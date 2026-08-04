@@ -262,12 +262,6 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "kanban.issue.delete": "desktop.kanban.deleteIssue",
   "kanban.issue.move": "desktop.kanban.moveIssue",
 
-  "page.context": "desktop.page.getContext",
-  "page.read": "desktop.page.readCurrent",
-  "page.interact": "desktop.page.interact",
-  "page.fillForm": "desktop.page.fillForm",
-  "page.submitForm": "desktop.page.submitForm",
-
   "web.entries.list": "desktop.web.list",
   "web.listSurfaces": "desktop.web.listSurfaces",
   "web.getActiveSurface": "desktop.web.getActiveSurface",

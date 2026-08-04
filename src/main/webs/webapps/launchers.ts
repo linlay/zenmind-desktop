@@ -111,7 +111,7 @@ function managedCheck(
 }
 
 function managedEnv(context: WebappLauncherContext) {
-  const scopedActions = context.item.schemaVersion === 4 && context.actionToken;
+  const scopedActions = context.item.schemaVersion >= 4 && context.actionToken;
   return {
     ...buildServiceEnv(),
     ...(

@@ -73,6 +73,7 @@ export type AppShellRuntimeOptions = {
   showDesktopPetWindow: () => unknown;
   hideDesktopPetWindow: () => unknown;
   restoreDesktopPetWindowLayering: () => void;
+  isAllowedWebappMicrophoneRequest?: (contents: { id: number }, details: unknown) => boolean;
 };
 
 export function createAppShellRuntime(options: AppShellRuntimeOptions) {
@@ -253,7 +254,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       permissionSession: options.session.defaultSession,
       getMainWindow: () => options.state.mainWindow,
-      askForMicrophoneAccess: () => options.systemPreferences.askForMediaAccess("microphone")
+      askForMicrophoneAccess: () => options.systemPreferences.askForMediaAccess("microphone"),
+      isAllowedWebappMicrophoneRequest: options.isAllowedWebappMicrophoneRequest
     });
   }
 

@@ -1,4 +1,5 @@
 import type { ServiceLogReadOptions, ServiceLogReadResult } from "./services";
+import type { WebappDesktopBridgeConfig } from "../webapp-bridge";
 
 export type WebKind = "website" | "webapp";
 export type WebEntryKey = `website:${string}` | `webapp:${string}`;
@@ -117,12 +118,13 @@ export interface WebsiteEntry extends WebEntryBase {
 export interface WebappEntry extends WebEntryBase {
   kind: "webapp";
   entryKey: `webapp:${string}`;
-  schemaVersion: 2 | 3 | 4;
+  schemaVersion: 2 | 3 | 4 | 5;
   version: string;
   target: WebappTarget;
   openMode: WebappOpenMode;
   frontend: WebappFrontendConfig;
   backend?: WebappBackendConfig;
+  desktopBridge?: WebappDesktopBridgeConfig;
   sourceKind?: WebappSourceKind;
   sourceLabel?: string;
   sourceOwnerId?: string;

@@ -1,18 +1,59 @@
-const WEBAPP_ASSISTANT_ACTIONS = Object.freeze([
+import type { WebappEntry } from "../../../shared/contracts";
+import {
+  WEBAPP_BRIDGE_ACTIONS,
+  WEBAPP_BRIDGE_CAPABILITY_ACTIONS,
+  type WebappBridgeCapability
+} from "../../../shared/webapp-bridge";
+
+const LEGACY_V4_BACKEND_ACTIONS = Object.freeze([
   "desktop.assistant.complete",
-  "desktop.assistant.chat"
+  WEBAPP_BRIDGE_ACTIONS.assistantChat
 ] as const);
 
+const LEGACY_V4_PAGE_ACTIONS = Object.freeze([
+  ...LEGACY_V4_BACKEND_ACTIONS,
+  "desktop.web.webapp.selectDirectory"
+] as const);
+
+export type WebappCapabilityScope = "backendActionToken" | "localPageGateway";
+
 export const WEBAPP_CAPABILITY_POLICY = Object.freeze({
-  backendActionToken: WEBAPP_ASSISTANT_ACTIONS,
-  localPageGateway: Object.freeze([
-    ...WEBAPP_ASSISTANT_ACTIONS,
-    "desktop.web.webapp.selectDirectory"
-  ] as const)
+  legacyV4Backend: LEGACY_V4_BACKEND_ACTIONS,
+  legacyV4Page: LEGACY_V4_PAGE_ACTIONS
 });
 
-export type WebappCapabilityScope = keyof typeof WEBAPP_CAPABILITY_POLICY;
+function declaredCapabilities(item: WebappEntry) {
+  return new Set<WebappBridgeCapability>(item.desktopBridge?.capabilities ?? []);
+}
 
-export function isWebappActionAllowed(scope: WebappCapabilityScope, action: string) {
-  return WEBAPP_CAPABILITY_POLICY[scope].some((allowedAction) => allowedAction === action);
+export function getWebappAllowedActions(item: WebappEntry, scope: WebappCapabilityScope) {
+  if (item.schemaVersion < 5) {
+    return [...(scope === "backendActionToken" ? LEGACY_V4_BACKEND_ACTIONS : LEGACY_V4_PAGE_ACTIONS)];
+  }
+  const declared = declaredCapabilities(item);
+  const actions = new Set<string>();
+  if (scope === "localPageGateway") {
+    actions.add(WEBAPP_BRIDGE_ACTIONS.capabilitiesList);
+  }
+  for (const capability of declared) {
+    if (scope === "backendActionToken" && capability !== "assistant.chat") {
+      continue;
+    }
+    for (const action of WEBAPP_BRIDGE_CAPABILITY_ACTIONS[capability]) {
+      actions.add(action);
+    }
+  }
+  return [...actions];
+}
+
+export function isWebappActionAllowed(
+  item: WebappEntry,
+  scope: WebappCapabilityScope,
+  action: string
+) {
+  return getWebappAllowedActions(item, scope).includes(action);
+}
+
+export function webappDeclaresCapability(item: WebappEntry, capability: WebappBridgeCapability) {
+  return item.schemaVersion === 5 && item.desktopBridge?.capabilities.includes(capability) === true;
 }

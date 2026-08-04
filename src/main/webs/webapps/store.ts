@@ -11,6 +11,13 @@ import type {
   WebappOpenMode,
   WebappTarget
 } from "../../../shared/contracts";
+import {
+  WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES,
+  WEBAPP_BRIDGE_VERSION,
+  isWebappBridgeAvailableCapability,
+  isWebappBridgeReservedCapability,
+  type WebappDesktopBridgeConfig
+} from "../../../shared/webapp-bridge";
 import { getDesktopWebappsDataRoot } from "../../user-paths";
 import {
   createWebId,
@@ -31,7 +38,7 @@ import {
 import { withWebappManagementMetadata } from "./metadata";
 
 export const WEBAPP_FILE = "webapp.json";
-export const WEBAPP_SCHEMA_VERSION = 4;
+export const WEBAPP_SCHEMA_VERSION = 5;
 export const WEBAPP_LEGACY_CANONICAL_SCHEMA_VERSION = 3;
 export const WEBAPP_JAVA_MIN_MAJOR = 21;
 export const WEBAPP_TARGETS = [
@@ -42,9 +49,11 @@ export const WEBAPP_TARGETS = [
   "windows-x64"
 ] as const satisfies readonly WebappTarget[];
 
-function normalizeSchemaVersion(value: unknown): 2 | 3 | 4 {
+type WebappSchemaVersion = WebappEntry["schemaVersion"];
+
+function normalizeSchemaVersion(value: unknown): WebappSchemaVersion {
   const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
-  return parsed === 4 ? 4 : parsed === 3 ? 3 : 2;
+  return parsed === 5 ? 5 : parsed === 4 ? 4 : parsed === 3 ? 3 : 2;
 }
 
 export function getCurrentWebappTarget(
@@ -68,7 +77,7 @@ export function webappTargetMatchesCurrentPlatform(
   return target === "universal" || target === getCurrentWebappTarget(platform, arch);
 }
 
-function normalizeTarget(value: unknown, schemaVersion: 2 | 3 | 4): WebappTarget {
+function normalizeTarget(value: unknown, schemaVersion: WebappSchemaVersion): WebappTarget {
   const target = readString(value);
   if (!target && schemaVersion < 4) {
     return "universal";
@@ -79,7 +88,7 @@ function normalizeTarget(value: unknown, schemaVersion: 2 | 3 | 4): WebappTarget
   return target as WebappTarget;
 }
 
-function normalizeVersion(value: unknown, schemaVersion: 2 | 3 | 4) {
+function normalizeVersion(value: unknown, schemaVersion: WebappSchemaVersion) {
   const version = readString(value);
   if (!version && schemaVersion < 4) {
     return "0.0.0";
@@ -124,7 +133,7 @@ export function getWebappPath(app: App, id: string, platform: NodeJS.Platform = 
   return path.join(getWebappDir(app, id, platform), WEBAPP_FILE);
 }
 
-function normalizeHealth(raw: unknown, schemaVersion: 2 | 3 | 4, legacyHealthPath: unknown): WebappHealthConfig {
+function normalizeHealth(raw: unknown, schemaVersion: WebappSchemaVersion, legacyHealthPath: unknown): WebappHealthConfig {
   if (schemaVersion < 4) {
     return {
       type: "http",
@@ -133,7 +142,7 @@ function normalizeHealth(raw: unknown, schemaVersion: 2 | 3 | 4, legacyHealthPat
     };
   }
   if (!isRecord(raw)) {
-    throw new Error("backend.health is required for schema v4.");
+    throw new Error("backend.health is required for schema v4/v5.");
   }
   const type = readString(raw.type);
   const timeoutMs = raw.timeoutMs === undefined
@@ -162,14 +171,14 @@ function normalizeHealth(raw: unknown, schemaVersion: 2 | 3 | 4, legacyHealthPat
 function normalizeFrontend(
   raw: unknown,
   projectDir: string,
-  schemaVersion: 2 | 3 | 4
+  schemaVersion: WebappSchemaVersion
 ): WebappFrontendConfig {
   const frontend = isRecord(raw) ? raw : {};
-  const mode = schemaVersion === 4 ? readString(frontend.mode) : "static";
+  const mode = schemaVersion >= 4 ? readString(frontend.mode) : "static";
   if (mode === "proxy") {
     return { mode: "proxy" };
   }
-  if (schemaVersion === 4 && mode !== "static") {
+  if (schemaVersion >= 4 && mode !== "static") {
     throw new Error("frontend.mode must be static or proxy.");
   }
   const root = readString(frontend.root) || "frontend";
@@ -197,7 +206,7 @@ function normalizeFrontend(
 function normalizeManagedBackend(
   backend: Record<string, unknown>,
   projectDir: string,
-  schemaVersion: 2 | 3 | 4
+  schemaVersion: WebappSchemaVersion
 ): WebappManagedBackendBase {
   const entry = readString(backend.entry);
   if (!entry) {
@@ -238,7 +247,7 @@ function normalizeJvmArgs(value: unknown) {
 
 function normalizeContainerBackend(
   backend: Record<string, unknown>,
-  schemaVersion: 2 | 3 | 4
+  schemaVersion: WebappSchemaVersion
 ): WebappContainerBackendConfig {
   for (const forbidden of [
     "entry",
@@ -293,20 +302,20 @@ function normalizeContainerBackend(
 function normalizeBackend(
   raw: unknown,
   projectDir: string,
-  schemaVersion: 2 | 3 | 4
+  schemaVersion: WebappSchemaVersion
 ): WebappBackendConfig | undefined {
   if (raw === undefined || raw === null) {
     return undefined;
   }
   const backend = isRecord(raw) ? raw : {};
-  if (schemaVersion === 4) {
+  if (schemaVersion >= 4) {
     for (const forbidden of ["command", "commands", "shell", "cwd", "startCommand", "stopCommand"]) {
       if (backend[forbidden] !== undefined) {
         throw new Error(`backend.${forbidden} is not allowed; use a built-in launcher.`);
       }
     }
   }
-  const launcher = schemaVersion === 4
+  const launcher = schemaVersion >= 4
     ? readString(backend.launcher)
     : readString(backend.runtime) || "node";
   if (launcher === "container") {
@@ -321,7 +330,7 @@ function normalizeBackend(
   const common = normalizeManagedBackend(backend, projectDir, schemaVersion);
   if (launcher === "node") {
     if (
-      schemaVersion === 4 &&
+      schemaVersion >= 4 &&
       ![".js", ".cjs", ".mjs"].includes(path.extname(common.entry).toLowerCase())
     ) {
       throw new Error("Node backend.entry must be a .js, .cjs, or .mjs file.");
@@ -344,6 +353,53 @@ function normalizeBackend(
   return { launcher: "native", ...common };
 }
 
+function normalizeDesktopBridge(
+  raw: unknown,
+  schemaVersion: WebappSchemaVersion
+): WebappDesktopBridgeConfig | undefined {
+  if (schemaVersion !== 5) {
+    return undefined;
+  }
+  if (raw === undefined || raw === null) {
+    return {
+      version: WEBAPP_BRIDGE_VERSION,
+      capabilities: []
+    };
+  }
+  if (!isRecord(raw) || raw.version !== WEBAPP_BRIDGE_VERSION) {
+    throw new Error(`desktopBridge.version must be ${WEBAPP_BRIDGE_VERSION}.`);
+  }
+  if (!Array.isArray(raw.capabilities)) {
+    throw new Error("desktopBridge.capabilities must be an array.");
+  }
+  const capabilities: WebappDesktopBridgeConfig["capabilities"] = [];
+  const seen = new Set<string>();
+  for (const value of raw.capabilities) {
+    if (typeof value !== "string" || !value.trim()) {
+      throw new Error("desktopBridge.capabilities must contain non-empty strings.");
+    }
+    const capability = value.trim();
+    if (seen.has(capability)) {
+      throw new Error(`desktopBridge capability is duplicated: ${capability}.`);
+    }
+    seen.add(capability);
+    if (isWebappBridgeReservedCapability(capability)) {
+      throw new Error(`desktopBridge capability is reserved but not implemented: ${capability}.`);
+    }
+    if (!isWebappBridgeAvailableCapability(capability)) {
+      throw new Error(
+        `unknown desktopBridge capability ${capability}; expected one of: ` +
+        `${WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES.join(", ")}.`
+      );
+    }
+    capabilities.push(capability);
+  }
+  return {
+    version: WEBAPP_BRIDGE_VERSION,
+    capabilities
+  };
+}
+
 export function normalizeWebappManifest(value: unknown, projectDir: string, fallbackId = ""): WebappEntry | null {
   if (!isRecord(value)) {
     return null;
@@ -358,6 +414,7 @@ export function normalizeWebappManifest(value: unknown, projectDir: string, fall
   const copilotAgentKey = readCopilotAgentKey(value);
   const backend = normalizeBackend(value.backend, projectDir, schemaVersion);
   const frontend = normalizeFrontend(value.frontend, projectDir, schemaVersion);
+  const desktopBridge = normalizeDesktopBridge(value.desktopBridge, schemaVersion);
   if (frontend.mode === "proxy" && !backend) {
     throw new Error("frontend.mode proxy requires a backend.");
   }
@@ -372,6 +429,7 @@ export function normalizeWebappManifest(value: unknown, projectDir: string, fall
     label: normalizeWebsiteLabel(readString(value.label), id),
     frontend,
     ...(backend ? { backend } : {}),
+    ...(desktopBridge ? { desktopBridge } : {}),
     ...(copilotAgentKey ? { copilotAgentKey } : {}),
     createdAt: value.createdAt === undefined ? now : toTimestamp(value.createdAt),
     updatedAt: value.updatedAt === undefined ? now : toTimestamp(value.updatedAt)
@@ -432,6 +490,7 @@ export function isWebappFile(value: unknown) {
     value.kind === "local-app" ||
     value.schemaVersion === 2 ||
     value.schemaVersion === 3 ||
+    value.schemaVersion === 4 ||
     value.schemaVersion === WEBAPP_SCHEMA_VERSION
   );
 }
@@ -463,8 +522,8 @@ export function writeWebappPreferenceFields(
     : item.copilotAgentKey;
   const next: Record<string, unknown> = {
     ...raw,
-    schemaVersion: item.schemaVersion === 4
-      ? WEBAPP_SCHEMA_VERSION
+    schemaVersion: item.schemaVersion >= 4
+      ? item.schemaVersion
       : WEBAPP_LEGACY_CANONICAL_SCHEMA_VERSION,
     id: item.id,
     kind: "webapp",
@@ -501,8 +560,8 @@ export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "")
   if (!item) {
     throw new Error("webapp.json is invalid.");
   }
-  const schemaVersion = item.schemaVersion === 4
-    ? WEBAPP_SCHEMA_VERSION
+  const schemaVersion = item.schemaVersion >= 4
+    ? item.schemaVersion
     : WEBAPP_LEGACY_CANONICAL_SCHEMA_VERSION;
   const legacyFrontend = item.frontend.mode === "static"
     ? {
@@ -531,11 +590,12 @@ export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "")
     kind: "webapp",
     label: item.label,
     openMode: item.openMode,
-    ...(schemaVersion === 4 ? {
+    ...(schemaVersion >= 4 ? {
       version: item.version,
       target: item.target,
       frontend: item.frontend,
-      ...(item.backend ? { backend: item.backend } : {})
+      ...(item.backend ? { backend: item.backend } : {}),
+      ...(schemaVersion === 5 && item.desktopBridge ? { desktopBridge: item.desktopBridge } : {})
     } : {
       frontend: legacyFrontend,
       ...(legacyBackend ? { backend: legacyBackend } : {})
@@ -550,6 +610,9 @@ export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "")
   }
   if (!item.copilotAgentKey) {
     delete next.copilotAgentKey;
+  }
+  if (schemaVersion !== 5) {
+    delete next.desktopBridge;
   }
   fs.writeFileSync(path.join(webappDir, WEBAPP_FILE), `${JSON.stringify(next, null, 2)}\n`, "utf8");
   return normalizeWebappManifest(next, webappDir, item.id)!;

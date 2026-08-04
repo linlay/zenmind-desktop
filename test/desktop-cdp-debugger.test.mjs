@@ -383,10 +383,8 @@ test("browser surface registry uses explicit guest registrations for open site s
   assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "webapp:app").open, false);
 });
 
-test("current page cdp executor uses the shared command timeout helper", () => {
-  const source = fs.readFileSync(path.join(process.cwd(), "src", "main", "current-page-cdp-executor.ts"), "utf8");
+test("current page cdp inspector uses the shared command helper", () => {
+  const source = fs.readFileSync(path.join(process.cwd(), "src", "main", "current-page-cdp-inspector.ts"), "utf8");
 
   assert.match(source, /sendDesktopCdpCommand/u);
-  assert.match(source, /isDesktopCdpTimeoutError/u);
-  assert.match(source, /DESKTOP_CDP_TARGET_TIMEOUT_CODE/u);
 });

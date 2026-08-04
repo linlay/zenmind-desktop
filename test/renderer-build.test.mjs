@@ -4667,6 +4667,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /desktop\.web\.listSurfaces/);
   assert.match(actionCatalog, /desktop\.web\.navigate/);
   assert.match(actionCatalog, /desktop\.web\.interactElement/);
+  assert.doesNotMatch(actionCatalog, /desktop\.web\.(?:getPageContext|readPageData|extractStructured)/);
   assert.match(actionCatalog, /desktop\.web\.webapp\.installAndOpen/);
   assert.match(actionCatalog, /desktop\.pet\.state/);
   assert.match(actionCatalog, /desktop\.pet\.list/);
@@ -4690,6 +4691,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.doesNotMatch(actionCatalog, /desktop\.help\.(?:getCurrentTopic|searchTopics|explainCurrentPage|suggestNextAction|navigateToRelatedPage)/);
   assert.match(actionCatalog, /desktop\.market\.applySettingsPatch/);
   assert.doesNotMatch(actionCatalog, /desktop\.memory\./);
+  assert.doesNotMatch(actionCatalog, /desktop\.page\./);
   assert.match(bridge, /GET" && url\.pathname === "\/health"/);
   assert.match(bridge, /GET" && url\.pathname === "\/actions"/);
   assert.match(bridge, /POST" && url\.pathname === "\/actions\/call"/);
@@ -4718,6 +4720,9 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /buildDesktopActionConfirmationDetail/);
   assert.match(bridge, /buildMutatingActionConfirmationRequest/);
   assert.match(bridge, /buildPageControlActionConfirmationRequest/);
+  assert.doesNotMatch(bridge, /desktop\.page\./);
+  assert.doesNotMatch(bridge, /desktop\.web\.(?:getPageContext|readPageData|extractStructured)/);
+  assert.match(bridge, /case "desktop\.web\.interactElement"/);
   assert.match(bridge, /confirmRendererAction/);
   assert.match(bridge, /summarizeConfirmationArgs/);
   assert.match(bridge, /confirmDetailRedacted/);
@@ -4771,10 +4776,11 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(appShell, /enabled or agentKey is required/);
   assert.match(appShell, /desktopCopilotPages:\s*\{\s*\[pageKey\]: nextPreference/);
   assert.match(appShell, /desktop\.web\.listSurfaces/);
-  assert.match(settingsPage, /registerDesktopActionProvider/);
+  assert.doesNotMatch(settingsPage, /registerDesktopActionProvider/);
+  assert.doesNotMatch(settingsPage, /desktop\.page\./);
   assert.match(settingsPage, /desktopHelperAgentKey/);
   assert.match(externalWebviewPage, /registerDesktopActionProviderForScope\("web"/);
-  assert.match(externalWebviewPage, /desktop\.web\.getPageContext/);
+  assert.doesNotMatch(externalWebviewPage, /desktop\.web\.(?:getPageContext|readPageData|extractStructured)/);
   assert.match(externalWebviewPage, /desktop\.web\.navigate/);
   assert.match(externalWebviewPage, /desktop\.web\.closeTab/);
   assert.doesNotMatch(externalWebviewPage, /querySelector\(request/);
@@ -5586,8 +5592,7 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(pluginPage, /webContentsId/);
   assert.doesNotMatch(pluginPage, /window\.electronAPI\.embeddedWeb\.executeInFrame/);
   assert.doesNotMatch(pluginPage, /frameMatchUrl/);
-  assert.match(pluginPage, /READ_PAGE_DATA_SCRIPT/);
-  assert.match(pluginPage, /EXTRACT_STRUCTURED_SCRIPT/);
+  assert.doesNotMatch(pluginPage, /READ_PAGE_DATA_SCRIPT|EXTRACT_STRUCTURED_SCRIPT/);
   assert.match(pluginPage, /buildInteractElementScript/);
   assert.match(pluginPage, /const webviewRenderKey = useMemo/);
   assert.doesNotMatch(pluginPage, /iframe/);

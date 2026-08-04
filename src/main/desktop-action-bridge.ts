@@ -1,8 +1,9 @@
 import http from "node:http";
+import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { App, BrowserWindow, OpenDialogOptions } from "electron";
-import { dialog } from "electron";
+import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions } from "electron";
+import { clipboard, dialog, Notification, shell, systemPreferences } from "electron";
 import type {
   DesktopActionConfirmationDecision,
   DesktopActionConfirmationRequest,
@@ -20,6 +21,13 @@ import type {
   ServiceLogTarget,
   ServiceOpenLogViewerRequest
 } from "../shared/contracts";
+import {
+  WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES,
+  WEBAPP_BRIDGE_RESERVED_CAPABILITIES,
+  WEBAPP_BRIDGE_VERSION,
+  type WebappBridgeCapabilitiesResult,
+  type WebappBridgePermissionStatus
+} from "../shared/webapp-bridge";
 import {
   DESKTOP_ACTION_BRIDGE_HOST,
   DESKTOP_ACTION_DEFINITIONS,
@@ -55,6 +63,8 @@ import {
   updateWebsiteItem
 } from "./webs/websites/actions";
 import { webappRuntime } from "./webs/webapps/runtime";
+import { readWebappItems } from "./webs/webapps/store";
+import { webappWindowManager } from "./webs/webapps/window-manager";
 import { readDesktopMobileWebappItem } from "./webs/webapps/mobile-catalog";
 import {
   getWebappPublishInfo,
@@ -86,11 +96,10 @@ import {
   readDesktopCdpErrorDetails
 } from "./desktop-cdp-debugger";
 import {
-  executeCurrentPageCdpAction,
   inspectCurrentPageCdpElement,
   readCurrentPageCdpLocation,
   type CurrentPageCdpElementSnapshot
-} from "./current-page-cdp-executor";
+} from "./current-page-cdp-inspector";
 import type { KanbanRuntime } from "./kanban-runtime";
 import { t } from "./i18n/main-i18n";
 import { getConfiguredDesktopActionBridgePort } from "./desktop-action-bridge-settings";
@@ -109,6 +118,19 @@ type DesktopActionBridgeOptions = {
     options: OpenDialogOptions,
     ownerWindow?: BrowserWindow | null
   ) => Promise<{ canceled: boolean; filePaths: string[] }>;
+  showSaveDialog?: (
+    options: SaveDialogOptions,
+    ownerWindow?: BrowserWindow | null
+  ) => Promise<{ canceled: boolean; filePath?: string }>;
+  openExternal?: (url: string) => Promise<unknown>;
+  writeClipboardText?: (text: string) => void;
+  getMicrophonePermission?: () => string;
+  requestMicrophoneAccess?: () => Promise<boolean>;
+  showNotification?: (input: {
+    title: string;
+    body: string;
+    onClick: () => void;
+  }) => boolean;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{
@@ -125,6 +147,11 @@ type DesktopActionBridgeOptions = {
     hide: () => DesktopPetState | Promise<DesktopPetState>;
   };
 };
+
+type DesktopActionInvocationContext =
+  | { kind: "desktop" }
+  | { kind: "webappPage"; webappId: string }
+  | { kind: "webappBackend"; webappId: string };
 
 type PlatformResponse<T> = {
   code?: number;
@@ -166,15 +193,59 @@ type DesktopCdpCallResponse = {
 
 const JSON_CONTENT_TYPE = "application/json; charset=utf-8";
 const MAX_BODY_BYTES = 256 * 1024;
+const MAX_WEBAPP_EXTERNAL_URL_CHARS = 8_192;
+const MAX_WEBAPP_CLIPBOARD_BYTES = 1024 * 1024;
+const MAX_WEBAPP_NOTIFICATION_TITLE_CHARS = 120;
+const MAX_WEBAPP_NOTIFICATION_BODY_CHARS = 1_000;
+const WEBAPP_NATIVE_RATE_WINDOW_MS = 60_000;
+const WEBAPP_EXTERNAL_RATE_LIMIT = 5;
+const WEBAPP_NOTIFICATION_RATE_LIMIT = 5;
+const WEBAPP_PAGE_ONLY_ACTIONS = new Set([
+  "desktop.capabilities.list",
+  "desktop.native.browser.openExternal",
+  "desktop.native.dialog.selectFiles",
+  "desktop.native.dialog.selectDirectory",
+  "desktop.native.dialog.selectSavePath",
+  "desktop.native.microphone.getPermission",
+  "desktop.native.microphone.requestAccess",
+  "desktop.native.clipboard.writeText",
+  "desktop.native.notification.show"
+]);
 const PAGE_CONTROL_GRANT_TTL_MS = 10 * 60 * 1000;
 const PAGE_CONTROL_LOW_RISK_INTERACTIONS = new Set(["fill", "scroll", "focus", "select"]);
 const PAGE_CONTROL_HIGH_RISK_PATTERN =
   /(\u63d0\u4ea4|\u5220\u9664|\u79fb\u9664|\u6e05\u7a7a|\u652f\u4ed8|\u4ed8\u6b3e|\u8d2d\u4e70|\u4e0b\u5355|\u8ba2\u5355|\u786e\u8ba4\u8ba2\u5355|\u9000\u6b3e|\u8f6c\u8d26|\u6388\u6743|\u786e\u8ba4\u6388\u6743|\u540c\u610f\u6388\u6743|\u5b89\u88c5|\u5378\u8f7d|\u542f\u52a8|\u505c\u6b62|\u91cd\u542f|\u53d1\u5e03|\u53d1\u9001|\u4fdd\u5b58|\u767b\u5f55|\u6ce8\u518c|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
+const CURRENT_PAGE_WEB_ACTIONS = new Set([
+  "desktop.web.interactElement",
+  "desktop.web.executeScript"
+]);
 const CONFIRMATION_ARG_MAX_KEYS = 8;
 const CONFIRMATION_ARG_MAX_NESTED_KEYS = 6;
 const CONFIRMATION_ARG_MAX_ARRAY_ITEMS = 4;
 const CONFIRMATION_ARG_VALUE_MAX_CHARS = 160;
 const CONFIRMATION_ARG_SUMMARY_MAX_CHARS = 1200;
+
+class WebappActionRateLimiter {
+  private readonly attempts = new Map<string, number[]>();
+
+  take(key: string, limit: number, now = Date.now()) {
+    const cutoff = now - WEBAPP_NATIVE_RATE_WINDOW_MS;
+    const current = (this.attempts.get(key) ?? []).filter((value) => value > cutoff);
+    if (current.length >= limit) {
+      this.attempts.set(key, current);
+      return false;
+    }
+    current.push(now);
+    this.attempts.set(key, current);
+    return true;
+  }
+
+  clear() {
+    this.attempts.clear();
+  }
+}
+
+const webappActionRateLimiter = new WebappActionRateLimiter();
 const CONFIRMATION_COMPACT_VALUE_MAX_CHARS = 280;
 const MAX_ASSISTANT_PROMPT_CHARS = 12_000;
 const MAX_ASSISTANT_INSTRUCTION_CHARS = 2_000;
@@ -1033,10 +1104,7 @@ async function isLowRiskPageControlAction(
   if (!snapshot || snapshot.pageKind !== "webview") {
     return false;
   }
-  if (action === "desktop.page.fillForm") {
-    return true;
-  }
-  if (action !== "desktop.page.interact") {
+  if (action !== "desktop.web.interactElement") {
     return false;
   }
   const interaction = readString(args, "action").toLowerCase();
@@ -1104,7 +1172,7 @@ async function confirmDesktopActionIfNeeded(
   };
 }
 
-async function callRendererPageAction(
+async function callRendererAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
   args: Record<string, unknown>
@@ -1291,6 +1359,262 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   return installAndOpenWebapp(options, action, args);
 }
 
+function webappPathResult(selectedPath: string) {
+  return {
+    path: selectedPath,
+    name: path.basename(selectedPath) || selectedPath
+  };
+}
+
+function readWebappDialogFilters(value: unknown) {
+  if (value === undefined) {
+    return { ok: true as const, filters: undefined };
+  }
+  if (!Array.isArray(value) || value.length > 10) {
+    return { ok: false as const, message: "filters must be an array with at most 10 items." };
+  }
+  const filters: NonNullable<OpenDialogOptions["filters"]> = [];
+  for (const entry of value) {
+    const record = asRecord(entry);
+    const name = readString(record, "name");
+    const extensions = Array.isArray(record.extensions)
+      ? record.extensions.map((extension) => typeof extension === "string" ? extension.trim() : "")
+      : [];
+    if (
+      !name ||
+      name.length > 80 ||
+      extensions.length === 0 ||
+      extensions.length > 20 ||
+      extensions.some((extension) => !/^[A-Za-z0-9*][A-Za-z0-9._+-]{0,31}$/u.test(extension))
+    ) {
+      return { ok: false as const, message: "each filter requires a name and 1-20 safe extensions." };
+    }
+    filters.push({ name, extensions });
+  }
+  return { ok: true as const, filters };
+}
+
+function normalizeMicrophonePermission(value: string): WebappBridgePermissionStatus {
+  if (value === "granted") return "granted";
+  if (value === "denied") return "denied";
+  if (value === "restricted") return "restricted";
+  if (value === "not-determined" || value === "unknown") return "prompt";
+  return "unavailable";
+}
+
+function getMicrophonePermission(options: DesktopActionBridgeOptions) {
+  if (process.platform !== "darwin" && process.platform !== "win32") {
+    return "unavailable" as const;
+  }
+  try {
+    const raw = options.getMicrophonePermission
+      ? options.getMicrophonePermission()
+      : systemPreferences.getMediaAccessStatus("microphone");
+    return normalizeMicrophonePermission(raw);
+  } catch {
+    return "unavailable" as const;
+  }
+}
+
+function getWebappBridgeCapabilities(
+  options: DesktopActionBridgeOptions,
+  webappId: string
+): WebappBridgeCapabilitiesResult | null {
+  const item = readWebappItems(options.app).find((candidate) => candidate.id === webappId) ?? null;
+  if (!item || item.schemaVersion !== 5) {
+    return null;
+  }
+  const declared = new Set(item.desktopBridge?.capabilities ?? []);
+  const microphonePermission = getMicrophonePermission(options);
+  const notificationAvailable = options.showNotification ? true : Notification.isSupported();
+  return {
+    bridgeVersion: WEBAPP_BRIDGE_VERSION,
+    capabilities: [
+      ...WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES.map((id) => {
+        const status = id === "native.microphone" && microphonePermission === "unavailable"
+          ? "unavailable" as const
+          : id === "native.notification" && !notificationAvailable
+            ? "unavailable" as const
+            : "available" as const;
+        return {
+          id,
+          status,
+          declared: declared.has(id),
+          permission: id === "native.microphone"
+            ? microphonePermission
+            : id === "native.notification" && !notificationAvailable
+              ? "unavailable" as const
+              : "not_required" as const
+        };
+      }),
+      ...WEBAPP_BRIDGE_RESERVED_CAPABILITIES.map((id) => ({
+        id,
+        status: "reserved" as const,
+        declared: false,
+        permission: "unavailable" as const
+      }))
+    ]
+  };
+}
+
+function getWebappDialogOwner(options: DesktopActionBridgeOptions, webappId: string) {
+  return webappWindowManager.getWindow(webappId) ?? options.getMainWindow();
+}
+
+async function executeNativeWebappAction(
+  options: DesktopActionBridgeOptions,
+  action: string,
+  args: Record<string, unknown>,
+  webappId: string
+): Promise<DesktopActionCallResponse> {
+  if (action === "desktop.capabilities.list") {
+    const result = getWebappBridgeCapabilities(options, webappId);
+    return result
+      ? ok(action, result)
+      : fail(action, "unsupported_schema", "Desktop Bridge v1 requires WebApp schema v5.");
+  }
+
+  const owner = getWebappDialogOwner(options, webappId);
+  if (action === "desktop.native.browser.openExternal") {
+    const rawUrl = readString(args, "url");
+    let target: URL;
+    try {
+      target = new URL(rawUrl);
+    } catch {
+      return fail(action, "invalid_args", "url must be a valid HTTP(S) URL.");
+    }
+    if (
+      !rawUrl ||
+      rawUrl.length > MAX_WEBAPP_EXTERNAL_URL_CHARS ||
+      (target.protocol !== "http:" && target.protocol !== "https:")
+    ) {
+      return fail(action, "invalid_args", "url must be an HTTP(S) URL with at most 8192 characters.");
+    }
+    if (!webappActionRateLimiter.take(`${webappId}:openExternal`, WEBAPP_EXTERNAL_RATE_LIMIT)) {
+      return fail(action, "rate_limited", "The WebApp opened too many external URLs.");
+    }
+    await (options.openExternal ?? shell.openExternal)(target.toString());
+    return ok(action, { opened: true, url: target.toString() });
+  }
+
+  if (action === "desktop.native.dialog.selectFiles") {
+    const parsedFilters = readWebappDialogFilters(args.filters);
+    if (!parsedFilters.ok) return fail(action, "invalid_args", parsedFilters.message);
+    const dialogOptions: OpenDialogOptions = {
+      title: "Select files",
+      properties: args.multiple === true ? ["openFile", "multiSelections"] : ["openFile"],
+      ...(parsedFilters.filters ? { filters: parsedFilters.filters } : {})
+    };
+    const result = options.showFileDialog
+      ? await options.showFileDialog(dialogOptions, owner)
+      : owner && !owner.isDestroyed()
+        ? await dialog.showOpenDialog(owner, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+    return ok(action, {
+      canceled: result.canceled,
+      files: result.canceled ? [] : result.filePaths.map(webappPathResult)
+    });
+  }
+
+  if (action === "desktop.native.dialog.selectDirectory") {
+    const dialogOptions: OpenDialogOptions = {
+      title: "Select directory",
+      defaultPath: options.app.getPath("documents"),
+      properties: ["openDirectory", "createDirectory"]
+    };
+    const result = options.showFileDialog
+      ? await options.showFileDialog(dialogOptions, owner)
+      : owner && !owner.isDestroyed()
+        ? await dialog.showOpenDialog(owner, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+    const selectedPath = result.canceled ? "" : String(result.filePaths[0] || "").trim();
+    return ok(action, selectedPath
+      ? { canceled: false, ...webappPathResult(selectedPath) }
+      : { canceled: true });
+  }
+
+  if (action === "desktop.native.dialog.selectSavePath") {
+    const parsedFilters = readWebappDialogFilters(args.filters);
+    if (!parsedFilters.ok) return fail(action, "invalid_args", parsedFilters.message);
+    const suggestedName = readString(args, "suggestedName");
+    if (suggestedName.length > 255 || (suggestedName && path.basename(suggestedName) !== suggestedName)) {
+      return fail(action, "invalid_args", "suggestedName must be a filename with at most 255 characters.");
+    }
+    const dialogOptions: SaveDialogOptions = {
+      title: "Select save path",
+      ...(suggestedName ? { defaultPath: path.join(options.app.getPath("documents"), suggestedName) } : {}),
+      ...(parsedFilters.filters ? { filters: parsedFilters.filters } : {})
+    };
+    const result = options.showSaveDialog
+      ? await options.showSaveDialog(dialogOptions, owner)
+      : owner && !owner.isDestroyed()
+        ? await dialog.showSaveDialog(owner, dialogOptions)
+        : await dialog.showSaveDialog(dialogOptions);
+    const selectedPath = result.canceled ? "" : String(result.filePath || "").trim();
+    return ok(action, selectedPath
+      ? { canceled: false, ...webappPathResult(selectedPath) }
+      : { canceled: true });
+  }
+
+  if (action === "desktop.native.microphone.getPermission") {
+    return ok(action, { permission: getMicrophonePermission(options) });
+  }
+
+  if (action === "desktop.native.microphone.requestAccess") {
+    if (process.platform === "darwin") {
+      const granted = await (options.requestMicrophoneAccess
+        ? options.requestMicrophoneAccess()
+        : systemPreferences.askForMediaAccess("microphone"));
+      return granted
+        ? ok(action, { permission: "granted" })
+        : fail(action, "permission_denied", "Microphone permission was denied.", { permission: "denied" });
+    }
+    if (process.platform === "win32") {
+      const permission = getMicrophonePermission(options);
+      return permission === "denied" || permission === "restricted"
+        ? fail(action, "permission_denied", "Microphone permission is unavailable.", { permission })
+        : ok(action, { permission });
+    }
+    return fail(action, "unsupported_platform", "Microphone access is unavailable on this platform.");
+  }
+
+  if (action === "desktop.native.clipboard.writeText") {
+    const text = typeof args.text === "string" ? args.text : "";
+    if (Buffer.byteLength(text, "utf8") > MAX_WEBAPP_CLIPBOARD_BYTES) {
+      return fail(action, "invalid_args", "text must be at most 1 MiB when encoded as UTF-8.");
+    }
+    (options.writeClipboardText ?? ((value: string) => clipboard.writeText(value)))(text);
+    return ok(action, { written: true });
+  }
+
+  if (action === "desktop.native.notification.show") {
+    const title = readString(args, "title");
+    const body = typeof args.body === "string" ? args.body.trim() : "";
+    if (!title || title.length > MAX_WEBAPP_NOTIFICATION_TITLE_CHARS || body.length > MAX_WEBAPP_NOTIFICATION_BODY_CHARS) {
+      return fail(action, "invalid_args", "title is required (max 120 characters); body is limited to 1000 characters.");
+    }
+    if (!webappActionRateLimiter.take(`${webappId}:notification`, WEBAPP_NOTIFICATION_RATE_LIMIT)) {
+      return fail(action, "rate_limited", "The WebApp showed too many notifications.");
+    }
+    const focus = () => webappWindowManager.focus(webappId, options.getMainWindow());
+    const shown = options.showNotification
+      ? options.showNotification({ title, body, onClick: focus })
+      : Notification.isSupported()
+        ? (() => {
+            const notification = new Notification({ title, body });
+            notification.once("click", focus);
+            notification.show();
+            return true;
+          })()
+        : false;
+    return shown
+      ? ok(action, { shown: true })
+      : fail(action, "unavailable", "System notifications are unavailable.");
+  }
+
+  return fail(action, "unknown_action", `unknown WebApp native action: ${action}`);
+}
+
 async function executeKanbanAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
   const runtime = options.getKanbanRuntime?.() ?? null;
   if (!runtime) {
@@ -1389,10 +1713,17 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
 
 async function executeAction(
   options: DesktopActionBridgeOptions,
-  request: DesktopActionCallRequest
+  request: DesktopActionCallRequest,
+  invocation: DesktopActionInvocationContext
 ): Promise<DesktopActionCallResponse> {
   const action = request.action;
   const args = asRecord(request.args);
+
+  if (WEBAPP_PAGE_ONLY_ACTIONS.has(action)) {
+    return invocation.kind === "webappPage"
+      ? executeNativeWebappAction(options, action, args, invocation.webappId)
+      : fail(action, "forbidden", "This native action is available only to an authorized local WebApp page.");
+  }
 
   switch (action) {
     case "desktop.assistant.complete": {
@@ -1469,29 +1800,6 @@ async function executeAction(
         chatId: completion.chatId
       });
     }
-    case "desktop.page.getContext":
-      if (options.getCurrentPageSnapshot()) {
-        return ok(action, {
-          source: "desktop",
-          ...options.getCurrentPageSnapshot()
-        });
-      }
-      return callRendererPageAction(options, request, args);
-    case "desktop.page.readCurrent":
-    case "desktop.page.extractStructured":
-    case "desktop.page.interact":
-    case "desktop.page.fillForm":
-    case "desktop.page.submitForm": {
-      const cdpResponse = await executeCurrentPageCdpAction(options.getCurrentPageSnapshot(), request);
-      if (cdpResponse) {
-        return cdpResponse;
-      }
-      return callRendererPageAction(options, request, args);
-    }
-    case "desktop.page.getFormState":
-    case "desktop.page.validateForm":
-    case "desktop.page.previewPatch":
-    case "desktop.page.applyPatch":
     case "desktop.theme.get":
     case "desktop.theme.set":
     case "desktop.locale.get":
@@ -1507,7 +1815,9 @@ async function executeAction(
     case "desktop.web.openTab":
     case "desktop.web.closeTab":
     case "desktop.web.switchTab":
-      return callRendererPageAction(options, request, args);
+    case "desktop.web.interactElement":
+    case "desktop.web.executeScript":
+      return callRendererAction(options, request, args);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
       return ok(action, {
@@ -1655,7 +1965,8 @@ async function executeAction(
 
 async function handleActionCallRaw(
   options: DesktopActionBridgeOptions,
-  request: DesktopActionCallRequest
+  request: DesktopActionCallRequest,
+  invocation: DesktopActionInvocationContext = { kind: "desktop" }
 ): Promise<DesktopActionCallResponse> {
   const action = typeof request.action === "string" ? request.action.trim() : "";
   if (!action || !getDesktopActionDefinition(action)) {
@@ -1663,7 +1974,7 @@ async function handleActionCallRaw(
   }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);
-  if (action.startsWith("desktop.page.")) {
+  if (CURRENT_PAGE_WEB_ACTIONS.has(action)) {
     const snapshot = options.getCurrentPageSnapshot();
     if (
       request.expectedPageKey &&
@@ -1676,14 +1987,14 @@ async function handleActionCallRaw(
       });
     }
   }
-  if (isDesktopActionMutating(action)) {
+  if (isDesktopActionMutating(action) && invocation.kind === "desktop") {
     const confirmationResponse = await confirmDesktopActionIfNeeded(options, normalizedRequest, args);
     if (confirmationResponse) {
       return confirmationResponse;
     }
   }
   try {
-    return await executeAction(options, normalizedRequest);
+    return await executeAction(options, normalizedRequest, invocation);
   } catch (error) {
     return fail(action, "action_failed", error instanceof Error ? error.message : String(error));
   }
@@ -1725,10 +2036,11 @@ function normalizeActionResponseTimePayload(
 
 async function handleActionCall(
   options: DesktopActionBridgeOptions,
-  request: DesktopActionCallRequest
+  request: DesktopActionCallRequest,
+  invocation: DesktopActionInvocationContext = { kind: "desktop" }
 ): Promise<DesktopActionCallResponse> {
   return normalizeActionResponseTimePayload(
-    await handleActionCallRaw(options, request)
+    await handleActionCallRaw(options, request, invocation)
   );
 }
 
@@ -1737,6 +2049,17 @@ export async function handleDesktopActionRequest(
   request: DesktopActionCallRequest
 ) {
   return handleActionCall(options, request);
+}
+
+export async function handleWebappPageActionRequest(
+  options: DesktopActionBridgeOptions,
+  webappId: string,
+  request: DesktopActionCallRequest
+) {
+  return handleActionCall(options, {
+    ...request,
+    source: { webappId }
+  }, { kind: "webappPage", webappId });
 }
 
 export async function handleDesktopCdpRequest(
@@ -1843,17 +2166,58 @@ export function startDesktopActionBridge(options: DesktopActionBridgeOptions) {
       try {
         const body = await readBody(req);
         const parsed = JSON.parse(body) as DesktopActionCallRequest;
-        const authorization = authorizeWebappActionToken(readBearerToken(req), parsed.action);
+        const authorization = authorizeWebappActionToken(
+          readBearerToken(req),
+          parsed.action,
+          "backendActionToken"
+        );
         if (!authorization.ok) {
           writeJSON(res, 403, fail(parsed.action || "unknown", "forbidden", "WebApp action token is missing, expired, or not authorized for this action."));
           return;
         }
-        const response = await handleActionCall(options, {
-          ...parsed,
-          source: {
-            webappId: authorization.webappId
-          }
-        });
+        const response = await handleActionCall(
+          options,
+          {
+            ...parsed,
+            source: {
+              webappId: authorization.webappId
+            }
+          },
+          { kind: "webappBackend", webappId: authorization.webappId }
+        );
+        writeJSON(res, response.ok ? 200 : 400, response);
+      } catch (error) {
+        writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
+      }
+      return;
+    }
+    if (req.method === "POST" && url.pathname === "/webapps/pages/actions/call") {
+      if (!hasJsonContentType(req)) {
+        writeJSON(res, 415, fail("unknown", "unsupported_media_type", "Content-Type must be application/json."));
+        return;
+      }
+      try {
+        const body = await readBody(req);
+        const parsed = JSON.parse(body) as DesktopActionCallRequest;
+        const authorization = authorizeWebappActionToken(
+          readBearerToken(req),
+          parsed.action,
+          "localPageGateway"
+        );
+        if (!authorization.ok) {
+          writeJSON(res, 403, fail(parsed.action || "unknown", "forbidden", "WebApp page token is missing, expired, or not authorized for this action."));
+          return;
+        }
+        const response = await handleActionCall(
+          options,
+          {
+            ...parsed,
+            source: {
+              webappId: authorization.webappId
+            }
+          },
+          { kind: "webappPage", webappId: authorization.webappId }
+        );
         writeJSON(res, response.ok ? 200 : 400, response);
       } catch (error) {
         writeJSON(res, 400, fail("unknown", "invalid_request", error instanceof Error ? error.message : String(error)));
@@ -1904,5 +2268,6 @@ export const __testInternals = {
   normalizeActionResponseTimePayload,
   sanitizeConfirmationUrl,
   summarizeConfirmationArgs,
-  fetchAgentPlatformWithAuth
+  fetchAgentPlatformWithAuth,
+  clearWebappActionRateLimits: () => webappActionRateLimiter.clear()
 };

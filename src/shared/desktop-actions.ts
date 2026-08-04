@@ -46,6 +46,17 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.assistant.chat", kind: "execute", category: "assistant", description: "Send a general message to the Desktop helper agent. Args: { message }." },
   { name: "desktop.assistant.complete", kind: "execute", category: "assistant", description: "Generate text with the Desktop helper agent. Args: { prompt, instruction? }." },
 
+  { name: "desktop.capabilities.list", kind: "read", category: "capabilities", description: "List the capabilities exposed to the calling local WebApp page." },
+
+  { name: "desktop.native.browser.openExternal", kind: "execute", category: "native", description: "Open an HTTP(S) URL in the system browser. Args: { url }." },
+  { name: "desktop.native.dialog.selectFiles", kind: "execute", category: "native", description: "Open a native file picker. Args: { multiple?, filters? }." },
+  { name: "desktop.native.dialog.selectDirectory", kind: "execute", category: "native", description: "Open a native directory picker for the calling local WebApp." },
+  { name: "desktop.native.dialog.selectSavePath", kind: "execute", category: "native", description: "Select a native save path without writing a file. Args: { suggestedName?, filters? }." },
+  { name: "desktop.native.microphone.getPermission", kind: "read", category: "native", description: "Read the operating-system microphone permission state for the calling local WebApp." },
+  { name: "desktop.native.microphone.requestAccess", kind: "execute", category: "native", description: "Request operating-system microphone access for the calling local WebApp." },
+  { name: "desktop.native.clipboard.writeText", kind: "execute", category: "native", description: "Write up to 1 MiB of text to the system clipboard. Args: { text }." },
+  { name: "desktop.native.notification.show", kind: "execute", category: "native", description: "Show a rate-limited system notification for the calling local WebApp. Args: { title, body? }." },
+
   { name: "desktop.general.deviceName", kind: "read", category: "general", description: "Read the effective and configured Desktop device names. Args: none. Returns: { deviceName, configuredDeviceName }." },
 
   { name: "desktop.theme.get", kind: "read", category: "theme", description: "Read the Desktop theme. Args: none. Returns: { themeMode, resolvedTheme }." },
@@ -59,9 +70,6 @@ export const DESKTOP_ACTION_DEFINITIONS = [
 
   { name: "desktop.web.listSurfaces", kind: "read", category: "web", description: "List Desktop web surfaces." },
   { name: "desktop.web.getActiveSurface", kind: "read", category: "web", description: "Read the active Desktop web surface." },
-  { name: "desktop.web.getPageContext", kind: "read", category: "web", description: "Read the current Desktop web page context." },
-  { name: "desktop.web.readPageData", kind: "read", category: "web", description: "Read structured content from the current Desktop web page." },
-  { name: "desktop.web.extractStructured", kind: "read", category: "web", description: "Extract structured data from the current Desktop web page." },
   { name: "desktop.web.interactElement", kind: "execute", category: "web", description: "Interact with an element in the current Desktop web page." },
   { name: "desktop.web.executeScript", kind: "execute", category: "web", description: "Execute a script in the current Desktop web page." },
   { name: "desktop.web.activateSurface", kind: "execute", category: "web", description: "Activate a Desktop web surface." },

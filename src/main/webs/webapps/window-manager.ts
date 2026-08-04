@@ -154,6 +154,27 @@ class WebappWindowManager {
     return Boolean(record && !record.window.isDestroyed());
   }
 
+  getWindow(id: string) {
+    const record = this.windows.get(id.trim());
+    return record && !record.window.isDestroyed() ? record.window : null;
+  }
+
+  focus(id: string, fallbackWindow: BrowserWindow | null = null) {
+    const targetWindow = this.getWindow(id) ?? (
+      fallbackWindow && !fallbackWindow.isDestroyed() ? fallbackWindow : null
+    );
+    if (!targetWindow) {
+      return false;
+    }
+    if (targetWindow.isMinimized()) {
+      targetWindow.restore();
+    }
+    targetWindow.show();
+    targetWindow.focus();
+    targetWindow.moveTop();
+    return true;
+  }
+
   openIds() {
     return [...this.windows.entries()]
       .filter(([, record]) => !record.window.isDestroyed())

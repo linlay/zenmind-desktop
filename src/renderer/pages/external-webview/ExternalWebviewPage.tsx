@@ -10,21 +10,12 @@ import type { AssistantPageContext } from "../../../shared/contracts";
 import type { EmbeddedCdpSiteSurfaceKind } from "../../../shared/embedded-cdp";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import {
-  EXTRACT_STRUCTURED_SCRIPT,
-  READ_PAGE_DATA_SCRIPT,
-  buildFillFormScript,
   buildInteractElementScript,
-  buildSubmitFormScript,
-  type EmbeddedWebInteractAction,
-  type EmbeddedWebReadInclude,
-  type EmbeddedWebStructuredTarget
+  type EmbeddedWebInteractAction
 } from "../../../shared/embedded-web-scripts";
 import { registerAssistantPageContextProvider } from "../../copilot/page-context/assistantPageContext";
 import { publishCurrentPageContextSnapshot } from "../../services/currentPageContext";
-import {
-  registerCurrentPageExecutor,
-  registerDesktopActionProviderForScope
-} from "../../services/desktopActionRegistry";
+import { registerDesktopActionProviderForScope } from "../../services/desktopActionRegistry";
 import { SidebarActionIcon } from "../../components/BrandMark";
 import {
   Favicon,
@@ -34,15 +25,9 @@ import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
 import { useI18n } from "../../i18n/useI18n";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
-  EMBEDDED_WEB_READ_INCLUDES,
   EMBEDDED_WEB_SCRIPT_MAX_BYTES,
-  EMBEDDED_WEB_STRUCTURED_TARGETS,
-  filterReadPageDataResult,
-  filterStructuredResult,
   getUtf8ByteLength,
-  readActionSelector,
-  readAllowedValues,
-  readFormFields
+  readActionSelector
 } from "../../copilot/page-context/webActions";
 
 type ExternalWebviewPageProps = {
@@ -1063,43 +1048,6 @@ export function ExternalWebviewPage({
     };
   }
 
-  async function executeCurrentPageRead(args: Record<string, unknown>) {
-    const response = await executeActiveWebviewScript(args, READ_PAGE_DATA_SCRIPT);
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        realtime: true,
-        readAt: new Date().toISOString(),
-        pageContext: await readActivePageContext(),
-        data: filterReadPageDataResult(
-          response.result,
-          readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES)
-        )
-      })
-    };
-  }
-
-  async function executeCurrentPageStructuredRead(args: Record<string, unknown>) {
-    const response = await executeActiveWebviewScript(args, EXTRACT_STRUCTURED_SCRIPT);
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        realtime: true,
-        readAt: new Date().toISOString(),
-        data: filterStructuredResult(
-          response.result,
-          readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS)
-        )
-      })
-    };
-  }
-
   async function executeCurrentPageInteract(args: Record<string, unknown>) {
     const selector = readActionSelector(args);
     const action = typeof args.action === "string" ? args.action.trim() : "";
@@ -1119,44 +1067,6 @@ export function ExternalWebviewPage({
       result: attachDescriptorMetadata({
         interacted: true,
         action,
-        outcome: response.result
-      })
-    };
-  }
-
-  async function executeCurrentPageFillForm(args: Record<string, unknown>) {
-    const fields = readFormFields(args);
-    if (fields.length === 0) {
-      return embeddedError("invalid_args", t("desktopAction.fieldsSelectorRequired"), args);
-    }
-    const response = await executeActiveWebviewScript(args, buildFillFormScript({
-      formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,
-      fields
-    }));
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        filled: true,
-        outcome: response.result
-      })
-    };
-  }
-
-  async function executeCurrentPageSubmitForm(args: Record<string, unknown>) {
-    const response = await executeActiveWebviewScript(args, buildSubmitFormScript({
-      formSelector: typeof args.formSelector === "string" ? args.formSelector.trim() : undefined,
-      submitSelector: typeof args.submitSelector === "string" ? args.submitSelector.trim() : undefined
-    }));
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        submitted: true,
         outcome: response.result
       })
     };
@@ -1206,21 +1116,6 @@ export function ExternalWebviewPage({
   }, [active, activeTab?.id, surfaceId, surfaceLabel, title]);
 
   useEffect(() => {
-    if (active === false || !activeTab) {
-      return undefined;
-    }
-
-    return registerCurrentPageExecutor({
-      getDescriptor: createCurrentPageDescriptor,
-      readCurrent: async (request) => executeCurrentPageRead(request.args ?? {}),
-      extractStructured: async (request) => executeCurrentPageStructuredRead(request.args ?? {}),
-      interact: async (request) => executeCurrentPageInteract(request.args ?? {}),
-      fillForm: async (request) => executeCurrentPageFillForm(request.args ?? {}),
-      submitForm: async (request) => executeCurrentPageSubmitForm(request.args ?? {})
-    });
-  }, [active, activeTab?.id, currentRoute, surfaceId, surfaceLabel, title, url]);
-
-  useEffect(() => {
     if (active === false) {
       return undefined;
     }
@@ -1251,22 +1146,6 @@ export function ExternalWebviewPage({
       switch (request.action) {
         case "desktop.web.getActiveSurface":
           return { ok: true, result: getEmbeddedWebSurfaceState() };
-        case "desktop.web.getPageContext":
-          return { ok: true, result: await readActivePageContext() };
-        case "desktop.web.readPageData": {
-          const response = await executeCurrentPageRead(args);
-          if (!response.ok) {
-            return response;
-          }
-          return { ok: true, result: response.result.data };
-        }
-        case "desktop.web.extractStructured": {
-          const response = await executeCurrentPageStructuredRead(args);
-          if (!response.ok) {
-            return response;
-          }
-          return { ok: true, result: response.result.data };
-        }
         case "desktop.web.interactElement": {
           const response = await executeCurrentPageInteract(args);
           if (!response.ok) {

@@ -279,7 +279,7 @@ export async function installWebsiteAppArchiveFromPath(
     upsertInstalledRecord(app, {
       id: webapp.id,
       type: "website-app",
-      version: webapp.schemaVersion === 4
+      version: webapp.schemaVersion >= 4
         ? webapp.version
         : options.version ?? webapp.version,
       source: options.source ?? "local",

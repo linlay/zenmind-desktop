@@ -43,7 +43,7 @@ const {
   revokeWebappActionToken
 } = require("../dist-electron/main/webs/webapps/action-tokens.js");
 const {
-  WEBAPP_CAPABILITY_POLICY,
+  getWebappAllowedActions,
   isWebappActionAllowed
 } = require("../dist-electron/main/webs/webapps/capability-policy.js");
 const {
@@ -230,29 +230,32 @@ server.listen(port, host);
     schemaVersion,
     id,
     kind: "webapp",
-    ...(schemaVersion === 4 ? {
+    ...(schemaVersion >= 4 ? {
       version: options.version ?? "1.0.0",
       target: options.target ?? "universal"
+    } : {}),
+    ...(schemaVersion === 5 ? {
+      desktopBridge: options.desktopBridge ?? { version: 1, capabilities: [] }
     } : {}),
     label: options.label ?? "Local Demo",
     ...(options.openMode ? { openMode: options.openMode } : {}),
     agentKey: options.agentKey,
     frontend: {
-      ...(schemaVersion === 4 ? { mode: "static" } : {}),
+      ...(schemaVersion >= 4 ? { mode: "static" } : {}),
       root: options.frontendRoot ?? "frontend",
       index: options.frontendIndex ?? "index.html",
       spa: true,
       apiPrefix: "/api"
     },
     ...(!options.frontendOnly ? { backend: {
-      ...(schemaVersion === 4
+      ...(schemaVersion >= 4
         ? { launcher: "node" }
         : { runtime: options.runtime ?? "node" }),
       entry: options.entry ?? "backend/server.mjs",
       args: [],
       env: {},
       port: 0,
-      ...(schemaVersion === 4
+      ...(schemaVersion >= 4
         ? { health: { type: "http", path: "/api/health", timeoutMs: 10_000 } }
         : { healthPath: "/api/health" })
     } } : {}),
@@ -414,7 +417,8 @@ function readUrl(target) {
       res.on("end", () => resolve({
         statusCode: res.statusCode,
         body: Buffer.concat(chunks).toString("utf8"),
-        contentType: String(res.headers["content-type"] ?? "")
+        contentType: String(res.headers["content-type"] ?? ""),
+        cacheControl: String(res.headers["cache-control"] ?? "")
       }));
     }).on("error", reject);
   });
@@ -1581,7 +1585,7 @@ test("schema v4 Node runtime uses scoped startup credentials and revokes them on
   assert.equal(result.state?.launcher, "node");
   assert.equal(result.state?.ownership, "desktop");
   assert.equal(result.state?.runtimeVersion.length > 0, true);
-  assert.equal(__actionTokenTestInternals.size(), 1);
+  assert.equal(__actionTokenTestInternals.size(), 2);
 
   const api = await readUrl(new URL("/api/demo", result.state.webUrl).toString());
   const body = JSON.parse(api.body);
@@ -1624,48 +1628,114 @@ test("schema v4 proxy frontend routes the whole site through the gateway and pre
   assert.match(page.body, /backend proxy page/u);
   const reserved = await readUrl(new URL("/__desktop/not-a-route", started.state.webUrl).toString());
   assert.equal(reserved.statusCode, 404);
+  const bridgeModule = await readUrl(new URL("/__desktop/bridge.js", started.state.webUrl).toString());
+  assert.equal(bridgeModule.statusCode, 200);
+  assert.match(bridgeModule.contentType, /text\/javascript/u);
+  assert.equal(bridgeModule.cacheControl, "no-store");
+  assert.match(bridgeModule.body, /export const desktop/u);
+  assert.match(bridgeModule.body, /desktop\.assistant\.chat/u);
+  assert.doesNotMatch(bridgeModule.body, /desktop\.assistant\.complete/u);
+  assert.match(bridgeModule.body, /not_implemented/u);
 });
 
 test("WebApp action tokens are scoped to the issuing app and assistant allowlist", () => {
   __actionTokenTestInternals.clear();
-  const token = issueWebappActionToken("scoped-app");
+  const item = { id: "scoped-app", schemaVersion: 4 };
+  const token = issueWebappActionToken(item, "backendActionToken");
   assert.deepEqual(
-    authorizeWebappActionToken(token, "desktop.assistant.complete"),
-    { ok: true, webappId: "scoped-app" }
+    authorizeWebappActionToken(token, "desktop.assistant.complete", "backendActionToken"),
+    { ok: true, webappId: "scoped-app", scope: "backendActionToken" }
   );
   assert.deepEqual(
     authorizeWebappActionToken(token, "desktop.assistant.chat"),
-    { ok: true, webappId: "scoped-app" }
+    { ok: true, webappId: "scoped-app", scope: "backendActionToken" }
   );
   assert.deepEqual(
     authorizeWebappActionToken(token, "desktop.assistant.translate"),
-    { ok: false, webappId: "" }
+    { ok: false, webappId: "", scope: null }
   );
   assert.deepEqual(
     authorizeWebappActionToken(token, "desktop.web.webapp.remove"),
-    { ok: false, webappId: "" }
+    { ok: false, webappId: "", scope: null }
   );
   revokeWebappActionToken(token);
   assert.deepEqual(
     authorizeWebappActionToken(token, "desktop.assistant.complete"),
-    { ok: false, webappId: "" }
+    { ok: false, webappId: "", scope: null }
   );
 });
 
 test("WebApp capability policy keeps backend tokens narrower than the local page gateway", () => {
-  assert.deepEqual([...WEBAPP_CAPABILITY_POLICY.backendActionToken], [
+  const legacy = { id: "legacy", schemaVersion: 4 };
+  assert.deepEqual(getWebappAllowedActions(legacy, "backendActionToken"), [
     "desktop.assistant.complete",
     "desktop.assistant.chat"
   ]);
-  assert.deepEqual([...WEBAPP_CAPABILITY_POLICY.localPageGateway], [
+  assert.deepEqual(getWebappAllowedActions(legacy, "localPageGateway"), [
     "desktop.assistant.complete",
     "desktop.assistant.chat",
     "desktop.web.webapp.selectDirectory"
   ]);
-  assert.equal(isWebappActionAllowed("backendActionToken", "desktop.web.webapp.selectDirectory"), false);
-  assert.equal(isWebappActionAllowed("localPageGateway", "desktop.web.webapp.selectDirectory"), true);
-  assert.equal(isWebappActionAllowed("localPageGateway", "desktop.assistant.translate"), false);
-  assert.equal(isWebappActionAllowed("localPageGateway", "desktop.web.webapp.remove"), false);
+  assert.equal(isWebappActionAllowed(legacy, "backendActionToken", "desktop.web.webapp.selectDirectory"), false);
+  assert.equal(isWebappActionAllowed(legacy, "localPageGateway", "desktop.web.webapp.selectDirectory"), true);
+
+  const v5 = {
+    id: "bridge-v5",
+    schemaVersion: 5,
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat", "native.dialog.directories", "native.notification"]
+    }
+  };
+  assert.deepEqual(getWebappAllowedActions(v5, "backendActionToken"), [
+    "desktop.assistant.chat"
+  ]);
+  assert.deepEqual(getWebappAllowedActions(v5, "localPageGateway"), [
+    "desktop.capabilities.list",
+    "desktop.assistant.chat",
+    "desktop.native.dialog.selectDirectory",
+    "desktop.native.notification.show"
+  ]);
+  assert.equal(isWebappActionAllowed(v5, "localPageGateway", "desktop.assistant.complete"), false);
+  assert.equal(isWebappActionAllowed(v5, "localPageGateway", "desktop.web.webapp.selectDirectory"), false);
+});
+
+test("schema v5 validates and preserves explicit Desktop Bridge capabilities", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-v5-manifest-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const appDir = writeWebapp(root, "bridge-v5", {
+    schemaVersion: 5,
+    frontendOnly: true,
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat", "native.microphone"]
+    }
+  });
+  const item = readWebappItemFromDir(appDir);
+  assert.equal(item.schemaVersion, 5);
+  assert.deepEqual(item.desktopBridge, {
+    version: 1,
+    capabilities: ["assistant.chat", "native.microphone"]
+  });
+
+  const manifestPath = path.join(appDir, "webapp.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  writeJson(manifestPath, {
+    ...manifest,
+    desktopBridge: { version: 1, capabilities: ["native.screen.capture"] }
+  });
+  assert.throws(
+    () => readWebappItemFromDir(appDir),
+    /reserved but not implemented/u
+  );
+  writeJson(manifestPath, {
+    ...manifest,
+    desktopBridge: { version: 1, capabilities: ["assistant.chat", "assistant.chat"] }
+  });
+  assert.throws(
+    () => readWebappItemFromDir(appDir),
+    /duplicated/u
+  );
 });
 
 test("webapp runtime starts a frontend-only package without a backend process", async (t) => {

@@ -39,11 +39,7 @@ import type {
 } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
 import {
-  EXTRACT_STRUCTURED_SCRIPT,
-  READ_PAGE_DATA_SCRIPT,
-  buildFillFormScript,
   buildInteractElementScript,
-  buildSubmitFormScript,
   type EmbeddedWebInteractAction,
 } from "../../../shared/embedded-web-scripts";
 import {
@@ -52,21 +48,12 @@ import {
   subscribeCurrentPageContext,
 } from "../../services/currentPageContext";
 import { registerPluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
-import {
-  registerCurrentPageExecutor,
-  registerDesktopActionProviderForScope,
-} from "../../services/desktopActionRegistry";
+import { registerDesktopActionProviderForScope } from "../../services/desktopActionRegistry";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
-  EMBEDDED_WEB_READ_INCLUDES,
   EMBEDDED_WEB_SCRIPT_MAX_BYTES,
-  EMBEDDED_WEB_STRUCTURED_TARGETS,
-  filterReadPageDataResult,
-  filterStructuredResult,
   getUtf8ByteLength,
   readActionSelector,
-  readAllowedValues,
-  readFormFields,
 } from "../../copilot/page-context/webActions";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
 import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
@@ -162,7 +149,7 @@ function buildPluginWebviewFallbackContext(
     headings: [],
     bodyText: [
       t("pluginPage.contextCurrentEmbeddedApp", { name: normalizedName || fallbackName }),
-      t("pluginPage.contextUseDesktopPage"),
+      t("pluginPage.contextUseDesktopWebActions"),
     ].join(" "),
     browserTarget: fallbackUrl
       ? {
@@ -756,48 +743,6 @@ export function PluginPage({
     };
   }
 
-  async function executeCurrentPageRead(args: Record<string, unknown>) {
-    const response = await executeWebviewScript(args, READ_PAGE_DATA_SCRIPT);
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        realtime: true,
-        readAt: new Date().toISOString(),
-        pageContext: await readPluginPageContext(),
-        data: filterReadPageDataResult(
-          response.result,
-          readAllowedValues(args.include, EMBEDDED_WEB_READ_INCLUDES),
-        ),
-      }),
-    };
-  }
-
-  async function executeCurrentPageStructuredRead(
-    args: Record<string, unknown>,
-  ) {
-    const response = await executeWebviewScript(
-      args,
-      EXTRACT_STRUCTURED_SCRIPT,
-    );
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        realtime: true,
-        readAt: new Date().toISOString(),
-        data: filterStructuredResult(
-          response.result,
-          readAllowedValues(args.targets, EMBEDDED_WEB_STRUCTURED_TARGETS),
-        ),
-      }),
-    };
-  }
-
   async function executeCurrentPageInteract(args: Record<string, unknown>) {
     const selector = readActionSelector(args);
     const action = typeof args.action === "string" ? args.action.trim() : "";
@@ -832,63 +777,6 @@ export function PluginPage({
       result: attachDescriptorMetadata({
         interacted: true,
         action,
-        outcome: response.result,
-      }),
-    };
-  }
-
-  async function executeCurrentPageFillForm(args: Record<string, unknown>) {
-    const fields = readFormFields(args);
-    if (fields.length === 0) {
-      return embeddedError(
-        "invalid_args",
-        t("desktopAction.fieldsSelectorRequired"),
-        args,
-      );
-    }
-    const response = await executeWebviewScript(
-      args,
-      buildFillFormScript({
-        formSelector:
-          typeof args.formSelector === "string"
-            ? args.formSelector.trim()
-            : undefined,
-        fields,
-      }),
-    );
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        filled: true,
-        outcome: response.result,
-      }),
-    };
-  }
-
-  async function executeCurrentPageSubmitForm(args: Record<string, unknown>) {
-    const response = await executeWebviewScript(
-      args,
-      buildSubmitFormScript({
-        formSelector:
-          typeof args.formSelector === "string"
-            ? args.formSelector.trim()
-            : undefined,
-        submitSelector:
-          typeof args.submitSelector === "string"
-            ? args.submitSelector.trim()
-            : undefined,
-      }),
-    );
-    if (!response.ok) {
-      return response;
-    }
-    return {
-      ok: true as const,
-      result: attachDescriptorMetadata({
-        submitted: true,
         outcome: response.result,
       }),
     };
@@ -1513,40 +1401,6 @@ export function PluginPage({
   ]);
 
   useEffect(() => {
-    if (
-      active === false ||
-      service?.status !== "running" ||
-      skipContextRegistration
-    ) {
-      return undefined;
-    }
-
-    return registerCurrentPageExecutor({
-      getDescriptor: createCurrentPageDescriptor,
-      readCurrent: async (request) =>
-        executeCurrentPageRead(request.args ?? {}),
-      extractStructured: async (request) =>
-        executeCurrentPageStructuredRead(request.args ?? {}),
-      interact: async (request) =>
-        executeCurrentPageInteract(request.args ?? {}),
-      fillForm: async (request) =>
-        executeCurrentPageFillForm(request.args ?? {}),
-      submitForm: async (request) =>
-        executeCurrentPageSubmitForm(request.args ?? {}),
-    });
-  }, [
-    active,
-    currentRoute,
-    embeddedUrl,
-    surfaceId,
-    service?.status,
-    serviceDisplayName,
-    skipContextRegistration,
-    webviewCurrentUrl,
-    webUrl,
-  ]);
-
-  useEffect(() => {
     const isSurfaceActive = active !== false;
     if (
       !isSurfaceActive ||
@@ -1593,22 +1447,6 @@ export function PluginPage({
                 activeTab: null,
               },
             };
-          case "desktop.web.getPageContext":
-            return { ok: true, result: await readPluginPageContext() };
-          case "desktop.web.readPageData": {
-            const response = await executeCurrentPageRead(args);
-            if (!response.ok) {
-              return response;
-            }
-            return { ok: true, result: response.result.data };
-          }
-          case "desktop.web.extractStructured": {
-            const response = await executeCurrentPageStructuredRead(args);
-            if (!response.ok) {
-              return response;
-            }
-            return { ok: true, result: response.result.data };
-          }
           case "desktop.web.interactElement": {
             const response = await executeCurrentPageInteract(args);
             if (!response.ok) {

@@ -10,6 +10,7 @@ const require = createRequire(import.meta.url);
 
 const {
   handleDesktopActionRequest,
+  handleWebappPageActionRequest,
   handleDesktopCdpRequest,
   startDesktopActionBridge,
   stopDesktopActionBridge,
@@ -31,6 +32,13 @@ const {
 const {
   getWebsitePath
 } = require("../dist-electron/main/webs/websites/store.js");
+const {
+  getDesktopWebappsDataRoot
+} = require("../dist-electron/main/user-paths.js");
+const {
+  issueWebappActionToken,
+  revokeWebappActionToken
+} = require("../dist-electron/main/webs/webapps/action-tokens.js");
 
 function createApp(homePath) {
   return {
@@ -77,7 +85,11 @@ function createDesktopActionOptions(t) {
     refreshState: 0,
     saveSettings: [],
     completions: [],
-    fileDialogs: []
+    fileDialogs: [],
+    saveDialogs: [],
+    externalUrls: [],
+    clipboardWrites: [],
+    notifications: []
   };
 
   return {
@@ -107,6 +119,25 @@ function createDesktopActionOptions(t) {
           canceled: false,
           filePaths: [path.join(homePath, "Documents", "Writing")]
         };
+      },
+      showSaveDialog: async (dialogOptions) => {
+        calls.saveDialogs.push(dialogOptions);
+        return {
+          canceled: false,
+          filePath: path.join(homePath, "Documents", dialogOptions.defaultPath ? path.basename(dialogOptions.defaultPath) : "result.txt")
+        };
+      },
+      openExternal: async (url) => {
+        calls.externalUrls.push(url);
+      },
+      writeClipboardText: (text) => {
+        calls.clipboardWrites.push(text);
+      },
+      getMicrophonePermission: () => "granted",
+      requestMicrophoneAccess: async () => true,
+      showNotification: (input) => {
+        calls.notifications.push(input);
+        return true;
       },
       callRendererAction: async () => ({ ok: false }),
       executeCdpCommand: async () => {
@@ -143,6 +174,7 @@ test("desktop assistant chat forwards a general message without business prompts
   assert.equal(calls.completions[0].message, "分析这段内容并给出建议");
   assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name === "desktop.assistant.chat"), true);
   assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name === "desktop.assistant.translate"), false);
+  assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name.startsWith("desktop.page.")), false);
 
   const invalid = await handleDesktopActionRequest(options, {
     action: "desktop.assistant.chat",
@@ -191,6 +223,131 @@ test("local WebApp directory action uses the native picker and returns one selec
   assert.match(response.result.path, /Documents[\\/]Writing$/u);
   assert.equal(calls.fileDialogs.length, 1);
   assert.deepEqual(calls.fileDialogs[0].properties, ["openDirectory", "createDirectory"]);
+});
+
+test("WebApp Bridge native actions require page scope and enforce their public contracts", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  __testInternals.clearWebappActionRateLimits();
+
+  const forbidden = await handleDesktopActionRequest(options, {
+    action: "desktop.native.browser.openExternal",
+    args: { url: "https://example.com/docs" },
+    permissionMode: "full_access"
+  });
+  assert.equal(forbidden.ok, false);
+  assert.equal(forbidden.error.code, "forbidden");
+
+  const opened = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.browser.openExternal",
+    args: { url: "https://example.com/docs" }
+  });
+  assert.equal(opened.ok, true);
+  assert.deepEqual(calls.externalUrls, ["https://example.com/docs"]);
+
+  const invalidProtocol = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.browser.openExternal",
+    args: { url: "file:///tmp/secret" }
+  });
+  assert.equal(invalidProtocol.ok, false);
+  assert.equal(invalidProtocol.error.code, "invalid_args");
+
+  const selectedFiles = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.dialog.selectFiles",
+    args: {
+      multiple: true,
+      filters: [{ name: "Text", extensions: ["txt", "md"] }]
+    }
+  });
+  assert.equal(selectedFiles.ok, true);
+  assert.equal(selectedFiles.result.canceled, false);
+  assert.equal(selectedFiles.result.files[0].name, "Writing");
+  assert.deepEqual(calls.fileDialogs.at(-1).properties, ["openFile", "multiSelections"]);
+
+  const selectedDirectory = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.dialog.selectDirectory",
+    args: {}
+  });
+  assert.equal(selectedDirectory.ok, true);
+  assert.equal(selectedDirectory.result.name, "Writing");
+
+  const savePath = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.dialog.selectSavePath",
+    args: { suggestedName: "report.xlsx", filters: [{ name: "Excel", extensions: ["xlsx"] }] }
+  });
+  assert.equal(savePath.ok, true);
+  assert.equal(savePath.result.name, "report.xlsx");
+  assert.equal(calls.saveDialogs.length, 1);
+
+  const microphone = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.microphone.getPermission",
+    args: {}
+  });
+  if (process.platform === "darwin" || process.platform === "win32") {
+    assert.equal(microphone.ok, true);
+    assert.equal(microphone.result.permission, "granted");
+  } else {
+    assert.equal(microphone.result.permission, "unavailable");
+  }
+
+  const clipboard = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.clipboard.writeText",
+    args: { text: "copied" }
+  });
+  assert.equal(clipboard.ok, true);
+  assert.deepEqual(calls.clipboardWrites, ["copied"]);
+
+  const oversizedClipboard = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.clipboard.writeText",
+    args: { text: "x".repeat(1024 * 1024 + 1) }
+  });
+  assert.equal(oversizedClipboard.ok, false);
+  assert.equal(oversizedClipboard.error.code, "invalid_args");
+
+  const notification = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.native.notification.show",
+    args: { title: "Finished", body: "Export complete" }
+  });
+  assert.equal(notification.ok, true);
+  assert.equal(calls.notifications.length, 1);
+});
+
+test("WebApp Bridge capability list distinguishes declared, reserved, and unavailable entries", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const webappDir = path.join(getDesktopWebappsDataRoot(options.app), "bridge-v5");
+  fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
+  fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html>", "utf8");
+  fs.writeFileSync(path.join(webappDir, "webapp.json"), JSON.stringify({
+    schemaVersion: 5,
+    id: "bridge-v5",
+    kind: "webapp",
+    version: "1.0.0",
+    target: "universal",
+    label: "Bridge V5",
+    frontend: {
+      mode: "static",
+      root: "frontend",
+      index: "index.html",
+      spa: true,
+      apiPrefix: "/api"
+    },
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat", "native.clipboard.write"]
+    }
+  }), "utf8");
+
+  const response = await handleWebappPageActionRequest(options, "bridge-v5", {
+    action: "desktop.capabilities.list",
+    args: {}
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.result.bridgeVersion, 1);
+  const chat = response.result.capabilities.find((entry) => entry.id === "assistant.chat");
+  const clipboard = response.result.capabilities.find((entry) => entry.id === "native.clipboard.write");
+  const screen = response.result.capabilities.find((entry) => entry.id === "native.screen.capture");
+  assert.deepEqual({ status: chat.status, declared: chat.declared }, { status: "available", declared: true });
+  assert.deepEqual({ status: clipboard.status, declared: clipboard.declared }, { status: "available", declared: true });
+  assert.deepEqual({ status: screen.status, declared: screen.declared }, { status: "reserved", declared: false });
 });
 
 function waitForListening(server) {
@@ -277,6 +434,86 @@ test("desktop action bridge listens on configured port and refreshes when config
     host: DESKTOP_ACTION_BRIDGE_HOST,
     port: secondPort
   });
+});
+
+test("Desktop Action Bridge keeps WebApp page and backend token scopes separate", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const port = await getFreeLoopbackPort();
+  const item = {
+    id: "scope-v5",
+    schemaVersion: 5,
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat", "native.clipboard.write"]
+    }
+  };
+  const pageToken = issueWebappActionToken(item, "localPageGateway");
+  const backendToken = issueWebappActionToken(item, "backendActionToken");
+  t.after(() => {
+    revokeWebappActionToken(pageToken);
+    revokeWebappActionToken(backendToken);
+    stopDesktopActionBridge();
+  });
+  writeDesktopActionBridgeSettingsConfig(options.app, { schemaVersion: 1, port });
+  const server = startDesktopActionBridge(options);
+  await waitForListening(server);
+
+  const call = async (route, token, action, args = {}) => {
+    const response = await fetch(`http://${DESKTOP_ACTION_BRIDGE_HOST}:${port}${route}`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        ...(token ? { authorization: `Bearer ${token}` } : {})
+      },
+      body: JSON.stringify({ action, args, permissionMode: "full_access" })
+    });
+    return { status: response.status, body: await response.json() };
+  };
+
+  const pageClipboard = await call(
+    "/webapps/pages/actions/call",
+    pageToken,
+    "desktop.native.clipboard.writeText",
+    { text: "page-only" }
+  );
+  assert.equal(pageClipboard.status, 200);
+  assert.equal(pageClipboard.body.ok, true);
+  assert.deepEqual(calls.clipboardWrites, ["page-only"]);
+
+  const forgedDesktop = await call(
+    "/actions/call",
+    "",
+    "desktop.native.clipboard.writeText",
+    { text: "forged" }
+  );
+  assert.equal(forgedDesktop.status, 400);
+  assert.equal(forgedDesktop.body.error.code, "forbidden");
+
+  const wrongScope = await call(
+    "/webapps/actions/call",
+    pageToken,
+    "desktop.native.clipboard.writeText",
+    { text: "wrong-scope" }
+  );
+  assert.equal(wrongScope.status, 403);
+
+  const backendChat = await call(
+    "/webapps/actions/call",
+    backendToken,
+    "desktop.assistant.chat",
+    { message: "hello" }
+  );
+  assert.equal(backendChat.status, 200);
+  assert.equal(backendChat.body.ok, true);
+  assert.equal(calls.completions.length, 1);
+
+  const removedComplete = await call(
+    "/webapps/actions/call",
+    backendToken,
+    "desktop.assistant.complete",
+    { prompt: "hello" }
+  );
+  assert.equal(removedComplete.status, 403);
 });
 
 test("desktop pet actions expose the simplified local pet API", async (t) => {
@@ -385,6 +622,54 @@ test("dedicated Desktop setting actions replace the removed generic Setting fami
     "desktop.setting.validatePatch",
     "desktop.setting.previewPatch",
     "desktop.setting.applyPatch"
+  ]) {
+    const response = await handleDesktopActionRequest(options, { action });
+    assert.equal(response.ok, false, action);
+    assert.equal(response.error.code, "unknown_action", action);
+  }
+});
+
+test("Desktop web actions retain page interaction while page reads use CDP", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererActions = [];
+  options.callRendererAction = async (request) => {
+    rendererActions.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: { handled: request.action }
+    };
+  };
+
+  for (const action of [
+    "desktop.web.interactElement",
+    "desktop.web.executeScript"
+  ]) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      args: {},
+      permissionMode: "full_access"
+    });
+    assert.equal(response.ok, true, action);
+    assert.equal(response.result.handled, action);
+  }
+
+  assert.deepEqual(rendererActions.map((request) => request.action), [
+    "desktop.web.interactElement",
+    "desktop.web.executeScript"
+  ]);
+
+  for (const action of [
+    "desktop.web.getPageContext",
+    "desktop.web.readPageData",
+    "desktop.web.extractStructured",
+    "desktop.page.getContext",
+    "desktop.page.readCurrent",
+    "desktop.page.extractStructured",
+    "desktop.page.interact",
+    "desktop.page.fillForm",
+    "desktop.page.submitForm"
   ]) {
     const response = await handleDesktopActionRequest(options, { action });
     assert.equal(response.ok, false, action);
@@ -786,7 +1071,7 @@ test("page control confirmation request exposes grant once cancel decisions", ()
     pageTitle: "Example"
   }, {
     requestId: "request-page",
-    action: "desktop.page.interact",
+    action: "desktop.web.interactElement",
     permissionMode: "page_control",
     source: {
       runId: "run-page",

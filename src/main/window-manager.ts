@@ -417,6 +417,10 @@ export function configureMediaPermissions<TWindow extends MediaPermissionWindowL
   };
   getMainWindow(): TWindow | null;
   askForMicrophoneAccess(): Promise<boolean>;
+  isAllowedWebappMicrophoneRequest?: (
+    contents: { id: number },
+    details: unknown
+  ) => boolean;
 }) {
   options.permissionSession.setPermissionRequestHandler((contents, permission, callback, details) => {
     const mainWindow = options.getMainWindow();
@@ -426,9 +430,15 @@ export function configureMediaPermissions<TWindow extends MediaPermissionWindowL
       ? (details as { mediaTypes: string[] }).mediaTypes
       : undefined;
 
+    const isAudioRequest = !mediaTypes || (
+      mediaTypes.includes("audio") && !mediaTypes.includes("video")
+    );
     const allowed = permission === "media" &&
-      contents.id === mainContentsId &&
-      (!mediaTypes || mediaTypes.includes("audio"));
+      isAudioRequest &&
+      (
+        contents.id === mainContentsId ||
+        options.isAllowedWebappMicrophoneRequest?.(contents, details) === true
+      );
     if (!allowed) {
       callback(false);
       return;

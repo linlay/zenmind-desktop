@@ -8,6 +8,10 @@ import type { WebappEntry } from "../../../shared/contracts";
 import { getConfiguredDesktopActionBridgePort } from "../../desktop-action-bridge-settings";
 import { resolveWebappRelativePath } from "../common";
 import { isWebappActionAllowed } from "./capability-policy";
+import {
+  WEBAPP_BRIDGE_MODULE_PATH,
+  WEBAPP_BRIDGE_MODULE_SOURCE
+} from "./bridge-module";
 
 const HOST = "127.0.0.1";
 const DESKTOP_RESERVED_PREFIX = "/__desktop/";
@@ -343,7 +347,7 @@ function readRequestBody(req: http.IncomingMessage, limit: number) {
 }
 
 async function handleDesktopAssistantRequest(
-  app: App,
+  options: { app: App; item: WebappEntry; pageActionToken: string },
   req: http.IncomingMessage,
   res: http.ServerResponse
 ) {
@@ -376,19 +380,21 @@ async function handleDesktopAssistantRequest(
       args?: unknown;
     };
     const action = typeof parsed.action === "string" ? parsed.action : "";
-    if (!isWebappActionAllowed("localPageGateway", action)) {
+    if (!isWebappActionAllowed(options.item, "localPageGateway", action)) {
       writeText(res, 403, "action is not allowed by the local WebApp capability policy");
       return;
     }
     const response = await fetch(
-      `http://${HOST}:${getConfiguredDesktopActionBridgePort(app)}/actions/call`,
+      `http://${HOST}:${getConfiguredDesktopActionBridgePort(options.app)}/webapps/pages/actions/call`,
       {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${options.pageActionToken}`
+        },
         body: JSON.stringify({
           action,
-          args: parsed.args && typeof parsed.args === "object" ? parsed.args : {},
-          permissionMode: "full_access"
+          args: parsed.args && typeof parsed.args === "object" ? parsed.args : {}
         }),
         signal: AbortSignal.timeout(120_000)
       }
@@ -427,6 +433,7 @@ export async function startWebappGateway(options: {
   item: WebappEntry;
   webappDir: string;
   backendUrl: string;
+  pageActionToken: string;
 }): Promise<WebappGateway> {
   const sockets = new Set<net.Socket>();
   const server = http.createServer((req, res) => {
@@ -435,8 +442,24 @@ export async function startWebappGateway(options: {
       writeText(res, 400, "invalid request path");
       return;
     }
+    if (requestPath === WEBAPP_BRIDGE_MODULE_PATH) {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.writeHead(405, { "Allow": "GET, HEAD", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      const body = req.method === "HEAD" ? "" : WEBAPP_BRIDGE_MODULE_SOURCE;
+      res.writeHead(200, {
+        "Content-Type": "text/javascript; charset=utf-8",
+        "Content-Length": String(Buffer.byteLength(body)),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      res.end(body);
+      return;
+    }
     if (requestPath === DESKTOP_ASSISTANT_PATH) {
-      void handleDesktopAssistantRequest(options.app, req, res);
+      void handleDesktopAssistantRequest(options, req, res);
       return;
     }
     if (requestPath.startsWith(DESKTOP_RESERVED_PREFIX)) {

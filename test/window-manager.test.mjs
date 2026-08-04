@@ -876,6 +876,46 @@ test("window manager grants media permissions only to the main window", async ()
   assert.equal(nativePromptCount, 0);
 });
 
+test("window manager grants audio-only media permission to an authorized WebApp guest", async () => {
+  const permissionSession = new FakePermissionSession();
+  const mainWindow = new FakeWindow();
+  mainWindow.webContents.id = 101;
+  const requests = [];
+
+  configureMediaPermissions({
+    platform: "win32",
+    permissionSession,
+    getMainWindow: () => mainWindow,
+    askForMicrophoneAccess: async () => true,
+    isAllowedWebappMicrophoneRequest: (contents, details) => {
+      requests.push({ contents, details });
+      return contents.id === 202 && details.requestingUrl === "http://127.0.0.1:43123/";
+    }
+  });
+
+  assert.equal(await permissionSession.request(
+    { id: 202 },
+    "media",
+    { mediaTypes: ["audio"], requestingUrl: "http://127.0.0.1:43123/" }
+  ), true);
+  assert.equal(await permissionSession.request(
+    { id: 202 },
+    "media",
+    { mediaTypes: ["video"], requestingUrl: "http://127.0.0.1:43123/" }
+  ), false);
+  assert.equal(await permissionSession.request(
+    { id: 202 },
+    "media",
+    { mediaTypes: ["audio", "video"], requestingUrl: "http://127.0.0.1:43123/" }
+  ), false);
+  assert.equal(await permissionSession.request(
+    { id: 303 },
+    "media",
+    { mediaTypes: ["audio"], requestingUrl: "http://127.0.0.1:43123/" }
+  ), false);
+  assert.equal(requests.length, 2);
+});
+
 test("window manager uses macOS native microphone access for allowed media requests", async () => {
   const permissionSession = new FakePermissionSession();
   const mainWindow = new FakeWindow();

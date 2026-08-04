@@ -39,6 +39,7 @@ import {
 } from "../services/manager";
 import { installBundledWebappTemplates } from "../webs/webapps/template-installer";
 import { restorePublishedWebapps } from "../webs/webapps/publication-runtime";
+import { webappRuntime } from "../webs/webapps/runtime";
 import { webappWindowManager } from "../webs/webapps/window-manager";
 import { loadInstalledPlugins } from "../plugin-loader";
 import { configurePluginResources, retryPendingPluginResourceSync } from "../plugin-resources";
@@ -465,7 +466,26 @@ export function createMainProcessRuntime() {
     isDesktopPetSupported: () => isDesktopPetSupportedPlatform(mainProcessContext.platform),
     showDesktopPetWindow,
     hideDesktopPetWindow,
-    restoreDesktopPetWindowLayering
+    restoreDesktopPetWindowLayering,
+    isAllowedWebappMicrophoneRequest: (contents, details) => {
+      const guest = webContents.fromId(contents.id);
+      if (!guest || guest.isDestroyed()) {
+        return false;
+      }
+      const liveUrl = guest.getURL();
+      const requestingUrl = details && typeof details === "object" &&
+        "requestingUrl" in details && typeof details.requestingUrl === "string"
+        ? details.requestingUrl
+        : liveUrl;
+      try {
+        if (new URL(liveUrl).origin !== new URL(requestingUrl).origin) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+      return webappRuntime.allowsLocalPageCapability(requestingUrl, "native.microphone");
+    }
   });
   webappWindowManager.setDisposalListener((webappId) => {
     emitWebsChanged({
@@ -596,6 +616,7 @@ export function createMainProcessRuntime() {
     callAgentPlatform,
     showMainWindow,
     showFileDialog,
+    showSaveDialog,
     openLogViewerWindow,
     listKanbanLocalAgents: () => petRuntime.listKanbanLocalAgents(),
     emitKanbanChanged,

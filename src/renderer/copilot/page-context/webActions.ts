@@ -65,27 +65,3 @@ export function filterStructuredResult(result: unknown, targets: EmbeddedWebStru
   }
   return filtered;
 }
-
-export function readFormFields(args: Record<string, unknown>) {
-  if (!Array.isArray(args.fields)) {
-    return [];
-  }
-  return args.fields
-    .map((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return null;
-      }
-      const node = item as Record<string, unknown>;
-      const selector = typeof node.selector === "string" ? node.selector.trim() : "";
-      if (!selector) {
-        return null;
-      }
-      const action = typeof node.action === "string" ? node.action.trim() : "";
-      return {
-        selector,
-        ...(typeof node.value === "string" ? { value: node.value } : node.value == null ? {} : { value: String(node.value) }),
-        ...(action === "fill" || action === "select" || action === "click" ? { action } : {})
-      };
-    })
-    .filter((item): item is { selector: string; value?: string; action?: "fill" | "select" | "click" } => Boolean(item));
-}

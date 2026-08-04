@@ -23,6 +23,7 @@ export interface DesktopActionContextDependencies {
   navigate: (...args: any[]) => unknown;
   openLogViewer: (...args: any[]) => unknown;
   showFileDialog?: (...args: any[]) => unknown;
+  showSaveDialog?: (...args: any[]) => unknown;
   callRendererAction: (...args: any[]) => unknown;
   confirmRendererAction?: (...args: any[]) => unknown;
   cdpIntegration: any;
@@ -48,6 +49,7 @@ export function createDesktopActionOptions(
     navigate: dependencies.navigate,
     openLogViewer: dependencies.openLogViewer,
     showFileDialog: dependencies.showFileDialog,
+    showSaveDialog: dependencies.showSaveDialog,
     callRendererAction: dependencies.callRendererAction,
     confirmRendererAction: dependencies.confirmRendererAction,
     executeCdpCommand: async (request: unknown) => {

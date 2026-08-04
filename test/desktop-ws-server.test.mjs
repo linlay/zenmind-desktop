@@ -410,6 +410,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(hello.data.requestTypes.includes("automation.list"), false);
   assert.equal(hello.data.requestTypes.includes("staticServer.list"), false);
   assert.equal(hello.data.requestTypes.includes("help.search"), false);
+  assert.equal(hello.data.requestTypes.some((type) => type.startsWith("page.")), false);
 
   client.send({ frame: "request", type: "action.list", id: "actions-1", payload: {} });
   const actionList = await client.waitFor((message) => message.id === "actions-1");
@@ -434,6 +435,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.ok(actionNames.includes("copilot.getPagePreferences"));
   assert.ok(actionNames.includes("copilot.setPagePreference"));
   assert.equal(actionNames.some((action) => action.startsWith("setting.")), false);
+  assert.equal(actionNames.some((action) => action.startsWith("page.")), false);
   assert.ok(actionNames.includes("help.open"));
   assert.ok(actionNames.includes("kanban.issue.list"));
   assert.ok(actionNames.includes("kanban.issue.get"));

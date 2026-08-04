@@ -15,6 +15,7 @@ import type {
   WebappPrerequisiteResult,
   WebappRuntimeState
 } from "../../../shared/contracts";
+import type { WebappBridgeCapability } from "../../../shared/webapp-bridge";
 import { readServiceLogFile } from "../../services/manager/logs";
 import {
   isProcessRunning,
@@ -46,6 +47,7 @@ import {
   issueWebappActionToken,
   revokeWebappActionToken
 } from "./action-tokens";
+import { getWebappAllowedActions } from "./capability-policy";
 import { getWebappDir, readWebappItems } from "./store";
 import { syncPublishedWebappRoute } from "./publisher";
 
@@ -61,7 +63,8 @@ type RuntimeRecord = {
   webappDir: string;
   child: ChildProcess | null;
   gateway: WebappGateway | null;
-  actionToken: string;
+  backendActionToken: string;
+  pageActionToken: string;
   state: WebappRuntimeState;
 };
 
@@ -413,10 +416,18 @@ function createLauncherContext(
   };
 }
 
-function shouldIssueActionToken(item: WebappEntry) {
-  return item.schemaVersion === 4 &&
+function shouldIssueBackendActionToken(item: WebappEntry) {
+  return item.schemaVersion >= 4 &&
     Boolean(item.backend) &&
-    item.backend?.launcher !== "container";
+    item.backend?.launcher !== "container" &&
+    getWebappAllowedActions(item, "backendActionToken").length > 0;
+}
+
+function revokeRecordActionTokens(record: RuntimeRecord) {
+  revokeWebappActionToken(record.backendActionToken);
+  revokeWebappActionToken(record.pageActionToken);
+  record.backendActionToken = "";
+  record.pageActionToken = "";
 }
 
 function prerequisiteMessage(check: WebappLauncherCheck) {
@@ -445,6 +456,26 @@ export class WebappRuntime {
         `${error instanceof Error ? error.message : String(error)}`
       );
     }
+  }
+
+  allowsLocalPageCapability(rawUrl: string, capability: WebappBridgeCapability) {
+    let origin = "";
+    try {
+      origin = new URL(rawUrl).origin;
+    } catch {
+      return false;
+    }
+    return [...this.records.values()].some((record) => {
+      if (record.state.status !== "running" || record.item.schemaVersion !== 5) {
+        return false;
+      }
+      try {
+        return new URL(record.state.webUrl).origin === origin &&
+          record.item.desktopBridge?.capabilities.includes(capability) === true;
+      } catch {
+        return false;
+      }
+    });
   }
 
   private syncPublishedRoute(app: App, item: WebappEntry, state: WebappRuntimeState) {
@@ -481,6 +512,7 @@ export class WebappRuntime {
         }
         void record.gateway?.close();
         record.gateway = null;
+        revokeRecordActionTokens(record);
         record.state = {
           ...record.state,
           status: "blocked",
@@ -612,7 +644,8 @@ export class WebappRuntime {
       webappDir: contextBase.webappDir,
       child: null,
       gateway: null,
-      actionToken: "",
+      backendActionToken: "",
+      pageActionToken: issueWebappActionToken(item, "localPageGateway"),
       state: initialState
     };
     this.records.set(id, record);
@@ -623,7 +656,8 @@ export class WebappRuntime {
           app,
           item,
           webappDir: record.webappDir,
-          backendUrl: ""
+          backendUrl: "",
+          pageActionToken: record.pageActionToken
         });
         record.gateway = gateway;
         record.state = {
@@ -658,18 +692,19 @@ export class WebappRuntime {
         };
         writeState(app, record.state);
         writeLogLine(getLogPath(app, id, "error"), `[${nowIso()}] blocked: ${record.state.message}`);
+        revokeRecordActionTokens(record);
         return { ok: false, item, state: record.state, message: record.state.message };
       }
 
-      if (shouldIssueActionToken(item)) {
-        record.actionToken = issueWebappActionToken(id);
+      if (shouldIssueBackendActionToken(item)) {
+        record.backendActionToken = issueWebappActionToken(item, "backendActionToken");
       }
       const launchContext = createLauncherContext(
         app,
         item,
         backendPort,
         record.webappDir,
-        record.actionToken
+        record.backendActionToken
       );
       const launched = launcher.start(launchContext);
       if (!launched.ok) {
@@ -707,7 +742,8 @@ export class WebappRuntime {
         app,
         item,
         webappDir: record.webappDir,
-        backendUrl: launched.backendUrl
+        backendUrl: launched.backendUrl,
+        pageActionToken: record.pageActionToken
       });
       record.gateway = gateway;
       record.state = {
@@ -734,8 +770,7 @@ export class WebappRuntime {
           if (child.pid) {
             terminateRuntimeProcessTree(child.pid);
           }
-          revokeWebappActionToken(current.actionToken);
-          current.actionToken = "";
+          revokeRecordActionTokens(current);
           void current.gateway?.close();
           current.gateway = null;
           current.state = {
@@ -761,8 +796,7 @@ export class WebappRuntime {
       if (record.child) {
         await terminateRuntimeChild(record.child);
       }
-      revokeWebappActionToken(record.actionToken);
-      record.actionToken = "";
+      revokeRecordActionTokens(record);
       const status = item.backend?.launcher === "container" ? "blocked" : "error";
       record.state = {
         ...record.state,
@@ -795,8 +829,7 @@ export class WebappRuntime {
         gatewayFailureMessage = `WebApp gateway failed to close: ${gatewayMessage}`;
       }
       record.gateway = null;
-      revokeWebappActionToken(record.actionToken);
-      record.actionToken = "";
+      revokeRecordActionTokens(record);
       if (record.child) {
         const terminated = await terminateRuntimeChild(record.child);
         if (!terminated) {
@@ -1012,8 +1045,7 @@ export class WebappRuntime {
       return;
     }
     if (record.state.status === "running" || record.state.status === "starting") {
-      revokeWebappActionToken(record.actionToken);
-      record.actionToken = "";
+      revokeRecordActionTokens(record);
       record.state = {
         ...record.state,
         status: "error",
