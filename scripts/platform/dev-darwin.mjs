@@ -2,7 +2,14 @@ import { spawn } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { brandBuildRoot, brandIconDir, loadBrandConfig, resolveBrandId } from "../lib/brand-config.mjs";
+import {
+  brandBuildRoot,
+  brandIconDir,
+  DARWIN_BUNDLE_DEVELOPMENT_REGION,
+  DARWIN_BUNDLE_LOCALIZATIONS,
+  loadBrandConfig,
+  resolveBrandId
+} from "../lib/brand-config.mjs";
 import { createDesktopBuildMetadata, readDesktopVersion } from "../lib/build-metadata.mjs";
 import { desktopBuiltinServicesDir } from "../lib/desktop-resources.mjs";
 
@@ -13,13 +20,51 @@ function escapePlistText(value) {
     .replace(/>/gu, "&gt;");
 }
 
+function insertPlistRootEntry(plist, entry) {
+  const rootClosingIndex = plist.lastIndexOf("</dict>");
+  if (rootClosingIndex < 0) {
+    throw new Error("invalid macOS Info.plist: missing root dictionary");
+  }
+  return `${plist.slice(0, rootClosingIndex)}${entry}\n${plist.slice(rootClosingIndex)}`;
+}
+
 function setPlistString(plist, key, value) {
   const pattern = new RegExp(`(<key>${key}</key>\\s*<string>)([^<]*)(</string>)`, "u");
   const escapedValue = escapePlistText(value);
   if (pattern.test(plist)) {
     return plist.replace(pattern, `$1${escapedValue}$3`);
   }
-  return plist.replace("</dict>", `<key>${key}</key><string>${escapedValue}</string></dict>`);
+  return insertPlistRootEntry(
+    plist,
+    `\t<key>${key}</key>\n\t<string>${escapedValue}</string>`
+  );
+}
+
+function setPlistStringArray(plist, key, values) {
+  const replacement = [
+    `<key>${key}</key>`,
+    "\t<array>",
+    ...values.map((value) => `\t\t<string>${escapePlistText(value)}</string>`),
+    "\t</array>"
+  ].join("\n");
+  const pattern = new RegExp(`<key>${key}</key>\\s*<array>[\\s\\S]*?</array>`, "u");
+  if (pattern.test(plist)) {
+    return plist.replace(pattern, replacement);
+  }
+  return insertPlistRootEntry(plist, `\t${replacement}`);
+}
+
+export function applyDarwinBundleLocalizationInfo(plist) {
+  const withDevelopmentRegion = setPlistString(
+    plist,
+    "CFBundleDevelopmentRegion",
+    DARWIN_BUNDLE_DEVELOPMENT_REGION
+  );
+  return setPlistStringArray(
+    withDevelopmentRegion,
+    "CFBundleLocalizations",
+    DARWIN_BUNDLE_LOCALIZATIONS
+  );
 }
 
 function plistEnvironmentEntry([key, value]) {
@@ -36,7 +81,7 @@ function setPlistEnvironment(plist, env) {
   if (pattern.test(plist)) {
     return plist.replace(pattern, replacement);
   }
-  return plist.replace("</dict>", `${replacement}\n</dict>`);
+  return insertPlistRootEntry(plist, `\t${replacement}`);
 }
 
 function fileHashPrefix(filePath) {
@@ -100,6 +145,7 @@ export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand =
   plist = setPlistString(plist, "CFBundleIconFile", targetIconFileName);
   plist = setPlistString(plist, "CFBundleShortVersionString", plistVersion);
   plist = setPlistString(plist, "CFBundleVersion", plistVersion);
+  plist = applyDarwinBundleLocalizationInfo(plist);
   plist = setPlistEnvironment(plist, buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot));
   fs.writeFileSync(targetPlistPath, plist);
 
