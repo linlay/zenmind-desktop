@@ -157,6 +157,8 @@ export function buildMainWindowOptions(input: {
       ? {
           titleBarStyle: "hidden" as const,
           trafficLightPosition: MAC_TRAFFIC_LIGHT_POSITION,
+          // Allow an inactive macOS window to begin a header drag on the first press.
+          acceptFirstMouse: true,
           transparent: true,
           vibrancy: "under-window" as const,
           visualEffectState: "active" as const

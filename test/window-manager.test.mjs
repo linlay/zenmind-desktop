@@ -408,6 +408,7 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.show, false);
   assert.equal(macOptions.titleBarStyle, "hidden");
   assert.deepEqual(macOptions.trafficLightPosition, { x: 10, y: 16 });
+  assert.equal(macOptions.acceptFirstMouse, true);
   assert.equal(macOptions.transparent, true);
   assert.equal(macOptions.vibrancy, "under-window");
   assert.equal(macOptions.backgroundColor, "#00000000");
@@ -420,6 +421,7 @@ test("window manager builds platform-specific main window options", () => {
     symbolColor: "#1F2937",
     height: 44
   });
+  assert.equal(winOptions.acceptFirstMouse, undefined);
   assert.equal(winOptions.backgroundColor, "#FFFFFF");
 });
 
