@@ -1072,7 +1072,7 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
 });
 
-test("sidebar operation menus use pointer anchors and theme-neutral glass surfaces", () => {
+test("sidebar operation menus use pointer anchors and theme-aware glass surfaces", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1106,6 +1106,7 @@ test("sidebar operation menus use pointer anchors and theme-neutral glass surfac
   assert.match(sidebarSource, /function openWebItemMenuAtPoint\(/u);
   assert.match(sidebarSource, /function openGroupActionMenuAtPoint\(/u);
   assert.match(sidebarSource, /\{ x: event\.clientX, y: event\.clientY \}/u);
+  assert.match(sidebarSource, /event\.clientX === 0 && event\.clientY === 0[\s\S]*?MenuAtElement\(event\.currentTarget/u);
   assert.match(sidebarSource, /event\.detail > 0[\s\S]*?event\.clientX[\s\S]*?event\.clientY/u);
   assert.match(sidebarSource, /anchorPoint=\{assistantSortMenuAnchorPoint\}/u);
   assert.match(sidebarSource, /anchorPoint=\{chatDefaultAgentMenuAnchorPoint\}/u);
@@ -1114,6 +1115,9 @@ test("sidebar operation menus use pointer anchors and theme-neutral glass surfac
   assert.match(sidebarSource, /visibility: assistantChatMenu\.positioned \? "visible" : "hidden"/u);
 
   assert.match(themeStyles, /--sidebar-operation-menu-bg:\s*rgba\(255, 255, 255, 0\.9\);/u);
+  assert.match(themeStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--sidebar-operation-menu-bg:\s*rgba\(31, 35, 42, 0\.9\);/u);
+  assert.match(themeStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--sidebar-operation-menu-text:\s*#f2f3f5;/u);
+  assert.match(themeStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--sidebar-operation-menu-hover:\s*rgba\(255, 255, 255, 0\.09\);/u);
   assert.match(navigationStyles, /\.sidebar-operation-menu-popover\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/u);
   assert.match(navigationStyles, /\.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/u);
   assert.match(navigationStyles, /:root\[data-theme="dark"\] \.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);/u);
@@ -1843,7 +1847,7 @@ test("expanded Projects hide duplicate header status without hiding chat Await b
   );
 });
 
-test("assistant sidebar active chats use loading status instead of thinking text", () => {
+test("assistant sidebar chat rows keep chatName while preserving live statuses", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1853,13 +1857,10 @@ test("assistant sidebar active chats use loading status instead of thinking text
   );
   const globalStyles = readRendererStyles();
 
-  assert.match(sidebarSource, /function isAssistantRunningPreview\(value: string\)/);
-  assert.match(sidebarSource, /"\\u601d\\u8003\\u4e2d"/);
-  assert.match(sidebarSource, /"\\u601d\\u8003\\u4e2d\.\.\."/);
-  assert.match(sidebarSource, /"thinking"/);
-  assert.match(sidebarSource, /"thinking\.\.\."/);
+  assert.match(sidebarSource, /function getAssistantChatDisplayText\([\s\S]{0,180}return chat\.chatName \|\| t\("sidebar\.chat\.noPreview"\);/);
+  assert.doesNotMatch(sidebarSource, /function getAssistantChatPreviewText\(/);
+  assert.doesNotMatch(sidebarSource, /isAssistantRunningPreview\(chat\.lastRunContent\)/);
   assert.match(sidebarSource, /const action = chat\.hasPendingAwaiting\s*\?\s*"awaiting"\s*:\s*chat\.hasActiveRun\s*\?\s*"loading"/);
-  assert.match(sidebarSource, /chat\.hasActiveRun && isAssistantRunningPreview\(chat\.lastRunContent\)/);
   assert.match(sidebarSource, /className="worker-chat-loading assistant-material-icon is-loading"/);
   assert.match(sidebarSource, /const awaitingChats = allRecentChats\.filter\(\s*\(chat\) => chat\.hasPendingAwaiting === true,\s*\);/);
   assert.match(sidebarSource, /const awaitingChatsCount = awaitingChats\.length;/);

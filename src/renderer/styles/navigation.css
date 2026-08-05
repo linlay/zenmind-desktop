@@ -710,16 +710,22 @@
 }
 
 .sidebar-chats-agent-picker.is-in-popover .sidebar-chats-agent-menu {
+  --ink: var(--sidebar-operation-menu-text);
+  --ink-soft: var(--sidebar-operation-menu-text-soft);
+  --ink-muted: var(--sidebar-operation-menu-text-muted);
   position: absolute;
   z-index: 2;
   top: calc(100% + 4px);
   left: 0;
   min-width: 184px;
   padding: 4px;
-  border: 1px solid var(--desktop-ui-border);
+  border: 1px solid var(--sidebar-operation-menu-border);
   border-radius: 8px;
-  background: var(--desktop-ui-card);
-  box-shadow: var(--panel-shadow);
+  background: var(--sidebar-operation-menu-bg);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
 .sidebar-chats-agent-error {
@@ -1317,6 +1323,18 @@
 
 .sidebar-assistant-sort-button {
   flex: 0 0 auto;
+}
+
+.sidebar-operation-menu-popover {
+  --ink: var(--sidebar-operation-menu-text);
+  --ink-soft: var(--sidebar-operation-menu-text-soft);
+  --ink-muted: var(--sidebar-operation-menu-text-muted);
+  border: 1px solid var(--sidebar-operation-menu-border);
+  background: var(--sidebar-operation-menu-bg);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
 .sidebar-assistant-sort-menu {
@@ -2302,15 +2320,23 @@
 }
 
 .assistant-chat-actions-menu {
+  --ink: var(--sidebar-operation-menu-text);
+  --ink-soft: var(--sidebar-operation-menu-text-soft);
+  --ink-muted: var(--sidebar-operation-menu-text-muted);
   position: fixed;
-  z-index: 90;
+  z-index: 10001;
   display: flex;
   flex-direction: column;
+  box-sizing: border-box;
   width: 160px;
   padding: 6px;
+  border: 1px solid var(--sidebar-operation-menu-border);
   border-radius: 10px;
-  box-shadow: var(--panel-shadow);
-  background: var(--desktop-ui-card-soft);
+  background: var(--sidebar-operation-menu-bg);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
 .sidebar-web-item-actions-menu {
@@ -2329,12 +2355,12 @@
 .sidebar-group-actions-menu-layer {
   position: fixed;
   inset: 0;
-  z-index: 89;
+  z-index: 10001;
   background: transparent;
 }
 
 .sidebar-group-actions-menu-layer .sidebar-group-actions-menu {
-  z-index: 90;
+  z-index: 10002;
   box-sizing: border-box;
   width: 196px;
 }
@@ -2353,14 +2379,14 @@
   border: 0;
   border-radius: 7px;
   background: transparent;
-  color: var(--ink);
+  color: var(--sidebar-operation-menu-text);
   text-align: left;
   cursor: pointer;
   font-size: 14px;
 }
 
 .assistant-chat-actions-menu button:hover {
-  background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
+  background: var(--sidebar-operation-menu-hover);
 }
 
 .assistant-chat-actions-menu button:disabled {
@@ -2606,21 +2632,24 @@
 }
 
 .sidebar-tool-menu.sidebar-account-menu {
-  --sidebar-account-menu-bg: rgba(255, 255, 255, 0.94);
-  --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.8);
-  --sidebar-account-menu-avatar-bg: rgba(255, 255, 255, 0.8);
-  --sidebar-account-menu-divider-bg: rgba(15, 23, 42, 0.12);
+  --ink: var(--sidebar-operation-menu-text);
+  --ink-soft: var(--sidebar-operation-menu-text-soft);
+  --ink-muted: var(--sidebar-operation-menu-text-muted);
+  --line-strong: var(--sidebar-operation-menu-border);
+  --sidebar-account-menu-bg: var(--sidebar-operation-menu-bg);
+  --sidebar-account-menu-layer-bg: var(--sidebar-operation-menu-hover);
+  --sidebar-account-menu-avatar-bg: var(--sidebar-operation-menu-avatar-bg);
+  --sidebar-account-menu-divider-bg: var(--sidebar-operation-menu-divider);
   gap: 2px;
   width: clamp(240px, 34vw, 280px);
   min-width: 240px;
   padding: 6px;
   overflow: hidden;
-  border: 1px solid rgba(255, 255, 255, 0.22);
+  border: 1px solid var(--sidebar-operation-menu-border);
   border-radius: 16px;
   background: var(--sidebar-account-menu-bg);
-  box-shadow:
-    0 18px 44px rgba(60, 60, 67, 0.12),
-    inset 0 1px 0 rgba(255, 255, 255, 0.22);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
   backdrop-filter: blur(18px) saturate(135%);
   -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
@@ -2867,7 +2896,7 @@
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item:hover .sidebar-link-icon,
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item:focus-visible .sidebar-link-icon,
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item.sidebar-link-active .sidebar-link-icon {
-  color: #e2e8f0;
+  color: var(--sidebar-operation-menu-text-muted);
 }
 
 :root[data-theme="dark"] .sidebar-group-heading {
@@ -2902,9 +2931,10 @@
 }
 
 :root[data-theme="dark"] .assistant-chat-actions-menu {
-  background: #242424;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.34);
+  background: var(--sidebar-operation-menu-bg);
+  border-color: var(--sidebar-operation-menu-border);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
 }
 
 :root[data-theme="dark"] .worker-panel-header-body,
@@ -2998,15 +3028,14 @@
 }
 
 :root[data-theme="dark"] .sidebar-tool-menu.sidebar-account-menu {
-  --sidebar-account-menu-bg: rgba(48, 48, 48, 0.9);
-  --sidebar-account-menu-layer-bg: rgba(255, 255, 255, 0.08);
-  --sidebar-account-menu-avatar-bg: rgba(48, 48, 48, 0.9);
-  --sidebar-account-menu-divider-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-account-menu-bg: var(--sidebar-operation-menu-bg);
+  --sidebar-account-menu-layer-bg: var(--sidebar-operation-menu-hover);
+  --sidebar-account-menu-avatar-bg: var(--sidebar-operation-menu-avatar-bg);
+  --sidebar-account-menu-divider-bg: var(--sidebar-operation-menu-divider);
   background: var(--sidebar-account-menu-bg);
-  border-color: rgba(255, 255, 255, 0.08);
-  box-shadow:
-    0 20px 42px rgba(0, 0, 0, 0.24),
-    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  border-color: var(--sidebar-operation-menu-border);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
 }
 
 /* ── Sidebar Collapsed ── */

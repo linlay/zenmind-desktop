@@ -25,6 +25,11 @@ type PopoverPlacement =
   | "left-start"
   | "left-end";
 
+type PopoverAnchorPoint = {
+  x: number;
+  y: number;
+};
+
 type PopoverChildProps = {
   onClick?: React.MouseEventHandler<HTMLElement>;
   onKeyDown?: React.KeyboardEventHandler<HTMLElement>;
@@ -51,6 +56,7 @@ interface PopoverProps {
   defaultOpen?: boolean;
   onOpenChange?: (open: boolean) => void;
   placement?: PopoverPlacement;
+  anchorPoint?: PopoverAnchorPoint | null;
   positionReferenceRef?: React.RefObject<HTMLElement | null>;
   offset?: number;
   disabled?: boolean;
@@ -71,6 +77,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     defaultOpen = false,
     onOpenChange,
     placement = "bottom",
+    anchorPoint = null,
     positionReferenceRef,
     offset = 8,
     disabled = false,
@@ -188,6 +195,32 @@ export const Popover: React.FC<PopoverProps> = (props) => {
     const viewportPadding = 8;
     const viewportWidth = window.innerWidth;
     const viewportHeight = window.innerHeight;
+
+    if (
+      anchorPoint &&
+      Number.isFinite(anchorPoint.x) &&
+      Number.isFinite(anchorPoint.y)
+    ) {
+      const maxLeft = Math.max(
+        viewportPadding,
+        viewportWidth - popoverRect.width - viewportPadding,
+      );
+      const maxTop = Math.max(
+        viewportPadding,
+        viewportHeight - popoverRect.height - viewportPadding,
+      );
+      setPosition({
+        left: Math.round(
+          Math.min(Math.max(anchorPoint.x, viewportPadding), maxLeft),
+        ),
+        top: Math.round(
+          Math.min(Math.max(anchorPoint.y, viewportPadding), maxTop),
+        ),
+        visibility: "visible",
+      });
+      return;
+    }
+
     const [side, align = "center"] = placement.split("-") as [
       "top" | "right" | "bottom" | "left",
       "start" | "center" | "end" | undefined,
@@ -253,7 +286,7 @@ export const Popover: React.FC<PopoverProps> = (props) => {
       ),
       visibility: "visible",
     });
-  }, [offset, placement, positionReferenceRef]);
+  }, [anchorPoint, offset, placement, positionReferenceRef]);
 
   useLayoutEffect(() => {
     if (!isOpen) {

@@ -1,5 +1,6 @@
 import {
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -135,22 +136,33 @@ type SidebarStatusSummary = {
 
 type AssistantNavSortMode = "byName" | "byTime";
 
-type AssistantChatMenuState = {
+type MenuAnchorPoint = {
+  x: number;
+  y: number;
+};
+
+type SidebarFloatingMenuPosition = {
+  anchorPoint: MenuAnchorPoint;
+  horizontalAlign: "start" | "end";
+  x: number;
+  y: number;
+  positioned: boolean;
+};
+
+type AssistantChatMenuState = SidebarFloatingMenuPosition & {
   chat: AssistantNavChatItem;
-  x: number;
-  y: number;
 };
 
-type SidebarWebItemMenuState = {
+type SidebarWebItemMenuState = SidebarFloatingMenuPosition & {
   item: WebEntry;
-  x: number;
-  y: number;
 };
 
-type SidebarGroupActionMenuState = {
+type SidebarGroupActionMenuState = SidebarFloatingMenuPosition & {
   groupId: SidebarGroupId;
-  x: number;
-  y: number;
+};
+
+type AssistantAgentMenuState = SidebarFloatingMenuPosition & {
+  agent: AssistantNavAgentItem;
 };
 
 type AssistantChatRenameDialogState = {
@@ -774,23 +786,11 @@ function formatAssistantChatDateTime(value?: EpochMilliseconds | null) {
   return formatEpochMillis(value);
 }
 
-function isAssistantRunningPreview(value: string) {
-  const normalized = value.trim().toLowerCase();
-  return [
-    "\u601d\u8003\u4e2d",
-    "\u601d\u8003\u4e2d...",
-    "thinking",
-    "thinking...",
-  ].includes(normalized);
-}
-
-function getAssistantChatPreviewText(
+function getAssistantChatDisplayText(
   chat: AssistantNavChatItem,
   t: TranslateFunction,
 ) {
-  return chat.hasActiveRun && isAssistantRunningPreview(chat.lastRunContent)
-    ? chat.chatName || t("sidebar.chat.noPreview")
-    : chat.lastRunContent || chat.chatName || t("sidebar.chat.noPreview");
+  return chat.chatName || t("sidebar.chat.noPreview");
 }
 
 function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
@@ -876,33 +876,58 @@ function createSidebarWebFocusId(entryKey: WebEntryKey | string) {
   return `web:${entryKey}`;
 }
 
-function getMenuPositionFromElement(
-  element: HTMLElement,
-  width: number,
-  height: number,
-) {
-  const rect = element.getBoundingClientRect();
+function createMenuPositionFromPoint(
+  anchorPoint: MenuAnchorPoint,
+  horizontalAlign: SidebarFloatingMenuPosition["horizontalAlign"] = "start",
+): SidebarFloatingMenuPosition {
   return {
-    x: Math.min(
-      window.innerWidth - width,
-      Math.max(8, rect.right - width + 10),
-    ),
-    y: Math.min(window.innerHeight - height, Math.max(8, rect.bottom + 4)),
+    anchorPoint,
+    horizontalAlign,
+    x: anchorPoint.x,
+    y: anchorPoint.y,
+    positioned: false,
   };
 }
 
-function getGroupActionMenuPositionFromElement(
+function createMenuPositionFromElement(
   element: HTMLElement,
-  width: number,
-  height: number,
-) {
+  horizontalAlign: SidebarFloatingMenuPosition["horizontalAlign"] = "end",
+): SidebarFloatingMenuPosition {
   const rect = element.getBoundingClientRect();
+  return createMenuPositionFromPoint(
+    {
+      x: horizontalAlign === "end" ? rect.right + 10 : rect.left - 12,
+      y: rect.bottom + 4,
+    },
+    horizontalAlign,
+  );
+}
+
+function getViewportClampedMenuPosition(
+  position: SidebarFloatingMenuPosition,
+  menu: HTMLElement,
+) {
+  const rect = menu.getBoundingClientRect();
+  const viewportPadding = 8;
+  const desiredLeft =
+    position.horizontalAlign === "end"
+      ? position.anchorPoint.x - rect.width
+      : position.anchorPoint.x;
+  const maxLeft = Math.max(
+    viewportPadding,
+    window.innerWidth - rect.width - viewportPadding,
+  );
+  const maxTop = Math.max(
+    viewportPadding,
+    window.innerHeight - rect.height - viewportPadding,
+  );
   return {
-    x: Math.min(
-      window.innerWidth - width - 8,
-      Math.max(8, rect.left - 12),
+    x: Math.round(
+      Math.min(Math.max(desiredLeft, viewportPadding), maxLeft),
     ),
-    y: Math.min(window.innerHeight - height, Math.max(8, rect.bottom + 4)),
+    y: Math.round(
+      Math.min(Math.max(position.anchorPoint.y, viewportPadding), maxTop),
+    ),
   };
 }
 
@@ -1088,14 +1113,24 @@ export function AppSidebar({
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
   const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
+  const [assistantSortMenuAnchorPoint, setAssistantSortMenuAnchorPoint] =
+    useState<MenuAnchorPoint | null>(null);
   const [refreshingAssistantNavAgents, setRefreshingAssistantNavAgents] =
     useState(false);
   const [chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen] =
     useState(false);
+  const [chatDefaultAgentMenuAnchorPoint, setChatDefaultAgentMenuAnchorPoint] =
+    useState<MenuAnchorPoint | null>(null);
+  const [
+    chatDefaultAgentInlineMenuPosition,
+    setChatDefaultAgentInlineMenuPosition,
+  ] = useState<{ left: number; top: number } | null>(null);
   const [chatDefaultAgentPending, setChatDefaultAgentPending] = useState(false);
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
+  const [toolMenuAnchorPoint, setToolMenuAnchorPoint] =
+    useState<MenuAnchorPoint | null>(null);
   const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
     useState<BootstrapGuideFloatingBubble[]>([]);
   const [bootstrapGuideDismissedBubbles, setBootstrapGuideDismissedBubbles] =
@@ -1130,11 +1165,9 @@ export function AppSidebar({
     useState<AssistantChatRenameDialogState | null>(null);
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
     useState<AssistantChatDeleteDialogState | null>(null);
-  const [agentMenu, setAgentMenu] = useState<{
-    agent: AssistantNavAgentItem;
-    x: number;
-    y: number;
-  } | null>(null);
+  const [agentMenu, setAgentMenu] = useState<AssistantAgentMenuState | null>(
+    null,
+  );
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const sidebarNavRef = useRef<HTMLElement | null>(null);
@@ -1146,6 +1179,7 @@ export function AppSidebar({
     null,
   );
   const chatDefaultAgentTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const chatDefaultAgentPickerRef = useRef<HTMLDivElement | null>(null);
   const chatDefaultAgentMenuRef = useRef<HTMLDivElement | null>(null);
   const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
@@ -1545,6 +1579,123 @@ export function AppSidebar({
     };
   }, [assistantChatMenu]);
 
+  useLayoutEffect(() => {
+    if (
+      assistantChatMenu &&
+      !assistantChatMenu.positioned &&
+      assistantChatMenuRef.current
+    ) {
+      const currentMenu = assistantChatMenu;
+      const position = getViewportClampedMenuPosition(
+        currentMenu,
+        assistantChatMenuRef.current,
+      );
+      setAssistantChatMenu((current) =>
+        current === currentMenu
+          ? { ...current, ...position, positioned: true }
+          : current,
+      );
+    }
+
+    if (webItemMenu && !webItemMenu.positioned && webItemMenuRef.current) {
+      const currentMenu = webItemMenu;
+      const position = getViewportClampedMenuPosition(
+        currentMenu,
+        webItemMenuRef.current,
+      );
+      setWebItemMenu((current) =>
+        current === currentMenu
+          ? { ...current, ...position, positioned: true }
+          : current,
+      );
+    }
+
+    if (
+      groupActionMenu &&
+      !groupActionMenu.positioned &&
+      groupActionMenuRef.current
+    ) {
+      const currentMenu = groupActionMenu;
+      const position = getViewportClampedMenuPosition(
+        currentMenu,
+        groupActionMenuRef.current,
+      );
+      setGroupActionMenu((current) =>
+        current === currentMenu
+          ? { ...current, ...position, positioned: true }
+          : current,
+      );
+    }
+
+    if (agentMenu && !agentMenu.positioned && agentMenuRef.current) {
+      const currentMenu = agentMenu;
+      const position = getViewportClampedMenuPosition(
+        currentMenu,
+        agentMenuRef.current,
+      );
+      setAgentMenu((current) =>
+        current === currentMenu
+          ? { ...current, ...position, positioned: true }
+          : current,
+      );
+    }
+  }, [agentMenu, assistantChatMenu, groupActionMenu, webItemMenu]);
+
+  useEffect(() => {
+    if (!assistantChatMenu && !webItemMenu && !groupActionMenu && !agentMenu) {
+      return undefined;
+    }
+
+    const handleResize = () => {
+      setAssistantChatMenu((current) =>
+        current ? { ...current, positioned: false } : current,
+      );
+      setWebItemMenu((current) =>
+        current ? { ...current, positioned: false } : current,
+      );
+      setGroupActionMenu((current) =>
+        current ? { ...current, positioned: false } : current,
+      );
+      setAgentMenu((current) =>
+        current ? { ...current, positioned: false } : current,
+      );
+    };
+
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [agentMenu, assistantChatMenu, groupActionMenu, webItemMenu]);
+
+  useLayoutEffect(() => {
+    if (
+      !isCollapsed ||
+      !chatDefaultAgentMenuOpen ||
+      !chatDefaultAgentMenuAnchorPoint
+    ) {
+      setChatDefaultAgentInlineMenuPosition(null);
+      return;
+    }
+
+    const picker = chatDefaultAgentPickerRef.current;
+    const menu = chatDefaultAgentMenuRef.current;
+    if (!picker || !menu) {
+      return;
+    }
+
+    const pickerRect = picker.getBoundingClientRect();
+    const position = getViewportClampedMenuPosition(
+      createMenuPositionFromPoint(chatDefaultAgentMenuAnchorPoint),
+      menu,
+    );
+    setChatDefaultAgentInlineMenuPosition({
+      left: position.x - pickerRect.left,
+      top: position.y - pickerRect.top,
+    });
+  }, [
+    chatDefaultAgentMenuAnchorPoint,
+    chatDefaultAgentMenuOpen,
+    isCollapsed,
+  ]);
+
   useEffect(() => {
     if (!bootstrapActive) {
       bootstrapGuideToolMenuAutoOpenedRef.current = false;
@@ -1559,6 +1710,7 @@ export function AppSidebar({
     }
     if (!isSettingsMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
       bootstrapGuideToolMenuAutoOpenedRef.current = true;
+      setToolMenuAnchorPoint(null);
       setToolMenuOpen(true);
     }
   }, [bootstrapActive, isSettingsMode]);
@@ -2048,33 +2200,63 @@ export function AppSidebar({
     element: HTMLElement,
     chat: AssistantNavChatItem,
   ) {
-    const position = getMenuPositionFromElement(element, 180, 172);
+    const position = createMenuPositionFromElement(element);
     setAssistantChatMenu({ chat, ...position });
+  }
+
+  function openAssistantChatMenuAtPoint(
+    anchorPoint: MenuAnchorPoint,
+    chat: AssistantNavChatItem,
+  ) {
+    setAssistantChatMenu({
+      chat,
+      ...createMenuPositionFromPoint(anchorPoint),
+    });
   }
 
   function openAgentMenuAtElement(
     element: HTMLElement,
     agent: AssistantNavAgentItem,
   ) {
-    const position = getMenuPositionFromElement(element, 180, 140);
+    const position = createMenuPositionFromElement(element);
     setAgentMenu({ agent, ...position });
   }
 
+  function openAgentMenuAtPoint(
+    anchorPoint: MenuAnchorPoint,
+    agent: AssistantNavAgentItem,
+  ) {
+    setAgentMenu({ agent, ...createMenuPositionFromPoint(anchorPoint) });
+  }
+
   function openWebItemMenuAtElement(element: HTMLElement, item: WebEntry) {
-    const position = getMenuPositionFromElement(
-      element,
-      180,
-      item.kind === "webapp" ? 126 : 82,
-    );
+    const position = createMenuPositionFromElement(element);
     setWebItemMenu({ item, ...position });
+  }
+
+  function openWebItemMenuAtPoint(
+    anchorPoint: MenuAnchorPoint,
+    item: WebEntry,
+  ) {
+    setWebItemMenu({ item, ...createMenuPositionFromPoint(anchorPoint) });
   }
 
   function openGroupActionMenuAtElement(
     element: HTMLElement,
     groupId: SidebarGroupId,
   ) {
-    const position = getGroupActionMenuPositionFromElement(element, 196, 156);
+    const position = createMenuPositionFromElement(element, "start");
     setGroupActionMenu({ groupId, ...position });
+  }
+
+  function openGroupActionMenuAtPoint(
+    anchorPoint: MenuAnchorPoint,
+    groupId: SidebarGroupId,
+  ) {
+    setGroupActionMenu({
+      groupId,
+      ...createMenuPositionFromPoint(anchorPoint),
+    });
   }
 
   function openSidebarRovingContextMenu(element: HTMLElement) {
@@ -2511,7 +2693,11 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openWebItemMenuAtElement(event.currentTarget, item);
+    if (event.clientX === 0 && event.clientY === 0) {
+      openWebItemMenuAtElement(event.currentTarget, item);
+      return;
+    }
+    openWebItemMenuAtPoint({ x: event.clientX, y: event.clientY }, item);
   }
 
   function handleAssistantAgentExpand(
@@ -2572,6 +2758,8 @@ export function AppSidebar({
 
   function closeChatsDefaultAgentMenu(restoreTriggerFocus = false) {
     setChatDefaultAgentMenuOpen(false);
+    setChatDefaultAgentMenuAnchorPoint(null);
+    setChatDefaultAgentInlineMenuPosition(null);
     if (restoreTriggerFocus) {
       window.requestAnimationFrame(() =>
         chatDefaultAgentTriggerRef.current?.focus(),
@@ -2588,6 +2776,9 @@ export function AppSidebar({
       closeChatsDefaultAgentMenu();
       return;
     }
+    setChatDefaultAgentMenuAnchorPoint(
+      event.detail > 0 ? { x: event.clientX, y: event.clientY } : null,
+    );
     openChatsDefaultAgentMenu();
   }
 
@@ -2597,6 +2788,7 @@ export function AppSidebar({
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       event.stopPropagation();
+      setChatDefaultAgentMenuAnchorPoint(null);
       const selectedIndex = chatNavAgentOptions.findIndex(
         (agent) => agent.agentKey === resolvedChatDefaultAgentKey,
       );
@@ -2614,6 +2806,7 @@ export function AppSidebar({
     if (event.key === "Enter" || event.key === " ") {
       event.preventDefault();
       event.stopPropagation();
+      setChatDefaultAgentMenuAnchorPoint(null);
       if (chatDefaultAgentMenuOpen) {
         closeChatsDefaultAgentMenu();
       } else {
@@ -2746,7 +2939,10 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openAssistantChatMenuAtElement(event.currentTarget, chat);
+    openAssistantChatMenuAtPoint(
+      { x: event.clientX, y: event.clientY },
+      chat,
+    );
   }
 
   function handleAssistantChatContextMenu(
@@ -2755,7 +2951,14 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openAssistantChatMenuAtElement(event.currentTarget, chat);
+    if (event.clientX === 0 && event.clientY === 0) {
+      openAssistantChatMenuAtElement(event.currentTarget, chat);
+      return;
+    }
+    openAssistantChatMenuAtPoint(
+      { x: event.clientX, y: event.clientY },
+      chat,
+    );
   }
 
   async function handleAssistantExportChat(chat: AssistantNavChatItem) {
@@ -2942,7 +3145,14 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openGroupActionMenuAtElement(event.currentTarget, groupId);
+    if (event.clientX === 0 && event.clientY === 0) {
+      openGroupActionMenuAtElement(event.currentTarget, groupId);
+      return;
+    }
+    openGroupActionMenuAtPoint(
+      { x: event.clientX, y: event.clientY },
+      groupId,
+    );
   }
 
   function getActiveSidebarAgentKey() {
@@ -3045,6 +3255,7 @@ export function AppSidebar({
             onClick={() => {
               setAssistantNavSortMode(option.mode);
               setAssistantSortMenuOpen(false);
+              setAssistantSortMenuAnchorPoint(null);
             }}
           >
             <span>{option.label}</span>
@@ -3064,8 +3275,15 @@ export function AppSidebar({
     return (
       <Popover
         open={assistantSortMenuOpen}
-        onOpenChange={setAssistantSortMenuOpen}
+        onOpenChange={(open) => {
+          setAssistantSortMenuOpen(open);
+          if (!open) {
+            setAssistantSortMenuAnchorPoint(null);
+          }
+        }}
+        anchorPoint={assistantSortMenuAnchorPoint}
         placement="bottom-end"
+        className="sidebar-operation-menu-popover"
         content={renderAssistantSortMenu()}
       >
         <button
@@ -3074,7 +3292,19 @@ export function AppSidebar({
           aria-label={t("sidebar.assistants.sort")}
           title={assistantNavSortLabel}
           tabIndex={options.tabIndex}
-          onClick={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setAssistantSortMenuAnchorPoint(
+              event.detail > 0
+                ? { x: event.clientX, y: event.clientY }
+                : null,
+            );
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === " ") {
+              setAssistantSortMenuAnchorPoint(null);
+            }
+          }}
         >
           <SidebarActionIcon kind="sort" />
         </button>
@@ -3212,6 +3442,13 @@ export function AppSidebar({
       <div
         ref={chatDefaultAgentMenuRef}
         className="sidebar-chats-agent-menu"
+        style={
+          options.inPopover && chatDefaultAgentMenuAnchorPoint
+            ? chatDefaultAgentInlineMenuPosition
+              ? chatDefaultAgentInlineMenuPosition
+              : { visibility: "hidden" }
+            : undefined
+        }
         role="menu"
         aria-label={t("settings.chat.defaultAgent")}
         onKeyDown={handleChatsDefaultAgentMenuKeyDown}
@@ -3278,7 +3515,10 @@ export function AppSidebar({
 
     if (options.inPopover) {
       return (
-        <div className="sidebar-chats-agent-picker is-in-popover">
+        <div
+          ref={chatDefaultAgentPickerRef}
+          className="sidebar-chats-agent-picker is-in-popover"
+        >
           {trigger}
           {chatDefaultAgentMenuOpen ? menu : null}
         </div>
@@ -3288,9 +3528,15 @@ export function AppSidebar({
     return (
       <Popover
         open={chatDefaultAgentMenuOpen}
-        onOpenChange={setChatDefaultAgentMenuOpen}
+        onOpenChange={(open) => {
+          setChatDefaultAgentMenuOpen(open);
+          if (!open) {
+            setChatDefaultAgentMenuAnchorPoint(null);
+          }
+        }}
+        anchorPoint={chatDefaultAgentMenuAnchorPoint}
         placement="bottom-start"
-        className="sidebar-chats-agent-menu-popover"
+        className="sidebar-chats-agent-menu-popover sidebar-operation-menu-popover"
         content={menu}
       >
         {trigger}
@@ -3317,7 +3563,7 @@ export function AppSidebar({
     return (
       <div className="sidebar-chat-hover-card">
         <span className="sidebar-chat-hover-card-title">
-          {chat.chatName || getAssistantChatPreviewText(chat, t)}
+          {getAssistantChatDisplayText(chat, t)}
         </span>
         <div className="sidebar-chat-hover-card-meta">
           <span>
@@ -3653,7 +3899,10 @@ export function AppSidebar({
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    openWebItemMenuAtElement(event.currentTarget, webItem);
+                    openWebItemMenuAtPoint(
+                      { x: event.clientX, y: event.clientY },
+                      webItem,
+                    );
                   }}
                 >
                   {closing || removePending ? (
@@ -3711,7 +3960,7 @@ export function AppSidebar({
         ? "loading"
         : "time";
     const previewText =
-      options.previewText ?? getAssistantChatPreviewText(chat, t);
+      options.previewText ?? getAssistantChatDisplayText(chat, t);
     const focusId = options.focusId ?? createSidebarChatFocusId(chat.chatId);
     const navigationKind = options.navigationKind ?? "chat";
     const item = (
@@ -4241,7 +4490,10 @@ export function AppSidebar({
                     tabIndex={-1}
                     onClick={(event) => {
                       event.stopPropagation();
-                      openGroupActionMenuAtElement(event.currentTarget, "webs");
+                      openGroupActionMenuAtPoint(
+                        { x: event.clientX, y: event.clientY },
+                        "webs",
+                      );
                     }}
                   >
                     <SidebarActionIcon kind="new_project" />
@@ -4653,6 +4905,7 @@ export function AppSidebar({
 
   function closeToolMenu() {
     setToolMenuOpen(false);
+    setToolMenuAnchorPoint(null);
   }
 
   function handleDesktopSsoMenuActionClick() {
@@ -4753,7 +5006,11 @@ export function AppSidebar({
         <div
           ref={groupActionMenuRef}
           className="assistant-chat-actions-menu sidebar-group-actions-menu"
-          style={{ left: groupActionMenu.x, top: groupActionMenu.y }}
+          style={{
+            left: groupActionMenu.x,
+            top: groupActionMenu.y,
+            visibility: groupActionMenu.positioned ? "visible" : "hidden",
+          }}
           role="menu"
           aria-label={
             groupId === "assistants"
@@ -4857,7 +5114,11 @@ export function AppSidebar({
       <div
         ref={webItemMenuRef}
         className="assistant-chat-actions-menu sidebar-web-item-actions-menu"
-        style={{ left: webItemMenu.x, top: webItemMenu.y }}
+        style={{
+          left: webItemMenu.x,
+          top: webItemMenu.y,
+          visibility: webItemMenu.positioned ? "visible" : "hidden",
+        }}
         role="menu"
         aria-label={
           isWebapp ? t("sidebar.webapp.actions") : t("sidebar.website.close")
@@ -4939,7 +5200,7 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openAgentMenuAtElement(event.currentTarget, agent);
+    openAgentMenuAtPoint({ x: event.clientX, y: event.clientY }, agent);
   }
 
   function handleAgentContextMenu(
@@ -4948,7 +5209,11 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openAgentMenuAtElement(event.currentTarget, agent);
+    if (event.clientX === 0 && event.clientY === 0) {
+      openAgentMenuAtElement(event.currentTarget, agent);
+      return;
+    }
+    openAgentMenuAtPoint({ x: event.clientX, y: event.clientY }, agent);
   }
 
   function getOpenWorkspaceDisabledReason(agent: AssistantNavAgentItem) {
@@ -5005,7 +5270,11 @@ export function AppSidebar({
       <div
         ref={assistantChatMenuRef}
         className="assistant-chat-actions-menu"
-        style={{ left: assistantChatMenu.x, top: assistantChatMenu.y }}
+        style={{
+          left: assistantChatMenu.x,
+          top: assistantChatMenu.y,
+          visibility: assistantChatMenu.positioned ? "visible" : "hidden",
+        }}
         role="menu"
         aria-label={t("sidebar.chat.actions")}
       >
@@ -5210,7 +5479,11 @@ export function AppSidebar({
       <div
         ref={agentMenuRef}
         className="assistant-chat-actions-menu"
-        style={{ left: agentMenu.x, top: agentMenu.y }}
+        style={{
+          left: agentMenu.x,
+          top: agentMenu.y,
+          visibility: agentMenu.positioned ? "visible" : "hidden",
+        }}
         role="menu"
         aria-label={t("sidebar.agent.actions")}
       >
@@ -5750,6 +6023,7 @@ export function AppSidebar({
               <div className="sidebar-tool-menu-anchor">
                 <Popover
                   placement="top-start"
+                  anchorPoint={toolMenuAnchorPoint}
                   content={renderToolMenu()}
                   open={toolMenuOpen}
                   onOpenChange={handleToolMenuOpenChange}
@@ -5767,6 +6041,18 @@ export function AppSidebar({
                       .filter(Boolean)
                       .join(" ")}
                     ref={toolMenuTriggerRef}
+                    onClick={(event) => {
+                      setToolMenuAnchorPoint(
+                        event.detail > 0
+                          ? { x: event.clientX, y: event.clientY }
+                          : null,
+                      );
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        setToolMenuAnchorPoint(null);
+                      }
+                    }}
                     aria-label={t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}

@@ -55,6 +55,17 @@
   --info: #722ED1;
   --panel-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
   --panel-shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --sidebar-operation-menu-bg: rgba(255, 255, 255, 0.9);
+  --sidebar-operation-menu-text: #1d2129;
+  --sidebar-operation-menu-text-soft: #4e5969;
+  --sidebar-operation-menu-text-muted: #64748b;
+  --sidebar-operation-menu-border: rgba(15, 23, 42, 0.12);
+  --sidebar-operation-menu-hover: rgba(15, 23, 42, 0.07);
+  --sidebar-operation-menu-divider: rgba(15, 23, 42, 0.1);
+  --sidebar-operation-menu-avatar-bg: rgba(255, 255, 255, 0.76);
+  --sidebar-operation-menu-shadow:
+    0 18px 44px rgba(15, 23, 42, 0.14),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
   --modal-mask-bg: rgba(15, 23, 42, 0.18);
   --desktop-ui-bg: #ffffff;
   --desktop-ui-card: #ffffff;
@@ -116,6 +127,17 @@
   --info: #A55EEA;
   --panel-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
   --panel-shadow-hover: 0 12px 30px rgba(0, 0, 0, 0.24);
+  --sidebar-operation-menu-bg: rgba(31, 35, 42, 0.9);
+  --sidebar-operation-menu-text: #f2f3f5;
+  --sidebar-operation-menu-text-soft: #c8cdd5;
+  --sidebar-operation-menu-text-muted: #9aa4b2;
+  --sidebar-operation-menu-border: rgba(255, 255, 255, 0.11);
+  --sidebar-operation-menu-hover: rgba(255, 255, 255, 0.09);
+  --sidebar-operation-menu-divider: rgba(255, 255, 255, 0.1);
+  --sidebar-operation-menu-avatar-bg: rgba(255, 255, 255, 0.1);
+  --sidebar-operation-menu-shadow:
+    0 20px 44px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
   --modal-mask-bg: rgba(0, 0, 0, 0.18);
   --desktop-ui-bg: #181818;
   --desktop-ui-card: #181818;
