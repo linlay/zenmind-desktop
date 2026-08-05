@@ -689,6 +689,10 @@
   padding-right: 2px;
 }
 
+:root[data-theme="dark"] .settings-page .web-settings-detail {
+  background: #232323;
+}
+
 .settings-page .web-detail-card {
   flex: 0 0 auto;
   border: 1px solid var(--control-center-border);
