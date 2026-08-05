@@ -5,7 +5,7 @@ import type { App } from "electron";
 import type {
   WebappEntry,
   WebappPublishInfo,
-  WebappPublishInfoResult,
+  WebappPublishStatusResult,
   WebappPublishResult,
   WebappPublishState,
   WebappRuntimeState
@@ -112,12 +112,12 @@ function inspectPublishInfo(app: App): WebappPublishInfo {
   };
 }
 
-export async function getWebappPublishInfo(app: App, id: string): Promise<WebappPublishInfoResult> {
+export async function getWebappPublishStatus(app: App, id: string): Promise<WebappPublishStatusResult> {
   const item = findWebapp(app, id);
   const info = inspectPublishInfo(app);
   const state = readWebappPublishState(app, id.trim());
   if (!item) {
-    return { ok: false, info, state, message: "WebApp was not found." };
+    return { ready: false, info, state, message: "WebApp was not found." };
   }
   const message = !info.signedIn
     ? "Sign in before publishing through Tunnel Hub."
@@ -126,7 +126,7 @@ export async function getWebappPublishInfo(app: App, id: string): Promise<Webapp
       : !info.tunnelConnected
         ? "Tunnel Hub is not connected. Publishing will retry the connection."
         : "Ready to publish through Tunnel Hub.";
-  return { ok: info.configured, info, state, message };
+  return { ready: info.configured && info.tunnelConnected, info, state, message };
 }
 
 function stableWebappName(id: string) {

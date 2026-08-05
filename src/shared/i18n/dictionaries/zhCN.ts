@@ -2150,8 +2150,6 @@ export const zhCNMessages = {
   "shell.chooseProjectDirectory": "选择项目目录",
   "shell.chooseDirectoryCancelled": "已取消选择目录。",
   "shell.directorySelected": "已选择目录。",
-  "desktopAction.webappSelectDirectoryTitle": "选择文档工作目录",
-  "desktopAction.webappSelectDirectoryButton": "使用此目录",
   "shell.downloadInvalid": "下载请求无效。",
   "shell.downloaded": "已下载文件。",
   "shell.screenshotUnavailable": "截屏能力暂不可用。",

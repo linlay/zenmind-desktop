@@ -834,7 +834,7 @@ export function AppShell() {
       current.filter((entryKey) => entryKey !== item.entryKey)
     );
 
-    const result = await window.electronAPI.webs.webapps.remove(item.id);
+    const result = await window.electronAPI.webs.webapps.uninstall(item.id);
     if (result.ok) {
       setWebappRuntimeById((current) => {
         const next = { ...current };

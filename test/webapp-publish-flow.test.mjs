@@ -10,39 +10,63 @@ function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 }
 
-test("XiaoJun WebApp install exposes direct mobile access without triggering public sharing", () => {
+test("WebApp lifecycle actions keep install, runtime, and Tunnel publishing separate", () => {
   const catalog = read("src/shared/desktop-actions.ts");
   const bridge = read("src/main/desktop-action-bridge.ts");
+  const webappActions = read("src/main/webs/webapps/actions.ts");
   const wsServer = read("src/main/desktop-ws-server.ts");
   const wsContract = read("src/shared/desktop-ws.ts");
 
   for (const action of [
-    "desktop.webapp.installAndOpen",
-    "desktop.webapp.getPublishInfo",
+    "desktop.webapp.install",
+    "desktop.webapp.checkRuntime",
+    "desktop.webapp.getPublishStatus",
     "desktop.webapp.publish",
-    "desktop.webapp.unpublish"
+    "desktop.webapp.unpublish",
+    "desktop.webapp.uninstall"
   ]) {
     assert.match(catalog, new RegExp(action.replaceAll(".", "\\."), "u"));
     assert.match(bridge, new RegExp(action.replaceAll(".", "\\."), "u"));
   }
-  assert.doesNotMatch(catalog, /desktop\.web\.webapps\.installAndOpen/u);
-  assert.match(bridge, /notifyWebsChanged\(options\);[\s\S]*?webappRuntime\.start\(options\.app, webappId\)[\s\S]*?options\.navigate\(route\)/u);
+  for (const removedAction of [
+    "desktop.webapp.installAndOpen",
+    "desktop.webapp.selectDirectory",
+    "desktop.webapp.checkPrerequisites",
+    "desktop.webapp.getPublishInfo"
+  ]) {
+    assert.doesNotMatch(catalog, new RegExp(removedAction.replaceAll(".", "\\."), "u"));
+  }
+  const installHandler = bridge.slice(
+    bridge.indexOf("async function installWebapp"),
+    bridge.indexOf("async function executeWebAction")
+  );
+  assert.match(installHandler, /installWebsiteAppArchiveFromPath/u);
+  assert.match(installHandler, /operation/u);
+  assert.doesNotMatch(installHandler, /webappRuntime\.start/u);
+  assert.doesNotMatch(installHandler, /navigate/u);
+  assert.doesNotMatch(installHandler, /mobilePublish|readDesktopMobileWebappItem/u);
   assert.match(bridge, /webapp_install_not_visible/u);
-  assert.doesNotMatch(bridge, /hasTunnelWebappSubscriber/u);
-  assert.doesNotMatch(bridge, /hasTunnelWebappSubscriber\?\.\(\)[\s\S]*?publishWebapp\(options\.app, webappId, command\.state\)/u);
-  assert.match(bridge, /readDesktopMobileWebappItem\(options\.app, webappId\)/u);
-  assert.match(bridge, /mobilePublish[\s\S]*?mode:\s*"direct-mobile-tunnel"[\s\S]*?publicUrl/u);
+  assert.match(bridge, /runtimeState\.status !== "running" \|\| !runtimeState\.webUrl/u);
+  assert.match(bridge, /webapp_not_running/u);
+  assert.match(
+    webappActions,
+    /unpublishWebapp\(app, target\.id\)[\s\S]*?webappRuntime\.stop\(app, target\.id[\s\S]*?closeForDisposal\(target\.id\)[\s\S]*?fs\.rmSync\(target\.installPath/u
+  );
   assert.match(wsContract, /"webapp\.list"/u);
   assert.match(wsContract, /"webapp\.changed"/u);
   for (const alias of [
-    "webapp.getPublishInfo",
+    "webapp.install",
+    "webapp.checkRuntime",
+    "webapp.getPublishStatus",
     "webapp.publish",
-    "webapp.unpublish"
+    "webapp.unpublish",
+    "webapp.uninstall"
   ]) {
     const pattern = new RegExp(alias.replaceAll(".", "\\."), "u");
     assert.match(wsServer, pattern);
     assert.match(wsContract, pattern);
   }
+  assert.doesNotMatch(wsServer, /webapp\.installAndOpen|webapp\.checkPrerequisites|webapp\.getPublishInfo/u);
 });
 
 test("mobile WebApp catalog derives m URLs while manual publishing remains on the wa route API", () => {
@@ -66,6 +90,7 @@ test("Settings exposes one-click Tunnel publishing and mobile QR sharing", () =>
   const styles = read("src/renderer/pages/settings/SettingsPage.css");
 
   assert.match(page, /onClick=\{\(\) => void handlePublishWebapp\(selectedWebapp\)\}/u);
+  assert.match(page, /webapps\.start\(item\.id\)[\s\S]*?webapps\.publish\(item\.id\)/u);
   assert.doesNotMatch(page, /disabled=\{!publishReady \|\| webappPublishPendingId !== ""\}/u);
   assert.match(page, /<QRCode[\s\S]*?value=\{publishState\.url\}/u);
   assert.match(page, /handleCopyWebappPublishUrl/u);

@@ -29,7 +29,7 @@ import {
   writeWebappRuntimeSettings
 } from "../webs/webapps/runtime-settings";
 import { resetWebappRuntimeProbeCaches } from "../webs/webapps/launchers";
-import { getWebappPublishInfo, publishWebapp, unpublishWebapp } from "../webs/webapps/publisher";
+import { getWebappPublishStatus, publishWebapp, unpublishWebapp } from "../webs/webapps/publisher";
 import { installWebsiteAppArchiveFromPath } from "../marketplace/website-app-market";
 import { t } from "../i18n/main-i18n";
 
@@ -214,7 +214,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     }
     return result;
   });
-  ipcMain.handle("webs.webapps.remove", async (_event: any, id: string) => {
+  ipcMain.handle("webs.webapps.uninstall", async (_event: any, id: string) => {
     const result = await removeWebappItem(app, id);
     if (result.ok) {
       webappWindowManager.close(id);
@@ -242,8 +242,8 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       message: state ? t("webapp.stateRead") : t("webapp.notFound")
     };
   });
-  ipcMain.handle("webs.webapps.checkPrerequisites", async (_event: any, id: string) =>
-    webappRuntime.checkPrerequisites(app, id)
+  ipcMain.handle("webs.webapps.checkRuntime", async (_event: any, id: string) =>
+    webappRuntime.checkRuntime(app, id)
   );
   ipcMain.handle("webs.webapps.getRuntimeSettings", async () => ({
     ok: true,
@@ -259,12 +259,11 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       message: "WebApp runtime settings saved."
     };
   });
-  ipcMain.handle("webs.webapps.getPublishInfo", async (_event: any, id: string) =>
-    getWebappPublishInfo(app, id)
+  ipcMain.handle("webs.webapps.getPublishStatus", async (_event: any, id: string) =>
+    getWebappPublishStatus(app, id)
   );
   ipcMain.handle("webs.webapps.publish", async (_event: any, id: string) => {
-    const command = await webappRuntime.start(app, id);
-    const result = await publishWebapp(app, id, command.state);
+    const result = await publishWebapp(app, id, webappRuntime.getStatus(app, id));
     options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", id);
     return result;
   });

@@ -64,12 +64,11 @@ import {
   updateWebsiteItem
 } from "./webs/websites/actions";
 import { webappRuntime } from "./webs/webapps/runtime";
-import { updateWebappItem } from "./webs/webapps/actions";
+import { removeWebappItem, updateWebappItem } from "./webs/webapps/actions";
 import { readWebappItems } from "./webs/webapps/store";
 import { webappWindowManager } from "./webs/webapps/window-manager";
-import { readDesktopMobileWebappItem } from "./webs/webapps/mobile-catalog";
 import {
-  getWebappPublishInfo,
+  getWebappPublishStatus,
   publishWebapp,
   unpublishWebapp
 } from "./webs/webapps/publisher";
@@ -85,10 +84,7 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
-import {
-  installWebsiteAppArchiveFromPath,
-  installWebsiteAppMarketItem
-} from "./marketplace/website-app-market";
+import { installWebsiteAppArchiveFromPath } from "./marketplace/website-app-market";
 import { normalizeMarketApiBaseUrl } from "./marketplace/common";
 import { readDesktopProfileFromRoot } from "./desktop-profile-store";
 import { getDesktopConfigRoot } from "./user-paths";
@@ -1225,26 +1221,24 @@ async function openWebapp(options: DesktopActionBridgeOptions, action: string, w
   });
 }
 
-async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
-  const itemId = readString(args, "itemId");
+async function installWebapp(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
   const archivePath = readString(args, "archivePath");
   const expectedId = readString(args, "expectedId");
-  if (itemId && archivePath) {
-    return fail(action, "invalid_args", "Provide either itemId or archivePath, not both.");
+  if (Object.prototype.hasOwnProperty.call(args, "itemId")) {
+    return fail(action, "invalid_args", "itemId is not supported; install market items with desktop.market.installItem.");
   }
-  if (!itemId && !archivePath) {
-    return fail(action, "invalid_args", "itemId or archivePath is required.");
+  if (!archivePath) {
+    return fail(action, "invalid_args", "archivePath is required.");
   }
   const previousItemIds = new Set(
     listWebEntries(options.app).items
       .filter((item) => item.kind === "webapp")
       .map((item) => item.id)
   );
-  const installResult = itemId
-    ? await installWebsiteAppMarketItem(options.app, itemId)
-    : await installWebsiteAppArchiveFromPath(options.app, archivePath, {
-        ...(expectedId ? { expectedId } : {})
-      });
+  const installResult = await installWebsiteAppArchiveFromPath(options.app, archivePath, {
+    ...(expectedId ? { expectedId } : {}),
+    validateUpdatedRuntime: false
+  });
   const webappId = typeof installResult.itemId === "string" ? installResult.itemId.trim() : "";
   if (!installResult.ok || !webappId) {
     return fail(action, "webapp_install_failed", installResult.message, installResult);
@@ -1256,55 +1250,17 @@ async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action:
     return fail(action, "webapp_install_not_visible", "The installed WebApp is not visible in the Desktop sidebar.", installResult);
   }
   notifyWebsChanged(options);
-  const command = await webappRuntime.start(options.app, webappId);
-  if (!command.ok || !command.state) {
-    return fail(action, "webapp_open_failed", command.message, command);
-  }
-  const route = webappRoute(webappId);
-  options.navigate(route);
-  options.emitWebappChanged?.(previousItemIds.has(webappId) ? "updated" : "installed", webappId);
-
-  const mobileItem = readDesktopMobileWebappItem(options.app, webappId);
-  const mobilePublish: Record<string, unknown> = {
-    attempted: true,
-    mode: "direct-mobile-tunnel",
-    ok: Boolean(mobileItem?.publicUrl),
-    publicUrl: mobileItem?.publicUrl ?? "",
-    available: mobileItem?.available === true,
-    availability: mobileItem?.availability ?? "not-published"
-  };
+  const operation = previousItemIds.has(webappId) ? "updated" : "installed";
+  options.emitWebappChanged?.(operation, webappId);
   return ok(action, {
-    install: installResult,
-    command,
-    state: command.state,
-    route,
-    mobilePublish
+    itemId: webappId,
+    operation,
+    item: installedItem,
+    message: installResult.message
   });
 }
 
 async function executeWebAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
-  if (action === "desktop.webapp.selectDirectory") {
-    const owner = options.getMainWindow();
-    const dialogOptions: OpenDialogOptions = {
-      title: t("desktopAction.webappSelectDirectoryTitle"),
-      buttonLabel: t("desktopAction.webappSelectDirectoryButton"),
-      defaultPath: options.app.getPath("documents"),
-      properties: ["openDirectory", "createDirectory"]
-    };
-    const result = options.showFileDialog
-      ? await options.showFileDialog(dialogOptions, owner)
-      : owner && !owner.isDestroyed()
-        ? await dialog.showOpenDialog(owner, dialogOptions)
-        : await dialog.showOpenDialog(dialogOptions);
-    const selectedPath = result.canceled ? "" : String(result.filePaths[0] || "").trim();
-    return ok(action, selectedPath
-      ? {
-          canceled: false,
-          path: selectedPath,
-          name: selectedPath.split(/[\\/]/u).filter(Boolean).at(-1) || selectedPath
-        }
-      : { canceled: true });
-  }
   if (action === "desktop.site.list") {
     return ok(action, listWebEntries(options.app));
   }
@@ -1333,8 +1289,12 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   if (action === "desktop.webapp.getStatus") {
     return ok(action, webappRuntime.getStatus(options.app, readWebappId(args)));
   }
-  if (action === "desktop.webapp.checkPrerequisites") {
-    return ok(action, webappRuntime.checkPrerequisites(options.app, readWebappId(args)));
+  if (action === "desktop.webapp.checkRuntime") {
+    const webappId = readWebappId(args);
+    if (!readWebappItems(options.app).some((item) => item.id === webappId)) {
+      return fail(action, "webapp_not_found", t("webapp.notFound"), { webappId });
+    }
+    return ok(action, webappRuntime.checkRuntime(options.app, webappId));
   }
   if (action === "desktop.webapp.start") {
     return ok(action, await webappRuntime.start(options.app, readWebappId(args)));
@@ -1362,16 +1322,23 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     }
     return result.ok ? ok(action, result) : fail(action, "webapp_update_failed", result.message, result);
   }
-  if (action === "desktop.webapp.getPublishInfo") {
-    return ok(action, await getWebappPublishInfo(options.app, readWebappId(args)));
+  if (action === "desktop.webapp.getPublishStatus") {
+    const webappId = readWebappId(args);
+    if (!readWebappItems(options.app).some((item) => item.id === webappId)) {
+      return fail(action, "webapp_not_found", t("webapp.notFound"), { webappId });
+    }
+    return ok(action, await getWebappPublishStatus(options.app, webappId));
   }
   if (action === "desktop.webapp.publish") {
     const webappId = readWebappId(args);
-    const command = await webappRuntime.start(options.app, webappId);
-    if (!command.ok || !command.state) {
-      return fail(action, "webapp_start_failed", command.message, command);
+    const runtimeState = webappRuntime.getStatus(options.app, webappId);
+    if (!runtimeState) {
+      return fail(action, "webapp_not_found", t("webapp.notFound"), { webappId });
     }
-    const result = await publishWebapp(options.app, webappId, command.state);
+    if (runtimeState.status !== "running" || !runtimeState.webUrl) {
+      return fail(action, "webapp_not_running", "Start the WebApp before publishing.", { webappId, status: runtimeState.status });
+    }
+    const result = await publishWebapp(options.app, webappId, runtimeState);
     options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", webappId);
     return result.ok
       ? ok(action, result)
@@ -1385,7 +1352,19 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
       ? ok(action, result)
       : fail(action, "webapp_unpublish_failed", result.message, result);
   }
-  return installAndOpenWebapp(options, action, args);
+  if (action === "desktop.webapp.install") {
+    return installWebapp(options, action, args);
+  }
+  if (action === "desktop.webapp.uninstall") {
+    const webappId = readWebappId(args);
+    const result = await removeWebappItem(options.app, webappId);
+    if (!result.ok) {
+      return fail(action, "webapp_uninstall_failed", result.message, result);
+    }
+    notifyWebsChanged(options);
+    return ok(action, result);
+  }
+  return fail(action, "unknown_action", `unknown WebApp action: ${action}`);
 }
 
 function webappPathResult(selectedPath: string) {
@@ -1917,9 +1896,10 @@ async function executeAction(
     case "desktop.webapp.restart":
     case "desktop.webapp.open":
     case "desktop.webapp.updatePreferences":
-    case "desktop.webapp.installAndOpen":
-    case "desktop.webapp.selectDirectory":
-    case "desktop.webapp.getPublishInfo":
+    case "desktop.webapp.checkRuntime":
+    case "desktop.webapp.install":
+    case "desktop.webapp.uninstall":
+    case "desktop.webapp.getPublishStatus":
     case "desktop.webapp.publish":
     case "desktop.webapp.unpublish":
       return executeWebAction(options, action, args);

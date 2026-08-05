@@ -11,7 +11,7 @@ import {
 import { isRecord, readString } from "../common";
 import { getWebappDir, readWebappItems, writeWebappPreferenceFields } from "./store";
 import { webappRuntime } from "./runtime";
-import { readWebappPublishState, unpublishWebapp } from "./publisher";
+import { unpublishWebapp } from "./publisher";
 import { webappWindowManager } from "./window-manager";
 
 function findWebapp(items: WebappEntry[], id: string) {
@@ -31,16 +31,14 @@ export async function disposeWebappInstallation(
   target: WebappDisposalTarget,
   stopMessage: string
 ) {
-  const releaseDisposal = webappWindowManager.beginDisposal(target.id);
+  const releaseDisposal = webappWindowManager.beginDisposal(target.id, { closeImmediately: false });
   try {
-    if (readWebappPublishState(app, target.id)?.active === true) {
-      const unpublished = await unpublishWebapp(app, target.id);
-      if (!unpublished.ok) {
-        return {
-          ok: false,
-          message: `Stop Tunnel publishing before removing ${target.label}: ${unpublished.message}`
-        };
-      }
+    const unpublished = await unpublishWebapp(app, target.id);
+    if (!unpublished.ok) {
+      return {
+        ok: false,
+        message: `Stop Tunnel publishing before removing ${target.label}: ${unpublished.message}`
+      };
     }
     const stopped = await webappRuntime.stop(app, target.id, stopMessage);
     if (!stopped.ok) {
@@ -49,6 +47,7 @@ export async function disposeWebappInstallation(
         message: `Unable to remove ${target.label}: ${stopped.message}`
       };
     }
+    webappWindowManager.closeForDisposal(target.id);
     fs.rmSync(target.installPath || getWebappDir(app, target.id), {
       recursive: true,
       force: true

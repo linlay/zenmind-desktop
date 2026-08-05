@@ -7,6 +7,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+const JSZip = require("jszip");
 
 const {
   handleDesktopActionRequest,
@@ -33,7 +34,10 @@ const {
   getWebsitePath
 } = require("../dist-electron/main/webs/websites/store.js");
 const {
-  getDesktopWebappsDataRoot
+  getDesktopWebappDataRoot,
+  getDesktopWebappLogsRoot,
+  getDesktopWebappsDataRoot,
+  getDesktopWebappStateRoot
 } = require("../dist-electron/main/user-paths.js");
 const {
   issueWebappActionToken,
@@ -89,7 +93,8 @@ function createDesktopActionOptions(t) {
     saveDialogs: [],
     externalUrls: [],
     clipboardWrites: [],
-    notifications: []
+    notifications: [],
+    navigation: []
   };
 
   return {
@@ -111,7 +116,7 @@ function createDesktopActionOptions(t) {
       },
       getMainWindow: () => null,
       getCurrentPageSnapshot: () => null,
-      navigate: () => {},
+      navigate: (route) => calls.navigation.push(route),
       openLogViewer: async () => ({ ok: true }),
       showFileDialog: async (dialogOptions) => {
         calls.fileDialogs.push(dialogOptions);
@@ -157,6 +162,31 @@ function createDesktopActionOptions(t) {
       }
     }
   };
+}
+
+async function writeStaticWebappArchive(root, id, label = "Lifecycle Test") {
+  const archivePath = path.join(root, `${id}.zip`);
+  const zip = new JSZip();
+  zip.file(`${id}/webapp.json`, `${JSON.stringify({
+    schemaVersion: 4,
+    id,
+    kind: "webapp",
+    version: "1.0.0",
+    target: "universal",
+    label,
+    frontend: {
+      mode: "static",
+      root: "frontend",
+      index: "index.html",
+      spa: true,
+      apiPrefix: "/api"
+    },
+    createdAt: "2026-08-05T00:00:00.000Z",
+    updatedAt: "2026-08-05T00:00:00.000Z"
+  }, null, 2)}\n`);
+  zip.file(`${id}/frontend/index.html`, "<!doctype html><title>Lifecycle Test</title>");
+  fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
+  return archivePath;
 }
 
 test("desktop assistant chat forwards a general message without business prompts", async (t) => {
@@ -217,20 +247,174 @@ test("desktop assistant complete uses the configured helper without exposing cre
   assert.equal(invalid.error.code, "invalid_args");
 });
 
-test("local WebApp directory action uses the native picker and returns one selected folder", async (t) => {
+test("removed WebApp actions return unknown_action without legacy aliases", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
-  const response = await handleDesktopActionRequest(options, {
-    action: "desktop.webapp.selectDirectory",
-    args: {},
+  for (const action of [
+    "desktop.webapp.installAndOpen",
+    "desktop.webapp.selectDirectory",
+    "desktop.webapp.checkPrerequisites",
+    "desktop.webapp.getPublishInfo"
+  ]) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      args: {},
+      permissionMode: "full_access"
+    });
+    assert.equal(response.ok, false);
+    assert.equal(response.error.code, "unknown_action");
+  }
+  assert.equal(calls.fileDialogs.length, 0);
+});
+
+test("desktop.webapp.install only installs a local archive and validates its arguments", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "lifecycle-test");
+
+  for (const args of [{}, { itemId: "market-webapp" }, { archivePath, itemId: "" }]) {
+    const invalid = await handleDesktopActionRequest(options, {
+      action: "desktop.webapp.install",
+      args,
+      permissionMode: "full_access"
+    });
+    assert.equal(invalid.ok, false);
+    assert.equal(invalid.error.code, "invalid_args");
+  }
+
+  const installed = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath, expectedId: "lifecycle-test" },
+    permissionMode: "full_access"
+  });
+  assert.equal(installed.ok, true);
+  assert.equal(installed.result.itemId, "lifecycle-test");
+  assert.equal(installed.result.operation, "installed");
+  assert.equal(installed.result.item.id, "lifecycle-test");
+  assert.equal(calls.navigation.length, 0);
+
+  const status = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.getStatus",
+    args: { webappId: "lifecycle-test" },
+    permissionMode: "full_access"
+  });
+  assert.equal(status.ok, true);
+  assert.equal(status.result.status, "stopped");
+
+  const started = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.start",
+    args: { id: "lifecycle-test" },
+    permissionMode: "full_access"
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.result.ok, true);
+
+  const updatedArchive = await writeStaticWebappArchive(options.app.getPath("home"), "lifecycle-test", "Lifecycle Updated");
+  const updated = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath: updatedArchive },
+    permissionMode: "full_access"
+  });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.result.operation, "updated");
+  assert.equal(updated.result.item.label, "Lifecycle Updated");
+  assert.equal(calls.navigation.length, 0);
+
+  const updatedStatus = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.getStatus",
+    args: { id: "lifecycle-test" },
+    permissionMode: "full_access"
+  });
+  assert.equal(updatedStatus.result.status, "stopped");
+
+  const removablePaths = [
+    getDesktopWebappDataRoot(options.app, "lifecycle-test"),
+    getDesktopWebappStateRoot(options.app, "lifecycle-test"),
+    getDesktopWebappLogsRoot(options.app, "lifecycle-test")
+  ];
+  for (const removablePath of removablePaths) {
+    fs.mkdirSync(removablePath, { recursive: true });
+    fs.writeFileSync(path.join(removablePath, "marker.txt"), "remove me", "utf8");
+  }
+  const uninstalled = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.uninstall",
+    args: { webappId: "lifecycle-test" },
+    permissionMode: "full_access"
+  });
+  assert.equal(uninstalled.ok, true);
+  assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(options.app), "lifecycle-test")), false);
+  for (const removablePath of removablePaths) {
+    assert.equal(fs.existsSync(removablePath), false);
+  }
+});
+
+test("runtime checks are side-effect free and publish requires an already running WebApp", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "runtime-check");
+  await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath },
     permissionMode: "full_access"
   });
 
-  assert.equal(response.ok, true);
-  assert.equal(response.result.canceled, false);
-  assert.equal(response.result.name, "Writing");
-  assert.match(response.result.path, /Documents[\\/]Writing$/u);
-  assert.equal(calls.fileDialogs.length, 1);
-  assert.deepEqual(calls.fileDialogs[0].properties, ["openDirectory", "createDirectory"]);
+  const checked = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.checkRuntime",
+    args: { id: "runtime-check" },
+    permissionMode: "full_access"
+  });
+  assert.equal(checked.ok, true);
+  assert.equal(checked.result.ready, true);
+  assert.equal(checked.result.launcher, "none");
+
+  const missing = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.checkRuntime",
+    args: { id: "missing-webapp" },
+    permissionMode: "full_access"
+  });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, "webapp_not_found");
+
+  const published = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.publish",
+    args: { id: "runtime-check" },
+    permissionMode: "full_access"
+  });
+  assert.equal(published.ok, false);
+  assert.equal(published.error.code, "webapp_not_running");
+
+  const status = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.getStatus",
+    args: { id: "runtime-check" },
+    permissionMode: "full_access"
+  });
+  assert.equal(status.result.status, "stopped");
+
+  const started = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.start",
+    args: { id: "runtime-check" },
+    permissionMode: "full_access"
+  });
+  assert.equal(started.result.ok, true);
+  const persistentDataPath = getDesktopWebappDataRoot(options.app, "runtime-check");
+  fs.mkdirSync(persistentDataPath, { recursive: true });
+  fs.writeFileSync(path.join(persistentDataPath, "keep.txt"), "keep", "utf8");
+
+  const unpublished = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.unpublish",
+    args: { id: "runtime-check" },
+    permissionMode: "full_access"
+  });
+  assert.equal(unpublished.ok, true);
+  const runningStatus = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.getStatus",
+    args: { id: "runtime-check" },
+    permissionMode: "full_access"
+  });
+  assert.equal(runningStatus.result.status, "running");
+  assert.equal(fs.readFileSync(path.join(persistentDataPath, "keep.txt"), "utf8"), "keep");
+  await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.stop",
+    args: { id: "runtime-check" },
+    permissionMode: "full_access"
+  });
 });
 
 test("WebApp Bridge native actions require page scope and enforce their public contracts", async (t) => {

@@ -68,7 +68,7 @@ const {
 } = require("../dist-electron/main/webs/webapps/mobile-catalog.js");
 const {
   __testInternals: webappPublisherInternals,
-  getWebappPublishInfo
+  getWebappPublishStatus
 } = require("../dist-electron/main/webs/webapps/publisher.js");
 const {
   registerWebIpcHandlers
@@ -1021,7 +1021,7 @@ test("webapp IPC delegates floating-window opens to the main-process window mana
   assert.equal(calls[0].sender, undefined);
 });
 
-test("webapp IPC exposes prerequisite checks and persistent runtime settings", async (t) => {
+test("webapp IPC exposes runtime checks and persistent runtime settings", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-runtime-settings-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
@@ -1062,13 +1062,13 @@ test("webapp IPC exposes prerequisite checks and persistent runtime settings", a
     saved.settings
   );
 
-  const prerequisites = await ipcMain.invoke("webs.webapps.checkPrerequisites", "static-settings");
-  assert.equal(prerequisites.ok, true);
-  assert.equal(prerequisites.launcher, "none");
-  assert.equal(prerequisites.ownership, null);
+  const runtimeCheck = await ipcMain.invoke("webs.webapps.checkRuntime", "static-settings");
+  assert.equal(runtimeCheck.ready, true);
+  assert.equal(runtimeCheck.launcher, "none");
+  assert.equal(runtimeCheck.ownership, null);
 });
 
-test("Java prerequisites block Java 17 and accept Java 21 from the configured executable", {
+test("Java runtime checks block Java 17 and accept Java 21 from the configured executable", {
   skip: process.platform === "win32"
 }, (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-java-prerequisites-"));
@@ -1086,8 +1086,8 @@ test("Java prerequisites block Java 17 and accept Java 21 from the configured ex
     containerEngine: "auto"
   });
   resetWebappRuntimeProbeCaches();
-  const blocked = webappRuntime.checkPrerequisites(app, "java-runtime");
-  assert.equal(blocked.ok, false);
+  const blocked = webappRuntime.checkRuntime(app, "java-runtime");
+  assert.equal(blocked.ready, false);
   assert.equal(blocked.launcher, "java");
   assert.equal(blocked.runtimeVersion, "17.0.1");
   assert.equal(blocked.externalId, java17);
@@ -1099,8 +1099,8 @@ test("Java prerequisites block Java 17 and accept Java 21 from the configured ex
     containerEngine: "auto"
   });
   resetWebappRuntimeProbeCaches();
-  const ready = webappRuntime.checkPrerequisites(app, "java-runtime");
-  assert.equal(ready.ok, true);
+  const ready = webappRuntime.checkRuntime(app, "java-runtime");
+  assert.equal(ready.ready, true);
   assert.equal(ready.runtimeVersion, "21.0.1");
   assert.equal(ready.externalId, java21);
 });
@@ -1221,9 +1221,9 @@ test("webapp publisher reports Tunnel readiness without exposing the SSO site to
     accessToken: "publisher-site-secret"
   });
 
-  const result = await getWebappPublishInfo(app, "publish-demo");
+  const result = await getWebappPublishStatus(app, "publish-demo");
 
-  assert.equal(result.ok, true);
+  assert.equal(result.ready, false);
   assert.equal(result.info.provider, "tunnel");
   assert.equal(result.info.configured, true);
   assert.equal(result.info.signedIn, true);
@@ -1722,7 +1722,7 @@ test("WebApp action tokens are scoped to the issuing app and assistant allowlist
     { ok: false, webappId: "", scope: null }
   );
   assert.deepEqual(
-    authorizeWebappActionToken(token, "desktop.webapp.remove"),
+    authorizeWebappActionToken(token, "desktop.webapp.uninstall"),
     { ok: false, webappId: "", scope: null }
   );
   revokeWebappActionToken(token);
@@ -1740,11 +1740,10 @@ test("WebApp capability policy keeps backend tokens narrower than the local page
   ]);
   assert.deepEqual(getWebappAllowedActions(legacy, "localPageGateway"), [
     "desktop.assistant.complete",
-    "desktop.assistant.chat",
-    "desktop.webapp.selectDirectory"
+    "desktop.assistant.chat"
   ]);
   assert.equal(isWebappActionAllowed(legacy, "backendActionToken", "desktop.webapp.selectDirectory"), false);
-  assert.equal(isWebappActionAllowed(legacy, "localPageGateway", "desktop.webapp.selectDirectory"), true);
+  assert.equal(isWebappActionAllowed(legacy, "localPageGateway", "desktop.webapp.selectDirectory"), false);
 
   const v5 = {
     id: "bridge-v5",

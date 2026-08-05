@@ -14,8 +14,8 @@ import type {
   WebappLogTarget,
   WebappOpenMode,
   WebappPublishInfo,
-  WebappPrerequisiteResult,
   WebappPublishState,
+  WebappRuntimeCheckResult,
   WebappRuntimeState,
   WebappRuntimeSettings,
   WebsiteEntry,
@@ -2397,7 +2397,7 @@ export function SettingsPage({
   const [webappDeletingId, setWebappDeletingId] = useState("");
   const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
-  const [webappPrerequisiteById, setWebappPrerequisiteById] = useState<Record<string, WebappPrerequisiteResult | null>>({});
+  const [webappRuntimeCheckById, setWebappRuntimeCheckById] = useState<Record<string, WebappRuntimeCheckResult | null>>({});
   const [webappRuntimeSettings, setWebappRuntimeSettings] = useState<WebappRuntimeSettings>({
     schemaVersion: 1,
     javaExecutable: "",
@@ -2615,8 +2615,8 @@ export function SettingsPage({
       return;
     }
     void refreshSelectedWebappStatus(selectedWebapp.id);
-    void refreshSelectedWebappPrerequisites(selectedWebapp.id);
-    void refreshWebappPublishInfo(selectedWebapp.id);
+    void refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
+    void refreshWebappPublishStatus(selectedWebapp.id);
   }, [activeSection, selectedWebapp?.id]);
 
   useEffect(() => {
@@ -3370,14 +3370,14 @@ export function SettingsPage({
     }
   }
 
-  async function refreshSelectedWebappPrerequisites(webappId = selectedWebapp?.id ?? "") {
+  async function refreshSelectedWebappRuntimeCheck(webappId = selectedWebapp?.id ?? "") {
     const id = webappId.trim();
     if (!id) {
       return;
     }
     try {
-      const result = await window.electronAPI.webs.webapps.checkPrerequisites(id);
-      setWebappPrerequisiteById((current) => ({
+      const result = await window.electronAPI.webs.webapps.checkRuntime(id);
+      setWebappRuntimeCheckById((current) => ({
         ...current,
         [id]: result
       }));
@@ -3392,7 +3392,7 @@ export function SettingsPage({
       const result = await window.electronAPI.webs.webapps.saveRuntimeSettings(webappRuntimeSettings);
       setWebappRuntimeSettings(result.settings);
       if (selectedWebapp) {
-        await refreshSelectedWebappPrerequisites(selectedWebapp.id);
+        await refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
       }
       showSectionResultNotice("webapps", result);
     } catch (reason) {
@@ -3411,13 +3411,13 @@ export function SettingsPage({
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
 
-  async function refreshWebappPublishInfo(webappId = selectedWebapp?.id ?? "") {
+  async function refreshWebappPublishStatus(webappId = selectedWebapp?.id ?? "") {
     const id = webappId.trim();
     if (!id) {
       return;
     }
     try {
-      const result = await window.electronAPI.webs.webapps.getPublishInfo(id);
+      const result = await window.electronAPI.webs.webapps.getPublishStatus(id);
       setWebappPublishInfoById((current) => ({ ...current, [id]: result.info }));
       setWebappPublishStateById((current) => ({ ...current, [id]: result.state }));
     } catch (reason) {
@@ -3428,6 +3428,13 @@ export function SettingsPage({
   async function handlePublishWebapp(item: WebappEntry) {
     setWebappPublishPendingId(item.id);
     try {
+      const startResult = await window.electronAPI.webs.webapps.start(item.id);
+      setWebappRuntimeById((current) => ({ ...current, [item.id]: startResult.state }));
+      onWebappRuntimeStateChange?.(item.id, startResult.state, startResult.message);
+      if (!startResult.ok || !startResult.state) {
+        showSectionResultNotice("webapps", startResult);
+        return;
+      }
       const result = await window.electronAPI.webs.webapps.publish(item.id);
       setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
       setWebappPublishStateById((current) => ({ ...current, [item.id]: result.state }));
@@ -3503,7 +3510,7 @@ export function SettingsPage({
         [item.id]: result.state
       }));
       onWebappRuntimeStateChange?.(item.id, result.state, result.message);
-      await refreshSelectedWebappPrerequisites(item.id);
+      await refreshSelectedWebappRuntimeCheck(item.id);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3528,7 +3535,7 @@ export function SettingsPage({
   async function handleDeleteWebappItem(item: WebappEntry) {
     setWebappDeletingId(item.id);
     try {
-      const result = await window.electronAPI.webs.webapps.remove(item.id);
+      const result = await window.electronAPI.webs.webapps.uninstall(item.id);
       showSectionResultNotice("webapps", result);
       if (result.ok) {
         onWebappRuntimeStateChange?.(item.id, null, result.message);
@@ -4903,7 +4910,7 @@ export function SettingsPage({
 
       case "webapps": {
         const runtimeState = selectedWebapp ? webappRuntimeById[selectedWebapp.id] : null;
-        const prerequisite = selectedWebapp ? webappPrerequisiteById[selectedWebapp.id] : null;
+        const runtimeCheck = selectedWebapp ? webappRuntimeCheckById[selectedWebapp.id] : null;
         const publishInfo = selectedWebapp ? webappPublishInfoById[selectedWebapp.id] : null;
         const publishState = selectedWebapp ? webappPublishStateById[selectedWebapp.id] : null;
         const publishReady = publishInfo?.configured === true;
@@ -5186,7 +5193,7 @@ export function SettingsPage({
                         </span>
                         <Button
                           disabled={webappPublishPendingId !== ""}
-                          onClick={() => void refreshWebappPublishInfo(selectedWebapp.id)}
+                          onClick={() => void refreshWebappPublishStatus(selectedWebapp.id)}
                         >
                           {t("settings.webapps.publishRefresh")}
                         </Button>
@@ -5289,20 +5296,20 @@ export function SettingsPage({
                             ? t("settings.webapps.ownershipExternal")
                             : ""
                       )}
-                      {renderWebDetailRow(t("settings.webapps.runtimeVersion"), runtimeState?.runtimeVersion || prerequisite?.runtimeVersion)}
+                      {renderWebDetailRow(t("settings.webapps.runtimeVersion"), runtimeState?.runtimeVersion || runtimeCheck?.runtimeVersion)}
                       {renderWebDetailRow(
                         selectedWebapp.backend?.launcher === "java"
                           ? t("settings.webapps.javaDetectedPath")
                           : selectedWebapp.backend?.launcher === "container"
                             ? t("settings.webapps.containerExternalId")
                             : t("settings.webapps.externalId"),
-                        runtimeState?.externalId || prerequisite?.externalId
+                        runtimeState?.externalId || runtimeCheck?.externalId
                       )}
                       {renderWebDetailRow(
                         t("settings.webapps.prerequisites"),
-                        prerequisite?.ok
+                        runtimeCheck?.ready
                           ? t("settings.webapps.prerequisitesReady")
-                          : prerequisite?.issues.map((issue) => issue.message).join(" ")
+                          : runtimeCheck?.issues.map((issue) => issue.message).join(" ")
                       )}
                       {renderWebDetailRow(t("settings.webapps.message"), runtimeState?.message)}
                     </div>

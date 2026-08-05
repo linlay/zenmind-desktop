@@ -10,10 +10,7 @@ const LEGACY_V4_BACKEND_ACTIONS = Object.freeze([
   WEBAPP_BRIDGE_ACTIONS.assistantChat
 ] as const);
 
-const LEGACY_V4_PAGE_ACTIONS = Object.freeze([
-  ...LEGACY_V4_BACKEND_ACTIONS,
-  "desktop.webapp.selectDirectory"
-] as const);
+const LEGACY_V4_PAGE_ACTIONS = LEGACY_V4_BACKEND_ACTIONS;
 
 export type WebappCapabilityScope = "backendActionToken" | "localPageGateway";
 

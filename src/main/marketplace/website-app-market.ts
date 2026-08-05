@@ -47,6 +47,7 @@ type WebsiteAppArchiveInstallOptions = {
   assetUrl?: string;
   sha256?: string;
   removeArchive?: boolean;
+  validateUpdatedRuntime?: boolean;
 };
 
 function websiteAppOnlyCatalog(catalog: Catalog): Catalog {
@@ -259,7 +260,7 @@ export async function installWebsiteAppArchiveFromPath(
       stagingPath: preparedPath
     });
 
-    if (replacingExisting) {
+    if (replacingExisting && options.validateUpdatedRuntime !== false) {
       const started = await webappRuntime.start(app, safeWebappDirName);
       if (!started.ok) {
         await webappRuntime.stop(app, safeWebappDirName).catch(() => undefined);

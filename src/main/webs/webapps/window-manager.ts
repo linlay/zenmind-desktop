@@ -181,17 +181,22 @@ class WebappWindowManager {
       .map(([id]) => id);
   }
 
-  beginDisposal(id: string) {
+  closeForDisposal(id: string) {
+    const normalizedId = id.trim();
+    try {
+      this.disposalListener?.(normalizedId);
+    } catch (error) {
+      console.warn(`[webapp-window] failed to announce disposal for ${normalizedId}`, error);
+    }
+    this.close(normalizedId);
+  }
+
+  beginDisposal(id: string, options: { closeImmediately?: boolean } = {}) {
     const normalizedId = id.trim();
     const previousCount = this.disposingIds.get(normalizedId) ?? 0;
     this.disposingIds.set(normalizedId, previousCount + 1);
-    if (previousCount === 0) {
-      try {
-        this.disposalListener?.(normalizedId);
-      } catch (error) {
-        console.warn(`[webapp-window] failed to announce disposal for ${normalizedId}`, error);
-      }
-      this.close(normalizedId);
+    if (previousCount === 0 && options.closeImmediately !== false) {
+      this.closeForDisposal(normalizedId);
     }
     let released = false;
     return () => {

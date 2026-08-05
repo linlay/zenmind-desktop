@@ -12,7 +12,7 @@ import type {
   WebappLogReadOptions,
   WebappLogReadResult,
   WebappLogTarget,
-  WebappPrerequisiteResult,
+  WebappRuntimeCheckResult,
   WebappRuntimeState
 } from "../../../shared/contracts";
 import type { WebappBridgeCapability } from "../../../shared/webapp-bridge";
@@ -539,11 +539,11 @@ export class WebappRuntime {
     }
   }
 
-  checkPrerequisites(app: App, webappId: string): WebappPrerequisiteResult {
+  checkRuntime(app: App, webappId: string): WebappRuntimeCheckResult {
     const item = findWebapp(app, webappId);
     if (!item) {
       return {
-        ok: false,
+        ready: false,
         launcher: "none",
         ownership: null,
         runtimeVersion: "",
@@ -556,7 +556,7 @@ export class WebappRuntime {
     }
     const check = checkWebappBackendPrerequisites(createLauncherContext(app, item, null));
     return {
-      ok: check.ok,
+      ready: check.ok,
       launcher: check.launcher,
       ownership: check.ownership,
       runtimeVersion: check.runtimeVersion,
@@ -568,7 +568,11 @@ export class WebappRuntime {
     };
   }
 
-  checkItemPrerequisites(app: App, item: WebappEntry, webappDir: string): WebappPrerequisiteResult {
+  checkItemPrerequisites(
+    app: App,
+    item: WebappEntry,
+    webappDir: string
+  ): WebappLauncherCheck & { message: string } {
     const check = checkWebappBackendPrerequisites(
       createLauncherContext(app, item, null, webappDir)
     );

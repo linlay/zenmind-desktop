@@ -279,8 +279,8 @@ export interface WebappStatusResult {
   message: string;
 }
 
-export interface WebappPrerequisiteResult {
-  ok: boolean;
+export interface WebappRuntimeCheckResult {
+  ready: boolean;
   launcher: WebappLauncherKind;
   ownership: WebappBackendOwnership | null;
   runtimeVersion: string;
@@ -325,8 +325,8 @@ export interface WebappPublishState {
   updatedAt: string;
 }
 
-export interface WebappPublishInfoResult {
-  ok: boolean;
+export interface WebappPublishStatusResult {
+  ready: boolean;
   info: WebappPublishInfo;
   state: WebappPublishState | null;
   message: string;

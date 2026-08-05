@@ -278,13 +278,14 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "website.update": "desktop.website.update",
   "website.remove": "desktop.website.remove",
   "webapp.getStatus": "desktop.webapp.getStatus",
-  "webapp.checkPrerequisites": "desktop.webapp.checkPrerequisites",
+  "webapp.checkRuntime": "desktop.webapp.checkRuntime",
   "webapp.start": "desktop.webapp.start",
   "webapp.stop": "desktop.webapp.stop",
   "webapp.restart": "desktop.webapp.restart",
   "webapp.open": "desktop.webapp.open",
-  "webapp.installAndOpen": "desktop.webapp.installAndOpen",
-  "webapp.getPublishInfo": "desktop.webapp.getPublishInfo",
+  "webapp.install": "desktop.webapp.install",
+  "webapp.uninstall": "desktop.webapp.uninstall",
+  "webapp.getPublishStatus": "desktop.webapp.getPublishStatus",
   "webapp.publish": "desktop.webapp.publish",
   "webapp.unpublish": "desktop.webapp.unpublish"
 };
