@@ -16,6 +16,7 @@ import {
 } from "../webs/websites/actions";
 import { cacheWebsiteFavicon } from "../webs/websites/favicon-cache";
 import {
+  exportWebappArchive,
   listWebappItems,
   removeWebappItem,
   updateWebappItem
@@ -203,6 +204,32 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
         message: error instanceof Error ? error.message : String(error)
       };
     }
+  });
+  ipcMain.handle("webs.webapps.export", async (_event: any, id: string) => {
+    const item = listWebappItems(app).items.find((candidate) => candidate.id === id) ?? null;
+    if (!item) {
+      return {
+        ok: false,
+        item: null,
+        path: "",
+        message: t("webapp.notFound")
+      };
+    }
+
+    const saveResult = await showSaveDialog({
+      title: t("dialog.exportWebapp.title"),
+      defaultPath: path.join(app.getPath("desktop"), `${item.id}-${item.version}.zip`),
+      filters: [{ name: "WebApp Archive", extensions: ["zip"] }]
+    });
+    if (saveResult.canceled || !saveResult.filePath) {
+      return {
+        ok: false,
+        item,
+        path: "",
+        message: t("webapp.exportCancelled")
+      };
+    }
+    return exportWebappArchive(app, item.id, saveResult.filePath);
   });
   ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) => {
     const result = updateWebappItem(app, id, input);

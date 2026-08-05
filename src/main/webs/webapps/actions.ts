@@ -1,6 +1,9 @@
 import fs from "node:fs";
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
+import JSZip from "jszip";
 import type { App } from "electron";
-import type { WebappDeleteResult, WebappEntry, WebappResult, WebappUpdateInput } from "../../../shared/contracts";
+import type { WebappDeleteResult, WebappEntry, WebappExportResult, WebappResult, WebappUpdateInput } from "../../../shared/contracts";
 import { t } from "../../i18n/main-i18n";
 import { removeInstalledRecord } from "../../marketplace/common";
 import {
@@ -17,6 +20,82 @@ import { webappWindowManager } from "./window-manager";
 function findWebapp(items: WebappEntry[], id: string) {
   const normalizedId = id.trim();
   return items.find((item) => item.id === normalizedId) ?? null;
+}
+
+async function addWebappDirectoryToZip(
+  zip: JSZip,
+  rootPath: string,
+  currentPath: string = rootPath
+): Promise<void> {
+  const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(currentPath, entry.name);
+    const archivePath = path.relative(rootPath, sourcePath).split(path.sep).join("/");
+    const stat = await fs.promises.lstat(sourcePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(`WebApp package contains a symbolic link: ${archivePath}`);
+    }
+    if (stat.isDirectory()) {
+      if ((await fs.promises.readdir(sourcePath)).length === 0) {
+        zip.folder(`${archivePath}/`);
+      }
+      await addWebappDirectoryToZip(zip, rootPath, sourcePath);
+      continue;
+    }
+    if (!stat.isFile()) {
+      throw new Error(`WebApp package contains an unsupported file type: ${archivePath}`);
+    }
+    zip.file(archivePath, await fs.promises.readFile(sourcePath), {
+      unixPermissions: stat.mode & 0o777
+    });
+  }
+}
+
+export async function exportWebappArchive(
+  app: App,
+  id: string,
+  archivePath: string
+): Promise<WebappExportResult> {
+  const item = findWebapp(readWebappItems(app), id);
+  if (!item) {
+    return {
+      ok: false,
+      item: null,
+      path: archivePath,
+      message: t("webapp.notFound")
+    };
+  }
+
+  const installPath = item.installPath || getWebappDir(app, item.id);
+  try {
+    const zip = new JSZip();
+    await addWebappDirectoryToZip(zip, installPath);
+    await fs.promises.mkdir(path.dirname(archivePath), { recursive: true });
+    await pipeline(
+      zip.generateNodeStream({
+        type: "nodebuffer",
+        streamFiles: true,
+        platform: "UNIX",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
+      }),
+      fs.createWriteStream(archivePath, { mode: 0o600 })
+    );
+    return {
+      ok: true,
+      item,
+      path: archivePath,
+      message: t("webapp.exported", { label: item.label })
+    };
+  } catch (error) {
+    await fs.promises.rm(archivePath, { force: true }).catch(() => undefined);
+    return {
+      ok: false,
+      item,
+      path: archivePath,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
 }
 
 export type WebappDisposalTarget = {

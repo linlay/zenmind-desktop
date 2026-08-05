@@ -26,7 +26,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -814,6 +814,18 @@ export function AppShell() {
       await refreshWebItems().catch(() => undefined);
     }
     return result;
+  }
+
+  async function exportWebappItem(item: WebEntry): Promise<WebappExportResult> {
+    if (item.kind !== "webapp") {
+      return {
+        ok: false,
+        item: null,
+        path: "",
+        message: t("webapp.notFound")
+      };
+    }
+    return window.electronAPI.webs.webapps.export(item.id);
   }
 
   async function removeWebappItem(item: WebEntry): Promise<WebappDeleteResult> {
@@ -2879,6 +2891,7 @@ export function AppShell() {
             void handleOpenWebappWorkspace(item);
           }}
           onCloseWebItem={handleCloseWebEntry}
+          onExportWebappItem={exportWebappItem}
           onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}
           onSidebarNavigateBack={handleSidebarBackNavigation}
