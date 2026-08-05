@@ -1199,6 +1199,7 @@ Var /GLOBAL DesktopCleanupWarning
 !endif
 !ifndef BUILD_UNINSTALLER
 Var /GLOBAL DesktopDataRootStored
+Var /GLOBAL DesktopDataRootAdoptConfirmed
 Var /GLOBAL DesktopDataParent
 Var /GLOBAL DesktopDataRootInput
 Var /GLOBAL DesktopDataRootBrowseButton
@@ -1422,6 +1423,30 @@ FunctionEnd
 !endif
 
 !ifndef BUILD_UNINSTALLER
+!macro DesktopValidateStoredDataRootForInstall
+  \${if} $DesktopDataRootStored == "1"
+  \${andIf} $DesktopDataRootLayoutVersion == "2"
+    !insertmacro DesktopReadOwnerMarker $DesktopDataRoot "${dataOwnerToken}" $R0
+    !insertmacro DesktopValidateOwnedRoot $DesktopDataRoot $R1
+    \${if} $R1 != "1"
+      MessageBox MB_ICONSTOP "${productName} 数据目录未通过路径安全校验，安装已停止：$\\r$\\n$DesktopDataRoot" /SD IDOK
+      SetErrorLevel 4
+      Abort
+    \${endif}
+    \${if} $R0 != "1"
+      \${if} \${FileExists} "$DesktopDataRoot\\.desktop-owner"
+        MessageBox MB_ICONSTOP "${productName} 数据目录的安全标记不匹配，安装已停止：$\\r$\\n$DesktopDataRoot" /SD IDOK
+        SetErrorLevel 4
+        Abort
+      \${elseIf} \${Silent}
+        MessageBox MB_ICONSTOP "${productName} 数据目录缺少安全标记，静默安装无法确认沿用历史数据，安装已停止：$\\r$\\n$DesktopDataRoot" /SD IDOK
+        SetErrorLevel 4
+        Abort
+      \${endif}
+    \${endif}
+  \${endif}
+!macroend
+
 Function ${nsisPrefix}BrowseDataDirectory
   \${NSD_GetText} $DesktopDataRootInput $DesktopDataParent
   nsDialogs::SelectFolderDialog "选择 ${productName} 数据存放位置" "$DesktopDataParent"
@@ -1461,6 +1486,8 @@ Function ${nsisPrefix}DataDirectoryPage
 FunctionEnd
 
 Function ${nsisPrefix}DataDirectoryPageLeave
+  StrCpy $DesktopDataRootAdoptConfirmed "0"
+  StrCpy $DesktopDataRootStored "0"
   \${NSD_GetText} $DesktopDataRootInput $DesktopDataParent
   \${if} $DesktopDataParent == ""
     MessageBox MB_ICONEXCLAMATION "请选择 ${productName} 数据存放位置。"
@@ -1523,9 +1550,20 @@ Function ${nsisPrefix}DataDirectoryPageLeave
   \${andIf} $R1 == "1"
     Goto ${nsisPrefix}DataDirectoryReady
   \${endif}
-  StrCmp "$DesktopDataRoot" "$PROFILE\\${runtimeRootDirName}" ${nsisPrefix}DataDirectoryReady
+  \${if} $DesktopDataRoot == "$PROFILE\\${runtimeRootDirName}"
+    StrCpy $DesktopDataRootAdoptConfirmed "1"
+    Goto ${nsisPrefix}DataDirectoryReady
+  \${endif}
+  \${if} $R1 == "1"
+  \${andIfNot} \${FileExists} "$DesktopDataRoot\\.desktop-owner"
+    MessageBox MB_YESNO|MB_ICONEXCLAMATION "目标目录已有数据但缺少 ${productName} 所有权标记：$\\r$\\n$DesktopDataRoot$\\r$\\n$\\r$\\n仅当你确认这是历史 ${productName} 数据目录时才继续。安装器会保留全部现有文件并补写所有权与注册表记录；以后卸载时选择清理数据将允许删除该目录。" /SD IDNO IDYES ${nsisPrefix}DataDirectoryAdoptLegacy
+    Abort
+  \${endif}
   MessageBox MB_ICONEXCLAMATION "目标专属目录已存在但不属于 ${productName}：$\\r$\\n$DesktopDataRoot$\\r$\\n请改选其他位置。"
   Abort
+${nsisPrefix}DataDirectoryAdoptLegacy:
+  StrCpy $DesktopDataRootAdoptConfirmed "1"
+  Goto ${nsisPrefix}DataDirectoryReady
 ${nsisPrefix}DataDirectoryCreateFailed:
   MessageBox MB_ICONEXCLAMATION "所选父目录无法创建，请改选其他位置。"
   Abort
@@ -1581,17 +1619,7 @@ FunctionEnd
   \${endif}
   StrCpy $INSTDIR "$DesktopDefaultInstallDir"
   Call ${nsisPrefix}EnsureDataRootDefault
-  \${if} $DesktopDataRootStored == "1"
-  \${andIf} $DesktopDataRootLayoutVersion == "2"
-    !insertmacro DesktopReadOwnerMarker $DesktopDataRoot "${dataOwnerToken}" $R0
-    !insertmacro DesktopValidateOwnedRoot $DesktopDataRoot $R1
-    \${if} $R0 != "1"
-    \${orIf} $R1 != "1"
-      MessageBox MB_ICONSTOP "${productName} 数据目录的安全标记缺失或不匹配，安装已停止：$\\r$\\n$DesktopDataRoot" /SD IDOK
-      SetErrorLevel 4
-      Quit
-    \${endif}
-  \${endif}
+  !insertmacro DesktopValidateStoredDataRootForInstall
 !macroend
 !endif
 
@@ -1666,17 +1694,7 @@ FunctionEnd
     \${endif}
     StrCpy $INSTDIR "$DesktopDefaultInstallDir"
     Call ${nsisPrefix}EnsureDataRootDefault
-    \${if} $DesktopDataRootStored == "1"
-    \${andIf} $DesktopDataRootLayoutVersion == "2"
-      !insertmacro DesktopReadOwnerMarker $DesktopDataRoot "${dataOwnerToken}" $R0
-      !insertmacro DesktopValidateOwnedRoot $DesktopDataRoot $R1
-      \${if} $R0 != "1"
-      \${orIf} $R1 != "1"
-        MessageBox MB_ICONSTOP "${productName} 数据目录的安全标记缺失或不匹配，安装已停止：$\\r$\\n$DesktopDataRoot" /SD IDOK
-        SetErrorLevel 4
-        Abort
-      \${endif}
-    \${endif}
+    !insertmacro DesktopValidateStoredDataRootForInstall
     \${if} $INSTDIR != $DesktopDefaultInstallDir
       MessageBox MB_ICONSTOP "${productName} 程序目录必须固定为：$\\r$\\n$DesktopDefaultInstallDir$\\r$\\n安装已停止。" /SD IDOK
       SetErrorLevel 6
@@ -1764,8 +1782,10 @@ FunctionEnd
       \${if} $R2 == "1"
         !insertmacro DesktopReadOwnerMarker $DesktopDataRoot "${dataOwnerToken}" $R0
         \${if} $R0 != "1"
-          MessageBox MB_ICONSTOP "目标数据目录已存在但缺少 ${productName} 所有权标记，安装已停止：$\\r$\\n$DesktopDataRoot"
-          Abort
+          \${if} $DesktopDataRootAdoptConfirmed != "1"
+            MessageBox MB_ICONSTOP "目标数据目录已存在但缺少 ${productName} 所有权标记，安装已停止：$\\r$\\n$DesktopDataRoot"
+            Abort
+          \${endif}
         \${endif}
       \${endif}
     \${endif}
