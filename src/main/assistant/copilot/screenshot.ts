@@ -176,7 +176,11 @@ function selectScreenshotRegion(display: Display, platform: NodeJS.Platform) {
 
     if (platform === "darwin") {
       overlayWindow.setAlwaysOnTop(true, "screen-saver");
-      overlayWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+      overlayWindow.setVisibleOnAllWorkspaces(true, {
+        visibleOnFullScreen: true,
+        // Preserve the foreground app identity so the Dock icon remains visible.
+        skipTransformProcessType: true
+      });
     } else if (platform === "win32") {
       overlayWindow.setAlwaysOnTop(true, "screen-saver");
     } else {
