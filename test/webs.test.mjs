@@ -1722,7 +1722,7 @@ test("WebApp action tokens are scoped to the issuing app and assistant allowlist
     { ok: false, webappId: "", scope: null }
   );
   assert.deepEqual(
-    authorizeWebappActionToken(token, "desktop.web.webapp.remove"),
+    authorizeWebappActionToken(token, "desktop.webapp.remove"),
     { ok: false, webappId: "", scope: null }
   );
   revokeWebappActionToken(token);
@@ -1741,10 +1741,10 @@ test("WebApp capability policy keeps backend tokens narrower than the local page
   assert.deepEqual(getWebappAllowedActions(legacy, "localPageGateway"), [
     "desktop.assistant.complete",
     "desktop.assistant.chat",
-    "desktop.web.webapp.selectDirectory"
+    "desktop.webapp.selectDirectory"
   ]);
-  assert.equal(isWebappActionAllowed(legacy, "backendActionToken", "desktop.web.webapp.selectDirectory"), false);
-  assert.equal(isWebappActionAllowed(legacy, "localPageGateway", "desktop.web.webapp.selectDirectory"), true);
+  assert.equal(isWebappActionAllowed(legacy, "backendActionToken", "desktop.webapp.selectDirectory"), false);
+  assert.equal(isWebappActionAllowed(legacy, "localPageGateway", "desktop.webapp.selectDirectory"), true);
 
   const v5 = {
     id: "bridge-v5",
@@ -1764,7 +1764,7 @@ test("WebApp capability policy keeps backend tokens narrower than the local page
     "desktop.native.notification.show"
   ]);
   assert.equal(isWebappActionAllowed(v5, "localPageGateway", "desktop.assistant.complete"), false);
-  assert.equal(isWebappActionAllowed(v5, "localPageGateway", "desktop.web.webapp.selectDirectory"), false);
+  assert.equal(isWebappActionAllowed(v5, "localPageGateway", "desktop.webapp.selectDirectory"), false);
 });
 
 test("WebApp Bridge SDK unwraps results and errors while reserved functions stay local", async (t) => {

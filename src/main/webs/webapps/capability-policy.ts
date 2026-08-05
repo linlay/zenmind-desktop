@@ -12,7 +12,7 @@ const LEGACY_V4_BACKEND_ACTIONS = Object.freeze([
 
 const LEGACY_V4_PAGE_ACTIONS = Object.freeze([
   ...LEGACY_V4_BACKEND_ACTIONS,
-  "desktop.web.webapp.selectDirectory"
+  "desktop.webapp.selectDirectory"
 ] as const);
 
 export type WebappCapabilityScope = "backendActionToken" | "localPageGateway";

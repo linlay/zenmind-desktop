@@ -262,7 +262,7 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "kanban.issue.delete": "desktop.kanban.deleteIssue",
   "kanban.issue.move": "desktop.kanban.moveIssue",
 
-  "web.entries.list": "desktop.web.list",
+  "site.list": "desktop.site.list",
   "web.listSurfaces": "desktop.web.listSurfaces",
   "web.getSurfaceState": "desktop.web.getSurfaceState",
   "web.activateSurface": "desktop.web.activateSurface",
@@ -273,20 +273,20 @@ const PUBLIC_ACTION_ALIASES: Record<string, string> = {
   "web.openTab": "desktop.web.openTab",
   "web.closeTab": "desktop.web.closeTab",
   "web.switchTab": "desktop.web.switchTab",
-  "web.website.list": "desktop.web.website.list",
-  "web.website.add": "desktop.web.website.add",
-  "web.website.update": "desktop.web.website.update",
-  "web.website.remove": "desktop.web.website.remove",
-  "web.webapp.getStatus": "desktop.web.webapp.getStatus",
-  "web.webapp.checkPrerequisites": "desktop.web.webapp.checkPrerequisites",
-  "web.webapp.start": "desktop.web.webapp.start",
-  "web.webapp.stop": "desktop.web.webapp.stop",
-  "web.webapp.restart": "desktop.web.webapp.restart",
-  "web.webapp.open": "desktop.web.webapp.open",
-  "web.webapp.installAndOpen": "desktop.web.webapp.installAndOpen",
-  "web.webapp.getPublishInfo": "desktop.web.webapp.getPublishInfo",
-  "web.webapp.publish": "desktop.web.webapp.publish",
-  "web.webapp.unpublish": "desktop.web.webapp.unpublish"
+  "website.list": "desktop.website.list",
+  "website.add": "desktop.website.add",
+  "website.update": "desktop.website.update",
+  "website.remove": "desktop.website.remove",
+  "webapp.getStatus": "desktop.webapp.getStatus",
+  "webapp.checkPrerequisites": "desktop.webapp.checkPrerequisites",
+  "webapp.start": "desktop.webapp.start",
+  "webapp.stop": "desktop.webapp.stop",
+  "webapp.restart": "desktop.webapp.restart",
+  "webapp.open": "desktop.webapp.open",
+  "webapp.installAndOpen": "desktop.webapp.installAndOpen",
+  "webapp.getPublishInfo": "desktop.webapp.getPublishInfo",
+  "webapp.publish": "desktop.webapp.publish",
+  "webapp.unpublish": "desktop.webapp.unpublish"
 };
 
 const BLOCKED_PUBLIC_ACTION_NAMES = new Set([
@@ -305,22 +305,14 @@ const BLOCKED_PUBLIC_ACTION_NAMES = new Set([
   "web.tab.open",
   "web.tab.close",
   "web.tab.switch",
-  "web.webapps.getStatus",
-  "web.webapps.start",
-  "web.webapps.stop",
-  "web.webapps.restart",
-  "web.webapps.open",
-  "web.webapps.installAndOpen",
-  "web.webapps.status",
   "webapp.status",
-  "webapp.start",
-  "webapp.stop",
-  "webapp.restart",
-  "webapp.open",
-  "webapp.installAndOpen",
   "pet.settings",
   "pet.appearances",
   "help.openTopic",
+  "agent.open",
+  "agent.update",
+  "skill.open",
+  "skill.update",
   "kanban.listIssues",
   "kanban.getIssue",
   "kanban.createIssue",
@@ -1132,7 +1124,7 @@ async function handleRequest(
     case "snapshot.get":
       sendResponse(connection, namespace, type, id, getKanbanRuntime(options).listIssues());
       return;
-    case "web.webapp.list":
+    case "webapp.list":
       if (!options.listMobileWebapps) {
         sendError(connection, namespace, id, "webapp_catalog_unavailable", 503, "WebApp catalog is not available.");
         return;

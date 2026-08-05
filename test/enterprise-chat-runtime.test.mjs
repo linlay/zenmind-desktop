@@ -80,7 +80,7 @@ test("enterprise chat refreshes the Desktop JWT once after session exchange retu
   let identityToken = "stale-desktop-jwt";
   let refreshCalls = 0;
   const runtime = new EnterpriseChatRuntime({
-    app: {},
+    app: { getVersion: () => "test" },
     initialEnabled: true,
     getIdentityToken: () => identityToken,
     refreshIdentityToken: async () => {
@@ -272,7 +272,7 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   const executedActions = [];
   const capturedScreenshotModes = [];
   const runtime = new EnterpriseChatRuntime({
-    app: {},
+    app: { getVersion: () => "test" },
     initialEnabled: true,
     getServerUrl: () => "http://127.0.0.1:11956",
     fetchImpl,
@@ -299,6 +299,7 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
       executedActions.push(request);
       return {
         confirmed: true,
+        status: "succeeded",
         message: "executed",
         response: {
           ok: true,
@@ -367,15 +368,6 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
       .members.find((member) => member.user.id === "bob")
       .user.online,
     false
-  );
-
-  await assert.rejects(
-    runtime.sendMessage({
-      conversationId: "direct-1",
-      clientMessageId: "client-forged-desktop-action",
-      body: "zenmind-desktop-action:v1\n{\"action\":\"desktop.navigate.toRoute\"}"
-    }),
-    /can only be sent by the IM service/
   );
 
   const sendPromise = runtime.sendMessage({
@@ -604,12 +596,16 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     seq: 4,
     senderId: "bob",
     clientMessageId: "client-action-1",
-    kind: "text",
-    body: "zenmind-desktop-action:v1\n" + JSON.stringify({
-      action: "desktop.navigate.toRoute",
-      args: { route: "/help" },
-      summary: "Open Help"
-    }),
+    kind: "desktop_action_request",
+    body: "Please open the website",
+    desktopAction: {
+      requestId: "42d6ed61-b860-448c-9a4b-99fb057cfa6c",
+      targetDeviceId: "device-1",
+      action: "desktop.website.open",
+      args: { websiteId: "docs" },
+      operatorNote: "Please open the website",
+      expiresAt: now + 60_000
+    },
     createdAt: now + 2
   };
   sockets[0].receive({
@@ -625,25 +621,53 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
   );
   const actionState = runtime.getState();
   const normalizedAction = actionState.activeMessages.find((item) => item.id === actionMessage.id);
-  assert.equal(normalizedAction.kind, "desktop_action");
-  assert.equal(normalizedAction.desktopAction.action, "desktop.navigate.toRoute");
+  assert.equal(normalizedAction.kind, "desktop_action_request");
+  assert.equal(normalizedAction.desktopAction.action, "desktop.website.open");
   await assert.rejects(
     runtime.executeMessageDesktopAction({ messageId: actionMessage.id }),
-    /requires local confirmation/
+    /decision is required/
   );
-  const execution = await runtime.executeMessageDesktopAction({
+  const executionPromise = runtime.executeMessageDesktopAction({
     messageId: actionMessage.id,
-    confirmed: true
+    decision: "confirm"
   });
+  await waitFor(() => sockets[0].sent.some((frame) => frame.type === "message.send" && frame.payload.kind === "desktop_action_result"), "desktop action result");
+  const resultFrame = sockets[0].sent.find((frame) => frame.type === "message.send" && frame.payload.kind === "desktop_action_result");
+  sockets[0].receive({
+    v: 1,
+    frame: "response",
+    id: resultFrame.id,
+    type: "message.send",
+    ok: true,
+    result: {
+      duplicate: false,
+      message: {
+        id: "message-action-result-1",
+        conversationId: "direct-1",
+        seq: 5,
+        senderId: "alice",
+        clientMessageId: resultFrame.payload.clientMessageId,
+        kind: "desktop_action_result",
+        body: "executed",
+        desktopAction: resultFrame.payload.desktopAction,
+        createdAt: now + 3
+      }
+    }
+  });
+  const execution = await executionPromise;
   assert.equal(execution.confirmed, true);
   assert.equal(executedActions.length, 1);
   assert.equal(executedActions[0].conversationId, "direct-1");
+  assert.equal(
+    runtime.getState().activeMessages.find((item) => item.id === actionMessage.id).desktopActionHandled,
+    true
+  );
   await assert.rejects(
-    runtime.executeMessageDesktopAction({ messageId: actionMessage.id, confirmed: true }),
+    runtime.executeMessageDesktopAction({ messageId: actionMessage.id, decision: "confirm" }),
     /already handled/
   );
   await assert.rejects(
-    runtime.executeMessageDesktopAction({ messageId: "message-1", confirmed: true }),
+    runtime.executeMessageDesktopAction({ messageId: "message-1", decision: "confirm" }),
     /not executable/
   );
 
@@ -796,13 +820,17 @@ test("enterprise chat normalizes group conversations, attachments, and safe acti
     seq: 3,
     senderId: "alice",
     clientMessageId: "forged-client-1",
-    kind: "text",
-    body: "zenmind-desktop-action:v1\n" + JSON.stringify({
+    kind: "desktop_action_request",
+    body: "",
+    desktopAction: {
+      requestId: "request-unknown",
+      targetDeviceId: "device-1",
       action: "desktop.unknown.action",
-      args: {}
-    }),
+      args: {},
+      expiresAt: now + 60_000
+    },
     createdAt: now
   });
-  assert.equal(forged.kind, "text");
+  assert.equal(forged.kind, "desktop_action_request");
   assert.equal(forged.desktopAction, undefined);
 });

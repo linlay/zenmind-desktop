@@ -17,10 +17,10 @@ test("XiaoJun WebApp install exposes direct mobile access without triggering pub
   const wsContract = read("src/shared/desktop-ws.ts");
 
   for (const action of [
-    "desktop.web.webapp.installAndOpen",
-    "desktop.web.webapp.getPublishInfo",
-    "desktop.web.webapp.publish",
-    "desktop.web.webapp.unpublish"
+    "desktop.webapp.installAndOpen",
+    "desktop.webapp.getPublishInfo",
+    "desktop.webapp.publish",
+    "desktop.webapp.unpublish"
   ]) {
     assert.match(catalog, new RegExp(action.replaceAll(".", "\\."), "u"));
     assert.match(bridge, new RegExp(action.replaceAll(".", "\\."), "u"));
@@ -32,12 +32,12 @@ test("XiaoJun WebApp install exposes direct mobile access without triggering pub
   assert.doesNotMatch(bridge, /hasTunnelWebappSubscriber\?\.\(\)[\s\S]*?publishWebapp\(options\.app, webappId, command\.state\)/u);
   assert.match(bridge, /readDesktopMobileWebappItem\(options\.app, webappId\)/u);
   assert.match(bridge, /mobilePublish[\s\S]*?mode:\s*"direct-mobile-tunnel"[\s\S]*?publicUrl/u);
-  assert.match(wsContract, /"web\.webapp\.list"/u);
+  assert.match(wsContract, /"webapp\.list"/u);
   assert.match(wsContract, /"webapp\.changed"/u);
   for (const alias of [
-    "web.webapp.getPublishInfo",
-    "web.webapp.publish",
-    "web.webapp.unpublish"
+    "webapp.getPublishInfo",
+    "webapp.publish",
+    "webapp.unpublish"
   ]) {
     const pattern = new RegExp(alias.replaceAll(".", "\\."), "u");
     assert.match(wsServer, pattern);

@@ -110,7 +110,8 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
 export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
   "/agents/:agentKey",
   "/copilot/:agentKey",
-  "/agent/:agentKey"
+  "/agent/:agentKey",
+  "/skills/:skillKey"
 ] as const;
 
 const AGENT_WEBCLIENT_CHAT_SURFACE_IDS = new Set([

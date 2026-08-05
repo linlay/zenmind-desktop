@@ -1,7 +1,6 @@
 import type { EpochMilliseconds } from "../time-contract";
 import type { DesktopActionCallResponse } from "../desktop-actions";
 
-export const ENTERPRISE_CHAT_DESKTOP_ACTION_PREFIX = "zenmind-desktop-action:v1\n";
 export const ENTERPRISE_CHAT_MAX_PASTED_FILES = 10;
 export const ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES = 32 * 1024 * 1024;
 
@@ -46,9 +45,29 @@ export interface EnterpriseChatAttachment {
 }
 
 export interface EnterpriseChatDesktopAction {
+  requestId: string;
+  targetDeviceId: string;
   action: string;
   args: Record<string, unknown>;
   summary: string;
+  operatorNote: string;
+  expiresAt: EpochMilliseconds;
+}
+
+export type EnterpriseChatDesktopActionStatus =
+  | "succeeded"
+  | "failed"
+  | "declined"
+  | "expired"
+  | "unsupported";
+
+export interface EnterpriseChatDesktopActionResult {
+  requestId: string;
+  targetDeviceId: string;
+  action: string;
+  status: EnterpriseChatDesktopActionStatus;
+  message: string;
+  completedAt: EpochMilliseconds;
 }
 
 export interface EnterpriseChatMessage {
@@ -56,11 +75,15 @@ export interface EnterpriseChatMessage {
   conversationId: string;
   seq: number;
   senderId: string;
+  actorUserId: string;
+  senderDeviceId: string;
   clientMessageId: string;
   kind: string;
   body: string;
   attachments: EnterpriseChatAttachment[];
   desktopAction?: EnterpriseChatDesktopAction;
+  desktopActionResult?: EnterpriseChatDesktopActionResult;
+  desktopActionHandled?: boolean;
   createdAt: EpochMilliseconds;
   editedAt?: EpochMilliseconds;
   revokedAt?: EpochMilliseconds;
@@ -171,11 +194,12 @@ export interface EnterpriseChatDownloadResult {
 
 export interface EnterpriseChatExecuteActionInput {
   messageId: string;
-  confirmed: true;
+  decision: "confirm" | "decline";
 }
 
 export interface EnterpriseChatExecuteActionResult {
   confirmed: boolean;
+  status: EnterpriseChatDesktopActionStatus;
   response?: DesktopActionCallResponse;
   message: string;
 }

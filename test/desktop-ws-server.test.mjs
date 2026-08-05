@@ -359,9 +359,9 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(hello.data.namespaceField, "ns");
   assert.deepEqual(hello.data.namespaces, { d: "desktop", ap: "agent-platform", wa: "webapp" });
   assert.ok(hello.data.requestTypes.includes("action.call"));
-  assert.ok(hello.data.requestTypes.includes("web.webapp.list"));
+  assert.ok(hello.data.requestTypes.includes("webapp.list"));
 
-  client.send({ frame: "request", type: "web.webapp.list", id: "webapp-list-1", payload: {} });
+  client.send({ frame: "request", type: "webapp.list", id: "webapp-list-1", payload: {} });
   const webappList = await client.waitFor((message) => message.id === "webapp-list-1");
   assert.equal(webappList.frame, "response");
   assert.equal(webappList.code, 0);
@@ -378,7 +378,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(webappHello.code, 0);
   assert.equal(webappHello.data.namespaces.wa, "webapp");
   assert.ok(hello.data.requestTypes.includes("web.listSurfaces"));
-  assert.ok(hello.data.requestTypes.includes("web.website.list"));
+  assert.ok(hello.data.requestTypes.includes("website.list"));
   assert.ok(hello.data.requestTypes.includes("kanban.issue.list"));
   assert.ok(hello.data.requestTypes.includes("pet.state"));
   assert.ok(hello.data.requestTypes.includes("pet.list"));
@@ -397,7 +397,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(hello.data.requestTypes.includes("web.interactElement"), false);
   assert.equal(hello.data.requestTypes.includes("web.executeScript"), false);
   assert.equal(hello.data.requestTypes.includes("web.websites.list"), false);
-  assert.ok(hello.data.requestTypes.includes("web.webapp.getStatus"));
+  assert.ok(hello.data.requestTypes.includes("webapp.getStatus"));
   assert.equal(hello.data.requestTypes.includes("web.webapps.getStatus"), false);
   assert.equal(hello.data.requestTypes.includes("web.webapps.status"), false);
   assert.equal(hello.data.requestTypes.includes("pet.getState"), false);
@@ -405,7 +405,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(hello.data.requestTypes.includes("pet.setEnabled"), false);
   assert.equal(hello.data.requestTypes.includes("pet.listAppearances"), false);
   assert.equal(hello.data.requestTypes.includes("pet.setAppearance"), false);
-  assert.equal(hello.data.requestTypes.includes("webapp.start"), false);
+  assert.ok(hello.data.requestTypes.includes("webapp.start"));
   assert.equal(hello.data.requestTypes.includes("agent.list"), false);
   assert.equal(hello.data.requestTypes.includes("automation.list"), false);
   assert.equal(hello.data.requestTypes.includes("staticServer.list"), false);
@@ -418,13 +418,13 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.ok(actionNames.includes("web.listSurfaces"));
   assert.ok(actionNames.includes("web.getSurfaceState"));
   assert.equal(actionNames.includes("web.getActiveSurface"), false);
-  assert.ok(actionNames.includes("web.entries.list"));
-  assert.ok(actionNames.includes("web.website.list"));
-  assert.ok(actionNames.includes("web.webapp.getStatus"));
-  assert.ok(actionNames.includes("web.webapp.installAndOpen"));
-  assert.ok(actionNames.includes("web.webapp.getPublishInfo"));
-  assert.ok(actionNames.includes("web.webapp.publish"));
-  assert.ok(actionNames.includes("web.webapp.unpublish"));
+  assert.ok(actionNames.includes("site.list"));
+  assert.ok(actionNames.includes("website.list"));
+  assert.ok(actionNames.includes("webapp.getStatus"));
+  assert.ok(actionNames.includes("webapp.installAndOpen"));
+  assert.ok(actionNames.includes("webapp.getPublishInfo"));
+  assert.ok(actionNames.includes("webapp.publish"));
+  assert.ok(actionNames.includes("webapp.unpublish"));
   assert.ok(actionNames.includes("pet.state"));
   assert.ok(actionNames.includes("pet.list"));
   assert.ok(actionNames.includes("pet.set"));
@@ -455,7 +455,10 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(actionNames.includes("web.webapps.getStatus"), false);
   assert.equal(actionNames.includes("web.webapps.status"), false);
   assert.equal(actionNames.some((action) => action.startsWith("embeddedWeb.")), false);
-  assert.equal(actionNames.some((action) => action.startsWith("webapp.")), false);
+  assert.ok(actionNames.includes("webapp.start"));
+  assert.ok(actionNames.includes("webapp.stop"));
+  assert.ok(actionNames.includes("webapp.restart"));
+  assert.ok(actionNames.includes("webapp.open"));
   assert.equal(actionNames.includes("pet.getState"), false);
   assert.equal(actionNames.includes("pet.getSettings"), false);
   assert.equal(actionNames.includes("pet.setEnabled"), false);

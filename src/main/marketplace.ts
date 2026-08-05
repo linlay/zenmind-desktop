@@ -29,6 +29,7 @@ import {
   type MarketSectionResult
 } from "./marketplace/common";
 import { listCatalogOnlyMarketItems } from "./marketplace/catalog-only-market";
+import { installAgentMarketItem, uninstallAgentMarketItem } from "./marketplace/agent-market";
 import {
   installCliMarketItem,
   listCliMarketItems,
@@ -436,6 +437,13 @@ export async function installMarketItem(
       throw error;
     }
   }
+  try {
+    return await installAgentMarketItem(app, itemId, options);
+  } catch (error) {
+    if (!isMarketNotFoundError(error)) {
+      throw error;
+    }
+  }
   return installSkillMarketItem(app, itemId, options);
 }
 
@@ -473,6 +481,8 @@ export async function uninstallMarketItem(
     ? await uninstallPluginMarketItem(app, itemId)
     : type === "pet"
       ? await uninstallPetMarketItem(app, itemId)
+      : type === "agent"
+        ? await uninstallAgentMarketItem(app, itemId)
       : type === "website-app"
         ? await uninstallWebsiteAppMarketItem(app, itemId)
         : type === "cli"

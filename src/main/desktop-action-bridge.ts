@@ -64,6 +64,7 @@ import {
   updateWebsiteItem
 } from "./webs/websites/actions";
 import { webappRuntime } from "./webs/webapps/runtime";
+import { updateWebappItem } from "./webs/webapps/actions";
 import { readWebappItems } from "./webs/webapps/store";
 import { webappWindowManager } from "./webs/webapps/window-manager";
 import { readDesktopMobileWebappItem } from "./webs/webapps/mobile-catalog";
@@ -1197,6 +1198,10 @@ function webappRoute(webappId: string) {
   return `/webs/webapp:${webappId.trim()}`;
 }
 
+function websiteRoute(websiteId: string) {
+  return `/webs/website:${websiteId.trim()}`;
+}
+
 function notifyWebsChanged(options: DesktopActionBridgeOptions) {
   const mainWindow = options.getMainWindow();
   if (!mainWindow || mainWindow.isDestroyed()) {
@@ -1278,7 +1283,7 @@ async function installAndOpenWebapp(options: DesktopActionBridgeOptions, action:
 }
 
 async function executeWebAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
-  if (action === "desktop.web.webapp.selectDirectory") {
+  if (action === "desktop.webapp.selectDirectory") {
     const owner = options.getMainWindow();
     const dialogOptions: OpenDialogOptions = {
       title: t("desktopAction.webappSelectDirectoryTitle"),
@@ -1300,43 +1305,67 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
         }
       : { canceled: true });
   }
-  if (action === "desktop.web.list") {
+  if (action === "desktop.site.list") {
     return ok(action, listWebEntries(options.app));
   }
-  if (action === "desktop.web.website.list") {
+  if (action === "desktop.website.list") {
     return ok(action, listWebsiteItems(options.app));
   }
-  if (action === "desktop.web.website.add") {
+  if (action === "desktop.website.add") {
     return ok(action, addWebsiteItem(options.app, readWebsiteActionInput(args) as any));
   }
-  if (action === "desktop.web.website.update") {
+  if (action === "desktop.website.update") {
     return ok(action, updateWebsiteItem(options.app, readWebsiteId(args), readWebsiteActionInput(args) as any));
   }
-  if (action === "desktop.web.website.remove") {
+  if (action === "desktop.website.remove") {
     return ok(action, removeWebsiteItem(options.app, readWebsiteId(args)));
   }
-  if (action === "desktop.web.webapp.getStatus") {
+  if (action === "desktop.website.open") {
+    const websiteId = readWebsiteId(args);
+    const item = listWebsiteItems(options.app).items.find((entry) => entry.id === websiteId);
+    if (!item) {
+      return fail(action, "website_not_found", "The website entry was not found.");
+    }
+    const route = websiteRoute(websiteId);
+    options.navigate(route);
+    return ok(action, { item, route });
+  }
+  if (action === "desktop.webapp.getStatus") {
     return ok(action, webappRuntime.getStatus(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapp.checkPrerequisites") {
+  if (action === "desktop.webapp.checkPrerequisites") {
     return ok(action, webappRuntime.checkPrerequisites(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapp.start") {
+  if (action === "desktop.webapp.start") {
     return ok(action, await webappRuntime.start(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapp.stop") {
+  if (action === "desktop.webapp.stop") {
     return ok(action, await webappRuntime.stop(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapp.restart") {
+  if (action === "desktop.webapp.restart") {
     return ok(action, await webappRuntime.restart(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapp.open") {
+  if (action === "desktop.webapp.open") {
     return openWebapp(options, action, readWebappId(args));
   }
-  if (action === "desktop.web.webapp.getPublishInfo") {
+  if (action === "desktop.webapp.updatePreferences") {
+    const webappId = readWebappId(args);
+    const patch = asRecord(args.patch ?? args.input ?? args);
+    const result = updateWebappItem(options.app, webappId, {
+      ...(typeof patch.label === "string" ? { label: patch.label } : {}),
+      ...(typeof patch.copilotAgentKey === "string" ? { copilotAgentKey: patch.copilotAgentKey } : {}),
+      ...(patch.openMode === "workspace" || patch.openMode === "dialog" ? { openMode: patch.openMode } : {})
+    });
+    if (result.ok) {
+      notifyWebsChanged(options);
+      options.emitWebappChanged?.("updated", webappId);
+    }
+    return result.ok ? ok(action, result) : fail(action, "webapp_update_failed", result.message, result);
+  }
+  if (action === "desktop.webapp.getPublishInfo") {
     return ok(action, await getWebappPublishInfo(options.app, readWebappId(args)));
   }
-  if (action === "desktop.web.webapp.publish") {
+  if (action === "desktop.webapp.publish") {
     const webappId = readWebappId(args);
     const command = await webappRuntime.start(options.app, webappId);
     if (!command.ok || !command.state) {
@@ -1348,7 +1377,7 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
       ? ok(action, result)
       : fail(action, "webapp_publish_failed", result.message, result);
   }
-  if (action === "desktop.web.webapp.unpublish") {
+  if (action === "desktop.webapp.unpublish") {
     const webappId = readWebappId(args);
     const result = await unpublishWebapp(options.app, webappId);
     options.emitWebappChanged?.(result.ok ? "unpublished" : "publish-failed", webappId);
@@ -1836,6 +1865,16 @@ async function executeAction(
     }
     case "desktop.controlCenter.listServices":
       return ok(action, await listServices(options.app));
+    case "desktop.controlCenter.openService": {
+      const serviceId = readServiceId(args);
+      const services = await listServices(options.app);
+      if (!services.some((service) => service.id === serviceId)) {
+        return fail(action, "service_not_found", "The Desktop service was not found.");
+      }
+      const route = `/settings/control?serviceId=${encodeURIComponent(serviceId)}`;
+      options.navigate(route);
+      return ok(action, { serviceId, route });
+    }
     case "desktop.controlCenter.getServiceStatus":
     case "desktop.controlCenter.getServiceDetail":
       return ok(action, await getResponsiveServiceState(options.app, readServiceId(args)));
@@ -1866,21 +1905,23 @@ async function executeAction(
       return ok(action, await stopService(options.app, readServiceId(args)));
     case "desktop.controlCenter.restartService":
       return ok(action, await restartService(options.app, readServiceId(args)));
-    case "desktop.web.list":
-    case "desktop.web.website.list":
-    case "desktop.web.website.add":
-    case "desktop.web.website.update":
-    case "desktop.web.website.remove":
-    case "desktop.web.webapp.getStatus":
-    case "desktop.web.webapp.start":
-    case "desktop.web.webapp.stop":
-    case "desktop.web.webapp.restart":
-    case "desktop.web.webapp.open":
-    case "desktop.web.webapp.installAndOpen":
-    case "desktop.web.webapp.selectDirectory":
-    case "desktop.web.webapp.getPublishInfo":
-    case "desktop.web.webapp.publish":
-    case "desktop.web.webapp.unpublish":
+    case "desktop.site.list":
+    case "desktop.website.list":
+    case "desktop.website.add":
+    case "desktop.website.update":
+    case "desktop.website.remove":
+    case "desktop.website.open":
+    case "desktop.webapp.getStatus":
+    case "desktop.webapp.start":
+    case "desktop.webapp.stop":
+    case "desktop.webapp.restart":
+    case "desktop.webapp.open":
+    case "desktop.webapp.updatePreferences":
+    case "desktop.webapp.installAndOpen":
+    case "desktop.webapp.selectDirectory":
+    case "desktop.webapp.getPublishInfo":
+    case "desktop.webapp.publish":
+    case "desktop.webapp.unpublish":
       return executeWebAction(options, action, args);
     case "desktop.market.getSettings":
       return ok(action, getMarketSettings(options.app));
@@ -1923,6 +1964,12 @@ async function executeAction(
       return ok(action, await updateMarketItem(options.app, readItemId(args)));
     case "desktop.market.uninstallItem":
       return ok(action, await uninstallMarketItem(options.app, readItemId(args)));
+    case "desktop.market.openItem": {
+      const itemId = readItemId(args);
+      const route = `/market?itemId=${encodeURIComponent(itemId)}`;
+      options.navigate(route);
+      return ok(action, { itemId, route });
+    }
     case "desktop.market.importSkill":
       return fail(action, "interactive_file_picker_required", t("desktopAction.marketImportRequiresPicker"));
     case "desktop.market.importSandboxImage":
@@ -1945,6 +1992,66 @@ async function executeAction(
       }
       options.navigate(route);
       return ok(action, { route });
+    }
+    case "desktop.agent.open": {
+      const agentKey = readString(args, "agentKey") || readString(args, "id");
+      if (!agentKey) {
+        return fail(action, "invalid_args", "agentKey is required.");
+      }
+      const route = `/agents/${encodeURIComponent(agentKey)}`;
+      options.navigate(route);
+      return ok(action, { agentKey, route });
+    }
+    case "desktop.skill.open": {
+      const skillKey = readString(args, "skillKey") || readString(args, "id");
+      if (!skillKey) {
+        return fail(action, "invalid_args", "skillKey is required.");
+      }
+      const route = `/skills/${encodeURIComponent(skillKey)}`;
+      options.navigate(route);
+      return ok(action, { skillKey, route });
+    }
+    case "desktop.agent.update": {
+      const agentKey = readString(args, "agentKey") || readString(args, "id");
+      if (!agentKey) {
+        return fail(action, "invalid_args", "agentKey is required.");
+      }
+      const definition = asRecord(args.definition);
+      const response = await callAgentPlatform(options.app, "/api/admin/agents/update", {
+        method: "POST",
+        body: {
+          agentKey,
+          ...(Object.keys(definition).length > 0 ? { definition } : {}),
+          ...(typeof args.soulPrompt === "string" ? { soulPrompt: args.soulPrompt.slice(0, 100_000) } : {}),
+          ...(typeof args.agentsPrompt === "string" ? { agentsPrompt: args.agentsPrompt.slice(0, 100_000) } : {})
+        }
+      });
+      return ok(action, response);
+    }
+    case "desktop.skill.update": {
+      const skillKey = readString(args, "skillKey") || readString(args, "id");
+      const filePath = readString(args, "path") || "SKILL.md";
+      if (!skillKey) {
+        return fail(action, "invalid_args", "skillKey is required.");
+      }
+      if (typeof args.content !== "string") {
+        return fail(action, "invalid_args", "content is required.");
+      }
+      if (args.content.length > 1024 * 1024) {
+        return fail(action, "invalid_args", "content exceeds the 1 MiB editable text limit.");
+      }
+      const response = await callAgentPlatform(options.app, "/api/admin/skills/file", {
+        method: "PUT",
+        body: {
+          key: skillKey,
+          path: filePath,
+          content: args.content,
+          ...(typeof args.baseSha256 === "string" && args.baseSha256.trim()
+            ? { baseSha256: args.baseSha256.trim() }
+            : {})
+        }
+      });
+      return ok(action, response);
     }
     case "desktop.kanban.listIssues":
     case "desktop.kanban.getIssue":

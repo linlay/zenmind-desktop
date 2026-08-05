@@ -150,8 +150,12 @@ test("enterprise chat receives Desktop actions but exposes no action sending pat
   assert.doesNotMatch(runtime, /async sendDesktopAction\(/);
   assert.match(panel, /className="enterprise-chat-action-confirm-backdrop"/);
   assert.match(panel, /role="alertdialog"/);
-  assert.match(panel, /confirmed: true/);
-  assert.match(runtime, /input\?\.confirmed !== true/);
+  assert.match(panel, /decision: "confirm"/);
+  assert.match(panel, /decision: "decline"/);
+  assert.match(panel, /message\.kind === "desktop_action_request"/);
+  assert.doesNotMatch(panel, /message\.kind === "desktop_action"/);
+  assert.match(runtime, /input\?\.decision !== "confirm"/);
+  assert.match(runtime, /kind: "desktop_action_result"/);
   assert.doesNotMatch(
     appRuntime,
     /executeDesktopAction: async \(request\) => \{[\s\S]{0,700}showMessageBox\(/

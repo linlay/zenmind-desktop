@@ -547,8 +547,9 @@ export function EnterpriseChatFloatingPanel({
     const nextAction = [...(snapshot?.activeMessages ?? [])]
       .reverse()
       .find((message) =>
-        message.kind === "desktop_action" &&
+        message.kind === "desktop_action_request" &&
         Boolean(message.desktopAction) &&
+        !message.desktopActionHandled &&
         !message.revokedAt &&
         message.senderId !== snapshot?.currentUser?.id &&
         !handledActionMessageIds[message.id] &&
@@ -661,7 +662,7 @@ export function EnterpriseChatFloatingPanel({
         ? t("enterpriseChat.groupMemberCount", { count: conversation.members.length })
         : t("enterpriseChat.noMessages");
     }
-    if (message.kind === "desktop_action") {
+    if (message.kind === "desktop_action_request") {
       return t("enterpriseChat.desktopActionPreview", {
         action: message.desktopAction?.action ?? ""
       });
@@ -1029,17 +1030,26 @@ export function EnterpriseChatFloatingPanel({
     setPendingActionMessage(message);
   }
 
-  function cancelDesktopAction() {
+  async function cancelDesktopAction() {
     const messageId = pendingActionMessage?.id;
     if (!messageId || busy) {
       return;
     }
-    setActionResults((current) => ({
-      ...current,
-      [messageId]: t("enterpriseChat.desktopActionCancelled")
-    }));
-    setError("");
-    setPendingActionMessage(null);
+    setBusy(`action:${messageId}`);
+    try {
+      const result = await window.electronAPI.enterpriseChat.executeDesktopAction({
+        messageId,
+        decision: "decline"
+      });
+      setActionResults((current) => ({ ...current, [messageId]: result.message }));
+      setHandledActionMessageIds((current) => ({ ...current, [messageId]: true }));
+      setError("");
+      setPendingActionMessage(null);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
   }
 
   async function confirmDesktopAction() {
@@ -1052,7 +1062,7 @@ export function EnterpriseChatFloatingPanel({
     try {
       const result = await window.electronAPI.enterpriseChat.executeDesktopAction({
         messageId: message.id,
-        confirmed: true
+        decision: "confirm"
       });
       setActionResults((current) => ({ ...current, [message.id]: result.message }));
       if (result.confirmed) {
@@ -1407,12 +1417,12 @@ export function EnterpriseChatFloatingPanel({
                           {sender?.displayName || message.senderId}
                         </span>
                       ) : null}
-                      {message.kind === "desktop_action" && message.desktopAction ? (
+                      {message.kind === "desktop_action_request" && message.desktopAction ? (
                         <div className="enterprise-chat-action-card">
                           <span className="enterprise-chat-action-icon"><ThunderboltOutlined /></span>
                           <strong>{message.desktopAction.summary}</strong>
                           <code>{message.desktopAction.action}</code>
-                          {!mine && activeConversation?.type === "direct" && !handledActionMessageIds[message.id] ? (
+                          {!mine && activeConversation?.type === "direct" && !message.desktopActionHandled && !handledActionMessageIds[message.id] ? (
                             <button
                               type="button"
                               disabled={Boolean(busy)}

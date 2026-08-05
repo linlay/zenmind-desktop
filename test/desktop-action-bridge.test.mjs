@@ -220,7 +220,7 @@ test("desktop assistant complete uses the configured helper without exposing cre
 test("local WebApp directory action uses the native picker and returns one selected folder", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   const response = await handleDesktopActionRequest(options, {
-    action: "desktop.web.webapp.selectDirectory",
+    action: "desktop.webapp.selectDirectory",
     args: {},
     permissionMode: "full_access"
   });
@@ -895,7 +895,7 @@ test("desktop website add accepts item payloads and name alias", async (t) => {
   const { options } = createDesktopActionOptions(t);
 
   const response = await handleDesktopActionRequest(options, {
-    action: "desktop.web.website.add",
+    action: "desktop.website.add",
     permissionMode: "full_access",
     args: {
       items: [{
@@ -917,7 +917,7 @@ test("desktop website add accepts item payloads and name alias", async (t) => {
 test("desktop website add can be listed and reports an existing website as a business result", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const request = {
-    action: "desktop.web.website.add",
+    action: "desktop.website.add",
     permissionMode: "full_access",
     args: {
       input: {
@@ -947,7 +947,7 @@ test("desktop website add can be listed and reports an existing website as a bus
   assert.equal("agentKey" in storedManifest, false);
 
   const listed = await handleDesktopActionRequest(options, {
-    action: "desktop.web.website.list"
+    action: "desktop.website.list"
   });
   assert.equal(listed.ok, true);
   assert.equal(listed.result.ok, true);
@@ -967,7 +967,7 @@ test("desktop website add returns detailed input issues", async (t) => {
   const { options } = createDesktopActionOptions(t);
 
   const response = await handleDesktopActionRequest(options, {
-    action: "desktop.web.website.add",
+    action: "desktop.website.add",
     permissionMode: "full_access",
     args: {
       items: [{
@@ -1147,7 +1147,7 @@ test("desktop action confirmation detail exposes debug context with redacted arg
 test("desktop action confirmation request keeps compact fields free of debug context", () => {
   const payload = __testInternals.buildMutatingActionConfirmationRequest({
     requestId: "request-123",
-    action: "desktop.web.website.add",
+    action: "desktop.website.add",
     source: {
       runId: "run-abc",
       chatId: "chat-def",
@@ -1176,7 +1176,7 @@ test("desktop action confirmation request keeps compact fields free of debug con
 
   assert.equal(payload.kind, "action");
   assert.deepEqual(payload.buttons.map((button) => button.decision), ["cancel", "confirm"]);
-  assert.match(compactText, /desktop\.web\.website\.add/u);
+  assert.match(compactText, /desktop\.website\.add/u);
   assert.match(compactText, /Agent Webclient/u);
   assert.match(compactText, /https:\/\/v\.qq\.com\//u);
   assert.doesNotMatch(compactText, /request-123/u);

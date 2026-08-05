@@ -40,6 +40,7 @@ import {
   createEmptyMarketResult,
   getMarketTabDefinitions,
   MARKET_TAB_ITEM_TYPES,
+  marketTabForItemType,
   matchesMarketItemQuery,
   type MarketTab,
   type MarketViewProps
@@ -472,7 +473,7 @@ function storefrontDetailRows(
     .filter((row) => row.value.length > 0);
 }
 
-export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
+export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }: MarketViewProps) {
   const navigate = useNavigate();
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
@@ -529,6 +530,16 @@ export function StorefrontMarket({ activeTab, onTabChange }: MarketViewProps) {
       }
       const next = await command();
       setMarketResult(next);
+      const initialItem = initialItemId
+        ? next.items.find((item) => item.id === initialItemId) ?? null
+        : null;
+      if (initialItem) {
+        setSelectedDetailItem(initialItem);
+        const initialTab = marketTabForItemType(initialItem.type);
+        if (initialTab && initialTab !== activeTab) {
+          onTabChange(initialTab);
+        }
+      }
       setFeedback("");
     } catch (reason) {
       console.warn("[market-storefront] failed to load market data", reason);

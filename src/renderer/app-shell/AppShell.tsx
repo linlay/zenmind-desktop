@@ -3226,6 +3226,11 @@ function resolveAgentWebclientRoute(
     return staticRoute;
   }
 
+  const skillManagementRoute = resolveSkillManagementWebclientRoute(pathname, search);
+  if (skillManagementRoute) {
+    return skillManagementRoute;
+  }
+
   const agentManagementRoute = resolveAgentManagementWebclientRoute(pathname, search);
   if (agentManagementRoute) {
     return agentManagementRoute;
@@ -3269,6 +3274,24 @@ function isBareAgentWebclientServiceRoute(pathname: string, search: string) {
 
 function isSingleAgentWebclientRoute(pathname: string) {
   return Boolean(matchPath("/agent/:agentKey", pathname));
+}
+
+function resolveSkillManagementWebclientRoute(pathname: string, search: string): AgentWebclientResolvedRoute | null {
+  const match = matchPath("/skills/:skillKey", pathname);
+  const encodedSkillKey = match?.params.skillKey?.trim() ?? "";
+  const skillKey = decodeRoutePathSegment(encodedSkillKey);
+  if (!skillKey) {
+    return null;
+  }
+
+  return {
+    key: "skills",
+    routePath: `${pathname}${search}`,
+    embedPath: `/skills/${encodeURIComponent(skillKey)}${search}`,
+    labelKey: "nav.skills",
+    kind: "management",
+    mode: "embedded"
+  };
 }
 
 function resolveAgentManagementWebclientRoute(pathname: string, search: string): AgentWebclientResolvedRoute | null {

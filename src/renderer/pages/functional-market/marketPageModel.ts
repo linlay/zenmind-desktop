@@ -20,6 +20,7 @@ export interface MarketTabDefinition {
 export interface MarketViewProps {
   activeTab: MarketTab;
   onTabChange: (tab: MarketTab) => void;
+  initialItemId?: string;
 }
 
 export const DEFAULT_MARKET_TAB: MarketTab = "plugins";
@@ -71,6 +72,11 @@ export const MARKET_TAB_ITEM_TYPES: Record<MarketTab, MarketItemType> = {
   cli: "cli",
   websiteApps: "website-app"
 };
+
+export function marketTabForItemType(type: MarketItemType): MarketTab | null {
+  return (Object.keys(MARKET_TAB_ITEM_TYPES) as MarketTab[])
+    .find((tab) => MARKET_TAB_ITEM_TYPES[tab] === type) ?? null;
+}
 
 export function getMarketTabDefinitions(t: TranslateFunction): MarketTabDefinition[] {
   return (Object.keys(MARKET_TAB_KEYS) as MarketTab[]).map((id) => ({

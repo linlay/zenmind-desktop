@@ -31,6 +31,7 @@ const { getPluginInstallDir, installPluginFromArchive } = require("../dist-elect
 const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/assistant/pet/desktop-pet.js");
 const { readWebappItems } = require("../dist-electron/main/webs/webapps/store.js");
+const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/marketplace/agent-market.js");
 const {
   getDesktopConfigRoot,
   getDesktopPetsDataRoot,
@@ -125,6 +126,20 @@ function writeSkillArchive(root, options = {}) {
     "utf8"
   );
   writeZipArchive(fixtureRoot, archivePath, skillId);
+  return archivePath;
+}
+
+function writeAgentArchive(root, options = {}) {
+  const packageName = options.packageName ?? "desktopassistant";
+  const agentKey = options.agentKey ?? "desktopAssistant";
+  const fixtureRoot = path.join(root, `fixture-agent-${packageName}`);
+  const agentRoot = path.join(fixtureRoot, packageName);
+  const archivePath = path.join(root, `${packageName}.zip`);
+  fs.mkdirSync(agentRoot, { recursive: true });
+  fs.writeFileSync(path.join(agentRoot, "agent.yml"), `key: ${agentKey}\nname: Desktop Assistant\n`, "utf8");
+  fs.writeFileSync(path.join(agentRoot, "SOUL.md"), "# Soul\n", "utf8");
+  fs.writeFileSync(path.join(agentRoot, "AGENTS.md"), "# Instructions\n", "utf8");
+  writeZipArchive(fixtureRoot, archivePath, packageName);
   return archivePath;
 }
 
@@ -1847,6 +1862,61 @@ test("installMarketItem downloads and installs catalog cloud skills", async (t) 
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "cloud-skill"), "SKILL.md")), true);
     assert.equal(JSON.parse(fs.readFileSync(path.join(getSkillInstallDir(app, "cloud-skill"), "skill.json"), "utf8")).name, "Cloud Skill");
     assert.equal(fs.existsSync(path.join(root, "home", ".codex", "skills")), false);
+  });
+});
+
+test("installMarketItem installs and removes agent packages through agent-platform", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-agent-install-"));
+  const app = createApp(root);
+  const archivePath = writeAgentArchive(root);
+  const archiveBytes = fs.readFileSync(archivePath);
+  const calls = [];
+  fs.mkdirSync(path.join(root, "temp"), { recursive: true });
+  configureAgentMarketPlatformCaller(async (targetPath, options) => {
+    calls.push({ targetPath, options });
+    return { ok: true };
+  });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/desktopassistant.zip", archiveBytes]
+  ]), async (baseUrl) => {
+    const options = {
+      catalog: {
+        schemaVersion: 1,
+        items: [{
+          id: "desktopassistant",
+          type: "agent",
+          name: "Desktop Assistant",
+          version: "1.0.0",
+          description: "Desktop assistant",
+          tags: ["agent"],
+          metadata: { agentKey: "desktopAssistant" },
+          assets: {
+            universal: {
+              url: `${baseUrl}/desktopassistant.zip`,
+              sha256: sha256(archivePath),
+              sizeBytes: archiveBytes.length,
+              archiveType: "agent"
+            }
+          }
+        }]
+      }
+    };
+
+    const result = await installMarketItem(app, "desktopassistant", options);
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "agent");
+    assert.equal(calls[0]?.targetPath, "/api/admin/agents/create");
+    assert.equal(calls[0]?.options?.body?.agentKey, "desktopAssistant");
+    assert.equal(calls[0]?.options?.body?.definition?.key, "desktopAssistant");
+    assert.equal(calls[0]?.options?.body?.soulPrompt, "# Soul\n");
+    assert.equal(__testInternals.readInstalledRecords(app).find((item) => item.id === "desktopassistant")?.resourceKey, "desktopAssistant");
+
+    const removed = await uninstallMarketItem(app, "desktopassistant", options);
+    assert.equal(removed.ok, true);
+    assert.equal(calls[1]?.targetPath, "/api/admin/agents/delete");
+    assert.equal(calls[1]?.options?.body?.agentKey, "desktopAssistant");
   });
 });
 

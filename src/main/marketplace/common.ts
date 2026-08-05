@@ -42,6 +42,7 @@ export type InstalledRecord = {
   assetUrl?: string;
   sha256?: string;
   installPath?: string;
+  resourceKey?: string;
   installedAt: string;
 };
 
@@ -54,7 +55,7 @@ export type MarketplaceOptions = MarketListOptions & {
   containerHubAuthToken?: string;
 };
 
-export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "sandbox-image" | "pet" | "cli" | "website-app">;
+export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "website-app">;
 
 export type MarketSectionResult = {
   items: MarketItem[];
@@ -336,6 +337,9 @@ function isDesktopInstallableAsset(
   if (item.type === "plugin" || item.type === "skill") {
     return asset.archiveType === "zip";
   }
+  if (item.type === "agent") {
+    return asset.archiveType === "zip" || asset.archiveType === "agent";
+  }
   if (item.type === "pet") {
     return asset.archiveType === "zip" || asset.archiveType === "pet";
   }
@@ -357,6 +361,7 @@ function isDesktopInstallableAsset(
 function shouldRequireInstallableAsset(item: MarketCatalogItem) {
   return item.type === "plugin" ||
     item.type === "skill" ||
+    item.type === "agent" ||
     item.type === "pet" ||
     item.type === "website-app" ||
     (item.type === "sandbox-image" && item.sandboxKind === "environment-template");

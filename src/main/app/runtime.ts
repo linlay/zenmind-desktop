@@ -35,6 +35,7 @@ import {
   getResponsiveServiceState,
   getServiceState,
   listServices,
+  readServiceLog,
   runStartupPreparation,
 } from "../services/manager";
 import { installBundledWebappTemplates } from "../webs/webapps/template-installer";
@@ -71,6 +72,7 @@ import {
   getElectronUserDataRoot,
 } from "../user-paths";
 import { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
+import { redactEnterpriseChatSupportText } from "../enterprise-chat-support-bundle";
 import { readEnterpriseImSettings } from "../enterprise-im-settings";
 import { createLogsRuntime } from "../logs/runtime";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
@@ -187,8 +189,12 @@ import {
 } from "../resource-directory-watcher";
 import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
 import { refreshMarketCatalog } from "../marketplace";
+import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
 
 export function createMainProcessRuntime() {
+  configureAgentMarketPlatformCaller((targetPath, options) =>
+    callAgentPlatform(app, targetPath, options)
+  );
   const appState = createMainAppState();
   const mainProcessContext = createMainProcessContext({
     state: appState,
@@ -279,13 +285,53 @@ export function createMainProcessRuntime() {
       return result.canceled ? [] : result.filePaths;
     },
     captureScreenshot: (mode) => captureEnterpriseChatScreenshot(mode),
+    createSupportArtifact: async (action, args) => {
+      const readArg = (key: string) => typeof args[key] === "string" ? args[key].trim() : "";
+      let filename = "desktop-support.txt";
+      let content = "";
+      if (action === "desktop.support.requestServiceLogs") {
+        const serviceId = (readArg("serviceId") || readArg("id")) as Parameters<typeof readServiceLog>[1];
+        const target = readArg("target") === "error" ? "error" : "main";
+        const result = await readServiceLog(app, serviceId, target, { limitBytes: 512 * 1024 });
+        filename = `service-${serviceId}-${target}.log`;
+        content = result.content;
+      } else if (action === "desktop.support.requestWebappLogs") {
+        const webappId = readArg("webappId") || readArg("id");
+        const target = readArg("target") === "error" ? "error" : "main";
+        const result = webappRuntime.readLog(app, webappId, target, { limitBytes: 512 * 1024 });
+        filename = `webapp-${webappId}-${target}.log`;
+        content = result.content;
+      } else if (action === "desktop.support.requestSystemInfo") {
+        filename = "desktop-system-info.json";
+        content = `${JSON.stringify({
+          appVersion: app.getVersion(),
+          platform: mainProcessContext.platform,
+          arch: process.arch,
+          electron: process.versions.electron,
+          node: process.versions.node,
+          locale: app.getLocale()
+        }, null, 2)}\n`;
+      } else {
+        throw new Error("Unsupported support artifact request.");
+      }
+      return {
+        filename,
+        contentType: filename.endsWith(".json") ? "application/json" : "text/plain",
+        bytes: Buffer.from(redactEnterpriseChatSupportText(
+          content,
+          app.getPath("home"),
+          getDataRoot(app)
+        ), "utf8")
+      };
+    },
     executeDesktopAction: async (request) => {
+      const { confirmationSummary: _ignoredConfirmationSummary, ...remoteArgs } = request.args;
       const response = await handleDesktopActionRequest(
         assistantBridgeRuntime.desktopActionOptions,
         {
           requestId: `enterprise-im-${request.messageId}`,
           action: request.action,
-          args: request.args,
+          args: remoteArgs,
           permissionMode: "full_access",
           source: {
             chatId: `enterprise-im:${request.conversationId}`
@@ -294,6 +340,7 @@ export function createMainProcessRuntime() {
       );
       return {
         confirmed: true,
+        status: response.ok ? "succeeded" : "failed",
         response,
         message: response.ok
           ? t("enterpriseChat.desktopActionExecuted")

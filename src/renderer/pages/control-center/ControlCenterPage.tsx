@@ -625,7 +625,9 @@ function ServiceWorkspacePage({ kind }: { kind: ServiceWorkspaceKind }) {
     selectedServiceId?: ServiceId;
   } | null;
   const startupFailure = navigationState?.startupFailure;
-  const selectedServiceIdFromNavigation = navigationState?.selectedServiceId;
+  const selectedServiceIdFromNavigation = (
+    navigationState?.selectedServiceId || new URLSearchParams(location.search).get("serviceId") || ""
+  ) as ServiceId | "";
   const visibleError = error === dismissedError ? "" : error;
 
   useEffect(() => {

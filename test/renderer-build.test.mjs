@@ -1496,6 +1496,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/copilot\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
+  assert.match(appShell, /"\/skills\/:skillKey"/);
+  assert.match(appShell, /function resolveSkillManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?embedPath: `\/skills\/\$\{encodeURIComponent\(skillKey\)\}\$\{search\}`/);
   assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
   assert.match(appShell, /const rawActiveAgentWebclientRouteLabelKey = rawActiveAgentWebclientRoute\?\.labelKey/);
   assert.match(appShell, /I18N_KEYS\.includes\(rawActiveAgentWebclientRouteLabelKey as TranslationKey\)[\s\S]{0,120}t\(rawActiveAgentWebclientRouteLabelKey as TranslationKey\)[\s\S]{0,120}rawActiveAgentWebclientRoute\.label \?\? rawActiveAgentWebclientRouteLabelKey/);
@@ -4201,10 +4203,10 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   );
   assert.match(startupPipeline, /options\.setStartupPhase\("core-services-starting"\);[\s\S]*?options\.loadBuiltinServices\(options\.app\);[\s\S]*?options\.loadInstalledPlugins\(options\.app\);[\s\S]*?options\.notifyCoreServicesChanged\(\);/);
   assert.match(startupPipeline, /options\.setStartupPhase\("core-ready"\);\s*options\.startNonCoreRuntime\(\);/);
-  assert.match(desktopActions, /"desktop\.web\.webapp\.start"/);
-  assert.match(desktopActions, /"desktop\.web\.webapp\.stop"/);
-  assert.match(desktopActionBridge, /case "desktop\.web\.webapp\.restart"/);
-  assert.match(desktopActionBridge, /case "desktop\.web\.webapp\.stop"/);
+  assert.match(desktopActions, /"desktop\.webapp\.start"/);
+  assert.match(desktopActions, /"desktop\.webapp\.stop"/);
+  assert.match(desktopActionBridge, /case "desktop\.webapp\.restart"/);
+  assert.match(desktopActionBridge, /case "desktop\.webapp\.stop"/);
   assert.match(desktopActionBridge, /readWebappId\(args\)/);
 });
 
@@ -4668,7 +4670,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(actionCatalog, /desktop\.web\.navigate/);
   assert.match(actionCatalog, /desktop\.web\.interactElement/);
   assert.doesNotMatch(actionCatalog, /desktop\.web\.(?:getPageContext|readPageData|extractStructured)/);
-  assert.match(actionCatalog, /desktop\.web\.webapp\.installAndOpen/);
+  assert.match(actionCatalog, /desktop\.webapp\.installAndOpen/);
   assert.match(actionCatalog, /desktop\.pet\.state/);
   assert.match(actionCatalog, /desktop\.pet\.list/);
   assert.match(actionCatalog, /desktop\.pet\.set/);
