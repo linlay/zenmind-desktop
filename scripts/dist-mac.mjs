@@ -93,7 +93,6 @@ if (shouldSkipNotarize()) {
 }
 const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 
-await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "sync:demo"], brandProcessOptions({ cwd: projectRoot }));
 syncBrandArtifacts({ brandId: brand.id, target });
