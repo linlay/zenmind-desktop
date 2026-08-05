@@ -42,6 +42,7 @@ type ExternalWebviewPageProps = {
   surfaceLabel?: string;
   chrome?: "browser" | "app";
   partition?: string;
+  refreshOnDesktopSso?: boolean;
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
@@ -407,6 +408,7 @@ export function ExternalWebviewPage({
   surfaceLabel,
   chrome = "browser",
   partition,
+  refreshOnDesktopSso = false,
   assistantDockOpen = false,
   onOpenAssistantDock,
   onCloseAssistantDock,
@@ -956,7 +958,7 @@ export function ExternalWebviewPage({
   }, [appChrome, partition]);
 
   useEffect(() => {
-    if (!window.electronAPI.sso?.onStatusChanged) {
+    if (!refreshOnDesktopSso || !window.electronAPI.sso?.onStatusChanged) {
       return undefined;
     }
     return window.electronAPI.sso.onStatusChanged((status) => {
@@ -986,7 +988,7 @@ export function ExternalWebviewPage({
         }
       }
     });
-  }, []);
+  }, [refreshOnDesktopSso]);
 
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
 
