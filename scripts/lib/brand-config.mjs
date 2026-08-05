@@ -1102,10 +1102,6 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
         to: "env"
       },
       {
-        from: brandBuildRelativePath(brand, "resources", "demo"),
-        to: "demo"
-      },
-      {
         from: brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-icon.png"),
         to: "brand-icon.png"
       },

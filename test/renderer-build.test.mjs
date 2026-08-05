@@ -1211,7 +1211,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_project" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
   assert.doesNotMatch(sidebarSource, /<SidebarActionIcon kind="double_check" \/>/);
-  assert.match(sidebarSource, /<ReloadOutlined aria-hidden="true" \/>/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="refresh" \/>/);
+  assert.doesNotMatch(sidebarSource, /ReloadOutlined/);
+  assert.match(brandMarkSource, /<path d="M21 12a9 9 0 1 1-9-9c2\.52 0 4\.93 1 6\.74 2\.74L21 8" \/>[\s\S]*?<path d="M21 3v5h-5" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="more_actions" \/>/);
 
   assert.doesNotMatch(sidebarSource, /EditSquareIcon|AddIcon/);
@@ -1893,7 +1895,7 @@ test("Projects header refresh force-loads navigation agents without toggling the
 
   assert.match(sidebarSource, /const \[refreshingAssistantNavAgents, setRefreshingAssistantNavAgents\] =\s*useState\(false\);/);
   assert.match(sidebarSource, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);[\s\S]{0,260}onRefreshAssistantNavAgents\?\.\(\{ force: true \}\)/);
-  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-refresh-button"[\s\S]{0,500}disabled=\{refreshingAssistantNavAgents\}[\s\S]{0,500}<ReloadOutlined aria-hidden="true" \/>/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-refresh-button"[\s\S]{0,500}disabled=\{refreshingAssistantNavAgents\}[\s\S]{0,500}<SidebarActionIcon kind="refresh" \/>/);
   assert.match(appShell, /async function refreshAssistantNavAgents\(options\?: AssistantNavigationListOptions\)[\s\S]{0,260}listNavigationAgents\(options\)/);
   assert.match(contracts, /interface AssistantNavigationListOptions \{\s*force\?: boolean;/);
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
@@ -3866,6 +3868,8 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(appShell, /function createWebsiteItem\(input: WebsiteInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.add\(input\)/);
   assert.notEqual(closeWebEntryStart, -1);
   assert.match(appShell, /const webOpenEntryKeys = useMemo\(\(\) => \{/);
+  assert.match(appShell, /const webRunningEntryKeys = useMemo\(/);
+  assert.match(appShell, /webappRuntimeById\[item\.id\]\?\.status === "running"/);
   assert.match(appShell, /openKeys\.add\(activeWebEntryKey\)/);
   assert.match(appShell, /mountedWebEntryKeys/);
   assert.match(appShell, /const EMPTY_WEB_SURFACE_ROUTE = "\/webs";/);
@@ -3879,6 +3883,7 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.doesNotMatch(closeWebEntry, /webs\.websites\.remove/);
   assert.match(appShell, /onCreateWebsiteItem=\{createWebsiteItem\}/);
   assert.match(appShell, /webOpenEntryKeys=\{webOpenEntryKeys\}/);
+  assert.match(appShell, /webRunningEntryKeys=\{webRunningEntryKeys\}/);
   assert.match(appShell, /onCloseWebItem=\{handleCloseWebEntry\}/);
   assert.match(appSidebar, /args\.groupId === "webs"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
@@ -3905,12 +3910,17 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(appSidebar, /<Favicon[\s\S]*?className="sidebar-website-favicon"[\s\S]*?faviconUrl=\{cachedFaviconUrl\}[\s\S]*?allowOriginFallback=\{false\}/);
   assert.match(appSidebar, /className=\{`assistant-worker-icon-button sidebar-website-status-action\$\{closing \? " is-closing" : ""\}`\}/);
   assert.match(appSidebar, /const showWebappAction = webItem\.kind === "webapp"/);
+  assert.match(appSidebar, /webRunningEntryKeys\.includes\(webItem\.entryKey\)/);
+  assert.match(appSidebar, /className="sidebar-website-status-dot sidebar-webapp-status-dot"/);
   assert.match(appSidebar, /<SidebarIllustration kind=\{item\.icon\} \/>/);
   assert.doesNotMatch(appSidebar, /website_open/);
   assert.doesNotMatch(appSidebar, /website_closed/);
 
   // Green dot CSS
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{/u);
+  assert.match(navigationCss, /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?left:\s*9px;/u);
+  assert.match(navigationCss, /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;/u);
+  assert.match(navigationCss, /\.sidebar-website-child-row:hover \.sidebar-website-child-action[\s\S]*?opacity:\s*1;/u);
   assert.match(navigationCss, /\.sidebar-website-status-action\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/u);
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{[\s\S]*?position:\s*absolute;/u);
   assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;/u);
@@ -3944,7 +3954,7 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(faviconCache, /FAVICON_MAX_BYTES = 1024 \* 1024/);
   assert.match(faviconProtocol, /registerWebsiteFaviconProtocolScheme/);
 
-  // WebApp should still use more_actions (unchanged)
+  // WebApp keeps more_actions while sharing its slot with the running dot.
   assert.match(appSidebar, /<SidebarActionIcon kind="more_actions" \/>/);
 });
 
@@ -3987,7 +3997,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   );
 
   assert.match(webContracts, /export interface WebappEntry/);
-  assert.match(webContracts, /export type WebappSourceKind = "market" \| "local" \| "plugin" \| "bundled"/);
+  assert.match(webContracts, /export type WebappSourceKind = "market" \| "local" \| "plugin"/);
   assert.match(webContracts, /export type WebappOpenMode = "workspace" \| "dialog"/);
   assert.match(webContracts, /sourceKind\?: WebappSourceKind/);
   assert.match(webContracts, /openMode: WebappOpenMode/);
@@ -4044,7 +4054,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appSidebar, /onOpenWebappWindow\?\.\(item\)/);
   assert.match(appSidebar, /onOpenWebappWorkspace\?\.\(item\)/);
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
-  assert.match(appSidebar, /disabled=\{\s*isCollapsed \|\| !isOpen \|\| Boolean\(webClosePendingEntryKey\)\s*\}/);
+  assert.match(appSidebar, /disabled=\{!isOpen \|\| Boolean\(webClosePendingEntryKey\)\}/);
+  assert.doesNotMatch(appSidebar, /isCollapsed \|\| !isOpen/);
+  assert.match(appSidebar, /void closeWebItem\(item\)\.finally\(\(\) => setWebItemMenu\(null\)\)/);
   assert.match(appSidebar, /\{!isCollapsed \? \(\s*<button[\s\S]{0,700}t\("sidebar\.webapp\.remove"\)/);
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}z-index:\s*10001;/);
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}width:\s*max-content;/);
@@ -4101,12 +4113,10 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(settingsPage, /const webappDraftSourceRef = useRef<WebappDraftSnapshot \| null>\(null\)/);
   assert.match(settingsPage, /const hasDraft = sameSource && \([\s\S]*?webappOpenMode !== previousSnapshot\.openMode/);
   assert.match(settingsPage, /if \(!sameSource \|\| !hasDraft\) \{\s*applyWebappDraftSnapshot\(nextSnapshot\)/);
-  assert.match(mainProcess, /installBundledWebappTemplates\(app\)/);
   const initializeUserDataIndex = mainProcess.indexOf("function initializeUserDataRootsAndSettings()");
   const initializeUserDataEndIndex = mainProcess.indexOf("const gotSingleInstanceLock", initializeUserDataIndex);
   const initializeUserDataBlock = mainProcess.slice(initializeUserDataIndex, initializeUserDataEndIndex);
   const ensureDataRootIndex = mainProcess.indexOf("ensureDataRoot(app);", initializeUserDataIndex);
-  const installDemoIndex = mainProcess.indexOf("installBundledWebappTemplates(app)", initializeUserDataIndex);
   const applyDesktopInitIndex = mainProcess.indexOf("applyDesktopInitBootstrap(app", initializeUserDataIndex);
   const initializeMainI18nIndex = mainProcess.indexOf("initializeMainI18n(app", initializeUserDataIndex);
   const prepareStartupRuntimeIndex = mainProcess.indexOf("await startupEnvironmentRuntime.prepareStartupRuntimeEnvironment()");
@@ -4145,7 +4155,6 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.notEqual(initializeUserDataIndex, -1);
   assert.notEqual(initializeUserDataEndIndex, -1);
   assert.notEqual(ensureDataRootIndex, -1);
-  assert.notEqual(installDemoIndex, -1);
   assert.notEqual(applyDesktopInitIndex, -1);
   assert.notEqual(initializeMainI18nIndex, -1);
   assert.notEqual(prepareStartupRuntimeIndex, -1);
@@ -4153,7 +4162,6 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.notEqual(restoreDesktopSsoIndex, -1);
   assert.notEqual(createWindowCallIndex, -1);
   assert.equal(ensureDataRootIndex < applyDesktopInitIndex, true);
-  assert.equal(applyDesktopInitIndex < installDemoIndex, true);
   assert.equal(applyDesktopInitIndex < initializeMainI18nIndex, true);
   assert.equal(prepareStartupRuntimeIndex < initializeUserDataCallIndex, true);
   assert.equal(initializeUserDataCallIndex < restoreDesktopSsoIndex, true);
@@ -7248,9 +7256,14 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.doesNotMatch(mainProcess, /shouldOpenAuthUrlInInternalBrowser/u);
   assert.doesNotMatch(windowManager, /openInternalAuthFromWebview/u);
   assert.match(externalWebviewPage, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/u);
+  assert.match(externalWebviewPage, /refreshOnDesktopSso\?: boolean;/u);
+  assert.match(embeddedSurfaceHosts, /refreshOnDesktopSso=\{isWebsite\}/u);
+  assert.match(embeddedSurfaceHosts, /refreshOnDesktopSso=\{item\.kind === "website"\}/u);
   assert.match(externalWebviewPage, /window\.electronAPI\.sso\.onStatusChanged/u);
+  assert.match(externalWebviewPage, /if \(!refreshOnDesktopSso \|\| !window\.electronAPI\.sso\?\.onStatusChanged\)/u);
   assert.match(externalWebviewPage, /if \(!status\.authenticated\) \{/u);
   assert.match(externalWebviewPage, /tab\.partition !== DESKTOP_SSO_WEBVIEW_PARTITION/u);
+  assert.doesNotMatch(externalWebviewPage, /\/auth\/oauth2\/authorize|#\/login|#\/prevent/u);
   assert.match(externalWebviewPage, /webview\.reload\(\)/u);
   assert.match(externalWebviewPage, /const isHostOpenRequest = sourceGuestId < 0;/);
   assert.match(externalWebviewPage, /if \(isHostOpenRequest\) \{[\s\S]{0,220}if \(!activeRef\.current\) \{[\s\S]{0,80}return;[\s\S]{0,180}openTab\(nextUrl, "", \{[\s\S]{0,160}partition,[\s\S]{0,80}userAgent/);
