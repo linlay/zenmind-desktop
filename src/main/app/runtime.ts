@@ -711,6 +711,7 @@ export function createMainProcessRuntime() {
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyCoreServicesChanged,
+    startShellRuntime: () => runNonCoreStartupTask("app tray", () => createAppTray()),
     startNonCoreRuntime: startNonCoreDesktopRuntime,
     setStartupPhase,
     runServiceMutation: servicesRuntime.runServiceMutation,
@@ -1305,7 +1306,6 @@ export function createMainProcessRuntime() {
         refreshDesktopPetState();
       }
     });
-    runNonCoreStartupTask("app tray", () => createAppTray());
     runNonCoreStartupTask("application menu", () => buildApplicationMenu());
     runNonCoreStartupTask("plugin desktop bridge", () => pluginBridgeRuntime.setDesktopReady());
     runNonCoreStartupTask("desktop ws server", () => {
