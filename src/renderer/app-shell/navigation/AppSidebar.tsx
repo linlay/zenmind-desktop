@@ -13,7 +13,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
-import { CloseOutlined, ReloadOutlined } from "@ant-design/icons";
+import { CloseOutlined } from "@ant-design/icons";
 import {
   SidebarActionIcon,
   SidebarIllustration,
@@ -4193,7 +4193,7 @@ export function AppSidebar({
                       aria-hidden="true"
                     />
                   ) : (
-                    <ReloadOutlined aria-hidden="true" />
+                    <SidebarActionIcon kind="refresh" />
                   )}
                 </button>
               </Tooltip>
