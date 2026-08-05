@@ -4005,6 +4005,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(webContracts, /export interface WebappUpdateInput/);
   assert.match(contracts, /webs:\s*\{[\s\S]*list: \(\) => Promise<WebListResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*list: \(\) => Promise<WebappItemsResult>/);
+  assert.match(contracts, /webapps:\s*\{[\s\S]*export: \(id: string\) => Promise<WebappExportResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*update: \(id: string, input: WebappUpdateInput\) => Promise<WebappResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*uninstall: \(id: string\) => Promise<WebappDeleteResult>/);
   assert.match(contracts, /webapps:\s*\{[\s\S]*checkRuntime: \(id: string\) => Promise<WebappRuntimeCheckResult>/);
@@ -4014,6 +4015,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(contracts, /webapps:\s*\{[\s\S]*stop: \(id: string\) => Promise<WebappCommandResult>/);
   assert.match(preload, /webs:\s*\{[\s\S]*list: \(\) => ipcRenderer\.invoke\("webs\.list"\)/);
   assert.match(preload, /list: \(\) => ipcRenderer\.invoke\("webs\.webapps\.list"\)/);
+  assert.match(preload, /export: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.export", id\)/);
   assert.match(preload, /update: \(id: string, input\) => ipcRenderer\.invoke\("webs\.webapps\.update", id, input\)/);
   assert.match(preload, /uninstall: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.uninstall", id\)/);
   assert.match(preload, /checkRuntime: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.checkRuntime", id\)/);
@@ -4022,6 +4024,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(preload, /openWindow: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.openWindow", id\)/);
   assert.match(preload, /stop: \(id: string\) => ipcRenderer\.invoke\("webs\.webapps\.stop", id\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.list"[\s\S]*listWebappItems\(app\)/);
+  assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.export"[\s\S]*exportWebappArchive\(app, item\.id, saveResult\.filePath\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.update"[\s\S]*updateWebappItem\(app, id, input\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.uninstall"[\s\S]*removeWebappItem\(app, id\)/);
   assert.match(webHandlers, /ipcMain\.handle\("webs\.webapps\.checkRuntime"[\s\S]*webappRuntime\.checkRuntime\(app, id\)/);
@@ -4042,6 +4045,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appShell, /async function handleCloseWebEntry\(item: WebEntry\)[\s\S]*?window\.electronAPI\.webs\.webapps\.stop\(item\.id\)/);
   assert.match(appShell, /async function removeWebappItem\(item: WebEntry\): Promise<WebappDeleteResult>[\s\S]*?window\.electronAPI\.webs\.webapps\.uninstall\(item\.id\)/);
   assert.match(appShell, /onRemoveWebappItem=\{removeWebappItem\}/);
+  assert.match(appShell, /onExportWebappItem=\{exportWebappItem\}/);
   assert.match(appShell, /async function handleOpenWebappWindow\(item: WebappEntry\)/);
   assert.match(appShell, /item\.openMode !== "dialog"[\s\S]*?webapps\.update\([\s\S]*?openMode: "dialog"/);
   assert.match(appShell, /window\.electronAPI\.webs\.webapps\.openWindow\(item\.id\)/);
@@ -4062,6 +4066,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}width:\s*max-content;/);
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu button span\s*\{[\s\S]{0,80}white-space:\s*nowrap;/);
   assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
+  assert.match(appSidebar, /t\("sidebar\.webapp\.export"\)/);
   assert.match(appSidebar, /void removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
   assert.match(zhCN, /"sidebar\.webapp\.remove": "卸载 WebApp"/);

@@ -236,6 +236,9 @@ export const zhCNMessages = {
   "sidebar.webapp.actions": "WebApp 操作",
   "sidebar.webapp.openInWindow": "在新窗口打开",
   "sidebar.webapp.openInWorkspace": "在内置窗口打开",
+  "sidebar.webapp.export": "导出 WebApp",
+  "sidebar.webapp.exporting": "导出中...",
+  "sidebar.webapp.exportFailed": "导出 WebApp 失败。",
   "sidebar.webapp.remove": "卸载 WebApp",
   "sidebar.webapp.removing": "卸载中...",
   "sidebar.webapp.removeConfirm": "确定要卸载「{name}」吗？",
@@ -2076,6 +2079,8 @@ export const zhCNMessages = {
 
   "webapp.listRead": "已读取网站应用。",
   "webapp.importCancelled": "已取消导入 WebApp。",
+  "webapp.exportCancelled": "已取消导出 WebApp。",
+  "webapp.exported": "已导出「{label}」。",
   "webapp.notFound": "未找到这个本地网站小应用。",
   "webapp.updated": "已更新「{label}」。",
   "webapp.deleted": "已移除「{label}」。",
@@ -2394,6 +2399,7 @@ export const zhCNMessages = {
   "dialog.importSkill.title": "选择技能包或 SKILL.md",
   "dialog.importEmbeddedWebsites.title": "导入内嵌网站配置",
   "dialog.importWebapp.title": "导入 WebApp",
+  "dialog.exportWebapp.title": "导出 WebApp",
   "dialog.exportEmbeddedWebsites.title": "导出内嵌网站配置",
 
   "copilotDock.surfaceLabel": "助手",

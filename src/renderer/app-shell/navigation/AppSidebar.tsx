@@ -31,6 +31,7 @@ import type {
   WebEntry,
   WebEntryKey,
   WebappDeleteResult,
+  WebappExportResult,
   WebappImportResult,
   WebsiteInput,
   WebsiteResult,
@@ -1009,6 +1010,7 @@ type AppSidebarProps = {
   webRunningEntryKeys?: WebEntryKey[];
   faviconCache?: WebsiteFaviconCache;
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
+  onExportWebappItem?: (item: WebEntry) => Promise<WebappExportResult>;
   onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
@@ -1068,6 +1070,7 @@ export function AppSidebar({
   webRunningEntryKeys = [],
   faviconCache,
   onCloseWebItem,
+  onExportWebappItem,
   onRemoveWebappItem,
   onRequestNavigate,
   onSidebarNavigateBack,
@@ -1120,6 +1123,7 @@ export function AppSidebar({
   const [websiteCreateError, setWebsiteCreateError] = useState("");
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [webItemRemovePendingId, setWebItemRemovePendingId] = useState("");
+  const [webItemExportPendingId, setWebItemExportPendingId] = useState("");
   const [assistantChatMenu, setAssistantChatMenu] =
     useState<AssistantChatMenuState | null>(null);
   const [webItemMenu, setWebItemMenu] =
@@ -2502,6 +2506,27 @@ export function AppSidebar({
       );
     } finally {
       setWebItemRemovePendingId("");
+    }
+  }
+
+  async function exportWebappItem(item: WebEntry) {
+    if (item.kind !== "webapp" || webItemExportPendingId || !onExportWebappItem) {
+      return;
+    }
+    setWebItemExportPendingId(item.id);
+    try {
+      const result = await onExportWebappItem(item);
+      if (!result.ok && result.path) {
+        window.alert(result.message || t("sidebar.webapp.exportFailed"));
+      }
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.webapp.exportFailed"),
+      );
+    } finally {
+      setWebItemExportPendingId("");
     }
   }
 
@@ -4900,6 +4925,21 @@ export function AppSidebar({
                     ? "sidebar.webapp.openInWorkspace"
                     : "sidebar.webapp.openInWindow",
                 )}
+              </span>
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              disabled={!onExportWebappItem || Boolean(webItemExportPendingId)}
+              onClick={() => {
+                setWebItemMenu(null);
+                void exportWebappItem(item);
+              }}
+            >
+              <span>
+                {webItemExportPendingId === item.id
+                  ? t("sidebar.webapp.exporting")
+                  : t("sidebar.webapp.export")}
               </span>
             </button>
             {!isCollapsed ? (

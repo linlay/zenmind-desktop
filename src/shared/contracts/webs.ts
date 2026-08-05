@@ -266,6 +266,13 @@ export interface WebappImportResult {
   installPath?: string;
 }
 
+export interface WebappExportResult {
+  ok: boolean;
+  item: WebappEntry | null;
+  path: string;
+  message: string;
+}
+
 export interface WebappDeleteResult {
   ok: boolean;
   item: WebappEntry | null;
