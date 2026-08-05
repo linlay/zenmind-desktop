@@ -4856,12 +4856,9 @@ export function AppSidebar({
         <button
           type="button"
           role="menuitem"
-          disabled={
-            isCollapsed || !isOpen || Boolean(webClosePendingEntryKey)
-          }
+          disabled={!isOpen || Boolean(webClosePendingEntryKey)}
           onClick={() => {
-            setWebItemMenu(null);
-            void closeWebItem(item);
+            void closeWebItem(item).finally(() => setWebItemMenu(null));
           }}
         >
           <span>{t("sidebar.website.close")}</span>

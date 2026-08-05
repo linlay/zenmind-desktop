@@ -4046,7 +4046,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appSidebar, /onOpenWebappWindow\?\.\(item\)/);
   assert.match(appSidebar, /onOpenWebappWorkspace\?\.\(item\)/);
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
-  assert.match(appSidebar, /disabled=\{\s*isCollapsed \|\| !isOpen \|\| Boolean\(webClosePendingEntryKey\)\s*\}/);
+  assert.match(appSidebar, /disabled=\{!isOpen \|\| Boolean\(webClosePendingEntryKey\)\}/);
+  assert.doesNotMatch(appSidebar, /isCollapsed \|\| !isOpen/);
+  assert.match(appSidebar, /void closeWebItem\(item\)\.finally\(\(\) => setWebItemMenu\(null\)\)/);
   assert.match(appSidebar, /\{!isCollapsed \? \(\s*<button[\s\S]{0,700}t\("sidebar\.webapp\.remove"\)/);
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}z-index:\s*10001;/);
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}width:\s*max-content;/);
