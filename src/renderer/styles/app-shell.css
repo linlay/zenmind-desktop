@@ -857,7 +857,7 @@
 
 :root[data-theme="dark"] .desktop-global-search-panel {
   border-color: rgba(255, 255, 255, 0.12);
-  background: var(--bg-base);
+  background: #2D2D2D;
   color: #e2e8f0;
   box-shadow: none;
 }

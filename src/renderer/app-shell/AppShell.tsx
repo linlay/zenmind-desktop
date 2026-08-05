@@ -709,6 +709,17 @@ export function AppShell() {
     }
     return [...openKeys];
   }, [activeWebEntryKey, mountedWebEntryKeys, webItems, webappRuntimeById]);
+  const webRunningEntryKeys = useMemo(
+    () =>
+      webItems
+        .filter(
+          (item) =>
+            item.kind === "webapp" &&
+            webappRuntimeById[item.id]?.status === "running",
+        )
+        .map((item) => item.entryKey),
+    [webItems, webappRuntimeById],
+  );
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const resolvedCopilotAgentKey = activeWebEntry
     ? activeWebEntry.copilotAgentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY
@@ -2858,6 +2869,7 @@ export function AppShell() {
           websiteNavOrder={normalizedWebGroupOrder}
           webItems={webItems}
           webOpenEntryKeys={webOpenEntryKeys}
+          webRunningEntryKeys={webRunningEntryKeys}
           faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
           assistantNavChatItems={assistantNavChatItems}

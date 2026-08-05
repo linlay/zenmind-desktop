@@ -1007,6 +1007,7 @@ type AppSidebarProps = {
   onOpenWebappWindow?: (item: Extract<WebEntry, { kind: "webapp" }>) => void;
   onOpenWebappWorkspace?: (item: Extract<WebEntry, { kind: "webapp" }>) => void;
   webOpenEntryKeys?: WebEntryKey[];
+  webRunningEntryKeys?: WebEntryKey[];
   faviconCache?: WebsiteFaviconCache;
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
   onExportWebappItem?: (item: WebEntry) => Promise<WebappExportResult>;
@@ -1066,6 +1067,7 @@ export function AppSidebar({
   onOpenWebappWindow,
   onOpenWebappWorkspace,
   webOpenEntryKeys = [],
+  webRunningEntryKeys = [],
   faviconCache,
   onCloseWebItem,
   onExportWebappItem,
@@ -3558,6 +3560,8 @@ export function AppSidebar({
       const removePending =
         webItem.kind === "webapp" && webItemRemovePendingId === webItem.id;
       const showWebappAction = webItem.kind === "webapp";
+      const isWebappRunning =
+        showWebappAction && webRunningEntryKeys.includes(webItem.entryKey);
       const isWebsite = webItem.kind === "website";
       const cachedFaviconUrl =
         faviconCache?.[webItem.entryKey]?.faviconUrl ||
@@ -3655,6 +3659,12 @@ export function AppSidebar({
           ) : null}
           {showWebappAction ? (
             <span className="sidebar-website-child-actions">
+              {isWebappRunning ? (
+                <span
+                  className="sidebar-website-status-dot sidebar-webapp-status-dot"
+                  aria-hidden="true"
+                />
+              ) : null}
               <Tooltip content={webappActionLabel}>
                 <button
                   type="button"

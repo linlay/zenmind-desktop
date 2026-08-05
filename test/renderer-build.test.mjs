@@ -3868,6 +3868,8 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(appShell, /function createWebsiteItem\(input: WebsiteInput\): Promise<WebsiteResult>[\s\S]*?window\.electronAPI\.webs\.websites\.add\(input\)/);
   assert.notEqual(closeWebEntryStart, -1);
   assert.match(appShell, /const webOpenEntryKeys = useMemo\(\(\) => \{/);
+  assert.match(appShell, /const webRunningEntryKeys = useMemo\(/);
+  assert.match(appShell, /webappRuntimeById\[item\.id\]\?\.status === "running"/);
   assert.match(appShell, /openKeys\.add\(activeWebEntryKey\)/);
   assert.match(appShell, /mountedWebEntryKeys/);
   assert.match(appShell, /const EMPTY_WEB_SURFACE_ROUTE = "\/webs";/);
@@ -3881,6 +3883,7 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.doesNotMatch(closeWebEntry, /webs\.websites\.remove/);
   assert.match(appShell, /onCreateWebsiteItem=\{createWebsiteItem\}/);
   assert.match(appShell, /webOpenEntryKeys=\{webOpenEntryKeys\}/);
+  assert.match(appShell, /webRunningEntryKeys=\{webRunningEntryKeys\}/);
   assert.match(appShell, /onCloseWebItem=\{handleCloseWebEntry\}/);
   assert.match(appSidebar, /args\.groupId === "webs"/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-website-add-button"/);
@@ -3907,12 +3910,17 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(appSidebar, /<Favicon[\s\S]*?className="sidebar-website-favicon"[\s\S]*?faviconUrl=\{cachedFaviconUrl\}[\s\S]*?allowOriginFallback=\{false\}/);
   assert.match(appSidebar, /className=\{`assistant-worker-icon-button sidebar-website-status-action\$\{closing \? " is-closing" : ""\}`\}/);
   assert.match(appSidebar, /const showWebappAction = webItem\.kind === "webapp"/);
+  assert.match(appSidebar, /webRunningEntryKeys\.includes\(webItem\.entryKey\)/);
+  assert.match(appSidebar, /className="sidebar-website-status-dot sidebar-webapp-status-dot"/);
   assert.match(appSidebar, /<SidebarIllustration kind=\{item\.icon\} \/>/);
   assert.doesNotMatch(appSidebar, /website_open/);
   assert.doesNotMatch(appSidebar, /website_closed/);
 
   // Green dot CSS
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{/u);
+  assert.match(navigationCss, /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?left:\s*9px;/u);
+  assert.match(navigationCss, /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;/u);
+  assert.match(navigationCss, /\.sidebar-website-child-row:hover \.sidebar-website-child-action[\s\S]*?opacity:\s*1;/u);
   assert.match(navigationCss, /\.sidebar-website-status-action\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/u);
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{[\s\S]*?position:\s*absolute;/u);
   assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;/u);
@@ -3946,7 +3954,7 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(faviconCache, /FAVICON_MAX_BYTES = 1024 \* 1024/);
   assert.match(faviconProtocol, /registerWebsiteFaviconProtocolScheme/);
 
-  // WebApp should still use more_actions (unchanged)
+  // WebApp keeps more_actions while sharing its slot with the running dot.
   assert.match(appSidebar, /<SidebarActionIcon kind="more_actions" \/>/);
 });
 
