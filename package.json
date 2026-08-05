@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.3.27",
+  "version": "0.3.29",
   "private": true,
   "description": "桌面壳",
   "main": "dist-electron/main/index.js",
