@@ -1137,6 +1137,7 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
     afterSign: "./scripts/verify-mac-services-signing.js",
     win: {
       icon: brandBuildRelativePath(brand, "icons", "icon.ico"),
+      signAndEditExecutable: true,
       target: ["nsis"]
     },
     nsis: {
