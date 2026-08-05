@@ -7248,9 +7248,14 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.doesNotMatch(mainProcess, /shouldOpenAuthUrlInInternalBrowser/u);
   assert.doesNotMatch(windowManager, /openInternalAuthFromWebview/u);
   assert.match(externalWebviewPage, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/u);
+  assert.match(externalWebviewPage, /refreshOnDesktopSso\?: boolean;/u);
+  assert.match(embeddedSurfaceHosts, /refreshOnDesktopSso=\{isWebsite\}/u);
+  assert.match(embeddedSurfaceHosts, /refreshOnDesktopSso=\{item\.kind === "website"\}/u);
   assert.match(externalWebviewPage, /window\.electronAPI\.sso\.onStatusChanged/u);
+  assert.match(externalWebviewPage, /if \(!refreshOnDesktopSso \|\| !window\.electronAPI\.sso\?\.onStatusChanged\)/u);
   assert.match(externalWebviewPage, /if \(!status\.authenticated\) \{/u);
   assert.match(externalWebviewPage, /tab\.partition !== DESKTOP_SSO_WEBVIEW_PARTITION/u);
+  assert.doesNotMatch(externalWebviewPage, /\/auth\/oauth2\/authorize|#\/login|#\/prevent/u);
   assert.match(externalWebviewPage, /webview\.reload\(\)/u);
   assert.match(externalWebviewPage, /const isHostOpenRequest = sourceGuestId < 0;/);
   assert.match(externalWebviewPage, /if \(isHostOpenRequest\) \{[\s\S]{0,220}if \(!activeRef\.current\) \{[\s\S]{0,80}return;[\s\S]{0,180}openTab\(nextUrl, "", \{[\s\S]{0,160}partition,[\s\S]{0,80}userAgent/);

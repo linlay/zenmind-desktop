@@ -277,6 +277,7 @@ export function WebSurfaceHost({
             url={item.url}
             chrome={item.chrome}
             partition={resolveWebsiteSsoPartition(item)}
+            refreshOnDesktopSso={isWebsite}
             onCloseSurface={onCloseWebItem ? () => onCloseWebItem(entryKey) : undefined}
             onFaviconDiscovered={
               isWebsite && onWebsiteFaviconDiscovered
@@ -338,6 +339,7 @@ export function ExternalItemRoute({
         url={item.url}
         chrome={item.chrome}
         partition={resolveWebsiteSsoPartition(item)}
+        refreshOnDesktopSso={item.kind === "website"}
         onCloseSurface={onCloseSurface}
         assistantDockOpen={assistantDockOpen}
         onOpenAssistantDock={onOpenAssistantDock}
