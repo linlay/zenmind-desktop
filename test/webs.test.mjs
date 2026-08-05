@@ -74,10 +74,6 @@ const {
   registerWebIpcHandlers
 } = require("../dist-electron/main/ipc/web-handlers.js");
 const {
-  __testInternals: webappTemplateInstallerInternals,
-  installBundledWebappTemplates
-} = require("../dist-electron/main/webs/webapps/template-installer.js");
-const {
   readInstalledRecords,
   upsertInstalledRecord
 } = require("../dist-electron/main/marketplace/common.js");
@@ -753,7 +749,6 @@ test("webapp items include source management metadata", (t) => {
   const localDir = writeWebapp(webappsRoot(homePath), "local-demo", { label: "Local Demo" });
   const marketDir = writeWebapp(webappsRoot(homePath), "market-demo", { label: "Market Demo" });
   const pluginDir = writeWebapp(webappsRoot(homePath), "plugin-demo", { label: "Plugin Demo" });
-  const bundledDir = writeWebapp(webappsRoot(homePath), "demo-node-html", { label: "Bundled Demo" });
 
   upsertInstalledRecord(app, {
     id: "market-demo",
@@ -784,10 +779,6 @@ test("webapp items include source management metadata", (t) => {
   assert.equal(byId["plugin-demo"].installPath, pluginDir);
   assert.equal(byId["plugin-demo"].removable, false);
 
-  assert.equal(byId["demo-node-html"].sourceKind, "bundled");
-  assert.equal(byId["demo-node-html"].sourceLabel, "Bundled demo");
-  assert.equal(byId["demo-node-html"].installPath, bundledDir);
-  assert.equal(byId["demo-node-html"].removable, false);
 });
 
 test("webapps update writes canonical Copilot preferences and preserves manifest runtime fields", (t) => {
@@ -850,7 +841,6 @@ test("webapps remove deletes removable installs and rejects managed sources", as
   }
   const marketDir = writeWebapp(webappsRoot(homePath), "market-remove", { label: "Market Remove" });
   const pluginDir = writeWebapp(webappsRoot(homePath), "plugin-managed", { label: "Plugin Managed" });
-  const bundledDir = writeWebapp(webappsRoot(homePath), "demo-node-html", { label: "Bundled Demo" });
   upsertInstalledRecord(app, {
     id: "market-remove",
     type: "website-app",
@@ -877,9 +867,6 @@ test("webapps remove deletes removable installs and rejects managed sources", as
   assert.equal(pluginResult.ok, false);
   assert.equal(fs.existsSync(pluginDir), true);
 
-  const bundledResult = await removeWebappItem(app, "demo-node-html");
-  assert.equal(bundledResult.ok, false);
-  assert.equal(fs.existsSync(bundledDir), true);
 });
 
 test("removing a published WebApp disables its Tunnel route before deleting files", async (t) => {
@@ -1999,48 +1986,4 @@ test("webapp runtime starts a frontend-only package without a backend process", 
   );
   assert.equal(missingOriginAttempt.statusCode, 403);
   assert.match(missingOriginAttempt.body, /require the local WebApp origin/u);
-});
-
-test("bundled webapp template installer is gated by demo manifest and refreshes demo on macOS and Windows branches", (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-template-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const homePath = path.join(root, "home");
-  const resourcesRoot = path.join(root, "resources");
-  const app = createApp(homePath, path.join(root, "app"));
-
-  const absent = installBundledWebappTemplates(app, { resourcesRoot, platform: "darwin" });
-  assert.equal(absent.ok, true);
-  assert.equal(absent.installed, false);
-  assert.equal(fs.existsSync(path.join(webappsRoot(homePath), "demo-node-html", "webapp.json")), false);
-
-  const sourceDir = path.join(resourcesRoot, "demo", "webapp-templates", "demo-node-html");
-  fs.mkdirSync(sourceDir, { recursive: true });
-  fs.writeFileSync(path.join(sourceDir, "webapp.json"), "{}\n", "utf8");
-  fs.writeFileSync(path.join(sourceDir, "marker.txt"), "packaged", "utf8");
-  writeJson(path.join(resourcesRoot, "demo", "manifest.json"), {
-    schemaVersion: 1,
-    bundled: true,
-    webappTemplates: ["demo-node-html"]
-  });
-
-  assert.deepEqual(
-    webappTemplateInstallerInternals.listTemplateRootCandidates(app, resourcesRoot, "darwin"),
-    [path.join(resourcesRoot, "demo", "webapp-templates")]
-  );
-  assert.deepEqual(
-    webappTemplateInstallerInternals.listTemplateRootCandidates(app, resourcesRoot, "win32"),
-    [path.join(resourcesRoot, "demo", "webapp-templates")]
-  );
-
-  const first = installBundledWebappTemplates(app, { resourcesRoot, platform: "darwin" });
-  assert.equal(first.ok, true);
-  assert.equal(first.installed, true);
-  assert.equal(fs.existsSync(path.join(webappsRoot(homePath), "demo-node-html", "webapp.json")), true);
-
-  fs.writeFileSync(path.join(webappsRoot(homePath), "demo-node-html", "marker.txt"), "user", "utf8");
-  fs.writeFileSync(path.join(webappsRoot(homePath), "demo-node-html", "stale.txt"), "stale", "utf8");
-  const second = installBundledWebappTemplates(app, { resourcesRoot, platform: "win32" });
-  assert.equal(second.installed, true);
-  assert.equal(fs.readFileSync(path.join(webappsRoot(homePath), "demo-node-html", "marker.txt"), "utf8"), "packaged");
-  assert.equal(fs.existsSync(path.join(webappsRoot(homePath), "demo-node-html", "stale.txt")), false);
 });

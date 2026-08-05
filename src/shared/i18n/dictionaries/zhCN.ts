@@ -824,7 +824,6 @@ export const zhCNMessages = {
   "settings.webapps.sourceMarket": "市场",
   "settings.webapps.sourceLocal": "本地",
   "settings.webapps.sourcePlugin": "插件",
-  "settings.webapps.sourceBundled": "内置",
   "settings.webapps.statusRunning": "运行中",
   "settings.webapps.statusStarting": "启动中",
   "settings.webapps.statusError": "异常",
@@ -2075,9 +2074,6 @@ export const zhCNMessages = {
   "website.urlUnsupportedProtocol": "仅支持 http 或 https 网站地址。",
   "website.defaultLabel": "自定义网站",
 
-  "webapp.demoMissingInPackage": "安装包未包含网站小应用示例。",
-  "webapp.demoTemplateMissing": "未找到内置网站小应用示例模板。",
-  "webapp.demoInstalled": "已安装内置网站小应用示例。",
   "webapp.listRead": "已读取网站应用。",
   "webapp.importCancelled": "已取消导入 WebApp。",
   "webapp.notFound": "未找到这个本地网站小应用。",

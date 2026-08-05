@@ -824,7 +824,6 @@ export const enUSMessages = {
   "settings.webapps.sourceMarket": "Market",
   "settings.webapps.sourceLocal": "Local",
   "settings.webapps.sourcePlugin": "Plugin",
-  "settings.webapps.sourceBundled": "Bundled",
   "settings.webapps.statusRunning": "Running",
   "settings.webapps.statusStarting": "Starting",
   "settings.webapps.statusError": "Error",
@@ -2075,9 +2074,6 @@ export const enUSMessages = {
   "website.urlUnsupportedProtocol": "Only http and https website addresses are supported.",
   "website.defaultLabel": "Custom website",
 
-  "webapp.demoMissingInPackage": "The package does not include a website app demo.",
-  "webapp.demoTemplateMissing": "Bundled website app demo template not found.",
-  "webapp.demoInstalled": "Bundled website app demo installed.",
   "webapp.listRead": "Website apps loaded.",
   "webapp.importCancelled": "WebApp import cancelled.",
   "webapp.notFound": "Local website app not found.",

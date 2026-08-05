@@ -103,16 +103,6 @@ function copyDir(sourceDir, targetDir) {
   });
 }
 
-export function removeRendererWebappTemplatesFromStage(rootDir) {
-  if (!rootDir) {
-    throw new Error("removeRendererWebappTemplatesFromStage requires a staged app root");
-  }
-  fs.rmSync(path.join(rootDir, "dist-renderer", "webapp-templates"), {
-    recursive: true,
-    force: true
-  });
-}
-
 function readDesktopPackageJson(rootDir = projectRoot) {
   return JSON.parse(fs.readFileSync(path.join(rootDir, "package.json"), "utf8"));
 }
@@ -317,7 +307,6 @@ export async function stageApp(rootDir = projectRoot, target = parseArgs(process
   fs.mkdirSync(stageRoot, { recursive: true });
 
   copyDir(rendererRoot, path.join(stageRoot, "dist-renderer"));
-  removeRendererWebappTemplatesFromStage(stageRoot);
   copyDir(bundleRoot, path.join(stageRoot, "dist-electron"));
   writeStagePackageJson(rootDir, normalizedTarget, stageRoot, activeBrand);
   await installRuntimeDependencies(normalizedTarget, stageRoot);

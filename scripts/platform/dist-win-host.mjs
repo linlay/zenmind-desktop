@@ -120,7 +120,6 @@ export async function buildOnWindowsHost(brand = syncBrandArtifacts({ brandId: r
 
   await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
   await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
-  await runAndWait(npmCmd, ["run", "sync:demo"], brandProcessOptions({ cwd: projectRoot }));
   syncBrandArtifacts({ brandId: brand.id, target });
   await syncWindowsBuiltinAssets(brand);
   await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));

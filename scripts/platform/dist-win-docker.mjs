@@ -25,27 +25,12 @@ async function syncWindowsBuiltinAssets(brand) {
   }));
 }
 
-export function appendWebappBuilderSkillMount(dockerArgs, env = process.env) {
-  const webappBuilderSkillDir = String(env.WEBAPP_BUILDER_SKILL_DIR ?? "").trim();
-  if (!webappBuilderSkillDir) {
-    return dockerArgs;
-  }
-  dockerArgs.push(
-    "--volume",
-    `${path.resolve(webappBuilderSkillDir)}:/webapp-builder-skill:ro`,
-    "--env",
-    "WEBAPP_BUILDER_SKILL_DIR=/webapp-builder-skill"
-  );
-  return dockerArgs;
-}
-
 export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: resolveBrandId() })) {
   const target = { os: "win32", arch: "x64" };
   const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 
   await runAndWait(npmCmd, ["run", "sync:version"], brandProcessOptions({ cwd: projectRoot }));
   await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
-  await runAndWait(npmCmd, ["run", "sync:demo"], brandProcessOptions({ cwd: projectRoot }));
   syncBrandArtifacts({ brandId: brand.id, target });
   await syncWindowsBuiltinAssets(brand);
   await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));
@@ -68,12 +53,8 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     "--volume",
     `${npmCacheDir}:/root/.npm`,
     "--env",
-    `BRAND=${brand.id}`,
-    "--env",
-    `DEMO=${process.env.DEMO ?? ""}`
+    `BRAND=${brand.id}`
   ];
-
-  appendWebappBuilderSkillMount(dockerArgs);
 
   if (electronBuilderCacheDir != null) {
     dockerArgs.push("--volume", `${electronBuilderCacheDir}:/root/.cache/electron-builder`);
@@ -88,7 +69,6 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
     [
       "npm install --no-package-lock --ignore-scripts",
       `node ./scripts/sync-brand.mjs --brand=${brand.id}`,
-      "node ./scripts/sync-demo-assets.mjs",
       "node ./scripts/stage-app.mjs --os=win32 --arch=x64",
       `npx electron-builder --config ${path.posix.relative("/project", electronBuilderConfigPath("/project", brand.id))} --win --x64`,
       "node ./scripts/build-safe-repair.mjs",
