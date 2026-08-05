@@ -1262,6 +1262,19 @@
   border-color: rgba(136, 151, 172, 0.18);
 }
 
+.sidebar-group-heading[data-sidebar-group-id="assistants"],
+.sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="assistants"]:focus-visible,
+.sidebar-group-heading[data-sidebar-group-id="webs"],
+.sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="webs"]:focus-visible,
+.sidebar-group-heading[data-sidebar-group-id="chats"],
+.sidebar-group-heading[data-sidebar-group-id="chats"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="chats"]:focus-visible {
+  background: transparent;
+  border-color: transparent;
+}
+
 .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
