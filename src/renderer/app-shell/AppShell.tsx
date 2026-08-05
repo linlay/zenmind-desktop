@@ -14,6 +14,7 @@ import {
   clearCopilotDockSessionSnapshot,
   readCopilotDockSessionSnapshot,
   writeCopilotDockSessionSnapshot,
+  type CopilotDockSurfaceSession,
   type CopilotDockSessionSnapshot
 } from "../copilot/sidebar-copilot/copilotDockSession";
 import { DebugModeContext } from "../debug/DebugModeContext";
@@ -451,7 +452,8 @@ export function AppShell() {
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
-  const assistantDockOpenRequestPathRef = useRef<string | null>(null);
+  const pendingAssistantDockOpenRequestRef = useRef<{ surfaceId: string; embedPath: string } | null>(null);
+  const assistantDockSessionsRef = useRef<Record<string, CopilotDockSurfaceSession>>({});
   const pendingCopilotRestoreRef = useRef<CopilotDockSessionSnapshot | null>(null);
   const copilotRestoreInitializedRef = useRef(false);
   const copilotRestoreAttemptedRef = useRef(false);
@@ -497,9 +499,8 @@ export function AppShell() {
   const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
-  const [assistantDockOpenPath, setAssistantDockOpenPath] = useState<string | null>(null);
+  const [assistantDockSessions, setAssistantDockSessions] = useState<Record<string, CopilotDockSurfaceSession>>({});
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
-  const [assistantDockRestoredEmbedPath, setAssistantDockRestoredEmbedPath] = useState("");
   const [, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
@@ -729,13 +730,18 @@ export function AppShell() {
     location.pathname === ASSISTANT_TARGET_PATH ||
     isSingleAgentWebclientRoute(location.pathname) ||
     isCopilotAgentWebclientRoute(location.pathname);
-  const assistantDockOpen = assistantDockOpenPath !== null;
-  const assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location.pathname && !isAgentWebclientMainRoute;
   const currentCopilotSurfaceId = activeWebEntryKey || (
     location.pathname === BUILTIN_BROWSER_ROUTE
       ? BUILTIN_BROWSER_SURFACE_ID
       : `desktop-route:${location.pathname}`
   );
+  const currentCopilotSession = assistantDockSessions[currentCopilotSurfaceId] ?? null;
+  const assistantDockOpen = Boolean(currentCopilotSession);
+  const assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute;
+  const currentAssistantDockOpenRequest =
+    pendingAssistantDockOpenRequestRef.current?.surfaceId === currentCopilotSurfaceId
+      ? assistantDockOpenRequest
+      : null;
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
   const effectiveSidebarCollapsed = sidebarCollapsed && !isSettingsRoute;
@@ -1440,10 +1446,8 @@ export function AppShell() {
       return;
     }
     if (request) {
-      assistantDockOpenRequestPathRef.current = location.pathname;
       setAssistantDockOpenRequest(request);
     } else {
-      assistantDockOpenRequestPathRef.current = null;
       setAssistantDockOpenRequest(null);
     }
     const requestedAgentKey = (request?.agentKey ?? request?.workerKey ?? resolvedCopilotAgentKey)
@@ -1455,37 +1459,58 @@ export function AppShell() {
       params.set("chatId", requestedChatId);
     }
     const embedPath = createAgentWebclientCopilotPath(requestedAgentKey, params);
-    setAssistantDockRestoredEmbedPath(embedPath);
-    writeCopilotDockSessionSnapshot({
-      openPath: location.pathname,
-      surfaceId: currentCopilotSurfaceId,
+    pendingAssistantDockOpenRequestRef.current = request
+      ? { surfaceId: currentCopilotSurfaceId, embedPath }
+      : null;
+    updateCopilotDockSurfaceSession(currentCopilotSurfaceId, {
       embedPath,
       agentKey: requestedAgentKey,
       ...(requestedChatId ? { chatId: requestedChatId } : {})
     });
-    setAssistantDockOpenPath(location.pathname);
   }
 
   function closeAssistantDock() {
-    setAssistantDockOpenPath(null);
     setAssistantDockOpenRequest(null);
-    setAssistantDockRestoredEmbedPath("");
-    assistantDockOpenRequestPathRef.current = null;
-    clearCopilotDockSessionSnapshot();
+    pendingAssistantDockOpenRequestRef.current = null;
+    updateCopilotDockSurfaceSession(currentCopilotSurfaceId, null);
   }
 
   function handleCopilotCurrentEmbedPathChange(embedPath: string, agentKey: string, chatId?: string) {
-    if (!assistantCopilotOpen) {
+    if (!assistantDockOpen) {
       return;
     }
-    setAssistantDockRestoredEmbedPath(embedPath);
-    writeCopilotDockSessionSnapshot({
-      openPath: location.pathname,
-      surfaceId: currentCopilotSurfaceId,
+    updateCopilotDockSurfaceSession(currentCopilotSurfaceId, {
       embedPath,
       agentKey,
       ...(chatId ? { chatId } : {})
     });
+    const pendingRequest = pendingAssistantDockOpenRequestRef.current;
+    if (
+      pendingRequest?.surfaceId === currentCopilotSurfaceId &&
+      pendingRequest.embedPath === embedPath
+    ) {
+      pendingAssistantDockOpenRequestRef.current = null;
+      setAssistantDockOpenRequest(null);
+    }
+  }
+
+  function updateCopilotDockSurfaceSession(
+    surfaceId: string,
+    session: CopilotDockSurfaceSession | null
+  ) {
+    const nextSessions = { ...assistantDockSessionsRef.current };
+    if (session) {
+      nextSessions[surfaceId] = session;
+    } else {
+      delete nextSessions[surfaceId];
+    }
+    assistantDockSessionsRef.current = nextSessions;
+    setAssistantDockSessions(nextSessions);
+    if (Object.keys(nextSessions).length === 0) {
+      clearCopilotDockSessionSnapshot();
+      return;
+    }
+    writeCopilotDockSessionSnapshot({ surfaces: nextSessions });
   }
 
   async function handleEnvImport() {
@@ -1643,17 +1668,7 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
-    if (currentCopilotPreference?.enabled === false && assistantDockOpenPath === location.pathname) {
-      setAssistantDockOpenPath(null);
-      setAssistantDockOpenRequest(null);
-      setAssistantDockRestoredEmbedPath("");
-      assistantDockOpenRequestPathRef.current = null;
-      clearCopilotDockSessionSnapshot();
-    }
-  }, [assistantDockOpenPath, currentCopilotPreference?.enabled, location.pathname]);
-
-  useEffect(() => {
-    if (copilotRestoreAttemptedRef.current || !assistantSettings || !webItemsLoaded) {
+    if (copilotRestoreAttemptedRef.current || !assistantSettings) {
       return;
     }
     copilotRestoreAttemptedRef.current = true;
@@ -1662,55 +1677,21 @@ export function AppShell() {
     if (!snapshot) {
       return;
     }
-    if (
-      snapshot.openPath !== location.pathname ||
-      snapshot.surfaceId !== currentCopilotSurfaceId ||
-      isAgentWebclientMainRoute ||
-      currentCopilotPreference?.enabled === false
-    ) {
-      clearCopilotDockSessionSnapshot();
-      return;
-    }
-    assistantDockOpenRequestPathRef.current = null;
+    pendingAssistantDockOpenRequestRef.current = null;
     setAssistantDockOpenRequest(null);
-    setAssistantDockRestoredEmbedPath(snapshot.embedPath);
-    setAssistantDockOpenPath(snapshot.openPath);
-  }, [
-    assistantSettings,
-    currentCopilotPreference?.enabled,
-    currentCopilotSurfaceId,
-    isAgentWebclientMainRoute,
-    location.pathname,
-    webItemsLoaded
-  ]);
+    assistantDockSessionsRef.current = snapshot.surfaces;
+    setAssistantDockSessions(snapshot.surfaces);
+  }, [assistantSettings]);
 
   useEffect(() => {
     if (
-      assistantDockOpenPath &&
-      assistantDockOpenPath !== location.pathname
+      pendingAssistantDockOpenRequestRef.current &&
+      pendingAssistantDockOpenRequestRef.current.surfaceId !== currentCopilotSurfaceId
     ) {
-      setAssistantDockOpenPath(null);
+      pendingAssistantDockOpenRequestRef.current = null;
       setAssistantDockOpenRequest(null);
-      setAssistantDockRestoredEmbedPath("");
-      assistantDockOpenRequestPathRef.current = null;
-      clearCopilotDockSessionSnapshot();
     }
-  }, [assistantDockOpenPath, isAgentWebclientMainRoute, location.pathname]);
-
-  useEffect(() => {
-    if (!assistantDockOpenRequest) {
-      assistantDockOpenRequestPathRef.current = null;
-      return;
-    }
-
-    if (
-      assistantDockOpenRequestPathRef.current &&
-      assistantDockOpenRequestPathRef.current !== location.pathname
-    ) {
-      setAssistantDockOpenRequest(null);
-      assistantDockOpenRequestPathRef.current = null;
-    }
-  }, [assistantDockOpenRequest, location.pathname]);
+  }, [currentCopilotSurfaceId]);
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
@@ -3062,8 +3043,8 @@ export function AppShell() {
         open={assistantCopilotOpen}
         hostTheme={resolvedTheme}
         nativeDialogVisible={nativeDialogVisible || Boolean(desktopActionConfirmation)}
-        openRequest={assistantDockOpenRequest}
-        restoredEmbedPath={assistantDockRestoredEmbedPath}
+        openRequest={currentAssistantDockOpenRequest}
+        restoredEmbedPath={currentCopilotSession?.embedPath ?? ""}
         resolvedAgentKey={resolvedCopilotAgentKey}
         onRunningRunIdChange={setAssistantRunningRunId}
         onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}

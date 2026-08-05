@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
 import { createAgentWebclientCopilotPath } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
@@ -14,6 +14,7 @@ const PluginPage = lazy(() =>
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
 const AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID = "agent-webclient-copilot-dock";
+type CopilotUrlChangeSource = "host" | "guest";
 
 function normalizeAgentKey(value = "") {
   const trimmed = value.trim();
@@ -92,11 +93,20 @@ export function AgentWebclientCopilotDock({
 }) {
   const { t } = useI18n();
   const [mounted, setMounted] = useState(open);
-  const targetAgentKey = resolveTargetAgentKey(openRequest, resolvedAgentKey);
   const normalizedRestoredEmbedPath = normalizeCopilotEmbedPath(restoredEmbedPath ?? "");
   const targetEmbedPath = openRequest
     ? buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey)
     : normalizedRestoredEmbedPath || buildAgentWebclientCopilotPath(null, resolvedAgentKey);
+  const targetAgentKey = readCopilotAgentKeyFromUrl(targetEmbedPath) ||
+    resolveTargetAgentKey(openRequest, resolvedAgentKey);
+  const lastHostTargetEmbedPathRef = useRef("");
+  const pendingHostTargetEmbedPathRef = useRef("");
+  const lastObservedAgentKeyRef = useRef("");
+  if (lastHostTargetEmbedPathRef.current !== targetEmbedPath) {
+    lastHostTargetEmbedPathRef.current = targetEmbedPath;
+    pendingHostTargetEmbedPathRef.current = targetEmbedPath;
+    lastObservedAgentKeyRef.current = targetAgentKey;
+  }
 
   useEffect(() => {
     if (open) {
@@ -110,13 +120,30 @@ export function AgentWebclientCopilotDock({
     }
   }, [onRunningRunIdChange, open]);
 
-  function handleCurrentUrlChange(currentUrl: string) {
+  function handleCurrentUrlChange(currentUrl: string, source: CopilotUrlChangeSource) {
     const embedPath = normalizeCopilotEmbedPath(currentUrl);
     const selectedAgentKey = readCopilotAgentKeyFromUrl(currentUrl);
     if (!selectedAgentKey || !embedPath) {
       return;
     }
-    onSelectedAgentKeyChange?.(selectedAgentKey);
+    if (source === "host") {
+      return;
+    }
+    if (pendingHostTargetEmbedPathRef.current) {
+      if (pendingHostTargetEmbedPathRef.current !== embedPath) {
+        return;
+      }
+      pendingHostTargetEmbedPathRef.current = "";
+      lastObservedAgentKeyRef.current = selectedAgentKey;
+      const chatId = readCopilotChatId(embedPath);
+      onCurrentEmbedPathChange?.(embedPath, selectedAgentKey, chatId || undefined);
+      return;
+    }
+    const previousAgentKey = lastObservedAgentKeyRef.current;
+    lastObservedAgentKeyRef.current = selectedAgentKey;
+    if (previousAgentKey && previousAgentKey !== selectedAgentKey) {
+      onSelectedAgentKeyChange?.(selectedAgentKey);
+    }
     const chatId = readCopilotChatId(embedPath);
     onCurrentEmbedPathChange?.(embedPath, selectedAgentKey, chatId || undefined);
   }

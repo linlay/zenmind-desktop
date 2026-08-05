@@ -1014,7 +1014,7 @@ test("sidebar primary navigation uses roving tabindex", () => {
   assert.match(sidebarSource, /event\.key === "End"[\s\S]*?moveSidebarRovingFocus\(currentElement, "last"\)/);
   assert.match(sidebarSource, /event\.key === "ArrowRight"[\s\S]*?handleSidebarRovingArrowRight\(currentElement\)/);
   assert.match(sidebarSource, /event\.key === "ArrowLeft"[\s\S]*?handleSidebarRovingArrowLeft\(currentElement\)/);
-  assert.match(sidebarSource, /event\.key === "ContextMenu" \|\| \(event\.shiftKey && event\.key === "F10"\)/);
+  assert.match(sidebarSource, /event\.key === "ContextMenu"\s*\|\|\s*\(event\.shiftKey && event\.key === "F10"\)/);
 });
 
 test("sidebar collapse headers separate trigger and actions", () => {
@@ -1072,6 +1072,55 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
 });
 
+test("sidebar operation menus use pointer anchors and theme-neutral glass surfaces", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const popoverSource = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "Popover",
+    "index.tsx"
+  );
+  const themeStyles = readSourceFile("src", "renderer", "styles", "theme.css");
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css"
+  );
+
+  assert.match(popoverSource, /anchorPoint\?: PopoverAnchorPoint \| null;/u);
+  assert.match(popoverSource, /anchorPoint &&[\s\S]*?Number\.isFinite\(anchorPoint\.x\)[\s\S]*?Number\.isFinite\(anchorPoint\.y\)/u);
+  assert.match(popoverSource, /viewportWidth - popoverRect\.width - viewportPadding/u);
+  assert.match(popoverSource, /viewportHeight - popoverRect\.height - viewportPadding/u);
+
+  assert.match(sidebarSource, /function getViewportClampedMenuPosition\([\s\S]*?menu\.getBoundingClientRect\(\)/u);
+  assert.match(sidebarSource, /function openAssistantChatMenuAtPoint\(/u);
+  assert.match(sidebarSource, /function openAgentMenuAtPoint\(/u);
+  assert.match(sidebarSource, /function openWebItemMenuAtPoint\(/u);
+  assert.match(sidebarSource, /function openGroupActionMenuAtPoint\(/u);
+  assert.match(sidebarSource, /\{ x: event\.clientX, y: event\.clientY \}/u);
+  assert.match(sidebarSource, /event\.detail > 0[\s\S]*?event\.clientX[\s\S]*?event\.clientY/u);
+  assert.match(sidebarSource, /anchorPoint=\{assistantSortMenuAnchorPoint\}/u);
+  assert.match(sidebarSource, /anchorPoint=\{chatDefaultAgentMenuAnchorPoint\}/u);
+  assert.match(sidebarSource, /anchorPoint=\{toolMenuAnchorPoint\}/u);
+  assert.match(sidebarSource, /chatDefaultAgentInlineMenuPosition/u);
+  assert.match(sidebarSource, /visibility: assistantChatMenu\.positioned \? "visible" : "hidden"/u);
+
+  assert.match(themeStyles, /--sidebar-operation-menu-bg:\s*rgba\(255, 255, 255, 0\.9\);/u);
+  assert.match(navigationStyles, /\.sidebar-operation-menu-popover\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/u);
+  assert.match(navigationStyles, /\.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/u);
+  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);/u);
+  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?--sidebar-account-menu-bg:\s*var\(--sidebar-operation-menu-bg\);/u);
+  assert.doesNotMatch(navigationStyles, /:root\[data-theme="dark"\] \.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*#242424;/u);
+});
+
 test("sites add menu merges website actions into one modal entry", () => {
   const sidebarSource = readSourceFile(
     "src",
@@ -1093,7 +1142,7 @@ test("sites add menu merges website actions into one modal entry", () => {
   assert.doesNotMatch(sidebarSource, /t\("sidebar\.website\.manage"\)/);
   assert.match(sidebarSource, /showWebsiteDialog\(\);[\s\S]{0,100}t\("sidebar\.website\.new"\)/);
   assert.match(sidebarSource, /handleImportWebapp\(\);[\s\S]{0,100}t\("sidebar\.webapp\.import"\)/);
-  assert.match(sidebarSource, /function getGroupActionMenuPositionFromElement[\s\S]{0,320}rect\.left - 12/);
+  assert.match(sidebarSource, /function openGroupActionMenuAtElement[\s\S]{0,320}createMenuPositionFromElement\(element, "start"\)/);
   assert.match(navigationStyles, /\.sidebar-group-actions-menu-layer \.sidebar-group-actions-menu\s*\{[\s\S]{0,120}width:\s*196px;/);
   assert.match(navigationStyles, /\.sidebar-group-actions-menu button span\s*\{[\s\S]{0,100}white-space:\s*nowrap;/);
   assert.match(zhCN, /"sidebar\.website\.new":\s*"添加网站"/);
@@ -3183,17 +3232,17 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(resolver, /"\/control-center"[\s\S]*?"controlCenter"/);
   assert.match(appShell, /resolveDesktopCopilotPreference/);
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
-  assert.match(appShell, /\[assistantDockOpenPath, setAssistantDockOpenPath\] = useState<string \| null>\(null\)/);
-  assert.match(appShell, /assistantDockOpen = assistantDockOpenPath !== null/);
-  assert.match(appShell, /currentCopilotPreference\?\.enabled === false && assistantDockOpenPath === location\.pathname && !assistantRunningRunId/);
+  assert.match(appShell, /\[assistantDockSessions, setAssistantDockSessions\] = useState<Record<string, CopilotDockSurfaceSession>>\(\{\}\)/);
   assert.match(appShell, /isAgentWebclientMainRoute =[\s\S]*?location\.pathname === ASSISTANT_TARGET_PATH \|\|[\s\S]*?isSingleAgentWebclientRoute\(location\.pathname\)/);
-  assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantDockOpenPath === location\.pathname && !isAgentWebclientMainRoute/);
-  assert.match(appShell, /assistantDockOpenPath !== location\.pathname[\s\S]{0,180}setAssistantDockOpenPath\(null\)/);
-  assert.doesNotMatch(appShell, /isAgentWebclientMainRoute && assistantDockOpen[\s\S]{0,180}setAssistantDockOpenPath\(null\)/);
+  assert.match(appShell, /currentCopilotSurfaceId = activeWebEntryKey \|\|/);
+  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotSurfaceId\] \?\? null/);
+  assert.match(appShell, /assistantDockOpen = Boolean\(currentCopilotSession\)/);
+  assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute/);
+  assert.doesNotMatch(appShell, /assistantDockOpenPath/);
   assert.match(appShell, /assistantLauncherDisabled=\{isAgentWebclientMainRoute\}/);
   assert.match(appShell, /open=\{assistantCopilotOpen\}/);
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
-  assert.match(appShell, /function closeAssistantDock\(\)[\s\S]*?setAssistantDockOpenPath\(null\)[\s\S]*?setAssistantDockOpenRequest\(null\)[\s\S]*?assistantDockOpenRequestPathRef\.current = null/);
+  assert.match(appShell, /function closeAssistantDock\(\)[\s\S]*?setAssistantDockOpenRequest\(null\)[\s\S]*?pendingAssistantDockOpenRequestRef\.current = null[\s\S]*?updateCopilotDockSurfaceSession\(currentCopilotSurfaceId, null\)/);
   assert.match(appShell, /<BuiltinBrowserSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
   assert.match(appShell, /<WebSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
   assert.match(appShell, /<ExternalItemRoute[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
@@ -3203,15 +3252,15 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(embeddedSurfaceHosts, /<ExternalWebviewPage[\s\S]*?assistantDockOpen=\{assistantDockOpen\}[\s\S]*?onOpenAssistantDock=\{onOpenAssistantDock\}[\s\S]*?onCloseAssistantDock=\{onCloseAssistantDock\}/);
   assert.match(appShell, /onRunningRunIdChange=\{setAssistantRunningRunId\}/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
-  assert.match(appShell, /websiteAgentKey = activeWebEntry\?\.agentKey \|\| ""/);
-  assert.match(appShell, /resolvedCopilotAgentKey = websiteAgentKey \|\| currentCopilotPreference\?\.agentKey \|\| DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
+  assert.match(appShell, /resolvedCopilotAgentKey = activeWebEntry[\s\S]{0,180}activeWebEntry\.copilotAgentKey \|\| assistantSettings\?\.desktopHelperAgentKey \|\| DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
   assert.match(appShell, /resolvedAgentKey=\{resolvedCopilotAgentKey\}/);
-  assert.match(appShell, /assistantDockOpenRequestPathRef = useRef<string \| null>\(null\)/);
-  assert.match(appShell, /assistantDockOpenRequestPathRef\.current !== location\.pathname[\s\S]*?setAssistantDockOpenRequest\(null\)/);
-  assert.match(appShell, /assistantDockOpenRequestPathRef\.current = location\.pathname[\s\S]*?setAssistantDockOpenRequest\(request\)/);
-  assert.match(appShell, /setAssistantDockOpenPath\(location\.pathname\)/);
-  assert.match(appShell, /const targetAgentKey = resolveTargetAgentKey\(openRequest, resolvedAgentKey\)/);
-  assert.match(appShell, /const targetEmbedPath = buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
+  assert.match(appShell, /pendingAssistantDockOpenRequestRef = useRef<\{ surfaceId: string; embedPath: string \} \| null>\(null\)/);
+  assert.match(appShell, /pendingAssistantDockOpenRequestRef\.current = request[\s\S]{0,100}\{ surfaceId: currentCopilotSurfaceId, embedPath \}/);
+  assert.match(appShell, /pendingRequest\?\.surfaceId === currentCopilotSurfaceId[\s\S]*?pendingRequest\.embedPath === embedPath[\s\S]*?setAssistantDockOpenRequest\(null\)/);
+  assert.match(appShell, /writeCopilotDockSessionSnapshot\(\{ surfaces: nextSessions \}\)/);
+  assert.match(appShell, /restoredEmbedPath=\{currentCopilotSession\?\.embedPath \?\? ""\}/);
+  assert.match(appShell, /const targetAgentKey = readCopilotAgentKeyFromUrl\(targetEmbedPath\) \|\|[\s\S]*?resolveTargetAgentKey\(openRequest, resolvedAgentKey\)/);
+  assert.match(appShell, /const targetEmbedPath = openRequest\s*\? buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
   assert.match(appShell, /key=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
   assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
@@ -3220,16 +3269,20 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /function handleCopilotSelectedAgentKeyChange\(agentKey: string\)[\s\S]*?activeWebEntry\?\.kind !== "website"/);
   assert.match(appShell, /normalizedAgentKey === resolvedCopilotAgentKey/);
   assert.match(appShell, /copilotAgentOptions\.some\(\(agent\) => agent\.agentKey\.trim\(\) === normalizedAgentKey\)/);
-  assert.match(appShell, /window\.electronAPI\.webs\.websites[\s\S]*?\.update\(websiteId, \{ agentKey: normalizedAgentKey \}\)/);
+  assert.match(appShell, /window\.electronAPI\.webs\.websites[\s\S]*?\.update\(websiteId, \{ copilotAgentKey: normalizedAgentKey \}\)/);
   assert.match(appShell, /updateWebItems\(mergeWebsiteItems\(webItems, result\.items\)\)/);
   assert.match(appShell, /onSelectedAgentKeyChange=\{handleCopilotSelectedAgentKeyChange\}/);
-  assert.match(pluginPage, /onCurrentUrlChange\?: \(url: string\) => void/);
+  assert.match(pluginPage, /onCurrentUrlChange\?: \(url: string, source: PluginWebviewUrlChangeSource\) => void/);
   assert.match(pluginPage, /const onCurrentUrlChangeRef = useRef\(onCurrentUrlChange\)/);
-  assert.match(pluginPage, /function updateWebviewCurrentUrl\(nextUrl: string\)[\s\S]*?onCurrentUrlChangeRef\.current\?\.\(nextUrl\)/);
-  assert.match(pluginPage, /const syncNavigationRoute = \(event: Event\) => \{[\s\S]*?updateWebviewCurrentUrl\(resolvedUrl\)/);
+  assert.match(pluginPage, /function updateWebviewCurrentUrl\(nextUrl: string, source: PluginWebviewUrlChangeSource\)[\s\S]*?onCurrentUrlChangeRef\.current\?\.\(nextUrl, source\)/);
+  assert.match(pluginPage, /updateWebviewCurrentUrl\(embeddedUrl, "host"\)/);
+  assert.match(pluginPage, /const syncNavigationRoute = \(event: Event\) => \{[\s\S]*?updateWebviewCurrentUrl\(resolvedUrl, "guest"\)/);
   assert.match(dockComponent, /function readCopilotAgentKeyFromUrl\(value: string\)/);
   assert.match(dockComponent, /readCopilotAgentKeyFromPathname\(new URL\(trimmed, "http:\/\/agent-webclient\.local"\)\.pathname\)/);
   assert.match(dockComponent, /onSelectedAgentKeyChange\?: \(agentKey: string\) => void/);
+  assert.match(dockComponent, /source === "host"[\s\S]*?return/);
+  assert.match(dockComponent, /pendingHostTargetEmbedPathRef\.current !== embedPath[\s\S]*?return/);
+  assert.match(dockComponent, /previousAgentKey && previousAgentKey !== selectedAgentKey[\s\S]*?onSelectedAgentKeyChange\?\.\(selectedAgentKey\)/);
   assert.match(dockComponent, /onSelectedAgentKeyChange\?\.\(selectedAgentKey\)/);
   assert.match(dockComponent, /onCurrentUrlChange=\{handleCurrentUrlChange\}/);
   assert.doesNotMatch(dockComponent, /agent-webclient-copilot-close/);
@@ -5806,10 +5859,15 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(styles, /\.external-webview-tab-trigger:focus-visible/u);
   assert.match(styles, /:root\[data-theme="dark"\] \.external-webview-tab\.is-active/u);
   assert.match(copilotSession, /window\.sessionStorage/u);
-  assert.match(copilotSession, /version:\s*1/u);
+  assert.match(copilotSession, /version:\s*3/u);
   assert.match(copilotSession, /safeParams\.set\("chatId", chatId\)/u);
+  assert.match(copilotSession, /surfaces:\s*Record<string, CopilotDockSurfaceSession>/u);
   assert.doesNotMatch(copilotSession, /localStorage/u);
-  assert.match(appShell, /snapshot\.openPath !== location\.pathname/u);
+  assert.doesNotMatch(copilotSession, /openPath/u);
+  assert.doesNotMatch(appShell, /snapshot\.openPath/u);
+  assert.match(appShell, /snapshot\.surfaces/u);
+  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotSurfaceId\] \?\? null/u);
+  assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute/u);
   assert.match(appShell, /clearCopilotDockSessionSnapshot\(\)/u);
   assert.match(copilotDock, /restoredEmbedPath/u);
   assert.match(copilotDock, /onCurrentEmbedPathChange/u);

@@ -49,46 +49,111 @@ function loadSessionModule() {
 test("copilot dock session snapshot keeps only relative route identity", () => {
   const { api, values } = loadSessionModule();
   api.writeCopilotDockSessionSnapshot({
-    openPath: "/webs/website:docs",
-    surfaceId: "website:docs",
-    embedPath: "https://webclient.example/copilot/helper?chatId=chat-1&token=secret&code=hidden",
-    agentKey: "helper",
-    chatId: "chat-1"
+    surfaces: {
+      "website:docs": {
+        embedPath: "https://webclient.example/copilot/helper?chatId=chat-1&token=secret&code=hidden",
+        agentKey: "helper",
+        chatId: "chat-1"
+      }
+    }
   });
 
   const serialized = [...values.values()][0];
   assert.equal(serialized.includes("webclient.example"), false);
+  assert.equal(serialized.includes("openPath"), false);
+  assert.equal(serialized.includes("surfaceId"), false);
   assert.equal(serialized.includes("secret"), false);
   assert.equal(serialized.includes("hidden"), false);
   assert.equal(serialized.includes("/copilot/helper?chatId=chat-1"), true);
   assert.deepEqual(api.readCopilotDockSessionSnapshot(), {
-    version: 1,
-    openPath: "/webs/website:docs",
-    surfaceId: "website:docs",
-    embedPath: "/copilot/helper?chatId=chat-1",
-    agentKey: "helper",
-    chatId: "chat-1"
+    version: 3,
+    surfaces: {
+      "website:docs": {
+        embedPath: "/copilot/helper?chatId=chat-1",
+        agentKey: "helper",
+        chatId: "chat-1"
+      }
+    }
+  });
+});
+
+test("copilot dock session keeps each surface on its own historical chat", () => {
+  const { api } = loadSessionModule();
+  api.writeCopilotDockSessionSnapshot({
+    surfaces: {
+      "website:docs": {
+        embedPath: "/copilot/docs-agent?chatId=docs-history",
+        agentKey: "docs-agent",
+        chatId: "docs-history"
+      },
+      "webapp:tasks": {
+        embedPath: "/copilot/tasks-agent?chatId=tasks-history",
+        agentKey: "tasks-agent",
+        chatId: "tasks-history"
+      }
+    }
+  });
+
+  assert.deepEqual(api.readCopilotDockSessionSnapshot()?.surfaces, {
+    "website:docs": {
+      embedPath: "/copilot/docs-agent?chatId=docs-history",
+      agentKey: "docs-agent",
+      chatId: "docs-history"
+    },
+    "webapp:tasks": {
+      embedPath: "/copilot/tasks-agent?chatId=tasks-history",
+      agentKey: "tasks-agent",
+      chatId: "tasks-history"
+    }
   });
 });
 
 test("copilot dock session rejects non-copilot paths and clears on explicit close", () => {
   const { api, values } = loadSessionModule();
   api.writeCopilotDockSessionSnapshot({
-    openPath: "/webs/website:docs",
-    surfaceId: "website:docs",
-    embedPath: "/agents/helper?chatId=chat-1",
-    agentKey: "helper"
+    surfaces: {
+      "website:docs": {
+        embedPath: "/agents/helper?chatId=chat-1",
+        agentKey: "helper"
+      }
+    }
   });
   assert.equal(values.size, 0);
 
   api.writeCopilotDockSessionSnapshot({
-    openPath: "/webs/website:docs",
-    surfaceId: "website:docs",
-    embedPath: "/copilot/helper",
-    agentKey: "helper"
+    surfaces: {
+      "website:docs": {
+        embedPath: "/copilot/helper",
+        agentKey: "helper"
+      }
+    }
   });
   assert.equal(values.size, 1);
   api.clearCopilotDockSessionSnapshot();
   assert.equal(values.size, 0);
   assert.equal(api.readCopilotDockSessionSnapshot(), null);
+});
+
+test("copilot dock session discards the old single-surface snapshots", () => {
+  const { api, values } = loadSessionModule();
+  values.set(api.__testInternals.COPILOT_DOCK_SESSION_KEY, JSON.stringify({
+    version: 1,
+    openPath: "/webs/website:docs",
+    surfaceId: "website:docs",
+    embedPath: "/copilot/helper?chatId=chat-1",
+    agentKey: "helper",
+    chatId: "chat-1"
+  }));
+
+  assert.equal(api.readCopilotDockSessionSnapshot(), null);
+  assert.equal(values.size, 0);
+
+  values.set(api.__testInternals.COPILOT_DOCK_SESSION_KEY, JSON.stringify({
+    version: 2,
+    embedPath: "/copilot/helper?chatId=chat-2",
+    agentKey: "helper",
+    chatId: "chat-2"
+  }));
+  assert.equal(api.readCopilotDockSessionSnapshot(), null);
+  assert.equal(values.size, 0);
 });

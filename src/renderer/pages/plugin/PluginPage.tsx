@@ -59,6 +59,8 @@ import {
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
 import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
 
+type PluginWebviewUrlChangeSource = "host" | "guest";
+
 type PluginPageProps = {
   hostTheme: "light" | "dark";
   pluginId?: string;
@@ -70,7 +72,7 @@ type PluginPageProps = {
   devToolsTarget?: "copilot";
   loadInitialEmbeddedUrlDirectly?: boolean;
   suppressInitialLoadingCopy?: boolean;
-  onCurrentUrlChange?: (url: string) => void;
+  onCurrentUrlChange?: (url: string, source: PluginWebviewUrlChangeSource) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -587,13 +589,13 @@ export function PluginPage({
     }
   }
 
-  function updateWebviewCurrentUrl(nextUrl: string) {
+  function updateWebviewCurrentUrl(nextUrl: string, source: PluginWebviewUrlChangeSource) {
     setWebviewCurrentUrl(nextUrl);
     if (!nextUrl || lastReportedCurrentUrlRef.current === nextUrl) {
       return;
     }
     lastReportedCurrentUrlRef.current = nextUrl;
-    onCurrentUrlChangeRef.current?.(nextUrl);
+    onCurrentUrlChangeRef.current?.(nextUrl, source);
   }
 
   function refreshCurrentPageSnapshotTarget() {
@@ -788,7 +790,7 @@ export function PluginPage({
   }, [service?.id, embeddedUrl]);
 
   useEffect(() => {
-    updateWebviewCurrentUrl(embeddedUrl);
+    updateWebviewCurrentUrl(embeddedUrl, "host");
   }, [embeddedUrl]);
 
   useEffect(() => {
@@ -904,7 +906,7 @@ export function PluginPage({
         return;
       }
       lastDirectWebviewRouteRef.current = embeddedUrl;
-      updateWebviewCurrentUrl(embeddedUrl);
+      updateWebviewCurrentUrl(embeddedUrl, "host");
       const currentParsed = parseHttpUrl(currentUrl);
       const targetParsed = parseHttpUrl(embeddedUrl);
       if (
@@ -1074,7 +1076,7 @@ export function PluginPage({
   }
 
   function syncWebviewState() {
-    updateWebviewCurrentUrl(readCurrentWebviewUrl());
+    updateWebviewCurrentUrl(readCurrentWebviewUrl(), "guest");
     if (!webviewLoadedChromeErrorPage()) {
       setWebviewLoadError(false);
       return;
@@ -1126,7 +1128,7 @@ export function PluginPage({
       const resolvedUrl = nextUrl
         ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
         : readCurrentWebviewUrl();
-      updateWebviewCurrentUrl(resolvedUrl);
+      updateWebviewCurrentUrl(resolvedUrl, "guest");
       const canSyncDesktopRoute = active !== false;
       if (
         canSyncDesktopRoute &&
