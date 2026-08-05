@@ -3987,7 +3987,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   );
 
   assert.match(webContracts, /export interface WebappEntry/);
-  assert.match(webContracts, /export type WebappSourceKind = "market" \| "local" \| "plugin" \| "bundled"/);
+  assert.match(webContracts, /export type WebappSourceKind = "market" \| "local" \| "plugin"/);
   assert.match(webContracts, /export type WebappOpenMode = "workspace" \| "dialog"/);
   assert.match(webContracts, /sourceKind\?: WebappSourceKind/);
   assert.match(webContracts, /openMode: WebappOpenMode/);
@@ -4101,12 +4101,10 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(settingsPage, /const webappDraftSourceRef = useRef<WebappDraftSnapshot \| null>\(null\)/);
   assert.match(settingsPage, /const hasDraft = sameSource && \([\s\S]*?webappOpenMode !== previousSnapshot\.openMode/);
   assert.match(settingsPage, /if \(!sameSource \|\| !hasDraft\) \{\s*applyWebappDraftSnapshot\(nextSnapshot\)/);
-  assert.match(mainProcess, /installBundledWebappTemplates\(app\)/);
   const initializeUserDataIndex = mainProcess.indexOf("function initializeUserDataRootsAndSettings()");
   const initializeUserDataEndIndex = mainProcess.indexOf("const gotSingleInstanceLock", initializeUserDataIndex);
   const initializeUserDataBlock = mainProcess.slice(initializeUserDataIndex, initializeUserDataEndIndex);
   const ensureDataRootIndex = mainProcess.indexOf("ensureDataRoot(app);", initializeUserDataIndex);
-  const installDemoIndex = mainProcess.indexOf("installBundledWebappTemplates(app)", initializeUserDataIndex);
   const applyDesktopInitIndex = mainProcess.indexOf("applyDesktopInitBootstrap(app", initializeUserDataIndex);
   const initializeMainI18nIndex = mainProcess.indexOf("initializeMainI18n(app", initializeUserDataIndex);
   const prepareStartupRuntimeIndex = mainProcess.indexOf("await startupEnvironmentRuntime.prepareStartupRuntimeEnvironment()");
@@ -4145,7 +4143,6 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.notEqual(initializeUserDataIndex, -1);
   assert.notEqual(initializeUserDataEndIndex, -1);
   assert.notEqual(ensureDataRootIndex, -1);
-  assert.notEqual(installDemoIndex, -1);
   assert.notEqual(applyDesktopInitIndex, -1);
   assert.notEqual(initializeMainI18nIndex, -1);
   assert.notEqual(prepareStartupRuntimeIndex, -1);
@@ -4153,7 +4150,6 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.notEqual(restoreDesktopSsoIndex, -1);
   assert.notEqual(createWindowCallIndex, -1);
   assert.equal(ensureDataRootIndex < applyDesktopInitIndex, true);
-  assert.equal(applyDesktopInitIndex < installDemoIndex, true);
   assert.equal(applyDesktopInitIndex < initializeMainI18nIndex, true);
   assert.equal(prepareStartupRuntimeIndex < initializeUserDataCallIndex, true);
   assert.equal(initializeUserDataCallIndex < restoreDesktopSsoIndex, true);

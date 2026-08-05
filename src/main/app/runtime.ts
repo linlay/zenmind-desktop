@@ -38,7 +38,6 @@ import {
   readServiceLog,
   runStartupPreparation,
 } from "../services/manager";
-import { installBundledWebappTemplates } from "../webs/webapps/template-installer";
 import { restorePublishedWebapps } from "../webs/webapps/publication-runtime";
 import { webappRuntime } from "../webs/webapps/runtime";
 import { webappWindowManager } from "../webs/webapps/window-manager";
@@ -437,10 +436,6 @@ export function createMainProcessRuntime() {
   function initializeUserDataRootsAndSettings() {
     ensureDataRoot(app);
     applyDesktopInitBootstrap(app, mainProcessContext.platform);
-    const webappTemplateResult = installBundledWebappTemplates(app);
-    if (!webappTemplateResult.ok) {
-      console.warn(`[main] ${webappTemplateResult.message}`);
-    }
     const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
     if (isFirstDesktopInstall) {
       setMainLocale(app, initialLocaleSettings.locale);

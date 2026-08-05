@@ -4027,8 +4027,6 @@ export function SettingsPage({
         return t("settings.webapps.sourceMarket");
       case "plugin":
         return t("settings.webapps.sourcePlugin");
-      case "bundled":
-        return t("settings.webapps.sourceBundled");
       default:
         return t("settings.webapps.sourceLocal");
     }

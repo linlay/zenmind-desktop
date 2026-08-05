@@ -6,7 +6,6 @@ import { readInstalledRecords } from "../../marketplace/common";
 import { getAllServices } from "../../services/service-registry";
 import { getDesktopWebappsDataRoot, getServiceStateRoot } from "../../user-paths";
 import { normalizeWebId } from "../common";
-import { BUNDLED_DEMO_ID } from "./template-installer";
 
 type PluginResourceOwnership = {
   webapps?: Record<string, { updatedAt: string }>;
@@ -57,13 +56,6 @@ function createMetadata(
 
 export function resolveWebappManagementMetadata(app: App, item: Pick<WebappEntry, "id">) {
   const installPath = path.join(getDesktopWebappsDataRoot(app), normalizeWebId(item.id));
-  if (item.id === BUNDLED_DEMO_ID) {
-    return createMetadata("bundled", installPath, {
-      sourceLabel: "Bundled demo",
-      removable: false
-    });
-  }
-
   const pluginOwner = findPluginOwner(app, item.id);
   if (pluginOwner) {
     return createMetadata("plugin", installPath, {
