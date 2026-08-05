@@ -705,27 +705,6 @@
   min-height: 0;
   overflow: auto;
   padding: 4px 10px 12px;
-  scrollbar-color: rgba(15, 23, 42, 0.3) transparent;
-  scrollbar-width: thin;
-}
-
-.desktop-global-search-results::-webkit-scrollbar {
-  width: 16px;
-  background: transparent;
-}
-
-.desktop-global-search-results::-webkit-scrollbar-track,
-.desktop-global-search-results::-webkit-scrollbar-track-piece {
-  border: 0;
-  background: transparent;
-  box-shadow: none;
-}
-
-.desktop-global-search-results::-webkit-scrollbar-thumb {
-  border: 4px solid transparent;
-  border-radius: 999px;
-  background: rgba(15, 23, 42, 0.3);
-  background-clip: padding-box;
 }
 
 .desktop-global-search-section + .desktop-global-search-section {
@@ -881,14 +860,6 @@
   background: #2D2D2D;
   color: #e2e8f0;
   box-shadow: none;
-}
-
-:root[data-theme="dark"] .desktop-global-search-results {
-  scrollbar-color: rgba(255, 255, 255, 0.38) transparent;
-}
-
-:root[data-theme="dark"] .desktop-global-search-results::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.38);
 }
 
 :root[data-theme="dark"] .desktop-global-search-input-icon,
