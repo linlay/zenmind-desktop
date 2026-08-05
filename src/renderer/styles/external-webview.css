@@ -38,7 +38,7 @@
   background: var(--embedded-surface-frame-bg);
 }
 
-.embedded-plugin-error {
+.service-webview-error {
   position: absolute;
   inset: 0;
   z-index: 2;

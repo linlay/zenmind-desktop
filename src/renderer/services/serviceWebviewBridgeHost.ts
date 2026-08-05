@@ -1,7 +1,7 @@
 import {
-  isPluginAuthBridgeRequestType,
-  resolvePluginAuthBridgeResponseType,
-  type PluginAuthBridgeProtocol
+  isServiceWebviewAuthRequestType,
+  resolveServiceWebviewAuthResponseType,
+  type ServiceWebviewAuthProtocol
 } from "../../shared/auth-bridge";
 import type { PluginSettingsValues } from "../../shared/contracts";
 import {
@@ -28,7 +28,7 @@ import {
 
 export type ServiceWebviewBridgeHostContext = {
   serviceId?: string | null;
-  bridgeProtocol?: PluginAuthBridgeProtocol | null;
+  bridgeProtocol?: ServiceWebviewAuthProtocol | null;
   desktopAuthContext?: string;
   sendBridgeMessageToWebview: (payload: ServiceWebviewBridgeMessage) => void;
   setBridgeError: (message: string) => void;
@@ -73,10 +73,10 @@ export function handleServiceWebviewBridgeMessage(
   const bridgeProtocol = context.bridgeProtocol;
   if (
     bridgeProtocol &&
-    isPluginAuthBridgeRequestType(bridgeProtocol, payload.type) &&
+    isServiceWebviewAuthRequestType(bridgeProtocol, payload.type) &&
     (payload.action === "getAccessToken" || payload.action === "refreshAccessToken")
   ) {
-    const responseType = resolvePluginAuthBridgeResponseType(bridgeProtocol);
+    const responseType = resolveServiceWebviewAuthResponseType(bridgeProtocol);
     void window.electronAPI.agentAuth
       .issueAccessToken(payload.reason === "unauthorized" ? "unauthorized" : "missing")
       .then((result) => {

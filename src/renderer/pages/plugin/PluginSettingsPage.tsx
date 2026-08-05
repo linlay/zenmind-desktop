@@ -55,7 +55,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
     setError("");
     void Promise.all([
       window.electronAPI.services.openPluginSettingsPage(pluginId),
-      window.electronAPI.plugins.getServiceWebviewPreloadUrl()
+      window.electronAPI.serviceWebview.getPreloadUrl()
     ])
       .then(([result, nextPreloadUrl]) => {
         if (cancelled) return;
@@ -157,7 +157,7 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
       <button
         className="embedded-back-button"
         onClick={() => navigate(-1)}
-        title={t("pluginPage.back")}
+        title={t("common.back")}
         aria-label={t("common.back")}
       >
         <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">

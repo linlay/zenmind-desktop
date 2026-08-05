@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 
 const {
-  buildPluginEmbeddedUrl
+  buildServiceWebviewUrl
 } = require("../dist-electron/shared/auth-bridge.js");
 const {
   areAgentWebclientHostRouteParamsEqual,
@@ -19,7 +19,7 @@ const {
 } = require("../dist-electron/shared/agent-webclient-routes.js");
 
 function buildAgentWebclientUrl(surfaceId, embedPath) {
-  return new URL(buildPluginEmbeddedUrl(
+  return new URL(buildServiceWebviewUrl(
     "agent-webclient",
     "http://127.0.0.1:7080/",
     {

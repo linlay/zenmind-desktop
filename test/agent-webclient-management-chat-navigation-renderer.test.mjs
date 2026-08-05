@@ -7,7 +7,7 @@ const projectRoot = process.cwd();
 
 test("agent webclient management restores switch the Desktop shell to the chat route", () => {
   const source = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+    path.join(projectRoot, "src", "renderer", "service-webview", "ServiceWebviewSurface.tsx"),
     "utf8",
   );
   const navigationHandler = source.match(

@@ -39,7 +39,7 @@
 
 .agent-webclient-copilot-dock .embedded-surface-page,
 .agent-webclient-copilot-dock .embedded-surface-frame-shell,
-.agent-webclient-copilot-dock .embedded-plugin-error {
+.agent-webclient-copilot-dock .service-webview-error {
   height: 100%;
   margin: 0;
   background: var(--embedded-surface-shell-bg);

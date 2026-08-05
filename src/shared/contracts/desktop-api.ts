@@ -475,7 +475,7 @@ export type DesktopConfigChangedEvent = {
 export type DesktopConfigChangedListener = (event: DesktopConfigChangedEvent) => void;
 
 export interface RendererDiagnosticReport {
-  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "plugin-webview";
+  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview";
   message: string;
   details?: Record<string, unknown>;
   stack?: string;
@@ -630,8 +630,10 @@ export interface DesktopApi {
   plugins: {
     install: () => Promise<PluginInstallResult>;
     uninstall: (serviceId: ServiceId) => Promise<PluginInstallResult>;
-    getServiceWebviewPreloadPath: () => Promise<string>;
-    getServiceWebviewPreloadUrl: () => Promise<string>;
+  };
+  serviceWebview: {
+    getPreloadPath: () => Promise<string>;
+    getPreloadUrl: () => Promise<string>;
   };
   market: {
     getSettings: () => Promise<MarketSettings>;

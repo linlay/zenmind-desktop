@@ -1,4 +1,4 @@
-export type PluginAuthBridgeProtocol = {
+export type ServiceWebviewAuthProtocol = {
   requestType: string;
   responseType: string;
 };
@@ -6,41 +6,41 @@ export type PluginAuthBridgeProtocol = {
 export const AGENT_AUTH_REQUEST_TYPE = "desktop:agent-auth:request";
 export const AGENT_AUTH_RESPONSE_TYPE = "desktop:agent-auth:response";
 
-const AUTH_BRIDGE_PROTOCOLS: Record<string, PluginAuthBridgeProtocol> = {
+const SERVICE_WEBVIEW_AUTH_PROTOCOLS: Record<string, ServiceWebviewAuthProtocol> = {
   "agent-webclient": {
     requestType: AGENT_AUTH_REQUEST_TYPE,
     responseType: AGENT_AUTH_RESPONSE_TYPE
   }
 };
 
-export function getPluginAuthBridgeProtocol(
+export function getServiceWebviewAuthProtocol(
   serviceId?: string | null
-): PluginAuthBridgeProtocol | null {
+): ServiceWebviewAuthProtocol | null {
   if (!serviceId) {
     return null;
   }
-  return AUTH_BRIDGE_PROTOCOLS[serviceId] ?? null;
+  return SERVICE_WEBVIEW_AUTH_PROTOCOLS[serviceId] ?? null;
 }
 
-export function isPluginAuthBridgeRequestType(
-  protocol: PluginAuthBridgeProtocol | null | undefined,
+export function isServiceWebviewAuthRequestType(
+  protocol: ServiceWebviewAuthProtocol | null | undefined,
   type: string | undefined | null
 ) {
   return Boolean(type && protocol && type === protocol.requestType);
 }
 
-export function isPluginAuthBridgeResponseType(
-  protocol: PluginAuthBridgeProtocol | null | undefined,
+export function isServiceWebviewAuthResponseType(
+  protocol: ServiceWebviewAuthProtocol | null | undefined,
   type: string | undefined | null
 ) {
   return Boolean(type && protocol && type === protocol.responseType);
 }
 
-export function resolvePluginAuthBridgeResponseType(protocol: PluginAuthBridgeProtocol) {
+export function resolveServiceWebviewAuthResponseType(protocol: ServiceWebviewAuthProtocol) {
   return protocol.responseType;
 }
 
-type BuildPluginEmbeddedUrlOptions = {
+type BuildServiceWebviewUrlOptions = {
   hostTheme?: "light" | "dark";
   hostLocale?: "zh-CN" | "en-US";
   accessToken?: string;
@@ -68,7 +68,7 @@ function getRuntimeUrlBase() {
   return "http://127.0.0.1";
 }
 
-function coercePluginWebUrl(value: string) {
+function coerceServiceWebviewUrl(value: string) {
   const trimmed = value.trim();
   if (!trimmed) {
     return "";
@@ -85,8 +85,8 @@ function coercePluginWebUrl(value: string) {
   return trimmed;
 }
 
-function parsePluginWebUrl(webUrl: string, baseUrl?: string) {
-  const candidate = coercePluginWebUrl(webUrl);
+function parseServiceWebviewUrl(webUrl: string, baseUrl?: string) {
+  const candidate = coerceServiceWebviewUrl(webUrl);
   if (!candidate) {
     return null;
   }
@@ -111,16 +111,16 @@ function parsePluginWebUrl(webUrl: string, baseUrl?: string) {
   }
 }
 
-function normalizePluginLocale(value: unknown) {
+function normalizeServiceWebviewLocale(value: unknown) {
   return value === "zh-CN" || value === "en-US" ? value : "";
 }
 
-export function buildPluginEmbeddedUrl(
+export function buildServiceWebviewUrl(
   serviceId: string | undefined,
   webUrl: string,
-  options: BuildPluginEmbeddedUrlOptions = {}
+  options: BuildServiceWebviewUrlOptions = {}
 ): string {
-  const url = parsePluginWebUrl(webUrl, options.baseUrl);
+  const url = parseServiceWebviewUrl(webUrl, options.baseUrl);
   if (!url) {
     return "";
   }
@@ -146,7 +146,7 @@ export function buildPluginEmbeddedUrl(
     if (options.hostTheme) {
       url.searchParams.set(url.pathname.startsWith("/agent/") ? "theme" : "hostTheme", options.hostTheme);
     }
-    const hostLocale = normalizePluginLocale(options.hostLocale);
+    const hostLocale = normalizeServiceWebviewLocale(options.hostLocale);
     if (hostLocale) {
       url.searchParams.set("lang", hostLocale);
     }

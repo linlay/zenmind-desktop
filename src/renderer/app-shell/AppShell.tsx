@@ -5,7 +5,7 @@ import type { WebsiteFaviconCache } from "../components/Favicon";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
-import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, PluginSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
+import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, ServiceWebviewSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
@@ -565,15 +565,15 @@ export function AppShell() {
     ? activeAgentWebclientRoute
     : null;
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
-  const activePluginId = activeEmbeddedAgentWebclientRoute
+  const activeServiceId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
     : bareAgentWebclientServiceRoute
       ? null
-      : resolvePluginRouteId(location.pathname);
+      : resolveServiceSurfaceRouteId(location.pathname);
   const activeWebEntryKey = resolveWebRouteEntryKey(location.pathname);
   activeWebEntryKeyRef.current = activeWebEntryKey;
-  const [mountedPluginIds, setMountedPluginIds] = useState<string[]>(() =>
-    activePluginId ? [activePluginId] : []
+  const [mountedServiceIds, setMountedServiceIds] = useState<string[]>(() =>
+    activeServiceId ? [activeServiceId] : []
   );
   const [mountedWebEntryKeys, setMountedWebEntryKeys] = useState<WebEntryKey[]>(() =>
     activeWebEntryKey ? [activeWebEntryKey] : []
@@ -596,7 +596,7 @@ export function AppShell() {
     location.pathname === EMPTY_WEB_SURFACE_ROUTE
       ? false
       : builtinBrowserSurfaceMounted || usesBuiltinBrowserSurface;
-  const usesPluginSurface =
+  const usesServiceWebviewSurface =
     Boolean(activeEmbeddedAgentWebclientRoute) ||
     (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
     location.pathname.startsWith("/plugin/") ||
@@ -2133,14 +2133,14 @@ export function AppShell() {
   }, [currentRoute, pendingSidebarNavigationPath]);
 
   useEffect(() => {
-    if (!activePluginId) {
+    if (!activeServiceId) {
       return;
     }
 
-    setMountedPluginIds((current) =>
-      current.includes(activePluginId) ? current : [...current, activePluginId]
+    setMountedServiceIds((current) =>
+      current.includes(activeServiceId) ? current : [...current, activeServiceId]
     );
-  }, [activePluginId]);
+  }, [activeServiceId]);
 
   useEffect(() => {
     if (!activeWebEntryKey) {
@@ -2445,7 +2445,7 @@ export function AppShell() {
           route: service.id === "agent-webclient"
             ? activeAgentWebclientRoute?.routePath ?? ASSISTANT_TARGET_PATH
             : `/service/${service.id}`,
-          active: activePluginId === service.id
+          active: activeServiceId === service.id
         }));
 
       return [
@@ -2561,7 +2561,7 @@ export function AppShell() {
   }, [
     activeWebEntryKey,
     activeAgentWebclientRoute,
-    activePluginId,
+    activeServiceId,
     webItems,
     location.pathname,
     navigate,
@@ -2814,7 +2814,7 @@ export function AppShell() {
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
-        usesPluginSurface ? "has-plugin-surface" : "",
+        usesServiceWebviewSurface ? "has-service-webview-surface" : "",
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
         usesStandardBaseSurface ? "has-standard-base-surface" : "",
@@ -2919,11 +2919,11 @@ export function AppShell() {
       </div>
       <div className="app-content">
         <main className="app-main">
-          <PluginSurfaceHost
-            activePluginId={activePluginId}
+          <ServiceWebviewSurfaceHost
+            activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
             hostTheme={resolvedTheme}
-            mountedPluginIds={mountedPluginIds}
+            mountedServiceIds={mountedServiceIds}
           />
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}
@@ -3188,7 +3188,7 @@ export function AppShell() {
   );
 }
 
-function resolvePluginRouteId(pathname: string) {
+function resolveServiceSurfaceRouteId(pathname: string) {
   return matchPath("/service/:serviceId", pathname)?.params.serviceId ??
     matchPath("/plugin/:pluginId", pathname)?.params.pluginId ??
     null;

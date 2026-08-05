@@ -7,21 +7,21 @@ import {
   useState,
 } from "react";
 import { Link, useLocation, useParams, useNavigate } from "react-router-dom";
-import { useServices } from "../../services/ServicesContext";
-import { registerAssistantPageContextProvider } from "../../copilot/page-context/assistantPageContext";
+import { useServices } from "../services/ServicesContext";
+import { registerAssistantPageContextProvider } from "../copilot/page-context/assistantPageContext";
 import {
-  buildPluginEmbeddedUrl,
-  getPluginAuthBridgeProtocol,
-} from "../../../shared/auth-bridge";
-import { buildAgentWebclientAccessTokenInjectionScript } from "../../../shared/agent-webclient-auth-injection";
+  buildServiceWebviewUrl,
+  getServiceWebviewAuthProtocol,
+} from "../../shared/auth-bridge";
+import { buildAgentWebclientAccessTokenInjectionScript } from "../../shared/agent-webclient-auth-injection";
 import {
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource,
-} from "../../../shared/agent-webclient-routes";
-import { useI18n } from "../../i18n/useI18n";
+} from "../../shared/agent-webclient-routes";
+import { useI18n } from "../i18n/useI18n";
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
@@ -29,41 +29,41 @@ import {
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   type ServiceWebviewBridgeMessage,
-} from "../../../shared/service-webview-bridge";
-import { handleServiceWebviewBridgeMessage } from "../../services/serviceWebviewBridgeHost";
-import { getServiceDisplayName } from "../../service-display";
-import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
+} from "../../shared/service-webview-bridge";
+import { handleServiceWebviewBridgeMessage } from "../services/serviceWebviewBridgeHost";
+import { getServiceDisplayName } from "../service-display";
+import { buildSettingsSectionPath } from "../settings/settingsRoutes";
 import type {
   AssistantPageContext,
   DesktopPageContextSnapshot,
-} from "../../../shared/contracts";
-import type { TranslateFunction } from "../../../shared/i18n";
+} from "../../shared/contracts";
+import type { TranslateFunction } from "../../shared/i18n";
 import {
   buildInteractElementScript,
   type EmbeddedWebInteractAction,
-} from "../../../shared/embedded-web-scripts";
+} from "../../shared/embedded-web-scripts";
 import {
   getCurrentPageContextSnapshot,
   publishCurrentPageContextSnapshot,
   subscribeCurrentPageContext,
-} from "../../services/currentPageContext";
-import { registerPluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
-import { registerDesktopActionProviderForScope } from "../../services/desktopActionRegistry";
-import { registerWebSurfaceStateProvider } from "../../services/webSurfaceStateRegistry";
+} from "../services/currentPageContext";
+import { registerServiceSurfaceWebviewRef } from "../services/serviceSurfaceWebviewRefs";
+import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
+import { registerWebSurfaceStateProvider } from "../services/webSurfaceStateRegistry";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
   EMBEDDED_WEB_SCRIPT_MAX_BYTES,
   getUtf8ByteLength,
   readActionSelector,
-} from "../../copilot/page-context/webActions";
-import { STORAGE_NAMESPACE } from "../../../shared/brand";
-import { WebviewDebugOverlay } from "../../components/WebviewDebugOverlay";
+} from "../copilot/page-context/webActions";
+import { STORAGE_NAMESPACE } from "../../shared/brand";
+import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
 
-type PluginWebviewUrlChangeSource = "host" | "guest";
+type ServiceWebviewUrlChangeSource = "host" | "guest";
 
-type PluginPageProps = {
+type ServiceWebviewSurfaceProps = {
   hostTheme: "light" | "dark";
-  pluginId?: string;
+  serviceId?: string;
   surfaceId?: string;
   active?: boolean | undefined;
   embedPath?: string;
@@ -72,7 +72,7 @@ type PluginPageProps = {
   devToolsTarget?: "copilot";
   loadInitialEmbeddedUrlDirectly?: boolean;
   suppressInitialLoadingCopy?: boolean;
-  onCurrentUrlChange?: (url: string, source: PluginWebviewUrlChangeSource) => void;
+  onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -87,8 +87,8 @@ type EmbeddedWebScriptResult =
     };
 type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
 
-const MAX_PLUGIN_PAGE_CONTEXT_HEADINGS = 24;
-const MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT = 40000;
+const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
+const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
 const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
 
 function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
@@ -113,8 +113,8 @@ const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
     headings: Array.from(document.querySelectorAll("h1, h2, h3"))
       .map((node) => normalize(node.textContent || ""))
       .filter(Boolean)
-      .slice(0, ${MAX_PLUGIN_PAGE_CONTEXT_HEADINGS}),
-    bodyText: normalize(document.body?.innerText || "").slice(0, ${MAX_PLUGIN_PAGE_CONTEXT_BODY_TEXT})
+      .slice(0, ${MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS}),
+    bodyText: normalize(document.body?.innerText || "").slice(0, ${MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT})
   };
 })()`;
 
@@ -131,7 +131,7 @@ function buildAgentWebclientDesktopContext(
   return snapshot;
 }
 
-function buildPluginWebviewFallbackContext(
+function buildServiceWebviewFallbackContext(
   serviceDisplayName: string,
   embeddedUrl: string,
   webUrl: string,
@@ -141,7 +141,7 @@ function buildPluginWebviewFallbackContext(
   surfaceRoute?: string,
   embedPath?: string,
 ): AssistantPageContext {
-  const fallbackName = t("pluginPage.embeddedAppFallback");
+  const fallbackName = t("serviceWebview.embeddedAppFallback");
   const normalizedName = normalizeWhitespace(serviceDisplayName || fallbackName);
   const fallbackUrl = embeddedUrl || webUrl || window.location.href;
   return {
@@ -151,8 +151,8 @@ function buildPluginWebviewFallbackContext(
     metaDescription: "",
     headings: [],
     bodyText: [
-      t("pluginPage.contextCurrentEmbeddedApp", { name: normalizedName || fallbackName }),
-      t("pluginPage.contextUseDesktopWebActions"),
+      t("serviceWebview.contextCurrentEmbeddedApp", { name: normalizedName || fallbackName }),
+      t("serviceWebview.contextUseDesktopWebActions"),
     ].join(" "),
     browserTarget: fallbackUrl
       ? {
@@ -200,16 +200,16 @@ function parseHttpUrl(value: string) {
   }
 }
 
-function buildPluginWebviewSrcUrl(embeddedUrl: string) {
+function buildServiceWebviewSrcUrl(embeddedUrl: string) {
   const parsed = parseHttpUrl(embeddedUrl);
   return parsed ? `${parsed.origin}/` : embeddedUrl;
 }
 
-function hasPluginRoute(url: URL) {
+function hasServiceWebviewRoute(url: URL) {
   return Boolean(url.pathname !== "/" || url.search || url.hash);
 }
 
-function isPluginRouteSyncTarget(value: string, webviewSrcUrl: string) {
+function isServiceWebviewRouteSyncTarget(value: string, webviewSrcUrl: string) {
   const parsed = parseHttpUrl(value);
   const src = parseHttpUrl(webviewSrcUrl);
   if (!parsed || !src || parsed.origin !== src.origin) {
@@ -230,7 +230,7 @@ function isPluginRouteSyncTarget(value: string, webviewSrcUrl: string) {
   return true;
 }
 
-function resolvePluginCurrentUrl(
+function resolveServiceWebviewCurrentUrl(
   actualUrl: string,
   embeddedUrl: string,
   webviewSrcUrl: string,
@@ -245,15 +245,15 @@ function resolvePluginCurrentUrl(
     embedded &&
     src &&
     actual.origin === src.origin &&
-    !hasPluginRoute(actual) &&
-    hasPluginRoute(embedded)
+    !hasServiceWebviewRoute(actual) &&
+    hasServiceWebviewRoute(embedded)
   ) {
     return embedded.toString();
   }
   return actual.toString();
 }
 
-function buildPluginRouteChangedMessage(
+function buildServiceWebviewRouteChangedMessage(
   targetUrl: string,
   reason: "initial" | "navigation" | "route-sync",
 ): ServiceWebviewBridgeMessage | null {
@@ -263,7 +263,7 @@ function buildPluginRouteChangedMessage(
   }
   return {
     type: DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
-    requestId: `plugin_route_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+    requestId: `service_webview_route_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
     reason,
     url: parsed.toString(),
     origin: parsed.origin,
@@ -293,7 +293,7 @@ function buildClientSideRouteNavigationScript(targetUrl: string) {
   })()`;
 }
 
-async function tryReadPluginWebviewPageContext(
+async function tryReadServiceWebviewPageContext(
   webview: Electron.WebviewTag | null,
   serviceDisplayName: string,
   embeddedUrl: string,
@@ -324,7 +324,7 @@ async function tryReadPluginWebviewPageContext(
       title:
         typeof pageContext?.title === "string" && pageContext.title
           ? pageContext.title
-          : serviceDisplayName || t("pluginPage.embeddedAppFallback"),
+          : serviceDisplayName || t("serviceWebview.embeddedAppFallback"),
       selectedText:
         typeof pageContext?.selectedText === "string"
           ? pageContext.selectedText
@@ -354,9 +354,9 @@ async function tryReadPluginWebviewPageContext(
   }
 }
 
-export function PluginPage({
+export function ServiceWebviewSurface({
   hostTheme,
-  pluginId: pluginIdProp,
+  serviceId: serviceIdProp,
   surfaceId: surfaceIdProp,
   active,
   embedPath,
@@ -366,16 +366,19 @@ export function PluginPage({
   loadInitialEmbeddedUrlDirectly,
   suppressInitialLoadingCopy,
   onCurrentUrlChange,
-}: PluginPageProps) {
+}: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const currentRoute = `${location.pathname}${location.search}`;
-  const { pluginId: routePluginId } = useParams<{ pluginId: string }>();
-  const pluginId = pluginIdProp ?? routePluginId ?? "";
-  const surfaceId = surfaceIdProp?.trim() || pluginId;
+  const { serviceId: routeServiceId, pluginId: routePluginId } = useParams<{
+    serviceId?: string;
+    pluginId?: string;
+  }>();
+  const serviceId = serviceIdProp ?? routeServiceId ?? routePluginId ?? "";
+  const surfaceId = surfaceIdProp?.trim() || serviceId;
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
-  const service = services.find((s) => s.id === pluginId);
+  const service = services.find((s) => s.id === serviceId);
   const agentPlatformService =
     service?.id === "agent-webclient"
       ? services.find((s) => s.id === "agent-platform")
@@ -387,9 +390,13 @@ export function PluginPage({
   const pluginsSettingsPath = buildSettingsSectionPath("plugins");
   const serviceManagementPath = service?.kind === "plugin" ? pluginsSettingsPath : controlCenterPath;
   const serviceOpenManagementLabel =
-    service?.kind === "plugin" ? t("pluginPage.openPlugins") : t("pluginPage.openControlCenter");
+    service?.kind === "plugin" ? t("serviceWebview.openPlugins") : t("serviceWebview.openControlCenter");
   const serviceBackManagementLabel =
-    service?.kind === "plugin" ? t("pluginPage.backToPlugins") : t("pluginPage.backToControlCenter");
+    service?.kind === "plugin" ? t("serviceWebview.backToPlugins") : t("serviceWebview.backToControlCenter");
+  const serviceKindLabel =
+    service?.kind === "plugin"
+      ? t("serviceWebview.kind.plugin")
+      : t("serviceWebview.kind.service");
   const surfaceRoute = location.pathname;
   const [bridgeError, setBridgeError] = useState("");
   const [bridgeReady, setBridgeReady] = useState(false);
@@ -415,7 +422,7 @@ export function PluginPage({
         };
 
   useEffect(() => {
-    return registerPluginSurfaceWebviewRef(surfaceId, webviewRef);
+    return registerServiceSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
 
   useEffect(() => {
@@ -445,7 +452,7 @@ export function PluginPage({
 
   const webUrl = service?.healthMeta.webUrl ?? "";
   const bridgeProtocol = useMemo(
-    () => getPluginAuthBridgeProtocol(service?.id),
+    () => getServiceWebviewAuthProtocol(service?.id),
     [service?.id],
   );
   const webviewReloadKey = [
@@ -477,7 +484,7 @@ export function PluginPage({
     ? resolveAgentWebclientWsSource(surfaceId, effectiveEmbedPath)
     : undefined;
   const embeddedUrl = useMemo(() => {
-    return buildPluginEmbeddedUrl(service?.id, webUrl, {
+    return buildServiceWebviewUrl(service?.id, webUrl, {
       hostTheme,
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
       accessToken:
@@ -501,7 +508,7 @@ export function PluginPage({
     wsSource,
   ]);
   const webviewOriginSrcUrl = useMemo(
-    () => buildPluginWebviewSrcUrl(embeddedUrl),
+    () => buildServiceWebviewSrcUrl(embeddedUrl),
     [embeddedUrl],
   );
   const webviewDirectLoadScope = [
@@ -545,7 +552,7 @@ export function PluginPage({
     };
   }
 
-  function reportPluginWebviewDiagnostic(
+  function reportServiceWebviewDiagnostic(
     stage: string,
     details: Record<string, unknown> = {},
   ) {
@@ -559,11 +566,11 @@ export function PluginPage({
       // The guest can disappear during route changes or app shutdown.
     }
     window.electronAPI.diagnostics?.reportRendererError({
-      source: "plugin-webview",
+      source: "service-webview",
       message: stage,
-      filename: "PluginPage.tsx",
+      filename: "ServiceWebviewSurface.tsx",
       details: {
-        serviceId: service?.id ?? pluginId,
+        serviceId: service?.id ?? serviceId,
         serviceStatus: service?.status ?? "",
         surfaceId,
         surfaceRoute,
@@ -582,14 +589,14 @@ export function PluginPage({
     try {
       const webviewUrl = webviewRef.current?.getURL();
       return typeof webviewUrl === "string" && webviewUrl.trim()
-        ? resolvePluginCurrentUrl(webviewUrl.trim(), embeddedUrl, webviewSrcUrl)
+        ? resolveServiceWebviewCurrentUrl(webviewUrl.trim(), embeddedUrl, webviewSrcUrl)
         : embeddedUrl;
     } catch {
       return embeddedUrl;
     }
   }
 
-  function updateWebviewCurrentUrl(nextUrl: string, source: PluginWebviewUrlChangeSource) {
+  function updateWebviewCurrentUrl(nextUrl: string, source: ServiceWebviewUrlChangeSource) {
     setWebviewCurrentUrl(nextUrl);
     if (!nextUrl || lastReportedCurrentUrlRef.current === nextUrl) {
       return;
@@ -602,9 +609,9 @@ export function PluginPage({
     setWebviewSnapshotNonce((current) => current + 1);
   }
 
-  async function readPluginPageContext() {
+  async function readServiceWebviewPageContext() {
     return (
-      (await tryReadPluginWebviewPageContext(
+      (await tryReadServiceWebviewPageContext(
         webviewRef.current,
         serviceDisplayName,
         embeddedUrl,
@@ -616,7 +623,7 @@ export function PluginPage({
         readCurrentWebviewUrl(),
         t,
       )) ??
-      buildPluginWebviewFallbackContext(
+      buildServiceWebviewFallbackContext(
         serviceDisplayName,
         embeddedUrl,
         webUrl,
@@ -687,20 +694,20 @@ export function PluginPage({
     }
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
-      reportPluginWebviewDiagnostic("execute-script-skipped", {
+      reportServiceWebviewDiagnostic("execute-script-skipped", {
         reason: "webview-unavailable",
       });
-      return embeddedError("webview_unavailable", t("pluginPage.error.webviewUnavailable"));
+      return embeddedError("webview_unavailable", t("serviceWebview.error.webviewUnavailable"));
     }
     try {
-      reportPluginWebviewDiagnostic("execute-script-start", {
+      reportServiceWebviewDiagnostic("execute-script-start", {
         scriptBytes: getUtf8ByteLength(script),
       });
       const result = await targetWebview.executeJavaScript(script, true);
-      reportPluginWebviewDiagnostic("execute-script-finish");
+      reportServiceWebviewDiagnostic("execute-script-finish");
       return { ok: true as const, result };
     } catch (error) {
-      reportPluginWebviewDiagnostic("execute-script-failed", {
+      reportServiceWebviewDiagnostic("execute-script-failed", {
         error: error instanceof Error ? error.message : String(error),
       });
       return {
@@ -801,8 +808,7 @@ export function PluginPage({
   useEffect(() => {
     let cancelled = false;
     setBridgeReady(false);
-    void window.electronAPI.plugins
-      .getServiceWebviewPreloadUrl()
+    void window.electronAPI.serviceWebview.getPreloadUrl()
       .then((preloadUrl) => {
         if (cancelled) {
           return;
@@ -833,7 +839,7 @@ export function PluginPage({
     }
   }
 
-  function dispatchPluginRouteEventToWebview(payload: Record<string, unknown>) {
+  function dispatchServiceWebviewRouteEventToWebview(payload: Record<string, unknown>) {
     try {
       webviewRef.current?.send(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, payload);
     } catch {
@@ -841,7 +847,7 @@ export function PluginPage({
     }
   }
 
-  function sendPluginRouteToWebview(
+  function sendServiceRouteToWebview(
     targetUrl: string,
     reason: "initial" | "navigation" | "route-sync",
   ) {
@@ -854,7 +860,7 @@ export function PluginPage({
         return;
       }
     }
-    const payload = buildPluginRouteChangedMessage(targetUrl, reason);
+    const payload = buildServiceWebviewRouteChangedMessage(targetUrl, reason);
     if (!payload) {
       return;
     }
@@ -864,7 +870,7 @@ export function PluginPage({
     ) {
       lastHostAppliedChatRouteRef.current = targetUrl;
     }
-    dispatchPluginRouteEventToWebview(payload);
+    dispatchServiceWebviewRouteEventToWebview(payload);
   }
 
   function requestDirectWebviewRouteLoad() {
@@ -874,7 +880,7 @@ export function PluginPage({
 
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
-      reportPluginWebviewDiagnostic("direct-route-load-skipped", {
+      reportServiceWebviewDiagnostic("direct-route-load-skipped", {
         reason: "webview-unavailable",
       });
       return;
@@ -886,21 +892,21 @@ export function PluginPage({
     try {
       const currentUrl = targetWebview.getURL().trim();
       const normalizedCurrentUrl = currentUrl
-        ? resolvePluginCurrentUrl(currentUrl, embeddedUrl, webviewSrcUrl)
+        ? resolveServiceWebviewCurrentUrl(currentUrl, embeddedUrl, webviewSrcUrl)
         : "";
       const isSemanticAgentChatRouteMatch =
         isAgentWebclientChatSurface(service?.id, surfaceId) &&
         areAgentWebclientChatNavigationUrlsEquivalent(currentUrl, embeddedUrl);
       if (normalizedCurrentUrl === embeddedUrl || isSemanticAgentChatRouteMatch) {
         lastDirectWebviewRouteRef.current = embeddedUrl;
-        reportPluginWebviewDiagnostic("direct-route-load-skipped", {
+        reportServiceWebviewDiagnostic("direct-route-load-skipped", {
           reason: "already-at-target",
           semanticAgentChatRouteMatch: isSemanticAgentChatRouteMatch || undefined,
         });
         return;
       }
       if (!currentUrl && lastDirectWebviewRouteRef.current === embeddedUrl) {
-        reportPluginWebviewDiagnostic("direct-route-load-skipped", {
+        reportServiceWebviewDiagnostic("direct-route-load-skipped", {
           reason: "pending-first-url",
         });
         return;
@@ -915,7 +921,7 @@ export function PluginPage({
         currentParsed.origin === targetParsed.origin &&
         !webviewLoadedChromeErrorPage()
       ) {
-        reportPluginWebviewDiagnostic("direct-route-client-navigation", {
+        reportServiceWebviewDiagnostic("direct-route-client-navigation", {
           targetUrl: embeddedUrl,
         });
         void targetWebview.executeJavaScript(
@@ -931,18 +937,18 @@ export function PluginPage({
           const resultHref =
             typeof resultRecord.href === "string" ? resultRecord.href.trim() : "";
           const resolvedResultUrl = resultHref
-            ? resolvePluginCurrentUrl(resultHref, embeddedUrl, webviewSrcUrl)
+            ? resolveServiceWebviewCurrentUrl(resultHref, embeddedUrl, webviewSrcUrl)
             : "";
           if (resolvedResultUrl === embeddedUrl) {
             return;
           }
-          reportPluginWebviewDiagnostic("direct-route-client-navigation-mismatch", {
+          reportServiceWebviewDiagnostic("direct-route-client-navigation-mismatch", {
             href: resultHref,
             targetUrl: embeddedUrl,
           });
           void targetWebview.loadURL(embeddedUrl);
         }).catch((reason: unknown) => {
-          reportPluginWebviewDiagnostic("direct-route-client-navigation-failed", {
+          reportServiceWebviewDiagnostic("direct-route-client-navigation-failed", {
             error: reason instanceof Error ? reason.message : String(reason),
           });
           console.warn(
@@ -953,12 +959,12 @@ export function PluginPage({
         });
         return;
       }
-      reportPluginWebviewDiagnostic("direct-route-load-url", {
+      reportServiceWebviewDiagnostic("direct-route-load-url", {
         targetUrl: embeddedUrl,
       });
       void targetWebview.loadURL(embeddedUrl);
     } catch (reason) {
-      reportPluginWebviewDiagnostic("direct-route-load-failed", {
+      reportServiceWebviewDiagnostic("direct-route-load-failed", {
         error: reason instanceof Error ? reason.message : String(reason),
       });
       console.warn(
@@ -974,7 +980,7 @@ export function PluginPage({
     }
     const targetWebview = webviewRef.current;
     if (!targetWebview) {
-      reportPluginWebviewDiagnostic("token-injection-skipped", {
+      reportServiceWebviewDiagnostic("token-injection-skipped", {
         reason: "webview-unavailable",
       });
       return false;
@@ -1060,7 +1066,7 @@ export function PluginPage({
       sendBridgeMessageToWebview,
       setBridgeError,
       logDebug: (stage, message) => {
-        console.info("[service-webview]", service?.id || "plugin", stage, message);
+        console.info("[service-webview]", service?.id || "service", stage, message);
       },
     });
   }
@@ -1106,27 +1112,27 @@ export function PluginPage({
     }
 
     const handleDomReady = () => {
-      reportPluginWebviewDiagnostic("dom-ready");
+      reportServiceWebviewDiagnostic("dom-ready");
       syncWebviewState();
       refreshCurrentPageSnapshotTarget();
-      sendPluginRouteToWebview(embeddedUrl, "initial");
+      sendServiceRouteToWebview(embeddedUrl, "initial");
       seedAgentWebclientAccessToken();
     };
     const handleDidFinishLoad = () => {
-      reportPluginWebviewDiagnostic("did-finish-load");
+      reportServiceWebviewDiagnostic("did-finish-load");
       syncWebviewState();
       refreshCurrentPageSnapshotTarget();
-      sendPluginRouteToWebview(embeddedUrl, "route-sync");
+      sendServiceRouteToWebview(embeddedUrl, "route-sync");
       seedAgentWebclientAccessToken();
     };
     const syncNavigationRoute = (event: Event) => {
       const nextUrl = readEventString(event, "url");
-      reportPluginWebviewDiagnostic("navigation", {
+      reportServiceWebviewDiagnostic("navigation", {
         url: nextUrl,
         isMainFrame: readEventBoolean(event, "isMainFrame"),
       });
       const resolvedUrl = nextUrl
-        ? resolvePluginCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
+        ? resolveServiceWebviewCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
         : readCurrentWebviewUrl();
       updateWebviewCurrentUrl(resolvedUrl, "guest");
       const canSyncDesktopRoute = active !== false;
@@ -1167,9 +1173,9 @@ export function PluginPage({
       if (
         nextUrl &&
         readEventBoolean(event, "isMainFrame") !== false &&
-        isPluginRouteSyncTarget(nextUrl, webviewSrcUrl)
+        isServiceWebviewRouteSyncTarget(nextUrl, webviewSrcUrl)
       ) {
-        sendPluginRouteToWebview(resolvedUrl, "navigation");
+        sendServiceRouteToWebview(resolvedUrl, "navigation");
       }
       seedAgentWebclientAccessToken();
     };
@@ -1180,7 +1186,7 @@ export function PluginPage({
       syncNavigationRoute(event);
     };
     const handleDidFailLoad = (event: Event) => {
-      reportPluginWebviewDiagnostic("did-fail-load", {
+      reportServiceWebviewDiagnostic("did-fail-load", {
         url: readEventString(event, "validatedURL") || readEventString(event, "url"),
         errorCode: readEventNumber(event, "errorCode"),
         errorDescription: readEventString(event, "errorDescription"),
@@ -1188,7 +1194,7 @@ export function PluginPage({
       syncWebviewState();
     };
 
-    reportPluginWebviewDiagnostic("listeners-attached");
+    reportServiceWebviewDiagnostic("listeners-attached");
     targetWebview.addEventListener("dom-ready", handleDomReady);
     targetWebview.addEventListener("did-finish-load", handleDidFinishLoad);
     targetWebview.addEventListener("did-navigate", handleDidNavigate);
@@ -1199,11 +1205,11 @@ export function PluginPage({
     targetWebview.addEventListener("did-fail-load", handleDidFailLoad);
     targetWebview.addEventListener("ipc-message", handleWebviewBridgeMessage);
     syncWebviewState();
-    sendPluginRouteToWebview(embeddedUrl, "route-sync");
+    sendServiceRouteToWebview(embeddedUrl, "route-sync");
     const seedTimers = scheduleAgentWebclientAccessTokenSeeds();
 
     return () => {
-      reportPluginWebviewDiagnostic("listeners-detached");
+      reportServiceWebviewDiagnostic("listeners-detached");
       seedTimers.forEach((timer) => window.clearTimeout(timer));
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
@@ -1222,7 +1228,7 @@ export function PluginPage({
     bridgeProtocol,
     bridgeReady,
     active,
-    pluginId,
+    serviceId,
     surfaceId,
     service?.id,
     service?.status,
@@ -1275,7 +1281,7 @@ export function PluginPage({
     ) {
       return;
     }
-    sendPluginRouteToWebview(embeddedUrl, "route-sync");
+    sendServiceRouteToWebview(embeddedUrl, "route-sync");
   }, [active, bridgeReady, embeddedUrl, service?.id, serviceWebviewPreloadUrl, surfaceId]);
 
   useEffect(() => {
@@ -1355,7 +1361,7 @@ export function PluginPage({
 
     let cancelled = false;
     void (async () => {
-      const pageContext = await readPluginPageContext();
+      const pageContext = await readServiceWebviewPageContext();
       if (cancelled) {
         return;
       }
@@ -1445,7 +1451,7 @@ export function PluginPage({
     }
 
     return registerAssistantPageContextProvider(async () => {
-      return readPluginPageContext();
+      return readServiceWebviewPageContext();
     });
   }, [
     active,
@@ -1508,7 +1514,7 @@ export function PluginPage({
   }, [
     active,
     embeddedUrl,
-    pluginId,
+    serviceId,
     surfaceId,
     service?.status,
     serviceDisplayName,
@@ -1519,13 +1525,13 @@ export function PluginPage({
   ]);
 
   if (!service) {
-    if (pluginId === "agent-webclient") {
+    if (serviceId === "agent-webclient") {
       return (
         <section className="empty-state" {...surfaceVisibilityProps}>
-          <h1>{t("pluginPage.agentServiceMissingTitle")}</h1>
-          <p>{t("pluginPage.agentServiceMissingDescription")}</p>
+          <h1>{t("serviceWebview.agentServiceMissingTitle")}</h1>
+          <p>{t("serviceWebview.agentServiceMissingDescription")}</p>
           <Link className="primary-link" to={controlCenterPath}>
-            {t("pluginPage.openControlCenter")}
+            {t("serviceWebview.openControlCenter")}
           </Link>
         </section>
       );
@@ -1533,10 +1539,10 @@ export function PluginPage({
 
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
-        <h1>{t("pluginPage.serviceMissingTitle")}</h1>
-        <p>{t("pluginPage.serviceMissingDescription", { pluginId })}</p>
+        <h1>{t("serviceWebview.serviceMissingTitle")}</h1>
+        <p>{t("serviceWebview.serviceMissingDescription", { serviceId })}</p>
         <Link className="primary-link" to={pluginsSettingsPath}>
-          {t("pluginPage.backToPlugins")}
+          {t("serviceWebview.backToPlugins")}
         </Link>
       </section>
     );
@@ -1545,8 +1551,8 @@ export function PluginPage({
   if (service.status !== "running") {
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
-        <p className="eyebrow">PLUGIN</p>
-        <h1>{t("pluginPage.notReadyTitle", { name: serviceDisplayName })}</h1>
+        <p className="eyebrow">{serviceKindLabel}</p>
+        <h1>{t("serviceWebview.notReadyTitle", { name: serviceDisplayName })}</h1>
         <p>{service.message}</p>
         <Link className="primary-link" to={serviceManagementPath}>
           {serviceOpenManagementLabel}
@@ -1563,7 +1569,7 @@ export function PluginPage({
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
         <h1>{serviceDisplayName}</h1>
-        <p>{t("pluginPage.noFrontend")}</p>
+        <p>{t("serviceWebview.noFrontend")}</p>
         <Link className="primary-link" to={serviceManagementPath}>
           {serviceBackManagementLabel}
         </Link>
@@ -1574,9 +1580,9 @@ export function PluginPage({
   if (bridgeError) {
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
-        <p className="eyebrow">PLUGIN</p>
+        <p className="eyebrow">{serviceKindLabel}</p>
         <h1>{serviceDisplayName}</h1>
-        <p>{t("pluginPage.authBridgeFailed", { message: bridgeError })}</p>
+        <p>{t("serviceWebview.authBridgeFailed", { message: bridgeError })}</p>
         <Link className="primary-link" to={serviceManagementPath}>
           {serviceBackManagementLabel}
         </Link>
@@ -1587,7 +1593,7 @@ export function PluginPage({
   if (service.id === "agent-platform" && !agentPlatformMonitorAccessToken) {
     return (
       <section className="empty-state" {...surfaceVisibilityProps}>
-        <p className="eyebrow">PLUGIN</p>
+        <p className="eyebrow">{serviceKindLabel}</p>
         <h1>{serviceDisplayName}</h1>
         <p>Preparing secure monitor preview.</p>
       </section>
@@ -1602,13 +1608,13 @@ export function PluginPage({
       ].filter(Boolean).join(" ")}
       {...surfaceVisibilityProps}
     >
-      {active && pluginId !== "agent-webclient" && (
+      {active && serviceId !== "agent-webclient" && (
         <button
           className="embedded-back-button"
           onClick={() => {
             navigate(-1);
           }}
-          title={t("pluginPage.back")}
+          title={t("serviceWebview.back")}
           aria-label={t("common.back")}
         >
           <svg xmlns="http://www.w3.org/2000/svg" height="20px" viewBox="0 -960 960 960" width="20px" fill="currentColor">
@@ -1622,12 +1628,12 @@ export function PluginPage({
           <>
             {webviewLoadError ? (
               <section
-                className="empty-state embedded-plugin-error"
+                className="empty-state service-webview-error"
                 aria-live="polite"
               >
-                <p className="eyebrow">PLUGIN</p>
+                <p className="eyebrow">{serviceKindLabel}</p>
                 <h1>{serviceDisplayName}</h1>
-                <p>{t("pluginPage.agentRecovering")}</p>
+                <p>{t("serviceWebview.agentRecovering")}</p>
               </section>
             ) : null}
             {createElement("webview", {
@@ -1637,7 +1643,7 @@ export function PluginPage({
               title: serviceDisplayName,
               className: "embedded-surface-frame",
               preload: serviceWebviewPreloadUrl,
-              partition: `persist:${STORAGE_NAMESPACE}-service-${pluginId || "plugin"}`,
+              partition: `persist:${STORAGE_NAMESPACE}-service-${serviceId || "plugin"}`,
               allowpopups: "true",
               style: { width: "100%", height: "100%", border: "none" },
             })}
@@ -1646,13 +1652,13 @@ export function PluginPage({
           <section
             className="empty-state"
             aria-busy="true"
-            aria-label={t("pluginPage.loading", { name: serviceDisplayName })}
+            aria-label={t("serviceWebview.loading", { name: serviceDisplayName })}
           />
         ) : (
           <section className="empty-state">
-            <p className="eyebrow">PLUGIN</p>
+            <p className="eyebrow">{serviceKindLabel}</p>
             <h1>{serviceDisplayName}</h1>
-            <p>{t("pluginPage.preparingAuth")}</p>
+            <p>{t("serviceWebview.preparingAuth")}</p>
           </section>
         )}
       </div>

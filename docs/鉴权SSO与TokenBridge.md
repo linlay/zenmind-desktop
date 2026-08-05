@@ -17,7 +17,7 @@ identity-center prepare
   -> ensureIdentityCenterJwk()
   -> Desktop capability auth.accessToken
   -> issueAgentAccessToken()
-  -> PluginPage / service-webview preload
+  -> ServiceWebviewSurface / service-webview preload
   -> agent-webclient postMessage request
   -> desktop:agent-auth:response
 ```

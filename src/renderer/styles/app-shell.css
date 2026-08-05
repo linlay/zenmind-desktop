@@ -78,7 +78,7 @@
   display: block;
 }
 
-.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface::before {
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface::before {
   display: none;
 }
 
@@ -95,20 +95,20 @@
   z-index: 1;
 }
 
-.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-content,
-.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-main,
-.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-page,
-.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-frame-shell {
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .app-content,
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .app-main,
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .embedded-surface-page,
+.app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .embedded-surface-frame-shell {
   background: transparent;
 }
 
-:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-content,
-:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .app-main {
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .app-content,
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .app-main {
   background: var(--embedded-surface-shell-bg);
 }
 
-:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-page,
-:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface .embedded-surface-frame-shell {
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .embedded-surface-page,
+:root[data-theme="dark"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .embedded-surface-frame-shell {
   background: var(--embedded-surface-page-bg);
 }
 

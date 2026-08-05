@@ -64,7 +64,7 @@ import {
   getAssistantNavAgentRecentChats,
   normalizeAssistantNavAgents
 } from "../../assistantNavigation";
-import { PluginPage } from "../plugin/PluginPage";
+import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
 import { useI18n } from "../../i18n/useI18n";
 import { flattenKanbanProjectTree } from "./kanbanProjectTree";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
@@ -2612,11 +2612,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
             aria-label={chatModalRequest.displayName ? t("kanban.chat.modalLabel", { name: chatModalRequest.displayName }) : t("kanban.chat.defaultModalLabel")}
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <PluginPage
+            <ServiceWebviewSurface
               key={`kanban-chat:${chatModalRequest.agentKey}:${chatModalRequest.chatId}`}
               active
               hostTheme={hostTheme}
-              pluginId="agent-webclient"
+              serviceId="agent-webclient"
               surfaceId="agent-webclient-kanban-chat"
               surfaceLabel={t("kanban.chat.surfaceLabel")}
               embedPath={buildKanbanChatEmbedPath(chatModalRequest)}

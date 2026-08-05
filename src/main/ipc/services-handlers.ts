@@ -642,8 +642,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
   );
 
   // ---------------------------------------------------------------------------
-  // plugins — preload paths
+  // service webview — preload paths
   // ---------------------------------------------------------------------------
-  ipcMain.handle("plugins.getServiceWebviewPreloadPath", async () => getServiceWebviewPreloadPath());
-  ipcMain.handle("plugins.getServiceWebviewPreloadUrl", async () => getServiceWebviewPreloadUrl());
+  ipcMain.handle("serviceWebview.getPreloadPath", async () => getServiceWebviewPreloadPath());
+  ipcMain.handle("serviceWebview.getPreloadUrl", async () => getServiceWebviewPreloadUrl());
 }

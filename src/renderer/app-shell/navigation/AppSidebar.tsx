@@ -63,7 +63,7 @@ import {
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
 } from "../../assistantNavigation";
-import { getActivePluginSurfaceWebviewRef } from "../../services/pluginSurfaceWebviewRefs";
+import { getActiveServiceSurfaceWebviewRef } from "../../services/serviceSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import {
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS,
@@ -2028,7 +2028,7 @@ export function AppSidebar({
       return false;
     }
 
-    const webview = getActivePluginSurfaceWebviewRef()?.current;
+    const webview = getActiveServiceSurfaceWebviewRef()?.current;
     if (!webview) {
       return false;
     }

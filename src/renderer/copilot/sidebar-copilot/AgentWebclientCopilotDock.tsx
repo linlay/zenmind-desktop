@@ -8,8 +8,8 @@ import {
   readCopilotChatId
 } from "./copilotDockSession";
 
-const PluginPage = lazy(() =>
-  import("../../pages/plugin/PluginPage").then((module) => ({ default: module.PluginPage }))
+const ServiceWebviewSurface = lazy(() =>
+  import("../../service-webview/ServiceWebviewSurface").then((module) => ({ default: module.ServiceWebviewSurface }))
 );
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
@@ -161,12 +161,12 @@ export function AgentWebclientCopilotDock({
     >
       {mounted ? (
         <Suspense fallback={null}>
-          <PluginPage
+          <ServiceWebviewSurface
             key={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
             active={open}
             embedPath={targetEmbedPath}
             hostTheme={hostTheme}
-            pluginId="agent-webclient"
+            serviceId="agent-webclient"
             surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
             surfaceLabel={t("copilotDock.surfaceLabel")}
             skipContextRegistration

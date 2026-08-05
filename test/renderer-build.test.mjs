@@ -284,8 +284,8 @@ test("main agent webclient keeps chat and copilot webviews separate from managem
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "copilot"/);
   assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
   assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
-  assert.match(surfaceHosts, /pluginId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
+  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
+  assert.match(surfaceHosts, /serviceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
 });
 
@@ -326,7 +326,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /path=\{routePattern\}[\s\S]*?element=\{null\}/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_PLUGIN_ID\}/);
+  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
   assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/registries"[\s\S]*?\]/);
   assert.match(routeDefinitions, /function resolveAgentWebclientWsSource\([\s\S]*?return undefined;/);
   assert.doesNotMatch(routeDefinitions, /desktop-agent-webclient/);
@@ -594,16 +594,16 @@ test("embedded service previews load auth and platform entrypoints directly", ()
     "embedded-surfaces",
     "EmbeddedSurfaceHosts.tsx"
   );
-  const pluginPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+  const serviceWebviewSurface = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "service-webview", "ServiceWebviewSurface.tsx"),
     "utf8"
   );
 
   assert.match(embeddedSurfaceHosts, /function shouldLoadInitialServiceUrlDirectly\(/);
-  assert.match(embeddedSurfaceHosts, /pluginId === "identity-center" \|\| pluginId === "agent-platform"/);
-  assert.match(embeddedSurfaceHosts, /loadInitialEmbeddedUrlDirectly=\{shouldLoadInitialServiceUrlDirectly\(pluginId\)\}/);
-  assert.match(pluginPage, /service\.id !== "agent-platform"/);
-  assert.match(pluginPage, /agentPlatformMonitorAccessToken/);
+  assert.match(embeddedSurfaceHosts, /serviceId === "identity-center" \|\| serviceId === "agent-platform"/);
+  assert.match(embeddedSurfaceHosts, /loadInitialEmbeddedUrlDirectly=\{shouldLoadInitialServiceUrlDirectly\(serviceId\)\}/);
+  assert.match(serviceWebviewSurface, /service\.id !== "agent-platform"/);
+  assert.match(serviceWebviewSurface, /agentPlatformMonitorAccessToken/);
 });
 
 test("startup and shutdown progress cards show the desktop version", () => {
@@ -724,12 +724,12 @@ test("assistant launcher sits beside the sidebar collapse button", () => {
 
 test("embedded surfaces use theme-backed host colors instead of hard-coded light fallbacks", () => {
   const globalStyles = readRendererStyles();
-  const macPluginEmbeddedSelector = ".app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-plugin-surface";
-  const macPluginEmbeddedRule = globalStyles.match(
-    new RegExp(`^${escapeRegExp(macPluginEmbeddedSelector)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
+  const macServiceWebviewSelector = ".app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface";
+  const macServiceWebviewRule = globalStyles.match(
+    new RegExp(`^${escapeRegExp(macServiceWebviewSelector)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
   )?.groups?.body ?? "";
-  const darkMacPluginEmbeddedRule = globalStyles.match(
-    new RegExp(`^:root\\[data-theme="dark"\\] ${escapeRegExp(macPluginEmbeddedSelector)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
+  const darkMacServiceWebviewRule = globalStyles.match(
+    new RegExp(`^:root\\[data-theme="dark"\\] ${escapeRegExp(macServiceWebviewSelector)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
   )?.groups?.body ?? "";
   const appShellBeforeRule = globalStyles.match(
     /^\.app-shell::before\s*\{(?<body>[\s\S]*?)^\}/m
@@ -737,8 +737,8 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   const darkAppShellBeforeRule = globalStyles.match(
     /^:root\[data-theme="dark"\] \.app-shell::before\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body ?? "";
-  const macPluginEmbeddedBeforeRule = globalStyles.match(
-    new RegExp(`^${escapeRegExp(`${macPluginEmbeddedSelector}::before`)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
+  const macServiceWebviewBeforeRule = globalStyles.match(
+    new RegExp(`^${escapeRegExp(`${macServiceWebviewSelector}::before`)}\\s*\\{(?<body>[\\s\\S]*?)^\\}`, "m")
   )?.groups?.body ?? "";
 
   assert.match(globalStyles, /--embedded-surface-shell-bg:\s*#fff;/);
@@ -755,30 +755,30 @@ test("embedded surfaces use theme-backed host colors instead of hard-coded light
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?border-right:\s*1px solid rgba\(255, 255, 255, 0\.08\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.has-translucent-sidebar \.app-sidebar\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-translucent-sidebar \.app-sidebar\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;[\s\S]*?backdrop-filter:\s*none;/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,[\s\S]*?background:\s*transparent;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-service-webview-surface \.app-content,[\s\S]*?background:\s*transparent;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-service-webview-surface \.app-content,[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(appShellBeforeRule, /background:\s*transparent;/);
   assert.match(darkAppShellBeforeRule, /background:\s*transparent;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\.is-mac-translucent-sidebar\.has-embedded-surface::before\s*\{[\s\S]*?display:\s*none;/);
-  assert.match(macPluginEmbeddedBeforeRule, /display:\s*none;/);
+  assert.match(macServiceWebviewBeforeRule, /display:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,\s*[\s\S]*?\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.embedded-surface-frame-shell\s*\{[\s\S]*?background:\s*transparent;/
+    /\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-service-webview-surface \.app-content,\s*[\s\S]*?\.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-service-webview-surface \.embedded-surface-frame-shell\s*\{[\s\S]*?background:\s*transparent;/
   );
   assert.match(
     globalStyles,
-    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/
+    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-service-webview-surface \.app-content,\s*[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/
   );
   assert.match(
     globalStyles,
-    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-plugin-surface \.embedded-surface-page,\s*[\s\S]*?background:\s*var\(--embedded-surface-page-bg\);/
+    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform\.is-mac-translucent-sidebar\.has-embedded-surface\.has-service-webview-surface \.embedded-surface-page,\s*[\s\S]*?background:\s*var\(--embedded-surface-page-bg\);/
   );
   assert.doesNotMatch(globalStyles, /^\.app-shell\.is-windows-platform[^{]*\{[^}]*background:\s*var\(--bg-canvas\);/m);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\s*\{[\s\S]*?border-left:\s*none;[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);[\s\S]*?box-shadow:\s*none;/);
-  assert.match(globalStyles, /\.agent-webclient-copilot-dock \.embedded-surface-page,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-surface-frame-shell,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
+  assert.match(globalStyles, /\.agent-webclient-copilot-dock \.embedded-surface-page,[\s\S]*?\.agent-webclient-copilot-dock \.embedded-surface-frame-shell,[\s\S]*?\.agent-webclient-copilot-dock \.service-webview-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-shell-bg\);/);
   assert.match(globalStyles, /\.embedded-surface-frame\s*\{[\s\S]*?background:\s*var\(--embedded-surface-frame-bg\);/);
-  assert.match(globalStyles, /\.embedded-plugin-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);
+  assert.match(globalStyles, /\.service-webview-error\s*\{[\s\S]*?background:\s*var\(--embedded-surface-loading-bg\);/);
   assert.match(globalStyles, /--browser-frame-bg:\s*#ffffff;/);
   assert.match(globalStyles, /\.external-webview-panel\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
   assert.match(globalStyles, /\.external-webview-frame\s*\{[\s\S]*?background:\s*var\(--browser-frame-bg\);/);
@@ -1210,8 +1210,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     path.join(projectRoot, "src", "renderer", "assistantNavigation.ts"),
     "utf8"
   );
-  const pluginPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+  const serviceWebviewSurface = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "service-webview", "ServiceWebviewSurface.tsx"),
     "utf8"
   );
   const brandMarkSource = fs.readFileSync(
@@ -1568,7 +1568,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "\/service\/agent-webclient";/);
   assert.match(appShell, /function isBareAgentWebclientServiceRoute\(pathname: string, search: string\)/);
   assert.match(appShell, /const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute\(location\.pathname,\s*location\.search\)/);
-  assert.match(appShell, /const activePluginId = activeEmbeddedAgentWebclientRoute[\s\S]*?: bareAgentWebclientServiceRoute[\s\S]*?\? null[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
+  assert.match(appShell, /const activeServiceId = activeEmbeddedAgentWebclientRoute[\s\S]*?: bareAgentWebclientServiceRoute[\s\S]*?\? null[\s\S]*?: resolveServiceSurfaceRouteId\(location\.pathname\)/);
   assert.match(appShell, /Boolean\(activeEmbeddedAgentWebclientRoute\) \|\|[\s\S]*?!bareAgentWebclientServiceRoute && location\.pathname\.startsWith\("\/service\/"\)/);
   assert.match(appShell, /function LegacyAgentWebclientServiceRouteRedirect\(\)/);
   assert.match(appShell, /const embedPath = readAgentWebclientRouteEmbedPath\(location\.search\)/);
@@ -1590,7 +1590,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(appShell, /newChatRequest/);
   assert.match(appShell, /embedPath:\s*createAgentWebclientAgentPath\(agentKey, businessSearch\)/);
   assert.match(appShell, /labelKey:\s*embedPath\.startsWith\("\/agent\/"\) \? "nav\.assistants" : "nav\.agents"/);
-  assert.match(appShell, /activeEmbeddedAgentWebclientRoute[\s\S]*?\? AGENT_WEBCLIENT_SERVICE_ID[\s\S]*?: resolvePluginRouteId\(location\.pathname\)/);
+  assert.match(appShell, /activeEmbeddedAgentWebclientRoute[\s\S]*?\? AGENT_WEBCLIENT_SERVICE_ID[\s\S]*?: resolveServiceSurfaceRouteId\(location\.pathname\)/);
   assert.match(appShell, /findAgentWebclientRouteDefinition\(pathname\)/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
   assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
@@ -1598,26 +1598,26 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
   assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?navigate\(targetPath\);[\s\S]*?return true;/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)/);
-  assert.match(appShell, /const usesPluginSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
+  assert.match(appShell, /const usesServiceWebviewSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)[\s\S]*?location\.pathname\.startsWith\("\/service\/"\)[\s\S]*?location\.pathname\.startsWith\("\/plugin\/"\)/);
   assert.match(appShell, /AGENT_WEBCLIENT_ROUTE_DEFINITIONS\.map\(\(routeDefinition\) =>/);
   assert.match(appShell, /path=\{routeDefinition\.routePath\}[\s\S]*?element=\{null\}/);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS\.map\(\(routePattern\) =>/);
   assert.match(appShell, /path=\{routePattern\}[\s\S]*?element=\{null\}/);
   assert.doesNotMatch(appShell, /path="\/agents"[\s\S]{0,180}<PlaceholderPage/);
 
-  assert.match(pluginPage, /embedPath\?: string;/);
-  assert.match(pluginPage, /surfaceLabel\?: string;/);
-  assert.match(pluginPage, /routeEmbedPath/);
-  assert.match(pluginPage, /effectiveEmbedPath/);
-  assert.match(pluginPage, /get\("embedPath"\)/);
-  assert.match(pluginPage, /embedPath: effectiveEmbedPath/);
-  assert.match(pluginPage, /function requestDirectWebviewRouteLoad\(\)/);
-  assert.match(pluginPage, /targetWebview\.loadURL\(embeddedUrl\)/);
-  assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
-  assert.doesNotMatch(pluginPage, /buildAgentWebclientSelectWorkerScript/);
-  assert.doesNotMatch(pluginPage, /agentWebclientRouteAgentKey/);
-  assert.doesNotMatch(pluginPage, /agentWebclientRouteNewChat/);
-  assert.doesNotMatch(pluginPage, /agent:select-worker/);
+  assert.match(serviceWebviewSurface, /embedPath\?: string;/);
+  assert.match(serviceWebviewSurface, /surfaceLabel\?: string;/);
+  assert.match(serviceWebviewSurface, /routeEmbedPath/);
+  assert.match(serviceWebviewSurface, /effectiveEmbedPath/);
+  assert.match(serviceWebviewSurface, /get\("embedPath"\)/);
+  assert.match(serviceWebviewSurface, /embedPath: effectiveEmbedPath/);
+  assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
+  assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientSelectWorkerScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteAgentKey/);
+  assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteNewChat/);
+  assert.doesNotMatch(serviceWebviewSurface, /agent:select-worker/);
 });
 
 test("sidebar top navigation exposes scoped back and forward history controls", () => {
@@ -3214,7 +3214,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
     "embedded-surfaces",
     "EmbeddedSurfaceHosts.tsx"
   );
-  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const dockComponent = readSourceFile(
     "src",
     "renderer",
@@ -3273,11 +3273,11 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /window\.electronAPI\.webs\.websites[\s\S]*?\.update\(websiteId, \{ copilotAgentKey: normalizedAgentKey \}\)/);
   assert.match(appShell, /updateWebItems\(mergeWebsiteItems\(webItems, result\.items\)\)/);
   assert.match(appShell, /onSelectedAgentKeyChange=\{handleCopilotSelectedAgentKeyChange\}/);
-  assert.match(pluginPage, /onCurrentUrlChange\?: \(url: string, source: PluginWebviewUrlChangeSource\) => void/);
-  assert.match(pluginPage, /const onCurrentUrlChangeRef = useRef\(onCurrentUrlChange\)/);
-  assert.match(pluginPage, /function updateWebviewCurrentUrl\(nextUrl: string, source: PluginWebviewUrlChangeSource\)[\s\S]*?onCurrentUrlChangeRef\.current\?\.\(nextUrl, source\)/);
-  assert.match(pluginPage, /updateWebviewCurrentUrl\(embeddedUrl, "host"\)/);
-  assert.match(pluginPage, /const syncNavigationRoute = \(event: Event\) => \{[\s\S]*?updateWebviewCurrentUrl\(resolvedUrl, "guest"\)/);
+  assert.match(serviceWebviewSurface, /onCurrentUrlChange\?: \(url: string, source: ServiceWebviewUrlChangeSource\) => void/);
+  assert.match(serviceWebviewSurface, /const onCurrentUrlChangeRef = useRef\(onCurrentUrlChange\)/);
+  assert.match(serviceWebviewSurface, /function updateWebviewCurrentUrl\(nextUrl: string, source: ServiceWebviewUrlChangeSource\)[\s\S]*?onCurrentUrlChangeRef\.current\?\.\(nextUrl, source\)/);
+  assert.match(serviceWebviewSurface, /updateWebviewCurrentUrl\(embeddedUrl, "host"\)/);
+  assert.match(serviceWebviewSurface, /const syncNavigationRoute = \(event: Event\) => \{[\s\S]*?updateWebviewCurrentUrl\(resolvedUrl, "guest"\)/);
   assert.match(dockComponent, /function readCopilotAgentKeyFromUrl\(value: string\)/);
   assert.match(dockComponent, /readCopilotAgentKeyFromPathname\(new URL\(trimmed, "http:\/\/agent-webclient\.local"\)\.pathname\)/);
   assert.match(dockComponent, /onSelectedAgentKeyChange\?: \(agentKey: string\) => void/);
@@ -3655,7 +3655,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(appShell, /isKanbanRoute \? "has-kanban-controls" : ""/);
   assert.match(kanbanPage, /type KanbanPageProps/);
   assert.match(kanbanPage, /hostTheme:\s*ThemeMode/);
-  assert.match(kanbanPage, /import \{ PluginPage \} from "\.\.\/plugin\/PluginPage"/);
+  assert.match(kanbanPage, /import \{ ServiceWebviewSurface \} from "\.\.\/\.\.\/service-webview\/ServiceWebviewSurface"/);
   assert.match(kanbanPage, /const \[chatModalRequest,\s*setChatModalRequest\]/);
   assert.match(kanbanPage, /function buildKanbanChatEmbedPath/);
   assert.match(kanbanPage, /chatId\?:\s*string/);
@@ -3672,7 +3672,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /is-awaiting-confirmation/);
   assert.match(kanbanPage, /const openAssistantIssueChat = useCallback\(async \(issue: KanbanIssue\) => \{/);
   assert.match(kanbanPage, /setChatModalRequest\(\{[\s\S]{0,180}agentKey[\s\S]{0,180}chatId/);
-  assert.match(kanbanPage, /<PluginPage[\s\S]{0,260}pluginId="agent-webclient"[\s\S]{0,260}embedPath=\{buildKanbanChatEmbedPath\(chatModalRequest\)\}/);
+  assert.match(kanbanPage, /<ServiceWebviewSurface[\s\S]{0,260}serviceId="agent-webclient"[\s\S]{0,260}embedPath=\{buildKanbanChatEmbedPath\(chatModalRequest\)\}/);
   assert.match(kanbanPage, /kanban-chat-modal-layer/);
   assert.match(kanbanPage, /kanban-chat-modal/);
   assert.doesNotMatch(kanbanPage, /void openAssistantIssueChat\(updateResult\.issue/);
@@ -5224,7 +5224,7 @@ test("market route keeps the unified native drag overlay", () => {
 test("embedded H5 routes keep a thin global window drag lane", () => {
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
-  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const pluginSettingsPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginSettingsPage.tsx");
   const externalWebviewPage = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const obsoleteEmbeddedSurfaceClassPattern = /\b(?:pan-page(?:-embedded|-agent-webclient)?|pan-frame(?:-shell)?|pan-session-box)\b/;
@@ -5234,8 +5234,8 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
 
   assert.match(appShell, /usesEmbeddedSurface/);
   assert.match(appShell, /has-embedded-surface/);
-  assert.match(appShell, /usesPluginSurface/);
-  assert.match(appShell, /has-plugin-surface/);
+  assert.match(appShell, /usesServiceWebviewSurface/);
+  assert.match(appShell, /has-service-webview-surface/);
   assert.match(appShell, /location\.pathname\.startsWith\("\/plugin-settings\/"\)/);
   assert.doesNotMatch(appShell, /shouldRenderAppMainDragRegion/);
   assert.doesNotMatch(appShell, /app-main-drag-region/);
@@ -5247,21 +5247,21 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.doesNotMatch(globalStyles, /--mac-embedded-titlebar-height:/);
   assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-plugin-surface \.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*padding-top:/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*padding-top:/
   );
   assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-plugin-surface \.embedded-surface-page\.embedded-surface-page-embedded::before\s*\{/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.embedded-surface-page\.embedded-surface-page-embedded::before\s*\{/
   );
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
   assert.match(globalStyles, /\.app-window-drag-layer\s*\{[^}]*z-index:\s*1000;/);
-  assert.doesNotMatch(pluginPage, /className="pan-drag-region"/);
+  assert.doesNotMatch(serviceWebviewSurface, /className="pan-drag-region"/);
   assert.doesNotMatch(pluginSettingsPage, /className="pan-drag-region"/);
   assert.doesNotMatch(externalWebviewPage, /className="pan-drag-region"/);
-  assert.doesNotMatch(pluginPage, obsoleteEmbeddedSurfaceClassPattern);
+  assert.doesNotMatch(serviceWebviewSurface, obsoleteEmbeddedSurfaceClassPattern);
   assert.doesNotMatch(pluginSettingsPage, obsoleteEmbeddedSurfaceClassPattern);
   assert.doesNotMatch(externalWebviewPage, obsoleteEmbeddedSurfaceClassPattern);
   assert.doesNotMatch(globalStyles, obsoleteEmbeddedSurfaceClassPattern);
@@ -5300,14 +5300,14 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.embedded-surface-page-agent-webclient/
   );
-  assert.doesNotMatch(pluginPage, /embedded-surface-page-agent-webclient/);
+  assert.doesNotMatch(serviceWebviewSurface, /embedded-surface-page-agent-webclient/);
   assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-plugin-surface\s+\.app-window-drag-region\s*\{/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface\s+\.app-window-drag-region\s*\{/
   );
   assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-plugin-surface\.has-assistant-dock-full\s+\.app-window-drag-region\s*\{/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface\.has-assistant-dock-full\s+\.app-window-drag-region\s*\{/
   );
 });
 
@@ -5611,9 +5611,9 @@ test("web copilot dock yields to native dialogs", () => {
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\.is-native-dialog-open/);
 });
 
-test("plugin page provides webview-backed assistant context instead of guessing embedded content", () => {
-  const pluginPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+test("service webview surface provides webview-backed assistant context instead of guessing embedded content", () => {
+  const serviceWebviewSurface = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "service-webview", "ServiceWebviewSurface.tsx"),
     "utf8"
   );
   const globalStyles = readRendererStyles();
@@ -5630,98 +5630,98 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   const windowManager = readSourceFile("src", "main", "window-manager.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
-  const sendBridgeMessageBlock = pluginPage.slice(
-    pluginPage.indexOf("function sendBridgeMessageToWebview"),
-    pluginPage.indexOf("function dispatchPluginRouteEventToWebview")
+  const sendBridgeMessageBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("function sendBridgeMessageToWebview"),
+    serviceWebviewSurface.indexOf("function dispatchServiceWebviewRouteEventToWebview")
   );
-  const sendPluginRouteBlock = pluginPage.slice(
-    pluginPage.indexOf("function dispatchPluginRouteEventToWebview"),
-    pluginPage.indexOf("function requestDirectWebviewRouteLoad")
+  const sendServiceRouteBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("function dispatchServiceWebviewRouteEventToWebview"),
+    serviceWebviewSurface.indexOf("function requestDirectWebviewRouteLoad")
   );
-  const directRouteLoadBlock = pluginPage.slice(
-    pluginPage.indexOf("function requestDirectWebviewRouteLoad"),
-    pluginPage.indexOf("async function injectAgentWebclientAccessToken")
+  const directRouteLoadBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("function requestDirectWebviewRouteLoad"),
+    serviceWebviewSurface.indexOf("async function injectAgentWebclientAccessToken")
   );
 
-  assert.match(pluginPage, /registerAssistantPageContextProvider/);
-  assert.doesNotMatch(pluginPage, /<<<<<<<|=======|>>>>>>>/);
-  assert.match(pluginPage, /registerDesktopActionProviderForScope\(\s*"web"/);
-  assert.match(pluginPage, /surfaceId\?: string/);
-  assert.match(pluginPage, /skipContextRegistration\?: boolean/);
-  assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly\?: boolean/);
-  assert.match(pluginPage, /suppressInitialLoadingCopy\?: boolean/);
-  assert.match(pluginPage, /const surfaceId = surfaceIdProp\?\.trim\(\) \|\| pluginId/);
-  assert.match(pluginPage, /resolveAgentWebclientWsSource/);
-  assert.match(pluginPage, /wsSource/);
-  assert.match(pluginPage, /registerPluginSurfaceWebviewRef\(surfaceId, webviewRef\)/);
-  assert.match(pluginPage, /const webviewOriginSrcUrl = useMemo\([\s\S]{0,120}buildPluginWebviewSrcUrl\(embeddedUrl\)/);
-  assert.match(pluginPage, /const webviewDirectLoadScope = \[[\s\S]{0,160}webviewOriginSrcUrl/);
-  assert.match(pluginPage, /initialWebviewSrcRef\.current\?\.scope !== webviewDirectLoadScope/);
-  assert.match(pluginPage, /loadInitialEmbeddedUrlDirectly[\s\S]{0,120}\?\s*\(initialWebviewSrcRef\.current\?\.url \?\? embeddedUrl\)[\s\S]{0,80}:\s*webviewOriginSrcUrl/);
+  assert.match(serviceWebviewSurface, /registerAssistantPageContextProvider/);
+  assert.doesNotMatch(serviceWebviewSurface, /<<<<<<<|=======|>>>>>>>/);
+  assert.match(serviceWebviewSurface, /registerDesktopActionProviderForScope\(\s*"web"/);
+  assert.match(serviceWebviewSurface, /surfaceId\?: string/);
+  assert.match(serviceWebviewSurface, /skipContextRegistration\?: boolean/);
+  assert.match(serviceWebviewSurface, /loadInitialEmbeddedUrlDirectly\?: boolean/);
+  assert.match(serviceWebviewSurface, /suppressInitialLoadingCopy\?: boolean/);
+  assert.match(serviceWebviewSurface, /const surfaceId = surfaceIdProp\?\.trim\(\) \|\| serviceId/);
+  assert.match(serviceWebviewSurface, /resolveAgentWebclientWsSource/);
+  assert.match(serviceWebviewSurface, /wsSource/);
+  assert.match(serviceWebviewSurface, /registerServiceSurfaceWebviewRef\(surfaceId, webviewRef\)/);
+  assert.match(serviceWebviewSurface, /const webviewOriginSrcUrl = useMemo\([\s\S]{0,120}buildServiceWebviewSrcUrl\(embeddedUrl\)/);
+  assert.match(serviceWebviewSurface, /const webviewDirectLoadScope = \[[\s\S]{0,160}webviewOriginSrcUrl/);
+  assert.match(serviceWebviewSurface, /initialWebviewSrcRef\.current\?\.scope !== webviewDirectLoadScope/);
+  assert.match(serviceWebviewSurface, /loadInitialEmbeddedUrlDirectly[\s\S]{0,120}\?\s*\(initialWebviewSrcRef\.current\?\.url \?\? embeddedUrl\)[\s\S]{0,80}:\s*webviewOriginSrcUrl/);
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   assert.match(kanbanPage, /loadInitialEmbeddedUrlDirectly/);
   assert.match(kanbanPage, /suppressInitialLoadingCopy/);
   assert.match(kanbanPage, /surfaceId="agent-webclient-kanban-chat"/);
-  assert.match(pluginPage, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
-  assert.match(pluginPage, /!embeddedUrl[\s\S]{0,80}\|\|\s*skipContextRegistration/);
-  assert.match(pluginPage, /tryReadPluginWebviewPageContext/);
-  assert.match(pluginPage, /buildPluginWebviewFallbackContext/);
-  assert.match(pluginPage, /webview\.executeJavaScript/);
-  assert.match(pluginPage, /kind:\s*"webview"/);
-  assert.match(pluginPage, /webContentsId/);
-  assert.doesNotMatch(pluginPage, /window\.electronAPI\.embeddedWeb\.executeInFrame/);
-  assert.doesNotMatch(pluginPage, /frameMatchUrl/);
-  assert.doesNotMatch(pluginPage, /READ_PAGE_DATA_SCRIPT|EXTRACT_STRUCTURED_SCRIPT/);
-  assert.match(pluginPage, /buildInteractElementScript/);
-  assert.match(pluginPage, /const webviewRenderKey = useMemo/);
-  assert.doesNotMatch(pluginPage, /iframe/);
-  assert.doesNotMatch(pluginPage, /正在等待页面样式与资源加载完成/);
-  assert.match(pluginPage, /webviewLoadedChromeErrorPage/);
-  assert.match(pluginPage, /chrome-error:\/\//);
-  assert.match(pluginPage, /setWebviewRetryNonce/);
-  assert.match(pluginPage, /refreshServices/);
-  assert.match(pluginPage, /embedded-plugin-error/);
-  assert.match(pluginPage, /buildAgentWebclientDesktopContext\(\s*getCurrentPageContextSnapshot\(\),?\s*\)/);
-  assert.match(pluginPage, /seedAgentWebclientAccessToken/);
-  assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
-  assert.match(pluginPage, /getServiceWebviewPreloadUrl\(\)/);
-  assert.match(pluginPage, /if \(!bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return undefined;/);
-  assert.match(pluginPage, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadUrl,[\s\S]{0,120}webviewRenderKey/);
-  assert.match(pluginPage, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
-  assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*service\?\.id,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*\]/);
-  assert.match(pluginPage, /function requestDirectWebviewRouteLoad\(\)/);
-  assert.match(pluginPage, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
-  assert.match(pluginPage, /normalizedCurrentUrl === embeddedUrl/);
-  assert.match(pluginPage, /resolveAgentWebclientDesktopChatRouteFromUrl/);
-  assert.match(pluginPage, /lastHostAppliedChatRouteRef/);
-  assert.match(pluginPage, /function isAgentWebclientChatSurface\(/);
-  assert.match(pluginPage, /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/);
-  assert.match(pluginPage, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]{0,900}navigate\(nextChatRoute, \{ replace: true \}\)/);
-  assert.doesNotMatch(pluginPage, /ChatRouteMessage/);
-  assert.doesNotMatch(pluginPage, /handleAgentWebclientChatRouteMessage/);
-  assert.doesNotMatch(pluginPage, /createAgentWebclientChatRoute/);
-  assert.match(pluginPage, /buildClientSideRouteNavigationScript/);
+  assert.match(serviceWebviewSurface, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
+  assert.match(serviceWebviewSurface, /!embeddedUrl[\s\S]{0,80}\|\|\s*skipContextRegistration/);
+  assert.match(serviceWebviewSurface, /tryReadServiceWebviewPageContext/);
+  assert.match(serviceWebviewSurface, /buildServiceWebviewFallbackContext/);
+  assert.match(serviceWebviewSurface, /webview\.executeJavaScript/);
+  assert.match(serviceWebviewSurface, /kind:\s*"webview"/);
+  assert.match(serviceWebviewSurface, /webContentsId/);
+  assert.doesNotMatch(serviceWebviewSurface, /window\.electronAPI\.embeddedWeb\.executeInFrame/);
+  assert.doesNotMatch(serviceWebviewSurface, /frameMatchUrl/);
+  assert.doesNotMatch(serviceWebviewSurface, /READ_PAGE_DATA_SCRIPT|EXTRACT_STRUCTURED_SCRIPT/);
+  assert.match(serviceWebviewSurface, /buildInteractElementScript/);
+  assert.match(serviceWebviewSurface, /const webviewRenderKey = useMemo/);
+  assert.doesNotMatch(serviceWebviewSurface, /iframe/);
+  assert.doesNotMatch(serviceWebviewSurface, /正在等待页面样式与资源加载完成/);
+  assert.match(serviceWebviewSurface, /webviewLoadedChromeErrorPage/);
+  assert.match(serviceWebviewSurface, /chrome-error:\/\//);
+  assert.match(serviceWebviewSurface, /setWebviewRetryNonce/);
+  assert.match(serviceWebviewSurface, /refreshServices/);
+  assert.match(serviceWebviewSurface, /service-webview-error/);
+  assert.match(serviceWebviewSurface, /buildAgentWebclientDesktopContext\(\s*getCurrentPageContextSnapshot\(\),?\s*\)/);
+  assert.match(serviceWebviewSurface, /seedAgentWebclientAccessToken/);
+  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.match(serviceWebviewSurface, /window\.electronAPI\.serviceWebview\.getPreloadUrl\(\)/);
+  assert.match(serviceWebviewSurface, /if \(!bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return undefined;/);
+  assert.match(serviceWebviewSurface, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadUrl,[\s\S]{0,120}webviewRenderKey/);
+  assert.match(serviceWebviewSurface, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
+  assert.match(serviceWebviewSurface, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*service\?\.id,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*\]/);
+  assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
+  assert.match(serviceWebviewSurface, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
+  assert.match(serviceWebviewSurface, /normalizedCurrentUrl === embeddedUrl/);
+  assert.match(serviceWebviewSurface, /resolveAgentWebclientDesktopChatRouteFromUrl/);
+  assert.match(serviceWebviewSurface, /lastHostAppliedChatRouteRef/);
+  assert.match(serviceWebviewSurface, /function isAgentWebclientChatSurface\(/);
+  assert.match(serviceWebviewSurface, /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/);
+  assert.match(serviceWebviewSurface, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]{0,900}navigate\(nextChatRoute, \{ replace: true \}\)/);
+  assert.doesNotMatch(serviceWebviewSurface, /ChatRouteMessage/);
+  assert.doesNotMatch(serviceWebviewSurface, /handleAgentWebclientChatRouteMessage/);
+  assert.doesNotMatch(serviceWebviewSurface, /createAgentWebclientChatRoute/);
+  assert.match(serviceWebviewSurface, /buildClientSideRouteNavigationScript/);
   assert.match(directRouteLoadBlock, /currentParsed\.origin === targetParsed\.origin/);
   assert.match(directRouteLoadBlock, /targetWebview\.executeJavaScript\(/);
-  assert.match(pluginPage, /window\.history\.pushState/);
-  assert.match(pluginPage, /PopStateEvent\("popstate"/);
-  assert.match(pluginPage, /targetWebview\.loadURL\(embeddedUrl\)/);
-  assert.match(pluginPage, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*loadInitialEmbeddedUrlDirectly,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*webviewSrcUrl,\s*\]/);
-  assert.match(pluginPage, /suppressInitialLoadingCopy\s*\?\s*\(/);
-  assert.match(pluginPage, /aria-label=\{t\("pluginPage\.loading", \{ name: serviceDisplayName \}\)\}/);
-  assert.match(pluginPage, /webviewRef\.current = node/);
-  assert.doesNotMatch(pluginPage, /!webviewRef\.current && \(webviewRef\.current = node\)/);
+  assert.match(serviceWebviewSurface, /window\.history\.pushState/);
+  assert.match(serviceWebviewSurface, /PopStateEvent\("popstate"/);
+  assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(serviceWebviewSurface, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*loadInitialEmbeddedUrlDirectly,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*webviewSrcUrl,\s*\]/);
+  assert.match(serviceWebviewSurface, /suppressInitialLoadingCopy\s*\?\s*\(/);
+  assert.match(serviceWebviewSurface, /aria-label=\{t\("serviceWebview\.loading", \{ name: serviceDisplayName \}\)\}/);
+  assert.match(serviceWebviewSurface, /webviewRef\.current = node/);
+  assert.doesNotMatch(serviceWebviewSurface, /!webviewRef\.current && \(webviewRef\.current = node\)/);
   assert.match(sendBridgeMessageBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,\s*payload\)/);
   assert.doesNotMatch(sendBridgeMessageBlock, /executeJavaScript/);
-  assert.match(sendPluginRouteBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
-  assert.doesNotMatch(sendPluginRouteBlock, /executeJavaScript/);
-  assert.match(pluginPage, /buildAgentWebclientAccessTokenInjectionScript/);
-  assert.doesNotMatch(pluginPage, /agentWebclientTokenReloadTimerRef/);
-  assert.doesNotMatch(pluginPage, /webviewRef\.current\?\.reload\(\)/);
-  assert.match(pluginPage, /issueAccessToken\("missing"\)/);
-  assert.match(pluginPage, /agent_webclient_seed_/);
-  assert.match(pluginPage, /handleServiceWebviewBridgeMessage/);
-  assert.match(serviceWebviewBridgeHost, /resolvePluginAuthBridgeResponseType\(bridgeProtocol\)/);
+  assert.match(sendServiceRouteBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
+  assert.doesNotMatch(sendServiceRouteBlock, /executeJavaScript/);
+  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /agentWebclientTokenReloadTimerRef/);
+  assert.doesNotMatch(serviceWebviewSurface, /webviewRef\.current\?\.reload\(\)/);
+  assert.match(serviceWebviewSurface, /issueAccessToken\("missing"\)/);
+  assert.match(serviceWebviewSurface, /agent_webclient_seed_/);
+  assert.match(serviceWebviewSurface, /handleServiceWebviewBridgeMessage/);
+  assert.match(serviceWebviewBridgeHost, /resolveServiceWebviewAuthResponseType\(bridgeProtocol\)/);
   assert.match(serviceWebviewBridgeHost, /desktopAuthContext/);
   assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
@@ -5800,18 +5800,21 @@ test("plugin page provides webview-backed assistant context instead of guessing 
   assert.match(shellHandlers, /ipcMain\.handle\("desktopDownloads\.saveFile"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopScreenshot\.capture"/);
   assert.match(windowManager, /webPreferences\.preload = input\.servicePreloadPath/);
-  assert.match(servicesHandlers, /ipcMain\.handle\("plugins\.getServiceWebviewPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
-  assert.match(preload, /getServiceWebviewPreloadUrl:\s*\(\) => ipcRenderer\.invoke\("plugins\.getServiceWebviewPreloadUrl"\)/);
+  assert.match(servicesHandlers, /ipcMain\.handle\("serviceWebview\.getPreloadPath", async \(\) => getServiceWebviewPreloadPath\(\)\)/);
+  assert.match(servicesHandlers, /ipcMain\.handle\("serviceWebview\.getPreloadUrl", async \(\) => getServiceWebviewPreloadUrl\(\)\)/);
+  assert.match(preload, /serviceWebview:\s*\{[\s\S]{0,120}getPreloadPath:\s*\(\) => ipcRenderer\.invoke\("serviceWebview\.getPreloadPath"\)/);
+  assert.match(preload, /serviceWebview:\s*\{[\s\S]{0,120}getPreloadUrl:\s*\(\) => ipcRenderer\.invoke\("serviceWebview\.getPreloadUrl"\)/);
   assert.match(preload, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => ipcRenderer\.invoke\("desktopDialog\.selectDirectory"\)/);
   assert.match(preload, /desktopScreenshot:[\s\S]{0,120}capture:\s*\(\) => ipcRenderer\.invoke\("desktopScreenshot\.capture"\)/);
   assert.match(preload, /desktopShell:[\s\S]{0,140}openPath:\s*\(targetPath: string\) => ipcRenderer\.invoke\("desktopShell\.openPath", targetPath\)/);
   assert.match(preload, /desktopDownloads:[\s\S]{0,140}saveFile:\s*\(input\) => ipcRenderer\.invoke\("desktopDownloads\.saveFile", input\)/);
-  assert.match(contracts, /getServiceWebviewPreloadUrl:\s*\(\) => Promise<string>/);
+  assert.match(contracts, /serviceWebview:\s*\{[\s\S]{0,120}getPreloadPath:\s*\(\) => Promise<string>/);
+  assert.match(contracts, /serviceWebview:\s*\{[\s\S]{0,120}getPreloadUrl:\s*\(\) => Promise<string>/);
   assert.match(contracts, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(contracts, /desktopShell:[\s\S]{0,120}openPath:\s*\(targetPath: string\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(contracts, /desktopShell:[\s\S]{0,220}moveWindowBy:\s*\(delta: \{ x: number; y: number \}\) => Promise<\{ ok: boolean; message\?: string \}>/);
   assert.match(contracts, /desktopDownloads:[\s\S]{0,220}saveFile:\s*\(input: \{[\s\S]{0,160}dataBase64\?: string;[\s\S]{0,120}\}\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
-  assert.match(globalStyles, /\.embedded-plugin-error\s*\{/);
+  assert.match(globalStyles, /\.service-webview-error\s*\{/);
 });
 
 test("embedded cdp exposes service frontends as webview surfaces", () => {
@@ -5882,17 +5885,17 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
 test("desktop web surface state reads one exact surface without an active-surface fallback", () => {
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
-  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
 
   assert.match(appShell, /case "desktop\.web\.getSurfaceState"/u);
   assert.match(appShell, /readWebSurfaceState\(surfaceId\)/u);
   assert.match(appShell, /code:\s*"surface_not_found"/u);
   assert.match(externalWebview, /registerWebSurfaceStateProvider\(surfaceId/u);
   assert.match(externalWebview, /tabs:\s*currentState\.tabs\.map/u);
-  assert.match(pluginPage, /registerWebSurfaceStateProvider\(surfaceId/u);
+  assert.match(serviceWebviewSurface, /registerWebSurfaceStateProvider\(surfaceId/u);
   assert.doesNotMatch(appShell, /case "desktop\.web\.getActiveSurface"/u);
   assert.doesNotMatch(externalWebview, /case "desktop\.web\.getActiveSurface"/u);
-  assert.doesNotMatch(pluginPage, /case "desktop\.web\.getActiveSurface"/u);
+  assert.doesNotMatch(serviceWebviewSurface, /case "desktop\.web\.getActiveSurface"/u);
 });
 
 test("assistant chat export writes directly to the download location", () => {
@@ -6342,8 +6345,8 @@ test("agent-platform monitor opens inside the service preview surface", () => {
     "embedded-surfaces",
     "EmbeddedSurfaceHosts.tsx"
   );
-  const pluginPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+  const serviceWebviewSurface = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "service-webview", "ServiceWebviewSurface.tsx"),
     "utf8"
   );
   const globalStyles = readRendererStyles();
@@ -6355,9 +6358,9 @@ test("agent-platform monitor opens inside the service preview surface", () => {
   assert.match(authBridge, /desktop:agent-auth:request/);
   assert.doesNotMatch(authBridge, removedProtocolPattern("desktop", "agent-app-auth", "request"));
   assert.doesNotMatch(authBridge, removedProtocolPattern("zenmind", "agent-app-auth", "request"));
-  assert.match(embeddedSurfaceHosts, /pluginId === "identity-center" \|\| pluginId === "agent-platform"/);
-  assert.match(pluginPage, /service\.id !== "agent-platform"/);
-  assert.match(pluginPage, /issueAccessToken\("missing"\)/);
+  assert.match(embeddedSurfaceHosts, /serviceId === "identity-center" \|\| serviceId === "agent-platform"/);
+  assert.match(serviceWebviewSurface, /service\.id !== "agent-platform"/);
+  assert.match(serviceWebviewSurface, /issueAccessToken\("missing"\)/);
   assert.doesNotMatch(app, /location\.pathname === "\/agent-platform-monitor"/);
   assert.match(controlCenter, /activeDetailService\.id === "agent-platform"/);
   assert.match(controlCenter, /navigate\(\s*`\/service\/\$\{activeDetailService\.id\}`/);
@@ -6388,15 +6391,15 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
 });
 
 test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", () => {
-  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
   const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
   const mainProcess = readMainProcessRuntimeSource();
 
-  assert.match(pluginPage, /devToolsTarget\?: "copilot"/);
-  assert.match(pluginPage, /window\.electronAPI\.copilot\.publishDevToolsTarget/);
-  assert.match(pluginPage, /document\.visibilityState !== "hidden"/);
+  assert.match(serviceWebviewSurface, /devToolsTarget\?: "copilot"/);
+  assert.match(serviceWebviewSurface, /window\.electronAPI\.copilot\.publishDevToolsTarget/);
+  assert.match(serviceWebviewSurface, /document\.visibilityState !== "hidden"/);
   assert.match(preload, /copilot:\s*\{[\s\S]{0,140}publishDevToolsTarget:\s*\(target\) => ipcRenderer\.invoke\("copilot\.publishDevToolsTarget", target\)/);
   assert.match(contracts, /interface CopilotDevToolsTargetInput/);
   assert.match(contracts, /copilot:\s*\{[\s\S]{0,180}publishDevToolsTarget:\s*\(target: CopilotDevToolsTargetInput\)/);
@@ -7261,8 +7264,8 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
     path.join(projectRoot, "src", "shared", "contracts", "copilot.ts"),
     "utf8"
   );
-  const pluginPage = fs.readFileSync(
-    path.join(projectRoot, "src", "renderer", "pages", "plugin", "PluginPage.tsx"),
+  const serviceWebviewSurface = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "service-webview", "ServiceWebviewSurface.tsx"),
     "utf8"
   );
   const embeddedSurfaceHosts = readSourceFile(
@@ -7296,9 +7299,9 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /partition: options\.partition \?\? partition/);
   assert.match(externalWebviewPage, /const nextSurfaceKey = `\$\{title\}\\u0000\$\{url\}\\u0000\$\{partition \|\| ""\}`;/);
   assert.doesNotMatch(externalWebviewPage, /getRendererEmbeddedBrowserUserAgent/u);
-  assert.doesNotMatch(pluginPage, /embedded-browser-user-agent/u);
-  assert.match(pluginPage, /partition: `persist:\$\{STORAGE_NAMESPACE\}-service-\$\{pluginId \|\| "plugin"\}`/);
-  assert.doesNotMatch(pluginPage, /DESKTOP_SSO_WEBVIEW_PARTITION/u);
+  assert.doesNotMatch(serviceWebviewSurface, /embedded-browser-user-agent/u);
+  assert.match(serviceWebviewSurface, /partition: `persist:\$\{STORAGE_NAMESPACE\}-service-\$\{serviceId \|\| "plugin"\}`/);
+  assert.doesNotMatch(serviceWebviewSurface, /DESKTOP_SSO_WEBVIEW_PARTITION/u);
   assert.match(oidcSso, /provider: "google"/u);
   assert.match(oidcSso, /https:\/\/accounts\.google\.com\/o\/oauth2\/v2\/auth/u);
   assert.match(oidcSso, /https:\/\/oauth2\.googleapis\.com\/token/u);
@@ -7397,7 +7400,7 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
   const debugModeContext = readSourceFile("src", "renderer", "debug", "DebugModeContext.ts");
   const webviewDebugOverlay = readSourceFile("src", "renderer", "components", "WebviewDebugOverlay.tsx");
   const webviewDebugUrl = loadTypeScriptCommonJs("src", "renderer", "debug", "webviewDebugUrl.ts");
-  const pluginPage = readSourceFile("src", "renderer", "pages", "plugin", "PluginPage.tsx");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const externalWebviewPage = readSourceFile(
     "src",
     "renderer",
@@ -7426,7 +7429,7 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
     webviewDebugUrl.redactWebviewDebugUrl("https://example.test/?API-Key=secret&token=other"),
     "https://example.test/?API-Key=REDACTED&token=REDACTED"
   );
-  assert.match(pluginPage, /<WebviewDebugOverlay url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\} \/>/u);
+  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\} \/>/u);
   assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} \/>/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*none;/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*none;/u);
