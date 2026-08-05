@@ -1136,6 +1136,11 @@ test("Windows installer data directory page validates the parent before creating
   assert.match(installerInclude, /\$\{FileExists\} "\$DesktopDataRoot\\\*\.\*"/u);
   assert.match(installerInclude, /DesktopReadOwnerMarker \$DesktopDataRoot/u);
   assert.match(installerInclude, /DesktopValidateOwnedRoot \$DesktopDataRoot/u);
+  assert.match(dataDirectoryPageLeave, /StrCpy \$DesktopDataRootAdoptConfirmed "0"/u);
+  assert.match(dataDirectoryPageLeave, /StrCpy \$DesktopDataRootStored "0"/u);
+  assert.match(dataDirectoryPageLeave, /\$\{andIfNot\} \$\{FileExists\} "\$DesktopDataRoot\\\.desktop-owner"/u);
+  assert.match(dataDirectoryPageLeave, /仅当你确认这是历史 CuteJ 数据目录时才继续/u);
+  assert.match(dataDirectoryPageLeave, /CuteJDataDirectoryAdoptLegacy:[\s\S]*?StrCpy \$DesktopDataRootAdoptConfirmed "1"/u);
   assert.match(installerInclude, /StrCmp "\$\{ROOT\}" "\$PROFILE\\Downloads"/u);
   assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$DesktopDataParent\\\.cutej"/u);
   assert.match(installerInclude, /可选择数据父目录或已有的 \.cutej 数据目录/u);
@@ -1166,6 +1171,11 @@ test("Windows installer keeps the program root fixed while the data root remains
   assert.match(dataDirectoryPage, /GetParent[\s\S]*?DesktopDataParent/u);
   assert.match(installerInclude, /GetFileName\} "\$DesktopDataParent" \$R3[\s\S]*?\$R3 == "\.cutej"[\s\S]*?StrCpy \$DesktopDataRoot "\$DesktopDataParent"/u);
   assert.match(installerInclude, /!macro customInit[\s\S]*?setInstallModePerUser[\s\S]*?DesktopResolveDefaultInstallDir[\s\S]*?StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
+  assert.match(installerInclude, /!macro DesktopValidateStoredDataRootForInstall[\s\S]*?DesktopValidateOwnedRoot \$DesktopDataRoot \$R1[\s\S]*?\$\{FileExists\} "\$DesktopDataRoot\\\.desktop-owner"[\s\S]*?\$\{Silent\}/u);
+  assert.match(installerInclude, /!macro customInit[\s\S]*?!insertmacro DesktopValidateStoredDataRootForInstall/u);
+  assert.match(installerInclude, /!macro customCheckAppRunning[\s\S]*?!insertmacro DesktopValidateStoredDataRootForInstall/u);
+  assert.doesNotMatch(installerInclude, /数据目录的安全标记缺失或不匹配/u);
+  assert.match(installerInclude, /\$DesktopDataRootAdoptConfirmed != "1"[\s\S]*?目标数据目录已存在但缺少 CuteJ 所有权标记/u);
   assert.match(installerInclude, /\$DesktopPreviousInstallDir != \$DesktopDefaultInstallDir[\s\S]*?SetErrorLevel 3[\s\S]*?Quit/u);
   assert.match(installerInclude, /!macro customCheckAppRunning[\s\S]*?setInstallModePerUser[\s\S]*?DesktopResolveDefaultInstallDir[\s\S]*?ReadRegStr \$DesktopPreviousInstallDir[\s\S]*?StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
   assert.match(installerInclude, /!macro customUnInstallCheck\s+!insertmacro DesktopHandleOldUninstallAndRestoreInstallDir/u);
