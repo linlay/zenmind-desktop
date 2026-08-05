@@ -236,6 +236,9 @@ export const enUSMessages = {
   "sidebar.webapp.actions": "WebApp actions",
   "sidebar.webapp.openInWindow": "Open in New Window",
   "sidebar.webapp.openInWorkspace": "Open in Main Window",
+  "sidebar.webapp.export": "Export WebApp",
+  "sidebar.webapp.exporting": "Exporting...",
+  "sidebar.webapp.exportFailed": "Failed to export WebApp.",
   "sidebar.webapp.remove": "Uninstall WebApp",
   "sidebar.webapp.removing": "Uninstalling...",
   "sidebar.webapp.removeConfirm": "Uninstall \"{name}\"?",
@@ -2076,6 +2079,8 @@ export const enUSMessages = {
 
   "webapp.listRead": "Website apps loaded.",
   "webapp.importCancelled": "WebApp import cancelled.",
+  "webapp.exportCancelled": "WebApp export cancelled.",
+  "webapp.exported": "\"{label}\" exported.",
   "webapp.notFound": "Local website app not found.",
   "webapp.updated": "\"{label}\" updated.",
   "webapp.deleted": "\"{label}\" removed.",
@@ -2394,6 +2399,7 @@ export const enUSMessages = {
   "dialog.importSkill.title": "Choose Skill package or SKILL.md",
   "dialog.importEmbeddedWebsites.title": "Import embedded website config",
   "dialog.importWebapp.title": "Import WebApp",
+  "dialog.exportWebapp.title": "Export WebApp",
   "dialog.exportEmbeddedWebsites.title": "Export embedded website config",
 
   "copilotDock.surfaceLabel": "Assistant",

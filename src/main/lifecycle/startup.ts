@@ -10,6 +10,7 @@ export type StartupPipelineOptions = {
   loadBuiltinServices: (app: App) => void;
   loadInstalledPlugins: (app: App) => void;
   notifyCoreServicesChanged: () => void;
+  startShellRuntime: () => void;
   startNonCoreRuntime: () => void;
   setStartupPhase: (phase: StartupPhase) => void;
   runServiceMutation: <T>(task: () => Promise<T>) => Promise<T>;
@@ -27,6 +28,7 @@ export type StartupPipelineOptions = {
 export function createStartupPipeline(options: StartupPipelineOptions) {
   async function run() {
     try {
+      options.startShellRuntime();
       const startupEnvImportFailureMessage = options.getEnvImportFailureMessage();
       if (startupEnvImportFailureMessage !== null) {
         options.startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);

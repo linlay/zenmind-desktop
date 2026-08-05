@@ -191,6 +191,35 @@ test("main window lifecycle hides Windows fullscreen windows without destroying 
   assert.equal(target.destroyed, false);
 });
 
+test("main window lifecycle sends Windows close requests to the tray instead of quitting", () => {
+  const target = new FakeWindow();
+  const controller = createMainWindowLifecycleController({
+    platform: "win32",
+    getWindow: () => target,
+    createWindow: () => target,
+    clearWindow: () => {}
+  });
+  let prevented = false;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "win32",
+    lifecycle: controller,
+    isDevToolsShortcut: () => false,
+    isHandlingQuit: () => false,
+    clearWindow: () => {}
+  });
+
+  target.emit("close", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  });
+
+  assert.equal(prevented, true);
+  assert.equal(target.hidden, true);
+  assert.equal(target.destroyed, false);
+});
+
 test("main window lifecycle hides macOS close requests without destroying the window", () => {
   const target = new FakeWindow();
   const controller = createMainWindowLifecycleController({

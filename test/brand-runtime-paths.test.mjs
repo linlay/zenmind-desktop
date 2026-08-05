@@ -116,6 +116,23 @@ function createBrandFixture(t) {
   return root;
 }
 
+test("Windows release keeps branded executable metadata editing enabled", (t) => {
+  const root = createBrandFixture(t);
+  const brand = syncBrandArtifacts({
+    rootDir: root,
+    brandId: "cutej",
+    target: { os: "win32", arch: "x64" }
+  });
+  const electronBuilderConfig = readJson(electronBuilderConfigPath(root, brand.id));
+  const windowsBuildScript = fs.readFileSync(
+    path.join(projectRoot, "scripts", "platform", "dist-win-host.mjs"),
+    "utf8"
+  );
+
+  assert.equal(electronBuilderConfig.win.signAndEditExecutable, true);
+  assert.doesNotMatch(windowsBuildScript, /signAndEditExecutable=false/u);
+});
+
 function writeMinimalGeneratedIconArtifacts(root, brand) {
   const outputRoot = brandRuntimeAssetDir(root, brand);
   fs.mkdirSync(outputRoot, { recursive: true });

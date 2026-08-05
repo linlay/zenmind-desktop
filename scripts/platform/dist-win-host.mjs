@@ -131,7 +131,6 @@ export async function buildOnWindowsHost(brand = syncBrandArtifacts({ brandId: r
     "--",
     "--config",
     electronBuilderConfigPath(projectRoot, brand.id),
-    "--config.win.signAndEditExecutable=false",
     "--win",
     "--x64"
   ], brandProcessOptions({

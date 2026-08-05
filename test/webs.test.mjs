@@ -21,6 +21,7 @@ const {
   writeCanonicalWebappManifest
 } = require("../dist-electron/main/webs/webapps/store.js");
 const {
+  exportWebappArchive,
   listWebappItems,
   removeWebappItem,
   updateWebappItem
@@ -967,6 +968,83 @@ test("webapp ipc import installs local archive and returns refreshed web entries
     "website:docs",
     "webapp:reg-report-excelx-webapp"
   ]);
+});
+
+test("webapp IPC exports an importable program-only ZIP archive", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-ipc-export-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeWebapp(webappsRoot(homePath), "portable-notes", {
+    schemaVersion: 4,
+    frontendOnly: true
+  });
+  const programRoot = path.join(webappsRoot(homePath), "portable-notes");
+  fs.writeFileSync(path.join(programRoot, "frontend", "portable.txt"), "program payload\n");
+  const persistentDataRoot = path.join(desktopRoot(homePath), "data", "webs", "webapp-data", "portable-notes");
+  fs.mkdirSync(persistentDataRoot, { recursive: true });
+  fs.writeFileSync(path.join(persistentDataRoot, "private.sqlite"), "business data");
+  const archivePath = path.join(root, "exports", "portable-notes.zip");
+
+  const ipcMain = createIpcMain();
+  registerWebIpcHandlers(ipcMain, {
+    app,
+    showFileDialog: async () => assert.fail("open dialog should not be opened"),
+    showSaveDialog: async (options) => {
+      assert.equal(options.defaultPath.endsWith("portable-notes-1.0.0.zip"), true);
+      assert.deepEqual(options.filters, [{ name: "WebApp Archive", extensions: ["zip"] }]);
+      return { canceled: false, filePath: archivePath };
+    },
+    getDataRoot: () => desktopRoot(homePath)
+  });
+
+  const result = await ipcMain.invoke("webs.webapps.export", "portable-notes");
+  assert.equal(result.ok, true);
+  assert.equal(result.item?.id, "portable-notes");
+  assert.equal(result.path, archivePath);
+
+  const zip = await JSZip.loadAsync(fs.readFileSync(archivePath));
+  assert.equal(Boolean(zip.file("webapp.json")), true);
+  assert.equal(await zip.file("frontend/portable.txt").async("string"), "program payload\n");
+  assert.equal(zip.file("private.sqlite"), null);
+  assert.equal(zip.file("webapp-data/portable-notes/private.sqlite"), null);
+
+  const importedHomePath = path.join(root, "imported-home");
+  const importedApp = createApp(importedHomePath);
+  const importedIpcMain = createIpcMain();
+  registerWebIpcHandlers(importedIpcMain, {
+    app: importedApp,
+    showFileDialog: async () => ({ canceled: false, filePaths: [archivePath] }),
+    showSaveDialog: async () => assert.fail("save dialog should not be opened"),
+    getDataRoot: () => desktopRoot(importedHomePath)
+  });
+  const imported = await importedIpcMain.invoke("webs.webapps.import");
+  assert.equal(imported.ok, true);
+  assert.equal(imported.item?.id, "portable-notes");
+  assert.equal(
+    fs.readFileSync(path.join(webappsRoot(importedHomePath), "portable-notes", "frontend", "portable.txt"), "utf8"),
+    "program payload\n"
+  );
+});
+
+test("webapp archive export rejects symbolic links and removes partial output", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-export-symlink-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  writeWebapp(webappsRoot(homePath), "unsafe-export", {
+    schemaVersion: 4,
+    frontendOnly: true
+  });
+  const linkedPath = path.join(webappsRoot(homePath), "unsafe-export", "frontend", "linked.txt");
+  fs.symlinkSync(path.join(root, "outside.txt"), linkedPath);
+  const archivePath = path.join(root, "unsafe-export.zip");
+
+  const result = await exportWebappArchive(app, "unsafe-export", archivePath);
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /symbolic link/u);
+  assert.equal(fs.existsSync(archivePath), false);
 });
 
 test("webapp IPC delegates floating-window opens to the main-process window manager", async (t) => {
