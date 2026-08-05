@@ -1511,14 +1511,16 @@ test("assistant navigation run.started preserves an existing real preview", () =
   assert.equal(chat?.hasActiveRun, true);
 });
 
-test("assistant navigation changes previews from chat.updated but not runtime status pushes", () => {
+test("assistant navigation tracks chat.updated content without replacing chat titles", () => {
   const chatId = "preview-chat";
+  const originalChat = createNavigationChat({
+    chatId,
+    chatName: "Stable chat title",
+    lastRunContent: "Original preview",
+  });
   const started = applyAssistantNavigationPush([createAgent({
     chatCount: 1,
-    recentChats: [createNavigationChat({
-      chatId,
-      lastRunContent: "Original preview",
-    })],
+    recentChats: [originalChat],
   })], {
     frame: "push",
     type: "run.started",
@@ -1535,7 +1537,16 @@ test("assistant navigation changes previews from chat.updated but not runtime st
     data: {
       agentKey: "zenmi",
       chatId,
-      chatName: "Preview title",
+      lastRunContent: "Updated elsewhere",
+      updatedAt: EPOCH_MS + 71,
+    },
+  });
+  const updatedChats = applyAssistantNavigationChatPush([originalChat], {
+    frame: "push",
+    type: "chat.updated",
+    data: {
+      agentKey: "zenmi",
+      chatId,
       lastRunContent: "Updated elsewhere",
       updatedAt: EPOCH_MS + 71,
     },
@@ -1555,9 +1566,43 @@ test("assistant navigation changes previews from chat.updated but not runtime st
   const updatedChat = findChat(updated.items, chatId);
   const completedChat = findChat(completed.items, chatId);
   assert.equal(updatedChat?.lastRunContent, "Updated elsewhere");
+  assert.equal(updatedChat?.chatName, "Stable chat title");
+  assert.equal(updatedChats.items[0]?.lastRunContent, "Updated elsewhere");
+  assert.equal(updatedChats.items[0]?.chatName, "Stable chat title");
   assert.equal(completedChat?.lastRunContent, "Updated elsewhere");
+  assert.equal(completedChat?.chatName, "Stable chat title");
   assert.equal(completedChat?.hasActiveRun, false);
   assert.equal(completed.shouldRefresh, false);
+});
+
+test("assistant navigation never derives a chat title from lastRunContent", () => {
+  const [agent] = buildAssistantNavigationAgentsFromPlatformAgents([{
+    key: "zenmi",
+    name: "Zenmi",
+    chats: [{
+      chatId: "summary-without-title",
+      createdAt: EPOCH_MS,
+      updatedAt: EPOCH_MS + 1,
+      lastRunContent: "Content must not become the sidebar title",
+    }],
+  }]);
+  const summaryChat = agent.recentChats[0];
+  assert.ok(summaryChat?.chatName);
+  assert.notEqual(summaryChat?.chatName, summaryChat?.lastRunContent);
+
+  const created = applyAssistantNavigationPush([createAgent()], {
+    frame: "push",
+    type: "chat.created",
+    data: {
+      agentKey: "zenmi",
+      chatId: "push-without-title",
+      createdAt: EPOCH_MS + 2,
+      lastRunContent: "Push content must not become the sidebar title",
+    },
+  });
+  const pushedChat = findChat(created.items, "push-without-title");
+  assert.ok(pushedChat?.chatName);
+  assert.notEqual(pushedChat?.chatName, pushedChat?.lastRunContent);
 });
 
 test("assistant navigation preserves chat creation time from summaries and pushes", () => {

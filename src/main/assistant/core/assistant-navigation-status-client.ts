@@ -769,7 +769,7 @@ function mapNavigationChat(
     return null;
   }
   const lastRunContent = toText(chat.lastRunContent) || toText(chat.lastMessage) || toText(chat.preview) || toText(chat.message);
-  const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || lastRunContent || t("assistant.newChat");
+  const chatName = toText(chat.chatName) || toText(chat.name) || toText(chat.title) || t("assistant.newChat");
   return {
     chatId,
     chatName,
@@ -1112,7 +1112,7 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   }
   const preview = readPushPreview(event);
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
-  const chatName = toText(event.chatName) || current?.chatName || preview || t("assistant.newChat");
+  const chatName = toText(event.chatName) || current?.chatName || t("assistant.newChat");
   const eventTimestamp = readPushChatUpdateTimestamp(event);
   const canReuseCurrentTimestamp = event.type === "chat.read" || event.type === "chat.unread";
   if (eventTimestamp === undefined && (!canReuseCurrentTimestamp || !current)) {
