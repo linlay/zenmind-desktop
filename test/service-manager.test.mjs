@@ -6272,8 +6272,7 @@ test("ensurePreStartRequirements leaves legacy desktop runtime child paths untou
     `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
     `CHATS_DIR=${legacyRuntimeRoot}/chats`,
     `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
-    `PAN_DIR=${legacyRuntimeRoot}/pan`,
-    `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
+    `PAN_DIR=${legacyRuntimeRoot}/pan`
   ].join("\n");
   writeTestEnv(userDataRoot, platformService.id, originalEnv);
 
@@ -6330,8 +6329,7 @@ test("ensurePreStartRequirements leaves legacy resolved desktop runtime paths un
     `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
     `CHATS_DIR=${legacyRuntimeRoot}/chats`,
     `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
-    `PAN_DIR=${legacyRuntimeRoot}/pan`,
-    `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
+    `PAN_DIR=${legacyRuntimeRoot}/pan`
   ].join("\n");
   writeTestEnv(userDataRoot, platformService.id, originalEnv);
 
@@ -6388,8 +6386,7 @@ test("ensurePreStartRequirements leaves hidden desktop legacy runtime roots unto
     `SCHEDULES_DIR=${legacyRuntimeRoot}/schedules`,
     `CHATS_DIR=${legacyRuntimeRoot}/chats`,
     `MEMORY_DIR=${legacyRuntimeRoot}/memory`,
-    `PAN_DIR=${legacyRuntimeRoot}/pan`,
-    `SKILLS_MARKET_DIR=${legacyRuntimeRoot}/skills-market`
+    `PAN_DIR=${legacyRuntimeRoot}/pan`
   ].join("\n");
   writeTestEnv(userDataRoot, platformService.id, originalEnv);
 

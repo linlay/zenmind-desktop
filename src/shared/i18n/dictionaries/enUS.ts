@@ -1827,6 +1827,8 @@ export const enUSMessages = {
   "envBootstrap.firstInstallZipOnly": "First install can only import env.zip.",
   "envBootstrap.emptyImport": "env.zip contains no importable files.",
   "envBootstrap.backupExists": "Old environment backup directory already exists: {path}",
+  "envBootstrap.removedSkillsMarketRuntime": "Legacy runtime directory is not supported: {path}. Back up the old runtime and restore a new environment containing skills-center.",
+  "envBootstrap.removedSkillsMarketArchive": "Legacy env.zip content is not supported: {path}. Use an environment package containing skills-center.",
 
   "identityCenterAuth.missingBinaryAndWindowsScript": "identity-center is missing backend/{binaryName} and Windows script scripts/{subcommand}.ps1.",
   "identityCenterAuth.missingBinaryAndUnixScript": "identity-center is missing backend/{binaryName} and Unix script scripts/{subcommand}.sh.",

@@ -63,7 +63,8 @@ export type RuntimeEnvResetFailure = Error & {
   sourceZipPath?: string;
 };
 
-const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-market"] as const;
+const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-center"] as const;
+const REMOVED_SKILLS_MARKET_DIR_NAME = "skills-market";
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
 const ENV_AGENT_DEFINITION_FILE_NAME = "agent.yml";
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
@@ -128,8 +129,16 @@ export function runtimeRootExists(app: AppPathReader, platform: NodeJS.Platform 
   }
 }
 
+export function assertNoRemovedSkillsMarketRuntimeDir(root: string) {
+  const removedPath = path.join(root, REMOVED_SKILLS_MARKET_DIR_NAME);
+  if (fs.existsSync(removedPath)) {
+    throw new Error(t("envBootstrap.removedSkillsMarketRuntime", { path: removedPath }));
+  }
+}
+
 export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   const root = resolveRuntimeRoot(app, platform);
+  assertNoRemovedSkillsMarketRuntimeDir(root);
   if (!runtimeRootExists(app, platform)) {
     return false;
   }
@@ -151,6 +160,7 @@ export function runtimeEnvNeedsBundledSeedRefresh(app: AppPathReader, platform: 
     return false;
   }
   const root = resolveRuntimeRoot(app, platform);
+  assertNoRemovedSkillsMarketRuntimeDir(root);
   if (!runtimeRootExists(app, platform)) {
     return false;
   }
@@ -458,6 +468,9 @@ function normalizeEnvZipEntryRelativePath(entryName: string) {
   if (segments.length === 1) {
     return null;
   }
+  if (segments[1]?.toLowerCase() === REMOVED_SKILLS_MARKET_DIR_NAME) {
+    throw new Error(t("envBootstrap.removedSkillsMarketArchive", { path: entryName }));
+  }
   if (isNestedEnvWrapperSegment(segments[1] ?? "")) {
     throw new Error(t("envBootstrap.nestedRoot", { path: entryName }));
   }
@@ -657,11 +670,13 @@ export async function importEnvZipToRuntime(
     throw new Error(t("envBootstrap.firstInstallZipOnly"));
   }
 
+  const targetRoot = resolveRuntimeRoot(app, platform);
+  assertNoRemovedSkillsMarketRuntimeDir(targetRoot);
+
   const zipBuffer = await fs.promises.readFile(zipPath);
   const zip = await JSZip.loadAsync(zipBuffer);
   const entries = normalizeZipEntries(zip);
   await validateEnvZipVersion(entries, expectedDesktopVersion);
-  const targetRoot = resolveRuntimeRoot(app, platform);
   let copiedFiles = 0;
   let skippedFiles = 0;
   const overwrittenFiles = 0;

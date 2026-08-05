@@ -7,11 +7,10 @@ import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../shared/contracts";
 import { APP_BRAND } from "../shared/brand";
 import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
-import { getService } from "./services/service-registry";
 import { getInstallDir, getServiceState } from "./services/manager";
-import { getServiceConfigRoot } from "./user-paths";
 import { t } from "./i18n/main-i18n";
 import { resolveRuntimeRootPath } from "./runtime-root";
+import { assertNoRemovedSkillsMarketRuntimeDir } from "./env-bootstrap";
 
 type SkillMetadata = {
   id: string;
@@ -66,24 +65,6 @@ function slugify(value: string) {
   return normalized || "local-skill";
 }
 
-function parseEnvFile(content: string) {
-  const env = new Map<string, string>();
-  for (const line of content.split(/\r?\n/u)) {
-    const trimmed = line.trim();
-    if (!trimmed || trimmed.startsWith("#")) {
-      continue;
-    }
-    const separatorIndex = trimmed.indexOf("=");
-    if (separatorIndex <= 0) {
-      continue;
-    }
-    const key = trimmed.slice(0, separatorIndex).trim();
-    const value = trimmed.slice(separatorIndex + 1).trim().replace(/^['"]|['"]$/gu, "");
-    env.set(key, value);
-  }
-  return env;
-}
-
 function resolveHomeDir(app: App) {
   try {
     const homePath = app.getPath("home")?.trim();
@@ -94,17 +75,6 @@ function resolveHomeDir(app: App) {
     // Fall through to Node's home directory.
   }
   return process.env.HOME || os.homedir();
-}
-
-function expandHomeShortcut(value: string, homeDir: string) {
-  const trimmed = value.trim();
-  if (trimmed === "~") {
-    return homeDir;
-  }
-  if (trimmed.startsWith("~/") || trimmed.startsWith("~\\")) {
-    return path.join(homeDir, trimmed.slice(2));
-  }
-  return trimmed;
 }
 
 function resolveDesktopDir(app: App, homeDir = resolveHomeDir(app)) {
@@ -123,7 +93,7 @@ function scoreRuntimeRoot(runtimeRoot: string) {
   if (!fs.existsSync(runtimeRoot) || !fs.statSync(runtimeRoot).isDirectory()) {
     return -1;
   }
-  return ["agents", "registries", "teams", "chats", "skills-market"]
+  return ["agents", "registries", "teams", "chats", "skills-center"]
     .filter((entry) => fs.existsSync(path.join(runtimeRoot, entry)))
     .length;
 }
@@ -157,24 +127,14 @@ function resolveDesktopRuntimeRoot(app: App) {
   return preferredRuntimeRoot;
 }
 
-export function getSkillsMarketDir(app: App) {
-  try {
-    const service = getService("agent-platform");
-    const envPath = path.join(getServiceConfigRoot(app, service.id, service.kind), ".env");
-    if (fs.existsSync(envPath)) {
-      const configured = parseEnvFile(fs.readFileSync(envPath, "utf8")).get("SKILLS_MARKET_DIR")?.trim();
-      if (configured) {
-        return expandHomeShortcut(configured, resolveHomeDir(app));
-      }
-    }
-  } catch {
-    // agent-platform may not be registered yet in focused tests or fresh installs.
-  }
-  return path.join(resolveDesktopRuntimeRoot(app), "skills-market");
+export function getSkillsCenterDir(app: App) {
+  const runtimeRoot = resolveDesktopRuntimeRoot(app);
+  assertNoRemovedSkillsMarketRuntimeDir(runtimeRoot);
+  return path.join(runtimeRoot, "skills-center");
 }
 
 export function getSkillInstallDir(app: App, skillId: string) {
-  return path.join(getSkillsMarketDir(app), skillId);
+  return path.join(getSkillsCenterDir(app), skillId);
 }
 
 function readSkillMetadata(skillDir: string): SkillMetadata {
@@ -607,7 +567,7 @@ async function buildMessage(app: App, skillName: string) {
 
 export async function installSkillFromPath(app: App, sourcePath: string, options: SkillInstallOptions = {}): Promise<MarketCommandResult> {
   const extension = path.basename(sourcePath).toLowerCase();
-  const skillsRoot = getSkillsMarketDir(app);
+  const skillsRoot = getSkillsCenterDir(app);
   fs.mkdirSync(skillsRoot, { recursive: true });
   const tempRoot = fs.mkdtempSync(path.join(skillsRoot, ".tmp-"));
   let preparedDir = "";
@@ -699,7 +659,7 @@ export async function installSkillFromCommand(app: App, commandText: string): Pr
   const [rawCommand, ...rawArgs] = tokens;
   const { command, args } = normalizeSkillDownloadCommand(rawCommand, rawArgs);
   const execution = resolvePackageManagerExecution(command, args);
-  const downloadsRoot = path.join(getSkillsMarketDir(app), ".downloads");
+  const downloadsRoot = path.join(getSkillsCenterDir(app), ".downloads");
   fs.mkdirSync(downloadsRoot, { recursive: true });
   const downloadRoot = fs.mkdtempSync(path.join(downloadsRoot, "desktop-skill-download-"));
   try {
@@ -725,7 +685,7 @@ export async function installSkillFromCommand(app: App, commandText: string): Pr
 }
 
 export function listInstalledSkills(app: App): MarketItem[] {
-  const root = getSkillsMarketDir(app);
+  const root = getSkillsCenterDir(app);
   if (!fs.existsSync(root)) {
     return [];
   }

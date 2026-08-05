@@ -12,6 +12,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const {
   importEnvZipToRuntime,
+  resetBundledRuntimeEnv,
   resolveRuntimeRoot,
   resolveBundledEnvZipPath,
   shouldPromptEnvRootConflict,
@@ -117,7 +118,7 @@ test("runtime env does not treat empty runtime directories as initialized", (t) 
   const app = createPathApp(root);
   assert.equal(resolveRuntimeRoot(app, "win32"), path.join(root, "home", APP_BRAND.paths.runtimeRootDirName));
   const runtimeRoot = resolveRuntimeRoot(app, "win32");
-  for (const dirName of ["agents", "registries", "teams", "chats", "skills-market"]) {
+  for (const dirName of ["agents", "registries", "teams", "chats", "skills-center"]) {
     fs.mkdirSync(path.join(runtimeRoot, dirName), { recursive: true });
   }
 
@@ -125,6 +126,96 @@ test("runtime env does not treat empty runtime directories as initialized", (t) 
 
   fs.writeFileSync(path.join(runtimeRoot, "agents", "webOperator.yml"), "key: webOperator\n", "utf8");
   assert.equal(runtimeEnvExists(app, "win32"), true);
+});
+
+test("legacy skills-market runtime directories fail before Desktop writes skills-center", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-removed-skill-runtime-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createPathApp(root);
+  const runtimeRoot = resolveRuntimeRoot(app, "darwin");
+  const removedRoot = path.join(runtimeRoot, "skills-market");
+  fs.mkdirSync(removedRoot, { recursive: true });
+  fs.writeFileSync(path.join(removedRoot, "keep.txt"), "keep\n", "utf8");
+
+  assert.throws(() => runtimeEnvExists(app, "darwin"), /skills-market/u);
+
+  const zipPath = path.join(root, "env.zip");
+  await writeEnvZip(zipPath, {
+    "env/VERSION": "1.0.0\n",
+    "env/skills-center/demo/SKILL.md": "# Demo\n"
+  });
+  await assert.rejects(
+    () => importEnvZipToRuntime(app, zipPath, "darwin", "1.0.0"),
+    /skills-market/u
+  );
+  assert.equal(fs.readFileSync(path.join(removedRoot, "keep.txt"), "utf8"), "keep\n");
+  assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-center")), false);
+});
+
+test("legacy skills-market env.zip is rejected before creating the runtime root", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-removed-skill-archive-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createPathApp(root);
+  const runtimeRoot = resolveRuntimeRoot(app, "darwin");
+  const zipPath = path.join(root, "env.zip");
+  await writeEnvZip(zipPath, {
+    "env/VERSION": "1.0.0\n",
+    "env/skills-market/demo/SKILL.md": "# Demo\n"
+  });
+
+  await assert.rejects(
+    () => importEnvZipToRuntime(app, zipPath, "darwin", "1.0.0"),
+    /skills-market/u
+  );
+  assert.equal(fs.existsSync(runtimeRoot), false);
+});
+
+test("legacy and new skill directories together still fail without modifying either", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-mixed-skill-runtime-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createPathApp(root);
+  const runtimeRoot = resolveRuntimeRoot(app, "win32");
+  const removedFile = path.join(runtimeRoot, "skills-market", "removed.txt");
+  const centerFile = path.join(runtimeRoot, "skills-center", "center.txt");
+  fs.mkdirSync(path.dirname(removedFile), { recursive: true });
+  fs.mkdirSync(path.dirname(centerFile), { recursive: true });
+  fs.writeFileSync(removedFile, "removed\n", "utf8");
+  fs.writeFileSync(centerFile, "center\n", "utf8");
+
+  assert.throws(() => runtimeEnvExists(app, "win32"), /skills-market/u);
+  assert.equal(fs.readFileSync(removedFile, "utf8"), "removed\n");
+  assert.equal(fs.readFileSync(centerFile, "utf8"), "center\n");
+});
+
+test("explicit bundled reset backs up a legacy runtime and restores skills-center", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-skill-center-reset-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const app = createPathApp(root);
+  const runtimeRoot = resolveRuntimeRoot(app, "darwin");
+  fs.mkdirSync(path.join(runtimeRoot, "skills-market"), { recursive: true });
+  fs.writeFileSync(path.join(runtimeRoot, "skills-market", "keep.txt"), "legacy\n", "utf8");
+
+  const resourcesRoot = path.join(root, "resources");
+  const zipPath = path.join(resourcesRoot, "env", "env.zip");
+  fs.mkdirSync(path.dirname(zipPath), { recursive: true });
+  await writeEnvZip(zipPath, {
+    "env/VERSION": "1.0.0\n",
+    "env/skills-center/demo/SKILL.md": "# Demo\n"
+  });
+
+  const result = await resetBundledRuntimeEnv(app, "darwin", {
+    resourcesRoot,
+    expectedDesktopVersion: "1.0.0",
+    nowSeconds: 123
+  });
+  assert.equal(result.backupPath, `${runtimeRoot}-123`);
+  assert.equal(fs.readFileSync(path.join(result.backupPath, "skills-market", "keep.txt"), "utf8"), "legacy\n");
+  assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-center", "demo", "SKILL.md")), true);
+  assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-market")), false);
 });
 
 test("Windows runtime root can come from the installer selected data directory", (t) => {

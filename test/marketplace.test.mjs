@@ -1543,7 +1543,7 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
         },
         dependencies: [],
         metadata: {
-          source: "zenmind-env/skills-market"
+          source: "zenmind-env/skills-center"
         },
         npmPackage: "@zenmind-skill/automation"
       },
@@ -2250,7 +2250,7 @@ test("importSkillFromCommand runs an npm or npx download command and installs th
   const npxPath = path.join(binDir, process.platform === "win32" ? "npx.cmd" : "npx");
   const script = process.platform === "win32"
     ? `@echo off
-echo %USERPROFILE% | findstr /C:"skills-market" >nul || exit /b 42
+echo %USERPROFILE% | findstr /C:"skills-center" >nul || exit /b 42
 set target=%USERPROFILE%\\.claude\\skills\\downloaded-skill
 mkdir "%target%"
 echo # Downloaded Skill>"%target%\\SKILL.md"
@@ -2259,7 +2259,7 @@ echo {"id":"downloaded-skill","name":"Downloaded Skill","version":"1.2.3","descr
     : `#!/bin/sh
 set -eu
 case "$HOME" in
-  *skills-market/.downloads/desktop-skill-download-*/home) ;;
+  *skills-center/.downloads/desktop-skill-download-*/home) ;;
   *) echo "unexpected HOME: $HOME" >&2; exit 42 ;;
 esac
 target="$HOME/.claude/skills/downloaded-skill"
