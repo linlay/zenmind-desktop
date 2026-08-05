@@ -1211,7 +1211,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_project" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="new_chat" \/>/);
   assert.doesNotMatch(sidebarSource, /<SidebarActionIcon kind="double_check" \/>/);
-  assert.match(sidebarSource, /<ReloadOutlined aria-hidden="true" \/>/);
+  assert.match(sidebarSource, /<SidebarActionIcon kind="refresh" \/>/);
+  assert.doesNotMatch(sidebarSource, /ReloadOutlined/);
+  assert.match(brandMarkSource, /<path d="M21 12a9 9 0 1 1-9-9c2\.52 0 4\.93 1 6\.74 2\.74L21 8" \/>[\s\S]*?<path d="M21 3v5h-5" \/>/);
   assert.match(sidebarSource, /<SidebarActionIcon kind="more_actions" \/>/);
 
   assert.doesNotMatch(sidebarSource, /EditSquareIcon|AddIcon/);
@@ -1893,7 +1895,7 @@ test("Projects header refresh force-loads navigation agents without toggling the
 
   assert.match(sidebarSource, /const \[refreshingAssistantNavAgents, setRefreshingAssistantNavAgents\] =\s*useState\(false\);/);
   assert.match(sidebarSource, /event\.preventDefault\(\);\s*event\.stopPropagation\(\);[\s\S]{0,260}onRefreshAssistantNavAgents\?\.\(\{ force: true \}\)/);
-  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-refresh-button"[\s\S]{0,500}disabled=\{refreshingAssistantNavAgents\}[\s\S]{0,500}<ReloadOutlined aria-hidden="true" \/>/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-refresh-button"[\s\S]{0,500}disabled=\{refreshingAssistantNavAgents\}[\s\S]{0,500}<SidebarActionIcon kind="refresh" \/>/);
   assert.match(appShell, /async function refreshAssistantNavAgents\(options\?: AssistantNavigationListOptions\)[\s\S]{0,260}listNavigationAgents\(options\)/);
   assert.match(contracts, /interface AssistantNavigationListOptions \{\s*force\?: boolean;/);
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
@@ -4044,7 +4046,9 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appSidebar, /onOpenWebappWindow\?\.\(item\)/);
   assert.match(appSidebar, /onOpenWebappWorkspace\?\.\(item\)/);
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
-  assert.match(appSidebar, /disabled=\{\s*isCollapsed \|\| !isOpen \|\| Boolean\(webClosePendingEntryKey\)\s*\}/);
+  assert.match(appSidebar, /disabled=\{!isOpen \|\| Boolean\(webClosePendingEntryKey\)\}/);
+  assert.doesNotMatch(appSidebar, /isCollapsed \|\| !isOpen/);
+  assert.match(appSidebar, /void closeWebItem\(item\)\.finally\(\(\) => setWebItemMenu\(null\)\)/);
   assert.match(appSidebar, /\{!isCollapsed \? \(\s*<button[\s\S]{0,700}t\("sidebar\.webapp\.remove"\)/);
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}z-index:\s*10001;/);
   assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}width:\s*max-content;/);
