@@ -1493,25 +1493,32 @@
 }
 
 .sidebar-website-child-actions {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 2px;
   flex: 0 0 auto;
   padding-right: 4px;
-  opacity: 0;
-  transition: opacity 0.16s ease-in-out;
-}
-
-.sidebar-website-child-row:hover .sidebar-website-child-actions,
-.sidebar-website-child-row:focus-within .sidebar-website-child-actions,
-.sidebar-website-child-row.is-closing .sidebar-website-child-actions {
-  opacity: 1;
 }
 
 .sidebar-website-child-action {
   width: 24px;
   height: 24px;
   border-radius: 6px;
+  opacity: 0;
+  transition: opacity 0.16s ease-in-out;
+}
+
+.sidebar-website-child-row:hover .sidebar-website-child-action,
+.sidebar-website-child-row:focus-within .sidebar-website-child-action,
+.sidebar-website-child-row.is-closing .sidebar-website-child-action {
+  opacity: 1;
+}
+
+.sidebar-webapp-status-dot {
+  top: 9px;
+  left: 9px;
+  pointer-events: none;
 }
 
 /* ── Website open-status action ── */
