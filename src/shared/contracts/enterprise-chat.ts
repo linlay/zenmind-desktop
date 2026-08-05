@@ -70,6 +70,12 @@ export interface EnterpriseChatDesktopActionResult {
   completedAt: EpochMilliseconds;
 }
 
+export type EnterpriseChatDesktopActionState =
+  | "pending"
+  | "executing"
+  | "handled"
+  | "not_executable";
+
 export interface EnterpriseChatMessage {
   id: string;
   conversationId: string;
@@ -78,12 +84,14 @@ export interface EnterpriseChatMessage {
   actorUserId: string;
   senderDeviceId: string;
   clientMessageId: string;
+  replyToId: string;
   kind: string;
   body: string;
   attachments: EnterpriseChatAttachment[];
   desktopAction?: EnterpriseChatDesktopAction;
   desktopActionResult?: EnterpriseChatDesktopActionResult;
   desktopActionHandled?: boolean;
+  desktopActionState?: EnterpriseChatDesktopActionState;
   createdAt: EpochMilliseconds;
   editedAt?: EpochMilliseconds;
   revokedAt?: EpochMilliseconds;
@@ -200,6 +208,8 @@ export interface EnterpriseChatExecuteActionInput {
 export interface EnterpriseChatExecuteActionResult {
   confirmed: boolean;
   status: EnterpriseChatDesktopActionStatus;
+  disposition: "completed" | "already_handled" | "not_executable";
+  deliveryState: "delivered" | "pending" | "not_applicable";
   response?: DesktopActionCallResponse;
   message: string;
 }

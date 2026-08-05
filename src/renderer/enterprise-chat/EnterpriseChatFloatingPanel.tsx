@@ -528,16 +528,20 @@ export function EnterpriseChatFloatingPanel({
       activeConversation?.type !== "direct"
     ) {
       if (pendingActionMessage) {
-        reviewedActionMessageIdsRef.current.delete(pendingActionMessage.id);
         setPendingActionMessage(null);
       }
       return;
     }
+    const projectedPendingAction = pendingActionMessage
+      ? snapshot?.activeMessages.find((message) => message.id === pendingActionMessage.id)
+      : undefined;
     if (
       pendingActionMessage &&
-      pendingActionMessage.conversationId !== activeConversation.id
+      (
+        pendingActionMessage.conversationId !== activeConversation.id ||
+        projectedPendingAction?.desktopActionState !== "pending"
+      )
     ) {
-      reviewedActionMessageIdsRef.current.delete(pendingActionMessage.id);
       setPendingActionMessage(null);
       return;
     }
@@ -549,7 +553,7 @@ export function EnterpriseChatFloatingPanel({
       .find((message) =>
         message.kind === "desktop_action_request" &&
         Boolean(message.desktopAction) &&
-        !message.desktopActionHandled &&
+        message.desktopActionState === "pending" &&
         !message.revokedAt &&
         message.senderId !== snapshot?.currentUser?.id &&
         !handledActionMessageIds[message.id] &&
@@ -1022,7 +1026,12 @@ export function EnterpriseChatFloatingPanel({
   }
 
   function openDesktopActionConfirmation(message: EnterpriseChatMessage) {
-    if (busy || !message.desktopAction || message.senderId === snapshot?.currentUser?.id) {
+    if (
+      busy ||
+      !message.desktopAction ||
+      message.desktopActionState !== "pending" ||
+      message.senderId === snapshot?.currentUser?.id
+    ) {
       return;
     }
     reviewedActionMessageIdsRef.current.add(message.id);
@@ -1035,6 +1044,7 @@ export function EnterpriseChatFloatingPanel({
     if (!messageId || busy) {
       return;
     }
+    setPendingActionMessage(null);
     setBusy(`action:${messageId}`);
     try {
       const result = await window.electronAPI.enterpriseChat.executeDesktopAction({
@@ -1042,9 +1052,10 @@ export function EnterpriseChatFloatingPanel({
         decision: "decline"
       });
       setActionResults((current) => ({ ...current, [messageId]: result.message }));
-      setHandledActionMessageIds((current) => ({ ...current, [messageId]: true }));
+      if (result.disposition !== "not_executable") {
+        setHandledActionMessageIds((current) => ({ ...current, [messageId]: true }));
+      }
       setError("");
-      setPendingActionMessage(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -1068,10 +1079,10 @@ export function EnterpriseChatFloatingPanel({
       if (result.confirmed) {
         setHandledActionMessageIds((current) => ({ ...current, [message.id]: true }));
       }
-      setPendingActionMessage(null);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
+      setPendingActionMessage(null);
       setBusy("");
     }
   }
@@ -1422,7 +1433,7 @@ export function EnterpriseChatFloatingPanel({
                           <span className="enterprise-chat-action-icon"><ThunderboltOutlined /></span>
                           <strong>{message.desktopAction.summary}</strong>
                           <code>{message.desktopAction.action}</code>
-                          {!mine && activeConversation?.type === "direct" && !message.desktopActionHandled && !handledActionMessageIds[message.id] ? (
+                          {!mine && activeConversation?.type === "direct" && message.desktopActionState === "pending" && !handledActionMessageIds[message.id] ? (
                             <button
                               type="button"
                               disabled={Boolean(busy)}

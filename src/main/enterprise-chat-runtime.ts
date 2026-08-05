@@ -41,6 +41,11 @@ import type { DesktopActionCallResponse } from "../shared/desktop-actions";
 import type { EpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import {
+  EnterpriseChatActionLedger,
+  enterpriseChatActionScope,
+  type EnterpriseChatActionLedgerEntry
+} from "./enterprise-chat-action-ledger";
+import {
   clearEnterpriseChatAvatar,
   readEnterpriseChatSelfProfile,
   saveEnterpriseChatAvatar,
@@ -126,7 +131,7 @@ type EnterpriseChatRuntimeOptions = {
       conversationId: string;
       senderId: string;
     }
-  ) => Promise<EnterpriseChatExecuteActionResult>;
+  ) => Promise<{ response?: DesktopActionCallResponse; message: string }>;
   onStateChanged?: (snapshot: EnterpriseChatSnapshot) => void;
 };
 
@@ -279,6 +284,7 @@ function normalizeMessage(value: unknown): EnterpriseChatMessage {
     actorUserId: readText(record.actorUserId),
     senderDeviceId: readText(record.senderDeviceId),
     clientMessageId: readText(record.clientMessageId),
+    replyToId: readText(record.replyToId),
     kind,
     body: desktopAction?.summary ?? desktopActionResult?.message ?? rawBody,
     attachments,
@@ -503,7 +509,10 @@ export class EnterpriseChatRuntime {
   private sessionRefreshTimer: ReturnType<typeof setTimeout> | null = null;
   private requestSequence = 0;
   private presenceRevision = 0;
-  private executedDesktopActionMessageIds = new Set<string>();
+  private desktopActionLedger: EnterpriseChatActionLedger | null = null;
+  private desktopActionLedgerPath = "";
+  private readonly recoveredDesktopActionScopes = new Set<string>();
+  private actionReceiptFlushPromise: Promise<void> | null = null;
   private pendingRequests = new Map<string, PendingWebSocketRequest>();
   private refreshPromise: Promise<EnterpriseChatSnapshot> | null = null;
 
@@ -528,7 +537,6 @@ export class EnterpriseChatRuntime {
     this.createSupportArtifact = options.createSupportArtifact;
     this.executeDesktopAction = options.executeDesktopAction;
     this.onStateChanged = options.onStateChanged;
-    this.executedDesktopActionMessageIds = this.readDesktopActionLedger();
     const initialEnabled = options.initialEnabled ?? false;
     this.snapshot = {
       enabled: initialEnabled,
@@ -558,37 +566,104 @@ export class EnterpriseChatRuntime {
       users: this.snapshot.users.map((user) => ({ ...user })),
       conversations: this.snapshot.conversations.map((conversation) => ({
         ...conversation,
-        lastMessage: conversation.lastMessage ? {
-          ...conversation.lastMessage,
-          attachments: conversation.lastMessage.attachments.map((attachment) => ({ ...attachment })),
-          ...(conversation.lastMessage.desktopAction
-            ? {
-                desktopActionHandled: this.executedDesktopActionMessageIds.has(conversation.lastMessage.id),
-                desktopAction: {
-                  ...conversation.lastMessage.desktopAction,
-                  args: { ...conversation.lastMessage.desktopAction.args }
-                }
-              }
-            : {})
-        } : null,
+        lastMessage: conversation.lastMessage
+          ? this.projectMessage(conversation.lastMessage, conversation)
+          : null,
         members: conversation.members.map((member) => ({
           ...member,
           user: { ...member.user }
         }))
       })),
-      activeMessages: this.snapshot.activeMessages.map((message) => ({
-        ...message,
-        attachments: message.attachments.map((attachment) => ({ ...attachment })),
-        ...(message.desktopAction
-          ? {
-              desktopActionHandled: this.executedDesktopActionMessageIds.has(message.id),
-              desktopAction: {
-                ...message.desktopAction,
-                args: { ...message.desktopAction.args }
-              }
+      activeMessages: this.snapshot.activeMessages.map((message) =>
+        this.projectMessage(
+          message,
+          this.snapshot.conversations.find((conversation) => conversation.id === message.conversationId)
+        )
+      )
+    };
+  }
+
+  private currentDesktopActionScope() {
+    const userId = this.snapshot.currentUser?.id ?? "";
+    const deviceId = this.getDeviceInfo().deviceId;
+    return userId && deviceId
+      ? enterpriseChatActionScope(this.serverUrl, userId, deviceId)
+      : "";
+  }
+
+  private getDesktopActionLedger() {
+    let ledgerPath = "";
+    try {
+      ledgerPath = path.join(this.app.getPath("userData"), "enterprise-chat-action-ledger.json");
+    } catch {
+      return null;
+    }
+    if (ledgerPath === this.desktopActionLedgerPath) {
+      return this.desktopActionLedger;
+    }
+    this.desktopActionLedgerPath = ledgerPath;
+    try {
+      this.desktopActionLedger = new EnterpriseChatActionLedger(ledgerPath);
+    } catch {
+      this.desktopActionLedger = null;
+    }
+    return this.desktopActionLedger;
+  }
+
+  private desktopActionState(
+    message: EnterpriseChatMessage,
+    conversation?: EnterpriseChatConversation
+  ) {
+    const request = message.desktopAction;
+    if (!request) {
+      return undefined;
+    }
+    const ledger = this.getDesktopActionLedger();
+    if (ledger?.hasLegacyMessage(message.id)) {
+      return "handled" as const;
+    }
+    const scope = this.currentDesktopActionScope();
+    const entry = scope ? ledger?.find(scope, request.requestId) : undefined;
+    if (entry?.phase === "executing") {
+      return "executing" as const;
+    }
+    if (entry?.phase === "terminal") {
+      return "handled" as const;
+    }
+    if (
+      !scope ||
+      !ledger ||
+      !conversation ||
+      conversation.type !== "direct" ||
+      message.senderId === this.snapshot.currentUser?.id ||
+      message.revokedAt ||
+      !getEnterpriseChatRemoteAction(request.action) ||
+      request.targetDeviceId !== this.getDeviceInfo().deviceId ||
+      request.expiresAt <= Date.now()
+    ) {
+      return "not_executable" as const;
+    }
+    return "pending" as const;
+  }
+
+  private projectMessage(
+    message: EnterpriseChatMessage,
+    conversation?: EnterpriseChatConversation
+  ): EnterpriseChatMessage {
+    const desktopActionState = this.desktopActionState(message, conversation);
+    return {
+      ...message,
+      attachments: message.attachments.map((attachment) => ({ ...attachment })),
+      ...(message.desktopAction
+        ? {
+            desktopActionHandled: desktopActionState !== "pending",
+            desktopActionState,
+            desktopAction: {
+              ...message.desktopAction,
+              args: { ...message.desktopAction.args }
             }
-          : {})
-      }))
+          }
+        : {})
     };
   }
 
@@ -722,6 +797,13 @@ export class EnterpriseChatRuntime {
         connectionState: "connecting",
         message: ""
       });
+      const actionScope = this.currentDesktopActionScope();
+      if (actionScope && !this.recoveredDesktopActionScopes.has(actionScope)) {
+        this.recoveredDesktopActionScopes.add(actionScope);
+        if (this.getDesktopActionLedger()?.recoverExecuting(actionScope).length) {
+          this.updateSnapshot({});
+        }
+      }
       await this.connectWebSocket();
     } catch (error) {
       this.disconnect();
@@ -803,6 +885,7 @@ export class EnterpriseChatRuntime {
     );
     const record = isRecord(response) ? response : {};
     const messages = normalizeMessages(record.items);
+    this.reconcileDesktopActionMessages(messages, conversation);
     this.updateSnapshot({
       conversations: [
         conversation,
@@ -812,6 +895,7 @@ export class EnterpriseChatRuntime {
       activeMessages: messages,
       message: ""
     });
+    void this.flushDesktopActionReceipts();
     if (conversation.lastSeq > conversation.lastReadSeq) {
       await this.markRead({ conversationId: conversation.id, seq: conversation.lastSeq });
     }
@@ -1129,57 +1213,122 @@ export class EnterpriseChatRuntime {
     const conversation = message
       ? this.snapshot.conversations.find((item) => item.id === message.conversationId)
       : undefined;
+    const request = message?.desktopAction;
+    const scope = this.currentDesktopActionScope();
+    const ledger = this.getDesktopActionLedger();
+    const existing = request && scope
+      ? ledger?.find(scope, request.requestId)
+      : undefined;
+    if (existing || (message && ledger?.hasLegacyMessage(message.id))) {
+      return this.handledDesktopActionResult(existing);
+    }
     if (
       !message ||
-      !message.desktopAction ||
+      !request ||
       !conversation ||
-      conversation.type !== "direct" ||
-      message.senderId === this.snapshot.currentUser?.id ||
-      !getEnterpriseChatRemoteAction(message.desktopAction.action) ||
-      message.desktopAction.targetDeviceId !== this.getDeviceInfo().deviceId
+      this.desktopActionState(message, conversation) !== "pending" ||
+      !scope ||
+      !ledger
     ) {
-      throw new Error("This Desktop action request is not executable.");
+      return this.notExecutableDesktopActionResult();
     }
-    if (this.executedDesktopActionMessageIds.has(message.id)) {
-      throw new Error("This Desktop action request was already handled.");
-    }
-    const request = message.desktopAction;
-    if (request.expiresAt <= Date.now()) {
-      return this.completeDesktopAction(message, "expired", "Desktop action request expired.");
-    }
-    if (input.decision === "decline") {
-      return this.completeDesktopAction(message, "declined", "User declined the Desktop action request.");
-    }
+
+    let claimed: EnterpriseChatActionLedgerEntry;
     try {
-      if (request.action.startsWith("desktop.support.")) {
-        const fileIds = await this.createRemoteSupportAttachment(request);
-        return this.completeDesktopAction(
-          message,
-          "succeeded",
-          fileIds.length > 0 ? "Requested support information was sent." : "Support request completed.",
-          fileIds
-        );
-      }
-      if (!this.executeDesktopAction) {
-        return this.completeDesktopAction(message, "unsupported", "Desktop action execution is unavailable.");
-      }
-      const result = await this.executeDesktopAction({
-        ...request,
-        args: { ...request.args },
+      const claim = ledger.claim({
+        scope,
         messageId: message.id,
+        requestId: request.requestId,
         conversationId: message.conversationId,
-        senderId: message.senderId
+        targetDeviceId: request.targetDeviceId,
+        action: request.action
       });
-      return this.completeDesktopAction(
-        message,
-        result.response?.ok === true ? "succeeded" : "failed",
-        result.message,
-        [],
-        result.response
-      );
+      if (!claim.created) {
+        return this.handledDesktopActionResult(claim.entry);
+      }
+      claimed = claim.entry;
     } catch (error) {
-      return this.completeDesktopAction(message, "failed", errorMessage(error));
+      return this.notExecutableDesktopActionResult(errorMessage(error));
     }
+    this.updateSnapshot({});
+
+    let status: EnterpriseChatDesktopActionStatus;
+    let resultMessage: string;
+    let fileIds: string[] = [];
+    let response: DesktopActionCallResponse | undefined;
+    if (input.decision === "decline") {
+      status = "declined";
+      resultMessage = "User declined the Desktop action request.";
+    } else {
+      try {
+        if (request.action.startsWith("desktop.support.")) {
+          fileIds = await this.createRemoteSupportAttachment(request);
+          status = "succeeded";
+          resultMessage = fileIds.length > 0
+            ? "Requested support information was sent."
+            : "Support request completed.";
+        } else if (!this.executeDesktopAction) {
+          status = "unsupported";
+          resultMessage = "Desktop action execution is unavailable.";
+        } else {
+          const result = await this.executeDesktopAction({
+            ...request,
+            args: { ...request.args },
+            messageId: message.id,
+            conversationId: message.conversationId,
+            senderId: message.senderId
+          });
+          response = result.response;
+          status = result.response?.ok === true ? "succeeded" : "failed";
+          resultMessage = result.message;
+        }
+      } catch (error) {
+        status = "failed";
+        resultMessage = errorMessage(error);
+      }
+    }
+
+    const terminal = ledger.complete(scope, claimed.requestId, {
+      status,
+      resultMessage,
+      fileIds
+    });
+    this.updateSnapshot({});
+    const delivered = await this.deliverDesktopActionReceipt(terminal);
+    return {
+      confirmed: input.decision === "confirm",
+      status,
+      disposition: "completed",
+      deliveryState: delivered ? "delivered" : "pending",
+      ...(response ? { response } : {}),
+      message: resultMessage
+    };
+  }
+
+  private handledDesktopActionResult(
+    entry?: EnterpriseChatActionLedgerEntry
+  ): EnterpriseChatExecuteActionResult {
+    return {
+      confirmed: entry?.status !== "declined",
+      status: entry?.status ?? "failed",
+      disposition: "already_handled",
+      deliveryState: entry?.phase === "terminal"
+        ? entry.deliveryState
+        : "not_applicable",
+      message: entry?.resultMessage || "This Desktop action request was already handled."
+    };
+  }
+
+  private notExecutableDesktopActionResult(
+    message = "This Desktop action request is not executable."
+  ): EnterpriseChatExecuteActionResult {
+    return {
+      confirmed: false,
+      status: "unsupported",
+      disposition: "not_executable",
+      deliveryState: "not_applicable",
+      message
+    };
   }
 
   private async createRemoteSupportAttachment(request: EnterpriseChatDesktopAction) {
@@ -1221,41 +1370,144 @@ export class EnterpriseChatRuntime {
     return [attachment.id];
   }
 
-  private async completeDesktopAction(
-    requestMessage: EnterpriseChatMessage,
-    status: EnterpriseChatDesktopActionStatus,
-    resultMessage: string,
-    fileIds: string[] = [],
-    response?: DesktopActionCallResponse
-  ): Promise<EnterpriseChatExecuteActionResult> {
-    const request = requestMessage.desktopAction;
-    if (!request) {
-      throw new Error("Desktop action request is missing.");
+  private async deliverDesktopActionReceipt(entry: EnterpriseChatActionLedgerEntry) {
+    if (
+      entry.phase !== "terminal" ||
+      !entry.status ||
+      entry.deliveryState === "delivered" ||
+      !this.socket ||
+      !this.socketSynced ||
+      this.socket.readyState !== 1
+    ) {
+      return entry.deliveryState === "delivered";
     }
-    await this.sendMessagePayload({
-      conversationId: requestMessage.conversationId,
-      clientMessageId: `desktop-action-result:${request.requestId}`,
-      body: resultMessage.slice(0, 1000),
-      fileIds,
-      replyToId: requestMessage.id,
-      kind: "desktop_action_result",
-      desktopAction: {
+    try {
+      await this.sendMessagePayload({
+        conversationId: entry.conversationId,
+        clientMessageId: `desktop-action-result:${entry.requestId}`,
+        body: entry.resultMessage.slice(0, 1000),
+        fileIds: entry.fileIds,
+        replyToId: entry.messageId,
+        kind: "desktop_action_result",
+        desktopAction: {
+          requestId: entry.requestId,
+          targetDeviceId: entry.targetDeviceId,
+          action: entry.action,
+          status: entry.status,
+          message: entry.resultMessage.slice(0, 1000),
+          completedAt: entry.completedAt
+        }
+      });
+      this.getDesktopActionLedger()?.markDelivered(entry.scope, entry.requestId);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  private flushDesktopActionReceipts() {
+    if (this.actionReceiptFlushPromise) {
+      return this.actionReceiptFlushPromise;
+    }
+    const scope = this.currentDesktopActionScope();
+    const ledger = this.getDesktopActionLedger();
+    if (!scope || !ledger) {
+      return Promise.resolve();
+    }
+    this.actionReceiptFlushPromise = (async () => {
+      for (const entry of ledger.pendingReceipts(scope)) {
+        if (!await this.deliverDesktopActionReceipt(entry)) {
+          break;
+        }
+      }
+    })().finally(() => {
+      this.actionReceiptFlushPromise = null;
+      this.updateSnapshot({});
+    });
+    return this.actionReceiptFlushPromise;
+  }
+
+  private reconcileDesktopActionMessages(
+    messages: EnterpriseChatMessage[],
+    conversation?: EnterpriseChatConversation
+  ) {
+    const scope = this.currentDesktopActionScope();
+    const ledger = this.getDesktopActionLedger();
+    const currentUserId = this.snapshot.currentUser?.id ?? "";
+    const currentDeviceId = this.getDeviceInfo().deviceId;
+    if (!scope || !ledger || !currentUserId || !currentDeviceId) {
+      return;
+    }
+    const requestsById = new Map(
+      messages
+        .filter((message) => Boolean(message.desktopAction))
+        .map((message) => [message.id, message] as const)
+    );
+    for (const resultMessage of messages) {
+      const result = resultMessage.desktopActionResult;
+      const requestMessage = requestsById.get(resultMessage.replyToId);
+      const request = requestMessage?.desktopAction;
+      if (
+        !result ||
+        !requestMessage ||
+        !request ||
+        resultMessage.senderId !== currentUserId ||
+        result.targetDeviceId !== currentDeviceId ||
+        request.requestId !== result.requestId ||
+        request.targetDeviceId !== result.targetDeviceId ||
+        request.action !== result.action ||
+        requestMessage.conversationId !== resultMessage.conversationId
+      ) {
+        continue;
+      }
+      ledger.recordDelivered({
+        scope,
+        messageId: requestMessage.id,
         requestId: request.requestId,
+        conversationId: requestMessage.conversationId,
         targetDeviceId: request.targetDeviceId,
         action: request.action,
-        status,
-        message: resultMessage.slice(0, 1000),
-        completedAt: Date.now()
+        status: result.status,
+        resultMessage: result.message,
+        fileIds: resultMessage.attachments.map((attachment) => attachment.id),
+        completedAt: result.completedAt
+      });
+    }
+
+    if (!conversation || conversation.type !== "direct") {
+      return;
+    }
+    for (const requestMessage of requestsById.values()) {
+      const request = requestMessage.desktopAction;
+      if (
+        !request ||
+        request.expiresAt > Date.now() ||
+        requestMessage.senderId === currentUserId ||
+        requestMessage.revokedAt ||
+        request.targetDeviceId !== currentDeviceId ||
+        !getEnterpriseChatRemoteAction(request.action) ||
+        ledger.hasLegacyMessage(requestMessage.id) ||
+        ledger.find(scope, request.requestId)
+      ) {
+        continue;
       }
-    });
-    this.executedDesktopActionMessageIds.add(requestMessage.id);
-    this.writeDesktopActionLedger();
-    return {
-      confirmed: status !== "declined",
-      status,
-      ...(response ? { response } : {}),
-      message: resultMessage
-    };
+      try {
+        ledger.claim({
+          scope,
+          messageId: requestMessage.id,
+          requestId: request.requestId,
+          conversationId: requestMessage.conversationId,
+          targetDeviceId: request.targetDeviceId,
+          action: request.action
+        });
+        ledger.complete(scope, request.requestId, {
+          status: "expired",
+          resultMessage: "Desktop action request expired."
+        });
+      } catch {
+        // Expired requests remain non-executable even if their acknowledgement cannot be persisted.
+      }
+    }
   }
 
   private async sendMessagePayload(input: {
@@ -1289,33 +1541,6 @@ export class EnterpriseChatRuntime {
   private assertMessageSendReady() {
     if (!this.socket || !this.socketSynced || this.socket.readyState !== 1) {
       throw new Error("Enterprise chat is reconnecting. Try again in a moment.");
-    }
-  }
-
-  private desktopActionLedgerPath() {
-    return path.join(this.app.getPath("userData"), "enterprise-chat-action-ledger.json");
-  }
-
-  private readDesktopActionLedger() {
-    try {
-      const value = JSON.parse(fs.readFileSync(this.desktopActionLedgerPath(), "utf8")) as unknown;
-      const ids = isRecord(value) && Array.isArray(value.messageIds) ? value.messageIds : [];
-      return new Set(ids.filter((id): id is string => typeof id === "string" && id.length <= 128).slice(-1000));
-    } catch {
-      return new Set<string>();
-    }
-  }
-
-  private writeDesktopActionLedger() {
-    const messageIds = [...this.executedDesktopActionMessageIds].slice(-1000);
-    try {
-      const ledgerPath = this.desktopActionLedgerPath();
-      fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
-      const temporaryPath = `${ledgerPath}.tmp`;
-      fs.writeFileSync(temporaryPath, `${JSON.stringify({ messageIds }, null, 2)}\n`, { mode: 0o600 });
-      fs.renameSync(temporaryPath, ledgerPath);
-    } catch {
-      // A read-only profile may lose cross-restart idempotency; the server request ID stays stable.
     }
   }
 
@@ -1661,6 +1886,7 @@ export class EnterpriseChatRuntime {
         this.updateSnapshot({ message: errorMessage(error) });
       });
       void this.refreshEmployeeDirectory();
+      void this.flushDesktopActionReceipts();
       return;
     }
     if (type === "sync.reset_required") {
@@ -1707,6 +1933,13 @@ export class EnterpriseChatRuntime {
 
   private applyMessage(message: EnterpriseChatMessage) {
     const isActive = this.snapshot.activeConversationId === message.conversationId;
+    const conversation = this.snapshot.conversations.find(
+      (item) => item.id === message.conversationId
+    );
+    this.reconcileDesktopActionMessages(
+      isActive ? mergeMessage(this.snapshot.activeMessages, message) : [message],
+      conversation
+    );
     this.updateSnapshot({
       activeMessages: isActive
         ? mergeMessage(this.snapshot.activeMessages, message)

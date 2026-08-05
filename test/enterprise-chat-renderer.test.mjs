@@ -152,10 +152,17 @@ test("enterprise chat receives Desktop actions but exposes no action sending pat
   assert.match(panel, /role="alertdialog"/);
   assert.match(panel, /decision: "confirm"/);
   assert.match(panel, /decision: "decline"/);
+  assert.match(panel, /message\.desktopActionState === "pending"/);
+  assert.match(
+    panel,
+    /async function cancelDesktopAction\(\)[\s\S]*setPendingActionMessage\(null\)[\s\S]*decision: "decline"/
+  );
   assert.match(panel, /message\.kind === "desktop_action_request"/);
   assert.doesNotMatch(panel, /message\.kind === "desktop_action"/);
   assert.match(runtime, /input\?\.decision !== "confirm"/);
   assert.match(runtime, /kind: "desktop_action_result"/);
+  assert.match(contract, /disposition: "completed" \| "already_handled" \| "not_executable"/);
+  assert.match(contract, /deliveryState: "delivered" \| "pending" \| "not_applicable"/);
   assert.doesNotMatch(
     appRuntime,
     /executeDesktopAction: async \(request\) => \{[\s\S]{0,700}showMessageBox\(/
