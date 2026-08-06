@@ -304,6 +304,7 @@ export function EnterpriseChatFloatingPanel({
   const [groupTitle, setGroupTitle] = useState("");
   const [groupMemberIds, setGroupMemberIds] = useState<string[]>([]);
   const [actionResults, setActionResults] = useState<Record<string, string>>({});
+  const [downloadedAttachmentIds, setDownloadedAttachmentIds] = useState<Record<string, true>>({});
   const [handledActionMessageIds, setHandledActionMessageIds] = useState<Record<string, true>>({});
   const [pendingActionMessage, setPendingActionMessage] = useState<EnterpriseChatMessage | null>(null);
   const [attachmentData, setAttachmentData] = useState<Record<string, string>>({});
@@ -334,6 +335,7 @@ export function EnterpriseChatFloatingPanel({
   const suppressLauncherClickRef = useRef(false);
   const searchPreferenceScopeRef = useRef("");
   const reviewedActionMessageIdsRef = useRef(new Set<string>());
+  const attachmentDownloadResetTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const signedIn = hasCompleteEnterpriseLogin(desktopSsoStatus);
   const preferenceScope = conversationPreferenceScope(snapshot);
 
@@ -412,6 +414,13 @@ export function EnterpriseChatFloatingPanel({
       setAttachmentMenuOpen(false);
     }
   }, [open, view]);
+
+  useEffect(() => () => {
+    for (const timer of attachmentDownloadResetTimersRef.current.values()) {
+      clearTimeout(timer);
+    }
+    attachmentDownloadResetTimersRef.current.clear();
+  }, []);
 
   useEffect(() => {
     if (!preferenceScope || !snapshot) {
@@ -1012,12 +1021,25 @@ export function EnterpriseChatFloatingPanel({
         name: attachment.name,
         contentType: attachment.contentType
       });
-      setActionResults((current) => ({
-        ...current,
-        [attachment.id]: result.ok
-          ? t("enterpriseChat.downloaded")
-          : result.message
-      }));
+      if (result.ok) {
+        setDownloadedAttachmentIds((current) => ({ ...current, [attachment.id]: true }));
+        const existingTimer = attachmentDownloadResetTimersRef.current.get(attachment.id);
+        if (existingTimer) {
+          clearTimeout(existingTimer);
+        }
+        const timer = setTimeout(() => {
+          setDownloadedAttachmentIds((current) => {
+            if (!current[attachment.id]) {
+              return current;
+            }
+            const next = { ...current };
+            delete next[attachment.id];
+            return next;
+          });
+          attachmentDownloadResetTimersRef.current.delete(attachment.id);
+        }, 3000);
+        attachmentDownloadResetTimersRef.current.set(attachment.id, timer);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : String(reason));
     } finally {
@@ -1230,7 +1252,7 @@ export function EnterpriseChatFloatingPanel({
           disabled={busy === `download:${attachment.id}`}
           onClick={() => void downloadAttachment(attachment)}
         >
-          {actionResults[attachment.id] ? <CheckOutlined /> : <DownloadOutlined />}
+          {downloadedAttachmentIds[attachment.id] ? <CheckOutlined /> : <DownloadOutlined />}
         </button>
       </div>
     );
