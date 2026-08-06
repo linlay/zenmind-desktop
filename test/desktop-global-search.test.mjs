@@ -45,6 +45,7 @@ function loadGlobalSearchRowsModule() {
 
 const {
   buildDesktopGlobalSearchSections,
+  buildDesktopGlobalSearchShortcutTargets,
   resolveDesktopGlobalSearchAgentKey,
 } = loadGlobalSearchRowsModule();
 
@@ -59,8 +60,10 @@ const messages = {
   "desktop.globalSearch.action.newChat.description": "Start current agent chat",
   "desktop.globalSearch.action.agents": "Open agents",
   "desktop.globalSearch.action.agents.description": "Browse agents",
-  "desktop.globalSearch.action.controlCenter": "Open control center",
-  "desktop.globalSearch.action.controlCenter.description": "Manage runtime",
+  "desktop.globalSearch.action.skills": "Open Skills Center",
+  "desktop.globalSearch.action.skills.description": "Browse skills",
+  "desktop.globalSearch.action.mcpConnectors": "Open MCP connections",
+  "desktop.globalSearch.action.mcpConnectors.description": "Manage MCP connectors",
   "desktop.globalSearch.action.settings": "Open settings",
   "desktop.globalSearch.action.settings.description": "Adjust preferences",
 };
@@ -123,9 +126,97 @@ test("desktop global search resolves the current agent and default sections", ()
   });
 
   assert.deepEqual(sections.map((section) => section.id), ["actions", "agents", "chats"]);
-  assert.equal(rowsOfKind(sections, "action").some((row) => row.actionId === "newChat"), true);
+  assert.deepEqual(
+    rowsOfKind(sections, "action").map((row) => row.actionId),
+    ["newChat", "agents", "skills", "mcpConnectors", "settings"],
+  );
   assert.equal(rowsOfKind(sections, "agent")[0].agentKey, "coder");
   assert.equal(rowsOfKind(sections, "chat")[0].chatId, "chat-1");
+
+  const sectionsWithoutCurrentAgent = buildDesktopGlobalSearchSections({
+    agents: [agent({})],
+    query: "",
+    t,
+  });
+  assert.equal(
+    rowsOfKind(sectionsWithoutCurrentAgent, "action").some((row) => row.actionId === "newChat"),
+    true,
+  );
+});
+
+test("desktop global search assigns stable attention-first and agent shortcut targets", () => {
+  const shortcutTargets = buildDesktopGlobalSearchShortcutTargets([
+    agent({
+      agentKey: "newest-agent",
+      displayName: "Newest agent",
+      updatedAt: EPOCH_MS + 4_000,
+      recentChats: [
+        chat({
+          chatId: "awaiting-newest",
+          updatedAt: EPOCH_MS + 4_000,
+          hasPendingAwaiting: true,
+          isRead: false,
+        }),
+        chat({
+          chatId: "unread-newest",
+          updatedAt: EPOCH_MS + 9_000,
+          isRead: false,
+        }),
+      ],
+    }),
+    agent({
+      agentKey: "second-agent",
+      displayName: "Second agent",
+      updatedAt: EPOCH_MS + 3_000,
+      recentChats: [
+        chat({
+          chatId: "awaiting-older",
+          updatedAt: EPOCH_MS + 2_000,
+          hasPendingAwaiting: true,
+        }),
+        chat({
+          chatId: "unread-second",
+          updatedAt: EPOCH_MS + 8_000,
+          isRead: false,
+        }),
+      ],
+    }),
+    agent({ agentKey: "third-agent", displayName: "Third agent", updatedAt: EPOCH_MS + 2_000, recentChats: [] }),
+    agent({ agentKey: "fourth-agent", displayName: "Fourth agent", updatedAt: EPOCH_MS + 1_000, recentChats: [] }),
+  ], t);
+
+  assert.deepEqual(
+    shortcutTargets.attention.map((row) => row.chatId),
+    ["awaiting-newest", "awaiting-older", "unread-newest", "unread-second"],
+  );
+  assert.deepEqual(
+    shortcutTargets.agents.map((row) => row.agentKey),
+    ["newest-agent", "second-agent", "third-agent", "fourth-agent"],
+  );
+});
+
+test("desktop global search caps numeric shortcut targets at ten", () => {
+  const agents = Array.from({ length: 11 }, (_, index) => {
+    const rank = index + 1;
+    return agent({
+      agentKey: `agent-${rank}`,
+      displayName: `Agent ${rank}`,
+      updatedAt: EPOCH_MS + (11 - index) * 1_000,
+      recentChats: [chat({
+        chatId: `awaiting-${rank}`,
+        updatedAt: EPOCH_MS + (11 - index) * 1_000,
+        hasPendingAwaiting: true,
+      })],
+    });
+  });
+  const shortcutTargets = buildDesktopGlobalSearchShortcutTargets(agents, t);
+
+  assert.equal(shortcutTargets.attention.length, 10);
+  assert.equal(shortcutTargets.agents.length, 10);
+  assert.deepEqual(
+    shortcutTargets.attention.map((row) => row.chatId),
+    Array.from({ length: 10 }, (_, index) => `awaiting-${index + 1}`),
+  );
 });
 
 test("desktop global search prioritizes awaiting and unread chats in the empty state", () => {

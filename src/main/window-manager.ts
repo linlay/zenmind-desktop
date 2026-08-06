@@ -7,6 +7,7 @@ import {
 } from "../shared/help";
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
+import type { DesktopGlobalSearchShortcut } from "../shared/contracts/desktop-api";
 import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
@@ -119,6 +120,8 @@ type AttachedWebviewOptions<
   getMainWindow(): TMainWindow | null;
   isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
   isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+  resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
+  isGlobalSearchOverlayVisible?(): boolean;
   shouldDownloadUrl(url: string): boolean;
   resolveOpenDisposition(url: string): "download" | "tab" | "external";
   collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
@@ -232,9 +235,11 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
       applyAppearance(targetWindow: TWindow): void;
       hideForClose(targetWindow: TWindow): void;
       cancelPendingClose(): void;
+      isGlobalSearchOverlayVisible?(): boolean;
     };
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+    resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isHandlingQuit(): boolean;
     clearWindow(targetWindow: TWindow): void;
     restoreFloatingWindowsForFullscreen?: () => void;
@@ -269,6 +274,15 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
   });
 
   targetWindow.webContents.on("before-input-event", (event, input) => {
+    const globalSearchCommandShortcut = options.lifecycle.isGlobalSearchOverlayVisible?.()
+      ? options.resolveGlobalSearchCommandShortcut?.(options.platform, input) ?? null
+      : null;
+    if (globalSearchCommandShortcut) {
+      event.preventDefault();
+      targetWindow.webContents.send("app.globalSearchShortcut", globalSearchCommandShortcut);
+      return;
+    }
+
     if (options.isGlobalSearchShortcut?.(options.platform, input)) {
       event.preventDefault();
       targetWindow.webContents.send("app.openGlobalSearch", { source: "main" });
@@ -313,6 +327,8 @@ export function configureMainWindowWebContents<
     isSafeServiceUrl(value: string): unknown;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+    resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
+    isGlobalSearchOverlayVisible?(): boolean;
     shouldDownloadUrl(url: string): boolean;
     resolveOpenDisposition(url: string): "download" | "tab" | "external";
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
@@ -390,6 +406,8 @@ export function configureMainWindowWebContents<
       getMainWindow: options.getMainWindow,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
+      isGlobalSearchOverlayVisible: options.isGlobalSearchOverlayVisible,
       shouldDownloadUrl: options.shouldDownloadUrl,
       resolveOpenDisposition: options.resolveOpenDisposition,
       collectLoadDiagnostics: options.collectLoadDiagnostics,
@@ -590,6 +608,19 @@ export function configureAttachedWebview<
   };
 
   contents.on("before-input-event", (event, input) => {
+    const globalSearchCommandShortcut = options.isGlobalSearchOverlayVisible?.()
+      ? options.resolveGlobalSearchCommandShortcut?.(options.platform, input) ?? null
+      : null;
+    if (globalSearchCommandShortcut) {
+      event.preventDefault();
+      const mainWindow = options.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send("app.globalSearchShortcut", globalSearchCommandShortcut);
+      return;
+    }
+
     const editCommand = resolveWebviewEditShortcut(options.platform, input);
     if (editCommand) {
       event.preventDefault();
@@ -884,8 +915,12 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
   }
 
   function setGlobalSearchOverlayVisible(visible: boolean) {
-    globalSearchOverlayVisible = options.platform === "win32" && visible;
+    globalSearchOverlayVisible = visible;
     applyAppearance(options.getWindow());
+  }
+
+  function isGlobalSearchOverlayVisible() {
+    return globalSearchOverlayVisible;
   }
 
   function attachRendererDiagnostics(targetWindow: TWindow) {
@@ -914,6 +949,7 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     cancelPendingClose,
     getWindowForActivation,
     hideForClose,
+    isGlobalSearchOverlayVisible,
     normalizeBeforeShow,
     setGlobalSearchOverlayVisible
   };

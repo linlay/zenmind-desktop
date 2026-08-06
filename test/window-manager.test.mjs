@@ -15,6 +15,7 @@ const {
 } = await import("../dist-electron/main/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
+const { resolveGlobalSearchCommandShortcut } = await import("../dist-electron/main/platform-adapter.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -330,6 +331,7 @@ test("main window lifecycle masks Windows caption controls while global search i
   });
 
   controller.setGlobalSearchOverlayVisible(true);
+  assert.equal(controller.isGlobalSearchOverlayVisible(), true);
   assert.deepEqual(target.titleBarOverlay, {
     color: "#D4D5D9",
     symbolColor: "#D4D5D9",
@@ -345,6 +347,7 @@ test("main window lifecycle masks Windows caption controls while global search i
   });
 
   controller.setGlobalSearchOverlayVisible(false);
+  assert.equal(controller.isGlobalSearchOverlayVisible(), false);
   assert.deepEqual(target.titleBarOverlay, {
     color: "#111111",
     symbolColor: "#F2F2F2",
@@ -626,6 +629,82 @@ test("window manager opens Desktop global search from the main window shortcut",
   assert.equal(target.webContents.toggleDevToolsCount, 0);
 });
 
+test("main window forwards global search commands only while the overlay is visible", () => {
+  const target = new FakeWindow();
+  let visible = true;
+  let prevented = false;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "darwin",
+    lifecycle: {
+      applyAppearance: () => {},
+      hideForClose: () => {},
+      cancelPendingClose: () => {},
+      isGlobalSearchOverlayVisible: () => visible,
+    },
+    isDevToolsShortcut: () => false,
+    isGlobalSearchShortcut: () => false,
+    resolveGlobalSearchCommandShortcut: (_platform, input) =>
+      input.key === "m" ? { kind: "action", actionId: "mcpConnectors" } : null,
+    isHandlingQuit: () => false,
+    clearWindow: () => {},
+  });
+
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, { type: "keyDown", key: "m", meta: true });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(target.webContents.sentMessages, [{
+    channel: "app.globalSearchShortcut",
+    payload: { kind: "action", actionId: "mcpConnectors" },
+  }]);
+
+  visible = false;
+  prevented = false;
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, { type: "keyDown", key: "m", meta: true });
+  assert.equal(prevented, false);
+  assert.equal(target.webContents.sentMessages.length, 1);
+});
+
+test("main window intercepts macOS Option digit symbols while global search is visible", () => {
+  const target = new FakeWindow();
+  let prevented = false;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "darwin",
+    lifecycle: {
+      applyAppearance: () => {},
+      hideForClose: () => {},
+      cancelPendingClose: () => {},
+      isGlobalSearchOverlayVisible: () => true,
+    },
+    isDevToolsShortcut: () => false,
+    isGlobalSearchShortcut: () => false,
+    resolveGlobalSearchCommandShortcut,
+    isHandlingQuit: () => false,
+    clearWindow: () => {},
+  });
+
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, { type: "keyDown", key: "™", code: "Digit2", alt: true });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(target.webContents.sentMessages, [{
+    channel: "app.globalSearchShortcut",
+    payload: { kind: "agent", slot: 2 },
+  }]);
+});
+
 test("window manager reports main renderer webContents failures", () => {
   const target = new FakeWindow();
   const reports = [];
@@ -880,6 +959,41 @@ test("attached webviews open Desktop global search without opening DevTools", ()
     { channel: "app.openGlobalSearch", payload: { source: "webview", guestId: 81 } }
   ]);
   assert.equal(guest.devtoolsOpenOptions, null);
+});
+
+test("attached webviews prioritize visible global search commands over edit shortcuts", () => {
+  const target = new FakeWindow();
+  const guest = new FakeWebContents(82);
+  let prevented = false;
+
+  configureAttachedWebview(guest, {
+    platform: "win32",
+    getMainWindow: () => target,
+    isDevToolsShortcut: () => false,
+    isGlobalSearchShortcut: () => false,
+    resolveGlobalSearchCommandShortcut: (_platform, input) =>
+      input.key === "a" ? { kind: "action", actionId: "agents" } : null,
+    isGlobalSearchOverlayVisible: () => true,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async () => {},
+    schedule: (callback) => callback(),
+  });
+
+  guest.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, { type: "keyDown", key: "a", control: true, meta: false });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(guest.editCommands, []);
+  assert.deepEqual(target.webContents.sentMessages, [{
+    channel: "app.globalSearchShortcut",
+    payload: { kind: "action", actionId: "agents" },
+  }]);
 });
 
 test("window manager grants media permissions only to the main window", async () => {

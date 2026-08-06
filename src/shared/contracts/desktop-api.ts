@@ -468,6 +468,13 @@ export type DesktopWindowState = {
   isFullScreen: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
+export type DesktopGlobalSearchActionShortcutId = "newChat" | "agents" | "skills" | "mcpConnectors";
+export type DesktopGlobalSearchShortcutSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
+export type DesktopGlobalSearchShortcut =
+  | { kind: "action"; actionId: DesktopGlobalSearchActionShortcutId }
+  | { kind: "attention"; slot: DesktopGlobalSearchShortcutSlot }
+  | { kind: "agent"; slot: DesktopGlobalSearchShortcutSlot };
+export type DesktopGlobalSearchShortcutListener = (shortcut: DesktopGlobalSearchShortcut) => void;
 export type DesktopConfigChangedEvent = {
   reason: string;
   changedAt: string;
@@ -818,6 +825,7 @@ export interface DesktopApi {
   onServicesChanged: (listener: ServicesChangedListener) => () => void;
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenGlobalSearch: (listener: () => void) => () => void;
+  onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;
   onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => () => void;

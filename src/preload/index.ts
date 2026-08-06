@@ -28,6 +28,7 @@ import type {
   DesktopActionConfirmationResponse,
   EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
+  DesktopGlobalSearchShortcutListener,
   ShutdownProgressListener,
   DesktopPetStateListener,
   DesktopLogTarget,
@@ -675,6 +676,19 @@ const api: DesktopApi = {
     ipcRenderer.on("app.openGlobalSearch", handleOpenGlobalSearch);
     return () => {
       ipcRenderer.off("app.openGlobalSearch", handleOpenGlobalSearch);
+    };
+  },
+  onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => {
+    const handleGlobalSearchShortcut = (
+      _event: Electron.IpcRendererEvent,
+      shortcut: Parameters<DesktopGlobalSearchShortcutListener>[0]
+    ) => {
+      listener(shortcut);
+    };
+
+    ipcRenderer.on("app.globalSearchShortcut", handleGlobalSearchShortcut);
+    return () => {
+      ipcRenderer.off("app.globalSearchShortcut", handleGlobalSearchShortcut);
     };
   },
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {

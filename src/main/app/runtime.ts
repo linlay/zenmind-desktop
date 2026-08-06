@@ -129,6 +129,7 @@ import {
   getFocusedWebviewDevToolsShortcut,
   isDevToolsShortcut,
   isGlobalSearchShortcut,
+  resolveGlobalSearchCommandShortcut,
 } from "../platform-adapter";
 import { configureSystemIdentity } from "./system-identity";
 import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
@@ -521,6 +522,7 @@ export function createMainProcessRuntime() {
     parseSafeLoopbackWebUrl,
     isDevToolsShortcut,
     isGlobalSearchShortcut,
+    resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation,
     collectWebviewLoadDiagnostics,
     reportRendererDiagnostic,

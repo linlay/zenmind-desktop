@@ -7,7 +7,7 @@ import {
   type Shell,
   type SystemPreferences
 } from "electron";
-import type { AssistantWorkerOpenRequest } from "../../shared/contracts";
+import type { AssistantWorkerOpenRequest, DesktopGlobalSearchShortcut } from "../../shared/contracts";
 import { DESKTOP_HELP_WEBVIEW_PARTITION } from "../../shared/help";
 import type { MainAppState } from "../app-state";
 import type { LogsRuntime } from "../logs/runtime";
@@ -60,6 +60,7 @@ export type AppShellRuntimeOptions = {
   parseSafeLoopbackWebUrl: (value: string) => unknown;
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  resolveGlobalSearchCommandShortcut: (platform: NodeJS.Platform, input: any) => DesktopGlobalSearchShortcut | null;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
   collectWebviewLoadDiagnostics: (contents: Electron.WebContents, validatedUrl: string) => Promise<Record<string, unknown>>;
   reportRendererDiagnostic: (source: string, details: Record<string, unknown>) => void;
@@ -214,6 +215,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isSafeServiceUrl: options.parseSafeLoopbackWebUrl,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
+      isGlobalSearchOverlayVisible: () => mainWindowLifecycle.isGlobalSearchOverlayVisible(),
       shouldDownloadUrl: shouldDownloadUrlFromWebview,
       resolveOpenDisposition: resolveWebviewOpenDisposition,
       collectLoadDiagnostics: options.collectWebviewLoadDiagnostics,
@@ -237,6 +240,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       lifecycle: mainWindowLifecycle,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isHandlingQuit: () => options.state.isHandlingQuit,
       clearWindow: (windowToClear) => {
         if (options.state.mainWindow === windowToClear) {

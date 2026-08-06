@@ -6,7 +6,9 @@ import {
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type {
   AssistantChatSearchResult,
-  AssistantNavAgentItem
+  AssistantNavAgentItem,
+  DesktopGlobalSearchShortcut,
+  DesktopGlobalSearchShortcutSlot
 } from "../../../shared/contracts";
 import type { TranslateFunction } from "../../../shared/i18n";
 import {
@@ -16,38 +18,44 @@ import {
 import { getAssistantAwaitingStatusKey } from "../../assistantNavigation";
 import { SidebarActionIcon, SidebarIllustration } from "../../components/BrandMark";
 import { AgentIcon } from "../navigation/AgentIcon";
-import { SettingsSidebarIcon } from "../navigation/SettingsSidebarIcon";
 import {
   buildDesktopGlobalSearchSections,
+  buildDesktopGlobalSearchShortcutTargets,
   resolveDesktopGlobalSearchAgentKey,
   type DesktopGlobalSearchActionId,
-  type DesktopGlobalSearchRow
+  type DesktopGlobalSearchRow,
+  type DesktopGlobalSearchShortcutTargets
 } from "./globalSearchRows";
 
 type DesktopGlobalSearchOverlayProps = {
   open: boolean;
   agents: AssistantNavAgentItem[];
   currentRoute: string;
-  shortcutLabel: string;
+  defaultChatAgentKey: string;
+  shortcutPlatform: "darwin" | "win32" | null;
   t: TranslateFunction;
   onClose: () => void;
   onNavigate: (targetPath: string) => void;
 };
 
 const SEARCH_DEBOUNCE_MS = 250;
+const EMPTY_SHORTCUT_TARGETS: DesktopGlobalSearchShortcutTargets = { attention: [], agents: [] };
 
 export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProps) {
   const inputRef = useRef<HTMLInputElement | null>(null);
   const searchRequestIdRef = useRef(0);
+  const shortcutTargetsRef = useRef<DesktopGlobalSearchShortcutTargets>(EMPTY_SHORTCUT_TARGETS);
   const [query, setQuery] = useState("");
   const [remoteResults, setRemoteResults] = useState<AssistantChatSearchResult[]>([]);
   const [remotePending, setRemotePending] = useState(false);
   const [remoteError, setRemoteError] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [shortcutTargets, setShortcutTargets] = useState<DesktopGlobalSearchShortcutTargets>(EMPTY_SHORTCUT_TARGETS);
   const currentAgentKey = useMemo(
     () => resolveDesktopGlobalSearchAgentKey(props.currentRoute),
     [props.currentRoute]
   );
+  const newChatAgentKey = currentAgentKey || props.defaultChatAgentKey.trim();
   const sections = useMemo(
     () => buildDesktopGlobalSearchSections({
       agents: props.agents,
@@ -66,11 +74,29 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
       setRemoteResults([]);
       setRemoteError("");
       setRemotePending(false);
+      shortcutTargetsRef.current = EMPTY_SHORTCUT_TARGETS;
+      setShortcutTargets(EMPTY_SHORTCUT_TARGETS);
       return;
     }
+    const nextShortcutTargets = buildDesktopGlobalSearchShortcutTargets(props.agents, props.t);
+    shortcutTargetsRef.current = nextShortcutTargets;
+    setShortcutTargets(nextShortcutTargets);
     setActiveIndex(0);
     window.setTimeout(() => inputRef.current?.focus(), 0);
   }, [props.open]);
+
+  useEffect(() => {
+    if (!props.open || typeof window.electronAPI.onGlobalSearchShortcut !== "function") {
+      return;
+    }
+    return window.electronAPI.onGlobalSearchShortcut((shortcut) => {
+      activateGlobalSearchShortcut(shortcut, shortcutTargetsRef.current, {
+        newChatAgentKey,
+        onNavigate: props.onNavigate,
+        onClose: props.onClose
+      });
+    });
+  }, [newChatAgentKey, props.onClose, props.onNavigate, props.open]);
 
   useEffect(() => {
     if (!props.open) {
@@ -166,7 +192,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
     if (event.key === "Enter" && activeRow) {
       event.preventDefault();
       activateRow(activeRow, {
-        currentAgentKey,
+        newChatAgentKey,
         onNavigate: props.onNavigate,
         onClose: props.onClose
       });
@@ -197,8 +223,10 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
             onChange={(event) => setQuery(event.currentTarget.value)}
             onKeyDown={handleKeyDown}
           />
-          {props.shortcutLabel ? (
-            <kbd title={props.t("desktop.globalSearch.shortcutHint")}>{props.shortcutLabel}</kbd>
+          {props.shortcutPlatform ? (
+            <kbd title={props.t("desktop.globalSearch.shortcutHint")}>
+              <ShortcutKeyHint platform={props.shortcutPlatform} keyLabel="K" />
+            </kbd>
           ) : null}
         </div>
         <div className="desktop-global-search-results" role="listbox" aria-label={props.t("desktop.globalSearch.results")}>
@@ -208,12 +236,16 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
               {section.rows.map((row) => {
                 renderedRowIndex += 1;
                 const rowIndex = renderedRowIndex;
+                const rowShortcut = resolveRowShortcut(row, shortcutTargets);
+                const rowShortcutLabel = formatShortcutLabel(rowShortcut, props.shortcutPlatform);
+                const rowAriaShortcut = formatAriaShortcut(rowShortcut, props.shortcutPlatform);
                 return (
                   <button
                     key={row.key}
                     type="button"
                     role="option"
                     aria-selected={rowIndex === activeIndex}
+                    aria-keyshortcuts={rowAriaShortcut || undefined}
                     className={[
                       "desktop-global-search-row",
                       `is-${row.kind}`,
@@ -223,7 +255,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                     ].filter(Boolean).join(" ")}
                     onMouseEnter={() => setActiveIndex(rowIndex)}
                     onClick={() => activateRow(row, {
-                      currentAgentKey,
+                      newChatAgentKey,
                       onNavigate: props.onNavigate,
                       onClose: props.onClose
                     })}
@@ -242,6 +274,15 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                         {renderChatStatus(row, props.t)}
                         <span className="desktop-global-search-row-agent">{row.agentLabel}</span>
                       </span>
+                    ) : null}
+                    {rowShortcutLabel ? (
+                      <kbd className="desktop-global-search-row-shortcut">
+                        <ShortcutKeyHint
+                          platform={props.shortcutPlatform}
+                          keyLabel={rowShortcutLabel}
+                          optionOnly={rowShortcut?.kind === "agent"}
+                        />
+                      </kbd>
                     ) : null}
                   </button>
                 );
@@ -263,9 +304,9 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
 
 function activateRow(
   row: DesktopGlobalSearchRow,
-  options: { currentAgentKey: string; onNavigate: (targetPath: string) => void; onClose: () => void }
+  options: { newChatAgentKey: string; onNavigate: (targetPath: string) => void; onClose: () => void }
 ) {
-  const targetPath = resolveRowTargetPath(row, options.currentAgentKey);
+  const targetPath = resolveRowTargetPath(row, options.newChatAgentKey);
   if (!targetPath) {
     return;
   }
@@ -273,7 +314,28 @@ function activateRow(
   options.onClose();
 }
 
-function resolveRowTargetPath(row: DesktopGlobalSearchRow, currentAgentKey: string) {
+function activateGlobalSearchShortcut(
+  shortcut: DesktopGlobalSearchShortcut,
+  targets: DesktopGlobalSearchShortcutTargets,
+  options: { newChatAgentKey: string; onNavigate: (targetPath: string) => void; onClose: () => void }
+) {
+  if (shortcut.kind === "action") {
+    const targetPath = resolveActionTargetPath(shortcut.actionId, options.newChatAgentKey);
+    if (targetPath) {
+      options.onNavigate(targetPath);
+      options.onClose();
+    }
+    return;
+  }
+  const target = shortcut.kind === "attention"
+    ? targets.attention[shortcut.slot - 1]
+    : targets.agents[shortcut.slot - 1];
+  if (target) {
+    activateRow(target, options);
+  }
+}
+
+function resolveRowTargetPath(row: DesktopGlobalSearchRow, newChatAgentKey: string) {
   if (row.kind === "agent") {
     return createAgentWebclientAgentPath(row.agentKey);
   }
@@ -283,17 +345,17 @@ function resolveRowTargetPath(row: DesktopGlobalSearchRow, currentAgentKey: stri
       chatId: row.chatId,
     });
   }
-  return resolveActionTargetPath(row.actionId, currentAgentKey);
+  return resolveActionTargetPath(row.actionId, newChatAgentKey);
 }
 
-function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, currentAgentKey: string) {
+function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, newChatAgentKey: string) {
   if (actionId === "newChat") {
-    if (!currentAgentKey) {
+    if (!newChatAgentKey) {
       return "";
     }
     const params = new URLSearchParams();
     params.set("newChat", String(Date.now()));
-    return createAgentWebclientAgentPath(currentAgentKey, params);
+    return createAgentWebclientAgentPath(newChatAgentKey, params);
   }
   if (actionId === "agents") {
     return "/agents";
@@ -301,8 +363,8 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, currentA
   if (actionId === "skills") {
     return "/skills";
   }
-  if (actionId === "controlCenter") {
-    return "/control-center";
+  if (actionId === "mcpConnectors") {
+    return "/mcp-servers";
   }
   if (actionId === "settings") {
     return "/settings";
@@ -340,10 +402,109 @@ function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.actionId === "skills") {
     return <SidebarIllustration kind="skill" />;
   }
-  if (row.actionId === "controlCenter") {
-    return <SettingsSidebarIcon kind="control" />;
+  if (row.actionId === "mcpConnectors") {
+    return <SidebarIllustration kind="connector" />;
   }
   return <SidebarIllustration kind="settings" />;
+}
+
+function resolveRowShortcut(
+  row: DesktopGlobalSearchRow,
+  targets: DesktopGlobalSearchShortcutTargets
+): DesktopGlobalSearchShortcut | null {
+  if (row.kind === "action") {
+    return row.actionId === "settings" ? null : { kind: "action", actionId: row.actionId };
+  }
+  if (row.kind === "chat") {
+    const index = targets.attention.findIndex((target) => target.key === row.key);
+    return index >= 0 ? { kind: "attention", slot: (index + 1) as DesktopGlobalSearchShortcutSlot } : null;
+  }
+  const index = targets.agents.findIndex((target) => target.key === row.key);
+  return index >= 0 ? { kind: "agent", slot: (index + 1) as DesktopGlobalSearchShortcutSlot } : null;
+}
+
+function formatShortcutLabel(
+  shortcut: DesktopGlobalSearchShortcut | null,
+  platform: DesktopGlobalSearchOverlayProps["shortcutPlatform"]
+) {
+  if (!shortcut || !platform) {
+    return "";
+  }
+  return shortcut.kind === "action"
+    ? shortcut.actionId === "newChat"
+      ? "N"
+      : shortcut.actionId === "agents"
+        ? "A"
+        : shortcut.actionId === "skills"
+          ? "S"
+          : "M"
+    : shortcut.slot === 10
+      ? "0"
+      : String(shortcut.slot);
+}
+
+function formatAriaShortcut(
+  shortcut: DesktopGlobalSearchShortcut | null,
+  platform: DesktopGlobalSearchOverlayProps["shortcutPlatform"]
+) {
+  if (!shortcut || !platform) {
+    return "";
+  }
+  const suffix = shortcut.kind === "action"
+    ? shortcut.actionId === "newChat"
+      ? "N"
+      : shortcut.actionId === "agents"
+        ? "A"
+        : shortcut.actionId === "skills"
+          ? "S"
+          : "M"
+    : shortcut.slot === 10
+      ? "0"
+      : String(shortcut.slot);
+  return shortcut.kind === "agent"
+    ? `Alt+${suffix}`
+    : `${platform === "darwin" ? "Meta" : "Control"}+${suffix}`;
+}
+
+function ShortcutKeyHint({
+  platform,
+  keyLabel,
+  optionOnly = false
+}: {
+  platform: DesktopGlobalSearchOverlayProps["shortcutPlatform"];
+  keyLabel: string;
+  optionOnly?: boolean;
+}) {
+  if (!platform) {
+    return null;
+  }
+  return (
+    <span className="desktop-global-search-shortcut-content" aria-hidden="true">
+      {platform === "darwin" ? (
+        optionOnly ? <OptionShortcutIcon /> : <CommandShortcutIcon />
+      ) : (
+        <span className="desktop-global-search-shortcut-modifier">{optionOnly ? "Alt" : "Ctrl"}</span>
+      )}
+      <span className="desktop-global-search-shortcut-key">{keyLabel}</span>
+    </span>
+  );
+}
+
+function CommandShortcutIcon() {
+  return (
+    <svg className="desktop-global-search-shortcut-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M5.5 5.5H3.75A2.25 2.25 0 1 1 6 3.25v9.5A2.25 2.25 0 1 1 3.75 10.5H12.25A2.25 2.25 0 1 1 10 12.75v-9.5A2.25 2.25 0 1 1 12.25 5.5H5.5v5h5" />
+    </svg>
+  );
+}
+
+function OptionShortcutIcon() {
+  return (
+    <svg className="desktop-global-search-shortcut-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M2 4h3l5 8h4" />
+      <path d="M9 4h5" />
+    </svg>
+  );
 }
 
 function renderRowDetail(row: Extract<DesktopGlobalSearchRow, { kind: "agent" }>) {

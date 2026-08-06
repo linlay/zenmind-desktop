@@ -2842,7 +2842,6 @@ export function AppShell() {
   const appShellStyle = {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`
   } as CSSProperties;
-  const globalSearchShortcutLabel = isMac ? "Cmd+K" : isWindows ? "Ctrl+K" : "";
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
 
   return (
@@ -3220,7 +3219,8 @@ export function AppShell() {
         open={globalSearchOpen}
         agents={assistantNavAgents}
         currentRoute={currentRoute}
-        shortcutLabel={globalSearchShortcutLabel}
+        defaultChatAgentKey={chatRuntimeAgent.agentKey}
+        shortcutPlatform={isMac ? "darwin" : isWindows ? "win32" : null}
         t={t}
         onClose={() => setGlobalSearchOpen(false)}
         onNavigate={requestSidebarNavigation}

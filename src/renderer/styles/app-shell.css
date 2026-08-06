@@ -700,6 +700,25 @@
   white-space: nowrap;
 }
 
+.desktop-global-search-shortcut-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+}
+
+.desktop-global-search-shortcut-icon {
+  width: 13px;
+  height: 13px;
+  display: block;
+  flex: none;
+}
+
+.desktop-global-search-shortcut-modifier,
+.desktop-global-search-shortcut-key {
+  display: inline-block;
+}
+
 .desktop-global-search-results {
   flex: 1 1 auto;
   min-height: 0;
@@ -723,7 +742,7 @@
   width: 100%;
   min-height: 31px;
   display: grid;
-  grid-template-columns: 28px minmax(0, 1fr) auto;
+  grid-template-columns: 28px minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px;
   padding: 5px 8px;
@@ -737,7 +756,7 @@
 
 .desktop-global-search-row.is-action,
 .desktop-global-search-row.is-agent {
-  grid-template-columns: 28px minmax(0, 1fr);
+  grid-template-columns: 28px minmax(0, 1fr) auto;
 }
 
 .desktop-global-search-row.is-active {
@@ -833,6 +852,22 @@
   color: #b45309;
 }
 
+.desktop-global-search-row-shortcut {
+  min-width: 48px;
+  justify-self: end;
+  padding: 2px 7px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.07);
+  color: #64748b;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 16px;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .desktop-global-search-empty {
   min-height: 140px;
   display: flex;
@@ -904,6 +939,11 @@
   color: #f4bf75;
 }
 
+:root[data-theme="dark"] .desktop-global-search-row-shortcut {
+  background: rgba(255, 255, 255, 0.09);
+  color: #d4d4d4;
+}
+
 @media (max-width: 680px) {
   .desktop-global-search-layer {
     padding: 16px 10px;
@@ -914,7 +954,7 @@
   }
 
   .desktop-global-search-row {
-    grid-template-columns: 30px minmax(0, 1fr);
+    grid-template-columns: 30px minmax(0, 1fr) auto;
   }
 
   .desktop-global-search-row-body {

@@ -1,13 +1,14 @@
 import type {
   AssistantChatSearchResult,
   AssistantNavAgentItem,
-  AssistantNavChatItem
+  AssistantNavChatItem,
+  DesktopGlobalSearchActionShortcutId
 } from "../../../shared/contracts";
 import type { EpochMilliseconds } from "../../../shared/time-contract";
 import type { TranslateFunction } from "../../../shared/i18n";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
 
-export type DesktopGlobalSearchActionId = "newChat" | "agents" | "skills" | "controlCenter" | "settings";
+export type DesktopGlobalSearchActionId = DesktopGlobalSearchActionShortcutId | "settings";
 export type DesktopGlobalSearchSectionId = "awaiting" | "unread" | "actions" | "agents" | "chats";
 export type DesktopGlobalSearchProjectAgentKind = "coder" | "kbase";
 
@@ -59,7 +60,12 @@ export type BuildDesktopGlobalSearchRowsInput = {
   t: TranslateFunction;
 };
 
-const EMPTY_AGENT_LIMIT = 8;
+export type DesktopGlobalSearchShortcutTargets = {
+  attention: Array<Extract<DesktopGlobalSearchRow, { kind: "chat" }>>;
+  agents: Array<Extract<DesktopGlobalSearchRow, { kind: "agent" }>>;
+};
+
+const EMPTY_AGENT_LIMIT = 10;
 const EMPTY_CHAT_LIMIT = 12;
 const EMPTY_ATTENTION_LIMIT = 10;
 const QUERY_AGENT_LIMIT = 10;
@@ -140,6 +146,27 @@ export function buildDesktopGlobalSearchSections(input: BuildDesktopGlobalSearch
   ].filter((section): section is DesktopGlobalSearchSection => Boolean(section));
 }
 
+export function buildDesktopGlobalSearchShortcutTargets(
+  agents: AssistantNavAgentItem[],
+  t: TranslateFunction
+): DesktopGlobalSearchShortcutTargets {
+  const sections = buildDesktopGlobalSearchSections({
+    agents,
+    query: "",
+    t
+  });
+  const rowsForSection = (sectionId: DesktopGlobalSearchSectionId) =>
+    sections.find((section) => section.id === sectionId)?.rows ?? [];
+  return {
+    attention: [...rowsForSection("awaiting"), ...rowsForSection("unread")]
+      .filter((row): row is Extract<DesktopGlobalSearchRow, { kind: "chat" }> => row.kind === "chat")
+      .slice(0, 10),
+    agents: rowsForSection("agents")
+      .filter((row): row is Extract<DesktopGlobalSearchRow, { kind: "agent" }> => row.kind === "agent")
+      .slice(0, 10)
+  };
+}
+
 function createSection(
   id: DesktopGlobalSearchSectionId,
   title: string,
@@ -148,17 +175,15 @@ function createSection(
   return rows.length > 0 ? { id, title, rows } : null;
 }
 
-function createActionRows(currentAgentKey: string, t: TranslateFunction): DesktopGlobalSearchRow[] {
-  const rows: Array<DesktopGlobalSearchRow | null> = [
-    currentAgentKey
-      ? {
-          kind: "action",
-          key: "action:newChat",
-          actionId: "newChat",
-          label: t("desktop.globalSearch.action.newChat"),
-          description: t("desktop.globalSearch.action.newChat.description")
-        }
-      : null,
+function createActionRows(_currentAgentKey: string, t: TranslateFunction): DesktopGlobalSearchRow[] {
+  const rows: DesktopGlobalSearchRow[] = [
+    {
+      kind: "action",
+      key: "action:newChat",
+      actionId: "newChat",
+      label: t("desktop.globalSearch.action.newChat"),
+      description: t("desktop.globalSearch.action.newChat.description")
+    },
     {
       kind: "action",
       key: "action:agents",
@@ -175,10 +200,10 @@ function createActionRows(currentAgentKey: string, t: TranslateFunction): Deskto
     },
     {
       kind: "action",
-      key: "action:controlCenter",
-      actionId: "controlCenter",
-      label: t("desktop.globalSearch.action.controlCenter"),
-      description: t("desktop.globalSearch.action.controlCenter.description")
+      key: "action:mcpConnectors",
+      actionId: "mcpConnectors",
+      label: t("desktop.globalSearch.action.mcpConnectors"),
+      description: t("desktop.globalSearch.action.mcpConnectors.description")
     },
     {
       kind: "action",
@@ -188,7 +213,7 @@ function createActionRows(currentAgentKey: string, t: TranslateFunction): Deskto
       description: t("desktop.globalSearch.action.settings.description")
     }
   ];
-  return rows.filter((row): row is DesktopGlobalSearchRow => Boolean(row));
+  return rows;
 }
 
 function createAgentRow(agent: AssistantNavAgentItem): Extract<DesktopGlobalSearchRow, { kind: "agent" }> | null {
