@@ -30,6 +30,16 @@ export function HelpPage({ hostTheme }: HelpPageProps) {
   const [webviewLoading, setWebviewLoading] = useState(true);
   const [webviewError, setWebviewError] = useState("");
 
+  const hideNativeSearchCancelButton = useCallback((targetWebview: Electron.WebviewTag) => {
+    void targetWebview.insertCSS(`
+      input[type="search"]::-webkit-search-cancel-button {
+        display: none !important;
+        appearance: none !important;
+        -webkit-appearance: none !important;
+      }
+    `).catch(() => undefined);
+  }, []);
+
   const loadSettings = useCallback(() => {
     requestSequenceRef.current += 1;
     const requestSequence = requestSequenceRef.current;
@@ -94,6 +104,7 @@ export function HelpPage({ hostTheme }: HelpPageProps) {
       setWebviewLoading(false);
     };
     const handleDomReady = () => {
+      hideNativeSearchCancelButton(webview);
       setWebviewLoading(false);
     };
     const handleDidFailLoad = (event: Event) => {
@@ -117,7 +128,7 @@ export function HelpPage({ hostTheme }: HelpPageProps) {
       webview.removeEventListener("dom-ready", handleDomReady);
       webview.removeEventListener("did-fail-load", handleDidFailLoad);
     };
-  }, [helpUrl, t, webviewKey]);
+  }, [helpUrl, hideNativeSearchCancelButton, t, webviewKey]);
 
   const retryWebview = () => {
     setWebviewError("");
