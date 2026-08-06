@@ -80,6 +80,11 @@ import type {
 } from "../../../shared/settings-sections";
 import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import { Flex } from "antd";
+import {
+  CAPABILITY_NAVIGATION_ITEMS,
+  getCapabilityNavigationItem,
+  type SidebarMode,
+} from "./capabilityNavigation";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -1043,11 +1048,11 @@ type AppSidebarProps = {
   onNavigateItem?: () => void;
   onOpenGlobalSearch?: () => void;
   onToggleCollapsed?: () => void;
-  isSettingsMode?: boolean;
+  sidebarMode?: SidebarMode;
   settingsSections?: SettingsSidebarSection[];
   activeSettingsSectionId?: SettingsSectionId | null;
   onSelectSettingsSection?: (sectionId: SettingsSectionId) => void;
-  onExitSettingsMode?: () => void;
+  onExitSecondarySidebarMode?: () => void;
 };
 
 export function AppSidebar({
@@ -1103,13 +1108,16 @@ export function AppSidebar({
   onNavigateItem,
   onOpenGlobalSearch,
   onToggleCollapsed,
-  isSettingsMode = false,
+  sidebarMode = "primary",
   settingsSections = [],
   activeSettingsSectionId = null,
   onSelectSettingsSection,
-  onExitSettingsMode,
+  onExitSecondarySidebarMode,
 }: AppSidebarProps) {
   const { t } = useI18n();
+  const isPrimaryMode = sidebarMode === "primary";
+  const isCapabilitiesMode = sidebarMode === "capabilities";
+  const isSettingsMode = sidebarMode === "settings";
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
   );
@@ -1213,7 +1221,7 @@ export function AppSidebar({
   const showBootstrapGuideCard =
     bootstrapActive &&
     !bootstrapGuideCardDismissed &&
-    !isSettingsMode &&
+    isPrimaryMode &&
     !isCollapsed;
   const primaryAssistantNavAgents = useMemo(
     () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
@@ -1386,6 +1394,9 @@ export function AppSidebar({
     )
     .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
+  const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.map(
+    (item) => ({ ...item, label: t(item.labelKey) }),
+  );
   const settingsToolItem = fixedToolItems.find(
     (item) => item.to === "/settings",
   );
@@ -1400,7 +1411,7 @@ export function AppSidebar({
     isMac ? "is-mac" : isWindows ? "is-windows" : "is-default",
   ].join(" ");
   const defaultSidebarNavFocusId = useMemo(() => {
-    if (isSettingsMode) {
+    if (!isPrimaryMode) {
       return "";
     }
 
@@ -1462,7 +1473,7 @@ export function AppSidebar({
     currentPathname,
     currentRoute,
     isCollapsed,
-    isSettingsMode,
+    isPrimaryMode,
     navItems,
     pendingPath,
     sidebarGroupState.assistants,
@@ -1712,12 +1723,12 @@ export function AppSidebar({
       setBootstrapGuideFloatingBubbles([]);
       return;
     }
-    if (!isSettingsMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
+    if (isPrimaryMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
       bootstrapGuideToolMenuAutoOpenedRef.current = true;
       setToolMenuAnchorPoint(null);
       setToolMenuOpen(true);
     }
-  }, [bootstrapActive, isSettingsMode]);
+  }, [bootstrapActive, isPrimaryMode]);
 
   useEffect(() => {
     if (!bootstrapActive || typeof window === "undefined") {
@@ -1766,7 +1777,7 @@ export function AppSidebar({
     bootstrapGuideDismissedBubbles.help,
     bootstrapSeedChatIndexed,
     isCollapsed,
-    isSettingsMode,
+    isPrimaryMode,
     normalizedBootstrapAgentKey,
     normalizedBootstrapChatId,
     toolMenuOpen,
@@ -1858,7 +1869,7 @@ export function AppSidebar({
   }, [currentRoute, forcedActiveManagementRoute]);
 
   useEffect(() => {
-    if (isSettingsMode) {
+    if (!isPrimaryMode) {
       if (sidebarNavFocusId) {
         setSidebarNavFocusId("");
       }
@@ -1878,7 +1889,7 @@ export function AppSidebar({
   }, [
     expandedAssistantAgentKey,
     isCollapsed,
-    isSettingsMode,
+    isPrimaryMode,
     navItems,
     resolvedSidebarNavFocusId,
     sidebarGroupState.assistants,
@@ -2095,7 +2106,7 @@ export function AppSidebar({
   }
 
   function getSidebarRovingItemProps(id: string, enabled = true) {
-    if (!enabled || isSettingsMode) {
+    if (!enabled || !isPrimaryMode) {
       return {};
     }
     return {
@@ -2390,7 +2401,7 @@ export function AppSidebar({
   }
 
   function handleSidebarNavKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
-    if (isSettingsMode) {
+    if (!isPrimaryMode) {
       return;
     }
     const currentElement = getSidebarRovingEventElement(event.target);
@@ -3224,14 +3235,19 @@ export function AppSidebar({
   function isFixedToolRouteActive(targetPath: string) {
     const targetPathname = getRoutePathname(targetPath);
     const pendingPathname = pendingPath ? getRoutePathname(pendingPath) : "";
-    if (targetPathname === "/agents") {
-      return (
-        displayCurrentPathname === targetPathname ||
-        displayCurrentPathname.startsWith(`${targetPathname}/`) ||
-        (!forcedActiveManagementRoute && pendingPathname === targetPathname) ||
-        (!forcedActiveManagementRoute &&
-          pendingPathname.startsWith(`${targetPathname}/`))
+    const targetCapabilityItem = getCapabilityNavigationItem(targetPathname);
+    if (targetCapabilityItem?.to === targetPathname) {
+      const activeCapabilityItem = getCapabilityNavigationItem(
+        displayCurrentPathname,
       );
+      const pendingCapabilityItem = getCapabilityNavigationItem(
+        pendingPathname,
+      );
+      const selectedCapabilityItem =
+        !forcedActiveManagementRoute && pendingCapabilityItem
+          ? pendingCapabilityItem
+          : activeCapabilityItem;
+      return selectedCapabilityItem?.id === targetCapabilityItem.id;
     }
     return (
       displayCurrentPathname === targetPathname ||
@@ -4729,7 +4745,7 @@ export function AppSidebar({
 
     if (
       !bootstrapGuideDismissedBubbles.help &&
-      !isSettingsMode &&
+      isPrimaryMode &&
       toolMenuOpen
     ) {
       const helpBubble = createBootstrapGuideFloatingBubble(
@@ -5853,7 +5869,7 @@ export function AppSidebar({
         <button
           type="button"
           className="sidebar-link sidebar-link-utility sidebar-settings-back"
-          onClick={() => onExitSettingsMode?.()}
+          onClick={() => onExitSecondarySidebarMode?.()}
         >
           <span className="sidebar-link-icon" aria-hidden="true">
             <SettingsSidebarIcon kind="back" />
@@ -5932,7 +5948,62 @@ export function AppSidebar({
     );
   }
 
-  const shouldRenderCollapsed = isCollapsed && !isSettingsMode;
+  function renderCapabilitiesNav() {
+    const activeCapabilityItem = getCapabilityNavigationItem(
+      displayCurrentPathname,
+    );
+    const pendingCapabilityItem = getCapabilityNavigationItem(
+      pendingPath ?? "",
+    );
+    const selectedCapabilityItem = pendingCapabilityItem ?? activeCapabilityItem;
+
+    return (
+      <div className="sidebar-settings-nav sidebar-capabilities-nav">
+        <button
+          type="button"
+          className="sidebar-link sidebar-link-utility sidebar-settings-back"
+          onClick={() => onExitSecondarySidebarMode?.()}
+        >
+          <span className="sidebar-link-icon" aria-hidden="true">
+            <SettingsSidebarIcon kind="back" />
+          </span>
+          <span className="sidebar-link-label">{t("settings.backToApp")}</span>
+        </button>
+        <nav
+          className="sidebar-settings-directory sidebar-capabilities-directory"
+          aria-label={t("nav.capabilities")}
+        >
+          <div className="settings-section-group-items">
+            {capabilityNavigationItems.map((item) => {
+              const isActive = selectedCapabilityItem?.id === item.id;
+              return (
+                <NavLink
+                  key={item.id}
+                  to={item.to}
+                  aria-current={isActive ? "page" : undefined}
+                  className={[
+                    "sidebar-link",
+                    isActive ? "sidebar-link-active" : "",
+                    pendingCapabilityItem?.id === item.id ? "is-pending" : "",
+                  ]
+                    .filter(Boolean)
+                    .join(" ")}
+                  onClick={(event) => handleToolItemClick(event, item.to)}
+                >
+                  <span className="sidebar-link-icon" aria-hidden="true">
+                    <SidebarIllustration kind={item.icon} />
+                  </span>
+                  <span className="sidebar-link-label">{item.label}</span>
+                </NavLink>
+              );
+            })}
+          </div>
+        </nav>
+      </div>
+    );
+  }
+
+  const shouldRenderCollapsed = isCollapsed && isPrimaryMode;
   const activeToolMenuItem =
     fixedToolItems.find((item) => isFixedToolRouteActive(item.to)) ??
     (isFixedToolRouteActive(helpToolItem.to) ? helpToolItem : undefined);
@@ -5962,7 +6033,7 @@ export function AppSidebar({
         <div className="sidebar-chrome">
           <div className={chromeToolbarClassName}>
             <div className="sidebar-top-actions">
-              {!isSettingsMode ? (
+              {isPrimaryMode ? (
                 <button
                   type="button"
                   className="app-sidebar-collapse-button sidebar-global-search-button is-compact"
@@ -5973,7 +6044,7 @@ export function AppSidebar({
                   <SettingsSidebarIcon kind="search" />
                 </button>
               ) : null}
-              {!isSettingsMode ? (
+              {isPrimaryMode ? (
                 <SidebarCollapseToggle
                   className="sidebar-collapsed-toggle-button"
                   isCollapsed={isCollapsed}
@@ -5982,7 +6053,7 @@ export function AppSidebar({
                   t={t}
                 />
               ) : null}
-              {!isSettingsMode ? (
+              {isPrimaryMode ? (
                 <div className="sidebar-history-controls">
                   <button
                     type="button"
@@ -6006,7 +6077,7 @@ export function AppSidebar({
                   </button>
                 </div>
               ) : null}
-              {!isSettingsMode && assistantLauncherVisible ? (
+              {isPrimaryMode && assistantLauncherVisible ? (
                 <button
                   type="button"
                   className={[
@@ -6046,17 +6117,25 @@ export function AppSidebar({
         <nav
           ref={sidebarNavRef}
           className="sidebar-nav"
-          aria-label="Primary Navigation"
-          data-sidebar-roving-container={!isSettingsMode ? "true" : undefined}
+          aria-label={
+            isCapabilitiesMode
+              ? t("nav.capabilities")
+              : isSettingsMode
+                ? t("settings.directory")
+                : t("nav.main")
+          }
+          data-sidebar-roving-container={isPrimaryMode ? "true" : undefined}
           onKeyDown={handleSidebarNavKeyDown}
         >
           {isSettingsMode
             ? renderSettingsNav()
-            : navItems.map((item) => renderPrimaryNavEntry(item))}
+            : isCapabilitiesMode
+              ? renderCapabilitiesNav()
+              : navItems.map((item) => renderPrimaryNavEntry(item))}
         </nav>
         {renderBootstrapGuideCard()}
 
-        {!isSettingsMode ? (
+        {isPrimaryMode ? (
           <div className="sidebar-footer">
             <div className="sidebar-footer-divider" aria-hidden="true" />
             <div className="sidebar-footer-actions">

@@ -96,6 +96,7 @@ export const enUSMessages = {
   "nav.market": "Market",
   "nav.settings": "Settings",
   "nav.help": "Help",
+  "nav.capabilities": "Capability navigation",
   "help.loading": "Loading Help…",
   "help.error.notConfigured": "The Help address is not configured.",
   "help.error.loadFailed": "Help could not be loaded. Check your connection and try again.",

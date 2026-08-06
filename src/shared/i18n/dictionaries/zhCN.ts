@@ -96,6 +96,7 @@ export const zhCNMessages = {
   "nav.market": "市场",
   "nav.settings": "设置",
   "nav.help": "帮助",
+  "nav.capabilities": "能力导航",
   "help.loading": "正在加载帮助…",
   "help.error.notConfigured": "尚未配置帮助地址。",
   "help.error.loadFailed": "帮助页面加载失败，请检查网络后重试。",

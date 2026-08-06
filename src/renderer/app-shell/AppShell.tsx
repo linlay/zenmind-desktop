@@ -1,6 +1,10 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
+import {
+  isCapabilityNavigationRoute,
+  resolveSidebarMode,
+} from "./navigation/capabilityNavigation";
 import type { WebsiteFaviconCache } from "../components/Favicon";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
@@ -279,26 +283,49 @@ function isSettingsRedirectRoute(targetPath: string) {
   return (targetPath.split("?")[0] || "/") === "/control-center";
 }
 
-function getSettingsExitFallbackPath(kanbanEnabled: boolean) {
-  return kanbanEnabled ? "/kanban" : ASSISTANT_TARGET_PATH;
+function getSecondarySidebarExitFallbackPath(
+  kanbanEnabled: boolean,
+  chatAgentKey = "",
+) {
+  if (kanbanEnabled) {
+    return "/kanban";
+  }
+  const normalizedChatAgentKey = chatAgentKey.trim();
+  return normalizedChatAgentKey
+    ? createAgentNewChatRoute(normalizedChatAgentKey)
+    : "/";
 }
 
-function resolveSettingsExitTargetPath(targetPath: string, kanbanEnabled: boolean) {
-  const fallbackPath = getSettingsExitFallbackPath(kanbanEnabled);
+function isSecondarySidebarRoute(targetPath: string) {
+  const targetPathname = targetPath.split("?")[0] || "/";
+  return (
+    isSettingsRedirectRoute(targetPath) ||
+    matchSettingsRoute(targetPathname) ||
+    isCapabilityNavigationRoute(targetPathname)
+  );
+}
+
+function resolveSecondarySidebarExitTargetPath(
+  targetPath: string,
+  kanbanEnabled: boolean,
+  chatAgentKey = "",
+) {
   const targetPathname = targetPath.split("?")[0] || "/";
   if (
     !targetPath ||
-    isSettingsRedirectRoute(targetPath) ||
-    matchSettingsRoute(targetPathname) ||
+    isSecondarySidebarRoute(targetPath) ||
     (!kanbanEnabled && isKanbanNavigationPath(targetPath))
   ) {
-    return fallbackPath;
+    return getSecondarySidebarExitFallbackPath(
+      kanbanEnabled,
+      chatAgentKey,
+    );
   }
   return targetPath;
 }
 
-function removeSettingsRoutesFromHistory(history: string[]) {
-  return history.filter((item) => !matchSettingsRoute(item.split("?")[0] || "/"));
+function removeSecondarySidebarRoutesFromHistory(history: string[]) {
+  return history.filter((item) => !isSecondarySidebarRoute(item));
 }
 
 function isMarketSettingsVisible(settings: { enabled?: boolean; apiBaseUrl?: string } | null | undefined) {
@@ -463,7 +490,7 @@ export function AppShell() {
   }
   const bootstrapInitialNavigationDoneRef = useRef(false);
   const bootstrapHandoffNavigationDoneRef = useRef(false);
-  const lastNonSettingsRouteRef = useRef("/kanban");
+  const lastPrimaryRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
   const assistantNavAgentsRefreshIdRef = useRef(0);
@@ -612,6 +639,8 @@ export function AppShell() {
   const isMac = desktopPlatform === "darwin";
   const isWindows = desktopPlatform === "win32";
   const isSettingsRoute = matchSettingsRoute(location.pathname);
+  const sidebarMode = resolveSidebarMode(location.pathname);
+  const isSecondarySidebarMode = sidebarMode !== "primary";
   const currentRoute = `${location.pathname}${location.search}`;
   const settingsSectionDefinitions = useMemo(
     () => buildLocalizedSettingsSections({
@@ -744,8 +773,10 @@ export function AppShell() {
       : null;
   const sidebarCollapsed = sidebarState.mode === "collapsed";
   const renderedSidebarWidth = resolveRenderedSidebarWidth(sidebarState);
-  const effectiveSidebarCollapsed = sidebarCollapsed && !isSettingsRoute;
-  const effectiveSidebarWidth = isSettingsRoute ? SETTINGS_SIDEBAR_WIDTH : renderedSidebarWidth;
+  const effectiveSidebarCollapsed = sidebarCollapsed && !isSecondarySidebarMode;
+  const effectiveSidebarWidth = isSecondarySidebarMode
+    ? SETTINGS_SIDEBAR_WIDTH
+    : renderedSidebarWidth;
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return createDefaultSidebarNavOrderItems({
       kanbanEnabled,
@@ -2240,7 +2271,7 @@ export function AppShell() {
   }
 
   function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || isSidebarResizing || isSettingsRoute) {
+    if (event.button !== 0 || isSidebarResizing || isSecondarySidebarMode) {
       return;
     }
 
@@ -2349,16 +2380,17 @@ export function AppShell() {
     navigate(targetPath, { replace: true });
   }
 
-  function handleExitSettingsMode() {
-    const targetPath = resolveSettingsExitTargetPath(
-      lastNonSettingsRouteRef.current || getSettingsExitFallbackPath(kanbanEnabled),
-      kanbanEnabled
+  function handleExitSecondarySidebarMode() {
+    const targetPath = resolveSecondarySidebarExitTargetPath(
+      lastPrimaryRouteRef.current,
+      kanbanEnabled,
+      chatRuntimeAgent.agentKey,
     );
     if (targetPath === currentRoute) {
       return;
     }
     setSidebarNavigationHistory((current) => ({
-      back: removeSettingsRoutesFromHistory(current.back),
+      back: removeSecondarySidebarRoutesFromHistory(current.back),
       forward: []
     }));
     setPendingSidebarNavigationPath(targetPath);
@@ -2373,11 +2405,20 @@ export function AppShell() {
   }
 
   useEffect(() => {
-    if (isSettingsRoute) {
+    if (isSecondarySidebarMode) {
       return;
     }
-    lastNonSettingsRouteRef.current = resolveSettingsExitTargetPath(currentRoute, kanbanEnabled);
-  }, [currentRoute, isSettingsRoute, kanbanEnabled]);
+    lastPrimaryRouteRef.current = resolveSecondarySidebarExitTargetPath(
+      currentRoute,
+      kanbanEnabled,
+      chatRuntimeAgent.agentKey,
+    );
+  }, [
+    chatRuntimeAgent.agentKey,
+    currentRoute,
+    isSecondarySidebarMode,
+    kanbanEnabled,
+  ]);
 
   useEffect(() => {
     if (!isSettingsRoute || location.pathname !== "/settings") {
@@ -2826,6 +2867,8 @@ export function AppShell() {
         windowFullScreen ? "is-window-fullscreen" : "",
         effectiveSidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
+        isSecondarySidebarMode ? "is-secondary-sidebar-mode" : "",
+        sidebarMode === "capabilities" ? "is-capabilities-mode" : "",
         isSettingsRoute ? "is-settings-mode" : "",
         "has-translucent-sidebar",
         isMac ? "is-mac-translucent-sidebar" : ""
@@ -2892,17 +2935,17 @@ export function AppShell() {
           onNavigateItem={undefined}
           onOpenGlobalSearch={() => setGlobalSearchOpen(true)}
           onToggleCollapsed={toggleSidebarCollapsed}
-          isSettingsMode={isSettingsRoute}
+          sidebarMode={sidebarMode}
           settingsSections={visibleSettingsSections}
           activeSettingsSectionId={activeSettingsSectionId}
           onSelectSettingsSection={handleSelectSettingsSection}
-          onExitSettingsMode={handleExitSettingsMode}
+          onExitSecondarySidebarMode={handleExitSecondarySidebarMode}
         />
       </div>
       <div
         className={[
           "app-sidebar-resizer",
-          isSettingsRoute ? "is-disabled" : "",
+          isSecondarySidebarMode ? "is-disabled" : "",
           isSidebarResizing ? "is-active" : ""
         ].filter(Boolean).join(" ")}
         role="separator"
@@ -2911,9 +2954,9 @@ export function AppShell() {
         aria-valuemin={SIDEBAR_COLLAPSED_WIDTH}
         aria-valuemax={SIDEBAR_EXPANDED_MAX_WIDTH}
         aria-valuenow={renderedSidebarWidth}
-        aria-hidden={isSettingsRoute ? true : undefined}
-        aria-disabled={isSettingsRoute ? true : undefined}
-        onPointerDown={isSettingsRoute ? undefined : handleSidebarResizerPointerDown}
+        aria-hidden={isSecondarySidebarMode ? true : undefined}
+        aria-disabled={isSecondarySidebarMode ? true : undefined}
+        onPointerDown={isSecondarySidebarMode ? undefined : handleSidebarResizerPointerDown}
       >
         <span className="app-sidebar-resizer-line" aria-hidden="true" />
       </div>

@@ -4667,43 +4667,43 @@
   color: var(--ink-muted);
 }
 
-.app-shell.is-settings-mode .app-sidebar {
+.app-shell.is-secondary-sidebar-mode .app-sidebar {
   padding: 0 10px 12px 8px;
 }
 
-.app-shell.is-settings-mode .sidebar-nav {
+.app-shell.is-secondary-sidebar-mode .sidebar-nav {
   padding: 0;
   scrollbar-gutter: auto;
 }
 
-.app-shell.is-settings-mode .sidebar-settings-back,
-.app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link {
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-back,
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-directory .sidebar-link {
   width: 100%;
   min-height: 30px;
   padding: 0 10px;
 }
 
-.app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link {
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-directory .sidebar-link {
   justify-content: flex-start;
 }
 
-.app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link:not(.sidebar-link-active) {
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-directory .sidebar-link:not(.sidebar-link-active) {
   color: var(--ink-soft);
 }
 
-.app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link:hover:not(.sidebar-link-active) {
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-directory .sidebar-link:hover:not(.sidebar-link-active) {
   color: var(--ink);
 }
 
-.app-shell.is-settings-mode .sidebar-settings-directory .sidebar-link-active {
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-directory .sidebar-link-active {
   color: var(--accent-strong);
 }
 
-.app-shell.is-settings-mode .sidebar-link-label {
+.app-shell.is-secondary-sidebar-mode .sidebar-link-label {
   font-size: 13px;
 }
 
-.app-shell.is-settings-mode .sidebar-settings-nav .sidebar-link-label {
+.app-shell.is-secondary-sidebar-mode .sidebar-settings-nav .sidebar-link-label {
   font-weight: 400;
 }
 
@@ -4754,12 +4754,12 @@
   font-weight: 400;
 }
 
-.app-shell.is-settings-mode .app-sidebar-shell {
+.app-shell.is-secondary-sidebar-mode .app-sidebar-shell {
   width: var(--app-sidebar-width, 200px);
   min-width: var(--app-sidebar-width, 200px);
 }
 
-.app-shell.is-settings-mode .app-sidebar-resizer {
+.app-shell.is-secondary-sidebar-mode .app-sidebar-resizer {
   display: none;
   pointer-events: none;
 }
