@@ -25,6 +25,7 @@ import {
 } from "../webs/webapps/runtime";
 import { webappWindowManager } from "../webs/webapps/window-manager";
 import { stopTunnelHubRuntime } from "../tunnel-hub-runtime";
+import { t } from "../i18n/main-i18n";
 
 const USER_SHUTDOWN_BUDGET_MS = 8_000;
 const INSTALLER_SHUTDOWN_BUDGET_MS = 10_000;
@@ -373,7 +374,7 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
         kind: "window",
         id: "webapp-windows",
         phase: "verify",
-        message: `WebApp windows are still open: ${openWindowIds.join(", ")}`
+        message: t("webapp.windowsStillOpen", { ids: openWindowIds.join(", ") })
       });
     }
     for (const target of processCleanupSnapshot) {

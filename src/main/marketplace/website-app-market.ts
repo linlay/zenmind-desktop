@@ -244,7 +244,7 @@ export async function installWebsiteAppArchiveFromPath(
       }
       const stopped = await webappRuntime.stop(app, safeWebappDirName, t("market.websiteApp.replaced"));
       if (!stopped.ok) {
-        throw new Error(`Unable to replace WebApp while its runtime is active: ${stopped.message}`);
+        throw new Error(t("webapp.marketReplaceActive", { message: stopped.message }));
       }
     }
     fs.mkdirSync(targetRoot, { recursive: true });
@@ -269,7 +269,7 @@ export async function installWebsiteAppArchiveFromPath(
         if (previousWasRunning) {
           await webappRuntime.start(app, safeWebappDirName).catch(() => undefined);
         }
-        throw new Error(`Updated WebApp failed startup validation: ${started.message}`);
+        throw new Error(t("webapp.marketStartupValidationFailed", { message: started.message }));
       }
       if (!previousWasRunning) {
         await webappRuntime.stop(app, safeWebappDirName);

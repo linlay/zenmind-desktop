@@ -33,7 +33,7 @@ async function addWebappDirectoryToZip(
     const archivePath = path.relative(rootPath, sourcePath).split(path.sep).join("/");
     const stat = await fs.promises.lstat(sourcePath);
     if (stat.isSymbolicLink()) {
-      throw new Error(`WebApp package contains a symbolic link: ${archivePath}`);
+      throw new Error(t("webapp.packageSymbolicLink", { path: archivePath }));
     }
     if (stat.isDirectory()) {
       if ((await fs.promises.readdir(sourcePath)).length === 0) {
@@ -43,7 +43,7 @@ async function addWebappDirectoryToZip(
       continue;
     }
     if (!stat.isFile()) {
-      throw new Error(`WebApp package contains an unsupported file type: ${archivePath}`);
+      throw new Error(t("webapp.packageUnsupportedFile", { path: archivePath }));
     }
     zip.file(archivePath, await fs.promises.readFile(sourcePath), {
       unixPermissions: stat.mode & 0o777
@@ -116,14 +116,20 @@ export async function disposeWebappInstallation(
     if (!unpublished.ok) {
       return {
         ok: false,
-        message: `Stop Tunnel publishing before removing ${target.label}: ${unpublished.message}`
+        message: t("webapp.unpublishBeforeRemove", {
+          label: target.label,
+          message: unpublished.message
+        })
       };
     }
     const stopped = await webappRuntime.stop(app, target.id, stopMessage);
     if (!stopped.ok) {
       return {
         ok: false,
-        message: `Unable to remove ${target.label}: ${stopped.message}`
+        message: t("webapp.removeFailed", {
+          label: target.label,
+          message: stopped.message
+        })
       };
     }
     webappWindowManager.closeForDisposal(target.id);

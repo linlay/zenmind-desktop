@@ -3880,6 +3880,16 @@ test("Kanban status order places completed after in progress", () => {
   );
 });
 
+test("WebApp user-facing dictionary terminology is normalized", () => {
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(zhCN, /"sidebar\.webapp\.import": "导入网站应用"/u);
+  assert.doesNotMatch(zhCN, /:\s*"[^"]*(?:WebApp|网站小应用)/u);
+  assert.match(enUS, /"sidebar\.webapp\.import": "Import WebApp"/u);
+  assert.doesNotMatch(enUS, /:\s*"[^"]*(?:Webapp|Webapps|website apps?|Website Apps?)/u);
+});
+
 test("website Copilot association is exposed across webs desktop api layers", () => {
   const contracts = readSharedContractsSource();
   const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "websites", "actions.ts"), "utf8");
@@ -4123,11 +4133,13 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appSidebar, /t\("sidebar\.webapp\.export"\)/);
   assert.match(appSidebar, /void removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
-  assert.match(zhCN, /"sidebar\.webapp\.remove": "卸载 WebApp"/);
+  assert.match(zhCN, /"sidebar\.webapp\.remove": "卸载网站应用"/);
   assert.match(zhCN, /"sidebar\.webapp\.openInWindow": "在新窗口打开"/);
   assert.match(zhCN, /"sidebar\.webapp\.openInWorkspace": "在内置窗口打开"/);
+  assert.doesNotMatch(zhCN, /:\s*"[^"]*(?:WebApp|网站小应用)/u);
   assert.doesNotMatch(zhCN, /webapp\.window\.restoreToWorkspace/);
   assert.match(enUS, /"sidebar\.webapp\.remove": "Uninstall WebApp"/);
+  assert.doesNotMatch(enUS, /:\s*"[^"]*(?:Webapp|Webapps|website apps?|Website Apps?)/u);
   assert.match(appShell, /handleOpenWebappWorkspace/);
   assert.match(appShell, /\{ openMode: "workspace" \}/);
   assert.match(appShell, /requestSidebarNavigation\(`\/webs\/\$\{item\.entryKey\}`\)/);

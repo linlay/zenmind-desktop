@@ -17,6 +17,7 @@ import {
   readTunnelHubSettings,
   saveTunnelHubSettings
 } from "../../tunnel-hub-settings";
+import { t } from "../../i18n/main-i18n";
 import { getDesktopWebappStateRoot } from "../../user-paths";
 import { readWebappItems } from "./store";
 
@@ -117,15 +118,15 @@ export async function getWebappPublishStatus(app: App, id: string): Promise<Weba
   const info = inspectPublishInfo(app);
   const state = readWebappPublishState(app, id.trim());
   if (!item) {
-    return { ready: false, info, state, message: "WebApp was not found." };
+    return { ready: false, info, state, message: t("webapp.notFound") };
   }
   const message = !info.signedIn
-    ? "Sign in before publishing through Tunnel Hub."
+    ? t("webapp.publishSignInRequired")
     : !info.tunnelEnabled
-      ? "Enable Tunnel Hub before publishing."
+      ? t("webapp.publishEnableTunnel")
       : !info.tunnelConnected
-        ? "Tunnel Hub is not connected. Publishing will retry the connection."
-        : "Ready to publish through Tunnel Hub.";
+        ? t("webapp.publishTunnelDisconnectedRetry")
+        : t("webapp.publishReady");
   return { ready: info.configured && info.tunnelConnected, info, state, message };
 }
 
@@ -149,10 +150,10 @@ function requireLoopbackTarget(targetUrl: string) {
   try {
     parsed = new URL(targetUrl);
   } catch {
-    throw new Error("WebApp runtime did not return a valid local URL.");
+    throw new Error(t("webapp.publishInvalidLocalUrl"));
   }
   if (parsed.protocol !== "http:" || !LOOPBACK_HOSTS.has(parsed.hostname.toLowerCase())) {
-    throw new Error("Tunnel publishing only accepts a loopback HTTP WebApp target.");
+    throw new Error(t("webapp.publishLoopbackOnly"));
   }
   parsed.username = "";
   parsed.password = "";
@@ -164,10 +165,10 @@ async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: strin
   const settings = readTunnelHubSettings(app);
   const siteToken = readTunnelHubRegistrationBearerToken(app);
   if (!siteToken) {
-    throw new Error("Sign in before publishing through Tunnel Hub.");
+    throw new Error(t("webapp.publishSignInRequired"));
   }
   if (!settings.enabled || !settings.relayUrl || !settings.deviceId) {
-    throw new Error("Enable Tunnel Hub before publishing.");
+    throw new Error(t("webapp.publishEnableTunnel"));
   }
   const name = stableWebappName(item.id);
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
@@ -185,19 +186,23 @@ async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: strin
   );
   const raw = await response.text();
   if (!response.ok) {
-    throw new Error(`Tunnel Hub WebApp registration failed (${response.status} ${response.statusText}): ${raw}`);
+    throw new Error(t("webapp.publishRegistrationFailed", {
+      status: response.status,
+      statusText: response.statusText,
+      message: raw
+    }));
   }
   let data: TunnelWebappResponse;
   try {
     const parsed = JSON.parse(raw) as unknown;
     data = parsed && typeof parsed === "object" ? parsed as TunnelWebappResponse : {};
   } catch {
-    throw new Error("Tunnel Hub returned an invalid WebApp registration response.");
+    throw new Error(t("webapp.publishInvalidRegistrationResponse"));
   }
   const publicHost = readText(data.publicHost);
   const publicUrl = readText(data.publicUrl) || (publicHost ? `https://${publicHost}` : "");
   if (!readText(data.routeId) || !publicHost || !/^https:\/\//iu.test(publicUrl)) {
-    throw new Error("Tunnel Hub did not return a complete WebApp route.");
+    throw new Error(t("webapp.publishIncompleteRoute"));
   }
   return {
     name: readText(data.name) || name,
@@ -235,7 +240,7 @@ async function ensureTunnelConnected(app: App) {
   }
   const result = await startTunnelHubRuntime();
   if (!result.ok || !result.status.connected) {
-    throw new Error(result.message || "Tunnel Hub is not connected.");
+    throw new Error(result.message || t("webapp.publishTunnelDisconnected"));
   }
   return result.status;
 }
@@ -247,7 +252,7 @@ function enableTunnelForPublish(app: App) {
   }
   const result = saveTunnelHubSettings(app, { enabled: true });
   if (!result.ok || !result.settings.enabled) {
-    throw new Error(result.message || "Tunnel Hub could not be enabled for publishing.");
+    throw new Error(result.message || t("webapp.publishTunnelEnableFailed"));
   }
   return result.settings;
 }
@@ -260,7 +265,7 @@ export async function publishWebapp(
   const item = findWebapp(app, id);
   const info = inspectPublishInfo(app);
   if (!item) {
-    const state = createState({ id: id.trim() }, { status: "error", message: "WebApp was not found." });
+    const state = createState({ id: id.trim() }, { status: "error", message: t("webapp.notFound") });
     return { ok: false, info, state, message: state.message };
   }
   const previous = readWebappPublishState(app, item.id);
@@ -269,12 +274,12 @@ export async function publishWebapp(
     status: "publishing",
     active: previous?.active === true,
     targetUrl: runtime?.webUrl || previous?.targetUrl || "",
-    message: "Publishing through Tunnel Hub..."
+    message: t("webapp.publishing")
   });
   writePublishState(app, state);
   try {
     if (runtime?.status !== "running" || !runtime.webUrl) {
-      throw new Error("Start the WebApp before publishing.");
+      throw new Error(t("webapp.publishStartRequired"));
     }
     enableTunnelForPublish(app);
     await ensureTunnelConnected(app);
@@ -283,7 +288,7 @@ export async function publishWebapp(
       status: "published",
       ...route,
       active: true,
-      message: "Published through Tunnel Hub."
+      message: t("webapp.published")
     });
     writePublishState(app, state);
     return { ok: true, info: inspectPublishInfo(app), state, message: state.message };
@@ -304,12 +309,17 @@ export async function unpublishWebapp(app: App, id: string): Promise<WebappPubli
   const item = findWebapp(app, id);
   const info = inspectPublishInfo(app);
   if (!item) {
-    const state = createState({ id: id.trim() }, { status: "error", message: "WebApp was not found." });
+    const state = createState({ id: id.trim() }, { status: "error", message: t("webapp.notFound") });
     return { ok: false, info, state, message: state.message };
   }
   const previous = readWebappPublishState(app, item.id);
   if (!previous?.active) {
-    const state = createState(item, { ...previous, status: "unpublished", active: false, message: "WebApp is not published." });
+    const state = createState(item, {
+      ...previous,
+      status: "unpublished",
+      active: false,
+      message: t("webapp.notPublished")
+    });
     writePublishState(app, state);
     return { ok: true, info, state, message: state.message };
   }
@@ -319,7 +329,7 @@ export async function unpublishWebapp(app: App, id: string): Promise<WebappPubli
       status: "unpublished",
       ...route,
       active: false,
-      message: "Tunnel publishing stopped."
+      message: t("webapp.publishStopped")
     });
     writePublishState(app, state);
     return { ok: true, info: inspectPublishInfo(app), state, message: state.message };
@@ -347,7 +357,7 @@ export async function syncPublishedWebappRoute(app: App, item: WebappEntry, runt
       status: "published",
       ...route,
       active: true,
-      message: "Tunnel route synchronized."
+      message: t("webapp.publishRouteSynchronized")
     });
     writePublishState(app, state);
     return state;
@@ -357,7 +367,7 @@ export async function syncPublishedWebappRoute(app: App, item: WebappEntry, runt
       status: "error",
       active: true,
       targetUrl: runtime.webUrl,
-      message: `Tunnel route synchronization failed: ${errorMessage(error)}`
+      message: t("webapp.publishRouteSyncFailed", { message: errorMessage(error) })
     });
     writePublishState(app, state);
     return state;

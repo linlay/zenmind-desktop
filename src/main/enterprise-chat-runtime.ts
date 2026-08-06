@@ -56,6 +56,7 @@ import {
   DEFAULT_ENTERPRISE_IM_BASE_URL,
   normalizeEnterpriseImBaseUrl
 } from "./enterprise-im-settings";
+import { t } from "./i18n/main-i18n";
 import { getDesktopSsoAccessToken } from "./oidc-sso";
 
 const ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS = 15_000;
@@ -214,6 +215,37 @@ function normalizeAttachment(value: unknown): EnterpriseChatAttachment | null {
   };
 }
 
+function localizedDesktopActionSummary(
+  action: string,
+  args: Record<string, unknown>,
+  fallback: string
+) {
+  let summary = "";
+  switch (action) {
+    case "desktop.webapp.open":
+      summary = t("enterpriseChat.desktopActionWebappOpen");
+      break;
+    case "desktop.webapp.updatePreferences":
+      summary = t("enterpriseChat.desktopActionWebappUpdate");
+      break;
+    case "desktop.webapp.restart":
+      summary = t("enterpriseChat.desktopActionWebappRestart");
+      break;
+    case "desktop.support.requestWebappLogs":
+      summary = t("enterpriseChat.desktopActionWebappRequestLogs");
+      break;
+    default:
+      break;
+  }
+  if (!summary) {
+    return fallback;
+  }
+  const target = readText(args.webappId) || readText(args.id);
+  return target
+    ? `${summary}${t("enterpriseChat.desktopActionTargetSuffix", { target })}`
+    : summary;
+}
+
 function normalizeDesktopAction(value: unknown): EnterpriseChatDesktopAction | undefined {
   const payload = isRecord(value) ? value : {};
   const requestId = readText(payload.requestId);
@@ -224,12 +256,13 @@ function normalizeDesktopAction(value: unknown): EnterpriseChatDesktopAction | u
     return undefined;
   }
   const args = isRecord(payload.args) ? payload.args : {};
+  const fallbackSummary = definition.summary(args);
   return {
     requestId,
     targetDeviceId,
     action,
     args,
-    summary: definition.summary(args).slice(0, 500),
+    summary: localizedDesktopActionSummary(action, args, fallbackSummary).slice(0, 500),
     operatorNote: readText(payload.operatorNote).slice(0, 500),
     expiresAt: readEpochMilliseconds(payload.expiresAt)
   };
@@ -2140,6 +2173,7 @@ export class EnterpriseChatRuntime {
 }
 
 export const __testInternals = {
+  normalizeDesktopAction,
   mergeConversationUsers,
   normalizeConversation,
   normalizeMessage,

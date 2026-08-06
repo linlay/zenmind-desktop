@@ -75,6 +75,9 @@ const {
   registerWebIpcHandlers
 } = require("../dist-electron/main/ipc/web-handlers.js");
 const {
+  setMainLocaleForCurrentProcess
+} = require("../dist-electron/main/i18n/main-i18n.js");
+const {
   readInstalledRecords,
   upsertInstalledRecord
 } = require("../dist-electron/main/marketplace/common.js");
@@ -871,6 +874,7 @@ test("webapps remove deletes removable installs and rejects managed sources", as
 });
 
 test("removing a published WebApp disables its Tunnel route before deleting files", async (t) => {
+  setMainLocaleForCurrentProcess("en-US");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-remove-published-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -932,6 +936,8 @@ test("removing a published WebApp disables its Tunnel route before deleting file
 });
 
 test("webapp ipc import installs local archive and returns refreshed web entries", async (t) => {
+  setMainLocaleForCurrentProcess("zh-CN");
+  t.after(() => setMainLocaleForCurrentProcess("en-US"));
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-ipc-import-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
@@ -948,7 +954,11 @@ test("webapp ipc import installs local archive and returns refreshed web entries
     app,
     showFileDialog: async (options) => {
       assert.equal(options.properties.includes("openFile"), true);
-      assert.equal(options.filters.some((filter) => filter.extensions.includes("zip")), true);
+      assert.equal(options.title, "导入网站应用");
+      assert.deepEqual(options.filters, [{
+        name: "网站应用归档",
+        extensions: ["zip", "tgz", "tar.gz"]
+      }]);
       return { canceled: false, filePaths: [archivePath] };
     },
     showSaveDialog: async () => assert.fail("save dialog should not be opened"),
@@ -963,14 +973,21 @@ test("webapp ipc import installs local archive and returns refreshed web entries
   assert.deepEqual(changes, [{ reason: "installed", webappId: "reg-report-excelx-webapp" }]);
   assert.equal(result.item?.entryKey, "webapp:reg-report-excelx-webapp");
   assert.equal(result.path, archivePath);
+  assert.equal(result.message, "已安装网站应用 监管报表与 Excel 工具。");
   assert.equal(fs.existsSync(webappManifestPath(homePath, "reg-report-excelx-webapp")), true);
   assert.deepEqual(result.items.map((item) => item.entryKey), [
     "website:docs",
     "webapp:reg-report-excelx-webapp"
   ]);
+
+  const runtimeSettings = await ipcMain.invoke("webs.webapps.getRuntimeSettings");
+  assert.equal(runtimeSettings.message, "已加载网站应用运行时设置。");
+  const savedSettings = await ipcMain.invoke("webs.webapps.saveRuntimeSettings", {});
+  assert.equal(savedSettings.message, "已保存网站应用运行时设置。");
 });
 
 test("webapp IPC exports an importable program-only ZIP archive", async (t) => {
+  setMainLocaleForCurrentProcess("en-US");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-ipc-export-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
@@ -1271,6 +1288,8 @@ test("WebApp install transactions rollback, commit, and recover without version 
 });
 
 test("webapp publisher reports Tunnel readiness without exposing the SSO site token", async (t) => {
+  setMainLocaleForCurrentProcess("zh-CN");
+  t.after(() => setMainLocaleForCurrentProcess("en-US"));
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-publisher-info-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
@@ -1295,6 +1314,7 @@ test("webapp publisher reports Tunnel readiness without exposing the SSO site to
   assert.equal(result.info.tunnelEnabled, true);
   assert.equal(result.info.tunnelConnected, false);
   assert.equal(result.info.deviceId, "mac-mini-office");
+  assert.equal(result.message, "Tunnel Hub 当前未连接；发布时会重试连接。");
   assert.doesNotMatch(JSON.stringify(result), /publisher-site-secret/u);
 });
 

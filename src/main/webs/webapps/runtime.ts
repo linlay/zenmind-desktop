@@ -432,7 +432,7 @@ function revokeRecordActionTokens(record: RuntimeRecord) {
 
 function prerequisiteMessage(check: WebappLauncherCheck) {
   return check.issues.map((entry) => entry.message).filter(Boolean).join(" ") ||
-    "WebApp runtime prerequisites are satisfied.";
+    t("webapp.runtimePrerequisitesReady");
 }
 
 export class WebappRuntime {
@@ -819,7 +819,7 @@ export class WebappRuntime {
   async stop(
     app: App,
     webappId: string,
-    message = t("service.stopped", { name: t("settings.websites.label") })
+    message = t("webapp.stopped")
   ): Promise<WebappCommandResult> {
     const id = webappId.trim();
     const item = findWebapp(app, id);
@@ -830,7 +830,7 @@ export class WebappRuntime {
         await record.gateway?.close();
       } catch (error) {
         const gatewayMessage = error instanceof Error ? error.message : String(error);
-        gatewayFailureMessage = `WebApp gateway failed to close: ${gatewayMessage}`;
+        gatewayFailureMessage = t("webapp.gatewayCloseFailed", { message: gatewayMessage });
       }
       record.gateway = null;
       revokeRecordActionTokens(record);
@@ -838,7 +838,9 @@ export class WebappRuntime {
         const terminated = await terminateRuntimeChild(record.child);
         if (!terminated) {
           const pid = record.child.pid ?? record.state.pid;
-          const failureMessage = `WebApp process tree is still running${pid ? ` (PID ${pid})` : ""}.`;
+          const failureMessage = pid
+            ? t("webapp.processTreeStillRunningWithPid", { pid })
+            : t("webapp.processTreeStillRunning");
           record.state = {
             ...record.state,
             status: "error",
@@ -907,7 +909,7 @@ export class WebappRuntime {
         getWebappDir(app, id)
       );
       if (identityMatch === "unknown") {
-        const failureMessage = `Unable to verify WebApp process ownership (PID ${stored.pid}).`;
+        const failureMessage = t("webapp.processOwnershipUnknown", { pid: stored.pid });
         const failedState = {
           ...stored,
           status: "error" as const,
@@ -931,8 +933,9 @@ export class WebappRuntime {
           await terminateCapturedProcessTreeAsync(stored.pid, capturedPids);
         const remainingPids = capturedPids.filter((pid) => isProcessRunning(pid));
         if (!terminated || remainingPids.length > 0) {
-          const failureMessage =
-            `WebApp process tree is still running (PID ${remainingPids.join(", ") || stored.pid}).`;
+          const failureMessage = t("webapp.processTreeStillRunningWithPid", {
+            pid: remainingPids.join(", ") || stored.pid
+          });
           const failedState = {
             ...stored,
             status: "error" as const,

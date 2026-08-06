@@ -220,7 +220,7 @@ class WebappWindowManager {
       return fail(null, null, t("webapp.notFound"));
     }
     if (this.disposingIds.has(normalizedId)) {
-      return fail(item, webappRuntime.getStatus(app, normalizedId), "WebApp is being removed.");
+      return fail(item, webappRuntime.getStatus(app, normalizedId), t("webapp.removing"));
     }
 
     const existing = this.windows.get(normalizedId);

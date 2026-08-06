@@ -158,7 +158,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     const result = await showFileDialog({
       title: t("dialog.importWebapp.title"),
       properties: ["openFile"],
-      filters: [{ name: "WebApp Archive", extensions: ["zip", "tgz", "tar.gz"] }]
+      filters: [{ name: t("webapp.archiveFilter"), extensions: ["zip", "tgz", "tar.gz"] }]
     });
 
     const currentItems = listWebEntries(app).items;
@@ -219,7 +219,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     const saveResult = await showSaveDialog({
       title: t("dialog.exportWebapp.title"),
       defaultPath: path.join(app.getPath("desktop"), `${item.id}-${item.version}.zip`),
-      filters: [{ name: "WebApp Archive", extensions: ["zip"] }]
+      filters: [{ name: t("webapp.archiveFilter"), extensions: ["zip"] }]
     });
     if (saveResult.canceled || !saveResult.filePath) {
       return {
@@ -275,7 +275,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   ipcMain.handle("webs.webapps.getRuntimeSettings", async () => ({
     ok: true,
     settings: readWebappRuntimeSettings(app),
-    message: "WebApp runtime settings loaded."
+    message: t("webapp.runtimeSettingsLoaded")
   }));
   ipcMain.handle("webs.webapps.saveRuntimeSettings", async (_event: any, input: any) => {
     const settings = writeWebappRuntimeSettings(app, input && typeof input === "object" ? input : {});
@@ -283,7 +283,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     return {
       ok: true,
       settings,
-      message: "WebApp runtime settings saved."
+      message: t("webapp.runtimeSettingsSaved")
     };
   });
   ipcMain.handle("webs.webapps.getPublishStatus", async (_event: any, id: string) =>
