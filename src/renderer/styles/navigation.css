@@ -1268,11 +1268,26 @@
   border-color: rgba(136, 151, 172, 0.18);
 }
 
+.sidebar-group-heading[data-sidebar-group-id="assistants"],
+.sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="assistants"]:focus-visible,
+.sidebar-group-heading[data-sidebar-group-id="webs"],
+.sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="webs"]:focus-visible,
+.sidebar-group-heading[data-sidebar-group-id="chats"],
+.sidebar-group-heading[data-sidebar-group-id="chats"]:hover,
+.sidebar-group-heading[data-sidebar-group-id="chats"]:focus-visible {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
 .sidebar-group-heading[data-sidebar-group-id="webs"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active:not(:hover):not(:focus-visible),
 .sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
 }
 
 .app-sidebar.is-collapsed .sidebar-group-heading-main {
@@ -2919,6 +2934,21 @@
 :root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"].is-active:not(:hover):not(:focus-visible) {
   background: transparent;
   border-color: transparent;
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"]:hover,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"]:focus-visible,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"]:hover,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"]:focus-visible,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"]:hover,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"]:focus-visible,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="assistants"].is-active,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="webs"].is-active,
+:root[data-theme="dark"] .sidebar-group-heading[data-sidebar-group-id="chats"].is-active {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .assistant-worker-collapse-item {
