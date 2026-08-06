@@ -1796,7 +1796,7 @@ test("WebApp action tokens are scoped to the issuing app and assistant allowlist
   const token = issueWebappActionToken(item, "backendActionToken");
   assert.deepEqual(
     authorizeWebappActionToken(token, "desktop.assistant.complete", "backendActionToken"),
-    { ok: true, webappId: "scoped-app", scope: "backendActionToken" }
+    { ok: false, webappId: "", scope: null }
   );
   assert.deepEqual(
     authorizeWebappActionToken(token, "desktop.assistant.chat"),
@@ -1820,11 +1820,9 @@ test("WebApp action tokens are scoped to the issuing app and assistant allowlist
 test("WebApp capability policy keeps backend tokens narrower than the local page gateway", () => {
   const legacy = { id: "legacy", schemaVersion: 4 };
   assert.deepEqual(getWebappAllowedActions(legacy, "backendActionToken"), [
-    "desktop.assistant.complete",
     "desktop.assistant.chat"
   ]);
   assert.deepEqual(getWebappAllowedActions(legacy, "localPageGateway"), [
-    "desktop.assistant.complete",
     "desktop.assistant.chat"
   ]);
   assert.equal(isWebappActionAllowed(legacy, "backendActionToken", "desktop.webapp.selectDirectory"), false);

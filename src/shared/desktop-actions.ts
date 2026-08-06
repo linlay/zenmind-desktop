@@ -44,7 +44,6 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
   { name: "desktop.assistant.chat", kind: "execute", category: "assistant", description: "Send a general message to the Desktop helper agent. Args: { message }." },
-  { name: "desktop.assistant.complete", kind: "execute", category: "assistant", description: "Generate text with the Desktop helper agent. Args: { prompt, instruction? }." },
 
   { name: "desktop.capabilities.list", kind: "read", category: "capabilities", description: "List the capabilities exposed to the calling local WebApp page." },
 

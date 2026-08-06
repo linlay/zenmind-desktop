@@ -6,7 +6,6 @@ import {
 } from "../../../shared/webapp-bridge";
 
 const LEGACY_V4_BACKEND_ACTIONS = Object.freeze([
-  "desktop.assistant.complete",
   WEBAPP_BRIDGE_ACTIONS.assistantChat
 ] as const);
 

@@ -245,7 +245,6 @@ class WebappActionRateLimiter {
 const webappActionRateLimiter = new WebappActionRateLimiter();
 const CONFIRMATION_COMPACT_VALUE_MAX_CHARS = 280;
 const MAX_ASSISTANT_PROMPT_CHARS = 12_000;
-const MAX_ASSISTANT_INSTRUCTION_CHARS = 2_000;
 let activeServer: http.Server | null = null;
 let activeServerPort = 0;
 
@@ -1734,46 +1733,6 @@ async function executeAction(
   }
 
   switch (action) {
-    case "desktop.assistant.complete": {
-      const prompt = readString(args, "prompt");
-      const instruction = readString(args, "instruction");
-      if (!prompt) {
-        return fail(action, "invalid_args", "prompt is required");
-      }
-      if (prompt.length > MAX_ASSISTANT_PROMPT_CHARS) {
-        return fail(action, "invalid_args", `prompt must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`);
-      }
-      if (instruction.length > MAX_ASSISTANT_INSTRUCTION_CHARS) {
-        return fail(action, "invalid_args", `instruction must be at most ${MAX_ASSISTANT_INSTRUCTION_CHARS} characters`);
-      }
-      const settings = getAssistantSettings(options.app);
-      const completion = await options.assistantBridge.completeText({
-        agentKey: settings.desktopHelperAgentKey,
-        source: "copilot",
-        action: "chat",
-        message: instruction
-          ? `${instruction}\n\nUSER REQUEST:\n${prompt}`
-          : prompt
-      });
-      if (!completion.ok) {
-        return fail(action, "assistant_failed", completion.message, {
-          runId: completion.runId,
-          chatId: completion.chatId
-        });
-      }
-      const text = completion.text.trim();
-      if (!text) {
-        return fail(action, "assistant_empty", "Desktop assistant returned an empty response", {
-          runId: completion.runId,
-          chatId: completion.chatId
-        });
-      }
-      return ok(action, {
-        text,
-        runId: completion.runId,
-        chatId: completion.chatId
-      });
-    }
     case "desktop.assistant.chat": {
       const message = readString(args, "message");
       if (!message) {

@@ -223,28 +223,17 @@ test("desktop assistant chat forwards a general message without business prompts
   assert.equal(oversized.error.code, "invalid_args");
 });
 
-test("desktop assistant complete uses the configured helper without exposing credentials", async (t) => {
-  const { calls, options } = createDesktopActionOptions(t);
+test("removed desktop assistant complete action returns unknown_action", async (t) => {
+  const { options } = createDesktopActionOptions(t);
   const response = await handleDesktopActionRequest(options, {
     action: "desktop.assistant.complete",
     args: { prompt: "总结这段文字", instruction: "只返回一句中文" },
     permissionMode: "full_access"
   });
 
-  assert.equal(response.ok, true);
-  assert.equal(response.result.text, "Hello world");
-  assert.equal(response.result.runId, "run-assistant");
-  assert.equal(calls.completions.length, 1);
-  assert.match(calls.completions[0].message, /只返回一句中文/u);
-  assert.match(calls.completions[0].message, /总结这段文字/u);
-
-  const invalid = await handleDesktopActionRequest(options, {
-    action: "desktop.assistant.complete",
-    args: { prompt: "" },
-    permissionMode: "full_access"
-  });
-  assert.equal(invalid.ok, false);
-  assert.equal(invalid.error.code, "invalid_args");
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "unknown_action");
+  assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name === "desktop.assistant.complete"), false);
 });
 
 test("removed WebApp actions return unknown_action without legacy aliases", async (t) => {
