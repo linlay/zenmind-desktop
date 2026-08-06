@@ -252,6 +252,32 @@
   container-type: inline-size;
 }
 
+:root[data-theme="dark"] .control-center-page.workspace-wide,
+:root[data-theme="dark"] .control-center-page {
+  --control-center-card: #232323;
+  --control-center-card-muted: #232323;
+}
+
+:root[data-theme="dark"] .service-nav-card:hover,
+:root[data-theme="dark"] .service-nav-card:focus-visible,
+:root[data-theme="dark"] .service-nav-card.is-active {
+  background: #232323;
+}
+
+:root[data-theme="dark"] .control-center-page .loading-box.control-center-empty,
+:root[data-theme="dark"] .control-center-page .service-card.control-center-empty,
+:root[data-theme="dark"] .control-center-page .control-center-detail,
+:root[data-theme="dark"] .control-center-page .control-center-detail.control-center-empty {
+  background: #232323;
+}
+
+:root[data-theme="dark"] .control-center-page .service-card,
+:root[data-theme="dark"] .control-center-page .control-center-service-hero,
+:root[data-theme="dark"] .control-center-page .config-panel,
+:root[data-theme="dark"] .control-center-page .plugin-settings-panel {
+  background: #232323;
+}
+
 .control-center-page .loading-box,
 .control-center-page .service-card,
 .control-center-empty {
