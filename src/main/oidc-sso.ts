@@ -23,7 +23,11 @@ import {
   buildDesktopSsoAvatarUrl,
   DESKTOP_SSO_AVATAR_PROTOCOL
 } from "../shared/sso-avatar";
-import { getDesktopStateRoot, getSecretsRoot } from "./user-paths";
+import {
+  getDesktopSsoAccessTokenFilePath,
+  getDesktopStateRoot,
+  getSecretsRoot
+} from "./user-paths";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { t } from "./i18n/main-i18n";
 import { clearCachedDesktopSsoAvatar } from "./sso-avatar-storage";
@@ -299,7 +303,6 @@ const LOGOUT_CALLBACK_PATH = "/api/auth/oidc/logout-callback";
 const RETURN_TO_APP_PATH = "/api/auth/oidc/return-to-app";
 const SESSION_FILE_NAME = "sso-session.json";
 const USER_INFO_FILE_NAME = "sso-user-info.json";
-const ACCESS_TOKEN_FILE_NAME = "sso-access-token.txt";
 const SITE_TOKEN_FILE_NAME = "sso-site-token.json";
 const DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS = 15 * 60_000;
 export const DESKTOP_SSO_CONFIG_FILE_NAME = "sso.json";
@@ -526,10 +529,6 @@ function getSessionPath(app: App) {
 
 export function getDesktopSsoUserInfoFilePath(app: Pick<App, "getPath">) {
   return path.join(getDesktopStateRoot(app as App), USER_INFO_FILE_NAME);
-}
-
-export function getDesktopSsoAccessTokenFilePath(app: Pick<App, "getPath">) {
-  return path.join(getDesktopStateRoot(app as App), ACCESS_TOKEN_FILE_NAME);
 }
 
 export function getDesktopSsoSiteTokenFilePath(app: Pick<App, "getPath">) {
@@ -1491,7 +1490,21 @@ function saveAccessTokenFile(app: Pick<App, "getPath">, accessToken: string) {
   }
   const filePath = getDesktopSsoAccessTokenFilePath(app);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`
+  );
+  try {
+    fs.writeFileSync(temporaryPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+    fs.renameSync(temporaryPath, filePath);
+  } catch (error) {
+    try {
+      fs.rmSync(temporaryPath, { force: true });
+    } catch {
+      // Preserve the publish failure; a same-directory temp file is never authoritative.
+    }
+    throw error;
+  }
 }
 
 function normalizeTokenResponseString(record: Record<string, unknown>, ...keys: string[]) {
@@ -1557,10 +1570,15 @@ export function removeDesktopSsoSiteTokenFile(app: Pick<App, "getPath">) {
 }
 
 function removeAccessTokenFile(app: Pick<App, "getPath">) {
+  const filePath = getDesktopSsoAccessTokenFilePath(app);
   try {
-    fs.rmSync(getDesktopSsoAccessTokenFilePath(app), { force: true });
-  } catch {
-    // Token file cleanup is best effort; logout still clears in-memory state.
+    fs.rmSync(filePath, { force: true });
+    if (fs.existsSync(filePath)) {
+      return new Error(`access token file still exists after removal: ${filePath}`);
+    }
+    return null;
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
   }
 }
 
@@ -1837,7 +1855,7 @@ function clearSession(app: App) {
   currentSessionMetadata = null;
   loadedSessionPath = getSessionPath(app);
   unverifiedCookieSessionCandidate = false;
-  removeAccessTokenFile(app);
+  const accessTokenRemovalError = removeAccessTokenFile(app);
   removeDesktopSsoSiteTokenFile(app);
   removeUserInfoFile(app);
   clearCachedDesktopSsoAvatar(app);
@@ -1847,6 +1865,7 @@ function clearSession(app: App) {
   } catch {
     // Session cleanup is best effort; the in-memory state is authoritative for this run.
   }
+  return accessTokenRemovalError;
 }
 
 function readFetchErrorStatus(response: FetchResponseLike) {
@@ -3966,11 +3985,23 @@ export async function logoutDesktopSso(app: App, hooks: CallbackHooks = {}): Pro
   }
   const logoutIdToken = currentIdToken;
   const logoutAuthMode = currentSessionAuthMode;
-  clearSession(app);
+  const accessTokenRemovalError = clearSession(app);
   const status = configResult.configured
     ? createSignedOutStatus(t("sso.signedOut"))
     : createUnconfiguredStatus(configResult.message);
   setCurrentStatus(status);
+  if (accessTokenRemovalError) {
+    const message = t("sso.accessTokenRevokeFailed", {
+      error: accessTokenRemovalError.message
+    });
+    const failedStatus = createFailedStatus(message);
+    setCurrentStatus(failedStatus);
+    return {
+      ok: false,
+      status: cloneStatus(failedStatus),
+      message
+    };
+  }
   if (!configResult.configured) {
     return {
       ok: true,
@@ -4090,6 +4121,7 @@ export const __testInternals = {
   getDesktopSsoSiteTokenBridgeCookieOrigins,
   isDesktopSsoLoginCompletionUrl,
   readCookieAccessTokenFromResponse,
+  saveAccessTokenFile,
   saveDesktopSsoSiteTokenFile,
   normalizeCallbackRequest,
   getDefaultOidcFetch,

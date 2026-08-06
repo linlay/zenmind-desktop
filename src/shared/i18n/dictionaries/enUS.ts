@@ -2256,6 +2256,7 @@ export const enUSMessages = {
   "sso.cookieAccessTokenEmpty": "Cookie access_token is empty.",
   "sso.signedOut": "Signed out of Desktop single sign-on.",
   "sso.loginStateCleared": "Desktop login state cleared.",
+  "sso.accessTokenRevokeFailed": "Failed to revoke the local access token: {error}",
   "sso.noPendingLogin": "There is no single sign-on in progress.",
   "sso.callbackHttpOnly": "Desktop SSO callback URL only supports http.",
   "sso.callbackPortInUse": "OIDC callback port {port} is already in use.",

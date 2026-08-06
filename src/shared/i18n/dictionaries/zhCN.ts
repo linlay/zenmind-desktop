@@ -2256,6 +2256,7 @@ export const zhCNMessages = {
   "sso.cookieAccessTokenEmpty": "Cookie access_token 为空。",
   "sso.signedOut": "已退出 Desktop 单点登录。",
   "sso.loginStateCleared": "已清除 Desktop 登录状态。",
+  "sso.accessTokenRevokeFailed": "撤销本地访问令牌失败：{error}",
   "sso.noPendingLogin": "没有正在进行的单点登录。",
   "sso.callbackHttpOnly": "Desktop SSO 回调地址只支持 http。",
   "sso.callbackPortInUse": "OIDC 回调端口 {port} 已被占用。",

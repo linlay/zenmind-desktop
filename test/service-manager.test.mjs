@@ -44,7 +44,10 @@ const {
   __testInternals: pluginResourceInternals
 } = require("../dist-electron/main/plugin-resources.js");
 const { updateDesktopProfileInRoot } = require("../dist-electron/main/desktop-profile-store.js");
-const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
+const {
+  getDesktopConfigRoot,
+  getDesktopSsoAccessTokenFilePath
+} = require("../dist-electron/main/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..");
 const TEST_IDENTITY_CENTER_BCRYPT = "$2a$10$VAC1MOfQV2f6L3LqgU5PweT25AdVaRK3yvMLwXjA0uRUhtnbbQ1ue";
@@ -2221,7 +2224,7 @@ test("desktop managed service commands keep deploy, start, and stop contracts se
       assert.equal(hubDeployCommand.includes(forbidden), false, `${forbidden} should not be passed to agent-container-hub deploy`);
     }
 
-    const hubStartCommand = __testInternals.appendDesktopManagedLayoutFlags(containerHub, ["start.sh"], containerHubLayout, "start");
+    const hubStartCommand = __testInternals.appendDesktopManagedLayoutFlags(app, containerHub, ["start.sh"], containerHubLayout, "start");
     assertFlag(hubStartCommand, "--config-dir", containerHubLayout.configDir);
     assertFlag(hubStartCommand, "--data-dir", containerHubLayout.dataDir);
     assertFlag(hubStartCommand, "--state-dir", containerHubLayout.stateDir);
@@ -2229,7 +2232,7 @@ test("desktop managed service commands keep deploy, start, and stop contracts se
     assertFlag(hubStartCommand, "--bind-addr", `127.0.0.1:${containerHub.web.defaultPort}`);
 
     assert.deepEqual(
-      __testInternals.appendDesktopManagedLayoutFlags(containerHub, ["stop.sh"], containerHubLayout, "stop"),
+      __testInternals.appendDesktopManagedLayoutFlags(app, containerHub, ["stop.sh"], containerHubLayout, "stop"),
       ["stop.sh", "--state-dir", containerHubLayout.stateDir]
     );
 
@@ -2245,6 +2248,7 @@ test("desktop managed service commands keep deploy, start, and stop contracts se
     };
 
     const startCommand = __testInternals.appendDesktopManagedLayoutFlags(
+      app,
       identityCenter,
       ["start.sh"],
       identityLayout,
@@ -2262,7 +2266,7 @@ test("desktop managed service commands keep deploy, start, and stop contracts se
     assert.equal(deployCommand.includes("--data-dir"), false);
     assert.equal(deployCommand.includes("--log-dir"), false);
     assert.deepEqual(
-      __testInternals.appendDesktopManagedLayoutFlags(identityCenter, ["stop.sh"], identityLayout, "stop"),
+      __testInternals.appendDesktopManagedLayoutFlags(app, identityCenter, ["stop.sh"], identityLayout, "stop"),
       ["stop.sh", "--state-dir", identityLayout.stateDir]
     );
 
@@ -2367,7 +2371,7 @@ test("desktop managed service commands insert configured lifecycle args before m
       ["start.sh", "--manifest-arg"],
       "start"
     );
-    const startCommand = __testInternals.appendDesktopManagedLayoutFlags(service, startCommandWithArgs, layout, "start");
+    const startCommand = __testInternals.appendDesktopManagedLayoutFlags(app, service, startCommandWithArgs, layout, "start");
     assert.deepEqual(startCommand.slice(0, 2), [
       "start.sh",
       "--manifest-arg"
@@ -2386,7 +2390,7 @@ test("desktop managed service commands insert configured lifecycle args before m
       "stop"
     );
     assert.deepEqual(
-      __testInternals.appendDesktopManagedLayoutFlags(service, stopCommandWithArgs, layout, "stop"),
+      __testInternals.appendDesktopManagedLayoutFlags(app, service, stopCommandWithArgs, layout, "stop"),
       ["stop.sh", "--manifest-arg", "--state-dir", layout.stateDir]
     );
 
@@ -2533,6 +2537,7 @@ test("agent-platform deploy command only appends Desktop required args", async (
       "--state-dir",
       "--log-dir",
       "--port",
+      "--identity-file",
       "--daemon",
       "--ai-vision-general-model-key",
       "--ai-vision-ocr-model-key",
@@ -2554,13 +2559,14 @@ test("agent-platform deploy command only appends Desktop required args", async (
     assert.equal(command.includes("--local-public-key-file"), false);
     assert.notEqual(identityCenterPublicKeyPath, publicKeyPath);
 
-    const startCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["start.sh"], layout, "start");
+    const startCommand = __testInternals.appendDesktopManagedLayoutFlags(app, service, ["start.sh"], layout, "start");
     assertFlag(startCommand, "--config-dir", layout.configDir);
     assert.equal(startCommand.includes("--runtime-dir"), false);
     assertFlag(startCommand, "--state-dir", layout.stateDir);
     assertFlag(startCommand, "--log-dir", layout.logDir);
     assertFlag(startCommand, "--port", String(fixture.ports.platform));
-    const stopCommand = __testInternals.appendDesktopManagedLayoutFlags(service, ["stop.sh"], layout, "stop");
+    assertFlag(startCommand, "--identity-file", getDesktopSsoAccessTokenFilePath(app));
+    const stopCommand = __testInternals.appendDesktopManagedLayoutFlags(app, service, ["stop.sh"], layout, "stop");
     assert.deepEqual(stopCommand, ["stop.sh", "--state-dir", layout.stateDir]);
   } finally {
     restore();

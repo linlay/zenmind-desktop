@@ -176,6 +176,7 @@ import {
   getConfiguredServiceLifecycleArgs,
   type ServiceLifecycleCommandKind
 } from "../../service-lifecycle-args";
+import { getDesktopSsoAccessTokenFilePath } from "../../user-paths";
 import {
   completeDesktopServiceConfigUpgrade,
   DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,
@@ -531,6 +532,7 @@ function appendDesktopConfigResetDeployArgs(
 }
 
 function appendDesktopManagedLayoutFlags(
+  app: App,
   service: ServiceDefinition,
   command: string[],
   layout: ServiceLayout,
@@ -548,7 +550,8 @@ function appendDesktopManagedLayoutFlags(
       "--config-dir", layout.configDir,
       "--state-dir", layout.stateDir,
       "--log-dir", layout.logDir,
-      "--port", String(getDesktopManagedCommandPort(service))
+      "--port", String(getDesktopManagedCommandPort(service)),
+      "--identity-file", getDesktopSsoAccessTokenFilePath(app)
     ];
   }
 
@@ -1935,6 +1938,7 @@ async function runServiceCommand(
       options.commandKind ?? "start"
     );
     const commandForExec = appendDesktopManagedLayoutFlags(
+      app,
       service,
       commandWithConfiguredArgs,
       layout,

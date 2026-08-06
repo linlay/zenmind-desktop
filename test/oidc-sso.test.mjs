@@ -527,6 +527,56 @@ test("desktop SSO logout clears only canonical session and token files", async (
   assert.equal(fs.existsSync(legacyTokenPath), true);
 });
 
+test("desktop SSO publishes the canonical access token with an atomic rename", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-token-atomic-"));
+  const app = createApp(path.join(root, "home"));
+  const accessTokenPath = __testInternals.getDesktopSsoAccessTokenFilePath(app);
+  const originalRenameSync = fs.renameSync;
+  let temporaryPath = "";
+  t.after(() => {
+    fs.renameSync = originalRenameSync;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  fs.renameSync = (from, to) => {
+    if (to === accessTokenPath) {
+      temporaryPath = from;
+    }
+    return originalRenameSync(from, to);
+  };
+
+  __testInternals.saveAccessTokenFile(app, "atomic-token");
+
+  assert.equal(fs.readFileSync(accessTokenPath, "utf8"), "atomic-token\n");
+  assert.equal(path.dirname(temporaryPath), path.dirname(accessTokenPath));
+  assert.match(path.basename(temporaryPath), /^\.sso-access-token\.txt\..+\.tmp$/u);
+  assert.equal(fs.existsSync(temporaryPath), false);
+});
+
+test("desktop SSO logout reports canonical access-token revocation failure", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-token-revoke-"));
+  const app = createApp(path.join(root, "home"));
+  const accessTokenPath = __testInternals.getDesktopSsoAccessTokenFilePath(app);
+  fs.mkdirSync(path.dirname(accessTokenPath), { recursive: true });
+  fs.writeFileSync(accessTokenPath, "stale-token\n", "utf8");
+  const originalRmSync = fs.rmSync;
+  t.after(() => {
+    fs.rmSync = originalRmSync;
+    fs.rmSync(root, { recursive: true, force: true });
+  });
+  fs.rmSync = (target, options) => {
+    if (target === accessTokenPath) {
+      throw new Error("simulated access-token removal failure");
+    }
+    return originalRmSync(target, options);
+  };
+
+  const result = await logoutDesktopSso(app);
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /simulated access-token removal failure/u);
+  assert.equal(fs.existsSync(accessTokenPath), true);
+});
+
 test("desktop sso keeps embedded browser default for ordinary OIDC without browserMode", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-oidc-sso-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

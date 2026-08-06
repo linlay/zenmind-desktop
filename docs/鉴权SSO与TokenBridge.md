@@ -44,6 +44,16 @@ state/desktop/sso-access-token.txt
   -> sync.resume / direct messages
 ```
 
+普通智能体 Host Bash：
+
+```text
+Desktop start agent-platform --identity-file <canonical token path>
+  -> Platform 每次创建 Host Bash 前重新读取文件
+  -> 可读取到非空单行 token 时注入 AP_ACCESS_TOKEN=<token>
+```
+
+Desktop 只向 Platform 传文件路径，不把 token 放入 Platform 启动参数或全局进程环境。`AP_ACCESS_TOKEN` 只进入普通智能体 Host Bash；Workspace Terminal、Container、Proxy、ACP、MCP、LSP、sidecar 和 `file_grep/file_glob` 不自动注入。
+
 嵌入式 Cookie SSO 按同一文件协议分步完成：
 
 ```text
@@ -67,7 +77,7 @@ Cookie SSO session、用户信息、access token 候选重新发布为已登录�
 
 - `authenticated`：上游 Cookie 有效，换取新 JWT，并用本次账号覆盖旧 user/token，防止账号数据混用。
 - `signed_out`：`401/403`、明确无 Cookie 会话或登录重定向；立即删除 session/user/token/site-token/头像缓存，并清理专用 SSO partition 与 default session 中配置已知的 SSO Cookie。
-- `temporarily_unavailable`：断网、超时、`429`、`5xx` 或其他不能证明会话失效的错误；保留磁盘文件和作为权威来源的上游 session Cookie，但从两个 Electron session 移除派生的旧 `access_token` Cookie。当前运行态为 `authenticated=false`，不注入旧 JWT，也不启动依赖 SSO 凭据的企业聊天与 Tunnel Hub。5 分钟定时器和 `sso.getStatus` 复用同一个单飞重试；恢复后广播状态并刷新 Website、Kanban、Market、企业聊天和 Tunnel Hub。
+- `temporarily_unavailable`：断网、超时、`429`、`5xx` 或其他不能证明会话失效的错误；保留磁盘文件和作为权威来源的上游 session Cookie，但从两个 Electron session 移除派生的旧 `access_token` Cookie。当前运行态为 `authenticated=false`，Website、企业聊天与 Tunnel Hub 不使用旧 JWT。普通智能体 Host Bash 是明确例外：其授权依据仅为 canonical token 文件是否可读，因此保留文件期间仍会注入旧 token。5 分钟定时器和 `sso.getStatus` 复用同一个单飞重试；恢复后广播状态并刷新 Website、Kanban、Market、企业聊天和 Tunnel Hub。
 
 session 验证成功后 `authenticated=true`，但当前登录尝试继续保持 `pending=true`。userinfo 与 access token 两步都尝试结束后才统一 finalize；三步全成功时登录 WebView 自动关闭，部分成功或失败时 WebView 被逐项结果面板替换，由用户选择关闭或重试。Cookie SSO 的基础用户信息来自同一次已验证 `/oauth2/auth` 响应中配置的 `userInfoHeaders`：`sub`（稳定用户 ID）是唯一必需字段，email 与 name 均可为空，name 缺失时使用 `sub` 显示。`/oauth2/userinfo` 仅做可选增强，空 email 不会把已经完成的 userInfo 步骤改为失败。只有响应头和增强接口都没有稳定用户 ID 时，token 成功才形成 `{session:true,userInfo:false,accessToken:true}` 的两文件状态。
 
@@ -123,7 +133,7 @@ Desktop WebSocket 鉴权：
 
   其中 `authenticated` 仅表示最近一次持久化验证成功，重启时仍须重新验证；临时网络失败保留该成功记录，但运行态不得据此显示已登录。明确失效或注销时直接删除文件，不写 `authenticated:false` 文件。
 - `state/desktop/sso-user-info.json`：schema v2 规范化用户信息及来源。
-- `state/desktop/sso-access-token.txt`：仅保存已成功取得的原始 access token。
+- `state/desktop/sso-access-token.txt`：仅保存已成功取得的原始 access token；以同目录临时文件原子替换发布。注销必须删除并确认 canonical 文件不存在，撤销失败时返回显式失败结果。
 - `data/desktop/sso-avatar/`：认证官网头像的本地缓存；文件名仅含用户/来源摘要，登录切换和退出时清理。
 - 已解锁的 Settings → Debug → State 会把 access token 文件作为固定白名单状态文件明文展示并允许复制；普通设置页和未解锁会话不显示这一入口。
 - `secrets/sso-site-token.json`：站点 token。
@@ -139,6 +149,7 @@ Token bridge 类型：
 ## 约束与注意事项
 
 - Desktop 本地凭据写入 `secrets/` 或 `state/`，不要进入 `config/` 文档示例。
+- `AP_ACCESS_TOKEN` 是 Agent Platform 为普通智能体 Host Bash 保留的输出变量，不是 Desktop 或 Platform `.env` 配置入口；Agent、Skill 和调用级环境不得覆盖。工具输出不自动脱敏，能够运行 Host Bash 的普通智能体属于可信凭据执行面。
 - `DesktopSsoStatus.completedSteps` 分别反映 session、userInfo、accessToken 是否完成；session 成功即 `authenticated=true`，但在剩余步骤 finalize 前保持 `pending=true`。userinfo 或 token 任一缺失时，侧栏和结果面板必须显示对应受限登录状态。
 - Cookie SSO 只信任已验证 browserSession 响应头或 Cookie userinfo 返回的稳定用户 ID；不得从未经验证的 access token claims 伪造用户信息。email 不是身份成功条件，显示名缺失时回退到稳定用户 ID。
 - Cookie 只保存在 Electron session，不写入上述三个状态文件，也不得进入日志。`persist:<storageNamespace>-sso` 只表示 partition 的存储目录可持久化，并不把没有 `Expires/Max-Age` 的 session Cookie 自动变成跨进程 Cookie。上游 Cookie 是否跨重启由服务端属性决定；Desktop 写入的 `access_token` Cookie 从 JWT `exp` 生成 `expirationDate`，同一枚 JWT 同时写入专用 SSO partition 和 default session。JWT 缺少合法未来 `exp` 时只写当前进程 session Cookie，下次启动仍强制重新校验和换票。
