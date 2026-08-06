@@ -114,6 +114,11 @@ type EnterpriseChatRuntimeOptions = {
   platform?: NodeJS.Platform;
   selectFiles?: () => Promise<string[]>;
   selectAvatar?: () => Promise<string[]>;
+  showSaveDialog?: (options: {
+    title?: string;
+    defaultPath?: string;
+    filters?: Array<{ name: string; extensions: string[] }>;
+  }) => Promise<{ canceled?: boolean; filePath?: string }>;
   createSupportBundle?: () => Promise<{ filename: string; bytes: Buffer }>;
   captureScreenshot?: (mode: EnterpriseChatScreenshotMode) => Promise<{
     ok: boolean;
@@ -505,15 +510,6 @@ function safeDownloadName(value: string, platform: NodeJS.Platform) {
   return base.replace(/[/\u0000]/gu, "_") || "attachment";
 }
 
-function numberedDownloadName(filename: string, attempt: number) {
-  if (attempt === 0) {
-    return filename;
-  }
-  const extension = path.extname(filename);
-  const stem = extension ? filename.slice(0, -extension.length) : filename;
-  return `${stem} (${attempt})${extension}`;
-}
-
 export class EnterpriseChatRuntime {
   private readonly app: App;
   private serverUrl: string;
@@ -526,6 +522,7 @@ export class EnterpriseChatRuntime {
   private readonly platform: NodeJS.Platform;
   private readonly selectFiles: () => Promise<string[]>;
   private readonly selectAvatar: () => Promise<string[]>;
+  private readonly showSaveDialog?: EnterpriseChatRuntimeOptions["showSaveDialog"];
   private readonly createSupportBundle: () => Promise<{ filename: string; bytes: Buffer }>;
   private readonly captureScreenshot?: EnterpriseChatRuntimeOptions["captureScreenshot"];
   private readonly createSupportArtifact?: EnterpriseChatRuntimeOptions["createSupportArtifact"];
@@ -563,6 +560,7 @@ export class EnterpriseChatRuntime {
     this.platform = options.platform ?? process.platform;
     this.selectFiles = options.selectFiles ?? (async () => []);
     this.selectAvatar = options.selectAvatar ?? (async () => []);
+    this.showSaveDialog = options.showSaveDialog;
     this.createSupportBundle = options.createSupportBundle ?? (() =>
       createEnterpriseChatSupportBundle(this.app, this.platform)
     );
@@ -1212,27 +1210,25 @@ export class EnterpriseChatRuntime {
     }
     const { buffer } = await this.fetchAttachment(fileId, ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES);
     const filename = safeDownloadName(readText(input?.name) || "attachment", this.platform);
-    const downloadsRoot = this.app.getPath("downloads");
-    await fs.promises.mkdir(downloadsRoot, { recursive: true });
-    for (let attempt = 0; attempt < 10_000; attempt += 1) {
-      const target = path.join(downloadsRoot, numberedDownloadName(filename, attempt));
-      try {
-        if (this.platform === "win32") {
-          await fs.promises.writeFile(target, buffer, { flag: "wx" });
-        } else if (this.platform === "darwin") {
-          await fs.promises.writeFile(target, buffer, { flag: "wx", mode: 0o600 });
-        } else {
-          await fs.promises.writeFile(target, buffer, { flag: "wx", mode: 0o600 });
-        }
-        return { ok: true, path: target, message: "" };
-      } catch (error) {
-        if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-          continue;
-        }
-        throw error;
-      }
+    const saveResult = this.showSaveDialog
+      ? await this.showSaveDialog({
+          title: "Save attachment",
+          defaultPath: path.join(this.app.getPath("downloads"), filename)
+        })
+      : {
+          canceled: false,
+          filePath: path.join(this.app.getPath("downloads"), filename)
+        };
+    if (saveResult.canceled || !saveResult.filePath) {
+      return { ok: false, path: "", message: "Download cancelled." };
     }
-    throw new Error("Unable to allocate a download filename.");
+    const target = saveResult.filePath;
+    if (this.platform === "win32") {
+      await fs.promises.writeFile(target, buffer);
+    } else {
+      await fs.promises.writeFile(target, buffer, { mode: 0o600 });
+    }
+    return { ok: true, path: target, message: "" };
   }
 
   async executeMessageDesktopAction(

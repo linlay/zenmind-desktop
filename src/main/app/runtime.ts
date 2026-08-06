@@ -283,6 +283,7 @@ export function createMainProcessRuntime() {
       });
       return result.canceled ? [] : result.filePaths;
     },
+    showSaveDialog: (options) => showSaveDialog(options),
     captureScreenshot: (mode) => captureEnterpriseChatScreenshot(mode),
     createSupportArtifact: async (action, args) => {
       const readArg = (key: string) => typeof args[key] === "string" ? args[key].trim() : "";
