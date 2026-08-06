@@ -53,13 +53,17 @@
 }
 
 .external-webview-page {
-  --browser-bg: #edf1f5;
-  --browser-top: #f1f3f4;
+  --browser-bg: #eef2f6;
+  --browser-top: #dee6ee;
   --browser-surface: rgba(255, 255, 255, 0.96);
   --browser-surface-strong: #ffffff;
   --browser-frame-bg: #ffffff;
-  --browser-tab: #e2e3e5;
-  --browser-edge: rgba(95, 99, 104, 0.24);
+  --browser-tab: rgba(95, 99, 104, 0.12);
+  --browser-tab-active: #ffffff;
+  --browser-tab-hover: rgba(255, 255, 255, 0.6);
+  --browser-button-bg: transparent;
+  --browser-button-hover: rgba(60, 64, 67, 0.08);
+  --browser-edge: rgba(95, 99, 104, 0.16);
   --browser-hover: rgba(60, 64, 67, 0.08);
   --browser-ink: #202124;
   --browser-muted: #5f6368;
@@ -110,13 +114,17 @@
 }
 
 :root[data-theme="dark"] .external-webview-page {
-  --browser-bg: #1d2127;
-  --browser-top: #262a31;
+  --browser-bg: #1f2329;
+  --browser-top: #2b3138;
   --browser-surface: rgba(41, 45, 54, 0.96);
   --browser-surface-strong: #2d323a;
   --browser-frame-bg: #1f2329;
-  --browser-tab: #3a4048;
-  --browser-edge: rgba(255, 255, 255, 0.08);
+  --browser-tab: rgba(0, 0, 0, 0.18);
+  --browser-tab-active: #3a4048;
+  --browser-tab-hover: rgba(255, 255, 255, 0.18);
+  --browser-button-bg: transparent;
+  --browser-button-hover: rgba(255, 255, 255, 0.08);
+  --browser-edge: rgba(255, 255, 255, 0.1);
   --browser-hover: rgba(255, 255, 255, 0.08);
   --browser-ink: #f1f3f4;
   --browser-muted: #bdc1c6;
@@ -133,7 +141,7 @@
   gap: 0;
   padding: 0;
   background: var(--browser-top);
-  border-bottom: 1px solid var(--browser-edge);
+  border-bottom: 0;
   app-region: drag;
   -webkit-app-region: drag;
   cursor: grab;
@@ -153,15 +161,15 @@
 .external-webview-tabbar {
   display: flex;
   align-items: center;
-  gap: 6px;
-  min-height: 32px;
-  padding: 4px 10px 0;
+  gap: 0;
+  min-height: 36px;
+  padding: 6px 8px 0;
 }
 
 .external-webview-tab-strip {
   display: flex;
   align-items: flex-end;
-  gap: 6px;
+  gap: 0;
   flex: 0 1 auto;
   min-width: 0;
   max-width: calc(100% - 42px);
@@ -178,8 +186,8 @@
 }
 
 .external-webview-tab-strip.is-overflowing {
-  mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent 100%);
-  -webkit-mask-image: linear-gradient(90deg, #000 0, #000 calc(100% - 28px), transparent 100%);
+  mask-image: none;
+  -webkit-mask-image: none;
 }
 
 .external-webview-tab {
@@ -190,17 +198,25 @@
   min-width: 112px;
   max-width: 240px;
   box-sizing: border-box;
-  border-top: 2px solid transparent;
-  border-radius: 18px 18px 0 0;
-  background: transparent;
+  min-height: 32px;
+  border: 0;
+  border-radius: 14px 14px 0 0;
+  background: var(--browser-tab);
   cursor: grab;
   transition:
     background 160ms ease,
+    box-shadow 160ms ease,
     transform 160ms ease,
     opacity 160ms ease;
+  overflow: visible;
   user-select: none;
   app-region: no-drag;
   -webkit-app-region: no-drag;
+}
+
+.external-webview-tab::before,
+.external-webview-tab::after {
+  content: none;
 }
 
 .external-webview-tab:active {
@@ -212,25 +228,51 @@
 }
 
 .external-webview-tab:hover:not(.is-active) {
-  background: var(--browser-hover);
+  background: var(--browser-tab-hover);
 }
 
 .external-webview-tab.is-active {
-  border-top-color: var(--browser-accent);
-  background: var(--browser-surface-strong);
-  box-shadow: 0 -1px 0 var(--browser-edge), 0 1px 0 var(--browser-surface-strong);
+  background: var(--browser-tab-active);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.28) inset;
   color: var(--browser-ink);
   z-index: 1;
+}
+
+.external-webview-tab.is-active:hover {
+  background: var(--browser-tab-active);
+}
+
+.external-webview-tab.is-active::before {
+  content: "";
+  position: absolute;
+  left: -12px;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle at top left, transparent 0 11px, var(--browser-tab-active) 11.5px);
+  pointer-events: none;
+}
+
+.external-webview-tab.is-active::after {
+  content: "";
+  position: absolute;
+  right: -12px;
+  bottom: 0;
+  width: 12px;
+  height: 12px;
+  background: radial-gradient(circle at top right, transparent 0 11px, var(--browser-tab-active) 11.5px);
+  pointer-events: none;
 }
 
 .external-webview-tab:not(.is-active)::after {
   content: "";
   position: absolute;
-  right: -3px;
-  top: 7px;
+  right: -2px;
+  top: 8px;
   width: 1px;
-  height: 20px;
-  background: rgba(95, 99, 104, 0.24);
+  height: 16px;
+  background: rgba(95, 99, 104, 0.18);
 }
 
 .external-webview-tab-trigger {
@@ -250,9 +292,9 @@
 }
 
 .external-webview-tab-trigger:focus-visible {
-  outline: 2px solid var(--browser-accent);
-  outline-offset: -3px;
-  border-radius: 14px 14px 2px 2px;
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--browser-accent);
+  border-radius: 10px 10px 0 0;
 }
 
 .external-webview-tab.is-active .external-webview-tab-trigger {
@@ -315,13 +357,29 @@
 }
 
 .external-webview-tab.is-active .external-webview-tab-title {
-  font-weight: 600;
+  font-weight: 500;
 }
 
 :root[data-theme="dark"] .external-webview-tab.is-active {
-  border-top-color: #8ab4f8;
-  background: #343a44;
-  box-shadow: 0 -1px 0 rgba(255, 255, 255, 0.12), 0 1px 0 #343a44;
+  background: var(--browser-tab-active);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+:root[data-theme="dark"] .external-webview-tab:hover:not(.is-active) {
+  background: var(--browser-tab-hover);
+}
+
+:root[data-theme="dark"] .external-webview-tab.is-active:hover {
+  background: var(--browser-tab-active);
+}
+
+:root[data-theme="dark"] .external-webview-tab.is-active::after {
+  background: radial-gradient(circle at top right, transparent 0 11px, var(--browser-tab-active) 11.5px);
+}
+
+:root[data-theme="dark"] .external-webview-tab.is-active::before {
+  background: radial-gradient(circle at top left, transparent 0 11px, var(--browser-tab-active) 11.5px);
 }
 
 :root[data-theme="dark"] .external-webview-tab:not(.is-active)::after {
@@ -335,11 +393,13 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 0;
+  border: 1px solid transparent;
   background: transparent;
   color: var(--browser-muted);
   transition:
     background 160ms ease,
+    border-color 160ms ease,
+    box-shadow 160ms ease,
     color 160ms ease,
     opacity 160ms ease;
 }
@@ -359,27 +419,36 @@
 
 .external-webview-tab-close {
   flex: none;
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   margin-right: 6px;
-  border-radius: 6px;
+  border-radius: 999px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
+  opacity: 0.82;
+}
+
+.external-webview-tab-close svg {
+  width: 14px;
+  height: 14px;
+  stroke-width: 2;
 }
 
 .external-webview-tab-close:hover,
 .external-webview-tab-add:hover,
 .external-webview-toolbar-button:hover:not(:disabled),
 .external-webview-copilot-button:hover {
-  background: var(--browser-hover);
+  background: var(--browser-button-hover);
+  border-color: var(--browser-edge);
   color: var(--browser-ink);
 }
 
 .external-webview-tab-add {
   flex: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  margin-top: 0;
+  border-radius: 999px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -388,11 +457,11 @@
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 38px;
-  padding: 4px 10px 6px;
+  min-height: 40px;
+  padding: 6px 8px 8px;
   border: 0;
   border-radius: 0;
-  background: transparent;
+  background: var(--browser-tab-active);
   box-shadow: none;
 }
 
@@ -401,12 +470,18 @@
   align-items: center;
   gap: 2px;
   flex: none;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .external-webview-toolbar-button {
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: transparent;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -418,9 +493,9 @@
 
 .external-webview-copilot-button {
   flex: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  border-radius: 10px;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -444,14 +519,14 @@
   min-height: 32px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(95, 99, 104, 0.16);
+  background: rgba(255, 255, 255, 0.92);
+  border: 1px solid transparent;
   color: var(--browser-muted);
   transition:
     border-color 160ms ease,
     box-shadow 160ms ease,
     background 160ms ease;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.8);
+  box-shadow: none;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
@@ -500,9 +575,9 @@
 }
 
 :root[data-theme="dark"] .external-webview-toolbar-location {
-  background: #1f2329;
-  border-color: rgba(255, 255, 255, 0.14);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: #20242a;
+  border-color: transparent;
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .external-webview-toolbar-location:focus-within {
@@ -526,7 +601,7 @@
   border-radius: 0;
   background: var(--browser-surface-strong);
   border: 0;
-  border-top: 1px solid rgba(95, 99, 104, 0.18);
+  border-top: 1px solid rgba(95, 99, 104, 0.08);
   overflow: hidden;
   box-shadow: none;
 }
@@ -583,7 +658,7 @@
 }
 
 :root[data-theme="dark"] .external-webview-frame-shell {
-  border-top-color: rgba(255, 255, 255, 0.1);
+  border-top-color: rgba(255, 255, 255, 0.08);
 }
 
 @media (max-width: 900px) {
@@ -592,7 +667,7 @@
   }
 
   .external-webview-tabbar {
-    padding: 4px 8px 0;
+    padding: 6px 8px 0;
   }
 
   .external-webview-toolbar {
