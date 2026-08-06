@@ -70,6 +70,9 @@ const CHAT_LAUNCHER_SIZE = 54 * 0.7;
 const CHAT_LAUNCHER_MARGIN = 12;
 const CHAT_PANEL_WIDTH = 400;
 const CHAT_PANEL_HEIGHT = 500;
+const ENTERPRISE_CHAT_COMPOSER_MIN_HEIGHT = 72;
+const ENTERPRISE_CHAT_COMPOSER_MAX_HEIGHT = 220;
+const ENTERPRISE_CHAT_COMPOSER_DEFAULT_HEIGHT = 96;
 
 function hasCompleteEnterpriseLogin(status: DesktopSsoStatus | null) {
   return Boolean(
@@ -315,6 +318,7 @@ export function EnterpriseChatFloatingPanel({
   const [screenshotMenuOpen, setScreenshotMenuOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
   const [mottoDraft, setMottoDraft] = useState("");
+  const [composerHeight, setComposerHeight] = useState(ENTERPRISE_CHAT_COMPOSER_DEFAULT_HEIGHT);
   const [hiddenConversationPreferences, setHiddenConversationPreferences] = useState(
     readHiddenConversationPreferences
   );
@@ -333,6 +337,11 @@ export function EnterpriseChatFloatingPanel({
     moved: boolean;
   } | null>(null);
   const suppressLauncherClickRef = useRef(false);
+  const composerResizeRef = useRef<{
+    pointerId: number;
+    startY: number;
+    originHeight: number;
+  } | null>(null);
   const searchPreferenceScopeRef = useRef("");
   const reviewedActionMessageIdsRef = useRef(new Set<string>());
   const attachmentDownloadResetTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
@@ -1173,6 +1182,38 @@ export function EnterpriseChatFloatingPanel({
     }
   }
 
+  function handleComposerResizePointerDown(event: PointerEvent<HTMLDivElement>) {
+    composerResizeRef.current = {
+      pointerId: event.pointerId,
+      startY: event.clientY,
+      originHeight: composerHeight
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleComposerResizePointerMove(event: PointerEvent<HTMLDivElement>) {
+    const resize = composerResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) {
+      return;
+    }
+    const deltaY = resize.startY - event.clientY;
+    setComposerHeight(Math.max(
+      ENTERPRISE_CHAT_COMPOSER_MIN_HEIGHT,
+      Math.min(ENTERPRISE_CHAT_COMPOSER_MAX_HEIGHT, resize.originHeight + deltaY)
+    ));
+  }
+
+  function handleComposerResizePointerEnd(event: PointerEvent<HTMLDivElement>) {
+    const resize = composerResizeRef.current;
+    if (!resize || resize.pointerId !== event.pointerId) {
+      return;
+    }
+    composerResizeRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
   if (!visible || !snapshot) {
     return null;
   }
@@ -1495,108 +1536,117 @@ export function EnterpriseChatFloatingPanel({
                 })}
               </div>
               <form className="enterprise-chat-composer" onSubmit={(event) => void sendMessage(event)}>
-                <div className="enterprise-chat-composer-tools">
-                  <Popover
-                    placement="top-start"
-                    open={attachmentMenuOpen}
-                    onOpenChange={setAttachmentMenuOpen}
-                    disabled={Boolean(busy)}
-                    content={(
-                      <div
-                        className="enterprise-chat-attachment-menu"
-                        role="menu"
-                        aria-label={t("enterpriseChat.attachmentOptions")}
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setAttachmentMenuOpen(false);
-                            void sendFiles();
-                          }}
-                        >
-                          <FolderOpenOutlined />
-                          <span>{t("enterpriseChat.sendAnyFiles")}</span>
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => void sendSupportBundle()}
-                        >
-                          <FileZipOutlined />
-                          <span>{t("enterpriseChat.sendSupportBundle")}</span>
-                        </button>
-                      </div>
-                    )}
-                  >
-                    <button
-                      type="button"
-                      title={t("enterpriseChat.attachmentOptions")}
-                      aria-label={t("enterpriseChat.attachmentOptions")}
-                      aria-haspopup="menu"
-                      disabled={Boolean(busy)}
-                    >
-                      <PaperClipOutlined />
-                    </button>
-                  </Popover>
-                  <Popover
-                    placement="top-start"
-                    open={screenshotMenuOpen}
-                    onOpenChange={setScreenshotMenuOpen}
-                    disabled={Boolean(busy)}
-                    content={(
-                      <div
-                        className="enterprise-chat-screenshot-menu"
-                        role="menu"
-                        aria-label={t("enterpriseChat.screenshotOptions")}
-                      >
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => void sendScreenshot("region")}
-                        >
-                          <ScissorOutlined />
-                          <span>{t("enterpriseChat.screenshotRegion")}</span>
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => void sendScreenshot("window")}
-                        >
-                          <LaptopOutlined />
-                          <span>{t("enterpriseChat.screenshotWindow")}</span>
-                        </button>
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => void sendScreenshot("desktop")}
-                        >
-                          <DesktopOutlined />
-                          <span>{t("enterpriseChat.screenshotDesktop")}</span>
-                        </button>
-                      </div>
-                    )}
-                  >
-                    <button
-                      type="button"
-                      title={t("enterpriseChat.sendScreenshot")}
-                      aria-label={t("enterpriseChat.screenshotOptions")}
-                      aria-haspopup="menu"
-                      disabled={Boolean(busy)}
-                    >
-                      <CameraOutlined />
-                    </button>
-                  </Popover>
-                  <span className="enterprise-chat-paste-hint" aria-live="polite">
-                    {busy === "paste"
-                      ? t("enterpriseChat.uploadingPastedFiles")
-                      : t("enterpriseChat.pasteFilesHint")}
-                  </span>
+                <div
+                  className="enterprise-chat-composer-resize-handle"
+                  onPointerDown={handleComposerResizePointerDown}
+                  onPointerMove={handleComposerResizePointerMove}
+                  onPointerUp={handleComposerResizePointerEnd}
+                  onPointerCancel={handleComposerResizePointerEnd}
+                >
+                  <span aria-hidden="true" />
                 </div>
-                <div className="enterprise-chat-composer-row">
+                <div className="enterprise-chat-editor" style={{ height: composerHeight }}>
+                  <div className="enterprise-chat-composer-tools">
+                    <Popover
+                      placement="top-start"
+                      open={attachmentMenuOpen}
+                      onOpenChange={setAttachmentMenuOpen}
+                      disabled={Boolean(busy)}
+                      content={(
+                        <div
+                          className="enterprise-chat-attachment-menu"
+                          role="menu"
+                          aria-label={t("enterpriseChat.attachmentOptions")}
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setAttachmentMenuOpen(false);
+                              void sendFiles();
+                            }}
+                          >
+                            <FolderOpenOutlined />
+                            <span>{t("enterpriseChat.sendAnyFiles")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void sendSupportBundle()}
+                          >
+                            <FileZipOutlined />
+                            <span>{t("enterpriseChat.sendSupportBundle")}</span>
+                          </button>
+                        </div>
+                      )}
+                    >
+                      <button
+                        type="button"
+                        title={t("enterpriseChat.attachmentOptions")}
+                        aria-label={t("enterpriseChat.attachmentOptions")}
+                        aria-haspopup="menu"
+                        disabled={Boolean(busy)}
+                      >
+                        <PaperClipOutlined />
+                      </button>
+                    </Popover>
+                    <Popover
+                      placement="top-start"
+                      open={screenshotMenuOpen}
+                      onOpenChange={setScreenshotMenuOpen}
+                      disabled={Boolean(busy)}
+                      content={(
+                        <div
+                          className="enterprise-chat-screenshot-menu"
+                          role="menu"
+                          aria-label={t("enterpriseChat.screenshotOptions")}
+                        >
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void sendScreenshot("region")}
+                          >
+                            <ScissorOutlined />
+                            <span>{t("enterpriseChat.screenshotRegion")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void sendScreenshot("window")}
+                          >
+                            <LaptopOutlined />
+                            <span>{t("enterpriseChat.screenshotWindow")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
+                            onClick={() => void sendScreenshot("desktop")}
+                          >
+                            <DesktopOutlined />
+                            <span>{t("enterpriseChat.screenshotDesktop")}</span>
+                          </button>
+                        </div>
+                      )}
+                    >
+                      <button
+                        type="button"
+                        title={t("enterpriseChat.sendScreenshot")}
+                        aria-label={t("enterpriseChat.screenshotOptions")}
+                        aria-haspopup="menu"
+                        disabled={Boolean(busy)}
+                      >
+                        <CameraOutlined />
+                      </button>
+                    </Popover>
+                    <span className="enterprise-chat-paste-hint" aria-live="polite">
+                      {busy === "paste"
+                        ? t("enterpriseChat.uploadingPastedFiles")
+                        : t("enterpriseChat.pasteFilesHint")}
+                    </span>
+                  </div>
                   <textarea
                     value={draft}
-                    rows={2}
+                    rows={4}
                     maxLength={20_000}
                     placeholder={t("enterpriseChat.messagePlaceholder")}
                     aria-label={t("enterpriseChat.messagePlaceholder")}
@@ -1604,14 +1654,16 @@ export function EnterpriseChatFloatingPanel({
                     onKeyDown={handleComposerKeyDown}
                     onPaste={handleComposerPaste}
                   />
-                  <button
-                    type="submit"
-                    className="enterprise-chat-send-button"
-                    aria-label={t("enterpriseChat.send")}
-                    disabled={!draft.trim() || Boolean(busy) || snapshot.connectionState !== "connected"}
-                  >
-                    <SendOutlined />
-                  </button>
+                  <div className="enterprise-chat-composer-footer">
+                    <button
+                      type="submit"
+                      className="enterprise-chat-send-button"
+                      aria-label={t("enterpriseChat.send")}
+                      disabled={!draft.trim() || Boolean(busy) || snapshot.connectionState !== "connected"}
+                    >
+                      <SendOutlined />
+                    </button>
+                  </div>
                 </div>
               </form>
             </>
