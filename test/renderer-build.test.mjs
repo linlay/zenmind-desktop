@@ -895,6 +895,24 @@ test("sidebar collapse toggle moves into the top chrome with the outline sidebar
   assert.match(globalStyles, /\.app-sidebar a,\s*[\s\S]*?\.app-sidebar button[\s\S]*?\{[\s\S]*?app-region:\s*no-drag;/);
 });
 
+test("collapsed mac sidebar toggle uses the same muted icon color as primary navigation", () => {
+  const globalStyles = readRendererStyles();
+  const collapsedMacTopActionButtonRule = globalStyles.match(
+    /^\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body;
+
+  assert.ok(collapsedMacTopActionButtonRule, "missing mac collapsed top action button rule");
+  assert.match(collapsedMacTopActionButtonRule, /color:\s*#94a3b8;/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button:hover,[\s\S]*?color:\s*#64748b;/
+  );
+  assert.match(
+    globalStyles,
+    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed[\s\S]*?color:\s*#cbd5e1;/
+  );
+});
+
 test("body-level popovers stay clickable above Electron drag regions", () => {
   const popoverSource = readSourceFile(
     "src",
