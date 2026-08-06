@@ -5852,6 +5852,7 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const copilotDock = readSourceFile("src", "renderer", "copilot", "sidebar-copilot", "AgentWebclientCopilotDock.tsx");
   const copilotSession = readSourceFile("src", "renderer", "copilot", "sidebar-copilot", "copilotDockSession.ts");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const desktopActions = readSourceFile("src", "shared", "desktop-actions.ts");
   const desktopWs = readSourceFile("src", "shared", "desktop-ws.ts");
   const desktopWsServer = readSourceFile("src", "main", "desktop-ws-server.ts");
@@ -5880,6 +5881,11 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(appShell, /clearCopilotDockSessionSnapshot\(\)/u);
   assert.match(copilotDock, /restoredEmbedPath/u);
   assert.match(copilotDock, /onCurrentEmbedPathChange/u);
+  assert.match(copilotDock, /source === "host"/u);
+  assert.match(copilotDock, /readCopilotChatId\(embedPath\)/u);
+  assert.match(serviceWebviewSurface, /updateWebviewCurrentUrl\(resolvedUrl, "guest"\)/u);
+  assert.match(serviceWebviewSurface, /addEventListener\(\s*"did-navigate-in-page"/u);
+  assert.match(appShell, /handleCopilotCurrentEmbedPathChange[\s\S]{0,360}updateCopilotDockSurfaceSession\(currentCopilotSurfaceId/u);
 });
 
 test("desktop web surface state reads one exact surface without an active-surface fallback", () => {

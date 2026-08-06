@@ -77,6 +77,20 @@ test("copilot dock session snapshot keeps only relative route identity", () => {
   });
 });
 
+test("copilot dock session captures a promoted WebClient chat URL", () => {
+  const { api } = loadSessionModule();
+  const currentUrl = "http://127.0.0.1:17080/copilot/zenmi?lang=zh&theme=light&chatId=d8c73338-7e4b-49ad-a134-bc15b16ef3ed";
+
+  assert.equal(
+    api.normalizeCopilotEmbedPath(currentUrl),
+    "/copilot/zenmi?chatId=d8c73338-7e4b-49ad-a134-bc15b16ef3ed"
+  );
+  assert.equal(
+    api.readCopilotChatId(currentUrl),
+    "d8c73338-7e4b-49ad-a134-bc15b16ef3ed"
+  );
+});
+
 test("copilot dock session keeps each surface on its own historical chat", () => {
   const { api } = loadSessionModule();
   api.writeCopilotDockSessionSnapshot({
