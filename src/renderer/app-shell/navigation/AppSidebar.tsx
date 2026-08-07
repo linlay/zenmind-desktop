@@ -277,7 +277,6 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
 ]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 const CHATS_VISIBLE_LIMIT = 8;
-type AssistantProjectKind = "coder" | "kbase";
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS.filter(
     (routeDefinition) => routeDefinition.kind === "management",
@@ -312,20 +311,6 @@ function getAssistantAgentRoleLabel(agent: AssistantNavAgentItem) {
     return "";
   }
   return role;
-}
-
-function getAssistantProjectKind(
-  agent: AssistantNavAgentItem,
-): AssistantProjectKind | null {
-  const mode = agent.mode?.trim().toUpperCase() ?? "";
-  if (mode === "CODER") {
-    return "coder";
-  }
-  if (mode === "KBASE") {
-    return "kbase";
-  }
-
-  return null;
 }
 
 const assistantGroupNavItemBase: Omit<SidebarStandardPrimaryEntry, "label"> = {
@@ -3642,6 +3627,72 @@ export function AppSidebar({
     );
   }
 
+  function renderProjectChatHoverCard(
+    agent: AssistantNavAgentItem,
+    chat: AssistantNavChatItem,
+  ) {
+    const askedAt = formatAssistantChatDateTime(chat.createdAt);
+    const workspaceName = getAssistantWorkspaceName(
+      agent.workspaceDir,
+      agent.workspaceDirExists,
+    );
+    const statusLabels = [
+      chat.hasActiveRun ? t("sidebar.agent.running") : "",
+      chat.hasPendingAwaiting
+        ? t(getAssistantAwaitingStatusKey(chat.awaitingMode))
+        : "",
+      !chat.isRead ? t("sidebar.chat.unread") : "",
+    ].filter(Boolean);
+    return (
+      <div className="sidebar-project-chat-hover-card">
+        <div className="sidebar-project-chat-hover-card-heading">
+          <span className="sidebar-project-chat-hover-card-title">
+            {getAssistantChatDisplayText(chat, t)}
+          </span>
+          {askedAt ? (
+            <span className="sidebar-project-chat-hover-card-time">{askedAt}</span>
+          ) : null}
+        </div>
+        {statusLabels.length > 0 ? (
+          <div
+            className="sidebar-project-chat-hover-card-statuses"
+            aria-label={t("sidebar.chats.card.status")}
+          >
+            {statusLabels.map((label) => (
+              <span className="sidebar-project-chat-hover-card-status" key={label}>
+                {label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {workspaceName ? (
+          <div className="sidebar-project-chat-hover-card-context">
+            <span className="sidebar-project-chat-hover-card-context-item">
+              <svg
+                className="sidebar-project-chat-hover-card-context-icon"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.8"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                focusable="false"
+              >
+                <path d="M3.5 7.5a2 2 0 0 1 2-2h4.2l2 2H18.5a2 2 0 0 1 2 2v7a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+                <path d="M3.5 10h17" />
+              </svg>
+              <span>{workspaceName}</span>
+            </span>
+            {agent.gitBranch ? (
+              <span>{agent.gitBranch}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   function getChatHoverAgent(
     chat: AssistantNavChatItem,
   ): AssistantNavAgentItem {
@@ -4086,72 +4137,6 @@ export function AppSidebar({
     );
   }
 
-  function renderProjectHoverCard(
-    agent: AssistantNavAgentItem,
-    projectKind: AssistantProjectKind,
-    options: {
-      hasActiveRun: boolean;
-      unreadCount: number;
-      awaitingMode?: AssistantNavChatItem["awaitingMode"];
-    },
-  ) {
-    const workspaceName = getAssistantWorkspaceName(
-      agent.workspaceDir,
-      agent.workspaceDirExists,
-    );
-    const lastActivity = formatAssistantChatDateTime(agent.updatedAt);
-    const projectType =
-      projectKind === "coder"
-        ? t("sidebar.project.coder")
-        : t("sidebar.project.kbase");
-    const statusLabels = [
-      options.hasActiveRun ? t("sidebar.agent.running") : "",
-      agent.hasPendingAwaiting
-        ? t(getAssistantAwaitingStatusKey(options.awaitingMode))
-        : "",
-      options.unreadCount > 0 ? t("sidebar.chat.unread") : "",
-    ].filter(Boolean);
-    return (
-      <div className="sidebar-project-hover-card">
-        <span className="sidebar-project-hover-card-title">
-          {agent.displayName}
-        </span>
-        <div className="sidebar-project-hover-card-meta">
-          <span>{t("sidebar.project.card.type", { type: projectType })}</span>
-          {lastActivity ? (
-            <span>
-              {t("sidebar.project.card.lastActivity", { time: lastActivity })}
-            </span>
-          ) : null}
-        </div>
-        {statusLabels.length > 0 ? (
-          <div
-            className="sidebar-project-hover-card-statuses"
-            aria-label={t("sidebar.project.card.status")}
-          >
-            {statusLabels.map((label) => (
-              <span className="sidebar-project-hover-card-status" key={label}>
-                {label}
-              </span>
-            ))}
-          </div>
-        ) : null}
-        {workspaceName ? (
-          <div className="sidebar-project-hover-card-context">
-            <span>
-              {t("sidebar.project.card.workspace", { name: workspaceName })}
-            </span>
-            {agent.gitBranch ? (
-              <span>
-                {t("sidebar.project.card.branch", { name: agent.gitBranch })}
-              </span>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-    );
-  }
-
   function renderAssistantAgent(
     agent: AssistantNavAgentItem,
     options: { roving?: boolean } = {},
@@ -4188,14 +4173,6 @@ export function AppSidebar({
     const selected =
       getActiveSidebarAgentKey() === agent.agentKey || Boolean(activeChatId);
     const agentRole = getAssistantAgentRoleLabel(agent);
-    const projectKind = getAssistantProjectKind(agent);
-    const projectHoverCard = projectKind
-      ? renderProjectHoverCard(agent, projectKind, {
-          hasActiveRun: Boolean(activeRunChat),
-          unreadCount,
-          awaitingMode: awaitingChat?.awaitingMode,
-        })
-      : null;
     return (
       <Collapse
         key={agent.agentKey}
@@ -4216,15 +4193,6 @@ export function AppSidebar({
           "data-sidebar-nav-kind": roving ? "agent" : undefined,
           "data-sidebar-agent-key": roving ? agent.agentKey : undefined,
         }}
-        headerPopover={
-          projectHoverCard
-            ? {
-                content: projectHoverCard,
-                placement: "right-start",
-                className: "sidebar-project-hover-card-surface",
-              }
-            : undefined
-        }
         header={
           <Flex gap={8} align="center" className="worker-panel-header">
             <AgentIcon icon={agent.icon} size={16} type="agent" />
@@ -4294,7 +4262,20 @@ export function AppSidebar({
         <Flex vertical gap={2} className="worker-chat-preview-list">
           {recentChats.length > 0 ? (
             recentChats.map((chat) =>
-              renderAssistantChatRow(chat, activeChatId, { roving }),
+              renderAssistantChatRow(chat, activeChatId, {
+                roving,
+                wrapItem: (item) => (
+                  <Popover
+                    trigger="hover"
+                    placement="right-start"
+                    closeOnOutsideClick={false}
+                    className="sidebar-project-chat-hover-card-surface"
+                    content={renderProjectChatHoverCard(agent, chat)}
+                  >
+                    {item}
+                  </Popover>
+                ),
+              }),
             )
           ) : chatCount === 0 ? (
             <div className="status-line">{t("sidebar.agent.noChats")}</div>
