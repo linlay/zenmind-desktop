@@ -102,6 +102,11 @@ import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFl
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
+type AgentChatFocusRequest = {
+  id: number;
+  sourceRoute: string;
+  targetRoute: string;
+};
 type WebappRuntimeViewState = {
   status: "idle" | "starting" | "running" | "blocked" | "error";
   webUrl: string;
@@ -547,6 +552,9 @@ export function AppShell() {
     ],
   );
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const agentChatFocusRequestIdRef = useRef(0);
+  const [pendingAgentChatFocusRequest, setPendingAgentChatFocusRequest] =
+    useState<AgentChatFocusRequest | null>(null);
   const [desktopActionConfirmation, setDesktopActionConfirmation] =
     useState<DesktopActionConfirmationRequest | null>(null);
   const [copilotAgentOptions, setCopilotAgentOptions] = useState<AssistantNavAgentItem[]>([]);
@@ -642,6 +650,11 @@ export function AppShell() {
   const sidebarMode = resolveSidebarMode(location.pathname);
   const isSecondarySidebarMode = sidebarMode !== "primary";
   const currentRoute = `${location.pathname}${location.search}`;
+  const activeAgentChatFocusRequestId =
+    !globalSearchOpen &&
+    pendingAgentChatFocusRequest?.targetRoute === currentRoute
+      ? pendingAgentChatFocusRequest.id
+      : null;
   const settingsSectionDefinitions = useMemo(
     () => buildLocalizedSettingsSections({
       isWindows,
@@ -1749,6 +1762,21 @@ export function AppShell() {
   }, []);
 
   useEffect(() => {
+    if (!pendingAgentChatFocusRequest || globalSearchOpen) {
+      return;
+    }
+    if (
+      currentRoute === pendingAgentChatFocusRequest.sourceRoute ||
+      currentRoute === pendingAgentChatFocusRequest.targetRoute
+    ) {
+      return;
+    }
+    setPendingAgentChatFocusRequest((current) =>
+      current?.id === pendingAgentChatFocusRequest.id ? null : current
+    );
+  }, [currentRoute, globalSearchOpen, pendingAgentChatFocusRequest]);
+
+  useEffect(() => {
     return window.electronAPI.onOpenAssistantWorker((request) => {
       openAssistantDock(request);
     });
@@ -2303,6 +2331,25 @@ export function AppShell() {
     }, SIDEBAR_NAVIGATION_LOCK_MS);
     navigate(targetPath);
     return true;
+  }
+
+  function requestGlobalSearchNavigation(targetPath: string) {
+    const targetRoute = resolveNavigationRoute(targetPath);
+    if (isSingleAgentWebclientRoute(resolveNavigationPathname(targetRoute))) {
+      agentChatFocusRequestIdRef.current += 1;
+      setPendingAgentChatFocusRequest({
+        id: agentChatFocusRequestIdRef.current,
+        sourceRoute: currentRoute,
+        targetRoute,
+      });
+    }
+    return requestSidebarNavigation(targetPath);
+  }
+
+  function handleAgentChatFocusRequestHandled(requestId: number) {
+    setPendingAgentChatFocusRequest((current) =>
+      current?.id === requestId ? null : current
+    );
   }
 
   function navigateWithSidebarHistory(targetPath: string, direction: "back" | "forward") {
@@ -2964,8 +3011,10 @@ export function AppShell() {
           <ServiceWebviewSurfaceHost
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
+            agentChatFocusRequestId={activeAgentChatFocusRequestId}
             hostTheme={resolvedTheme}
             mountedServiceIds={mountedServiceIds}
+            onAgentChatFocusRequestHandled={handleAgentChatFocusRequestHandled}
           />
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}
@@ -3223,7 +3272,7 @@ export function AppShell() {
         shortcutPlatform={isMac ? "darwin" : isWindows ? "win32" : null}
         t={t}
         onClose={() => setGlobalSearchOpen(false)}
-        onNavigate={requestSidebarNavigation}
+        onNavigate={requestGlobalSearchNavigation}
       />
       <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
       </div>
@@ -3247,6 +3296,23 @@ function readAgentRouteInfo(route: string) {
     };
   } catch {
     return { agentKey: "", chatId: "" };
+  }
+}
+
+function resolveNavigationPathname(targetPath: string) {
+  try {
+    return new URL(targetPath, "http://desktop.local").pathname;
+  } catch {
+    return "";
+  }
+}
+
+function resolveNavigationRoute(targetPath: string) {
+  try {
+    const targetUrl = new URL(targetPath, "http://desktop.local");
+    return `${targetUrl.pathname}${targetUrl.search}`;
+  } catch {
+    return "";
   }
 }
 

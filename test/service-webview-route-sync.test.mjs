@@ -141,6 +141,70 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
   );
 });
 
+test("global search chat navigation restores focus to the active main chat webview once", () => {
+  const appShell = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
+    "utf8",
+  );
+  const surfaceHosts = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "src",
+      "renderer",
+      "app-shell",
+      "embedded-surfaces",
+      "EmbeddedSurfaceHosts.tsx",
+    ),
+    "utf8",
+  );
+  const serviceWebviewSurface = readServiceWebviewSurfaceSource();
+  const globalSearchNavigationBlock = appShell.slice(
+    appShell.indexOf("function requestGlobalSearchNavigation"),
+    appShell.indexOf("function navigateWithSidebarHistory"),
+  );
+  const chatSurfaceBlock = surfaceHosts.slice(
+    surfaceHosts.indexOf("{shouldRenderAgentChatSurface ? ("),
+    surfaceHosts.indexOf("{shouldRenderCopilotSurface ? ("),
+  );
+  const nonChatSurfaceBlock = surfaceHosts.slice(
+    surfaceHosts.indexOf("{shouldRenderCopilotSurface ? ("),
+    surfaceHosts.indexOf("</EmbeddedSurfaceSuspense>"),
+  );
+  const focusEffectBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("const requestId = Number.isSafeInteger(focusRequestId)"),
+    serviceWebviewSurface.indexOf("const webUrl = service?.healthMeta.webUrl"),
+  );
+
+  assert.match(appShell, /const activeAgentChatFocusRequestId =\s*!globalSearchOpen/);
+  assert.match(appShell, /pendingAgentChatFocusRequest\?\.targetRoute === currentRoute/);
+  assert.match(globalSearchNavigationBlock, /isSingleAgentWebclientRoute\(resolveNavigationPathname\(targetRoute\)\)/);
+  assert.match(globalSearchNavigationBlock, /agentChatFocusRequestIdRef\.current \+= 1/);
+  assert.match(globalSearchNavigationBlock, /sourceRoute: currentRoute/);
+  assert.match(globalSearchNavigationBlock, /targetRoute/);
+  assert.match(globalSearchNavigationBlock, /return requestSidebarNavigation\(targetPath\)/);
+  assert.match(appShell, /onNavigate=\{requestGlobalSearchNavigation\}/);
+  assert.match(appShell, /currentRoute === pendingAgentChatFocusRequest\.sourceRoute/);
+  assert.match(appShell, /currentRoute === pendingAgentChatFocusRequest\.targetRoute/);
+  assert.match(appShell, /current\?\.id === pendingAgentChatFocusRequest\.id \? null : current/);
+
+  assert.match(chatSurfaceBlock, /focusRequestId=\{agentChatFocusRequestId\}/);
+  assert.match(chatSurfaceBlock, /onFocusRequestHandled=\{onAgentChatFocusRequestHandled\}/);
+  assert.doesNotMatch(nonChatSurfaceBlock, /focusRequestId=/);
+  assert.doesNotMatch(nonChatSurfaceBlock, /onFocusRequestHandled=/);
+
+  assert.match(focusEffectBlock, /requestId === lastHandledFocusRequestIdRef\.current/);
+  assert.match(focusEffectBlock, /active !== true/);
+  assert.match(focusEffectBlock, /isAgentWebclientChatSurface\(serviceId, surfaceId\)/);
+  assert.match(focusEffectBlock, /if \(!targetWebview\) \{\s*return;/);
+  assert.match(focusEffectBlock, /targetWebview\.focus\(\)/);
+  assert.match(focusEffectBlock, /lastHandledFocusRequestIdRef\.current = requestId/);
+  assert.match(focusEffectBlock, /onFocusRequestHandled\?\.\(requestId\)/);
+  assert.match(
+    focusEffectBlock,
+    /\[active, focusRequestId, onFocusRequestHandled, serviceId, surfaceId, webviewSnapshotNonce\]/,
+  );
+});
+
 test("service webview surface reports webview breadcrumbs for post-crash diagnosis", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
 

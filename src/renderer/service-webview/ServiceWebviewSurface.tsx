@@ -72,6 +72,8 @@ type ServiceWebviewSurfaceProps = {
   devToolsTarget?: "copilot";
   loadInitialEmbeddedUrlDirectly?: boolean;
   suppressInitialLoadingCopy?: boolean;
+  focusRequestId?: number | null;
+  onFocusRequestHandled?: (requestId: number) => void;
   onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
 };
 
@@ -365,6 +367,8 @@ export function ServiceWebviewSurface({
   devToolsTarget,
   loadInitialEmbeddedUrlDirectly,
   suppressInitialLoadingCopy,
+  focusRequestId,
+  onFocusRequestHandled,
   onCurrentUrlChange,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
@@ -409,6 +413,7 @@ export function ServiceWebviewSurface({
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const lastHandledFocusRequestIdRef = useRef(0);
   const lastDirectWebviewRouteRef = useRef("");
   const lastHostAppliedChatRouteRef = useRef("");
   const lastReportedCurrentUrlRef = useRef("");
@@ -449,6 +454,31 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     onCurrentUrlChangeRef.current = onCurrentUrlChange;
   }, [onCurrentUrlChange]);
+
+  useEffect(() => {
+    const requestId = Number.isSafeInteger(focusRequestId) && Number(focusRequestId) > 0
+      ? Number(focusRequestId)
+      : 0;
+    if (
+      !requestId ||
+      requestId === lastHandledFocusRequestIdRef.current ||
+      active !== true ||
+      !isAgentWebclientChatSurface(serviceId, surfaceId)
+    ) {
+      return;
+    }
+    const targetWebview = webviewRef.current;
+    if (!targetWebview) {
+      return;
+    }
+    try {
+      targetWebview.focus();
+      lastHandledFocusRequestIdRef.current = requestId;
+      onFocusRequestHandled?.(requestId);
+    } catch {
+      // Keep the request pending so a recreated WebView can consume it later.
+    }
+  }, [active, focusRequestId, onFocusRequestHandled, serviceId, surfaceId, webviewSnapshotNonce]);
 
   const webUrl = service?.healthMeta.webUrl ?? "";
   const bridgeProtocol = useMemo(

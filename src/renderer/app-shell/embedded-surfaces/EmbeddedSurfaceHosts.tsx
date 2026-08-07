@@ -60,13 +60,17 @@ function resolveWebsiteSsoPartition(item: EmbeddedSidebarItem) {
 export function ServiceWebviewSurfaceHost({
   activeServiceId,
   activeAgentWebclientRoute,
+  agentChatFocusRequestId,
   hostTheme,
-  mountedServiceIds
+  mountedServiceIds,
+  onAgentChatFocusRequestHandled,
 }: {
   activeServiceId: string | null;
   activeAgentWebclientRoute: AgentWebclientRouteItem | null;
+  agentChatFocusRequestId?: number | null;
   hostTheme: ThemeMode;
   mountedServiceIds: string[];
+  onAgentChatFocusRequestHandled?: (requestId: number) => void;
 }) {
   const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
   const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);
@@ -138,8 +142,10 @@ export function ServiceWebviewSurfaceHost({
           key={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
           embedPath={agentChatRoute?.embedPath}
+          focusRequestId={agentChatFocusRequestId}
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(agentChatRoute?.embedPath)}
+          onFocusRequestHandled={onAgentChatFocusRequestHandled}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}
           surfaceId={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
           surfaceLabel={agentChatRoute?.label}
