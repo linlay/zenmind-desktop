@@ -16,6 +16,7 @@ const {
   writeWebsiteItems
 } = require("../dist-electron/main/webs/websites/store.js");
 const {
+  readWebappInternalAgentKey,
   readWebappItemFromDir,
   readWebappItems,
   writeCanonicalWebappManifest
@@ -601,6 +602,7 @@ test("web stores prefer copilotAgentKey and keep agentKey as a read-only legacy 
   const canonicalWebapp = JSON.parse(fs.readFileSync(canonicalWebappPath, "utf8"));
   writeJson(canonicalWebappPath, {
     ...canonicalWebapp,
+    internalAgentKey: "internal-app-agent",
     copilotAgentKey: "canonical-app-agent",
     agentKey: "ignored-app-agent"
   });
@@ -611,6 +613,8 @@ test("web stores prefer copilotAgentKey and keep agentKey as a read-only legacy 
   assert.equal(websites["canonical-site"].copilotAgentKey, "canonical-site-agent");
   assert.equal("agentKey" in websites["legacy-site"], false);
   assert.equal(webapps["legacy-app"].copilotAgentKey, "canonical-app-agent");
+  assert.equal(readWebappInternalAgentKey(app, "legacy-app"), "internal-app-agent");
+  assert.equal("internalAgentKey" in webapps["legacy-app"], false);
   assert.equal("agentKey" in webapps["legacy-app"], false);
 });
 

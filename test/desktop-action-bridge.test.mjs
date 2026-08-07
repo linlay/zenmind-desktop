@@ -168,7 +168,7 @@ async function writeStaticWebappArchive(root, id, label = "Lifecycle Test") {
   const archivePath = path.join(root, `${id}.zip`);
   const zip = new JSZip();
   zip.file(`${id}/webapp.json`, `${JSON.stringify({
-    schemaVersion: 4,
+    schemaVersion: 5,
     id,
     kind: "webapp",
     version: "1.0.0",
@@ -181,12 +181,81 @@ async function writeStaticWebappArchive(root, id, label = "Lifecycle Test") {
       spa: true,
       apiPrefix: "/api"
     },
+    desktopBridge: {
+      version: 1,
+      capabilities: []
+    },
     createdAt: "2026-08-05T00:00:00.000Z",
     updatedAt: "2026-08-05T00:00:00.000Z"
   }, null, 2)}\n`);
   zip.file(`${id}/frontend/index.html`, "<!doctype html><title>Lifecycle Test</title>");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
+}
+
+async function writeFailingNodeWebappArchive(root, id, label = "Failing Node") {
+  const archivePath = path.join(root, `${id}-failing.zip`);
+  const zip = new JSZip();
+  zip.file(`${id}/webapp.json`, `${JSON.stringify({
+    schemaVersion: 5,
+    id,
+    kind: "webapp",
+    version: "1.0.0",
+    target: "universal",
+    label,
+    frontend: {
+      mode: "static",
+      root: "frontend",
+      index: "index.html",
+      spa: true,
+      apiPrefix: "/api"
+    },
+    desktopBridge: {
+      version: 1,
+      capabilities: []
+    },
+    backend: {
+      launcher: "node",
+      entry: "backend/server.mjs",
+      args: [],
+      env: {},
+      port: 0,
+      health: { type: "http", path: "/api/health", timeoutMs: 1000 }
+    },
+    createdAt: "2026-08-05T00:00:00.000Z",
+    updatedAt: "2026-08-05T00:00:00.000Z"
+  }, null, 2)}\n`);
+  zip.file(`${id}/frontend/index.html`, "<!doctype html><title>Failing Node</title>");
+  zip.file(`${id}/backend/server.mjs`, "process.exitCode = 1;\n");
+  fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
+  return archivePath;
+}
+
+function writeInstalledChatWebapp(app, id, agentKeys = {}) {
+  const webappDir = path.join(getDesktopWebappsDataRoot(app), id);
+  fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
+  fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html>", "utf8");
+  fs.writeFileSync(path.join(webappDir, "webapp.json"), JSON.stringify({
+    schemaVersion: 5,
+    id,
+    kind: "webapp",
+    version: "1.0.0",
+    target: "universal",
+    label: id,
+    ...(agentKeys.internalAgentKey ? { internalAgentKey: agentKeys.internalAgentKey } : {}),
+    ...(agentKeys.copilotAgentKey ? { copilotAgentKey: agentKeys.copilotAgentKey } : {}),
+    frontend: {
+      mode: "static",
+      root: "frontend",
+      index: "index.html",
+      spa: true,
+      apiPrefix: "/api"
+    },
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat"]
+    }
+  }), "utf8");
 }
 
 test("desktop assistant chat forwards a general message without business prompts", async (t) => {
@@ -202,6 +271,7 @@ test("desktop assistant chat forwards a general message without business prompts
   assert.equal(response.result.runId, "run-assistant");
   assert.equal(calls.completions.length, 1);
   assert.equal(calls.completions[0].message, "分析这段内容并给出建议");
+  assert.equal(calls.completions[0].agentKey, "desktopAssistant");
   assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name === "desktop.assistant.chat"), true);
   assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name === "desktop.assistant.translate"), false);
   assert.equal(DESKTOP_ACTION_DEFINITIONS.some((definition) => definition.name.startsWith("desktop.page.")), false);
@@ -221,6 +291,39 @@ test("desktop assistant chat forwards a general message without business prompts
   });
   assert.equal(oversized.ok, false);
   assert.equal(oversized.error.code, "invalid_args");
+});
+
+test("WebApp assistant chat prefers internalAgentKey with Copilot and helper fallbacks", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  writeInstalledChatWebapp(options.app, "internal-chat", {
+    internalAgentKey: "desktopTextGenerator",
+    copilotAgentKey: "webOperator"
+  });
+  writeInstalledChatWebapp(options.app, "copilot-chat", {
+    copilotAgentKey: "webOperator"
+  });
+  writeInstalledChatWebapp(options.app, "fallback-chat");
+
+  const internal = await handleWebappPageActionRequest(options, "internal-chat", {
+    action: "desktop.assistant.chat",
+    args: { message: "任务：翻译\n要求：只返回译文\n内容：hello" }
+  });
+  assert.equal(internal.ok, true);
+  assert.equal(calls.completions.at(-1).agentKey, "desktopTextGenerator");
+
+  const copilot = await handleWebappPageActionRequest(options, "copilot-chat", {
+    action: "desktop.assistant.chat",
+    args: { message: "任务：润色\n要求：只返回结果\n内容：hello" }
+  });
+  assert.equal(copilot.ok, true);
+  assert.equal(calls.completions.at(-1).agentKey, "webOperator");
+
+  const fallback = await handleWebappPageActionRequest(options, "fallback-chat", {
+    action: "desktop.assistant.chat",
+    args: { message: "任务：摘要\n要求：只返回摘要\n内容：hello" }
+  });
+  assert.equal(fallback.ok, true);
+  assert.equal(calls.completions.at(-1).agentKey, "desktopAssistant");
 });
 
 test("removed desktop assistant complete action returns unknown_action", async (t) => {
@@ -255,11 +358,17 @@ test("removed WebApp actions return unknown_action without legacy aliases", asyn
   assert.equal(calls.fileDialogs.length, 0);
 });
 
-test("desktop.webapp.install only installs a local archive and validates its arguments", async (t) => {
+test("desktop.webapp.install only accepts an archive and validates its arguments", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "lifecycle-test");
 
-  for (const args of [{}, { itemId: "market-webapp" }, { archivePath, itemId: "" }]) {
+  for (const args of [
+    {},
+    { sourcePath: options.app.getPath("home") },
+    { sourcePath: options.app.getPath("home"), archivePath },
+    { itemId: "market-webapp" },
+    { archivePath, itemId: "" }
+  ]) {
     const invalid = await handleDesktopActionRequest(options, {
       action: "desktop.webapp.install",
       args,
@@ -278,6 +387,7 @@ test("desktop.webapp.install only installs a local archive and validates its arg
   assert.equal(installed.result.itemId, "lifecycle-test");
   assert.equal(installed.result.operation, "installed");
   assert.equal(installed.result.item.id, "lifecycle-test");
+  assert.equal(installed.result.runtimeState.status, "stopped");
   assert.equal(calls.navigation.length, 0);
 
   const status = await handleDesktopActionRequest(options, {
@@ -288,13 +398,13 @@ test("desktop.webapp.install only installs a local archive and validates its arg
   assert.equal(status.ok, true);
   assert.equal(status.result.status, "stopped");
 
-  const started = await handleDesktopActionRequest(options, {
-    action: "desktop.webapp.start",
+  const opened = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.open",
     args: { id: "lifecycle-test" },
     permissionMode: "full_access"
   });
-  assert.equal(started.ok, true);
-  assert.equal(started.result.ok, true);
+  assert.equal(opened.ok, true);
+  assert.equal(opened.result.state.status, "running");
 
   const updatedArchive = await writeStaticWebappArchive(options.app.getPath("home"), "lifecycle-test", "Lifecycle Updated");
   const updated = await handleDesktopActionRequest(options, {
@@ -305,14 +415,15 @@ test("desktop.webapp.install only installs a local archive and validates its arg
   assert.equal(updated.ok, true);
   assert.equal(updated.result.operation, "updated");
   assert.equal(updated.result.item.label, "Lifecycle Updated");
-  assert.equal(calls.navigation.length, 0);
+  assert.equal(updated.result.runtimeState.status, "running");
+  assert.deepEqual(calls.navigation, ["/webs/webapp:lifecycle-test"]);
 
   const updatedStatus = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
     args: { id: "lifecycle-test" },
     permissionMode: "full_access"
   });
-  assert.equal(updatedStatus.result.status, "stopped");
+  assert.equal(updatedStatus.result.status, "running");
 
   const removablePaths = [
     getDesktopWebappDataRoot(options.app, "lifecycle-test"),
@@ -333,6 +444,72 @@ test("desktop.webapp.install only installs a local archive and validates its arg
   for (const removablePath of removablePaths) {
     assert.equal(fs.existsSync(removablePath), false);
   }
+});
+
+test("archive runtime validation removes failed new installs and rolls back failed updates", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const originalArchive = await writeStaticWebappArchive(
+    options.app.getPath("home"),
+    "archive-rollback",
+    "Original Archive"
+  );
+  const originalInstall = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath: originalArchive, expectedId: "archive-rollback" },
+    permissionMode: "full_access"
+  });
+  assert.equal(originalInstall.ok, true);
+  const started = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.start",
+    args: { id: "archive-rollback" },
+    permissionMode: "full_access"
+  });
+  assert.equal(started.result.ok, true);
+
+  const updateArchive = await writeFailingNodeWebappArchive(
+    options.app.getPath("home"),
+    "archive-rollback",
+    "Broken Update"
+  );
+  const update = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath: updateArchive, expectedId: "archive-rollback" },
+    permissionMode: "full_access"
+  });
+  assert.equal(update.ok, false);
+  assert.equal(update.error.code, "webapp_install_failed");
+  const restoredManifest = JSON.parse(fs.readFileSync(
+    path.join(getDesktopWebappsDataRoot(options.app), "archive-rollback", "webapp.json"),
+    "utf8"
+  ));
+  assert.equal(restoredManifest.label, "Original Archive");
+  const restoredStatus = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.getStatus",
+    args: { id: "archive-rollback" },
+    permissionMode: "full_access"
+  });
+  assert.equal(restoredStatus.result.status, "running");
+
+  const failedNewArchive = await writeFailingNodeWebappArchive(
+    options.app.getPath("home"),
+    "archive-new-failure"
+  );
+  const failedNew = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath: failedNewArchive, expectedId: "archive-new-failure" },
+    permissionMode: "full_access"
+  });
+  assert.equal(failedNew.ok, false);
+  assert.equal(failedNew.error.code, "webapp_install_failed");
+  assert.equal(fs.existsSync(
+    path.join(getDesktopWebappsDataRoot(options.app), "archive-new-failure")
+  ), false);
+
+  await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.stop",
+    args: { id: "archive-rollback" },
+    permissionMode: "full_access"
+  });
 });
 
 test("runtime checks are side-effect free and publish requires an already running WebApp", async (t) => {
@@ -681,6 +858,9 @@ test("desktop action bridge listens on configured port and refreshes when config
 test("Desktop Action Bridge keeps WebApp page and backend token scopes separate", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   const port = await getFreeLoopbackPort();
+  writeInstalledChatWebapp(options.app, "scope-v5", {
+    internalAgentKey: "desktopTextGenerator"
+  });
   const item = {
     id: "scope-v5",
     schemaVersion: 5,
@@ -748,6 +928,7 @@ test("Desktop Action Bridge keeps WebApp page and backend token scopes separate"
   assert.equal(backendChat.status, 200);
   assert.equal(backendChat.body.ok, true);
   assert.equal(calls.completions.length, 1);
+  assert.equal(calls.completions[0].agentKey, "desktopTextGenerator");
 
   const removedComplete = await call(
     "/webapps/actions/call",
@@ -1362,6 +1543,64 @@ test("desktop action confirmation request keeps compact fields free of debug con
   assert.match(payload.details, /chat-def/u);
   assert.doesNotMatch(payload.details, /secret-token/u);
   assert.doesNotMatch(payload.details, /token=secret/u);
+});
+
+test("webapp install confirmation uses installation-specific copy and manifest summary", () => {
+  const payload = __testInternals.buildMutatingActionConfirmationRequest({
+    requestId: "request-install",
+    action: "desktop.webapp.install",
+    source: {
+      runId: "run-install",
+      chatId: "chat-install",
+      agentKey: "cutej"
+    }
+  }, {
+    archivePath: "/tmp/futures-daily-position-1.0.0.zip",
+    expectedId: "futures-daily-position",
+    confirmationSummary: "安装并打开 WebApp「期货每日持仓」；ID=futures-daily-position；版本=1.0.0；前端=static；后端=node"
+  }, null);
+
+  assert.equal(payload.title, "安装 WebApp");
+  assert.equal(payload.summary, "安装并打开 WebApp「期货每日持仓」；ID=futures-daily-position；版本=1.0.0；前端=static；后端=node");
+  assert.deepEqual(payload.buttons.map((button) => button.label), ["取消", "安装"]);
+  assert.deepEqual(payload.buttons.map((button) => button.decision), ["cancel", "confirm"]);
+  assert.equal(payload.defaultDecision, "cancel");
+  assert.match(payload.details, /desktop\.webapp\.install/u);
+  assert.match(payload.details, /futures-daily-position/u);
+});
+
+test("cancelling the WebApp install confirmation prevents installation and navigation", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const archivePath = await writeStaticWebappArchive(
+    options.app.getPath("home"),
+    "cancelled-install",
+    "Cancelled Install"
+  );
+  let confirmation;
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => {
+    confirmation = request;
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: {
+      archivePath,
+      expectedId: "cancelled-install",
+      confirmationSummary: "安装 WebApp「Cancelled Install」；ID=cancelled-install；版本=1.0.0；前端=static；后端=none"
+    }
+  });
+
+  assert.equal(confirmation.title, "安装 WebApp");
+  assert.equal(response.ok, false);
+  assert.equal(response.requiresConfirmation, true);
+  assert.equal(response.error.code, "user_cancelled");
+  assert.equal(
+    fs.existsSync(path.join(getDesktopWebappsDataRoot(options.app), "cancelled-install")),
+    false
+  );
+  assert.deepEqual(calls.navigation, []);
 });
 
 test("page control confirmation request exposes grant once cancel decisions", () => {

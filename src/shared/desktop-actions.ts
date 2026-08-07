@@ -92,7 +92,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.webapp.restart", kind: "execute", category: "web", description: "Restart a local webapp." },
   { name: "desktop.webapp.open", kind: "execute", category: "web", description: "Start and open a local webapp." },
   { name: "desktop.webapp.updatePreferences", kind: "execute", category: "web", description: "Update a local WebApp label, Copilot agent, or open mode. Args: { webappId|id, patch: { label?, copilotAgentKey?, openMode? } }." },
-  { name: "desktop.webapp.install", kind: "execute", category: "web", description: "Install or update a local WebApp archive without starting or opening it. Args: { archivePath, expectedId? }." },
+  { name: "desktop.webapp.install", kind: "execute", category: "web", description: "Transactionally install or update one local WebApp archive, including runtime validation but not navigation. Args: { archivePath, expectedId? }." },
   { name: "desktop.webapp.uninstall", kind: "execute", category: "web", description: "Unpublish, stop, and remove one local WebApp installation and its managed data. Args: { webappId|id }." },
   { name: "desktop.webapp.getPublishStatus", kind: "read", category: "web", description: "Read one local WebApp's Tunnel publishing readiness, state, and public URL. Args: { webappId|id }." },
   { name: "desktop.webapp.publish", kind: "execute", category: "web", description: "Publish a running local WebApp gateway through the configured Tunnel. Args: { webappId|id }." },

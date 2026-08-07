@@ -103,6 +103,10 @@ function readCopilotAgentKey(value: Record<string, unknown>) {
   return normalizeAgentKey(readString(value.copilotAgentKey) || readString(value.agentKey));
 }
 
+function readInternalAgentKey(value: Record<string, unknown>) {
+  return normalizeAgentKey(readString(value.internalAgentKey));
+}
+
 function normalizePort(value: unknown) {
   if (value === undefined || value === null || value === "") {
     return 0;
@@ -441,6 +445,19 @@ function readWebappManifestFile(webappDir: string) {
   return JSON.parse(fs.readFileSync(webappPath, "utf8")) as unknown;
 }
 
+export function readWebappInternalAgentKey(
+  app: App,
+  id: string,
+  platform: NodeJS.Platform = process.platform
+) {
+  try {
+    const value = readWebappManifestFile(getWebappDir(app, id, platform));
+    return isRecord(value) ? readInternalAgentKey(value) : "";
+  } catch {
+    return "";
+  }
+}
+
 export function readWebappItemFromDir(webappDir: string, fallbackId = "") {
   return normalizeWebappManifest(readWebappManifestFile(webappDir), webappDir, fallbackId || path.basename(webappDir));
 }
@@ -560,6 +577,7 @@ export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "")
   if (!item) {
     throw new Error("webapp.json is invalid.");
   }
+  const internalAgentKey = readInternalAgentKey(raw);
   const schemaVersion = item.schemaVersion >= 4
     ? item.schemaVersion
     : WEBAPP_LEGACY_CANONICAL_SCHEMA_VERSION;
@@ -600,6 +618,7 @@ export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "")
       frontend: legacyFrontend,
       ...(legacyBackend ? { backend: legacyBackend } : {})
     }),
+    ...(internalAgentKey ? { internalAgentKey } : {}),
     ...(item.copilotAgentKey ? { copilotAgentKey: item.copilotAgentKey } : {}),
     createdAt: toIsoTimestamp(item.createdAt),
     updatedAt: toIsoTimestamp(item.updatedAt)
@@ -610,6 +629,9 @@ export function writeCanonicalWebappManifest(webappDir: string, fallbackId = "")
   }
   if (!item.copilotAgentKey) {
     delete next.copilotAgentKey;
+  }
+  if (!internalAgentKey) {
+    delete next.internalAgentKey;
   }
   if (schemaVersion !== 5) {
     delete next.desktopBridge;

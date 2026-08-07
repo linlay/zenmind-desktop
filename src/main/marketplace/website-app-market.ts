@@ -10,14 +10,11 @@ import {
 } from "../user-paths";
 import { removeWebappItem } from "../webs/webapps/actions";
 import { getWebappDir, readWebappItemFromDir } from "../webs/webapps/store";
-import { webappRuntime } from "../webs/webapps/runtime";
-import { webappWindowManager } from "../webs/webapps/window-manager";
 import {
-  activateWebappInstall,
-  commitWebappInstall,
-  rollbackWebappInstall,
-  type WebappInstallTransaction
-} from "../webs/webapps/install-transaction";
+  installPreparedWebappDirectory,
+  normalizeWebappDirectoryName,
+  type WebappRuntimeValidationMode
+} from "../webs/webapps/installation";
 import {
   downloadAsset,
   findCatalogItem,
@@ -47,7 +44,7 @@ type WebsiteAppArchiveInstallOptions = {
   assetUrl?: string;
   sha256?: string;
   removeArchive?: boolean;
-  validateUpdatedRuntime?: boolean;
+  runtimeValidation?: WebappRuntimeValidationMode;
 };
 
 function websiteAppOnlyCatalog(catalog: Catalog): Catalog {
@@ -75,15 +72,6 @@ async function loadWebsiteAppCatalog(
     ...result,
     catalog: websiteAppOnlyCatalog(result.catalog)
   };
-}
-
-function normalizeWebappDirectoryName(value: unknown) {
-  const normalized = typeof value === "string" ? value.trim().replace(/^user:/u, "") : "";
-  return normalized
-    .toLowerCase()
-    .replace(/[^a-z0-9._-]+/gu, "-")
-    .replace(/^-+|-+$/gu, "")
-    .slice(0, 80);
 }
 
 function assertSafeArchiveEntries(entries: Set<string>) {
@@ -205,8 +193,6 @@ export async function installWebsiteAppArchiveFromPath(
   const nonce = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const tempRoot = path.join(stagingRoot, `${tempId}-${nonce}`);
   const preparedPath = path.join(stagingRoot, `${tempId}-${nonce}-package`);
-  let transaction: WebappInstallTransaction | null = null;
-  let releaseWebappDisposal: (() => void) | null = null;
   try {
     const entries = await listArchiveEntriesAsync(archivePath);
     assertSafeArchiveEntries(entries);
@@ -219,94 +205,43 @@ export async function installWebsiteAppArchiveFromPath(
       throw new Error(t("market.websiteApp.invalidPackage"));
     }
 
-    const webapp = readWebappItemFromDir(webappRoot, expectedId);
-    if (!webapp) {
-      throw new Error(t("market.websiteApp.invalidPackage"));
-    }
-    const safeWebappDirName = normalizeWebappDirectoryName(expectedId || webapp.id);
-    if (!safeWebappDirName) {
-      throw new Error(t("market.websiteApp.invalidId"));
-    }
-    if (webapp.id !== safeWebappDirName) {
-      throw new Error(t("market.websiteApp.idMismatch", { expected: safeWebappDirName, actual: webapp.id }));
-    }
-
-    const targetRoot = getDesktopWebappsDataRoot(app);
-    const installPath = path.join(targetRoot, safeWebappDirName);
-    const replacingExisting = fs.existsSync(installPath);
-    const previousState = replacingExisting ? webappRuntime.getStatus(app, safeWebappDirName) : null;
-    const previousWasRunning = previousState?.status === "running";
-    if (replacingExisting) {
-      releaseWebappDisposal = webappWindowManager.beginDisposal(safeWebappDirName);
-      const prerequisites = webappRuntime.checkItemPrerequisites(app, webapp, webappRoot);
-      if (!prerequisites.ok) {
-        throw new Error(prerequisites.message);
-      }
-      const stopped = await webappRuntime.stop(app, safeWebappDirName, t("market.websiteApp.replaced"));
-      if (!stopped.ok) {
-        throw new Error(t("webapp.marketReplaceActive", { message: stopped.message }));
-      }
-    }
-    fs.mkdirSync(targetRoot, { recursive: true });
     if (webappRoot === tempRoot) {
       fs.renameSync(tempRoot, preparedPath);
     } else {
       fs.renameSync(webappRoot, preparedPath);
     }
-    transaction = activateWebappInstall({
-      app,
-      id: safeWebappDirName,
-      installPath,
-      stagingPath: preparedPath
+    const installed = await installPreparedWebappDirectory(app, preparedPath, {
+      ...(expectedId ? { expectedId } : {}),
+      runtimeValidation: options.runtimeValidation ?? "updates"
     });
-
-    if (replacingExisting && options.validateUpdatedRuntime !== false) {
-      const started = await webappRuntime.start(app, safeWebappDirName);
-      if (!started.ok) {
-        await webappRuntime.stop(app, safeWebappDirName).catch(() => undefined);
-        rollbackWebappInstall(app, transaction);
-        transaction = null;
-        if (previousWasRunning) {
-          await webappRuntime.start(app, safeWebappDirName).catch(() => undefined);
-        }
-        throw new Error(t("webapp.marketStartupValidationFailed", { message: started.message }));
-      }
-      if (!previousWasRunning) {
-        await webappRuntime.stop(app, safeWebappDirName);
-      }
-    }
-    commitWebappInstall(app, transaction);
-    transaction = null;
     upsertInstalledRecord(app, {
-      id: webapp.id,
+      id: installed.item.id,
       type: "website-app",
-      version: webapp.schemaVersion >= 4
-        ? webapp.version
-        : options.version ?? webapp.version,
+      version: installed.item.schemaVersion >= 4
+        ? installed.item.version
+        : options.version ?? installed.item.version,
       source: options.source ?? "local",
       ...(options.assetUrl ? { assetUrl: options.assetUrl } : {}),
       ...(options.sha256 ? { sha256: options.sha256 } : {}),
-      installPath,
+      installPath: installed.installPath,
       installedAt: new Date().toISOString()
     });
-
     return {
       ok: true,
-      itemId: webapp.id,
+      itemId: installed.item.id,
       type: "website-app",
       state: "installed",
-      message: t("market.websiteApp.installed", { name: options.displayName || webapp.label }),
-      installPath
+      message: t("market.websiteApp.installed", {
+        name: options.displayName || installed.item.label
+      }),
+      installPath: installed.installPath
     };
   } finally {
-    releaseWebappDisposal?.();
-    if (transaction) {
-      rollbackWebappInstall(app, transaction);
-    }
     if (options.removeArchive) {
       fs.rmSync(archivePath, { force: true });
     }
     fs.rmSync(tempRoot, { recursive: true, force: true });
+    fs.rmSync(preparedPath, { recursive: true, force: true });
   }
 }
 

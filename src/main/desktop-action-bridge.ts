@@ -65,7 +65,7 @@ import {
 } from "./webs/websites/actions";
 import { webappRuntime } from "./webs/webapps/runtime";
 import { removeWebappItem, updateWebappItem } from "./webs/webapps/actions";
-import { readWebappItems } from "./webs/webapps/store";
+import { readWebappInternalAgentKey, readWebappItems } from "./webs/webapps/store";
 import { webappWindowManager } from "./webs/webapps/window-manager";
 import {
   getWebappPublishStatus,
@@ -888,17 +888,22 @@ function buildMutatingActionConfirmationRequest(
   snapshot: DesktopPageContextSnapshot | null
 ): DesktopActionConfirmationRequest {
   const action = request.action;
+  const isWebappInstall = action === "desktop.webapp.install";
   const providedSummary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
     ? args.confirmationSummary.trim()
     : "";
-  const summary = providedSummary || t("desktopAction.confirmSummary", { action });
+  const summary = providedSummary || (isWebappInstall
+    ? t("desktopAction.webappInstallSummary", { id: readString(args, "expectedId") || "-" })
+    : t("desktopAction.confirmSummary", { action }));
   const permissionMode = readRequestPermissionMode(request, args);
   const target = describeDesktopActionSnapshotTarget(snapshot);
   const argsSummary = summarizeConfirmationArgs(args);
   return {
     requestId: getConfirmationRequestId(request),
     kind: "action",
-    title: t("desktopAction.confirmActionTitle"),
+    title: isWebappInstall
+      ? t("desktopAction.webappInstallTitle")
+      : t("desktopAction.confirmActionTitle"),
     summary,
     description: t("desktopAction.confirmActionDetail"),
     fields: [
@@ -913,7 +918,13 @@ function buildMutatingActionConfirmationRequest(
     }),
     buttons: [
       { decision: "cancel", label: t("common.cancel"), variant: "cancel" },
-      { decision: "confirm", label: t("desktopAction.confirmExecute"), variant: "primary" }
+      {
+        decision: "confirm",
+        label: isWebappInstall
+          ? t("desktopAction.webappInstallConfirm")
+          : t("desktopAction.confirmExecute"),
+        variant: "primary"
+      }
     ],
     defaultDecision: "cancel",
     cancelDecision: "cancel"
@@ -1226,6 +1237,9 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
   if (Object.prototype.hasOwnProperty.call(args, "itemId")) {
     return fail(action, "invalid_args", "itemId is not supported; install market items with desktop.market.installItem.");
   }
+  if (Object.prototype.hasOwnProperty.call(args, "sourcePath")) {
+    return fail(action, "invalid_args", "sourcePath is not supported; provide archivePath.");
+  }
   if (!archivePath) {
     return fail(action, "invalid_args", "archivePath is required.");
   }
@@ -1234,10 +1248,19 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
       .filter((item) => item.kind === "webapp")
       .map((item) => item.id)
   );
-  const installResult = await installWebsiteAppArchiveFromPath(options.app, archivePath, {
-    ...(expectedId ? { expectedId } : {}),
-    validateUpdatedRuntime: false
-  });
+  let installResult;
+  try {
+    installResult = await installWebsiteAppArchiveFromPath(options.app, archivePath, {
+      ...(expectedId ? { expectedId } : {}),
+      runtimeValidation: "always"
+    });
+  } catch (error) {
+    return fail(
+      action,
+      "webapp_install_failed",
+      error instanceof Error ? error.message : String(error)
+    );
+  }
   const webappId = typeof installResult.itemId === "string" ? installResult.itemId.trim() : "";
   if (!installResult.ok || !webappId) {
     return fail(action, "webapp_install_failed", installResult.message, installResult);
@@ -1255,6 +1278,7 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
     itemId: webappId,
     operation,
     item: installedItem,
+    runtimeState: webappRuntime.getStatus(options.app, webappId),
     message: installResult.message
   });
 }
@@ -1742,8 +1766,16 @@ async function executeAction(
         return fail(action, "invalid_args", `message must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`);
       }
       const settings = getAssistantSettings(options.app);
+      const webappAgentKey = invocation.kind === "desktop"
+        ? ""
+        : (() => {
+          const item = readWebappItems(options.app)
+            .find((candidate) => candidate.id === invocation.webappId);
+          return (item ? readWebappInternalAgentKey(options.app, item.id) : "") ||
+            item?.copilotAgentKey?.trim() || "";
+        })();
       const completion = await options.assistantBridge.completeText({
-        agentKey: settings.desktopHelperAgentKey,
+        agentKey: webappAgentKey || settings.desktopHelperAgentKey,
         source: "copilot",
         action: "chat",
         message
