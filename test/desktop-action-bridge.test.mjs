@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
+const FIXTURE_INTERNAL_AGENT_KEY = "fixture-internal-agent";
 
 const {
   handleDesktopActionRequest,
@@ -296,7 +297,7 @@ test("desktop assistant chat forwards a general message without business prompts
 test("WebApp assistant chat prefers internalAgentKey with Copilot and helper fallbacks", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   writeInstalledChatWebapp(options.app, "internal-chat", {
-    internalAgentKey: "desktopTextGenerator",
+    internalAgentKey: FIXTURE_INTERNAL_AGENT_KEY,
     copilotAgentKey: "webOperator"
   });
   writeInstalledChatWebapp(options.app, "copilot-chat", {
@@ -309,7 +310,7 @@ test("WebApp assistant chat prefers internalAgentKey with Copilot and helper fal
     args: { message: "任务：翻译\n要求：只返回译文\n内容：hello" }
   });
   assert.equal(internal.ok, true);
-  assert.equal(calls.completions.at(-1).agentKey, "desktopTextGenerator");
+  assert.equal(calls.completions.at(-1).agentKey, FIXTURE_INTERNAL_AGENT_KEY);
 
   const copilot = await handleWebappPageActionRequest(options, "copilot-chat", {
     action: "desktop.assistant.chat",
@@ -859,7 +860,7 @@ test("Desktop Action Bridge keeps WebApp page and backend token scopes separate"
   const { calls, options } = createDesktopActionOptions(t);
   const port = await getFreeLoopbackPort();
   writeInstalledChatWebapp(options.app, "scope-v5", {
-    internalAgentKey: "desktopTextGenerator"
+    internalAgentKey: FIXTURE_INTERNAL_AGENT_KEY
   });
   const item = {
     id: "scope-v5",
@@ -928,7 +929,7 @@ test("Desktop Action Bridge keeps WebApp page and backend token scopes separate"
   assert.equal(backendChat.status, 200);
   assert.equal(backendChat.body.ok, true);
   assert.equal(calls.completions.length, 1);
-  assert.equal(calls.completions[0].agentKey, "desktopTextGenerator");
+  assert.equal(calls.completions[0].agentKey, FIXTURE_INTERNAL_AGENT_KEY);
 
   const removedComplete = await call(
     "/webapps/actions/call",
