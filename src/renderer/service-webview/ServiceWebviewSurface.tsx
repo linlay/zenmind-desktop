@@ -58,6 +58,7 @@ import {
 } from "../copilot/page-context/webActions";
 import { STORAGE_NAMESPACE } from "../../shared/brand";
 import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
+import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
 
@@ -92,6 +93,32 @@ type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
 const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
+let serviceSurfaceRegistrationSequence = 0;
+
+function createServiceSurfaceRegistrationId() {
+  serviceSurfaceRegistrationSequence += 1;
+  return `service-surface-${Date.now()}-${serviceSurfaceRegistrationSequence}`;
+}
+
+function getEmbeddedCdpSurfaceApi() {
+  const embeddedCdp = window.electronAPI?.embeddedCdp;
+  return typeof embeddedCdp?.registerSurface === "function" &&
+    typeof embeddedCdp?.unregisterSurface === "function"
+    ? embeddedCdp
+    : null;
+}
+
+function resolveContextMenuSurfaceType(
+  serviceId: string,
+  surfaceId: string,
+  embedPath: string | undefined,
+): WebviewContextMenuSurfaceType {
+  if (serviceId !== "agent-webclient") return "service";
+  if (/project/iu.test(embedPath || "")) return "project";
+  if (/copilot/iu.test(surfaceId)) return "agent-copilot";
+  if (/chat/iu.test(surfaceId)) return "agent-chat";
+  return "agent-management";
+}
 
 function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
   return serviceId === "agent-webclient" && surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT;
@@ -413,6 +440,10 @@ export function ServiceWebviewSurface({
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const surfaceRegistrationIdRef = useRef("");
+  if (!surfaceRegistrationIdRef.current) {
+    surfaceRegistrationIdRef.current = createServiceSurfaceRegistrationId();
+  }
   const lastHandledFocusRequestIdRef = useRef(0);
   const lastDirectWebviewRouteRef = useRef("");
   const lastHostAppliedChatRouteRef = useRef("");
@@ -537,6 +568,71 @@ export function ServiceWebviewSurface({
     webUrl,
     wsSource,
   ]);
+
+  useEffect(() => {
+    const embeddedCdp = getEmbeddedCdpSurfaceApi();
+    const targetWebview = webviewRef.current;
+    const webContentsId = readWebviewContentsId(targetWebview);
+    if (!embeddedCdp || !targetWebview || !webContentsId || !surfaceId) {
+      return;
+    }
+    let currentUrl = embeddedUrl;
+    let title = serviceDisplayName;
+    let canGoBack = false;
+    let canGoForward = false;
+    let isLoading = false;
+    try {
+      currentUrl = targetWebview.getURL() || webviewCurrentUrl || embeddedUrl;
+      title = targetWebview.getTitle() || serviceDisplayName;
+      canGoBack = targetWebview.canGoBack();
+      canGoForward = targetWebview.canGoForward();
+      isLoading = targetWebview.isLoading();
+    } catch {
+      return;
+    }
+    void embeddedCdp.registerSurface({
+      registrationId: surfaceRegistrationIdRef.current,
+      surfaceId,
+      surfaceKind: "service",
+      surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceId, effectiveEmbedPath),
+      ...(serviceId ? { serviceId } : {}),
+      pageRoute: surfaceRoute,
+      label: serviceDisplayName || surfaceId,
+      url: webUrl || embeddedUrl,
+      active: active !== false,
+      tabs: [{
+        tabId: surfaceId,
+        currentUrl,
+        title,
+        webContentsId,
+        canGoBack,
+        canGoForward,
+        isLoading,
+      }],
+      activeTabId: surfaceId,
+    }).catch(() => undefined);
+  }, [
+    active,
+    effectiveEmbedPath,
+    embeddedUrl,
+    serviceDisplayName,
+    serviceId,
+    surfaceId,
+    surfaceRoute,
+    webUrl,
+    webviewCurrentUrl,
+    webviewSnapshotNonce,
+  ]);
+
+  useEffect(() => {
+    const registrationId = surfaceRegistrationIdRef.current;
+    return () => {
+      void getEmbeddedCdpSurfaceApi()?.unregisterSurface({
+        registrationId,
+        surfaceId,
+      }).catch(() => undefined);
+    };
+  }, [surfaceId]);
   const webviewOriginSrcUrl = useMemo(
     () => buildServiceWebviewSrcUrl(embeddedUrl),
     [embeddedUrl],

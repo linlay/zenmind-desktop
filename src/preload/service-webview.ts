@@ -16,6 +16,11 @@ import {
   type ServiceWebviewBridgeMessage
 } from "../shared/service-webview-bridge";
 import {
+  WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION,
+  WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
+  WEBVIEW_CONTEXT_MENU_SEMANTIC_RESPONSE_CHANNEL
+} from "../shared/webview-context-menu";
+import {
   PAGE_TO_PRELOAD_EVENT,
   PRELOAD_TO_PAGE_EVENT,
   PRELOAD_TO_PAGE_ACTION_EVENT,
@@ -119,6 +124,16 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
 });
 
 window.addEventListener("message", (event) => {
+  if (
+    isBridgeMessage(event.data) &&
+    event.data.type === WEBVIEW_CONTEXT_MENU_SEMANTIC_RESPONSE_CHANNEL &&
+    event.source === window &&
+    event.origin === window.location.origin
+  ) {
+    const { type: _type, ...payload } = event.data;
+    ipcRenderer.send(WEBVIEW_CONTEXT_MENU_SEMANTIC_RESPONSE_CHANNEL, payload);
+    return;
+  }
   if (!isBridgeMessage(event.data) || !isDesktopBridgeRequest(event.data)) {
     return;
   }
@@ -145,9 +160,17 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, (_event, payload: ServiceWe
 });
 
 ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<string, unknown>) => {
-  if (!payload || typeof payload !== "object" || payload.action !== "openChatHistory") {
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    ![
+      "openChatHistory",
+      WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
+      WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION
+    ].includes(String(payload.action || ""))
+  ) {
     return;
   }
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_ACTION_EVENT, { detail: payload }));
-  sendBridgeDebug("action-dispatched", "openChatHistory");
+  sendBridgeDebug("action-dispatched", String(payload.action || ""));
 });

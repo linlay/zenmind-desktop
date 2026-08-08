@@ -6,6 +6,7 @@ import {
   type DesktopHelpTheme
 } from "../../shared/help";
 import { useI18n } from "../i18n/useI18n";
+import { useSingleWebviewSurfaceRegistration } from "../services/useSingleWebviewSurfaceRegistration";
 import "./HelpPage.css";
 
 type SettingsState =
@@ -71,6 +72,16 @@ export function HelpPage({ hostTheme }: HelpPageProps) {
         theme: hostTheme
       })
     : "";
+
+  useSingleWebviewSurfaceRegistration({
+    webviewRef,
+    surfaceId: "desktop-help",
+    surfaceType: "help",
+    pageRoute: "/help",
+    label: t("nav.help"),
+    url: helpUrl,
+    refreshKey: webviewKey,
+  });
 
   useEffect(() => {
     if (!helpUrl) {

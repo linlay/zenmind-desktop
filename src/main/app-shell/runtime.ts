@@ -62,6 +62,7 @@ export type AppShellRuntimeOptions = {
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   resolveGlobalSearchCommandShortcut: (platform: NodeJS.Platform, input: any) => DesktopGlobalSearchShortcut | null;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
+  attachWebviewContextMenu: (contents: Electron.WebContents) => void;
   collectWebviewLoadDiagnostics: (contents: Electron.WebContents, validatedUrl: string) => Promise<Record<string, unknown>>;
   reportRendererDiagnostic: (source: string, details: Record<string, unknown>) => void;
   safeConsoleError: (message: string, details: unknown) => void;
@@ -222,6 +223,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       collectLoadDiagnostics: options.collectWebviewLoadDiagnostics,
       report: options.safeConsoleError,
       onWebviewNavigation: options.handleDesktopSsoWebviewNavigation,
+      attachWebviewContextMenu: options.attachWebviewContextMenu,
       getHelpUrl: () => readHelpSettings(options.app, options.platform).url,
       isHelpWebview: (contents) =>
         contents.session === options.session.fromPartition(DESKTOP_HELP_WEBVIEW_PARTITION),

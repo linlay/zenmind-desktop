@@ -59,6 +59,20 @@ type RegisteredSurface = EmbeddedCdpSurfaceRegistration & {
   ownerWebContentsId: number;
 };
 
+export type RegisteredWebviewSurfaceTarget = {
+  registrationId: string;
+  surfaceId: string;
+  surfaceKind: EmbeddedCdpSurfaceKind;
+  surfaceType: NonNullable<EmbeddedCdpSurfaceRegistration["surfaceType"]>;
+  serviceId?: string;
+  pageRoute?: string;
+  tabId: string;
+  webContentsId: number;
+  ownerWebContentsId: number;
+  currentUrl: string;
+  label: string;
+};
+
 export function normalizeSurfaceMatchText(value: string) {
   return value
     .trim()
@@ -95,6 +109,38 @@ export function webEntryMatchesSurfaceTarget(item: BrowserSurface, target: strin
 
 export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOptions) {
   const registeredSurfaces = new Map<string, RegisteredSurface>();
+  const registeredGuestTargets = new Map<number, RegisteredWebviewSurfaceTarget>();
+
+  function fallbackSurfaceType(surfaceKind: EmbeddedCdpSurfaceKind) {
+    return surfaceKind;
+  }
+
+  function removeGuestTargetsForSurface(surfaceId: string) {
+    for (const [webContentsId, target] of registeredGuestTargets) {
+      if (target.surfaceId === surfaceId) {
+        registeredGuestTargets.delete(webContentsId);
+      }
+    }
+  }
+
+  function indexRegisteredSurface(surface: RegisteredSurface) {
+    removeGuestTargetsForSurface(surface.surfaceId);
+    for (const tab of surface.tabs) {
+      registeredGuestTargets.set(tab.webContentsId, {
+        registrationId: surface.registrationId,
+        surfaceId: surface.surfaceId,
+        surfaceKind: surface.surfaceKind,
+        surfaceType: surface.surfaceType ?? fallbackSurfaceType(surface.surfaceKind),
+        ...(surface.serviceId ? { serviceId: surface.serviceId } : {}),
+        ...(surface.pageRoute ? { pageRoute: surface.pageRoute } : {}),
+        tabId: tab.tabId,
+        webContentsId: tab.webContentsId,
+        ownerWebContentsId: surface.ownerWebContentsId,
+        currentUrl: tab.currentUrl,
+        label: surface.label
+      });
+    }
+  }
 
   function expectedSiteSurfaceIdPrefix(surfaceKind: EmbeddedCdpSiteSurfaceKind) {
     return `${surfaceKind}:`;
@@ -120,6 +166,17 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       ? true
       : input.surfaceId.startsWith(expectedSiteSurfaceIdPrefix(input.surfaceKind));
     const validKinds: EmbeddedCdpSurfaceKind[] = ["website", "webapp", "browser", "service"];
+    const validSurfaceTypes = new Set([
+      "agent-chat",
+      "agent-copilot",
+      "agent-management",
+      "project",
+      "browser",
+      "website",
+      "webapp",
+      "help",
+      "service"
+    ]);
     const tabIds = new Set<string>();
     const webContentsIds = new Set<number>();
     return Boolean(
@@ -129,6 +186,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       typeof input.surfaceId === "string" &&
       input.surfaceId.trim() &&
       validKinds.includes(input.surfaceKind) &&
+      (input.surfaceType === undefined || validSurfaceTypes.has(input.surfaceType)) &&
+      (input.serviceId === undefined || typeof input.serviceId === "string") &&
+      (input.pageRoute === undefined || typeof input.pageRoute === "string") &&
       sitePrefixValid &&
       typeof input.label === "string" &&
       typeof input.url === "string" &&
@@ -154,10 +214,24 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   }
 
   function registerSurface(input: EmbeddedCdpSurfaceRegistration, ownerWebContentsId: number) {
-    if (!isValidSurfaceRegistration(input) || !Number.isSafeInteger(ownerWebContentsId)) {
+    if (
+      !isValidSurfaceRegistration(input) ||
+      !Number.isSafeInteger(ownerWebContentsId) ||
+      ownerWebContentsId <= 0
+    ) {
       return false;
     }
-    registeredSurfaces.set(input.surfaceId, {
+    const existingSurface = registeredSurfaces.get(input.surfaceId);
+    if (existingSurface && existingSurface.ownerWebContentsId !== ownerWebContentsId) {
+      return false;
+    }
+    for (const tab of input.tabs) {
+      const claimed = registeredGuestTargets.get(tab.webContentsId);
+      if (claimed && claimed.surfaceId !== input.surfaceId) {
+        return false;
+      }
+    }
+    const registered: RegisteredSurface = {
       ...input,
       registrationId: input.registrationId.trim(),
       surfaceId: input.surfaceId.trim(),
@@ -171,8 +245,12 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl.trim() } : {})
       })),
       activeTabId: input.activeTabId?.trim() || null,
+      ...(input.serviceId ? { serviceId: input.serviceId.trim() } : {}),
+      ...(input.pageRoute ? { pageRoute: input.pageRoute.trim() } : {}),
       ownerWebContentsId
-    });
+    };
+    registeredSurfaces.set(input.surfaceId, registered);
+    indexRegisteredSurface(registered);
     return true;
   }
 
@@ -188,6 +266,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       return false;
     }
     registeredSurfaces.delete(surfaceId);
+    removeGuestTargetsForSurface(surfaceId);
     return true;
   }
 
@@ -195,6 +274,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     for (const [surfaceId, surface] of registeredSurfaces) {
       if (surface.ownerWebContentsId === ownerWebContentsId) {
         registeredSurfaces.delete(surfaceId);
+        removeGuestTargetsForSurface(surfaceId);
       }
     }
   }
@@ -211,10 +291,12 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     });
     if (tabs.length === 0) {
       registeredSurfaces.delete(surfaceId);
+      removeGuestTargetsForSurface(surfaceId);
       return null;
     }
     if (tabs.length !== previousTabs.length) {
       registered.tabs = tabs;
+      indexRegisteredSurface(registered);
     }
     if (!registered.activeTabId || !tabs.some((tab) => tab.tabId === registered.activeTabId)) {
       registered.activeTabId = selectSurvivingTabId(
@@ -242,6 +324,32 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   function findWebContentsById(webContentsId: number) {
     const contents = options.webContents.fromId(webContentsId);
     return contents && !contents.isDestroyed() && contents.getType() === "webview" ? contents : null;
+  }
+
+  function resolveWebviewSurfaceTarget(webContentsId: number) {
+    const indexed = registeredGuestTargets.get(webContentsId);
+    if (!indexed) {
+      return null;
+    }
+    const resolved = resolveRegisteredSurface(indexed.surfaceId);
+    const tab = resolved?.tabs.find((candidate) => candidate.webContentsId === webContentsId);
+    if (
+      !resolved ||
+      !tab ||
+      resolved.registered.registrationId !== indexed.registrationId ||
+      resolved.registered.ownerWebContentsId !== indexed.ownerWebContentsId
+    ) {
+      registeredGuestTargets.delete(webContentsId);
+      return null;
+    }
+    const next = {
+      ...indexed,
+      currentUrl: tab.currentUrl,
+      label: resolved.registered.label,
+      ...(resolved.registered.pageRoute ? { pageRoute: resolved.registered.pageRoute } : {})
+    };
+    registeredGuestTargets.set(webContentsId, next);
+    return next;
   }
 
   function currentPageSnapshotMatchesSurface(surfaceId: string, contents?: WebContents | null) {
@@ -344,6 +452,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     builtinBrowserSurface,
     listBrowserSurfaces,
     registerSurface,
+    resolveWebviewSurfaceTarget,
     unregisterSurface,
     unregisterSurfacesForOwner,
     webEntryMatchesSurfaceTarget

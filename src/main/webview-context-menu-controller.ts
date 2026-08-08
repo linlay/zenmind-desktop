@@ -1,0 +1,494 @@
+import { clipboard, ipcMain, Menu, type BrowserWindow, type ContextMenuParams, type MenuItemConstructorOptions, type WebContents } from "electron";
+import type { BrowserSurfaceRegistry, RegisteredWebviewSurfaceTarget } from "./browser-surface-registry";
+import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../shared/service-webview-bridge";
+import {
+  WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION,
+  WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
+  WEBVIEW_CONTEXT_MENU_SEMANTIC_RESPONSE_CHANNEL,
+  WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION,
+  type WebviewContextMenuActionId,
+  type WebviewContextMenuExecuteCommand,
+  type WebviewContextMenuSemanticCapability,
+  type WebviewContextMenuSemanticTarget,
+  type WebviewContextMenuSurfaceType
+} from "../shared/webview-context-menu";
+import {
+  buildWebviewContextMenuPolicy,
+  isDesktopTabUrl,
+  isExternalApplicationUrl,
+  isSafeMediaDownloadUrl,
+  type WebviewContextMenuPolicyItem
+} from "./webview-context-menu-policy";
+
+const SEMANTIC_TIMEOUT_MS = 120;
+const MAX_SEMANTIC_RESPONSE_BYTES = 32 * 1024;
+const MAX_TARGET_ID_LENGTH = 128;
+const MAX_URL_LENGTH = 2_048;
+const MAX_LABEL_LENGTH = 256;
+
+const CAPABILITIES_BY_TARGET = {
+  message: new Set<WebviewContextMenuSemanticCapability>(["content.copy"]),
+  code: new Set<WebviewContextMenuSemanticCapability>(["code.copy"]),
+  "web-link": new Set<WebviewContextMenuSemanticCapability>(["link.preview"]),
+  "workspace-file": new Set<WebviewContextMenuSemanticCapability>([
+    "workspace.preview",
+    "workspace.copy-path"
+  ]),
+  "chat-resource": new Set<WebviewContextMenuSemanticCapability>([
+    "resource.preview",
+    "resource.download"
+  ])
+} as const;
+
+const SEMANTIC_COMMAND_BY_ACTION: Partial<Record<
+  WebviewContextMenuActionId,
+  WebviewContextMenuExecuteCommand
+>> = {
+  "content.copy": "copy-content",
+  "code.copy": "copy-code",
+  "workspace.preview": "preview-workspace",
+  "workspace.copy-path": "copy-workspace-path",
+  "resource.preview": "preview-resource",
+  "resource.download": "download-resource"
+};
+
+export type WebviewContextMenuContext = {
+  webContentsId: number;
+  surfaceId: string | null;
+  tabId: string | null;
+  registrationId: string | null;
+  ownerWebContentsId: number;
+  surfaceType: WebviewContextMenuSurfaceType;
+  serviceId?: string;
+  pageRoute?: string;
+  pageURL: string;
+  frameURL: string;
+  x: number;
+  y: number;
+  selectionText: string;
+  linkURL: string;
+  mediaURL: string;
+  mediaType: string;
+  suggestedFilename: string;
+  hasImageContents: boolean;
+  isEditable: boolean;
+  editFlags: ContextMenuParams["editFlags"];
+  canGoBack: boolean;
+  canGoForward: boolean;
+  trustedAgentWebclient: boolean;
+  semanticTarget: WebviewContextMenuSemanticTarget | null;
+};
+
+export type WebviewContextMenuControllerOptions = {
+  platform: NodeJS.Platform;
+  browserSurfaces: BrowserSurfaceRegistry;
+  getMainWindow(): BrowserWindow | null;
+  openBrowserUrl(input: { url: string; label?: string; requireOperableTarget?: boolean }): Promise<unknown>;
+  openExternal(url: string): Promise<unknown>;
+  isTrustedAgentWebclient(
+    contents: WebContents,
+    target: RegisteredWebviewSurfaceTarget
+  ): boolean | Promise<boolean>;
+  t(key: any, values?: any): string;
+  report(source: string, details: Record<string, unknown>): void;
+};
+
+type PendingSemanticRequest = {
+  guestId: number;
+  resolve(target: WebviewContextMenuSemanticTarget | null): void;
+  timeout: NodeJS.Timeout;
+};
+
+type MenuSnapshot = {
+  contents: WebContents;
+  registeredTarget: RegisteredWebviewSurfaceTarget | null;
+  context: WebviewContextMenuContext;
+};
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]) {
+  const allowedKeys = new Set(allowed);
+  return Object.keys(value).every((key) => allowedKeys.has(key));
+}
+
+export function validateWebviewContextMenuSemanticResponse(
+  value: unknown,
+  expectedRequestId: string
+): WebviewContextMenuSemanticTarget | null | undefined {
+  if (!isPlainObject(value)) return undefined;
+  try {
+    if (Buffer.byteLength(JSON.stringify(value), "utf8") > MAX_SEMANTIC_RESPONSE_BYTES) return undefined;
+  } catch {
+    return undefined;
+  }
+  if (
+    !hasOnlyKeys(value, ["version", "requestId", "target"]) ||
+    value.version !== WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION ||
+    value.requestId !== expectedRequestId
+  ) {
+    return undefined;
+  }
+  if (value.target === null) return null;
+  if (!isPlainObject(value.target)) return undefined;
+  const target = value.target;
+  if (!hasOnlyKeys(target, ["version", "targetId", "kind", "capabilities", "url", "title", "name", "mediaType"])) {
+    return undefined;
+  }
+  if (
+    target.version !== WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION ||
+    typeof target.targetId !== "string" ||
+    !target.targetId.trim() ||
+    target.targetId.length > MAX_TARGET_ID_LENGTH ||
+    typeof target.kind !== "string" ||
+    !(target.kind in CAPABILITIES_BY_TARGET) ||
+    !Array.isArray(target.capabilities) ||
+    target.capabilities.length > 4 ||
+    new Set(target.capabilities).size !== target.capabilities.length
+  ) {
+    return undefined;
+  }
+  const allowedCapabilities = CAPABILITIES_BY_TARGET[target.kind as keyof typeof CAPABILITIES_BY_TARGET];
+  if (!target.capabilities.every((capability) =>
+    typeof capability === "string" && allowedCapabilities.has(capability as never)
+  )) {
+    return undefined;
+  }
+  for (const key of ["title", "name"] as const) {
+    if (target[key] !== undefined && (typeof target[key] !== "string" || target[key].length > MAX_LABEL_LENGTH)) {
+      return undefined;
+    }
+  }
+  if (target.url !== undefined && (typeof target.url !== "string" || target.url.length > MAX_URL_LENGTH)) {
+    return undefined;
+  }
+  if (
+    target.kind === "web-link" &&
+    (typeof target.url !== "string" || !isDesktopTabUrl(target.url))
+  ) {
+    return undefined;
+  }
+  if (
+    target.mediaType !== undefined &&
+    !["image", "audio", "video", "file"].includes(String(target.mediaType))
+  ) {
+    return undefined;
+  }
+  return target as WebviewContextMenuSemanticTarget;
+}
+
+export function getWebviewContextMenuAccelerator(
+  platform: NodeJS.Platform,
+  actionId: WebviewContextMenuActionId
+) {
+  const mac = platform === "darwin";
+  const accelerators: Partial<Record<WebviewContextMenuActionId, string>> = mac
+    ? {
+        "edit.undo": "Command+Z",
+        "edit.redo": "Shift+Command+Z",
+        "edit.cut": "Command+X",
+        "edit.copy": "Command+C",
+        "edit.paste": "Command+V",
+        "edit.select-all": "Command+A",
+        "selection.copy": "Command+C"
+      }
+    : {
+        "edit.undo": "Ctrl+Z",
+        "edit.redo": "Ctrl+Y",
+        "edit.cut": "Ctrl+X",
+        "edit.copy": "Ctrl+C",
+        "edit.paste": "Ctrl+V",
+        "edit.select-all": "Ctrl+A",
+        "selection.copy": "Ctrl+C"
+      };
+  return accelerators[actionId];
+}
+
+export function createWebviewContextMenuController(options: WebviewContextMenuControllerOptions) {
+  const attachedGuests = new WeakSet<WebContents>();
+  const pendingRequests = new Map<string, PendingSemanticRequest>();
+  const latestRequestByGuest = new Map<number, string>();
+  const contextSequenceByGuest = new Map<number, number>();
+
+  function finishPending(requestId: string, target: WebviewContextMenuSemanticTarget | null) {
+    const pending = pendingRequests.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    pendingRequests.delete(requestId);
+    if (latestRequestByGuest.get(pending.guestId) === requestId) {
+      latestRequestByGuest.delete(pending.guestId);
+    }
+    pending.resolve(target);
+  }
+
+  ipcMain.on(WEBVIEW_CONTEXT_MENU_SEMANTIC_RESPONSE_CHANNEL, (event, payload: unknown) => {
+    if (!isPlainObject(payload) || typeof payload.requestId !== "string") return;
+    const pending = pendingRequests.get(payload.requestId);
+    if (!pending || event.sender.id !== pending.guestId) return;
+    const validated = validateWebviewContextMenuSemanticResponse(payload, payload.requestId);
+    if (validated === undefined) {
+      finishPending(payload.requestId, null);
+      return;
+    }
+    finishPending(payload.requestId, validated);
+  });
+
+  function cancelGuestRequests(guestId: number) {
+    const requestId = latestRequestByGuest.get(guestId);
+    if (requestId) finishPending(requestId, null);
+  }
+
+  function resolveSemantic(contents: WebContents, x: number, y: number) {
+    cancelGuestRequests(contents.id);
+    const requestId = `webview-context-${contents.id}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    return new Promise<WebviewContextMenuSemanticTarget | null>((resolve) => {
+      const timeout = setTimeout(() => finishPending(requestId, null), SEMANTIC_TIMEOUT_MS);
+      pendingRequests.set(requestId, { guestId: contents.id, resolve, timeout });
+      latestRequestByGuest.set(contents.id, requestId);
+      try {
+        contents.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+          action: WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
+          version: WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION,
+          requestId,
+          x,
+          y
+        });
+      } catch {
+        finishPending(requestId, null);
+      }
+    });
+  }
+
+  function readNavigationState(contents: WebContents) {
+    try {
+      return {
+        canGoBack: contents.navigationHistory.canGoBack(),
+        canGoForward: contents.navigationHistory.canGoForward()
+      };
+    } catch {
+      return { canGoBack: false, canGoForward: false };
+    }
+  }
+
+  function liveRegistrationMatches(snapshot: MenuSnapshot) {
+    const mainWindow = options.getMainWindow();
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      mainWindow.webContents.id !== snapshot.context.ownerWebContentsId
+    ) {
+      return false;
+    }
+    if (snapshot.contents.isDestroyed() || snapshot.contents.getType() !== "webview") return false;
+    if (snapshot.contents.id !== snapshot.context.webContentsId) return false;
+    if (snapshot.contents.getURL() !== snapshot.context.pageURL) return false;
+    if (!snapshot.registeredTarget) return true;
+    const live = options.browserSurfaces.resolveWebviewSurfaceTarget(snapshot.contents.id);
+    return Boolean(
+      live &&
+      live.registrationId === snapshot.registeredTarget.registrationId &&
+      live.surfaceId === snapshot.registeredTarget.surfaceId &&
+      live.tabId === snapshot.registeredTarget.tabId &&
+      live.ownerWebContentsId === snapshot.registeredTarget.ownerWebContentsId
+    );
+  }
+
+  function semanticLinkURL(context: WebviewContextMenuContext) {
+    return context.semanticTarget?.kind === "web-link" && context.semanticTarget.url
+      ? context.semanticTarget.url
+      : context.linkURL;
+  }
+
+  function executeSemantic(snapshot: MenuSnapshot, command: WebviewContextMenuExecuteCommand) {
+    const target = snapshot.context.semanticTarget;
+    if (!target || !liveRegistrationMatches(snapshot)) return;
+    try {
+      snapshot.contents.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+        action: WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION,
+        version: WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION,
+        requestId: `webview-context-execute-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`,
+        targetId: target.targetId,
+        targetKind: target.kind,
+        command,
+        x: snapshot.context.x,
+        y: snapshot.context.y
+      });
+    } catch {
+      // The guest can be destroyed after validation and before delivery.
+    }
+  }
+
+  function executeAction(snapshot: MenuSnapshot, actionId: WebviewContextMenuActionId) {
+    if (!liveRegistrationMatches(snapshot)) return;
+    const contents = snapshot.contents;
+    const context = snapshot.context;
+    const semanticCommand = SEMANTIC_COMMAND_BY_ACTION[actionId];
+    if (semanticCommand) {
+      executeSemantic(snapshot, semanticCommand);
+      return;
+    }
+    switch (actionId) {
+      case "edit.undo": contents.undo(); return;
+      case "edit.redo": contents.redo(); return;
+      case "edit.cut": contents.cut(); return;
+      case "edit.copy": contents.copy(); return;
+      case "edit.paste": contents.paste(); return;
+      case "edit.select-all": contents.selectAll(); return;
+      case "selection.copy": clipboard.writeText(context.selectionText); return;
+      case "link.open-current": {
+        const url = semanticLinkURL(context);
+        if (!isDesktopTabUrl(url)) return;
+        if (context.trustedAgentWebclient && context.semanticTarget?.kind === "web-link") {
+          executeSemantic(snapshot, "preview-link");
+          return;
+        }
+        if (["browser", "website", "webapp"].includes(context.surfaceType)) {
+          void contents.loadURL(url);
+        }
+        return;
+      }
+      case "link.open-desktop-tab": {
+        const url = semanticLinkURL(context);
+        if (isDesktopTabUrl(url)) {
+          void options.openBrowserUrl({ url, requireOperableTarget: false });
+        }
+        return;
+      }
+      case "link.open-external": {
+        const url = semanticLinkURL(context);
+        if (isExternalApplicationUrl(url)) void options.openExternal(url);
+        return;
+      }
+      case "link.copy": {
+        const url = semanticLinkURL(context);
+        if (isExternalApplicationUrl(url)) clipboard.writeText(url);
+        return;
+      }
+      case "media.copy-image": contents.copyImageAt(context.x, context.y); return;
+      case "media.save-as": {
+        if (isSafeMediaDownloadUrl(context.mediaURL)) contents.downloadURL(context.mediaURL);
+        return;
+      }
+      case "page.back": {
+        if (contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack();
+        return;
+      }
+      case "page.forward": {
+        if (contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward();
+        return;
+      }
+      case "page.reload": contents.reload(); return;
+      case "page.copy-url": {
+        if (isDesktopTabUrl(contents.getURL())) clipboard.writeText(contents.getURL());
+        return;
+      }
+      default: return;
+    }
+  }
+
+  function labelFor(snapshot: MenuSnapshot, actionId: WebviewContextMenuActionId) {
+    if (actionId === "link.open-current" && snapshot.context.trustedAgentWebclient) {
+      return options.t("webviewContextMenu.linkPreview");
+    }
+    return options.t(`webviewContextMenu.${actionId}`);
+  }
+
+  function buildTemplate(snapshot: MenuSnapshot, policyItems: WebviewContextMenuPolicyItem[]) {
+    const template: MenuItemConstructorOptions[] = [];
+    let previousGroup: WebviewContextMenuPolicyItem["group"] | null = null;
+    for (const item of policyItems) {
+      if (previousGroup && previousGroup !== item.group) template.push({ type: "separator" });
+      template.push({
+        label: labelFor(snapshot, item.id),
+        accelerator: getWebviewContextMenuAccelerator(options.platform, item.id),
+        click: () => executeAction(snapshot, item.id)
+      });
+      previousGroup = item.group;
+    }
+    return template;
+  }
+
+  async function handleContextMenu(contents: WebContents, params: ContextMenuParams) {
+    if (contents.isDestroyed()) return;
+    const contextSequence = (contextSequenceByGuest.get(contents.id) ?? 0) + 1;
+    contextSequenceByGuest.set(contents.id, contextSequence);
+    const registeredTarget = options.browserSurfaces.resolveWebviewSurfaceTarget(contents.id);
+    const navigation = readNavigationState(contents);
+    const pageURL = contents.getURL();
+    let trustedAgentWebclient = false;
+    if (registeredTarget) {
+      try {
+        trustedAgentWebclient = Boolean(
+          await options.isTrustedAgentWebclient(contents, registeredTarget)
+        );
+      } catch {
+        trustedAgentWebclient = false;
+      }
+    }
+    if (contextSequenceByGuest.get(contents.id) !== contextSequence) return;
+    const semanticTarget = trustedAgentWebclient
+      ? await resolveSemantic(contents, params.x, params.y)
+      : null;
+    if (contextSequenceByGuest.get(contents.id) !== contextSequence) return;
+    const mainWindow = options.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed() || contents.isDestroyed()) return;
+    const snapshot: MenuSnapshot = {
+      contents,
+      registeredTarget,
+      context: {
+        webContentsId: contents.id,
+        surfaceId: registeredTarget?.surfaceId ?? null,
+        tabId: registeredTarget?.tabId ?? null,
+        registrationId: registeredTarget?.registrationId ?? null,
+        ownerWebContentsId: registeredTarget?.ownerWebContentsId ?? mainWindow.webContents.id,
+        surfaceType: registeredTarget?.surfaceType ?? "service",
+        ...(registeredTarget?.serviceId ? { serviceId: registeredTarget.serviceId } : {}),
+        ...(registeredTarget?.pageRoute ? { pageRoute: registeredTarget.pageRoute } : {}),
+        pageURL,
+        frameURL: params.frameURL,
+        x: params.x,
+        y: params.y,
+        selectionText: params.selectionText,
+        linkURL: params.linkURL,
+        mediaURL: params.srcURL,
+        mediaType: params.mediaType,
+        suggestedFilename: params.suggestedFilename,
+        hasImageContents: params.hasImageContents,
+        isEditable: params.isEditable,
+        editFlags: params.editFlags,
+        canGoBack: navigation.canGoBack,
+        canGoForward: navigation.canGoForward,
+        trustedAgentWebclient,
+        semanticTarget
+      }
+    };
+    if (!liveRegistrationMatches(snapshot)) return;
+    const policyItems = buildWebviewContextMenuPolicy(snapshot.context);
+    if (policyItems.length === 0) return;
+    Menu.buildFromTemplate(buildTemplate(snapshot, policyItems)).popup({ window: mainWindow });
+  }
+
+  function attach(contents: WebContents) {
+    if (attachedGuests.has(contents)) return;
+    attachedGuests.add(contents);
+    contents.on("context-menu", (event, params) => {
+      event.preventDefault();
+      void handleContextMenu(contents, params).catch((error) => {
+        options.report("webview context menu failed", {
+          guestId: contents.id,
+          error: error instanceof Error ? error.message : String(error)
+        });
+      });
+    });
+    contents.once("destroyed", () => {
+      cancelGuestRequests(contents.id);
+      contextSequenceByGuest.delete(contents.id);
+    });
+  }
+
+  return { attach };
+}
+
+export type WebviewContextMenuController = ReturnType<typeof createWebviewContextMenuController>;

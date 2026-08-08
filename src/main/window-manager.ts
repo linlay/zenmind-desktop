@@ -334,6 +334,7 @@ export function configureMainWindowWebContents<
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
     report(source: string, details: Record<string, unknown>): void;
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
+    attachWebviewContextMenu?(contents: TGuestContents): void;
     getHelpUrl?(): string;
     isHelpWebview?(contents: TGuestContents): boolean;
     openExternal(url: string): Promise<unknown>;
@@ -401,6 +402,7 @@ export function configureMainWindowWebContents<
   });
 
   targetWindow.webContents.on("did-attach-webview", (_event, contents: TGuestContents) => {
+    options.attachWebviewContextMenu?.(contents);
     configureAttachedWebview(contents, {
       platform: options.platform,
       getMainWindow: options.getMainWindow,

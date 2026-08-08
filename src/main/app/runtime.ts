@@ -140,6 +140,7 @@ import {
 } from "../sso-controller";
 import { createCdpIntegration } from "../cdp-integration";
 import { createWebSurfaceRuntime } from "../webs/surface-runtime";
+import { createWebviewContextMenuController } from "../webview-context-menu-controller";
 import { createSettingsRuntime } from "../settings/runtime";
 import { createMainAppState } from "../app-state";
 import {
@@ -257,6 +258,32 @@ export function createMainProcessRuntime() {
     navigateMainWindow,
     delay,
     t
+  });
+  const webviewContextMenuController = createWebviewContextMenuController({
+    platform: mainProcessContext.platform,
+    browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
+    getMainWindow: () => appState.mainWindow,
+    openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
+    openExternal: (url) => shell.openExternal(url),
+    isTrustedAgentWebclient: async (contents, target) => {
+      if (
+        target.serviceId !== "agent-webclient" ||
+        contents.session !== session.fromPartition(`persist:${STORAGE_NAMESPACE}-service-agent-webclient`)
+      ) {
+        return false;
+      }
+      const liveUrl = parseSafeLoopbackWebUrl(contents.getURL());
+      if (!liveUrl) return false;
+      const service = await getResponsiveServiceState(app, "agent-webclient");
+      const serviceUrl = parseSafeLoopbackWebUrl(service.healthMeta.webUrl);
+      return Boolean(
+        service.status === "running" &&
+        serviceUrl &&
+        new URL(liveUrl.toString()).origin === new URL(serviceUrl.toString()).origin
+      );
+    },
+    t,
+    report: reportRendererDiagnostic
   });
   let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
   const enterpriseChatRuntime = new EnterpriseChatRuntime({
@@ -524,6 +551,7 @@ export function createMainProcessRuntime() {
     isGlobalSearchShortcut,
     resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation,
+    attachWebviewContextMenu: webviewContextMenuController.attach,
     collectWebviewLoadDiagnostics,
     reportRendererDiagnostic,
     safeConsoleError,

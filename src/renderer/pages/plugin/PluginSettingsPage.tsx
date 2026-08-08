@@ -11,6 +11,7 @@ import {
 } from "../../../shared/service-webview-bridge";
 import { handleServiceWebviewBridgeMessage } from "../../services/serviceWebviewBridgeHost";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
+import { useSingleWebviewSurfaceRegistration } from "../../services/useSingleWebviewSurfaceRegistration";
 
 type PluginSettingsPageProps = {
   hostTheme: "light" | "dark";
@@ -48,6 +49,17 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
       return settingsUrl;
     }
   }, [hostTheme, settingsUrl]);
+
+  useSingleWebviewSurfaceRegistration({
+    webviewRef,
+    surfaceId: `plugin-settings:${pluginId}`,
+    surfaceType: "service",
+    serviceId: pluginId,
+    pageRoute: `/plugins/${pluginId}/settings`,
+    label: serviceDisplayName,
+    url: webviewUrl,
+    refreshKey: preloadUrl,
+  });
 
   useEffect(() => {
     let cancelled = false;

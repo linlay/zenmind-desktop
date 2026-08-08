@@ -538,6 +538,8 @@ export function ExternalWebviewPage({
       registrationId: surfaceRegistrationId,
       surfaceId,
       surfaceKind: registeredSurfaceKind,
+      surfaceType: registeredSurfaceKind,
+      pageRoute: registeredSurfaceRoute,
       label: surfaceLabel ?? title,
       url,
       active: activeRef.current,

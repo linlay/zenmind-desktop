@@ -1,3 +1,5 @@
+import type { WebviewContextMenuSurfaceType } from "./webview-context-menu";
+
 export const EMBEDDED_CDP_GATEWAY_HOST = "127.0.0.1";
 export const EMBEDDED_CDP_GATEWAY_PORT = 11789;
 export const EMBEDDED_CDP_GATEWAY_URL = `http://${EMBEDDED_CDP_GATEWAY_HOST}:${EMBEDDED_CDP_GATEWAY_PORT}`;
@@ -44,6 +46,9 @@ export type EmbeddedCdpSurfaceRegistration = {
   registrationId: string;
   surfaceId: string;
   surfaceKind: EmbeddedCdpSurfaceKind;
+  surfaceType?: WebviewContextMenuSurfaceType;
+  serviceId?: string;
+  pageRoute?: string;
   label: string;
   url: string;
   active: boolean;
