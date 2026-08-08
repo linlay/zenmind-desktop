@@ -22,8 +22,6 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
-  ApartmentOutlined,
-  AppstoreOutlined,
   CheckCircleOutlined,
   ClockCircleOutlined,
   CloseCircleOutlined,
@@ -59,7 +57,7 @@ import {
   createAgentWebclientAgentPath,
   createAgentWebclientRoute,
 } from "../../../shared/agent-webclient-routes";
-import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
+import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import {
   getAssistantNavAgentRecentChats,
   normalizeAssistantNavAgents
@@ -100,7 +98,6 @@ type IssueFormState = {
 };
 
 type DisplayState = {
-  assignee: boolean;
   priority: boolean;
 };
 
@@ -119,6 +116,12 @@ type IssueCardSignalPresentation = {
   label: string;
   tone: IssueCardSignalTone;
   icon: IssueCardSignalIconName;
+};
+
+type IssueCardDuePresentation = {
+  label: string;
+  title: string;
+  overdue: boolean;
 };
 
 type Feedback = {
@@ -239,7 +242,6 @@ const emptyForm: IssueFormState = {
 };
 
 const defaultDisplayState: DisplayState = {
-  assignee: true,
   priority: true
 };
 
@@ -767,6 +769,50 @@ function getIssueGranularStatusLabel(issue: KanbanIssue, t: TranslateFunction) {
   return columnLabels.has(normalizedLabel) ? "" : label;
 }
 
+function getIssueCardStatusPresentation(issue: KanbanIssue, t: TranslateFunction) {
+  const granularLabel = getIssueGranularStatusLabel(issue, t);
+  return {
+    label: granularLabel || t(STATUS_META[issue.status].labelKey),
+    tone: granularLabel ? getIssueGranularStatusTone(issue) : issue.status
+  };
+}
+
+function getIssueDescriptionPreview(description: string) {
+  return description.trim().replace(/\s+/gu, " ");
+}
+
+function getIssueCardDuePresentation(
+  issue: KanbanIssue,
+  locale: SupportedLocale,
+  now: Date,
+  t: TranslateFunction
+): IssueCardDuePresentation | null {
+  if (issue.dueAt === undefined || issue.dueAt === null) {
+    return null;
+  }
+  const dueDate = new Date(issue.dueAt);
+  const sameYear = dueDate.getFullYear() === now.getFullYear();
+  const compactTime = new Intl.DateTimeFormat(locale, {
+    ...(sameYear ? {} : { year: "numeric" }),
+    month: "2-digit",
+    day: "2-digit"
+  }).format(issue.dueAt);
+  const fullTime = new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(issue.dueAt);
+  const overdue = issue.status !== "completed" && issue.runState !== "completed" && issue.dueAt < now.getTime();
+  const labelKey: TranslationKey = overdue ? "kanban.card.overdueAt" : "kanban.card.dueAt";
+  return {
+    label: t(labelKey, { time: compactTime }),
+    title: t(labelKey, { time: fullTime }),
+    overdue
+  };
+}
+
 function getIssueCardSignalPresentation(
   issue: KanbanIssue,
   options: {
@@ -1072,10 +1118,6 @@ function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, 
 
 function normalizeIssueSeverity(severity: KanbanIssue["severity"]): KanbanSeverity {
   return severity === "critical" || severity === "high" || severity === "low" ? severity : "medium";
-}
-
-function getIssueStageLabel(issue: KanbanIssue) {
-  return issue.stageName?.trim() || "";
 }
 
 function issueHasPendingAwaiting(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
@@ -2039,13 +2081,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     <section className="kanban-page" aria-label={t("kanban.title")}>
       <div className="kanban-toolbar">
         <div className="kanban-toolbar-start">
-          <div className="kanban-page-title">
-            <AppstoreOutlined aria-hidden="true" />
-            <strong>{t("kanban.title")}</strong>
-          </div>
           <KanbanProjectFilter
             projects={cloudProjectOptions}
             selectedProjectIds={selectedProjectIds}
+            filteredCount={filteredCount}
+            totalCount={totalCount}
             open={projectFilterOpen}
             t={t}
             onOpenChange={(open) => {
@@ -2091,7 +2131,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           </div>
         </div>
         <div className="kanban-toolbar-end">
-          <span className="kanban-count">{t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount })}</span>
           <button
             type="button"
             className={`kanban-tool kanban-cloud-status is-${getKanbanConnectionTone(connectionState)} ${menu === "cloud" ? "is-active" : ""}`}
@@ -2134,7 +2173,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
             <>
               <strong>{t("kanban.display.cardFields")}</strong>
               {Object.entries({
-                assignee: t("kanban.display.assignee"),
                 priority: t("kanban.display.priority")
               } satisfies Record<keyof DisplayState, string>).map(([key, label]) => (
                 <label key={key} className="kanban-check-row">
@@ -2207,6 +2245,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 agents={agents}
                 projectsById={kanbanProjectsById}
                 display={display}
+                locale={locale}
                 now={new Date(kanbanCountdownNow)}
                 t={t}
                 canAdd={kanbanReady}
@@ -2230,6 +2269,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   agents={agents}
                   projectsById={kanbanProjectsById}
                   display={display}
+                  locale={locale}
                   now={new Date(kanbanCountdownNow)}
                   t={t}
                   interactive={false}
@@ -2646,6 +2686,7 @@ const KanbanColumn = memo(function KanbanColumn({
   agents,
   projectsById,
   display,
+  locale,
   now,
   t,
   canAdd,
@@ -2660,6 +2701,7 @@ const KanbanColumn = memo(function KanbanColumn({
   agents: AssistantNavAgentItem[];
   projectsById: Map<string, KanbanProject>;
   display: DisplayState;
+  locale: SupportedLocale;
   now: Date;
   t: TranslateFunction;
   canAdd: boolean;
@@ -2715,6 +2757,7 @@ const KanbanColumn = memo(function KanbanColumn({
               agents={agents}
               projectsById={projectsById}
               display={display}
+              locale={locale}
               now={now}
               t={t}
               onEdit={() => onEdit(issue)}
@@ -2742,6 +2785,7 @@ const IssueCard = memo(function IssueCard({
   agents,
   projectsById,
   display,
+  locale,
   now,
   t,
   onEdit,
@@ -2755,6 +2799,7 @@ const IssueCard = memo(function IssueCard({
   agents: AssistantNavAgentItem[];
   projectsById: Map<string, KanbanProject>;
   display: DisplayState;
+  locale: SupportedLocale;
   now: Date;
   t: TranslateFunction;
   onEdit: () => void;
@@ -2795,6 +2840,7 @@ const IssueCard = memo(function IssueCard({
         agents={agents}
         projectsById={projectsById}
         display={display}
+        locale={locale}
         now={now}
         t={t}
         interactive
@@ -2813,6 +2859,7 @@ const IssueCardContent = memo(function IssueCardContent({
   agents,
   projectsById,
   display,
+  locale,
   now,
   t,
   interactive,
@@ -2826,6 +2873,7 @@ const IssueCardContent = memo(function IssueCardContent({
   agents: AssistantNavAgentItem[];
   projectsById: Map<string, KanbanProject>;
   display: DisplayState;
+  locale: SupportedLocale;
   now: Date;
   t: TranslateFunction;
   interactive: boolean;
@@ -2834,22 +2882,23 @@ const IssueCardContent = memo(function IssueCardContent({
   onOpenChat: () => void;
 }) {
   const severity = normalizeIssueSeverity(issue.severity);
-  const stageLabel = getIssueStageLabel(issue);
-  const granularStatusLabel = getIssueGranularStatusLabel(issue, t);
-  const granularStatusTone = getIssueGranularStatusTone(issue);
+  const cardStatus = getIssueCardStatusPresentation(issue, t);
   const cardSignal = getIssueCardSignalPresentation(issue, {
     awaitingConfirmation,
     now,
     sortIndex
   }, t);
+  const descriptionPreview = getIssueDescriptionPreview(issue.description);
+  const duePresentation = getIssueCardDuePresentation(issue, locale, now, t);
   const peopleLine = getIssueCardPeoplePresentation(issue, agents, t);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const canOpenIssueDetails = interactive;
   const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
+  const actionCount = interactive ? 1 + Number(canOpenIssueChat) + Number(canDeleteIssue) : 0;
   const unassignedLabel = t("kanban.form.unassigned");
   const shouldShowAssignee = peopleLine.assigneeLabel !== unassignedLabel || canEditKanbanIssueBody(issue);
-  const shouldShowPeople = display.assignee && (shouldShowAssignee || Boolean(peopleLine.worker));
+  const shouldShowPeople = shouldShowAssignee || Boolean(peopleLine.worker);
   const mainContent = (
     <>
       <section className="issue-card-section issue-card-context">
@@ -2857,37 +2906,19 @@ const IssueCardContent = memo(function IssueCardContent({
           <span className="issue-card-project" title={issueOrigin.title}>
             {issueOrigin.projectLabel}
           </span>
-          {cardSignal.label ? (
-            <span className={`issue-card-signal is-${cardSignal.tone}`} title={cardSignal.label}>
-              <IssueCardSignalIcon kind={cardSignal.icon} />
-              <span>{cardSignal.label}</span>
-            </span>
-          ) : null}
-        </div>
-        <div className="issue-card-context-line is-taxonomy">
-          {stageLabel ? (
-            <span
-              className="issue-card-taxonomy-item is-stage"
-              title={t("kanban.card.stage", { value: stageLabel })}
-            >
-              <ApartmentOutlined aria-hidden="true" />
-              <span>{stageLabel}</span>
-            </span>
-          ) : null}
-          {granularStatusLabel ? (
-            <span
-              className={`issue-card-taxonomy-item is-status is-${granularStatusTone}`}
-              title={t("kanban.card.status", { value: granularStatusLabel })}
-            >
-              <TagOutlined aria-hidden="true" />
-              <span>{granularStatusLabel}</span>
-            </span>
-          ) : null}
+          <span
+            className={`issue-card-status is-${cardStatus.tone}`}
+            title={t("kanban.card.status", { value: cardStatus.label })}
+          >
+            <TagOutlined aria-hidden="true" />
+            <span>{cardStatus.label}</span>
+          </span>
         </div>
       </section>
-      <section className="issue-card-section issue-card-title-block" title={issue.title}>
-        <span>
-          {issue.title}
+      <section className="issue-card-section issue-card-title-block">
+        <span className="issue-card-title" title={issue.title}>{issue.title}</span>
+        <span className="issue-card-description" title={descriptionPreview || undefined}>
+          {descriptionPreview}
         </span>
       </section>
     </>
@@ -2916,39 +2947,53 @@ const IssueCardContent = memo(function IssueCardContent({
         </div>
       )}
       <footer className="issue-card-section issue-card-foot">
-        <div className="issue-card-footer-badges">
-          {display.priority ? (
-            <>
+        <div className="issue-card-footer-start">
+          {duePresentation ? (
+            <span
+              className={`issue-card-due ${duePresentation.overdue ? "is-overdue" : ""}`}
+              title={duePresentation.title}
+            >
+              <ClockCircleOutlined aria-hidden="true" />
+              <span>{duePresentation.label}</span>
+            </span>
+          ) : display.priority ? (
+            <div className="issue-card-footer-badges">
               <IssueCardFooterPriorityBadge priority={issue.priority} t={t} />
               <IssueCardFooterSeverityBadge severity={severity} t={t} />
-            </>
+            </div>
           ) : null}
         </div>
-        <div className="issue-card-footer-end">
-          {shouldShowPeople ? (
-            <div className="issue-card-people" title={peopleLine.title}>
-              {shouldShowAssignee ? (
-                <span className="issue-card-person is-assignee">
-                  {peopleLine.assigneeLabel !== unassignedLabel ? (
-                    <span className="issue-card-assignee-avatar" aria-hidden="true">
-                      {getPersonInitials(peopleLine.assigneeLabel)}
-                    </span>
-                  ) : null}
-                  <span>{peopleLine.assigneeLabel}</span>
-                </span>
-              ) : null}
-              {peopleLine.worker ? (
-                <span
-                  className={`issue-card-person is-worker is-${issue.workerType ?? "unknown"}`}
-                  title={t("kanban.card.worker", { value: peopleLine.worker.rawLabel })}
-                >
-                  <span className="issue-card-worker-icon" aria-hidden="true">
-                    {peopleLine.worker.icon}
+        {shouldShowPeople ? (
+          <div className="issue-card-people" title={peopleLine.title}>
+            {shouldShowAssignee ? (
+              <span className="issue-card-person is-assignee">
+                {peopleLine.assigneeLabel !== unassignedLabel ? (
+                  <span className="issue-card-assignee-avatar" aria-hidden="true">
+                    {getPersonInitials(peopleLine.assigneeLabel)}
                   </span>
-                  <span>{peopleLine.worker.label}</span>
+                ) : null}
+                <span>{peopleLine.assigneeLabel}</span>
+              </span>
+            ) : null}
+            {peopleLine.worker ? (
+              <span
+                className={`issue-card-person is-worker is-${issue.workerType ?? "unknown"}`}
+                title={t("kanban.card.worker", { value: peopleLine.worker.rawLabel })}
+              >
+                <span className="issue-card-worker-icon" aria-hidden="true">
+                  {peopleLine.worker.icon}
                 </span>
-              ) : null}
-            </div>
+                <span>{peopleLine.worker.label}</span>
+              </span>
+            ) : null}
+          </div>
+        ) : <span className="issue-card-people-spacer" aria-hidden="true" />}
+        <div className={`issue-card-footer-end has-${actionCount}-actions`}>
+          {cardSignal.label ? (
+            <span className={`issue-card-signal issue-card-footer-signal is-${cardSignal.tone}`} title={cardSignal.label}>
+              <IssueCardSignalIcon kind={cardSignal.icon} />
+              <span>{cardSignal.label}</span>
+            </span>
           ) : null}
           {interactive ? (
             <span className="issue-card-actions">
@@ -3016,14 +3061,13 @@ function IssueCardSignalIcon({ kind }: { kind: IssueCardSignalIconName }) {
   return <Icon aria-hidden="true" />;
 }
 
-/*
- * The card intentionally keeps descriptions, automation, and attachments in the
- * detail surface. The board uses the same three-section hierarchy in every state.
- */
+/* Card descriptions are display-only previews; full content stays in the detail surface. */
 
 function KanbanProjectFilter({
   projects,
   selectedProjectIds,
+  filteredCount,
+  totalCount,
   open,
   t,
   onOpenChange,
@@ -3032,6 +3076,8 @@ function KanbanProjectFilter({
 }: {
   projects: KanbanProject[];
   selectedProjectIds: string[];
+  filteredCount: number;
+  totalCount: number;
   open: boolean;
   t: TranslateFunction;
   onOpenChange: (open: boolean) => void;
@@ -3041,6 +3087,7 @@ function KanbanProjectFilter({
   const filterRef = useRef<HTMLDivElement | null>(null);
   const treeItems = useMemo(() => flattenKanbanProjectTree(projects), [projects]);
   const label = getKanbanProjectFilterLabel(selectedProjectIds, projects, t);
+  const countLabel = t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount });
 
   useEffect(() => {
     if (!open || typeof document === "undefined") {
@@ -3073,12 +3120,13 @@ function KanbanProjectFilter({
         className={`kanban-project-filter-trigger ${open ? "is-open" : ""}`}
         aria-haspopup="tree"
         aria-expanded={open}
-        aria-label={t("kanban.projectFilter.ariaLabel")}
-        title={label}
+        aria-label={`${t("kanban.projectFilter.ariaLabel")}: ${label}; ${countLabel}`}
+        title={`${label} · ${countLabel}`}
         onClick={() => onOpenChange(!open)}
       >
         <KanbanIcon kind="project" />
         <span className="kanban-project-filter-label">{label}</span>
+        <span className="kanban-project-filter-count" aria-hidden="true">{countLabel}</span>
       </button>
       {open ? (
         <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>

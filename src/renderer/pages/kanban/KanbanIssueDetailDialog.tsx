@@ -34,8 +34,6 @@ import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
 import type { SupportedLocale, TranslateFunction } from "../../../shared/i18n";
 import { resolveKanbanIssueFields } from "./issueFieldResolution";
 
-type DetailTab = "all" | "fields" | "activity" | "runs" | "related";
-
 export type KanbanIssueDetailDraft = {
   title: string;
   description: string;
@@ -224,7 +222,6 @@ export function KanbanIssueDetailDialog({
   onFeedback,
   initialEditStatus = null
 }: KanbanIssueDetailDialogProps) {
-  const [activeTab, setActiveTab] = useState<DetailTab>("all");
   const [editing, setEditing] = useState(Boolean(initialEditStatus));
   const [saving, setSaving] = useState(false);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
@@ -267,16 +264,6 @@ export function KanbanIssueDetailDialog({
     ?? t("kanban.form.unassigned");
   const assigneeUser = issue.assigneeId ? usersDetailById.get(issue.assigneeId) : undefined;
   const reviewerUser = issue.reviewerId ? usersDetailById.get(issue.reviewerId) : undefined;
-  const showGroup = (group: Exclude<DetailTab, "all">) => activeTab === "all" || activeTab === group;
-  const sectionCount = 10;
-  const tabItems: Array<{ id: DetailTab; label: string; count: number }> = [
-    { id: "all", label: t("kanban.detail.tabAll"), count: sectionCount },
-    { id: "fields", label: t("kanban.detail.tabFields"), count: 4 },
-    { id: "activity", label: t("kanban.detail.tabActivity"), count: reviews.length + comments.length + events.length },
-    { id: "runs", label: t("kanban.detail.tabRuns"), count: (issue.runId || issue.runState ? 1 : 0) + runEvents.length },
-    { id: "related", label: t("kanban.detail.tabRelated"), count: subtasks.length + dependencies.length }
-  ];
-
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -334,103 +321,51 @@ export function KanbanIssueDetailDialog({
         <header className="kanban-detail-header">
           <div className="kanban-detail-breadcrumb"><ApartmentOutlined /><span>{project?.path || project?.name || issue.projectName || t("kanban.projectFilter.all")}</span></div>
           <button className="kanban-detail-close" type="button" onClick={onClose} aria-label={t("kanban.modal.close")}><CloseOutlined /></button>
-          <div className="kanban-detail-heading-row">
-            <div className="kanban-detail-heading-copy">
+        </header>
+
+        <div className="kanban-detail-body">
+          <main className="kanban-detail-content">
+            <div className="kanban-detail-issue-heading">
               <div className="kanban-detail-kicker">
                 <span>{remoteId}</span>
                 <span className={`kanban-detail-pill is-status is-${issue.status}`}>{issue.statusName || t(DETAIL_STATUS_LABELS[issue.status])}</span>
                 <span className={`kanban-detail-pill is-priority is-${issue.priority}`}>{t(DETAIL_PRIORITY_LABELS[issue.priority])}</span>
                 <span className={`kanban-detail-pill is-origin ${isCloud ? "is-cloud" : "is-local"}`}>{isCloud ? <CloudOutlined /> : <ApartmentOutlined />}{isCloud ? t("kanban.detail.cloudOrigin") : t("kanban.detail.localOrigin")}</span>
               </div>
-              {editing ? <input className="kanban-detail-title-input" value={draft.title} onChange={(event) => updateDraft({ title: event.target.value })} autoFocus /> : <h1 id="kanban-detail-title">{issue.title}</h1>}
-              <p>{issue.description || t("kanban.detail.noDescription")}</p>
+              <div className="kanban-detail-heading-row">
+                <div className="kanban-detail-heading-copy">
+                  {editing ? <input className="kanban-detail-title-input" value={draft.title} onChange={(event) => updateDraft({ title: event.target.value })} autoFocus /> : <h1 id="kanban-detail-title">{issue.title}</h1>}
+                </div>
+                <div className="kanban-detail-header-actions">
+                  {issue.chatId ? <button type="button" className="kanban-detail-secondary-button" onClick={onOpenChat}><MessageOutlined />{t("kanban.chat.view")}</button> : null}
+                  {editing ? (
+                    <>
+                      <button type="button" className="kanban-detail-secondary-button" onClick={() => { setDraft(createDetailDraft(issue)); setEditing(false); }}>{t("kanban.form.cancel")}</button>
+                      <button type="button" className="kanban-detail-primary-button" disabled={saving} onClick={() => void saveDraft()}><SaveOutlined />{saving ? t("kanban.detail.saving") : t("kanban.form.save")}</button>
+                    </>
+                  ) : !isCloud ? <button type="button" className="kanban-detail-secondary-button" onClick={() => setEditing(true)}><EditOutlined />{t("kanban.detail.editIssue")}</button> : null}
+                </div>
+              </div>
             </div>
-            <div className="kanban-detail-header-actions">
-              {issue.chatId ? <button type="button" className="kanban-detail-secondary-button" onClick={onOpenChat}><MessageOutlined />{t("kanban.chat.view")}</button> : null}
-              {editing ? (
-                <>
-                  <button type="button" className="kanban-detail-secondary-button" onClick={() => { setDraft(createDetailDraft(issue)); setEditing(false); }}>{t("kanban.form.cancel")}</button>
-                  <button type="button" className="kanban-detail-primary-button" disabled={saving} onClick={() => void saveDraft()}><SaveOutlined />{saving ? t("kanban.detail.saving") : t("kanban.form.save")}</button>
-                </>
-              ) : !isCloud ? <button type="button" className="kanban-detail-secondary-button" onClick={() => setEditing(true)}><EditOutlined />{t("kanban.detail.editIssue")}</button> : null}
-            </div>
-          </div>
-          {isCloud ? <div className="kanban-detail-readonly-banner"><LockOutlined /><span><strong>{t("kanban.detail.cloudReadonly")}</strong>{t("kanban.detail.cloudReadonlyHint")}</span></div> : null}
-        </header>
 
-        <nav className="kanban-detail-tabs" aria-label={t("kanban.modal.detailTitle")}>
-          {tabItems.map((tab) => <button key={tab.id} type="button" className={activeTab === tab.id ? "is-active" : ""} onClick={() => setActiveTab(tab.id)}>{tab.label}<span>{tab.count}</span></button>)}
-          <div className="kanban-detail-tabs-meta">{sectionCount} {t("kanban.detail.sections")} · {formatDateTime(issue.updatedAt, locale)}</div>
-        </nav>
+            <DetailSection title={t("kanban.detail.descriptionTitle")} description={t("kanban.detail.descriptionHint")} icon={<FileTextOutlined />} meta={issueType?.name || issue.issueTypeKey || issue.typeId || "Issue"}>
+              {editing ? <textarea className="kanban-detail-description-editor" value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} rows={7} /> : issue.description ? <div className="kanban-detail-prose">{issue.description}</div> : <EmptyBlock>{t("kanban.detail.noDescription")}</EmptyBlock>}
+            </DetailSection>
 
-        <div className="kanban-detail-body">
-          <main className="kanban-detail-content">
-            {showGroup("fields") ? (
-              <>
-                <DetailSection title={t("kanban.detail.descriptionTitle")} description={t("kanban.detail.descriptionHint")} icon={<FileTextOutlined />} meta={issueType?.name || issue.issueTypeKey || issue.typeId || "Issue"}>
-                  {editing ? <textarea className="kanban-detail-description-editor" value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} rows={7} /> : issue.description ? <div className="kanban-detail-prose">{issue.description}</div> : <EmptyBlock>{t("kanban.detail.noDescription")}</EmptyBlock>}
-                </DetailSection>
-                <DetailSection title={t("kanban.detail.customFieldsTitle")} description={t("kanban.detail.customFieldsHint")} icon={<ApartmentOutlined />} meta={t("kanban.detail.resolvedFields", { count: resolvedFields.length })}>
-                  {resolvedFields.length > 0 ? <div className="kanban-detail-field-grid">{resolvedFields.map((field) => (
-                    <div className="kanban-detail-field-value" key={field.def.id}>
-                      <span>{field.def.name}{field.context.required ? " *" : ""}</span>
-                      <strong>{renderDynamicValue(field, issue.customFields?.[field.def.key] ?? field.context.defaultValue, usersById, issuesByRemoteId, t)}</strong>
-                      {field.def.description ? <small>{field.def.description}</small> : null}
-                    </div>
-                  ))}</div> : <EmptyBlock>{t("kanban.detail.noCustomFields")}</EmptyBlock>}
-                </DetailSection>
-                <DetailSection title={t("kanban.detail.labelsTitle")} description={t("kanban.detail.labelsHint")} icon={<TagsOutlined />} meta={t("kanban.detail.itemCount", { count: labels.length })}>
-                  {labels.length > 0 ? <div className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</div> : <EmptyBlock>{t("kanban.detail.noLabels")}</EmptyBlock>}
-                </DetailSection>
-                <DetailSection title={t("kanban.detail.attachmentsTitle")} description={t("kanban.detail.attachmentsHint")} icon={<PaperClipOutlined />} meta={t("kanban.detail.itemCount", { count: visibleAttachments.length })}>
-                  {visibleAttachments.length > 0 ? <div className="kanban-detail-attachment-list">{visibleAttachments.map((attachment) => (
-                    <article key={attachment.id}><span className="kanban-detail-file-icon"><FileTextOutlined /></span><span><strong>{attachment.name}</strong><small>{attachment.mimeType || t("kanban.detail.file")} {formatFileSize(attachment.sizeBytes) ? `· ${formatFileSize(attachment.sizeBytes)}` : ""}</small></span><button type="button" onClick={() => void openAttachment(attachment)}>{t("kanban.detail.open")}</button>{editing ? <button type="button" className="is-remove" aria-label={t("kanban.form.removeAttachment", { name: attachment.name })} onClick={() => updateDraft({ attachments: draft.attachments.filter((item) => item.id !== attachment.id && item.sourceAttachmentId !== attachment.id) })}><CloseOutlined /></button> : null}</article>
-                  ))}</div> : <EmptyBlock>{t("kanban.detail.noAttachments")}</EmptyBlock>}
-                  {editing ? <button type="button" className="kanban-detail-dashed-button" disabled={attachmentBusy} onClick={() => void addAttachment()}><PaperClipOutlined />{attachmentBusy ? t("kanban.form.uploading") : t("kanban.form.addAttachment")}</button> : null}
-                </DetailSection>
-              </>
-            ) : null}
+            <DetailSection title={t("kanban.detail.attachmentsTitle")} description={t("kanban.detail.attachmentsHint")} icon={<PaperClipOutlined />} meta={t("kanban.detail.itemCount", { count: visibleAttachments.length })}>
+              {visibleAttachments.length > 0 ? <div className="kanban-detail-attachment-list">{visibleAttachments.map((attachment) => (
+                <article key={attachment.id}><span className="kanban-detail-file-icon"><FileTextOutlined /></span><span><strong>{attachment.name}</strong><small>{attachment.mimeType || t("kanban.detail.file")} {formatFileSize(attachment.sizeBytes) ? `· ${formatFileSize(attachment.sizeBytes)}` : ""}</small></span><button type="button" onClick={() => void openAttachment(attachment)}>{t("kanban.detail.open")}</button>{editing ? <button type="button" className="is-remove" aria-label={t("kanban.form.removeAttachment", { name: attachment.name })} onClick={() => updateDraft({ attachments: draft.attachments.filter((item) => item.id !== attachment.id && item.sourceAttachmentId !== attachment.id) })}><CloseOutlined /></button> : null}</article>
+              ))}</div> : <EmptyBlock>{t("kanban.detail.noAttachments")}</EmptyBlock>}
+              {editing ? <button type="button" className="kanban-detail-dashed-button" disabled={attachmentBusy} onClick={() => void addAttachment()}><PaperClipOutlined />{attachmentBusy ? t("kanban.form.uploading") : t("kanban.form.addAttachment")}</button> : null}
+            </DetailSection>
 
-            {showGroup("related") ? (
-              <>
-                <DetailSection title={t("kanban.detail.subtasksTitle")} description={t("kanban.detail.subtasksHint")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: subtasks.length })}>
-                  {subtasks.length > 0 ? <div className="kanban-detail-related-list">{subtasks.map((subtask) => <article key={subtask.id}><CheckCircleFilled className={subtask.status === "completed" ? "is-complete" : ""} /><span><strong>{subtask.title}</strong><small>{issueExternalId(subtask)} · {subtask.statusName || t(DETAIL_STATUS_LABELS[subtask.status])}</small></span></article>)}</div> : <EmptyBlock>{t("kanban.detail.noSubtasks")}</EmptyBlock>}
-                </DetailSection>
-                <DetailSection title={t("kanban.detail.dependenciesTitle")} description={t("kanban.detail.dependenciesHint")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: dependencies.length })}>
-                  {dependencies.length > 0 ? <div className="kanban-detail-dependency-list">{dependencies.map((dependency) => {
-                    const outbound = dependency.fromIssueId === remoteId;
-                    const relatedId = outbound ? dependency.toIssueId : dependency.fromIssueId;
-                    const related = issuesByRemoteId.get(relatedId);
-                    return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
-                  })}</div> : <EmptyBlock>{t("kanban.detail.noDependencies")}</EmptyBlock>}
-                </DetailSection>
-              </>
-            ) : null}
-
-            {showGroup("activity") ? (
-              <>
-                <DetailSection title={t("kanban.detail.reviewsTitle")} description={t("kanban.detail.reviewsHint")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: reviews.length })}>
-                  {reviews.length > 0 ? <div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div> : <EmptyBlock>{t("kanban.detail.noReviews")}</EmptyBlock>}
-                </DetailSection>
-                <DetailSection title={t("kanban.detail.commentsTitle")} description={t("kanban.detail.commentsHint")} icon={<MessageOutlined />} meta={t("kanban.detail.itemCount", { count: comments.length })}>
-                  {comments.length > 0 ? <div className="kanban-detail-comment-list">{comments.map((comment) => {
-                    const author = usersDetailById.get(comment.authorUserId ?? "");
-                    const name = author?.displayName || comment.authorAgent || comment.authorUserId || t("kanban.detail.unknownActor");
-                    return <article key={comment.id}><DetailAvatar label={name} avatarUrl={author?.avatarUrl} agent={Boolean(comment.authorAgent)} /><div><p><strong>{name}</strong><time>{formatDateTime(comment.createdAt, locale)}</time></p><span>{comment.body}</span></div></article>;
-                  })}</div> : <EmptyBlock>{t("kanban.detail.noComments")}</EmptyBlock>}
-                </DetailSection>
-                <DetailSection title={t("kanban.detail.activityTitle")} description={t("kanban.detail.activityHint")} icon={<HistoryOutlined />} meta={t("kanban.detail.itemCount", { count: events.length })}>
-                  {events.length > 0 ? <ol className="kanban-detail-timeline">{events.map((event) => <li key={event.id}><span><ClockCircleOutlined /></span><div><strong>{event.eventType}</strong><small>{usersById.get(event.actorId ?? "") || event.actorAgent || t("kanban.detail.systemActor")} · {formatDateTime(event.createdAt, locale)}</small>{event.payload && Object.keys(event.payload).length > 0 ? <details><summary>{t("kanban.detail.eventPayload")}</summary><pre>{safeJson(event.payload)}</pre></details> : null}</div></li>)}</ol> : <EmptyBlock>{t("kanban.detail.noActivity")}</EmptyBlock>}
-                </DetailSection>
-              </>
-            ) : null}
-
-            {showGroup("runs") ? (
-              <DetailSection title={t("kanban.detail.runsTitle")} description={t("kanban.detail.runsHint")} icon={<RobotOutlined />} meta={issue.runState ? t(`kanban.run.${issue.runState}` as "kanban.run.running") : t("kanban.detail.noCurrentRun")}>
-                {issue.runId || issue.runState || issue.runResultMessage || issue.runErrorMessage ? <div className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{issue.runAgentKey || agentLabel}</strong><p>{issue.runId || issue.activeRunId || t("kanban.detail.runIdMissing")}</p><small>{formatDateTime(issue.runStartedAt, locale)}{issue.runFinishedAt ? ` — ${formatDateTime(issue.runFinishedAt, locale)}` : ""}</small>{issue.runResultMessage ? <blockquote>{issue.runResultMessage}</blockquote> : null}{issue.runErrorMessage ? <blockquote className="is-error">{issue.runErrorMessage}</blockquote> : null}</div>{issue.chatId ? <button type="button" onClick={onOpenChat}>{t("kanban.chat.view")}</button> : null}</div> : <EmptyBlock>{t("kanban.detail.noRuns")}</EmptyBlock>}
-                {runEvents.length > 0 ? <div className="kanban-detail-run-events">{runEvents.map((event) => <article key={event.id}><CheckCircleFilled /><span><strong>{event.eventType}</strong><small>{formatDateTime(event.createdAt, locale)}</small></span></article>)}</div> : null}
-              </DetailSection>
-            ) : null}
+            <DetailSection title={t("kanban.detail.commentsTitle")} description={t("kanban.detail.commentsHint")} icon={<MessageOutlined />} meta={t("kanban.detail.itemCount", { count: comments.length })}>
+              {comments.length > 0 ? <div className="kanban-detail-comment-list">{comments.map((comment) => {
+                const author = usersDetailById.get(comment.authorUserId ?? "");
+                const name = author?.displayName || comment.authorAgent || comment.authorUserId || t("kanban.detail.unknownActor");
+                return <article key={comment.id}><DetailAvatar label={name} avatarUrl={author?.avatarUrl} agent={Boolean(comment.authorAgent)} /><div><p><strong>{name}</strong><time>{formatDateTime(comment.createdAt, locale)}</time></p><span>{comment.body}</span></div></article>;
+              })}</div> : <EmptyBlock>{t("kanban.detail.noComments")}</EmptyBlock>}
+            </DetailSection>
           </main>
 
           <aside className="kanban-detail-rail" aria-label={t("kanban.detail.properties")}>
@@ -457,12 +392,53 @@ export function KanbanIssueDetailDialog({
               </div>
             </DetailSection>
 
+            <DetailSection title={t("kanban.detail.customFieldsTitle")} description={t("kanban.detail.customFieldsHint")} icon={<ApartmentOutlined />} meta={t("kanban.detail.resolvedFields", { count: resolvedFields.length })}>
+              {resolvedFields.length > 0 ? <div className="kanban-detail-field-grid">{resolvedFields.map((field) => (
+                <div className="kanban-detail-field-value" key={field.def.id}>
+                  <span>{field.def.name}{field.context.required ? " *" : ""}</span>
+                  <strong>{renderDynamicValue(field, issue.customFields?.[field.def.key] ?? field.context.defaultValue, usersById, issuesByRemoteId, t)}</strong>
+                  {field.def.description ? <small>{field.def.description}</small> : null}
+                </div>
+              ))}</div> : <EmptyBlock>{t("kanban.detail.noCustomFields")}</EmptyBlock>}
+            </DetailSection>
+
+            <DetailSection title={t("kanban.detail.labelsTitle")} description={t("kanban.detail.labelsHint")} icon={<TagsOutlined />} meta={t("kanban.detail.itemCount", { count: labels.length })}>
+              {labels.length > 0 ? <div className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</div> : <EmptyBlock>{t("kanban.detail.noLabels")}</EmptyBlock>}
+            </DetailSection>
+
             <DetailSection title={t("kanban.detail.automationTitle")} description={isCloud ? t("kanban.detail.automationCloudHint") : t("kanban.detail.automationHint")} icon={<ClockCircleOutlined />}>
               <div className="kanban-detail-automation-summary"><span className={`kanban-detail-switch ${draft.automationEnabled ? "is-on" : ""}`}><span /></span><div><strong>{draft.automationEnabled ? t("kanban.detail.enabled") : t("kanban.detail.disabled")}</strong><small>{issue.automationCron || t("kanban.detail.noSchedule")}</small></div></div>
               {editing ? <div className="kanban-detail-automation-form"><label className="kanban-detail-check"><input type="checkbox" checked={draft.automationEnabled} onChange={(event) => updateDraft({ automationEnabled: event.target.checked })} /><span>{t("kanban.form.automationEnabled")}</span></label>{draft.automationEnabled ? <><label className="kanban-detail-control"><span>{t("kanban.form.cron")}</span><input value={draft.automationCron} onChange={(event) => updateDraft({ automationCron: event.target.value })} /></label><label className="kanban-detail-control"><span>{t("kanban.detail.timezone")}</span><input value={draft.automationTimezone} onChange={(event) => updateDraft({ automationTimezone: event.target.value })} /></label><label className="kanban-detail-control"><span>{t("kanban.detail.automationMessage")}</span><textarea value={draft.automationMessage} onChange={(event) => updateDraft({ automationMessage: event.target.value })} rows={3} /></label></> : null}</div> : null}
             </DetailSection>
 
+            <DetailSection title={t("kanban.detail.subtasksTitle")} description={t("kanban.detail.subtasksHint")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: subtasks.length })}>
+              {subtasks.length > 0 ? <div className="kanban-detail-related-list">{subtasks.map((subtask) => <article key={subtask.id}><CheckCircleFilled className={subtask.status === "completed" ? "is-complete" : ""} /><span><strong>{subtask.title}</strong><small>{issueExternalId(subtask)} · {subtask.statusName || t(DETAIL_STATUS_LABELS[subtask.status])}</small></span></article>)}</div> : <EmptyBlock>{t("kanban.detail.noSubtasks")}</EmptyBlock>}
+            </DetailSection>
+
+            <DetailSection title={t("kanban.detail.dependenciesTitle")} description={t("kanban.detail.dependenciesHint")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: dependencies.length })}>
+              {dependencies.length > 0 ? <div className="kanban-detail-dependency-list">{dependencies.map((dependency) => {
+                const outbound = dependency.fromIssueId === remoteId;
+                const relatedId = outbound ? dependency.toIssueId : dependency.fromIssueId;
+                const related = issuesByRemoteId.get(relatedId);
+                return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
+              })}</div> : <EmptyBlock>{t("kanban.detail.noDependencies")}</EmptyBlock>}
+            </DetailSection>
+
+            <DetailSection title={t("kanban.detail.reviewsTitle")} description={t("kanban.detail.reviewsHint")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: reviews.length })}>
+              {reviews.length > 0 ? <div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div> : <EmptyBlock>{t("kanban.detail.noReviews")}</EmptyBlock>}
+            </DetailSection>
+
+            <DetailSection title={t("kanban.detail.runsTitle")} description={t("kanban.detail.runsHint")} icon={<RobotOutlined />} meta={issue.runState ? t(`kanban.run.${issue.runState}` as "kanban.run.running") : t("kanban.detail.noCurrentRun")}>
+              {issue.runId || issue.runState || issue.runResultMessage || issue.runErrorMessage ? <div className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{issue.runAgentKey || agentLabel}</strong><p>{issue.runId || issue.activeRunId || t("kanban.detail.runIdMissing")}</p><small>{formatDateTime(issue.runStartedAt, locale)}{issue.runFinishedAt ? ` — ${formatDateTime(issue.runFinishedAt, locale)}` : ""}</small>{issue.runResultMessage ? <blockquote>{issue.runResultMessage}</blockquote> : null}{issue.runErrorMessage ? <blockquote className="is-error">{issue.runErrorMessage}</blockquote> : null}</div>{issue.chatId ? <button type="button" onClick={onOpenChat}>{t("kanban.chat.view")}</button> : null}</div> : <EmptyBlock>{t("kanban.detail.noRuns")}</EmptyBlock>}
+              {runEvents.length > 0 ? <div className="kanban-detail-run-events">{runEvents.map((event) => <article key={event.id}><CheckCircleFilled /><span><strong>{event.eventType}</strong><small>{formatDateTime(event.createdAt, locale)}</small></span></article>)}</div> : null}
+            </DetailSection>
+
+            <DetailSection title={t("kanban.detail.activityTitle")} description={t("kanban.detail.activityHint")} icon={<HistoryOutlined />} meta={t("kanban.detail.itemCount", { count: events.length })}>
+              {events.length > 0 ? <ol className="kanban-detail-timeline">{events.map((event) => <li key={event.id}><span><ClockCircleOutlined /></span><div><strong>{event.eventType}</strong><small>{usersById.get(event.actorId ?? "") || event.actorAgent || t("kanban.detail.systemActor")} · {formatDateTime(event.createdAt, locale)}</small>{event.payload && Object.keys(event.payload).length > 0 ? <details><summary>{t("kanban.detail.eventPayload")}</summary><pre>{safeJson(event.payload)}</pre></details> : null}</div></li>)}</ol> : <EmptyBlock>{t("kanban.detail.noActivity")}</EmptyBlock>}
+            </DetailSection>
+
             <DetailSection title={t("kanban.detail.sourceTitle")} description={isCloud ? t("kanban.detail.cloudCache") : t("kanban.detail.localIssue")} icon={isCloud ? <CloudOutlined /> : <ApartmentOutlined />}>
+              {isCloud ? <div className="kanban-detail-readonly-banner is-rail"><LockOutlined /><span><strong>{t("kanban.detail.cloudReadonly")}</strong>{t("kanban.detail.cloudReadonlyHint")}</span></div> : null}
               <dl className="kanban-detail-properties">
                 <div><dt>{t("kanban.detail.syncMode")}</dt><dd><LockOutlined /> {isCloud ? t("kanban.detail.readonly") : t("kanban.detail.editable")}</dd></div>
                 <div><dt>{t("kanban.detail.revision")}</dt><dd>{issue.revision ?? issue.lastRemoteRevision ?? 0}</dd></div>

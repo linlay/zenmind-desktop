@@ -1458,6 +1458,8 @@ export const zhCNMessages = {
   "kanban.card.severity": "重要程度：{value}",
   "kanban.card.stage": "当前阶段：{value}",
   "kanban.card.status": "当前状态：{value}",
+  "kanban.card.dueAt": "截止 {time}",
+  "kanban.card.overdueAt": "逾期 {time}",
   "kanban.card.updatedAt": "更新 {time}",
   "kanban.card.runningFor": "运行 {duration}",
   "kanban.card.waitingFor": "等待 {duration}",

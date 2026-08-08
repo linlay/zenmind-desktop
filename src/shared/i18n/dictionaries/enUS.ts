@@ -1458,6 +1458,8 @@ export const enUSMessages = {
   "kanban.card.severity": "Importance: {value}",
   "kanban.card.stage": "Current stage: {value}",
   "kanban.card.status": "Current status: {value}",
+  "kanban.card.dueAt": "Due {time}",
+  "kanban.card.overdueAt": "Overdue {time}",
   "kanban.card.updatedAt": "Updated {time}",
   "kanban.card.runningFor": "Running {duration}",
   "kanban.card.waitingFor": "Waiting {duration}",

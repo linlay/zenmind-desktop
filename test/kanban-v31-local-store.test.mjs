@@ -220,3 +220,66 @@ test("cloud detail snapshot survives cache reload and incremental issue updates"
   assert.equal(replaced.cloudDetails.issueLabels.length, 0);
   assert.equal(replaced.cloudDetails.recentEvents.length, 0);
 });
+
+test("cloud dueTime normalizes to epoch-ms and survives cache reload", (t) => {
+  const app = createTempApp(t);
+  const expectedDueAt = Date.UTC(2026, 6, 12, 1, 30, 0, 0);
+  const issueWithDueTime = cloudIssue({
+    dueTime: "2026-07-12T09:30:00.000000000+08:00"
+  });
+
+  applyDesktopKanbanCloudSnapshot(app, currentUser, {
+    scope: "project_set",
+    complete: true,
+    projectIds: ["cloud-project-1"],
+    lastSeq: 49,
+    projects: [],
+    issues: [issueWithDueTime]
+  });
+  assert.equal(
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
+    expectedDueAt
+  );
+
+  const valid = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
+    revision: 51,
+    dueTime: "2026-07-12T09:30:00.000000000+08:00"
+  }), 51);
+
+  assert.equal(valid.ok, true);
+  assert.equal(valid.issue.dueAt, expectedDueAt);
+  assert.equal(
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
+    expectedDueAt
+  );
+
+  const cleared = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
+    revision: 52,
+    dueTime: null
+  }), 52);
+  assert.equal(cleared.issue.dueAt, null);
+  assert.equal(
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
+    null
+  );
+
+  const missing = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({ revision: 53 }), 53);
+  assert.equal(missing.issue.dueAt, undefined);
+
+  for (const [index, dueTime] of [
+    "2026-02-30T09:30:00+08:00",
+    "2026-07-12T09:30:00",
+    "2026-07-12T09:30:00.000000001Z"
+  ].entries()) {
+    const revision = 54 + index;
+    const invalid = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
+      revision,
+      dueTime
+    }), revision);
+    assert.equal(invalid.issue.dueAt, undefined);
+  }
+  assert.equal(
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
+    null
+  );
+});

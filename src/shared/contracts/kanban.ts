@@ -1,4 +1,5 @@
 import type { AssistantAttachment } from "./attachments";
+import type { EpochMilliseconds } from "../time-contract";
 
 export const KANBAN_STATUSES = [
   "backlog",
@@ -265,6 +266,7 @@ export interface KanbanIssue {
   attachmentChatId: string | null;
   attachments: AssistantAttachment[];
   customFields?: Record<string, unknown>;
+  dueAt?: EpochMilliseconds | null;
   createdBy?: string | null;
   updatedBy?: string | null;
   createdByAgent?: string | null;

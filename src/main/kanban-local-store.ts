@@ -24,6 +24,7 @@ import type {
   KanbanSyncState
 } from "../shared/contracts";
 import {
+  isEpochMilliseconds,
   KANBAN_PRIORITIES,
   KANBAN_RUN_STATES,
   KANBAN_STATUSES
@@ -248,6 +249,49 @@ function normalizeCustomFields(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
+function parseCloudDueTime(value: unknown): KanbanIssue["dueAt"] {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (typeof value !== "string") return undefined;
+
+  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/u.exec(value.trim());
+  if (!match) return undefined;
+
+  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = "", offsetText] = match;
+  const year = Number(yearText);
+  const month = Number(monthText);
+  const day = Number(dayText);
+  const hour = Number(hourText);
+  const minute = Number(minuteText);
+  const second = Number(secondText);
+  const offsetHour = offsetText === "Z" ? 0 : Number(offsetText.slice(1, 3));
+  const offsetMinute = offsetText === "Z" ? 0 : Number(offsetText.slice(4, 6));
+  const maxDay = month === 2
+    ? (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28)
+    : [4, 6, 9, 11].includes(month) ? 30 : 31;
+  if (
+    year < 1970 || month < 1 || month > 12 || day < 1 || day > maxDay ||
+    hour > 23 || minute > 59 || second > 59 ||
+    offsetHour > 23 || offsetMinute > 59 ||
+    (fraction.length > 3 && !/^0*$/u.test(fraction.slice(3)))
+  ) {
+    return undefined;
+  }
+
+  const localDate = new Date(0);
+  localDate.setUTCFullYear(year, month - 1, day);
+  localDate.setUTCHours(hour, minute, second, Number(fraction.slice(0, 3).padEnd(3, "0")));
+  const offsetSign = offsetText.startsWith("-") ? -1 : 1;
+  const offsetMillis = offsetSign * ((offsetHour * 60) + offsetMinute) * 60_000;
+  const epochMillis = localDate.getTime() - offsetMillis;
+  return isEpochMilliseconds(epochMillis) ? epochMillis : undefined;
+}
+
+function readStoredDueAt(value: unknown): KanbanIssue["dueAt"] {
+  if (value === null) return null;
+  return isEpochMilliseconds(value) ? value : undefined;
+}
+
 function buildIssueDetailJson(issue: KanbanIssue) {
   return JSON.stringify({
     projectPath: issue.projectPath ?? "",
@@ -258,6 +302,7 @@ function buildIssueDetailJson(issue: KanbanIssue) {
     statusKey: issue.statusKey ?? "",
     columnKey: issue.columnKey ?? "",
     customFields: issue.customFields ?? {},
+    dueAt: issue.dueAt ?? null,
     runAgentKey: issue.runAgentKey ?? null,
     runCommandId: issue.runCommandId ?? null,
     runStartedAt: issue.runStartedAt ?? null,
@@ -803,6 +848,7 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     attachmentChatId: row.attachment_chat_id,
     attachments: parseAttachmentsJson(row.attachments_json),
     customFields: normalizeCustomFields(detail.customFields),
+    dueAt: readStoredDueAt(detail.dueAt),
     createdBy: nullableTrimmedText(detail.createdBy),
     updatedBy: nullableTrimmedText(detail.updatedBy),
     createdByAgent: nullableTrimmedText(detail.createdByAgent),
@@ -1735,6 +1781,7 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     attachmentChatId: nullableTrimmedText(rawIssue.attachmentChatId),
     attachments: normalizeAttachments(rawIssue.attachments),
     customFields: normalizeCustomFields(rawIssue.customFields),
+    dueAt: parseCloudDueTime(rawIssue.dueTime),
     createdBy: nullableTrimmedText(rawIssue.createdBy),
     updatedBy: nullableTrimmedText(rawIssue.updatedBy),
     createdByAgent: nullableTrimmedText(rawIssue.createdByAgent),

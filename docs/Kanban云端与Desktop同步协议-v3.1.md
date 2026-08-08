@@ -214,6 +214,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
   "status": "in_progress",
   "title": "实现 Desktop 离线恢复",
   "description": "Desktop 重新上线后恢复云端状态。",
+  "dueTime": "2026-07-18T18:00:00+08:00",
   "priority": "high",
   "severity": "medium",
   "position": 120.5,
@@ -258,6 +259,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 - `status` / `columnKey`：`backlog`、`todo`、`in_progress`、`in_review`、`completed`。
 - `priority`：`high`、`medium`、`low`。
 - `severity`：`critical`、`high`、`medium`、`low`。
+- `dueTime`：可选 RFC3339 截止时间；缺失或 `null` 表示未设置。Desktop 在主进程边界将其严格归一化为 epoch-ms `dueAt` 供共享契约和 renderer 使用，不接受无时区文本或有损的亚毫秒精度。
 - `workerType`：`human`、`agent`、`null`。
 - `dispatchState`：`null`、`waiting_for_device`、`delivered`、`accepted`、`cancelled`、`expired`。
 - `runState`：`null`、`running`、`completed`、`failed`、`cancelled`。
