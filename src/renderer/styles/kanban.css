@@ -955,7 +955,7 @@
   align-items: center;
   gap: 5px;
   white-space: nowrap;
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 650;
 }
 
@@ -1040,7 +1040,7 @@
   padding: 0;
   flex: 0 0 auto;
   width: 100%;
-  min-height: 124px;
+  min-height: 0;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -1180,7 +1180,7 @@
 .issue-card-main {
   width: 100%;
   display: flex;
-  flex: 1 1 auto;
+  flex: 0 0 auto;
   min-height: 0;
   flex-direction: column;
   gap: 0;
@@ -1224,9 +1224,9 @@
 }
 
 .issue-card-context {
-  min-height: 37px;
-  padding-top: 12px;
-  padding-bottom: 5px;
+  min-height: 0;
+  padding-top: 10px;
+  padding-bottom: 4px;
 }
 
 .issue-card-context-line {
@@ -1238,7 +1238,7 @@
 }
 
 .issue-card-context-line.is-primary {
-  min-height: 18px;
+  min-height: 14px;
 }
 
 .issue-card-project {
@@ -1248,9 +1248,9 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: color-mix(in srgb, var(--kanban-ink) 72%, var(--kanban-muted));
-  font-size: 11.5px;
-  font-weight: 700;
-  line-height: 1.4;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 14px;
 }
 
 .issue-card-status,
@@ -1261,8 +1261,8 @@
   min-width: 0;
   overflow: hidden;
   color: var(--issue-card-muted);
-  font-size: 10.5px;
-  line-height: 1.4;
+  font-size: 10px;
+  line-height: 14px;
   white-space: nowrap;
 }
 
@@ -1271,14 +1271,14 @@
   max-width: 52%;
   justify-content: flex-end;
   color: color-mix(in srgb, var(--kanban-ink) 64%, var(--kanban-muted));
-  font-weight: 650;
+  font-weight: 600;
 }
 
 .issue-card-signal {
   justify-content: flex-start;
   max-width: 100%;
   color: var(--issue-card-muted);
-  font-weight: 550;
+  font-weight: 500;
 }
 
 .issue-card-status-mark {
@@ -1312,9 +1312,9 @@
 
 .issue-card-title-block {
   margin: 0;
-  min-height: 45px;
-  padding-top: 5px;
-  padding-bottom: 11px;
+  min-height: 0;
+  padding-top: 4px;
+  padding-bottom: 8px;
   color: var(--kanban-ink);
 }
 
@@ -1323,9 +1323,9 @@
   align-items: flex-start;
   gap: 5px;
   min-width: 0;
-  font-size: 14px;
-  font-weight: 680;
-  line-height: 1.42;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 18px;
 }
 
 .issue-card-title-text {
@@ -1342,39 +1342,39 @@
 .issue-card-queue-rank {
   flex: 0 0 auto;
   color: color-mix(in srgb, var(--kanban-ink) 54%, var(--kanban-muted));
-  font-size: 11px;
-  font-weight: 750;
-  line-height: 1.82;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 18px;
 }
 
 .issue-card-description {
-  margin-top: 5px;
+  margin-top: 3px;
   display: -webkit-box;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
   line-clamp: 2;
-  max-height: calc(2 * 1.42 * 11px);
+  max-height: 28px;
   overflow: hidden;
   text-overflow: ellipsis;
   overflow-wrap: break-word;
   word-break: break-word;
-  color: var(--issue-card-muted);
-  font-size: 11px;
+  color: color-mix(in srgb, var(--issue-card-muted) 72%, transparent);
+  font-size: 10px;
   font-weight: 400;
-  line-height: 1.42;
+  line-height: 14px;
 }
 
 .issue-card-foot {
-  min-height: 55px;
+  min-height: 0;
   display: flex;
   flex-direction: column;
   flex: 0 0 auto;
   align-items: stretch;
   justify-content: center;
-  gap: 5px;
-  margin-top: auto;
-  padding-top: 7px;
-  padding-bottom: 7px;
+  gap: 4px;
+  margin-top: 0;
+  padding-top: 5px;
+  padding-bottom: 5px;
   border-top: 1px solid var(--kanban-border);
   min-width: 0;
   overflow: hidden;
@@ -1547,7 +1547,7 @@
   max-width: 112px;
   overflow: hidden;
   color: var(--kanban-muted);
-  font-size: 10.5px;
+  font-size: 10px;
   font-weight: 500;
   line-height: 1.2;
 }

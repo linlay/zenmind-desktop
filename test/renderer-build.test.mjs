@@ -3414,7 +3414,13 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /<DeleteOutlined \/>/);
 
   assert.match(kanbanStyles, /--kanban-column-min-width:\s*252px;/);
-  assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,260}min-height:\s*124px;/);
+  assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,260}min-height:\s*0;[\s\S]{0,260}height:\s*auto;/);
+  assert.match(kanbanStyles, /\.issue-card-main\s*\{[\s\S]{0,180}flex:\s*0 0 auto;/);
+  assert.match(kanbanStyles, /\.issue-card-project\s*\{[\s\S]{0,260}font-size:\s*10px;/);
+  assert.match(kanbanStyles, /\.issue-card-status,\s*\.issue-card-signal\s*\{[\s\S]{0,220}font-size:\s*10px;/);
+  assert.match(kanbanStyles, /\.issue-card-title\s*\{[\s\S]{0,220}font-size:\s*12px;[\s\S]{0,80}font-weight:\s*400;/);
+  assert.match(kanbanStyles, /\.issue-card-description\s*\{[\s\S]{0,420}font-size:\s*10px;[\s\S]{0,80}font-weight:\s*400;/);
+  assert.doesNotMatch(kanbanStyles, /font-size:\s*\d+\.\d+px;/);
   assert.match(kanbanStyles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,220}height:\s*3px;[\s\S]{0,160}background:/);
   assert.match(kanbanStyles, /\.issue-card-main:focus-visible\s*\{\s*outline:\s*none;/);
   assert.match(kanbanStyles, /\.issue-card:has\(\.issue-card-main:focus-visible\)\s*\{[\s\S]{0,180}box-shadow:/);
@@ -3423,6 +3429,7 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /\.issue-card-status\s*\{[\s\S]{0,180}color:\s*color-mix/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card\.is-(backlog|todo|in_progress|in_review|completed)\s*\{\s*--issue-status-color/);
   assert.match(kanbanStyles, /\.issue-card-foot\s*\{[\s\S]{0,180}flex-direction:\s*column;/);
+  assert.match(kanbanStyles, /\.issue-card-foot\s*\{[\s\S]{0,100}min-height:\s*0;[\s\S]{0,260}margin-top:\s*0;/);
   assert.match(kanbanStyles, /\.issue-card-footer-row\s*\{[\s\S]{0,180}display:\s*flex;/);
   assert.match(kanbanStyles, /\.issue-card-priority-importance\s*\{[\s\S]{0,220}border:\s*0;/);
   assert.match(kanbanStyles, /\.issue-card-priority-importance\.is-p0/);
@@ -3432,6 +3439,8 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /\.issue-card-actions\s*\{[\s\S]{0,500}opacity:\s*0;[\s\S]{0,120}pointer-events:\s*none;/);
   assert.match(kanbanStyles, /\.issue-card:hover \.issue-card-actions,[\s\S]{0,80}\.issue-card:focus-within \.issue-card-actions\s*\{[\s\S]{0,100}opacity:\s*1;[\s\S]{0,80}pointer-events:\s*auto;/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card:hover \.issue-card-people/);
+  assert.match(kanbanPage, /\(priorityImportance \|\| due\) \? <div className="issue-card-footer-row">\{priorityImportance\}/);
+  assert.match(kanbanPage, /\{hasPeople \? <div className="issue-card-footer-row">\{people\}<\/div> : null\}/);
   assert.match(kanbanStyles, /\.issue-card:hover \.issue-card-footer-end:not\(\.has-0-actions\) \.issue-card-footer-signal,[\s\S]{0,160}opacity:\s*0;/);
 
   assert.match(zhCN, /"kanban\.status\.inReview": "审核中"/);

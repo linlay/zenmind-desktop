@@ -3113,6 +3113,7 @@ const IssueCardContent = memo(function IssueCardContent({
   const descriptionPreview = getIssueDescriptionPreview(issue.description);
   const duePresentation = getIssueCardDuePresentation(issue, locale, now, t);
   const peopleLine = getIssueCardPeoplePresentation(issue, agents, cloudDetails.users, t);
+  const hasPeople = peopleLine.people.length > 0;
   const progress = getIssueCardProgressPresentation(issue, cloudDetails);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const canOpenIssueDetails = interactive;
@@ -3273,12 +3274,12 @@ const IssueCardContent = memo(function IssueCardContent({
           </>
         ) : issue.status === "todo" ? (
           <>
-            <div className="issue-card-footer-row">{priorityImportance}<span className="issue-card-footer-row-end">{due}</span></div>
+            {(priorityImportance || due) ? <div className="issue-card-footer-row">{priorityImportance}<span className="issue-card-footer-row-end">{due}</span></div> : null}
             <div className="issue-card-footer-row">{people}{actionSlot()}</div>
           </>
         ) : issue.status === "in_progress" || issue.status === "in_review" ? (
           <>
-            <div className="issue-card-footer-row">{people}</div>
+            {hasPeople ? <div className="issue-card-footer-row">{people}</div> : null}
             <div className="issue-card-footer-row is-timing">
               {timingSignal}
               <span className="issue-card-footer-row-end">{due}</span>
