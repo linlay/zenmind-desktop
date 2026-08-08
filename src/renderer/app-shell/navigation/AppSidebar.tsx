@@ -1125,8 +1125,6 @@ export function AppSidebar({
   const [chatDefaultAgentError, setChatDefaultAgentError] = useState("");
   const [sidebarNavFocusId, setSidebarNavFocusId] = useState("");
   const [toolMenuOpen, setToolMenuOpen] = useState(false);
-  const [toolMenuAnchorPoint, setToolMenuAnchorPoint] =
-    useState<MenuAnchorPoint | null>(null);
   const [bootstrapGuideFloatingBubbles, setBootstrapGuideFloatingBubbles] =
     useState<BootstrapGuideFloatingBubble[]>([]);
   const [bootstrapGuideDismissedBubbles, setBootstrapGuideDismissedBubbles] =
@@ -1168,7 +1166,6 @@ export function AppSidebar({
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const sidebarNavRef = useRef<HTMLElement | null>(null);
-  const toolMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
   const bootstrapGuideChatAnchorRef = useRef<HTMLButtonElement | null>(null);
@@ -1710,7 +1707,6 @@ export function AppSidebar({
     }
     if (isPrimaryMode && !bootstrapGuideToolMenuAutoOpenedRef.current) {
       bootstrapGuideToolMenuAutoOpenedRef.current = true;
-      setToolMenuAnchorPoint(null);
       setToolMenuOpen(true);
     }
   }, [bootstrapActive, isPrimaryMode]);
@@ -4927,7 +4923,6 @@ export function AppSidebar({
 
   function closeToolMenu() {
     setToolMenuOpen(false);
-    setToolMenuAnchorPoint(null);
   }
 
   function handleDesktopSsoMenuActionClick() {
@@ -6123,7 +6118,6 @@ export function AppSidebar({
               <div className="sidebar-tool-menu-anchor">
                 <Popover
                   placement="top-start"
-                  anchorPoint={toolMenuAnchorPoint}
                   content={renderToolMenu()}
                   open={toolMenuOpen}
                   onOpenChange={handleToolMenuOpenChange}
@@ -6140,19 +6134,6 @@ export function AppSidebar({
                     ]
                       .filter(Boolean)
                       .join(" ")}
-                    ref={toolMenuTriggerRef}
-                    onClick={(event) => {
-                      setToolMenuAnchorPoint(
-                        event.detail > 0
-                          ? { x: event.clientX, y: event.clientY }
-                          : null,
-                      );
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter" || event.key === " ") {
-                        setToolMenuAnchorPoint(null);
-                      }
-                    }}
                     aria-label={t("nav.sidebar.openSettings")}
                     aria-haspopup="menu"
                     aria-expanded={toolMenuOpen}

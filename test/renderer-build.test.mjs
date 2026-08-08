@@ -956,6 +956,7 @@ test("fixed sidebar tool menu uses controlled popover state", () => {
     sidebarSource,
     /<Popover[\s\S]{0,160}placement="top-start"[\s\S]{0,160}content=\{renderToolMenu\(\)\}[\s\S]{0,160}open=\{toolMenuOpen\}[\s\S]{0,160}onOpenChange=\{handleToolMenuOpenChange\}/
   );
+  assert.doesNotMatch(sidebarSource, /toolMenuAnchorPoint/);
   assert.doesNotMatch(sidebarSource, /toolMenuPosition/);
   assert.doesNotMatch(sidebarSource, /toolMenuPanelRef/);
 });
@@ -1128,7 +1129,7 @@ test("sidebar operation menus use pointer anchors and theme-aware glass surfaces
   assert.match(sidebarSource, /event\.detail > 0[\s\S]*?event\.clientX[\s\S]*?event\.clientY/u);
   assert.match(sidebarSource, /anchorPoint=\{assistantSortMenuAnchorPoint\}/u);
   assert.match(sidebarSource, /anchorPoint=\{chatDefaultAgentMenuAnchorPoint\}/u);
-  assert.match(sidebarSource, /anchorPoint=\{toolMenuAnchorPoint\}/u);
+  assert.doesNotMatch(sidebarSource, /anchorPoint=\{toolMenuAnchorPoint\}/u);
   assert.match(sidebarSource, /chatDefaultAgentInlineMenuPosition/u);
   assert.match(sidebarSource, /visibility: assistantChatMenu\.positioned \? "visible" : "hidden"/u);
 
