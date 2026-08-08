@@ -34,7 +34,6 @@ import {
   OrderedListOutlined,
   RobotOutlined,
   StopOutlined,
-  TagOutlined,
   ThunderboltOutlined,
   UserOutlined
 } from "@ant-design/icons";
@@ -45,12 +44,15 @@ import type {
   DesktopApi,
   DesktopPetAgentOption,
   KanbanCloudDetailData,
+  KanbanCloudUser,
   KanbanIssue,
   KanbanIssueInput,
   KanbanIssueUpdateInput,
   KanbanPriority,
   KanbanProject,
-  KanbanStatus
+  KanbanStatus,
+  KanbanWorkflowStage,
+  KanbanWorkflowStatus
 } from "../../../shared/contracts";
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
 import {
@@ -124,6 +126,20 @@ type IssueCardDuePresentation = {
   overdue: boolean;
 };
 
+type IssueCardProgressPresentation = {
+  color: string;
+  percent: number;
+  stageLabel: string;
+};
+
+type IssueCardPersonPresentation = {
+  icon: ReactNode;
+  label: string;
+  rawLabel: string;
+  avatarUrl?: string | null;
+  kind: "assignee" | "worker" | "reviewer";
+};
+
 type Feedback = {
   tone: "success" | "error";
   message: string;
@@ -158,6 +174,17 @@ const VISIBLE_KANBAN_STATUSES = [
   "completed"
 ] satisfies ReadonlyArray<KanbanStatus>;
 const VISIBLE_KANBAN_STATUS_SET = new Set<KanbanStatus>(VISIBLE_KANBAN_STATUSES);
+
+const ISSUE_STAGE_COLOR_PALETTE = [
+  "#8b5cf6",
+  "#3b82f6",
+  "#f59e0b",
+  "#22b8c7",
+  "#ec4899",
+  "#6366f1"
+] as const;
+
+const ISSUE_STAGE_FALLBACK_COLOR = "#86909c";
 
 const STATUS_META: Record<KanbanStatus, { labelKey: TranslationKey; tone: string }> = {
   backlog: { labelKey: "kanban.status.backlog", tone: "neutral" },
@@ -335,6 +362,20 @@ function formatKanbanCompactDuration(value: string | null | undefined, now: Date
     return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
   }
   return `${minutes}m`;
+}
+
+function formatKanbanCompletionTime(value: string | null | undefined, locale: SupportedLocale) {
+  const timestamp = Date.parse(value ?? "");
+  if (!Number.isFinite(timestamp)) {
+    return "";
+  }
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(timestamp);
 }
 
 function formatKanbanSortNumber(sortIndex: number | undefined, position: number) {
@@ -622,11 +663,6 @@ function getAssigneeAgent(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
   return agentKey ? agents.find((agent) => agent.agentKey === agentKey) : undefined;
 }
 
-function getVisibleAssigneeName(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
-  const trimmed = getAssigneeName(issue.assigneeAgentKey ?? "", agents)?.trim() ?? "";
-  return trimmed;
-}
-
 function formatKanbanPersonLabel(value: string | null | undefined, fallback: string) {
   const raw = (value ?? "").trim();
   if (!raw) {
@@ -662,39 +698,200 @@ function getPersonInitials(label: string): string {
   return raw.slice(0, 2).toUpperCase();
 }
 
-function getIssueCardWorkerPresentation(issue: KanbanIssue, t: TranslateFunction) {
+function getKanbanCloudUser(userId: string | null | undefined, users: KanbanCloudUser[]) {
+  const normalizedUserId = userId?.trim();
+  return normalizedUserId ? users.find((user) => user.id === normalizedUserId) : undefined;
+}
+
+function getIssueCardAssigneePresentation(
+  issue: KanbanIssue,
+  agents: AssistantNavAgentItem[],
+  users: KanbanCloudUser[],
+  t: TranslateFunction
+): IssueCardPersonPresentation | null {
+  const cloudUser = getKanbanCloudUser(issue.assigneeId, users);
+  const rawLabel = cloudUser?.displayName?.trim()
+    || getAssigneeName(issue.assigneeAgentKey ?? "", agents)?.trim()
+    || issue.assigneeId?.trim()
+    || "";
+  if (!rawLabel) {
+    return canEditKanbanIssueBody(issue) ? {
+      icon: <UserOutlined />,
+      label: t("kanban.form.unassigned"),
+      rawLabel: t("kanban.form.unassigned"),
+      kind: "assignee"
+    } : null;
+  }
+  return {
+    icon: <UserOutlined />,
+    label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
+    rawLabel,
+    avatarUrl: cloudUser?.avatarUrl,
+    kind: "assignee"
+  };
+}
+
+function getIssueCardWorkerPresentation(
+  issue: KanbanIssue,
+  agents: AssistantNavAgentItem[],
+  users: KanbanCloudUser[],
+  t: TranslateFunction
+): IssueCardPersonPresentation | null {
   if (issue.workerType === "agent" && issue.workerAgent?.trim()) {
     const rawLabel = issue.workerAgent.trim();
     return {
       icon: <RobotOutlined />,
-      label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
-      rawLabel
+      label: formatKanbanPersonLabel(getAssigneeName(rawLabel, agents), t("kanban.form.unassigned")),
+      rawLabel,
+      kind: "worker"
     };
   }
   if (issue.workerType === "human" && issue.workerId?.trim()) {
-    const rawLabel = issue.workerId.trim();
+    const cloudUser = getKanbanCloudUser(issue.workerId, users);
+    const rawLabel = cloudUser?.displayName?.trim() || issue.workerId.trim();
     return {
       icon: <UserOutlined />,
       label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
-      rawLabel
+      rawLabel,
+      avatarUrl: cloudUser?.avatarUrl,
+      kind: "worker"
     };
   }
   return null;
 }
 
+function getIssueCardReviewerPresentation(
+  issue: KanbanIssue,
+  users: KanbanCloudUser[],
+  t: TranslateFunction
+): IssueCardPersonPresentation | null {
+  const cloudUser = getKanbanCloudUser(issue.reviewerId, users);
+  const rawLabel = cloudUser?.displayName?.trim() || issue.reviewerId?.trim() || "";
+  if (!rawLabel) {
+    return null;
+  }
+  return {
+    icon: <UserOutlined />,
+    label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
+    rawLabel,
+    avatarUrl: cloudUser?.avatarUrl,
+    kind: "reviewer"
+  };
+}
+
 function getIssueCardPeoplePresentation(
   issue: KanbanIssue,
   agents: AssistantNavAgentItem[],
+  users: KanbanCloudUser[],
   t: TranslateFunction
 ) {
-  const visibleAssigneeName = getVisibleAssigneeName(issue, agents);
-  const assigneeLabel = formatKanbanPersonLabel(visibleAssigneeName, t("kanban.form.unassigned"));
-  const worker = getIssueCardWorkerPresentation(issue, t);
+  const assignee = getIssueCardAssigneePresentation(issue, agents, users, t);
+  const worker = getIssueCardWorkerPresentation(issue, agents, users, t);
+  const reviewer = getIssueCardReviewerPresentation(issue, users, t);
+  const normalizedAssignee = assignee?.rawLabel.trim().toLocaleLowerCase();
+  const visibleWorker = worker?.rawLabel.trim().toLocaleLowerCase() === normalizedAssignee ? null : worker;
+  const visibleReviewer = reviewer?.rawLabel.trim().toLocaleLowerCase() === normalizedAssignee ? null : reviewer;
+  const people = issue.status === "in_review"
+    ? [assignee, visibleReviewer]
+    : issue.status === "todo" || issue.status === "in_progress"
+      ? [assignee, visibleWorker]
+      : [assignee];
+  const visiblePeople = people.filter((person): person is IssueCardPersonPresentation => Boolean(person));
   return {
-    assigneeLabel,
-    worker,
-    title: worker ? `${assigneeLabel} -> ${worker.rawLabel}` : assigneeLabel
+    people: visiblePeople,
+    title: visiblePeople.map((person) => person.rawLabel).join(" -> ")
   };
+}
+
+function sortWorkflowStages(stages: KanbanWorkflowStage[]) {
+  return [...stages].sort((left, right) => {
+    const positionDelta = (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER);
+    return positionDelta !== 0 ? positionDelta : left.id.localeCompare(right.id);
+  });
+}
+
+function sortWorkflowStatuses(statuses: KanbanWorkflowStatus[]) {
+  return [...statuses].sort((left, right) => {
+    const positionDelta = (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER);
+    return positionDelta !== 0 ? positionDelta : left.id.localeCompare(right.id);
+  });
+}
+
+function getKnownStagePaletteIndex(value: string | null | undefined) {
+  const normalized = (value ?? "").trim().toLocaleLowerCase();
+  if (!normalized) return -1;
+  if (/review|评审|审查/u.test(normalized)) return 0;
+  if (/develop|development|build|开发|构建/u.test(normalized)) return 1;
+  if (/test|testing|qa|验收|测试/u.test(normalized)) return 2;
+  if (/release|deploy|launch|production|上线|发布/u.test(normalized)) return 3;
+  return -1;
+}
+
+function findIssueWorkflowStage(issue: KanbanIssue, details: KanbanCloudDetailData) {
+  const workflowStages = issue.workflowId
+    ? details.workflowStages.filter((stage) => stage.workflowId === issue.workflowId)
+    : details.workflowStages;
+  const stage = workflowStages.find((candidate) => candidate.id === issue.stageId)
+    || workflowStages.find((candidate) => candidate.key === issue.stageKey)
+    || workflowStages.find((candidate) => candidate.name === issue.stageName);
+  const orderedStages = sortWorkflowStages(stage
+    ? details.workflowStages.filter((candidate) => candidate.workflowId === stage.workflowId)
+    : workflowStages);
+  return { stage, orderedStages };
+}
+
+function getIssueCardProgressPresentation(
+  issue: KanbanIssue,
+  details: KanbanCloudDetailData
+): IssueCardProgressPresentation {
+  const { stage, orderedStages } = findIssueWorkflowStage(issue, details);
+  const fallbackStageLabel = issue.stageName?.trim() || issue.stageKey?.trim() || "";
+  const stageLabel = stage?.name?.trim() || fallbackStageLabel;
+  const catalogStageIndex = stage ? orderedStages.findIndex((candidate) => candidate.id === stage.id) : -1;
+  const knownStageIndex = getKnownStagePaletteIndex(`${stage?.key ?? issue.stageKey ?? ""} ${stageLabel}`);
+  const stageIndex = catalogStageIndex >= 0 ? catalogStageIndex : knownStageIndex;
+  const stageCount = orderedStages.length > 0 ? orderedStages.length : stageIndex >= 0 ? 4 : 1;
+  const stageStatuses = stage
+    ? sortWorkflowStatuses(details.workflowStatuses.filter((status) => status.stageId === stage.id))
+    : [];
+  const statusIndexById = stageStatuses.findIndex((status) => status.id === issue.statusId);
+  const statusIndexByKey = stageStatuses.findIndex((status) => status.key === issue.statusKey);
+  const statusIndexByColumn = stageStatuses.findIndex((status) => (
+    status.columnKey === issue.columnKey || status.columnKey === issue.status
+  ));
+  const catalogStatusIndex = statusIndexById >= 0
+    ? statusIndexById
+    : statusIndexByKey >= 0
+      ? statusIndexByKey
+      : statusIndexByColumn;
+  const fallbackStatusIndex = Math.max(0, VISIBLE_KANBAN_STATUSES.indexOf(issue.status));
+  const statusIndex = catalogStatusIndex >= 0 ? catalogStatusIndex : fallbackStatusIndex;
+  const statusCount = stageStatuses.length > 0 ? stageStatuses.length : VISIBLE_KANBAN_STATUSES.length;
+  const stageProgress = Math.min(1, Math.max(0.08, (statusIndex + 1) / Math.max(1, statusCount)));
+  const workflowProgress = stageIndex >= 0
+    ? ((stageIndex + stageProgress) / Math.max(1, stageCount)) * 100
+    : stageProgress * 100;
+  const paletteIndex = catalogStageIndex >= 0 ? catalogStageIndex : knownStageIndex;
+  return {
+    color: paletteIndex >= 0
+      ? ISSUE_STAGE_COLOR_PALETTE[paletteIndex % ISSUE_STAGE_COLOR_PALETTE.length]!
+      : ISSUE_STAGE_FALLBACK_COLOR,
+    percent: Math.min(100, Math.max(4, Math.round(workflowProgress))),
+    stageLabel
+  };
+}
+
+function getKanbanStageLegend(issues: KanbanIssue[], details: KanbanCloudDetailData) {
+  const items = new Map<string, { color: string; label: string }>();
+  for (const issue of issues) {
+    const progress = getIssueCardProgressPresentation(issue, details);
+    if (!progress.stageLabel) continue;
+    const key = `${progress.color}:${progress.stageLabel}`;
+    if (!items.has(key)) {
+      items.set(key, { color: progress.color, label: progress.stageLabel });
+    }
+  }
+  return Array.from(items.values()).slice(0, ISSUE_STAGE_COLOR_PALETTE.length);
 }
 
 function getIssueCardShellClassName(issue: KanbanIssue, extra: string[] = []) {
@@ -764,6 +961,8 @@ function getIssueGranularStatusLabel(issue: KanbanIssue, t: TranslateFunction) {
     "待办",
     "进行中",
     "评审中",
+    "审核中",
+    "待审查",
     "已完成"
   ]);
   return columnLabels.has(normalizedLabel) ? "" : label;
@@ -816,31 +1015,13 @@ function getIssueCardDuePresentation(
 function getIssueCardSignalPresentation(
   issue: KanbanIssue,
   options: {
-    awaitingConfirmation: boolean;
+    locale: SupportedLocale;
     now: Date;
-    sortIndex?: number;
   },
   t: TranslateFunction
 ): IssueCardSignalPresentation {
-  if (issue.runState === "cancelled") {
-    return { label: t("kanban.run.cancelled"), tone: "cancelled", icon: "cancelled" };
-  }
-  if (issue.runState === "failed") {
-    return { label: t("kanban.run.failed"), tone: "failed", icon: "failed" };
-  }
-  if (options.awaitingConfirmation && issue.status === "in_progress") {
-    return { label: t("kanban.run.awaitingApproval"), tone: "awaiting", icon: "waiting" };
-  }
-  if (issue.status === "todo") {
-    return {
-      label: formatKanbanSortNumber(options.sortIndex, issue.position),
-      tone: "todo",
-      icon: "order"
-    };
-  }
-  if (issue.status === "in_progress" && (issue.runState === "running" || Boolean(issue.runId))) {
-    const duration = formatKanbanCompactDuration(issue.runStartedAt, options.now)
-      || formatKanbanCompactDuration(issue.updatedAt, options.now);
+  if (issue.status === "in_progress") {
+    const duration = formatKanbanCompactDuration(issue.runStartedAt || issue.createdAt, options.now);
     return {
       label: duration ? t("kanban.card.runningFor", { duration }) : t("kanban.run.running"),
       tone: "running",
@@ -848,26 +1029,21 @@ function getIssueCardSignalPresentation(
     };
   }
   if (issue.status === "completed" || issue.runState === "completed") {
-    const duration = formatKanbanCompactDuration(issue.runFinishedAt, options.now)
-      || formatKanbanCompactDuration(issue.updatedAt, options.now);
-    const updatedTime = formatIssueUpdatedTime(issue.runFinishedAt || issue.updatedAt, options.now);
+    const completedTime = formatKanbanCompletionTime(issue.runFinishedAt || issue.updatedAt, options.locale);
     return {
-      label: duration
-        ? t("kanban.card.completedAgo", { duration })
-        : updatedTime ? t("kanban.card.updatedAt", { time: updatedTime }) : "",
+      label: completedTime ? t("kanban.card.completedAt", { time: completedTime }) : "",
       tone: "succeeded",
       icon: "completed"
     };
   }
   if (issue.status === "in_review") {
-    const duration = formatKanbanCompactDuration(issue.updatedAt, options.now);
-    const updatedTime = formatIssueUpdatedTime(issue.updatedAt, options.now);
+    const duration = formatKanbanCompactDuration(issue.runStartedAt || issue.createdAt, options.now);
     return {
       label: duration
-        ? t("kanban.card.waitingFor", { duration })
-        : updatedTime ? t("kanban.card.updatedAt", { time: updatedTime }) : "",
+        ? t("kanban.card.runningFor", { duration })
+        : t("kanban.status.inReview"),
       tone: "in_review",
-      icon: "waiting"
+      icon: "running"
     };
   }
   const updatedTime = formatIssueUpdatedTime(issue.updatedAt, options.now);
@@ -876,6 +1052,26 @@ function getIssueCardSignalPresentation(
     tone: issue.status,
     icon: "history"
   };
+}
+
+function getIssueCardOperationalStatePresentation(
+  issue: KanbanIssue,
+  awaitingConfirmation: boolean,
+  t: TranslateFunction
+): IssueCardSignalPresentation | null {
+  if (issue.runState === "cancelled") {
+    return { label: t("kanban.run.cancelled"), tone: "cancelled", icon: "cancelled" };
+  }
+  if (issue.runState === "failed") {
+    return { label: t("kanban.run.failed"), tone: "failed", icon: "failed" };
+  }
+  if (awaitingConfirmation && issue.status === "in_progress") {
+    return { label: t("kanban.run.awaitingApproval"), tone: "awaiting", icon: "waiting" };
+  }
+  if (issue.status === "in_progress" && (issue.runState === "running" || Boolean(issue.runId))) {
+    return { label: t("kanban.run.running"), tone: "running", icon: "running" };
+  }
+  return null;
 }
 
 function getKanbanEmptyHint(status: KanbanStatus, t: TranslateFunction) {
@@ -1544,6 +1740,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
     return grouped;
   }, [filteredIssues]);
+
+  const stageLegend = useMemo(
+    () => getKanbanStageLegend(filteredIssues, cloudDetails),
+    [cloudDetails, filteredIssues]
+  );
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const detailIssue = detailIssueId ? issueMap.get(detailIssueId) ?? null : null;
@@ -2224,6 +2425,17 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         </div>
       ) : null}
 
+      {stageLegend.length > 0 ? (
+        <div className="kanban-stage-legend" aria-label={t("kanban.card.stageLegend")}>
+          {stageLegend.map((stage) => (
+            <span key={`${stage.color}:${stage.label}`} className="kanban-stage-legend-item">
+              <span className="kanban-stage-legend-dot" style={{ backgroundColor: stage.color }} aria-hidden="true" />
+              <span>{stage.label}</span>
+            </span>
+          ))}
+        </div>
+      ) : null}
+
       <DndContext
         sensors={sensors}
         collisionDetection={detectKanbanCollisions}
@@ -2243,6 +2455,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 status={status}
                 issues={columnIssues}
                 agents={agents}
+                cloudDetails={cloudDetails}
                 projectsById={kanbanProjectsById}
                 display={display}
                 locale={locale}
@@ -2267,6 +2480,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   issue={activeDragIssue}
                   awaitingConfirmation={false}
                   agents={agents}
+                  cloudDetails={cloudDetails}
                   projectsById={kanbanProjectsById}
                   display={display}
                   locale={locale}
@@ -2684,6 +2898,7 @@ const KanbanColumn = memo(function KanbanColumn({
   status,
   issues,
   agents,
+  cloudDetails,
   projectsById,
   display,
   locale,
@@ -2699,6 +2914,7 @@ const KanbanColumn = memo(function KanbanColumn({
   status: KanbanStatus;
   issues: KanbanIssue[];
   agents: AssistantNavAgentItem[];
+  cloudDetails: KanbanCloudDetailData;
   projectsById: Map<string, KanbanProject>;
   display: DisplayState;
   locale: SupportedLocale;
@@ -2721,7 +2937,6 @@ const KanbanColumn = memo(function KanbanColumn({
     >
       <header className="kanban-column-head">
         <div className="kanban-column-title">
-          <span className={`kanban-status-dot is-${meta.tone}`} aria-hidden="true" />
           <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
@@ -2755,6 +2970,7 @@ const KanbanColumn = memo(function KanbanColumn({
               sortIndex={index + 1}
               awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
               agents={agents}
+              cloudDetails={cloudDetails}
               projectsById={projectsById}
               display={display}
               locale={locale}
@@ -2783,6 +2999,7 @@ const IssueCard = memo(function IssueCard({
   sortIndex,
   awaitingConfirmation,
   agents,
+  cloudDetails,
   projectsById,
   display,
   locale,
@@ -2797,6 +3014,7 @@ const IssueCard = memo(function IssueCard({
   sortIndex: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
+  cloudDetails: KanbanCloudDetailData;
   projectsById: Map<string, KanbanProject>;
   display: DisplayState;
   locale: SupportedLocale;
@@ -2838,6 +3056,7 @@ const IssueCard = memo(function IssueCard({
         sortIndex={sortIndex}
         awaitingConfirmation={awaitingConfirmation}
         agents={agents}
+        cloudDetails={cloudDetails}
         projectsById={projectsById}
         display={display}
         locale={locale}
@@ -2857,6 +3076,7 @@ const IssueCardContent = memo(function IssueCardContent({
   sortIndex,
   awaitingConfirmation,
   agents,
+  cloudDetails,
   projectsById,
   display,
   locale,
@@ -2871,6 +3091,7 @@ const IssueCardContent = memo(function IssueCardContent({
   sortIndex?: number;
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
+  cloudDetails: KanbanCloudDetailData;
   projectsById: Map<string, KanbanProject>;
   display: DisplayState;
   locale: SupportedLocale;
@@ -2884,23 +3105,115 @@ const IssueCardContent = memo(function IssueCardContent({
   const severity = normalizeIssueSeverity(issue.severity);
   const cardStatus = getIssueCardStatusPresentation(issue, t);
   const cardSignal = getIssueCardSignalPresentation(issue, {
-    awaitingConfirmation,
+    locale,
     now,
-    sortIndex
   }, t);
+  const operationalState = getIssueCardOperationalStatePresentation(issue, awaitingConfirmation, t);
   const descriptionPreview = getIssueDescriptionPreview(issue.description);
   const duePresentation = getIssueCardDuePresentation(issue, locale, now, t);
-  const peopleLine = getIssueCardPeoplePresentation(issue, agents, t);
+  const peopleLine = getIssueCardPeoplePresentation(issue, agents, cloudDetails.users, t);
+  const progress = getIssueCardProgressPresentation(issue, cloudDetails);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const canOpenIssueDetails = interactive;
   const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
   const actionCount = interactive ? 1 + Number(canOpenIssueChat) + Number(canDeleteIssue) : 0;
-  const unassignedLabel = t("kanban.form.unassigned");
-  const shouldShowAssignee = peopleLine.assigneeLabel !== unassignedLabel || canEditKanbanIssueBody(issue);
-  const shouldShowPeople = shouldShowAssignee || Boolean(peopleLine.worker);
+  const queueRank = issue.status === "todo" ? formatKanbanSortNumber(sortIndex, issue.position) : "";
+  const showDescription = issue.status === "backlog" && Boolean(descriptionPreview);
+  const showPriorityImportance = display.priority && (issue.status === "backlog" || issue.status === "todo");
+  const priorityImportance = showPriorityImportance ? (
+    <IssueCardPriorityImportance priority={issue.priority} severity={severity} t={t} />
+  ) : null;
+  const due = duePresentation ? (
+    <span
+      className={`issue-card-due ${duePresentation.overdue ? "is-overdue" : ""}`}
+      title={duePresentation.title}
+    >
+      <ClockCircleOutlined aria-hidden="true" />
+      <span>{duePresentation.label}</span>
+    </span>
+  ) : null;
+  const people = peopleLine.people.length > 0 ? (
+    <IssueCardPeople people={peopleLine.people} title={peopleLine.title} t={t} />
+  ) : <span className="issue-card-people-spacer" aria-hidden="true" />;
+  const timingSignal = cardSignal.label ? (
+    <span className={`issue-card-signal is-${cardSignal.tone}`} title={cardSignal.label}>
+      <IssueCardSignalIcon kind={cardSignal.icon} />
+      <span>{cardSignal.label}</span>
+    </span>
+  ) : null;
+  const stateSignal = operationalState ? (
+    <span className={`issue-card-signal issue-card-operational-state is-${operationalState.tone}`} title={operationalState.label}>
+      <span className="issue-card-state-dot" aria-hidden="true" />
+      <span>{operationalState.label}</span>
+    </span>
+  ) : null;
+  const actions = interactive ? (
+    <span className="issue-card-actions">
+      <button
+        type="button"
+        className="issue-card-action"
+        aria-label={t("kanban.card.viewDetails")}
+        title={t("kanban.card.viewDetails")}
+        onPointerDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          onEdit();
+        }}
+      >
+        <EyeOutlined />
+      </button>
+      {canOpenIssueChat ? (
+        <button
+          type="button"
+          className="issue-card-action"
+          aria-label={t("kanban.chat.view")}
+          title={t("kanban.chat.view")}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onOpenChat();
+          }}
+        >
+          <MessageOutlined />
+        </button>
+      ) : null}
+      {canDeleteIssue ? (
+        <button
+          type="button"
+          className="issue-card-action is-danger"
+          aria-label={t("kanban.context.delete")}
+          title={t("kanban.context.delete")}
+          onPointerDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+        >
+          <DeleteOutlined />
+        </button>
+      ) : null}
+    </span>
+  ) : null;
+  const actionSlot = (signal: ReactNode = null) => (
+    <span className={`issue-card-footer-end has-${actionCount}-actions`}>
+      {signal ? <span className="issue-card-footer-signal">{signal}</span> : null}
+      {actions}
+    </span>
+  );
   const mainContent = (
     <>
+      <div
+        className="issue-card-workflow-progress"
+        role="progressbar"
+        aria-label={t("kanban.card.workflowProgress", { stage: progress.stageLabel || t("kanban.card.stageUnknown") })}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress.percent}
+        title={progress.stageLabel ? t("kanban.card.stage", { value: progress.stageLabel }) : undefined}
+      >
+        <span style={{ width: `${progress.percent}%`, backgroundColor: progress.color }} />
+      </div>
       <section className="issue-card-section issue-card-context">
         <div className="issue-card-context-line is-primary">
           <span className="issue-card-project" title={issueOrigin.title}>
@@ -2910,16 +3223,21 @@ const IssueCardContent = memo(function IssueCardContent({
             className={`issue-card-status is-${cardStatus.tone}`}
             title={t("kanban.card.status", { value: cardStatus.label })}
           >
-            <TagOutlined aria-hidden="true" />
+            <span className="issue-card-status-mark" style={{ backgroundColor: progress.color }} aria-hidden="true" />
             <span>{cardStatus.label}</span>
           </span>
         </div>
       </section>
       <section className="issue-card-section issue-card-title-block">
-        <span className="issue-card-title" title={issue.title}>{issue.title}</span>
-        <span className="issue-card-description" title={descriptionPreview || undefined}>
-          {descriptionPreview}
+        <span className="issue-card-title" title={issue.title}>
+          {queueRank ? <span className="issue-card-queue-rank">{queueRank}</span> : null}
+          <span className="issue-card-title-text">{issue.title}</span>
         </span>
+        {showDescription ? (
+          <span className="issue-card-description" title={descriptionPreview}>
+            {descriptionPreview}
+          </span>
+        ) : null}
       </section>
     </>
   );
@@ -2947,102 +3265,31 @@ const IssueCardContent = memo(function IssueCardContent({
         </div>
       )}
       <footer className="issue-card-section issue-card-foot">
-        <div className="issue-card-footer-start">
-          {duePresentation ? (
-            <span
-              className={`issue-card-due ${duePresentation.overdue ? "is-overdue" : ""}`}
-              title={duePresentation.title}
-            >
-              <ClockCircleOutlined aria-hidden="true" />
-              <span>{duePresentation.label}</span>
-            </span>
-          ) : display.priority ? (
-            <div className="issue-card-footer-badges">
-              <IssueCardFooterPriorityBadge priority={issue.priority} t={t} />
-              <IssueCardFooterSeverityBadge severity={severity} t={t} />
+        {issue.status === "backlog" ? (
+          <>
+            {(priorityImportance || due) ? <div className="issue-card-footer-row">{priorityImportance}<span className="issue-card-footer-row-end">{due}</span></div> : null}
+            <div className="issue-card-footer-row">{people}{actionSlot(timingSignal)}</div>
+          </>
+        ) : issue.status === "todo" ? (
+          <>
+            <div className="issue-card-footer-row">{priorityImportance}<span className="issue-card-footer-row-end">{due}</span></div>
+            <div className="issue-card-footer-row">{people}{actionSlot()}</div>
+          </>
+        ) : issue.status === "in_progress" || issue.status === "in_review" ? (
+          <>
+            <div className="issue-card-footer-row">{people}</div>
+            <div className="issue-card-footer-row is-timing">
+              {timingSignal}
+              <span className="issue-card-footer-row-end">{due}</span>
+              {actionSlot(stateSignal)}
             </div>
-          ) : null}
-        </div>
-        {shouldShowPeople ? (
-          <div className="issue-card-people" title={peopleLine.title}>
-            {shouldShowAssignee ? (
-              <span className="issue-card-person is-assignee">
-                {peopleLine.assigneeLabel !== unassignedLabel ? (
-                  <span className="issue-card-assignee-avatar" aria-hidden="true">
-                    {getPersonInitials(peopleLine.assigneeLabel)}
-                  </span>
-                ) : null}
-                <span>{peopleLine.assigneeLabel}</span>
-              </span>
-            ) : null}
-            {peopleLine.worker ? (
-              <span
-                className={`issue-card-person is-worker is-${issue.workerType ?? "unknown"}`}
-                title={t("kanban.card.worker", { value: peopleLine.worker.rawLabel })}
-              >
-                <span className="issue-card-worker-icon" aria-hidden="true">
-                  {peopleLine.worker.icon}
-                </span>
-                <span>{peopleLine.worker.label}</span>
-              </span>
-            ) : null}
-          </div>
-        ) : <span className="issue-card-people-spacer" aria-hidden="true" />}
-        <div className={`issue-card-footer-end has-${actionCount}-actions`}>
-          {cardSignal.label ? (
-            <span className={`issue-card-signal issue-card-footer-signal is-${cardSignal.tone}`} title={cardSignal.label}>
-              <IssueCardSignalIcon kind={cardSignal.icon} />
-              <span>{cardSignal.label}</span>
-            </span>
-          ) : null}
-          {interactive ? (
-            <span className="issue-card-actions">
-              <button
-                type="button"
-                className="issue-card-action"
-                aria-label={t("kanban.card.viewDetails")}
-                title={t("kanban.card.viewDetails")}
-                onPointerDown={(event) => event.stopPropagation()}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onEdit();
-                }}
-              >
-                <EyeOutlined />
-              </button>
-              {canOpenIssueChat ? (
-                <button
-                  type="button"
-                  className="issue-card-action"
-                  aria-label={t("kanban.chat.view")}
-                  title={t("kanban.chat.view")}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenChat();
-                  }}
-                >
-                  <MessageOutlined />
-                </button>
-              ) : null}
-              {canDeleteIssue ? (
-                <button
-                  type="button"
-                  className="issue-card-action is-danger"
-                  aria-label={t("kanban.context.delete")}
-                  title={t("kanban.context.delete")}
-                  onPointerDown={(event) => event.stopPropagation()}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onDelete();
-                  }}
-                >
-                  <DeleteOutlined />
-                </button>
-              ) : null}
-            </span>
-          ) : null}
-        </div>
+          </>
+        ) : (
+          <>
+            <div className="issue-card-footer-row">{timingSignal}</div>
+            <div className="issue-card-footer-row">{people}{actionSlot()}</div>
+          </>
+        )}
       </footer>
     </>
   );
@@ -3381,32 +3628,65 @@ function KanbanIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filt
   );
 }
 
-function IssueCardFooterPriorityBadge({ priority, t }: { priority: KanbanPriority; t: TranslateFunction }) {
-  const meta = PRIORITY_META[priority];
-  const label = t(meta.labelKey);
-  const shortLabel = t(meta.shortLabelKey);
+function IssueCardPriorityImportance({
+  priority,
+  severity,
+  t
+}: {
+  priority: KanbanPriority;
+  severity: KanbanSeverity;
+  t: TranslateFunction;
+}) {
+  const priorityLabel = { high: "P1", medium: "P2", low: "P3" }[priority];
+  const importanceLabel = t({
+    critical: "kanban.card.importanceCritical",
+    high: "kanban.card.importanceHigh",
+    medium: "kanban.card.importanceMedium",
+    low: "kanban.card.importanceLow"
+  }[severity] as TranslationKey);
   return (
     <span
-      className={`issue-card-footer-badge issue-card-footer-badge-priority is-${priority}`}
-      title={t("kanban.card.priority", { value: label })}
+      className={`issue-card-priority-importance is-${priority} is-importance-${severity}`}
+      title={`${t("kanban.card.priority", { value: t(PRIORITY_META[priority].labelKey) })} · ${t("kanban.card.severity", { value: t(SEVERITY_META[severity].labelKey) })}`}
     >
-      <PriorityIcon priority={priority} width={12} height={12} />
-      <span>{shortLabel}</span>
+      <span>{priorityLabel}</span>
+      <span className="issue-card-priority-divider" aria-hidden="true">｜</span>
+      <span>{importanceLabel}</span>
     </span>
   );
 }
 
-function IssueCardFooterSeverityBadge({ severity, t }: { severity: KanbanSeverity; t: TranslateFunction }) {
-  const meta = SEVERITY_META[severity];
-  const label = t(meta.labelKey);
-  const shortLabel = t(meta.shortLabelKey);
+function IssueCardPeople({
+  people,
+  title,
+  t
+}: {
+  people: IssueCardPersonPresentation[];
+  title: string;
+  t: TranslateFunction;
+}) {
   return (
-    <span
-      className={`issue-card-footer-badge issue-card-footer-badge-severity is-${severity}`}
-      title={t("kanban.card.severity", { value: label })}
-    >
-      <ImportanceIcon severity={severity} width={12} height={12} />
-      <span>{shortLabel}</span>
+    <span className="issue-card-people" title={title}>
+      {people.map((person, index) => (
+        <span className="issue-card-person-group" key={`${person.kind}:${person.rawLabel}`}>
+          {index > 0 ? <span className="issue-card-person-arrow" aria-hidden="true">→</span> : null}
+          <span
+            className={`issue-card-person is-${person.kind}`}
+            title={person.kind === "worker" ? t("kanban.card.worker", { value: person.rawLabel }) : person.rawLabel}
+          >
+            {person.avatarUrl ? (
+              <img className="issue-card-person-avatar" src={person.avatarUrl} alt="" aria-hidden="true" />
+            ) : person.kind === "worker" && person.icon ? (
+              <span className="issue-card-worker-icon" aria-hidden="true">{person.icon}</span>
+            ) : person.rawLabel === t("kanban.form.unassigned") ? (
+              <span className="issue-card-worker-icon" aria-hidden="true">{person.icon}</span>
+            ) : (
+              <span className="issue-card-person-avatar is-initials" aria-hidden="true">{getPersonInitials(person.label)}</span>
+            )}
+            <span>{person.label}</span>
+          </span>
+        </span>
+      ))}
     </span>
   );
 }

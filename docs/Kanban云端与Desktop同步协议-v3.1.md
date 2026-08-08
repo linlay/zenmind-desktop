@@ -266,6 +266,8 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 
 `dispatchState` 和相关 dispatch 字段属于 Target v3.1。Current v3 主要通过 `event_delivery` 表达排队状态，Issue JSON 尚未完整投影这些字段。
 
+Desktop 卡片展示的工作流进度不是 wire 字段。Renderer 只读消费 `workflowStages` 的顺序、当前 `stageId/stageKey`，以及该 Stage 下 `workflowStatuses` 的顺序与当前 `statusId/statusKey/columnKey` 来推导大致进度；进度轨填充区只使用当前 Stage 的单一颜色，不携带历史阶段分段，也不向 Server 回写百分比或颜色。目录缺失或引用无法匹配时必须使用中性降级，不得猜测或产生 mutation。
+
 ### 4.2 Project
 
 ```json
