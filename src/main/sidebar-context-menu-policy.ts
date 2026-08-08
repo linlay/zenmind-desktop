@@ -50,11 +50,14 @@ export function normalizeSidebarContextMenuRequest(
       !hasOnlyKeys(target, [
         "kind",
         "groupId",
+        "menuScope",
         "sortMode",
         "canCreateProject",
         "canCreateChat"
       ]) ||
       !["assistants", "chats", "webs"].includes(String(target.groupId)) ||
+      !["all", "sort"].includes(String(target.menuScope)) ||
+      (target.menuScope === "sort" && target.groupId !== "assistants") ||
       !["byName", "byTime"].includes(String(target.sortMode)) ||
       !isBoolean(target.canCreateProject) ||
       !isBoolean(target.canCreateChat)
@@ -64,6 +67,7 @@ export function normalizeSidebarContextMenuRequest(
     normalizedTarget = {
       kind: "group",
       groupId: target.groupId as "assistants" | "chats" | "webs",
+      menuScope: target.menuScope as "all" | "sort",
       sortMode: target.sortMode as "byName" | "byTime",
       canCreateProject: target.canCreateProject,
       canCreateChat: target.canCreateChat
@@ -132,7 +136,7 @@ export function buildSidebarContextMenuPolicy(
 ): SidebarContextMenuPolicyItem[] {
   if (target.kind === "group") {
     if (target.groupId === "assistants") {
-      return [
+      const items: SidebarContextMenuPolicyItem[] = [
         {
           id: "group.sort-by-time",
           group: 0,
@@ -146,13 +150,16 @@ export function buildSidebarContextMenuPolicy(
           enabled: true,
           type: "radio",
           checked: target.sortMode === "byName"
-        },
-        {
+        }
+      ];
+      if (target.menuScope === "all") {
+        items.push({
           id: "group.new-project",
           group: 1,
           enabled: target.canCreateProject
-        }
-      ];
+        });
+      }
+      return items;
     }
     if (target.groupId === "chats") {
       return [

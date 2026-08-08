@@ -118,7 +118,11 @@ type SidebarPrimaryEntry = SidebarStandardPrimaryEntry | SidebarChatsEntry;
 type SidebarGroupId = "assistants" | "chats" | "webs";
 
 type SidebarContextMenuSubject =
-  | { kind: "group"; groupId: SidebarGroupId }
+  | {
+      kind: "group";
+      groupId: SidebarGroupId;
+      menuScope?: "all" | "sort";
+    }
   | { kind: "agent"; agentKey: string }
   | { kind: "chat"; chatId: string }
   | { kind: "web"; entryKey: string };
@@ -161,22 +165,6 @@ type SidebarFloatingMenuPosition = {
   x: number;
   y: number;
   positioned: boolean;
-};
-
-type AssistantChatMenuState = SidebarFloatingMenuPosition & {
-  chat: AssistantNavChatItem;
-};
-
-type SidebarWebItemMenuState = SidebarFloatingMenuPosition & {
-  item: WebEntry;
-};
-
-type SidebarGroupActionMenuState = SidebarFloatingMenuPosition & {
-  groupId: SidebarGroupId;
-};
-
-type AssistantAgentMenuState = SidebarFloatingMenuPosition & {
-  agent: AssistantNavAgentItem;
 };
 
 type AssistantChatRenameDialogState = {
@@ -1102,9 +1090,6 @@ export function AppSidebar({
   );
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
-  const [assistantSortMenuOpen, setAssistantSortMenuOpen] = useState(false);
-  const [assistantSortMenuAnchorPoint, setAssistantSortMenuAnchorPoint] =
-    useState<MenuAnchorPoint | null>(null);
   const [refreshingAssistantNavAgents, setRefreshingAssistantNavAgents] =
     useState(false);
   const [chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen] =
@@ -1144,19 +1129,10 @@ export function AppSidebar({
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [webItemRemovePendingId, setWebItemRemovePendingId] = useState("");
   const [webItemExportPendingId, setWebItemExportPendingId] = useState("");
-  const [assistantChatMenu, setAssistantChatMenu] =
-    useState<AssistantChatMenuState | null>(null);
-  const [webItemMenu, setWebItemMenu] =
-    useState<SidebarWebItemMenuState | null>(null);
-  const [groupActionMenu, setGroupActionMenu] =
-    useState<SidebarGroupActionMenuState | null>(null);
   const [assistantChatRenameDialog, setAssistantChatRenameDialog] =
     useState<AssistantChatRenameDialogState | null>(null);
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
     useState<AssistantChatDeleteDialogState | null>(null);
-  const [agentMenu, setAgentMenu] = useState<AssistantAgentMenuState | null>(
-    null,
-  );
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const sidebarNavRef = useRef<HTMLElement | null>(null);
@@ -1169,10 +1145,6 @@ export function AppSidebar({
   const chatDefaultAgentTriggerRef = useRef<HTMLButtonElement | null>(null);
   const chatDefaultAgentPickerRef = useRef<HTMLDivElement | null>(null);
   const chatDefaultAgentMenuRef = useRef<HTMLDivElement | null>(null);
-  const assistantChatMenuRef = useRef<HTMLDivElement | null>(null);
-  const webItemMenuRef = useRef<HTMLDivElement | null>(null);
-  const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
-  const agentMenuRef = useRef<HTMLDivElement | null>(null);
   const sidebarContextMenuRequestIdRef = useRef(0);
   const assistantNavAgentsRef = useRef(assistantNavAgents);
   const webItemsRef = useRef(webItems);
@@ -1576,119 +1548,6 @@ export function AppSidebar({
     };
   }, [assistantChatDeleteDialog]);
 
-  useEffect(() => {
-    if (!assistantChatMenu) {
-      return undefined;
-    }
-    function handleDocumentPointerDown(event: PointerEvent) {
-      const target = event.target;
-      if (
-        target instanceof Node &&
-        assistantChatMenuRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setAssistantChatMenu(null);
-    }
-    function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setAssistantChatMenu(null);
-      }
-    }
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-    document.addEventListener("keydown", handleDocumentKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
-      document.removeEventListener("keydown", handleDocumentKeyDown);
-    };
-  }, [assistantChatMenu]);
-
-  useLayoutEffect(() => {
-    if (
-      assistantChatMenu &&
-      !assistantChatMenu.positioned &&
-      assistantChatMenuRef.current
-    ) {
-      const currentMenu = assistantChatMenu;
-      const position = getViewportClampedMenuPosition(
-        currentMenu,
-        assistantChatMenuRef.current,
-      );
-      setAssistantChatMenu((current) =>
-        current === currentMenu
-          ? { ...current, ...position, positioned: true }
-          : current,
-      );
-    }
-
-    if (webItemMenu && !webItemMenu.positioned && webItemMenuRef.current) {
-      const currentMenu = webItemMenu;
-      const position = getViewportClampedMenuPosition(
-        currentMenu,
-        webItemMenuRef.current,
-      );
-      setWebItemMenu((current) =>
-        current === currentMenu
-          ? { ...current, ...position, positioned: true }
-          : current,
-      );
-    }
-
-    if (
-      groupActionMenu &&
-      !groupActionMenu.positioned &&
-      groupActionMenuRef.current
-    ) {
-      const currentMenu = groupActionMenu;
-      const position = getViewportClampedMenuPosition(
-        currentMenu,
-        groupActionMenuRef.current,
-      );
-      setGroupActionMenu((current) =>
-        current === currentMenu
-          ? { ...current, ...position, positioned: true }
-          : current,
-      );
-    }
-
-    if (agentMenu && !agentMenu.positioned && agentMenuRef.current) {
-      const currentMenu = agentMenu;
-      const position = getViewportClampedMenuPosition(
-        currentMenu,
-        agentMenuRef.current,
-      );
-      setAgentMenu((current) =>
-        current === currentMenu
-          ? { ...current, ...position, positioned: true }
-          : current,
-      );
-    }
-  }, [agentMenu, assistantChatMenu, groupActionMenu, webItemMenu]);
-
-  useEffect(() => {
-    if (!assistantChatMenu && !webItemMenu && !groupActionMenu && !agentMenu) {
-      return undefined;
-    }
-
-    const handleResize = () => {
-      setAssistantChatMenu((current) =>
-        current ? { ...current, positioned: false } : current,
-      );
-      setWebItemMenu((current) =>
-        current ? { ...current, positioned: false } : current,
-      );
-      setGroupActionMenu((current) =>
-        current ? { ...current, positioned: false } : current,
-      );
-      setAgentMenu((current) =>
-        current ? { ...current, positioned: false } : current,
-      );
-    };
-
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, [agentMenu, assistantChatMenu, groupActionMenu, webItemMenu]);
-
   useLayoutEffect(() => {
     if (
       !isCollapsed ||
@@ -1790,81 +1649,6 @@ export function AppSidebar({
     normalizedBootstrapChatId,
     toolMenuOpen,
   ]);
-
-  useEffect(() => {
-    if (!agentMenu) {
-      return undefined;
-    }
-    function handleDocumentPointerDown(event: PointerEvent) {
-      const target = event.target;
-      if (target instanceof Node && agentMenuRef.current?.contains(target)) {
-        return;
-      }
-      setAgentMenu(null);
-    }
-    function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setAgentMenu(null);
-      }
-    }
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-    document.addEventListener("keydown", handleDocumentKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
-      document.removeEventListener("keydown", handleDocumentKeyDown);
-    };
-  }, [agentMenu]);
-
-  useEffect(() => {
-    if (!webItemMenu) {
-      return undefined;
-    }
-    function handleDocumentPointerDown(event: PointerEvent) {
-      const target = event.target;
-      if (target instanceof Node && webItemMenuRef.current?.contains(target)) {
-        return;
-      }
-      setWebItemMenu(null);
-    }
-    function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setWebItemMenu(null);
-      }
-    }
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-    document.addEventListener("keydown", handleDocumentKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
-      document.removeEventListener("keydown", handleDocumentKeyDown);
-    };
-  }, [webItemMenu]);
-
-  useEffect(() => {
-    if (!groupActionMenu) {
-      return undefined;
-    }
-    function handleDocumentPointerDown(event: PointerEvent) {
-      const target = event.target;
-      if (
-        target instanceof Node &&
-        groupActionMenuRef.current?.contains(target)
-      ) {
-        return;
-      }
-      setGroupActionMenu(null);
-    }
-    function handleDocumentKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        setGroupActionMenu(null);
-      }
-    }
-    document.addEventListener("pointerdown", handleDocumentPointerDown);
-    document.addEventListener("keydown", handleDocumentKeyDown);
-    return () => {
-      document.removeEventListener("pointerdown", handleDocumentPointerDown);
-      document.removeEventListener("keydown", handleDocumentKeyDown);
-    };
-  }, [groupActionMenu]);
 
   useEffect(() => {
     if (!forcedActiveManagementRoute) {
@@ -2231,6 +2015,7 @@ export function AppSidebar({
       return {
         kind: "group",
         groupId: subject.groupId,
+        menuScope: subject.menuScope ?? "all",
         sortMode: assistantNavSortMode,
         canCreateProject:
           !runtime.creatingProject && !runtime.hasCreateProjectDialog,
@@ -2477,40 +2262,6 @@ export function AppSidebar({
     return true;
   }
 
-  function openAssistantChatMenuAtPoint(
-    anchorPoint: MenuAnchorPoint,
-    chat: AssistantNavChatItem,
-  ) {
-    setAssistantChatMenu({
-      chat,
-      ...createMenuPositionFromPoint(anchorPoint),
-    });
-  }
-
-  function openAgentMenuAtPoint(
-    anchorPoint: MenuAnchorPoint,
-    agent: AssistantNavAgentItem,
-  ) {
-    setAgentMenu({ agent, ...createMenuPositionFromPoint(anchorPoint) });
-  }
-
-  function openWebItemMenuAtPoint(
-    anchorPoint: MenuAnchorPoint,
-    item: WebEntry,
-  ) {
-    setWebItemMenu({ item, ...createMenuPositionFromPoint(anchorPoint) });
-  }
-
-  function openGroupActionMenuAtPoint(
-    anchorPoint: MenuAnchorPoint,
-    groupId: SidebarGroupId,
-  ) {
-    setGroupActionMenu({
-      groupId,
-      ...createMenuPositionFromPoint(anchorPoint),
-    });
-  }
-
   function openSidebarRovingContextMenu(element: HTMLElement) {
     const kind = element.dataset.sidebarNavKind;
     if (kind === "group") {
@@ -2655,12 +2406,7 @@ export function AppSidebar({
     }
 
     if (event.key === "Escape") {
-      setAssistantSortMenuOpen(false);
       closeToolMenu();
-      setAssistantChatMenu(null);
-      setAgentMenu(null);
-      setWebItemMenu(null);
-      setGroupActionMenu(null);
       return;
     }
 
@@ -3231,9 +2977,10 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openAssistantChatMenuAtPoint(
+    openNativeSidebarContextMenu(
+      { kind: "chat", chatId: chat.chatId },
+      event.currentTarget,
       { x: event.clientX, y: event.clientY },
-      chat,
     );
   }
 
@@ -3253,7 +3000,6 @@ export function AppSidebar({
   }
 
   async function handleAssistantExportChat(chat: AssistantNavChatItem) {
-    setAssistantChatMenu(null);
     try {
       const result = await window.electronAPI.assistant.exportChat(chat.chatId);
       if (!result.ok) {
@@ -3271,7 +3017,6 @@ export function AppSidebar({
   }
 
   function handleAssistantRenameChat(chat: AssistantNavChatItem) {
-    setAssistantChatMenu(null);
     setAssistantChatRenameDialog({
       chat,
       value: chat.chatName,
@@ -3324,7 +3069,6 @@ export function AppSidebar({
   }
 
   async function handleAssistantArchiveChat(chat: AssistantNavChatItem) {
-    setAssistantChatMenu(null);
     const result = await window.electronAPI.assistant.archiveChat(chat.chatId);
     if (!result?.ok) {
       window.alert(result?.message || t("sidebar.chat.archiveFailed"));
@@ -3353,7 +3097,6 @@ export function AppSidebar({
   }
 
   async function handleAssistantDeleteChat(chat: AssistantNavChatItem) {
-    setAssistantChatMenu(null);
     setAssistantChatDeleteDialog({
       chat,
       pending: false,
@@ -3524,86 +3267,32 @@ export function AppSidebar({
     );
   }
 
-  function renderAssistantSortMenu() {
-    const options: Array<{ mode: AssistantNavSortMode; label: string }> = [
-      { mode: "byTime", label: t("sidebar.assistants.sortByTime") },
-      { mode: "byName", label: t("sidebar.assistants.sortByName") },
-    ];
-    return (
-      <div
-        className="sidebar-assistant-sort-menu"
-        role="menu"
-        aria-label={t("sidebar.assistants.sortMenu")}
-      >
-        {options.map((option) => (
-          <button
-            key={option.mode}
-            type="button"
-            className={[
-              "sidebar-assistant-sort-item",
-              assistantNavSortMode === option.mode ? "is-active" : "",
-            ]
-              .filter(Boolean)
-              .join(" ")}
-            role="menuitemradio"
-            aria-checked={assistantNavSortMode === option.mode}
-            onClick={() => {
-              setAssistantNavSortMode(option.mode);
-              setAssistantSortMenuOpen(false);
-              setAssistantSortMenuAnchorPoint(null);
-            }}
-          >
-            <span>{option.label}</span>
-            {assistantNavSortMode === option.mode ? (
-              <span
-                className="sidebar-assistant-sort-check"
-                aria-hidden="true"
-              />
-            ) : null}
-          </button>
-        ))}
-      </div>
-    );
-  }
-
   function renderAssistantSortButton(options: { tabIndex?: number } = {}) {
     return (
-      <Popover
-        open={assistantSortMenuOpen}
-        onOpenChange={(open) => {
-          setAssistantSortMenuOpen(open);
-          if (!open) {
-            setAssistantSortMenuAnchorPoint(null);
-          }
+      <button
+        type="button"
+        className="assistant-worker-icon-button sidebar-assistant-sort-button"
+        aria-label={t("sidebar.assistants.sort")}
+        title={assistantNavSortLabel}
+        tabIndex={options.tabIndex}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          openNativeSidebarContextMenu(
+            {
+              kind: "group",
+              groupId: "assistants",
+              menuScope: "sort",
+            },
+            event.currentTarget,
+            event.detail > 0
+              ? { x: event.clientX, y: event.clientY }
+              : undefined,
+          );
         }}
-        anchorPoint={assistantSortMenuAnchorPoint}
-        placement="bottom-end"
-        className="sidebar-operation-menu-popover"
-        content={renderAssistantSortMenu()}
       >
-        <button
-          type="button"
-          className="assistant-worker-icon-button sidebar-assistant-sort-button"
-          aria-label={t("sidebar.assistants.sort")}
-          title={assistantNavSortLabel}
-          tabIndex={options.tabIndex}
-          onClick={(event) => {
-            event.stopPropagation();
-            setAssistantSortMenuAnchorPoint(
-              event.detail > 0
-                ? { x: event.clientX, y: event.clientY }
-                : null,
-            );
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === " ") {
-              setAssistantSortMenuAnchorPoint(null);
-            }
-          }}
-        >
-          <SidebarActionIcon kind="sort" />
-        </button>
-      </Popover>
+        <SidebarActionIcon kind="sort" />
+      </button>
     );
   }
 
@@ -4260,9 +3949,10 @@ export function AppSidebar({
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
-                    openWebItemMenuAtPoint(
+                    openNativeSidebarContextMenu(
+                      { kind: "web", entryKey: webItem.entryKey },
+                      event.currentTarget,
                       { x: event.clientX, y: event.clientY },
-                      webItem,
                     );
                   }}
                 >
@@ -4781,9 +4471,10 @@ export function AppSidebar({
                     tabIndex={-1}
                     onClick={(event) => {
                       event.stopPropagation();
-                      openGroupActionMenuAtPoint(
+                      openNativeSidebarContextMenu(
+                        { kind: "group", groupId: "webs" },
+                        event.currentTarget,
                         { x: event.clientX, y: event.clientY },
-                        "webs",
                       );
                     }}
                   >
@@ -5283,229 +4974,17 @@ export function AppSidebar({
     );
   }
 
-  function renderGroupActionMenu() {
-    if (!groupActionMenu || typeof document === "undefined") {
-      return null;
-    }
-    const groupId = groupActionMenu.groupId;
-    return createPortal(
-      <div
-        className="sidebar-group-actions-menu-layer"
-        onPointerDown={() => setGroupActionMenu(null)}
-      >
-        <div
-          ref={groupActionMenuRef}
-          className="assistant-chat-actions-menu sidebar-group-actions-menu"
-          style={{
-            left: groupActionMenu.x,
-            top: groupActionMenu.y,
-            visibility: groupActionMenu.positioned ? "visible" : "hidden",
-          }}
-          role="menu"
-          aria-label={
-            groupId === "assistants"
-              ? t("nav.assistants")
-              : groupId === "chats"
-                ? t("nav.chats")
-                : t("nav.websites")
-          }
-          onPointerDown={(event) => event.stopPropagation()}
-        >
-          {groupId === "assistants" ? (
-            <>
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={assistantNavSortMode === "byTime"}
-                onClick={() => {
-                  setAssistantNavSortMode("byTime");
-                  setGroupActionMenu(null);
-                }}
-              >
-                <span>{t("sidebar.assistants.sortByTime")}</span>
-              </button>
-              <button
-                type="button"
-                role="menuitemradio"
-                aria-checked={assistantNavSortMode === "byName"}
-                onClick={() => {
-                  setAssistantNavSortMode("byName");
-                  setGroupActionMenu(null);
-                }}
-              >
-                <span>{t("sidebar.assistants.sortByName")}</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                disabled={creatingProject || Boolean(createProjectDialog)}
-                onClick={() => {
-                  setGroupActionMenu(null);
-                  void beginCreateProject();
-                }}
-              >
-                <span>{t("sidebar.project.new")}</span>
-              </button>
-            </>
-          ) : groupId === "chats" ? (
-            <button
-              type="button"
-              role="menuitem"
-              disabled={
-                !resolvedChatDefaultAgentKey || chatDefaultAgentUnavailable
-              }
-              onClick={(event) => {
-                setGroupActionMenu(null);
-                handleChatsNewChat(event);
-              }}
-            >
-              <span>{t("sidebar.chats.newChat")}</span>
-            </button>
-          ) : (
-            <>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setGroupActionMenu(null);
-                  showWebsiteDialog();
-                }}
-              >
-                <span>{t("sidebar.website.new")}</span>
-              </button>
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setGroupActionMenu(null);
-                  void handleImportWebapp();
-                }}
-              >
-                <span>{t("sidebar.webapp.import")}</span>
-              </button>
-            </>
-          )}
-        </div>
-      </div>,
-      document.body,
-    );
-  }
-
-  function renderWebItemMenu() {
-    if (!webItemMenu || typeof document === "undefined") {
-      return null;
-    }
-    const item = webItemMenu.item;
-    const isOpen = webOpenEntryKeys.includes(item.entryKey);
-    const isWebapp = item.kind === "webapp";
-    const canRemoveWebapp = isWebapp && item.removable !== false;
-    const removePending = isWebapp && webItemRemovePendingId === item.id;
-    return createPortal(
-      <div
-        ref={webItemMenuRef}
-        className="assistant-chat-actions-menu sidebar-web-item-actions-menu"
-        style={{
-          left: webItemMenu.x,
-          top: webItemMenu.y,
-          visibility: webItemMenu.positioned ? "visible" : "hidden",
-        }}
-        role="menu"
-        aria-label={
-          isWebapp ? t("sidebar.webapp.actions") : t("sidebar.website.close")
-        }
-      >
-        <button
-          type="button"
-          role="menuitem"
-          disabled={!isOpen || Boolean(webClosePendingEntryKey)}
-          onClick={() => {
-            void closeWebItem(item).finally(() => setWebItemMenu(null));
-          }}
-        >
-          <span>{t("sidebar.website.close")}</span>
-        </button>
-        {isWebapp ? (
-          <>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={
-                item.openMode === "dialog"
-                  ? !onOpenWebappWorkspace
-                  : !onOpenWebappWindow
-              }
-              onClick={() => {
-                setWebItemMenu(null);
-                if (item.kind === "webapp") {
-                  if (item.openMode === "dialog") {
-                    onOpenWebappWorkspace?.(item);
-                  } else {
-                    onOpenWebappWindow?.(item);
-                  }
-                }
-              }}
-            >
-              <span>
-                {t(
-                  item.openMode === "dialog"
-                    ? "sidebar.webapp.openInWorkspace"
-                    : "sidebar.webapp.openInWindow",
-                )}
-              </span>
-            </button>
-            <button
-              type="button"
-              role="menuitem"
-              disabled={!onExportWebappItem || Boolean(webItemExportPendingId)}
-              onClick={() => {
-                setWebItemMenu(null);
-                void exportWebappItem(item);
-              }}
-            >
-              <span>
-                {webItemExportPendingId === item.id
-                  ? t("sidebar.webapp.exporting")
-                  : t("sidebar.webapp.export")}
-              </span>
-            </button>
-            {!isCollapsed ? (
-              <button
-                type="button"
-                role="menuitem"
-                disabled={!canRemoveWebapp || Boolean(webItemRemovePendingId)}
-                title={
-                  canRemoveWebapp
-                    ? t("sidebar.webapp.remove")
-                    : t("sidebar.webapp.managedNotRemovable", {
-                        name: item.label,
-                      })
-                }
-                onClick={() => {
-                  setWebItemMenu(null);
-                  void removeWebappItem(item);
-                }}
-              >
-                <span>
-                  {removePending
-                    ? t("sidebar.webapp.removing")
-                    : t("sidebar.webapp.remove")}
-                </span>
-              </button>
-            ) : null}
-          </>
-        ) : null}
-      </div>,
-      document.body,
-    );
-  }
-
   function handleOpenAgentMenu(
     event: MouseEvent<HTMLButtonElement>,
     agent: AssistantNavAgentItem,
   ) {
     event.preventDefault();
     event.stopPropagation();
-    openAgentMenuAtPoint({ x: event.clientX, y: event.clientY }, agent);
+    openNativeSidebarContextMenu(
+      { kind: "agent", agentKey: agent.agentKey },
+      event.currentTarget,
+      { x: event.clientX, y: event.clientY },
+    );
   }
 
   function handleAgentContextMenu(
@@ -5550,7 +5029,6 @@ export function AppSidebar({
     if (disabledReason) {
       return;
     }
-    setAgentMenu(null);
     if (agent.workspaceDir) {
       await openWorkspaceDirectory(agent.workspaceDir, agent.agentKey);
     }
@@ -5564,62 +5042,7 @@ export function AppSidebar({
   }
 
   function handleEditAgent(agent: AssistantNavAgentItem) {
-    setAgentMenu(null);
     requestNavigate(createAgentEditRoute(agent));
-  }
-
-  function renderAssistantChatMenu() {
-    if (!assistantChatMenu || typeof document === "undefined") {
-      return null;
-    }
-    const chat = assistantChatMenu.chat;
-    return createPortal(
-      <div
-        ref={assistantChatMenuRef}
-        className="assistant-chat-actions-menu"
-        style={{
-          left: assistantChatMenu.x,
-          top: assistantChatMenu.y,
-          visibility: assistantChatMenu.positioned ? "visible" : "hidden",
-        }}
-        role="menu"
-        aria-label={t("sidebar.chat.actions")}
-      >
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => void handleAssistantExportChat(chat)}
-        >
-          <span aria-hidden="true">↓</span>
-          <span>{t("sidebar.chat.export")}</span>
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => void handleAssistantRenameChat(chat)}
-        >
-          <span aria-hidden="true">✎</span>
-          <span>{t("sidebar.chat.rename")}</span>
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => void handleAssistantArchiveChat(chat)}
-        >
-          <span aria-hidden="true">□</span>
-          <span>{t("sidebar.chat.archive")}</span>
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => void handleAssistantDeleteChat(chat)}
-        >
-          <span aria-hidden="true">×</span>
-          <span>{t("sidebar.chat.delete")}</span>
-        </button>
-      </div>,
-      document.body,
-    );
   }
 
   function renderAssistantChatRenameDialog() {
@@ -5771,46 +5194,6 @@ export function AppSidebar({
             </button>
           </div>
         </div>
-      </div>,
-      document.body,
-    );
-  }
-
-  function renderAgentMenu() {
-    if (!agentMenu || typeof document === "undefined") {
-      return null;
-    }
-    const agent = agentMenu.agent;
-    const openWorkspaceDisabledReason = getOpenWorkspaceDisabledReason(agent);
-    return createPortal(
-      <div
-        ref={agentMenuRef}
-        className="assistant-chat-actions-menu"
-        style={{
-          left: agentMenu.x,
-          top: agentMenu.y,
-          visibility: agentMenu.positioned ? "visible" : "hidden",
-        }}
-        role="menu"
-        aria-label={t("sidebar.agent.actions")}
-      >
-        <button
-          type="button"
-          role="menuitem"
-          disabled={Boolean(openWorkspaceDisabledReason)}
-          aria-disabled={Boolean(openWorkspaceDisabledReason)}
-          title={openWorkspaceDisabledReason || agent.workspaceDir}
-          onClick={() => void handleOpenWorkspace(agent)}
-        >
-          <span>{t("sidebar.agent.openWorkspace")}</span>
-        </button>
-        <button
-          type="button"
-          role="menuitem"
-          onClick={() => handleEditAgent(agent)}
-        >
-          <span>{t("sidebar.agent.edit")}</span>
-        </button>
       </div>,
       document.body,
     );
@@ -6451,12 +5834,8 @@ export function AppSidebar({
                   </button>
                 </Popover>
               </div>
-              {renderAssistantChatMenu()}
-              {renderWebItemMenu()}
-              {renderGroupActionMenu()}
               {renderAssistantChatRenameDialog()}
               {renderAssistantChatDeleteDialog()}
-              {renderAgentMenu()}
               {renderCreateProjectDialog()}
               {renderWebsiteDialog()}
             </div>

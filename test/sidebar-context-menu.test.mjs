@@ -17,6 +17,7 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
   const assistants = buildSidebarContextMenuPolicy({
     kind: "group",
     groupId: "assistants",
+    menuScope: "all",
     sortMode: "byTime",
     canCreateProject: false,
     canCreateChat: false
@@ -29,10 +30,19 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
   assert.equal(assistants[0].checked, true);
   assert.equal(assistants[1].checked, false);
   assert.equal(assistants[2].enabled, false);
+  assert.deepEqual(ids({
+    kind: "group",
+    groupId: "assistants",
+    menuScope: "sort",
+    sortMode: "byName",
+    canCreateProject: true,
+    canCreateChat: false
+  }), ["group.sort-by-time", "group.sort-by-name"]);
 
   assert.deepEqual(ids({
     kind: "group",
     groupId: "chats",
+    menuScope: "all",
     sortMode: "byName",
     canCreateProject: true,
     canCreateChat: true
@@ -40,6 +50,7 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
   assert.deepEqual(ids({
     kind: "group",
     groupId: "webs",
+    menuScope: "all",
     sortMode: "byName",
     canCreateProject: true,
     canCreateChat: true
@@ -109,6 +120,18 @@ test("sidebar native context request validation rejects injected and malformed f
     x: 1,
     y: 2,
     target: { kind: "command", command: "arbitrary" }
+  }), null);
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 1,
+    y: 2,
+    target: {
+      kind: "group",
+      groupId: "webs",
+      menuScope: "sort",
+      sortMode: "byTime",
+      canCreateProject: false,
+      canCreateChat: false
+    }
   }), null);
 });
 

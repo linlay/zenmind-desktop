@@ -24,6 +24,7 @@ export type SidebarContextMenuTarget =
   | {
       kind: "group";
       groupId: "assistants" | "chats" | "webs";
+      menuScope: "all" | "sort";
       sortMode: "byName" | "byTime";
       canCreateProject: boolean;
       canCreateChat: boolean;

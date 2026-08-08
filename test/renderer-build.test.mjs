@@ -1087,11 +1087,13 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /function openSidebarRovingContextMenu\(element: HTMLElement\)/);
-  assert.match(sidebarSource, /function renderWebItemMenu\(\)/);
-  assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
+  assert.doesNotMatch(sidebarSource, /function renderWebItemMenu\(\)/);
+  assert.doesNotMatch(sidebarSource, /function renderGroupActionMenu\(\)/);
+  assert.doesNotMatch(sidebarSource, /function renderAssistantChatMenu\(\)/);
+  assert.doesNotMatch(sidebarSource, /function renderAgentMenu\(\)/);
 });
 
-test("sidebar right-click menus are native while button menus keep pointer anchors and glass surfaces", () => {
+test("sidebar action buttons and right-clicks share native menus while selection popovers keep glass surfaces", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1120,34 +1122,34 @@ test("sidebar right-click menus are native while button menus keep pointer ancho
   assert.match(popoverSource, /viewportHeight - popoverRect\.height - viewportPadding/u);
 
   assert.match(sidebarSource, /function getViewportClampedMenuPosition\([\s\S]*?menu\.getBoundingClientRect\(\)/u);
-  assert.match(sidebarSource, /function openAssistantChatMenuAtPoint\(/u);
-  assert.match(sidebarSource, /function openAgentMenuAtPoint\(/u);
-  assert.match(sidebarSource, /function openWebItemMenuAtPoint\(/u);
-  assert.match(sidebarSource, /function openGroupActionMenuAtPoint\(/u);
   assert.match(sidebarSource, /function openNativeSidebarContextMenu\(/u);
   assert.match(sidebarSource, /window\.electronAPI\.sidebarContextMenu[\s\S]*?\.popup\(/u);
+  assert.match(sidebarSource, /function handleAssistantOpenChatMenu\([\s\S]*?openNativeSidebarContextMenu\([\s\S]*?kind: "chat"/u);
+  assert.match(sidebarSource, /function handleOpenAgentMenu\([\s\S]*?openNativeSidebarContextMenu\([\s\S]*?kind: "agent"/u);
+  assert.match(sidebarSource, /sidebar-website-child-action[\s\S]{0,600}openNativeSidebarContextMenu\([\s\S]{0,120}kind: "web"/u);
+  assert.match(sidebarSource, /sidebar-website-add-button[\s\S]{0,500}openNativeSidebarContextMenu\([\s\S]{0,120}kind: "group"/u);
+  assert.match(sidebarSource, /sidebar-assistant-sort-button[\s\S]{0,500}openNativeSidebarContextMenu\([\s\S]{0,160}menuScope: "sort"/u);
   assert.match(sidebarSource, /\{ x: event\.clientX, y: event\.clientY \}/u);
   assert.match(sidebarSource, /event\.clientX === 0 && event\.clientY === 0[\s\S]*?\? undefined[\s\S]*?: \{ x: event\.clientX, y: event\.clientY \}/u);
   assert.match(sidebarSource, /event\.key === "ContextMenu"[\s\S]*?event\.shiftKey && event\.key === "F10"[\s\S]*?openSidebarRovingContextMenu\(currentElement\)/u);
   assert.match(sidebarSource, /event\.detail > 0[\s\S]*?event\.clientX[\s\S]*?event\.clientY/u);
-  assert.match(sidebarSource, /anchorPoint=\{assistantSortMenuAnchorPoint\}/u);
   assert.match(sidebarSource, /anchorPoint=\{chatDefaultAgentMenuAnchorPoint\}/u);
   assert.doesNotMatch(sidebarSource, /anchorPoint=\{toolMenuAnchorPoint\}/u);
   assert.match(sidebarSource, /chatDefaultAgentInlineMenuPosition/u);
-  assert.match(sidebarSource, /visibility: assistantChatMenu\.positioned \? "visible" : "hidden"/u);
+  assert.doesNotMatch(sidebarSource, /assistantChatMenu|webItemMenu|groupActionMenu|agentMenu/u);
+  assert.doesNotMatch(sidebarSource, /assistantSortMenu|renderAssistantSortMenu/u);
 
   assert.match(themeStyles, /--sidebar-operation-menu-bg:\s*rgba\(255, 255, 255, 0\.9\);/u);
   assert.match(themeStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--sidebar-operation-menu-bg:\s*rgba\(31, 35, 42, 0\.9\);/u);
   assert.match(themeStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--sidebar-operation-menu-text:\s*#f2f3f5;/u);
   assert.match(themeStyles, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--sidebar-operation-menu-hover:\s*rgba\(255, 255, 255, 0\.09\);/u);
   assert.match(navigationStyles, /\.sidebar-operation-menu-popover\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/u);
-  assert.match(navigationStyles, /\.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);[\s\S]*?backdrop-filter:\s*blur\(18px\) saturate\(135%\);/u);
-  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*var\(--sidebar-operation-menu-bg\);/u);
+  assert.doesNotMatch(navigationStyles, /\.assistant-chat-actions-menu|\.sidebar-web-item-actions-menu|\.sidebar-group-actions-menu/u);
+  assert.doesNotMatch(navigationStyles, /\.sidebar-assistant-sort-menu|\.sidebar-assistant-sort-item/u);
   assert.match(navigationStyles, /:root\[data-theme="dark"\] \.sidebar-tool-menu\.sidebar-account-menu\s*\{[\s\S]*?--sidebar-account-menu-bg:\s*var\(--sidebar-operation-menu-bg\);/u);
-  assert.doesNotMatch(navigationStyles, /:root\[data-theme="dark"\] \.assistant-chat-actions-menu\s*\{[\s\S]*?background:\s*#242424;/u);
 });
 
-test("sites add menu merges website actions into one modal entry", () => {
+test("sites add button opens the native grouped action menu", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1155,22 +1157,13 @@ test("sites add menu merges website actions into one modal entry", () => {
     "navigation",
     "AppSidebar.tsx"
   );
-  const navigationStyles = readSourceFile(
-    "src",
-    "renderer",
-    "styles",
-    "navigation.css"
-  );
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
   assert.doesNotMatch(sidebarSource, /navigateWebsitesSettings/);
   assert.doesNotMatch(sidebarSource, /t\("sidebar\.website\.manage"\)/);
-  assert.match(sidebarSource, /showWebsiteDialog\(\);[\s\S]{0,100}t\("sidebar\.website\.new"\)/);
-  assert.match(sidebarSource, /handleImportWebapp\(\);[\s\S]{0,100}t\("sidebar\.webapp\.import"\)/);
   assert.match(sidebarSource, /openNativeSidebarContextMenu\([\s\S]{0,120}\{ kind: "group", groupId \}/);
-  assert.match(navigationStyles, /\.sidebar-group-actions-menu-layer \.sidebar-group-actions-menu\s*\{[\s\S]{0,120}width:\s*196px;/);
-  assert.match(navigationStyles, /\.sidebar-group-actions-menu button span\s*\{[\s\S]{0,100}white-space:\s*nowrap;/);
+  assert.match(sidebarSource, /sidebar-website-add-button[\s\S]{0,500}openNativeSidebarContextMenu\([\s\S]{0,120}groupId: "webs"/);
   assert.match(zhCN, /"sidebar\.website\.new":\s*"添加网站"/);
   assert.match(enUS, /"sidebar\.website\.new":\s*"Add website"/);
 });
@@ -4163,23 +4156,21 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(appShell, /window\.electronAPI\.webs\.webapps\.openWindow\(item\.id\)/);
   assert.doesNotMatch(appShell, /WebappDialogSurface|dialogWebappEntryKey/);
   assert.match(appSidebar, /onRemoveWebappItem\?: \(item: WebEntry\) => Promise<WebappDeleteResult>/);
-  assert.match(appSidebar, /webItem\.openMode === "dialog"/);
-  assert.match(appSidebar, /onOpenWebappWindow\(webItem\)/);
-  assert.match(appSidebar, /sidebar\.webapp\.openInWindow/);
-  assert.match(appSidebar, /sidebar\.webapp\.openInWorkspace/);
-  assert.match(appSidebar, /onOpenWebappWindow\?\.\(item\)/);
-  assert.match(appSidebar, /onOpenWebappWorkspace\?\.\(item\)/);
+  assert.match(appSidebar, /actionId === "web\.open-in-window"[\s\S]{0,180}item\.openMode !== "dialog"/);
+  assert.match(appSidebar, /runtime\.onOpenWebappWindow\?\.\(item\)/);
+  assert.match(appSidebar, /actionId === "web\.open-in-workspace"[\s\S]{0,180}item\.openMode === "dialog"/);
+  assert.match(appSidebar, /runtime\.onOpenWebappWorkspace\?\.\(item\)/);
   assert.match(appSidebar, /webItem\.kind === "webapp"[\s\S]*?<SidebarActionIcon kind="more_actions" \/>/);
-  assert.match(appSidebar, /disabled=\{!isOpen \|\| Boolean\(webClosePendingEntryKey\)\}/);
+  assert.match(appSidebar, /disabled=\{Boolean\([\s\S]{0,120}webClosePendingEntryKey/);
   assert.doesNotMatch(appSidebar, /isCollapsed \|\| !isOpen/);
-  assert.match(appSidebar, /void closeWebItem\(item\)\.finally\(\(\) => setWebItemMenu\(null\)\)/);
-  assert.match(appSidebar, /\{!isCollapsed \? \(\s*<button[\s\S]{0,700}t\("sidebar\.webapp\.remove"\)/);
-  assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}z-index:\s*10001;/);
-  assert.match(globalStyles, /\.sidebar-web-item-actions-menu\s*\{[\s\S]{0,180}width:\s*max-content;/);
-  assert.match(globalStyles, /\.sidebar-web-item-actions-menu button span\s*\{[\s\S]{0,80}white-space:\s*nowrap;/);
-  assert.match(appSidebar, /t\("sidebar\.webapp\.remove"\)/);
-  assert.match(appSidebar, /t\("sidebar\.webapp\.export"\)/);
-  assert.match(appSidebar, /void removeWebappItem\(item\)/);
+  assert.match(
+    appSidebar,
+    /openNativeSidebarContextMenu\(\s*\{ kind: "web", entryKey: webItem\.entryKey \}/,
+  );
+  assert.doesNotMatch(appSidebar, /setWebItemMenu|renderWebItemMenu/);
+  assert.doesNotMatch(globalStyles, /\.sidebar-web-item-actions-menu/);
+  assert.match(appSidebar, /actionId === "web\.export"[\s\S]{0,100}exportWebappItem\(item\)/);
+  assert.match(appSidebar, /actionId === "web\.remove"[\s\S]{0,180}removeWebappItem\(item\)/);
   assert.doesNotMatch(appSidebar, /if \(!webOpenEntryKeys\.includes\(item\.entryKey\)\)[\s\S]{0,80}return;/);
   assert.match(zhCN, /"sidebar\.webapp\.remove": "卸载网站应用"/);
   assert.match(zhCN, /"sidebar\.webapp\.openInWindow": "在新窗口打开"/);
