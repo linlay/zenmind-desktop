@@ -57,9 +57,11 @@ import type {
   WebsChangedListener,
   WebviewOpenTabListener,
   WebviewOpenTabRequest,
-  SidebarContextMenuPopupRequest
+  SidebarContextMenuPopupRequest,
+  WebviewSelectionToolbarStateListener
 } from "../shared/contracts";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
+import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
 import { DEFAULT_LOCALE } from "../shared/i18n/locales";
@@ -314,7 +316,19 @@ const api: DesktopApi = {
   },
   serviceWebview: {
     getPreloadPath: () => ipcRenderer.invoke("serviceWebview.getPreloadPath"),
-    getPreloadUrl: () => ipcRenderer.invoke("serviceWebview.getPreloadUrl")
+    getPreloadUrl: () => ipcRenderer.invoke("serviceWebview.getPreloadUrl"),
+    onSelectionToolbarState: (listener: WebviewSelectionToolbarStateListener) => {
+      const handleSelectionToolbarState = (
+        _event: Electron.IpcRendererEvent,
+        state: Parameters<WebviewSelectionToolbarStateListener>[0]
+      ) => {
+        listener(state);
+      };
+      ipcRenderer.on(WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL, handleSelectionToolbarState);
+      return () => {
+        ipcRenderer.off(WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL, handleSelectionToolbarState);
+      };
+    }
   },
   market: {
     getSettings: () => ipcRenderer.invoke("market.getSettings"),

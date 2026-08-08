@@ -9,6 +9,7 @@
 @import "./styles/control-center.css";
 @import "./styles/log-viewer.css";
 @import "./styles/external-webview.css";
+@import "./styles/webview-selection-toolbar.css";
 @import "./styles/kanban.css";
 @import "./styles/shutdown.css";
 @import "./styles/base-tail.css";

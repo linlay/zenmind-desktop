@@ -13,6 +13,7 @@ import type {
   SidebarContextMenuPopupRequest,
   SidebarContextMenuPopupResult
 } from "../sidebar-context-menu";
+import type { WebviewSelectionToolbarStateListener } from "../webview-selection-toolbar";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
   EmbeddedCdpSurfaceRegistration,
@@ -650,6 +651,9 @@ export interface DesktopApi {
   serviceWebview: {
     getPreloadPath: () => Promise<string>;
     getPreloadUrl: () => Promise<string>;
+    onSelectionToolbarState: (
+      listener: WebviewSelectionToolbarStateListener
+    ) => () => void;
   };
   market: {
     getSettings: () => Promise<MarketSettings>;

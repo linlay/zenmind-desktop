@@ -68,6 +68,11 @@ export const zhCNMessages = {
   "webviewContextMenu.page.reload": "刷新",
   "webviewContextMenu.page.copy-url": "复制当前页面地址",
 
+  "webviewSelectionToolbar.label": "所选文本快捷操作",
+  "webviewSelectionToolbar.addToChat": "添加到对话",
+  "webviewSelectionToolbar.moreDetails": "详细解释",
+  "webviewSelectionToolbar.askInSideChat": "在顺便问中提问",
+
   "quitConfirm.title": "确认退出？",
   "quitConfirm.detail": "退出后，本机正在运行的任务和服务将中断；已启用的自动化在应用关闭期间不会运行。",
   "quitConfirm.quit": "退出",

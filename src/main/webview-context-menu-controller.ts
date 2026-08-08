@@ -19,6 +19,15 @@ import {
   isSafeMediaDownloadUrl,
   type WebviewContextMenuPolicyItem
 } from "./webview-context-menu-policy";
+import {
+  WEBVIEW_SELECTION_TOOLBAR_CHANGE_CHANNEL,
+  WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL,
+  WEBVIEW_SELECTION_TOOLBAR_VERSION,
+  isWebviewSelectionToolbarSurfaceAllowed,
+  isWebviewSelectionToolbarTargetAllowed,
+  validateWebviewSelectionToolbarChange,
+  type WebviewSelectionToolbarState
+} from "../shared/webview-selection-toolbar";
 
 const SEMANTIC_TIMEOUT_MS = 120;
 const MAX_SEMANTIC_RESPONSE_BYTES = 32 * 1024;
@@ -103,6 +112,14 @@ type MenuSnapshot = {
   contents: WebContents;
   registeredTarget: RegisteredWebviewSurfaceTarget | null;
   context: WebviewContextMenuContext;
+};
+
+type SelectionToolbarVisibleRecord = {
+  selectionId: string;
+  guestId: number;
+  registrationId: string;
+  surfaceId: string;
+  ownerWebContentsId: number;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -211,6 +228,8 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
   const pendingRequests = new Map<string, PendingSemanticRequest>();
   const latestRequestByGuest = new Map<number, string>();
   const contextSequenceByGuest = new Map<number, number>();
+  const selectionSequenceByGuest = new Map<number, number>();
+  const visibleSelectionByGuest = new Map<number, SelectionToolbarVisibleRecord>();
 
   function finishPending(requestId: string, target: WebviewContextMenuSemanticTarget | null) {
     const pending = pendingRequests.get(requestId);
@@ -233,6 +252,15 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
       return;
     }
     finishPending(payload.requestId, validated);
+  });
+
+  ipcMain.on(WEBVIEW_SELECTION_TOOLBAR_CHANGE_CHANNEL, (event, payload: unknown) => {
+    void handleSelectionToolbarChange(event.sender, payload).catch((error) => {
+      options.report("webview selection toolbar failed", {
+        guestId: event.sender.id,
+        error: error instanceof Error ? error.message : String(error)
+      });
+    });
   });
 
   function cancelGuestRequests(guestId: number) {
@@ -259,6 +287,146 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
         finishPending(requestId, null);
       }
     });
+  }
+
+  function nextSelectionSequence(guestId: number) {
+    const next = (selectionSequenceByGuest.get(guestId) ?? 0) + 1;
+    selectionSequenceByGuest.set(guestId, next);
+    return next;
+  }
+
+  function sendSelectionToolbarState(
+    ownerWebContentsId: number,
+    state: WebviewSelectionToolbarState
+  ) {
+    const mainWindow = options.getMainWindow();
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      mainWindow.webContents.id !== ownerWebContentsId
+    ) {
+      return false;
+    }
+    mainWindow.webContents.send(WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL, state);
+    return true;
+  }
+
+  function clearSelectionToolbar(guestId: number, advanceSequence = true) {
+    if (advanceSequence) nextSelectionSequence(guestId);
+    const visible = visibleSelectionByGuest.get(guestId);
+    if (!visible) return;
+    visibleSelectionByGuest.delete(guestId);
+    sendSelectionToolbarState(visible.ownerWebContentsId, {
+      version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
+      visible: false,
+      selectionId: visible.selectionId,
+      guestId: visible.guestId,
+      registrationId: visible.registrationId,
+      surfaceId: visible.surfaceId
+    });
+  }
+
+  function liveSelectionRegistrationMatches(
+    contents: WebContents,
+    registeredTarget: RegisteredWebviewSurfaceTarget,
+    pageURL: string
+  ) {
+    const mainWindow = options.getMainWindow();
+    if (
+      !mainWindow ||
+      mainWindow.isDestroyed() ||
+      mainWindow.webContents.id !== registeredTarget.ownerWebContentsId ||
+      contents.isDestroyed() ||
+      contents.getType() !== "webview" ||
+      contents.id !== registeredTarget.webContentsId ||
+      contents.getURL() !== pageURL
+    ) {
+      return false;
+    }
+    const live = options.browserSurfaces.resolveWebviewSurfaceTarget(contents.id);
+    return Boolean(
+      live &&
+      live.registrationId === registeredTarget.registrationId &&
+      live.surfaceId === registeredTarget.surfaceId &&
+      live.tabId === registeredTarget.tabId &&
+      live.ownerWebContentsId === registeredTarget.ownerWebContentsId
+    );
+  }
+
+  async function handleSelectionToolbarChange(contents: WebContents, payload: unknown) {
+    if (contents.isDestroyed() || contents.getType() !== "webview") return;
+    const guestId = contents.id;
+    const selectionSequence = nextSelectionSequence(guestId);
+    const change = validateWebviewSelectionToolbarChange(payload);
+    if (!change || !change.visible) {
+      clearSelectionToolbar(guestId, false);
+      return;
+    }
+    const registeredTarget = options.browserSurfaces.resolveWebviewSurfaceTarget(guestId);
+    if (
+      !registeredTarget ||
+      registeredTarget.serviceId !== "agent-webclient" ||
+      !isWebviewSelectionToolbarSurfaceAllowed(registeredTarget.surfaceType)
+    ) {
+      clearSelectionToolbar(guestId, false);
+      return;
+    }
+    const pageURL = contents.getURL();
+    let trustedAgentWebclient = false;
+    try {
+      trustedAgentWebclient = Boolean(
+        await options.isTrustedAgentWebclient(contents, registeredTarget)
+      );
+    } catch {
+      trustedAgentWebclient = false;
+    }
+    if (selectionSequenceByGuest.get(guestId) !== selectionSequence) return;
+    if (!trustedAgentWebclient) {
+      clearSelectionToolbar(guestId, false);
+      return;
+    }
+    const semanticTarget = await resolveSemantic(
+      contents,
+      change.probe.x,
+      change.probe.y
+    );
+    if (selectionSequenceByGuest.get(guestId) !== selectionSequence) return;
+    if (
+      !semanticTarget ||
+      !isWebviewSelectionToolbarTargetAllowed(semanticTarget.kind) ||
+      !liveSelectionRegistrationMatches(contents, registeredTarget, pageURL)
+    ) {
+      clearSelectionToolbar(guestId, false);
+      return;
+    }
+    const previous = visibleSelectionByGuest.get(guestId);
+    if (
+      previous &&
+      (previous.registrationId !== registeredTarget.registrationId ||
+        previous.surfaceId !== registeredTarget.surfaceId)
+    ) {
+      clearSelectionToolbar(guestId, false);
+    }
+    const selectionId = `webview-selection-${guestId}-${Date.now()}-${selectionSequence}`;
+    const visible: SelectionToolbarVisibleRecord = {
+      selectionId,
+      guestId,
+      registrationId: registeredTarget.registrationId,
+      surfaceId: registeredTarget.surfaceId,
+      ownerWebContentsId: registeredTarget.ownerWebContentsId
+    };
+    visibleSelectionByGuest.set(guestId, visible);
+    if (!sendSelectionToolbarState(registeredTarget.ownerWebContentsId, {
+      version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
+      visible: true,
+      selectionId,
+      guestId,
+      registrationId: registeredTarget.registrationId,
+      surfaceId: registeredTarget.surfaceId,
+      rect: change.rect
+    })) {
+      visibleSelectionByGuest.delete(guestId);
+    }
   }
 
   function readNavigationState(contents: WebContents) {
@@ -412,6 +580,7 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
 
   async function handleContextMenu(contents: WebContents, params: ContextMenuParams) {
     if (contents.isDestroyed()) return;
+    clearSelectionToolbar(contents.id);
     const contextSequence = (contextSequenceByGuest.get(contents.id) ?? 0) + 1;
     contextSequenceByGuest.set(contents.id, contextSequence);
     const registeredTarget = options.browserSurfaces.resolveWebviewSurfaceTarget(contents.id);
@@ -483,9 +652,14 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
       });
     });
     contents.once("destroyed", () => {
+      clearSelectionToolbar(contents.id);
       cancelGuestRequests(contents.id);
       contextSequenceByGuest.delete(contents.id);
+      selectionSequenceByGuest.delete(contents.id);
     });
+    contents.on("did-start-navigation", () => clearSelectionToolbar(contents.id));
+    contents.on("did-navigate-in-page", () => clearSelectionToolbar(contents.id));
+    contents.on("render-process-gone", () => clearSelectionToolbar(contents.id));
   }
 
   return { attach };

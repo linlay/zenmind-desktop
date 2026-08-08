@@ -1,0 +1,66 @@
+.embedded-surface-frame-shell {
+  position: relative;
+}
+
+.webview-selection-toolbar-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.webview-selection-toolbar {
+  position: absolute;
+  display: inline-flex;
+  max-width: calc(100% - 16px);
+  min-height: 38px;
+  overflow: hidden;
+  border: 1px solid var(--sidebar-operation-menu-border);
+  border-radius: 16px;
+  background: var(--sidebar-operation-menu-bg);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
+  backdrop-filter: blur(18px) saturate(1.15);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  pointer-events: auto;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.webview-selection-toolbar button {
+  min-width: 0;
+  min-height: 38px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: inherit;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.webview-selection-toolbar button + button {
+  border-left: 1px solid var(--sidebar-operation-menu-divider);
+}
+
+.webview-selection-toolbar button:hover,
+.webview-selection-toolbar button:focus-visible {
+  background: var(--sidebar-operation-menu-hover);
+  color: var(--sidebar-operation-menu-text);
+  outline: none;
+}
+
+@media (max-width: 420px) {
+  .webview-selection-toolbar button {
+    padding-inline: 10px;
+    font-size: 12px;
+  }
+}

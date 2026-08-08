@@ -68,6 +68,11 @@ export const enUSMessages = {
   "webviewContextMenu.page.reload": "Reload",
   "webviewContextMenu.page.copy-url": "Copy Page Address",
 
+  "webviewSelectionToolbar.label": "Selected text actions",
+  "webviewSelectionToolbar.addToChat": "Add to chat",
+  "webviewSelectionToolbar.moreDetails": "More details",
+  "webviewSelectionToolbar.askInSideChat": "Ask in side chat",
+
   "quitConfirm.title": "Quit now?",
   "quitConfirm.detail": "Quitting will interrupt active local tasks and services. Enabled automations will not run while the app is closed.",
   "quitConfirm.quit": "Quit",

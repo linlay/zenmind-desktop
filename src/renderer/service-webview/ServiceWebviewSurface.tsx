@@ -59,6 +59,8 @@ import {
 import { STORAGE_NAMESPACE } from "../../shared/brand";
 import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
 import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
+import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
+import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
 
@@ -89,6 +91,10 @@ type EmbeddedWebScriptResult =
       };
     };
 type EmbeddedWebScriptError = Extract<EmbeddedWebScriptResult, { ok: false }>;
+type VisibleSelectionToolbarState = Extract<
+  WebviewSelectionToolbarState,
+  { visible: true }
+>;
 
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
@@ -435,6 +441,8 @@ export function ServiceWebviewSurface({
   const [webviewLoadError, setWebviewLoadError] = useState(false);
   const [webviewCurrentUrl, setWebviewCurrentUrl] = useState("");
   const [webviewSnapshotNonce, setWebviewSnapshotNonce] = useState(0);
+  const [selectionToolbarState, setSelectionToolbarState] =
+    useState<VisibleSelectionToolbarState | null>(null);
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== "hidden");
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
@@ -476,11 +484,37 @@ export function ServiceWebviewSurface({
     if (webviewRef.current === node) {
       return;
     }
+    setSelectionToolbarState(null);
     webviewRef.current = node;
     if (node) {
       setWebviewSnapshotNonce((current) => current + 1);
     }
   }, []);
+
+  useEffect(() => {
+    return window.electronAPI.serviceWebview.onSelectionToolbarState((state) => {
+      const webContentsId = readWebviewContentsId(webviewRef.current);
+      if (
+        state.guestId !== webContentsId ||
+        state.registrationId !== surfaceRegistrationIdRef.current ||
+        state.surfaceId !== surfaceId
+      ) {
+        return;
+      }
+      if (!state.visible) {
+        setSelectionToolbarState((current) =>
+          current?.selectionId === state.selectionId ? null : current
+        );
+        return;
+      }
+      if (active === false || service?.id !== "agent-webclient") return;
+      setSelectionToolbarState(state);
+    });
+  }, [active, service?.id, surfaceId, webviewSnapshotNonce]);
+
+  useEffect(() => {
+    if (active === false) setSelectionToolbarState(null);
+  }, [active]);
 
   useEffect(() => {
     onCurrentUrlChangeRef.current = onCurrentUrlChange;
@@ -929,6 +963,7 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     setWebviewRetryNonce(0);
     setWebviewLoadError(false);
+    setSelectionToolbarState(null);
   }, [service?.status, webviewBaseKey]);
 
   useEffect(() => {
@@ -1773,6 +1808,13 @@ export function ServiceWebviewSurface({
               allowpopups: "true",
               style: { width: "100%", height: "100%", border: "none" },
             })}
+            {selectionToolbarState && active !== false ? (
+              <WebviewSelectionToolbar
+                anchor={selectionToolbarState.rect}
+                selectionId={selectionToolbarState.selectionId}
+                onDismiss={() => setSelectionToolbarState(null)}
+              />
+            ) : null}
           </>
         ) : suppressInitialLoadingCopy ? (
           <section
