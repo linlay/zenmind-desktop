@@ -36,6 +36,8 @@ import type {
   WebappImportResult,
   WebsiteInput,
   WebsiteResult,
+  SidebarContextMenuActionId,
+  SidebarContextMenuTarget,
 } from "../../../shared/contracts";
 import {
   formatEpochMillis,
@@ -114,6 +116,12 @@ type SidebarStandardPrimaryEntry = SidebarNavItem & {
 type SidebarPrimaryEntry = SidebarStandardPrimaryEntry | SidebarChatsEntry;
 
 type SidebarGroupId = "assistants" | "chats" | "webs";
+
+type SidebarContextMenuSubject =
+  | { kind: "group"; groupId: SidebarGroupId }
+  | { kind: "agent"; agentKey: string }
+  | { kind: "chat"; chatId: string }
+  | { kind: "web"; entryKey: string };
 
 type SidebarGroupState = Record<SidebarGroupId, boolean>;
 
@@ -880,20 +888,6 @@ function createMenuPositionFromPoint(
   };
 }
 
-function createMenuPositionFromElement(
-  element: HTMLElement,
-  horizontalAlign: SidebarFloatingMenuPosition["horizontalAlign"] = "end",
-): SidebarFloatingMenuPosition {
-  const rect = element.getBoundingClientRect();
-  return createMenuPositionFromPoint(
-    {
-      x: horizontalAlign === "end" ? rect.right + 10 : rect.left - 12,
-      y: rect.bottom + 4,
-    },
-    horizontalAlign,
-  );
-}
-
 function getViewportClampedMenuPosition(
   position: SidebarFloatingMenuPosition,
   menu: HTMLElement,
@@ -1179,6 +1173,11 @@ export function AppSidebar({
   const webItemMenuRef = useRef<HTMLDivElement | null>(null);
   const groupActionMenuRef = useRef<HTMLDivElement | null>(null);
   const agentMenuRef = useRef<HTMLDivElement | null>(null);
+  const sidebarContextMenuRequestIdRef = useRef(0);
+  const assistantNavAgentsRef = useRef(assistantNavAgents);
+  const webItemsRef = useRef(webItems);
+  assistantNavAgentsRef.current = assistantNavAgents;
+  webItemsRef.current = webItems;
   const forcedActiveManagementPathname = forcedActiveManagementRoute
     ? getRoutePathname(forcedActiveManagementRoute)
     : "";
@@ -1270,6 +1269,34 @@ export function AppSidebar({
   const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);
   const chatDefaultAgentUnavailable =
     assistantNavAgentsLoaded && !chatDefaultAgentAvailable;
+  const sidebarContextMenuRuntimeRef = useRef({
+    creatingProject,
+    hasCreateProjectDialog: Boolean(createProjectDialog),
+    resolvedChatDefaultAgentKey,
+    chatDefaultAgentUnavailable,
+    webOpenEntryKeys,
+    webClosePendingEntryKey,
+    webItemRemovePendingId,
+    webItemExportPendingId,
+    isCollapsed,
+    onOpenWebappWorkspace,
+    onOpenWebappWindow,
+    onExportWebappItem,
+  });
+  sidebarContextMenuRuntimeRef.current = {
+    creatingProject,
+    hasCreateProjectDialog: Boolean(createProjectDialog),
+    resolvedChatDefaultAgentKey,
+    chatDefaultAgentUnavailable,
+    webOpenEntryKeys,
+    webClosePendingEntryKey,
+    webItemRemovePendingId,
+    webItemExportPendingId,
+    isCollapsed,
+    onOpenWebappWorkspace,
+    onOpenWebappWindow,
+    onExportWebappItem,
+  };
   const chatsHistoryAvailable =
     assistantNavChatItemsHasMore &&
     Boolean(resolvedChatDefaultAgentKey) &&
@@ -2172,12 +2199,14 @@ export function AppSidebar({
 
   function findAssistantNavAgent(agentKey: string) {
     return (
-      assistantNavAgents.find((agent) => agent.agentKey === agentKey) || null
+      assistantNavAgentsRef.current.find(
+        (agent) => agent.agentKey === agentKey,
+      ) || null
     );
   }
 
   function findAssistantNavChat(chatId: string) {
-    for (const agent of assistantNavAgents) {
+    for (const agent of assistantNavAgentsRef.current) {
       const chat = getAssistantNavAgentRecentChats(agent).find(
         (item) => item.chatId === chatId,
       );
@@ -2189,15 +2218,263 @@ export function AppSidebar({
   }
 
   function findWebItem(entryKey: string) {
-    return webItems.find((item) => item.entryKey === entryKey) || null;
+    return (
+      webItemsRef.current.find((item) => item.entryKey === entryKey) || null
+    );
   }
 
-  function openAssistantChatMenuAtElement(
-    element: HTMLElement,
-    chat: AssistantNavChatItem,
+  function getSidebarContextMenuTarget(
+    subject: SidebarContextMenuSubject,
+  ): SidebarContextMenuTarget | null {
+    const runtime = sidebarContextMenuRuntimeRef.current;
+    if (subject.kind === "group") {
+      return {
+        kind: "group",
+        groupId: subject.groupId,
+        sortMode: assistantNavSortMode,
+        canCreateProject:
+          !runtime.creatingProject && !runtime.hasCreateProjectDialog,
+        canCreateChat:
+          Boolean(runtime.resolvedChatDefaultAgentKey) &&
+          !runtime.chatDefaultAgentUnavailable,
+      };
+    }
+    if (subject.kind === "agent") {
+      const agent = findAssistantNavAgent(subject.agentKey);
+      return agent
+        ? {
+            kind: "agent",
+            canOpenWorkspace: !getOpenWorkspaceDisabledReason(agent),
+          }
+        : null;
+    }
+    if (subject.kind === "chat") {
+      return findAssistantNavChat(subject.chatId) ? { kind: "chat" } : null;
+    }
+
+    const item = findWebItem(subject.entryKey);
+    if (!item) {
+      return null;
+    }
+    const isWebapp = item.kind === "webapp";
+    return {
+      kind: "web",
+      webKind: item.kind,
+      openMode:
+        item.kind === "webapp" && item.openMode === "dialog"
+          ? "dialog"
+          : "window",
+      canClose:
+        runtime.webOpenEntryKeys.includes(item.entryKey) &&
+        !runtime.webClosePendingEntryKey,
+      canOpenAlternative: isWebapp
+        ? item.openMode === "dialog"
+          ? Boolean(runtime.onOpenWebappWorkspace)
+          : Boolean(runtime.onOpenWebappWindow)
+        : false,
+      canExport:
+        isWebapp &&
+        Boolean(runtime.onExportWebappItem) &&
+        !runtime.webItemExportPendingId,
+      canRemove:
+        isWebapp &&
+        item.removable !== false &&
+        !runtime.webItemRemovePendingId,
+      showRemove: isWebapp && !runtime.isCollapsed,
+    };
+  }
+
+  function isSidebarContextMenuActionEnabled(
+    target: SidebarContextMenuTarget,
+    actionId: SidebarContextMenuActionId,
   ) {
-    const position = createMenuPositionFromElement(element);
-    setAssistantChatMenu({ chat, ...position });
+    if (target.kind === "group") {
+      if (
+        actionId === "group.sort-by-time" ||
+        actionId === "group.sort-by-name"
+      ) {
+        return target.groupId === "assistants";
+      }
+      if (actionId === "group.new-project") {
+        return target.groupId === "assistants" && target.canCreateProject;
+      }
+      if (actionId === "group.new-chat") {
+        return target.groupId === "chats" && target.canCreateChat;
+      }
+      return (
+        target.groupId === "webs" &&
+        (actionId === "group.add-website" ||
+          actionId === "group.import-webapp")
+      );
+    }
+    if (target.kind === "agent") {
+      return (
+        actionId === "agent.edit" ||
+        (actionId === "agent.open-workspace" && target.canOpenWorkspace)
+      );
+    }
+    if (target.kind === "chat") {
+      return [
+        "chat.export",
+        "chat.rename",
+        "chat.archive",
+        "chat.delete",
+      ].includes(actionId);
+    }
+    if (actionId === "web.close") return target.canClose;
+    if (actionId === "web.open-in-workspace") {
+      return (
+        target.webKind === "webapp" &&
+        target.openMode === "dialog" &&
+        target.canOpenAlternative
+      );
+    }
+    if (actionId === "web.open-in-window") {
+      return (
+        target.webKind === "webapp" &&
+        target.openMode === "window" &&
+        target.canOpenAlternative
+      );
+    }
+    if (actionId === "web.export") {
+      return target.webKind === "webapp" && target.canExport;
+    }
+    return (
+      actionId === "web.remove" &&
+      target.webKind === "webapp" &&
+      target.showRemove &&
+      target.canRemove
+    );
+  }
+
+  async function executeSidebarContextMenuAction(
+    subject: SidebarContextMenuSubject,
+    actionId: SidebarContextMenuActionId,
+  ) {
+    const currentTarget = getSidebarContextMenuTarget(subject);
+    if (
+      !currentTarget ||
+      !isSidebarContextMenuActionEnabled(currentTarget, actionId)
+    ) {
+      return;
+    }
+    if (subject.kind === "group") {
+      if (actionId === "group.sort-by-time") {
+        setAssistantNavSortMode("byTime");
+      } else if (actionId === "group.sort-by-name") {
+        setAssistantNavSortMode("byName");
+      } else if (
+        actionId === "group.new-project" &&
+        currentTarget.kind === "group" &&
+        currentTarget.canCreateProject
+      ) {
+        await beginCreateProject();
+      } else if (actionId === "group.new-chat") {
+        startChatsNewChat();
+      } else if (actionId === "group.add-website") {
+        showWebsiteDialog();
+      } else if (actionId === "group.import-webapp") {
+        await handleImportWebapp();
+      }
+      return;
+    }
+
+    if (subject.kind === "agent") {
+      const agent = findAssistantNavAgent(subject.agentKey);
+      if (!agent) return;
+      if (
+        actionId === "agent.open-workspace" &&
+        !getOpenWorkspaceDisabledReason(agent)
+      ) {
+        await handleOpenWorkspace(agent);
+      } else if (actionId === "agent.edit") {
+        handleEditAgent(agent);
+      }
+      return;
+    }
+
+    if (subject.kind === "chat") {
+      const chat = findAssistantNavChat(subject.chatId);
+      if (!chat) return;
+      if (actionId === "chat.export") {
+        await handleAssistantExportChat(chat);
+      } else if (actionId === "chat.rename") {
+        handleAssistantRenameChat(chat);
+      } else if (actionId === "chat.archive") {
+        await handleAssistantArchiveChat(chat);
+      } else if (actionId === "chat.delete") {
+        await handleAssistantDeleteChat(chat);
+      }
+      return;
+    }
+
+    const item = findWebItem(subject.entryKey);
+    if (!item) return;
+    const runtime = sidebarContextMenuRuntimeRef.current;
+    if (
+      actionId === "web.close" &&
+      runtime.webOpenEntryKeys.includes(item.entryKey) &&
+      !runtime.webClosePendingEntryKey
+    ) {
+      await closeWebItem(item);
+    } else if (
+      actionId === "web.open-in-workspace" &&
+      item.kind === "webapp" &&
+      item.openMode === "dialog"
+    ) {
+      runtime.onOpenWebappWorkspace?.(item);
+    } else if (
+      actionId === "web.open-in-window" &&
+      item.kind === "webapp" &&
+      item.openMode !== "dialog"
+    ) {
+      runtime.onOpenWebappWindow?.(item);
+    } else if (actionId === "web.export" && item.kind === "webapp") {
+      await exportWebappItem(item);
+    } else if (
+      actionId === "web.remove" &&
+      item.kind === "webapp" &&
+      item.removable !== false
+    ) {
+      await removeWebappItem(item);
+    }
+  }
+
+  function openNativeSidebarContextMenu(
+    subject: SidebarContextMenuSubject,
+    element: HTMLElement,
+    point?: MenuAnchorPoint,
+  ) {
+    const target = getSidebarContextMenuTarget(subject);
+    if (!target) {
+      return false;
+    }
+    const rect = element.getBoundingClientRect();
+    const anchorPoint = point ?? {
+      x: rect.left + Math.min(16, Math.max(0, rect.width)),
+      y: rect.bottom,
+    };
+    const requestId = sidebarContextMenuRequestIdRef.current + 1;
+    sidebarContextMenuRequestIdRef.current = requestId;
+    void window.electronAPI.sidebarContextMenu
+      .popup({
+        x: anchorPoint.x,
+        y: anchorPoint.y,
+        target,
+      })
+      .then((result) => {
+        if (
+          requestId !== sidebarContextMenuRequestIdRef.current ||
+          !result.actionId
+        ) {
+          return;
+        }
+        return executeSidebarContextMenuAction(subject, result.actionId);
+      })
+      .catch((error) => {
+        console.warn("[sidebar] failed to open native context menu", error);
+      });
+    return true;
   }
 
   function openAssistantChatMenuAtPoint(
@@ -2210,14 +2487,6 @@ export function AppSidebar({
     });
   }
 
-  function openAgentMenuAtElement(
-    element: HTMLElement,
-    agent: AssistantNavAgentItem,
-  ) {
-    const position = createMenuPositionFromElement(element);
-    setAgentMenu({ agent, ...position });
-  }
-
   function openAgentMenuAtPoint(
     anchorPoint: MenuAnchorPoint,
     agent: AssistantNavAgentItem,
@@ -2225,24 +2494,11 @@ export function AppSidebar({
     setAgentMenu({ agent, ...createMenuPositionFromPoint(anchorPoint) });
   }
 
-  function openWebItemMenuAtElement(element: HTMLElement, item: WebEntry) {
-    const position = createMenuPositionFromElement(element);
-    setWebItemMenu({ item, ...position });
-  }
-
   function openWebItemMenuAtPoint(
     anchorPoint: MenuAnchorPoint,
     item: WebEntry,
   ) {
     setWebItemMenu({ item, ...createMenuPositionFromPoint(anchorPoint) });
-  }
-
-  function openGroupActionMenuAtElement(
-    element: HTMLElement,
-    groupId: SidebarGroupId,
-  ) {
-    const position = createMenuPositionFromElement(element, "start");
-    setGroupActionMenu({ groupId, ...position });
   }
 
   function openGroupActionMenuAtPoint(
@@ -2262,8 +2518,10 @@ export function AppSidebar({
       if (!groupId) {
         return false;
       }
-      openGroupActionMenuAtElement(element, groupId);
-      return true;
+      return openNativeSidebarContextMenu(
+        { kind: "group", groupId },
+        element,
+      );
     }
     if (kind === "agent") {
       const agent = findAssistantNavAgent(
@@ -2272,24 +2530,30 @@ export function AppSidebar({
       if (!agent) {
         return false;
       }
-      openAgentMenuAtElement(element, agent);
-      return true;
+      return openNativeSidebarContextMenu(
+        { kind: "agent", agentKey: agent.agentKey },
+        element,
+      );
     }
     if (kind === "chat" || kind === "chats-chat") {
       const chat = findAssistantNavChat(element.dataset.sidebarChatId || "");
       if (!chat) {
         return false;
       }
-      openAssistantChatMenuAtElement(element, chat);
-      return true;
+      return openNativeSidebarContextMenu(
+        { kind: "chat", chatId: chat.chatId },
+        element,
+      );
     }
     if (kind === "web") {
       const item = findWebItem(element.dataset.sidebarWebEntryKey || "");
       if (!item) {
         return false;
       }
-      openWebItemMenuAtElement(element, item);
-      return true;
+      return openNativeSidebarContextMenu(
+        { kind: "web", entryKey: item.entryKey },
+        element,
+      );
     }
     return false;
   }
@@ -2710,11 +2974,13 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    if (event.clientX === 0 && event.clientY === 0) {
-      openWebItemMenuAtElement(event.currentTarget, item);
-      return;
-    }
-    openWebItemMenuAtPoint({ x: event.clientX, y: event.clientY }, item);
+    openNativeSidebarContextMenu(
+      { kind: "web", entryKey: item.entryKey },
+      event.currentTarget,
+      event.clientX === 0 && event.clientY === 0
+        ? undefined
+        : { x: event.clientX, y: event.clientY },
+    );
   }
 
   function handleAssistantAgentExpand(
@@ -2736,15 +3002,24 @@ export function AppSidebar({
     });
   }
 
+  function startChatsNewChat() {
+    const runtime = sidebarContextMenuRuntimeRef.current;
+    if (
+      !runtime.resolvedChatDefaultAgentKey ||
+      runtime.chatDefaultAgentUnavailable
+    ) {
+      return;
+    }
+    requestNavigate(
+      createAgentNewChatRoute(runtime.resolvedChatDefaultAgentKey),
+      { retriggerAgentRoute: true },
+    );
+  }
+
   function handleChatsNewChat(event: MouseEvent<HTMLElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (!resolvedChatDefaultAgentKey || chatDefaultAgentUnavailable) {
-      return;
-    }
-    requestNavigate(createAgentNewChatRoute(resolvedChatDefaultAgentKey), {
-      retriggerAgentRoute: true,
-    });
+    startChatsNewChat();
   }
 
   function focusChatsDefaultAgentMenuItem(index: number) {
@@ -2968,13 +3243,12 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    if (event.clientX === 0 && event.clientY === 0) {
-      openAssistantChatMenuAtElement(event.currentTarget, chat);
-      return;
-    }
-    openAssistantChatMenuAtPoint(
-      { x: event.clientX, y: event.clientY },
-      chat,
+    openNativeSidebarContextMenu(
+      { kind: "chat", chatId: chat.chatId },
+      event.currentTarget,
+      event.clientX === 0 && event.clientY === 0
+        ? undefined
+        : { x: event.clientX, y: event.clientY },
     );
   }
 
@@ -3162,13 +3436,12 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    if (event.clientX === 0 && event.clientY === 0) {
-      openGroupActionMenuAtElement(event.currentTarget, groupId);
-      return;
-    }
-    openGroupActionMenuAtPoint(
-      { x: event.clientX, y: event.clientY },
-      groupId,
+    openNativeSidebarContextMenu(
+      { kind: "group", groupId },
+      event.currentTarget,
+      event.clientX === 0 && event.clientY === 0
+        ? undefined
+        : { x: event.clientX, y: event.clientY },
     );
   }
 
@@ -5241,11 +5514,13 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    if (event.clientX === 0 && event.clientY === 0) {
-      openAgentMenuAtElement(event.currentTarget, agent);
-      return;
-    }
-    openAgentMenuAtPoint({ x: event.clientX, y: event.clientY }, agent);
+    openNativeSidebarContextMenu(
+      { kind: "agent", agentKey: agent.agentKey },
+      event.currentTarget,
+      event.clientX === 0 && event.clientY === 0
+        ? undefined
+        : { x: event.clientX, y: event.clientY },
+    );
   }
 
   function getOpenWorkspaceDisabledReason(agent: AssistantNavAgentItem) {

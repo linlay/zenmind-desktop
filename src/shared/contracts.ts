@@ -14,3 +14,4 @@ export * from "./webapp-bridge";
 export * from "./shutdown";
 export * from "./time-contract";
 export * from "./help";
+export * from "./sidebar-context-menu";

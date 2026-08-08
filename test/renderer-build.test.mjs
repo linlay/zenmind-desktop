@@ -1091,7 +1091,7 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /function renderGroupActionMenu\(\)/);
 });
 
-test("sidebar operation menus use pointer anchors and theme-aware glass surfaces", () => {
+test("sidebar right-click menus are native while button menus keep pointer anchors and glass surfaces", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1124,8 +1124,11 @@ test("sidebar operation menus use pointer anchors and theme-aware glass surfaces
   assert.match(sidebarSource, /function openAgentMenuAtPoint\(/u);
   assert.match(sidebarSource, /function openWebItemMenuAtPoint\(/u);
   assert.match(sidebarSource, /function openGroupActionMenuAtPoint\(/u);
+  assert.match(sidebarSource, /function openNativeSidebarContextMenu\(/u);
+  assert.match(sidebarSource, /window\.electronAPI\.sidebarContextMenu[\s\S]*?\.popup\(/u);
   assert.match(sidebarSource, /\{ x: event\.clientX, y: event\.clientY \}/u);
-  assert.match(sidebarSource, /event\.clientX === 0 && event\.clientY === 0[\s\S]*?MenuAtElement\(event\.currentTarget/u);
+  assert.match(sidebarSource, /event\.clientX === 0 && event\.clientY === 0[\s\S]*?\? undefined[\s\S]*?: \{ x: event\.clientX, y: event\.clientY \}/u);
+  assert.match(sidebarSource, /event\.key === "ContextMenu"[\s\S]*?event\.shiftKey && event\.key === "F10"[\s\S]*?openSidebarRovingContextMenu\(currentElement\)/u);
   assert.match(sidebarSource, /event\.detail > 0[\s\S]*?event\.clientX[\s\S]*?event\.clientY/u);
   assert.match(sidebarSource, /anchorPoint=\{assistantSortMenuAnchorPoint\}/u);
   assert.match(sidebarSource, /anchorPoint=\{chatDefaultAgentMenuAnchorPoint\}/u);
@@ -1165,7 +1168,7 @@ test("sites add menu merges website actions into one modal entry", () => {
   assert.doesNotMatch(sidebarSource, /t\("sidebar\.website\.manage"\)/);
   assert.match(sidebarSource, /showWebsiteDialog\(\);[\s\S]{0,100}t\("sidebar\.website\.new"\)/);
   assert.match(sidebarSource, /handleImportWebapp\(\);[\s\S]{0,100}t\("sidebar\.webapp\.import"\)/);
-  assert.match(sidebarSource, /function openGroupActionMenuAtElement[\s\S]{0,320}createMenuPositionFromElement\(element, "start"\)/);
+  assert.match(sidebarSource, /openNativeSidebarContextMenu\([\s\S]{0,120}\{ kind: "group", groupId \}/);
   assert.match(navigationStyles, /\.sidebar-group-actions-menu-layer \.sidebar-group-actions-menu\s*\{[\s\S]{0,120}width:\s*196px;/);
   assert.match(navigationStyles, /\.sidebar-group-actions-menu button span\s*\{[\s\S]{0,100}white-space:\s*nowrap;/);
   assert.match(zhCN, /"sidebar\.website\.new":\s*"添加网站"/);

@@ -56,8 +56,10 @@ import type {
   KanbanCloudConfig,
   WebsChangedListener,
   WebviewOpenTabListener,
-  WebviewOpenTabRequest
+  WebviewOpenTabRequest,
+  SidebarContextMenuPopupRequest
 } from "../shared/contracts";
+import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
 import { DEFAULT_LOCALE } from "../shared/i18n/locales";
@@ -75,6 +77,10 @@ const api: DesktopApi = {
   },
   desktopDialog: {
     selectDirectory: () => ipcRenderer.invoke("desktopDialog.selectDirectory")
+  },
+  sidebarContextMenu: {
+    popup: (request: SidebarContextMenuPopupRequest) =>
+      ipcRenderer.invoke(SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL, request)
   },
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),

@@ -9,6 +9,10 @@ import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult,
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
+import type {
+  SidebarContextMenuPopupRequest,
+  SidebarContextMenuPopupResult
+} from "../sidebar-context-menu";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
   EmbeddedCdpSurfaceRegistration,
@@ -498,6 +502,11 @@ export interface DesktopApi {
   };
   desktopDialog: {
     selectDirectory: () => Promise<{ ok: boolean; path?: string; message?: string }>;
+  };
+  sidebarContextMenu: {
+    popup: (
+      request: SidebarContextMenuPopupRequest
+    ) => Promise<SidebarContextMenuPopupResult>;
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
