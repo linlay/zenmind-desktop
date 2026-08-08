@@ -77,6 +77,7 @@ const allowedLatinTerms = [
   /AES/g,
   /RSA/g,
   /PDF/g,
+  /P[0-3]/g,
   /ZIP/g,
   /UTF-8/g,
   /DevTools/g,

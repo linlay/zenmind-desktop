@@ -17,7 +17,6 @@ import {
   PaperClipOutlined,
   RobotOutlined,
   SaveOutlined,
-  TagsOutlined,
   UserOutlined
 } from "@ant-design/icons";
 import type {
@@ -73,10 +72,11 @@ const DETAIL_STATUS_LABELS: Record<KanbanStatus, "kanban.status.backlog" | "kanb
   completed: "kanban.status.completed"
 };
 
-const DETAIL_PRIORITY_LABELS: Record<KanbanPriority, "kanban.priority.high" | "kanban.priority.medium" | "kanban.priority.low"> = {
-  high: "kanban.priority.high",
-  medium: "kanban.priority.medium",
-  low: "kanban.priority.low"
+const DETAIL_PRIORITY_LABELS: Record<KanbanPriority, "kanban.priority.p0" | "kanban.priority.p1" | "kanban.priority.p2" | "kanban.priority.p3"> = {
+  P0: "kanban.priority.p0",
+  P1: "kanban.priority.p1",
+  P2: "kanban.priority.p2",
+  P3: "kanban.priority.p3"
 };
 
 function createDetailDraft(issue: KanbanIssue): KanbanIssueDetailDraft {
@@ -186,15 +186,16 @@ function DetailAvatar({ label, avatarUrl, agent = false }: { label: string; avat
   );
 }
 
-function DetailSection({ title, meta, icon, children, className = "" }: {
+function DetailSection({ title, meta, icon, children, className = "", sectionId }: {
   title: string;
   meta?: ReactNode;
   icon?: ReactNode;
   children: ReactNode;
   className?: string;
+  sectionId?: string;
 }) {
   return (
-    <section className={`kanban-detail-section ${className}`}>
+    <section id={sectionId} className={`kanban-detail-section ${className}`}>
       <header className="kanban-detail-section-head">
         <div className="kanban-detail-section-heading">
           {icon ? <span className="kanban-detail-section-icon">{icon}</span> : null}
@@ -374,13 +375,7 @@ export function KanbanIssueDetailDialog({
         <header className="kanban-detail-header">
           <div className="kanban-detail-header-context">
             <div className="kanban-detail-breadcrumb"><ApartmentOutlined /><span>{project?.path || project?.name || issue.projectName || t("kanban.projectFilter.all")}</span></div>
-            <div className="kanban-detail-kicker" aria-label={t("kanban.detail.properties")}>
-              <span>{remoteId}</span>
-              <span className={`kanban-detail-pill is-status is-${issue.status}`}>{issue.statusName || t(DETAIL_STATUS_LABELS[issue.status])}</span>
-              <span className={`kanban-detail-pill is-priority is-${issue.priority}`}>{t(DETAIL_PRIORITY_LABELS[issue.priority])}</span>
-              <span className="kanban-detail-pill is-severity">{issue.severity ? t(`kanban.severity.${issue.severity}` as "kanban.severity.medium") : "—"}</span>
-              <span className={`kanban-detail-pill is-origin ${isCloud ? "is-cloud" : "is-local"}`}>{isCloud ? <CloudOutlined /> : <ApartmentOutlined />}{isCloud ? t("kanban.detail.cloudOrigin") : t("kanban.detail.localOrigin")}</span>
-            </div>
+            {isCloud ? <span className="kanban-detail-pill is-origin is-cloud"><CloudOutlined />{t("kanban.detail.cloudOrigin")}</span> : null}
           </div>
           <button className="kanban-detail-close" type="button" onClick={onClose} aria-label={t("kanban.modal.close")}><CloseOutlined /></button>
         </header>
@@ -390,7 +385,7 @@ export function KanbanIssueDetailDialog({
             <div className="kanban-detail-issue-heading">
               <div className="kanban-detail-heading-row">
                 <div className="kanban-detail-heading-copy">
-                  <input id="kanban-detail-title" className="kanban-detail-title-input" value={draft.title} disabled={!editing} onChange={(event) => updateDraft({ title: event.target.value })} autoFocus={editing} />
+                  <input id="kanban-detail-title" className={`kanban-detail-title-input ${editing ? "is-editing" : ""}`} value={draft.title} disabled={!editing} onChange={(event) => updateDraft({ title: event.target.value })} autoFocus={editing} />
                 </div>
                 <div className="kanban-detail-header-actions">
                   {issue.chatId ? <button type="button" className="kanban-detail-secondary-button" onClick={onOpenChat}><MessageOutlined />{t("kanban.chat.view")}</button> : null}
@@ -404,12 +399,12 @@ export function KanbanIssueDetailDialog({
               </div>
             </div>
 
-            <DetailSection title={t("kanban.detail.descriptionTitle")} icon={<FileTextOutlined />} meta={issueType?.name || issue.issueTypeKey || issue.typeId || "Issue"}>
-              <div className="kanban-detail-markdown-toolbar">
+            <DetailSection title={t("kanban.detail.descriptionTitle")} icon={<FileTextOutlined />}>
+              {editing ? <div className="kanban-detail-markdown-toolbar">
                 <span>Markdown</span>
-                {editing ? <><button type="button" onClick={() => void addAttachment(true)}><PaperClipOutlined />{t("kanban.form.addAttachment")}</button><button type="button" onClick={insertMermaid}>Mermaid</button></> : null}
-              </div>
-              <textarea className="kanban-detail-description-editor" value={draft.description} disabled={!editing} onChange={(event) => updateDraft({ description: event.target.value })} rows={14} placeholder={t("kanban.detail.noDescription")} />
+                <button type="button" onClick={() => void addAttachment(true)}><PaperClipOutlined />{t("kanban.form.addAttachment")}</button><button type="button" onClick={insertMermaid}>Mermaid</button>
+              </div> : null}
+              <textarea className={`kanban-detail-description-editor ${editing ? "is-editing" : ""}`} value={draft.description} disabled={!editing} onChange={(event) => updateDraft({ description: event.target.value })} rows={editing ? 12 : 6} placeholder={t("kanban.detail.noDescription")} />
             </DetailSection>
 
             <DetailSection title={t("kanban.detail.attachmentsTitle")} icon={<PaperClipOutlined />} meta={t("kanban.detail.itemCount", { count: visibleAttachments.length })}>
@@ -429,8 +424,21 @@ export function KanbanIssueDetailDialog({
           </main>
 
           <aside className="kanban-detail-rail" aria-label={t("kanban.detail.properties")}>
-            <DetailSection title={t("kanban.detail.scopeTitle")} icon={<ApartmentOutlined />}>
+            <nav className="kanban-detail-anchor-nav" aria-label={t("kanban.detail.properties")}>
+              {[
+                ["kanban-detail-scope", t("kanban.detail.tabFields")],
+                ["kanban-detail-people", t("kanban.detail.peopleTitle")],
+                ["kanban-detail-automation", t("kanban.detail.automationTitle")],
+                ["kanban-detail-related", t("kanban.detail.tabRelated")],
+                ["kanban-detail-runs", t("kanban.detail.tabRuns")],
+                ["kanban-detail-activity", t("kanban.detail.tabActivity")],
+                ["kanban-detail-source", t("kanban.detail.sourceTitle")]
+              ].map(([sectionId, label]) => <button key={sectionId} type="button" onClick={() => document.getElementById(sectionId)?.scrollIntoView({ block: "start" })}>{label}</button>)}
+            </nav>
+
+            <DetailSection sectionId="kanban-detail-scope" title={t("kanban.detail.scopeTitle")} icon={<ApartmentOutlined />}>
               <dl className="kanban-detail-properties">
+                <DetailProperty label={t("kanban.detail.issueId")} value={remoteId} />
                 <DetailProperty label={t("kanban.detail.project")} value={project?.name || issue.projectName || issue.projectId || "—"} />
                 <DetailProperty label={t("kanban.detail.issueType")} value={issueType?.name || issue.issueTypeKey || issue.typeId || "—"} />
                 <DetailProperty label={t("kanban.detail.workflow")} value={workflow?.name || issue.workflowId || "—"} />
@@ -447,11 +455,15 @@ export function KanbanIssueDetailDialog({
                   editing={editing}
                   editor={<select value={draft.priority} onChange={(event) => updateDraft({ priority: event.target.value as KanbanPriority })}>{KANBAN_PRIORITIES.map((priority) => <option key={priority} value={priority}>{t(DETAIL_PRIORITY_LABELS[priority])}</option>)}</select>}
                 />
-                <DetailProperty label={t("kanban.detail.severity")} value={issue.severity ? t(`kanban.severity.${issue.severity}` as "kanban.severity.medium") : "—"} />
+                <DetailProperty label={t("kanban.detail.severity")} value={issue.severity ? t(`kanban.importance.${issue.severity}` as "kanban.importance.medium") : "—"} />
+                {labels.length > 0 ? <DetailProperty label={t("kanban.detail.labelsTitle")} value={<span className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</span>} /> : null}
+                {resolvedFields.map((field) => (
+                  <DetailProperty key={field.def.id} label={<>{field.def.name}{field.context.required ? " *" : ""}</>} value={renderDynamicValue(field, issue.customFields?.[field.def.key] ?? field.context.defaultValue, usersById, issuesByRemoteId, t)} />
+                ))}
               </dl>
             </DetailSection>
 
-            <DetailSection title={t("kanban.detail.peopleTitle")} icon={<UserOutlined />}>
+            <DetailSection sectionId="kanban-detail-people" title={t("kanban.detail.peopleTitle")} icon={<UserOutlined />}>
               <dl className="kanban-detail-properties">
                 <DetailProperty label={t("kanban.detail.owner")} value={assigneeUser?.displayName || issue.assigneeId || t("kanban.form.unassigned")} />
                 <DetailProperty
@@ -464,17 +476,7 @@ export function KanbanIssueDetailDialog({
               </dl>
             </DetailSection>
 
-            <DetailSection title={t("kanban.detail.customFieldsTitle")} icon={<ApartmentOutlined />} meta={t("kanban.detail.resolvedFields", { count: resolvedFields.length })}>
-              {resolvedFields.length > 0 ? <dl className="kanban-detail-properties">{resolvedFields.map((field) => (
-                <DetailProperty key={field.def.id} label={<>{field.def.name}{field.context.required ? " *" : ""}</>} value={renderDynamicValue(field, issue.customFields?.[field.def.key] ?? field.context.defaultValue, usersById, issuesByRemoteId, t)} />
-              ))}</dl> : <EmptyBlock>{t("kanban.detail.noCustomFields")}</EmptyBlock>}
-            </DetailSection>
-
-            <DetailSection title={t("kanban.detail.labelsTitle")} icon={<TagsOutlined />} meta={t("kanban.detail.itemCount", { count: labels.length })}>
-              {labels.length > 0 ? <div className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</div> : <EmptyBlock>{t("kanban.detail.noLabels")}</EmptyBlock>}
-            </DetailSection>
-
-            <DetailSection title={t("kanban.detail.automationTitle")} icon={<ClockCircleOutlined />}>
+            <DetailSection sectionId="kanban-detail-automation" title={t("kanban.detail.automationTitle")} icon={<ClockCircleOutlined />}>
               <dl className="kanban-detail-properties">
                 <DetailProperty
                   label={t("kanban.form.automationEnabled")}
@@ -490,33 +492,29 @@ export function KanbanIssueDetailDialog({
               </dl>
             </DetailSection>
 
-            <DetailSection title={t("kanban.detail.subtasksTitle")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: subtasks.length })}>
-              {subtasks.length > 0 ? <div className="kanban-detail-related-list">{subtasks.map((subtask) => <article key={subtask.id}><CheckCircleFilled className={subtask.status === "completed" ? "is-complete" : ""} /><span><strong>{subtask.title}</strong><small>{issueExternalId(subtask)} · {subtask.statusName || t(DETAIL_STATUS_LABELS[subtask.status])}</small></span></article>)}</div> : <EmptyBlock>{t("kanban.detail.noSubtasks")}</EmptyBlock>}
+            <DetailSection sectionId="kanban-detail-related" title={t("kanban.detail.relatedTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: subtasks.length + dependencies.length + reviews.length })}>
+              {subtasks.length + dependencies.length + reviews.length > 0 ? <div className="kanban-detail-related-groups">
+                {subtasks.length > 0 ? <div><h3>{t("kanban.detail.subtasksTitle")}</h3><div className="kanban-detail-related-list">{subtasks.map((subtask) => <article key={subtask.id}><CheckCircleFilled className={subtask.status === "completed" ? "is-complete" : ""} /><span><strong>{subtask.title}</strong><small>{issueExternalId(subtask)} · {subtask.statusName || t(DETAIL_STATUS_LABELS[subtask.status])}</small></span></article>)}</div></div> : null}
+                {dependencies.length > 0 ? <div><h3>{t("kanban.detail.dependenciesTitle")}</h3><div className="kanban-detail-dependency-list">{dependencies.map((dependency) => {
+                  const outbound = dependency.fromIssueId === remoteId;
+                  const relatedId = outbound ? dependency.toIssueId : dependency.fromIssueId;
+                  const related = issuesByRemoteId.get(relatedId);
+                  return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
+                })}</div></div> : null}
+                {reviews.length > 0 ? <div><h3>{t("kanban.detail.reviewsTitle")}</h3><div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div></div> : null}
+              </div> : <EmptyBlock>{t("kanban.detail.noRelated")}</EmptyBlock>}
             </DetailSection>
 
-            <DetailSection title={t("kanban.detail.dependenciesTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: dependencies.length })}>
-              {dependencies.length > 0 ? <div className="kanban-detail-dependency-list">{dependencies.map((dependency) => {
-                const outbound = dependency.fromIssueId === remoteId;
-                const relatedId = outbound ? dependency.toIssueId : dependency.fromIssueId;
-                const related = issuesByRemoteId.get(relatedId);
-                return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
-              })}</div> : <EmptyBlock>{t("kanban.detail.noDependencies")}</EmptyBlock>}
-            </DetailSection>
-
-            <DetailSection title={t("kanban.detail.reviewsTitle")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: reviews.length })}>
-              {reviews.length > 0 ? <div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div> : <EmptyBlock>{t("kanban.detail.noReviews")}</EmptyBlock>}
-            </DetailSection>
-
-            <DetailSection title={t("kanban.detail.runsTitle")} icon={<RobotOutlined />} meta={issue.runState ? t(`kanban.run.${issue.runState}` as "kanban.run.running") : t("kanban.detail.noCurrentRun")}>
+            <DetailSection sectionId="kanban-detail-runs" title={t("kanban.detail.runsTitle")} icon={<RobotOutlined />} meta={issue.runState ? t(`kanban.run.${issue.runState}` as "kanban.run.running") : t("kanban.detail.noCurrentRun")}>
               {issue.runId || issue.runState || issue.runResultMessage || issue.runErrorMessage ? <div className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{issue.runAgentKey || agentLabel}</strong><p>{issue.runId || issue.activeRunId || t("kanban.detail.runIdMissing")}</p><small>{formatDateTime(issue.runStartedAt, locale)}{issue.runFinishedAt ? ` — ${formatDateTime(issue.runFinishedAt, locale)}` : ""}</small>{issue.runResultMessage ? <blockquote>{issue.runResultMessage}</blockquote> : null}{issue.runErrorMessage ? <blockquote className="is-error">{issue.runErrorMessage}</blockquote> : null}</div>{issue.chatId ? <button type="button" onClick={onOpenChat}>{t("kanban.chat.view")}</button> : null}</div> : <EmptyBlock>{t("kanban.detail.noRuns")}</EmptyBlock>}
               {runEvents.length > 0 ? <div className="kanban-detail-run-events">{runEvents.map((event) => <article key={event.id}><CheckCircleFilled /><span><strong>{event.eventType}</strong><small>{formatDateTime(event.createdAt, locale)}</small></span></article>)}</div> : null}
             </DetailSection>
 
-            <DetailSection title={t("kanban.detail.activityTitle")} icon={<HistoryOutlined />} meta={t("kanban.detail.itemCount", { count: events.length })}>
+            <DetailSection sectionId="kanban-detail-activity" title={t("kanban.detail.activityTitle")} icon={<HistoryOutlined />} meta={t("kanban.detail.itemCount", { count: events.length })}>
               {events.length > 0 ? <ol className="kanban-detail-timeline">{events.map((event) => <li key={event.id}><span><ClockCircleOutlined /></span><div><strong>{event.eventType}</strong><small>{usersById.get(event.actorId ?? "") || event.actorAgent || t("kanban.detail.systemActor")} · {formatDateTime(event.createdAt, locale)}</small>{event.payload && Object.keys(event.payload).length > 0 ? <details><summary>{t("kanban.detail.eventPayload")}</summary><pre>{safeJson(event.payload)}</pre></details> : null}</div></li>)}</ol> : <EmptyBlock>{t("kanban.detail.noActivity")}</EmptyBlock>}
             </DetailSection>
 
-            <DetailSection title={t("kanban.detail.sourceTitle")} icon={isCloud ? <CloudOutlined /> : <ApartmentOutlined />}>
+            <DetailSection sectionId="kanban-detail-source" title={t("kanban.detail.sourceTitle")} icon={isCloud ? <CloudOutlined /> : <ApartmentOutlined />}>
               {isCloud ? <div className="kanban-detail-readonly-banner is-rail"><LockOutlined /><span><strong>{t("kanban.detail.cloudReadonly")}</strong>{t("kanban.detail.cloudReadonlyHint")}</span></div> : null}
               <dl className="kanban-detail-properties">
                 <DetailProperty label={t("kanban.detail.syncMode")} value={<><LockOutlined /> {isCloud ? t("kanban.detail.readonly") : t("kanban.detail.editable")}</>} />

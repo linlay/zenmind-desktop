@@ -35,7 +35,7 @@ test("Kanban automation payload keeps issue context hidden in the platform query
     automationMessage: "Run the regression checks",
     automationTimezone: "",
     status: "todo",
-    priority: "medium",
+    priority: "P2",
     position: 1,
     chatId: null,
     runId: null,

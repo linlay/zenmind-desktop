@@ -129,7 +129,7 @@ function ensureKanbanRunStateConstraint(db: DatabaseSync) {
       title TEXT NOT NULL CHECK (length(trim(title)) > 0),
       description TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','in_review','completed')),
-      priority TEXT NOT NULL CHECK (priority IN ('high','medium','low')),
+      priority TEXT NOT NULL CHECK (priority IN ('P0','P1','P2','P3')),
       assignee_agent_key TEXT,
       position REAL NOT NULL,
       chat_id TEXT,
@@ -172,7 +172,16 @@ function ensureKanbanRunStateConstraint(db: DatabaseSync) {
       title,
       description,
       status,
-      priority,
+      CASE priority
+        WHEN 'P0' THEN 'P0'
+        WHEN 'P1' THEN 'P1'
+        WHEN 'P2' THEN 'P2'
+        WHEN 'P3' THEN 'P3'
+        WHEN 'high' THEN 'P1'
+        WHEN 'medium' THEN 'P2'
+        WHEN 'low' THEN 'P3'
+        ELSE 'P2'
+      END,
       assignee_agent_key,
       position,
       chat_id,
@@ -208,6 +217,79 @@ function ensureKanbanIssueIndexes(db: DatabaseSync) {
   `);
 }
 
+function ensureKanbanPriorityConstraint(db: DatabaseSync) {
+  const row = db.prepare(`
+    SELECT sql FROM sqlite_master
+    WHERE type = 'table' AND name = 'kanban_issues'
+  `).get() as { sql?: string } | undefined;
+  if (row?.sql?.includes("'P0'") && row.sql.includes("'P3'")) return;
+
+  db.exec(`
+    ALTER TABLE kanban_issues RENAME TO kanban_issues_old_priority;
+
+    CREATE TABLE kanban_issues (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL CHECK (length(trim(title)) > 0),
+      description TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','in_review','completed')),
+      priority TEXT NOT NULL CHECK (priority IN ('P0','P1','P2','P3')),
+      assignee_agent_key TEXT,
+      position REAL NOT NULL,
+      chat_id TEXT,
+      run_id TEXT,
+      run_state TEXT CHECK (run_state IN ('running','completed','failed','cancelled')),
+      automation_id TEXT,
+      automation_enabled INTEGER NOT NULL DEFAULT 0 CHECK (automation_enabled IN (0, 1)),
+      automation_cron TEXT,
+      automation_message TEXT,
+      automation_timezone TEXT,
+      attachment_chat_id TEXT,
+      attachments_json TEXT NOT NULL DEFAULT '[]',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
+
+    INSERT INTO kanban_issues (
+      id, title, description, status, priority, assignee_agent_key, position,
+      chat_id, run_id, run_state, automation_id, automation_enabled,
+      automation_cron, automation_message, automation_timezone,
+      attachment_chat_id, attachments_json, created_at, updated_at
+    )
+    SELECT
+      id,
+      title,
+      description,
+      status,
+      CASE priority
+        WHEN 'P0' THEN 'P0'
+        WHEN 'P1' THEN 'P1'
+        WHEN 'P2' THEN 'P2'
+        WHEN 'P3' THEN 'P3'
+        WHEN 'high' THEN 'P1'
+        WHEN 'medium' THEN 'P2'
+        WHEN 'low' THEN 'P3'
+        ELSE 'P2'
+      END,
+      assignee_agent_key,
+      position,
+      chat_id,
+      run_id,
+      run_state,
+      automation_id,
+      automation_enabled,
+      automation_cron,
+      automation_message,
+      automation_timezone,
+      attachment_chat_id,
+      attachments_json,
+      created_at,
+      updated_at
+    FROM kanban_issues_old_priority;
+
+    DROP TABLE kanban_issues_old_priority;
+  `);
+}
+
 export function openKanbanDatabase(app: AppPathProvider) {
   const databasePath = getKanbanDatabasePath(app);
   fs.mkdirSync(path.dirname(databasePath), { recursive: true });
@@ -225,7 +307,7 @@ export function openKanbanDatabase(app: AppPathProvider) {
       title TEXT NOT NULL CHECK (length(trim(title)) > 0),
       description TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL CHECK (status IN ('backlog','todo','in_progress','in_review','completed')),
-      priority TEXT NOT NULL CHECK (priority IN ('high','medium','low')),
+      priority TEXT NOT NULL CHECK (priority IN ('P0','P1','P2','P3')),
       assignee_agent_key TEXT,
       position REAL NOT NULL,
       chat_id TEXT,
@@ -244,8 +326,9 @@ export function openKanbanDatabase(app: AppPathProvider) {
   `);
   ensureKanbanIssueColumns(db);
   ensureKanbanRunStateConstraint(db);
+  ensureKanbanPriorityConstraint(db);
   ensureKanbanIssueIndexes(db);
-  setKanbanMeta(db, "schema_version", "5");
+  setKanbanMeta(db, "schema_version", "6");
   return db;
 }
 

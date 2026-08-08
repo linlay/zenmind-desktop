@@ -2,11 +2,13 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 const {
   applyDesktopKanbanCloudSnapshot,
   createPrivateDesktopKanbanIssue,
+  getDesktopKanbanDatabasePath,
   listDesktopKanbanIssues,
   listPendingDesktopKanbanCommandReceipts,
   recordDesktopKanbanCommandReceipt,
@@ -36,7 +38,7 @@ function cloudIssue(overrides = {}) {
     title: "Cloud task",
     description: "",
     status: "todo",
-    priority: "medium",
+    priority: "P2",
     severity: "medium",
     position: 1,
     revision: 50,
@@ -45,6 +47,107 @@ function cloudIssue(overrides = {}) {
     ...overrides
   };
 }
+
+test("priority uses P0-P3 and only normalizes legacy values at the cache boundary", (t) => {
+  const app = createTempApp(t);
+  applyDesktopKanbanCloudSnapshot(app, currentUser, {
+    scope: "project_set",
+    complete: true,
+    projectIds: ["cloud-project-1"],
+    lastSeq: 40,
+    projects: [],
+    issues: [cloudIssue({ priority: "P0" })]
+  });
+
+  const cached = listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1");
+  assert.equal(cached?.priority, "P0");
+
+  const legacy = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
+    priority: "high",
+    revision: 41
+  }), 41);
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.issue.priority, "P1");
+  assert.equal(
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.priority,
+    "P1"
+  );
+
+  const local = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Default priority" });
+  assert.equal(local.ok, true);
+  assert.equal(local.issue.priority, "P2");
+});
+
+test("legacy priority rows migrate to the P0-P3 SQLite constraint", (t) => {
+  const app = createTempApp(t);
+  const databasePath = getDesktopKanbanDatabasePath(app);
+  fs.mkdirSync(path.dirname(databasePath), { recursive: true });
+  const legacyDb = new DatabaseSync(databasePath);
+  legacyDb.exec(`
+    CREATE TABLE issue (
+      ID_ TEXT PRIMARY KEY,
+      REMOTE_ISSUE_ID_ TEXT,
+      BOARD_ID_ TEXT NOT NULL DEFAULT 'default',
+      PROJECT_ID_ TEXT NOT NULL DEFAULT 'default',
+      WORKFLOW_ID_ TEXT NOT NULL DEFAULT 'workflow-standard-requirement',
+      TYPE_ID_ TEXT,
+      STAGE_ID_ TEXT,
+      STAGE_NAME_ TEXT,
+      STATUS_ID_ TEXT,
+      STATUS_NAME_ TEXT,
+      TITLE_ TEXT NOT NULL,
+      DESCRIPTION_ TEXT NOT NULL DEFAULT '',
+      STATUS_ TEXT NOT NULL,
+      PRIORITY_ TEXT NOT NULL CHECK (PRIORITY_ IN ('high','medium','low')),
+      SEVERITY_ TEXT NOT NULL DEFAULT 'medium',
+      POSITION_ REAL NOT NULL,
+      ASSIGNEE_AGENT_KEY_ TEXT,
+      ASSIGNEE_ID_ TEXT,
+      WORKER_TYPE_ TEXT,
+      WORKER_ID_ TEXT,
+      WORKER_AGENT_ TEXT,
+      REVIEWER_ID_ TEXT,
+      REVIEW_REQUIRED_ INTEGER NOT NULL DEFAULT 0,
+      ACTIVE_REVIEW_ID_ TEXT,
+      ACTIVE_RUN_ID_ TEXT,
+      CHAT_ID_ TEXT,
+      RUN_ID_ TEXT,
+      RUN_STATE_ TEXT,
+      DISPATCH_STATE_ TEXT,
+      DISPATCH_DEVICE_ID_ TEXT,
+      DISPATCH_COMMAND_ID_ TEXT,
+      DISPATCH_UPDATED_AT_ TEXT,
+      AUTOMATION_ID_ TEXT,
+      AUTOMATION_ENABLED_ INTEGER NOT NULL DEFAULT 0,
+      AUTOMATION_CRON_ TEXT,
+      AUTOMATION_MESSAGE_ TEXT,
+      AUTOMATION_TIMEZONE_ TEXT,
+      ATTACHMENT_CHAT_ID_ TEXT,
+      ATTACHMENTS_JSON_ TEXT NOT NULL DEFAULT '[]',
+      DETAIL_JSON_ TEXT NOT NULL DEFAULT '{}',
+      REVISION_ INTEGER NOT NULL DEFAULT 0,
+      CREATED_AT_ TEXT NOT NULL,
+      UPDATED_AT_ TEXT NOT NULL,
+      DELETED_AT_ TEXT
+    );
+    INSERT INTO issue (
+      ID_, TITLE_, DESCRIPTION_, STATUS_, PRIORITY_, SEVERITY_, POSITION_, CREATED_AT_, UPDATED_AT_
+    ) VALUES (
+      'legacy-issue', 'Legacy priority', '', 'backlog', 'high', 'medium', 1,
+      '2026-07-11T00:00:00.000Z', '2026-07-11T00:00:00.000Z'
+    );
+  `);
+  legacyDb.close();
+
+  listDesktopKanbanIssues(app, currentUser);
+
+  const migratedDb = new DatabaseSync(databasePath);
+  assert.equal(migratedDb.prepare("SELECT PRIORITY_ AS priority FROM issue WHERE ID_ = 'legacy-issue'").get().priority, "P1");
+  const schema = migratedDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'issue'").get().sql;
+  assert.match(schema, /PRIORITY_ IN \('P0','P1','P2','P3'\)/);
+  assert.doesNotMatch(schema, /PRIORITY_ IN \('high','medium','low'\)/);
+  migratedDb.close();
+});
 
 test("project-set replacement removes cloud cache and preserves private issues", (t) => {
   const app = createTempApp(t);

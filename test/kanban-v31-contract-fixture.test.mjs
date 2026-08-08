@@ -14,6 +14,7 @@ test("Kanban v3.1 golden fixtures keep canonical envelope shapes", () => {
   assert.equal(moved.payload.eventType, "issue.updated");
   assert.equal(moved.payload.reason, "moved");
   assert.equal(moved.payload.issue.revision, moved.payload.seq);
+  assert.equal(moved.payload.issue.priority, "P2");
   assert.equal(moved.payload.fromProjectId, "project-1");
   assert.equal(moved.payload.toProjectId, "project-2");
   const snapshot = fixture.cases.projectSetSnapshot.payload;
@@ -26,4 +27,5 @@ test("Kanban v3.1 golden fixtures keep canonical envelope shapes", () => {
   assert.equal(delivery.eventType, "command.runIssue");
   assert.equal(delivery.commandId, "command-1");
   assert.equal(delivery.payload.issue.revision, delivery.sourceRevision);
+  assert.equal(delivery.payload.issue.priority, "P2");
 });

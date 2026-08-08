@@ -14,9 +14,10 @@ const PATHS = {
 };
 
 const PRIORITY_CONFIG: Record<KanbanPriority, { color: string; clipY: number; clipH: number }> = {
-  low: { color: "#84CC16", clipY: 358, clipH: 666 },
-  medium: { color: "#EAB308", clipY: 358, clipH: 666 },
-  high: { color: "#F97316", clipY: 205, clipH: 819 }
+  P0: { color: "#EF4444", clipY: 0, clipH: 1024 },
+  P1: { color: "#F97316", clipY: 205, clipH: 819 },
+  P2: { color: "#EAB308", clipY: 358, clipH: 666 },
+  P3: { color: "#84CC16", clipY: 358, clipH: 666 }
 };
 
 const SEVERITY_CONFIG: Record<KanbanSeverity, { color: string; clipW: number }> = {

@@ -10,9 +10,10 @@ export const KANBAN_STATUSES = [
 ] as const;
 
 export const KANBAN_PRIORITIES = [
-  "high",
-  "medium",
-  "low"
+  "P0",
+  "P1",
+  "P2",
+  "P3"
 ] as const;
 
 export const KANBAN_RUN_STATES = [
@@ -28,6 +29,21 @@ export type KanbanRunState = typeof KANBAN_RUN_STATES[number];
 export type KanbanSyncMode = "private" | "cloud";
 export type KanbanSyncState = "local" | "syncing" | "synced" | "error";
 export type KanbanOrigin = "desktop" | "cloud_dispatch";
+
+const LEGACY_KANBAN_PRIORITY_ALIASES: Record<string, KanbanPriority> = {
+  high: "P1",
+  medium: "P2",
+  low: "P3"
+};
+
+export function parseKanbanPriority(value: unknown): KanbanPriority | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toUpperCase();
+  if (KANBAN_PRIORITIES.includes(normalized as KanbanPriority)) {
+    return normalized as KanbanPriority;
+  }
+  return LEGACY_KANBAN_PRIORITY_ALIASES[value.trim().toLowerCase()] ?? null;
+}
 
 export interface KanbanCurrentUser {
   id: string;

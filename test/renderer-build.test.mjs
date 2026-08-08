@@ -3335,6 +3335,8 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
   assert.match(contracts, /KANBAN_RUN_STATES/);
+  assert.match(contracts, /KANBAN_PRIORITIES = \[[\s\S]{0,100}"P0"[\s\S]{0,100}"P1"[\s\S]{0,100}"P2"[\s\S]{0,100}"P3"/);
+  assert.match(contracts, /high: "P1"[\s\S]{0,80}medium: "P2"[\s\S]{0,80}low: "P3"/);
   assert.match(contracts, /"cancelled"/);
   assert.match(contracts, /runState: KanbanRunState \| null/);
   assert.match(contracts, /stageName\?: string/);
@@ -3384,7 +3386,9 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
 
   assert.match(kanbanPage, /const showPriorityImportance = display\.priority && \(issue\.status === "backlog" \|\| issue\.status === "todo"\)/);
   assert.match(kanbanPage, /function IssueCardPriorityImportance\(/);
-  assert.match(kanbanPage, /const priorityLabel = \{ high: "P1", medium: "P2", low: "P3" \}\[priority\]/);
+  assert.match(kanbanPage, /P0: \{ labelKey: "kanban\.priority\.p0"[\s\S]{0,520}P3: \{ labelKey: "kanban\.priority\.p3"/);
+  assert.match(kanbanPage, /const priorityLabel = t\(priorityMeta\.shortLabelKey\)/);
+  assert.match(kanbanPage, /const importanceLabel = t\(SEVERITY_META\[severity\]\.labelKey\)/);
   assert.match(kanbanPage, /className="issue-card-priority-divider" aria-hidden="true">｜<\/span>/);
   assert.match(kanbanPage, /function getIssueCardPeoplePresentation\(/);
   assert.match(kanbanPage, /issue\.status === "in_review"[\s\S]{0,180}\[assignee, visibleReviewer\]/);
@@ -3421,6 +3425,8 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /\.issue-card-foot\s*\{[\s\S]{0,180}flex-direction:\s*column;/);
   assert.match(kanbanStyles, /\.issue-card-footer-row\s*\{[\s\S]{0,180}display:\s*flex;/);
   assert.match(kanbanStyles, /\.issue-card-priority-importance\s*\{[\s\S]{0,220}border:\s*0;/);
+  assert.match(kanbanStyles, /\.issue-card-priority-importance\.is-p0/);
+  assert.match(kanbanStyles, /\.kanban-priority\.is-p3/);
   assert.match(kanbanStyles, /\.issue-card-due\.is-overdue\s*\{[\s\S]{0,80}color:\s*var\(--danger/);
   assert.match(kanbanStyles, /\.issue-card-footer-end\.has-1-actions\s*\{[\s\S]{0,60}width:\s*56px;/);
   assert.match(kanbanStyles, /\.issue-card-actions\s*\{[\s\S]{0,500}opacity:\s*0;[\s\S]{0,120}pointer-events:\s*none;/);
@@ -3434,11 +3440,13 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(zhCN, /"kanban\.card\.runningFor": "已进行 \{duration\}"/);
   assert.match(zhCN, /"kanban\.card\.completedAt": "完成 \{time\}"/);
   assert.match(zhCN, /"kanban\.card\.workflowProgress": "工作流进度，当前阶段：\{stage\}"/);
-  assert.match(zhCN, /"kanban\.card\.importanceCritical": "关键"/);
+  assert.match(zhCN, /"kanban\.priority\.p0": "P0"[\s\S]{0,180}"kanban\.priority\.p3": "P3"/);
+  assert.match(zhCN, /"kanban\.importance\.critical": "关键"[\s\S]{0,240}"kanban\.importance\.medium": "普通"/);
   assert.match(enUS, /"kanban\.card\.runningFor": "In progress \{duration\}"/);
   assert.match(enUS, /"kanban\.card\.completedAt": "Completed \{time\}"/);
   assert.match(enUS, /"kanban\.card\.workflowProgress": "Workflow progress, current stage: \{stage\}"/);
-  assert.match(enUS, /"kanban\.card\.importanceCritical": "Critical"/);
+  assert.match(enUS, /"kanban\.priority\.p0": "P0"[\s\S]{0,180}"kanban\.priority\.p3": "P3"/);
+  assert.match(enUS, /"kanban\.importance\.critical": "Critical"[\s\S]{0,240}"kanban\.importance\.medium": "Normal"/);
 });
 
 test("Kanban toolbar can filter issues by automation", () => {

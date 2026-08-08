@@ -195,16 +195,17 @@ const STATUS_META: Record<KanbanStatus, { labelKey: TranslationKey; tone: string
 };
 
 const PRIORITY_META: Record<KanbanPriority, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string; bars: number }> = {
-  high: { labelKey: "kanban.priority.high", shortLabelKey: "kanban.priority.highShort", tone: "high", bars: 3 },
-  medium: { labelKey: "kanban.priority.medium", shortLabelKey: "kanban.priority.mediumShort", tone: "medium", bars: 2 },
-  low: { labelKey: "kanban.priority.low", shortLabelKey: "kanban.priority.lowShort", tone: "low", bars: 1 }
+  P0: { labelKey: "kanban.priority.p0", shortLabelKey: "kanban.priority.p0", tone: "p0", bars: 4 },
+  P1: { labelKey: "kanban.priority.p1", shortLabelKey: "kanban.priority.p1", tone: "p1", bars: 3 },
+  P2: { labelKey: "kanban.priority.p2", shortLabelKey: "kanban.priority.p2", tone: "p2", bars: 2 },
+  P3: { labelKey: "kanban.priority.p3", shortLabelKey: "kanban.priority.p3", tone: "p3", bars: 1 }
 };
 
 const SEVERITY_META: Record<KanbanSeverity, { labelKey: TranslationKey; shortLabelKey: TranslationKey; tone: string }> = {
-  critical: { labelKey: "kanban.severity.critical", shortLabelKey: "kanban.severity.criticalShort", tone: "critical" },
-  high: { labelKey: "kanban.severity.high", shortLabelKey: "kanban.severity.highShort", tone: "high" },
-  medium: { labelKey: "kanban.severity.medium", shortLabelKey: "kanban.severity.mediumShort", tone: "medium" },
-  low: { labelKey: "kanban.severity.low", shortLabelKey: "kanban.severity.lowShort", tone: "low" }
+  critical: { labelKey: "kanban.importance.critical", shortLabelKey: "kanban.importance.criticalShort", tone: "critical" },
+  high: { labelKey: "kanban.importance.high", shortLabelKey: "kanban.importance.highShort", tone: "high" },
+  medium: { labelKey: "kanban.importance.medium", shortLabelKey: "kanban.importance.mediumShort", tone: "medium" },
+  low: { labelKey: "kanban.importance.low", shortLabelKey: "kanban.importance.lowShort", tone: "low" }
 };
 
 const KANBAN_SEVERITIES = [
@@ -257,7 +258,7 @@ const emptyForm: IssueFormState = {
   attachmentChatId: "",
   attachments: [],
   status: "backlog",
-  priority: "medium",
+  priority: "P2",
   assigneeAgentKey: "",
   automationEnabled: false,
   automationPreset: DEFAULT_KANBAN_AUTOMATION_PLAN,
@@ -3637,16 +3638,12 @@ function IssueCardPriorityImportance({
   severity: KanbanSeverity;
   t: TranslateFunction;
 }) {
-  const priorityLabel = { high: "P1", medium: "P2", low: "P3" }[priority];
-  const importanceLabel = t({
-    critical: "kanban.card.importanceCritical",
-    high: "kanban.card.importanceHigh",
-    medium: "kanban.card.importanceMedium",
-    low: "kanban.card.importanceLow"
-  }[severity] as TranslationKey);
+  const priorityMeta = PRIORITY_META[priority];
+  const priorityLabel = t(priorityMeta.shortLabelKey);
+  const importanceLabel = t(SEVERITY_META[severity].labelKey);
   return (
     <span
-      className={`issue-card-priority-importance is-${priority} is-importance-${severity}`}
+      className={`issue-card-priority-importance is-${priorityMeta.tone} is-importance-${severity}`}
       title={`${t("kanban.card.priority", { value: t(PRIORITY_META[priority].labelKey) })} · ${t("kanban.card.severity", { value: t(SEVERITY_META[severity].labelKey) })}`}
     >
       <span>{priorityLabel}</span>

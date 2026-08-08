@@ -7,11 +7,10 @@ import type {
   KanbanIssueResult,
   KanbanIssueUpdateInput,
   KanbanListResult,
-  KanbanPriority,
   KanbanRunState,
   KanbanStatus
 } from "../shared/contracts";
-import { KANBAN_PRIORITIES, KANBAN_RUN_STATES, KANBAN_STATUSES } from "../shared/contracts";
+import { KANBAN_RUN_STATES, KANBAN_STATUSES, parseKanbanPriority } from "../shared/contracts";
 import {
   getKanbanDatabasePath,
   readKanbanIssues,
@@ -84,10 +83,6 @@ function normalizeAttachments(value: unknown): AssistantAttachment[] {
     : [];
 }
 
-function isKanbanPriority(value: unknown): value is KanbanPriority {
-  return typeof value === "string" && KANBAN_PRIORITIES.includes(value as KanbanPriority);
-}
-
 function isNonDragCompletedTransition(issue: KanbanIssue, requestedStatus: KanbanStatus | null, clearsActiveRun = false) {
   return requestedStatus === "completed" && issue.status !== "completed" && !clearsActiveRun;
 }
@@ -157,7 +152,7 @@ function buildIssue(input: KanbanIssueInput, existingIssues: KanbanIssue[]): Kan
   if (!title) return null;
 
   const status = normalizeKanbanStatus(input.status) ?? "backlog";
-  const priority = isKanbanPriority(input.priority) ? input.priority : "medium";
+  const priority = parseKanbanPriority(input.priority) ?? "P2";
   const timestamp = nowIso();
   return {
     id: createKanbanIssueId(existingIssues),
@@ -199,7 +194,10 @@ function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): Ka
     const status = normalizeKanbanStatus(input.status);
     if (status) nextIssue.status = status;
   }
-  if (input.priority !== undefined && isKanbanPriority(input.priority)) nextIssue.priority = input.priority;
+  if (input.priority !== undefined) {
+    const priority = parseKanbanPriority(input.priority);
+    if (priority) nextIssue.priority = priority;
+  }
   if (input.assigneeAgentKey !== undefined) nextIssue.assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
   if (input.chatId !== undefined) nextIssue.chatId = nullableTrimmedText(input.chatId);
   if (input.runId !== undefined) nextIssue.runId = nullableTrimmedText(input.runId);

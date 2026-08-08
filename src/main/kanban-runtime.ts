@@ -24,6 +24,7 @@ import type {
   KanbanSettingsResult,
   KanbanStatus
 } from "../shared/contracts";
+import { parseKanbanPriority } from "../shared/contracts";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { getDesktopDeviceId } from "./device-identity";
 import { getDesktopSsoStatus } from "./oidc-sso";
@@ -461,7 +462,7 @@ function kanbanIssueFromAutomationPayload(payload: unknown): KanbanIssue | null 
     title,
     description: readText(record.description),
     status: (readText(record.status) || "backlog") as KanbanStatus,
-    priority: (readText(record.priority) || "medium") as KanbanIssue["priority"],
+    priority: parseKanbanPriority(record.priority) ?? "P2",
     severity: (readText(record.severity) || "medium") as NonNullable<KanbanIssue["severity"]>,
     assigneeAgentKey: nullableText(record.assigneeAgentKey),
     assigneeId: nullableText(record.assigneeId),

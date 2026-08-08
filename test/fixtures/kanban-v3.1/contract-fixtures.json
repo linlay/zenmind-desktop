@@ -16,7 +16,7 @@
         "fromProjectId": "project-1", "toProjectId": "project-2",
         "issue": {
           "id": "issue-1", "projectId": "project-2", "workflowId": "workflow-standard-task", "title": "Moved issue",
-          "description": "", "status": "in_progress", "priority": "medium", "severity": "medium", "position": 120.5,
+          "description": "", "status": "in_progress", "priority": "P2", "severity": "medium", "position": 120.5,
           "revision": 501, "createdAt": "2026-07-11T10:00:00Z", "updatedAt": "2026-07-11T10:01:00Z"
         },
         "actor": { "type": "user", "id": "user-1" }, "createdAt": "2026-07-11T10:01:00Z"
@@ -47,7 +47,7 @@
             "issueId": "issue-1",
             "issue": {
               "id": "issue-1", "projectId": "project-1", "workflowId": "workflow-standard-task", "title": "Run issue",
-              "description": "", "status": "in_progress", "priority": "medium", "severity": "medium", "position": 1,
+              "description": "", "status": "in_progress", "priority": "P2", "severity": "medium", "position": 1,
               "revision": 520, "createdAt": "2026-07-11T10:00:00Z", "updatedAt": "2026-07-11T10:06:00Z"
             },
             "agentKey": "codeAssistant", "accessLevel": "default"

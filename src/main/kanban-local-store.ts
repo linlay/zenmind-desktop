@@ -25,9 +25,9 @@ import type {
 } from "../shared/contracts";
 import {
   isEpochMilliseconds,
-  KANBAN_PRIORITIES,
   KANBAN_RUN_STATES,
-  KANBAN_STATUSES
+  KANBAN_STATUSES,
+  parseKanbanPriority
 } from "../shared/contracts";
 import { getRuntimeDataRoot } from "./user-paths";
 import { t } from "./i18n/main-i18n";
@@ -201,9 +201,7 @@ function normalizeKanbanStatus(value: unknown): KanbanStatus {
 }
 
 function normalizeKanbanPriority(value: unknown): KanbanPriority {
-  return typeof value === "string" && KANBAN_PRIORITIES.includes(value as KanbanPriority)
-    ? value as KanbanPriority
-    : "medium";
+  return parseKanbanPriority(value) ?? "P2";
 }
 
 function normalizeKanbanSeverity(value: unknown): NonNullable<KanbanIssue["severity"]> {
@@ -512,7 +510,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       TITLE_ TEXT NOT NULL CHECK (length(trim(TITLE_)) > 0),
       DESCRIPTION_ TEXT NOT NULL DEFAULT '',
       STATUS_ TEXT NOT NULL CHECK (STATUS_ IN ('backlog','todo','in_progress','in_review','completed')),
-      PRIORITY_ TEXT NOT NULL CHECK (PRIORITY_ IN ('high','medium','low')),
+      PRIORITY_ TEXT NOT NULL CHECK (PRIORITY_ IN ('P0','P1','P2','P3')),
       SEVERITY_ TEXT NOT NULL DEFAULT 'medium' CHECK (SEVERITY_ IN ('critical','high','medium','low')),
       POSITION_ REAL NOT NULL,
       ASSIGNEE_AGENT_KEY_ TEXT,
@@ -688,6 +686,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       WHERE DELETED_AT_ IS NULL;
   `);
   ensureDesktopKanbanIssueColumns(db);
+  ensureDesktopKanbanPriorityConstraint(db);
 }
 
 function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
@@ -720,6 +719,113 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   }
   const receiptColumns = new Set((db.prepare("PRAGMA table_info(kanban_command_receipt)").all() as Array<{ name: string }>).map((column) => column.name));
   if (!receiptColumns.has("TERMINAL_REPORTED_AT_")) db.exec("ALTER TABLE kanban_command_receipt ADD COLUMN TERMINAL_REPORTED_AT_ TEXT");
+}
+
+function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
+  const row = db.prepare(`
+    SELECT sql FROM sqlite_master
+    WHERE type = 'table' AND name = 'issue'
+  `).get() as { sql?: string } | undefined;
+  if (row?.sql?.includes("'P0'") && row.sql.includes("'P3'")) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.exec(`
+      BEGIN IMMEDIATE;
+
+      CREATE TABLE issue_priority_migration (
+        ID_ TEXT PRIMARY KEY,
+        REMOTE_ISSUE_ID_ TEXT,
+        BOARD_ID_ TEXT NOT NULL DEFAULT 'default',
+        PROJECT_ID_ TEXT NOT NULL DEFAULT 'default',
+        WORKFLOW_ID_ TEXT NOT NULL DEFAULT 'workflow-standard-requirement',
+        TYPE_ID_ TEXT,
+        STAGE_ID_ TEXT,
+        STAGE_NAME_ TEXT,
+        STATUS_ID_ TEXT,
+        STATUS_NAME_ TEXT,
+        TITLE_ TEXT NOT NULL CHECK (length(trim(TITLE_)) > 0),
+        DESCRIPTION_ TEXT NOT NULL DEFAULT '',
+        STATUS_ TEXT NOT NULL CHECK (STATUS_ IN ('backlog','todo','in_progress','in_review','completed')),
+        PRIORITY_ TEXT NOT NULL CHECK (PRIORITY_ IN ('P0','P1','P2','P3')),
+        SEVERITY_ TEXT NOT NULL DEFAULT 'medium' CHECK (SEVERITY_ IN ('critical','high','medium','low')),
+        POSITION_ REAL NOT NULL,
+        ASSIGNEE_AGENT_KEY_ TEXT,
+        ASSIGNEE_ID_ TEXT,
+        WORKER_TYPE_ TEXT CHECK (WORKER_TYPE_ IN ('human','agent') OR WORKER_TYPE_ IS NULL),
+        WORKER_ID_ TEXT,
+        WORKER_AGENT_ TEXT,
+        REVIEWER_ID_ TEXT,
+        REVIEW_REQUIRED_ INTEGER NOT NULL DEFAULT 0,
+        ACTIVE_REVIEW_ID_ TEXT,
+        ACTIVE_RUN_ID_ TEXT,
+        CHAT_ID_ TEXT,
+        RUN_ID_ TEXT,
+        RUN_STATE_ TEXT CHECK (RUN_STATE_ IN ('running','completed','failed','cancelled') OR RUN_STATE_ IS NULL),
+        DISPATCH_STATE_ TEXT,
+        DISPATCH_DEVICE_ID_ TEXT,
+        DISPATCH_COMMAND_ID_ TEXT,
+        DISPATCH_UPDATED_AT_ TEXT,
+        AUTOMATION_ID_ TEXT,
+        AUTOMATION_ENABLED_ INTEGER NOT NULL DEFAULT 0,
+        AUTOMATION_CRON_ TEXT,
+        AUTOMATION_MESSAGE_ TEXT,
+        AUTOMATION_TIMEZONE_ TEXT,
+        ATTACHMENT_CHAT_ID_ TEXT,
+        ATTACHMENTS_JSON_ TEXT NOT NULL DEFAULT '[]',
+        DETAIL_JSON_ TEXT NOT NULL DEFAULT '{}',
+        REVISION_ INTEGER NOT NULL DEFAULT 0,
+        CREATED_AT_ TEXT NOT NULL,
+        UPDATED_AT_ TEXT NOT NULL,
+        DELETED_AT_ TEXT
+      );
+
+      INSERT INTO issue_priority_migration (
+        ID_, REMOTE_ISSUE_ID_, BOARD_ID_, PROJECT_ID_, WORKFLOW_ID_, TYPE_ID_, STAGE_ID_, STAGE_NAME_, STATUS_ID_, STATUS_NAME_,
+        TITLE_, DESCRIPTION_, STATUS_, PRIORITY_, SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
+        WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
+        CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
+        AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_, AUTOMATION_TIMEZONE_,
+        ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, DETAIL_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+      )
+      SELECT
+        ID_, REMOTE_ISSUE_ID_, BOARD_ID_, PROJECT_ID_, WORKFLOW_ID_, TYPE_ID_, STAGE_ID_, STAGE_NAME_, STATUS_ID_, STATUS_NAME_,
+        TITLE_, DESCRIPTION_, STATUS_,
+        CASE PRIORITY_
+          WHEN 'P0' THEN 'P0'
+          WHEN 'P1' THEN 'P1'
+          WHEN 'P2' THEN 'P2'
+          WHEN 'P3' THEN 'P3'
+          WHEN 'high' THEN 'P1'
+          WHEN 'medium' THEN 'P2'
+          WHEN 'low' THEN 'P3'
+          ELSE 'P2'
+        END,
+        SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
+        WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
+        CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
+        AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_, AUTOMATION_TIMEZONE_,
+        ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, DETAIL_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+      FROM issue;
+
+      DROP TABLE issue;
+      ALTER TABLE issue_priority_migration RENAME TO issue;
+      CREATE INDEX IF NOT EXISTS idx_issue_status_position
+        ON issue(STATUS_, POSITION_, ID_)
+        WHERE DELETED_AT_ IS NULL;
+
+      COMMIT;
+    `);
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // Preserve the original migration error.
+    }
+    throw error;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
 }
 
 function seedDesktopKanban(db: DatabaseSync, currentUser: KanbanCurrentUser) {

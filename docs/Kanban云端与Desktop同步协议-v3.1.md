@@ -215,7 +215,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
   "title": "实现 Desktop 离线恢复",
   "description": "Desktop 重新上线后恢复云端状态。",
   "dueTime": "2026-07-18T18:00:00+08:00",
-  "priority": "high",
+  "priority": "P1",
   "severity": "medium",
   "position": 120.5,
   "assigneeAgentKey": "codeAssistant",
@@ -257,7 +257,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 枚举：
 
 - `status` / `columnKey`：`backlog`、`todo`、`in_progress`、`in_review`、`completed`。
-- `priority`：`high`、`medium`、`low`。
+- `priority`：`P0`、`P1`、`P2`、`P3`；Desktop 内部与 SQLite 缓存使用同一枚举。旧缓存中的 `high`、`medium`、`low` 仅在数据库迁移边界依次转换为 `P1`、`P2`、`P3`，不得继续作为新 wire 值写入。
 - `severity`：`critical`、`high`、`medium`、`low`。
 - `dueTime`：可选 RFC3339 截止时间；缺失或 `null` 表示未设置。Desktop 在主进程边界将其严格归一化为 epoch-ms `dueAt` 供共享契约和 renderer 使用，不接受无时区文本或有损的亚毫秒精度。
 - `workerType`：`human`、`agent`、`null`。
@@ -625,7 +625,7 @@ Success payload：
       "description": "支持 Desktop 离线后恢复。",
       "issueTypeKey": "task",
       "workflowId": "workflow-standard-task",
-      "priority": "high",
+      "priority": "P1",
       "severity": "medium",
       "assigneeId": "user-1",
       "workerType": "agent",
@@ -657,7 +657,7 @@ Target v3.1 用于内容和非流程字段更新。stage/status/position 使用 
     "input": {
       "title": "实现完整快照恢复",
       "description": "更新后的说明。",
-      "priority": "high",
+      "priority": "P1",
       "severity": "high",
       "attachments": [],
       "labelIds": ["label-sync"],
@@ -1304,7 +1304,7 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
       "projectId": "local-project-1",
       "description": "只保存在当前电脑。",
       "status": "todo",
-      "priority": "medium",
+      "priority": "P2",
       "severity": "medium",
       "assigneeAgentKey": "codeAssistant",
       "syncToCloud": false
@@ -1324,7 +1324,7 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
     "id": "local_issue_1",
     "input": {
       "title": "更新后的本地任务",
-      "priority": "high",
+      "priority": "P1",
       "syncToCloud": false
     }
   }
