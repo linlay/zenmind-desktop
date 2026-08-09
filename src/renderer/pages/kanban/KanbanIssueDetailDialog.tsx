@@ -1,5 +1,7 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Children, isValidElement, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
+import ReactMarkdown, { defaultUrlTransform, type Components } from "react-markdown";
+import remarkGfm from "remark-gfm";
 import {
   ApartmentOutlined,
   CalendarOutlined,
@@ -231,6 +233,135 @@ function EmptyBlock({ children }: { children: ReactNode }) {
   return <div className="kanban-detail-empty"><FileTextOutlined /><span>{children}</span></div>;
 }
 
+function transformMarkdownUrl(url: string, key: string) {
+  if (key === "src" && /^data:image\/(?:gif|jpeg|png|webp);base64,/iu.test(url)) {
+    return url;
+  }
+  return defaultUrlTransform(url);
+}
+
+const MARKDOWN_COMPONENTS: Components = {
+  a: ({ node: _node, href, children, ...props }) => (
+    <a
+      {...props}
+      href={href}
+      onClick={(event) => {
+        event.preventDefault();
+        if (href) void window.electronAPI.shell.openExternal(href);
+      }}
+    >
+      {children}
+    </a>
+  ),
+  img: ({ node: _node, alt, ...props }) => <img {...props} alt={alt ?? ""} loading="lazy" decoding="async" />
+};
+
+function currentMermaidTheme(): "default" | "dark" {
+  return document.documentElement.dataset.theme === "dark" ? "dark" : "default";
+}
+
+function MermaidDiagram({ source, t }: { source: string; t: TranslateFunction }) {
+  const reactId = useId();
+  const renderSequenceRef = useRef(0);
+  const [theme, setTheme] = useState(currentMermaidTheme);
+  const [svg, setSvg] = useState("");
+  const [renderFailed, setRenderFailed] = useState(false);
+  useEffect(() => {
+    if (typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(() => setTheme(currentMermaidTheme()));
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+    return () => observer.disconnect();
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    const sequence = ++renderSequenceRef.current;
+    const diagramId = `kanban-mermaid-${reactId.replace(/[^a-z0-9_-]/giu, "")}-${sequence}`;
+    setSvg("");
+    setRenderFailed(false);
+    void (async () => {
+      try {
+        const { default: mermaid } = await import("mermaid");
+        mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          suppressErrorRendering: true,
+          maxTextSize: 50_000,
+          maxEdges: 500,
+          htmlLabels: false,
+          theme,
+          fontFamily: "Inter, ui-sans-serif, system-ui, sans-serif"
+        });
+        const parsed = await mermaid.parse(source, { suppressErrors: true });
+        if (!parsed) throw new Error("Invalid Mermaid syntax");
+        const result = await mermaid.render(diagramId, source);
+        if (!cancelled) setSvg(result.svg);
+      } catch {
+        if (!cancelled) setRenderFailed(true);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [reactId, source, theme]);
+
+  if (renderFailed) {
+    return (
+      <div className="kanban-detail-mermaid is-error">
+        <p role="alert">{t("kanban.detail.mermaidRenderFailed")}</p>
+        <pre><code className="language-mermaid">{source}</code></pre>
+      </div>
+    );
+  }
+  if (!svg) {
+    return <div className="kanban-detail-mermaid is-loading" role="status">{t("kanban.detail.mermaidLoading")}</div>;
+  }
+  return (
+    <figure className="kanban-detail-mermaid" aria-label={t("kanban.detail.mermaidLabel")}>
+      <div className="kanban-detail-mermaid-svg" dangerouslySetInnerHTML={{ __html: svg }} />
+    </figure>
+  );
+}
+
+function MarkdownPreview({
+  value,
+  emptyText,
+  variant,
+  t
+}: {
+  value: string;
+  emptyText?: string;
+  variant: "description" | "comment";
+  t: TranslateFunction;
+}) {
+  const components = useMemo<Components>(() => ({
+    ...MARKDOWN_COMPONENTS,
+    pre: ({ node: _node, children, ...props }) => {
+      const codeElement = Children.toArray(children)[0];
+      if (isValidElement<{ className?: string; children?: ReactNode }>(codeElement)
+        && /(?:^|\s)language-mermaid(?:\s|$)/iu.test(codeElement.props.className ?? "")) {
+        const source = String(codeElement.props.children ?? "").replace(/\n$/u, "");
+        return <MermaidDiagram source={source} t={t} />;
+      }
+      return <pre {...props}>{children}</pre>;
+    }
+  }), [t]);
+  if (!value.trim()) {
+    return emptyText ? <div className={`kanban-detail-markdown is-${variant} is-empty`}>{emptyText}</div> : null;
+  }
+  return (
+    <div className={`kanban-detail-markdown is-${variant}`}>
+      <ReactMarkdown
+        components={components}
+        remarkPlugins={[remarkGfm]}
+        skipHtml
+        urlTransform={transformMarkdownUrl}
+      >
+        {value}
+      </ReactMarkdown>
+    </div>
+  );
+}
+
 function resizeTextareaToContent(textarea: HTMLTextAreaElement | null) {
   if (!textarea) return;
   textarea.style.height = "auto";
@@ -310,7 +441,7 @@ export function KanbanIssueDetailDialog({
     });
     observer.observe(textarea);
     return () => observer.disconnect();
-  }, []);
+  }, [editing]);
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -423,11 +554,13 @@ export function KanbanIssueDetailDialog({
             </div>
 
             <DetailSection title={t("kanban.detail.descriptionTitle")} icon={<FileTextOutlined />}>
-              {editing ? <div className="kanban-detail-markdown-toolbar">
-                <span>Markdown</span>
-                <button type="button" onClick={() => void addAttachment(true)}><PaperClipOutlined />{t("kanban.form.addAttachment")}</button><button type="button" onClick={insertMermaid}>Mermaid</button>
-              </div> : null}
-              <textarea ref={descriptionEditorRef} className={`kanban-detail-description-editor ${editing ? "is-editing" : ""}`} value={draft.description} disabled={!editing} onChange={(event) => updateDraft({ description: event.target.value })} rows={editing ? 12 : 6} placeholder={t("kanban.detail.noDescription")} />
+              {editing ? <>
+                <div className="kanban-detail-markdown-toolbar">
+                  <span>Markdown</span>
+                  <button type="button" onClick={() => void addAttachment(true)}><PaperClipOutlined />{t("kanban.form.addAttachment")}</button><button type="button" onClick={insertMermaid}>Mermaid</button>
+                </div>
+                <textarea ref={descriptionEditorRef} className="kanban-detail-description-editor is-editing" value={draft.description} onChange={(event) => updateDraft({ description: event.target.value })} rows={12} placeholder={t("kanban.detail.noDescription")} />
+              </> : <MarkdownPreview value={draft.description} emptyText={t("kanban.detail.noDescription")} variant="description" t={t} />}
             </DetailSection>
 
             <DetailSection title={t("kanban.detail.attachmentsTitle")} icon={<PaperClipOutlined />} meta={t("kanban.detail.itemCount", { count: visibleAttachments.length })}>
@@ -441,7 +574,7 @@ export function KanbanIssueDetailDialog({
               {comments.length > 0 ? <div className="kanban-detail-comment-list">{comments.map((comment) => {
                 const author = usersDetailById.get(comment.authorUserId ?? "");
                 const name = author?.displayName || comment.authorAgent || comment.authorUserId || t("kanban.detail.unknownActor");
-                return <article key={comment.id}><DetailAvatar label={name} avatarUrl={author?.avatarUrl} agent={Boolean(comment.authorAgent)} /><div><p><strong>{name}</strong><time>{formatDateTime(comment.createdAt, locale)}</time></p><span>{comment.body}</span></div></article>;
+                return <article key={comment.id}><DetailAvatar label={name} avatarUrl={author?.avatarUrl} agent={Boolean(comment.authorAgent)} /><div><p className="kanban-detail-comment-meta"><strong>{name}</strong><time>{formatDateTime(comment.createdAt, locale)}</time></p><MarkdownPreview value={comment.body} variant="comment" t={t} /></div></article>;
               })}</div> : <EmptyBlock>{t("kanban.detail.noComments")}</EmptyBlock>}
             </DetailSection>
           </main>

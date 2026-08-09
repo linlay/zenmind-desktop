@@ -30,6 +30,7 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
 test("Kanban detail opens independently from create and preserves the cloud read-only boundary", () => {
   const page = read("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const detail = read("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
+  const packageManifest = JSON.parse(read("package.json"));
   assert.match(page, /setModal\(\{ mode: "create" \}\)/);
   assert.match(page, /const openEditModal = useCallback\(\(issue: KanbanIssue\) => \{[\s\S]{0,180}setDetailIssueId\(issue\.id\)/);
   assert.match(page, /<KanbanIssueDetailDialog/);
@@ -40,7 +41,18 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /P0: "kanban\.priority\.p0"[\s\S]{0,180}P3: "kanban\.priority\.p3"/);
   assert.match(detail, /kanban\.importance\.\$\{issue\.severity\}/);
   assert.match(detail, /id="kanban-detail-title"[\s\S]{0,160}disabled=\{!editing\}/);
-  assert.match(detail, /kanban-detail-description-editor[\s\S]{0,160}disabled=\{!editing\}/);
+  assert.equal(packageManifest.dependencies["react-markdown"], "^10.1.0");
+  assert.equal(packageManifest.dependencies["remark-gfm"], "^4.0.1");
+  assert.equal(packageManifest.dependencies.mermaid, "^11.16.1");
+  assert.match(detail, /editing \? <>[\s\S]{0,900}<textarea ref=\{descriptionEditorRef\}[\s\S]{0,500}<MarkdownPreview value=\{draft\.description\}/);
+  assert.match(detail, /<MarkdownPreview value=\{comment\.body\} variant="comment" t=\{t\} \/>/);
+  assert.match(detail, /<ReactMarkdown[\s\S]{0,260}remarkPlugins=\{\[remarkGfm\]\}[\s\S]{0,120}skipHtml[\s\S]{0,120}urlTransform=\{transformMarkdownUrl\}/);
+  assert.match(detail, /language-mermaid[\s\S]{0,260}<MermaidDiagram source=\{source\} t=\{t\}/);
+  assert.match(detail, /import\("mermaid"\)/);
+  assert.match(detail, /securityLevel: "strict"[\s\S]{0,160}suppressErrorRendering: true[\s\S]{0,160}maxTextSize: 50_000/);
+  assert.match(detail, /mermaid\.parse\(source, \{ suppressErrors: true \}\)/);
+  assert.match(detail, /kanban\.detail\.mermaidRenderFailed[\s\S]{0,180}<pre><code className="language-mermaid">\{source\}/);
+  assert.doesNotMatch(detail, /<span>\{comment\.body\}<\/span>/);
   assert.match(detail, /!isCloud \? <button[\s\S]{0,180}setEditing\(true\)/);
   assert.match(detail, /if \(await onSave\(draft\)\) setEditing\(false\)/);
   assert.match(detail, /kanban\.detail\.cloudReadonly/);
