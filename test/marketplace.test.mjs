@@ -19,7 +19,6 @@ const {
   importSkillFromCommand,
   importSandboxImageFromPath,
   installMarketItem,
-  installWebsiteAppArchiveFromPath,
   listMarketItems,
   refreshMarketCatalog,
   saveMarketSettings,
@@ -27,6 +26,9 @@ const {
   uninstallMarketItem,
   __testInternals
 } = require("../dist-electron/main/marketplace.js");
+const { webappManager } = require("../dist-electron/main/webs/webapps/manager.js");
+const installWebsiteAppArchiveFromPath = (app, archivePath, options) =>
+  webappManager.installArchive(app, archivePath, options);
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
 const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/assistant/pet/desktop-pet.js");

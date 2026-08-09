@@ -1,6 +1,7 @@
 export const WEBAPP_BRIDGE_MODULE_PATH = "/__desktop/bridge.js";
 
 export const WEBAPP_BRIDGE_MODULE_SOURCE = String.raw`const ACTION_PATH = "/__desktop/actions/call";
+const APP_CONFIG_PATH = "/__desktop/app-config.json";
 
 export class DesktopBridgeError extends Error {
   constructor(action, code, message, details) {
@@ -65,7 +66,50 @@ async function listCapabilities() {
   return call("desktop.capabilities.list");
 }
 
+async function getAppConfig() {
+  let response;
+  try {
+    response = await fetch(APP_CONFIG_PATH, { headers: { "Accept": "application/json" } });
+  } catch (error) {
+    throw new DesktopBridgeError(
+      "desktop.app.getConfig",
+      "bridge_unavailable",
+      "WebApp configuration is unavailable.",
+      { cause: error?.name || "Error" }
+    );
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new DesktopBridgeError(
+      "desktop.app.getConfig",
+      "invalid_response",
+      "Desktop returned an invalid WebApp configuration."
+    );
+  }
+  if (!response.ok || !payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw new DesktopBridgeError(
+      "desktop.app.getConfig",
+      "invalid_response",
+      "Desktop returned an invalid WebApp configuration."
+    );
+  }
+  const appConfig = payload.appConfig;
+  if (!appConfig || typeof appConfig !== "object" || Array.isArray(appConfig)) {
+    throw new DesktopBridgeError(
+      "desktop.app.getConfig",
+      "invalid_response",
+      "Desktop returned an invalid appConfig."
+    );
+  }
+  return appConfig;
+}
+
 export const desktop = Object.freeze({
+  app: Object.freeze({
+    getConfig: getAppConfig
+  }),
   capabilities: Object.freeze({
     list: listCapabilities,
     async has(id) {
@@ -76,7 +120,7 @@ export const desktop = Object.freeze({
     }
   }),
   assistant: Object.freeze({
-    chat: (input) => call("desktop.assistant.chat", input)
+    chat: (message) => call("desktop.assistant.chat", { message })
   }),
   native: Object.freeze({
     browser: Object.freeze({

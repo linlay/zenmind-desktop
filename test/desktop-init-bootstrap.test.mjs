@@ -73,10 +73,13 @@ function writeBootstrapWebappSeed(app, platform, id, manifest = {}) {
   fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
   fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html><title>seed</title>", "utf8");
   fs.writeFileSync(path.join(webappDir, "webapp.json"), `${JSON.stringify({
-    schemaVersion: 2,
+    schemaVersion: 1,
     id,
-    kind: "webapp",
     label: id,
+    version: "1.0.0",
+    target: "universal",
+    openMode: "workspace",
+    appConfig: {},
     frontend: {
       root: "frontend",
       index: "index.html",
@@ -553,8 +556,11 @@ test("desktop-init v2 installs mixed Sites once, keeps declared order, and later
   };
   const initPath = writeDesktopInit(app, "darwin", init);
   writeBootstrapWebappSeed(app, "darwin", "ops-console", {
-    copilotAgentKey: "canonicalCopilot",
-    agentKey: "ignoredLegacyCopilot"
+    appConfig: { seeded: true },
+    desktopBridge: {
+      version: 1,
+      capabilities: { "native.clipboard.write": {} }
+    }
   });
 
   const first = applyDesktopInitBootstrap(app, "darwin");
@@ -578,9 +584,9 @@ test("desktop-init v2 installs mixed Sites once, keeps declared order, and later
   assert.equal(docs.copilotAgentKey, "desktopAssistant");
   assert.equal("agentKey" in docs, false);
   assert.equal("copilotAgentKey" in portal, false);
-  assert.equal(webapp.schemaVersion, 3);
-  assert.equal(webapp.copilotAgentKey, "canonicalCopilot");
-  assert.equal("agentKey" in webapp, false);
+  assert.equal(webapp.schemaVersion, 1);
+  assert.deepEqual(webapp.appConfig, { seeded: true });
+  assert.deepEqual(webapp.desktopBridge.capabilities, { "native.clipboard.write": {} });
   assert.deepEqual(readJson(orderPath).entryKeys, [
     "website:docs",
     "webapp:ops-console",

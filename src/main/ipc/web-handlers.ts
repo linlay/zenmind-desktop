@@ -15,23 +15,12 @@ import {
   updateWebsiteItem
 } from "../webs/websites/actions";
 import { cacheWebsiteFavicon } from "../webs/websites/favicon-cache";
-import {
-  exportWebappArchive,
-  listWebappItems,
-  removeWebappItem,
-  updateWebappItem
-} from "../webs/webapps/actions";
+import { webappManager } from "../webs/webapps/manager";
 import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
-import { webappRuntime } from "../webs/webapps/runtime";
 import { webappWindowManager } from "../webs/webapps/window-manager";
-import {
-  readWebappRuntimeSettings,
-  writeWebappRuntimeSettings
-} from "../webs/webapps/runtime-settings";
 import { resetWebappRuntimeProbeCaches } from "../webs/webapps/launchers";
 import { getWebappPublishStatus, publishWebapp, unpublishWebapp } from "../webs/webapps/publisher";
-import { installWebsiteAppArchiveFromPath } from "../marketplace/website-app-market";
 import { t } from "../i18n/main-i18n";
 
 export interface WebIpcHandlerOptions {
@@ -147,13 +136,13 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   });
 
   ipcMain.handle("webs.webapps.start", async (_event: any, id: string) =>
-    webappRuntime.start(app, id)
+    webappManager.runtime.start(app, id)
   );
   ipcMain.handle("webs.webapps.openWindow", async (event: any, id: string) =>
     (options.openWebappWindow ?? ((targetApp, webappId, sender) =>
       webappWindowManager.open(targetApp, webappId, sender)))(app, id, event?.sender)
   );
-  ipcMain.handle("webs.webapps.list", async () => listWebappItems(app));
+  ipcMain.handle("webs.webapps.list", async () => webappManager.listResult(app));
   ipcMain.handle("webs.webapps.import", async () => {
     const result = await showFileDialog({
       title: t("dialog.importWebapp.title"),
@@ -177,7 +166,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
 
     const importPath = result.filePaths[0];
     try {
-      const installResult = await installWebsiteAppArchiveFromPath(app, importPath, {
+      const installResult = await webappManager.installArchive(app, importPath, {
         source: "local"
       });
       const nextItems = listWebEntries(app).items;
@@ -206,7 +195,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     }
   });
   ipcMain.handle("webs.webapps.export", async (_event: any, id: string) => {
-    const item = listWebappItems(app).items.find((candidate) => candidate.id === id) ?? null;
+    const item = webappManager.listResult(app).items.find((candidate) => candidate.id === id) ?? null;
     if (!item) {
       return {
         ok: false,
@@ -229,10 +218,10 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
         message: t("webapp.exportCancelled")
       };
     }
-    return exportWebappArchive(app, item.id, saveResult.filePath);
+    return webappManager.exportArchive(app, item.id, saveResult.filePath);
   });
   ipcMain.handle("webs.webapps.update", async (_event: any, id: string, input: any) => {
-    const result = updateWebappItem(app, id, input);
+    const result = webappManager.update(app, id, input);
     if (result.ok) {
       if (input?.openMode === "workspace") {
         webappWindowManager.close(id);
@@ -242,7 +231,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     return result;
   });
   ipcMain.handle("webs.webapps.uninstall", async (_event: any, id: string) => {
-    const result = await removeWebappItem(app, id);
+    const result = await webappManager.remove(app, id);
     if (result.ok) {
       webappWindowManager.close(id);
     }
@@ -250,10 +239,10 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
   });
   ipcMain.handle("webs.webapps.stop", async (_event: any, id: string) => {
     webappWindowManager.close(id);
-    return webappRuntime.stop(app, id);
+    return webappManager.runtime.stop(app, id);
   });
   ipcMain.handle("webs.webapps.restart", async (_event: any, id: string) => {
-    const result = await webappRuntime.restart(app, id);
+    const result = await webappManager.runtime.restart(app, id);
     if (result.ok && result.state?.webUrl) {
       await webappWindowManager.reload(id, result.state);
     } else {
@@ -262,7 +251,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     return result;
   });
   ipcMain.handle("webs.webapps.getStatus", async (_event: any, id: string) => {
-    const state = webappRuntime.getStatus(app, id);
+    const state = webappManager.runtime.getStatus(app, id);
     return {
       ok: Boolean(state),
       state,
@@ -270,15 +259,15 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     };
   });
   ipcMain.handle("webs.webapps.checkRuntime", async (_event: any, id: string) =>
-    webappRuntime.checkRuntime(app, id)
+    webappManager.runtime.checkRuntime(app, id)
   );
   ipcMain.handle("webs.webapps.getRuntimeSettings", async () => ({
     ok: true,
-    settings: readWebappRuntimeSettings(app),
+    settings: webappManager.readRuntimeSettings(app),
     message: t("webapp.runtimeSettingsLoaded")
   }));
   ipcMain.handle("webs.webapps.saveRuntimeSettings", async (_event: any, input: any) => {
-    const settings = writeWebappRuntimeSettings(app, input && typeof input === "object" ? input : {});
+    const settings = webappManager.saveRuntimeSettings(app, input && typeof input === "object" ? input : {});
     resetWebappRuntimeProbeCaches();
     return {
       ok: true,
@@ -290,7 +279,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     getWebappPublishStatus(app, id)
   );
   ipcMain.handle("webs.webapps.publish", async (_event: any, id: string) => {
-    const result = await publishWebapp(app, id, webappRuntime.getStatus(app, id));
+    const result = await publishWebapp(app, id, webappManager.runtime.getStatus(app, id));
     options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", id);
     return result;
   });
@@ -300,6 +289,6 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     return result;
   });
   ipcMain.handle("webs.webapps.readLog", async (_event: any, id: string, target: unknown, options?: WebappLogReadOptions) =>
-    webappRuntime.readLog(app, id, normalizeLogTarget(target), options)
+    webappManager.runtime.readLog(app, id, normalizeLogTarget(target), options)
   );
 }

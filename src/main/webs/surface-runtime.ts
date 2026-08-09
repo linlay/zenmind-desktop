@@ -5,7 +5,7 @@ import {
   type BrowserSurfaceRegistryOptions
 } from "../browser-surface-registry";
 import { listWebEntries } from "../ipc/web-handlers";
-import { webappRuntime } from "./webapps/runtime";
+import { webappManager } from "./webapps/manager";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -46,7 +46,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
         });
         continue;
       }
-      const state = webappRuntime.getStatus(options.app, item.id);
+      const state = webappManager.runtime.getStatus(options.app, item.id);
       if (state?.webUrl) {
         items.push({
           id: item.id,
