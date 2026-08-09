@@ -3025,6 +3025,15 @@ export function AppSidebar({
     });
   }
 
+  function handleAssistantChatDoubleClick(
+    event: MouseEvent<HTMLButtonElement>,
+    chat: AssistantNavChatItem,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    handleAssistantRenameChat(chat);
+  }
+
   async function handleConfirmRenameChat(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!assistantChatRenameDialog || assistantChatRenameDialog.pending) {
@@ -4029,6 +4038,7 @@ export function AppSidebar({
           .join(" ")}
         aria-current={isActive ? "page" : undefined}
         onClick={() => void handleAssistantOpenChat(chat)}
+        onDoubleClick={(event) => handleAssistantChatDoubleClick(event, chat)}
         {...getSidebarRovingItemProps(focusId, roving)}
         data-sidebar-nav-kind={roving ? navigationKind : undefined}
         data-sidebar-agent-key={
@@ -5060,7 +5070,7 @@ export function AppSidebar({
         }}
       >
         <form
-          className="sidebar-agent-dialog"
+          className="sidebar-agent-dialog sidebar-chat-rename-dialog"
           role="dialog"
           aria-modal="true"
           aria-labelledby="sidebar-chat-rename-dialog-title"

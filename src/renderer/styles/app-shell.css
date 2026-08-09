@@ -672,7 +672,7 @@
   overflow: hidden;
   border: 1px solid rgba(148, 163, 184, 0.22);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--desktop-overlay-panel-bg);
   box-shadow: 0 18px 54px rgba(15, 23, 42, 0.2);
   color: #0f172a;
 }
@@ -914,7 +914,7 @@
 
 :root[data-theme="dark"] .desktop-global-search-panel {
   border-color: rgba(255, 255, 255, 0.12);
-  background: #2D2D2D;
+  background: var(--desktop-overlay-panel-bg);
   color: #e2e8f0;
   box-shadow: none;
 }

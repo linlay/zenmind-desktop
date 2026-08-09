@@ -4518,6 +4518,7 @@ test("desktop global search contract is wired across main preload renderer and h
   const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
+  const themeCss = readSourceFile("src", "renderer", "styles", "theme.css");
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const overlay = readSourceFile("src", "renderer", "app-shell", "search", "DesktopGlobalSearchOverlay.tsx");
   const rows = readSourceFile("src", "renderer", "app-shell", "search", "globalSearchRows.ts");
@@ -4591,9 +4592,12 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.doesNotMatch(appShellCss, /\.desktop-global-search-row-status\.is-unread\s*\{/);
   assert.match(appShellCss, /\.desktop-global-search-layer\s*\{[^}]*align-items:\s*center;[^}]*justify-content:\s*center;[^}]*padding:\s*16px;/);
   assert.match(appShellCss, /\.desktop-global-search-panel\s*\{[^}]*width:\s*min\(640px,\s*100%\);[^}]*min-height:\s*240px;[^}]*max-height:\s*min\(680px,\s*calc\(100vh - 32px\)\);/);
+  assert.match(appShellCss, /\.desktop-global-search-panel\s*\{[^}]*background:\s*var\(--desktop-overlay-panel-bg\);/);
+  assert.match(themeCss, /:root\s*\{[\s\S]*?--desktop-overlay-panel-bg:\s*rgba\(255, 255, 255, 0\.94\);/);
+  assert.match(themeCss, /:root\[data-theme="dark"\]\s*\{[\s\S]*?--desktop-overlay-panel-bg:\s*#2D2D2D;/);
   assert.match(appShellCss, /\.desktop-global-search-results\s*\{[^}]*flex:\s*1 1 auto;[^}]*min-height:\s*0;[^}]*overflow:\s*auto;/);
   assert.match(appShellCss, /@media \(max-width:\s*680px\)\s*\{[\s\S]*?\.desktop-global-search-layer\s*\{[^}]*padding:\s*16px 10px;[^}]*\}[\s\S]*?\.desktop-global-search-panel\s*\{[^}]*max-height:\s*calc\(100vh - 32px\);/);
-  assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*#2D2D2D;[\s\S]*?box-shadow:\s*none;/);
+  assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*var\(--desktop-overlay-panel-bg\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row-icon\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /\.desktop-global-search-row-icon \.sidebar-illustration,[\s\S]*?\.desktop-global-search-row-icon \.sidebar-action-icon,[\s\S]*?\.desktop-global-search-row-icon \.settings-sidebar-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row\.is-active\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.08\);/);
@@ -4629,6 +4633,94 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.unread": "未读聊天"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.skills": "打开技能中心"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.mcpConnectors": "打开 MCP 连接"/);
+});
+
+test("Chinese chat copy consistently uses 对话 while technical sessions keep 会话", () => {
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const messages = new Map(
+    [...zhCN.matchAll(/^\s*"([^"]+)":\s*"([^"]*)",?$/gmu)].map((match) => [match[1], match[2]])
+  );
+  const chatKeys = [
+    "sidebar.chat.exportFailed",
+    "sidebar.chat.nameRequired",
+    "sidebar.chat.renameFailed",
+    "sidebar.chat.archiveFailed",
+    "sidebar.chat.deleteFailed",
+    "sidebar.chat.deleteConfirm",
+    "sidebar.chat.moreActions",
+    "sidebar.chat.actions",
+    "sidebar.chat.renameTitle",
+    "sidebar.chats.card.status",
+    "sidebar.agent.noChats",
+    "enterpriseChat.searchChats",
+    "enterpriseChat.conversationActions",
+    "enterpriseChat.conversationActionsFor",
+    "enterpriseChat.deleteConversation",
+    "enterpriseChat.directConversation",
+    "enterpriseChat.noConversations",
+    "enterpriseChat.supportBundleConfirm",
+    "kanban.runtime.chatMissing",
+    "kanban.runtime.chatUpdated",
+    "desktopPet.replyMissingContent",
+    "assistant.chatIdRequired",
+    "assistant.chatIdOrNameRequired",
+    "assistant.agentChatsMarkedRead",
+    "assistant.chatRenamed",
+    "assistant.chatArchived",
+    "assistant.chatArchiveFailed",
+    "assistant.chatExportDownloaded",
+    "desktop.globalSearch.placeholder",
+    "desktop.globalSearch.searching",
+    "desktop.globalSearch.empty.default",
+    "desktop.globalSearch.empty.query",
+    "desktop.globalSearch.group.chats",
+    "desktop.globalSearch.action.newChat",
+    "desktop.globalSearch.action.newChat.description",
+  ];
+
+  for (const key of chatKeys) {
+    assert.match(messages.get(key) ?? "", /对话/u, `${key} should use 对话`);
+  }
+
+  assert.deepEqual(
+    [...messages].filter(([, value]) => value.includes("会话")),
+    [
+      ["sidebar.sso.sessionStep", "浏览器会话"],
+      ["settings.usage.overview.sessions", "会话数"],
+      ["settings.usage.details.noDevices", "暂无设备会话。"],
+      ["sso.restoringLogin", "正在验证上次的单点登录会话。"],
+      ["sso.restoreSessionExpired", "上游登录会话已失效。"],
+      ["sso.completingLogin", "登录会话已验证，正在获取用户信息和访问令牌。"],
+      ["sso.logoutReturnedMessage", "IAM 会话登出已返回 Desktop。"],
+      ["sso.config.browserSessionMissing", "未配置浏览器会话验证。"],
+      ["sso.sessionRequiredForUserInfo", "写入用户信息前必须先完成 SSO 会话验证。"],
+    ]
+  );
+});
+
+test("chat rename dialog shares the Cmd+K panel background", () => {
+  const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
+  const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
+  const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
+
+  assert.match(sidebar, /className="sidebar-agent-dialog sidebar-chat-rename-dialog"/);
+  assert.match(navigationCss, /\.sidebar-chat-rename-dialog\s*\{[^}]*background:\s*var\(--desktop-overlay-panel-bg\);/);
+  assert.match(appShellCss, /\.desktop-global-search-panel\s*\{[^}]*background:\s*var\(--desktop-overlay-panel-bg\);/);
+});
+
+test("sidebar chat rows open the rename dialog on double click", () => {
+  const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
+  const doubleClickHandler = sidebar.match(
+    /function handleAssistantChatDoubleClick[\s\S]*?async function handleConfirmRenameChat/u,
+  )?.[0] ?? "";
+
+  assert.match(doubleClickHandler, /event\.preventDefault\(\);/u);
+  assert.match(doubleClickHandler, /event\.stopPropagation\(\);/u);
+  assert.match(doubleClickHandler, /handleAssistantRenameChat\(chat\);/u);
+  assert.match(
+    sidebar,
+    /onClick=\{\(\) => void handleAssistantOpenChat\(chat\)\}[\s\S]{0,120}onDoubleClick=\{\(event\) => handleAssistantChatDoubleClick\(event, chat\)\}/u,
+  );
 });
 
 test("assistant navigation agents stay empty before platform data is ready", () => {

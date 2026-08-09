@@ -2373,6 +2373,10 @@
   box-shadow: var(--panel-shadow);
 }
 
+.sidebar-chat-rename-dialog {
+  background: var(--desktop-overlay-panel-bg);
+}
+
 .sidebar-agent-dialog-head,
 .sidebar-agent-dialog-actions {
   display: flex;
