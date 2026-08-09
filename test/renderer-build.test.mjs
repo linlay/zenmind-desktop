@@ -3581,7 +3581,9 @@ test("Kanban toolbar merges issue count into the wider project filter and compac
   assert.match(kanbanPage, /<KanbanProjectFilter[\s\S]{0,240}filteredCount=\{filteredCount\}[\s\S]{0,80}totalCount=\{totalCount\}/);
   assert.match(kanbanPage, /className="kanban-project-filter-count"[\s\S]{0,80}\{countLabel\}/);
   assert.doesNotMatch(kanbanPage, /className="kanban-count"/);
-  assert.match(kanbanStyles, /\.kanban-project-filter-trigger\s*\{[\s\S]{0,120}width:\s*clamp\(220px,\s*18vw,\s*260px\);/);
+  assert.match(kanbanStyles, /\.kanban-project-filter\s*\{[\s\S]{0,160}width:\s*100%;[\s\S]{0,100}max-width:\s*360px;/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-trigger\s*\{[\s\S]{0,100}width:\s*100%;/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-menu\s*\{[\s\S]{0,180}width:\s*min\(360px,\s*calc\(100vw - 32px\)\);/);
   assert.match(kanbanStyles, /\.kanban-project-filter-count\s*\{[\s\S]{0,260}border-left:\s*1px solid/);
   assert.match(kanbanStyles, /\.kanban-cloud-status\s*\{[\s\S]{0,80}width:\s*auto;[\s\S]{0,80}min-width:\s*0;/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-cloud-status\s*\{[^}]*min-width:\s*150px/);
@@ -3792,6 +3794,8 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /className="kanban-toolbar-start"[\s\S]{0,180}<KanbanProjectFilter/);
   assert.match(kanbanPage, /className="kanban-toolbar-center"/);
   assert.match(kanbanPage, /className="kanban-toolbar-end"/);
+  assert.match(globalStyles, /\.kanban-toolbar\s*\{[\s\S]{0,240}grid-template-columns:\s*minmax\(300px,\s*360px\) minmax\(320px,\s*480px\) minmax\(120px,\s*1fr\);/);
+  assert.match(globalStyles, /\.kanban-toolbar-center\s*\{[\s\S]{0,80}justify-content:\s*flex-start;/);
   assert.match(globalStyles, /\.kanban-tool\s*\{[\s\S]{0,180}min-width:\s*32px;[\s\S]{0,180}height:\s*32px;/);
   assert.match(globalStyles, /\.kanban-search\s*\{[\s\S]{0,180}height:\s*32px;/);
   assert.doesNotMatch(globalStyles, /\.kanban-tool\s*\{[\s\S]{0,180}height:\s*36px;/);
@@ -3868,7 +3872,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.issue-card-action\s*\{/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.kanban-columns,[\s\S]{0,220}scrollbar-width:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.is-windows-platform \.kanban-columns,[\s\S]{0,260}scrollbar-width:\s*thin;/);
-  assert.match(globalStyles, /@container kanban-page \(max-width:\s*1120px\)/);
+  assert.match(globalStyles, /@container kanban-page \(max-width:\s*820px\)/);
   assert.match(globalStyles, /@media \(prefers-reduced-motion:\s*reduce\)/);
   assert.doesNotMatch(globalStyles, /\.kanban-agent-picker\s*\{/);
   assert.match(globalStyles, /\.kanban-chat-modal-layer\s*\{/);
