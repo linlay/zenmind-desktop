@@ -7,7 +7,7 @@ import {
   getDesktopWebappsDataRoot,
   getServiceStateRoot
 } from "./user-paths";
-import { disposeWebappInstallation } from "./webs/webapps/actions";
+import { webappManager } from "./webs/webapps/manager";
 import { t } from "./i18n/main-i18n";
 
 type AgentPlatformCaller = (app: App, path: string, options?: { method?: string; body?: unknown }) => Promise<unknown>;
@@ -105,7 +105,7 @@ function resolvePluginResourceDir(pluginDir: string, relativePath: string) {
   return resolved;
 }
 
-function copyWebappResource(app: App, service: ServiceDefinition, pluginDir: string) {
+async function installWebappResources(app: App, service: ServiceDefinition, pluginDir: string) {
   const webappsRoot = getDesktopWebappsDataRoot(app);
   const ownership = readOwnership(app, service.id);
   ownership.webapps = ownership.webapps ?? {};
@@ -118,23 +118,31 @@ function copyWebappResource(app: App, service: ServiceDefinition, pluginDir: str
     if (fs.existsSync(targetDir) && !ownership.webapps[webapp.id]) {
       throw new Error(`webapp resource already exists and is not owned by plugin ${service.id}: ${webapp.id}`);
     }
-    fs.mkdirSync(webappsRoot, { recursive: true });
-    fs.rmSync(targetDir, { recursive: true, force: true });
-    fs.cpSync(sourceDir, targetDir, { recursive: true, force: true });
+    await webappManager.installPackageDirectory(app, sourceDir, {
+      expectedId: webapp.id,
+      source: "local",
+      recordInstallation: false
+    });
     ownership.webapps[webapp.id] = { updatedAt: nowIso() };
+    writeOwnership(app, service.id, ownership);
   }
-  writeOwnership(app, service.id, ownership);
 }
 
-async function removeWebappResources(app: App, service: ServiceDefinition, ownership: PluginResourceOwnership) {
+async function removeWebappResources(
+  app: App,
+  service: ServiceDefinition,
+  ownership: PluginResourceOwnership,
+  options: { preserveUserData?: boolean } = {}
+) {
   const webappsRoot = getDesktopWebappsDataRoot(app);
   for (const webappId of Object.keys(ownership.webapps ?? {})) {
-    const disposed = await disposeWebappInstallation(
+    const disposed = await webappManager.dispose(
       app,
       {
         id: webappId,
         label: `plugin WebApp ${webappId}`,
-        installPath: path.join(webappsRoot, webappId)
+        installPath: path.join(webappsRoot, webappId),
+        preserveUserData: options.preserveUserData
       },
       t("pluginResources.webappRemoved")
     );
@@ -312,7 +320,7 @@ export async function syncPluginResources(app: App, service: ServiceDefinition, 
     return { ok: true, message: t("pluginResources.noneDeclared") };
   }
   updateDesiredStatus(app, service, "running");
-  copyWebappResource(app, service, pluginDir);
+  await installWebappResources(app, service, pluginDir);
   await syncAgentPlatformResources(app, service);
   return { ok: true, message: t("pluginResources.synced") };
 }
@@ -324,7 +332,7 @@ export async function stopPluginResources(app: App, service: ServiceDefinition) 
   const ownership = updateDesiredStatus(app, service, "stopped", {
     pendingAgentPlatformSync: false
   });
-  await removeWebappResources(app, service, ownership);
+  await removeWebappResources(app, service, ownership, { preserveUserData: true });
   await removeAgentPlatformResources(app, service);
   return { ok: true, message: t("pluginResources.uninstalled") };
 }

@@ -18,13 +18,7 @@ import {
   readWebsiteItems,
   writeWebsiteItem
 } from "./webs/websites/store";
-import {
-  isWebappFile,
-  readWebappItemFromDir,
-  readWebappItemsWithoutMigration,
-  WEBAPP_FILE,
-  writeCanonicalWebappManifest
-} from "./webs/webapps/store";
+import { webappManager } from "./webs/webapps/manager";
 import { readWebOrderKeys, writeWebOrderKeys } from "./webs/order-store";
 import { normalizeWebId } from "./webs/common";
 import { resolveRuntimeRoot } from "./env-bootstrap";
@@ -619,16 +613,16 @@ function prepareBootstrapSites(
       `WebApp seed path escapes desktop-init/sites: ${id}`
     );
     assertBootstrapTreeHasNoSymlinks(sourceDirReal);
-    const rawManifest = readJsonFile(pathApi.join(sourceDirReal, WEBAPP_FILE));
-    if (!isWebappFile(rawManifest) || !isRecord(rawManifest)) {
-      throw new Error(`WebApp seed manifest is invalid: ${id}/${WEBAPP_FILE}`);
+    const rawManifest = readJsonFile(pathApi.join(sourceDirReal, webappManager.manifestFileName));
+    if (!webappManager.isManifest(rawManifest) || !isRecord(rawManifest)) {
+      throw new Error(`WebApp seed manifest is invalid: ${id}/${webappManager.manifestFileName}`);
     }
     if (readText(rawManifest.id) !== id) {
       throw new Error(`WebApp seed manifest id must match directory id: ${id}`);
     }
-    const item = readWebappItemFromDir(sourceDirReal, id);
+    const item = webappManager.readPackage(sourceDirReal, id);
     if (!item || item.id !== id) {
-      throw new Error(`WebApp seed manifest is invalid: ${id}/${WEBAPP_FILE}`);
+      throw new Error(`WebApp seed manifest is invalid: ${id}/${webappManager.manifestFileName}`);
     }
     seenIds.add(id);
     prepared.push({ kind, id, entryKey: item.entryKey, item, sourceDir: sourceDirReal });
@@ -655,7 +649,7 @@ function applyWebsiteDefaults(
   // Validate every declared Site and packaged WebApp before touching user data.
   const prepared = prepareBootstrapSites(initPath, webs, platform);
   const existingWebsites = readWebsiteItems(app, platform);
-  const existingWebapps = readWebappItemsWithoutMigration(app, platform);
+  const existingWebapps = webappManager.listInstalled(app, platform);
   const websiteById = new Map(existingWebsites.map((item) => [item.id, item] as const));
   const websiteByUrl = new Map(existingWebsites.map((item) => [item.url, item] as const));
   const webappById = new Map(existingWebapps.map((item) => [item.id, item] as const));
@@ -717,7 +711,7 @@ function applyWebsiteDefaults(
       for (const site of webappsToInstall) {
         const stagedDir = path.join(stagingRoot, site.id);
         fs.cpSync(site.sourceDir, stagedDir, { recursive: true, errorOnExist: true });
-        const stagedItem = writeCanonicalWebappManifest(stagedDir, site.id);
+        const stagedItem = webappManager.canonicalizePackage(stagedDir, site.id);
         if (stagedItem.id !== site.id) {
           throw new Error(`Staged WebApp id changed unexpectedly: ${site.id}`);
         }

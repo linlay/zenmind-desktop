@@ -29,7 +29,7 @@ import {
   createDesktopMobileWebappCatalog,
   readDesktopMobileWebappItem
 } from "../webs/webapps/mobile-catalog";
-import { webappRuntime } from "../webs/webapps/runtime";
+import { webappManager } from "../webs/webapps/manager";
 
 export type AssistantBridgeRuntimeOptions = {
   app: App;
@@ -101,7 +101,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       item: resolvedItem
     });
   }
-  webappRuntime.setPublicationChangeListener(emitWebappChanged);
+  webappManager.runtime.setPublicationChangeListener(emitWebappChanged);
 
   const desktopActionOptions = createDesktopActionOptions(options.context, {
     assistantBridge,
@@ -233,7 +233,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     emitWebappChanged,
     refreshDesktopActionBridge,
     stop() {
-      webappRuntime.setPublicationChangeListener(null);
+      webappManager.runtime.setPublicationChangeListener(null);
       void options.cdpIntegration.stop();
       stopDesktopActionBridge();
       void stopDesktopWsServer();

@@ -29,6 +29,11 @@ import {
   type WebappBridgePermissionStatus
 } from "../shared/webapp-bridge";
 import {
+  WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS,
+  WEBAPP_ID_PATTERN,
+  getWebappAssistantChatConfig
+} from "../shared/webapp-manifest";
+import {
   DESKTOP_ACTION_BRIDGE_HOST,
   DESKTOP_ACTION_DEFINITIONS,
   getDesktopActionDefinition,
@@ -63,9 +68,11 @@ import {
   removeWebsiteItem,
   updateWebsiteItem
 } from "./webs/websites/actions";
-import { webappRuntime } from "./webs/webapps/runtime";
-import { removeWebappItem, updateWebappItem } from "./webs/webapps/actions";
-import { readWebappItems } from "./webs/webapps/store";
+import {
+  webappManager,
+  WebappInstallPolicyError,
+  WebappSystemRuntimeRequiredError
+} from "./webs/webapps/manager";
 import { webappWindowManager } from "./webs/webapps/window-manager";
 import {
   getWebappPublishStatus,
@@ -84,7 +91,6 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "./marketplace";
-import { installWebsiteAppArchiveFromPath } from "./marketplace/website-app-market";
 import { normalizeMarketApiBaseUrl } from "./marketplace/common";
 import { readDesktopProfileFromRoot } from "./desktop-profile-store";
 import { getDesktopConfigRoot } from "./user-paths";
@@ -244,7 +250,7 @@ class WebappActionRateLimiter {
 
 const webappActionRateLimiter = new WebappActionRateLimiter();
 const CONFIRMATION_COMPACT_VALUE_MAX_CHARS = 280;
-const MAX_ASSISTANT_PROMPT_CHARS = 12_000;
+const MAX_ASSISTANT_PROMPT_CHARS = WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS;
 let activeServer: http.Server | null = null;
 let activeServerPort = 0;
 
@@ -375,11 +381,13 @@ function readServiceId(args: Record<string, unknown>) {
 }
 
 function readWebappId(args: Record<string, unknown>) {
-  const webappId = readString(args, "webappId") || readString(args, "id");
-  if (!webappId) {
-    throw new Error("webappId is required");
+  const raw = typeof args.webappId === "string"
+    ? args.webappId
+    : typeof args.id === "string" ? args.id : "";
+  if (!WEBAPP_ID_PATTERN.test(raw)) {
+    throw new Error("webappId must be present and already valid");
   }
-  return webappId;
+  return raw;
 }
 
 function readWebsiteId(args: Record<string, unknown>) {
@@ -1190,7 +1198,7 @@ async function callRendererAction(
 }
 
 function webappRoute(webappId: string) {
-  return `/webs/webapp:${webappId.trim()}`;
+  return `/webs/webapp:${webappId}`;
 }
 
 function websiteRoute(websiteId: string) {
@@ -1206,7 +1214,7 @@ function notifyWebsChanged(options: DesktopActionBridgeOptions) {
 }
 
 async function openWebapp(options: DesktopActionBridgeOptions, action: string, webappId: string, installResult?: unknown) {
-  const command = await webappRuntime.start(options.app, webappId);
+  const command = await webappManager.runtime.start(options.app, webappId);
   if (!command.ok || !command.state) {
     return fail(action, "webapp_open_failed", command.message, command);
   }
@@ -1222,22 +1230,72 @@ async function openWebapp(options: DesktopActionBridgeOptions, action: string, w
 
 async function installWebapp(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
   const archivePath = readString(args, "archivePath");
-  const expectedId = readString(args, "expectedId");
+  const hasExpectedId = Object.hasOwn(args, "expectedId");
+  const expectedId = hasExpectedId && typeof args.expectedId === "string" ? args.expectedId : "";
   if (Object.prototype.hasOwnProperty.call(args, "itemId")) {
     return fail(action, "invalid_args", "itemId is not supported; install market items with desktop.market.installItem.");
   }
   if (!archivePath) {
     return fail(action, "invalid_args", "archivePath is required.");
   }
+  if (hasExpectedId && !WEBAPP_ID_PATTERN.test(expectedId)) {
+    return fail(action, "invalid_args", "expectedId must already be a valid WebApp id; it is never normalized.");
+  }
   const previousItemIds = new Set(
     listWebEntries(options.app).items
       .filter((item) => item.kind === "webapp")
       .map((item) => item.id)
   );
-  const installResult = await installWebsiteAppArchiveFromPath(options.app, archivePath, {
-    ...(expectedId ? { expectedId } : {}),
-    validateUpdatedRuntime: false
-  });
+  const installOptions = { ...(expectedId ? { expectedId } : {}) };
+  let installResult;
+  try {
+    installResult = await webappManager.installArchive(options.app, archivePath, installOptions);
+  } catch (error) {
+    if (error instanceof WebappInstallPolicyError) {
+      return fail(action, error.code, error.message, error.details);
+    }
+    if (!(error instanceof WebappSystemRuntimeRequiredError)) {
+      throw error;
+    }
+    const dialogOptions: OpenDialogOptions = {
+      title: `Select ${error.executable} executable for ${error.webappId}`,
+      properties: ["openFile"]
+    };
+    const owner = options.getMainWindow();
+    const selection = options.showFileDialog
+      ? await options.showFileDialog(dialogOptions, owner)
+      : owner && !owner.isDestroyed()
+        ? await dialog.showOpenDialog(owner, dialogOptions)
+        : await dialog.showOpenDialog(dialogOptions);
+    const executablePath = selection.canceled ? "" : String(selection.filePaths[0] || "").trim();
+    if (!executablePath || !path.isAbsolute(executablePath)) {
+      return fail(action, error.code, error.message, {
+        webappId: error.webappId,
+        executable: error.executable
+      });
+    }
+    webappManager.bindSystemExecutable(
+      options.app,
+      error.webappId,
+      error.executable,
+      executablePath
+    );
+    try {
+      installResult = await webappManager.installArchive(options.app, archivePath, installOptions);
+    } catch (retryError) {
+      if (retryError instanceof WebappInstallPolicyError) {
+        return fail(action, retryError.code, retryError.message, retryError.details);
+      }
+      if (retryError instanceof WebappSystemRuntimeRequiredError) {
+        return fail(action, retryError.code, retryError.message, {
+          webappId: retryError.webappId,
+          executable: retryError.executable,
+          selectedPath: executablePath
+        });
+      }
+      throw retryError;
+    }
+  }
   const webappId = typeof installResult.itemId === "string" ? installResult.itemId.trim() : "";
   if (!installResult.ok || !webappId) {
     return fail(action, "webapp_install_failed", installResult.message, installResult);
@@ -1286,23 +1344,23 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     return ok(action, { item, route });
   }
   if (action === "desktop.webapp.getStatus") {
-    return ok(action, webappRuntime.getStatus(options.app, readWebappId(args)));
+    return ok(action, webappManager.runtime.getStatus(options.app, readWebappId(args)));
   }
   if (action === "desktop.webapp.checkRuntime") {
     const webappId = readWebappId(args);
-    if (!readWebappItems(options.app).some((item) => item.id === webappId)) {
+    if (!webappManager.list(options.app).some((item) => item.id === webappId)) {
       return fail(action, "webapp_not_found", t("webapp.notFound"), { webappId });
     }
-    return ok(action, webappRuntime.checkRuntime(options.app, webappId));
+    return ok(action, webappManager.runtime.checkRuntime(options.app, webappId));
   }
   if (action === "desktop.webapp.start") {
-    return ok(action, await webappRuntime.start(options.app, readWebappId(args)));
+    return ok(action, await webappManager.runtime.start(options.app, readWebappId(args)));
   }
   if (action === "desktop.webapp.stop") {
-    return ok(action, await webappRuntime.stop(options.app, readWebappId(args)));
+    return ok(action, await webappManager.runtime.stop(options.app, readWebappId(args)));
   }
   if (action === "desktop.webapp.restart") {
-    return ok(action, await webappRuntime.restart(options.app, readWebappId(args)));
+    return ok(action, await webappManager.runtime.restart(options.app, readWebappId(args)));
   }
   if (action === "desktop.webapp.open") {
     return openWebapp(options, action, readWebappId(args));
@@ -1310,7 +1368,7 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   if (action === "desktop.webapp.updatePreferences") {
     const webappId = readWebappId(args);
     const patch = asRecord(args.patch ?? args.input ?? args);
-    const result = updateWebappItem(options.app, webappId, {
+    const result = webappManager.update(options.app, webappId, {
       ...(typeof patch.label === "string" ? { label: patch.label } : {}),
       ...(typeof patch.copilotAgentKey === "string" ? { copilotAgentKey: patch.copilotAgentKey } : {}),
       ...(patch.openMode === "workspace" || patch.openMode === "dialog" ? { openMode: patch.openMode } : {})
@@ -1323,14 +1381,14 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   }
   if (action === "desktop.webapp.getPublishStatus") {
     const webappId = readWebappId(args);
-    if (!readWebappItems(options.app).some((item) => item.id === webappId)) {
+    if (!webappManager.list(options.app).some((item) => item.id === webappId)) {
       return fail(action, "webapp_not_found", t("webapp.notFound"), { webappId });
     }
     return ok(action, await getWebappPublishStatus(options.app, webappId));
   }
   if (action === "desktop.webapp.publish") {
     const webappId = readWebappId(args);
-    const runtimeState = webappRuntime.getStatus(options.app, webappId);
+    const runtimeState = webappManager.runtime.getStatus(options.app, webappId);
     if (!runtimeState) {
       return fail(action, "webapp_not_found", t("webapp.notFound"), { webappId });
     }
@@ -1356,7 +1414,7 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   }
   if (action === "desktop.webapp.uninstall") {
     const webappId = readWebappId(args);
-    const result = await removeWebappItem(options.app, webappId);
+    const result = await webappManager.remove(options.app, webappId);
     if (!result.ok) {
       return fail(action, "webapp_uninstall_failed", result.message, result);
     }
@@ -1427,11 +1485,11 @@ function getWebappBridgeCapabilities(
   options: DesktopActionBridgeOptions,
   webappId: string
 ): WebappBridgeCapabilitiesResult | null {
-  const item = readWebappItems(options.app).find((candidate) => candidate.id === webappId) ?? null;
-  if (!item || item.schemaVersion !== 5) {
+  const item = webappManager.list(options.app).find((candidate) => candidate.id === webappId) ?? null;
+  if (!item || item.schemaVersion !== 1) {
     return null;
   }
-  const declared = new Set(item.desktopBridge?.capabilities ?? []);
+  const declared = new Set(Object.keys(item.desktopBridge?.capabilities ?? {}));
   const microphonePermission = getMicrophonePermission(options);
   const notificationAvailable = options.showNotification ? true : Notification.isSupported();
   return {
@@ -1478,7 +1536,7 @@ async function executeNativeWebappAction(
     const result = getWebappBridgeCapabilities(options, webappId);
     return result
       ? ok(action, result)
-      : fail(action, "unsupported_schema", "Desktop Bridge v1 requires WebApp schema v5.");
+      : fail(action, "unsupported_schema", "Desktop Bridge v1 requires WebApp manifest schema v1.");
   }
 
   const owner = getWebappDialogOwner(options, webappId);
@@ -1734,19 +1792,69 @@ async function executeAction(
 
   switch (action) {
     case "desktop.assistant.chat": {
-      const message = readString(args, "message");
-      if (!message) {
+      const isWebappInvocation = invocation.kind === "webappPage" || invocation.kind === "webappBackend";
+      const allowedWebappArgs = new Set(["message"]);
+      if (isWebappInvocation) {
+        const rejectedKeys = Object.keys(args).filter((key) => !allowedWebappArgs.has(key));
+        if (rejectedKeys.length > 0) {
+          return fail(
+            action,
+            "invalid_args",
+            `WebApp assistant calls only accept message; rejected: ${rejectedKeys.join(", ")}.`
+          );
+        }
+      }
+      const message = typeof args.message === "string" ? args.message : "";
+      if (!message.trim()) {
         return fail(action, "invalid_args", "message is required");
       }
-      if (message.length > MAX_ASSISTANT_PROMPT_CHARS) {
-        return fail(action, "invalid_args", `message must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`);
-      }
       const settings = getAssistantSettings(options.app);
+      let agentKey = settings.desktopHelperAgentKey;
+      let assistantMessage = message;
+      if (isWebappInvocation) {
+        const item = webappManager.list(options.app).find((candidate) => candidate.id === invocation.webappId) ?? null;
+        const assistantConfig = item ? getWebappAssistantChatConfig(item) : null;
+        if (!assistantConfig) {
+          return fail(action, "forbidden", "assistant.chat is not declared by this WebApp.");
+        }
+        if (assistantConfig.agentKey) {
+          let agents: Awaited<ReturnType<AgentPlatformAssistantBridge["listAgents"]>> = [];
+          try {
+            agents = await options.assistantBridge.listAgents();
+          } catch {
+            agents = [];
+          }
+          if (!agents.some((candidate) => candidate.agentKey === assistantConfig.agentKey)) {
+            return fail(
+              action,
+              "assistant_agent_unavailable",
+              `assistant agent is unavailable: ${assistantConfig.agentKey}`
+            );
+          }
+          agentKey = assistantConfig.agentKey;
+        }
+        if (assistantConfig.instruction) {
+          assistantMessage = [
+            "[WebApp instruction]",
+            assistantConfig.instruction,
+            "",
+            "[User input]",
+            message
+          ].join("\n");
+        }
+      }
+      if (assistantMessage.length > MAX_ASSISTANT_PROMPT_CHARS) {
+        return fail(
+          action,
+          "assistant_message_too_long",
+          `combined assistant input must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`
+        );
+      }
       const completion = await options.assistantBridge.completeText({
-        agentKey: settings.desktopHelperAgentKey,
+        agentKey,
         source: "copilot",
         action: "chat",
-        message
+        message: assistantMessage
       });
       if (!completion.ok) {
         return fail(action, "assistant_failed", completion.message, {
@@ -1763,6 +1871,7 @@ async function executeAction(
       }
       return ok(action, {
         text,
+        ...(isWebappInvocation ? { agentKey } : {}),
         runId: completion.runId,
         chatId: completion.chatId
       });

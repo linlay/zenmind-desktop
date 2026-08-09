@@ -31,10 +31,7 @@ export type WebappBridgePermissionStatus =
   | "unavailable"
   | "not_required";
 
-export interface WebappDesktopBridgeConfig {
-  version: typeof WEBAPP_BRIDGE_VERSION;
-  capabilities: WebappBridgeCapability[];
-}
+export type { WebappDesktopBridgeConfig } from "./webapp-manifest";
 
 export interface WebappBridgeCapabilityState {
   id: WebappBridgeCapability | WebappBridgeReservedCapability;

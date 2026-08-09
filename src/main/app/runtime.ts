@@ -39,7 +39,7 @@ import {
   runStartupPreparation,
 } from "../services/manager";
 import { restorePublishedWebapps } from "../webs/webapps/publication-runtime";
-import { webappRuntime } from "../webs/webapps/runtime";
+import { webappManager } from "../webs/webapps/manager";
 import { webappWindowManager } from "../webs/webapps/window-manager";
 import { loadInstalledPlugins } from "../plugin-loader";
 import { configurePluginResources, retryPendingPluginResourceSync } from "../plugin-resources";
@@ -299,7 +299,7 @@ export function createMainProcessRuntime() {
       } else if (action === "desktop.support.requestWebappLogs") {
         const webappId = readArg("webappId") || readArg("id");
         const target = readArg("target") === "error" ? "error" : "main";
-        const result = webappRuntime.readLog(app, webappId, target, { limitBytes: 512 * 1024 });
+        const result = webappManager.runtime.readLog(app, webappId, target, { limitBytes: 512 * 1024 });
         filename = `webapp-${webappId}-${target}.log`;
         content = result.content;
       } else if (action === "desktop.support.requestSystemInfo") {
@@ -553,7 +553,7 @@ export function createMainProcessRuntime() {
       } catch {
         return false;
       }
-      return webappRuntime.allowsLocalPageCapability(requestingUrl, "native.microphone");
+      return webappManager.runtime.allowsLocalPageCapability(requestingUrl, "native.microphone");
     }
   });
   webappWindowManager.setDisposalListener((webappId) => {

@@ -2400,8 +2400,7 @@ export function SettingsPage({
   const [webappRuntimeCheckById, setWebappRuntimeCheckById] = useState<Record<string, WebappRuntimeCheckResult | null>>({});
   const [webappRuntimeSettings, setWebappRuntimeSettings] = useState<WebappRuntimeSettings>({
     schemaVersion: 1,
-    javaExecutable: "",
-    containerEngine: "auto"
+    systemExecutables: {}
   });
   const [webappRuntimeSettingsPending, setWebappRuntimeSettingsPending] = useState(false);
   const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
@@ -4935,6 +4934,12 @@ export function SettingsPage({
               : publishState?.status === "unpublished"
                 ? t("settings.webapps.publishStopped")
               : publishHint;
+        const systemExecutableName = selectedWebapp?.backend?.command.type === "system"
+          ? selectedWebapp.backend.command.executable
+          : "";
+        const systemExecutableBindingKey = systemExecutableName && selectedWebapp
+          ? `${selectedWebapp.id}:${systemExecutableName}`
+          : "";
         return (
           <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-webapps">
             <div className="page-head control-center-hero">
@@ -4953,6 +4958,7 @@ export function SettingsPage({
               </div>
             </div>
 
+            {systemExecutableBindingKey ? (
             <section className="config-panel web-detail-card webapp-runtime-settings-card">
               <div className="config-head">
                 <div className="config-title-main">
@@ -4965,34 +4971,19 @@ export function SettingsPage({
               <div className="settings-control-grid">
                 <label className="settings-control-row">
                   <span className="settings-control-row-copy">
-                    <strong>{t("settings.webapps.javaExecutable")}</strong>
-                    <small>{t("settings.webapps.javaExecutableHint")}</small>
+                    <strong>{t("settings.webapps.systemExecutable")}</strong>
+                    <small>{t("settings.webapps.systemExecutableHint", { executable: systemExecutableName })}</small>
                   </span>
                   <Input
-                    value={webappRuntimeSettings.javaExecutable}
-                    placeholder={t("settings.webapps.javaExecutablePlaceholder")}
+                    value={webappRuntimeSettings.systemExecutables[systemExecutableBindingKey] ?? ""}
+                    placeholder={t("settings.webapps.systemExecutablePlaceholder")}
                     onChange={(event) => setWebappRuntimeSettings((current) => ({
                       ...current,
-                      javaExecutable: event.target.value
+                      systemExecutables: {
+                        ...current.systemExecutables,
+                        [systemExecutableBindingKey]: event.target.value
+                      }
                     }))}
-                  />
-                </label>
-                <label className="settings-control-row">
-                  <span className="settings-control-row-copy">
-                    <strong>{t("settings.webapps.defaultContainerEngine")}</strong>
-                  </span>
-                  <Select
-                    classNames={SETTINGS_SELECT_CLASS_NAMES}
-                    value={webappRuntimeSettings.containerEngine}
-                    onChange={(containerEngine) => setWebappRuntimeSettings((current) => ({
-                      ...current,
-                      containerEngine
-                    }))}
-                    options={[
-                      { value: "auto", label: t("settings.webapps.containerEngineAuto") },
-                      { value: "docker", label: "Docker" },
-                      { value: "podman", label: "Podman" }
-                    ]}
                   />
                 </label>
               </div>
@@ -5007,6 +4998,7 @@ export function SettingsPage({
                 </Button>
               </div>
             </section>
+            ) : null}
 
             <div className="control-center-shell web-settings-shell">
               <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.webapps.catalogAria")}>
@@ -5288,19 +5280,11 @@ export function SettingsPage({
                       {renderWebDetailRow(t("settings.webapps.launcher"), runtimeState?.launcher)}
                       {renderWebDetailRow(
                         t("settings.webapps.ownership"),
-                        runtimeState?.ownership === "desktop"
-                          ? t("settings.webapps.ownershipDesktop")
-                          : runtimeState?.ownership === "external"
-                            ? t("settings.webapps.ownershipExternal")
-                            : ""
+                        runtimeState?.ownership === "desktop" ? t("settings.webapps.ownershipDesktop") : ""
                       )}
                       {renderWebDetailRow(t("settings.webapps.runtimeVersion"), runtimeState?.runtimeVersion || runtimeCheck?.runtimeVersion)}
                       {renderWebDetailRow(
-                        selectedWebapp.backend?.launcher === "java"
-                          ? t("settings.webapps.javaDetectedPath")
-                          : selectedWebapp.backend?.launcher === "container"
-                            ? t("settings.webapps.containerExternalId")
-                            : t("settings.webapps.externalId"),
+                        t("settings.webapps.externalId"),
                         runtimeState?.externalId || runtimeCheck?.externalId
                       )}
                       {renderWebDetailRow(
@@ -5333,35 +5317,27 @@ export function SettingsPage({
                           : t("settings.webapps.openModeWorkspace")
                       )}
                       {renderWebDetailRow(t("settings.webapps.target"), selectedWebapp.target)}
-                      {renderWebDetailRow(t("settings.webapps.frontendMode"), selectedWebapp.frontend.mode)}
-                      {selectedWebapp.frontend.mode === "static" ? (
+                      {renderWebDetailRow(t("settings.webapps.frontendMode"), "static")}
+                      {renderWebDetailRow(t("settings.webapps.frontendRoot"), selectedWebapp.frontend.root)}
+                      {renderWebDetailRow(t("settings.webapps.frontendIndex"), selectedWebapp.frontend.index)}
+                      {renderWebDetailRow(t("settings.webapps.frontendSpa"), selectedWebapp.frontend.spa ? t("common.yes") : t("common.no"))}
+                      {renderWebDetailRow(t("settings.webapps.apiPrefix"), selectedWebapp.frontend.apiPrefix)}
+                      {renderWebDetailRow(t("settings.webapps.backendRuntime"), selectedWebapp.backend?.command.type ?? t("common.none"))}
+                      {selectedWebapp.backend ? (
                         <>
-                          {renderWebDetailRow(t("settings.webapps.frontendRoot"), selectedWebapp.frontend.root)}
-                          {renderWebDetailRow(t("settings.webapps.frontendIndex"), selectedWebapp.frontend.index)}
-                          {renderWebDetailRow(t("settings.webapps.frontendSpa"), selectedWebapp.frontend.spa ? t("common.yes") : t("common.no"))}
-                          {renderWebDetailRow(t("settings.webapps.apiPrefix"), selectedWebapp.frontend.apiPrefix)}
-                        </>
-                      ) : null}
-                      {renderWebDetailRow(t("settings.webapps.backendRuntime"), selectedWebapp.backend?.launcher ?? t("common.none"))}
-                      {selectedWebapp.backend && selectedWebapp.backend.launcher !== "container" ? (
-                        <>
-                          {renderWebDetailRow(t("settings.webapps.backendEntry"), selectedWebapp.backend.entry)}
+                          {renderWebDetailRow(
+                            t("settings.webapps.backendEntry"),
+                            selectedWebapp.backend.command.type === "electron-node"
+                              ? selectedWebapp.backend.command.script
+                              : selectedWebapp.backend.command.executable
+                          )}
                           {renderWebDetailRow(t("settings.webapps.backendArgs"), selectedWebapp.backend.args.join(" "))}
-                          {renderWebDetailRow(t("settings.webapps.backendPortSetting"), selectedWebapp.backend.port)}
                           {renderWebDetailRow(
                             t("settings.webapps.healthPath"),
                             selectedWebapp.backend.health.type === "http"
                               ? selectedWebapp.backend.health.path
                               : selectedWebapp.backend.health.type
                           )}
-                        </>
-                      ) : null}
-                      {selectedWebapp.backend?.launcher === "container" ? (
-                        <>
-                          {renderWebDetailRow(t("settings.webapps.containerEngine"), selectedWebapp.backend.engine)}
-                          {renderWebDetailRow(t("settings.webapps.containerName"), selectedWebapp.backend.containerName)}
-                          {renderWebDetailRow(t("settings.webapps.containerImage"), selectedWebapp.backend.image)}
-                          {renderWebDetailRow(t("settings.webapps.containerPort"), selectedWebapp.backend.containerPort)}
                         </>
                       ) : null}
                     </div>
