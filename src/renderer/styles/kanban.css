@@ -21,7 +21,16 @@
   --kanban-status-review: #f97316;
   --kanban-status-completed: #00b42a;
   --kanban-column-gap: 0px;
-  --kanban-column-min-width: 208px;
+  --kanban-content-min-width: 1060px;
+  --kanban-columns-inline-padding: 10px;
+  --kanban-column-min-width: calc(
+    (
+        var(--kanban-content-min-width) -
+          (2 * var(--kanban-columns-inline-padding)) -
+          (4 * var(--kanban-column-gap))
+      ) /
+      5
+  );
   --kanban-column-width: max(
     calc((100% - (4 * var(--kanban-column-gap))) / 5),
     var(--kanban-column-min-width)
@@ -803,7 +812,7 @@
   gap: var(--kanban-column-gap);
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 10px 12px 12px;
+  padding: 10px var(--kanban-columns-inline-padding) 12px;
   background: var(--kanban-bg);
   scrollbar-gutter: stable;
 }

@@ -3415,7 +3415,9 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /<MessageOutlined \/>/);
   assert.match(kanbanPage, /<DeleteOutlined \/>/);
 
-  assert.match(kanbanStyles, /--kanban-column-min-width:\s*208px;/);
+  assert.match(kanbanStyles, /--kanban-content-min-width:\s*1060px;/);
+  assert.match(kanbanStyles, /--kanban-columns-inline-padding:\s*10px;/);
+  assert.match(kanbanStyles, /--kanban-column-min-width:\s*calc\([\s\S]{0,360}var\(--kanban-content-min-width\)[\s\S]{0,360}\/\s*5\s*\);/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-page\s*\{[\s\S]{0,260}--issue-card:\s*#181818;/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-drag-overlay\s*\{[\s\S]{0,120}--issue-card:\s*#181818;/);
   assert.match(kanbanStyles, /\.kanban-column\s*\{[\s\S]{0,420}border-radius:\s*0;/);
@@ -3797,10 +3799,12 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /--kanban-column-gap:\s*0px;/);
-  assert.match(globalStyles, /--kanban-column-min-width:\s*208px;/);
+  assert.match(globalStyles, /--kanban-content-min-width:\s*1060px;/);
+  assert.match(globalStyles, /--kanban-columns-inline-padding:\s*10px;/);
+  assert.match(globalStyles, /--kanban-column-min-width:\s*calc\([\s\S]{0,360}var\(--kanban-content-min-width\)[\s\S]{0,360}\/\s*5\s*\);/);
   assert.doesNotMatch(globalStyles, /--kanban-column-fit-width/);
   assert.match(globalStyles, /--kanban-column-width:\s*max\(\s*calc\(\(100% - \(4 \* var\(--kanban-column-gap\)\)\) \/ 5\),\s*var\(--kanban-column-min-width\)\s*\);/);
-  assert.match(globalStyles, /\.kanban-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;/);
+  assert.match(globalStyles, /\.kanban-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;[\s\S]{0,140}padding:\s*10px var\(--kanban-columns-inline-padding\) 12px;/);
   assert.match(globalStyles, /\.kanban-column\s*\{/);
   assert.match(globalStyles, /\.kanban-column\s*\{[\s\S]{0,320}border:\s*0;[\s\S]{0,180}border-radius:\s*0;[\s\S]{0,220}box-shadow:\s*none;/);
   assert.match(globalStyles, /\.kanban-column \+ \.kanban-column\s*\{[\s\S]{0,100}border-left:\s*1px solid var\(--kanban-column-border\);/);
