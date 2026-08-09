@@ -3419,8 +3419,8 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /<MessageOutlined \/>/);
   assert.match(kanbanPage, /<DeleteOutlined \/>/);
 
-  assert.match(kanbanStyles, /--kanban-content-min-width:\s*1060px;/);
-  assert.match(kanbanStyles, /--kanban-columns-inline-padding:\s*10px;/);
+  assert.match(kanbanStyles, /--kanban-content-min-width:\s*1080px;/);
+  assert.doesNotMatch(kanbanStyles, /--kanban-columns-inline-padding:/);
   assert.match(kanbanStyles, /--kanban-column-min-width:\s*calc\([\s\S]{0,360}var\(--kanban-content-min-width\)[\s\S]{0,360}\/\s*5\s*\);/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-page\s*\{[\s\S]{0,260}--issue-card:\s*#181818;/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-drag-overlay\s*\{[\s\S]{0,120}--issue-card:\s*#181818;/);
@@ -3431,7 +3431,8 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /\.kanban-column-title strong\s*\{[\s\S]{0,200}font-size:\s*12px;[\s\S]{0,120}font-weight:\s*700;/);
   assert.match(kanbanStyles, /\.kanban-column-title span:last-child\s*\{[\s\S]{0,340}background:\s*transparent;[\s\S]{0,180}font-size:\s*10px;/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-column-actions button\s*\{[\s\S]{0,120}border-color:\s*transparent;[\s\S]{0,80}background:\s*transparent;/);
-  assert.match(kanbanStyles, /\.kanban-column-body\s*\{[\s\S]{0,260}gap:\s*4px;[\s\S]{0,100}padding:\s*4px;/);
+  assert.match(kanbanStyles, /\.kanban-column-body\s*\{[\s\S]{0,260}gap:\s*4px;[\s\S]{0,100}padding:\s*4px 8px 8px;/);
+  assert.match(kanbanStyles, /\.kanban-column\.is-completed \.kanban-column-body\s*\{[\s\S]{0,80}padding-right:\s*8px;/);
   assert.match(kanbanStyles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,220}height:\s*2px;/);
   assert.match(kanbanPage, /<PlusOutlined \/>/);
   assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,180}width:\s*100%;[\s\S]{0,120}min-width:\s*200px;/);
@@ -3802,7 +3803,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanPage, /busy \? "提交中" : issue\.runId \? "运行中" : "交给智能体"/);
   assert.doesNotMatch(kanbanPage, /aria-label=\{`\$\{meta\.label\} 更多`\}/);
   assert.match(globalStyles, /\.kanban-page\s*\{[\s\S]*?padding:\s*0;[\s\S]*?container-type:\s*inline-size;/);
-  assert.match(globalStyles, /\.kanban-toolbar\s*\{[\s\S]{0,180}min-height:\s*56px;[\s\S]{0,260}padding:\s*10px 16px;/);
+  assert.match(globalStyles, /\.kanban-toolbar\s*\{[\s\S]{0,180}min-height:\s*56px;[\s\S]{0,260}padding:\s*10px 8px;/);
   assert.match(kanbanPage, /className="kanban-toolbar-start"[\s\S]{0,180}<KanbanProjectFilter/);
   assert.match(kanbanPage, /className="kanban-toolbar-center"/);
   assert.match(kanbanPage, /className="kanban-toolbar-end"/);
@@ -3815,12 +3816,12 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /--kanban-column-gap:\s*0px;/);
-  assert.match(globalStyles, /--kanban-content-min-width:\s*1060px;/);
-  assert.match(globalStyles, /--kanban-columns-inline-padding:\s*10px;/);
+  assert.match(globalStyles, /--kanban-content-min-width:\s*1080px;/);
+  assert.doesNotMatch(globalStyles, /--kanban-columns-inline-padding:/);
   assert.match(globalStyles, /--kanban-column-min-width:\s*calc\([\s\S]{0,360}var\(--kanban-content-min-width\)[\s\S]{0,360}\/\s*5\s*\);/);
   assert.doesNotMatch(globalStyles, /--kanban-column-fit-width/);
   assert.match(globalStyles, /--kanban-column-width:\s*max\(\s*calc\(\(100% - \(4 \* var\(--kanban-column-gap\)\)\) \/ 5\),\s*var\(--kanban-column-min-width\)\s*\);/);
-  assert.match(globalStyles, /\.kanban-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;[\s\S]{0,140}padding:\s*10px var\(--kanban-columns-inline-padding\) 12px;/);
+  assert.match(globalStyles, /\.kanban-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;[\s\S]{0,140}padding:\s*0;/);
   assert.match(globalStyles, /\.kanban-column\s*\{/);
   assert.match(globalStyles, /\.kanban-column\s*\{[\s\S]{0,320}border:\s*0;[\s\S]{0,180}border-radius:\s*0;[\s\S]{0,220}box-shadow:\s*none;/);
   assert.match(globalStyles, /\.kanban-column \+ \.kanban-column\s*\{[\s\S]{0,100}border-left:\s*1px solid var\(--kanban-column-border\);/);
@@ -3853,7 +3854,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanStyles, /\.kanban-column-summary\s*\{/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-empty-illustration\s*\{/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.kanban-page\s*\{[\s\S]{0,260}--kanban-bg:\s*#111418;[\s\S]{0,260}background:/);
-  assert.match(kanbanStyles, /--kanban-column-tint:\s*color-mix\(in srgb, var\(--surface-soft, #f7faff\) 76%, transparent\);/);
+  assert.match(kanbanStyles, /--kanban-column-tint:\s*#F3F4F6;/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-column\.is-(?:backlog|todo|in_progress|in_review|completed)\s*\{[^}]*--kanban-column-tint:/);
   assert.match(kanbanStyles, /\.kanban-empty-column\s*\{[\s\S]{0,320}background:\s*transparent;/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-empty-column\s*\{[\s\S]{0,100}background:\s*transparent;/);
@@ -3887,8 +3888,6 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.kanban-columns,[\s\S]{0,220}scrollbar-width:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.is-windows-platform \.kanban-columns,[\s\S]{0,260}scrollbar-width:\s*thin;/);
   assert.match(globalStyles, /@container kanban-page \(max-width:\s*820px\)/);
-  assert.match(kanbanStyles, /@container kanban-page \(max-width:\s*820px\)\s*\{[\s\S]{0,420}\.kanban-toolbar\s*\{[\s\S]{0,260}padding:\s*10px 8px;/);
-  assert.match(kanbanStyles, /@container kanban-page \(max-width:\s*820px\)\s*\{[\s\S]{0,1200}\.kanban-columns\s*\{\s*padding:\s*0;/);
   assert.match(globalStyles, /@media \(prefers-reduced-motion:\s*reduce\)/);
   assert.doesNotMatch(globalStyles, /\.kanban-agent-picker\s*\{/);
   assert.match(globalStyles, /\.kanban-chat-modal-layer\s*\{/);

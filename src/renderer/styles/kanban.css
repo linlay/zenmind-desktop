@@ -13,7 +13,7 @@
   --kanban-border: var(--line, rgba(15, 23, 42, 0.08));
   --kanban-accent: var(--accent, #2663eb);
   --kanban-accent-soft: var(--accent-soft, #e8f0ff);
-  --kanban-column-tint: color-mix(in srgb, var(--surface-soft, #f7faff) 76%, transparent);
+  --kanban-column-tint: #F3F4F6;
   --kanban-column-border: var(--line, rgba(148, 163, 184, 0.22));
   --kanban-status-backlog: #86909c;
   --kanban-status-todo: #facc15;
@@ -21,12 +21,10 @@
   --kanban-status-review: #f97316;
   --kanban-status-completed: #00b42a;
   --kanban-column-gap: 0px;
-  --kanban-content-min-width: 1060px;
-  --kanban-columns-inline-padding: 10px;
+  --kanban-content-min-width: 1080px;
   --kanban-column-min-width: calc(
     (
         var(--kanban-content-min-width) -
-          (2 * var(--kanban-columns-inline-padding)) -
           (4 * var(--kanban-column-gap))
       ) /
       5
@@ -98,7 +96,7 @@
   grid-template-columns: minmax(300px, 360px) minmax(320px, 480px) minmax(120px, 1fr);
   align-items: center;
   gap: 12px;
-  padding: 10px 16px;
+  padding: 10px 8px;
   overflow: visible;
   border-bottom: 1px solid rgba(148, 163, 184, 0.18);
   background: rgba(255, 255, 255, 0.76);
@@ -833,7 +831,7 @@
   gap: var(--kanban-column-gap);
   overflow-x: auto;
   overflow-y: hidden;
-  padding: 10px var(--kanban-columns-inline-padding) 12px;
+  padding: 0;
   background: var(--kanban-bg);
   scrollbar-gutter: stable;
 }
@@ -1025,7 +1023,7 @@
   flex-direction: column;
   gap: 4px;
   border-radius: 0;
-  padding: 4px;
+  padding: 4px 8px 8px;
 }
 
 .kanban-column-body::-webkit-scrollbar,
@@ -1034,7 +1032,7 @@
 }
 
 .kanban-column.is-completed .kanban-column-body {
-  padding-right: 4px;
+  padding-right: 8px;
   scrollbar-color: rgba(148, 163, 184, 0.44) transparent;
   scrollbar-width: none;
 }
@@ -2427,7 +2425,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     grid-template-rows: 36px 36px;
     gap: 8px 12px;
-    padding: 10px 8px;
   }
 
   .kanban-toolbar-start {
@@ -2453,9 +2450,6 @@
     top: 100px;
   }
 
-  .kanban-columns {
-    padding: 0;
-  }
 }
 
 @container kanban-page (max-width: 720px) {
