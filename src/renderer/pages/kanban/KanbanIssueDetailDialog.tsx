@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   ApartmentOutlined,
@@ -231,6 +231,13 @@ function EmptyBlock({ children }: { children: ReactNode }) {
   return <div className="kanban-detail-empty"><FileTextOutlined /><span>{children}</span></div>;
 }
 
+function resizeTextareaToContent(textarea: HTMLTextAreaElement | null) {
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  const borderHeight = textarea.offsetHeight - textarea.clientHeight;
+  textarea.style.height = `${textarea.scrollHeight + borderHeight}px`;
+}
+
 export function KanbanIssueDetailDialog({
   issue,
   issues,
@@ -254,6 +261,7 @@ export function KanbanIssueDetailDialog({
     ...createDetailDraft(issue),
     status: initialEditStatus ?? issue.status
   }));
+  const descriptionEditorRef = useRef<HTMLTextAreaElement>(null);
   const remoteId = issueExternalId(issue);
   const project = projects.find((candidate) => candidate.id === issue.projectId);
   const issueType = cloudDetails.issueTypes.find((candidate) => candidate.key === (issue.issueTypeKey || issue.typeId));
@@ -287,7 +295,22 @@ export function KanbanIssueDetailDialog({
     ?? issue.workerAgent
     ?? t("kanban.form.unassigned");
   const assigneeUser = issue.assigneeId ? usersDetailById.get(issue.assigneeId) : undefined;
-  const reviewerUser = issue.reviewerId ? usersDetailById.get(issue.reviewerId) : undefined;
+  useLayoutEffect(() => {
+    resizeTextareaToContent(descriptionEditorRef.current);
+  }, [draft.description, editing]);
+  useEffect(() => {
+    const textarea = descriptionEditorRef.current;
+    if (!textarea || typeof ResizeObserver === "undefined") return;
+    let previousWidth = textarea.clientWidth;
+    const observer = new ResizeObserver(() => {
+      const nextWidth = textarea.clientWidth;
+      if (nextWidth === previousWidth) return;
+      previousWidth = nextWidth;
+      resizeTextareaToContent(textarea);
+    });
+    observer.observe(textarea);
+    return () => observer.disconnect();
+  }, []);
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") onClose();
@@ -404,7 +427,7 @@ export function KanbanIssueDetailDialog({
                 <span>Markdown</span>
                 <button type="button" onClick={() => void addAttachment(true)}><PaperClipOutlined />{t("kanban.form.addAttachment")}</button><button type="button" onClick={insertMermaid}>Mermaid</button>
               </div> : null}
-              <textarea className={`kanban-detail-description-editor ${editing ? "is-editing" : ""}`} value={draft.description} disabled={!editing} onChange={(event) => updateDraft({ description: event.target.value })} rows={editing ? 12 : 6} placeholder={t("kanban.detail.noDescription")} />
+              <textarea ref={descriptionEditorRef} className={`kanban-detail-description-editor ${editing ? "is-editing" : ""}`} value={draft.description} disabled={!editing} onChange={(event) => updateDraft({ description: event.target.value })} rows={editing ? 12 : 6} placeholder={t("kanban.detail.noDescription")} />
             </DetailSection>
 
             <DetailSection title={t("kanban.detail.attachmentsTitle")} icon={<PaperClipOutlined />} meta={t("kanban.detail.itemCount", { count: visibleAttachments.length })}>
@@ -472,7 +495,6 @@ export function KanbanIssueDetailDialog({
                   editing={editing}
                   editor={<select value={draft.assigneeAgentKey} onChange={(event) => updateDraft({ assigneeAgentKey: event.target.value })}><option value="">{t("kanban.form.unassigned")}</option>{agents.map((agent) => <option key={agent.agentKey} value={agent.agentKey}>{agent.displayName}</option>)}</select>}
                 />
-                <DetailProperty label={t("kanban.detail.reviewer")} value={reviewerUser?.displayName || issue.reviewerId || t("kanban.form.unassigned")} />
               </dl>
             </DetailSection>
 

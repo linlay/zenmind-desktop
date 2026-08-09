@@ -2859,20 +2859,24 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   assert.doesNotMatch(settingsPage, /window\.electronAPI\.kanban\.listOnlineDevices/);
   assert.match(kanbanContracts, /interface KanbanSettings[\s\S]*?enabled:\s*boolean;[\s\S]*?cloud:\s*KanbanCloudConfig;/);
   assert.match(kanbanContracts, /interface KanbanSettingsInput[\s\S]*?enabled\?:\s*boolean;[\s\S]*?cloud\?:\s*Partial<KanbanCloudConfig>;/);
+  assert.match(kanbanContracts, /connectionState\?:[^;]*"auth_required"/);
   assert.doesNotMatch(kanbanContracts, /selectedProjectId:\s*string/);
   assert.match(kanbanContracts, /remoteControlEnabled:\s*boolean/);
   assert.match(kanbanRuntime, /remoteControlEnabled/);
   assert.match(kanbanRuntime, /config\.remoteControlEnabled/);
   assert.match(kanbanRuntime, /KANBAN_CONFIG_FILE = "kanban\.json"/);
+  assert.match(kanbanRuntime, /fallbackState:\s*"auth_required"/);
   assert.match(zhCN, /"settings\.control\.label":\s*"控制中心"/);
   assert.match(zhCN, /"settings\.kanban\.label":\s*"看板"/);
   assert.match(zhCN, /"settings\.control\.description":\s*"管理服务和桌面端配对。"/);
   assert.match(zhCN, /"settings\.kanban\.description":\s*"云看板连接。"/);
   assert.match(zhCN, /"settings\.control\.remoteControlEnabled":\s*"允许云看板控制此桌面端"/);
+  assert.match(zhCN, /"kanban\.cloud\.status\.authRequired":\s*"请重新登录"/);
   assert.match(enUS, /"settings\.control\.label":\s*"Control Center"/);
   assert.match(enUS, /"settings\.kanban\.label":\s*"Kanban"/);
   assert.match(enUS, /"settings\.control\.description":\s*"Manage services and Desktop pairing\."/);
   assert.match(enUS, /"settings\.kanban\.description":\s*"Cloud board connection\."/);
+  assert.match(enUS, /"kanban\.cloud\.status\.authRequired":\s*"Sign in again"/);
   assert.match(settingsPage, /buildLocalizedSettingsSections\(\{ isWindows, desktopPetSupported, debugVisible, t \}\)/);
 });
 
@@ -3391,8 +3395,8 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /const importanceLabel = t\(SEVERITY_META\[severity\]\.shortLabelKey\)/);
   assert.match(kanbanPage, /className="issue-card-priority-divider" aria-hidden="true">｜<\/span>/);
   assert.match(kanbanPage, /function getIssueCardPeoplePresentation\(/);
-  assert.match(kanbanPage, /issue\.status === "in_review"[\s\S]{0,180}\[assignee, visibleReviewer\]/);
   assert.match(kanbanPage, /issue\.status === "todo" \|\| issue\.status === "in_progress"[\s\S]{0,140}\[assignee, visibleWorker\]/);
+  assert.doesNotMatch(kanbanPage, /getIssueCardReviewerPresentation|visibleReviewer|kind: "reviewer"/);
   assert.match(kanbanPage, /<RobotOutlined \/>/);
   assert.match(kanbanPage, /<UserOutlined \/>/);
   assert.match(kanbanPage, /function getIssueCardPeopleWithDevDemo\(/);
@@ -3420,7 +3424,9 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /--kanban-column-min-width:\s*calc\([\s\S]{0,360}var\(--kanban-content-min-width\)[\s\S]{0,360}\/\s*5\s*\);/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-page\s*\{[\s\S]{0,260}--issue-card:\s*#181818;/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-drag-overlay\s*\{[\s\S]{0,120}--issue-card:\s*#181818;/);
+  assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-toolbar\s*\{[\s\S]{0,100}background:\s*#181818;/);
   assert.match(kanbanStyles, /\.kanban-column\s*\{[\s\S]{0,420}border-radius:\s*0;/);
+  assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-column\s*\{[\s\S]{0,80}background:\s*#212121;/);
   assert.match(kanbanStyles, /\.kanban-column-head\s*\{[\s\S]{0,240}height:\s*40px;[\s\S]{0,240}background:\s*transparent;/);
   assert.match(kanbanStyles, /\.kanban-column-title strong\s*\{[\s\S]{0,200}font-size:\s*12px;[\s\S]{0,120}font-weight:\s*700;/);
   assert.match(kanbanStyles, /\.kanban-column-title span:last-child\s*\{[\s\S]{0,340}background:\s*transparent;[\s\S]{0,180}font-size:\s*10px;/);
@@ -3864,6 +3870,8 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.kanban-modal-head-actions/);
   assert.match(globalStyles, /\.kanban-modal-mode-button[\s\S]*?border:\s*0;[\s\S]*?background:\s*transparent;[\s\S]*?white-space:\s*nowrap;/);
   assert.match(globalStyles, /\.kanban-modal\.is-compact/);
+  assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-modal\.is-compact\s*\{[\s\S]{0,80}background:\s*#212121;/);
+  assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-detail-layer\s*\{[\s\S]{0,100}--detail-bg:\s*#2D2D2D;[\s\S]{0,80}--detail-surface:\s*#2D2D2D;/);
   assert.match(globalStyles, /\.kanban-automation-popover/);
   assert.match(globalStyles, /\.kanban-automation-menu-trigger/);
   assert.match(globalStyles, /\.kanban-automation-menu-list\s*\{[\s\S]*?top:\s*calc\(100% \+ 4px\);[\s\S]*?max-height:\s*164px;/);
@@ -3879,6 +3887,8 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.app-shell\.is-mac-platform \.kanban-columns,[\s\S]{0,220}scrollbar-width:\s*none;/);
   assert.match(globalStyles, /\.app-shell\.is-windows-platform \.kanban-columns,[\s\S]{0,260}scrollbar-width:\s*thin;/);
   assert.match(globalStyles, /@container kanban-page \(max-width:\s*820px\)/);
+  assert.match(kanbanStyles, /@container kanban-page \(max-width:\s*820px\)\s*\{[\s\S]{0,420}\.kanban-toolbar\s*\{[\s\S]{0,260}padding:\s*10px 8px;/);
+  assert.match(kanbanStyles, /@container kanban-page \(max-width:\s*820px\)\s*\{[\s\S]{0,1200}\.kanban-columns\s*\{\s*padding:\s*0;/);
   assert.match(globalStyles, /@media \(prefers-reduced-motion:\s*reduce\)/);
   assert.doesNotMatch(globalStyles, /\.kanban-agent-picker\s*\{/);
   assert.match(globalStyles, /\.kanban-chat-modal-layer\s*\{/);

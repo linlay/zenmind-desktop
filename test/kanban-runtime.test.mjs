@@ -182,6 +182,7 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
     assert.equal(serverOnly.settings.enabled, true);
     assert.equal(serverOnly.settings.cloud.serverUrl, "http://127.0.0.1:3000");
     assert.equal(serverOnly.settings.cloud.token, "");
+    assert.equal(serverOnly.connectionState, "auth_required");
     assert.equal(readKanbanSettings(app).enabled, true);
 
     const saved = runtime.saveSettings({
@@ -196,7 +197,40 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
     assert.equal(saved.settings.enabled, true);
     assert.equal(saved.settings.cloud.serverUrl, "http://127.0.0.1:3000");
     assert.equal(saved.settings.cloud.token, "secret");
+    assert.equal(saved.connectionState, "auth_required");
     assert.equal(readKanbanSettings(app).enabled, true);
+  } finally {
+    runtime.stop();
+  }
+});
+
+test("Kanban runtime reports sign-in required when SSO credentials are unavailable", (t) => {
+  const app = createTempApp(t);
+  writeKanbanConfig(app, {
+    schemaVersion: 1,
+    enabled: true,
+    cloud: {
+      serverUrl: "https://kanban.example.test",
+      remoteControlEnabled: true
+    }
+  });
+  writeSsoSiteToken(app);
+
+  const runtime = new KanbanRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" })
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    canUseDesktopSsoCredentials: () => false,
+    onChanged: () => {}
+  });
+
+  try {
+    assert.equal(runtime.getSettings().connectionState, "auth_required");
+    assert.equal(runtime.getCloudConfig().connectionState, "auth_required");
+    assert.equal(runtime.listIssues().connectionState, "auth_required");
   } finally {
     runtime.stop();
   }

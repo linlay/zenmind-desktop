@@ -57,8 +57,6 @@ type KanbanIssueRow = {
   worker_type: KanbanIssue["workerType"];
   worker_id: string | null;
   worker_agent: string | null;
-  reviewer_id: string | null;
-  review_required: number;
   active_review_id: string | null;
   active_run_id: string | null;
   position: number;
@@ -518,8 +516,6 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       WORKER_TYPE_ TEXT CHECK (WORKER_TYPE_ IN ('human','agent') OR WORKER_TYPE_ IS NULL),
       WORKER_ID_ TEXT,
       WORKER_AGENT_ TEXT,
-      REVIEWER_ID_ TEXT,
-      REVIEW_REQUIRED_ INTEGER NOT NULL DEFAULT 0,
       ACTIVE_REVIEW_ID_ TEXT,
       ACTIVE_RUN_ID_ TEXT,
       CHAT_ID_ TEXT,
@@ -755,8 +751,6 @@ function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
         WORKER_TYPE_ TEXT CHECK (WORKER_TYPE_ IN ('human','agent') OR WORKER_TYPE_ IS NULL),
         WORKER_ID_ TEXT,
         WORKER_AGENT_ TEXT,
-        REVIEWER_ID_ TEXT,
-        REVIEW_REQUIRED_ INTEGER NOT NULL DEFAULT 0,
         ACTIVE_REVIEW_ID_ TEXT,
         ACTIVE_RUN_ID_ TEXT,
         CHAT_ID_ TEXT,
@@ -783,7 +777,7 @@ function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
       INSERT INTO issue_priority_migration (
         ID_, REMOTE_ISSUE_ID_, BOARD_ID_, PROJECT_ID_, WORKFLOW_ID_, TYPE_ID_, STAGE_ID_, STAGE_NAME_, STATUS_ID_, STATUS_NAME_,
         TITLE_, DESCRIPTION_, STATUS_, PRIORITY_, SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
-        WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
+        WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
         CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
         AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_, AUTOMATION_TIMEZONE_,
         ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, DETAIL_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
@@ -802,7 +796,7 @@ function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
           ELSE 'P2'
         END,
         SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
-        WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
+        WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
         CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
         AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_, AUTOMATION_TIMEZONE_,
         ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, DETAIL_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
@@ -928,8 +922,6 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     workerType: row.worker_type,
     workerId: row.worker_id,
     workerAgent: row.worker_agent,
-    reviewerId: row.reviewer_id,
-    reviewRequired: row.review_required === 1,
     activeReviewId: row.active_review_id,
     activeRunId: row.active_run_id,
     position: row.position,
@@ -1169,8 +1161,6 @@ function selectIssues(db: DatabaseSync, currentUser: KanbanCurrentUser): KanbanI
       issue.WORKER_TYPE_ AS worker_type,
       issue.WORKER_ID_ AS worker_id,
       issue.WORKER_AGENT_ AS worker_agent,
-      issue.REVIEWER_ID_ AS reviewer_id,
-      issue.REVIEW_REQUIRED_ AS review_required,
       issue.ACTIVE_REVIEW_ID_ AS active_review_id,
       issue.ACTIVE_RUN_ID_ AS active_run_id,
       issue.POSITION_ AS position,
@@ -1365,11 +1355,11 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
     INSERT INTO issue (
       ID_, REMOTE_ISSUE_ID_, BOARD_ID_, PROJECT_ID_, WORKFLOW_ID_, TYPE_ID_, STAGE_ID_, STAGE_NAME_, STATUS_ID_, STATUS_NAME_,
       TITLE_, DESCRIPTION_, STATUS_, PRIORITY_, SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
-      WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, REVIEWER_ID_, REVIEW_REQUIRED_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
+      WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
       CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
       AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_,
       AUTOMATION_TIMEZONE_, ATTACHMENT_CHAT_ID_, ATTACHMENTS_JSON_, DETAIL_JSON_, REVISION_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     ON CONFLICT(ID_) DO UPDATE SET
       REMOTE_ISSUE_ID_ = excluded.REMOTE_ISSUE_ID_,
       BOARD_ID_ = excluded.BOARD_ID_,
@@ -1391,8 +1381,6 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
       WORKER_TYPE_ = excluded.WORKER_TYPE_,
       WORKER_ID_ = excluded.WORKER_ID_,
       WORKER_AGENT_ = excluded.WORKER_AGENT_,
-      REVIEWER_ID_ = excluded.REVIEWER_ID_,
-      REVIEW_REQUIRED_ = excluded.REVIEW_REQUIRED_,
       ACTIVE_REVIEW_ID_ = excluded.ACTIVE_REVIEW_ID_,
       ACTIVE_RUN_ID_ = excluded.ACTIVE_RUN_ID_,
       CHAT_ID_ = excluded.CHAT_ID_,
@@ -1435,8 +1423,6 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
     issue.workerType ?? null,
     issue.workerId ?? null,
     issue.workerAgent ?? issue.assigneeAgentKey ?? null,
-    issue.reviewerId ?? null,
-    issue.reviewRequired ? 1 : 0,
     issue.activeReviewId ?? null,
     issue.activeRunId ?? issue.runId ?? null,
     issue.chatId,
@@ -1513,8 +1499,6 @@ function buildLocalIssue(
     workerType: normalizeWorkerType(input.workerType) ?? (assigneeAgentKey ? "agent" : null),
     workerId: nullableTrimmedText(input.workerId),
     workerAgent: nullableTrimmedText(input.workerAgent) ?? assigneeAgentKey,
-    reviewerId: nullableTrimmedText(input.reviewerId),
-    reviewRequired: input.reviewRequired === true || status === "in_review",
     activeReviewId: null,
     activeRunId: null,
     position: nextIssuePosition(db, status),
@@ -1556,7 +1540,6 @@ function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): Ka
   if (input.description !== undefined) nextIssue.description = typeof input.description === "string" ? input.description.trim() : "";
   if (input.status !== undefined) {
     nextIssue.status = normalizeKanbanStatus(input.status);
-    nextIssue.reviewRequired = nextIssue.reviewRequired || nextIssue.status === "in_review";
   }
   if (input.priority !== undefined) nextIssue.priority = normalizeKanbanPriority(input.priority);
   if (input.severity !== undefined) nextIssue.severity = normalizeKanbanSeverity(input.severity);
@@ -1569,8 +1552,6 @@ function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): Ka
   if (input.workerType !== undefined) nextIssue.workerType = normalizeWorkerType(input.workerType);
   if (input.workerId !== undefined) nextIssue.workerId = nullableTrimmedText(input.workerId);
   if (input.workerAgent !== undefined) nextIssue.workerAgent = nullableTrimmedText(input.workerAgent);
-  if (input.reviewerId !== undefined) nextIssue.reviewerId = nullableTrimmedText(input.reviewerId);
-  if (input.reviewRequired !== undefined) nextIssue.reviewRequired = input.reviewRequired === true;
   if (input.chatId !== undefined) nextIssue.chatId = nullableTrimmedText(input.chatId);
   if (input.runId !== undefined) {
     nextIssue.runId = nullableTrimmedText(input.runId);
@@ -1861,8 +1842,6 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     workerType: normalizeWorkerType(rawIssue.workerType),
     workerId: nullableTrimmedText(rawIssue.workerId),
     workerAgent: nullableTrimmedText(rawIssue.workerAgent),
-    reviewerId: nullableTrimmedText(rawIssue.reviewerId),
-    reviewRequired: rawIssue.reviewRequired === true,
     activeReviewId: nullableTrimmedText(rawIssue.activeReviewId),
     activeRunId: nullableTrimmedText(rawIssue.activeRunId),
     position: typeof rawIssue.position === "number" && Number.isFinite(rawIssue.position) ? rawIssue.position : 1,

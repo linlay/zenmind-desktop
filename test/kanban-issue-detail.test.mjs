@@ -10,15 +10,21 @@ const read = (...parts) => fs.readFileSync(path.join(projectRoot, ...parts), "ut
 test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite cache", () => {
   const contracts = read("src", "shared", "contracts", "kanban.ts");
   const store = read("src", "main", "kanban-local-store.ts");
+  const issueContract = contracts.slice(
+    contracts.indexOf("export interface KanbanIssue {"),
+    contracts.indexOf("export interface KanbanIssueInput")
+  );
   assert.match(contracts, /interface KanbanCloudDetailData/);
   assert.match(contracts, /customFields\?: Record<string, unknown>/);
   assert.match(contracts, /parentIssueId\?: string \| null/);
   assert.match(contracts, /runResultMessage\?: string \| null/);
   assert.match(contracts, /cloudDetails\?: KanbanCloudDetailData/);
+  assert.doesNotMatch(issueContract, /reviewerId|reviewRequired/);
   assert.match(store, /DETAIL_JSON_ TEXT NOT NULL DEFAULT '\{\}'/);
   assert.match(store, /CREATE TABLE IF NOT EXISTS kanban_cloud_detail_cache/);
   assert.match(store, /storeCloudDetailData\(db, currentUser, snapshot, revision\)/);
   assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 3/);
+  assert.doesNotMatch(store, /(?:rawIssue|input|issue|row)\.(?:reviewerId|reviewRequired|reviewer_id|review_required)/);
 });
 
 test("Kanban detail opens independently from create and preserves the cloud read-only boundary", () => {
@@ -38,6 +44,7 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /!isCloud \? <button[\s\S]{0,180}setEditing\(true\)/);
   assert.match(detail, /if \(await onSave\(draft\)\) setEditing\(false\)/);
   assert.match(detail, /kanban\.detail\.cloudReadonly/);
+  assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
 });
@@ -69,10 +76,19 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(rail, /kanban-detail-anchor-nav[\s\S]*kanban\.detail\.scopeTitle[\s\S]*kanban\.detail\.peopleTitle[\s\S]*kanban\.detail\.automationTitle[\s\S]*kanban\.detail\.relatedTitle[\s\S]*kanban\.detail\.runsTitle[\s\S]*kanban\.detail\.activityTitle[\s\S]*kanban\.detail\.sourceTitle/);
   assert.match(scope, /kanban\.detail\.issueId[\s\S]*kanban\.detail\.labelsTitle[\s\S]*resolvedFields\.map/);
   assert.doesNotMatch(rail, /kanban\.detail\.customFieldsTitle|kanban\.detail\.noCustomFields/);
-  assert.match(styles, /\.kanban-detail-body\s*\{[\s\S]{0,180}grid-template-columns: minmax\(0, 3fr\) min\(40%, 320px\)/);
+  assert.match(styles, /\.kanban-detail-dialog\s*\{[\s\S]{0,180}width: min\(1062px, calc\(90vw - 43\.2px\)\);[\s\S]{0,80}height: min\(81vh, 738px\);[\s\S]{0,80}min-height: 558px/);
+  assert.match(styles, /@media \(max-width: 980px\)[\s\S]{0,180}\.kanban-detail-dialog \{ min-height: 0; \}/);
+  assert.match(styles, /\.kanban-detail-layer\s*\{[\s\S]{0,760}background: rgba\(22, 29, 40, 0\.16\);[\s\S]{0,100}backdrop-filter: none/);
+  assert.match(styles, /:root\[data-theme="dark"\] \.kanban-detail-layer\s*\{[\s\S]{0,760}background: rgba\(3, 5, 8, 0\.32\)/);
+  assert.match(styles, /\.kanban-detail-body\s*\{[\s\S]{0,180}grid-template-columns: minmax\(0, 1fr\) 280px/);
   assert.match(styles, /\.kanban-detail-properties > div \{[^\n]*grid-template-columns: minmax\(72px, 42%\) minmax\(0, 1fr\)/);
-  assert.match(styles, /\.kanban-detail-description-editor \{[^\n]*height: 150px; min-height: 120px/);
-  assert.match(styles, /\.kanban-detail-description-editor\.is-editing \{[^\n]*height: 260px/);
+  assert.match(detail, /function resizeTextareaToContent[\s\S]{0,320}scrollHeight \+ borderHeight/);
+  assert.match(detail, /useLayoutEffect\(\(\) => \{[\s\S]{0,140}resizeTextareaToContent\(descriptionEditorRef\.current\)[\s\S]{0,80}\[draft\.description, editing\]/);
+  assert.match(detail, /new ResizeObserver[\s\S]{0,360}resizeTextareaToContent\(textarea\)/);
+  assert.match(detail, /<textarea ref=\{descriptionEditorRef\}/);
+  assert.match(styles, /\.kanban-detail-description-editor \{[^\n]*min-height: 120px;[^\n]*overflow-y: hidden; resize: none/);
+  assert.match(styles, /\.kanban-detail-description-editor\.is-editing \{ min-height: 200px; \}/);
+  assert.doesNotMatch(styles, /\.kanban-detail-description-editor(?:\.is-editing)? \{[^\n]*(?<!-)height:/);
   assert.match(styles, /\.kanban-detail-title-input \{[\s\S]{0,260}font-size: clamp\(17px, 1\.35vw, 20px\)/);
   assert.match(styles, /\.kanban-detail-anchor-nav \{[\s\S]{0,100}position: sticky;[\s\S]{0,80}top: 0/);
   assert.match(styles, /\.kanban-detail-section \{[\s\S]{0,260}border: 0;[\s\S]{0,120}border-bottom: 1px solid var\(--detail-line-subtle\)/);

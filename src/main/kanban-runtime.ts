@@ -293,22 +293,40 @@ export function readKanbanSettings(app: App, platform: NodeJS.Platform = process
 }
 
 export function readKanbanWsConfig(app: App): KanbanDesktopWsConfig | null {
+  return resolveKanbanWsConnection(app).config;
+}
+
+type KanbanConnectionFallbackState = Extract<KanbanDesktopConnectionState, "disabled" | "auth_required">;
+
+function resolveKanbanWsConnection(
+  app: App,
+  canUseDesktopSsoCredentials = true
+): { config: KanbanDesktopWsConfig | null; fallbackState: KanbanConnectionFallbackState } {
   const settings = readKanbanSettings(app);
   const config = settings.cloud;
   const serverUrl = readText(process.env.DESKTOP_KANBAN_SERVER_URL) ||
     readText(config.serverUrl);
   const remoteControlEnabled = process.env.DESKTOP_KANBAN_REMOTE_CONTROL_ENABLED === "true" ||
     config.remoteControlEnabled;
+  if (!settings.enabled || !remoteControlEnabled || !serverUrl) {
+    return { config: null, fallbackState: "disabled" };
+  }
+  if (!canUseDesktopSsoCredentials) {
+    return { config: null, fallbackState: "auth_required" };
+  }
   const token = readText(process.env.DESKTOP_KANBAN_TOKEN) ||
     readDesktopSsoSiteAccessToken(app);
-  if (!settings.enabled || !remoteControlEnabled || !serverUrl || !token) {
-    return null;
+  if (!token) {
+    return { config: null, fallbackState: "auth_required" };
   }
   return {
-    serverUrl,
-    token,
-    selectedProjectId: readText(process.env.DESKTOP_KANBAN_PROJECT_ID) ||
-      DEFAULT_SELECTED_PROJECT_ID
+    config: {
+      serverUrl,
+      token,
+      selectedProjectId: readText(process.env.DESKTOP_KANBAN_PROJECT_ID) ||
+        DEFAULT_SELECTED_PROJECT_ID
+    },
+    fallbackState: "disabled"
   };
 }
 
@@ -469,8 +487,6 @@ function kanbanIssueFromAutomationPayload(payload: unknown): KanbanIssue | null 
     workerType: readText(record.workerType) === "human" || readText(record.workerType) === "agent" ? readText(record.workerType) as "human" | "agent" : null,
     workerId: nullableText(record.workerId),
     workerAgent: nullableText(record.workerAgent),
-    reviewerId: nullableText(record.reviewerId),
-    reviewRequired: readBoolean(record.reviewRequired),
     activeReviewId: nullableText(record.activeReviewId),
     activeRunId: nullableText(record.activeRunId),
     position: typeof record.position === "number" ? record.position : 1,
@@ -501,6 +517,7 @@ export class KanbanRuntime {
   private readonly wsClient: KanbanDesktopWsClient;
   private readonly cloudSync: DesktopCloudSyncEngine;
   private connectionState: KanbanDesktopConnectionState = "disabled";
+  private connectionFallbackState: KanbanConnectionFallbackState = "disabled";
   private commandReceiptProcessing = false;
   private commandReceiptRetryTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -537,7 +554,7 @@ export class KanbanRuntime {
         void this.processPendingCommandReceipts().catch((error) => this.options.onDebug?.(error instanceof Error ? error.message : String(error)));
       },
       onStateChanged: (state) => {
-        this.connectionState = state;
+        this.connectionState = state === "disabled" ? this.connectionFallbackState : state;
         this.notifyChanged();
       },
       onDebug: (message) => appendKanbanWsLog(this.options.app, {
@@ -565,6 +582,7 @@ export class KanbanRuntime {
       clearTimeout(this.commandReceiptRetryTimer);
       this.commandReceiptRetryTimer = null;
     }
+    this.connectionFallbackState = "disabled";
     this.cloudSync.stop();
     this.wsClient.stop();
   }
@@ -898,11 +916,13 @@ export class KanbanRuntime {
   }
 
   private refreshConnection(options: { forceReconnect?: boolean } = {}) {
-    const config = this.options.canUseDesktopSsoCredentials?.() === false
-      ? null
-      : readKanbanWsConfig(this.options.app);
-    this.wsClient.start(config, options.forceReconnect ? { forceReconnect: true } : undefined);
-    this.connectionState = this.wsClient.getState();
+    const resolution = resolveKanbanWsConnection(
+      this.options.app,
+      this.options.canUseDesktopSsoCredentials?.() !== false
+    );
+    this.connectionFallbackState = resolution.fallbackState;
+    this.wsClient.start(resolution.config, options.forceReconnect ? { forceReconnect: true } : undefined);
+    this.connectionState = resolution.config ? this.wsClient.getState() : resolution.fallbackState;
   }
 
   private applySnapshot(snapshot: KanbanCloudSnapshot) {

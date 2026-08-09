@@ -139,7 +139,7 @@ type IssueCardPersonPresentation = {
   label: string;
   rawLabel: string;
   avatarUrl?: string | null;
-  kind: "assignee" | "worker" | "reviewer";
+  kind: "assignee" | "worker";
 };
 
 type Feedback = {
@@ -769,25 +769,6 @@ function getIssueCardWorkerPresentation(
   return null;
 }
 
-function getIssueCardReviewerPresentation(
-  issue: KanbanIssue,
-  users: KanbanCloudUser[],
-  t: TranslateFunction
-): IssueCardPersonPresentation | null {
-  const cloudUser = getKanbanCloudUser(issue.reviewerId, users);
-  const rawLabel = cloudUser?.displayName?.trim() || issue.reviewerId?.trim() || "";
-  if (!rawLabel) {
-    return null;
-  }
-  return {
-    icon: <UserOutlined />,
-    label: formatKanbanPersonLabel(rawLabel, t("kanban.form.unassigned")),
-    rawLabel,
-    avatarUrl: cloudUser?.avatarUrl,
-    kind: "reviewer"
-  };
-}
-
 function getIssueCardPeoplePresentation(
   issue: KanbanIssue,
   agents: AssistantNavAgentItem[],
@@ -796,15 +777,11 @@ function getIssueCardPeoplePresentation(
 ) {
   const assignee = getIssueCardAssigneePresentation(issue, agents, users, t);
   const worker = getIssueCardWorkerPresentation(issue, agents, users, t);
-  const reviewer = getIssueCardReviewerPresentation(issue, users, t);
   const normalizedAssignee = assignee?.rawLabel.trim().toLocaleLowerCase();
   const visibleWorker = worker?.rawLabel.trim().toLocaleLowerCase() === normalizedAssignee ? null : worker;
-  const visibleReviewer = reviewer?.rawLabel.trim().toLocaleLowerCase() === normalizedAssignee ? null : reviewer;
-  const people = issue.status === "in_review"
-    ? [assignee, visibleReviewer]
-    : issue.status === "todo" || issue.status === "in_progress"
-      ? [assignee, visibleWorker]
-      : [assignee];
+  const people = issue.status === "todo" || issue.status === "in_progress"
+    ? [assignee, visibleWorker]
+    : [assignee];
   const visiblePeople = people.filter((person): person is IssueCardPersonPresentation => Boolean(person));
   return {
     people: visiblePeople,
@@ -844,19 +821,11 @@ function getIssueCardPeopleWithDevDemo(
       label: collaboratorLabel,
       rawLabel: collaboratorLabel,
       kind: "worker"
-    },
-    reviewer: {
-      icon: <UserOutlined />,
-      label: collaboratorLabel,
-      rawLabel: collaboratorLabel,
-      kind: "reviewer"
     }
   };
-  const visibleKinds: IssueCardPersonPresentation["kind"][] = issue.status === "in_review"
-    ? ["assignee", "reviewer"]
-    : issue.status === "todo" || issue.status === "in_progress"
-      ? ["assignee", "worker"]
-      : ["assignee"];
+  const visibleKinds: IssueCardPersonPresentation["kind"][] = issue.status === "todo" || issue.status === "in_progress"
+    ? ["assignee", "worker"]
+    : ["assignee"];
   const people = visibleKinds.map(
     (kind) => presentation.people.find((person) => person.kind === kind) ?? demoByKind[kind]
   );
@@ -1255,7 +1224,7 @@ function readKanbanApi(): DesktopApi["kanban"] | null {
 
 function getKanbanConnectionTone(state: KanbanConnectionState) {
   if (state === "open") return "success";
-  if (state === "connecting") return "pending";
+  if (state === "connecting" || state === "auth_required") return "pending";
   if (state === "error") return "error";
   return "muted";
 }
@@ -1263,6 +1232,7 @@ function getKanbanConnectionTone(state: KanbanConnectionState) {
 function getKanbanConnectionLabel(state: KanbanConnectionState, t: TranslateFunction) {
   if (state === "open") return t("kanban.cloud.status.open");
   if (state === "connecting") return t("kanban.cloud.status.connecting");
+  if (state === "auth_required") return t("kanban.cloud.status.authRequired");
   if (state === "closed") return t("kanban.cloud.status.closed");
   if (state === "error") return t("kanban.cloud.status.error");
   return t("kanban.cloud.status.disabled");

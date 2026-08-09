@@ -256,8 +256,6 @@ export interface KanbanIssue {
   workerType?: "human" | "agent" | null;
   workerId?: string | null;
   workerAgent?: string | null;
-  reviewerId?: string | null;
-  reviewRequired?: boolean;
   activeReviewId?: string | null;
   activeRunId?: string | null;
   position: number;
@@ -421,8 +419,6 @@ export interface KanbanIssueInput {
   workerType?: "human" | "agent" | null;
   workerId?: string | null;
   workerAgent?: string | null;
-  reviewerId?: string | null;
-  reviewRequired?: boolean;
   runState?: KanbanRunState | null;
   automationId?: string | null;
   automationEnabled?: boolean;
@@ -446,8 +442,6 @@ export interface KanbanIssueUpdateInput {
   workerType?: "human" | "agent" | null;
   workerId?: string | null;
   workerAgent?: string | null;
-  reviewerId?: string | null;
-  reviewRequired?: boolean;
   chatId?: string | null;
   runId?: string | null;
   runState?: KanbanRunState | null;
@@ -482,7 +476,7 @@ export interface KanbanListResult {
   projectId?: string;
   revision?: number;
   currentUser?: KanbanCurrentUser;
-  connectionState?: "disabled" | "connecting" | "open" | "closed" | "error";
+  connectionState?: "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
 }
 
 export interface KanbanCloudConfig {

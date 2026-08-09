@@ -78,7 +78,7 @@ import { isAssistantNavChatAgent } from "../../assistantNavigation";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 
 type ThemePreference = "light" | "dark" | "system";
-type KanbanConnectionState = "disabled" | "connecting" | "open" | "closed" | "error";
+type KanbanConnectionState = "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
 type DebugCategoryId = "device" | "state" | "logs" | "wsServer" | "authTokens" | "other";
 type UsageHeatmapMode = "day" | "week" | "cumulative";
 type DebugLogDirection = "in" | "out" | "system";
@@ -3680,6 +3680,8 @@ export function SettingsPage({
         return t("kanban.cloud.status.connecting");
       case "open":
         return t("kanban.cloud.status.open");
+      case "auth_required":
+        return t("kanban.cloud.status.authRequired");
       case "closed":
         return t("kanban.cloud.status.closed");
       case "error":
