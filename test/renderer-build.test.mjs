@@ -3415,7 +3415,17 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /<MessageOutlined \/>/);
   assert.match(kanbanPage, /<DeleteOutlined \/>/);
 
-  assert.match(kanbanStyles, /--kanban-column-min-width:\s*216px;/);
+  assert.match(kanbanStyles, /--kanban-column-min-width:\s*208px;/);
+  assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-page\s*\{[\s\S]{0,260}--issue-card:\s*#181818;/);
+  assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-drag-overlay\s*\{[\s\S]{0,120}--issue-card:\s*#181818;/);
+  assert.match(kanbanStyles, /\.kanban-column\s*\{[\s\S]{0,420}border-radius:\s*0;/);
+  assert.match(kanbanStyles, /\.kanban-column-head\s*\{[\s\S]{0,240}height:\s*40px;[\s\S]{0,240}background:\s*transparent;/);
+  assert.match(kanbanStyles, /\.kanban-column-title strong\s*\{[\s\S]{0,200}font-size:\s*12px;[\s\S]{0,120}font-weight:\s*700;/);
+  assert.match(kanbanStyles, /\.kanban-column-title span:last-child\s*\{[\s\S]{0,340}background:\s*transparent;[\s\S]{0,180}font-size:\s*10px;/);
+  assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-column-actions button\s*\{[\s\S]{0,120}border-color:\s*transparent;[\s\S]{0,80}background:\s*transparent;/);
+  assert.match(kanbanStyles, /\.kanban-column-body\s*\{[\s\S]{0,260}gap:\s*4px;[\s\S]{0,100}padding:\s*4px;/);
+  assert.match(kanbanStyles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,220}height:\s*2px;/);
+  assert.match(kanbanPage, /<PlusOutlined \/>/);
   assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,180}width:\s*100%;[\s\S]{0,120}min-width:\s*200px;/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,180}max-width:/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-stage-legend/);
@@ -3426,7 +3436,7 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /\.issue-card-title\s*\{[\s\S]{0,220}font-size:\s*12px;[\s\S]{0,80}font-weight:\s*400;/);
   assert.match(kanbanStyles, /\.issue-card-description\s*\{[\s\S]{0,420}font-size:\s*10px;[\s\S]{0,80}font-weight:\s*400;/);
   assert.doesNotMatch(kanbanStyles, /font-size:\s*\d+\.\d+px;/);
-  assert.match(kanbanStyles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,220}height:\s*3px;[\s\S]{0,160}background:/);
+  assert.match(kanbanStyles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,220}height:\s*2px;[\s\S]{0,160}background:/);
   assert.match(kanbanStyles, /\.issue-card-main:focus-visible\s*\{\s*outline:\s*none;/);
   assert.match(kanbanStyles, /\.issue-card:has\(\.issue-card-main:focus-visible\)\s*\{[\s\S]{0,180}box-shadow:/);
   assert.match(kanbanStyles, /\.issue-card-title-text\s*\{[\s\S]{0,180}-webkit-line-clamp:\s*2;/);
@@ -3787,12 +3797,12 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /--kanban-column-gap:\s*0px;/);
-  assert.match(globalStyles, /--kanban-column-min-width:\s*216px;/);
+  assert.match(globalStyles, /--kanban-column-min-width:\s*208px;/);
   assert.doesNotMatch(globalStyles, /--kanban-column-fit-width/);
   assert.match(globalStyles, /--kanban-column-width:\s*max\(\s*calc\(\(100% - \(4 \* var\(--kanban-column-gap\)\)\) \/ 5\),\s*var\(--kanban-column-min-width\)\s*\);/);
   assert.match(globalStyles, /\.kanban-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;/);
   assert.match(globalStyles, /\.kanban-column\s*\{/);
-  assert.match(globalStyles, /\.kanban-column\s*\{[\s\S]{0,320}border:\s*0;[\s\S]{0,180}border-radius:\s*12px;[\s\S]{0,220}box-shadow:\s*none;/);
+  assert.match(globalStyles, /\.kanban-column\s*\{[\s\S]{0,320}border:\s*0;[\s\S]{0,180}border-radius:\s*0;[\s\S]{0,220}box-shadow:\s*none;/);
   assert.match(globalStyles, /\.kanban-column \+ \.kanban-column\s*\{[\s\S]{0,100}border-left:\s*1px solid var\(--kanban-column-border\);/);
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-todo\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-in_progress\s*\{[^}]*margin-left:/);

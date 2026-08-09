@@ -32,6 +32,7 @@ import {
   HourglassOutlined,
   MessageOutlined,
   OrderedListOutlined,
+  PlusOutlined,
   RobotOutlined,
   StopOutlined,
   ThunderboltOutlined,
@@ -2982,7 +2983,7 @@ const KanbanColumn = memo(function KanbanColumn({
               onAdd();
             }}
           >
-            +
+            <PlusOutlined />
           </button>
         </div>
       </header>

@@ -21,7 +21,7 @@
   --kanban-status-review: #f97316;
   --kanban-status-completed: #00b42a;
   --kanban-column-gap: 0px;
-  --kanban-column-min-width: 216px;
+  --kanban-column-min-width: 208px;
   --kanban-column-width: max(
     calc((100% - (4 * var(--kanban-column-gap))) / 5),
     var(--kanban-column-min-width)
@@ -46,7 +46,7 @@
   --kanban-bg: #111418;
   background:
     linear-gradient(180deg, #121316 0%, #0d0e10 44%, var(--kanban-bg) 100%);
-  --issue-card: #161719;
+  --issue-card: #181818;
   --issue-card-border: rgba(255, 255, 255, 0.08);
   --issue-card-tag-bg: rgba(255, 255, 255, 0.04);
   --issue-card-tag-border: rgba(255, 255, 255, 0.08);
@@ -818,7 +818,7 @@
   display: flex;
   flex-direction: column;
   border: 0;
-  border-radius: 12px;
+  border-radius: 0;
   background: var(--kanban-column-tint);
   box-shadow: none;
   padding: 0;
@@ -878,17 +878,17 @@
 }
 
 .kanban-column-head {
-  height: 44px;
-  min-height: 44px;
-  flex: 0 0 44px;
+  height: 40px;
+  min-height: 40px;
+  flex: 0 0 40px;
   display: flex;
   align-items: center;
   justify-content: space-between;
   flex-wrap: nowrap;
-  gap: 6px;
-  padding: 0 10px 0 12px;
+  gap: 4px;
+  padding: 0 6px 0 16px;
   border-bottom: 1px solid var(--kanban-column-border);
-  background: color-mix(in srgb, var(--issue-card) 78%, transparent);
+  background: transparent;
 }
 
 .kanban-column-title {
@@ -896,8 +896,8 @@
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 5px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -905,30 +905,34 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-  font-size: 13px;
-  font-weight: 800;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  line-height: 16px;
   white-space: nowrap;
 }
 
 .kanban-column-title span:last-child {
   flex: 0 0 auto;
-  min-width: 20px;
-  height: 17px;
+  min-width: 0;
+  height: auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  padding: 0 6px;
+  padding: 0;
   border: 0;
-  border-radius: 999px;
-  background: rgba(100, 116, 139, 0.1);
-  color: #64748b;
-  font-size: 11px;
-  font-weight: 800;
+  border-radius: 0;
+  background: transparent;
+  color: color-mix(in srgb, var(--kanban-muted) 78%, transparent);
+  font-size: 10px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
 }
 
 :root[data-theme="dark"] .kanban-column-title span:last-child {
-  background: rgba(148, 163, 184, 0.14);
-  color: #94a3b8;
+  background: transparent;
+  color: color-mix(in srgb, var(--kanban-muted) 82%, transparent);
 }
 
 .kanban-column-actions {
@@ -939,22 +943,46 @@
 }
 
 .kanban-column-actions button {
-  width: 24px;
-  height: 24px;
+  width: 22px;
+  height: 22px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: 5px;
   background: transparent;
-  color: var(--kanban-muted);
+  color: color-mix(in srgb, var(--kanban-muted) 78%, transparent);
   box-shadow: none;
-  font-weight: 800;
-  font-size: 16px;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+:root[data-theme="dark"] .kanban-column-actions button {
+  border-color: transparent;
+  background: transparent;
+}
+
+.kanban-column-actions button .anticon {
+  font-size: 12px;
+  line-height: 1;
 }
 
 .kanban-column-actions button:hover:not(:disabled) {
-  background: rgba(100, 116, 139, 0.12);
+  background: color-mix(in srgb, var(--kanban-muted) 10%, transparent);
   border-color: transparent;
   color: var(--kanban-ink);
+}
+
+:root[data-theme="dark"] .kanban-column-actions button:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.kanban-column-actions button:focus-visible {
+  outline: 1px solid color-mix(in srgb, var(--kanban-muted) 48%, transparent);
+  outline-offset: 1px;
+}
+
+.kanban-column-actions button:disabled {
+  opacity: 0.28;
 }
 
 .kanban-column-body {
@@ -965,9 +993,9 @@
   scrollbar-width: none;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 4px;
   border-radius: 0;
-  padding: 8px;
+  padding: 4px;
 }
 
 .kanban-column-body::-webkit-scrollbar,
@@ -1107,7 +1135,7 @@
 }
 
 :root[data-theme="dark"] .kanban-drag-overlay {
-  --issue-card: #161719;
+  --issue-card: #181818;
   --issue-card-border: rgba(255, 255, 255, 0.08);
   --kanban-ink: #f2f3f5;
   --kanban-muted: #86909c;
@@ -1172,7 +1200,7 @@
   top: -1px;
   right: -1px;
   left: -1px;
-  height: 3px;
+  height: 2px;
   overflow: hidden;
   border-radius: 10px 10px 0 0;
   background: color-mix(in srgb, var(--kanban-muted) 18%, transparent);
