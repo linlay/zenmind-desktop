@@ -268,8 +268,8 @@
 }
 
 .desktop-action-confirmation-dialog {
-  width: min(520px, 100%);
-  max-height: min(640px, calc(100vh - 32px));
+  width: min(440px, 100%);
+  max-height: min(560px, calc(100vh - 32px));
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -283,8 +283,8 @@
 .desktop-action-confirmation-head {
   display: flex;
   align-items: center;
-  min-height: 42px;
-  padding: 10px 18px 4px;
+  min-height: 38px;
+  padding: 9px 14px 3px;
 }
 
 .desktop-action-confirmation-head h2 {
@@ -298,18 +298,18 @@
 .desktop-action-confirmation-body {
   min-height: 0;
   overflow: auto;
-  padding: 0 10px 4px;
+  padding: 0 8px 2px;
 }
 
 .desktop-action-confirmation-summary {
   margin: 0;
-  border-radius: 12px;
-  padding: 9px 10px;
+  border-radius: 10px;
+  padding: 8px 9px;
   background: rgba(15, 23, 42, 0.05);
   color: #0f172a;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 20px;
+  line-height: 19px;
   overflow-wrap: anywhere;
 }
 
@@ -354,7 +354,7 @@
 }
 
 .desktop-action-confirmation-details {
-  margin: 6px 0 0;
+  margin: 4px 0 0;
 }
 
 .desktop-action-confirmation-details summary {
@@ -397,11 +397,27 @@
 
 .desktop-action-confirmation-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
-  gap: 8px;
-  margin-top: 6px;
+  gap: 12px;
+  margin-top: 4px;
   border-top: 1px solid rgba(148, 163, 184, 0.18);
-  padding: 10px 14px 12px;
+  padding: 8px 12px 10px;
+}
+
+.desktop-action-confirmation-settings-hint {
+  min-width: 0;
+  margin: 0 auto 0 0;
+  color: #94a3b8;
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 15px;
+}
+
+.desktop-action-confirmation-buttons {
+  display: flex;
+  flex: none;
+  gap: 8px;
 }
 
 .desktop-action-confirmation-button {
@@ -446,7 +462,7 @@
 
 :root[data-theme="dark"] .desktop-action-confirmation-dialog {
   border-color: rgba(255, 255, 255, 0.12);
-  background: var(--bg-base);
+  background: #2D2D2D;
   color: #e2e8f0;
   box-shadow: none;
 }
@@ -455,7 +471,8 @@
 :root[data-theme="dark"] .desktop-action-confirmation-description,
 :root[data-theme="dark"] .desktop-action-confirmation-field dt,
 :root[data-theme="dark"] .desktop-action-confirmation-details summary,
-:root[data-theme="dark"] .desktop-action-confirmation-button.is-cancel {
+:root[data-theme="dark"] .desktop-action-confirmation-button.is-cancel,
+:root[data-theme="dark"] .desktop-action-confirmation-settings-hint {
   color: #a3a3a3;
 }
 
@@ -502,6 +519,11 @@
   }
 
   .desktop-action-confirmation-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .desktop-action-confirmation-buttons {
     flex-direction: column-reverse;
   }
 

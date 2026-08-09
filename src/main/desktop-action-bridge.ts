@@ -923,7 +923,7 @@ function buildMutatingActionConfirmationRequest(
       { decision: "cancel", label: t("common.cancel"), variant: "cancel" },
       { decision: "confirm", label: t("desktopAction.confirmExecute"), variant: "primary" }
     ],
-    defaultDecision: "cancel",
+    defaultDecision: "confirm",
     cancelDecision: "cancel"
   };
 }

@@ -2682,6 +2682,8 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(zhCN, /"settings\.general\.description":\s*"应用行为与系统设置。"/);
   assert.match(zhCN, /"settings\.general\.preventSleepWhileRunning":\s*"运行时防止休眠"/);
   assert.match(zhCN, /"settings\.general\.preventSleepWhileRunningDescription":\s*"在桌面应用运行聊天时，保持电脑唤醒。"/);
+  assert.match(zhCN, /"settings\.general\.desktopActionConfirmation":\s*"桌面端动作确认"/);
+  assert.match(zhCN, /"settings\.general\.desktopActionConfirmationDescription":\s*"本地动作桥执行变更前先询问。"/);
   assert.doesNotMatch(settingsPage, /<Input\.Password[\s\S]*kanban\.cloud\.tokenPlaceholder/);
   assert.doesNotMatch(settingsPage, /controlProjectSelectOptions|controlProjectOptions|kanban\.cloud\.projectId|kanban\.cloud\.projectSelectHelp|kanban\.cloud\.projectFallbackHelp|selectedProjectId/);
   assert.doesNotMatch(enUS, /kanban\.cloud\.projectId|kanban\.cloud\.projectSelectHelp|kanban\.cloud\.projectFallbackHelp/);
@@ -4991,9 +4993,12 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.ok(dialog.indexOf("desktop-action-confirmation-summary") < detailsIndex);
   assert.ok(dialog.indexOf("desktop-action-confirmation-description") > detailsIndex);
   assert.ok(dialog.indexOf("desktop-action-confirmation-fields") > detailsIndex);
+  assert.match(dialog, /desktopAction\.confirmSettingsHint/);
+  assert.match(dialog, /desktop-action-confirmation-buttons/);
   assert.match(layerRule, /position:\s*fixed;/);
   assert.match(layerRule, /padding:\s*16px;/);
   assert.match(dialogRule, /border-radius:\s*12px;/);
+  assert.match(dialogRule, /width:\s*min\(440px, 100%\);/);
   assert.match(dialogRule, /background:\s*rgba\(255, 255, 255, 0\.94\);/);
   assert.match(dialogRule, /box-shadow:\s*0 18px 54px rgba\(15, 23, 42, 0\.2\);/);
   assert.match(titleRule, /font-size:\s*12px;/);
@@ -5002,7 +5007,7 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(buttonRule, /font-weight:\s*500;/);
   assert.match(
     styles,
-    /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*var\(--bg-base\);[\s\S]*?box-shadow:\s*none;/
+    /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*#2D2D2D;[\s\S]*?box-shadow:\s*none;/
   );
 });
 

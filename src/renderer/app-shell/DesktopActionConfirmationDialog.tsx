@@ -89,20 +89,25 @@ export function DesktopActionConfirmationDialog({
           </details>
         </div>
         <footer className="desktop-action-confirmation-actions">
-          {request.buttons.map((button) => (
-            <button
-              key={button.decision}
-              ref={button.decision === defaultDecision ? defaultButtonRef : undefined}
-              type="button"
-              className={[
-                "desktop-action-confirmation-button",
-                `is-${button.variant}`
-              ].join(" ")}
-              onClick={() => onDecision(button.decision)}
-            >
-              {button.label}
-            </button>
-          ))}
+          <p className="desktop-action-confirmation-settings-hint">
+            {t("desktopAction.confirmSettingsHint")}
+          </p>
+          <div className="desktop-action-confirmation-buttons">
+            {request.buttons.map((button) => (
+              <button
+                key={button.decision}
+                ref={button.decision === defaultDecision ? defaultButtonRef : undefined}
+                type="button"
+                className={[
+                  "desktop-action-confirmation-button",
+                  `is-${button.variant}`
+                ].join(" ")}
+                onClick={() => onDecision(button.decision)}
+              >
+                {button.label}
+              </button>
+            ))}
+          </div>
         </footer>
       </section>
     </div>

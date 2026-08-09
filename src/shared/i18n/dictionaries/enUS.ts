@@ -2070,6 +2070,7 @@ export const enUSMessages = {
   "desktopAction.confirmFieldArgs": "Parameters",
   "desktopAction.confirmShowDetails": "Show details",
   "desktopAction.confirmHideDetails": "Hide details",
+  "desktopAction.confirmSettingsHint": "Turn this off in Settings / General",
   "desktopAction.confirmDetailIntro": "Source: local Desktop Action Bridge",
   "desktopAction.confirmDetailAction": "Action: {action} (permission: {permissionMode})",
   "desktopAction.confirmDetailRequest": "Request: requestId={requestId}",
