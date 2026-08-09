@@ -208,6 +208,12 @@ const SEVERITY_META: Record<KanbanSeverity, { labelKey: TranslationKey; shortLab
   low: { labelKey: "kanban.importance.low", shortLabelKey: "kanban.importance.lowShort", tone: "low" }
 };
 
+const KANBAN_DEMO_OWNER_KEYS = [
+  "kanban.card.demoOwnerNina",
+  "kanban.card.demoOwnerEvan",
+  "kanban.card.demoOwnerMika"
+] satisfies ReadonlyArray<TranslationKey>;
+
 const KANBAN_SEVERITIES = [
   "critical",
   "high",
@@ -804,6 +810,60 @@ function getIssueCardPeoplePresentation(
   };
 }
 
+function getIssueCardPeopleWithDevDemo(
+  issue: KanbanIssue,
+  presentation: ReturnType<typeof getIssueCardPeoplePresentation>,
+  t: TranslateFunction
+) {
+  if (!import.meta.env.DEV || issue.syncMode !== "cloud") {
+    return presentation;
+  }
+
+  const seed = Array.from(issue.id).reduce(
+    (value, character) => (value * 31 + (character.codePointAt(0) ?? 0)) >>> 0,
+    0
+  );
+  const ownerLabel = t(KANBAN_DEMO_OWNER_KEYS[seed % KANBAN_DEMO_OWNER_KEYS.length]!);
+  const collaboratorLabel = t(KANBAN_DEMO_OWNER_KEYS[(seed + 1) % KANBAN_DEMO_OWNER_KEYS.length]!);
+  const demoByKind: Record<IssueCardPersonPresentation["kind"], IssueCardPersonPresentation> = {
+    assignee: {
+      icon: <UserOutlined />,
+      label: ownerLabel,
+      rawLabel: ownerLabel,
+      kind: "assignee"
+    },
+    worker: seed % 2 === 0 ? {
+      icon: <RobotOutlined />,
+      label: t("kanban.card.demoAgent"),
+      rawLabel: t("kanban.card.demoAgent"),
+      kind: "worker"
+    } : {
+      icon: <UserOutlined />,
+      label: collaboratorLabel,
+      rawLabel: collaboratorLabel,
+      kind: "worker"
+    },
+    reviewer: {
+      icon: <UserOutlined />,
+      label: collaboratorLabel,
+      rawLabel: collaboratorLabel,
+      kind: "reviewer"
+    }
+  };
+  const visibleKinds: IssueCardPersonPresentation["kind"][] = issue.status === "in_review"
+    ? ["assignee", "reviewer"]
+    : issue.status === "todo" || issue.status === "in_progress"
+      ? ["assignee", "worker"]
+      : ["assignee"];
+  const people = visibleKinds.map(
+    (kind) => presentation.people.find((person) => person.kind === kind) ?? demoByKind[kind]
+  );
+  return {
+    people,
+    title: people.map((person) => person.rawLabel).join(" -> ")
+  };
+}
+
 function sortWorkflowStages(stages: KanbanWorkflowStage[]) {
   return [...stages].sort((left, right) => {
     const positionDelta = (left.position ?? Number.MAX_SAFE_INTEGER) - (right.position ?? Number.MAX_SAFE_INTEGER);
@@ -880,19 +940,6 @@ function getIssueCardProgressPresentation(
     percent: Math.min(100, Math.max(4, Math.round(workflowProgress))),
     stageLabel
   };
-}
-
-function getKanbanStageLegend(issues: KanbanIssue[], details: KanbanCloudDetailData) {
-  const items = new Map<string, { color: string; label: string }>();
-  for (const issue of issues) {
-    const progress = getIssueCardProgressPresentation(issue, details);
-    if (!progress.stageLabel) continue;
-    const key = `${progress.color}:${progress.stageLabel}`;
-    if (!items.has(key)) {
-      items.set(key, { color: progress.color, label: progress.stageLabel });
-    }
-  }
-  return Array.from(items.values()).slice(0, ISSUE_STAGE_COLOR_PALETTE.length);
 }
 
 function getIssueCardShellClassName(issue: KanbanIssue, extra: string[] = []) {
@@ -1742,11 +1789,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     return grouped;
   }, [filteredIssues]);
 
-  const stageLegend = useMemo(
-    () => getKanbanStageLegend(filteredIssues, cloudDetails),
-    [cloudDetails, filteredIssues]
-  );
-
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const detailIssue = detailIssueId ? issueMap.get(detailIssueId) ?? null : null;
   const filteredCount = filteredIssues.length;
@@ -2426,17 +2468,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         </div>
       ) : null}
 
-      {stageLegend.length > 0 ? (
-        <div className="kanban-stage-legend" aria-label={t("kanban.card.stageLegend")}>
-          {stageLegend.map((stage) => (
-            <span key={`${stage.color}:${stage.label}`} className="kanban-stage-legend-item">
-              <span className="kanban-stage-legend-dot" style={{ backgroundColor: stage.color }} aria-hidden="true" />
-              <span>{stage.label}</span>
-            </span>
-          ))}
-        </div>
-      ) : null}
-
       <DndContext
         sensors={sensors}
         collisionDetection={detectKanbanCollisions}
@@ -3112,7 +3143,11 @@ const IssueCardContent = memo(function IssueCardContent({
   const operationalState = getIssueCardOperationalStatePresentation(issue, awaitingConfirmation, t);
   const descriptionPreview = getIssueDescriptionPreview(issue.description);
   const duePresentation = getIssueCardDuePresentation(issue, locale, now, t);
-  const peopleLine = getIssueCardPeoplePresentation(issue, agents, cloudDetails.users, t);
+  const peopleLine = getIssueCardPeopleWithDevDemo(
+    issue,
+    getIssueCardPeoplePresentation(issue, agents, cloudDetails.users, t),
+    t
+  );
   const hasPeople = peopleLine.people.length > 0;
   const progress = getIssueCardProgressPresentation(issue, cloudDetails);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
@@ -3198,7 +3233,7 @@ const IssueCardContent = memo(function IssueCardContent({
     </span>
   ) : null;
   const actionSlot = (signal: ReactNode = null) => (
-    <span className={`issue-card-footer-end has-${actionCount}-actions`}>
+    <span className={`issue-card-footer-end has-${actionCount}-actions ${signal ? "has-signal" : "has-no-signal"}`}>
       {signal ? <span className="issue-card-footer-signal">{signal}</span> : null}
       {actions}
     </span>
@@ -3273,10 +3308,18 @@ const IssueCardContent = memo(function IssueCardContent({
             <div className="issue-card-footer-row">{people}{actionSlot(timingSignal)}</div>
           </>
         ) : issue.status === "todo" ? (
-          <>
-            {(priorityImportance || due) ? <div className="issue-card-footer-row">{priorityImportance}<span className="issue-card-footer-row-end">{due}</span></div> : null}
-            <div className="issue-card-footer-row">{people}{actionSlot()}</div>
-          </>
+          hasPeople ? (
+            <>
+              {(priorityImportance || due) ? <div className="issue-card-footer-row">{priorityImportance}<span className="issue-card-footer-row-end">{due}</span></div> : null}
+              <div className="issue-card-footer-row">{people}{actionSlot()}</div>
+            </>
+          ) : (priorityImportance || due) ? (
+            <div className="issue-card-footer-row">
+              {priorityImportance}
+              <span className="issue-card-footer-row-end">{due}</span>
+              {actionSlot()}
+            </div>
+          ) : null
         ) : issue.status === "in_progress" || issue.status === "in_review" ? (
           <>
             {hasPeople ? <div className="issue-card-footer-row">{people}</div> : null}
@@ -3287,10 +3330,14 @@ const IssueCardContent = memo(function IssueCardContent({
             </div>
           </>
         ) : (
-          <>
-            <div className="issue-card-footer-row">{timingSignal}</div>
-            <div className="issue-card-footer-row">{people}{actionSlot()}</div>
-          </>
+          hasPeople ? (
+            <>
+              <div className="issue-card-footer-row">{timingSignal}</div>
+              <div className="issue-card-footer-row">{people}{actionSlot()}</div>
+            </>
+          ) : (
+            <div className="issue-card-footer-row">{timingSignal}{actionSlot()}</div>
+          )
         )}
       </footer>
     </>
@@ -3641,7 +3688,7 @@ function IssueCardPriorityImportance({
 }) {
   const priorityMeta = PRIORITY_META[priority];
   const priorityLabel = t(priorityMeta.shortLabelKey);
-  const importanceLabel = t(SEVERITY_META[severity].labelKey);
+  const importanceLabel = t(SEVERITY_META[severity].shortLabelKey);
   return (
     <span
       className={`issue-card-priority-importance is-${priorityMeta.tone} is-importance-${severity}`}

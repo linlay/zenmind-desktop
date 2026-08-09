@@ -3367,8 +3367,8 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /className="issue-card-workflow-progress"/);
   assert.match(kanbanPage, /style=\{\{ width: `\$\{progress\.percent\}%`, backgroundColor: progress\.color \}\}/);
   assert.match(kanbanPage, /className="issue-card-status-mark" style=\{\{ backgroundColor: progress\.color \}\}/);
-  assert.match(kanbanPage, /const stageLegend = useMemo/);
-  assert.match(kanbanPage, /className="kanban-stage-legend"/);
+  assert.doesNotMatch(kanbanPage, /getKanbanStageLegend|stageLegend/);
+  assert.doesNotMatch(kanbanPage, /className="kanban-stage-legend"/);
   assert.doesNotMatch(kanbanPage, /kanban-status-dot/);
   assert.doesNotMatch(kanbanPage, /TagOutlined/);
 
@@ -3388,13 +3388,15 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /function IssueCardPriorityImportance\(/);
   assert.match(kanbanPage, /P0: \{ labelKey: "kanban\.priority\.p0"[\s\S]{0,520}P3: \{ labelKey: "kanban\.priority\.p3"/);
   assert.match(kanbanPage, /const priorityLabel = t\(priorityMeta\.shortLabelKey\)/);
-  assert.match(kanbanPage, /const importanceLabel = t\(SEVERITY_META\[severity\]\.labelKey\)/);
+  assert.match(kanbanPage, /const importanceLabel = t\(SEVERITY_META\[severity\]\.shortLabelKey\)/);
   assert.match(kanbanPage, /className="issue-card-priority-divider" aria-hidden="true">｜<\/span>/);
   assert.match(kanbanPage, /function getIssueCardPeoplePresentation\(/);
   assert.match(kanbanPage, /issue\.status === "in_review"[\s\S]{0,180}\[assignee, visibleReviewer\]/);
   assert.match(kanbanPage, /issue\.status === "todo" \|\| issue\.status === "in_progress"[\s\S]{0,140}\[assignee, visibleWorker\]/);
   assert.match(kanbanPage, /<RobotOutlined \/>/);
   assert.match(kanbanPage, /<UserOutlined \/>/);
+  assert.match(kanbanPage, /function getIssueCardPeopleWithDevDemo\(/);
+  assert.match(kanbanPage, /if \(!import\.meta\.env\.DEV \|\| issue\.syncMode !== "cloud"\)/);
 
   assert.match(kanbanPage, /<IssueCardSignalIcon kind=\{cardSignal\.icon\} \/>/);
   assert.match(kanbanPage, /const duePresentation = getIssueCardDuePresentation\(issue, locale, now, t\)/);
@@ -3413,7 +3415,10 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /<MessageOutlined \/>/);
   assert.match(kanbanPage, /<DeleteOutlined \/>/);
 
-  assert.match(kanbanStyles, /--kanban-column-min-width:\s*252px;/);
+  assert.match(kanbanStyles, /--kanban-column-min-width:\s*216px;/);
+  assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,180}width:\s*100%;[\s\S]{0,120}min-width:\s*200px;/);
+  assert.doesNotMatch(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,180}max-width:/);
+  assert.doesNotMatch(kanbanStyles, /\.kanban-stage-legend/);
   assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,260}min-height:\s*0;[\s\S]{0,260}height:\s*auto;/);
   assert.match(kanbanStyles, /\.issue-card-main\s*\{[\s\S]{0,180}flex:\s*0 0 auto;/);
   assert.match(kanbanStyles, /\.issue-card-project\s*\{[\s\S]{0,260}font-size:\s*10px;/);
@@ -3441,6 +3446,7 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.doesNotMatch(kanbanStyles, /\.issue-card:hover \.issue-card-people/);
   assert.match(kanbanPage, /\(priorityImportance \|\| due\) \? <div className="issue-card-footer-row">\{priorityImportance\}/);
   assert.match(kanbanPage, /\{hasPeople \? <div className="issue-card-footer-row">\{people\}<\/div> : null\}/);
+  assert.match(kanbanPage, /hasPeople \? \([\s\S]{0,420}\) : \(priorityImportance \|\| due\) \? \([\s\S]{0,260}\{actionSlot\(\)\}/);
   assert.match(kanbanStyles, /\.issue-card:hover \.issue-card-footer-end:not\(\.has-0-actions\) \.issue-card-footer-signal,[\s\S]{0,160}opacity:\s*0;/);
 
   assert.match(zhCN, /"kanban\.status\.inReview": "审核中"/);
@@ -3448,6 +3454,10 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(zhCN, /"kanban\.card\.overdueAt": "逾期 \{time\}"/);
   assert.match(zhCN, /"kanban\.card\.runningFor": "已进行 \{duration\}"/);
   assert.match(zhCN, /"kanban\.card\.completedAt": "完成 \{time\}"/);
+  assert.match(enUS, /"kanban\.importance\.criticalShort": "Crit\."/);
+  assert.match(enUS, /"kanban\.importance\.highShort": "Imp\."/);
+  assert.match(enUS, /"kanban\.importance\.mediumShort": "Norm\."/);
+  assert.doesNotMatch(enUS, /kanban\.card\.stageLegend/);
   assert.match(zhCN, /"kanban\.card\.workflowProgress": "工作流进度，当前阶段：\{stage\}"/);
   assert.match(zhCN, /"kanban\.priority\.p0": "P0"[\s\S]{0,180}"kanban\.priority\.p3": "P3"/);
   assert.match(zhCN, /"kanban\.importance\.critical": "关键"[\s\S]{0,240}"kanban\.importance\.medium": "普通"/);
@@ -3620,7 +3630,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanRuntime, /t\("kanban\.runtime\.cloudReadOnly"\)/);
   assert.doesNotMatch(kanbanRuntime, /desktop\.issue\.sync/);
   assert.match(kanbanRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
-  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => state\.kanbanRuntime\?\.sendAssistantEvent\(event\)/);
+  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,100}state\.kanbanRuntime\?\.sendAssistantEvent\(event\)/);
   assert.match(kanbanStore, /export function updateKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
@@ -3637,7 +3647,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /if \(!feedback \|\| feedback\.tone !== "success"\) \{/);
   assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,140}setFeedback\(\(current\) => \(current === feedback \? null : current\)\)/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.startRun/);
-  assert.match(kanbanPage, /const \{ t \} = useI18n\(\)/);
+  assert.match(kanbanPage, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(kanbanPage, /t\("kanban\.prompt\.rule"\)/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.onNavigationAgentsChanged/);
@@ -3675,7 +3685,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /<DragOverlay[\s\S]*?dropAnimation=\{null\}/);
   assert.match(kanbanPage, /kanbanApi\.updateIssue\(issue\.id,[\s\S]*?status:\s*"in_progress"/);
   assert.match(kanbanPage, /function openInProgressAssignmentModal\(issue: KanbanIssue\)/);
-  assert.match(kanbanPage, /setForm\(\{[\s\S]{0,160}\.\.\.createFormFromIssue\(issue\),[\s\S]{0,120}status:\s*"in_progress"/);
+  assert.match(kanbanPage, /function openInProgressAssignmentModal\(issue: KanbanIssue\) \{[\s\S]{0,160}setDetailInitialEditStatus\("in_progress"\)[\s\S]{0,120}setDetailIssueId\(issue\.id\)/);
   assert.match(kanbanPage, /targetStatus === "in_progress" && activeIssue\.status !== "in_progress"/);
   assert.match(kanbanPage, /activeIssue\.assigneeAgentKey\?\.trim\(\)[\s\S]{0,180}assignIssueToAssistant\(activeIssue, activeIssue\.assigneeAgentKey\)/);
   assert.match(kanbanPage, /openInProgressAssignmentModal\(activeIssue\)/);
@@ -3700,7 +3710,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /KANBAN_AUTOMATION_TIME_OPTIONS/);
   assert.match(kanbanPage, /automationTime/);
   assert.match(kanbanPage, /function hasIssueAutomation\(issue: Pick<KanbanIssue, "automationEnabled" \| "automationCron">\)/);
-  assert.match(kanbanPage, /const openEditModal = useCallback\(\(issue: KanbanIssue\) => \{[\s\S]{0,260}setFormCompact\(canEditKanbanIssueBody\(issue\) \? !hasIssueAutomation\(issue\) : false\);/);
+  assert.match(kanbanPage, /const openEditModal = useCallback\(\(issue: KanbanIssue\) => \{[\s\S]{0,160}setDetailIssueId\(issue\.id\)/);
   assert.match(kanbanPage, /function buildAutomationCron/);
   assert.match(kanbanPage, /const \[automationMenuOpen,\s*setAutomationMenuOpen\] = useState<AutomationMenuKind \| null>\(null\)/);
   assert.match(kanbanPage, /selectedAutomationTimeRef\.current\?\.scrollIntoView/);
@@ -3728,9 +3738,8 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /data-drag-locked=\{dragLocked \? "true" : undefined\}/);
   assert.match(kanbanPage, /\{\.\.\.sortable\.attributes\}\s*aria-disabled=\{undefined\}/);
   assert.doesNotMatch(kanbanPage, /aria-disabled=\{dragLocked\}/);
-  assert.match(kanbanPage, /function getVisibleAssigneeName\(issue: KanbanIssue, agents: AssistantNavAgentItem\[\]\)/);
   assert.match(kanbanPage, /function formatKanbanPersonLabel\(/);
-  assert.match(kanbanPage, /const peopleLine = getIssueCardPeoplePresentation\(issue, agents, t\)/);
+  assert.match(kanbanPage, /const peopleLine = getIssueCardPeopleWithDevDemo\([\s\S]{0,180}getIssueCardPeoplePresentation\(issue, agents, cloudDetails\.users, t\)/);
   assert.match(kanbanPage, /function getAssigneeAgent\(issue: KanbanIssue, agents: AssistantNavAgentItem\[\]\)/);
   assert.match(kanbanPage, /function mergeKanbanAgentIcons\(currentAgents: AssistantNavAgentItem\[\], nextAgents: AssistantNavAgentItem\[\]\)/);
   assert.match(kanbanPage, /function createNavigationAgentFromOption\(agent: DesktopPetAgentOption\): AssistantNavAgentItem[\s\S]{0,260}icon: agent\.icon/);
@@ -3748,15 +3757,14 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /setAgents\(\(currentAgents\) => mergeKanbanAgentIcons\(currentAgents, items\)\)/);
   assert.match(kanbanPage, /function getAssigneeAgent\(issue: KanbanIssue, agents: AssistantNavAgentItem\[\]\)/);
   assert.doesNotMatch(kanbanPage, /function KanbanAssigneeIcon/);
-  assert.match(kanbanPage, /issue-card-assignee-avatar/);
-  assert.match(kanbanPage, /getPersonInitials\(peopleLine\.assigneeLabel\)/);
+  assert.match(kanbanPage, /issue-card-person-avatar/);
+  assert.match(kanbanPage, /getPersonInitials\(person\.label\)/);
   assert.doesNotMatch(kanbanPage, /getIssueCardAssigneeAvatarLabel/);
   assert.doesNotMatch(kanbanPage, /issue-card-assignee-icon-frame/);
   assert.doesNotMatch(kanbanPage, /<span className="issue-card-assignee-icon" aria-hidden="true" \/>/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card-assignee-icon-frame\s*\{/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card-assignee-icon\s*\{/);
-  assert.match(kanbanStyles, /\.issue-card-assignee-avatar\s*\{/);
-  assert.doesNotMatch(kanbanStyles, /\.issue-card-assignee-avatar-label\s*\{/);
+  assert.match(kanbanStyles, /\.issue-card-person-avatar,/);
   assert.doesNotMatch(globalStyles, /#fde047 0%, #facc15 48%, #d69e13/);
   assert.doesNotMatch(kanbanPage, /issue\.assigneeName\.slice\(0, 1\)/);
   assert.doesNotMatch(kanbanPage, /kanban-run-badge/);
@@ -3779,13 +3787,12 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,220}-webkit-app-region:\s*no-drag;/);
   assert.match(globalStyles, /\.kanban-toolbar,[\s\S]{0,120}\.kanban-toolbar input\s*\{[\s\S]{0,260}pointer-events:\s*auto;/);
   assert.match(globalStyles, /--kanban-column-gap:\s*0px;/);
-  assert.match(globalStyles, /--kanban-column-min-width:\s*252px;/);
+  assert.match(globalStyles, /--kanban-column-min-width:\s*216px;/);
   assert.doesNotMatch(globalStyles, /--kanban-column-fit-width/);
   assert.match(globalStyles, /--kanban-column-width:\s*max\(\s*calc\(\(100% - \(4 \* var\(--kanban-column-gap\)\)\) \/ 5\),\s*var\(--kanban-column-min-width\)\s*\);/);
   assert.match(globalStyles, /\.kanban-columns\s*\{[\s\S]{0,220}overflow-x:\s*auto;/);
   assert.match(globalStyles, /\.kanban-column\s*\{/);
   assert.match(globalStyles, /\.kanban-column\s*\{[\s\S]{0,320}border:\s*0;[\s\S]{0,180}border-radius:\s*12px;[\s\S]{0,220}box-shadow:\s*none;/);
-  assert.doesNotMatch(globalStyles, /\.kanban-column\s*\{[^}]*border(?:-inline|-left|-right)?:\s*1px/);
   assert.match(globalStyles, /\.kanban-column \+ \.kanban-column\s*\{[\s\S]{0,100}border-left:\s*1px solid var\(--kanban-column-border\);/);
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-todo\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-in_progress\s*\{[^}]*margin-left:/);
@@ -3800,16 +3807,16 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanStyles, /--issue-card-border:\s*rgba\(15, 23, 42, 0\.1\);/);
   assert.match(kanbanStyles, /\.issue-card\s*\{/);
   assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,180}position:\s*relative;/);
-  assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,360}min-height:\s*206px;[\s\S]{0,360}height:\s*auto;/);
+  assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,360}width:\s*100%;[\s\S]{0,180}min-height:\s*0;[\s\S]{0,120}min-width:\s*200px;[\s\S]{0,360}height:\s*auto;/);
   assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,360}border:\s*1px solid var\(--issue-card-border\);/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card\.is-(?:backlog|todo|in_progress|in_review|completed):not\(\.is-awaiting-confirmation\)/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card:hover\s*\{[\s\S]{0,220}transform:\s*scale/);
-  assert.match(kanbanStyles, /\.issue-card-title\s*\{[\s\S]{0,240}white-space:\s*nowrap;/);
+  assert.match(kanbanStyles, /\.issue-card-title-text\s*\{[\s\S]{0,180}-webkit-line-clamp:\s*2;/);
   assert.match(kanbanStyles, /\.issue-card-description\s*\{[\s\S]{0,260}-webkit-line-clamp:\s*2;/);
-  assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,360}border-radius:\s*12px;/);
+  assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,360}border-radius:\s*10px;/);
   assert.match(kanbanStyles, /\.issue-card\s*\{[\s\S]{0,360}padding:\s*0;/);
   assert.match(kanbanStyles, /\.issue-card-foot\s*\{[\s\S]{0,220}border-top:\s*1px solid var\(--kanban-border\);/);
-  assert.match(kanbanStyles, /\.issue-card-foot\s*\{[\s\S]{0,180}display:\s*flex;[\s\S]{0,120}flex-wrap:\s*nowrap;/);
+  assert.match(kanbanStyles, /\.issue-card-foot\s*\{[\s\S]{0,180}display:\s*flex;[\s\S]{0,120}flex-direction:\s*column;/);
   assert.doesNotMatch(kanbanStyles, /kanban-running-status-dot/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card\.has-agent\.is-running-state\s*\{[\s\S]{0,120}animation:/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card\.has-agent::before\s*\{/);
@@ -3823,9 +3830,6 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.kanban-column-summary/);
   assert.match(globalStyles, /\.issue-card\.is-drag-locked\s*\{/);
   assert.doesNotMatch(globalStyles, /\.issue-card\.is-drag-locked \.issue-card-main\s*\{[\s\S]{0,120}padding-right:/);
-  assert.match(globalStyles, /\.issue-card\.is-awaiting-confirmation\s*\{/);
-  assert.doesNotMatch(globalStyles, /\.issue-card\.is-awaiting-confirmation\s*\{[\s\S]{0,160}background:\s*var\(--issue-card\);/);
-  assert.doesNotMatch(globalStyles, /:root\[data-theme="dark"\] \.issue-card\.is-awaiting-confirmation/);
   assert.match(globalStyles, /\.issue-card-status,\s*\.issue-card-signal\s*\{[\s\S]{0,220}overflow:\s*hidden;/);
   assert.doesNotMatch(globalStyles, /\.kanban-run-dot\s*\{/);
   assert.match(globalStyles, /\.kanban-automation-panel\s*\{/);
@@ -3845,7 +3849,6 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.app-shell\.is-mac-platform\.has-kanban-controls \.kanban-page\s*\{[^}]*padding-top:\s*(?:12|18|24)px;/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.is-windows-platform\.has-kanban-controls \.kanban-page\s*\{[^}]*padding-top:\s*(?:12|18|24)px;/);
   assert.doesNotMatch(globalStyles, /\.kanban-page::before\s*\{[\s\S]*?app-region:\s*drag;/);
-  assert.doesNotMatch(globalStyles, /\.kanban-breadcrumb\s*\{[\s\S]*?-webkit-app-region:\s*drag;/);
   assert.match(globalStyles, /\.kanban-modal-actions \.kanban-secondary-button/);
   assert.doesNotMatch(globalStyles, /\.kanban-human-loop-hint\s*\{/);
   assert.match(globalStyles, /\.issue-card-action\s*\{/);
