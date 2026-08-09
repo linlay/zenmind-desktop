@@ -56,7 +56,6 @@ const STATE_FILE = "runtime.json";
 const MAIN_LOG_FILE = "main.log";
 const ERROR_LOG_FILE = "error.log";
 const HEALTH_INTERVAL_MS = 250;
-const EXTERNAL_MONITOR_INTERVAL_MS = 15_000;
 
 type RuntimeRecord = {
   item: WebappEntry;
@@ -73,14 +72,14 @@ function nowIso() {
 }
 
 function launcherForItem(item: WebappEntry): WebappLauncherKind {
-  return item.backend?.launcher ?? "none";
+  return item.backend?.command.type ?? "none";
 }
 
 function ownershipForItem(item: WebappEntry) {
   if (!item.backend) {
     return null;
   }
-  return item.backend.launcher === "container" ? "external" as const : "desktop" as const;
+  return "desktop" as const;
 }
 
 function getStatePath(app: App, webappId: string) {
@@ -115,10 +114,9 @@ function normalizeStoredLauncher(
   fallback: WebappRuntimeState["launcher"]
 ): WebappRuntimeState["launcher"] {
   return value === "none" ||
-    value === "node" ||
-    value === "native" ||
-    value === "java" ||
-    value === "container"
+    value === "electron-node" ||
+    value === "bundled" ||
+    value === "system"
     ? value
     : fallback;
 }
@@ -149,8 +147,8 @@ function readStoredStateById(
         parsed.launcher,
         item ? launcherForItem(item) : "none"
       ),
-      ownership: parsed.ownership === "desktop" || parsed.ownership === "external"
-        ? parsed.ownership
+      ownership: parsed.ownership === "desktop"
+        ? "desktop"
         : item
           ? ownershipForItem(item)
           : null,
@@ -272,7 +270,7 @@ function waitForChildExit(child: ChildProcess, timeoutMs: number) {
   });
 }
 
-async function terminateRuntimeChild(child: ChildProcess) {
+async function terminateRuntimeChild(child: ChildProcess, shutdownTimeoutMs = 3_000) {
   const pid = child.pid;
   if (!pid) {
     return true;
@@ -295,8 +293,8 @@ async function terminateRuntimeChild(child: ChildProcess) {
   } catch {
     return terminateCapturedProcessTreeAsync(pid, capturedPids);
   }
-  await waitForChildExit(child, 1_000);
-  const gracefulDeadline = Date.now() + 1_000;
+  await waitForChildExit(child, shutdownTimeoutMs);
+  const gracefulDeadline = Date.now() + shutdownTimeoutMs;
   while (Date.now() < gracefulDeadline && capturedPids.some((candidatePid) => isProcessRunning(candidatePid))) {
     await delay(100);
   }
@@ -417,9 +415,7 @@ function createLauncherContext(
 }
 
 function shouldIssueBackendActionToken(item: WebappEntry) {
-  return item.schemaVersion >= 4 &&
-    Boolean(item.backend) &&
-    item.backend?.launcher !== "container" &&
+  return Boolean(item.backend) &&
     getWebappAllowedActions(item, "backendActionToken").length > 0;
 }
 
@@ -438,8 +434,6 @@ function prerequisiteMessage(check: WebappLauncherCheck) {
 export class WebappRuntime {
   private readonly records = new Map<string, RuntimeRecord>();
   private publicationChangeListener: ((reason: DesktopWebappChangedReason, webappId: string) => void) | null = null;
-  private externalMonitor: NodeJS.Timeout | null = null;
-  private externalMonitorApp: App | null = null;
 
   setPublicationChangeListener(
     listener: ((reason: DesktopWebappChangedReason, webappId: string) => void) | null
@@ -466,12 +460,12 @@ export class WebappRuntime {
       return false;
     }
     return [...this.records.values()].some((record) => {
-      if (record.state.status !== "running" || record.item.schemaVersion !== 5) {
+      if (record.state.status !== "running") {
         return false;
       }
       try {
         return new URL(record.state.webUrl).origin === origin &&
-          record.item.desktopBridge?.capabilities.includes(capability) === true;
+          Object.hasOwn(record.item.desktopBridge?.capabilities ?? {}, capability);
       } catch {
         return false;
       }
@@ -488,55 +482,6 @@ export class WebappRuntime {
         item.id
       );
     });
-  }
-
-  private ensureExternalMonitor(app: App) {
-    this.externalMonitorApp = app;
-    if (this.externalMonitor) {
-      return;
-    }
-    this.externalMonitor = setInterval(() => {
-      const monitorApp = this.externalMonitorApp;
-      if (!monitorApp) {
-        return;
-      }
-      for (const record of this.records.values()) {
-        if (record.item.backend?.launcher !== "container" || record.state.status !== "running") {
-          continue;
-        }
-        const check = checkWebappBackendPrerequisites(
-          createLauncherContext(monitorApp, record.item, null)
-        );
-        if (check.ok) {
-          continue;
-        }
-        void record.gateway?.close();
-        record.gateway = null;
-        revokeRecordActionTokens(record);
-        record.state = {
-          ...record.state,
-          status: "blocked",
-          webUrl: "",
-          frontendPort: null,
-          prerequisiteIssues: check.issues,
-          message: prerequisiteMessage(check),
-          updatedAt: nowIso()
-        };
-        writeState(monitorApp, record.state);
-      }
-    }, EXTERNAL_MONITOR_INTERVAL_MS);
-    this.externalMonitor.unref();
-  }
-
-  private stopExternalMonitorIfIdle() {
-    if ([...this.records.values()].some((record) => record.item.backend?.launcher === "container")) {
-      return;
-    }
-    if (this.externalMonitor) {
-      clearInterval(this.externalMonitor);
-      this.externalMonitor = null;
-      this.externalMonitorApp = null;
-    }
   }
 
   checkRuntime(app: App, webappId: string): WebappRuntimeCheckResult {
@@ -678,9 +623,7 @@ export class WebappRuntime {
         return { ok: true, item, state: record.state, message: record.state.message };
       }
 
-      const backendPort = item.backend.launcher === "container"
-        ? null
-        : await reservePort(item.backend.port);
+      const backendPort = await reservePort(0);
       const context = createLauncherContext(app, item, backendPort);
       const launcher = getWebappBackendLauncher(item.backend);
       const preflight = launcher.validatePrerequisites(context);
@@ -788,8 +731,6 @@ export class WebappRuntime {
           writeState(app, current.state);
           writeLogLine(getLogPath(app, id, "error"), `[${nowIso()}] backend exited: ${code ?? signal ?? "unknown"}`);
         });
-      } else if (item.backend.launcher === "container") {
-        this.ensureExternalMonitor(app);
       }
 
       this.syncPublishedRoute(app, item, record.state);
@@ -798,13 +739,12 @@ export class WebappRuntime {
       const message = error instanceof Error ? error.message : String(error);
       await record.gateway?.close().catch(() => undefined);
       if (record.child) {
-        await terminateRuntimeChild(record.child);
+        await terminateRuntimeChild(record.child, item.backend?.shutdownTimeoutMs);
       }
       revokeRecordActionTokens(record);
-      const status = item.backend?.launcher === "container" ? "blocked" : "error";
       record.state = {
         ...record.state,
-        status,
+        status: "error",
         webUrl: "",
         frontendPort: null,
         message,
@@ -835,7 +775,10 @@ export class WebappRuntime {
       record.gateway = null;
       revokeRecordActionTokens(record);
       if (record.child) {
-        const terminated = await terminateRuntimeChild(record.child);
+        const terminated = await terminateRuntimeChild(
+          record.child,
+          record.item.backend?.shutdownTimeoutMs
+        );
         if (!terminated) {
           const pid = record.child.pid ?? record.state.pid;
           const failureMessage = pid
@@ -892,7 +835,6 @@ export class WebappRuntime {
         updatedAt: nowIso()
       };
       this.records.delete(id);
-      this.stopExternalMonitorIfIdle();
       writeState(app, record.state);
       writeLogLine(getLogPath(app, id, "main"), `[${nowIso()}] stopped ${id}`);
       return { ok: true, item: item ?? record.item, state: record.state, message };
@@ -988,7 +930,6 @@ export class WebappRuntime {
         .map((state) => state.id)
     ]);
     const results = await Promise.all([...ids].map((id) => this.stop(app, id)));
-    this.stopExternalMonitorIfIdle();
     return results;
   }
 
@@ -1045,9 +986,6 @@ export class WebappRuntime {
     if (!record.item.backend && record.gateway?.server.listening) {
       return;
     }
-    if (record.item.backend?.launcher === "container" && record.gateway?.server.listening) {
-      return;
-    }
     if (record.child && record.child.exitCode === null && record.child.signalCode === null) {
       return;
     }
@@ -1068,16 +1006,7 @@ export class WebappRuntime {
 
 export const webappRuntime = new WebappRuntime();
 
-export function stopAllWebapps(app: App) {
-  return webappRuntime.stopAll(app);
-}
-
-export function listActiveWebappPorts(app: App) {
-  return webappRuntime.listActivePorts(app);
-}
-
 export const __testInternals = {
   HOST,
-  EXTERNAL_MONITOR_INTERVAL_MS,
   reservePort
 };

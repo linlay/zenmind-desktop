@@ -40,7 +40,7 @@ test("WebApp lifecycle actions keep install, runtime, and Tunnel publishing sepa
     bridge.indexOf("async function installWebapp"),
     bridge.indexOf("async function executeWebAction")
   );
-  assert.match(installHandler, /installWebsiteAppArchiveFromPath/u);
+  assert.match(installHandler, /webappManager\.installArchive/u);
   assert.match(installHandler, /operation/u);
   assert.doesNotMatch(installHandler, /webappRuntime\.start/u);
   assert.doesNotMatch(installHandler, /navigate/u);

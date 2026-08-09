@@ -5,27 +5,15 @@ import {
   type WebappBridgeCapability
 } from "../../../shared/webapp-bridge";
 
-const LEGACY_V4_BACKEND_ACTIONS = Object.freeze([
-  WEBAPP_BRIDGE_ACTIONS.assistantChat
-] as const);
-
-const LEGACY_V4_PAGE_ACTIONS = LEGACY_V4_BACKEND_ACTIONS;
-
 export type WebappCapabilityScope = "backendActionToken" | "localPageGateway";
 
-export const WEBAPP_CAPABILITY_POLICY = Object.freeze({
-  legacyV4Backend: LEGACY_V4_BACKEND_ACTIONS,
-  legacyV4Page: LEGACY_V4_PAGE_ACTIONS
-});
-
 function declaredCapabilities(item: WebappEntry) {
-  return new Set<WebappBridgeCapability>(item.desktopBridge?.capabilities ?? []);
+  return new Set(
+    Object.keys(item.desktopBridge?.capabilities ?? {}) as WebappBridgeCapability[]
+  );
 }
 
 export function getWebappAllowedActions(item: WebappEntry, scope: WebappCapabilityScope) {
-  if (item.schemaVersion < 5) {
-    return [...(scope === "backendActionToken" ? LEGACY_V4_BACKEND_ACTIONS : LEGACY_V4_PAGE_ACTIONS)];
-  }
   const declared = declaredCapabilities(item);
   const actions = new Set<string>();
   if (scope === "localPageGateway") {
@@ -51,5 +39,5 @@ export function isWebappActionAllowed(
 }
 
 export function webappDeclaresCapability(item: WebappEntry, capability: WebappBridgeCapability) {
-  return item.schemaVersion === 5 && item.desktopBridge?.capabilities.includes(capability) === true;
+  return Object.hasOwn(item.desktopBridge?.capabilities ?? {}, capability);
 }

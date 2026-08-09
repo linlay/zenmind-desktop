@@ -1,31 +1,27 @@
 import type { ServiceLogReadOptions, ServiceLogReadResult } from "./services";
-import type { WebappDesktopBridgeConfig } from "../webapp-bridge";
+import type {
+  WebappBackendConfig,
+  WebappDesktopBridgeConfig,
+  WebappFrontendConfig,
+  WebappManifestV1
+} from "../webapp-manifest";
 
 export type WebKind = "website" | "webapp";
 export type WebEntryKey = `website:${string}` | `webapp:${string}`;
 export type WebappRuntimeStatus = "stopped" | "starting" | "running" | "blocked" | "error";
 export type WebappLogTarget = "main" | "error";
 export type WebappSourceKind = "market" | "local" | "plugin";
-export type WebappOpenMode = "workspace" | "dialog";
-export type WebappLauncherKind = "none" | "node" | "native" | "java" | "container";
-export type WebappBackendOwnership = "desktop" | "external";
-export type WebappTarget =
-  | "universal"
-  | "darwin-arm64"
-  | "darwin-x64"
-  | "windows-arm64"
-  | "windows-x64";
-export type WebappContainerEngine = "auto" | "docker" | "podman";
-
+export type WebappOpenMode = WebappManifestV1["openMode"];
+export type WebappLauncherKind = "none" | "electron-node" | "bundled" | "system";
+export type WebappBackendOwnership = "desktop";
+export type WebappTarget = WebappManifestV1["target"];
 export interface WebappRuntimeSettings {
   schemaVersion: 1;
-  javaExecutable: string;
-  containerEngine: WebappContainerEngine;
+  systemExecutables: Record<string, string>;
 }
 
 export interface WebappRuntimeSettingsInput {
-  javaExecutable?: string;
-  containerEngine?: WebappContainerEngine;
+  systemExecutables?: Record<string, string>;
 }
 
 export interface WebappRuntimeSettingsResult {
@@ -34,70 +30,9 @@ export interface WebappRuntimeSettingsResult {
   message: string;
 }
 
-export interface WebappStaticFrontendConfig {
-  mode: "static";
-  root: string;
-  index: string;
-  spa: boolean;
-  apiPrefix: string;
-}
-
-export interface WebappProxyFrontendConfig {
-  mode: "proxy";
-}
-
-export type WebappFrontendConfig = WebappStaticFrontendConfig | WebappProxyFrontendConfig;
-
-export interface WebappHttpHealthConfig {
-  type: "http";
-  path: string;
-  timeoutMs: number;
-}
-
-export interface WebappTcpHealthConfig {
-  type: "tcp";
-  timeoutMs: number;
-}
-
-export type WebappHealthConfig = WebappHttpHealthConfig | WebappTcpHealthConfig;
-
-export interface WebappManagedBackendBase {
-  entry: string;
-  args: string[];
-  env: Record<string, string>;
-  port: number;
-  health: WebappHealthConfig;
-}
-
-export interface WebappNodeBackendConfig extends WebappManagedBackendBase {
-  launcher: "node";
-  runtime: "node";
-}
-
-export interface WebappNativeBackendConfig extends WebappManagedBackendBase {
-  launcher: "native";
-}
-
-export interface WebappJavaBackendConfig extends WebappManagedBackendBase {
-  launcher: "java";
-  jvmArgs: string[];
-}
-
-export interface WebappContainerBackendConfig {
-  launcher: "container";
-  management: "external";
-  engine: WebappContainerEngine;
-  containerName: string;
-  image: string;
-  containerPort: number;
-  health: WebappHealthConfig;
-}
-
-export type WebappBackendConfig =
-  | WebappNodeBackendConfig
-  | WebappNativeBackendConfig
-  | WebappJavaBackendConfig
-  | WebappContainerBackendConfig;
+export type WebappHealthConfig = NonNullable<WebappBackendConfig>["health"];
+export type WebappHttpHealthConfig = Extract<WebappHealthConfig, { type: "http" }>;
+export type WebappTcpHealthConfig = Extract<WebappHealthConfig, { type: "tcp" }>;
 
 export interface WebEntryBase {
   id: string;
@@ -118,10 +53,11 @@ export interface WebsiteEntry extends WebEntryBase {
 export interface WebappEntry extends WebEntryBase {
   kind: "webapp";
   entryKey: `webapp:${string}`;
-  schemaVersion: 2 | 3 | 4 | 5;
-  version: string;
+  schemaVersion: WebappManifestV1["schemaVersion"];
+  version: WebappManifestV1["version"];
   target: WebappTarget;
   openMode: WebappOpenMode;
+  appConfig: WebappManifestV1["appConfig"];
   frontend: WebappFrontendConfig;
   backend?: WebappBackendConfig;
   desktopBridge?: WebappDesktopBridgeConfig;

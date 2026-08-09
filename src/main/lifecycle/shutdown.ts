@@ -19,10 +19,7 @@ import {
   staticSiteHostManager,
   stopAllStaticSiteHosts
 } from "../static-site-host-manager";
-import {
-  listActiveWebappPorts,
-  stopAllWebapps
-} from "../webs/webapps/runtime";
+import { webappManager } from "../webs/webapps/manager";
 import { webappWindowManager } from "../webs/webapps/window-manager";
 import { stopTunnelHubRuntime } from "../tunnel-hub-runtime";
 import { t } from "../i18n/main-i18n";
@@ -46,7 +43,7 @@ export type ShutdownCleanupDependencies = {
   listInitialPortTargets: (app: App) => ShutdownPortTarget[];
   captureManagedProcessSnapshot: (app: App) => Promise<ManagedProcessSnapshot>;
   stopStaticSites: () => ReturnType<typeof stopAllStaticSiteHosts>;
-  stopWebapps: (app: App) => ReturnType<typeof stopAllWebapps>;
+  stopWebapps: (app: App) => ReturnType<(typeof webappManager.runtime)["stopAll"]>;
   stopServices: (
     app: App,
     options: { stopCommandTimeoutMs: number }
@@ -122,7 +119,7 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
           ? [{ kind: "gateway" as const, id: `static-site:${site.siteId}`, port: site.port }]
           : []
       ),
-      ...listActiveWebappPorts(app).map((target) => ({
+      ...webappManager.runtime.listActivePorts(app).map((target) => ({
         kind: "gateway" as const,
         id: `webapp:${target.id}`,
         port: target.port
@@ -131,7 +128,7 @@ export function createShutdownCleanupRunner(options: ShutdownCleanupRunnerOption
     captureManagedProcessSnapshot: (app) =>
       captureManagedProcessCleanupSnapshotAsync(app),
     stopStaticSites: () => stopAllStaticSiteHosts(),
-    stopWebapps: (app) => stopAllWebapps(app),
+    stopWebapps: (app) => webappManager.runtime.stopAll(app),
     stopServices: (app, serviceOptions) =>
       stopRunningServicesForShutdown(app, serviceOptions),
     stopTunnel: () => stopTunnelHubRuntime(),
