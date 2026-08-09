@@ -897,16 +897,18 @@ test("plugin webapp resources do not overwrite unowned webapps", async () => {
     const pluginDir = path.join(root, "plugin");
     const sourceDir = path.join(pluginDir, "webapp", "calendar");
     fs.mkdirSync(path.join(sourceDir, "frontend"), { recursive: true });
-    fs.mkdirSync(path.join(sourceDir, "backend"), { recursive: true });
     fs.writeFileSync(path.join(sourceDir, "webapp.json"), JSON.stringify({
+      schemaVersion: 1,
       id: "calendar",
-      kind: "webapp",
       label: "日历",
-      frontend: { root: "frontend", index: "index.html" },
-      backend: { runtime: "node", entry: "backend/server.mjs" }
+      version: "1.0.0",
+      target: "universal",
+      openMode: "workspace",
+      appConfig: {},
+      frontend: { root: "frontend", index: "index.html", spa: true, apiPrefix: "/api" },
+      desktopBridge: { version: 1, capabilities: {} }
     }), "utf8");
     fs.writeFileSync(path.join(sourceDir, "frontend", "index.html"), "<!doctype html>\n", "utf8");
-    fs.writeFileSync(path.join(sourceDir, "backend", "server.mjs"), "console.log('calendar')\n", "utf8");
 
     const userWebappDir = path.join(desktopRoot(root), "data", "webs", "webapps", "calendar");
     fs.mkdirSync(userWebappDir, { recursive: true });

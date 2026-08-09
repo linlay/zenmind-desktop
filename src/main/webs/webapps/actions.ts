@@ -11,8 +11,12 @@ import {
   getDesktopWebappLogsRoot,
   getDesktopWebappStateRoot
 } from "../../user-paths";
-import { isRecord, readString } from "../common";
-import { getWebappDir, readWebappItems, writeWebappPreferenceFields } from "./store";
+import {
+  getWebappDir,
+  readWebappItems,
+  removeWebappPreferences,
+  writeWebappPreferenceFields
+} from "./store";
 import { webappRuntime } from "./runtime";
 import { unpublishWebapp } from "./publisher";
 import { webappWindowManager } from "./window-manager";
@@ -103,6 +107,7 @@ export type WebappDisposalTarget = {
   label: string;
   installPath?: string;
   removeMarketRecord?: boolean;
+  preserveUserData?: boolean;
 };
 
 export async function disposeWebappInstallation(
@@ -137,9 +142,12 @@ export async function disposeWebappInstallation(
       recursive: true,
       force: true
     });
-    fs.rmSync(getDesktopWebappDataRoot(app, target.id), { recursive: true, force: true });
-    fs.rmSync(getDesktopWebappStateRoot(app, target.id), { recursive: true, force: true });
-    fs.rmSync(getDesktopWebappLogsRoot(app, target.id), { recursive: true, force: true });
+    if (!target.preserveUserData) {
+      fs.rmSync(getDesktopWebappDataRoot(app, target.id), { recursive: true, force: true });
+      fs.rmSync(getDesktopWebappStateRoot(app, target.id), { recursive: true, force: true });
+      fs.rmSync(getDesktopWebappLogsRoot(app, target.id), { recursive: true, force: true });
+      removeWebappPreferences(app, target.id);
+    }
     if (target.removeMarketRecord) {
       removeInstalledRecord(app, target.id, "website-app");
     }
@@ -176,14 +184,9 @@ export function updateWebappItem(app: App, id: string, input: WebappUpdateInput)
   }
 
   try {
-    const rawInput = isRecord(input) ? input : {};
     const updated = writeWebappPreferenceFields(app, target.id, {
       ...(typeof input.label === "string" ? { label: input.label } : {}),
-      ...(
-        typeof input.copilotAgentKey === "string" || typeof rawInput.agentKey === "string"
-          ? { copilotAgentKey: readString(input.copilotAgentKey) || readString(rawInput.agentKey) }
-          : {}
-      ),
+      ...(typeof input.copilotAgentKey === "string" ? { copilotAgentKey: input.copilotAgentKey } : {}),
       ...(input.openMode === "workspace" || input.openMode === "dialog"
         ? { openMode: input.openMode }
         : {})

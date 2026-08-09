@@ -1,0 +1,357 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "schemaVersion": {
+      "type": "number",
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,78}[a-z0-9])?$"
+    },
+    "label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 80
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)\\.(?:0|[1-9]\\d*)(?:-(?:0|[1-9]\\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\\.(?:0|[1-9]\\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$"
+    },
+    "target": {
+      "type": "string",
+      "enum": [
+        "universal",
+        "darwin-arm64",
+        "darwin-x64",
+        "windows-arm64",
+        "windows-x64"
+      ]
+    },
+    "openMode": {
+      "default": "workspace",
+      "type": "string",
+      "enum": [
+        "workspace",
+        "dialog"
+      ]
+    },
+    "appConfig": {
+      "default": {},
+      "type": "object",
+      "propertyNames": {
+        "type": "string"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/__schema0"
+      },
+      "x-zenmind-maxBytes": 131072,
+      "description": "Arbitrary JSON business configuration owned by the WebApp. Secrets are forbidden."
+    },
+    "frontend": {
+      "type": "object",
+      "properties": {
+        "root": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "index": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512
+        },
+        "spa": {
+          "default": true,
+          "type": "boolean"
+        },
+        "apiPrefix": {
+          "default": "/api",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        }
+      },
+      "required": [
+        "root",
+        "index",
+        "spa",
+        "apiPrefix"
+      ],
+      "additionalProperties": false
+    },
+    "backend": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "default": {
+            "type": "electron-node",
+            "script": "backend/server.mjs"
+          },
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "electron-node"
+                },
+                "script": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              },
+              "required": [
+                "type",
+                "script"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "bundled"
+                },
+                "executable": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
+                }
+              },
+              "required": [
+                "type",
+                "executable"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "system"
+                },
+                "executable": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                }
+              },
+              "required": [
+                "type",
+                "executable"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "args": {
+          "default": [],
+          "maxItems": 128,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 4096
+          }
+        },
+        "env": {
+          "default": {},
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 8192
+          }
+        },
+        "health": {
+          "oneOf": [
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "http"
+                },
+                "path": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 256,
+                  "pattern": "^\\/(?!\\/)"
+                },
+                "timeoutMs": {
+                  "default": 10000,
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 120000
+                }
+              },
+              "required": [
+                "type",
+                "path",
+                "timeoutMs"
+              ],
+              "additionalProperties": false
+            },
+            {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "const": "tcp"
+                },
+                "timeoutMs": {
+                  "default": 10000,
+                  "type": "integer",
+                  "minimum": 1000,
+                  "maximum": 120000
+                }
+              },
+              "required": [
+                "type",
+                "timeoutMs"
+              ],
+              "additionalProperties": false
+            }
+          ]
+        },
+        "shutdownTimeoutMs": {
+          "default": 3000,
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 30000
+        }
+      },
+      "required": [
+        "command",
+        "args",
+        "env",
+        "health",
+        "shutdownTimeoutMs"
+      ],
+      "additionalProperties": false
+    },
+    "desktopBridge": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 1
+        },
+        "capabilities": {
+          "type": "object",
+          "properties": {
+            "assistant.chat": {
+              "type": "object",
+              "properties": {
+                "agentKey": {
+                  "type": "string",
+                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                },
+                "instruction": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 8000
+                }
+              },
+              "additionalProperties": false
+            },
+            "native.browser.external": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "native.dialog.files": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "native.dialog.directories": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "native.dialog.savePath": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "native.microphone": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "native.clipboard.write": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            },
+            "native.notification": {
+              "type": "object",
+              "properties": {},
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "version",
+        "capabilities"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "id",
+    "label",
+    "version",
+    "target",
+    "openMode",
+    "appConfig",
+    "frontend"
+  ],
+  "additionalProperties": false,
+  "$defs": {
+    "__schema0": {
+      "anyOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "boolean"
+        },
+        {
+          "type": "number"
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/__schema0"
+          }
+        },
+        {
+          "type": "object",
+          "propertyNames": {
+            "type": "string"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/__schema0"
+          }
+        }
+      ]
+    }
+  },
+  "title": "ZenMind WebApp Manifest v1",
+  "description": "Desktop's authoritative host contract. Business-owned configuration belongs in appConfig.",
+  "x-zenmind-manifestMaxBytes": 262144
+}

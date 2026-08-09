@@ -8,6 +8,7 @@ import type { WebappEntry } from "../../../shared/contracts";
 import { getConfiguredDesktopActionBridgePort } from "../../desktop-action-bridge-settings";
 import { resolveWebappRelativePath } from "../common";
 import { isWebappActionAllowed } from "./capability-policy";
+import { readWebappManifestFromDir } from "./store";
 import {
   WEBAPP_BRIDGE_MODULE_PATH,
   WEBAPP_BRIDGE_MODULE_SOURCE
@@ -16,6 +17,7 @@ import {
 const HOST = "127.0.0.1";
 const DESKTOP_RESERVED_PREFIX = "/__desktop/";
 const DESKTOP_ACTION_PATH = "/__desktop/actions/call";
+export const WEBAPP_APP_CONFIG_PATH = "/__desktop/app-config.json";
 const DESKTOP_ACTION_BODY_LIMIT = 64 * 1024;
 
 export type WebappGateway = {
@@ -190,10 +192,6 @@ async function handleStaticRequest(
   req: http.IncomingMessage,
   res: http.ServerResponse
 ) {
-  if (item.frontend.mode !== "static") {
-    writeText(res, 500, "static frontend configuration is unavailable");
-    return;
-  }
   if (req.method !== "GET" && req.method !== "HEAD") {
     res.writeHead(405, { "Allow": "GET, HEAD", "Cache-Control": "no-store" });
     res.end("method not allowed");
@@ -237,9 +235,6 @@ async function handleStaticRequest(
 function shouldProxyRequest(item: WebappEntry, requestPath: string) {
   if (!item.backend) {
     return false;
-  }
-  if (item.frontend.mode === "proxy") {
-    return true;
   }
   return requestPath === item.frontend.apiPrefix ||
     requestPath.startsWith(`${item.frontend.apiPrefix}/`);
@@ -488,6 +483,7 @@ export async function startWebappGateway(options: {
   backendUrl: string;
   pageActionToken: string;
 }): Promise<WebappGateway> {
+  const installedManifest = readWebappManifestFromDir(options.webappDir);
   const sockets = new Set<net.Socket>();
   const server = http.createServer((req, res) => {
     const requestPath = getRequestPath(req.url);
@@ -513,6 +509,27 @@ export async function startWebappGateway(options: {
     }
     if (requestPath === DESKTOP_ACTION_PATH) {
       void handleDesktopBridgeRequest(options, req, res);
+      return;
+    }
+    if (requestPath === WEBAPP_APP_CONFIG_PATH) {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.writeHead(405, { "Allow": "GET, HEAD", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      const payload = JSON.stringify({
+        id: installedManifest.id,
+        label: installedManifest.label,
+        version: installedManifest.version,
+        appConfig: installedManifest.appConfig
+      });
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Length": String(Buffer.byteLength(payload)),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      res.end(req.method === "HEAD" ? "" : payload);
       return;
     }
     if (requestPath.startsWith(DESKTOP_RESERVED_PREFIX)) {

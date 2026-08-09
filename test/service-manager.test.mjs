@@ -1245,6 +1245,17 @@ function getTestPluginProgramDir(userDataRoot, pluginId, version = "v1.0.0") {
   return path.join(getTestProgramsRoot(userDataRoot), "plugins", pluginId, version);
 }
 
+function getTestApplicationSupportPluginDir(userDataRoot, pluginId, version = "v1.0.0") {
+  return path.join(
+    userDataRoot,
+    "app-data",
+    APP_BRAND.paths.programDataDirName,
+    "plugins",
+    pluginId,
+    version
+  );
+}
+
 function getTestConfigDir(userDataRoot, serviceId, kind = "services") {
   return path.join(getTestDesktopRoot(userDataRoot), "config", kind, serviceId);
 }
@@ -1780,20 +1791,21 @@ function writeResourcePluginInstallRoot(installDir, options = {}) {
   if (resources.webapps?.some((webapp) => webapp.id === "calendar")) {
     const sourceDir = path.join(installDir, "webapp", "calendar");
     fs.mkdirSync(path.join(sourceDir, "frontend"), { recursive: true });
-    fs.mkdirSync(path.join(sourceDir, "backend"), { recursive: true });
     fs.writeFileSync(path.join(sourceDir, "webapp.json"), `${JSON.stringify({
+      schemaVersion: 1,
       id: "calendar",
-      kind: "webapp",
       label: "日历",
-      frontend: { root: "frontend", index: "index.html", apiPrefix: "/api" },
-      backend: { runtime: "node", entry: "backend/server.mjs", healthPath: "/api/health" }
+      version: "1.0.0",
+      target: "universal",
+      openMode: "workspace",
+      appConfig: {},
+      frontend: { root: "frontend", index: "index.html", spa: true, apiPrefix: "/api" },
+      desktopBridge: { version: 1, capabilities: {} }
     }, null, 2)}\n`, "utf8");
     fs.writeFileSync(path.join(sourceDir, "frontend", "index.html"), "<!doctype html>\n", "utf8");
-    fs.writeFileSync(path.join(sourceDir, "backend", "server.mjs"), "console.log('calendar')\n", "utf8");
     for (const relativePath of [
       "webapp/calendar/webapp.json",
-      "webapp/calendar/frontend/index.html",
-      "webapp/calendar/backend/server.mjs"
+      "webapp/calendar/frontend/index.html"
     ]) {
       if (!requiredPaths.includes(relativePath)) {
         requiredPaths.push(relativePath);
@@ -4676,7 +4688,7 @@ test("initializeService copies template, runs deploy hook, and records success s
 test("resource plugin initializes stopped and start-stop manages webapp resources without deleting state", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-webapp-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = getTestPluginProgramDir(userDataRoot, "calendar");
+  const installDir = getTestApplicationSupportPluginDir(userDataRoot, "calendar");
   const app = createApp(userDataRoot);
   const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", "calendar");
   const webappStateDir = path.join(getTestDesktopRoot(userDataRoot), "state", "webs", "webapps", "calendar");
@@ -4689,9 +4701,8 @@ test("resource plugin initializes stopped and start-stop manages webapp resource
       id: "calendar",
       name: "日历"
     });
-
     const initResult = await initializeService(app, "calendar");
-    assert.equal(initResult.ok, true);
+    assert.equal(initResult.ok, true, initResult.message);
     assert.equal(initResult.service.status, "stopped");
     assert.equal(fs.existsSync(webappDir), false);
     assert.equal(pluginResourceInternals.readPluginResourceDesiredStatus(app, getService("calendar")), "stopped");
@@ -4722,7 +4733,7 @@ test("resource plugin initializes stopped and start-stop manages webapp resource
 test("resource plugin start-stop manages agent-platform resources and preserves ownership", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-agent-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = getTestPluginProgramDir(userDataRoot, "happy-agent");
+  const installDir = getTestApplicationSupportPluginDir(userDataRoot, "happy-agent");
   const app = createApp(userDataRoot);
   const calls = [];
 
@@ -6853,7 +6864,7 @@ test("startup restore skips install-only services that were running at shutdown"
 test("shutdown records running resource plugins without unloading their resources", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-shutdown-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = getTestPluginProgramDir(userDataRoot, "happy-agent");
+  const installDir = getTestApplicationSupportPluginDir(userDataRoot, "happy-agent");
   const app = createApp(userDataRoot);
   const calls = [];
 
@@ -6900,7 +6911,7 @@ test("shutdown records running resource plugins without unloading their resource
 test("restoreRunningServices restores desired running resource plugins even without shutdown state", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-plugin-restore-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const installDir = getTestPluginProgramDir(userDataRoot, "calendar");
+  const installDir = getTestApplicationSupportPluginDir(userDataRoot, "calendar");
   const app = createApp(userDataRoot);
   const webappDir = path.join(getTestDesktopRoot(userDataRoot), "data", "webs", "webapps", "calendar");
 
