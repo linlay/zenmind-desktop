@@ -67,6 +67,7 @@ import {
 } from "../../assistantNavigation";
 import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
 import { useI18n } from "../../i18n/useI18n";
+import { Tooltip } from "../../components/Tooltip";
 import { flattenKanbanProjectTree } from "./kanbanProjectTree";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
@@ -1273,6 +1274,20 @@ function getKanbanProjectOptionLabel(project: KanbanProject) {
     return `${project.name} · ${path}`;
   }
   return project.name;
+}
+
+function getKanbanSelectedProjectTooltipItems(selectedProjectIds: string[], projects: KanbanProject[]) {
+  if (selectedProjectIds.length < 2) {
+    return [];
+  }
+  const projectsById = new Map(projects.map((project) => [project.id, project]));
+  return selectedProjectIds.map((projectId) => {
+    const project = projectsById.get(projectId);
+    return {
+      id: projectId,
+      label: project ? getKanbanProjectOptionLabel(project) : projectId
+    };
+  });
 }
 
 function sortKanbanProjectOptions(projects: KanbanProject[]) {
@@ -3385,6 +3400,10 @@ function KanbanProjectFilter({
   const treeItems = useMemo(() => flattenKanbanProjectTree(projects), [projects]);
   const label = getKanbanProjectFilterLabel(selectedProjectIds, projects, t);
   const countLabel = t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount });
+  const selectedProjectTooltipItems = useMemo(
+    () => getKanbanSelectedProjectTooltipItems(selectedProjectIds, projects),
+    [projects, selectedProjectIds]
+  );
 
   useEffect(() => {
     if (!open || typeof document === "undefined") {
@@ -3412,19 +3431,33 @@ function KanbanProjectFilter({
 
   return (
     <div className="kanban-project-filter" ref={filterRef}>
-      <button
-        type="button"
-        className={`kanban-project-filter-trigger ${open ? "is-open" : ""}`}
-        aria-haspopup="tree"
-        aria-expanded={open}
-        aria-label={`${t("kanban.projectFilter.ariaLabel")}: ${label}; ${countLabel}`}
-        title={`${label} · ${countLabel}`}
-        onClick={() => onOpenChange(!open)}
+      <Tooltip
+        placement="bottom"
+        disabled={open || selectedProjectTooltipItems.length < 2}
+        content={(
+          <span className="kanban-project-filter-tooltip">
+            {selectedProjectTooltipItems.map((item) => (
+              <span key={item.id} className="kanban-project-filter-tooltip-item">
+                {item.label}
+              </span>
+            ))}
+          </span>
+        )}
       >
-        <KanbanIcon kind="project" />
-        <span className="kanban-project-filter-label">{label}</span>
-        <span className="kanban-project-filter-count" aria-hidden="true">{countLabel}</span>
-      </button>
+        <button
+          type="button"
+          className={`kanban-project-filter-trigger ${open ? "is-open" : ""}`}
+          aria-haspopup="tree"
+          aria-expanded={open}
+          aria-label={`${t("kanban.projectFilter.ariaLabel")}: ${label}; ${countLabel}`}
+          title={selectedProjectTooltipItems.length >= 2 ? undefined : `${label} · ${countLabel}`}
+          onClick={() => onOpenChange(!open)}
+        >
+          <KanbanIcon kind="project" />
+          <span className="kanban-project-filter-label">{label}</span>
+          <span className="kanban-project-filter-count" aria-hidden="true">{countLabel}</span>
+        </button>
+      </Tooltip>
       {open ? (
         <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>
           <button

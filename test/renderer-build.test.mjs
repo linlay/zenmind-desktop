@@ -3584,6 +3584,12 @@ test("Kanban toolbar merges issue count into the wider project filter and compac
   assert.match(kanbanStyles, /\.kanban-project-filter\s*\{[\s\S]{0,160}width:\s*100%;[\s\S]{0,100}max-width:\s*360px;/);
   assert.match(kanbanStyles, /\.kanban-project-filter-trigger\s*\{[\s\S]{0,100}width:\s*100%;/);
   assert.match(kanbanStyles, /\.kanban-project-filter-menu\s*\{[\s\S]{0,180}width:\s*min\(360px,\s*calc\(100vw - 32px\)\);/);
+  assert.match(kanbanPage, /function getKanbanSelectedProjectTooltipItems\(selectedProjectIds: string\[\], projects: KanbanProject\[\]\)[\s\S]{0,160}selectedProjectIds\.length < 2/);
+  assert.match(kanbanPage, /<Tooltip[\s\S]{0,160}placement="bottom"[\s\S]{0,120}disabled=\{open \|\| selectedProjectTooltipItems\.length < 2\}/);
+  assert.match(kanbanPage, /className="kanban-project-filter-tooltip"[\s\S]{0,260}className="kanban-project-filter-tooltip-item"/);
+  assert.match(kanbanPage, /title=\{selectedProjectTooltipItems\.length >= 2 \? undefined : `\$\{label\} · \$\{countLabel\}`\}/);
+  assert.match(kanbanStyles, /\[role="tooltip"\]:has\(> \.kanban-project-filter-tooltip\)\s*\{[\s\S]{0,180}max-width:\s*min\(360px,\s*calc\(100vw - 16px\)\);/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-tooltip-item\s*\{[\s\S]{0,180}text-overflow:\s*ellipsis;[\s\S]{0,80}white-space:\s*nowrap;/);
   assert.match(kanbanStyles, /\.kanban-project-filter-count\s*\{[\s\S]{0,260}border-left:\s*1px solid/);
   assert.match(kanbanStyles, /\.kanban-cloud-status\s*\{[\s\S]{0,80}width:\s*auto;[\s\S]{0,80}min-width:\s*0;/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-cloud-status\s*\{[^}]*min-width:\s*150px/);

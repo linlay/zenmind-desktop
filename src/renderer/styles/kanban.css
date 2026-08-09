@@ -322,6 +322,26 @@
   white-space: nowrap;
 }
 
+[role="tooltip"]:has(> .kanban-project-filter-tooltip) {
+  width: max-content;
+  max-width: min(360px, calc(100vw - 16px));
+  padding: 8px 10px;
+}
+
+.kanban-project-filter-tooltip {
+  display: grid;
+  gap: 4px;
+  max-width: 340px;
+}
+
+.kanban-project-filter-tooltip-item {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .kanban-project-filter-menu {
   position: absolute;
   top: 38px;
