@@ -3336,6 +3336,7 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
 test("Kanban cards use stage-colored workflow rails and status-specific compact footers", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const issueTypeIcon = readSourceFile("src", "renderer", "pages", "kanban", "IssueTypeIcon.tsx");
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
@@ -3372,10 +3373,18 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /color: paletteIndex >= 0[\s\S]{0,180}ISSUE_STAGE_COLOR_PALETTE/);
   assert.match(kanbanPage, /className="issue-card-workflow-progress"/);
   assert.match(kanbanPage, /style=\{\{ width: `\$\{progress\.percent\}%`, backgroundColor: progress\.color \}\}/);
-  assert.match(kanbanPage, /className="issue-card-status-mark" style=\{\{ backgroundColor: progress\.color \}\}/);
+  assert.match(kanbanPage, /className=\{`issue-card-status is-\$\{cardStatus\.tone\}`\}[\s\S]{0,100}style=\{\{ color: progress\.color \}\}/);
+  assert.doesNotMatch(kanbanPage, /issue-card-status-mark/);
+  assert.match(kanbanPage, /function getIssueCardTypePresentation\(issue: KanbanIssue, cloudDetails: KanbanCloudDetailData\)/);
+  assert.match(kanbanPage, /cloudDetails\.issueTypes\.find\(\(candidate\) => candidate\.key === key\)/);
+  assert.match(kanbanPage, /className="issue-card-context-meta"[\s\S]{0,420}<IssueTypeIcon[\s\S]{0,200}className="issue-card-type-icon"/);
+  assert.match(issueTypeIcon, /bulb:\s*BulbFilled[\s\S]{0,200}"book-open":\s*BookFilled[\s\S]{0,200}"check-square":\s*CheckSquareFilled[\s\S]{0,200}bug:\s*BugFilled[\s\S]{0,200}file:\s*FileTextFilled/);
+  assert.match(issueTypeIcon, /requirement:\s*\{ icon: "bulb"[\s\S]{0,180}story:\s*\{ icon: "book-open"[\s\S]{0,180}task:\s*\{ icon: "check-square"[\s\S]{0,180}subtask:\s*\{ icon: "file"[\s\S]{0,180}problem:\s*\{ icon: "bug"/);
+  assert.match(issueTypeIcon, /role=\{label \? "img" : undefined\}[\s\S]{0,80}aria-label=\{label\}/);
   assert.doesNotMatch(kanbanPage, /getKanbanStageLegend|stageLegend/);
   assert.doesNotMatch(kanbanPage, /className="kanban-stage-legend"/);
   assert.doesNotMatch(kanbanPage, /kanban-status-dot/);
+  assert.match(kanbanPage, /className="kanban-column-status-dot" aria-hidden="true"/);
   assert.doesNotMatch(kanbanPage, /TagOutlined/);
 
   assert.match(kanbanPage, /function canEditKanbanIssueBody\(issue: KanbanIssue \| null \| undefined\)/);
@@ -3416,8 +3425,10 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanPage, /const canOpenIssueDetails = interactive/);
   assert.match(kanbanPage, /const canDeleteIssue = interactive && canEditKanbanIssueBody\(issue\)/);
   assert.match(kanbanPage, /const canOpenIssueChat = interactive && Boolean\(issue\.chatId\?\.trim\(\)\)/);
+  assert.match(kanbanPage, /const actionCount = Number\(canOpenIssueChat\) \+ Number\(canDeleteIssue\)/);
+  assert.match(kanbanPage, /const actions = actionCount > 0 \? \(/);
   assert.match(kanbanPage, /className="issue-card-actions"/);
-  assert.match(kanbanPage, /<EyeOutlined \/>/);
+  assert.doesNotMatch(kanbanPage, /EyeOutlined/);
   assert.match(kanbanPage, /<MessageOutlined \/>/);
   assert.match(kanbanPage, /<DeleteOutlined \/>/);
 
@@ -3431,6 +3442,12 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-column\s*\{[\s\S]{0,80}background:\s*#212121;/);
   assert.match(kanbanStyles, /\.kanban-column-head\s*\{[\s\S]{0,240}height:\s*40px;[\s\S]{0,240}background:\s*transparent;/);
   assert.match(kanbanStyles, /\.kanban-column-title strong\s*\{[\s\S]{0,200}font-size:\s*12px;[\s\S]{0,120}font-weight:\s*700;/);
+  assert.match(kanbanStyles, /\.kanban-column-status-dot\s*\{[\s\S]{0,220}background:\s*var\(--kanban-column-status-color\);/);
+  assert.match(kanbanStyles, /\.kanban-column\.is-backlog\s*\{[\s\S]{0,100}--kanban-column-status-color:\s*var\(--kanban-status-backlog\);/);
+  assert.match(kanbanStyles, /\.kanban-column\.is-todo\s*\{[\s\S]{0,100}--kanban-column-status-color:\s*var\(--kanban-status-todo\);/);
+  assert.match(kanbanStyles, /\.kanban-column\.is-in_progress\s*\{[\s\S]{0,100}--kanban-column-status-color:\s*var\(--kanban-status-progress\);/);
+  assert.match(kanbanStyles, /\.kanban-column\.is-in_review\s*\{[\s\S]{0,100}--kanban-column-status-color:\s*var\(--kanban-status-review\);/);
+  assert.match(kanbanStyles, /\.kanban-column\.is-completed\s*\{[\s\S]{0,100}--kanban-column-status-color:\s*var\(--kanban-status-completed\);/);
   assert.match(kanbanStyles, /\.kanban-column-title span:last-child\s*\{[\s\S]{0,340}background:\s*transparent;[\s\S]{0,180}font-size:\s*10px;/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-column-actions button\s*\{[\s\S]{0,120}border-color:\s*transparent;[\s\S]{0,80}background:\s*transparent;/);
   assert.match(kanbanStyles, /\.kanban-column-body\s*\{[\s\S]{0,260}gap:\s*4px;[\s\S]{0,100}padding:\s*4px 8px 8px;/);
@@ -3444,6 +3461,9 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /\.issue-card-main\s*\{[\s\S]{0,180}flex:\s*0 0 auto;/);
   assert.match(kanbanStyles, /\.issue-card-project\s*\{[\s\S]{0,260}font-size:\s*10px;/);
   assert.match(kanbanStyles, /\.issue-card-status,\s*\.issue-card-signal\s*\{[\s\S]{0,220}font-size:\s*10px;/);
+  assert.match(kanbanStyles, /\.issue-card-context-meta\s*\{[\s\S]{0,220}max-width:\s*58%;[\s\S]{0,180}gap:\s*6px;/);
+  assert.match(kanbanStyles, /\.issue-card-type-icon\s*\{[\s\S]{0,260}width:\s*14px;[\s\S]{0,220}font-size:\s*13px;/);
+  assert.doesNotMatch(kanbanStyles, /\.issue-card-type-icon\s*\{[^}]*background:/);
   assert.match(kanbanStyles, /\.issue-card-title\s*\{[\s\S]{0,220}font-size:\s*12px;[\s\S]{0,80}font-weight:\s*400;/);
   assert.match(kanbanStyles, /\.issue-card-description\s*\{[\s\S]{0,420}font-size:\s*10px;[\s\S]{0,80}font-weight:\s*400;/);
   assert.doesNotMatch(kanbanStyles, /font-size:\s*\d+\.\d+px;/);
@@ -3462,6 +3482,7 @@ test("Kanban cards use stage-colored workflow rails and status-specific compact 
   assert.match(kanbanStyles, /\.kanban-priority\.is-p3/);
   assert.match(kanbanStyles, /\.issue-card-due\.is-overdue\s*\{[\s\S]{0,80}color:\s*var\(--danger/);
   assert.match(kanbanStyles, /\.issue-card-footer-end\.has-1-actions\s*\{[\s\S]{0,60}width:\s*56px;/);
+  assert.match(kanbanStyles, /\.issue-card-footer-end\.has-0-actions\.has-signal\s*\{[\s\S]{0,80}width:\s*auto;/);
   assert.match(kanbanStyles, /\.issue-card-actions\s*\{[\s\S]{0,500}opacity:\s*0;[\s\S]{0,120}pointer-events:\s*none;/);
   assert.match(kanbanStyles, /\.issue-card:hover \.issue-card-actions,[\s\S]{0,80}\.issue-card:focus-within \.issue-card-actions\s*\{[\s\S]{0,100}opacity:\s*1;[\s\S]{0,80}pointer-events:\s*auto;/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card:hover \.issue-card-people/);
@@ -3512,6 +3533,32 @@ test("Kanban toolbar can filter issues by automation", () => {
   assert.match(zhCN, /"kanban\.searchFilter\.noAutomation": "手动议题"/);
   assert.match(enUS, /"kanban\.searchFilter\.hasAutomation": "Has automation"/);
   assert.match(enUS, /"kanban\.searchFilter\.noAutomation": "No automation"/);
+});
+
+test("Kanban toolbar remembers multi-select assignee filters and defaults to self", () => {
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(kanbanPage, /type KanbanAssigneeFilter = "others" \| "self" \| "unassigned"/);
+  assert.match(kanbanPage, /const DEFAULT_KANBAN_ASSIGNEE_FILTERS = \["self"\]/);
+  assert.match(kanbanPage, /KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.assignee-filters`/);
+  assert.match(kanbanPage, /window\.localStorage\.getItem\(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY\)/);
+  assert.match(kanbanPage, /window\.localStorage\.setItem\(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY, JSON\.stringify\(assigneeFilters\)\)/);
+  assert.match(kanbanPage, /const \[currentUserId, setCurrentUserId\] = useState\(""\)/);
+  assert.match(kanbanPage, /setCurrentUserId\(issueResult\.currentUser\?\.id \?\? ""\)/);
+  assert.match(kanbanPage, /function shouldShowIssueForAssigneeFilters\([\s\S]{0,500}!assigneeId[\s\S]{0,120}"unassigned"[\s\S]{0,180}assigneeId === normalizedCurrentUserId[\s\S]{0,120}"self"[\s\S]{0,80}"others"/);
+  assert.match(kanbanPage, /shouldShowIssueForAssigneeFilters\(issue, currentUserId, assigneeFilters\)/);
+  assert.match(kanbanPage, /openMenu === "assignee"[\s\S]{0,500}<UserOutlined \/>/);
+  assert.match(kanbanPage, /KANBAN_ASSIGNEE_FILTER_OPTIONS\.map[\s\S]{0,320}type="checkbox"[\s\S]{0,160}assigneeFilters\.includes\(option\.value\)/);
+  assert.match(kanbanStyles, /\.kanban-search\s*\{[\s\S]{0,260}padding:\s*0 114px 0 30px;/);
+  assert.match(zhCN, /"kanban\.searchFilter\.assigneeOthers": "他人"/);
+  assert.match(zhCN, /"kanban\.searchFilter\.assigneeSelf": "自己"/);
+  assert.match(zhCN, /"kanban\.searchFilter\.assigneeUnassigned": "未分配"/);
+  assert.match(enUS, /"kanban\.searchFilter\.assigneeOthers": "Others"/);
+  assert.match(enUS, /"kanban\.searchFilter\.assigneeSelf": "Me"/);
+  assert.match(enUS, /"kanban\.searchFilter\.assigneeUnassigned": "Unassigned"/);
 });
 
 test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
@@ -3587,7 +3634,7 @@ test("Kanban toolbar merges issue count into the wider project filter and compac
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
 
   assert.doesNotMatch(kanbanPage, /AppstoreOutlined|className="kanban-page-title"/);
-  assert.match(kanbanPage, /<KanbanProjectFilter[\s\S]{0,240}filteredCount=\{filteredCount\}[\s\S]{0,80}totalCount=\{totalCount\}/);
+  assert.match(kanbanPage, /<KanbanProjectFilter[\s\S]{0,240}projectIssueCounts=\{projectIssueCounts\}[\s\S]{0,80}filteredCount=\{filteredCount\}[\s\S]{0,80}totalCount=\{totalCount\}/);
   assert.match(kanbanPage, /className="kanban-project-filter-count"[\s\S]{0,80}\{countLabel\}/);
   assert.doesNotMatch(kanbanPage, /className="kanban-count"/);
   assert.match(kanbanStyles, /\.kanban-project-filter\s*\{[\s\S]{0,160}width:\s*100%;[\s\S]{0,100}max-width:\s*360px;/);
@@ -3600,6 +3647,9 @@ test("Kanban toolbar merges issue count into the wider project filter and compac
   assert.match(kanbanStyles, /\[role="tooltip"\]:has\(> \.kanban-project-filter-tooltip\)\s*\{[\s\S]{0,180}max-width:\s*min\(360px,\s*calc\(100vw - 16px\)\);/);
   assert.match(kanbanStyles, /\.kanban-project-filter-tooltip-item\s*\{[\s\S]{0,180}text-overflow:\s*ellipsis;[\s\S]{0,80}white-space:\s*nowrap;/);
   assert.match(kanbanStyles, /\.kanban-project-filter-count\s*\{[\s\S]{0,260}border-left:\s*1px solid/);
+  assert.match(kanbanPage, /function buildKanbanProjectIssueCounts\(projects: KanbanProject\[\], issues: KanbanIssue\[\]\)[\s\S]{0,900}collectKanbanProjectAndDescendantIds/);
+  assert.match(kanbanPage, /className="kanban-project-filter-item-count"[\s\S]{0,120}\{projectIssueCounts\.get\(project\.id\) \?\? 0\}/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-item-count\s*\{[\s\S]{0,220}font-variant-numeric:\s*tabular-nums/);
   assert.match(kanbanStyles, /\.kanban-cloud-status\s*\{[\s\S]{0,80}width:\s*auto;[\s\S]{0,80}min-width:\s*0;/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-cloud-status\s*\{[^}]*min-width:\s*150px/);
 });

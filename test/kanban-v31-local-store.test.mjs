@@ -78,6 +78,41 @@ test("priority uses P0-P3 and only normalizes legacy values at the cache boundar
   assert.equal(local.issue.priority, "P2");
 });
 
+test("project version catalogs and optional issue versions survive the Desktop cache", (t) => {
+  const app = createTempApp(t);
+  applyDesktopKanbanCloudSnapshot(app, currentUser, {
+    scope: "project_set",
+    complete: true,
+    projectIds: ["cloud-project-1"],
+    lastSeq: 45,
+    projects: [{
+      id: "cloud-project-1",
+      name: "Cloud Project",
+      slug: "cloud-project-1",
+      versions: ["1.0.0", "2.0.0"],
+      path: "default/cloud-project-1",
+      depth: 1,
+      position: 1,
+      revision: 44,
+      createdAt: "2026-07-11T00:00:00.000Z",
+      updatedAt: "2026-07-11T00:00:00.000Z"
+    }],
+    issues: [cloudIssue({ version: "2.0.0" })]
+  });
+
+  const cached = listDesktopKanbanIssues(app, currentUser);
+  assert.deepEqual(cached.projects.find((project) => project.id === "cloud-project-1")?.versions, ["1.0.0", "2.0.0"]);
+  assert.equal(cached.issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.version, "2.0.0");
+
+  const local = createPrivateDesktopKanbanIssue(app, currentUser, {
+    title: "Local versioned task",
+    projectId: "cloud-project-1",
+    version: "1.0.0"
+  });
+  assert.equal(local.ok, true);
+  assert.equal(local.issue.version, "1.0.0");
+});
+
 test("legacy priority rows migrate to the P0-P3 SQLite constraint", (t) => {
   const app = createTempApp(t);
   const databasePath = getDesktopKanbanDatabasePath(app);

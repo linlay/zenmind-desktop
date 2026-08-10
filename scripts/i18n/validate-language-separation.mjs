@@ -25,6 +25,7 @@ const allowedLatinTerms = [
   /Podman/g,
   /Electron/g,
   /React/g,
+  /Mermaid/g,
   /OAuth2/g,
   /OIDC/g,
   /IAM/g,

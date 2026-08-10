@@ -235,6 +235,7 @@ export interface KanbanIssue {
   projectId?: string;
   projectPath?: string;
   projectName?: string;
+  version?: string | null;
   parentIssueId?: string | null;
   workflowId?: string;
   typeId?: string;
@@ -304,6 +305,7 @@ export interface KanbanProject {
   key?: string;
   name: string;
   description?: string;
+  versions?: string[];
   path: string;
   depth: number;
   position: number;
@@ -410,6 +412,7 @@ export interface KanbanCreateLocalProjectResult {
 export interface KanbanIssueInput {
   title: string;
   projectId?: string | null;
+  version?: string | null;
   description?: string | null;
   status?: KanbanStatus;
   priority?: KanbanPriority;
@@ -433,6 +436,7 @@ export interface KanbanIssueInput {
 export interface KanbanIssueUpdateInput {
   title?: string;
   projectId?: string | null;
+  version?: string | null;
   description?: string | null;
   status?: KanbanStatus;
   priority?: KanbanPriority;

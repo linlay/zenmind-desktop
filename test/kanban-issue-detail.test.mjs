@@ -30,6 +30,8 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
 test("Kanban detail opens independently from create and preserves the cloud read-only boundary", () => {
   const page = read("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const detail = read("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
+  const rendererIndex = read("index.html");
+  const brandConfig = read("scripts", "lib", "brand-config.mjs");
   const packageManifest = JSON.parse(read("package.json"));
   assert.match(page, /setModal\(\{ mode: "create" \}\)/);
   assert.match(page, /const openEditModal = useCallback\(\(issue: KanbanIssue\) => \{[\s\S]{0,180}setDetailIssueId\(issue\.id\)/);
@@ -47,6 +49,11 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /editing \? <>[\s\S]{0,900}<textarea ref=\{descriptionEditorRef\}[\s\S]{0,500}<MarkdownPreview value=\{draft\.description\}/);
   assert.match(detail, /<MarkdownPreview value=\{comment\.body\} variant="comment" t=\{t\} \/>/);
   assert.match(detail, /<ReactMarkdown[\s\S]{0,260}remarkPlugins=\{\[remarkGfm\]\}[\s\S]{0,120}skipHtml[\s\S]{0,120}urlTransform=\{transformMarkdownUrl\}/);
+  assert.ok(detail.includes('/^data:image\\/(?:gif|jpeg|png|svg\\+xml|webp);base64,/iu'));
+  assert.match(detail, /return defaultUrlTransform\(url\)/);
+  assert.match(rendererIndex, /img-src 'self' data: https:/);
+  assert.match(brandConfig, /img-src 'self' data: https:/);
+  assert.doesNotMatch(rendererIndex, /img-src[^";]*http:/);
   assert.match(detail, /language-mermaid[\s\S]{0,260}<MermaidDiagram source=\{source\} t=\{t\}/);
   assert.match(detail, /import\("mermaid"\)/);
   assert.match(detail, /securityLevel: "strict"[\s\S]{0,160}suppressErrorRendering: true[\s\S]{0,160}maxTextSize: 50_000/);
@@ -56,6 +63,9 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /!isCloud \? <button[\s\S]{0,180}setEditing\(true\)/);
   assert.match(detail, /if \(await onSave\(draft\)\) setEditing\(false\)/);
   assert.match(detail, /kanban\.detail\.cloudReadonly/);
+  assert.match(detail, /label=\{t\("kanban\.form\.version"\)\}[\s\S]{0,300}<select value=\{draft\.version\}/u);
+  assert.match(page, /projectVersionLabel = version \? `\$\{projectName\} \(\$\{version\}\)` : projectName/u);
+  assert.match(page, /<select[\s\S]{0,180}value=\{form\.version\}/u);
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
@@ -63,12 +73,17 @@ test("Kanban detail opens independently from create and preserves the cloud read
 
 test("Kanban detail keeps content on the left and all remaining issue data on the right", () => {
   const resolver = read("src", "renderer", "pages", "kanban", "issueFieldResolution.ts");
+  const history = read("src", "renderer", "pages", "kanban", "issueDetailHistory.ts");
   const detail = read("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
   const styles = read("src", "renderer", "styles", "kanban.css");
+  const enUS = read("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const content = detail.slice(detail.indexOf('<main className="kanban-detail-content">'), detail.indexOf("</main>"));
   const rail = detail.slice(detail.indexOf('<aside className="kanban-detail-rail"'), detail.indexOf("</aside>"));
   const header = detail.slice(detail.indexOf('<header className="kanban-detail-header">'), detail.indexOf('<div className="kanban-detail-body">'));
-  const scope = rail.slice(rail.indexOf('sectionId="kanban-detail-scope"'), rail.indexOf('sectionId="kanban-detail-people"'));
+  const basic = rail.slice(rail.indexOf('sectionId="kanban-detail-basic"'), rail.indexOf('sectionId="kanban-detail-people"'));
+  const people = rail.slice(rail.indexOf('sectionId="kanban-detail-people"'), rail.indexOf('sectionId="kanban-detail-related"'));
+  const related = rail.slice(rail.indexOf('sectionId="kanban-detail-related"'), rail.indexOf('sectionId="kanban-detail-activity"'));
+  const activity = rail.slice(rail.indexOf('sectionId="kanban-detail-activity"'), rail.indexOf('kanban-detail-readonly-note'));
   assert.match(resolver, /buildKanbanProjectDistances/);
   assert.match(resolver, /candidateRank\.specificity > currentRank\.specificity/);
   assert.match(resolver, /candidateDistance < currentDistance/);
@@ -77,7 +92,11 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(detail, /valueType\.includes\("issue"\)/);
   assert.match(detail, /valueType\.includes\("select"\)/);
   assert.match(detail, /valueType === "json"/);
-  assert.match(detail, /function DetailProperty[\s\S]{0,700}kanban-detail-property-editor[\s\S]{0,200}kanban-detail-property-value/);
+  assert.match(enUS, /"kanban\.detail\.basicTitle": "Basic"/);
+  assert.match(history, /export function resolveKanbanIssueRuns[\s\S]*eventIssueSnapshot\(event\)[\s\S]*issue\.runId[\s\S]*return \[\.\.\.runs\.values\(\)\]/);
+  assert.match(history, /export function resolveKanbanStatusTimeline[\s\S]*eventStatusTransition\(event\)[\s\S]*fromLabel[\s\S]*toLabel[\s\S]*issue\.statusId \|\| issue\.status/);
+  assert.match(history, /event\.payload\?\.summary/);
+  assert.match(detail, /function DetailProperty[\s\S]{0,1600}kanban-detail-property-editor[\s\S]{0,300}kanban-detail-property-value/);
   assert.match(content, /kanban-detail-issue-heading[\s\S]*kanban\.detail\.descriptionTitle[\s\S]*kanban\.detail\.attachmentsTitle[\s\S]*kanban\.detail\.commentsTitle/);
   assert.match(header, /kanban-detail-breadcrumb[\s\S]*kanban\.detail\.cloudOrigin/);
   assert.doesNotMatch(header, /kanban-detail-kicker|DETAIL_STATUS_LABELS|DETAIL_PRIORITY_LABELS|kanban\.detail\.localOrigin/);
@@ -85,8 +104,26 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(detail, /shell\.openExternal\(attachment\.url\)/);
   assert.doesNotMatch(detail, /description=\{t\("kanban\.detail\./);
   assert.doesNotMatch(content, /kanban\.detail\.(?:customFieldsTitle|labelsTitle|subtasksTitle|dependenciesTitle|reviewsTitle|runsTitle|activityTitle|sourceTitle)/);
-  assert.match(rail, /kanban-detail-anchor-nav[\s\S]*kanban\.detail\.scopeTitle[\s\S]*kanban\.detail\.peopleTitle[\s\S]*kanban\.detail\.automationTitle[\s\S]*kanban\.detail\.relatedTitle[\s\S]*kanban\.detail\.runsTitle[\s\S]*kanban\.detail\.activityTitle[\s\S]*kanban\.detail\.sourceTitle/);
-  assert.match(scope, /kanban\.detail\.issueId[\s\S]*kanban\.detail\.labelsTitle[\s\S]*resolvedFields\.map/);
+  const anchor = rail.slice(rail.indexOf("kanban-detail-anchor-nav"), rail.indexOf("</nav>"));
+  assert.match(anchor, /kanban\.detail\.basicTitle[\s\S]*kanban\.detail\.peopleTitle[\s\S]*kanban\.detail\.relatedTitle[\s\S]*kanban\.detail\.activityTitle/);
+  assert.doesNotMatch(anchor, /kanban\.detail\.(?:scopeTitle|automationTitle|runsTitle|sourceTitle)/);
+  assert.match(basic, /kanban\.detail\.issueId[\s\S]*kanban\.detail\.project[\s\S]*kanban\.detail\.workflow[\s\S]*kanban\.form\.status[\s\S]*kanban\.form\.priority[\s\S]*kanban\.detail\.severity[\s\S]*resolvedFields\.map[\s\S]*kanban\.detail\.createdAt[\s\S]*kanban\.detail\.updatedAt/);
+  assert.doesNotMatch(rail, /sectionId="kanban-detail-scope"/);
+  assert.match(people, /kanban\.detail\.owner[\s\S]*kanban\.detail\.executor[\s\S]*kanban\.form\.automationEnabled[\s\S]*kanban\.form\.cron/);
+  assert.match(related, /kanban\.detail\.parentTitle[\s\S]*kanban\.detail\.subtasksTitle[\s\S]*kanban\.detail\.dependenciesTitle[\s\S]*kanban\.detail\.reviewsTitle[\s\S]*kanban\.detail\.runsTitle/);
+  assert.match(related, /runs\.map[\s\S]*run\.resultMessage[\s\S]*run\.errorMessage/);
+  assert.doesNotMatch(related, /kanban\.detail\.activityTitle/);
+  assert.match(enUS, /"kanban\.detail\.activityTitle": "Timeline"/);
+  assert.match(activity, /kanban\.detail\.activityTitle[\s\S]*statusTimeline\.map[\s\S]*entry\.fromLabel[\s\S]*ArrowRightOutlined[\s\S]*entry\.toLabel/);
+  assert.match(activity, /usersById\.get\(entry\.actor\)[\s\S]*formatDateTime\(entry\.createdAt[\s\S]*debugMode && event\?\.payload[\s\S]*kanban\.detail\.eventPayload/);
+  assert.match(detail, /const parentIssueId = issue\.parentIssueId\?\.trim\(\) \?\? ""/);
+  assert.doesNotMatch(detail, /sectionId="kanban-detail-(?:automation|runs|source)"/);
+  assert.match(detail, /useDebugMode\(\)[\s\S]*debugMode \? <DetailProperty[\s\S]*kanban\.detail\.revision/);
+  assert.match(detail, /window\.electronAPI\.clipboard\.writeText\(value\)/);
+  assert.match(detail, /onDoubleClick=\{copy\}/);
+  assert.doesNotMatch(detail, /showCopyButton|copyButtonTitle|CopyOutlined/);
+  assert.match(detail, /kanban-detail-readonly-note[\s\S]*kanban\.detail\.cloudReadonlyCompact/);
+  assert.doesNotMatch(detail, /kanban-detail-readonly-banner is-rail/);
   assert.doesNotMatch(rail, /kanban\.detail\.customFieldsTitle|kanban\.detail\.noCustomFields/);
   assert.match(styles, /\.kanban-detail-dialog\s*\{[\s\S]{0,180}width: min\(1062px, calc\(90vw - 43\.2px\)\);[\s\S]{0,80}height: min\(81vh, 738px\);[\s\S]{0,80}min-height: 558px/);
   assert.match(styles, /@media \(max-width: 980px\)[\s\S]{0,180}\.kanban-detail-dialog \{ min-height: 0; \}/);
@@ -106,6 +143,10 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(styles, /\.kanban-detail-section \{[\s\S]{0,260}border: 0;[\s\S]{0,120}border-bottom: 1px solid var\(--detail-line-subtle\)/);
   assert.match(styles, /\.kanban-detail-rail \{[^\n]*border-left: 1px solid var\(--detail-line-subtle\)/);
   assert.match(styles, /\.kanban-detail-property-editor select/);
+  assert.doesNotMatch(styles, /\.kanban-detail-properties > div\.is-copyable|cursor: copy/);
+  assert.match(styles, /\.kanban-detail-copy-notice[\s\S]{0,220}position: absolute/);
+  assert.match(styles, /\.kanban-detail-readonly-note[\s\S]{0,220}color: var\(--detail-muted\)/);
+  assert.match(styles, /\.kanban-detail-run-list[\s\S]{0,120}flex-direction: column/);
   assert.match(styles, /\.kanban-detail-title-input:disabled \{[\s\S]{0,100}border-color: transparent/);
   assert.doesNotMatch(styles, /grid-template-columns: minmax\(0, 1fr\) 286px/);
   assert.doesNotMatch(styles, /\.kanban-detail-footer/);

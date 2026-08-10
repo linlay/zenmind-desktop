@@ -185,7 +185,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 - 时间字段使用 UTC ISO-8601，例如 `2026-07-11T10:00:00Z`。
 - ID 是不透明字符串，客户端不得解析其格式。
 - Update 中字段缺失表示“不修改”，显式 `null` 表示“清空”。
-- 数组型 whole-replacement 字段必须明确记录，例如 `labelIds`、`dependencies`；传空数组表示清空。
+- 数组型 whole-replacement 字段必须明确记录，例如 Project 的 `versions` 以及 Issue 的 `labelIds`、`dependencies`；传空数组表示清空。
 - Target v3.1 Server 对成功的 mutating Request 持久化 `id` 和结果；重复请求返回原结果，不生成第二个 revision。
 - Current v3 的 Request `id` 主要用于 RPC 关联，不保证所有写接口都已实现持久幂等。
 
@@ -202,6 +202,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
   "parentIssueId": null,
   "projectPath": "default/project-1",
   "projectName": "Desktop",
+  "version": "1.4.0",
   "issueTypeKey": "task",
   "workflowId": "workflow-standard-task",
   "stageId": "stage-development",
@@ -260,6 +261,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 - `priority`：`P0`、`P1`、`P2`、`P3`；Desktop 内部与 SQLite 缓存使用同一枚举。旧缓存中的 `high`、`medium`、`low` 仅在数据库迁移边界依次转换为 `P1`、`P2`、`P3`，不得继续作为新 wire 值写入。
 - `severity`：`critical`、`high`、`medium`、`low`。
 - `dueTime`：可选 RFC3339 截止时间；缺失或 `null` 表示未设置。Desktop 在主进程边界将其严格归一化为 epoch-ms `dueAt` 供共享契约和 renderer 使用，不接受无时区文本或有损的亚毫秒精度。
+- `version`：可选字符串；缺失、`null` 或空字符串表示未设置。非空值必须存在于所属 Project 的 `versions` 目录，Web 表单必须使用下拉选择而非自由输入。
 - `workerType`：`human`、`agent`、`null`。
 - `dispatchState`：`null`、`waiting_for_device`、`delivered`、`accepted`、`cancelled`、`expired`。
 - `runState`：`null`、`running`、`completed`、`failed`、`cancelled`。
@@ -278,6 +280,7 @@ Desktop 卡片展示的工作流进度不是 wire 字段。Renderer 只读消费
   "key": "DESKTOP",
   "name": "Desktop",
   "description": "ZenMind Desktop",
+  "versions": ["1.3.0", "1.4.0"],
   "path": "default/desktop",
   "depth": 1,
   "position": 10.0,
@@ -293,7 +296,7 @@ Desktop 卡片展示的工作流进度不是 wire 字段。Renderer 只读消费
 }
 ```
 
-`Project.revision` 属于 Target v3.1，用于项目更新、移动、删除和恢复的实体级冲突检查。
+`Project.versions` 是该 Project 可供 Issue 选择的版本号目录，保序、去空、去重；删除仍被 Issue 使用的版本必须失败。默认 Project 的名称和结构仍不可修改，但允许单独维护 `versions`。`Project.revision` 属于 Target v3.1，用于项目更新、移动、删除和恢复的实体级冲突检查。
 
 ### 4.3 Desktop cursor
 
@@ -622,6 +625,7 @@ Success payload：
     "input": {
       "projectId": "project-1",
       "title": "实现快照恢复",
+      "version": "1.4.0",
       "description": "支持 Desktop 离线后恢复。",
       "issueTypeKey": "task",
       "workflowId": "workflow-standard-task",
@@ -656,6 +660,7 @@ Target v3.1 用于内容和非流程字段更新。stage/status/position 使用 
     "baseIssueRevision": 500,
     "input": {
       "title": "实现完整快照恢复",
+      "version": null,
       "description": "更新后的说明。",
       "priority": "P1",
       "severity": "high",
@@ -761,7 +766,9 @@ Target v3.1 的显式分配接口。
 - 分配只修改云端 Issue，不依赖 Desktop 在线。
 - Agent worker 的 `agentKey` 表示执行能力，不等同于某台设备。
 - 选择执行设备属于后续 `issue.run.request`。
-- Current v3 的 `issue.claim` 映射到 `issue.assign`。
+- Target v3.1 的 `issue.claim` 是“当前登录用户认领未分配 Issue”的兼容别名：Server 忽略客户端提交的 assignee，使用 JWT actor，并在 Issue 已有 assignee 时返回 `already_claimed`。
+- 只有当前 assignee 可以通过 `issue.assign` 指定或清空 worker；可选 Agent worker 来自该用户当前在线 Desktop 会话上报的 Agent 列表。分配 worker 不自动启动执行。
+- Current v3 的 `issue.claim` 仍按旧兼容语义映射到 `issue.assign`。
 - Current v3 的 `issue.claimed` 下行事件必须在 v3.1 统一为 `issue.updated` 且 `reason="assigned"`。
 
 ### 6.6 `issue.delete`
@@ -934,6 +941,7 @@ Server 必须把同一事件发送给订阅旧项目或新项目的会话。客�
     "name": "Desktop",
     "slug": "desktop",
     "description": "ZenMind Desktop",
+    "versions": ["1.3.0", "1.4.0"],
     "visibility": "workspace",
     "defaultWorkflowId": "workflow-standard-task",
     "position": 10.0
@@ -956,7 +964,8 @@ Server 必须把同一事件发送给订阅旧项目或新项目的会话。客�
     "baseProjectRevision": 210,
     "input": {
       "name": "Desktop Client",
-      "description": "Desktop 客户端项目"
+      "description": "Desktop 客户端项目",
+      "versions": ["1.4.0", "2.0.0"]
     }
   }
 }
@@ -1383,7 +1392,7 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
 | Desktop 初始快照 | 当前选中项目 | 全部已绑定项目的 project set 快照 |
 | Issue create/update/delete | 已实现 | 保留并统一幂等、单实体结果 |
 | Stage/status | update/move 均可修改 | 正式使用 `issue.move` |
-| Worker 分配 | `issue.claim`，实际事件可为 `issue.claimed` | `issue.assign`，下行统一为 `issue.updated` |
+| 认领与 Worker 分配 | `issue.claim`，实际事件可为 `issue.claimed` | `issue.claim` 仅供当前用户认领未分配 Issue；`issue.assign` 由 assignee 指定 worker；下行统一为 `issue.updated` |
 | Website 实时事件 | 当前消费者期望全量 `issues`，与 Server 单实体事件不一致 | Website/Desktop 都消费同一实体事件 |
 | Project create/update/move | 已实现，成功后广播完整快照 | 增量 Project 事件，并兼容完整快照 |
 | Project delete/restore | 未实现 | 软删除、恢复和 tombstone |
@@ -1397,7 +1406,7 @@ Target v3.1 Server 在兼容期应：
 
 - 继续接受 wire `v=3`。
 - `contractVersion` 缺失时按 Current v3 返回单项目快照和兼容响应。
-- 接受 `issue.claim`，内部转换为 `issue.assign`。
+- 接受 `issue.claim`；缺少 `contractVersion` 时按 Current v3 转换为旧 `issue.assign`，v3.1 时只允许 JWT 当前用户认领尚未分配的 Issue。
 - 不再产生 Desktop 无法识别的 `issue.claimed`；统一产生 `issue.updated`。
 - 在兼容期保留 mutation payload 中 deprecated 的全量 `issues`。
 - 单项目 `snapshot.get` 与 project set `snapshot.get` 同时可用。

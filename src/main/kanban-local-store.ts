@@ -94,6 +94,7 @@ type KanbanProjectRow = {
   key: string;
   name: string;
   description: string;
+  versions_json: string;
   path: string;
   depth: number;
   position: number;
@@ -222,6 +223,20 @@ function normalizeAttachments(value: unknown): AssistantAttachment[] {
     : [];
 }
 
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map(trimText).filter(Boolean))];
+}
+
+function parseStringList(value: string | null | undefined): string[] {
+  if (!value) return [];
+  try {
+    return normalizeStringList(JSON.parse(value));
+  } catch {
+    return [];
+  }
+}
+
 function parseAttachmentsJson(value: string | null | undefined): AssistantAttachment[] {
   if (!value) return [];
   try {
@@ -292,6 +307,7 @@ function buildIssueDetailJson(issue: KanbanIssue) {
   return JSON.stringify({
     projectPath: issue.projectPath ?? "",
     projectName: issue.projectName ?? "",
+    version: issue.version ?? null,
     parentIssueId: issue.parentIssueId ?? null,
     issueTypeKey: issue.issueTypeKey ?? issue.typeId ?? "",
     stageKey: issue.stageKey ?? "",
@@ -449,6 +465,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       KEY_ TEXT NOT NULL DEFAULT '',
       NAME_ TEXT NOT NULL,
       DESCRIPTION_ TEXT NOT NULL DEFAULT '',
+      VERSIONS_JSON_ TEXT NOT NULL DEFAULT '[]',
       PATH_ TEXT NOT NULL,
       DEPTH_ INTEGER NOT NULL DEFAULT 0,
       POSITION_ REAL NOT NULL DEFAULT 0,
@@ -709,6 +726,7 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   }
   const projectColumns = new Set((db.prepare("PRAGMA table_info(project)").all() as Array<{ name: string }>).map((column) => column.name));
   if (!projectColumns.has("REVISION_")) db.exec("ALTER TABLE project ADD COLUMN REVISION_ INTEGER NOT NULL DEFAULT 0");
+  if (!projectColumns.has("VERSIONS_JSON_")) db.exec("ALTER TABLE project ADD COLUMN VERSIONS_JSON_ TEXT NOT NULL DEFAULT '[]'");
   if (!projectColumns.has("SYNC_MODE_")) {
     db.exec("ALTER TABLE project ADD COLUMN SYNC_MODE_ TEXT NOT NULL DEFAULT 'private'");
     db.exec(`UPDATE project SET SYNC_MODE_ = 'cloud' WHERE ID_ IN (SELECT DISTINCT PROJECT_ID_ FROM issue JOIN desktop_issue_sync ON desktop_issue_sync.LOCAL_ISSUE_ID_ = issue.ID_ WHERE desktop_issue_sync.SYNC_MODE_ = 'cloud')`);
@@ -901,6 +919,7 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     projectId: row.project_id,
     projectPath: trimText(detail.projectPath) || undefined,
     projectName: trimText(detail.projectName) || undefined,
+    version: nullableTrimmedText(detail.version),
     parentIssueId: nullableTrimmedText(detail.parentIssueId),
     workflowId: row.workflow_id,
     typeId: row.type_id ?? undefined,
@@ -972,6 +991,7 @@ function projectFromRow(row: KanbanProjectRow): KanbanProject {
     key: row.key || undefined,
     name: row.name,
     description: row.description || undefined,
+    versions: parseStringList(row.versions_json),
     path: row.path,
     depth: row.depth,
     position: row.position,
@@ -1014,6 +1034,7 @@ function parseCloudProject(value: unknown): KanbanProject | null {
     key: trimText(record.key) || undefined,
     name,
     description: trimText(record.description) || undefined,
+    versions: normalizeStringList(record.versions),
     path: trimText(record.path) || id,
     depth: typeof record.depth === "number" && Number.isFinite(record.depth) ? record.depth : 0,
     position: typeof record.position === "number" && Number.isFinite(record.position) ? record.position : 0,
@@ -1218,6 +1239,7 @@ function selectProjects(db: DatabaseSync): KanbanProject[] {
       KEY_ AS key,
       NAME_ AS name,
       DESCRIPTION_ AS description,
+      VERSIONS_JSON_ AS versions_json,
       PATH_ AS path,
       DEPTH_ AS depth,
       POSITION_ AS position,
@@ -1266,15 +1288,16 @@ function nextIssuePosition(db: DatabaseSync, status: KanbanStatus) {
 function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject, syncMode: KanbanSyncMode = "cloud") {
   db.prepare(`
     INSERT INTO project (
-      ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, PATH_, DEPTH_, POSITION_,
+      ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, VERSIONS_JSON_, PATH_, DEPTH_, POSITION_,
       REVISION_, SYNC_MODE_, VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     ON CONFLICT(ID_) DO UPDATE SET
       PARENT_ID_ = excluded.PARENT_ID_,
       SLUG_ = excluded.SLUG_,
       KEY_ = excluded.KEY_,
       NAME_ = excluded.NAME_,
       DESCRIPTION_ = excluded.DESCRIPTION_,
+      VERSIONS_JSON_ = excluded.VERSIONS_JSON_,
       PATH_ = excluded.PATH_,
       DEPTH_ = excluded.DEPTH_,
       POSITION_ = excluded.POSITION_,
@@ -1291,6 +1314,7 @@ function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject, syncMo
     project.key ?? project.slug.toUpperCase(),
     project.name,
     project.description ?? "",
+    JSON.stringify(project.versions ?? []),
     project.path,
     project.depth,
     project.position,
@@ -1487,6 +1511,7 @@ function buildLocalIssue(
     remoteIssueId: null,
     boardId: BOARD_ID,
     projectId: nullableTrimmedText(input.projectId) ?? PROJECT_ID,
+    version: nullableTrimmedText(input.version),
     workflowId: WORKFLOW_ID,
     typeId: ISSUE_TYPE_ID,
     title,
@@ -1537,6 +1562,7 @@ function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): Ka
     nextIssue.title = title;
   }
   if (input.projectId !== undefined) nextIssue.projectId = nullableTrimmedText(input.projectId) ?? PROJECT_ID;
+  if (input.version !== undefined) nextIssue.version = nullableTrimmedText(input.version);
   if (input.description !== undefined) nextIssue.description = typeof input.description === "string" ? input.description.trim() : "";
   if (input.status !== undefined) {
     nextIssue.status = normalizeKanbanStatus(input.status);
@@ -1821,6 +1847,7 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     projectId: trimText(rawIssue.projectId) || PROJECT_ID,
     projectPath: trimText(rawIssue.projectPath) || undefined,
     projectName: trimText(rawIssue.projectName) || undefined,
+    version: nullableTrimmedText(rawIssue.version),
     parentIssueId: nullableTrimmedText(rawIssue.parentIssueId),
     workflowId: trimText(rawIssue.workflowId) || WORKFLOW_ID,
     typeId: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || ISSUE_TYPE_ID,

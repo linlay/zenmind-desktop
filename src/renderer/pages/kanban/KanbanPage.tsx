@@ -26,7 +26,6 @@ import {
   ClockCircleOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
-  EyeOutlined,
   FlagOutlined,
   HistoryOutlined,
   HourglassOutlined,
@@ -56,6 +55,7 @@ import type {
   KanbanWorkflowStatus
 } from "../../../shared/contracts";
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
+import { STORAGE_NAMESPACE } from "../../../shared/brand";
 import {
   createAgentWebclientAgentPath,
   createAgentWebclientRoute,
@@ -69,15 +69,17 @@ import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurfa
 import { useI18n } from "../../i18n/useI18n";
 import { Tooltip } from "../../components/Tooltip";
 import { flattenKanbanProjectTree } from "./kanbanProjectTree";
+import { IssueTypeIcon } from "./IssueTypeIcon";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
 
 type MenuKind = "display" | "cloud" | null;
-type SearchFilterMenuKind = "priority" | "severity" | "automation" | null;
+type SearchFilterMenuKind = "priority" | "severity" | "automation" | "assignee" | null;
 type ModalMode = "create" | "edit";
 type ThemeMode = "light" | "dark";
 type KanbanAutomationPlan = "hourly" | "daily" | "weekdays" | "weekly" | "custom";
 type KanbanAutomationFilter = "all" | "scheduled" | "manual";
+type KanbanAssigneeFilter = "others" | "self" | "unassigned";
 type AutomationMenuKind = "plan" | "time";
 type ModalState = {
   mode: ModalMode;
@@ -86,6 +88,7 @@ type ModalState = {
 
 type IssueFormState = {
   title: string;
+  version: string;
   description: string;
   attachmentChatId: string;
   attachments: AssistantAttachment[];
@@ -226,6 +229,8 @@ const KANBAN_SEVERITIES = [
 const DEFAULT_KANBAN_AUTOMATION_PLAN: KanbanAutomationPlan = "daily";
 const DEFAULT_KANBAN_AUTOMATION_TIME = "09:00";
 const DEFAULT_KANBAN_AUTOMATION_CRON = "0 9 * * *";
+const KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `${STORAGE_NAMESPACE}.kanban.assignee-filters`;
+const DEFAULT_KANBAN_ASSIGNEE_FILTERS = ["self"] satisfies KanbanAssigneeFilter[];
 
 const KANBAN_AUTOMATION_PLANS = [
   { labelKey: "kanban.automation.hourly", value: "hourly" },
@@ -240,6 +245,12 @@ const KANBAN_AUTOMATION_FILTER_OPTIONS = [
   { labelKey: "kanban.searchFilter.hasAutomation", value: "scheduled" },
   { labelKey: "kanban.searchFilter.noAutomation", value: "manual" }
 ] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: KanbanAutomationFilter }>;
+
+const KANBAN_ASSIGNEE_FILTER_OPTIONS = [
+  { labelKey: "kanban.searchFilter.assigneeOthers", value: "others" },
+  { labelKey: "kanban.searchFilter.assigneeSelf", value: "self" },
+  { labelKey: "kanban.searchFilter.assigneeUnassigned", value: "unassigned" }
+] satisfies ReadonlyArray<{ labelKey: TranslationKey; value: KanbanAssigneeFilter }>;
 
 const KANBAN_AUTOMATION_TIME_OPTIONS = buildAutomationTimeOptions();
 
@@ -262,6 +273,7 @@ const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
 
 const emptyForm: IssueFormState = {
   title: "",
+  version: "",
   description: "",
   attachmentChatId: "",
   attachments: [],
@@ -280,6 +292,41 @@ const emptyForm: IssueFormState = {
 const defaultDisplayState: DisplayState = {
   priority: true
 };
+
+function readKanbanAssigneeFilters(): KanbanAssigneeFilter[] {
+  if (typeof window === "undefined") {
+    return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
+  }
+  try {
+    const savedValue = window.localStorage.getItem(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY);
+    if (!savedValue) {
+      return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
+    }
+    const parsed = JSON.parse(savedValue);
+    if (!Array.isArray(parsed)) {
+      return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
+    }
+    const allowedFilters = new Set<KanbanAssigneeFilter>(KANBAN_ASSIGNEE_FILTER_OPTIONS.map((option) => option.value));
+    return Array.from(new Set(parsed.filter((value): value is KanbanAssigneeFilter => allowedFilters.has(value))));
+  } catch {
+    return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
+  }
+}
+
+function shouldShowIssueForAssigneeFilters(
+  issue: Pick<KanbanIssue, "assigneeId">,
+  currentUserId: string,
+  filters: KanbanAssigneeFilter[]
+) {
+  const assigneeId = issue.assigneeId?.trim() ?? "";
+  const normalizedCurrentUserId = currentUserId.trim();
+  const category: KanbanAssigneeFilter = !assigneeId
+    ? "unassigned"
+    : normalizedCurrentUserId && assigneeId === normalizedCurrentUserId
+      ? "self"
+      : "others";
+  return filters.includes(category);
+}
 
 function getColumnId(status: KanbanStatus) {
   return `kanban-column:${status}`;
@@ -594,6 +641,7 @@ function createFormFromIssue(issue: KanbanIssue): IssueFormState {
   const automationForm = parseAutomationFormFromCron(issue.automationCron);
   return {
     title: issue.title,
+    version: issue.version ?? "",
     description: issue.description,
     attachmentChatId: issue.attachmentChatId ?? issue.chatId ?? createKanbanAttachmentChatId(issue.id),
     attachments: issue.attachments ?? [],
@@ -995,6 +1043,20 @@ function getIssueCardStatusPresentation(issue: KanbanIssue, t: TranslateFunction
   };
 }
 
+function getIssueCardTypePresentation(issue: KanbanIssue, cloudDetails: KanbanCloudDetailData) {
+  const key = (issue.issueTypeKey || issue.typeId || "").trim();
+  if (!key) {
+    return null;
+  }
+  const issueType = cloudDetails.issueTypes.find((candidate) => candidate.key === key);
+  return {
+    key,
+    label: issueType?.name?.trim() || key,
+    icon: issueType?.icon,
+    color: issueType?.color
+  };
+}
+
 function getIssueDescriptionPreview(description: string) {
   return description.trim().replace(/\s+/gu, " ");
 }
@@ -1308,6 +1370,24 @@ function getKanbanProjectFilterIds(projects: KanbanProject[], selectedProjectIds
   return filterIds;
 }
 
+function buildKanbanProjectIssueCounts(projects: KanbanProject[], issues: KanbanIssue[]) {
+  const directCounts = new Map<string, number>();
+  for (const issue of issues) {
+    const projectId = issue.projectId?.trim();
+    if (projectId) {
+      directCounts.set(projectId, (directCounts.get(projectId) ?? 0) + 1);
+    }
+  }
+
+  const childrenByParentId = buildKanbanProjectChildrenMap(projects);
+  return new Map(projects.map((project) => {
+    const projectIds = new Set<string>();
+    collectKanbanProjectAndDescendantIds(project.id, childrenByParentId, projectIds);
+    const count = Array.from(projectIds).reduce((total, projectId) => total + (directCounts.get(projectId) ?? 0), 0);
+    return [project.id, count] as const;
+  }));
+}
+
 function getKanbanProjectFilterLabel(
   selectedProjectIds: string[],
   projects: KanbanProject[],
@@ -1376,17 +1456,19 @@ function getKanbanIssueOriginPresentation(
   const projectId = issue.projectId?.trim() || "default";
   const project = projectsById.get(projectId);
   const projectName = project?.name.trim() || projectId;
+  const version = issue.version?.trim() || "";
+  const projectVersionLabel = version ? `${projectName} (${version})` : projectName;
   const projectPath = project?.path.trim() || "";
   const issueId = issue.remoteIssueId?.trim()
     ? `${issue.remoteIssueId.trim()} / ${issue.id}`
     : issue.id;
   const titleParts = [
-    t("kanban.card.project", { value: projectName }),
+    t("kanban.card.project", { value: projectVersionLabel }),
     projectPath ? t("kanban.card.projectPath", { value: projectPath }) : null,
     t("kanban.card.issueId", { value: issueId })
   ].filter((value): value is string => Boolean(value));
   return {
-    projectLabel: truncateKanbanProjectLabel(projectName),
+    projectLabel: version ? `${truncateKanbanProjectLabel(projectName)} (${version})` : truncateKanbanProjectLabel(projectName),
     title: titleParts.join("\n")
   };
 }
@@ -1451,6 +1533,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [priorityFilters, setPriorityFilters] = useState<KanbanPriority[]>([]);
   const [severityFilters, setSeverityFilters] = useState<KanbanSeverity[]>([]);
   const [automationFilter, setAutomationFilter] = useState<KanbanAutomationFilter>("all");
+  const [assigneeFilters, setAssigneeFilters] = useState<KanbanAssigneeFilter[]>(readKanbanAssigneeFilters);
+  const [currentUserId, setCurrentUserId] = useState("");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenuKind>(null);
   const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
   const [display, setDisplay] = useState<DisplayState>(defaultDisplayState);
@@ -1500,6 +1584,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         setCloudProjects(issueResult.projects ?? []);
         setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
         setConnectionState(issueResult.connectionState ?? "disabled");
+        setCurrentUserId(issueResult.currentUser?.id ?? "");
         setAgents(agentResult);
       } catch (error) {
         if (!cancelled) {
@@ -1528,6 +1613,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     setCloudProjects(issueResult.projects ?? []);
     setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
     setConnectionState(issueResult.connectionState ?? "disabled");
+    setCurrentUserId(issueResult.currentUser?.id ?? "");
   }
 
   async function resyncCloudBoard() {
@@ -1547,6 +1633,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setCloudProjects(result.projects ?? []);
       setCloudDetails(result.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
       setConnectionState(result.connectionState ?? "disabled");
+      setCurrentUserId(result.currentUser?.id ?? "");
       setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
     } catch (error) {
       setFeedback({
@@ -1576,6 +1663,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   useEffect(() => {
     issuesRef.current = issues;
   }, [issues]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY, JSON.stringify(assigneeFilters));
+    } catch {
+      // Ignore localStorage failures in restricted renderer contexts.
+    }
+  }, [assigneeFilters]);
 
   useEffect(() => {
     const kanbanApi = readKanbanApi();
@@ -1713,6 +1808,10 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     () => issues.filter((issue) => VISIBLE_KANBAN_STATUS_SET.has(issue.status)),
     [issues]
   );
+  const projectIssueCounts = useMemo(
+    () => buildKanbanProjectIssueCounts(cloudProjects, visibleIssues),
+    [cloudProjects, visibleIssues]
+  );
 
   const cloudSyncSummary = useMemo(() => {
     const cloudIssues = visibleIssues.filter((issue) => issue.syncMode === "cloud");
@@ -1745,6 +1844,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       if (!shouldShowIssueForAutomationFilter(issue, automationFilter)) {
         return false;
       }
+      if (!shouldShowIssueForAssigneeFilters(issue, currentUserId, assigneeFilters)) {
+        return false;
+      }
       if (!keyword) {
         return true;
       }
@@ -1759,7 +1861,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [agents, automationFilter, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
+  }, [agents, assigneeFilters, automationFilter, currentUserId, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
 
   const issuesByStatus = useMemo(() => {
     const grouped = {
@@ -1945,6 +2047,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     const savedStatus = shouldRunAfterSave ? modal?.issue?.status ?? "todo" : form.status;
     const payload: KanbanIssueInput | KanbanIssueUpdateInput = {
       title,
+      version: form.version || null,
       description: form.description,
       status: savedStatus,
       priority: form.priority,
@@ -2035,6 +2138,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
     const payload: KanbanIssueUpdateInput = {
       title,
+      version: draft.version || null,
       description: draft.description,
       status: shouldRunAfterSave ? issue.status : draft.status,
       priority: draft.priority,
@@ -2294,6 +2398,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     );
   }
 
+  function toggleAssigneeFilter(filter: KanbanAssigneeFilter) {
+    setAssigneeFilters((current) =>
+      current.includes(filter)
+        ? current.filter((item) => item !== filter)
+        : [...current, filter]
+    );
+  }
+
   function toggleProjectFilter(projectId: string) {
     setSelectedProjectIds((current) =>
       current.includes(projectId)
@@ -2305,6 +2417,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const modalReadOnly = modal?.mode === "edit" && !canEditKanbanIssueBody(modal.issue);
   const modalStatusLocked = modalReadOnly || (modal?.mode === "edit" && Boolean(modal.issue?.runId));
   const modalSyncLocked = modalReadOnly || (modal?.mode === "edit" && modal.issue?.syncMode === "cloud");
+  const modalProjectId = modal?.issue?.projectId?.trim() || "default";
+  const modalProjectVersions = kanbanProjectsById.get(modalProjectId)?.versions ?? [];
   const visibleFormAttachments = getVisibleKanbanAttachments(form.attachments);
 
   return (
@@ -2314,6 +2428,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           <KanbanProjectFilter
             projects={cloudProjectOptions}
             selectedProjectIds={selectedProjectIds}
+            projectIssueCounts={projectIssueCounts}
             filteredCount={filteredCount}
             totalCount={totalCount}
             open={projectFilterOpen}
@@ -2344,6 +2459,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               priorityFilters={priorityFilters}
               severityFilters={severityFilters}
               automationFilter={automationFilter}
+              assigneeFilters={assigneeFilters}
               t={t}
               onOpenMenuChange={(nextMenu) => {
                 setSearchFilterMenu(nextMenu);
@@ -2357,6 +2473,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               onToggleSeverity={toggleSeverity}
               onClearSeverity={() => setSeverityFilters([])}
               onAutomationFilterChange={setAutomationFilter}
+              onToggleAssignee={toggleAssigneeFilter}
             />
           </div>
         </div>
@@ -2597,6 +2714,19 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 <button type="button" className="kanban-modal-close-button" onClick={() => setModal(null)} aria-label={t("kanban.modal.close")}>×</button>
               </div>
             </div>
+            <label className="kanban-field">
+              <span>{t("kanban.form.version")}</span>
+              <select
+                value={form.version}
+                disabled={modalReadOnly}
+                onChange={(event) => setForm((current) => ({ ...current, version: event.target.value }))}
+              >
+                <option value="">{t("kanban.detail.notSet")}</option>
+                {modalProjectVersions.map((version) => (
+                  <option key={version} value={version}>{version}</option>
+                ))}
+              </select>
+            </label>
             {!formCompact ? (
               <label className="kanban-field">
                 <span>{t("kanban.form.title")}</span>
@@ -2955,6 +3085,7 @@ const KanbanColumn = memo(function KanbanColumn({
     >
       <header className="kanban-column-head">
         <div className="kanban-column-title">
+          <span className="kanban-column-status-dot" aria-hidden="true" />
           <strong>{label}</strong>
           <span>{issues.length}</span>
         </div>
@@ -3137,10 +3268,11 @@ const IssueCardContent = memo(function IssueCardContent({
   const hasPeople = peopleLine.people.length > 0;
   const progress = getIssueCardProgressPresentation(issue, cloudDetails);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
+  const issueType = getIssueCardTypePresentation(issue, cloudDetails);
   const canOpenIssueDetails = interactive;
   const canDeleteIssue = interactive && canEditKanbanIssueBody(issue);
   const canOpenIssueChat = interactive && Boolean(issue.chatId?.trim());
-  const actionCount = interactive ? 1 + Number(canOpenIssueChat) + Number(canDeleteIssue) : 0;
+  const actionCount = Number(canOpenIssueChat) + Number(canDeleteIssue);
   const queueRank = issue.status === "todo" ? formatKanbanSortNumber(sortIndex, issue.position) : "";
   const showDescription = issue.status === "backlog" && Boolean(descriptionPreview);
   const showPriorityImportance = display.priority && (issue.status === "backlog" || issue.status === "todo");
@@ -3171,21 +3303,8 @@ const IssueCardContent = memo(function IssueCardContent({
       <span>{operationalState.label}</span>
     </span>
   ) : null;
-  const actions = interactive ? (
+  const actions = actionCount > 0 ? (
     <span className="issue-card-actions">
-      <button
-        type="button"
-        className="issue-card-action"
-        aria-label={t("kanban.card.viewDetails")}
-        title={t("kanban.card.viewDetails")}
-        onPointerDown={(event) => event.stopPropagation()}
-        onClick={(event) => {
-          event.stopPropagation();
-          onEdit();
-        }}
-      >
-        <EyeOutlined />
-      </button>
       {canOpenIssueChat ? (
         <button
           type="button"
@@ -3242,12 +3361,23 @@ const IssueCardContent = memo(function IssueCardContent({
           <span className="issue-card-project" title={issueOrigin.title}>
             {issueOrigin.projectLabel}
           </span>
-          <span
-            className={`issue-card-status is-${cardStatus.tone}`}
-            title={t("kanban.card.status", { value: cardStatus.label })}
-          >
-            <span className="issue-card-status-mark" style={{ backgroundColor: progress.color }} aria-hidden="true" />
-            <span>{cardStatus.label}</span>
+          <span className="issue-card-context-meta">
+            <span
+              className={`issue-card-status is-${cardStatus.tone}`}
+              style={{ color: progress.color }}
+              title={t("kanban.card.status", { value: cardStatus.label })}
+            >
+              <span>{cardStatus.label}</span>
+            </span>
+            {issueType ? (
+              <IssueTypeIcon
+                className="issue-card-type-icon"
+                issueTypeKey={issueType.key}
+                icon={issueType.icon}
+                color={issueType.color}
+                label={issueType.label}
+              />
+            ) : null}
           </span>
         </div>
       </section>
@@ -3348,6 +3478,7 @@ function IssueCardSignalIcon({ kind }: { kind: IssueCardSignalIconName }) {
 function KanbanProjectFilter({
   projects,
   selectedProjectIds,
+  projectIssueCounts,
   filteredCount,
   totalCount,
   open,
@@ -3358,6 +3489,7 @@ function KanbanProjectFilter({
 }: {
   projects: KanbanProject[];
   selectedProjectIds: string[];
+  projectIssueCounts: Map<string, number>;
   filteredCount: number;
   totalCount: number;
   open: boolean;
@@ -3434,8 +3566,10 @@ function KanbanProjectFilter({
             type="button"
             className={`kanban-project-filter-all ${selectedProjectIds.length === 0 ? "is-active" : ""}`}
             onClick={onClear}
+            aria-label={`${t("kanban.projectFilter.all")}: ${t("kanban.column.summary.count", { count: totalCount })}`}
           >
-            {t("kanban.projectFilter.all")}
+            <span>{t("kanban.projectFilter.all")}</span>
+            <span className="kanban-project-filter-item-count" aria-hidden="true">{totalCount}</span>
           </button>
           {treeItems.length > 0 ? (
             <div className="kanban-project-filter-tree">
@@ -3446,17 +3580,18 @@ function KanbanProjectFilter({
                   role="treeitem"
                   aria-level={level + 1}
                   style={{ paddingLeft: `${8 + (level * 14)}px` }}
-                  title={getKanbanProjectOptionLabel(project)}
+                  title={`${getKanbanProjectOptionLabel(project)} · ${t("kanban.column.summary.count", { count: projectIssueCounts.get(project.id) ?? 0 })}`}
                 >
                   <input
                     type="checkbox"
                     checked={selectedProjectIds.includes(project.id)}
                     onChange={() => onToggleProject(project.id)}
                   />
-                  <span className="kanban-project-filter-name">{project.name}</span>
-                  {project.path && project.path !== project.name ? (
-                    <span className="kanban-project-filter-path">{project.path}</span>
-                  ) : null}
+                  <span className="kanban-project-filter-project">
+                    <span className="kanban-project-filter-name">{project.name}</span>
+                    {project.path && project.path !== project.name ? <span className="kanban-project-filter-path">{project.path}</span> : null}
+                  </span>
+                  <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: projectIssueCounts.get(project.id) ?? 0 })}>{projectIssueCounts.get(project.id) ?? 0}</span>
                 </label>
               ))}
             </div>
@@ -3474,18 +3609,21 @@ function KanbanSearchFilters({
   priorityFilters,
   severityFilters,
   automationFilter,
+  assigneeFilters,
   t,
   onOpenMenuChange,
   onTogglePriority,
   onClearPriority,
   onToggleSeverity,
   onClearSeverity,
-  onAutomationFilterChange
+  onAutomationFilterChange,
+  onToggleAssignee
 }: {
   openMenu: SearchFilterMenuKind;
   priorityFilters: KanbanPriority[];
   severityFilters: KanbanSeverity[];
   automationFilter: KanbanAutomationFilter;
+  assigneeFilters: KanbanAssigneeFilter[];
   t: TranslateFunction;
   onOpenMenuChange: (menu: SearchFilterMenuKind) => void;
   onTogglePriority: (priority: KanbanPriority) => void;
@@ -3493,11 +3631,13 @@ function KanbanSearchFilters({
   onToggleSeverity: (severity: KanbanSeverity) => void;
   onClearSeverity: () => void;
   onAutomationFilterChange: (filter: KanbanAutomationFilter) => void;
+  onToggleAssignee: (filter: KanbanAssigneeFilter) => void;
 }) {
   const filterRef = useRef<HTMLDivElement | null>(null);
   const hasPriorityFilter = priorityFilters.length > 0;
   const hasSeverityFilter = severityFilters.length > 0;
   const hasAutomationFilter = automationFilter !== "all";
+  const hasAssigneeFilter = assigneeFilters.length !== KANBAN_ASSIGNEE_FILTER_OPTIONS.length;
 
   useEffect(() => {
     if (!openMenu || typeof document === "undefined") {
@@ -3562,6 +3702,17 @@ function KanbanSearchFilters({
       >
         <KanbanIcon kind="clock" />
       </button>
+      <button
+        type="button"
+        className={`kanban-search-filter-button ${openMenu === "assignee" ? "is-open" : ""} ${hasAssigneeFilter ? "is-active" : ""}`}
+        aria-label={t("kanban.searchFilter.assignee")}
+        aria-haspopup="true"
+        aria-expanded={openMenu === "assignee"}
+        title={t("kanban.searchFilter.assignee")}
+        onClick={() => toggleMenu("assignee")}
+      >
+        <UserOutlined />
+      </button>
       {openMenu ? (
         <div
           className={`kanban-search-filter-menu is-${openMenu}`}
@@ -3570,7 +3721,9 @@ function KanbanSearchFilters({
               ? t("kanban.searchFilter.priority")
               : openMenu === "severity"
                 ? t("kanban.searchFilter.severity")
-                : t("kanban.searchFilter.automation")
+                : openMenu === "automation"
+                  ? t("kanban.searchFilter.automation")
+                  : t("kanban.searchFilter.assignee")
           }
         >
           {openMenu === "priority" ? (
@@ -3613,7 +3766,7 @@ function KanbanSearchFilters({
                 </label>
               ))}
             </>
-          ) : (
+          ) : openMenu === "automation" ? (
             <>
               {KANBAN_AUTOMATION_FILTER_OPTIONS.map((option) => (
                 <label key={option.value} className="kanban-check-row kanban-search-filter-row">
@@ -3622,6 +3775,19 @@ function KanbanSearchFilters({
                     name="kanban-automation-filter"
                     checked={automationFilter === option.value}
                     onChange={() => onAutomationFilterChange(option.value)}
+                  />
+                  <span>{t(option.labelKey)}</span>
+                </label>
+              ))}
+            </>
+          ) : (
+            <>
+              {KANBAN_ASSIGNEE_FILTER_OPTIONS.map((option) => (
+                <label key={option.value} className="kanban-check-row kanban-search-filter-row">
+                  <input
+                    type="checkbox"
+                    checked={assigneeFilters.includes(option.value)}
+                    onChange={() => onToggleAssignee(option.value)}
                   />
                   <span>{t(option.labelKey)}</span>
                 </label>
