@@ -140,7 +140,6 @@
 .kanban-primary-button,
 .kanban-secondary-button,
 .kanban-danger-button,
-.issue-card-action,
 .kanban-column-actions button,
 .kanban-modal-head button,
 .kanban-feedback button {
@@ -887,15 +886,13 @@
   background: color-mix(in srgb, var(--issue-card) 62%, var(--kanban-bg));
 }
 
-:root[data-theme="dark"] .kanban-attachment-badge,
-:root[data-theme="dark"] .issue-card-action {
+:root[data-theme="dark"] .kanban-attachment-badge {
   background: rgba(30, 41, 59, 0.8);
   border-color: rgba(148, 163, 184, 0.28);
   color: #cbd5e1;
 }
 
-:root[data-theme="dark"] .kanban-attachment-badge:hover,
-:root[data-theme="dark"] .issue-card-action:hover:not(:disabled) {
+:root[data-theme="dark"] .kanban-attachment-badge:hover {
   background: rgba(255, 255, 255, 0.08);
   border-color: rgba(148, 163, 184, 0.32);
   color: var(--kanban-ink);
@@ -1277,7 +1274,7 @@
   top: -1px;
   right: -1px;
   left: -1px;
-  height: 2px;
+  height: 3px;
   overflow: hidden;
   border-radius: 10px 10px 0 0;
   background: color-mix(in srgb, var(--kanban-muted) 18%, transparent);
@@ -1296,6 +1293,41 @@
   min-height: 0;
   padding-top: 10px;
   padding-bottom: 4px;
+}
+
+.issue-card-section.issue-card-context {
+  padding-left: 26px;
+}
+
+.issue-card-type-corner {
+  position: absolute;
+  z-index: 4;
+  top: 8px;
+  left: 5px;
+  width: 19px;
+  height: 18px;
+  overflow: hidden;
+  border-left: 2px solid currentColor;
+  opacity: 0.68;
+  filter: saturate(0.58) brightness(0.94);
+  pointer-events: none;
+}
+
+:root[data-theme="dark"] .issue-card-type-corner {
+  opacity: 0.78;
+  filter: saturate(0.72) brightness(1.02);
+}
+
+.issue-card-type-corner .issue-card-type-corner-icon {
+  position: absolute;
+  top: 2px;
+  left: 3px;
+  width: 13px;
+  height: 13px;
+  display: inline-grid;
+  place-items: center;
+  font-size: 13px;
+  line-height: 1;
 }
 
 .issue-card-context-line {
@@ -1318,6 +1350,7 @@
   align-items: center;
   justify-content: flex-end;
   gap: 6px;
+  margin-left: auto;
 }
 
 .issue-card-project {
@@ -1330,6 +1363,27 @@
   font-size: 10px;
   font-weight: 600;
   line-height: 14px;
+}
+
+.issue-card-context-line.has-version .issue-card-project {
+  flex: 0 1 auto;
+  max-width: 46%;
+}
+
+.issue-card-version {
+  max-width: 28%;
+  flex: 0 1 auto;
+  overflow: hidden;
+  padding: 1px 5px;
+  border: 1px solid color-mix(in srgb, var(--issue-card-muted) 20%, transparent);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--issue-card-muted) 7%, transparent);
+  color: color-mix(in srgb, var(--kanban-ink) 58%, var(--issue-card-muted));
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .issue-card-status,
@@ -1353,20 +1407,8 @@
   font-weight: 600;
 }
 
-.issue-card-type-icon {
-  width: 14px;
-  height: 14px;
-  flex: 0 0 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  line-height: 1;
-}
-
-.issue-card-type-icon .anticon {
-  font-size: 13px;
-  line-height: 1;
+:root[data-theme="dark"] .issue-card-status {
+  filter: saturate(1.28) brightness(1.16);
 }
 
 .issue-card-signal {
@@ -1407,22 +1449,17 @@
 }
 
 .issue-card-title {
-  display: flex;
-  align-items: flex-start;
-  gap: 5px;
+  display: block;
   min-width: 0;
+  max-height: 36px;
+  overflow: hidden;
   font-size: 12px;
   font-weight: 400;
   line-height: 18px;
 }
 
 .issue-card-title-text {
-  display: -webkit-box;
-  min-width: 0;
-  overflow: hidden;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-  line-clamp: 2;
+  display: inline;
   overflow-wrap: break-word;
   word-break: break-word;
 }
@@ -1481,11 +1518,23 @@
   gap: 6px;
 }
 
-.issue-card-footer-row-end {
+.issue-card-footer-row.is-summary {
+  justify-content: space-between;
+}
+
+.issue-card-footer-row.is-summary .issue-card-footer-signal {
   margin-left: auto;
-  flex: 0 1 auto;
   min-width: 0;
   overflow: hidden;
+}
+
+.issue-card-footer-row.is-summary .issue-card-signal {
+  max-width: 100%;
+  justify-content: flex-end;
+}
+
+.issue-card-footer-row.is-operational {
+  justify-content: flex-end;
 }
 
 .issue-card-due {
@@ -1520,72 +1569,47 @@
   font-weight: 700;
   line-height: 1.4;
   white-space: nowrap;
+  margin-right: 5px;
+  vertical-align: 1px;
 }
 
-.issue-card-priority-importance.is-p0 {
-  color: #b54708;
-  background: rgba(249, 115, 22, 0.12);
-}
+.issue-card-priority-importance.is-severity-critical { color: #ef4444; background: rgb(239 68 68 / 10%); }
+.issue-card-priority-importance.is-severity-high { color: #f97316; background: rgb(249 115 22 / 10%); }
+.issue-card-priority-importance.is-severity-medium { color: #ca8a04; background: rgb(234 179 8 / 10%); }
+.issue-card-priority-importance.is-severity-low { color: #84cc16; background: rgb(132 204 22 / 10%); }
+.issue-card-priority-importance.is-severity-unset { color: var(--issue-card-tag-color); background: rgb(148 163 184 / 10%); }
 
-.issue-card-priority-importance.is-p1 {
-  color: #d94f20;
-  background: rgba(249, 115, 22, 0.09);
-}
+.issue-card-signal.is-due { color: color-mix(in srgb, var(--kanban-ink) 72%, var(--issue-card-muted)); font-weight: 600; }
+.issue-card-signal.is-overdue { color: var(--danger, #dc2626); font-weight: 700; }
+.issue-card-signal.is-missing-due { color: color-mix(in srgb, var(--issue-card-tag-color) 76%, var(--issue-card-muted)); }
 
-.issue-card-priority-importance.is-p2 {
-  color: #a66b00;
-  background: rgba(202, 138, 4, 0.09);
-}
-
-.issue-card-priority-divider {
-  color: color-mix(in srgb, currentColor 38%, var(--kanban-muted));
-  font-weight: 400;
-}
-
-.issue-card-footer-end {
-  position: relative;
+.issue-card-due-risk {
   flex: 0 0 auto;
-  min-width: 0;
-  min-height: 24px;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  overflow: hidden;
+  display: inline-grid;
+  width: 13px;
+  height: 14px;
+  place-items: center;
+  color: #ef4444;
+  transform-origin: 50% 12%;
+  animation: issue-card-due-risk-ring 2.4s ease-in-out infinite;
 }
 
-.issue-card-footer-end.has-0-actions {
-  width: 0;
-}
+.issue-card-due-risk-icon { width: 14px; height: 14px; overflow: visible; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.issue-card-due-risk-ring-line { stroke-width: 1.6; }
+:root[data-theme="dark"] .issue-card-due-risk { color: #fb7185; }
 
-.issue-card-footer-end.has-0-actions.has-signal {
-  width: auto;
-  flex: 0 1 auto;
-}
-
-.issue-card-footer-end.has-1-actions {
-  width: 56px;
-}
-
-.issue-card-footer-end.has-2-actions {
-  width: 56px;
-}
-
-.issue-card-footer-end.has-3-actions {
-  width: 76px;
-}
-
-.issue-card-footer-end.has-no-signal.has-1-actions {
-  width: 24px;
-}
-
-.issue-card-footer-end.has-no-signal.has-2-actions {
-  width: 50px;
+@keyframes issue-card-due-risk-ring {
+  0%, 66%, 100% { transform: rotate(0deg); }
+  70% { transform: rotate(-13deg); }
+  74% { transform: rotate(11deg); }
+  78% { transform: rotate(-9deg); }
+  82% { transform: rotate(7deg); }
+  86% { transform: rotate(0deg); }
 }
 
 .issue-card-footer-signal {
   width: 100%;
   min-width: 0;
-  transition: opacity 0.2s ease;
 }
 
 .issue-card-people {
@@ -1670,73 +1694,6 @@
   flex: 0 0 6px;
   border-radius: 999px;
   background: currentColor;
-}
-
-.issue-card-actions {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 24px;
-  width: 100%;
-  display: inline-flex;
-  min-width: 24px;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 2px;
-  padding: 0;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-  box-shadow: none;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease;
-}
-
-.issue-card:hover .issue-card-footer-end:not(.has-0-actions) .issue-card-footer-signal,
-.issue-card:focus-within .issue-card-footer-end:not(.has-0-actions) .issue-card-footer-signal {
-  opacity: 0;
-  pointer-events: none;
-}
-
-.issue-card:hover .issue-card-actions,
-.issue-card:focus-within .issue-card-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.issue-card-action {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  min-height: 24px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  padding: 0;
-  border-radius: 5px;
-  border: 0;
-  background: color-mix(in srgb, var(--kanban-muted) 10%, var(--issue-card));
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 800;
-  white-space: nowrap;
-}
-
-.issue-card-action .anticon {
-  font-size: 14px;
-  line-height: 1;
-}
-
-.issue-card-action:hover:not(:disabled) {
-  background: rgba(15, 23, 42, 0.05);
-  color: var(--kanban-ink);
-}
-
-.issue-card-action.is-danger:hover:not(:disabled) {
-  background: rgba(220, 38, 38, 0.08);
-  color: #dc2626;
 }
 
 :root[data-theme="dark"] .issue-card-signal.is-failed,
@@ -2296,6 +2253,10 @@
   gap: 12px;
 }
 
+.kanban-field-grid.is-three-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .kanban-automation-panel {
   display: grid;
   gap: 12px;
@@ -2588,8 +2549,6 @@
 
 @media (prefers-reduced-motion: reduce) {
   .issue-card,
-  .issue-card-actions,
-  .issue-card-footer-signal,
   .kanban-column {
     transition-duration: 0.01ms;
   }
@@ -3260,6 +3219,7 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .issue-card-due-risk { animation: none; }
   .kanban-detail-dialog { animation: none; }
   .kanban-detail-layer button,
   .kanban-detail-layer input,

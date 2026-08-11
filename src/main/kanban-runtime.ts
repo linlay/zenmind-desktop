@@ -45,12 +45,12 @@ import {
   moveDesktopKanbanIssue,
   readDesktopKanbanSyncCursor,
   recordDesktopKanbanCommandReceipt,
-  setDesktopKanbanIssuePosition,
   tombstoneDesktopKanbanCloudIssue,
   updateDesktopKanbanIssue,
   updateDesktopKanbanCommandReceipt,
   updateDesktopKanbanIssueByChatId,
   updateDesktopKanbanIssueByRunId,
+  updateDesktopKanbanIssueRuntimeState,
   upsertDispatchedDesktopKanbanIssue,
   writeDesktopKanbanSyncCursor,
   type KanbanCloudSnapshot,
@@ -157,6 +157,32 @@ function optionalText(value: unknown) {
 
 function readBoolean(value: unknown) {
   return value === true;
+}
+
+function readStringList(value: unknown) {
+  return Array.isArray(value)
+    ? [...new Set(value.map(readText).filter(Boolean))]
+    : [];
+}
+
+function readEffortSeconds(value: unknown) {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+  const seconds = Math.trunc(value);
+  return Number.isSafeInteger(seconds) ? seconds : 0;
+}
+
+function readDueDate(value: unknown) {
+  if (value === null || value === "") return null;
+  if (typeof value !== "string") return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value.trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const maxDay = month === 2
+    ? (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28)
+    : [4, 6, 9, 11].includes(month) ? 30 : 31;
+  return year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= maxDay ? value.trim() : null;
 }
 
 function getKanbanConfigPath(app: App, platform: NodeJS.Platform = process.platform) {
@@ -470,18 +496,36 @@ function kanbanIssueFromAutomationPayload(payload: unknown): KanbanIssue | null 
     remoteIssueId: nullableText(record.remoteIssueId) ?? id,
     boardId: readText(record.boardId) || "default",
     projectId: readText(record.projectId) || "default",
+    projectPath: optionalText(record.projectPath),
+    projectName: optionalText(record.projectName),
+    projectVersion: nullableText(record.projectVersion !== undefined ? record.projectVersion : record.version),
+    dueDate: readDueDate(record.dueDate),
+    dueRisk: nullableText(record.dueRisk),
+    resolution: nullableText(record.resolution),
+    securityLevelKey: nullableText(record.securityLevelKey),
+    reporterId: nullableText(record.reporterId),
+    componentKeys: readStringList(record.componentKeys),
+    originalEstimate: readEffortSeconds(record.originalEstimate),
+    remainingEstimate: readEffortSeconds(record.remainingEstimate),
+    timeSpent: readEffortSeconds(record.timeSpent),
+    parentIssueId: nullableText(record.parentIssueId),
     workflowId: readText(record.workflowId) || "workflow-standard-requirement",
-    typeId: optionalText(record.typeId),
+    typeId: optionalText(record.issueTypeKey) ?? optionalText(record.typeId),
+    issueTypeKey: optionalText(record.issueTypeKey) ?? optionalText(record.typeId),
     stageId: optionalText(record.stageId),
+    stageKey: optionalText(record.stageKey),
     stageName: optionalText(record.stageName),
     statusId: optionalText(record.statusId),
     statusName: optionalText(record.statusName),
     statusKey: optionalText(record.statusKey),
+    columnKey: optionalText(record.columnKey),
     title,
     description: readText(record.description),
     status: (readText(record.status) || "backlog") as KanbanStatus,
-    priority: parseKanbanPriority(record.priority) ?? "P2",
-    severity: (readText(record.severity) || "medium") as NonNullable<KanbanIssue["severity"]>,
+    priority: parseKanbanPriority(record.priority),
+    severity: (["critical", "high", "medium", "low"] as const).includes(readText(record.severity) as "critical" | "high" | "medium" | "low")
+      ? readText(record.severity) as NonNullable<KanbanIssue["severity"]>
+      : null,
     assigneeAgentKey: nullableText(record.assigneeAgentKey),
     assigneeId: nullableText(record.assigneeId),
     workerType: readText(record.workerType) === "human" || readText(record.workerType) === "agent" ? readText(record.workerType) as "human" | "agent" : null,
@@ -1211,7 +1255,9 @@ export class KanbanRuntime {
     const record = isRecord(payload) ? payload : {};
     const result = createLocalDesktopProject(this.options.app, this.currentUser(), {
       id: readText(record.localProjectId),
-      name: readText(record.name)
+      name: readText(record.name),
+      versions: readStringList(record.versions),
+      components: readStringList(record.components)
     });
     if (result.ok) {
       this.notifyChanged();
@@ -1314,7 +1360,7 @@ export class KanbanRuntime {
     const startRun = this.options.assistantBridge.startRun(startRequest);
     const applyRunResult = (runResult: AssistantStartRunResult) => {
       if (runResult.ok && localIssueId) {
-        updateDesktopKanbanIssue(this.options.app, currentUser, localIssueId, {
+        updateDesktopKanbanIssueRuntimeState(this.options.app, currentUser, localIssueId, {
           status: "in_progress",
           chatId: runResult.chatId,
           runId: runResult.runId,
@@ -1340,7 +1386,7 @@ export class KanbanRuntime {
     }
 
     if (localIssueId) {
-      updateDesktopKanbanIssue(this.options.app, currentUser, localIssueId, {
+      updateDesktopKanbanIssueRuntimeState(this.options.app, currentUser, localIssueId, {
         status: "in_progress",
         chatId,
         runId: fallbackRunId,
@@ -1355,7 +1401,7 @@ export class KanbanRuntime {
       }
     }).catch((error) => {
       if (localIssueId) {
-        updateDesktopKanbanIssue(this.options.app, currentUser, localIssueId, {
+        updateDesktopKanbanIssueRuntimeState(this.options.app, currentUser, localIssueId, {
           status: "todo",
           chatId,
           runId: fallbackRunId,

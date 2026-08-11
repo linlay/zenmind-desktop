@@ -45,6 +45,8 @@ export type CreateLocalDesktopProjectInput = {
   id?: string;
   name: string;
   slug?: string;
+  versions?: string[];
+  components?: string[];
 };
 
 // 创建本地项目(响应云端 desktop.project.createLocal)。
@@ -92,15 +94,17 @@ export function createLocalDesktopProject(
     const position = typeof maxPosition?.maxPosition === "number" ? maxPosition.maxPosition + 1 : 1;
     db.prepare(`
       INSERT INTO project (
-        ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, PATH_, DEPTH_, POSITION_,
+        ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, VERSIONS_JSON_, COMPONENTS_JSON_, PATH_, DEPTH_, POSITION_,
         VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_
-      ) VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, 'workspace', ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, '', ?, ?, ?, ?, ?, 'workspace', ?, ?, ?)
     `).run(
       id,
       DEFAULT_PARENT_PROJECT_ID,
       slug,
       slug.toUpperCase(),
       name,
+      JSON.stringify((input.versions ?? []).map(trimText).filter(Boolean)),
+      JSON.stringify((input.components ?? []).map(trimText).filter(Boolean)),
       path,
       depth,
       position,

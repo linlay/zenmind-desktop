@@ -30,6 +30,7 @@ import type {
   KanbanPriority,
   KanbanProject,
   KanbanResolvedIssueField,
+  KanbanSeverity,
   KanbanStatus
 } from "../../../shared/contracts";
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
@@ -40,10 +41,18 @@ import { resolveKanbanIssueFields } from "./issueFieldResolution";
 
 export type KanbanIssueDetailDraft = {
   title: string;
-  version: string;
+  projectVersion: string;
+  dueDate: string;
+  resolution: string;
+  reporterId: string;
+  componentKeys: string[];
+  originalEstimateHours: string;
+  remainingEstimateHours: string;
+  timeSpentHours: string;
   description: string;
   status: KanbanStatus;
-  priority: KanbanPriority;
+  priority: KanbanPriority | null;
+  severity: KanbanSeverity | null;
   assigneeAgentKey: string;
   automationEnabled: boolean;
   automationCron: string;
@@ -88,19 +97,37 @@ const DETAIL_PRIORITY_LABELS: Record<KanbanPriority, "kanban.priority.p0" | "kan
 function createDetailDraft(issue: KanbanIssue): KanbanIssueDetailDraft {
   return {
     title: issue.title,
-    version: issue.version ?? "",
+    projectVersion: issue.projectVersion ?? "",
+    dueDate: issue.dueDate ?? "",
+    resolution: issue.resolution ?? "",
+    reporterId: issue.reporterId ?? "",
+    componentKeys: issue.componentKeys ?? [],
+    originalEstimateHours: secondsToHoursInput(issue.originalEstimate),
+    remainingEstimateHours: secondsToHoursInput(issue.remainingEstimate),
+    timeSpentHours: secondsToHoursInput(issue.timeSpent),
     description: issue.description,
     status: issue.status,
     priority: issue.priority,
+    severity: issue.severity,
     assigneeAgentKey: issue.assigneeAgentKey ?? "",
     automationEnabled: issue.automationEnabled,
-    automationCron: issue.automationCron ?? "0 9 * * *",
+    automationCron: issue.automationCron ?? "",
     automationMessage: issue.automationMessage ?? "",
-    automationTimezone: issue.automationTimezone ?? "Asia/Shanghai",
+    automationTimezone: issue.automationTimezone ?? "",
     attachmentChatId: issue.attachmentChatId ?? "",
     attachments: issue.attachments ?? [],
     syncToCloud: issue.syncMode === "cloud"
   };
+}
+
+function secondsToHoursInput(value: number | null | undefined) {
+  if (!value) return "";
+  return String(Math.round((value / 3600) * 100) / 100);
+}
+
+function formatEffort(value: number | null | undefined, t: TranslateFunction) {
+  if (!value) return t("kanban.detail.notSet");
+  return t("kanban.detail.hours", { value: Math.round((value / 3600) * 100) / 100 });
 }
 
 function issueExternalId(issue: KanbanIssue) {
@@ -448,8 +475,12 @@ export function KanbanIssueDetailDialog({
   const remoteId = issueExternalId(issue);
   const project = projects.find((candidate) => candidate.id === issue.projectId);
   const projectVersions = Array.from(new Set([
-    ...(issue.version?.trim() ? [issue.version.trim()] : []),
+    ...(issue.projectVersion?.trim() ? [issue.projectVersion.trim()] : []),
     ...(project?.versions ?? [])
+  ]));
+  const projectComponents = Array.from(new Set([
+    ...issue.componentKeys,
+    ...(project?.components ?? [])
   ]));
   const issueType = cloudDetails.issueTypes.find((candidate) => candidate.key === (issue.issueTypeKey || issue.typeId));
   const workflow = cloudDetails.workflows.find((candidate) => candidate.id === issue.workflowId);
@@ -464,7 +495,7 @@ export function KanbanIssueDetailDialog({
     cloudDetails.issueFieldOptions,
     projects,
     issue.projectId ?? "",
-    issue.issueTypeKey ?? issue.typeId ?? "task",
+    issue.issueTypeKey ?? issue.typeId ?? "",
     issue.workflowId ?? ""
   ), [cloudDetails.issueFieldContexts, cloudDetails.issueFieldDefs, cloudDetails.issueFieldOptions, issue.issueTypeKey, issue.projectId, issue.typeId, issue.workflowId, projects]);
   const labelIds = new Set(cloudDetails.issueLabelLinks.filter((link) => link.issueId === remoteId).map((link) => link.labelId));
@@ -495,7 +526,7 @@ export function KanbanIssueDetailDialog({
     ?? t("kanban.form.unassigned");
   const assigneeUser = issue.assigneeId ? usersDetailById.get(issue.assigneeId) : undefined;
   const statusLabel = workflowStatus?.name || issue.statusName || t(DETAIL_STATUS_LABELS[issue.status]);
-  const priorityLabel = t(DETAIL_PRIORITY_LABELS[issue.priority]);
+  const priorityLabel = issue.priority ? t(DETAIL_PRIORITY_LABELS[issue.priority]) : "—";
   const severityLabel = issue.severity ? t(`kanban.importance.${issue.severity}` as "kanban.importance.medium") : "—";
   const projectLabel = project?.name || issue.projectName || issue.projectId || "—";
   const issueTypeLabel = issueType?.name || issue.issueTypeKey || issue.typeId || "—";
@@ -506,6 +537,7 @@ export function KanbanIssueDetailDialog({
   const createdByLabel = usersById.get(issue.createdBy ?? "") || issue.createdByAgent || issue.createdBy || "—";
   const updatedByLabel = usersById.get(issue.updatedBy ?? "") || issue.updatedByAgent || issue.updatedBy || "—";
   const ownerLabel = assigneeUser?.displayName || issue.assigneeId || t("kanban.form.unassigned");
+  const reporterLabel = usersById.get(issue.reporterId ?? "") || issue.reporterId || t("kanban.detail.notSet");
   const copyBehavior = {
     copyTitle: t("kanban.detail.doubleClickToCopy"),
     onCopy: copyPropertyValue
@@ -630,7 +662,7 @@ export function KanbanIssueDetailDialog({
         {copyNotice ? <div className={`kanban-detail-copy-notice is-${copyNotice.tone}`} role="status">{copyNotice.message}</div> : null}
         <header className="kanban-detail-header">
           <div className="kanban-detail-header-context">
-            <div className="kanban-detail-breadcrumb"><ApartmentOutlined /><span>{project?.path || project?.name || issue.projectName || t("kanban.projectFilter.all")}</span></div>
+            <div className="kanban-detail-breadcrumb"><ApartmentOutlined /><span>{project?.path || project?.name || issue.projectName || issue.projectId || "—"}</span></div>
             {isCloud ? <span className="kanban-detail-pill is-origin is-cloud"><CloudOutlined />{t("kanban.detail.cloudOrigin")}</span> : null}
           </div>
           <button className="kanban-detail-close" type="button" onClick={onClose} aria-label={t("kanban.modal.close")}><CloseOutlined /></button>
@@ -698,10 +730,18 @@ export function KanbanIssueDetailDialog({
                 <DetailProperty
                   {...copyBehavior}
                   label={t("kanban.form.version")}
-                  value={issue.version || t("kanban.detail.notSet")}
+                  value={issue.projectVersion || t("kanban.detail.notSet")}
                   editing={editing}
-                  editor={<select value={draft.version} onChange={(event) => updateDraft({ version: event.target.value })}><option value="">{t("kanban.detail.notSet")}</option>{projectVersions.map((version) => <option key={version} value={version}>{version}</option>)}</select>}
+                  editor={<select value={draft.projectVersion} onChange={(event) => updateDraft({ projectVersion: event.target.value })}><option value="">{t("kanban.detail.notSet")}</option>{projectVersions.map((version) => <option key={version} value={version}>{version}</option>)}</select>}
                 />
+                <DetailProperty {...copyBehavior} label={t("kanban.form.dueDate")} value={issue.dueDate || t("kanban.detail.notSet")} editing={editing} editor={<input type="date" value={draft.dueDate} onChange={(event) => updateDraft({ dueDate: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} label={t("kanban.detail.dueRisk")} value={issue.dueRisk || t("kanban.detail.notSet")} />
+                <DetailProperty {...copyBehavior} label={t("kanban.form.resolution")} value={issue.resolution || t("kanban.detail.notSet")} editing={editing} editor={<input maxLength={200} value={draft.resolution} onChange={(event) => updateDraft({ resolution: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} label={t("kanban.form.components")} value={issue.componentKeys.join(", ") || t("kanban.detail.notSet")} editing={editing} editor={<select multiple value={draft.componentKeys} onChange={(event) => updateDraft({ componentKeys: [...event.target.selectedOptions].map((option) => option.value) })}>{projectComponents.map((component) => <option key={component} value={component}>{component}</option>)}</select>} />
+                <DetailProperty {...copyBehavior} label={t("kanban.form.originalEstimate")} value={formatEffort(issue.originalEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.originalEstimateHours} onChange={(event) => updateDraft({ originalEstimateHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} label={t("kanban.form.remainingEstimate")} value={formatEffort(issue.remainingEstimate, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.remainingEstimateHours} onChange={(event) => updateDraft({ remainingEstimateHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} label={t("kanban.form.timeSpent")} value={formatEffort(issue.timeSpent, t)} editing={editing} editor={<input type="number" min={0} step="0.25" value={draft.timeSpentHours} onChange={(event) => updateDraft({ timeSpentHours: event.target.value })} />} />
+                <DetailProperty {...copyBehavior} label={t("kanban.detail.securityLevel")} value={issue.securityLevelKey || t("kanban.detail.notSet")} />
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.issueType")} value={issueTypeLabel} />
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.workflow")} value={workflowLabel} />
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.stage")} value={stageLabel} />
@@ -717,9 +757,9 @@ export function KanbanIssueDetailDialog({
                   label={t("kanban.form.priority")}
                   value={priorityLabel}
                   editing={editing}
-                  editor={<select value={draft.priority} onChange={(event) => updateDraft({ priority: event.target.value as KanbanPriority })}>{KANBAN_PRIORITIES.map((priority) => <option key={priority} value={priority}>{t(DETAIL_PRIORITY_LABELS[priority])}</option>)}</select>}
+                  editor={<select value={draft.priority ?? ""} onChange={(event) => updateDraft({ priority: event.target.value ? event.target.value as KanbanPriority : null })}><option value="">{t("kanban.detail.notSet")}</option>{KANBAN_PRIORITIES.map((priority) => <option key={priority} value={priority}>{t(DETAIL_PRIORITY_LABELS[priority])}</option>)}</select>}
                 />
-                <DetailProperty {...copyBehavior} label={t("kanban.detail.severity")} value={severityLabel} />
+                <DetailProperty {...copyBehavior} label={t("kanban.detail.severity")} value={severityLabel} editing={editing} editor={<select value={draft.severity ?? ""} onChange={(event) => updateDraft({ severity: event.target.value ? event.target.value as KanbanSeverity : null })}><option value="">{t("kanban.detail.notSet")}</option>{(["critical", "high", "medium", "low"] as const).map((severity) => <option key={severity} value={severity}>{t(`kanban.importance.${severity}` as "kanban.importance.medium")}</option>)}</select>} />
                 {labels.length > 0 ? <DetailProperty {...copyBehavior} copyValue={labels.map((label) => label.name || label.key).join(", ")} label={t("kanban.detail.labelsTitle")} value={<span className="kanban-detail-labels">{labels.map((label) => <span key={label.id} style={label.color ? { borderColor: label.color, color: label.color } : undefined}>{label.name || label.key}</span>)}</span>} /> : null}
                 {resolvedFields.map((field) => {
                   const value = issue.customFields?.[field.def.key] ?? field.context.defaultValue;
@@ -744,6 +784,7 @@ export function KanbanIssueDetailDialog({
             <DetailSection sectionId="kanban-detail-people" title={t("kanban.detail.peopleTitle")} icon={<UserOutlined />}>
               <dl className="kanban-detail-properties">
                 <DetailProperty {...copyBehavior} label={t("kanban.detail.owner")} value={ownerLabel} />
+                <DetailProperty {...copyBehavior} label={t("kanban.form.reporter")} value={reporterLabel} editing={editing} editor={<select value={draft.reporterId} onChange={(event) => updateDraft({ reporterId: event.target.value })}><option value="">{t("kanban.detail.notSet")}</option>{cloudDetails.users.map((user) => <option key={user.id} value={user.id}>{user.displayName || user.email || user.id}</option>)}</select>} />
                 <DetailProperty
                   {...copyBehavior}
                   label={t("kanban.detail.executor")}
@@ -777,14 +818,14 @@ export function KanbanIssueDetailDialog({
                   return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
                 })}</div></div> : null}
                 {reviews.length > 0 ? <div><h3>{t("kanban.detail.reviewsTitle")}</h3><div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div></div> : null}
-                {runs.length > 0 ? <div><h3><RobotOutlined />{t("kanban.detail.runsTitle")}</h3><div className="kanban-detail-run-list">{runs.map((run) => <div key={run.id} className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{run.workerAgent || agentLabel}<em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em></strong><p>{run.runId || t("kanban.detail.runIdMissing")}</p><small>{formatDateTime(run.startedAt, locale)}{run.finishedAt ? ` — ${formatDateTime(run.finishedAt, locale)}` : ""}</small>{run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}{run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}</div>{run.chatId && run.chatId === issue.chatId ? <button type="button" onClick={onOpenChat}>{t("kanban.chat.view")}</button> : null}</div>)}</div></div> : null}
+                {runs.length > 0 ? <div><h3><RobotOutlined />{t("kanban.detail.runsTitle")}</h3><div className="kanban-detail-run-list">{runs.map((run) => <div key={run.id} className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong><p>{run.runId || t("kanban.detail.runIdMissing")}</p><small>{formatDateTime(run.startedAt, locale)}{run.finishedAt ? ` — ${formatDateTime(run.finishedAt, locale)}` : ""}</small>{run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}{run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}</div>{run.chatId && run.chatId === issue.chatId ? <button type="button" onClick={onOpenChat}>{t("kanban.chat.view")}</button> : null}</div>)}</div></div> : null}
               </div> : <EmptyBlock>{t("kanban.detail.noRelated")}</EmptyBlock>}
             </DetailSection>
 
             <DetailSection sectionId="kanban-detail-activity" title={t("kanban.detail.activityTitle")} icon={<HistoryOutlined />} meta={t("kanban.detail.itemCount", { count: statusTimeline.length })}>
               {statusTimeline.length > 0 ? <ol className="kanban-detail-timeline is-status-timeline">{statusTimeline.map((entry, index) => {
                 const event = timelineEventsByRevision.get(entry.revision);
-                return <li key={`${entry.key}:${entry.revision}`}><span>{index === 0 ? <CheckCircleFilled /> : <ClockCircleOutlined />}</span><div><strong className="kanban-detail-timeline-transition"><span>{entry.fromLabel || t("kanban.detail.notSet")}</span><ArrowRightOutlined /><span>{entry.toLabel}</span></strong><small>{usersById.get(entry.actor) || entry.actor || t("kanban.detail.systemActor")} · {formatDateTime(entry.createdAt, locale)}</small>{debugMode && event?.payload && Object.keys(event.payload).length > 0 ? <details><summary>{t("kanban.detail.eventPayload")}</summary><pre>{safeJson(event.payload)}</pre></details> : null}</div></li>;
+                return <li key={`${entry.key}:${entry.revision}`}><span>{index === 0 ? <CheckCircleFilled /> : <ClockCircleOutlined />}</span><div><strong className="kanban-detail-timeline-transition"><span>{entry.fromLabel || t("kanban.detail.notSet")}</span><ArrowRightOutlined /><span>{entry.toLabel}</span></strong><small>{usersById.get(entry.actor) || entry.actor || t("kanban.detail.unknownActor")} · {formatDateTime(entry.createdAt, locale)}</small>{debugMode && event?.payload && Object.keys(event.payload).length > 0 ? <details><summary>{t("kanban.detail.eventPayload")}</summary><pre>{safeJson(event.payload)}</pre></details> : null}</div></li>;
               })}</ol> : <EmptyBlock>{t("kanban.detail.noActivity")}</EmptyBlock>}
             </DetailSection>
 

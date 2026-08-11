@@ -16,7 +16,7 @@
 
 - Server 已实现 project/issue revision、canonical event、project-set snapshot、多项目 event pull、项目软删除恢复、离线 run delivery、ACK 后 delivered 状态、运行事件幂等和 v3 输出适配。
 - Website 已切换单实体 upsert/tombstone reducer、`issue.assign`、`issue.run.request`、项目删除恢复及重连快照收敛。
-- Desktop 已切换 cache schema 2、完整 binding set 恢复、cloud cache 精确替换、private 数据隔离、command receipt 和稳定 run identity。
+- Desktop 已切换 cache schema 4、完整 binding set 恢复、cloud cache 精确替换、private 数据隔离、command receipt 和稳定 run identity；schema 4 同时保存 Project 组件目录、可空等级和完整 Issue 详情字段。
 - 三仓使用同一组 `kanban-v3.1/contract-fixtures.json` 做 JSON golden fixture 验证。
 - 本文继续保留 `Current v3` 与 `Target v3.1` 标签，用于解释兼容输出，不再表示 v3.1 尚未编码。
 
@@ -185,7 +185,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 - 时间字段使用 UTC ISO-8601，例如 `2026-07-11T10:00:00Z`。
 - ID 是不透明字符串，客户端不得解析其格式。
 - Update 中字段缺失表示“不修改”，显式 `null` 表示“清空”。
-- 数组型 whole-replacement 字段必须明确记录，例如 Project 的 `versions` 以及 Issue 的 `labelIds`、`dependencies`；传空数组表示清空。
+- 数组型 whole-replacement 字段必须明确记录，例如 Project 的 `versions`、`components` 以及 Issue 的 `componentKeys`、`labelIds`、`dependencies`；传空数组表示清空。
 - Target v3.1 Server 对成功的 mutating Request 持久化 `id` 和结果；重复请求返回原结果，不生成第二个 revision。
 - Current v3 的 Request `id` 主要用于 RPC 关联，不保证所有写接口都已实现持久幂等。
 
@@ -202,7 +202,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
   "parentIssueId": null,
   "projectPath": "default/project-1",
   "projectName": "Desktop",
-  "version": "1.4.0",
+  "projectVersion": "1.4.0",
   "issueTypeKey": "task",
   "workflowId": "workflow-standard-task",
   "stageId": "stage-development",
@@ -215,8 +215,16 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
   "status": "in_progress",
   "title": "实现 Desktop 离线恢复",
   "description": "Desktop 重新上线后恢复云端状态。",
-  "dueTime": "2026-07-18T18:00:00+08:00",
-  "priority": "P1",
+  "dueDate": "2026-07-18",
+  "dueRisk": "high",
+  "resolution": null,
+  "securityLevelKey": "internal",
+  "reporterId": "user-2",
+  "componentKeys": ["desktop-shell", "sync"],
+  "originalEstimate": 28800,
+  "remainingEstimate": 14400,
+  "timeSpent": 7200,
+  "priority": "high",
   "severity": "medium",
   "position": 120.5,
   "assigneeAgentKey": "codeAssistant",
@@ -258,17 +266,21 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 枚举：
 
 - `status` / `columnKey`：`backlog`、`todo`、`in_progress`、`in_review`、`completed`。
-- `priority`：`P0`、`P1`、`P2`、`P3`；Desktop 内部与 SQLite 缓存使用同一枚举。旧缓存中的 `high`、`medium`、`low` 仅在数据库迁移边界依次转换为 `P1`、`P2`、`P3`，不得继续作为新 wire 值写入。
-- `severity`：`critical`、`high`、`medium`、`low`。
-- `dueTime`：可选 RFC3339 截止时间；缺失或 `null` 表示未设置。Desktop 在主进程边界将其严格归一化为 epoch-ms `dueAt` 供共享契约和 renderer 使用，不接受无时区文本或有损的亚毫秒精度。
-- `version`：可选字符串；缺失、`null` 或空字符串表示未设置。非空值必须存在于所属 Project 的 `versions` 目录，Web 表单必须使用下拉选择而非自由输入。
+- `priority`：wire 使用 `urgent`、`high`、`medium`、`low` 或 `null`。Desktop 在缓存边界映射为 `P0`、`P1`、`P2`、`P3`，Desktop Action 同时接受两组输入，但输出保持 P0–P3 兼容现有调用方。
+- `severity`：`critical`、`high`、`medium`、`low` 或 `null`。`priority` 与 `severity` 缺失时均保持空值，不补默认等级。
+- `dueDate`：严格的 `YYYY-MM-DD` 日历日期；缺失或 `null` 表示未设置。不得转换成时间点或受时区偏移影响。旧 `dueTime`、`dueAt` 仅供 Desktop 迁移读取，新实体不再写入旧键。
+- `dueRisk`：Server 计算的只读值。Desktop 不允许动作写入，也不为 private Issue 复制 Server 风险算法。
+- `projectVersion`：可选字符串；缺失、`null` 或空字符串表示未设置。非空值必须存在于所属 Project 的 `versions` 目录。旧 `version` 只作为 Desktop Action 与存量缓存的兼容读取来源。
+- `componentKeys`：所属 Project `components` 目录中的字符串数组，whole-replacement；空数组表示清空。
+- `originalEstimate`、`remainingEstimate`、`timeSpent`：可选非负整数秒；UI 可以小时输入，但协议和缓存统一使用秒。
+- `resolution`、`securityLevelKey`、`reporterId`：可选字符串；`securityLevelKey` 在 Desktop 原生 UI 中只读。
 - `workerType`：`human`、`agent`、`null`。
 - `dispatchState`：`null`、`waiting_for_device`、`delivered`、`accepted`、`cancelled`、`expired`。
 - `runState`：`null`、`running`、`completed`、`failed`、`cancelled`。
 
 `dispatchState` 和相关 dispatch 字段属于 Target v3.1。Current v3 主要通过 `event_delivery` 表达排队状态，Issue JSON 尚未完整投影这些字段。
 
-Desktop 卡片展示的工作流进度不是 wire 字段。Renderer 只读消费 `workflowStages` 的顺序、当前 `stageId/stageKey`，以及该 Stage 下 `workflowStatuses` 的顺序与当前 `statusId/statusKey/columnKey` 来推导大致进度；进度轨填充区只使用当前 Stage 的单一颜色，不携带历史阶段分段，也不向 Server 回写百分比或颜色。目录缺失或引用无法匹配时必须使用中性降级，不得猜测或产生 mutation。
+Desktop 卡片展示的工作流进度不是 Issue wire 字段。Renderer 只读消费 `workflowStages` 的顺序、当前 `stageId/stageKey`，以及该 Stage 下 `workflowStatuses` 的顺序与当前 `statusId/statusKey/columnKey` 来推导大致进度；3px 进度轨优先使用 Workflow Stage 目录中的 `color`，缺失时使用稳定语义色板，不携带历史阶段分段，也不向 Server 回写百分比或颜色。目录缺失或引用无法匹配时必须使用中性降级，不得猜测或产生 mutation。
 
 ### 4.2 Project
 
@@ -281,6 +293,7 @@ Desktop 卡片展示的工作流进度不是 wire 字段。Renderer 只读消费
   "name": "Desktop",
   "description": "ZenMind Desktop",
   "versions": ["1.3.0", "1.4.0"],
+  "components": ["desktop-shell", "sync"],
   "path": "default/desktop",
   "depth": 1,
   "position": 10.0,
@@ -296,7 +309,7 @@ Desktop 卡片展示的工作流进度不是 wire 字段。Renderer 只读消费
 }
 ```
 
-`Project.versions` 是该 Project 可供 Issue 选择的版本号目录，保序、去空、去重；删除仍被 Issue 使用的版本必须失败。默认 Project 的名称和结构仍不可修改，但允许单独维护 `versions`。`Project.revision` 属于 Target v3.1，用于项目更新、移动、删除和恢复的实体级冲突检查。
+`Project.versions` 与 `Project.components` 是该 Project 可供 Issue 选择的版本和组件目录，保序、去空、去重；删除仍被 Issue 使用的目录项必须失败。默认 Project 的名称和结构仍不可修改，但允许单独维护两个目录。`Project.revision` 属于 Target v3.1，用于项目更新、移动、删除和恢复的实体级冲突检查。
 
 ### 4.3 Desktop cursor
 
@@ -305,7 +318,7 @@ Desktop 卡片展示的工作流进度不是 wire 字段。Renderer 只读消费
   "deviceId": "device-1",
   "lastAckedDeliverySeq": 12,
   "lastAppliedRevision": 500,
-  "cacheSchemaVersion": 1,
+  "cacheSchemaVersion": 4,
   "updatedAt": "2026-07-11T10:00:00Z"
 }
 ```
@@ -625,11 +638,19 @@ Success payload：
     "input": {
       "projectId": "project-1",
       "title": "实现快照恢复",
-      "version": "1.4.0",
+      "projectVersion": "1.4.0",
       "description": "支持 Desktop 离线后恢复。",
       "issueTypeKey": "task",
       "workflowId": "workflow-standard-task",
-      "priority": "P1",
+      "dueDate": "2026-07-18",
+      "resolution": null,
+      "securityLevelKey": "internal",
+      "reporterId": "user-2",
+      "componentKeys": ["sync"],
+      "originalEstimate": 28800,
+      "remainingEstimate": 28800,
+      "timeSpent": 0,
+      "priority": "high",
       "severity": "medium",
       "assigneeId": "user-1",
       "workerType": "agent",
@@ -660,9 +681,16 @@ Target v3.1 用于内容和非流程字段更新。stage/status/position 使用 
     "baseIssueRevision": 500,
     "input": {
       "title": "实现完整快照恢复",
-      "version": null,
+      "projectVersion": null,
       "description": "更新后的说明。",
-      "priority": "P1",
+      "dueDate": "2026-07-20",
+      "resolution": "fixed",
+      "reporterId": "user-2",
+      "componentKeys": ["desktop-shell", "sync"],
+      "originalEstimate": 28800,
+      "remainingEstimate": 7200,
+      "timeSpent": 21600,
+      "priority": "high",
       "severity": "high",
       "attachments": [],
       "labelIds": ["label-sync"],
@@ -942,6 +970,7 @@ Server 必须把同一事件发送给订阅旧项目或新项目的会话。客�
     "slug": "desktop",
     "description": "ZenMind Desktop",
     "versions": ["1.3.0", "1.4.0"],
+    "components": ["desktop-shell", "sync"],
     "visibility": "workspace",
     "defaultWorkflowId": "workflow-standard-task",
     "position": 10.0
@@ -965,7 +994,8 @@ Server 必须把同一事件发送给订阅旧项目或新项目的会话。客�
     "input": {
       "name": "Desktop Client",
       "description": "Desktop 客户端项目",
-      "versions": ["1.4.0", "2.0.0"]
+      "versions": ["1.4.0", "2.0.0"],
+      "components": ["desktop-shell", "runtime"]
     }
   }
 }
@@ -1313,6 +1343,14 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
       "projectId": "local-project-1",
       "description": "只保存在当前电脑。",
       "status": "todo",
+      "projectVersion": "1.4.0",
+      "dueDate": "2026-07-18",
+      "resolution": null,
+      "reporterId": "user-1",
+      "componentKeys": ["desktop-shell"],
+      "originalEstimate": 14400,
+      "remainingEstimate": 14400,
+      "timeSpent": 0,
       "priority": "P2",
       "severity": "medium",
       "assigneeAgentKey": "codeAssistant",
@@ -1324,6 +1362,8 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
 
 `syncToCloud` 缺失或为 `false` 时创建 private Issue。Current v3 中设置为 `true` 会被拒绝，因为 Desktop cloud issue 是只读缓存。
 
+Desktop Action 的 `priority` 同时接受 P0–P3 与 `urgent/high/medium/low`，返回值保持 P0–P3；`version` 仍可作为 `projectVersion` 的旧输入别名。`dueRisk` 不可写，`securityLevelKey` 可由动作设置但在 Desktop 原生 UI 中只读。
+
 ### 10.3 `desktop.kanban.updateIssue`
 
 ```json
@@ -1333,6 +1373,9 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
     "id": "local_issue_1",
     "input": {
       "title": "更新后的本地任务",
+      "projectVersion": null,
+      "dueDate": null,
+      "componentKeys": [],
       "priority": "P1",
       "syncToCloud": false
     }

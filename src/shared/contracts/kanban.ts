@@ -1,5 +1,4 @@
 import type { AssistantAttachment } from "./attachments";
-import type { EpochMilliseconds } from "../time-contract";
 
 export const KANBAN_STATUSES = [
   "backlog",
@@ -25,12 +24,15 @@ export const KANBAN_RUN_STATES = [
 
 export type KanbanStatus = typeof KANBAN_STATUSES[number];
 export type KanbanPriority = typeof KANBAN_PRIORITIES[number];
+export type KanbanWirePriority = "urgent" | "high" | "medium" | "low";
+export type KanbanSeverity = "critical" | "high" | "medium" | "low";
 export type KanbanRunState = typeof KANBAN_RUN_STATES[number];
 export type KanbanSyncMode = "private" | "cloud";
 export type KanbanSyncState = "local" | "syncing" | "synced" | "error";
 export type KanbanOrigin = "desktop" | "cloud_dispatch";
 
 const LEGACY_KANBAN_PRIORITY_ALIASES: Record<string, KanbanPriority> = {
+  urgent: "P0",
   high: "P1",
   medium: "P2",
   low: "P3"
@@ -128,6 +130,7 @@ export interface KanbanWorkflowStage {
   stageDefId?: string;
   key: string;
   name: string;
+  color?: string;
   position?: number;
   isStart?: boolean;
   isEnd?: boolean;
@@ -235,7 +238,16 @@ export interface KanbanIssue {
   projectId?: string;
   projectPath?: string;
   projectName?: string;
-  version?: string | null;
+  projectVersion?: string | null;
+  dueDate?: string | null;
+  dueRisk?: string | null;
+  resolution?: string | null;
+  securityLevelKey?: string | null;
+  reporterId?: string | null;
+  componentKeys: string[];
+  originalEstimate: number;
+  remainingEstimate: number;
+  timeSpent: number;
   parentIssueId?: string | null;
   workflowId?: string;
   typeId?: string;
@@ -250,8 +262,8 @@ export interface KanbanIssue {
   title: string;
   description: string;
   status: KanbanStatus;
-  priority: KanbanPriority;
-  severity?: "critical" | "high" | "medium" | "low";
+  priority: KanbanPriority | null;
+  severity: KanbanSeverity | null;
   assigneeAgentKey: string | null;
   assigneeId?: string | null;
   workerType?: "human" | "agent" | null;
@@ -281,7 +293,6 @@ export interface KanbanIssue {
   attachmentChatId: string | null;
   attachments: AssistantAttachment[];
   customFields?: Record<string, unknown>;
-  dueAt?: EpochMilliseconds | null;
   createdBy?: string | null;
   updatedBy?: string | null;
   createdByAgent?: string | null;
@@ -306,6 +317,7 @@ export interface KanbanProject {
   name: string;
   description?: string;
   versions?: string[];
+  components?: string[];
   path: string;
   depth: number;
   position: number;
@@ -396,6 +408,8 @@ export interface KanbanCreateLocalProjectRequest {
   name: string;
   localProjectId?: string;
   cloudProjectId?: string;
+  versions?: string[];
+  components?: string[];
 }
 
 export interface KanbanCreateLocalProjectResult {
@@ -412,11 +426,21 @@ export interface KanbanCreateLocalProjectResult {
 export interface KanbanIssueInput {
   title: string;
   projectId?: string | null;
+  projectVersion?: string | null;
+  /** @deprecated Compatibility alias; normalized to projectVersion at the Desktop boundary. */
   version?: string | null;
+  dueDate?: string | null;
+  resolution?: string | null;
+  securityLevelKey?: string | null;
+  reporterId?: string | null;
+  componentKeys?: string[];
+  originalEstimate?: number;
+  remainingEstimate?: number;
+  timeSpent?: number;
   description?: string | null;
   status?: KanbanStatus;
-  priority?: KanbanPriority;
-  severity?: "critical" | "high" | "medium" | "low";
+  priority?: KanbanPriority | KanbanWirePriority | null;
+  severity?: KanbanSeverity | null;
   assigneeAgentKey?: string | null;
   assigneeId?: string | null;
   workerType?: "human" | "agent" | null;
@@ -436,11 +460,21 @@ export interface KanbanIssueInput {
 export interface KanbanIssueUpdateInput {
   title?: string;
   projectId?: string | null;
+  projectVersion?: string | null;
+  /** @deprecated Compatibility alias; normalized to projectVersion at the Desktop boundary. */
   version?: string | null;
+  dueDate?: string | null;
+  resolution?: string | null;
+  securityLevelKey?: string | null;
+  reporterId?: string | null;
+  componentKeys?: string[];
+  originalEstimate?: number;
+  remainingEstimate?: number;
+  timeSpent?: number;
   description?: string | null;
   status?: KanbanStatus;
-  priority?: KanbanPriority;
-  severity?: "critical" | "high" | "medium" | "low";
+  priority?: KanbanPriority | KanbanWirePriority | null;
+  severity?: KanbanSeverity | null;
   assigneeAgentKey?: string | null;
   assigneeId?: string | null;
   workerType?: "human" | "agent" | null;

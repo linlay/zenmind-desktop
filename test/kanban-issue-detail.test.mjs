@@ -18,12 +18,17 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
   assert.match(contracts, /customFields\?: Record<string, unknown>/);
   assert.match(contracts, /parentIssueId\?: string \| null/);
   assert.match(contracts, /runResultMessage\?: string \| null/);
+  assert.match(contracts, /projectVersion\?: string \| null/);
+  assert.match(contracts, /dueDate\?: string \| null/);
+  assert.match(contracts, /componentKeys: string\[\]/);
   assert.match(contracts, /cloudDetails\?: KanbanCloudDetailData/);
   assert.doesNotMatch(issueContract, /reviewerId|reviewRequired/);
   assert.match(store, /DETAIL_JSON_ TEXT NOT NULL DEFAULT '\{\}'/);
   assert.match(store, /CREATE TABLE IF NOT EXISTS kanban_cloud_detail_cache/);
   assert.match(store, /storeCloudDetailData\(db, currentUser, snapshot, revision\)/);
-  assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 3/);
+  assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 4/);
+  assert.match(store, /COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '\[\]'/);
+  assert.match(store, /migrateDesktopKanbanIssueDetailJson\(db\)/);
   assert.doesNotMatch(store, /(?:rawIssue|input|issue|row)\.(?:reviewerId|reviewRequired|reviewer_id|review_required)/);
 });
 
@@ -63,12 +68,50 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /!isCloud \? <button[\s\S]{0,180}setEditing\(true\)/);
   assert.match(detail, /if \(await onSave\(draft\)\) setEditing\(false\)/);
   assert.match(detail, /kanban\.detail\.cloudReadonly/);
-  assert.match(detail, /label=\{t\("kanban\.form\.version"\)\}[\s\S]{0,300}<select value=\{draft\.version\}/u);
-  assert.match(page, /projectVersionLabel = version \? `\$\{projectName\} \(\$\{version\}\)` : projectName/u);
-  assert.match(page, /<select[\s\S]{0,180}value=\{form\.version\}/u);
+  assert.match(detail, /issue\.issueTypeKey \?\? issue\.typeId \?\? ""/);
+  assert.doesNotMatch(detail, /issue\.issueTypeKey \?\? issue\.typeId \?\? "task"/);
+  assert.match(detail, /automationCron: issue\.automationCron \?\? ""/);
+  assert.match(detail, /automationTimezone: issue\.automationTimezone \?\? ""/);
+  assert.doesNotMatch(detail, /automation(?:Cron|Timezone): issue\.automation(?:Cron|Timezone) \?\? "(?:0 9 \* \* \*|Asia\/Shanghai)"/);
+  assert.match(detail, /issue\.projectName \|\| issue\.projectId \|\| "—"/);
+  assert.doesNotMatch(detail, /issue\.projectName \|\| t\("kanban\.projectFilter\.all"\)/);
+  assert.match(detail, /label=\{t\("kanban\.form\.version"\)\}[\s\S]{0,300}<select value=\{draft\.projectVersion\}/u);
+  assert.match(detail, /kanban\.form\.dueDate[\s\S]*kanban\.form\.components[\s\S]*kanban\.form\.originalEstimate/);
+  assert.match(detail, /kanban\.detail\.dueRisk[\s\S]*kanban\.detail\.securityLevel/);
+  assert.match(page, /issue\.projectVersion\?\.trim\(\) \? t\("kanban\.card\.version"/u);
+  assert.match(page, /<select[\s\S]{0,180}value=\{form\.projectVersion\}/u);
+  assert.doesNotMatch(page, /issue\.dueAt|value=\{form\.version\}/);
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
+});
+
+test("Kanban cards use the Website hierarchy without hover actions", () => {
+  const page = read("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const styles = read("src", "renderer", "styles", "kanban.css");
+  const card = page.slice(page.indexOf("const IssueCardContent"), page.indexOf("function IssueCardSignalIcon"));
+  const operational = page.slice(
+    page.indexOf("function getIssueCardOperationalStatePresentation"),
+    page.indexOf("function getKanbanEmptyHint")
+  );
+  assert.match(page, /color: stage\?\.color\?\.trim\(\) \|\|/);
+  assert.match(styles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,180}height: 3px/);
+  assert.match(card, /issue-card-type-corner/);
+  assert.match(card, /issue-card-version/);
+  assert.match(card, /issue-card-queue-rank/);
+  assert.match(card, /IssueCardPriorityImportance[\s\S]*issue-card-title-text/);
+  assert.match(styles, /\.issue-card-priority-importance/);
+  assert.match(card, /issue-card-footer-row is-summary[\s\S]*issue-card-footer-row is-operational/);
+  assert.match(page, /issue\.status !== "todo"[\s\S]{0,900}Date\.UTC\(year, month - 1, day\)/);
+  assert.match(card, /issue\.dueRisk[\s\S]*DueRiskAlarmIcon/);
+  assert.match(styles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.issue-card-due-risk \{ animation: none; \}/);
+  assert.doesNotMatch(card, /issue-card-actions|issue-card-action|onOpenChat|onDelete/);
+  assert.doesNotMatch(styles, /\.issue-card-actions|\.issue-card-action(?:\W)/);
+  assert.match(operational, /runState === "cancelled"[\s\S]*runState === "failed"[\s\S]*awaitingConfirmation/);
+  assert.doesNotMatch(operational, /kanban\.run\.running|icon: "running"/);
+  assert.match(page, /type SearchFilterMenuKind = "issueType" \| "priority" \| "severity"/);
+  assert.match(page, /issue\.priority \?\? "unset"[\s\S]*issueSeverity \?\? "unset"/);
+  assert.match(page, /issue\.issueTypeKey \?\? issue\.typeId[\s\S]*issue\.reporterId[\s\S]*issue\.projectPath[\s\S]*\.\.\.issue\.componentKeys/);
 });
 
 test("Kanban detail keeps content on the left and all remaining issue data on the right", () => {
@@ -94,6 +137,8 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(detail, /valueType === "json"/);
   assert.match(enUS, /"kanban\.detail\.basicTitle": "Basic"/);
   assert.match(history, /export function resolveKanbanIssueRuns[\s\S]*eventIssueSnapshot\(event\)[\s\S]*issue\.runId[\s\S]*return \[\.\.\.runs\.values\(\)\]/);
+  assert.match(history, /status: KanbanRunState \| null/);
+  assert.doesNotMatch(history, /status: (?:status|issueStatus) \|\| previous\?\.status \|\| "running"/);
   assert.match(history, /export function resolveKanbanStatusTimeline[\s\S]*eventStatusTransition\(event\)[\s\S]*fromLabel[\s\S]*toLabel[\s\S]*issue\.statusId \|\| issue\.status/);
   assert.match(history, /event\.payload\?\.summary/);
   assert.match(detail, /function DetailProperty[\s\S]{0,1600}kanban-detail-property-editor[\s\S]{0,300}kanban-detail-property-value/);
@@ -112,10 +157,13 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(people, /kanban\.detail\.owner[\s\S]*kanban\.detail\.executor[\s\S]*kanban\.form\.automationEnabled[\s\S]*kanban\.form\.cron/);
   assert.match(related, /kanban\.detail\.parentTitle[\s\S]*kanban\.detail\.subtasksTitle[\s\S]*kanban\.detail\.dependenciesTitle[\s\S]*kanban\.detail\.reviewsTitle[\s\S]*kanban\.detail\.runsTitle/);
   assert.match(related, /runs\.map[\s\S]*run\.resultMessage[\s\S]*run\.errorMessage/);
+  assert.match(related, /run\.workerAgent \|\| "—"[\s\S]{0,100}run\.status \? <em/);
+  assert.doesNotMatch(related, /run\.workerAgent \|\| agentLabel/);
   assert.doesNotMatch(related, /kanban\.detail\.activityTitle/);
   assert.match(enUS, /"kanban\.detail\.activityTitle": "Timeline"/);
   assert.match(activity, /kanban\.detail\.activityTitle[\s\S]*statusTimeline\.map[\s\S]*entry\.fromLabel[\s\S]*ArrowRightOutlined[\s\S]*entry\.toLabel/);
-  assert.match(activity, /usersById\.get\(entry\.actor\)[\s\S]*formatDateTime\(entry\.createdAt[\s\S]*debugMode && event\?\.payload[\s\S]*kanban\.detail\.eventPayload/);
+  assert.match(activity, /usersById\.get\(entry\.actor\)[\s\S]*kanban\.detail\.unknownActor[\s\S]*formatDateTime\(entry\.createdAt[\s\S]*debugMode && event\?\.payload[\s\S]*kanban\.detail\.eventPayload/);
+  assert.doesNotMatch(activity, /kanban\.detail\.systemActor/);
   assert.match(detail, /const parentIssueId = issue\.parentIssueId\?\.trim\(\) \?\? ""/);
   assert.doesNotMatch(detail, /sectionId="kanban-detail-(?:automation|runs|source)"/);
   assert.match(detail, /useDebugMode\(\)[\s\S]*debugMode \? <DetailProperty[\s\S]*kanban\.detail\.revision/);

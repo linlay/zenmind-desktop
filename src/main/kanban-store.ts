@@ -152,7 +152,7 @@ function buildIssue(input: KanbanIssueInput, existingIssues: KanbanIssue[]): Kan
   if (!title) return null;
 
   const status = normalizeKanbanStatus(input.status) ?? "backlog";
-  const priority = parseKanbanPriority(input.priority) ?? "P2";
+  const priority = parseKanbanPriority(input.priority);
   const timestamp = nowIso();
   return {
     id: createKanbanIssueId(existingIssues),
@@ -160,6 +160,17 @@ function buildIssue(input: KanbanIssueInput, existingIssues: KanbanIssue[]): Kan
     description: normalizeDescription(input.description),
     status,
     priority,
+    severity: input.severity ?? null,
+    projectVersion: nullableTrimmedText(input.projectVersion !== undefined ? input.projectVersion : input.version),
+    dueDate: nullableTrimmedText(input.dueDate),
+    dueRisk: null,
+    resolution: nullableTrimmedText(input.resolution),
+    securityLevelKey: nullableTrimmedText(input.securityLevelKey),
+    reporterId: nullableTrimmedText(input.reporterId),
+    componentKeys: Array.isArray(input.componentKeys) ? input.componentKeys.map(trimText).filter(Boolean) : [],
+    originalEstimate: typeof input.originalEstimate === "number" && input.originalEstimate >= 0 ? Math.trunc(input.originalEstimate) : 0,
+    remainingEstimate: typeof input.remainingEstimate === "number" && input.remainingEstimate >= 0 ? Math.trunc(input.remainingEstimate) : 0,
+    timeSpent: typeof input.timeSpent === "number" && input.timeSpent >= 0 ? Math.trunc(input.timeSpent) : 0,
     assigneeAgentKey: nullableTrimmedText(input.assigneeAgentKey),
     position: nextIssuePosition(existingIssues, status),
     chatId: null,
@@ -195,9 +206,18 @@ function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): Ka
     if (status) nextIssue.status = status;
   }
   if (input.priority !== undefined) {
-    const priority = parseKanbanPriority(input.priority);
-    if (priority) nextIssue.priority = priority;
+    nextIssue.priority = parseKanbanPriority(input.priority);
   }
+  if (input.severity !== undefined) nextIssue.severity = input.severity;
+  if (input.projectVersion !== undefined || input.version !== undefined) nextIssue.projectVersion = nullableTrimmedText(input.projectVersion !== undefined ? input.projectVersion : input.version);
+  if (input.dueDate !== undefined) nextIssue.dueDate = nullableTrimmedText(input.dueDate);
+  if (input.resolution !== undefined) nextIssue.resolution = nullableTrimmedText(input.resolution);
+  if (input.securityLevelKey !== undefined) nextIssue.securityLevelKey = nullableTrimmedText(input.securityLevelKey);
+  if (input.reporterId !== undefined) nextIssue.reporterId = nullableTrimmedText(input.reporterId);
+  if (input.componentKeys !== undefined) nextIssue.componentKeys = input.componentKeys.map(trimText).filter(Boolean);
+  if (input.originalEstimate !== undefined) nextIssue.originalEstimate = Math.max(0, Math.trunc(input.originalEstimate));
+  if (input.remainingEstimate !== undefined) nextIssue.remainingEstimate = Math.max(0, Math.trunc(input.remainingEstimate));
+  if (input.timeSpent !== undefined) nextIssue.timeSpent = Math.max(0, Math.trunc(input.timeSpent));
   if (input.assigneeAgentKey !== undefined) nextIssue.assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
   if (input.chatId !== undefined) nextIssue.chatId = nullableTrimmedText(input.chatId);
   if (input.runId !== undefined) nextIssue.runId = nullableTrimmedText(input.runId);

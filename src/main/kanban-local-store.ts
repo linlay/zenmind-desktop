@@ -24,7 +24,6 @@ import type {
   KanbanSyncState
 } from "../shared/contracts";
 import {
-  isEpochMilliseconds,
   KANBAN_RUN_STATES,
   KANBAN_STATUSES,
   parseKanbanPriority
@@ -50,8 +49,8 @@ type KanbanIssueRow = {
   title: string;
   description: string;
   status: KanbanStatus;
-  priority: KanbanPriority;
-  severity: NonNullable<KanbanIssue["severity"]>;
+  priority: KanbanPriority | null;
+  severity: KanbanIssue["severity"];
   assignee_agent_key: string | null;
   assignee_id: string | null;
   worker_type: KanbanIssue["workerType"];
@@ -95,6 +94,7 @@ type KanbanProjectRow = {
   name: string;
   description: string;
   versions_json: string;
+  components_json: string;
   path: string;
   depth: number;
   position: number;
@@ -179,7 +179,7 @@ const WORKFLOW_ID = "workflow-standard-requirement";
 const ISSUE_TYPE_ID = "issue-type-standard-requirement";
 const DATABASE_DIRECTORY = "desktop-kanban";
 const DATABASE_FILENAME = "kanban.db";
-const SYNC_CACHE_SCHEMA_VERSION = 3;
+const SYNC_CACHE_SCHEMA_VERSION = 4;
 
 function nowIso() {
   return new Date().toISOString();
@@ -199,12 +199,12 @@ function normalizeKanbanStatus(value: unknown): KanbanStatus {
   return KANBAN_STATUSES.includes(raw as KanbanStatus) ? raw as KanbanStatus : "backlog";
 }
 
-function normalizeKanbanPriority(value: unknown): KanbanPriority {
-  return parseKanbanPriority(value) ?? "P2";
+function normalizeKanbanPriority(value: unknown): KanbanPriority | null {
+  return parseKanbanPriority(value);
 }
 
-function normalizeKanbanSeverity(value: unknown): NonNullable<KanbanIssue["severity"]> {
-  return value === "critical" || value === "high" || value === "medium" || value === "low" ? value : "medium";
+function normalizeKanbanSeverity(value: unknown): KanbanIssue["severity"] {
+  return value === "critical" || value === "high" || value === "medium" || value === "low" ? value : null;
 }
 
 function normalizeKanbanRunState(value: unknown): KanbanRunState | null {
@@ -226,6 +226,12 @@ function normalizeAttachments(value: unknown): AssistantAttachment[] {
 function normalizeStringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map(trimText).filter(Boolean))];
+}
+
+function normalizeEffortSeconds(value: unknown): number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return 0;
+  const seconds = Math.trunc(value);
+  return Number.isSafeInteger(seconds) ? seconds : 0;
 }
 
 function parseStringList(value: string | null | undefined): string[] {
@@ -260,61 +266,65 @@ function normalizeCustomFields(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 }
 
-function parseCloudDueTime(value: unknown): KanbanIssue["dueAt"] {
+function normalizeDueDate(value: unknown): string | null | undefined {
   if (value === undefined) return undefined;
-  if (value === null) return null;
+  if (value === null || value === "") return null;
   if (typeof value !== "string") return undefined;
-
-  const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.(\d{1,9}))?(Z|[+-]\d{2}:\d{2})$/u.exec(value.trim());
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/u.exec(value.trim());
   if (!match) return undefined;
-
-  const [, yearText, monthText, dayText, hourText, minuteText, secondText, fraction = "", offsetText] = match;
+  const [, yearText, monthText, dayText] = match;
   const year = Number(yearText);
   const month = Number(monthText);
   const day = Number(dayText);
-  const hour = Number(hourText);
-  const minute = Number(minuteText);
-  const second = Number(secondText);
-  const offsetHour = offsetText === "Z" ? 0 : Number(offsetText.slice(1, 3));
-  const offsetMinute = offsetText === "Z" ? 0 : Number(offsetText.slice(4, 6));
   const maxDay = month === 2
     ? (year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0) ? 29 : 28)
     : [4, 6, 9, 11].includes(month) ? 30 : 31;
-  if (
-    year < 1970 || month < 1 || month > 12 || day < 1 || day > maxDay ||
-    hour > 23 || minute > 59 || second > 59 ||
-    offsetHour > 23 || offsetMinute > 59 ||
-    (fraction.length > 3 && !/^0*$/u.test(fraction.slice(3)))
-  ) {
-    return undefined;
-  }
-
-  const localDate = new Date(0);
-  localDate.setUTCFullYear(year, month - 1, day);
-  localDate.setUTCHours(hour, minute, second, Number(fraction.slice(0, 3).padEnd(3, "0")));
-  const offsetSign = offsetText.startsWith("-") ? -1 : 1;
-  const offsetMillis = offsetSign * ((offsetHour * 60) + offsetMinute) * 60_000;
-  const epochMillis = localDate.getTime() - offsetMillis;
-  return isEpochMilliseconds(epochMillis) ? epochMillis : undefined;
+  return year >= 1 && month >= 1 && month <= 12 && day >= 1 && day <= maxDay
+    ? `${yearText}-${monthText}-${dayText}`
+    : undefined;
 }
 
-function readStoredDueAt(value: unknown): KanbanIssue["dueAt"] {
-  if (value === null) return null;
-  return isEpochMilliseconds(value) ? value : undefined;
+function readLegacyDueDate(dueTime: unknown, dueAt: unknown): string | null | undefined {
+  if (dueTime === null || dueAt === null) return null;
+  if (typeof dueTime === "string") {
+    const datePrefix = /^(\d{4}-\d{2}-\d{2})T/u.exec(dueTime.trim())?.[1];
+    if (datePrefix) return normalizeDueDate(datePrefix);
+  }
+  if (typeof dueAt === "number" && Number.isSafeInteger(dueAt) && dueAt >= 0) {
+    const date = new Date(dueAt);
+    if (!Number.isNaN(date.getTime())) {
+      const pad = (part: number) => String(part).padStart(2, "0");
+      return `${String(date.getFullYear()).padStart(4, "0")}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+    }
+  }
+  return undefined;
+}
+
+function readStoredDueDate(detail: Record<string, unknown>): KanbanIssue["dueDate"] {
+  const canonical = normalizeDueDate(detail.dueDate);
+  return canonical !== undefined ? canonical : readLegacyDueDate(detail.dueTime, detail.dueAt);
 }
 
 function buildIssueDetailJson(issue: KanbanIssue) {
   return JSON.stringify({
     projectPath: issue.projectPath ?? "",
     projectName: issue.projectName ?? "",
-    version: issue.version ?? null,
+    projectVersion: issue.projectVersion ?? null,
+    dueDate: issue.dueDate ?? null,
+    dueRisk: issue.dueRisk ?? null,
+    resolution: issue.resolution ?? null,
+    securityLevelKey: issue.securityLevelKey ?? null,
+    reporterId: issue.reporterId ?? null,
+    componentKeys: normalizeStringList(issue.componentKeys),
+    originalEstimate: Math.max(0, Math.trunc(issue.originalEstimate || 0)),
+    remainingEstimate: Math.max(0, Math.trunc(issue.remainingEstimate || 0)),
+    timeSpent: Math.max(0, Math.trunc(issue.timeSpent || 0)),
     parentIssueId: issue.parentIssueId ?? null,
     issueTypeKey: issue.issueTypeKey ?? issue.typeId ?? "",
     stageKey: issue.stageKey ?? "",
     statusKey: issue.statusKey ?? "",
     columnKey: issue.columnKey ?? "",
     customFields: issue.customFields ?? {},
-    dueAt: issue.dueAt ?? null,
     runAgentKey: issue.runAgentKey ?? null,
     runCommandId: issue.runCommandId ?? null,
     runStartedAt: issue.runStartedAt ?? null,
@@ -466,6 +476,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       NAME_ TEXT NOT NULL,
       DESCRIPTION_ TEXT NOT NULL DEFAULT '',
       VERSIONS_JSON_ TEXT NOT NULL DEFAULT '[]',
+      COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '[]',
       PATH_ TEXT NOT NULL,
       DEPTH_ INTEGER NOT NULL DEFAULT 0,
       POSITION_ REAL NOT NULL DEFAULT 0,
@@ -525,8 +536,8 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       TITLE_ TEXT NOT NULL CHECK (length(trim(TITLE_)) > 0),
       DESCRIPTION_ TEXT NOT NULL DEFAULT '',
       STATUS_ TEXT NOT NULL CHECK (STATUS_ IN ('backlog','todo','in_progress','in_review','completed')),
-      PRIORITY_ TEXT NOT NULL CHECK (PRIORITY_ IN ('P0','P1','P2','P3')),
-      SEVERITY_ TEXT NOT NULL DEFAULT 'medium' CHECK (SEVERITY_ IN ('critical','high','medium','low')),
+      PRIORITY_ TEXT CHECK (PRIORITY_ IS NULL OR PRIORITY_ IN ('P0','P1','P2','P3')),
+      SEVERITY_ TEXT CHECK (SEVERITY_ IS NULL OR SEVERITY_ IN ('critical','high','medium','low')),
       POSITION_ REAL NOT NULL,
       ASSIGNEE_AGENT_KEY_ TEXT,
       ASSIGNEE_ID_ TEXT,
@@ -700,6 +711,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
   `);
   ensureDesktopKanbanIssueColumns(db);
   ensureDesktopKanbanPriorityConstraint(db);
+  migrateDesktopKanbanIssueDetailJson(db);
 }
 
 function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
@@ -727,6 +739,7 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   const projectColumns = new Set((db.prepare("PRAGMA table_info(project)").all() as Array<{ name: string }>).map((column) => column.name));
   if (!projectColumns.has("REVISION_")) db.exec("ALTER TABLE project ADD COLUMN REVISION_ INTEGER NOT NULL DEFAULT 0");
   if (!projectColumns.has("VERSIONS_JSON_")) db.exec("ALTER TABLE project ADD COLUMN VERSIONS_JSON_ TEXT NOT NULL DEFAULT '[]'");
+  if (!projectColumns.has("COMPONENTS_JSON_")) db.exec("ALTER TABLE project ADD COLUMN COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '[]'");
   if (!projectColumns.has("SYNC_MODE_")) {
     db.exec("ALTER TABLE project ADD COLUMN SYNC_MODE_ TEXT NOT NULL DEFAULT 'private'");
     db.exec(`UPDATE project SET SYNC_MODE_ = 'cloud' WHERE ID_ IN (SELECT DISTINCT PROJECT_ID_ FROM issue JOIN desktop_issue_sync ON desktop_issue_sync.LOCAL_ISSUE_ID_ = issue.ID_ WHERE desktop_issue_sync.SYNC_MODE_ = 'cloud')`);
@@ -740,7 +753,12 @@ function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
     SELECT sql FROM sqlite_master
     WHERE type = 'table' AND name = 'issue'
   `).get() as { sql?: string } | undefined;
-  if (row?.sql?.includes("'P0'") && row.sql.includes("'P3'")) return;
+  if (
+    row?.sql?.includes("'P0'") &&
+    row.sql.includes("'P3'") &&
+    !/PRIORITY_\s+TEXT\s+NOT NULL/iu.test(row.sql) &&
+    !/SEVERITY_\s+TEXT\s+NOT NULL/iu.test(row.sql)
+  ) return;
 
   db.exec("PRAGMA foreign_keys = OFF");
   try {
@@ -761,8 +779,8 @@ function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
         TITLE_ TEXT NOT NULL CHECK (length(trim(TITLE_)) > 0),
         DESCRIPTION_ TEXT NOT NULL DEFAULT '',
         STATUS_ TEXT NOT NULL CHECK (STATUS_ IN ('backlog','todo','in_progress','in_review','completed')),
-        PRIORITY_ TEXT NOT NULL CHECK (PRIORITY_ IN ('P0','P1','P2','P3')),
-        SEVERITY_ TEXT NOT NULL DEFAULT 'medium' CHECK (SEVERITY_ IN ('critical','high','medium','low')),
+        PRIORITY_ TEXT CHECK (PRIORITY_ IS NULL OR PRIORITY_ IN ('P0','P1','P2','P3')),
+        SEVERITY_ TEXT CHECK (SEVERITY_ IS NULL OR SEVERITY_ IN ('critical','high','medium','low')),
         POSITION_ REAL NOT NULL,
         ASSIGNEE_AGENT_KEY_ TEXT,
         ASSIGNEE_ID_ TEXT,
@@ -808,12 +826,14 @@ function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
           WHEN 'P1' THEN 'P1'
           WHEN 'P2' THEN 'P2'
           WHEN 'P3' THEN 'P3'
+          WHEN 'urgent' THEN 'P0'
           WHEN 'high' THEN 'P1'
           WHEN 'medium' THEN 'P2'
           WHEN 'low' THEN 'P3'
-          ELSE 'P2'
+          ELSE NULL
         END,
-        SEVERITY_, POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
+        CASE WHEN SEVERITY_ IN ('critical','high','medium','low') THEN SEVERITY_ ELSE NULL END,
+        POSITION_, ASSIGNEE_AGENT_KEY_, ASSIGNEE_ID_,
         WORKER_TYPE_, WORKER_ID_, WORKER_AGENT_, ACTIVE_REVIEW_ID_, ACTIVE_RUN_ID_,
         CHAT_ID_, RUN_ID_, RUN_STATE_, DISPATCH_STATE_, DISPATCH_DEVICE_ID_, DISPATCH_COMMAND_ID_, DISPATCH_UPDATED_AT_,
         AUTOMATION_ID_, AUTOMATION_ENABLED_, AUTOMATION_CRON_, AUTOMATION_MESSAGE_, AUTOMATION_TIMEZONE_,
@@ -837,6 +857,33 @@ function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
     throw error;
   } finally {
     db.exec("PRAGMA foreign_keys = ON");
+  }
+}
+
+function migrateDesktopKanbanIssueDetailJson(db: DatabaseSync) {
+  const rows = db.prepare("SELECT ID_ AS id, DETAIL_JSON_ AS detail_json FROM issue").all() as Array<{ id: string; detail_json: string }>;
+  const update = db.prepare("UPDATE issue SET DETAIL_JSON_ = ? WHERE ID_ = ?");
+  for (const row of rows) {
+    const detail = parseJsonRecord(row.detail_json);
+    let changed = false;
+    if (!("projectVersion" in detail) && "version" in detail) {
+      detail.projectVersion = nullableTrimmedText(detail.version);
+      changed = true;
+    }
+    if (!("dueDate" in detail)) {
+      const legacyDueDate = readLegacyDueDate(detail.dueTime, detail.dueAt);
+      if (legacyDueDate !== undefined) {
+        detail.dueDate = legacyDueDate;
+        changed = true;
+      }
+    }
+    for (const legacyKey of ["version", "dueTime", "dueAt"] as const) {
+      if (legacyKey in detail) {
+        delete detail[legacyKey];
+        changed = true;
+      }
+    }
+    if (changed) update.run(JSON.stringify(detail), row.id);
   }
 }
 
@@ -919,7 +966,16 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     projectId: row.project_id,
     projectPath: trimText(detail.projectPath) || undefined,
     projectName: trimText(detail.projectName) || undefined,
-    version: nullableTrimmedText(detail.version),
+    projectVersion: nullableTrimmedText(detail.projectVersion),
+    dueDate: readStoredDueDate(detail),
+    dueRisk: nullableTrimmedText(detail.dueRisk),
+    resolution: nullableTrimmedText(detail.resolution),
+    securityLevelKey: nullableTrimmedText(detail.securityLevelKey),
+    reporterId: nullableTrimmedText(detail.reporterId),
+    componentKeys: normalizeStringList(detail.componentKeys),
+    originalEstimate: normalizeEffortSeconds(detail.originalEstimate),
+    remainingEstimate: normalizeEffortSeconds(detail.remainingEstimate),
+    timeSpent: normalizeEffortSeconds(detail.timeSpent),
     parentIssueId: nullableTrimmedText(detail.parentIssueId),
     workflowId: row.workflow_id,
     typeId: row.type_id ?? undefined,
@@ -965,7 +1021,6 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     attachmentChatId: row.attachment_chat_id,
     attachments: parseAttachmentsJson(row.attachments_json),
     customFields: normalizeCustomFields(detail.customFields),
-    dueAt: readStoredDueAt(detail.dueAt),
     createdBy: nullableTrimmedText(detail.createdBy),
     updatedBy: nullableTrimmedText(detail.updatedBy),
     createdByAgent: nullableTrimmedText(detail.createdByAgent),
@@ -992,6 +1047,7 @@ function projectFromRow(row: KanbanProjectRow): KanbanProject {
     name: row.name,
     description: row.description || undefined,
     versions: parseStringList(row.versions_json),
+    components: parseStringList(row.components_json),
     path: row.path,
     depth: row.depth,
     position: row.position,
@@ -1035,6 +1091,7 @@ function parseCloudProject(value: unknown): KanbanProject | null {
     name,
     description: trimText(record.description) || undefined,
     versions: normalizeStringList(record.versions),
+    components: normalizeStringList(record.components),
     path: trimText(record.path) || id,
     depth: typeof record.depth === "number" && Number.isFinite(record.depth) ? record.depth : 0,
     position: typeof record.position === "number" && Number.isFinite(record.position) ? record.position : 0,
@@ -1240,6 +1297,7 @@ function selectProjects(db: DatabaseSync): KanbanProject[] {
       NAME_ AS name,
       DESCRIPTION_ AS description,
       VERSIONS_JSON_ AS versions_json,
+      COMPONENTS_JSON_ AS components_json,
       PATH_ AS path,
       DEPTH_ AS depth,
       POSITION_ AS position,
@@ -1288,9 +1346,9 @@ function nextIssuePosition(db: DatabaseSync, status: KanbanStatus) {
 function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject, syncMode: KanbanSyncMode = "cloud") {
   db.prepare(`
     INSERT INTO project (
-      ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, VERSIONS_JSON_, PATH_, DEPTH_, POSITION_,
+      ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, VERSIONS_JSON_, COMPONENTS_JSON_, PATH_, DEPTH_, POSITION_,
       REVISION_, SYNC_MODE_, VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)
     ON CONFLICT(ID_) DO UPDATE SET
       PARENT_ID_ = excluded.PARENT_ID_,
       SLUG_ = excluded.SLUG_,
@@ -1298,6 +1356,7 @@ function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject, syncMo
       NAME_ = excluded.NAME_,
       DESCRIPTION_ = excluded.DESCRIPTION_,
       VERSIONS_JSON_ = excluded.VERSIONS_JSON_,
+      COMPONENTS_JSON_ = excluded.COMPONENTS_JSON_,
       PATH_ = excluded.PATH_,
       DEPTH_ = excluded.DEPTH_,
       POSITION_ = excluded.POSITION_,
@@ -1315,6 +1374,7 @@ function insertOrReplaceProject(db: DatabaseSync, project: KanbanProject, syncMo
     project.name,
     project.description ?? "",
     JSON.stringify(project.versions ?? []),
+    JSON.stringify(project.components ?? []),
     project.path,
     project.depth,
     project.position,
@@ -1440,7 +1500,7 @@ function insertOrReplaceIssue(db: DatabaseSync, issue: KanbanIssue, sync: {
     issue.description,
     issue.status,
     issue.priority,
-    issue.severity ?? "medium",
+    issue.severity,
     issue.position,
     issue.assigneeAgentKey,
     issue.assigneeId ?? null,
@@ -1511,7 +1571,16 @@ function buildLocalIssue(
     remoteIssueId: null,
     boardId: BOARD_ID,
     projectId: nullableTrimmedText(input.projectId) ?? PROJECT_ID,
-    version: nullableTrimmedText(input.version),
+    projectVersion: nullableTrimmedText(input.projectVersion !== undefined ? input.projectVersion : input.version),
+    dueDate: normalizeDueDate(input.dueDate) ?? null,
+    dueRisk: null,
+    resolution: nullableTrimmedText(input.resolution),
+    securityLevelKey: nullableTrimmedText(input.securityLevelKey),
+    reporterId: nullableTrimmedText(input.reporterId),
+    componentKeys: normalizeStringList(input.componentKeys),
+    originalEstimate: normalizeEffortSeconds(input.originalEstimate),
+    remainingEstimate: normalizeEffortSeconds(input.remainingEstimate),
+    timeSpent: normalizeEffortSeconds(input.timeSpent),
     workflowId: WORKFLOW_ID,
     typeId: ISSUE_TYPE_ID,
     title,
@@ -1562,7 +1631,17 @@ function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): Ka
     nextIssue.title = title;
   }
   if (input.projectId !== undefined) nextIssue.projectId = nullableTrimmedText(input.projectId) ?? PROJECT_ID;
-  if (input.version !== undefined) nextIssue.version = nullableTrimmedText(input.version);
+  if (input.projectVersion !== undefined || input.version !== undefined) {
+    nextIssue.projectVersion = nullableTrimmedText(input.projectVersion !== undefined ? input.projectVersion : input.version);
+  }
+  if (input.dueDate !== undefined) nextIssue.dueDate = normalizeDueDate(input.dueDate) ?? null;
+  if (input.resolution !== undefined) nextIssue.resolution = nullableTrimmedText(input.resolution);
+  if (input.securityLevelKey !== undefined) nextIssue.securityLevelKey = nullableTrimmedText(input.securityLevelKey);
+  if (input.reporterId !== undefined) nextIssue.reporterId = nullableTrimmedText(input.reporterId);
+  if (input.componentKeys !== undefined) nextIssue.componentKeys = normalizeStringList(input.componentKeys);
+  if (input.originalEstimate !== undefined) nextIssue.originalEstimate = normalizeEffortSeconds(input.originalEstimate);
+  if (input.remainingEstimate !== undefined) nextIssue.remainingEstimate = normalizeEffortSeconds(input.remainingEstimate);
+  if (input.timeSpent !== undefined) nextIssue.timeSpent = normalizeEffortSeconds(input.timeSpent);
   if (input.description !== undefined) nextIssue.description = typeof input.description === "string" ? input.description.trim() : "";
   if (input.status !== undefined) {
     nextIssue.status = normalizeKanbanStatus(input.status);
@@ -1625,6 +1704,9 @@ export function createPrivateDesktopKanbanIssue(
   input: KanbanIssueInput
 ): KanbanIssueResult {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    if (input.dueDate !== undefined && normalizeDueDate(input.dueDate) === undefined) {
+      return { ok: false, message: t("kanban.runtime.invalidDueDate"), issues: selectIssues(db, currentUser) };
+    }
     const issue = buildLocalIssue(db, input, currentUser);
     if (!issue) {
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
@@ -1655,6 +1737,12 @@ export function updateDesktopKanbanIssue(
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
       return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
+    }
+    if (issue.syncMode === "cloud") {
+      return { ok: false, message: t("kanban.runtime.cloudReadOnly"), issues: selectIssues(db, currentUser) };
+    }
+    if (input.dueDate !== undefined && normalizeDueDate(input.dueDate) === undefined) {
+      return { ok: false, message: t("kanban.runtime.invalidDueDate"), issues: selectIssues(db, currentUser) };
     }
     const nextIssue = applyIssueUpdate(issue, input);
     if (!nextIssue) {
@@ -1701,6 +1789,21 @@ function updateDesktopKanbanIssueByPredicate(
     });
     return { ok: true, message: t("kanban.runtime.updated"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
+}
+
+export function updateDesktopKanbanIssueRuntimeState(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  issueId: string,
+  input: Pick<KanbanIssueUpdateInput, "status" | "chatId" | "runId" | "runState">
+): KanbanIssueResult {
+  return updateDesktopKanbanIssueByPredicate(
+    app,
+    currentUser,
+    (issue) => issue.id === issueId,
+    input,
+    t("kanban.runtime.missing")
+  );
 }
 
 export function updateDesktopKanbanIssueByRunId(
@@ -1755,6 +1858,9 @@ export function setDesktopKanbanIssuePosition(
     if (!issue) {
       return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
     }
+    if (issue.syncMode === "cloud") {
+      return { ok: false, message: t("kanban.runtime.cloudReadOnly"), issues: selectIssues(db, currentUser) };
+    }
     const nextIssue = {
       ...issue,
       status,
@@ -1784,6 +1890,9 @@ export function deleteDesktopKanbanIssue(
     const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
     if (!issue) {
       return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
+    }
+    if (issue.syncMode === "cloud") {
+      return { ok: false, message: t("kanban.runtime.cloudReadOnly"), issues: selectIssues(db, currentUser) };
     }
     db.prepare("UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?").run(nowIso(), nowIso(), issueId);
     return {
@@ -1839,6 +1948,7 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
   const issueRevision = typeof rawIssue.revision === "number" && Number.isFinite(rawIssue.revision)
     ? Math.max(0, Math.floor(rawIssue.revision))
     : Math.max(0, Math.floor(revision));
+  const canonicalDueDate = normalizeDueDate(rawIssue.dueDate);
   return {
     id: "",
     localIssueId: "",
@@ -1847,7 +1957,18 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     projectId: trimText(rawIssue.projectId) || PROJECT_ID,
     projectPath: trimText(rawIssue.projectPath) || undefined,
     projectName: trimText(rawIssue.projectName) || undefined,
-    version: nullableTrimmedText(rawIssue.version),
+    projectVersion: nullableTrimmedText(rawIssue.projectVersion !== undefined ? rawIssue.projectVersion : rawIssue.version),
+    dueDate: rawIssue.dueDate !== undefined
+      ? canonicalDueDate ?? null
+      : readLegacyDueDate(rawIssue.dueTime, rawIssue.dueAt) ?? null,
+    dueRisk: nullableTrimmedText(rawIssue.dueRisk),
+    resolution: nullableTrimmedText(rawIssue.resolution),
+    securityLevelKey: nullableTrimmedText(rawIssue.securityLevelKey),
+    reporterId: nullableTrimmedText(rawIssue.reporterId),
+    componentKeys: normalizeStringList(rawIssue.componentKeys),
+    originalEstimate: normalizeEffortSeconds(rawIssue.originalEstimate),
+    remainingEstimate: normalizeEffortSeconds(rawIssue.remainingEstimate),
+    timeSpent: normalizeEffortSeconds(rawIssue.timeSpent),
     parentIssueId: nullableTrimmedText(rawIssue.parentIssueId),
     workflowId: trimText(rawIssue.workflowId) || WORKFLOW_ID,
     typeId: trimText(rawIssue.issueTypeKey) || trimText(rawIssue.typeId) || ISSUE_TYPE_ID,
@@ -1893,7 +2014,6 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     attachmentChatId: nullableTrimmedText(rawIssue.attachmentChatId),
     attachments: normalizeAttachments(rawIssue.attachments),
     customFields: normalizeCustomFields(rawIssue.customFields),
-    dueAt: parseCloudDueTime(rawIssue.dueTime),
     createdBy: nullableTrimmedText(rawIssue.createdBy),
     updatedBy: nullableTrimmedText(rawIssue.updatedBy),
     createdByAgent: nullableTrimmedText(rawIssue.createdByAgent),

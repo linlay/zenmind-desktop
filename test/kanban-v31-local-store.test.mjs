@@ -8,10 +8,13 @@ import test from "node:test";
 const {
   applyDesktopKanbanCloudSnapshot,
   createPrivateDesktopKanbanIssue,
+  deleteDesktopKanbanIssue,
   getDesktopKanbanDatabasePath,
   listDesktopKanbanIssues,
   listPendingDesktopKanbanCommandReceipts,
+  moveDesktopKanbanIssue,
   recordDesktopKanbanCommandReceipt,
+  updateDesktopKanbanIssue,
   upsertDispatchedDesktopKanbanIssue
 } = await import("../dist-electron/main/kanban-local-store.js");
 
@@ -73,12 +76,19 @@ test("priority uses P0-P3 and only normalizes legacy values at the cache boundar
     "P1"
   );
 
-  const local = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Default priority" });
+  const urgent = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
+    priority: "urgent",
+    revision: 42
+  }), 42);
+  assert.equal(urgent.issue.priority, "P0");
+
+  const local = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Optional priority" });
   assert.equal(local.ok, true);
-  assert.equal(local.issue.priority, "P2");
+  assert.equal(local.issue.priority, null);
+  assert.equal(local.issue.severity, null);
 });
 
-test("project version catalogs and optional issue versions survive the Desktop cache", (t) => {
+test("project catalogs and new issue fields survive snapshots, incremental upserts, and private updates", (t) => {
   const app = createTempApp(t);
   applyDesktopKanbanCloudSnapshot(app, currentUser, {
     scope: "project_set",
@@ -90,6 +100,7 @@ test("project version catalogs and optional issue versions survive the Desktop c
       name: "Cloud Project",
       slug: "cloud-project-1",
       versions: ["1.0.0", "2.0.0"],
+      components: ["desktop", "sync"],
       path: "default/cloud-project-1",
       depth: 1,
       position: 1,
@@ -97,20 +108,126 @@ test("project version catalogs and optional issue versions survive the Desktop c
       createdAt: "2026-07-11T00:00:00.000Z",
       updatedAt: "2026-07-11T00:00:00.000Z"
     }],
-    issues: [cloudIssue({ version: "2.0.0" })]
+    workflowStages: [{
+      id: "stage-development",
+      workflowId: "workflow-standard-requirement",
+      key: "development",
+      name: "Development",
+      color: "#7c3aed",
+      position: 1
+    }],
+    issues: [cloudIssue({
+      projectVersion: "2.0.0",
+      dueDate: "2026-07-12",
+      dueRisk: "high",
+      resolution: "fixed",
+      securityLevelKey: "internal",
+      reporterId: "user-1",
+      componentKeys: ["desktop", "sync"],
+      originalEstimate: 7200,
+      remainingEstimate: 3600,
+      timeSpent: 1800
+    })]
   });
 
   const cached = listDesktopKanbanIssues(app, currentUser);
   assert.deepEqual(cached.projects.find((project) => project.id === "cloud-project-1")?.versions, ["1.0.0", "2.0.0"]);
-  assert.equal(cached.issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.version, "2.0.0");
+  assert.deepEqual(cached.projects.find((project) => project.id === "cloud-project-1")?.components, ["desktop", "sync"]);
+  assert.equal(cached.cloudDetails.workflowStages[0]?.color, "#7c3aed");
+  const cachedCloudIssue = cached.issues.find((issue) => issue.remoteIssueId === "cloud-issue-1");
+  assert.equal(cachedCloudIssue?.projectVersion, "2.0.0");
+  assert.equal(cachedCloudIssue?.dueDate, "2026-07-12");
+  assert.equal(cachedCloudIssue?.dueRisk, "high");
+  assert.equal(cachedCloudIssue?.resolution, "fixed");
+  assert.equal(cachedCloudIssue?.securityLevelKey, "internal");
+  assert.equal(cachedCloudIssue?.reporterId, "user-1");
+  assert.deepEqual(cachedCloudIssue?.componentKeys, ["desktop", "sync"]);
+  assert.deepEqual(
+    [cachedCloudIssue?.originalEstimate, cachedCloudIssue?.remainingEstimate, cachedCloudIssue?.timeSpent],
+    [7200, 3600, 1800]
+  );
+  const rejectedCloudWrite = updateDesktopKanbanIssue(app, currentUser, cachedCloudIssue.id, {
+    dueDate: "2026-07-30",
+    projectVersion: "1.0.0",
+    componentKeys: []
+  });
+  assert.equal(rejectedCloudWrite.ok, false);
+  assert.equal(moveDesktopKanbanIssue(app, currentUser, {
+    id: cachedCloudIssue.id,
+    status: "in_progress",
+    position: 2
+  }).ok, false);
+  assert.equal(deleteDesktopKanbanIssue(app, currentUser, cachedCloudIssue.id).ok, false);
+  assert.equal(
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.id === cachedCloudIssue.id)?.dueDate,
+    "2026-07-12"
+  );
 
   const local = createPrivateDesktopKanbanIssue(app, currentUser, {
     title: "Local versioned task",
     projectId: "cloud-project-1",
-    version: "1.0.0"
+    version: "1.0.0",
+    dueDate: "2026-08-01",
+    priority: "urgent",
+    severity: "critical",
+    resolution: "planned",
+    securityLevelKey: "private",
+    reporterId: "user-1",
+    componentKeys: ["desktop"],
+    originalEstimate: 3600.9,
+    remainingEstimate: 2400,
+    timeSpent: 1200
   });
   assert.equal(local.ok, true);
-  assert.equal(local.issue.version, "1.0.0");
+  assert.equal(local.issue.projectVersion, "1.0.0");
+  assert.equal(local.issue.priority, "P0");
+  assert.equal(local.issue.originalEstimate, 3600);
+  assert.equal(local.issue.dueRisk, null);
+  const updated = updateDesktopKanbanIssue(app, currentUser, local.issue.id, {
+    projectVersion: null,
+    dueDate: null,
+    priority: null,
+    severity: null,
+    componentKeys: ["sync"],
+    originalEstimate: 0,
+    remainingEstimate: 0,
+    timeSpent: 3600
+  });
+  assert.equal(updated.ok, true);
+  assert.equal(updated.issue.projectVersion, null);
+  assert.equal(updated.issue.dueDate, null);
+  assert.equal(updated.issue.priority, null);
+  assert.equal(updated.issue.severity, null);
+  assert.deepEqual(updated.issue.componentKeys, ["sync"]);
+  assert.equal(listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.id === local.issue.id)?.timeSpent, 3600);
+
+  const incremental = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
+    revision: 51,
+    projectVersion: "1.0.0",
+    dueDate: null,
+    dueTime: "2026-09-30T18:00:00+08:00",
+    dueRisk: "medium",
+    componentKeys: ["sync"],
+    originalEstimate: 100.8,
+    remainingEstimate: 50.2,
+    timeSpent: 50.9
+  }), 51);
+  assert.equal(incremental.ok, true);
+  assert.equal(incremental.issue.projectVersion, "1.0.0");
+  assert.equal(incremental.issue.dueDate, null);
+  assert.equal(incremental.issue.dueRisk, "medium");
+  assert.deepEqual(incremental.issue.componentKeys, ["sync"]);
+  assert.deepEqual(
+    [incremental.issue.originalEstimate, incremental.issue.remainingEstimate, incremental.issue.timeSpent],
+    [100, 50, 50]
+  );
+  assert.deepEqual(
+    listDesktopKanbanIssues(app, currentUser).projects.find((project) => project.id === "cloud-project-1")?.components,
+    ["desktop", "sync"]
+  );
+
+  const invalidDate = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Invalid date", dueDate: "2026-02-30" });
+  assert.equal(invalidDate.ok, false);
 });
 
 test("legacy priority rows migrate to the P0-P3 SQLite constraint", (t) => {
@@ -171,6 +288,7 @@ test("legacy priority rows migrate to the P0-P3 SQLite constraint", (t) => {
       'legacy-issue', 'Legacy priority', '', 'backlog', 'high', 'medium', 1,
       '2026-07-11T00:00:00.000Z', '2026-07-11T00:00:00.000Z'
     );
+    UPDATE issue SET DETAIL_JSON_ = '{"version":"1.4.0","dueTime":"2026-07-18T18:00:00+08:00"}' WHERE ID_ = 'legacy-issue';
   `);
   legacyDb.close();
 
@@ -181,6 +299,11 @@ test("legacy priority rows migrate to the P0-P3 SQLite constraint", (t) => {
   const schema = migratedDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'issue'").get().sql;
   assert.match(schema, /PRIORITY_ IN \('P0','P1','P2','P3'\)/);
   assert.doesNotMatch(schema, /PRIORITY_ IN \('high','medium','low'\)/);
+  const migratedDetail = JSON.parse(migratedDb.prepare("SELECT DETAIL_JSON_ AS detail FROM issue WHERE ID_ = 'legacy-issue'").get().detail);
+  assert.equal(migratedDetail.projectVersion, "1.4.0");
+  assert.equal(migratedDetail.dueDate, "2026-07-18");
+  assert.equal("version" in migratedDetail, false);
+  assert.equal("dueTime" in migratedDetail, false);
   migratedDb.close();
 });
 
@@ -359,11 +482,10 @@ test("cloud detail snapshot survives cache reload and incremental issue updates"
   assert.equal(replaced.cloudDetails.recentEvents.length, 0);
 });
 
-test("cloud dueTime normalizes to epoch-ms and survives cache reload", (t) => {
+test("dueDate remains a timezone-free calendar date and legacy dueTime is read compatibly", (t) => {
   const app = createTempApp(t);
-  const expectedDueAt = Date.UTC(2026, 6, 12, 1, 30, 0, 0);
-  const issueWithDueTime = cloudIssue({
-    dueTime: "2026-07-12T09:30:00.000000000+08:00"
+  const issueWithDueDate = cloudIssue({
+    dueDate: "2026-07-12"
   });
 
   applyDesktopKanbanCloudSnapshot(app, currentUser, {
@@ -372,52 +494,52 @@ test("cloud dueTime normalizes to epoch-ms and survives cache reload", (t) => {
     projectIds: ["cloud-project-1"],
     lastSeq: 49,
     projects: [],
-    issues: [issueWithDueTime]
+    issues: [issueWithDueDate]
   });
   assert.equal(
-    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
-    expectedDueAt
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueDate,
+    "2026-07-12"
   );
 
   const valid = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
     revision: 51,
-    dueTime: "2026-07-12T09:30:00.000000000+08:00"
+    dueTime: "2026-07-13T23:30:00-08:00"
   }), 51);
 
   assert.equal(valid.ok, true);
-  assert.equal(valid.issue.dueAt, expectedDueAt);
+  assert.equal(valid.issue.dueDate, "2026-07-13");
   assert.equal(
-    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
-    expectedDueAt
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueDate,
+    "2026-07-13"
   );
 
   const cleared = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
     revision: 52,
-    dueTime: null
+    dueDate: null
   }), 52);
-  assert.equal(cleared.issue.dueAt, null);
+  assert.equal(cleared.issue.dueDate, null);
   assert.equal(
-    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueDate,
     null
   );
 
   const missing = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({ revision: 53 }), 53);
-  assert.equal(missing.issue.dueAt, undefined);
+  assert.equal(missing.issue.dueDate, null);
 
-  for (const [index, dueTime] of [
-    "2026-02-30T09:30:00+08:00",
+  for (const [index, dueDate] of [
+    "2026-02-30",
     "2026-07-12T09:30:00",
-    "2026-07-12T09:30:00.000000001Z"
+    "07/12/2026"
   ].entries()) {
     const revision = 54 + index;
     const invalid = upsertDispatchedDesktopKanbanIssue(app, currentUser, cloudIssue({
       revision,
-      dueTime
+      dueDate
     }), revision);
-    assert.equal(invalid.issue.dueAt, undefined);
+    assert.equal(invalid.issue.dueDate, null);
   }
   assert.equal(
-    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueAt,
+    listDesktopKanbanIssues(app, currentUser).issues.find((issue) => issue.remoteIssueId === "cloud-issue-1")?.dueDate,
     null
   );
 });
