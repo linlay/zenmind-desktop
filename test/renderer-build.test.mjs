@@ -4056,16 +4056,19 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(appSidebar, /className=\{`assistant-worker-icon-button sidebar-website-status-action\$\{closing \? " is-closing" : ""\}`\}/);
   assert.match(appSidebar, /const showWebappAction = webItem\.kind === "webapp"/);
   assert.match(appSidebar, /webRunningEntryKeys\.includes\(webItem\.entryKey\)/);
-  assert.match(appSidebar, /className="sidebar-website-status-dot sidebar-webapp-status-dot"/);
+  assert.match(appSidebar, /className="sidebar-website-child-actions"[\s\S]*?className="sidebar-website-status-dot sidebar-webapp-status-dot"[\s\S]*?<SidebarActionIcon kind="more_actions"/);
   assert.match(appSidebar, /<SidebarIllustration kind=\{item\.icon\} \/>/);
   assert.doesNotMatch(appSidebar, /website_open/);
   assert.doesNotMatch(appSidebar, /website_closed/);
 
   // Green dot CSS
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{/u);
-  assert.match(navigationCss, /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?left:\s*9px;/u);
+  assert.match(navigationCss, /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*5px;[\s\S]*?left:\s*auto;/u);
+  assert.match(navigationCss, /\.sidebar-website-child-actions\s*\{[\s\S]*?flex:\s*0 0 28px;[\s\S]*?width:\s*28px;[\s\S]*?overflow:\s*visible;/u);
   assert.match(navigationCss, /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;/u);
   assert.match(navigationCss, /\.sidebar-website-child-row:hover \.sidebar-website-child-action[\s\S]*?opacity:\s*1;/u);
+  assert.match(navigationCss, /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateX\(-12px\);/u);
+  assert.match(navigationCss, /\.sidebar-website-child-row:hover \.sidebar-webapp-status-dot[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*scale\(1\);/u);
   assert.match(navigationCss, /\.sidebar-website-status-action\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/u);
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{[\s\S]*?position:\s*absolute;/u);
   assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;/u);

@@ -10,7 +10,7 @@ function readSource(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 }
 
-test("running WebApps show a green status dot in the existing action slot", () => {
+test("running WebApps show a green status dot beside the action slot", () => {
   const appShell = readSource("src", "renderer", "app-shell", "AppShell.tsx");
   const appSidebar = readSource(
     "src",
@@ -38,19 +38,27 @@ test("running WebApps show a green status dot in the existing action slot", () =
   );
   assert.match(
     appSidebar,
-    /className="sidebar-website-status-dot sidebar-webapp-status-dot"/,
+    /className="sidebar-website-child-actions"[\s\S]*?className="sidebar-website-status-dot sidebar-webapp-status-dot"[\s\S]*?<SidebarActionIcon kind="more_actions"/,
   );
   assert.match(appSidebar, /<SidebarActionIcon kind="more_actions" \/>/);
   assert.match(
     navigationCss,
-    /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?left:\s*9px;/u,
+    /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*5px;[\s\S]*?left:\s*auto;/u,
   );
   assert.match(
     navigationCss,
-    /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;/u,
+    /\.sidebar-website-child-actions\s*\{[\s\S]*?flex:\s*0 0 28px;[\s\S]*?width:\s*28px;[\s\S]*?overflow:\s*visible;/u,
+  );
+  assert.match(
+    navigationCss,
+    /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateX\(-12px\);/u,
   );
   assert.match(
     navigationCss,
     /\.sidebar-website-child-row:hover \.sidebar-website-child-action[\s\S]*?opacity:\s*1;/u,
+  );
+  assert.match(
+    navigationCss,
+    /\.sidebar-website-child-row:hover \.sidebar-webapp-status-dot[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*scale\(1\);/u,
   );
 });
