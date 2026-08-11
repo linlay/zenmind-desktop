@@ -59,6 +59,10 @@ function sha256(filePath) {
   return createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
 }
 
+function webappId(key) {
+  return `webapp-${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
+}
+
 function writeZipArchive(root, archivePath, entryName) {
   if (process.platform === "win32") {
     execFileSync("powershell", [
@@ -205,36 +209,29 @@ async function writePetArchive(root, options = {}) {
 }
 
 async function writeWebappArchive(root, options = {}) {
-  const webappId = options.id ?? "cloud-webapp";
-  const archivePath = path.join(root, `${webappId}.zip`);
+  const key = options.key ?? "cloud-webapp";
+  const id = options.id ?? webappId(key);
+  const archivePath = path.join(root, `${id}.zip`);
   const zip = new JSZip();
   zip.file(
-    `${webappId}/webapp.json`,
+    `${id}/webapp.json`,
     `${JSON.stringify({
-      schemaVersion: 1,
-      id: webappId,
-      kind: "webapp",
+      schemaVersion: 2,
+      id,
+      key,
       label: options.label ?? "Cloud WebApp",
+      version: options.version ?? "1.0.0",
+      target: "any",
+      appConfig: {},
       frontend: {
         root: "frontend",
         index: "index.html",
-        spa: true,
-        apiPrefix: "/api"
+        routeConfig: { backendPrefixes: [] }
       },
-      backend: {
-        runtime: "node",
-        entry: "backend/server.mjs",
-        args: [],
-        env: {},
-        port: 0,
-        healthPath: "/api/health"
-      },
-      createdAt: "2026-06-18T00:00:00.000Z",
-      updatedAt: "2026-06-18T00:00:00.000Z"
+      desktopBridge: { version: 1 }
     }, null, 2)}\n`
   );
-  zip.file(`${webappId}/frontend/index.html`, "<!doctype html><div id=\"app\">cloud webapp</div>");
-  zip.file(`${webappId}/backend/server.mjs`, "console.log('cloud webapp')\n");
+  zip.file(`${id}/frontend/index.html`, "<!doctype html><div id=\"app\">cloud webapp</div>");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
 }
@@ -1730,7 +1727,8 @@ test("installMarketItem installs pet packages into desktop pet data", async (t) 
 test("installMarketItem installs and uninstalls website app packages into desktop webapps data", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-install-"));
   const app = createApp(root);
-  const archivePath = await writeWebappArchive(root, { id: "reg-report", label: "监管报表" });
+  const id = webappId("reg-report");
+  const archivePath = await writeWebappArchive(root, { id, key: "reg-report", label: "监管报表" });
   const archiveBytes = fs.readFileSync(archivePath);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -1741,7 +1739,7 @@ test("installMarketItem installs and uninstalls website app packages into deskto
       catalog: {
         schemaVersion: 1,
         items: [{
-          id: "reg-report",
+          id,
           type: "website-app",
           name: "监管报表",
           version: "0.1.0",
@@ -1760,40 +1758,41 @@ test("installMarketItem installs and uninstalls website app packages into deskto
       }
     };
 
-    const result = await installMarketItem(app, "reg-report", options);
+    const result = await installMarketItem(app, id, options);
     assert.equal(result.ok, true);
     assert.equal(result.type, "website-app");
     assert.equal(result.state, "installed");
-    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), "reg-report", "webapp.json")), true);
-    assert.equal(readWebappItems(app).find((item) => item.id === "reg-report")?.label, "监管报表");
+    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), id, "webapp.json")), true);
+    assert.equal(readWebappItems(app).find((item) => item.id === id)?.label, "监管报表");
 
     const installedList = await listMarketItems(app, options);
-    assert.equal(installedList.items.find((item) => item.id === "reg-report")?.state, "installed");
+    assert.equal(installedList.items.find((item) => item.id === id)?.state, "installed");
 
-    const uninstallResult = await uninstallMarketItem(app, "reg-report", options);
+    const uninstallResult = await uninstallMarketItem(app, id, options);
     assert.equal(uninstallResult.ok, true);
-    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), "reg-report")), false);
+    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), id)), false);
 
     const uninstalledList = await listMarketItems(app, options);
-    assert.equal(uninstalledList.items.find((item) => item.id === "reg-report")?.state, "not-installed");
+    assert.equal(uninstalledList.items.find((item) => item.id === id)?.state, "not-installed");
   });
 });
 
 test("installWebsiteAppArchiveFromPath installs local website app packages", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-local-"));
   const app = createApp(root);
-  const archivePath = await writeWebappArchive(root, { id: "local-report", label: "Local Report" });
+  const id = webappId("local-report");
+  const archivePath = await writeWebappArchive(root, { id, key: "local-report", label: "Local Report" });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
   const result = await installWebsiteAppArchiveFromPath(app, archivePath, {
-    expectedId: "local-report"
+    expectedId: id
   });
 
   assert.equal(result.ok, true);
   assert.equal(result.type, "website-app");
-  assert.equal(result.itemId, "local-report");
-  assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), "local-report", "webapp.json")), true);
-  assert.equal(readWebappItems(app).find((item) => item.id === "local-report")?.label, "Local Report");
+  assert.equal(result.itemId, id);
+  assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), id, "webapp.json")), true);
+  assert.equal(readWebappItems(app).find((item) => item.id === id)?.label, "Local Report");
 });
 
 test("installMarketItem does not execute cli installs from Desktop", async (t) => {

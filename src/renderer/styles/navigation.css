@@ -2079,6 +2079,35 @@
   line-height: 1.45;
 }
 
+.sidebar-webapp-import-failure {
+  display: grid;
+  gap: 10px;
+  color: var(--ink);
+}
+
+.sidebar-webapp-import-failure code {
+  width: fit-content;
+  max-width: 100%;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: rgba(220, 38, 38, 0.08);
+  color: var(--danger);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-webapp-import-failure p {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.sidebar-webapp-import-failure .sidebar-webapp-import-failure-suggestion {
+  color: var(--ink-muted);
+  font-size: 12px;
+}
+
 .sidebar-website-dialog-actions {
   display: flex;
   justify-content: flex-end;

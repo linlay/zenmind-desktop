@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { spawn, type ChildProcess } from "node:child_process";
+import { spawn, spawnSync, type ChildProcess } from "node:child_process";
 import type { App } from "electron";
 import type {
   WebappBackendConfig,
@@ -12,10 +12,33 @@ import type {
 import { buildServiceEnv, resolveCommandBin } from "../../services/manager/command-env";
 import { getConfiguredDesktopActionBridgePort } from "../../desktop-action-bridge-settings";
 import { resolveWebappRelativePath } from "../common";
-import { WEBAPP_FILE } from "./store";
-import { resolveConfiguredSystemExecutable } from "./runtime-settings";
+import { WEBAPP_FILE, readWebappUserConfigValues } from "./store";
+import { resolveConfiguredRuntimeExecutable } from "./runtime-settings";
 
 const HOST = "127.0.0.1";
+const SAFE_INHERITED_ENV_KEYS = new Set([
+  "APPDATA",
+  "COMMONPROGRAMFILES",
+  "COMSPEC",
+  "HOME",
+  "LANG",
+  "LANGUAGE",
+  "LC_ALL",
+  "LC_CTYPE",
+  "LOCALAPPDATA",
+  "PATH",
+  "PATHEXT",
+  "PROGRAMDATA",
+  "PROGRAMFILES",
+  "PROGRAMFILES(X86)",
+  "SYSTEMROOT",
+  "TEMP",
+  "TMP",
+  "TMPDIR",
+  "TZ",
+  "USERPROFILE",
+  "WINDIR"
+]);
 
 export type WebappLauncherContext = {
   app: App;
@@ -110,8 +133,13 @@ function isExecutableFile(candidate: string) {
 
 function managedEnv(context: WebappLauncherContext) {
   const scopedActions = Boolean(context.actionToken);
+  const inheritedEnv = Object.fromEntries(
+    Object.entries(buildServiceEnv()).filter(([key, value]) =>
+      value !== undefined && SAFE_INHERITED_ENV_KEYS.has(key.toUpperCase())
+    )
+  );
   return {
-    ...buildServiceEnv(),
+    ...inheritedEnv,
     ...(context.item.backend?.env ?? {}),
     HOST,
     PORT: String(context.backendPort ?? ""),
@@ -121,6 +149,7 @@ function managedEnv(context: WebappLauncherContext) {
     WEBAPP_STATE_DIR: context.stateDir,
     WEBAPP_LOG_DIR: context.logDir,
     WEBAPP_MANIFEST_PATH: path.join(context.webappDir, WEBAPP_FILE),
+    WEBAPP_USER_CONFIG_PATH: path.join(context.stateDir, "user-config.json"),
     DESKTOP_ACTION_BRIDGE_URL: scopedActions
       ? `http://${HOST}:${getConfiguredDesktopActionBridgePort(context.app)}/webapps`
       : `http://${HOST}:${getConfiguredDesktopActionBridgePort(context.app)}`,
@@ -138,6 +167,12 @@ function startManagedProcess(
   if (!check.ok) {
     return { ...check, child: null };
   }
+  fs.mkdirSync(context.stateDir, { recursive: true });
+  fs.writeFileSync(
+    path.join(context.stateDir, "user-config.json"),
+    `${JSON.stringify(readWebappUserConfigValues(context.app, context.item.id), null, 2)}\n`,
+    { encoding: "utf8", mode: 0o600 }
+  );
   const child = spawn(command, args, {
     cwd: context.webappDir,
     env: {
@@ -166,7 +201,7 @@ const electronNodeLauncher: BackendLauncher = {
       };
     }
     const check = this.validatePrerequisites(context);
-    const scriptPath = resolveWebappRelativePath(context.webappDir, backend.command.script);
+    const scriptPath = resolveWebappRelativePath(context.webappDir, backend.command.entry);
     return startManagedProcess(
       check,
       process.execPath,
@@ -177,30 +212,30 @@ const electronNodeLauncher: BackendLauncher = {
   }
 };
 
-const bundledLauncher: BackendLauncher = {
-  kind: "bundled",
+const executableLauncher: BackendLauncher = {
+  kind: "executable",
   validatePrerequisites(context) {
     const backend = context.item.backend;
-    if (!backend || backend.command.type !== "bundled") {
-      return failedCheck("bundled", [issue("invalid_backend", "bundled backend is invalid.")]);
+    if (!backend || backend.command.type !== "executable") {
+      return failedCheck("executable", [issue("invalid_backend", "executable backend is invalid.")]);
     }
-    const executable = resolveWebappRelativePath(context.webappDir, backend.command.executable);
+    const executable = resolveWebappRelativePath(context.webappDir, backend.command.entry);
     if (!isExecutableFile(executable)) {
-      return failedCheck("bundled", [
-        issue("bundled_executable_missing", "Bundled backend executable does not exist.", backend.command.executable)
+      return failedCheck("executable", [
+        issue("executable_missing", "Backend executable does not exist.", backend.command.entry)
       ]);
     }
     if (process.platform === "win32" && path.extname(executable).toLowerCase() !== ".exe") {
-      return failedCheck("bundled", [
-        issue("bundled_executable_extension", "Windows bundled backend executable must be an .exe file.", ".exe")
+      return failedCheck("executable", [
+        issue("executable_extension", "Windows backend executable must be an .exe file.", ".exe")
       ]);
     }
-    return managedCheck("bundled", context, context.item.target, executable);
+    return managedCheck("executable", context, context.item.target, executable);
   },
   start(context) {
     const check = this.validatePrerequisites(context);
     const backend = context.item.backend;
-    if (!check.ok || !check.command || !backend || backend.command.type !== "bundled") {
+    if (!check.ok || !check.command || !backend || backend.command.type !== "executable") {
       return { ...check, child: null };
     }
     if (process.platform === "darwin") {
@@ -210,48 +245,100 @@ const bundledLauncher: BackendLauncher = {
   }
 };
 
-function resolveSystemExecutable(context: WebappLauncherContext, logicalName: string) {
-  const configured = resolveConfiguredSystemExecutable(context.app, context.item.id, logicalName);
+function parseRuntimeVersion(output: string) {
+  return output.match(/\d+(?:\.\d+){0,2}/u)?.[0] ?? "";
+}
+
+function compareRuntimeVersions(left: string, right: string) {
+  const leftParts = left.split(".").map(Number);
+  const rightParts = right.split(".").map(Number);
+  for (let index = 0; index < Math.max(leftParts.length, rightParts.length); index += 1) {
+    const difference = (leftParts[index] ?? 0) - (rightParts[index] ?? 0);
+    if (difference !== 0) {
+      return Math.sign(difference);
+    }
+  }
+  return 0;
+}
+
+function resolveRuntimeExecutable(context: WebappLauncherContext, runtime: "python" | "java") {
+  const configured = resolveConfiguredRuntimeExecutable(context.app, context.item.id, runtime);
   if (configured && isExecutableFile(configured)) {
     return configured;
   }
-  const fromPath = resolveCommandBin(logicalName);
-  return fromPath && isExecutableFile(fromPath) ? fromPath : "";
+  const candidates = runtime === "python"
+    ? process.platform === "win32" ? ["python", "python3"] : ["python3", "python"]
+    : ["java"];
+  for (const candidate of candidates) {
+    const resolved = resolveCommandBin(candidate);
+    if (resolved && isExecutableFile(resolved)) {
+      return resolved;
+    }
+  }
+  return "";
 }
 
-const systemLauncher: BackendLauncher = {
-  kind: "system",
+function probeRuntimeVersion(command: string, runtime: "python" | "java") {
+  const result = spawnSync(command, ["--version"], {
+    encoding: "utf8",
+    windowsHide: true,
+    timeout: 5_000,
+    shell: false
+  });
+  return parseRuntimeVersion(`${result.stdout ?? ""}\n${result.stderr ?? ""}`);
+}
+
+const runtimeLauncher: BackendLauncher = {
+  kind: "runtime",
   validatePrerequisites(context) {
     const backend = context.item.backend;
-    if (!backend || backend.command.type !== "system") {
-      return failedCheck("system", [issue("invalid_backend", "system backend is invalid.")]);
+    if (!backend || backend.command.type !== "runtime") {
+      return failedCheck("runtime", [issue("invalid_backend", "runtime backend is invalid.")]);
     }
-    const executable = resolveSystemExecutable(context, backend.command.executable);
+    const executable = resolveRuntimeExecutable(context, backend.command.runtime);
     if (!executable) {
-      return failedCheck("system", [
+      return failedCheck("runtime", [
         issue(
-          "system_runtime_missing",
-          `System runtime ${backend.command.executable} was not found. Select an existing executable in WebApp settings.`,
-          backend.command.executable
+          "runtime_missing",
+          `${backend.command.runtime} runtime was not found. Select an existing executable in WebApp settings.`,
+          backend.command.runtime
         )
       ]);
     }
-    return managedCheck("system", context, backend.command.executable, executable);
+    const runtimeVersion = probeRuntimeVersion(executable, backend.command.runtime);
+    if (
+      backend.command.minimumVersion &&
+      (!runtimeVersion || compareRuntimeVersions(runtimeVersion, backend.command.minimumVersion) < 0)
+    ) {
+      return failedCheck("runtime", [
+        issue(
+          "runtime_version_too_low",
+          `${backend.command.runtime} ${backend.command.minimumVersion} or newer is required.`,
+          backend.command.minimumVersion,
+          runtimeVersion || "unknown"
+        )
+      ], { runtimeVersion, externalId: executable });
+    }
+    return managedCheck("runtime", context, runtimeVersion, executable);
   },
   start(context) {
     const check = this.validatePrerequisites(context);
     const backend = context.item.backend;
-    if (!check.ok || !check.command || !backend || backend.command.type !== "system") {
+    if (!check.ok || !check.command || !backend || backend.command.type !== "runtime") {
       return { ...check, child: null };
     }
-    return startManagedProcess(check, check.command, backend.args, context);
+    const entry = resolveWebappRelativePath(context.webappDir, backend.command.entry);
+    const runtimeArgs = backend.command.runtime === "java"
+      ? ["-jar", entry, ...backend.args]
+      : [entry, ...backend.args];
+    return startManagedProcess(check, check.command, runtimeArgs, context);
   }
 };
 
 const LAUNCHERS = new Map<BackendLauncher["kind"], BackendLauncher>([
   ["electron-node", electronNodeLauncher],
-  ["bundled", bundledLauncher],
-  ["system", systemLauncher]
+  ["executable", executableLauncher],
+  ["runtime", runtimeLauncher]
 ]);
 
 export function getWebappBackendLauncher(backend: NonNullable<WebappBackendConfig>) {
@@ -276,5 +363,5 @@ export function checkWebappBackendPrerequisites(context: WebappLauncherContext) 
 }
 
 export function resetWebappRuntimeProbeCaches() {
-  // System runtimes are intentionally resolved on every check so local bindings take effect immediately.
+  // Runtimes are intentionally resolved on every check so local bindings take effect immediately.
 }

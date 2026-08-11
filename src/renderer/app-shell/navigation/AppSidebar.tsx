@@ -81,7 +81,7 @@ import type {
   SettingsSectionId,
 } from "../../../shared/settings-sections";
 import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
-import { Flex } from "antd";
+import { Flex, Modal } from "antd";
 import {
   CAPABILITY_NAVIGATION_ITEMS,
   getCapabilityNavigationItem,
@@ -1129,6 +1129,10 @@ export function AppSidebar({
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [webItemRemovePendingId, setWebItemRemovePendingId] = useState("");
   const [webItemExportPendingId, setWebItemExportPendingId] = useState("");
+  const [webappImportFailure, setWebappImportFailure] = useState<{
+    message: string;
+    diagnostic?: WebappImportResult["diagnostic"];
+  } | null>(null);
   const [assistantChatRenameDialog, setAssistantChatRenameDialog] =
     useState<AssistantChatRenameDialogState | null>(null);
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
@@ -2617,16 +2621,55 @@ export function AppSidebar({
     if (!onImportWebappItem) {
       return;
     }
+    setWebappImportFailure(null);
     try {
       const result = await onImportWebappItem();
       if (!result.ok || !result.item) {
+        const cancelled = !result.path && !result.diagnostic;
+        if (!cancelled) {
+          setWebappImportFailure({
+            message: result.diagnostic?.message || result.message || t("sidebar.webapp.importFailed"),
+            diagnostic: result.diagnostic,
+          });
+        }
         return;
       }
       setSidebarGroupState((current) => ({ ...current, webs: true }));
       requestNavigate(`/webs/${result.item.entryKey}`);
-    } catch {
-      // The import dialog reports failures through the native result surface.
+    } catch (error) {
+      setWebappImportFailure({
+        message: error instanceof Error ? error.message : t("sidebar.webapp.importFailed"),
+      });
     }
+  }
+
+  function renderWebappImportFailureDialog() {
+    return (
+      <Modal
+        centered
+        className="sidebar-webapp-import-failure-modal"
+        open={Boolean(webappImportFailure)}
+        title={t("sidebar.webapp.importFailedTitle")}
+        okText={t("common.close")}
+        cancelButtonProps={{ style: { display: "none" } }}
+        onOk={() => setWebappImportFailure(null)}
+        onCancel={() => setWebappImportFailure(null)}
+      >
+        {webappImportFailure ? (
+          <div className="sidebar-webapp-import-failure" role="alert">
+            {webappImportFailure.diagnostic ? (
+              <code>{`${webappImportFailure.diagnostic.stage}/${webappImportFailure.diagnostic.code}`}</code>
+            ) : null}
+            <p>{webappImportFailure.message}</p>
+            {webappImportFailure.diagnostic?.suggestion ? (
+              <p className="sidebar-webapp-import-failure-suggestion">
+                {webappImportFailure.diagnostic.suggestion}
+              </p>
+            ) : null}
+          </div>
+        ) : null}
+      </Modal>
+    );
   }
 
   async function closeWebItem(item: WebEntry) {
@@ -5852,6 +5895,7 @@ export function AppSidebar({
           </div>
         ) : null}
       </aside>
+      {renderWebappImportFailureDialog()}
       {renderBootstrapGuideFloatingBubbles()}
     </>
   );

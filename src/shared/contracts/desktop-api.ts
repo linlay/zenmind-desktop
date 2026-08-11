@@ -2,7 +2,7 @@ import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopAction
 import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { NavigateListener, ServicesChangedListener, StartupRestoreState, StartupRestoreStateListener } from "./startup";
-import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
+import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebappUserConfigResult, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
@@ -824,6 +824,8 @@ export interface DesktopApi {
       checkRuntime: (id: string) => Promise<WebappRuntimeCheckResult>;
       getRuntimeSettings: () => Promise<WebappRuntimeSettingsResult>;
       saveRuntimeSettings: (input: WebappRuntimeSettingsInput) => Promise<WebappRuntimeSettingsResult>;
+      getUserConfig: (id: string) => Promise<WebappUserConfigResult>;
+      saveUserConfig: (id: string, values: Record<string, string | number | boolean>) => Promise<WebappUserConfigResult>;
       getPublishStatus: (id: string) => Promise<WebappPublishStatusResult>;
       publish: (id: string) => Promise<WebappPublishResult>;
       unpublish: (id: string) => Promise<WebappPublishResult>;

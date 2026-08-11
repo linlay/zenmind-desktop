@@ -4,7 +4,8 @@ import { createHash } from "node:crypto";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
 import { WEBAPP_ID_PATTERN } from "../../shared/webapp-manifest";
-import { extractArchiveToDir, listArchiveEntriesAsync } from "../archive-utils";
+import packageValidation = require("../../shared/webapp-package-validation");
+import { extractArchiveToDir, inspectZipArchiveSafety } from "../archive-utils";
 import { t } from "../i18n/main-i18n";
 import {
   getDesktopWebappDataRoot,
@@ -14,7 +15,11 @@ import {
   getDesktopWebappsDataRoot
 } from "../user-paths";
 import { removeWebappItem } from "../webs/webapps/actions";
-import { getWebappDir, readWebappItemFromDir } from "../webs/webapps/store";
+import {
+  getWebappDir,
+  readInstalledWebappItems,
+  readWebappItemFromDir
+} from "../webs/webapps/store";
 import { webappRuntime } from "../webs/webapps/runtime";
 import { webappWindowManager } from "../webs/webapps/window-manager";
 import {
@@ -37,6 +42,11 @@ import {
   type MarketSectionResult
 } from "./common";
 
+const {
+  WebappPackageValidationError,
+  validateWebappArchiveLayout
+} = packageValidation;
+
 type WebsiteAppCatalogResult = {
   catalog: Catalog;
   offline: boolean;
@@ -55,28 +65,60 @@ type WebsiteAppArchiveInstallOptions = {
   recordInstallation?: boolean;
 };
 
-export class WebappInstallPolicyError extends Error {
+export type WebappInstallStage = "archive" | "manifest" | "package" | "runtime" | "startup" | "install";
+
+export class WebappInstallError extends Error {
   constructor(
-    readonly code: "invalid_id" | "version_content_conflict" | "downgrade_not_allowed",
+    readonly stage: WebappInstallStage,
+    readonly code: string,
     message: string,
-    readonly details: Record<string, unknown>
+    readonly details: Record<string, unknown> = {}
   ) {
     super(message);
+    this.name = "WebappInstallError";
+  }
+}
+
+export class WebappInstallPolicyError extends WebappInstallError {
+  constructor(
+    code: "invalid_id" | "version_content_conflict" | "downgrade_not_allowed",
+    message: string,
+    details: Record<string, unknown>
+  ) {
+    super("install", code, message, details);
     this.name = "WebappInstallPolicyError";
   }
 }
 
-export class WebappSystemRuntimeRequiredError extends Error {
-  readonly code = "system_runtime_required";
-
+export class WebappRuntimeRequiredError extends WebappInstallError {
   constructor(
     readonly webappId: string,
     readonly executable: string,
     message: string
   ) {
-    super(message);
-    this.name = "WebappSystemRuntimeRequiredError";
+    super("runtime", "runtime_required", message, { webappId, runtime: executable });
+    this.name = "WebappRuntimeRequiredError";
   }
+}
+
+function toWebappInstallError(
+  error: unknown,
+  stage: WebappInstallStage,
+  code: string,
+  details: Record<string, unknown> = {}
+) {
+  if (error instanceof WebappInstallError) {
+    return error;
+  }
+  if (error instanceof WebappPackageValidationError) {
+    return new WebappInstallError(error.stage, error.code, error.message, error.details);
+  }
+  return new WebappInstallError(
+    stage,
+    code,
+    error instanceof Error ? error.message : String(error),
+    details
+  );
 }
 
 function websiteAppOnlyCatalog(catalog: Catalog): Catalog {
@@ -170,46 +212,6 @@ function calculateDirectoryDigest(rootPath: string) {
   return hash.digest("hex");
 }
 
-function assertSafeArchiveEntries(entries: Set<string>) {
-  for (const rawEntry of entries) {
-    const entry = rawEntry.trim().replace(/\\/gu, "/");
-    if (!entry || entry.startsWith("/") || /^[a-z]:/iu.test(entry)) {
-      throw new Error(t("market.websiteApp.invalidArchivePath"));
-    }
-    const parts = entry.split("/").filter(Boolean);
-    if (parts.some((part) => part === "." || part === "..")) {
-      throw new Error(t("market.websiteApp.invalidArchivePath"));
-    }
-  }
-}
-
-function hasWebappManifest(entries: Set<string>) {
-  for (const rawEntry of entries) {
-    const entry = rawEntry.replace(/\\/gu, "/").replace(/\/$/u, "");
-    if (entry.endsWith("/webapp.json") || entry === "webapp.json") {
-      return true;
-    }
-  }
-  return false;
-}
-
-function findExtractedWebappRoot(rootPath: string): string | null {
-  const queue = [rootPath];
-  while (queue.length > 0) {
-    const current = queue.shift() ?? rootPath;
-    const manifestPath = path.join(current, "webapp.json");
-    if (fs.existsSync(manifestPath)) {
-      return current;
-    }
-    for (const entry of fs.readdirSync(current, { withFileTypes: true })) {
-      if (entry.isDirectory()) {
-        queue.push(path.join(current, entry.name));
-      }
-    }
-  }
-  return null;
-}
-
 function listLocalWebsiteApps(app: App): MarketItem[] {
   return fs.existsSync(getDesktopWebappsDataRoot(app))
     ? fs.readdirSync(getDesktopWebappsDataRoot(app), { withFileTypes: true })
@@ -282,6 +284,11 @@ export async function installWebsiteAppArchiveFromPath(
   archivePath: string,
   options: WebsiteAppArchiveInstallOptions = {}
 ): Promise<MarketCommandResult> {
+  if (path.extname(archivePath).toLowerCase() !== ".zip") {
+    throw new WebappInstallError("archive", "unsupported_format", "WebApp packages must be ZIP archives.", {
+      path: archivePath
+    });
+  }
   const hasExpectedId = Object.hasOwn(options, "expectedId");
   const expectedId = hasExpectedId ? validateWebappId(options.expectedId) : "";
   if (hasExpectedId && !expectedId) {
@@ -300,27 +307,62 @@ export async function installWebsiteAppArchiveFromPath(
   let transaction: WebappInstallTransaction | null = null;
   let releaseWebappDisposal: (() => void) | null = null;
   try {
-    const entries = await listArchiveEntriesAsync(archivePath);
-    assertSafeArchiveEntries(entries);
-    if (!hasWebappManifest(entries)) {
-      throw new Error(t("market.websiteApp.invalidPackage"));
+    let archiveRootName: string;
+    try {
+      const { entries } = await inspectZipArchiveSafety(archivePath);
+      archiveRootName = validateWebappArchiveLayout(entries, WEBAPP_ID_PATTERN);
+      await extractArchiveToDir(archivePath, tempRoot);
+    } catch (error) {
+      throw toWebappInstallError(error, "archive", "invalid_archive", { path: archivePath });
     }
-    await extractArchiveToDir(archivePath, tempRoot);
-    const webappRoot = findExtractedWebappRoot(tempRoot);
-    if (!webappRoot) {
-      throw new Error(t("market.websiteApp.invalidPackage"));
+    const webappRoot = path.join(tempRoot, archiveRootName);
+    if (!fs.existsSync(webappRoot) || !fs.statSync(webappRoot).isDirectory()) {
+      throw new WebappInstallError("package", "package_root_missing", t("market.websiteApp.invalidPackage"), {
+        path: webappRoot
+      });
     }
 
-    const webapp = readWebappItemFromDir(webappRoot, expectedId);
+    let webapp;
+    try {
+      webapp = readWebappItemFromDir(webappRoot, expectedId);
+    } catch (error) {
+      throw toWebappInstallError(error, "manifest", "invalid_manifest", {
+        path: path.join(webappRoot, "webapp.json")
+      });
+    }
     if (!webapp) {
-      throw new Error(t("market.websiteApp.invalidPackage"));
+      throw new WebappInstallError("package", "invalid_package", t("market.websiteApp.invalidPackage"));
     }
     const safeWebappDirName = validateWebappId(expectedId || webapp.id);
     if (!safeWebappDirName) {
-      throw new Error(t("market.websiteApp.invalidId"));
+      throw new WebappInstallError("manifest", "invalid_id", t("market.websiteApp.invalidId"));
     }
     if (webapp.id !== safeWebappDirName) {
-      throw new Error(t("market.websiteApp.idMismatch", { expected: safeWebappDirName, actual: webapp.id }));
+      throw new WebappInstallError(
+        "manifest",
+        "id_mismatch",
+        t("market.websiteApp.idMismatch", { expected: safeWebappDirName, actual: webapp.id }),
+        { expected: safeWebappDirName, actual: webapp.id }
+      );
+    }
+    if (archiveRootName !== webapp.id) {
+      throw new WebappInstallError(
+        "archive",
+        "id_mismatch",
+        t("market.websiteApp.idMismatch", { expected: archiveRootName, actual: webapp.id }),
+        { expected: archiveRootName, actual: webapp.id }
+      );
+    }
+    const keyConflict = readInstalledWebappItems(app).find((item) =>
+      item.key === webapp.key && item.id !== webapp.id
+    );
+    if (keyConflict) {
+      throw new WebappInstallError(
+        "install",
+        "key_conflict",
+        `WebApp key is already installed: ${webapp.key} (${keyConflict.id}).`,
+        { key: webapp.key, installedId: keyConflict.id }
+      );
     }
 
     const targetRoot = getDesktopWebappsDataRoot(app);
@@ -329,7 +371,9 @@ export async function installWebsiteAppArchiveFromPath(
     if (replacingExisting) {
       const installed = readWebappItemFromDir(installPath, safeWebappDirName);
       if (!installed) {
-        throw new Error(t("market.websiteApp.invalidPackage"));
+        throw new WebappInstallError("install", "installed_package_invalid", t("market.websiteApp.invalidPackage"), {
+          id: safeWebappDirName
+        });
       }
       const versionOrder = compareSemver(webapp.version, installed.version);
       if (versionOrder < 0) {
@@ -364,22 +408,31 @@ export async function installWebsiteAppArchiveFromPath(
     const prerequisites = webappRuntime.checkItemPrerequisites(app, webapp, webappRoot);
     if (!prerequisites.ok) {
       if (
-        webapp.backend?.command.type === "system" &&
-        prerequisites.issues.some((entry) => entry.code === "system_runtime_missing")
+        webapp.backend?.command.type === "runtime" &&
+        prerequisites.issues.some((entry) =>
+          entry.code === "runtime_missing" || entry.code === "runtime_version_too_low"
+        )
       ) {
-        throw new WebappSystemRuntimeRequiredError(
+        throw new WebappRuntimeRequiredError(
           webapp.id,
-          webapp.backend.command.executable,
+          webapp.backend.command.runtime,
           prerequisites.message
         );
       }
-      throw new Error(prerequisites.message);
+      throw new WebappInstallError("runtime", "runtime_invalid", prerequisites.message, {
+        issues: prerequisites.issues
+      });
     }
     if (replacingExisting) {
       releaseWebappDisposal = webappWindowManager.beginDisposal(safeWebappDirName);
       const stopped = await webappRuntime.stop(app, safeWebappDirName, t("market.websiteApp.replaced"));
       if (!stopped.ok) {
-        throw new Error(t("webapp.marketReplaceActive", { message: stopped.message }));
+        throw new WebappInstallError(
+          "install",
+          "existing_runtime_stop_failed",
+          t("webapp.marketReplaceActive", { message: stopped.message }),
+          { id: safeWebappDirName }
+        );
       }
     }
     fs.mkdirSync(targetRoot, { recursive: true });
@@ -412,14 +465,21 @@ export async function installWebsiteAppArchiveFromPath(
           fs.rmSync(getDesktopWebappStateRoot(app, safeWebappDirName), { recursive: true, force: true });
           fs.rmSync(getDesktopWebappLogsRoot(app, safeWebappDirName), { recursive: true, force: true });
         }
-        throw new Error(t("webapp.marketStartupValidationFailed", { message: started.message }));
+        throw new WebappInstallError(
+          "startup",
+          "startup_failed",
+          t("webapp.marketStartupValidationFailed", { message: started.message }),
+          { id: safeWebappDirName }
+        );
       }
       if (!previousWasRunning) {
         const stopped = await webappRuntime.stop(app, safeWebappDirName);
         if (!stopped.ok) {
           rollbackWebappInstall(app, transaction);
           transaction = null;
-          throw new Error(stopped.message);
+          throw new WebappInstallError("startup", "validation_stop_failed", stopped.message, {
+            id: safeWebappDirName
+          });
         }
       }
     }
@@ -446,6 +506,8 @@ export async function installWebsiteAppArchiveFromPath(
       message: t("market.websiteApp.installed", { name: options.displayName || webapp.label }),
       installPath
     };
+  } catch (error) {
+    throw toWebappInstallError(error, "install", "install_failed", { path: archivePath });
   } finally {
     releaseWebappDisposal?.();
     if (transaction) {

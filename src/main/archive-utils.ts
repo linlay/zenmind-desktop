@@ -2,7 +2,13 @@ import { execFile, execFileSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import JSZip from "jszip";
+import packageValidation = require("../shared/webapp-package-validation");
 import { beginStartupTiming } from "./startup-timing";
+
+const {
+  WEBAPP_PACKAGE_LIMITS,
+  validateZipEntrySafety
+} = packageValidation;
 
 function isZipArchive(archivePath: string) {
   return archivePath.toLowerCase().endsWith(".zip");
@@ -30,7 +36,6 @@ function quotePowerShell(value: string) {
 }
 
 const SYNC_TIMEOUT_MS = 300_000;
-
 function tarCommand() {
   if (process.platform === "win32") {
     return "tar.exe";
@@ -112,6 +117,48 @@ async function listZipArchiveEntriesWithJSZip(archivePath: string) {
       .map((entry) => entry.name.trim().replace(/\\/g, "/"))
       .filter(Boolean)
   );
+}
+
+export async function inspectZipArchiveSafety(
+  archivePath: string,
+  limits: {
+    maxArchiveBytes?: number;
+    maxExpandedBytes?: number;
+    maxFileBytes?: number;
+    maxEntries?: number;
+    maxCompressionRatio?: number;
+  } = {}
+) {
+  if (!isZipArchive(archivePath)) {
+    throw new Error(`unsupported archive format: ${archivePath}`);
+  }
+  const archiveStat = await fs.promises.stat(archivePath);
+  const maxArchiveBytes = limits.maxArchiveBytes ?? WEBAPP_PACKAGE_LIMITS.maxArchiveBytes;
+  if (!archiveStat.isFile() || archiveStat.size > maxArchiveBytes) {
+    throw new Error(`archive exceeds the size limit: ${archivePath}`);
+  }
+  const zip = await JSZip.loadAsync(await fs.promises.readFile(archivePath), { checkCRC32: true });
+  const entries = Object.values(zip.files);
+  const inspected = validateZipEntrySafety(entries.map((entry) => {
+    const data = (entry as unknown as {
+      _data?: { compressedSize?: number; uncompressedSize?: number };
+    })._data;
+    return {
+      name: entry.name,
+      dir: entry.dir,
+      unixPermissions: typeof entry.unixPermissions === "number" ? entry.unixPermissions : undefined,
+      compressedSize: Number(data?.compressedSize ?? 0),
+      uncompressedSize: Number(data?.uncompressedSize ?? 0)
+    };
+  }), {
+    archiveBytes: archiveStat.size,
+    ...limits
+  });
+  return {
+    entries: inspected.entries,
+    archiveBytes: archiveStat.size,
+    expandedBytes: inspected.expandedBytes
+  };
 }
 
 async function extractZipArchiveWithJSZip(archivePath: string, targetDir: string) {
