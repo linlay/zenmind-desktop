@@ -12,7 +12,7 @@ export type KanbanIssueRunRecord = {
   id: string;
   runId: string | null;
   chatId: string | null;
-  status: KanbanRunState;
+  status: KanbanRunState | null;
   workerAgent: string | null;
   startedAt: string | null;
   finishedAt: string | null;
@@ -53,7 +53,7 @@ export function resolveKanbanIssueRuns(issue: KanbanIssue, events: KanbanRecentE
       id: previous?.id || key,
       runId: runId || previous?.runId || null,
       chatId: chatId || previous?.chatId || null,
-      status: status || previous?.status || "running",
+      status: status || previous?.status || null,
       workerAgent: nullableText(snapshot.runAgentKey) || nullableText(snapshot.workerAgent) || previous?.workerAgent || null,
       startedAt,
       finishedAt,
@@ -72,7 +72,7 @@ export function resolveKanbanIssueRuns(issue: KanbanIssue, events: KanbanRecentE
       id: previous?.id || key,
       runId: issueRunId || previous?.runId || null,
       chatId: issue.chatId || previous?.chatId || null,
-      status: issueStatus || previous?.status || "running",
+      status: issueStatus || previous?.status || null,
       workerAgent: issue.runAgentKey || issue.workerAgent || previous?.workerAgent || null,
       startedAt: issue.runStartedAt || previous?.startedAt || null,
       finishedAt: issue.runFinishedAt || previous?.finishedAt || null,
