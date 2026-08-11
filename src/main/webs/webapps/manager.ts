@@ -19,40 +19,50 @@ import {
   readWebappItemFromDir,
   readInstalledWebappItems,
   readWebappItems,
+  readWebappUserConfigState,
+  readWebappUserConfigValues,
   WEBAPP_FILE,
+  writeWebappUserConfigValues,
   writeCanonicalWebappManifest
 } from "./store";
 import { webappRuntime } from "./runtime";
 import {
-  getSystemExecutableBindingKey,
+  getRuntimeExecutableBindingKey,
   readWebappRuntimeSettings,
   writeWebappRuntimeSettings
 } from "./runtime-settings";
 import {
   installWebsiteAppArchiveFromPath,
+  WebappInstallError,
   WebappInstallPolicyError,
-  WebappSystemRuntimeRequiredError
+  WebappRuntimeRequiredError
 } from "../../marketplace/website-app-market";
 import { getDesktopWebappInstallStagingRoot } from "../../user-paths";
 
 type WebappInstallArchiveOptions = Parameters<typeof installWebsiteAppArchiveFromPath>[2];
 
-function addDirectoryToZip(zip: JSZip, rootPath: string, currentPath = rootPath) {
+function addDirectoryToZip(
+  zip: JSZip,
+  rootPath: string,
+  currentPath = rootPath,
+  archiveRoot = path.basename(rootPath)
+) {
   for (const entry of fs.readdirSync(currentPath, { withFileTypes: true })) {
     const absolutePath = path.join(currentPath, entry.name);
     const stat = fs.lstatSync(absolutePath);
     const relativePath = path.relative(rootPath, absolutePath).split(path.sep).join("/");
+    const archivePath = `${archiveRoot}/${relativePath}`;
     if (stat.isSymbolicLink()) {
-      throw new Error(`WebApp packages must not contain symbolic links: ${relativePath}`);
+      throw new Error(`WebApp packages must not contain symbolic links: ${archivePath}`);
     }
     if (stat.isDirectory()) {
-      addDirectoryToZip(zip, rootPath, absolutePath);
+      addDirectoryToZip(zip, rootPath, absolutePath, archiveRoot);
     } else if (stat.isFile()) {
-      zip.file(relativePath, fs.readFileSync(absolutePath), {
+      zip.file(archivePath, fs.readFileSync(absolutePath), {
         unixPermissions: stat.mode & 0o777
       });
     } else {
-      throw new Error(`WebApp packages may contain only files and directories: ${relativePath}`);
+      throw new Error(`WebApp packages may contain only files and directories: ${archivePath}`);
     }
   }
 }
@@ -103,14 +113,14 @@ export class WebappManager {
     packageRoot: string,
     options: WebappInstallArchiveOptions = {}
   ) {
-    this.readPackage(packageRoot, options.expectedId);
+    const item = this.readPackage(packageRoot, options.expectedId);
     const stagingRoot = getDesktopWebappInstallStagingRoot(app);
     fs.mkdirSync(stagingRoot, { recursive: true });
     const temporaryRoot = fs.mkdtempSync(path.join(stagingRoot, "directory-package-"));
     const archivePath = path.join(temporaryRoot, "webapp.zip");
     try {
       const zip = new JSZip();
-      addDirectoryToZip(zip, packageRoot);
+      addDirectoryToZip(zip, packageRoot, packageRoot, item.id);
       fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
       return await this.installArchive(app, archivePath, options);
     } finally {
@@ -120,6 +130,18 @@ export class WebappManager {
 
   update(app: App, id: string, input: WebappUpdateInput) {
     return updateWebappItem(app, id, input);
+  }
+
+  readUserConfig(app: App, id: string) {
+    return readWebappUserConfigValues(app, id);
+  }
+
+  readUserConfigState(app: App, id: string) {
+    return readWebappUserConfigState(app, id);
+  }
+
+  saveUserConfig(app: App, id: string, input: unknown) {
+    return writeWebappUserConfigValues(app, id, input);
   }
 
   remove(app: App, id: string) {
@@ -142,16 +164,16 @@ export class WebappManager {
     return writeWebappRuntimeSettings(app, input);
   }
 
-  bindSystemExecutable(app: App, webappId: string, executable: string, executablePath: string) {
+  bindRuntimeExecutable(app: App, webappId: string, runtime: string, executablePath: string) {
     const settings = this.readRuntimeSettings(app);
     return this.saveRuntimeSettings(app, {
-      systemExecutables: {
-        ...settings.systemExecutables,
-        [getSystemExecutableBindingKey(webappId, executable)]: executablePath
+      runtimeExecutables: {
+        ...settings.runtimeExecutables,
+        [getRuntimeExecutableBindingKey(webappId, runtime)]: executablePath
       }
     });
   }
 }
 
 export const webappManager = new WebappManager();
-export { WebappInstallPolicyError, WebappSystemRuntimeRequiredError };
+export { WebappInstallError, WebappInstallPolicyError, WebappRuntimeRequiredError };

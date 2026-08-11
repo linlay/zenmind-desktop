@@ -15,7 +15,12 @@ import {
   updateWebsiteItem
 } from "../webs/websites/actions";
 import { cacheWebsiteFavicon } from "../webs/websites/favicon-cache";
-import { webappManager } from "../webs/webapps/manager";
+import {
+  webappManager,
+  WebappInstallError,
+  WebappInstallPolicyError,
+  WebappRuntimeRequiredError
+} from "../webs/webapps/manager";
 import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
 import { webappWindowManager } from "../webs/webapps/window-manager";
@@ -44,6 +49,42 @@ export interface WebIpcHandlerOptions {
 
 function normalizeLogTarget(value: unknown): WebappLogTarget {
   return value === "error" ? "error" : "main";
+}
+
+export function createWebappImportDiagnostic(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof WebappInstallError) {
+    const suggestion = error instanceof WebappInstallPolicyError
+      ? error.code === "version_content_conflict"
+        ? t("webapp.importDiagnostic.versionConflict")
+        : error.code === "downgrade_not_allowed"
+          ? t("webapp.importDiagnostic.downgrade")
+          : t("webapp.importDiagnostic.identity")
+      : error.stage === "archive"
+        ? t("webapp.importDiagnostic.archive")
+        : error.stage === "manifest" || error.stage === "package"
+          ? t("webapp.importDiagnostic.manifest")
+          : error.stage === "runtime"
+            ? error instanceof WebappRuntimeRequiredError
+              ? t("webapp.importDiagnostic.runtimeRequired", { runtime: error.executable })
+              : t("webapp.importDiagnostic.runtimeInvalid")
+            : error.stage === "startup"
+              ? t("webapp.importDiagnostic.startup")
+              : t("webapp.importDiagnostic.install");
+    return {
+      stage: error.stage,
+      code: error.code,
+      message,
+      details: error.details,
+      suggestion
+    };
+  }
+  return {
+    stage: "install" as const,
+    code: "install_failed",
+    message,
+    suggestion: t("webapp.importDiagnostic.install")
+  };
 }
 
 export function listWebEntries(app: App) {
@@ -147,7 +188,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     const result = await showFileDialog({
       title: t("dialog.importWebapp.title"),
       properties: ["openFile"],
-      filters: [{ name: t("webapp.archiveFilter"), extensions: ["zip", "tgz", "tar.gz"] }]
+      filters: [{ name: t("webapp.archiveFilter"), extensions: ["zip"] }]
     });
 
     const currentItems = listWebEntries(app).items;
@@ -166,9 +207,41 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
 
     const importPath = result.filePaths[0];
     try {
-      const installResult = await webappManager.installArchive(app, importPath, {
-        source: "local"
-      });
+      let installResult;
+      try {
+        installResult = await webappManager.installArchive(app, importPath, {
+          source: "local"
+        });
+      } catch (error) {
+        if (!(error instanceof WebappRuntimeRequiredError)) {
+          throw error;
+        }
+        const runtimeSelection = await showFileDialog({
+          title: t("dialog.selectWebappRuntime.title", {
+            id: error.webappId,
+            runtime: error.executable
+          }),
+          properties: ["openFile"]
+        });
+        const executablePath = runtimeSelection.canceled
+          ? ""
+          : String(runtimeSelection.filePaths[0] || "").trim();
+        if (!executablePath || !path.isAbsolute(executablePath)) {
+          const diagnostic = createWebappImportDiagnostic(error);
+          return {
+            ok: false,
+            item: null,
+            items: listWebEntries(app).items,
+            path: importPath,
+            message: diagnostic.message,
+            diagnostic
+          };
+        }
+        webappManager.bindRuntimeExecutable(app, error.webappId, error.executable, executablePath);
+        installResult = await webappManager.installArchive(app, importPath, {
+          source: "local"
+        });
+      }
       const nextItems = listWebEntries(app).items;
       const item = nextItems.find((candidate) =>
         candidate.kind === "webapp" && candidate.id === installResult.itemId
@@ -182,15 +255,25 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
         items: nextItems,
         path: importPath,
         message: installResult.message,
+        ...(!installResult.ok ? {
+          diagnostic: {
+            stage: "install",
+            code: "install_failed",
+            message: installResult.message,
+            suggestion: t("webapp.importDiagnostic.install")
+          }
+        } : {}),
         ...(installResult.installPath ? { installPath: installResult.installPath } : {})
       };
     } catch (error) {
+      const diagnostic = createWebappImportDiagnostic(error);
       return {
         ok: false,
         item: null,
         items: listWebEntries(app).items,
         path: importPath,
-        message: error instanceof Error ? error.message : String(error)
+        message: diagnostic.message,
+        diagnostic
       };
     }
   });
@@ -274,6 +357,50 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
       settings,
       message: t("webapp.runtimeSettingsSaved")
     };
+  });
+  ipcMain.handle("webs.webapps.getUserConfig", async (_event: any, id: string) => {
+    try {
+      const result = webappManager.readUserConfigState(app, id);
+      return {
+        ok: true,
+        values: result.values,
+        ...(result.issues.length > 0 ? { issues: result.issues } : {}),
+        message: t("webapp.userConfigLoaded")
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        values: {},
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+  ipcMain.handle("webs.webapps.saveUserConfig", async (_event: any, id: string, input: any) => {
+    try {
+      const result = webappManager.saveUserConfig(app, id, input);
+      if (!result.ok) {
+        return {
+          ...result,
+          message: t("webapp.userConfigInvalid")
+        };
+      }
+      const item = webappManager.list(app).find((candidate) => candidate.id === id) ?? null;
+      const state = webappManager.runtime.getStatus(app, id);
+      if (item?.backend && state?.status === "running") {
+        await webappManager.runtime.restart(app, id);
+      }
+      options.emitWebappChanged?.("updated", id);
+      return {
+        ...result,
+        message: t("webapp.userConfigSaved")
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        values: {},
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
   });
   ipcMain.handle("webs.webapps.getPublishStatus", async (_event: any, id: string) =>
     getWebappPublishStatus(app, id)

@@ -6,25 +6,25 @@ import type {
   WebappRuntimeSettingsInput
 } from "../../../shared/contracts";
 import {
-  WEBAPP_ID_PATTERN,
-  WEBAPP_SYSTEM_EXECUTABLE_PATTERN
+  WEBAPP_ID_PATTERN
 } from "../../../shared/webapp-manifest";
 import { getDesktopWebsConfigRoot } from "../../user-paths";
 
 const DEFAULT_SETTINGS: WebappRuntimeSettings = {
   schemaVersion: 1,
-  systemExecutables: {}
+  runtimeExecutables: {}
 };
+const WEBAPP_RUNTIME_PATTERN = /^(?:python|java)$/u;
 
 export function getWebappRuntimeSettingsPath(app: App) {
   return path.join(getDesktopWebsConfigRoot(app), "runtime.json");
 }
 
-export function getSystemExecutableBindingKey(webappId: string, executable: string) {
-  if (!WEBAPP_ID_PATTERN.test(webappId) || !WEBAPP_SYSTEM_EXECUTABLE_PATTERN.test(executable)) {
-    throw new Error("invalid WebApp system executable binding key.");
+export function getRuntimeExecutableBindingKey(webappId: string, runtime: string) {
+  if (!WEBAPP_ID_PATTERN.test(webappId) || !WEBAPP_RUNTIME_PATTERN.test(runtime)) {
+    throw new Error("invalid WebApp runtime executable binding key.");
   }
-  return `${webappId}:${executable}`;
+  return `${webappId}:${runtime}`;
 }
 
 function normalizeBindings(value: unknown) {
@@ -38,11 +38,11 @@ function normalizeBindings(value: unknown) {
     }
     const separator = key.lastIndexOf(":");
     const webappId = separator > 0 ? key.slice(0, separator) : "";
-    const executable = separator > 0 ? key.slice(separator + 1) : "";
+    const runtime = separator > 0 ? key.slice(separator + 1) : "";
     const executablePath = rawPath.trim();
     if (
       WEBAPP_ID_PATTERN.test(webappId) &&
-      WEBAPP_SYSTEM_EXECUTABLE_PATTERN.test(executable) &&
+      WEBAPP_RUNTIME_PATTERN.test(runtime) &&
       executablePath &&
       path.isAbsolute(executablePath)
     ) {
@@ -56,14 +56,14 @@ export function readWebappRuntimeSettings(app: App): WebappRuntimeSettings {
   try {
     const parsed = JSON.parse(fs.readFileSync(getWebappRuntimeSettingsPath(app), "utf8")) as {
       schemaVersion?: unknown;
-      systemExecutables?: unknown;
+      runtimeExecutables?: unknown;
     };
     if (parsed.schemaVersion !== 1) {
       return DEFAULT_SETTINGS;
     }
     return {
       schemaVersion: 1,
-      systemExecutables: normalizeBindings(parsed.systemExecutables)
+      runtimeExecutables: normalizeBindings(parsed.runtimeExecutables)
     };
   } catch {
     return DEFAULT_SETTINGS;
@@ -76,7 +76,7 @@ export function writeWebappRuntimeSettings(
 ): WebappRuntimeSettings {
   const next: WebappRuntimeSettings = {
     schemaVersion: 1,
-    systemExecutables: normalizeBindings(input.systemExecutables)
+    runtimeExecutables: normalizeBindings(input.runtimeExecutables)
   };
   const filePath = getWebappRuntimeSettingsPath(app);
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
@@ -84,11 +84,11 @@ export function writeWebappRuntimeSettings(
   return next;
 }
 
-export function resolveConfiguredSystemExecutable(
+export function resolveConfiguredRuntimeExecutable(
   app: App,
   webappId: string,
-  executable: string
+  runtime: string
 ) {
-  const key = getSystemExecutableBindingKey(webappId, executable);
-  return readWebappRuntimeSettings(app).systemExecutables[key] ?? "";
+  const key = getRuntimeExecutableBindingKey(webappId, runtime);
+  return readWebappRuntimeSettings(app).runtimeExecutables[key] ?? "";
 }

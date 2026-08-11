@@ -4,11 +4,17 @@
   "properties": {
     "schemaVersion": {
       "type": "number",
-      "const": 1
+      "const": 2
     },
     "id": {
       "type": "string",
-      "pattern": "^[a-z0-9](?:[a-z0-9._-]{0,78}[a-z0-9])?$"
+      "pattern": "^webapp-[a-f0-9]{16}$"
+    },
+    "key": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 64,
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
     },
     "label": {
       "type": "string",
@@ -22,19 +28,12 @@
     "target": {
       "type": "string",
       "enum": [
-        "universal",
+        "any",
         "darwin-arm64",
         "darwin-x64",
-        "windows-arm64",
-        "windows-x64"
-      ]
-    },
-    "openMode": {
-      "default": "workspace",
-      "type": "string",
-      "enum": [
-        "workspace",
-        "dialog"
+        "darwin-universal",
+        "win32-arm64",
+        "win32-x64"
       ]
     },
     "appConfig": {
@@ -46,8 +45,328 @@
       "additionalProperties": {
         "$ref": "#/$defs/__schema0"
       },
-      "x-zenmind-maxBytes": 131072,
+      "x-desktop-maxBytes": 131072,
       "description": "Arbitrary JSON business configuration owned by the WebApp. Secrets are forbidden."
+    },
+    "userConfig": {
+      "type": "object",
+      "properties": {
+        "fields": {
+          "maxItems": 64,
+          "type": "array",
+          "items": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "text"
+                  },
+                  "default": {
+                    "type": "string",
+                    "maxLength": 4096
+                  },
+                  "placeholder": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "maxLength": {
+                    "default": 1024,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 4096
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "required",
+                  "type",
+                  "maxLength"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "textarea"
+                  },
+                  "default": {
+                    "type": "string",
+                    "maxLength": 12000
+                  },
+                  "placeholder": {
+                    "type": "string",
+                    "maxLength": 160
+                  },
+                  "maxLength": {
+                    "default": 8000,
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 12000
+                  },
+                  "rows": {
+                    "default": 4,
+                    "type": "integer",
+                    "minimum": 2,
+                    "maximum": 12
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "required",
+                  "type",
+                  "maxLength",
+                  "rows"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "number"
+                  },
+                  "default": {
+                    "type": "number"
+                  },
+                  "min": {
+                    "type": "number"
+                  },
+                  "max": {
+                    "type": "number"
+                  },
+                  "step": {
+                    "default": 1,
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "required",
+                  "type",
+                  "step"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "boolean"
+                  },
+                  "default": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "required",
+                  "type",
+                  "default"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "select"
+                  },
+                  "options": {
+                    "minItems": 1,
+                    "maxItems": 100,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "label": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 80
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        }
+                      },
+                      "required": [
+                        "label",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  },
+                  "default": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 256
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "required",
+                  "type",
+                  "options"
+                ],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string",
+                    "pattern": "^[a-z][A-Za-z0-9_]{0,63}$"
+                  },
+                  "label": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 80
+                  },
+                  "description": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 240
+                  },
+                  "required": {
+                    "default": false,
+                    "type": "boolean"
+                  },
+                  "type": {
+                    "type": "string",
+                    "const": "select"
+                  },
+                  "source": {
+                    "type": "string",
+                    "const": "desktop.agents"
+                  },
+                  "default": {
+                    "type": "string",
+                    "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+                  }
+                },
+                "required": [
+                  "name",
+                  "label",
+                  "required",
+                  "type",
+                  "source"
+                ],
+                "additionalProperties": false
+              }
+            ]
+          }
+        }
+      },
+      "required": [
+        "fields"
+      ],
+      "additionalProperties": false,
+      "x-desktop-maxBytes": 65536,
+      "description": "Settings form definitions and non-secret defaults. Desktop stores actual user values separately."
     },
     "frontend": {
       "type": "object",
@@ -62,22 +381,38 @@
           "minLength": 1,
           "maxLength": 512
         },
-        "spa": {
-          "default": true,
-          "type": "boolean"
-        },
-        "apiPrefix": {
-          "default": "/api",
-          "type": "string",
-          "minLength": 1,
-          "maxLength": 128
+        "routeConfig": {
+          "default": {
+            "backendPrefixes": []
+          },
+          "type": "object",
+          "properties": {
+            "backendPrefixes": {
+              "default": [],
+              "maxItems": 16,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 128
+              }
+            },
+            "navigationFallback": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 512
+            }
+          },
+          "required": [
+            "backendPrefixes"
+          ],
+          "additionalProperties": false
         }
       },
       "required": [
         "root",
         "index",
-        "spa",
-        "apiPrefix"
+        "routeConfig"
       ],
       "additionalProperties": false
     },
@@ -85,10 +420,6 @@
       "type": "object",
       "properties": {
         "command": {
-          "default": {
-            "type": "electron-node",
-            "script": "backend/server.mjs"
-          },
           "oneOf": [
             {
               "type": "object",
@@ -97,7 +428,7 @@
                   "type": "string",
                   "const": "electron-node"
                 },
-                "script": {
+                "entry": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 512
@@ -105,7 +436,7 @@
               },
               "required": [
                 "type",
-                "script"
+                "entry"
               ],
               "additionalProperties": false
             },
@@ -114,9 +445,9 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "bundled"
+                  "const": "executable"
                 },
-                "executable": {
+                "entry": {
                   "type": "string",
                   "minLength": 1,
                   "maxLength": 512
@@ -124,7 +455,7 @@
               },
               "required": [
                 "type",
-                "executable"
+                "entry"
               ],
               "additionalProperties": false
             },
@@ -133,16 +464,29 @@
               "properties": {
                 "type": {
                   "type": "string",
-                  "const": "system"
+                  "const": "runtime"
                 },
-                "executable": {
+                "runtime": {
                   "type": "string",
-                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"
+                  "enum": [
+                    "python",
+                    "java"
+                  ]
+                },
+                "minimumVersion": {
+                  "type": "string",
+                  "pattern": "^(?:0|[1-9]\\d*)(?:\\.(?:0|[1-9]\\d*)){0,2}$"
+                },
+                "entry": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 512
                 }
               },
               "required": [
                 "type",
-                "executable"
+                "runtime",
+                "entry"
               ],
               "additionalProperties": false
             }
@@ -184,7 +528,7 @@
                   "maxLength": 256,
                   "pattern": "^\\/(?!\\/)"
                 },
-                "timeoutMs": {
+                "startupTimeoutMs": {
                   "default": 10000,
                   "type": "integer",
                   "minimum": 1000,
@@ -194,7 +538,7 @@
               "required": [
                 "type",
                 "path",
-                "timeoutMs"
+                "startupTimeoutMs"
               ],
               "additionalProperties": false
             },
@@ -205,7 +549,7 @@
                   "type": "string",
                   "const": "tcp"
                 },
-                "timeoutMs": {
+                "startupTimeoutMs": {
                   "default": 10000,
                   "type": "integer",
                   "minimum": 1000,
@@ -214,7 +558,7 @@
               },
               "required": [
                 "type",
-                "timeoutMs"
+                "startupTimeoutMs"
               ],
               "additionalProperties": false
             }
@@ -237,72 +581,18 @@
       "additionalProperties": false
     },
     "desktopBridge": {
+      "default": {
+        "version": 1
+      },
       "type": "object",
       "properties": {
         "version": {
           "type": "number",
           "const": 1
-        },
-        "capabilities": {
-          "type": "object",
-          "properties": {
-            "assistant.chat": {
-              "type": "object",
-              "properties": {
-                "agentKey": {
-                  "type": "string",
-                  "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
-                },
-                "instruction": {
-                  "type": "string",
-                  "minLength": 1,
-                  "maxLength": 8000
-                }
-              },
-              "additionalProperties": false
-            },
-            "native.browser.external": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            },
-            "native.dialog.files": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            },
-            "native.dialog.directories": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            },
-            "native.dialog.savePath": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            },
-            "native.microphone": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            },
-            "native.clipboard.write": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            },
-            "native.notification": {
-              "type": "object",
-              "properties": {},
-              "additionalProperties": false
-            }
-          },
-          "additionalProperties": false
         }
       },
       "required": [
-        "version",
-        "capabilities"
+        "version"
       ],
       "additionalProperties": false
     }
@@ -310,12 +600,13 @@
   "required": [
     "schemaVersion",
     "id",
+    "key",
     "label",
     "version",
     "target",
-    "openMode",
     "appConfig",
-    "frontend"
+    "frontend",
+    "desktopBridge"
   ],
   "additionalProperties": false,
   "$defs": {
@@ -351,7 +642,7 @@
       ]
     }
   },
-  "title": "ZenMind WebApp Manifest v1",
-  "description": "Desktop's authoritative host contract. Business-owned configuration belongs in appConfig.",
-  "x-zenmind-manifestMaxBytes": 262144
+  "title": "Desktop WebApp Manifest v2",
+  "description": "Desktop's authoritative host contract. Business configuration belongs in appConfig; editable user values are stored outside the package.",
+  "x-desktop-manifestMaxBytes": 262144
 }

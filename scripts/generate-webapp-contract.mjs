@@ -22,7 +22,7 @@ function assertSameFile(expectedPath, generatedPath) {
   }
 }
 
-const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-contract-"));
+const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-contract-"));
 try {
   await build({
     configFile: false,
@@ -47,13 +47,18 @@ try {
   fs.writeFileSync(generatedValidator, normalizedValidator, "utf8");
   const contract = await import(`${pathToFileURL(generatedValidator).href}?v=${Date.now()}`);
   const schema = contract.createWebappManifestJsonSchema();
-  schema.title = "ZenMind WebApp Manifest v1";
-  schema.description = "Desktop's authoritative host contract. Business-owned configuration belongs in appConfig.";
-  schema["x-zenmind-manifestMaxBytes"] = contract.WEBAPP_MANIFEST_MAX_BYTES;
+  schema.title = "Desktop WebApp Manifest v2";
+  schema.description = "Desktop's authoritative host contract. Business configuration belongs in appConfig; editable user values are stored outside the package.";
+  schema["x-desktop-manifestMaxBytes"] = contract.WEBAPP_MANIFEST_MAX_BYTES;
   if (schema.properties?.appConfig) {
-    schema.properties.appConfig["x-zenmind-maxBytes"] = contract.WEBAPP_APP_CONFIG_MAX_BYTES;
+    schema.properties.appConfig["x-desktop-maxBytes"] = contract.WEBAPP_APP_CONFIG_MAX_BYTES;
     schema.properties.appConfig.description =
       "Arbitrary JSON business configuration owned by the WebApp. Secrets are forbidden.";
+  }
+  if (schema.properties?.userConfig) {
+    schema.properties.userConfig["x-desktop-maxBytes"] = contract.WEBAPP_USER_CONFIG_MAX_BYTES;
+    schema.properties.userConfig.description =
+      "Settings form definitions and non-secret defaults. Desktop stores actual user values separately.";
   }
   const generatedSchema = path.join(temporaryRoot, schemaName);
   fs.writeFileSync(generatedSchema, `${JSON.stringify(schema, null, 2)}\n`, "utf8");

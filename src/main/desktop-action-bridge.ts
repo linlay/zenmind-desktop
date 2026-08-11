@@ -30,8 +30,7 @@ import {
 } from "../shared/webapp-bridge";
 import {
   WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS,
-  WEBAPP_ID_PATTERN,
-  getWebappAssistantChatConfig
+  WEBAPP_ID_PATTERN
 } from "../shared/webapp-manifest";
 import {
   DESKTOP_ACTION_BRIDGE_HOST,
@@ -71,7 +70,7 @@ import {
 import {
   webappManager,
   WebappInstallPolicyError,
-  WebappSystemRuntimeRequiredError
+  WebappRuntimeRequiredError
 } from "./webs/webapps/manager";
 import { webappWindowManager } from "./webs/webapps/window-manager";
 import {
@@ -1254,7 +1253,7 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
     if (error instanceof WebappInstallPolicyError) {
       return fail(action, error.code, error.message, error.details);
     }
-    if (!(error instanceof WebappSystemRuntimeRequiredError)) {
+    if (!(error instanceof WebappRuntimeRequiredError)) {
       throw error;
     }
     const dialogOptions: OpenDialogOptions = {
@@ -1274,7 +1273,7 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
         executable: error.executable
       });
     }
-    webappManager.bindSystemExecutable(
+    webappManager.bindRuntimeExecutable(
       options.app,
       error.webappId,
       error.executable,
@@ -1286,7 +1285,7 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
       if (retryError instanceof WebappInstallPolicyError) {
         return fail(action, retryError.code, retryError.message, retryError.details);
       }
-      if (retryError instanceof WebappSystemRuntimeRequiredError) {
+      if (retryError instanceof WebappRuntimeRequiredError) {
         return fail(action, retryError.code, retryError.message, {
           webappId: retryError.webappId,
           executable: retryError.executable,
@@ -1370,7 +1369,6 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     const patch = asRecord(args.patch ?? args.input ?? args);
     const result = webappManager.update(options.app, webappId, {
       ...(typeof patch.label === "string" ? { label: patch.label } : {}),
-      ...(typeof patch.copilotAgentKey === "string" ? { copilotAgentKey: patch.copilotAgentKey } : {}),
       ...(patch.openMode === "workspace" || patch.openMode === "dialog" ? { openMode: patch.openMode } : {})
     });
     if (result.ok) {
@@ -1486,10 +1484,9 @@ function getWebappBridgeCapabilities(
   webappId: string
 ): WebappBridgeCapabilitiesResult | null {
   const item = webappManager.list(options.app).find((candidate) => candidate.id === webappId) ?? null;
-  if (!item || item.schemaVersion !== 1) {
+  if (!item || item.schemaVersion !== 2) {
     return null;
   }
-  const declared = new Set(Object.keys(item.desktopBridge?.capabilities ?? {}));
   const microphonePermission = getMicrophonePermission(options);
   const notificationAvailable = options.showNotification ? true : Notification.isSupported();
   return {
@@ -1504,7 +1501,7 @@ function getWebappBridgeCapabilities(
         return {
           id,
           status,
-          declared: declared.has(id),
+          declared: true,
           permission: id === "native.microphone"
             ? microphonePermission
             : id === "native.notification" && !notificationAvailable
@@ -1536,7 +1533,7 @@ async function executeNativeWebappAction(
     const result = getWebappBridgeCapabilities(options, webappId);
     return result
       ? ok(action, result)
-      : fail(action, "unsupported_schema", "Desktop Bridge v1 requires WebApp manifest schema v1.");
+      : fail(action, "unsupported_schema", "Desktop Bridge v1 requires WebApp manifest schema v2.");
   }
 
   const owner = getWebappDialogOwner(options, webappId);
@@ -1810,51 +1807,47 @@ async function executeAction(
       }
       const settings = getAssistantSettings(options.app);
       let agentKey = settings.desktopHelperAgentKey;
-      let assistantMessage = message;
       if (isWebappInvocation) {
         const item = webappManager.list(options.app).find((candidate) => candidate.id === invocation.webappId) ?? null;
-        const assistantConfig = item ? getWebappAssistantChatConfig(item) : null;
-        if (!assistantConfig) {
-          return fail(action, "forbidden", "assistant.chat is not declared by this WebApp.");
+        if (!item) {
+          return fail(action, "forbidden", "WebApp is not installed.");
         }
-        if (assistantConfig.agentKey) {
+        const agentField = item.userConfig?.fields.find((field) =>
+          field.type === "select" && "source" in field && field.source === "desktop.agents"
+        );
+        const userConfig = webappManager.readUserConfig(options.app, item.id);
+        const configuredAgentKey = agentField && typeof userConfig[agentField.name] === "string"
+          ? String(userConfig[agentField.name])
+          : "";
+        if (configuredAgentKey) {
           let agents: Awaited<ReturnType<AgentPlatformAssistantBridge["listAgents"]>> = [];
           try {
             agents = await options.assistantBridge.listAgents();
           } catch {
             agents = [];
           }
-          if (!agents.some((candidate) => candidate.agentKey === assistantConfig.agentKey)) {
+          if (!agents.some((candidate) => candidate.agentKey === configuredAgentKey)) {
             return fail(
               action,
               "assistant_agent_unavailable",
-              `assistant agent is unavailable: ${assistantConfig.agentKey}`
+              `assistant agent is unavailable: ${configuredAgentKey}`
             );
           }
-          agentKey = assistantConfig.agentKey;
-        }
-        if (assistantConfig.instruction) {
-          assistantMessage = [
-            "[WebApp instruction]",
-            assistantConfig.instruction,
-            "",
-            "[User input]",
-            message
-          ].join("\n");
+          agentKey = configuredAgentKey;
         }
       }
-      if (assistantMessage.length > MAX_ASSISTANT_PROMPT_CHARS) {
+      if (message.length > MAX_ASSISTANT_PROMPT_CHARS) {
         return fail(
           action,
           "assistant_message_too_long",
-          `combined assistant input must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`
+          `assistant input must be at most ${MAX_ASSISTANT_PROMPT_CHARS} characters`
         );
       }
       const completion = await options.assistantBridge.completeText({
         agentKey,
         source: "copilot",
         action: "chat",
-        message: assistantMessage
+        message
       });
       if (!completion.ok) {
         return fail(action, "assistant_failed", completion.message, {

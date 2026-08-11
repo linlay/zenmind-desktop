@@ -4936,16 +4936,18 @@ function refine(fn, _params = {}) {
 function superRefine(fn, params) {
   return /* @__PURE__ */ _superRefine(fn, params);
 }
-const WEBAPP_MANIFEST_VERSION = 1;
+const WEBAPP_MANIFEST_VERSION = 2;
 const WEBAPP_MANIFEST_MAX_BYTES = 256 * 1024;
 const WEBAPP_APP_CONFIG_MAX_BYTES = 128 * 1024;
-const WEBAPP_ASSISTANT_INSTRUCTION_MAX_CHARS = 8e3;
+const WEBAPP_USER_CONFIG_MAX_BYTES = 64 * 1024;
 const WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS = 12e3;
-const WEBAPP_ID_PATTERN = /^[a-z0-9](?:[a-z0-9._-]{0,78}[a-z0-9])?$/u;
+const WEBAPP_ID_PATTERN = /^webapp-[a-f0-9]{16}$/u;
+const WEBAPP_KEY_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
 const WEBAPP_AGENT_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
-const WEBAPP_SYSTEM_EXECUTABLE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
 const SEMVER_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$/u;
+const MINIMUM_RUNTIME_VERSION_PATTERN = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,2}$/u;
 const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
+const USER_CONFIG_FIELD_NAME_PATTERN = /^[a-z][A-Za-z0-9_]{0,63}$/u;
 const RESERVED_ENV_KEYS = /* @__PURE__ */ new Set([
   "HOST",
   "PORT",
@@ -4955,6 +4957,7 @@ const RESERVED_ENV_KEYS = /* @__PURE__ */ new Set([
   "WEBAPP_STATE_DIR",
   "WEBAPP_LOG_DIR",
   "WEBAPP_MANIFEST_PATH",
+  "WEBAPP_USER_CONFIG_PATH",
   "DESKTOP_ACTION_BRIDGE_URL",
   "DESKTOP_ACTION_BRIDGE_TOKEN"
 ]);
@@ -4967,10 +4970,13 @@ function jsonBytes(value) {
     return Number.POSITIVE_INFINITY;
   }
 }
-function findUnsafeAppConfigKey(value, path = []) {
+function normalizeJsonKey(key) {
+  return key.replace(/([a-z0-9])([A-Z])/gu, "$1_$2").replace(/-/gu, "_").toLowerCase();
+}
+function findUnsafeJsonKey(value, path = []) {
   if (Array.isArray(value)) {
     for (let index = 0; index < value.length; index += 1) {
-      const issue2 = findUnsafeAppConfigKey(value[index], [...path, String(index)]);
+      const issue2 = findUnsafeJsonKey(value[index], [...path, String(index)]);
       if (issue2) {
         return issue2;
       }
@@ -4982,11 +4988,10 @@ function findUnsafeAppConfigKey(value, path = []) {
   }
   for (const [key, child] of Object.entries(value)) {
     const nextPath = [...path, key];
-    const normalizedKey = key.replace(/([a-z0-9])([A-Z])/gu, "$1_$2").replace(/-/gu, "_").toLowerCase();
-    if (DANGEROUS_JSON_KEYS.has(key) || SECRET_LIKE_KEY_PATTERN.test(normalizedKey)) {
+    if (DANGEROUS_JSON_KEYS.has(key) || SECRET_LIKE_KEY_PATTERN.test(normalizeJsonKey(key))) {
       return nextPath.join(".");
     }
-    const issue2 = findUnsafeAppConfigKey(child, nextPath);
+    const issue2 = findUnsafeJsonKey(child, nextPath);
     if (issue2) {
       return issue2;
     }
@@ -5008,7 +5013,7 @@ const webappAppConfigSchema = record(string(), webappJsonValueSchema).superRefin
       message: `appConfig must not exceed ${WEBAPP_APP_CONFIG_MAX_BYTES} bytes.`
     });
   }
-  const unsafePath = findUnsafeAppConfigKey(value);
+  const unsafePath = findUnsafeJsonKey(value);
   if (unsafePath) {
     context.addIssue({
       code: "custom",
@@ -5022,11 +5027,11 @@ const safeRelativePathSchema = string().min(1).max(512).superRefine((value, cont
     context.addIssue({ code: "custom", message: "must be a safe relative path." });
   }
 });
-const apiPrefixSchema = string().min(1).max(128).superRefine((value, context) => {
-  if (!value.startsWith("/") || value.length > 1 && value.endsWith("/") || value === "/__desktop" || value.startsWith("/__desktop/") || value.includes("?") || value.includes("#")) {
+const backendPrefixSchema = string().min(1).max(128).superRefine((value, context) => {
+  if (!value.startsWith("/") || value === "/" || value.endsWith("/") || value === "/__desktop" || value.startsWith("/__desktop/") || value.includes("?") || value.includes("#") || value.includes("\\") || value.split("/").some((segment) => segment === "." || segment === "..")) {
     context.addIssue({
       code: "custom",
-      message: "must be an absolute URL path without a trailing slash, query, fragment, or /__desktop prefix."
+      message: "must be an absolute URL prefix without a trailing slash, query, fragment, or /__desktop path."
     });
   }
 });
@@ -5035,7 +5040,7 @@ const environmentSchema = record(
   string().max(8192)
 ).superRefine((value, context) => {
   for (const key of Object.keys(value)) {
-    if (RESERVED_ENV_KEYS.has(key) || key.startsWith("DESKTOP_")) {
+    if (RESERVED_ENV_KEYS.has(key) || key.startsWith("DESKTOP_") || key.startsWith("WEBAPP_")) {
       context.addIssue({
         code: "custom",
         path: [key],
@@ -5044,73 +5049,197 @@ const environmentSchema = record(
     }
   }
 });
+const userConfigFieldBase = {
+  name: string().regex(USER_CONFIG_FIELD_NAME_PATTERN),
+  label: string().trim().min(1).max(80),
+  description: string().trim().min(1).max(240).optional(),
+  required: boolean().default(false)
+};
+const textUserConfigFieldSchema = strictObject({
+  ...userConfigFieldBase,
+  type: literal("text"),
+  default: string().max(4096).optional(),
+  placeholder: string().max(160).optional(),
+  maxLength: number().int().min(1).max(4096).default(1024)
+}).superRefine((value, context) => {
+  if (value.default !== void 0 && value.default.length > value.maxLength) {
+    context.addIssue({
+      code: "custom",
+      path: ["default"],
+      message: "default must not exceed maxLength."
+    });
+  }
+});
+const textareaUserConfigFieldSchema = strictObject({
+  ...userConfigFieldBase,
+  type: literal("textarea"),
+  default: string().max(12e3).optional(),
+  placeholder: string().max(160).optional(),
+  maxLength: number().int().min(1).max(12e3).default(8e3),
+  rows: number().int().min(2).max(12).default(4)
+}).superRefine((value, context) => {
+  if (value.default !== void 0 && value.default.length > value.maxLength) {
+    context.addIssue({
+      code: "custom",
+      path: ["default"],
+      message: "default must not exceed maxLength."
+    });
+  }
+});
+const numberUserConfigFieldSchema = strictObject({
+  ...userConfigFieldBase,
+  type: literal("number"),
+  default: number().finite().optional(),
+  min: number().finite().optional(),
+  max: number().finite().optional(),
+  step: number().finite().positive().default(1)
+}).superRefine((value, context) => {
+  if (value.min !== void 0 && value.max !== void 0 && value.min > value.max) {
+    context.addIssue({ code: "custom", path: ["min"], message: "min must not exceed max." });
+  }
+  if (value.default !== void 0 && value.min !== void 0 && value.default < value.min) {
+    context.addIssue({ code: "custom", path: ["default"], message: "default must be at least min." });
+  }
+  if (value.default !== void 0 && value.max !== void 0 && value.default > value.max) {
+    context.addIssue({ code: "custom", path: ["default"], message: "default must not exceed max." });
+  }
+});
+const booleanUserConfigFieldSchema = strictObject({
+  ...userConfigFieldBase,
+  type: literal("boolean"),
+  default: boolean().default(false)
+});
+const selectOptionSchema = strictObject({
+  label: string().trim().min(1).max(80),
+  value: string().min(1).max(256)
+});
+const staticSelectUserConfigFieldSchema = strictObject({
+  ...userConfigFieldBase,
+  type: literal("select"),
+  options: array(selectOptionSchema).min(1).max(100),
+  default: string().min(1).max(256).optional()
+}).superRefine((value, context) => {
+  const optionValues = /* @__PURE__ */ new Set();
+  value.options.forEach((option, index) => {
+    if (optionValues.has(option.value)) {
+      context.addIssue({
+        code: "custom",
+        path: ["options", index, "value"],
+        message: "select option values must be unique."
+      });
+    }
+    optionValues.add(option.value);
+  });
+  if (value.default !== void 0 && !optionValues.has(value.default)) {
+    context.addIssue({
+      code: "custom",
+      path: ["default"],
+      message: "default must match one select option value."
+    });
+  }
+});
+const dynamicSelectUserConfigFieldSchema = strictObject({
+  ...userConfigFieldBase,
+  type: literal("select"),
+  source: literal("desktop.agents"),
+  default: string().regex(WEBAPP_AGENT_KEY_PATTERN).optional()
+});
+const webappUserConfigFieldSchema = union([
+  textUserConfigFieldSchema,
+  textareaUserConfigFieldSchema,
+  numberUserConfigFieldSchema,
+  booleanUserConfigFieldSchema,
+  staticSelectUserConfigFieldSchema,
+  dynamicSelectUserConfigFieldSchema
+]);
+const webappUserConfigSchema = strictObject({
+  fields: array(webappUserConfigFieldSchema).max(64)
+}).superRefine((value, context) => {
+  const names = /* @__PURE__ */ new Set();
+  value.fields.forEach((field, index) => {
+    if (names.has(field.name)) {
+      context.addIssue({
+        code: "custom",
+        path: ["fields", index, "name"],
+        message: "userConfig field names must be unique."
+      });
+    }
+    names.add(field.name);
+    if (DANGEROUS_JSON_KEYS.has(field.name) || SECRET_LIKE_KEY_PATTERN.test(normalizeJsonKey(field.name))) {
+      context.addIssue({
+        code: "custom",
+        path: ["fields", index, "name"],
+        message: "userConfig field names must not be reserved or secret-like."
+      });
+    }
+  });
+  if (jsonBytes(value) > WEBAPP_USER_CONFIG_MAX_BYTES) {
+    context.addIssue({
+      code: "custom",
+      message: `userConfig must not exceed ${WEBAPP_USER_CONFIG_MAX_BYTES} bytes.`
+    });
+  }
+});
 const httpHealthSchema = strictObject({
   type: literal("http"),
   path: string().min(1).max(256).regex(/^\/(?!\/)/u),
-  timeoutMs: number().int().min(1e3).max(12e4).default(1e4)
+  startupTimeoutMs: number().int().min(1e3).max(12e4).default(1e4)
 });
 const tcpHealthSchema = strictObject({
   type: literal("tcp"),
-  timeoutMs: number().int().min(1e3).max(12e4).default(1e4)
+  startupTimeoutMs: number().int().min(1e3).max(12e4).default(1e4)
 });
 const backendCommandSchema = discriminatedUnion("type", [
   strictObject({
     type: literal("electron-node"),
-    script: safeRelativePathSchema
+    entry: safeRelativePathSchema
   }),
   strictObject({
-    type: literal("bundled"),
-    executable: safeRelativePathSchema
+    type: literal("executable"),
+    entry: safeRelativePathSchema
   }),
   strictObject({
-    type: literal("system"),
-    executable: string().regex(WEBAPP_SYSTEM_EXECUTABLE_PATTERN)
+    type: literal("runtime"),
+    runtime: _enum(["python", "java"]),
+    minimumVersion: string().regex(MINIMUM_RUNTIME_VERSION_PATTERN).optional(),
+    entry: safeRelativePathSchema
   })
 ]);
 const webappBackendSchema = strictObject({
-  command: backendCommandSchema.default({
-    type: "electron-node",
-    script: "backend/server.mjs"
-  }),
+  command: backendCommandSchema,
   args: array(string().max(4096)).max(128).default([]),
   env: environmentSchema.default({}),
   health: discriminatedUnion("type", [httpHealthSchema, tcpHealthSchema]),
   shutdownTimeoutMs: number().int().min(1e3).max(3e4).default(3e3)
 });
-const webappAssistantChatCapabilitySchema = strictObject({
-  agentKey: string().regex(WEBAPP_AGENT_KEY_PATTERN).optional(),
-  instruction: string().trim().min(1).max(WEBAPP_ASSISTANT_INSTRUCTION_MAX_CHARS).optional()
-});
-const emptyCapabilitySchema = strictObject({});
-const webappBridgeCapabilitiesSchema = strictObject({
-  "assistant.chat": webappAssistantChatCapabilitySchema.optional(),
-  "native.browser.external": emptyCapabilitySchema.optional(),
-  "native.dialog.files": emptyCapabilitySchema.optional(),
-  "native.dialog.directories": emptyCapabilitySchema.optional(),
-  "native.dialog.savePath": emptyCapabilitySchema.optional(),
-  "native.microphone": emptyCapabilitySchema.optional(),
-  "native.clipboard.write": emptyCapabilitySchema.optional(),
-  "native.notification": emptyCapabilitySchema.optional()
-});
-const webappManifestSchema = strictObject({
+const webappManifestV2Schema = strictObject({
   schemaVersion: literal(WEBAPP_MANIFEST_VERSION),
   id: string().regex(WEBAPP_ID_PATTERN),
+  key: string().min(3).max(64).regex(WEBAPP_KEY_PATTERN),
   label: string().trim().min(1).max(80),
   version: string().regex(SEMVER_PATTERN),
-  target: _enum(["universal", "darwin-arm64", "darwin-x64", "windows-arm64", "windows-x64"]),
-  openMode: _enum(["workspace", "dialog"]).default("workspace"),
+  target: _enum([
+    "any",
+    "darwin-arm64",
+    "darwin-x64",
+    "darwin-universal",
+    "win32-arm64",
+    "win32-x64"
+  ]),
   appConfig: webappAppConfigSchema.default({}),
+  userConfig: webappUserConfigSchema.optional(),
   frontend: strictObject({
     root: safeRelativePathSchema,
     index: safeRelativePathSchema,
-    spa: boolean().default(true),
-    apiPrefix: apiPrefixSchema.default("/api")
+    routeConfig: strictObject({
+      backendPrefixes: array(backendPrefixSchema).max(16).default([]),
+      navigationFallback: safeRelativePathSchema.optional()
+    }).default({ backendPrefixes: [] })
   }),
   backend: webappBackendSchema.optional(),
   desktopBridge: strictObject({
-    version: literal(1),
-    capabilities: webappBridgeCapabilitiesSchema
-  }).optional()
+    version: literal(1)
+  }).default({ version: 1 })
 }).superRefine((value, context) => {
   if (jsonBytes(value) > WEBAPP_MANIFEST_MAX_BYTES) {
     context.addIssue({
@@ -5118,14 +5247,44 @@ const webappManifestSchema = strictObject({
       message: `webapp.json must not exceed ${WEBAPP_MANIFEST_MAX_BYTES} bytes.`
     });
   }
-  if (value.backend?.command.type === "bundled" && value.target === "universal") {
+  if (value.frontend.routeConfig.backendPrefixes.length > 0 && !value.backend) {
+    context.addIssue({
+      code: "custom",
+      path: ["frontend", "routeConfig", "backendPrefixes"],
+      message: "backendPrefixes require a backend."
+    });
+  }
+  const prefixes = /* @__PURE__ */ new Set();
+  value.frontend.routeConfig.backendPrefixes.forEach((prefix, index) => {
+    if (prefixes.has(prefix)) {
+      context.addIssue({
+        code: "custom",
+        path: ["frontend", "routeConfig", "backendPrefixes", index],
+        message: "backendPrefixes must be unique."
+      });
+    }
+    prefixes.add(prefix);
+  });
+  if (value.backend?.command.type === "executable" && value.target === "any") {
     context.addIssue({
       code: "custom",
       path: ["target"],
-      message: "bundled backends require an explicit platform target."
+      message: "executable backends require an explicit platform target."
     });
   }
+  if (value.backend?.command.type === "runtime") {
+    const extension = value.backend.command.entry.split(".").pop()?.toLowerCase() ?? "";
+    const expected = value.backend.command.runtime === "python" ? "py" : "jar";
+    if (extension !== expected) {
+      context.addIssue({
+        code: "custom",
+        path: ["backend", "command", "entry"],
+        message: `${value.backend.command.runtime} runtime entry must use .${expected}.`
+      });
+    }
+  }
 });
+const webappManifestSchema = webappManifestV2Schema;
 class WebappManifestValidationError extends Error {
   issues;
   constructor(issues) {
@@ -5147,14 +5306,8 @@ function parseWebappManifest(value) {
 function safeParseWebappManifest(value) {
   return webappManifestSchema.safeParse(value);
 }
-function getWebappAssistantChatConfig(manifest) {
-  return manifest.desktopBridge?.capabilities["assistant.chat"] ?? null;
-}
-function webappDeclaresCapability(manifest, capability) {
-  return Object.hasOwn(manifest.desktopBridge?.capabilities ?? {}, capability);
-}
 function createWebappManifestJsonSchema() {
-  return toJSONSchema(webappManifestSchema, {
+  return toJSONSchema(webappManifestV2Schema, {
     target: "draft-2020-12",
     unrepresentable: "any"
   });
@@ -5162,21 +5315,19 @@ function createWebappManifestJsonSchema() {
 export {
   WEBAPP_AGENT_KEY_PATTERN,
   WEBAPP_APP_CONFIG_MAX_BYTES,
-  WEBAPP_ASSISTANT_INSTRUCTION_MAX_CHARS,
   WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS,
   WEBAPP_ID_PATTERN,
+  WEBAPP_KEY_PATTERN,
   WEBAPP_MANIFEST_MAX_BYTES,
   WEBAPP_MANIFEST_VERSION,
-  WEBAPP_SYSTEM_EXECUTABLE_PATTERN,
+  WEBAPP_USER_CONFIG_MAX_BYTES,
   WebappManifestValidationError,
   createWebappManifestJsonSchema,
-  getWebappAssistantChatConfig,
   parseWebappManifest,
   safeParseWebappManifest,
   webappAppConfigSchema,
-  webappAssistantChatCapabilitySchema,
   webappBackendSchema,
-  webappBridgeCapabilitiesSchema,
-  webappDeclaresCapability,
-  webappManifestSchema
+  webappManifestSchema,
+  webappUserConfigFieldSchema,
+  webappUserConfigSchema
 };
