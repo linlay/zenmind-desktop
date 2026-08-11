@@ -4,6 +4,8 @@ import fs from "node:fs";
 import http from "node:http";
 import os from "node:os";
 import path from "node:path";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -16,8 +18,11 @@ const {
 } = require("../dist-electron/shared/webapp-manifest.js");
 const {
   getWebappDir,
+  getWebappUserConfigPath,
+  readWebappUserConfigState,
   readWebappItemFromDir,
   readWebappItems,
+  writeWebappUserConfigValues,
   writeCanonicalWebappManifest
 } = require("../dist-electron/main/webs/webapps/store.js");
 const {
@@ -46,11 +51,15 @@ const {
 } = require("../dist-electron/main/webs/webapps/install-transaction.js");
 const {
   installWebsiteAppArchiveFromPath,
+  WebappInstallError,
   WebappInstallPolicyError
 } = require("../dist-electron/main/marketplace/website-app-market.js");
 const {
   WEBAPP_BRIDGE_MODULE_SOURCE
 } = require("../dist-electron/main/webs/webapps/bridge-module.js");
+const {
+  createWebappImportDiagnostic
+} = require("../dist-electron/main/ipc/web-handlers.js");
 
 function createApp(homePath) {
   return {
@@ -80,23 +89,30 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
-function manifest(id, overrides = {}) {
+function webappId(key) {
+  return `webapp-${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
+}
+
+function manifest(key, overrides = {}) {
   return {
-    schemaVersion: 1,
-    id,
+    schemaVersion: 2,
+    id: overrides.id ?? webappId(key),
+    key: overrides.key ?? key,
     label: overrides.label ?? "Local Demo",
     version: overrides.version ?? "1.0.0",
-    target: overrides.target ?? "universal",
-    openMode: overrides.openMode ?? "workspace",
+    target: overrides.target ?? "any",
     appConfig: overrides.appConfig ?? {},
+    ...(Object.hasOwn(overrides, "userConfig") ? { userConfig: overrides.userConfig } : {}),
     frontend: overrides.frontend ?? {
       root: "frontend",
       index: "index.html",
-      spa: true,
-      apiPrefix: "/api"
+      routeConfig: {
+        backendPrefixes: overrides.backend ? ["/api"] : [],
+        navigationFallback: "index.html"
+      }
     },
     ...(Object.hasOwn(overrides, "backend") ? { backend: overrides.backend } : {}),
-    desktopBridge: overrides.desktopBridge ?? { version: 1, capabilities: {} }
+    desktopBridge: overrides.desktopBridge ?? { version: 1 }
   };
 }
 
@@ -104,6 +120,7 @@ function backendServerSource(options = {}) {
   if (options.exitImmediately) return "process.exit(1);\n";
   return `
 import http from "node:http";
+import fs from "node:fs";
 const host = process.env.HOST;
 const port = Number.parseInt(process.env.PORT, 10);
 const server = http.createServer((request, response) => {
@@ -121,7 +138,9 @@ const server = http.createServer((request, response) => {
       stateDir: process.env.WEBAPP_STATE_DIR,
       logDir: process.env.WEBAPP_LOG_DIR,
       bridgeUrl: process.env.DESKTOP_ACTION_BRIDGE_URL,
-      hasBridgeToken: Boolean(process.env.DESKTOP_ACTION_BRIDGE_TOKEN)
+      hasBridgeToken: Boolean(process.env.DESKTOP_ACTION_BRIDGE_TOKEN),
+      userConfigPath: process.env.WEBAPP_USER_CONFIG_PATH,
+      userConfig: JSON.parse(fs.readFileSync(process.env.WEBAPP_USER_CONFIG_PATH, "utf8"))
     }));
     return;
   }
@@ -134,30 +153,31 @@ server.listen(port, host);
 
 function nodeBackend(overrides = {}) {
   return {
-    command: { type: "electron-node", script: "backend/server.mjs" },
+    command: { type: "electron-node", entry: "backend/server.mjs" },
     args: [],
     env: {},
-    health: { type: "http", path: "/health", timeoutMs: 2_000 },
+    health: { type: "http", path: "/health", startupTimeoutMs: 2_000 },
     shutdownTimeoutMs: 1_000,
     ...overrides
   };
 }
 
-function writeWebapp(root, id, options = {}) {
+function writeWebapp(root, key, options = {}) {
+  const id = options.id ?? webappId(key);
   const appDir = path.join(root, id);
   fs.mkdirSync(path.join(appDir, "frontend"), { recursive: true });
-  fs.writeFileSync(path.join(appDir, "frontend", "index.html"), "<!doctype html><title>WebApp v1</title>", "utf8");
-  const appManifest = manifest(id, options);
+  fs.writeFileSync(path.join(appDir, "frontend", "index.html"), "<!doctype html><title>WebApp v2</title>", "utf8");
+  const appManifest = manifest(key, { ...options, id });
   if (appManifest.backend?.command.type === "electron-node") {
     fs.mkdirSync(path.join(appDir, "backend"), { recursive: true });
     fs.writeFileSync(
-      path.join(appDir, appManifest.backend.command.script),
+      path.join(appDir, appManifest.backend.command.entry),
       options.backendSource ?? backendServerSource(),
       "utf8"
     );
   }
-  if (appManifest.backend?.command.type === "bundled") {
-    const executable = path.join(appDir, appManifest.backend.command.executable);
+  if (appManifest.backend?.command.type === "executable") {
+    const executable = path.join(appDir, appManifest.backend.command.entry);
     fs.mkdirSync(path.dirname(executable), { recursive: true });
     fs.writeFileSync(executable, options.backendSource ?? "binary", "utf8");
     fs.chmodSync(executable, 0o755);
@@ -166,9 +186,9 @@ function writeWebapp(root, id, options = {}) {
   return appDir;
 }
 
-function readUrl(target) {
+function readUrl(target, headers = {}) {
   return new Promise((resolve, reject) => {
-    http.get(target, (response) => {
+    http.get(target, { headers }, (response) => {
       const chunks = [];
       response.on("data", (chunk) => chunks.push(chunk));
       response.on("end", () => resolve({
@@ -180,11 +200,17 @@ function readUrl(target) {
   });
 }
 
-async function writeArchive(root, id, options = {}) {
-  const packageRoot = path.join(root, `source-${id}-${options.version ?? "1.0.0"}-${Math.random()}`);
-  const appDir = writeWebapp(packageRoot, id, options);
+async function writeArchive(root, key, options = {}) {
+  const id = options.id ?? webappId(key);
+  const packageRoot = path.join(root, `source-${key}-${options.version ?? "1.0.0"}-${Math.random()}`);
+  const appDir = writeWebapp(packageRoot, key, { ...options, id });
   if (options.frontendContent) {
     fs.writeFileSync(path.join(appDir, "frontend", "index.html"), options.frontendContent, "utf8");
+  }
+  for (const [relativePath, content] of Object.entries(options.extraFiles ?? {})) {
+    const absolutePath = path.join(appDir, relativePath);
+    fs.mkdirSync(path.dirname(absolutePath), { recursive: true });
+    fs.writeFileSync(absolutePath, content, "utf8");
   }
   const zip = new JSZip();
   const visit = (current) => {
@@ -201,27 +227,53 @@ async function writeArchive(root, id, options = {}) {
   return archivePath;
 }
 
-test("manifest v1 preserves arbitrary business appConfig and one typed assistant route", () => {
+test("manifest v2 preserves appConfig and enables Desktop Bridge v1 without capability declarations", () => {
   const parsed = parseWebappManifest(manifest("meeting-notes", {
     appConfig: {
       outputLanguage: "zh-CN",
       sections: ["摘要", "行动项"],
       format: { markdown: true, density: 2 }
     },
-    desktopBridge: {
-      version: 1,
-      capabilities: {
-        "assistant.chat": {
-          agentKey: "summary-agent",
-          instruction: "只输出摘要和行动项。"
+    userConfig: {
+      fields: [
+        {
+          name: "agentKey",
+          type: "select",
+          source: "desktop.agents",
+          label: "智能体",
+          required: true,
+          default: "summary-agent"
         },
-        "native.dialog.directories": {}
-      }
+        {
+          name: "prompt",
+          type: "textarea",
+          label: "处理要求",
+          default: "只输出摘要和行动项。"
+        }
+      ]
+    },
+    desktopBridge: {
+      version: 1
     }
   }));
-  assert.equal(parsed.schemaVersion, 1);
+  assert.equal(parsed.schemaVersion, 2);
   assert.deepEqual(parsed.appConfig.sections, ["摘要", "行动项"]);
-  assert.equal(parsed.desktopBridge.capabilities["assistant.chat"].agentKey, "summary-agent");
+  assert.equal(parsed.userConfig.fields[0].source, "desktop.agents");
+  assert.deepEqual(parsed.desktopBridge, { version: 1 });
+});
+
+test("manifest v2 defaults Desktop Bridge v1 and rejects legacy capability arrays", () => {
+  const withoutBridge = manifest("bridge-default");
+  delete withoutBridge.desktopBridge;
+  assert.deepEqual(parseWebappManifest(withoutBridge).desktopBridge, { version: 1 });
+
+  const legacy = manifest("bridge-legacy", {
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat", "native.clipboard.write"]
+    }
+  });
+  assert.throws(() => parseWebappManifest(legacy));
 });
 
 test("WebApp SDK hides the internal config endpoint and sends only the chat message", async (t) => {
@@ -272,29 +324,33 @@ test("WebApp SDK hides the internal config endpoint and sends only the chat mess
   });
 });
 
-test("backend technology defaults to Desktop's bundled Electron Node runtime", () => {
+test("backend command is explicit and Desktop supplies safe defaults around it", () => {
   const parsed = parseWebappManifest(manifest("default-node", {
     backend: {
+      command: { type: "electron-node", entry: "backend/server.mjs" },
       health: { type: "http", path: "/health" }
     }
   }));
   assert.deepEqual(parsed.backend.command, {
     type: "electron-node",
-    script: "backend/server.mjs"
+    entry: "backend/server.mjs"
   });
+  assert.deepEqual(parsed.backend.args, []);
+  assert.deepEqual(parsed.backend.env, {});
+  assert.equal(parsed.backend.health.startupTimeoutMs, 10_000);
 });
 
-test("manifest v1 rejects legacy schemas, aliases, unknown host fields, and invalid ids", () => {
+test("manifest v2 rejects legacy fields, capability declarations, unknown fields, and invalid ids", () => {
   for (const value of [
-    { ...manifest("legacy"), schemaVersion: 5 },
+    { ...manifest("legacy"), schemaVersion: 1 },
     { ...manifest("legacy"), kind: "webapp" },
     { ...manifest("legacy"), assistantAgentKey: "agent" },
+    { ...manifest("legacy"), openMode: "workspace" },
+    { ...manifest("legacy"), frontend: { root: "frontend", index: "index.html", spa: true } },
     { ...manifest("legacy"), desktopBridge: { version: 1, capabilities: ["assistant.chat"] } },
-    { ...manifest("legacy"), desktopBridge: { version: 1, capabilities: {
-      "assistant.chat": { behaviors: { summarize: {} } }
-    } } },
+    { ...manifest("legacy"), desktopBridge: { version: 1, capabilities: { "assistant.chat": {} } } },
     { ...manifest("legacy"), desktopBridge: { version: 1, capabilities: { "native.future": {} } } },
-    { ...manifest("Invalid Id") }
+    { ...manifest("valid-key"), id: "Invalid Id" }
   ]) {
     assert.throws(() => parseWebappManifest(value));
   }
@@ -318,13 +374,14 @@ test("manifest appConfig rejects secrets, dangerous keys, and size overflow", ()
 test("store requires exact manifest id and installation directory identity", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-store-v1-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const validId = webappId("valid-app");
   const validDir = writeWebapp(root, "valid-app");
-  assert.equal(readWebappItemFromDir(validDir, "valid-app").id, "valid-app");
-  assert.throws(() => readWebappItemFromDir(validDir, "different-app"), /mismatch/u);
-  assert.throws(() => readWebappItemFromDir(validDir, " valid-app "), /invalid/u);
+  assert.equal(readWebappItemFromDir(validDir, validId).id, validId);
+  assert.throws(() => readWebappItemFromDir(validDir, webappId("different-app")), /mismatch/u);
+  assert.throws(() => readWebappItemFromDir(validDir, ` ${validId} `), /invalid/u);
   assert.throws(() => readWebappItemFromDir(validDir, "Needs-Normalizing"), /invalid/u);
-  const canonical = writeCanonicalWebappManifest(validDir, "valid-app");
-  assert.equal(canonical.schemaVersion, 1);
+  const canonical = writeCanonicalWebappManifest(validDir, validId);
+  assert.equal(canonical.schemaVersion, 2);
 });
 
 test("local display preferences do not mutate webapp.json", async (t) => {
@@ -332,24 +389,24 @@ test("local display preferences do not mutate webapp.json", async (t) => {
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
+  const preferenceId = webappId("preference-app");
   writeWebapp(webappsRoot(homePath), "preference-app");
-  const manifestPath = path.join(getWebappDir(app, "preference-app"), "webapp.json");
+  const manifestPath = path.join(getWebappDir(app, preferenceId), "webapp.json");
   const before = fs.readFileSync(manifestPath, "utf8");
-  const updated = updateWebappItem(app, "preference-app", {
+  const updated = updateWebappItem(app, preferenceId, {
     label: "Local Label",
-    copilotAgentKey: "local-copilot",
     openMode: "dialog"
   });
   assert.equal(updated.ok, true);
   assert.equal(updated.item.label, "Local Label");
   assert.equal(updated.item.openMode, "dialog");
   assert.equal(fs.readFileSync(manifestPath, "utf8"), before);
-  const removed = await removeWebappItem(app, "preference-app");
+  const removed = await removeWebappItem(app, preferenceId);
   assert.equal(removed.ok, true);
-  assert.equal(fs.existsSync(getWebappDir(app, "preference-app")), false);
+  assert.equal(fs.existsSync(getWebappDir(app, preferenceId)), false);
 });
 
-test("runtime settings store only per-WebApp system executable bindings", (t) => {
+test("runtime settings store only per-WebApp runtime executable bindings", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-system-runtime-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const app = createApp(path.join(root, "home"));
@@ -357,26 +414,74 @@ test("runtime settings store only per-WebApp system executable bindings", (t) =>
   fs.mkdirSync(path.dirname(executable), { recursive: true });
   fs.writeFileSync(executable, "#!/bin/sh\n", "utf8");
   fs.chmodSync(executable, 0o755);
+  const javaAppId = webappId("java-app");
   const settings = writeWebappRuntimeSettings(app, {
-    systemExecutables: { "java-app:java": executable }
+    runtimeExecutables: { [`${javaAppId}:java`]: executable }
   });
   assert.deepEqual(settings, {
     schemaVersion: 1,
-    systemExecutables: { "java-app:java": executable }
+    runtimeExecutables: { [`${javaAppId}:java`]: executable }
   });
   assert.deepEqual(readWebappRuntimeSettings(app), settings);
 });
 
-test("capability policy issues backend tokens only for assistant.chat", () => {
+test("userConfig keeps field definitions in the package and actual values in Desktop data", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-user-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  const id = webappId("configurable-app");
+  writeWebapp(webappsRoot(app.getPath("home")), "configurable-app", {
+    userConfig: {
+      fields: [
+        {
+          name: "agentKey",
+          type: "select",
+          source: "desktop.agents",
+          label: "智能体",
+          required: true,
+          default: "test-agent"
+        },
+        {
+          name: "prompt",
+          type: "textarea",
+          label: "提示词",
+          default: "请处理以下内容"
+        }
+      ]
+    }
+  });
+  assert.deepEqual(readWebappUserConfigState(app, id), {
+    values: { agentKey: "test-agent", prompt: "请处理以下内容" },
+    issues: []
+  });
+  const saved = writeWebappUserConfigValues(app, id, {
+    agentKey: "desktopTextGenerator",
+    prompt: "只返回结果"
+  });
+  assert.equal(saved.ok, true);
+  assert.deepEqual(saved.values, {
+    agentKey: "desktopTextGenerator",
+    prompt: "只返回结果"
+  });
+  assert.deepEqual(JSON.parse(fs.readFileSync(getWebappUserConfigPath(app, id), "utf8")), {
+    agentKey: "desktopTextGenerator",
+    prompt: "只返回结果"
+  });
+  const invalid = writeWebappUserConfigValues(app, id, {
+    agentKey: "test-agent",
+    prompt: "有效",
+    apiToken: "must-not-be-stored"
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.issues[0].field, "apiToken");
+});
+
+test("public Bridge policy enables every page capability and keeps backend tokens scoped to assistant.chat", () => {
   const item = {
-    id: "capability-app",
-    schemaVersion: 1,
+    id: webappId("capability-app"),
+    schemaVersion: 2,
     desktopBridge: {
-      version: 1,
-      capabilities: {
-        "assistant.chat": {},
-        "native.clipboard.write": {}
-      }
+      version: 1
     }
   };
   assert.deepEqual(getWebappAllowedActions(item, "backendActionToken"), ["desktop.assistant.chat"]);
@@ -385,7 +490,7 @@ test("capability policy issues backend tokens only for assistant.chat", () => {
   const token = issueWebappActionToken(item, "backendActionToken");
   assert.deepEqual(authorizeWebappActionToken(token, "desktop.assistant.chat"), {
     ok: true,
-    webappId: "capability-app",
+    webappId: webappId("capability-app"),
     scope: "backendActionToken"
   });
   assert.equal(authorizeWebappActionToken(token, "desktop.native.clipboard.writeText").ok, false);
@@ -393,7 +498,7 @@ test("capability policy issues backend tokens only for assistant.chat", () => {
   assert.equal(authorizeWebappActionToken(token, "desktop.assistant.chat").ok, false);
 });
 
-test("runtime statically hosts frontend, exposes read-only appConfig, and proxies only apiPrefix", async (t) => {
+test("runtime hosts frontend, exposes read-only configs, and follows typed routeConfig", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-runtime-v1-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -402,48 +507,53 @@ test("runtime statically hosts frontend, exposes read-only appConfig, and proxie
     await runtime.stopAll(app);
     fs.rmSync(root, { recursive: true, force: true });
   });
+  const runtimeId = webappId("runtime-app");
   writeWebapp(webappsRoot(homePath), "runtime-app", {
     appConfig: { theme: "compact", nested: { enabled: true } },
     backend: nodeBackend(),
     desktopBridge: {
-      version: 1,
-      capabilities: { "assistant.chat": {} }
+      version: 1
     }
   });
-  updateWebappItem(app, "runtime-app", { label: "Local display label" });
-  const started = await runtime.start(app, "runtime-app");
+  updateWebappItem(app, runtimeId, { label: "Local display label" });
+  const started = await runtime.start(app, runtimeId);
   assert.equal(started.ok, true);
   const rootPage = await readUrl(started.state.webUrl);
   assert.equal(rootPage.status, 200);
-  assert.match(rootPage.body, /WebApp v1/u);
+  assert.match(rootPage.body, /WebApp v2/u);
   const config = await readUrl(new URL("__desktop/app-config.json", started.state.webUrl));
   assert.deepEqual(JSON.parse(config.body), {
-    id: "runtime-app",
+    id: runtimeId,
     label: "Local Demo",
     version: "1.0.0",
     appConfig: { theme: "compact", nested: { enabled: true } }
   }, "gateway config must come from webapp.json, not mutable local preferences");
   const context = JSON.parse((await readUrl(new URL("api/context", started.state.webUrl))).body);
-  assert.equal(context.id, "runtime-app");
-  assert.equal(context.manifestPath, path.join(getWebappDir(app, "runtime-app"), "webapp.json"));
+  assert.equal(context.id, runtimeId);
+  assert.equal(context.manifestPath, path.join(getWebappDir(app, runtimeId), "webapp.json"));
   assert.equal(context.hasBridgeToken, true);
   const backendRoot = await readUrl(new URL("health", started.state.webUrl));
-  assert.equal(backendRoot.status, 200);
-  assert.match(backendRoot.body, /WebApp v1/u, "non-api paths must use the static SPA fallback");
-  const stopped = await runtime.stop(app, "runtime-app");
+  assert.equal(backendRoot.status, 404, "non-proxy paths must not reach the backend");
+  const deepRoute = await readUrl(new URL("workspace/notes", started.state.webUrl), { Accept: "text/html" });
+  assert.equal(deepRoute.status, 200);
+  assert.match(deepRoute.body, /WebApp v2/u, "HTML navigation may use the declared fallback");
+  const missingAsset = await readUrl(new URL("missing.js", started.state.webUrl), { Accept: "*/*" });
+  assert.equal(missingAsset.status, 404, "missing assets must not fall back to HTML");
+  const stopped = await runtime.stop(app, runtimeId);
   assert.equal(stopped.ok, true);
 });
 
 test("frontend-only WebApps run without a backend or backend token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-static-v1-"));
   const app = createApp(path.join(root, "home"));
+  const staticId = webappId("static-app");
   const runtime = new WebappRuntime();
   t.after(async () => {
     await runtime.stopAll(app);
     fs.rmSync(root, { recursive: true, force: true });
   });
   writeWebapp(webappsRoot(app.getPath("home")), "static-app", { appConfig: { local: true } });
-  const started = await runtime.start(app, "static-app");
+  const started = await runtime.start(app, staticId);
   assert.equal(started.ok, true);
   assert.equal(started.state.launcher, "none");
   assert.equal(started.state.backendPort, null);
@@ -458,13 +568,14 @@ test("install policy supports idempotence, upgrades, conflicts, downgrades, and 
     fs.rmSync(root, { recursive: true, force: true });
   });
   const firstArchive = await writeArchive(root, "install-app", { version: "1.0.0" });
+  const installId = webappId("install-app");
   await assert.rejects(
-    installWebsiteAppArchiveFromPath(app, firstArchive, { expectedId: " install-app " }),
+    installWebsiteAppArchiveFromPath(app, firstArchive, { expectedId: ` ${installId} ` }),
     (error) => error instanceof WebappInstallPolicyError && error.code === "invalid_id"
   );
-  const installed = await installWebsiteAppArchiveFromPath(app, firstArchive, { expectedId: "install-app" });
+  const installed = await installWebsiteAppArchiveFromPath(app, firstArchive, { expectedId: installId });
   assert.equal(installed.ok, true);
-  const idempotent = await installWebsiteAppArchiveFromPath(app, firstArchive, { expectedId: "install-app" });
+  const idempotent = await installWebsiteAppArchiveFromPath(app, firstArchive, { expectedId: installId });
   assert.equal(idempotent.ok, true);
 
   const conflictArchive = await writeArchive(root, "install-app", {
@@ -472,59 +583,129 @@ test("install policy supports idempotence, upgrades, conflicts, downgrades, and 
     frontendContent: "<!doctype html><title>different</title>"
   });
   await assert.rejects(
-    installWebsiteAppArchiveFromPath(app, conflictArchive, { expectedId: "install-app" }),
+    installWebsiteAppArchiveFromPath(app, conflictArchive, { expectedId: installId }),
     (error) => error instanceof WebappInstallPolicyError && error.code === "version_content_conflict"
   );
 
   const downgradeArchive = await writeArchive(root, "install-app", { version: "0.9.0" });
   await assert.rejects(
-    installWebsiteAppArchiveFromPath(app, downgradeArchive, { expectedId: "install-app" }),
+    installWebsiteAppArchiveFromPath(app, downgradeArchive, { expectedId: installId }),
     (error) => error instanceof WebappInstallPolicyError && error.code === "downgrade_not_allowed"
   );
 
   const upgradeArchive = await writeArchive(root, "install-app", { version: "1.1.0" });
-  assert.equal((await installWebsiteAppArchiveFromPath(app, upgradeArchive, { expectedId: "install-app" })).ok, true);
-  assert.equal(readWebappItems(app).find((item) => item.id === "install-app").version, "1.1.0");
+  assert.equal((await installWebsiteAppArchiveFromPath(app, upgradeArchive, { expectedId: installId })).ok, true);
+  assert.equal(readWebappItems(app).find((item) => item.id === installId).version, "1.1.0");
 
   const parallelArchive = await writeArchive(root, "parallel-app", { version: "1.0.0" });
-  assert.equal((await installWebsiteAppArchiveFromPath(app, parallelArchive, { expectedId: "parallel-app" })).ok, true);
-  assert.deepEqual(readWebappItems(app).map((item) => item.id).sort(), ["install-app", "parallel-app"]);
+  const parallelId = webappId("parallel-app");
+  assert.equal((await installWebsiteAppArchiveFromPath(app, parallelArchive, { expectedId: parallelId })).ok, true);
+  assert.deepEqual(readWebappItems(app).map((item) => item.id).sort(), [installId, parallelId].sort());
+});
+
+test("Tooling and Desktop installer share path and native artifact policy", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-package-policy-"));
+  const app = createApp(path.join(root, "home"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const projectRoot = writeWebapp(root, "tooling-policy-app");
+  fs.mkdirSync(path.join(projectRoot, ".mypy_cache"), { recursive: true });
+  fs.writeFileSync(path.join(projectRoot, ".mypy_cache", "cache.bin"), "cache", "utf8");
+  const tooling = spawnSync(process.execPath, [
+    path.join(process.cwd(), "scripts", "webapp-tooling.mjs"),
+    "package",
+    "validate",
+    "--project",
+    projectRoot
+  ], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(tooling.status, 1);
+  assert.equal(JSON.parse(tooling.stdout).code, "disallowed_path");
+
+  const archive = await writeArchive(root, "installer-policy-app", {
+    extraFiles: { "dist-cache/cache.bin": "cache" }
+  });
+  await assert.rejects(
+    installWebsiteAppArchiveFromPath(app, archive),
+    (error) => error instanceof WebappInstallError &&
+      error.stage === "archive" &&
+      error.code === "disallowed_path"
+  );
+
+  const nativeProjectRoot = writeWebapp(root, "tooling-native-app");
+  fs.writeFileSync(path.join(nativeProjectRoot, "addon.node"), "not-native", "utf8");
+  const nativeTooling = spawnSync(process.execPath, [
+    path.join(process.cwd(), "scripts", "webapp-tooling.mjs"),
+    "package",
+    "validate",
+    "--project",
+    nativeProjectRoot
+  ], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(nativeTooling.status, 1);
+  assert.equal(JSON.parse(nativeTooling.stdout).code, "native_artifact_forbidden");
+
+  const nativeArchive = await writeArchive(root, "installer-native-app", {
+    extraFiles: { "addon.node": "not-native" }
+  });
+  await assert.rejects(
+    installWebsiteAppArchiveFromPath(app, nativeArchive),
+    (error) => error instanceof WebappInstallError &&
+      error.stage === "package" &&
+      error.code === "native_artifact_forbidden"
+  );
+});
+
+test("WebApp import diagnostics use structured errors instead of localized message text", () => {
+  const structured = createWebappImportDiagnostic(new WebappInstallError(
+    "archive",
+    "unsafe_path",
+    "启动进程 Java manifest ZIP",
+    { path: "../unsafe" }
+  ));
+  assert.equal(structured.stage, "archive");
+  assert.equal(structured.code, "unsafe_path");
+  assert.deepEqual(structured.details, { path: "../unsafe" });
+
+  const unknown = createWebappImportDiagnostic(new Error("ZIP manifest Java 启动进程"));
+  assert.equal(unknown.stage, "install");
+  assert.equal(unknown.code, "install_failed");
 });
 
 test("failed startup validation rolls an upgrade back to the old package", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-rollback-v1-"));
   const app = createApp(path.join(root, "home"));
+  const rollbackId = webappId("rollback-app");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const original = await writeArchive(root, "rollback-app", { version: "1.0.0" });
-  await installWebsiteAppArchiveFromPath(app, original, { expectedId: "rollback-app" });
+  await installWebsiteAppArchiveFromPath(app, original, { expectedId: rollbackId });
   const broken = await writeArchive(root, "rollback-app", {
     version: "2.0.0",
-    backend: nodeBackend({ health: { type: "http", path: "/health", timeoutMs: 1_000 } }),
+    backend: nodeBackend({ health: { type: "http", path: "/health", startupTimeoutMs: 1_000 } }),
     backendSource: backendServerSource({ exitImmediately: true })
   });
   await assert.rejects(
-    installWebsiteAppArchiveFromPath(app, broken, { expectedId: "rollback-app" }),
+    installWebsiteAppArchiveFromPath(app, broken, { expectedId: rollbackId }),
     (error) => error instanceof Error && error.message.length > 0
   );
-  assert.equal(readWebappItems(app).find((item) => item.id === "rollback-app").version, "1.0.0");
-  const restoredState = new WebappRuntime().getStatus(app, "rollback-app");
+  assert.equal(readWebappItems(app).find((item) => item.id === rollbackId).version, "1.0.0");
+  const restoredState = new WebappRuntime().getStatus(app, rollbackId);
   assert.equal(restoredState.version, "1.0.0");
   assert.equal(restoredState.status, "stopped");
 
   const rejectedNew = await writeArchive(root, "rejected-new-app", {
-    backend: nodeBackend({ health: { type: "http", path: "/health", timeoutMs: 1_000 } }),
+    backend: nodeBackend({ health: { type: "http", path: "/health", startupTimeoutMs: 1_000 } }),
     backendSource: backendServerSource({ exitImmediately: true })
   });
+  const rejectedNewId = webappId("rejected-new-app");
   await assert.rejects(
-    installWebsiteAppArchiveFromPath(app, rejectedNew, { expectedId: "rejected-new-app" })
+    installWebsiteAppArchiveFromPath(app, rejectedNew, { expectedId: rejectedNewId })
   );
-  assert.equal(fs.existsSync(path.join(webappsRoot(app.getPath("home")), "rejected-new-app")), false);
+  assert.equal(fs.existsSync(path.join(webappsRoot(app.getPath("home")), rejectedNewId)), false);
   assert.equal(
-    fs.existsSync(path.join(desktopRoot(app.getPath("home")), "data", "webs", "webapp-data", "rejected-new-app")),
+    fs.existsSync(path.join(desktopRoot(app.getPath("home")), "data", "webs", "webapp-data", rejectedNewId)),
     false
   );
   assert.equal(
-    fs.existsSync(path.join(desktopRoot(app.getPath("home")), "state", "webs", "webapps", "rejected-new-app")),
+    fs.existsSync(path.join(desktopRoot(app.getPath("home")), "state", "webs", "webapps", rejectedNewId)),
     false
   );
 });

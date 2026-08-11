@@ -8,7 +8,7 @@ import type { WebappEntry } from "../../../shared/contracts";
 import { getConfiguredDesktopActionBridgePort } from "../../desktop-action-bridge-settings";
 import { resolveWebappRelativePath } from "../common";
 import { isWebappActionAllowed } from "./capability-policy";
-import { readWebappManifestFromDir } from "./store";
+import { readWebappManifestFromDir, readWebappUserConfigValues } from "./store";
 import {
   WEBAPP_BRIDGE_MODULE_PATH,
   WEBAPP_BRIDGE_MODULE_SOURCE
@@ -18,6 +18,7 @@ const HOST = "127.0.0.1";
 const DESKTOP_RESERVED_PREFIX = "/__desktop/";
 const DESKTOP_ACTION_PATH = "/__desktop/actions/call";
 export const WEBAPP_APP_CONFIG_PATH = "/__desktop/app-config.json";
+export const WEBAPP_USER_CONFIG_PATH = "/__desktop/user-config.json";
 const DESKTOP_ACTION_BODY_LIMIT = 64 * 1024;
 
 export type WebappGateway = {
@@ -30,7 +31,7 @@ export type WebappGateway = {
 
 type ResolvedStaticFile =
   | { ok: true; filePath: string; stat: fs.Stats }
-  | { ok: false; status: number; message: string; allowSpaFallback?: boolean };
+  | { ok: false; status: number; message: string };
 
 function writeText(res: http.ServerResponse, status: number, message: string) {
   res.writeHead(status, {
@@ -108,7 +109,7 @@ async function realpathInsideRoot(rootDir: string, filePath: string) {
 async function resolveFile(rootDir: string, candidatePath: string, index: string): Promise<ResolvedStaticFile> {
   const initialStat = await statFile(candidatePath);
   if (!initialStat) {
-    return { ok: false, status: 404, message: "not found", allowSpaFallback: true };
+    return { ok: false, status: 404, message: "not found" };
   }
   const candidateRealPath = await realpathInsideRoot(rootDir, candidatePath);
   if (!candidateRealPath) {
@@ -182,10 +183,6 @@ function sendFile(req: http.IncomingMessage, res: http.ServerResponse, file: { f
     .pipe(res);
 }
 
-function requestPathHasExtension(requestPath: string) {
-  return path.posix.extname(requestPath) !== "";
-}
-
 async function handleStaticRequest(
   item: WebappEntry,
   webappDir: string,
@@ -218,10 +215,14 @@ async function handleStaticRequest(
     sendFile(req, res, resolved);
     return;
   }
-  if (resolved.allowSpaFallback && item.frontend.spa && !requestPathHasExtension(requestPath)) {
+  const acceptsHtml = String(req.headers.accept ?? "").split(",").some((value) =>
+    value.trim().split(";", 1)[0] === "text/html"
+  );
+  const fallback = item.frontend.routeConfig.navigationFallback;
+  if (fallback && acceptsHtml) {
     const indexResolved = await resolveFile(
       frontendRealRoot,
-      path.join(frontendRealRoot, item.frontend.index),
+      path.join(frontendRealRoot, fallback),
       item.frontend.index
     );
     if (indexResolved.ok) {
@@ -236,8 +237,9 @@ function shouldProxyRequest(item: WebappEntry, requestPath: string) {
   if (!item.backend) {
     return false;
   }
-  return requestPath === item.frontend.apiPrefix ||
-    requestPath.startsWith(`${item.frontend.apiPrefix}/`);
+  return item.frontend.routeConfig.backendPrefixes.some((prefix) =>
+    requestPath === prefix || requestPath.startsWith(`${prefix}/`)
+  );
 }
 
 function resolveBackendEndpoint(backendUrl: string) {
@@ -522,6 +524,25 @@ export async function startWebappGateway(options: {
         label: installedManifest.label,
         version: installedManifest.version,
         appConfig: installedManifest.appConfig
+      });
+      res.writeHead(200, {
+        "Content-Type": "application/json; charset=utf-8",
+        "Content-Length": String(Buffer.byteLength(payload)),
+        "Cache-Control": "no-store",
+        "X-Content-Type-Options": "nosniff"
+      });
+      res.end(req.method === "HEAD" ? "" : payload);
+      return;
+    }
+    if (requestPath === WEBAPP_USER_CONFIG_PATH) {
+      if (req.method !== "GET" && req.method !== "HEAD") {
+        res.writeHead(405, { "Allow": "GET, HEAD", "Cache-Control": "no-store" });
+        res.end();
+        return;
+      }
+      const payload = JSON.stringify({
+        id: installedManifest.id,
+        values: readWebappUserConfigValues(options.app, installedManifest.id)
       });
       res.writeHead(200, {
         "Content-Type": "application/json; charset=utf-8",

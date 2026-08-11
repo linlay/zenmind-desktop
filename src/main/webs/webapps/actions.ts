@@ -29,12 +29,14 @@ function findWebapp(items: WebappEntry[], id: string) {
 async function addWebappDirectoryToZip(
   zip: JSZip,
   rootPath: string,
-  currentPath: string = rootPath
+  currentPath: string = rootPath,
+  archiveRoot: string = path.basename(rootPath)
 ): Promise<void> {
   const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
   for (const entry of entries) {
     const sourcePath = path.join(currentPath, entry.name);
-    const archivePath = path.relative(rootPath, sourcePath).split(path.sep).join("/");
+    const relativePath = path.relative(rootPath, sourcePath).split(path.sep).join("/");
+    const archivePath = `${archiveRoot}/${relativePath}`;
     const stat = await fs.promises.lstat(sourcePath);
     if (stat.isSymbolicLink()) {
       throw new Error(t("webapp.packageSymbolicLink", { path: archivePath }));
@@ -43,7 +45,7 @@ async function addWebappDirectoryToZip(
       if ((await fs.promises.readdir(sourcePath)).length === 0) {
         zip.folder(`${archivePath}/`);
       }
-      await addWebappDirectoryToZip(zip, rootPath, sourcePath);
+      await addWebappDirectoryToZip(zip, rootPath, sourcePath, archiveRoot);
       continue;
     }
     if (!stat.isFile()) {
@@ -186,7 +188,6 @@ export function updateWebappItem(app: App, id: string, input: WebappUpdateInput)
   try {
     const updated = writeWebappPreferenceFields(app, target.id, {
       ...(typeof input.label === "string" ? { label: input.label } : {}),
-      ...(typeof input.copilotAgentKey === "string" ? { copilotAgentKey: input.copilotAgentKey } : {}),
       ...(input.openMode === "workspace" || input.openMode === "dialog"
         ? { openMode: input.openMode }
         : {})

@@ -5,6 +5,8 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHash } from "node:crypto";
+import { spawnSync } from "node:child_process";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
@@ -74,6 +76,10 @@ function createApp(homePath) {
       return "0.0.0-test";
     }
   };
+}
+
+function webappId(key) {
+  return `webapp-${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
 }
 
 function createDesktopActionOptions(t) {
@@ -173,56 +179,66 @@ function createDesktopActionOptions(t) {
   };
 }
 
-async function writeStaticWebappArchive(root, id, label = "Lifecycle Test", version = "1.0.0") {
+async function writeStaticWebappArchive(root, key, label = "Lifecycle Test", version = "1.0.0") {
+  const id = webappId(key);
   const archivePath = path.join(root, `${id}.zip`);
   const zip = new JSZip();
   zip.file(`${id}/webapp.json`, `${JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
+    key,
     version,
-    target: "universal",
+    target: "any",
     label,
-    openMode: "workspace",
     appConfig: {},
     frontend: {
       root: "frontend",
       index: "index.html",
-      spa: true,
-      apiPrefix: "/api"
+      routeConfig: { backendPrefixes: [] }
     },
-    desktopBridge: { version: 1, capabilities: {} }
+    desktopBridge: { version: 1 }
   }, null, 2)}\n`);
   zip.file(`${id}/frontend/index.html`, "<!doctype html><title>Lifecycle Test</title>");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
 }
 
-async function writeSystemWebappArchive(root, id) {
+async function writeRuntimeWebappArchive(root, key) {
+  const id = webappId(key);
   const archivePath = path.join(root, `${id}.zip`);
   const zip = new JSZip();
   zip.file(`${id}/webapp.json`, `${JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
-    label: "System Runtime Test",
+    key,
+    label: "Runtime Test",
     version: "1.0.0",
-    target: "universal",
-    openMode: "workspace",
+    target: "any",
     appConfig: {},
-    frontend: { root: "frontend", index: "index.html", spa: true, apiPrefix: "/api" },
+    frontend: {
+      root: "frontend",
+      index: "index.html",
+      routeConfig: { backendPrefixes: ["/api"] }
+    },
     backend: {
-      command: { type: "system", executable: "fixture-node" },
-      args: ["backend/server.mjs"],
+      command: {
+        type: "runtime",
+        runtime: "java",
+        minimumVersion: "17",
+        entry: "backend/server.jar"
+      },
+      args: [],
       env: {},
-      health: { type: "http", path: "/health", timeoutMs: 2_000 },
+      health: { type: "http", path: "/api/health", startupTimeoutMs: 2_000 },
       shutdownTimeoutMs: 1_000
     },
-    desktopBridge: { version: 1, capabilities: {} }
+    desktopBridge: { version: 1 }
   }, null, 2)}\n`);
-  zip.file(`${id}/frontend/index.html`, "<!doctype html><title>System Runtime Test</title>");
-  zip.file(`${id}/backend/server.mjs`, `
+  zip.file(`${id}/frontend/index.html`, "<!doctype html><title>Runtime Test</title>");
+  zip.file(`${id}/backend/server.jar`, `
 import http from "node:http";
 const server = http.createServer((request, response) => {
-  response.writeHead(request.url === "/health" ? 200 : 404);
+  response.writeHead(request.url === "/api/health" ? 200 : 404);
   response.end();
 });
 server.listen(Number(process.env.PORT), process.env.HOST);
@@ -265,33 +281,41 @@ test("desktop assistant chat forwards a general message without business prompts
   assert.equal(oversized.error.code, "assistant_message_too_long");
 });
 
-test("WebApp assistant chat uses its one declared agent and fixed instruction", async (t) => {
+test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
-  const webappDir = path.join(getDesktopWebappsDataRoot(options.app), "assistant-app");
+  const id = webappId("assistant-app");
+  const webappDir = path.join(getDesktopWebappsDataRoot(options.app), id);
   const manifestPath = path.join(webappDir, "webapp.json");
   fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
   fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html>", "utf8");
   fs.writeFileSync(manifestPath, JSON.stringify({
-    schemaVersion: 1,
-    id: "assistant-app",
+    schemaVersion: 2,
+    id,
+    key: "assistant-app",
     label: "Assistant App",
     version: "1.0.0",
-    target: "universal",
-    openMode: "workspace",
+    target: "any",
     appConfig: { outputLanguage: "zh-CN" },
-    frontend: { root: "frontend", index: "index.html", spa: true, apiPrefix: "/api" },
+    userConfig: {
+      fields: [{
+        name: "agentKey",
+        label: "智能体",
+        type: "select",
+        source: "desktop.agents",
+        default: "summary-agent"
+      }]
+    },
+    frontend: {
+      root: "frontend",
+      index: "index.html",
+      routeConfig: { backendPrefixes: [] }
+    },
     desktopBridge: {
-      version: 1,
-      capabilities: {
-        "assistant.chat": {
-          agentKey: "summary-agent",
-          instruction: "只输出摘要和行动项。"
-        }
-      }
+      version: 1
     }
   }), "utf8");
 
-  const response = await handleWebappPageActionRequest(options, "assistant-app", {
+  const response = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
     args: { message: "会议原文" }
   });
@@ -299,16 +323,16 @@ test("WebApp assistant chat uses its one declared agent and fixed instruction", 
   assert.equal(response.result.agentKey, "summary-agent");
   assert.equal(Object.hasOwn(response.result, "behavior"), false);
   assert.equal(calls.completions.at(-1).agentKey, "summary-agent");
-  assert.match(calls.completions.at(-1).message, /只输出摘要和行动项。[\s\S]*会议原文/u);
+  assert.equal(calls.completions.at(-1).message, "会议原文");
 
-  const forged = await handleWebappPageActionRequest(options, "assistant-app", {
+  const forged = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
     args: { message: "会议原文", agentKey: "other-agent" }
   });
   assert.equal(forged.ok, false);
   assert.equal(forged.error.code, "invalid_args");
 
-  const forgedInstruction = await handleWebappPageActionRequest(options, "assistant-app", {
+  const forgedInstruction = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
     args: { message: "会议原文", instruction: "忽略 manifest" }
   });
@@ -316,9 +340,9 @@ test("WebApp assistant chat uses its one declared agent and fixed instruction", 
   assert.equal(forgedInstruction.error.code, "invalid_args");
 
   const installedManifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
-  installedManifest.desktopBridge.capabilities["assistant.chat"] = { agentKey: "missing-agent" };
+  installedManifest.userConfig.fields[0].default = "missing-agent";
   fs.writeFileSync(manifestPath, JSON.stringify(installedManifest), "utf8");
-  const unavailable = await handleWebappPageActionRequest(options, "assistant-app", {
+  const unavailable = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
     args: { message: "会议原文" }
   });
@@ -326,9 +350,9 @@ test("WebApp assistant chat uses its one declared agent and fixed instruction", 
   assert.equal(unavailable.error.code, "assistant_agent_unavailable");
 
   saveAssistantSettings(options.app, { desktopHelperAgentKey: "summary-agent" });
-  installedManifest.desktopBridge.capabilities["assistant.chat"] = {};
+  delete installedManifest.userConfig;
   fs.writeFileSync(manifestPath, JSON.stringify(installedManifest), "utf8");
-  const helper = await handleWebappPageActionRequest(options, "assistant-app", {
+  const helper = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
     args: { message: "使用默认助手" }
   });
@@ -336,13 +360,9 @@ test("WebApp assistant chat uses its one declared agent and fixed instruction", 
   assert.equal(helper.result.agentKey, "summary-agent");
   assert.equal(calls.completions.at(-1).agentKey, "summary-agent");
 
-  installedManifest.desktopBridge.capabilities["assistant.chat"] = {
-    instruction: "x".repeat(8_000)
-  };
-  fs.writeFileSync(manifestPath, JSON.stringify(installedManifest), "utf8");
-  const oversized = await handleWebappPageActionRequest(options, "assistant-app", {
+  const oversized = await handleWebappPageActionRequest(options, id, {
     action: "desktop.assistant.chat",
-    args: { message: "y".repeat(4_000) }
+    args: { message: "y".repeat(12_001) }
   });
   assert.equal(oversized.ok, false);
   assert.equal(oversized.error.code, "assistant_message_too_long");
@@ -382,6 +402,7 @@ test("removed WebApp actions return unknown_action without legacy aliases", asyn
 
 test("desktop.webapp.install only installs a local archive and validates its arguments", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
+  const id = webappId("lifecycle-test");
   const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "lifecycle-test");
 
   for (const args of [{}, { itemId: "market-webapp" }, { archivePath, itemId: "" }]) {
@@ -396,18 +417,18 @@ test("desktop.webapp.install only installs a local archive and validates its arg
 
   const installed = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.install",
-    args: { archivePath, expectedId: "lifecycle-test" },
+    args: { archivePath, expectedId: id },
     permissionMode: "full_access"
   });
-  assert.equal(installed.ok, true);
-  assert.equal(installed.result.itemId, "lifecycle-test");
+  assert.equal(installed.ok, true, JSON.stringify(installed));
+  assert.equal(installed.result.itemId, id);
   assert.equal(installed.result.operation, "installed");
-  assert.equal(installed.result.item.id, "lifecycle-test");
+  assert.equal(installed.result.item.id, id);
   assert.equal(calls.navigation.length, 0);
 
   const status = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
-    args: { webappId: "lifecycle-test" },
+    args: { webappId: id },
     permissionMode: "full_access"
   });
   assert.equal(status.ok, true);
@@ -415,7 +436,7 @@ test("desktop.webapp.install only installs a local archive and validates its arg
 
   const started = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.start",
-    args: { id: "lifecycle-test" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(started.ok, true);
@@ -439,15 +460,15 @@ test("desktop.webapp.install only installs a local archive and validates its arg
 
   const updatedStatus = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
-    args: { id: "lifecycle-test" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(updatedStatus.result.status, "running");
 
   const removablePaths = [
-    getDesktopWebappDataRoot(options.app, "lifecycle-test"),
-    getDesktopWebappStateRoot(options.app, "lifecycle-test"),
-    getDesktopWebappLogsRoot(options.app, "lifecycle-test")
+    getDesktopWebappDataRoot(options.app, id),
+    getDesktopWebappStateRoot(options.app, id),
+    getDesktopWebappLogsRoot(options.app, id)
   ];
   for (const removablePath of removablePaths) {
     fs.mkdirSync(removablePath, { recursive: true });
@@ -455,45 +476,65 @@ test("desktop.webapp.install only installs a local archive and validates its arg
   }
   const uninstalled = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.uninstall",
-    args: { webappId: "lifecycle-test" },
+    args: { webappId: id },
     permissionMode: "full_access"
   });
   assert.equal(uninstalled.ok, true);
-  assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(options.app), "lifecycle-test")), false);
+  assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(options.app), id)), false);
   for (const removablePath of removablePaths) {
     assert.equal(fs.existsSync(removablePath), false);
   }
 });
 
-test("desktop.webapp.install asks for a missing system executable and stores only a local binding", async (t) => {
+test("desktop.webapp.install asks for a missing Java runtime and stores only a local binding", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
+  const id = webappId("runtime-app");
+  const runtimeWrapper = path.join(options.app.getPath("home"), "fixture-java");
+  fs.writeFileSync(runtimeWrapper, `#!/bin/sh
+if [ "$1" = "--version" ]; then
+  echo "java 17.0.0"
+  exit 0
+fi
+if [ "$1" = "-jar" ]; then
+  shift
+  entry="$1"
+  shift
+  exec "${process.execPath}" --input-type=module "$@" < "$entry"
+fi
+exec "${process.execPath}" "$@"
+`, { encoding: "utf8", mode: 0o755 });
+  const runtimeProbe = spawnSync(runtimeWrapper, ["--version"], { encoding: "utf8" });
+  assert.equal(runtimeProbe.status, 0, runtimeProbe.stderr);
+  assert.match(runtimeProbe.stdout, /17\.0\.0/u);
   options.showFileDialog = async (dialogOptions) => {
     calls.fileDialogs.push(dialogOptions);
-    return { canceled: false, filePaths: [process.execPath] };
+    return { canceled: false, filePaths: [runtimeWrapper] };
   };
-  const archivePath = await writeSystemWebappArchive(options.app.getPath("home"), "system-runtime-app");
+  const archivePath = await writeRuntimeWebappArchive(options.app.getPath("home"), "runtime-app");
   const installed = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.install",
-    args: { archivePath, expectedId: "system-runtime-app" },
+    args: { archivePath, expectedId: id },
     permissionMode: "full_access"
   });
-  assert.equal(installed.ok, true);
+  assert.equal(installed.ok, true, JSON.stringify(installed));
   assert.equal(calls.fileDialogs.length, 1);
   assert.deepEqual(calls.fileDialogs[0].properties, ["openFile"]);
   assert.equal(
-    readWebappRuntimeSettings(options.app).systemExecutables["system-runtime-app:fixture-node"],
-    process.execPath
+    readWebappRuntimeSettings(options.app).runtimeExecutables[`${id}:java`],
+    runtimeWrapper
   );
   const installedManifest = JSON.parse(fs.readFileSync(
-    path.join(getDesktopWebappsDataRoot(options.app), "system-runtime-app", "webapp.json"),
+    path.join(getDesktopWebappsDataRoot(options.app), id, "webapp.json"),
     "utf8"
   ));
-  assert.equal(installedManifest.backend.command.executable, "fixture-node");
+  assert.equal(installedManifest.backend.command.runtime, "java");
+  assert.equal(installedManifest.backend.command.entry, "backend/server.jar");
   assert.equal(Object.hasOwn(installedManifest.backend.command, "path"), false);
 });
 
 test("runtime checks are side-effect free and publish requires an already running WebApp", async (t) => {
   const { options } = createDesktopActionOptions(t);
+  const id = webappId("runtime-check");
   const archivePath = await writeStaticWebappArchive(options.app.getPath("home"), "runtime-check");
   await handleDesktopActionRequest(options, {
     action: "desktop.webapp.install",
@@ -503,7 +544,7 @@ test("runtime checks are side-effect free and publish requires an already runnin
 
   const checked = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.checkRuntime",
-    args: { id: "runtime-check" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(checked.ok, true);
@@ -512,7 +553,7 @@ test("runtime checks are side-effect free and publish requires an already runnin
 
   const missing = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.checkRuntime",
-    args: { id: "missing-webapp" },
+    args: { id: webappId("missing-webapp") },
     permissionMode: "full_access"
   });
   assert.equal(missing.ok, false);
@@ -520,7 +561,7 @@ test("runtime checks are side-effect free and publish requires an already runnin
 
   const published = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.publish",
-    args: { id: "runtime-check" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(published.ok, false);
@@ -528,43 +569,44 @@ test("runtime checks are side-effect free and publish requires an already runnin
 
   const status = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
-    args: { id: "runtime-check" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(status.result.status, "stopped");
 
   const started = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.start",
-    args: { id: "runtime-check" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(started.result.ok, true);
-  const persistentDataPath = getDesktopWebappDataRoot(options.app, "runtime-check");
+  const persistentDataPath = getDesktopWebappDataRoot(options.app, id);
   fs.mkdirSync(persistentDataPath, { recursive: true });
   fs.writeFileSync(path.join(persistentDataPath, "keep.txt"), "keep", "utf8");
 
   const unpublished = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.unpublish",
-    args: { id: "runtime-check" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(unpublished.ok, true);
   const runningStatus = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
-    args: { id: "runtime-check" },
+    args: { id },
     permissionMode: "full_access"
   });
   assert.equal(runningStatus.result.status, "running");
   assert.equal(fs.readFileSync(path.join(persistentDataPath, "keep.txt"), "utf8"), "keep");
   await handleDesktopActionRequest(options, {
     action: "desktop.webapp.stop",
-    args: { id: "runtime-check" },
+    args: { id },
     permissionMode: "full_access"
   });
 });
 
 test("WebApp Bridge native actions require page scope and enforce their public contracts", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
+  const id = webappId("bridge-v5");
   __testInternals.clearWebappActionRateLimits();
   assert.equal(
     DESKTOP_ACTION_DEFINITIONS.some((definition) =>
@@ -586,14 +628,14 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(forbidden.ok, false);
   assert.equal(forbidden.error.code, "forbidden");
 
-  const opened = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const opened = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.browser.openExternal",
     args: { url: "https://example.com/docs" }
   });
   assert.equal(opened.ok, true);
   assert.deepEqual(calls.externalUrls, ["https://example.com/docs"]);
 
-  const invalidProtocol = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const invalidProtocol = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.browser.openExternal",
     args: { url: "file:///tmp/secret" }
   });
@@ -601,13 +643,13 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(invalidProtocol.error.code, "invalid_args");
 
   for (let index = 1; index < 5; index += 1) {
-    const repeated = await handleWebappPageActionRequest(options, "bridge-v5", {
+    const repeated = await handleWebappPageActionRequest(options, id, {
       action: "desktop.native.browser.openExternal",
       args: { url: `https://example.com/docs/${index}` }
     });
     assert.equal(repeated.ok, true);
   }
-  const externalRateLimited = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const externalRateLimited = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.browser.openExternal",
     args: { url: "https://example.com/docs/too-many" }
   });
@@ -615,7 +657,7 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(externalRateLimited.error.code, "rate_limited");
   assert.equal(calls.externalUrls.length, 5);
 
-  const selectedFiles = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const selectedFiles = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.dialog.selectFiles",
     args: {
       multiple: true,
@@ -628,7 +670,7 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.deepEqual(calls.fileDialogs.at(-1).properties, ["openFile", "multiSelections"]);
 
   const dialogCountBeforeInvalidFilter = calls.fileDialogs.length;
-  const invalidFilter = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const invalidFilter = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.dialog.selectFiles",
     args: { filters: [{ name: "Unsafe", extensions: ["../secret"] }] }
   });
@@ -636,14 +678,14 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(invalidFilter.error.code, "invalid_args");
   assert.equal(calls.fileDialogs.length, dialogCountBeforeInvalidFilter);
 
-  const selectedDirectory = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const selectedDirectory = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.dialog.selectDirectory",
     args: {}
   });
   assert.equal(selectedDirectory.ok, true);
   assert.equal(selectedDirectory.result.name, "Writing");
 
-  const savePath = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const savePath = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.dialog.selectSavePath",
     args: { suggestedName: "report.xlsx", filters: [{ name: "Excel", extensions: ["xlsx"] }] }
   });
@@ -655,14 +697,14 @@ test("WebApp Bridge native actions require page scope and enforce their public c
     calls.fileDialogs.push(dialogOptions);
     return { canceled: true, filePaths: [] };
   };
-  const canceledFiles = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const canceledFiles = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.dialog.selectFiles",
     args: {}
   });
   assert.equal(canceledFiles.ok, true);
   assert.deepEqual(canceledFiles.result, { canceled: true, files: [] });
 
-  const microphone = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const microphone = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.microphone.getPermission",
     args: {}
   });
@@ -673,21 +715,21 @@ test("WebApp Bridge native actions require page scope and enforce their public c
     assert.equal(microphone.result.permission, "unavailable");
   }
 
-  const clipboard = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const clipboard = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.clipboard.writeText",
     args: { text: "copied" }
   });
   assert.equal(clipboard.ok, true);
   assert.deepEqual(calls.clipboardWrites, ["copied"]);
 
-  const oversizedClipboard = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const oversizedClipboard = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.clipboard.writeText",
     args: { text: "x".repeat(1024 * 1024 + 1) }
   });
   assert.equal(oversizedClipboard.ok, false);
   assert.equal(oversizedClipboard.error.code, "invalid_args");
 
-  const notification = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const notification = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.notification.show",
     args: { title: "Finished", body: "Export complete" }
   });
@@ -695,13 +737,13 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(calls.notifications.length, 1);
 
   for (let index = 1; index < 5; index += 1) {
-    const repeated = await handleWebappPageActionRequest(options, "bridge-v5", {
+    const repeated = await handleWebappPageActionRequest(options, id, {
       action: "desktop.native.notification.show",
       args: { title: `Update ${index}`, body: "Still working" }
     });
     assert.equal(repeated.ok, true);
   }
-  const rateLimited = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const rateLimited = await handleWebappPageActionRequest(options, id, {
     action: "desktop.native.notification.show",
     args: { title: "One too many", body: "This notification must be rejected" }
   });
@@ -710,35 +752,31 @@ test("WebApp Bridge native actions require page scope and enforce their public c
   assert.equal(calls.notifications.length, 5);
 });
 
-test("WebApp Bridge capability list distinguishes declared, reserved, and unavailable entries", async (t) => {
+test("WebApp Bridge capability list enables all public capabilities and distinguishes reserved entries", async (t) => {
   const { options } = createDesktopActionOptions(t);
-  const webappDir = path.join(getDesktopWebappsDataRoot(options.app), "bridge-v5");
+  const id = webappId("bridge-v5");
+  const webappDir = path.join(getDesktopWebappsDataRoot(options.app), id);
   fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
   fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html>", "utf8");
   fs.writeFileSync(path.join(webappDir, "webapp.json"), JSON.stringify({
-    schemaVersion: 1,
-    id: "bridge-v5",
+    schemaVersion: 2,
+    id,
+    key: "bridge-v5",
     version: "1.0.0",
-    target: "universal",
+    target: "any",
     label: "Bridge V5",
-    openMode: "workspace",
     appConfig: {},
     frontend: {
       root: "frontend",
       index: "index.html",
-      spa: true,
-      apiPrefix: "/api"
+      routeConfig: { backendPrefixes: [] }
     },
     desktopBridge: {
-      version: 1,
-      capabilities: {
-        "assistant.chat": {},
-        "native.clipboard.write": {}
-      }
+      version: 1
     }
   }), "utf8");
 
-  const response = await handleWebappPageActionRequest(options, "bridge-v5", {
+  const response = await handleWebappPageActionRequest(options, id, {
     action: "desktop.capabilities.list",
     args: {}
   });
@@ -841,15 +879,13 @@ test("desktop action bridge listens on configured port and refreshes when config
 test("Desktop Action Bridge keeps WebApp page and backend token scopes separate", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   const port = await getFreeLoopbackPort();
+  const id = webappId("scope-v5");
   const item = {
-    id: "scope-v5",
-    schemaVersion: 1,
+    id,
+    key: "scope-v5",
+    schemaVersion: 2,
     desktopBridge: {
-      version: 1,
-      capabilities: {
-        "assistant.chat": {},
-        "native.clipboard.write": {}
-      }
+      version: 1
     }
   };
   const webappDir = path.join(getDesktopWebappsDataRoot(options.app), item.id);
@@ -859,10 +895,13 @@ test("Desktop Action Bridge keeps WebApp page and backend token scopes separate"
     ...item,
     label: "Scoped App",
     version: "1.0.0",
-    target: "universal",
-    openMode: "workspace",
+    target: "any",
     appConfig: {},
-    frontend: { root: "frontend", index: "index.html", spa: true, apiPrefix: "/api" }
+    frontend: {
+      root: "frontend",
+      index: "index.html",
+      routeConfig: { backendPrefixes: [] }
+    }
   }), "utf8");
   const pageToken = issueWebappActionToken(item, "localPageGateway");
   const backendToken = issueWebappActionToken(item, "backendActionToken");

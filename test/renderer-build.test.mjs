@@ -2746,7 +2746,7 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(settingsPage, /desktopPetSupported/);
   assert.match(settingsPage, /handleToggleDesktopPet/);
   assert.match(settingsPage, /window\.electronAPI\.assistant\.listCopilotAgents\(\),[\s\S]*?window\.electronAPI\.assistant\.listAgents\(\)/);
-  assert.match(settingsPage, /readAssistantAgentOptions\(agentsResult, fallbackAgents\)/);
+  assert.match(settingsPage, /readAssistantAgentOptions\(agentsResult, fallbackAgents\)[\s\S]*?\.\.\.chatAgents[\s\S]*?findIndex\(\(candidate\) => candidate\.agentKey === agent\.agentKey\)/);
   assert.doesNotMatch(settingsPage, /页面 Copilot/);
   assert.doesNotMatch(settingsPage, />选择宠物</);
   assert.doesNotMatch(settingsPage, /半透明侧边栏/);
@@ -2793,6 +2793,14 @@ test("settings page configures desktop helper default agent separately from desk
   assert.match(globalStyles, /grid-template-columns:\s*minmax\(140px,\s*1fr\)\s*minmax\(220px,\s*300px\)\s*124px/);
   assert.doesNotMatch(settingsPage, /onClick=\{resetSidebarNavOrder\}/);
   assert.doesNotMatch(settingsPage, /moveSidebarNavOrderItem/);
+});
+
+test("WebApp agent choices merge Copilot and general agents", () => {
+  const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
+  assert.match(settingsPage, /const merged = new Map<string, DesktopPetAgentOption>\(\)/);
+  assert.match(settingsPage, /for \(const agent of copilotAgents\)[\s\S]*?merged\.set\(agent\.agentKey, agent\)/);
+  assert.match(settingsPage, /for \(const agent of Array\.isArray\(fallbackAgents\) \? fallbackAgents : \[\]\)[\s\S]*?!merged\.has\(agent\.agentKey\)[\s\S]*?merged\.set\(agent\.agentKey, agent\)/);
+  assert.match(settingsPage, /readAssistantAgentOptions\(agentsResult, fallbackAgents\)[\s\S]*?\.\.\.chatAgents[\s\S]*?findIndex\(\(candidate\) => candidate\.agentKey === agent\.agentKey\)/);
 });
 
 test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
@@ -7703,6 +7711,15 @@ test("websites and webapps settings use split workspace detail panes", () => {
   assert.match(settingsPage, /settings\.webapps\.runtimeTitle/);
   assert.match(settingsPage, /settings\.webapps\.manifestTitle/);
   assert.match(settingsPage, /settings\.webapps\.logsTitle/);
+  assert.match(
+    settingsPage,
+    /case "webapps"[\s\S]*className="control-center-shell web-settings-shell"[\s\S]*className="control-center-detail web-settings-detail"[\s\S]*className="service-card web-detail-card control-center-service-hero webapp-user-config-card"[\s\S]*className="webapp-runtime-settings-card"/
+  );
+  assert.match(
+    settingsPage,
+    /handleSaveWebappSettings[\s\S]*command\.type === "runtime"[\s\S]*saveRuntimeSettings\(\s*webappRuntimeSettings/
+  );
+  assert.doesNotMatch(settingsPage, /handleSaveWebappRuntimeSettings|settings\.webapps\.runtimeSettingsSave/);
   assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("start", selectedWebapp\)/);
   assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("stop", selectedWebapp\)/);
   assert.match(settingsPage, /case "webapps"[\s\S]*handleWebappRuntimeAction\("restart", selectedWebapp\)/);

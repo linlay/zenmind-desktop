@@ -2,6 +2,7 @@ export const WEBAPP_BRIDGE_MODULE_PATH = "/__desktop/bridge.js";
 
 export const WEBAPP_BRIDGE_MODULE_SOURCE = String.raw`const ACTION_PATH = "/__desktop/actions/call";
 const APP_CONFIG_PATH = "/__desktop/app-config.json";
+const USER_CONFIG_PATH = "/__desktop/user-config.json";
 
 export class DesktopBridgeError extends Error {
   constructor(action, code, message, details) {
@@ -106,9 +107,43 @@ async function getAppConfig() {
   return appConfig;
 }
 
+async function getUserConfig() {
+  let response;
+  try {
+    response = await fetch(USER_CONFIG_PATH, { headers: { "Accept": "application/json" } });
+  } catch (error) {
+    throw new DesktopBridgeError(
+      "desktop.app.getUserConfig",
+      "bridge_unavailable",
+      "WebApp user configuration is unavailable.",
+      { cause: error?.name || "Error" }
+    );
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new DesktopBridgeError(
+      "desktop.app.getUserConfig",
+      "invalid_response",
+      "Desktop returned an invalid WebApp user configuration."
+    );
+  }
+  const values = payload?.values;
+  if (!response.ok || !values || typeof values !== "object" || Array.isArray(values)) {
+    throw new DesktopBridgeError(
+      "desktop.app.getUserConfig",
+      "invalid_response",
+      "Desktop returned an invalid WebApp user configuration."
+    );
+  }
+  return values;
+}
+
 export const desktop = Object.freeze({
   app: Object.freeze({
-    getConfig: getAppConfig
+    getConfig: getAppConfig,
+    getUserConfig
   }),
   capabilities: Object.freeze({
     list: listCapabilities,

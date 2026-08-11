@@ -1,48 +1,54 @@
 import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
+import packageValidation = require("../../../shared/webapp-package-validation");
 import type {
   WebappEntry,
   WebappOpenMode,
-  WebappTarget
+  WebappTarget,
+  WebappUserConfigIssue
 } from "../../../shared/contracts";
 import {
+  WEBAPP_AGENT_KEY_PATTERN,
   WEBAPP_ID_PATTERN,
   WEBAPP_MANIFEST_MAX_BYTES,
   WEBAPP_MANIFEST_VERSION,
   parseWebappManifest,
   safeParseWebappManifest,
-  type WebappManifestV1
+  type WebappManifest,
+  type WebappUserConfigField,
+  type WebappUserConfigValue,
+  type WebappUserConfigValues
 } from "../../../shared/webapp-manifest";
 import {
+  getDesktopWebappDataRoot,
   getDesktopWebappsDataRoot,
   getDesktopWebsConfigRoot
 } from "../../user-paths";
 import {
   createWebappEntryKey,
-  normalizeAgentKey,
   normalizeWebsiteLabel,
-  realpathInsideRoot,
-  resolveWebappRelativePath,
   sortWebEntries
 } from "../common";
 import { withWebappManagementMetadata } from "./metadata";
 
+const { validateWebappPackageDirectory } = packageValidation;
+
 export const WEBAPP_FILE = "webapp.json";
 export const WEBAPP_SCHEMA_VERSION = WEBAPP_MANIFEST_VERSION;
 export const WEBAPP_TARGETS = [
-  "universal",
+  "any",
   "darwin-arm64",
   "darwin-x64",
-  "windows-arm64",
-  "windows-x64"
+  "darwin-universal",
+  "win32-arm64",
+  "win32-x64"
 ] as const satisfies readonly WebappTarget[];
 
 const WEBAPP_PREFERENCES_FILE = "webapp-preferences.json";
 
 type WebappPreference = {
   label?: string;
-  copilotAgentKey?: string;
   openMode?: WebappOpenMode;
 };
 
@@ -63,7 +69,7 @@ export function getCurrentWebappTarget(
     return `darwin-${arch}`;
   }
   if (platform === "win32" && (arch === "arm64" || arch === "x64")) {
-    return `windows-${arch}`;
+    return `win32-${arch}`;
   }
   return "";
 }
@@ -73,7 +79,13 @@ export function webappTargetMatchesCurrentPlatform(
   platform: NodeJS.Platform = process.platform,
   arch: string = process.arch
 ) {
-  return target === "universal" || target === getCurrentWebappTarget(platform, arch);
+  if (target === "any") {
+    return true;
+  }
+  if (target === "darwin-universal") {
+    return platform === "darwin" && (arch === "arm64" || arch === "x64");
+  }
+  return target === getCurrentWebappTarget(platform, arch);
 }
 
 export function getWebappDir(app: App, id: string, platform: NodeJS.Platform = process.platform) {
@@ -104,12 +116,6 @@ function readPreferences(app: App): WebappPreferenceStore {
       if (typeof candidate.label === "string" && candidate.label.trim()) {
         preference.label = normalizeWebsiteLabel(candidate.label, id);
       }
-      if (typeof candidate.copilotAgentKey === "string") {
-        const agentKey = normalizeAgentKey(candidate.copilotAgentKey);
-        if (agentKey) {
-          preference.copilotAgentKey = agentKey;
-        }
-      }
       if (candidate.openMode === "workspace" || candidate.openMode === "dialog") {
         preference.openMode = candidate.openMode;
       }
@@ -131,6 +137,174 @@ function writePreferences(app: App, preferences: WebappPreferenceStore) {
   fs.renameSync(temporaryPath, filePath);
 }
 
+export function getWebappUserConfigPath(app: App, id: string) {
+  return path.join(getDesktopWebappDataRoot(app, assertWebappId(id)), "config", "user-config.json");
+}
+
+function readStoredUserConfigValues(app: App, id: string): WebappUserConfigValues {
+  try {
+    const value = JSON.parse(fs.readFileSync(getWebappUserConfigPath(app, id), "utf8")) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) {
+      return {};
+    }
+    const result: WebappUserConfigValues = {};
+    for (const [key, candidate] of Object.entries(value)) {
+      if (
+        typeof candidate === "string" ||
+        typeof candidate === "boolean" ||
+        typeof candidate === "number" && Number.isFinite(candidate)
+      ) {
+        result[key] = candidate;
+      }
+    }
+    return result;
+  } catch {
+    return {};
+  }
+}
+
+function getUserConfigFieldDefault(field: WebappUserConfigField): WebappUserConfigValue | undefined {
+  return "default" in field ? field.default : undefined;
+}
+
+function isValidUserConfigValue(field: WebappUserConfigField, value: unknown) {
+  if (field.type === "text" || field.type === "textarea") {
+    return typeof value === "string" && value.length <= field.maxLength;
+  }
+  if (field.type === "number") {
+    return typeof value === "number" &&
+      Number.isFinite(value) &&
+      (field.min === undefined || value >= field.min) &&
+      (field.max === undefined || value <= field.max);
+  }
+  if (field.type === "boolean") {
+    return typeof value === "boolean";
+  }
+  if (typeof value !== "string" || !value) {
+    return false;
+  }
+  if ("source" in field) {
+    return field.source === "desktop.agents" && WEBAPP_AGENT_KEY_PATTERN.test(value);
+  }
+  return field.options.some((option) => option.value === value);
+}
+
+function normalizeWebappUserConfigValues(
+  manifest: WebappManifest,
+  input: unknown,
+  options: { includeDefaults: boolean; rejectUnknown: boolean }
+) {
+  const source = input && typeof input === "object" && !Array.isArray(input)
+    ? input as Record<string, unknown>
+    : {};
+  const fields = manifest.userConfig?.fields ?? [];
+  const fieldNames = new Set(fields.map((field) => field.name));
+  const values: WebappUserConfigValues = {};
+  const issues: WebappUserConfigIssue[] = [];
+
+  if (options.rejectUnknown) {
+    for (const key of Object.keys(source)) {
+      if (!fieldNames.has(key)) {
+        issues.push({ field: key, message: "This field is not declared by the WebApp." });
+      }
+    }
+  }
+
+  for (const field of fields) {
+    const hasInput = Object.hasOwn(source, field.name);
+    const candidate = hasInput ? source[field.name] : undefined;
+    if (hasInput && !isValidUserConfigValue(field, candidate)) {
+      issues.push({ field: field.name, message: `Value is invalid for ${field.type}.` });
+      continue;
+    }
+    if (hasInput) {
+      values[field.name] = candidate as WebappUserConfigValue;
+      continue;
+    }
+    const defaultValue = getUserConfigFieldDefault(field);
+    if (options.includeDefaults && defaultValue !== undefined) {
+      values[field.name] = defaultValue;
+      continue;
+    }
+    if (field.required) {
+      issues.push({ field: field.name, message: "A value is required." });
+    }
+  }
+  return { values, issues };
+}
+
+export function readWebappUserConfigState(app: App, id: string) {
+  const webappId = assertWebappId(id);
+  const manifest = readManifestFile(getWebappDir(app, webappId));
+  const stored = readStoredUserConfigValues(app, webappId);
+  return normalizeWebappUserConfigValues(manifest, stored, {
+    includeDefaults: true,
+    rejectUnknown: false
+  });
+}
+
+export function readWebappUserConfigValues(app: App, id: string): WebappUserConfigValues {
+  return readWebappUserConfigState(app, id).values;
+}
+
+export function validateWebappUserConfigValues(
+  manifest: WebappManifest,
+  input: unknown
+) {
+  return normalizeWebappUserConfigValues(manifest, input, {
+    includeDefaults: false,
+    rejectUnknown: true
+  });
+}
+
+export function writeWebappUserConfigValues(
+  app: App,
+  id: string,
+  input: unknown
+) {
+  const webappId = assertWebappId(id);
+  const manifest = readManifestFile(getWebappDir(app, webappId));
+  const normalized = validateWebappUserConfigValues(manifest, input);
+  if (normalized.issues.length > 0) {
+    return {
+      ok: false as const,
+      values: readWebappUserConfigValues(app, webappId),
+      issues: normalized.issues
+    };
+  }
+
+  const overrides: WebappUserConfigValues = {};
+  for (const field of manifest.userConfig?.fields ?? []) {
+    if (!Object.hasOwn(normalized.values, field.name)) {
+      continue;
+    }
+    const value = normalized.values[field.name]!;
+    const defaultValue = getUserConfigFieldDefault(field);
+    if (defaultValue !== value) {
+      overrides[field.name] = value;
+    }
+  }
+
+  const filePath = getWebappUserConfigPath(app, webappId);
+  if (Object.keys(overrides).length === 0) {
+    fs.rmSync(filePath, { force: true });
+  } else {
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const temporaryPath = `${filePath}.${process.pid}.tmp`;
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(overrides, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600
+    });
+    fs.renameSync(temporaryPath, filePath);
+  }
+
+  return {
+    ok: true as const,
+    values: readWebappUserConfigValues(app, webappId),
+    issues: [] as WebappUserConfigIssue[]
+  };
+}
+
 export function removeWebappPreferences(app: App, id: string) {
   const webappId = assertWebappId(id);
   const preferences = readPreferences(app);
@@ -141,7 +315,7 @@ export function removeWebappPreferences(app: App, id: string) {
   writePreferences(app, preferences);
 }
 
-function readManifestFile(webappDir: string): WebappManifestV1 {
+function readManifestFile(webappDir: string): WebappManifest {
   const manifestPath = path.join(webappDir, WEBAPP_FILE);
   const stat = fs.statSync(manifestPath);
   if (!stat.isFile()) {
@@ -153,61 +327,27 @@ function readManifestFile(webappDir: string): WebappManifestV1 {
   return parseWebappManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown);
 }
 
-function validatePackagePaths(manifest: WebappManifestV1, webappDir: string) {
-  const frontendRoot = resolveWebappRelativePath(webappDir, manifest.frontend.root);
-  const frontendRealRoot = realpathInsideRoot(webappDir, frontendRoot);
-  if (!fs.statSync(frontendRealRoot).isDirectory()) {
-    throw new Error(`frontend.root is not a directory: ${manifest.frontend.root}`);
-  }
-  const indexPath = resolveWebappRelativePath(frontendRealRoot, manifest.frontend.index);
-  const indexRealPath = realpathInsideRoot(frontendRealRoot, indexPath);
-  if (!fs.statSync(indexRealPath).isFile()) {
-    throw new Error(`frontend.index is not a file: ${manifest.frontend.index}`);
-  }
-
-  const command = manifest.backend?.command;
-  if (!command || command.type === "system") {
-    return;
-  }
-  const relativeEntry = command.type === "electron-node" ? command.script : command.executable;
-  const entryPath = resolveWebappRelativePath(webappDir, relativeEntry);
-  const entryRealPath = realpathInsideRoot(webappDir, entryPath);
-  if (!fs.statSync(entryRealPath).isFile()) {
-    throw new Error(`backend command entry is not a file: ${relativeEntry}`);
-  }
-  if (
-    command.type === "electron-node" &&
-    ![".js", ".cjs", ".mjs"].includes(path.extname(entryRealPath).toLowerCase())
-  ) {
-    throw new Error("electron-node backend script must be a .js, .cjs, or .mjs file.");
-  }
-  if (
-    command.type === "bundled" &&
-    process.platform === "win32" &&
-    path.extname(entryRealPath).toLowerCase() !== ".exe"
-  ) {
-    throw new Error("Windows bundled backend executable must be an .exe file.");
-  }
-}
-
 function manifestToEntry(
-  manifest: WebappManifestV1,
+  manifest: WebappManifest,
   webappDir: string,
-  preference: WebappPreference = {}
+  preference: WebappPreference = {},
+  userConfigValues: WebappUserConfigValues = {}
 ): WebappEntry {
   if (!webappTargetMatchesCurrentPlatform(manifest.target)) {
     throw new Error(`webapp target ${manifest.target} is not compatible with this Desktop.`);
   }
-  validatePackagePaths(manifest, webappDir);
+  validateWebappPackageDirectory(webappDir, manifest);
   const manifestStat = fs.statSync(path.join(webappDir, WEBAPP_FILE));
   return {
     ...manifest,
     label: preference.label ?? manifest.label,
-    openMode: preference.openMode ?? manifest.openMode,
+    openMode: preference.openMode ?? "workspace",
     id: manifest.id,
     entryKey: createWebappEntryKey(manifest.id),
     kind: "webapp",
-    ...(preference.copilotAgentKey ? { copilotAgentKey: preference.copilotAgentKey } : {}),
+    ...(typeof userConfigValues.agentKey === "string" && WEBAPP_AGENT_KEY_PATTERN.test(userConfigValues.agentKey)
+      ? { copilotAgentKey: userConfigValues.agentKey }
+      : {}),
     createdAt: manifestStat.birthtimeMs || manifestStat.ctimeMs,
     updatedAt: manifestStat.mtimeMs
   };
@@ -262,7 +402,8 @@ export function readInstalledWebappItems(app: App, platform: NodeJS.Platform = p
       if (manifest.id !== entry.name) {
         throw new Error(`webapp id must match its installation directory: ${entry.name}.`);
       }
-      items.push(manifestToEntry(manifest, webappDir, preferences[manifest.id]));
+      const userConfigValues = readWebappUserConfigValues(app, manifest.id);
+      items.push(manifestToEntry(manifest, webappDir, preferences[manifest.id], userConfigValues));
     } catch (error) {
       console.warn("failed to read webapp item", path.join(webappDir, WEBAPP_FILE), error);
     }
@@ -279,7 +420,6 @@ export function writeWebappPreferenceFields(
   id: string,
   input: {
     label?: string;
-    copilotAgentKey?: string;
     openMode?: WebappOpenMode;
   },
   platform: NodeJS.Platform = process.platform
@@ -301,16 +441,8 @@ export function writeWebappPreferenceFields(
       next.label = label;
     }
   }
-  if (typeof input.copilotAgentKey === "string") {
-    const agentKey = normalizeAgentKey(input.copilotAgentKey);
-    if (agentKey) {
-      next.copilotAgentKey = agentKey;
-    } else {
-      delete next.copilotAgentKey;
-    }
-  }
   if (input.openMode === "workspace" || input.openMode === "dialog") {
-    if (input.openMode === manifest.openMode) {
+    if (input.openMode === "workspace") {
       delete next.openMode;
     } else {
       next.openMode = input.openMode;
@@ -322,7 +454,10 @@ export function writeWebappPreferenceFields(
     delete preferences[webappId];
   }
   writePreferences(app, preferences);
-  return withWebappManagementMetadata(app, manifestToEntry(manifest, webappDir, next));
+  return withWebappManagementMetadata(
+    app,
+    manifestToEntry(manifest, webappDir, next, readWebappUserConfigValues(app, webappId))
+  );
 }
 
 export function writeCanonicalWebappManifest(webappDir: string, expectedId = "") {

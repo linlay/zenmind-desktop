@@ -660,6 +660,18 @@
   color: var(--accent-strong);
 }
 
+.settings-page .webapp-nav-statuses {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: 3px;
+}
+
+.settings-page .webapp-nav-statuses .service-nav-version-status {
+  min-width: 52px;
+  justify-content: flex-start;
+}
+
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:hover,
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:focus-visible {
   background: rgba(255, 255, 255, 0.055);
@@ -730,6 +742,248 @@
   font-weight: 400;
 }
 
+.settings-page .webapp-user-config-section {
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .webapp-user-config-heading {
+  padding: 12px 16px;
+}
+
+.settings-page .webapp-user-config-heading h3 {
+  margin: 0;
+  color: var(--control-center-text);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.settings-page .webapp-user-config-heading p {
+  max-width: 680px;
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.settings-page .webapp-user-config-fields {
+  display: grid;
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .webapp-user-config-field {
+  display: grid;
+  grid-template-columns: minmax(140px, 0.32fr) minmax(260px, 1fr);
+  align-items: start;
+  gap: 18px;
+  min-width: 0;
+  padding: 14px 16px;
+}
+
+.settings-page .webapp-user-config-field + .webapp-user-config-field {
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .webapp-user-config-copy,
+.settings-page .webapp-user-config-control {
+  display: grid;
+  min-width: 0;
+  gap: 5px;
+}
+
+.settings-page .webapp-user-config-control .ant-input-textarea-show-count {
+  margin-bottom: 20px;
+}
+
+.settings-page .webapp-user-config-copy strong {
+  color: var(--ink-soft);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.settings-page .webapp-user-config-label-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-page .webapp-user-config-help {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  color: var(--ink-muted);
+  font-size: 13px;
+  cursor: help;
+}
+
+.settings-page .webapp-user-config-help:hover,
+.settings-page .webapp-user-config-help:focus-visible {
+  color: var(--accent-strong);
+}
+
+.settings-page .webapp-user-config-help:focus-visible {
+  border-radius: 999px;
+  outline: 2px solid rgba(var(--accent-rgb), 0.34);
+  outline-offset: 2px;
+}
+
+.settings-page .webapp-user-config-required,
+.settings-page .webapp-user-config-error {
+  color: var(--danger);
+}
+
+.settings-page .webapp-user-config-required {
+  margin-left: 4px;
+}
+
+.settings-page .webapp-user-config-error {
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.settings-page .webapp-user-config-empty {
+  padding: 18px 16px;
+  border-top: 1px solid var(--control-center-border);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.settings-page .webapp-public-url {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  padding: 10px 14px;
+  border: 1px solid rgba(27, 133, 83, 0.22);
+  border-radius: var(--control-center-radius);
+  background: rgba(27, 133, 83, 0.055);
+}
+
+.settings-page .control-center-service-hero > .webapp-public-url {
+  margin: 0 16px 14px;
+}
+
+.settings-page .webapp-public-url > span {
+  color: #187346;
+  font-size: 12px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+:root[data-theme="dark"] .settings-page .webapp-public-url {
+  border-color: rgba(101, 212, 155, 0.22);
+  background: rgba(101, 212, 155, 0.07);
+}
+
+:root[data-theme="dark"] .settings-page .webapp-public-url > span {
+  color: #65d49b;
+}
+
+.settings-page .webapp-import-empty {
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+}
+
+.settings-page .webapp-import-empty span {
+  max-width: 440px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.settings-page .webapp-catalog-import {
+  flex: 0 0 auto;
+}
+
+.settings-page .webapp-catalog-import > button {
+  min-height: 34px;
+}
+
+@media (max-width: 900px) {
+  .settings-page .webapp-user-config-field {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+
+  .settings-page .webapp-public-url {
+    grid-template-columns: 1fr auto;
+  }
+
+  .settings-page .webapp-public-url > span {
+    grid-column: 1 / -1;
+  }
+}
+
+.webapp-details-modal .webapp-details-tab {
+  min-height: 320px;
+  border: 1px solid var(--control-center-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.webapp-details-modal .webapp-details-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 54px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--control-center-border);
+  background: var(--surface-soft);
+}
+
+.webapp-details-modal .webapp-details-toolbar-copy {
+  display: grid;
+  min-width: 0;
+  gap: 3px;
+}
+
+.webapp-details-modal .webapp-details-toolbar-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.webapp-details-modal .webapp-details-toolbar-copy span,
+.webapp-details-modal .webapp-details-toolbar > span {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.webapp-details-modal .webapp-details-toolbar.is-log-toolbar .service-title-actions {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 8px;
+}
+
+.webapp-details-modal .webapp-details-toolbar.is-log-toolbar {
+  justify-content: flex-end;
+}
+
+@media (max-width: 760px) {
+  .webapp-details-modal .webapp-details-toolbar {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .webapp-details-modal .web-detail-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .webapp-details-modal .web-detail-row:nth-child(2) {
+    border-top: 1px solid var(--control-center-border);
+  }
+}
+
 .settings-page .webapp-runtime-settings-card .ant-input,
 .settings-page .webapp-runtime-settings-card .ant-select {
   width: 100%;
@@ -785,7 +1039,8 @@
   border-bottom: 0;
 }
 
-.settings-page .web-publish-link {
+.settings-page .web-publish-link,
+.webapp-details-modal .web-publish-link {
   max-width: 100%;
   margin: 0;
   padding: 0;
@@ -800,12 +1055,15 @@
 }
 
 .settings-page .web-publish-link:hover,
-.settings-page .web-publish-link:focus-visible {
+.settings-page .web-publish-link:focus-visible,
+.webapp-details-modal .web-publish-link:hover,
+.webapp-details-modal .web-publish-link:focus-visible {
   color: var(--accent);
   text-decoration: underline;
 }
 
-.settings-page .web-publish-message {
+.settings-page .web-publish-message,
+.webapp-details-modal .web-publish-message {
   padding: 10px 16px;
   border-top: 1px solid var(--control-center-border);
   color: var(--muted);
@@ -814,12 +1072,14 @@
   overflow-wrap: anywhere;
 }
 
-.settings-page .web-publish-message.is-error {
+.settings-page .web-publish-message.is-error,
+.webapp-details-modal .web-publish-message.is-error {
   color: #b52e31;
   background: rgba(201, 54, 57, 0.04);
 }
 
-.settings-page .web-publish-share-card {
+.settings-page .web-publish-share-card,
+.webapp-details-modal .web-publish-share-card {
   display: grid;
   grid-template-columns: 156px minmax(0, 1fr);
   gap: 18px;
@@ -831,7 +1091,8 @@
   background: var(--surface-soft);
 }
 
-.settings-page .web-publish-share-copy {
+.settings-page .web-publish-share-copy,
+.webapp-details-modal .web-publish-share-copy {
   display: flex;
   min-width: 0;
   flex-direction: column;
@@ -841,12 +1102,14 @@
   line-height: 1.5;
 }
 
-.settings-page .web-publish-share-copy strong {
+.settings-page .web-publish-share-copy strong,
+.webapp-details-modal .web-publish-share-copy strong {
   color: var(--ink);
   font-size: 14px;
 }
 
-.settings-page .web-publish-share-copy code {
+.settings-page .web-publish-share-copy code,
+.webapp-details-modal .web-publish-share-copy code {
   padding: 8px 10px;
   border-radius: 7px;
   background: var(--surface);
@@ -855,12 +1118,14 @@
   white-space: normal;
 }
 
-.settings-page .web-publish-setup-actions {
+.settings-page .web-publish-setup-actions,
+.webapp-details-modal .web-publish-setup-actions {
   padding: 0 16px 16px;
 }
 
 @media (max-width: 760px) {
-  .settings-page .web-publish-share-card {
+  .settings-page .web-publish-share-card,
+  .webapp-details-modal .web-publish-share-card {
     grid-template-columns: 1fr;
     justify-items: start;
   }
@@ -872,7 +1137,8 @@
 }
 
 :root[data-theme="dark"] .settings-page .web-publish-status.is-error,
-:root[data-theme="dark"] .settings-page .web-publish-message.is-error {
+:root[data-theme="dark"] .settings-page .web-publish-message.is-error,
+:root[data-theme="dark"] .webapp-details-modal .web-publish-message.is-error {
   color: #ff8f92;
 }
 
@@ -931,7 +1197,8 @@
   background: transparent;
 }
 
-.settings-page .web-detail-actions {
+.settings-page .web-detail-actions,
+.webapp-details-modal .web-detail-actions {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -946,13 +1213,15 @@
   line-height: 1.45;
 }
 
-.settings-page .web-detail-grid {
+.settings-page .web-detail-grid,
+.webapp-details-modal .web-detail-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0;
 }
 
-.settings-page .web-detail-row {
+.settings-page .web-detail-row,
+.webapp-details-modal .web-detail-row {
   display: grid;
   grid-template-columns: minmax(110px, 0.42fr) minmax(0, 1fr);
   gap: 10px;
@@ -962,17 +1231,21 @@
 }
 
 .settings-page .web-detail-row:nth-child(1),
-.settings-page .web-detail-row:nth-child(2) {
+.settings-page .web-detail-row:nth-child(2),
+.webapp-details-modal .web-detail-row:nth-child(1),
+.webapp-details-modal .web-detail-row:nth-child(2) {
   border-top: 0;
 }
 
-.settings-page .web-detail-row span {
+.settings-page .web-detail-row span,
+.webapp-details-modal .web-detail-row span {
   min-width: 0;
   color: var(--muted);
   font-size: 12px;
 }
 
-.settings-page .web-detail-row strong {
+.settings-page .web-detail-row strong,
+.webapp-details-modal .web-detail-row strong {
   min-width: 0;
   color: var(--ink);
   font-size: 12px;
@@ -980,7 +1253,8 @@
   overflow-wrap: anywhere;
 }
 
-.settings-page .web-log-preview {
+.settings-page .web-log-preview,
+.webapp-details-modal .web-log-preview {
   min-height: 120px;
   max-height: 280px;
   margin: 0;

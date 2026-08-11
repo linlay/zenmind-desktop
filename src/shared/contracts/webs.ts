@@ -3,7 +3,9 @@ import type {
   WebappBackendConfig,
   WebappDesktopBridgeConfig,
   WebappFrontendConfig,
-  WebappManifestV1
+  WebappManifest,
+  WebappUserConfig,
+  WebappUserConfigValues
 } from "../webapp-manifest";
 
 export type WebKind = "website" | "webapp";
@@ -11,17 +13,17 @@ export type WebEntryKey = `website:${string}` | `webapp:${string}`;
 export type WebappRuntimeStatus = "stopped" | "starting" | "running" | "blocked" | "error";
 export type WebappLogTarget = "main" | "error";
 export type WebappSourceKind = "market" | "local" | "plugin";
-export type WebappOpenMode = WebappManifestV1["openMode"];
-export type WebappLauncherKind = "none" | "electron-node" | "bundled" | "system";
+export type WebappOpenMode = "workspace" | "dialog";
+export type WebappLauncherKind = "none" | "electron-node" | "executable" | "runtime";
 export type WebappBackendOwnership = "desktop";
-export type WebappTarget = WebappManifestV1["target"];
+export type WebappTarget = WebappManifest["target"];
 export interface WebappRuntimeSettings {
   schemaVersion: 1;
-  systemExecutables: Record<string, string>;
+  runtimeExecutables: Record<string, string>;
 }
 
 export interface WebappRuntimeSettingsInput {
-  systemExecutables?: Record<string, string>;
+  runtimeExecutables?: Record<string, string>;
 }
 
 export interface WebappRuntimeSettingsResult {
@@ -53,11 +55,13 @@ export interface WebsiteEntry extends WebEntryBase {
 export interface WebappEntry extends WebEntryBase {
   kind: "webapp";
   entryKey: `webapp:${string}`;
-  schemaVersion: WebappManifestV1["schemaVersion"];
-  version: WebappManifestV1["version"];
+  schemaVersion: WebappManifest["schemaVersion"];
+  key: WebappManifest["key"];
+  version: WebappManifest["version"];
   target: WebappTarget;
   openMode: WebappOpenMode;
-  appConfig: WebappManifestV1["appConfig"];
+  appConfig: WebappManifest["appConfig"];
+  userConfig?: WebappUserConfig;
   frontend: WebappFrontendConfig;
   backend?: WebappBackendConfig;
   desktopBridge?: WebappDesktopBridgeConfig;
@@ -176,8 +180,19 @@ export interface WebsiteTransferResult {
 
 export interface WebappUpdateInput {
   label?: string;
-  copilotAgentKey?: string;
   openMode?: WebappOpenMode;
+}
+
+export interface WebappUserConfigIssue {
+  field: string;
+  message: string;
+}
+
+export interface WebappUserConfigResult {
+  ok: boolean;
+  values: WebappUserConfigValues;
+  message: string;
+  issues?: WebappUserConfigIssue[];
 }
 
 export interface WebappItemsResult {
@@ -200,6 +215,13 @@ export interface WebappImportResult {
   path: string;
   message: string;
   installPath?: string;
+  diagnostic?: {
+    stage: "archive" | "manifest" | "package" | "runtime" | "startup" | "install";
+    code: string;
+    message: string;
+    suggestion?: string;
+    details?: Record<string, unknown>;
+  };
 }
 
 export interface WebappExportResult {

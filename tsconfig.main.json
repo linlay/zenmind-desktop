@@ -6,6 +6,8 @@
     "outDir": "dist-electron",
     "rootDir": "src",
     "strict": true,
+    "allowJs": true,
+    "checkJs": true,
     "esModuleInterop": true,
     "allowSyntheticDefaultImports": true,
     "skipLibCheck": true,

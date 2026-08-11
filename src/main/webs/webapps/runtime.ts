@@ -56,6 +56,8 @@ const STATE_FILE = "runtime.json";
 const MAIN_LOG_FILE = "main.log";
 const ERROR_LOG_FILE = "error.log";
 const HEALTH_INTERVAL_MS = 250;
+const HEALTH_MONITOR_INTERVAL_MS = 5_000;
+const HEALTH_MONITOR_FAILURE_THRESHOLD = 3;
 
 type RuntimeRecord = {
   item: WebappEntry;
@@ -64,6 +66,9 @@ type RuntimeRecord = {
   gateway: WebappGateway | null;
   backendActionToken: string;
   pageActionToken: string;
+  healthTimer: NodeJS.Timeout | null;
+  healthProbeActive: boolean;
+  consecutiveHealthFailures: number;
   state: WebappRuntimeState;
 };
 
@@ -100,11 +105,12 @@ function normalizeStoredTarget(
   value: unknown,
   fallback: WebappRuntimeState["target"]
 ): WebappRuntimeState["target"] {
-  return value === "universal" ||
+  return value === "any" ||
     value === "darwin-arm64" ||
     value === "darwin-x64" ||
-    value === "windows-arm64" ||
-    value === "windows-x64"
+    value === "darwin-universal" ||
+    value === "win32-arm64" ||
+    value === "win32-x64"
     ? value
     : fallback;
 }
@@ -115,8 +121,8 @@ function normalizeStoredLauncher(
 ): WebappRuntimeState["launcher"] {
   return value === "none" ||
     value === "electron-node" ||
-    value === "bundled" ||
-    value === "system"
+    value === "executable" ||
+    value === "runtime"
     ? value
     : fallback;
 }
@@ -142,7 +148,7 @@ function readStoredStateById(
       kind: "webapp",
       status,
       version: typeof parsed.version === "string" ? parsed.version : item?.version ?? "",
-      target: normalizeStoredTarget(parsed.target, item?.target ?? "universal"),
+      target: normalizeStoredTarget(parsed.target, item?.target ?? "any"),
       launcher: normalizeStoredLauncher(
         parsed.launcher,
         item ? launcherForItem(item) : "none"
@@ -373,7 +379,7 @@ async function waitForBackendHealth(
   if (!item.backend || !check.backendPort) {
     throw new Error("backend endpoint is unavailable");
   }
-  const deadline = Date.now() + item.backend.health.timeoutMs;
+  const deadline = Date.now() + item.backend.health.startupTimeoutMs;
   let lastMessage = "";
   while (Date.now() < deadline) {
     if (child && (child.exitCode !== null || child.signalCode !== null)) {
@@ -426,6 +432,24 @@ function revokeRecordActionTokens(record: RuntimeRecord) {
   record.pageActionToken = "";
 }
 
+function stopRecordHealthMonitor(record: RuntimeRecord) {
+  if (record.healthTimer) {
+    clearInterval(record.healthTimer);
+    record.healthTimer = null;
+  }
+  record.healthProbeActive = false;
+  record.consecutiveHealthFailures = 0;
+}
+
+async function probeBackendHealthOnce(item: WebappEntry, backendUrl: string) {
+  if (!item.backend || !backendUrl) {
+    return { ok: false, message: "backend endpoint is unavailable" };
+  }
+  return item.backend.health.type === "http"
+    ? probeHttpUrl(`${backendUrl}${item.backend.health.path}`, { timeoutMs: 1_500 })
+    : probeTcp(backendUrl, 1_500);
+}
+
 function prerequisiteMessage(check: WebappLauncherCheck) {
   return check.issues.map((entry) => entry.message).filter(Boolean).join(" ") ||
     t("webapp.runtimePrerequisitesReady");
@@ -452,7 +476,7 @@ export class WebappRuntime {
     }
   }
 
-  allowsLocalPageCapability(rawUrl: string, capability: WebappBridgeCapability) {
+  allowsLocalPageCapability(rawUrl: string, _capability: WebappBridgeCapability) {
     let origin = "";
     try {
       origin = new URL(rawUrl).origin;
@@ -464,8 +488,7 @@ export class WebappRuntime {
         return false;
       }
       try {
-        return new URL(record.state.webUrl).origin === origin &&
-          Object.hasOwn(record.item.desktopBridge?.capabilities ?? {}, capability);
+        return new URL(record.state.webUrl).origin === origin;
       } catch {
         return false;
       }
@@ -482,6 +505,58 @@ export class WebappRuntime {
         item.id
       );
     });
+  }
+
+  private startHealthMonitor(app: App, record: RuntimeRecord) {
+    if (!record.item.backend || !record.state.backendUrl) {
+      return;
+    }
+    stopRecordHealthMonitor(record);
+    record.healthTimer = setInterval(() => {
+      if (record.healthProbeActive || record.state.status !== "running") {
+        return;
+      }
+      record.healthProbeActive = true;
+      void probeBackendHealthOnce(record.item, record.state.backendUrl).then(async (probe) => {
+        if (record.state.status !== "running") {
+          return;
+        }
+        if (probe.ok) {
+          record.consecutiveHealthFailures = 0;
+          return;
+        }
+        record.consecutiveHealthFailures += 1;
+        if (record.consecutiveHealthFailures < HEALTH_MONITOR_FAILURE_THRESHOLD) {
+          return;
+        }
+        const message = t("service.healthTimeout", {
+          message: probe.message || record.state.backendUrl
+        });
+        stopRecordHealthMonitor(record);
+        record.state = {
+          ...record.state,
+          status: "error",
+          webUrl: "",
+          frontendPort: null,
+          message,
+          updatedAt: nowIso()
+        };
+        writeState(app, record.state);
+        writeLogLine(getLogPath(app, record.item.id, "error"), `[${nowIso()}] health monitor failed: ${message}`);
+        const gateway = record.gateway;
+        record.gateway = null;
+        await gateway?.close().catch(() => undefined);
+        revokeRecordActionTokens(record);
+        if (record.child) {
+          await terminateRuntimeChild(record.child, record.item.backend?.shutdownTimeoutMs);
+          record.child = null;
+        }
+        this.emitLifecycleChange("updated", record.item.id);
+      }).finally(() => {
+        record.healthProbeActive = false;
+      });
+    }, HEALTH_MONITOR_INTERVAL_MS);
+    record.healthTimer.unref();
   }
 
   checkRuntime(app: App, webappId: string): WebappRuntimeCheckResult {
@@ -595,6 +670,9 @@ export class WebappRuntime {
       gateway: null,
       backendActionToken: "",
       pageActionToken: issueWebappActionToken(item, "localPageGateway"),
+      healthTimer: null,
+      healthProbeActive: false,
+      consecutiveHealthFailures: 0,
       state: initialState
     };
     this.records.set(id, record);
@@ -711,13 +789,18 @@ export class WebappRuntime {
         const child = launched.child;
         child.once("exit", (code, signal) => {
           const current = this.records.get(id);
-          if (!current || current.child !== child || current.state.status === "stopped") {
+          if (
+            !current ||
+            current.child !== child ||
+            (current.state.status !== "running" && current.state.status !== "starting")
+          ) {
             return;
           }
           if (child.pid) {
             terminateRuntimeProcessTree(child.pid);
           }
           revokeRecordActionTokens(current);
+          stopRecordHealthMonitor(current);
           void current.gateway?.close();
           current.gateway = null;
           current.state = {
@@ -733,11 +816,13 @@ export class WebappRuntime {
         });
       }
 
+      this.startHealthMonitor(app, record);
       this.syncPublishedRoute(app, item, record.state);
       return { ok: true, item, state: record.state, message: record.state.message };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       await record.gateway?.close().catch(() => undefined);
+      stopRecordHealthMonitor(record);
       if (record.child) {
         await terminateRuntimeChild(record.child, item.backend?.shutdownTimeoutMs);
       }
@@ -765,6 +850,7 @@ export class WebappRuntime {
     const item = findWebapp(app, id);
     const record = this.records.get(id);
     if (record) {
+      stopRecordHealthMonitor(record);
       let gatewayFailureMessage = "";
       try {
         await record.gateway?.close();
@@ -990,6 +1076,7 @@ export class WebappRuntime {
       return;
     }
     if (record.state.status === "running" || record.state.status === "starting") {
+      stopRecordHealthMonitor(record);
       revokeRecordActionTokens(record);
       record.state = {
         ...record.state,

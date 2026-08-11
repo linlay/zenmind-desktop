@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, SunOutlined, UserOutlined } from "@ant-design/icons";
-import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tooltip } from "antd";
+import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined } from "@ant-design/icons";
+import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
 import { ControlCenterPage, PluginsPage } from "../control-center/ControlCenterPage";
@@ -76,6 +76,11 @@ import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shel
 import { useI18n } from "../../i18n/useI18n";
 import { isAssistantNavChatAgent } from "../../assistantNavigation";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
+import type {
+  WebappUserConfigField,
+  WebappUserConfigValue,
+  WebappUserConfigValues
+} from "../../../shared/webapp-manifest";
 
 type ThemePreference = "light" | "dark" | "system";
 type KanbanConnectionState = "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
@@ -128,7 +133,6 @@ type WebsiteDraftSnapshot = {
 type WebappDraftSnapshot = {
   id: string;
   label: string;
-  copilotAgentKey: string;
   openMode: WebappOpenMode;
 };
 
@@ -210,7 +214,6 @@ function createWebappDraftSnapshot(item: WebappEntry): WebappDraftSnapshot {
   return {
     id: item.id,
     label: item.label,
-    copilotAgentKey: item.copilotAgentKey || "",
     openMode: item.openMode
   };
 }
@@ -568,13 +571,19 @@ function readAssistantAgentOptions(
   copilotResult: Awaited<ReturnType<NonNullable<typeof window.electronAPI>["assistant"]["listCopilotAgents"]>>,
   fallbackAgents: DesktopPetAgentOption[]
 ) {
+  const merged = new Map<string, DesktopPetAgentOption>();
   if (copilotResult.ok) {
     const copilotAgents = toAssistantAgentOptions(Array.isArray(copilotResult.items) ? copilotResult.items : []);
-    if (copilotAgents.length > 0) {
-      return copilotAgents;
+    for (const agent of copilotAgents) {
+      merged.set(agent.agentKey, agent);
     }
   }
-  return Array.isArray(fallbackAgents) ? fallbackAgents : [];
+  for (const agent of Array.isArray(fallbackAgents) ? fallbackAgents : []) {
+    if (!merged.has(agent.agentKey)) {
+      merged.set(agent.agentKey, agent);
+    }
+  }
+  return [...merged.values()];
 }
 
 function readChatAgentOptions(
@@ -2391,21 +2400,25 @@ export function SettingsPage({
   const [deletingWebsiteId, setDeletingWebsiteId] = useState("");
   const [selectedWebappId, setSelectedWebappId] = useState("");
   const [webappLabel, setWebappLabel] = useState("");
-  const [webappAgentKey, setWebappAgentKey] = useState("");
   const [webappOpenMode, setWebappOpenMode] = useState<WebappOpenMode>("workspace");
   const [webappPending, setWebappPending] = useState(false);
+  const [webappUserConfigValues, setWebappUserConfigValues] = useState<WebappUserConfigValues>({});
+  const [webappUserConfigIssues, setWebappUserConfigIssues] = useState<Record<string, string>>({});
+  const [webappUserConfigLoading, setWebappUserConfigLoading] = useState(false);
+  const [webappUserConfigPending, setWebappUserConfigPending] = useState(false);
+  const [webappImportPending, setWebappImportPending] = useState(false);
   const [webappDeletingId, setWebappDeletingId] = useState("");
   const [webappRuntimePendingId, setWebappRuntimePendingId] = useState("");
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeState | null>>({});
   const [webappRuntimeCheckById, setWebappRuntimeCheckById] = useState<Record<string, WebappRuntimeCheckResult | null>>({});
   const [webappRuntimeSettings, setWebappRuntimeSettings] = useState<WebappRuntimeSettings>({
     schemaVersion: 1,
-    systemExecutables: {}
+    runtimeExecutables: {}
   });
-  const [webappRuntimeSettingsPending, setWebappRuntimeSettingsPending] = useState(false);
   const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
   const [webappPublishStateById, setWebappPublishStateById] = useState<Record<string, WebappPublishState | null>>({});
   const [webappPublishPendingId, setWebappPublishPendingId] = useState("");
+  const [webappDetailsOpen, setWebappDetailsOpen] = useState(false);
   const [webappLogTarget, setWebappLogTarget] = useState<WebappLogTarget>("main");
   const [webappLogContent, setWebappLogContent] = useState("");
   const [webappLogPending, setWebappLogPending] = useState(false);
@@ -2443,6 +2456,7 @@ export function SettingsPage({
   const contentRef = useRef<HTMLDivElement>(null);
   const websiteDraftSourceRef = useRef<WebsiteDraftSnapshot | null>(null);
   const webappDraftSourceRef = useRef<WebappDraftSnapshot | null>(null);
+  const webappUserConfigRequestRef = useRef(0);
   const pendingWebsiteSelectionIdRef = useRef("");
   const pendingWebsiteSnapshotRef = useRef<WebsiteDraftSnapshot | null>(null);
   const assistantSettingsLoadedRef = useRef(false);
@@ -2487,7 +2501,10 @@ export function SettingsPage({
   const shouldReadTunnelHubData = activeSection === "tunnelHub";
   const shouldReadMarketSettings = activeSection === "market";
   const shouldReadAssistantSettings = Boolean(
-    activeSection && ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection)
+    activeSection && (
+      ASSISTANT_SETTINGS_SECTION_IDS.includes(activeSection) ||
+      activeSection === "webapps"
+    )
   );
   const shouldReadDesktopPetState = desktopPetSupported && activeSection === "assistant";
   const controlConfigDirty = controlCloudConfig.serverUrl !== savedControlCloudConfig.serverUrl;
@@ -2517,15 +2534,17 @@ export function SettingsPage({
 
   function applyWebappDraftSnapshot(snapshot: WebappDraftSnapshot) {
     setWebappLabel(snapshot.label);
-    setWebappAgentKey(snapshot.copilotAgentKey);
     setWebappOpenMode(snapshot.openMode);
   }
 
   function clearWebappDraft() {
     webappDraftSourceRef.current = null;
     setWebappLabel("");
-    setWebappAgentKey("");
     setWebappOpenMode("workspace");
+    setWebappUserConfigValues({});
+    setWebappUserConfigIssues({});
+    setWebappUserConfigLoading(false);
+    webappUserConfigRequestRef.current += 1;
     setWebappLogContent("");
   }
 
@@ -2584,7 +2603,6 @@ export function SettingsPage({
       const sameSource = previousSnapshot?.id === selectedWebapp.id;
       const hasDraft = sameSource && (
         webappLabel !== previousSnapshot.label ||
-        webappAgentKey !== previousSnapshot.copilotAgentKey ||
         webappOpenMode !== previousSnapshot.openMode
       );
       if (!sameSource || !hasDraft) {
@@ -2603,7 +2621,6 @@ export function SettingsPage({
   }, [
     activeSection,
     selectedWebapp,
-    webappAgentKey,
     webappItems,
     webappLabel,
     webappOpenMode
@@ -2615,8 +2632,44 @@ export function SettingsPage({
     }
     void refreshSelectedWebappStatus(selectedWebapp.id);
     void refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
+    void refreshSelectedWebappUserConfig(selectedWebapp.id);
     void refreshWebappPublishStatus(selectedWebapp.id);
   }, [activeSection, selectedWebapp?.id]);
+
+  useEffect(() => {
+    if (activeSection !== "webapps" || !selectedWebapp) {
+      return;
+    }
+    let cancelled = false;
+    const otherWebapps = webappItems.filter((item) => item.id !== selectedWebapp.id);
+    void Promise.all(otherWebapps.map(async (item) => {
+      try {
+        const result = await window.electronAPI.webs.webapps.getPublishStatus(item.id);
+        return { id: item.id, result };
+      } catch {
+        return null;
+      }
+    })).then((results) => {
+      if (cancelled) {
+        return;
+      }
+      const successfulResults = results.filter((entry) => entry !== null);
+      if (successfulResults.length === 0) {
+        return;
+      }
+      setWebappPublishInfoById((current) => ({
+        ...current,
+        ...Object.fromEntries(successfulResults.map(({ id, result }) => [id, result.info]))
+      }));
+      setWebappPublishStateById((current) => ({
+        ...current,
+        ...Object.fromEntries(successfulResults.map(({ id, result }) => [id, result.state]))
+      }));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [activeSection, selectedWebapp?.id, webappItems]);
 
   useEffect(() => {
     if (activeSection !== "webapps") {
@@ -2905,8 +2958,13 @@ export function SettingsPage({
           assistantSettingsLoadedRef.current = false;
           return;
         }
-        const assistantAgents = readAssistantAgentOptions(agentsResult, fallbackAgents);
         const chatAgents = readChatAgentOptions(navigationResult);
+        const assistantAgents = [
+          ...readAssistantAgentOptions(agentsResult, fallbackAgents),
+          ...chatAgents
+        ].filter((agent, index, agents) =>
+          agents.findIndex((candidate) => candidate.agentKey === agent.agentKey) === index
+        );
         if (!agentsResult.ok && assistantAgents.length === 0) {
           throw new Error(agentsResult.message);
         }
@@ -3352,6 +3410,27 @@ export function SettingsPage({
     }
   }
 
+  async function handleImportWebappItem() {
+    setWebappImportPending(true);
+    try {
+      const result = await window.electronAPI.webs.webapps.import();
+      const diagnosticMessage = result.diagnostic
+        ? `[${result.diagnostic.stage}/${result.diagnostic.code}] ${result.diagnostic.message}${result.diagnostic.suggestion ? ` ${result.diagnostic.suggestion}` : ""}`
+        : result.message;
+      showSectionNotice("webapps", diagnosticMessage, result.ok ? "success" : "error");
+      if (result.ok) {
+        if (result.item) {
+          setSelectedWebappId(result.item.id);
+        }
+        await refreshWebItemsFromSettings();
+      }
+    } catch (reason) {
+      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setWebappImportPending(false);
+    }
+  }
+
   async function refreshSelectedWebappStatus(webappId = selectedWebapp?.id ?? "") {
     const id = webappId.trim();
     if (!id) {
@@ -3385,27 +3464,68 @@ export function SettingsPage({
     }
   }
 
-  async function handleSaveWebappRuntimeSettings() {
-    setWebappRuntimeSettingsPending(true);
-    try {
-      const result = await window.electronAPI.webs.webapps.saveRuntimeSettings(webappRuntimeSettings);
-      setWebappRuntimeSettings(result.settings);
-      if (selectedWebapp) {
-        await refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
+  function updateWebappUserConfigValue(
+    fieldName: string,
+    value: WebappUserConfigValue | undefined
+  ) {
+    setWebappUserConfigValues((current) => {
+      const next = { ...current };
+      if (value === undefined) {
+        delete next[fieldName];
+      } else {
+        next[fieldName] = value;
       }
-      showSectionResultNotice("webapps", result);
+      return next;
+    });
+    setWebappUserConfigIssues((current) => {
+      if (!Object.hasOwn(current, fieldName)) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[fieldName];
+      return next;
+    });
+  }
+
+  async function refreshSelectedWebappUserConfig(webappId = selectedWebapp?.id ?? "") {
+    const id = webappId.trim();
+    if (!id) {
+      return;
+    }
+    const requestId = webappUserConfigRequestRef.current + 1;
+    webappUserConfigRequestRef.current = requestId;
+    setWebappUserConfigLoading(true);
+    try {
+      const result = await window.electronAPI.webs.webapps.getUserConfig(id);
+      if (webappUserConfigRequestRef.current !== requestId) {
+        return;
+      }
+      setWebappUserConfigValues(result.values);
+      setWebappUserConfigIssues(Object.fromEntries(
+        (result.issues ?? []).map((issue) => [issue.field, issue.message])
+      ));
+      if (!result.ok) {
+        showSectionResultNotice("webapps", result);
+      }
     } catch (reason) {
-      showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+      if (webappUserConfigRequestRef.current === requestId) {
+        showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
+      }
     } finally {
-      setWebappRuntimeSettingsPending(false);
+      if (webappUserConfigRequestRef.current === requestId) {
+        setWebappUserConfigLoading(false);
+      }
     }
   }
 
   function handleSelectWebappItem(item: WebappEntry) {
+    setWebappDetailsOpen(false);
     setSelectedWebappId(item.id);
     setWebappLabel(item.label);
-    setWebappAgentKey(item.copilotAgentKey || "");
     setWebappOpenMode(item.openMode);
+    setWebappUserConfigValues({});
+    setWebappUserConfigIssues({});
+    webappUserConfigRequestRef.current += 1;
     setWebappLogContent("");
     setNotice((current) => current?.sectionId === "webapps" ? null : current);
   }
@@ -3470,26 +3590,53 @@ export function SettingsPage({
     );
   }
 
-  async function handleSaveWebappItem(event?: FormEvent<HTMLFormElement>) {
+  async function handleSaveWebappSettings(event?: FormEvent<HTMLFormElement>) {
     event?.preventDefault();
     if (!selectedWebapp) {
       return;
     }
     setWebappPending(true);
+    setWebappUserConfigPending(true);
     try {
-      const result = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
+      const updateResult = await window.electronAPI.webs.webapps.update(selectedWebapp.id, {
         label: webappLabel,
-        copilotAgentKey: webappAgentKey,
         openMode: webappOpenMode
       });
-      showSectionResultNotice("webapps", result);
-      if (result.ok) {
-        await refreshWebItemsFromSettings();
+      if (!updateResult.ok) {
+        showSectionResultNotice("webapps", updateResult);
+        return;
       }
+
+      if ((selectedWebapp.userConfig?.fields.length ?? 0) > 0) {
+        const configResult = await window.electronAPI.webs.webapps.saveUserConfig(
+          selectedWebapp.id,
+          webappUserConfigValues
+        );
+        setWebappUserConfigValues(configResult.values);
+        setWebappUserConfigIssues(Object.fromEntries(
+          (configResult.issues ?? []).map((issue) => [issue.field, issue.message])
+        ));
+        if (!configResult.ok) {
+          showSectionResultNotice("webapps", configResult);
+          return;
+        }
+      }
+
+      if (selectedWebapp.backend?.command.type === "runtime") {
+        const runtimeSettingsResult = await window.electronAPI.webs.webapps.saveRuntimeSettings(
+          webappRuntimeSettings
+        );
+        setWebappRuntimeSettings(runtimeSettingsResult.settings);
+      }
+
+      await refreshWebItemsFromSettings();
+      await refreshSelectedWebappStatus(selectedWebapp.id);
+      await refreshSelectedWebappRuntimeCheck(selectedWebapp.id);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     } finally {
       setWebappPending(false);
+      setWebappUserConfigPending(false);
     }
   }
 
@@ -4019,6 +4166,113 @@ export function SettingsPage({
     ];
   }
 
+  function renderWebappUserConfigField(field: WebappUserConfigField) {
+    const value = webappUserConfigValues[field.name];
+    const issue = webappUserConfigIssues[field.name] ?? "";
+    const disabled = webappUserConfigLoading || webappUserConfigPending;
+    let control: ReactNode;
+
+    if (field.type === "text") {
+      control = (
+        <Input
+          value={typeof value === "string" ? value : ""}
+          placeholder={field.placeholder}
+          maxLength={field.maxLength}
+          disabled={disabled}
+          aria-invalid={Boolean(issue)}
+          onChange={(event) => updateWebappUserConfigValue(field.name, event.target.value)}
+        />
+      );
+    } else if (field.type === "textarea") {
+      control = (
+        <Input.TextArea
+          value={typeof value === "string" ? value : ""}
+          placeholder={field.placeholder}
+          maxLength={field.maxLength}
+          rows={field.rows}
+          showCount
+          disabled={disabled}
+          aria-invalid={Boolean(issue)}
+          onChange={(event) => updateWebappUserConfigValue(field.name, event.target.value)}
+        />
+      );
+    } else if (field.type === "number") {
+      control = (
+        <InputNumber
+          value={typeof value === "number" ? value : null}
+          min={field.min}
+          max={field.max}
+          step={field.step}
+          style={{ width: "100%" }}
+          disabled={disabled}
+          aria-invalid={Boolean(issue)}
+          onChange={(nextValue) => updateWebappUserConfigValue(
+            field.name,
+            typeof nextValue === "number" ? nextValue : undefined
+          )}
+        />
+      );
+    } else if (field.type === "boolean") {
+      control = (
+        <Switch
+          checked={value === true}
+          disabled={disabled}
+          aria-label={field.label}
+          onChange={(checked) => updateWebappUserConfigValue(field.name, checked)}
+        />
+      );
+    } else {
+      const currentValue = typeof value === "string" ? value : "";
+      const usesDesktopAgents = "source" in field && field.source === "desktop.agents";
+      control = (
+        <Select
+          classNames={SETTINGS_SELECT_CLASS_NAMES}
+          style={{ width: "100%" }}
+          value={currentValue || undefined}
+          placeholder={t("settings.webapps.userConfigSelectPlaceholder")}
+          allowClear={!field.required}
+          disabled={disabled || (usesDesktopAgents && assistantAgentOptions.length === 0)}
+          aria-invalid={Boolean(issue)}
+          options={"source" in field
+            ? renderAgentSelectOptions(currentValue).filter((option) => option.value)
+            : field.options}
+          onChange={(nextValue) => updateWebappUserConfigValue(
+            field.name,
+            typeof nextValue === "string" && nextValue ? nextValue : undefined
+          )}
+        />
+      );
+    }
+
+    return (
+      <div className={`webapp-user-config-field${issue ? " has-error" : ""}`} key={field.name}>
+        <div className="webapp-user-config-copy">
+          <div className="webapp-user-config-label-row">
+            <strong>
+              {field.label}
+              {field.required ? <span className="webapp-user-config-required" aria-hidden="true">*</span> : null}
+            </strong>
+            {field.description ? (
+              <Tooltip title={field.description}>
+                <span
+                  className="webapp-user-config-help"
+                  tabIndex={0}
+                  aria-label={`${field.label}：${field.description}`}
+                >
+                  <QuestionCircleOutlined aria-hidden="true" />
+                </span>
+              </Tooltip>
+            ) : null}
+          </div>
+        </div>
+        <div className="webapp-user-config-control">
+          {control}
+          {issue ? <span className="webapp-user-config-error" role="alert">{issue}</span> : null}
+        </div>
+      </div>
+    );
+  }
+
   function getWebappSourceLabel(item: WebappEntry) {
     if (item.sourceLabel) {
       return item.sourceLabel;
@@ -4066,20 +4320,13 @@ export function SettingsPage({
   }
 
   function getWebappPublishStatusLabel(state: WebappPublishState | null | undefined) {
-    switch (state?.status) {
-      case "publishing":
-        return t("settings.webapps.publishStatusPublishing");
-      case "published":
-        return t("settings.webapps.publishStatusPublished");
-      case "unpublished":
-        return t("settings.webapps.publishStatusUnpublished");
-      case "error":
-        return t("settings.webapps.publishStatusError");
-      case "ready":
-        return t("settings.webapps.publishStatusReady");
-      default:
-        return t("settings.webapps.publishStatusNotPublished");
-    }
+    return state?.active
+      ? t("settings.webapps.publishStatusPublished")
+      : t("settings.webapps.publishStatusNotPublished");
+  }
+
+  function getWebappPublishStatusClass(state: WebappPublishState | null | undefined) {
+    return state?.active ? "running" : "idle";
   }
 
   function renderWebDetailRow(label: string, value: ReactNode) {
@@ -4922,11 +5169,7 @@ export function SettingsPage({
               : !publishInfo.tunnelConnected
                 ? t("settings.webapps.publishTunnelDisconnected")
                 : t("settings.webapps.publishReadyHint");
-        const publishStatusLabel = publishState
-          ? getWebappPublishStatusLabel(publishState)
-          : publishReady
-            ? t("settings.webapps.publishStatusReady")
-            : t("settings.webapps.publishStatusNotPublished");
+        const publishStatusLabel = getWebappPublishStatusLabel(publishState);
         const publishMessage = publishState?.status === "error"
           ? publishState.message
           : publishState?.status === "publishing"
@@ -4936,11 +5179,11 @@ export function SettingsPage({
               : publishState?.status === "unpublished"
                 ? t("settings.webapps.publishStopped")
               : publishHint;
-        const systemExecutableName = selectedWebapp?.backend?.command.type === "system"
-          ? selectedWebapp.backend.command.executable
+        const runtimeExecutableName = selectedWebapp?.backend?.command.type === "runtime"
+          ? selectedWebapp.backend.command.runtime
           : "";
-        const systemExecutableBindingKey = systemExecutableName && selectedWebapp
-          ? `${selectedWebapp.id}:${systemExecutableName}`
+        const runtimeExecutableBindingKey = runtimeExecutableName && selectedWebapp
+          ? `${selectedWebapp.id}:${runtimeExecutableName}`
           : "";
         return (
           <section className="control-center-page workspace-wide service-workspace-page web-settings-page is-webapps">
@@ -4960,48 +5203,6 @@ export function SettingsPage({
               </div>
             </div>
 
-            {systemExecutableBindingKey ? (
-            <section className="config-panel web-detail-card webapp-runtime-settings-card">
-              <div className="config-head">
-                <div className="config-title-main">
-                  <div className="service-hero-copy">
-                    <h3>{t("settings.webapps.runtimeSettingsTitle")}</h3>
-                    <p>{t("settings.webapps.runtimeSettingsDescription")}</p>
-                  </div>
-                </div>
-              </div>
-              <div className="settings-control-grid">
-                <label className="settings-control-row">
-                  <span className="settings-control-row-copy">
-                    <strong>{t("settings.webapps.systemExecutable")}</strong>
-                    <small>{t("settings.webapps.systemExecutableHint", { executable: systemExecutableName })}</small>
-                  </span>
-                  <Input
-                    value={webappRuntimeSettings.systemExecutables[systemExecutableBindingKey] ?? ""}
-                    placeholder={t("settings.webapps.systemExecutablePlaceholder")}
-                    onChange={(event) => setWebappRuntimeSettings((current) => ({
-                      ...current,
-                      systemExecutables: {
-                        ...current.systemExecutables,
-                        [systemExecutableBindingKey]: event.target.value
-                      }
-                    }))}
-                  />
-                </label>
-              </div>
-              <div className="web-detail-actions">
-                <Button
-                  type="primary"
-                  loading={webappRuntimeSettingsPending}
-                  disabled={webappRuntimeSettingsPending}
-                  onClick={() => void handleSaveWebappRuntimeSettings()}
-                >
-                  {t("settings.webapps.runtimeSettingsSave")}
-                </Button>
-              </div>
-            </section>
-            ) : null}
-
             <div className="control-center-shell web-settings-shell">
               <aside className="service-sider service-catalog web-settings-catalog" aria-label={t("settings.webapps.catalogAria")}>
                 <div className="service-accordion">
@@ -5013,12 +5214,24 @@ export function SettingsPage({
                           <span>{t("settings.webapps.listSubtitle", { count: webappItems.length })}</span>
                         </div>
                       </div>
+                      <div className="webapp-catalog-import">
+                        <Button
+                          loading={webappImportPending}
+                          disabled={webappImportPending}
+                          onClick={() => void handleImportWebappItem()}
+                        >
+                          {webappImportPending
+                            ? t("settings.webapps.importing")
+                            : t("settings.webapps.importCompactAction")}
+                        </Button>
+                      </div>
                     </div>
                     <div className="service-nav-list" role="list" aria-label={t("settings.webapps.installedTitle")}>
                       {webappItems.length === 0 ? (
                         <div className="service-group-empty">{t("settings.webapps.empty")}</div>
                       ) : webappItems.map((item) => {
                         const itemState = webappRuntimeById[item.id];
+                        const itemPublishState = webappPublishStateById[item.id];
                         return (
                           <Button
                             type="text"
@@ -5033,9 +5246,20 @@ export function SettingsPage({
                               <span className="service-nav-title-row">
                                 <span className="service-nav-card-title">{item.label}</span>
                               </span>
-                              <span className="service-nav-version-status">
-                                <span className={`status-dot ${getWebappRuntimeStatusClass(itemState)}`} aria-hidden="true" />
-                                <span className="service-nav-status-label">{getWebappRuntimeStatusLabel(itemState)}</span>
+                              <span className="webapp-nav-statuses">
+                                <span className="service-nav-version-status">
+                                  <span className={`status-dot ${getWebappRuntimeStatusClass(itemState)}`} aria-hidden="true" />
+                                  <span className="service-nav-status-label">{getWebappRuntimeStatusLabel(itemState)}</span>
+                                </span>
+                                <span className="service-nav-version-status">
+                                  <span
+                                    className={`status-dot ${getWebappPublishStatusClass(itemPublishState)}`}
+                                    aria-hidden="true"
+                                  />
+                                  <span className="service-nav-status-label">
+                                    {getWebappPublishStatusLabel(itemPublishState)}
+                                  </span>
+                                </span>
                               </span>
                             </span>
                           </Button>
@@ -5048,7 +5272,10 @@ export function SettingsPage({
 
               {selectedWebapp ? (
                 <article className="control-center-detail web-settings-detail">
-                  <section className="service-card control-center-service-hero web-detail-card">
+                  <section
+                    key={`${selectedWebapp.id}:overview`}
+                    className="service-card web-detail-card control-center-service-hero webapp-user-config-card"
+                  >
                     <div className="control-center-service-head">
                       <div className="control-center-service-main">
                         <div className="service-hero-icon web-hero-icon" aria-hidden="true"><span /></div>
@@ -5093,11 +5320,39 @@ export function SettingsPage({
                         >
                           {t("settings.webapps.restart")}
                         </Button>
+                        {selectedWebapp.removable !== false ? (
+                          <Button
+                            danger
+                            disabled={webappDeletingId === selectedWebapp.id || webappPending}
+                            loading={webappDeletingId === selectedWebapp.id}
+                            onClick={() => void handleDeleteWebappItem(selectedWebapp)}
+                          >
+                            {webappDeletingId === selectedWebapp.id ? t("settings.webapps.removing") : t("settings.webapps.remove")}
+                          </Button>
+                        ) : null}
+                        <Button onClick={() => setWebappDetailsOpen(true)}>
+                          {t("settings.webapps.detailsAction")}
+                        </Button>
                       </div>
                     </div>
+                    {publishState?.active && publishState.url ? (
+                      <div className="webapp-public-url">
+                        <span>{t("settings.webapps.publishUrl")}</span>
+                        <button
+                          type="button"
+                          className="web-publish-link"
+                          onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}
+                        >
+                          {publishState.url}
+                        </button>
+                        <Button size="small" onClick={() => void handleCopyWebappPublishUrl(publishState.url)}>
+                          {t("settings.webapps.publishCopyUrl")}
+                        </Button>
+                      </div>
+                    ) : null}
                     <form
                       className="web-detail-form"
-                      onSubmit={(event) => void handleSaveWebappItem(event)}
+                      onSubmit={(event) => void handleSaveWebappSettings(event)}
                     >
                       <label className="web-detail-form-item">
                         <span>{t("settings.websites.displayName")}</span>
@@ -5111,262 +5366,319 @@ export function SettingsPage({
                           required
                         />
                       </label>
-                      <div className="web-detail-form-item">
-                        <span>{t("settings.webapps.openMode")}</span>
-                        <Segmented
-                          block
-                          value={webappOpenMode}
-                          onChange={(value) => setWebappOpenMode(value as WebappOpenMode)}
-                          aria-label={t("settings.webapps.openMode")}
-                          options={[
-                            {
-                              value: "workspace",
-                              label: t("settings.webapps.openModeWorkspace")
-                            },
-                            {
-                              value: "dialog",
-                              label: t("settings.webapps.openModeDialog")
-                            }
-                          ]}
-                        />
-                      </div>
-                      <label className="web-detail-form-item">
-                        <span>{t("settings.websites.agentEnhancement")}</span>
-                        <span className="settings-control-row-select desktop-pet-agent-select-wrap">
-                          <Select
-                            classNames={SETTINGS_SELECT_CLASS_NAMES}
-                            style={{ width: "100%" }}
-                            value={webappAgentKey}
-                            onChange={setWebappAgentKey}
-                            disabled={assistantAgentOptions.length === 0}
-                            aria-label={t("settings.websites.agentEnhancement")}
-                            options={renderAgentSelectOptions(webappAgentKey)}
-                          />
-                        </span>
-                      </label>
-                      <div className="web-detail-actions">
-                        <Button type="primary" htmlType="submit" disabled={webappPending} loading={webappPending}>
-                          {webappPending ? t("settings.websites.updating") : t("settings.websites.save")}
-                        </Button>
-                        <Button
-                          onClick={() => void handleWebappRuntimeAction("refresh", selectedWebapp)}
-                          disabled={webappRuntimePendingId !== ""}
-                          loading={webappRuntimePendingId === `refresh:${selectedWebapp.id}`}
-                        >
-                          {t("settings.webapps.refreshStatus")}
-                        </Button>
-                        {selectedWebapp.removable !== false ? (
-                          <Button
-                            danger
-                            disabled={webappDeletingId === selectedWebapp.id || webappPending}
-                            loading={webappDeletingId === selectedWebapp.id}
-                            onClick={() => void handleDeleteWebappItem(selectedWebapp)}
-                          >
-                            {webappDeletingId === selectedWebapp.id ? t("settings.webapps.removing") : t("settings.webapps.remove")}
-                          </Button>
-                        ) : (
-                          <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
-                        )}
-                      </div>
-                    </form>
-                  </section>
-
-                  <section className="config-panel web-detail-card web-publish-panel">
-                    <div className="config-head">
-                      <div className="config-title-main">
-                        <div className="service-hero-copy">
-                          <h3>{t("settings.webapps.publishTitle")}</h3>
-                          <p>{t("settings.webapps.publishDescription")}</p>
+                      {webappUserConfigLoading ? (
+                        <div className="webapp-user-config-empty">{t("settings.webapps.userConfigLoading")}</div>
+                      ) : (selectedWebapp.userConfig?.fields.length ?? 0) > 0 ? (
+                        <div className="webapp-user-config-fields">
+                          {selectedWebapp.userConfig!.fields.map(renderWebappUserConfigField)}
                         </div>
-                      </div>
-                      <div className="service-title-actions">
-                        <span className={`web-publish-status is-${publishState?.status || (publishReady ? "ready" : "not-configured")}`}>
-                          {publishStatusLabel}
-                        </span>
-                        <Button
-                          disabled={webappPublishPendingId !== ""}
-                          onClick={() => void refreshWebappPublishStatus(selectedWebapp.id)}
-                        >
-                          {t("settings.webapps.publishRefresh")}
-                        </Button>
-                      </div>
-                    </div>
-                    <div className="web-detail-grid">
-                      {renderWebDetailRow(t("settings.webapps.publishStatus"), publishStatusLabel)}
-                      {renderWebDetailRow(t("settings.webapps.publishProvider"), publishInfo?.provider === "tunnel"
-                        ? t("settings.webapps.publishProviderTunnel")
-                        : "")}
-                      {renderWebDetailRow(t("settings.webapps.publishTunnelStatus"), publishInfo?.tunnelConnected
-                        ? t("settings.webapps.publishTunnelConnected")
-                        : t("settings.webapps.publishTunnelDisconnectedShort"))}
-                      {renderWebDetailRow(t("settings.webapps.publishDeviceId"), publishInfo?.deviceId)}
-                      {renderWebDetailRow(t("settings.webapps.publishRouteName"), publishState?.name)}
-                      {renderWebDetailRow(t("settings.webapps.publishRouteId"), publishState?.routeId)}
-                      {renderWebDetailRow(t("settings.webapps.publishTargetUrl"), publishState?.targetUrl)}
-                      {renderWebDetailRow(t("settings.webapps.publishUrl"), publishState?.url ? (
-                        <button
-                          type="button"
-                          className="web-publish-link"
-                          onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}
-                        >
-                          {publishState.url}
-                        </button>
-                      ) : "")}
-                      {renderWebDetailRow(t("settings.webapps.publishUpdatedAt"), publishState?.updatedAt
-                        ? new Date(publishState.updatedAt).toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US")
-                        : "")}
-                    </div>
-                    {publishState?.active && publishState.url ? (
-                      <div className="web-publish-share-card">
-                        <QRCode
-                          value={publishState.url}
-                          size={156}
-                          bordered={false}
-                          color="var(--ink)"
-                          bgColor="transparent"
-                        />
-                        <div className="web-publish-share-copy">
-                          <strong>{t("settings.webapps.publishQrTitle")}</strong>
-                          <span>{t("settings.webapps.publishQrDescription")}</span>
-                          <code>{publishState.url}</code>
-                          <div className="web-detail-actions">
-                            <Button onClick={() => void handleCopyWebappPublishUrl(publishState.url)}>
-                              {t("settings.webapps.publishCopyUrl")}
+                      ) : (
+                        <div className="webapp-user-config-empty">{t("settings.webapps.userConfigEmpty")}</div>
+                      )}
+                      {!runtimeExecutableBindingKey || selectedWebapp.removable === false ? (
+                        <div className="web-detail-actions">
+                          {!runtimeExecutableBindingKey ? (
+                            <Button
+                              type="primary"
+                              htmlType="submit"
+                              loading={webappPending || webappUserConfigPending}
+                              disabled={webappPending || webappUserConfigPending || webappUserConfigLoading}
+                            >
+                              {webappPending || webappUserConfigPending
+                                ? t("settings.websites.updating")
+                                : t("settings.websites.save")}
                             </Button>
-                            <Button onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}>
-                              {t("settings.webapps.publishOpenUrl")}
-                            </Button>
-                          </div>
+                          ) : null}
+                          {selectedWebapp.removable === false ? (
+                            <span className="web-managed-note">{t("settings.webapps.managedNotRemovable")}</span>
+                          ) : null}
                         </div>
-                      </div>
-                    ) : null}
-                    {!publishReady ? (
-                      <div className="web-detail-actions web-publish-setup-actions">
-                        <Button onClick={() => navigate(buildSettingsSectionPath("tunnelHub"))}>
-                          {t("settings.webapps.publishConfigure")}
-                        </Button>
-                      </div>
-                    ) : null}
-                    {publishState?.active ? (
-                      <div className="web-detail-actions">
-                        <Button
-                          danger
-                          disabled={webappPublishPendingId !== ""}
-                          loading={webappPublishPendingId === selectedWebapp.id}
-                          onClick={() => void handleUnpublishWebapp(selectedWebapp)}
-                        >
-                          {t("settings.webapps.unpublishAction")}
-                        </Button>
-                      </div>
-                    ) : null}
-                    <div className={`web-publish-message${publishState?.status === "error" ? " is-error" : ""}`}>
-                      {publishMessage}
-                    </div>
-                  </section>
-
-                  <section className="config-panel web-detail-card">
-                    <div className="config-head">
-                      <div className="config-title-main">
-                        <div className="service-hero-copy">
-                          <h3>{t("settings.webapps.runtimeTitle")}</h3>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="web-detail-grid">
-                      {renderWebDetailRow(t("settings.webapps.status"), getWebappRuntimeStatusLabel(runtimeState))}
-                      {renderWebDetailRow(t("settings.webapps.webUrl"), runtimeState?.webUrl)}
-                      {renderWebDetailRow(t("settings.webapps.backendUrl"), runtimeState?.backendUrl)}
-                      {renderWebDetailRow(t("settings.webapps.frontendPort"), runtimeState?.frontendPort)}
-                      {renderWebDetailRow(t("settings.webapps.backendPort"), runtimeState?.backendPort)}
-                      {renderWebDetailRow(t("settings.webapps.pid"), runtimeState?.pid)}
-                      {renderWebDetailRow(t("settings.webapps.launcher"), runtimeState?.launcher)}
-                      {renderWebDetailRow(
-                        t("settings.webapps.ownership"),
-                        runtimeState?.ownership === "desktop" ? t("settings.webapps.ownershipDesktop") : ""
-                      )}
-                      {renderWebDetailRow(t("settings.webapps.runtimeVersion"), runtimeState?.runtimeVersion || runtimeCheck?.runtimeVersion)}
-                      {renderWebDetailRow(
-                        t("settings.webapps.externalId"),
-                        runtimeState?.externalId || runtimeCheck?.externalId
-                      )}
-                      {renderWebDetailRow(
-                        t("settings.webapps.prerequisites"),
-                        runtimeCheck?.ready
-                          ? t("settings.webapps.prerequisitesReady")
-                          : runtimeCheck?.issues.map((issue) => issue.message).join(" ")
-                      )}
-                      {renderWebDetailRow(t("settings.webapps.message"), runtimeState?.message)}
-                    </div>
-                  </section>
-
-                  <section className="config-panel web-detail-card">
-                    <div className="config-head">
-                      <div className="config-title-main">
-                        <div className="service-hero-copy">
-                          <h3>{t("settings.webapps.manifestTitle")}</h3>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="web-detail-grid">
-                      {renderWebDetailRow(t("settings.webapps.source"), getWebappSourceLabel(selectedWebapp))}
-                      {renderWebDetailRow(t("settings.webapps.installPath"), selectedWebapp.installPath)}
-                      {renderWebDetailRow(t("settings.webapps.schemaVersion"), selectedWebapp.schemaVersion)}
-                      {renderWebDetailRow(t("settings.webapps.appVersion"), selectedWebapp.version)}
-                      {renderWebDetailRow(
-                        t("settings.webapps.openMode"),
-                        selectedWebapp.openMode === "dialog"
-                          ? t("settings.webapps.openModeDialog")
-                          : t("settings.webapps.openModeWorkspace")
-                      )}
-                      {renderWebDetailRow(t("settings.webapps.target"), selectedWebapp.target)}
-                      {renderWebDetailRow(t("settings.webapps.frontendMode"), "static")}
-                      {renderWebDetailRow(t("settings.webapps.frontendRoot"), selectedWebapp.frontend.root)}
-                      {renderWebDetailRow(t("settings.webapps.frontendIndex"), selectedWebapp.frontend.index)}
-                      {renderWebDetailRow(t("settings.webapps.frontendSpa"), selectedWebapp.frontend.spa ? t("common.yes") : t("common.no"))}
-                      {renderWebDetailRow(t("settings.webapps.apiPrefix"), selectedWebapp.frontend.apiPrefix)}
-                      {renderWebDetailRow(t("settings.webapps.backendRuntime"), selectedWebapp.backend?.command.type ?? t("common.none"))}
-                      {selectedWebapp.backend ? (
-                        <>
-                          {renderWebDetailRow(
-                            t("settings.webapps.backendEntry"),
-                            selectedWebapp.backend.command.type === "electron-node"
-                              ? selectedWebapp.backend.command.script
-                              : selectedWebapp.backend.command.executable
-                          )}
-                          {renderWebDetailRow(t("settings.webapps.backendArgs"), selectedWebapp.backend.args.join(" "))}
-                          {renderWebDetailRow(
-                            t("settings.webapps.healthPath"),
-                            selectedWebapp.backend.health.type === "http"
-                              ? selectedWebapp.backend.health.path
-                              : selectedWebapp.backend.health.type
-                          )}
-                        </>
                       ) : null}
+                    </form>
+
+                  {runtimeExecutableBindingKey ? (
+                    <div
+                      className="webapp-runtime-settings-card"
+                      key={`${selectedWebapp.id}:runtime-settings`}
+                    >
+                      <div className="settings-control-grid">
+                        <label className="settings-control-row">
+                          <span className="settings-control-row-copy">
+                            <span className="webapp-user-config-label-row">
+                              <strong>{t("settings.webapps.runtimeExecutable")}</strong>
+                              <Tooltip title={t("settings.webapps.runtimeExecutableHint", { runtime: runtimeExecutableName })}>
+                                <span
+                                  className="webapp-user-config-help"
+                                  tabIndex={0}
+                                  aria-label={`${t("settings.webapps.runtimeExecutable")}：${t("settings.webapps.runtimeExecutableHint", { runtime: runtimeExecutableName })}`}
+                                >
+                                  <QuestionCircleOutlined aria-hidden="true" />
+                                </span>
+                              </Tooltip>
+                            </span>
+                          </span>
+                          <Input
+                            value={webappRuntimeSettings.runtimeExecutables[runtimeExecutableBindingKey] ?? ""}
+                            placeholder={t("settings.webapps.runtimeExecutablePlaceholder")}
+                            onChange={(event) => setWebappRuntimeSettings((current) => ({
+                              ...current,
+                              runtimeExecutables: {
+                                ...current.runtimeExecutables,
+                                [runtimeExecutableBindingKey]: event.target.value
+                              }
+                            }))}
+                          />
+                        </label>
+                      </div>
+                      <div className="web-detail-actions">
+                        <Button
+                          type="primary"
+                          loading={webappPending || webappUserConfigPending}
+                          disabled={webappPending || webappUserConfigPending || webappUserConfigLoading}
+                          onClick={() => void handleSaveWebappSettings()}
+                        >
+                          {webappPending || webappUserConfigPending
+                            ? t("settings.websites.updating")
+                            : t("settings.websites.save")}
+                        </Button>
+                      </div>
                     </div>
+                  ) : null}
                   </section>
 
-                  <section className="config-panel web-detail-card">
-                    <div className="config-head">
-                      <div className="config-title-main">
-                        <div className="service-hero-copy">
-                          <h3>{t("settings.webapps.logsTitle")}</h3>
-                        </div>
-                      </div>
-                      <div className="service-title-actions">
-                        <Button disabled={webappLogPending} loading={webappLogPending && webappLogTarget === "main"} onClick={() => void handleReadWebappLog(selectedWebapp, "main")}>
-                          {t("settings.webapps.mainLog")}
-                        </Button>
-                        <Button disabled={webappLogPending} loading={webappLogPending && webappLogTarget === "error"} onClick={() => void handleReadWebappLog(selectedWebapp, "error")}>
-                          {t("settings.webapps.errorLog")}
-                        </Button>
-                      </div>
-                    </div>
-                    <pre className="web-log-preview">{webappLogContent || t("settings.webapps.logEmpty")}</pre>
-                  </section>
+                  <Modal
+                    className="webapp-details-modal"
+                    open={webappDetailsOpen}
+                    title={`${selectedWebapp.label} · ${t("settings.webapps.detailsTitle")}`}
+                    footer={null}
+                    centered
+                    width={920}
+                    destroyOnHidden
+                    styles={{ body: { maxHeight: "72vh", overflowY: "auto" } }}
+                    onCancel={() => setWebappDetailsOpen(false)}
+                  >
+                    <Tabs
+                      defaultActiveKey="publish"
+                      items={[
+                        {
+                          key: "publish",
+                          label: t("settings.webapps.publishTitle"),
+                          children: (
+                            <div className="webapp-details-tab">
+                              <div className="webapp-details-toolbar">
+                                <div className="webapp-details-toolbar-copy">
+                                  <strong>{publishStatusLabel}</strong>
+                                  <span>{t("settings.webapps.publishDescription")}</span>
+                                </div>
+                                <Button
+                                  disabled={webappPublishPendingId !== ""}
+                                  onClick={() => void refreshWebappPublishStatus(selectedWebapp.id)}
+                                >
+                                  {t("settings.webapps.publishRefresh")}
+                                </Button>
+                              </div>
+                              <div className="web-detail-grid">
+                                {renderWebDetailRow(t("settings.webapps.publishStatus"), publishStatusLabel)}
+                                {renderWebDetailRow(t("settings.webapps.publishProvider"), publishInfo?.provider === "tunnel"
+                                  ? t("settings.webapps.publishProviderTunnel")
+                                  : "")}
+                                {renderWebDetailRow(t("settings.webapps.publishTunnelStatus"), publishInfo?.tunnelConnected
+                                  ? t("settings.webapps.publishTunnelConnected")
+                                  : t("settings.webapps.publishTunnelDisconnectedShort"))}
+                                {renderWebDetailRow(t("settings.webapps.publishDeviceId"), publishInfo?.deviceId)}
+                                {renderWebDetailRow(t("settings.webapps.publishRouteName"), publishState?.name)}
+                                {renderWebDetailRow(t("settings.webapps.publishRouteId"), publishState?.routeId)}
+                                {renderWebDetailRow(t("settings.webapps.publishTargetUrl"), publishState?.targetUrl)}
+                                {renderWebDetailRow(t("settings.webapps.publishUrl"), publishState?.url ? (
+                                  <button
+                                    type="button"
+                                    className="web-publish-link"
+                                    onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}
+                                  >
+                                    {publishState.url}
+                                  </button>
+                                ) : "")}
+                                {renderWebDetailRow(t("settings.webapps.publishUpdatedAt"), publishState?.updatedAt
+                                  ? new Date(publishState.updatedAt).toLocaleString(locale === "zh-CN" ? "zh-CN" : "en-US")
+                                  : "")}
+                              </div>
+                              {publishState?.active && publishState.url ? (
+                                <div className="web-publish-share-card">
+                                  <QRCode
+                                    value={publishState.url}
+                                    size={156}
+                                    bordered={false}
+                                    color="var(--ink)"
+                                    bgColor="transparent"
+                                  />
+                                  <div className="web-publish-share-copy">
+                                    <strong>{t("settings.webapps.publishQrTitle")}</strong>
+                                    <span>{t("settings.webapps.publishQrDescription")}</span>
+                                    <code>{publishState.url}</code>
+                                    <div className="web-detail-actions">
+                                      <Button onClick={() => void handleCopyWebappPublishUrl(publishState.url)}>
+                                        {t("settings.webapps.publishCopyUrl")}
+                                      </Button>
+                                      <Button onClick={() => void window.electronAPI.shell.openExternal(publishState.url)}>
+                                        {t("settings.webapps.publishOpenUrl")}
+                                      </Button>
+                                    </div>
+                                  </div>
+                                </div>
+                              ) : null}
+                              {!publishReady ? (
+                                <div className="web-detail-actions web-publish-setup-actions">
+                                  <Button onClick={() => {
+                                    setWebappDetailsOpen(false);
+                                    navigate(buildSettingsSectionPath("tunnelHub"));
+                                  }}>
+                                    {t("settings.webapps.publishConfigure")}
+                                  </Button>
+                                </div>
+                              ) : null}
+                              {publishState?.active ? (
+                                <div className="web-detail-actions">
+                                  <Button
+                                    danger
+                                    disabled={webappPublishPendingId !== ""}
+                                    loading={webappPublishPendingId === selectedWebapp.id}
+                                    onClick={() => void handleUnpublishWebapp(selectedWebapp)}
+                                  >
+                                    {t("settings.webapps.unpublishAction")}
+                                  </Button>
+                                </div>
+                              ) : null}
+                              <div className={`web-publish-message${publishState?.status === "error" ? " is-error" : ""}`}>
+                                {publishMessage}
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          key: "runtime",
+                          label: t("settings.webapps.runtimeTitle"),
+                          children: (
+                            <div className="webapp-details-tab">
+                              <div className="web-detail-grid">
+                                {renderWebDetailRow(t("settings.webapps.status"), getWebappRuntimeStatusLabel(runtimeState))}
+                                {renderWebDetailRow(t("settings.webapps.webUrl"), runtimeState?.webUrl)}
+                                {renderWebDetailRow(t("settings.webapps.backendUrl"), runtimeState?.backendUrl)}
+                                {renderWebDetailRow(t("settings.webapps.frontendPort"), runtimeState?.frontendPort)}
+                                {renderWebDetailRow(t("settings.webapps.backendPort"), runtimeState?.backendPort)}
+                                {renderWebDetailRow(t("settings.webapps.pid"), runtimeState?.pid)}
+                                {renderWebDetailRow(t("settings.webapps.launcher"), runtimeState?.launcher)}
+                                {renderWebDetailRow(
+                                  t("settings.webapps.ownership"),
+                                  runtimeState?.ownership === "desktop" ? t("settings.webapps.ownershipDesktop") : ""
+                                )}
+                                {renderWebDetailRow(t("settings.webapps.runtimeVersion"), runtimeState?.runtimeVersion || runtimeCheck?.runtimeVersion)}
+                                {renderWebDetailRow(t("settings.webapps.externalId"), runtimeState?.externalId || runtimeCheck?.externalId)}
+                                {renderWebDetailRow(
+                                  t("settings.webapps.prerequisites"),
+                                  runtimeCheck?.ready
+                                    ? t("settings.webapps.prerequisitesReady")
+                                    : runtimeCheck?.issues.map((issue) => issue.message).join(" ")
+                                )}
+                                {renderWebDetailRow(t("settings.webapps.message"), runtimeState?.message)}
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          key: "manifest",
+                          label: t("settings.webapps.manifestTitle"),
+                          children: (
+                            <div className="webapp-details-tab">
+                              <div className="web-detail-grid">
+                                {renderWebDetailRow(t("settings.webapps.source"), getWebappSourceLabel(selectedWebapp))}
+                                {renderWebDetailRow(t("settings.webapps.installPath"), selectedWebapp.installPath)}
+                                {renderWebDetailRow(t("settings.webapps.schemaVersion"), selectedWebapp.schemaVersion)}
+                                {renderWebDetailRow(t("settings.webapps.appId"), selectedWebapp.id)}
+                                {renderWebDetailRow(t("settings.webapps.appKey"), selectedWebapp.key)}
+                                {renderWebDetailRow(t("settings.webapps.appVersion"), selectedWebapp.version)}
+                                {renderWebDetailRow(t("settings.webapps.target"), selectedWebapp.target)}
+                                {renderWebDetailRow(t("settings.webapps.frontendMode"), "static")}
+                                {renderWebDetailRow(t("settings.webapps.frontendRoot"), selectedWebapp.frontend.root)}
+                                {renderWebDetailRow(t("settings.webapps.frontendIndex"), selectedWebapp.frontend.index)}
+                                {renderWebDetailRow(
+                                  t("settings.webapps.backendPrefixes"),
+                                  selectedWebapp.frontend.routeConfig.backendPrefixes.join(", ") || t("common.none")
+                                )}
+                                {renderWebDetailRow(
+                                  t("settings.webapps.navigationFallback"),
+                                  selectedWebapp.frontend.routeConfig.navigationFallback || t("common.none")
+                                )}
+                                {renderWebDetailRow(
+                                  t("settings.webapps.userConfigFields"),
+                                  selectedWebapp.userConfig?.fields.map((field) => `${field.label} (${field.type})`).join(", ") || t("common.none")
+                                )}
+                                {renderWebDetailRow(
+                                  t("settings.webapps.bridgeVersion"),
+                                  `v${selectedWebapp.desktopBridge?.version ?? 1}`
+                                )}
+                                {renderWebDetailRow(t("settings.webapps.backendRuntime"), selectedWebapp.backend?.command.type ?? t("common.none"))}
+                                {selectedWebapp.backend ? (
+                                  <>
+                                    {renderWebDetailRow(t("settings.webapps.backendEntry"), selectedWebapp.backend.command.entry)}
+                                    {selectedWebapp.backend.command.type === "runtime"
+                                      ? renderWebDetailRow(t("settings.webapps.requiredRuntime"), selectedWebapp.backend.command.runtime)
+                                      : null}
+                                    {renderWebDetailRow(t("settings.webapps.backendArgs"), selectedWebapp.backend.args.join(" "))}
+                                    {renderWebDetailRow(
+                                      t("settings.webapps.healthPath"),
+                                      selectedWebapp.backend.health.type === "http"
+                                        ? selectedWebapp.backend.health.path
+                                        : selectedWebapp.backend.health.type
+                                    )}
+                                    {renderWebDetailRow(
+                                      t("settings.webapps.healthStartupTimeout"),
+                                      `${selectedWebapp.backend.health.startupTimeoutMs} ms`
+                                    )}
+                                  </>
+                                ) : null}
+                              </div>
+                            </div>
+                          )
+                        },
+                        {
+                          key: "logs",
+                          label: t("settings.webapps.logsTitle"),
+                          children: (
+                            <div className="webapp-details-tab">
+                              <div className="webapp-details-toolbar is-log-toolbar">
+                                <div className="service-title-actions">
+                                  <Button disabled={webappLogPending} loading={webappLogPending && webappLogTarget === "main"} onClick={() => void handleReadWebappLog(selectedWebapp, "main")}>
+                                    {t("settings.webapps.mainLog")}
+                                  </Button>
+                                  <Button disabled={webappLogPending} loading={webappLogPending && webappLogTarget === "error"} onClick={() => void handleReadWebappLog(selectedWebapp, "error")}>
+                                    {t("settings.webapps.errorLog")}
+                                  </Button>
+                                </div>
+                              </div>
+                              <pre className="web-log-preview">{webappLogContent || t("settings.webapps.logEmpty")}</pre>
+                            </div>
+                          )
+                        }
+                      ]}
+                    />
+                  </Modal>
                 </article>
               ) : (
                 <article className="service-card control-center-detail control-center-empty">
-                  <div className="loading-box control-center-empty">{t("settings.webapps.empty")}</div>
+                  <div className="loading-box control-center-empty webapp-import-empty">
+                    <strong>{t("settings.webapps.empty")}</strong>
+                    <span>{t("settings.webapps.importHint")}</span>
+                    <Button
+                      type="primary"
+                      loading={webappImportPending}
+                      disabled={webappImportPending}
+                      onClick={() => void handleImportWebappItem()}
+                    >
+                      {webappImportPending
+                        ? t("settings.webapps.importing")
+                        : t("settings.webapps.importAction")}
+                    </Button>
+                  </div>
                 </article>
               )}
             </div>
