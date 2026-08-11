@@ -91,6 +91,7 @@ import {
   createAgentWebclientBusinessSearch,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
+  createAgentWebclientProjectPath,
   createAgentWebclientRoute,
   findAgentWebclientRouteDefinition,
   isEmbeddedAgentWebclientRoute,
@@ -100,6 +101,10 @@ import { decodeRoutePathSegment } from "../../shared/route-path";
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
 import { ChatWorkPanelHost } from "../chat-work-panel/ChatWorkPanelHost";
+import {
+  ProjectFloatingWebviews,
+  type ProjectFloatingWebviewEntry,
+} from "./project/ProjectFloatingWebviews";
 import {
   CHAT_WORK_PANEL_BLANK_URL,
   createChatWorkPanelSurfaceId,
@@ -558,6 +563,9 @@ export function AppShell() {
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
+  const [projectFloatingWebviews, setProjectFloatingWebviews] =
+    useState<ProjectFloatingWebviewEntry[]>([]);
+  const projectFloatingFocusRequestIdRef = useRef(0);
   const [chatWorkPanelWorkspaces, setChatWorkPanelWorkspaces] = useState<ChatWorkPanelWorkspace[]>([]);
   const chatWorkPanelWorkspacesRef = useRef(new Map<string, ChatWorkPanelWorkspace>());
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
@@ -2961,6 +2969,61 @@ export function AppShell() {
     }
   }, [activeChatWorkPanelChatId, ensureChatWorkPanelWorkspace, requestSidebarNavigation]);
 
+  const openAgentProjectFromSidebar = useCallback((agent: AssistantNavAgentItem) => {
+    const agentKey = agent.agentKey.trim();
+    if (!agentKey) {
+      return;
+    }
+    const routeInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
+    const activeChatId = routeInfo.agentKey === agentKey ? routeInfo.chatId : "";
+    const preferredChatId =
+      activeChatId ||
+      agent.latestChatId?.trim() ||
+      agent.recentChats[0]?.chatId.trim() ||
+      "";
+    const preferredChat = [...agent.recentChats, ...assistantNavChatItems].find(
+      (chat) =>
+        (chat.agentKey.trim() || agentKey) === agentKey &&
+        chat.chatId.trim() === preferredChatId,
+    );
+    projectFloatingFocusRequestIdRef.current += 1;
+    const nextEntry: ProjectFloatingWebviewEntry = {
+      agentKey,
+      displayName: agent.displayName.trim() || agentKey,
+      embedPath: createAgentWebclientProjectPath({
+        agentKey,
+        chatId: preferredChatId,
+        runId: preferredChat?.lastRunId,
+      }),
+      focusRequestId: projectFloatingFocusRequestIdRef.current,
+    };
+    setProjectFloatingWebviews((current) => [
+      ...current.filter((entry) => entry.agentKey !== agentKey),
+      nextEntry,
+    ]);
+  }, [assistantNavChatItems, location.pathname, location.search]);
+
+  const bringProjectFloatingWebviewToFront = useCallback((agentKey: string) => {
+    setProjectFloatingWebviews((current) => {
+      const index = current.findIndex((entry) => entry.agentKey === agentKey);
+      if (index < 0 || index === current.length - 1) {
+        return current;
+      }
+      const entry = current[index];
+      return [
+        ...current.slice(0, index),
+        ...current.slice(index + 1),
+        entry,
+      ];
+    });
+  }, []);
+
+  const closeProjectFloatingWebview = useCallback((agentKey: string) => {
+    setProjectFloatingWebviews((current) =>
+      current.filter((entry) => entry.agentKey !== agentKey),
+    );
+  }, []);
+
   return (
     <DebugModeContext.Provider value={debugSettingsUnlocked}>
       <div
@@ -3034,6 +3097,7 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onOpenAgentProject={openAgentProjectFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}
@@ -3235,6 +3299,15 @@ export function AppShell() {
         onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}
       />
       <EnterpriseChatFloatingPanel desktopSsoStatus={desktopSsoStatus} />
+      <ProjectFloatingWebviews
+        entries={projectFloatingWebviews}
+        hostTheme={resolvedTheme}
+        isMac={isMac}
+        isWindows={isWindows}
+        windowFullScreen={windowFullScreen}
+        onBringToFront={bringProjectFloatingWebviewToFront}
+        onClose={closeProjectFloatingWebview}
+      />
       {desktopSsoLoginDialog ? (
         <div className="desktop-sso-login-modal-layer" role="presentation">
           <section

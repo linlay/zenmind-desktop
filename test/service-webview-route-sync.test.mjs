@@ -120,7 +120,7 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
 
   assert.match(
     navigationHandlerBlock,
-    /const canSyncDesktopRoute = active !== false;/,
+    /const canSyncDesktopRoute = ownsActiveSurface;/,
   );
   assert.match(
     navigationHandlerBlock,
@@ -131,8 +131,9 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
     /canSyncDesktopRoute\s*&&\s*isAgentWebclientManagementSurface\(service\?\.id, surfaceId\)/,
   );
   assert.ok(
-    navigationHandlerBlock.indexOf("updateWebviewCurrentUrl(resolvedUrl)") <
-      navigationHandlerBlock.indexOf("const canSyncDesktopRoute = active !== false"),
+    navigationHandlerBlock.indexOf("updateWebviewCurrentUrl(resolvedUrl") >= 0 &&
+      navigationHandlerBlock.indexOf("updateWebviewCurrentUrl(resolvedUrl") <
+        navigationHandlerBlock.indexOf("const canSyncDesktopRoute = ownsActiveSurface"),
     "inactive surfaces should still record their current WebView URL",
   );
   assert.match(

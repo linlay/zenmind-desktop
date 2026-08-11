@@ -26,6 +26,7 @@ const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
   "group.add-website": "sidebar.website.new",
   "group.import-webapp": "sidebar.webapp.import",
   "agent.open-workspace": "sidebar.agent.openWorkspace",
+  "agent.open-project": "sidebar.agent.openProject",
   "agent.edit": "sidebar.agent.edit",
   "chat.export": "sidebar.chat.export",
   "chat.rename": "sidebar.chat.rename",

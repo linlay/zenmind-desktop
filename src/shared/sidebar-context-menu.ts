@@ -9,6 +9,7 @@ export type SidebarContextMenuActionId =
   | "group.add-website"
   | "group.import-webapp"
   | "agent.open-workspace"
+  | "agent.open-project"
   | "agent.edit"
   | "chat.export"
   | "chat.rename"
@@ -34,6 +35,7 @@ export type SidebarContextMenuTarget =
   | {
       kind: "agent";
       canOpenWorkspace: boolean;
+      canOpenProject: boolean;
     }
   | {
       kind: "chat";

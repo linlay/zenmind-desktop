@@ -74,14 +74,16 @@ export function normalizeSidebarContextMenuRequest(
     };
   } else if (target.kind === "agent") {
     if (
-      !hasOnlyKeys(target, ["kind", "canOpenWorkspace"]) ||
-      !isBoolean(target.canOpenWorkspace)
+      !hasOnlyKeys(target, ["kind", "canOpenWorkspace", "canOpenProject"]) ||
+      !isBoolean(target.canOpenWorkspace) ||
+      !isBoolean(target.canOpenProject)
     ) {
       return null;
     }
     normalizedTarget = {
       kind: "agent",
-      canOpenWorkspace: target.canOpenWorkspace
+      canOpenWorkspace: target.canOpenWorkspace,
+      canOpenProject: target.canOpenProject
     };
   } else if (target.kind === "chat") {
     if (!hasOnlyKeys(target, ["kind", "workPanelOpen"]) || !isBoolean(target.workPanelOpen)) {
@@ -182,6 +184,11 @@ export function buildSidebarContextMenuPolicy(
         id: "agent.open-workspace",
         group: 0,
         enabled: target.canOpenWorkspace
+      },
+      {
+        id: "agent.open-project",
+        group: 0,
+        enabled: target.canOpenProject
       },
       { id: "agent.edit", group: 0, enabled: true }
     ];

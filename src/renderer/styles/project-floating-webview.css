@@ -1,0 +1,159 @@
+.project-floating-webview {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  width: min(1080px, calc(100vw - 24px));
+  height: min(760px, calc(100vh - 64px));
+  min-width: 0;
+  min-height: 240px;
+  overflow: hidden;
+  border: 1px solid color-mix(in srgb, var(--line) 84%, transparent);
+  border-radius: 12px;
+  background: var(--embedded-surface-page-bg);
+  box-shadow:
+    0 24px 60px rgba(15, 23, 42, 0.24),
+    0 8px 20px rgba(15, 23, 42, 0.12);
+  outline: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.project-floating-webview:focus-visible {
+  box-shadow:
+    0 0 0 2px color-mix(in srgb, var(--accent) 70%, transparent),
+    0 24px 60px rgba(15, 23, 42, 0.24),
+    0 8px 20px rgba(15, 23, 42, 0.12);
+}
+
+:root[data-theme="dark"] .project-floating-webview {
+  border-color: rgba(148, 163, 184, 0.24);
+  box-shadow:
+    0 28px 72px rgba(0, 0, 0, 0.5),
+    0 8px 22px rgba(0, 0, 0, 0.32);
+}
+
+.project-floating-webview-header {
+  display: flex;
+  flex: 0 0 40px;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 40px;
+  padding: 0 8px 0 12px;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 78%, transparent);
+  background: color-mix(in srgb, var(--bg-base) 94%, var(--accent) 6%);
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.project-floating-webview.is-dragging .project-floating-webview-header {
+  cursor: grabbing;
+}
+
+.project-floating-webview-icon {
+  display: inline-flex;
+  flex: 0 0 18px;
+  width: 18px;
+  height: 18px;
+  color: var(--accent);
+}
+
+.project-floating-webview-icon svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.project-floating-webview-header strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.project-floating-webview-close {
+  display: inline-flex;
+  flex: 0 0 28px;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.project-floating-webview-close:hover,
+.project-floating-webview-close:focus-visible {
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+  color: var(--ink);
+  outline: none;
+}
+
+.project-floating-webview-close svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.project-floating-webview-content {
+  position: relative;
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--embedded-surface-page-bg);
+}
+
+.project-floating-webview-content .embedded-surface-page.embedded-surface-page-embedded {
+  inset: 0;
+  padding-top: 0;
+}
+
+.project-floating-webview.is-dragging .project-floating-webview-content {
+  pointer-events: none;
+}
+
+.app-shell.is-mac-platform .project-floating-webview {
+  max-height: calc(100vh - 48px);
+}
+
+.app-shell.is-mac-platform.is-window-fullscreen .project-floating-webview {
+  max-height: calc(100vh - 24px);
+}
+
+.app-shell.is-windows-platform .project-floating-webview {
+  max-height: calc(100vh - 64px);
+}
+
+.app-shell.is-windows-platform .project-floating-webview-header {
+  flex-basis: 42px;
+  height: 42px;
+}
+
+.app-shell.is-windows-platform .project-floating-webview .project-floating-webview-content .embedded-surface-page.embedded-surface-page-embedded {
+  padding-top: 0;
+}
+
+@media (max-width: 720px) {
+  .project-floating-webview {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 56px);
+    border-radius: 10px;
+  }
+}

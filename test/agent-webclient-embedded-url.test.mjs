@@ -14,6 +14,7 @@ const {
   createAgentWebclientAgentPath,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
+  createAgentWebclientProjectPath,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
@@ -71,6 +72,25 @@ test("management embedded URLs do not carry WebSocket source or auth context", (
     assert.equal(url.searchParams.has("wsSource"), false, embedPath);
     assert.equal(url.searchParams.has("desktopAuthContext"), false, embedPath);
   }
+});
+
+test("project embedded URL carries project identity without a WebSocket source", () => {
+  const embedPath = createAgentWebclientProjectPath({
+    agentKey: "知识库 alpha",
+    chatId: "chat-1",
+    runId: "run-2"
+  });
+  const url = buildAgentWebclientUrl(
+    "agent-webclient-project:%E7%9F%A5%E8%AF%86%E5%BA%93%20alpha",
+    embedPath
+  );
+
+  assert.equal(url.pathname, "/project");
+  assert.equal(url.searchParams.get("agentKey"), "知识库 alpha");
+  assert.equal(url.searchParams.get("chatId"), "chat-1");
+  assert.equal(url.searchParams.get("runId"), "run-2");
+  assert.equal(url.searchParams.has("wsSource"), false);
+  assert.equal(url.searchParams.has("desktopAuthContext"), false);
 });
 
 test("main chat route comparison ignores host presentation params and their order", () => {

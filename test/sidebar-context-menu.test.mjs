@@ -58,10 +58,24 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
 });
 
 test("sidebar entity context menus expose only their fixed action sets", () => {
-  assert.deepEqual(ids({ kind: "agent", canOpenWorkspace: true }), [
+  const agentItems = buildSidebarContextMenuPolicy({
+    kind: "agent",
+    canOpenWorkspace: true,
+    canOpenProject: true
+  });
+  assert.deepEqual(agentItems.map((item) => item.id), [
     "agent.open-workspace",
+    "agent.open-project",
     "agent.edit"
   ]);
+  const disabledAgentItems = buildSidebarContextMenuPolicy({
+    kind: "agent",
+    canOpenWorkspace: false,
+    canOpenProject: false
+  });
+  assert.equal(disabledAgentItems[0].enabled, false);
+  assert.equal(disabledAgentItems[1].enabled, false);
+  assert.equal(disabledAgentItems[2].enabled, true);
   assert.deepEqual(ids({ kind: "chat", workPanelOpen: false }), [
     "chat.workPanel.open",
     "chat.export",
@@ -112,6 +126,28 @@ test("sidebar native context request validation rejects injected and malformed f
     x: 1,
     y: 2,
     target: { kind: "chat", workPanelOpen: false, label: "Injected" }
+  }), null);
+  assert.deepEqual(normalizeSidebarContextMenuRequest({
+    x: 4,
+    y: 8,
+    target: {
+      kind: "agent",
+      canOpenWorkspace: false,
+      canOpenProject: true
+    }
+  }), {
+    x: 4,
+    y: 8,
+    target: {
+      kind: "agent",
+      canOpenWorkspace: false,
+      canOpenProject: true
+    }
+  });
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 4,
+    y: 8,
+    target: { kind: "agent", canOpenWorkspace: true }
   }), null);
   assert.equal(normalizeSidebarContextMenuRequest({
     x: Number.POSITIVE_INFINITY,

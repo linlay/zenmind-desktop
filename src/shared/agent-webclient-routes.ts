@@ -202,6 +202,28 @@ export function createAgentWebclientRoute(request: {
   return createAgentWebclientAgentPath(agentKey, params);
 }
 
+export function createAgentWebclientProjectPath(request: {
+  agentKey?: string | null;
+  chatId?: string | null;
+  runId?: string | null;
+}) {
+  const params = new URLSearchParams();
+  const agentKey = request.agentKey?.trim() ?? "";
+  const chatId = request.chatId?.trim() ?? "";
+  const runId = request.runId?.trim() ?? "";
+  if (agentKey) {
+    params.set("agentKey", agentKey);
+  }
+  if (chatId) {
+    params.set("chatId", chatId);
+  }
+  if (runId) {
+    params.set("runId", runId);
+  }
+  const search = params.toString();
+  return search ? `/project?${search}` : "/project";
+}
+
 export function resolveAgentWebclientWsSource(
   surfaceId: string,
   embedPath: string | undefined

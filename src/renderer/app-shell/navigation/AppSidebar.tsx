@@ -998,6 +998,7 @@ type AppSidebarProps = {
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
+  onOpenAgentProject?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onCloseChatWorkPanel?: (chatId: string) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
@@ -1061,6 +1062,7 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
+  onOpenAgentProject,
   onOpenChatWorkPanel,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
@@ -1257,6 +1259,7 @@ export function AppSidebar({
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
+    onOpenAgentProject,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
@@ -1271,6 +1274,7 @@ export function AppSidebar({
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
+    onOpenAgentProject,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
@@ -2036,6 +2040,8 @@ export function AppSidebar({
         ? {
             kind: "agent",
             canOpenWorkspace: !getOpenWorkspaceDisabledReason(agent),
+            canOpenProject:
+              Boolean(runtime.onOpenAgentProject) && canOpenAgentProject(agent),
           }
         : null;
     }
@@ -2103,7 +2109,8 @@ export function AppSidebar({
     if (target.kind === "agent") {
       return (
         actionId === "agent.edit" ||
-        (actionId === "agent.open-workspace" && target.canOpenWorkspace)
+        (actionId === "agent.open-workspace" && target.canOpenWorkspace) ||
+        (actionId === "agent.open-project" && target.canOpenProject)
       );
     }
     if (target.kind === "chat") {
@@ -2182,6 +2189,11 @@ export function AppSidebar({
         !getOpenWorkspaceDisabledReason(agent)
       ) {
         await handleOpenWorkspace(agent);
+      } else if (
+        actionId === "agent.open-project" &&
+        canOpenAgentProject(agent)
+      ) {
+        sidebarContextMenuRuntimeRef.current.onOpenAgentProject?.(agent);
       } else if (actionId === "agent.edit") {
         handleEditAgent(agent);
       }
@@ -5045,6 +5057,14 @@ export function AppSidebar({
 
   function isCoderAgent(agent: AssistantNavAgentItem) {
     return agent.mode?.trim().toUpperCase() === "CODER";
+  }
+
+  function canOpenAgentProject(agent: AssistantNavAgentItem) {
+    const mode = agent.mode?.trim().toUpperCase() ?? "";
+    if (mode === "KBASE") {
+      return true;
+    }
+    return mode === "CODER" && !getOpenWorkspaceDisabledReason(agent);
   }
 
   function createAgentEditRoute(agent: AssistantNavAgentItem) {

@@ -69,6 +69,7 @@ type ServiceWebviewSurfaceProps = {
   serviceId?: string;
   surfaceId?: string;
   active?: boolean | undefined;
+  surfaceOwnershipActive?: boolean;
   embedPath?: string;
   surfaceLabel?: string;
   skipContextRegistration?: boolean;
@@ -394,6 +395,7 @@ export function ServiceWebviewSurface({
   serviceId: serviceIdProp,
   surfaceId: surfaceIdProp,
   active,
+  surfaceOwnershipActive,
   embedPath,
   surfaceLabel,
   skipContextRegistration,
@@ -413,6 +415,7 @@ export function ServiceWebviewSurface({
   }>();
   const serviceId = serviceIdProp ?? routeServiceId ?? routePluginId ?? "";
   const surfaceId = surfaceIdProp?.trim() || serviceId;
+  const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
   const service = services.find((s) => s.id === serviceId);
@@ -633,7 +636,7 @@ export function ServiceWebviewSurface({
       pageRoute: surfaceRoute,
       label: serviceDisplayName || surfaceId,
       url: webUrl || embeddedUrl,
-      active: active !== false,
+      active: ownsActiveSurface,
       tabs: [{
         tabId: surfaceId,
         currentUrl,
@@ -646,7 +649,7 @@ export function ServiceWebviewSurface({
       activeTabId: surfaceId,
     }).catch(() => undefined);
   }, [
-    active,
+    ownsActiveSurface,
     effectiveEmbedPath,
     embeddedUrl,
     serviceDisplayName,
@@ -803,7 +806,7 @@ export function ServiceWebviewSurface({
 
     const webContentsId = readWebviewContentsId(webviewRef.current);
     const isActive =
-      active !== false &&
+      ownsActiveSurface &&
       documentVisible &&
       service?.status === "running" &&
       typeof webContentsId === "number";
@@ -819,7 +822,7 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     publishCopilotDevToolsTarget();
   }, [
-    active,
+    ownsActiveSurface,
     devToolsTarget,
     documentVisible,
     embeddedUrl,
@@ -1296,7 +1299,7 @@ export function ServiceWebviewSurface({
         ? resolveServiceWebviewCurrentUrl(nextUrl, embeddedUrl, webviewSrcUrl)
         : readCurrentWebviewUrl();
       updateWebviewCurrentUrl(resolvedUrl, "guest");
-      const canSyncDesktopRoute = active !== false;
+      const canSyncDesktopRoute = ownsActiveSurface;
       if (
         canSyncDesktopRoute &&
         isAgentWebclientChatSurface(service?.id, surfaceId)
@@ -1388,7 +1391,7 @@ export function ServiceWebviewSurface({
   }, [
     bridgeProtocol,
     bridgeReady,
-    active,
+    ownsActiveSurface,
     serviceId,
     surfaceId,
     service?.id,
@@ -1513,7 +1516,7 @@ export function ServiceWebviewSurface({
 
   useEffect(() => {
     if (
-      active === false ||
+      !ownsActiveSurface ||
       service?.status !== "running" ||
       skipContextRegistration
     ) {
@@ -1536,7 +1539,7 @@ export function ServiceWebviewSurface({
       cancelled = true;
     };
   }, [
-    active,
+    ownsActiveSurface,
     currentRoute,
     embeddedUrl,
     surfaceId,
@@ -1573,7 +1576,7 @@ export function ServiceWebviewSurface({
           url: embeddedUrl || webUrl,
           route: surfaceRoute,
           open,
-          active: active !== false
+          active: ownsActiveSurface
         },
         tabs: open
           ? [{
@@ -1590,7 +1593,7 @@ export function ServiceWebviewSurface({
       };
     });
   }, [
-    active,
+    ownsActiveSurface,
     bridgeReady,
     embeddedUrl,
     service,
@@ -1604,7 +1607,7 @@ export function ServiceWebviewSurface({
 
   useEffect(() => {
     if (
-      active === false ||
+      !ownsActiveSurface ||
       service?.status !== "running" ||
       skipContextRegistration
     ) {
@@ -1615,7 +1618,7 @@ export function ServiceWebviewSurface({
       return readServiceWebviewPageContext();
     });
   }, [
-    active,
+    ownsActiveSurface,
     embeddedUrl,
     surfaceId,
     service?.status,
@@ -1625,7 +1628,7 @@ export function ServiceWebviewSurface({
   ]);
 
   useEffect(() => {
-    const isSurfaceActive = active !== false;
+    const isSurfaceActive = ownsActiveSurface;
     if (
       !isSurfaceActive ||
       service?.status !== "running" ||
@@ -1673,7 +1676,7 @@ export function ServiceWebviewSurface({
       },
     );
   }, [
-    active,
+    ownsActiveSurface,
     embeddedUrl,
     serviceId,
     surfaceId,
