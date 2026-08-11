@@ -33,6 +33,26 @@ import {
   readActionSelector
 } from "../../copilot/page-context/webActions";
 
+export type ExternalWebviewControllerState = {
+  surfaceId: string;
+  activeTabId: string | null;
+  tabs: Array<{
+    tabId: string;
+    targetId: string;
+    title: string;
+    url: string;
+    isLoading: boolean;
+  }>;
+};
+
+export type ExternalWebviewController = {
+  getState: () => Promise<ExternalWebviewControllerState>;
+  openTab: (url: string, title?: string) => Promise<ExternalWebviewControllerState>;
+  activateTab: (tabId: string) => Promise<ExternalWebviewControllerState>;
+  closeTab: (tabId: string) => Promise<ExternalWebviewControllerState | null>;
+  unregisterSurface: () => Promise<void>;
+};
+
 type ExternalWebviewPageProps = {
   title: string;
   url: string;
@@ -47,7 +67,17 @@ type ExternalWebviewPageProps = {
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
   onCloseSurface?: () => void;
+  showSurfaceCloseButton?: boolean;
+  surfaceCloseLabel?: string;
   onFaviconDiscovered?: (faviconUrl: string) => void;
+  ownerChatId?: string;
+  allowUserTabCreation?: boolean;
+  enableDesktopWebActions?: boolean;
+  registerPublicWebSurface?: boolean;
+  openPopupsInCurrentTab?: boolean;
+  cdpActive?: boolean;
+  publishPageContext?: boolean;
+  onControllerReady?: (controller: ExternalWebviewController | null) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -130,6 +160,7 @@ type ExternalWebviewPaneProps = {
   onCloseRequested: (tabId: string) => void;
   onDomReady: (tabId: string) => void;
   onFaviconDiscovered?: (faviconUrl: string) => void;
+  openPopupsInCurrentTab?: boolean;
 };
 
 function getFallbackTabTitle(defaultTitle: string, url: string) {
@@ -170,6 +201,18 @@ function normalizeEditableUrl(rawValue: string) {
 function readEventString(event: Event, key: string) {
   const candidate = (event as unknown as Record<string, unknown>)[key];
   return typeof candidate === "string" ? candidate : "";
+}
+
+function normalizeSameTabPopupUrl(rawValue: string) {
+  if (rawValue === BLANK_EXTERNAL_WEBVIEW_URL) {
+    return rawValue;
+  }
+  try {
+    const parsedUrl = new URL(rawValue);
+    return ["http:", "https:"].includes(parsedUrl.protocol) ? parsedUrl.toString() : null;
+  } catch {
+    return null;
+  }
 }
 
 function getUrlDisplayLabel(url: string) {
@@ -257,7 +300,8 @@ function ExternalWebviewPane({
   onWebviewRefChange,
   onCloseRequested,
   onDomReady,
-  onFaviconDiscovered
+  onFaviconDiscovered,
+  openPopupsInCurrentTab = false
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const initialSrcRef = useRef(tab.currentUrl);
@@ -352,6 +396,17 @@ function ExternalWebviewPane({
         onFaviconDiscovered?.(nextFaviconUrl);
       }
     };
+    const handleNewWindow = (event: Event) => {
+      if (!openPopupsInCurrentTab) {
+        return;
+      }
+      event.preventDefault?.();
+      const nextUrl = normalizeSameTabPopupUrl(readEventString(event, "url"));
+      if (!nextUrl) {
+        return;
+      }
+      void webview.loadURL(nextUrl).catch(() => undefined);
+    };
 
     webview.addEventListener("dom-ready", handleDomReady);
     webview.addEventListener("did-start-loading", handleDidStartLoading);
@@ -360,6 +415,7 @@ function ExternalWebviewPane({
     webview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
     webview.addEventListener("page-title-updated", handlePageTitleUpdated);
     webview.addEventListener("page-favicon-updated", handlePageFaviconUpdated);
+    webview.addEventListener("new-window", handleNewWindow);
     webview.addEventListener("close", handleClose);
     syncFromWebview();
 
@@ -371,9 +427,10 @@ function ExternalWebviewPane({
       webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
+      webview.removeEventListener("new-window", handleNewWindow);
       webview.removeEventListener("close", handleClose);
     };
-  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onTabStateChange, tab.currentUrl, tab.id]);
+  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onTabStateChange, openPopupsInCurrentTab, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -389,7 +446,7 @@ function ExternalWebviewPane({
         src: initialSrcRef.current,
         title: tab.title,
         className: "embedded-surface-frame external-webview-frame",
-        allowpopups: "true",
+        ...(openPopupsInCurrentTab ? {} : { allowpopups: "true" }),
         partition: tab.partition,
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
@@ -413,7 +470,17 @@ export function ExternalWebviewPage({
   onOpenAssistantDock,
   onCloseAssistantDock,
   onCloseSurface,
-  onFaviconDiscovered
+  showSurfaceCloseButton = false,
+  surfaceCloseLabel,
+  onFaviconDiscovered,
+  ownerChatId,
+  allowUserTabCreation = true,
+  enableDesktopWebActions = true,
+  registerPublicWebSurface = true,
+  openPopupsInCurrentTab = false,
+  cdpActive,
+  publishPageContext = true,
+  onControllerReady
 }: ExternalWebviewPageProps) {
   const { t } = useI18n();
   const location = useLocation();
@@ -426,11 +493,13 @@ export function ExternalWebviewPage({
   const activeRef = useRef(active !== false);
   const [surfaceRegistrationId] = useState(createSurfaceRegistrationId);
   const registeredSurfaceKind = surfaceKind ?? (surfaceId === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
-  const registeredSurfaceRoute = surfaceId === BUILTIN_BROWSER_SURFACE_ID
-    ? BUILTIN_BROWSER_ROUTE
-    : surfaceId
-      ? `/webs/${surfaceId}`
-      : currentRoute;
+  const registeredSurfaceRoute = registeredSurfaceKind === "chat-work-panel"
+    ? ""
+    : surfaceId === BUILTIN_BROWSER_SURFACE_ID
+      ? BUILTIN_BROWSER_ROUTE
+      : surfaceId
+        ? `/webs/${surfaceId}`
+        : currentRoute;
   const faviconReportedRef = useRef(false);
   const initialFaviconTabIdRef = useRef("");
   const surfaceClassName = [
@@ -540,9 +609,10 @@ export function ExternalWebviewPage({
       surfaceKind: registeredSurfaceKind,
       surfaceType: registeredSurfaceKind,
       pageRoute: registeredSurfaceRoute,
+      ...(ownerChatId ? { ownerChatId } : {}),
       label: surfaceLabel ?? title,
       url,
-      active: activeRef.current,
+      active: cdpActive ?? activeRef.current,
       tabs: registeredTabs,
       activeTabId: registeredActiveTabId
     });
@@ -1124,7 +1194,9 @@ export function ExternalWebviewPage({
     return {
       surface: {
         id: surfaceId ?? "",
-        kind: registeredSurfaceKind ?? "browser" as const,
+        kind: registeredSurfaceKind === "chat-work-panel"
+          ? "browser" as const
+          : registeredSurfaceKind ?? "browser" as const,
         label: surfaceLabel ?? title,
         url,
         route: registeredSurfaceRoute,
@@ -1146,11 +1218,11 @@ export function ExternalWebviewPage({
   };
 
   useEffect(() => {
-    if (!surfaceId || !registeredSurfaceKind) {
+    if (!registerPublicWebSurface || !surfaceId || !registeredSurfaceKind) {
       return undefined;
     }
     return registerWebSurfaceStateProvider(surfaceId, getPublicWebSurfaceState);
-  }, [registeredSurfaceKind, registeredSurfaceRoute, surfaceId, surfaceLabel, title, url]);
+  }, [registerPublicWebSurface, registeredSurfaceKind, registeredSurfaceRoute, surfaceId, surfaceLabel, title, url]);
 
   const readActivePageContext = async () => {
     const { currentActiveTab, activeWebview } = getActiveWebviewState();
@@ -1265,7 +1337,7 @@ export function ExternalWebviewPage({
   }
 
   useEffect(() => {
-    if (active === false || !activeTab) {
+    if (!publishPageContext || active === false || !activeTab) {
       return undefined;
     }
 
@@ -1286,6 +1358,7 @@ export function ExternalWebviewPage({
     };
   }, [
     active,
+    publishPageContext,
     activeTab?.currentUrl,
     activeTab?.guestId,
     activeTab?.id,
@@ -1298,17 +1371,17 @@ export function ExternalWebviewPage({
   ]);
 
   useEffect(() => {
-    if (active === false || !activeTab) {
+    if (!publishPageContext || active === false || !activeTab) {
       return undefined;
     }
 
     return registerAssistantPageContextProvider(async () => {
       return readActivePageContext();
     });
-  }, [active, activeTab?.id, surfaceId, surfaceLabel, title]);
+  }, [active, activeTab?.id, publishPageContext, surfaceId, surfaceLabel, title]);
 
   useEffect(() => {
-    if (active === false) {
+    if (!enableDesktopWebActions || active === false) {
       return undefined;
     }
 
@@ -1434,7 +1507,75 @@ export function ExternalWebviewPage({
           return null;
       }
     });
-  }, [active, activeTab?.id, onCloseSurface, surfaceId, surfaceLabel, t, title, url]);
+  }, [active, activeTab?.id, enableDesktopWebActions, onCloseSurface, surfaceId, surfaceLabel, t, title, url]);
+
+  const readControllerState = async (waitForTabId?: string) => {
+    if (!surfaceId || !registeredSurfaceKind) {
+      throw new Error("Embedded CDP surface is unavailable.");
+    }
+    const deadline = Date.now() + 8_000;
+    do {
+      await syncEmbeddedCdpSurface(browserStateRef.current);
+      const response = await window.electronAPI.embeddedCdp.getSurfaceTargetState({
+        registrationId: surfaceRegistrationId,
+        surfaceId
+      });
+      const targets = response.targets ?? [];
+      if (response.ok && (!waitForTabId || targets.some((target) => target.tabId === waitForTabId))) {
+        return {
+          surfaceId,
+          activeTabId: response.activeTabId ?? null,
+          tabs: targets.map((target) => ({
+            tabId: target.tabId,
+            targetId: target.targetId,
+            title: target.title,
+            url: target.currentUrl,
+            isLoading: target.isLoading
+          }))
+        } satisfies ExternalWebviewControllerState;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    throw new Error("Work Panel webview target is unavailable.");
+  };
+
+  useEffect(() => {
+    if (!onControllerReady) {
+      return undefined;
+    }
+    const controller: ExternalWebviewController = {
+      getState: () => readControllerState(),
+      openTab: async (nextUrl, preferredTitle = "") => {
+        const nextTab = openTab(nextUrl, preferredTitle);
+        return readControllerState(nextTab.id);
+      },
+      activateTab: async (tabId) => {
+        if (!browserStateRef.current.tabs.some((tab) => tab.id === tabId)) {
+          throw new Error("tab_not_found");
+        }
+        setActiveTab(tabId);
+        return readControllerState(tabId);
+      },
+      closeTab: async (tabId) => {
+        const result = await closeTab(tabId);
+        if (!result) {
+          return null;
+        }
+        return result.closedSurface ? null : readControllerState();
+      },
+      unregisterSurface: async () => {
+        if (!surfaceId || !registeredSurfaceKind) {
+          return;
+        }
+        await getEmbeddedCdpSurfaceApi()?.unregisterSurface({
+          registrationId: surfaceRegistrationId,
+          surfaceId
+        });
+      }
+    };
+    onControllerReady(controller);
+    return () => onControllerReady(null);
+  });
 
   useEffect(() => {
     if (addressInputUnlocked) {
@@ -1645,7 +1786,7 @@ export function ExternalWebviewPage({
               );
             })}
           </div>
-            <button
+            {allowUserTabCreation ? <button
               type="button"
               className="external-webview-tab-add"
               onClick={() => openTab(BLANK_EXTERNAL_WEBVIEW_URL, "")}
@@ -1653,7 +1794,18 @@ export function ExternalWebviewPage({
               title={t("externalWebview.newTab")}
             >
             <PlusIcon />
-          </button>
+          </button> : null}
+          {showSurfaceCloseButton && onCloseSurface ? (
+            <button
+              type="button"
+              className="external-webview-surface-close"
+              onClick={onCloseSurface}
+              aria-label={surfaceCloseLabel}
+              title={surfaceCloseLabel}
+            >
+              <CloseIcon />
+            </button>
+          ) : null}
         </div>
         <div className="external-webview-toolbar">
           <div className="external-webview-toolbar-actions">
@@ -1768,6 +1920,7 @@ export function ExternalWebviewPage({
                   }
                 : undefined
             }
+            openPopupsInCurrentTab={openPopupsInCurrentTab}
           />
         ))}
       </div>

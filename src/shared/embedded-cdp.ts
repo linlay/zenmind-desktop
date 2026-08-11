@@ -28,7 +28,7 @@ export const DESKTOP_CDP_PUBLIC_METHODS = [
 
 export type DesktopCdpPublicMethod = typeof DESKTOP_CDP_PUBLIC_METHODS[number];
 
-export type EmbeddedCdpSurfaceKind = "website" | "webapp" | "browser" | "service";
+export type EmbeddedCdpSurfaceKind = "website" | "webapp" | "browser" | "service" | "chat-work-panel";
 export type EmbeddedCdpSiteSurfaceKind = Extract<EmbeddedCdpSurfaceKind, "website" | "webapp">;
 
 export type EmbeddedCdpSurfaceTabRegistration = {
@@ -49,11 +49,32 @@ export type EmbeddedCdpSurfaceRegistration = {
   surfaceType?: WebviewContextMenuSurfaceType;
   serviceId?: string;
   pageRoute?: string;
+  ownerChatId?: string;
   label: string;
   url: string;
   active: boolean;
   tabs: EmbeddedCdpSurfaceTabRegistration[];
   activeTabId: string | null;
+};
+
+export type EmbeddedCdpSurfaceTargetState = {
+  tabId: string;
+  targetId: string;
+  currentUrl: string;
+  title: string;
+  isLoading: boolean;
+};
+
+export type EmbeddedCdpSurfaceTargetStateRequest = {
+  registrationId: string;
+  surfaceId: string;
+};
+
+export type EmbeddedCdpSurfaceTargetStateResult = {
+  ok: boolean;
+  surfaceId?: string;
+  activeTabId?: string | null;
+  targets?: EmbeddedCdpSurfaceTargetState[];
 };
 
 export type EmbeddedCdpSurfaceRemoval = {

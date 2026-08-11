@@ -31,6 +31,7 @@ export type BrowserSurface = {
   open: boolean;
   tabs: BrowserSurfaceTab[];
   activeTabId: string | null;
+  ownerChatId?: string;
 };
 
 export type BrowserSurfaceTab = EmbeddedCdpSurfaceTabRegistration;
@@ -71,6 +72,7 @@ export type RegisteredWebviewSurfaceTarget = {
   ownerWebContentsId: number;
   currentUrl: string;
   label: string;
+  ownerChatId?: string;
 };
 
 export function normalizeSurfaceMatchText(value: string) {
@@ -133,6 +135,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         surfaceType: surface.surfaceType ?? fallbackSurfaceType(surface.surfaceKind),
         ...(surface.serviceId ? { serviceId: surface.serviceId } : {}),
         ...(surface.pageRoute ? { pageRoute: surface.pageRoute } : {}),
+        ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
         tabId: tab.tabId,
         webContentsId: tab.webContentsId,
         ownerWebContentsId: surface.ownerWebContentsId,
@@ -165,7 +168,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     const sitePrefixValid = input?.surfaceKind !== "website" && input?.surfaceKind !== "webapp"
       ? true
       : input.surfaceId.startsWith(expectedSiteSurfaceIdPrefix(input.surfaceKind));
-    const validKinds: EmbeddedCdpSurfaceKind[] = ["website", "webapp", "browser", "service"];
+    const validKinds: EmbeddedCdpSurfaceKind[] = ["website", "webapp", "browser", "service", "chat-work-panel"];
     const validSurfaceTypes = new Set([
       "agent-chat",
       "agent-copilot",
@@ -174,6 +177,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       "browser",
       "website",
       "webapp",
+      "chat-work-panel",
       "help",
       "service"
     ]);
@@ -186,9 +190,11 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       typeof input.surfaceId === "string" &&
       input.surfaceId.trim() &&
       validKinds.includes(input.surfaceKind) &&
+      (input.surfaceKind !== "chat-work-panel" || Boolean(input.ownerChatId?.trim())) &&
       (input.surfaceType === undefined || validSurfaceTypes.has(input.surfaceType)) &&
       (input.serviceId === undefined || typeof input.serviceId === "string") &&
       (input.pageRoute === undefined || typeof input.pageRoute === "string") &&
+      (input.ownerChatId === undefined || typeof input.ownerChatId === "string") &&
       sitePrefixValid &&
       typeof input.label === "string" &&
       typeof input.url === "string" &&
@@ -247,6 +253,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       activeTabId: input.activeTabId?.trim() || null,
       ...(input.serviceId ? { serviceId: input.serviceId.trim() } : {}),
       ...(input.pageRoute ? { pageRoute: input.pageRoute.trim() } : {}),
+      ...(input.ownerChatId ? { ownerChatId: input.ownerChatId.trim() } : {}),
       ownerWebContentsId
     };
     registeredSurfaces.set(input.surfaceId, registered);
@@ -346,7 +353,8 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       ...indexed,
       currentUrl: tab.currentUrl,
       label: resolved.registered.label,
-      ...(resolved.registered.pageRoute ? { pageRoute: resolved.registered.pageRoute } : {})
+      ...(resolved.registered.pageRoute ? { pageRoute: resolved.registered.pageRoute } : {}),
+      ...(resolved.registered.ownerChatId ? { ownerChatId: resolved.registered.ownerChatId } : {})
     };
     registeredGuestTargets.set(webContentsId, next);
     return next;
@@ -444,6 +452,55 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     ];
   }
 
+  function listChatWorkPanelSurfaces(): BrowserSurface[] {
+    const surfaces: BrowserSurface[] = [];
+    for (const [surfaceId, candidate] of registeredSurfaces) {
+      if (candidate.surfaceKind !== "chat-work-panel") {
+        continue;
+      }
+      const resolved = resolveRegisteredSurface(surfaceId);
+      if (!resolved) {
+        continue;
+      }
+      const activeTab = resolved.activeTab;
+      surfaces.push({
+        id: surfaceId,
+        targetGeneration: resolved.registered.registrationId,
+        label: resolved.registered.label,
+        url: resolved.registered.url,
+        active: false,
+        currentUrl: activeTab?.currentUrl,
+        title: activeTab?.title,
+        webContentsId: activeTab?.webContentsId,
+        surfaceKind: "chat-work-panel",
+        open: true,
+        tabs: resolved.tabs,
+        activeTabId: resolved.registered.activeTabId,
+        ownerChatId: resolved.registered.ownerChatId
+      });
+    }
+    return surfaces;
+  }
+
+  function getRegisteredSurfaceSnapshot(
+    surfaceId: string,
+    registrationId: string,
+    ownerWebContentsId: number
+  ) {
+    const resolved = resolveRegisteredSurface(surfaceId);
+    if (
+      !resolved ||
+      resolved.registered.registrationId !== registrationId ||
+      resolved.registered.ownerWebContentsId !== ownerWebContentsId
+    ) {
+      return null;
+    }
+    return {
+      registered: resolved.registered,
+      tabs: resolved.tabs
+    };
+  }
+
   return {
     currentPageSnapshotMatchesSurface,
     findWebContentsById,
@@ -451,6 +508,8 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     findRegisteredSurfaceWebContents,
     builtinBrowserSurface,
     listBrowserSurfaces,
+    listChatWorkPanelSurfaces,
+    getRegisteredSurfaceSnapshot,
     registerSurface,
     resolveWebviewSurfaceTarget,
     unregisterSurface,

@@ -14,8 +14,8 @@ type CdpIntegrationOptions = {
   getCurrentPageSnapshot(): DesktopPageContextSnapshot | null;
   listServices: ServiceLister;
   isLoopbackUrl(value: string): unknown;
-  switchTab(surfaceId: string, tabId: string): Promise<unknown>;
-  closeTab(surfaceId: string, tabId: string): Promise<unknown>;
+  switchTab(surfaceId: string, tabId: string, ownerChatId?: string): Promise<unknown>;
+  closeTab(surfaceId: string, tabId: string, ownerChatId?: string): Promise<unknown>;
   version: string;
 };
 
@@ -84,6 +84,10 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
       kind: "webview" as const,
       copilotAgentKey: surface.copilotAgentKey || ""
     }));
+    const chatWorkPanelSurfaces = options.browserSurfaces.listChatWorkPanelSurfaces().map((surface) => ({
+      ...surface,
+      kind: "webview" as const
+    }));
 
     let serviceSurfaces: EmbeddedCdpSurface[] = [];
     try {
@@ -116,7 +120,7 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
       console.warn("[embedded-cdp] failed to list service webview targets", error);
     }
 
-    return [...webviewSurfaces, ...serviceSurfaces];
+    return [...webviewSurfaces, ...serviceSurfaces, ...chatWorkPanelSurfaces];
   }
 
   function resolveWebContents(_surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab): WebContents | null {
@@ -127,11 +131,11 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
     if (surface.activeTabId === tab.tabId || (surface.tabs?.length ?? 0) <= 1) {
       return;
     }
-    await options.switchTab(surface.id, tab.tabId);
+    await options.switchTab(surface.id, tab.tabId, surface.ownerChatId);
   }
 
   async function closeTarget(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
-    return options.closeTab(surface.id, tab.tabId);
+    return options.closeTab(surface.id, tab.tabId, surface.ownerChatId);
   }
 
   function start() {

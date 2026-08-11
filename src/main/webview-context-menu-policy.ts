@@ -104,7 +104,7 @@ export function buildWebviewContextMenuPolicy(
     if (hasCapability(target, "resource.download")) add("target", "resource.download");
   } else {
     const candidateLinkURL = target?.kind === "web-link" && target.url ? target.url : context.linkURL;
-    const linkURL = !["browser", "website", "webapp"].includes(context.surfaceType) &&
+    const linkURL = !["browser", "website", "webapp", "chat-work-panel"].includes(context.surfaceType) &&
       isLoopbackHttpUrl(candidateLinkURL)
       ? ""
       : candidateLinkURL;
@@ -117,7 +117,7 @@ export function buildWebviewContextMenuPolicy(
       ) {
         add("target", "link.open-current");
       } else if (
-        ["browser", "website", "webapp"].includes(context.surfaceType) &&
+        ["browser", "website", "webapp", "chat-work-panel"].includes(context.surfaceType) &&
         isDesktopTabUrl(linkURL)
       ) {
         add("target", "link.open-current");
@@ -135,7 +135,7 @@ export function buildWebviewContextMenuPolicy(
     ["image", "audio", "video"].includes(context.mediaType) &&
     target?.kind !== "chat-resource" &&
     (
-      ["browser", "website", "webapp"].includes(context.surfaceType) ||
+      ["browser", "website", "webapp", "chat-work-panel"].includes(context.surfaceType) ||
       !isLoopbackHttpUrl(context.mediaURL)
     ) &&
     isSafeMediaDownloadUrl(context.mediaURL)
@@ -151,7 +151,7 @@ export function buildWebviewContextMenuPolicy(
     target
   );
   if (!hasLocalTarget) {
-    if (["browser", "website", "webapp"].includes(context.surfaceType)) {
+    if (["browser", "website", "webapp", "chat-work-panel"].includes(context.surfaceType)) {
       if (context.canGoBack) add("page", "page.back");
       if (context.canGoForward) add("page", "page.forward");
       add("page", "page.reload");

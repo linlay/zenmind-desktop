@@ -1409,10 +1409,12 @@ test("desktop cdp bridge normalizes Target.closeTarget ids and rejects conflicts
 
   const topLevelResponse = await handleDesktopCdpRequest(options, {
     method: "Target.closeTarget",
-    targetId: "desktop-top-level"
+    targetId: "desktop-top-level",
+    source: { chatId: "chat-owned", agentKey: "ignored-for-cdp" }
   });
   assert.equal(topLevelResponse.ok, true);
   assert.equal(calls[1].targetId, "desktop-top-level");
+  assert.deepEqual(calls[1].source, { chatId: "chat-owned" });
 
   const conflictResponse = await handleDesktopCdpRequest(options, {
     method: "Target.closeTarget",

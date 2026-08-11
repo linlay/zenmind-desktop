@@ -387,11 +387,12 @@ export function createMainProcessRuntime() {
     getCurrentPageSnapshot: () => appState.currentPageSnapshot,
     listServices: () => listServices(app),
     isLoopbackUrl: parseSafeLoopbackWebUrl,
-    switchTab: async (surfaceId, tabId) => {
+    switchTab: async (surfaceId, tabId, ownerChatId) => {
       const response = await callDesktopActionRenderer({
         requestId: `cdp-switch-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: "desktop.web.switchTab",
-        args: { surfaceId, tabId }
+        action: ownerChatId ? "desktop.chatWorkPanel.activateTab" : "desktop.web.switchTab",
+        args: ownerChatId ? { tabId } : { surfaceId, tabId },
+        ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
       }, {
         getMainWindow: () => appState.mainWindow,
         pendingRequests: appState.desktopActionRendererRequests
@@ -401,11 +402,12 @@ export function createMainProcessRuntime() {
       }
       return response.result;
     },
-    closeTab: async (surfaceId, tabId) => {
+    closeTab: async (surfaceId, tabId, ownerChatId) => {
       const response = await callDesktopActionRenderer({
         requestId: `cdp-close-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: "desktop.web.closeTab",
-        args: { surfaceId, tabId }
+        action: ownerChatId ? "desktop.chatWorkPanel.closeTab" : "desktop.web.closeTab",
+        args: ownerChatId ? { tabId } : { surfaceId, tabId },
+        ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
       }, {
         getMainWindow: () => appState.mainWindow,
         pendingRequests: appState.desktopActionRendererRequests
@@ -551,6 +553,8 @@ export function createMainProcessRuntime() {
     isGlobalSearchShortcut,
     resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation,
+    shouldOpenWebviewPopupInCurrentTab: (contents) =>
+      webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id)?.surfaceType === "chat-work-panel",
     attachWebviewContextMenu: webviewContextMenuController.attach,
     collectWebviewLoadDiagnostics,
     reportRendererDiagnostic,

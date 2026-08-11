@@ -62,12 +62,14 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
     "agent.open-workspace",
     "agent.edit"
   ]);
-  assert.deepEqual(ids({ kind: "chat" }), [
+  assert.deepEqual(ids({ kind: "chat", workPanelOpen: false }), [
+    "chat.workPanel.open",
     "chat.export",
     "chat.rename",
     "chat.archive",
     "chat.delete"
   ]);
+  assert.equal(ids({ kind: "chat", workPanelOpen: true })[0], "chat.workPanel.close");
   assert.deepEqual(ids({
     kind: "web",
     webKind: "website",
@@ -99,22 +101,22 @@ test("sidebar native context request validation rejects injected and malformed f
   const valid = normalizeSidebarContextMenuRequest({
     x: 10.4,
     y: 20.6,
-    target: { kind: "chat" }
+    target: { kind: "chat", workPanelOpen: false }
   });
   assert.deepEqual(valid, {
     x: 10,
     y: 21,
-    target: { kind: "chat" }
+    target: { kind: "chat", workPanelOpen: false }
   });
   assert.equal(normalizeSidebarContextMenuRequest({
     x: 1,
     y: 2,
-    target: { kind: "chat", label: "Injected" }
+    target: { kind: "chat", workPanelOpen: false, label: "Injected" }
   }), null);
   assert.equal(normalizeSidebarContextMenuRequest({
     x: Number.POSITIVE_INFINITY,
     y: 2,
-    target: { kind: "chat" }
+    target: { kind: "chat", workPanelOpen: false }
   }), null);
   assert.equal(normalizeSidebarContextMenuRequest({
     x: 1,
@@ -170,7 +172,7 @@ test("sidebar native menu is owned by the main window and returns only the click
   const result = await invokeHandler({ sender }, {
     x: 999,
     y: -10,
-    target: { kind: "chat" }
+    target: { kind: "chat", workPanelOpen: false }
   });
   assert.deepEqual(result, { actionId: "chat.rename" });
   assert.equal(popupOptions.window, ownerWindow);
@@ -178,13 +180,13 @@ test("sidebar native menu is owned by the main window and returns only the click
   assert.equal(popupOptions.y, 0);
   assert.deepEqual(
     builtTemplate.filter((item) => item.type !== "separator").map((item) => item.id),
-    ["chat.export", "chat.rename", "chat.archive", "chat.delete"]
+    ["chat.workPanel.open", "chat.export", "chat.rename", "chat.archive", "chat.delete"]
   );
 
   const rejected = await invokeHandler({ sender: {} }, {
     x: 1,
     y: 2,
-    target: { kind: "chat" }
+    target: { kind: "chat", workPanelOpen: false }
   });
   assert.deepEqual(rejected, { actionId: null });
 });

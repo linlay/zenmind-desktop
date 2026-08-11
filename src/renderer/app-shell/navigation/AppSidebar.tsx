@@ -977,6 +977,7 @@ type AppSidebarProps = {
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavChatItems?: AssistantNavChatItem[];
   assistantNavChatItemsHasMore?: boolean;
+  chatWorkPanelOpenChatIds?: string[];
   assistantNavAgentsLoaded?: boolean;
   websitesLoaded?: boolean;
   chatNavAgentOptions?: AssistantNavAgentItem[];
@@ -997,6 +998,8 @@ type AppSidebarProps = {
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
+  onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
+  onCloseChatWorkPanel?: (chatId: string) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (input: WebsiteInput) => Promise<WebsiteResult>;
@@ -1039,6 +1042,7 @@ export function AppSidebar({
   assistantNavAgents = [],
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
+  chatWorkPanelOpenChatIds = [],
   assistantNavAgentsLoaded = true,
   websitesLoaded = true,
   chatNavAgentOptions = [],
@@ -1057,6 +1061,8 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
+  onOpenChatWorkPanel,
+  onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
   onRefreshCopilotAgentOptions,
   onCreateWebsiteItem,
@@ -2034,7 +2040,9 @@ export function AppSidebar({
         : null;
     }
     if (subject.kind === "chat") {
-      return findAssistantNavChat(subject.chatId) ? { kind: "chat" } : null;
+      return findAssistantNavChat(subject.chatId)
+        ? { kind: "chat", workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId) }
+        : null;
     }
 
     const item = findWebItem(subject.entryKey);
@@ -2102,6 +2110,8 @@ export function AppSidebar({
       return [
         "chat.export",
         "chat.rename",
+        "chat.workPanel.open",
+        "chat.workPanel.close",
         "chat.archive",
         "chat.delete",
       ].includes(actionId);
@@ -2185,6 +2195,10 @@ export function AppSidebar({
         await handleAssistantExportChat(chat);
       } else if (actionId === "chat.rename") {
         handleAssistantRenameChat(chat);
+      } else if (actionId === "chat.workPanel.open") {
+        onOpenChatWorkPanel?.(chat.chatId, chat.agentKey.trim() || currentAgentKey);
+      } else if (actionId === "chat.workPanel.close") {
+        onCloseChatWorkPanel?.(chat.chatId);
       } else if (actionId === "chat.archive") {
         await handleAssistantArchiveChat(chat);
       } else if (actionId === "chat.delete") {
@@ -3084,6 +3098,8 @@ export function AppSidebar({
       return;
     }
 
+    onCloseChatWorkPanel?.(chat.chatId);
+
     if (currentChatId === chat.chatId) {
       const agentKey = chat.agentKey.trim() || currentAgentKey;
       const currentAgent = assistantNavAgents.find(
@@ -3127,6 +3143,7 @@ export function AppSidebar({
         throw new Error(result.message || t("sidebar.chat.deleteFailed"));
       }
       setAssistantChatDeleteDialog(null);
+      onCloseChatWorkPanel?.(chat.chatId);
 
       if (currentChatId === chat.chatId) {
         const agentKey = chat.agentKey.trim() || currentAgentKey;

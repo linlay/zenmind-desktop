@@ -8,6 +8,7 @@ import {
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
 import type { DesktopGlobalSearchShortcut } from "../shared/contracts/desktop-api";
+import { normalizeChatWorkPanelUrl } from "../shared/chat-work-panel";
 import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
@@ -107,6 +108,7 @@ type AttachedWebviewLike = {
   openDevTools(options: { mode: "detach" }): void;
   paste(): void;
   selectAll(): void;
+  loadURL(url: string): Promise<unknown>;
   setWindowOpenHandler(handler: (details: { url: string }) => { action: "deny" }): void;
 };
 
@@ -127,6 +129,7 @@ type AttachedWebviewOptions<
   collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
   report(source: string, details: Record<string, unknown>): void;
   onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
+  shouldOpenPopupInCurrentTab?(contents: TGuestContents): boolean;
   getHelpUrl?(): string;
   isHelpWebview?(contents: TGuestContents): boolean;
   openExternal(url: string): Promise<unknown>;
@@ -334,6 +337,7 @@ export function configureMainWindowWebContents<
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
     report(source: string, details: Record<string, unknown>): void;
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
+    shouldOpenPopupInCurrentTab?(contents: TGuestContents): boolean;
     attachWebviewContextMenu?(contents: TGuestContents): void;
     getHelpUrl?(): string;
     isHelpWebview?(contents: TGuestContents): boolean;
@@ -415,6 +419,7 @@ export function configureMainWindowWebContents<
       collectLoadDiagnostics: options.collectLoadDiagnostics,
       report: options.report,
       onWebviewNavigation: options.onWebviewNavigation,
+      shouldOpenPopupInCurrentTab: options.shouldOpenPopupInCurrentTab,
       getHelpUrl: options.getHelpUrl,
       isHelpWebview: options.isHelpWebview,
       openExternal: options.openExternal,
@@ -717,6 +722,20 @@ export function configureAttachedWebview<
   });
 
   contents.setWindowOpenHandler(({ url }) => {
+    if (options.shouldOpenPopupInCurrentTab?.(contents)) {
+      const nextUrl = normalizeChatWorkPanelUrl(url);
+      if (nextUrl) {
+        void contents.loadURL(nextUrl).catch((error) => {
+          options.report("failed to navigate Work Panel popup in current tab", {
+            guestId: contents.id,
+            url: nextUrl,
+            error
+          });
+        });
+      }
+      return { action: "deny" };
+    }
+
     const disposition = options.resolveOpenDisposition(url);
     if (disposition === "download") {
       downloadFromWebview(url);

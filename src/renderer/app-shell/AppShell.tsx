@@ -99,6 +99,12 @@ import {
 import { decodeRoutePathSegment } from "../../shared/route-path";
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
+import { ChatWorkPanelHost } from "../chat-work-panel/ChatWorkPanelHost";
+import {
+  CHAT_WORK_PANEL_BLANK_URL,
+  createChatWorkPanelSurfaceId,
+  type ChatWorkPanelWorkspace
+} from "../../shared/chat-work-panel";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
@@ -209,6 +215,20 @@ const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclie
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
+let chatWorkPanelGenerationSequence = 0;
+
+function createChatWorkPanelWorkspace(chatId: string, initialUrl: string, initialTitle?: string) {
+  chatWorkPanelGenerationSequence += 1;
+  const generation = `${Date.now()}-${chatWorkPanelGenerationSequence}`;
+  return {
+    chatId,
+    surfaceId: createChatWorkPanelSurfaceId(chatId),
+    generation,
+    partition: `chat-work-panel-${generation}`,
+    initialUrl,
+    ...(initialTitle ? { initialTitle } : {})
+  } satisfies ChatWorkPanelWorkspace;
+}
 
 function RouteSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
@@ -538,6 +558,8 @@ export function AppShell() {
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
+  const [chatWorkPanelWorkspaces, setChatWorkPanelWorkspaces] = useState<ChatWorkPanelWorkspace[]>([]);
+  const chatWorkPanelWorkspacesRef = useRef(new Map<string, ChatWorkPanelWorkspace>());
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const chatRuntimeAgent = useMemo(
@@ -599,6 +621,14 @@ export function AppShell() {
   const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
     ? activeAgentWebclientRoute
     : null;
+  const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
+  const activeChatWorkPanelChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId
+    ? activeChatRouteInfo.chatId
+    : null;
+  const activeChatWorkPanelVisible = Boolean(
+    activeChatWorkPanelChatId &&
+    chatWorkPanelWorkspaces.some((workspace) => workspace.chatId === activeChatWorkPanelChatId)
+  );
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
@@ -2891,6 +2921,46 @@ export function AppShell() {
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
 
+  const ensureChatWorkPanelWorkspace = useCallback((chatId: string, initialUrl = CHAT_WORK_PANEL_BLANK_URL, initialTitle?: string) => {
+    const normalizedChatId = chatId.trim();
+    const current = chatWorkPanelWorkspacesRef.current.get(normalizedChatId);
+    if (current) {
+      return current;
+    }
+    const workspace = createChatWorkPanelWorkspace(normalizedChatId, initialUrl, initialTitle);
+    const next = new Map(chatWorkPanelWorkspacesRef.current);
+    next.set(normalizedChatId, workspace);
+    chatWorkPanelWorkspacesRef.current = next;
+    setChatWorkPanelWorkspaces([...next.values()]);
+    return workspace;
+  }, []);
+
+  const closeChatWorkPanelWorkspace = useCallback((chatId: string) => {
+    const closingWorkspace = chatWorkPanelWorkspacesRef.current.get(chatId);
+    const next = new Map(chatWorkPanelWorkspacesRef.current);
+    next.delete(chatId);
+    chatWorkPanelWorkspacesRef.current = next;
+    setChatWorkPanelWorkspaces([...next.values()]);
+    if (closingWorkspace) {
+      window.setTimeout(() => {
+        const clearSession = window.electronAPI.chatWorkPanel?.clearSession;
+        if (typeof clearSession !== "function") {
+          return;
+        }
+        void clearSession({
+          partition: closingWorkspace.partition
+        }).catch(() => undefined);
+      }, 0);
+    }
+  }, []);
+
+  const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
+    ensureChatWorkPanelWorkspace(chatId);
+    if (activeChatWorkPanelChatId !== chatId) {
+      requestSidebarNavigation(createAgentChatRoute(agentKey, chatId));
+    }
+  }, [activeChatWorkPanelChatId, ensureChatWorkPanelWorkspace, requestSidebarNavigation]);
+
   return (
     <DebugModeContext.Provider value={debugSettingsUnlocked}>
       <div
@@ -2908,6 +2978,7 @@ export function AppShell() {
         showsEmptyContentSurface ? "has-empty-content-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
+        activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         windowFullScreen ? "is-window-fullscreen" : "",
@@ -2944,6 +3015,7 @@ export function AppShell() {
           assistantNavAgents={assistantNavAgents}
           assistantNavChatItems={assistantNavChatItems}
           assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
+          chatWorkPanelOpenChatIds={chatWorkPanelWorkspaces.map((workspace) => workspace.chatId)}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}
           chatNavAgentOptions={chatNavAgentOptions}
@@ -2962,6 +3034,8 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
+          onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
           onCreateWebsiteItem={createWebsiteItem}
@@ -3139,6 +3213,12 @@ export function AppShell() {
             <Route path="/help" element={<RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>} />
           </Routes>
         </main>
+        <ChatWorkPanelHost
+          activeChatId={activeChatWorkPanelChatId}
+          workspaces={chatWorkPanelWorkspaces}
+          ensureWorkspace={ensureChatWorkPanelWorkspace}
+          closeWorkspace={closeChatWorkPanelWorkspace}
+        />
       </div>
       {isSidebarResizing ? (
         <div className="app-sidebar-resize-overlay" aria-hidden="true" />

@@ -14,6 +14,7 @@ export type WebviewContextMenuSurfaceType =
   | "browser"
   | "website"
   | "webapp"
+  | "chat-work-panel"
   | "help"
   | "service";
 

@@ -17,10 +17,13 @@ import type { WebviewSelectionToolbarStateListener } from "../webview-selection-
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
   EmbeddedCdpSurfaceRegistration,
-  EmbeddedCdpSurfaceRemoval
+  EmbeddedCdpSurfaceRemoval,
+  EmbeddedCdpSurfaceTargetStateRequest,
+  EmbeddedCdpSurfaceTargetStateResult
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
+import type { ChatWorkPanelClearSessionRequest } from "../chat-work-panel";
 import type { DesktopHelpSettings } from "../help";
 import type {
   EnterpriseChatAttachmentData,
@@ -758,6 +761,10 @@ export interface DesktopApi {
   embeddedCdp: {
     registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<{ ok: boolean }>;
     unregisterSurface: (input: EmbeddedCdpSurfaceRemoval) => Promise<{ ok: boolean }>;
+    getSurfaceTargetState: (input: EmbeddedCdpSurfaceTargetStateRequest) => Promise<EmbeddedCdpSurfaceTargetStateResult>;
+  };
+  chatWorkPanel: {
+    clearSession: (input: ChatWorkPanelClearSessionRequest) => Promise<{ ok: boolean }>;
   };
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;

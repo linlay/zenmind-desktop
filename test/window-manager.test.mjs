@@ -134,6 +134,7 @@ class FakePermissionSession {
 
 class FakeWebContents extends EventEmitter {
   downloadedUrls = [];
+  loadedUrls = [];
   devtoolsOpenOptions = null;
   windowOpenHandler = null;
   editCommands = [];
@@ -149,6 +150,10 @@ class FakeWebContents extends EventEmitter {
 
   downloadURL(url) {
     this.downloadedUrls.push(url);
+  }
+
+  async loadURL(url) {
+    this.loadedUrls.push(url);
   }
 
   openDevTools(options) {
@@ -1217,4 +1222,38 @@ test("window manager configures attached webviews for downloads, DevTools and po
       }
     }
   ]);
+});
+
+test("Chat Work Panel popups navigate the source guest without creating a tab or external window", async () => {
+  const contents = new FakeWebContents(43);
+  const sentTabs = [];
+  const externalUrls = [];
+
+  configureAttachedWebview(contents, {
+    platform: "darwin",
+    getMainWindow: () => ({
+      isDestroyed: () => false,
+      webContents: {
+        send: (channel, payload) => sentTabs.push({ channel, payload })
+      }
+    }),
+    isDevToolsShortcut: () => false,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "tab",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    shouldOpenPopupInCurrentTab: () => true,
+    openExternal: async (url) => {
+      externalUrls.push(url);
+    },
+    schedule: (callback) => callback()
+  });
+
+  assert.deepEqual(contents.windowOpenHandler({ url: "https://example.test/popup" }), { action: "deny" });
+  assert.deepEqual(contents.windowOpenHandler({ url: "javascript:alert(1)" }), { action: "deny" });
+  await Promise.resolve();
+
+  assert.deepEqual(contents.loadedUrls, ["https://example.test/popup"]);
+  assert.deepEqual(sentTabs, []);
+  assert.deepEqual(externalUrls, []);
 });

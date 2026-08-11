@@ -84,10 +84,10 @@ export function normalizeSidebarContextMenuRequest(
       canOpenWorkspace: target.canOpenWorkspace
     };
   } else if (target.kind === "chat") {
-    if (!hasOnlyKeys(target, ["kind"])) {
+    if (!hasOnlyKeys(target, ["kind", "workPanelOpen"]) || !isBoolean(target.workPanelOpen)) {
       return null;
     }
-    normalizedTarget = { kind: "chat" };
+    normalizedTarget = { kind: "chat", workPanelOpen: target.workPanelOpen };
   } else if (target.kind === "web") {
     if (
       !hasOnlyKeys(target, [
@@ -189,10 +189,15 @@ export function buildSidebarContextMenuPolicy(
 
   if (target.kind === "chat") {
     return [
-      { id: "chat.export", group: 0, enabled: true },
-      { id: "chat.rename", group: 0, enabled: true },
-      { id: "chat.archive", group: 1, enabled: true },
-      { id: "chat.delete", group: 1, enabled: true }
+      {
+        id: target.workPanelOpen ? "chat.workPanel.close" : "chat.workPanel.open",
+        group: 0,
+        enabled: true
+      },
+      { id: "chat.export", group: 1, enabled: true },
+      { id: "chat.rename", group: 1, enabled: true },
+      { id: "chat.archive", group: 2, enabled: true },
+      { id: "chat.delete", group: 2, enabled: true }
     ];
   }
 

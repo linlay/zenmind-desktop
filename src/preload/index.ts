@@ -532,7 +532,11 @@ const api: DesktopApi = {
   },
   embeddedCdp: {
     registerSurface: (input) => ipcRenderer.invoke("embeddedCdp.registerSurface", input),
-    unregisterSurface: (input) => ipcRenderer.invoke("embeddedCdp.unregisterSurface", input)
+    unregisterSurface: (input) => ipcRenderer.invoke("embeddedCdp.unregisterSurface", input),
+    getSurfaceTargetState: (input) => ipcRenderer.invoke("embeddedCdp.getSurfaceTargetState", input)
+  },
+  chatWorkPanel: {
+    clearSession: (input) => ipcRenderer.invoke("chatWorkPanel.clearSession", input)
   },
   copilot: {
     publishDevToolsTarget: (target) => ipcRenderer.invoke("copilot.publishDevToolsTarget", target)

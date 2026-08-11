@@ -32,6 +32,7 @@ export type EmbeddedCdpSurface = {
   open: boolean;
   tabs?: EmbeddedCdpSurfaceTab[];
   activeTabId?: string | null;
+  ownerChatId?: string;
 };
 
 export type EmbeddedCdpSurfaceTab = {
@@ -85,6 +86,7 @@ export type EmbeddedCdpCommandRequest = {
   method: string;
   params?: Record<string, unknown>;
   targetId?: string;
+  source?: { chatId?: string };
 };
 
 const WEBSOCKET_GUID = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
@@ -96,12 +98,12 @@ export class EmbeddedCdpInvalidArgsError extends Error {
 }
 
 export class EmbeddedCdpTargetError extends Error {
-  constructor(readonly code: "target_required" | "current_target_unavailable" | "target_not_in_current_surface" | "target_not_found", message: string) {
+  constructor(readonly code: "target_required" | "current_target_unavailable" | "target_not_in_current_surface" | "target_not_owned_by_chat" | "target_not_found", message: string) {
     super(message);
   }
 }
 
-function stableTargetId(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
+export function createEmbeddedCdpTargetId(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
   const generation = surface.targetGeneration || String(tab.webContentsId);
   const source = `webview:${generation}:${surface.id}:${tab.tabId}`;
   return `desktop-${crypto.createHash("sha1").update(source).digest("hex").slice(0, 16)}`;
@@ -432,7 +434,7 @@ export class EmbeddedCdpGateway {
       return [];
     }
     return surfaceTabs(surface).map((tab) =>
-      targetDescriptor(surface, tab, stableTargetId(surface, tab), origins)
+      targetDescriptor(surface, tab, createEmbeddedCdpTargetId(surface, tab), origins)
     );
   }
 
@@ -449,7 +451,7 @@ export class EmbeddedCdpGateway {
       const surface = this.resolveCurrentSurface(await this.listValidSurfaces());
       const tabs = surface ? surfaceTabs(surface) : [];
       const currentTab = surface ? activeSurfaceTab(surface) : null;
-      const targetId = surface && currentTab ? stableTargetId(surface, currentTab) : null;
+      const targetId = surface && currentTab ? createEmbeddedCdpTargetId(surface, currentTab) : null;
       const targetInfo = surface && currentTab && targetId
         ? targetInfoDescriptor(surface, currentTab, targetId, true)
         : null;
@@ -469,7 +471,7 @@ export class EmbeddedCdpGateway {
         result: {
           targetInfos: surface
             ? tabs.map((tab) => {
-                const candidateTargetId = stableTargetId(surface, tab);
+                const candidateTargetId = createEmbeddedCdpTargetId(surface, tab);
                 return targetInfoDescriptor(surface, tab, candidateTargetId, candidateTargetId === targetId);
               })
             : [],
@@ -804,7 +806,7 @@ export class EmbeddedCdpGateway {
     return surfaceTabs(surface).map((tab) => ({
       surface,
       tab,
-      targetId: stableTargetId(surface, tab)
+      targetId: createEmbeddedCdpTargetId(surface, tab)
     }));
   }
 
@@ -824,13 +826,33 @@ export class EmbeddedCdpGateway {
     }
     const surfaces = await this.listValidSurfaces();
     const currentSurface = this.resolveCurrentSurface(surfaces);
+    const requestedChatId = typeof request.source?.chatId === "string" ? request.source.chatId.trim() : "";
+    const matchingTarget = surfaces
+      .flatMap((surface) => this.targetsForSurface(surface))
+      .find((target) => target.targetId === targetId) ?? null;
+    if (matchingTarget?.surface.surfaceKind === "chat-work-panel") {
+      if (requestedChatId && matchingTarget.surface.ownerChatId === requestedChatId) {
+        return matchingTarget;
+      }
+      if (requestedChatId) {
+        throw new EmbeddedCdpTargetError(
+          "target_not_owned_by_chat",
+          "The Work Panel target does not belong to the calling chat."
+        );
+      }
+    }
     if (!currentSurface) {
       const existsOutsideCurrentSurface = surfaces
         .some((surface) => this.targetsForSurface(surface).some((target) => target.targetId === targetId));
       if (existsOutsideCurrentSurface) {
         throw new EmbeddedCdpTargetError("target_not_in_current_surface", "The target does not belong to the current Desktop surface.");
       }
-      throw new EmbeddedCdpTargetError("current_target_unavailable", "The current Desktop surface does not expose a CDP target.");
+      throw new EmbeddedCdpTargetError(
+        requestedChatId ? "target_not_found" : "current_target_unavailable",
+        requestedChatId
+          ? "The target is closed or unavailable."
+          : "The current Desktop surface does not expose a CDP target."
+      );
     }
     const currentTarget = this.targetsForSurface(currentSurface).find((target) => target.targetId === targetId);
     if (currentTarget) {
@@ -848,6 +870,6 @@ export class EmbeddedCdpGateway {
 
 export const __testInternals = {
   createServerFrame,
-  stableTargetId,
+  stableTargetId: createEmbeddedCdpTargetId,
   targetDescriptor
 };

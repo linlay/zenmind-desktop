@@ -527,6 +527,106 @@ test("embedded cdp commands require a target from the current surface and allow 
   );
 });
 
+test("embedded cdp authorizes chat-owned Work Panel targets without changing current target discovery", async () => {
+  const sentCommands = [];
+  const createContents = (id) => {
+    let attached = false;
+    return {
+      id,
+      isDestroyed: () => false,
+      getURL: () => `https://work.example/${id}`,
+      getTitle: () => `Work ${id}`,
+      debugger: {
+        isAttached: () => attached,
+        attach: () => { attached = true; },
+        detach: () => { attached = false; },
+        sendCommand: async (method, params) => {
+          sentCommands.push({ id, method, params });
+          return { value: id };
+        }
+      }
+    };
+  };
+  const currentTab = { tabId: "current-tab", currentUrl: "https://current.example/", title: "Current", webContentsId: 501 };
+  const ownedTab = { tabId: "owned-tab", currentUrl: "https://work.example/owned", title: "Owned", webContentsId: 502 };
+  const otherTab = { tabId: "other-tab", currentUrl: "https://work.example/other", title: "Other", webContentsId: 503 };
+  const surfaces = [
+    {
+      id: "website:current",
+      targetGeneration: "current-1",
+      label: "Current",
+      url: currentTab.currentUrl,
+      surfaceKind: "website",
+      open: true,
+      active: true,
+      tabs: [currentTab],
+      activeTabId: currentTab.tabId
+    },
+    {
+      id: "chat-work-panel:owned",
+      targetGeneration: "owned-1",
+      label: "Work Panel",
+      url: ownedTab.currentUrl,
+      surfaceKind: "chat-work-panel",
+      ownerChatId: "chat-owned",
+      open: true,
+      active: false,
+      tabs: [ownedTab],
+      activeTabId: ownedTab.tabId
+    },
+    {
+      id: "chat-work-panel:other",
+      targetGeneration: "other-1",
+      label: "Work Panel",
+      url: otherTab.currentUrl,
+      surfaceKind: "chat-work-panel",
+      ownerChatId: "chat-other",
+      open: true,
+      active: false,
+      tabs: [otherTab],
+      activeTabId: otherTab.tabId
+    }
+  ];
+  const contents = new Map([501, 502, 503].map((id) => [id, createContents(id)]));
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: (_surface, tab) => contents.get(tab.webContentsId) ?? null
+  });
+
+  const targets = await gateway.executeCommand({ method: "Target.getTargets" });
+  assert.deepEqual(targets.result.targetInfos.map((target) => target.surfaceId), ["website:current"]);
+
+  const ownedTargetId = gatewayInternals.stableTargetId(surfaces[1], ownedTab);
+  const result = await gateway.executeCommand({
+    method: "Runtime.evaluate",
+    params: { expression: "document.title" },
+    targetId: ownedTargetId,
+    source: { chatId: "chat-owned" }
+  });
+  assert.equal(result.surfaceId, "chat-work-panel:owned");
+  assert.equal(sentCommands.at(-1).id, 502);
+
+  await assert.rejects(
+    gateway.executeCommand({
+      method: "Runtime.evaluate",
+      params: { expression: "document.title" },
+      targetId: gatewayInternals.stableTargetId(surfaces[2], otherTab),
+      source: { chatId: "chat-owned" }
+    }),
+    (error) => error?.code === "target_not_owned_by_chat"
+  );
+
+  await assert.rejects(
+    gateway.executeCommand({
+      method: "Runtime.evaluate",
+      params: { expression: "document.title" },
+      targetId: "desktop-stale-work-panel-target",
+      source: { chatId: "chat-owned" }
+    }),
+    (error) => error?.code === "target_not_found"
+  );
+});
+
 test("browser surface registry uses explicit guest registrations for complete surface tab state", () => {
   let currentPageSnapshot = {
     pageKind: "webview",

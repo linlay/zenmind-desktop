@@ -1894,6 +1894,12 @@ async function executeAction(
     case "desktop.web.switchTab":
     case "desktop.web.interactElement":
     case "desktop.web.executeScript":
+    case "desktop.chatWorkPanel.getState":
+    case "desktop.chatWorkPanel.open":
+    case "desktop.chatWorkPanel.close":
+    case "desktop.chatWorkPanel.openTab":
+    case "desktop.chatWorkPanel.activateTab":
+    case "desktop.chatWorkPanel.closeTab":
       return callRendererAction(options, request, args);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
@@ -2250,7 +2256,8 @@ export async function handleDesktopCdpRequest(
     const response = await options.executeCdpCommand({
       method,
       params,
-      targetId
+      targetId,
+      ...(request.source?.chatId ? { source: { chatId: request.source.chatId } } : {})
     });
     return {
       ok: true,

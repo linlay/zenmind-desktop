@@ -118,6 +118,12 @@ test("link policy separates browser, trusted webclient and generic service surfa
     "link.open-external",
     "link.copy"
   ]);
+  assert.deepEqual(ids(context({ surfaceType: "chat-work-panel", linkURL })), [
+    "link.open-current",
+    "link.open-desktop-tab",
+    "link.open-external",
+    "link.copy"
+  ]);
   assert.deepEqual(ids(context({
     trustedAgentWebclient: true,
     linkURL,
@@ -150,6 +156,12 @@ test("media and blank-page policy do not expose unsafe URLs", () => {
   })), ["media.copy-image"]);
   assert.deepEqual(ids(context({
     surfaceType: "browser",
+    canGoBack: true,
+    canGoForward: true,
+    pageURL: "https://example.test/"
+  })), ["page.back", "page.forward", "page.reload", "page.copy-url"]);
+  assert.deepEqual(ids(context({
+    surfaceType: "chat-work-panel",
     canGoBack: true,
     canGoForward: true,
     pageURL: "https://example.test/"

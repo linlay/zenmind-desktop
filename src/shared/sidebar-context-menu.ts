@@ -12,6 +12,8 @@ export type SidebarContextMenuActionId =
   | "agent.edit"
   | "chat.export"
   | "chat.rename"
+  | "chat.workPanel.open"
+  | "chat.workPanel.close"
   | "chat.archive"
   | "chat.delete"
   | "web.close"
@@ -35,6 +37,7 @@ export type SidebarContextMenuTarget =
     }
   | {
       kind: "chat";
+      workPanelOpen: boolean;
     }
   | {
       kind: "web";

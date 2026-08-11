@@ -29,6 +29,8 @@ const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
   "agent.edit": "sidebar.agent.edit",
   "chat.export": "sidebar.chat.export",
   "chat.rename": "sidebar.chat.rename",
+  "chat.workPanel.open": "sidebar.chat.workPanel.open",
+  "chat.workPanel.close": "sidebar.chat.workPanel.close",
   "chat.archive": "sidebar.chat.archive",
   "chat.delete": "sidebar.chat.delete",
   "web.close": "sidebar.website.close",
