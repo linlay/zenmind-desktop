@@ -37,7 +37,6 @@
       ]
     },
     "appConfig": {
-      "default": {},
       "type": "object",
       "propertyNames": {
         "type": "string"
@@ -382,13 +381,9 @@
           "maxLength": 512
         },
         "routeConfig": {
-          "default": {
-            "backendPrefixes": []
-          },
           "type": "object",
           "properties": {
             "backendPrefixes": {
-              "default": [],
               "maxItems": 16,
               "type": "array",
               "items": {
@@ -581,9 +576,6 @@
       "additionalProperties": false
     },
     "desktopBridge": {
-      "default": {
-        "version": 1
-      },
       "type": "object",
       "properties": {
         "version": {

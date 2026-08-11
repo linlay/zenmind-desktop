@@ -256,7 +256,8 @@ async function initManifest(options) {
       root: "frontend",
       index: "index.html",
       routeConfig: { backendPrefixes: [] }
-    }
+    },
+    desktopBridge: { version: 1 }
   });
   fs.mkdirSync(path.join(projectPath, "frontend"), { recursive: true });
   const indexPath = path.join(projectPath, "frontend", "index.html");

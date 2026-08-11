@@ -262,10 +262,21 @@ test("manifest v2 preserves appConfig and enables Desktop Bridge v1 without capa
   assert.deepEqual(parsed.desktopBridge, { version: 1 });
 });
 
-test("manifest v2 defaults Desktop Bridge v1 and rejects legacy capability arrays", () => {
-  const withoutBridge = manifest("bridge-default");
-  delete withoutBridge.desktopBridge;
-  assert.deepEqual(parseWebappManifest(withoutBridge).desktopBridge, { version: 1 });
+test("manifest v2 requires the canonical authoring structure and rejects legacy capability arrays", () => {
+  const requiredFields = [
+    ["appConfig", (value) => delete value.appConfig],
+    ["frontend.routeConfig", (value) => delete value.frontend.routeConfig],
+    ["frontend.routeConfig.backendPrefixes", (value) => delete value.frontend.routeConfig.backendPrefixes],
+    ["desktopBridge", (value) => delete value.desktopBridge]
+  ];
+  for (const [field, remove] of requiredFields) {
+    const value = manifest(`missing-${field.replaceAll(".", "-")}`);
+    remove(value);
+    assert.throws(
+      () => parseWebappManifest(value),
+      (error) => error.issues?.some((issue) => issue.path.join(".") === field)
+    );
+  }
 
   const legacy = manifest("bridge-legacy", {
     desktopBridge: {

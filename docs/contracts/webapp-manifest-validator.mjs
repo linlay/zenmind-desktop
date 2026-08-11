@@ -5226,20 +5226,20 @@ const webappManifestV2Schema = strictObject({
     "win32-arm64",
     "win32-x64"
   ]),
-  appConfig: webappAppConfigSchema.default({}),
+  appConfig: webappAppConfigSchema,
   userConfig: webappUserConfigSchema.optional(),
   frontend: strictObject({
     root: safeRelativePathSchema,
     index: safeRelativePathSchema,
     routeConfig: strictObject({
-      backendPrefixes: array(backendPrefixSchema).max(16).default([]),
+      backendPrefixes: array(backendPrefixSchema).max(16),
       navigationFallback: safeRelativePathSchema.optional()
-    }).default({ backendPrefixes: [] })
+    })
   }),
   backend: webappBackendSchema.optional(),
   desktopBridge: strictObject({
     version: literal(1)
-  }).default({ version: 1 })
+  })
 }).superRefine((value, context) => {
   if (jsonBytes(value) > WEBAPP_MANIFEST_MAX_BYTES) {
     context.addIssue({
