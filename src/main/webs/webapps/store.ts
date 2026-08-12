@@ -54,6 +54,25 @@ type WebappPreference = {
 
 type WebappPreferenceStore = Record<string, WebappPreference>;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function normalizeInstalledWebappManifest(value: unknown) {
+  if (!isRecord(value) || value.schemaVersion !== WEBAPP_MANIFEST_VERSION || !isRecord(value.desktopBridge)) {
+    return value;
+  }
+  if (!Object.hasOwn(value.desktopBridge, "capabilities")) {
+    return value;
+  }
+  const desktopBridge = { ...value.desktopBridge };
+  delete desktopBridge.capabilities;
+  return {
+    ...value,
+    desktopBridge
+  };
+}
+
 export function assertWebappId(value: string) {
   if (!WEBAPP_ID_PATTERN.test(value)) {
     throw new Error("webapp id is missing or invalid.");
@@ -235,7 +254,7 @@ function normalizeWebappUserConfigValues(
 
 export function readWebappUserConfigState(app: App, id: string) {
   const webappId = assertWebappId(id);
-  const manifest = readManifestFile(getWebappDir(app, webappId));
+  const manifest = readInstalledManifestFile(getWebappDir(app, webappId));
   const stored = readStoredUserConfigValues(app, webappId);
   return normalizeWebappUserConfigValues(manifest, stored, {
     includeDefaults: true,
@@ -263,7 +282,7 @@ export function writeWebappUserConfigValues(
   input: unknown
 ) {
   const webappId = assertWebappId(id);
-  const manifest = readManifestFile(getWebappDir(app, webappId));
+  const manifest = readInstalledManifestFile(getWebappDir(app, webappId));
   const normalized = validateWebappUserConfigValues(manifest, input);
   if (normalized.issues.length > 0) {
     return {
@@ -315,7 +334,7 @@ export function removeWebappPreferences(app: App, id: string) {
   writePreferences(app, preferences);
 }
 
-function readManifestFile(webappDir: string): WebappManifest {
+function readManifestJson(webappDir: string) {
   const manifestPath = path.join(webappDir, WEBAPP_FILE);
   const stat = fs.statSync(manifestPath);
   if (!stat.isFile()) {
@@ -324,7 +343,15 @@ function readManifestFile(webappDir: string): WebappManifest {
   if (stat.size > WEBAPP_MANIFEST_MAX_BYTES) {
     throw new Error(`webapp.json must not exceed ${WEBAPP_MANIFEST_MAX_BYTES} bytes.`);
   }
-  return parseWebappManifest(JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown);
+  return JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown;
+}
+
+function readManifestFile(webappDir: string): WebappManifest {
+  return parseWebappManifest(readManifestJson(webappDir));
+}
+
+function readInstalledManifestFile(webappDir: string): WebappManifest {
+  return parseWebappManifest(normalizeInstalledWebappManifest(readManifestJson(webappDir)));
 }
 
 function manifestToEntry(
@@ -359,7 +386,7 @@ export function normalizeWebappManifest(value: unknown, projectDir: string): Web
 }
 
 export function readWebappManifestFromDir(webappDir: string) {
-  return readManifestFile(webappDir);
+  return readInstalledManifestFile(webappDir);
 }
 
 export function readWebappItemFromDir(webappDir: string, expectedId = "") {
@@ -398,7 +425,7 @@ export function readInstalledWebappItems(app: App, platform: NodeJS.Platform = p
     }
     const webappDir = path.join(root, entry.name);
     try {
-      const manifest = readManifestFile(webappDir);
+      const manifest = readInstalledManifestFile(webappDir);
       if (manifest.id !== entry.name) {
         throw new Error(`webapp id must match its installation directory: ${entry.name}.`);
       }
@@ -426,7 +453,7 @@ export function writeWebappPreferenceFields(
 ) {
   const webappId = assertWebappId(id);
   const webappDir = getWebappDir(app, webappId, platform);
-  const manifest = readManifestFile(webappDir);
+  const manifest = readInstalledManifestFile(webappDir);
   if (manifest.id !== webappId) {
     throw new Error(`webapp id mismatch: expected ${webappId}, received ${manifest.id}.`);
   }

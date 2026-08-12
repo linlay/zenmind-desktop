@@ -131,9 +131,14 @@ export function runtimeRootExists(app: AppPathReader, platform: NodeJS.Platform 
 
 export function assertNoRemovedSkillsMarketRuntimeDir(root: string) {
   const removedPath = path.join(root, REMOVED_SKILLS_MARKET_DIR_NAME);
-  if (fs.existsSync(removedPath)) {
-    throw new Error(t("envBootstrap.removedSkillsMarketRuntime", { path: removedPath }));
+  if (!fs.existsSync(removedPath)) {
+    return;
   }
+  if (fs.statSync(removedPath).isDirectory() && !hasDirectoryEntries(removedPath)) {
+    fs.rmSync(removedPath, { recursive: true, force: true });
+    return;
+  }
+  throw new Error(t("envBootstrap.removedSkillsMarketRuntime", { path: removedPath }));
 }
 
 export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {

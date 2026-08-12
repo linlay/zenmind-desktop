@@ -128,6 +128,23 @@ test("runtime env does not treat empty runtime directories as initialized", (t) 
   assert.equal(runtimeEnvExists(app, "win32"), true);
 });
 
+test("empty legacy skills-market directories are removed before using a skills-center runtime", (t) => {
+  for (const platform of ["darwin", "win32"]) {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), `zenmind-empty-legacy-skill-runtime-${platform}-`));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+    const app = createPathApp(root);
+    const runtimeRoot = resolveRuntimeRoot(app, platform);
+    fs.mkdirSync(path.join(runtimeRoot, "skills-market"), { recursive: true });
+    fs.writeFileSync(path.join(runtimeRoot, "skills-market", ".DS_Store"), "", "utf8");
+    fs.mkdirSync(path.join(runtimeRoot, "skills-center", "demo"), { recursive: true });
+    fs.writeFileSync(path.join(runtimeRoot, "skills-center", "demo", "SKILL.md"), "# Demo\n", "utf8");
+
+    assert.equal(runtimeEnvExists(app, platform), true);
+    assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-market")), false);
+  }
+});
+
 test("legacy skills-market runtime directories fail before Desktop writes skills-center", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-removed-skill-runtime-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));

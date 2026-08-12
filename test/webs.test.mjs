@@ -356,6 +356,29 @@ test("manifest v2 rejects legacy fields, capability declarations, unknown fields
   }
 });
 
+test("installed WebApps keep loading legacy desktopBridge capabilities without weakening package validation", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webapp-installed-bridge-compat-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const id = webappId("legacy-installed-bridge");
+  const appDir = writeWebapp(webappsRoot(homePath), "legacy-installed-bridge", {
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat", "native.clipboard.write"]
+    }
+  });
+  const manifestPath = path.join(appDir, "webapp.json");
+  const before = fs.readFileSync(manifestPath, "utf8");
+
+  assert.throws(() => readWebappItemFromDir(appDir), /capabilities/u);
+  const installed = readWebappItems(app);
+  assert.equal(installed.length, 1);
+  assert.equal(installed[0].id, id);
+  assert.deepEqual(installed[0].desktopBridge, { version: 1 });
+  assert.equal(fs.readFileSync(manifestPath, "utf8"), before);
+});
+
 test("manifest appConfig rejects secrets, dangerous keys, and size overflow", () => {
   assert.throws(() => parseWebappManifest(manifest("secret-app", { appConfig: { api_token: "secret" } })));
   assert.throws(() => parseWebappManifest(manifest("camel-secret-app", { appConfig: { modelKey: "secret" } })));
