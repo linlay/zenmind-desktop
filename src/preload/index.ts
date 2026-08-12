@@ -51,6 +51,7 @@ import type {
   StartupRestoreStateListener,
   KanbanIssueInput,
   KanbanIssueMoveInput,
+  KanbanRunIssueInput,
   KanbanIssueUpdateInput,
   KanbanChangedListener,
   KanbanCloudConfig,
@@ -145,6 +146,8 @@ const api: DesktopApi = {
       ipcRenderer.invoke("kanban.updateIssue", id, input),
     deleteIssue: (id: string) => ipcRenderer.invoke("kanban.deleteIssue", id),
     moveIssue: (input: KanbanIssueMoveInput) => ipcRenderer.invoke("kanban.moveIssue", input),
+    claimIssue: (issueId: string) => ipcRenderer.invoke("kanban.claimIssue", issueId),
+    runIssue: (input: KanbanRunIssueInput) => ipcRenderer.invoke("kanban.runIssue", input),
     syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("kanban.syncIssueAutomation", issueId),
     onChanged: (listener: KanbanChangedListener) => {
       const handleKanbanChanged = () => {

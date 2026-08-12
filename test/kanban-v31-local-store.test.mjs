@@ -10,10 +10,16 @@ const {
   createPrivateDesktopKanbanIssue,
   deleteDesktopKanbanIssue,
   getDesktopKanbanDatabasePath,
+  getDesktopKanbanManualRunByRunId,
+  listDesktopKanbanCloudMutations,
   listDesktopKanbanIssues,
+  listDesktopKanbanRunEvents,
   listPendingDesktopKanbanCommandReceipts,
   moveDesktopKanbanIssue,
+  recordDesktopKanbanCloudMutation,
   recordDesktopKanbanCommandReceipt,
+  recordDesktopKanbanManualRun,
+  recordDesktopKanbanRunEvent,
   updateDesktopKanbanIssue,
   upsertDispatchedDesktopKanbanIssue
 } = await import("../dist-electron/main/kanban-local-store.js");
@@ -50,6 +56,69 @@ function cloudIssue(overrides = {}) {
     ...overrides
   };
 }
+
+test("Desktop cloud mutation, run event, and manual run receipts persist idempotently", (t) => {
+  const app = createTempApp(t);
+  recordDesktopKanbanCloudMutation(app, currentUser, {
+    id: "mutation-claim-1",
+    requestType: "issue.claim",
+    projectId: "cloud-project-1",
+    issueId: "cloud-issue-1",
+    payload: { id: "cloud-issue-1", baseIssueRevision: 12 }
+  });
+  recordDesktopKanbanCloudMutation(app, currentUser, {
+    id: "mutation-claim-1",
+    requestType: "issue.claim",
+    projectId: "cloud-project-1",
+    issueId: "cloud-issue-1",
+    payload: { id: "cloud-issue-1", baseIssueRevision: 99 }
+  });
+  assert.deepEqual(listDesktopKanbanCloudMutations(app, currentUser).map((item) => ({ id: item.id, payload: item.payload })), [{
+    id: "mutation-claim-1",
+    payload: { id: "cloud-issue-1", baseIssueRevision: 12 }
+  }]);
+
+  recordDesktopKanbanRunEvent(app, currentUser, {
+    clientEventId: "device-1:cloud-issue-1:run-1:run.started",
+    projectId: "cloud-project-1",
+    issueId: "cloud-issue-1",
+    runId: "run-1",
+    chatId: "chat-1",
+    eventType: "run.started",
+    sourceDeliverySeq: 0,
+    payload: { source: "desktop_manual", agentKey: "codeAssistant" }
+  });
+  recordDesktopKanbanRunEvent(app, currentUser, {
+    clientEventId: "device-1:cloud-issue-1:run-1:run.started",
+    projectId: "cloud-project-1",
+    issueId: "cloud-issue-1",
+    runId: "run-1",
+    chatId: "chat-1",
+    eventType: "run.started",
+    sourceDeliverySeq: 0,
+    payload: { source: "desktop_manual", agentKey: "different-agent" }
+  });
+  const events = listDesktopKanbanRunEvents(app, currentUser);
+  assert.equal(events.length, 1);
+  assert.equal(events[0].payload.agentKey, "codeAssistant");
+
+  recordDesktopKanbanManualRun(app, currentUser, {
+    runId: "run-1",
+    chatId: "chat-1",
+    issueId: "cloud-issue-1",
+    projectId: "cloud-project-1",
+    agentKey: "codeAssistant"
+  });
+  assert.deepEqual({ ...getDesktopKanbanManualRunByRunId(app, currentUser, "run-1") }, {
+    runId: "run-1",
+    chatId: "chat-1",
+    issueId: "cloud-issue-1",
+    projectId: "cloud-project-1",
+    agentKey: "codeAssistant",
+    state: "starting",
+    lastError: null
+  });
+});
 
 test("priority uses P0-P3 and only normalizes legacy values at the cache boundary", (t) => {
   const app = createTempApp(t);

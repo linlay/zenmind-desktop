@@ -75,6 +75,10 @@ type KanbanIssueDetailDialogProps = {
   onSave: (draft: KanbanIssueDetailDraft) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
   onOpenChat: () => void;
+  cloudAction?: "claim" | "run" | null;
+  cloudActionBusy?: boolean;
+  onClaim?: () => void;
+  onRun?: () => void;
   onFeedback: (tone: "success" | "error", message: string) => void;
   initialEditStatus?: KanbanStatus | null;
 };
@@ -458,6 +462,10 @@ export function KanbanIssueDetailDialog({
   onSave,
   onDelete,
   onOpenChat,
+  cloudAction = null,
+  cloudActionBusy = false,
+  onClaim,
+  onRun,
   onFeedback,
   initialEditStatus = null
 }: KanbanIssueDetailDialogProps) {
@@ -676,6 +684,8 @@ export function KanbanIssueDetailDialog({
                   <input id="kanban-detail-title" className={`kanban-detail-title-input ${editing ? "is-editing" : ""}`} value={draft.title} disabled={!editing} onChange={(event) => updateDraft({ title: event.target.value })} autoFocus={editing} />
                 </div>
                 <div className="kanban-detail-header-actions">
+                  {cloudAction === "claim" ? <button type="button" className="kanban-detail-primary-button" disabled={cloudActionBusy} onClick={onClaim}><UserOutlined />{cloudActionBusy ? t("kanban.cloud.actionWorking") : t("kanban.cloud.claim")}</button> : null}
+                  {cloudAction === "run" ? <button type="button" className="kanban-detail-primary-button" disabled={cloudActionBusy} onClick={onRun}><RobotOutlined />{cloudActionBusy ? t("kanban.cloud.actionWorking") : t("kanban.cloud.startProcessing")}</button> : null}
                   {issue.chatId ? <button type="button" className="kanban-detail-secondary-button" onClick={onOpenChat}><MessageOutlined />{t("kanban.chat.view")}</button> : null}
                   {editing ? (
                     <>

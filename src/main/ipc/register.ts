@@ -390,6 +390,16 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       message: t("kanban.runtime.uninitialized"),
       issues: []
     },
+    claimKanbanIssue: (_app: any, issueId: string) => state.kanbanRuntime?.claimIssue(issueId) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized"),
+      issues: []
+    },
+    runKanbanIssue: (_app: any, input: any) => state.kanbanRuntime?.runIssue(input) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized"),
+      issues: []
+    },
     syncKanbanIssueAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
       state.kanbanRuntime?.syncIssueAutomation(issueId, agentPlatformCaller) ?? {
         ok: false,

@@ -21,6 +21,7 @@ import {
   verticalListSortingStrategy
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
+import { useNavigate } from "react-router-dom";
 import {
   CalendarOutlined,
   CloseCircleOutlined,
@@ -57,7 +58,6 @@ import type {
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
 import {
-  createAgentWebclientAgentPath,
   createAgentWebclientRoute,
 } from "../../../shared/agent-webclient-routes";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
@@ -65,7 +65,6 @@ import {
   getAssistantNavAgentRecentChats,
   normalizeAssistantNavAgents
 } from "../../assistantNavigation";
-import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
 import { useI18n } from "../../i18n/useI18n";
 import { Tooltip } from "../../components/Tooltip";
 import { flattenKanbanProjectTree } from "./kanbanProjectTree";
@@ -165,12 +164,7 @@ type KanbanPageProps = {
 };
 
 type KanbanConnectionState = NonNullable<Awaited<ReturnType<DesktopApi["kanban"]["listIssues"]>>["connectionState"]>;
-
-type KanbanChatModalRequest = {
-  agentKey: string;
-  chatId?: string;
-  displayName?: string;
-};
+type CloudIssueAction = "claim" | "run" | null;
 
 type KanbanContextMenu = {
   issueId: string;
@@ -189,6 +183,20 @@ const VISIBLE_KANBAN_STATUSES = [
   "completed"
 ] satisfies ReadonlyArray<KanbanStatus>;
 const VISIBLE_KANBAN_STATUS_SET = new Set<KanbanStatus>(VISIBLE_KANBAN_STATUSES);
+
+function getCloudIssueAction(
+  issue: KanbanIssue,
+  currentUserId: string,
+  canClaim: boolean,
+  canRun: boolean
+): CloudIssueAction {
+  if (issue.syncMode !== "cloud" || issue.status !== "todo") return null;
+  const assigneeId = issue.assigneeId?.trim() ?? "";
+  if (!assigneeId) return canClaim ? "claim" : null;
+  if (assigneeId !== currentUserId.trim()) return null;
+  if (issue.runState === "running" || issue.activeRunId?.trim()) return null;
+  return canRun ? "run" : null;
+}
 
 const ISSUE_STAGE_COLOR_PALETTE = [
   "#8b5cf6",
@@ -1496,32 +1504,14 @@ function resolveIssueAgentKey(issue: KanbanIssue, agents: AssistantNavAgentItem[
   return matchedAgent?.agentKey ?? "";
 }
 
-function buildKanbanChatEmbedPath(request: KanbanChatModalRequest) {
-  const agentKey = request.agentKey.trim();
-  const chatId = request.chatId?.trim() ?? "";
-  if (!agentKey) {
-    if (!chatId) {
-      return "/copilot";
-    }
-    const params = new URLSearchParams();
-    params.set("chatId", chatId);
-    return `/copilot?${params.toString()}`;
-  }
-
-  if (!chatId) {
-    return createAgentWebclientAgentPath(agentKey);
-  }
-
-  return createAgentWebclientRoute({ agentKey, chatId });
-}
-
-export function KanbanPage({ hostTheme }: KanbanPageProps) {
+export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
   const { locale, t } = useI18n();
+  const navigate = useNavigate();
   const [issues, setIssues] = useState<KanbanIssue[]>([]);
   const [cloudDetails, setCloudDetails] = useState<KanbanCloudDetailData>(EMPTY_KANBAN_CLOUD_DETAILS);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
   const [loading, setLoading] = useState(true);
-  const [, setBusyIssueId] = useState<string | null>(null);
+  const [busyIssueId, setBusyIssueId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [menu, setMenu] = useState<MenuKind>(null);
   const [query, setQuery] = useState("");
@@ -1529,6 +1519,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
   const [projectFilterOpen, setProjectFilterOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<KanbanConnectionState>("disabled");
+  const [cloudCapabilities, setCloudCapabilities] = useState<string[]>([]);
   const [cloudResyncing, setCloudResyncing] = useState(false);
   const [issueTypeFilters, setIssueTypeFilters] = useState<string[]>([]);
   const [priorityFilters, setPriorityFilters] = useState<KanbanPriorityFilter[]>([]);
@@ -1542,7 +1533,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [modal, setModal] = useState<ModalState | null>(null);
   const [detailIssueId, setDetailIssueId] = useState<string | null>(null);
   const [detailInitialEditStatus, setDetailInitialEditStatus] = useState<KanbanStatus | null>(null);
-  const [chatModalRequest, setChatModalRequest] = useState<KanbanChatModalRequest | null>(null);
+  const [runAgentPickerIssueId, setRunAgentPickerIssueId] = useState<string | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
@@ -1585,6 +1576,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         setCloudProjects(issueResult.projects ?? []);
         setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
         setConnectionState(issueResult.connectionState ?? "disabled");
+        setCloudCapabilities(issueResult.cloudCapabilities ?? []);
         setCurrentUserId(issueResult.currentUser?.id ?? "");
         setAgents(agentResult);
       } catch (error) {
@@ -1614,6 +1606,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     setCloudProjects(issueResult.projects ?? []);
     setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
     setConnectionState(issueResult.connectionState ?? "disabled");
+    setCloudCapabilities(issueResult.cloudCapabilities ?? []);
     setCurrentUserId(issueResult.currentUser?.id ?? "");
   }
 
@@ -1634,6 +1627,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setCloudProjects(result.projects ?? []);
       setCloudDetails(result.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
       setConnectionState(result.connectionState ?? "disabled");
+      setCloudCapabilities(result.cloudCapabilities ?? []);
       setCurrentUserId(result.currentUser?.id ?? "");
       setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
     } catch (error) {
@@ -1756,19 +1750,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   }, [form.automationTime, automationMenuOpen]);
 
   useEffect(() => {
-    if (!chatModalRequest || typeof document === "undefined") {
-      return undefined;
-    }
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        setChatModalRequest(null);
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [chatModalRequest]);
-
-  useEffect(() => {
     const removeAssistantEventListener = window.electronAPI.assistant.onAssistantEvent(async (event) => {
       const nextRunStatus = resolveAssistantRunStatus(event, t);
       if (!nextRunStatus) {
@@ -1776,6 +1757,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       }
       const issue = issuesRef.current.find((candidate) => candidate.runId === event.runId);
       if (!issue) {
+        return;
+      }
+      if (issue.syncMode === "cloud") {
         return;
       }
       const kanbanApi = readKanbanApi();
@@ -1897,6 +1881,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const detailIssue = detailIssueId ? issueMap.get(detailIssueId) ?? null : null;
+  const runAgentPickerIssue = runAgentPickerIssueId ? issueMap.get(runAgentPickerIssueId) ?? null : null;
   const filteredCount = filteredIssues.length;
   const totalCount = visibleIssues.length;
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
@@ -2280,6 +2265,75 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     return nextAgents;
   }
 
+  async function claimCloudIssue(issue: KanbanIssue) {
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi || typeof kanbanApi.claimIssue !== "function") {
+      setFeedback({ tone: "error", message: t("kanban.cloud.preloadOutdated") });
+      return;
+    }
+    setBusyIssueId(issue.id);
+    try {
+      const result = await kanbanApi.claimIssue(issue.id);
+      setIssues(sortIssues(result.issues));
+      setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : t("kanban.feedback.claimFailed") });
+    } finally {
+      setBusyIssueId(null);
+    }
+  }
+
+  async function startCloudIssue(issue: KanbanIssue, selectedAgentKey?: string) {
+    const kanbanApi = readKanbanApi();
+    if (!kanbanApi || typeof kanbanApi.runIssue !== "function") {
+      setFeedback({ tone: "error", message: t("kanban.cloud.preloadOutdated") });
+      return;
+    }
+    const availableAgents = await getAvailableAgents();
+    let agentKey = selectedAgentKey?.trim() ?? "";
+    if (!agentKey) {
+      const boundAgentKey = [issue.workerAgent, issue.assigneeAgentKey]
+        .map((value) => value?.trim() ?? "")
+        .find((candidate) => candidate && availableAgents.some((agent) => agent.agentKey === candidate));
+      agentKey = boundAgentKey ?? "";
+    }
+    if (!agentKey) {
+      try {
+        const settings = await window.electronAPI.assistant.getSettings();
+        const defaultAgentKey = settings.chatDefaultAgentKey?.trim() ?? "";
+        if (defaultAgentKey && availableAgents.some((agent) => agent.agentKey === defaultAgentKey)) {
+          agentKey = defaultAgentKey;
+        }
+      } catch {
+        // The explicit picker below remains available when settings cannot be read.
+      }
+    }
+    if (!agentKey) {
+      if (availableAgents.length === 0) {
+        setFeedback({ tone: "error", message: t("kanban.feedback.noAgents") });
+        return;
+      }
+      setRunAgentPickerIssueId(issue.id);
+      return;
+    }
+
+    setBusyIssueId(issue.id);
+    try {
+      const result = await kanbanApi.runIssue({ issueId: issue.id, agentKey });
+      setIssues(sortIssues(result.issues));
+      setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
+      if (result.ok && result.chatId && result.agentKey) {
+        setRunAgentPickerIssueId(null);
+        setDetailIssueId(null);
+        navigate(createAgentWebclientRoute({ agentKey: result.agentKey, chatId: result.chatId }));
+      }
+    } catch (error) {
+      setFeedback({ tone: "error", message: error instanceof Error ? error.message : t("kanban.feedback.assistantStartFailed") });
+    } finally {
+      setBusyIssueId(null);
+    }
+  }
+
   async function assignIssueToAssistant(issue: KanbanIssue, selectedAgentKey?: string) {
     const kanbanApi = readKanbanApi();
     if (!kanbanApi) {
@@ -2325,7 +2379,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  const openAssistantIssueChat = useCallback(async (issue: KanbanIssue) => {
+  const openAssistantIssueChat = useCallback((issue: KanbanIssue) => {
     const chatId = issue.chatId?.trim() ?? "";
     if (!chatId) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noChat") });
@@ -2336,12 +2390,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noBoundAgent") });
       return;
     }
-    setChatModalRequest({
-      agentKey,
-      chatId,
-      displayName: getAssigneeName(agentKey, agents) ?? undefined
-    });
-  }, [agents, t]);
+    setDetailIssueId(null);
+    navigate(createAgentWebclientRoute({ agentKey, chatId }));
+  }, [agents, navigate, t]);
 
   function handleDragStart(event: DragStartEvent) {
     const activeIssue = issueMap.get(String(event.active.id));
@@ -2475,6 +2526,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const modalReadOnly = modal?.mode === "edit" && !canEditKanbanIssueBody(modal.issue);
   const modalStatusLocked = modalReadOnly || (modal?.mode === "edit" && Boolean(modal.issue?.runId));
   const modalSyncLocked = modalReadOnly || (modal?.mode === "edit" && modal.issue?.syncMode === "cloud");
+  const canClaimCloudIssues = connectionState === "open" && cloudCapabilities.includes("issue.claim");
+  const canRunCloudIssues = connectionState === "open" && cloudCapabilities.includes("run.event.append");
   const modalProjectId = form.projectId.trim() || modal?.issue?.projectId?.trim() || "default";
   const modalProject = kanbanProjectsById.get(modalProjectId);
   const modalProjectVersions = Array.from(new Set([
@@ -2667,8 +2720,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 now={new Date(kanbanCountdownNow)}
                 t={t}
                 canAdd={kanbanReady}
+                currentUserId={currentUserId}
+                canClaimCloudIssues={canClaimCloudIssues}
+                canRunCloudIssues={canRunCloudIssues}
+                busyIssueId={busyIssueId}
                 onAdd={createIssueHandlersByStatus[status]}
                 onEdit={openEditModal}
+                onClaim={claimCloudIssue}
+                onRun={startCloudIssue}
                 onOpenContextMenu={openIssueContextMenu}
               />
             );
@@ -2742,6 +2801,10 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           onSave={(draft) => saveIssueDetail(detailIssue, draft)}
           onDelete={() => deleteIssue(detailIssue)}
           onOpenChat={() => void openAssistantIssueChat(detailIssue)}
+          cloudAction={getCloudIssueAction(detailIssue, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
+          cloudActionBusy={busyIssueId === detailIssue.id}
+          onClaim={() => void claimCloudIssue(detailIssue)}
+          onRun={() => void startCloudIssue(detailIssue)}
           onFeedback={(tone, message) => setFeedback({ tone, message })}
         />
       ) : null}
@@ -3123,36 +3186,21 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         </div>
       ) : null}
 
-      {chatModalRequest ? (
-        <div className="kanban-modal-layer kanban-chat-modal-layer" role="presentation" onMouseDown={() => setChatModalRequest(null)}>
-          <section
-            className="kanban-chat-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label={chatModalRequest.displayName ? t("kanban.chat.modalLabel", { name: chatModalRequest.displayName }) : t("kanban.chat.defaultModalLabel")}
-            onMouseDown={(event) => event.stopPropagation()}
-          >
-            <ServiceWebviewSurface
-              key={`kanban-chat:${chatModalRequest.agentKey}:${chatModalRequest.chatId}`}
-              active
-              hostTheme={hostTheme}
-              serviceId="agent-webclient"
-              surfaceId="agent-webclient-kanban-chat"
-              surfaceLabel={t("kanban.chat.surfaceLabel")}
-              embedPath={buildKanbanChatEmbedPath(chatModalRequest)}
-              skipContextRegistration
-              loadInitialEmbeddedUrlDirectly
-              suppressInitialLoadingCopy
-            />
-            <button
-              type="button"
-              className="kanban-chat-modal-close"
-              aria-label={t("kanban.chat.close")}
-              title={t("kanban.modal.close")}
-              onClick={() => setChatModalRequest(null)}
-            >
-              ×
-            </button>
+      {runAgentPickerIssue ? (
+        <div className="kanban-modal-layer" role="presentation" onMouseDown={() => setRunAgentPickerIssueId(null)}>
+          <section className="kanban-agent-picker" role="dialog" aria-modal="true" aria-label={t("kanban.cloud.selectAgent")} onMouseDown={(event) => event.stopPropagation()}>
+            <header>
+              <div><strong>{t("kanban.cloud.selectAgent")}</strong><span>{runAgentPickerIssue.title}</span></div>
+              <button type="button" aria-label={t("kanban.modal.close")} onClick={() => setRunAgentPickerIssueId(null)}>×</button>
+            </header>
+            <div className="kanban-agent-picker-list">
+              {agents.map((agent) => (
+                <button key={agent.agentKey} type="button" disabled={busyIssueId === runAgentPickerIssue.id} onClick={() => void startCloudIssue(runAgentPickerIssue, agent.agentKey)}>
+                  <RobotOutlined />
+                  <span><strong>{agent.displayName}</strong><small>{agent.agentKey}</small></span>
+                </button>
+              ))}
+            </div>
           </section>
         </div>
       ) : null}
@@ -3171,8 +3219,14 @@ const KanbanColumn = memo(function KanbanColumn({
   now,
   t,
   canAdd,
+  currentUserId,
+  canClaimCloudIssues,
+  canRunCloudIssues,
+  busyIssueId,
   onAdd,
   onEdit,
+  onClaim,
+  onRun,
   onOpenContextMenu
 }: {
   status: KanbanStatus;
@@ -3185,8 +3239,14 @@ const KanbanColumn = memo(function KanbanColumn({
   now: Date;
   t: TranslateFunction;
   canAdd: boolean;
+  currentUserId: string;
+  canClaimCloudIssues: boolean;
+  canRunCloudIssues: boolean;
+  busyIssueId: string | null;
   onAdd: () => void;
   onEdit: (issue: KanbanIssue) => void;
+  onClaim: (issue: KanbanIssue) => void;
+  onRun: (issue: KanbanIssue) => void;
   onOpenContextMenu: (issue: KanbanIssue, event: MouseEvent<HTMLElement>) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: getColumnId(status) });
@@ -3239,7 +3299,13 @@ const KanbanColumn = memo(function KanbanColumn({
               locale={locale}
               now={now}
               t={t}
+              currentUserId={currentUserId}
+              canClaimCloudIssues={canClaimCloudIssues}
+              canRunCloudIssues={canRunCloudIssues}
+              busy={busyIssueId === issue.id}
               onEdit={() => onEdit(issue)}
+              onClaim={() => onClaim(issue)}
+              onRun={() => onRun(issue)}
               onOpenContextMenu={(event) => onOpenContextMenu(issue, event)}
             />
           ))}
@@ -3266,7 +3332,13 @@ const IssueCard = memo(function IssueCard({
   locale,
   now,
   t,
+  currentUserId,
+  canClaimCloudIssues,
+  canRunCloudIssues,
+  busy,
   onEdit,
+  onClaim,
+  onRun,
   onOpenContextMenu
 }: {
   issue: KanbanIssue;
@@ -3279,7 +3351,13 @@ const IssueCard = memo(function IssueCard({
   locale: SupportedLocale;
   now: Date;
   t: TranslateFunction;
+  currentUserId: string;
+  canClaimCloudIssues: boolean;
+  canRunCloudIssues: boolean;
+  busy: boolean;
   onEdit: () => void;
+  onClaim: () => void;
+  onRun: () => void;
   onOpenContextMenu: (event: MouseEvent<HTMLElement>) => void;
 }) {
   const dragLocked = isIssueDragLocked(issue);
@@ -3320,7 +3398,13 @@ const IssueCard = memo(function IssueCard({
         now={now}
         t={t}
         interactive
+        currentUserId={currentUserId}
+        canClaimCloudIssues={canClaimCloudIssues}
+        canRunCloudIssues={canRunCloudIssues}
+        busy={busy}
         onEdit={onEdit}
+        onClaim={onClaim}
+        onRun={onRun}
       />
     </article>
   );
@@ -3338,7 +3422,13 @@ const IssueCardContent = memo(function IssueCardContent({
   now,
   t,
   interactive,
-  onEdit
+  currentUserId = "",
+  canClaimCloudIssues = false,
+  canRunCloudIssues = false,
+  busy = false,
+  onEdit,
+  onClaim,
+  onRun
 }: {
   issue: KanbanIssue;
   sortIndex?: number;
@@ -3351,7 +3441,13 @@ const IssueCardContent = memo(function IssueCardContent({
   now: Date;
   t: TranslateFunction;
   interactive: boolean;
+  currentUserId?: string;
+  canClaimCloudIssues?: boolean;
+  canRunCloudIssues?: boolean;
+  busy?: boolean;
   onEdit: () => void;
+  onClaim?: () => void;
+  onRun?: () => void;
 }) {
   const severity = normalizeIssueSeverity(issue.severity);
   const cardStatus = getIssueCardStatusPresentation(issue, t);
@@ -3366,6 +3462,9 @@ const IssueCardContent = memo(function IssueCardContent({
   const progress = getIssueCardProgressPresentation(issue, cloudDetails);
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const issueType = getIssueCardTypePresentation(issue, cloudDetails);
+  const cloudAction = interactive
+    ? getCloudIssueAction(issue, currentUserId, canClaimCloudIssues, canRunCloudIssues)
+    : null;
   const canOpenIssueDetails = interactive;
   const queueRank = issue.status === "todo" ? formatKanbanSortNumber(sortIndex, issue.position) : "";
   const showDescription = issue.status === "backlog" && Boolean(descriptionPreview);
@@ -3474,6 +3573,24 @@ const IssueCardContent = memo(function IssueCardContent({
           {(due || timingSignal) ? <span className="issue-card-footer-signal">{due || timingSignal}</span> : null}
         </div>
         {stateSignal ? <div className="issue-card-footer-row is-operational">{stateSignal}</div> : null}
+        {cloudAction ? (
+          <div className="issue-card-footer-row is-cloud-action">
+            <button
+              type="button"
+              className="issue-card-cloud-action"
+              disabled={busy}
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                if (cloudAction === "claim") onClaim?.();
+                else onRun?.();
+              }}
+            >
+              {cloudAction === "claim" ? <UserOutlined /> : <RobotOutlined />}
+              {busy ? t("kanban.cloud.actionWorking") : cloudAction === "claim" ? t("kanban.cloud.claim") : t("kanban.cloud.startProcessing")}
+            </button>
+          </div>
+        ) : null}
       </footer>
     </>
   );

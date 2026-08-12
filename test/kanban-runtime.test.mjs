@@ -275,6 +275,128 @@ async function respondNextRequest(socket, type, payload, fromIndex = 0, timeoutM
   return request;
 }
 
+test("Kanban runtime atomically claims and starts a normal Chat run through v3.2", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.sent = [];
+      this.readyState = 0;
+      sockets.push(this);
+    }
+    send(data) { this.sent.push(JSON.parse(data)); }
+    close() { this.readyState = 3; }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => { globalThis.WebSocket = originalWebSocket; });
+
+  const app = createTempApp(t);
+  const starts = [];
+  const stopped = [];
+  const runtime = new KanbanRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [{ agentKey: "codeAssistant", displayName: "Code Assistant" }],
+      startRun: async (request) => {
+        starts.push(request);
+        return { ok: true, runId: request.runId, chatId: request.chatId, message: "started" };
+      },
+      stopRun: async (runId) => {
+        stopped.push(runId);
+        return { ok: true, message: "stopped" };
+      }
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {}
+  });
+  writeSsoSiteToken(app);
+  runtime.saveCloudConfig({
+    serverUrl: "http://127.0.0.1:3000",
+    token: "secret",
+    remoteControlEnabled: true,
+    deviceAlias: "手动运行测试"
+  });
+
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+  await waitFor(() => socket.sent.some((frame) => frame.type === "sync.hello"), "sync.hello", 3000);
+  const hello = socket.sent.find((frame) => frame.type === "sync.hello");
+  assert.equal(hello.payload.contractVersion, "3.2");
+  respondOk(socket, hello, {
+    ok: true,
+    contractVersion: "3.2",
+    capabilities: ["issue.claim", "run.event.append.desktop_manual"],
+    cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 12, cacheSchemaVersion: 2 },
+    links: []
+  });
+  await waitFor(() => socket.sent.some((frame) => frame.type === "snapshot.get"), "snapshot.get", 3000);
+  const snapshot = socket.sent.find((frame) => frame.type === "snapshot.get");
+  const cloudIssue = {
+    id: "ISS-MANUAL-1",
+    projectId: "default",
+    workflowId: "workflow-standard-story",
+    title: "Desktop manual issue",
+    description: "Use the normal chat pipeline",
+    status: "todo",
+    priority: "P2",
+    severity: "medium",
+    position: 1,
+    revision: 12,
+    createdAt: "2026-08-11T00:00:00.000Z",
+    updatedAt: "2026-08-11T00:00:00.000Z"
+  };
+  respondOk(socket, snapshot, {
+    ok: true,
+    projectId: "default",
+    projectIds: ["default"],
+    scope: "project_set",
+    complete: true,
+    revision: 12,
+    lastSeq: 12,
+    issues: [cloudIssue]
+  });
+  await waitFor(() => runtime.listIssues().issues.some((issue) => issue.remoteIssueId === cloudIssue.id), "cloud issue cache", 3000);
+  assert.deepEqual(runtime.listIssues().cloudCapabilities, ["issue.claim", "run.event.append"]);
+
+  const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === cloudIssue.id);
+  const claimPromise = runtime.claimIssue(localIssue.id);
+  await waitFor(() => socket.sent.some((frame) => frame.type === "issue.claim"), "issue.claim", 3000);
+  const claim = socket.sent.find((frame) => frame.type === "issue.claim");
+  assert.deepEqual(claim.payload, { id: cloudIssue.id, baseIssueRevision: 12 });
+  assert.equal("ownerUserId" in claim.payload, false);
+  respondOk(socket, claim, { ok: true, revision: 13, issue: { ...cloudIssue, assigneeId: "user-1", revision: 13 } });
+  assert.equal((await claimPromise).ok, true);
+
+  const claimedIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === cloudIssue.id);
+  const runPromise = runtime.runIssue({ issueId: claimedIssue.id, agentKey: "codeAssistant" });
+  await waitFor(() => socket.sent.some((frame) => frame.type === "run.event.append"), "run.event.append", 3000);
+  const started = socket.sent.find((frame) => frame.type === "run.event.append");
+  assert.equal(started.payload.eventType, "run.started");
+  assert.equal(started.payload.payload.source, "desktop_manual");
+  assert.equal(started.payload.payload.agentKey, "codeAssistant");
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].runId, started.payload.runId);
+  assert.equal(starts[0].chatId, started.payload.chatId);
+  assert.equal(starts[0].requestId, started.payload.runId);
+  respondOk(socket, started, { ok: true, revision: 14 });
+  const runResult = await runPromise;
+  assert.equal(runResult.ok, true);
+  assert.equal(runResult.runId, started.payload.runId);
+  assert.deepEqual(stopped, []);
+
+  const conflictPromise = runtime.runIssue({ issueId: claimedIssue.id, agentKey: "codeAssistant" });
+  await waitFor(() => socket.sent.filter((frame) => frame.type === "run.event.append").length === 2, "conflicting run.event.append", 3000);
+  const conflictStarted = socket.sent.filter((frame) => frame.type === "run.event.append")[1];
+  respondOk(socket, conflictStarted, { ok: false, message: "another Desktop already started this issue" });
+  const conflictResult = await conflictPromise;
+  assert.equal(conflictResult.ok, false);
+  assert.deepEqual(stopped, [conflictStarted.payload.runId]);
+
+  runtime.stop();
+});
+
 test("Kanban runtime resyncs cloud board over the existing websocket", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
@@ -833,7 +955,7 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
   assert.equal(runEvent.payload.issueId, "ISS-V3-RUN");
   assert.equal(runEvent.payload.eventType, "run.started");
   assert.match(runEvent.payload.payload.runId, /^run_kanban_/);
-  assert.match(runEvent.payload.clientEventId, /:command:cmd-run-1:run\.started$/);
+  assert.match(runEvent.payload.clientEventId, /:ISS-V3-RUN:run_kanban_[^:]+:run\.started$/);
   socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: runEvent.id, type: "run.event.append", ok: true, payload: { ok: true, revision: 41 } }) });
   await new Promise((resolve) => setTimeout(resolve, 10));
 
@@ -946,7 +1068,7 @@ test("Kanban runtime recovers a terminal starting receipt without launching a du
   await waitFor(() => socket.sent.some((frame) => frame.type === "run.event.append"), "recovered terminal event", 3000);
   const terminal = socket.sent.find((frame) => frame.type === "run.event.append");
   assert.equal(terminal.payload.eventType, "run.completed");
-  assert.match(terminal.payload.clientEventId, /:command:command-recover-1:run\.completed$/);
+  assert.match(terminal.payload.clientEventId, new RegExp(`:ISS-RECOVER-1:${stored.receipt.runId}:run\\.completed$`));
   assert.equal(startCount, 0);
   respondOk(socket, terminal, { ok: true, revision: 71 });
   await new Promise((resolve) => setTimeout(resolve, 10));
