@@ -74,12 +74,10 @@ const ENTERPRISE_CHAT_COMPOSER_MIN_HEIGHT = 72;
 const ENTERPRISE_CHAT_COMPOSER_MAX_HEIGHT = 220;
 const ENTERPRISE_CHAT_COMPOSER_DEFAULT_HEIGHT = 96;
 
-function hasCompleteEnterpriseLogin(status: DesktopSsoStatus | null) {
+function hasEnterpriseLoginSession(status: DesktopSsoStatus | null) {
   return Boolean(
     status?.authenticated &&
-    status.completedSteps.session &&
-    status.completedSteps.userInfo &&
-    status.completedSteps.accessToken
+    status.completedSteps.session
   );
 }
 
@@ -345,7 +343,7 @@ export function EnterpriseChatFloatingPanel({
   const searchPreferenceScopeRef = useRef("");
   const reviewedActionMessageIdsRef = useRef(new Set<string>());
   const attachmentDownloadResetTimersRef = useRef(new Map<string, ReturnType<typeof setTimeout>>());
-  const signedIn = hasCompleteEnterpriseLogin(desktopSsoStatus);
+  const signedIn = hasEnterpriseLoginSession(desktopSsoStatus);
   const preferenceScope = conversationPreferenceScope(snapshot);
 
   useEffect(() => {

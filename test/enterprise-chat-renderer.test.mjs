@@ -48,6 +48,24 @@ test("enterprise chat renderer uses the compact panel and persistent list search
   assert.match(panel, /\[user\.displayName, user\.email\]/);
 });
 
+test("enterprise chat launcher remains visible for an authenticated Desktop session", () => {
+  const panel = readSource(
+    "src",
+    "renderer",
+    "enterprise-chat",
+    "EnterpriseChatFloatingPanel.tsx"
+  );
+
+  assert.match(
+    panel,
+    /function hasEnterpriseLoginSession[\s\S]*status\?\.authenticated[\s\S]*status\.completedSteps\.session/
+  );
+  assert.doesNotMatch(
+    panel,
+    /function hasEnterpriseLoginSession[\s\S]{0,240}completedSteps\.(?:userInfo|accessToken)/
+  );
+});
+
 test("enterprise chat distinguishes people, groups, and service bots in Contacts", () => {
   const panel = readSource(
     "src",
