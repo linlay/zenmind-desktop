@@ -957,6 +957,85 @@ test("agent platform assistant bridge downloads chat export from the current pla
   }
 });
 
+test("agent platform assistant bridge downloads the generic structured transcript", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify({
+      code: 0,
+      msg: "success",
+      data: {
+        exportVersion: 1,
+        kind: "chat-transcript",
+        title: "Transcript",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS + 2,
+        turns: [{
+          startedAt: EPOCH_MS,
+          completedAt: EPOCH_MS + 2,
+          items: [
+            { kind: "user-message", content: "hello", createdAt: EPOCH_MS },
+            { kind: "assistant-message", content: "ready", createdAt: EPOCH_MS + 1 }
+          ]
+        }]
+      }
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json; charset=utf-8" }
+    });
+  };
+
+  try {
+    const result = await bridge.downloadChatTranscriptExport(" chat_1 ");
+
+    assert.equal(result.ok, true);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=transcript-json&includeReasoning=true");
+    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
+    assert.equal(result.transcript.kind, "chat-transcript");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects Markdown fallback and invalid transcript versions", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  const responses = [
+    new Response("# Legacy export", {
+      status: 200,
+      headers: { "content-type": "text/markdown; charset=utf-8" }
+    }),
+    new Response(JSON.stringify({
+      code: 0,
+      msg: "success",
+      data: {
+        exportVersion: 2,
+        kind: "chat-transcript",
+        title: "Unsupported",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS,
+        turns: []
+      }
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    })
+  ];
+  globalThis.fetch = async () => responses.shift();
+
+  try {
+    const markdown = await bridge.downloadChatTranscriptExport("chat_1");
+    const invalidVersion = await bridge.downloadChatTranscriptExport("chat_1");
+
+    assert.equal(markdown.ok, false);
+    assert.equal(invalidVersion.ok, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge recovers UTF-8 filenames from legacy quoted content disposition", async () => {
   const originalFetch = globalThis.fetch;
   const expectedFilename = "\u6211\u73b0\u5728.md";

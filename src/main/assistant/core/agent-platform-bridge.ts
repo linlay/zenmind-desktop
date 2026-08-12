@@ -52,8 +52,8 @@ import {
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
 import {
-  parseSharedConversationSnapshot,
-  type AgentPlatformChatShareSnapshotResult
+  parseChatTranscriptExport,
+  type AgentPlatformChatTranscriptExportResult
 } from "./conversation-share-types";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
@@ -1283,7 +1283,7 @@ export class AgentPlatformAssistantBridge {
     return { ok: true, message: t("assistant.chatExportDownloaded"), filename, bytes };
   }
 
-  async downloadChatShareSnapshot(chatId: string): Promise<AgentPlatformChatShareSnapshotResult> {
+  async downloadChatTranscriptExport(chatId: string): Promise<AgentPlatformChatTranscriptExportResult> {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
       return { ok: false, message: t("assistant.chatIdRequired") };
@@ -1294,7 +1294,7 @@ export class AgentPlatformAssistantBridge {
     }
     const response = await this.platformFetch(
       availability.baseUrl,
-      `/api/chat/export?audience=share&chatId=${encodeURIComponent(trimmedChatId)}`,
+      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=transcript-json&includeReasoning=true`,
       {
         method: "GET",
         headers: {
@@ -1306,21 +1306,22 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    if (response.headers.get("x-zenmind-chat-export-audience") !== "share") {
+    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
+    if (!contentType.startsWith("application/json")) {
       return { ok: false, message: t("assistant.chatSharePlatformUnsupported") };
     }
     try {
-      const snapshot = parseSharedConversationSnapshot(
+      const transcript = parseChatTranscriptExport(
         unwrapApiResponse<unknown>(await response.json())
       );
-      if (!snapshot) {
-        return { ok: false, message: t("assistant.chatShareInvalidSnapshot") };
+      if (!transcript) {
+        return { ok: false, message: t("assistant.chatShareInvalidTranscript") };
       }
-      return { ok: true, snapshot };
-    } catch (error) {
+      return { ok: true, transcript };
+    } catch {
       return {
         ok: false,
-        message: error instanceof Error ? error.message : t("assistant.chatShareSnapshotReadFailed")
+        message: t("assistant.chatShareTranscriptReadFailed")
       };
     }
   }

@@ -3,11 +3,16 @@ import type { AssistantConversationShareResult } from "../../../shared/contracts
 import { readDesktopSsoSiteAccessToken } from "../../sso-site-token";
 import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
 import { readTunnelHubSettings } from "../../tunnel-hub-settings";
-import type { AgentPlatformChatShareSnapshotResult } from "./conversation-share-types";
+import {
+  buildConversationShareSnapshot,
+  validateConversationShareSnapshot,
+  type AgentPlatformChatTranscriptExportResult,
+  type ConversationShareSnapshotValidationError
+} from "./conversation-share-types";
 import { t } from "../../i18n/main-i18n";
 
 type ConversationShareBridge = {
-  downloadChatShareSnapshot(chatId: string): Promise<AgentPlatformChatShareSnapshotResult>;
+  downloadChatTranscriptExport(chatId: string): Promise<AgentPlatformChatTranscriptExportResult>;
 };
 
 type ConversationShareCreateResponse = {
@@ -23,9 +28,14 @@ export async function createConversationShare(
   chatId: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<AssistantConversationShareResult> {
-  const snapshotResult = await assistantBridge.downloadChatShareSnapshot(chatId);
-  if (!snapshotResult.ok) {
-    return { ok: false, message: snapshotResult.message };
+  const transcriptResult = await assistantBridge.downloadChatTranscriptExport(chatId);
+  if (!transcriptResult.ok) {
+    return { ok: false, message: transcriptResult.message };
+  }
+  const snapshot = buildConversationShareSnapshot(transcriptResult.transcript);
+  const snapshotError = validateConversationShareSnapshot(snapshot);
+  if (snapshotError) {
+    return { ok: false, message: shareSnapshotValidationMessage(snapshotError) };
   }
   const connection = resolveConversationShareConnection(app);
   if (!connection.ok) {
@@ -40,7 +50,7 @@ export async function createConversationShare(
         Authorization: `Bearer ${connection.token}`,
         "Content-Type": "application/json"
       },
-      body: JSON.stringify(snapshotResult.snapshot),
+      body: JSON.stringify(snapshot),
       signal: AbortSignal.timeout(15_000)
     });
   } catch (error) {
@@ -62,6 +72,21 @@ export async function createConversationShare(
     url,
     createdAt: readText(payload.createdAt)
   };
+}
+
+function shareSnapshotValidationMessage(error: ConversationShareSnapshotValidationError) {
+  switch (error) {
+    case "empty":
+      return t("assistant.chatShareEmptyTranscript");
+    case "entry-limit":
+    case "title-size":
+    case "entry-size":
+    case "label-size":
+    case "payload-size":
+      return t("assistant.chatShareSnapshotTooLarge");
+    case "invalid-time":
+      return t("assistant.chatShareInvalidTranscript");
+  }
 }
 
 export async function revokeConversationShare(

@@ -9,9 +9,11 @@ const {
   createConversationShare,
   revokeConversationShare
 } = await import("../dist-electron/main/assistant/core/conversation-share-controller.js");
-const { parseSharedConversationSnapshot } = await import(
-  "../dist-electron/main/assistant/core/conversation-share-types.js"
-);
+const {
+  buildConversationShareSnapshot,
+  parseChatTranscriptExport,
+  validateConversationShareSnapshot
+} = await import("../dist-electron/main/assistant/core/conversation-share-types.js");
 
 function createFixture(t) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-conversation-share-"));
@@ -41,6 +43,23 @@ function createFixture(t) {
   return app;
 }
 
+const transcript = {
+  exportVersion: 1,
+  kind: "chat-transcript",
+  title: "Release plan",
+  createdAt: 1700000000000,
+  updatedAt: 1700000001000,
+  turns: [{
+    startedAt: 1700000000000,
+    completedAt: 1700000001000,
+    items: [
+      { kind: "user-message", content: "hello", createdAt: 1700000000000 },
+      { kind: "assistant-reasoning", content: "compare options", label: "分析问题", createdAt: 1700000000500 },
+      { kind: "assistant-message", content: "ready", createdAt: 1700000001000 }
+    ]
+  }]
+};
+
 const snapshot = {
   schemaVersion: 1,
   title: "Release plan",
@@ -48,30 +67,79 @@ const snapshot = {
   updatedAt: 1700000001000,
   entries: [
     { type: "message", role: "user", content: "hello", createdAt: 1700000000000 },
-    { type: "reasoning", content: "compare options", label: "分析问题", durationMs: 900, createdAt: 1700000000500 },
+    { type: "reasoning", content: "compare options", label: "分析问题", durationMs: 1000, createdAt: 1700000000500 },
     { type: "message", role: "assistant", content: "ready", createdAt: 1700000001000 }
   ]
 };
 
-test("Desktop accepts only the final strict entries snapshot", () => {
-  assert.deepEqual(parseSharedConversationSnapshot(snapshot), snapshot);
-  assert.equal(parseSharedConversationSnapshot({ ...snapshot, messages: [] }), null);
-  assert.equal(parseSharedConversationSnapshot({
-    ...snapshot,
-    entries: [{ type: "reasoning", role: "assistant", content: "private metadata" }]
+test("Desktop parses extensible transcripts and builds a strict share snapshot", () => {
+  const parsed = parseChatTranscriptExport({
+    ...transcript,
+    platformExtension: { runId: "must-not-pass-through" },
+    turns: [{
+      ...transcript.turns[0],
+      futureField: true,
+      items: [
+        ...transcript.turns[0].items,
+        { kind: "future-item", secret: "must-not-pass-through" }
+      ]
+    }]
+  });
+  assert.ok(parsed);
+  assert.deepEqual(buildConversationShareSnapshot(parsed), snapshot);
+  assert.equal(JSON.stringify(buildConversationShareSnapshot(parsed)).includes("must-not-pass-through"), false);
+  assert.equal(validateConversationShareSnapshot(snapshot), null);
+});
+
+test("Desktop rejects invalid known transcript fields and unreliable completion times", () => {
+  assert.equal(parseChatTranscriptExport({ ...transcript, exportVersion: 2 }), null);
+  assert.equal(parseChatTranscriptExport({
+    ...transcript,
+    turns: [{ ...transcript.turns[0], completedAt: transcript.turns[0].startedAt - 1 }]
   }), null);
-  assert.equal(parseSharedConversationSnapshot({
-    ...snapshot,
-    entries: [{ type: "reasoning", content: "invalid duration", durationMs: -1 }]
+  assert.equal(parseChatTranscriptExport({
+    ...transcript,
+    turns: [{ ...transcript.turns[0], items: [{ kind: "user-message", content: "", createdAt: 1700000000000 }] }]
   }), null);
 });
 
-test("createConversationShare uploads a safe platform snapshot with the SSO site token", async (t) => {
+test("Desktop omits reasoning duration for an unfinished turn", () => {
+  const parsed = parseChatTranscriptExport({
+    ...transcript,
+    turns: [{
+      startedAt: 1700000000000,
+      items: [{ kind: "assistant-reasoning", content: "still working", createdAt: 1700000000500 }]
+    }]
+  });
+  assert.ok(parsed);
+  assert.deepEqual(buildConversationShareSnapshot(parsed).entries, [
+    { type: "reasoning", content: "still working", createdAt: 1700000000500 }
+  ]);
+});
+
+test("Desktop rejects empty and oversized share snapshots before upload", () => {
+  assert.equal(validateConversationShareSnapshot({ ...snapshot, entries: [] }), "empty");
+  assert.equal(validateConversationShareSnapshot({
+    ...snapshot,
+    entries: Array.from({ length: 2001 }, (_, index) => ({
+      type: "message",
+      role: "user",
+      content: String(index),
+      createdAt: 1700000000000
+    }))
+  }), "entry-limit");
+  assert.equal(validateConversationShareSnapshot({
+    ...snapshot,
+    entries: [{ type: "message", role: "user", content: "x".repeat(200001) }]
+  }), "entry-size");
+});
+
+test("createConversationShare converts a platform transcript before uploading", async (t) => {
   const app = createFixture(t);
   const calls = [];
   const result = await createConversationShare(
     app,
-    { downloadChatShareSnapshot: async () => ({ ok: true, snapshot }) },
+    { downloadChatTranscriptExport: async () => ({ ok: true, transcript }) },
     "chat-1",
     async (url, init) => {
       calls.push({ url, init });
@@ -90,12 +158,28 @@ test("createConversationShare uploads a safe platform snapshot with the SSO site
   assert.deepEqual(JSON.parse(calls[0].init.body), snapshot);
 });
 
-test("createConversationShare does not upload when Agent Platform lacks the safe share contract", async (t) => {
+test("createConversationShare does not upload invalid or empty platform exports", async (t) => {
   const app = createFixture(t);
   let called = false;
   const result = await createConversationShare(
     app,
-    { downloadChatShareSnapshot: async () => ({ ok: false, message: "unsupported" }) },
+    { downloadChatTranscriptExport: async () => ({ ok: true, transcript: { ...transcript, turns: [] } }) },
+    "chat-1",
+    async () => {
+      called = true;
+      return new Response();
+    }
+  );
+  assert.equal(result.ok, false);
+  assert.equal(called, false);
+});
+
+test("createConversationShare does not upload when structured export is unsupported", async (t) => {
+  const app = createFixture(t);
+  let called = false;
+  const result = await createConversationShare(
+    app,
+    { downloadChatTranscriptExport: async () => ({ ok: false, message: "unsupported" }) },
     "chat-1",
     async () => {
       called = true;
