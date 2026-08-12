@@ -51,6 +51,10 @@ import {
 } from "./assistant-navigation-status-client";
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
+import {
+  parseSharedConversationSnapshot,
+  type AgentPlatformChatShareSnapshotResult
+} from "./conversation-share-types";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
@@ -1277,6 +1281,48 @@ export class AgentPlatformAssistantBridge {
     const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.md`;
     const bytes = Buffer.from(await response.arrayBuffer());
     return { ok: true, message: t("assistant.chatExportDownloaded"), filename, bytes };
+  }
+
+  async downloadChatShareSnapshot(chatId: string): Promise<AgentPlatformChatShareSnapshotResult> {
+    const trimmedChatId = chatId.trim();
+    if (!trimmedChatId) {
+      return { ok: false, message: t("assistant.chatIdRequired") };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(
+      availability.baseUrl,
+      `/api/chat/export?audience=share&chatId=${encodeURIComponent(trimmedChatId)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/json",
+          Authorization: `Bearer ${availability.token}`
+        }
+      }
+    );
+    if (!response.ok) {
+      return { ok: false, message: await readErrorText(response) };
+    }
+    if (response.headers.get("x-zenmind-chat-export-audience") !== "share") {
+      return { ok: false, message: t("assistant.chatSharePlatformUnsupported") };
+    }
+    try {
+      const snapshot = parseSharedConversationSnapshot(
+        unwrapApiResponse<unknown>(await response.json())
+      );
+      if (!snapshot) {
+        return { ok: false, message: t("assistant.chatShareInvalidSnapshot") };
+      }
+      return { ok: true, snapshot };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : t("assistant.chatShareSnapshotReadFailed")
+      };
+    }
   }
 
   async getMemorySettings(): Promise<AssistantMemorySettings> {

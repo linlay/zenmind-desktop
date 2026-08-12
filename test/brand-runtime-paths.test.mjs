@@ -130,6 +130,10 @@ test("Windows release keeps branded executable metadata editing enabled", (t) =>
   );
 
   assert.equal(electronBuilderConfig.win.signAndEditExecutable, true);
+  assert.deepEqual(electronBuilderConfig.protocols, [{
+    name: `${brand.productName} Open`,
+    schemes: [brand.id]
+  }]);
   assert.doesNotMatch(windowsBuildScript, /signAndEditExecutable=false/u);
 });
 

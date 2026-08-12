@@ -1074,6 +1074,12 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
   return {
     appId: brand.appId,
     productName: brand.productName,
+    protocols: [
+      {
+        name: `${brand.productName} Open`,
+        schemes: [brand.id]
+      }
+    ],
     directories: {
       app: brandBuildRelativePath(brand, "app", brandBuildTargetKey(target)),
       output: path.posix.join("dist", brand.id)

@@ -1,5 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
+
+const projectRoot = path.resolve(import.meta.dirname, "..");
 
 const {
   buildSidebarContextMenuPolicy,
@@ -79,6 +83,7 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
   assert.deepEqual(ids({ kind: "chat", workPanelOpen: false }), [
     "chat.workPanel.open",
     "chat.export",
+    "chat.share",
     "chat.rename",
     "chat.archive",
     "chat.delete"
@@ -109,6 +114,19 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
     "web.export",
     "web.remove"
   ]);
+});
+
+test("sidebar renderer accepts every chat action exposed by the native menu", () => {
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
+    "utf8"
+  );
+  const chatActionGate = sidebarSource.match(
+    /if \(target\.kind === "chat"\) \{([\s\S]*?)\n    \}/u
+  )?.[1] ?? "";
+  for (const actionId of ids({ kind: "chat" })) {
+    assert.match(chatActionGate, new RegExp(`"${actionId.replace(".", "\\.")}"`, "u"));
+  }
 });
 
 test("sidebar native context request validation rejects injected and malformed fields", () => {
@@ -216,7 +234,7 @@ test("sidebar native menu is owned by the main window and returns only the click
   assert.equal(popupOptions.y, 0);
   assert.deepEqual(
     builtTemplate.filter((item) => item.type !== "separator").map((item) => item.id),
-    ["chat.workPanel.open", "chat.export", "chat.rename", "chat.archive", "chat.delete"]
+    ["chat.workPanel.open", "chat.export", "chat.share", "chat.rename", "chat.archive", "chat.delete"]
   );
 
   const rejected = await invokeHandler({ sender: {} }, {

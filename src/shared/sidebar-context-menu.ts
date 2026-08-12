@@ -12,6 +12,7 @@ export type SidebarContextMenuActionId =
   | "agent.open-project"
   | "agent.edit"
   | "chat.export"
+  | "chat.share"
   | "chat.rename"
   | "chat.workPanel.open"
   | "chat.workPanel.close"
