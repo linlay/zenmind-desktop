@@ -5607,6 +5607,8 @@ test("mac dev app uses a content-addressed icon filename to avoid stale Dock cac
   assert.match(darwinDev, /const iconRoot = brandIconDir\(projectRoot,\s*brand\);/);
   assert.match(darwinDev, /const sourceDockIconPath = path\.join\(iconRoot, "icon\.png"\);/);
   assert.match(darwinDev, /fs\.copyFileSync\(sourceDockIconPath, path\.join\(targetResourcesDir, "icon\.png"\)\);/);
+  assert.match(darwinDev, /const sourceEnvResourcesDir = path\.join\(brandResourcesDir\(projectRoot, brand\), "env"\);/);
+  assert.match(darwinDev, /fs\.cpSync\(sourceEnvResourcesDir, targetEnvResourcesDir, \{ recursive: true \}\);/);
   assert.match(darwinDev, /setPlistString\(plist,\s*"CFBundleIconFile",\s*targetIconFileName\)/);
   assert.match(darwinDev, /plist = applyDarwinBundleLocalizationInfo\(plist\)/);
   assert.match(darwinDev, /function setPlistEnvironment\(plist,\s*env\)/);

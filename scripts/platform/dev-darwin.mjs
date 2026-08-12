@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   brandBuildRoot,
   brandIconDir,
+  brandResourcesDir,
   DARWIN_BUNDLE_DEVELOPMENT_REGION,
   DARWIN_BUNDLE_LOCALIZATIONS,
   loadBrandConfig,
@@ -121,6 +122,8 @@ export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand =
   const iconRoot = brandIconDir(projectRoot, brand);
   const sourceIconPath = path.join(iconRoot, "icon.icns");
   const sourceDockIconPath = path.join(iconRoot, "icon.png");
+  const sourceEnvResourcesDir = path.join(brandResourcesDir(projectRoot, brand), "env");
+  const targetEnvResourcesDir = path.join(targetResourcesDir, "env");
 
   fs.rmSync(targetAppRoot, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(targetAppRoot), { recursive: true });
@@ -136,6 +139,9 @@ export function prepareDarwinDevElectronApp(electronBinary, projectRoot, brand =
   fs.mkdirSync(targetResourcesDir, { recursive: true });
   fs.copyFileSync(sourceIconPath, path.join(targetResourcesDir, targetIconFileName));
   fs.copyFileSync(sourceDockIconPath, path.join(targetResourcesDir, "icon.png"));
+  if (fs.existsSync(sourceEnvResourcesDir)) {
+    fs.cpSync(sourceEnvResourcesDir, targetEnvResourcesDir, { recursive: true });
+  }
 
   let plist = fs.readFileSync(targetPlistPath, "utf8");
   plist = setPlistString(plist, "CFBundleName", devAppName);
