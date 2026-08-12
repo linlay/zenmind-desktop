@@ -33,7 +33,8 @@ export function ChatWorkPanelSurface({
         <Suspense fallback={null}>
           <ExternalWebviewPage
             active={visible}
-            allowUserTabCreation={false}
+            allowTabUrlCopy
+            allowUserTabCreation
             cdpActive={false}
             chrome="browser"
             enableDesktopWebActions={false}
@@ -45,6 +46,7 @@ export function ChatWorkPanelSurface({
             publishPageContext={false}
             registerPublicWebSurface={false}
             showSurfaceCloseButton
+            showToolbar={false}
             surfaceId={workspace.surfaceId}
             surfaceCloseLabel={t("chatWorkPanel.close")}
             surfaceKind="chat-work-panel"

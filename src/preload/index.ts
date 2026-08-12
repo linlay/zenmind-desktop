@@ -57,10 +57,12 @@ import type {
   WebsChangedListener,
   WebviewOpenTabListener,
   WebviewOpenTabRequest,
+  ChatWorkPanelTabContextMenuPopupRequest,
   SidebarContextMenuPopupRequest,
   WebviewSelectionToolbarStateListener
 } from "../shared/contracts";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
+import { CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/chat-work-panel-tab-context-menu";
 import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
@@ -83,6 +85,10 @@ const api: DesktopApi = {
   sidebarContextMenu: {
     popup: (request: SidebarContextMenuPopupRequest) =>
       ipcRenderer.invoke(SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL, request)
+  },
+  chatWorkPanelTabContextMenu: {
+    popup: (request: ChatWorkPanelTabContextMenuPopupRequest) =>
+      ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request)
   },
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),

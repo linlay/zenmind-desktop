@@ -13,6 +13,10 @@ import type {
   SidebarContextMenuPopupRequest,
   SidebarContextMenuPopupResult
 } from "../sidebar-context-menu";
+import type {
+  ChatWorkPanelTabContextMenuPopupRequest,
+  ChatWorkPanelTabContextMenuPopupResult
+} from "../chat-work-panel-tab-context-menu";
 import type { WebviewSelectionToolbarStateListener } from "../webview-selection-toolbar";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
@@ -511,6 +515,11 @@ export interface DesktopApi {
     popup: (
       request: SidebarContextMenuPopupRequest
     ) => Promise<SidebarContextMenuPopupResult>;
+  };
+  chatWorkPanelTabContextMenu: {
+    popup: (
+      request: ChatWorkPanelTabContextMenuPopupRequest
+    ) => Promise<ChatWorkPanelTabContextMenuPopupResult>;
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;

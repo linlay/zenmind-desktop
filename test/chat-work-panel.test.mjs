@@ -18,7 +18,9 @@ test("Chat Work Panel keeps the main chat surface single while mounting chat wor
   assert.match(appShell, /chatWorkPanelWorkspaces\.map/u);
   assert.match(appShell, /<ChatWorkPanelHost/u);
   assert.match(workPanelHost, /workspaces\.map/u);
-  assert.match(workPanelSurface, /allowUserTabCreation=\{false\}/u);
+  assert.match(workPanelSurface, /allowUserTabCreation/u);
+  assert.match(workPanelSurface, /allowTabUrlCopy/u);
+  assert.match(workPanelSurface, /showToolbar=\{false\}/u);
   assert.match(workPanelSurface, /registerPublicWebSurface=\{false\}/u);
   assert.match(workPanelSurface, /partition=\{workspace\.partition\}/u);
   assert.match(appShellCss, /\.app-content\s*\{[^}]*display:\s*flex;/su);
@@ -43,11 +45,12 @@ test("Chat Work Panel actions derive ownership from trusted source and expose ta
   assert.match(bridge, /request\.source\?\.chatId/u);
 });
 
-test("Chat Work Panel UI has dynamic native menu actions and no user new-tab control", () => {
+test("Chat Work Panel UI has dynamic panel actions and a toolbar-free user tab strip", () => {
   const sidebarContract = read("src/shared/sidebar-context-menu.ts");
   const sidebar = read("src/renderer/app-shell/navigation/AppSidebar.tsx");
   const workPanelHost = read("src/renderer/chat-work-panel/ChatWorkPanelHost.tsx");
   const workPanelSurface = read("src/renderer/chat-work-panel/ChatWorkPanelSurface.tsx");
+  const appShellCss = read("src/renderer/styles/app-shell.css");
 
   assert.match(sidebarContract, /"chat\.workPanel\.open"/u);
   assert.match(sidebarContract, /"chat\.workPanel\.close"/u);
@@ -55,8 +58,11 @@ test("Chat Work Panel UI has dynamic native menu actions and no user new-tab con
   assert.match(sidebar, /actionId === "chat\.workPanel\.open"/u);
   assert.match(sidebar, /actionId === "chat\.workPanel\.close"/u);
   assert.match(sidebar, /onCloseChatWorkPanel\?\.\(chat\.chatId\)/u);
-  assert.doesNotMatch(workPanelSurface, /external-webview-tab-add/u);
   assert.doesNotMatch(workPanelSurface, /chat-work-panel-header/u);
+  assert.match(workPanelSurface, /allowUserTabCreation/u);
+  assert.match(workPanelSurface, /allowTabUrlCopy/u);
+  assert.match(workPanelSurface, /showToolbar=\{false\}/u);
   assert.match(workPanelSurface, /showSurfaceCloseButton/u);
   assert.match(workPanelSurface, /surfaceCloseLabel=\{t\("chatWorkPanel\.close"\)\}/u);
+  assert.match(appShellCss, /\.chat-work-panel \.external-webview-surface-close svg\s*\{[^}]*stroke:\s*currentColor;/su);
 });

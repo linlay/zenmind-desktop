@@ -1,6 +1,7 @@
 import { createElement, useEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
+  MouseEvent as ReactMouseEvent,
   PointerEvent as ReactPointerEvent,
   WheelEvent as ReactWheelEvent
 } from "react";
@@ -72,6 +73,8 @@ type ExternalWebviewPageProps = {
   onFaviconDiscovered?: (faviconUrl: string) => void;
   ownerChatId?: string;
   allowUserTabCreation?: boolean;
+  allowTabUrlCopy?: boolean;
+  showToolbar?: boolean;
   enableDesktopWebActions?: boolean;
   registerPublicWebSurface?: boolean;
   openPopupsInCurrentTab?: boolean;
@@ -475,6 +478,8 @@ export function ExternalWebviewPage({
   onFaviconDiscovered,
   ownerChatId,
   allowUserTabCreation = true,
+  allowTabUrlCopy = false,
+  showToolbar = true,
   enableDesktopWebActions = true,
   registerPublicWebSurface = true,
   openPopupsInCurrentTab = false,
@@ -505,6 +510,7 @@ export function ExternalWebviewPage({
   const surfaceClassName = [
     "embedded-surface-page external-webview-page",
     appChrome ? "" : "has-browser-chrome",
+    !appChrome && !showToolbar ? "is-toolbarless-browser" : "",
     appChrome ? "is-app-surface" : "",
     active === false ? "is-inactive-surface" : ""
   ].filter(Boolean).join(" ");
@@ -1704,6 +1710,25 @@ export function ExternalWebviewPage({
     event.currentTarget.select();
   };
 
+  const handleTabContextMenu = async (
+    event: ReactMouseEvent<HTMLDivElement>,
+    tab: ExternalWebviewTabState
+  ) => {
+    if (!allowTabUrlCopy) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const urlToCopy = tab.currentUrl;
+    const result = await window.electronAPI.chatWorkPanelTabContextMenu.popup({
+      x: event.clientX,
+      y: event.clientY
+    });
+    if (result.actionId === "copy-url") {
+      await window.electronAPI.clipboard.writeText(urlToCopy);
+    }
+  };
+
   const handleAssistantDockToggle = () => {
     if (assistantDockOpen) {
       onCloseAssistantDock?.();
@@ -1740,6 +1765,9 @@ export function ExternalWebviewPage({
                   data-tab-id={tab.id}
                   style={draggingTabId === tab.id ? { transform: `translateX(${tabDragOffsetX}px)` } : undefined}
                   role="presentation"
+                  onContextMenu={(event) => {
+                    void handleTabContextMenu(event, tab).catch(() => undefined);
+                  }}
                 >
                   <button
                     type="button"
@@ -1807,7 +1835,7 @@ export function ExternalWebviewPage({
             </button>
           ) : null}
         </div>
-        <div className="external-webview-toolbar">
+        {showToolbar ? <div className="external-webview-toolbar">
           <div className="external-webview-toolbar-actions">
             <button
               type="button"
@@ -1886,7 +1914,7 @@ export function ExternalWebviewPage({
               />
             </button>
           ) : null}
-        </div>
+        </div> : null}
         </div>
       )}
       <div className={`embedded-surface-frame-shell external-webview-frame-shell${appChrome ? " is-app-surface" : ""}`}>
