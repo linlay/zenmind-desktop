@@ -6,7 +6,7 @@ import {
   screen as electronScreen
 } from "electron";
 import type { App, BrowserWindow, IpcMain, IpcMainEvent, IpcMainInvokeEvent } from "electron";
-import type { AgentAuthRefreshReason, DesktopLogTarget } from "../../shared/contracts";
+import type { AgentAuthRefreshReason, DesktopLogTarget, ServiceRevealPathOptions } from "../../shared/contracts";
 import {
   getAvailableFilePath,
   getDesktopDownloadDefaultPath,
@@ -62,7 +62,7 @@ type ShellIpcOptions = {
   ) => Promise<{ canceled: boolean; filePaths: string[] }>;
   revealPathInFileManager?: (
     targetPath: string,
-    options: { targetType: "directory" },
+    options: ServiceRevealPathOptions,
     fsOptions: {
       showItemInFolder: (pathToReveal: string) => void;
       openPath: (pathToOpen: string) => Promise<string>;
@@ -237,6 +237,25 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   ipcMain.handle("desktopShell.openPath", async (_event: IpcMainInvokeEvent, targetPath: string) => {
     try {
       return await options.revealPathInFileManager?.(targetPath, { targetType: "directory" }, {
+        showItemInFolder: (pathToReveal: string) => shell.showItemInFolder(pathToReveal),
+        openPath: (pathToOpen: string) => shell.openPath(pathToOpen),
+        platform: options.platform
+      });
+    } catch (error) {
+      return {
+        ok: false as const,
+        path: typeof targetPath === "string" ? targetPath : "",
+        message: error instanceof Error ? error.message : String(error)
+      };
+    }
+  });
+
+  ipcMain.handle("desktopShell.revealPath", async (_event: IpcMainInvokeEvent, targetPath: string) => {
+    try {
+      return await options.revealPathInFileManager?.(targetPath, {
+        targetType: "directory",
+        directoryAction: "reveal"
+      }, {
         showItemInFolder: (pathToReveal: string) => shell.showItemInFolder(pathToReveal),
         openPath: (pathToOpen: string) => shell.openPath(pathToOpen),
         platform: options.platform

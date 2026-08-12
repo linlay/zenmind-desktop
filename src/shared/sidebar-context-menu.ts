@@ -8,8 +8,8 @@ export type SidebarContextMenuActionId =
   | "group.new-chat"
   | "group.add-website"
   | "group.import-webapp"
-  | "agent.open-workspace"
-  | "agent.open-project"
+  | "agent.reveal-workspace"
+  | "agent.open-project-editor"
   | "agent.edit"
   | "chat.export"
   | "chat.rename"
@@ -34,8 +34,8 @@ export type SidebarContextMenuTarget =
     }
   | {
       kind: "agent";
-      canOpenWorkspace: boolean;
-      canOpenProject: boolean;
+      canRevealWorkspace: boolean;
+      canOpenProjectEditor: boolean;
     }
   | {
       kind: "chat";

@@ -182,6 +182,7 @@ export interface ServiceOpenLogViewerRequest {
 
 export interface ServiceRevealPathOptions {
   targetType?: "file" | "directory";
+  directoryAction?: "open" | "reveal";
 }
 
 export interface ServiceRevealPathResult {

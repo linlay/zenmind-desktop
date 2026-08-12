@@ -4436,10 +4436,10 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appSidebar, /使用本机 Claude Code 运行 CODER 助理/);
   assert.doesNotMatch(appSidebar, /使用本机 Codex CLI 运行 CODER 助理/);
   assert.match(appSidebar, /className="assistant-worker-icon-button sidebar-assistant-project-button"/);
-  assert.match(appSidebar, /function getOpenWorkspaceDisabledReason\(agent: AssistantNavAgentItem\)/);
+  assert.match(appSidebar, /function getRevealWorkspaceDisabledReason\(agent: AssistantNavAgentItem\)/);
   assert.match(appSidebar, /agent\.workspaceDirExists === false/);
   assert.match(appSidebar, /disabled=\{Boolean\(openWorkspaceDisabledReason\)\}/);
-  assert.match(appSidebar, /openWorkspaceDirectory\(agent\.workspaceDir, agent\.agentKey\)/);
+  assert.match(appSidebar, /revealWorkspaceDirectory\(agent\.workspaceDir, agent\.agentKey\)/);
   assert.doesNotMatch(appSidebar, /const title = isRename \? t\("sidebar\.agent\.rename"\) : t\("sidebar\.agent\.delete"\)/);
   assert.match(appSidebar, /role="dialog"/);
   const agentDialogInputRule = globalStyles.match(
@@ -5909,6 +5909,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(mainProcess, /getServiceWebviewPreloadUrl\(\)[\s\S]{0,120}pathToFileURL\(getServiceWebviewPreloadPath\(\)\)\.toString\(\)/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopDialog\.selectDirectory"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.openPath"/);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.revealPath"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopDownloads\.saveFile"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopScreenshot\.capture"/);
   assert.match(windowManager, /webPreferences\.preload = input\.servicePreloadPath/);
@@ -5919,11 +5920,13 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(preload, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => ipcRenderer\.invoke\("desktopDialog\.selectDirectory"\)/);
   assert.match(preload, /desktopScreenshot:[\s\S]{0,120}capture:\s*\(\) => ipcRenderer\.invoke\("desktopScreenshot\.capture"\)/);
   assert.match(preload, /desktopShell:[\s\S]{0,140}openPath:\s*\(targetPath: string\) => ipcRenderer\.invoke\("desktopShell\.openPath", targetPath\)/);
+  assert.match(preload, /desktopShell:[\s\S]{0,260}revealPath:\s*\(targetPath: string\) => ipcRenderer\.invoke\("desktopShell\.revealPath", targetPath\)/);
   assert.match(preload, /desktopDownloads:[\s\S]{0,140}saveFile:\s*\(input\) => ipcRenderer\.invoke\("desktopDownloads\.saveFile", input\)/);
   assert.match(contracts, /serviceWebview:\s*\{[\s\S]{0,120}getPreloadPath:\s*\(\) => Promise<string>/);
   assert.match(contracts, /serviceWebview:\s*\{[\s\S]{0,120}getPreloadUrl:\s*\(\) => Promise<string>/);
   assert.match(contracts, /desktopDialog:[\s\S]{0,120}selectDirectory:\s*\(\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(contracts, /desktopShell:[\s\S]{0,120}openPath:\s*\(targetPath: string\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
+  assert.match(contracts, /desktopShell:[\s\S]{0,260}revealPath:\s*\(targetPath: string\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(contracts, /desktopShell:[\s\S]{0,220}moveWindowBy:\s*\(delta: \{ x: number; y: number \}\) => Promise<\{ ok: boolean; message\?: string \}>/);
   assert.match(contracts, /desktopDownloads:[\s\S]{0,220}saveFile:\s*\(input: \{[\s\S]{0,160}dataBase64\?: string;[\s\S]{0,120}\}\) => Promise<\{ ok: boolean; path\?: string; message\?: string \}>/);
   assert.match(globalStyles, /\.service-webview-error\s*\{/);

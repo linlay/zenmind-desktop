@@ -93,6 +93,7 @@ const api: DesktopApi = {
   },
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
+    revealPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.revealPath", targetPath),
     moveWindowBy: (delta: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.moveWindowBy", delta),
     beginWindowDrag: (point: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.beginWindowDrag", point),
     endWindowDrag: () => ipcRenderer.invoke("desktopShell.endWindowDrag"),

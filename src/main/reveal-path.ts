@@ -36,6 +36,14 @@ function normalizeTargetType(value: ServiceRevealPathOptions["targetType"] | und
   return "auto";
 }
 
+function getRevealSuccessMessage(platform: RevealPlatform) {
+  return platform === "win32"
+    ? t("revealPath.shownInExplorer")
+    : platform === "darwin"
+      ? t("revealPath.shownInFinder")
+      : t("revealPath.shownInFileManager");
+}
+
 async function openDirectory(
   targetPath: string,
   deps: Required<Pick<RevealPathDeps, "openPath">>
@@ -62,8 +70,6 @@ export async function revealPathInFileManager(
   deps: RevealPathDeps
 ): Promise<ServiceRevealPathResult> {
   const platform = deps.platform ?? process.platform;
-  const isWindows = platform === "win32";
-  const isMac = platform === "darwin";
   const normalizedPath = typeof targetPath === "string" ? targetPath.trim() : "";
   if (!normalizedPath) {
     return {
@@ -88,25 +94,22 @@ export async function revealPathInFileManager(
   if (exists) {
     const isDirectory = requestedTargetType === "directory" || statSync(normalizedPath).isDirectory();
     if (isDirectory) {
-      if (isWindows) {
-        return openDirectory(normalizedPath, deps);
-      }
-      if (isMac) {
-        return openDirectory(normalizedPath, deps);
+      if (options.directoryAction === "reveal") {
+        deps.showItemInFolder(normalizedPath);
+        return {
+          ok: true,
+          path: normalizedPath,
+          message: getRevealSuccessMessage(platform)
+        };
       }
       return openDirectory(normalizedPath, deps);
     }
 
     deps.showItemInFolder(normalizedPath);
-    const message = isWindows
-      ? t("revealPath.shownInExplorer")
-      : isMac
-        ? t("revealPath.shownInFinder")
-        : t("revealPath.shownInFileManager");
     return {
       ok: true,
       path: normalizedPath,
-      message
+      message: getRevealSuccessMessage(platform)
     };
   }
 

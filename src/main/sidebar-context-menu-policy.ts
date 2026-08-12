@@ -74,16 +74,16 @@ export function normalizeSidebarContextMenuRequest(
     };
   } else if (target.kind === "agent") {
     if (
-      !hasOnlyKeys(target, ["kind", "canOpenWorkspace", "canOpenProject"]) ||
-      !isBoolean(target.canOpenWorkspace) ||
-      !isBoolean(target.canOpenProject)
+      !hasOnlyKeys(target, ["kind", "canRevealWorkspace", "canOpenProjectEditor"]) ||
+      !isBoolean(target.canRevealWorkspace) ||
+      !isBoolean(target.canOpenProjectEditor)
     ) {
       return null;
     }
     normalizedTarget = {
       kind: "agent",
-      canOpenWorkspace: target.canOpenWorkspace,
-      canOpenProject: target.canOpenProject
+      canRevealWorkspace: target.canRevealWorkspace,
+      canOpenProjectEditor: target.canOpenProjectEditor
     };
   } else if (target.kind === "chat") {
     if (!hasOnlyKeys(target, ["kind", "workPanelOpen"]) || !isBoolean(target.workPanelOpen)) {
@@ -181,14 +181,14 @@ export function buildSidebarContextMenuPolicy(
   if (target.kind === "agent") {
     return [
       {
-        id: "agent.open-workspace",
+        id: "agent.reveal-workspace",
         group: 0,
-        enabled: target.canOpenWorkspace
+        enabled: target.canRevealWorkspace
       },
       {
-        id: "agent.open-project",
+        id: "agent.open-project-editor",
         group: 0,
-        enabled: target.canOpenProject
+        enabled: target.canOpenProjectEditor
       },
       { id: "agent.edit", group: 0, enabled: true }
     ];
