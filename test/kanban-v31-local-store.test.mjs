@@ -79,6 +79,34 @@ test("private issue IDs use the short local-prefixed Server base36 format", (t) 
   assert.match(first.issue.id, /^local-[0-9A-Z]+$/);
 });
 
+test("moving a completed private issue back to todo keeps its chat ready for a new run", (t) => {
+  const app = createTempApp(t);
+  const created = createPrivateDesktopKanbanIssue(app, currentUser, {
+    title: "Private issue to reopen",
+    assigneeAgentKey: "codeAssistant"
+  });
+  assert.equal(created.ok, true);
+
+  const completed = updateDesktopKanbanIssue(app, currentUser, created.issue.id, {
+    status: "completed",
+    chatId: "chat-existing",
+    runId: null,
+    runState: "completed"
+  });
+  assert.equal(completed.ok, true);
+
+  const reopened = moveDesktopKanbanIssue(app, currentUser, {
+    id: created.issue.id,
+    status: "todo",
+    position: 1
+  });
+  assert.equal(reopened.ok, true);
+  assert.equal(reopened.issue.chatId, "chat-existing");
+  assert.equal(reopened.issue.runId, null);
+  assert.equal(reopened.issue.activeRunId, null);
+  assert.equal(reopened.issue.runState, null);
+});
+
 test("Desktop cloud mutation, run event, and manual run receipts persist idempotently", (t) => {
   const app = createTempApp(t);
   recordDesktopKanbanCloudMutation(app, currentUser, {

@@ -108,7 +108,7 @@ Server 按来源校验：
 
 Private Issue 只存 Desktop SQLite，不进入 cloud mutation/run-event outbox，不发送 Kanban WS 请求，标题、描述、附件和本地路径也不得进入 Kanban WS 日志。
 
-Private Issue 创建或由用户移入 Todo 后，若已选 Agent、没有 automation 且没有 active run，可自动走正常 `/api/query`。成功进入 Completed，失败或取消回 Todo；回到 Todo 后不自动再次执行。
+Private Issue 创建或由用户主动移入 Todo 后，若已选 Agent、没有 automation 且没有 active run，延迟 1 秒后可自动走正常 `/api/query`。已有 `chatId` 时继续使用原 Chat 并为本次执行生成新 `runId`；没有原 Chat 时，带附件的 Issue 优先使用附件 Chat，否则新建 Chat。成功进入 Completed，失败或取消自动回 Todo；这种运行终态导致的回退不触发再次执行，避免失败循环。Completed 等状态由用户主动移回 Todo 属于一次新的返工，仍按上述规则延迟执行一次。
 
 ## 7. 发布顺序
 

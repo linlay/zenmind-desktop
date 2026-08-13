@@ -53,7 +53,7 @@ test("Kanban automation payload keeps issue context hidden in the platform query
   assert.equal(payload.agentKey, "coder");
   assert.equal(payload.zoneId, "Asia/Shanghai");
   assert.equal(payload.query.hidden, true);
-  assert.match(payload.query.message, /议题编号：ISSUE1/u);
+  assert.match(payload.query.message, /问题编号：ISSUE1/u);
   assert.deepEqual(payload.query.params, {
     source: "kanban",
     issueId: "ISSUE1"

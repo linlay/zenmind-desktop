@@ -3444,8 +3444,8 @@ test("Kanban toolbar can filter issues by automation", () => {
   assert.match(kanbanPage, /checked=\{automationFilter === option\.value\}/);
   assert.match(kanbanStyles, /\.kanban-search-filter-button\.is-active\s*\{/);
   assert.match(kanbanStyles, /\.kanban-search-filter-menu\s*\{/);
-  assert.match(zhCN, /"kanban\.searchFilter\.hasAutomation": "定时议题"/);
-  assert.match(zhCN, /"kanban\.searchFilter\.noAutomation": "手动议题"/);
+  assert.match(zhCN, /"kanban\.searchFilter\.hasAutomation": "定时问题"/);
+  assert.match(zhCN, /"kanban\.searchFilter\.noAutomation": "手动问题"/);
   assert.match(enUS, /"kanban\.searchFilter\.hasAutomation": "Has automation"/);
   assert.match(enUS, /"kanban\.searchFilter\.noAutomation": "No automation"/);
 });
@@ -3534,9 +3534,19 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   assert.match(zhCN, /"kanban\.cloud\.resync": "重新同步"/);
   assert.match(zhCN, /"kanban\.projectFilter\.all": "全部项目"/);
   assert.match(zhCN, /"kanban\.projectFilter\.local": "本地"/);
+  assert.match(zhCN, /"kanban\.runtime\.localCreated": "本地问题已创建。"/);
+  assert.doesNotMatch(zhCN, /"kanban\.runtime\.privateCreated"|"私有问题已创建。"/);
+  assert.equal(
+    zhCN.split("\n").filter((line) => line.includes('"kanban.')).some((line) => line.includes("议题")),
+    false
+  );
+  assert.equal(readJsonFile("brands", "zenmind", "i18n", "zh-CN.json")["kanban.prompt.intro"].includes("议题"), false);
+  assert.equal(readJsonFile("brands", "cutej", "i18n", "zh-CN.json")["kanban.prompt.intro"].includes("议题"), false);
   assert.match(enUS, /"kanban\.cloud\.resync": "Resync"/);
   assert.match(enUS, /"kanban\.projectFilter\.all": "All Projects"/);
   assert.match(enUS, /"kanban\.projectFilter\.local": "Local"/);
+  assert.match(enUS, /"kanban\.runtime\.localCreated": "Local issue created\."/);
+  assert.doesNotMatch(enUS, /"kanban\.runtime\.privateCreated"|"Private issue created\."/);
 });
 
 test("Kanban scheduled tasks wait for automation time before assistant run", () => {
@@ -3658,9 +3668,17 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /target\.closest\("\.issue-card"\)/);
   assert.match(kanbanPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
   assert.match(kanbanPage, /KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000/);
-  assert.match(kanbanPage, /if \(!feedback \|\| feedback\.tone !== "success"\) \{/);
+  assert.match(kanbanPage, /if \(!feedback \|\| feedback\.tone !== "success" \|\| feedbackPaused\) \{/);
   assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,140}setFeedback\(\(current\) => \(current === feedback \? null : current\)\)/);
+  assert.match(kanbanPage, /onMouseEnter=\{\(\) => setFeedbackPaused\(true\)\}/);
+  assert.match(kanbanPage, /onMouseLeave=\{\(\) => setFeedbackPaused\(false\)\}/);
+  assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,180}bottom:\s*calc\(24px \+ env\(safe-area-inset-bottom, 0px\)\);[\s\S]{0,120}left:\s*50%;/);
+  assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,300}width:\s*max-content;[\s\S]{0,100}max-width:\s*min\(360px, calc\(100% - 32px\)\);/);
+  assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,700}transform:\s*translateX\(-50%\);/);
+  assert.doesNotMatch(kanbanStyles, /\.kanban-feedback\s*\{[^}]*top:\s*66px;/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.startRun/);
+  assert.match(kanbanPage, /const chatId = resolvePrivateKanbanRunChatId\(issue\)/);
+  assert.match(kanbanPage, /\.\.\.\(chatId \? \{ chatId \} : \{\}\),[\s\S]{0,80}agentKey/);
   assert.match(kanbanPage, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(kanbanPage, /t\("kanban\.prompt\.rule"\)/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);

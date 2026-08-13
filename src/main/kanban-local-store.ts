@@ -1810,7 +1810,7 @@ export function createPrivateDesktopKanbanIssue(
     });
     return {
       ok: true,
-      message: t("kanban.runtime.privateCreated"),
+      message: t("kanban.runtime.localCreated"),
       issue,
       issues: selectIssues(db, currentUser)
     };

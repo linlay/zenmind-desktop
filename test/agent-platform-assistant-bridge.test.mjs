@@ -260,6 +260,38 @@ test("agent platform assistant bridge holds wake lock while a run is active", as
   }
 });
 
+test("agent platform assistant bridge reuses an existing chat with a new run id", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).endsWith("/api/query")) {
+      const body = JSON.parse(String(init.body));
+      requests.push(body);
+      return sseResponse([
+        { seq: 1, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + requests.length },
+        "[DONE]"
+      ]);
+    }
+    throw new Error(`unexpected request ${url}`);
+  };
+
+  try {
+    const first = await bridge.startRun({ chatId: "chat-existing", message: "first pass" });
+    await waitFor(() => requests.length === 1, "first rerun was not submitted");
+    const second = await bridge.startRun({ chatId: "chat-existing", message: "second pass" });
+    await waitFor(() => requests.length === 2, "second rerun was not submitted");
+
+    assert.equal(first.chatId, "chat-existing");
+    assert.equal(second.chatId, "chat-existing");
+    assert.notEqual(first.runId, second.runId);
+    assert.deepEqual(requests.map((request) => request.chatId), ["chat-existing", "chat-existing"]);
+    assert.deepEqual(requests.map((request) => request.runId), [first.runId, second.runId]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge shares one wake lock across concurrent runs", async () => {
   const originalFetch = globalThis.fetch;
   const wakeLock = makeWakeLockRecorder();

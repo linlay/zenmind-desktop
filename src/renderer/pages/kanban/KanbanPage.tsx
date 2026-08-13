@@ -76,6 +76,7 @@ import {
 import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
+import { resolvePrivateKanbanRunChatId } from "./kanbanAssistantRun";
 
 type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "issueType" | "priority" | "severity" | "automation" | "assignee" | null;
@@ -1541,6 +1542,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
   const [loading, setLoading] = useState(true);
   const [busyIssueId, setBusyIssueId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<Feedback | null>(null);
+  const [feedbackPaused, setFeedbackPaused] = useState(false);
   const [menu, setMenu] = useState<MenuKind>(null);
   const [query, setQuery] = useState("");
   const [cloudProjects, setCloudProjects] = useState<KanbanProject[]>([]);
@@ -1759,7 +1761,11 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
   }, [contextMenu]);
 
   useEffect(() => {
-    if (!feedback || feedback.tone !== "success") {
+    setFeedbackPaused(false);
+  }, [feedback]);
+
+  useEffect(() => {
+    if (!feedback || feedback.tone !== "success" || feedbackPaused) {
       return;
     }
 
@@ -1770,7 +1776,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [feedback]);
+  }, [feedback, feedbackPaused]);
 
   useEffect(() => {
     if (automationMenuOpen === "time") {
@@ -2382,8 +2388,9 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
 
     setBusyIssueId(issue.id);
     try {
+      const chatId = resolvePrivateKanbanRunChatId(issue);
       const runResult = await window.electronAPI.assistant.startRun({
-        ...(issue.attachmentChatId && issue.attachments.length > 0 ? { chatId: issue.attachmentChatId } : {}),
+        ...(chatId ? { chatId } : {}),
         agentKey,
         message: buildAssistantPrompt(issue, t),
         source: "copilot",
@@ -2725,7 +2732,12 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
       ) : null}
 
       {feedback ? (
-        <div className={`kanban-feedback is-${feedback.tone}`}>
+        <div
+          className={`kanban-feedback is-${feedback.tone}`}
+          role={feedback.tone === "error" ? "alert" : "status"}
+          onMouseEnter={() => setFeedbackPaused(true)}
+          onMouseLeave={() => setFeedbackPaused(false)}
+        >
           <span>{feedback.message}</span>
           <button type="button" onClick={() => setFeedback(null)} aria-label={t("kanban.notice.close")}>×</button>
         </div>
