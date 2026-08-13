@@ -2422,6 +2422,38 @@
   background: var(--desktop-overlay-panel-bg);
 }
 
+.sidebar-chat-share-dialog {
+  width: min(520px, 100%);
+  background: var(--desktop-overlay-panel-bg);
+}
+
+.sidebar-chat-share-name {
+  overflow: hidden;
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-chat-share-link-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+}
+
+.sidebar-chat-share-link-row input {
+  min-width: 0;
+}
+
+.sidebar-chat-share-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .sidebar-agent-dialog-head,
 .sidebar-agent-dialog-actions {
   display: flex;

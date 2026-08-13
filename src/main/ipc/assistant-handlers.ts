@@ -9,6 +9,10 @@ import { PRODUCT_NAME } from "../../shared/brand";
 import type { AssistantNavigationListOptions } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
+import {
+  createConversationShare,
+  revokeConversationShare
+} from "../assistant/core/conversation-share-controller";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -455,6 +459,14 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
 
   ipcMain.handle("assistant.exportChat", async (_event: any, chatId: string) =>
     saveAssistantChatExport(assistantBridge, chatId, app, platform)
+  );
+
+  ipcMain.handle("assistant.shareChat", async (_event: any, chatId: string) =>
+    createConversationShare(app, assistantBridge, chatId)
+  );
+
+  ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>
+    revokeConversationShare(app, shareId)
   );
 
   // ---------------------------------------------------------------------------

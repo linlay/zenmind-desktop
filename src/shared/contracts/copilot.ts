@@ -314,6 +314,14 @@ export interface AssistantNavActionResult {
   filePath?: string;
 }
 
+export interface AssistantConversationShareResult {
+  ok: boolean;
+  message: string;
+  shareId?: string;
+  url?: string;
+  createdAt?: string;
+}
+
 export interface AssistantChatDetail {
   summary: AssistantChatSummary;
   messages: AssistantChatMessage[];

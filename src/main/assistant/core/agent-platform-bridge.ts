@@ -51,6 +51,10 @@ import {
 } from "./assistant-navigation-status-client";
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
+import {
+  parseChatTranscriptJSONL,
+  type AgentPlatformChatTranscriptExportResult
+} from "./conversation-share-types";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
@@ -1277,6 +1281,47 @@ export class AgentPlatformAssistantBridge {
     const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.md`;
     const bytes = Buffer.from(await response.arrayBuffer());
     return { ok: true, message: t("assistant.chatExportDownloaded"), filename, bytes };
+  }
+
+  async downloadChatTranscriptExport(chatId: string): Promise<AgentPlatformChatTranscriptExportResult> {
+    const trimmedChatId = chatId.trim();
+    if (!trimmedChatId) {
+      return { ok: false, message: t("assistant.chatIdRequired") };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(
+      availability.baseUrl,
+      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=raw`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "application/x-ndjson",
+          Authorization: `Bearer ${availability.token}`
+        }
+      }
+    );
+    if (!response.ok) {
+      return { ok: false, message: await readErrorText(response) };
+    }
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    if (contentType !== "application/x-ndjson") {
+      return { ok: false, message: t("assistant.chatSharePlatformUnsupported") };
+    }
+    try {
+      const transcript = parseChatTranscriptJSONL(await response.text());
+      if (!transcript) {
+        return { ok: false, message: t("assistant.chatShareInvalidTranscript") };
+      }
+      return { ok: true, transcript };
+    } catch {
+      return {
+        ok: false,
+        message: t("assistant.chatShareTranscriptReadFailed")
+      };
+    }
   }
 
   async getMemorySettings(): Promise<AssistantMemorySettings> {

@@ -87,6 +87,8 @@ import {
   getCapabilityNavigationItem,
   type SidebarMode,
 } from "./capabilityNavigation";
+import { ConversationShareDialog } from "./ConversationShareDialog";
+import { useConversationShareDialog } from "./useConversationShareDialog";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -1145,6 +1147,7 @@ export function AppSidebar({
     useState<AssistantChatRenameDialogState | null>(null);
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
     useState<AssistantChatDeleteDialogState | null>(null);
+  const conversationShareDialog = useConversationShareDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const sidebarNavRef = useRef<HTMLElement | null>(null);
@@ -2122,6 +2125,7 @@ export function AppSidebar({
     if (target.kind === "chat") {
       return [
         "chat.export",
+        "chat.share",
         "chat.rename",
         "chat.workPanel.open",
         "chat.workPanel.close",
@@ -2211,6 +2215,8 @@ export function AppSidebar({
       if (!chat) return;
       if (actionId === "chat.export") {
         await handleAssistantExportChat(chat);
+      } else if (actionId === "chat.share") {
+        conversationShareDialog.open(chat.chatId, chat.chatName);
       } else if (actionId === "chat.rename") {
         handleAssistantRenameChat(chat);
       } else if (actionId === "chat.workPanel.open") {
@@ -3494,6 +3500,46 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsShareButton(options: { inPopover?: boolean } = {}) {
+    if (!currentChatId) return null;
+    const currentChat = findAssistantNavChat(currentChatId);
+    const label = t("sidebar.chat.shareCurrent");
+    return (
+      <Tooltip content={label}>
+        <button
+          type="button"
+          className={[
+            "assistant-worker-icon-button",
+            "sidebar-chats-share-button",
+            options.inPopover ? "is-in-popover" : "",
+          ].filter(Boolean).join(" ")}
+          aria-label={label}
+          title={label}
+          tabIndex={options.inPopover ? undefined : -1}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            conversationShareDialog.open(
+              currentChatId,
+              currentChat?.chatName || t("sidebar.chat.current"),
+            );
+          }}
+        >
+          <SidebarActionIcon kind="share" />
+        </button>
+      </Tooltip>
+    );
+  }
+
+  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
+    return (
+      <>
+        {renderChatsShareButton(options)}
+        {renderChatsNewChatButton(options)}
+      </>
+    );
+  }
+
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
   ) {
@@ -3885,12 +3931,12 @@ export function AppSidebar({
         </span>
       ),
       headerSupplement: renderChatsDefaultAgentPicker(),
-      headerActions: renderChatsNewChatButton(),
+      headerActions: renderChatsHeaderActions(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
           <span>{item.label}</span>
           {renderChatsDefaultAgentPicker({ inPopover: true })}
-          {renderChatsNewChatButton({ inPopover: true })}
+          {renderChatsHeaderActions({ inPopover: true })}
         </div>
       ),
       renderChildren: ({ roving }) => renderChatsList({ roving }),
@@ -5928,6 +5974,14 @@ export function AppSidebar({
               </div>
               {renderAssistantChatRenameDialog()}
               {renderAssistantChatDeleteDialog()}
+              <ConversationShareDialog
+                state={conversationShareDialog.state}
+                t={t}
+                onClose={conversationShareDialog.close}
+                onCreate={() => void conversationShareDialog.create()}
+                onCopy={() => void conversationShareDialog.copy()}
+                onRevoke={() => void conversationShareDialog.revoke()}
+              />
               {renderCreateProjectDialog()}
               {renderWebsiteDialog()}
             </div>

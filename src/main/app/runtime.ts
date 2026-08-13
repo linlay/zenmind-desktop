@@ -184,6 +184,7 @@ import {
   writeShutdownAck
 } from "../lifecycle/shutdown-ack";
 import { registerMainAppEvents } from "./app-events";
+import { registerDesktopOpenProtocolClient } from "./deep-link";
 import {
   createResourceDirectoryWatcher,
   type ResourceDirectoryWatcher
@@ -1474,6 +1475,11 @@ export function createMainProcessRuntime() {
   }
   
   function start() {
+    registerDesktopOpenProtocolClient(app, mainProcessContext.platform, {
+      isDefaultApp: Boolean((process as NodeJS.Process & { defaultApp?: boolean }).defaultApp),
+      execPath: process.execPath,
+      appEntryPath: process.argv[1]
+    });
     registerMainAppEvents({
       app,
       platform: mainProcessContext.platform,
@@ -1482,8 +1488,9 @@ export function createMainProcessRuntime() {
       installerShutdownArgs: INSTALLER_SHUTDOWN_ARGS,
       globalShortcut,
       focusedWebviewDevToolsShortcut: FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT,
+      initialCommandLine: process.argv,
       onReady: handleAppReady,
-      showMainWindow: () => showMainWindow(),
+      showMainWindow,
       beginAppQuitWithoutConfirmation,
       beginInstallerShutdown,
       isNativeDialogOpen: () => appShellRuntime.isNativeDialogOpen(),
