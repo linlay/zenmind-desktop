@@ -33,6 +33,7 @@ import {
   MessageOutlined,
   PlusOutlined,
   RobotOutlined,
+  SettingOutlined,
   StopOutlined,
   ThunderboltOutlined,
   UserOutlined
@@ -1651,6 +1652,9 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const activeDragIssueIdRef = useRef<string | null>(null);
   const issuesRef = useRef<KanbanIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
+  const cloudMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const displayMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const menuPanelRef = useRef<HTMLDivElement | null>(null);
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const kanbanReady = readKanbanApi() !== null;
   const missingKanbanApiMessage = t("kanban.missingApi", { appName: t("app.name") });
@@ -1854,6 +1858,30 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [contextMenu]);
+
+  useEffect(() => {
+    if (!menu || typeof document === "undefined") {
+      return undefined;
+    }
+    const closeMenuOnOutsidePointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Node)) {
+        return;
+      }
+      if (
+        cloudMenuTriggerRef.current?.contains(target) ||
+        displayMenuTriggerRef.current?.contains(target) ||
+        menuPanelRef.current?.contains(target)
+      ) {
+        return;
+      }
+      setMenu(null);
+    };
+    document.addEventListener("pointerdown", closeMenuOnOutsidePointerDown);
+    return () => {
+      document.removeEventListener("pointerdown", closeMenuOnOutsidePointerDown);
+    };
+  }, [menu]);
 
   useEffect(() => {
     setFeedbackPaused(false);
@@ -2743,6 +2771,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         </div>
         <div className="kanban-toolbar-end">
           <button
+            ref={cloudMenuTriggerRef}
             type="button"
             className={`kanban-tool kanban-cloud-status is-${getKanbanConnectionTone(connectionState)} ${menu === "cloud" ? "is-active" : ""}`}
             aria-label={t("kanban.cloud.configure")}
@@ -2762,6 +2791,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
             ) : null}
           </button>
           <button
+            ref={displayMenuTriggerRef}
             type="button"
             className={`kanban-tool is-icon-only ${menu === "display" ? "is-active" : ""}`}
             aria-label={t("kanban.toolbar.display")}
@@ -2772,14 +2802,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               setMenu(menu === "display" ? null : "display");
             }}
           >
-            <KanbanIcon kind="display" />
+            <SettingOutlined className="kanban-tool-icon" />
             <span className="kanban-tool-label">{t("kanban.toolbar.display")}</span>
           </button>
         </div>
       </div>
 
       {menu ? (
-        <div className={`kanban-menu-panel is-${menu}`}>
+        <div ref={menuPanelRef} className={`kanban-menu-panel is-${menu}`}>
           {menu === "display" ? (
             <>
               <strong>{t("kanban.display.columns")}</strong>
@@ -2787,7 +2817,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 <input
                   type="checkbox"
                   checked={showBacklog}
-                  onChange={(event) => setShowBacklog(event.target.checked)}
+                  onChange={() => setShowBacklog((current) => !current)}
                 />
                 <span>{t("kanban.display.backlog")}</span>
               </label>
@@ -4200,7 +4230,7 @@ function KanbanSearchFilters({
   );
 }
 
-function KanbanIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filter" | "project" | "search" }) {
+function KanbanIcon({ kind }: { kind: "attachment" | "clock" | "filter" | "project" | "search" }) {
   const paths: Record<typeof kind, ReactNode> = {
     attachment: (
       <path d="M7.5 11.5 12 7a2.1 2.1 0 0 1 3 3l-6 6a3.1 3.1 0 0 1-4.4-4.4l6.4-6.4" />
@@ -4209,15 +4239,6 @@ function KanbanIcon({ kind }: { kind: "attachment" | "clock" | "display" | "filt
       <>
         <circle cx="10" cy="10" r="6" />
         <path d="M10 6.8V10l2.3 1.4" />
-      </>
-    ),
-    display: (
-      <>
-        <path d="M4 6h12" />
-        <path d="M4 10h12" />
-        <path d="M4 14h12" />
-        <path d="M7 4v4" />
-        <path d="M13 8v4" />
       </>
     ),
     filter: (
