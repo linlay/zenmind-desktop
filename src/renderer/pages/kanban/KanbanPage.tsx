@@ -2450,13 +2450,15 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  const openAssistantIssueChat = useCallback((issue: KanbanIssue) => {
-    const chatId = issue.chatId?.trim() ?? "";
+  const openAssistantIssueChat = useCallback((issue: KanbanIssue, requestedChatId?: string, requestedAgentKey?: string | null) => {
+    const chatId = requestedChatId?.trim() || issue.chatId?.trim() || "";
     if (!chatId) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noChat") });
       return null;
     }
-    const agentKey = resolveIssueAgentKey(issue, agents);
+    const agentKey = requestedAgentKey?.trim()
+      || agents.find((agent) => agent.latestChatId === chatId || getAssistantNavAgentRecentChats(agent).some((chat) => chat.chatId === chatId))?.agentKey
+      || resolveIssueAgentKey(issue, agents);
     if (!agentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noBoundAgent") });
       return null;
@@ -2865,7 +2867,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           issues={issues}
           projects={cloudProjects}
           cloudDetails={cloudDetails}
-          agents={agents.map((agent) => ({ agentKey: agent.agentKey, displayName: agent.displayName }))}
+          agents={agents.map((agent) => ({
+            agentKey: agent.agentKey,
+            displayName: agent.displayName,
+            chatIds: [agent.latestChatId, ...getAssistantNavAgentRecentChats(agent).map((chat) => chat.chatId)].filter((chatId): chatId is string => Boolean(chatId))
+          }))}
           locale={locale}
           hostTheme={hostTheme}
           t={t}

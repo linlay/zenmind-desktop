@@ -35,6 +35,7 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
 test("Kanban detail opens independently from create and preserves the cloud read-only boundary", () => {
   const page = read("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const detail = read("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
+  const styles = read("src", "renderer", "styles", "kanban.css");
   const rendererIndex = read("index.html");
   const brandConfig = read("scripts", "lib", "brand-config.mjs");
   const packageManifest = JSON.parse(read("package.json"));
@@ -84,8 +85,16 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.match(detail, /className="kanban-detail-window-actions"[\s\S]{0,700}kanban\.chat\.view[\s\S]{0,900}kanban\.detail\.editIssue[\s\S]{0,500}kanban-detail-close/);
-  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceId="agent-webclient-kanban-chat"/);
+  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-layout[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceId="agent-webclient-kanban-chat"/);
   assert.match(detail, /chatEmbedPath \? t\("kanban\.chat\.viewIssue"\) : t\("kanban\.chat\.view"\)/);
+  assert.match(detail, /disabled=\{!chatEmbedPath && !latestOpenableIssueChat\}/);
+  assert.match(detail, /return \[\.\.\.chatsByChatId\.values\(\)\]\.sort\(compareIssueChatTime\)/);
+  assert.match(detail, /const latestOpenableIssueChat = openableIssueChats\.at\(-1\)/);
+  assert.match(detail, /className="kanban-detail-chat-list"[\s\S]{0,1800}issueChatItems\.map[\s\S]{0,1200}onClick=\{\(\) => openChat\(chat\)\}/);
+  assert.match(detail, /chat\.local && chat\.state === "active" && Boolean\(chat\.agentKey\)/);
+  assert.match(styles, /\.kanban-detail-chat-layout\s*\{[\s\S]{0,260}grid-template-columns:\s*220px minmax\(0, 1fr\)/);
+  assert.match(styles, /\.kanban-detail-window-actions \.kanban-detail-secondary-button:disabled\s*\{\s*cursor:\s*not-allowed/);
+  assert.match(page, /onOpenChat=\{\(chatId, agentKey\) => openAssistantIssueChat\(detailIssue, chatId, agentKey\)\}/);
   assert.match(page, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
   assert.doesNotMatch(page, /setDetailIssueId\(null\);[\s\S]{0,100}navigate\(createAgentWebclientRoute\(\{ agentKey, chatId \}\)\)/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
@@ -126,7 +135,8 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   const styles = read("src", "renderer", "styles", "kanban.css");
   const enUS = read("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const content = detail.slice(detail.indexOf('<main className="kanban-detail-content">'), detail.indexOf("</main>"));
-  const rail = detail.slice(detail.indexOf('<aside className="kanban-detail-rail"'), detail.indexOf("</aside>"));
+  const railStart = detail.indexOf('<aside className="kanban-detail-rail"');
+  const rail = detail.slice(railStart, detail.indexOf("</aside>", railStart));
   const header = detail.slice(detail.indexOf('<header className="kanban-detail-header">'), detail.indexOf('<div className="kanban-detail-body">'));
   const basic = rail.slice(rail.indexOf('sectionId="kanban-detail-basic"'), rail.indexOf('sectionId="kanban-detail-people"'));
   const people = rail.slice(rail.indexOf('sectionId="kanban-detail-people"'), rail.indexOf('sectionId="kanban-detail-related"'));
@@ -163,6 +173,8 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.match(related, /kanban\.detail\.parentTitle[\s\S]*kanban\.detail\.subtasksTitle[\s\S]*kanban\.detail\.dependenciesTitle[\s\S]*kanban\.detail\.reviewsTitle[\s\S]*kanban\.detail\.runsTitle/);
   assert.match(related, /runs\.map[\s\S]*run\.resultMessage[\s\S]*run\.errorMessage/);
   assert.match(related, /run\.workerAgent \|\| "—"[\s\S]{0,100}run\.status \? <em/);
+  assert.match(related, /kanban-detail-run-footer[\s\S]*kanban\.detail\.runSpent[\s\S]*formatRunDuration\(run\.startedAt, run\.finishedAt, t\)[\s\S]*kanban\.detail\.runCompletedAt[\s\S]*formatDateTime\(run\.finishedAt, locale\)[\s\S]*viewChatButton/);
+  assert.doesNotMatch(related, /run\.runId|kanban\.detail\.runIdMissing|run\.stageId|run\.statusId/);
   assert.doesNotMatch(related, /run\.workerAgent \|\| agentLabel/);
   assert.doesNotMatch(related, /kanban\.detail\.activityTitle/);
   assert.match(enUS, /"kanban\.detail\.activityTitle": "Timeline"/);
