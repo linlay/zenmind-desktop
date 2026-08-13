@@ -3388,13 +3388,18 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(kanbanPage, /tone: "missing-due"/);
   assert.match(kanbanPage, /kanban\.card\.dueDateToday/);
   assert.match(kanbanPage, /kanban\.card\.dueDateOverdue/);
-  assert.match(kanbanPage, /if \(issue\.status === "completed"\)[\s\S]{0,240}issue\.updatedAt[\s\S]{0,160}kanban\.card\.completedAt/);
-  assert.match(kanbanPage, /issue\.updatedAt[\s\S]{0,160}kanban\.card\.updatedAt/);
+  assert.match(kanbanPage, /if \(issue\.status === "completed"\)[\s\S]{0,240}issue\.updatedAt[\s\S]{0,120}label: completedTime,[\s\S]{0,120}title: completedTime \? t\("kanban\.card\.completedAt"/);
+  assert.match(kanbanPage, /issue\.updatedAt[\s\S]{0,120}label: updatedTime,[\s\S]{0,120}title: updatedTime \? t\("kanban\.card\.updatedAt"/);
+  assert.doesNotMatch(kanbanPage, /label: completedTime \? t\("kanban\.card\.completedAt"/);
+  assert.doesNotMatch(kanbanPage, /label: updatedTime \? t\("kanban\.card\.updatedAt"/);
   assert.match(kanbanPage, /issue\.dueRisk[\s\S]{0,220}DueRiskAlarmIcon/);
   assert.match(kanbanStyles, /@keyframes issue-card-due-risk-ring/);
   assert.match(kanbanStyles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.issue-card-due-risk \{ animation: none; \}/);
 
   assert.match(kanbanPage, /className="issue-card-footer-row is-summary"[\s\S]{0,220}\{people\}[\s\S]{0,220}issue-card-footer-signal/);
+  assert.match(kanbanStyles, /\.issue-card-footer-row\.is-summary \.issue-card-footer-signal\s*\{[\s\S]{0,160}margin-left:\s*auto;/);
+  assert.match(kanbanStyles, /\.issue-card-footer-row\.is-summary \.issue-card-signal\s*\{[\s\S]{0,160}justify-content:\s*flex-end;/);
+  assert.doesNotMatch(kanbanStyles, /\.issue-card-footer-signal\s*\{[^}]*(?:^|[;\s])width:\s*100%/m);
   assert.match(kanbanPage, /runState === "cancelled"[\s\S]{0,220}runState === "failed"[\s\S]{0,260}awaitingConfirmation/);
   assert.doesNotMatch(kanbanPage, /kanban\.run\.running"[\s\S]{0,120}icon: "running"/);
   assert.doesNotMatch(kanbanPage, /issue-card-actions|issue-card-action/);

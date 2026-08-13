@@ -130,6 +130,7 @@ type IssueCardSignalIconName = "history" | "waiting" | "failed" | "cancelled";
 
 type IssueCardSignalPresentation = {
   label: string;
+  title: string;
   tone: IssueCardSignalTone;
   icon: IssueCardSignalIconName;
 };
@@ -1132,14 +1133,16 @@ function getIssueCardSignalPresentation(
   if (issue.status === "completed") {
     const completedTime = formatIssueUpdatedTime(issue.updatedAt, options.now);
     return {
-      label: completedTime ? t("kanban.card.completedAt", { time: completedTime }) : "",
+      label: completedTime,
+      title: completedTime ? t("kanban.card.completedAt", { time: completedTime }) : "",
       tone: "succeeded",
       icon: "history"
     };
   }
   const updatedTime = formatIssueUpdatedTime(issue.updatedAt, options.now);
   return {
-    label: updatedTime ? t("kanban.card.updatedAt", { time: updatedTime }) : "",
+    label: updatedTime,
+    title: updatedTime ? t("kanban.card.updatedAt", { time: updatedTime }) : "",
     tone: issue.status,
     icon: "history"
   };
@@ -1151,13 +1154,16 @@ function getIssueCardOperationalStatePresentation(
   t: TranslateFunction
 ): IssueCardSignalPresentation | null {
   if (issue.runState === "cancelled") {
-    return { label: t("kanban.run.cancelled"), tone: "cancelled", icon: "cancelled" };
+    const label = t("kanban.run.cancelled");
+    return { label, title: label, tone: "cancelled", icon: "cancelled" };
   }
   if (issue.runState === "failed") {
-    return { label: t("kanban.run.failed"), tone: "failed", icon: "failed" };
+    const label = t("kanban.run.failed");
+    return { label, title: label, tone: "failed", icon: "failed" };
   }
   if (awaitingConfirmation && (issue.status === "in_progress" || issue.status === "in_review")) {
-    return { label: t("kanban.run.awaitingApproval"), tone: "awaiting", icon: "waiting" };
+    const label = t("kanban.run.awaitingApproval");
+    return { label, title: label, tone: "awaiting", icon: "waiting" };
   }
   return null;
 }
@@ -3487,7 +3493,7 @@ const IssueCardContent = memo(function IssueCardContent({
     <IssueCardPeople people={peopleLine.people} title={peopleLine.title} t={t} />
   ) : <span className="issue-card-people-spacer" aria-hidden="true" />;
   const timingSignal = cardSignal.label ? (
-    <span className={`issue-card-signal is-${cardSignal.tone}`} title={cardSignal.label} aria-label={cardSignal.label}>
+    <span className={`issue-card-signal is-${cardSignal.tone}`} title={cardSignal.title} aria-label={cardSignal.title}>
       {issue.dueRisk ? <span className="issue-card-due-risk" role="img" aria-label={t("kanban.card.dueRisk", { value: issue.dueRisk })} title={t("kanban.card.dueRisk", { value: issue.dueRisk })}><DueRiskAlarmIcon /></span> : null}
       <IssueCardSignalIcon kind={cardSignal.icon} />
       <span>{cardSignal.label}</span>
