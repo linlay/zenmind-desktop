@@ -3375,7 +3375,7 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(kanbanStyles, /\.issue-card-context-meta\s*\{[\s\S]{0,260}margin-left:\s*auto/);
   assert.match(kanbanStyles, /\.issue-card-version\s*\{[\s\S]{0,500}text-overflow:\s*ellipsis/);
 
-  assert.match(kanbanPage, /const showPriorityImportance = display\.priority && Boolean\(issue\.priority \|\| severity\)/);
+  assert.match(kanbanPage, /const showPriorityImportance = Boolean\(issue\.priority \|\| severity\)/);
   assert.match(kanbanPage, /if \(!priority && !severity\) return null/);
   assert.match(kanbanPage, /is-severity-\$\{severity\}/);
   assert.match(kanbanPage, /<span>\{priorityLabel \|\| importanceLabel\}<\/span>/);
@@ -3466,12 +3466,14 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(kanbanPage, /const \[query, setQuery\] = useState\(initialFilterPreferences\.query\)/);
   assert.match(kanbanPage, /const \[selectedProjectIds, setSelectedProjectIds\] = useState\(initialFilterPreferences\.selectedProjectIds\)/);
   assert.match(kanbanPage, /const \[includeLocalIssues, setIncludeLocalIssues\] = useState\(initialFilterPreferences\.includeLocalIssues\)/);
+  assert.match(kanbanPage, /showBacklog: typeof stored\.showBacklog === "boolean" \? stored\.showBacklog : defaults\.showBacklog/);
+  assert.match(kanbanPage, /const \[showBacklog, setShowBacklog\] = useState\(initialFilterPreferences\.showBacklog\)/);
   assert.match(kanbanPage, /const \[issueTypeFilters, setIssueTypeFilters\] = useState\(initialFilterPreferences\.issueTypeFilters\)/);
   assert.match(kanbanPage, /const \[priorityFilters, setPriorityFilters\] = useState\(initialFilterPreferences\.priorityFilters\)/);
   assert.match(kanbanPage, /const \[severityFilters, setSeverityFilters\] = useState\(initialFilterPreferences\.severityFilters\)/);
   assert.match(kanbanPage, /const \[automationFilter, setAutomationFilter\] = useState\(initialFilterPreferences\.automationFilter\)/);
   assert.match(kanbanPage, /const \[assigneeFilters, setAssigneeFilters\] = useState\(initialFilterPreferences\.assigneeFilters\)/);
-  assert.match(kanbanPage, /const preferences: KanbanFilterPreferences = \{\s*query,\s*selectedProjectIds,\s*includeLocalIssues,\s*issueTypeFilters,\s*priorityFilters,\s*severityFilters,\s*automationFilter,\s*assigneeFilters\s*\}/);
+  assert.match(kanbanPage, /const preferences: KanbanFilterPreferences = \{\s*query,\s*selectedProjectIds,\s*includeLocalIssues,\s*showBacklog,\s*issueTypeFilters,\s*priorityFilters,\s*severityFilters,\s*automationFilter,\s*assigneeFilters\s*\}/);
   assert.match(kanbanPage, /window\.localStorage\.setItem\(KANBAN_FILTER_PREFERENCES_STORAGE_KEY, JSON\.stringify\(preferences\)\)/);
   assert.match(kanbanPage, /if \(!projectCatalogLoaded\) \{\s*return;\s*\}[\s\S]{0,180}setSelectedProjectIds\(\(current\) => current\.filter\(\(projectId\) => projectIds\.has\(projectId\)\)\)/);
   assert.match(kanbanPage, /const \[currentUserId, setCurrentUserId\] = useState\(""\)/);
@@ -3487,6 +3489,13 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(enUS, /"kanban\.searchFilter\.assigneeOthers": "Others"/);
   assert.match(enUS, /"kanban\.searchFilter\.assigneeSelf": "Me"/);
   assert.match(enUS, /"kanban\.searchFilter\.assigneeUnassigned": "Unassigned"/);
+  assert.match(kanbanPage, /checked=\{showBacklog\}[\s\S]{0,180}setShowBacklog\(event\.target\.checked\)/);
+  assert.match(kanbanPage, /VISIBLE_KANBAN_STATUSES\.filter\(\(status\) => showBacklog \|\| status !== "backlog"\)/);
+  assert.match(kanbanStyles, /\.kanban-columns\.is-backlog-hidden\s*\{[\s\S]{0,500}\) \/ 4/);
+  assert.match(zhCN, /"kanban\.display\.columns": "显示列"/);
+  assert.match(zhCN, /"kanban\.display\.backlog": "待排期"/);
+  assert.match(enUS, /"kanban\.display\.columns": "Columns"/);
+  assert.match(enUS, /"kanban\.display\.backlog": "Backlog"/);
 });
 
 test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
@@ -3856,7 +3865,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-in_review\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-completed\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(kanbanPage, /backlogExpanded/);
-  assert.match(kanbanPage, /className="kanban-columns"/);
+  assert.match(kanbanPage, /className=\{`kanban-columns \$\{showBacklog \? "" : "is-backlog-hidden"\}`\}/);
   assert.doesNotMatch(kanbanPage, /onSelectColumn/);
   assert.doesNotMatch(globalStyles, /--kanban-columns-total-width/);
   assert.doesNotMatch(globalStyles, /--kanban-column-fold-offset/);

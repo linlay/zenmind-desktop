@@ -118,10 +118,6 @@ type IssueFormState = {
   syncToCloud: boolean;
 };
 
-type DisplayState = {
-  priority: boolean;
-};
-
 type KanbanIssueOriginPresentation = {
   projectLabel: string;
   title: string;
@@ -134,6 +130,7 @@ type KanbanFilterPreferences = {
   query: string;
   selectedProjectIds: string[];
   includeLocalIssues: boolean;
+  showBacklog: boolean;
   issueTypeFilters: string[];
   priorityFilters: KanbanPriorityFilter[];
   severityFilters: KanbanSeverityFilter[];
@@ -329,15 +326,12 @@ const emptyForm: IssueFormState = {
   syncToCloud: false
 };
 
-const defaultDisplayState: DisplayState = {
-  priority: true
-};
-
 function createDefaultKanbanFilterPreferences(): KanbanFilterPreferences {
   return {
     query: "",
     selectedProjectIds: [],
     includeLocalIssues: false,
+    showBacklog: true,
     issueTypeFilters: [],
     priorityFilters: [],
     severityFilters: [],
@@ -406,6 +400,7 @@ function readKanbanFilterPreferences(): KanbanFilterPreferences {
       query: typeof stored.query === "string" ? stored.query : defaults.query,
       selectedProjectIds: normalizeStoredStringArray(stored.selectedProjectIds),
       includeLocalIssues: typeof stored.includeLocalIssues === "boolean" ? stored.includeLocalIssues : defaults.includeLocalIssues,
+      showBacklog: typeof stored.showBacklog === "boolean" ? stored.showBacklog : defaults.showBacklog,
       issueTypeFilters: normalizeStoredStringArray(stored.issueTypeFilters),
       priorityFilters: normalizeStoredFilterValues(stored.priorityFilters, [...KANBAN_PRIORITIES, "unset"]),
       severityFilters: normalizeStoredFilterValues(stored.severityFilters, [...KANBAN_SEVERITIES, "unset"]),
@@ -1641,7 +1636,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [currentUserId, setCurrentUserId] = useState("");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenuKind>(null);
   const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
-  const [display, setDisplay] = useState<DisplayState>(defaultDisplayState);
+  const [showBacklog, setShowBacklog] = useState(initialFilterPreferences.showBacklog);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [detailIssueId, setDetailIssueId] = useState<string | null>(null);
   const [detailInitialEditStatus, setDetailInitialEditStatus] = useState<KanbanStatus | null>(null);
@@ -1782,6 +1777,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         query,
         selectedProjectIds,
         includeLocalIssues,
+        showBacklog,
         issueTypeFilters,
         priorityFilters,
         severityFilters,
@@ -1792,7 +1788,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     } catch {
       // Ignore localStorage failures in restricted renderer contexts.
     }
-  }, [assigneeFilters, automationFilter, includeLocalIssues, issueTypeFilters, priorityFilters, query, selectedProjectIds, severityFilters]);
+  }, [assigneeFilters, automationFilter, includeLocalIssues, issueTypeFilters, priorityFilters, query, selectedProjectIds, severityFilters, showBacklog]);
 
   useEffect(() => {
     const kanbanApi = readKanbanApi();
@@ -2786,22 +2782,15 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         <div className={`kanban-menu-panel is-${menu}`}>
           {menu === "display" ? (
             <>
-              <strong>{t("kanban.display.cardFields")}</strong>
-              {Object.entries({
-                priority: t("kanban.display.priority")
-              } satisfies Record<keyof DisplayState, string>).map(([key, label]) => (
-                <label key={key} className="kanban-check-row">
-                  <input
-                    type="checkbox"
-                    checked={display[key as keyof DisplayState]}
-                    onChange={() => {
-                      const displayKey = key as keyof DisplayState;
-                      setDisplay((current) => ({ ...current, [displayKey]: !current[displayKey] }));
-                    }}
-                  />
-                  <span>{label}</span>
-                </label>
-              ))}
+              <strong>{t("kanban.display.columns")}</strong>
+              <label className="kanban-check-row">
+                <input
+                  type="checkbox"
+                  checked={showBacklog}
+                  onChange={(event) => setShowBacklog(event.target.checked)}
+                />
+                <span>{t("kanban.display.backlog")}</span>
+              </label>
             </>
           ) : (
             <div className="kanban-cloud-form">
@@ -2852,10 +2841,10 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         onDragEnd={handleDragEnd}
       >
         <div
-          className="kanban-columns"
+          className={`kanban-columns ${showBacklog ? "" : "is-backlog-hidden"}`}
           aria-busy={loading}
         >
-          {VISIBLE_KANBAN_STATUSES.map((status) => {
+          {VISIBLE_KANBAN_STATUSES.filter((status) => showBacklog || status !== "backlog").map((status) => {
             const columnIssues = issuesByStatus[status] ?? [];
             return (
               <KanbanColumn
@@ -2865,7 +2854,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 agents={agents}
                 cloudDetails={cloudDetails}
                 projectsById={kanbanProjectsById}
-                display={display}
                 locale={locale}
                 now={new Date(kanbanCountdownNow)}
                 t={t}
@@ -2894,7 +2882,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   agents={agents}
                   cloudDetails={cloudDetails}
                   projectsById={kanbanProjectsById}
-                  display={display}
                   locale={locale}
                   now={new Date(kanbanCountdownNow)}
                   t={t}
@@ -3403,7 +3390,6 @@ const KanbanColumn = memo(function KanbanColumn({
   agents,
   cloudDetails,
   projectsById,
-  display,
   locale,
   now,
   t,
@@ -3423,7 +3409,6 @@ const KanbanColumn = memo(function KanbanColumn({
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
   projectsById: Map<string, KanbanProject>;
-  display: DisplayState;
   locale: SupportedLocale;
   now: Date;
   t: TranslateFunction;
@@ -3484,7 +3469,6 @@ const KanbanColumn = memo(function KanbanColumn({
               agents={agents}
               cloudDetails={cloudDetails}
               projectsById={projectsById}
-              display={display}
               locale={locale}
               now={now}
               t={t}
@@ -3517,7 +3501,6 @@ const IssueCard = memo(function IssueCard({
   agents,
   cloudDetails,
   projectsById,
-  display,
   locale,
   now,
   t,
@@ -3536,7 +3519,6 @@ const IssueCard = memo(function IssueCard({
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
   projectsById: Map<string, KanbanProject>;
-  display: DisplayState;
   locale: SupportedLocale;
   now: Date;
   t: TranslateFunction;
@@ -3582,7 +3564,6 @@ const IssueCard = memo(function IssueCard({
         agents={agents}
         cloudDetails={cloudDetails}
         projectsById={projectsById}
-        display={display}
         locale={locale}
         now={now}
         t={t}
@@ -3606,7 +3587,6 @@ const IssueCardContent = memo(function IssueCardContent({
   agents,
   cloudDetails,
   projectsById,
-  display,
   locale,
   now,
   t,
@@ -3625,7 +3605,6 @@ const IssueCardContent = memo(function IssueCardContent({
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
   projectsById: Map<string, KanbanProject>;
-  display: DisplayState;
   locale: SupportedLocale;
   now: Date;
   t: TranslateFunction;
@@ -3657,7 +3636,7 @@ const IssueCardContent = memo(function IssueCardContent({
   const canOpenIssueDetails = interactive;
   const queueRank = issue.status === "todo" ? formatKanbanSortNumber(sortIndex, issue.position) : "";
   const showDescription = issue.status === "backlog" && Boolean(descriptionPreview);
-  const showPriorityImportance = display.priority && Boolean(issue.priority || severity);
+  const showPriorityImportance = Boolean(issue.priority || severity);
   const priorityImportance = showPriorityImportance ? (
     <IssueCardPriorityImportance priority={issue.priority} severity={severity} t={t} />
   ) : null;

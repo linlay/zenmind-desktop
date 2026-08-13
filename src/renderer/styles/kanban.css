@@ -921,6 +921,21 @@
   scrollbar-gutter: stable;
 }
 
+.kanban-columns.is-backlog-hidden {
+  --kanban-content-min-width: 864px;
+  --kanban-column-min-width: calc(
+    (
+        var(--kanban-content-min-width) -
+          (3 * var(--kanban-column-gap))
+      ) /
+      4
+  );
+  --kanban-column-width: max(
+    calc((100% - (3 * var(--kanban-column-gap))) / 4),
+    var(--kanban-column-min-width)
+  );
+}
+
 .kanban-column {
   position: relative;
   flex: 1 0 var(--kanban-column-width);
