@@ -155,6 +155,40 @@ export function parseChatTranscriptExport(value: unknown): ChatTranscriptExportV
   };
 }
 
+export function parseChatTranscriptJSONL(value: string): ChatTranscriptExportV1 | null {
+  const lines = value.split(/\r?\n/u);
+  if (lines.at(-1) === "") {
+    lines.pop();
+  }
+  if (lines.length < 2 || lines.some((line) => !line.trim())) {
+    return null;
+  }
+  try {
+    const records = lines.map((line) => JSON.parse(line) as unknown);
+    const metadata = records[0];
+    if (!isRecord(metadata) || metadata.type !== "metadata") {
+      return null;
+    }
+    const turns: unknown[] = [];
+    for (const record of records.slice(1)) {
+      if (!isRecord(record) || record.type !== "turn") {
+        return null;
+      }
+      turns.push(record);
+    }
+    return parseChatTranscriptExport({
+      exportVersion: metadata.exportVersion,
+      kind: metadata.kind,
+      title: metadata.title,
+      createdAt: metadata.createdAt,
+      updatedAt: metadata.updatedAt,
+      turns
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function buildConversationShareSnapshot(transcript: ChatTranscriptExportV1): SharedConversationSnapshot {
   const entries: SharedConversationEntry[] = [];
   for (const turn of transcript.turns) {

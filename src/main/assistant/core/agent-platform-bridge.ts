@@ -52,7 +52,7 @@ import {
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
 import {
-  parseChatTranscriptExport,
+  parseChatTranscriptJSONL,
   type AgentPlatformChatTranscriptExportResult
 } from "./conversation-share-types";
 
@@ -1294,11 +1294,11 @@ export class AgentPlatformAssistantBridge {
     }
     const response = await this.platformFetch(
       availability.baseUrl,
-      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=transcript-json&includeReasoning=true`,
+      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=raw`,
       {
         method: "GET",
         headers: {
-          Accept: "application/json",
+          Accept: "application/x-ndjson",
           Authorization: `Bearer ${availability.token}`
         }
       }
@@ -1306,14 +1306,12 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
-    if (!contentType.startsWith("application/json")) {
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    if (contentType !== "application/x-ndjson") {
       return { ok: false, message: t("assistant.chatSharePlatformUnsupported") };
     }
     try {
-      const transcript = parseChatTranscriptExport(
-        unwrapApiResponse<unknown>(await response.json())
-      );
+      const transcript = parseChatTranscriptJSONL(await response.text());
       if (!transcript) {
         return { ok: false, message: t("assistant.chatShareInvalidTranscript") };
       }

@@ -12,6 +12,7 @@ const {
 const {
   buildConversationShareSnapshot,
   parseChatTranscriptExport,
+  parseChatTranscriptJSONL,
   validateConversationShareSnapshot
 } = await import("../dist-electron/main/assistant/core/conversation-share-types.js");
 
@@ -89,6 +90,92 @@ test("Desktop parses extensible transcripts and builds a strict share snapshot",
   assert.deepEqual(buildConversationShareSnapshot(parsed), snapshot);
   assert.equal(JSON.stringify(buildConversationShareSnapshot(parsed)).includes("must-not-pass-through"), false);
   assert.equal(validateConversationShareSnapshot(snapshot), null);
+});
+
+test("Desktop parses extensible JSONL transcript records", () => {
+  const jsonl = [
+    JSON.stringify({
+      type: "metadata",
+      exportVersion: 1,
+      kind: "chat-transcript",
+      title: "Release plan",
+      createdAt: 1700000000000,
+      updatedAt: 1700000001000,
+      platformExtension: true
+    }),
+    JSON.stringify({
+      type: "turn",
+      startedAt: 1700000000000,
+      completedAt: 1700000001000,
+      futureField: true,
+      items: [
+        { ...transcript.turns[0].items[0], runId: "must-not-pass-through" },
+        ...transcript.turns[0].items.slice(1),
+        { kind: "future-item", secret: "must-not-pass-through" }
+      ]
+    })
+  ].join("\n") + "\n";
+  const parsed = parseChatTranscriptJSONL(jsonl);
+  assert.ok(parsed);
+  assert.deepEqual(buildConversationShareSnapshot(parsed), snapshot);
+  assert.equal(JSON.stringify(parsed).includes("must-not-pass-through"), false);
+});
+
+test("Desktop preserves JSONL turn order and derives each reasoning duration", () => {
+  const jsonl = [
+    JSON.stringify({
+      type: "metadata",
+      exportVersion: 1,
+      kind: "chat-transcript",
+      title: "Ordered turns",
+      createdAt: 1700000000000,
+      updatedAt: 1700000005000
+    }),
+    JSON.stringify({
+      type: "turn",
+      startedAt: 1700000000000,
+      completedAt: 1700000001000,
+      items: [{ kind: "assistant-reasoning", content: "first", createdAt: 1700000000500 }]
+    }),
+    JSON.stringify({
+      type: "turn",
+      startedAt: 1700000002000,
+      completedAt: 1700000005000,
+      items: [{ kind: "assistant-reasoning", content: "second", createdAt: 1700000003000 }]
+    })
+  ].join("\n");
+
+  const parsed = parseChatTranscriptJSONL(jsonl);
+  assert.ok(parsed);
+  assert.deepEqual(buildConversationShareSnapshot(parsed).entries, [
+    { type: "reasoning", content: "first", durationMs: 1000, createdAt: 1700000000500 },
+    { type: "reasoning", content: "second", durationMs: 3000, createdAt: 1700000003000 }
+  ]);
+});
+
+test("Desktop rejects invalid JSONL transcript record order and content", () => {
+  const metadataRecord = {
+    type: "metadata",
+    exportVersion: 1,
+    kind: "chat-transcript",
+    title: "Release plan",
+    createdAt: 1700000000000,
+    updatedAt: 1700000001000
+  };
+  const metadata = JSON.stringify(metadataRecord);
+  const turn = JSON.stringify({ type: "turn", ...transcript.turns[0] });
+  assert.equal(parseChatTranscriptJSONL(`${turn}\n${metadata}\n`), null);
+  assert.equal(parseChatTranscriptJSONL(`${metadata}\n${metadata}\n`), null);
+  assert.equal(parseChatTranscriptJSONL(`${metadata}\n{"type":"future-record"}\n`), null);
+  assert.equal(parseChatTranscriptJSONL(`${metadata}\nnot-json\n`), null);
+  assert.equal(parseChatTranscriptJSONL(`${metadata}\n\n${turn}\n`), null);
+  assert.equal(parseChatTranscriptJSONL(`${metadata}\n`), null);
+  assert.equal(parseChatTranscriptJSONL(`${JSON.stringify({ ...metadataRecord, updatedAt: 1 })}\n${turn}\n`), null);
+  assert.equal(parseChatTranscriptJSONL(`${metadata}\n${JSON.stringify({
+    type: "turn",
+    ...transcript.turns[0],
+    completedAt: transcript.turns[0].startedAt - 1
+  })}\n`), null);
 });
 
 test("Desktop rejects invalid known transcript fields and unreliable completion times", () => {
