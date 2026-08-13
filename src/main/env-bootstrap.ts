@@ -129,16 +129,53 @@ export function runtimeRootExists(app: AppPathReader, platform: NodeJS.Platform 
   }
 }
 
-export function assertNoRemovedSkillsMarketRuntimeDir(root: string) {
+function hasBusinessDataInRemovedSkillsMarketDir(dirPath: string): boolean {
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    if (entry.name === ".DS_Store" && entry.isFile()) {
+      continue;
+    }
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      if (hasBusinessDataInRemovedSkillsMarketDir(path.join(dirPath, entry.name))) {
+        return true;
+      }
+      continue;
+    }
+    return true;
+  }
+  return false;
+}
+
+function removeEmptyRemovedSkillsMarketDir(dirPath: string) {
+  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
+    const entryPath = path.join(dirPath, entry.name);
+    if (entry.name === ".DS_Store" && entry.isFile()) {
+      fs.unlinkSync(entryPath);
+      continue;
+    }
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      removeEmptyRemovedSkillsMarketDir(entryPath);
+      continue;
+    }
+    throw new Error(t("envBootstrap.removedSkillsMarketRuntime", { path: dirPath }));
+  }
+  fs.rmdirSync(dirPath);
+}
+
+export function prepareRemovedSkillsMarketRuntimeDir(root: string) {
   const removedPath = path.join(root, REMOVED_SKILLS_MARKET_DIR_NAME);
-  if (fs.existsSync(removedPath)) {
+  if (!fs.existsSync(removedPath)) {
+    return;
+  }
+  const stat = fs.lstatSync(removedPath);
+  if (!stat.isDirectory() || stat.isSymbolicLink() || hasBusinessDataInRemovedSkillsMarketDir(removedPath)) {
     throw new Error(t("envBootstrap.removedSkillsMarketRuntime", { path: removedPath }));
   }
+  removeEmptyRemovedSkillsMarketDir(removedPath);
 }
 
 export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   const root = resolveRuntimeRoot(app, platform);
-  assertNoRemovedSkillsMarketRuntimeDir(root);
+  prepareRemovedSkillsMarketRuntimeDir(root);
   if (!runtimeRootExists(app, platform)) {
     return false;
   }
@@ -160,7 +197,7 @@ export function runtimeEnvNeedsBundledSeedRefresh(app: AppPathReader, platform: 
     return false;
   }
   const root = resolveRuntimeRoot(app, platform);
-  assertNoRemovedSkillsMarketRuntimeDir(root);
+  prepareRemovedSkillsMarketRuntimeDir(root);
   if (!runtimeRootExists(app, platform)) {
     return false;
   }
@@ -671,7 +708,7 @@ export async function importEnvZipToRuntime(
   }
 
   const targetRoot = resolveRuntimeRoot(app, platform);
-  assertNoRemovedSkillsMarketRuntimeDir(targetRoot);
+  prepareRemovedSkillsMarketRuntimeDir(targetRoot);
 
   const zipBuffer = await fs.promises.readFile(zipPath);
   const zip = await JSZip.loadAsync(zipBuffer);

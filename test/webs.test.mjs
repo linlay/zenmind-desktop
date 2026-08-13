@@ -276,6 +276,29 @@ test("manifest v2 defaults Desktop Bridge v1 and rejects legacy capability array
   assert.throws(() => parseWebappManifest(legacy));
 });
 
+test("installed WebApps with legacy desktopBridge capabilities stay rejected without rewriting webapp.json", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-installed-legacy-webapp-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const appDir = writeWebapp(webappsRoot(homePath), "installed-legacy", {
+    desktopBridge: {
+      version: 1,
+      capabilities: { "native.clipboard.write": {} }
+    }
+  });
+  const manifestPath = path.join(appDir, "webapp.json");
+  const originalManifest = fs.readFileSync(manifestPath, "utf8");
+  const originalWarn = console.warn;
+  t.after(() => {
+    console.warn = originalWarn;
+  });
+  console.warn = () => {};
+
+  assert.deepEqual(readWebappItems(app), []);
+  assert.equal(fs.readFileSync(manifestPath, "utf8"), originalManifest);
+});
+
 test("WebApp SDK hides the internal config endpoint and sends only the chat message", async (t) => {
   const originalFetch = globalThis.fetch;
   const calls = [];
@@ -652,6 +675,36 @@ test("Tooling and Desktop installer share path and native artifact policy", asyn
       error.stage === "package" &&
       error.code === "native_artifact_forbidden"
   );
+
+  const legacyCapabilityProjectRoot = writeWebapp(root, "tooling-legacy-capability", {
+    desktopBridge: {
+      version: 1,
+      capabilities: { "native.clipboard.write": {} }
+    }
+  });
+  const legacyCapabilityTooling = spawnSync(process.execPath, [
+    path.join(process.cwd(), "scripts", "webapp-tooling.mjs"),
+    "package",
+    "validate",
+    "--project",
+    legacyCapabilityProjectRoot
+  ], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(legacyCapabilityTooling.status, 1);
+  assert.equal(JSON.parse(legacyCapabilityTooling.stdout).code, "manifest_invalid");
+
+  const legacyCapabilityArchive = await writeArchive(root, "installer-legacy-capability", {
+    desktopBridge: {
+      version: 1,
+      capabilities: ["assistant.chat"]
+    }
+  });
+  await assert.rejects(
+    installWebsiteAppArchiveFromPath(app, legacyCapabilityArchive),
+    (error) => error instanceof WebappInstallError &&
+      error.stage === "manifest" &&
+      error.code === "invalid_manifest"
+  );
+  assert.equal(readWebappItems(app).some((item) => item.id === webappId("installer-legacy-capability")), false);
 });
 
 test("WebApp import diagnostics use structured errors instead of localized message text", () => {
