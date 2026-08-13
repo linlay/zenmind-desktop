@@ -1362,8 +1362,6 @@ export class KanbanRuntime {
     const commandReceipt = getDesktopKanbanCommandReceiptByRunId(this.options.app, currentUser, runId);
     const matchingCloudIssue = issues.find((issue) =>
       issueSyncMode(issue) === "cloud" && (
-        issue.runId === runId ||
-        issue.activeRunId === runId ||
         (manualReceipt && getRemoteIssueId(issue) === manualReceipt.issueId) ||
         (commandReceipt && getRemoteIssueId(issue) === commandReceipt.issueId)
       )
@@ -1954,8 +1952,6 @@ export class KanbanRuntime {
     const commandReceipt = getDesktopKanbanCommandReceiptByRunId(this.options.app, currentUser, runId);
     const matchingCloudIssue = listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues.find((issue) =>
       issueSyncMode(issue) === "cloud" && (
-        issue.runId === runId ||
-        issue.activeRunId === runId ||
         (manualReceipt && getRemoteIssueId(issue) === manualReceipt.issueId) ||
         (commandReceipt && getRemoteIssueId(issue) === commandReceipt.issueId)
       )

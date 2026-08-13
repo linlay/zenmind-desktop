@@ -289,6 +289,17 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
       runId,
       runState: "running",
     });
+    const beforeStartedPush = changedCount;
+    runtime.sendNavigationPushEvent({
+      frame: "push",
+      type: "run.started",
+      chatId: "shared-chat",
+      runId,
+      status: null,
+      finishReason: null,
+      startedAt: 1_783_000_000_000,
+    });
+    assert.equal(changedCount, beforeStartedPush + 1);
 
     runtime.sendNavigationPushEvent({
       frame: "push",
@@ -297,7 +308,7 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
       runId,
       status: "completed",
       finishReason: "complete",
-      finishedAt: 1_783_000_000_000,
+      finishedAt: 1_783_000_000_001,
     });
     runtime.sendNavigationPushEvent({
       frame: "push",
@@ -306,7 +317,7 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
       runId: `old-${runId}`,
       status: "completed",
       finishReason: "complete",
-      finishedAt: 1_783_000_000_001,
+      finishedAt: 1_783_000_000_002,
     });
     runtime.sendNavigationPushEvent({
       frame: "push",
@@ -315,7 +326,7 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
       runId,
       status: item.status,
       finishReason: item.status === "completed" ? "error" : null,
-      finishedAt: 1_783_000_000_002,
+      finishedAt: 1_783_000_000_003,
     });
     let issue = runtime.listIssues().issues.find((candidate) => candidate.id === created.issue.id);
     assert.equal(issue.status, "in_progress");
@@ -330,7 +341,7 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
       runId,
       status: item.status,
       finishReason: item.finishReason,
-      finishedAt: 1_783_000_000_003,
+      finishedAt: 1_783_000_000_004,
     });
     issue = runtime.listIssues().issues.find((candidate) => candidate.id === created.issue.id);
     assert.equal(issue.status, item.expectedStatus);
@@ -345,7 +356,7 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
       runId,
       status: item.status,
       finishReason: item.finishReason,
-      finishedAt: 1_783_000_000_003,
+      finishedAt: 1_783_000_000_004,
     });
     assert.equal(changedCount, beforeAcceptedPush + 1);
   }
@@ -419,7 +430,7 @@ test("Kanban navigation push queues Cloud Issue terminals without changing the c
 function respondOk(socket, request, payload) {
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: request.v,
       frame: "response",
       id: request.id,
       type: request.type,
@@ -436,7 +447,7 @@ async function respondNextRequest(socket, type, payload, fromIndex = 0, timeoutM
   return request;
 }
 
-test("Kanban runtime atomically claims and starts a normal Chat run through v3.2", async (t) => {
+test("Kanban runtime atomically claims and starts a normal Chat run through v4", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -484,11 +495,11 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v3.2
   socket.onopen();
   await waitFor(() => socket.sent.some((frame) => frame.type === "sync.hello"), "sync.hello", 3000);
   const hello = socket.sent.find((frame) => frame.type === "sync.hello");
-  assert.equal(hello.payload.contractVersion, "3.2");
+  assert.equal(hello.payload.contractVersion, "4.0");
   respondOk(socket, hello, {
     ok: true,
-    contractVersion: "3.2",
-    capabilities: ["issue.claim", "run.event.append.desktop_manual"],
+    contractVersion: "4.0",
+    capabilities: ["issue.claim", "issue.run.prepare", "run.event.append"],
     cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 12, cacheSchemaVersion: 2 },
     links: []
   });
@@ -532,28 +543,34 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v3.2
 
   const claimedIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === cloudIssue.id);
   const runPromise = runtime.runIssue({ issueId: claimedIssue.id, agentKey: "codeAssistant" });
+  await waitFor(() => socket.sent.some((frame) => frame.type === "issue.run.prepare"), "issue.run.prepare", 3000);
+  const prepared = socket.sent.find((frame) => frame.type === "issue.run.prepare");
+  respondOk(socket, prepared, { ok: true, issueRun: { id: "issue-run-manual-1" } });
   await waitFor(() => socket.sent.some((frame) => frame.type === "run.event.append"), "run.event.append", 3000);
   const started = socket.sent.find((frame) => frame.type === "run.event.append");
   assert.equal(started.payload.eventType, "run.started");
   assert.equal(started.payload.payload.source, "desktop_manual");
   assert.equal(started.payload.payload.agentKey, "codeAssistant");
   assert.equal(starts.length, 1);
-  assert.equal(starts[0].runId, started.payload.runId);
+  assert.equal(starts[0].runId, started.payload.externalRunId);
   assert.equal(starts[0].chatId, started.payload.chatId);
-  assert.equal(starts[0].requestId, started.payload.runId);
+  assert.equal(starts[0].requestId, started.payload.externalRunId);
   respondOk(socket, started, { ok: true, revision: 14 });
   const runResult = await runPromise;
   assert.equal(runResult.ok, true);
-  assert.equal(runResult.runId, started.payload.runId);
+  assert.equal(runResult.runId, started.payload.externalRunId);
   assert.deepEqual(stopped, []);
 
   const conflictPromise = runtime.runIssue({ issueId: claimedIssue.id, agentKey: "codeAssistant" });
+  await waitFor(() => socket.sent.filter((frame) => frame.type === "issue.run.prepare").length === 2, "conflicting issue.run.prepare", 3000);
+  const conflictPrepared = socket.sent.filter((frame) => frame.type === "issue.run.prepare")[1];
+  respondOk(socket, conflictPrepared, { ok: true, issueRun: { id: "issue-run-manual-2" } });
   await waitFor(() => socket.sent.filter((frame) => frame.type === "run.event.append").length === 2, "conflicting run.event.append", 3000);
   const conflictStarted = socket.sent.filter((frame) => frame.type === "run.event.append")[1];
   respondOk(socket, conflictStarted, { ok: false, message: "another Desktop already started this issue" });
   const conflictResult = await conflictPromise;
   assert.equal(conflictResult.ok, false);
-  assert.deepEqual(stopped, [conflictStarted.payload.runId]);
+  assert.deepEqual(stopped, [conflictStarted.payload.externalRunId]);
 
   runtime.stop();
 });

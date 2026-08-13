@@ -289,6 +289,17 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     Array.from({ length: 20 }, (_, index) => `diagnostic-${index + 1}`),
   );
   assert.ok(boundedFrames.every((frame) => frame.direction === "inbound" && frame.kind === "response"));
+  assert.equal(pushEvents.length, 0);
+
+  sockets[0].emit({ frame: "error", type: "run.finished" });
+  sockets[0].emit({ frame: "stream", type: "run.finished", data: {
+    chatId: "react-newest",
+    runId: "run-newest",
+    status: "completed",
+    finishReason: "complete",
+    finishedAt: EPOCH_MS + 49,
+  }});
+  assert.equal(pushEvents.length, 0);
 
   sockets[0].emit({ frame: "push", type: "chat.updated", data: {
     chatId: "react-newest",

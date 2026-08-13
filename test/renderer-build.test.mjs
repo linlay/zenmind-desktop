@@ -3694,6 +3694,10 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanStore, /export function updateKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
+  assert.match(assistantNavigationStatusClient, /frame: "push"/);
+  assert.match(assistantNavigationStatusClient, /finishReason: toText\(event\.finishReason\) \|\| null/);
+  assert.match(assistantNavigationStatusClient, /runId: toText\(event\.runId\) \|\| null/);
+  assert.doesNotMatch(assistantNavigationStatusClient, /runId: toText\(event\.runId\) \|\| toText\(event\.lastRunId\)/);
   assert.match(appShell, /import\("\.\.\/pages\/kanban\/KanbanPage"\)/);
   assert.match(kanbanPage, /function readKanbanApi/);
   assert.match(kanbanPage, /kanbanApi\.listIssues\(\)/);
@@ -3929,6 +3933,32 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(globalStyles, /@media \(prefers-reduced-motion:\s*reduce\)/);
   assert.match(globalStyles, /\.kanban-agent-picker\s*\{/);
   assert.doesNotMatch(globalStyles, /\.kanban-chat-modal-layer\s*\{|\.kanban-chat-modal\s*\{/);
+});
+
+test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () => {
+  const contracts = readSharedContractsSource();
+  const assistantRuntime = readSourceFile("src", "main", "bridge", "assistant-runtime.ts");
+  const navigationClient = readSourceFile("src", "main", "assistant", "core", "assistant-navigation-status-client.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  const kanbanSync = readSourceFile("src", "main", "kanban-sync.ts");
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+
+  assert.match(contracts, /interface AssistantNavigationPushEvent[\s\S]{0,100}frame: "push"/);
+  assert.match(contracts, /finishReason: string \| null/);
+  assert.match(contracts, /startedAt\?: EpochMilliseconds/);
+  assert.match(contracts, /finishedAt\?: EpochMilliseconds/);
+  assert.doesNotMatch(assistantRuntime, /onEvent:\s*\(event\) => \{\s*state\.kanbanRuntime/);
+  assert.match(assistantRuntime, /event\.type === "run\.started" \|\| event\.type === "run\.finished"/);
+  assert.match(assistantRuntime, /sendNavigationPushEvent\(event\)/);
+  assert.match(navigationClient, /runId: toText\(event\.runId\) \|\| null/);
+  assert.doesNotMatch(navigationClient, /runId: toText\(event\.runId\) \|\| toText\(event\.lastRunId\)/);
+  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
+  assert.match(kanbanRuntime, /issue\.runId === runId \|\| issue\.activeRunId === runId/);
+  assert.doesNotMatch(kanbanRuntime, /sendAssistantEvent/);
+  assert.doesNotMatch(kanbanPage, /assistant\.onAssistantEvent/);
+  assert.match(kanbanPage, /kanbanApi\.onChanged\(\(\) => \{/);
 });
 
 test("Kanban view settings use a dismissible gear menu for the Backlog column", () => {
