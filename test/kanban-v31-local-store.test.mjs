@@ -57,6 +57,28 @@ function cloudIssue(overrides = {}) {
   };
 }
 
+test("private issue IDs use the short local-prefixed Server base36 format", (t) => {
+  const app = createTempApp(t);
+  const fixedNow = 1_786_588_420_234;
+  const originalDateNow = Date.now;
+  Date.now = () => fixedNow;
+  let first;
+  let second;
+  try {
+    first = createPrivateDesktopKanbanIssue(app, currentUser, { title: "First private issue" });
+    second = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Second private issue" });
+  } finally {
+    Date.now = originalDateNow;
+  }
+
+  const tick = Math.floor(fixedNow / 100);
+  assert.equal(first.ok, true);
+  assert.equal(second.ok, true);
+  assert.equal(first.issue.id, `local-${tick.toString(36).toUpperCase()}`);
+  assert.equal(second.issue.id, `local-${(tick + 1).toString(36).toUpperCase()}`);
+  assert.match(first.issue.id, /^local-[0-9A-Z]+$/);
+});
+
 test("Desktop cloud mutation, run event, and manual run receipts persist idempotently", (t) => {
   const app = createTempApp(t);
   recordDesktopKanbanCloudMutation(app, currentUser, {

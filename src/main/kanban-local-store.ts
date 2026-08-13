@@ -473,8 +473,18 @@ function parseCloudIssue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function createLocalIssueId(prefix = "local") {
-  return `${prefix}_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
+function createPrivateIssueId(db: DatabaseSync) {
+  let tick = Math.floor(Date.now() / 100);
+  const exists = db.prepare("SELECT 1 FROM issue WHERE ID_ = ? LIMIT 1");
+  while (true) {
+    const id = `local-${tick.toString(36).toUpperCase()}`;
+    if (!exists.get(id)) return id;
+    tick += 1;
+  }
+}
+
+function createCloudCacheIssueId() {
+  return `cloud_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
 }
 
 export function getDesktopKanbanDatabasePath(app: AppPathProvider) {
@@ -1646,7 +1656,7 @@ function buildLocalIssue(
   const status = normalizeKanbanStatus(input.status);
   const assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
   return {
-    id: createLocalIssueId("local"),
+    id: createPrivateIssueId(db),
     localIssueId: "",
     remoteIssueId: null,
     boardId: BOARD_ID,
@@ -2224,7 +2234,7 @@ export function applyDesktopKanbanCloudSnapshot(
         remoteIds.add(localIssue.remoteIssueId);
         const existingSync = findLocalSyncForRemote(db, localIssue.remoteIssueId);
         const existingLocalId = existingSync.localIssueId;
-        localIssue.id = existingLocalId || createLocalIssueId("cloud");
+        localIssue.id = existingLocalId || createCloudCacheIssueId();
         localIssue.localIssueId = localIssue.id;
         insertOrReplaceIssue(db, localIssue, {
           syncMode: "cloud",
@@ -2494,7 +2504,7 @@ export function recordDesktopKanbanCommandReceipt(
       const cloudIssue = cloudIssueToLocalIssue(issueRecord!, currentUser, input.sourceRevision ?? 0);
       if (!cloudIssue) throw new Error("invalid command issue snapshot");
       const existingSync = findLocalSyncForRemote(db, issueId);
-      cloudIssue.id = existingSync.localIssueId || createLocalIssueId("cloud");
+      cloudIssue.id = existingSync.localIssueId || createCloudCacheIssueId();
       cloudIssue.localIssueId = cloudIssue.id;
       insertOrReplaceIssue(db, cloudIssue, {
         syncMode: "cloud",
@@ -2651,7 +2661,7 @@ export function upsertDispatchedDesktopKanbanIssue(
     if (!localIssue?.remoteIssueId) {
       return { ok: false, message: t("kanban.runtime.dispatchMissingId"), issues: selectIssues(db, currentUser) };
     }
-    localIssue.id = findLocalSyncForRemote(db, localIssue.remoteIssueId).localIssueId || createLocalIssueId("cloud");
+    localIssue.id = findLocalSyncForRemote(db, localIssue.remoteIssueId).localIssueId || createCloudCacheIssueId();
     localIssue.localIssueId = localIssue.id;
     insertOrReplaceIssue(db, localIssue, {
       syncMode: "cloud",
