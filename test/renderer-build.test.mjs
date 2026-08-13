@@ -3512,17 +3512,31 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   assert.match(kanbanPage, /function collectKanbanProjectAndDescendantIds\(projectId: string/);
   assert.match(kanbanPage, /function getKanbanProjectFilterIds\(projects: KanbanProject\[\], selectedProjectIds: string\[\]\)/);
   assert.match(kanbanPage, /collectKanbanProjectAndDescendantIds\(projectId, childrenByParentId, filterIds\)/);
-  assert.match(kanbanPage, /projectFilterIds && !projectFilterIds\.has\(issue\.projectId \?\? ""\)/);
+  assert.match(kanbanPage, /matchesKanbanProjectSelection\(issue, projectFilterIds, includeLocalIssues\)/);
+  assert.match(kanbanPage, /visibleIssues\.filter\(\(issue\) => issue\.syncMode !== "cloud"\)\.length/);
+  assert.match(kanbanPage, /if \(issue\.syncMode !== "cloud"\) \{[\s\S]{0,80}continue;/);
   assert.match(kanbanPage, /<KanbanProjectFilter[\s\S]{0,260}selectedProjectIds=\{selectedProjectIds\}/);
+  assert.match(kanbanPage, /checked=\{includeLocalIssues\}[\s\S]{0,160}onChange=\{onToggleLocal\}/);
+  assert.match(kanbanPage, /getKanbanPartiallySelectedProjectIds\(projects, selectedProjectIds\)/);
+  assert.match(kanbanPage, /toggleKanbanProjectTreeSelection\(cloudProjects, current, projectId\)/);
+  assert.match(kanbanPage, /inputRef\.current\.indeterminate = indeterminate/);
+  assert.match(kanbanPage, /aria-checked=\{indeterminate \? "mixed" : checked\}/);
   assert.match(kanbanPage, /role="tree"/);
   assert.match(kanbanPage, /role="treeitem"/);
   assert.match(kanbanStyles, /\.kanban-project-filter-trigger\s*\{/);
   assert.match(kanbanStyles, /\.kanban-project-filter-menu\s*\{/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-menu\s*\{[\s\S]{0,720}background:\s*var\(--sidebar-operation-menu-bg\);[\s\S]{0,220}box-shadow:\s*var\(--sidebar-operation-menu-shadow\);[\s\S]{0,180}backdrop-filter:\s*blur\(18px\) saturate\(135%\);/);
+  assert.doesNotMatch(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-project-filter-menu[\s\S]{0,100}background:\s*#1c2026/);
   assert.match(kanbanStyles, /\.kanban-project-filter-row\s*\{/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-row\.is-local\s*\{[\s\S]{0,420}border-left:\s*3px solid[\s\S]{0,240}background:/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-row\.is-local\.is-active\s*\{/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-tree\s*\{[\s\S]{0,220}border-top:\s*1px solid/);
   assert.match(zhCN, /"kanban\.cloud\.resync": "重新同步"/);
   assert.match(zhCN, /"kanban\.projectFilter\.all": "全部项目"/);
+  assert.match(zhCN, /"kanban\.projectFilter\.local": "本地"/);
   assert.match(enUS, /"kanban\.cloud\.resync": "Resync"/);
   assert.match(enUS, /"kanban\.projectFilter\.all": "All Projects"/);
+  assert.match(enUS, /"kanban\.projectFilter\.local": "Local"/);
 });
 
 test("Kanban scheduled tasks wait for automation time before assistant run", () => {
@@ -3555,7 +3569,7 @@ test("Kanban toolbar merges issue count into the wider project filter and compac
   assert.match(kanbanStyles, /\.kanban-project-filter\s*\{[\s\S]{0,160}width:\s*100%;[\s\S]{0,100}max-width:\s*360px;/);
   assert.match(kanbanStyles, /\.kanban-project-filter-trigger\s*\{[\s\S]{0,100}width:\s*100%;/);
   assert.match(kanbanStyles, /\.kanban-project-filter-menu\s*\{[\s\S]{0,180}width:\s*min\(360px,\s*calc\(100vw - 32px\)\);/);
-  assert.match(kanbanPage, /function getKanbanSelectedProjectTooltipItems\(selectedProjectIds: string\[\], projects: KanbanProject\[\]\)[\s\S]{0,160}selectedProjectIds\.length < 2/);
+  assert.match(kanbanPage, /function getKanbanSelectedProjectTooltipItems\([\s\S]{0,220}includeLocalIssues: boolean,[\s\S]{0,180}selectedProjectIds\.length \+ Number\(includeLocalIssues\) < 2/);
   assert.match(kanbanPage, /<Tooltip[\s\S]{0,160}placement="bottom"[\s\S]{0,120}disabled=\{open \|\| selectedProjectTooltipItems\.length < 2\}/);
   assert.match(kanbanPage, /className="kanban-project-filter-tooltip"[\s\S]{0,260}className="kanban-project-filter-tooltip-item"/);
   assert.match(kanbanPage, /title=\{selectedProjectTooltipItems\.length >= 2 \? undefined : `\$\{label\} · \$\{countLabel\}`\}/);

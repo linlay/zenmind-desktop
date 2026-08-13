@@ -340,6 +340,8 @@
 }
 
 .kanban-project-filter-menu {
+  --kanban-ink: var(--sidebar-operation-menu-text);
+  --kanban-muted: var(--sidebar-operation-menu-text-muted);
   position: absolute;
   top: 38px;
   left: 0;
@@ -350,10 +352,13 @@
   gap: 6px;
   padding: 8px;
   overflow: auto;
-  border: 1px solid var(--kanban-border);
+  border: 1px solid var(--sidebar-operation-menu-border);
   border-radius: var(--kanban-radius);
-  background: #ffffff;
-  box-shadow: 0 16px 36px rgba(15, 23, 42, 0.14);
+  background: var(--sidebar-operation-menu-bg);
+  color: var(--sidebar-operation-menu-text);
+  box-shadow: var(--sidebar-operation-menu-shadow);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
 }
 
 .kanban-project-filter-all,
@@ -381,12 +386,15 @@
 .kanban-project-filter-all:hover,
 .kanban-project-filter-all.is-active,
 .kanban-project-filter-row:hover {
-  background: rgba(0, 82, 217, 0.08);
+  background: var(--sidebar-operation-menu-hover);
 }
 
 .kanban-project-filter-tree {
   display: grid;
   gap: 2px;
+  margin-top: 2px;
+  padding-top: 6px;
+  border-top: 1px solid color-mix(in srgb, var(--kanban-border) 72%, transparent);
 }
 
 .kanban-project-filter-row {
@@ -397,6 +405,38 @@
   padding-right: 8px;
   font-size: 12px;
   cursor: pointer;
+}
+
+.kanban-project-filter-row.is-local {
+  min-height: 42px;
+  margin: 2px 0;
+  padding: 5px 8px 5px 6px;
+  border: 1px solid color-mix(in srgb, var(--kanban-accent) 18%, var(--kanban-border));
+  border-left: 3px solid color-mix(in srgb, var(--kanban-accent) 52%, var(--kanban-border));
+  background: color-mix(in srgb, var(--kanban-accent) 5%, transparent);
+}
+
+.kanban-project-filter-row.is-local:hover {
+  background: color-mix(in srgb, var(--kanban-accent) 9%, transparent);
+}
+
+.kanban-project-filter-row.is-local.is-active {
+  border-color: color-mix(in srgb, var(--kanban-accent) 34%, var(--kanban-border));
+  border-left-color: var(--kanban-accent);
+  background: color-mix(in srgb, var(--kanban-accent) 12%, transparent);
+}
+
+.kanban-project-filter-row.is-local .kanban-project-filter-project {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.kanban-project-filter-row.is-local .kanban-project-filter-path {
+  max-width: none;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 1.25;
 }
 
 .kanban-project-filter-row input {
@@ -581,7 +621,6 @@
   box-shadow: none;
 }
 
-:root[data-theme="dark"] .kanban-project-filter-menu,
 :root[data-theme="dark"] .kanban-search-filter-menu {
   background: #1c2026;
 }

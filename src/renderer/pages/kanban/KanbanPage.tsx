@@ -67,7 +67,12 @@ import {
 } from "../../assistantNavigation";
 import { useI18n } from "../../i18n/useI18n";
 import { Tooltip } from "../../components/Tooltip";
-import { flattenKanbanProjectTree } from "./kanbanProjectTree";
+import {
+  flattenKanbanProjectTree,
+  getKanbanPartiallySelectedProjectIds,
+  matchesKanbanProjectSelection,
+  toggleKanbanProjectTreeSelection
+} from "./kanbanProjectTree";
 import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
@@ -1321,18 +1326,27 @@ function getKanbanProjectOptionLabel(project: KanbanProject) {
   return project.name;
 }
 
-function getKanbanSelectedProjectTooltipItems(selectedProjectIds: string[], projects: KanbanProject[]) {
-  if (selectedProjectIds.length < 2) {
+function getKanbanSelectedProjectTooltipItems(
+  selectedProjectIds: string[],
+  includeLocalIssues: boolean,
+  projects: KanbanProject[],
+  t: TranslateFunction
+) {
+  if (selectedProjectIds.length + Number(includeLocalIssues) < 2) {
     return [];
   }
   const projectsById = new Map(projects.map((project) => [project.id, project]));
-  return selectedProjectIds.map((projectId) => {
+  const items = selectedProjectIds.map((projectId) => {
     const project = projectsById.get(projectId);
     return {
       id: projectId,
       label: project ? getKanbanProjectOptionLabel(project) : projectId
     };
   });
+  if (includeLocalIssues) {
+    items.unshift({ id: "local", label: t("kanban.projectFilter.local") });
+  }
+  return items;
 }
 
 function sortKanbanProjectOptions(projects: KanbanProject[]) {
@@ -1386,6 +1400,9 @@ function getKanbanProjectFilterIds(projects: KanbanProject[], selectedProjectIds
 function buildKanbanProjectIssueCounts(projects: KanbanProject[], issues: KanbanIssue[]) {
   const directCounts = new Map<string, number>();
   for (const issue of issues) {
+    if (issue.syncMode !== "cloud") {
+      continue;
+    }
     const projectId = issue.projectId?.trim();
     if (projectId) {
       directCounts.set(projectId, (directCounts.get(projectId) ?? 0) + 1);
@@ -1403,17 +1420,22 @@ function buildKanbanProjectIssueCounts(projects: KanbanProject[], issues: Kanban
 
 function getKanbanProjectFilterLabel(
   selectedProjectIds: string[],
+  includeLocalIssues: boolean,
   projects: KanbanProject[],
   t: TranslateFunction
 ) {
-  if (selectedProjectIds.length === 0) {
+  const selectedCount = selectedProjectIds.length + Number(includeLocalIssues);
+  if (selectedCount === 0) {
     return t("kanban.projectFilter.all");
   }
-  if (selectedProjectIds.length === 1) {
+  if (selectedCount === 1 && includeLocalIssues) {
+    return t("kanban.projectFilter.local");
+  }
+  if (selectedCount === 1) {
     const project = projects.find((candidate) => candidate.id === selectedProjectIds[0]);
     return project ? getKanbanProjectOptionLabel(project) : selectedProjectIds[0];
   }
-  return t("kanban.projectFilter.selectedCount", { count: selectedProjectIds.length });
+  return t("kanban.projectFilter.selectedCount", { count: selectedCount });
 }
 
 function isIssueDragLocked(issue: KanbanIssue | null | undefined) {
@@ -1523,6 +1545,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
   const [query, setQuery] = useState("");
   const [cloudProjects, setCloudProjects] = useState<KanbanProject[]>([]);
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
+  const [includeLocalIssues, setIncludeLocalIssues] = useState(false);
   const [projectFilterOpen, setProjectFilterOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<KanbanConnectionState>("disabled");
   const [cloudCapabilities, setCloudCapabilities] = useState<string[]>([]);
@@ -1803,6 +1826,10 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
     () => buildKanbanProjectIssueCounts(cloudProjects, visibleIssues),
     [cloudProjects, visibleIssues]
   );
+  const localIssueCount = useMemo(
+    () => visibleIssues.filter((issue) => issue.syncMode !== "cloud").length,
+    [visibleIssues]
+  );
 
   const cloudSyncSummary = useMemo(() => {
     const cloudIssues = visibleIssues.filter((issue) => issue.syncMode === "cloud");
@@ -1836,7 +1863,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
       if (issueTypeFilters.length > 0 && !issueTypeFilters.includes(issueTypeKey)) {
         return false;
       }
-      if (projectFilterIds && !projectFilterIds.has(issue.projectId ?? "")) {
+      if (!matchesKanbanProjectSelection(issue, projectFilterIds, includeLocalIssues)) {
         return false;
       }
       if (!shouldShowIssueForAutomationFilter(issue, automationFilter)) {
@@ -1869,7 +1896,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
       ].join(" ").toLowerCase();
       return haystack.includes(keyword);
     });
-  }, [agents, assigneeFilters, automationFilter, currentUserId, issueTypeFilters, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
+  }, [agents, assigneeFilters, automationFilter, currentUserId, includeLocalIssues, issueTypeFilters, priorityFilters, projectFilterIds, query, severityFilters, visibleIssues]);
 
   const issuesByStatus = useMemo(() => {
     const grouped = {
@@ -2523,9 +2550,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
 
   function toggleProjectFilter(projectId: string) {
     setSelectedProjectIds((current) =>
-      current.includes(projectId)
-        ? current.filter((item) => item !== projectId)
-        : [...current, projectId]
+      toggleKanbanProjectTreeSelection(cloudProjects, current, projectId)
     );
   }
 
@@ -2553,7 +2578,9 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
           <KanbanProjectFilter
             projects={cloudProjectOptions}
             selectedProjectIds={selectedProjectIds}
+            includeLocalIssues={includeLocalIssues}
             projectIssueCounts={projectIssueCounts}
+            localIssueCount={localIssueCount}
             filteredCount={filteredCount}
             totalCount={totalCount}
             open={projectFilterOpen}
@@ -2566,7 +2593,11 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
               }
             }}
             onToggleProject={toggleProjectFilter}
-            onClear={() => setSelectedProjectIds([])}
+            onToggleLocal={() => setIncludeLocalIssues((current) => !current)}
+            onClear={() => {
+              setSelectedProjectIds([]);
+              setIncludeLocalIssues(false);
+            }}
           />
         </div>
         <div className="kanban-toolbar-center">
@@ -3617,33 +3648,43 @@ function IssueCardSignalIcon({ kind }: { kind: IssueCardSignalIconName }) {
 function KanbanProjectFilter({
   projects,
   selectedProjectIds,
+  includeLocalIssues,
   projectIssueCounts,
+  localIssueCount,
   filteredCount,
   totalCount,
   open,
   t,
   onOpenChange,
   onToggleProject,
+  onToggleLocal,
   onClear
 }: {
   projects: KanbanProject[];
   selectedProjectIds: string[];
+  includeLocalIssues: boolean;
   projectIssueCounts: Map<string, number>;
+  localIssueCount: number;
   filteredCount: number;
   totalCount: number;
   open: boolean;
   t: TranslateFunction;
   onOpenChange: (open: boolean) => void;
   onToggleProject: (projectId: string) => void;
+  onToggleLocal: () => void;
   onClear: () => void;
 }) {
   const filterRef = useRef<HTMLDivElement | null>(null);
   const treeItems = useMemo(() => flattenKanbanProjectTree(projects), [projects]);
-  const label = getKanbanProjectFilterLabel(selectedProjectIds, projects, t);
+  const partiallySelectedProjectIds = useMemo(
+    () => getKanbanPartiallySelectedProjectIds(projects, selectedProjectIds),
+    [projects, selectedProjectIds]
+  );
+  const label = getKanbanProjectFilterLabel(selectedProjectIds, includeLocalIssues, projects, t);
   const countLabel = t("kanban.toolbar.issueCount", { filtered: filteredCount, total: totalCount });
   const selectedProjectTooltipItems = useMemo(
-    () => getKanbanSelectedProjectTooltipItems(selectedProjectIds, projects),
-    [projects, selectedProjectIds]
+    () => getKanbanSelectedProjectTooltipItems(selectedProjectIds, includeLocalIssues, projects, t),
+    [includeLocalIssues, projects, selectedProjectIds, t]
   );
 
   useEffect(() => {
@@ -3703,36 +3744,58 @@ function KanbanProjectFilter({
         <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>
           <button
             type="button"
-            className={`kanban-project-filter-all ${selectedProjectIds.length === 0 ? "is-active" : ""}`}
+            className={`kanban-project-filter-all ${selectedProjectIds.length === 0 && !includeLocalIssues ? "is-active" : ""}`}
             onClick={onClear}
             aria-label={`${t("kanban.projectFilter.all")}: ${t("kanban.column.summary.count", { count: totalCount })}`}
           >
             <span>{t("kanban.projectFilter.all")}</span>
             <span className="kanban-project-filter-item-count" aria-hidden="true">{totalCount}</span>
           </button>
+          <label
+            className={`kanban-project-filter-row is-local ${includeLocalIssues ? "is-active" : ""}`}
+            role="treeitem"
+            aria-level={1}
+            title={`${t("kanban.projectFilter.local")} · ${t("kanban.projectFilter.localHint")} · ${t("kanban.column.summary.count", { count: localIssueCount })}`}
+          >
+            <input
+              type="checkbox"
+              checked={includeLocalIssues}
+              onChange={onToggleLocal}
+            />
+            <span className="kanban-project-filter-project">
+              <span className="kanban-project-filter-name">{t("kanban.projectFilter.local")}</span>
+              <span className="kanban-project-filter-path">{t("kanban.projectFilter.localHint")}</span>
+            </span>
+            <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: localIssueCount })}>{localIssueCount}</span>
+          </label>
           {treeItems.length > 0 ? (
             <div className="kanban-project-filter-tree">
-              {treeItems.map(({ project, level }) => (
-                <label
-                  key={project.id}
-                  className="kanban-project-filter-row"
-                  role="treeitem"
-                  aria-level={level + 1}
-                  style={{ paddingLeft: `${8 + (level * 14)}px` }}
-                  title={`${getKanbanProjectOptionLabel(project)} · ${t("kanban.column.summary.count", { count: projectIssueCounts.get(project.id) ?? 0 })}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={selectedProjectIds.includes(project.id)}
-                    onChange={() => onToggleProject(project.id)}
-                  />
-                  <span className="kanban-project-filter-project">
-                    <span className="kanban-project-filter-name">{project.name}</span>
-                    {project.path && project.path !== project.name ? <span className="kanban-project-filter-path">{project.path}</span> : null}
-                  </span>
-                  <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: projectIssueCounts.get(project.id) ?? 0 })}>{projectIssueCounts.get(project.id) ?? 0}</span>
-                </label>
-              ))}
+              {treeItems.map(({ project, level }) => {
+                const checked = selectedProjectIds.includes(project.id);
+                const indeterminate = partiallySelectedProjectIds.has(project.id);
+                return (
+                  <label
+                    key={project.id}
+                    className="kanban-project-filter-row"
+                    role="treeitem"
+                    aria-level={level + 1}
+                    aria-checked={indeterminate ? "mixed" : checked}
+                    style={{ paddingLeft: `${8 + (level * 14)}px` }}
+                    title={`${getKanbanProjectOptionLabel(project)} · ${t("kanban.column.summary.count", { count: projectIssueCounts.get(project.id) ?? 0 })}`}
+                  >
+                    <KanbanProjectCheckbox
+                      checked={checked}
+                      indeterminate={indeterminate}
+                      onChange={() => onToggleProject(project.id)}
+                    />
+                    <span className="kanban-project-filter-project">
+                      <span className="kanban-project-filter-name">{project.name}</span>
+                      {project.path && project.path !== project.name ? <span className="kanban-project-filter-path">{project.path}</span> : null}
+                    </span>
+                    <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: projectIssueCounts.get(project.id) ?? 0 })}>{projectIssueCounts.get(project.id) ?? 0}</span>
+                  </label>
+                );
+              })}
             </div>
           ) : (
             <span className="kanban-project-filter-empty">{t("kanban.projectFilter.empty")}</span>
@@ -3740,6 +3803,32 @@ function KanbanProjectFilter({
         </div>
       ) : null}
     </div>
+  );
+}
+
+function KanbanProjectCheckbox({
+  checked,
+  indeterminate,
+  onChange
+}: {
+  checked: boolean;
+  indeterminate: boolean;
+  onChange: () => void;
+}) {
+  const inputRef = useRef<HTMLInputElement | null>(null);
+  useEffect(() => {
+    if (inputRef.current) {
+      inputRef.current.indeterminate = indeterminate;
+    }
+  }, [indeterminate]);
+  return (
+    <input
+      ref={inputRef}
+      type="checkbox"
+      checked={checked}
+      aria-checked={indeterminate ? "mixed" : checked}
+      onChange={onChange}
+    />
   );
 }
 
