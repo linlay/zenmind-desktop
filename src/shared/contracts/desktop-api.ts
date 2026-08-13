@@ -5,7 +5,7 @@ import type { NavigateListener, ServicesChangedListener, StartupRestoreState, St
 import type { WebListResult, WebappCommandResult, WebappDeleteResult, WebappExportResult, WebappImportResult, WebappItemsResult, WebappLogReadOptions, WebappLogReadResult, WebappLogTarget, WebappPublishResult, WebappPublishStatusResult, WebappResult, WebappRuntimeCheckResult, WebappRuntimeSettingsInput, WebappRuntimeSettingsResult, WebappStatusResult, WebappUpdateInput, WebappUserConfigResult, WebsChangedListener, WebsiteDeleteResult, WebsiteFaviconCacheInput, WebsiteFaviconCacheResult, WebsiteInput, WebsiteItemsResult, WebsiteResult, WebsiteTransferResult, WebsiteUpdateInput } from "./webs";
 import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput, DesktopPetSignatureRequestedListener, DesktopPetState, DesktopPetStateListener, DesktopPetWindowMode } from "./pet-copilot";
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
-import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
+import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
 import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
@@ -13,6 +13,10 @@ import type {
   SidebarContextMenuPopupRequest,
   SidebarContextMenuPopupResult
 } from "../sidebar-context-menu";
+import type {
+  ChatWorkPanelTabContextMenuPopupRequest,
+  ChatWorkPanelTabContextMenuPopupResult
+} from "../chat-work-panel-tab-context-menu";
 import type { WebviewSelectionToolbarStateListener } from "../webview-selection-toolbar";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
@@ -512,8 +516,14 @@ export interface DesktopApi {
       request: SidebarContextMenuPopupRequest
     ) => Promise<SidebarContextMenuPopupResult>;
   };
+  chatWorkPanelTabContextMenu: {
+    popup: (
+      request: ChatWorkPanelTabContextMenuPopupRequest
+    ) => Promise<ChatWorkPanelTabContextMenuPopupResult>;
+  };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
+    revealPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
     moveWindowBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
@@ -555,6 +565,8 @@ export interface DesktopApi {
     updateIssue: (id: string, input: KanbanIssueUpdateInput) => Promise<KanbanIssueResult>;
     deleteIssue: (id: string) => Promise<KanbanDeleteResult>;
     moveIssue: (input: KanbanIssueMoveInput) => Promise<KanbanIssueResult>;
+    claimIssue: (issueId: string) => Promise<KanbanIssueResult>;
+    runIssue: (input: KanbanRunIssueInput) => Promise<KanbanRunIssueResult>;
     syncIssueAutomation: (issueId: string) => Promise<KanbanIssueResult>;
     onChanged: (listener: KanbanChangedListener) => () => void;
   };

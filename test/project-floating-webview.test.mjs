@@ -10,7 +10,7 @@ function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
 }
 
-test("project agents expose the native open-project action with mode-aware eligibility", () => {
+test("project agents expose the native project-editor action with mode-aware eligibility", () => {
   const sidebar = read("src/renderer/app-shell/navigation/AppSidebar.tsx");
   const policy = read("src/main/sidebar-context-menu-policy.ts");
   const handler = read("src/main/ipc/sidebar-context-menu-handlers.ts");
@@ -19,23 +19,24 @@ test("project agents expose the native open-project action with mode-aware eligi
 
   assert.match(
     sidebar,
-    /canOpenProject:[\s\S]{0,100}canOpenAgentProject\(agent\)/,
+    /canOpenProjectEditor:[\s\S]{0,120}canOpenAgentProjectEditor\(agent\)/,
   );
   assert.match(
     sidebar,
-    /function canOpenAgentProject[\s\S]*?mode === "KBASE"[\s\S]*?return true[\s\S]*?mode === "CODER" && !getOpenWorkspaceDisabledReason\(agent\)/,
+    /function canOpenAgentProjectEditor[\s\S]*?mode === "KBASE"[\s\S]*?return true[\s\S]*?mode === "CODER" && !getRevealWorkspaceDisabledReason\(agent\)/,
   );
   assert.match(
     sidebar,
-    /actionId === "agent\.open-project"[\s\S]*?onOpenAgentProject\?\.\(agent\)/,
+    /actionId === "agent\.open-project-editor"[\s\S]*?onOpenAgentProjectEditor\?\.\(agent\)/,
   );
   assert.match(
     policy,
-    /id: "agent\.open-workspace"[\s\S]*?id: "agent\.open-project"[\s\S]*?id: "agent\.edit"/,
+    /id: "agent\.reveal-workspace"[\s\S]*?id: "agent\.open-project-editor"[\s\S]*?id: "agent\.edit"/,
   );
-  assert.match(handler, /"agent\.open-project": "sidebar\.agent\.openProject"/);
-  assert.match(enUS, /"sidebar\.agent\.openProject": "Open project"/);
-  assert.match(zhCN, /"sidebar\.agent\.openProject": "打开项目"/);
+  assert.match(handler, /"agent\.open-project-editor": "sidebar\.agent\.openProjectEditor"/);
+  assert.match(enUS, /"sidebar\.agent\.openProjectEditor": "Open project editor"/);
+  assert.match(zhCN, /"sidebar\.agent\.openProjectEditor": "打开项目编辑器"/);
+  assert.match(sidebar, /desktopShell\.revealPath\(workspaceDir\)/);
 });
 
 test("AppShell keeps one floating entry per agent and enriches the project route", () => {

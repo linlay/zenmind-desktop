@@ -25,8 +25,8 @@ const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
   "group.new-chat": "sidebar.chats.newChat",
   "group.add-website": "sidebar.website.new",
   "group.import-webapp": "sidebar.webapp.import",
-  "agent.open-workspace": "sidebar.agent.openWorkspace",
-  "agent.open-project": "sidebar.agent.openProject",
+  "agent.reveal-workspace": "sidebar.agent.revealWorkspaceFileManager",
+  "agent.open-project-editor": "sidebar.agent.openProjectEditor",
   "agent.edit": "sidebar.agent.edit",
   "chat.export": "sidebar.chat.export",
   "chat.share": "sidebar.chat.share",
@@ -44,9 +44,25 @@ const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
 
 type SidebarContextMenuHandlerOptions = {
   getMainWindow(): BrowserWindow | null;
+  platform?: NodeJS.Platform | string;
   BrowserWindow?: Pick<typeof ElectronBrowserWindow, "fromWebContents">;
   Menu?: Pick<typeof ElectronMenu, "buildFromTemplate">;
 };
+
+export function resolveSidebarContextMenuLabelKey(
+  actionId: SidebarContextMenuActionId,
+  platform: NodeJS.Platform | string = process.platform
+): TranslationKey {
+  if (actionId === "agent.reveal-workspace") {
+    if (platform === "darwin") {
+      return "sidebar.agent.revealWorkspaceFinder";
+    }
+    if (platform === "win32") {
+      return "sidebar.agent.revealWorkspaceExplorer";
+    }
+  }
+  return LABEL_KEYS[actionId];
+}
 
 export function registerSidebarContextMenuIpcHandlers(
   ipcMain: Pick<IpcMain, "handle">,
@@ -95,7 +111,7 @@ export function registerSidebarContextMenuIpcHandlers(
           previousGroup = item.group;
           template.push({
             id: item.id,
-            label: t(LABEL_KEYS[item.id]),
+            label: t(resolveSidebarContextMenuLabelKey(item.id, options.platform)),
             type: item.type,
             checked: item.checked,
             enabled: item.enabled,

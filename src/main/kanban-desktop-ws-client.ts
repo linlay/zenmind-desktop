@@ -145,15 +145,24 @@ export type KanbanDesktopWsClientOptions = {
   onBindProject: (payload: unknown) => Promise<unknown>;
   onUnbindProject: (payload: unknown) => Promise<unknown>;
   onConnected?: () => void;
+  onContractNegotiated?: (contractVersion: string, capabilities: string[]) => void;
   onStateChanged?: (state: KanbanDesktopConnectionState) => void;
   onDebug?: (message: string) => void;
   onWsLog?: (entry: KanbanDesktopWsLogEntry) => void;
 };
 
 const PROTOCOL_VERSION = 3;
+const CONTRACT_VERSION = "3.2";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECONNECT_MS = 5_000;
 const WS_OPEN_STATE = 1;
+
+export class KanbanDesktopRequestError extends Error {
+  constructor(readonly code: string, message: string) {
+    super(message);
+    this.name = "KanbanDesktopRequestError";
+  }
+}
 const ISSUE_EVENT_TYPES = new Set([
   "issue.created",
   "issue.updated",
@@ -180,7 +189,7 @@ function createWsUrl(config: KanbanDesktopWsConfig) {
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("role", "desktop");
   url.searchParams.set("v", String(PROTOCOL_VERSION));
-  url.searchParams.set("contractVersion", "3.1");
+  url.searchParams.set("contractVersion", CONTRACT_VERSION);
   if (config.token?.trim()) {
     url.searchParams.set("token", config.token.trim());
   }
@@ -604,11 +613,24 @@ export class KanbanDesktopWsClient {
   }
 
   async request<TPayload = unknown>(messageType: string, payload: unknown, timeoutMs = REQUEST_TIMEOUT_MS): Promise<TPayload> {
+    return this.requestWithId(messageType, payload, createRequestId(), timeoutMs);
+  }
+
+  async requestWithId<TPayload = unknown>(
+    messageType: string,
+    payload: unknown,
+    requestId: string,
+    timeoutMs = REQUEST_TIMEOUT_MS,
+    projectId?: string
+  ): Promise<TPayload> {
     if (!this.ws || this.state !== "open") {
       throw new Error(t("kanban.cloudSync.notConnected"));
     }
     assertCloudPayloadPrivacy({ frame: "request", payload });
-    const id = createRequestId();
+    const id = readText(requestId);
+    if (!id) {
+      throw new Error(t("kanban.ws.messageTypeRequired"));
+    }
     const response = await new Promise<KanbanEnvelope>((resolve, reject) => {
       const timeout = setTimeout(() => {
         if (this.pending.delete(id)) {
@@ -624,7 +646,7 @@ export class KanbanDesktopWsClient {
         id,
         role: "desktop",
         boardId: "default",
-        projectId: this.config?.selectedProjectId ?? "default",
+        projectId: readText(projectId) || this.config?.selectedProjectId || "default",
         payload
       });
       if (!sent) {
@@ -634,7 +656,10 @@ export class KanbanDesktopWsClient {
       }
     });
     if (response.ok === false) {
-      throw new Error(response.error?.message || t("kanban.ws.operationFailed", { type: messageType }));
+      throw new KanbanDesktopRequestError(
+        readText(response.error?.code) || "request_rejected",
+        response.error?.message || t("kanban.ws.operationFailed", { type: messageType })
+      );
     }
     return response.payload as TPayload;
   }
@@ -725,8 +750,8 @@ export class KanbanDesktopWsClient {
       }
       const currentUser = this.options.getCurrentUser();
       const cursor = normalizeSyncCursor(this.options.getSyncCursor?.());
-      const hello = await this.request<{ cursor?: unknown; links?: unknown[] }>("sync.hello", {
-        contractVersion: "3.1",
+      const hello = await this.request<{ cursor?: unknown; links?: unknown[]; contractVersion?: string; capabilities?: unknown[] }>("sync.hello", {
+        contractVersion: CONTRACT_VERSION,
         capabilities: this.options.capabilities,
         deviceId: this.options.getDeviceId(),
         ownerUserId: currentUser.id,
@@ -741,6 +766,10 @@ export class KanbanDesktopWsClient {
       if (isRecord(hello) && hello.cursor) {
         this.options.onSyncCursor?.(normalizeSyncCursor(hello.cursor));
       }
+      this.options.onContractNegotiated?.(
+        readText(hello.contractVersion),
+        Array.isArray(hello.capabilities) ? hello.capabilities.map(readText).filter(Boolean) : []
+      );
       this.desktopLinks = Array.isArray(hello.links) ? hello.links : [];
       const snapshot = await this.request<KanbanCloudSnapshot>("snapshot.get", {
         scope: "project_set",

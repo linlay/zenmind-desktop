@@ -107,6 +107,7 @@ import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
 import { registerHelpIpcHandlers } from "./help-handlers";
 import { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-handlers";
+import { registerChatWorkPanelTabContextMenuIpcHandlers } from "./chat-work-panel-tab-context-menu-handlers";
 import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
 
 export type MainIpcRegistrationOptions = {
@@ -181,6 +182,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible
   }));
   registerSidebarContextMenuIpcHandlers(ipcMain, {
+    getMainWindow: () => context.state.mainWindow
+  });
+  registerChatWorkPanelTabContextMenuIpcHandlers(ipcMain, {
     getMainWindow: () => context.state.mainWindow
   });
 
@@ -382,6 +386,16 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         issues: []
       },
     moveKanbanIssue: (_app: any, input: any) => state.kanbanRuntime?.moveIssue(input) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized"),
+      issues: []
+    },
+    claimKanbanIssue: (_app: any, issueId: string) => state.kanbanRuntime?.claimIssue(issueId) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized"),
+      issues: []
+    },
+    runKanbanIssue: (_app: any, input: any) => state.kanbanRuntime?.runIssue(input) ?? {
       ok: false,
       message: t("kanban.runtime.uninitialized"),
       issues: []

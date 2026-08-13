@@ -501,6 +501,17 @@ export interface KanbanIssueMoveInput {
   baseIssueRevision?: number;
 }
 
+export interface KanbanRunIssueInput {
+  issueId: string;
+  agentKey: string;
+}
+
+export interface KanbanRunIssueResult extends KanbanIssueResult {
+  chatId?: string;
+  runId?: string;
+  agentKey?: string;
+}
+
 export interface KanbanListResult {
   ok: boolean;
   message: string;
@@ -515,6 +526,7 @@ export interface KanbanListResult {
   revision?: number;
   currentUser?: KanbanCurrentUser;
   connectionState?: "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
+  cloudCapabilities?: string[];
 }
 
 export interface KanbanCloudConfig {

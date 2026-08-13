@@ -173,6 +173,41 @@ export type KanbanCommandReceipt = {
   updatedAt: string;
 };
 
+export type KanbanCloudMutationOutboxItem = {
+  id: string;
+  requestType: "issue.claim";
+  projectId: string;
+  issueId: string;
+  payload: Record<string, unknown>;
+  attemptCount: number;
+  lastError: string | null;
+};
+
+export type KanbanRunEventOutboxItem = {
+  clientEventId: string;
+  projectId: string;
+  issueId: string;
+  runId: string;
+  chatId: string;
+  eventType: string;
+  sourceDeliverySeq: number;
+  payload: Record<string, unknown>;
+  attemptCount: number;
+  lastError: string | null;
+};
+
+export type KanbanManualRunReceiptState = "starting" | "started" | "completed" | "failed" | "cancelled";
+
+export type KanbanManualRunReceipt = {
+  runId: string;
+  chatId: string;
+  issueId: string;
+  projectId: string;
+  agentKey: string;
+  state: KanbanManualRunReceiptState;
+  lastError: string | null;
+};
+
 const BOARD_ID = "default";
 const PROJECT_ID = "default";
 const WORKFLOW_ID = "workflow-standard-requirement";
@@ -687,6 +722,45 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       UPDATED_AT_ TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS kanban_cloud_mutation_outbox (
+      ID_ TEXT PRIMARY KEY,
+      REQUEST_TYPE_ TEXT NOT NULL CHECK (REQUEST_TYPE_ IN ('issue.claim')),
+      PROJECT_ID_ TEXT NOT NULL,
+      ISSUE_ID_ TEXT NOT NULL,
+      PAYLOAD_JSON_ TEXT NOT NULL,
+      ATTEMPT_COUNT_ INTEGER NOT NULL DEFAULT 0,
+      LAST_ERROR_ TEXT,
+      CREATED_AT_ TEXT NOT NULL,
+      UPDATED_AT_ TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS kanban_run_event_outbox (
+      CLIENT_EVENT_ID_ TEXT PRIMARY KEY,
+      PROJECT_ID_ TEXT NOT NULL,
+      ISSUE_ID_ TEXT NOT NULL,
+      RUN_ID_ TEXT NOT NULL,
+      CHAT_ID_ TEXT NOT NULL,
+      EVENT_TYPE_ TEXT NOT NULL,
+      SOURCE_DELIVERY_SEQ_ INTEGER NOT NULL DEFAULT 0,
+      PAYLOAD_JSON_ TEXT NOT NULL,
+      ATTEMPT_COUNT_ INTEGER NOT NULL DEFAULT 0,
+      LAST_ERROR_ TEXT,
+      CREATED_AT_ TEXT NOT NULL,
+      UPDATED_AT_ TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS kanban_manual_run_receipt (
+      RUN_ID_ TEXT PRIMARY KEY,
+      CHAT_ID_ TEXT NOT NULL,
+      ISSUE_ID_ TEXT NOT NULL,
+      PROJECT_ID_ TEXT NOT NULL,
+      AGENT_KEY_ TEXT NOT NULL,
+      STATE_ TEXT NOT NULL CHECK (STATE_ IN ('starting','started','completed','failed','cancelled')),
+      LAST_ERROR_ TEXT,
+      CREATED_AT_ TEXT NOT NULL,
+      UPDATED_AT_ TEXT NOT NULL
+    );
+
     CREATE TABLE IF NOT EXISTS kanban_cloud_detail_cache (
       OWNER_USER_ID_ TEXT PRIMARY KEY,
       REVISION_ INTEGER NOT NULL DEFAULT 0,
@@ -696,6 +770,12 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
 
     CREATE INDEX IF NOT EXISTS idx_kanban_command_receipt_state
       ON kanban_command_receipt(STATE_, DELIVERY_SEQ_);
+
+    CREATE INDEX IF NOT EXISTS idx_kanban_cloud_mutation_outbox_created
+      ON kanban_cloud_mutation_outbox(CREATED_AT_, ID_);
+
+    CREATE INDEX IF NOT EXISTS idx_kanban_run_event_outbox_created
+      ON kanban_run_event_outbox(CREATED_AT_, CLIENT_EVENT_ID_);
 
     CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_issue_sync_remote
       ON desktop_issue_sync(REMOTE_ISSUE_ID_)
@@ -2233,6 +2313,154 @@ export function applyDesktopKanbanCloudSnapshot(
       connectionState: "open"
     };
   });
+}
+
+export function recordDesktopKanbanCloudMutation(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  item: Omit<KanbanCloudMutationOutboxItem, "attemptCount" | "lastError">
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO kanban_cloud_mutation_outbox (
+        ID_, REQUEST_TYPE_, PROJECT_ID_, ISSUE_ID_, PAYLOAD_JSON_, CREATED_AT_, UPDATED_AT_
+      ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(ID_) DO NOTHING
+    `).run(item.id, item.requestType, item.projectId, item.issueId, JSON.stringify(item.payload), now, now);
+  });
+}
+
+export function listDesktopKanbanCloudMutations(app: AppPathProvider, currentUser: KanbanCurrentUser): KanbanCloudMutationOutboxItem[] {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => (db.prepare(`
+    SELECT ID_ AS id, REQUEST_TYPE_ AS requestType, PROJECT_ID_ AS projectId, ISSUE_ID_ AS issueId,
+      PAYLOAD_JSON_ AS payloadJson, ATTEMPT_COUNT_ AS attemptCount, LAST_ERROR_ AS lastError
+    FROM kanban_cloud_mutation_outbox ORDER BY CREATED_AT_, ID_
+  `).all() as Array<Omit<KanbanCloudMutationOutboxItem, "payload"> & { payloadJson: string }>).map((row) => {
+    const { payloadJson, ...item } = row;
+    return { ...item, payload: parseJsonRecord(payloadJson) };
+  }));
+}
+
+export function markDesktopKanbanCloudMutationAttempt(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  id: string,
+  error: string | null
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`UPDATE kanban_cloud_mutation_outbox SET ATTEMPT_COUNT_ = ATTEMPT_COUNT_ + 1, LAST_ERROR_ = ?, UPDATED_AT_ = ? WHERE ID_ = ?`)
+      .run(nullableTrimmedText(error), new Date().toISOString(), trimText(id));
+  });
+}
+
+export function deleteDesktopKanbanCloudMutation(app: AppPathProvider, currentUser: KanbanCurrentUser, id: string) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`DELETE FROM kanban_cloud_mutation_outbox WHERE ID_ = ?`).run(trimText(id));
+  });
+}
+
+export function recordDesktopKanbanRunEvent(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  item: Omit<KanbanRunEventOutboxItem, "attemptCount" | "lastError">
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO kanban_run_event_outbox (
+        CLIENT_EVENT_ID_, PROJECT_ID_, ISSUE_ID_, RUN_ID_, CHAT_ID_, EVENT_TYPE_, SOURCE_DELIVERY_SEQ_, PAYLOAD_JSON_, CREATED_AT_, UPDATED_AT_
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(CLIENT_EVENT_ID_) DO NOTHING
+    `).run(item.clientEventId, item.projectId, item.issueId, item.runId, item.chatId, item.eventType, item.sourceDeliverySeq, JSON.stringify(item.payload), now, now);
+  });
+}
+
+export function listDesktopKanbanRunEvents(app: AppPathProvider, currentUser: KanbanCurrentUser): KanbanRunEventOutboxItem[] {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => (db.prepare(`
+    SELECT CLIENT_EVENT_ID_ AS clientEventId, PROJECT_ID_ AS projectId, ISSUE_ID_ AS issueId,
+      RUN_ID_ AS runId, CHAT_ID_ AS chatId, EVENT_TYPE_ AS eventType, SOURCE_DELIVERY_SEQ_ AS sourceDeliverySeq,
+      PAYLOAD_JSON_ AS payloadJson, ATTEMPT_COUNT_ AS attemptCount, LAST_ERROR_ AS lastError
+    FROM kanban_run_event_outbox ORDER BY CREATED_AT_, CLIENT_EVENT_ID_
+  `).all() as Array<Omit<KanbanRunEventOutboxItem, "payload"> & { payloadJson: string }>).map((row) => {
+    const { payloadJson, ...item } = row;
+    return { ...item, payload: parseJsonRecord(payloadJson) };
+  }));
+}
+
+export function markDesktopKanbanRunEventAttempt(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  clientEventId: string,
+  error: string | null
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`UPDATE kanban_run_event_outbox SET ATTEMPT_COUNT_ = ATTEMPT_COUNT_ + 1, LAST_ERROR_ = ?, UPDATED_AT_ = ? WHERE CLIENT_EVENT_ID_ = ?`)
+      .run(nullableTrimmedText(error), new Date().toISOString(), trimText(clientEventId));
+  });
+}
+
+export function deleteDesktopKanbanRunEvent(app: AppPathProvider, currentUser: KanbanCurrentUser, clientEventId: string) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`DELETE FROM kanban_run_event_outbox WHERE CLIENT_EVENT_ID_ = ?`).run(trimText(clientEventId));
+  });
+}
+
+export function recordDesktopKanbanManualRun(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  receipt: Omit<KanbanManualRunReceipt, "state" | "lastError">
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const now = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO kanban_manual_run_receipt (
+        RUN_ID_, CHAT_ID_, ISSUE_ID_, PROJECT_ID_, AGENT_KEY_, STATE_, CREATED_AT_, UPDATED_AT_
+      ) VALUES (?, ?, ?, ?, ?, 'starting', ?, ?)
+      ON CONFLICT(RUN_ID_) DO NOTHING
+    `).run(receipt.runId, receipt.chatId, receipt.issueId, receipt.projectId, receipt.agentKey, now, now);
+  });
+}
+
+export function updateDesktopKanbanManualRun(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  runId: string,
+  state: KanbanManualRunReceiptState,
+  error: string | null = null
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`UPDATE kanban_manual_run_receipt SET STATE_ = ?, LAST_ERROR_ = ?, UPDATED_AT_ = ? WHERE RUN_ID_ = ?`)
+      .run(state, nullableTrimmedText(error), new Date().toISOString(), trimText(runId));
+  });
+}
+
+export function getDesktopKanbanManualRunByRunId(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  runId: string
+): KanbanManualRunReceipt | null {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const row = db.prepare(`
+      SELECT RUN_ID_ AS runId, CHAT_ID_ AS chatId, ISSUE_ID_ AS issueId, PROJECT_ID_ AS projectId,
+        AGENT_KEY_ AS agentKey, STATE_ AS state, LAST_ERROR_ AS lastError
+      FROM kanban_manual_run_receipt WHERE RUN_ID_ = ?
+    `).get(trimText(runId)) as KanbanManualRunReceipt | undefined;
+    return row ?? null;
+  });
+}
+
+export function listPendingDesktopKanbanManualRuns(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser
+): KanbanManualRunReceipt[] {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => db.prepare(`
+    SELECT RUN_ID_ AS runId, CHAT_ID_ AS chatId, ISSUE_ID_ AS issueId, PROJECT_ID_ AS projectId,
+      AGENT_KEY_ AS agentKey, STATE_ AS state, LAST_ERROR_ AS lastError
+    FROM kanban_manual_run_receipt
+    WHERE STATE_ IN ('starting', 'started')
+    ORDER BY CREATED_AT_, RUN_ID_
+  `).all() as KanbanManualRunReceipt[]);
 }
 
 export function recordDesktopKanbanCommandReceipt(

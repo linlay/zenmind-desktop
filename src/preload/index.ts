@@ -51,16 +51,19 @@ import type {
   StartupRestoreStateListener,
   KanbanIssueInput,
   KanbanIssueMoveInput,
+  KanbanRunIssueInput,
   KanbanIssueUpdateInput,
   KanbanChangedListener,
   KanbanCloudConfig,
   WebsChangedListener,
   WebviewOpenTabListener,
   WebviewOpenTabRequest,
+  ChatWorkPanelTabContextMenuPopupRequest,
   SidebarContextMenuPopupRequest,
   WebviewSelectionToolbarStateListener
 } from "../shared/contracts";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
+import { CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/chat-work-panel-tab-context-menu";
 import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
@@ -84,8 +87,13 @@ const api: DesktopApi = {
     popup: (request: SidebarContextMenuPopupRequest) =>
       ipcRenderer.invoke(SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL, request)
   },
+  chatWorkPanelTabContextMenu: {
+    popup: (request: ChatWorkPanelTabContextMenuPopupRequest) =>
+      ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request)
+  },
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
+    revealPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.revealPath", targetPath),
     moveWindowBy: (delta: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.moveWindowBy", delta),
     beginWindowDrag: (point: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.beginWindowDrag", point),
     endWindowDrag: () => ipcRenderer.invoke("desktopShell.endWindowDrag"),
@@ -139,6 +147,8 @@ const api: DesktopApi = {
       ipcRenderer.invoke("kanban.updateIssue", id, input),
     deleteIssue: (id: string) => ipcRenderer.invoke("kanban.deleteIssue", id),
     moveIssue: (input: KanbanIssueMoveInput) => ipcRenderer.invoke("kanban.moveIssue", input),
+    claimIssue: (issueId: string) => ipcRenderer.invoke("kanban.claimIssue", issueId),
+    runIssue: (input: KanbanRunIssueInput) => ipcRenderer.invoke("kanban.runIssue", input),
     syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("kanban.syncIssueAutomation", issueId),
     onChanged: (listener: KanbanChangedListener) => {
       const handleKanbanChanged = () => {

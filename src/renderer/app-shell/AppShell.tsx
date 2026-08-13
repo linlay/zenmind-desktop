@@ -2969,7 +2969,7 @@ export function AppShell() {
     }
   }, [activeChatWorkPanelChatId, ensureChatWorkPanelWorkspace, requestSidebarNavigation]);
 
-  const openAgentProjectFromSidebar = useCallback((agent: AssistantNavAgentItem) => {
+  const openAgentProjectEditorFromSidebar = useCallback((agent: AssistantNavAgentItem) => {
     const agentKey = agent.agentKey.trim();
     if (!agentKey) {
       return;
@@ -3097,7 +3097,7 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
-          onOpenAgentProject={openAgentProjectFromSidebar}
+          onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}

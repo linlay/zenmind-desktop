@@ -1000,7 +1000,7 @@ type AppSidebarProps = {
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
-  onOpenAgentProject?: (agent: AssistantNavAgentItem) => void;
+  onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onCloseChatWorkPanel?: (chatId: string) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
@@ -1064,7 +1064,7 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
-  onOpenAgentProject,
+  onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
@@ -1266,7 +1266,7 @@ export function AppSidebar({
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
-    onOpenAgentProject,
+    onOpenAgentProjectEditor,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
@@ -1281,7 +1281,7 @@ export function AppSidebar({
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
-    onOpenAgentProject,
+    onOpenAgentProjectEditor,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
@@ -2046,9 +2046,10 @@ export function AppSidebar({
       return agent
         ? {
             kind: "agent",
-            canOpenWorkspace: !getOpenWorkspaceDisabledReason(agent),
-            canOpenProject:
-              Boolean(runtime.onOpenAgentProject) && canOpenAgentProject(agent),
+            canRevealWorkspace: !getRevealWorkspaceDisabledReason(agent),
+            canOpenProjectEditor:
+              Boolean(runtime.onOpenAgentProjectEditor) &&
+              canOpenAgentProjectEditor(agent),
           }
         : null;
     }
@@ -2116,8 +2117,9 @@ export function AppSidebar({
     if (target.kind === "agent") {
       return (
         actionId === "agent.edit" ||
-        (actionId === "agent.open-workspace" && target.canOpenWorkspace) ||
-        (actionId === "agent.open-project" && target.canOpenProject)
+        (actionId === "agent.reveal-workspace" && target.canRevealWorkspace) ||
+        (actionId === "agent.open-project-editor" &&
+          target.canOpenProjectEditor)
       );
     }
     if (target.kind === "chat") {
@@ -2193,15 +2195,15 @@ export function AppSidebar({
       const agent = findAssistantNavAgent(subject.agentKey);
       if (!agent) return;
       if (
-        actionId === "agent.open-workspace" &&
-        !getOpenWorkspaceDisabledReason(agent)
+        actionId === "agent.reveal-workspace" &&
+        !getRevealWorkspaceDisabledReason(agent)
       ) {
-        await handleOpenWorkspace(agent);
+        await handleRevealWorkspace(agent);
       } else if (
-        actionId === "agent.open-project" &&
-        canOpenAgentProject(agent)
+        actionId === "agent.open-project-editor" &&
+        canOpenAgentProjectEditor(agent)
       ) {
-        sidebarContextMenuRuntimeRef.current.onOpenAgentProject?.(agent);
+        sidebarContextMenuRuntimeRef.current.onOpenAgentProjectEditor?.(agent);
       } else if (actionId === "agent.edit") {
         handleEditAgent(agent);
       }
@@ -5130,7 +5132,7 @@ export function AppSidebar({
     );
   }
 
-  function getOpenWorkspaceDisabledReason(agent: AssistantNavAgentItem) {
+  function getRevealWorkspaceDisabledReason(agent: AssistantNavAgentItem) {
     const workspaceDir = agent.workspaceDir?.trim() ?? "";
     if (!workspaceDir) {
       return t("sidebar.agent.workspaceUnavailable");
@@ -5148,33 +5150,33 @@ export function AppSidebar({
     return agent.mode?.trim().toUpperCase() === "CODER";
   }
 
-  function canOpenAgentProject(agent: AssistantNavAgentItem) {
+  function canOpenAgentProjectEditor(agent: AssistantNavAgentItem) {
     const mode = agent.mode?.trim().toUpperCase() ?? "";
     if (mode === "KBASE") {
       return true;
     }
-    return mode === "CODER" && !getOpenWorkspaceDisabledReason(agent);
+    return mode === "CODER" && !getRevealWorkspaceDisabledReason(agent);
   }
 
   function createAgentEditRoute(agent: AssistantNavAgentItem) {
     return createAgentWebclientManagementPath(agent.agentKey);
   }
 
-  async function handleOpenWorkspace(agent: AssistantNavAgentItem) {
-    const disabledReason = getOpenWorkspaceDisabledReason(agent);
+  async function handleRevealWorkspace(agent: AssistantNavAgentItem) {
+    const disabledReason = getRevealWorkspaceDisabledReason(agent);
     if (disabledReason) {
       return;
     }
     if (agent.workspaceDir) {
-      await openWorkspaceDirectory(agent.workspaceDir, agent.agentKey);
+      await revealWorkspaceDirectory(agent.workspaceDir, agent.agentKey);
     }
   }
 
-  async function openWorkspaceDirectory(
+  async function revealWorkspaceDirectory(
     workspaceDir: string,
     _agentKey: string,
   ) {
-    await window.electronAPI.desktopShell.openPath(workspaceDir);
+    await window.electronAPI.desktopShell.revealPath(workspaceDir);
   }
 
   function handleEditAgent(agent: AssistantNavAgentItem) {

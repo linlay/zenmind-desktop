@@ -74,6 +74,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   const states = [];
   const debugMessages = [];
   const wsLogs = [];
+  const negotiatedContracts = [];
   const client = new KanbanDesktopWsClient({
     capabilities: ["desktop.issue.dispatch"],
     getCurrentUser: () => ({
@@ -102,6 +103,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     onListAgents: async () => [{ agentKey: "cutej", displayName: "小君", role: "桌面智能体" }],
     onStartRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "started" }),
     onAutomationSync: async () => ({ ok: true }),
+    onContractNegotiated: (contractVersion, capabilities) => negotiatedContracts.push({ contractVersion, capabilities }),
     onStateChanged: (state) => states.push(state),
     onDebug: (message) => debugMessages.push(message),
     onWsLog: (entry) => wsLogs.push(entry)
@@ -117,6 +119,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   assert.match(socket.url, /^ws:\/\/127\.0\.0\.1:3000\/ws\?/);
   assert.match(socket.url, /role=desktop/);
   assert.match(socket.url, /[?&]v=3(?:&|$)/);
+  assert.match(socket.url, /[?&]contractVersion=3\.2(?:&|$)/);
   assert.match(socket.url, /token=secret/);
 
   socket.readyState = 1;
@@ -135,10 +138,10 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   assert.equal(hello.payload.lastAckedDeliverySeq, 0);
   assert.equal(hello.payload.lastAppliedRevision, 0);
   assert.equal(hello.payload.cacheSchemaVersion, 2);
-  assert.equal(hello.payload.contractVersion, "3.1");
+  assert.equal(hello.payload.contractVersion, "3.2");
   assert.deepEqual(hello.payload.agents, [{ agentKey: "cutej", displayName: "小君", role: "桌面智能体" }]);
 
-    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "3.2", capabilities: ["issue.claim", "run.event.append.desktop_manual"] } }) });
     await waitFor(() => socket.sent.length === 2, "snapshot request");
     const snapshotRequest = socket.sent[1];
     assert.equal(snapshotRequest.v, 3);
@@ -185,6 +188,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     revision: 13
   }]);
   assert.deepEqual(states.slice(0, 2), ["connecting", "open"]);
+  assert.deepEqual(negotiatedContracts, [{ contractVersion: "3.2", capabilities: ["issue.claim", "run.event.append.desktop_manual"] }]);
   assert.equal(wsLogs.some((entry) => entry.direction === "send" && entry.envelope.type === "sync.hello"), true);
   assert.equal(wsLogs.some((entry) => entry.direction === "recv" && entry.envelope.type === "sync.hello"), true);
   assert.equal(JSON.stringify(wsLogs).includes("secret"), false);

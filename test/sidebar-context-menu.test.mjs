@@ -10,7 +10,8 @@ const {
   normalizeSidebarContextMenuRequest
 } = await import("../dist-electron/main/sidebar-context-menu-policy.js");
 const {
-  registerSidebarContextMenuIpcHandlers
+  registerSidebarContextMenuIpcHandlers,
+  resolveSidebarContextMenuLabelKey
 } = await import("../dist-electron/main/ipc/sidebar-context-menu-handlers.js");
 
 function ids(target) {
@@ -64,18 +65,18 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
 test("sidebar entity context menus expose only their fixed action sets", () => {
   const agentItems = buildSidebarContextMenuPolicy({
     kind: "agent",
-    canOpenWorkspace: true,
-    canOpenProject: true
+    canRevealWorkspace: true,
+    canOpenProjectEditor: true
   });
   assert.deepEqual(agentItems.map((item) => item.id), [
-    "agent.open-workspace",
-    "agent.open-project",
+    "agent.reveal-workspace",
+    "agent.open-project-editor",
     "agent.edit"
   ]);
   const disabledAgentItems = buildSidebarContextMenuPolicy({
     kind: "agent",
-    canOpenWorkspace: false,
-    canOpenProject: false
+    canRevealWorkspace: false,
+    canOpenProjectEditor: false
   });
   assert.equal(disabledAgentItems[0].enabled, false);
   assert.equal(disabledAgentItems[1].enabled, false);
@@ -150,22 +151,22 @@ test("sidebar native context request validation rejects injected and malformed f
     y: 8,
     target: {
       kind: "agent",
-      canOpenWorkspace: false,
-      canOpenProject: true
+      canRevealWorkspace: false,
+      canOpenProjectEditor: true
     }
   }), {
     x: 4,
     y: 8,
     target: {
       kind: "agent",
-      canOpenWorkspace: false,
-      canOpenProject: true
+      canRevealWorkspace: false,
+      canOpenProjectEditor: true
     }
   });
   assert.equal(normalizeSidebarContextMenuRequest({
     x: 4,
     y: 8,
-    target: { kind: "agent", canOpenWorkspace: true }
+    target: { kind: "agent", canRevealWorkspace: true }
   }), null);
   assert.equal(normalizeSidebarContextMenuRequest({
     x: Number.POSITIVE_INFINITY,
@@ -189,6 +190,21 @@ test("sidebar native context request validation rejects injected and malformed f
       canCreateChat: false
     }
   }), null);
+});
+
+test("workspace reveal menu uses native platform terminology", () => {
+  assert.equal(
+    resolveSidebarContextMenuLabelKey("agent.reveal-workspace", "darwin"),
+    "sidebar.agent.revealWorkspaceFinder"
+  );
+  assert.equal(
+    resolveSidebarContextMenuLabelKey("agent.reveal-workspace", "win32"),
+    "sidebar.agent.revealWorkspaceExplorer"
+  );
+  assert.equal(
+    resolveSidebarContextMenuLabelKey("agent.reveal-workspace", "linux"),
+    "sidebar.agent.revealWorkspaceFileManager"
+  );
 });
 
 test("sidebar native menu is owned by the main window and returns only the clicked action", async () => {

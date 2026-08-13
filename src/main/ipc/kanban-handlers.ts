@@ -12,6 +12,8 @@ export interface KanbanIpcHandlerOptions {
   updateKanbanIssue: (app: any, issueId: string, input: any) => any;
   deleteKanbanIssueWithAutomation: (app: any, issueId: string, callAgentPlatform: any) => any;
   moveKanbanIssue: (app: any, input: any) => any;
+  claimKanbanIssue: (app: any, issueId: string) => any;
+  runKanbanIssue: (app: any, input: any) => any;
   syncKanbanIssueAutomation: (app: any, issueId: string, callAgentPlatform: any) => any;
   callAgentPlatform: (app: any, path: string, options?: any) => any;
 
@@ -30,6 +32,8 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
     updateKanbanIssue,
     deleteKanbanIssueWithAutomation,
     moveKanbanIssue,
+    claimKanbanIssue,
+    runKanbanIssue,
     syncKanbanIssueAutomation,
     callAgentPlatform
   } = options;
@@ -75,6 +79,14 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
 
   ipcMain.handle("kanban.moveIssue", async (_event: any, input: any) =>
     moveKanbanIssue(app, input)
+  );
+
+  ipcMain.handle("kanban.claimIssue", async (_event: any, issueId: string) =>
+    claimKanbanIssue(app, issueId)
+  );
+
+  ipcMain.handle("kanban.runIssue", async (_event: any, input: any) =>
+    runKanbanIssue(app, input)
   );
 
   ipcMain.handle("kanban.syncIssueAutomation", async (_event: any, issueId: string) =>
