@@ -1687,6 +1687,7 @@ export const enUSMessages = {
   "kanban.sync.error": "Failed",
   "kanban.chat.viewOrConfirm": "View/confirm",
   "kanban.chat.view": "View chat",
+  "kanban.chat.viewIssue": "Issue details",
   "kanban.chat.awaitingConfirmation": "Awaiting your confirmation",
   "kanban.chat.openWithConfirmation": "Open chat for {id} and handle confirmation",
   "kanban.chat.open": "Open chat for {id}",

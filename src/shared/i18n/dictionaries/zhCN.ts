@@ -1687,6 +1687,7 @@ export const zhCNMessages = {
   "kanban.sync.error": "失败",
   "kanban.chat.viewOrConfirm": "查看/确认",
   "kanban.chat.view": "查看聊天",
+  "kanban.chat.viewIssue": "问题详情",
   "kanban.chat.awaitingConfirmation": "等待你确认",
   "kanban.chat.openWithConfirmation": "打开 {id} 的聊天记录并处理确认",
   "kanban.chat.open": "打开 {id} 的聊天记录",

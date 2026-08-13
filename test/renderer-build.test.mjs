@@ -3405,7 +3405,7 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.doesNotMatch(kanbanPage, /issue-card-actions|issue-card-action/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card-actions|\.issue-card-action(?:\W)/);
   assert.match(kanbanPage, /role="button"[\s\S]{0,120}tabIndex=\{0\}[\s\S]{0,160}onClick=\{onEdit\}/);
-  assert.match(kanbanPage, /onOpenChat=\{\(\) => void openAssistantIssueChat\(detailIssue\)\}/);
+  assert.match(kanbanPage, /onOpenChat=\{\(\) => openAssistantIssueChat\(detailIssue\)\}/);
   assert.match(kanbanPage, /className="issue-card-context-menu"/);
   assert.match(kanbanPage, /canEditKanbanIssueBody\(issue\)/);
 
@@ -3701,7 +3701,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanPage, /kanban-human-loop-hint/);
   assert.match(kanbanPage, /is-awaiting-confirmation/);
   assert.match(kanbanPage, /const openAssistantIssueChat = useCallback\(\(issue: KanbanIssue\) => \{/);
-  assert.match(kanbanPage, /navigate\(createAgentWebclientRoute\(\{ agentKey, chatId \}\)\)/);
+  assert.match(kanbanPage, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
   assert.match(kanbanPage, /kanban-agent-picker/);
   assert.doesNotMatch(kanbanPage, /kanban-chat-modal-layer|kanban-chat-modal/);
   assert.doesNotMatch(kanbanPage, /void openAssistantIssueChat\(updateResult\.issue/);
@@ -5810,7 +5810,11 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /initialWebviewSrcRef\.current\?\.scope !== webviewDirectLoadScope/);
   assert.match(serviceWebviewSurface, /loadInitialEmbeddedUrlDirectly[\s\S]{0,120}\?\s*\(initialWebviewSrcRef\.current\?\.url \?\? embeddedUrl\)[\s\S]{0,80}:\s*webviewOriginSrcUrl/);
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
-  assert.doesNotMatch(kanbanPage, /loadInitialEmbeddedUrlDirectly|suppressInitialLoadingCopy|surfaceId="agent-webclient-kanban-chat"/);
+  const kanbanDetailDialog = readSourceFile("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
+  assert.match(kanbanDetailDialog, /surfaceId="agent-webclient-kanban-chat"/);
+  assert.match(kanbanDetailDialog, /surfaceOwnershipActive=\{false\}/);
+  assert.match(kanbanDetailDialog, /loadInitialEmbeddedUrlDirectly/);
+  assert.match(kanbanDetailDialog, /suppressInitialLoadingCopy/);
   assert.match(serviceWebviewSurface, /service\?\.status !== "running"[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(serviceWebviewSurface, /!embeddedUrl[\s\S]{0,80}\|\|\s*skipContextRegistration/);
   assert.match(serviceWebviewSurface, /tryReadServiceWebviewPageContext/);

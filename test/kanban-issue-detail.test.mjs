@@ -65,7 +65,7 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.match(detail, /mermaid\.parse\(source, \{ suppressErrors: true \}\)/);
   assert.match(detail, /kanban\.detail\.mermaidRenderFailed[\s\S]{0,180}<pre><code className="language-mermaid">\{source\}/);
   assert.doesNotMatch(detail, /<span>\{comment\.body\}<\/span>/);
-  assert.match(detail, /!isCloud \? <button[\s\S]{0,180}setEditing\(true\)/);
+  assert.match(detail, /!isCloud \? \([\s\S]{0,220}<button[\s\S]{0,180}setEditing\(true\)/);
   assert.match(detail, /if \(await onSave\(draft\)\) setEditing\(false\)/);
   assert.match(detail, /kanban\.detail\.cloudReadonly/);
   assert.match(detail, /issue\.issueTypeKey \?\? issue\.typeId \?\? ""/);
@@ -83,6 +83,11 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.doesNotMatch(page, /issue\.dueAt|value=\{form\.version\}/);
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
+  assert.match(detail, /className="kanban-detail-window-actions"[\s\S]{0,700}kanban\.chat\.view[\s\S]{0,900}kanban\.detail\.editIssue[\s\S]{0,500}kanban-detail-close/);
+  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceId="agent-webclient-kanban-chat"/);
+  assert.match(detail, /chatEmbedPath \? t\("kanban\.chat\.viewIssue"\) : t\("kanban\.chat\.view"\)/);
+  assert.match(page, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
+  assert.doesNotMatch(page, /setDetailIssueId\(null\);[\s\S]{0,100}navigate\(createAgentWebclientRoute\(\{ agentKey, chatId \}\)\)/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
 });
 

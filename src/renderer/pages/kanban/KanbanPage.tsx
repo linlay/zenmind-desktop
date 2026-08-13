@@ -1533,7 +1533,7 @@ function resolveIssueAgentKey(issue: KanbanIssue, agents: AssistantNavAgentItem[
   return matchedAgent?.agentKey ?? "";
 }
 
-export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
+export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const { locale, t } = useI18n();
   const navigate = useNavigate();
   const [issues, setIssues] = useState<KanbanIssue[]>([]);
@@ -2423,16 +2423,15 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
     const chatId = issue.chatId?.trim() ?? "";
     if (!chatId) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noChat") });
-      return;
+      return null;
     }
     const agentKey = resolveIssueAgentKey(issue, agents);
     if (!agentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noBoundAgent") });
-      return;
+      return null;
     }
-    setDetailIssueId(null);
-    navigate(createAgentWebclientRoute({ agentKey, chatId }));
-  }, [agents, navigate, t]);
+    return createAgentWebclientRoute({ agentKey, chatId });
+  }, [agents, t]);
 
   function handleDragStart(event: DragStartEvent) {
     const activeIssue = issueMap.get(String(event.active.id));
@@ -2841,6 +2840,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
           cloudDetails={cloudDetails}
           agents={agents.map((agent) => ({ agentKey: agent.agentKey, displayName: agent.displayName }))}
           locale={locale}
+          hostTheme={hostTheme}
           t={t}
           initialEditStatus={detailInitialEditStatus}
           onClose={() => {
@@ -2849,7 +2849,7 @@ export function KanbanPage({ hostTheme: _hostTheme }: KanbanPageProps) {
           }}
           onSave={(draft) => saveIssueDetail(detailIssue, draft)}
           onDelete={() => deleteIssue(detailIssue)}
-          onOpenChat={() => void openAssistantIssueChat(detailIssue)}
+          onOpenChat={() => openAssistantIssueChat(detailIssue)}
           cloudAction={getCloudIssueAction(detailIssue, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
           cloudActionBusy={busyIssueId === detailIssue.id}
           onClaim={() => void claimCloudIssue(detailIssue)}
