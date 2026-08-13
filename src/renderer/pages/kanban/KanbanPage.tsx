@@ -304,7 +304,7 @@ const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
 
 const emptyForm: IssueFormState = {
   title: "",
-  projectId: "default",
+  projectId: "",
   projectVersion: "",
   dueDate: "",
   resolution: "",
@@ -747,9 +747,10 @@ function computeSortableDropPosition(
 
 function createFormFromIssue(issue: KanbanIssue): IssueFormState {
   const automationForm = parseAutomationFormFromCron(issue.automationCron);
+  const projectId = issue.projectId?.trim() ?? "";
   return {
     title: issue.title,
-    projectId: issue.projectId ?? "default",
+    projectId: issue.syncMode === "local" && (!projectId || projectId === "default") ? "" : projectId,
     projectVersion: issue.projectVersion ?? "",
     dueDate: issue.dueDate ?? "",
     resolution: issue.resolution ?? "",
@@ -1647,6 +1648,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [runAgentPickerIssueId, setRunAgentPickerIssueId] = useState<string | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
+  const [projectFormMenuOpen, setProjectFormMenuOpen] = useState(false);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
@@ -1658,6 +1660,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const kanbanReady = readKanbanApi() !== null;
   const missingKanbanApiMessage = t("kanban.missingApi", { appName: t("app.name") });
   const cloudProjectOptions = useMemo(() => sortKanbanProjectOptions(cloudProjects), [cloudProjects]);
+  const projectFormOptions = useMemo(() => flattenKanbanProjectTree(cloudProjects), [cloudProjects]);
   const kanbanProjectsById = useMemo(() => new Map(cloudProjects.map((project) => [project.id, project])), [cloudProjects]);
   const projectFilterIds = useMemo(
     () => getKanbanProjectFilterIds(cloudProjects, selectedProjectIds),
@@ -2026,13 +2029,13 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setFeedback({ tone: "error", message: missingKanbanApiMessage });
       return;
     }
-    const projectId = selectedProjectIds.length === 1 ? selectedProjectIds[0] : "default";
-    setForm({ ...emptyForm, projectId, status, attachmentChatId: createKanbanDraftAttachmentChatId() });
+    setForm({ ...emptyForm, status, attachmentChatId: createKanbanDraftAttachmentChatId() });
     setFormCompact(true);
+    setProjectFormMenuOpen(false);
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "create" });
-  }, [missingKanbanApiMessage, selectedProjectIds]);
+  }, [missingKanbanApiMessage]);
 
   const createIssueHandlersByStatus = useMemo(
     () => Object.fromEntries(
@@ -2661,8 +2664,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const modalSyncLocked = modalReadOnly || (modal?.mode === "edit" && modal.issue?.syncMode === "cloud");
   const canClaimCloudIssues = connectionState === "open" && cloudCapabilities.includes("issue.claim");
   const canRunCloudIssues = connectionState === "open" && cloudCapabilities.includes("run.event.append");
-  const modalProjectId = form.projectId.trim() || modal?.issue?.projectId?.trim() || "default";
-  const modalProject = kanbanProjectsById.get(modalProjectId);
+  const modalProjectId = form.projectId.trim();
+  const modalProject = modalProjectId ? kanbanProjectsById.get(modalProjectId) : undefined;
+  const modalProjectLabel = modalProject
+    ? getKanbanProjectOptionLabel(modalProject)
+    : t("kanban.projectFilter.local");
   const modalProjectVersions = Array.from(new Set([
     ...(form.projectVersion ? [form.projectVersion] : []),
     ...(modalProject?.versions ?? [])
@@ -2989,16 +2995,54 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
               </div>
             </div>
             <div className="kanban-field-grid">
-              <label className="kanban-field">
+              <div className="kanban-field">
                 <span>{t("kanban.detail.project")}</span>
-                <select
-                  value={form.projectId}
-                  disabled={modalReadOnly}
-                  onChange={(event) => setForm((current) => ({ ...current, projectId: event.target.value, projectVersion: "", componentKeys: [] }))}
-                >
-                  {cloudProjectOptions.map((project) => <option key={project.id} value={project.id}>{getKanbanProjectOptionLabel(project)}</option>)}
-                </select>
-              </label>
+                <div className="kanban-project-form-select">
+                  <button
+                    type="button"
+                    className="kanban-project-form-trigger"
+                    disabled={modalReadOnly}
+                    aria-haspopup="listbox"
+                    aria-expanded={projectFormMenuOpen}
+                    onClick={() => setProjectFormMenuOpen((current) => !current)}
+                  >
+                    <span>{modalProjectLabel}</span>
+                    <span className="kanban-project-form-chevron" aria-hidden="true">⌄</span>
+                  </button>
+                  {projectFormMenuOpen ? (
+                    <div className="kanban-project-form-menu" role="listbox" aria-label={t("kanban.detail.project")}>
+                      <button
+                        type="button"
+                        role="option"
+                        aria-selected={!form.projectId}
+                        className={!form.projectId ? "is-selected" : ""}
+                        onClick={() => {
+                          setForm((current) => ({ ...current, projectId: "", projectVersion: "", componentKeys: [] }));
+                          setProjectFormMenuOpen(false);
+                        }}
+                      >
+                        {t("kanban.projectFilter.local")}
+                      </button>
+                      {projectFormOptions.map(({ project, level }) => (
+                        <button
+                          key={project.id}
+                          type="button"
+                          role="option"
+                          aria-selected={form.projectId === project.id}
+                          className={form.projectId === project.id ? "is-selected" : ""}
+                          style={{ paddingLeft: `${10 + (level * 16)}px` }}
+                          onClick={() => {
+                            setForm((current) => ({ ...current, projectId: project.id, projectVersion: "", componentKeys: [] }));
+                            setProjectFormMenuOpen(false);
+                          }}
+                        >
+                          {getKanbanProjectOptionLabel(project)}
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+                </div>
+              </div>
               <label className="kanban-field">
                 <span>{t("kanban.form.version")}</span>
                 <select

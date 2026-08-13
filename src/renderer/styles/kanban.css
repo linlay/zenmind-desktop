@@ -342,6 +342,7 @@
 .kanban-project-filter-menu {
   --kanban-ink: var(--sidebar-operation-menu-text);
   --kanban-muted: var(--sidebar-operation-menu-text-muted);
+  --kanban-project-scrollbar-track: rgba(255, 255, 255, 0.94);
   position: absolute;
   top: 38px;
   left: 0;
@@ -351,7 +352,10 @@
   display: grid;
   gap: 6px;
   padding: 8px;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--sidebar-operation-menu-text-muted) 48%, transparent) var(--kanban-project-scrollbar-track);
   border: 1px solid var(--sidebar-operation-menu-border);
   border-radius: var(--kanban-radius);
   background: var(--sidebar-operation-menu-bg);
@@ -359,6 +363,25 @@
   box-shadow: var(--sidebar-operation-menu-shadow);
   backdrop-filter: blur(18px) saturate(135%);
   -webkit-backdrop-filter: blur(18px) saturate(135%);
+}
+
+.kanban-project-filter-menu::-webkit-scrollbar {
+  width: 8px;
+}
+
+.kanban-project-filter-menu::-webkit-scrollbar-track {
+  background: var(--kanban-project-scrollbar-track);
+}
+
+.kanban-project-filter-menu::-webkit-scrollbar-thumb {
+  border: 2px solid var(--kanban-project-scrollbar-track);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--sidebar-operation-menu-text-muted) 48%, transparent);
+  background-clip: padding-box;
+}
+
+.kanban-project-filter-menu::-webkit-scrollbar-corner {
+  background: var(--kanban-project-scrollbar-track);
 }
 
 .kanban-project-filter-all,
@@ -619,6 +642,10 @@
   border-color: rgba(148, 163, 184, 0.26);
   background: #151920;
   box-shadow: none;
+}
+
+:root[data-theme="dark"] .kanban-project-filter-menu {
+  --kanban-project-scrollbar-track: rgba(31, 35, 42, 0.98);
 }
 
 :root[data-theme="dark"] .kanban-search-filter-menu {
@@ -2224,6 +2251,93 @@
   font-size: 11px;
   font-weight: 500;
   line-height: 1.45;
+}
+
+.kanban-project-form-select {
+  position: relative;
+  min-width: 0;
+}
+
+.kanban-field .kanban-project-form-trigger {
+  width: 100%;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--kanban-border);
+  border-radius: 6px;
+  background: var(--kanban-bg);
+  color: var(--kanban-ink);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.kanban-project-form-trigger > span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-project-form-trigger:focus,
+.kanban-project-form-trigger[aria-expanded="true"] {
+  border-color: #1677ff;
+  outline: none;
+}
+
+.kanban-project-form-chevron {
+  flex: 0 0 auto;
+  font-size: 15px;
+  line-height: 1;
+}
+
+.kanban-project-form-menu {
+  position: absolute;
+  z-index: 160;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  max-height: min(240px, calc(100vh - 180px));
+  overflow-x: hidden;
+  overflow-y: auto;
+  display: grid;
+  gap: 2px;
+  padding: 5px;
+  border: 1px solid var(--sidebar-operation-menu-border);
+  border-radius: 8px;
+  background: var(--sidebar-operation-menu-bg);
+  box-shadow: var(--sidebar-operation-menu-shadow);
+  backdrop-filter: blur(18px) saturate(135%);
+  -webkit-backdrop-filter: blur(18px) saturate(135%);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--sidebar-operation-menu-text-muted) 48%, transparent) transparent;
+}
+
+.kanban-project-form-menu button {
+  min-height: 30px;
+  overflow: hidden;
+  padding: 6px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--sidebar-operation-menu-text);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kanban-project-form-menu button:hover,
+.kanban-project-form-menu button.is-selected {
+  background: var(--sidebar-operation-menu-hover);
+}
+
+.kanban-project-form-menu button.is-selected {
+  color: var(--kanban-accent);
 }
 
 .kanban-attachment-add-button {

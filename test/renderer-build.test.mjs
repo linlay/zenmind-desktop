@@ -3532,6 +3532,17 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   assert.match(kanbanPage, /checked=\{includeLocalIssues\}[\s\S]{0,160}onChange=\{onToggleLocal\}/);
   assert.match(kanbanPage, /getKanbanPartiallySelectedProjectIds\(projects, selectedProjectIds\)/);
   assert.match(kanbanPage, /toggleKanbanProjectTreeSelection\(cloudProjects, current, projectId\)/);
+  assert.match(kanbanPage, /const emptyForm: IssueFormState = \{[\s\S]{0,120}projectId:\s*""/);
+  assert.match(kanbanPage, /const emptyForm: IssueFormState = \{[\s\S]{0,900}syncToCloud:\s*false/);
+  assert.match(kanbanPage, /const projectFormOptions = useMemo\(\(\) => flattenKanbanProjectTree\(cloudProjects\), \[cloudProjects\]\)/);
+  assert.match(kanbanPage, /className="kanban-project-form-trigger"[\s\S]{0,180}aria-haspopup="listbox"/);
+  assert.match(kanbanPage, /className="kanban-project-form-menu" role="listbox"/);
+  assert.match(kanbanPage, /projectFormOptions\.map\(\(\{ project, level \}\)/);
+  assert.match(kanbanPage, /aria-selected=\{form\.projectId === project\.id\}/);
+  assert.match(kanbanPage, /projectId:\s*project\.id, projectVersion:\s*"", componentKeys:\s*\[\]/);
+  assert.match(kanbanStyles, /\.kanban-project-form-menu\s*\{[\s\S]{0,260}max-height:\s*min\(240px, calc\(100vh - 180px\)\);[\s\S]{0,100}overflow-y:\s*auto/);
+  assert.match(kanbanPage, /setForm\(\{ \.\.\.emptyForm, status, attachmentChatId: createKanbanDraftAttachmentChatId\(\) \}\)/);
+  assert.match(kanbanPage, /projectId:\s*form\.projectId \|\| "default"/);
   assert.match(kanbanPage, /inputRef\.current\.indeterminate = indeterminate/);
   assert.match(kanbanPage, /aria-checked=\{indeterminate \? "mixed" : checked\}/);
   assert.match(kanbanPage, /role="tree"/);
@@ -3544,6 +3555,9 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   assert.match(kanbanStyles, /\.kanban-project-filter-row\.is-local\s*\{[\s\S]{0,420}border-left:\s*3px solid[\s\S]{0,240}background:/);
   assert.match(kanbanStyles, /\.kanban-project-filter-row\.is-local\.is-active\s*\{/);
   assert.match(kanbanStyles, /\.kanban-project-filter-tree\s*\{[\s\S]{0,220}border-top:\s*1px solid/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-menu::\-webkit-scrollbar\s*\{[\s\S]{0,80}width:\s*8px/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-menu::\-webkit-scrollbar-track\s*\{[\s\S]{0,100}background:\s*var\(--kanban-project-scrollbar-track\)/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-menu::\-webkit-scrollbar-thumb\s*\{[\s\S]{0,180}border:\s*2px solid var\(--kanban-project-scrollbar-track\)/);
   assert.match(zhCN, /"kanban\.cloud\.resync": "重新同步"/);
   assert.match(zhCN, /"kanban\.projectFilter\.all": "全部项目"/);
   assert.match(zhCN, /"kanban\.projectFilter\.local": "本地"/);
