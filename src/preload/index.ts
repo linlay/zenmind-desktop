@@ -149,6 +149,8 @@ const api: DesktopApi = {
     moveIssue: (input: KanbanIssueMoveInput) => ipcRenderer.invoke("kanban.moveIssue", input),
     claimIssue: (issueId: string) => ipcRenderer.invoke("kanban.claimIssue", issueId),
     runIssue: (input: KanbanRunIssueInput) => ipcRenderer.invoke("kanban.runIssue", input),
+    bindHumanReferenceChat: (input: { issueId: string; stageId: string; statusId: string; chatId: string }) => ipcRenderer.invoke("kanban.bindHumanReferenceChat", input),
+    unbindHumanReferenceChat: (issueChatId: string) => ipcRenderer.invoke("kanban.unbindHumanReferenceChat", issueChatId),
     syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("kanban.syncIssueAutomation", issueId),
     onChanged: (listener: KanbanChangedListener) => {
       const handleKanbanChanged = () => {

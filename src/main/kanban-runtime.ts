@@ -4,6 +4,7 @@ import { randomUUID } from "node:crypto";
 import yaml from "js-yaml";
 import type { App } from "electron";
 import type {
+  AssistantNavigationPushEvent,
   AssistantStartRunRequest,
   AssistantStartRunResult,
   DesktopPetAgentOption,
@@ -27,12 +28,13 @@ import type {
   KanbanStatus
 } from "../shared/contracts";
 import { parseKanbanPriority } from "../shared/contracts";
+import { isAgentPlatformEpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { getDesktopDeviceId } from "./device-identity";
 import { getDesktopSsoStatus } from "./oidc-sso";
 import { readDesktopSsoSiteAccessToken, readDesktopSsoSiteTokenUser } from "./sso-site-token";
 import { resolveRuntimeRoot } from "./env-bootstrap";
-import { buildKanbanAutomationPayload, resolveKanbanRunStateFromAssistantEvent, resolveKanbanStatusFromAssistantEvent } from "./kanban-sync";
+import { buildKanbanAutomationPayload, resolveKanbanRunFinishedPush } from "./kanban-sync";
 import {
   applyDesktopKanbanCloudSnapshot,
   completeDesktopKanbanCommandReceiptByRunId,
@@ -41,6 +43,7 @@ import {
   deleteDesktopKanbanRunEvent,
   deleteDesktopKanbanIssue,
   ensureDesktopKanbanDefaultBinding,
+  getDesktopKanbanCommandReceiptByRunId,
   getDesktopKanbanIssue,
   getDesktopKanbanManualRunByRunId,
   hasDesktopKanbanCloudProject,
@@ -61,9 +64,8 @@ import {
   tombstoneDesktopKanbanCloudIssue,
   updateDesktopKanbanIssue,
   updateDesktopKanbanCommandReceipt,
+  updateDesktopKanbanCommandReceiptIdentity,
   updateDesktopKanbanManualRun,
-  updateDesktopKanbanIssueByChatId,
-  updateDesktopKanbanIssueByRunId,
   updateDesktopKanbanIssueRuntimeState,
   upsertDispatchedDesktopKanbanIssue,
   writeDesktopKanbanSyncCursor,
@@ -105,7 +107,7 @@ type AssistantBridgeLike = {
   startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
   stopRun?: (runId: string) => Promise<{ ok: boolean; message?: string }>;
   getChat?: (chatId: string) => Promise<{
-    messages?: Array<{ runId?: string }>;
+    messages?: Array<{ runId?: string; role?: string; content?: string }>;
     events?: Array<{ runId?: string; seq?: number; type?: string; status?: string; message?: string; error?: string }>;
   } | null>;
 };
@@ -131,15 +133,6 @@ type KanbanDesktopConfigFile = {
   deviceAlias?: unknown;
 };
 
-type KanbanAssistantSyncEvent = {
-  type?: string;
-  status?: string | null;
-  chatId?: string | null;
-  runId?: string | null;
-  message?: string | null;
-  error?: string | null;
-};
-
 const KANBAN_CONFIG_FILE = "kanban.json";
 const DEFAULT_SELECTED_PROJECT_ID = "default";
 const ASSISTANT_AGENT_LIST_TIMEOUT_MS = 2_000;
@@ -159,6 +152,22 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function parseStructuredReviewText(value: string): { verdict: "approved" | "changes_requested" | "rejected"; summary: string } | undefined {
+  const text = value.trim().replace(/^```(?:json)?\s*/iu, "").replace(/\s*```$/u, "");
+  if (!text) return undefined;
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    const verdict = readText(parsed.verdict);
+    const summary = readText(parsed.summary);
+    if ((verdict === "approved" || verdict === "changes_requested" || verdict === "rejected") && summary) {
+      return { verdict, summary };
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
 }
 
 function nullableText(value: unknown) {
@@ -548,7 +557,8 @@ function kanbanIssueFromAutomationPayload(payload: unknown): KanbanIssue | null 
     workerId: nullableText(record.workerId),
     workerAgent: nullableText(record.workerAgent),
     activeReviewId: nullableText(record.activeReviewId),
-    activeRunId: nullableText(record.activeRunId),
+    activeIssueRunId: nullableText(record.activeIssueRunId),
+    activeRunId: nullableText(record.activeIssueRunId) ?? nullableText(record.activeRunId),
     position: typeof record.position === "number" ? record.position : 1,
     chatId: nullableText(record.chatId),
     runId: nullableText(record.runId),
@@ -590,7 +600,11 @@ export class KanbanRuntime {
       capabilities: [
         "command.dispatchIssue",
         "command.runIssue",
+        "command.reviewIssue",
         "run.event.append",
+        "issue.run.prepare",
+        "issue.chat.bind",
+        "issue.chat.unbind",
         "issue.claim",
         "agent.listDesktop",
         "automation.sync"
@@ -671,10 +685,11 @@ export class KanbanRuntime {
     this.refreshConnection();
     return {
       ...listDesktopKanbanIssues(this.options.app, this.currentUser(), this.connectionState),
-      cloudCapabilities: this.negotiatedContractVersion.startsWith("3.2")
+      cloudCapabilities: this.negotiatedContractVersion.startsWith("4.")
         ? [
           ...(this.negotiatedCapabilities.includes("issue.claim") ? ["issue.claim"] : []),
-          ...(this.negotiatedCapabilities.includes("run.event.append.desktop_manual") ? ["run.event.append"] : [])
+          ...(this.negotiatedCapabilities.includes("run.event.append") ? ["run.event.append"] : []),
+          ...(this.negotiatedCapabilities.includes("issue.chat.bind") ? ["issue.chat.bind"] : [])
         ]
         : []
     };
@@ -904,7 +919,7 @@ export class KanbanRuntime {
     if (!issue || issueSyncMode(issue) !== "cloud") {
       return { ok: false, message: t("kanban.runtime.missing"), issues };
     }
-    if (!this.negotiatedContractVersion.startsWith("3.2") || !this.negotiatedCapabilities.includes("issue.claim")) {
+    if (!this.negotiatedContractVersion.startsWith("4.") || !this.negotiatedCapabilities.includes("issue.claim")) {
       return { ok: false, message: t("kanban.cloud.claimUnsupported"), issues };
     }
     if (!this.wsClient.isOpen()) {
@@ -938,7 +953,7 @@ export class KanbanRuntime {
     if (!issue || issueSyncMode(issue) !== "cloud") {
       return { ok: false, message: t("kanban.runtime.missing"), issues: currentIssues };
     }
-    if (!this.negotiatedContractVersion.startsWith("3.2") || !this.negotiatedCapabilities.includes("run.event.append.desktop_manual") || !this.wsClient.isOpen()) {
+    if (!this.negotiatedContractVersion.startsWith("4.") || !this.negotiatedCapabilities.includes("run.event.append") || !this.wsClient.isOpen()) {
       return { ok: false, message: t("kanban.cloudSync.notConnected"), issues: currentIssues };
     }
     if (issue.status !== "todo") {
@@ -955,11 +970,50 @@ export class KanbanRuntime {
     if (!agentKey || !availableAgents.some((agent) => agent.agentKey === agentKey)) {
       return { ok: false, message: t("kanban.feedback.noAgents"), issues: currentIssues };
     }
-    const chatId = createKanbanRemoteChatId();
-    const runId = createKanbanRemoteRunId();
     const projectId = readText(issue.projectId) || DEFAULT_SELECTED_PROJECT_ID;
     const remoteIssueId = getRemoteIssueId(issue);
-    recordDesktopKanbanManualRun(this.options.app, currentUser, { runId, chatId, issueId: remoteIssueId, projectId, agentKey });
+    let prepared: { issueRun?: { id?: string }; preferredChatId?: string };
+    try {
+      prepared = await this.wsClient.request("issue.run.prepare", {
+        issueId: remoteIssueId,
+        agentKey,
+        forceNewChat: input.forceNewChat === true
+      });
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof Error ? error.message : String(error),
+        issues: currentIssues,
+        agentKey
+      };
+    }
+    const issueRunId = readText(prepared.issueRun?.id);
+    if (!issueRunId) {
+      return { ok: false, message: t("kanban.runtime.dispatchInvalid"), issues: currentIssues, agentKey };
+    }
+    const preferredChatId = input.forceNewChat === true ? "" : readText(prepared.preferredChatId);
+    let chatId = preferredChatId || createKanbanRemoteChatId();
+    if (preferredChatId && this.options.assistantBridge.getChat) {
+      try {
+        if (!await this.options.assistantBridge.getChat(preferredChatId)) chatId = createKanbanRemoteChatId();
+      } catch {
+        chatId = createKanbanRemoteChatId();
+      }
+    }
+    const runId = createKanbanRemoteRunId();
+    recordDesktopKanbanManualRun(this.options.app, currentUser, { issueRunId, runId, chatId, issueId: remoteIssueId, projectId, agentKey });
+    const failPreparedRun = async (message: string) => {
+      updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "failed", message);
+      await this.appendRunEvent({
+        projectId,
+        issueId: remoteIssueId,
+        issueRunId,
+        runId,
+        chatId,
+        eventType: "run.failed",
+        payload: { source: "desktop_manual", status: "failed", agentKey, runId, chatId, error: message }
+      }).catch(() => undefined);
+    };
     let runResult: AssistantStartRunResult;
     try {
       runResult = await this.options.assistantBridge.startRun({
@@ -972,17 +1026,17 @@ export class KanbanRuntime {
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "failed", message);
+      await failPreparedRun(message);
       return { ok: false, message, issues: currentIssues, chatId, runId, agentKey };
     }
     if (!runResult.ok) {
-      updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "failed", runResult.message);
+      await failPreparedRun(runResult.message);
       return { ok: false, message: runResult.message, issues: currentIssues, chatId, runId, agentKey };
     }
     if (readText(runResult.runId) !== runId || readText(runResult.chatId) !== chatId) {
       await this.options.assistantBridge.stopRun?.(readText(runResult.runId) || runId).catch(() => undefined);
       const message = t("kanban.run.identityMismatch");
-      updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "failed", message);
+      await failPreparedRun(message);
       return { ok: false, message, issues: currentIssues, chatId, runId, agentKey };
     }
     updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "started");
@@ -990,6 +1044,7 @@ export class KanbanRuntime {
       const appended = await this.appendRunEvent({
         projectId,
         issueId: remoteIssueId,
+        issueRunId,
         runId,
         chatId,
         eventType: "run.started",
@@ -1011,8 +1066,36 @@ export class KanbanRuntime {
     } catch (error) {
       await this.options.assistantBridge.stopRun?.(runId).catch(() => undefined);
       const message = error instanceof Error ? error.message : String(error);
-      updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "failed", message);
+      await failPreparedRun(message);
       return { ok: false, message, issues: currentIssues, chatId, runId, agentKey };
+    }
+  }
+
+  async bindHumanReferenceChat(input: { issueId: string; stageId: string; statusId: string; chatId: string }) {
+    this.refreshConnection();
+    if (!this.wsClient.isOpen() || !this.negotiatedContractVersion.startsWith("4.")) {
+      return { ok: false, message: t("kanban.cloudSync.notConnected") };
+    }
+    try {
+      const result = await this.wsClient.request<{ ok: boolean; message?: string }>("issue.chat.bind", input);
+      if (result.ok) await this.resyncCloudBoard();
+      return result;
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  async unbindHumanReferenceChat(issueChatId: string) {
+    this.refreshConnection();
+    if (!this.wsClient.isOpen() || !this.negotiatedContractVersion.startsWith("4.")) {
+      return { ok: false, message: t("kanban.cloudSync.notConnected") };
+    }
+    try {
+      const result = await this.wsClient.request<{ ok: boolean; message?: string }>("issue.chat.unbind", { issueChatId });
+      if (result.ok) await this.resyncCloudBoard();
+      return result;
+    } catch (error) {
+      return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
   }
 
@@ -1096,7 +1179,8 @@ export class KanbanRuntime {
         sourceDeliverySeq: item.sourceDeliverySeq,
         projectId: item.projectId,
         issueId: item.issueId,
-        runId: item.runId || undefined,
+        issueRunId: item.issueRunId,
+        externalRunId: item.externalRunId,
         chatId: item.chatId || undefined,
         eventType: item.eventType,
         payload: item.payload
@@ -1135,6 +1219,7 @@ export class KanbanRuntime {
         await this.appendRunEvent({
           projectId: receipt.projectId,
           issueId: receipt.issueId,
+          issueRunId: receipt.issueRunId,
           runId: receipt.runId,
           chatId: receipt.chatId,
           eventType: recovery.terminalEventType,
@@ -1166,6 +1251,15 @@ export class KanbanRuntime {
         });
         if (!result.ok) {
           updateDesktopKanbanManualRun(this.options.app, currentUser, receipt.runId, "failed", result.message);
+          await this.appendRunEvent({
+            projectId: receipt.projectId,
+            issueId: receipt.issueId,
+            issueRunId: receipt.issueRunId,
+            runId: receipt.runId,
+            chatId: receipt.chatId,
+            eventType: "run.failed",
+            payload: { source: "desktop_manual", status: "failed", agentKey: receipt.agentKey, error: result.message }
+          });
           continue;
         }
       }
@@ -1178,6 +1272,7 @@ export class KanbanRuntime {
       const started = await this.appendRunEvent({
         projectId: receipt.projectId,
         issueId: receipt.issueId,
+        issueRunId: receipt.issueRunId,
         runId: receipt.runId,
         chatId: receipt.chatId,
         eventType: "run.started",
@@ -1188,6 +1283,8 @@ export class KanbanRuntime {
           clientEventId: stableClientEventId(getDesktopDeviceId(this.options.app), [receipt.issueId, receipt.runId, "run.started"]),
           projectId: receipt.projectId,
           issueId: receipt.issueId,
+          issueRunId: receipt.issueRunId,
+          externalRunId: receipt.runId,
           runId: receipt.runId,
           chatId: receipt.chatId,
           eventType: "run.started",
@@ -1200,84 +1297,121 @@ export class KanbanRuntime {
     }
   }
 
-  sendAssistantEvent(event: KanbanAssistantSyncEvent) {
+  sendNavigationPushEvent(event: AssistantNavigationPushEvent) {
     this.refreshConnection();
-    const status = resolveKanbanStatusFromAssistantEvent(event);
-    const runState = resolveKanbanRunStateFromAssistantEvent(event);
-    if (!runState || (!event.runId && !event.chatId)) {
+    const runId = event.runId?.trim() ?? "";
+    const semanticTime = event.type === "run.started" ? event.startedAt : event.finishedAt;
+    if (
+      event.frame !== "push" ||
+      (event.type !== "run.started" && event.type !== "run.finished") ||
+      !runId ||
+      !isAgentPlatformEpochMilliseconds(semanticTime)
+    ) {
+      this.options.onDebug?.(
+        `ignored invalid navigation push: frame=${event.frame || ""} type=${event.type || ""} runId=${runId} semanticTime=${String(semanticTime ?? "")}`,
+      );
       return;
     }
-    this.options.onDebug?.(
-      t("kanban.runtime.debugAssistantTerminal", {
-        type: event.type || "",
-        status: event.status || "",
-        runState: runState || "",
-        runId: event.runId || "",
-        chatId: event.chatId || "",
-        message: event.message || event.error || ""
-      })
-    );
     const currentUser = this.currentUser();
-    const input: KanbanIssueUpdateInput = {
-      runId: null,
-      runState
-    };
-    if (status) {
-      input.status = status;
-    }
-    if (event.chatId) {
-      input.chatId = event.chatId;
-    }
     const issues = listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues;
-    const manualReceipt = event.runId ? getDesktopKanbanManualRunByRunId(this.options.app, currentUser, event.runId) : null;
-    const matchingCloudIssue = event.runId ? issues.find((issue) =>
-      issueSyncMode(issue) === "cloud" && (
-        issue.runId === event.runId ||
-        issue.activeRunId === event.runId ||
-        (manualReceipt && getRemoteIssueId(issue) === manualReceipt.issueId)
-      )
-    ) : undefined;
-    const matchingLocalIssue = issues.find((issue) => issueSyncMode(issue) !== "cloud" && (
-      (event.runId && (issue.runId === event.runId || issue.activeRunId === event.runId)) ||
-      (!event.runId && event.chatId && (issue.chatId === event.chatId || issue.attachmentChatId === event.chatId))
-    ));
-    const matchingIssue = matchingCloudIssue ?? matchingLocalIssue;
-    if (matchingIssue && issueSyncMode(matchingIssue) !== "cloud") {
-      if (event.runId) {
-        updateDesktopKanbanIssueByRunId(this.options.app, currentUser, event.runId, input);
-      } else if (event.chatId) {
-        updateDesktopKanbanIssueByChatId(this.options.app, currentUser, event.chatId, input);
+    const matchingLocalIssue = issues.find((issue) =>
+      issueSyncMode(issue) !== "cloud" && (issue.runId === runId || issue.activeRunId === runId)
+    );
+
+    if (event.type === "run.started") {
+      if (!matchingLocalIssue) {
+        return;
+      }
+      const result = updateDesktopKanbanIssueRuntimeState(this.options.app, currentUser, matchingLocalIssue.id, {
+        status: "in_progress",
+        chatId: event.chatId || matchingLocalIssue.chatId,
+        runId,
+        runState: "running",
+      });
+      if (result.ok) {
+        this.notifyChanged();
       }
       return;
     }
-    if (matchingCloudIssue && event.runId) {
-      const terminalEventType = runState === "completed" ? "run.completed" : runState === "cancelled" ? "run.cancelled" : "run.failed";
-      const commandId = readText(matchingCloudIssue.dispatchCommandId);
-      if (manualReceipt) {
-        updateDesktopKanbanManualRun(this.options.app, currentUser, event.runId, runState === "completed" ? "completed" : runState === "cancelled" ? "cancelled" : "failed", event.error ?? null);
+
+    const terminal = resolveKanbanRunFinishedPush(event);
+    if (!terminal) {
+      this.options.onDebug?.(
+        `ignored invalid run.finished protocol: runId=${runId} status=${event.status || ""} finishReason=${event.finishReason || ""}`,
+      );
+      return;
+    }
+
+    this.options.onDebug?.(
+      `accepted navigation run.finished: runId=${runId} status=${event.status} finishReason=${event.finishReason} runState=${terminal.runState}`,
+    );
+    if (matchingLocalIssue) {
+      const result = updateDesktopKanbanIssueRuntimeState(this.options.app, currentUser, matchingLocalIssue.id, {
+        status: terminal.status,
+        chatId: event.chatId || matchingLocalIssue.chatId,
+        runId: null,
+        runState: terminal.runState,
+      });
+      if (result.ok) {
+        this.notifyChanged();
       }
-      void this.appendRunEvent({
-        projectId: matchingCloudIssue.projectId,
-        issueId: getRemoteIssueId(matchingCloudIssue),
-        runId: event.runId,
-        chatId: event.chatId,
-        eventType: terminalEventType,
-        payload: {
-          ...(manualReceipt ? { source: "desktop_manual", agentKey: manualReceipt.agentKey } : {}),
-          ...(commandId ? { commandId } : {}),
-          type: event.type,
-          status: status ?? event.status ?? runState,
-          runState,
-          chatId: event.chatId,
-          runId: event.runId,
-          message: event.message,
-          error: event.error
+      return;
+    }
+
+    const manualReceipt = getDesktopKanbanManualRunByRunId(this.options.app, currentUser, runId);
+    const commandReceipt = getDesktopKanbanCommandReceiptByRunId(this.options.app, currentUser, runId);
+    const matchingCloudIssue = issues.find((issue) =>
+      issueSyncMode(issue) === "cloud" && (
+        issue.runId === runId ||
+        issue.activeRunId === runId ||
+        (manualReceipt && getRemoteIssueId(issue) === manualReceipt.issueId) ||
+        (commandReceipt && getRemoteIssueId(issue) === commandReceipt.issueId)
+      )
+    );
+    if (matchingCloudIssue || manualReceipt || commandReceipt) {
+      const commandId = commandReceipt?.commandId || readText(matchingCloudIssue?.dispatchCommandId);
+      if (manualReceipt) {
+        updateDesktopKanbanManualRun(
+          this.options.app,
+          currentUser,
+          runId,
+          terminal.runState === "completed" ? "completed" : terminal.runState === "cancelled" ? "cancelled" : "failed",
+          null,
+        );
+      }
+      void (async () => {
+        const reviewResult = commandReceipt?.commandType === "review" && terminal.terminalEventType === "run.completed"
+          ? await this.readStructuredReviewResult(commandReceipt.chatId, runId)
+          : undefined;
+        await this.appendRunEvent({
+          projectId: commandReceipt?.projectId || manualReceipt?.projectId || matchingCloudIssue?.projectId || "",
+          issueId: commandReceipt?.issueId || manualReceipt?.issueId || (matchingCloudIssue ? getRemoteIssueId(matchingCloudIssue) : ""),
+          issueRunId: commandReceipt?.issueRunId || manualReceipt?.issueRunId,
+          runId,
+          chatId: event.chatId || commandReceipt?.chatId,
+          eventType: terminal.terminalEventType,
+          payload: {
+            ...(manualReceipt ? { source: "desktop_manual", agentKey: manualReceipt.agentKey } : {}),
+            ...(commandReceipt ? { agentKey: optionalText(commandReceipt.payload.agentKey) } : {}),
+            ...(commandId ? { commandId } : {}),
+            ...(reviewResult ? { reviewResult } : {}),
+            type: event.type,
+            status: event.status,
+            finishReason: event.finishReason,
+            runState: terminal.runState,
+            chatId: event.chatId || commandReceipt?.chatId,
+            runId,
+          }
+        });
+        if (commandReceipt) {
+          completeDesktopKanbanCommandReceiptByRunId(
+            this.options.app,
+            currentUser,
+            runId,
+            terminal.runState === "completed" ? "completed" : "failed",
+          );
         }
-      }).then(() => {
-        if (event.runId) {
-          completeDesktopKanbanCommandReceiptByRunId(this.options.app, currentUser, event.runId, runState === "completed" ? "completed" : "failed");
-        }
-      }).catch((error) => this.options.onDebug?.(error instanceof Error ? error.message : String(error)));
+      })().catch((error) => this.options.onDebug?.(error instanceof Error ? error.message : String(error)));
     }
   }
 
@@ -1411,7 +1545,7 @@ export class KanbanRuntime {
       const result = this.applyDispatch(issue, sourceRevision);
       return { ok: result.ok, message: result.message, lastAppliedRevision: cursor.lastAppliedRevision };
     }
-    if (delivery.eventType === "command.runIssue") {
+    if (delivery.eventType === "command.runIssue" || delivery.eventType === "command.reviewIssue") {
       const commandId = readText(delivery.commandId) || `delivery:${getDesktopDeviceId(this.options.app)}:${delivery.deliverySeq}`;
       const receipt = recordDesktopKanbanCommandReceipt(this.options.app, currentUser, {
         commandId,
@@ -1442,10 +1576,14 @@ export class KanbanRuntime {
           ? await this.inspectReceiptRun(receipt.chatId, receipt.runId)
           : { exists: false as const, terminalEventType: undefined, message: undefined, error: undefined };
         if (recovery.terminalEventType) {
+		  const reviewResult = receipt.commandType === "review" && recovery.terminalEventType === "run.completed"
+			? await this.readStructuredReviewResult(receipt.chatId, receipt.runId)
+			: undefined;
           await this.appendRunEvent({
             sourceDeliverySeq: receipt.deliverySeq,
             projectId: receipt.projectId,
             issueId: receipt.issueId,
+			issueRunId: receipt.issueRunId,
             runId: receipt.runId,
             chatId: receipt.chatId,
             eventType: recovery.terminalEventType,
@@ -1455,7 +1593,8 @@ export class KanbanRuntime {
               runId: receipt.runId,
               chatId: receipt.chatId,
               message: recovery.message,
-              error: recovery.error
+			  error: recovery.error,
+			  ...(reviewResult ? { reviewResult } : {})
             }
           });
           updateDesktopKanbanCommandReceipt(
@@ -1470,6 +1609,14 @@ export class KanbanRuntime {
           updateDesktopKanbanCommandReceipt(this.options.app, currentUser, receipt.commandId, "starting", null, true);
           const issue = receipt.payload.issue;
           const issueRevision = isRecord(issue) && typeof issue.revision === "number" ? issue.revision : 0;
+          const preferredChatId = readText(receipt.payload.preferredChatId);
+          const preferredChatMissing = preferredChatId === receipt.chatId && !await this.localChatExists(preferredChatId);
+          const requiresNewChat = receipt.commandType === "review" || receipt.payload.forceNewChat === true || readText(receipt.payload.chatPolicy) === "new" || preferredChatMissing;
+          if (requiresNewChat) {
+            const freshChatId = createKanbanRemoteChatId();
+            updateDesktopKanbanCommandReceiptIdentity(this.options.app, currentUser, receipt.commandId, freshChatId, receipt.runId);
+            receipt.chatId = freshChatId;
+          }
           const runResult = await this.startRemoteRun({
             issue,
             revision: issueRevision,
@@ -1492,6 +1639,7 @@ export class KanbanRuntime {
           sourceDeliverySeq: receipt.deliverySeq,
           projectId: receipt.projectId,
           issueId: receipt.issueId,
+          issueRunId: receipt.issueRunId,
           runId: receipt.runId,
           chatId: receipt.chatId,
           eventType: "run.started",
@@ -1538,11 +1686,36 @@ export class KanbanRuntime {
     }
   }
 
+  private async localChatExists(chatId: string) {
+    if (!chatId || !this.options.assistantBridge.getChat) return true;
+    try {
+      return Boolean(await this.options.assistantBridge.getChat(chatId));
+    } catch {
+      return false;
+    }
+  }
+
+  private async readStructuredReviewResult(chatId: string, runId: string) {
+	if (!this.options.assistantBridge.getChat) return undefined;
+	try {
+	  const detail = await this.options.assistantBridge.getChat(chatId);
+	  const messages = (detail?.messages ?? []).filter((message) => message.runId === runId);
+	  for (const message of [...messages].reverse()) {
+		const parsed = parseStructuredReviewText(readText(message.content));
+		if (parsed) return parsed;
+	  }
+	} catch {
+	  return undefined;
+	}
+	return undefined;
+  }
+
   private async reportFailedCommandReceipt(receipt: KanbanCommandReceipt, error: string) {
     await this.appendRunEvent({
       sourceDeliverySeq: receipt.deliverySeq,
       projectId: receipt.projectId,
       issueId: receipt.issueId,
+      issueRunId: receipt.issueRunId,
       runId: receipt.runId,
       chatId: receipt.chatId,
       eventType: "run.failed",
@@ -1574,6 +1747,7 @@ export class KanbanRuntime {
     sourceDeliverySeq?: number;
     projectId?: string;
     issueId: string;
+    issueRunId?: string | null;
     runId?: string | null;
     chatId?: string | null;
     eventType: string;
@@ -1584,11 +1758,14 @@ export class KanbanRuntime {
       return { accepted: false, queued: false, message: t("kanban.runtime.dispatchInvalid") };
     }
     const deviceId = getDesktopDeviceId(this.options.app);
+    const issueRunId = readText(input.issueRunId);
     const item = {
-      clientEventId: stableClientEventId(deviceId, [issueId, readText(input.runId), input.eventType]),
+      clientEventId: stableClientEventId(deviceId, [issueRunId || issueId, readText(input.runId), input.eventType]),
       sourceDeliverySeq: input.sourceDeliverySeq ?? 0,
       projectId: readText(input.projectId) || DEFAULT_SELECTED_PROJECT_ID,
       issueId,
+      issueRunId,
+      externalRunId: readText(input.runId),
       runId: readText(input.runId),
       chatId: readText(input.chatId),
       eventType: input.eventType,
@@ -1753,22 +1930,14 @@ export class KanbanRuntime {
     void startRun.then((runResult) => {
       applyRunResult(runResult);
       if (!runResult.ok) {
-        this.sendAssistantEvent({ type: "error", status: "failed", chatId, runId: fallbackRunId });
+        void this.handleRemoteStartFailure(fallbackRunId, chatId, runResult.message)
+          .catch((error) => this.options.onDebug?.(error instanceof Error ? error.message : String(error)));
       }
     }).catch((error) => {
-      if (localIssueId) {
-        updateDesktopKanbanIssueRuntimeState(this.options.app, currentUser, localIssueId, {
-          status: "todo",
-          chatId,
-          runId: fallbackRunId,
-          runState: "failed"
-        });
-        this.notifyChanged();
-      }
-      this.sendAssistantEvent({ type: "error", status: "failed", chatId, runId: fallbackRunId });
-      this.options.onDebug?.(t("kanban.runtime.debugBackgroundStartFailed", {
-        message: error instanceof Error ? error.message : String(error)
-      }));
+      const message = error instanceof Error ? error.message : String(error);
+      void this.handleRemoteStartFailure(fallbackRunId, chatId, message)
+        .catch((failureError) => this.options.onDebug?.(failureError instanceof Error ? failureError.message : String(failureError)));
+      this.options.onDebug?.(t("kanban.runtime.debugBackgroundStartFailed", { message }));
     });
     this.options.onDebug?.(t("kanban.runtime.debugSlowStartRun"));
     return {
@@ -1777,6 +1946,46 @@ export class KanbanRuntime {
       chatId,
       message: t("kanban.runtime.dispatchedStarting")
     };
+  }
+
+  private async handleRemoteStartFailure(runId: string, chatId: string, message: string) {
+    const currentUser = this.currentUser();
+    const manualReceipt = getDesktopKanbanManualRunByRunId(this.options.app, currentUser, runId);
+    const commandReceipt = getDesktopKanbanCommandReceiptByRunId(this.options.app, currentUser, runId);
+    const matchingCloudIssue = listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues.find((issue) =>
+      issueSyncMode(issue) === "cloud" && (
+        issue.runId === runId ||
+        issue.activeRunId === runId ||
+        (manualReceipt && getRemoteIssueId(issue) === manualReceipt.issueId) ||
+        (commandReceipt && getRemoteIssueId(issue) === commandReceipt.issueId)
+      )
+    );
+    if (!matchingCloudIssue && !manualReceipt && !commandReceipt) {
+      return;
+    }
+    if (manualReceipt) {
+      updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "failed", message);
+    }
+    await this.appendRunEvent({
+      projectId: commandReceipt?.projectId || manualReceipt?.projectId || matchingCloudIssue?.projectId || "",
+      issueId: commandReceipt?.issueId || manualReceipt?.issueId || (matchingCloudIssue ? getRemoteIssueId(matchingCloudIssue) : ""),
+      issueRunId: commandReceipt?.issueRunId || manualReceipt?.issueRunId,
+      runId,
+      chatId: chatId || commandReceipt?.chatId,
+      eventType: "run.failed",
+      payload: {
+        ...(manualReceipt ? { source: "desktop_manual", agentKey: manualReceipt.agentKey } : {}),
+        ...(commandReceipt ? { commandId: commandReceipt.commandId, agentKey: optionalText(commandReceipt.payload.agentKey) } : {}),
+        status: "failed",
+        runState: "failed",
+        runId,
+        chatId: chatId || commandReceipt?.chatId,
+        error: message,
+      },
+    });
+    if (commandReceipt) {
+      completeDesktopKanbanCommandReceiptByRunId(this.options.app, currentUser, runId, "failed");
+    }
   }
 
   private notifyChanged() {

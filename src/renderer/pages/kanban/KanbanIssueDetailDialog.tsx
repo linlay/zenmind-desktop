@@ -34,6 +34,7 @@ import type {
   KanbanStatus
 } from "../../../shared/contracts";
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
+import { createAgentWebclientRoute } from "../../../shared/agent-webclient-routes";
 import type { SupportedLocale, TranslateFunction } from "../../../shared/i18n";
 import { useDebugMode } from "../../debug/DebugModeContext";
 import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
@@ -81,6 +82,8 @@ type KanbanIssueDetailDialogProps = {
   cloudActionBusy?: boolean;
   onClaim?: () => void;
   onRun?: () => void;
+  onBindHumanReferenceChat?: (chatId: string) => Promise<{ ok: boolean; message?: string }>;
+  onUnbindHumanReferenceChat?: (issueChatId: string) => Promise<{ ok: boolean; message?: string }>;
   onFeedback: (tone: "success" | "error", message: string) => void;
   initialEditStatus?: KanbanStatus | null;
 };
@@ -469,11 +472,17 @@ export function KanbanIssueDetailDialog({
   cloudActionBusy = false,
   onClaim,
   onRun,
+  onBindHumanReferenceChat,
+  onUnbindHumanReferenceChat,
   onFeedback,
   initialEditStatus = null
 }: KanbanIssueDetailDialogProps) {
   const debugMode = useDebugMode();
   const isCloud = issue.syncMode === "cloud";
+  const [localDeviceId, setLocalDeviceId] = useState("");
+  const [availableLocalChats, setAvailableLocalChats] = useState<Array<{ id: string; title: string }>>([]);
+  const [selectedReferenceChatId, setSelectedReferenceChatId] = useState("");
+  const [referenceChatBusy, setReferenceChatBusy] = useState(false);
   const [editing, setEditing] = useState(!isCloud && Boolean(initialEditStatus));
   const [saving, setSaving] = useState(false);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
@@ -518,9 +527,33 @@ export function KanbanIssueDetailDialog({
   const subtasks = issues.filter((candidate) => candidate.parentIssueId && issueIdentityIds.has(candidate.parentIssueId));
   const dependencies = cloudDetails.issueDependencies.filter((dependency) => dependency.fromIssueId === remoteId || dependency.toIssueId === remoteId);
   const reviews = cloudDetails.reviews.filter((review) => review.issueId === remoteId);
+  const issueRuns = cloudDetails.issueRuns.filter((run) => run.issueId === remoteId);
+  const currentRunWorker = cloudDetails.issueStageWorkers.find((worker) => worker.issueId === remoteId && worker.stageId === issue.stageId && worker.workerRole === "run");
+  const issueChatsById = new Map(cloudDetails.issueChats.filter((chat) => chat.issueId === remoteId).map((chat) => [chat.id, chat]));
+  const localReferenceChats = cloudDetails.issueChats.filter((chat) => chat.issueId === remoteId && chat.deviceId === localDeviceId && chat.purpose === "human_reference");
   const comments = cloudDetails.issueComments.filter((comment) => comment.issueId === remoteId);
   const events = cloudDetails.recentEvents.filter((event) => event.issueId === remoteId).sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
-  const runs = resolveKanbanIssueRuns(issue, events);
+  const runs = issueRuns.length > 0 ? issueRuns.map((run) => {
+    const chat = run.issueChatId ? issueChatsById.get(run.issueChatId) : undefined;
+    return {
+      id: run.id,
+      issueId: run.issueId,
+      workerAgent: run.workerAgent,
+      chatId: chat?.chatId,
+      runId: run.externalRunId || run.id,
+      status: run.state,
+      startedAt: run.startedAt || run.createdAt,
+      finishedAt: run.finishedAt || undefined,
+      resultMessage: run.resultMessage || undefined,
+      errorMessage: run.errorMessage || undefined,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+      deviceId: run.deviceId,
+      stageId: run.stageId,
+      statusId: run.statusId,
+      workerRole: run.workerRole
+    };
+  }) : resolveKanbanIssueRuns(issue, events);
   const statusTimeline = resolveKanbanStatusTimeline(issue, events, cloudDetails.workflowStatuses, {
     backlog: t("kanban.status.backlog"),
     todo: t("kanban.status.todo"),
@@ -554,6 +587,21 @@ export function KanbanIssueDetailDialog({
     copyTitle: t("kanban.detail.doubleClickToCopy"),
     onCopy: copyPropertyValue
   };
+  useEffect(() => {
+    let active = true;
+    void window.electronAPI.settings.getDeviceIdentity().then((identity) => {
+      if (active) setLocalDeviceId(identity.deviceId || "");
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    if (!isCloud) return;
+    let active = true;
+    void window.electronAPI.assistant.listChats().then((items) => {
+      if (active) setAvailableLocalChats(items.map((chat) => ({ id: chat.id, title: chat.title || chat.id })));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [isCloud, remoteId]);
   useLayoutEffect(() => {
     resizeTextareaToContent(descriptionEditorRef.current);
   }, [draft.description, editing]);
@@ -611,6 +659,23 @@ export function KanbanIssueDetailDialog({
   function openChat() {
     const embedPath = onOpenChat();
     if (embedPath) setChatEmbedPath(embedPath);
+  }
+
+  function openIssueChat(agentKey: string, chatId: string) {
+    if (!agentKey || !chatId) return;
+    setChatEmbedPath(createAgentWebclientRoute({ agentKey, chatId }));
+  }
+
+  async function bindHumanReferenceChat() {
+    if (!selectedReferenceChatId || !onBindHumanReferenceChat) return;
+    setReferenceChatBusy(true);
+    try {
+      const result = await onBindHumanReferenceChat(selectedReferenceChatId);
+      onFeedback(result.ok ? "success" : "error", result.message || (result.ok ? "已关联本机对话。" : "关联本机对话失败。"));
+      if (result.ok) setSelectedReferenceChatId("");
+    } finally {
+      setReferenceChatBusy(false);
+    }
   }
 
   async function addAttachment(insertImages = false) {
@@ -856,6 +921,7 @@ export function KanbanIssueDetailDialog({
                   <DetailProperty {...copyBehavior} label={t("kanban.detail.automationMessage")} value={draft.automationMessage || "—"} editing={editing} editor={<textarea value={draft.automationMessage} onChange={(event) => updateDraft({ automationMessage: event.target.value })} rows={3} />} />
                 </> : null}
               </dl>
+              {isCloud && issue.status === "in_progress" && currentRunWorker?.workerType === "human" && onBindHumanReferenceChat ? <div className="kanban-detail-owner-action"><label>关联本机对话</label><select value={selectedReferenceChatId} onChange={(event) => setSelectedReferenceChatId(event.target.value)}><option value="">选择本机已有对话</option>{availableLocalChats.map((chat) => <option key={chat.id} value={chat.id}>{chat.title}</option>)}</select><button type="button" disabled={referenceChatBusy || !selectedReferenceChatId} onClick={() => void bindHumanReferenceChat()}>{referenceChatBusy ? "关联中…" : "关联"}</button>{localReferenceChats.map((chat) => <span key={chat.id}>{chat.chatId}<button type="button" disabled={referenceChatBusy} onClick={() => void onUnbindHumanReferenceChat?.(chat.id).then((result) => onFeedback(result.ok ? "success" : "error", result.message || (result.ok ? "已解除关联。" : "解除关联失败。")))}>解除</button></span>)}</div> : null}
             </DetailSection>
 
             <DetailSection sectionId="kanban-detail-related" title={t("kanban.detail.relatedTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: relatedItemCount })}>
@@ -869,7 +935,7 @@ export function KanbanIssueDetailDialog({
                   return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
                 })}</div></div> : null}
                 {reviews.length > 0 ? <div><h3>{t("kanban.detail.reviewsTitle")}</h3><div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div></div> : null}
-                {runs.length > 0 ? <div><h3><RobotOutlined />{t("kanban.detail.runsTitle")}</h3><div className="kanban-detail-run-list">{runs.map((run) => <div key={run.id} className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong><p>{run.runId || t("kanban.detail.runIdMissing")}</p><small>{formatDateTime(run.startedAt, locale)}{run.finishedAt ? ` — ${formatDateTime(run.finishedAt, locale)}` : ""}</small>{run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}{run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}</div>{run.chatId && run.chatId === issue.chatId ? <button type="button" onClick={openChat}>{t("kanban.chat.view")}</button> : null}</div>)}</div></div> : null}
+                {runs.length > 0 ? <div><h3><RobotOutlined />{t("kanban.detail.runsTitle")}</h3><div className="kanban-detail-run-list">{runs.map((run) => <div key={run.id} className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong><p>{run.runId || t("kanban.detail.runIdMissing")}</p><small>{"stageId" in run ? `${run.stageId} → ${run.statusId} · ${run.deviceId} · ${run.workerRole === "review" ? "Review" : "Run"} · ` : ""}{formatDateTime(run.startedAt, locale)}{run.finishedAt ? ` — ${formatDateTime(run.finishedAt, locale)}` : ""}</small>{run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}{run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}</div>{run.chatId && "deviceId" in run && run.deviceId === localDeviceId ? <button type="button" onClick={() => openIssueChat(run.workerAgent || "", run.chatId || "")}>{t("kanban.chat.view")}</button> : run.chatId && !("deviceId" in run) && run.chatId === issue.chatId ? <button type="button" onClick={openChat}>{t("kanban.chat.view")}</button> : null}</div>)}</div></div> : null}
               </div> : <EmptyBlock>{t("kanban.detail.noRelated")}</EmptyBlock>}
             </DetailSection>
 

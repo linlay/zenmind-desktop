@@ -3368,6 +3368,15 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(kanbanStyles, /\.issue-card-type-corner\s*\{[\s\S]{0,260}border-left:\s*2px solid currentColor[\s\S]{0,140}filter:\s*saturate/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.issue-card-type-corner/);
   assert.match(issueTypeIcon, /bulb:\s*BulbFilled[\s\S]{0,200}"book-open":\s*BookFilled[\s\S]{0,200}"check-square":\s*CheckSquareFilled[\s\S]{0,200}bug:\s*BugFilled[\s\S]{0,200}file:\s*FileTextFilled/);
+  for (const icon of ["CrownFilled", "RocketFilled", "ExperimentFilled", "ContactsFilled"]) {
+    assert.match(issueTypeIcon, new RegExp(icon));
+  }
+  assert.match(issueTypeIcon, /epic:\s*\{\s*icon:\s*"crown"[\s\S]{0,500}deployment:\s*\{\s*icon:\s*"rocket"[\s\S]{0,300}research:\s*\{\s*icon:\s*"experiment"[\s\S]{0,200}visit:\s*\{\s*icon:\s*"contacts"/);
+  assert.doesNotMatch(issueTypeIcon, /magenta:/);
+  assert.match(issueTypeIcon, /return ISSUE_TYPE_COLOR_ALIASES\[normalizedColor\] \?\? ISSUE_TYPE_COLOR_ALIASES\.gray/);
+  assert.match(kanbanPage, /issueTypes\.filter\(\(issueType\) => issueType\.isActive !== false\)\.map/);
+  assert.match(kanbanStyles, /\.kanban-search-filter-row \.issue-type-icon\s*\{[\s\S]{0,300}opacity:\s*0\.74[\s\S]{0,100}filter:\s*saturate\(0\.62\)/);
+  assert.doesNotMatch(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-search-filter-row \.issue-type-icon/);
 
   assert.match(kanbanPage, /issue\.projectVersion \? <span className="issue-card-version"/);
   assert.match(kanbanPage, /const queueRank = issue\.status === "todo" \? formatKanbanSortNumber\(sortIndex, issue\.position\) : ""/);
@@ -3438,11 +3447,15 @@ test("Kanban toolbar can filter issues by automation", () => {
   assert.match(kanbanPage, /const hasAutomation = hasIssueAutomation\(issue\)/);
   assert.match(kanbanPage, /const \[automationFilter, setAutomationFilter\] = useState\(initialFilterPreferences\.automationFilter\)/);
   assert.match(kanbanPage, /shouldShowIssueForAutomationFilter\(issue, automationFilter\)/);
-  assert.match(kanbanPage, /className=\{`kanban-search-filter-button \$\{openMenu === "automation" \? "is-open" : ""\} \$\{hasAutomationFilter \? "is-active" : ""\}`\}/);
+  assert.match(kanbanPage, /className=\{`kanban-search-filter-button is-automation \$\{openMenu === "automation" \? "is-open" : ""\} \$\{hasAutomationFilter \? "is-active" : ""\}`\}/);
   assert.match(kanbanPage, /KANBAN_AUTOMATION_FILTER_OPTIONS\.map/);
   assert.match(kanbanPage, /aria-label=\{t\("kanban\.searchFilter\.automation"\)\}/);
   assert.match(kanbanPage, /checked=\{automationFilter === option\.value\}/);
   assert.match(kanbanStyles, /\.kanban-search-filter-button\.is-active\s*\{/);
+  assert.match(kanbanPage, /className=\{`kanban-search-filter-button is-issue-type[\s\S]{0,420}<TagsOutlined \/>/);
+  assert.match(kanbanStyles, /\.kanban-search-filter-button\.is-issue-type \.anticon\s*\{\s*font-size:\s*12px;/);
+  assert.match(kanbanStyles, /\.kanban-search-filter-button\.is-automation \.kanban-icon\s*\{\s*width:\s*18px;\s*height:\s*18px;/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-trigger > \.kanban-icon\s*\{\s*width:\s*18px;\s*height:\s*18px;/);
   assert.match(kanbanStyles, /\.kanban-search-filter-menu\s*\{/);
   assert.match(zhCN, /"kanban\.searchFilter\.hasAutomation": "定时问题"/);
   assert.match(zhCN, /"kanban\.searchFilter\.noAutomation": "手动问题"/);
@@ -3466,14 +3479,12 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(kanbanPage, /const \[query, setQuery\] = useState\(initialFilterPreferences\.query\)/);
   assert.match(kanbanPage, /const \[selectedProjectIds, setSelectedProjectIds\] = useState\(initialFilterPreferences\.selectedProjectIds\)/);
   assert.match(kanbanPage, /const \[includeLocalIssues, setIncludeLocalIssues\] = useState\(initialFilterPreferences\.includeLocalIssues\)/);
-  assert.match(kanbanPage, /showBacklog: typeof stored\.showBacklog === "boolean" \? stored\.showBacklog : defaults\.showBacklog/);
-  assert.match(kanbanPage, /const \[showBacklog, setShowBacklog\] = useState\(initialFilterPreferences\.showBacklog\)/);
   assert.match(kanbanPage, /const \[issueTypeFilters, setIssueTypeFilters\] = useState\(initialFilterPreferences\.issueTypeFilters\)/);
   assert.match(kanbanPage, /const \[priorityFilters, setPriorityFilters\] = useState\(initialFilterPreferences\.priorityFilters\)/);
   assert.match(kanbanPage, /const \[severityFilters, setSeverityFilters\] = useState\(initialFilterPreferences\.severityFilters\)/);
   assert.match(kanbanPage, /const \[automationFilter, setAutomationFilter\] = useState\(initialFilterPreferences\.automationFilter\)/);
   assert.match(kanbanPage, /const \[assigneeFilters, setAssigneeFilters\] = useState\(initialFilterPreferences\.assigneeFilters\)/);
-  assert.match(kanbanPage, /const preferences: KanbanFilterPreferences = \{\s*query,\s*selectedProjectIds,\s*includeLocalIssues,\s*showBacklog,\s*issueTypeFilters,\s*priorityFilters,\s*severityFilters,\s*automationFilter,\s*assigneeFilters\s*\}/);
+  assert.match(kanbanPage, /const preferences: KanbanFilterPreferences = \{\s*query,\s*showBacklog,\s*selectedProjectIds,\s*includeLocalIssues,\s*issueTypeFilters,\s*priorityFilters,\s*severityFilters,\s*automationFilter,\s*assigneeFilters\s*\}/);
   assert.match(kanbanPage, /window\.localStorage\.setItem\(KANBAN_FILTER_PREFERENCES_STORAGE_KEY, JSON\.stringify\(preferences\)\)/);
   assert.match(kanbanPage, /if \(!projectCatalogLoaded\) \{\s*return;\s*\}[\s\S]{0,180}setSelectedProjectIds\(\(current\) => current\.filter\(\(projectId\) => projectIds\.has\(projectId\)\)\)/);
   assert.match(kanbanPage, /const \[currentUserId, setCurrentUserId\] = useState\(""\)/);
@@ -3489,13 +3500,6 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(enUS, /"kanban\.searchFilter\.assigneeOthers": "Others"/);
   assert.match(enUS, /"kanban\.searchFilter\.assigneeSelf": "Me"/);
   assert.match(enUS, /"kanban\.searchFilter\.assigneeUnassigned": "Unassigned"/);
-  assert.match(kanbanPage, /checked=\{showBacklog\}[\s\S]{0,180}setShowBacklog\(event\.target\.checked\)/);
-  assert.match(kanbanPage, /VISIBLE_KANBAN_STATUSES\.filter\(\(status\) => showBacklog \|\| status !== "backlog"\)/);
-  assert.match(kanbanStyles, /\.kanban-columns\.is-backlog-hidden\s*\{[\s\S]{0,500}\) \/ 4/);
-  assert.match(zhCN, /"kanban\.display\.columns": "显示列"/);
-  assert.match(zhCN, /"kanban\.display\.backlog": "待排期"/);
-  assert.match(enUS, /"kanban\.display\.columns": "Columns"/);
-  assert.match(enUS, /"kanban\.display\.backlog": "Backlog"/);
 });
 
 test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
@@ -3576,8 +3580,6 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
     zhCN.split("\n").filter((line) => line.includes('"kanban.')).some((line) => line.includes("议题")),
     false
   );
-  assert.equal(readJsonFile("brands", "zenmind", "i18n", "zh-CN.json")["kanban.prompt.intro"].includes("议题"), false);
-  assert.equal(readJsonFile("brands", "cutej", "i18n", "zh-CN.json")["kanban.prompt.intro"].includes("议题"), false);
   assert.match(enUS, /"kanban\.cloud\.resync": "Resync"/);
   assert.match(enUS, /"kanban\.projectFilter\.all": "All Projects"/);
   assert.match(enUS, /"kanban\.projectFilter\.local": "Local"/);
@@ -3650,7 +3652,6 @@ test("Kanban route exposes native desktop api and page styles", () => {
     path.join(projectRoot, "src", "renderer", "pages", "kanban", "KanbanPage.tsx"),
     "utf8"
   );
-
   assert.match(contracts, /interface KanbanIssue/);
   assert.match(contracts, /kanban:\s*\{/);
   assert.match(contracts, /createIssue: \(input: KanbanIssueInput\) => Promise<KanbanIssueResult>/);
@@ -3672,13 +3673,12 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanSync, /\/api\/automation\/delete/);
   assert.doesNotMatch(kanbanSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(assistantRuntime, /createKanbanRuntime/);
-  assert.match(assistantRuntime, /state\.kanbanRuntime\?\.sendAssistantEvent\(event\)/);
-  assert.match(kanbanSync, /type === "done"[\s\S]{0,220}type === "run\.complete"[\s\S]{0,520}return "completed"/);
-  assert.match(kanbanSync, /typeValue === "run\.error"/);
-  assert.match(kanbanSync, /statusValue === "timeout"[\s\S]{0,220}return "failed"/);
-  assert.match(kanbanSync, /updateKanbanIssueByRunId\(app, event\.runId/);
-  assert.match(kanbanSync, /updateKanbanIssueByChatId/);
-  assert.match(kanbanSync, /updateKanbanIssueByChatId\(app,\s*event\.chatId/);
+  assert.doesNotMatch(assistantRuntime, /onEvent:\s*\(event\) => \{\s*state\.kanbanRuntime/);
+  assert.match(kanbanSync, /event\.frame !== "push" \|\| event\.type !== "run\.finished"/);
+  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
+  assert.doesNotMatch(kanbanSync, /updateKanbanIssueByChatId/);
   assert.match(kanbanRuntime, /private async applyIssueEvent\(event: KanbanDesktopIssueEvent\)/);
   assert.match(kanbanRuntime, /private async applyDelivery\(delivery: KanbanDesktopDelivery\)/);
   assert.match(kanbanRuntime, /seq <= cursor\.lastAppliedRevision/);
@@ -3690,7 +3690,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanRuntime, /t\("kanban\.runtime\.cloudReadOnly"\)/);
   assert.doesNotMatch(kanbanRuntime, /desktop\.issue\.sync/);
   assert.match(kanbanRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
-  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,100}state\.kanbanRuntime\?\.sendAssistantEvent\(event\)/);
+  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}state\.kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
   assert.match(kanbanStore, /export function updateKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
@@ -3699,10 +3699,14 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /kanbanApi\.listIssues\(\)/);
   assert.match(kanbanPage, /kanbanApi\.createIssue/);
   assert.match(kanbanPage, /function canCreateIssueFromColumnDoubleClick\(status: KanbanStatus\)/);
-  assert.match(kanbanPage, /return status === "backlog" \|\| status === "todo";/);
+  assert.match(kanbanPage, /return status === "todo";/);
   assert.match(kanbanPage, /function shouldCreateIssueFromColumnDoubleClick/);
   assert.match(kanbanPage, /target\.closest\("\.issue-card"\)/);
-  assert.match(kanbanPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
+  assert.match(kanbanPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}canAdd && shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
+  assert.match(kanbanPage, /status === "todo" && canAdd[\s\S]{0,300}kanban\.column\.emptyTodoCreateHint/);
+  assert.match(kanbanStyles, /\.kanban-empty-column-create-hint\s*\{/);
+  assert.match(zhCN, /"kanban\.column\.emptyTodoCreateHint": "双击此处新增问题"/);
+  assert.match(enUS, /"kanban\.column\.emptyTodoCreateHint": "Double-click here to create an issue"/);
   assert.match(kanbanPage, /KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000/);
   assert.match(kanbanPage, /if \(!feedback \|\| feedback\.tone !== "success" \|\| feedbackPaused\) \{/);
   assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,140}setFeedback\(\(current\) => \(current === feedback \? null : current\)\)/);
@@ -3717,7 +3721,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /\.\.\.\(chatId \? \{ chatId \} : \{\}\),[\s\S]{0,80}agentKey/);
   assert.match(kanbanPage, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(kanbanPage, /t\("kanban\.prompt\.rule"\)/);
-  assert.match(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
+  assert.doesNotMatch(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.onNavigationAgentsChanged/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.listAgents\(\)/);
   assert.match(appShell, /<RouteSuspense><KanbanPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>/);
@@ -3865,7 +3869,6 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-in_review\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-completed\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(kanbanPage, /backlogExpanded/);
-  assert.match(kanbanPage, /className=\{`kanban-columns \$\{showBacklog \? "" : "is-backlog-hidden"\}`\}/);
   assert.doesNotMatch(kanbanPage, /onSelectColumn/);
   assert.doesNotMatch(globalStyles, /--kanban-columns-total-width/);
   assert.doesNotMatch(globalStyles, /--kanban-column-fold-offset/);
@@ -3928,6 +3931,27 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.kanban-chat-modal-layer\s*\{|\.kanban-chat-modal\s*\{/);
 });
 
+test("Kanban view settings use a dismissible gear menu for the Backlog column", () => {
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(kanbanPage, /showBacklog: typeof stored\.showBacklog === "boolean" \? stored\.showBacklog : defaults\.showBacklog/);
+  assert.match(kanbanPage, /const \[showBacklog, setShowBacklog\] = useState\(initialFilterPreferences\.showBacklog\)/);
+  assert.match(kanbanPage, /className=\{`kanban-columns \$\{showBacklog \? "" : "is-backlog-hidden"\}`\}/);
+  assert.match(kanbanPage, /VISIBLE_KANBAN_STATUSES\.filter\(\(status\) => showBacklog \|\| status !== "backlog"\)\.map/);
+  assert.match(kanbanPage, /t\("kanban\.display\.columns"\)[\s\S]{0,320}checked=\{showBacklog\}[\s\S]{0,220}t\("kanban\.display\.backlog"\)/);
+  assert.doesNotMatch(kanbanPage, /kanban\.display\.priority/);
+  assert.match(kanbanPage, /SettingOutlined className="kanban-tool-icon"/);
+  assert.match(kanbanPage, /const menuPanelRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(kanbanPage, /document\.addEventListener\("pointerdown", closeMenuOnOutsidePointerDown\)/);
+  assert.match(kanbanPage, /menuPanelRef\.current\?\.contains\(target\)[\s\S]{0,100}setMenu\(null\)/);
+  assert.match(zhCN, /"kanban\.display\.columns": "显示列"[\s\S]{0,100}"kanban\.display\.backlog": "待排期"/);
+  assert.match(enUS, /"kanban\.display\.columns": "Columns"[\s\S]{0,100}"kanban\.display\.backlog": "Backlog"/);
+  assert.match(kanbanStyles, /\.kanban-columns\.is-backlog-hidden\s*\{[\s\S]{0,520}\/\s*4[\s\S]{0,260}\/\s*4\)/);
+});
+
 test("Kanban status order places completed after in progress", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
   const kanbanDb = readSourceFile("src", "main", "kanban-db.ts");
@@ -3939,6 +3963,15 @@ test("Kanban status order places completed after in progress", () => {
   assert.match(
     kanbanDb,
     /WHEN 'in_progress' THEN 2[\s\S]*?WHEN 'in_review' THEN 3[\s\S]*?WHEN 'completed' THEN 4/,
+  );
+});
+
+test("Local Kanban cards show workers without repeating the implicit assignee", () => {
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+
+  assert.match(
+    kanbanPage,
+    /const worker = getIssueCardWorkerPresentation\(issue, agents, users, t\);\s*if \(issue\.syncMode === "local"\) \{\s*return \{\s*people: worker \? \[worker\] : \[\],\s*title: worker\?\.rawLabel \?\? ""\s*\};\s*\}\s*const assignee = getIssueCardAssigneePresentation\(issue, agents, users, t\);/
   );
 });
 

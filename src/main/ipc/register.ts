@@ -400,6 +400,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       message: t("kanban.runtime.uninitialized"),
       issues: []
     },
+    bindKanbanHumanReferenceChat: (_app: any, input: any) => state.kanbanRuntime?.bindHumanReferenceChat(input) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized")
+    },
+    unbindKanbanHumanReferenceChat: (_app: any, issueChatId: string) => state.kanbanRuntime?.unbindHumanReferenceChat(issueChatId) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized")
+    },
     syncKanbanIssueAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
       state.kanbanRuntime?.syncIssueAutomation(issueId, agentPlatformCaller) ?? {
         ok: false,

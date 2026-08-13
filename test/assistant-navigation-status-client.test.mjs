@@ -77,6 +77,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   const snapshots = [];
+  const pushEvents = [];
   const debugMessages = [];
   const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-ws-"));
   const chatResponses = [[
@@ -234,6 +235,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     }),
     issueAccessToken: async () => ({ ok: true, token: "secret-token", message: "" }),
     onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onPushEvent: (event) => pushEvents.push(event),
     onDebug: (message) => debugMessages.push(message),
   });
   t.after(() => client.stop());
@@ -304,6 +306,15 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     runId: "run-newest",
     startedAt: EPOCH_MS + 60,
   }});
+  assert.deepEqual(pushEvents.at(-1), {
+    frame: "push",
+    type: "run.started",
+    chatId: "react-newest",
+    runId: "run-newest",
+    status: null,
+    finishReason: null,
+    startedAt: EPOCH_MS + 60,
+  });
   assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
   await new Promise((resolve) => setTimeout(resolve, 450));
   assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 2);
@@ -341,8 +352,19 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     agentKey: "zenmi",
     chatId: "react-newest",
     runId: "run-newest",
+    status: "completed",
+    finishReason: "complete",
     finishedAt: EPOCH_MS + 90,
   }});
+  assert.deepEqual(pushEvents.at(-1), {
+    frame: "push",
+    type: "run.finished",
+    chatId: "react-newest",
+    runId: "run-newest",
+    status: "completed",
+    finishReason: "complete",
+    finishedAt: EPOCH_MS + 90,
+  });
   assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, false);
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
   await new Promise((resolve) => setTimeout(resolve, 450));

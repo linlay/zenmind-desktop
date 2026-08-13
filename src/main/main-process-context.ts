@@ -384,6 +384,8 @@ export interface KanbanIpcHandlerContextDependencies {
   moveKanbanIssue: (...args: any[]) => unknown;
   claimKanbanIssue: (...args: any[]) => unknown;
   runKanbanIssue: (...args: any[]) => unknown;
+  bindKanbanHumanReferenceChat: (...args: any[]) => unknown;
+  unbindKanbanHumanReferenceChat: (...args: any[]) => unknown;
   syncKanbanIssueAutomation: (...args: any[]) => unknown;
   callAgentPlatform: (...args: any[]) => unknown;
   getKanbanCloudConfig: (...args: any[]) => unknown;
@@ -408,6 +410,8 @@ export function createKanbanIpcHandlerOptions(
     moveKanbanIssue: dependencies.moveKanbanIssue,
     claimKanbanIssue: dependencies.claimKanbanIssue,
     runKanbanIssue: dependencies.runKanbanIssue,
+    bindKanbanHumanReferenceChat: dependencies.bindKanbanHumanReferenceChat,
+    unbindKanbanHumanReferenceChat: dependencies.unbindKanbanHumanReferenceChat,
     syncKanbanIssueAutomation: dependencies.syncKanbanIssueAutomation,
     callAgentPlatform: dependencies.callAgentPlatform
   };

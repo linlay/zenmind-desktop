@@ -1987,11 +1987,25 @@ export class AssistantNavigationStatusClient {
       return;
     }
     this.recordRuntimeStatusPush(frame, event);
+    const protocolType = frameType || (event.type === "run.start"
+      ? "run.started"
+      : event.type === "run.complete"
+        ? "run.finished"
+        : toText(event.type));
+    const semanticTime = readAgentPlatformPushEpochMillis(event.type, event);
     this.options.onPushEvent?.({
-      type: event.type,
+      frame: "push",
+      type: protocolType,
       chatId: readPushChatId(event) || null,
-      runId: toText(event.runId) || toText(event.lastRunId) || null,
-      status: toText(event.status) || null
+      runId: toText(event.runId) || null,
+      status: toText(event.status) || null,
+      finishReason: toText(event.finishReason) || null,
+      ...(protocolType === "run.started" && semanticTime !== undefined
+        ? { startedAt: semanticTime }
+        : {}),
+      ...(protocolType === "run.finished" && semanticTime !== undefined
+        ? { finishedAt: semanticTime }
+        : {})
     });
     const next = applyAssistantNavigationPush(this.latestResult.items, frame);
     const hasActivityItems = Array.isArray(this.latestResult.activityItems);

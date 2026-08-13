@@ -151,8 +151,8 @@ export type KanbanDesktopWsClientOptions = {
   onWsLog?: (entry: KanbanDesktopWsLogEntry) => void;
 };
 
-const PROTOCOL_VERSION = 3;
-const CONTRACT_VERSION = "3.2";
+const PROTOCOL_VERSION = 4;
+const CONTRACT_VERSION = "4.0";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECONNECT_MS = 5_000;
 const WS_OPEN_STATE = 1;

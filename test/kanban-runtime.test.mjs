@@ -9,7 +9,11 @@ process.env.DESKTOP_KANBAN_REMOTE_START_ACK_TIMEOUT_MS = "20";
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const { KanbanRuntime, readKanbanSettings, readKanbanWsConfig } = await import("../dist-electron/main/kanban-runtime.js");
 const { readDesktopSsoSiteTokenFile } = await import("../dist-electron/main/sso-site-token.js");
-const { recordDesktopKanbanCommandReceipt, updateDesktopKanbanCommandReceipt } = await import("../dist-electron/main/kanban-local-store.js");
+const {
+  listDesktopKanbanRunEvents,
+  recordDesktopKanbanCommandReceipt,
+  updateDesktopKanbanCommandReceipt,
+} = await import("../dist-electron/main/kanban-local-store.js");
 
 function createTempApp(t) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-runtime-"));
@@ -254,6 +258,163 @@ function waitFor(check, message = "condition", timeoutMs = 1000) {
     tick();
   });
 }
+
+test("Kanban navigation push updates Local Issues only for the exact active runId", async (t) => {
+  const app = createTempApp(t);
+  let changedCount = 0;
+  const debugMessages = [];
+  const runtime = new KanbanRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({ ok: true, runId: "unused", chatId: "unused", message: "started" }),
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => { changedCount += 1; },
+    onDebug: (message) => debugMessages.push(message),
+  });
+  t.after(() => runtime.stop());
+
+  const cases = [
+    { suffix: "completed", status: "completed", finishReason: "complete", expectedStatus: "completed", expectedRunState: "completed" },
+    { suffix: "failed", status: "failed", finishReason: "error", expectedStatus: "todo", expectedRunState: "failed" },
+    { suffix: "cancelled", status: "interrupted", finishReason: "cancel", expectedStatus: "todo", expectedRunState: "cancelled" },
+  ];
+  for (const item of cases) {
+    const created = await runtime.createIssue({ title: `Local ${item.suffix}`, status: "todo" });
+    const runId = `run-${item.suffix}`;
+    await runtime.updateIssue(created.issue.id, {
+      status: "in_progress",
+      chatId: "shared-chat",
+      runId,
+      runState: "running",
+    });
+
+    runtime.sendNavigationPushEvent({
+      frame: "push",
+      type: "run.activity",
+      chatId: "shared-chat",
+      runId,
+      status: "completed",
+      finishReason: "complete",
+      finishedAt: 1_783_000_000_000,
+    });
+    runtime.sendNavigationPushEvent({
+      frame: "push",
+      type: "run.finished",
+      chatId: "shared-chat",
+      runId: `old-${runId}`,
+      status: "completed",
+      finishReason: "complete",
+      finishedAt: 1_783_000_000_001,
+    });
+    runtime.sendNavigationPushEvent({
+      frame: "push",
+      type: "run.finished",
+      chatId: "shared-chat",
+      runId,
+      status: item.status,
+      finishReason: item.status === "completed" ? "error" : null,
+      finishedAt: 1_783_000_000_002,
+    });
+    let issue = runtime.listIssues().issues.find((candidate) => candidate.id === created.issue.id);
+    assert.equal(issue.status, "in_progress");
+    assert.equal(issue.runState, "running");
+    assert.equal(issue.runId, runId);
+
+    const beforeAcceptedPush = changedCount;
+    runtime.sendNavigationPushEvent({
+      frame: "push",
+      type: "run.finished",
+      chatId: "shared-chat",
+      runId,
+      status: item.status,
+      finishReason: item.finishReason,
+      finishedAt: 1_783_000_000_003,
+    });
+    issue = runtime.listIssues().issues.find((candidate) => candidate.id === created.issue.id);
+    assert.equal(issue.status, item.expectedStatus);
+    assert.equal(issue.runState, item.expectedRunState);
+    assert.equal(issue.runId, null);
+    assert.equal(changedCount, beforeAcceptedPush + 1);
+
+    runtime.sendNavigationPushEvent({
+      frame: "push",
+      type: "run.finished",
+      chatId: "shared-chat",
+      runId,
+      status: item.status,
+      finishReason: item.finishReason,
+      finishedAt: 1_783_000_000_003,
+    });
+    assert.equal(changedCount, beforeAcceptedPush + 1);
+  }
+  assert.ok(debugMessages.some((message) => message.includes("ignored invalid navigation push")));
+  assert.ok(debugMessages.some((message) => message.includes("ignored invalid run.finished protocol")));
+});
+
+test("Kanban navigation push queues Cloud Issue terminals without changing the cached workflow state", async (t) => {
+  const app = createTempApp(t);
+  writeSsoSiteToken(app);
+  const currentUser = { id: "user-1", name: "Lin Lay", email: "lin@example.test", source: "sso" };
+  const runtime = new KanbanRuntime({
+    app,
+    assistantBridge: {
+      listAgents: async () => [],
+      startRun: async () => ({ ok: true, runId: "unused", chatId: "unused", message: "started" }),
+    },
+    callAgentPlatform: async () => ({ ok: true }),
+    onChanged: () => {},
+  });
+  t.after(() => runtime.stop());
+
+  const terminals = [
+    { status: "completed", finishReason: "complete", eventType: "run.completed" },
+    { status: "failed", finishReason: "error", eventType: "run.failed" },
+    { status: "interrupted", finishReason: "cancel", eventType: "run.cancelled" },
+  ];
+  for (const [index, terminal] of terminals.entries()) {
+    const issueId = `CLOUD-${index + 1}`;
+    const receiptResult = recordDesktopKanbanCommandReceipt(app, currentUser, {
+      commandId: `command-${index + 1}`,
+      deliverySeq: index + 1,
+      projectId: "project-1",
+      sourceRevision: index + 1,
+      payload: { issueRunId: `issue-run-${index + 1}`, agentKey: "coder" },
+      issue: {
+        id: issueId,
+        boardId: "default",
+        projectId: "project-1",
+        workflowId: "workflow-standard-requirement",
+        title: `Cloud ${index + 1}`,
+        description: "Server-authoritative state",
+        status: "in_progress",
+        priority: "P2",
+        severity: "medium",
+        position: index + 1,
+        revision: index + 1,
+        createdAt: "2026-08-13T00:00:00.000Z",
+        updatedAt: "2026-08-13T00:00:00.000Z",
+      },
+    });
+    const { runId, chatId } = receiptResult.receipt;
+    runtime.sendNavigationPushEvent({
+      frame: "push",
+      type: "run.finished",
+      chatId,
+      runId,
+      status: terminal.status,
+      finishReason: terminal.finishReason,
+      finishedAt: 1_783_000_000_100 + index,
+    });
+    await waitFor(
+      () => listDesktopKanbanRunEvents(app, currentUser).some((event) => event.runId === runId && event.eventType === terminal.eventType),
+      terminal.eventType,
+    );
+    const cachedIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === issueId);
+    assert.equal(cachedIssue.status, "in_progress");
+  }
+});
 
 function respondOk(socket, request, payload) {
   socket.onmessage({

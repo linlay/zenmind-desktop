@@ -20,10 +20,14 @@ export interface AssistantNavigationListOptions {
 }
 
 export interface AssistantNavigationPushEvent {
+  frame: "push";
   type: string;
   chatId: string | null;
   runId: string | null;
   status: string | null;
+  finishReason: string | null;
+  startedAt?: EpochMilliseconds;
+  finishedAt?: EpochMilliseconds;
 }
 
 export type AssistantNavigationPushEventListener = (event: AssistantNavigationPushEvent) => void;

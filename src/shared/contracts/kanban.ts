@@ -176,7 +176,15 @@ export interface KanbanIssueDependency {
 export interface KanbanIssueReview {
   id: string;
   issueId: string;
-  runId?: string | null;
+  stageId: string;
+  statusId: string;
+  workerType: "human" | "agent";
+  workerId?: string | null;
+  workerAgent?: string | null;
+  deviceId?: string | null;
+  issueRunId?: string | null;
+  issueChatId?: string | null;
+  attemptState: "awaiting_human" | "queued" | "running" | "decided" | "failed" | "cancelled";
   reviewType: string;
   reviewerId?: string | null;
   status: string;
@@ -184,6 +192,55 @@ export interface KanbanIssueReview {
   requestedAt: string;
   submittedAt?: string | null;
   summary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanIssueStageWorker {
+  issueId: string;
+  stageId: string;
+  workerRole: "run" | "review";
+  workerType: "human" | "agent";
+  workerId?: string | null;
+  workerAgent?: string | null;
+  deviceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanIssueChat {
+  id: string;
+  issueId: string;
+  deviceId?: string | null;
+  chatId: string;
+  stageId: string;
+  statusId: string;
+  agentKey?: string | null;
+  purpose: "run" | "review" | "human_reference";
+  reviewId?: string | null;
+  isPreferred: boolean;
+  state: "active" | "missing" | "archived";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanIssueRun {
+  id: string;
+  issueId: string;
+  stageId: string;
+  statusId: string;
+  workerRole: "run" | "review";
+  workerAgent: string;
+  deviceId: string;
+  issueChatId?: string | null;
+  externalRunId?: string | null;
+  source: "desktop_manual" | "cloud_dispatch" | "review";
+  commandId?: string | null;
+  state: "queued" | "running" | "completed" | "failed" | "cancelled";
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  resultMessage?: string | null;
+  errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -226,6 +283,9 @@ export interface KanbanCloudDetailData {
   issueLabelLinks: KanbanIssueLabelLink[];
   issueDependencies: KanbanIssueDependency[];
   reviews: KanbanIssueReview[];
+  issueStageWorkers: KanbanIssueStageWorker[];
+  issueChats: KanbanIssueChat[];
+  issueRuns: KanbanIssueRun[];
   issueComments: KanbanIssueComment[];
   recentEvents: KanbanRecentEvent[];
 }
@@ -270,6 +330,8 @@ export interface KanbanIssue {
   workerId?: string | null;
   workerAgent?: string | null;
   activeReviewId?: string | null;
+  activeIssueRunId?: string | null;
+  /** Local-only legacy run identity. Cloud Contract 4.0 uses activeIssueRunId. */
   activeRunId?: string | null;
   position: number;
   chatId: string | null;
@@ -504,6 +566,7 @@ export interface KanbanIssueMoveInput {
 export interface KanbanRunIssueInput {
   issueId: string;
   agentKey: string;
+  forceNewChat?: boolean;
 }
 
 export interface KanbanRunIssueResult extends KanbanIssueResult {

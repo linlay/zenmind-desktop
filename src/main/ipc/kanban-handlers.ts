@@ -14,6 +14,8 @@ export interface KanbanIpcHandlerOptions {
   moveKanbanIssue: (app: any, input: any) => any;
   claimKanbanIssue: (app: any, issueId: string) => any;
   runKanbanIssue: (app: any, input: any) => any;
+  bindKanbanHumanReferenceChat: (app: any, input: any) => any;
+  unbindKanbanHumanReferenceChat: (app: any, issueChatId: string) => any;
   syncKanbanIssueAutomation: (app: any, issueId: string, callAgentPlatform: any) => any;
   callAgentPlatform: (app: any, path: string, options?: any) => any;
 
@@ -34,6 +36,8 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
     moveKanbanIssue,
     claimKanbanIssue,
     runKanbanIssue,
+    bindKanbanHumanReferenceChat,
+    unbindKanbanHumanReferenceChat,
     syncKanbanIssueAutomation,
     callAgentPlatform
   } = options;
@@ -87,6 +91,14 @@ export function registerKanbanIpcHandlers(ipcMain: any, options: KanbanIpcHandle
 
   ipcMain.handle("kanban.runIssue", async (_event: any, input: any) =>
     runKanbanIssue(app, input)
+  );
+
+  ipcMain.handle("kanban.bindHumanReferenceChat", async (_event: any, input: any) =>
+    bindKanbanHumanReferenceChat(app, input)
+  );
+
+  ipcMain.handle("kanban.unbindHumanReferenceChat", async (_event: any, issueChatId: string) =>
+    unbindKanbanHumanReferenceChat(app, issueChatId)
   );
 
   ipcMain.handle("kanban.syncIssueAutomation", async (_event: any, issueId: string) =>

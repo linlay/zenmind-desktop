@@ -567,6 +567,8 @@ export interface DesktopApi {
     moveIssue: (input: KanbanIssueMoveInput) => Promise<KanbanIssueResult>;
     claimIssue: (issueId: string) => Promise<KanbanIssueResult>;
     runIssue: (input: KanbanRunIssueInput) => Promise<KanbanRunIssueResult>;
+    bindHumanReferenceChat: (input: { issueId: string; stageId: string; statusId: string; chatId: string }) => Promise<{ ok: boolean; message?: string }>;
+    unbindHumanReferenceChat: (issueChatId: string) => Promise<{ ok: boolean; message?: string }>;
     syncIssueAutomation: (issueId: string) => Promise<KanbanIssueResult>;
     onChanged: (listener: KanbanChangedListener) => () => void;
   };

@@ -299,6 +299,12 @@
   background: var(--issue-card);
 }
 
+.kanban-project-filter-trigger > .kanban-icon {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
 .kanban-project-filter-label {
   flex: 1 1 auto;
   min-width: 0;
@@ -582,6 +588,15 @@
   height: 16px;
 }
 
+.kanban-search-filter-button.is-issue-type .anticon {
+  font-size: 12px;
+}
+
+.kanban-search-filter-button.is-automation .kanban-icon {
+  width: 18px;
+  height: 18px;
+}
+
 .kanban-search-filter-menu {
   position: absolute;
   top: 30px;
@@ -630,6 +645,17 @@
   width: 13px;
   height: 13px;
   margin: 0;
+}
+
+.kanban-search-filter-row .issue-type-icon {
+  width: 20px;
+  height: 20px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  opacity: 0.74;
+  filter: saturate(0.62);
+  font-size: 11px;
 }
 
 :root[data-theme="dark"] .kanban-search {
@@ -2031,10 +2057,21 @@
   font-weight: 800;
 }
 
-.kanban-empty-column span:last-child {
+.kanban-empty-column-hint {
   font-size: 11px;
   font-weight: 600;
   color: #a1aec0;
+}
+
+.kanban-empty-column.is-create-enabled {
+  user-select: none;
+}
+
+.kanban-empty-column-create-hint {
+  margin-top: 5px;
+  color: color-mix(in srgb, var(--kanban-accent) 72%, #7c8da5);
+  font-size: 10px;
+  font-weight: 650;
 }
 
 :root[data-theme="dark"] .kanban-empty-column {
@@ -2043,8 +2080,12 @@
   color: #cbd5e1;
 }
 
-:root[data-theme="dark"] .kanban-empty-column span:last-child {
+:root[data-theme="dark"] .kanban-empty-column-hint {
   color: #7f8b9d;
+}
+
+:root[data-theme="dark"] .kanban-empty-column-create-hint {
+  color: color-mix(in srgb, var(--kanban-accent) 68%, #94a3b8);
 }
 
 .kanban-modal-layer {

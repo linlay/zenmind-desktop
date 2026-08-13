@@ -26,7 +26,6 @@ import {
   CalendarOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
-  FileTextOutlined,
   FlagOutlined,
   HistoryOutlined,
   HourglassOutlined,
@@ -36,11 +35,11 @@ import {
   SettingOutlined,
   StopOutlined,
   ThunderboltOutlined,
+  TagsOutlined,
   UserOutlined
 } from "@ant-design/icons";
 import type {
   AssistantAttachment,
-  AssistantEvent,
   AssistantNavAgentItem,
   DesktopApi,
   DesktopPetAgentOption,
@@ -129,9 +128,9 @@ type KanbanSeverityFilter = KanbanSeverity | "unset";
 
 type KanbanFilterPreferences = {
   query: string;
+  showBacklog: boolean;
   selectedProjectIds: string[];
   includeLocalIssues: boolean;
-  showBacklog: boolean;
   issueTypeFilters: string[];
   priorityFilters: KanbanPriorityFilter[];
   severityFilters: KanbanSeverityFilter[];
@@ -296,6 +295,9 @@ const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
   issueLabelLinks: [],
   issueDependencies: [],
   reviews: [],
+  issueStageWorkers: [],
+  issueChats: [],
+  issueRuns: [],
   issueComments: [],
   recentEvents: []
 };
@@ -330,9 +332,9 @@ const emptyForm: IssueFormState = {
 function createDefaultKanbanFilterPreferences(): KanbanFilterPreferences {
   return {
     query: "",
+    showBacklog: true,
     selectedProjectIds: [],
     includeLocalIssues: false,
-    showBacklog: true,
     issueTypeFilters: [],
     priorityFilters: [],
     severityFilters: [],
@@ -399,9 +401,9 @@ function readKanbanFilterPreferences(): KanbanFilterPreferences {
       : defaults.automationFilter;
     return {
       query: typeof stored.query === "string" ? stored.query : defaults.query,
+      showBacklog: typeof stored.showBacklog === "boolean" ? stored.showBacklog : defaults.showBacklog,
       selectedProjectIds: normalizeStoredStringArray(stored.selectedProjectIds),
       includeLocalIssues: typeof stored.includeLocalIssues === "boolean" ? stored.includeLocalIssues : defaults.includeLocalIssues,
-      showBacklog: typeof stored.showBacklog === "boolean" ? stored.showBacklog : defaults.showBacklog,
       issueTypeFilters: normalizeStoredStringArray(stored.issueTypeFilters),
       priorityFilters: normalizeStoredFilterValues(stored.priorityFilters, [...KANBAN_PRIORITIES, "unset"]),
       severityFilters: normalizeStoredFilterValues(stored.severityFilters, [...KANBAN_SEVERITIES, "unset"]),
@@ -689,8 +691,6 @@ function buildCompactIssueTitle(description: string) {
 
 function buildAssistantPrompt(issue: KanbanIssue, t: TranslateFunction) {
   const parts = [
-    t("kanban.prompt.intro"),
-    t("kanban.prompt.rule"),
     t("kanban.prompt.id", { value: issue.remoteIssueId ?? issue.id }),
     t("kanban.prompt.title", { value: issue.title }),
     t("kanban.prompt.status", { value: t(STATUS_META[issue.status].labelKey) })
@@ -953,8 +953,14 @@ function getIssueCardPeoplePresentation(
   users: KanbanCloudUser[],
   t: TranslateFunction
 ) {
-  const assignee = getIssueCardAssigneePresentation(issue, agents, users, t);
   const worker = getIssueCardWorkerPresentation(issue, agents, users, t);
+  if (issue.syncMode === "local") {
+    return {
+      people: worker ? [worker] : [],
+      title: worker?.rawLabel ?? ""
+    };
+  }
+  const assignee = getIssueCardAssigneePresentation(issue, agents, users, t);
   const normalizedAssignee = assignee?.rawLabel.trim().toLocaleLowerCase();
   const visibleWorker = worker?.rawLabel.trim().toLocaleLowerCase() === normalizedAssignee ? null : worker;
   const people = issue.status === "backlog" || issue.status === "todo" || issue.status === "in_progress"
@@ -1317,59 +1323,6 @@ async function loadKanbanAgents(): Promise<AssistantNavAgentItem[]> {
   return agentOptions.map(createNavigationAgentFromOption);
 }
 
-function isCancelledAssistantRunEvent(event: AssistantEvent) {
-  const eventStatus = String(event.status ?? "");
-  return (
-    event.type === "run.cancel" ||
-    event.type === "task.cancel" ||
-    event.type === "stopped" ||
-    event.type === "run.stopped" ||
-    event.type === "run.interrupt" ||
-    eventStatus === "cancelled" ||
-    eventStatus === "canceled" ||
-    eventStatus === "stopped"
-  );
-}
-
-function resolveAssistantRunStatus(event: AssistantEvent, t: TranslateFunction): {
-  status: KanbanStatus | null;
-  runState: KanbanIssue["runState"];
-  tone: Feedback["tone"];
-  message: string;
-} | null {
-  if (event.type === "done" || event.type === "run.complete") {
-    return {
-      status: "completed",
-      runState: "completed",
-      tone: "success",
-      message: t("kanban.feedback.agentDone")
-    };
-  }
-  if (isCancelledAssistantRunEvent(event)) {
-    return {
-      status: null,
-      runState: "cancelled",
-      tone: "error",
-      message: t("kanban.feedback.agentCancelled")
-    };
-  }
-  if (
-    event.type === "error" ||
-    event.type === "run.error" ||
-    event.type === "run.expired" ||
-    event.status === "error" ||
-    event.status === "timeout"
-  ) {
-    return {
-      status: null,
-      runState: "failed",
-      tone: "error",
-      message: t("kanban.feedback.agentIncomplete")
-    };
-  }
-  return null;
-}
-
 function readKanbanApi(): DesktopApi["kanban"] | null {
   if (typeof window === "undefined") {
     return null;
@@ -1523,7 +1476,7 @@ function canEditKanbanIssueBody(issue: KanbanIssue | null | undefined) {
 }
 
 function canCreateIssueFromColumnDoubleClick(status: KanbanStatus) {
-  return status === "backlog" || status === "todo";
+  return status === "todo";
 }
 
 function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, status: KanbanStatus) {
@@ -1650,7 +1603,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<KanbanContextMenu | null>(null);
   const activeDragIssueIdRef = useRef<string | null>(null);
-  const issuesRef = useRef<KanbanIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const cloudMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const displayMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1772,16 +1724,12 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   }, []);
 
   useEffect(() => {
-    issuesRef.current = issues;
-  }, [issues]);
-
-  useEffect(() => {
     try {
       const preferences: KanbanFilterPreferences = {
         query,
+        showBacklog,
         selectedProjectIds,
         includeLocalIssues,
-        showBacklog,
         issueTypeFilters,
         priorityFilters,
         severityFilters,
@@ -1906,46 +1854,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       selectedAutomationTimeRef.current?.scrollIntoView({ block: "center" });
     }
   }, [form.automationTime, automationMenuOpen]);
-
-  useEffect(() => {
-    const removeAssistantEventListener = window.electronAPI.assistant.onAssistantEvent(async (event) => {
-      const nextRunStatus = resolveAssistantRunStatus(event, t);
-      if (!nextRunStatus) {
-        return;
-      }
-      const issue = issuesRef.current.find((candidate) => candidate.runId === event.runId);
-      if (!issue) {
-        return;
-      }
-      if (issue.syncMode === "cloud") {
-        return;
-      }
-      const kanbanApi = readKanbanApi();
-      if (!kanbanApi) {
-        return;
-      }
-      try {
-        const issueUpdate: KanbanIssueUpdateInput = {
-          chatId: event.chatId || issue.chatId,
-          runId: null,
-          runState: nextRunStatus.runState
-        };
-        if (nextRunStatus.status) {
-          issueUpdate.status = nextRunStatus.status;
-        }
-        const result = await kanbanApi.updateIssue(issue.id, issueUpdate);
-        setIssues(sortIssues(result.issues));
-        setFeedback({ tone: nextRunStatus.tone, message: nextRunStatus.message });
-      } catch (error) {
-        setFeedback({
-          tone: "error",
-          message: error instanceof Error ? error.message : t("kanban.feedback.statusWritebackFailed")
-        });
-      }
-    });
-
-    return removeAssistantEventListener;
-  }, [t]);
 
   const visibleIssues = useMemo(
     () => issues.filter((issue) => VISIBLE_KANBAN_STATUS_SET.has(issue.status)),
@@ -2973,6 +2881,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           cloudActionBusy={busyIssueId === detailIssue.id}
           onClaim={() => void claimCloudIssue(detailIssue)}
           onRun={() => void startCloudIssue(detailIssue)}
+          onBindHumanReferenceChat={(chatId) => window.electronAPI.kanban.bindHumanReferenceChat({ issueId: detailIssue.remoteIssueId || detailIssue.id, stageId: detailIssue.stageId || "", statusId: detailIssue.statusId || "", chatId })}
+          onUnbindHumanReferenceChat={(issueChatId) => window.electronAPI.kanban.unbindHumanReferenceChat(issueChatId)}
           onFeedback={(tone, message) => setFeedback({ tone, message })}
         />
       ) : null}
@@ -3484,7 +3394,7 @@ const KanbanColumn = memo(function KanbanColumn({
       <div
         className="kanban-column-body"
         onDoubleClick={(event) => {
-          if (shouldCreateIssueFromColumnDoubleClick(event, status)) {
+          if (canAdd && shouldCreateIssueFromColumnDoubleClick(event, status)) {
             onAdd();
           }
         }}
@@ -3514,9 +3424,12 @@ const KanbanColumn = memo(function KanbanColumn({
           ))}
         </SortableContext>
         {issues.length === 0 ? (
-          <div className="kanban-empty-column">
+          <div className={`kanban-empty-column ${status === "todo" && canAdd ? "is-create-enabled" : ""}`}>
             <strong>{t("kanban.column.empty")}</strong>
-            <span>{getKanbanEmptyHint(status, t)}</span>
+            <span className="kanban-empty-column-hint">{getKanbanEmptyHint(status, t)}</span>
+            {status === "todo" && canAdd ? (
+              <span className="kanban-empty-column-create-hint">{t("kanban.column.emptyTodoCreateHint")}</span>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -3744,7 +3657,7 @@ const IssueCardContent = memo(function IssueCardContent({
       >
         <span style={{ width: `${progress.percent}%`, backgroundColor: progress.color }} />
       </div>
-      {issueType ? <span className="issue-card-type-corner" style={{ color: resolveIssueTypeColor(issueType.color, issueType.key) }} title={t("kanban.card.issueType", { value: issueType.label })}><IssueTypeIcon className="issue-card-type-corner-icon" issueTypeKey={issueType.key} icon={issueType.icon} color={issueType.color} label={issueType.label} /></span> : null}
+      {issueType ? <span className="issue-card-type-corner" style={{ color: resolveIssueTypeColor(issueType.color) }} title={t("kanban.card.issueType", { value: issueType.label })}><IssueTypeIcon className="issue-card-type-corner-icon" issueTypeKey={issueType.key} icon={issueType.icon} color={issueType.color} label={issueType.label} /></span> : null}
       {canOpenIssueDetails ? (
         <div
           className="issue-card-main"
@@ -4069,14 +3982,14 @@ function KanbanSearchFilters({
     <div className="kanban-search-filters" ref={filterRef}>
       <button
         type="button"
-        className={`kanban-search-filter-button ${openMenu === "issueType" ? "is-open" : ""} ${hasIssueTypeFilter ? "is-active" : ""}`}
+        className={`kanban-search-filter-button is-issue-type ${openMenu === "issueType" ? "is-open" : ""} ${hasIssueTypeFilter ? "is-active" : ""}`}
         aria-label={t("kanban.searchFilter.issueType")}
         aria-haspopup="true"
         aria-expanded={openMenu === "issueType"}
         title={t("kanban.searchFilter.issueType")}
         onClick={() => toggleMenu("issueType")}
       >
-        <FileTextOutlined />
+        <TagsOutlined />
       </button>
       <button
         type="button"
@@ -4102,7 +4015,7 @@ function KanbanSearchFilters({
       </button>
       <button
         type="button"
-        className={`kanban-search-filter-button ${openMenu === "automation" ? "is-open" : ""} ${hasAutomationFilter ? "is-active" : ""}`}
+        className={`kanban-search-filter-button is-automation ${openMenu === "automation" ? "is-open" : ""} ${hasAutomationFilter ? "is-active" : ""}`}
         aria-label={t("kanban.searchFilter.automation")}
         aria-haspopup="true"
         aria-expanded={openMenu === "automation"}
@@ -4140,7 +4053,7 @@ function KanbanSearchFilters({
           {openMenu === "issueType" ? (
             <>
               <button type="button" className={`kanban-search-filter-all ${!hasIssueTypeFilter ? "is-active" : ""}`} onClick={onClearIssueTypes}>{t("kanban.searchFilter.allIssueTypes")}</button>
-              {issueTypes.map((issueType) => (
+              {issueTypes.filter((issueType) => issueType.isActive !== false).map((issueType) => (
                 <label key={issueType.key} className="kanban-check-row kanban-search-filter-row">
                   <input type="checkbox" checked={issueTypeFilters.includes(issueType.key)} onChange={() => onToggleIssueType(issueType.key)} />
                   <IssueTypeIcon issueTypeKey={issueType.key} icon={issueType.icon} color={issueType.color} />

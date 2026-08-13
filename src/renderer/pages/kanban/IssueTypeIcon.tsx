@@ -1,13 +1,17 @@
 import type { ComponentType } from "react";
 import {
-  ApartmentOutlined,
+  AppstoreFilled,
   BookFilled,
   BugFilled,
   BulbFilled,
   CheckSquareFilled,
+  ContactsFilled,
+  CrownFilled,
+  ExperimentFilled,
   FileTextFilled,
   FlagFilled,
-  ProfileFilled
+  ProfileFilled,
+  RocketFilled
 } from "@ant-design/icons";
 
 const ISSUE_TYPE_ICON_COMPONENTS: Record<string, ComponentType> = {
@@ -20,7 +24,11 @@ const ISSUE_TYPE_ICON_COMPONENTS: Record<string, ComponentType> = {
   bug: BugFilled,
   file: FileTextFilled,
   flag: FlagFilled,
-  hierarchy: ApartmentOutlined
+  hierarchy: AppstoreFilled,
+  rocket: RocketFilled,
+  experiment: ExperimentFilled,
+  contacts: ContactsFilled,
+  crown: CrownFilled
 };
 
 const ISSUE_TYPE_COLOR_ALIASES: Record<string, string> = {
@@ -35,26 +43,30 @@ const ISSUE_TYPE_COLOR_ALIASES: Record<string, string> = {
   grey: "#64748b"
 };
 
-const ISSUE_TYPE_FALLBACKS: Record<string, { icon: string; color: string }> = {
-  requirement: { icon: "bulb", color: ISSUE_TYPE_COLOR_ALIASES.blue },
-  story: { icon: "book-open", color: ISSUE_TYPE_COLOR_ALIASES.purple },
-  task: { icon: "check-square", color: ISSUE_TYPE_COLOR_ALIASES.green },
-  subtask: { icon: "file", color: ISSUE_TYPE_COLOR_ALIASES.cyan },
-  problem: { icon: "bug", color: ISSUE_TYPE_COLOR_ALIASES.red },
-  bug: { icon: "bug", color: ISSUE_TYPE_COLOR_ALIASES.red }
+const ISSUE_TYPE_FALLBACKS: Record<string, { icon: string }> = {
+  requirement: { icon: "bulb" },
+  epic: { icon: "crown" },
+  story: { icon: "book-open" },
+  task: { icon: "check-square" },
+  subtask: { icon: "list-tree" },
+  problem: { icon: "bug" },
+  bug: { icon: "bug" },
+  deployment: { icon: "rocket" },
+  free: { icon: "flag" },
+  research: { icon: "experiment" },
+  visit: { icon: "contacts" }
 };
 
 function normalizeIssueTypeKey(value?: string | null) {
   return value?.trim().toLowerCase().replace(/[\s_-]+/gu, "") ?? "";
 }
 
-export function resolveIssueTypeColor(color?: string | null, issueTypeKey?: string | null) {
+export function resolveIssueTypeColor(color?: string | null) {
   const normalizedColor = color?.trim().toLowerCase() ?? "";
   if (/^#[0-9a-f]{6}$/u.test(normalizedColor)) {
     return normalizedColor;
   }
-  const fallback = ISSUE_TYPE_FALLBACKS[normalizeIssueTypeKey(issueTypeKey)];
-  return ISSUE_TYPE_COLOR_ALIASES[normalizedColor] ?? fallback?.color ?? ISSUE_TYPE_COLOR_ALIASES.gray;
+  return ISSUE_TYPE_COLOR_ALIASES[normalizedColor] ?? ISSUE_TYPE_COLOR_ALIASES.gray;
 }
 
 export function IssueTypeIcon({
@@ -77,7 +89,7 @@ export function IssueTypeIcon({
   return (
     <span
       className={`issue-type-icon ${className}`.trim()}
-      style={{ color: resolveIssueTypeColor(color, issueTypeKey) }}
+      style={{ color: resolveIssueTypeColor(color) }}
       role={label ? "img" : undefined}
       aria-label={label}
       aria-hidden={label ? undefined : true}
