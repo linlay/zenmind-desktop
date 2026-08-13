@@ -3436,7 +3436,7 @@ test("Kanban toolbar can filter issues by automation", () => {
   assert.match(kanbanPage, /function shouldShowIssueForAutomationFilter\(\s*issue: Pick<KanbanIssue, "automationEnabled" \| "automationCron">,\s*filter: KanbanAutomationFilter/);
   assert.match(kanbanPage, /if \(filter === "all"\) \{[\s\S]{0,80}return true;/);
   assert.match(kanbanPage, /const hasAutomation = hasIssueAutomation\(issue\)/);
-  assert.match(kanbanPage, /const \[automationFilter,\s*setAutomationFilter\] = useState<KanbanAutomationFilter>\("all"\)/);
+  assert.match(kanbanPage, /const \[automationFilter, setAutomationFilter\] = useState\(initialFilterPreferences\.automationFilter\)/);
   assert.match(kanbanPage, /shouldShowIssueForAutomationFilter\(issue, automationFilter\)/);
   assert.match(kanbanPage, /className=\{`kanban-search-filter-button \$\{openMenu === "automation" \? "is-open" : ""\} \$\{hasAutomationFilter \? "is-active" : ""\}`\}/);
   assert.match(kanbanPage, /KANBAN_AUTOMATION_FILTER_OPTIONS\.map/);
@@ -3450,7 +3450,7 @@ test("Kanban toolbar can filter issues by automation", () => {
   assert.match(enUS, /"kanban\.searchFilter\.noAutomation": "No automation"/);
 });
 
-test("Kanban toolbar remembers multi-select assignee filters and defaults to self", () => {
+test("Kanban toolbar remembers all filter preferences and defaults assignee to self", () => {
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
@@ -3458,9 +3458,22 @@ test("Kanban toolbar remembers multi-select assignee filters and defaults to sel
 
   assert.match(kanbanPage, /type KanbanAssigneeFilter = "others" \| "self" \| "unassigned"/);
   assert.match(kanbanPage, /const DEFAULT_KANBAN_ASSIGNEE_FILTERS = \["self"\]/);
-  assert.match(kanbanPage, /KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.assignee-filters`/);
-  assert.match(kanbanPage, /window\.localStorage\.getItem\(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY\)/);
-  assert.match(kanbanPage, /window\.localStorage\.setItem\(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY, JSON\.stringify\(assigneeFilters\)\)/);
+  assert.match(kanbanPage, /KANBAN_FILTER_PREFERENCES_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.filter-preferences\.v1`/);
+  assert.match(kanbanPage, /LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.kanban\.assignee-filters`/);
+  assert.match(kanbanPage, /function readKanbanFilterPreferences\(\): KanbanFilterPreferences/);
+  assert.match(kanbanPage, /window\.localStorage\.getItem\(KANBAN_FILTER_PREFERENCES_STORAGE_KEY\)/);
+  assert.match(kanbanPage, /const \[initialFilterPreferences\] = useState\(readKanbanFilterPreferences\)/);
+  assert.match(kanbanPage, /const \[query, setQuery\] = useState\(initialFilterPreferences\.query\)/);
+  assert.match(kanbanPage, /const \[selectedProjectIds, setSelectedProjectIds\] = useState\(initialFilterPreferences\.selectedProjectIds\)/);
+  assert.match(kanbanPage, /const \[includeLocalIssues, setIncludeLocalIssues\] = useState\(initialFilterPreferences\.includeLocalIssues\)/);
+  assert.match(kanbanPage, /const \[issueTypeFilters, setIssueTypeFilters\] = useState\(initialFilterPreferences\.issueTypeFilters\)/);
+  assert.match(kanbanPage, /const \[priorityFilters, setPriorityFilters\] = useState\(initialFilterPreferences\.priorityFilters\)/);
+  assert.match(kanbanPage, /const \[severityFilters, setSeverityFilters\] = useState\(initialFilterPreferences\.severityFilters\)/);
+  assert.match(kanbanPage, /const \[automationFilter, setAutomationFilter\] = useState\(initialFilterPreferences\.automationFilter\)/);
+  assert.match(kanbanPage, /const \[assigneeFilters, setAssigneeFilters\] = useState\(initialFilterPreferences\.assigneeFilters\)/);
+  assert.match(kanbanPage, /const preferences: KanbanFilterPreferences = \{\s*query,\s*selectedProjectIds,\s*includeLocalIssues,\s*issueTypeFilters,\s*priorityFilters,\s*severityFilters,\s*automationFilter,\s*assigneeFilters\s*\}/);
+  assert.match(kanbanPage, /window\.localStorage\.setItem\(KANBAN_FILTER_PREFERENCES_STORAGE_KEY, JSON\.stringify\(preferences\)\)/);
+  assert.match(kanbanPage, /if \(!projectCatalogLoaded\) \{\s*return;\s*\}[\s\S]{0,180}setSelectedProjectIds\(\(current\) => current\.filter\(\(projectId\) => projectIds\.has\(projectId\)\)\)/);
   assert.match(kanbanPage, /const \[currentUserId, setCurrentUserId\] = useState\(""\)/);
   assert.match(kanbanPage, /setCurrentUserId\(issueResult\.currentUser\?\.id \?\? ""\)/);
   assert.match(kanbanPage, /function shouldShowIssueForAssigneeFilters\([\s\S]{0,500}!assigneeId[\s\S]{0,120}"unassigned"[\s\S]{0,180}assigneeId === normalizedCurrentUserId[\s\S]{0,120}"self"[\s\S]{0,80}"others"/);
@@ -3677,7 +3690,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanStyles, /\.kanban-feedback\s*\{[\s\S]{0,700}transform:\s*translateX\(-50%\);/);
   assert.doesNotMatch(kanbanStyles, /\.kanban-feedback\s*\{[^}]*top:\s*66px;/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.startRun/);
-  assert.match(kanbanPage, /const chatId = resolvePrivateKanbanRunChatId\(issue\)/);
+  assert.match(kanbanPage, /const chatId = resolveLocalKanbanRunChatId\(issue\)/);
   assert.match(kanbanPage, /\.\.\.\(chatId \? \{ chatId \} : \{\}\),[\s\S]{0,80}agentKey/);
   assert.match(kanbanPage, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(kanbanPage, /t\("kanban\.prompt\.rule"\)/);

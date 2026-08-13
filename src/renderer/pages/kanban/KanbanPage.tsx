@@ -76,7 +76,7 @@ import {
 import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
-import { resolvePrivateKanbanRunChatId } from "./kanbanAssistantRun";
+import { resolveLocalKanbanRunChatId } from "./kanbanAssistantRun";
 
 type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "issueType" | "priority" | "severity" | "automation" | "assignee" | null;
@@ -129,6 +129,17 @@ type KanbanIssueOriginPresentation = {
 
 type KanbanPriorityFilter = KanbanPriority | "unset";
 type KanbanSeverityFilter = KanbanSeverity | "unset";
+
+type KanbanFilterPreferences = {
+  query: string;
+  selectedProjectIds: string[];
+  includeLocalIssues: boolean;
+  issueTypeFilters: string[];
+  priorityFilters: KanbanPriorityFilter[];
+  severityFilters: KanbanSeverityFilter[];
+  automationFilter: KanbanAutomationFilter;
+  assigneeFilters: KanbanAssigneeFilter[];
+};
 
 type IssueCardSignalTone = KanbanStatus | "running" | "awaiting" | "succeeded" | "failed" | "cancelled";
 
@@ -248,7 +259,8 @@ const KANBAN_SEVERITIES = [
 const DEFAULT_KANBAN_AUTOMATION_PLAN: KanbanAutomationPlan = "daily";
 const DEFAULT_KANBAN_AUTOMATION_TIME = "09:00";
 const DEFAULT_KANBAN_AUTOMATION_CRON = "0 9 * * *";
-const KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `${STORAGE_NAMESPACE}.kanban.assignee-filters`;
+const KANBAN_FILTER_PREFERENCES_STORAGE_KEY = `${STORAGE_NAMESPACE}.kanban.filter-preferences.v1`;
+const LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY = `${STORAGE_NAMESPACE}.kanban.assignee-filters`;
 const DEFAULT_KANBAN_ASSIGNEE_FILTERS = ["self"] satisfies KanbanAssigneeFilter[];
 
 const KANBAN_AUTOMATION_PLANS = [
@@ -321,23 +333,89 @@ const defaultDisplayState: DisplayState = {
   priority: true
 };
 
-function readKanbanAssigneeFilters(): KanbanAssigneeFilter[] {
-  if (typeof window === "undefined") {
-    return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
+function createDefaultKanbanFilterPreferences(): KanbanFilterPreferences {
+  return {
+    query: "",
+    selectedProjectIds: [],
+    includeLocalIssues: false,
+    issueTypeFilters: [],
+    priorityFilters: [],
+    severityFilters: [],
+    automationFilter: "all",
+    assigneeFilters: [...DEFAULT_KANBAN_ASSIGNEE_FILTERS]
+  };
+}
+
+function parseStoredJson(value: string | null): unknown {
+  if (!value) {
+    return undefined;
   }
   try {
-    const savedValue = window.localStorage.getItem(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY);
-    if (!savedValue) {
-      return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
-    }
-    const parsed = JSON.parse(savedValue);
-    if (!Array.isArray(parsed)) {
-      return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
-    }
-    const allowedFilters = new Set<KanbanAssigneeFilter>(KANBAN_ASSIGNEE_FILTER_OPTIONS.map((option) => option.value));
-    return Array.from(new Set(parsed.filter((value): value is KanbanAssigneeFilter => allowedFilters.has(value))));
+    return JSON.parse(value);
   } catch {
-    return [...DEFAULT_KANBAN_ASSIGNEE_FILTERS];
+    return undefined;
+  }
+}
+
+function normalizeStoredStringArray(value: unknown): string[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  return Array.from(new Set(
+    value
+      .filter((item): item is string => typeof item === "string")
+      .map((item) => item.trim())
+      .filter(Boolean)
+  ));
+}
+
+function normalizeStoredFilterValues<T extends string>(value: unknown, allowedValues: ReadonlyArray<T>): T[] {
+  const allowed = new Set<T>(allowedValues);
+  return normalizeStoredStringArray(value).filter((item): item is T => allowed.has(item as T));
+}
+
+function readLegacyKanbanAssigneeFilters(): KanbanAssigneeFilter[] | null {
+  const parsed = parseStoredJson(window.localStorage.getItem(LEGACY_KANBAN_ASSIGNEE_FILTER_STORAGE_KEY));
+  if (!Array.isArray(parsed)) {
+    return null;
+  }
+  return normalizeStoredFilterValues(parsed, KANBAN_ASSIGNEE_FILTER_OPTIONS.map((option) => option.value));
+}
+
+function readKanbanFilterPreferences(): KanbanFilterPreferences {
+  const defaults = createDefaultKanbanFilterPreferences();
+  if (typeof window === "undefined") {
+    return defaults;
+  }
+  try {
+    const storedValue = parseStoredJson(window.localStorage.getItem(KANBAN_FILTER_PREFERENCES_STORAGE_KEY));
+    const stored = storedValue && typeof storedValue === "object" && !Array.isArray(storedValue)
+      ? storedValue as Record<string, unknown>
+      : null;
+    const legacyAssigneeFilters = readLegacyKanbanAssigneeFilters();
+    if (!stored) {
+      return {
+        ...defaults,
+        assigneeFilters: legacyAssigneeFilters ?? defaults.assigneeFilters
+      };
+    }
+    const automationFilter = KANBAN_AUTOMATION_FILTER_OPTIONS.some((option) => option.value === stored.automationFilter)
+      ? stored.automationFilter as KanbanAutomationFilter
+      : defaults.automationFilter;
+    return {
+      query: typeof stored.query === "string" ? stored.query : defaults.query,
+      selectedProjectIds: normalizeStoredStringArray(stored.selectedProjectIds),
+      includeLocalIssues: typeof stored.includeLocalIssues === "boolean" ? stored.includeLocalIssues : defaults.includeLocalIssues,
+      issueTypeFilters: normalizeStoredStringArray(stored.issueTypeFilters),
+      priorityFilters: normalizeStoredFilterValues(stored.priorityFilters, [...KANBAN_PRIORITIES, "unset"]),
+      severityFilters: normalizeStoredFilterValues(stored.severityFilters, [...KANBAN_SEVERITIES, "unset"]),
+      automationFilter,
+      assigneeFilters: Array.isArray(stored.assigneeFilters)
+        ? normalizeStoredFilterValues(stored.assigneeFilters, KANBAN_ASSIGNEE_FILTER_OPTIONS.map((option) => option.value))
+        : legacyAssigneeFilters ?? defaults.assigneeFilters
+    };
+  } catch {
+    return defaults;
   }
 }
 
@@ -1536,6 +1614,7 @@ function resolveIssueAgentKey(issue: KanbanIssue, agents: AssistantNavAgentItem[
 export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const { locale, t } = useI18n();
   const navigate = useNavigate();
+  const [initialFilterPreferences] = useState(readKanbanFilterPreferences);
   const [issues, setIssues] = useState<KanbanIssue[]>([]);
   const [cloudDetails, setCloudDetails] = useState<KanbanCloudDetailData>(EMPTY_KANBAN_CLOUD_DETAILS);
   const [agents, setAgents] = useState<AssistantNavAgentItem[]>([]);
@@ -1544,19 +1623,20 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [feedback, setFeedback] = useState<Feedback | null>(null);
   const [feedbackPaused, setFeedbackPaused] = useState(false);
   const [menu, setMenu] = useState<MenuKind>(null);
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialFilterPreferences.query);
   const [cloudProjects, setCloudProjects] = useState<KanbanProject[]>([]);
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>([]);
-  const [includeLocalIssues, setIncludeLocalIssues] = useState(false);
+  const [projectCatalogLoaded, setProjectCatalogLoaded] = useState(false);
+  const [selectedProjectIds, setSelectedProjectIds] = useState(initialFilterPreferences.selectedProjectIds);
+  const [includeLocalIssues, setIncludeLocalIssues] = useState(initialFilterPreferences.includeLocalIssues);
   const [projectFilterOpen, setProjectFilterOpen] = useState(false);
   const [connectionState, setConnectionState] = useState<KanbanConnectionState>("disabled");
   const [cloudCapabilities, setCloudCapabilities] = useState<string[]>([]);
   const [cloudResyncing, setCloudResyncing] = useState(false);
-  const [issueTypeFilters, setIssueTypeFilters] = useState<string[]>([]);
-  const [priorityFilters, setPriorityFilters] = useState<KanbanPriorityFilter[]>([]);
-  const [severityFilters, setSeverityFilters] = useState<KanbanSeverityFilter[]>([]);
-  const [automationFilter, setAutomationFilter] = useState<KanbanAutomationFilter>("all");
-  const [assigneeFilters, setAssigneeFilters] = useState<KanbanAssigneeFilter[]>(readKanbanAssigneeFilters);
+  const [issueTypeFilters, setIssueTypeFilters] = useState(initialFilterPreferences.issueTypeFilters);
+  const [priorityFilters, setPriorityFilters] = useState(initialFilterPreferences.priorityFilters);
+  const [severityFilters, setSeverityFilters] = useState(initialFilterPreferences.severityFilters);
+  const [automationFilter, setAutomationFilter] = useState(initialFilterPreferences.automationFilter);
+  const [assigneeFilters, setAssigneeFilters] = useState(initialFilterPreferences.assigneeFilters);
   const [currentUserId, setCurrentUserId] = useState("");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenuKind>(null);
   const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
@@ -1605,6 +1685,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         if (cancelled) return;
         setIssues(sortIssues(issueResult.issues));
         setCloudProjects(issueResult.projects ?? []);
+        setProjectCatalogLoaded(true);
         setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
         setConnectionState(issueResult.connectionState ?? "disabled");
         setCloudCapabilities(issueResult.cloudCapabilities ?? []);
@@ -1635,6 +1716,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     const issueResult = await kanbanApi.listIssues();
     setIssues(sortIssues(issueResult.issues));
     setCloudProjects(issueResult.projects ?? []);
+    setProjectCatalogLoaded(true);
     setCloudDetails(issueResult.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
     setConnectionState(issueResult.connectionState ?? "disabled");
     setCloudCapabilities(issueResult.cloudCapabilities ?? []);
@@ -1656,6 +1738,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       const result = await kanbanApi.resyncCloudBoard();
       setIssues(sortIssues(result.issues));
       setCloudProjects(result.projects ?? []);
+      setProjectCatalogLoaded(true);
       setCloudDetails(result.cloudDetails ?? EMPTY_KANBAN_CLOUD_DETAILS);
       setConnectionState(result.connectionState ?? "disabled");
       setCloudCapabilities(result.cloudCapabilities ?? []);
@@ -1692,11 +1775,21 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(KANBAN_ASSIGNEE_FILTER_STORAGE_KEY, JSON.stringify(assigneeFilters));
+      const preferences: KanbanFilterPreferences = {
+        query,
+        selectedProjectIds,
+        includeLocalIssues,
+        issueTypeFilters,
+        priorityFilters,
+        severityFilters,
+        automationFilter,
+        assigneeFilters
+      };
+      window.localStorage.setItem(KANBAN_FILTER_PREFERENCES_STORAGE_KEY, JSON.stringify(preferences));
     } catch {
       // Ignore localStorage failures in restricted renderer contexts.
     }
-  }, [assigneeFilters]);
+  }, [assigneeFilters, automationFilter, includeLocalIssues, issueTypeFilters, priorityFilters, query, selectedProjectIds, severityFilters]);
 
   useEffect(() => {
     const kanbanApi = readKanbanApi();
@@ -1709,9 +1802,12 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   }, []);
 
   useEffect(() => {
+    if (!projectCatalogLoaded) {
+      return;
+    }
     const projectIds = new Set(cloudProjects.map((project) => project.id));
     setSelectedProjectIds((current) => current.filter((projectId) => projectIds.has(projectId)));
-  }, [cloudProjects]);
+  }, [cloudProjects, projectCatalogLoaded]);
 
   useEffect(() => {
     activeDragIssueIdRef.current = activeDragIssueId;
@@ -2388,7 +2484,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
     setBusyIssueId(issue.id);
     try {
-      const chatId = resolvePrivateKanbanRunChatId(issue);
+      const chatId = resolveLocalKanbanRunChatId(issue);
       const runResult = await window.electronAPI.assistant.startRun({
         ...(chatId ? { chatId } : {}),
         agentKey,
