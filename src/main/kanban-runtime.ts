@@ -36,7 +36,7 @@ import { buildKanbanAutomationPayload, resolveKanbanRunStateFromAssistantEvent, 
 import {
   applyDesktopKanbanCloudSnapshot,
   completeDesktopKanbanCommandReceiptByRunId,
-  createPrivateDesktopKanbanIssue,
+  createLocalDesktopKanbanIssue,
   deleteDesktopKanbanCloudMutation,
   deleteDesktopKanbanRunEvent,
   deleteDesktopKanbanIssue,
@@ -72,7 +72,7 @@ import {
 } from "./kanban-local-store";
 import { getDesktopConfigRoot } from "./user-paths";
 import {
-  convertLocalProjectIssuesToPrivate,
+  convertLocalProjectIssuesToLocal,
   createLocalDesktopProject,
   findLocalDesktopProject
 } from "./kanban-local-projects";
@@ -440,7 +440,7 @@ function getKanbanDeviceInfo(app: App) {
 }
 
 function issueSyncMode(issue: KanbanIssue | null | undefined) {
-  return issue?.syncMode === "cloud" ? "cloud" : "private";
+  return issue?.syncMode === "cloud" ? "cloud" : "local";
 }
 
 function getRemoteIssueId(issue: KanbanIssue) {
@@ -794,7 +794,7 @@ export class KanbanRuntime {
     this.refreshConnection();
     const currentUser = this.currentUser();
     if (input.syncToCloud !== true) {
-      return createPrivateDesktopKanbanIssue(this.options.app, currentUser, input);
+      return createLocalDesktopKanbanIssue(this.options.app, currentUser, input);
     }
     return this.cloudIssueReadOnlyResult();
   }
@@ -811,7 +811,7 @@ export class KanbanRuntime {
       };
     }
 
-    if (issueSyncMode(issue) === "private") {
+    if (issueSyncMode(issue) === "local") {
       if (input.syncToCloud === true) {
         return this.cloudIssueReadOnlyResult();
       }
@@ -832,7 +832,7 @@ export class KanbanRuntime {
         issues: listDesktopKanbanIssues(this.options.app, currentUser, this.connectionState).issues
       };
     }
-    if (issueSyncMode(issue) === "private") {
+    if (issueSyncMode(issue) === "local") {
       return moveDesktopKanbanIssue(this.options.app, currentUser, input);
     }
     return this.cloudIssueReadOnlyResult();
@@ -866,7 +866,7 @@ export class KanbanRuntime {
         };
       }
     }
-    if (issueSyncMode(issue) === "private") {
+    if (issueSyncMode(issue) === "local") {
       return deleteDesktopKanbanIssue(this.options.app, currentUser, issue.id);
     }
     return deleteDesktopKanbanIssue(this.options.app, currentUser, issue.id);
@@ -890,7 +890,7 @@ export class KanbanRuntime {
       return this.cloudIssueReadOnlyResult();
     }
     const localResult = await this.syncAutomationForIssue(issue, callAgentPlatform);
-    if (!localResult.ok || !localResult.issue || issueSyncMode(localResult.issue) === "private") {
+    if (!localResult.ok || !localResult.issue || issueSyncMode(localResult.issue) === "local") {
       return localResult;
     }
     return localResult;
@@ -1237,11 +1237,11 @@ export class KanbanRuntime {
         (manualReceipt && getRemoteIssueId(issue) === manualReceipt.issueId)
       )
     ) : undefined;
-    const matchingPrivateIssue = issues.find((issue) => issueSyncMode(issue) !== "cloud" && (
+    const matchingLocalIssue = issues.find((issue) => issueSyncMode(issue) !== "cloud" && (
       (event.runId && (issue.runId === event.runId || issue.activeRunId === event.runId)) ||
       (!event.runId && event.chatId && (issue.chatId === event.chatId || issue.attachmentChatId === event.chatId))
     ));
-    const matchingIssue = matchingCloudIssue ?? matchingPrivateIssue;
+    const matchingIssue = matchingCloudIssue ?? matchingLocalIssue;
     if (matchingIssue && issueSyncMode(matchingIssue) !== "cloud") {
       if (event.runId) {
         updateDesktopKanbanIssueByRunId(this.options.app, currentUser, event.runId, input);
@@ -1639,12 +1639,12 @@ export class KanbanRuntime {
     };
   }
 
-  // 响应云端 desktop.project.unbind:把该本地项目下的 cloud issue 转为 private 保留副本。
+  // 响应云端 desktop.project.unbind:把该本地项目下的 cloud issue 转为 local 保留副本。
   private unbindLocalProject(payload: unknown) {
     const record = isRecord(payload) ? payload : {};
     const localProjectId = readText(record.localProjectId);
     const converted = localProjectId
-      ? convertLocalProjectIssuesToPrivate(this.options.app, this.currentUser(), localProjectId)
+      ? convertLocalProjectIssuesToLocal(this.options.app, this.currentUser(), localProjectId)
       : 0;
     if (converted > 0) {
       this.notifyChanged();

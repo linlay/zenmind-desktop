@@ -217,7 +217,7 @@ function assertCloudPayloadPrivacy(env: KanbanEnvelope) {
   const visit = (value: unknown): boolean => {
     if (Array.isArray(value)) return value.some(visit);
     if (!isRecord(value)) return false;
-    if (value.syncMode === "private") return true;
+    if ("syncMode" in value && value.syncMode !== "cloud") return true;
     if ("filePath" in value || "localFilePath" in value) return true;
     if (typeof value.path === "string" && (/^\//u.test(value.path) || /^[A-Za-z]:[\\/]/u.test(value.path))) return true;
     if (Array.isArray(value.attachments) && value.attachments.some((attachment) =>
@@ -227,7 +227,7 @@ function assertCloudPayloadPrivacy(env: KanbanEnvelope) {
     return Object.values(value).some(visit);
   };
   if (visit(env.payload)) {
-    throw new Error("private kanban payload must never be sent to cloud");
+    throw new Error("local kanban payload must never be sent to cloud");
   }
 }
 

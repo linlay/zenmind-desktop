@@ -104,11 +104,11 @@ Server 按来源校验：
 
 状态收敛完全依赖 Server 的 `issue.updated`：成功且当前工作流存在 `reviewRequired` 审核节点时进入 In Review，否则进入 Completed；Failed/Cancelled 回到 Todo，且不会自动循环重试。
 
-## 6. Private Issue
+## 6. Local Issue
 
-Private Issue 只存 Desktop SQLite，不进入 cloud mutation/run-event outbox，不发送 Kanban WS 请求，标题、描述、附件和本地路径也不得进入 Kanban WS 日志。
+Local Issue 使用 `syncMode="local"`，只存 Desktop SQLite，不进入 cloud mutation/run-event outbox，不发送 Kanban WS 请求，标题、描述、附件和本地路径也不得进入 Kanban WS 日志。`syncMode` 只允许 `local | cloud`；旧 SQLite 中的 `private` 会在 Desktop 首次打开数据库时迁移为 `local`，迁移后不再作为共享契约或存储值接受。
 
-Private Issue 创建或由用户主动移入 Todo 后，若已选 Agent、没有 automation 且没有 active run，延迟 1 秒后可自动走正常 `/api/query`。已有 `chatId` 时继续使用原 Chat 并为本次执行生成新 `runId`；没有原 Chat 时，带附件的 Issue 优先使用附件 Chat，否则新建 Chat。成功进入 Completed，失败或取消自动回 Todo；这种运行终态导致的回退不触发再次执行，避免失败循环。Completed 等状态由用户主动移回 Todo 属于一次新的返工，仍按上述规则延迟执行一次。
+Local Issue 创建或由用户主动移入 Todo 后，若已选 Agent、没有 automation 且没有 active run，延迟 1 秒后可自动走正常 `/api/query`。已有 `chatId` 时继续使用原 Chat 并为本次执行生成新 `runId`；没有原 Chat 时，带附件的 Issue 优先使用附件 Chat，否则新建 Chat。成功进入 Completed，失败或取消自动回 Todo；这种运行终态导致的回退不触发再次执行，避免失败循环。Completed 等状态由用户主动移回 Todo 属于一次新的返工，仍按上述规则延迟执行一次。
 
 ## 7. 发布顺序
 

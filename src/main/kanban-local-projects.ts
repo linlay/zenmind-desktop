@@ -134,8 +134,8 @@ export function findLocalDesktopProject(
   return (result.projects ?? []).find((project) => project.id === id) ?? null;
 }
 
-// 解绑后把该本地项目下的 cloud issue 转为 private(本地保留副本,不再随云端同步)。
-export function convertLocalProjectIssuesToPrivate(
+// 解绑后把该本地项目下的 cloud issue 转为 local(本地保留副本,不再随云端同步)。
+export function convertLocalProjectIssuesToLocal(
   app: AppPathProvider,
   currentUser: KanbanCurrentUser,
   localProjectId: string
@@ -153,7 +153,7 @@ export function convertLocalProjectIssuesToPrivate(
     `).all(id) as Array<{ localIssueId: string }>;
     const update = db.prepare(`
       UPDATE desktop_issue_sync
-      SET SYNC_MODE_ = 'private', SYNC_STATE_ = 'local', REMOTE_ISSUE_ID_ = NULL, SYNC_ERROR_ = NULL
+      SET SYNC_MODE_ = 'local', SYNC_STATE_ = 'local', REMOTE_ISSUE_ID_ = NULL, SYNC_ERROR_ = NULL
       WHERE LOCAL_ISSUE_ID_ = ?
     `);
     const clearRemote = db.prepare(`

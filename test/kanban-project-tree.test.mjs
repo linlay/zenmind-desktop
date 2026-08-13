@@ -92,7 +92,7 @@ test("flattenKanbanProjectTree keeps non-aggregate roots at level zero", () => {
 test("matchesKanbanProjectSelection keeps local issues separate from cloud projects", () => {
   const { matchesKanbanProjectSelection } = loadKanbanProjectTreeModule();
   const cloudProjectIds = new Set(["cloud-project"]);
-  const localIssue = { projectId: "cloud-project", syncMode: "private" };
+  const localIssue = { projectId: "cloud-project", syncMode: "local" };
   const cloudIssue = { projectId: "cloud-project", syncMode: "cloud" };
 
   assert.equal(matchesKanbanProjectSelection(localIssue, null, false), true);

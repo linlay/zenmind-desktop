@@ -24,7 +24,7 @@ type DesktopLogStreamCallback = (event: ServiceLogStreamEvent) => void;
 const DESKTOP_LOG_SERVICE_ID = "desktop";
 const KANBAN_WS_LOG_LIMIT_BYTES = 10 * 1024 * 1024;
 const REDACTED_LOG_VALUE = "[REDACTED]";
-const REDACTED_PRIVATE_PAYLOAD = "[REDACTED_PRIVATE_PAYLOAD]";
+const REDACTED_LOCAL_PAYLOAD = "[REDACTED_LOCAL_PAYLOAD]";
 let consoleTeeInstalled = false;
 
 function getDesktopLogPath(app: App, target: DesktopLogTarget) {
@@ -189,8 +189,8 @@ function sanitizeKanbanWsLogValue(value: unknown, key = "", seen = new WeakSet<o
   if (seen.has(value)) {
     return "[CIRCULAR]";
   }
-  if (value.syncMode === "private") {
-    return REDACTED_PRIVATE_PAYLOAD;
+  if ("syncMode" in value && value.syncMode !== "cloud") {
+    return REDACTED_LOCAL_PAYLOAD;
   }
   seen.add(value);
   const sanitized: Record<string, unknown> = {};

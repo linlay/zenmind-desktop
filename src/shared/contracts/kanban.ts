@@ -27,7 +27,7 @@ export type KanbanPriority = typeof KANBAN_PRIORITIES[number];
 export type KanbanWirePriority = "urgent" | "high" | "medium" | "low";
 export type KanbanSeverity = "critical" | "high" | "medium" | "low";
 export type KanbanRunState = typeof KANBAN_RUN_STATES[number];
-export type KanbanSyncMode = "private" | "cloud";
+export type KanbanSyncMode = "local" | "cloud";
 export type KanbanSyncState = "local" | "syncing" | "synced" | "error";
 export type KanbanOrigin = "desktop" | "cloud_dispatch";
 

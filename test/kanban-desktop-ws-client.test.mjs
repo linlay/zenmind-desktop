@@ -1106,7 +1106,7 @@ test("kanban desktop ws client closes when response cannot be sent", async (t) =
   client.stop();
 });
 
-test("kanban desktop ws client refuses private issue content before serialization", async (t) => {
+test("kanban desktop ws client refuses local issue content before serialization", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -1139,8 +1139,12 @@ test("kanban desktop ws client refuses private issue content before serializatio
   const sentBefore = socket.sent.length;
 
   await assert.rejects(
-    client.request("issue.update", { issue: { id: "local-1", syncMode: "private", title: "never upload", filePath: "/Users/me/private.txt" } }),
-    /private kanban payload/u
+    client.request("issue.update", { issue: { id: "local-1", syncMode: "local", title: "never upload", filePath: "/Users/me/private.txt" } }),
+    /local kanban payload/u
+  );
+  await assert.rejects(
+    client.request("issue.update", { issue: { id: "legacy-1", syncMode: "private", title: "legacy never upload" } }),
+    /local kanban payload/u
   );
   assert.equal(socket.sent.length, sentBefore);
   assert.equal(socket.readyState, 1);

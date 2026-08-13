@@ -16,7 +16,7 @@
 
 - Server 已实现 project/issue revision、canonical event、project-set snapshot、多项目 event pull、项目软删除恢复、离线 run delivery、ACK 后 delivered 状态、运行事件幂等和 v3 输出适配。
 - Website 已切换单实体 upsert/tombstone reducer、`issue.assign`、`issue.run.request`、项目删除恢复及重连快照收敛。
-- Desktop 已切换 cache schema 4、完整 binding set 恢复、cloud cache 精确替换、private 数据隔离、command receipt 和稳定 run identity；schema 4 同时保存 Project 组件目录、可空等级和完整 Issue 详情字段。
+- Desktop 已切换 cache schema 4、完整 binding set 恢复、cloud cache 精确替换、local 数据隔离、command receipt 和稳定 run identity；schema 4 同时保存 Project 组件目录、可空等级和完整 Issue 详情字段。
 - 三仓使用同一组 `kanban-v3.1/contract-fixtures.json` 做 JSON golden fixture 验证。
 - 本文继续保留 `Current v3` 与 `Target v3.1` 标签，用于解释兼容输出，不再表示 v3.1 尚未编码。
 
@@ -49,7 +49,7 @@ Desktop 不应成为云端 CRUD 的同步前置条件。用户关闭电脑后，
 - 云端实体采用 Server-authoritative、last-write-by-valid-revision。
 - 所有云端写请求都进行实体 revision 冲突检查。
 - Desktop 重连完成后，其 cloud-owned 缓存必须等于快照及后续事件所描述的 Server 状态。
-- Desktop 的 private-owned 数据不参与云端 revision，也不受云快照删除集合影响。
+- Desktop 的 local-owned 数据不参与云端 revision，也不受云快照删除集合影响。
 - WebSocket `open` 仅表示传输已建立；完成快照和追赶事件后才进入 `ready`。
 
 ## 3. 传输、鉴权与公共 Envelope
@@ -269,7 +269,7 @@ Body 使用与 WebSocket Request 完全相同的 Envelope，响应使用相同�
 - `priority`：wire 使用 `urgent`、`high`、`medium`、`low` 或 `null`。Desktop 在缓存边界映射为 `P0`、`P1`、`P2`、`P3`，Desktop Action 同时接受两组输入，但输出保持 P0–P3 兼容现有调用方。
 - `severity`：`critical`、`high`、`medium`、`low` 或 `null`。`priority` 与 `severity` 缺失时均保持空值，不补默认等级。
 - `dueDate`：严格的 `YYYY-MM-DD` 日历日期；缺失或 `null` 表示未设置。不得转换成时间点或受时区偏移影响。旧 `dueTime`、`dueAt` 仅供 Desktop 迁移读取，新实体不再写入旧键。
-- `dueRisk`：Server 计算的只读值。Desktop 不允许动作写入，也不为 private Issue 复制 Server 风险算法。
+- `dueRisk`：Server 计算的只读值。Desktop 不允许动作写入，也不为 Local Issue 复制 Server 风险算法。
 - `projectVersion`：可选字符串；缺失、`null` 或空字符串表示未设置。非空值必须存在于所属 Project 的 `versions` 目录。旧 `version` 只作为 Desktop Action 与存量缓存的兼容读取来源。
 - `componentKeys`：所属 Project `components` 目录中的字符串数组，whole-replacement；空数组表示清空。
 - `originalEstimate`、`remainingEstimate`、`timeSpent`：可选非负整数秒；UI 可以小时输入，但协议和缓存统一使用秒。
@@ -478,7 +478,7 @@ Success payload：
 
 1. 在一个本地数据库事务中 upsert `projects`、`issues` 和 workflow catalog。
 2. 对 `projectIds` 范围内 `syncMode=cloud` 且未出现在完整快照中的记录写 tombstone。
-3. 不删除 `syncMode=private` 的 Issue。
+3. 不删除 `syncMode=local` 的 Issue。
 4. 事务成功后同时写入 `lastAppliedRevision=lastSeq`。
 5. 事务失败不得推进 cursor。
 
@@ -1046,7 +1046,7 @@ Target v3.1 的公开删除固定为软删除子树，不提供公开 hard delet
 
 - 项目子树写入 `deletedAt` 或等价归档状态。
 - 云端 Issue 和审计事件保留，但不再出现在 active snapshot。
-- Desktop 删除该子树的 cloud cache，保留所有 private project/issue。
+- Desktop 删除该子树的 cloud cache，保留所有 local project/issue。
 - 默认项目不能删除。
 
 ### 8.5 `project.restore`
@@ -1321,7 +1321,7 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
 
 纯本地任务：
 
-- `syncMode="private"`
+- `syncMode="local"`
 - `syncState="local"`
 - `remoteIssueId=null`
 - `origin="desktop"`
@@ -1360,7 +1360,7 @@ Server 接受运行事件后更新权威 Issue，并广播标准 `issue.updated`
 }
 ```
 
-`syncToCloud` 缺失或为 `false` 时创建 private Issue。Current v3 中设置为 `true` 会被拒绝，因为 Desktop cloud issue 是只读缓存。
+`syncToCloud` 缺失或为 `false` 时创建 Local Issue。Current v3 中设置为 `true` 会被拒绝，因为 Desktop cloud issue 是只读缓存。
 
 Desktop Action 的 `priority` 同时接受 P0–P3 与 `urgent/high/medium/low`，返回值保持 P0–P3；`version` 仍可作为 `projectVersion` 的旧输入别名。`dueRisk` 不可写，`securityLevelKey` 可由动作设置但在 Desktop 原生 UI 中只读。
 
@@ -1383,7 +1383,7 @@ Desktop Action 的 `priority` 同时接受 P0–P3 与 `urgent/high/medium/low`�
 }
 ```
 
-只能更新 private Issue。更新 cloud Issue 返回只读错误。
+只能更新 Local Issue。更新 cloud Issue 返回只读错误。
 
 ### 10.4 `desktop.kanban.moveIssue`
 
@@ -1477,7 +1477,7 @@ Target v3.1 Server 在兼容期应：
 ### 12.2 Desktop
 
 - Cloud Issue 只接受 snapshot/event/run-report 回流更新，不调用云 CRUD。
-- Private Issue 只通过本地 action/IPC 修改。
+- Local Issue 只通过本地 action/IPC 修改。
 - 所有 snapshot/event/cursor 更新使用 SQLite 事务。
 - `syncMode` 是删除边界：cloud 快照只能清理 cloud 行。
 - `deliverySeq` 严格连续；发现空洞时停止处理并重新 `sync.pull`。
@@ -1500,7 +1500,7 @@ Target v3.1 Server 在兼容期应：
 2. Website 创建、更新、移动、分配和删除 Issue，并增删改 Project。
 3. Server revision 推进到 560，所有 Website 操作正常完成。
 4. Desktop 重连，执行 `sync.hello → snapshot.get → event.pull → sync.pull`。
-5. Desktop cloud cache 与 Server revision 560 一致，private Issue 完整保留。
+5. Desktop cloud cache 与 Server revision 560 一致，Local Issue 完整保留。
 
 ### 13.2 版本冲突
 
@@ -1527,7 +1527,7 @@ Target v3.1 Server 在兼容期应：
 
 1. Desktop 离线时 Website 软删除 Project 子树。
 2. Desktop 重连后移除该子树的 cloud Project/Issue 缓存。
-3. 同一 Desktop 的 private Project/Issue 不被删除。
+3. 同一 Desktop 的 Local Project/Issue 不被删除。
 4. Project restore 后通过事件或快照重新出现。
 
 ### 13.6 跨项目移动
@@ -1545,9 +1545,9 @@ Target v3.1 Server 在兼容期应：
 
 ### 13.8 本地任务隐私
 
-1. 创建 private Issue，包含标题、正文、附件路径和 automation message。
+1. 创建 Local Issue，包含标题、正文、附件路径和 automation message。
 2. 触发 Desktop 连接、快照、事件拉取和命令拉取。
-3. 网络抓包中不出现任何 private Issue 内容。
+3. 网络抓包中不出现任何 Local Issue 内容。
 
 ## 14. 当前实现参考
 

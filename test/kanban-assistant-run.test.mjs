@@ -19,30 +19,30 @@ function loadKanbanAssistantRunModule() {
   return module.exports;
 }
 
-test("private Kanban reruns prefer the issue's existing chat", () => {
-  const { resolvePrivateKanbanRunChatId } = loadKanbanAssistantRunModule();
+test("local Kanban reruns prefer the issue's existing chat", () => {
+  const { resolveLocalKanbanRunChatId } = loadKanbanAssistantRunModule();
 
-  assert.equal(resolvePrivateKanbanRunChatId({
+  assert.equal(resolveLocalKanbanRunChatId({
     chatId: " chat-existing ",
     attachmentChatId: "chat-attachments",
     attachments: [{ id: "attachment-1" }]
   }), "chat-existing");
 });
 
-test("private Kanban runs fall back to the attachment chat only when attachments exist", () => {
-  const { resolvePrivateKanbanRunChatId } = loadKanbanAssistantRunModule();
+test("local Kanban runs fall back to the attachment chat only when attachments exist", () => {
+  const { resolveLocalKanbanRunChatId } = loadKanbanAssistantRunModule();
 
-  assert.equal(resolvePrivateKanbanRunChatId({
+  assert.equal(resolveLocalKanbanRunChatId({
     chatId: null,
     attachmentChatId: " chat-attachments ",
     attachments: [{ id: "attachment-1" }]
   }), "chat-attachments");
-  assert.equal(resolvePrivateKanbanRunChatId({
+  assert.equal(resolveLocalKanbanRunChatId({
     chatId: null,
     attachmentChatId: "chat-attachments",
     attachments: []
   }), undefined);
-  assert.equal(resolvePrivateKanbanRunChatId({
+  assert.equal(resolveLocalKanbanRunChatId({
     chatId: null,
     attachmentChatId: null,
     attachments: []

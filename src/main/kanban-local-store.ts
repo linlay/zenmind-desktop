@@ -214,6 +214,7 @@ const WORKFLOW_ID = "workflow-standard-requirement";
 const ISSUE_TYPE_ID = "issue-type-standard-requirement";
 const DATABASE_DIRECTORY = "desktop-kanban";
 const DATABASE_FILENAME = "kanban.db";
+const DATABASE_SCHEMA_VERSION = 2;
 const SYNC_CACHE_SCHEMA_VERSION = 4;
 
 function nowIso() {
@@ -473,7 +474,7 @@ function parseCloudIssue(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : null;
 }
 
-function createPrivateIssueId(db: DatabaseSync) {
+function createLocalIssueId(db: DatabaseSync) {
   let tick = Math.floor(Date.now() / 100);
   const exists = db.prepare("SELECT 1 FROM issue WHERE ID_ = ? LIMIT 1");
   while (true) {
@@ -526,7 +527,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       DEPTH_ INTEGER NOT NULL DEFAULT 0,
       POSITION_ REAL NOT NULL DEFAULT 0,
       REVISION_ INTEGER NOT NULL DEFAULT 0,
-      SYNC_MODE_ TEXT NOT NULL DEFAULT 'private' CHECK (SYNC_MODE_ IN ('private','cloud')),
+      SYNC_MODE_ TEXT NOT NULL DEFAULT 'local' CHECK (SYNC_MODE_ IN ('local','cloud')),
       VISIBILITY_ TEXT NOT NULL DEFAULT 'workspace',
       DEFAULT_WORKFLOW_ID_ TEXT NOT NULL,
       CREATED_AT_ TEXT NOT NULL,
@@ -689,7 +690,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
     CREATE TABLE IF NOT EXISTS desktop_issue_sync (
       LOCAL_ISSUE_ID_ TEXT PRIMARY KEY REFERENCES issue(ID_) ON DELETE CASCADE,
       REMOTE_ISSUE_ID_ TEXT,
-      SYNC_MODE_ TEXT NOT NULL CHECK (SYNC_MODE_ IN ('private','cloud')),
+      SYNC_MODE_ TEXT NOT NULL CHECK (SYNC_MODE_ IN ('local','cloud')),
       SYNC_STATE_ TEXT NOT NULL CHECK (SYNC_STATE_ IN ('local','syncing','synced','error')),
       ORIGIN_ TEXT NOT NULL CHECK (ORIGIN_ IN ('desktop','cloud_dispatch')),
       OWNER_USER_ID_ TEXT NOT NULL,
@@ -800,8 +801,103 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       WHERE DELETED_AT_ IS NULL;
   `);
   ensureDesktopKanbanIssueColumns(db);
+  ensureDesktopKanbanSyncModeConstraint(db);
   ensureDesktopKanbanPriorityConstraint(db);
   migrateDesktopKanbanIssueDetailJson(db);
+}
+
+function ensureDesktopKanbanSyncModeConstraint(db: DatabaseSync) {
+  const projectSchema = db.prepare(`
+    SELECT sql FROM sqlite_master
+    WHERE type = 'table' AND name = 'project'
+  `).get() as { sql?: string } | undefined;
+  const issueSyncSchema = db.prepare(`
+    SELECT sql FROM sqlite_master
+    WHERE type = 'table' AND name = 'desktop_issue_sync'
+  `).get() as { sql?: string } | undefined;
+  if (
+    projectSchema?.sql?.includes("SYNC_MODE_ IN ('local','cloud')") &&
+    issueSyncSchema?.sql?.includes("SYNC_MODE_ IN ('local','cloud')")
+  ) return;
+
+  db.exec("PRAGMA foreign_keys = OFF");
+  try {
+    db.exec(`
+      BEGIN IMMEDIATE;
+
+      CREATE TABLE project_sync_mode_migration (
+        ID_ TEXT PRIMARY KEY,
+        PARENT_ID_ TEXT,
+        SLUG_ TEXT NOT NULL,
+        KEY_ TEXT NOT NULL DEFAULT '',
+        NAME_ TEXT NOT NULL,
+        DESCRIPTION_ TEXT NOT NULL DEFAULT '',
+        VERSIONS_JSON_ TEXT NOT NULL DEFAULT '[]',
+        COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '[]',
+        PATH_ TEXT NOT NULL,
+        DEPTH_ INTEGER NOT NULL DEFAULT 0,
+        POSITION_ REAL NOT NULL DEFAULT 0,
+        REVISION_ INTEGER NOT NULL DEFAULT 0,
+        SYNC_MODE_ TEXT NOT NULL DEFAULT 'local' CHECK (SYNC_MODE_ IN ('local','cloud')),
+        VISIBILITY_ TEXT NOT NULL DEFAULT 'workspace',
+        DEFAULT_WORKFLOW_ID_ TEXT NOT NULL,
+        CREATED_AT_ TEXT NOT NULL,
+        UPDATED_AT_ TEXT NOT NULL,
+        DELETED_AT_ TEXT
+      );
+
+      INSERT INTO project_sync_mode_migration (
+        ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, VERSIONS_JSON_, COMPONENTS_JSON_, PATH_, DEPTH_, POSITION_,
+        REVISION_, SYNC_MODE_, VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+      )
+      SELECT
+        ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, VERSIONS_JSON_, COMPONENTS_JSON_, PATH_, DEPTH_, POSITION_,
+        REVISION_, CASE SYNC_MODE_ WHEN 'private' THEN 'local' ELSE SYNC_MODE_ END,
+        VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
+      FROM project;
+
+      CREATE TABLE desktop_issue_sync_mode_migration (
+        LOCAL_ISSUE_ID_ TEXT PRIMARY KEY REFERENCES issue(ID_) ON DELETE CASCADE,
+        REMOTE_ISSUE_ID_ TEXT,
+        SYNC_MODE_ TEXT NOT NULL CHECK (SYNC_MODE_ IN ('local','cloud')),
+        SYNC_STATE_ TEXT NOT NULL CHECK (SYNC_STATE_ IN ('local','syncing','synced','error')),
+        ORIGIN_ TEXT NOT NULL CHECK (ORIGIN_ IN ('desktop','cloud_dispatch')),
+        OWNER_USER_ID_ TEXT NOT NULL,
+        LAST_REMOTE_REVISION_ INTEGER NOT NULL DEFAULT 0,
+        LAST_SYNCED_AT_ TEXT,
+        SYNC_ERROR_ TEXT
+      );
+
+      INSERT INTO desktop_issue_sync_mode_migration (
+        LOCAL_ISSUE_ID_, REMOTE_ISSUE_ID_, SYNC_MODE_, SYNC_STATE_, ORIGIN_, OWNER_USER_ID_,
+        LAST_REMOTE_REVISION_, LAST_SYNCED_AT_, SYNC_ERROR_
+      )
+      SELECT
+        LOCAL_ISSUE_ID_, REMOTE_ISSUE_ID_, CASE SYNC_MODE_ WHEN 'private' THEN 'local' ELSE SYNC_MODE_ END,
+        SYNC_STATE_, ORIGIN_, OWNER_USER_ID_, LAST_REMOTE_REVISION_, LAST_SYNCED_AT_, SYNC_ERROR_
+      FROM desktop_issue_sync;
+
+      DROP TABLE desktop_issue_sync;
+      ALTER TABLE desktop_issue_sync_mode_migration RENAME TO desktop_issue_sync;
+      DROP TABLE project;
+      ALTER TABLE project_sync_mode_migration RENAME TO project;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_desktop_issue_sync_remote
+        ON desktop_issue_sync(REMOTE_ISSUE_ID_)
+        WHERE REMOTE_ISSUE_ID_ IS NOT NULL;
+
+      COMMIT;
+    `);
+  } catch (error) {
+    try {
+      db.exec("ROLLBACK");
+    } catch {
+      // Preserve the original migration error.
+    }
+    throw error;
+  } finally {
+    db.exec("PRAGMA foreign_keys = ON");
+  }
 }
 
 function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
@@ -831,7 +927,7 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   if (!projectColumns.has("VERSIONS_JSON_")) db.exec("ALTER TABLE project ADD COLUMN VERSIONS_JSON_ TEXT NOT NULL DEFAULT '[]'");
   if (!projectColumns.has("COMPONENTS_JSON_")) db.exec("ALTER TABLE project ADD COLUMN COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '[]'");
   if (!projectColumns.has("SYNC_MODE_")) {
-    db.exec("ALTER TABLE project ADD COLUMN SYNC_MODE_ TEXT NOT NULL DEFAULT 'private'");
+    db.exec("ALTER TABLE project ADD COLUMN SYNC_MODE_ TEXT NOT NULL DEFAULT 'local'");
     db.exec(`UPDATE project SET SYNC_MODE_ = 'cloud' WHERE ID_ IN (SELECT DISTINCT PROJECT_ID_ FROM issue JOIN desktop_issue_sync ON desktop_issue_sync.LOCAL_ISSUE_ID_ = issue.ID_ WHERE desktop_issue_sync.SYNC_MODE_ = 'cloud')`);
   }
   const receiptColumns = new Set((db.prepare("PRAGMA table_info(kanban_command_receipt)").all() as Array<{ name: string }>).map((column) => column.name));
@@ -1024,9 +1120,9 @@ function seedDesktopKanban(db: DatabaseSync, currentUser: KanbanCurrentUser) {
   `).run(currentUser.id, currentUser.email, currentUser.name || currentUser.id, timestamp, timestamp);
   db.prepare(`
     INSERT INTO board_meta (BOARD_ID_, KEY_, VALUE_)
-    VALUES (?, 'schema_version', '1')
+    VALUES (?, 'schema_version', ?)
     ON CONFLICT(BOARD_ID_, KEY_) DO UPDATE SET VALUE_ = excluded.VALUE_
-  `).run(BOARD_ID);
+  `).run(BOARD_ID, String(DATABASE_SCHEMA_VERSION));
 }
 
 export function withDesktopKanbanDatabase<T>(
@@ -1656,7 +1752,7 @@ function buildLocalIssue(
   const status = normalizeKanbanStatus(input.status);
   const assigneeAgentKey = nullableTrimmedText(input.assigneeAgentKey);
   return {
-    id: createPrivateIssueId(db),
+    id: createLocalIssueId(db),
     localIssueId: "",
     remoteIssueId: null,
     boardId: BOARD_ID,
@@ -1696,7 +1792,7 @@ function buildLocalIssue(
     automationTimezone: nullableTrimmedText(input.automationTimezone),
     attachmentChatId: nullableTrimmedText(input.attachmentChatId),
     attachments: normalizeAttachments(input.attachments),
-    syncMode: "private",
+    syncMode: "local",
     syncState: "local",
     origin: "desktop",
     ownerUserId: currentUser.id,
@@ -1788,7 +1884,7 @@ export function listDesktopKanbanIssues(
   }));
 }
 
-export function createPrivateDesktopKanbanIssue(
+export function createLocalDesktopKanbanIssue(
   app: AppPathProvider,
   currentUser: KanbanCurrentUser,
   input: KanbanIssueInput
@@ -1803,7 +1899,7 @@ export function createPrivateDesktopKanbanIssue(
     }
     issue.localIssueId = issue.id;
     insertOrReplaceIssue(db, issue, {
-      syncMode: "private",
+      syncMode: "local",
       syncState: "local",
       origin: "desktop",
       ownerUserId: currentUser.id
@@ -1839,7 +1935,7 @@ export function updateDesktopKanbanIssue(
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues: selectIssues(db, currentUser) };
     }
     insertOrReplaceIssue(db, nextIssue, {
-      syncMode: nextIssue.syncMode ?? "private",
+      syncMode: nextIssue.syncMode ?? "local",
       syncState: nextIssue.syncMode === "cloud" ? "synced" : "local",
       origin: nextIssue.origin ?? "desktop",
       ownerUserId: nextIssue.ownerUserId ?? currentUser.id,
@@ -1869,7 +1965,7 @@ function updateDesktopKanbanIssueByPredicate(
       return { ok: false, message: t("kanban.runtime.titleRequired"), issues };
     }
     insertOrReplaceIssue(db, nextIssue, {
-      syncMode: nextIssue.syncMode ?? "private",
+      syncMode: nextIssue.syncMode ?? "local",
       syncState: nextIssue.syncMode === "cloud" ? "synced" : "local",
       origin: nextIssue.origin ?? "desktop",
       ownerUserId: nextIssue.ownerUserId ?? currentUser.id,
@@ -1959,7 +2055,7 @@ export function setDesktopKanbanIssuePosition(
       updatedAt: nowIso()
     };
     insertOrReplaceIssue(db, nextIssue, {
-      syncMode: nextIssue.syncMode ?? "private",
+      syncMode: nextIssue.syncMode ?? "local",
       syncState: nextIssue.syncMode === "cloud" ? "synced" : "local",
       origin: nextIssue.origin ?? "desktop",
       ownerUserId: nextIssue.ownerUserId ?? currentUser.id,
@@ -2144,7 +2240,7 @@ function markIssueSyncState(
     return null;
   }
   insertOrReplaceIssue(db, issue, {
-    syncMode: issue.syncMode ?? "private",
+    syncMode: issue.syncMode ?? "local",
     syncState,
     origin: issue.origin ?? "desktop",
     ownerUserId: issue.ownerUserId ?? currentUser.id,
@@ -2274,17 +2370,17 @@ export function applyDesktopKanbanCloudSnapshot(
         const cachedCloudProjects = db.prepare(`SELECT ID_ AS id FROM project WHERE SYNC_MODE_ = 'cloud' AND DELETED_AT_ IS NULL`).all() as Array<{ id: string }>;
         const removedProjectIds = cachedCloudProjects.map((row) => row.id).filter((id) => !remoteProjectIds.has(id));
         if (removedProjectIds.length > 0) {
-          const privateContainerId = "local-private-orphans";
+          const localContainerId = "local-private-orphans";
           db.prepare(`
             INSERT INTO project (
               ID_, PARENT_ID_, SLUG_, KEY_, NAME_, DESCRIPTION_, PATH_, DEPTH_, POSITION_, REVISION_, SYNC_MODE_,
               VISIBILITY_, DEFAULT_WORKFLOW_ID_, CREATED_AT_, UPDATED_AT_, DELETED_AT_
-            ) VALUES (?, NULL, 'private-orphans', 'PRIVATE', 'Private Tasks', '', 'private-orphans', 0, 999999, 0, 'private', 'private', ?, ?, ?, NULL)
-            ON CONFLICT(ID_) DO UPDATE SET DELETED_AT_ = NULL, UPDATED_AT_ = excluded.UPDATED_AT_
-          `).run(privateContainerId, WORKFLOW_ID, timestamp, timestamp);
-          const updatePrivateIssues = db.prepare(`
+            ) VALUES (?, NULL, 'private-orphans', 'PRIVATE', 'Local Issues', '', 'private-orphans', 0, 999999, 0, 'local', 'private', ?, ?, ?, NULL)
+            ON CONFLICT(ID_) DO UPDATE SET NAME_ = excluded.NAME_, SYNC_MODE_ = excluded.SYNC_MODE_, DELETED_AT_ = NULL, UPDATED_AT_ = excluded.UPDATED_AT_
+          `).run(localContainerId, WORKFLOW_ID, timestamp, timestamp);
+          const updateLocalIssues = db.prepare(`
             UPDATE issue SET PROJECT_ID_ = ?, UPDATED_AT_ = ?
-            WHERE PROJECT_ID_ = ? AND ID_ IN (SELECT LOCAL_ISSUE_ID_ FROM desktop_issue_sync WHERE SYNC_MODE_ = 'private')
+            WHERE PROJECT_ID_ = ? AND ID_ IN (SELECT LOCAL_ISSUE_ID_ FROM desktop_issue_sync WHERE SYNC_MODE_ = 'local')
           `);
           const tombstoneCloudIssues = db.prepare(`
             UPDATE issue SET DELETED_AT_ = ?, UPDATED_AT_ = ?
@@ -2293,7 +2389,7 @@ export function applyDesktopKanbanCloudSnapshot(
           const tombstoneProject = db.prepare("UPDATE project SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE ID_ = ? AND SYNC_MODE_ = 'cloud'");
           const removeBinding = db.prepare("UPDATE project_desktop_binding SET DELETED_AT_ = ?, UPDATED_AT_ = ? WHERE PROJECT_ID_ = ? AND DELETED_AT_ IS NULL");
           for (const projectId of removedProjectIds) {
-            updatePrivateIssues.run(privateContainerId, timestamp, projectId);
+            updateLocalIssues.run(localContainerId, timestamp, projectId);
             tombstoneCloudIssues.run(timestamp, timestamp, projectId);
             tombstoneProject.run(timestamp, timestamp, projectId);
             removeBinding.run(timestamp, timestamp, projectId);

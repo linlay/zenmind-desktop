@@ -76,7 +76,8 @@ test("kanban websocket entries use an independent, sanitized JSONL log", () => {
         endpoint: "wss://kanban.example.test/ws?token=secret-url-token",
         authorization: "Bearer secret-bearer-token",
         filePath: "/Users/example/private.txt",
-        privateIssue: { syncMode: "private", title: "private task content" }
+        localIssue: { syncMode: "local", title: "local task content" },
+        legacyLocalIssue: { syncMode: "private", title: "legacy local task content" }
       }
     }
   });
@@ -91,8 +92,10 @@ test("kanban websocket entries use an independent, sanitized JSONL log", () => {
   assert.equal(raw.includes("secret-url-token"), false);
   assert.equal(raw.includes("secret-bearer-token"), false);
   assert.equal(raw.includes("/Users/example/private.txt"), false);
-  assert.equal(raw.includes("private task content"), false);
-  assert.equal(entry.envelope.payload.privateIssue, "[REDACTED_PRIVATE_PAYLOAD]");
+  assert.equal(raw.includes("local task content"), false);
+  assert.equal(raw.includes("legacy local task content"), false);
+  assert.equal(entry.envelope.payload.localIssue, "[REDACTED_LOCAL_PAYLOAD]");
+  assert.equal(entry.envelope.payload.legacyLocalIssue, "[REDACTED_LOCAL_PAYLOAD]");
   assert.equal(fs.existsSync(path.join(logRoot, "main.log")), false);
 
   const result = readDesktopLog(app, "kanban-ws");

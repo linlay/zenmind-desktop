@@ -1,6 +1,6 @@
 import type { KanbanIssue } from "../../../shared/contracts";
 
-export function resolvePrivateKanbanRunChatId(
+export function resolveLocalKanbanRunChatId(
   issue: Pick<KanbanIssue, "attachments" | "attachmentChatId" | "chatId">
 ): string | undefined {
   const existingChatId = issue.chatId?.trim();
@@ -10,3 +10,5 @@ export function resolvePrivateKanbanRunChatId(
   const attachmentChatId = issue.attachmentChatId?.trim();
   return issue.attachments.length > 0 && attachmentChatId ? attachmentChatId : undefined;
 }
+
+export const resolvePrivateKanbanRunChatId = resolveLocalKanbanRunChatId;

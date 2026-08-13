@@ -7,7 +7,7 @@ import test from "node:test";
 
 const {
   applyDesktopKanbanCloudSnapshot,
-  createPrivateDesktopKanbanIssue,
+  createLocalDesktopKanbanIssue,
   deleteDesktopKanbanIssue,
   getDesktopKanbanDatabasePath,
   getDesktopKanbanManualRunByRunId,
@@ -57,7 +57,7 @@ function cloudIssue(overrides = {}) {
   };
 }
 
-test("private issue IDs use the short local-prefixed Server base36 format", (t) => {
+test("local issue IDs use the short local-prefixed Server base36 format", (t) => {
   const app = createTempApp(t);
   const fixedNow = 1_786_588_420_234;
   const originalDateNow = Date.now;
@@ -65,8 +65,8 @@ test("private issue IDs use the short local-prefixed Server base36 format", (t) 
   let first;
   let second;
   try {
-    first = createPrivateDesktopKanbanIssue(app, currentUser, { title: "First private issue" });
-    second = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Second private issue" });
+    first = createLocalDesktopKanbanIssue(app, currentUser, { title: "First local issue" });
+    second = createLocalDesktopKanbanIssue(app, currentUser, { title: "Second local issue" });
   } finally {
     Date.now = originalDateNow;
   }
@@ -79,10 +79,71 @@ test("private issue IDs use the short local-prefixed Server base36 format", (t) 
   assert.match(first.issue.id, /^local-[0-9A-Z]+$/);
 });
 
-test("moving a completed private issue back to todo keeps its chat ready for a new run", (t) => {
+test("legacy private sync mode rows migrate to the local-cloud SQLite contract", (t) => {
   const app = createTempApp(t);
-  const created = createPrivateDesktopKanbanIssue(app, currentUser, {
-    title: "Private issue to reopen",
+  const created = createLocalDesktopKanbanIssue(app, currentUser, { title: "Legacy local issue" });
+  assert.equal(created.ok, true);
+
+  const databasePath = getDesktopKanbanDatabasePath(app);
+  const legacyDb = new DatabaseSync(databasePath);
+  const projectSchema = legacyDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project'").get().sql;
+  const issueSyncSchema = legacyDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'desktop_issue_sync'").get().sql;
+  const legacyProjectSchema = projectSchema
+    .replace(/^CREATE TABLE project/u, "CREATE TABLE project_private_legacy")
+    .replace("DEFAULT 'local' CHECK (SYNC_MODE_ IN ('local','cloud'))", "DEFAULT 'private' CHECK (SYNC_MODE_ IN ('private','cloud'))");
+  const legacyIssueSyncSchema = issueSyncSchema
+    .replace(/^CREATE TABLE desktop_issue_sync/u, "CREATE TABLE desktop_issue_sync_private_legacy")
+    .replace("SYNC_MODE_ TEXT NOT NULL CHECK (SYNC_MODE_ IN ('local','cloud'))", "SYNC_MODE_ TEXT NOT NULL CHECK (SYNC_MODE_ IN ('private','cloud'))");
+  legacyDb.exec("PRAGMA foreign_keys = OFF");
+  legacyDb.exec("PRAGMA ignore_check_constraints = ON");
+  legacyDb.exec("BEGIN IMMEDIATE");
+  try {
+    legacyDb.exec("UPDATE project SET SYNC_MODE_ = 'private' WHERE SYNC_MODE_ = 'local'");
+    legacyDb.exec("UPDATE desktop_issue_sync SET SYNC_MODE_ = 'private' WHERE SYNC_MODE_ = 'local'");
+    legacyDb.exec(legacyProjectSchema);
+    legacyDb.exec("INSERT INTO project_private_legacy SELECT * FROM project");
+    legacyDb.exec(legacyIssueSyncSchema);
+    legacyDb.exec("INSERT INTO desktop_issue_sync_private_legacy SELECT * FROM desktop_issue_sync");
+    legacyDb.exec("DROP TABLE desktop_issue_sync");
+    legacyDb.exec("ALTER TABLE desktop_issue_sync_private_legacy RENAME TO desktop_issue_sync");
+    legacyDb.exec("DROP TABLE project");
+    legacyDb.exec("ALTER TABLE project_private_legacy RENAME TO project");
+    legacyDb.exec("COMMIT");
+  } catch (error) {
+    legacyDb.exec("ROLLBACK");
+    throw error;
+  } finally {
+    legacyDb.exec("PRAGMA ignore_check_constraints = OFF");
+    legacyDb.exec("PRAGMA foreign_keys = ON");
+    legacyDb.close();
+  }
+
+  const migrated = listDesktopKanbanIssues(app, currentUser);
+  assert.equal(migrated.issues.find((issue) => issue.id === created.issue.id)?.syncMode, "local");
+
+  const migratedDb = new DatabaseSync(databasePath);
+  const migratedProjectSchema = migratedDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'project'").get().sql;
+  const migratedIssueSyncSchema = migratedDb.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'desktop_issue_sync'").get().sql;
+  assert.equal(
+    migratedDb.prepare("SELECT VALUE_ AS value FROM board_meta WHERE BOARD_ID_ = 'default' AND KEY_ = 'schema_version'").get().value,
+    "2"
+  );
+  assert.match(migratedProjectSchema, /SYNC_MODE_ IN \('local','cloud'\)/u);
+  assert.match(migratedIssueSyncSchema, /SYNC_MODE_ IN \('local','cloud'\)/u);
+  assert.doesNotMatch(migratedProjectSchema, /SYNC_MODE_ IN \('private','cloud'\)/u);
+  assert.doesNotMatch(migratedIssueSyncSchema, /SYNC_MODE_ IN \('private','cloud'\)/u);
+  assert.deepEqual(migratedDb.prepare("PRAGMA foreign_key_check").all(), []);
+  assert.throws(
+    () => migratedDb.prepare("UPDATE desktop_issue_sync SET SYNC_MODE_ = 'private' WHERE LOCAL_ISSUE_ID_ = ?").run(created.issue.id),
+    /constraint failed/iu
+  );
+  migratedDb.close();
+});
+
+test("moving a completed local issue back to todo keeps its chat ready for a new run", (t) => {
+  const app = createTempApp(t);
+  const created = createLocalDesktopKanbanIssue(app, currentUser, {
+    title: "Local issue to reopen",
     assigneeAgentKey: "codeAssistant"
   });
   assert.equal(created.ok, true);
@@ -201,13 +262,13 @@ test("priority uses P0-P3 and only normalizes legacy values at the cache boundar
   }), 42);
   assert.equal(urgent.issue.priority, "P0");
 
-  const local = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Optional priority" });
+  const local = createLocalDesktopKanbanIssue(app, currentUser, { title: "Optional priority" });
   assert.equal(local.ok, true);
   assert.equal(local.issue.priority, null);
   assert.equal(local.issue.severity, null);
 });
 
-test("project catalogs and new issue fields survive snapshots, incremental upserts, and private updates", (t) => {
+test("project catalogs and new issue fields survive snapshots, incremental upserts, and local updates", (t) => {
   const app = createTempApp(t);
   applyDesktopKanbanCloudSnapshot(app, currentUser, {
     scope: "project_set",
@@ -282,7 +343,7 @@ test("project catalogs and new issue fields survive snapshots, incremental upser
     "2026-07-12"
   );
 
-  const local = createPrivateDesktopKanbanIssue(app, currentUser, {
+  const local = createLocalDesktopKanbanIssue(app, currentUser, {
     title: "Local versioned task",
     projectId: "cloud-project-1",
     version: "1.0.0",
@@ -345,7 +406,7 @@ test("project catalogs and new issue fields survive snapshots, incremental upser
     ["desktop", "sync"]
   );
 
-  const invalidDate = createPrivateDesktopKanbanIssue(app, currentUser, { title: "Invalid date", dueDate: "2026-02-30" });
+  const invalidDate = createLocalDesktopKanbanIssue(app, currentUser, { title: "Invalid date", dueDate: "2026-02-30" });
   assert.equal(invalidDate.ok, false);
 });
 
@@ -426,7 +487,7 @@ test("legacy priority rows migrate to the P0-P3 SQLite constraint", (t) => {
   migratedDb.close();
 });
 
-test("project-set replacement removes cloud cache and preserves private issues", (t) => {
+test("project-set replacement removes cloud cache and preserves local issues", (t) => {
   const app = createTempApp(t);
   applyDesktopKanbanCloudSnapshot(app, currentUser, {
     scope: "project_set",
@@ -458,8 +519,8 @@ test("project-set replacement removes cloud cache and preserves private issues",
     }],
     issues: [cloudIssue()]
   });
-  const local = createPrivateDesktopKanbanIssue(app, currentUser, {
-    title: "Private task",
+  const local = createLocalDesktopKanbanIssue(app, currentUser, {
+    title: "Local task",
     projectId: "cloud-project-1"
   });
   assert.equal(local.ok, true);
@@ -475,10 +536,10 @@ test("project-set replacement removes cloud cache and preserves private issues",
 
   const list = listDesktopKanbanIssues(app, currentUser);
   assert.equal(list.issues.some((issue) => issue.remoteIssueId === "cloud-issue-1"), false);
-  const privateIssue = list.issues.find((issue) => issue.title === "Private task");
-  assert.ok(privateIssue);
-  assert.equal(privateIssue.syncMode, "private");
-  assert.equal(privateIssue.projectId, "local-private-orphans");
+  const localIssue = list.issues.find((issue) => issue.title === "Local task");
+  assert.ok(localIssue);
+  assert.equal(localIssue.syncMode, "local");
+  assert.equal(localIssue.projectId, "local-private-orphans");
   assert.equal(list.projects.some((project) => project.id === "cloud-project-1"), false);
   assert.equal(list.projectBindings.length, 0);
 });
