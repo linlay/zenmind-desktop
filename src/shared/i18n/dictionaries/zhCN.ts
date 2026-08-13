@@ -214,7 +214,7 @@ export const zhCNMessages = {
   "assistant.chatShareCreated": "分享链接已创建。",
   "assistant.chatShareInvalidId": "分享标识无效。",
   "assistant.chatShareRevoked": "分享链接已撤销。",
-  "assistant.chatShareLoginRequired": "请先登录 ZenMind 账号，再创建分享链接。",
+  "assistant.chatShareLoginRequired": `请先登录 ${PRODUCT_NAME} 账号，再创建分享链接。`,
   "assistant.chatShareTunnelRequired": "请先在设置中启用 Tunnel 服务。",
   "assistant.chatShareTunnelUrlInvalid": "Tunnel 服务地址无效：{message}",
   "assistant.chatShareUnauthorized": "登录凭证无效或没有 Tunnel 分享权限，请重新登录。",

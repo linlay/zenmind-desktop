@@ -214,7 +214,7 @@ export const enUSMessages = {
   "assistant.chatShareCreated": "Share link created.",
   "assistant.chatShareInvalidId": "The share identifier is invalid.",
   "assistant.chatShareRevoked": "Share link revoked.",
-  "assistant.chatShareLoginRequired": "Sign in to ZenMind before creating a share link.",
+  "assistant.chatShareLoginRequired": `Sign in to ${PRODUCT_NAME} before creating a share link.`,
   "assistant.chatShareTunnelRequired": "Enable Tunnel in Settings before creating a share link.",
   "assistant.chatShareTunnelUrlInvalid": "The Tunnel service URL is invalid: {message}",
   "assistant.chatShareUnauthorized": "Your sign-in credential is invalid or lacks Tunnel sharing permission. Sign in again.",

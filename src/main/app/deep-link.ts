@@ -1,7 +1,7 @@
 import type { App } from "electron";
-import { BRAND_ID } from "../../shared/brand";
+import { DESKTOP_OPEN_PROTOCOL_SCHEME } from "../../shared/brand";
 
-export const DESKTOP_OPEN_DEEP_LINK = `${BRAND_ID}://open`;
+export const DESKTOP_OPEN_DEEP_LINK = `${DESKTOP_OPEN_PROTOCOL_SCHEME}://open`;
 
 type ProtocolClientApp = Pick<App, "isPackaged" | "setAsDefaultProtocolClient">;
 
@@ -14,7 +14,7 @@ export function isDesktopOpenDeepLink(value: unknown): boolean {
   }
   try {
     const parsed = new URL(value);
-    return parsed.protocol === `${BRAND_ID}:` &&
+    return parsed.protocol === `${DESKTOP_OPEN_PROTOCOL_SCHEME}:` &&
       parsed.hostname === "open" &&
       parsed.pathname === "" &&
       parsed.username === "" &&
@@ -44,10 +44,10 @@ export function registerDesktopOpenProtocolClient(
     return false;
   }
   if (app.isPackaged) {
-    return app.setAsDefaultProtocolClient(BRAND_ID);
+    return app.setAsDefaultProtocolClient(DESKTOP_OPEN_PROTOCOL_SCHEME);
   }
   if (platform === "win32" && options.isDefaultApp && options.appEntryPath) {
-    return app.setAsDefaultProtocolClient(BRAND_ID, options.execPath, [options.appEntryPath]);
+    return app.setAsDefaultProtocolClient(DESKTOP_OPEN_PROTOCOL_SCHEME, options.execPath, [options.appEntryPath]);
   }
   return false;
 }

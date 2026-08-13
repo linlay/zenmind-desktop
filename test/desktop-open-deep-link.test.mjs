@@ -7,6 +7,7 @@ const {
   isDesktopOpenDeepLink,
   registerDesktopOpenProtocolClient
 } = await import("../dist-electron/main/app/deep-link.js");
+const { DESKTOP_OPEN_PROTOCOL_SCHEME } = await import("../dist-electron/shared/brand.js");
 
 test("desktop open deep link accepts only the exact branded open action", () => {
   assert.equal(isDesktopOpenDeepLink(DESKTOP_OPEN_DEEP_LINK), true);
@@ -16,7 +17,7 @@ test("desktop open deep link accepts only the exact branded open action", () => 
     `${DESKTOP_OPEN_DEEP_LINK}#fragment`,
     DESKTOP_OPEN_DEEP_LINK.toUpperCase(),
     "https://open",
-    "zenmind://settings"
+    `${DESKTOP_OPEN_PROTOCOL_SCHEME}://settings`
   ]) {
     assert.equal(isDesktopOpenDeepLink(value), false, value);
   }

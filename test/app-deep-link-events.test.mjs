@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 
 const { registerMainAppEvents } = await import("../dist-electron/main/app/app-events.js");
 const { DESKTOP_OPEN_DEEP_LINK } = await import("../dist-electron/main/app/deep-link.js");
+const { DESKTOP_OPEN_PROTOCOL_SCHEME } = await import("../dist-electron/shared/brand.js");
 
 function createOptions(platform, initialCommandLine = ["desktop"]) {
   const app = new EventEmitter();
@@ -65,6 +66,6 @@ test("Windows initial and second-instance deep links open only the Desktop home 
   assert.deepEqual(fixture.shown, ["/"]);
   fixture.options.app.emit("second-instance", {}, ["desktop", DESKTOP_OPEN_DEEP_LINK]);
   assert.deepEqual(fixture.shown, ["/", "/"]);
-  fixture.options.app.emit("second-instance", {}, ["desktop", "zenmind://settings"]);
+  fixture.options.app.emit("second-instance", {}, ["desktop", `${DESKTOP_OPEN_PROTOCOL_SCHEME}://settings`]);
   assert.deepEqual(fixture.shown, ["/", "/", undefined]);
 });

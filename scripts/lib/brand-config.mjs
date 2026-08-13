@@ -13,6 +13,7 @@ export const DESKTOP_PACKAGE_NAME = "desktop";
 const PACKAGE_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/u;
 const BRAND_ID_PATTERN = /^[a-z0-9][a-z0-9_-]*$/u;
 const APP_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]+$/u;
+const URI_SCHEME_PATTERN = /^[a-z][a-z0-9+.-]*$/u;
 const REQUIRED_ICON_FILES = ["app-icon.svg", "tray-icon.svg"];
 export const BRAND_BUILD_ROOT_DIR = "build/brands";
 export const BRAND_RUNTIME_ASSET_DIR_NAME = "brand-assets";
@@ -642,6 +643,14 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
 
   const productName = requireString(manifest, "productName");
   const description = requireString(manifest, "description");
+  const openProtocolSchemeValue = manifest.protocols?.open?.scheme;
+  if (typeof openProtocolSchemeValue !== "string" || !openProtocolSchemeValue.trim()) {
+    throw new Error('Brand manifest field "protocols.open.scheme" must be a non-empty string.');
+  }
+  const openProtocolScheme = openProtocolSchemeValue.trim();
+  if (!URI_SCHEME_PATTERN.test(openProtocolScheme)) {
+    throw new Error(`Brand manifest field "protocols.open.scheme" is invalid: ${openProtocolScheme}`);
+  }
   const runtimeRootDirName = `.${id}`;
   const configuredRuntimeRootDirName = optionalNestedString(manifest, "paths", "runtimeRootDirName");
   if (configuredRuntimeRootDirName && configuredRuntimeRootDirName !== runtimeRootDirName) {
@@ -665,6 +674,11 @@ function normalizeManifest(rootDir, brandRoot, manifest, i18n, icons, desktopPet
     productName,
     appId,
     description,
+    protocols: {
+      open: {
+        scheme: openProtocolScheme
+      }
+    },
     paths: {
       runtimeRootDirName,
       desktopDataSubdir,
@@ -910,6 +924,7 @@ export function runtimeBrandPayload(brand) {
     productName: brand.productName,
     appId: brand.appId,
     description: brand.description,
+    protocols: brand.protocols,
     paths: brand.paths,
     installer: brand.installer,
     desktopPet: brand.desktopPet,
@@ -1000,6 +1015,7 @@ function writeGeneratedBrandFiles(rootDir, brand) {
       "export const PRODUCT_NAME = APP_BRAND.productName;",
       "export const APP_ID = APP_BRAND.appId;",
       "export const APP_DESCRIPTION = APP_BRAND.description;",
+      "export const DESKTOP_OPEN_PROTOCOL_SCHEME = APP_BRAND.protocols.open.scheme;",
       "export const INSTALLER_SHUTDOWN_ARG = APP_BRAND.installer.shutdownArg;",
       ""
     ].join("\n")
@@ -1077,7 +1093,7 @@ function electronBuilderConfig(brand, target = currentBrandBuildTarget()) {
     protocols: [
       {
         name: `${brand.productName} Open`,
-        schemes: [brand.id]
+        schemes: [brand.protocols.open.scheme]
       }
     ],
     directories: {

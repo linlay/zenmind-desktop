@@ -132,7 +132,7 @@ test("Windows release keeps branded executable metadata editing enabled", (t) =>
   assert.equal(electronBuilderConfig.win.signAndEditExecutable, true);
   assert.deepEqual(electronBuilderConfig.protocols, [{
     name: `${brand.productName} Open`,
-    schemes: [brand.id]
+    schemes: [brand.protocols.open.scheme]
   }]);
   assert.doesNotMatch(windowsBuildScript, /signAndEditExecutable=false/u);
 });
@@ -390,6 +390,8 @@ test("brand runtime root directory is derived from brand id", () => {
   assert.equal(cutej.packageName, "desktop");
   assert.equal(zenmind.storageNamespace, "zenmind-desktop");
   assert.equal(cutej.storageNamespace, "cutej-desktop");
+  assert.equal(zenmind.protocols.open.scheme, "zenmind");
+  assert.equal(cutej.protocols.open.scheme, "cutej");
   assert.equal(zenmind.paths.programDataDirName, "ZenMind");
   assert.equal(cutej.paths.programDataDirName, "CuteJ");
   assert.deepEqual(zenmind.desktopPet, zenmindPet);
@@ -978,6 +980,46 @@ test("brand manifest rejects mismatched explicit runtimeRootDirName", (t) => {
   assert.throws(
     () => loadBrandConfig(root, "cutej"),
     /paths\.runtimeRootDirName" must be "\.cutej"/u
+  );
+});
+
+test("desktop open protocol is configured independently from brand id", (t) => {
+  const root = createBrandFixture(t);
+  writeBrandManifest(root, "cutej", (manifest) => ({
+    ...manifest,
+    protocols: {
+      open: {
+        scheme: "cutej-desktop-open"
+      }
+    }
+  }));
+
+  const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
+  const generatedBrand = readJson(path.join(brandGeneratedDir(root, brand), "brand.json"));
+  const electronBuilderConfig = readJson(electronBuilderConfigPath(root, brand.id));
+
+  assert.equal(brand.id, "cutej");
+  assert.equal(generatedBrand.protocols.open.scheme, "cutej-desktop-open");
+  assert.deepEqual(electronBuilderConfig.protocols, [{
+    name: "CuteJ Open",
+    schemes: ["cutej-desktop-open"]
+  }]);
+});
+
+test("brand manifest rejects an invalid desktop open protocol scheme", (t) => {
+  const root = createBrandFixture(t);
+  writeBrandManifest(root, "cutej", (manifest) => ({
+    ...manifest,
+    protocols: {
+      open: {
+        scheme: "Cute J"
+      }
+    }
+  }));
+
+  assert.throws(
+    () => loadBrandConfig(root, "cutej"),
+    /protocols\.open\.scheme" is invalid/u
   );
 });
 

@@ -5,6 +5,11 @@
   "productName": "CuteJ",
   "appId": "cc.cutej.desktop",
   "description": "CuteJ 应用壳",
+  "protocols": {
+    "open": {
+      "scheme": "cutej"
+    }
+  },
   "paths": {
     "desktopDataSubdir": ".desktop",
     "programDataDirName": "CuteJ"
