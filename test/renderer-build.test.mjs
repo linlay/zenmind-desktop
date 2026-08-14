@@ -4473,23 +4473,29 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
   assert.match(contracts, /type AssistantCreateCoderProjectResult = AssistantCreateProjectResult/);
   assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
+  assert.match(contracts, /interface AssistantBootstrapState[\s\S]*?ownerProfileExists: boolean/);
+  assert.match(contracts, /AssistantBootstrapStateChangedListener/);
   assert.match(contracts, /AssistantNavigationPushEventListener/);
   assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
+  assert.match(contracts, /getBootstrapState: \(\) => Promise<AssistantBootstrapState>/);
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
   assert.match(contracts, /getNavigationLiveStatus: \(\) => Promise<AssistantNavigationLiveStatus>/);
   assert.match(contracts, /createProject:\s*\(input: AssistantCreateProjectRequest\) => Promise<AssistantCreateProjectResult>/);
   assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
+  assert.match(preload, /getBootstrapState: \(\) => ipcRenderer\.invoke\("assistant\.getBootstrapState"\)/);
   assert.match(preload, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) =>\s*ipcRenderer\.invoke\("assistant\.listNavigationAgents", options\)/);
   assert.match(preload, /getNavigationLiveStatus: \(\) => ipcRenderer\.invoke\("assistant\.getNavigationLiveStatus"\)/);
   assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createProject:\s*\(input: AssistantCreateProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createProject", input\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
+  assert.match(preload, /onBootstrapStateChanged/);
   assert.match(preload, /onNavigationPushEvent/);
   assert.match(mainIpcRegister, /registerAssistantIpcHandlers\(ipcMain,/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listAgents"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getBootstrapState"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getNavigationLiveStatus"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
@@ -4509,6 +4515,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
   assert.match(assistantHandlers, /lastError:\s*null,\s*recentFrames:\s*\[\]/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?assistant\.navigationAgentsChanged/);
+  assert.match(mainProcess, /createAssistantBootstrapStateMonitor\([\s\S]*?assistant\.bootstrapStateChanged/);
   assert.match(mainProcess, /function emitAssistantNavigationPushEvent[\s\S]*?assistant\.navigationPushEvent/);
   assert.match(assistantRuntime, /emitAssistantNavigationPushEvent\(event\)/);
   assert.match(assistantHandlers, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
@@ -4525,6 +4532,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appSidebar, /readEpochMillis/);
   assert.doesNotMatch(globalSearchRows, /readEpochMillis/);
   assert.match(appShell, /onNavigationAgentsChanged/);
+  assert.match(appShell, /onBootstrapStateChanged/);
   assert.doesNotMatch(appShell, /onNavigationPushEvent/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);
   assert.match(appShell, /const \[assistantNavChatItems, setAssistantNavChatItems\] = useState<AssistantNavChatItem\[\]>\(\[\]\);/);
@@ -4867,7 +4875,7 @@ test("assistant navigation agents refresh immediately after startup services bec
   assert.match(appShell, /if \(agentPlatformRunning\) \{[\s\S]*?refreshAssistantNavAgents\(\)/);
 });
 
-test("bootstrap initialization stays in Chats and restores the configured default agent", () => {
+test("OWNER-driven bootstrap initialization stays in Chats and strictly restores the configured default agent", () => {
   const appShell = readAppShellSource();
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const appSidebar = readSourceFile(
@@ -4890,9 +4898,13 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current = true;[\s\S]*?navigate\(targetRoute, \{ replace: true \}\)/);
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current \|\|[\s\S]*?chatRuntimeAgent\.bootstrapActive \|\|[\s\S]*?location\.pathname !== "\/"/);
   assert.match(assistantNavigation, /export function resolveAssistantNavChatRuntimeAgent\(/);
-  assert.match(assistantNavigation, /const agent = defaultAgent \?\? bootstrapAgent;/);
-  assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapAgent && !defaultAgent\)/);
+  assert.match(assistantNavigation, /const bootstrapPending = Boolean\(bootstrapAgentKey && options\.bootstrapPending\)/);
+  assert.match(assistantNavigation, /const agent = bootstrapPending \? bootstrapAgent : defaultAgent;/);
+  assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapPending && bootstrapAgent\)/);
   assert.match(appShell, /const chatRuntimeAgent = useMemo\([\s\S]*?resolveAssistantNavChatRuntimeAgent\(chatNavAgentOptions/);
+  assert.match(appShell, /bootstrapPending,/);
+  assert.match(appShell, /Promise\.all\(\[[\s\S]*?assistant\.getSettings\(\)[\s\S]*?assistant\.getBootstrapState\(\)/);
+  assert.match(appShell, /!assistantBootstrapStateReady/);
   assert.match(appShell, /if \(!chatRuntimeAgent\.bootstrapActive \|\| !bootstrapAgentKey \|\| !bootstrapAgent\)/);
   assert.match(appShell, /chatDefaultAgentKey=\{chatRuntimeAgent\.agentKey\}/);
   assert.match(appShell, /bootstrapActive=\{chatRuntimeAgent\.bootstrapActive\}/);
@@ -4903,6 +4915,7 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.doesNotMatch(appShell, /run\.complete/);
   assert.doesNotMatch(appShell, /chatRuntimeAgent\.bootstrapActive[\s\S]*?window\.setInterval\([\s\S]*?refreshAssistantNavAgents\(\)[\s\S]*?2_000/);
   assert.match(appShell, /!chatRuntimeAgent\.defaultAgentAvailable/);
+  assert.match(appShell, /assistantBootstrapState\?\.ownerProfileExists !== true/);
   assert.match(appShell, /if \(bootstrapHandoffNavigationDoneRef\.current\) \{\s*return;/);
   assert.match(appShell, /route\.agentKey !== bootstrapAgentKey/);
   assert.match(appShell, /navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/);

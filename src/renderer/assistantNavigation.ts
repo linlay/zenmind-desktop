@@ -223,6 +223,7 @@ export function resolveAssistantNavChatRuntimeAgent(
   options: {
     defaultChatAgentKey?: string;
     bootstrapAgentKey?: string;
+    bootstrapPending?: boolean;
   },
 ): AssistantNavChatRuntimeAgent {
   const defaultChatAgentKey = toText(options.defaultChatAgentKey);
@@ -233,14 +234,16 @@ export function resolveAssistantNavChatRuntimeAgent(
   const bootstrapAgent = bootstrapAgentKey
     ? agents.find((agent) => agent.agentKey === bootstrapAgentKey) ?? null
     : null;
-  const agent = defaultAgent ?? bootstrapAgent;
+  const bootstrapPending = Boolean(bootstrapAgentKey && options.bootstrapPending);
+  const agent = bootstrapPending ? bootstrapAgent : defaultAgent;
+  const agentKey = bootstrapPending ? bootstrapAgentKey : defaultChatAgentKey;
 
   return {
     agent,
-    agentKey: agent?.agentKey ?? defaultChatAgentKey,
+    agentKey: agent?.agentKey ?? agentKey,
     defaultAgentAvailable: Boolean(defaultAgent),
     bootstrapAgentAvailable: Boolean(bootstrapAgent),
-    bootstrapActive: Boolean(bootstrapAgent && !defaultAgent),
+    bootstrapActive: Boolean(bootstrapPending && bootstrapAgent),
   };
 }
 

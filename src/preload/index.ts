@@ -5,6 +5,7 @@ import type {
   AssistantCreateCoderProjectRequest,
   AssistantCreateProjectRequest,
   AssistantEventListener,
+  AssistantBootstrapStateChangedListener,
   AssistantNavigationAgentsChangedListener,
   AssistantNavigationListOptions,
   AssistantNavigationPushEventListener,
@@ -165,6 +166,7 @@ const api: DesktopApi = {
   },
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),
+    getBootstrapState: () => ipcRenderer.invoke("assistant.getBootstrapState"),
     saveSettings: (input: AssistantSettingsInput) => ipcRenderer.invoke("assistant.saveSettings", input),
     getMemorySettings: () => ipcRenderer.invoke("assistant.getMemorySettings"),
     saveMemorySettings: (input: AssistantMemorySettingsInput) =>
@@ -218,6 +220,19 @@ const api: DesktopApi = {
       ipcRenderer.on("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
       return () => {
         ipcRenderer.off("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
+      };
+    },
+    onBootstrapStateChanged: (listener: AssistantBootstrapStateChangedListener) => {
+      const handleBootstrapStateChanged = (
+        _event: Electron.IpcRendererEvent,
+        state: Parameters<AssistantBootstrapStateChangedListener>[0]
+      ) => {
+        listener(state);
+      };
+
+      ipcRenderer.on("assistant.bootstrapStateChanged", handleBootstrapStateChanged);
+      return () => {
+        ipcRenderer.off("assistant.bootstrapStateChanged", handleBootstrapStateChanged);
       };
     },
     onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => {

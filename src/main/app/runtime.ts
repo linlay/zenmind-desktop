@@ -166,6 +166,7 @@ import { cleanupRetiredPluginUserData } from "../retired-plugins";
 import { cleanupProgramDataForVersion } from "../program-data-cleanup";
 import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../bridge/assistant-runtime";
 import { createAssistantRunWakeLock } from "../bridge/assistant-wake-lock";
+import { createAssistantBootstrapStateMonitor } from "../assistant/core/bootstrap-state";
 import { createPluginClipboardBridge } from "../bridge/plugin-clipboard";
 import { createPluginBridgeRuntime, type PluginBridgeRuntime } from "../bridge/plugin-runtime";
 import {
@@ -230,6 +231,16 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
+  const assistantBootstrapStateMonitor = createAssistantBootstrapStateMonitor({
+    app,
+    platform: mainProcessContext.platform,
+    onChange: (state) => {
+      const targetWindow = appState.mainWindow;
+      if (targetWindow && !targetWindow.isDestroyed()) {
+        targetWindow.webContents.send("assistant.bootstrapStateChanged", state);
+      }
+    },
+  });
   
   const startupRestoreController = createStartupRestoreController({
     onChange: (state) => {
@@ -1410,6 +1421,7 @@ export function createMainProcessRuntime() {
     setStartupPhase("runtime-env-ready");
   
     initializeUserDataRootsAndSettings();
+    assistantBootstrapStateMonitor.start();
     setStartupPhase("desktop-state-ready");
     const desktopSsoRestoreResult = await desktopSsoController.restoreDesktopSsoSession();
     applyDesktopSsoRestoreResult(desktopSsoRestoreResult);
@@ -1498,6 +1510,7 @@ export function createMainProcessRuntime() {
       stopAgentPlatformPetStatusClient,
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,
+      stopAssistantBootstrapStateMonitor: () => assistantBootstrapStateMonitor.stop(),
       stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop(),
       stopEnterpriseChatRuntime: () => enterpriseChatRuntime.stop()
     });

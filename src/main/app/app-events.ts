@@ -27,6 +27,7 @@ export type MainAppEventsOptions = {
   stopAgentPlatformPetStatusClient: () => void;
   unregisterPluginGlobalShortcuts: () => void;
   stopResourceDirectoryWatcher: () => void;
+  stopAssistantBootstrapStateMonitor: () => void;
   stopPluginBridgeRuntime: () => void;
   stopEnterpriseChatRuntime: () => void;
 };
@@ -85,6 +86,7 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     options.unregisterPluginGlobalShortcuts();
     options.globalShortcut.unregister(options.focusedWebviewDevToolsShortcut);
     options.stopResourceDirectoryWatcher();
+    options.stopAssistantBootstrapStateMonitor();
     options.stopPluginBridgeRuntime();
     options.stopEnterpriseChatRuntime();
   });

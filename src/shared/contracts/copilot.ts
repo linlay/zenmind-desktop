@@ -15,6 +15,12 @@ export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) 
 
 export type AssistantNavigationAgentsChangedListener = (result: AssistantNavAgentItemsResult) => void;
 
+export interface AssistantBootstrapState {
+  ownerProfileExists: boolean;
+}
+
+export type AssistantBootstrapStateChangedListener = (state: AssistantBootstrapState) => void;
+
 export interface AssistantNavigationListOptions {
   force?: boolean;
 }
