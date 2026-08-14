@@ -83,6 +83,29 @@ test("electron-builder Windows registry GUIDs stay aligned with the installed to
   assert.equal(electronBuilderWindowsGuid("cc.zenmind.desktop"), "498936cc-d13d-526e-80bb-92867e6e1874");
 });
 
+test("new Windows installs default directly to the brand runtime root under the user profile", (t) => {
+  for (const [brandId, nsisPrefix, productName] of [
+    ["zenmind", "ZenMind", "ZenMind"],
+    ["cutej", "CuteJ", "CuteJ"]
+  ]) {
+    const root = createBrandFixture(t);
+    const brand = syncBrandArtifacts({ rootDir: root, brandId });
+    const installerInclude = fs.readFileSync(
+      path.join(brandInstallerDir(root, brand), "installer.nsh"),
+      "utf8"
+    );
+    const ensureDataRootDefault = installerInclude.match(
+      new RegExp(`Function ${nsisPrefix}EnsureDataRootDefault\\s+([\\s\\S]*?)FunctionEnd`, "u")
+    )?.[1] ?? "";
+    const dataDirectoryPage = installerInclude.match(
+      new RegExp(`Function ${nsisPrefix}DataDirectoryPage\\s+([\\s\\S]*?)FunctionEnd`, "u")
+    )?.[1] ?? "";
+
+    assert.doesNotMatch(ensureDataRootDefault, new RegExp(`\\$PROFILE\\\\${productName} Data`, "u"));
+    assert.match(dataDirectoryPage, /StrCpy \$DesktopDataParent "\$PROFILE"/u);
+  }
+});
+
 function createBrandFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-brand-runtime-"));
   fs.cpSync(path.join(projectRoot, "brands"), path.join(root, "brands"), { recursive: true });
@@ -1240,10 +1263,15 @@ test("Windows uninstall safety requires path validation in addition to owner mar
     "utf8"
   );
 
+  assert.match(
+    installerInclude,
+    /!macro DesktopValidateDataRoot ROOT NORMALIZED RESULT[\s\S]*?GetFullPathName \$\{NORMALIZED\} "\$\{ROOT\}"[\s\S]*?\$\{GetFileName\} "\$\{NORMALIZED\}" \$R6[\s\S]*?\$R6 == "\.cutej"[\s\S]*?DesktopValidateOwnedRoot \$\{NORMALIZED\} \$\{RESULT\}/u
+  );
   assert.match(installerInclude, /DesktopReadOwnerMarker \$DesktopPreviousInstallDir[^\n]+install-root/u);
   assert.match(installerInclude, /DesktopValidateInstallRoot \$DesktopPreviousInstallDir/u);
+  assert.match(installerInclude, /DesktopValidateDataRoot \$DesktopDataRoot \$DesktopOwnedDataRoot \$R1/u);
   assert.match(installerInclude, /DesktopReadOwnerMarker \$DesktopOwnedDataRoot[^\n]+data-root/u);
-  assert.match(installerInclude, /DesktopValidateOwnedRoot \$DesktopOwnedDataRoot/u);
+  assert.doesNotMatch(installerInclude, /StrCpy \$DesktopOwnedDataRoot "\$DesktopDataRoot"/u);
   assert.match(installerInclude, /RMDir \/r "\$DesktopOwnedDataRoot"/u);
   assert.match(installerInclude, /RMDir \/r "\$DesktopProgramDataRoot"/u);
   assert.match(installerInclude, /\$\{FileExists\} "\$DesktopOwnedDataRoot\\\*\.\*"/u);
