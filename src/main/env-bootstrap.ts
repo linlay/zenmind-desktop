@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
@@ -53,6 +53,18 @@ export type BundledEnvZipImportResult = EnvZipImportResult & {
   sourceZipPath: string;
 };
 
+export type BundledEnvResourceSyncResult = {
+  status: "not-bundled" | "current" | "synced";
+  targetRoot: string;
+  desktopVersion: string;
+  sourceZipPath?: string;
+  copiedUnits: number;
+  skippedUnits: number;
+  copiedFiles: number;
+  addedRegistryFiles: number;
+  overwrittenRegistryFiles: number;
+};
+
 export type RuntimeEnvResetResult = BundledEnvZipImportResult & {
   backupPath?: string;
 };
@@ -63,18 +75,56 @@ export type RuntimeEnvResetFailure = Error & {
   sourceZipPath?: string;
 };
 
-const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-center"] as const;
+const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-center", "tools"] as const;
+const ENV_RESOURCE_SYNC_SCOPES = ["agents", "registries", "skills-center", "tools"] as const;
+const ENV_NON_OVERWRITE_RESOURCE_SCOPES = ["agents", "skills-center", "tools"] as const;
 const REMOVED_SKILLS_MARKET_DIR_NAME = "skills-market";
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
+const ENV_RESOURCE_SYNC_MARKER_RELATIVE_PATH = path.join(
+  ".desktop",
+  "state",
+  "desktop",
+  "env-resource-sync.json"
+);
 const ENV_AGENT_DEFINITION_FILE_NAME = "agent.yml";
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
+const ENV_ZIP_MANIFEST_FILE_NAME = "manifest.json";
 const ENV_INITIAL_DATA_RELATIVE_DIR = path.join(".desktop", "data", "env-initial");
 const ENV_INITIAL_PACKAGE_RELATIVE_PATH = path.join(ENV_INITIAL_DATA_RELATIVE_DIR, ENV_ZIP_FILE_NAME);
 const ENV_INITIAL_MANIFEST_FILE_NAME = "manifest.json";
 const ENV_INITIAL_MANIFEST_RELATIVE_PATH = path.join(ENV_INITIAL_DATA_RELATIVE_DIR, ENV_INITIAL_MANIFEST_FILE_NAME);
 const VERSION_FILE_NAME = "VERSION";
 const ENV_ZIP_ROOT_DIR_NAME = "env";
+
+type EnvResourceSyncScope = typeof ENV_RESOURCE_SYNC_SCOPES[number];
+type EnvNonOverwriteResourceScope = typeof ENV_NON_OVERWRITE_RESOURCE_SCOPES[number];
+
+type EnvResourceSyncMarker = {
+  schemaVersion: 1;
+  desktopVersion: string;
+  completedAt: string;
+  mode: "full-import" | "incremental";
+  scopes: EnvResourceSyncScope[];
+  copiedUnits: number;
+  skippedUnits: number;
+  copiedFiles: number;
+  addedRegistryFiles: number;
+  overwrittenRegistryFiles: number;
+};
+
+type BundledEnvManifest = {
+  bundled: boolean;
+  fileName: string | null;
+  version?: string;
+  size?: number;
+  sha256?: string;
+};
+
+type BundledEnvPackage = {
+  zipPath: string;
+  manifest?: BundledEnvManifest;
+};
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   if (platform === "win32") {
@@ -313,21 +363,32 @@ export async function importBundledEnvZipToRuntime(
     expectedDesktopVersion?: string;
   } = {}
 ): Promise<BundledEnvZipImportResult | null> {
-  const zipPath = resolveBundledEnvZipPath(app, platform, options.resourcesRoot);
-  if (!zipPath || !fileExists(zipPath)) {
+  const bundledPackage = resolveBundledEnvPackageForSync(app, platform, options.resourcesRoot);
+  if (!bundledPackage) {
     return null;
   }
 
+  const desktopVersion = options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader);
+  const zipBuffer = await fs.promises.readFile(bundledPackage.zipPath);
+  validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
+
   const result = await importEnvZipToRuntime(
     app,
-    zipPath,
+    bundledPackage.zipPath,
     platform,
-    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
+    desktopVersion,
     { source: "bundled" }
   );
+  writeEnvResourceSyncMarker(result.targetRoot, desktopVersion, "full-import", {
+    copiedUnits: 0,
+    skippedUnits: 0,
+    copiedFiles: result.copiedFiles,
+    addedRegistryFiles: 0,
+    overwrittenRegistryFiles: 0
+  }, platform);
   return {
     ...result,
-    sourceZipPath: zipPath
+    sourceZipPath: bundledPackage.zipPath
   };
 }
 
@@ -359,17 +420,24 @@ export async function resetBundledRuntimeEnv(
     nowSeconds?: number;
   } = {}
 ): Promise<RuntimeEnvResetResult> {
-  let sourceZipPath: string | null = null;
-  if (platform === "darwin") {
-    sourceZipPath = resolveBundledEnvZipPath(app, "darwin", options.resourcesRoot);
-  } else if (platform === "win32") {
-    sourceZipPath = resolveBundledEnvZipPath(app, "win32", options.resourcesRoot);
-  } else {
+  const runtimeRoot = resolveRuntimeRoot(app, platform);
+  if (platform !== "darwin" && platform !== "win32") {
     throw createRuntimeEnvResetFailure(t("envBootstrap.resetUnsupportedPlatform"), {});
   }
+  let bundledPackage: BundledEnvPackage | null = null;
+  try {
+    if (platform === "darwin") {
+      bundledPackage = resolveBundledEnvPackageForSync(app, "darwin", options.resourcesRoot);
+    } else {
+      bundledPackage = resolveBundledEnvPackageForSync(app, "win32", options.resourcesRoot);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw createRuntimeEnvResetFailure(t("envBootstrap.resetFailed", { message }), { runtimeRoot }, error);
+  }
 
-  const runtimeRoot = resolveRuntimeRoot(app, platform);
-  if (!sourceZipPath || !fileExists(sourceZipPath)) {
+  const sourceZipPath = bundledPackage?.zipPath ?? null;
+  if (!bundledPackage || !sourceZipPath || !fileExists(sourceZipPath)) {
     throw createRuntimeEnvResetFailure(t("envBootstrap.bundledEnvZipMissing"), {
       runtimeRoot,
       sourceZipPath: sourceZipPath ?? undefined
@@ -378,6 +446,9 @@ export async function resetBundledRuntimeEnv(
 
   let backupPath: string | undefined;
   try {
+    const desktopVersion = options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader);
+    const zipBuffer = await fs.promises.readFile(sourceZipPath);
+    validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
     if (fs.existsSync(runtimeRoot)) {
       if (!fs.statSync(runtimeRoot).isDirectory()) {
         throw new Error(t("envBootstrap.runtimeRootNotDirectory", { path: runtimeRoot }));
@@ -390,9 +461,16 @@ export async function resetBundledRuntimeEnv(
       app,
       sourceZipPath,
       platform,
-      options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
+      desktopVersion,
       { source: "reset" }
     );
+    writeEnvResourceSyncMarker(importResult.targetRoot, desktopVersion, "full-import", {
+      copiedUnits: 0,
+      skippedUnits: 0,
+      copiedFiles: importResult.copiedFiles,
+      addedRegistryFiles: 0,
+      overwrittenRegistryFiles: 0
+    }, platform);
     return {
       ...importResult,
       backupPath,
@@ -635,6 +713,585 @@ async function validateEnvZipVersion(entries: EnvZipEntry[], expectedDesktopVers
   if (envVersion !== normalizedExpectedVersion) {
     throw new Error(t("envBootstrap.versionMismatch", { expected: normalizedExpectedVersion, actual: envVersion }));
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function lstatIfExists(filePath: string) {
+  try {
+    return fs.lstatSync(filePath);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return null;
+    }
+    throw error;
+  }
+}
+
+function resourceSyncTempPath(targetPath: string) {
+  return path.join(
+    path.dirname(targetPath),
+    `.${path.basename(targetPath)}.${process.pid}.${randomUUID()}.env-resource-sync.tmp`
+  );
+}
+
+function assertPathIsRealDirectory(targetPath: string) {
+  const stat = lstatIfExists(targetPath);
+  if (!stat) {
+    return false;
+  }
+  if (stat.isSymbolicLink()) {
+    throw new Error(t("envBootstrap.resourceSyncSymlink", { path: targetPath }));
+  }
+  if (!stat.isDirectory()) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: targetPath }));
+  }
+  return true;
+}
+
+function ensureRealDirectoryChain(targetRoot: string, directoryPath: string) {
+  const resolvedRoot = path.resolve(targetRoot);
+  const resolvedDirectory = path.resolve(directoryPath);
+  const relativeDirectory = path.relative(resolvedRoot, resolvedDirectory);
+  if (
+    relativeDirectory === ".." ||
+    relativeDirectory.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relativeDirectory)
+  ) {
+    throw new Error(t("envBootstrap.outsidePath", { path: directoryPath }));
+  }
+
+  if (!assertPathIsRealDirectory(resolvedRoot)) {
+    fs.mkdirSync(resolvedRoot, { recursive: true });
+    assertPathIsRealDirectory(resolvedRoot);
+  }
+
+  let currentPath = resolvedRoot;
+  for (const segment of relativeDirectory.split(path.sep).filter(Boolean)) {
+    currentPath = path.join(currentPath, segment);
+    if (assertPathIsRealDirectory(currentPath)) {
+      continue;
+    }
+    fs.mkdirSync(currentPath);
+    assertPathIsRealDirectory(currentPath);
+  }
+}
+
+function assertArchiveEntryIsNotSymlink(entry: EnvZipEntry) {
+  const rawPermissions = entry.entry.unixPermissions;
+  const permissions = typeof rawPermissions === "string"
+    ? Number.parseInt(rawPermissions, 8)
+    : rawPermissions;
+  if (typeof permissions === "number" && (permissions & 0o170000) === 0o120000) {
+    throw new Error(t("envBootstrap.resourceSyncSymlink", { path: entry.relativePath }));
+  }
+}
+
+function chmodNewShellScript(filePath: string, platform: NodeJS.Platform) {
+  if (
+    (platform === "darwin" || platform === "linux") &&
+    path.extname(filePath).toLowerCase() === ".sh"
+  ) {
+    fs.chmodSync(filePath, 0o755);
+  }
+}
+
+function chmodNewShellScriptForTarget(
+  filePath: string,
+  targetPath: string,
+  platform: NodeJS.Platform
+) {
+  if (
+    (platform === "darwin" || platform === "linux") &&
+    path.extname(targetPath).toLowerCase() === ".sh"
+  ) {
+    fs.chmodSync(filePath, 0o755);
+  }
+}
+
+function replaceFileFromTemp(tempPath: string, targetPath: string, platform: NodeJS.Platform) {
+  if (platform === "win32") {
+    // libuv maps rename to the Windows replace-existing operation. An open or
+    // protected destination fails instead of falling back to a non-atomic copy.
+    fs.renameSync(tempPath, targetPath);
+    return;
+  }
+  fs.renameSync(tempPath, targetPath);
+}
+
+function writeJsonAtomic(
+  targetRoot: string,
+  targetPath: string,
+  value: unknown,
+  platform: NodeJS.Platform
+) {
+  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
+  const existing = lstatIfExists(targetPath);
+  if (existing && (existing.isSymbolicLink() || !existing.isFile())) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: targetPath }));
+  }
+  const tempPath = resourceSyncTempPath(targetPath);
+  try {
+    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600
+    });
+    if (platform !== "win32") {
+      fs.chmodSync(tempPath, 0o600);
+    }
+    replaceFileFromTemp(tempPath, targetPath, platform);
+  } catch (error) {
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // Preserve the original write or replace error.
+    }
+    throw error;
+  }
+}
+
+function isValidResourceSyncMarker(value: unknown): value is EnvResourceSyncMarker {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const scopes = value.scopes;
+  const counts = [
+    value.copiedUnits,
+    value.skippedUnits,
+    value.copiedFiles,
+    value.addedRegistryFiles,
+    value.overwrittenRegistryFiles
+  ];
+  return value.schemaVersion === 1 &&
+    typeof value.desktopVersion === "string" &&
+    Boolean(normalizeVersion(value.desktopVersion)) &&
+    typeof value.completedAt === "string" &&
+    (value.mode === "full-import" || value.mode === "incremental") &&
+    Array.isArray(scopes) &&
+    scopes.length === ENV_RESOURCE_SYNC_SCOPES.length &&
+    scopes.every((scope, index) => scope === ENV_RESOURCE_SYNC_SCOPES[index]) &&
+    counts.every((count) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0);
+}
+
+function readEnvResourceSyncMarker(targetRoot: string) {
+  const markerPath = path.join(targetRoot, ENV_RESOURCE_SYNC_MARKER_RELATIVE_PATH);
+  try {
+    const parsed = JSON.parse(fs.readFileSync(markerPath, "utf8")) as unknown;
+    return isValidResourceSyncMarker(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeEnvResourceSyncMarker(
+  targetRoot: string,
+  desktopVersion: string,
+  mode: EnvResourceSyncMarker["mode"],
+  result: Pick<
+    BundledEnvResourceSyncResult,
+    "copiedUnits" |
+    "skippedUnits" |
+    "copiedFiles" |
+    "addedRegistryFiles" |
+    "overwrittenRegistryFiles"
+  >,
+  platform: NodeJS.Platform
+) {
+  const marker: EnvResourceSyncMarker = {
+    schemaVersion: 1,
+    desktopVersion: normalizeVersion(desktopVersion),
+    completedAt: new Date().toISOString(),
+    mode,
+    scopes: [...ENV_RESOURCE_SYNC_SCOPES],
+    copiedUnits: result.copiedUnits,
+    skippedUnits: result.skippedUnits,
+    copiedFiles: result.copiedFiles,
+    addedRegistryFiles: result.addedRegistryFiles,
+    overwrittenRegistryFiles: result.overwrittenRegistryFiles
+  };
+  writeJsonAtomic(
+    targetRoot,
+    path.join(targetRoot, ENV_RESOURCE_SYNC_MARKER_RELATIVE_PATH),
+    marker,
+    platform
+  );
+}
+
+function readBundledEnvManifest(manifestPath: string): BundledEnvManifest | null {
+  if (!fileExists(manifestPath)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown;
+    if (!isRecord(parsed) || typeof parsed.bundled !== "boolean") {
+      throw new Error("invalid bundled flag");
+    }
+    const fileName = parsed.fileName;
+    if (parsed.bundled) {
+      if (fileName !== ENV_ZIP_FILE_NAME) {
+        throw new Error("invalid file name");
+      }
+    } else if (fileName !== null) {
+      throw new Error("unbundled manifest must not name a package");
+    }
+    if (parsed.version !== undefined && typeof parsed.version !== "string") {
+      throw new Error("invalid version");
+    }
+    if (parsed.size !== undefined && (
+      typeof parsed.size !== "number" ||
+      !Number.isSafeInteger(parsed.size) ||
+      parsed.size < 0
+    )) {
+      throw new Error("invalid size");
+    }
+    if (parsed.sha256 !== undefined && (
+      typeof parsed.sha256 !== "string" ||
+      !/^[a-f0-9]{64}$/iu.test(parsed.sha256)
+    )) {
+      throw new Error("invalid sha256");
+    }
+    return {
+      bundled: parsed.bundled,
+      fileName: parsed.bundled ? ENV_ZIP_FILE_NAME : null,
+      ...(typeof parsed.version === "string" ? { version: parsed.version } : {}),
+      ...(typeof parsed.size === "number" ? { size: parsed.size } : {}),
+      ...(typeof parsed.sha256 === "string" ? { sha256: parsed.sha256.toLowerCase() } : {})
+    };
+  } catch {
+    throw new Error(t("envBootstrap.resourceSyncManifestInvalid", { path: manifestPath }));
+  }
+}
+
+function resolveBundledEnvPackageForSync(
+  app: AppPackageReader,
+  platform: NodeJS.Platform,
+  resourcesRootOverride?: string
+): BundledEnvPackage | null {
+  if (platform !== "darwin" && platform !== "win32") {
+    return null;
+  }
+
+  const roots = bundledResourcesRootCandidates(app, resourcesRootOverride);
+  for (const resourcesRoot of roots) {
+    const envRoot = path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME);
+    const manifestPath = path.join(envRoot, ENV_ZIP_MANIFEST_FILE_NAME);
+    const manifest = readBundledEnvManifest(manifestPath);
+    const zipPath = path.join(envRoot, ENV_ZIP_FILE_NAME);
+    if (manifest) {
+      if (!manifest.bundled) {
+        return null;
+      }
+      if (!fileExists(zipPath)) {
+        throw new Error(t("envBootstrap.resourceSyncBundleMissing", { path: zipPath }));
+      }
+      return { zipPath, manifest };
+    }
+    if (fileExists(zipPath)) {
+      return { zipPath };
+    }
+  }
+  return null;
+}
+
+function validateBundledEnvPackageManifest(
+  bundledPackage: BundledEnvPackage,
+  zipBuffer: Buffer,
+  expectedDesktopVersion: string
+) {
+  const manifest = bundledPackage.manifest;
+  if (!manifest) {
+    return;
+  }
+  if (
+    manifest.version !== undefined &&
+    normalizeVersion(manifest.version) !== normalizeVersion(expectedDesktopVersion)
+  ) {
+    throw new Error(t("envBootstrap.versionMismatch", {
+      expected: normalizeVersion(expectedDesktopVersion),
+      actual: normalizeVersion(manifest.version)
+    }));
+  }
+  if (manifest.size !== undefined && manifest.size !== zipBuffer.byteLength) {
+    throw new Error(t("envBootstrap.resourceSyncIntegrity", { path: bundledPackage.zipPath }));
+  }
+  if (manifest.sha256 !== undefined && manifest.sha256 !== sha256Hex(zipBuffer)) {
+    throw new Error(t("envBootstrap.resourceSyncIntegrity", { path: bundledPackage.zipPath }));
+  }
+}
+
+type NonOverwriteResourceUnit = {
+  scope: EnvNonOverwriteResourceScope;
+  key: string;
+  entries: EnvZipEntry[];
+};
+
+function buildNonOverwriteResourceUnits(entries: EnvZipEntry[]) {
+  const unitMap = new Map<string, NonOverwriteResourceUnit>();
+  for (const entry of entries) {
+    const segments = entry.relativePath.split("/").filter(Boolean);
+    const scope = segments[0];
+    if (
+      !ENV_NON_OVERWRITE_RESOURCE_SCOPES.includes(scope as EnvNonOverwriteResourceScope) ||
+      segments.length < 2
+    ) {
+      continue;
+    }
+    assertArchiveEntryIsNotSymlink(entry);
+    const typedScope = scope as EnvNonOverwriteResourceScope;
+    const key = segments[1];
+    const mapKey = `${typedScope}/${key}`;
+    const unit = unitMap.get(mapKey) ?? { scope: typedScope, key, entries: [] };
+    unit.entries.push(entry);
+    unitMap.set(mapKey, unit);
+  }
+  return [...unitMap.values()].sort((left, right) => {
+    const scopeOrder = ENV_NON_OVERWRITE_RESOURCE_SCOPES.indexOf(left.scope) -
+      ENV_NON_OVERWRITE_RESOURCE_SCOPES.indexOf(right.scope);
+    return scopeOrder || left.key.localeCompare(right.key);
+  });
+}
+
+function classifyNonOverwriteResourceUnit(unit: NonOverwriteResourceUnit) {
+  const rootEntry = unit.entries.find((entry) => entry.relativePath === `${unit.scope}/${unit.key}`);
+  const hasNestedEntries = unit.entries.some(
+    (entry) => entry.relativePath.startsWith(`${unit.scope}/${unit.key}/`)
+  );
+  if (rootEntry && !rootEntry.directory && hasNestedEntries) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: rootEntry.relativePath }));
+  }
+  return rootEntry && !rootEntry.directory && !hasNestedEntries ? "file" : "directory";
+}
+
+async function copyNewFileUnit(
+  entry: EnvZipEntry,
+  targetRoot: string,
+  targetPath: string,
+  platform: NodeJS.Platform
+) {
+  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
+  if (lstatIfExists(targetPath)) {
+    return false;
+  }
+  const tempPath = resourceSyncTempPath(targetPath);
+  try {
+    fs.writeFileSync(tempPath, await entry.entry.async("nodebuffer"), { flag: "wx" });
+    chmodNewShellScriptForTarget(tempPath, targetPath, platform);
+    try {
+      fs.copyFileSync(tempPath, targetPath, fs.constants.COPYFILE_EXCL);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
+        return false;
+      }
+      throw error;
+    }
+    chmodNewShellScript(targetPath, platform);
+    return true;
+  } finally {
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // The authoritative target has already been published or the original error is more useful.
+    }
+  }
+}
+
+async function copyNewDirectoryUnit(
+  unit: NonOverwriteResourceUnit,
+  targetRoot: string,
+  targetPath: string,
+  platform: NodeJS.Platform
+) {
+  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
+  if (lstatIfExists(targetPath)) {
+    return { copied: false, copiedFiles: 0 };
+  }
+
+  const stagingPath = resourceSyncTempPath(targetPath);
+  let copiedFiles = 0;
+  try {
+    fs.mkdirSync(stagingPath);
+    for (const entry of unit.entries) {
+      const segments = entry.relativePath.split("/").filter(Boolean);
+      const nestedRelativePath = segments.slice(2).join("/");
+      if (!nestedRelativePath) {
+        continue;
+      }
+      const stagedTargetPath = resolveSafeTargetPath(stagingPath, nestedRelativePath);
+      if (entry.directory) {
+        fs.mkdirSync(stagedTargetPath, { recursive: true });
+        continue;
+      }
+      fs.mkdirSync(path.dirname(stagedTargetPath), { recursive: true });
+      fs.writeFileSync(stagedTargetPath, await entry.entry.async("nodebuffer"), { flag: "wx" });
+      chmodNewShellScript(stagedTargetPath, platform);
+      copiedFiles += 1;
+    }
+    if (lstatIfExists(targetPath)) {
+      return { copied: false, copiedFiles: 0 };
+    }
+    fs.renameSync(stagingPath, targetPath);
+    return { copied: true, copiedFiles };
+  } finally {
+    try {
+      fs.rmSync(stagingPath, { recursive: true, force: true });
+    } catch {
+      // A successful rename moved the staging path; failed staging cleanup is best effort.
+    }
+  }
+}
+
+async function copyNonOverwriteResourceUnit(
+  unit: NonOverwriteResourceUnit,
+  targetRoot: string,
+  platform: NodeJS.Platform
+) {
+  const targetPath = resolveSafeTargetPath(targetRoot, `${unit.scope}/${unit.key}`);
+  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
+  if (lstatIfExists(targetPath)) {
+    return { copied: false, copiedFiles: 0 };
+  }
+  if (classifyNonOverwriteResourceUnit(unit) === "file") {
+    const entry = unit.entries[0];
+    const copied = await copyNewFileUnit(entry, targetRoot, targetPath, platform);
+    return { copied, copiedFiles: copied ? 1 : 0 };
+  }
+  return copyNewDirectoryUnit(unit, targetRoot, targetPath, platform);
+}
+
+async function writeRegistryOverlayFile(
+  entry: EnvZipEntry,
+  targetRoot: string,
+  platform: NodeJS.Platform
+) {
+  assertArchiveEntryIsNotSymlink(entry);
+  const targetPath = resolveSafeTargetPath(targetRoot, entry.relativePath);
+  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
+  const existing = lstatIfExists(targetPath);
+  if (existing && (existing.isSymbolicLink() || !existing.isFile())) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: targetPath }));
+  }
+
+  const tempPath = resourceSyncTempPath(targetPath);
+  try {
+    const existingMode = existing && platform !== "win32" ? existing.mode & 0o777 : undefined;
+    fs.writeFileSync(tempPath, await entry.entry.async("nodebuffer"), {
+      flag: "wx",
+      ...(existingMode === undefined ? {} : { mode: existingMode })
+    });
+    if (existingMode !== undefined) {
+      fs.chmodSync(tempPath, existingMode);
+    }
+    chmodNewShellScriptForTarget(tempPath, targetPath, platform);
+    replaceFileFromTemp(tempPath, targetPath, platform);
+    chmodNewShellScript(targetPath, platform);
+  } catch (error) {
+    try {
+      fs.rmSync(tempPath, { force: true });
+    } catch {
+      // Preserve the original overlay failure.
+    }
+    throw error;
+  }
+  return existing ? "overwritten" : "added";
+}
+
+export async function syncBundledEnvResourcesForVersion(
+  app: AppPathReader & AppPackageReader,
+  platform: NodeJS.Platform = process.platform,
+  options: {
+    resourcesRoot?: string;
+    expectedDesktopVersion?: string;
+  } = {}
+): Promise<BundledEnvResourceSyncResult> {
+  const targetRoot = resolveRuntimeRoot(app, platform);
+  const desktopVersion = normalizeVersion(
+    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
+  );
+  if (!desktopVersion) {
+    throw new Error(t("envBootstrap.desktopVersionEmpty"));
+  }
+  assertNoRemovedSkillsMarketRuntimeDir(targetRoot);
+
+  const currentMarker = readEnvResourceSyncMarker(targetRoot);
+  if (currentMarker && normalizeVersion(currentMarker.desktopVersion) === desktopVersion) {
+    return {
+      status: "current",
+      targetRoot,
+      desktopVersion,
+      copiedUnits: currentMarker.copiedUnits,
+      skippedUnits: currentMarker.skippedUnits,
+      copiedFiles: currentMarker.copiedFiles,
+      addedRegistryFiles: currentMarker.addedRegistryFiles,
+      overwrittenRegistryFiles: currentMarker.overwrittenRegistryFiles
+    };
+  }
+
+  const bundledPackage = resolveBundledEnvPackageForSync(app, platform, options.resourcesRoot);
+  if (!bundledPackage) {
+    return {
+      status: "not-bundled",
+      targetRoot,
+      desktopVersion,
+      copiedUnits: 0,
+      skippedUnits: 0,
+      copiedFiles: 0,
+      addedRegistryFiles: 0,
+      overwrittenRegistryFiles: 0
+    };
+  }
+
+  const zipBuffer = await fs.promises.readFile(bundledPackage.zipPath);
+  validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  const entries = normalizeZipEntries(zip);
+  await validateEnvZipVersion(entries, desktopVersion);
+
+  let copiedUnits = 0;
+  let skippedUnits = 0;
+  let copiedFiles = 0;
+  let addedRegistryFiles = 0;
+  let overwrittenRegistryFiles = 0;
+
+  ensureRealDirectoryChain(targetRoot, targetRoot);
+  for (const unit of buildNonOverwriteResourceUnits(entries)) {
+    const result = await copyNonOverwriteResourceUnit(unit, targetRoot, platform);
+    if (result.copied) {
+      copiedUnits += 1;
+      copiedFiles += result.copiedFiles;
+    } else {
+      skippedUnits += 1;
+    }
+  }
+
+  const registryEntries = entries
+    .filter((entry) => !entry.directory && entry.relativePath.startsWith("registries/"))
+    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
+  for (const entry of registryEntries) {
+    const action = await writeRegistryOverlayFile(entry, targetRoot, platform);
+    copiedFiles += 1;
+    if (action === "added") {
+      addedRegistryFiles += 1;
+    } else {
+      overwrittenRegistryFiles += 1;
+    }
+  }
+
+  const result: BundledEnvResourceSyncResult = {
+    status: "synced",
+    targetRoot,
+    desktopVersion,
+    sourceZipPath: bundledPackage.zipPath,
+    copiedUnits,
+    skippedUnits,
+    copiedFiles,
+    addedRegistryFiles,
+    overwrittenRegistryFiles
+  };
+  writeEnvResourceSyncMarker(targetRoot, desktopVersion, "incremental", result, platform);
+  return result;
 }
 
 function writeEnvImportMarker(
