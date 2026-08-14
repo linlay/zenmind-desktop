@@ -43,6 +43,7 @@ import type {
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
+  EnterpriseChatSendRawAgentChatInput,
   EnterpriseChatSendScreenshotInput,
   EnterpriseChatSendSupportBundleInput,
   EnterpriseChatSnapshot,
@@ -723,6 +724,7 @@ export interface DesktopApi {
     sendMessage: (input: EnterpriseChatSendMessageInput) => Promise<EnterpriseChatSnapshot>;
     sendFiles: (input: EnterpriseChatSendFilesInput) => Promise<EnterpriseChatSnapshot>;
     sendSupportBundle: (input: EnterpriseChatSendSupportBundleInput) => Promise<EnterpriseChatSnapshot>;
+    sendRawAgentChat: (input: EnterpriseChatSendRawAgentChatInput) => Promise<EnterpriseChatSnapshot>;
     sendPastedFiles: (input: EnterpriseChatSendPastedFilesInput) => Promise<EnterpriseChatSnapshot>;
     sendScreenshot: (input: EnterpriseChatSendScreenshotInput) => Promise<EnterpriseChatSnapshot>;
     loadAttachment: (input: EnterpriseChatAttachmentInput) => Promise<EnterpriseChatAttachmentData>;

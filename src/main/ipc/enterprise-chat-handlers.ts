@@ -9,14 +9,23 @@ import type {
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
+  EnterpriseChatSendRawAgentChatInput,
   EnterpriseChatSendScreenshotInput,
   EnterpriseChatSendSupportBundleInput
 } from "../../shared/contracts";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 
+type RawAgentChatBridge = {
+  downloadRawChatJSONL(chatId: string): Promise<
+    | { ok: true; filename: string; bytes: Buffer }
+    | { ok: false; message: string }
+  >;
+};
+
 export function registerEnterpriseChatIpcHandlers(
   ipcMain: any,
-  runtime: EnterpriseChatRuntime
+  runtime: EnterpriseChatRuntime,
+  assistantBridge: RawAgentChatBridge
 ) {
   ipcMain.handle("enterpriseChat.getState", async () => runtime.getState());
   ipcMain.handle("enterpriseChat.refresh", async () => runtime.refresh());
@@ -49,6 +58,22 @@ export function registerEnterpriseChatIpcHandlers(
     "enterpriseChat.sendSupportBundle",
     async (_event: unknown, input: EnterpriseChatSendSupportBundleInput) =>
       runtime.sendSupportBundle(input)
+  );
+  ipcMain.handle(
+    "enterpriseChat.sendRawAgentChat",
+    async (_event: unknown, input: EnterpriseChatSendRawAgentChatInput) => {
+      const conversationId = input?.conversationId?.trim() ?? "";
+      const chatId = input?.chatId?.trim() ?? "";
+      const clientMessageId = input?.clientMessageId?.trim() ?? "";
+      if (!conversationId || !chatId || !clientMessageId) {
+        throw new Error("conversationId, chatId, and clientMessageId are required.");
+      }
+      const rawChat = await assistantBridge.downloadRawChatJSONL(chatId);
+      if (!rawChat.ok) {
+        throw new Error(rawChat.message);
+      }
+      return runtime.sendRawAgentChat(input, rawChat);
+    }
   );
   ipcMain.handle(
     "enterpriseChat.sendPastedFiles",

@@ -58,6 +58,7 @@ import {
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const DONE_SENTINEL = "[DONE]";
+const MAX_RAW_CHAT_JSONL_BYTES = 100 * 1024 * 1024;
 const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "createdAt",
   "updatedAt",
@@ -85,6 +86,10 @@ type ApiResponse<T> = {
 type AgentPlatformChatExportResult =
   | { ok: true; message: string; filename: string; bytes: Buffer }
   | { ok: false; message: string; filename: string; bytes?: never };
+
+export type AgentPlatformRawChatJSONLResult =
+  | { ok: true; filename: string; bytes: Buffer }
+  | { ok: false; message: string; filename?: never; bytes?: never };
 
 type AssistantRunWakeLock = {
   acquire: () => void;
@@ -379,6 +384,40 @@ async function readErrorText(response: Response) {
   } catch {
     return `HTTP ${response.status}`;
   }
+}
+
+class ResponseBytesTooLargeError extends Error {}
+
+async function readResponseBytesWithLimit(response: Response, maxBytes: number) {
+  const declaredLength = Number(response.headers.get("content-length"));
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new ResponseBytesTooLargeError();
+  }
+  if (!response.body) {
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > maxBytes) {
+      throw new ResponseBytesTooLargeError();
+    }
+    return bytes;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) {
+      break;
+    }
+    const chunk = Buffer.from(value);
+    totalBytes += chunk.length;
+    if (totalBytes > maxBytes) {
+      await reader.cancel().catch(() => undefined);
+      throw new ResponseBytesTooLargeError();
+    }
+    chunks.push(chunk);
+  }
+  return Buffer.concat(chunks, totalBytes);
 }
 
 function filenameFromContentDisposition(value: string | null) {
@@ -1320,6 +1359,54 @@ export class AgentPlatformAssistantBridge {
       return {
         ok: false,
         message: t("assistant.chatShareTranscriptReadFailed")
+      };
+    }
+  }
+
+  async downloadRawChatJSONL(chatId: string): Promise<AgentPlatformRawChatJSONLResult> {
+    const trimmedChatId = chatId.trim();
+    if (!trimmedChatId) {
+      return { ok: false, message: t("assistant.chatIdRequired") };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(
+      availability.baseUrl,
+      `/api/chat/jsonl?chatId=${encodeURIComponent(trimmedChatId)}`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "text/plain, application/x-ndjson",
+          Authorization: `Bearer ${availability.token}`
+        }
+      }
+    );
+    if (!response.ok) {
+      return { ok: false, message: await readErrorText(response) };
+    }
+    const contentType = response.headers.get("content-type")
+      ?.split(";", 1)[0]
+      ?.trim()
+      .toLowerCase() ?? "";
+    if (contentType !== "text/plain" && contentType !== "application/x-ndjson") {
+      return { ok: false, message: t("assistant.rawChatJsonlUnsupported") };
+    }
+    try {
+      return {
+        ok: true,
+        filename: filenameFromContentDisposition(
+          response.headers.get("content-disposition")
+        ) || `${trimmedChatId}.jsonl`,
+        bytes: await readResponseBytesWithLimit(response, MAX_RAW_CHAT_JSONL_BYTES)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message: error instanceof ResponseBytesTooLargeError
+          ? t("assistant.rawChatJsonlTooLarge")
+          : t("assistant.rawChatJsonlReadFailed")
       };
     }
   }

@@ -1032,6 +1032,64 @@ test("agent platform assistant bridge downloads the generic JSONL transcript", a
   }
 });
 
+test("agent platform assistant bridge preserves the original chat JSONL bytes", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const originalJsonl = Buffer.from([
+    '{"type":"metadata","unknown":{"keep":true}}',
+    '{"type":"internal.event","hidden":true,"path":"/Users/example/project"}',
+    '{"type":"tool.output","raw":"line one\\nline two"}',
+    ""
+  ].join("\r\n"), "utf8");
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(originalJsonl, {
+      status: 200,
+      headers: {
+        "content-type": "text/plain; charset=utf-8",
+        "content-disposition": 'inline; filename="Original chat.jsonl"'
+      }
+    });
+  };
+
+  try {
+    const result = await bridge.downloadRawChatJSONL(" chat_1 ");
+
+    assert.equal(result.ok, true);
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/jsonl?chatId=chat_1");
+    assert.equal(requests[0].init.method, "GET");
+    assert.equal(requests[0].init.headers.Accept, "text/plain, application/x-ndjson");
+    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
+    assert.equal(result.filename, "Original chat.jsonl");
+    assert.equal(Buffer.compare(result.bytes, originalJsonl), 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects raw chat JSONL above 100 MiB", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response("{}\n", {
+    status: 200,
+    headers: {
+      "content-type": "application/x-ndjson",
+      "content-length": String(100 * 1024 * 1024 + 1)
+    }
+  });
+
+  try {
+    const result = await bridge.downloadRawChatJSONL("chat_1");
+
+    assert.equal(result.ok, false);
+    assert.match(result.message, /100 MiB/u);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge rejects non-JSONL and invalid JSONL transcripts", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();

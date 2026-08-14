@@ -737,6 +737,84 @@ test("enterprise chat exchanges the SSO token and completes a direct message flo
     "desktop-support-test.zip"
   );
 
+  const rawAgentChatBytes = Buffer.from([
+    '{"type":"metadata","unknown":true}',
+    '{"type":"tool.output","hidden":true,"path":"C:\\\\work\\\\project"}',
+    ""
+  ].join("\r\n"), "utf8");
+  const rawAgentChatPromise = runtime.sendRawAgentChat({
+    conversationId: "direct-1",
+    chatId: "agent-chat-1",
+    chatName: "Raw Plan",
+    clientMessageId: "client-agent-chat-1"
+  }, {
+    filename: "agent-chat-1.jsonl",
+    bytes: rawAgentChatBytes
+  });
+  await waitFor(
+    () => sockets[0].sent.some((frame) =>
+      frame.type === "message.send" &&
+      frame.payload.clientMessageId === "client-agent-chat-1"
+    ),
+    "raw Agent Chat message.send"
+  );
+  const rawAgentChatUploadRequest = requests
+    .filter(({ url, init }) =>
+      new URL(url).pathname === "/api/v1/files" &&
+      init.method === "POST"
+    )
+    .at(-1);
+  const rawAgentChatUpload = rawAgentChatUploadRequest.init.body.get("file");
+  assert.equal(rawAgentChatUpload.name, "Raw Plan.jsonl");
+  assert.equal(rawAgentChatUpload.type, "application/x-ndjson");
+  assert.equal(
+    Buffer.compare(Buffer.from(await rawAgentChatUpload.arrayBuffer()), rawAgentChatBytes),
+    0
+  );
+  const rawAgentChatFrame = sockets[0].sent.find((frame) =>
+    frame.type === "message.send" &&
+    frame.payload.clientMessageId === "client-agent-chat-1"
+  );
+  assert.equal(rawAgentChatFrame.payload.conversationId, "direct-1");
+  assert.equal(rawAgentChatFrame.payload.clientMessageId, "client-agent-chat-1");
+  assert.equal(rawAgentChatFrame.payload.kind, "file");
+  assert.equal(rawAgentChatFrame.payload.body, "");
+  assert.deepEqual(rawAgentChatFrame.payload.fileIds, ["file-image-1"]);
+  sockets[0].receive({
+    v: 1,
+    frame: "response",
+    id: rawAgentChatFrame.id,
+    type: "message.send",
+    ok: true,
+    result: {
+      duplicate: false,
+      message: {
+        id: "message-agent-chat-1",
+        conversationId: "direct-1",
+        seq: 4,
+        senderId: "alice",
+        clientMessageId: "client-agent-chat-1",
+        kind: "file",
+        body: "",
+        attachments: [{
+          id: "file-image-1",
+          name: "Raw Plan.jsonl",
+          contentType: "application/x-ndjson",
+          sizeBytes: rawAgentChatBytes.length,
+          sha256: "raw-agent-chat-hash",
+          createdAt: now
+        }],
+        createdAt: now + 3
+      }
+    }
+  });
+  const rawAgentChatState = await rawAgentChatPromise;
+  assert.equal(
+    rawAgentChatState.activeMessages.find((item) => item.id === "message-agent-chat-1")
+      .attachments[0].contentType,
+    "application/x-ndjson"
+  );
+
   const pastedBytes = Buffer.from("pasted attachment");
   const pastedPromise = runtime.sendPastedFiles({
     conversationId: "direct-1",
@@ -972,6 +1050,19 @@ test("enterprise chat server URL accepts loopback HTTP and requires TLS remotely
   assert.throws(
     () => __testInternals.normalizeServerUrl("http://chat.example.com"),
     /loopback HTTP or remote HTTPS/
+  );
+});
+
+test("enterprise chat creates safe raw Agent Chat filenames on macOS and Windows", () => {
+  const title = "Quarter: Plan/Alpha\\Beta?.jsonl";
+
+  assert.equal(
+    __testInternals.safeRawAgentChatFilename(title, "chat-1", "darwin"),
+    "Quarter_ Plan_Alpha_Beta?.jsonl"
+  );
+  assert.equal(
+    __testInternals.safeRawAgentChatFilename(title, "chat-1", "win32"),
+    "Quarter_ Plan_Alpha_Beta_.jsonl"
   );
 });
 

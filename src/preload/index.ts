@@ -444,6 +444,7 @@ const api: DesktopApi = {
     sendMessage: (input) => ipcRenderer.invoke("enterpriseChat.sendMessage", input),
     sendFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendFiles", input),
     sendSupportBundle: (input) => ipcRenderer.invoke("enterpriseChat.sendSupportBundle", input),
+    sendRawAgentChat: (input) => ipcRenderer.invoke("enterpriseChat.sendRawAgentChat", input),
     sendPastedFiles: (input) => ipcRenderer.invoke("enterpriseChat.sendPastedFiles", input),
     sendScreenshot: (input) => ipcRenderer.invoke("enterpriseChat.sendScreenshot", input),
     loadAttachment: (input) => ipcRenderer.invoke("enterpriseChat.loadAttachment", input),

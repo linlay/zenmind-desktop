@@ -41,6 +41,7 @@ import {
   ENTERPRISE_CHAT_MAX_PASTED_FILES
 } from "../../shared/contracts";
 import type {
+  AssistantChatSummary,
   DesktopSsoStatus,
   EnterpriseChatAttachment,
   EnterpriseChatConversation,
@@ -317,6 +318,11 @@ export function EnterpriseChatFloatingPanel({
   const [openConversationMenuId, setOpenConversationMenuId] = useState("");
   const [screenshotMenuOpen, setScreenshotMenuOpen] = useState(false);
   const [attachmentMenuOpen, setAttachmentMenuOpen] = useState(false);
+  const [agentChatPickerOpen, setAgentChatPickerOpen] = useState(false);
+  const [agentChats, setAgentChats] = useState<AssistantChatSummary[]>([]);
+  const [agentChatSearch, setAgentChatSearch] = useState("");
+  const [agentChatPickerLoading, setAgentChatPickerLoading] = useState(false);
+  const [agentChatPickerError, setAgentChatPickerError] = useState("");
   const [mottoDraft, setMottoDraft] = useState("");
   const [composerHeight, setComposerHeight] = useState(ENTERPRISE_CHAT_COMPOSER_DEFAULT_HEIGHT);
   const [hiddenConversationPreferences, setHiddenConversationPreferences] = useState(
@@ -421,8 +427,23 @@ export function EnterpriseChatFloatingPanel({
     if (!open || view !== "conversation") {
       setScreenshotMenuOpen(false);
       setAttachmentMenuOpen(false);
+      setAgentChatPickerOpen(false);
     }
   }, [open, view]);
+
+  useEffect(() => {
+    if (!agentChatPickerOpen) {
+      return;
+    }
+    const handleKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        setAgentChatPickerOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [agentChatPickerOpen]);
 
   useEffect(() => () => {
     for (const timer of attachmentDownloadResetTimersRef.current.values()) {
@@ -538,6 +559,12 @@ export function EnterpriseChatFloatingPanel({
   const activeConversation = snapshot?.conversations.find(
     (conversation) => conversation.id === snapshot.activeConversationId
   );
+  const filteredAgentChats = useMemo(() => {
+    const query = agentChatSearch.trim().toLocaleLowerCase(locale);
+    return [...agentChats]
+      .sort((left, right) => right.updatedAt - left.updatedAt)
+      .filter((chat) => !query || chat.title.toLocaleLowerCase(locale).includes(query));
+  }, [agentChatSearch, agentChats, locale]);
 
   useEffect(() => {
     if (
@@ -895,6 +922,51 @@ export function EnterpriseChatFloatingPanel({
     try {
       setSnapshot(await window.electronAPI.enterpriseChat.sendSupportBundle({
         conversationId,
+        clientMessageId: newClientMessageId()
+      }));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function openAgentChatPicker() {
+    if (!snapshot?.activeConversationId || busy) {
+      return;
+    }
+    setAttachmentMenuOpen(false);
+    setAgentChatSearch("");
+    setAgentChatPickerError("");
+    setAgentChatPickerOpen(true);
+    setAgentChatPickerLoading(true);
+    try {
+      setAgentChats(await window.electronAPI.assistant.listChats());
+    } catch (reason) {
+      setAgentChats([]);
+      setAgentChatPickerError(reason instanceof Error ? reason.message : String(reason));
+    } finally {
+      setAgentChatPickerLoading(false);
+    }
+  }
+
+  async function sendRawAgentChat(chat: AssistantChatSummary) {
+    const conversationId = snapshot?.activeConversationId ?? "";
+    if (!conversationId || busy) {
+      return;
+    }
+    const chatName = chat.title.trim() || chat.id;
+    if (!window.confirm(t("enterpriseChat.rawAgentChatConfirm", { name: chatName }))) {
+      return;
+    }
+    setAgentChatPickerOpen(false);
+    setBusy("agent-chat");
+    setError("");
+    try {
+      setSnapshot(await window.electronAPI.enterpriseChat.sendRawAgentChat({
+        conversationId,
+        chatId: chat.id,
+        chatName,
         clientMessageId: newClientMessageId()
       }));
     } catch (reason) {
@@ -1572,6 +1644,15 @@ export function EnterpriseChatFloatingPanel({
                           <button
                             type="button"
                             role="menuitem"
+                            disabled={!snapshot.activeConversationId || Boolean(busy)}
+                            onClick={() => void openAgentChatPicker()}
+                          >
+                            <FileOutlined />
+                            <span>{t("enterpriseChat.sendAgentChat")}</span>
+                          </button>
+                          <button
+                            type="button"
+                            role="menuitem"
                             onClick={() => void sendSupportBundle()}
                           >
                             <FileZipOutlined />
@@ -1641,7 +1722,9 @@ export function EnterpriseChatFloatingPanel({
                     <span className="enterprise-chat-paste-hint" aria-live="polite">
                       {busy === "paste"
                         ? t("enterpriseChat.uploadingPastedFiles")
-                        : t("enterpriseChat.pasteFilesHint")}
+                        : busy === "agent-chat"
+                          ? t("enterpriseChat.sendingAgentChat")
+                          : t("enterpriseChat.pasteFilesHint")}
                     </span>
                   </div>
                   <textarea
@@ -1947,6 +2030,88 @@ export function EnterpriseChatFloatingPanel({
                 <span>{t("enterpriseChat.settings")}</span>
               </button>
             </nav>
+          ) : null}
+
+          {agentChatPickerOpen ? (
+            <div className="enterprise-chat-agent-chat-picker-backdrop">
+              <div
+                className="enterprise-chat-agent-chat-picker"
+                role="dialog"
+                aria-modal="true"
+                aria-labelledby="enterprise-chat-agent-chat-picker-title"
+              >
+                <div className="enterprise-chat-agent-chat-picker-heading">
+                  <div>
+                    <strong id="enterprise-chat-agent-chat-picker-title">
+                      {t("enterpriseChat.agentChatPickerTitle")}
+                    </strong>
+                    <span>{t("enterpriseChat.agentChatPickerDescription")}</span>
+                  </div>
+                  <button
+                    type="button"
+                    aria-label={t("enterpriseChat.close")}
+                    onClick={() => setAgentChatPickerOpen(false)}
+                  >
+                    <CloseOutlined />
+                  </button>
+                </div>
+                <label className="enterprise-chat-agent-chat-search">
+                  <SearchOutlined aria-hidden="true" />
+                  <input
+                    autoFocus
+                    type="search"
+                    autoComplete="off"
+                    value={agentChatSearch}
+                    placeholder={t("enterpriseChat.agentChatSearchPlaceholder")}
+                    aria-label={t("enterpriseChat.agentChatSearchPlaceholder")}
+                    onChange={(event) => setAgentChatSearch(event.target.value)}
+                  />
+                </label>
+                <div className="enterprise-chat-agent-chat-list">
+                  {agentChatPickerLoading ? (
+                    <div className="enterprise-chat-agent-chat-status">
+                      {t("enterpriseChat.agentChatPickerLoading")}
+                    </div>
+                  ) : agentChatPickerError ? (
+                    <div className="enterprise-chat-agent-chat-status is-error" role="alert">
+                      {agentChatPickerError}
+                    </div>
+                  ) : filteredAgentChats.length > 0 ? (
+                    filteredAgentChats.map((chat) => (
+                      <button
+                        type="button"
+                        className="enterprise-chat-agent-chat-item"
+                        key={chat.id}
+                        onClick={() => void sendRawAgentChat(chat)}
+                      >
+                        <FileOutlined aria-hidden="true" />
+                        <span>
+                          <strong>{chat.title || chat.id}</strong>
+                          <small>
+                            {t("enterpriseChat.agentChatMessageCount", {
+                              count: chat.messageCount
+                            })}
+                            {" · "}
+                            {new Intl.DateTimeFormat(locale, {
+                              month: "short",
+                              day: "numeric",
+                              hour: "2-digit",
+                              minute: "2-digit"
+                            }).format(chat.updatedAt)}
+                          </small>
+                        </span>
+                      </button>
+                    ))
+                  ) : (
+                    <div className="enterprise-chat-agent-chat-status">
+                      {agentChats.length === 0
+                        ? t("enterpriseChat.agentChatPickerEmpty")
+                        : t("enterpriseChat.agentChatPickerNoResults")}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
           ) : null}
 
           {pendingActionMessage?.desktopAction ? (

@@ -156,6 +156,13 @@ export interface EnterpriseChatSendSupportBundleInput {
   clientMessageId: string;
 }
 
+export interface EnterpriseChatSendRawAgentChatInput {
+  conversationId: string;
+  chatId: string;
+  chatName: string;
+  clientMessageId: string;
+}
+
 export interface EnterpriseChatSaveSelfProfileInput {
   motto: string;
 }

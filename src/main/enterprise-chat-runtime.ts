@@ -23,6 +23,7 @@ import type {
   EnterpriseChatSendFilesInput,
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
+  EnterpriseChatSendRawAgentChatInput,
   EnterpriseChatScreenshotMode,
   EnterpriseChatSendScreenshotInput,
   EnterpriseChatSendSupportBundleInput,
@@ -63,7 +64,13 @@ const ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS = 15_000;
 const ENTERPRISE_CHAT_RECONNECT_MAX_MS = 30_000;
 const ENTERPRISE_CHAT_INLINE_ATTACHMENT_MAX_BYTES = 32 * 1024 * 1024;
 const ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES = 110 * 1024 * 1024;
+const ENTERPRISE_CHAT_RAW_AGENT_CHAT_MAX_BYTES = 100 * 1024 * 1024;
 const ENTERPRISE_CHAT_MAX_SELECTED_FILES = 10;
+
+export type EnterpriseChatRawAgentChatData = {
+  filename: string;
+  bytes: Uint8Array;
+};
 
 type FetchResponseLike = {
   ok: boolean;
@@ -508,6 +515,16 @@ function safeDownloadName(value: string, platform: NodeJS.Platform) {
     return base.replace(/[:/\u0000]/gu, "_") || "attachment";
   }
   return base.replace(/[/\u0000]/gu, "_") || "attachment";
+}
+
+function safeRawAgentChatFilename(
+  chatName: string,
+  chatId: string,
+  platform: NodeJS.Platform
+) {
+  const source = (chatName.trim() || chatId).replace(/\.jsonl$/iu, "").slice(0, 180);
+  const stem = source.replace(/[\\/]+/gu, "_").trim() || chatId;
+  return safeDownloadName(`${stem}.jsonl`, platform);
 }
 
 export class EnterpriseChatRuntime {
@@ -1034,6 +1051,43 @@ export class EnterpriseChatRuntime {
       conversationId,
       clientMessageId,
       body: "",
+      fileIds: [attachment.id]
+    });
+  }
+
+  async sendRawAgentChat(
+    input: EnterpriseChatSendRawAgentChatInput,
+    rawChat: EnterpriseChatRawAgentChatData
+  ) {
+    const conversationId = readText(input?.conversationId);
+    const clientMessageId = readText(input?.clientMessageId);
+    const chatId = readText(input?.chatId);
+    if (!conversationId || !clientMessageId || !chatId) {
+      throw new Error("conversationId, chatId, and clientMessageId are required.");
+    }
+    if (!(rawChat?.bytes instanceof Uint8Array)) {
+      throw new Error(t("assistant.rawChatJsonlReadFailed"));
+    }
+    if (rawChat.bytes.byteLength > ENTERPRISE_CHAT_RAW_AGENT_CHAT_MAX_BYTES) {
+      throw new Error(t("assistant.rawChatJsonlTooLarge"));
+    }
+    await this.ensureSession();
+    this.assertMessageSendReady();
+    const filename = safeRawAgentChatFilename(
+      readText(input.chatName) || path.basename(readText(rawChat.filename), ".jsonl"),
+      chatId,
+      this.platform
+    );
+    const bytes = Uint8Array.from(rawChat.bytes);
+    const attachment = await this.uploadBlob(
+      new Blob([bytes.buffer], { type: "application/x-ndjson" }),
+      filename
+    );
+    return this.sendMessagePayload({
+      conversationId,
+      clientMessageId,
+      body: "",
+      kind: "file",
       fileIds: [attachment.id]
     });
   }
@@ -2175,5 +2229,6 @@ export const __testInternals = {
   normalizeMessage,
   normalizeServerUrl,
   normalizeUser,
+  safeRawAgentChatFilename,
   toWebSocketUrl
 };

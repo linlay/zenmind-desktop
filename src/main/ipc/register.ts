@@ -329,7 +329,11 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
     stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
   }));
-  registerEnterpriseChatIpcHandlers(ipcMain, options.enterpriseChatRuntime);
+  registerEnterpriseChatIpcHandlers(
+    ipcMain,
+    options.enterpriseChatRuntime,
+    assistantBridge
+  );
   registerTunnelHubIpcHandlers(ipcMain);
   registerKanbanIpcHandlers(ipcMain, createKanbanIpcHandlerOptions(context, {
     listKanbanIssues: () => state.kanbanRuntime?.listIssues() ?? {

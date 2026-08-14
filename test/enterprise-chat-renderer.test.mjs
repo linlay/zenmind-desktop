@@ -90,6 +90,43 @@ test("enterprise chat exposes an attachment menu and a local profile settings ta
   assert.match(handlers, /runtime\.saveSelfProfile/);
 });
 
+test("enterprise chat sends a selected Agent Chat through the raw JSONL file path", () => {
+  const panel = readSource(
+    "src",
+    "renderer",
+    "enterprise-chat",
+    "EnterpriseChatFloatingPanel.tsx"
+  );
+  const styles = readSource("src", "renderer", "styles", "enterprise-chat.css");
+  const preload = readSource("src", "preload", "index.ts");
+  const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
+  const handlers = readSource("src", "main", "ipc", "enterprise-chat-handlers.ts");
+  const bridge = readSource("src", "main", "assistant", "core", "agent-platform-bridge.ts");
+  const rawMethodStart = bridge.indexOf("async downloadRawChatJSONL(");
+  const rawMethodEnd = bridge.indexOf("\n  async getMemorySettings(", rawMethodStart);
+  const rawMethod = bridge.slice(rawMethodStart, rawMethodEnd);
+
+  assert.match(panel, /enterpriseChat\.sendAgentChat/);
+  assert.match(panel, /assistant\.listChats\(\)/);
+  assert.match(panel, /agentChatSearch[\s\S]*chat\.title\.toLocaleLowerCase/);
+  assert.match(panel, /className="enterprise-chat-agent-chat-picker"/);
+  assert.match(
+    panel,
+    /window\.confirm\(t\("enterpriseChat\.rawAgentChatConfirm"[\s\S]*enterpriseChat\.sendRawAgentChat/
+  );
+  assert.match(panel, /sendRawAgentChat\(\{[\s\S]*?conversationId,/);
+  assert.match(panel, /clientMessageId:\s*newClientMessageId\(\)/);
+  assert.match(styles, /\[data-theme="dark"\] \.enterprise-chat-agent-chat-picker/);
+  assert.match(preload, /enterpriseChat\.sendRawAgentChat/);
+  assert.match(contract, /interface EnterpriseChatSendRawAgentChatInput/);
+  assert.match(handlers, /downloadRawChatJSONL\(chatId\)/);
+  assert.match(handlers, /runtime\.sendRawAgentChat\(input, rawChat\)/);
+  assert.match(rawMethod, /\/api\/chat\/jsonl\?chatId=/);
+  assert.match(rawMethod, /readResponseBytesWithLimit/);
+  assert.doesNotMatch(rawMethod, /JSON\.parse|JSON\.stringify/);
+  assert.match(bridge, /\/api\/chat\/export\?chatId=\$\{encodeURIComponent\(trimmedChatId\)\}&format=raw/);
+});
+
 test("enterprise chat deletion remains a renderer-only sequence-aware hide", () => {
   const panel = readSource(
     "src",
