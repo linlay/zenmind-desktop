@@ -5231,6 +5231,9 @@ test("desktop action confirmation keeps supporting information inside details", 
   const buttonRule = styles.match(
     /\.desktop-action-confirmation-button\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body ?? "";
+  const buttonFocusRule = styles.match(
+    /\.desktop-action-confirmation-button:focus\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
 
   assert.ok(detailsIndex > 0);
   assert.ok(dialog.indexOf("desktop-action-confirmation-summary") < detailsIndex);
@@ -5238,6 +5241,15 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.ok(dialog.indexOf("desktop-action-confirmation-fields") > detailsIndex);
   assert.match(dialog, /desktopAction\.confirmSettingsHint/);
   assert.match(dialog, /desktop-action-confirmation-buttons/);
+  assert.match(dialog, /useLayoutEffect/);
+  assert.match(dialog, /focusTarget\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(dialog, /\[request\?\.defaultDecision, request\?\.requestId\]/);
+  assert.doesNotMatch(dialog, /setTimeout/);
+  assert.match(dialog, /event\.key === "Escape"/);
+  assert.match(dialog, /event\.key !== "Tab"/);
+  assert.doesNotMatch(dialog, /event\.key\s*===\s*"(?: |Space|Spacebar)"/);
+  assert.match(dialog, /tabIndex=\{-1\}/);
+  assert.match(dialog, /data-decision=\{button\.decision\}/);
   assert.match(layerRule, /position:\s*fixed;/);
   assert.match(layerRule, /padding:\s*16px;/);
   assert.match(dialogRule, /border-radius:\s*12px;/);
@@ -5248,6 +5260,8 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(titleRule, /font-weight:\s*400;/);
   assert.match(buttonRule, /min-height:\s*32px;/);
   assert.match(buttonRule, /font-weight:\s*500;/);
+  assert.match(buttonFocusRule, /outline:\s*2px solid var\(--accent-border\);/);
+  assert.match(buttonFocusRule, /outline-offset:\s*2px;/);
   assert.match(
     styles,
     /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*#2D2D2D;[\s\S]*?box-shadow:\s*none;/

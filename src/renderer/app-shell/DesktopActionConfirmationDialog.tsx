@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   DesktopActionConfirmationDecision,
   DesktopActionConfirmationRequest
@@ -10,23 +10,38 @@ type DesktopActionConfirmationDialogProps = {
   onDecision: (decision: DesktopActionConfirmationDecision) => void;
 };
 
+function getDialogFocusableElements(dialog: HTMLElement) {
+  return Array.from(
+    dialog.querySelectorAll<HTMLElement>("summary, button:not([disabled]), [tabindex]:not([tabindex='-1'])")
+  ).filter((element) => element !== dialog && !element.hasAttribute("hidden"));
+}
+
 export function DesktopActionConfirmationDialog({
   request,
   onDecision
 }: DesktopActionConfirmationDialogProps) {
   const { t } = useI18n();
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const dialogRef = useRef<HTMLElement | null>(null);
   const defaultButtonRef = useRef<HTMLButtonElement | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     setDetailsOpen(false);
     if (!request) {
       return;
     }
-    window.setTimeout(() => {
-      defaultButtonRef.current?.focus();
-    }, 0);
-  }, [request?.requestId]);
+    const previouslyFocusedElement = document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+    const focusTarget = defaultButtonRef.current ?? dialogRef.current;
+    focusTarget?.focus({ preventScroll: true });
+
+    return () => {
+      if (previouslyFocusedElement?.isConnected) {
+        previouslyFocusedElement.focus({ preventScroll: true });
+      }
+    };
+  }, [request?.defaultDecision, request?.requestId]);
 
   useEffect(() => {
     if (!request) {
@@ -35,7 +50,32 @@ export function DesktopActionConfirmationDialog({
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
+        event.stopPropagation();
         onDecision(request.cancelDecision);
+        return;
+      }
+      if (event.key !== "Tab") {
+        return;
+      }
+      const dialog = dialogRef.current;
+      if (!dialog) {
+        return;
+      }
+      const focusableElements = getDialogFocusableElements(dialog);
+      const firstElement = focusableElements[0];
+      const lastElement = focusableElements.at(-1);
+      if (!firstElement || !lastElement) {
+        event.preventDefault();
+        dialog.focus({ preventScroll: true });
+        return;
+      }
+      const activeElement = document.activeElement;
+      if (event.shiftKey && (activeElement === firstElement || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        lastElement.focus({ preventScroll: true });
+      } else if (!event.shiftKey && (activeElement === lastElement || !dialog.contains(activeElement))) {
+        event.preventDefault();
+        firstElement.focus({ preventScroll: true });
       }
     };
     window.addEventListener("keydown", handleKeyDown, true);
@@ -54,10 +94,12 @@ export function DesktopActionConfirmationDialog({
   return (
     <div className="desktop-action-confirmation-layer" role="presentation">
       <section
+        ref={dialogRef}
         className="desktop-action-confirmation-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
+        tabIndex={-1}
       >
         <header className="desktop-action-confirmation-head">
           <h2 id={titleId}>{request.title}</h2>
@@ -98,6 +140,7 @@ export function DesktopActionConfirmationDialog({
                 key={button.decision}
                 ref={button.decision === defaultDecision ? defaultButtonRef : undefined}
                 type="button"
+                data-decision={button.decision}
                 className={[
                   "desktop-action-confirmation-button",
                   `is-${button.variant}`

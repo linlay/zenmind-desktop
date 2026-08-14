@@ -433,10 +433,14 @@
   font-weight: 500;
 }
 
-.desktop-action-confirmation-button:hover,
-.desktop-action-confirmation-button:focus-visible {
+.desktop-action-confirmation-button:hover {
   background: rgba(15, 23, 42, 0.07);
-  outline: none;
+}
+
+.desktop-action-confirmation-button:focus {
+  background: rgba(15, 23, 42, 0.07);
+  outline: 2px solid var(--accent-border);
+  outline-offset: 2px;
 }
 
 .desktop-action-confirmation-button.is-secondary {
@@ -451,7 +455,7 @@
 }
 
 .desktop-action-confirmation-button.is-primary:hover,
-.desktop-action-confirmation-button.is-primary:focus-visible {
+.desktop-action-confirmation-button.is-primary:focus {
   border-color: rgba(29, 78, 216, 0.74);
   background: #1d4ed8;
 }
@@ -494,7 +498,7 @@
 
 :root[data-theme="dark"] .desktop-action-confirmation-details summary:hover,
 :root[data-theme="dark"] .desktop-action-confirmation-button:not(.is-primary):hover,
-:root[data-theme="dark"] .desktop-action-confirmation-button:not(.is-primary):focus-visible {
+:root[data-theme="dark"] .desktop-action-confirmation-button:not(.is-primary):focus {
   background: rgba(255, 255, 255, 0.08);
   color: #eeeeee;
 }
