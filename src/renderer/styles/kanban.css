@@ -390,6 +390,79 @@
   background: var(--kanban-project-scrollbar-track);
 }
 
+.kanban-project-search-field {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  min-height: 30px;
+  border: 1px solid color-mix(in srgb, var(--sidebar-operation-menu-text-muted) 28%, transparent);
+  border-radius: 7px;
+  background: var(--sidebar-operation-menu-bg);
+  color: var(--sidebar-operation-menu-text-muted);
+}
+
+.kanban-project-search-field:focus-within {
+  border-color: color-mix(in srgb, var(--kanban-accent) 64%, var(--sidebar-operation-menu-border));
+}
+
+.kanban-project-search-field > .kanban-icon {
+  flex: 0 0 auto;
+  width: 14px;
+  height: 14px;
+  margin-left: 9px;
+}
+
+.kanban-field .kanban-project-search-field input,
+.kanban-project-search-field input {
+  flex: 1 1 auto;
+  width: 0;
+  min-width: 0;
+  height: 28px;
+  padding: 0 8px;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--sidebar-operation-menu-text);
+  font: inherit;
+  font-size: 12px;
+}
+
+.kanban-field .kanban-project-search-field input:focus,
+.kanban-project-search-field input:focus {
+  border: 0;
+}
+
+.kanban-project-search-field input::-webkit-search-cancel-button {
+  display: none;
+  -webkit-appearance: none;
+}
+
+.kanban-project-search-clear {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--sidebar-operation-menu-text-muted);
+  cursor: pointer;
+  font: inherit;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.kanban-project-search-clear:hover,
+.kanban-project-search-clear:focus-visible {
+  background: var(--sidebar-operation-menu-hover);
+  color: var(--sidebar-operation-menu-text);
+  outline: none;
+}
+
 .kanban-project-filter-all,
 .kanban-project-filter-row {
   min-height: 28px;
@@ -414,6 +487,8 @@
 
 .kanban-project-filter-all:hover,
 .kanban-project-filter-all.is-active,
+.kanban-project-filter-all:focus-visible,
+.kanban-project-filter-row:focus-within,
 .kanban-project-filter-row:hover {
   background: var(--sidebar-operation-menu-hover);
 }
@@ -2372,6 +2447,10 @@
   scrollbar-color: color-mix(in srgb, var(--sidebar-operation-menu-text-muted) 48%, transparent) transparent;
 }
 
+.kanban-project-form-menu .kanban-project-search-field {
+  margin-bottom: 3px;
+}
+
 .kanban-project-form-menu button {
   min-height: 30px;
   overflow: hidden;
@@ -2388,12 +2467,30 @@
 }
 
 .kanban-project-form-menu button:hover,
+.kanban-project-form-menu button:focus-visible,
 .kanban-project-form-menu button.is-selected {
   background: var(--sidebar-operation-menu-hover);
 }
 
+.kanban-project-form-menu button:focus-visible,
+.kanban-project-filter-all:focus-visible,
+.kanban-project-filter-row input:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--kanban-accent) 72%, transparent);
+  outline-offset: -2px;
+}
+
 .kanban-project-form-menu button.is-selected {
   color: var(--kanban-accent);
+}
+
+.kanban-project-form-menu .kanban-project-search-clear {
+  width: 26px;
+  min-height: 26px;
+  height: 26px;
+  margin-right: 2px;
+  padding: 0;
+  overflow: visible;
+  text-align: center;
 }
 
 .kanban-attachment-add-button {

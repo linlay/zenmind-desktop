@@ -4005,6 +4005,36 @@ test("Local Kanban cards show workers without repeating the implicit assignee", 
   );
 });
 
+test("Kanban project filter and New Issue project picker support text search", () => {
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(kanbanPage, /function matchesKanbanProjectSearch\(project: KanbanProject, query: string\)/);
+  assert.match(kanbanPage, /\[project\.name, project\.path, project\.id\][\s\S]{0,120}\.includes\(normalizedQuery\)/);
+  assert.match(kanbanPage, /const filteredProjectFormOptions = useMemo\([\s\S]{0,220}matchesKanbanProjectSearch\(project, projectFormQuery\)/);
+  assert.match(kanbanPage, /const filteredTreeItems = useMemo\([\s\S]{0,220}matchesKanbanProjectSearch\(project, searchQuery\)/);
+  assert.equal((kanbanPage.match(/<KanbanProjectSearchInput/g) ?? []).length, 2);
+  assert.match(kanbanPage, /type="search"[\s\S]{0,180}kanban\.projectFilter\.searchPlaceholder/);
+  assert.match(kanbanPage, /function focusAdjacentKanbanProjectOption\(target: HTMLElement, direction: -1 \| 1\)/);
+  assert.match(kanbanPage, /event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"/);
+  assert.match(kanbanPage, /scrollIntoView\(\{ block: "nearest" \}\)/);
+  assert.match(kanbanPage, /data-kanban-project-option/);
+  assert.match(kanbanPage, /className="kanban-project-search-clear"[\s\S]{0,360}onClick=\{\(\) => onChange\(""\)\}/);
+  assert.match(kanbanPage, /!normalizedSearchQuery \? <button[\s\S]{0,120}data-kanban-project-option/);
+  assert.match(kanbanPage, /kanban\.projectFilter\.noResults/);
+  assert.match(kanbanStyles, /\.kanban-project-search-field\s*\{[\s\S]{0,260}position:\s*sticky/);
+  assert.match(kanbanStyles, /\.kanban-project-search-field input\s*\{[\s\S]{0,120}flex:\s*1 1 auto;[\s\S]{0,80}width:\s*0;/);
+  assert.match(kanbanStyles, /\.kanban-project-search-clear\s*\{[\s\S]{0,160}margin-right:\s*2px/);
+  assert.match(zhCN, /"kanban\.projectFilter\.searchPlaceholder": "搜索项目"/);
+  assert.match(zhCN, /"kanban\.projectFilter\.clearSearch": "清除项目搜索"/);
+  assert.match(zhCN, /"kanban\.projectFilter\.noResults": "没有匹配的项目"/);
+  assert.match(enUS, /"kanban\.projectFilter\.searchPlaceholder": "Search projects"/);
+  assert.match(enUS, /"kanban\.projectFilter\.clearSearch": "Clear project search"/);
+  assert.match(enUS, /"kanban\.projectFilter\.noResults": "No matching projects"/);
+});
+
 test("WebApp user-facing dictionary terminology is normalized", () => {
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");

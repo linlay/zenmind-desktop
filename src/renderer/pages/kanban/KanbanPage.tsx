@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -1368,6 +1368,62 @@ function getKanbanProjectOptionLabel(project: KanbanProject) {
   return project.name;
 }
 
+function matchesKanbanProjectSearch(project: KanbanProject, query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  return [project.name, project.path, project.id]
+    .some((value) => value.trim().toLocaleLowerCase().includes(normalizedQuery));
+}
+
+const KANBAN_PROJECT_OPTION_SELECTOR = "[data-kanban-project-option]";
+
+function focusAdjacentKanbanProjectOption(target: HTMLElement, direction: -1 | 1) {
+  const menu = target.closest(".kanban-project-filter-menu, .kanban-project-form-menu");
+  if (!menu) {
+    return false;
+  }
+  const options = Array.from(menu.querySelectorAll<HTMLElement>(KANBAN_PROJECT_OPTION_SELECTOR))
+    .filter((option) => !option.hasAttribute("disabled"));
+  if (options.length === 0) {
+    return false;
+  }
+  const currentIndex = options.findIndex((option) => option === document.activeElement);
+  const nextIndex = currentIndex < 0
+    ? direction > 0 ? 0 : options.length - 1
+    : (currentIndex + direction + options.length) % options.length;
+  options[nextIndex]?.focus();
+  options[nextIndex]?.scrollIntoView({ block: "nearest" });
+  return true;
+}
+
+function handleKanbanProjectOptionKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (focusAdjacentKanbanProjectOption(event.currentTarget, event.key === "ArrowDown" ? 1 : -1)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return;
+  }
+  if (event.key === "Enter" && event.currentTarget instanceof HTMLInputElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.click();
+    return;
+  }
+  if (event.key === "Escape") {
+    const searchInput = event.currentTarget
+      .closest(".kanban-project-filter-menu, .kanban-project-form-menu")
+      ?.querySelector<HTMLInputElement>(".kanban-project-search-field input");
+    if (searchInput) {
+      event.preventDefault();
+      event.stopPropagation();
+      searchInput.focus();
+    }
+  }
+}
+
 function getKanbanSelectedProjectTooltipItems(
   selectedProjectIds: string[],
   includeLocalIssues: boolean,
@@ -1611,6 +1667,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
   const [projectFormMenuOpen, setProjectFormMenuOpen] = useState(false);
+  const [projectFormQuery, setProjectFormQuery] = useState("");
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
@@ -1625,6 +1682,10 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const missingKanbanApiMessage = t("kanban.missingApi", { appName: t("app.name") });
   const cloudProjectOptions = useMemo(() => sortKanbanProjectOptions(cloudProjects), [cloudProjects]);
   const projectFormOptions = useMemo(() => flattenKanbanProjectTree(cloudProjects), [cloudProjects]);
+  const filteredProjectFormOptions = useMemo(
+    () => projectFormOptions.filter(({ project }) => matchesKanbanProjectSearch(project, projectFormQuery)),
+    [projectFormOptions, projectFormQuery]
+  );
   const kanbanProjectsById = useMemo(() => new Map(cloudProjects.map((project) => [project.id, project])), [cloudProjects]);
   const projectFilterIds = useMemo(
     () => getKanbanProjectFilterIds(cloudProjects, selectedProjectIds),
@@ -1984,6 +2045,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     setForm({ ...emptyForm, status, attachmentChatId: createKanbanDraftAttachmentChatId() });
     setFormCompact(true);
     setProjectFormMenuOpen(false);
+    setProjectFormQuery("");
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "create" });
@@ -2940,41 +3002,64 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                     disabled={modalReadOnly}
                     aria-haspopup="listbox"
                     aria-expanded={projectFormMenuOpen}
-                    onClick={() => setProjectFormMenuOpen((current) => !current)}
+                    onClick={() => {
+                      if (!projectFormMenuOpen) {
+                        setProjectFormQuery("");
+                      }
+                      setProjectFormMenuOpen((current) => !current);
+                    }}
                   >
                     <span>{modalProjectLabel}</span>
                     <span className="kanban-project-form-chevron" aria-hidden="true">⌄</span>
                   </button>
                   {projectFormMenuOpen ? (
                     <div className="kanban-project-form-menu" role="listbox" aria-label={t("kanban.detail.project")}>
-                      <button
-                        type="button"
-                        role="option"
-                        aria-selected={!form.projectId}
-                        className={!form.projectId ? "is-selected" : ""}
-                        onClick={() => {
-                          setForm((current) => ({ ...current, projectId: "", projectVersion: "", componentKeys: [] }));
-                          setProjectFormMenuOpen(false);
-                        }}
-                      >
-                        {t("kanban.projectFilter.local")}
-                      </button>
-                      {projectFormOptions.map(({ project, level }) => (
+                      <KanbanProjectSearchInput
+                        value={projectFormQuery}
+                        autoFocus
+                        t={t}
+                        onChange={setProjectFormQuery}
+                        onEscape={() => setProjectFormMenuOpen(false)}
+                      />
+                      {`${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`.toLocaleLowerCase().includes(projectFormQuery.trim().toLocaleLowerCase()) ? (
+                        <button
+                          type="button"
+                          role="option"
+                          data-kanban-project-option
+                          aria-selected={!form.projectId}
+                          className={!form.projectId ? "is-selected" : ""}
+                          onKeyDown={handleKanbanProjectOptionKeyDown}
+                          onClick={() => {
+                            setForm((current) => ({ ...current, projectId: "", projectVersion: "", componentKeys: [] }));
+                            setProjectFormMenuOpen(false);
+                            setProjectFormQuery("");
+                          }}
+                        >
+                          {t("kanban.projectFilter.local")}
+                        </button>
+                      ) : null}
+                      {filteredProjectFormOptions.map(({ project, level }) => (
                         <button
                           key={project.id}
                           type="button"
                           role="option"
+                          data-kanban-project-option
                           aria-selected={form.projectId === project.id}
                           className={form.projectId === project.id ? "is-selected" : ""}
                           style={{ paddingLeft: `${10 + (level * 16)}px` }}
+                          onKeyDown={handleKanbanProjectOptionKeyDown}
                           onClick={() => {
                             setForm((current) => ({ ...current, projectId: project.id, projectVersion: "", componentKeys: [] }));
                             setProjectFormMenuOpen(false);
+                            setProjectFormQuery("");
                           }}
                         >
                           {getKanbanProjectOptionLabel(project)}
                         </button>
                       ))}
+                      {filteredProjectFormOptions.length === 0 && !`${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`.toLocaleLowerCase().includes(projectFormQuery.trim().toLocaleLowerCase()) ? (
+                        <span className="kanban-project-filter-empty">{t("kanban.projectFilter.noResults")}</span>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -3748,7 +3833,16 @@ function KanbanProjectFilter({
   onClear: () => void;
 }) {
   const filterRef = useRef<HTMLDivElement | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const treeItems = useMemo(() => flattenKanbanProjectTree(projects), [projects]);
+  const filteredTreeItems = useMemo(
+    () => treeItems.filter(({ project }) => matchesKanbanProjectSearch(project, searchQuery)),
+    [searchQuery, treeItems]
+  );
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const localMatchesSearch = `${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`
+    .toLocaleLowerCase()
+    .includes(normalizedSearchQuery);
   const partiallySelectedProjectIds = useMemo(
     () => getKanbanPartiallySelectedProjectIds(projects, selectedProjectIds),
     [projects, selectedProjectIds]
@@ -3770,10 +3864,12 @@ function KanbanProjectFilter({
         return;
       }
       onOpenChange(false);
+      setSearchQuery("");
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onOpenChange(false);
+        setSearchQuery("");
       }
     };
     document.addEventListener("pointerdown", closeOnOutsidePointerDown);
@@ -3806,7 +3902,12 @@ function KanbanProjectFilter({
           aria-expanded={open}
           aria-label={`${t("kanban.projectFilter.ariaLabel")}: ${label}; ${countLabel}`}
           title={selectedProjectTooltipItems.length >= 2 ? undefined : `${label} · ${countLabel}`}
-          onClick={() => onOpenChange(!open)}
+          onClick={() => {
+            if (open) {
+              setSearchQuery("");
+            }
+            onOpenChange(!open);
+          }}
         >
           <KanbanIcon kind="project" />
           <span className="kanban-project-filter-label">{label}</span>
@@ -3815,16 +3916,28 @@ function KanbanProjectFilter({
       </Tooltip>
       {open ? (
         <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>
-          <button
+          <KanbanProjectSearchInput
+            value={searchQuery}
+            autoFocus
+            t={t}
+            onChange={setSearchQuery}
+            onEscape={() => {
+              setSearchQuery("");
+              onOpenChange(false);
+            }}
+          />
+          {!normalizedSearchQuery ? <button
             type="button"
+            data-kanban-project-option
             className={`kanban-project-filter-all ${selectedProjectIds.length === 0 && !includeLocalIssues ? "is-active" : ""}`}
+            onKeyDown={handleKanbanProjectOptionKeyDown}
             onClick={onClear}
             aria-label={`${t("kanban.projectFilter.all")}: ${t("kanban.column.summary.count", { count: totalCount })}`}
           >
             <span>{t("kanban.projectFilter.all")}</span>
             <span className="kanban-project-filter-item-count" aria-hidden="true">{totalCount}</span>
-          </button>
-          <label
+          </button> : null}
+          {localMatchesSearch ? <label
             className={`kanban-project-filter-row is-local ${includeLocalIssues ? "is-active" : ""}`}
             role="treeitem"
             aria-level={1}
@@ -3832,18 +3945,20 @@ function KanbanProjectFilter({
           >
             <input
               type="checkbox"
+              data-kanban-project-option
               checked={includeLocalIssues}
               onChange={onToggleLocal}
+              onKeyDown={handleKanbanProjectOptionKeyDown}
             />
             <span className="kanban-project-filter-project">
               <span className="kanban-project-filter-name">{t("kanban.projectFilter.local")}</span>
               <span className="kanban-project-filter-path">{t("kanban.projectFilter.localHint")}</span>
             </span>
             <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: localIssueCount })}>{localIssueCount}</span>
-          </label>
-          {treeItems.length > 0 ? (
+          </label> : null}
+          {filteredTreeItems.length > 0 ? (
             <div className="kanban-project-filter-tree">
-              {treeItems.map(({ project, level }) => {
+              {filteredTreeItems.map(({ project, level }) => {
                 const checked = selectedProjectIds.includes(project.id);
                 const indeterminate = partiallySelectedProjectIds.has(project.id);
                 return (
@@ -3870,10 +3985,68 @@ function KanbanProjectFilter({
                 );
               })}
             </div>
-          ) : (
-            <span className="kanban-project-filter-empty">{t("kanban.projectFilter.empty")}</span>
-          )}
+          ) : null}
+          {filteredTreeItems.length === 0 && !localMatchesSearch ? (
+            <span className="kanban-project-filter-empty">
+              {normalizedSearchQuery ? t("kanban.projectFilter.noResults") : t("kanban.projectFilter.empty")}
+            </span>
+          ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function KanbanProjectSearchInput({
+  value,
+  autoFocus = false,
+  t,
+  onChange,
+  onEscape
+}: {
+  value: string;
+  autoFocus?: boolean;
+  t: TranslateFunction;
+  onChange: (value: string) => void;
+  onEscape: () => void;
+}) {
+  return (
+    <div className="kanban-project-search-field">
+      <KanbanIcon kind="search" />
+      <input
+        type="search"
+        value={value}
+        autoFocus={autoFocus}
+        placeholder={t("kanban.projectFilter.searchPlaceholder")}
+        aria-label={t("kanban.projectFilter.searchAriaLabel")}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            if (focusAdjacentKanbanProjectOption(event.currentTarget, event.key === "ArrowDown" ? 1 : -1)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            event.stopPropagation();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onEscape();
+          }
+        }}
+      />
+      {value ? (
+        <button
+          type="button"
+          className="kanban-project-search-clear"
+          aria-label={t("kanban.projectFilter.clearSearch")}
+          title={t("kanban.projectFilter.clearSearch")}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onChange("")}
+        >
+          <span aria-hidden="true">×</span>
+        </button>
       ) : null}
     </div>
   );
@@ -3898,9 +4071,11 @@ function KanbanProjectCheckbox({
     <input
       ref={inputRef}
       type="checkbox"
+      data-kanban-project-option
       checked={checked}
       aria-checked={indeterminate ? "mixed" : checked}
       onChange={onChange}
+      onKeyDown={handleKanbanProjectOptionKeyDown}
     />
   );
 }
