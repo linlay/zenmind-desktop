@@ -31,8 +31,7 @@ import { parseKanbanPriority } from "../shared/contracts";
 import { isAgentPlatformEpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { getDesktopDeviceId } from "./device-identity";
-import { getDesktopSsoStatus } from "./oidc-sso";
-import { readDesktopSsoSiteAccessToken, readDesktopSsoSiteTokenUser } from "./sso-site-token";
+import { readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser } from "./oidc-sso";
 import { resolveRuntimeRoot } from "./env-bootstrap";
 import { buildKanbanAutomationPayload, resolveKanbanRunFinishedPush } from "./kanban-sync";
 import {
@@ -266,7 +265,6 @@ function readInstalledAgentOptions(app: App): DesktopPetAgentOption[] {
 function normalizeKanbanCloudConfig(input: KanbanDesktopConfigFile): KanbanCloudConfig {
   return {
     serverUrl: readText(input.serverUrl),
-    token: readText(input.token),
     remoteControlEnabled: readBoolean(input.remoteControlEnabled),
     deviceAlias: readText(input.deviceAlias)
   };
@@ -287,6 +285,16 @@ function hasLegacyKanbanSelectedProjectId(input: unknown) {
       ? owner.kanban
       : owner;
   return isRecord(cloudInput) && "selectedProjectId" in cloudInput;
+}
+
+function hasLegacyKanbanToken(input: unknown) {
+  const owner = readKanbanOwnerConfig(input);
+  const cloudInput = isRecord(owner.cloud)
+    ? owner.cloud
+    : isRecord(owner.kanban)
+      ? owner.kanban
+      : owner;
+  return isRecord(cloudInput) && "token" in cloudInput;
 }
 
 function normalizeKanbanSettings(
@@ -332,7 +340,7 @@ export function readKanbanSettings(app: App, platform: NodeJS.Platform = process
     const raw = readJsonConfigFile(configPath);
     const parsed = readKanbanOwnerConfig(raw);
     const settings = normalizeKanbanSettings(parsed);
-    if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled || hasLegacyKanbanSelectedProjectId(raw)) {
+    if (!isRecord(raw) || !isRecord(raw.cloud) || raw.enabled !== settings.enabled || hasLegacyKanbanSelectedProjectId(raw) || hasLegacyKanbanToken(raw)) {
       writeKanbanSettings(app, settings, platform);
     }
     return settings;
@@ -365,9 +373,8 @@ function resolveKanbanWsConnection(
   if (!canUseDesktopSsoCredentials) {
     return { config: null, fallbackState: "auth_required" };
   }
-  const token = readText(process.env.DESKTOP_KANBAN_TOKEN) ||
-    readDesktopSsoSiteAccessToken(app);
-  if (!token) {
+  const token = readDesktopSsoAccessToken(app);
+  if (!token || !readDesktopSsoAccessTokenUser(app)) {
     return { config: null, fallbackState: "auth_required" };
   }
   return {
@@ -609,7 +616,6 @@ export class KanbanRuntime {
         "agent.listDesktop",
         "automation.sync"
       ],
-      getCurrentUser: () => this.currentUser(),
       getDeviceId: () => getDesktopDeviceId(this.options.app),
       getDeviceInfo: () => getKanbanDeviceInfo(this.options.app),
       getSyncCursor: () => readDesktopKanbanSyncCursor(this.options.app, this.currentUser()),
@@ -1426,24 +1432,14 @@ export class KanbanRuntime {
   }
 
   private currentUser(): KanbanCurrentUser {
-    const status = getDesktopSsoStatus(this.options.app);
-    const user = status.authenticated ? status.user : null;
+    const user = this.options.canUseDesktopSsoCredentials?.() === false
+      ? null
+      : readDesktopSsoAccessTokenUser(this.options.app);
     if (user?.sub?.trim()) {
       return {
         id: user.sub.trim(),
         name: user.name?.trim() || user.email?.trim() || user.sub.trim(),
         email: user.email?.trim() || "",
-        source: "sso"
-      };
-    }
-    const siteTokenUser = this.options.canUseDesktopSsoCredentials?.() === false
-      ? null
-      : readDesktopSsoSiteTokenUser(this.options.app);
-    if (siteTokenUser?.sub) {
-      return {
-        id: siteTokenUser.sub,
-        name: siteTokenUser.name || siteTokenUser.email || siteTokenUser.sub,
-        email: siteTokenUser.email,
         source: "sso"
       };
     }

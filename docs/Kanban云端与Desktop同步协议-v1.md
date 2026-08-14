@@ -60,13 +60,13 @@ Desktop 连接：
 wss://<host>/ws?role=desktop&v=1&contractVersion=1.0&token=<jwt>
 ```
 
-`sync.hello` 必须携带当前 `deviceId`、JWT 对应的 `ownerUserId`、本机 Agent 列表、项目映射、同步 cursor 和 `cacheSchemaVersion=1`。Server 返回 Contract `1.0`、能力列表和是否需要全量快照。
+`sync.hello` 必须携带当前 `deviceId`、本机 Agent 列表、项目映射、同步 cursor 和 `cacheSchemaVersion=1`，不得携带用户身份。Server 返回 Contract `1.0`、能力列表和是否需要全量快照。
 
 Snapshot 包含 `issueStageWorkers[]`、`issueChats[]`、`issueRuns[]` 与 Review attempts。Issue 顶层不提供全局 worker、Chat、Run 或 dispatch 标量；附件字段 `attachmentChatId` 独立保留。
 
 ## 7. 身份与权限
 
-- Desktop session actor 始终来自已验证 JWT subject；`ownerUserId` 不能覆盖身份。
+- Desktop 只提交 JWT；Server 使用配置的公钥验证签名、issuer、audience 与有效期后生成 session actor。身份 claim 默认固定为 `sub`，仅当 Server 显式配置时使用 `user_id`，客户端字段不能覆盖身份。
 - `deviceId` 来自认证 Desktop session，Website 不能填写或伪造本机 Chat ID。
 - Agent 必须存在于目标 Desktop 上，且当前用户具有 Project 访问权限。
 - 只有本机 Chat 可以打开；Website 仅展示 Chat ID、Agent、Desktop、Review 和 Run 状态。

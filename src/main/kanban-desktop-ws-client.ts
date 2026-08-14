@@ -4,7 +4,6 @@ import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
   DesktopPetAgentOption,
-  KanbanCurrentUser,
   KanbanIssueResult,
   KanbanListResult,
   KanbanProject
@@ -123,7 +122,6 @@ export type KanbanDesktopWsLogEntry = {
 
 export type KanbanDesktopWsClientOptions = {
   capabilities: string[];
-  getCurrentUser: () => KanbanCurrentUser;
   getDeviceId: () => string;
   getDeviceInfo?: () => KanbanDesktopDeviceInfo;
   getSyncCursor?: () => KanbanDesktopSyncCursor;
@@ -647,7 +645,18 @@ export class KanbanDesktopWsClient {
     timeoutMs = REQUEST_TIMEOUT_MS,
     projectId?: string
   ): Promise<TPayload> {
-    if (!this.ws || this.state !== "open") {
+    return this.requestInternal(messageType, payload, requestId, timeoutMs, projectId, false);
+  }
+
+  private async requestInternal<TPayload = unknown>(
+    messageType: string,
+    payload: unknown,
+    requestId: string,
+    timeoutMs: number,
+    projectId: string | undefined,
+    allowConnecting: boolean
+  ): Promise<TPayload> {
+    if (!this.ws || (!allowConnecting && this.state !== "open") || (allowConnecting && this.state !== "connecting" && this.state !== "open")) {
       throw new Error(t("kanban.cloudSync.notConnected"));
     }
     assertCloudPayloadPrivacy({ frame: "request", payload });
@@ -757,7 +766,6 @@ export class KanbanDesktopWsClient {
       return;
     }
     this.options.onDebug?.(t("kanban.ws.opened"));
-    this.setState("open");
     this.snapshotReady = false;
     this.issueEventsReady = false;
     try {
@@ -772,13 +780,17 @@ export class KanbanDesktopWsClient {
           return [];
         });
       }
-      const currentUser = this.options.getCurrentUser();
       const cursor = normalizeSyncCursor(this.options.getSyncCursor?.());
-      const hello = await this.request<{ cursor?: unknown; links?: unknown[]; contractVersion?: string; capabilities?: unknown[] }>("sync.hello", {
+      const hello = await this.requestInternal<{
+        cursor?: unknown;
+        links?: unknown[];
+        accessibleProjects?: unknown[];
+        contractVersion?: string;
+        capabilities?: unknown[];
+      }>("sync.hello", {
         contractVersion: CONTRACT_VERSION,
         capabilities: this.options.capabilities,
         deviceId: this.options.getDeviceId(),
-        ownerUserId: currentUser.id,
         ...this.options.getDeviceInfo?.(),
         selectedProjectId: this.config?.selectedProjectId ?? "default",
         lastAckedDeliverySeq: cursor.lastAckedDeliverySeq,
@@ -786,7 +798,7 @@ export class KanbanDesktopWsClient {
         cacheSchemaVersion: cursor.cacheSchemaVersion ?? 1,
         localProjects,
         agents
-      });
+      }, createRequestId(), REQUEST_TIMEOUT_MS, undefined, true);
       if (readText(hello.contractVersion) !== CONTRACT_VERSION) {
         throw new Error(`kanban contract ${CONTRACT_VERSION} is required`);
       }
@@ -798,24 +810,33 @@ export class KanbanDesktopWsClient {
         Array.isArray(hello.capabilities) ? hello.capabilities.map(readText).filter(Boolean) : []
       );
       this.desktopLinks = Array.isArray(hello.links) ? hello.links : [];
-      const snapshot = await this.request<KanbanCloudSnapshot>("snapshot.get", {
+      const snapshot = await this.requestInternal<KanbanCloudSnapshot>("snapshot.get", {
         scope: "project_set",
         projectIds: localProjects.map((project) => project.projectId),
         deviceId: this.options.getDeviceId()
-      });
+      }, createRequestId(), REQUEST_TIMEOUT_MS, undefined, true);
+      if (
+        Array.isArray(hello.accessibleProjects) &&
+        hello.accessibleProjects.length > 0 &&
+        (!Array.isArray(snapshot.projects) || snapshot.projects.length === 0)
+      ) {
+        throw new Error("kanban project_set snapshot unexpectedly contains no accessible projects");
+      }
       snapshot.projectBindings = this.desktopLinks;
       this.projectScopeIds = snapshotProjectScopeIds(snapshot);
       this.options.onSnapshot(snapshot);
       this.snapshotReady = true;
-      await this.pullIssueEvents(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAppliedRevision);
+      await this.pullIssueEvents(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAppliedRevision, true);
       this.issueEventsReady = true;
       await this.flushQueuedIssueEvents();
-      await this.flushQueuedDeliveries();
-      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
+      await this.flushQueuedDeliveries(true);
+      await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq, true);
+      this.setState("open");
       this.options.onConnected?.();
       this.scheduleProjectResync();
     } catch (error) {
       this.options.onDebug?.(errorMessage(error));
+      this.handleClosed("error", errorMessage(error));
     }
   }
 
@@ -903,19 +924,19 @@ export class KanbanDesktopWsClient {
       return;
     }
     try {
-      await this.applyAndAckDeliveries(deliveries);
+      await this.applyAndAckDeliveries(deliveries, this.state === "connecting");
     } catch (error) {
       this.options.onDebug?.(errorMessage(error));
     }
   }
 
-  private async flushQueuedDeliveries() {
+  private async flushQueuedDeliveries(allowConnecting = false) {
     if (this.queuedDeliveries.length === 0) {
       return;
     }
     const deliveries = this.queuedDeliveries;
     this.queuedDeliveries = [];
-    await this.applyAndAckDeliveries(deliveries);
+    await this.applyAndAckDeliveries(deliveries, allowConnecting);
   }
 
   private async flushQueuedIssueEvents() {
@@ -927,17 +948,17 @@ export class KanbanDesktopWsClient {
     await this.applyIssueEvents(events);
   }
 
-  private async pullIssueEvents(afterSeq: number) {
+  private async pullIssueEvents(afterSeq: number, allowConnecting = false) {
     if (this.projectScopeIds.length === 0) {
       return;
     }
     let nextAfter = Math.max(0, Math.floor(afterSeq));
     for (;;) {
-      const result = await this.request<{ events?: unknown[]; hasMore?: boolean; nextAfterSeq?: number; lastSeq?: number }>("event.pull", {
+      const result = await this.requestInternal<{ events?: unknown[]; hasMore?: boolean; nextAfterSeq?: number; lastSeq?: number }>("event.pull", {
         projectIds: this.projectScopeIds,
         afterSeq: nextAfter,
         limit: 100
-      });
+      }, createRequestId(), REQUEST_TIMEOUT_MS, undefined, allowConnecting);
       const events = normalizeIssueEvents(result);
       if (events.length > 0) {
         const applied = await this.applyIssueEvents(events);
@@ -1004,19 +1025,19 @@ export class KanbanDesktopWsClient {
     });
   }
 
-  private async pullDeliveries(afterDeliverySeq: number) {
+  private async pullDeliveries(afterDeliverySeq: number, allowConnecting = false) {
     let nextAfter = Math.max(0, Math.floor(afterDeliverySeq));
     for (;;) {
-      const result = await this.request<{ items?: unknown[]; hasMore?: boolean; nextDeliverySeq?: number }>("sync.pull", {
+      const result = await this.requestInternal<{ items?: unknown[]; hasMore?: boolean; nextDeliverySeq?: number }>("sync.pull", {
         deviceId: this.options.getDeviceId(),
         afterDeliverySeq: nextAfter,
         limit: 100
-      });
+      }, createRequestId(), REQUEST_TIMEOUT_MS, undefined, allowConnecting);
       const deliveries = normalizeDeliveries(result);
       if (deliveries.length === 0) {
         return;
       }
-      await this.applyAndAckDeliveries(deliveries);
+      await this.applyAndAckDeliveries(deliveries, allowConnecting);
       nextAfter = deliveries[deliveries.length - 1].deliverySeq;
       if (!result.hasMore) {
         return;
@@ -1024,7 +1045,7 @@ export class KanbanDesktopWsClient {
     }
   }
 
-  private async applyAndAckDeliveries(deliveries: KanbanDesktopDelivery[]) {
+  private async applyAndAckDeliveries(deliveries: KanbanDesktopDelivery[], allowConnecting = false) {
     for (const delivery of deliveries.sort((a, b) => a.deliverySeq - b.deliverySeq)) {
       const cursor = normalizeSyncCursor(this.options.getSyncCursor?.());
       if (delivery.deliverySeq <= cursor.lastAckedDeliverySeq) {
@@ -1051,11 +1072,11 @@ export class KanbanDesktopWsClient {
         result.lastAppliedRevision ?? 0,
         sourceRevision
       );
-      const ack = await this.request<{ cursor?: unknown }>("sync.ack", {
+      const ack = await this.requestInternal<{ cursor?: unknown }>("sync.ack", {
         deviceId: this.options.getDeviceId(),
         ackedDeliverySeq: delivery.deliverySeq,
         lastAppliedRevision
-      });
+      }, createRequestId(), REQUEST_TIMEOUT_MS, undefined, allowConnecting);
       if (isRecord(ack) && ack.cursor) {
         this.options.onSyncCursor?.(normalizeSyncCursor(ack.cursor));
       } else {

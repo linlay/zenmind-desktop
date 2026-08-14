@@ -692,7 +692,6 @@ export interface KanbanListResult {
 
 export interface KanbanCloudConfig {
   serverUrl: string;
-  token: string;
   remoteControlEnabled: boolean;
   deviceAlias?: string;
 }

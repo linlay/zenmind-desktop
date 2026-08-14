@@ -79,7 +79,15 @@ function writeSsoSiteToken(app, payload = {}, options = {}) {
   return token;
 }
 
-test("Kanban websocket config requires remote control and sso site token", (t) => {
+function writeCanonicalSsoAccessToken(app, payload = {}) {
+  const token = createSiteJwt(payload);
+  const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-access-token.txt");
+  fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
+  fs.writeFileSync(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
+  return token;
+}
+
+test("Kanban websocket config uses only the canonical desktop SSO access token", (t) => {
   const app = createTempApp(t);
 
   writeKanbanConfig(app, {
@@ -93,22 +101,24 @@ test("Kanban websocket config requires remote control and sso site token", (t) =
   });
   assert.equal(readKanbanWsConfig(app), null);
 
-  const token = writeSsoSiteToken(app);
+  const ignoredSiteToken = writeSsoSiteToken(app);
+  assert.ok(ignoredSiteToken);
+  process.env.DESKTOP_KANBAN_TOKEN = "env-token";
+  t.after(() => {
+    delete process.env.DESKTOP_KANBAN_TOKEN;
+  });
+  assert.equal(readKanbanWsConfig(app), null);
+
+  writeCanonicalSsoAccessToken(app, { exp: Math.floor(Date.now() / 1000) - 60 });
+  assert.equal(readKanbanWsConfig(app), null);
+
+  const token = writeCanonicalSsoAccessToken(app);
   assert.deepEqual(readKanbanWsConfig(app), {
     serverUrl: "http://127.0.0.1:8080",
     token,
     selectedProjectId: "default"
   });
 
-  process.env.DESKTOP_KANBAN_TOKEN = "env-token";
-  t.after(() => {
-    delete process.env.DESKTOP_KANBAN_TOKEN;
-  });
-  assert.deepEqual(readKanbanWsConfig(app), {
-    serverUrl: "http://127.0.0.1:8080",
-    token: "env-token",
-    selectedProjectId: "default"
-  });
 });
 
 test("desktop sso site token helper reads claims and rejects bad tokens", (t) => {
@@ -150,6 +160,7 @@ test("Kanban server URL preserves explicit disabled setting", (t) => {
   const migrated = JSON.parse(fs.readFileSync(configPath, "utf8"));
   assert.equal(migrated.enabled, false);
   assert.equal("selectedProjectId" in migrated.cloud, false);
+  assert.equal("token" in migrated.cloud, false);
 });
 
 test("Kanban settings read and save enabled plus cloud config", (t) => {
@@ -170,7 +181,6 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
     assert.equal(initial.settings.enabled, false);
     assert.deepEqual(initial.settings.cloud, {
       serverUrl: "",
-      token: "",
       remoteControlEnabled: false,
       deviceAlias: ""
     });
@@ -185,7 +195,7 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
     });
     assert.equal(serverOnly.settings.enabled, true);
     assert.equal(serverOnly.settings.cloud.serverUrl, "http://127.0.0.1:3000");
-    assert.equal(serverOnly.settings.cloud.token, "");
+    assert.equal("token" in serverOnly.settings.cloud, false);
     assert.equal(serverOnly.connectionState, "auth_required");
     assert.equal(readKanbanSettings(app).enabled, true);
 
@@ -193,14 +203,13 @@ test("Kanban settings read and save enabled plus cloud config", (t) => {
       enabled: true,
       cloud: {
         serverUrl: "http://127.0.0.1:3000",
-        token: "secret",
         remoteControlEnabled: true,
         deviceAlias: "桌面 A"
       }
     });
     assert.equal(saved.settings.enabled, true);
     assert.equal(saved.settings.cloud.serverUrl, "http://127.0.0.1:3000");
-    assert.equal(saved.settings.cloud.token, "secret");
+    assert.equal("token" in saved.settings.cloud, false);
     assert.equal(saved.connectionState, "auth_required");
     assert.equal(readKanbanSettings(app).enabled, true);
   } finally {
@@ -218,7 +227,7 @@ test("Kanban runtime reports sign-in required when SSO credentials are unavailab
       remoteControlEnabled: true
     }
   });
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
 
   const runtime = new KanbanRuntime({
     app,
@@ -366,7 +375,7 @@ test("Kanban navigation push updates Local Issues only for the exact active runI
 
 test("Kanban navigation push queues Cloud Issue terminals without changing the cached workflow state", async (t) => {
   const app = createTempApp(t);
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   const currentUser = { id: "user-1", name: "Lin Lay", email: "lin@example.test", source: "sso" };
   const runtime = new KanbanRuntime({
     app,
@@ -485,10 +494,9 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v1",
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => {}
   });
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "手动运行测试"
   });
@@ -532,6 +540,16 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v1",
     lastSeq: 12,
     issues: [cloudIssue]
   });
+  const eventPull = await respondNextRequest(socket, "event.pull", {
+    ok: true,
+    projectId: "default",
+    events: [],
+    hasMore: false,
+    lastSeq: 12,
+    nextAfterSeq: 12
+  });
+  await respondNextRequest(socket, "sync.pull", { ok: true, items: [], hasMore: false }, socket.sent.indexOf(eventPull) + 1);
+  await waitFor(() => runtime.listIssues().connectionState === "open", "initial sync ready", 3000);
   await waitFor(() => runtime.listIssues().issues.some((issue) => issue.remoteIssueId === cloudIssue.id), "cloud issue cache", 3000);
   assert.deepEqual(runtime.listIssues().cloudCapabilities, ["issue.claim", "run.event.append"]);
 
@@ -617,10 +635,9 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -656,6 +673,7 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
     await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "initial sync.pull");
     const initialPull = socket.sent.find((frame) => frame.type === "sync.pull");
     socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: initialPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+    await waitFor(() => runtime.listIssues().connectionState === "open", "initial sync ready", 3000);
 
     const sentBeforeResync = socket.sent.length;
     const resyncPromise = runtime.resyncCloudBoard();
@@ -754,10 +772,9 @@ test("Kanban runtime applies paged issue event pulls and tombstones deleted issu
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -904,10 +921,9 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -919,7 +935,7 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
   const hello = socket.sent[0];
   assert.equal(hello.payload.deviceName, "测试桌面");
   assert.equal(hello.payload.deviceAlias, "测试桌面");
-  assert.equal(hello.payload.ownerUserId, "user-1");
+  assert.equal("ownerUserId" in hello.payload, false);
   assert.ok(hello.payload.hostname || hello.payload.username);
   socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
@@ -1044,10 +1060,9 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -1219,10 +1234,9 @@ test("Kanban runtime recovers a terminal starting receipt without launching a du
     callAgentPlatform: async () => ({ ok: true }),
     onChanged: () => {}
   });
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "恢复测试"
   });
@@ -1302,10 +1316,9 @@ test("Kanban runtime stores cloud dispatch issue without auto-starting", async (
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "测试桌面"
   });
@@ -1430,10 +1443,9 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "旧设备名"
   });
@@ -1451,7 +1463,6 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
 
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true,
     deviceAlias: "牛家林"
   });
@@ -1465,7 +1476,7 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
   const secondHello = secondSocket.sent[0];
   assert.equal(secondHello.payload.deviceName, "牛家林");
   assert.equal(secondHello.payload.deviceAlias, "牛家林");
-  assert.equal(secondHello.payload.ownerUserId, "user-1");
+  assert.equal("ownerUserId" in secondHello.payload, false);
 
   writeDesktopConfig(app, "profile.json", {
     schemaVersion: 1,
@@ -1485,7 +1496,7 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
   const thirdHello = thirdSocket.sent[0];
   assert.equal(thirdHello.payload.deviceName, "全局桌面");
   assert.equal(thirdHello.payload.deviceAlias, "全局桌面");
-  assert.equal(thirdHello.payload.ownerUserId, "user-1");
+  assert.equal("ownerUserId" in thirdHello.payload, false);
   runtime.stop();
 });
 
@@ -1537,10 +1548,9 @@ test("Kanban runtime ACKs slow remote startRun before bridge resolves", async (t
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true
   });
 
@@ -1669,10 +1679,9 @@ test("Kanban runtime falls back to local agents for remote listAgents", async (t
     onChanged: () => {}
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true
   });
 
@@ -1760,10 +1769,9 @@ test("Kanban runtime lists installed agents when platform listAgents times out",
     onDebug: (message) => debugMessages.push(message)
   });
 
-  writeSsoSiteToken(app);
+  writeCanonicalSsoAccessToken(app);
   runtime.saveCloudConfig({
     serverUrl: "http://127.0.0.1:3000",
-    token: "secret",
     remoteControlEnabled: true
   });
 
