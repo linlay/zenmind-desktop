@@ -3414,7 +3414,7 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.doesNotMatch(kanbanPage, /issue-card-actions|issue-card-action/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card-actions|\.issue-card-action(?:\W)/);
   assert.match(kanbanPage, /role="button"[\s\S]{0,120}tabIndex=\{0\}[\s\S]{0,160}onClick=\{onEdit\}/);
-  assert.match(kanbanPage, /onOpenChat=\{\(\) => openAssistantIssueChat\(detailIssue\)\}/);
+  assert.match(kanbanPage, /onOpenChat=\{\(chatId, agentKey\) => openAssistantIssueChat\(detailIssue, chatId, agentKey\)\}/);
   assert.match(kanbanPage, /className="issue-card-context-menu"/);
   assert.match(kanbanPage, /canEditKanbanIssueBody\(issue\)/);
 
@@ -3744,9 +3744,9 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanPage, /agent\.latestChatId === chatId && agent\.hasPendingAwaiting/);
   assert.doesNotMatch(kanbanPage, /kanban-human-loop-hint/);
   assert.match(kanbanPage, /is-awaiting-confirmation/);
-  assert.match(kanbanPage, /const openAssistantIssueChat = useCallback\(\(issue: KanbanIssue\) => \{/);
+  assert.match(kanbanPage, /const openAssistantIssueChat = useCallback\(\(issue: KanbanIssue, requestedChatId\?: string, requestedAgentKey\?: string \| null\) => \{/);
   assert.match(kanbanPage, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
-  assert.match(kanbanPage, /kanban-agent-picker/);
+  assert.doesNotMatch(kanbanPage, /kanban-agent-picker/);
   assert.doesNotMatch(kanbanPage, /kanban-chat-modal-layer|kanban-chat-modal/);
   assert.doesNotMatch(kanbanPage, /void openAssistantIssueChat\(updateResult\.issue/);
   assert.doesNotMatch(kanbanPage, /kanban-chat-action/);

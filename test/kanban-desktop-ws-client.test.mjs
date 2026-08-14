@@ -24,7 +24,7 @@ function waitFor(check, message = "condition") {
 function respondOk(socket, request, payload) {
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "response",
       id: request.id,
       type: request.type,
@@ -32,6 +32,10 @@ function respondOk(socket, request, payload) {
       payload
     })
   });
+}
+
+function helloPayload(payload = {}) {
+  return { ok: true, contractVersion: "1.0", capabilities: [], ...payload };
 }
 
 async function respondNextRequest(socket, type, payload, fromIndex = 0) {
@@ -118,15 +122,15 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   const socket = sockets[0];
   assert.match(socket.url, /^ws:\/\/127\.0\.0\.1:3000\/ws\?/);
   assert.match(socket.url, /role=desktop/);
-  assert.match(socket.url, /[?&]v=3(?:&|$)/);
-  assert.match(socket.url, /[?&]contractVersion=3\.2(?:&|$)/);
+  assert.match(socket.url, /[?&]v=1(?:&|$)/);
+  assert.match(socket.url, /[?&]contractVersion=1\.0(?:&|$)/);
   assert.match(socket.url, /token=secret/);
 
   socket.readyState = 1;
   socket.onopen();
     await waitFor(() => socket.sent.length === 1, "sync.hello");
     const hello = socket.sent[0];
-    assert.equal(hello.v, 3);
+    assert.equal(hello.v, 1);
     assert.equal(hello.frame, "request");
     assert.equal(hello.type, "sync.hello");
     assert.equal(hello.payload.deviceId, "device-1");
@@ -137,19 +141,19 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   assert.equal(hello.payload.ownerUserId, "user-1");
   assert.equal(hello.payload.lastAckedDeliverySeq, 0);
   assert.equal(hello.payload.lastAppliedRevision, 0);
-  assert.equal(hello.payload.cacheSchemaVersion, 2);
-  assert.equal(hello.payload.contractVersion, "3.2");
+  assert.equal(hello.payload.cacheSchemaVersion, 1);
+  assert.equal(hello.payload.contractVersion, "1.0");
   assert.deepEqual(hello.payload.agents, [{ agentKey: "cutej", displayName: "小君", role: "桌面智能体" }]);
 
-    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "3.2", capabilities: ["issue.claim", "run.event.append.desktop_manual"] } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: ["issue.claim", "issue.run.prepare", "run.event.append"] } }) });
     await waitFor(() => socket.sent.length === 2, "snapshot request");
     const snapshotRequest = socket.sent[1];
-    assert.equal(snapshotRequest.v, 3);
+    assert.equal(snapshotRequest.v, 1);
     assert.equal(snapshotRequest.frame, "request");
     assert.equal(snapshotRequest.type, "snapshot.get");
     socket.onmessage({
       data: JSON.stringify({
-        v: 3,
+        v: 1,
         frame: "response",
         id: snapshotRequest.id,
         type: "snapshot.get",
@@ -168,7 +172,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
 
     socket.onmessage({
       data: JSON.stringify({
-        v: 3,
+        v: 1,
         frame: "request",
         id: "dispatch-1",
         type: "desktop.issue.dispatch",
@@ -178,7 +182,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
   });
     await waitFor(() => socket.sent.some((frame) => frame.id === "dispatch-1"), "dispatch ACK");
     const ack = socket.sent.find((frame) => frame.id === "dispatch-1");
-    assert.equal(ack.v, 3);
+    assert.equal(ack.v, 1);
     assert.equal(ack.frame, "response");
     assert.equal(ack.type, "desktop.issue.dispatch");
     assert.equal(ack.ok, true);
@@ -188,7 +192,7 @@ test("kanban desktop ws client sends hello, applies snapshot, and ACKs dispatch"
     revision: 13
   }]);
   assert.deepEqual(states.slice(0, 2), ["connecting", "open"]);
-  assert.deepEqual(negotiatedContracts, [{ contractVersion: "3.2", capabilities: ["issue.claim", "run.event.append.desktop_manual"] }]);
+  assert.deepEqual(negotiatedContracts, [{ contractVersion: "1.0", capabilities: ["issue.claim", "issue.run.prepare", "run.event.append"] }]);
   assert.equal(wsLogs.some((entry) => entry.direction === "send" && entry.envelope.type === "sync.hello"), true);
   assert.equal(wsLogs.some((entry) => entry.direction === "recv" && entry.envelope.type === "sync.hello"), true);
   assert.equal(JSON.stringify(wsLogs).includes("secret"), false);
@@ -253,14 +257,14 @@ test("kanban desktop ws client decodes Blob websocket messages", async (t) => {
   const hello = socket.sent[0];
 
   socket.onmessage({
-    data: new Blob([JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } })])
+    data: new Blob([JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: helloPayload() })])
   });
 
   await waitFor(() => socket.sent.length === 2, "snapshot request after blob hello");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: new Blob([JSON.stringify({
-      v: 3, frame: "response",
+      v: 1, frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
@@ -344,12 +348,12 @@ test("kanban desktop ws client applies direct issue pushes without delivery ACK"
   await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
   assert.equal(hello.payload.lastAppliedRevision, 12);
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: helloPayload({ cursor }) }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
@@ -361,7 +365,7 @@ test("kanban desktop ws client applies direct issue pushes without delivery ACK"
 
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "push",
       type: "issue.updated",
       projectId: "project-1",
@@ -452,13 +456,13 @@ test("kanban desktop ws client queues issue pushes until snapshot and skips stal
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: helloPayload({ cursor }) }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
 
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "push",
       type: "issue.updated",
       projectId: "project-1",
@@ -477,7 +481,7 @@ test("kanban desktop ws client queues issue pushes until snapshot and skips stal
 
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
@@ -488,7 +492,7 @@ test("kanban desktop ws client queues issue pushes until snapshot and skips stal
   await waitFor(() => socket.sent.some((frame) => frame.type === "event.pull"), "event.pull request");
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "push",
       type: "issue.created",
       projectId: "project-1",
@@ -511,7 +515,7 @@ test("kanban desktop ws client queues issue pushes until snapshot and skips stal
 
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "push",
       type: "issue.updated",
       projectId: "project-1",
@@ -592,12 +596,12 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: helloPayload({ cursor }) }) });
   await waitFor(() => socket.sent.length === 2, "initial snapshot request");
   const initialSnapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "response",
       id: initialSnapshotRequest.id,
       type: "snapshot.get",
@@ -608,7 +612,7 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
   await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", lastSeq: 12, hasMore: false, nextAfterSeq: 12, events: [] });
   await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "initial sync.pull");
   const initialPullRequest = socket.sent.find((frame) => frame.type === "sync.pull");
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: initialPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: initialPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
 
   const sentBeforeResync = socket.sent.length;
   const resyncPromise = client.resyncFromCloud();
@@ -621,7 +625,7 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
   assert.equal(resyncSnapshotRequest.payload.deviceId, "device-1");
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "response",
       id: resyncSnapshotRequest.id,
       type: "snapshot.get",
@@ -634,19 +638,154 @@ test("kanban desktop ws client resyncs snapshot and deliveries without reconnect
     "manual resync event pull"
   );
   const resyncEventPullRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "event.pull");
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: resyncEventPullRequest.id, type: "event.pull", ok: true, payload: { ok: true, projectId: "project-1", events: [], hasMore: false, lastSeq: 13, nextAfterSeq: 13 } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: resyncEventPullRequest.id, type: "event.pull", ok: true, payload: { ok: true, projectId: "project-1", events: [], hasMore: false, lastSeq: 13, nextAfterSeq: 13 } }) });
   await waitFor(
     () => socket.sent.slice(sentBeforeResync).some((frame) => frame.type === "sync.pull"),
     "manual resync pull"
   );
   const resyncPullRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "sync.pull");
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: resyncPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: resyncPullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
   await resyncPromise;
 
   assert.equal(sockets.length, 1);
   assert.equal(snapshots.length, 2);
   assert.equal(snapshots[1].revision, 13);
   assert.equal(snapshots[1].issues[0].id, "ISS-13");
+
+  client.stop();
+});
+
+test("kanban desktop ws client keeps metadata pushes and converges with a project-set snapshot", async (t) => {
+  const originalWebSocket = globalThis.WebSocket;
+  const sockets = [];
+  class FakeWebSocket {
+    constructor() {
+      this.sent = [];
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.readyState = 0;
+      sockets.push(this);
+    }
+
+    send(data) {
+      this.sent.push(JSON.parse(data));
+    }
+
+    close() {
+      this.readyState = 3;
+    }
+  }
+  globalThis.WebSocket = FakeWebSocket;
+  t.after(() => {
+    globalThis.WebSocket = originalWebSocket;
+  });
+
+  const snapshots = [];
+  const client = new KanbanDesktopWsClient({
+    capabilities: [],
+    getCurrentUser: () => ({ id: "user-1", name: "User", email: "user@example.test", source: "sso" }),
+    getDeviceId: () => "device-1",
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+    onDispatchIssue: () => ({ ok: true, message: "ok", issues: [] }),
+    onListAgents: async () => [],
+    onStartRun: async () => ({ ok: true, runId: "run-1", chatId: "chat-1", message: "ok" }),
+    onAutomationSync: async () => ({ ok: true })
+  });
+
+  client.start({ serverUrl: "http://127.0.0.1:3000", selectedProjectId: "default" });
+  const socket = sockets[0];
+  socket.readyState = 1;
+  socket.onopen();
+
+  await waitFor(() => socket.sent.some((frame) => frame.type === "sync.hello"), "sync.hello");
+  const hello = socket.sent.find((frame) => frame.type === "sync.hello");
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 1,
+      frame: "response",
+      id: hello.id,
+      type: "sync.hello",
+      ok: true,
+      payload: { contractVersion: "1.0", cursor: {} }
+    })
+  });
+
+  await waitFor(() => socket.sent.some((frame) => frame.type === "snapshot.get"), "initial snapshot.get");
+  const initialSnapshot = socket.sent.find((frame) => frame.type === "snapshot.get");
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 1,
+      frame: "response",
+      id: initialSnapshot.id,
+      type: "snapshot.get",
+      ok: true,
+      payload: {
+        scope: "project_set",
+        complete: true,
+        projectIds: [],
+        issues: [],
+        issueTypes: [{ key: "story", name: "Story", color: "#8f78c7", icon: "book", isActive: true }],
+        workflowStages: [{ id: "stage-todo", workflowId: "workflow-story", key: "todo", name: "Todo", color: "#6f91c9" }]
+      }
+    })
+  });
+  await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "initial sync.pull");
+  const initialPull = socket.sent.find((frame) => frame.type === "sync.pull");
+  socket.onmessage({
+    data: JSON.stringify({ v: 1, frame: "response", id: initialPull.id, type: "sync.pull", ok: true, payload: { items: [], hasMore: false } })
+  });
+  await waitFor(() => snapshots.length === 1, "initial snapshot apply");
+
+  const sentBeforePush = socket.sent.length;
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 1,
+      frame: "push",
+      type: "snapshot.updated",
+      revision: 22,
+      payload: {
+        scope: "project",
+        complete: true,
+        issueTypes: [{ key: "story", name: "Story", color: "#7185a6", icon: "crown", isActive: false }],
+        workflowStages: [{ id: "stage-todo", workflowId: "workflow-story", key: "todo", name: "Todo", color: "#d2a96e" }]
+      }
+    })
+  });
+
+  await waitFor(() => snapshots.length === 2, "metadata push apply");
+  assert.deepEqual(
+    [snapshots[1].issueTypes[0].color, snapshots[1].issueTypes[0].icon, snapshots[1].issueTypes[0].isActive],
+    ["#7185a6", "crown", false]
+  );
+  assert.equal(snapshots[1].workflowStages[0].color, "#d2a96e");
+
+  await waitFor(
+    () => socket.sent.slice(sentBeforePush).some((frame) => frame.type === "snapshot.get"),
+    "metadata project-set resync"
+  );
+  const metadataResync = socket.sent.slice(sentBeforePush).find((frame) => frame.type === "snapshot.get");
+  assert.equal(metadataResync.payload.scope, "project_set");
+  socket.onmessage({
+    data: JSON.stringify({
+      v: 1,
+      frame: "response",
+      id: metadataResync.id,
+      type: "snapshot.get",
+      ok: true,
+      payload: { scope: "project_set", complete: true, projectIds: [], issues: [], issueTypes: [], workflowStages: [] }
+    })
+  });
+  await waitFor(
+    () => socket.sent.slice(sentBeforePush).filter((frame) => frame.type === "sync.pull").length === 1,
+    "metadata resync sync.pull"
+  );
+  const metadataPull = socket.sent.slice(sentBeforePush).find((frame) => frame.type === "sync.pull");
+  socket.onmessage({
+    data: JSON.stringify({ v: 1, frame: "response", id: metadataPull.id, type: "sync.pull", ok: true, payload: { items: [], hasMore: false } })
+  });
+  await waitFor(() => snapshots.length === 3, "authoritative metadata snapshot apply");
 
   client.stop();
 });
@@ -716,12 +855,12 @@ test("kanban desktop ws client waits when sync.deliver has a deliverySeq gap", a
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: helloPayload({ cursor }) }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
@@ -732,11 +871,11 @@ test("kanban desktop ws client waits when sync.deliver has a deliverySeq gap", a
   await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", lastSeq: 20, hasMore: false, nextAfterSeq: 20, events: [] });
   await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "sync.pull");
   const pullRequest = socket.sent.find((frame) => frame.type === "sync.pull");
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: pullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: pullRequest.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
 
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "push",
       type: "sync.deliver",
       payload: {
@@ -758,7 +897,7 @@ test("kanban desktop ws client waits when sync.deliver has a deliverySeq gap", a
 
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "push",
       type: "sync.deliver",
       payload: {
@@ -843,7 +982,7 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
     try {
       socket.onmessage({
         data: JSON.stringify({
-          v: 3,
+          v: 1,
           frame: "request",
           id: "start-run-1",
           type: "desktop.assistant.startRun",
@@ -859,7 +998,7 @@ test("kanban desktop ws client passes cloud issue to startRun handler", async (t
 
       await waitFor(() => socket.sent.some((frame) => frame.id === "start-run-1"), "startRun ACK");
       const ack = socket.sent.find((frame) => frame.id === "start-run-1");
-      assert.equal(ack.v, 3);
+      assert.equal(ack.v, 1);
       assert.equal(ack.frame, "response");
       assert.equal(ack.type, "desktop.assistant.startRun");
       assert.deepEqual(startRuns, [{
@@ -946,7 +1085,7 @@ test("kanban desktop ws client reconnects after request timeout", async (t) => {
 });
 
 
-test("kanban desktop ws client closes non-v3 protocol messages", async (t) => {
+test("kanban desktop ws client closes non-v1 protocol messages", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -1091,7 +1230,7 @@ test("kanban desktop ws client closes when response cannot be sent", async (t) =
   socket.failSends = true;
   socket.onmessage({
     data: JSON.stringify({
-      v: 3, frame: "request",
+      v: 1, frame: "request",
       id: "list-agents-1",
       type: "agent.listDesktop",
       payload: {}

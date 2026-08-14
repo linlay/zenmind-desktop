@@ -428,6 +428,9 @@ test("Kanban navigation push queues Cloud Issue terminals without changing the c
 });
 
 function respondOk(socket, request, payload) {
+  const responsePayload = request.type === "sync.hello"
+    ? { ok: true, contractVersion: "1.0", capabilities: [], ...payload }
+    : payload;
   socket.onmessage({
     data: JSON.stringify({
       v: request.v,
@@ -435,7 +438,7 @@ function respondOk(socket, request, payload) {
       id: request.id,
       type: request.type,
       ok: true,
-      payload
+      payload: responsePayload
     })
   });
 }
@@ -447,7 +450,7 @@ async function respondNextRequest(socket, type, payload, fromIndex = 0, timeoutM
   return request;
 }
 
-test("Kanban runtime atomically claims and starts a normal Chat run through v4", async (t) => {
+test("Kanban runtime atomically claims and starts a normal Chat run through v1", async (t) => {
   const originalWebSocket = globalThis.WebSocket;
   const sockets = [];
   class FakeWebSocket {
@@ -495,12 +498,12 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v4",
   socket.onopen();
   await waitFor(() => socket.sent.some((frame) => frame.type === "sync.hello"), "sync.hello", 3000);
   const hello = socket.sent.find((frame) => frame.type === "sync.hello");
-  assert.equal(hello.payload.contractVersion, "4.0");
+  assert.equal(hello.payload.contractVersion, "1.0");
   respondOk(socket, hello, {
     ok: true,
-    contractVersion: "4.0",
+    contractVersion: "1.0",
     capabilities: ["issue.claim", "issue.run.prepare", "run.event.append"],
-    cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 12, cacheSchemaVersion: 2 },
+    cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 12, cacheSchemaVersion: 1 },
     links: []
   });
   await waitFor(() => socket.sent.some((frame) => frame.type === "snapshot.get"), "snapshot.get", 3000);
@@ -628,12 +631,12 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
     socket.onopen();
     await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
     const hello = socket.sent[0];
-    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 30, cacheSchemaVersion: 1 } } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [], cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 30, cacheSchemaVersion: 1 } } }) });
     await waitFor(() => socket.sent.length === 2, "initial snapshot request");
     const initialSnapshotRequest = socket.sent[1];
     socket.onmessage({
       data: JSON.stringify({
-        v: 3,
+        v: 1,
         frame: "response",
         id: initialSnapshotRequest.id,
         type: "snapshot.get",
@@ -652,7 +655,7 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
     await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", events: [], hasMore: false, lastSeq: 30, nextAfterSeq: 30 });
     await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "initial sync.pull");
     const initialPull = socket.sent.find((frame) => frame.type === "sync.pull");
-    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: initialPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: initialPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
 
     const sentBeforeResync = socket.sent.length;
     const resyncPromise = runtime.resyncCloudBoard();
@@ -663,7 +666,7 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
     const resyncSnapshotRequest = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "snapshot.get");
     socket.onmessage({
       data: JSON.stringify({
-        v: 3,
+        v: 1,
         frame: "response",
         id: resyncSnapshotRequest.id,
         type: "snapshot.get",
@@ -700,7 +703,7 @@ test("Kanban runtime resyncs cloud board over the existing websocket", async (t)
       "resync sync.pull"
     );
     const resyncPull = socket.sent.slice(sentBeforeResync).find((frame) => frame.type === "sync.pull");
-    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: resyncPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: resyncPull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
     const result = await resyncPromise;
 
     assert.equal(result.ok, true);
@@ -918,12 +921,12 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
   assert.equal(hello.payload.deviceAlias, "测试桌面");
   assert.equal(hello.payload.ownerUserId, "user-1");
   assert.ok(hello.payload.hostname || hello.payload.username);
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 3, frame: "response",
+      v: 1, frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
@@ -941,7 +944,7 @@ test("Kanban runtime stores remote startRun issue locally before executing", asy
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 3, frame: "request",
+        v: 1, frame: "request",
         id: "start-run-remote",
         type: "desktop.assistant.startRun",
         boardId: "default",
@@ -1054,12 +1057,12 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 40, cacheSchemaVersion: 1 } } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [], cursor: { lastAckedDeliverySeq: 0, lastAppliedRevision: 40, cacheSchemaVersion: 1 } } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
@@ -1078,11 +1081,11 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
   await respondNextRequest(socket, "event.pull", { ok: true, projectId: "project-1", events: [], hasMore: false, lastSeq: 40, nextAfterSeq: 40 });
   await waitFor(() => socket.sent.some((frame) => frame.type === "sync.pull"), "sync.pull");
   const pull = socket.sent.find((frame) => frame.type === "sync.pull");
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: pull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: pull.id, type: "sync.pull", ok: true, payload: { ok: true, items: [], hasMore: false } }) });
 
   socket.onmessage({
     data: JSON.stringify({
-      v: 3,
+      v: 1,
       frame: "push",
       type: "sync.deliver",
       projectId: "project-1",
@@ -1096,13 +1099,14 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
           commandId: "cmd-run-1",
           eventType: "command.runIssue",
           payload: {
-            issueId: "ISS-V3-RUN",
+            issueRunId: "issue-run-cmd-run-1",
+            issueId: "ISS-V1-RUN",
             issue: {
-              id: "ISS-V3-RUN",
+              id: "ISS-V1-RUN",
               boardId: "default",
               projectId: "project-1",
               workflowId: "workflow-standard-requirement",
-              title: "v3 可靠派发议题",
+              title: "v1 可靠派发议题",
               description: "通过 delivery 执行",
               status: "in_progress",
               priority: "P2",
@@ -1114,7 +1118,7 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
               updatedAt: "2026-06-09T00:00:00.000Z"
             },
             agentKey: "codeAssistant",
-            message: "执行 v3 delivery"
+            message: "执行 v1 delivery"
           }
         }]
       }
@@ -1125,24 +1129,25 @@ test("Kanban runtime persists and ACKs command.runIssue before starting one stab
   const ack = socket.sent.find((frame) => frame.type === "sync.ack");
   assert.equal(ack.payload.ackedDeliverySeq, 1);
   assert.equal(ack.payload.lastAppliedRevision, 40);
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: ack.id, type: "sync.ack", ok: true, payload: { ok: true, cursor: { lastAckedDeliverySeq: 1, lastAppliedRevision: 40, cacheSchemaVersion: 2 } } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: ack.id, type: "sync.ack", ok: true, payload: { ok: true, cursor: { lastAckedDeliverySeq: 1, lastAppliedRevision: 40, cacheSchemaVersion: 1 } } }) });
 
   await waitFor(() => socket.sent.some((frame) => frame.type === "run.event.append"), "run.event.append", 3000);
   const runEvent = socket.sent.find((frame) => frame.type === "run.event.append");
   assert.equal(runEvent.payload.sourceDeliverySeq, 1);
-  assert.equal(runEvent.payload.issueId, "ISS-V3-RUN");
+  assert.equal(runEvent.payload.issueId, "ISS-V1-RUN");
   assert.equal(runEvent.payload.eventType, "run.started");
   assert.match(runEvent.payload.payload.runId, /^run_kanban_/);
-  assert.match(runEvent.payload.clientEventId, /:ISS-V3-RUN:run_kanban_[^:]+:run\.started$/);
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: runEvent.id, type: "run.event.append", ok: true, payload: { ok: true, revision: 41 } }) });
+  assert.equal(runEvent.payload.issueRunId, "issue-run-cmd-run-1");
+  assert.match(runEvent.payload.clientEventId, /:issue-run-cmd-run-1:run_kanban_[^:]+:run\.started$/);
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: runEvent.id, type: "run.event.append", ok: true, payload: { ok: true, revision: 41 } }) });
   await new Promise((resolve) => setTimeout(resolve, 10));
 
   assert.equal(startRuns.length, 1);
-  assert.equal(startRuns[0].message, "执行 v3 delivery");
+  assert.equal(startRuns[0].message, "执行 v1 delivery");
   assert.match(startRuns[0].runId, /^run_kanban_/);
   assert.match(startRuns[0].requestId, /^request_kanban_/);
 
-  const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-V3-RUN");
+  const localIssue = runtime.listIssues().issues.find((issue) => issue.remoteIssueId === "ISS-V1-RUN");
   assert.ok(localIssue);
   assert.match(localIssue.runId, /^run_kanban_/);
   assert.match(localIssue.chatId, /^chat_kanban_/);
@@ -1187,7 +1192,7 @@ test("Kanban runtime recovers a terminal starting receipt without launching a du
     deliverySeq: 1,
     projectId: "default",
     sourceRevision: 70,
-    payload: { issue, agentKey: "codeAssistant", message: "recover" },
+    payload: { issue, issueRunId: "issue-run-recover-1", agentKey: "codeAssistant", message: "recover" },
     issue
   });
   updateDesktopKanbanCommandReceipt(app, currentUser, stored.receipt.commandId, "starting", null, true);
@@ -1227,7 +1232,7 @@ test("Kanban runtime recovers a terminal starting receipt without launching a du
   socket.onopen();
   await waitFor(() => socket.sent.some((frame) => frame.type === "sync.hello"), "sync.hello", 3000);
   const hello = socket.sent.find((frame) => frame.type === "sync.hello");
-  respondOk(socket, hello, { ok: true, cursor: { lastAckedDeliverySeq: 1, lastAppliedRevision: 70, cacheSchemaVersion: 2 }, links: [] });
+  respondOk(socket, hello, { ok: true, cursor: { lastAckedDeliverySeq: 1, lastAppliedRevision: 70, cacheSchemaVersion: 1 }, links: [] });
   await waitFor(() => socket.sent.some((frame) => frame.type === "snapshot.get"), "snapshot.get", 3000);
   const snapshot = socket.sent.find((frame) => frame.type === "snapshot.get");
   respondOk(socket, snapshot, {
@@ -1246,7 +1251,8 @@ test("Kanban runtime recovers a terminal starting receipt without launching a du
   await waitFor(() => socket.sent.some((frame) => frame.type === "run.event.append"), "recovered terminal event", 3000);
   const terminal = socket.sent.find((frame) => frame.type === "run.event.append");
   assert.equal(terminal.payload.eventType, "run.completed");
-  assert.match(terminal.payload.clientEventId, new RegExp(`:ISS-RECOVER-1:${stored.receipt.runId}:run\\.completed$`));
+  assert.equal(terminal.payload.issueRunId, "issue-run-recover-1");
+  assert.match(terminal.payload.clientEventId, new RegExp(`:issue-run-recover-1:${stored.receipt.runId}:run\\.completed$`));
   assert.equal(startCount, 0);
   respondOk(socket, terminal, { ok: true, revision: 71 });
   await new Promise((resolve) => setTimeout(resolve, 10));
@@ -1309,12 +1315,12 @@ test("Kanban runtime stores cloud dispatch issue without auto-starting", async (
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 3, frame: "response",
+      v: 1, frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
@@ -1332,7 +1338,7 @@ test("Kanban runtime stores cloud dispatch issue without auto-starting", async (
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 3, frame: "request",
+        v: 1, frame: "request",
         id: "dispatch-run",
         type: "desktop.issue.dispatch",
         boardId: "default",
@@ -1439,7 +1445,7 @@ test("Kanban runtime reconnects after saving device alias so cloud sees new devi
   const firstHello = firstSocket.sent[0];
   assert.equal(firstHello.payload.deviceName, "旧设备名");
   firstSocket.onmessage({
-    data: JSON.stringify({ v: 3, frame: "response", id: firstHello.id, type: "sync.hello", ok: true, payload: { ok: true } })
+    data: JSON.stringify({ v: 1, frame: "response", id: firstHello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } })
   });
   await waitFor(() => firstSocket.sent.length === 2, "initial snapshot request", 3000);
 
@@ -1543,12 +1549,12 @@ test("Kanban runtime ACKs slow remote startRun before bridge resolves", async (t
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
   const snapshotRequest = socket.sent[1];
   socket.onmessage({
     data: JSON.stringify({
-      v: 3, frame: "response",
+      v: 1, frame: "response",
       id: snapshotRequest.id,
       type: "snapshot.get",
       ok: true,
@@ -1566,7 +1572,7 @@ test("Kanban runtime ACKs slow remote startRun before bridge resolves", async (t
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 3, frame: "request",
+        v: 1, frame: "request",
         id: "start-run-slow",
         type: "desktop.assistant.startRun",
         boardId: "default",
@@ -1675,13 +1681,13 @@ test("Kanban runtime falls back to local agents for remote listAgents", async (t
   socket.onopen();
   await waitFor(() => socket.sent.length === 1, "sync.hello");
   const hello = socket.sent[0];
-  socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
+  socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } }) });
   await waitFor(() => socket.sent.length === 2, "snapshot request");
 
   try {
     socket.onmessage({
       data: JSON.stringify({
-        v: 3, frame: "request",
+        v: 1, frame: "request",
         id: "list-agents-local",
         type: "agent.listDesktop",
         boardId: "default",
@@ -1767,11 +1773,11 @@ test("Kanban runtime lists installed agents when platform listAgents times out",
     socket.onopen();
     await waitFor(() => socket.sent.length === 1, "sync.hello", 3000);
     const hello = socket.sent[0];
-    socket.onmessage({ data: JSON.stringify({ v: 3, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true } }) });
+    socket.onmessage({ data: JSON.stringify({ v: 1, frame: "response", id: hello.id, type: "sync.hello", ok: true, payload: { ok: true, contractVersion: "1.0", capabilities: [] } }) });
 
     socket.onmessage({
       data: JSON.stringify({
-        v: 3, frame: "request",
+        v: 1, frame: "request",
         id: "list-agents-timeout",
         type: "agent.listDesktop",
         boardId: "default",

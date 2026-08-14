@@ -201,16 +201,22 @@ const VISIBLE_KANBAN_STATUS_SET = new Set<KanbanStatus>(VISIBLE_KANBAN_STATUSES)
 
 function getCloudIssueAction(
   issue: KanbanIssue,
+  cloudDetails: KanbanCloudDetailData,
+  localDeviceId: string,
   currentUserId: string,
   canClaim: boolean,
   canRun: boolean
 ): CloudIssueAction {
-  if (issue.syncMode !== "cloud" || issue.status !== "todo") return null;
+  if (issue.syncMode !== "cloud" || (issue.status !== "todo" && issue.status !== "in_progress")) return null;
   const assigneeId = issue.assigneeId?.trim() ?? "";
   if (!assigneeId) return canClaim ? "claim" : null;
   if (assigneeId !== currentUserId.trim()) return null;
-  if (issue.runState === "running" || issue.activeRunId?.trim()) return null;
-  return canRun ? "run" : null;
+  if (issue.activeIssueRunId?.trim()) return null;
+  const issueId = issue.remoteIssueId?.trim() || issue.id;
+  const runWorker = cloudDetails.issueStageWorkers.find((worker) =>
+    worker.issueId === issueId && worker.stageId === issue.stageId && worker.workerRole === "run"
+  );
+  return canRun && runWorker?.workerType === "agent" && runWorker.deviceId === localDeviceId ? "run" : null;
 }
 
 const ISSUE_STAGE_COLOR_PALETTE = [
@@ -289,8 +295,15 @@ const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
   issueFieldContexts: [],
   issueFieldOptions: [],
   workflows: [],
+  workflowStageDefs: [],
+  workflowStatusDefs: [],
   workflowStages: [],
   workflowStatuses: [],
+  workflowTransitions: [],
+  workflowDecomposeRules: [],
+  teams: [],
+  teamMembers: [],
+  projectPermissions: [],
   issueLabels: [],
   issueLabelLinks: [],
   issueDependencies: [],
@@ -1588,13 +1601,13 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [automationFilter, setAutomationFilter] = useState(initialFilterPreferences.automationFilter);
   const [assigneeFilters, setAssigneeFilters] = useState(initialFilterPreferences.assigneeFilters);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [localDeviceId, setLocalDeviceId] = useState("");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenuKind>(null);
   const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
   const [showBacklog, setShowBacklog] = useState(initialFilterPreferences.showBacklog);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [detailIssueId, setDetailIssueId] = useState<string | null>(null);
   const [detailInitialEditStatus, setDetailInitialEditStatus] = useState<KanbanStatus | null>(null);
-  const [runAgentPickerIssueId, setRunAgentPickerIssueId] = useState<string | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
   const [projectFormMenuOpen, setProjectFormMenuOpen] = useState(false);
@@ -1617,6 +1630,14 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     () => getKanbanProjectFilterIds(cloudProjects, selectedProjectIds),
     [cloudProjects, selectedProjectIds]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI.settings.getDeviceIdentity().then((identity) => {
+      if (!cancelled) setLocalDeviceId(identity.deviceId || "");
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1951,7 +1972,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const detailIssue = detailIssueId ? issueMap.get(detailIssueId) ?? null : null;
-  const runAgentPickerIssue = runAgentPickerIssueId ? issueMap.get(runAgentPickerIssueId) ?? null : null;
   const filteredCount = filteredIssues.length;
   const totalCount = visibleIssues.length;
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
@@ -2353,37 +2373,19 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  async function startCloudIssue(issue: KanbanIssue, selectedAgentKey?: string) {
+  async function startCloudIssue(issue: KanbanIssue) {
     const kanbanApi = readKanbanApi();
     if (!kanbanApi || typeof kanbanApi.runIssue !== "function") {
       setFeedback({ tone: "error", message: t("kanban.cloud.preloadOutdated") });
       return;
     }
-    const availableAgents = await getAvailableAgents();
-    let agentKey = selectedAgentKey?.trim() ?? "";
-    if (!agentKey) {
-      const boundAgentKey = [issue.workerAgent, issue.assigneeAgentKey]
-        .map((value) => value?.trim() ?? "")
-        .find((candidate) => candidate && availableAgents.some((agent) => agent.agentKey === candidate));
-      agentKey = boundAgentKey ?? "";
-    }
-    if (!agentKey) {
-      try {
-        const settings = await window.electronAPI.assistant.getSettings();
-        const defaultAgentKey = settings.chatDefaultAgentKey?.trim() ?? "";
-        if (defaultAgentKey && availableAgents.some((agent) => agent.agentKey === defaultAgentKey)) {
-          agentKey = defaultAgentKey;
-        }
-      } catch {
-        // The explicit picker below remains available when settings cannot be read.
-      }
-    }
-    if (!agentKey) {
-      if (availableAgents.length === 0) {
-        setFeedback({ tone: "error", message: t("kanban.feedback.noAgents") });
-        return;
-      }
-      setRunAgentPickerIssueId(issue.id);
+    const remoteIssueId = issue.remoteIssueId?.trim() || issue.id;
+    const runWorker = cloudDetails.issueStageWorkers.find((worker) =>
+      worker.issueId === remoteIssueId && worker.stageId === issue.stageId && worker.workerRole === "run"
+    );
+    const agentKey = runWorker?.workerType === "agent" ? runWorker.workerAgent?.trim() ?? "" : "";
+    if (!agentKey || !localDeviceId || runWorker?.deviceId !== localDeviceId) {
+      setFeedback({ tone: "error", message: t("kanban.feedback.runWorkerNotLocal") });
       return;
     }
 
@@ -2393,7 +2395,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setIssues(sortIssues(result.issues));
       setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
       if (result.ok && result.chatId && result.agentKey) {
-        setRunAgentPickerIssueId(null);
         setDetailIssueId(null);
         navigate(createAgentWebclientRoute({ agentKey: result.agentKey, chatId: result.chatId }));
       }
@@ -2793,6 +2794,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 issues={columnIssues}
                 agents={agents}
                 cloudDetails={cloudDetails}
+                localDeviceId={localDeviceId}
                 projectsById={kanbanProjectsById}
                 locale={locale}
                 now={new Date(kanbanCountdownNow)}
@@ -2821,6 +2823,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   awaitingConfirmation={false}
                   agents={agents}
                   cloudDetails={cloudDetails}
+                  localDeviceId={localDeviceId}
                   projectsById={kanbanProjectsById}
                   locale={locale}
                   now={new Date(kanbanCountdownNow)}
@@ -2882,8 +2885,8 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           }}
           onSave={(draft) => saveIssueDetail(detailIssue, draft)}
           onDelete={() => deleteIssue(detailIssue)}
-          onOpenChat={() => openAssistantIssueChat(detailIssue)}
-          cloudAction={getCloudIssueAction(detailIssue, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
+          onOpenChat={(chatId, agentKey) => openAssistantIssueChat(detailIssue, chatId, agentKey)}
+          cloudAction={getCloudIssueAction(detailIssue, cloudDetails, localDeviceId, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
           cloudActionBusy={busyIssueId === detailIssue.id}
           onClaim={() => void claimCloudIssue(detailIssue)}
           onRun={() => void startCloudIssue(detailIssue)}
@@ -3308,24 +3311,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         </div>
       ) : null}
 
-      {runAgentPickerIssue ? (
-        <div className="kanban-modal-layer" role="presentation" onMouseDown={() => setRunAgentPickerIssueId(null)}>
-          <section className="kanban-agent-picker" role="dialog" aria-modal="true" aria-label={t("kanban.cloud.selectAgent")} onMouseDown={(event) => event.stopPropagation()}>
-            <header>
-              <div><strong>{t("kanban.cloud.selectAgent")}</strong><span>{runAgentPickerIssue.title}</span></div>
-              <button type="button" aria-label={t("kanban.modal.close")} onClick={() => setRunAgentPickerIssueId(null)}>×</button>
-            </header>
-            <div className="kanban-agent-picker-list">
-              {agents.map((agent) => (
-                <button key={agent.agentKey} type="button" disabled={busyIssueId === runAgentPickerIssue.id} onClick={() => void startCloudIssue(runAgentPickerIssue, agent.agentKey)}>
-                  <RobotOutlined />
-                  <span><strong>{agent.displayName}</strong><small>{agent.agentKey}</small></span>
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -3335,6 +3320,7 @@ const KanbanColumn = memo(function KanbanColumn({
   issues,
   agents,
   cloudDetails,
+  localDeviceId,
   projectsById,
   locale,
   now,
@@ -3354,6 +3340,7 @@ const KanbanColumn = memo(function KanbanColumn({
   issues: KanbanIssue[];
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
+  localDeviceId: string;
   projectsById: Map<string, KanbanProject>;
   locale: SupportedLocale;
   now: Date;
@@ -3414,6 +3401,7 @@ const KanbanColumn = memo(function KanbanColumn({
               awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
               agents={agents}
               cloudDetails={cloudDetails}
+              localDeviceId={localDeviceId}
               projectsById={projectsById}
               locale={locale}
               now={now}
@@ -3449,6 +3437,7 @@ const IssueCard = memo(function IssueCard({
   awaitingConfirmation,
   agents,
   cloudDetails,
+  localDeviceId,
   projectsById,
   locale,
   now,
@@ -3467,6 +3456,7 @@ const IssueCard = memo(function IssueCard({
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
+  localDeviceId: string;
   projectsById: Map<string, KanbanProject>;
   locale: SupportedLocale;
   now: Date;
@@ -3512,6 +3502,7 @@ const IssueCard = memo(function IssueCard({
         awaitingConfirmation={awaitingConfirmation}
         agents={agents}
         cloudDetails={cloudDetails}
+        localDeviceId={localDeviceId}
         projectsById={projectsById}
         locale={locale}
         now={now}
@@ -3535,6 +3526,7 @@ const IssueCardContent = memo(function IssueCardContent({
   awaitingConfirmation,
   agents,
   cloudDetails,
+  localDeviceId,
   projectsById,
   locale,
   now,
@@ -3553,6 +3545,7 @@ const IssueCardContent = memo(function IssueCardContent({
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
+  localDeviceId: string;
   projectsById: Map<string, KanbanProject>;
   locale: SupportedLocale;
   now: Date;
@@ -3580,7 +3573,7 @@ const IssueCardContent = memo(function IssueCardContent({
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const issueType = getIssueCardTypePresentation(issue, cloudDetails);
   const cloudAction = interactive
-    ? getCloudIssueAction(issue, currentUserId, canClaimCloudIssues, canRunCloudIssues)
+    ? getCloudIssueAction(issue, cloudDetails, localDeviceId, currentUserId, canClaimCloudIssues, canRunCloudIssues)
     : null;
   const canOpenIssueDetails = interactive;
   const queueRank = issue.status === "todo" ? formatKanbanSortNumber(sortIndex, issue.position) : "";

@@ -26,7 +26,7 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
   assert.match(store, /DETAIL_JSON_ TEXT NOT NULL DEFAULT '\{\}'/);
   assert.match(store, /CREATE TABLE IF NOT EXISTS kanban_cloud_detail_cache/);
   assert.match(store, /storeCloudDetailData\(db, currentUser, snapshot, revision\)/);
-  assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 4/);
+  assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 1/);
   assert.match(store, /COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '\[\]'/);
   assert.match(store, /migrateDesktopKanbanIssueDetailJson\(db\)/);
   assert.doesNotMatch(store, /(?:rawIssue|input|issue|row)\.(?:reviewerId|reviewRequired|reviewer_id|review_required)/);

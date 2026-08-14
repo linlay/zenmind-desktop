@@ -591,7 +591,7 @@ export function KanbanIssueDetailDialog({
       statusId: run.statusId,
       workerRole: run.workerRole
     };
-  }) : resolveKanbanIssueRuns(issue, events);
+  }) : isCloud ? [] : resolveKanbanIssueRuns(issue, events);
   const statusTimeline = resolveKanbanStatusTimeline(issue, events, cloudDetails.workflowStatuses, {
     backlog: t("kanban.status.backlog"),
     todo: t("kanban.status.todo"),
@@ -770,7 +770,7 @@ export function KanbanIssueDetailDialog({
     setReferenceChatBusy(true);
     try {
       const result = await onBindHumanReferenceChat(selectedReferenceChatId);
-      onFeedback(result.ok ? "success" : "error", result.message || (result.ok ? "已关联本机对话。" : "关联本机对话失败。"));
+      onFeedback(result.ok ? "success" : "error", result.message || t(result.ok ? "kanban.chat.bindSucceeded" : "kanban.chat.bindFailed"));
       if (result.ok) setSelectedReferenceChatId("");
     } finally {
       setReferenceChatBusy(false);
@@ -1055,7 +1055,7 @@ export function KanbanIssueDetailDialog({
                   <DetailProperty {...copyBehavior} label={t("kanban.detail.automationMessage")} value={draft.automationMessage || "—"} editing={editing} editor={<textarea value={draft.automationMessage} onChange={(event) => updateDraft({ automationMessage: event.target.value })} rows={3} />} />
                 </> : null}
               </dl>
-              {isCloud && issue.status === "in_progress" && currentRunWorker?.workerType === "human" && onBindHumanReferenceChat ? <div className="kanban-detail-owner-action"><label>关联本机对话</label><select value={selectedReferenceChatId} onChange={(event) => setSelectedReferenceChatId(event.target.value)}><option value="">选择本机已有对话</option>{availableLocalChats.map((chat) => <option key={chat.id} value={chat.id}>{chat.title}</option>)}</select><button type="button" disabled={referenceChatBusy || !selectedReferenceChatId} onClick={() => void bindHumanReferenceChat()}>{referenceChatBusy ? "关联中…" : "关联"}</button>{localReferenceChats.map((chat) => <span key={chat.id}>{chat.chatId}<button type="button" disabled={referenceChatBusy} onClick={() => void onUnbindHumanReferenceChat?.(chat.id).then((result) => onFeedback(result.ok ? "success" : "error", result.message || (result.ok ? "已解除关联。" : "解除关联失败。")))}>解除</button></span>)}</div> : null}
+              {isCloud && issue.status === "in_progress" && currentRunWorker?.workerType === "human" && onBindHumanReferenceChat ? <div className="kanban-detail-owner-action"><label>{t("kanban.chat.bindLocal")}</label><select value={selectedReferenceChatId} onChange={(event) => setSelectedReferenceChatId(event.target.value)}><option value="">{t("kanban.chat.selectLocal")}</option>{availableLocalChats.map((chat) => <option key={chat.id} value={chat.id}>{chat.title}</option>)}</select><button type="button" disabled={referenceChatBusy || !selectedReferenceChatId} onClick={() => void bindHumanReferenceChat()}>{t(referenceChatBusy ? "kanban.chat.binding" : "kanban.chat.bind")}</button>{localReferenceChats.map((chat) => <span key={chat.id}>{chat.chatId}<button type="button" disabled={referenceChatBusy} onClick={() => void onUnbindHumanReferenceChat?.(chat.id).then((result) => onFeedback(result.ok ? "success" : "error", result.message || t(result.ok ? "kanban.chat.unbindSucceeded" : "kanban.chat.unbindFailed")))}>{t("kanban.chat.unbind")}</button></span>)}</div> : null}
             </DetailSection>
 
             <DetailSection sectionId="kanban-detail-related" title={t("kanban.detail.relatedTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: relatedItemCount })}>

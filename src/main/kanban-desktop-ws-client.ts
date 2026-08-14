@@ -151,8 +151,8 @@ export type KanbanDesktopWsClientOptions = {
   onWsLog?: (entry: KanbanDesktopWsLogEntry) => void;
 };
 
-const PROTOCOL_VERSION = 4;
-const CONTRACT_VERSION = "4.0";
+const PROTOCOL_VERSION = 1;
+const CONTRACT_VERSION = "1.0";
 const REQUEST_TIMEOUT_MS = 30_000;
 const RECONNECT_MS = 5_000;
 const WS_OPEN_STATE = 1;
@@ -286,7 +286,31 @@ function normalizeSnapshot(payload: unknown, env: KanbanEnvelope): KanbanCloudSn
     scope: readText(record.scope),
     projects: Array.isArray(record.projects) ? record.projects : [],
     projectBindings: Array.isArray(record.projectBindings) ? record.projectBindings : [],
-    issues: Array.isArray(record.issues) ? record.issues : []
+    issues: Array.isArray(record.issues) ? record.issues : [],
+    users: Array.isArray(record.users) ? record.users : [],
+    issueTypes: Array.isArray(record.issueTypes) ? record.issueTypes : [],
+    issueFieldDefs: Array.isArray(record.issueFieldDefs) ? record.issueFieldDefs : [],
+    issueFieldContexts: Array.isArray(record.issueFieldContexts) ? record.issueFieldContexts : [],
+    issueFieldOptions: Array.isArray(record.issueFieldOptions) ? record.issueFieldOptions : [],
+    workflows: Array.isArray(record.workflows) ? record.workflows : [],
+    workflowStageDefs: Array.isArray(record.workflowStageDefs) ? record.workflowStageDefs : [],
+    workflowStatusDefs: Array.isArray(record.workflowStatusDefs) ? record.workflowStatusDefs : [],
+    workflowStages: Array.isArray(record.workflowStages) ? record.workflowStages : [],
+    workflowStatuses: Array.isArray(record.workflowStatuses) ? record.workflowStatuses : [],
+    workflowTransitions: Array.isArray(record.workflowTransitions) ? record.workflowTransitions : [],
+    workflowDecomposeRules: Array.isArray(record.workflowDecomposeRules) ? record.workflowDecomposeRules : [],
+    teams: Array.isArray(record.teams) ? record.teams : [],
+    teamMembers: Array.isArray(record.teamMembers) ? record.teamMembers : [],
+    projectPermissions: Array.isArray(record.projectPermissions) ? record.projectPermissions : [],
+    issueLabels: Array.isArray(record.issueLabels) ? record.issueLabels : [],
+    issueLabelLinks: Array.isArray(record.issueLabelLinks) ? record.issueLabelLinks : [],
+    issueDependencies: Array.isArray(record.issueDependencies) ? record.issueDependencies : [],
+    reviews: Array.isArray(record.reviews) ? record.reviews : [],
+    issueStageWorkers: Array.isArray(record.issueStageWorkers) ? record.issueStageWorkers : [],
+    issueChats: Array.isArray(record.issueChats) ? record.issueChats : [],
+    issueRuns: Array.isArray(record.issueRuns) ? record.issueRuns : [],
+    issueComments: Array.isArray(record.issueComments) ? record.issueComments : [],
+    recentEvents: Array.isArray(record.recentEvents) ? record.recentEvents : []
   };
 }
 
@@ -311,7 +335,7 @@ function normalizeSyncCursor(value: unknown): KanbanDesktopSyncCursor {
   return {
     lastAckedDeliverySeq: readNonNegativeInteger(record.lastAckedDeliverySeq),
     lastAppliedRevision: readNonNegativeInteger(record.lastAppliedRevision),
-    cacheSchemaVersion: cacheSchemaVersion > 0 ? cacheSchemaVersion : 2
+    cacheSchemaVersion: cacheSchemaVersion > 0 ? cacheSchemaVersion : 1
   };
 }
 
@@ -430,7 +454,7 @@ function normalizeMessageType(messageType: string) {
   return trimmed;
 }
 
-function isV2Envelope(env: KanbanEnvelope) {
+function isV1Envelope(env: KanbanEnvelope) {
   return env.v === PROTOCOL_VERSION && readText(env.frame) !== "" && readText(env.type) !== "";
 }
 
@@ -439,19 +463,19 @@ function envelopeBusinessType(env: KanbanEnvelope) {
 }
 
 function isResponseEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) && env.frame === "response";
+  return isV1Envelope(env) && env.frame === "response";
 }
 
 function isRequestEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) && env.frame === "request";
+  return isV1Envelope(env) && env.frame === "request";
 }
 
 function isSnapshotPushEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "snapshot.updated";
+  return isV1Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "snapshot.updated";
 }
 
 function isProjectEventPushEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) && env.frame === "push" && [
+  return isV1Envelope(env) && env.frame === "push" && [
     "project.created",
     "project.updated",
     "project.deleted",
@@ -461,11 +485,11 @@ function isProjectEventPushEnvelope(env: KanbanEnvelope) {
 }
 
 function isSyncDeliverPushEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "sync.deliver";
+  return isV1Envelope(env) && env.frame === "push" && envelopeBusinessType(env) === "sync.deliver";
 }
 
 function isIssueEventPushEnvelope(env: KanbanEnvelope) {
-  return isV2Envelope(env) && env.frame === "push" && ISSUE_EVENT_TYPES.has(envelopeBusinessType(env));
+  return isV1Envelope(env) && env.frame === "push" && ISSUE_EVENT_TYPES.has(envelopeBusinessType(env));
 }
 
 export class KanbanDesktopWsClient {
@@ -759,10 +783,13 @@ export class KanbanDesktopWsClient {
         selectedProjectId: this.config?.selectedProjectId ?? "default",
         lastAckedDeliverySeq: cursor.lastAckedDeliverySeq,
         lastAppliedRevision: cursor.lastAppliedRevision,
-        cacheSchemaVersion: cursor.cacheSchemaVersion ?? 2,
+        cacheSchemaVersion: cursor.cacheSchemaVersion ?? 1,
         localProjects,
         agents
       });
+      if (readText(hello.contractVersion) !== CONTRACT_VERSION) {
+        throw new Error(`kanban contract ${CONTRACT_VERSION} is required`);
+      }
       if (isRecord(hello) && hello.cursor) {
         this.options.onSyncCursor?.(normalizeSyncCursor(hello.cursor));
       }
@@ -786,6 +813,7 @@ export class KanbanDesktopWsClient {
       await this.flushQueuedDeliveries();
       await this.pullDeliveries(normalizeSyncCursor(this.options.getSyncCursor?.()).lastAckedDeliverySeq);
       this.options.onConnected?.();
+      this.scheduleProjectResync();
     } catch (error) {
       this.options.onDebug?.(errorMessage(error));
     }
@@ -810,8 +838,8 @@ export class KanbanDesktopWsClient {
       return;
     }
     this.logFrame("recv", env, Buffer.byteLength(raw));
-    if (!isV2Envelope(env) || !["request", "response", "push"].includes(readText(env.frame))) {
-      this.closeProtocolError("kanban v3 envelope required");
+    if (!isV1Envelope(env) || !["request", "response", "push"].includes(readText(env.frame))) {
+      this.closeProtocolError("kanban v1 envelope required");
       return;
     }
     if (isResponseEnvelope(env) && env.id) {
@@ -825,7 +853,12 @@ export class KanbanDesktopWsClient {
       return;
     }
     if (isSnapshotPushEnvelope(env)) {
-      this.options.onSnapshot(normalizeSnapshot(env.payload, env));
+      const snapshot = normalizeSnapshot(env.payload, env);
+      this.options.onSnapshot(snapshot);
+      if (snapshot.scope !== "project_set" || snapshot.complete !== true) {
+        this.queuedProjectResync = true;
+        this.scheduleProjectResync();
+      }
       return;
     }
     if (isIssueEventPushEnvelope(env)) {

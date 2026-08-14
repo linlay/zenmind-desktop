@@ -685,7 +685,7 @@ export class KanbanRuntime {
     this.refreshConnection();
     return {
       ...listDesktopKanbanIssues(this.options.app, this.currentUser(), this.connectionState),
-      cloudCapabilities: this.negotiatedContractVersion.startsWith("4.")
+      cloudCapabilities: this.negotiatedContractVersion.startsWith("1.")
         ? [
           ...(this.negotiatedCapabilities.includes("issue.claim") ? ["issue.claim"] : []),
           ...(this.negotiatedCapabilities.includes("run.event.append") ? ["run.event.append"] : []),
@@ -919,7 +919,7 @@ export class KanbanRuntime {
     if (!issue || issueSyncMode(issue) !== "cloud") {
       return { ok: false, message: t("kanban.runtime.missing"), issues };
     }
-    if (!this.negotiatedContractVersion.startsWith("4.") || !this.negotiatedCapabilities.includes("issue.claim")) {
+    if (!this.negotiatedContractVersion.startsWith("1.") || !this.negotiatedCapabilities.includes("issue.claim")) {
       return { ok: false, message: t("kanban.cloud.claimUnsupported"), issues };
     }
     if (!this.wsClient.isOpen()) {
@@ -953,7 +953,7 @@ export class KanbanRuntime {
     if (!issue || issueSyncMode(issue) !== "cloud") {
       return { ok: false, message: t("kanban.runtime.missing"), issues: currentIssues };
     }
-    if (!this.negotiatedContractVersion.startsWith("4.") || !this.negotiatedCapabilities.includes("run.event.append") || !this.wsClient.isOpen()) {
+    if (!this.negotiatedContractVersion.startsWith("1.") || !this.negotiatedCapabilities.includes("run.event.append") || !this.wsClient.isOpen()) {
       return { ok: false, message: t("kanban.cloudSync.notConnected"), issues: currentIssues };
     }
     if (issue.status !== "todo") {
@@ -993,10 +993,15 @@ export class KanbanRuntime {
     }
     const preferredChatId = input.forceNewChat === true ? "" : readText(prepared.preferredChatId);
     let chatId = preferredChatId || createKanbanRemoteChatId();
+    let missingPreferredChatId = "";
     if (preferredChatId && this.options.assistantBridge.getChat) {
       try {
-        if (!await this.options.assistantBridge.getChat(preferredChatId)) chatId = createKanbanRemoteChatId();
+        if (!await this.options.assistantBridge.getChat(preferredChatId)) {
+          missingPreferredChatId = preferredChatId;
+          chatId = createKanbanRemoteChatId();
+        }
       } catch {
+        missingPreferredChatId = preferredChatId;
         chatId = createKanbanRemoteChatId();
       }
     }
@@ -1048,7 +1053,14 @@ export class KanbanRuntime {
         runId,
         chatId,
         eventType: "run.started",
-        payload: { source: "desktop_manual", status: "running", agentKey, runId, chatId }
+        payload: {
+          source: "desktop_manual",
+          status: "running",
+          agentKey,
+          runId,
+          chatId,
+          ...(missingPreferredChatId ? { missingPreferredChatId } : {})
+        }
       });
       if (!appended.accepted && !appended.queued) {
         updateDesktopKanbanManualRun(this.options.app, currentUser, runId, "failed", appended.message);
@@ -1073,7 +1085,7 @@ export class KanbanRuntime {
 
   async bindHumanReferenceChat(input: { issueId: string; stageId: string; statusId: string; chatId: string }) {
     this.refreshConnection();
-    if (!this.wsClient.isOpen() || !this.negotiatedContractVersion.startsWith("4.")) {
+    if (!this.wsClient.isOpen() || !this.negotiatedContractVersion.startsWith("1.")) {
       return { ok: false, message: t("kanban.cloudSync.notConnected") };
     }
     try {
@@ -1087,7 +1099,7 @@ export class KanbanRuntime {
 
   async unbindHumanReferenceChat(issueChatId: string) {
     this.refreshConnection();
-    if (!this.wsClient.isOpen() || !this.negotiatedContractVersion.startsWith("4.")) {
+    if (!this.wsClient.isOpen() || !this.negotiatedContractVersion.startsWith("1.")) {
       return { ok: false, message: t("kanban.cloudSync.notConnected") };
     }
     try {
@@ -1574,14 +1586,14 @@ export class KanbanRuntime {
           ? await this.inspectReceiptRun(receipt.chatId, receipt.runId)
           : { exists: false as const, terminalEventType: undefined, message: undefined, error: undefined };
         if (recovery.terminalEventType) {
-		  const reviewResult = receipt.commandType === "review" && recovery.terminalEventType === "run.completed"
-			? await this.readStructuredReviewResult(receipt.chatId, receipt.runId)
-			: undefined;
+          const reviewResult = receipt.commandType === "review" && recovery.terminalEventType === "run.completed"
+            ? await this.readStructuredReviewResult(receipt.chatId, receipt.runId)
+            : undefined;
           await this.appendRunEvent({
             sourceDeliverySeq: receipt.deliverySeq,
             projectId: receipt.projectId,
             issueId: receipt.issueId,
-			issueRunId: receipt.issueRunId,
+            issueRunId: receipt.issueRunId,
             runId: receipt.runId,
             chatId: receipt.chatId,
             eventType: recovery.terminalEventType,
@@ -1591,8 +1603,8 @@ export class KanbanRuntime {
               runId: receipt.runId,
               chatId: receipt.chatId,
               message: recovery.message,
-			  error: recovery.error,
-			  ...(reviewResult ? { reviewResult } : {})
+              error: recovery.error,
+              ...(reviewResult ? { reviewResult } : {})
             }
           });
           updateDesktopKanbanCommandReceipt(
@@ -1633,6 +1645,11 @@ export class KanbanRuntime {
           }
         }
         updateDesktopKanbanCommandReceipt(this.options.app, currentUser, receipt.commandId, "started");
+        const preferredChatId = readText(receipt.payload.preferredChatId);
+        const missingPreferredChatId = receipt.commandType === "run" && preferredChatId && receipt.chatId !== preferredChatId &&
+          receipt.payload.forceNewChat !== true && readText(receipt.payload.chatPolicy) !== "new"
+          ? preferredChatId
+          : "";
         await this.appendRunEvent({
           sourceDeliverySeq: receipt.deliverySeq,
           projectId: receipt.projectId,
@@ -1646,7 +1663,8 @@ export class KanbanRuntime {
             agentKey: optionalText(receipt.payload.agentKey),
             commandId: receipt.commandId,
             runId: receipt.runId,
-            chatId: receipt.chatId
+            chatId: receipt.chatId,
+            ...(missingPreferredChatId ? { missingPreferredChatId } : {})
           }
         });
       }
@@ -1694,18 +1712,18 @@ export class KanbanRuntime {
   }
 
   private async readStructuredReviewResult(chatId: string, runId: string) {
-	if (!this.options.assistantBridge.getChat) return undefined;
-	try {
-	  const detail = await this.options.assistantBridge.getChat(chatId);
-	  const messages = (detail?.messages ?? []).filter((message) => message.runId === runId);
-	  for (const message of [...messages].reverse()) {
-		const parsed = parseStructuredReviewText(readText(message.content));
-		if (parsed) return parsed;
-	  }
-	} catch {
-	  return undefined;
-	}
-	return undefined;
+    if (!this.options.assistantBridge.getChat) return undefined;
+    try {
+      const detail = await this.options.assistantBridge.getChat(chatId);
+      const messages = (detail?.messages ?? []).filter((message) => message.runId === runId);
+      for (const message of [...messages].reverse()) {
+        const parsed = parseStructuredReviewText(readText(message.content));
+        if (parsed) return parsed;
+      }
+    } catch {
+      return undefined;
+    }
+    return undefined;
   }
 
   private async reportFailedCommandReceipt(receipt: KanbanCommandReceipt, error: string) {

@@ -137,8 +137,15 @@ export type KanbanCloudSnapshot = {
   issueFieldContexts?: unknown[];
   issueFieldOptions?: unknown[];
   workflows?: unknown[];
+  workflowStageDefs?: unknown[];
+  workflowStatusDefs?: unknown[];
   workflowStages?: unknown[];
   workflowStatuses?: unknown[];
+  workflowTransitions?: unknown[];
+  workflowDecomposeRules?: unknown[];
+  teams?: unknown[];
+  teamMembers?: unknown[];
+  projectPermissions?: unknown[];
   issueLabels?: unknown[];
   issueLabelLinks?: unknown[];
   issueDependencies?: unknown[];
@@ -223,7 +230,7 @@ const ISSUE_TYPE_ID = "issue-type-standard-requirement";
 const DATABASE_DIRECTORY = "desktop-kanban";
 const DATABASE_FILENAME = "kanban.db";
 const DATABASE_SCHEMA_VERSION = 2;
-const SYNC_CACHE_SCHEMA_VERSION = 5;
+const SYNC_CACHE_SCHEMA_VERSION = 1;
 
 function nowIso() {
   return new Date().toISOString();
@@ -369,6 +376,7 @@ function buildIssueDetailJson(issue: KanbanIssue) {
     statusKey: issue.statusKey ?? "",
     columnKey: issue.columnKey ?? "",
     customFields: issue.customFields ?? {},
+    activeIssueRunId: issue.activeIssueRunId ?? null,
     runAgentKey: issue.runAgentKey ?? null,
     runCommandId: issue.runCommandId ?? null,
     runStartedAt: issue.runStartedAt ?? null,
@@ -390,8 +398,15 @@ function emptyCloudDetailData(): KanbanCloudDetailData {
     issueFieldContexts: [],
     issueFieldOptions: [],
     workflows: [],
+    workflowStageDefs: [],
+    workflowStatusDefs: [],
     workflowStages: [],
     workflowStatuses: [],
+    workflowTransitions: [],
+    workflowDecomposeRules: [],
+    teams: [],
+    teamMembers: [],
+    projectPermissions: [],
     issueLabels: [],
     issueLabelLinks: [],
     issueDependencies: [],
@@ -411,8 +426,15 @@ const CLOUD_DETAIL_KEYS = [
   "issueFieldContexts",
   "issueFieldOptions",
   "workflows",
+  "workflowStageDefs",
+  "workflowStatusDefs",
   "workflowStages",
   "workflowStatuses",
+  "workflowTransitions",
+  "workflowDecomposeRules",
+  "teams",
+  "teamMembers",
+  "projectPermissions",
   "issueLabels",
   "issueLabelLinks",
   "issueDependencies",
@@ -439,6 +461,7 @@ function detailItemKey(key: keyof KanbanCloudDetailData, item: unknown, index: n
   const record = parseCloudIssue(item);
   if (!record) return `${key}:${index}`;
   if (key === "issueTypes") return trimText(record.key) || `${key}:${index}`;
+  if (key === "teamMembers") return `${trimText(record.teamId)}:${trimText(record.userId)}`;
   if (key === "issueLabelLinks") return `${trimText(record.issueId)}:${trimText(record.labelId)}`;
   return String(record.id ?? `${key}:${index}`);
 }
@@ -1210,6 +1233,7 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     workerId: row.worker_id,
     workerAgent: row.worker_agent,
     activeReviewId: row.active_review_id,
+    activeIssueRunId: nullableTrimmedText(detail.activeIssueRunId),
     activeRunId: row.active_run_id,
     position: row.position,
     chatId: row.chat_id,
@@ -2199,26 +2223,28 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     severity: normalizeKanbanSeverity(rawIssue.severity),
     assigneeAgentKey: nullableTrimmedText(rawIssue.assigneeAgentKey),
     assigneeId: nullableTrimmedText(rawIssue.assigneeId),
-    workerType: normalizeWorkerType(rawIssue.workerType),
-    workerId: nullableTrimmedText(rawIssue.workerId),
-    workerAgent: nullableTrimmedText(rawIssue.workerAgent),
+    // Contract 1.0 keeps cloud execution identity in issueStageWorkers and
+    // execution state in issueChats/issueRuns. Never dual-read retired Issue scalars.
+    workerType: null,
+    workerId: null,
+    workerAgent: null,
     activeReviewId: nullableTrimmedText(rawIssue.activeReviewId),
     activeIssueRunId: nullableTrimmedText(rawIssue.activeIssueRunId),
-    activeRunId: nullableTrimmedText(rawIssue.activeIssueRunId) ?? nullableTrimmedText(rawIssue.activeRunId),
+    activeRunId: nullableTrimmedText(rawIssue.activeIssueRunId),
     position: typeof rawIssue.position === "number" && Number.isFinite(rawIssue.position) ? rawIssue.position : 1,
-    chatId: nullableTrimmedText(rawIssue.chatId),
-    runId: nullableTrimmedText(rawIssue.runId),
-    runState: normalizeKanbanRunState(rawIssue.runState),
-    runAgentKey: nullableTrimmedText(rawIssue.runAgentKey),
-    runCommandId: nullableTrimmedText(rawIssue.runCommandId),
-    runStartedAt: nullableTrimmedText(rawIssue.runStartedAt),
-    runFinishedAt: nullableTrimmedText(rawIssue.runFinishedAt),
-    runResultMessage: nullableTrimmedText(rawIssue.runResultMessage),
-    runErrorMessage: nullableTrimmedText(rawIssue.runErrorMessage),
-    dispatchState: nullableTrimmedText(rawIssue.dispatchState) as KanbanIssue["dispatchState"],
-    dispatchDeviceId: nullableTrimmedText(rawIssue.dispatchDeviceId),
-    dispatchCommandId: nullableTrimmedText(rawIssue.dispatchCommandId),
-    dispatchUpdatedAt: nullableTrimmedText(rawIssue.dispatchUpdatedAt),
+    chatId: null,
+    runId: null,
+    runState: null,
+    runAgentKey: null,
+    runCommandId: null,
+    runStartedAt: null,
+    runFinishedAt: null,
+    runResultMessage: null,
+    runErrorMessage: null,
+    dispatchState: null,
+    dispatchDeviceId: null,
+    dispatchCommandId: null,
+    dispatchUpdatedAt: null,
     automationId: nullableTrimmedText(rawIssue.automationId),
     automationEnabled: rawIssue.automationEnabled === true,
     automationCron: nullableTrimmedText(rawIssue.automationCron),

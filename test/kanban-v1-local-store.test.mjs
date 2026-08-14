@@ -27,7 +27,7 @@ const {
 const currentUser = { id: "user-1", name: "User One", email: "user@example.test", source: "test" };
 
 function createTempApp(t) {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-v31-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-kanban-v1-"));
   const app = {
     getPath(name) {
       if (name === "home") return path.join(root, "home");
@@ -193,6 +193,8 @@ test("Desktop cloud mutation, run event, and manual run receipts persist idempot
     clientEventId: "device-1:cloud-issue-1:run-1:run.started",
     projectId: "cloud-project-1",
     issueId: "cloud-issue-1",
+    issueRunId: "issue-run-1",
+    externalRunId: "run-1",
     runId: "run-1",
     chatId: "chat-1",
     eventType: "run.started",
@@ -203,6 +205,8 @@ test("Desktop cloud mutation, run event, and manual run receipts persist idempot
     clientEventId: "device-1:cloud-issue-1:run-1:run.started",
     projectId: "cloud-project-1",
     issueId: "cloud-issue-1",
+    issueRunId: "issue-run-1",
+    externalRunId: "run-1",
     runId: "run-1",
     chatId: "chat-1",
     eventType: "run.started",
@@ -214,6 +218,7 @@ test("Desktop cloud mutation, run event, and manual run receipts persist idempot
   assert.equal(events[0].payload.agentKey, "codeAssistant");
 
   recordDesktopKanbanManualRun(app, currentUser, {
+    issueRunId: "issue-run-1",
     runId: "run-1",
     chatId: "chat-1",
     issueId: "cloud-issue-1",
@@ -221,6 +226,7 @@ test("Desktop cloud mutation, run event, and manual run receipts persist idempot
     agentKey: "codeAssistant"
   });
   assert.deepEqual({ ...getDesktopKanbanManualRunByRunId(app, currentUser, "run-1") }, {
+    issueRunId: "issue-run-1",
     runId: "run-1",
     chatId: "chat-1",
     issueId: "cloud-issue-1",
@@ -266,6 +272,70 @@ test("priority uses P0-P3 and only normalizes legacy values at the cache boundar
   assert.equal(local.ok, true);
   assert.equal(local.issue.priority, null);
   assert.equal(local.issue.severity, null);
+});
+
+test("cloud Issue cache ignores retired top-level execution scalars", (t) => {
+  const app = createTempApp(t);
+  applyDesktopKanbanCloudSnapshot(app, currentUser, {
+    scope: "project_set",
+    complete: true,
+    projectIds: ["cloud-project-1"],
+    lastSeq: 44,
+    projects: [],
+    issueStageWorkers: [{
+      issueId: "cloud-issue-1",
+      stageId: "stage-development",
+      workerRole: "run",
+      workerType: "agent",
+      workerAgent: "canonical-agent",
+      deviceId: "device-1",
+      createdAt: "2026-07-11T00:00:00.000Z",
+      updatedAt: "2026-07-11T00:00:00.000Z"
+    }],
+    issueChats: [],
+    issueRuns: [{
+      id: "issue-run-1",
+      issueId: "cloud-issue-1",
+      stageId: "stage-development",
+      statusId: "status-todo",
+      workerRole: "run",
+      workerAgent: "canonical-agent",
+      deviceId: "device-1",
+      externalRunId: "external-run-1",
+      source: "cloud_dispatch",
+      state: "running",
+      createdAt: "2026-07-11T00:00:00.000Z",
+      updatedAt: "2026-07-11T00:00:00.000Z"
+    }],
+    issues: [cloudIssue({
+      stageId: "stage-development",
+      statusId: "status-todo",
+      activeIssueRunId: "issue-run-1",
+      workerType: "agent",
+      workerId: "retired-worker",
+      workerAgent: "retired-agent",
+      chatId: "retired-chat",
+      runId: "retired-run",
+      runState: "running",
+      runAgentKey: "retired-agent",
+      dispatchState: "running",
+      dispatchDeviceId: "wrong-device"
+    })]
+  });
+
+  const cached = listDesktopKanbanIssues(app, currentUser);
+  const issue = cached.issues.find((candidate) => candidate.remoteIssueId === "cloud-issue-1");
+  assert.equal(issue?.activeIssueRunId, "issue-run-1");
+  assert.equal(issue?.activeRunId, "issue-run-1");
+  assert.equal(issue?.workerType, null);
+  assert.equal(issue?.workerId, null);
+  assert.equal(issue?.workerAgent, null);
+  assert.equal(issue?.chatId, null);
+  assert.equal(issue?.runId, null);
+  assert.equal(issue?.runState, null);
+  assert.equal(issue?.dispatchState, null);
+  assert.equal(issue?.dispatchDeviceId, null);
+  assert.equal(cached.cloudDetails.issueStageWorkers[0]?.workerAgent, "canonical-agent");
 });
 
 test("project catalogs and new issue fields survive snapshots, incremental upserts, and local updates", (t) => {
@@ -546,7 +616,7 @@ test("project-set replacement removes cloud cache and preserves local issues", (
 
 test("command receipt deduplicates stable command IDs and rejects payload drift", (t) => {
   const app = createTempApp(t);
-  const payload = { issue: cloudIssue(), agentKey: "codeAssistant", message: "run once" };
+  const payload = { issue: cloudIssue(), issueRunId: "issue-run-command-1", agentKey: "codeAssistant", message: "run once" };
   const first = recordDesktopKanbanCommandReceipt(app, currentUser, {
     commandId: "command-1",
     deliverySeq: 1,
@@ -589,10 +659,6 @@ test("cloud detail snapshot survives cache reload and incremental issue updates"
     statusKey: "todo",
     columnKey: "todo",
     customFields: { budget: 120000, stakeholders: ["team-payments"] },
-    runAgentKey: "codeAssistant",
-    runCommandId: "command-rich-1",
-    runStartedAt: "2026-07-11T01:00:00.000Z",
-    runResultMessage: "Scope ready",
     createdBy: "user-1",
     updatedByAgent: "codeAssistant"
   });
@@ -614,17 +680,25 @@ test("cloud detail snapshot survives cache reload and incremental issue updates"
     }],
     issues: [richIssue],
     users: [{ id: "user-1", email: "user@example.test", displayName: "User One", status: "active" }],
-    issueTypes: [{ key: "story", name: "Story", position: 1, isActive: true }],
+    issueTypes: [{ key: "story", name: "Story", color: "#8f78c7", icon: "book", position: 1, isActive: true }],
     issueFieldDefs: [{ id: "field-budget", key: "budget", name: "Budget", valueType: "number", unit: "CNY" }],
     issueFieldContexts: [{ id: "context-budget", fieldId: "field-budget", projectId: "cloud-project-1", required: true, position: 1, isActive: true }],
     issueFieldOptions: [],
     workflows: [{ id: "workflow-standard-requirement", issueTypeKey: "story", key: "story", name: "Story workflow" }],
-    workflowStages: [{ id: "stage-delivery", workflowId: "workflow-standard-requirement", key: "delivery", name: "Delivery" }],
+    workflowStageDefs: [{ id: "stage-def-delivery", key: "delivery", name: "Delivery", isSystem: true }],
+    workflowStatusDefs: [{ id: "status-def-todo", key: "todo", name: "Todo", columnKey: "todo", isSystem: true }],
+    workflowStages: [{ id: "stage-delivery", workflowId: "workflow-standard-requirement", stageDefId: "stage-def-delivery", key: "delivery", name: "Delivery", color: "#6f91c9" }],
     workflowStatuses: [{ id: "status-todo", workflowId: "workflow-standard-requirement", stageId: "stage-delivery", key: "todo", name: "Todo" }],
+    workflowTransitions: [{ id: "transition-start", workflowId: "workflow-standard-requirement", fromStageId: "stage-delivery", fromStatusId: "status-todo", toStageId: "stage-delivery", toStatusId: "status-todo", actionKey: "start", name: "Start", actorType: "agent", requiresReview: false, isActive: true, position: 1 }],
+    workflowDecomposeRules: [],
+    teams: [{ id: "team-payments", slug: "payments", name: "Payments" }],
+    teamMembers: [{ teamId: "team-payments", userId: "user-1", role: "member" }],
+    projectPermissions: [{ id: "permission-1", projectId: "cloud-project-1", principalType: "team", principalId: "team-payments", role: "editor", inheritToChildren: true }],
     issueLabels: [{ id: "label-backend", projectId: "cloud-project-1", key: "backend", name: "Backend", color: "#3b82f6" }],
     issueLabelLinks: [{ issueId: "cloud-issue-1", labelId: "label-backend" }],
     issueDependencies: [{ id: "dep-1", fromIssueId: "cloud-issue-1", toIssueId: "cloud-parent-1", type: "blocks" }],
-    reviews: [{ id: "review-1", issueId: "cloud-issue-1", reviewType: "acceptance", status: "pending", requestedAt: "2026-07-11T02:00:00.000Z", summary: "Please review", createdAt: "2026-07-11T02:00:00.000Z", updatedAt: "2026-07-11T02:00:00.000Z" }],
+    reviews: [{ id: "review-1", issueId: "cloud-issue-1", stageId: "stage-delivery", statusId: "status-todo", reviewType: "acceptance", status: "pending", workerType: "human", workerId: "user-1", attemptState: "awaiting_human", requestedAt: "2026-07-11T02:00:00.000Z", summary: "Please review", createdAt: "2026-07-11T02:00:00.000Z", updatedAt: "2026-07-11T02:00:00.000Z" }],
+    issueRuns: [{ id: "issue-run-rich-1", issueId: "cloud-issue-1", stageId: "stage-delivery", statusId: "status-todo", workerRole: "run", workerAgent: "codeAssistant", deviceId: "device-1", externalRunId: "run-rich-1", source: "cloud_dispatch", commandId: "command-rich-1", state: "completed", startedAt: "2026-07-11T01:00:00.000Z", finishedAt: "2026-07-11T01:30:00.000Z", resultMessage: "Scope ready", createdAt: "2026-07-11T01:00:00.000Z", updatedAt: "2026-07-11T01:30:00.000Z" }],
     issueComments: [{ id: "comment-1", issueId: "cloud-issue-1", authorUserId: "user-1", body: "Looks good", createdAt: "2026-07-11T02:01:00.000Z", updatedAt: "2026-07-11T02:01:00.000Z" }],
     recentEvents: [{ id: 1, issueId: "cloud-issue-1", revision: 70, eventType: "issue.updated", actorId: "user-1", payload: {}, createdAt: "2026-07-11T02:02:00.000Z" }]
   });
@@ -634,20 +708,46 @@ test("cloud detail snapshot survives cache reload and incremental issue updates"
   assert.equal(cachedIssue?.issueTypeKey, "story");
   assert.equal(cachedIssue?.parentIssueId, "cloud-parent-1");
   assert.deepEqual(cachedIssue?.customFields, { budget: 120000, stakeholders: ["team-payments"] });
-  assert.equal(cachedIssue?.runResultMessage, "Scope ready");
+  assert.equal(cachedIssue?.runResultMessage, null);
+  assert.equal(cached.cloudDetails.issueRuns[0]?.resultMessage, "Scope ready");
   assert.equal(cached.cloudDetails.users[0].displayName, "User One");
+  assert.deepEqual(
+    [cached.cloudDetails.issueTypes[0].color, cached.cloudDetails.issueTypes[0].icon, cached.cloudDetails.issueTypes[0].isActive],
+    ["#8f78c7", "book", true]
+  );
+  assert.equal(cached.cloudDetails.workflowStages[0].color, "#6f91c9");
+  assert.equal(cached.cloudDetails.workflowStageDefs[0].key, "delivery");
+  assert.equal(cached.cloudDetails.workflowStatusDefs[0].columnKey, "todo");
+  assert.equal(cached.cloudDetails.workflowTransitions[0].actionKey, "start");
+  assert.equal(cached.cloudDetails.teams[0].slug, "payments");
+  assert.equal(cached.cloudDetails.teamMembers[0].userId, "user-1");
+  assert.equal(cached.cloudDetails.projectPermissions[0].role, "editor");
   assert.equal(cached.cloudDetails.issueFieldDefs[0].key, "budget");
   assert.equal(cached.cloudDetails.issueComments[0].body, "Looks good");
 
   const updated = upsertDispatchedDesktopKanbanIssue(app, currentUser, {
     ...richIssue,
     revision: 71,
-    customFields: { budget: 160000 },
-    runResultMessage: "Scope updated"
+    customFields: { budget: 160000 }
   }, 71);
   assert.equal(updated.ok, true);
   assert.deepEqual(updated.issue.customFields, { budget: 160000 });
   assert.equal(listDesktopKanbanIssues(app, currentUser).cloudDetails.issueLabels.length, 1);
+  assert.equal(listDesktopKanbanIssues(app, currentUser).cloudDetails.issueRuns[0]?.resultMessage, "Scope ready");
+
+  applyDesktopKanbanCloudSnapshot(app, currentUser, {
+    scope: "project",
+    complete: false,
+    lastSeq: 71,
+    issueTypes: [{ key: "story", name: "Story", color: "#7185a6", icon: "crown", position: 1, isActive: false }],
+    workflowStages: [{ id: "stage-delivery", workflowId: "workflow-standard-requirement", stageDefId: "stage-def-delivery", key: "delivery", name: "Delivery", color: "#d2a96e" }]
+  });
+  const incrementallyUpdated = listDesktopKanbanIssues(app, currentUser).cloudDetails;
+  assert.deepEqual(
+    [incrementallyUpdated.issueTypes[0].color, incrementallyUpdated.issueTypes[0].icon, incrementallyUpdated.issueTypes[0].isActive],
+    ["#7185a6", "crown", false]
+  );
+  assert.equal(incrementallyUpdated.workflowStages[0].color, "#d2a96e");
 
   applyDesktopKanbanCloudSnapshot(app, currentUser, {
     scope: "project_set",
@@ -658,6 +758,9 @@ test("cloud detail snapshot survives cache reload and incremental issue updates"
     issues: [{ ...richIssue, revision: 72 }]
   });
   const replaced = listDesktopKanbanIssues(app, currentUser);
+  assert.equal(replaced.cloudDetails.issueTypes.length, 0);
+  assert.equal(replaced.cloudDetails.workflowStages.length, 0);
+  assert.equal(replaced.cloudDetails.teams.length, 0);
   assert.equal(replaced.cloudDetails.issueLabels.length, 0);
   assert.equal(replaced.cloudDetails.recentEvents.length, 0);
 });

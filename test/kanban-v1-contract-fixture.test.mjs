@@ -2,14 +2,15 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-test("Kanban v3.1 golden fixtures keep canonical envelope shapes", () => {
-  const fixture = JSON.parse(fs.readFileSync(new URL("./fixtures/kanban-v3.1/contract-fixtures.json", import.meta.url), "utf8"));
-  assert.equal(fixture.contractVersion, "3.1");
-  assert.equal(fixture.wireVersion, 3);
-  const assign = fixture.cases.issueAssignRequest;
-  assert.equal(assign.frame, "request");
-  assert.equal(assign.payload.baseIssueRevision, 35);
-  assert.deepEqual(assign.payload.worker, { type: "agent", agentKey: "codeAssistant" });
+test("Kanban v1 golden fixtures keep canonical envelope shapes", () => {
+  const fixture = JSON.parse(fs.readFileSync(new URL("./fixtures/kanban-v1/contract-fixtures.json", import.meta.url), "utf8"));
+  assert.equal(fixture.contractVersion, "1.0");
+  assert.equal(fixture.wireVersion, 1);
+  const worker = fixture.cases.issueWorkerSetRequest;
+  assert.equal(worker.frame, "request");
+  assert.equal(worker.type, "issue.worker.set");
+  assert.equal(worker.payload.workerRole, "run");
+  assert.equal(worker.payload.deviceId, "device-1");
   const moved = fixture.cases.crossProjectIssueEvent;
   assert.equal(moved.payload.eventType, "issue.updated");
   assert.equal(moved.payload.reason, "moved");
