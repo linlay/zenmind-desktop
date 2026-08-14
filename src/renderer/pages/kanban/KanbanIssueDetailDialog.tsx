@@ -600,7 +600,7 @@ export function KanbanIssueDetailDialog({
     completed: t("kanban.status.completed")
   });
   const timelineEventsByRevision = new Map(events.map((event) => [event.revision, event]));
-  const relatedItemCount = (parentIssueId ? 1 : 0) + subtasks.length + dependencies.length + reviews.length + runs.length;
+  const relatedItemCount = (parentIssueId ? 1 : 0) + subtasks.length + dependencies.length;
   const visibleAttachments = draft.attachments.filter((attachment) => !attachment.hidden);
   const localChatSummariesById = new Map(availableLocalChats.map((chat) => [chat.id, chat]));
   const resolveChatAgentKey = (chatId: string, explicitAgentKey?: string | null) => {
@@ -965,12 +965,14 @@ export function KanbanIssueDetailDialog({
 
           <aside className="kanban-detail-rail" aria-label={t("kanban.detail.properties")}>
             <nav className="kanban-detail-anchor-nav" aria-label={t("kanban.detail.properties")}>
-              {[
+              {([
                 ["kanban-detail-basic", t("kanban.detail.basicTitle")],
                 ["kanban-detail-people", t("kanban.detail.peopleTitle")],
-                ["kanban-detail-related", t("kanban.detail.relatedTitle")],
+                ...(relatedItemCount > 0 ? [["kanban-detail-related", t("kanban.detail.relatedTitle")]] : []),
+                ["kanban-detail-reviews", t("kanban.detail.reviewsTitle")],
+                ["kanban-detail-runs", t("kanban.detail.runsTitle")],
                 ["kanban-detail-activity", t("kanban.detail.activityTitle")]
-              ].map(([sectionId, label]) => <button key={sectionId} type="button" onClick={() => document.getElementById(sectionId)?.scrollIntoView({ block: "start" })}>{label}</button>)}
+              ] as Array<[string, string]>).map(([sectionId, label]) => <button key={sectionId} type="button" onClick={() => document.getElementById(sectionId)?.scrollIntoView({ block: "start" })}>{label}</button>)}
             </nav>
 
             <DetailSection sectionId="kanban-detail-basic" title={t("kanban.detail.basicTitle")} icon={<FileTextOutlined />}>
@@ -1058,8 +1060,8 @@ export function KanbanIssueDetailDialog({
               {isCloud && issue.status === "in_progress" && currentRunWorker?.workerType === "human" && onBindHumanReferenceChat ? <div className="kanban-detail-owner-action"><label>{t("kanban.chat.bindLocal")}</label><select value={selectedReferenceChatId} onChange={(event) => setSelectedReferenceChatId(event.target.value)}><option value="">{t("kanban.chat.selectLocal")}</option>{availableLocalChats.map((chat) => <option key={chat.id} value={chat.id}>{chat.title}</option>)}</select><button type="button" disabled={referenceChatBusy || !selectedReferenceChatId} onClick={() => void bindHumanReferenceChat()}>{t(referenceChatBusy ? "kanban.chat.binding" : "kanban.chat.bind")}</button>{localReferenceChats.map((chat) => <span key={chat.id}>{chat.chatId}<button type="button" disabled={referenceChatBusy} onClick={() => void onUnbindHumanReferenceChat?.(chat.id).then((result) => onFeedback(result.ok ? "success" : "error", result.message || t(result.ok ? "kanban.chat.unbindSucceeded" : "kanban.chat.unbindFailed")))}>{t("kanban.chat.unbind")}</button></span>)}</div> : null}
             </DetailSection>
 
-            <DetailSection sectionId="kanban-detail-related" title={t("kanban.detail.relatedTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: relatedItemCount })}>
-              {relatedItemCount > 0 ? <div className="kanban-detail-related-groups">
+            {relatedItemCount > 0 ? <DetailSection sectionId="kanban-detail-related" title={t("kanban.detail.relatedTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: relatedItemCount })}>
+              <div className="kanban-detail-related-groups">
                 {parentIssueId ? <div><h3>{t("kanban.detail.parentTitle")}</h3><div className="kanban-detail-related-list"><article><FileTextOutlined /><span><strong>{parentIssue?.title || parentIssueId}</strong><small>{parentIssueId}{parentIssue ? ` · ${parentIssue.statusName || t(DETAIL_STATUS_LABELS[parentIssue.status])}` : ""}</small></span></article></div></div> : null}
                 {subtasks.length > 0 ? <div><h3>{t("kanban.detail.subtasksTitle")}</h3><div className="kanban-detail-related-list">{subtasks.map((subtask) => <article key={subtask.id}><CheckCircleFilled className={subtask.status === "completed" ? "is-complete" : ""} /><span><strong>{subtask.title}</strong><small>{issueExternalId(subtask)} · {subtask.statusName || t(DETAIL_STATUS_LABELS[subtask.status])}</small></span></article>)}</div></div> : null}
                 {dependencies.length > 0 ? <div><h3>{t("kanban.detail.dependenciesTitle")}</h3><div className="kanban-detail-dependency-list">{dependencies.map((dependency) => {
@@ -1068,33 +1070,36 @@ export function KanbanIssueDetailDialog({
                   const related = issuesByRemoteId.get(relatedId);
                   return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
                 })}</div></div> : null}
-                {reviews.length > 0 ? <div><h3>{t("kanban.detail.reviewsTitle")}</h3><div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div></div> : null}
-                {runs.length > 0 ? <div>
-                  <h3><RobotOutlined />{t("kanban.detail.runsTitle")}</h3>
-                  <div className="kanban-detail-run-list">{runs.map((run) => {
-                    const viewChatButton = run.chatId && "deviceId" in run && run.deviceId === localDeviceId
-                      ? <button type="button" onClick={() => openIssueChat(run.workerAgent || "", run.chatId || "")}>{t("kanban.chat.view")}</button>
-                      : run.chatId && !("deviceId" in run) && run.chatId === issue.chatId
-                        ? <button type="button" onClick={() => openChat()}>{t("kanban.chat.view")}</button>
-                        : null;
-                    return <div key={run.id} className="kanban-detail-run-card">
-                      <span className="kanban-detail-run-icon"><RobotOutlined /></span>
-                      <div className="kanban-detail-run-body">
-                        <strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong>
-                        {run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}
-                        {run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}
-                        <div className="kanban-detail-run-footer">
-                          <dl className="kanban-detail-run-metrics">
-                            <div><dt>{t("kanban.detail.runSpent")}</dt><dd>{formatRunDuration(run.startedAt, run.finishedAt, t)}</dd></div>
-                            <div><dt>{t("kanban.detail.runCompletedAt")}</dt><dd>{formatDateTime(run.finishedAt, locale)}</dd></div>
-                          </dl>
-                          {viewChatButton}
-                        </div>
-                      </div>
-                    </div>;
-                  })}</div>
-                </div> : null}
-              </div> : <EmptyBlock>{t("kanban.detail.noRelated")}</EmptyBlock>}
+              </div>
+            </DetailSection> : null}
+
+            <DetailSection sectionId="kanban-detail-reviews" title={t("kanban.detail.reviewsTitle")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: reviews.length })}>
+              {reviews.length > 0 ? <div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div> : <EmptyBlock>{t("kanban.detail.noReviews")}</EmptyBlock>}
+            </DetailSection>
+
+            <DetailSection sectionId="kanban-detail-runs" title={t("kanban.detail.runsTitle")} icon={<RobotOutlined />} meta={t("kanban.detail.itemCount", { count: runs.length })}>
+              {runs.length > 0 ? <div className="kanban-detail-run-list">{runs.map((run) => {
+                const viewChatButton = run.chatId && "deviceId" in run && run.deviceId === localDeviceId
+                  ? <button type="button" onClick={() => openIssueChat(run.workerAgent || "", run.chatId || "")}>{t("kanban.chat.view")}</button>
+                  : run.chatId && !("deviceId" in run) && run.chatId === issue.chatId
+                    ? <button type="button" onClick={() => openChat()}>{t("kanban.chat.view")}</button>
+                    : null;
+                return <div key={run.id} className="kanban-detail-run-card">
+                  <span className="kanban-detail-run-icon"><RobotOutlined /></span>
+                  <div className="kanban-detail-run-body">
+                    <strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong>
+                    {run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}
+                    {run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}
+                    <div className="kanban-detail-run-footer">
+                      <dl className="kanban-detail-run-metrics">
+                        <div><dt>{t("kanban.detail.runSpent")}</dt><dd>{formatRunDuration(run.startedAt, run.finishedAt, t)}</dd></div>
+                        <div><dt>{t("kanban.detail.runCompletedAt")}</dt><dd>{formatDateTime(run.finishedAt, locale)}</dd></div>
+                      </dl>
+                      {viewChatButton}
+                    </div>
+                  </div>
+                </div>;
+              })}</div> : <EmptyBlock>{t("kanban.detail.noRuns")}</EmptyBlock>}
             </DetailSection>
 
             <DetailSection sectionId="kanban-detail-activity" title={t("kanban.detail.activityTitle")} icon={<HistoryOutlined />} meta={t("kanban.detail.itemCount", { count: statusTimeline.length })}>
