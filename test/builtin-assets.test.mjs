@@ -109,7 +109,7 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
     "    case \"$1\" in",
     "      --public-key-source-file) shift 2 ;;",
     "      --desktop-config-reset) shift ;;",
-    "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to|--runtime-resource-source|--runtime-resource-previous-source|--runtime-resource-mode) shift 2 ;;",
+    "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to|--runtime-resource-source|--runtime-resource-previous-source|--runtime-resource-mode|--desktop-device-id) shift 2 ;;",
     "      *) shift ;;",
     "    esac",
     "  done",

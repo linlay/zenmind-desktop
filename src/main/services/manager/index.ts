@@ -499,7 +499,8 @@ async function buildDesktopManagedDeployCommand(
     return appendAgentPlatformRuntimeResourceDeployArgs(
       appendDesktopConfigResetDeployArgs(desktopCommand, desktopConfigReset),
       service,
-      desktopConfigReset
+      desktopConfigReset,
+      getDesktopDeviceId(app)
     );
   }
   if (service.id === "agent-container-hub") {
@@ -545,7 +546,8 @@ function appendDesktopConfigResetDeployArgs(
 function appendAgentPlatformRuntimeResourceDeployArgs(
   command: string[],
   service: ServiceDefinition,
-  context: DesktopServiceConfigResetContext | undefined
+  context: DesktopServiceConfigResetContext | undefined,
+  desktopDeviceId: string
 ) {
   if (!context?.runtimeResourceSource) {
     return command;
@@ -554,6 +556,10 @@ function appendAgentPlatformRuntimeResourceDeployArgs(
     throw new Error(
       "agent-platform bundle does not declare desktop.runtimeResources=v1; install a current Platform bundle before Desktop env upgrade."
     );
+  }
+  const normalizedDeviceId = desktopDeviceId.trim();
+  if (!normalizedDeviceId) {
+    throw new Error("agent-platform runtime resource migration requires a Desktop device id.");
   }
   return [
     ...command,
@@ -567,7 +573,8 @@ function appendAgentPlatformRuntimeResourceDeployArgs(
     ...(context.runtimeResourcePreviousSource
       ? ["--runtime-resource-previous-source", context.runtimeResourcePreviousSource]
       : []),
-    "--runtime-resource-mode", context.runtimeResourceMode ?? "version-change"
+    "--runtime-resource-mode", context.runtimeResourceMode ?? "version-change",
+    "--desktop-device-id", normalizedDeviceId
   ];
 }
 

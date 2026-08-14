@@ -316,13 +316,15 @@ test("Desktop reset deploy flags use the unified service interface", () => {
         runtimeResourceSource: "/validated/env.zip",
         runtimeResourcePreviousSource: "/validated/previous.zip",
         runtimeResourceMode: "version-change"
-      }
+      },
+      "desktop-device-123"
     ),
     [
       "deploy.sh", "--desktop-version-from", "v1", "--desktop-version-to", "v2",
       "--runtime-resource-source", "/validated/env.zip",
       "--runtime-resource-previous-source", "/validated/previous.zip",
-      "--runtime-resource-mode", "version-change"
+      "--runtime-resource-mode", "version-change",
+      "--desktop-device-id", "desktop-device-123"
     ]
   );
   assert.throws(
@@ -334,7 +336,8 @@ test("Desktop reset deploy flags use the unified service interface", () => {
         fromVersion: "v1",
         toVersion: "v2",
         runtimeResourceSource: "/validated/env.zip"
-      }
+      },
+      "desktop-device-123"
     ),
     /runtimeResources=v1/u
   );

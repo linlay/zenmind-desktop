@@ -35,6 +35,7 @@ const AGENT_PLATFORM_RUNTIME_RESOURCE_PROTOCOL_MARKERS = [
   "--runtime-resource-source",
   "--runtime-resource-previous-source",
   "--runtime-resource-mode",
+  "--desktop-device-id",
   "runtime-resource-sync"
 ];
 const LIFECYCLE_DEPLOY_PROTOCOLS = {
