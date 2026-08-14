@@ -1,17 +1,16 @@
 import type {
+  AssistantNavigationPushEvent,
   KanbanDeleteResult,
   KanbanIssue,
   KanbanIssueResult,
-  KanbanIssueUpdateInput,
   KanbanListResult,
-  KanbanStatus
+  KanbanRunState,
+  KanbanStatus,
 } from "../shared/contracts";
 import {
   deleteKanbanIssue,
   listKanbanIssues,
   updateKanbanIssue,
-  updateKanbanIssueByChatId,
-  updateKanbanIssueByRunId
 } from "./kanban-store";
 import { PRODUCT_NAME } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
@@ -29,146 +28,35 @@ type AgentPlatformCaller<TApp> = <T = unknown>(
   }
 ) => Promise<T>;
 
-type KanbanAssistantSyncEvent = {
-  type?: string;
-  status?: string | null;
-  chatId?: string | null;
-  runId?: string | null;
-};
-
 type KanbanAutomationDetail = {
   id?: string;
   scheduleId?: string;
 };
 
-export function resolveKanbanStatusFromAssistantEvent(
-  event: KanbanAssistantSyncEvent
-): KanbanStatus | null {
-  const type = (event.type ?? "").trim().toLowerCase();
-  const status = (event.status ?? "").trim().toLowerCase();
-  if (
-    type === "done" ||
-    type === "complete" ||
-    type === "completed" ||
-    type === "success" ||
-    type === "succeeded" ||
-    type === "finish" ||
-    type === "finished" ||
-    type === "run.complete" ||
-    type === "run.completed" ||
-    type === "run.success" ||
-    type === "run.succeeded" ||
-    type === "task.complete" ||
-    type === "task.completed" ||
-    type === "task.success" ||
-    type === "task.succeeded" ||
-    status === "done" ||
-    status === "complete" ||
-    status === "completed" ||
-    status === "success" ||
-    status === "succeeded" ||
-    status === "finish" ||
-    status === "finished"
-  ) {
-    return "completed";
+export type KanbanRunFinishedPushResolution = {
+  status: KanbanStatus;
+  runState: Exclude<KanbanRunState, "running">;
+  terminalEventType: "run.completed" | "run.failed" | "run.cancelled";
+};
+
+export function resolveKanbanRunFinishedPush(
+  event: Pick<AssistantNavigationPushEvent, "frame" | "type" | "status" | "finishReason">
+): KanbanRunFinishedPushResolution | null {
+  if (event.frame !== "push" || event.type !== "run.finished") {
+    return null;
+  }
+  const status = event.status?.trim() ?? "";
+  const finishReason = event.finishReason?.trim() ?? "";
+  if (status === "completed" && finishReason === "complete") {
+    return { status: "completed", runState: "completed", terminalEventType: "run.completed" };
+  }
+  if (status === "failed" && finishReason === "error") {
+    return { status: "todo", runState: "failed", terminalEventType: "run.failed" };
+  }
+  if (status === "interrupted" && finishReason === "cancel") {
+    return { status: "todo", runState: "cancelled", terminalEventType: "run.cancelled" };
   }
   return null;
-}
-
-function isCancelledKanbanAssistantEvent(event: KanbanAssistantSyncEvent) {
-  const type = (event.type ?? "").trim().toLowerCase();
-  const status = (event.status ?? "").trim().toLowerCase();
-  return (
-    type === "cancel" ||
-    type === "cancelled" ||
-    type === "canceled" ||
-    type === "run.cancel" ||
-    type === "run.cancelled" ||
-    type === "run.canceled" ||
-    type === "task.cancel" ||
-    type === "task.cancelled" ||
-    type === "task.canceled" ||
-    type === "stopped" ||
-    type === "run.stopped" ||
-    type === "run.interrupt" ||
-    status === "cancelled" ||
-    status === "canceled" ||
-    status === "stopped"
-  );
-}
-
-export function resolveKanbanRunStateFromAssistantEvent(
-  event: KanbanAssistantSyncEvent
-): KanbanIssue["runState"] {
-  const status = resolveKanbanStatusFromAssistantEvent(event);
-  if (status === "completed") {
-    return "completed";
-  }
-  const typeValue = (event.type ?? "").trim().toLowerCase();
-  const statusValue = (event.status ?? "").trim().toLowerCase();
-  if (isCancelledKanbanAssistantEvent(event)) {
-    return "cancelled";
-  }
-  if (
-    typeValue === "error" ||
-    typeValue === "failed" ||
-    typeValue === "fail" ||
-    typeValue === "timeout" ||
-    typeValue === "run.error" ||
-    typeValue === "run.fail" ||
-    typeValue === "run.failed" ||
-    typeValue === "task.fail" ||
-    typeValue === "task.failed" ||
-    typeValue === "run.expired" ||
-    statusValue === "error" ||
-    statusValue === "failed" ||
-    statusValue === "fail" ||
-    statusValue === "timeout"
-  ) {
-    return "failed";
-  }
-  return null;
-}
-
-export function syncKanbanIssueFromAssistantEvent(
-  app: AppPathProvider,
-  event: KanbanAssistantSyncEvent
-) {
-  const status = resolveKanbanStatusFromAssistantEvent(event);
-  const runState = resolveKanbanRunStateFromAssistantEvent(event);
-  if (!runState || (!event.runId && !event.chatId)) {
-    return;
-  }
-
-  const input: KanbanIssueUpdateInput = {
-    runId: null,
-    runState
-  };
-  if (status) {
-    input.status = status;
-  }
-  if (event.chatId) {
-    input.chatId = event.chatId;
-  }
-
-  const runResult = event.runId ? updateKanbanIssueByRunId(app, event.runId, input) : null;
-  if (runResult?.ok) {
-    return;
-  }
-
-  const chatResult = event.chatId ? updateKanbanIssueByChatId(app, event.chatId, input) : null;
-  if (chatResult?.ok) {
-    return;
-  }
-
-  const result = chatResult ?? runResult;
-  if (
-    result &&
-    result.message !== t("kanban.runtime.runMissing") &&
-    result.message !== t("kanban.runtime.chatMissing")
-  ) {
-    console.warn(`[kanban] failed to sync assistant run ${event.runId ?? event.chatId}: ${result.message}`);
-  }
 }
 
 function readPlatformAutomationId(value: unknown) {

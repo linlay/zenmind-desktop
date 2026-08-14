@@ -5,6 +5,7 @@ import type {
   AssistantCreateCoderProjectRequest,
   AssistantCreateProjectRequest,
   AssistantEventListener,
+  AssistantBootstrapStateChangedListener,
   AssistantNavigationAgentsChangedListener,
   AssistantNavigationListOptions,
   AssistantNavigationPushEventListener,
@@ -149,6 +150,8 @@ const api: DesktopApi = {
     moveIssue: (input: KanbanIssueMoveInput) => ipcRenderer.invoke("kanban.moveIssue", input),
     claimIssue: (issueId: string) => ipcRenderer.invoke("kanban.claimIssue", issueId),
     runIssue: (input: KanbanRunIssueInput) => ipcRenderer.invoke("kanban.runIssue", input),
+    bindHumanReferenceChat: (input: { issueId: string; stageId: string; statusId: string; chatId: string }) => ipcRenderer.invoke("kanban.bindHumanReferenceChat", input),
+    unbindHumanReferenceChat: (issueChatId: string) => ipcRenderer.invoke("kanban.unbindHumanReferenceChat", issueChatId),
     syncIssueAutomation: (issueId: string) => ipcRenderer.invoke("kanban.syncIssueAutomation", issueId),
     onChanged: (listener: KanbanChangedListener) => {
       const handleKanbanChanged = () => {
@@ -163,6 +166,7 @@ const api: DesktopApi = {
   },
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),
+    getBootstrapState: () => ipcRenderer.invoke("assistant.getBootstrapState"),
     saveSettings: (input: AssistantSettingsInput) => ipcRenderer.invoke("assistant.saveSettings", input),
     getMemorySettings: () => ipcRenderer.invoke("assistant.getMemorySettings"),
     saveMemorySettings: (input: AssistantMemorySettingsInput) =>
@@ -218,6 +222,19 @@ const api: DesktopApi = {
       ipcRenderer.on("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
       return () => {
         ipcRenderer.off("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
+      };
+    },
+    onBootstrapStateChanged: (listener: AssistantBootstrapStateChangedListener) => {
+      const handleBootstrapStateChanged = (
+        _event: Electron.IpcRendererEvent,
+        state: Parameters<AssistantBootstrapStateChangedListener>[0]
+      ) => {
+        listener(state);
+      };
+
+      ipcRenderer.on("assistant.bootstrapStateChanged", handleBootstrapStateChanged);
+      return () => {
+        ipcRenderer.off("assistant.bootstrapStateChanged", handleBootstrapStateChanged);
       };
     },
     onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => {

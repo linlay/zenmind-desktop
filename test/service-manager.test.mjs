@@ -2586,7 +2586,7 @@ test("agent-platform deploy command only appends Desktop required args", async (
   }
 });
 
-test("agent-platform deploy passes explicit lifecycle args without backfilling model defaults", async () => {
+test("agent-platform deploy passes refreshed image-2 lifecycle args without backfilling model defaults", async () => {
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture);
@@ -2605,6 +2605,7 @@ test("agent-platform deploy passes explicit lifecycle args without backfilling m
     const configPath = path.join(getDesktopConfigRoot(app), "service-lifecycle-args.json");
     const configuredArgs = [
       "--ai-web-fetch-model-key", "custom-web-fetch",
+      "--ai-image-generate-model-key", "th-gpt-image-2",
       "--coder-reasoning-effort", "HIGH"
     ];
     fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -2646,6 +2647,7 @@ test("agent-platform deploy passes explicit lifecycle args without backfilling m
     assert.deepEqual(findFlagValues(command, "--ai-vision-general-model-key"), []);
     assert.deepEqual(findFlagValues(command, "--ai-vision-ocr-model-key"), []);
     assert.deepEqual(findFlagValues(command, "--ai-web-fetch-model-key"), ["custom-web-fetch"]);
+    assert.deepEqual(findFlagValues(command, "--ai-image-generate-model-key"), ["th-gpt-image-2"]);
     assert.deepEqual(findFlagValues(command, "--coder-model-key"), []);
     assert.ok(command.indexOf("--output-dir") > command.indexOf("HIGH"));
   } finally {

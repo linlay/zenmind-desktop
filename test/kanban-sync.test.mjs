@@ -3,26 +3,29 @@ import assert from "node:assert/strict";
 
 const {
   buildKanbanAutomationPayload,
-  resolveKanbanRunStateFromAssistantEvent,
-  resolveKanbanStatusFromAssistantEvent
+  resolveKanbanRunFinishedPush
 } = await import("../dist-electron/main/kanban-sync.js");
 
-test("Kanban sync maps assistant terminal events to Kanban run state", () => {
-  assert.equal(resolveKanbanStatusFromAssistantEvent({ type: "run.complete" }), "completed");
-  assert.equal(resolveKanbanStatusFromAssistantEvent({ type: "run.completed" }), "completed");
-  assert.equal(resolveKanbanStatusFromAssistantEvent({ type: "completed" }), "completed");
-  assert.equal(resolveKanbanStatusFromAssistantEvent({ status: "succeeded" }), "completed");
-  assert.equal(resolveKanbanStatusFromAssistantEvent({ status: "success" }), "completed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ type: "run.complete" }), "completed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ type: "run.completed" }), "completed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ type: "completed" }), "completed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ status: "succeeded" }), "completed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ status: "success" }), "completed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ status: "cancelled" }), "cancelled");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ type: "run.cancelled" }), "cancelled");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ type: "run.failed" }), "failed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ type: "run.expired" }), "failed");
-  assert.equal(resolveKanbanRunStateFromAssistantEvent({ type: "run.start" }), null);
+test("Kanban sync accepts only the three run.finished status and finishReason pairs", () => {
+  assert.deepEqual(resolveKanbanRunFinishedPush({
+    frame: "push", type: "run.finished", status: "completed", finishReason: "complete"
+  }), { status: "completed", runState: "completed", terminalEventType: "run.completed" });
+  assert.deepEqual(resolveKanbanRunFinishedPush({
+    frame: "push", type: "run.finished", status: "failed", finishReason: "error"
+  }), { status: "todo", runState: "failed", terminalEventType: "run.failed" });
+  assert.deepEqual(resolveKanbanRunFinishedPush({
+    frame: "push", type: "run.finished", status: "interrupted", finishReason: "cancel"
+  }), { status: "todo", runState: "cancelled", terminalEventType: "run.cancelled" });
+
+  for (const event of [
+    { frame: "push", type: "run.activity", status: "completed", finishReason: "complete" },
+    { frame: "stream", type: "run.finished", status: "completed", finishReason: "complete" },
+    { frame: "push", type: "run.finished", status: "completed", finishReason: null },
+    { frame: "push", type: "run.finished", status: "completed", finishReason: "error" },
+    { frame: "push", type: "run.finished", status: "unknown", finishReason: "complete" },
+  ]) {
+    assert.equal(resolveKanbanRunFinishedPush(event), null);
+  }
 });
 
 test("Kanban automation payload keeps issue context hidden in the platform query", () => {

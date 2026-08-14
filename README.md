@@ -96,7 +96,7 @@ npm test
 - [智能助理集成](docs/智能助理集成.md)：agent-platform bridge、聊天、附件和 Copilot。
 - [桌宠系统](docs/桌宠系统.md)：桌宠设置、资产、窗口、状态和 agent 绑定。
 - [看板与云同步](docs/看板与云同步.md)：本地 SQLite、云只读缓存、远端控制和 automation。
-- [Kanban 云端与 Desktop 同步协议 v3.2](docs/Kanban云端与Desktop同步协议-v3.2.md)：Desktop 原子认领、正常 Chat 手动运行和可靠 run event。
+- [Kanban 云端与 Desktop 同步协议 V1](docs/Kanban云端与Desktop同步协议-v1.md)：Desktop 原子认领、多 Chat、Stage Worker、Review Worker 和可靠 run event。
 - [桌面协议与动作桥](docs/桌面协议与动作桥.md)：Desktop WebSocket、HTTP action bridge 和动作命名。
 - [版本化打包与卸载](docs/版本化打包与卸载.md)：macOS/Windows 打包、env/demo 资源和卸载。
 - [手工测试用例](docs/手工测试用例.md)：文档化手工回归路径。
@@ -105,5 +105,5 @@ npm test
 
 - 平台差异必须显式区分 macOS / Windows，不依赖隐式 fallback。
 - 文件系统和用户目录优先使用 Electron `app.getPath("home")`、`app.getPath("desktop")`、`app.getPath("appData")`。
-- cloud Kanban issue 正文在 Desktop UI/runtime 中是只读缓存；contract 3.2 仅允许原子 `issue.claim`，运行状态同步继续使用 `run.event.append`。
+- cloud Kanban issue 正文在 Desktop UI/runtime 中是只读缓存；Contract 1.0 仅允许受限原子操作，运行状态同步使用 `run.event.append`。
 - 真实 token、私钥、证书、`.env.local` 和本地配置不得提交。

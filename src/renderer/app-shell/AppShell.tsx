@@ -31,7 +31,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantBootstrapState, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -520,6 +520,7 @@ export function AppShell() {
   }
   const bootstrapInitialNavigationDoneRef = useRef(false);
   const bootstrapHandoffNavigationDoneRef = useRef(false);
+  const lastOwnerProfileExistsRef = useRef<boolean | null>(null);
   const lastPrimaryRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -560,6 +561,7 @@ export function AppShell() {
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
+  const [assistantBootstrapState, setAssistantBootstrapState] = useState<AssistantBootstrapState | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
@@ -570,14 +572,23 @@ export function AppShell() {
   const chatWorkPanelWorkspacesRef = useRef(new Map<string, ChatWorkPanelWorkspace>());
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
+  const bootstrapAgentConfigured = Boolean(assistantSettings?.bootstrapAgentKey.trim());
+  const assistantBootstrapStateReady = Boolean(
+    assistantSettings && (!bootstrapAgentConfigured || assistantBootstrapState),
+  );
+  const bootstrapPending = Boolean(
+    bootstrapAgentConfigured && assistantBootstrapState?.ownerProfileExists !== true,
+  );
   const chatRuntimeAgent = useMemo(
     () => resolveAssistantNavChatRuntimeAgent(chatNavAgentOptions, {
       defaultChatAgentKey: assistantSettings?.chatDefaultAgentKey,
       bootstrapAgentKey: assistantSettings?.bootstrapAgentKey,
+      bootstrapPending,
     }),
     [
       assistantSettings?.bootstrapAgentKey,
       assistantSettings?.chatDefaultAgentKey,
+      bootstrapPending,
       chatNavAgentOptions,
     ],
   );
@@ -1334,10 +1345,26 @@ export function AppShell() {
   }, [assistantSettings?.bootstrapAgentKey, assistantSettings?.chatDefaultAgentKey, chatNavAgentOptions]);
 
   useEffect(() => {
+    const ownerProfileExists = assistantBootstrapState?.ownerProfileExists;
+    if (ownerProfileExists === undefined) {
+      return;
+    }
+    const previousOwnerProfileExists = lastOwnerProfileExistsRef.current;
+    if (previousOwnerProfileExists === true && !ownerProfileExists) {
+      bootstrapInitialNavigationDoneRef.current = false;
+      bootstrapHandoffNavigationDoneRef.current = false;
+    } else if (previousOwnerProfileExists === false && ownerProfileExists) {
+      bootstrapHandoffNavigationDoneRef.current = false;
+    }
+    lastOwnerProfileExistsRef.current = ownerProfileExists;
+  }, [assistantBootstrapState?.ownerProfileExists]);
+
+  useEffect(() => {
     if (
       bootstrapInitialNavigationDoneRef.current ||
       !assistantNavAgentsLoaded ||
-      !assistantSettings
+      !assistantSettings ||
+      !assistantBootstrapStateReady
     ) {
       return;
     }
@@ -1367,6 +1394,7 @@ export function AppShell() {
   }, [
     assistantNavAgentsLoaded,
     assistantNavChatItems,
+    assistantBootstrapStateReady,
     assistantSettings,
     chatRuntimeAgent,
     chatNavAgentOptions,
@@ -1382,6 +1410,7 @@ export function AppShell() {
       location.pathname !== "/" ||
       !assistantNavAgentsLoaded ||
       !assistantSettings ||
+      !assistantBootstrapStateReady ||
       !chatRuntimeAgent.agent
     ) {
       return;
@@ -1389,6 +1418,7 @@ export function AppShell() {
     navigate(createAgentNewChatRoute(chatRuntimeAgent.agent.agentKey), { replace: true });
   }, [
     assistantNavAgentsLoaded,
+    assistantBootstrapStateReady,
     assistantSettings,
     chatRuntimeAgent.agent,
     chatRuntimeAgent.bootstrapActive,
@@ -1397,7 +1427,7 @@ export function AppShell() {
   ]);
 
   useEffect(() => {
-    if (!assistantNavAgentsLoaded || !assistantSettings) {
+    if (!assistantNavAgentsLoaded || !assistantSettings || !assistantBootstrapStateReady) {
       return;
     }
     if (bootstrapHandoffNavigationDoneRef.current) {
@@ -1409,6 +1439,7 @@ export function AppShell() {
       !bootstrapAgentKey ||
       !defaultChatAgentKey ||
       bootstrapAgentKey === defaultChatAgentKey ||
+      assistantBootstrapState?.ownerProfileExists !== true ||
       !chatRuntimeAgent.defaultAgentAvailable
     ) {
       return;
@@ -1425,6 +1456,8 @@ export function AppShell() {
     navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
   }, [
     assistantNavAgentsLoaded,
+    assistantBootstrapState?.ownerProfileExists,
+    assistantBootstrapStateReady,
     assistantSettings?.bootstrapAgentKey,
     assistantSettings?.chatDefaultAgentKey,
     chatRuntimeAgent.defaultAgentAvailable,
@@ -1748,16 +1781,30 @@ export function AppShell() {
 
   useEffect(() => {
     let cancelled = false;
-    window.electronAPI.assistant.getSettings()
-      .then((settings) => {
+    let bootstrapStateChanged = false;
+    const unsubscribe = window.electronAPI.assistant.onBootstrapStateChanged((state) => {
+      bootstrapStateChanged = true;
+      if (!cancelled) {
+        setAssistantBootstrapState(state);
+      }
+    });
+    Promise.all([
+      window.electronAPI.assistant.getSettings(),
+      window.electronAPI.assistant.getBootstrapState(),
+    ])
+      .then(([settings, bootstrapState]) => {
         if (!cancelled) {
           setAssistantSettings(settings);
+          if (!bootstrapStateChanged) {
+            setAssistantBootstrapState(bootstrapState);
+          }
         }
       })
       .catch(() => undefined);
 
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 

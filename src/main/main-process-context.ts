@@ -198,6 +198,8 @@ export interface ServicesIpcHandlerContextDependencies {
   getServiceWebviewPreloadUrl: (...args: any[]) => unknown;
   startupRestoreController: unknown;
   importEnvZipToRuntime?: (...args: any[]) => unknown;
+  importEnvZipIntoExistingRuntime?: (...args: any[]) => unknown;
+  runtimeEnvExists?: (...args: any[]) => unknown;
   applyDesktopInitBootstrap?: (...args: any[]) => unknown;
   refreshDesktopRuntimeConfigFromCanonicalFiles?: (...args: any[]) => unknown;
   loadBuiltinServices?: (...args: any[]) => unknown;
@@ -259,6 +261,8 @@ export function createServicesIpcHandlerOptions(
     logStreamSubscriptions: dependencies.logStreamSubscriptions,
     startupRestoreController: dependencies.startupRestoreController,
     importEnvZipToRuntime: dependencies.importEnvZipToRuntime,
+    importEnvZipIntoExistingRuntime: dependencies.importEnvZipIntoExistingRuntime,
+    runtimeEnvExists: dependencies.runtimeEnvExists,
     applyDesktopInitBootstrap: dependencies.applyDesktopInitBootstrap,
     refreshDesktopRuntimeConfigFromCanonicalFiles: dependencies.refreshDesktopRuntimeConfigFromCanonicalFiles,
     loadBuiltinServices: dependencies.loadBuiltinServices,
@@ -384,6 +388,8 @@ export interface KanbanIpcHandlerContextDependencies {
   moveKanbanIssue: (...args: any[]) => unknown;
   claimKanbanIssue: (...args: any[]) => unknown;
   runKanbanIssue: (...args: any[]) => unknown;
+  bindKanbanHumanReferenceChat: (...args: any[]) => unknown;
+  unbindKanbanHumanReferenceChat: (...args: any[]) => unknown;
   syncKanbanIssueAutomation: (...args: any[]) => unknown;
   callAgentPlatform: (...args: any[]) => unknown;
   getKanbanCloudConfig: (...args: any[]) => unknown;
@@ -408,6 +414,8 @@ export function createKanbanIpcHandlerOptions(
     moveKanbanIssue: dependencies.moveKanbanIssue,
     claimKanbanIssue: dependencies.claimKanbanIssue,
     runKanbanIssue: dependencies.runKanbanIssue,
+    bindKanbanHumanReferenceChat: dependencies.bindKanbanHumanReferenceChat,
+    unbindKanbanHumanReferenceChat: dependencies.unbindKanbanHumanReferenceChat,
     syncKanbanIssueAutomation: dependencies.syncKanbanIssueAutomation,
     callAgentPlatform: dependencies.callAgentPlatform
   };

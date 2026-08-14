@@ -9,6 +9,7 @@ const require = createRequire(import.meta.url);
 
 const {
   applyDesktopInitBootstrap,
+  applyDesktopInitVersionUpgrade,
   resolveDesktopInitPath
 } = require("../dist-electron/main/desktop-init-bootstrap.js");
 const {
@@ -1449,9 +1450,67 @@ test("desktop-init bootstrap reads profile market and SSO from one init", (t) =>
   assert.equal(fs.existsSync(resolveDesktopInitPath(app, "darwin")), false);
 });
 
+test("Desktop version upgrade reapplies only Desktop-owned canonical sections", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-upgrade-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const configRoot = path.join(desktopRoot(homePath), "config", "desktop");
+  fs.mkdirSync(configRoot, { recursive: true });
+  const profilePath = path.join(configRoot, "profile.json");
+  fs.writeFileSync(profilePath, '{"user":"keep"}\n', "utf8");
+  fs.writeFileSync(path.join(configRoot, "sso.json"), '{"old":true}\n', "utf8");
+  fs.writeFileSync(path.join(configRoot, "market.json"), '{"enabled":true,"apiBaseUrl":"https://old.example"}\n', "utf8");
+
+  applyDesktopInitVersionUpgrade(app, {
+    profile: { appearance: { theme: "dark" } },
+    pet: { enabled: true },
+    webs: { items: [] },
+    services: {
+      "agent-platform": {
+        defaultPort: 11949,
+        lifecycleArgs: {
+          deploy: ["--ai-image-generate-model-key", "th-gpt-image-2"]
+        }
+      },
+      "agent-webclient": { defaultPort: 11950 },
+      "agent-container-hub": { defaultPort: 11960 },
+      "identity-center": { defaultPort: 11946 }
+    }
+  }, path.join(root, "backup"), "darwin");
+
+  assert.equal(fs.readFileSync(profilePath, "utf8"), '{"user":"keep"}\n');
+  assert.equal(fs.existsSync(path.join(configRoot, "sso.json")), false);
+  assert.equal(fs.existsSync(path.join(configRoot, "market.json")), false);
+  const lifecycle = readJson(path.join(configRoot, "service-lifecycle-args.json"));
+  assert.deepEqual(
+    lifecycle.services["agent-platform"].lifecycleArgs.deploy,
+    ["--ai-image-generate-model-key", "th-gpt-image-2"]
+  );
+});
+
+test("invalid version-upgrade desktop-init fails before clearing canonical config", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-init-upgrade-invalid-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const homePath = path.join(root, "home");
+  const app = createApp(homePath);
+  const ssoPath = canonicalSsoPath(homePath);
+  fs.mkdirSync(path.dirname(ssoPath), { recursive: true });
+  fs.writeFileSync(ssoPath, '{"old":true}\n', "utf8");
+  assert.throws(
+    () => applyDesktopInitVersionUpgrade(app, {
+      sso: { enabled: true },
+      help: { url: "http://remote-insecure.example/help" }
+    }, path.join(root, "backup"), "darwin"),
+    /Help URL/u
+  );
+  assert.equal(fs.readFileSync(ssoPath, "utf8"), '{"old":true}\n');
+});
+
 test("manual env.zip import applies desktop-init bootstrap and refreshes config before startup preparation", async () => {
   const handlers = new Map();
   const calls = [];
+  let existingRuntime = false;
   const app = createApp("/tmp/zenmind-services-home");
 
   registerServicesIpcHandlers({
@@ -1495,6 +1554,12 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
       calls.push(["import", zipPath, platform]);
       return { copiedFiles: 1, skippedFiles: 0 };
     },
+    importEnvZipIntoExistingRuntime: async (_app, zipPath, desktopVersion, platform) => {
+      calls.push(["platform-import", zipPath, desktopVersion, platform]);
+      return { copiedFiles: 2, skippedFiles: 3 };
+    },
+    runtimeEnvExists: () => existingRuntime,
+    desktopVersion: "2.0.0",
     applyDesktopInitBootstrap: (_app, platform) => {
       calls.push(["bootstrap", platform]);
       return { ok: true, applied: true };
@@ -1529,4 +1594,18 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
     ["loadBuiltin"],
     ["loadPlugins"]
   ]);
+
+  calls.length = 0;
+  existingRuntime = true;
+  const existingResult = await handlers.get("services.importEnvZip")();
+
+  assert.deepEqual(existingResult, { ok: true });
+  assert.deepEqual(calls.slice(0, 4), [
+    ["platform-import", "/tmp/env.zip", "2.0.0", "darwin"],
+    ["refreshConfig", "manual-env-import"],
+    ["loadBuiltin"],
+    ["loadPlugins"]
+  ]);
+  assert.equal(calls.some(([name]) => name === "bootstrap"), false);
+  assert.equal(calls.some(([name]) => name === "import"), false);
 });

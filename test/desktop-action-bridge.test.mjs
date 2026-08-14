@@ -1568,6 +1568,7 @@ test("desktop action confirmation request keeps compact fields free of debug con
   assert.equal(payload.description, "该动作由本地桌面端动作桥发起。请确认目标和影响后再执行。");
   assert.deepEqual(payload.buttons.map((button) => button.decision), ["cancel", "confirm"]);
   assert.equal(payload.defaultDecision, "confirm");
+  assert.equal(payload.cancelDecision, "cancel");
   assert.match(compactText, /desktop\.website\.add/u);
   assert.match(compactText, /Agent Webclient/u);
   assert.match(compactText, /https:\/\/v\.qq\.com\//u);

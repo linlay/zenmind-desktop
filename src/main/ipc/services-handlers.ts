@@ -78,6 +78,13 @@ export interface ServicesIpcHandlerOptions {
 
   // Environment zip import operations (TDD index-ts-slimming)
   importEnvZipToRuntime?: (app: any, zipPath: string, platform: string) => Promise<{ copiedFiles: number; skippedFiles: number }>;
+  importEnvZipIntoExistingRuntime?: (
+    app: any,
+    zipPath: string,
+    desktopVersion: string,
+    platform: NodeJS.Platform
+  ) => Promise<{ copiedFiles: number; skippedFiles: number }>;
+  runtimeEnvExists?: (app: any, platform: NodeJS.Platform) => boolean;
   applyDesktopInitBootstrap?: (app: any, platform: NodeJS.Platform) => unknown;
   refreshDesktopRuntimeConfigFromCanonicalFiles?: (reason: string) => unknown;
   loadBuiltinServices?: (app: any) => void;
@@ -195,6 +202,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     startupRestoreController,
     clearSessionCache,
     importEnvZipToRuntime,
+    importEnvZipIntoExistingRuntime,
+    runtimeEnvExists,
     applyDesktopInitBootstrap,
     refreshDesktopRuntimeConfigFromCanonicalFiles,
     loadBuiltinServices,
@@ -377,11 +386,19 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     try {
       beginBootstrapStatus(t("startup.envImport.importingZip"));
 
-      const importResult = await importEnvZipToRuntime(app, result.filePaths[0], platform);
+      const importIntoExistingRuntime = runtimeEnvExists?.(app, platform) === true;
+      if (importIntoExistingRuntime && (!importEnvZipIntoExistingRuntime || !desktopVersion)) {
+        return { ok: false, message: t("startup.envImport.configUnavailable") };
+      }
+      const importResult = importIntoExistingRuntime
+        ? await importEnvZipIntoExistingRuntime!(app, result.filePaths[0], desktopVersion!, platform)
+        : await importEnvZipToRuntime(app, result.filePaths[0], platform);
       console.info(
         `[main] imported env.zip: copied=${importResult.copiedFiles}, skipped=${importResult.skippedFiles}`
       );
-      applyDesktopInitBootstrap?.(app, platform);
+      if (!importIntoExistingRuntime) {
+        applyDesktopInitBootstrap?.(app, platform);
+      }
       refreshDesktopRuntimeConfigFromCanonicalFiles?.("manual-env-import");
 
       scheduleStartupPreparationAfterEnvDecision();

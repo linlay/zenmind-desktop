@@ -95,9 +95,10 @@ URL 决定是否返回认证头像地址；没有头像 URL 的账号继续显�
 文件路径都不得进入 renderer；下载、类型或来源校验失败时显示姓名首字符。登录新账号和退出
 登录都会清理本地头像缓存。标准 OIDC 未配置 `avatarCache` 时维持原头像 URL 行为。
 
-Tunnel Hub、Kanban 与 Market 继续读取 `sso-site-token.json`，企业聊天读取
-`state/desktop/sso-access-token.txt`；两个文件保存的是官网同一次 Cookie 换取的同一枚 JWT，
+Tunnel Hub 与 Market 继续读取 `sso-site-token.json`；Kanban 与企业聊天读取
+`state/desktop/sso-access-token.txt`。两个文件保存的是官网同一次 Cookie 换取的同一枚 JWT，
 不再启动第二次 `siteTokenBridge` 浏览器登录。Desktop 不验证该 JWT，也不依赖 JWKS。
+Kanban 不读取 `DESKTOP_KANBAN_TOKEN` 或 Kanban 配置中的 token，也不从 userinfo 构造云端身份；它只把 canonical JWT 发送给 Server，由 Server 公钥验证并决定身份。
 当前严格启动恢复只适用于同时配置 `browserSession + cookieAccessTokenExchange` 的 Cookie SSO。
 官网 Server Broker 在官网提供可由 Electron Cookie 调用的 session 验证 API，并接入 Desktop 的
 `server` 恢复分支后，才能同样以上游 Cookie 为启动权威并强制换票；在此之前仍维持既有文件恢复

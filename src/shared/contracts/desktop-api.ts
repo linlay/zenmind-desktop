@@ -7,7 +7,7 @@ import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { AssistantBootstrapState, AssistantBootstrapStateChangedListener, AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type {
   SidebarContextMenuPopupRequest,
@@ -567,11 +567,14 @@ export interface DesktopApi {
     moveIssue: (input: KanbanIssueMoveInput) => Promise<KanbanIssueResult>;
     claimIssue: (issueId: string) => Promise<KanbanIssueResult>;
     runIssue: (input: KanbanRunIssueInput) => Promise<KanbanRunIssueResult>;
+    bindHumanReferenceChat: (input: { issueId: string; stageId: string; statusId: string; chatId: string }) => Promise<{ ok: boolean; message?: string }>;
+    unbindHumanReferenceChat: (issueChatId: string) => Promise<{ ok: boolean; message?: string }>;
     syncIssueAutomation: (issueId: string) => Promise<KanbanIssueResult>;
     onChanged: (listener: KanbanChangedListener) => () => void;
   };
   assistant: {
     getSettings: () => Promise<AssistantSettingsPublic>;
+    getBootstrapState: () => Promise<AssistantBootstrapState>;
     saveSettings: (input: AssistantSettingsInput) => Promise<AssistantSettingsPublic>;
     getMemorySettings: () => Promise<AssistantMemorySettings>;
     saveMemorySettings: (input: AssistantMemorySettingsInput) => Promise<AssistantMemorySettings>;
@@ -616,6 +619,7 @@ export interface DesktopApi {
     shareChat: (chatId: string) => Promise<AssistantConversationShareResult>;
     revokeChatShare: (shareId: string) => Promise<AssistantConversationShareResult>;
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => () => void;
+    onBootstrapStateChanged: (listener: AssistantBootstrapStateChangedListener) => () => void;
     onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => () => void;
     onAssistantEvent: (listener: AssistantEventListener) => () => void;
     onAttachmentProgress: (listener: AssistantAttachmentProgressListener) => () => void;

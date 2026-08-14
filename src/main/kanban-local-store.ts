@@ -137,12 +137,22 @@ export type KanbanCloudSnapshot = {
   issueFieldContexts?: unknown[];
   issueFieldOptions?: unknown[];
   workflows?: unknown[];
+  workflowStageDefs?: unknown[];
+  workflowStatusDefs?: unknown[];
   workflowStages?: unknown[];
   workflowStatuses?: unknown[];
+  workflowTransitions?: unknown[];
+  workflowDecomposeRules?: unknown[];
+  teams?: unknown[];
+  teamMembers?: unknown[];
+  projectPermissions?: unknown[];
   issueLabels?: unknown[];
   issueLabelLinks?: unknown[];
   issueDependencies?: unknown[];
   reviews?: unknown[];
+  issueStageWorkers?: unknown[];
+  issueChats?: unknown[];
+  issueRuns?: unknown[];
   issueComments?: unknown[];
   recentEvents?: unknown[];
 };
@@ -160,6 +170,8 @@ export type KanbanCommandReceipt = {
   deliverySeq: number;
   projectId: string;
   issueId: string;
+  issueRunId: string;
+  commandType: "run" | "review";
   payload: Record<string, unknown>;
   payloadHash: string;
   chatId: string;
@@ -187,6 +199,8 @@ export type KanbanRunEventOutboxItem = {
   clientEventId: string;
   projectId: string;
   issueId: string;
+  issueRunId: string;
+  externalRunId: string;
   runId: string;
   chatId: string;
   eventType: string;
@@ -199,6 +213,7 @@ export type KanbanRunEventOutboxItem = {
 export type KanbanManualRunReceiptState = "starting" | "started" | "completed" | "failed" | "cancelled";
 
 export type KanbanManualRunReceipt = {
+  issueRunId: string;
   runId: string;
   chatId: string;
   issueId: string;
@@ -215,7 +230,7 @@ const ISSUE_TYPE_ID = "issue-type-standard-requirement";
 const DATABASE_DIRECTORY = "desktop-kanban";
 const DATABASE_FILENAME = "kanban.db";
 const DATABASE_SCHEMA_VERSION = 2;
-const SYNC_CACHE_SCHEMA_VERSION = 4;
+const SYNC_CACHE_SCHEMA_VERSION = 1;
 
 function nowIso() {
   return new Date().toISOString();
@@ -361,6 +376,7 @@ function buildIssueDetailJson(issue: KanbanIssue) {
     statusKey: issue.statusKey ?? "",
     columnKey: issue.columnKey ?? "",
     customFields: issue.customFields ?? {},
+    activeIssueRunId: issue.activeIssueRunId ?? null,
     runAgentKey: issue.runAgentKey ?? null,
     runCommandId: issue.runCommandId ?? null,
     runStartedAt: issue.runStartedAt ?? null,
@@ -382,12 +398,22 @@ function emptyCloudDetailData(): KanbanCloudDetailData {
     issueFieldContexts: [],
     issueFieldOptions: [],
     workflows: [],
+    workflowStageDefs: [],
+    workflowStatusDefs: [],
     workflowStages: [],
     workflowStatuses: [],
+    workflowTransitions: [],
+    workflowDecomposeRules: [],
+    teams: [],
+    teamMembers: [],
+    projectPermissions: [],
     issueLabels: [],
     issueLabelLinks: [],
     issueDependencies: [],
     reviews: [],
+    issueStageWorkers: [],
+    issueChats: [],
+    issueRuns: [],
     issueComments: [],
     recentEvents: []
   };
@@ -400,12 +426,22 @@ const CLOUD_DETAIL_KEYS = [
   "issueFieldContexts",
   "issueFieldOptions",
   "workflows",
+  "workflowStageDefs",
+  "workflowStatusDefs",
   "workflowStages",
   "workflowStatuses",
+  "workflowTransitions",
+  "workflowDecomposeRules",
+  "teams",
+  "teamMembers",
+  "projectPermissions",
   "issueLabels",
   "issueLabelLinks",
   "issueDependencies",
   "reviews",
+  "issueStageWorkers",
+  "issueChats",
+  "issueRuns",
   "issueComments",
   "recentEvents"
 ] as const satisfies ReadonlyArray<keyof KanbanCloudDetailData>;
@@ -425,6 +461,7 @@ function detailItemKey(key: keyof KanbanCloudDetailData, item: unknown, index: n
   const record = parseCloudIssue(item);
   if (!record) return `${key}:${index}`;
   if (key === "issueTypes") return trimText(record.key) || `${key}:${index}`;
+  if (key === "teamMembers") return `${trimText(record.teamId)}:${trimText(record.userId)}`;
   if (key === "issueLabelLinks") return `${trimText(record.issueId)}:${trimText(record.labelId)}`;
   return String(record.id ?? `${key}:${index}`);
 }
@@ -720,6 +757,8 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       DELIVERY_SEQ_ INTEGER NOT NULL,
       PROJECT_ID_ TEXT,
       ISSUE_ID_ TEXT NOT NULL,
+      ISSUE_RUN_ID_ TEXT NOT NULL DEFAULT '',
+      COMMAND_TYPE_ TEXT NOT NULL DEFAULT 'run' CHECK (COMMAND_TYPE_ IN ('run','review')),
       PAYLOAD_JSON_ TEXT NOT NULL,
       PAYLOAD_HASH_ TEXT NOT NULL,
       CHAT_ID_ TEXT NOT NULL,
@@ -749,6 +788,8 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
       CLIENT_EVENT_ID_ TEXT PRIMARY KEY,
       PROJECT_ID_ TEXT NOT NULL,
       ISSUE_ID_ TEXT NOT NULL,
+      ISSUE_RUN_ID_ TEXT NOT NULL DEFAULT '',
+      EXTERNAL_RUN_ID_ TEXT NOT NULL DEFAULT '',
       RUN_ID_ TEXT NOT NULL,
       CHAT_ID_ TEXT NOT NULL,
       EVENT_TYPE_ TEXT NOT NULL,
@@ -761,6 +802,7 @@ function ensureDesktopKanbanSchema(db: DatabaseSync) {
     );
 
     CREATE TABLE IF NOT EXISTS kanban_manual_run_receipt (
+      ISSUE_RUN_ID_ TEXT NOT NULL DEFAULT '',
       RUN_ID_ TEXT PRIMARY KEY,
       CHAT_ID_ TEXT NOT NULL,
       ISSUE_ID_ TEXT NOT NULL,
@@ -932,6 +974,13 @@ function ensureDesktopKanbanIssueColumns(db: DatabaseSync) {
   }
   const receiptColumns = new Set((db.prepare("PRAGMA table_info(kanban_command_receipt)").all() as Array<{ name: string }>).map((column) => column.name));
   if (!receiptColumns.has("TERMINAL_REPORTED_AT_")) db.exec("ALTER TABLE kanban_command_receipt ADD COLUMN TERMINAL_REPORTED_AT_ TEXT");
+  if (!receiptColumns.has("ISSUE_RUN_ID_")) db.exec("ALTER TABLE kanban_command_receipt ADD COLUMN ISSUE_RUN_ID_ TEXT NOT NULL DEFAULT ''");
+  if (!receiptColumns.has("COMMAND_TYPE_")) db.exec("ALTER TABLE kanban_command_receipt ADD COLUMN COMMAND_TYPE_ TEXT NOT NULL DEFAULT 'run'");
+  const eventColumns = new Set((db.prepare("PRAGMA table_info(kanban_run_event_outbox)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!eventColumns.has("ISSUE_RUN_ID_")) db.exec("ALTER TABLE kanban_run_event_outbox ADD COLUMN ISSUE_RUN_ID_ TEXT NOT NULL DEFAULT ''");
+  if (!eventColumns.has("EXTERNAL_RUN_ID_")) db.exec("ALTER TABLE kanban_run_event_outbox ADD COLUMN EXTERNAL_RUN_ID_ TEXT NOT NULL DEFAULT ''");
+  const manualRunColumns = new Set((db.prepare("PRAGMA table_info(kanban_manual_run_receipt)").all() as Array<{ name: string }>).map((column) => column.name));
+  if (!manualRunColumns.has("ISSUE_RUN_ID_")) db.exec("ALTER TABLE kanban_manual_run_receipt ADD COLUMN ISSUE_RUN_ID_ TEXT NOT NULL DEFAULT ''");
 }
 
 function ensureDesktopKanbanPriorityConstraint(db: DatabaseSync) {
@@ -1184,6 +1233,7 @@ function issueFromRow(row: KanbanIssueRow): KanbanIssue {
     workerId: row.worker_id,
     workerAgent: row.worker_agent,
     activeReviewId: row.active_review_id,
+    activeIssueRunId: nullableTrimmedText(detail.activeIssueRunId),
     activeRunId: row.active_run_id,
     position: row.position,
     chatId: row.chat_id,
@@ -2173,25 +2223,28 @@ function cloudIssueToLocalIssue(rawIssue: Record<string, unknown>, currentUser: 
     severity: normalizeKanbanSeverity(rawIssue.severity),
     assigneeAgentKey: nullableTrimmedText(rawIssue.assigneeAgentKey),
     assigneeId: nullableTrimmedText(rawIssue.assigneeId),
-    workerType: normalizeWorkerType(rawIssue.workerType),
-    workerId: nullableTrimmedText(rawIssue.workerId),
-    workerAgent: nullableTrimmedText(rawIssue.workerAgent),
+    // Contract 1.0 keeps cloud execution identity in issueStageWorkers and
+    // execution state in issueChats/issueRuns. Never dual-read retired Issue scalars.
+    workerType: null,
+    workerId: null,
+    workerAgent: null,
     activeReviewId: nullableTrimmedText(rawIssue.activeReviewId),
-    activeRunId: nullableTrimmedText(rawIssue.activeRunId),
+    activeIssueRunId: nullableTrimmedText(rawIssue.activeIssueRunId),
+    activeRunId: nullableTrimmedText(rawIssue.activeIssueRunId),
     position: typeof rawIssue.position === "number" && Number.isFinite(rawIssue.position) ? rawIssue.position : 1,
-    chatId: nullableTrimmedText(rawIssue.chatId),
-    runId: nullableTrimmedText(rawIssue.runId),
-    runState: normalizeKanbanRunState(rawIssue.runState),
-    runAgentKey: nullableTrimmedText(rawIssue.runAgentKey),
-    runCommandId: nullableTrimmedText(rawIssue.runCommandId),
-    runStartedAt: nullableTrimmedText(rawIssue.runStartedAt),
-    runFinishedAt: nullableTrimmedText(rawIssue.runFinishedAt),
-    runResultMessage: nullableTrimmedText(rawIssue.runResultMessage),
-    runErrorMessage: nullableTrimmedText(rawIssue.runErrorMessage),
-    dispatchState: nullableTrimmedText(rawIssue.dispatchState) as KanbanIssue["dispatchState"],
-    dispatchDeviceId: nullableTrimmedText(rawIssue.dispatchDeviceId),
-    dispatchCommandId: nullableTrimmedText(rawIssue.dispatchCommandId),
-    dispatchUpdatedAt: nullableTrimmedText(rawIssue.dispatchUpdatedAt),
+    chatId: null,
+    runId: null,
+    runState: null,
+    runAgentKey: null,
+    runCommandId: null,
+    runStartedAt: null,
+    runFinishedAt: null,
+    runResultMessage: null,
+    runErrorMessage: null,
+    dispatchState: null,
+    dispatchDeviceId: null,
+    dispatchCommandId: null,
+    dispatchUpdatedAt: null,
     automationId: nullableTrimmedText(rawIssue.automationId),
     automationEnabled: rawIssue.automationEnabled === true,
     automationCron: nullableTrimmedText(rawIssue.automationCron),
@@ -2475,17 +2528,17 @@ export function recordDesktopKanbanRunEvent(
     const now = new Date().toISOString();
     db.prepare(`
       INSERT INTO kanban_run_event_outbox (
-        CLIENT_EVENT_ID_, PROJECT_ID_, ISSUE_ID_, RUN_ID_, CHAT_ID_, EVENT_TYPE_, SOURCE_DELIVERY_SEQ_, PAYLOAD_JSON_, CREATED_AT_, UPDATED_AT_
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        CLIENT_EVENT_ID_, PROJECT_ID_, ISSUE_ID_, ISSUE_RUN_ID_, EXTERNAL_RUN_ID_, RUN_ID_, CHAT_ID_, EVENT_TYPE_, SOURCE_DELIVERY_SEQ_, PAYLOAD_JSON_, CREATED_AT_, UPDATED_AT_
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(CLIENT_EVENT_ID_) DO NOTHING
-    `).run(item.clientEventId, item.projectId, item.issueId, item.runId, item.chatId, item.eventType, item.sourceDeliverySeq, JSON.stringify(item.payload), now, now);
+    `).run(item.clientEventId, item.projectId, item.issueId, item.issueRunId, item.externalRunId, item.runId, item.chatId, item.eventType, item.sourceDeliverySeq, JSON.stringify(item.payload), now, now);
   });
 }
 
 export function listDesktopKanbanRunEvents(app: AppPathProvider, currentUser: KanbanCurrentUser): KanbanRunEventOutboxItem[] {
   return withDesktopKanbanDatabase(app, currentUser, (db) => (db.prepare(`
     SELECT CLIENT_EVENT_ID_ AS clientEventId, PROJECT_ID_ AS projectId, ISSUE_ID_ AS issueId,
-      RUN_ID_ AS runId, CHAT_ID_ AS chatId, EVENT_TYPE_ AS eventType, SOURCE_DELIVERY_SEQ_ AS sourceDeliverySeq,
+      ISSUE_RUN_ID_ AS issueRunId, EXTERNAL_RUN_ID_ AS externalRunId, RUN_ID_ AS runId, CHAT_ID_ AS chatId, EVENT_TYPE_ AS eventType, SOURCE_DELIVERY_SEQ_ AS sourceDeliverySeq,
       PAYLOAD_JSON_ AS payloadJson, ATTEMPT_COUNT_ AS attemptCount, LAST_ERROR_ AS lastError
     FROM kanban_run_event_outbox ORDER BY CREATED_AT_, CLIENT_EVENT_ID_
   `).all() as Array<Omit<KanbanRunEventOutboxItem, "payload"> & { payloadJson: string }>).map((row) => {
@@ -2521,10 +2574,10 @@ export function recordDesktopKanbanManualRun(
     const now = new Date().toISOString();
     db.prepare(`
       INSERT INTO kanban_manual_run_receipt (
-        RUN_ID_, CHAT_ID_, ISSUE_ID_, PROJECT_ID_, AGENT_KEY_, STATE_, CREATED_AT_, UPDATED_AT_
-      ) VALUES (?, ?, ?, ?, ?, 'starting', ?, ?)
+        ISSUE_RUN_ID_, RUN_ID_, CHAT_ID_, ISSUE_ID_, PROJECT_ID_, AGENT_KEY_, STATE_, CREATED_AT_, UPDATED_AT_
+      ) VALUES (?, ?, ?, ?, ?, ?, 'starting', ?, ?)
       ON CONFLICT(RUN_ID_) DO NOTHING
-    `).run(receipt.runId, receipt.chatId, receipt.issueId, receipt.projectId, receipt.agentKey, now, now);
+    `).run(receipt.issueRunId, receipt.runId, receipt.chatId, receipt.issueId, receipt.projectId, receipt.agentKey, now, now);
   });
 }
 
@@ -2548,7 +2601,7 @@ export function getDesktopKanbanManualRunByRunId(
 ): KanbanManualRunReceipt | null {
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const row = db.prepare(`
-      SELECT RUN_ID_ AS runId, CHAT_ID_ AS chatId, ISSUE_ID_ AS issueId, PROJECT_ID_ AS projectId,
+      SELECT ISSUE_RUN_ID_ AS issueRunId, RUN_ID_ AS runId, CHAT_ID_ AS chatId, ISSUE_ID_ AS issueId, PROJECT_ID_ AS projectId,
         AGENT_KEY_ AS agentKey, STATE_ AS state, LAST_ERROR_ AS lastError
       FROM kanban_manual_run_receipt WHERE RUN_ID_ = ?
     `).get(trimText(runId)) as KanbanManualRunReceipt | undefined;
@@ -2561,7 +2614,7 @@ export function listPendingDesktopKanbanManualRuns(
   currentUser: KanbanCurrentUser
 ): KanbanManualRunReceipt[] {
   return withDesktopKanbanDatabase(app, currentUser, (db) => db.prepare(`
-    SELECT RUN_ID_ AS runId, CHAT_ID_ AS chatId, ISSUE_ID_ AS issueId, PROJECT_ID_ AS projectId,
+    SELECT ISSUE_RUN_ID_ AS issueRunId, RUN_ID_ AS runId, CHAT_ID_ AS chatId, ISSUE_ID_ AS issueId, PROJECT_ID_ AS projectId,
       AGENT_KEY_ AS agentKey, STATE_ AS state, LAST_ERROR_ AS lastError
     FROM kanban_manual_run_receipt
     WHERE STATE_ IN ('starting', 'started')
@@ -2577,8 +2630,10 @@ export function recordDesktopKanbanCommandReceipt(
   return withDesktopKanbanDatabase(app, currentUser, (db) => {
     const commandId = trimText(input.commandId);
     const issueRecord = parseCloudIssue(input.issue);
-    const issueId = trimText(issueRecord?.id);
-    if (!commandId || !issueId) throw new Error("commandId and issue.id are required");
+      const issueId = trimText(issueRecord?.id);
+    const issueRunId = trimText(input.payload.issueRunId);
+    const commandType = trimText(input.payload.reviewId) ? "review" : "run";
+    if (!commandId || !issueId || !issueRunId) throw new Error("commandId, issue.id and issueRunId are required");
     const payloadJson = stableJson(input.payload);
     const payloadHash = createHash("sha256").update(payloadJson).digest("hex");
     const idHash = createHash("sha256").update(commandId).digest("hex").slice(0, 32);
@@ -2613,11 +2668,11 @@ export function recordDesktopKanbanCommandReceipt(
       });
       db.prepare(`
         INSERT INTO kanban_command_receipt (
-          COMMAND_ID_, DELIVERY_SEQ_, PROJECT_ID_, ISSUE_ID_, PAYLOAD_JSON_, PAYLOAD_HASH_, CHAT_ID_, RUN_ID_, REQUEST_ID_,
+          COMMAND_ID_, DELIVERY_SEQ_, PROJECT_ID_, ISSUE_ID_, ISSUE_RUN_ID_, COMMAND_TYPE_, PAYLOAD_JSON_, PAYLOAD_HASH_, CHAT_ID_, RUN_ID_, REQUEST_ID_,
           STATE_, ATTEMPT_COUNT_, LAST_ERROR_, CREATED_AT_, UPDATED_AT_
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 0, NULL, ?, ?)
-      `).run(commandId, input.deliverySeq, trimText(input.projectId), issueId, payloadJson, payloadHash,
-        `chat_kanban_${idHash}`, `run_kanban_${idHash}`, `request_kanban_${idHash}`, timestamp, timestamp);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'received', 0, NULL, ?, ?)
+      `).run(commandId, input.deliverySeq, trimText(input.projectId), issueId, issueRunId, commandType, payloadJson, payloadHash,
+        trimText(input.payload.preferredChatId) || `chat_kanban_${idHash}`, `run_kanban_${idHash}`, `request_kanban_${idHash}`, timestamp, timestamp);
       db.exec("COMMIT");
       return { ok: true, executable: true, message: "command received", receipt: readCommandReceiptInDb(db, commandId)! };
     } catch (error) {
@@ -2638,6 +2693,23 @@ export function listPendingDesktopKanbanCommandReceipts(app: AppPathProvider, cu
   });
 }
 
+export function getDesktopKanbanCommandReceiptByRunId(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  runId: string
+): KanbanCommandReceipt | null {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    const row = db.prepare(`
+      SELECT COMMAND_ID_ AS commandId
+      FROM kanban_command_receipt
+      WHERE RUN_ID_ = ?
+      ORDER BY UPDATED_AT_ DESC
+      LIMIT 1
+    `).get(trimText(runId)) as { commandId?: string } | undefined;
+    return row?.commandId ? readCommandReceiptInDb(db, row.commandId) : null;
+  });
+}
+
 export function updateDesktopKanbanCommandReceipt(
   app: AppPathProvider,
   currentUser: KanbanCurrentUser,
@@ -2653,6 +2725,19 @@ export function updateDesktopKanbanCommandReceipt(
       WHERE COMMAND_ID_ = ? AND (? IN ('completed','failed') OR STATE_ NOT IN ('completed','failed'))
     `).run(state, lastError, incrementAttempt ? 1 : 0, nowIso(), trimText(commandId), state);
     return readCommandReceiptInDb(db, commandId);
+  });
+}
+
+export function updateDesktopKanbanCommandReceiptIdentity(
+  app: AppPathProvider,
+  currentUser: KanbanCurrentUser,
+  commandId: string,
+  chatId: string,
+  runId: string
+) {
+  return withDesktopKanbanDatabase(app, currentUser, (db) => {
+    db.prepare(`UPDATE kanban_command_receipt SET CHAT_ID_ = ?, RUN_ID_ = ?, UPDATED_AT_ = ? WHERE COMMAND_ID_ = ?`)
+      .run(trimText(chatId), trimText(runId), nowIso(), trimText(commandId));
   });
 }
 
@@ -2716,6 +2801,7 @@ export function ensureDesktopKanbanDefaultBinding(
 function readCommandReceiptInDb(db: DatabaseSync, commandId: string): KanbanCommandReceipt | null {
   const row = db.prepare(`
     SELECT COMMAND_ID_ AS commandId, DELIVERY_SEQ_ AS deliverySeq, PROJECT_ID_ AS projectId, ISSUE_ID_ AS issueId,
+      ISSUE_RUN_ID_ AS issueRunId, COMMAND_TYPE_ AS commandType,
       PAYLOAD_JSON_ AS payloadJson, PAYLOAD_HASH_ AS payloadHash, CHAT_ID_ AS chatId, RUN_ID_ AS runId,
       REQUEST_ID_ AS requestId, STATE_ AS state, ATTEMPT_COUNT_ AS attemptCount, LAST_ERROR_ AS lastError,
       TERMINAL_REPORTED_AT_ AS terminalReportedAt, CREATED_AT_ AS createdAt, UPDATED_AT_ AS updatedAt

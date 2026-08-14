@@ -2,7 +2,6 @@
   "app.name": "CuteJ",
   "app.productName": "CuteJ",
   "startup.envImport.title": "Initialize CuteJ Environment",
-  "kanban.prompt.intro": "Please handle this CuteJ Kanban issue and summarize the result when finished.",
   "desktopPet.appearance.classic.name": "CuteJ",
   "desktopPet.appearance.classic.description": "A blue-haired CuteJ 3D toy desktop pet with a headset and blue-white uniform."
 }

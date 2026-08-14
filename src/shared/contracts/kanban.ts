@@ -151,6 +151,97 @@ export interface KanbanWorkflowStatus {
   reviewRequired?: boolean;
 }
 
+export interface KanbanWorkflowStageDef {
+  id: string;
+  key: string;
+  name: string;
+  description?: string;
+  isSystem?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface KanbanWorkflowStatusDef {
+  id: string;
+  key: string;
+  name: string;
+  columnKey: string;
+  description?: string;
+  isSystem?: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface KanbanWorkflowTransition {
+  id: string;
+  workflowId: string;
+  fromStageId: string;
+  fromStatusId: string;
+  toStageId: string;
+  toStatusId: string;
+  actionKey: string;
+  name: string;
+  actorType: string;
+  requiresReview: boolean;
+  isActive: boolean;
+  position: number;
+  createdAt?: string;
+}
+
+export interface KanbanWorkflowDecomposeRule {
+  id: string;
+  workflowId: string;
+  fromStageId: string;
+  fromStatusId: string;
+  toStageId: string;
+  toStatusId: string;
+  childTypeKey: string;
+  childWorkflowId?: string | null;
+  actionKey: string;
+  name: string;
+  actorType: string;
+  minItems: number;
+  maxItems: number;
+  isActive: boolean;
+  position: number;
+  createdAt?: string;
+}
+
+export interface KanbanTeam {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  createdBy?: string | null;
+  updatedBy?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+  deletedAt?: string | null;
+}
+
+export interface KanbanTeamMember {
+  teamId: string;
+  userId: string;
+  role: string;
+  invitedBy?: string | null;
+  joinedAt?: string;
+  leftAt?: string | null;
+}
+
+export interface KanbanProjectPermission {
+  id: string;
+  projectId: string;
+  principalType: string;
+  principalId: string;
+  role: string;
+  inheritToChildren: boolean;
+  createdBy?: string | null;
+  createdAt?: string;
+  deletedAt?: string | null;
+}
+
 export interface KanbanIssueLabel {
   id: string;
   projectId: string;
@@ -176,7 +267,15 @@ export interface KanbanIssueDependency {
 export interface KanbanIssueReview {
   id: string;
   issueId: string;
-  runId?: string | null;
+  stageId: string;
+  statusId: string;
+  workerType: "human" | "agent";
+  workerId?: string | null;
+  workerAgent?: string | null;
+  deviceId?: string | null;
+  issueRunId?: string | null;
+  issueChatId?: string | null;
+  attemptState: "awaiting_human" | "queued" | "running" | "decided" | "failed" | "cancelled";
   reviewType: string;
   reviewerId?: string | null;
   status: string;
@@ -184,6 +283,55 @@ export interface KanbanIssueReview {
   requestedAt: string;
   submittedAt?: string | null;
   summary: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanIssueStageWorker {
+  issueId: string;
+  stageId: string;
+  workerRole: "run" | "review";
+  workerType: "human" | "agent";
+  workerId?: string | null;
+  workerAgent?: string | null;
+  deviceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanIssueChat {
+  id: string;
+  issueId: string;
+  deviceId?: string | null;
+  chatId: string;
+  stageId: string;
+  statusId: string;
+  agentKey?: string | null;
+  purpose: "run" | "review" | "human_reference";
+  reviewId?: string | null;
+  isPreferred: boolean;
+  state: "active" | "missing" | "archived";
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KanbanIssueRun {
+  id: string;
+  issueId: string;
+  stageId: string;
+  statusId: string;
+  workerRole: "run" | "review";
+  workerAgent: string;
+  deviceId: string;
+  issueChatId?: string | null;
+  externalRunId?: string | null;
+  source: "desktop_manual" | "cloud_dispatch" | "review";
+  commandId?: string | null;
+  state: "queued" | "running" | "completed" | "failed" | "cancelled";
+  startedAt?: string | null;
+  finishedAt?: string | null;
+  resultMessage?: string | null;
+  errorMessage?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -220,12 +368,22 @@ export interface KanbanCloudDetailData {
   issueFieldContexts: KanbanIssueFieldContext[];
   issueFieldOptions: KanbanIssueFieldOption[];
   workflows: KanbanWorkflow[];
+  workflowStageDefs: KanbanWorkflowStageDef[];
+  workflowStatusDefs: KanbanWorkflowStatusDef[];
   workflowStages: KanbanWorkflowStage[];
   workflowStatuses: KanbanWorkflowStatus[];
+  workflowTransitions: KanbanWorkflowTransition[];
+  workflowDecomposeRules: KanbanWorkflowDecomposeRule[];
+  teams: KanbanTeam[];
+  teamMembers: KanbanTeamMember[];
+  projectPermissions: KanbanProjectPermission[];
   issueLabels: KanbanIssueLabel[];
   issueLabelLinks: KanbanIssueLabelLink[];
   issueDependencies: KanbanIssueDependency[];
   reviews: KanbanIssueReview[];
+  issueStageWorkers: KanbanIssueStageWorker[];
+  issueChats: KanbanIssueChat[];
+  issueRuns: KanbanIssueRun[];
   issueComments: KanbanIssueComment[];
   recentEvents: KanbanRecentEvent[];
 }
@@ -270,6 +428,8 @@ export interface KanbanIssue {
   workerId?: string | null;
   workerAgent?: string | null;
   activeReviewId?: string | null;
+  activeIssueRunId?: string | null;
+  /** Local-only legacy run identity. Cloud Contract 1.0 uses activeIssueRunId. */
   activeRunId?: string | null;
   position: number;
   chatId: string | null;
@@ -504,6 +664,7 @@ export interface KanbanIssueMoveInput {
 export interface KanbanRunIssueInput {
   issueId: string;
   agentKey: string;
+  forceNewChat?: boolean;
 }
 
 export interface KanbanRunIssueResult extends KanbanIssueResult {
@@ -531,7 +692,6 @@ export interface KanbanListResult {
 
 export interface KanbanCloudConfig {
   serverUrl: string;
-  token: string;
   remoteControlEnabled: boolean;
   deviceAlias?: string;
 }

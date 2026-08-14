@@ -39,7 +39,7 @@ type DesktopServiceConfigUpgradeServiceState = {
 };
 
 export type DesktopServiceConfigUpgradeJournal = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   mode: "fresh-install" | "version-change";
   status: "in-progress" | "awaiting-core-health" | "failed";
   fromVersion: string;
@@ -47,14 +47,34 @@ export type DesktopServiceConfigUpgradeJournal = {
   backupRoot: string;
   startedAt: string;
   updatedAt: string;
+  desktopConfig: {
+    status: "pending" | "applied" | "failed" | "not-required";
+    updatedAt: string;
+    sourceZipPath?: string;
+    previousSourceZipPath?: string;
+    sha256?: string;
+    size?: number;
+    lastError?: string;
+  };
   services: Record<CoreServiceConfigUpgradeId, DesktopServiceConfigUpgradeServiceState>;
   lastError?: string;
 };
 
 export type DesktopServiceConfigResetContext = {
+  desktopConfigReset?: boolean;
   backupDir: string;
   fromVersion: string;
   toVersion: string;
+  runtimeResourceSource?: string;
+  runtimeResourcePreviousSource?: string;
+  runtimeResourceMode?: "version-change" | "manual-import";
+};
+
+export type DesktopVersionUpgradeInput = {
+  sourceZipPath: string;
+  previousSourceZipPath?: string;
+  sha256: string;
+  size: number;
 };
 
 type DesktopServiceConfigUpgradeCallbacks = {
@@ -64,6 +84,12 @@ type DesktopServiceConfigUpgradeCallbacks = {
   onProgress?: (serviceId: ServiceId, message: string) => void;
   stopService: (serviceId: ServiceId) => Promise<void>;
   installCurrentService: (serviceId: ServiceId) => Promise<void>;
+  prepareDesktopConfiguration: (context: {
+    fromVersion: string;
+    toVersion: string;
+    backupDir: string;
+    apply: boolean;
+  }) => Promise<DesktopVersionUpgradeInput>;
   resetServiceConfig: (
     serviceId: ServiceId,
     context: DesktopServiceConfigResetContext
@@ -182,6 +208,15 @@ function readUpgradeJournal(app: App, platform: NodeJS.Platform) {
     if (!mode || !status || !fromVersion || !toVersion || !startedAt || !updatedAt) {
       return null;
     }
+    const expectedBackupRoot = mode === "version-change"
+      ? getTransactionBackupRoot(app, fromVersion, toVersion, platform)
+      : "";
+    if (
+      (mode === "version-change" && path.resolve(backupRoot) !== path.resolve(expectedBackupRoot)) ||
+      (mode === "fresh-install" && backupRoot !== "")
+    ) {
+      return null;
+    }
     const rawServices = isRecord(parsed.services) ? parsed.services : {};
     const services = {} as DesktopServiceConfigUpgradeJournal["services"];
     for (const serviceId of DESKTOP_SERVICE_CONFIG_UPGRADE_IDS) {
@@ -194,8 +229,28 @@ function readUpgradeJournal(app: App, platform: NodeJS.Platform) {
     const lastError = typeof parsed.lastError === "string" && parsed.lastError.trim()
       ? parsed.lastError
       : undefined;
+    const rawDesktopConfig = isRecord(parsed.desktopConfig) ? parsed.desktopConfig : {};
+    const desktopConfigStatus = rawDesktopConfig.status === "applied" ||
+      rawDesktopConfig.status === "failed" ||
+      rawDesktopConfig.status === "not-required" ||
+      rawDesktopConfig.status === "pending"
+      ? rawDesktopConfig.status
+      : mode === "fresh-install" ? "not-required" : "pending";
+    const desktopConfig = {
+      status: desktopConfigStatus,
+      updatedAt: typeof rawDesktopConfig.updatedAt === "string"
+        ? rawDesktopConfig.updatedAt
+        : updatedAt,
+      ...(typeof rawDesktopConfig.sourceZipPath === "string" ? { sourceZipPath: rawDesktopConfig.sourceZipPath } : {}),
+      ...(typeof rawDesktopConfig.previousSourceZipPath === "string"
+        ? { previousSourceZipPath: rawDesktopConfig.previousSourceZipPath }
+        : {}),
+      ...(typeof rawDesktopConfig.sha256 === "string" ? { sha256: rawDesktopConfig.sha256 } : {}),
+      ...(typeof rawDesktopConfig.size === "number" ? { size: rawDesktopConfig.size } : {}),
+      ...(typeof rawDesktopConfig.lastError === "string" ? { lastError: rawDesktopConfig.lastError } : {})
+    } satisfies DesktopServiceConfigUpgradeJournal["desktopConfig"];
     return {
-      schemaVersion: 1,
+      schemaVersion: 2,
       mode,
       status,
       fromVersion,
@@ -203,6 +258,7 @@ function readUpgradeJournal(app: App, platform: NodeJS.Platform) {
       backupRoot,
       startedAt,
       updatedAt,
+      desktopConfig,
       services,
       ...(lastError ? { lastError } : {})
     } satisfies DesktopServiceConfigUpgradeJournal;
@@ -251,7 +307,7 @@ function createJournal(
 ) {
   const now = new Date().toISOString();
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     mode,
     status: mode === "fresh-install" ? "awaiting-core-health" : "in-progress",
     fromVersion,
@@ -261,6 +317,10 @@ function createJournal(
       : "",
     startedAt: now,
     updatedAt: now,
+    desktopConfig: {
+      status: mode === "fresh-install" ? "not-required" : "pending",
+      updatedAt: now
+    },
     services: createServicesState(now)
   } satisfies DesktopServiceConfigUpgradeJournal;
 }
@@ -386,6 +446,47 @@ export async function prepareDesktopServiceConfigUpgrade(
     writeJournal(app, journal, platform);
   }
 
+  const shouldApplyDesktopConfiguration = journal.desktopConfig.status !== "applied";
+  try {
+    const input = await callbacks.prepareDesktopConfiguration({
+      fromVersion: journal.fromVersion,
+      toVersion: journal.toVersion,
+      backupDir: path.join(journal.backupRoot, "desktop"),
+      apply: shouldApplyDesktopConfiguration
+    });
+    if (
+      journal.desktopConfig.sha256 &&
+      journal.desktopConfig.sha256.toLowerCase() !== input.sha256.toLowerCase()
+    ) {
+      throw new Error(
+        `bundled env.zip changed during the unfinished upgrade: expected ${journal.desktopConfig.sha256}, got ${input.sha256}`
+      );
+    }
+    journal.desktopConfig = {
+      status: "applied",
+      updatedAt: new Date().toISOString(),
+      sourceZipPath: input.sourceZipPath,
+      ...(input.previousSourceZipPath ? { previousSourceZipPath: input.previousSourceZipPath } : {}),
+      sha256: input.sha256.toLowerCase(),
+      size: input.size
+    };
+    writeJournal(app, journal, platform);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    journal.desktopConfig.status = "failed";
+    journal.desktopConfig.updatedAt = new Date().toISOString();
+    journal.desktopConfig.lastError = message;
+    journal.status = "failed";
+    journal.lastError = `Desktop environment configuration failed: ${message}`;
+    writeJournal(app, journal, platform);
+    return {
+      mode: "version-change",
+      desktopVersion,
+      failures: [journal.lastError],
+      journal
+    };
+  }
+
   callbacks.onBegin?.();
   try {
     const ports = rewriteServicePortDefaultsForDesktopConfigUpgrade(
@@ -434,7 +535,16 @@ export async function prepareDesktopServiceConfigUpgrade(
       await callbacks.resetServiceConfig(serviceId, {
         backupDir: path.join(journal.backupRoot, serviceId),
         fromVersion: journal.fromVersion,
-        toVersion: journal.toVersion
+        toVersion: journal.toVersion,
+        ...(journal.desktopConfig.sourceZipPath
+          ? {
+              runtimeResourceSource: journal.desktopConfig.sourceZipPath,
+              ...(journal.desktopConfig.previousSourceZipPath
+                ? { runtimeResourcePreviousSource: journal.desktopConfig.previousSourceZipPath }
+                : {}),
+              runtimeResourceMode: "version-change" as const
+            }
+          : {})
       });
       serviceState.status = "succeeded";
       serviceState.updatedAt = new Date().toISOString();

@@ -26,7 +26,7 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
   assert.match(store, /DETAIL_JSON_ TEXT NOT NULL DEFAULT '\{\}'/);
   assert.match(store, /CREATE TABLE IF NOT EXISTS kanban_cloud_detail_cache/);
   assert.match(store, /storeCloudDetailData\(db, currentUser, snapshot, revision\)/);
-  assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 4/);
+  assert.match(store, /const SYNC_CACHE_SCHEMA_VERSION = 1/);
   assert.match(store, /COMPONENTS_JSON_ TEXT NOT NULL DEFAULT '\[\]'/);
   assert.match(store, /migrateDesktopKanbanIssueDetailJson\(db\)/);
   assert.doesNotMatch(store, /(?:rawIssue|input|issue|row)\.(?:reviewerId|reviewRequired|reviewer_id|review_required)/);
@@ -35,6 +35,7 @@ test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite
 test("Kanban detail opens independently from create and preserves the cloud read-only boundary", () => {
   const page = read("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const detail = read("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
+  const styles = read("src", "renderer", "styles", "kanban.css");
   const rendererIndex = read("index.html");
   const brandConfig = read("scripts", "lib", "brand-config.mjs");
   const packageManifest = JSON.parse(read("package.json"));
@@ -84,8 +85,16 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.match(detail, /className="kanban-detail-window-actions"[\s\S]{0,700}kanban\.chat\.view[\s\S]{0,900}kanban\.detail\.editIssue[\s\S]{0,500}kanban-detail-close/);
-  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceId="agent-webclient-kanban-chat"/);
+  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-layout[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceId="agent-webclient-kanban-chat"/);
   assert.match(detail, /chatEmbedPath \? t\("kanban\.chat\.viewIssue"\) : t\("kanban\.chat\.view"\)/);
+  assert.match(detail, /disabled=\{!chatEmbedPath && !latestOpenableIssueChat\}/);
+  assert.match(detail, /return \[\.\.\.chatsByChatId\.values\(\)\]\.sort\(compareIssueChatTime\)/);
+  assert.match(detail, /const latestOpenableIssueChat = openableIssueChats\.at\(-1\)/);
+  assert.match(detail, /className="kanban-detail-chat-list"[\s\S]{0,1800}issueChatItems\.map[\s\S]{0,1200}onClick=\{\(\) => openChat\(chat\)\}/);
+  assert.match(detail, /chat\.local && chat\.state === "active" && Boolean\(chat\.agentKey\)/);
+  assert.match(styles, /\.kanban-detail-chat-layout\s*\{[\s\S]{0,260}grid-template-columns:\s*220px minmax\(0, 1fr\)/);
+  assert.match(styles, /\.kanban-detail-window-actions \.kanban-detail-secondary-button:disabled\s*\{\s*cursor:\s*not-allowed/);
+  assert.match(page, /onOpenChat=\{\(chatId, agentKey\) => openAssistantIssueChat\(detailIssue, chatId, agentKey\)\}/);
   assert.match(page, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
   assert.doesNotMatch(page, /setDetailIssueId\(null\);[\s\S]{0,100}navigate\(createAgentWebclientRoute\(\{ agentKey, chatId \}\)\)/);
   assert.doesNotMatch(detail, /"(?:issue\.(?:transition|assignRun|dispatchDesktop)|review\.comment\.|issueLabel\.|issue\.dependency\.)/);
@@ -99,7 +108,7 @@ test("Kanban cards use the Website hierarchy without hover actions", () => {
     page.indexOf("function getIssueCardOperationalStatePresentation"),
     page.indexOf("function getKanbanEmptyHint")
   );
-  assert.match(page, /color: stage\?\.color\?\.trim\(\) \|\|/);
+  assert.match(page, /color: resolveWorkflowStageColor\(resolvedStage, stageIndex\)/);
   assert.match(styles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,180}height: 3px/);
   assert.match(card, /issue-card-type-corner/);
   assert.match(card, /issue-card-version/);
@@ -126,11 +135,14 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   const styles = read("src", "renderer", "styles", "kanban.css");
   const enUS = read("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const content = detail.slice(detail.indexOf('<main className="kanban-detail-content">'), detail.indexOf("</main>"));
-  const rail = detail.slice(detail.indexOf('<aside className="kanban-detail-rail"'), detail.indexOf("</aside>"));
+  const railStart = detail.indexOf('<aside className="kanban-detail-rail"');
+  const rail = detail.slice(railStart, detail.indexOf("</aside>", railStart));
   const header = detail.slice(detail.indexOf('<header className="kanban-detail-header">'), detail.indexOf('<div className="kanban-detail-body">'));
   const basic = rail.slice(rail.indexOf('sectionId="kanban-detail-basic"'), rail.indexOf('sectionId="kanban-detail-people"'));
   const people = rail.slice(rail.indexOf('sectionId="kanban-detail-people"'), rail.indexOf('sectionId="kanban-detail-related"'));
-  const related = rail.slice(rail.indexOf('sectionId="kanban-detail-related"'), rail.indexOf('sectionId="kanban-detail-activity"'));
+  const related = rail.slice(rail.indexOf('sectionId="kanban-detail-related"'), rail.indexOf('sectionId="kanban-detail-reviews"'));
+  const reviews = rail.slice(rail.indexOf('sectionId="kanban-detail-reviews"'), rail.indexOf('sectionId="kanban-detail-runs"'));
+  const runs = rail.slice(rail.indexOf('sectionId="kanban-detail-runs"'), rail.indexOf('sectionId="kanban-detail-activity"'));
   const activity = rail.slice(rail.indexOf('sectionId="kanban-detail-activity"'), rail.indexOf('kanban-detail-readonly-note'));
   assert.match(resolver, /buildKanbanProjectDistances/);
   assert.match(resolver, /candidateRank\.specificity > currentRank\.specificity/);
@@ -155,22 +167,30 @@ test("Kanban detail keeps content on the left and all remaining issue data on th
   assert.doesNotMatch(detail, /description=\{t\("kanban\.detail\./);
   assert.doesNotMatch(content, /kanban\.detail\.(?:customFieldsTitle|labelsTitle|subtasksTitle|dependenciesTitle|reviewsTitle|runsTitle|activityTitle|sourceTitle)/);
   const anchor = rail.slice(rail.indexOf("kanban-detail-anchor-nav"), rail.indexOf("</nav>"));
-  assert.match(anchor, /kanban\.detail\.basicTitle[\s\S]*kanban\.detail\.peopleTitle[\s\S]*kanban\.detail\.relatedTitle[\s\S]*kanban\.detail\.activityTitle/);
-  assert.doesNotMatch(anchor, /kanban\.detail\.(?:scopeTitle|automationTitle|runsTitle|sourceTitle)/);
+  assert.match(anchor, /kanban\.detail\.basicTitle[\s\S]*kanban\.detail\.peopleTitle[\s\S]*kanban\.detail\.relatedTitle[\s\S]*kanban\.detail\.reviewsTitle[\s\S]*kanban\.detail\.runsTitle[\s\S]*kanban\.detail\.activityTitle/);
+  assert.match(anchor, /relatedItemCount > 0 \? \[\["kanban-detail-related"/);
+  assert.doesNotMatch(anchor, /kanban\.detail\.(?:scopeTitle|automationTitle|sourceTitle)/);
   assert.match(basic, /kanban\.detail\.issueId[\s\S]*kanban\.detail\.project[\s\S]*kanban\.detail\.workflow[\s\S]*kanban\.form\.status[\s\S]*kanban\.form\.priority[\s\S]*kanban\.detail\.severity[\s\S]*resolvedFields\.map[\s\S]*kanban\.detail\.createdAt[\s\S]*kanban\.detail\.updatedAt/);
   assert.doesNotMatch(rail, /sectionId="kanban-detail-scope"/);
   assert.match(people, /kanban\.detail\.owner[\s\S]*kanban\.detail\.executor[\s\S]*kanban\.form\.automationEnabled[\s\S]*kanban\.form\.cron/);
-  assert.match(related, /kanban\.detail\.parentTitle[\s\S]*kanban\.detail\.subtasksTitle[\s\S]*kanban\.detail\.dependenciesTitle[\s\S]*kanban\.detail\.reviewsTitle[\s\S]*kanban\.detail\.runsTitle/);
-  assert.match(related, /runs\.map[\s\S]*run\.resultMessage[\s\S]*run\.errorMessage/);
-  assert.match(related, /run\.workerAgent \|\| "—"[\s\S]{0,100}run\.status \? <em/);
-  assert.doesNotMatch(related, /run\.workerAgent \|\| agentLabel/);
+  assert.match(detail, /const relatedItemCount = \(parentIssueId \? 1 : 0\) \+ subtasks\.length \+ dependencies\.length/);
+  assert.match(detail, /relatedItemCount > 0 \? <DetailSection sectionId="kanban-detail-related"/);
+  assert.match(related, /kanban\.detail\.parentTitle[\s\S]*kanban\.detail\.subtasksTitle[\s\S]*kanban\.detail\.dependenciesTitle/);
+  assert.doesNotMatch(related, /kanban\.detail\.(?:reviewsTitle|runsTitle)|reviews\.map|runs\.map/);
+  assert.match(reviews, /kanban\.detail\.reviewsTitle[\s\S]*reviews\.map[\s\S]*kanban\.detail\.noReviews/);
+  assert.match(runs, /kanban\.detail\.runsTitle[\s\S]*runs\.map[\s\S]*run\.resultMessage[\s\S]*run\.errorMessage/);
+  assert.match(runs, /run\.workerAgent \|\| "—"[\s\S]{0,100}run\.status \? <em/);
+  assert.match(runs, /kanban-detail-run-footer[\s\S]*kanban\.detail\.runSpent[\s\S]*formatRunDuration\(run\.startedAt, run\.finishedAt, t\)[\s\S]*kanban\.detail\.runCompletedAt[\s\S]*formatDateTime\(run\.finishedAt, locale\)[\s\S]*viewChatButton/);
+  assert.match(runs, /kanban\.detail\.noRuns/);
+  assert.doesNotMatch(runs, /run\.runId|kanban\.detail\.runIdMissing|run\.stageId|run\.statusId/);
+  assert.doesNotMatch(runs, /run\.workerAgent \|\| agentLabel/);
   assert.doesNotMatch(related, /kanban\.detail\.activityTitle/);
   assert.match(enUS, /"kanban\.detail\.activityTitle": "Timeline"/);
   assert.match(activity, /kanban\.detail\.activityTitle[\s\S]*statusTimeline\.map[\s\S]*entry\.fromLabel[\s\S]*ArrowRightOutlined[\s\S]*entry\.toLabel/);
   assert.match(activity, /usersById\.get\(entry\.actor\)[\s\S]*kanban\.detail\.unknownActor[\s\S]*formatDateTime\(entry\.createdAt[\s\S]*debugMode && event\?\.payload[\s\S]*kanban\.detail\.eventPayload/);
   assert.doesNotMatch(activity, /kanban\.detail\.systemActor/);
   assert.match(detail, /const parentIssueId = issue\.parentIssueId\?\.trim\(\) \?\? ""/);
-  assert.doesNotMatch(detail, /sectionId="kanban-detail-(?:automation|runs|source)"/);
+  assert.doesNotMatch(detail, /sectionId="kanban-detail-(?:automation|source)"/);
   assert.match(detail, /useDebugMode\(\)[\s\S]*debugMode \? <DetailProperty[\s\S]*kanban\.detail\.revision/);
   assert.match(detail, /window\.electronAPI\.clipboard\.writeText\(value\)/);
   assert.match(detail, /onDoubleClick=\{copy\}/);

@@ -1650,7 +1650,7 @@ function persistedDesktopSsoUser(
     : withoutAvatarUrl(user);
 }
 
-function readAccessTokenFile(app: Pick<App, "getPath">) {
+export function readDesktopSsoAccessToken(app: Pick<App, "getPath">) {
   const filePath = getDesktopSsoAccessTokenFilePath(app);
   if (!fs.existsSync(filePath)) {
     return "";
@@ -1662,11 +1662,29 @@ function readAccessTokenFile(app: Pick<App, "getPath">) {
   }
 }
 
+export function readDesktopSsoAccessTokenUser(app: Pick<App, "getPath">): DesktopSsoClaims | null {
+  const payload = getJwtPayload(readDesktopSsoAccessToken(app));
+  const sub = normalizeStringClaim(payload.sub);
+  const expiresAt = typeof payload.exp === "number" ? payload.exp : Number.NaN;
+  if (!sub || !Number.isFinite(expiresAt) || expiresAt <= Date.now() / 1000) {
+    return null;
+  }
+  const name = normalizeStringClaim(payload.name);
+  const email = normalizeStringClaim(payload.email);
+  return {
+    sub,
+    issuer: normalizeStringClaim(payload.iss),
+    audience: normalizeAudience(payload.aud),
+    ...(name ? { name } : {}),
+    ...(email ? { email } : {})
+  };
+}
+
 export function desktopSsoAccessTokenNeedsRefresh(
   app: Pick<App, "getPath">,
   minValidityMs = DESKTOP_SSO_ACCESS_TOKEN_REFRESH_SKEW_MS
 ) {
-  const token = currentAccessToken || readAccessTokenFile(app);
+  const token = currentAccessToken || readDesktopSsoAccessToken(app);
   if (!token) {
     return true;
   }
@@ -1706,7 +1724,7 @@ function loadSession(app: App) {
       const sessionIssuer = typeof parsed.issuer === "string" ? parsed.issuer.trim() : "";
       const userMatchesSession = !user || !sessionIssuer || !user.issuer || user.issuer === sessionIssuer;
       const restoredUser = presentDesktopSsoUser(app, userMatchesSession ? user : null);
-      currentAccessToken = readAccessTokenFile(app);
+      currentAccessToken = readDesktopSsoAccessToken(app);
       const completedSteps = createCompletedSteps({
         session: true,
         userInfo: Boolean(restoredUser),

@@ -28,7 +28,7 @@ export type DesktopCloudSyncRunResult = {
   errors: number;
 };
 
-// Desktop v3 treats cloud issue bodies as read-only. Runtime keeps this engine
+// Desktop V1 treats cloud issue bodies as read-only. Runtime keeps this engine
 // as a no-op compatibility shell so older callers cannot upload issue changes.
 export class DesktopCloudSyncEngine {
   constructor(_options: DesktopCloudSyncOptions) {}
@@ -36,6 +36,6 @@ export class DesktopCloudSyncEngine {
   stop() {}
 
   async run(): Promise<DesktopCloudSyncRunResult> {
-    return { ok: true, message: t("kanban.cloudSync.disabledV3"), attempted: 0, synced: 0, conflicts: 0, errors: 0 };
+    return { ok: true, message: t("kanban.cloudSync.uploadDisabled"), attempted: 0, synced: 0, conflicts: 0, errors: 0 };
   }
 }

@@ -34,6 +34,7 @@ import type {
   KanbanStatus
 } from "../../../shared/contracts";
 import { KANBAN_PRIORITIES, KANBAN_STATUSES } from "../../../shared/contracts";
+import { createAgentWebclientRoute } from "../../../shared/agent-webclient-routes";
 import type { SupportedLocale, TranslateFunction } from "../../../shared/i18n";
 import { useDebugMode } from "../../debug/DebugModeContext";
 import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
@@ -69,20 +70,34 @@ type KanbanIssueDetailDialogProps = {
   issues: KanbanIssue[];
   projects: KanbanProject[];
   cloudDetails: KanbanCloudDetailData;
-  agents: Array<{ agentKey: string; displayName: string }>;
+  agents: Array<{ agentKey: string; displayName: string; chatIds?: string[] }>;
   locale: SupportedLocale;
   hostTheme: "light" | "dark";
   t: TranslateFunction;
   onClose: () => void;
   onSave: (draft: KanbanIssueDetailDraft) => Promise<boolean>;
   onDelete: () => Promise<boolean>;
-  onOpenChat: () => string | null;
+  onOpenChat: (chatId: string, agentKey?: string | null) => string | null;
   cloudAction?: "claim" | "run" | null;
   cloudActionBusy?: boolean;
   onClaim?: () => void;
   onRun?: () => void;
+  onBindHumanReferenceChat?: (chatId: string) => Promise<{ ok: boolean; message?: string }>;
+  onUnbindHumanReferenceChat?: (issueChatId: string) => Promise<{ ok: boolean; message?: string }>;
   onFeedback: (tone: "success" | "error", message: string) => void;
   initialEditStatus?: KanbanStatus | null;
+};
+
+type KanbanIssueChatListItem = {
+  id: string;
+  chatId: string;
+  agentKey: string;
+  agentLabel: string;
+  title: string;
+  purpose: "run" | "review" | "human_reference";
+  state: "active" | "missing" | "archived";
+  createdAt: string;
+  local: boolean;
 };
 
 const DETAIL_STATUS_LABELS: Record<KanbanStatus, "kanban.status.backlog" | "kanban.status.todo" | "kanban.status.inProgress" | "kanban.status.inReview" | "kanban.status.completed"> = {
@@ -151,6 +166,29 @@ function formatDateTime(value: string | null | undefined, locale: SupportedLocal
     hour: "2-digit",
     minute: "2-digit"
   }).format(timestamp);
+}
+
+function formatRunDuration(startedAt: string | null | undefined, finishedAt: string | null | undefined, t: TranslateFunction) {
+  if (!startedAt || !finishedAt) return "—";
+  const startedTimestamp = Date.parse(startedAt);
+  const finishedTimestamp = Date.parse(finishedAt);
+  if (!Number.isFinite(startedTimestamp) || !Number.isFinite(finishedTimestamp) || finishedTimestamp < startedTimestamp) return "—";
+  const totalSeconds = Math.floor((finishedTimestamp - startedTimestamp) / 1000);
+  if (totalSeconds < 60) return t("kanban.detail.durationSeconds", { count: totalSeconds });
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  if (totalMinutes < 60) return t("kanban.detail.durationMinutes", { count: totalMinutes });
+  return t("kanban.detail.durationHoursMinutes", {
+    hours: Math.floor(totalMinutes / 60),
+    minutes: totalMinutes % 60
+  });
+}
+
+function compareIssueChatTime(left: KanbanIssueChatListItem, right: KanbanIssueChatListItem) {
+  const leftTime = Date.parse(left.createdAt);
+  const rightTime = Date.parse(right.createdAt);
+  const normalizedLeftTime = Number.isFinite(leftTime) ? leftTime : 0;
+  const normalizedRightTime = Number.isFinite(rightTime) ? rightTime : 0;
+  return normalizedLeftTime - normalizedRightTime || left.id.localeCompare(right.id);
 }
 
 function formatFileSize(bytes: number) {
@@ -469,16 +507,23 @@ export function KanbanIssueDetailDialog({
   cloudActionBusy = false,
   onClaim,
   onRun,
+  onBindHumanReferenceChat,
+  onUnbindHumanReferenceChat,
   onFeedback,
   initialEditStatus = null
 }: KanbanIssueDetailDialogProps) {
   const debugMode = useDebugMode();
   const isCloud = issue.syncMode === "cloud";
+  const [localDeviceId, setLocalDeviceId] = useState("");
+  const [availableLocalChats, setAvailableLocalChats] = useState<Array<{ id: string; title: string; createdAt: number }>>([]);
+  const [selectedReferenceChatId, setSelectedReferenceChatId] = useState("");
+  const [referenceChatBusy, setReferenceChatBusy] = useState(false);
   const [editing, setEditing] = useState(!isCloud && Boolean(initialEditStatus));
   const [saving, setSaving] = useState(false);
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [copyNotice, setCopyNotice] = useState<{ tone: "success" | "error"; message: string } | null>(null);
   const [chatEmbedPath, setChatEmbedPath] = useState<string | null>(null);
+  const [selectedIssueChatId, setSelectedIssueChatId] = useState<string | null>(null);
   const [draft, setDraft] = useState(() => ({
     ...createDetailDraft(issue),
     status: initialEditStatus ?? issue.status
@@ -518,9 +563,35 @@ export function KanbanIssueDetailDialog({
   const subtasks = issues.filter((candidate) => candidate.parentIssueId && issueIdentityIds.has(candidate.parentIssueId));
   const dependencies = cloudDetails.issueDependencies.filter((dependency) => dependency.fromIssueId === remoteId || dependency.toIssueId === remoteId);
   const reviews = cloudDetails.reviews.filter((review) => review.issueId === remoteId);
+  const issueRuns = cloudDetails.issueRuns.filter((run) => run.issueId === remoteId);
+  const currentRunWorker = cloudDetails.issueStageWorkers.find((worker) => worker.issueId === remoteId && worker.stageId === issue.stageId && worker.workerRole === "run");
+  const issueChats = cloudDetails.issueChats.filter((chat) => chat.issueId === remoteId);
+  const issueChatsById = new Map(issueChats.map((chat) => [chat.id, chat]));
+  const localReferenceChats = issueChats.filter((chat) => chat.deviceId === localDeviceId && chat.purpose === "human_reference");
+  const hasCurrentDeviceIssueChat = issueChats.some((chat) => Boolean(localDeviceId) && chat.deviceId === localDeviceId);
   const comments = cloudDetails.issueComments.filter((comment) => comment.issueId === remoteId);
   const events = cloudDetails.recentEvents.filter((event) => event.issueId === remoteId).sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
-  const runs = resolveKanbanIssueRuns(issue, events);
+  const runs = issueRuns.length > 0 ? issueRuns.map((run) => {
+    const chat = run.issueChatId ? issueChatsById.get(run.issueChatId) : undefined;
+    return {
+      id: run.id,
+      issueId: run.issueId,
+      workerAgent: run.workerAgent,
+      chatId: chat?.chatId,
+      runId: run.externalRunId || run.id,
+      status: run.state,
+      startedAt: run.startedAt || run.createdAt,
+      finishedAt: run.finishedAt || undefined,
+      resultMessage: run.resultMessage || undefined,
+      errorMessage: run.errorMessage || undefined,
+      createdAt: run.createdAt,
+      updatedAt: run.updatedAt,
+      deviceId: run.deviceId,
+      stageId: run.stageId,
+      statusId: run.statusId,
+      workerRole: run.workerRole
+    };
+  }) : isCloud ? [] : resolveKanbanIssueRuns(issue, events);
   const statusTimeline = resolveKanbanStatusTimeline(issue, events, cloudDetails.workflowStatuses, {
     backlog: t("kanban.status.backlog"),
     todo: t("kanban.status.todo"),
@@ -529,8 +600,60 @@ export function KanbanIssueDetailDialog({
     completed: t("kanban.status.completed")
   });
   const timelineEventsByRevision = new Map(events.map((event) => [event.revision, event]));
-  const relatedItemCount = (parentIssueId ? 1 : 0) + subtasks.length + dependencies.length + reviews.length + runs.length;
+  const relatedItemCount = (parentIssueId ? 1 : 0) + subtasks.length + dependencies.length;
   const visibleAttachments = draft.attachments.filter((attachment) => !attachment.hidden);
+  const localChatSummariesById = new Map(availableLocalChats.map((chat) => [chat.id, chat]));
+  const resolveChatAgentKey = (chatId: string, explicitAgentKey?: string | null) => {
+    const normalizedExplicitAgentKey = explicitAgentKey?.trim() ?? "";
+    if (normalizedExplicitAgentKey) return normalizedExplicitAgentKey;
+    return agents.find((agent) => agent.chatIds?.includes(chatId))?.agentKey
+      ?? (!isCloud ? (issue.runAgentKey || issue.assigneeAgentKey || issue.workerAgent || "").trim() : "");
+  };
+  const issueChatItems = (() => {
+    const chatsByChatId = new Map<string, KanbanIssueChatListItem>();
+    for (const chat of issueChats) {
+      const chatId = chat.chatId.trim();
+      if (!chatId) continue;
+      const agentKey = resolveChatAgentKey(chatId, chat.agentKey);
+      const agentLabel = agents.find((agent) => agent.agentKey === agentKey)?.displayName || agentKey || t("kanban.form.unassigned");
+      const item: KanbanIssueChatListItem = {
+        id: chat.id,
+        chatId,
+        agentKey,
+        agentLabel,
+        title: localChatSummariesById.get(chatId)?.title || t("kanban.chat.untitled"),
+        purpose: chat.purpose,
+        state: chat.state,
+        createdAt: chat.createdAt,
+        local: Boolean(localDeviceId) && chat.deviceId === localDeviceId
+          || (!chat.deviceId && localChatSummariesById.has(chatId) && (!isCloud || !hasCurrentDeviceIssueChat))
+      };
+      const previous = chatsByChatId.get(chatId);
+      if (!previous || compareIssueChatTime(previous, item) <= 0) chatsByChatId.set(chatId, item);
+    }
+    if (!isCloud) {
+      const chatId = issue.chatId?.trim() ?? "";
+      if (chatId) {
+        const agentKey = resolveChatAgentKey(chatId);
+        chatsByChatId.set(chatId, {
+          id: `local:${chatId}`,
+          chatId,
+          agentKey,
+          agentLabel: agents.find((agent) => agent.agentKey === agentKey)?.displayName || agentKey || t("kanban.form.unassigned"),
+          title: localChatSummariesById.get(chatId)?.title || t("kanban.chat.untitled"),
+          purpose: "run",
+          state: "active",
+          createdAt: issue.runStartedAt || (localChatSummariesById.get(chatId)?.createdAt
+            ? new Date(localChatSummariesById.get(chatId)!.createdAt).toISOString()
+            : issue.updatedAt),
+          local: true
+        });
+      }
+    }
+    return [...chatsByChatId.values()].sort(compareIssueChatTime);
+  })();
+  const openableIssueChats = issueChatItems.filter((chat) => chat.local && chat.state === "active" && Boolean(chat.agentKey));
+  const latestOpenableIssueChat = openableIssueChats.at(-1);
   const agentLabel = agents.find((agent) => agent.agentKey === (draft.assigneeAgentKey || issue.runAgentKey || issue.workerAgent))?.displayName
     ?? draft.assigneeAgentKey
     ?? issue.runAgentKey
@@ -554,6 +677,20 @@ export function KanbanIssueDetailDialog({
     copyTitle: t("kanban.detail.doubleClickToCopy"),
     onCopy: copyPropertyValue
   };
+  useEffect(() => {
+    let active = true;
+    void window.electronAPI.settings.getDeviceIdentity().then((identity) => {
+      if (active) setLocalDeviceId(identity.deviceId || "");
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, []);
+  useEffect(() => {
+    let active = true;
+    void window.electronAPI.assistant.listChats().then((items) => {
+      if (active) setAvailableLocalChats(items.map((chat) => ({ id: chat.id, title: chat.title || chat.id, createdAt: chat.createdAt })));
+    }).catch(() => undefined);
+    return () => { active = false; };
+  }, [isCloud, remoteId]);
   useLayoutEffect(() => {
     resizeTextareaToContent(descriptionEditorRef.current);
   }, [draft.description, editing]);
@@ -608,9 +745,36 @@ export function KanbanIssueDetailDialog({
     }
   }
 
-  function openChat() {
-    const embedPath = onOpenChat();
-    if (embedPath) setChatEmbedPath(embedPath);
+  function openChat(chat: KanbanIssueChatListItem | undefined = latestOpenableIssueChat) {
+    if (!chat || !chat.local || chat.state !== "active" || !chat.agentKey) return;
+    const embedPath = onOpenChat(chat.chatId, chat.agentKey);
+    if (!embedPath) return;
+    setSelectedIssueChatId(chat.id);
+    setChatEmbedPath(embedPath);
+  }
+
+  function openIssueChat(agentKey: string, chatId: string) {
+    if (!agentKey || !chatId) return;
+    const matchedChat = issueChatItems.find((chat) => chat.chatId === chatId);
+    if (matchedChat) {
+      openChat(matchedChat);
+      return;
+    }
+    const embedPath = createAgentWebclientRoute({ agentKey, chatId });
+    setSelectedIssueChatId(chatId);
+    setChatEmbedPath(embedPath);
+  }
+
+  async function bindHumanReferenceChat() {
+    if (!selectedReferenceChatId || !onBindHumanReferenceChat) return;
+    setReferenceChatBusy(true);
+    try {
+      const result = await onBindHumanReferenceChat(selectedReferenceChatId);
+      onFeedback(result.ok ? "success" : "error", result.message || t(result.ok ? "kanban.chat.bindSucceeded" : "kanban.chat.bindFailed"));
+      if (result.ok) setSelectedReferenceChatId("");
+    } finally {
+      setReferenceChatBusy(false);
+    }
   }
 
   async function addAttachment(insertImages = false) {
@@ -690,12 +854,16 @@ export function KanbanIssueDetailDialog({
             {isCloud ? <span className="kanban-detail-pill is-origin is-cloud"><CloudOutlined />{t("kanban.detail.cloudOrigin")}</span> : null}
           </div>
           <div className="kanban-detail-window-actions">
-            {issue.chatId ? (
-              <button type="button" className="kanban-detail-secondary-button" onClick={chatEmbedPath ? () => setChatEmbedPath(null) : openChat}>
-                {chatEmbedPath ? <FileTextOutlined /> : <MessageOutlined />}
-                {chatEmbedPath ? t("kanban.chat.viewIssue") : t("kanban.chat.view")}
-              </button>
-            ) : null}
+            <button
+              type="button"
+              className="kanban-detail-secondary-button"
+              disabled={!chatEmbedPath && !latestOpenableIssueChat}
+              title={!chatEmbedPath && !latestOpenableIssueChat ? t("kanban.chat.noneAvailable") : undefined}
+              onClick={chatEmbedPath ? () => { setChatEmbedPath(null); setSelectedIssueChatId(null); } : () => openChat()}
+            >
+              {chatEmbedPath ? <FileTextOutlined /> : <MessageOutlined />}
+              {chatEmbedPath ? t("kanban.chat.viewIssue") : t("kanban.chat.view")}
+            </button>
             {!chatEmbedPath ? editing ? (
               <>
                 <button type="button" className="kanban-detail-secondary-button" onClick={() => { setDraft(createDetailDraft(issue)); setEditing(false); }}>{t("kanban.form.cancel")}</button>
@@ -709,20 +877,51 @@ export function KanbanIssueDetailDialog({
         </header>
 
         {chatEmbedPath ? (
-          <div className="kanban-detail-chat-surface">
-            <ServiceWebviewSurface
-              key={`kanban-chat:${issue.id}:${chatEmbedPath}`}
-              active
-              surfaceOwnershipActive={false}
-              hostTheme={hostTheme}
-              serviceId="agent-webclient"
-              surfaceId="agent-webclient-kanban-chat"
-              surfaceLabel={t("kanban.chat.surfaceLabel")}
-              embedPath={chatEmbedPath}
-              skipContextRegistration
-              loadInitialEmbeddedUrlDirectly
-              suppressInitialLoadingCopy
-            />
+          <div className="kanban-detail-chat-layout">
+            <aside className="kanban-detail-chat-list" aria-label={t("kanban.chat.listTitle")}>
+              <div className="kanban-detail-chat-list-heading">
+                <strong>{t("kanban.chat.listTitle")}</strong>
+                <span>{issueChatItems.length}</span>
+              </div>
+              <div className="kanban-detail-chat-list-items">
+                {issueChatItems.map((chat, index) => {
+                  const openable = chat.local && chat.state === "active" && Boolean(chat.agentKey);
+                  const purposeLabel = chat.purpose === "review"
+                    ? t("kanban.chat.review")
+                    : chat.purpose === "human_reference" ? t("kanban.chat.reference") : t("kanban.chat.run");
+                  return (
+                    <button
+                      key={chat.id}
+                      type="button"
+                      className={selectedIssueChatId === chat.id ? "is-selected" : ""}
+                      disabled={!openable}
+                      title={openable ? chat.title : t("kanban.chat.unavailableOnDevice")}
+                      onClick={() => openChat(chat)}
+                    >
+                      <span className="kanban-detail-chat-list-title"><MessageOutlined />{chat.title}</span>
+                      <span className="kanban-detail-chat-list-meta">{purposeLabel} · {chat.agentLabel}</span>
+                      <time>{formatDateTime(chat.createdAt, locale)}</time>
+                      {index === issueChatItems.length - 1 ? <em>{t("kanban.chat.latest")}</em> : null}
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+            <div className="kanban-detail-chat-surface">
+              <ServiceWebviewSurface
+                key={`kanban-chat:${issue.id}:${selectedIssueChatId || chatEmbedPath}`}
+                active
+                surfaceOwnershipActive={false}
+                hostTheme={hostTheme}
+                serviceId="agent-webclient"
+                surfaceId="agent-webclient-kanban-chat"
+                surfaceLabel={t("kanban.chat.surfaceLabel")}
+                embedPath={chatEmbedPath}
+                skipContextRegistration
+                loadInitialEmbeddedUrlDirectly
+                suppressInitialLoadingCopy
+              />
+            </div>
           </div>
         ) : <div className="kanban-detail-body">
           <main className="kanban-detail-content">
@@ -766,12 +965,14 @@ export function KanbanIssueDetailDialog({
 
           <aside className="kanban-detail-rail" aria-label={t("kanban.detail.properties")}>
             <nav className="kanban-detail-anchor-nav" aria-label={t("kanban.detail.properties")}>
-              {[
+              {([
                 ["kanban-detail-basic", t("kanban.detail.basicTitle")],
                 ["kanban-detail-people", t("kanban.detail.peopleTitle")],
-                ["kanban-detail-related", t("kanban.detail.relatedTitle")],
+                ...(relatedItemCount > 0 ? [["kanban-detail-related", t("kanban.detail.relatedTitle")]] : []),
+                ["kanban-detail-reviews", t("kanban.detail.reviewsTitle")],
+                ["kanban-detail-runs", t("kanban.detail.runsTitle")],
                 ["kanban-detail-activity", t("kanban.detail.activityTitle")]
-              ].map(([sectionId, label]) => <button key={sectionId} type="button" onClick={() => document.getElementById(sectionId)?.scrollIntoView({ block: "start" })}>{label}</button>)}
+              ] as Array<[string, string]>).map(([sectionId, label]) => <button key={sectionId} type="button" onClick={() => document.getElementById(sectionId)?.scrollIntoView({ block: "start" })}>{label}</button>)}
             </nav>
 
             <DetailSection sectionId="kanban-detail-basic" title={t("kanban.detail.basicTitle")} icon={<FileTextOutlined />}>
@@ -856,10 +1057,11 @@ export function KanbanIssueDetailDialog({
                   <DetailProperty {...copyBehavior} label={t("kanban.detail.automationMessage")} value={draft.automationMessage || "—"} editing={editing} editor={<textarea value={draft.automationMessage} onChange={(event) => updateDraft({ automationMessage: event.target.value })} rows={3} />} />
                 </> : null}
               </dl>
+              {isCloud && issue.status === "in_progress" && currentRunWorker?.workerType === "human" && onBindHumanReferenceChat ? <div className="kanban-detail-owner-action"><label>{t("kanban.chat.bindLocal")}</label><select value={selectedReferenceChatId} onChange={(event) => setSelectedReferenceChatId(event.target.value)}><option value="">{t("kanban.chat.selectLocal")}</option>{availableLocalChats.map((chat) => <option key={chat.id} value={chat.id}>{chat.title}</option>)}</select><button type="button" disabled={referenceChatBusy || !selectedReferenceChatId} onClick={() => void bindHumanReferenceChat()}>{t(referenceChatBusy ? "kanban.chat.binding" : "kanban.chat.bind")}</button>{localReferenceChats.map((chat) => <span key={chat.id}>{chat.chatId}<button type="button" disabled={referenceChatBusy} onClick={() => void onUnbindHumanReferenceChat?.(chat.id).then((result) => onFeedback(result.ok ? "success" : "error", result.message || t(result.ok ? "kanban.chat.unbindSucceeded" : "kanban.chat.unbindFailed")))}>{t("kanban.chat.unbind")}</button></span>)}</div> : null}
             </DetailSection>
 
-            <DetailSection sectionId="kanban-detail-related" title={t("kanban.detail.relatedTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: relatedItemCount })}>
-              {relatedItemCount > 0 ? <div className="kanban-detail-related-groups">
+            {relatedItemCount > 0 ? <DetailSection sectionId="kanban-detail-related" title={t("kanban.detail.relatedTitle")} icon={<LinkOutlined />} meta={t("kanban.detail.itemCount", { count: relatedItemCount })}>
+              <div className="kanban-detail-related-groups">
                 {parentIssueId ? <div><h3>{t("kanban.detail.parentTitle")}</h3><div className="kanban-detail-related-list"><article><FileTextOutlined /><span><strong>{parentIssue?.title || parentIssueId}</strong><small>{parentIssueId}{parentIssue ? ` · ${parentIssue.statusName || t(DETAIL_STATUS_LABELS[parentIssue.status])}` : ""}</small></span></article></div></div> : null}
                 {subtasks.length > 0 ? <div><h3>{t("kanban.detail.subtasksTitle")}</h3><div className="kanban-detail-related-list">{subtasks.map((subtask) => <article key={subtask.id}><CheckCircleFilled className={subtask.status === "completed" ? "is-complete" : ""} /><span><strong>{subtask.title}</strong><small>{issueExternalId(subtask)} · {subtask.statusName || t(DETAIL_STATUS_LABELS[subtask.status])}</small></span></article>)}</div></div> : null}
                 {dependencies.length > 0 ? <div><h3>{t("kanban.detail.dependenciesTitle")}</h3><div className="kanban-detail-dependency-list">{dependencies.map((dependency) => {
@@ -868,9 +1070,36 @@ export function KanbanIssueDetailDialog({
                   const related = issuesByRemoteId.get(relatedId);
                   return <article key={dependency.id}><span>{outbound ? dependency.type : t("kanban.detail.dependedBy")}</span><div><strong>{related?.title || relatedId}</strong><small>{relatedId}{related ? ` · ${related.statusName || t(DETAIL_STATUS_LABELS[related.status])}` : ""}</small></div></article>;
                 })}</div></div> : null}
-                {reviews.length > 0 ? <div><h3>{t("kanban.detail.reviewsTitle")}</h3><div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div></div> : null}
-                {runs.length > 0 ? <div><h3><RobotOutlined />{t("kanban.detail.runsTitle")}</h3><div className="kanban-detail-run-list">{runs.map((run) => <div key={run.id} className="kanban-detail-run-card"><span className="kanban-detail-run-icon"><RobotOutlined /></span><div><strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong><p>{run.runId || t("kanban.detail.runIdMissing")}</p><small>{formatDateTime(run.startedAt, locale)}{run.finishedAt ? ` — ${formatDateTime(run.finishedAt, locale)}` : ""}</small>{run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}{run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}</div>{run.chatId && run.chatId === issue.chatId ? <button type="button" onClick={openChat}>{t("kanban.chat.view")}</button> : null}</div>)}</div></div> : null}
-              </div> : <EmptyBlock>{t("kanban.detail.noRelated")}</EmptyBlock>}
+              </div>
+            </DetailSection> : null}
+
+            <DetailSection sectionId="kanban-detail-reviews" title={t("kanban.detail.reviewsTitle")} icon={<CheckCircleFilled />} meta={t("kanban.detail.itemCount", { count: reviews.length })}>
+              {reviews.length > 0 ? <div className="kanban-detail-review-list">{reviews.map((review) => <article key={review.id}><span className={`kanban-detail-review-status is-${review.status}`}>{review.status}</span><div><strong>{review.summary || review.reviewType}</strong><small>{usersById.get(review.reviewerId ?? "") || review.reviewerId || t("kanban.form.unassigned")} · {formatDateTime(review.submittedAt || review.requestedAt, locale)}</small></div></article>)}</div> : <EmptyBlock>{t("kanban.detail.noReviews")}</EmptyBlock>}
+            </DetailSection>
+
+            <DetailSection sectionId="kanban-detail-runs" title={t("kanban.detail.runsTitle")} icon={<RobotOutlined />} meta={t("kanban.detail.itemCount", { count: runs.length })}>
+              {runs.length > 0 ? <div className="kanban-detail-run-list">{runs.map((run) => {
+                const viewChatButton = run.chatId && "deviceId" in run && run.deviceId === localDeviceId
+                  ? <button type="button" onClick={() => openIssueChat(run.workerAgent || "", run.chatId || "")}>{t("kanban.chat.view")}</button>
+                  : run.chatId && !("deviceId" in run) && run.chatId === issue.chatId
+                    ? <button type="button" onClick={() => openChat()}>{t("kanban.chat.view")}</button>
+                    : null;
+                return <div key={run.id} className="kanban-detail-run-card">
+                  <span className="kanban-detail-run-icon"><RobotOutlined /></span>
+                  <div className="kanban-detail-run-body">
+                    <strong>{run.workerAgent || "—"}{run.status ? <em className={`is-${run.status}`}>{t(`kanban.run.${run.status}` as "kanban.run.running")}</em> : null}</strong>
+                    {run.resultMessage ? <blockquote>{run.resultMessage}</blockquote> : null}
+                    {run.errorMessage ? <blockquote className="is-error">{run.errorMessage}</blockquote> : null}
+                    <div className="kanban-detail-run-footer">
+                      <dl className="kanban-detail-run-metrics">
+                        <div><dt>{t("kanban.detail.runSpent")}</dt><dd>{formatRunDuration(run.startedAt, run.finishedAt, t)}</dd></div>
+                        <div><dt>{t("kanban.detail.runCompletedAt")}</dt><dd>{formatDateTime(run.finishedAt, locale)}</dd></div>
+                      </dl>
+                      {viewChatButton}
+                    </div>
+                  </div>
+                </div>;
+              })}</div> : <EmptyBlock>{t("kanban.detail.noRuns")}</EmptyBlock>}
             </DetailSection>
 
             <DetailSection sectionId="kanban-detail-activity" title={t("kanban.detail.activityTitle")} icon={<HistoryOutlined />} meta={t("kanban.detail.itemCount", { count: statusTimeline.length })}>

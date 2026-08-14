@@ -33,7 +33,7 @@
 
 ## Kanban Issue Protocol
 
-- Treat cloud Kanban issue content and workflow state as a Server-authoritative read-only cache in Desktop UI/runtime surfaces. Contract 3.2 Desktop may call only the restricted atomic `issue.claim` mutation.
+- Treat cloud Kanban issue content and workflow state as a Server-authoritative read-only cache in Desktop UI/runtime surfaces. Contract 1.0 Desktop may call only the restricted atomic `issue.claim`, `issue.run.prepare`, `issue.chat.bind/unbind`, and `run.event.append` operations.
 - Do not call removed public issue endpoints such as `issue.transition`, `issue.assignRun`, `issue.dispatchDesktop`, `issue.label.set`, `issue.dependency.*`, `issueLabel.*`, `review.*`, or `review.comment.*`.
-- Keep `run.event.append` as the Desktop runtime synchronization protocol for run state, `chatId`, and `runId`; it is not public issue CRUD. Desktop manual runs must use normal Agent Platform query first and report `source: desktop_manual` with an exact stable `runId`.
+- Keep `run.event.append` as the Desktop runtime synchronization protocol for run state and exact `issueRunId + deviceId + externalRunId` identity; it is not public issue CRUD. Desktop manual runs must use normal Agent Platform query and the Server-prepared run identity.
 - Do not add `issue.claimAndRun` or call Website's `issue.run.request` from Desktop.

@@ -10,7 +10,7 @@ function readSource(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 }
 
-test("running WebApps show a green status dot beside the action slot", () => {
+test("Website and WebApp status dots share the right alignment", () => {
   const appShell = readSource("src", "renderer", "app-shell", "AppShell.tsx");
   const appSidebar = readSource(
     "src",
@@ -48,6 +48,14 @@ test("running WebApps show a green status dot beside the action slot", () => {
   assert.match(
     navigationCss,
     /\.sidebar-website-child-actions\s*\{[\s\S]*?flex:\s*0 0 28px;[\s\S]*?width:\s*28px;[\s\S]*?overflow:\s*visible;/u,
+  );
+  assert.match(
+    navigationCss,
+    /\.sidebar-website-status-action\s*\{[\s\S]*?flex:\s*0 0 28px;[\s\S]*?width:\s*28px;/u,
+  );
+  assert.match(
+    navigationCss,
+    /\.sidebar-website-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*5px;[\s\S]*?left:\s*auto;/u,
   );
   assert.match(
     navigationCss,

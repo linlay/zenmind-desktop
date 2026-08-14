@@ -9,6 +9,7 @@ import { PRODUCT_NAME } from "../../shared/brand";
 import type { AssistantNavigationListOptions } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
+import { getAssistantBootstrapState } from "../assistant/core/bootstrap-state";
 import {
   createConversationShare,
   revokeConversationShare
@@ -241,6 +242,10 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // ---------------------------------------------------------------------------
   ipcMain.handle("assistant.getSettings", async () =>
     (getAgentPlatformMinimaxSettingsPublic?.(app) ?? null) ?? getAssistantSettings?.(app)
+  );
+
+  ipcMain.handle("assistant.getBootstrapState", async () =>
+    getAssistantBootstrapState(app, platform as NodeJS.Platform)
   );
 
   ipcMain.handle("assistant.saveSettings", async (_event: any, input: any) => {

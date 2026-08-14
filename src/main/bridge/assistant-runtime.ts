@@ -71,7 +71,6 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     issueAccessToken: options.issueAgentAccessToken,
     wakeLock: options.assistantRunWakeLock,
     onEvent: (event) => {
-      state.kanbanRuntime?.sendAssistantEvent(event);
       emitDesktopWsPush("assistant.event", event);
       const targetWindow = state.mainWindow;
       if (targetWindow && !targetWindow.isDestroyed()) {
@@ -155,7 +154,9 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       issueAccessToken: options.issueAgentAccessToken,
       onSnapshot: options.emitAssistantNavigationAgentsChanged,
       onPushEvent: (event) => {
-        state.kanbanRuntime?.sendAssistantEvent(event);
+        if (event.type === "run.started" || event.type === "run.finished") {
+          state.kanbanRuntime?.sendNavigationPushEvent(event);
+        }
         options.emitAssistantNavigationPushEvent(event);
       },
       onDebug: (message) => {

@@ -1590,18 +1590,21 @@
 .sidebar-website-status-action {
   position: relative;
   display: inline-flex;
-  flex: 0 0 24px;
+  flex: 0 0 28px;
   align-items: center;
-  justify-content: center;
-  width: 24px;
+  justify-content: flex-end;
+  width: 28px;
   height: 24px;
-  margin-right: 4px;
+  margin-right: 0;
   padding: 0;
   border-radius: 6px;
 }
 
 .sidebar-website-status-dot {
   position: absolute;
+  top: 9px;
+  right: 5px;
+  left: auto;
   width: 6px;
   height: 6px;
   border-radius: 999px;
@@ -1613,6 +1616,8 @@
 
 .sidebar-website-status-close {
   position: absolute;
+  top: 4px;
+  right: 0;
   width: 16px;
   height: 16px;
   opacity: 0;

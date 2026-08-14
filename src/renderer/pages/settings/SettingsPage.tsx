@@ -496,7 +496,6 @@ const ASSISTANT_SETTINGS_SECTION_IDS: SettingsSectionId[] = [
 
 const defaultKanbanCloudConfig: KanbanCloudConfig = {
   serverUrl: "",
-  token: "",
   remoteControlEnabled: false,
   deviceAlias: ""
 };

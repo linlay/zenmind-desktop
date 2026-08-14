@@ -1,4 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import {
   DndContext,
@@ -26,7 +26,6 @@ import {
   CalendarOutlined,
   CloseCircleOutlined,
   DeleteOutlined,
-  FileTextOutlined,
   FlagOutlined,
   HistoryOutlined,
   HourglassOutlined,
@@ -36,11 +35,11 @@ import {
   SettingOutlined,
   StopOutlined,
   ThunderboltOutlined,
+  TagsOutlined,
   UserOutlined
 } from "@ant-design/icons";
 import type {
   AssistantAttachment,
-  AssistantEvent,
   AssistantNavAgentItem,
   DesktopApi,
   DesktopPetAgentOption,
@@ -78,6 +77,7 @@ import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
 import { resolveLocalKanbanRunChatId } from "./kanbanAssistantRun";
+import { resolveWorkflowStageColor } from "./stageColor";
 
 type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "issueType" | "priority" | "severity" | "automation" | "assignee" | null;
@@ -129,9 +129,9 @@ type KanbanSeverityFilter = KanbanSeverity | "unset";
 
 type KanbanFilterPreferences = {
   query: string;
+  showBacklog: boolean;
   selectedProjectIds: string[];
   includeLocalIssues: boolean;
-  showBacklog: boolean;
   issueTypeFilters: string[];
   priorityFilters: KanbanPriorityFilter[];
   severityFilters: KanbanSeverityFilter[];
@@ -202,28 +202,23 @@ const VISIBLE_KANBAN_STATUS_SET = new Set<KanbanStatus>(VISIBLE_KANBAN_STATUSES)
 
 function getCloudIssueAction(
   issue: KanbanIssue,
+  cloudDetails: KanbanCloudDetailData,
+  localDeviceId: string,
   currentUserId: string,
   canClaim: boolean,
   canRun: boolean
 ): CloudIssueAction {
-  if (issue.syncMode !== "cloud" || issue.status !== "todo") return null;
+  if (issue.syncMode !== "cloud" || (issue.status !== "todo" && issue.status !== "in_progress")) return null;
   const assigneeId = issue.assigneeId?.trim() ?? "";
-  if (!assigneeId) return canClaim ? "claim" : null;
+  if (!assigneeId) return issue.status === "todo" && canClaim ? "claim" : null;
   if (assigneeId !== currentUserId.trim()) return null;
-  if (issue.runState === "running" || issue.activeRunId?.trim()) return null;
-  return canRun ? "run" : null;
+  if (issue.activeIssueRunId?.trim()) return null;
+  const issueId = issue.remoteIssueId?.trim() || issue.id;
+  const runWorker = cloudDetails.issueStageWorkers.find((worker) =>
+    worker.issueId === issueId && worker.stageId === issue.stageId && worker.workerRole === "run"
+  );
+  return canRun && runWorker?.workerType === "agent" && runWorker.deviceId === localDeviceId ? "run" : null;
 }
-
-const ISSUE_STAGE_COLOR_PALETTE = [
-  "#8b5cf6",
-  "#3b82f6",
-  "#f59e0b",
-  "#22b8c7",
-  "#ec4899",
-  "#6366f1"
-] as const;
-
-const ISSUE_STAGE_FALLBACK_COLOR = "#86909c";
 
 const STATUS_META: Record<KanbanStatus, { labelKey: TranslationKey; tone: string }> = {
   backlog: { labelKey: "kanban.status.backlog", tone: "neutral" },
@@ -290,12 +285,22 @@ const EMPTY_KANBAN_CLOUD_DETAILS: KanbanCloudDetailData = {
   issueFieldContexts: [],
   issueFieldOptions: [],
   workflows: [],
+  workflowStageDefs: [],
+  workflowStatusDefs: [],
   workflowStages: [],
   workflowStatuses: [],
+  workflowTransitions: [],
+  workflowDecomposeRules: [],
+  teams: [],
+  teamMembers: [],
+  projectPermissions: [],
   issueLabels: [],
   issueLabelLinks: [],
   issueDependencies: [],
   reviews: [],
+  issueStageWorkers: [],
+  issueChats: [],
+  issueRuns: [],
   issueComments: [],
   recentEvents: []
 };
@@ -330,9 +335,9 @@ const emptyForm: IssueFormState = {
 function createDefaultKanbanFilterPreferences(): KanbanFilterPreferences {
   return {
     query: "",
+    showBacklog: true,
     selectedProjectIds: [],
     includeLocalIssues: false,
-    showBacklog: true,
     issueTypeFilters: [],
     priorityFilters: [],
     severityFilters: [],
@@ -399,9 +404,9 @@ function readKanbanFilterPreferences(): KanbanFilterPreferences {
       : defaults.automationFilter;
     return {
       query: typeof stored.query === "string" ? stored.query : defaults.query,
+      showBacklog: typeof stored.showBacklog === "boolean" ? stored.showBacklog : defaults.showBacklog,
       selectedProjectIds: normalizeStoredStringArray(stored.selectedProjectIds),
       includeLocalIssues: typeof stored.includeLocalIssues === "boolean" ? stored.includeLocalIssues : defaults.includeLocalIssues,
-      showBacklog: typeof stored.showBacklog === "boolean" ? stored.showBacklog : defaults.showBacklog,
       issueTypeFilters: normalizeStoredStringArray(stored.issueTypeFilters),
       priorityFilters: normalizeStoredFilterValues(stored.priorityFilters, [...KANBAN_PRIORITIES, "unset"]),
       severityFilters: normalizeStoredFilterValues(stored.severityFilters, [...KANBAN_SEVERITIES, "unset"]),
@@ -689,8 +694,6 @@ function buildCompactIssueTitle(description: string) {
 
 function buildAssistantPrompt(issue: KanbanIssue, t: TranslateFunction) {
   const parts = [
-    t("kanban.prompt.intro"),
-    t("kanban.prompt.rule"),
     t("kanban.prompt.id", { value: issue.remoteIssueId ?? issue.id }),
     t("kanban.prompt.title", { value: issue.title }),
     t("kanban.prompt.status", { value: t(STATUS_META[issue.status].labelKey) })
@@ -953,8 +956,14 @@ function getIssueCardPeoplePresentation(
   users: KanbanCloudUser[],
   t: TranslateFunction
 ) {
-  const assignee = getIssueCardAssigneePresentation(issue, agents, users, t);
   const worker = getIssueCardWorkerPresentation(issue, agents, users, t);
+  if (issue.syncMode === "local") {
+    return {
+      people: worker ? [worker] : [],
+      title: worker?.rawLabel ?? ""
+    };
+  }
+  const assignee = getIssueCardAssigneePresentation(issue, agents, users, t);
   const normalizedAssignee = assignee?.rawLabel.trim().toLocaleLowerCase();
   const visibleWorker = worker?.rawLabel.trim().toLocaleLowerCase() === normalizedAssignee ? null : worker;
   const people = issue.status === "backlog" || issue.status === "todo" || issue.status === "in_progress"
@@ -1035,11 +1044,13 @@ function getIssueCardProgressPresentation(
   const workflowProgress = stageIndex >= 0
     ? ((stageIndex + stageProgress) / Math.max(1, stageCount)) * 100
     : stageProgress * 100;
-  const paletteIndex = catalogStageIndex >= 0 ? catalogStageIndex : knownStageIndex;
+  const resolvedStage = stage ?? {
+    key: issue.stageKey ?? "",
+    name: stageLabel,
+    color: undefined
+  };
   return {
-    color: stage?.color?.trim() || (paletteIndex >= 0
-      ? ISSUE_STAGE_COLOR_PALETTE[paletteIndex % ISSUE_STAGE_COLOR_PALETTE.length]!
-      : ISSUE_STAGE_FALLBACK_COLOR),
+    color: resolveWorkflowStageColor(resolvedStage, stageIndex),
     percent: Math.min(100, Math.max(4, Math.round(workflowProgress))),
     stageLabel
   };
@@ -1317,59 +1328,6 @@ async function loadKanbanAgents(): Promise<AssistantNavAgentItem[]> {
   return agentOptions.map(createNavigationAgentFromOption);
 }
 
-function isCancelledAssistantRunEvent(event: AssistantEvent) {
-  const eventStatus = String(event.status ?? "");
-  return (
-    event.type === "run.cancel" ||
-    event.type === "task.cancel" ||
-    event.type === "stopped" ||
-    event.type === "run.stopped" ||
-    event.type === "run.interrupt" ||
-    eventStatus === "cancelled" ||
-    eventStatus === "canceled" ||
-    eventStatus === "stopped"
-  );
-}
-
-function resolveAssistantRunStatus(event: AssistantEvent, t: TranslateFunction): {
-  status: KanbanStatus | null;
-  runState: KanbanIssue["runState"];
-  tone: Feedback["tone"];
-  message: string;
-} | null {
-  if (event.type === "done" || event.type === "run.complete") {
-    return {
-      status: "completed",
-      runState: "completed",
-      tone: "success",
-      message: t("kanban.feedback.agentDone")
-    };
-  }
-  if (isCancelledAssistantRunEvent(event)) {
-    return {
-      status: null,
-      runState: "cancelled",
-      tone: "error",
-      message: t("kanban.feedback.agentCancelled")
-    };
-  }
-  if (
-    event.type === "error" ||
-    event.type === "run.error" ||
-    event.type === "run.expired" ||
-    event.status === "error" ||
-    event.status === "timeout"
-  ) {
-    return {
-      status: null,
-      runState: "failed",
-      tone: "error",
-      message: t("kanban.feedback.agentIncomplete")
-    };
-  }
-  return null;
-}
-
 function readKanbanApi(): DesktopApi["kanban"] | null {
   if (typeof window === "undefined") {
     return null;
@@ -1400,6 +1358,62 @@ function getKanbanProjectOptionLabel(project: KanbanProject) {
     return `${project.name} · ${path}`;
   }
   return project.name;
+}
+
+function matchesKanbanProjectSearch(project: KanbanProject, query: string) {
+  const normalizedQuery = query.trim().toLocaleLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+  return [project.name, project.path, project.id]
+    .some((value) => value.trim().toLocaleLowerCase().includes(normalizedQuery));
+}
+
+const KANBAN_PROJECT_OPTION_SELECTOR = "[data-kanban-project-option]";
+
+function focusAdjacentKanbanProjectOption(target: HTMLElement, direction: -1 | 1) {
+  const menu = target.closest(".kanban-project-filter-menu, .kanban-project-form-menu");
+  if (!menu) {
+    return false;
+  }
+  const options = Array.from(menu.querySelectorAll<HTMLElement>(KANBAN_PROJECT_OPTION_SELECTOR))
+    .filter((option) => !option.hasAttribute("disabled"));
+  if (options.length === 0) {
+    return false;
+  }
+  const currentIndex = options.findIndex((option) => option === document.activeElement);
+  const nextIndex = currentIndex < 0
+    ? direction > 0 ? 0 : options.length - 1
+    : (currentIndex + direction + options.length) % options.length;
+  options[nextIndex]?.focus();
+  options[nextIndex]?.scrollIntoView({ block: "nearest" });
+  return true;
+}
+
+function handleKanbanProjectOptionKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+    if (focusAdjacentKanbanProjectOption(event.currentTarget, event.key === "ArrowDown" ? 1 : -1)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+    return;
+  }
+  if (event.key === "Enter" && event.currentTarget instanceof HTMLInputElement) {
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.click();
+    return;
+  }
+  if (event.key === "Escape") {
+    const searchInput = event.currentTarget
+      .closest(".kanban-project-filter-menu, .kanban-project-form-menu")
+      ?.querySelector<HTMLInputElement>(".kanban-project-search-field input");
+    if (searchInput) {
+      event.preventDefault();
+      event.stopPropagation();
+      searchInput.focus();
+    }
+  }
 }
 
 function getKanbanSelectedProjectTooltipItems(
@@ -1523,7 +1537,7 @@ function canEditKanbanIssueBody(issue: KanbanIssue | null | undefined) {
 }
 
 function canCreateIssueFromColumnDoubleClick(status: KanbanStatus) {
-  return status === "backlog" || status === "todo";
+  return status === "todo";
 }
 
 function shouldCreateIssueFromColumnDoubleClick(event: MouseEvent<HTMLElement>, status: KanbanStatus) {
@@ -1635,22 +1649,22 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const [automationFilter, setAutomationFilter] = useState(initialFilterPreferences.automationFilter);
   const [assigneeFilters, setAssigneeFilters] = useState(initialFilterPreferences.assigneeFilters);
   const [currentUserId, setCurrentUserId] = useState("");
+  const [localDeviceId, setLocalDeviceId] = useState("");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenuKind>(null);
   const [kanbanCountdownNow, setKanbanCountdownNow] = useState(() => Date.now());
   const [showBacklog, setShowBacklog] = useState(initialFilterPreferences.showBacklog);
   const [modal, setModal] = useState<ModalState | null>(null);
   const [detailIssueId, setDetailIssueId] = useState<string | null>(null);
   const [detailInitialEditStatus, setDetailInitialEditStatus] = useState<KanbanStatus | null>(null);
-  const [runAgentPickerIssueId, setRunAgentPickerIssueId] = useState<string | null>(null);
   const [form, setForm] = useState<IssueFormState>(emptyForm);
   const [formCompact, setFormCompact] = useState(true);
   const [projectFormMenuOpen, setProjectFormMenuOpen] = useState(false);
+  const [projectFormQuery, setProjectFormQuery] = useState("");
   const [attachmentBusy, setAttachmentBusy] = useState(false);
   const [automationMenuOpen, setAutomationMenuOpen] = useState<AutomationMenuKind | null>(null);
   const [activeDragIssueId, setActiveDragIssueId] = useState<string | null>(null);
   const [contextMenu, setContextMenu] = useState<KanbanContextMenu | null>(null);
   const activeDragIssueIdRef = useRef<string | null>(null);
-  const issuesRef = useRef<KanbanIssue[]>([]);
   const selectedAutomationTimeRef = useRef<HTMLButtonElement | null>(null);
   const cloudMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
   const displayMenuTriggerRef = useRef<HTMLButtonElement | null>(null);
@@ -1660,11 +1674,23 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   const missingKanbanApiMessage = t("kanban.missingApi", { appName: t("app.name") });
   const cloudProjectOptions = useMemo(() => sortKanbanProjectOptions(cloudProjects), [cloudProjects]);
   const projectFormOptions = useMemo(() => flattenKanbanProjectTree(cloudProjects), [cloudProjects]);
+  const filteredProjectFormOptions = useMemo(
+    () => projectFormOptions.filter(({ project }) => matchesKanbanProjectSearch(project, projectFormQuery)),
+    [projectFormOptions, projectFormQuery]
+  );
   const kanbanProjectsById = useMemo(() => new Map(cloudProjects.map((project) => [project.id, project])), [cloudProjects]);
   const projectFilterIds = useMemo(
     () => getKanbanProjectFilterIds(cloudProjects, selectedProjectIds),
     [cloudProjects, selectedProjectIds]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    void window.electronAPI.settings.getDeviceIdentity().then((identity) => {
+      if (!cancelled) setLocalDeviceId(identity.deviceId || "");
+    }).catch(() => undefined);
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -1772,16 +1798,12 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
   }, []);
 
   useEffect(() => {
-    issuesRef.current = issues;
-  }, [issues]);
-
-  useEffect(() => {
     try {
       const preferences: KanbanFilterPreferences = {
         query,
+        showBacklog,
         selectedProjectIds,
         includeLocalIssues,
-        showBacklog,
         issueTypeFilters,
         priorityFilters,
         severityFilters,
@@ -1907,46 +1929,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }, [form.automationTime, automationMenuOpen]);
 
-  useEffect(() => {
-    const removeAssistantEventListener = window.electronAPI.assistant.onAssistantEvent(async (event) => {
-      const nextRunStatus = resolveAssistantRunStatus(event, t);
-      if (!nextRunStatus) {
-        return;
-      }
-      const issue = issuesRef.current.find((candidate) => candidate.runId === event.runId);
-      if (!issue) {
-        return;
-      }
-      if (issue.syncMode === "cloud") {
-        return;
-      }
-      const kanbanApi = readKanbanApi();
-      if (!kanbanApi) {
-        return;
-      }
-      try {
-        const issueUpdate: KanbanIssueUpdateInput = {
-          chatId: event.chatId || issue.chatId,
-          runId: null,
-          runState: nextRunStatus.runState
-        };
-        if (nextRunStatus.status) {
-          issueUpdate.status = nextRunStatus.status;
-        }
-        const result = await kanbanApi.updateIssue(issue.id, issueUpdate);
-        setIssues(sortIssues(result.issues));
-        setFeedback({ tone: nextRunStatus.tone, message: nextRunStatus.message });
-      } catch (error) {
-        setFeedback({
-          tone: "error",
-          message: error instanceof Error ? error.message : t("kanban.feedback.statusWritebackFailed")
-        });
-      }
-    });
-
-    return removeAssistantEventListener;
-  }, [t]);
-
   const visibleIssues = useMemo(
     () => issues.filter((issue) => VISIBLE_KANBAN_STATUS_SET.has(issue.status)),
     [issues]
@@ -2043,7 +2025,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
 
   const issueMap = useMemo(() => new Map(issues.map((issue) => [issue.id, issue])), [issues]);
   const detailIssue = detailIssueId ? issueMap.get(detailIssueId) ?? null : null;
-  const runAgentPickerIssue = runAgentPickerIssueId ? issueMap.get(runAgentPickerIssueId) ?? null : null;
   const filteredCount = filteredIssues.length;
   const totalCount = visibleIssues.length;
   const activeDragIssue = activeDragIssueId ? issueMap.get(activeDragIssueId) ?? null : null;
@@ -2056,6 +2037,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     setForm({ ...emptyForm, status, attachmentChatId: createKanbanDraftAttachmentChatId() });
     setFormCompact(true);
     setProjectFormMenuOpen(false);
+    setProjectFormQuery("");
     setAttachmentBusy(false);
     setAutomationMenuOpen(null);
     setModal({ mode: "create" });
@@ -2445,37 +2427,19 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  async function startCloudIssue(issue: KanbanIssue, selectedAgentKey?: string) {
+  async function startCloudIssue(issue: KanbanIssue) {
     const kanbanApi = readKanbanApi();
     if (!kanbanApi || typeof kanbanApi.runIssue !== "function") {
       setFeedback({ tone: "error", message: t("kanban.cloud.preloadOutdated") });
       return;
     }
-    const availableAgents = await getAvailableAgents();
-    let agentKey = selectedAgentKey?.trim() ?? "";
-    if (!agentKey) {
-      const boundAgentKey = [issue.workerAgent, issue.assigneeAgentKey]
-        .map((value) => value?.trim() ?? "")
-        .find((candidate) => candidate && availableAgents.some((agent) => agent.agentKey === candidate));
-      agentKey = boundAgentKey ?? "";
-    }
-    if (!agentKey) {
-      try {
-        const settings = await window.electronAPI.assistant.getSettings();
-        const defaultAgentKey = settings.chatDefaultAgentKey?.trim() ?? "";
-        if (defaultAgentKey && availableAgents.some((agent) => agent.agentKey === defaultAgentKey)) {
-          agentKey = defaultAgentKey;
-        }
-      } catch {
-        // The explicit picker below remains available when settings cannot be read.
-      }
-    }
-    if (!agentKey) {
-      if (availableAgents.length === 0) {
-        setFeedback({ tone: "error", message: t("kanban.feedback.noAgents") });
-        return;
-      }
-      setRunAgentPickerIssueId(issue.id);
+    const remoteIssueId = issue.remoteIssueId?.trim() || issue.id;
+    const runWorker = cloudDetails.issueStageWorkers.find((worker) =>
+      worker.issueId === remoteIssueId && worker.stageId === issue.stageId && worker.workerRole === "run"
+    );
+    const agentKey = runWorker?.workerType === "agent" ? runWorker.workerAgent?.trim() ?? "" : "";
+    if (!agentKey || !localDeviceId || runWorker?.deviceId !== localDeviceId) {
+      setFeedback({ tone: "error", message: t("kanban.feedback.runWorkerNotLocal") });
       return;
     }
 
@@ -2485,7 +2449,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
       setIssues(sortIssues(result.issues));
       setFeedback({ tone: result.ok ? "success" : "error", message: result.message });
       if (result.ok && result.chatId && result.agentKey) {
-        setRunAgentPickerIssueId(null);
         setDetailIssueId(null);
         navigate(createAgentWebclientRoute({ agentKey: result.agentKey, chatId: result.chatId }));
       }
@@ -2542,13 +2505,15 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
     }
   }
 
-  const openAssistantIssueChat = useCallback((issue: KanbanIssue) => {
-    const chatId = issue.chatId?.trim() ?? "";
+  const openAssistantIssueChat = useCallback((issue: KanbanIssue, requestedChatId?: string, requestedAgentKey?: string | null) => {
+    const chatId = requestedChatId?.trim() || issue.chatId?.trim() || "";
     if (!chatId) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noChat") });
       return null;
     }
-    const agentKey = resolveIssueAgentKey(issue, agents);
+    const agentKey = requestedAgentKey?.trim()
+      || agents.find((agent) => agent.latestChatId === chatId || getAssistantNavAgentRecentChats(agent).some((chat) => chat.chatId === chatId))?.agentKey
+      || resolveIssueAgentKey(issue, agents);
     if (!agentKey) {
       setFeedback({ tone: "error", message: t("kanban.feedback.noBoundAgent") });
       return null;
@@ -2883,6 +2848,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                 issues={columnIssues}
                 agents={agents}
                 cloudDetails={cloudDetails}
+                localDeviceId={localDeviceId}
                 projectsById={kanbanProjectsById}
                 locale={locale}
                 now={new Date(kanbanCountdownNow)}
@@ -2911,6 +2877,7 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                   awaitingConfirmation={false}
                   agents={agents}
                   cloudDetails={cloudDetails}
+                  localDeviceId={localDeviceId}
                   projectsById={kanbanProjectsById}
                   locale={locale}
                   now={new Date(kanbanCountdownNow)}
@@ -2957,7 +2924,11 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           issues={issues}
           projects={cloudProjects}
           cloudDetails={cloudDetails}
-          agents={agents.map((agent) => ({ agentKey: agent.agentKey, displayName: agent.displayName }))}
+          agents={agents.map((agent) => ({
+            agentKey: agent.agentKey,
+            displayName: agent.displayName,
+            chatIds: [agent.latestChatId, ...getAssistantNavAgentRecentChats(agent).map((chat) => chat.chatId)].filter((chatId): chatId is string => Boolean(chatId))
+          }))}
           locale={locale}
           hostTheme={hostTheme}
           t={t}
@@ -2968,11 +2939,13 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
           }}
           onSave={(draft) => saveIssueDetail(detailIssue, draft)}
           onDelete={() => deleteIssue(detailIssue)}
-          onOpenChat={() => openAssistantIssueChat(detailIssue)}
-          cloudAction={getCloudIssueAction(detailIssue, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
+          onOpenChat={(chatId, agentKey) => openAssistantIssueChat(detailIssue, chatId, agentKey)}
+          cloudAction={getCloudIssueAction(detailIssue, cloudDetails, localDeviceId, currentUserId, canClaimCloudIssues, canRunCloudIssues)}
           cloudActionBusy={busyIssueId === detailIssue.id}
           onClaim={() => void claimCloudIssue(detailIssue)}
           onRun={() => void startCloudIssue(detailIssue)}
+          onBindHumanReferenceChat={(chatId) => window.electronAPI.kanban.bindHumanReferenceChat({ issueId: detailIssue.remoteIssueId || detailIssue.id, stageId: detailIssue.stageId || "", statusId: detailIssue.statusId || "", chatId })}
+          onUnbindHumanReferenceChat={(issueChatId) => window.electronAPI.kanban.unbindHumanReferenceChat(issueChatId)}
           onFeedback={(tone, message) => setFeedback({ tone, message })}
         />
       ) : null}
@@ -3021,41 +2994,64 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
                     disabled={modalReadOnly}
                     aria-haspopup="listbox"
                     aria-expanded={projectFormMenuOpen}
-                    onClick={() => setProjectFormMenuOpen((current) => !current)}
+                    onClick={() => {
+                      if (!projectFormMenuOpen) {
+                        setProjectFormQuery("");
+                      }
+                      setProjectFormMenuOpen((current) => !current);
+                    }}
                   >
                     <span>{modalProjectLabel}</span>
                     <span className="kanban-project-form-chevron" aria-hidden="true">⌄</span>
                   </button>
                   {projectFormMenuOpen ? (
                     <div className="kanban-project-form-menu" role="listbox" aria-label={t("kanban.detail.project")}>
-                      <button
-                        type="button"
-                        role="option"
-                        aria-selected={!form.projectId}
-                        className={!form.projectId ? "is-selected" : ""}
-                        onClick={() => {
-                          setForm((current) => ({ ...current, projectId: "", projectVersion: "", componentKeys: [] }));
-                          setProjectFormMenuOpen(false);
-                        }}
-                      >
-                        {t("kanban.projectFilter.local")}
-                      </button>
-                      {projectFormOptions.map(({ project, level }) => (
+                      <KanbanProjectSearchInput
+                        value={projectFormQuery}
+                        autoFocus
+                        t={t}
+                        onChange={setProjectFormQuery}
+                        onEscape={() => setProjectFormMenuOpen(false)}
+                      />
+                      {`${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`.toLocaleLowerCase().includes(projectFormQuery.trim().toLocaleLowerCase()) ? (
+                        <button
+                          type="button"
+                          role="option"
+                          data-kanban-project-option
+                          aria-selected={!form.projectId}
+                          className={!form.projectId ? "is-selected" : ""}
+                          onKeyDown={handleKanbanProjectOptionKeyDown}
+                          onClick={() => {
+                            setForm((current) => ({ ...current, projectId: "", projectVersion: "", componentKeys: [] }));
+                            setProjectFormMenuOpen(false);
+                            setProjectFormQuery("");
+                          }}
+                        >
+                          {t("kanban.projectFilter.local")}
+                        </button>
+                      ) : null}
+                      {filteredProjectFormOptions.map(({ project, level }) => (
                         <button
                           key={project.id}
                           type="button"
                           role="option"
+                          data-kanban-project-option
                           aria-selected={form.projectId === project.id}
                           className={form.projectId === project.id ? "is-selected" : ""}
                           style={{ paddingLeft: `${10 + (level * 16)}px` }}
+                          onKeyDown={handleKanbanProjectOptionKeyDown}
                           onClick={() => {
                             setForm((current) => ({ ...current, projectId: project.id, projectVersion: "", componentKeys: [] }));
                             setProjectFormMenuOpen(false);
+                            setProjectFormQuery("");
                           }}
                         >
                           {getKanbanProjectOptionLabel(project)}
                         </button>
                       ))}
+                      {filteredProjectFormOptions.length === 0 && !`${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`.toLocaleLowerCase().includes(projectFormQuery.trim().toLocaleLowerCase()) ? (
+                        <span className="kanban-project-filter-empty">{t("kanban.projectFilter.noResults")}</span>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -3392,24 +3388,6 @@ export function KanbanPage({ hostTheme }: KanbanPageProps) {
         </div>
       ) : null}
 
-      {runAgentPickerIssue ? (
-        <div className="kanban-modal-layer" role="presentation" onMouseDown={() => setRunAgentPickerIssueId(null)}>
-          <section className="kanban-agent-picker" role="dialog" aria-modal="true" aria-label={t("kanban.cloud.selectAgent")} onMouseDown={(event) => event.stopPropagation()}>
-            <header>
-              <div><strong>{t("kanban.cloud.selectAgent")}</strong><span>{runAgentPickerIssue.title}</span></div>
-              <button type="button" aria-label={t("kanban.modal.close")} onClick={() => setRunAgentPickerIssueId(null)}>×</button>
-            </header>
-            <div className="kanban-agent-picker-list">
-              {agents.map((agent) => (
-                <button key={agent.agentKey} type="button" disabled={busyIssueId === runAgentPickerIssue.id} onClick={() => void startCloudIssue(runAgentPickerIssue, agent.agentKey)}>
-                  <RobotOutlined />
-                  <span><strong>{agent.displayName}</strong><small>{agent.agentKey}</small></span>
-                </button>
-              ))}
-            </div>
-          </section>
-        </div>
-      ) : null}
     </section>
   );
 }
@@ -3419,6 +3397,7 @@ const KanbanColumn = memo(function KanbanColumn({
   issues,
   agents,
   cloudDetails,
+  localDeviceId,
   projectsById,
   locale,
   now,
@@ -3438,6 +3417,7 @@ const KanbanColumn = memo(function KanbanColumn({
   issues: KanbanIssue[];
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
+  localDeviceId: string;
   projectsById: Map<string, KanbanProject>;
   locale: SupportedLocale;
   now: Date;
@@ -3484,7 +3464,7 @@ const KanbanColumn = memo(function KanbanColumn({
       <div
         className="kanban-column-body"
         onDoubleClick={(event) => {
-          if (shouldCreateIssueFromColumnDoubleClick(event, status)) {
+          if (canAdd && shouldCreateIssueFromColumnDoubleClick(event, status)) {
             onAdd();
           }
         }}
@@ -3498,6 +3478,7 @@ const KanbanColumn = memo(function KanbanColumn({
               awaitingConfirmation={issueHasPendingAwaiting(issue, agents)}
               agents={agents}
               cloudDetails={cloudDetails}
+              localDeviceId={localDeviceId}
               projectsById={projectsById}
               locale={locale}
               now={now}
@@ -3514,9 +3495,12 @@ const KanbanColumn = memo(function KanbanColumn({
           ))}
         </SortableContext>
         {issues.length === 0 ? (
-          <div className="kanban-empty-column">
+          <div className={`kanban-empty-column ${status === "todo" && canAdd ? "is-create-enabled" : ""}`}>
             <strong>{t("kanban.column.empty")}</strong>
-            <span>{getKanbanEmptyHint(status, t)}</span>
+            <span className="kanban-empty-column-hint">{getKanbanEmptyHint(status, t)}</span>
+            {status === "todo" && canAdd ? (
+              <span className="kanban-empty-column-create-hint">{t("kanban.column.emptyTodoCreateHint")}</span>
+            ) : null}
           </div>
         ) : null}
       </div>
@@ -3530,6 +3514,7 @@ const IssueCard = memo(function IssueCard({
   awaitingConfirmation,
   agents,
   cloudDetails,
+  localDeviceId,
   projectsById,
   locale,
   now,
@@ -3548,6 +3533,7 @@ const IssueCard = memo(function IssueCard({
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
+  localDeviceId: string;
   projectsById: Map<string, KanbanProject>;
   locale: SupportedLocale;
   now: Date;
@@ -3593,6 +3579,7 @@ const IssueCard = memo(function IssueCard({
         awaitingConfirmation={awaitingConfirmation}
         agents={agents}
         cloudDetails={cloudDetails}
+        localDeviceId={localDeviceId}
         projectsById={projectsById}
         locale={locale}
         now={now}
@@ -3616,6 +3603,7 @@ const IssueCardContent = memo(function IssueCardContent({
   awaitingConfirmation,
   agents,
   cloudDetails,
+  localDeviceId,
   projectsById,
   locale,
   now,
@@ -3634,6 +3622,7 @@ const IssueCardContent = memo(function IssueCardContent({
   awaitingConfirmation: boolean;
   agents: AssistantNavAgentItem[];
   cloudDetails: KanbanCloudDetailData;
+  localDeviceId: string;
   projectsById: Map<string, KanbanProject>;
   locale: SupportedLocale;
   now: Date;
@@ -3661,7 +3650,7 @@ const IssueCardContent = memo(function IssueCardContent({
   const issueOrigin = getKanbanIssueOriginPresentation(issue, projectsById, t);
   const issueType = getIssueCardTypePresentation(issue, cloudDetails);
   const cloudAction = interactive
-    ? getCloudIssueAction(issue, currentUserId, canClaimCloudIssues, canRunCloudIssues)
+    ? getCloudIssueAction(issue, cloudDetails, localDeviceId, currentUserId, canClaimCloudIssues, canRunCloudIssues)
     : null;
   const canOpenIssueDetails = interactive;
   const queueRank = issue.status === "todo" ? formatKanbanSortNumber(sortIndex, issue.position) : "";
@@ -3744,7 +3733,7 @@ const IssueCardContent = memo(function IssueCardContent({
       >
         <span style={{ width: `${progress.percent}%`, backgroundColor: progress.color }} />
       </div>
-      {issueType ? <span className="issue-card-type-corner" style={{ color: resolveIssueTypeColor(issueType.color, issueType.key) }} title={t("kanban.card.issueType", { value: issueType.label })}><IssueTypeIcon className="issue-card-type-corner-icon" issueTypeKey={issueType.key} icon={issueType.icon} color={issueType.color} label={issueType.label} /></span> : null}
+      {issueType ? <span className="issue-card-type-corner" style={{ color: resolveIssueTypeColor(issueType.color) }} title={t("kanban.card.issueType", { value: issueType.label })}><IssueTypeIcon className="issue-card-type-corner-icon" issueTypeKey={issueType.key} icon={issueType.icon} color={issueType.color} label={issueType.label} /></span> : null}
       {canOpenIssueDetails ? (
         <div
           className="issue-card-main"
@@ -3772,7 +3761,7 @@ const IssueCardContent = memo(function IssueCardContent({
         </div>
         {stateSignal ? <div className="issue-card-footer-row is-operational">{stateSignal}</div> : null}
         {cloudAction ? (
-          <div className="issue-card-footer-row is-cloud-action">
+          <div className={`issue-card-footer-row is-cloud-action${cloudAction === "claim" ? " is-claim-action" : ""}`}>
             <button
               type="button"
               className="issue-card-cloud-action"
@@ -3836,7 +3825,16 @@ function KanbanProjectFilter({
   onClear: () => void;
 }) {
   const filterRef = useRef<HTMLDivElement | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
   const treeItems = useMemo(() => flattenKanbanProjectTree(projects), [projects]);
+  const filteredTreeItems = useMemo(
+    () => treeItems.filter(({ project }) => matchesKanbanProjectSearch(project, searchQuery)),
+    [searchQuery, treeItems]
+  );
+  const normalizedSearchQuery = searchQuery.trim().toLocaleLowerCase();
+  const localMatchesSearch = `${t("kanban.projectFilter.local")} ${t("kanban.projectFilter.localHint")}`
+    .toLocaleLowerCase()
+    .includes(normalizedSearchQuery);
   const partiallySelectedProjectIds = useMemo(
     () => getKanbanPartiallySelectedProjectIds(projects, selectedProjectIds),
     [projects, selectedProjectIds]
@@ -3858,10 +3856,12 @@ function KanbanProjectFilter({
         return;
       }
       onOpenChange(false);
+      setSearchQuery("");
     };
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         onOpenChange(false);
+        setSearchQuery("");
       }
     };
     document.addEventListener("pointerdown", closeOnOutsidePointerDown);
@@ -3894,7 +3894,12 @@ function KanbanProjectFilter({
           aria-expanded={open}
           aria-label={`${t("kanban.projectFilter.ariaLabel")}: ${label}; ${countLabel}`}
           title={selectedProjectTooltipItems.length >= 2 ? undefined : `${label} · ${countLabel}`}
-          onClick={() => onOpenChange(!open)}
+          onClick={() => {
+            if (open) {
+              setSearchQuery("");
+            }
+            onOpenChange(!open);
+          }}
         >
           <KanbanIcon kind="project" />
           <span className="kanban-project-filter-label">{label}</span>
@@ -3903,16 +3908,28 @@ function KanbanProjectFilter({
       </Tooltip>
       {open ? (
         <div className="kanban-project-filter-menu" role="tree" aria-label={t("kanban.projectFilter.ariaLabel")}>
-          <button
+          <KanbanProjectSearchInput
+            value={searchQuery}
+            autoFocus
+            t={t}
+            onChange={setSearchQuery}
+            onEscape={() => {
+              setSearchQuery("");
+              onOpenChange(false);
+            }}
+          />
+          {!normalizedSearchQuery ? <button
             type="button"
+            data-kanban-project-option
             className={`kanban-project-filter-all ${selectedProjectIds.length === 0 && !includeLocalIssues ? "is-active" : ""}`}
+            onKeyDown={handleKanbanProjectOptionKeyDown}
             onClick={onClear}
             aria-label={`${t("kanban.projectFilter.all")}: ${t("kanban.column.summary.count", { count: totalCount })}`}
           >
             <span>{t("kanban.projectFilter.all")}</span>
             <span className="kanban-project-filter-item-count" aria-hidden="true">{totalCount}</span>
-          </button>
-          <label
+          </button> : null}
+          {localMatchesSearch ? <label
             className={`kanban-project-filter-row is-local ${includeLocalIssues ? "is-active" : ""}`}
             role="treeitem"
             aria-level={1}
@@ -3920,18 +3937,20 @@ function KanbanProjectFilter({
           >
             <input
               type="checkbox"
+              data-kanban-project-option
               checked={includeLocalIssues}
               onChange={onToggleLocal}
+              onKeyDown={handleKanbanProjectOptionKeyDown}
             />
             <span className="kanban-project-filter-project">
               <span className="kanban-project-filter-name">{t("kanban.projectFilter.local")}</span>
               <span className="kanban-project-filter-path">{t("kanban.projectFilter.localHint")}</span>
             </span>
             <span className="kanban-project-filter-item-count" aria-label={t("kanban.column.summary.count", { count: localIssueCount })}>{localIssueCount}</span>
-          </label>
-          {treeItems.length > 0 ? (
+          </label> : null}
+          {filteredTreeItems.length > 0 ? (
             <div className="kanban-project-filter-tree">
-              {treeItems.map(({ project, level }) => {
+              {filteredTreeItems.map(({ project, level }) => {
                 const checked = selectedProjectIds.includes(project.id);
                 const indeterminate = partiallySelectedProjectIds.has(project.id);
                 return (
@@ -3958,10 +3977,68 @@ function KanbanProjectFilter({
                 );
               })}
             </div>
-          ) : (
-            <span className="kanban-project-filter-empty">{t("kanban.projectFilter.empty")}</span>
-          )}
+          ) : null}
+          {filteredTreeItems.length === 0 && !localMatchesSearch ? (
+            <span className="kanban-project-filter-empty">
+              {normalizedSearchQuery ? t("kanban.projectFilter.noResults") : t("kanban.projectFilter.empty")}
+            </span>
+          ) : null}
         </div>
+      ) : null}
+    </div>
+  );
+}
+
+function KanbanProjectSearchInput({
+  value,
+  autoFocus = false,
+  t,
+  onChange,
+  onEscape
+}: {
+  value: string;
+  autoFocus?: boolean;
+  t: TranslateFunction;
+  onChange: (value: string) => void;
+  onEscape: () => void;
+}) {
+  return (
+    <div className="kanban-project-search-field">
+      <KanbanIcon kind="search" />
+      <input
+        type="search"
+        value={value}
+        autoFocus={autoFocus}
+        placeholder={t("kanban.projectFilter.searchPlaceholder")}
+        aria-label={t("kanban.projectFilter.searchAriaLabel")}
+        onChange={(event) => onChange(event.target.value)}
+        onKeyDown={(event) => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            if (focusAdjacentKanbanProjectOption(event.currentTarget, event.key === "ArrowDown" ? 1 : -1)) {
+              event.preventDefault();
+              event.stopPropagation();
+            }
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            event.stopPropagation();
+          } else if (event.key === "Escape") {
+            event.preventDefault();
+            event.stopPropagation();
+            onEscape();
+          }
+        }}
+      />
+      {value ? (
+        <button
+          type="button"
+          className="kanban-project-search-clear"
+          aria-label={t("kanban.projectFilter.clearSearch")}
+          title={t("kanban.projectFilter.clearSearch")}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => onChange("")}
+        >
+          <span aria-hidden="true">×</span>
+        </button>
       ) : null}
     </div>
   );
@@ -3986,9 +4063,11 @@ function KanbanProjectCheckbox({
     <input
       ref={inputRef}
       type="checkbox"
+      data-kanban-project-option
       checked={checked}
       aria-checked={indeterminate ? "mixed" : checked}
       onChange={onChange}
+      onKeyDown={handleKanbanProjectOptionKeyDown}
     />
   );
 }
@@ -4069,14 +4148,14 @@ function KanbanSearchFilters({
     <div className="kanban-search-filters" ref={filterRef}>
       <button
         type="button"
-        className={`kanban-search-filter-button ${openMenu === "issueType" ? "is-open" : ""} ${hasIssueTypeFilter ? "is-active" : ""}`}
+        className={`kanban-search-filter-button is-issue-type ${openMenu === "issueType" ? "is-open" : ""} ${hasIssueTypeFilter ? "is-active" : ""}`}
         aria-label={t("kanban.searchFilter.issueType")}
         aria-haspopup="true"
         aria-expanded={openMenu === "issueType"}
         title={t("kanban.searchFilter.issueType")}
         onClick={() => toggleMenu("issueType")}
       >
-        <FileTextOutlined />
+        <TagsOutlined />
       </button>
       <button
         type="button"
@@ -4102,7 +4181,7 @@ function KanbanSearchFilters({
       </button>
       <button
         type="button"
-        className={`kanban-search-filter-button ${openMenu === "automation" ? "is-open" : ""} ${hasAutomationFilter ? "is-active" : ""}`}
+        className={`kanban-search-filter-button is-automation ${openMenu === "automation" ? "is-open" : ""} ${hasAutomationFilter ? "is-active" : ""}`}
         aria-label={t("kanban.searchFilter.automation")}
         aria-haspopup="true"
         aria-expanded={openMenu === "automation"}
@@ -4140,7 +4219,7 @@ function KanbanSearchFilters({
           {openMenu === "issueType" ? (
             <>
               <button type="button" className={`kanban-search-filter-all ${!hasIssueTypeFilter ? "is-active" : ""}`} onClick={onClearIssueTypes}>{t("kanban.searchFilter.allIssueTypes")}</button>
-              {issueTypes.map((issueType) => (
+              {issueTypes.filter((issueType) => issueType.isActive !== false).map((issueType) => (
                 <label key={issueType.key} className="kanban-check-row kanban-search-filter-row">
                   <input type="checkbox" checked={issueTypeFilters.includes(issueType.key)} onChange={() => onToggleIssueType(issueType.key)} />
                   <IssueTypeIcon issueTypeKey={issueType.key} icon={issueType.icon} color={issueType.color} />

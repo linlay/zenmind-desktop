@@ -15,15 +15,25 @@ export type AssistantWorkerOpenListener = (request: AssistantWorkerOpenRequest) 
 
 export type AssistantNavigationAgentsChangedListener = (result: AssistantNavAgentItemsResult) => void;
 
+export interface AssistantBootstrapState {
+  ownerProfileExists: boolean;
+}
+
+export type AssistantBootstrapStateChangedListener = (state: AssistantBootstrapState) => void;
+
 export interface AssistantNavigationListOptions {
   force?: boolean;
 }
 
 export interface AssistantNavigationPushEvent {
+  frame: "push";
   type: string;
   chatId: string | null;
   runId: string | null;
   status: string | null;
+  finishReason: string | null;
+  startedAt?: EpochMilliseconds;
+  finishedAt?: EpochMilliseconds;
 }
 
 export type AssistantNavigationPushEventListener = (event: AssistantNavigationPushEvent) => void;

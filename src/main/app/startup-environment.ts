@@ -90,10 +90,13 @@ export function createStartupEnvironmentRuntime(options: StartupEnvironmentRunti
     const shouldImportBundledEnvZip =
       options.oldRootDecisionRef.current === "migrate" ||
       (options.requireEnvZipImportAtStartup && options.oldRootDecisionRef.current !== "keep");
-    if (!shouldImportBundledEnvZip) {
+    if (shouldImportBundledEnvZip) {
+      return tryImportBundledEnvZipAtStartup();
+    }
+    if (options.oldRootDecisionRef.current === "keep") {
       return { ok: true };
     }
-    return tryImportBundledEnvZipAtStartup();
+    return { ok: true };
   }
 
   async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: false; message: string }> {

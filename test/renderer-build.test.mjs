@@ -3344,6 +3344,8 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
 test("Kanban cards match the Website hierarchy and date-only contract", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const stageColorSource = readSourceFile("src", "renderer", "pages", "kanban", "stageColor.ts");
+  const { resolveWorkflowStageColor } = loadTypeScriptCommonJs("src", "renderer", "pages", "kanban", "stageColor.ts");
   const issueTypeIcon = readSourceFile("src", "renderer", "pages", "kanban", "IssueTypeIcon.tsx");
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
@@ -3357,9 +3359,14 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(contracts, /interface KanbanWorkflowStage[\s\S]{0,220}color\?: string/);
   assert.doesNotMatch(contracts, /dueAt\?: EpochMilliseconds/);
 
-  assert.match(kanbanPage, /color: stage\?\.color\?\.trim\(\) \|\|/);
+  assert.match(kanbanPage, /color: resolveWorkflowStageColor\(resolvedStage, stageIndex\)/);
+  assert.match(stageColorSource, /const configured = stage\?\.color\?\.trim\(\)/);
+  assert.equal(resolveWorkflowStageColor({ key: "task_development", name: "开发", color: "" }, 0), "#6684a3");
+  assert.equal(resolveWorkflowStageColor({ key: "task_testing", name: "测试", color: "" }, 1), "#708f78");
+  assert.equal(resolveWorkflowStageColor({ key: "custom", name: "Custom", color: "#123abc" }, 0), "#123abc");
   assert.match(kanbanPage, /className="issue-card-workflow-progress"/);
   assert.match(kanbanPage, /backgroundColor: progress\.color/);
+  assert.match(kanbanPage, /className=\{`issue-card-status is-\$\{cardStatus\.tone\}`\}[\s\S]{0,100}style=\{\{ color: progress\.color \}\}/);
   assert.match(kanbanStyles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,220}height:\s*3px/);
   assert.match(kanbanStyles, /\.issue-card-workflow-progress > span\s*\{[\s\S]{0,180}transition:\s*width/);
 
@@ -3368,6 +3375,15 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(kanbanStyles, /\.issue-card-type-corner\s*\{[\s\S]{0,260}border-left:\s*2px solid currentColor[\s\S]{0,140}filter:\s*saturate/);
   assert.match(kanbanStyles, /:root\[data-theme="dark"\] \.issue-card-type-corner/);
   assert.match(issueTypeIcon, /bulb:\s*BulbFilled[\s\S]{0,200}"book-open":\s*BookFilled[\s\S]{0,200}"check-square":\s*CheckSquareFilled[\s\S]{0,200}bug:\s*BugFilled[\s\S]{0,200}file:\s*FileTextFilled/);
+  for (const icon of ["CrownFilled", "RocketFilled", "ExperimentFilled", "ContactsFilled"]) {
+    assert.match(issueTypeIcon, new RegExp(icon));
+  }
+  assert.match(issueTypeIcon, /epic:\s*\{\s*icon:\s*"crown"[\s\S]{0,500}deployment:\s*\{\s*icon:\s*"rocket"[\s\S]{0,300}research:\s*\{\s*icon:\s*"experiment"[\s\S]{0,200}visit:\s*\{\s*icon:\s*"contacts"/);
+  assert.doesNotMatch(issueTypeIcon, /magenta:/);
+  assert.match(issueTypeIcon, /return ISSUE_TYPE_COLOR_ALIASES\[normalizedColor\] \?\? ISSUE_TYPE_COLOR_ALIASES\.gray/);
+  assert.match(kanbanPage, /issueTypes\.filter\(\(issueType\) => issueType\.isActive !== false\)\.map/);
+  assert.match(kanbanStyles, /\.kanban-search-filter-row \.issue-type-icon\s*\{[\s\S]{0,300}opacity:\s*0\.74[\s\S]{0,100}filter:\s*saturate\(0\.62\)/);
+  assert.doesNotMatch(kanbanStyles, /:root\[data-theme="dark"\] \.kanban-search-filter-row \.issue-type-icon/);
 
   assert.match(kanbanPage, /issue\.projectVersion \? <span className="issue-card-version"/);
   assert.match(kanbanPage, /const queueRank = issue\.status === "todo" \? formatKanbanSortNumber\(sortIndex, issue\.position\) : ""/);
@@ -3397,6 +3413,10 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(kanbanStyles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.issue-card-due-risk \{ animation: none; \}/);
 
   assert.match(kanbanPage, /className="issue-card-footer-row is-summary"[\s\S]{0,220}\{people\}[\s\S]{0,220}issue-card-footer-signal/);
+  assert.match(kanbanPage, /is-cloud-action\$\{cloudAction === "claim" \? " is-claim-action" : ""\}/);
+  assert.match(kanbanPage, /if \(!assigneeId\) return issue\.status === "todo" && canClaim \? "claim" : null/);
+  assert.match(kanbanStyles, /\.issue-card-footer-row\.is-cloud-action\.is-claim-action\s*\{[\s\S]{0,360}position:\s*absolute;[\s\S]{0,360}opacity:\s*0;[\s\S]{0,220}visibility:\s*hidden;/);
+  assert.match(kanbanStyles, /\.issue-card:hover \.issue-card-footer-row\.is-claim-action,[\s\S]{0,180}\.issue-card:focus-within \.issue-card-footer-row\.is-claim-action/);
   assert.match(kanbanStyles, /\.issue-card-footer-row\.is-summary \.issue-card-footer-signal\s*\{[\s\S]{0,160}margin-left:\s*auto;/);
   assert.match(kanbanStyles, /\.issue-card-footer-row\.is-summary \.issue-card-signal\s*\{[\s\S]{0,160}justify-content:\s*flex-end;/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card-footer-signal\s*\{[^}]*(?:^|[;\s])width:\s*100%/m);
@@ -3405,7 +3425,7 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.doesNotMatch(kanbanPage, /issue-card-actions|issue-card-action/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card-actions|\.issue-card-action(?:\W)/);
   assert.match(kanbanPage, /role="button"[\s\S]{0,120}tabIndex=\{0\}[\s\S]{0,160}onClick=\{onEdit\}/);
-  assert.match(kanbanPage, /onOpenChat=\{\(\) => openAssistantIssueChat\(detailIssue\)\}/);
+  assert.match(kanbanPage, /onOpenChat=\{\(chatId, agentKey\) => openAssistantIssueChat\(detailIssue, chatId, agentKey\)\}/);
   assert.match(kanbanPage, /className="issue-card-context-menu"/);
   assert.match(kanbanPage, /canEditKanbanIssueBody\(issue\)/);
 
@@ -3438,11 +3458,15 @@ test("Kanban toolbar can filter issues by automation", () => {
   assert.match(kanbanPage, /const hasAutomation = hasIssueAutomation\(issue\)/);
   assert.match(kanbanPage, /const \[automationFilter, setAutomationFilter\] = useState\(initialFilterPreferences\.automationFilter\)/);
   assert.match(kanbanPage, /shouldShowIssueForAutomationFilter\(issue, automationFilter\)/);
-  assert.match(kanbanPage, /className=\{`kanban-search-filter-button \$\{openMenu === "automation" \? "is-open" : ""\} \$\{hasAutomationFilter \? "is-active" : ""\}`\}/);
+  assert.match(kanbanPage, /className=\{`kanban-search-filter-button is-automation \$\{openMenu === "automation" \? "is-open" : ""\} \$\{hasAutomationFilter \? "is-active" : ""\}`\}/);
   assert.match(kanbanPage, /KANBAN_AUTOMATION_FILTER_OPTIONS\.map/);
   assert.match(kanbanPage, /aria-label=\{t\("kanban\.searchFilter\.automation"\)\}/);
   assert.match(kanbanPage, /checked=\{automationFilter === option\.value\}/);
   assert.match(kanbanStyles, /\.kanban-search-filter-button\.is-active\s*\{/);
+  assert.match(kanbanPage, /className=\{`kanban-search-filter-button is-issue-type[\s\S]{0,420}<TagsOutlined \/>/);
+  assert.match(kanbanStyles, /\.kanban-search-filter-button\.is-issue-type \.anticon\s*\{\s*font-size:\s*12px;/);
+  assert.match(kanbanStyles, /\.kanban-search-filter-button\.is-automation \.kanban-icon\s*\{\s*width:\s*18px;\s*height:\s*18px;/);
+  assert.match(kanbanStyles, /\.kanban-project-filter-trigger > \.kanban-icon\s*\{\s*width:\s*18px;\s*height:\s*18px;/);
   assert.match(kanbanStyles, /\.kanban-search-filter-menu\s*\{/);
   assert.match(zhCN, /"kanban\.searchFilter\.hasAutomation": "定时问题"/);
   assert.match(zhCN, /"kanban\.searchFilter\.noAutomation": "手动问题"/);
@@ -3466,14 +3490,12 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(kanbanPage, /const \[query, setQuery\] = useState\(initialFilterPreferences\.query\)/);
   assert.match(kanbanPage, /const \[selectedProjectIds, setSelectedProjectIds\] = useState\(initialFilterPreferences\.selectedProjectIds\)/);
   assert.match(kanbanPage, /const \[includeLocalIssues, setIncludeLocalIssues\] = useState\(initialFilterPreferences\.includeLocalIssues\)/);
-  assert.match(kanbanPage, /showBacklog: typeof stored\.showBacklog === "boolean" \? stored\.showBacklog : defaults\.showBacklog/);
-  assert.match(kanbanPage, /const \[showBacklog, setShowBacklog\] = useState\(initialFilterPreferences\.showBacklog\)/);
   assert.match(kanbanPage, /const \[issueTypeFilters, setIssueTypeFilters\] = useState\(initialFilterPreferences\.issueTypeFilters\)/);
   assert.match(kanbanPage, /const \[priorityFilters, setPriorityFilters\] = useState\(initialFilterPreferences\.priorityFilters\)/);
   assert.match(kanbanPage, /const \[severityFilters, setSeverityFilters\] = useState\(initialFilterPreferences\.severityFilters\)/);
   assert.match(kanbanPage, /const \[automationFilter, setAutomationFilter\] = useState\(initialFilterPreferences\.automationFilter\)/);
   assert.match(kanbanPage, /const \[assigneeFilters, setAssigneeFilters\] = useState\(initialFilterPreferences\.assigneeFilters\)/);
-  assert.match(kanbanPage, /const preferences: KanbanFilterPreferences = \{\s*query,\s*selectedProjectIds,\s*includeLocalIssues,\s*showBacklog,\s*issueTypeFilters,\s*priorityFilters,\s*severityFilters,\s*automationFilter,\s*assigneeFilters\s*\}/);
+  assert.match(kanbanPage, /const preferences: KanbanFilterPreferences = \{\s*query,\s*showBacklog,\s*selectedProjectIds,\s*includeLocalIssues,\s*issueTypeFilters,\s*priorityFilters,\s*severityFilters,\s*automationFilter,\s*assigneeFilters\s*\}/);
   assert.match(kanbanPage, /window\.localStorage\.setItem\(KANBAN_FILTER_PREFERENCES_STORAGE_KEY, JSON\.stringify\(preferences\)\)/);
   assert.match(kanbanPage, /if \(!projectCatalogLoaded\) \{\s*return;\s*\}[\s\S]{0,180}setSelectedProjectIds\(\(current\) => current\.filter\(\(projectId\) => projectIds\.has\(projectId\)\)\)/);
   assert.match(kanbanPage, /const \[currentUserId, setCurrentUserId\] = useState\(""\)/);
@@ -3489,13 +3511,6 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
   assert.match(enUS, /"kanban\.searchFilter\.assigneeOthers": "Others"/);
   assert.match(enUS, /"kanban\.searchFilter\.assigneeSelf": "Me"/);
   assert.match(enUS, /"kanban\.searchFilter\.assigneeUnassigned": "Unassigned"/);
-  assert.match(kanbanPage, /checked=\{showBacklog\}[\s\S]{0,180}setShowBacklog\(event\.target\.checked\)/);
-  assert.match(kanbanPage, /VISIBLE_KANBAN_STATUSES\.filter\(\(status\) => showBacklog \|\| status !== "backlog"\)/);
-  assert.match(kanbanStyles, /\.kanban-columns\.is-backlog-hidden\s*\{[\s\S]{0,500}\) \/ 4/);
-  assert.match(zhCN, /"kanban\.display\.columns": "显示列"/);
-  assert.match(zhCN, /"kanban\.display\.backlog": "待排期"/);
-  assert.match(enUS, /"kanban\.display\.columns": "Columns"/);
-  assert.match(enUS, /"kanban\.display\.backlog": "Backlog"/);
 });
 
 test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
@@ -3576,8 +3591,6 @@ test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
     zhCN.split("\n").filter((line) => line.includes('"kanban.')).some((line) => line.includes("议题")),
     false
   );
-  assert.equal(readJsonFile("brands", "zenmind", "i18n", "zh-CN.json")["kanban.prompt.intro"].includes("议题"), false);
-  assert.equal(readJsonFile("brands", "cutej", "i18n", "zh-CN.json")["kanban.prompt.intro"].includes("议题"), false);
   assert.match(enUS, /"kanban\.cloud\.resync": "Resync"/);
   assert.match(enUS, /"kanban\.projectFilter\.all": "All Projects"/);
   assert.match(enUS, /"kanban\.projectFilter\.local": "Local"/);
@@ -3650,7 +3663,6 @@ test("Kanban route exposes native desktop api and page styles", () => {
     path.join(projectRoot, "src", "renderer", "pages", "kanban", "KanbanPage.tsx"),
     "utf8"
   );
-
   assert.match(contracts, /interface KanbanIssue/);
   assert.match(contracts, /kanban:\s*\{/);
   assert.match(contracts, /createIssue: \(input: KanbanIssueInput\) => Promise<KanbanIssueResult>/);
@@ -3672,13 +3684,12 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanSync, /\/api\/automation\/delete/);
   assert.doesNotMatch(kanbanSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(assistantRuntime, /createKanbanRuntime/);
-  assert.match(assistantRuntime, /state\.kanbanRuntime\?\.sendAssistantEvent\(event\)/);
-  assert.match(kanbanSync, /type === "done"[\s\S]{0,220}type === "run\.complete"[\s\S]{0,520}return "completed"/);
-  assert.match(kanbanSync, /typeValue === "run\.error"/);
-  assert.match(kanbanSync, /statusValue === "timeout"[\s\S]{0,220}return "failed"/);
-  assert.match(kanbanSync, /updateKanbanIssueByRunId\(app, event\.runId/);
-  assert.match(kanbanSync, /updateKanbanIssueByChatId/);
-  assert.match(kanbanSync, /updateKanbanIssueByChatId\(app,\s*event\.chatId/);
+  assert.doesNotMatch(assistantRuntime, /onEvent:\s*\(event\) => \{\s*state\.kanbanRuntime/);
+  assert.match(kanbanSync, /event\.frame !== "push" \|\| event\.type !== "run\.finished"/);
+  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
+  assert.doesNotMatch(kanbanSync, /updateKanbanIssueByChatId/);
   assert.match(kanbanRuntime, /private async applyIssueEvent\(event: KanbanDesktopIssueEvent\)/);
   assert.match(kanbanRuntime, /private async applyDelivery\(delivery: KanbanDesktopDelivery\)/);
   assert.match(kanbanRuntime, /seq <= cursor\.lastAppliedRevision/);
@@ -3690,19 +3701,27 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanRuntime, /t\("kanban\.runtime\.cloudReadOnly"\)/);
   assert.doesNotMatch(kanbanRuntime, /desktop\.issue\.sync/);
   assert.match(kanbanRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
-  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,100}state\.kanbanRuntime\?\.sendAssistantEvent\(event\)/);
+  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}state\.kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
   assert.match(kanbanStore, /export function updateKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
+  assert.match(assistantNavigationStatusClient, /frame: "push"/);
+  assert.match(assistantNavigationStatusClient, /finishReason: toText\(event\.finishReason\) \|\| null/);
+  assert.match(assistantNavigationStatusClient, /runId: toText\(event\.runId\) \|\| null/);
+  assert.doesNotMatch(assistantNavigationStatusClient, /runId: toText\(event\.runId\) \|\| toText\(event\.lastRunId\)/);
   assert.match(appShell, /import\("\.\.\/pages\/kanban\/KanbanPage"\)/);
   assert.match(kanbanPage, /function readKanbanApi/);
   assert.match(kanbanPage, /kanbanApi\.listIssues\(\)/);
   assert.match(kanbanPage, /kanbanApi\.createIssue/);
   assert.match(kanbanPage, /function canCreateIssueFromColumnDoubleClick\(status: KanbanStatus\)/);
-  assert.match(kanbanPage, /return status === "backlog" \|\| status === "todo";/);
+  assert.match(kanbanPage, /return status === "todo";/);
   assert.match(kanbanPage, /function shouldCreateIssueFromColumnDoubleClick/);
   assert.match(kanbanPage, /target\.closest\("\.issue-card"\)/);
-  assert.match(kanbanPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
+  assert.match(kanbanPage, /onDoubleClick=\{\(event\) => \{[\s\S]{0,220}canAdd && shouldCreateIssueFromColumnDoubleClick\(event, status\)[\s\S]{0,120}onAdd\(\)/);
+  assert.match(kanbanPage, /status === "todo" && canAdd[\s\S]{0,300}kanban\.column\.emptyTodoCreateHint/);
+  assert.match(kanbanStyles, /\.kanban-empty-column-create-hint\s*\{/);
+  assert.match(zhCN, /"kanban\.column\.emptyTodoCreateHint": "双击此处新增问题"/);
+  assert.match(enUS, /"kanban\.column\.emptyTodoCreateHint": "Double-click here to create an issue"/);
   assert.match(kanbanPage, /KANBAN_FEEDBACK_AUTO_CLOSE_MS = 3000/);
   assert.match(kanbanPage, /if \(!feedback \|\| feedback\.tone !== "success" \|\| feedbackPaused\) \{/);
   assert.match(kanbanPage, /window\.setTimeout\(\(\) => \{[\s\S]{0,140}setFeedback\(\(current\) => \(current === feedback \? null : current\)\)/);
@@ -3717,7 +3736,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanPage, /\.\.\.\(chatId \? \{ chatId \} : \{\}\),[\s\S]{0,80}agentKey/);
   assert.match(kanbanPage, /const \{ locale, t \} = useI18n\(\)/);
   assert.match(kanbanPage, /t\("kanban\.prompt\.rule"\)/);
-  assert.match(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
+  assert.doesNotMatch(kanbanPage, /window\.electronAPI\.assistant\.onAssistantEvent/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.onNavigationAgentsChanged/);
   assert.match(kanbanPage, /window\.electronAPI\.assistant\.listAgents\(\)/);
   assert.match(appShell, /<RouteSuspense><KanbanPage hostTheme=\{resolvedTheme\} \/><\/RouteSuspense>/);
@@ -3736,9 +3755,9 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanPage, /agent\.latestChatId === chatId && agent\.hasPendingAwaiting/);
   assert.doesNotMatch(kanbanPage, /kanban-human-loop-hint/);
   assert.match(kanbanPage, /is-awaiting-confirmation/);
-  assert.match(kanbanPage, /const openAssistantIssueChat = useCallback\(\(issue: KanbanIssue\) => \{/);
+  assert.match(kanbanPage, /const openAssistantIssueChat = useCallback\(\(issue: KanbanIssue, requestedChatId\?: string, requestedAgentKey\?: string \| null\) => \{/);
   assert.match(kanbanPage, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
-  assert.match(kanbanPage, /kanban-agent-picker/);
+  assert.doesNotMatch(kanbanPage, /kanban-agent-picker/);
   assert.doesNotMatch(kanbanPage, /kanban-chat-modal-layer|kanban-chat-modal/);
   assert.doesNotMatch(kanbanPage, /void openAssistantIssueChat\(updateResult\.issue/);
   assert.doesNotMatch(kanbanPage, /kanban-chat-action/);
@@ -3865,7 +3884,6 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-in_review\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(globalStyles, /\.kanban-column\.is-completed\s*\{[^}]*margin-left:/);
   assert.doesNotMatch(kanbanPage, /backlogExpanded/);
-  assert.match(kanbanPage, /className=\{`kanban-columns \$\{showBacklog \? "" : "is-backlog-hidden"\}`\}/);
   assert.doesNotMatch(kanbanPage, /onSelectColumn/);
   assert.doesNotMatch(globalStyles, /--kanban-columns-total-width/);
   assert.doesNotMatch(globalStyles, /--kanban-column-fold-offset/);
@@ -3928,6 +3946,53 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.kanban-chat-modal-layer\s*\{|\.kanban-chat-modal\s*\{/);
 });
 
+test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () => {
+  const contracts = readSharedContractsSource();
+  const assistantRuntime = readSourceFile("src", "main", "bridge", "assistant-runtime.ts");
+  const navigationClient = readSourceFile("src", "main", "assistant", "core", "assistant-navigation-status-client.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  const kanbanSync = readSourceFile("src", "main", "kanban-sync.ts");
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+
+  assert.match(contracts, /interface AssistantNavigationPushEvent[\s\S]{0,100}frame: "push"/);
+  assert.match(contracts, /finishReason: string \| null/);
+  assert.match(contracts, /startedAt\?: EpochMilliseconds/);
+  assert.match(contracts, /finishedAt\?: EpochMilliseconds/);
+  assert.doesNotMatch(assistantRuntime, /onEvent:\s*\(event\) => \{\s*state\.kanbanRuntime/);
+  assert.match(assistantRuntime, /event\.type === "run\.started" \|\| event\.type === "run\.finished"/);
+  assert.match(assistantRuntime, /sendNavigationPushEvent\(event\)/);
+  assert.match(navigationClient, /runId: toText\(event\.runId\) \|\| null/);
+  assert.doesNotMatch(navigationClient, /runId: toText\(event\.runId\) \|\| toText\(event\.lastRunId\)/);
+  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
+  assert.match(kanbanRuntime, /issue\.runId === runId \|\| issue\.activeRunId === runId/);
+  assert.doesNotMatch(kanbanRuntime, /sendAssistantEvent/);
+  assert.doesNotMatch(kanbanPage, /assistant\.onAssistantEvent/);
+  assert.match(kanbanPage, /kanbanApi\.onChanged\(\(\) => \{/);
+});
+
+test("Kanban view settings use a dismissible gear menu for the Backlog column", () => {
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(kanbanPage, /showBacklog: typeof stored\.showBacklog === "boolean" \? stored\.showBacklog : defaults\.showBacklog/);
+  assert.match(kanbanPage, /const \[showBacklog, setShowBacklog\] = useState\(initialFilterPreferences\.showBacklog\)/);
+  assert.match(kanbanPage, /className=\{`kanban-columns \$\{showBacklog \? "" : "is-backlog-hidden"\}`\}/);
+  assert.match(kanbanPage, /VISIBLE_KANBAN_STATUSES\.filter\(\(status\) => showBacklog \|\| status !== "backlog"\)\.map/);
+  assert.match(kanbanPage, /t\("kanban\.display\.columns"\)[\s\S]{0,320}checked=\{showBacklog\}[\s\S]{0,220}t\("kanban\.display\.backlog"\)/);
+  assert.doesNotMatch(kanbanPage, /kanban\.display\.priority/);
+  assert.match(kanbanPage, /SettingOutlined className="kanban-tool-icon"/);
+  assert.match(kanbanPage, /const menuPanelRef = useRef<HTMLDivElement \| null>\(null\)/);
+  assert.match(kanbanPage, /document\.addEventListener\("pointerdown", closeMenuOnOutsidePointerDown\)/);
+  assert.match(kanbanPage, /menuPanelRef\.current\?\.contains\(target\)[\s\S]{0,100}setMenu\(null\)/);
+  assert.match(zhCN, /"kanban\.display\.columns": "显示列"[\s\S]{0,100}"kanban\.display\.backlog": "待排期"/);
+  assert.match(enUS, /"kanban\.display\.columns": "Columns"[\s\S]{0,100}"kanban\.display\.backlog": "Backlog"/);
+  assert.match(kanbanStyles, /\.kanban-columns\.is-backlog-hidden\s*\{[\s\S]{0,520}\/\s*4[\s\S]{0,260}\/\s*4\)/);
+});
+
 test("Kanban status order places completed after in progress", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
   const kanbanDb = readSourceFile("src", "main", "kanban-db.ts");
@@ -3940,6 +4005,45 @@ test("Kanban status order places completed after in progress", () => {
     kanbanDb,
     /WHEN 'in_progress' THEN 2[\s\S]*?WHEN 'in_review' THEN 3[\s\S]*?WHEN 'completed' THEN 4/,
   );
+});
+
+test("Local Kanban cards show workers without repeating the implicit assignee", () => {
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+
+  assert.match(
+    kanbanPage,
+    /const worker = getIssueCardWorkerPresentation\(issue, agents, users, t\);\s*if \(issue\.syncMode === "local"\) \{\s*return \{\s*people: worker \? \[worker\] : \[\],\s*title: worker\?\.rawLabel \?\? ""\s*\};\s*\}\s*const assignee = getIssueCardAssigneePresentation\(issue, agents, users, t\);/
+  );
+});
+
+test("Kanban project filter and New Issue project picker support text search", () => {
+  const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(kanbanPage, /function matchesKanbanProjectSearch\(project: KanbanProject, query: string\)/);
+  assert.match(kanbanPage, /\[project\.name, project\.path, project\.id\][\s\S]{0,120}\.includes\(normalizedQuery\)/);
+  assert.match(kanbanPage, /const filteredProjectFormOptions = useMemo\([\s\S]{0,220}matchesKanbanProjectSearch\(project, projectFormQuery\)/);
+  assert.match(kanbanPage, /const filteredTreeItems = useMemo\([\s\S]{0,220}matchesKanbanProjectSearch\(project, searchQuery\)/);
+  assert.equal((kanbanPage.match(/<KanbanProjectSearchInput/g) ?? []).length, 2);
+  assert.match(kanbanPage, /type="search"[\s\S]{0,180}kanban\.projectFilter\.searchPlaceholder/);
+  assert.match(kanbanPage, /function focusAdjacentKanbanProjectOption\(target: HTMLElement, direction: -1 \| 1\)/);
+  assert.match(kanbanPage, /event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"/);
+  assert.match(kanbanPage, /scrollIntoView\(\{ block: "nearest" \}\)/);
+  assert.match(kanbanPage, /data-kanban-project-option/);
+  assert.match(kanbanPage, /className="kanban-project-search-clear"[\s\S]{0,360}onClick=\{\(\) => onChange\(""\)\}/);
+  assert.match(kanbanPage, /!normalizedSearchQuery \? <button[\s\S]{0,120}data-kanban-project-option/);
+  assert.match(kanbanPage, /kanban\.projectFilter\.noResults/);
+  assert.match(kanbanStyles, /\.kanban-project-search-field\s*\{[\s\S]{0,260}position:\s*sticky/);
+  assert.match(kanbanStyles, /\.kanban-project-search-field input\s*\{[\s\S]{0,120}flex:\s*1 1 auto;[\s\S]{0,80}width:\s*0;/);
+  assert.match(kanbanStyles, /\.kanban-project-search-clear\s*\{[\s\S]{0,160}margin-right:\s*2px/);
+  assert.match(zhCN, /"kanban\.projectFilter\.searchPlaceholder": "搜索项目"/);
+  assert.match(zhCN, /"kanban\.projectFilter\.clearSearch": "清除项目搜索"/);
+  assert.match(zhCN, /"kanban\.projectFilter\.noResults": "没有匹配的项目"/);
+  assert.match(enUS, /"kanban\.projectFilter\.searchPlaceholder": "Search projects"/);
+  assert.match(enUS, /"kanban\.projectFilter\.clearSearch": "Clear project search"/);
+  assert.match(enUS, /"kanban\.projectFilter\.noResults": "No matching projects"/);
 });
 
 test("WebApp user-facing dictionary terminology is normalized", () => {
@@ -4410,23 +4514,29 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
   assert.match(contracts, /type AssistantCreateCoderProjectResult = AssistantCreateProjectResult/);
   assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
+  assert.match(contracts, /interface AssistantBootstrapState[\s\S]*?ownerProfileExists: boolean/);
+  assert.match(contracts, /AssistantBootstrapStateChangedListener/);
   assert.match(contracts, /AssistantNavigationPushEventListener/);
   assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
+  assert.match(contracts, /getBootstrapState: \(\) => Promise<AssistantBootstrapState>/);
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
   assert.match(contracts, /getNavigationLiveStatus: \(\) => Promise<AssistantNavigationLiveStatus>/);
   assert.match(contracts, /createProject:\s*\(input: AssistantCreateProjectRequest\) => Promise<AssistantCreateProjectResult>/);
   assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
+  assert.match(preload, /getBootstrapState: \(\) => ipcRenderer\.invoke\("assistant\.getBootstrapState"\)/);
   assert.match(preload, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) =>\s*ipcRenderer\.invoke\("assistant\.listNavigationAgents", options\)/);
   assert.match(preload, /getNavigationLiveStatus: \(\) => ipcRenderer\.invoke\("assistant\.getNavigationLiveStatus"\)/);
   assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createProject:\s*\(input: AssistantCreateProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createProject", input\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
+  assert.match(preload, /onBootstrapStateChanged/);
   assert.match(preload, /onNavigationPushEvent/);
   assert.match(mainIpcRegister, /registerAssistantIpcHandlers\(ipcMain,/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listAgents"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getBootstrapState"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getNavigationLiveStatus"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
@@ -4446,6 +4556,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
   assert.match(assistantHandlers, /lastError:\s*null,\s*recentFrames:\s*\[\]/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?assistant\.navigationAgentsChanged/);
+  assert.match(mainProcess, /createAssistantBootstrapStateMonitor\([\s\S]*?assistant\.bootstrapStateChanged/);
   assert.match(mainProcess, /function emitAssistantNavigationPushEvent[\s\S]*?assistant\.navigationPushEvent/);
   assert.match(assistantRuntime, /emitAssistantNavigationPushEvent\(event\)/);
   assert.match(assistantHandlers, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
@@ -4462,6 +4573,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appSidebar, /readEpochMillis/);
   assert.doesNotMatch(globalSearchRows, /readEpochMillis/);
   assert.match(appShell, /onNavigationAgentsChanged/);
+  assert.match(appShell, /onBootstrapStateChanged/);
   assert.doesNotMatch(appShell, /onNavigationPushEvent/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);
   assert.match(appShell, /const \[assistantNavChatItems, setAssistantNavChatItems\] = useState<AssistantNavChatItem\[\]>\(\[\]\);/);
@@ -4804,7 +4916,7 @@ test("assistant navigation agents refresh immediately after startup services bec
   assert.match(appShell, /if \(agentPlatformRunning\) \{[\s\S]*?refreshAssistantNavAgents\(\)/);
 });
 
-test("bootstrap initialization stays in Chats and restores the configured default agent", () => {
+test("OWNER-driven bootstrap initialization stays in Chats and strictly restores the configured default agent", () => {
   const appShell = readAppShellSource();
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const appSidebar = readSourceFile(
@@ -4827,9 +4939,13 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current = true;[\s\S]*?navigate\(targetRoute, \{ replace: true \}\)/);
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current \|\|[\s\S]*?chatRuntimeAgent\.bootstrapActive \|\|[\s\S]*?location\.pathname !== "\/"/);
   assert.match(assistantNavigation, /export function resolveAssistantNavChatRuntimeAgent\(/);
-  assert.match(assistantNavigation, /const agent = defaultAgent \?\? bootstrapAgent;/);
-  assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapAgent && !defaultAgent\)/);
+  assert.match(assistantNavigation, /const bootstrapPending = Boolean\(bootstrapAgentKey && options\.bootstrapPending\)/);
+  assert.match(assistantNavigation, /const agent = bootstrapPending \? bootstrapAgent : defaultAgent;/);
+  assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapPending && bootstrapAgent\)/);
   assert.match(appShell, /const chatRuntimeAgent = useMemo\([\s\S]*?resolveAssistantNavChatRuntimeAgent\(chatNavAgentOptions/);
+  assert.match(appShell, /bootstrapPending,/);
+  assert.match(appShell, /Promise\.all\(\[[\s\S]*?assistant\.getSettings\(\)[\s\S]*?assistant\.getBootstrapState\(\)/);
+  assert.match(appShell, /!assistantBootstrapStateReady/);
   assert.match(appShell, /if \(!chatRuntimeAgent\.bootstrapActive \|\| !bootstrapAgentKey \|\| !bootstrapAgent\)/);
   assert.match(appShell, /chatDefaultAgentKey=\{chatRuntimeAgent\.agentKey\}/);
   assert.match(appShell, /bootstrapActive=\{chatRuntimeAgent\.bootstrapActive\}/);
@@ -4840,6 +4956,7 @@ test("bootstrap initialization stays in Chats and restores the configured defaul
   assert.doesNotMatch(appShell, /run\.complete/);
   assert.doesNotMatch(appShell, /chatRuntimeAgent\.bootstrapActive[\s\S]*?window\.setInterval\([\s\S]*?refreshAssistantNavAgents\(\)[\s\S]*?2_000/);
   assert.match(appShell, /!chatRuntimeAgent\.defaultAgentAvailable/);
+  assert.match(appShell, /assistantBootstrapState\?\.ownerProfileExists !== true/);
   assert.match(appShell, /if \(bootstrapHandoffNavigationDoneRef\.current\) \{\s*return;/);
   assert.match(appShell, /route\.agentKey !== bootstrapAgentKey/);
   assert.match(appShell, /navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/);
@@ -5114,6 +5231,9 @@ test("desktop action confirmation keeps supporting information inside details", 
   const buttonRule = styles.match(
     /\.desktop-action-confirmation-button\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body ?? "";
+  const buttonFocusRule = styles.match(
+    /\.desktop-action-confirmation-button:focus\s*\{(?<body>[\s\S]*?)^\}/m
+  )?.groups?.body ?? "";
 
   assert.ok(detailsIndex > 0);
   assert.ok(dialog.indexOf("desktop-action-confirmation-summary") < detailsIndex);
@@ -5121,6 +5241,15 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.ok(dialog.indexOf("desktop-action-confirmation-fields") > detailsIndex);
   assert.match(dialog, /desktopAction\.confirmSettingsHint/);
   assert.match(dialog, /desktop-action-confirmation-buttons/);
+  assert.match(dialog, /useLayoutEffect/);
+  assert.match(dialog, /focusTarget\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(dialog, /\[request\?\.defaultDecision, request\?\.requestId\]/);
+  assert.doesNotMatch(dialog, /setTimeout/);
+  assert.match(dialog, /event\.key === "Escape"/);
+  assert.match(dialog, /event\.key !== "Tab"/);
+  assert.doesNotMatch(dialog, /event\.key\s*===\s*"(?: |Space|Spacebar)"/);
+  assert.match(dialog, /tabIndex=\{-1\}/);
+  assert.match(dialog, /data-decision=\{button\.decision\}/);
   assert.match(layerRule, /position:\s*fixed;/);
   assert.match(layerRule, /padding:\s*16px;/);
   assert.match(dialogRule, /border-radius:\s*12px;/);
@@ -5131,6 +5260,8 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(titleRule, /font-weight:\s*400;/);
   assert.match(buttonRule, /min-height:\s*32px;/);
   assert.match(buttonRule, /font-weight:\s*500;/);
+  assert.match(buttonFocusRule, /outline:\s*2px solid var\(--accent-border\);/);
+  assert.match(buttonFocusRule, /outline-offset:\s*2px;/);
   assert.match(
     styles,
     /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*#2D2D2D;[\s\S]*?box-shadow:\s*none;/

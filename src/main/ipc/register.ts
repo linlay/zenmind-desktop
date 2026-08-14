@@ -18,6 +18,7 @@ import {
   getServiceState,
   getResponsiveServiceState,
   initializeService,
+  importEnvZipIntoExistingRuntime,
   importServiceFile,
   installBuiltinService,
   listServices,
@@ -64,6 +65,7 @@ import {
   importEnvZipToRuntime,
   migrateOldRootToBackup,
   resetBundledRuntimeEnv,
+  runtimeEnvExists,
   shouldPromptEnvRootConflict
 } from "../env-bootstrap";
 import { getDataRoot } from "../user-paths";
@@ -247,6 +249,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     getServiceWebviewPreloadUrl: options.getServiceWebviewPreloadUrl,
     startupRestoreController: options.startupRestoreController,
     importEnvZipToRuntime,
+    importEnvZipIntoExistingRuntime,
+    runtimeEnvExists,
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged: options.notifyServicesChanged,
@@ -344,7 +348,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       message: t("kanban.runtime.uninitialized"),
       settings: {
         enabled: false,
-        cloud: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" }
+        cloud: { serverUrl: "", remoteControlEnabled: false, deviceAlias: "" }
       },
       connectionState: "disabled"
     },
@@ -353,20 +357,20 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       message: t("kanban.runtime.uninitialized"),
       settings: {
         enabled: false,
-        cloud: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" }
+        cloud: { serverUrl: "", remoteControlEnabled: false, deviceAlias: "" }
       },
       connectionState: "disabled"
     },
     getKanbanCloudConfig: () => state.kanbanRuntime?.getCloudConfig() ?? {
       ok: false,
       message: t("kanban.runtime.uninitialized"),
-      config: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" },
+      config: { serverUrl: "", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     saveKanbanCloudConfig: (_app: any, input: any) => state.kanbanRuntime?.saveCloudConfig(input) ?? {
       ok: false,
       message: t("kanban.runtime.uninitialized"),
-      config: { serverUrl: "", token: "", remoteControlEnabled: false, deviceAlias: "" },
+      config: { serverUrl: "", remoteControlEnabled: false, deviceAlias: "" },
       connectionState: "disabled"
     },
     createKanbanIssue: (_app: any, input: any) => state.kanbanRuntime?.createIssue(input) ?? {
@@ -399,6 +403,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       ok: false,
       message: t("kanban.runtime.uninitialized"),
       issues: []
+    },
+    bindKanbanHumanReferenceChat: (_app: any, input: any) => state.kanbanRuntime?.bindHumanReferenceChat(input) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized")
+    },
+    unbindKanbanHumanReferenceChat: (_app: any, issueChatId: string) => state.kanbanRuntime?.unbindHumanReferenceChat(issueChatId) ?? {
+      ok: false,
+      message: t("kanban.runtime.uninitialized")
     },
     syncKanbanIssueAutomation: (_app: any, issueId: string, agentPlatformCaller: any) =>
       state.kanbanRuntime?.syncIssueAutomation(issueId, agentPlatformCaller) ?? {

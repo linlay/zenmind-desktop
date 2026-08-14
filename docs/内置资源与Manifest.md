@@ -47,7 +47,7 @@ loadBuiltinServices()
 - `configFiles`：`.env` 等配置模板。
 - `runtime.pidRelativePath`、`runtime.logRelativePath`、`runtime.errorLogRelativePath`、`runtime.requiredPaths`。
 - `web.portEnvKey`、`web.defaultPort`、`web.routePath`。
-- `desktop.bundleTopLevelDir`、`desktop.envBindings`、`desktop.capabilities`、`desktop.actions`。
+- `desktop.bundleTopLevelDir`、`desktop.envBindings`、`desktop.capabilities`、`desktop.actions`；Agent Platform 还必须声明 `desktop.runtimeResources: "v1"`。
 
 核心服务端口默认值由 `manifest-utils.ts` 对特定服务做 Desktop 覆写：
 
@@ -63,6 +63,7 @@ loadBuiltinServices()
 - `dev`、`dist:mac` 和 Windows Electron 打包不扫描周边服务项目；它们只校验当前 `build/resources/services`。刷新内置服务资源请先运行对应平台的 `build-all-dist` 入口，或显式运行 `npm run sync:assets`。
 - 新增内置服务必须保证 bundle 内的 `runtime.requiredPaths` 完整。
 - `agent-platform` 额外执行 sidecar 硬门禁：Darwin/Linux 必须同时声明并携带 `bin/kbase-lance-engine`，Windows 必须同时声明并携带 `bin/kbase-lance-engine.exe`；即使上游 manifest 漏写该路径，`sync:assets` 也会拒绝不完整产物。
+- `agent-platform` 还执行 runtime resource contract 硬门禁：manifest 必须声明 `desktop.runtimeResources: "v1"`，Unix/Windows deploy 必须接收 runtime resource 参数并调用同一个 `agent-platform runtime-resource-sync` 子命令；Desktop 拒绝旧 bundle。
 - macOS 内置二进制如需预签名，使用 Darwin signing 相关环境变量和 `--sign-darwin`；`--use-existing --sign-darwin` 只处理 `build/resources/services` 中已有的 Darwin 目录资源，并刷新资源 manifest 的 `assetSignature`。
 - `agent-container-hub` 是 install-only startup service；核心必需资源校验当前主要覆盖 `identity-center`、`agent-platform`、`agent-webclient`。
 

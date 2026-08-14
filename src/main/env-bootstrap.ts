@@ -53,6 +53,15 @@ export type BundledEnvZipImportResult = EnvZipImportResult & {
   sourceZipPath: string;
 };
 
+export type ValidatedBundledEnvUpgradeInput = {
+  sourceZipPath: string;
+  previousSourceZipPath?: string;
+  desktopVersion: string;
+  sha256: string;
+  size: number;
+  desktopInit: Record<string, unknown>;
+};
+
 export type RuntimeEnvResetResult = BundledEnvZipImportResult & {
   backupPath?: string;
 };
@@ -63,18 +72,32 @@ export type RuntimeEnvResetFailure = Error & {
   sourceZipPath?: string;
 };
 
-const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-center"] as const;
+const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-center", "tools"] as const;
 const REMOVED_SKILLS_MARKET_DIR_NAME = "skills-market";
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
 const ENV_AGENT_DEFINITION_FILE_NAME = "agent.yml";
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
+const ENV_ZIP_MANIFEST_FILE_NAME = "manifest.json";
 const ENV_INITIAL_DATA_RELATIVE_DIR = path.join(".desktop", "data", "env-initial");
 const ENV_INITIAL_PACKAGE_RELATIVE_PATH = path.join(ENV_INITIAL_DATA_RELATIVE_DIR, ENV_ZIP_FILE_NAME);
 const ENV_INITIAL_MANIFEST_FILE_NAME = "manifest.json";
 const ENV_INITIAL_MANIFEST_RELATIVE_PATH = path.join(ENV_INITIAL_DATA_RELATIVE_DIR, ENV_INITIAL_MANIFEST_FILE_NAME);
 const VERSION_FILE_NAME = "VERSION";
 const ENV_ZIP_ROOT_DIR_NAME = "env";
+
+type BundledEnvManifest = {
+  bundled: boolean;
+  fileName: string | null;
+  version?: string;
+  size?: number;
+  sha256?: string;
+};
+
+type BundledEnvPackage = {
+  zipPath: string;
+  manifest?: BundledEnvManifest;
+};
 
 function pathApiForPlatform(platform: NodeJS.Platform | undefined) {
   if (platform === "win32") {
@@ -313,21 +336,25 @@ export async function importBundledEnvZipToRuntime(
     expectedDesktopVersion?: string;
   } = {}
 ): Promise<BundledEnvZipImportResult | null> {
-  const zipPath = resolveBundledEnvZipPath(app, platform, options.resourcesRoot);
-  if (!zipPath || !fileExists(zipPath)) {
+  const bundledPackage = resolveBundledEnvPackage(app, platform, options.resourcesRoot);
+  if (!bundledPackage) {
     return null;
   }
 
+  const desktopVersion = options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader);
+  const zipBuffer = await fs.promises.readFile(bundledPackage.zipPath);
+  validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
+
   const result = await importEnvZipToRuntime(
     app,
-    zipPath,
+    bundledPackage.zipPath,
     platform,
-    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
+    desktopVersion,
     { source: "bundled" }
   );
   return {
     ...result,
-    sourceZipPath: zipPath
+    sourceZipPath: bundledPackage.zipPath
   };
 }
 
@@ -359,17 +386,24 @@ export async function resetBundledRuntimeEnv(
     nowSeconds?: number;
   } = {}
 ): Promise<RuntimeEnvResetResult> {
-  let sourceZipPath: string | null = null;
-  if (platform === "darwin") {
-    sourceZipPath = resolveBundledEnvZipPath(app, "darwin", options.resourcesRoot);
-  } else if (platform === "win32") {
-    sourceZipPath = resolveBundledEnvZipPath(app, "win32", options.resourcesRoot);
-  } else {
+  const runtimeRoot = resolveRuntimeRoot(app, platform);
+  if (platform !== "darwin" && platform !== "win32") {
     throw createRuntimeEnvResetFailure(t("envBootstrap.resetUnsupportedPlatform"), {});
   }
+  let bundledPackage: BundledEnvPackage | null = null;
+  try {
+    if (platform === "darwin") {
+      bundledPackage = resolveBundledEnvPackage(app, "darwin", options.resourcesRoot);
+    } else {
+      bundledPackage = resolveBundledEnvPackage(app, "win32", options.resourcesRoot);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw createRuntimeEnvResetFailure(t("envBootstrap.resetFailed", { message }), { runtimeRoot }, error);
+  }
 
-  const runtimeRoot = resolveRuntimeRoot(app, platform);
-  if (!sourceZipPath || !fileExists(sourceZipPath)) {
+  const sourceZipPath = bundledPackage?.zipPath ?? null;
+  if (!bundledPackage || !sourceZipPath || !fileExists(sourceZipPath)) {
     throw createRuntimeEnvResetFailure(t("envBootstrap.bundledEnvZipMissing"), {
       runtimeRoot,
       sourceZipPath: sourceZipPath ?? undefined
@@ -378,6 +412,9 @@ export async function resetBundledRuntimeEnv(
 
   let backupPath: string | undefined;
   try {
+    const desktopVersion = options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader);
+    const zipBuffer = await fs.promises.readFile(sourceZipPath);
+    validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
     if (fs.existsSync(runtimeRoot)) {
       if (!fs.statSync(runtimeRoot).isDirectory()) {
         throw new Error(t("envBootstrap.runtimeRootNotDirectory", { path: runtimeRoot }));
@@ -390,7 +427,7 @@ export async function resetBundledRuntimeEnv(
       app,
       sourceZipPath,
       platform,
-      options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader),
+      desktopVersion,
       { source: "reset" }
     );
     return {
@@ -635,6 +672,263 @@ async function validateEnvZipVersion(entries: EnvZipEntry[], expectedDesktopVers
   if (envVersion !== normalizedExpectedVersion) {
     throw new Error(t("envBootstrap.versionMismatch", { expected: normalizedExpectedVersion, actual: envVersion }));
   }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function readBundledEnvManifest(manifestPath: string): BundledEnvManifest | null {
+  if (!fileExists(manifestPath)) {
+    return null;
+  }
+  try {
+    const parsed = JSON.parse(fs.readFileSync(manifestPath, "utf8")) as unknown;
+    if (!isRecord(parsed) || typeof parsed.bundled !== "boolean") {
+      throw new Error("invalid bundled flag");
+    }
+    const fileName = parsed.fileName;
+    if (parsed.bundled) {
+      if (fileName !== ENV_ZIP_FILE_NAME) {
+        throw new Error("invalid file name");
+      }
+    } else if (fileName !== null) {
+      throw new Error("unbundled manifest must not name a package");
+    }
+    if (parsed.version !== undefined && typeof parsed.version !== "string") {
+      throw new Error("invalid version");
+    }
+    if (parsed.size !== undefined && (
+      typeof parsed.size !== "number" ||
+      !Number.isSafeInteger(parsed.size) ||
+      parsed.size < 0
+    )) {
+      throw new Error("invalid size");
+    }
+    if (parsed.sha256 !== undefined && (
+      typeof parsed.sha256 !== "string" ||
+      !/^[a-f0-9]{64}$/iu.test(parsed.sha256)
+    )) {
+      throw new Error("invalid sha256");
+    }
+    return {
+      bundled: parsed.bundled,
+      fileName: parsed.bundled ? ENV_ZIP_FILE_NAME : null,
+      ...(typeof parsed.version === "string" ? { version: parsed.version } : {}),
+      ...(typeof parsed.size === "number" ? { size: parsed.size } : {}),
+      ...(typeof parsed.sha256 === "string" ? { sha256: parsed.sha256.toLowerCase() } : {})
+    };
+  } catch {
+    throw new Error(t("envBootstrap.resourceSyncManifestInvalid", { path: manifestPath }));
+  }
+}
+
+function resolveBundledEnvPackage(
+  app: AppPackageReader,
+  platform: NodeJS.Platform,
+  resourcesRootOverride?: string
+): BundledEnvPackage | null {
+  if (platform !== "darwin" && platform !== "win32") {
+    return null;
+  }
+
+  const roots = bundledResourcesRootCandidates(app, resourcesRootOverride);
+  for (const resourcesRoot of roots) {
+    const envRoot = path.join(resourcesRoot, BUNDLED_ENV_RESOURCES_DIR_NAME);
+    const manifestPath = path.join(envRoot, ENV_ZIP_MANIFEST_FILE_NAME);
+    const manifest = readBundledEnvManifest(manifestPath);
+    const zipPath = path.join(envRoot, ENV_ZIP_FILE_NAME);
+    if (manifest) {
+      if (!manifest.bundled) {
+        return null;
+      }
+      if (!fileExists(zipPath)) {
+        throw new Error(t("envBootstrap.resourceSyncBundleMissing", { path: zipPath }));
+      }
+      return { zipPath, manifest };
+    }
+    if (fileExists(zipPath)) {
+      return { zipPath };
+    }
+  }
+  return null;
+}
+
+function validateBundledEnvPackageManifest(
+  bundledPackage: BundledEnvPackage,
+  zipBuffer: Buffer,
+  expectedDesktopVersion: string
+) {
+  const manifest = bundledPackage.manifest;
+  if (!manifest) {
+    return;
+  }
+  if (
+    manifest.version !== undefined &&
+    normalizeVersion(manifest.version) !== normalizeVersion(expectedDesktopVersion)
+  ) {
+    throw new Error(t("envBootstrap.versionMismatch", {
+      expected: normalizeVersion(expectedDesktopVersion),
+      actual: normalizeVersion(manifest.version)
+    }));
+  }
+  if (manifest.size !== undefined && manifest.size !== zipBuffer.byteLength) {
+    throw new Error(t("envBootstrap.resourceSyncIntegrity", { path: bundledPackage.zipPath }));
+  }
+  if (manifest.sha256 !== undefined && manifest.sha256 !== sha256Hex(zipBuffer)) {
+    throw new Error(t("envBootstrap.resourceSyncIntegrity", { path: bundledPackage.zipPath }));
+  }
+}
+
+function assertStrictArchiveEntry(entry: JSZip.JSZipObject) {
+  const originalName = (entry as JSZip.JSZipObject & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
+  if (originalName.includes("\\") || originalName.includes("\0")) {
+    throw new Error(t("envBootstrap.unsafePath", { path: originalName }));
+  }
+  const segments = entrySegments(originalName);
+  if (segments.length === 0 || segments[0] !== ENV_ZIP_ROOT_DIR_NAME) {
+    throw new Error(t("envBootstrap.rootDirRequired", { path: originalName }));
+  }
+  normalizeEnvZipEntryRelativePath(originalName);
+
+  const rawPermissions = entry.unixPermissions;
+  const permissions = typeof rawPermissions === "string"
+    ? Number.parseInt(rawPermissions, 8)
+    : rawPermissions;
+  if (typeof permissions !== "number") {
+    return;
+  }
+  const fileType = permissions & 0o170000;
+  if (fileType !== 0 && fileType !== 0o040000 && fileType !== 0o100000) {
+    throw new Error(t("envBootstrap.resourceSyncSymlink", { path: originalName }));
+  }
+}
+
+function resolvePreviousRuntimeResourceSource(app: AppPathReader, platform: NodeJS.Platform) {
+  const previousSource = path.join(resolveRuntimeRoot(app, platform), ENV_INITIAL_PACKAGE_RELATIVE_PATH);
+  try {
+    const stat = fs.lstatSync(previousSource);
+    return !stat.isSymbolicLink() && stat.isFile() ? previousSource : undefined;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
+    }
+    throw error;
+  }
+}
+
+export async function validateBundledEnvForDesktopVersionUpgrade(
+  app: AppPathReader & AppPackageReader,
+  platform: NodeJS.Platform = process.platform,
+  options: {
+    resourcesRoot?: string;
+    expectedDesktopVersion?: string;
+  } = {}
+): Promise<ValidatedBundledEnvUpgradeInput> {
+  const desktopVersion = normalizeVersion(
+    options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
+  );
+  if (!desktopVersion) {
+    throw new Error(t("envBootstrap.desktopVersionEmpty"));
+  }
+  const bundledPackage = resolveBundledEnvPackage(app, platform, options.resourcesRoot);
+  if (!bundledPackage) {
+    throw new Error(t("envBootstrap.bundledEnvZipMissing"));
+  }
+  const sourceStat = fs.lstatSync(bundledPackage.zipPath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: bundledPackage.zipPath }));
+  }
+  if (
+    !bundledPackage.manifest ||
+    typeof bundledPackage.manifest.version !== "string" ||
+    typeof bundledPackage.manifest.size !== "number" ||
+    typeof bundledPackage.manifest.sha256 !== "string"
+  ) {
+    throw new Error(`Bundled env manifest must declare version, size, and sha256: ${bundledPackage.zipPath}`);
+  }
+
+  const zipBuffer = await fs.promises.readFile(bundledPackage.zipPath);
+  validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  for (const entry of Object.values(zip.files)) {
+    assertStrictArchiveEntry(entry);
+  }
+  const entries = normalizeZipEntries(zip);
+  await validateEnvZipVersion(entries, desktopVersion);
+  const desktopInitEntry = entries.find(
+    (entry) => !entry.directory && entry.relativePath === "desktop-init.json"
+  );
+  if (!desktopInitEntry) {
+    throw new Error("Bundled env.zip requires env/desktop-init.json for a Desktop version change.");
+  }
+  let desktopInit: unknown;
+  try {
+    desktopInit = JSON.parse(await desktopInitEntry.entry.async("string")) as unknown;
+  } catch (error) {
+    throw new Error(`Bundled desktop-init.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(desktopInit)) {
+    throw new Error("Bundled desktop-init.json must be a JSON object.");
+  }
+
+  const previousSourceZipPath = resolvePreviousRuntimeResourceSource(app, platform);
+  return {
+    sourceZipPath: bundledPackage.zipPath,
+    ...(previousSourceZipPath ? { previousSourceZipPath } : {}),
+    desktopVersion,
+    sha256: sha256Hex(zipBuffer),
+    size: zipBuffer.byteLength,
+    desktopInit
+  };
+}
+
+export async function validateEnvZipForDesktopManualImport(
+  app: AppPathReader,
+  zipPath: string,
+  expectedDesktopVersion: string,
+  platform: NodeJS.Platform = process.platform
+): Promise<ValidatedBundledEnvUpgradeInput> {
+  const desktopVersion = normalizeVersion(expectedDesktopVersion);
+  if (!desktopVersion) {
+    throw new Error(t("envBootstrap.desktopVersionEmpty"));
+  }
+  const sourcePath = path.resolve(zipPath);
+  const sourceStat = fs.lstatSync(sourcePath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: sourcePath }));
+  }
+  const zipBuffer = await fs.promises.readFile(sourcePath);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  for (const entry of Object.values(zip.files)) {
+    assertStrictArchiveEntry(entry);
+  }
+  const entries = normalizeZipEntries(zip);
+  await validateEnvZipVersion(entries, desktopVersion);
+  const desktopInitEntry = entries.find(
+    (entry) => !entry.directory && entry.relativePath === "desktop-init.json"
+  );
+  if (!desktopInitEntry) {
+    throw new Error("env.zip requires env/desktop-init.json for manual import into an existing runtime.");
+  }
+  let desktopInit: unknown;
+  try {
+    desktopInit = JSON.parse(await desktopInitEntry.entry.async("string")) as unknown;
+  } catch (error) {
+    throw new Error(`desktop-init.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(desktopInit)) {
+    throw new Error("desktop-init.json must be a JSON object.");
+  }
+  const previousSourceZipPath = resolvePreviousRuntimeResourceSource(app, platform);
+  return {
+    sourceZipPath: sourcePath,
+    ...(previousSourceZipPath ? { previousSourceZipPath } : {}),
+    desktopVersion,
+    sha256: sha256Hex(zipBuffer),
+    size: zipBuffer.byteLength,
+    desktopInit
+  };
 }
 
 function writeEnvImportMarker(
