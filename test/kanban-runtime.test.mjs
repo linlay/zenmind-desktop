@@ -478,12 +478,17 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v1",
   const app = createTempApp(t);
   const starts = [];
   const stopped = [];
+  let resolveQueryAccepted = () => {};
+  const queryAccepted = new Promise((resolve) => {
+    resolveQueryAccepted = resolve;
+  });
   const runtime = new KanbanRuntime({
     app,
     assistantBridge: {
       listAgents: async () => [{ agentKey: "codeAssistant", displayName: "Code Assistant" }],
       startRun: async (request) => {
         starts.push(request);
+        await queryAccepted;
         return { ok: true, runId: request.runId, chatId: request.chatId, message: "started" };
       },
       stopRun: async (runId) => {
@@ -567,6 +572,14 @@ test("Kanban runtime atomically claims and starts a normal Chat run through v1",
   await waitFor(() => socket.sent.some((frame) => frame.type === "issue.run.prepare"), "issue.run.prepare", 3000);
   const prepared = socket.sent.find((frame) => frame.type === "issue.run.prepare");
   respondOk(socket, prepared, { ok: true, issueRun: { id: "issue-run-manual-1" } });
+  await waitFor(() => starts.length === 1, "Assistant query start", 3000);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    socket.sent.some((frame) => frame.type === "run.event.append"),
+    false,
+    "run.started must wait until the Assistant bridge has accepted the query",
+  );
+  resolveQueryAccepted();
   await waitFor(() => socket.sent.some((frame) => frame.type === "run.event.append"), "run.event.append", 3000);
   const started = socket.sent.find((frame) => frame.type === "run.event.append");
   assert.equal(started.payload.eventType, "run.started");

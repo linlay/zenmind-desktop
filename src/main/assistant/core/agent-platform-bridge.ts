@@ -43,7 +43,6 @@ import {
   requireEpochMillis,
 } from "../../../shared/time-contract";
 import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
-import { DesktopPetSseParser } from "../pet/desktop-pet-preview";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
 import {
   readAssistantCopilotAgentsFromPlatform,
@@ -55,9 +54,13 @@ import {
   parseChatTranscriptJSONL,
   type AgentPlatformChatTranscriptExportResult
 } from "./conversation-share-types";
+import {
+  AssistantWsDisconnectedError,
+  AssistantWsTransport,
+  type AssistantWsFactory,
+} from "./assistant-ws-transport";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
-const DONE_SENTINEL = "[DONE]";
 const MAX_RAW_CHAT_JSONL_BYTES = 100 * 1024 * 1024;
 const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "createdAt",
@@ -94,6 +97,15 @@ export type AgentPlatformRawChatJSONLResult =
 type AssistantRunWakeLock = {
   acquire: () => void;
   release: () => void;
+};
+
+type ActiveAssistantRun = {
+  controller: AbortController;
+  chatId: string;
+  agentKey: string;
+  baseUrl: string;
+  token: string;
+  acceptance?: Promise<AssistantStartRunResult>;
 };
 
 type PlatformUploadTicket = {
@@ -681,6 +693,7 @@ function isAssistantRunTerminalEvent(event: AssistantEvent) {
     event.type === "error" ||
     event.type === "stopped" ||
     event.type === "run.error" ||
+    event.type === "run.cancel" ||
     event.type === "run.stopped" ||
     event.type === "run.interrupt" ||
     event.type === "run.expired";
@@ -878,7 +891,9 @@ function normalizeAssistantAccessLevel(value: unknown): AssistantStartRunRequest
 }
 
 export class AgentPlatformAssistantBridge {
-  private readonly activeRuns = new Map<string, AbortController>();
+  private readonly activeRuns = new Map<string, ActiveAssistantRun>();
+  private readonly wsTransport: AssistantWsTransport;
+  private disposed = false;
 
   constructor(private readonly options: {
     app: App;
@@ -886,7 +901,18 @@ export class AgentPlatformAssistantBridge {
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
     wakeLock?: AssistantRunWakeLock;
-  }) {}
+    createWebSocket?: AssistantWsFactory;
+    assistantWsConnectTimeoutMs?: number;
+    assistantWsAcceptanceTimeoutMs?: number;
+  }) {
+    this.wsTransport = new AssistantWsTransport({
+      app: options.app,
+      issueAccessToken: options.issueAccessToken,
+      createWebSocket: options.createWebSocket,
+      connectTimeoutMs: options.assistantWsConnectTimeoutMs,
+      acceptanceTimeoutMs: options.assistantWsAcceptanceTimeoutMs,
+    });
+  }
 
   private acquireWakeLockForActiveRuns() {
     if (this.activeRuns.size === 1) {
@@ -912,6 +938,14 @@ export class AgentPlatformAssistantBridge {
         message: t("assistant.messageRequired")
       };
     }
+    if (this.disposed) {
+      return {
+        ok: false,
+        runId,
+        chatId,
+        message: "Assistant bridge is disposed"
+      };
+    }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
       return {
@@ -921,28 +955,40 @@ export class AgentPlatformAssistantBridge {
         message: availability.message
       };
     }
-    const controller = new AbortController();
-    if (this.activeRuns.has(runId)) {
-      return {
-        ok: true,
-        runId,
-        chatId,
-        message: t("agentPlatform.runSubmitted"),
-        permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
-        fullAccessRemainingMs: 0
-      };
+    const existing = this.activeRuns.get(runId);
+    if (existing) {
+      if (existing.chatId !== chatId || !existing.acceptance) {
+        return {
+          ok: false,
+          runId,
+          chatId,
+          message: "runId is already active with a different Assistant transaction"
+        };
+      }
+      return existing.acceptance;
     }
-    this.activeRuns.set(runId, controller);
-    this.acquireWakeLockForActiveRuns();
-    void this.runQuery(availability.baseUrl, availability.token, request, { chatId, runId, controller });
-    return {
-      ok: true,
-      runId,
+    const controller = new AbortController();
+    let resolveAcceptance!: (result: AssistantStartRunResult) => void;
+    const acceptance = new Promise<AssistantStartRunResult>((resolve) => {
+      resolveAcceptance = resolve;
+    });
+    const activeRun: ActiveAssistantRun = {
+      controller,
       chatId,
-      message: t("agentPlatform.runSubmitted"),
-      permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
-      fullAccessRemainingMs: 0
+      agentKey: request.agentKey?.trim() || "",
+      baseUrl: availability.baseUrl,
+      token: availability.token,
+      acceptance,
     };
+    this.activeRuns.set(runId, activeRun);
+    this.acquireWakeLockForActiveRuns();
+    void this.runQuery(availability.baseUrl, availability.token, request, {
+      chatId,
+      runId,
+      activeRun,
+      onAcceptance: resolveAcceptance,
+    });
+    return acceptance;
   }
 
   async completeText(request: AssistantStartRunRequest): Promise<AssistantTextCompletionResult> {
@@ -956,6 +1002,15 @@ export class AgentPlatformAssistantBridge {
         chatId,
         text: "",
         message: t("assistant.messageRequired")
+      };
+    }
+    if (this.disposed) {
+      return {
+        ok: false,
+        runId,
+        chatId,
+        text: "",
+        message: "Assistant bridge is disposed"
       };
     }
     const availability = await this.resolvePlatform();
@@ -978,18 +1033,26 @@ export class AgentPlatformAssistantBridge {
       };
     }
     const controller = new AbortController();
-    this.activeRuns.set(runId, controller);
+    const activeRun: ActiveAssistantRun = {
+      controller,
+      chatId,
+      agentKey: request.agentKey?.trim() || "",
+      baseUrl: availability.baseUrl,
+      token: availability.token,
+    };
+    this.activeRuns.set(runId, activeRun);
     this.acquireWakeLockForActiveRuns();
     return this.runQuery(availability.baseUrl, availability.token, request, {
       chatId,
       runId,
-      controller
+      activeRun,
     });
   }
 
   async stopRun(runId: string): Promise<AssistantStopRunResult> {
     const trimmedRunId = runId.trim();
-    this.activeRuns.get(trimmedRunId)?.abort();
+    const activeRun = this.activeRuns.get(trimmedRunId);
+    activeRun?.controller.abort();
     if (this.activeRuns.delete(trimmedRunId)) {
       this.releaseWakeLockIfIdle();
     }
@@ -1000,7 +1063,11 @@ export class AgentPlatformAssistantBridge {
     const response = await this.platformFetch(availability.baseUrl, "/api/interrupt", {
       method: "POST",
       headers: this.jsonHeaders(availability.token),
-      body: JSON.stringify({ runId: trimmedRunId, message: "Desktop requested stop." })
+      body: JSON.stringify({
+        runId: trimmedRunId,
+        ...(activeRun?.agentKey ? { agentKey: activeRun.agentKey } : {}),
+        message: "Desktop requested stop."
+      })
     });
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
@@ -1025,6 +1092,9 @@ export class AgentPlatformAssistantBridge {
       headers: this.jsonHeaders(availability.token),
       body: JSON.stringify({
         runId,
+        ...(this.activeRuns.get(runId)?.agentKey
+          ? { agentKey: this.activeRuns.get(runId)?.agentKey }
+          : {}),
         awaitingId: request.awaitingId,
         params
       })
@@ -1499,16 +1569,35 @@ export class AgentPlatformAssistantBridge {
     baseUrl: string,
     token: string,
     request: AssistantStartRunRequest,
-    run: { chatId: string; runId: string; controller: AbortController }
+    run: {
+      chatId: string;
+      runId: string;
+      activeRun: ActiveAssistantRun;
+      onAcceptance?: (result: AssistantStartRunResult) => void;
+    }
   ): Promise<AssistantTextCompletionResult> {
+    let acceptanceSettled = false;
+    const settleAcceptance = (result: AssistantStartRunResult) => {
+      if (acceptanceSettled) {
+        return;
+      }
+      acceptanceSettled = true;
+      run.onAcceptance?.(result);
+    };
     try {
       const references = await this.uploadAttachments(baseUrl, token, run.chatId, run.runId, request.attachments ?? []);
       const accessLevel = normalizeAssistantAccessLevel(request.accessLevel);
-      const response = await this.platformFetch(baseUrl, "/api/query", {
-        method: "POST",
-        headers: this.jsonHeaders(token, { Accept: "text/event-stream" }),
-        body: JSON.stringify({
-          requestId: request.requestId?.trim() || run.runId,
+      const requestId = request.requestId?.trim() || run.runId;
+      const query = this.wsTransport.query({
+        baseUrl,
+        token,
+        id: requestId,
+        runId: run.runId,
+        chatId: run.chatId,
+        agentKey: request.agentKey?.trim() || undefined,
+        signal: run.activeRun.controller.signal,
+        payload: {
+          requestId,
           runId: run.runId,
           chatId: run.chatId,
           agentKey: request.agentKey?.trim() || undefined,
@@ -1529,82 +1618,20 @@ export class AgentPlatformAssistantBridge {
               }
             : undefined,
           stream: true
-        }),
-        signal: run.controller.signal
-      });
-      if (!response.ok) {
-        throw new Error(await readErrorText(response));
-      }
-      const streamResult = await this.consumeQueryStream(response, {
-        runId: run.runId,
-        chatId: run.chatId,
-        source: request.source
-      });
-      if (!streamResult.sawTerminalEvent) {
-        throw new Error("time_contract_violation: stream ended before a timestamped terminal event");
-      }
-      return {
-        ok: true,
-        runId: run.runId,
-        chatId: run.chatId,
-        text: streamResult.finalMessage,
-        message: streamResult.finalMessage
-      };
-    } catch (error) {
-      if ((error as Error).name === "AbortError") {
-        const message = t("assistant.stopped");
-        this.options.onEvent({
-          runId: run.runId,
-          chatId: run.chatId,
-          type: "stopped",
-          createdAt: nowEpochMillis(),
-          message
-        });
-        return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
-      }
-      const message = error instanceof Error ? error.message : String(error);
-      this.options.onEvent({
-        runId: run.runId,
-        chatId: run.chatId,
-        type: "error",
-        ...(isTimeContractViolation(error) ? {} : { createdAt: nowEpochMillis() }),
-        message,
-        error: message
-      });
-      return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
-    } finally {
-      if (this.activeRuns.delete(run.runId)) {
-        this.releaseWakeLockIfIdle();
-      }
-    }
-  }
-
-  private async consumeQueryStream(response: Response, fallback: {
-    runId: string;
-    chatId: string;
-    source?: AssistantStartRunRequest["source"];
-  }): Promise<{ sawTerminalEvent: boolean; finalMessage: string; terminalMessageEmitted: boolean }> {
-    if (!response.body) {
-      return { sawTerminalEvent: false, finalMessage: "", terminalMessageEmitted: false };
-    }
-    const parser = new DesktopPetSseParser();
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let sawTerminalEvent = false;
-    let terminalMessageEmitted = false;
-    let finalMessage = "";
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
-        const result = done ? parser.finish() : parser.push(chunk);
-        for (const [index, event] of result.events.entries()) {
-          const normalizedEvent = normalizePlatformEvent(event.raw, fallback, `stream.events[${index}]`);
+        },
+        onEvent: async (event, eventPath) => {
+          const normalizedEvent = normalizePlatformEvent(event, {
+            runId: run.runId,
+            chatId: run.chatId,
+            source: request.source,
+          }, eventPath);
           if (!normalizedEvent) {
             throw new Error("time_contract_violation: stream event.type is required");
           }
           const eventText = readAssistantEventOutputText(normalizedEvent);
-          const delta = normalizedEvent.type === "content.delta" ? normalizedEvent.delta || eventText : "";
+          const delta = normalizedEvent.type === "content.delta"
+            ? normalizedEvent.delta || eventText
+            : "";
           if (delta) {
             finalMessage += delta;
           }
@@ -1613,30 +1640,106 @@ export class AgentPlatformAssistantBridge {
             const terminalMessage = normalizedEvent.message ||
               eventText ||
               finalMessage.trim() ||
-              await this.readPersistedFinalAssistantMessage(fallback.chatId, fallback.runId);
+              await this.readPersistedFinalAssistantMessage(run.chatId, run.runId);
             if (!finalMessage && terminalMessage) {
               finalMessage = terminalMessage;
             }
             if (!normalizedEvent.message && terminalMessage) {
               normalizedEvent.message = terminalMessage;
             }
-            if (normalizedEvent.message?.trim()) {
-              terminalMessageEmitted = true;
-            }
           }
           this.options.onEvent(normalizedEvent);
-        }
-        if (result.done) {
-          break;
-        }
-        if (done) {
-          break;
-        }
+        },
+      });
+      let finalMessage = "";
+      let sawTerminalEvent = false;
+      const accepted = await query.accepted;
+      run.activeRun.agentKey = accepted.agentKey;
+      settleAcceptance({
+        ok: true,
+        runId: run.runId,
+        chatId: run.chatId,
+        message: t("agentPlatform.runSubmitted"),
+        permissionMode: normalizeAssistantPermissionMode(request.permissionMode),
+        fullAccessRemainingMs: 0
+      });
+      await query.completed;
+      if (!sawTerminalEvent) {
+        throw new Error("time_contract_violation: stream ended before a timestamped business terminal event");
       }
+      return {
+        ok: true,
+        runId: run.runId,
+        chatId: run.chatId,
+        text: finalMessage.trim(),
+        message: finalMessage.trim()
+      };
+    } catch (error) {
+      const message = (error as Error).name === "AbortError"
+        ? t("assistant.stopped")
+        : error instanceof Error ? error.message : String(error);
+      settleAcceptance({
+        ok: false,
+        runId: run.runId,
+        chatId: run.chatId,
+        message
+      });
+      if (error instanceof AssistantWsDisconnectedError && run.activeRun.agentKey) {
+        this.bestEffortInterrupt(run.runId, run.activeRun, "Desktop Assistant WebSocket disconnected.");
+      }
+      if ((error as Error).name === "AbortError") {
+        if (!this.disposed) {
+          this.options.onEvent({
+            runId: run.runId,
+            chatId: run.chatId,
+            type: "stopped",
+            createdAt: nowEpochMillis(),
+            message
+          });
+        }
+        return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
+      }
+      if (!this.disposed) {
+        this.options.onEvent({
+          runId: run.runId,
+          chatId: run.chatId,
+          type: "error",
+          ...(isTimeContractViolation(error) ? {} : { createdAt: nowEpochMillis() }),
+          message,
+          error: message
+        });
+      }
+      return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
     } finally {
-      reader.releaseLock();
+      if (this.activeRuns.get(run.runId) === run.activeRun) {
+        this.activeRuns.delete(run.runId);
+        this.releaseWakeLockIfIdle();
+      }
     }
-    return { sawTerminalEvent, finalMessage: finalMessage.trim(), terminalMessageEmitted };
+  }
+
+  dispose() {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    for (const [runId, activeRun] of this.activeRuns) {
+      if (activeRun.agentKey) {
+        this.bestEffortInterrupt(runId, activeRun, "Desktop Assistant runtime disposed.");
+      }
+      activeRun.controller.abort();
+    }
+    this.activeRuns.clear();
+    this.wsTransport.dispose();
+    this.releaseWakeLockIfIdle();
+  }
+
+  private bestEffortInterrupt(runId: string, activeRun: ActiveAssistantRun, message: string) {
+    void this.platformFetch(activeRun.baseUrl, "/api/interrupt", {
+      method: "POST",
+      headers: this.jsonHeaders(activeRun.token),
+      body: JSON.stringify({ runId, agentKey: activeRun.agentKey, message })
+    }).catch(() => undefined);
   }
 
   private async readPersistedFinalAssistantMessage(chatId: string, runId: string): Promise<string> {

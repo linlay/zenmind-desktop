@@ -242,6 +242,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       state.kanbanRuntime = null;
       state.assistantNavigationStatusClient?.stop();
       state.assistantNavigationStatusClient = null;
+      assistantBridge.dispose();
     }
   };
 }

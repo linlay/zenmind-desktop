@@ -42,19 +42,6 @@ function makeBridge(overrides = {}) {
   return { bridge, events };
 }
 
-function sseResponse(frames) {
-  const body = frames.map((frame) => {
-    if (frame === "[DONE]") {
-      return "event: message\ndata: [DONE]\n\n";
-    }
-    return `event: message\ndata: ${JSON.stringify(frame)}\n\n`;
-  }).join("");
-  return new Response(body, {
-    status: 200,
-    headers: { "content-type": "text/event-stream" }
-  });
-}
-
 function makeWakeLockRecorder() {
   const calls = [];
   return {
@@ -66,44 +53,107 @@ function makeWakeLockRecorder() {
   };
 }
 
-function sseFrame(frame) {
-  if (frame === "[DONE]") {
-    return "event: message\ndata: [DONE]\n\n";
-  }
-  return `event: message\ndata: ${JSON.stringify(frame)}\n\n`;
-}
+function createWsHarness({ onQuery, onSend, autoOpen = true } = {}) {
+  const sockets = [];
+  const queryRequests = [];
 
-function createControlledSseResponse() {
-  const encoder = new TextEncoder();
-  let streamController;
-  let closed = false;
-  const stream = new ReadableStream({
-    start(controller) {
-      streamController = controller;
-    }
-  });
-  return {
-    response: new Response(stream, {
-      status: 200,
-      headers: { "content-type": "text/event-stream" }
-    }),
-    send(frame) {
-      if (!closed) {
-        streamController.enqueue(encoder.encode(sseFrame(frame)));
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url;
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      this.sent = [];
+      this.closed = false;
+      sockets.push(this);
+      if (autoOpen) {
+        queueMicrotask(() => {
+          if (!this.closed) {
+            this.onopen?.();
+          }
+        });
       }
-    },
+    }
+
+    send(data) {
+      const frame = JSON.parse(String(data));
+      this.sent.push(frame);
+      onSend?.({ socket: this, frame });
+      if (frame.frame === "request" && frame.type === "/api/query") {
+        queryRequests.push({ socket: this, frame, payload: frame.payload });
+        onQuery?.({ socket: this, frame, payload: frame.payload });
+      }
+    }
+
+    receive(frame) {
+      this.onmessage?.({ data: JSON.stringify(frame) });
+    }
+
+    open() {
+      this.onopen?.();
+    }
+
     close() {
-      if (closed) {
+      if (this.closed) {
         return;
       }
-      closed = true;
-      try {
-        streamController.close();
-      } catch {
-        // Stream cancellation can win races in abort tests.
-      }
+      this.closed = true;
+      this.onclose?.();
     }
+
+    disconnect() {
+      this.close();
+    }
+  }
+
+  return {
+    sockets,
+    queryRequests,
+    createWebSocket: (url) => new FakeWebSocket(url),
   };
+}
+
+function sendStreamEvent(socket, requestFrame, event, streamId = `stream-${requestFrame.id}`) {
+  socket.receive({
+    frame: "stream",
+    id: requestFrame.id,
+    streamId,
+    event,
+  });
+}
+
+function endStream(socket, requestFrame, reason = "done", lastSeq) {
+  socket.receive({
+    frame: "stream",
+    id: requestFrame.id,
+    streamId: `stream-${requestFrame.id}`,
+    reason,
+    ...(lastSeq === undefined ? {} : { lastSeq }),
+  });
+}
+
+function acceptQuery(socket, frame, timestamp = EPOCH_MS) {
+  sendStreamEvent(socket, frame, {
+    seq: 1,
+    type: "run.start",
+    runId: frame.payload.runId,
+    chatId: frame.payload.chatId,
+    agentKey: frame.payload.agentKey || "codeAssistant",
+    timestamp,
+  }, "opaque-stream-id");
+}
+
+function completeQuery(socket, frame, events = [], reason = "done") {
+  acceptQuery(socket, frame);
+  events.forEach((event, index) => sendStreamEvent(socket, frame, {
+    seq: index + 2,
+    runId: frame.payload.runId,
+    chatId: frame.payload.chatId,
+    timestamp: EPOCH_MS + index + 1,
+    ...event,
+  }));
+  endStream(socket, frame, reason, events.length + 1);
 }
 
 async function waitFor(predicate, message) {
@@ -133,14 +183,15 @@ test("agent platform assistant bridge returns a clear error when platform is una
 
 test("agent platform assistant bridge waits for a text completion", async () => {
   const originalFetch = globalThis.fetch;
-  const { bridge } = makeBridge();
-  globalThis.fetch = async (_url, init = {}) => {
-    const body = JSON.parse(String(init.body));
-    return sseResponse([
-      { seq: 1, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "Hello", timestamp: EPOCH_MS },
-      { seq: 2, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + 1 },
-      "[DONE]"
-    ]);
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => completeQuery(socket, frame, [
+      { type: "content.delta", delta: "Hello" },
+      { type: "run.complete" },
+    ]),
+  });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
+    throw new Error(`unexpected HTTP request ${url}`);
   };
 
   try {
@@ -149,7 +200,12 @@ test("agent platform assistant bridge waits for a text completion", async () => 
     assert.equal(result.text, "Hello");
     assert.match(result.runId, /^run_/u);
     assert.match(result.chatId, /^chat_/u);
+    assert.equal(ws.sockets.length, 1);
+    assert.equal(ws.queryRequests.length, 1);
+    assert.match(ws.sockets[0].url, /^ws:\/\/127\.0\.0\.1:18888\/ws\?/u);
+    assert.equal(new URL(ws.sockets[0].url).searchParams.get("source"), "desktop-assistant");
   } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -232,18 +288,20 @@ test("agent platform assistant bridge does not acquire wake lock for rejected st
 test("agent platform assistant bridge holds wake lock while a run is active", async () => {
   const originalFetch = globalThis.fetch;
   const wakeLock = makeWakeLockRecorder();
-  const { bridge, events } = makeBridge({ wakeLock: wakeLock.wakeLock });
-  globalThis.fetch = async (url, init = {}) => {
-    assert.equal(init.headers.Authorization, "Bearer desktop-token");
-    if (String(url).endsWith("/api/query")) {
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => {
       assert.deepEqual(wakeLock.calls, ["acquire"]);
-      const body = JSON.parse(String(init.body));
-      return sseResponse([
-        { seq: 1, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "awake", timestamp: EPOCH_MS },
-        { seq: 2, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + 1 },
-        "[DONE]"
+      completeQuery(socket, frame, [
+        { type: "content.delta", delta: "awake" },
+        { type: "run.complete" },
       ]);
-    }
+    },
+  });
+  const { bridge, events } = makeBridge({
+    wakeLock: wakeLock.wakeLock,
+    createWebSocket: ws.createWebSocket,
+  });
+  globalThis.fetch = async (url) => {
     throw new Error(`unexpected request ${url}`);
   };
 
@@ -254,8 +312,9 @@ test("agent platform assistant bridge holds wake lock while a run is active", as
     assert.deepEqual(wakeLock.calls, ["acquire"]);
     await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after run completion");
     assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
-    assert.deepEqual(events.map((event) => event.type), ["content.delta", "run.complete"]);
+    assert.deepEqual(events.map((event) => event.type), ["run.start", "content.delta", "run.complete"]);
   } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -263,16 +322,14 @@ test("agent platform assistant bridge holds wake lock while a run is active", as
 test("agent platform assistant bridge reuses an existing chat with a new run id", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
-  const { bridge } = makeBridge();
-  globalThis.fetch = async (url, init = {}) => {
-    if (String(url).endsWith("/api/query")) {
-      const body = JSON.parse(String(init.body));
-      requests.push(body);
-      return sseResponse([
-        { seq: 1, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + requests.length },
-        "[DONE]"
-      ]);
-    }
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame, payload }) => {
+      requests.push(payload);
+      completeQuery(socket, frame, [{ type: "run.complete" }]);
+    },
+  });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
     throw new Error(`unexpected request ${url}`);
   };
 
@@ -287,7 +344,9 @@ test("agent platform assistant bridge reuses an existing chat with a new run id"
     assert.notEqual(first.runId, second.runId);
     assert.deepEqual(requests.map((request) => request.chatId), ["chat-existing", "chat-existing"]);
     assert.deepEqual(requests.map((request) => request.runId), [first.runId, second.runId]);
+    assert.equal(ws.sockets.length, 1);
   } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -296,28 +355,34 @@ test("agent platform assistant bridge shares one wake lock across concurrent run
   const originalFetch = globalThis.fetch;
   const wakeLock = makeWakeLockRecorder();
   const streams = [];
-  const { bridge, events } = makeBridge({ wakeLock: wakeLock.wakeLock });
-  globalThis.fetch = async (url, init = {}) => {
-    assert.equal(init.headers.Authorization, "Bearer desktop-token");
-    if (String(url).endsWith("/api/query")) {
-      const body = JSON.parse(String(init.body));
-      const stream = createControlledSseResponse();
-      streams.push({ body, stream });
-      return stream.response;
-    }
+  const ws = createWsHarness({
+    autoOpen: false,
+    onQuery: ({ socket, frame, payload }) => {
+      streams.push({ socket, frame, body: payload });
+      acceptQuery(socket, frame);
+    },
+  });
+  const { bridge, events } = makeBridge({
+    wakeLock: wakeLock.wakeLock,
+    createWebSocket: ws.createWebSocket,
+  });
+  globalThis.fetch = async (url) => {
     throw new Error(`unexpected request ${url}`);
   };
 
   try {
-    const first = await bridge.startRun({ message: "first" });
-    const second = await bridge.startRun({ message: "second" });
+    const firstPromise = bridge.startRun({ message: "first" });
+    const secondPromise = bridge.startRun({ message: "second" });
+    await waitFor(() => ws.sockets.length === 1, "shared WebSocket was not created");
+    ws.sockets[0].open();
+    const [first, second] = await Promise.all([firstPromise, secondPromise]);
 
     assert.equal(first.ok, true);
     assert.equal(second.ok, true);
     assert.deepEqual(wakeLock.calls, ["acquire"]);
     await waitFor(() => streams.length === 2, "expected both query streams to start");
 
-    streams[0].stream.send({
+    sendStreamEvent(streams[0].socket, streams[0].frame, {
       seq: 1,
       type: "content.delta",
       runId: streams[0].body.runId,
@@ -325,21 +390,21 @@ test("agent platform assistant bridge shares one wake lock across concurrent run
       delta: "first",
       timestamp: EPOCH_MS
     });
-    streams[0].stream.send({
+    sendStreamEvent(streams[0].socket, streams[0].frame, {
       seq: 2,
       type: "run.complete",
       runId: streams[0].body.runId,
       chatId: streams[0].body.chatId,
       timestamp: EPOCH_MS + 1
     });
-    streams[0].stream.close();
+    endStream(streams[0].socket, streams[0].frame, "done", 2);
     await waitFor(
       () => events.some((event) => event.runId === first.runId && event.type === "run.complete"),
       "first run did not complete"
     );
     assert.deepEqual(wakeLock.calls, ["acquire"]);
 
-    streams[1].stream.send({
+    sendStreamEvent(streams[1].socket, streams[1].frame, {
       seq: 1,
       type: "content.delta",
       runId: streams[1].body.runId,
@@ -347,18 +412,18 @@ test("agent platform assistant bridge shares one wake lock across concurrent run
       delta: "second",
       timestamp: EPOCH_MS + 2
     });
-    streams[1].stream.send({
+    sendStreamEvent(streams[1].socket, streams[1].frame, {
       seq: 2,
       type: "run.complete",
       runId: streams[1].body.runId,
       chatId: streams[1].body.chatId,
       timestamp: EPOCH_MS + 3
     });
-    streams[1].stream.close();
+    endStream(streams[1].socket, streams[1].frame, "done", 2);
     await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after both runs completed");
     assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
   } finally {
-    streams.forEach(({ stream }) => stream.close());
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -366,16 +431,15 @@ test("agent platform assistant bridge shares one wake lock across concurrent run
 test("agent platform assistant bridge releases wake lock when stopRun interrupt fails", async () => {
   const originalFetch = globalThis.fetch;
   const wakeLock = makeWakeLockRecorder();
-  const streams = [];
-  const { bridge } = makeBridge({ wakeLock: wakeLock.wakeLock });
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => acceptQuery(socket, frame),
+  });
+  const { bridge } = makeBridge({
+    wakeLock: wakeLock.wakeLock,
+    createWebSocket: ws.createWebSocket,
+  });
   globalThis.fetch = async (url, init = {}) => {
     assert.equal(init.headers.Authorization, "Bearer desktop-token");
-    if (String(url).endsWith("/api/query")) {
-      const stream = createControlledSseResponse();
-      init.signal?.addEventListener("abort", () => stream.close(), { once: true });
-      streams.push(stream);
-      return stream.response;
-    }
     if (String(url).endsWith("/api/interrupt")) {
       return new Response("interrupt failed", { status: 500 });
     }
@@ -386,7 +450,7 @@ test("agent platform assistant bridge releases wake lock when stopRun interrupt 
     const result = await bridge.startRun({ message: "hello platform" });
     assert.equal(result.ok, true);
     assert.deepEqual(wakeLock.calls, ["acquire"]);
-    await waitFor(() => streams.length === 1, "query stream did not start");
+    assert.equal(ws.queryRequests.length, 1);
 
     const stop = await bridge.stopRun(result.runId);
 
@@ -394,7 +458,7 @@ test("agent platform assistant bridge releases wake lock when stopRun interrupt 
     assert.match(stop.message, /interrupt failed/u);
     assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
   } finally {
-    streams.forEach((stream) => stream.close());
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -402,12 +466,9 @@ test("agent platform assistant bridge releases wake lock when stopRun interrupt 
 test("agent platform assistant bridge forwards startRun accessLevel and emits aggregated completion message", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
-  const { bridge, events } = makeBridge();
-  globalThis.fetch = async (url, init = {}) => {
-    requests.push({ url: String(url), init });
-    assert.equal(init.headers.Authorization, "Bearer desktop-token");
-    if (String(url).endsWith("/api/query")) {
-      const body = JSON.parse(String(init.body));
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame, payload: body }) => {
+      requests.push(frame);
       assert.equal(body.message, "hello platform");
       assert.equal(body.runId, "run-stable-1");
       assert.equal(body.requestId, "request-stable-1");
@@ -418,14 +479,15 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
       assert.equal(body.params.desktop.source, "copilot");
       assert.equal(Object.hasOwn(body.params.desktop, "permissionMode"), false);
       assert.equal(Object.hasOwn(body.params.desktop, "historyBeforeMessageId"), false);
-      return sseResponse([
-        { seq: 1, type: "run.start", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS },
-        { seq: 2, type: "content.delta", runId: body.runId, chatId: body.chatId, delta: "hi", timestamp: EPOCH_MS + 1 },
-        { seq: 3, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS + 2 },
-        "[DONE]"
+      completeQuery(socket, frame, [
+        { type: "content.delta", delta: "hi" },
+        { type: "run.complete" },
       ]);
-    }
-    throw new Error(`unexpected request ${url}`);
+    },
+  });
+  const { bridge, events } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
+    throw new Error(`unexpected HTTP request ${url}`);
   };
 
   try {
@@ -438,9 +500,11 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
       requestId: "request-stable-1"
     });
     assert.equal(result.ok, true);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await waitFor(() => events.some((event) => event.type === "run.complete"), "completion event was not emitted");
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/query");
+    assert.equal(requests[0].frame, "request");
+    assert.equal(requests[0].type, "/api/query");
+    assert.equal(requests[0].id, "request-stable-1");
     assert.deepEqual(events.map((event) => event.type), ["run.start", "content.delta", "run.complete"]);
     assert.equal(events[1].delta, "hi");
     assert.equal(events[1].runId, result.runId);
@@ -449,6 +513,382 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     assert.equal(events[2].chatId, result.chatId);
     assert.equal(events[2].message, "hi");
   } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge accepts a query only after matching run.start and buffers earlier events", async () => {
+  const originalFetch = globalThis.fetch;
+  let queryRequest;
+  const ws = createWsHarness({
+    onQuery: (request) => {
+      queryRequest = request;
+    },
+  });
+  const { bridge, events } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
+    throw new Error(`unexpected HTTP request ${url}`);
+  };
+
+  try {
+    let settled = false;
+    const startPromise = bridge.startRun({
+      runId: "run-accept-1",
+      chatId: "chat-accept-1",
+      requestId: "request-accept-1",
+      message: "wait for run.start",
+    }).then((result) => {
+      settled = true;
+      return result;
+    });
+    await waitFor(() => Boolean(queryRequest), "query request was not sent");
+    queryRequest.socket.receive({
+      frame: "response",
+      type: "/api/query",
+      id: queryRequest.frame.id,
+      code: 0,
+      msg: "success",
+      data: {},
+    });
+    sendStreamEvent(queryRequest.socket, queryRequest.frame, {
+      type: "content.delta",
+      runId: "run-accept-1",
+      chatId: "chat-accept-1",
+      delta: "buffered",
+      timestamp: EPOCH_MS,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    assert.equal(settled, false);
+    assert.deepEqual(events, []);
+
+    acceptQuery(queryRequest.socket, queryRequest.frame, EPOCH_MS + 1);
+    const result = await startPromise;
+    assert.equal(result.ok, true);
+    await waitFor(() => events.length === 2, "buffered events were not released after acceptance");
+    assert.deepEqual(events.map((event) => event.type), ["content.delta", "run.start"]);
+    sendStreamEvent(queryRequest.socket, queryRequest.frame, {
+      type: "run.complete",
+      runId: "run-accept-1",
+      chatId: "chat-accept-1",
+      timestamp: EPOCH_MS + 2,
+    });
+    endStream(queryRequest.socket, queryRequest.frame, "done", 3);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge uploads attachments before sending the WS query and never uses HTTP /api/query", async () => {
+  const originalFetch = globalThis.fetch;
+  const sequence = [];
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame, payload }) => {
+      sequence.push("ws-query");
+      assert.deepEqual(payload.references, [{ id: "upload-1", name: "note.txt" }]);
+      completeQuery(socket, frame, [{ type: "run.complete", message: "uploaded" }]);
+    },
+  });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    assert.equal(target.endsWith("/api/query"), false);
+    if (target.endsWith("/api/upload")) {
+      sequence.push("upload");
+      assert.equal(init.headers.Authorization, "Bearer desktop-token");
+      return new Response(JSON.stringify({
+        code: 0,
+        msg: "success",
+        data: { upload: { id: "upload-1", name: "note.txt" } },
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }
+    throw new Error(`unexpected HTTP request ${target}`);
+  };
+
+  try {
+    const result = await bridge.completeText({
+      message: "read attachment",
+      attachments: [{
+        id: "attachment-1",
+        name: "note.txt",
+        mimeType: "text/plain",
+        size: 5,
+        dataUrl: "data:text/plain;base64,aGVsbG8=",
+      }],
+    });
+    assert.equal(result.ok, true);
+    assert.deepEqual(sequence, ["upload", "ws-query"]);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge converges pre-accept frame, identity, and timeout failures to one error", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => {
+    throw new Error(`unexpected HTTP request ${url}`);
+  };
+  try {
+    const cases = [
+      {
+        name: "frame error",
+        configure: ({ socket, frame }) => socket.receive({
+          frame: "error",
+          type: "invalid_request",
+          id: frame.id,
+          code: 400,
+          msg: "bad query",
+          data: {},
+        }),
+        expected: /invalid_request: bad query/u,
+      },
+      {
+        name: "identity conflict",
+        configure: ({ socket, frame, payload }) => sendStreamEvent(socket, frame, {
+          type: "run.start",
+          runId: `${payload.runId}-wrong`,
+          chatId: payload.chatId,
+          agentKey: "codeAssistant",
+          timestamp: EPOCH_MS,
+        }),
+        expected: /identity conflict/u,
+      },
+      {
+        name: "acceptance timeout",
+        configure: () => undefined,
+        expected: /timed out waiting for run\.start/u,
+        acceptanceTimeout: 5,
+      },
+      {
+        name: "connection timeout",
+        configure: () => undefined,
+        expected: /connection timed out/u,
+        autoOpen: false,
+        connectTimeout: 5,
+      },
+    ];
+    for (const failureCase of cases) {
+      const ws = createWsHarness({
+        onQuery: failureCase.configure,
+        autoOpen: failureCase.autoOpen ?? true,
+      });
+      const { bridge, events } = makeBridge({
+        createWebSocket: ws.createWebSocket,
+        assistantWsAcceptanceTimeoutMs: failureCase.acceptanceTimeout,
+        assistantWsConnectTimeoutMs: failureCase.connectTimeout,
+      });
+      const result = await bridge.startRun({ message: failureCase.name });
+      assert.equal(result.ok, false, failureCase.name);
+      await waitFor(() => events.length === 1, `${failureCase.name} did not emit one error`);
+      assert.deepEqual(events.map((event) => event.type), ["error"], failureCase.name);
+      assert.match(events[0].message, failureCase.expected, failureCase.name);
+      bridge.dispose();
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge recognizes run.cancel and rejects an envelope without a business terminal", async () => {
+  const originalFetch = globalThis.fetch;
+  let queryCount = 0;
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => {
+      queryCount += 1;
+      if (queryCount === 1) {
+        completeQuery(socket, frame, [{ type: "run.cancel", message: "cancelled" }], "cancelled");
+        return;
+      }
+      acceptQuery(socket, frame);
+      endStream(socket, frame, "done", 1);
+    },
+  });
+  const { bridge, events } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
+    throw new Error(`unexpected HTTP request ${url}`);
+  };
+
+  try {
+    const cancelled = await bridge.completeText({ message: "cancel me" });
+    assert.equal(cancelled.ok, true);
+    assert.equal(cancelled.text, "cancelled");
+    assert.equal(events.some((event) => event.type === "run.cancel"), true);
+
+    const missingTerminal = await bridge.completeText({ message: "missing terminal" });
+    assert.equal(missingTerminal.ok, false);
+    assert.match(missingTerminal.message, /business terminal event/u);
+    assert.equal(events.filter((event) => event.type === "error").length, 1);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge interrupts known runs on disconnect and reconnects only for a new query", async () => {
+  const originalFetch = globalThis.fetch;
+  const interrupts = [];
+  let queryCount = 0;
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => {
+      queryCount += 1;
+      if (queryCount === 1) {
+        acceptQuery(socket, frame);
+      } else {
+        completeQuery(socket, frame, [{ type: "run.complete", message: "reconnected" }]);
+      }
+    },
+  });
+  const { bridge, events } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    assert.equal(target.endsWith("/api/query"), false);
+    if (target.endsWith("/api/interrupt")) {
+      interrupts.push(JSON.parse(String(init.body)));
+      return new Response(JSON.stringify({ code: 0, msg: "success", data: {} }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected HTTP request ${target}`);
+  };
+
+  try {
+    const first = await bridge.startRun({
+      runId: "run-disconnect-1",
+      chatId: "chat-disconnect-1",
+      message: "disconnect",
+    });
+    assert.equal(first.ok, true);
+    ws.sockets[0].disconnect();
+    await waitFor(() => events.some((event) => event.type === "error"), "disconnect did not end the local transaction");
+    await waitFor(() => interrupts.length === 1, "disconnect did not request a best-effort interrupt");
+    assert.deepEqual(interrupts[0], {
+      runId: "run-disconnect-1",
+      agentKey: "codeAssistant",
+      message: "Desktop Assistant WebSocket disconnected.",
+    });
+
+    const second = await bridge.startRun({ message: "new request after disconnect" });
+    assert.equal(second.ok, true);
+    assert.equal(ws.sockets.length, 2);
+    assert.equal(ws.queryRequests.length, 2);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge refreshes auth on the same WS connection", async () => {
+  const originalFetch = globalThis.fetch;
+  const issuedReasons = [];
+  const authRefreshFrames = [];
+  let queryRequest;
+  const ws = createWsHarness({
+    onQuery: (request) => {
+      queryRequest = request;
+      acceptQuery(request.socket, request.frame);
+    },
+    onSend: ({ socket, frame }) => {
+      if (frame.frame === "request" && frame.type === "auth.refresh") {
+        authRefreshFrames.push(frame);
+        socket.receive({
+          frame: "response",
+          type: "auth.refresh",
+          id: frame.id,
+          code: 0,
+          msg: "success",
+          data: { expiresAt: EPOCH_MS + 60_000 },
+        });
+      }
+    },
+  });
+  const { bridge } = makeBridge({
+    createWebSocket: ws.createWebSocket,
+    issueAccessToken: async (_app, reason) => {
+      issuedReasons.push(reason);
+      return { ok: true, token: reason === "unauthorized" ? "fresh-token" : "old-token", message: "" };
+    },
+  });
+  globalThis.fetch = async (url) => {
+    throw new Error(`unexpected HTTP request ${url}`);
+  };
+
+  try {
+    const started = await bridge.startRun({ message: "refresh auth" });
+    assert.equal(started.ok, true);
+    queryRequest.socket.receive({
+      frame: "push",
+      type: "auth.expiring",
+      data: { expiresAt: EPOCH_MS + 1_000 },
+    });
+    await waitFor(() => authRefreshFrames.length === 1, "auth.refresh was not sent");
+    assert.equal(authRefreshFrames[0].payload.token, "fresh-token");
+    assert.deepEqual(issuedReasons, ["missing", "unauthorized"]);
+    assert.equal(ws.sockets.length, 1);
+    sendStreamEvent(queryRequest.socket, queryRequest.frame, {
+      type: "run.complete",
+      runId: queryRequest.payload.runId,
+      chatId: queryRequest.payload.chatId,
+      timestamp: EPOCH_MS + 2,
+    });
+    endStream(queryRequest.socket, queryRequest.frame, "done", 2);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge responds to reverse requests and dispose closes WS and releases wake lock", async () => {
+  const originalFetch = globalThis.fetch;
+  const interrupts = [];
+  const wakeLock = makeWakeLockRecorder();
+  let queryRequest;
+  const ws = createWsHarness({
+    onQuery: (request) => {
+      queryRequest = request;
+      acceptQuery(request.socket, request.frame);
+    },
+  });
+  const { bridge, events } = makeBridge({
+    createWebSocket: ws.createWebSocket,
+    wakeLock: wakeLock.wakeLock,
+  });
+  globalThis.fetch = async (url, init = {}) => {
+    if (String(url).endsWith("/api/interrupt")) {
+      interrupts.push(JSON.parse(String(init.body)));
+      return new Response(null, { status: 204 });
+    }
+    throw new Error(`unexpected HTTP request ${url}`);
+  };
+
+  try {
+    const started = await bridge.startRun({ message: "reverse actions" });
+    assert.equal(started.ok, true);
+    queryRequest.socket.receive({ frame: "request", type: "webclient.sidebar.setState", id: "reverse-1", payload: {} });
+    queryRequest.socket.receive({ frame: "request", type: "desktop.unknown", id: "reverse-2", payload: {} });
+    queryRequest.socket.receive({ frame: "request", type: "webclient.sidebar.setState", id: "reverse-1", payload: {} });
+    await waitFor(
+      () => queryRequest.socket.sent.filter((frame) => frame.frame === "error").length === 3,
+      "reverse request errors were not sent",
+    );
+    assert.deepEqual(
+      queryRequest.socket.sent.filter((frame) => frame.frame === "error").map((frame) => frame.type),
+      ["unsupported_in_current_view", "unknown_request_type", "duplicate_id"],
+    );
+    assert.deepEqual(
+      queryRequest.socket.sent.filter((frame) => frame.frame === "error").map((frame) => frame.data.code),
+      ["unsupported_in_current_view", "unknown_request_type", "duplicate_id"],
+    );
+
+    bridge.dispose();
+    await waitFor(() => interrupts.length === 1, "dispose did not interrupt the active run");
+    assert.equal(ws.sockets[0].closed, true);
+    assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
+    assert.equal(events.some((event) => event.type === "stopped"), false);
+  } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -464,28 +904,28 @@ test("agent platform assistant bridge rejects ISO, string, seconds, fractional, 
       -1,
       undefined,
     ]) {
-      const { bridge, events } = makeBridge();
-      globalThis.fetch = async (url, init = {}) => {
-        if (String(url).endsWith("/api/query")) {
-          const body = JSON.parse(String(init.body));
-          return sseResponse([{
+      const ws = createWsHarness({
+        onQuery: ({ socket, frame, payload: body }) => sendStreamEvent(socket, frame, {
             seq: 1,
-            type: "content.delta",
+            type: "run.start",
             runId: body.runId,
             chatId: body.chatId,
-            delta: "must not reach the desktop",
+            agentKey: "codeAssistant",
             ...(timestamp === undefined ? {} : { timestamp })
-          }]);
-        }
-        throw new Error(`unexpected request ${url}`);
+        }),
+      });
+      const { bridge, events } = makeBridge({ createWebSocket: ws.createWebSocket });
+      globalThis.fetch = async (url) => {
+        throw new Error(`unexpected HTTP request ${url}`);
       };
 
       const result = await bridge.startRun({ message: "strict timestamp" });
-      assert.equal(result.ok, true);
+      assert.equal(result.ok, false);
       await waitFor(() => events.some((event) => event.type === "error"), "malformed stream did not surface a local error");
       assert.deepEqual(events.map((event) => event.type), ["error"]);
       assert.match(events[0].error ?? "", /time_contract_violation/u);
       assert.equal(Object.hasOwn(events[0], "createdAt"), false);
+      bridge.dispose();
     }
   } finally {
     globalThis.fetch = originalFetch;
@@ -629,11 +1069,10 @@ test("agent platform assistant bridge rejects malformed chat message times", asy
 
 test("agent platform assistant bridge rejects malformed nested awaiting timestamps", async () => {
   const originalFetch = globalThis.fetch;
-  const { bridge, events } = makeBridge();
-  globalThis.fetch = async (url, init = {}) => {
-    if (String(url).endsWith("/api/query")) {
-      const body = JSON.parse(String(init.body));
-      return sseResponse([{
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame, payload: body }) => {
+      acceptQuery(socket, frame);
+      sendStreamEvent(socket, frame, {
         type: "awaiting.asking",
         runId: body.runId,
         chatId: body.chatId,
@@ -642,8 +1081,11 @@ test("agent platform assistant bridge rejects malformed nested awaiting timestam
           awaitingId: "awaiting-1",
           createdAt: "2026-07-13T00:00:00.000Z",
         },
-      }]);
-    }
+      });
+    },
+  });
+  const { bridge, events } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
     throw new Error(`unexpected request ${url}`);
   };
 
@@ -651,9 +1093,10 @@ test("agent platform assistant bridge rejects malformed nested awaiting timestam
     const result = await bridge.startRun({ message: "validate awaiting" });
     assert.equal(result.ok, true);
     await waitFor(() => events.some((event) => event.type === "error"), "awaiting violation did not surface");
-    assert.match(events[0].error ?? "", /stream\.events\[0\]\.awaiting\.createdAt/u);
-    assert.equal(Object.hasOwn(events[0], "createdAt"), false);
+    assert.match(events.at(-1).error ?? "", /ws\.query\[.+\]\.events\[1\]\.awaiting\.createdAt/u);
+    assert.equal(Object.hasOwn(events.at(-1), "createdAt"), false);
   } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -710,34 +1153,29 @@ test("agent platform assistant bridge preserves nullable optional times and epoc
 
 test("agent platform assistant bridge uses terminal result payload as completion message", async () => {
   const originalFetch = globalThis.fetch;
-  const { bridge, events } = makeBridge();
-  globalThis.fetch = async (url, init = {}) => {
-    assert.equal(init.headers.Authorization, "Bearer desktop-token");
-    if (String(url).endsWith("/api/query")) {
-      const body = JSON.parse(String(init.body));
-      return sseResponse([
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => completeQuery(socket, frame, [
         {
-          seq: 1,
           type: "run.complete",
-          runId: body.runId,
-          chatId: body.chatId,
           data: { result: "云端验证OK" },
-          timestamp: EPOCH_MS
         }
-      ]);
-    }
+    ]),
+  });
+  const { bridge, events } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
     throw new Error(`unexpected request ${url}`);
   };
 
   try {
     const result = await bridge.startRun({ message: "hello platform", agentKey: "codeAssistant", accessLevel: "auto_approve" });
     assert.equal(result.ok, true);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(events.map((event) => event.type), ["run.complete"]);
-    assert.equal(events[0].runId, result.runId);
-    assert.equal(events[0].chatId, result.chatId);
-    assert.equal(events[0].message, "云端验证OK");
+    await waitFor(() => events.some((event) => event.type === "run.complete"), "completion event was not emitted");
+    assert.deepEqual(events.map((event) => event.type), ["run.start", "run.complete"]);
+    assert.equal(events[1].runId, result.runId);
+    assert.equal(events[1].chatId, result.chatId);
+    assert.equal(events[1].message, "云端验证OK");
   } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });
@@ -745,11 +1183,8 @@ test("agent platform assistant bridge uses terminal result payload as completion
 test("agent platform assistant bridge falls back to persisted chat jsonl for empty completion events", async () => {
   const originalFetch = globalThis.fetch;
   const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-test-"));
-  const { bridge, events } = makeBridge({ app: makeApp(homeDir) });
-  globalThis.fetch = async (url, init = {}) => {
-    assert.equal(init.headers.Authorization, "Bearer desktop-token");
-    if (String(url).endsWith("/api/query")) {
-      const body = JSON.parse(String(init.body));
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame, payload: body }) => {
       const chatDir = path.join(homeDir, APP_BRAND.paths.runtimeRootDirName, "chats");
       fs.mkdirSync(chatDir, { recursive: true });
       fs.writeFileSync(
@@ -767,22 +1202,27 @@ test("agent platform assistant bridge falls back to persisted chat jsonl for emp
           })
         ].join("\n")
       );
-      return sseResponse([
-        { seq: 1, type: "run.complete", runId: body.runId, chatId: body.chatId, timestamp: EPOCH_MS }
-      ]);
-    }
+      completeQuery(socket, frame, [{ type: "run.complete" }]);
+    },
+  });
+  const { bridge, events } = makeBridge({
+    app: makeApp(homeDir),
+    createWebSocket: ws.createWebSocket,
+  });
+  globalThis.fetch = async (url) => {
     throw new Error(`unexpected request ${url}`);
   };
 
   try {
     const result = await bridge.startRun({ message: "hello platform", agentKey: "codeAssistant", accessLevel: "auto_approve" });
     assert.equal(result.ok, true);
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    assert.deepEqual(events.map((event) => event.type), ["run.complete"]);
-    assert.equal(events[0].runId, result.runId);
-    assert.equal(events[0].chatId, result.chatId);
-    assert.equal(events[0].message, "最终回答来自本地会话文件");
+    await waitFor(() => events.some((event) => event.type === "run.complete"), "completion event was not emitted");
+    assert.deepEqual(events.map((event) => event.type), ["run.start", "run.complete"]);
+    assert.equal(events[1].runId, result.runId);
+    assert.equal(events[1].chatId, result.chatId);
+    assert.equal(events[1].message, "最终回答来自本地会话文件");
   } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
     fs.rmSync(homeDir, { recursive: true, force: true });
   }
@@ -814,9 +1254,9 @@ test("agent platform assistant bridge lists and normalizes agents from /api/agen
 
     assert.equal(requests.length, 1);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/agents");
-    assert.deepEqual(agents, [
+    assert.deepEqual(agents.sort((left, right) => left.agentKey.localeCompare(right.agentKey)), [
+      { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 },
       { agentKey: "zenmi", displayName: "小宅", role: "平台总管", icon: { name: "summit" }, unreadCount: 1 },
-      { agentKey: "codeAssistant", displayName: "代码助手", role: "CLI 代码助手", unreadCount: 3 }
     ]);
   } finally {
     globalThis.fetch = originalFetch;
@@ -848,7 +1288,10 @@ test("agent platform assistant bridge returns no agents when platform is install
 test("agent platform assistant bridge maps submitAwaiting and stopRun to platform endpoints", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
-  const { bridge } = makeBridge();
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => acceptQuery(socket, frame),
+  });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), body: JSON.parse(String(init.body)) });
     return new Response(JSON.stringify({ code: 0, msg: "success", data: { accepted: true } }), {
@@ -858,6 +1301,13 @@ test("agent platform assistant bridge maps submitAwaiting and stopRun to platfor
   };
 
   try {
+    const started = await bridge.startRun({
+      runId: "run_1",
+      chatId: "chat_1",
+      agentKey: "codeAssistant",
+      message: "keep owner identity",
+    });
+    assert.equal(started.ok, true);
     const submit = await bridge.submitAwaiting({
       runId: "run_1",
       chatId: "chat_1",
@@ -871,9 +1321,12 @@ test("agent platform assistant bridge maps submitAwaiting and stopRun to platfor
     assert.equal(stop.ok, true);
     assert.equal(requests[0].url, "http://127.0.0.1:18888/api/submit");
     assert.deepEqual(requests[0].body.params, [{ id: "q1", answer: "ok" }]);
+    assert.equal(requests[0].body.agentKey, "codeAssistant");
     assert.equal(requests[1].url, "http://127.0.0.1:18888/api/interrupt");
     assert.equal(requests[1].body.runId, "run_1");
+    assert.equal(requests[1].body.agentKey, "codeAssistant");
   } finally {
+    bridge.dispose();
     globalThis.fetch = originalFetch;
   }
 });

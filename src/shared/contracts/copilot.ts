@@ -731,6 +731,7 @@ export const ASSISTANT_TERMINAL_EVENT_TYPES = [
   "stopped",
   "error",
   "run.complete",
+  "run.cancel",
   "run.stopped",
   "run.error",
   "run.interrupt",
