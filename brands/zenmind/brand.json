@@ -5,6 +5,11 @@
   "productName": "ZenMind",
   "appId": "cc.zenmind.desktop",
   "description": "ZenMind 应用壳",
+  "protocols": {
+    "open": {
+      "scheme": "zenmind"
+    }
+  },
   "paths": {
     "desktopDataSubdir": ".desktop",
     "programDataDirName": "ZenMind"

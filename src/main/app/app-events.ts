@@ -2,6 +2,7 @@ import type { App, GlobalShortcut } from "electron";
 import type { MainAppState } from "../app-state";
 import { hasInstallerShutdownArg } from "../lifecycle/single-instance";
 import type { ShutdownReport } from "../../shared/shutdown";
+import { findDesktopOpenDeepLink, isDesktopOpenDeepLink } from "./deep-link";
 
 export type MainAppEventsOptions = {
   app: App;
@@ -12,7 +13,8 @@ export type MainAppEventsOptions = {
   globalShortcut: Pick<GlobalShortcut, "unregister">;
   focusedWebviewDevToolsShortcut: string;
   onReady: () => Promise<void> | void;
-  showMainWindow: () => void;
+  initialCommandLine: readonly string[];
+  showMainWindow: (targetPath?: string) => void;
   beginAppQuitWithoutConfirmation: () => void;
   beginInstallerShutdown: (commandLine: string[]) => void;
   isNativeDialogOpen: () => boolean;
@@ -37,9 +39,34 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     return;
   }
 
+  let readyCompleted = false;
+  let pendingDesktopOpen = Boolean(findDesktopOpenDeepLink(options.initialCommandLine));
+
+  const openDesktopHome = () => {
+    if (!readyCompleted) {
+      pendingDesktopOpen = true;
+      return;
+    }
+    options.showMainWindow("/");
+  };
+
+  if (options.platform === "darwin") {
+    options.app.on("open-url", (event, url) => {
+      if (!isDesktopOpenDeepLink(url)) {
+        return;
+      }
+      event.preventDefault();
+      openDesktopHome();
+    });
+  }
+
   options.app.on("second-instance", (_event, commandLine) => {
     if (hasInstallerShutdownArg(commandLine, options.installerShutdownArgs)) {
       options.beginInstallerShutdown(commandLine);
+      return;
+    }
+    if (options.platform === "win32" && findDesktopOpenDeepLink(commandLine)) {
+      openDesktopHome();
       return;
     }
     options.showMainWindow();
@@ -47,6 +74,11 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
 
   void options.app.whenReady().then(async () => {
     await options.onReady();
+    readyCompleted = true;
+    if (pendingDesktopOpen) {
+      pendingDesktopOpen = false;
+      options.showMainWindow("/");
+    }
     options.app.on("activate", () => {
       if (options.isNativeDialogOpen()) {
         return;

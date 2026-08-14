@@ -41,6 +41,7 @@ export type SidebarActionIconKind =
   | "refresh"
   | "new_project"
   | "new_chat"
+  | "share"
   | "more_actions"
   | "double_check"
   | "close";
@@ -209,6 +210,16 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
         <svg {...iconProps}>
           <line x1="12" y1="5" x2="12" y2="19" />
           <line x1="5" y1="12" x2="19" y2="12" />
+        </svg>
+      );
+    case "share":
+      return (
+        <svg {...iconProps}>
+          <circle cx="18" cy="5" r="2.5" />
+          <circle cx="6" cy="12" r="2.5" />
+          <circle cx="18" cy="19" r="2.5" />
+          <path d="m8.2 10.8 7.6-4.5" />
+          <path d="m8.2 13.2 7.6 4.5" />
         </svg>
       );
     case "new_chat":

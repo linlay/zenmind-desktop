@@ -40,6 +40,11 @@ export type AppBrand = {
   productName: string;
   appId: string;
   description: string;
+  protocols: {
+    open: {
+      scheme: string;
+    };
+  };
   paths: {
     runtimeRootDirName: string;
     desktopDataSubdir: string;
@@ -166,4 +171,5 @@ export const STORAGE_NAMESPACE = APP_BRAND.storageNamespace;
 export const PRODUCT_NAME = APP_BRAND.productName;
 export const APP_ID = APP_BRAND.appId;
 export const APP_DESCRIPTION = APP_BRAND.description;
+export const DESKTOP_OPEN_PROTOCOL_SCHEME = APP_BRAND.protocols.open.scheme;
 export const INSTALLER_SHUTDOWN_ARG = APP_BRAND.installer.shutdownArg;

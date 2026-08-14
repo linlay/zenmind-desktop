@@ -209,6 +209,8 @@ const api: DesktopApi = {
     renameChat: (chatId: string, chatName: string) => ipcRenderer.invoke("assistant.renameChat", chatId, chatName),
     archiveChat: (chatId: string) => ipcRenderer.invoke("assistant.archiveChat", chatId),
     exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),
+    shareChat: (chatId: string) => ipcRenderer.invoke("assistant.shareChat", chatId),
+    revokeChatShare: (shareId: string) => ipcRenderer.invoke("assistant.revokeChatShare", shareId),
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => {
       const handleNavigationAgentsChanged = (
         _event: Electron.IpcRendererEvent,
