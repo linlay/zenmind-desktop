@@ -43,6 +43,13 @@ function createTestApp(t) {
 function callbacks(overrides = {}) {
   return {
     currentDesktopDefaultPorts: CURRENT_PORTS,
+    prepareDesktopConfiguration: async ({ apply }) => ({
+      sourceZipPath: "/validated/env.zip",
+      previousSourceZipPath: "/validated/previous-env.zip",
+      sha256: "a".repeat(64),
+      size: 1024,
+      apply
+    }),
     stopService: async () => {},
     installCurrentService: async () => {},
     resetServiceConfig: async () => {},
@@ -144,6 +151,8 @@ test("legacy config is reset in fixed order and Desktop-owned config is strictly
     assert.equal(path.isAbsolute(call[2].backupDir), true);
     assert.equal(call[2].fromVersion, "legacy");
     assert.equal(call[2].toVersion, "v0.3.27");
+    assert.equal(call[2].runtimeResourceSource, "/validated/env.zip");
+    assert.equal(call[2].runtimeResourceMode, "version-change");
   }
 
   const ports = JSON.parse(fs.readFileSync(
@@ -296,4 +305,75 @@ test("Desktop reset deploy flags use the unified service interface", () => {
       "--desktop-version-to", "v2"
     ]
   );
+  assert.deepEqual(
+    serviceManagerInternals.appendAgentPlatformRuntimeResourceDeployArgs(
+      ["deploy.sh", "--desktop-version-from", "v1", "--desktop-version-to", "v2"],
+      { desktop: { runtimeResources: "v1" } },
+      {
+        backupDir: "/backup",
+        fromVersion: "v1",
+        toVersion: "v2",
+        runtimeResourceSource: "/validated/env.zip",
+        runtimeResourcePreviousSource: "/validated/previous.zip",
+        runtimeResourceMode: "version-change"
+      }
+    ),
+    [
+      "deploy.sh", "--desktop-version-from", "v1", "--desktop-version-to", "v2",
+      "--runtime-resource-source", "/validated/env.zip",
+      "--runtime-resource-previous-source", "/validated/previous.zip",
+      "--runtime-resource-mode", "version-change"
+    ]
+  );
+  assert.throws(
+    () => serviceManagerInternals.appendAgentPlatformRuntimeResourceDeployArgs(
+      ["deploy.sh"],
+      { desktop: {} },
+      {
+        backupDir: "/backup",
+        fromVersion: "v1",
+        toVersion: "v2",
+        runtimeResourceSource: "/validated/env.zip"
+      }
+    ),
+    /runtimeResources=v1/u
+  );
+});
+
+test("Desktop configuration preflight fails before any service is stopped", async (t) => {
+  const { app } = createTestApp(t);
+  const calls = [];
+  const result = await prepareDesktopServiceConfigUpgrade(app, "v0.3.27", callbacks({
+    prepareDesktopConfiguration: async () => {
+      throw new Error("invalid desktop-init.json");
+    },
+    stopService: async (serviceId) => calls.push(serviceId)
+  }));
+  assert.deepEqual(result.failures, [
+    "Desktop environment configuration failed: invalid desktop-init.json"
+  ]);
+  assert.deepEqual(calls, []);
+  assert.equal(result.journal.desktopConfig.status, "failed");
+});
+
+test("same completed Desktop version does not read env.zip or run deploy", async (t) => {
+  const { app } = createTestApp(t);
+  await prepareDesktopServiceConfigUpgrade(app, "v0.3.27", callbacks({
+    isFirstDesktopInstall: true
+  }));
+  completeDesktopServiceConfigUpgrade(app, "v0.3.27");
+  let preflightCalls = 0;
+  let resetCalls = 0;
+  const result = await prepareDesktopServiceConfigUpgrade(app, "v0.3.27", callbacks({
+    prepareDesktopConfiguration: async () => {
+      preflightCalls += 1;
+      throw new Error("same version must not inspect env.zip");
+    },
+    resetServiceConfig: async () => {
+      resetCalls += 1;
+    }
+  }));
+  assert.equal(result.mode, "none");
+  assert.equal(preflightCalls, 0);
+  assert.equal(resetCalls, 0);
 });

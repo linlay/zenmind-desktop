@@ -109,6 +109,7 @@ export interface ManifestDesktopHosting {
 }
 
 export interface ManifestDesktop {
+  runtimeResources?: "v1";
   assetFileName?: string;
   bundleTopLevelDir?: string;
   envBindings?: ManifestEnvBinding[];

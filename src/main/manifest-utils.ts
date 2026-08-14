@@ -983,6 +983,7 @@ function resolveDesktop(
   settings: ServiceDefinition["settings"]
 ) {
   const desktop = asObject(raw.desktop);
+  const runtimeResources = asOptionalString(desktop.runtimeResources) === "v1" ? "v1" as const : undefined;
   const assetFileName =
     options.desktop?.assetFileName ?? asOptionalString(desktop.assetFileName);
   const bundleTopLevelDir =
@@ -998,6 +999,7 @@ function resolveDesktop(
   const actions = resolveDesktopActions(raw, settings);
 
   return {
+    ...(runtimeResources ? { runtimeResources } : {}),
     assetFileName,
     bundleTopLevelDir,
     envBindings,

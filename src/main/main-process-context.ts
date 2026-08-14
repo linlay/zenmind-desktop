@@ -198,6 +198,8 @@ export interface ServicesIpcHandlerContextDependencies {
   getServiceWebviewPreloadUrl: (...args: any[]) => unknown;
   startupRestoreController: unknown;
   importEnvZipToRuntime?: (...args: any[]) => unknown;
+  importEnvZipIntoExistingRuntime?: (...args: any[]) => unknown;
+  runtimeEnvExists?: (...args: any[]) => unknown;
   applyDesktopInitBootstrap?: (...args: any[]) => unknown;
   refreshDesktopRuntimeConfigFromCanonicalFiles?: (...args: any[]) => unknown;
   loadBuiltinServices?: (...args: any[]) => unknown;
@@ -259,6 +261,8 @@ export function createServicesIpcHandlerOptions(
     logStreamSubscriptions: dependencies.logStreamSubscriptions,
     startupRestoreController: dependencies.startupRestoreController,
     importEnvZipToRuntime: dependencies.importEnvZipToRuntime,
+    importEnvZipIntoExistingRuntime: dependencies.importEnvZipIntoExistingRuntime,
+    runtimeEnvExists: dependencies.runtimeEnvExists,
     applyDesktopInitBootstrap: dependencies.applyDesktopInitBootstrap,
     refreshDesktopRuntimeConfigFromCanonicalFiles: dependencies.refreshDesktopRuntimeConfigFromCanonicalFiles,
     loadBuiltinServices: dependencies.loadBuiltinServices,

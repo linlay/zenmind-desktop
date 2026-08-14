@@ -3,7 +3,6 @@ import {
   generateBackupDirName,
   importBundledEnvZipToRuntime,
   migrateOldRootToBackup,
-  syncBundledEnvResourcesForVersion,
   type EnvRootConflictDecision
 } from "../env-bootstrap";
 
@@ -97,7 +96,7 @@ export function createStartupEnvironmentRuntime(options: StartupEnvironmentRunti
     if (options.oldRootDecisionRef.current === "keep") {
       return { ok: true };
     }
-    return trySyncBundledEnvResourcesAtStartup();
+    return { ok: true };
   }
 
   async function tryImportBundledEnvZipAtStartup(): Promise<{ ok: true } | { ok: false; message: string }> {
@@ -126,28 +125,6 @@ export function createStartupEnvironmentRuntime(options: StartupEnvironmentRunti
       return {
         ok: false,
         message: options.t("startup.envImport.bundledFailed", { message })
-      };
-    }
-  }
-
-  async function trySyncBundledEnvResourcesAtStartup(): Promise<{ ok: true } | { ok: false; message: string }> {
-    try {
-      const syncResult = await syncBundledEnvResourcesForVersion(options.app, options.platform);
-      if (syncResult.status === "synced") {
-        console.info(
-          `[main] synchronized bundled env resources from ${syncResult.sourceZipPath} into ${syncResult.targetRoot}: ` +
-          `copiedUnits=${syncResult.copiedUnits}, skippedUnits=${syncResult.skippedUnits}, ` +
-          `addedRegistryFiles=${syncResult.addedRegistryFiles}, ` +
-          `overwrittenRegistryFiles=${syncResult.overwrittenRegistryFiles}`
-        );
-      }
-      return { ok: true };
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      console.error("failed to synchronize bundled env resources", error);
-      return {
-        ok: false,
-        message: options.t("startup.envImport.resourceSyncFailed", { message })
       };
     }
   }

@@ -96,18 +96,20 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
   requireAgentPlatformRuntime = true,
   includeAgentPlatformSidecar = true,
   requireAgentPlatformSidecar = true,
+  includeAgentPlatformRuntimeCapability = true,
   agentPlatformProgramCommon = [
     "#!/usr/bin/env bash",
     "program_sync_deploy_env_values() {",
     "  program_set_env_value \"$ENV_FILE\" \"AP_RUNTIME_DIR\" \"$DEPLOY_AP_RUNTIME_DIR\"",
     "  program_set_env_value \"$ENV_FILE\" \"AP_CONTAINER_HUB_BASE_URL\" \"$DEPLOY_CONTAINER_HUB_BASE_URL\"",
     "}",
+    "program_sync_runtime_resources() { agent-platform runtime-resource-sync; }",
     "program_apply_deploy_flags() {",
     "  while [[ $# -gt 0 ]]; do",
     "    case \"$1\" in",
     "      --public-key-source-file) shift 2 ;;",
     "      --desktop-config-reset) shift ;;",
-    "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to) shift 2 ;;",
+    "      --desktop-config-backup-dir|--desktop-version-from|--desktop-version-to|--runtime-resource-source|--runtime-resource-previous-source|--runtime-resource-mode) shift 2 ;;",
     "      *) shift ;;",
     "    esac",
     "  done",
@@ -184,6 +186,9 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
   }
 
   if (id === "agent-platform") {
+    if (includeAgentPlatformRuntimeCapability) {
+      manifest.desktop.runtimeResources = "v1";
+    }
     fs.mkdirSync(path.join(bundleRoot, "configs"), { recursive: true });
     manifest.runtime.requiredPaths.push("configs");
     if (includeAgentPlatformSidecar) {
@@ -686,6 +691,32 @@ test("syncBuiltinAssets allows agent-container-hub runtime helpers outside deplo
   const hub = manifest.find((service) => service.id === "agent-container-hub");
   assert.ok(hub);
   assert.equal(hub.assetType, "directory");
+});
+
+test("syncBuiltinAssets rejects agent-platform archives without runtimeResources v1", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-platform-no-resource-capability-"));
+  t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform", {
+    includeAgentPlatformRuntimeCapability: false
+  });
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const previousSource = process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+  process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = sourceRoot;
+  t.after(() => {
+    if (previousSource === undefined) delete process.env.DESKTOP_BUILTIN_ASSETS_SOURCE;
+    else process.env.DESKTOP_BUILTIN_ASSETS_SOURCE = previousSource;
+  });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-no-resource-capability-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, { os: "darwin", arch: "arm64", brandId: "cutej" }),
+    /agent-platform[\s\S]*desktop\.runtimeResources must be v1/u
+  );
 });
 
 test("syncBuiltinAssets rejects agent-platform archives without required runtime directory", async (t) => {

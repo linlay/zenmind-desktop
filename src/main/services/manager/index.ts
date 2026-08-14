@@ -174,9 +174,16 @@ import { resolveDesktopCapability } from "./capabilities";
 import {
   appendConfiguredServiceLifecycleArgs,
   getConfiguredServiceLifecycleArgs,
+  rewriteServiceLifecycleArgsForDesktopConfigUpgrade,
   type ServiceLifecycleCommandKind
 } from "../../service-lifecycle-args";
-import { getDesktopSsoAccessTokenFilePath } from "../../user-paths";
+import { rewriteServicePortDefaultsForDesktopConfigUpgrade } from "../../service-port-defaults";
+import { getDataRoot, getDesktopSsoAccessTokenFilePath } from "../../user-paths";
+import {
+  validateBundledEnvForDesktopVersionUpgrade,
+  validateEnvZipForDesktopManualImport
+} from "../../env-bootstrap";
+import { applyDesktopInitVersionUpgrade } from "../../desktop-init-bootstrap";
 import {
   completeDesktopServiceConfigUpgrade,
   DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,
@@ -489,7 +496,11 @@ async function buildDesktopManagedDeployCommand(
       containerHubBaseUrl,
       publicKeySourceFile
     );
-    return appendDesktopConfigResetDeployArgs(desktopCommand, desktopConfigReset);
+    return appendAgentPlatformRuntimeResourceDeployArgs(
+      appendDesktopConfigResetDeployArgs(desktopCommand, desktopConfigReset),
+      service,
+      desktopConfigReset
+    );
   }
   if (service.id === "agent-container-hub") {
     return appendDesktopConfigResetDeployArgs(
@@ -519,7 +530,7 @@ function appendDesktopConfigResetDeployArgs(
   command: string[],
   context: DesktopServiceConfigResetContext | undefined
 ) {
-  if (!context) {
+  if (!context || context.desktopConfigReset === false) {
     return command;
   }
   return [
@@ -528,6 +539,35 @@ function appendDesktopConfigResetDeployArgs(
     "--desktop-config-backup-dir", context.backupDir,
     "--desktop-version-from", context.fromVersion,
     "--desktop-version-to", context.toVersion
+  ];
+}
+
+function appendAgentPlatformRuntimeResourceDeployArgs(
+  command: string[],
+  service: ServiceDefinition,
+  context: DesktopServiceConfigResetContext | undefined
+) {
+  if (!context?.runtimeResourceSource) {
+    return command;
+  }
+  if (service.desktop.runtimeResources !== "v1") {
+    throw new Error(
+      "agent-platform bundle does not declare desktop.runtimeResources=v1; install a current Platform bundle before Desktop env upgrade."
+    );
+  }
+  return [
+    ...command,
+    ...(context.desktopConfigReset === false
+      ? [
+          "--desktop-version-from", context.fromVersion,
+          "--desktop-version-to", context.toVersion
+        ]
+      : []),
+    "--runtime-resource-source", context.runtimeResourceSource,
+    ...(context.runtimeResourcePreviousSource
+      ? ["--runtime-resource-previous-source", context.runtimeResourcePreviousSource]
+      : []),
+    "--runtime-resource-mode", context.runtimeResourceMode ?? "version-change"
   ];
 }
 
@@ -3176,6 +3216,27 @@ async function runDesktopServiceConfigUpgradePreparation(
     onProgress: (serviceId, message) => {
       options.onProgress?.(serviceId, "initializing", message);
     },
+    prepareDesktopConfiguration: async (context) => {
+      const validated = await validateBundledEnvForDesktopVersionUpgrade(app, process.platform, {
+        expectedDesktopVersion: context.toVersion
+      });
+      if (context.apply) {
+        applyDesktopInitVersionUpgrade(
+          app,
+          validated.desktopInit,
+          context.backupDir,
+          process.platform
+        );
+      }
+      return {
+        sourceZipPath: validated.sourceZipPath,
+        ...(validated.previousSourceZipPath
+          ? { previousSourceZipPath: validated.previousSourceZipPath }
+          : {}),
+        sha256: validated.sha256,
+        size: validated.size
+      };
+    },
     stopService: (serviceId) => stopServiceForDesktopConfigUpgrade(app, serviceId),
     installCurrentService: async (serviceId) => {
       await installBuiltinService(app, serviceId, {
@@ -3193,6 +3254,74 @@ async function runDesktopServiceConfigUpgradePreparation(
       }
     }
   });
+}
+
+export async function importEnvZipIntoExistingRuntime(
+  app: App,
+  zipPath: string,
+  desktopVersion: string,
+  platform: NodeJS.Platform = process.platform
+) {
+  const validated = await validateEnvZipForDesktopManualImport(
+    app,
+    zipPath,
+    desktopVersion,
+    platform
+  );
+  const backupDir = path.join(
+    getDataRoot(app, platform),
+    "config",
+    "service-backups",
+    "manual-env-import",
+    String(Date.now()),
+    "desktop"
+  );
+  applyDesktopInitVersionUpgrade(app, validated.desktopInit, backupDir, platform);
+  const currentDesktopDefaultPorts = Object.fromEntries(
+    DESKTOP_SERVICE_CONFIG_UPGRADE_IDS.map((serviceId) => [
+      serviceId,
+      getService(serviceId).web.defaultPort
+    ])
+  );
+  const ports = rewriteServicePortDefaultsForDesktopConfigUpgrade(
+    app,
+    currentDesktopDefaultPorts,
+    platform
+  );
+  rewriteServiceLifecycleArgsForDesktopConfigUpgrade(
+    app,
+    ports.services["agent-platform"].defaultPort,
+    platform
+  );
+  await stopServiceForDesktopConfigUpgrade(app, "agent-platform");
+  await installBuiltinService(app, "agent-platform", {
+    source: "manual-env-import",
+    skipInitialize: true
+  });
+  const result = await initializeServiceInternal(app, "agent-platform", {
+    skipInstallRefresh: true,
+    desktopConfigReset: {
+      desktopConfigReset: false,
+      backupDir: "",
+      fromVersion: desktopVersion,
+      toVersion: desktopVersion,
+      runtimeResourceSource: validated.sourceZipPath,
+      ...(validated.previousSourceZipPath
+        ? { runtimeResourcePreviousSource: validated.previousSourceZipPath }
+        : {}),
+      runtimeResourceMode: "manual-import"
+    }
+  });
+  if (!result.ok) {
+    throw new Error(result.message);
+  }
+  return {
+    copiedFiles: 0,
+    skippedFiles: 0,
+    platformResourcesMigrated: true,
+    sourceZipPath: validated.sourceZipPath,
+    sha256: validated.sha256
+  };
 }
 
 export async function runStartupPreparation(
@@ -3365,6 +3494,7 @@ export const __testInternals = {
   appendConfiguredServiceLifecycleArgs,
   appendDesktopManagedLayoutFlags,
   appendAgentPlatformDesktopDeployArgs,
+  appendAgentPlatformRuntimeResourceDeployArgs,
   appendDesktopConfigResetDeployArgs,
   resolveAgentWebclientHostStartOverrides,
   buildDesktopManagedDeployCommand,

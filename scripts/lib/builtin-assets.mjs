@@ -31,6 +31,12 @@ const DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS = [
   "--desktop-version-from",
   "--desktop-version-to"
 ];
+const AGENT_PLATFORM_RUNTIME_RESOURCE_PROTOCOL_MARKERS = [
+  "--runtime-resource-source",
+  "--runtime-resource-previous-source",
+  "--runtime-resource-mode",
+  "runtime-resource-sync"
+];
 const LIFECYCLE_DEPLOY_PROTOCOLS = {
   "identity-center": {
     required: ["--output-dir", ...DESKTOP_CONFIG_RESET_PROTOCOL_MARKERS],
@@ -752,6 +758,9 @@ function serviceFromBundleManifest(manifest, assetPath) {
       os: manifest.platform?.os ?? "",
       arch: manifest.platform?.arch ?? ""
     },
+    desktop: {
+      runtimeResources: manifest.desktop?.runtimeResources
+    },
     requiredBundleEntries
   };
 }
@@ -1031,6 +1040,24 @@ function validateAgentPlatformDeployProtocolText(service, sourceLabel, relativeP
       );
     }
   }
+  for (const marker of AGENT_PLATFORM_RUNTIME_RESOURCE_PROTOCOL_MARKERS) {
+    if (!content.includes(marker)) {
+      throw new Error(
+        `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+          `Missing Platform runtime resource marker ${JSON.stringify(marker)} in ${relativePath}.\n` +
+          "Please rebuild the Desktop-ready agent-platform bundle with runtimeResources v1 support."
+      );
+    }
+  }
+}
+
+function validateAgentPlatformRuntimeResourceCapability(service, sourceLabel) {
+  if (service.desktop?.runtimeResources !== "v1") {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+        "manifest desktop.runtimeResources must be v1."
+    );
+  }
 }
 
 function validateAgentPlatformArchiveDeployProtocol(service, archivePath) {
@@ -1077,6 +1104,7 @@ function validateAgentPlatformSidecarContract(service, sourceLabel, containsPath
 }
 
 function validateAgentPlatformBundleArchive(service, archivePath, entries) {
+  validateAgentPlatformRuntimeResourceCapability(service, archivePath);
   validateAgentPlatformArchiveDeployProtocol(service, archivePath);
   validateAgentPlatformSidecarContract(
     service,
@@ -1373,6 +1401,7 @@ function validateAgentPlatformBundleDirectory(service, directoryPath) {
   if (service.id !== "agent-platform") {
     return;
   }
+  validateAgentPlatformRuntimeResourceCapability(service, directoryPath);
 
   for (const relativePath of ["scripts/program-common.sh", "scripts/program-common.ps1"]) {
     const filePath = path.join(directoryPath, ...relativePath.split("/"));

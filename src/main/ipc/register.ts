@@ -18,6 +18,7 @@ import {
   getServiceState,
   getResponsiveServiceState,
   initializeService,
+  importEnvZipIntoExistingRuntime,
   importServiceFile,
   installBuiltinService,
   listServices,
@@ -64,6 +65,7 @@ import {
   importEnvZipToRuntime,
   migrateOldRootToBackup,
   resetBundledRuntimeEnv,
+  runtimeEnvExists,
   shouldPromptEnvRootConflict
 } from "../env-bootstrap";
 import { getDataRoot } from "../user-paths";
@@ -247,6 +249,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     getServiceWebviewPreloadUrl: options.getServiceWebviewPreloadUrl,
     startupRestoreController: options.startupRestoreController,
     importEnvZipToRuntime,
+    importEnvZipIntoExistingRuntime,
+    runtimeEnvExists,
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged: options.notifyServicesChanged,

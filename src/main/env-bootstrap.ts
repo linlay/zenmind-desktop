@@ -1,5 +1,5 @@
 import fs from "node:fs";
-import { createHash, randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 import os from "node:os";
 import path from "node:path";
 import type { App } from "electron";
@@ -53,16 +53,13 @@ export type BundledEnvZipImportResult = EnvZipImportResult & {
   sourceZipPath: string;
 };
 
-export type BundledEnvResourceSyncResult = {
-  status: "not-bundled" | "current" | "synced";
-  targetRoot: string;
+export type ValidatedBundledEnvUpgradeInput = {
+  sourceZipPath: string;
+  previousSourceZipPath?: string;
   desktopVersion: string;
-  sourceZipPath?: string;
-  copiedUnits: number;
-  skippedUnits: number;
-  copiedFiles: number;
-  addedRegistryFiles: number;
-  overwrittenRegistryFiles: number;
+  sha256: string;
+  size: number;
+  desktopInit: Record<string, unknown>;
 };
 
 export type RuntimeEnvResetResult = BundledEnvZipImportResult & {
@@ -76,16 +73,8 @@ export type RuntimeEnvResetFailure = Error & {
 };
 
 const ENV_RUNTIME_DIRS = ["agents", "registries", "teams", "chats", "skills-center", "tools"] as const;
-const ENV_RESOURCE_SYNC_SCOPES = ["agents", "registries", "skills-center", "tools"] as const;
-const ENV_NON_OVERWRITE_RESOURCE_SCOPES = ["agents", "skills-center", "tools"] as const;
 const REMOVED_SKILLS_MARKET_DIR_NAME = "skills-market";
 const ENV_IMPORT_MARKER_RELATIVE_PATH = path.join(".desktop", "state", "desktop", "env-bootstrap.json");
-const ENV_RESOURCE_SYNC_MARKER_RELATIVE_PATH = path.join(
-  ".desktop",
-  "state",
-  "desktop",
-  "env-resource-sync.json"
-);
 const ENV_AGENT_DEFINITION_FILE_NAME = "agent.yml";
 const BUNDLED_ENV_RESOURCES_DIR_NAME = "env";
 const ENV_ZIP_FILE_NAME = "env.zip";
@@ -96,22 +85,6 @@ const ENV_INITIAL_MANIFEST_FILE_NAME = "manifest.json";
 const ENV_INITIAL_MANIFEST_RELATIVE_PATH = path.join(ENV_INITIAL_DATA_RELATIVE_DIR, ENV_INITIAL_MANIFEST_FILE_NAME);
 const VERSION_FILE_NAME = "VERSION";
 const ENV_ZIP_ROOT_DIR_NAME = "env";
-
-type EnvResourceSyncScope = typeof ENV_RESOURCE_SYNC_SCOPES[number];
-type EnvNonOverwriteResourceScope = typeof ENV_NON_OVERWRITE_RESOURCE_SCOPES[number];
-
-type EnvResourceSyncMarker = {
-  schemaVersion: 1;
-  desktopVersion: string;
-  completedAt: string;
-  mode: "full-import" | "incremental";
-  scopes: EnvResourceSyncScope[];
-  copiedUnits: number;
-  skippedUnits: number;
-  copiedFiles: number;
-  addedRegistryFiles: number;
-  overwrittenRegistryFiles: number;
-};
 
 type BundledEnvManifest = {
   bundled: boolean;
@@ -363,7 +336,7 @@ export async function importBundledEnvZipToRuntime(
     expectedDesktopVersion?: string;
   } = {}
 ): Promise<BundledEnvZipImportResult | null> {
-  const bundledPackage = resolveBundledEnvPackageForSync(app, platform, options.resourcesRoot);
+  const bundledPackage = resolveBundledEnvPackage(app, platform, options.resourcesRoot);
   if (!bundledPackage) {
     return null;
   }
@@ -379,13 +352,6 @@ export async function importBundledEnvZipToRuntime(
     desktopVersion,
     { source: "bundled" }
   );
-  writeEnvResourceSyncMarker(result.targetRoot, desktopVersion, "full-import", {
-    copiedUnits: 0,
-    skippedUnits: 0,
-    copiedFiles: result.copiedFiles,
-    addedRegistryFiles: 0,
-    overwrittenRegistryFiles: 0
-  }, platform);
   return {
     ...result,
     sourceZipPath: bundledPackage.zipPath
@@ -427,9 +393,9 @@ export async function resetBundledRuntimeEnv(
   let bundledPackage: BundledEnvPackage | null = null;
   try {
     if (platform === "darwin") {
-      bundledPackage = resolveBundledEnvPackageForSync(app, "darwin", options.resourcesRoot);
+      bundledPackage = resolveBundledEnvPackage(app, "darwin", options.resourcesRoot);
     } else {
-      bundledPackage = resolveBundledEnvPackageForSync(app, "win32", options.resourcesRoot);
+      bundledPackage = resolveBundledEnvPackage(app, "win32", options.resourcesRoot);
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -464,13 +430,6 @@ export async function resetBundledRuntimeEnv(
       desktopVersion,
       { source: "reset" }
     );
-    writeEnvResourceSyncMarker(importResult.targetRoot, desktopVersion, "full-import", {
-      copiedUnits: 0,
-      skippedUnits: 0,
-      copiedFiles: importResult.copiedFiles,
-      addedRegistryFiles: 0,
-      overwrittenRegistryFiles: 0
-    }, platform);
     return {
       ...importResult,
       backupPath,
@@ -719,207 +678,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function lstatIfExists(filePath: string) {
-  try {
-    return fs.lstatSync(filePath);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-      return null;
-    }
-    throw error;
-  }
-}
-
-function resourceSyncTempPath(targetPath: string) {
-  return path.join(
-    path.dirname(targetPath),
-    `.${path.basename(targetPath)}.${process.pid}.${randomUUID()}.env-resource-sync.tmp`
-  );
-}
-
-function assertPathIsRealDirectory(targetPath: string) {
-  const stat = lstatIfExists(targetPath);
-  if (!stat) {
-    return false;
-  }
-  if (stat.isSymbolicLink()) {
-    throw new Error(t("envBootstrap.resourceSyncSymlink", { path: targetPath }));
-  }
-  if (!stat.isDirectory()) {
-    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: targetPath }));
-  }
-  return true;
-}
-
-function ensureRealDirectoryChain(targetRoot: string, directoryPath: string) {
-  const resolvedRoot = path.resolve(targetRoot);
-  const resolvedDirectory = path.resolve(directoryPath);
-  const relativeDirectory = path.relative(resolvedRoot, resolvedDirectory);
-  if (
-    relativeDirectory === ".." ||
-    relativeDirectory.startsWith(`..${path.sep}`) ||
-    path.isAbsolute(relativeDirectory)
-  ) {
-    throw new Error(t("envBootstrap.outsidePath", { path: directoryPath }));
-  }
-
-  if (!assertPathIsRealDirectory(resolvedRoot)) {
-    fs.mkdirSync(resolvedRoot, { recursive: true });
-    assertPathIsRealDirectory(resolvedRoot);
-  }
-
-  let currentPath = resolvedRoot;
-  for (const segment of relativeDirectory.split(path.sep).filter(Boolean)) {
-    currentPath = path.join(currentPath, segment);
-    if (assertPathIsRealDirectory(currentPath)) {
-      continue;
-    }
-    fs.mkdirSync(currentPath);
-    assertPathIsRealDirectory(currentPath);
-  }
-}
-
-function assertArchiveEntryIsNotSymlink(entry: EnvZipEntry) {
-  const rawPermissions = entry.entry.unixPermissions;
-  const permissions = typeof rawPermissions === "string"
-    ? Number.parseInt(rawPermissions, 8)
-    : rawPermissions;
-  if (typeof permissions === "number" && (permissions & 0o170000) === 0o120000) {
-    throw new Error(t("envBootstrap.resourceSyncSymlink", { path: entry.relativePath }));
-  }
-}
-
-function chmodNewShellScript(filePath: string, platform: NodeJS.Platform) {
-  if (
-    (platform === "darwin" || platform === "linux") &&
-    path.extname(filePath).toLowerCase() === ".sh"
-  ) {
-    fs.chmodSync(filePath, 0o755);
-  }
-}
-
-function chmodNewShellScriptForTarget(
-  filePath: string,
-  targetPath: string,
-  platform: NodeJS.Platform
-) {
-  if (
-    (platform === "darwin" || platform === "linux") &&
-    path.extname(targetPath).toLowerCase() === ".sh"
-  ) {
-    fs.chmodSync(filePath, 0o755);
-  }
-}
-
-function replaceFileFromTemp(tempPath: string, targetPath: string, platform: NodeJS.Platform) {
-  if (platform === "win32") {
-    // libuv maps rename to the Windows replace-existing operation. An open or
-    // protected destination fails instead of falling back to a non-atomic copy.
-    fs.renameSync(tempPath, targetPath);
-    return;
-  }
-  fs.renameSync(tempPath, targetPath);
-}
-
-function writeJsonAtomic(
-  targetRoot: string,
-  targetPath: string,
-  value: unknown,
-  platform: NodeJS.Platform
-) {
-  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
-  const existing = lstatIfExists(targetPath);
-  if (existing && (existing.isSymbolicLink() || !existing.isFile())) {
-    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: targetPath }));
-  }
-  const tempPath = resourceSyncTempPath(targetPath);
-  try {
-    fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, {
-      encoding: "utf8",
-      flag: "wx",
-      mode: 0o600
-    });
-    if (platform !== "win32") {
-      fs.chmodSync(tempPath, 0o600);
-    }
-    replaceFileFromTemp(tempPath, targetPath, platform);
-  } catch (error) {
-    try {
-      fs.rmSync(tempPath, { force: true });
-    } catch {
-      // Preserve the original write or replace error.
-    }
-    throw error;
-  }
-}
-
-function isValidResourceSyncMarker(value: unknown): value is EnvResourceSyncMarker {
-  if (!isRecord(value)) {
-    return false;
-  }
-  const scopes = value.scopes;
-  const counts = [
-    value.copiedUnits,
-    value.skippedUnits,
-    value.copiedFiles,
-    value.addedRegistryFiles,
-    value.overwrittenRegistryFiles
-  ];
-  return value.schemaVersion === 1 &&
-    typeof value.desktopVersion === "string" &&
-    Boolean(normalizeVersion(value.desktopVersion)) &&
-    typeof value.completedAt === "string" &&
-    (value.mode === "full-import" || value.mode === "incremental") &&
-    Array.isArray(scopes) &&
-    scopes.length === ENV_RESOURCE_SYNC_SCOPES.length &&
-    scopes.every((scope, index) => scope === ENV_RESOURCE_SYNC_SCOPES[index]) &&
-    counts.every((count) => typeof count === "number" && Number.isSafeInteger(count) && count >= 0);
-}
-
-function readEnvResourceSyncMarker(targetRoot: string) {
-  const markerPath = path.join(targetRoot, ENV_RESOURCE_SYNC_MARKER_RELATIVE_PATH);
-  try {
-    const parsed = JSON.parse(fs.readFileSync(markerPath, "utf8")) as unknown;
-    return isValidResourceSyncMarker(parsed) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function writeEnvResourceSyncMarker(
-  targetRoot: string,
-  desktopVersion: string,
-  mode: EnvResourceSyncMarker["mode"],
-  result: Pick<
-    BundledEnvResourceSyncResult,
-    "copiedUnits" |
-    "skippedUnits" |
-    "copiedFiles" |
-    "addedRegistryFiles" |
-    "overwrittenRegistryFiles"
-  >,
-  platform: NodeJS.Platform
-) {
-  const marker: EnvResourceSyncMarker = {
-    schemaVersion: 1,
-    desktopVersion: normalizeVersion(desktopVersion),
-    completedAt: new Date().toISOString(),
-    mode,
-    scopes: [...ENV_RESOURCE_SYNC_SCOPES],
-    copiedUnits: result.copiedUnits,
-    skippedUnits: result.skippedUnits,
-    copiedFiles: result.copiedFiles,
-    addedRegistryFiles: result.addedRegistryFiles,
-    overwrittenRegistryFiles: result.overwrittenRegistryFiles
-  };
-  writeJsonAtomic(
-    targetRoot,
-    path.join(targetRoot, ENV_RESOURCE_SYNC_MARKER_RELATIVE_PATH),
-    marker,
-    platform
-  );
-}
-
 function readBundledEnvManifest(manifestPath: string): BundledEnvManifest | null {
   if (!fileExists(manifestPath)) {
     return null;
@@ -965,7 +723,7 @@ function readBundledEnvManifest(manifestPath: string): BundledEnvManifest | null
   }
 }
 
-function resolveBundledEnvPackageForSync(
+function resolveBundledEnvPackage(
   app: AppPackageReader,
   platform: NodeJS.Platform,
   resourcesRootOverride?: string
@@ -1022,276 +780,155 @@ function validateBundledEnvPackageManifest(
   }
 }
 
-type NonOverwriteResourceUnit = {
-  scope: EnvNonOverwriteResourceScope;
-  key: string;
-  entries: EnvZipEntry[];
-};
-
-function buildNonOverwriteResourceUnits(entries: EnvZipEntry[]) {
-  const unitMap = new Map<string, NonOverwriteResourceUnit>();
-  for (const entry of entries) {
-    const segments = entry.relativePath.split("/").filter(Boolean);
-    const scope = segments[0];
-    if (
-      !ENV_NON_OVERWRITE_RESOURCE_SCOPES.includes(scope as EnvNonOverwriteResourceScope) ||
-      segments.length < 2
-    ) {
-      continue;
-    }
-    assertArchiveEntryIsNotSymlink(entry);
-    const typedScope = scope as EnvNonOverwriteResourceScope;
-    const key = segments[1];
-    const mapKey = `${typedScope}/${key}`;
-    const unit = unitMap.get(mapKey) ?? { scope: typedScope, key, entries: [] };
-    unit.entries.push(entry);
-    unitMap.set(mapKey, unit);
+function assertStrictArchiveEntry(entry: JSZip.JSZipObject) {
+  const originalName = (entry as JSZip.JSZipObject & { unsafeOriginalName?: string }).unsafeOriginalName ?? entry.name;
+  if (originalName.includes("\\") || originalName.includes("\0")) {
+    throw new Error(t("envBootstrap.unsafePath", { path: originalName }));
   }
-  return [...unitMap.values()].sort((left, right) => {
-    const scopeOrder = ENV_NON_OVERWRITE_RESOURCE_SCOPES.indexOf(left.scope) -
-      ENV_NON_OVERWRITE_RESOURCE_SCOPES.indexOf(right.scope);
-    return scopeOrder || left.key.localeCompare(right.key);
-  });
+  const segments = entrySegments(originalName);
+  if (segments.length === 0 || segments[0] !== ENV_ZIP_ROOT_DIR_NAME) {
+    throw new Error(t("envBootstrap.rootDirRequired", { path: originalName }));
+  }
+  normalizeEnvZipEntryRelativePath(originalName);
+
+  const rawPermissions = entry.unixPermissions;
+  const permissions = typeof rawPermissions === "string"
+    ? Number.parseInt(rawPermissions, 8)
+    : rawPermissions;
+  if (typeof permissions !== "number") {
+    return;
+  }
+  const fileType = permissions & 0o170000;
+  if (fileType !== 0 && fileType !== 0o040000 && fileType !== 0o100000) {
+    throw new Error(t("envBootstrap.resourceSyncSymlink", { path: originalName }));
+  }
 }
 
-function classifyNonOverwriteResourceUnit(unit: NonOverwriteResourceUnit) {
-  const rootEntry = unit.entries.find((entry) => entry.relativePath === `${unit.scope}/${unit.key}`);
-  const hasNestedEntries = unit.entries.some(
-    (entry) => entry.relativePath.startsWith(`${unit.scope}/${unit.key}/`)
-  );
-  if (rootEntry && !rootEntry.directory && hasNestedEntries) {
-    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: rootEntry.relativePath }));
-  }
-  return rootEntry && !rootEntry.directory && !hasNestedEntries ? "file" : "directory";
-}
-
-async function copyNewFileUnit(
-  entry: EnvZipEntry,
-  targetRoot: string,
-  targetPath: string,
-  platform: NodeJS.Platform
-) {
-  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
-  if (lstatIfExists(targetPath)) {
-    return false;
-  }
-  const tempPath = resourceSyncTempPath(targetPath);
+function resolvePreviousRuntimeResourceSource(app: AppPathReader, platform: NodeJS.Platform) {
+  const previousSource = path.join(resolveRuntimeRoot(app, platform), ENV_INITIAL_PACKAGE_RELATIVE_PATH);
   try {
-    fs.writeFileSync(tempPath, await entry.entry.async("nodebuffer"), { flag: "wx" });
-    chmodNewShellScriptForTarget(tempPath, targetPath, platform);
-    try {
-      fs.copyFileSync(tempPath, targetPath, fs.constants.COPYFILE_EXCL);
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "EEXIST") {
-        return false;
-      }
-      throw error;
-    }
-    chmodNewShellScript(targetPath, platform);
-    return true;
-  } finally {
-    try {
-      fs.rmSync(tempPath, { force: true });
-    } catch {
-      // The authoritative target has already been published or the original error is more useful.
-    }
-  }
-}
-
-async function copyNewDirectoryUnit(
-  unit: NonOverwriteResourceUnit,
-  targetRoot: string,
-  targetPath: string,
-  platform: NodeJS.Platform
-) {
-  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
-  if (lstatIfExists(targetPath)) {
-    return { copied: false, copiedFiles: 0 };
-  }
-
-  const stagingPath = resourceSyncTempPath(targetPath);
-  let copiedFiles = 0;
-  try {
-    fs.mkdirSync(stagingPath);
-    for (const entry of unit.entries) {
-      const segments = entry.relativePath.split("/").filter(Boolean);
-      const nestedRelativePath = segments.slice(2).join("/");
-      if (!nestedRelativePath) {
-        continue;
-      }
-      const stagedTargetPath = resolveSafeTargetPath(stagingPath, nestedRelativePath);
-      if (entry.directory) {
-        fs.mkdirSync(stagedTargetPath, { recursive: true });
-        continue;
-      }
-      fs.mkdirSync(path.dirname(stagedTargetPath), { recursive: true });
-      fs.writeFileSync(stagedTargetPath, await entry.entry.async("nodebuffer"), { flag: "wx" });
-      chmodNewShellScript(stagedTargetPath, platform);
-      copiedFiles += 1;
-    }
-    if (lstatIfExists(targetPath)) {
-      return { copied: false, copiedFiles: 0 };
-    }
-    fs.renameSync(stagingPath, targetPath);
-    return { copied: true, copiedFiles };
-  } finally {
-    try {
-      fs.rmSync(stagingPath, { recursive: true, force: true });
-    } catch {
-      // A successful rename moved the staging path; failed staging cleanup is best effort.
-    }
-  }
-}
-
-async function copyNonOverwriteResourceUnit(
-  unit: NonOverwriteResourceUnit,
-  targetRoot: string,
-  platform: NodeJS.Platform
-) {
-  const targetPath = resolveSafeTargetPath(targetRoot, `${unit.scope}/${unit.key}`);
-  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
-  if (lstatIfExists(targetPath)) {
-    return { copied: false, copiedFiles: 0 };
-  }
-  if (classifyNonOverwriteResourceUnit(unit) === "file") {
-    const entry = unit.entries[0];
-    const copied = await copyNewFileUnit(entry, targetRoot, targetPath, platform);
-    return { copied, copiedFiles: copied ? 1 : 0 };
-  }
-  return copyNewDirectoryUnit(unit, targetRoot, targetPath, platform);
-}
-
-async function writeRegistryOverlayFile(
-  entry: EnvZipEntry,
-  targetRoot: string,
-  platform: NodeJS.Platform
-) {
-  assertArchiveEntryIsNotSymlink(entry);
-  const targetPath = resolveSafeTargetPath(targetRoot, entry.relativePath);
-  ensureRealDirectoryChain(targetRoot, path.dirname(targetPath));
-  const existing = lstatIfExists(targetPath);
-  if (existing && (existing.isSymbolicLink() || !existing.isFile())) {
-    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: targetPath }));
-  }
-
-  const tempPath = resourceSyncTempPath(targetPath);
-  try {
-    const existingMode = existing && platform !== "win32" ? existing.mode & 0o777 : undefined;
-    fs.writeFileSync(tempPath, await entry.entry.async("nodebuffer"), {
-      flag: "wx",
-      ...(existingMode === undefined ? {} : { mode: existingMode })
-    });
-    if (existingMode !== undefined) {
-      fs.chmodSync(tempPath, existingMode);
-    }
-    chmodNewShellScriptForTarget(tempPath, targetPath, platform);
-    replaceFileFromTemp(tempPath, targetPath, platform);
-    chmodNewShellScript(targetPath, platform);
+    const stat = fs.lstatSync(previousSource);
+    return !stat.isSymbolicLink() && stat.isFile() ? previousSource : undefined;
   } catch (error) {
-    try {
-      fs.rmSync(tempPath, { force: true });
-    } catch {
-      // Preserve the original overlay failure.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") {
+      return undefined;
     }
     throw error;
   }
-  return existing ? "overwritten" : "added";
 }
 
-export async function syncBundledEnvResourcesForVersion(
+export async function validateBundledEnvForDesktopVersionUpgrade(
   app: AppPathReader & AppPackageReader,
   platform: NodeJS.Platform = process.platform,
   options: {
     resourcesRoot?: string;
     expectedDesktopVersion?: string;
   } = {}
-): Promise<BundledEnvResourceSyncResult> {
-  const targetRoot = resolveRuntimeRoot(app, platform);
+): Promise<ValidatedBundledEnvUpgradeInput> {
   const desktopVersion = normalizeVersion(
     options.expectedDesktopVersion ?? resolveDesktopVersion(app as AppVersionReader)
   );
   if (!desktopVersion) {
     throw new Error(t("envBootstrap.desktopVersionEmpty"));
   }
-  assertNoRemovedSkillsMarketRuntimeDir(targetRoot);
-
-  const currentMarker = readEnvResourceSyncMarker(targetRoot);
-  if (currentMarker && normalizeVersion(currentMarker.desktopVersion) === desktopVersion) {
-    return {
-      status: "current",
-      targetRoot,
-      desktopVersion,
-      copiedUnits: currentMarker.copiedUnits,
-      skippedUnits: currentMarker.skippedUnits,
-      copiedFiles: currentMarker.copiedFiles,
-      addedRegistryFiles: currentMarker.addedRegistryFiles,
-      overwrittenRegistryFiles: currentMarker.overwrittenRegistryFiles
-    };
-  }
-
-  const bundledPackage = resolveBundledEnvPackageForSync(app, platform, options.resourcesRoot);
+  const bundledPackage = resolveBundledEnvPackage(app, platform, options.resourcesRoot);
   if (!bundledPackage) {
-    return {
-      status: "not-bundled",
-      targetRoot,
-      desktopVersion,
-      copiedUnits: 0,
-      skippedUnits: 0,
-      copiedFiles: 0,
-      addedRegistryFiles: 0,
-      overwrittenRegistryFiles: 0
-    };
+    throw new Error(t("envBootstrap.bundledEnvZipMissing"));
+  }
+  const sourceStat = fs.lstatSync(bundledPackage.zipPath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: bundledPackage.zipPath }));
+  }
+  if (
+    !bundledPackage.manifest ||
+    typeof bundledPackage.manifest.version !== "string" ||
+    typeof bundledPackage.manifest.size !== "number" ||
+    typeof bundledPackage.manifest.sha256 !== "string"
+  ) {
+    throw new Error(`Bundled env manifest must declare version, size, and sha256: ${bundledPackage.zipPath}`);
   }
 
   const zipBuffer = await fs.promises.readFile(bundledPackage.zipPath);
   validateBundledEnvPackageManifest(bundledPackage, zipBuffer, desktopVersion);
   const zip = await JSZip.loadAsync(zipBuffer);
+  for (const entry of Object.values(zip.files)) {
+    assertStrictArchiveEntry(entry);
+  }
   const entries = normalizeZipEntries(zip);
   await validateEnvZipVersion(entries, desktopVersion);
-
-  let copiedUnits = 0;
-  let skippedUnits = 0;
-  let copiedFiles = 0;
-  let addedRegistryFiles = 0;
-  let overwrittenRegistryFiles = 0;
-
-  ensureRealDirectoryChain(targetRoot, targetRoot);
-  for (const unit of buildNonOverwriteResourceUnits(entries)) {
-    const result = await copyNonOverwriteResourceUnit(unit, targetRoot, platform);
-    if (result.copied) {
-      copiedUnits += 1;
-      copiedFiles += result.copiedFiles;
-    } else {
-      skippedUnits += 1;
-    }
+  const desktopInitEntry = entries.find(
+    (entry) => !entry.directory && entry.relativePath === "desktop-init.json"
+  );
+  if (!desktopInitEntry) {
+    throw new Error("Bundled env.zip requires env/desktop-init.json for a Desktop version change.");
+  }
+  let desktopInit: unknown;
+  try {
+    desktopInit = JSON.parse(await desktopInitEntry.entry.async("string")) as unknown;
+  } catch (error) {
+    throw new Error(`Bundled desktop-init.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(desktopInit)) {
+    throw new Error("Bundled desktop-init.json must be a JSON object.");
   }
 
-  const registryEntries = entries
-    .filter((entry) => !entry.directory && entry.relativePath.startsWith("registries/"))
-    .sort((left, right) => left.relativePath.localeCompare(right.relativePath));
-  for (const entry of registryEntries) {
-    const action = await writeRegistryOverlayFile(entry, targetRoot, platform);
-    copiedFiles += 1;
-    if (action === "added") {
-      addedRegistryFiles += 1;
-    } else {
-      overwrittenRegistryFiles += 1;
-    }
-  }
-
-  const result: BundledEnvResourceSyncResult = {
-    status: "synced",
-    targetRoot,
-    desktopVersion,
+  const previousSourceZipPath = resolvePreviousRuntimeResourceSource(app, platform);
+  return {
     sourceZipPath: bundledPackage.zipPath,
-    copiedUnits,
-    skippedUnits,
-    copiedFiles,
-    addedRegistryFiles,
-    overwrittenRegistryFiles
+    ...(previousSourceZipPath ? { previousSourceZipPath } : {}),
+    desktopVersion,
+    sha256: sha256Hex(zipBuffer),
+    size: zipBuffer.byteLength,
+    desktopInit
   };
-  writeEnvResourceSyncMarker(targetRoot, desktopVersion, "incremental", result, platform);
-  return result;
+}
+
+export async function validateEnvZipForDesktopManualImport(
+  app: AppPathReader,
+  zipPath: string,
+  expectedDesktopVersion: string,
+  platform: NodeJS.Platform = process.platform
+): Promise<ValidatedBundledEnvUpgradeInput> {
+  const desktopVersion = normalizeVersion(expectedDesktopVersion);
+  if (!desktopVersion) {
+    throw new Error(t("envBootstrap.desktopVersionEmpty"));
+  }
+  const sourcePath = path.resolve(zipPath);
+  const sourceStat = fs.lstatSync(sourcePath);
+  if (sourceStat.isSymbolicLink() || !sourceStat.isFile()) {
+    throw new Error(t("envBootstrap.resourceSyncTypeConflict", { path: sourcePath }));
+  }
+  const zipBuffer = await fs.promises.readFile(sourcePath);
+  const zip = await JSZip.loadAsync(zipBuffer);
+  for (const entry of Object.values(zip.files)) {
+    assertStrictArchiveEntry(entry);
+  }
+  const entries = normalizeZipEntries(zip);
+  await validateEnvZipVersion(entries, desktopVersion);
+  const desktopInitEntry = entries.find(
+    (entry) => !entry.directory && entry.relativePath === "desktop-init.json"
+  );
+  if (!desktopInitEntry) {
+    throw new Error("env.zip requires env/desktop-init.json for manual import into an existing runtime.");
+  }
+  let desktopInit: unknown;
+  try {
+    desktopInit = JSON.parse(await desktopInitEntry.entry.async("string")) as unknown;
+  } catch (error) {
+    throw new Error(`desktop-init.json is invalid: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (!isRecord(desktopInit)) {
+    throw new Error("desktop-init.json must be a JSON object.");
+  }
+  const previousSourceZipPath = resolvePreviousRuntimeResourceSource(app, platform);
+  return {
+    sourceZipPath: sourcePath,
+    ...(previousSourceZipPath ? { previousSourceZipPath } : {}),
+    desktopVersion,
+    sha256: sha256Hex(zipBuffer),
+    size: zipBuffer.byteLength,
+    desktopInit
+  };
 }
 
 function writeEnvImportMarker(
