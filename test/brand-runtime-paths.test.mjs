@@ -258,6 +258,7 @@ function inspectCanvasPixels(canvas) {
   );
   let opaquePixels = 0;
   let opaqueNeutralGrayPixels = 0;
+  let chromaticPixels = 0;
   let opaqueMinX = canvas.width;
   let opaqueMinY = canvas.height;
   let opaqueMaxX = -1;
@@ -300,6 +301,9 @@ function inspectCanvasPixels(canvas) {
     ) {
       opaqueNeutralGrayPixels += 1;
     }
+    if (alpha > 0 && Math.max(red, green, blue) - Math.min(red, green, blue) >= 12) {
+      chromaticPixels += 1;
+    }
   }
 
   return {
@@ -307,6 +311,7 @@ function inspectCanvasPixels(canvas) {
     height: canvas.height,
     opaquePixels,
     opaqueNeutralGrayPixels,
+    chromaticPixels,
     opaqueBounds: opaqueMaxX === -1
       ? null
       : {
@@ -459,6 +464,22 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
   assert.doesNotMatch(generator, /path\.join\(publicDir,\s*"brand-icon\.png"\)/u);
   assert.doesNotMatch(generator, /path\.join\(publicDir,\s*"brand-mark\.png"\)/u);
   assert.doesNotMatch(generator, /path\.join\(publicDir,\s*"tray-icon\.png"\)/u);
+});
+
+test("ZenMind tray artwork contains brand color for Windows", async () => {
+  const brand = loadBrandConfig(projectRoot, "zenmind");
+  const image = await loadImage(Buffer.from(fs.readFileSync(path.join(projectRoot, brand.icons.trayIconSvg), "utf8")));
+  const canvas = createCanvas(256, 256);
+  const context = canvas.getContext("2d");
+  context.clearRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(image, 0, 0, canvas.width, canvas.height);
+  const stats = inspectCanvasPixels(canvas);
+
+  assert(stats.opaquePixels > 0, "ZenMind tray artwork should remain visible");
+  assert(
+    stats.chromaticPixels >= stats.opaquePixels * 0.5,
+    `ZenMind tray artwork should use brand color instead of monochrome white: ${stats.chromaticPixels}/${stats.opaquePixels}`
+  );
 });
 
 test("brand app icon generation rounds the white backdrop for every brand", async () => {
