@@ -3344,6 +3344,8 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
 test("Kanban cards match the Website hierarchy and date-only contract", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
+  const stageColorSource = readSourceFile("src", "renderer", "pages", "kanban", "stageColor.ts");
+  const { resolveWorkflowStageColor } = loadTypeScriptCommonJs("src", "renderer", "pages", "kanban", "stageColor.ts");
   const issueTypeIcon = readSourceFile("src", "renderer", "pages", "kanban", "IssueTypeIcon.tsx");
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
@@ -3357,9 +3359,14 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(contracts, /interface KanbanWorkflowStage[\s\S]{0,220}color\?: string/);
   assert.doesNotMatch(contracts, /dueAt\?: EpochMilliseconds/);
 
-  assert.match(kanbanPage, /color: stage\?\.color\?\.trim\(\) \|\|/);
+  assert.match(kanbanPage, /color: resolveWorkflowStageColor\(resolvedStage, stageIndex\)/);
+  assert.match(stageColorSource, /const configured = stage\?\.color\?\.trim\(\)/);
+  assert.equal(resolveWorkflowStageColor({ key: "task_development", name: "开发", color: "" }, 0), "#6684a3");
+  assert.equal(resolveWorkflowStageColor({ key: "task_testing", name: "测试", color: "" }, 1), "#708f78");
+  assert.equal(resolveWorkflowStageColor({ key: "custom", name: "Custom", color: "#123abc" }, 0), "#123abc");
   assert.match(kanbanPage, /className="issue-card-workflow-progress"/);
   assert.match(kanbanPage, /backgroundColor: progress\.color/);
+  assert.match(kanbanPage, /className=\{`issue-card-status is-\$\{cardStatus\.tone\}`\}[\s\S]{0,100}style=\{\{ color: progress\.color \}\}/);
   assert.match(kanbanStyles, /\.issue-card-workflow-progress\s*\{[\s\S]{0,220}height:\s*3px/);
   assert.match(kanbanStyles, /\.issue-card-workflow-progress > span\s*\{[\s\S]{0,180}transition:\s*width/);
 
@@ -3406,6 +3413,10 @@ test("Kanban cards match the Website hierarchy and date-only contract", () => {
   assert.match(kanbanStyles, /@media \(prefers-reduced-motion: reduce\)[\s\S]*\.issue-card-due-risk \{ animation: none; \}/);
 
   assert.match(kanbanPage, /className="issue-card-footer-row is-summary"[\s\S]{0,220}\{people\}[\s\S]{0,220}issue-card-footer-signal/);
+  assert.match(kanbanPage, /is-cloud-action\$\{cloudAction === "claim" \? " is-claim-action" : ""\}/);
+  assert.match(kanbanPage, /if \(!assigneeId\) return issue\.status === "todo" && canClaim \? "claim" : null/);
+  assert.match(kanbanStyles, /\.issue-card-footer-row\.is-cloud-action\.is-claim-action\s*\{[\s\S]{0,360}position:\s*absolute;[\s\S]{0,360}opacity:\s*0;[\s\S]{0,220}visibility:\s*hidden;/);
+  assert.match(kanbanStyles, /\.issue-card:hover \.issue-card-footer-row\.is-claim-action,[\s\S]{0,180}\.issue-card:focus-within \.issue-card-footer-row\.is-claim-action/);
   assert.match(kanbanStyles, /\.issue-card-footer-row\.is-summary \.issue-card-footer-signal\s*\{[\s\S]{0,160}margin-left:\s*auto;/);
   assert.match(kanbanStyles, /\.issue-card-footer-row\.is-summary \.issue-card-signal\s*\{[\s\S]{0,160}justify-content:\s*flex-end;/);
   assert.doesNotMatch(kanbanStyles, /\.issue-card-footer-signal\s*\{[^}]*(?:^|[;\s])width:\s*100%/m);

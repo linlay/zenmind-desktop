@@ -77,6 +77,7 @@ import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
 import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
 import { resolveLocalKanbanRunChatId } from "./kanbanAssistantRun";
+import { resolveWorkflowStageColor } from "./stageColor";
 
 type MenuKind = "display" | "cloud" | null;
 type SearchFilterMenuKind = "issueType" | "priority" | "severity" | "automation" | "assignee" | null;
@@ -209,7 +210,7 @@ function getCloudIssueAction(
 ): CloudIssueAction {
   if (issue.syncMode !== "cloud" || (issue.status !== "todo" && issue.status !== "in_progress")) return null;
   const assigneeId = issue.assigneeId?.trim() ?? "";
-  if (!assigneeId) return canClaim ? "claim" : null;
+  if (!assigneeId) return issue.status === "todo" && canClaim ? "claim" : null;
   if (assigneeId !== currentUserId.trim()) return null;
   if (issue.activeIssueRunId?.trim()) return null;
   const issueId = issue.remoteIssueId?.trim() || issue.id;
@@ -218,17 +219,6 @@ function getCloudIssueAction(
   );
   return canRun && runWorker?.workerType === "agent" && runWorker.deviceId === localDeviceId ? "run" : null;
 }
-
-const ISSUE_STAGE_COLOR_PALETTE = [
-  "#8b5cf6",
-  "#3b82f6",
-  "#f59e0b",
-  "#22b8c7",
-  "#ec4899",
-  "#6366f1"
-] as const;
-
-const ISSUE_STAGE_FALLBACK_COLOR = "#86909c";
 
 const STATUS_META: Record<KanbanStatus, { labelKey: TranslationKey; tone: string }> = {
   backlog: { labelKey: "kanban.status.backlog", tone: "neutral" },
@@ -1054,11 +1044,13 @@ function getIssueCardProgressPresentation(
   const workflowProgress = stageIndex >= 0
     ? ((stageIndex + stageProgress) / Math.max(1, stageCount)) * 100
     : stageProgress * 100;
-  const paletteIndex = catalogStageIndex >= 0 ? catalogStageIndex : knownStageIndex;
+  const resolvedStage = stage ?? {
+    key: issue.stageKey ?? "",
+    name: stageLabel,
+    color: undefined
+  };
   return {
-    color: stage?.color?.trim() || (paletteIndex >= 0
-      ? ISSUE_STAGE_COLOR_PALETTE[paletteIndex % ISSUE_STAGE_COLOR_PALETTE.length]!
-      : ISSUE_STAGE_FALLBACK_COLOR),
+    color: resolveWorkflowStageColor(resolvedStage, stageIndex),
     percent: Math.min(100, Math.max(4, Math.round(workflowProgress))),
     stageLabel
   };
@@ -3769,7 +3761,7 @@ const IssueCardContent = memo(function IssueCardContent({
         </div>
         {stateSignal ? <div className="issue-card-footer-row is-operational">{stateSignal}</div> : null}
         {cloudAction ? (
-          <div className="issue-card-footer-row is-cloud-action">
+          <div className={`issue-card-footer-row is-cloud-action${cloudAction === "claim" ? " is-claim-action" : ""}`}>
             <button
               type="button"
               className="issue-card-cloud-action"
