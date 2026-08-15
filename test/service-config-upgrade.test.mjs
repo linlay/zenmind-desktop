@@ -200,7 +200,17 @@ test("failed deploy resumes without rerunning completed service resets", async (
   fs.writeFileSync(path.join(desktopRoot, "config", "services", "agent-container-hub", ".env"), "ENGINE=local\n", "utf8");
   let failIdentity = true;
   const resetCalls = [];
+  const preparationContexts = [];
   const upgradeCallbacks = callbacks({
+    prepareDesktopConfiguration: async (context) => {
+      preparationContexts.push(context);
+      return {
+        sourceZipPath: "/validated/env.zip",
+        previousSourceZipPath: "/validated/previous-env.zip",
+        sha256: "a".repeat(64),
+        size: 1024
+      };
+    },
     resetServiceConfig: async (serviceId) => {
       resetCalls.push(serviceId);
       if (serviceId === "identity-center" && failIdentity) {
@@ -220,6 +230,12 @@ test("failed deploy resumes without rerunning completed service resets", async (
   const resumed = await prepareDesktopServiceConfigUpgrade(app, "v0.3.27", upgradeCallbacks);
   assert.deepEqual(resumed.failures, []);
   assert.deepEqual(resetCalls, ["identity-center", "agent-platform", "agent-webclient"]);
+  assert.equal(preparationContexts[0].sourceZipPath, undefined);
+  assert.equal(preparationContexts[0].expectedSha256, undefined);
+  assert.match(preparationContexts[0].inputDir, /input$/u);
+  assert.equal(preparationContexts[1].sourceZipPath, "/validated/env.zip");
+  assert.equal(preparationContexts[1].expectedSha256, "a".repeat(64));
+  assert.equal(preparationContexts[1].apply, false);
 
   recordDesktopServiceConfigCoreHealthFailure(app, "v0.3.27", ["agent-platform: injected health failure"]);
   resetCalls.length = 0;
@@ -357,6 +373,75 @@ test("Desktop configuration preflight fails before any service is stopped", asyn
   ]);
   assert.deepEqual(calls, []);
   assert.equal(result.journal.desktopConfig.status, "failed");
+});
+
+test("development env input request keeps the upgrade pending without touching services", async (t) => {
+  const { app } = createTestApp(t);
+  const calls = [];
+  const result = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks({
+    prepareDesktopConfiguration: async () => ({ inputRequired: { message: "" } }),
+    stopService: async (serviceId) => calls.push(["stop", serviceId]),
+    installCurrentService: async (serviceId) => calls.push(["install", serviceId]),
+    resetServiceConfig: async (serviceId) => calls.push(["reset", serviceId])
+  }));
+
+  assert.deepEqual(calls, []);
+  assert.deepEqual(result.inputRequired, {
+    kind: "env-zip",
+    message: "",
+    fromVersion: "legacy",
+    toVersion: "v0.3.40"
+  });
+  assert.equal(result.journal.status, "in-progress");
+  assert.equal(result.journal.desktopConfig.status, "pending");
+  for (const service of Object.values(result.journal.services)) {
+    assert.equal(service.status, "pending");
+    assert.equal(service.attempts, 0);
+  }
+});
+
+test("a previous missing bundled env failure recovers to development input request", async (t) => {
+  const { app } = createTestApp(t);
+  const failed = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks({
+    prepareDesktopConfiguration: async () => {
+      throw new Error("The bundled env.zip was not found");
+    }
+  }));
+  assert.equal(failed.journal.desktopConfig.status, "failed");
+
+  const recovered = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks({
+    prepareDesktopConfiguration: async () => ({ inputRequired: { message: "" } })
+  }));
+  assert.equal(recovered.inputRequired.kind, "env-zip");
+  assert.equal(recovered.journal.desktopConfig.status, "pending");
+  assert.equal(recovered.journal.desktopConfig.lastError, undefined);
+  assert.equal(recovered.journal.lastError, undefined);
+  for (const service of Object.values(recovered.journal.services)) {
+    assert.equal(service.attempts, 0);
+  }
+});
+
+test("successful version commit removes the staged development env input", async (t) => {
+  const { app } = createTestApp(t);
+  let inputDir = "";
+  const prepared = await prepareDesktopServiceConfigUpgrade(app, "v0.3.40", callbacks({
+    prepareDesktopConfiguration: async (context) => {
+      inputDir = context.inputDir;
+      fs.mkdirSync(inputDir, { recursive: true });
+      const sourceZipPath = path.join(inputDir, `env-${"b".repeat(64)}.zip`);
+      fs.writeFileSync(sourceZipPath, "zip", "utf8");
+      return {
+        sourceZipPath,
+        sha256: "b".repeat(64),
+        size: 3
+      };
+    }
+  }));
+  assert.equal(prepared.failures.length, 0);
+  assert.equal(fs.existsSync(inputDir), true);
+
+  completeDesktopServiceConfigUpgrade(app, "v0.3.40");
+  assert.equal(fs.existsSync(inputDir), false);
 });
 
 test("same completed Desktop version does not read env.zip or run deploy", async (t) => {

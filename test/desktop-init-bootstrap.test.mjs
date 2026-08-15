@@ -1511,6 +1511,9 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
   const handlers = new Map();
   const calls = [];
   let existingRuntime = false;
+  let startupState = {};
+  let startupOptions = null;
+  let resumedStartupCount = 0;
   const app = createApp("/tmp/zenmind-services-home");
 
   registerServicesIpcHandlers({
@@ -1570,12 +1573,16 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
     loadBuiltinServices: () => calls.push(["loadBuiltin"]),
     loadInstalledPlugins: () => calls.push(["loadPlugins"]),
     notifyServicesChanged: () => undefined,
-    runStartupPreparation: async () => {
+    onStartupPreparationSucceeded: () => {
+      resumedStartupCount += 1;
+    },
+    runStartupPreparation: async (_app, options) => {
+      startupOptions = options;
       calls.push(["startup"]);
       return { mode: "bootstrap", failures: [] };
     },
     startupRestoreController: {
-      getState: () => ({}),
+      getState: () => startupState,
       beginSession: () => undefined,
       updateService: () => undefined,
       finishSession: () => undefined,
@@ -1594,6 +1601,8 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
     ["loadBuiltin"],
     ["loadPlugins"]
   ]);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resumedStartupCount, 0);
 
   calls.length = 0;
   existingRuntime = true;
@@ -1608,4 +1617,26 @@ test("manual env.zip import applies desktop-init bootstrap and refreshes config 
   ]);
   assert.equal(calls.some(([name]) => name === "bootstrap"), false);
   assert.equal(calls.some(([name]) => name === "import"), false);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(resumedStartupCount, 0);
+
+  calls.length = 0;
+  startupOptions = null;
+  app.isPackaged = false;
+  startupState = {
+    phase: "env-import-required",
+    envImportRequest: {
+      reason: "desktop-version-change",
+      fromVersion: "v1.0.0",
+      toVersion: "v2.0.0"
+    }
+  };
+  const versionChangeResult = await handlers.get("services.importEnvZip")();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(versionChangeResult, { ok: true, message: "" });
+  assert.equal(startupOptions.desktopVersionUpgradeEnvZipPath, "/tmp/env.zip");
+  assert.equal(calls.some(([name]) => name === "platform-import"), false);
+  assert.equal(calls.some(([name]) => name === "import"), false);
+  assert.equal(resumedStartupCount, 1);
 });

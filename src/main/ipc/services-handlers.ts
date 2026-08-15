@@ -3,6 +3,7 @@ import { getPluginGlobalShortcutStatuses } from "../plugin-global-shortcuts";
 import { invokePluginDesktopAction } from "../plugin-actions";
 import { t } from "../i18n/main-i18n";
 import type { LogStreamSubscriptionRegistry } from "../logs/subscriptions";
+import type { StartupEnvImportRequest } from "../../shared/contracts";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 
@@ -73,7 +74,7 @@ export interface ServicesIpcHandlerOptions {
     updateService: (serviceId: string, phase: any, message: string) => void;
     finishSession: (mode: string, failures: any[]) => void;
     failCurrentSession: (message: string) => void;
-    setEnvImportRequired: (message?: string) => void;
+    setEnvImportRequired: (message?: string, request?: StartupEnvImportRequest) => void;
   };
 
   // Environment zip import operations (TDD index-ts-slimming)
@@ -90,13 +91,20 @@ export interface ServicesIpcHandlerOptions {
   loadBuiltinServices?: (app: any) => void;
   loadInstalledPlugins?: (app: any) => void;
   notifyServicesChanged?: () => void;
+  onStartupPreparationSucceeded?: () => void;
+  onStartupPreparationBlocked?: () => void;
   runStartupPreparation?: (app: any, callbacks: {
     desktopVersion?: string;
+    desktopVersionUpgradeEnvZipPath?: string;
     isFirstDesktopInstall?: boolean;
     onModeResolved: (mode: string) => void;
     onStarting: (serviceId: string) => void;
     onProgress: (serviceId: string, phase: any, message: string) => void;
-  }) => Promise<{ mode: string; failures: any[] }>;
+  }) => Promise<{
+    mode: string;
+    failures: any[];
+    inputRequired?: { request: StartupEnvImportRequest; message: string };
+  }>;
   desktopVersion?: string;
 
   // Session cache clearing (injected to allow testing without electron)
@@ -209,6 +217,8 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged,
+    onStartupPreparationSucceeded,
+    onStartupPreparationBlocked,
     runStartupPreparation,
     desktopVersion,
     issueAgentPlatformAccessToken,
@@ -237,7 +247,10 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     notifyServicesChanged?.();
   }
 
-  function scheduleStartupPreparationAfterEnvDecision() {
+  function scheduleStartupPreparationAfterEnvDecision(
+    desktopVersionUpgradeEnvZipPath?: string,
+    resumeBlockedStartup = false
+  ) {
     if (!runStartupPreparation) {
       return false;
     }
@@ -248,6 +261,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
 
     void runServiceMutation(() => runStartupPreparation(app, {
       desktopVersion,
+      ...(desktopVersionUpgradeEnvZipPath ? { desktopVersionUpgradeEnvZipPath } : {}),
       isFirstDesktopInstall: Boolean(isFirstDesktopInstall),
       onModeResolved: (mode: string) => {
         startupRestoreController?.beginSession(mode);
@@ -261,24 +275,43 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       }
     }))
       .then((result) => {
+        if (result.inputRequired) {
+          startupRestoreController?.setEnvImportRequired(
+            result.inputRequired.message,
+            result.inputRequired.request
+          );
+          notifyServicesChanged?.();
+          if (resumeBlockedStartup) {
+            onStartupPreparationBlocked?.();
+          }
+          return;
+        }
         startupRestoreController?.finishSession(result.mode, result.failures);
         notifyServicesChanged?.();
+        if (resumeBlockedStartup && result.failures.length > 0) {
+          onStartupPreparationBlocked?.();
+        } else if (resumeBlockedStartup) {
+          onStartupPreparationSucceeded?.();
+        }
       })
       .catch((error) => {
         startupRestoreController?.failCurrentSession(error instanceof Error ? error.message : String(error));
         notifyServicesChanged?.();
+        if (resumeBlockedStartup) {
+          onStartupPreparationBlocked?.();
+        }
       });
 
     return true;
   }
 
-  function continueStartupWithExistingEnv() {
+  function continueStartupWithExistingEnv(resumeBlockedStartup: boolean) {
     if (!runStartupPreparation) {
       return { ok: false, message: t("startup.envImport.configUnavailable") };
     }
 
     beginBootstrapStatus(t("startup.envImport.skipExisting"));
-    scheduleStartupPreparationAfterEnvDecision();
+    scheduleStartupPreparationAfterEnvDecision(undefined, resumeBlockedStartup);
     return { ok: true };
   }
 
@@ -360,12 +393,20 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
   }
 
   ipcMain.handle("services.importEnvZip", async () => {
-    const effectiveDecision = await promptManualEnvRootConflict();
-    if (effectiveDecision === "keep") {
-      return continueStartupWithExistingEnv();
-    }
-    if (effectiveDecision === "cancel") {
-      return { ok: false, message: t("startup.envImport.cancelled") };
+    const startupRestoreState = startupRestoreController?.getState();
+    const envImportRequest = startupRestoreState?.envImportRequest as StartupEnvImportRequest | undefined;
+    const resumeBlockedStartup = startupRestoreState?.phase === "env-import-required";
+    const isDevelopmentVersionChange =
+      app.isPackaged === false && envImportRequest?.reason === "desktop-version-change";
+
+    if (!isDevelopmentVersionChange) {
+      const effectiveDecision = await promptManualEnvRootConflict();
+      if (effectiveDecision === "keep") {
+        return continueStartupWithExistingEnv(resumeBlockedStartup);
+      }
+      if (effectiveDecision === "cancel") {
+        return { ok: false, message: t("startup.envImport.cancelled") };
+      }
     }
 
     const result = await showFileDialog({
@@ -377,6 +418,15 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
 
     if (result.canceled || result.filePaths.length === 0) {
       return { ok: false, message: t("startup.envImport.cancelled") };
+    }
+
+    if (isDevelopmentVersionChange) {
+      if (!runStartupPreparation) {
+        return { ok: false, message: t("startup.envImport.configUnavailable") };
+      }
+      beginBootstrapStatus(t("startup.envImport.importingZip"));
+      scheduleStartupPreparationAfterEnvDecision(result.filePaths[0], resumeBlockedStartup);
+      return { ok: true, message: "" };
     }
 
     if (!importEnvZipToRuntime || !runStartupPreparation) {
@@ -401,7 +451,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
       }
       refreshDesktopRuntimeConfigFromCanonicalFiles?.("manual-env-import");
 
-      scheduleStartupPreparationAfterEnvDecision();
+      scheduleStartupPreparationAfterEnvDecision(undefined, resumeBlockedStartup);
 
       return { ok: true };
     } catch (error) {

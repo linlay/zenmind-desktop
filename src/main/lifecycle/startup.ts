@@ -1,4 +1,5 @@
 import type { App } from "electron";
+import type { StartupEnvImportRequest } from "../../shared/contracts";
 import type { StartupPhase } from "./startup-phases";
 
 export type StartupPipelineOptions = {
@@ -20,7 +21,11 @@ export type StartupPipelineOptions = {
     onModeResolved: (mode: string) => void;
     onStarting: (serviceId: string) => void;
     onProgress: (serviceId: string, phase: any, message: string) => void;
-  }) => Promise<{ mode: string; failures: any[] }>;
+  }) => Promise<{
+    mode: string;
+    failures: any[];
+    inputRequired?: { request: StartupEnvImportRequest; message: string };
+  }>;
   t: (...args: any[]) => string;
   onError: (message: string, details: Record<string, unknown>) => void;
 };
@@ -55,6 +60,15 @@ export function createStartupPipeline(options: StartupPipelineOptions) {
         }
       }))
         .then((result) => {
+          if (result.inputRequired) {
+            options.startupRestoreController.setEnvImportRequired(
+              result.inputRequired.message,
+              result.inputRequired.request
+            );
+            options.notifyCoreServicesChanged();
+            options.setStartupPhase("degraded");
+            return;
+          }
           options.startupRestoreController.finishSession(result.mode, result.failures);
           options.notifyCoreServicesChanged();
           if (result.failures.length > 0) {

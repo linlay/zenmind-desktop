@@ -1100,6 +1100,41 @@ test("sync-env clears stale bundled env zip when ENV_ZIP is not provided", async
   });
 });
 
+test("sync-env stages an explicit valid ENV_ZIP in the active brand resources", async (t) => {
+  const root = createBrandFixture(t);
+  fs.writeFileSync(path.join(root, "VERSION"), "v1.2.3\n", "utf8");
+  const sourceZipPath = path.join(root, "fixtures", "env.zip");
+  await writeZip(sourceZipPath, {
+    "env/VERSION": "1.2.3\n",
+    "env/desktop-init.json": "{}\n"
+  });
+
+  const result = await prepareBundledEnvZip({
+    rootDir: root,
+    env: { BRAND: "zenmind", ENV_ZIP: sourceZipPath },
+    logger: silentLogger
+  });
+  const expectedPath = path.join(brandResourcesDir(root, "zenmind"), "env", "env.zip");
+  assert.equal(result.bundled, true);
+  assert.equal(result.outputPath, expectedPath);
+  assert.deepEqual(fs.readFileSync(expectedPath), fs.readFileSync(sourceZipPath));
+});
+
+test("sync-env rejects an explicitly configured missing ENV_ZIP", async (t) => {
+  const root = createBrandFixture(t);
+  fs.writeFileSync(path.join(root, "VERSION"), "v1.2.3\n", "utf8");
+  const missingPath = path.join(root, "fixtures", "missing.zip");
+
+  await assert.rejects(
+    () => prepareBundledEnvZip({
+      rootDir: root,
+      env: { BRAND: "zenmind", ENV_ZIP: missingPath },
+      logger: silentLogger
+    }),
+    /ENV_ZIP file not found/u
+  );
+});
+
 test("dev startup syncs env zip resources before building the main process", () => {
   const devScript = fs.readFileSync(path.join(projectRoot, "scripts", "dev.mjs"), "utf8");
   const syncEnvIndex = devScript.indexOf('["./scripts/sync-env-zip.mjs"]');

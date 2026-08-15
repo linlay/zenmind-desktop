@@ -1,6 +1,7 @@
 import type {
   ServiceId,
   StartupRestoreMode,
+  StartupEnvImportRequest,
   StartupRestoreServiceState,
   StartupRestoreState
 } from "../shared/contracts";
@@ -19,7 +20,7 @@ export type StartupRestoreController = {
   updateService(serviceId: ServiceId, phase: StartupRestoreServiceState["phase"], message?: string): StartupRestoreState;
   finishSession(mode: StartupRestoreMode, failures: string[]): StartupRestoreState;
   failCurrentSession(message: string): StartupRestoreState;
-  setEnvImportRequired(message?: string): StartupRestoreState;
+  setEnvImportRequired(message?: string, request?: StartupEnvImportRequest): StartupRestoreState;
 };
 
 export function createStartupRestoreState(
@@ -138,12 +139,13 @@ export function createStartupRestoreController(
         message
       });
     },
-    setEnvImportRequired(message = t("dialog.envZipRequired.title")) {
+    setEnvImportRequired(message = t("dialog.envZipRequired.title"), request = { reason: "runtime-bootstrap" }) {
       const state = cloneStartupRestoreState(currentState);
       return commitState({
         ...state,
         phase: "env-import-required",
-        message
+        message,
+        envImportRequest: request
       });
     }
   };

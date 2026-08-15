@@ -5,6 +5,7 @@ import path from "node:path";
 import {
   brandBuildRoot,
   brandIconDir,
+  brandResourcesDir,
   DARWIN_BUNDLE_DEVELOPMENT_REGION,
   DARWIN_BUNDLE_LOCALIZATIONS,
   loadBrandConfig,
@@ -95,6 +96,7 @@ function buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot) 
     BRAND: brand.id,
     DESKTOP_BRAND_JSON: path.join(projectRoot, "build", "brands", brand.id, "generated", "brand.json"),
     DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
+    DESKTOP_DEV_RESOURCES_ROOT: brandResourcesDir(projectRoot, brand),
     DESKTOP_NODE_BIN: process.env.DESKTOP_NODE_BIN || process.execPath,
     VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
   };

@@ -1,17 +1,21 @@
 import { useI18n } from "../../i18n/useI18n";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import { BrandMark } from "../../components/BrandMark";
+import type { StartupEnvImportRequest } from "../../../shared/contracts";
 
 export function EnvImportOverlay({
   onImport,
   errorMessage,
-  busy
+  busy,
+  request
 }: {
   onImport: () => Promise<void>;
   errorMessage: string;
   busy: boolean;
+  request?: StartupEnvImportRequest;
 }) {
   const { t } = useI18n();
+  const versionChangeRequest = request?.reason === "desktop-version-change" ? request : null;
 
   return (
     <div className="env-import-overlay">
@@ -22,9 +26,23 @@ export function EnvImportOverlay({
           <BrandMark className="brand-logo-image" ariaLabel={`${PRODUCT_NAME} Logo`} />
         </div>
 
-        <h1 className="env-import-title">{t("startup.envImport.title")}</h1>
+        <h1 className="env-import-title">
+          {versionChangeRequest
+            ? t("startup.envImport.versionChangeTitle", {
+                fromVersion: versionChangeRequest.fromVersion,
+                toVersion: versionChangeRequest.toVersion
+              })
+            : t("startup.envImport.title")}
+        </h1>
         <p className="env-import-desc">
-          {t("startup.envImport.descriptionPrefix")} <code>env.zip</code> {t("startup.envImport.descriptionSuffix")}
+          {versionChangeRequest
+            ? t("startup.envImport.versionChangeDescription", {
+                fromVersion: versionChangeRequest.fromVersion,
+                toVersion: versionChangeRequest.toVersion
+              })
+            : <>
+                {t("startup.envImport.descriptionPrefix")} <code>env.zip</code> {t("startup.envImport.descriptionSuffix")}
+              </>}
         </p>
 
         {errorMessage ? (

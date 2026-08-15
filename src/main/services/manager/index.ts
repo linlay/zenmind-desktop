@@ -19,7 +19,8 @@ import type {
   ServiceState,
   ServiceVerification,
   StartupRestoreMode,
-  StartupRestoreServicePhase
+  StartupRestoreServicePhase,
+  StartupEnvImportRequest
 } from "../../../shared/contracts";
 import type { ServiceDefinition } from "../../manifest-utils";
 import { getAllServices, getService } from "../service-registry";
@@ -180,8 +181,11 @@ import {
 import { rewriteServicePortDefaultsForDesktopConfigUpgrade } from "../../service-port-defaults";
 import { getDataRoot, getDesktopSsoAccessTokenFilePath } from "../../user-paths";
 import {
+  bundledEnvZipExists,
+  stageValidatedDesktopVersionUpgradeInput,
   validateBundledEnvForDesktopVersionUpgrade,
-  validateEnvZipForDesktopManualImport
+  validateEnvZipForDesktopManualImport,
+  validateSelectedEnvZipForDesktopVersionUpgrade
 } from "../../env-bootstrap";
 import { applyDesktopInitVersionUpgrade } from "../../desktop-init-bootstrap";
 import {
@@ -220,10 +224,15 @@ type StartupPreparationResult = {
   started: ServiceId[];
   failures: string[];
   preparedChanged: boolean;
+  inputRequired?: {
+    request: StartupEnvImportRequest;
+    message: string;
+  };
 };
 
 type StartupPreparationOptions = {
   desktopVersion?: string;
+  desktopVersionUpgradeEnvZipPath?: string;
   isFirstDesktopInstall?: boolean;
   onModeResolved?: (mode: StartupRestoreMode) => void;
   onStarting?: (serviceId: ServiceId) => void;
@@ -3210,6 +3219,7 @@ async function runDesktopServiceConfigUpgradePreparation(
   options: StartupPreparationOptions,
   onBegin: () => void
 ) {
+  const isDevelopmentApp = app.isPackaged === false;
   const currentDesktopDefaultPorts = Object.fromEntries(
     DESKTOP_SERVICE_CONFIG_UPGRADE_IDS.map((serviceId) => {
       const service = getService(serviceId);
@@ -3224,16 +3234,88 @@ async function runDesktopServiceConfigUpgradePreparation(
       options.onProgress?.(serviceId, "initializing", message);
     },
     prepareDesktopConfiguration: async (context) => {
-      const validated = await validateBundledEnvForDesktopVersionUpgrade(app, process.platform, {
-        expectedDesktopVersion: context.toVersion
-      });
-      if (context.apply) {
-        applyDesktopInitVersionUpgrade(
-          app,
-          validated.desktopInit,
-          context.backupDir,
+      let validated;
+      let journalInputError = "";
+      if (isDevelopmentApp && context.sourceZipPath && fs.existsSync(context.sourceZipPath)) {
+        try {
+          validated = await validateSelectedEnvZipForDesktopVersionUpgrade(
+            app,
+            context.sourceZipPath,
+            context.toVersion,
+            process.platform
+          );
+        } catch (error) {
+          journalInputError = error instanceof Error ? error.message : String(error);
+        }
+      }
+      if (isDevelopmentApp && !validated && options.desktopVersionUpgradeEnvZipPath) {
+        try {
+          validated = await validateSelectedEnvZipForDesktopVersionUpgrade(
+            app,
+            options.desktopVersionUpgradeEnvZipPath,
+            context.toVersion,
+            process.platform
+          );
+        } catch (error) {
+          return { inputRequired: { message: error instanceof Error ? error.message : String(error) } };
+        }
+      } else if (isDevelopmentApp && !validated && context.sourceZipPath) {
+        return {
+          inputRequired: {
+            message: journalInputError || t("startup.envImport.versionChangeStagedMissing", {
+              expected: context.expectedSha256 ?? ""
+            })
+          }
+        };
+      } else if (isDevelopmentApp && !validated && !bundledEnvZipExists(app, process.platform)) {
+        return { inputRequired: { message: "" } };
+      } else if (!validated) {
+        validated = await validateBundledEnvForDesktopVersionUpgrade(app, process.platform, {
+          expectedDesktopVersion: context.toVersion
+        });
+      }
+
+      if (
+        context.expectedSha256 &&
+        context.expectedSha256.toLowerCase() !== validated.sha256.toLowerCase()
+      ) {
+        if (isDevelopmentApp) {
+          return {
+            inputRequired: {
+              message: t("startup.envImport.versionChangeShaMismatch", {
+                expected: context.expectedSha256.toLowerCase(),
+                actual: validated.sha256.toLowerCase()
+              })
+            }
+          };
+        }
+        throw new Error(
+          `bundled env.zip changed during the unfinished upgrade: expected ${context.expectedSha256}, got ${validated.sha256}`
+        );
+      }
+
+      if (isDevelopmentApp) {
+        validated = await stageValidatedDesktopVersionUpgradeInput(
+          validated,
+          context.inputDir,
           process.platform
         );
+      }
+      if (context.apply) {
+        try {
+          applyDesktopInitVersionUpgrade(
+            app,
+            validated.desktopInit,
+            context.backupDir,
+            process.platform
+          );
+        } catch (error) {
+          if (isDevelopmentApp && options.desktopVersionUpgradeEnvZipPath) {
+            fs.rmSync(validated.sourceZipPath, { force: true });
+            return { inputRequired: { message: error instanceof Error ? error.message : String(error) } };
+          }
+          throw error;
+        }
       }
       return {
         sourceZipPath: validated.sourceZipPath,
@@ -3354,6 +3436,22 @@ export async function runStartupPreparation(
       : null;
     if (desktopConfigUpgrade && desktopConfigUpgrade.mode !== "none") {
       resolveMode("bootstrap");
+    }
+    if (desktopConfigUpgrade?.inputRequired) {
+      return {
+        mode: "bootstrap",
+        started: [],
+        failures: [],
+        preparedChanged: false,
+        inputRequired: {
+          request: {
+            reason: "desktop-version-change",
+            fromVersion: desktopConfigUpgrade.inputRequired.fromVersion,
+            toVersion: desktopConfigUpgrade.inputRequired.toVersion
+          },
+          message: desktopConfigUpgrade.inputRequired.message
+        }
+      };
     }
     if (desktopConfigUpgrade && desktopConfigUpgrade.failures.length > 0) {
       return {

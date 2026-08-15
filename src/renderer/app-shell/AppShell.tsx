@@ -3457,6 +3457,7 @@ export function AppShell() {
         <EnvImportOverlay
           errorMessage={envImportError || resolvedStartupRestoreState.message}
           busy={envImportBusy}
+          request={resolvedStartupRestoreState.envImportRequest}
           onImport={handleEnvImport}
         />
       ) : null}

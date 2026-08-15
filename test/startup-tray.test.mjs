@@ -84,3 +84,53 @@ test("core startup failures keep the shell tray available without starting non-c
   assert.equal(events.includes("start-non-core"), false);
   assert.equal(phase, "degraded");
 });
+
+test("development version upgrade input request returns to the env selector", async () => {
+  const events = [];
+  let phase = "";
+  const request = {
+    reason: "desktop-version-change",
+    fromVersion: "v0.3.35",
+    toVersion: "v0.3.40"
+  };
+  const pipeline = createStartupPipeline({
+    app: {},
+    desktopVersion: "0.3.40",
+    isFirstDesktopInstall: false,
+    getEnvImportFailureMessage: () => null,
+    startupRestoreController: {
+      beginSession: () => undefined,
+      finishSession: () => events.push("finish-startup"),
+      updateService: () => undefined,
+      setEnvImportRequired: (message, receivedRequest) => events.push(["env-input", message, receivedRequest]),
+      failCurrentSession: () => undefined
+    },
+    loadBuiltinServices: () => undefined,
+    loadInstalledPlugins: () => undefined,
+    notifyCoreServicesChanged: () => events.push("notify-services"),
+    startShellRuntime: () => events.push("create-tray"),
+    startNonCoreRuntime: () => events.push("start-non-core"),
+    setStartupPhase: (nextPhase) => {
+      phase = nextPhase;
+    },
+    runServiceMutation: async (task) => task(),
+    runStartupPreparation: async () => ({
+      mode: "bootstrap",
+      failures: [],
+      inputRequired: { request, message: "" }
+    }),
+    t: (key) => key,
+    onError: () => undefined
+  });
+
+  await pipeline.run();
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.deepEqual(events, [
+    "create-tray",
+    "notify-services",
+    ["env-input", "", request],
+    "notify-services"
+  ]);
+  assert.equal(phase, "degraded");
+});

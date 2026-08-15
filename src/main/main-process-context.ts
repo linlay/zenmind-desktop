@@ -205,6 +205,8 @@ export interface ServicesIpcHandlerContextDependencies {
   loadBuiltinServices?: (...args: any[]) => unknown;
   loadInstalledPlugins?: (...args: any[]) => unknown;
   notifyServicesChanged?: (...args: any[]) => unknown;
+  onStartupPreparationSucceeded?: (...args: any[]) => unknown;
+  onStartupPreparationBlocked?: (...args: any[]) => unknown;
   runStartupPreparation?: (...args: any[]) => unknown;
   desktopVersion?: string;
   logStreamSubscriptions: LogStreamSubscriptionRegistry;
@@ -268,6 +270,8 @@ export function createServicesIpcHandlerOptions(
     loadBuiltinServices: dependencies.loadBuiltinServices,
     loadInstalledPlugins: dependencies.loadInstalledPlugins,
     notifyServicesChanged: dependencies.notifyServicesChanged,
+    onStartupPreparationSucceeded: dependencies.onStartupPreparationSucceeded,
+    onStartupPreparationBlocked: dependencies.onStartupPreparationBlocked,
     runStartupPreparation: dependencies.runStartupPreparation,
     desktopVersion: dependencies.desktopVersion,
     oldRootDecisionRef: dependencies.oldRootDecisionRef,

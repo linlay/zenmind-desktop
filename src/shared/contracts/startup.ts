@@ -5,6 +5,13 @@ export type ServicesChangedListener = () => void;
 
 export type StartupRestoreMode = "restore" | "bootstrap";
 export type StartupRestorePhase = "idle" | "running" | "succeeded" | "failed" | "env-import-required";
+export type StartupEnvImportRequest =
+  | { reason: "runtime-bootstrap" }
+  | {
+      reason: "desktop-version-change";
+      fromVersion: string;
+      toVersion: string;
+    };
 export type StartupRestoreServicePhase =
   | "pending"
   | "installing"
@@ -29,6 +36,7 @@ export interface StartupRestoreState {
   message: string;
   updatedAt: string;
   services: StartupRestoreServiceState[];
+  envImportRequest?: StartupEnvImportRequest;
 }
 
 export type StartupRestoreStateListener = (state: StartupRestoreState) => void;

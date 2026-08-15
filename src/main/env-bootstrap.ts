@@ -291,6 +291,9 @@ function bundledResourcesRootCandidates(app: AppPackageReader, resourcesRootOver
       pushUniquePath(candidates, path.join(path.dirname(process.execPath), "resources"));
     }
   } else if (!resourcesRootOverride) {
+    // Development resources are brand-scoped. Packaged applications must never
+    // honor this environment override and remain confined to their app bundle.
+    pushUniquePath(candidates, process.env.DESKTOP_DEV_RESOURCES_ROOT);
     pushUniquePath(candidates, path.join(process.cwd(), "build", "resources"));
   }
 
@@ -305,12 +308,16 @@ function fileExists(filePath: string) {
   }
 }
 
+function supportsBundledEnvResources(app: AppPackageReader, platform: NodeJS.Platform) {
+  return platform === "darwin" || platform === "win32" || app.isPackaged === false;
+}
+
 export function resolveBundledEnvZipPath(
   app: AppPackageReader,
   platform: NodeJS.Platform = process.platform,
   resourcesRootOverride?: string
 ) {
-  if (platform !== "darwin" && platform !== "win32") {
+  if (!supportsBundledEnvResources(app, platform)) {
     return null;
   }
 
@@ -324,8 +331,13 @@ export function bundledEnvZipExists(
   platform: NodeJS.Platform = process.platform,
   resourcesRootOverride?: string
 ) {
-  const zipPath = resolveBundledEnvZipPath(app, platform, resourcesRootOverride);
-  return Boolean(zipPath && fileExists(zipPath));
+  try {
+    return resolveBundledEnvPackage(app, platform, resourcesRootOverride) !== null;
+  } catch {
+    // A declared bundle with an invalid manifest or a missing payload must still
+    // enter strict validation so the concrete packaging error is reported.
+    return true;
+  }
 }
 
 export async function importBundledEnvZipToRuntime(
@@ -728,7 +740,7 @@ function resolveBundledEnvPackage(
   platform: NodeJS.Platform,
   resourcesRootOverride?: string
 ): BundledEnvPackage | null {
-  if (platform !== "darwin" && platform !== "win32") {
+  if (!supportsBundledEnvResources(app, platform)) {
     return null;
   }
 
@@ -889,6 +901,22 @@ export async function validateEnvZipForDesktopManualImport(
   expectedDesktopVersion: string,
   platform: NodeJS.Platform = process.platform
 ): Promise<ValidatedBundledEnvUpgradeInput> {
+  return validateSelectedEnvZipForDesktopVersionUpgrade(
+    app,
+    zipPath,
+    expectedDesktopVersion,
+    platform,
+    "manual-import"
+  );
+}
+
+export async function validateSelectedEnvZipForDesktopVersionUpgrade(
+  app: AppPathReader,
+  zipPath: string,
+  expectedDesktopVersion: string,
+  platform: NodeJS.Platform = process.platform,
+  purpose: "version-change" | "manual-import" = "version-change"
+): Promise<ValidatedBundledEnvUpgradeInput> {
   const desktopVersion = normalizeVersion(expectedDesktopVersion);
   if (!desktopVersion) {
     throw new Error(t("envBootstrap.desktopVersionEmpty"));
@@ -909,7 +937,9 @@ export async function validateEnvZipForDesktopManualImport(
     (entry) => !entry.directory && entry.relativePath === "desktop-init.json"
   );
   if (!desktopInitEntry) {
-    throw new Error("env.zip requires env/desktop-init.json for manual import into an existing runtime.");
+    throw new Error(purpose === "manual-import"
+      ? "env.zip requires env/desktop-init.json for manual import into an existing runtime."
+      : "env.zip requires env/desktop-init.json for a Desktop version change.");
   }
   let desktopInit: unknown;
   try {
@@ -929,6 +959,51 @@ export async function validateEnvZipForDesktopManualImport(
     size: zipBuffer.byteLength,
     desktopInit
   };
+}
+
+export async function stageValidatedDesktopVersionUpgradeInput(
+  validated: ValidatedBundledEnvUpgradeInput,
+  inputDir: string,
+  platform: NodeJS.Platform = process.platform
+): Promise<ValidatedBundledEnvUpgradeInput> {
+  fs.mkdirSync(inputDir, { recursive: true, mode: 0o700 });
+  if (platform !== "win32") {
+    fs.chmodSync(inputDir, 0o700);
+  }
+
+  const targetPath = path.join(inputDir, `env-${validated.sha256.toLowerCase()}.zip`);
+  if (fileExists(targetPath)) {
+    const existingBuffer = await fs.promises.readFile(targetPath);
+    if (
+      existingBuffer.byteLength !== validated.size ||
+      sha256Hex(existingBuffer) !== validated.sha256.toLowerCase()
+    ) {
+      // This is a content-addressed file owned by the current Desktop upgrade
+      // transaction. A corrupt partial can be replaced by the same validated SHA.
+      fs.rmSync(targetPath, { force: true });
+    } else {
+      return { ...validated, sourceZipPath: targetPath };
+    }
+  }
+
+  const temporaryPath = path.join(inputDir, `.env-${validated.sha256}.${process.pid}.${Date.now()}.tmp`);
+  try {
+    await fs.promises.copyFile(validated.sourceZipPath, temporaryPath);
+    if (platform !== "win32") {
+      fs.chmodSync(temporaryPath, 0o600);
+    }
+    const stagedBuffer = await fs.promises.readFile(temporaryPath);
+    if (
+      stagedBuffer.byteLength !== validated.size ||
+      sha256Hex(stagedBuffer) !== validated.sha256.toLowerCase()
+    ) {
+      throw new Error(`staged env.zip failed its integrity check: ${temporaryPath}`);
+    }
+    fs.renameSync(temporaryPath, targetPath);
+    return { ...validated, sourceZipPath: targetPath };
+  } finally {
+    fs.rmSync(temporaryPath, { force: true });
+  }
 }
 
 function writeEnvImportMarker(

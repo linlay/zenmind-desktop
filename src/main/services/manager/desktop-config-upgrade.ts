@@ -77,6 +77,17 @@ export type DesktopVersionUpgradeInput = {
   size: number;
 };
 
+export type DesktopVersionUpgradeInputRequired = {
+  kind: "env-zip";
+  message: string;
+  fromVersion: string;
+  toVersion: string;
+};
+
+export type DesktopVersionUpgradeConfigurationPreparation =
+  | DesktopVersionUpgradeInput
+  | { inputRequired: { message: string } };
+
 type DesktopServiceConfigUpgradeCallbacks = {
   currentDesktopDefaultPorts: Record<string, number>;
   isFirstDesktopInstall?: boolean;
@@ -88,8 +99,11 @@ type DesktopServiceConfigUpgradeCallbacks = {
     fromVersion: string;
     toVersion: string;
     backupDir: string;
+    inputDir: string;
     apply: boolean;
-  }) => Promise<DesktopVersionUpgradeInput>;
+    sourceZipPath?: string;
+    expectedSha256?: string;
+  }) => Promise<DesktopVersionUpgradeConfigurationPreparation>;
   resetServiceConfig: (
     serviceId: ServiceId,
     context: DesktopServiceConfigResetContext
@@ -101,6 +115,7 @@ export type DesktopServiceConfigUpgradePreparationResult = {
   desktopVersion: string;
   failures: string[];
   journal: DesktopServiceConfigUpgradeJournal | null;
+  inputRequired?: DesktopVersionUpgradeInputRequired;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -448,12 +463,40 @@ export async function prepareDesktopServiceConfigUpgrade(
 
   const shouldApplyDesktopConfiguration = journal.desktopConfig.status !== "applied";
   try {
-    const input = await callbacks.prepareDesktopConfiguration({
+    const preparation = await callbacks.prepareDesktopConfiguration({
       fromVersion: journal.fromVersion,
       toVersion: journal.toVersion,
       backupDir: path.join(journal.backupRoot, "desktop"),
-      apply: shouldApplyDesktopConfiguration
+      inputDir: path.join(journal.backupRoot, "input"),
+      apply: shouldApplyDesktopConfiguration,
+      ...(journal.desktopConfig.sourceZipPath
+        ? { sourceZipPath: journal.desktopConfig.sourceZipPath }
+        : {}),
+      ...(journal.desktopConfig.sha256
+        ? { expectedSha256: journal.desktopConfig.sha256 }
+        : {})
     });
+    if ("inputRequired" in preparation) {
+      journal.desktopConfig.status = "pending";
+      journal.desktopConfig.updatedAt = new Date().toISOString();
+      delete journal.desktopConfig.lastError;
+      journal.status = "in-progress";
+      delete journal.lastError;
+      writeJournal(app, journal, platform);
+      return {
+        mode: "version-change",
+        desktopVersion,
+        failures: [],
+        journal,
+        inputRequired: {
+          kind: "env-zip",
+          message: preparation.inputRequired.message,
+          fromVersion: journal.fromVersion,
+          toVersion: journal.toVersion
+        }
+      };
+    }
+    const input = preparation;
     if (
       journal.desktopConfig.sha256 &&
       journal.desktopConfig.sha256.toLowerCase() !== input.sha256.toLowerCase()
@@ -615,6 +658,9 @@ export function completeDesktopServiceConfigUpgrade(
   }
   writeCompletedVersion(app, desktopVersion, platform);
   if (journal) {
+    if (journal.mode === "version-change" && journal.backupRoot) {
+      fs.rmSync(path.join(journal.backupRoot, "input"), { recursive: true, force: true });
+    }
     cleanupSuccessfulUpgradeBackups(app, journal, platform);
     removeUpgradeJournal(app, platform);
   }

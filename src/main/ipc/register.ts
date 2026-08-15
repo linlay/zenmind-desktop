@@ -148,6 +148,8 @@ export type MainIpcRegistrationOptions = {
   handleServiceStart: (serviceId: any) => Promise<any>;
   refreshPluginDesktopGlobalShortcuts: () => unknown;
   notifyServicesChanged: () => void;
+  onStartupPreparationSucceeded: () => void;
+  onStartupPreparationBlocked: () => void;
   refreshDesktopRuntimeConfigFromCanonicalFiles: (reason: string) => void;
   buildApplicationMenu: () => void;
   refreshTrayContextMenu: () => void;
@@ -254,6 +256,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     loadBuiltinServices,
     loadInstalledPlugins,
     notifyServicesChanged: options.notifyServicesChanged,
+    onStartupPreparationSucceeded: options.onStartupPreparationSucceeded,
+    onStartupPreparationBlocked: options.onStartupPreparationBlocked,
     runStartupPreparation,
     desktopVersion: options.desktopAppInfo.version,
     logStreamSubscriptions: logsRuntime.getServiceLogSubscriptions(),

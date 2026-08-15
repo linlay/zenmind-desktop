@@ -12,14 +12,17 @@ const JSZip = require("jszip");
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const {
+  bundledEnvZipExists,
   importEnvZipToRuntime,
   importBundledEnvZipToRuntime,
   resetBundledRuntimeEnv,
   resolveRuntimeRoot,
   resolveBundledEnvZipPath,
   shouldPromptEnvRootConflict,
+  stageValidatedDesktopVersionUpgradeInput,
   validateBundledEnvForDesktopVersionUpgrade,
   validateEnvZipForDesktopManualImport,
+  validateSelectedEnvZipForDesktopVersionUpgrade,
   runtimeEnvExists,
   runtimeEnvNeedsBundledSeedRefresh
 } = require(path.join(__dirname, "..", "dist-electron", "main", "env-bootstrap.js"));
@@ -194,6 +197,50 @@ test("manual existing-runtime preflight accepts the current Desktop version and 
   );
 });
 
+test("development version-change selection rejects mismatches, unsafe entries, symlinks, and damaged ZIPs", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-selected-invalid-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createPathApp(root);
+
+  const versionMismatchPath = path.join(root, "version-mismatch.zip");
+  await writeEnvZip(versionMismatchPath, {
+    "env/VERSION": "1.0.0\n",
+    "env/desktop-init.json": "{}"
+  });
+  await assert.rejects(
+    () => validateSelectedEnvZipForDesktopVersionUpgrade(app, versionMismatchPath, "2.0.0", "darwin"),
+    /version|版本/iu
+  );
+
+  const unsafePath = path.join(root, "unsafe.zip");
+  await writeEnvZip(unsafePath, {
+    "env/VERSION": "2.0.0\n",
+    "env/desktop-init.json": "{}",
+    "env\\outside.txt": "unsafe"
+  });
+  await assert.rejects(
+    () => validateSelectedEnvZipForDesktopVersionUpgrade(app, unsafePath, "2.0.0", "darwin"),
+    /unsafe|安全/iu
+  );
+
+  const symlinkPath = path.join(root, "symlink.zip");
+  const symlinkZip = new JSZip();
+  symlinkZip.file("env/VERSION", "2.0.0\n");
+  symlinkZip.file("env/desktop-init.json", "{}");
+  symlinkZip.file("env/link", "target", { unixPermissions: 0o120777 });
+  fs.writeFileSync(symlinkPath, await symlinkZip.generateAsync({ type: "nodebuffer", platform: "UNIX" }));
+  await assert.rejects(
+    () => validateSelectedEnvZipForDesktopVersionUpgrade(app, symlinkPath, "2.0.0", "darwin"),
+    /symbolic|symlink|符号/iu
+  );
+
+  const damagedPath = path.join(root, "damaged.zip");
+  fs.writeFileSync(damagedPath, "not-a-zip", "utf8");
+  await assert.rejects(
+    () => validateSelectedEnvZipForDesktopVersionUpgrade(app, damagedPath, "2.0.0", "darwin")
+  );
+});
+
 test("manual env import does not mark bundled resource sync complete", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-env-manual-resource-marker-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -240,6 +287,100 @@ test("bundled env.zip falls back to the packaged app resources directory", (t) =
     resolveBundledEnvZipPath(app, "win32", staleResourcesRoot),
     path.join(resourcesRoot, "env", "env.zip")
   );
+});
+
+test("development env.zip resolves from the explicit brand resources root on every dev platform", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-dev-env-resources-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const resourcesRoot = path.join(root, "build", "brands", "zenmind", "resources");
+  const zipPath = path.join(resourcesRoot, "env", "env.zip");
+  fs.mkdirSync(path.dirname(zipPath), { recursive: true });
+  fs.writeFileSync(zipPath, "zip", "utf8");
+  const previousRoot = process.env.DESKTOP_DEV_RESOURCES_ROOT;
+  process.env.DESKTOP_DEV_RESOURCES_ROOT = resourcesRoot;
+  t.after(() => {
+    if (previousRoot === undefined) {
+      delete process.env.DESKTOP_DEV_RESOURCES_ROOT;
+    } else {
+      process.env.DESKTOP_DEV_RESOURCES_ROOT = previousRoot;
+    }
+  });
+
+  for (const platform of ["darwin", "win32", "linux"]) {
+    assert.equal(
+      resolveBundledEnvZipPath({ isPackaged: false, getAppPath: () => root }, platform),
+      zipPath
+    );
+  }
+  assert.equal(
+    resolveBundledEnvZipPath({ isPackaged: true, getAppPath: () => root }, "linux"),
+    null
+  );
+  assert.notEqual(
+    resolveBundledEnvZipPath({ isPackaged: true, getAppPath: () => root }, "darwin"),
+    zipPath
+  );
+});
+
+test("development bundled-env detection honors the active brand bundled=false manifest", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-dev-env-manifest-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const resourcesRoot = path.join(root, "build", "brands", "zenmind", "resources");
+  const manifestPath = path.join(resourcesRoot, "env", "manifest.json");
+  fs.mkdirSync(path.dirname(manifestPath), { recursive: true });
+  fs.writeFileSync(manifestPath, JSON.stringify({
+    bundled: false,
+    fileName: null,
+    version: "1.0.0"
+  }), "utf8");
+  const staleLegacyZip = path.join(root, "build", "resources", "env", "env.zip");
+  fs.mkdirSync(path.dirname(staleLegacyZip), { recursive: true });
+  fs.writeFileSync(staleLegacyZip, "stale", "utf8");
+  const previousRoot = process.env.DESKTOP_DEV_RESOURCES_ROOT;
+  process.env.DESKTOP_DEV_RESOURCES_ROOT = resourcesRoot;
+  t.after(() => {
+    if (previousRoot === undefined) {
+      delete process.env.DESKTOP_DEV_RESOURCES_ROOT;
+    } else {
+      process.env.DESKTOP_DEV_RESOURCES_ROOT = previousRoot;
+    }
+  });
+
+  assert.equal(
+    bundledEnvZipExists({ isPackaged: false, getAppPath: () => root }, "darwin"),
+    false
+  );
+});
+
+test("validated development upgrade input is staged by sha with private permissions", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-staged-env-input-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceZipPath = path.join(root, "selected.zip");
+  const content = Buffer.from("validated-env-zip", "utf8");
+  fs.writeFileSync(sourceZipPath, content);
+  const sha256 = createHash("sha256").update(content).digest("hex");
+  const inputDir = path.join(root, "transaction", "input");
+  const validated = {
+    sourceZipPath,
+    desktopVersion: "1.0.0",
+    sha256,
+    size: content.byteLength,
+    desktopInit: {}
+  };
+
+  const staged = await stageValidatedDesktopVersionUpgradeInput(validated, inputDir, "darwin");
+  assert.equal(staged.sourceZipPath, path.join(inputDir, `env-${sha256}.zip`));
+  assert.deepEqual(fs.readFileSync(staged.sourceZipPath), content);
+  assert.equal(fs.statSync(inputDir).mode & 0o777, 0o700);
+  assert.equal(fs.statSync(staged.sourceZipPath).mode & 0o777, 0o600);
+
+  const reused = await stageValidatedDesktopVersionUpgradeInput(validated, inputDir, "darwin");
+  assert.equal(reused.sourceZipPath, staged.sourceZipPath);
+
+  fs.writeFileSync(staged.sourceZipPath, "corrupt", "utf8");
+  const repaired = await stageValidatedDesktopVersionUpgradeInput(validated, inputDir, "darwin");
+  assert.equal(repaired.sourceZipPath, staged.sourceZipPath);
+  assert.deepEqual(fs.readFileSync(repaired.sourceZipPath), content);
 });
 
 test("runtime env does not treat empty runtime directories as initialized", (t) => {
