@@ -1364,6 +1364,21 @@ Var /GLOBAL DesktopDataRootBrowseButton
   \${endif}
 !macroend
 
+!macro DesktopValidateDataRoot ROOT NORMALIZED RESULT
+  StrCpy \${NORMALIZED} ""
+  StrCpy \${RESULT} "0"
+  \${if} "\${ROOT}" != ""
+  \${andIf} \${FileExists} "\${ROOT}\\*.*"
+    GetFullPathName \${NORMALIZED} "\${ROOT}"
+    \${if} "\${NORMALIZED}" != ""
+      \${GetFileName} "\${NORMALIZED}" $R6
+      \${if} $R6 == "${runtimeRootDirName}"
+        !insertmacro DesktopValidateOwnedRoot \${NORMALIZED} \${RESULT}
+      \${endif}
+    \${endif}
+  \${endif}
+!macroend
+
 !macro DesktopResolveDefaultInstallDir
   StrCpy $DesktopDefaultInstallDir "$LOCALAPPDATA\\Programs\\\${APP_FILENAME}"
 !macroend
@@ -1418,7 +1433,7 @@ Function ${nsisPrefix}EnsureDataRootDefault
       StrCpy $DesktopDataRoot "$PROFILE\\${runtimeRootDirName}"
       StrCpy $DesktopDataRootStored "1"
     \${else}
-      StrCpy $DesktopDataRoot "$PROFILE\\${productName} Data\\${runtimeRootDirName}"
+      StrCpy $DesktopDataRoot "$PROFILE\\${runtimeRootDirName}"
     \${endif}
     StrCpy $DesktopDataRootLayoutVersion "0"
   \${endif}
@@ -1490,7 +1505,7 @@ Function ${nsisPrefix}DataDirectoryPage
   \${andIf} $DesktopDataRootLayoutVersion == "2"
     \${GetParent} "$DesktopDataRoot" $DesktopDataParent
   \${else}
-    StrCpy $DesktopDataParent "$PROFILE\\${productName} Data"
+    StrCpy $DesktopDataParent "$PROFILE"
   \${endif}
   nsDialogs::Create 1018
   Pop $0
@@ -1854,9 +1869,11 @@ removeDesktopData:
   StrCpy $DesktopDataRemoved "0"
   StrCpy $DesktopCleanupWarning ""
   \${if} $DesktopDataRootLayoutVersion == "2"
-    StrCpy $DesktopOwnedDataRoot "$DesktopDataRoot"
-    !insertmacro DesktopReadOwnerMarker $DesktopOwnedDataRoot "${dataOwnerToken}" $R0
-    !insertmacro DesktopValidateOwnedRoot $DesktopOwnedDataRoot $R1
+    !insertmacro DesktopValidateDataRoot $DesktopDataRoot $DesktopOwnedDataRoot $R1
+    StrCpy $R0 "0"
+    \${if} $R1 == "1"
+      !insertmacro DesktopReadOwnerMarker $DesktopOwnedDataRoot "${dataOwnerToken}" $R0
+    \${endif}
     \${if} $R0 == "1"
     \${andIf} $R1 == "1"
       StrCpy $R4 "0"
@@ -1875,7 +1892,7 @@ removeDesktopOwnedDataRetry:
         StrCpy $DesktopCleanupWarning "运行数据目录删除失败，所有权标记已恢复：$DesktopOwnedDataRoot"
       \${endif}
     \${else}
-      StrCpy $DesktopCleanupWarning "运行数据目录未通过所有权校验，已保留：$DesktopOwnedDataRoot"
+      StrCpy $DesktopCleanupWarning "运行数据目录未通过规范化路径、品牌目录名或所有权校验，已保留：$DesktopDataRoot"
     \${endif}
   \${else}
     StrCpy $DesktopCleanupWarning "历史自定义运行数据目录缺少所有权信息，已保留：$DesktopDataRoot"
