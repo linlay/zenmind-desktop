@@ -13,7 +13,7 @@ import {
   WEBAPP_KEY_PATTERN,
   WEBAPP_MANIFEST_MAX_BYTES,
   parseWebappManifest
-} from "../docs/contracts/webapp-manifest-validator.mjs";
+} from "../contracts/webapp/webapp-manifest-validator.mjs";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const {

@@ -8,7 +8,6 @@
 - For frontend embedding, navigation, authentication, SSO, token bridges, desktop protocols, or action dispatch, read `docs/前端嵌入与导航.md`, `docs/鉴权SSO与TokenBridge.md`, and `docs/桌面协议与动作桥.md` as applicable.
 - For plugins, market resources, external websites, local web apps, pets, data layout, Kanban sync, or assistant integration, read the matching topic docs under `docs/` before editing the related modules.
 - Use `docs/手工测试用例.md` as the manual regression checklist for user-visible workflow changes.
-- Treat migration stubs such as `docs/plugin-development.md`, `docs/data-directories.md`, and `docs/bootstrap-startup-order.md` as pointers only; follow them to the current Chinese topic documents.
 - If code must intentionally diverge from a design doc, update the doc in the same change or call out the mismatch explicitly.
 
 ## Platform Compatibility

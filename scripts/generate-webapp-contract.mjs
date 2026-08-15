@@ -6,7 +6,7 @@ import { build } from "vite";
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const entry = path.join(repoRoot, "src", "shared", "webapp-manifest.ts");
-const contractRoot = path.join(repoRoot, "docs", "contracts");
+const contractRoot = path.join(repoRoot, "contracts", "webapp");
 const validatorName = "webapp-manifest-validator.mjs";
 const schemaName = "webapp.schema.json";
 const args = process.argv.slice(2);
