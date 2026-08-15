@@ -54,7 +54,8 @@ npm test
 ├── brands/                 # 品牌配置、图标和文案
 ├── build/                  # 生成的品牌配置、资源和打包中间产物
 ├── contracts/              # 由源码生成的机器可读对外契约
-├── docs/                   # 中文专题文档
+├── docs/                   # 架构与专题设计文档
+├── qa/                     # 手工回归清单
 ├── scripts/                # 开发、同步、打包和验证脚本
 ├── src/
 │   ├── main/               # Electron 主进程
@@ -79,28 +80,8 @@ npm test
 
 ## 6. 专题文档索引
 
-- [架构与模块边界](docs/架构与模块边界.md)：进程、模块、服务和前端边界。
-- [时间契约](docs/时间契约.md)：epoch-ms、RFC3339、JWT 秒级字段和 shared contract 规则。
-- [配置化与品牌](docs/配置化与品牌.md)：`BRAND`、品牌生成物、环境变量与配置来源。
-- [数据目录](docs/数据目录.md)：桌面数据根、程序数据根、服务/插件/webs 数据分层。
-- [内置资源与Manifest](docs/内置资源与Manifest.md)：内置服务资源包、manifest 字段和同步脚本。
-- [启动初始化与恢复](docs/启动初始化与恢复.md)：启动阶段、首启 bootstrap、核心服务恢复顺序。
-- [服务生命周期](docs/服务生命周期.md)：安装、初始化、启动、停止、日志和健康检查。
-- [前端嵌入与导航](docs/前端嵌入与导航.md)：webview、独立/内嵌前端、导航入口和路由同步。
-- [鉴权SSO与TokenBridge](docs/鉴权SSO与TokenBridge.md)：identity-center、OIDC、JWK、access token 与 postMessage bridge。
-- [企业聊天](docs/企业聊天.md)：企业 SSO 换票、私聊/群聊、文件图片、截图、桌面动作和可拖动聊天浮层。
-- [企业聊天架构评估](docs/企业聊天架构评估.md)：IM Server 的 SQLite、对象存储与局域网快传决策。
-- [插件开发](docs/插件开发.md)：插件包、manifest、脚本、初始化和卸载。
-- [市场系统](docs/市场系统.md)：市场 catalog、安装记录、下载缓存和各资源分区。
-- [外部网站](docs/外部网站.md)：URL 网站入口、排序、Copilot 绑定和数据文件。
-- [本地网站应用](docs/本地网站应用.md)：webapp 包结构、Node 后端、静态前端代理、运行状态。
-- [智能助理集成](docs/智能助理集成.md)：agent-platform bridge、聊天、附件和 Copilot。
-- [桌宠系统](docs/桌宠系统.md)：桌宠设置、资产、窗口、状态和 agent 绑定。
-- [看板与云同步](docs/看板与云同步.md)：本地 SQLite、云只读缓存、远端控制和 automation。
-- [Kanban 云端与 Desktop 同步协议 V1](docs/Kanban云端与Desktop同步协议-v1.md)：Desktop 原子认领、多 Chat、Stage Worker、Review Worker 和可靠 run event。
-- [桌面协议与动作桥](docs/桌面协议与动作桥.md)：Desktop WebSocket、HTTP action bridge 和动作命名。
-- [版本化打包与卸载](docs/版本化打包与卸载.md)：macOS/Windows 打包、env/demo 资源和卸载。
-- [手工测试用例](docs/手工测试用例.md)：文档化手工回归路径。
+- [设计文档总览](docs/README.md)：文档边界、事实源分工、阅读路径与全部专题索引。
+- [手工回归清单](qa/manual-regression.md)：跨模块和用户可见工作流的发布验证。
 
 ## 7. 开发约束
 

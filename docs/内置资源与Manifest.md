@@ -1,78 +1,59 @@
-# 内置资源与Manifest
+# 内置资源与 Manifest
 
-## 当前状态
+## 文档定位
 
-Desktop 内置服务使用按平台生成的资源包或目录分发。资源根目录开发态默认为 `build/resources/services`，打包态默认为 Electron `process.resourcesPath/services`，可用 `DESKTOP_BUILTIN_ASSETS_ROOT` 覆盖。
+本文描述 Desktop 如何消费内置服务发布物，以及 manifest 在资源发现和生命周期编排中的作用。字段全集、默认值和校验规则以共享类型、源码及测试为准。
 
-每个内置服务必须提供 `manifest.json`。Desktop 读取 manifest 后通过 `normalizeManifest()` 归一化服务定义，再注册到运行时 service registry。
+## 资源边界
 
-## 核心流程
+内置服务由各自仓库构建发布，Desktop 只消费明确的 release 目录或已同步到 `build/resources/services` 的产物。Desktop 不扫描周边源码仓库，也不读取或修改服务私有发布配置。
 
 ```text
-npm run sync:assets
-  -> scripts/lib/builtin-assets.mjs
-  -> scan workspace or DESKTOP_BUILTIN_ASSETS_SOURCE
-  -> --source <release-dir> 时只读取明确指定的上游发布目录
-  -> filter manifest.kind === "builtin"
-  -> filter target os / arch
-  -> build/resources/services/<service-id>/<archive>
-  -> build/resources/services/manifest.json
-
-npm run dev / npm run dist:mac
-  -> scripts/sync-builtin-assets.mjs --use-existing
-  -> validate build/resources/services
-  -> fail if the current build resources are missing or incomplete
-
-loadBuiltinServices()
-  -> read installed services under program data
-  -> read bundled assets under resources/services
-  -> select latest version per service id
-  -> registerService()
+上游服务 release
+  -> Desktop 资源同步与平台校验
+  -> build/resources/services
+  -> Electron 打包资源
+  -> 运行时发现、安装与注册
 ```
 
-平台资源格式：
+开发和发布入口可以校验现有资源，但不能在不知情的情况下从本机任意目录刷新 bundle。需要更新内置资源时必须显式执行同步流程。
 
-- Windows：`.zip`。
-- macOS / Linux：`.tar.gz` 或 `.tgz`。
-- 开发态也支持包含 `manifest.json` 的目录型资源。
+## Manifest 职责
 
-## 配置与接口
+每个 bundle 的 manifest 是 Desktop 识别该资源的唯一入口，描述：
 
-关键 manifest 字段：
+- 稳定身份、版本、服务种类和目标平台。
+- 程序包顶层结构与必须存在的运行文件。
+- 前端形态、端口与健康检查能力。
+- deploy、start、stop 的生命周期入口。
+- Desktop 可以传递的布局、能力和动作声明。
 
-- `id`、`name`、`kind`、`version`、`description`。
-- `platform.os` / `platform.arch`：平台筛选。
-- `frontend.mode`：`none`、`embedded`、`standalone`。
-- `scripts.start`、`scripts.stop`、`scripts.deploy`：生命周期脚本。
-- `configFiles`：`.env` 等配置模板。
-- `runtime.pidRelativePath`、`runtime.logRelativePath`、`runtime.errorLogRelativePath`、`runtime.requiredPaths`。
-- `web.portEnvKey`、`web.defaultPort`、`web.routePath`。
-- `desktop.bundleTopLevelDir`、`desktop.envBindings`、`desktop.capabilities`、`desktop.actions`；Agent Platform 还必须声明 `desktop.runtimeResources: "v1"`。
+Manifest 不承载真实密钥，也不替代服务自己的配置 schema。Desktop 可以为宿主级策略做显式归一化，但不能维护与服务 bundle 相冲突的第二份服务定义。
 
-核心服务端口默认值由 `manifest-utils.ts` 对特定服务做 Desktop 覆写：
+## 平台资源
 
-- `agent-container-hub`：默认 `7079`。
-- `agent-platform`：默认 `7078`。
-- `agent-webclient`：默认 `7080`。
+Windows 与 macOS 使用各自平台可验证的归档和脚本格式。资源同步必须校验 OS、CPU 架构、包结构、路径安全、必要文件和签名要求；运行时只选择与当前平台匹配的版本。
 
-## 约束与注意事项
+平台差异在同步、解压、签名和命令执行处显式分支。一个平台验证通过不能证明另一个平台产物完整。
 
-- `sync:assets` 只同步 `manifest.json.kind === "builtin"` 的产物。
-- macOS/Linux 使用 `build-all-dist.sh`；Windows AMD64 使用原生 PowerShell 5.1 的 `build-all-dist.ps1`。两个入口都只调用每个上游服务的公开 `make release ARCH=<arch>`，然后将四个 `dist/release` 目录作为明确 `--source` 同步到 Desktop。它们不清理、不修复也不传递服务私有发布配置。
-- Windows 完整发布分两阶段：先在 `agent-platform` 运行 `powershell -ExecutionPolicy Bypass -File scripts/sync-local-builtins.ps1 -Target windows/amd64` 准备私有 builtin cache，再在 Desktop 运行 `powershell -ExecutionPolicy Bypass -File scripts/build-all-dist.ps1 -SyncOS windows -SyncArch amd64`。Desktop 不读取 builtin 源码仓库，也不修改 `builtins.lock.json`。
-- `dev`、`dist:mac` 和 Windows Electron 打包不扫描周边服务项目；它们只校验当前 `build/resources/services`。刷新内置服务资源请先运行对应平台的 `build-all-dist` 入口，或显式运行 `npm run sync:assets`。
-- 新增内置服务必须保证 bundle 内的 `runtime.requiredPaths` 完整。
-- `agent-platform` 额外执行 sidecar 硬门禁：Darwin/Linux 必须同时声明并携带 `bin/kbase-lance-engine`，Windows 必须同时声明并携带 `bin/kbase-lance-engine.exe`；即使上游 manifest 漏写该路径，`sync:assets` 也会拒绝不完整产物。
-- `agent-platform` 还执行 runtime resource contract 硬门禁：manifest 必须声明 `desktop.runtimeResources: "v1"`，Unix/Windows deploy 必须接收 runtime resource 参数并调用同一个 `agent-platform runtime-resource-sync` 子命令；Desktop 拒绝旧 bundle。
-- macOS 内置二进制如需预签名，使用 Darwin signing 相关环境变量和 `--sign-darwin`；`--use-existing --sign-darwin` 只处理 `build/resources/services` 中已有的 Darwin 目录资源，并刷新资源 manifest 的 `assetSignature`。
-- `agent-container-hub` 是 install-only startup service；核心必需资源校验当前主要覆盖 `identity-center`、`agent-platform`、`agent-webclient`。
+## 安装与注册
 
-## 相关文件
+Desktop 同时读取 bundled 资源和已安装程序版本，按稳定 service id 建立运行时 registry。新资源通过服务生命周期完成安装与 deploy；registry 只表达当前可用定义，不成为持久配置或业务状态源。
+
+核心服务可以有额外的硬门禁，例如必须携带的 sidecar 或 runtime resource contract。门禁属于 Desktop 与 bundle 的兼容边界，应由同步和安装测试共同锁定，而不是依赖文档字段清单。
+
+## 安全与维护约束
+
+- 只接受 manifest 明确声明且通过平台校验的资源。
+- 拒绝路径穿越、符号链接逃逸、缺失顶层目录和不完整 required paths。
+- 不直接手改生成的资源目录；修改上游并重新发布、同步。
+- 生成的资源索引和签名可以重建，源 manifest 与上游 release 才是长期事实。
+- Desktop 只验证生命周期 contract，不代替服务脚本修复配置。
+
+## 实现事实源
 
 - `src/main/builtin-loader.ts`
 - `src/main/manifest-utils.ts`
-- `src/main/services/service-registry.ts`
-- `scripts/sync-builtin-assets.mjs`
-- `scripts/lib/builtin-assets.mjs`
-- `test/builtin-assets.test.mjs`
-- `test/electron-bundle-paths.test.mjs`
+- `scripts/sync-builtin-assets.mjs` 与 `scripts/lib/builtin-assets.mjs`
+- `src/shared/contracts/manifest.ts`
+- 内置资源、bundle 路径和平台打包测试

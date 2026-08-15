@@ -2,13 +2,16 @@
 
 ## Design Docs First
 
-- Treat `docs/` as the design-plan source for Desktop behavior. Before changing code, read `README.md` section `6. 专题文档索引`, then open the `docs/` topic documents that match the task.
+- Treat `docs/` as the source for architecture, direction, module boundaries, major flows, and long-lived invariants. It is not an exhaustive description of current implementation details.
+- Before changing code, read `README.md` section `6. 专题文档索引`, then `docs/README.md`, and then the topic documents that match the task.
 - Start with `docs/架构与模块边界.md` whenever a change crosses Electron main/preload/renderer, built-in services, plugins, webviews, or shared contracts.
 - For startup, recovery, built-in services, resources, packaging, or uninstall flows, read `docs/启动初始化与恢复.md`, `docs/服务生命周期.md`, `docs/内置资源与Manifest.md`, and `docs/版本化打包与卸载.md` as applicable.
 - For frontend embedding, navigation, authentication, SSO, token bridges, desktop protocols, or action dispatch, read `docs/前端嵌入与导航.md`, `docs/鉴权SSO与TokenBridge.md`, and `docs/桌面协议与动作桥.md` as applicable.
 - For plugins, market resources, external websites, local web apps, pets, data layout, Kanban sync, or assistant integration, read the matching topic docs under `docs/` before editing the related modules.
-- Use `docs/手工测试用例.md` as the manual regression checklist for user-visible workflow changes.
-- If code must intentionally diverge from a design doc, update the doc in the same change or call out the mismatch explicitly.
+- Read exact interfaces, fields, defaults, paths, commands, and runtime behavior from `src/`, `src/shared/`, generated `contracts/`, and tests instead of copying them into design docs.
+- Use `qa/manual-regression.md` as the manual regression checklist for user-visible workflow changes.
+- Update a design doc in the same change when architecture, ownership, security boundaries, state machines, or cross-module invariants change. Field-level and implementation-only changes belong in source, contracts, tests, or QA.
+- If code must intentionally diverge from an existing design decision, update the doc in the same change or call out the mismatch explicitly.
 
 ## Platform Compatibility
 
