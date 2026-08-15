@@ -7,6 +7,7 @@ import JSZip from "jszip";
 import { APP_BRAND } from "../shared/brand";
 import { t } from "./i18n/main-i18n";
 import { resolveRuntimeRootPath } from "./runtime-root";
+import { isDesktopDevelopmentRuntime } from "./development-runtime";
 
 export type EnvRootConflictDecision = "migrate" | "keep" | "cancel";
 
@@ -279,7 +280,8 @@ function bundledResourcesRootCandidates(app: AppPackageReader, resourcesRootOver
   const candidates: string[] = [];
   pushUniquePath(candidates, resourcesRootOverride);
 
-  if (app.isPackaged) {
+  const isDevelopmentRuntime = isDesktopDevelopmentRuntime(app);
+  if (app.isPackaged && !isDevelopmentRuntime) {
     pushUniquePath(candidates, process.resourcesPath);
 
     const appPath = getPackagedAppPath(app);
@@ -309,7 +311,7 @@ function fileExists(filePath: string) {
 }
 
 function supportsBundledEnvResources(app: AppPackageReader, platform: NodeJS.Platform) {
-  return platform === "darwin" || platform === "win32" || app.isPackaged === false;
+  return platform === "darwin" || platform === "win32" || isDesktopDevelopmentRuntime(app, { platform });
 }
 
 export function resolveBundledEnvZipPath(

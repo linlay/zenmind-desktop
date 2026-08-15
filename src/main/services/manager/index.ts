@@ -188,6 +188,7 @@ import {
   validateSelectedEnvZipForDesktopVersionUpgrade
 } from "../../env-bootstrap";
 import { applyDesktopInitVersionUpgrade } from "../../desktop-init-bootstrap";
+import { isDesktopDevelopmentRuntime } from "../../development-runtime";
 import {
   completeDesktopServiceConfigUpgrade,
   DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,
@@ -3219,7 +3220,7 @@ async function runDesktopServiceConfigUpgradePreparation(
   options: StartupPreparationOptions,
   onBegin: () => void
 ) {
-  const isDevelopmentApp = app.isPackaged === false;
+  const isDevelopmentApp = isDesktopDevelopmentRuntime(app);
   const currentDesktopDefaultPorts = Object.fromEntries(
     DESKTOP_SERVICE_CONFIG_UPGRADE_IDS.map((serviceId) => {
       const service = getService(serviceId);

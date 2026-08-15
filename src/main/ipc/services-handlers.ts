@@ -4,6 +4,7 @@ import { invokePluginDesktopAction } from "../plugin-actions";
 import { t } from "../i18n/main-i18n";
 import type { LogStreamSubscriptionRegistry } from "../logs/subscriptions";
 import type { StartupEnvImportRequest } from "../../shared/contracts";
+import { isDesktopDevelopmentRuntime } from "../development-runtime";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 
@@ -397,7 +398,7 @@ export function registerServicesIpcHandlers(ipcMain: any, options: ServicesIpcHa
     const envImportRequest = startupRestoreState?.envImportRequest as StartupEnvImportRequest | undefined;
     const resumeBlockedStartup = startupRestoreState?.phase === "env-import-required";
     const isDevelopmentVersionChange =
-      app.isPackaged === false && envImportRequest?.reason === "desktop-version-change";
+      isDesktopDevelopmentRuntime(app) && envImportRequest?.reason === "desktop-version-change";
 
     if (!isDevelopmentVersionChange) {
       const effectiveDecision = await promptManualEnvRootConflict();
