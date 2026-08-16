@@ -300,7 +300,6 @@ window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => {
   const call = {
     method: detail.method,
     ...(detail.input === undefined ? {} : { input: detail.input }),
-    ...(detail.subscriptionId === undefined ? {} : { subscriptionId: detail.subscriptionId }),
   };
   void ipcRenderer.invoke(channel, call)
     .then((result) => {

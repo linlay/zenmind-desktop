@@ -89,8 +89,7 @@ test("RealtimeBroker multiplexes concurrent Runs and local request ids over one 
     baseUrl: "http://127.0.0.1:11789",
     token,
     id: "same-local-id",
-    runId: "run-1",
-    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "coder" },
     payload: { marker: "run-1", prompt: "redacted by diagnostics" },
     onEvent: (event) => firstEvents.push(event),
   });
@@ -98,8 +97,7 @@ test("RealtimeBroker multiplexes concurrent Runs and local request ids over one 
     baseUrl: "http://127.0.0.1:11789",
     token,
     id: "same-local-id",
-    runId: "run-2",
-    chatId: "chat-2",
+    owner: { kind: "team", teamId: "research" },
     payload: { marker: "run-2", prompt: "another" },
     onEvent: (event) => secondEvents.push(event),
   });
@@ -110,22 +108,32 @@ test("RealtimeBroker multiplexes concurrent Runs and local request ids over one 
   assert.equal(queries.length, 2);
   assert.notEqual(queries[0].id, queries[1].id);
   const byRun = new Map(queries.map((frame) => [frame.payload.marker, frame]));
+  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
+    type: "chat.start", timestamp: EPOCH_MS, seq: 1, chatId: "chat-1",
+  }});
+  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
+    type: "request.query", timestamp: EPOCH_MS + 1, seq: 2, chatId: "chat-1", runId: "run-1",
+  }});
   sockets[0].emit({ frame: "stream", id: byRun.get("run-2").id, event: {
-    type: "run.start", timestamp: EPOCH_MS, seq: 1, runId: "run-2", chatId: "chat-2", agentKey: "zenmi",
+    type: "run.start", timestamp: EPOCH_MS, seq: 1, runId: "run-2", chatId: "chat-2", teamId: "research",
   }});
   sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
-    type: "run.start", timestamp: EPOCH_MS + 1, seq: 1, runId: "run-1", chatId: "chat-1", agentKey: "coder",
+    type: "run.start", timestamp: EPOCH_MS + 2, seq: 3, runId: "run-1", chatId: "chat-1", agentKey: "coder",
   }});
-  assert.deepEqual(await first.accepted, { agentKey: "coder" });
-  assert.deepEqual(await second.accepted, { agentKey: "zenmi" });
+  assert.deepEqual(await first.accepted, {
+    chatId: "chat-1", runId: "run-1", owner: { kind: "agent", agentKey: "coder" },
+  });
+  assert.deepEqual(await second.accepted, {
+    chatId: "chat-2", runId: "run-2", owner: { kind: "team", teamId: "research" },
+  });
   sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
-    type: "run.start", timestamp: EPOCH_MS + 2, seq: 1, runId: "run-1", chatId: "chat-1", agentKey: "coder",
+    type: "run.start", timestamp: EPOCH_MS + 3, seq: 3, runId: "run-1", chatId: "chat-1", agentKey: "coder",
   }});
   await nextTurn();
-  assert.deepEqual(firstEvents.map((event) => event.runId), ["run-1"]);
+  assert.deepEqual(firstEvents.map((event) => event.type), ["chat.start", "request.query", "run.start"]);
   assert.deepEqual(secondEvents.map((event) => event.runId), ["run-2"]);
 
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, reason: "complete", lastSeq: 1 });
+  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, reason: "complete", lastSeq: 3 });
   sockets[0].emit({ frame: "stream", id: byRun.get("run-2").id, reason: "complete", lastSeq: 1 });
   assert.equal((await first.completed).reason, "complete");
   assert.equal((await second.completed).reason, "complete");
@@ -134,6 +142,56 @@ test("RealtimeBroker multiplexes concurrent Runs and local request ids over one 
   assert.equal(broker.getDiagnostics().connection.physicalConnectionCount, 1);
   assert.equal(broker.getDiagnostics().seqRegressionCount, 1);
   assert.equal(broker.getDiagnostics().duplicateTerminalCount, 1);
+});
+
+test("RealtimeBroker locally fans one Run out to Agent, Copilot, Overview and Debug", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    id: "primary-agent-query",
+    owner: { kind: "agent", agentKey: "coder" },
+    payload: { prompt: "fan out" },
+    onEvent() {},
+  });
+  await nextTurn();
+  const upstreamQuery = sockets[0].sent.find((frame) => frame.type === "/api/query");
+  sockets[0].emit({ frame: "stream", id: upstreamQuery.id, event: {
+    type: "run.start", timestamp: EPOCH_MS, seq: 1,
+    chatId: "chat-shared", runId: "run-shared", agentKey: "coder",
+  }});
+  await query.accepted;
+
+  const observed = new Map();
+  const subscriptions = ["agent", "copilot", "overview", "debug"].map((surface) => {
+    observed.set(surface, []);
+    return broker.subscribeRun({
+      baseUrl: "http://127.0.0.1:11789",
+      token,
+      chatId: "chat-shared",
+      runId: "run-shared",
+      kind: "surface",
+      consumerId: `surface-${surface}`,
+      onEvent: (event) => observed.get(surface).push(event.type),
+    });
+  });
+  await nextTurn();
+  assert.equal(sockets.length, 1);
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/attach").length, 0);
+
+  sockets[0].emit({ frame: "stream", id: upstreamQuery.id, event: {
+    type: "assistant.delta", timestamp: EPOCH_MS + 1, seq: 2,
+    chatId: "chat-shared", runId: "run-shared", delta: "hello",
+  }});
+  await nextTurn();
+  for (const surface of observed.keys()) {
+    assert.deepEqual(observed.get(surface), ["run.start", "assistant.delta"], surface);
+  }
+  assert.equal(broker.getDiagnostics().connection.physicalConnectionCount, 1);
+
+  sockets[0].emit({ frame: "stream", id: upstreamQuery.id, reason: "complete", lastSeq: 2 });
+  await query.completed;
+  for (const subscription of subscriptions) subscription.unsubscribe();
 });
 
 test("RealtimeBroker singleflights attach and strictly pairs rewritten response ids", async (t) => {
@@ -210,6 +268,7 @@ test("RealtimeBroker restores an accepted Run with attach(lastSeq) and never res
   const { broker, sockets, token } = createHarness(t);
   const handle = broker.query({
     baseUrl: "http://127.0.0.1:11789", token, id: "operation-1", runId: "run-recover", chatId: "chat-recover",
+    owner: { kind: "agent", agentKey: "coder" },
     payload: {}, onEvent: () => {},
   });
   await nextTurn();
@@ -235,6 +294,7 @@ test("RealtimeBroker closes the old identity generation before starting work for
   const { broker, sockets, token } = createHarness(t);
   const first = broker.query({
     baseUrl: "http://127.0.0.1:11789", token, id: "identity-one", runId: "run-one", chatId: "chat-one",
+    owner: { kind: "agent", agentKey: "coder" },
     payload: {}, onEvent: () => {},
   });
   await nextTurn();
@@ -246,7 +306,8 @@ test("RealtimeBroker closes the old identity generation before starting work for
 
   const second = broker.query({
     baseUrl: "http://127.0.0.1:11789", token: jwt({ sid: "new-session" }),
-    id: "identity-two", runId: "run-two", chatId: "chat-two", payload: {}, onEvent: () => {},
+    id: "identity-two", runId: "run-two", chatId: "chat-two",
+    owner: { kind: "agent", agentKey: "coder" }, payload: {}, onEvent: () => {},
   });
   await assert.rejects(first.completed, /identity was invalidated/);
   sockets[0].emit({ frame: "push", type: "chat.updated", data: { chatId: "stale" } });

@@ -317,15 +317,6 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
   ],
   proxyRoutes: [
     {
-      match: "exact",
-      path: "/ws",
-      targetEnv: "BASE_URL",
-      http: false,
-      websocket: true,
-      auth: "agent-platform-access-token",
-      stripRequestHeaders: ["sec-websocket-extensions"]
-    },
-    {
       match: "prefix",
       path: "/api/voice",
       targetEnv: "VOICE_BASE_URL",
@@ -341,11 +332,9 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
       match: "prefix",
       path: "/api",
       targetEnv: "BASE_URL",
-      websocket: true,
+      http: true,
+      websocket: false,
       auth: "agent-platform-access-token",
-      ssePaths: ["/api/query", "/api/attach"],
-      disableProxyBuffering: true,
-      stripRequestHeaders: ["sec-websocket-extensions"]
     }
   ]
 };

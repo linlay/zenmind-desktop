@@ -10,9 +10,13 @@ import {
   type AgentWebclientBridgeErrorCode,
   type AgentWebclientBridgeFailure,
   type AgentWebclientBridgeHello,
+  type AgentWebclientApiResponse,
+  type AgentWebclientDeliveryTarget,
   type AgentWebclientRealtimeMessage,
   type AgentWebclientRealtimeRequest,
+  type AgentWebclientRealtimeDetachInput,
   type AgentWebclientRealtimeSubscription,
+  type AgentWebclientRunOwner,
   type AgentWebclientSurfaceCapability,
   type AgentWebclientSurfaceKind,
   type WorkPanelBridgeResult,
@@ -46,7 +50,7 @@ type LocalSubscription = {
 
 type BatchQueue = {
   sender: WebContents;
-  subscriptionId: string;
+  delivery: AgentWebclientDeliveryTarget;
   chatId: string;
   runId: string;
   bindingEpoch: number;
@@ -65,7 +69,10 @@ const CAPABILITIES: Record<AgentWebclientSurfaceKind, readonly AgentWebclientSur
     "run.query", "run.attach", "run.control", "run.visible.read", "push.subscribe",
     "workpanel.open", "workpanel.activate", "workpanel.close", "inbound.action.owner",
   ],
-  "agent-summary": ["run.attach", "run.visible.read", "push.subscribe", "workpanel.activate", "workpanel.close"],
+  "agent-summary": [
+    "run.attach", "run.visible.read", "push.subscribe",
+    "workpanel.open", "workpanel.activate", "workpanel.close",
+  ],
   "agent-debug": ["run.attach", "run.visible.read", "push.subscribe", "workpanel.activate", "workpanel.close"],
   "agent-project": ["push.subscribe", "workpanel.open", "workpanel.activate", "workpanel.close"],
 };
@@ -89,6 +96,10 @@ function errorCode(error: unknown): AgentWebclientBridgeErrorCode {
 
 function messageOf(error: unknown) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function readText(value: unknown) {
+  return typeof value === "string" ? value.trim() : "";
 }
 
 function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
@@ -162,6 +173,62 @@ function ensureSourceChat(context: SurfaceContext, chatId: string) {
   return null;
 }
 
+function ensureQuerySourceChat(context: SurfaceContext, chatId: string | undefined) {
+  const ownerChatId = context.target.ownerChatId?.trim() || "";
+  const requestedChatId = chatId?.trim() || "";
+  if (ownerChatId) {
+    return ownerChatId === requestedChatId
+      ? null
+      : failure("capability_denied", "Query chat does not match the trusted surface owner");
+  }
+  if (
+    !requestedChatId &&
+    context.target.active &&
+    (context.kind === "agent-chat" || context.kind === "agent-copilot")
+  ) {
+    return null;
+  }
+  return failure("target_unavailable", "A new query requires an active ownerless Agent or Copilot surface");
+}
+
+function readOwner(value: unknown): AgentWebclientRunOwner | null {
+  if (!isPlainBridgeRecord(value)) return null;
+  if (value.kind === "agent" && typeof value.agentKey === "string" && value.agentKey.trim()) {
+    return { kind: "agent", agentKey: value.agentKey.trim() };
+  }
+  if (value.kind === "team" && typeof value.teamId === "string" && value.teamId.trim()) {
+    return { kind: "team", teamId: value.teamId.trim() };
+  }
+  return null;
+}
+
+function ownerPayload(owner: AgentWebclientRunOwner) {
+  return owner.kind === "agent"
+    ? { agentKey: owner.agentKey }
+    : { teamId: owner.teamId };
+}
+
+function deliveryKey(target: AgentWebclientDeliveryTarget) {
+  return target.kind === "operation"
+    ? `operation:${target.operationId}`
+    : `subscription:${target.subscriptionId}`;
+}
+
+function apiResponseFromFrame(frame: Record<string, unknown>): AgentWebclientApiResponse {
+  const isError = frame.frame === "error";
+  const frameCode = typeof frame.code === "number" && Number.isFinite(frame.code)
+    ? Math.trunc(frame.code)
+    : isError
+      ? 500
+      : 0;
+  return {
+    status: isError ? frameCode : 200,
+    code: frameCode,
+    msg: typeof frame.msg === "string" ? frame.msg : isError ? "request failed" : "success",
+    ...(frame.data === undefined ? {} : { data: frame.data }),
+  };
+}
+
 function sendMessage(sender: WebContents, message: AgentWebclientRealtimeMessage) {
   if (!sender.isDestroyed()) sender.send(AGENT_WEBCLIENT_REALTIME_MESSAGE_CHANNEL, message);
 }
@@ -180,7 +247,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   }): Promise<WorkPanelBridgeResult>;
 }) {
   const subscriptions = new Map<string, LocalSubscription>();
-  const operations = new Map<string, number>();
+  const operations = new Map<string, { senderId: number; kind: "query" | "control" }>();
   const batchQueues = new Map<string, BatchQueue>();
   const installedCleanup = new Set<number>();
   const connectionUnsubscribers = new Map<number, () => void>();
@@ -197,8 +264,8 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       if (queue.timer) clearTimeout(queue.timer);
       batchQueues.delete(key);
     }
-    for (const [key, ownerId] of operations) {
-      if (ownerId === senderId) operations.delete(key);
+    for (const [key, operation] of operations) {
+      if (operation.senderId === senderId) operations.delete(key);
     }
     options.realtimeBroker.cleanupConsumer(`agent-webclient-surface:${senderId}`);
     connectionUnsubscribers.get(senderId)?.();
@@ -246,7 +313,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     sendMessage(queue.sender, {
       version: AGENT_WEBCLIENT_BRIDGE_VERSION,
       kind: "run.batch",
-      subscriptionId: queue.subscriptionId,
+      delivery: queue.delivery,
       bindingEpoch: queue.bindingEpoch,
       chatId: queue.chatId,
       runId: queue.runId,
@@ -257,15 +324,15 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
 
   const enqueue = (
     sender: WebContents,
-    subscriptionId: string,
+    delivery: AgentWebclientDeliveryTarget,
     chatId: string,
     runId: string,
     event: Record<string, unknown>,
     epoch: number,
   ) => {
-    const key = `${sender.id}:${subscriptionId}`;
+    const key = `${sender.id}:${deliveryKey(delivery)}`;
     const queue = batchQueues.get(key) ?? {
-      sender, subscriptionId, chatId, runId, bindingEpoch: epoch,
+      sender, delivery, chatId, runId, bindingEpoch: epoch,
       events: [], bytes: 0, lastSeq: 0, timer: null,
     };
     queue.bindingEpoch = epoch;
@@ -316,37 +383,71 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       if (!input || (input.kind !== "run.query" && input.kind !== "run.control")) {
         return failure("invalid_request", "unsupported realtime request kind");
       }
+      if (!isPlainBridgeRecord(input.payload)) {
+        return failure("invalid_request", "request payload must be an object");
+      }
+      if (input.kind === "run.control" && (!readText(input.chatId) || !readText(input.runId))) {
+        return failure("invalid_request", "control chatId and runId are required");
+      }
       const capabilityFailure = requireCapability(context, input.kind);
       if (capabilityFailure) return capabilityFailure;
       if (!context.target.active) {
         return failure("unsupported_in_current_view", "Run control is available only from the active trusted surface");
       }
-      const sourceFailure = ensureSourceChat(context, input.chatId);
+      const owner = readOwner(input.owner);
+      if (!owner) return failure("invalid_request", "a canonical Run owner is required");
+      const sourceFailure = input.kind === "run.query"
+        ? ensureQuerySourceChat(context, input.chatId)
+        : ensureSourceChat(context, input.chatId);
       if (sourceFailure) return sourceFailure;
       const operationId = input.operationId?.trim() || "";
       const operationKey = `${event.sender.id}:${operationId}`;
       if (!operationId) return failure("invalid_request", "operationId is required");
       if (operations.has(operationKey)) return failure("duplicate_id", "operationId is already active");
-      operations.set(operationKey, event.sender.id);
+      operations.set(operationKey, { senderId: event.sender.id, kind: input.kind === "run.query" ? "query" : "control" });
       try {
         const platform = await availability();
         if (input.kind === "run.query") {
+          if (readText(input.payload?.runId)) {
+            operations.delete(operationKey);
+            return failure("invalid_request", "Desktop Bridge v2 forbids guest-provided query runId");
+          }
+          const {
+            runId: _runId,
+            chatId: _payloadChatId,
+            agentKey: _payloadAgentKey,
+            teamId: _payloadTeamId,
+            ...queryPayload
+          } = input.payload;
+          const requestedChatId = input.chatId?.trim() || "";
+          const delivery = { kind: "operation", operationId } as const;
+          let canonicalIdentity: { chatId: string; runId: string } | null = null;
           let epoch = ++bindingEpoch;
           const handle = options.realtimeBroker.query({
             ...platform,
             id: operationId,
-            runId: input.runId,
-            chatId: input.chatId,
-            agentKey: input.owner?.kind === "agent" ? input.owner.agentKey : undefined,
-            payload: input.payload,
-            onEvent: (runEvent) => enqueue(event.sender, `operation:${operationId}`, input.chatId, input.runId, runEvent, epoch),
+            ...(requestedChatId ? { chatId: requestedChatId } : {}),
+            owner,
+            payload: {
+              ...queryPayload,
+              ...(requestedChatId ? { chatId: requestedChatId } : {}),
+              ...ownerPayload(owner),
+            },
+            onEvent: (runEvent) => {
+              if (!operations.has(operationKey)) return;
+              const chatId = canonicalIdentity?.chatId || readText(runEvent.chatId);
+              const runId = canonicalIdentity?.runId || readText(runEvent.runId);
+              if (chatId && runId) enqueue(event.sender, delivery, chatId, runId, runEvent, epoch);
+            },
           });
           void handle.accepted.then((accepted) => {
+            canonicalIdentity = { chatId: accepted.chatId, runId: accepted.runId };
+            if (!operations.has(operationKey)) return;
             if (context.kind === "agent-chat" || context.kind === "agent-copilot") {
               try {
                 const binding = options.realtimeBroker.bindVisibleRun({
-                  chatId: input.chatId,
-                  runId: input.runId,
+                  chatId: accepted.chatId,
+                  runId: accepted.runId,
                   primarySurfaceId: `surface:${event.sender.id}`,
                 });
                 if (binding) {
@@ -361,34 +462,41 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "run.accepted",
               operationId,
-              chatId: input.chatId,
-              runId: input.runId,
-              agentKey: accepted.agentKey,
-            });
-          }).catch((error) => sendMessage(event.sender, {
-            version: AGENT_WEBCLIENT_BRIDGE_VERSION,
-            kind: "error",
-            operationId,
-            error: { code: errorCode(error), message: messageOf(error) },
-          }));
-          void handle.completed.then((completed) => {
-            operations.delete(operationKey);
-            flushBatch(`${event.sender.id}:operation:${operationId}`);
-            sendMessage(event.sender, {
-              version: AGENT_WEBCLIENT_BRIDGE_VERSION,
-              kind: "run.completed",
-              operationId,
-              chatId: input.chatId,
-              runId: input.runId,
-              reason: completed.reason,
-              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+              chatId: accepted.chatId,
+              runId: accepted.runId,
+              owner: accepted.owner,
             });
           }).catch((error) => {
+            if (!operations.has(operationKey)) return;
             operations.delete(operationKey);
             sendMessage(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "error",
-              operationId,
+              delivery,
+              error: { code: errorCode(error), message: messageOf(error) },
+            });
+          });
+          void handle.completed.then((completed) => {
+            if (!operations.has(operationKey)) return;
+            operations.delete(operationKey);
+            flushBatch(`${event.sender.id}:${deliveryKey(delivery)}`);
+            if (!canonicalIdentity) return;
+            sendMessage(event.sender, {
+              version: AGENT_WEBCLIENT_BRIDGE_VERSION,
+              kind: "run.completed",
+              delivery,
+              chatId: canonicalIdentity.chatId,
+              runId: canonicalIdentity.runId,
+              reason: completed.reason,
+              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+            });
+          }).catch((error) => {
+            if (!operations.has(operationKey)) return;
+            operations.delete(operationKey);
+            sendMessage(event.sender, {
+              version: AGENT_WEBCLIENT_BRIDGE_VERSION,
+              kind: "error",
+              delivery,
               error: { code: errorCode(error), message: messageOf(error) },
             });
           });
@@ -398,27 +506,37 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           ? "/api/interrupt"
           : input.control === "submitAwaiting" || input.control === "submitTool"
             ? "/api/submit"
-            : "";
-        if (!route) {
-          operations.delete(operationKey);
-          return failure("unsupported_in_current_view", `${input.control} is not supported by Desktop bridge v1`);
-        }
-        await new Promise<void>((resolve, reject) => {
+            : input.control === "steer"
+              ? "/api/steer"
+              : input.control === "updateAccessLevel"
+                ? "/api/access-level"
+                : "";
+        if (!route) throw Object.assign(new Error("unsupported Run control"), { name: "invalid_request" });
+        const {
+          chatId: _payloadChatId,
+          runId: _payloadRunId,
+          agentKey: _payloadAgentKey,
+          teamId: _payloadTeamId,
+          ...controlPayload
+        } = input.payload;
+        const response = await new Promise<AgentWebclientApiResponse>((resolve, reject) => {
           void options.realtimeBroker.forwardRequest({
             ...platform,
             localId: operationId,
             consumerId: `agent-webclient-surface:${event.sender.id}`,
             type: route,
-            payload: { ...input.payload, chatId: input.chatId, runId: input.runId },
-            onFrame: (frame) => {
-              if (frame.frame === "error") reject(new Error(String(frame.msg || frame.type || "control failed")));
-              else resolve();
+            payload: {
+              ...controlPayload,
+              chatId: input.chatId,
+              runId: input.runId,
+              ...ownerPayload(owner),
             },
+            onFrame: (frame) => resolve(apiResponseFromFrame(frame)),
             onError: reject,
           }).catch(reject);
         });
         operations.delete(operationKey);
-        return { ok: true, operationId };
+        return { ok: true, operationId, response };
       } catch (error) {
         operations.delete(operationKey);
         return failure(errorCode(error), messageOf(error));
@@ -458,6 +576,8 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       if (input.kind !== "run") return failure("invalid_request", "unsupported subscription kind");
       const denied = requireCapability(context, "run.attach");
       if (denied) return denied;
+      const owner = readOwner(input.owner);
+      if (!owner) return failure("invalid_request", "a canonical Run owner is required");
       const sourceFailure = ensureSourceChat(context, input.chatId);
       if (sourceFailure) return sourceFailure;
       if (input.role === "primary" && context.kind !== "agent-chat" && context.kind !== "agent-copilot") {
@@ -467,6 +587,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         return failure("unsupported_in_current_view", "A hidden surface cannot become the primary Run surface");
       }
       const subscriptionId = `surface-run-${randomUUID()}`;
+      const delivery = { kind: "subscription", subscriptionId } as const;
       let epoch = options.realtimeBroker.getVisibleBinding()?.epoch ?? ++bindingEpoch;
       try {
         const subscription = options.realtimeBroker.subscribeRun({
@@ -474,16 +595,16 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           runId: input.runId,
           chatId: input.chatId,
           lastSeq: input.lastSeq,
-          agentKey: input.owner?.kind === "agent" ? input.owner.agentKey : undefined,
+          owner,
           kind: "surface",
           consumerId: `agent-webclient-surface:${event.sender.id}`,
-          onEvent: (runEvent) => enqueue(event.sender, subscriptionId, input.chatId, input.runId, runEvent, epoch),
+          onEvent: (runEvent) => enqueue(event.sender, delivery, input.chatId, input.runId, runEvent, epoch),
           onComplete: (completed) => {
-            flushBatch(`${event.sender.id}:${subscriptionId}`);
+            flushBatch(`${event.sender.id}:${deliveryKey(delivery)}`);
             sendMessage(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "run.completed",
-              subscriptionId,
+              delivery,
               chatId: input.chatId,
               runId: input.runId,
               reason: completed.reason,
@@ -493,7 +614,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           onError: (error) => sendMessage(event.sender, {
             version: AGENT_WEBCLIENT_BRIDGE_VERSION,
             kind: "error",
-            subscriptionId,
+            delivery,
             error: { code: errorCode(error), message: error.message },
           }),
         });
@@ -524,18 +645,40 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         return failure(errorCode(error), messageOf(error));
       }
     }
-    if (method === "unsubscribe") {
-      const subscriptionId = typeof record.subscriptionId === "string" ? record.subscriptionId.trim() : "";
-      const subscription = subscriptions.get(subscriptionId);
-      if (!subscription || subscription.senderId !== event.sender.id) {
-        return failure("target_unavailable", "subscription is unavailable for this surface");
+    if (method === "detach") {
+      const input = record.input as AgentWebclientRealtimeDetachInput;
+      const versionFailure = validateVersion(input);
+      if (versionFailure) return versionFailure;
+      const target: Record<string, unknown> = isPlainBridgeRecord(input?.target) ? input.target : {};
+      if (target.kind === "operation") {
+        const operationId = typeof target.operationId === "string" ? target.operationId.trim() : "";
+        const operationKey = `${event.sender.id}:${operationId}`;
+        const operation = operations.get(operationKey);
+        if (!operation || operation.senderId !== event.sender.id || operation.kind !== "query") {
+          return failure("target_unavailable", "query operation is unavailable for this surface");
+        }
+        operations.delete(operationKey);
+        const delivery = { kind: "operation", operationId } as const;
+        const key = `${event.sender.id}:${deliveryKey(delivery)}`;
+        if (batchQueues.get(key)?.timer) clearTimeout(batchQueues.get(key)!.timer!);
+        batchQueues.delete(key);
+        return { ok: true, operationId };
       }
-      subscription.unsubscribe();
-      subscriptions.delete(subscriptionId);
-      const key = `${event.sender.id}:${subscriptionId}`;
-      flushBatch(key);
-      batchQueues.delete(key);
-      return { ok: true, subscriptionId };
+      if (target.kind === "subscription") {
+        const subscriptionId = typeof target.subscriptionId === "string" ? target.subscriptionId.trim() : "";
+        const subscription = subscriptions.get(subscriptionId);
+        if (!subscription || subscription.senderId !== event.sender.id) {
+          return failure("target_unavailable", "subscription is unavailable for this surface");
+        }
+        subscription.unsubscribe();
+        subscriptions.delete(subscriptionId);
+        const delivery = { kind: "subscription", subscriptionId } as const;
+        const key = `${event.sender.id}:${deliveryKey(delivery)}`;
+        if (batchQueues.get(key)?.timer) clearTimeout(batchQueues.get(key)!.timer!);
+        batchQueues.delete(key);
+        return { ok: true, subscriptionId };
+      }
+      return failure("invalid_request", "detach target is required");
     }
     return failure("invalid_request", "unknown realtime bridge method");
   });

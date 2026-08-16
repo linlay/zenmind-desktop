@@ -57,7 +57,9 @@ Agent WebClient guest 不接收 access token。普通 HTTP 请求继续经过 De
   -> 定向返回最小业务结果
 ```
 
-页面不能访问通用主进程 API。bridge 必须校验 origin、来源窗口、session partition、route、owner Chat 与活动状态；响应不能广播给其他 webview，也不能通过页面 URL 或 guest storage 传递 token。旧 WebClient 的业务 `/ws` host proxy 只作为 Desktop-only 兼容面保留，必须与匹配 WebClient bundle 原子切换后才能禁用。
+页面不能访问通用主进程 API。bridge 必须校验 origin、来源窗口、session partition、route、owner Chat 与活动状态；响应不能广播给其他 webview，也不能通过页面 URL 或 guest storage 传递 token。Bridge v2 不保留业务 `/ws`、SSE query/attach 或 HTTP Run control 兼容面；Program manifest 缺少 `/api` 的 `agent-platform-access-token` 声明，或重新声明 `/auth`、`/ws`、Agent Platform WebSocket/SSE 时，安装与启动必须失败。
+
+Bridge v2 与 Agent WebClient bundle、vendored contract hash 和 Desktop 内置资源必须原子发布及回滚。v1 Desktop、v1 WebClient 或旧 manifest 与 v2 任一侧混用都属于不兼容部署，不允许回退到 Standalone transport。
 
 ### 内置服务与 Host Bash
 

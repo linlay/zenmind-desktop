@@ -79,25 +79,35 @@ function createRegistration(targetOverrides = {}) {
 }
 
 test("trusted bridge derives Summary capabilities and rejects control and forged chat identity", async () => {
-  const { handlers } = createRegistration();
+  const { handlers, dispatched } = createRegistration();
   const sender = createSender();
   const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
   const hello = await realtime({ sender }, { method: "hello" });
-  assert.equal(hello.version, 1);
+  assert.equal(hello.version, 2);
   assert.equal(hello.surface.kind, "agent-summary");
   assert.equal(hello.surface.ownerChatId, "chat-1");
   assert.equal(hello.surface.capabilities.includes("run.control"), false);
-  const mismatched = await realtime({ sender }, { method: "hello", input: { version: 2 } });
+  assert.equal(hello.surface.capabilities.includes("workpanel.open"), true);
+  const workpanel = handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+  const opened = await workpanel({ sender }, { method: "openItem", input: {
+    version: 2,
+    descriptor: { kind: "web", url: "https://example.test/summary-target" },
+  }});
+  assert.equal(opened.ok, true);
+  assert.equal(dispatched.length, 1);
+  assert.equal(dispatched[0].action, "openItem");
+  const mismatched = await realtime({ sender }, { method: "hello", input: { version: 1 } });
   assert.equal(mismatched.error.code, "version_mismatch");
 
   const control = await realtime({ sender }, { method: "request", input: {
-    version: 1, operationId: "operation-1", kind: "run.control", control: "interrupt",
+    version: 2, operationId: "operation-1", kind: "run.control", control: "interrupt",
     chatId: "chat-1", runId: "run-1", payload: {},
   }});
   assert.equal(control.error.code, "capability_denied");
 
   const forgedChat = await realtime({ sender }, { method: "subscribe", input: {
-    version: 1, kind: "run", role: "summary", chatId: "chat-forged", runId: "run-1", lastSeq: 0,
+    version: 2, kind: "run", role: "summary", chatId: "chat-forged", runId: "run-1", lastSeq: 0,
+    owner: { kind: "agent", agentKey: "agent-1" },
   }});
   assert.equal(forgedChat.error.code, "capability_denied");
 });
@@ -107,7 +117,7 @@ test("trusted WorkPanel bridge binds owner chat in Main and rejects an unregiste
   const sender = createSender();
   const workpanel = registered.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
   const result = await workpanel({ sender }, { method: "openItem", input: {
-    version: 1,
+    version: 2,
     descriptor: { kind: "web", url: "https://example.test/" },
   }});
   assert.equal(result.ok, true);
@@ -125,7 +135,7 @@ test("trusted WorkPanel bridge binds owner chat in Main and rejects an unregiste
     dispatchWorkPanel: async () => ({ ok: true }),
   });
   const denied = await deniedHandlerMap.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, {
-    method: "openItem", input: { version: 1, descriptor: { kind: "web", url: "https://example.test" } },
+    method: "openItem", input: { version: 2, descriptor: { kind: "web", url: "https://example.test" } },
   });
   assert.equal(denied.error.code, "surface_unavailable");
 });
@@ -135,7 +145,7 @@ test("destroyed guest automatically cleans subscriptions, pending consumers, and
   const sender = createSender();
   const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
   const subscribed = await realtime({ sender }, { method: "subscribe", input: {
-    version: 1, kind: "push", types: ["chat.updated"], filter: { chatId: "chat-1" },
+    version: 2, kind: "push", types: ["chat.updated"], filter: { chatId: "chat-1" },
   }});
   assert.equal(subscribed.ok, true);
   sender.emit("destroyed");
@@ -150,11 +160,153 @@ test("reloading a guest clears subscriptions before the next preload registers",
   const sender = createSender(42);
   const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
   const subscribed = await realtime({ sender }, { method: "subscribe", input: {
-    version: 1, kind: "push", types: ["chat.updated"], filter: { chatId: "chat-1" },
+    version: 2, kind: "push", types: ["chat.updated"], filter: { chatId: "chat-1" },
   }});
   assert.equal(subscribed.ok, true);
   sender.emit("did-start-loading");
   assert.ok(cleanups.includes("push"));
   assert.ok(cleanups.includes("agent-webclient-surface:42"));
   assert.deepEqual(cleared, ["surface:42"]);
+});
+
+test("Bridge v2 accepts an ownerless active Agent surface query and returns canonical identity", async () => {
+  const registered = createRegistration({
+    surfaceType: "agent-chat",
+    ownerChatId: undefined,
+    pageRoute: "/agent/agent-1",
+  });
+  let brokerQuery;
+  registered.broker.query = (input) => {
+    brokerQuery = input;
+    queueMicrotask(() => input.onEvent({
+      type: "run.start",
+      timestamp: 1_771_888_000_000,
+      seq: 1,
+      chatId: "chat-canonical",
+      runId: "run-canonical",
+      agentKey: "agent-1",
+    }));
+    return {
+      accepted: Promise.resolve({
+        chatId: "chat-canonical",
+        runId: "run-canonical",
+        owner: { kind: "agent", agentKey: "agent-1" },
+      }),
+      completed: new Promise(() => {}),
+    };
+  };
+  registered.broker.bindVisibleRun = () => ({ epoch: 9 });
+  const sender = createSender();
+  const realtime = registered.handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
+  const result = await realtime({ sender }, { method: "request", input: {
+    version: 2,
+    operationId: "operation-new",
+    kind: "run.query",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    payload: { message: "hello", agentKey: "agent-1" },
+  }});
+  assert.deepEqual(result, { ok: true, operationId: "operation-new" });
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal("runId" in brokerQuery.payload, false);
+  assert.equal("chatId" in brokerQuery.payload, false);
+  assert.deepEqual(sender.messages.find(({ message }) => message.kind === "run.accepted").message, {
+    version: 2,
+    kind: "run.accepted",
+    operationId: "operation-new",
+    chatId: "chat-canonical",
+    runId: "run-canonical",
+    owner: { kind: "agent", agentKey: "agent-1" },
+  });
+
+  const detached = await realtime({ sender }, { method: "detach", input: {
+    version: 2,
+    target: { kind: "operation", operationId: "operation-new" },
+  }});
+  assert.deepEqual(detached, { ok: true, operationId: "operation-new" });
+});
+
+test("Bridge v2 returns the real Platform control response", async () => {
+  const registered = createRegistration({ surfaceType: "agent-chat" });
+  registered.broker.forwardRequest = async ({ localId, onFrame }) => {
+    onFrame({
+      frame: "error",
+      id: localId,
+      type: "awaiting_conflict",
+      code: 409,
+      msg: "awaiting state changed",
+      data: { awaitingId: "awaiting-1" },
+    });
+  };
+  const sender = createSender();
+  const realtime = registered.handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
+  const result = await realtime({ sender }, { method: "request", input: {
+    version: 2,
+    operationId: "submit-1",
+    kind: "run.control",
+    control: "submitAwaiting",
+    chatId: "chat-1",
+    runId: "run-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    payload: { awaitingId: "awaiting-1", params: [] },
+  }});
+  assert.deepEqual(result, {
+    ok: true,
+    operationId: "submit-1",
+    response: {
+      status: 409,
+      code: 409,
+      msg: "awaiting state changed",
+      data: { awaitingId: "awaiting-1" },
+    },
+  });
+});
+
+test("Bridge v2 routes all five Run controls over the Broker and preserves success payloads", async () => {
+  const registered = createRegistration({ surfaceType: "agent-chat" });
+  const forwarded = [];
+  registered.broker.forwardRequest = async (options) => {
+    forwarded.push({ type: options.type, payload: options.payload });
+    options.onFrame({
+      frame: "response",
+      id: options.localId,
+      code: 0,
+      msg: "success",
+      data: { routed: options.type },
+    });
+  };
+  const sender = createSender();
+  const realtime = registered.handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
+  const controls = [
+    ["interrupt", { message: "stop" }],
+    ["submitAwaiting", { awaitingId: "awaiting-1", params: [] }],
+    ["submitTool", { toolId: "tool-1", params: { accepted: true } }],
+    ["steer", { message: "continue" }],
+    ["updateAccessLevel", { accessLevel: "auto_approve" }],
+  ];
+  for (const [index, [control, payload]] of controls.entries()) {
+    const result = await realtime({ sender }, { method: "request", input: {
+      version: 2,
+      operationId: `control-${index}`,
+      kind: "run.control",
+      control,
+      chatId: "chat-1",
+      runId: "run-1",
+      owner: { kind: "agent", agentKey: "agent-1" },
+      payload,
+    }});
+    assert.equal(result.response.status, 200, control);
+    assert.equal(result.response.code, 0, control);
+  }
+  assert.deepEqual(forwarded.map(({ type }) => type), [
+    "/api/interrupt",
+    "/api/submit",
+    "/api/submit",
+    "/api/steer",
+    "/api/access-level",
+  ]);
+  for (const { payload } of forwarded) {
+    assert.equal(payload.chatId, "chat-1");
+    assert.equal(payload.runId, "run-1");
+    assert.equal(payload.agentKey, "agent-1");
+  }
 });

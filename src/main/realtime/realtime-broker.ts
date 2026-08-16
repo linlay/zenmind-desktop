@@ -3,6 +3,7 @@ import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
   AgentWebclientConnectionPhase,
+  AgentWebclientRunOwner,
 } from "../../shared/contracts";
 import { validateAgentPlatformPushTimeContract } from "../../shared/agent-platform-push-time-contract";
 import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
@@ -60,7 +61,7 @@ type ReplayEvent = {
 type BrokerRun = {
   runId: string;
   chatId: string;
-  agentKey: string;
+  owner: AgentWebclientRunOwner | null;
   lastSeq: number;
   terminal: boolean;
   suspended: boolean;
@@ -74,15 +75,18 @@ type BrokerRun = {
 type QueryTransaction = {
   operationId: string;
   upstreamRequestId: string;
-  runId: string;
-  chatId: string;
-  expectedAgentKey: string;
+  runId: string | null;
+  chatId: string | null;
+  expectedRunId: string;
+  expectedChatId: string;
+  expectedOwner: AgentWebclientRunOwner;
   accepted: Deferred<RealtimeQueryAccepted>;
   completed: Deferred<RealtimeQueryCompleted>;
   onEvent(event: Record<string, unknown>, path: string): Promise<void> | void;
   eventIndex: number;
   acceptedValue: RealtimeQueryAccepted | null;
   bufferedEvents: Array<{ event: Record<string, unknown>; path: string }>;
+  bufferedEventBytes: number;
   eventQueue: Promise<void>;
   acceptanceTimer: ReturnType<typeof setTimeout> | null;
   signal?: AbortSignal;
@@ -127,7 +131,11 @@ type ConnectionSubscription = {
   onState(state: AgentPlatformRealtimeConnectionState): void;
 };
 
-export type RealtimeQueryAccepted = { agentKey: string };
+export type RealtimeQueryAccepted = {
+  chatId: string;
+  runId: string;
+  owner: AgentWebclientRunOwner;
+};
 export type RealtimeQueryCompleted = { reason: string; lastSeq?: number };
 export type RealtimeQueryHandle = {
   accepted: Promise<RealtimeQueryAccepted>;
@@ -293,17 +301,17 @@ export class RealtimeBroker {
     token: string;
     id: string;
     payload: Record<string, unknown>;
-    runId: string;
-    chatId: string;
-    agentKey?: string;
+    runId?: string;
+    chatId?: string;
+    owner: AgentWebclientRunOwner;
     signal?: AbortSignal;
     onEvent(event: Record<string, unknown>, path: string): Promise<void> | void;
   }): RealtimeQueryHandle {
     const accepted = createDeferred<RealtimeQueryAccepted>();
     const completed = createDeferred<RealtimeQueryCompleted>();
     const operationId = options.id.trim();
-    const runId = options.runId.trim();
-    const chatId = options.chatId.trim();
+    const expectedRunId = options.runId?.trim() || "";
+    const expectedChatId = options.chatId?.trim() || "";
     if (!this.acceptingDelivery) {
       const error = brokerError("connection_unavailable", "Realtime Broker is shutting down");
       accepted.reject(error);
@@ -311,14 +319,8 @@ export class RealtimeBroker {
       return { accepted: accepted.promise, completed: completed.promise };
     }
     this.prepareConnectionIdentity(options.baseUrl, options.token);
-    if (!operationId || !runId || !chatId) {
-      const error = brokerError("invalid_request", "query id, runId and chatId are required");
-      accepted.reject(error);
-      completed.reject(error);
-      return { accepted: accepted.promise, completed: completed.promise };
-    }
-    if (this.runsById.has(runId)) {
-      const error = brokerError("duplicate_id", `runId ${runId} is already registered`);
+    if (!operationId) {
+      const error = brokerError("invalid_request", "query id is required");
       accepted.reject(error);
       completed.reject(error);
       return { accepted: accepted.promise, completed: completed.promise };
@@ -327,33 +329,22 @@ export class RealtimeBroker {
     const transaction: QueryTransaction = {
       operationId,
       upstreamRequestId,
-      runId,
-      chatId,
-      expectedAgentKey: options.agentKey?.trim() || "",
+      runId: null,
+      chatId: null,
+      expectedRunId,
+      expectedChatId,
+      expectedOwner: options.owner,
       accepted,
       completed,
       onEvent: options.onEvent,
       eventIndex: 0,
       acceptedValue: null,
       bufferedEvents: [],
+      bufferedEventBytes: 0,
       eventQueue: Promise.resolve(),
       acceptanceTimer: null,
       signal: options.signal,
     };
-    const run: BrokerRun = {
-      runId,
-      chatId,
-      agentKey: options.agentKey?.trim() || "",
-      lastSeq: 0,
-      terminal: false,
-      suspended: false,
-      upstreamRequestId,
-      query: transaction,
-      replay: [],
-      replayBytes: 0,
-      subscribers: new Set(),
-    };
-    this.runsById.set(runId, run);
     this.queriesByRequestId.set(upstreamRequestId, transaction);
     transaction.acceptanceTimer = unrefTimer(setTimeout(() => {
       this.failQuery(
@@ -475,6 +466,7 @@ export class RealtimeBroker {
     chatId: string;
     lastSeq?: number;
     agentKey?: string;
+    owner?: AgentWebclientRunOwner;
     kind: "surface" | "internal";
     consumerId: string;
     onEvent(event: Record<string, unknown>): void;
@@ -507,7 +499,9 @@ export class RealtimeBroker {
       run = {
         runId,
         chatId,
-        agentKey: options.agentKey?.trim() || "",
+        owner: options.owner ?? (options.agentKey?.trim()
+          ? { kind: "agent", agentKey: options.agentKey.trim() }
+          : null),
         lastSeq: Math.max(0, options.lastSeq ?? 0),
         terminal: false,
         suspended: false,
@@ -715,7 +709,7 @@ export class RealtimeBroker {
         this.failQuery(transaction, disconnectError);
         continue;
       }
-      const run = this.runsById.get(transaction.runId);
+      const run = transaction.runId ? this.runsById.get(transaction.runId) : null;
       if (run) {
         run.suspended = true;
         run.upstreamRequestId = null;
@@ -779,13 +773,17 @@ export class RealtimeBroker {
   }
 
   private handleQueryStream(transaction: QueryTransaction, frame: AgentPlatformRealtimeFrame) {
-    const run = this.runsById.get(transaction.runId);
-    if (!run) {
-      this.failQuery(transaction, brokerError("protocol_error", "query Run registry entry is missing"));
-      return;
-    }
+    let run = transaction.runId ? this.runsById.get(transaction.runId) : null;
     if (isRecord(frame.event)) {
       try {
+        if (!run && readText(frame.event.type) !== "run.start") {
+          this.bufferProvisionalQueryEvent(transaction, frame.event);
+          return;
+        }
+        if (!run) {
+          run = this.registerProvisionalRun(transaction, frame.event);
+          this.commitProvisionalQueryEvents(run, transaction);
+        }
         this.consumeRunEvent(run, frame.event, transaction);
       } catch (error) {
         this.failQuery(transaction, error);
@@ -798,10 +796,121 @@ export class RealtimeBroker {
       this.failQuery(transaction, brokerError("protocol_error", "query ended before run.start"));
       return;
     }
+    if (!run) {
+      this.failQuery(transaction, brokerError("protocol_error", "accepted query Run registry entry is missing"));
+      return;
+    }
     this.completeRun(run, {
       reason,
       ...(typeof frame.lastSeq === "number" ? { lastSeq: frame.lastSeq } : {}),
     });
+  }
+
+  private bufferProvisionalQueryEvent(
+    transaction: QueryTransaction,
+    event: Record<string, unknown>,
+  ) {
+    const type = readText(event.type);
+    const path = `ws.query[${transaction.operationId}].events[${transaction.eventIndex++}]`;
+    if (!type) throw brokerError("protocol_error", "stream event.type is required");
+    if (isTerminalEvent(type)) {
+      throw brokerError("protocol_error", "terminal event arrived before run.start");
+    }
+    requireAgentPlatformEpochMillis(event.timestamp, `${path}.timestamp`);
+    const eventChatId = readText(event.chatId);
+    if (transaction.expectedChatId && eventChatId && transaction.expectedChatId !== eventChatId) {
+      throw brokerError("protocol_error", "bootstrap chatId conflicts with query chatId");
+    }
+    const bytes = Buffer.byteLength(JSON.stringify(event));
+    if (
+      transaction.bufferedEvents.length >= MAX_REPLAY_EVENTS ||
+      transaction.bufferedEventBytes + bytes > MAX_REPLAY_BYTES
+    ) {
+      throw brokerError("backpressure", "too many query events arrived before run.start");
+    }
+    transaction.bufferedEvents.push({ event, path });
+    transaction.bufferedEventBytes += bytes;
+  }
+
+  private commitProvisionalQueryEvents(run: BrokerRun, transaction: QueryTransaction) {
+    for (const { event } of transaction.bufferedEvents) {
+      const eventRunId = readText(event.runId);
+      const eventChatId = readText(event.chatId);
+      if (eventRunId && eventRunId !== run.runId) {
+        throw brokerError("protocol_error", "bootstrap runId conflicts with canonical Run");
+      }
+      if (eventChatId && eventChatId !== run.chatId) {
+        throw brokerError("protocol_error", "bootstrap chatId conflicts with canonical Run");
+      }
+      const seq = typeof event.seq === "number" && Number.isSafeInteger(event.seq)
+        ? event.seq
+        : null;
+      if (seq !== null) {
+        if (seq <= run.lastSeq) {
+          this.diagnostics.seqRegressionCount += 1;
+          continue;
+        }
+        if (run.lastSeq > 0 && seq > run.lastSeq + 1) this.diagnostics.seqGapCount += 1;
+        run.lastSeq = seq;
+      }
+      this.appendReplay(run, event, seq);
+    }
+  }
+
+  private registerProvisionalRun(
+    transaction: QueryTransaction,
+    event: Record<string, unknown>,
+  ) {
+    const path = `ws.query[${transaction.operationId}].events[${transaction.eventIndex}]`;
+    if (readText(event.type) !== "run.start") throw brokerError("protocol_error", "run.start is required");
+    requireAgentPlatformEpochMillis(event.timestamp, `${path}.timestamp`);
+    const runId = readText(event.runId);
+    const chatId = readText(event.chatId);
+    if (!runId || !chatId) {
+      throw brokerError("protocol_error", "run.start must include canonical chatId and runId");
+    }
+    if (transaction.expectedRunId && transaction.expectedRunId !== runId) {
+      throw brokerError("protocol_error", "run.start runId conflicts with query runId");
+    }
+    if (transaction.expectedChatId && transaction.expectedChatId !== chatId) {
+      throw brokerError("protocol_error", "run.start chatId conflicts with query chatId");
+    }
+    const agentKey = readText(event.agentKey);
+    const teamId = readText(event.teamId);
+    if (Boolean(agentKey) === Boolean(teamId)) {
+      throw brokerError("protocol_error", "run.start must include exactly one Run owner");
+    }
+    const owner: AgentWebclientRunOwner = teamId
+      ? { kind: "team", teamId }
+      : { kind: "agent", agentKey };
+    const expectedOwner = transaction.expectedOwner;
+    if (
+      owner.kind !== expectedOwner.kind ||
+      (owner.kind === "agent" && expectedOwner.kind === "agent" && owner.agentKey !== expectedOwner.agentKey) ||
+      (owner.kind === "team" && expectedOwner.kind === "team" && owner.teamId !== expectedOwner.teamId)
+    ) {
+      throw brokerError("protocol_error", "run.start owner conflicts with query owner");
+    }
+    if (this.runsById.has(runId)) {
+      throw brokerError("duplicate_id", `runId ${runId} is already registered`);
+    }
+    const run: BrokerRun = {
+      runId,
+      chatId,
+      owner,
+      lastSeq: 0,
+      terminal: false,
+      suspended: false,
+      upstreamRequestId: transaction.upstreamRequestId,
+      query: transaction,
+      replay: [],
+      replayBytes: 0,
+      subscribers: new Set(),
+    };
+    transaction.runId = runId;
+    transaction.chatId = chatId;
+    this.runsById.set(runId, run);
+    return run;
   }
 
   private handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame) {
@@ -862,22 +971,21 @@ export class RealtimeBroker {
         transaction.bufferedEvents.push({ event, path });
         return;
       }
-      const agentKey = readText(event.agentKey);
-      if (!agentKey) throw brokerError("protocol_error", "run.start must include agentKey");
-      if (transaction.expectedAgentKey && transaction.expectedAgentKey !== agentKey) {
-        throw brokerError("protocol_error", "run.start agentKey conflicts with query owner");
-      }
-      transaction.acceptedValue = { agentKey };
-      run.agentKey = agentKey;
+      transaction.acceptedValue = {
+        chatId: run.chatId,
+        runId: run.runId,
+        owner: run.owner!,
+      };
       if (transaction.acceptanceTimer) {
         clearTimeout(transaction.acceptanceTimer);
         transaction.acceptanceTimer = null;
       }
-      transaction.accepted.resolve({ agentKey });
+      transaction.accepted.resolve(transaction.acceptedValue);
     }
     this.appendReplay(run, event, seq);
     if (transaction?.acceptedValue) {
       const queued = transaction.bufferedEvents.splice(0);
+      transaction.bufferedEventBytes = 0;
       queued.push({ event, path });
       for (const item of queued) {
         transaction.eventQueue = transaction.eventQueue.then(() =>
@@ -944,8 +1052,8 @@ export class RealtimeBroker {
 
   private failQuery(transaction: QueryTransaction, error: unknown) {
     this.queriesByRequestId.delete(transaction.upstreamRequestId);
-    const run = this.runsById.get(transaction.runId);
-    if (run && !transaction.acceptedValue) this.runsById.delete(transaction.runId);
+    const run = transaction.runId ? this.runsById.get(transaction.runId) : null;
+    if (run && !transaction.acceptedValue) this.runsById.delete(run.runId);
     if (transaction.signal && transaction.abortListener) {
       transaction.signal.removeEventListener("abort", transaction.abortListener);
     }
@@ -971,7 +1079,11 @@ export class RealtimeBroker {
         runId: run.runId,
         chatId: run.chatId,
         lastSeq: run.lastSeq,
-        ...(run.agentKey ? { agentKey: run.agentKey } : {}),
+        ...(run.owner?.kind === "agent"
+          ? { agentKey: run.owner.agentKey }
+          : run.owner?.kind === "team"
+            ? { teamId: run.owner.teamId }
+            : {}),
       },
     });
   }
@@ -989,7 +1101,11 @@ export class RealtimeBroker {
         runId: run.runId,
         chatId: run.chatId,
         lastSeq: run.lastSeq,
-        ...(run.agentKey ? { agentKey: run.agentKey } : {}),
+        ...(run.owner?.kind === "agent"
+          ? { agentKey: run.owner.agentKey }
+          : run.owner?.kind === "team"
+            ? { teamId: run.owner.teamId }
+            : {}),
       },
     });
   }

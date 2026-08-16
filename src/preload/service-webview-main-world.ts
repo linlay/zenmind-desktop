@@ -66,7 +66,7 @@ export function buildServiceWebviewMainWorldScript() {
     let requestSequence = 0;
     const pending = new Map();
     const realtimeListeners = new Set();
-    const invoke = (bridge, method, input, subscriptionId) => new Promise((resolve) => {
+    const invoke = (bridge, method, input) => new Promise((resolve) => {
       requestSequence += 1;
       const requestId = "agent-webclient-bridge-" + Date.now() + "-" + requestSequence;
       pending.set(requestId, resolve);
@@ -75,8 +75,7 @@ export function buildServiceWebviewMainWorldScript() {
           requestId,
           bridge,
           method,
-          ...(input === undefined ? {} : { input }),
-          ...(subscriptionId === undefined ? {} : { subscriptionId })
+          ...(input === undefined ? {} : { input })
         }
       }));
     });
@@ -100,7 +99,7 @@ export function buildServiceWebviewMainWorldScript() {
       hello: (input) => invoke("realtime", "hello", input),
       request: (input) => invoke("realtime", "request", input),
       subscribe: (input) => invoke("realtime", "subscribe", input),
-      unsubscribe: (subscriptionId) => invoke("realtime", "unsubscribe", undefined, subscriptionId),
+      detach: (input) => invoke("realtime", "detach", input),
       onMessage: (listener) => {
         if (typeof listener !== "function") return () => {};
         realtimeListeners.add(listener);

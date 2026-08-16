@@ -5,7 +5,7 @@
  * separately released Agent WebClient bundle and must not depend on Electron.
  */
 
-export const AGENT_WEBCLIENT_BRIDGE_VERSION = 1 as const;
+export const AGENT_WEBCLIENT_BRIDGE_VERSION = 2 as const;
 export const AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL =
   "__AGENT_WEBCLIENT_REALTIME_BRIDGE__" as const;
 export const AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL =
@@ -103,14 +103,29 @@ export type AgentWebclientRunControlKind =
   | "steer"
   | "updateAccessLevel";
 
+export type AgentWebclientDeliveryTarget =
+  | { kind: "operation"; operationId: string }
+  | { kind: "subscription"; subscriptionId: string };
+
+export type AgentWebclientRealtimeDetachInput = {
+  version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
+  target: AgentWebclientDeliveryTarget;
+};
+
+export type AgentWebclientApiResponse = {
+  status: number;
+  code: number;
+  msg?: string;
+  data?: unknown;
+};
+
 export type AgentWebclientRealtimeRequest =
   | {
       version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
       operationId: string;
       kind: "run.query";
-      chatId: string;
-      runId: string;
-      owner?: AgentWebclientRunOwner;
+      chatId?: string;
+      owner: AgentWebclientRunOwner;
       payload: Record<string, unknown>;
     }
   | {
@@ -120,7 +135,7 @@ export type AgentWebclientRealtimeRequest =
       chatId: string;
       runId: string;
       control: AgentWebclientRunControlKind;
-      owner?: AgentWebclientRunOwner;
+      owner: AgentWebclientRunOwner;
       payload: Record<string, unknown>;
     };
 
@@ -138,7 +153,7 @@ export type AgentWebclientRealtimeSubscription =
       runId: string;
       lastSeq: number;
       role: Exclude<AgentWebclientRunSubscriptionRole, "internal">;
-      owner?: AgentWebclientRunOwner;
+      owner: AgentWebclientRunOwner;
     }
   | {
       version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
@@ -155,6 +170,7 @@ export type AgentWebclientBridgeAck = {
   ok: true;
   operationId?: string;
   subscriptionId?: string;
+  response?: AgentWebclientApiResponse;
 };
 
 export type AgentWebclientBridgeFailure = {
@@ -179,12 +195,12 @@ export type AgentWebclientRealtimeMessage =
       operationId: string;
       chatId: string;
       runId: string;
-      agentKey?: string;
+      owner: AgentWebclientRunOwner;
     }
   | {
       version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
       kind: "run.batch";
-      subscriptionId: string;
+      delivery: AgentWebclientDeliveryTarget;
       bindingEpoch: number;
       chatId: string;
       runId: string;
@@ -194,8 +210,7 @@ export type AgentWebclientRealtimeMessage =
   | {
       version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
       kind: "run.completed";
-      operationId?: string;
-      subscriptionId?: string;
+      delivery: AgentWebclientDeliveryTarget;
       chatId: string;
       runId: string;
       reason: string;
@@ -211,8 +226,7 @@ export type AgentWebclientRealtimeMessage =
   | {
       version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
       kind: "error";
-      operationId?: string;
-      subscriptionId?: string;
+      delivery: AgentWebclientDeliveryTarget;
       error: AgentWebclientBridgeError;
     };
 
@@ -297,7 +311,7 @@ export type AgentWebclientRealtimeBridge = {
   hello(): Promise<AgentWebclientBridgeHello | AgentWebclientBridgeFailure>;
   request(input: AgentWebclientRealtimeRequest): Promise<AgentWebclientBridgeResult>;
   subscribe(input: AgentWebclientRealtimeSubscription): Promise<AgentWebclientBridgeResult>;
-  unsubscribe(subscriptionId: string): Promise<AgentWebclientBridgeResult>;
+  detach(input: AgentWebclientRealtimeDetachInput): Promise<AgentWebclientBridgeResult>;
   onMessage(listener: (message: AgentWebclientRealtimeMessage) => void): () => void;
 };
 
@@ -307,7 +321,7 @@ export type AgentWebclientWorkPanelBridge = {
   closeItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
 };
 
-export function isAgentWebclientBridgeVersion(value: unknown): value is 1 {
+export function isAgentWebclientBridgeVersion(value: unknown): value is 2 {
   return value === AGENT_WEBCLIENT_BRIDGE_VERSION;
 }
 

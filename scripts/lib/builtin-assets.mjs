@@ -1160,6 +1160,7 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   const deployScriptPath = lifecycleDeployScriptPathForArchive(service, archivePath);
   const deployScript = readArchiveEntryText(archivePath, deployScriptPath);
   validateLifecycleDeployProtocolText(service, archivePath, deployScriptPath, deployScript);
+  validateAgentWebclientBridgeV2Manifest(service, manifest, archivePath);
 
   if (manifest?.frontend?.hostManaged !== true) {
     throw new Error(
@@ -1265,6 +1266,41 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
         `Missing desktop capability requirement verifyRunning agent-platform waitHttp /api/runtime-info with auth.accessToken in manifest.json.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle with manifest-declared platform readiness dependencies.`
     );
+  }
+}
+
+function validateAgentWebclientBridgeV2Manifest(service, manifest, sourceLabel) {
+  if (service.id !== "agent-webclient") {
+    return;
+  }
+  const routes = manifest?.desktop?.hosting?.proxyRoutes;
+  const fail = (reason) => {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+        `Bridge v2 manifest ${reason}.\n` +
+        `Please rebuild and atomically publish the Bridge v2 agent-webclient bundle.`
+    );
+  };
+  if (!Array.isArray(routes)) {
+    fail("is missing desktop.hosting.proxyRoutes");
+  }
+  if (routes.some((route) => route?.path === "/auth" || route?.path === "/ws")) {
+    fail("must not expose /auth or /ws");
+  }
+  const apiRoutes = routes.filter((route) => route?.match === "prefix" && route?.path === "/api");
+  const apiRoute = apiRoutes[0];
+  if (
+    apiRoutes.length !== 1 ||
+    apiRoute?.targetEnv !== "BASE_URL" ||
+    apiRoute?.auth !== "agent-platform-access-token" ||
+    apiRoute?.http !== true ||
+    apiRoute?.websocket === true ||
+    (Array.isArray(apiRoute?.ssePaths) && apiRoute.ssePaths.length > 0)
+  ) {
+    fail("requires exactly one authenticated HTTP-only /api route without SSE overrides");
+  }
+  if (routes.some((route) => route?.targetEnv === "BASE_URL" && route?.websocket === true)) {
+    fail("must not expose an Agent Platform WebSocket route");
   }
 }
 
@@ -1464,6 +1500,7 @@ export function validateBundleDirectory(service, directoryPath) {
   }
 
   validateBundleDirectoryContents(service, directoryPath);
+  validateAgentWebclientBridgeV2Manifest(service, manifest, directoryPath);
   validateAgentPlatformBundleDirectory(service, directoryPath);
   if (service.id === "agent-container-hub") {
     validateBundleDirectoryDeployProtocol(service, directoryPath);

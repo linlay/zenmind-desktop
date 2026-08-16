@@ -1597,7 +1597,7 @@ export class AgentPlatformAssistantBridge {
         id: requestId,
         runId: run.runId,
         chatId: run.chatId,
-        agentKey: request.agentKey?.trim() || undefined,
+        owner: { kind: "agent", agentKey: request.agentKey?.trim() || "" },
         signal: run.activeRun.controller.signal,
         payload: {
           requestId,
@@ -1657,7 +1657,9 @@ export class AgentPlatformAssistantBridge {
       let finalMessage = "";
       let sawTerminalEvent = false;
       const accepted = await query.accepted;
-      run.activeRun.agentKey = accepted.agentKey;
+      run.activeRun.agentKey = accepted.owner.kind === "agent"
+        ? accepted.owner.agentKey
+        : run.activeRun.agentKey;
       settleAcceptance({
         ok: true,
         runId: run.runId,

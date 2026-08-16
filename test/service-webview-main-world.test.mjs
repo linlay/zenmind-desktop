@@ -368,7 +368,7 @@ test("service webview main-world script exposes fixed Agent WebClient bridges", 
 
   const realtime = window.__AGENT_WEBCLIENT_REALTIME_BRIDGE__;
   const workpanel = window.__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__;
-  assert.deepEqual(Object.keys(realtime).sort(), ["hello", "onMessage", "request", "subscribe", "unsubscribe"]);
+  assert.deepEqual(Object.keys(realtime).sort(), ["detach", "hello", "onMessage", "request", "subscribe"]);
   assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "openItem"]);
   assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_REALTIME_BRIDGE__").writable, false);
 
