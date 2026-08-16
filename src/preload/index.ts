@@ -602,7 +602,13 @@ const api: DesktopApi = {
     },
     inspectIdentityAccessToken: (input) => ipcRenderer.invoke("diagnostics.inspectIdentityAccessToken", input),
     getTunnelDebugSnapshot: () => ipcRenderer.invoke("diagnostics.getTunnelDebugSnapshot"),
-    probeDesktopWs: (input) => ipcRenderer.invoke("diagnostics.probeDesktopWs", input)
+    probeDesktopWs: (input) => ipcRenderer.invoke("diagnostics.probeDesktopWs", input),
+    openAgentRealtimeInspector: () =>
+      ipcRenderer.invoke("diagnostics.openAgentRealtimeInspector"),
+    getAgentRealtimeDebugSnapshot: (input) =>
+      ipcRenderer.invoke("diagnostics.getAgentRealtimeDebugSnapshot", input),
+    clearAgentRealtimeDebugTrace: () =>
+      ipcRenderer.invoke("diagnostics.clearAgentRealtimeDebugTrace")
   },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),

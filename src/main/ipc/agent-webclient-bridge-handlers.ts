@@ -24,6 +24,7 @@ import {
   type WorkPanelOpenItemInput,
 } from "../../shared/contracts";
 import type { AgentAuthIssueResult, ServiceState } from "../../shared/contracts";
+import { requireEpochMillis, type EpochMilliseconds } from "../../shared/time-contract";
 import type { BrowserSurfaceRegistry, RegisteredWebviewSurfaceTarget } from "../browser-surface-registry";
 import {
   AGENT_PLATFORM_KNOWN_PUSH_TYPES,
@@ -58,6 +59,16 @@ type BatchQueue = {
   bytes: number;
   lastSeq: number;
   timer: ReturnType<typeof setTimeout> | null;
+};
+
+type SurfaceDebugState = {
+  surfaceId: string;
+  webContentsId: number;
+  kind: AgentWebclientSurfaceKind;
+  active: boolean;
+  ownerChatId?: string;
+  route: string;
+  updatedAt: EpochMilliseconds;
 };
 
 const CAPABILITIES: Record<AgentWebclientSurfaceKind, readonly AgentWebclientSurfaceCapability[]> = {
@@ -229,10 +240,6 @@ function apiResponseFromFrame(frame: Record<string, unknown>): AgentWebclientApi
   };
 }
 
-function sendMessage(sender: WebContents, message: AgentWebclientRealtimeMessage) {
-  if (!sender.isDestroyed()) sender.send(AGENT_WEBCLIENT_REALTIME_MESSAGE_CHANNEL, message);
-}
-
 export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   app: App;
   browserSurfaces: BrowserSurfaceRegistry;
@@ -251,7 +258,52 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   const batchQueues = new Map<string, BatchQueue>();
   const installedCleanup = new Set<number>();
   const connectionUnsubscribers = new Map<number, () => void>();
+  const surfaceDebugStates = new Map<number, SurfaceDebugState>();
   let bindingEpoch = 0;
+
+  const rememberSurface = (context: SurfaceContext) => {
+    surfaceDebugStates.set(context.sender.id, {
+      surfaceId: context.target.surfaceId,
+      webContentsId: context.sender.id,
+      kind: context.kind,
+      active: context.target.active,
+      ...(context.target.ownerChatId ? { ownerChatId: context.target.ownerChatId } : {}),
+      route: context.target.pageRoute || context.sender.getURL(),
+      updatedAt: requireEpochMillis(Date.now(), "agentRealtimeDebugSurface.updatedAt"),
+    });
+  };
+
+  const recordSurfaceTrace = (
+    context: SurfaceContext,
+    direction: "surface-to-desktop" | "desktop-to-surface",
+    data: unknown,
+  ) => {
+    rememberSurface(context);
+    options.realtimeBroker.appendDebugTrace({
+      layer: "surface-bridge",
+      direction,
+      data,
+      surfaceId: context.target.surfaceId,
+      webContentsId: context.sender.id,
+      surfaceKind: context.kind,
+      route: context.target.pageRoute || context.sender.getURL(),
+    });
+  };
+
+  const sendToSurface = (sender: WebContents, message: AgentWebclientRealtimeMessage) => {
+    if (sender.isDestroyed()) return;
+    const target = options.browserSurfaces.resolveWebviewSurfaceTarget(sender.id);
+    const kind = trustedKind(target?.surfaceType);
+    if (target && kind) {
+      recordSurfaceTrace({
+        sender,
+        target,
+        kind,
+        capabilities: new Set(CAPABILITIES[kind]),
+      }, "desktop-to-surface", message);
+    }
+    sender.send(AGENT_WEBCLIENT_REALTIME_MESSAGE_CHANNEL, message);
+  };
 
   const cleanupSender = (senderId: number) => {
     for (const [id, subscription] of subscriptions) {
@@ -271,15 +323,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     connectionUnsubscribers.get(senderId)?.();
     connectionUnsubscribers.delete(senderId);
     options.realtimeBroker.clearVisibleBinding(`surface:${senderId}`);
+    surfaceDebugStates.delete(senderId);
     installedCleanup.delete(senderId);
   };
 
-  const installCleanup = (sender: WebContents) => {
+  const installCleanup = (context: SurfaceContext) => {
+    const sender = context.sender;
+    rememberSurface(context);
     if (installedCleanup.has(sender.id)) return;
     installedCleanup.add(sender.id);
     connectionUnsubscribers.set(sender.id, options.realtimeBroker.subscribeConnection({
       consumerId: `agent-webclient-surface:${sender.id}`,
-      onState: (state) => sendMessage(sender, {
+      onState: (state) => sendToSurface(sender, {
         version: AGENT_WEBCLIENT_BRIDGE_VERSION,
         kind: "connection",
         phase: state.phase,
@@ -310,7 +365,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     queue.timer = null;
     const events = queue.events.splice(0);
     queue.bytes = 0;
-    sendMessage(queue.sender, {
+    sendToSurface(queue.sender, {
       version: AGENT_WEBCLIENT_BRIDGE_VERSION,
       kind: "run.batch",
       delivery: queue.delivery,
@@ -347,16 +402,21 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     }
   };
 
-  ipcMain.handle(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL, async (event: any, call: unknown) => {
+  const handleRealtimeInvoke = async (event: any, call: unknown) => {
     const context = authorizeSurface(
       event.sender,
       options.browserSurfaces,
       options.isTrustedAgentWebclientSession,
     );
     if ("ok" in context) return context;
-    installCleanup(context.sender);
+    installCleanup(context);
     const record = isPlainBridgeRecord(call) ? call : {};
     const method = typeof record.method === "string" ? record.method : "";
+    recordSurfaceTrace(context, "surface-to-desktop", {
+      bridge: "realtime",
+      method,
+      ...(record.input === undefined ? {} : { input: record.input }),
+    });
     if (method === "hello") {
       if (record.input !== undefined) {
         const versionFailure = validateVersion(record.input);
@@ -458,7 +518,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
                 // The Run may have completed between acceptance and visibility binding.
               }
             }
-            sendMessage(event.sender, {
+            sendToSurface(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "run.accepted",
               operationId,
@@ -469,7 +529,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           }).catch((error) => {
             if (!operations.has(operationKey)) return;
             operations.delete(operationKey);
-            sendMessage(event.sender, {
+            sendToSurface(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "error",
               delivery,
@@ -481,7 +541,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             operations.delete(operationKey);
             flushBatch(`${event.sender.id}:${deliveryKey(delivery)}`);
             if (!canonicalIdentity) return;
-            sendMessage(event.sender, {
+            sendToSurface(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "run.completed",
               delivery,
@@ -493,7 +553,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           }).catch((error) => {
             if (!operations.has(operationKey)) return;
             operations.delete(operationKey);
-            sendMessage(event.sender, {
+            sendToSurface(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "error",
               delivery,
@@ -559,7 +619,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             filter: input.filter,
             kind: "surface",
             consumerId: `agent-webclient-surface:${event.sender.id}`,
-            onPush: (frame) => sendMessage(event.sender, {
+            onPush: (frame) => sendToSurface(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "push",
               subscriptionId,
@@ -601,7 +661,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           onEvent: (runEvent) => enqueue(event.sender, delivery, input.chatId, input.runId, runEvent, epoch),
           onComplete: (completed) => {
             flushBatch(`${event.sender.id}:${deliveryKey(delivery)}`);
-            sendMessage(event.sender, {
+            sendToSurface(event.sender, {
               version: AGENT_WEBCLIENT_BRIDGE_VERSION,
               kind: "run.completed",
               delivery,
@@ -611,7 +671,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
               ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
             });
           },
-          onError: (error) => sendMessage(event.sender, {
+          onError: (error) => sendToSurface(event.sender, {
             version: AGENT_WEBCLIENT_BRIDGE_VERSION,
             kind: "error",
             delivery,
@@ -681,20 +741,44 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       return failure("invalid_request", "detach target is required");
     }
     return failure("invalid_request", "unknown realtime bridge method");
+  };
+
+  ipcMain.handle(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL, async (event: any, call: unknown) => {
+    const result = await handleRealtimeInvoke(event, call);
+    const context = authorizeSurface(
+      event.sender,
+      options.browserSurfaces,
+      options.isTrustedAgentWebclientSession,
+    );
+    if (!("ok" in context)) {
+      const record = isPlainBridgeRecord(call) ? call : {};
+      recordSurfaceTrace(context, "desktop-to-surface", {
+        bridge: "realtime",
+        transport: "invoke-result",
+        method: typeof record.method === "string" ? record.method : "",
+        result,
+      });
+    }
+    return result;
   });
 
-  ipcMain.handle(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL, async (event: any, call: unknown) => {
+  const handleWorkPanelInvoke = async (event: any, call: unknown) => {
     const context = authorizeSurface(
       event.sender,
       options.browserSurfaces,
       options.isTrustedAgentWebclientSession,
     );
     if ("ok" in context) return context;
-    installCleanup(context.sender);
+    installCleanup(context);
     const ownerChatId = context.target.ownerChatId?.trim() || "";
     if (!ownerChatId) return failure("target_unavailable", "trusted WorkPanel owner chat is unavailable");
     const record = isPlainBridgeRecord(call) ? call : {};
     const method = typeof record.method === "string" ? record.method : "";
+    recordSurfaceTrace(context, "surface-to-desktop", {
+      bridge: "workpanel",
+      method,
+      ...(record.input === undefined ? {} : { input: record.input }),
+    });
     const capability = method === "openItem"
       ? "workpanel.open"
       : method === "activateItem"
@@ -716,6 +800,25 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       ownerChatId,
       args,
     });
+  };
+
+  ipcMain.handle(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL, async (event: any, call: unknown) => {
+    const result = await handleWorkPanelInvoke(event, call);
+    const context = authorizeSurface(
+      event.sender,
+      options.browserSurfaces,
+      options.isTrustedAgentWebclientSession,
+    );
+    if (!("ok" in context)) {
+      const record = isPlainBridgeRecord(call) ? call : {};
+      recordSurfaceTrace(context, "desktop-to-surface", {
+        bridge: "workpanel",
+        transport: "invoke-result",
+        method: typeof record.method === "string" ? record.method : "",
+        result,
+      });
+    }
+    return result;
   });
 
   return {
@@ -727,6 +830,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       pendingOperationCount: operations.size,
       batchQueueCount: batchQueues.size,
       bindingEpoch,
+      surfaces: [...surfaceDebugStates.values()].map((surface) => ({
+        ...surface,
+        subscriptionCount: [...subscriptions.values()].filter((item) =>
+          item.senderId === surface.webContentsId,
+        ).length,
+        pendingOperationCount: [...operations.values()].filter((item) =>
+          item.senderId === surface.webContentsId,
+        ).length,
+        batchQueueCount: [...batchQueues.values()].filter((item) =>
+          item.sender.id === surface.webContentsId,
+        ).length,
+      })),
     }),
   };
 }

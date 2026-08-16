@@ -19,6 +19,11 @@ const DesktopActionWorkbenchPage = lazy(() =>
     default: module.DesktopActionWorkbenchPage
   }))
 );
+const AgentRealtimeInspectorPage = lazy(() =>
+  import("./pages/AgentRealtimeInspectorPage").then((module) => ({
+    default: module.AgentRealtimeInspectorPage
+  }))
+);
 
 export function App() {
   const location = useLocation();
@@ -47,6 +52,14 @@ export function App() {
       <AppErrorBoundary resetKey={resetKey}>
         <Suspense fallback={null}>
           <DesktopActionWorkbenchPage />
+        </Suspense>
+      </AppErrorBoundary>
+    );
+  } else if (location.pathname === "/agent-realtime-inspector") {
+    content = (
+      <AppErrorBoundary resetKey={resetKey}>
+        <Suspense fallback={null}>
+          <AgentRealtimeInspectorPage />
         </Suspense>
       </AppErrorBoundary>
     );

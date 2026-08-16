@@ -212,6 +212,7 @@ export function createMainProcessRuntime() {
   });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
+  const AGENT_REALTIME_INSPECTOR_ROUTE = "/agent-realtime-inspector";
   const DESKTOP_ACTION_WORKBENCH_ROUTE = "/desktop-action-workbench";
   const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, mainProcessContext.platform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
@@ -564,6 +565,7 @@ export function createMainProcessRuntime() {
     systemPreferences,
     t,
     logsRuntime,
+    agentRealtimeInspectorRoute: AGENT_REALTIME_INSPECTOR_ROUTE,
     desktopActionWorkbenchRoute: DESKTOP_ACTION_WORKBENCH_ROUTE,
     loadRendererRoute,
     parseSafeLoopbackWebUrl,
@@ -987,6 +989,10 @@ export function createMainProcessRuntime() {
 
   async function openDesktopActionWorkbenchWindow() {
     return appShellRuntime.openDesktopActionWorkbenchWindow();
+  }
+
+  async function openAgentRealtimeInspectorWindow() {
+    return appShellRuntime.openAgentRealtimeInspectorWindow();
   }
 
   function closeDesktopActionWorkbenchWindow() {
@@ -1468,6 +1474,7 @@ export function createMainProcessRuntime() {
       minimizeLogViewerWindow,
       maximizeLogViewerWindow,
       openAgentPlatformMonitorWindow,
+      openAgentRealtimeInspectorWindow,
       openDesktopActionWorkbenchWindow,
       closeDesktopActionWorkbenchWindow,
       revealPathInFileManager,

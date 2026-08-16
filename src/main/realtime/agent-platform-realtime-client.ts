@@ -185,6 +185,7 @@ export class AgentPlatformRealtimeClient {
     onStaleFrame?(): void;
     onState?(state: AgentPlatformRealtimeConnectionState): void;
     onDiagnostic?(message: string): void;
+    onTrace?(direction: "in" | "out", frame: AgentPlatformRealtimeFrame): void;
   }) {}
 
   getState() {
@@ -245,6 +246,7 @@ export class AgentPlatformRealtimeClient {
       throw new Error("connection_unavailable: Agent Platform realtime connection is not open");
     }
     socket.send(JSON.stringify(frame));
+    this.options.onTrace?.("out", frame);
   }
 
   rotateIdentity() {
@@ -407,6 +409,7 @@ export class AgentPlatformRealtimeClient {
       throw new Error("protocol_error: Agent Platform frame must be an object");
     }
     const frame = parsed as AgentPlatformRealtimeFrame;
+    this.options.onTrace?.("in", frame);
     const kind = readText(frame.frame);
     const id = readText(frame.id);
     if ((kind === "response" || kind === "error") && id) {

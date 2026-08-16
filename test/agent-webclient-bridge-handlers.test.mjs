@@ -27,6 +27,7 @@ function createRegistration(targetOverrides = {}) {
   const cleanups = [];
   const cleared = [];
   const dispatched = [];
+  const traces = [];
   const target = {
     registrationId: "registration-1",
     surfaceId: "overview-1",
@@ -58,6 +59,7 @@ function createRegistration(targetOverrides = {}) {
     },
     cleanupConsumer: (id) => cleanups.push(id),
     clearVisibleBinding: (id) => cleared.push(id),
+    appendDebugTrace: (entry) => traces.push(entry),
   };
   const registration = registerAgentWebclientBridgeIpcHandlers({
     handle(channel, handler) {
@@ -75,8 +77,38 @@ function createRegistration(targetOverrides = {}) {
       return { ok: true, workspaceId: "workspace-1" };
     },
   });
-  return { broker, cleanups, cleared, dispatched, handlers, registration, target };
+  return { broker, cleanups, cleared, dispatched, handlers, registration, target, traces };
 }
+
+test("Bridge diagnostics correlate inbound calls and outbound delivery with trusted surfaceId", async () => {
+  const { handlers, registration, traces } = createRegistration();
+  const sender = createSender();
+  const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
+  await realtime({ sender }, { method: "hello", input: { version: 2 } });
+
+  assert.ok(traces.some((entry) =>
+    entry.direction === "surface-to-desktop" &&
+    entry.surfaceId === "overview-1" &&
+    entry.data.method === "hello",
+  ));
+  assert.ok(traces.some((entry) =>
+    entry.direction === "desktop-to-surface" &&
+    entry.surfaceId === "overview-1" &&
+    entry.data.kind === "connection",
+  ));
+  assert.deepEqual(registration.getDiagnostics().surfaces, [{
+    surfaceId: "overview-1",
+    webContentsId: 41,
+    kind: "agent-summary",
+    active: true,
+    ownerChatId: "chat-1",
+    route: "/overview",
+    updatedAt: registration.getDiagnostics().surfaces[0].updatedAt,
+    subscriptionCount: 0,
+    pendingOperationCount: 0,
+    batchQueueCount: 0,
+  }]);
+});
 
 test("trusted bridge derives Summary capabilities and rejects control and forged chat identity", async () => {
   const { handlers, dispatched } = createRegistration();

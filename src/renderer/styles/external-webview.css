@@ -641,6 +641,12 @@
   -webkit-user-select: none;
 }
 
+.webview-debug-surface-id {
+  margin-bottom: 2px;
+  color: var(--accent-strong);
+  font-weight: 700;
+}
+
 .embedded-surface-page .webview-debug-url-overlay {
   left: 52px;
   max-width: calc(100% - 64px);

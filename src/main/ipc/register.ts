@@ -112,6 +112,7 @@ import { registerHelpIpcHandlers } from "./help-handlers";
 import { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-handlers";
 import { registerChatWorkPanelTabContextMenuIpcHandlers } from "./chat-work-panel-tab-context-menu-handlers";
 import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
+import { requireEpochMillis } from "../../shared/time-contract";
 
 export type MainIpcRegistrationOptions = {
   app: App;
@@ -141,6 +142,7 @@ export type MainIpcRegistrationOptions = {
   minimizeLogViewerWindow: (...args: any[]) => unknown;
   maximizeLogViewerWindow: (...args: any[]) => unknown;
   openAgentPlatformMonitorWindow: (...args: any[]) => unknown;
+  openAgentRealtimeInspectorWindow: (...args: any[]) => unknown;
   openDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
   closeDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
   revealPathInFileManager: (...args: any[]) => unknown;
@@ -216,7 +218,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
-  registerAgentWebclientBridgeIpcHandlers(ipcMain, {
+  const agentWebclientBridgeRuntime = registerAgentWebclientBridgeIpcHandlers(ipcMain, {
     app,
     browserSurfaces: options.browserSurfaces,
     isTrustedAgentWebclientSession: options.isTrustedAgentWebclientSession,
@@ -241,6 +243,76 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         }
       };
     }
+  });
+  const readAgentRealtimeDebugSnapshot = (afterSequence?: unknown) => {
+    const brokerDiagnostics = assistantBridgeRuntime.realtimeBroker.getDiagnostics();
+    const bridgeDiagnostics = agentWebclientBridgeRuntime.getDiagnostics();
+    const trace = assistantBridgeRuntime.realtimeBroker.getDebugTraceEntries();
+    const normalizedAfterSequence = typeof afterSequence === "number" &&
+      Number.isSafeInteger(afterSequence) && afterSequence >= 0
+      ? afterSequence
+      : null;
+    const replayEventCount = brokerDiagnostics.replay.reduce((total, item) =>
+      total + item.eventCount,
+    0);
+    const replayBytes = brokerDiagnostics.replay.reduce((total, item) =>
+      total + item.bytes,
+    0);
+    return {
+      capturedAt: requireEpochMillis(Date.now(), "agentRealtimeDebugSnapshot.capturedAt"),
+      connection: {
+        phase: brokerDiagnostics.connection.phase,
+        generation: brokerDiagnostics.connection.generation,
+        physicalConnectionCount: brokerDiagnostics.connection.physicalConnectionCount,
+        reconnectCount: brokerDiagnostics.connection.reconnectCount,
+        endpoint: brokerDiagnostics.connection.key?.endpoint || "",
+        ...(brokerDiagnostics.connection.lastError
+          ? { lastError: brokerDiagnostics.connection.lastError }
+          : {}),
+      },
+      broker: {
+        pendingRequestCount: brokerDiagnostics.pendingRequestCount,
+        activeStreamCount: brokerDiagnostics.activeStreamCount,
+        runCount: brokerDiagnostics.runCount,
+        localRunSubscriberCount: brokerDiagnostics.localRunSubscriberCount,
+        pushSubscriberCount: brokerDiagnostics.pushSubscriberCount,
+        connectionSubscriberCount: brokerDiagnostics.connectionSubscriberCount,
+        visibleBinding: brokerDiagnostics.visibleBinding,
+        replayEventCount,
+        replayBytes,
+        unknownFrameCount: brokerDiagnostics.unknownFrameCount,
+        unknownRequestIdCount: brokerDiagnostics.unknownRequestIdCount,
+        seqGapCount: brokerDiagnostics.seqGapCount,
+        staleFrameCount: brokerDiagnostics.staleFrameCount,
+        seqRegressionCount: brokerDiagnostics.seqRegressionCount,
+        duplicateTerminalCount: brokerDiagnostics.duplicateTerminalCount,
+        replayEvictionCount: brokerDiagnostics.replayEvictionCount,
+      },
+      bridge: {
+        registeredSenderCount: bridgeDiagnostics.registeredSenderCount,
+        connectionListenerCount: bridgeDiagnostics.connectionListenerCount,
+        subscriptionCount: bridgeDiagnostics.subscriptionCount,
+        pendingOperationCount: bridgeDiagnostics.pendingOperationCount,
+        batchQueueCount: bridgeDiagnostics.batchQueueCount,
+        bindingEpoch: bridgeDiagnostics.bindingEpoch,
+      },
+      surfaces: bridgeDiagnostics.surfaces,
+      trace: normalizedAfterSequence === null
+        ? trace
+        : trace.filter((entry) => entry.sequence > normalizedAfterSequence),
+    };
+  };
+  ipcMain.handle("diagnostics.getAgentRealtimeDebugSnapshot", async (_event: any, input?: unknown) =>
+    readAgentRealtimeDebugSnapshot(
+      input && typeof input === "object" ? (input as { afterSequence?: unknown }).afterSequence : undefined,
+    ),
+  );
+  ipcMain.handle("diagnostics.openAgentRealtimeInspector", async () =>
+    options.openAgentRealtimeInspectorWindow(),
+  );
+  ipcMain.handle("diagnostics.clearAgentRealtimeDebugTrace", async () => {
+    assistantBridgeRuntime.realtimeBroker.clearDebugTrace();
+    return readAgentRealtimeDebugSnapshot();
   });
   registerHelpIpcHandlers(ipcMain, app);
 

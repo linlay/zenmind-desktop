@@ -84,7 +84,7 @@ import type {
 
 type ThemePreference = "light" | "dark" | "system";
 type KanbanConnectionState = "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
-type DebugCategoryId = "device" | "state" | "logs" | "wsServer" | "authTokens" | "other";
+type DebugCategoryId = "device" | "state" | "logs" | "realtime" | "wsServer" | "authTokens" | "other";
 type UsageHeatmapMode = "day" | "week" | "cumulative";
 type DebugLogDirection = "in" | "out" | "system";
 
@@ -151,7 +151,7 @@ type SettingsDebugTextAreaFieldProps = {
 };
 
 const THEME_PREFERENCE_OPTIONS: ThemePreference[] = ["light", "dark", "system"];
-const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "wsServer", "authTokens", "other"];
+const DEBUG_CATEGORY_IDS: DebugCategoryId[] = ["device", "state", "logs", "realtime", "wsServer", "authTokens", "other"];
 const SETTINGS_SELECT_CLASS_NAMES = {
   popup: {
     root: "settings-select-popup"
@@ -237,6 +237,8 @@ function getDebugCategoryLabel(categoryId: DebugCategoryId, t: TranslateFunction
       return t("settings.debug.categories.state");
     case "logs":
       return t("settings.debug.categories.logs");
+    case "realtime":
+      return t("settings.debug.categories.realtime");
     case "wsServer":
       return t("settings.debug.categories.wsServer");
     case "authTokens":
@@ -2012,6 +2014,48 @@ function TunnelDebugCard() {
   );
 }
 
+function AgentRealtimeDebugCard() {
+  const { t } = useI18n();
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState("");
+
+  async function handleOpenInspector() {
+    setPending(true);
+    setMessage("");
+    try {
+      const result = await window.electronAPI.diagnostics.openAgentRealtimeInspector();
+      setMessage(result.ok
+        ? t("settings.debug.realtime.opened")
+        : t("settings.debug.realtime.openFailed"));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    } finally {
+      setPending(false);
+    }
+  }
+
+  return (
+    <div className="data-root-card settings-debug-panel settings-agent-realtime-panel">
+      <div className="settings-debug-panel-head">
+        <div>
+          <h2>{t("settings.debug.realtime.title")}</h2>
+          <p className="page-copy">{t("settings.debug.realtime.launchDescription")}</p>
+        </div>
+      </div>
+      <div className="settings-debug-actions">
+        <Button type="primary" disabled={pending} onClick={() => void handleOpenInspector()}>
+          {pending ? t("common.loading") : t("settings.debug.realtime.openInspector")}
+        </Button>
+      </div>
+      {message ? (
+        <div className="feedback-banner settings-desktop-ws-message" role="status">
+          {message}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function DebugSettingsPanel() {
   const { t } = useI18n();
   const [activeCategoryId, setActiveCategoryId] = useState<DebugCategoryId>("device");
@@ -2024,6 +2068,8 @@ function DebugSettingsPanel() {
         return <DesktopStateDebugCard />;
       case "logs":
         return <DesktopLogsDebugCard />;
+      case "realtime":
+        return <AgentRealtimeDebugCard />;
       case "wsServer":
         return <LocalWsServerDebugCard />;
       case "authTokens":

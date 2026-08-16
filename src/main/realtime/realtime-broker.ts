@@ -13,6 +13,7 @@ import {
   type AgentPlatformRealtimeFrame,
   type AgentPlatformRealtimeSocketFactory,
 } from "./agent-platform-realtime-client";
+import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 
 const MAX_REPLAY_EVENTS = 2_000;
 const MAX_REPLAY_BYTES = 4 * 1024 * 1024;
@@ -235,6 +236,7 @@ export class RealtimeBroker {
   private visibleBinding: VisibleRunBinding | null = null;
   private disposed = false;
   private acceptingDelivery = true;
+  private readonly debugTrace = new RealtimeDebugTraceBuffer();
   private diagnostics = {
     unknownFrameCount: 0,
     unknownRequestIdCount: 0,
@@ -277,6 +279,11 @@ export class RealtimeBroker {
       },
       onState: (state) => this.handleConnectionState(state),
       onDiagnostic: options.onDiagnostic,
+      onTrace: (direction, frame) => this.debugTrace.append({
+        layer: "platform-ws",
+        direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
+        data: frame,
+      }),
     });
   }
 
@@ -636,6 +643,18 @@ export class RealtimeBroker {
       })),
       ...this.diagnostics,
     };
+  }
+
+  appendDebugTrace(input: Parameters<RealtimeDebugTraceBuffer["append"]>[0]) {
+    return this.debugTrace.append(input);
+  }
+
+  getDebugTraceEntries() {
+    return this.debugTrace.snapshot();
+  }
+
+  clearDebugTrace() {
+    this.debugTrace.clear();
   }
 
   rotateIdentity() {

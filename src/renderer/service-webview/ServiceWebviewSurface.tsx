@@ -1747,7 +1747,10 @@ export function ServiceWebviewSurface({
         </button>
       )}
       <div className="embedded-surface-frame-shell">
-        <WebviewDebugOverlay url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl} />
+        <WebviewDebugOverlay
+          url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl}
+          surfaceId={surfaceId}
+        />
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>
             {webviewLoadError ? (

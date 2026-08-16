@@ -2388,6 +2388,10 @@
   color: var(--ink-soft);
 }
 
+.settings-agent-realtime-panel .page-copy {
+  margin: 4px 0 0;
+}
+
 @media (max-width: 720px) {
   .settings-desktop-ws-panel,
   .settings-desktop-ws-meta {

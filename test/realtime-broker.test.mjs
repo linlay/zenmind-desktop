@@ -142,6 +142,34 @@ test("RealtimeBroker multiplexes concurrent Runs and local request ids over one 
   assert.equal(broker.getDiagnostics().connection.physicalConnectionCount, 1);
   assert.equal(broker.getDiagnostics().seqRegressionCount, 1);
   assert.equal(broker.getDiagnostics().duplicateTerminalCount, 1);
+  assert.ok(broker.getDebugTraceEntries().some((entry) =>
+    entry.layer === "platform-ws" &&
+    entry.direction === "desktop-to-platform" &&
+    entry.data.type === "/api/query",
+  ));
+  assert.ok(broker.getDebugTraceEntries().some((entry) =>
+    entry.layer === "platform-ws" &&
+    entry.direction === "platform-to-desktop" &&
+    entry.data.frame === "stream",
+  ));
+
+  broker.appendDebugTrace({
+    layer: "surface-bridge",
+    direction: "surface-to-desktop",
+    surfaceId: "agent-webclient-chat",
+    data: {
+      token: "must-not-leak",
+      nested: { authorization: "Bearer must-not-leak" },
+      url: "https://example.test/path?access_token=must-not-leak&visible=1",
+    },
+  });
+  const redacted = broker.getDebugTraceEntries().at(-1);
+  assert.equal(redacted.data.token, "<REDACTED>");
+  assert.equal(redacted.data.nested.authorization, "<REDACTED>");
+  assert.match(redacted.data.url, /access_token=<REDACTED>/u);
+  assert.equal(JSON.stringify(redacted).includes("must-not-leak"), false);
+  broker.clearDebugTrace();
+  assert.deepEqual(broker.getDebugTraceEntries(), []);
 });
 
 test("RealtimeBroker locally fans one Run out to Agent, Copilot, Overview and Debug", async (t) => {

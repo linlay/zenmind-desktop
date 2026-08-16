@@ -33,6 +33,7 @@ import {
 } from "../electron-bundle-paths";
 import { buildApplicationMenu as installApplicationMenu } from "./app-menu";
 import { AgentPlatformMonitorWindowController } from "./agent-platform-monitor-window";
+import { AgentRealtimeInspectorWindowController } from "./agent-realtime-inspector-window";
 import { DesktopActionWorkbenchWindowController } from "./desktop-action-workbench-window";
 import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
@@ -55,6 +56,7 @@ export type AppShellRuntimeOptions = {
   systemPreferences: Pick<SystemPreferences, "askForMediaAccess">;
   t: (...args: any[]) => string;
   logsRuntime: LogsRuntime;
+  agentRealtimeInspectorRoute: string;
   desktopActionWorkbenchRoute: string;
   loadRendererRoute: (targetWindow: BrowserWindow, routePath: string) => Promise<unknown>;
   parseSafeLoopbackWebUrl: (value: string) => unknown;
@@ -101,6 +103,13 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   });
   const agentPlatformMonitorWindowController = new AgentPlatformMonitorWindowController({
     platform: options.platform,
+    onRendererError: options.safeConsoleError
+  });
+  const agentRealtimeInspectorWindowController = new AgentRealtimeInspectorWindowController({
+    preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
+    routePath: options.agentRealtimeInspectorRoute,
+    platform: options.platform,
+    loadRendererRoute: options.loadRendererRoute,
     onRendererError: options.safeConsoleError
   });
   const desktopActionWorkbenchWindowController = new DesktopActionWorkbenchWindowController({
@@ -162,6 +171,10 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
 
   async function openDesktopActionWorkbenchWindow() {
     return desktopActionWorkbenchWindowController.open();
+  }
+
+  async function openAgentRealtimeInspectorWindow() {
+    return agentRealtimeInspectorWindowController.open();
   }
 
   function closeDesktopActionWorkbenchWindow() {
@@ -306,6 +319,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     getServiceWebviewPreloadPath,
     getServiceWebviewPreloadUrl,
     openAgentPlatformMonitorWindow,
+    openAgentRealtimeInspectorWindow,
     openDesktopActionWorkbenchWindow,
     closeDesktopActionWorkbenchWindow,
     showFileDialog,

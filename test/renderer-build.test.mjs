@@ -7771,10 +7771,12 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
     webviewDebugUrl.redactWebviewDebugUrl("https://example.test/?API-Key=secret&token=other"),
     "https://example.test/?API-Key=REDACTED&token=REDACTED"
   );
-  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\} \/>/u);
-  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} \/>/u);
+  assert.match(webviewDebugOverlay, /surfaceId:\s*\{displaySurfaceId\}/u);
+  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceId=\{surfaceId\}/u);
+  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceId=\{surfaceId\} \/>/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*none;/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*none;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-surface-id/u);
   assert.match(externalWebviewStyles, /\.embedded-surface-page \.webview-debug-url-overlay/u);
 });
 

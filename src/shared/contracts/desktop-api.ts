@@ -29,6 +29,7 @@ import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
 import type { ChatWorkPanelClearSessionRequest } from "../chat-work-panel";
 import type { DesktopHelpSettings } from "../help";
+import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
 import type {
   EnterpriseChatAttachmentData,
   EnterpriseChatAttachmentInput,
@@ -95,6 +96,79 @@ export interface DesktopWsProbeResult {
   url: string;
   message: string;
   frames: DesktopWsProbeFrame[];
+}
+
+export type AgentRealtimeDebugTraceLayer = "platform-ws" | "surface-bridge";
+
+export type AgentRealtimeDebugTraceDirection =
+  | "platform-to-desktop"
+  | "desktop-to-platform"
+  | "surface-to-desktop"
+  | "desktop-to-surface";
+
+export interface AgentRealtimeDebugTraceEntry {
+  sequence: number;
+  recordedAt: EpochMilliseconds;
+  layer: AgentRealtimeDebugTraceLayer;
+  direction: AgentRealtimeDebugTraceDirection;
+  data: unknown;
+  surfaceId?: string;
+  webContentsId?: number;
+  surfaceKind?: string;
+  route?: string;
+}
+
+export interface AgentRealtimeDebugSurface {
+  surfaceId: string;
+  webContentsId: number;
+  kind: AgentWebclientSurfaceKind;
+  active: boolean;
+  ownerChatId?: string;
+  route: string;
+  subscriptionCount: number;
+  pendingOperationCount: number;
+  batchQueueCount: number;
+  updatedAt: EpochMilliseconds;
+}
+
+export interface AgentRealtimeDebugSnapshot {
+  capturedAt: EpochMilliseconds;
+  connection: {
+    phase: AgentWebclientConnectionPhase;
+    generation: number;
+    physicalConnectionCount: 0 | 1;
+    reconnectCount: number;
+    endpoint: string;
+    lastError?: string;
+  };
+  broker: {
+    pendingRequestCount: number;
+    activeStreamCount: number;
+    runCount: number;
+    localRunSubscriberCount: number;
+    pushSubscriberCount: number;
+    connectionSubscriberCount: number;
+    visibleBinding: { epoch: number; consumerCount: number } | null;
+    replayEventCount: number;
+    replayBytes: number;
+    unknownFrameCount: number;
+    unknownRequestIdCount: number;
+    seqGapCount: number;
+    staleFrameCount: number;
+    seqRegressionCount: number;
+    duplicateTerminalCount: number;
+    replayEvictionCount: number;
+  };
+  bridge: {
+    registeredSenderCount: number;
+    connectionListenerCount: number;
+    subscriptionCount: number;
+    pendingOperationCount: number;
+    batchQueueCount: number;
+    bindingEpoch: number;
+  };
+  surfaces: AgentRealtimeDebugSurface[];
+  trace: AgentRealtimeDebugTraceEntry[];
 }
 
 export interface DesktopSsoClaims {
@@ -804,6 +878,11 @@ export interface DesktopApi {
     }) => Promise<IdentityAccessTokenInspection>;
     getTunnelDebugSnapshot: () => Promise<TunnelDebugSnapshot>;
     probeDesktopWs: (input: { target: "localDebug" }) => Promise<DesktopWsProbeResult>;
+    openAgentRealtimeInspector: () => Promise<{ ok: boolean }>;
+    getAgentRealtimeDebugSnapshot: (input?: {
+      afterSequence?: number;
+    }) => Promise<AgentRealtimeDebugSnapshot>;
+    clearAgentRealtimeDebugTrace: () => Promise<AgentRealtimeDebugSnapshot>;
   };
   desktopPet: {
     getSettings: () => Promise<DesktopPetSettings>;
