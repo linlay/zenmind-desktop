@@ -16,10 +16,6 @@ import {
 } from "./lib/brand-config.mjs";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const brand = loadBrandConfig(projectRoot, resolveBrandId());
-const buildIconsDir = brandIconDir(projectRoot, brand);
-const iconsetDir = path.join(buildIconsDir, "icon.iconset");
-const brandRuntimeAssetsDir = brandRuntimeAssetDir(projectRoot, brand);
 const svgParser = new XMLParser({
   ignoreAttributes: false,
   attributeNamePrefix: "",
@@ -31,10 +27,6 @@ const svgBuilder = new XMLBuilder({
   preserveOrder: true,
   suppressEmptyNode: true
 });
-
-const appIconSvgPath = path.join(projectRoot, brand.icons.appIconSvg);
-const trayIconSourceSvgPath = path.join(projectRoot, brand.icons.trayIconSvg);
-const generatedTrayIconSvgPath = path.join(brandRuntimeAssetsDir, "tray-icon.svg");
 
 const APP_ICON_BASE_SIZE = 1024;
 const APP_ICON_TILE_SIZE = 840;
@@ -338,6 +330,24 @@ async function assertNonTransparentPng(label, png) {
   }
 }
 
+async function assertPngFile(filePath, expectedSize, label) {
+  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+    throw new Error(`${label} is missing: ${filePath}`);
+  }
+  const png = fs.readFileSync(filePath);
+  let image;
+  try {
+    image = await loadImage(png);
+  } catch (error) {
+    throw new Error(`${label} is not a decodable PNG: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (image.width !== expectedSize || image.height !== expectedSize) {
+    throw new Error(`${label} must be ${expectedSize}x${expectedSize}, got ${image.width}x${image.height}`);
+  }
+  await assertNonTransparentPng(label, png);
+  return png;
+}
+
 function writeFileIfChanged(filePath, content) {
   if (fs.existsSync(filePath) && Buffer.compare(fs.readFileSync(filePath), content) === 0) {
     return false;
@@ -373,6 +383,27 @@ function createIco(pngEntries) {
   return Buffer.concat([header, ...pngEntries.map(({ png }) => png)]);
 }
 
+function readIcoEntries(ico, label) {
+  if (ico.length < 6 || ico.readUInt16LE(0) !== 0 || ico.readUInt16LE(2) !== 1) {
+    throw new Error(`${label} has an invalid ICO header`);
+  }
+  const count = ico.readUInt16LE(4);
+  if (ico.length < 6 + count * 16) {
+    throw new Error(`${label} has a truncated ICO directory`);
+  }
+  return Array.from({ length: count }, (_unused, index) => {
+    const directoryOffset = 6 + index * 16;
+    const width = ico.readUInt8(directoryOffset) || 256;
+    const height = ico.readUInt8(directoryOffset + 1) || 256;
+    const byteLength = ico.readUInt32LE(directoryOffset + 8);
+    const imageOffset = ico.readUInt32LE(directoryOffset + 12);
+    if (byteLength === 0 || imageOffset + byteLength > ico.length) {
+      throw new Error(`${label} has an invalid ${width}x${height} image entry`);
+    }
+    return { width, height, png: ico.subarray(imageOffset, imageOffset + byteLength) };
+  });
+}
+
 function createIcns(pngEntries) {
   const chunks = pngEntries.map(({ type, png }) => {
     const chunk = Buffer.alloc(8 + png.length);
@@ -388,15 +419,118 @@ function createIcns(pngEntries) {
   return Buffer.concat([header, ...chunks], totalLength);
 }
 
-function warnSkippedMacIcns() {
-  if (process.platform !== "darwin") {
-    console.warn("skipped icon.icns generation; run npm run icons on macOS to refresh the macOS app icon");
+function readIcnsEntries(icns, label) {
+  if (icns.length < 8 || icns.toString("ascii", 0, 4) !== "icns" || icns.readUInt32BE(4) !== icns.length) {
+    throw new Error(`${label} has an invalid ICNS header`);
+  }
+  const entries = [];
+  let offset = 8;
+  while (offset < icns.length) {
+    if (offset + 8 > icns.length) {
+      throw new Error(`${label} has a truncated ICNS chunk header`);
+    }
+    const type = icns.toString("ascii", offset, offset + 4);
+    const byteLength = icns.readUInt32BE(offset + 4);
+    if (byteLength < 8 || offset + byteLength > icns.length) {
+      throw new Error(`${label} has an invalid ${type} chunk`);
+    }
+    entries.push({ type, png: icns.subarray(offset + 8, offset + byteLength) });
+    offset += byteLength;
+  }
+  return entries;
+}
+
+async function assertEmbeddedPng(png, expectedSize, label) {
+  let image;
+  try {
+    image = await loadImage(png);
+  } catch (error) {
+    throw new Error(`${label} is not a decodable PNG: ${error instanceof Error ? error.message : String(error)}`);
+  }
+  if (image.width !== expectedSize || image.height !== expectedSize) {
+    throw new Error(`${label} must be ${expectedSize}x${expectedSize}, got ${image.width}x${image.height}`);
+  }
+  await assertNonTransparentPng(label, png);
+}
+
+export async function verifyGeneratedAppIcons({
+  rootDir = projectRoot,
+  brandId = resolveBrandId(),
+  platform = process.platform
+} = {}) {
+  const activeBrand = loadBrandConfig(rootDir, brandId);
+  const iconsRoot = brandIconDir(rootDir, activeBrand);
+  const runtimeAssetsRoot = brandRuntimeAssetDir(rootDir, activeBrand);
+  const activeIconsetDir = path.join(iconsRoot, "icon.iconset");
+
+  for (const size of pngSizes) {
+    await assertPngFile(path.join(iconsRoot, `icon-${size}.png`), size, `${activeBrand.id} app icon ${size}px`);
+  }
+  await assertPngFile(path.join(iconsRoot, "icon.png"), 1024, `${activeBrand.id} canonical app icon`);
+  for (const [fileName, size] of iconsetEntries) {
+    await assertPngFile(path.join(activeIconsetDir, fileName), size, `${activeBrand.id} iconset ${fileName}`);
+  }
+
+  const brandIcon = await assertPngFile(
+    path.join(runtimeAssetsRoot, "brand-icon.png"),
+    256,
+    `${activeBrand.id} runtime brand icon`
+  );
+  const appIcon256 = fs.readFileSync(path.join(iconsRoot, "icon-256.png"));
+  if (Buffer.compare(brandIcon, appIcon256) !== 0) {
+    throw new Error(`${activeBrand.id} runtime brand-icon.png differs from the 256px app icon`);
+  }
+  await assertPngFile(path.join(runtimeAssetsRoot, "brand-mark.png"), 256, `${activeBrand.id} runtime brand mark`);
+  await assertPngFile(path.join(runtimeAssetsRoot, "tray-icon.png"), 256, `${activeBrand.id} runtime tray icon`);
+
+  const generatedTraySvgPath = path.join(runtimeAssetsRoot, "tray-icon.svg");
+  const sourceTraySvgPath = path.join(rootDir, activeBrand.icons.trayIconSvg);
+  if (!fs.existsSync(generatedTraySvgPath) || Buffer.compare(fs.readFileSync(generatedTraySvgPath), fs.readFileSync(sourceTraySvgPath)) !== 0) {
+    throw new Error(`${activeBrand.id} runtime tray-icon.svg differs from its brand source`);
+  }
+
+  const icoPath = path.join(iconsRoot, "icon.ico");
+  if (!fs.existsSync(icoPath)) {
+    throw new Error(`${activeBrand.id} Windows icon is missing: ${icoPath}`);
+  }
+  const icoEntries = readIcoEntries(fs.readFileSync(icoPath), `${activeBrand.id} icon.ico`);
+  const actualIcoSizes = icoEntries.map(({ width, height }) => width === height ? width : `${width}x${height}`);
+  if (actualIcoSizes.length !== icoSizes.length || actualIcoSizes.some((size, index) => size !== icoSizes[index])) {
+    throw new Error(`${activeBrand.id} icon.ico sizes must be ${icoSizes.join(", ")}; got ${actualIcoSizes.join(", ")}`);
+  }
+  for (const entry of icoEntries) {
+    await assertEmbeddedPng(entry.png, entry.width, `${activeBrand.id} ICO ${entry.width}px entry`);
+  }
+
+  if (platform === "darwin") {
+    const icnsPath = path.join(iconsRoot, "icon.icns");
+    if (!fs.existsSync(icnsPath)) {
+      throw new Error(`${activeBrand.id} macOS icon is missing: ${icnsPath}`);
+    }
+    const icns = readIcnsEntries(fs.readFileSync(icnsPath), `${activeBrand.id} icon.icns`);
+    const expectedTypes = icnsEntries.map(([, type]) => type);
+    if (icns.length !== expectedTypes.length || icns.some(({ type }, index) => type !== expectedTypes[index])) {
+      throw new Error(`${activeBrand.id} icon.icns chunks must be ${expectedTypes.join(", ")}; got ${icns.map(({ type }) => type).join(", ")}`);
+    }
+    for (let index = 0; index < icns.length; index += 1) {
+      await assertEmbeddedPng(
+        icns[index].png,
+        iconsetEntries[index][1],
+        `${activeBrand.id} ICNS ${icns[index].type} chunk`
+      );
+    }
   }
 }
 
-function runMacIconTool(cmd, args) {
+function warnSkippedMacIcns(platform) {
+  if (platform !== "darwin") {
+    console.warn("skipped icon.icns generation; run npm run brand:prepare on macOS to refresh the macOS app icon");
+  }
+}
+
+function runMacIconTool(cmd, args, cwd) {
   const result = spawnSync(cmd, args, {
-    cwd: projectRoot,
+    cwd,
     encoding: "utf8"
   });
   if (result.status !== 0) {
@@ -404,8 +538,8 @@ function runMacIconTool(cmd, args) {
   }
 }
 
-function generateMacIconsetAndIcnsFromPng(sourcePngPath) {
-  const tempParent = process.platform === "darwin" ? "/private/tmp" : os.tmpdir();
+function generateMacIconsetAndIcnsFromPng(sourcePngPath, { rootDir, buildIconsDir, iconsetDir, platform }) {
+  const tempParent = platform === "darwin" ? "/private/tmp" : os.tmpdir();
   const tempRoot = fs.mkdtempSync(path.join(tempParent, "desktop-app-icons-"));
   const tempIconsetDir = path.join(tempRoot, "icon.iconset");
   fs.mkdirSync(tempIconsetDir, { recursive: true });
@@ -418,7 +552,7 @@ function generateMacIconsetAndIcnsFromPng(sourcePngPath) {
       sourcePngPath,
       "--out",
       path.join(tempIconsetDir, filename)
-    ]);
+    ], rootDir);
   }
 
   fs.rmSync(iconsetDir, { recursive: true, force: true });
@@ -438,11 +572,23 @@ function generateMacIconsetAndIcnsFromPng(sourcePngPath) {
   fs.rmSync(tempRoot, { recursive: true, force: true });
 }
 
-async function main() {
+export async function generateAppIcons({
+  rootDir = projectRoot,
+  brandId = resolveBrandId(),
+  platform = process.platform
+} = {}) {
+  const brand = loadBrandConfig(rootDir, brandId);
+  const buildIconsDir = brandIconDir(rootDir, brand);
+  const iconsetDir = path.join(buildIconsDir, "icon.iconset");
+  const brandRuntimeAssetsDir = brandRuntimeAssetDir(rootDir, brand);
+  const appIconSvgPath = path.join(rootDir, brand.icons.appIconSvg);
+  const trayIconSourceSvgPath = path.join(rootDir, brand.icons.trayIconSvg);
+  const generatedTrayIconSvgPath = path.join(brandRuntimeAssetsDir, "tray-icon.svg");
+
   fs.mkdirSync(buildIconsDir, { recursive: true });
   fs.mkdirSync(iconsetDir, { recursive: true });
   fs.mkdirSync(brandRuntimeAssetsDir, { recursive: true });
-  cleanupPublicBrandIconArtifacts(projectRoot);
+  cleanupPublicBrandIconArtifacts(rootDir);
 
   const appIconSvg = fs.readFileSync(appIconSvgPath, "utf8");
   const trayIconSvg = fs.readFileSync(trayIconSourceSvgPath, "utf8");
@@ -462,8 +608,13 @@ async function main() {
   await assertNonTransparentPng(brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-icon.png"), renderedAppPngs.get(256));
   await assertNonTransparentPng(brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "brand-mark.png"), brandMarkPng);
 
-  if (process.platform === "darwin") {
-    generateMacIconsetAndIcnsFromPng(path.join(buildIconsDir, "icon.png"));
+  if (platform === "darwin") {
+    generateMacIconsetAndIcnsFromPng(path.join(buildIconsDir, "icon.png"), {
+      rootDir,
+      buildIconsDir,
+      iconsetDir,
+      platform
+    });
   } else {
     fs.rmSync(iconsetDir, { recursive: true, force: true });
     fs.mkdirSync(iconsetDir, { recursive: true });
@@ -471,7 +622,7 @@ async function main() {
       const png = renderedAppPngs.get(size) ?? (await renderAppIconToPng(appIconSvg, size));
       writeFileIfChanged(path.join(iconsetDir, filename), png);
     }
-    warnSkippedMacIcns();
+    warnSkippedMacIcns(platform);
   }
 
   const icoPngEntries = [];
@@ -485,11 +636,13 @@ async function main() {
   writeFileIfChanged(path.join(brandRuntimeAssetsDir, "tray-icon.png"), trayPng);
   await assertNonTransparentPng(brandBuildRelativePath(brand, BRAND_RUNTIME_ASSET_DIR_NAME, "tray-icon.png"), trayPng);
 
+  await verifyGeneratedAppIcons({ rootDir, brandId: brand.id, platform });
+
   console.log(`generated ${brand.productName} app icons`);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main().catch((error) => {
+  generateAppIcons().catch((error) => {
     console.error(error);
     process.exitCode = 1;
   });

@@ -18,6 +18,8 @@
 
 开发和发布入口可以校验现有资源，但不能在不知情的情况下从本机任意目录刷新 bundle。需要更新内置资源时必须显式执行同步流程。
 
+四个内置服务的显式构建与同步入口是 macOS/Linux 的 `scripts/build-builtin-services.sh` 和 Windows 的 `scripts/build-builtin-services.ps1`。Windows host 与 Docker 发布只校验、消费已经同步的 `build/resources/services`；资源缺失时先运行对应 PowerShell 入口，发布命令本身不扫描相邻服务仓库。
+
 ## Manifest 职责
 
 每个 bundle 的 manifest 是 Desktop 识别该资源的唯一入口，描述：
@@ -55,5 +57,6 @@ Desktop 同时读取 bundled 资源和已安装程序版本，按稳定 service 
 - `src/main/builtin-loader.ts`
 - `src/main/manifest-utils.ts`
 - `scripts/sync-builtin-assets.mjs` 与 `scripts/lib/builtin-assets.mjs`
+- `scripts/build-builtin-services.sh` 与 `scripts/build-builtin-services.ps1`
 - `src/shared/contracts/manifest.ts`
 - 内置资源、bundle 路径和平台打包测试

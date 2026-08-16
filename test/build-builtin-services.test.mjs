@@ -6,8 +6,8 @@ import path from "node:path";
 import { execFileSync } from "node:child_process";
 
 const projectRoot = process.cwd();
-const buildAllScript = path.join(projectRoot, "scripts", "build-all-dist.sh");
-const buildAllPowerShellScript = path.join(projectRoot, "scripts", "build-all-dist.ps1");
+const buildBuiltinServicesScript = path.join(projectRoot, "scripts", "build-builtin-services.sh");
+const buildBuiltinServicesPowerShellScript = path.join(projectRoot, "scripts", "build-builtin-services.ps1");
 const windowsReleaseChainScript = path.join(projectRoot, "scripts", "test-windows-release-chain.ps1");
 const serviceRepos = [
   "agent-container-hub",
@@ -16,8 +16,8 @@ const serviceRepos = [
   "identity-center"
 ];
 
-test("build-all-dist releases every upstream service with only ARCH and explicit sources", (t) => {
-  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-build-all-workspace-"));
+test("build-builtin-services releases every upstream service with only ARCH and explicit sources", (t) => {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-build-builtin-services-workspace-"));
   t.after(() => {
     fs.rmSync(workspaceRoot, { recursive: true, force: true });
   });
@@ -30,7 +30,7 @@ test("build-all-dist releases every upstream service with only ARCH and explicit
 
   const output = execFileSync(
     "bash",
-    [buildAllScript, "--dry-run", "--sync-os", "darwin", "--sync-arch", "arm64"],
+    [buildBuiltinServicesScript, "--dry-run", "--sync-os", "darwin", "--sync-arch", "arm64"],
     {
       cwd: projectRoot,
       encoding: "utf8",
@@ -55,8 +55,8 @@ test("build-all-dist releases every upstream service with only ARCH and explicit
   assert.doesNotMatch(output, /--only|--skip|--no-clean|--no-sync/u);
 });
 
-test("build-all-dist leaves existing Desktop assets untouched when an upstream release fails", (t) => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-build-all-failure-"));
+test("build-builtin-services leaves existing Desktop assets untouched when an upstream release fails", (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-build-builtin-services-failure-"));
   t.after(() => {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   });
@@ -65,7 +65,7 @@ test("build-all-dist leaves existing Desktop assets untouched when an upstream r
   const scriptsRoot = path.join(desktopRoot, "scripts");
   const workspaceRoot = path.join(tempRoot, "workspace");
   fs.mkdirSync(scriptsRoot, { recursive: true });
-  fs.copyFileSync(buildAllScript, path.join(scriptsRoot, "build-all-dist.sh"));
+  fs.copyFileSync(buildBuiltinServicesScript, path.join(scriptsRoot, "build-builtin-services.sh"));
   const existingAsset = path.join(desktopRoot, "build", "resources", "services", "keep.txt");
   fs.mkdirSync(path.dirname(existingAsset), { recursive: true });
   fs.writeFileSync(existingAsset, "keep\n", "utf8");
@@ -86,7 +86,7 @@ test("build-all-dist leaves existing Desktop assets untouched when an upstream r
   assert.throws(
     () => execFileSync(
       "bash",
-      [path.join(scriptsRoot, "build-all-dist.sh"), "--sync-os", "darwin", "--sync-arch", "arm64"],
+      [path.join(scriptsRoot, "build-builtin-services.sh"), "--sync-os", "darwin", "--sync-arch", "arm64"],
       {
         cwd: desktopRoot,
         encoding: "utf8",
@@ -109,7 +109,7 @@ test("build-all-dist leaves existing Desktop assets untouched when an upstream r
 });
 
 test("native PowerShell orchestrator preserves the public four-service release boundary", () => {
-  const source = fs.readFileSync(buildAllPowerShellScript, "utf8");
+  const source = fs.readFileSync(buildBuiltinServicesPowerShellScript, "utf8");
   assert.match(source, /#Requires -Version 5\.1/u);
   for (const parameter of ["SyncOS", "SyncArch", "WorkspaceRoot", "DryRun"]) {
     assert.match(source, new RegExp(`\\$${parameter}\\b`, "u"));
@@ -132,11 +132,27 @@ test("native PowerShell orchestrator preserves the public four-service release b
 test("Windows release-chain runner enforces two stages and canonical lock immutability", () => {
   const source = fs.readFileSync(windowsReleaseChainScript, "utf8");
   assert.match(source, /sync-local-builtins\.ps1[\s\S]*-Target windows\/amd64/u);
-  assert.match(source, /build-all-dist\.ps1[\s\S]*-SyncOS windows[\s\S]*-SyncArch amd64/u);
+  assert.match(source, /build-builtin-services\.ps1[\s\S]*-SyncOS windows[\s\S]*-SyncArch amd64/u);
   assert.match(source, /\.sha256[\s\S]*\.sizes\.json[\s\S]*\.sbom\.cdx\.json/u);
   assert.match(source, /services\)\.Count -ne 4/u);
   assert.match(source, /lockHashBefore[\s\S]*lockHashAfter/u);
   assert.match(source, /Canonical builtins\.lock\.json changed/u);
+});
+
+test("Windows packaging consumes only already-synced builtin service assets", () => {
+  for (const scriptPath of [
+    path.join(projectRoot, "scripts", "platform", "dist-win-host.mjs"),
+    path.join(projectRoot, "scripts", "platform", "dist-win-docker.mjs")
+  ]) {
+    const source = fs.readFileSync(scriptPath, "utf8");
+    assert.match(source, /\["\.\/scripts\/sync-builtin-assets\.mjs", "--use-existing", "--os=windows", "--arch=amd64"\]/u);
+  }
+  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "build-all-dist.sh")), false);
+  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "build-all-dist.ps1")), false);
+  assert.doesNotMatch(
+    fs.readFileSync(path.join(projectRoot, "scripts", "lib", "builtin-assets.mjs"), "utf8"),
+    /export const builtinServices\s*=\s*discoverBuiltinServices/u
+  );
 });
 
 function escapeRegExp(value) {

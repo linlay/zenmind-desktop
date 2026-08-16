@@ -896,7 +896,7 @@ function validateExistingSyncedAssets(projectRoot, platform = {}, options = {}) 
       if (archivedAsset) {
         throw new Error(
           `cannot sign existing Darwin builtin archive for ${archivedAsset.service.id}: ${archivedAsset.assetPath}\n` +
-            "Run scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64 to sync Darwin services as directories."
+            "Run scripts/build-builtin-services.sh --sync-os darwin --sync-arch arm64 to sync Darwin services as directories."
         );
       }
 
@@ -955,8 +955,6 @@ function compareBuiltinVersions(leftVersion, rightVersion) {
   }
   return 0;
 }
-
-export const builtinServices = discoverBuiltinServices();
 
 function normalizeRequiredPath(relativePath) {
   return relativePath
@@ -1489,7 +1487,7 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
     }
     throw new Error(
       `missing current Desktop builtin service assets for ${formatPlatformLabel(platform)}: ${outputRoot}\n` +
-        `Run scripts/build-all-dist.sh${os ? ` --sync-os ${os}` : ""}${arch ? ` --sync-arch ${arch}` : ""} to build and sync them, ` +
+        `Run scripts/build-builtin-services.${os === "windows" ? "ps1 -SyncOS windows -SyncArch amd64" : `sh${os ? ` --sync-os ${os}` : ""}${arch ? ` --sync-arch ${arch}` : ""}`} to build and sync them, ` +
         `or set ${BUILTIN_ASSETS_SOURCE_ENV} to a directory containing the complete release assets.`
     );
   }

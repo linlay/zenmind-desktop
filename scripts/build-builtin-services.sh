@@ -22,7 +22,7 @@ UPSTREAM_SERVICE_REPOS=(
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/build-all-dist.sh [options]
+  scripts/build-builtin-services.sh [options]
 
 Build the complete set of upstream builtin service release packages, then sync
 only those release outputs into build/resources/services.
@@ -49,18 +49,18 @@ Each upstream service owns its VERSION, target matrix, and all service-private
 release inputs. Desktop invokes only: make release ARCH=<host-or-sync-arch>.
 
 Examples:
-  scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64
-  SIGN_MAC_BUILTINS=1 CSC_NAME="Your Name (TEAMID)" scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64
-  DESKTOP_WORKSPACE_ROOT=/Users/me/Project/desktop-workspace scripts/build-all-dist.sh --sync-os windows --sync-arch amd64
+  scripts/build-builtin-services.sh --sync-os darwin --sync-arch arm64
+  SIGN_MAC_BUILTINS=1 CSC_NAME="Your Name (TEAMID)" scripts/build-builtin-services.sh --sync-os darwin --sync-arch arm64
+  DESKTOP_WORKSPACE_ROOT=/Users/me/Project/desktop-workspace scripts/build-builtin-services.sh --sync-os windows --sync-arch amd64
 EOF
 }
 
 log() {
-  printf '[build-all-dist] %s\n' "$*"
+  printf '[build-builtin-services] %s\n' "$*"
 }
 
 die() {
-  printf '[build-all-dist] %s\n' "$*" >&2
+  printf '[build-builtin-services] %s\n' "$*" >&2
   exit 1
 }
 
@@ -192,7 +192,7 @@ assert_no_synced_darwin_archives() {
   [[ -d "$services_dir" ]] || return
 
   while IFS= read -r -d '' archive_path; do
-    printf '[build-all-dist] unexpected Darwin archive after sync: %s\n' "$archive_path" >&2
+    printf '[build-builtin-services] unexpected Darwin archive after sync: %s\n' "$archive_path" >&2
     found=1
   done < <(find "$services_dir" -type f \( -name '*-darwin-*.tar.gz' -o -name '*-darwin-*.tgz' \) -print0)
 

@@ -134,7 +134,6 @@ function createBrandFixture(t) {
   );
   fs.copyFileSync(path.join(projectRoot, "index.html"), path.join(root, "index.html"));
   fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
-  fs.copyFileSync(path.join(projectRoot, "scripts", "uninstall.sh"), path.join(root, "scripts", "uninstall.sh"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return root;
 }
@@ -445,9 +444,9 @@ test("brand icon generation surfaces are brand-owned and distinct", async () => 
     await renderSvgFileHash(path.join(projectRoot, zenmind.icons.appIconSvg)),
     await renderSvgFileHash(path.join(projectRoot, cutej.icons.appIconSvg))
   );
-  assert.match(generator, /cleanupPublicBrandIconArtifacts\(projectRoot\)/u);
+  assert.match(generator, /cleanupPublicBrandIconArtifacts\(rootDir\)/u);
   assert.match(generator, /writeFileIfChanged\(generatedTrayIconSvgPath,\s*Buffer\.from\(trayIconSvg\)\)/u);
-  assert.match(generator, /brandRuntimeAssetDir\(projectRoot,\s*brand\)/u);
+  assert.match(generator, /brandRuntimeAssetDir\(rootDir,\s*brand\)/u);
   assert.match(generator, /APP_ICON_BASE_SIZE\s*=\s*1024/u);
   assert.match(generator, /APP_ICON_TILE_SIZE\s*=\s*840/u);
   assert.match(generator, /APP_ICON_CORNER_RADIUS\s*=\s*232/u);
@@ -703,8 +702,6 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   const root = createBrandFixture(t);
   const sourcePackageBefore = fs.readFileSync(path.join(root, "package.json"), "utf8");
   const sourceIndexBefore = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const sourceUninstallBefore = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
-
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "cutej" });
   const expectedPet = readBrandDesktopPetManifest(root, "cutej");
   const generatedBrand = readJson(path.join(brandGeneratedDir(root, brand), "brand.json"));
@@ -733,7 +730,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   }
   assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), sourcePackageBefore);
   assert.equal(fs.readFileSync(path.join(root, "index.html"), "utf8"), sourceIndexBefore);
-  assert.equal(fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8"), sourceUninstallBefore);
+  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "uninstall.sh")), false);
   assert.equal(
     electronBuilderConfig.directories.app.startsWith(brandBuildRelativePath(brand, "app", "")),
     true
@@ -778,6 +775,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(electronBuilderConfig.mac.notarize, false);
   assert.equal(electronBuilderConfig.mac.timestamp, undefined);
   assert.deepEqual(electronBuilderConfig.electronLanguages, ["zh-CN", "en-US"]);
+  assert.equal(electronBuilderConfig.afterPack, "./scripts/after-pack.js");
   assert.equal(electronBuilderConfig.win.icon, brandBuildRelativePath(brand, "icons", "icon.ico"));
   assert.equal(electronBuilderConfig.nsis.include, brandBuildRelativePath(brand, "installer", "installer.nsh"));
   assert.equal(electronBuilderConfig.nsis.allowToChangeInstallationDirectory, false);
@@ -892,8 +890,6 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   const root = createBrandFixture(t);
   const sourcePackageBefore = fs.readFileSync(path.join(root, "package.json"), "utf8");
   const sourceIndexBefore = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const sourceUninstallBefore = fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8");
-
   const brand = syncBrandArtifacts({ rootDir: root, brandId: "zenmind" });
   const expectedPet = readBrandDesktopPetManifest(root, "zenmind");
   const generatedBrand = readJson(path.join(brandGeneratedDir(root, brand), "brand.json"));
@@ -919,7 +915,7 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   }
   assert.equal(fs.readFileSync(path.join(root, "package.json"), "utf8"), sourcePackageBefore);
   assert.equal(fs.readFileSync(path.join(root, "index.html"), "utf8"), sourceIndexBefore);
-  assert.equal(fs.readFileSync(path.join(root, "scripts", "uninstall.sh"), "utf8"), sourceUninstallBefore);
+  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "uninstall.sh")), false);
   assert.match(installerInclude, /StrCpy \$isForceCurrentInstall "1"/u);
   assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$PROFILE\\\.zenmind"/u);
   assert.match(installerInclude, /Function un\.ZenMindEnsureDataRootDefault/u);
@@ -1182,7 +1178,7 @@ test("sync-env rejects an explicitly configured missing ENV_ZIP", async (t) => {
 test("dev startup syncs env zip resources before building the main process", () => {
   const devScript = fs.readFileSync(path.join(projectRoot, "scripts", "dev.mjs"), "utf8");
   const syncEnvIndex = devScript.indexOf('["./scripts/sync-env-zip.mjs"]');
-  const buildMainIndex = devScript.indexOf('["run", "build:main"]');
+  const buildMainIndex = devScript.indexOf('["run", "build:main:prepared"]');
 
   assert.notEqual(syncEnvIndex, -1);
   assert.notEqual(buildMainIndex, -1);
