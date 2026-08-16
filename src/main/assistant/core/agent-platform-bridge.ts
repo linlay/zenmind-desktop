@@ -51,16 +51,13 @@ import {
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
 import {
-  parseChatTranscriptJSONL,
-  type AgentPlatformChatTranscriptExportResult
-} from "./conversation-share-types";
-import {
   AssistantWsDisconnectedError,
   AssistantWsTransport,
   type AssistantWsFactory,
 } from "./assistant-ws-transport";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
+const MAX_CONVERSATION_SHARE_BYTES = 2 << 20;
 const MAX_RAW_CHAT_JSONL_BYTES = 100 * 1024 * 1024;
 const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "createdAt",
@@ -89,6 +86,10 @@ type ApiResponse<T> = {
 type AgentPlatformChatExportResult =
   | { ok: true; message: string; filename: string; bytes: Buffer }
   | { ok: false; message: string; filename: string; bytes?: never };
+
+export type AgentPlatformChatShareEventStreamResult =
+  | { ok: true; bytes: Buffer }
+  | { ok: false; message: string; bytes?: never };
 
 export type AgentPlatformRawChatJSONLResult =
   | { ok: true; filename: string; bytes: Buffer }
@@ -421,7 +422,7 @@ async function readResponseBytesWithLimit(response: Response, maxBytes: number) 
     if (done) {
       break;
     }
-    const chunk = Buffer.from(value);
+    const chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
     totalBytes += chunk.length;
     if (totalBytes > maxBytes) {
       await reader.cancel().catch(() => undefined);
@@ -1392,7 +1393,7 @@ export class AgentPlatformAssistantBridge {
     return { ok: true, message: t("assistant.chatExportDownloaded"), filename, bytes };
   }
 
-  async downloadChatTranscriptExport(chatId: string): Promise<AgentPlatformChatTranscriptExportResult> {
+  async downloadChatShareEventStream(chatId: string): Promise<AgentPlatformChatShareEventStreamResult> {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
       return { ok: false, message: t("assistant.chatIdRequired") };
@@ -1403,11 +1404,11 @@ export class AgentPlatformAssistantBridge {
     }
     const response = await this.platformFetch(
       availability.baseUrl,
-      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=raw`,
+      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=sse`,
       {
         method: "GET",
         headers: {
-          Accept: "application/x-ndjson",
+          Accept: "text/event-stream",
           Authorization: `Bearer ${availability.token}`
         }
       }
@@ -1416,19 +1417,20 @@ export class AgentPlatformAssistantBridge {
       return { ok: false, message: await readErrorText(response) };
     }
     const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-    if (contentType !== "application/x-ndjson") {
+    if (contentType !== "text/event-stream") {
       return { ok: false, message: t("assistant.chatSharePlatformUnsupported") };
     }
     try {
-      const transcript = parseChatTranscriptJSONL(await response.text());
-      if (!transcript) {
-        return { ok: false, message: t("assistant.chatShareInvalidTranscript") };
-      }
-      return { ok: true, transcript };
-    } catch {
+      return {
+        ok: true,
+        bytes: await readResponseBytesWithLimit(response, MAX_CONVERSATION_SHARE_BYTES)
+      };
+    } catch (error) {
       return {
         ok: false,
-        message: t("assistant.chatShareTranscriptReadFailed")
+        message: error instanceof ResponseBytesTooLargeError
+          ? t("assistant.chatShareSnapshotTooLarge")
+          : t("assistant.chatShareTranscriptReadFailed")
       };
     }
   }

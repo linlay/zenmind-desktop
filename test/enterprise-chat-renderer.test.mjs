@@ -124,7 +124,7 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   assert.match(rawMethod, /\/api\/chat\/jsonl\?chatId=/);
   assert.match(rawMethod, /readResponseBytesWithLimit/);
   assert.doesNotMatch(rawMethod, /JSON\.parse|JSON\.stringify/);
-  assert.match(bridge, /\/api\/chat\/export\?chatId=\$\{encodeURIComponent\(trimmedChatId\)\}&format=raw/);
+  assert.match(bridge, /\/api\/chat\/export\?chatId=\$\{encodeURIComponent\(trimmedChatId\)\}&format=sse/);
 });
 
 test("enterprise chat deletion remains a renderer-only sequence-aware hide", () => {

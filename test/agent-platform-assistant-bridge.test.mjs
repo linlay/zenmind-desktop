@@ -1442,44 +1442,40 @@ test("agent platform assistant bridge downloads chat export from the current pla
   }
 });
 
-test("agent platform assistant bridge downloads the generic JSONL transcript", async () => {
+test("agent platform assistant bridge downloads the safe share event stream without changing bytes", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
   const { bridge } = makeBridge();
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), init });
     return new Response([
-      JSON.stringify({
-        type: "metadata",
-        exportVersion: 1,
-        kind: "chat-transcript",
-        title: "Transcript",
-        createdAt: EPOCH_MS,
-        updatedAt: EPOCH_MS + 2
-      }),
-      JSON.stringify({
-        type: "turn",
-        startedAt: EPOCH_MS,
-        completedAt: EPOCH_MS + 2,
-        items: [
-          { kind: "user-message", content: "hello", createdAt: EPOCH_MS },
-          { kind: "assistant-message", content: "ready", createdAt: EPOCH_MS + 1 }
-        ]
-      })
-    ].join("\n") + "\n", {
+      `event: message\ndata: {"seq":1,"type":"chat.start","shareVersion":1,"chatName":"Transcript","timestamp":${EPOCH_MS}}`,
+      `event: message\ndata: {"seq":2,"type":"request.query","message":"hello","timestamp":${EPOCH_MS}}`,
+      `event: message\ndata: {"seq":3,"type":"content.snapshot","text":"ready","timestamp":${EPOCH_MS + 1}}`,
+      `event: message\ndata: {"seq":4,"type":"run.complete","timestamp":${EPOCH_MS + 2}}`,
+      "event: message\ndata: [DONE]",
+      ""
+    ].join("\n\n"), {
       status: 200,
-      headers: { "content-type": "application/x-ndjson; charset=utf-8" }
+      headers: { "content-type": "text/event-stream; charset=utf-8" }
     });
   };
 
   try {
-    const result = await bridge.downloadChatTranscriptExport(" chat_1 ");
+    const result = await bridge.downloadChatShareEventStream(" chat_1 ");
 
     assert.equal(result.ok, true);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=raw");
-    assert.equal(requests[0].init.headers.Accept, "application/x-ndjson");
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=sse");
+    assert.equal(requests[0].init.headers.Accept, "text/event-stream");
     assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
-    assert.equal(result.transcript.kind, "chat-transcript");
+    assert.equal(Buffer.compare(result.bytes, Buffer.from([
+      `event: message\ndata: {"seq":1,"type":"chat.start","shareVersion":1,"chatName":"Transcript","timestamp":${EPOCH_MS}}`,
+      `event: message\ndata: {"seq":2,"type":"request.query","message":"hello","timestamp":${EPOCH_MS}}`,
+      `event: message\ndata: {"seq":3,"type":"content.snapshot","text":"ready","timestamp":${EPOCH_MS + 1}}`,
+      `event: message\ndata: {"seq":4,"type":"run.complete","timestamp":${EPOCH_MS + 2}}`,
+      "event: message\ndata: [DONE]",
+      ""
+    ].join("\n\n"))), 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1543,31 +1539,13 @@ test("agent platform assistant bridge rejects raw chat JSONL above 100 MiB", asy
   }
 });
 
-test("agent platform assistant bridge rejects non-JSONL and invalid JSONL transcripts", async () => {
+test("agent platform assistant bridge only enforces the safe event stream media type", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
   const responses = [
     new Response("# Legacy export", {
       status: 200,
       headers: { "content-type": "text/markdown; charset=utf-8" }
-    }),
-    new Response([
-      JSON.stringify({
-        type: "metadata",
-        exportVersion: 2,
-        kind: "chat-transcript",
-        title: "Unsupported",
-        createdAt: EPOCH_MS,
-        updatedAt: EPOCH_MS
-      }),
-      JSON.stringify({ type: "turn", startedAt: EPOCH_MS, items: [] })
-    ].join("\n"), {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson" }
-    }),
-    new Response('{"type":"metadata"}\nnot-json\n', {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson" }
     }),
     new Response('{"type":"metadata"}\n{"type":"turn"}\n', {
       status: 200,
@@ -1576,28 +1554,56 @@ test("agent platform assistant bridge rejects non-JSONL and invalid JSONL transc
     new Response(JSON.stringify({ code: 0, data: { exportVersion: 1 } }), {
       status: 200,
       headers: { "content-type": "application/json" }
-    }),
-    new Response("", {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson" }
     })
   ];
   globalThis.fetch = async () => responses.shift();
 
   try {
-    const markdown = await bridge.downloadChatTranscriptExport("chat_1");
-    const invalidVersion = await bridge.downloadChatTranscriptExport("chat_1");
-    const malformed = await bridge.downloadChatTranscriptExport("chat_1");
-    const invalidContentType = await bridge.downloadChatTranscriptExport("chat_1");
-    const oldJSON = await bridge.downloadChatTranscriptExport("chat_1");
-    const empty = await bridge.downloadChatTranscriptExport("chat_1");
+    const markdown = await bridge.downloadChatShareEventStream("chat_1");
+    const invalidContentType = await bridge.downloadChatShareEventStream("chat_1");
+    const oldJSON = await bridge.downloadChatShareEventStream("chat_1");
 
     assert.equal(markdown.ok, false);
-    assert.equal(invalidVersion.ok, false);
-    assert.equal(malformed.ok, false);
     assert.equal(invalidContentType.ok, false);
     assert.equal(oldJSON.ok, false);
-    assert.equal(empty.ok, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects a safe event stream above 2 MiB", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response("{}\n", {
+    status: 200,
+    headers: {
+      "content-type": "text/event-stream",
+      "content-length": String(2 * 1024 * 1024 + 1)
+    }
+  });
+
+  try {
+    const result = await bridge.downloadChatShareEventStream("chat_1");
+
+    assert.equal(result.ok, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge returns a Platform error without reading a share event stream", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response(
+    JSON.stringify({ code: 404, msg: "chat not found" }),
+    { status: 404, headers: { "content-type": "application/json" } }
+  );
+
+  try {
+    const result = await bridge.downloadChatShareEventStream("chat_1");
+
+    assert.equal(result.ok, false);
+    assert.match(result.message, /chat not found/u);
   } finally {
     globalThis.fetch = originalFetch;
   }

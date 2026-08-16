@@ -3,16 +3,13 @@ import type { AssistantConversationShareResult } from "../../../shared/contracts
 import { readDesktopSsoSiteAccessToken } from "../../sso-site-token";
 import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
 import { readTunnelHubSettings } from "../../tunnel-hub-settings";
-import {
-  buildConversationShareSnapshot,
-  validateConversationShareSnapshot,
-  type AgentPlatformChatTranscriptExportResult,
-  type ConversationShareSnapshotValidationError
-} from "./conversation-share-types";
 import { t } from "../../i18n/main-i18n";
 
 type ConversationShareBridge = {
-  downloadChatTranscriptExport(chatId: string): Promise<AgentPlatformChatTranscriptExportResult>;
+  downloadChatShareEventStream(chatId: string): Promise<
+    | { ok: true; bytes: Buffer }
+    | { ok: false; message: string }
+  >;
 };
 
 type ConversationShareCreateResponse = {
@@ -28,14 +25,9 @@ export async function createConversationShare(
   chatId: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<AssistantConversationShareResult> {
-  const transcriptResult = await assistantBridge.downloadChatTranscriptExport(chatId);
-  if (!transcriptResult.ok) {
-    return { ok: false, message: transcriptResult.message };
-  }
-  const snapshot = buildConversationShareSnapshot(transcriptResult.transcript);
-  const snapshotError = validateConversationShareSnapshot(snapshot);
-  if (snapshotError) {
-    return { ok: false, message: shareSnapshotValidationMessage(snapshotError) };
+  const eventStreamResult = await assistantBridge.downloadChatShareEventStream(chatId);
+  if (!eventStreamResult.ok) {
+    return { ok: false, message: eventStreamResult.message };
   }
   const connection = resolveConversationShareConnection(app);
   if (!connection.ok) {
@@ -48,9 +40,10 @@ export async function createConversationShare(
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${connection.token}`,
-        "Content-Type": "application/json"
+        "Content-Type": "text/event-stream"
       },
-      body: JSON.stringify(snapshot),
+      // Electron's Node fetch accepts Buffer directly; keep it intact instead of copying or re-encoding it.
+      body: eventStreamResult.bytes as unknown as BodyInit,
       signal: AbortSignal.timeout(15_000)
     });
   } catch (error) {
@@ -62,7 +55,7 @@ export async function createConversationShare(
   }
   const shareId = readText(payload.id);
   const url = readText(payload.url);
-  if (!shareId || !url || !isSafePublicShareURL(url)) {
+  if (!isValidConversationShareId(shareId) || !url || !isSafePublicShareURL(url)) {
     return { ok: false, message: t("assistant.chatShareInvalidUrl") };
   }
   return {
@@ -74,28 +67,13 @@ export async function createConversationShare(
   };
 }
 
-function shareSnapshotValidationMessage(error: ConversationShareSnapshotValidationError) {
-  switch (error) {
-    case "empty":
-      return t("assistant.chatShareEmptyTranscript");
-    case "entry-limit":
-    case "title-size":
-    case "entry-size":
-    case "label-size":
-    case "payload-size":
-      return t("assistant.chatShareSnapshotTooLarge");
-    case "invalid-time":
-      return t("assistant.chatShareInvalidTranscript");
-  }
-}
-
 export async function revokeConversationShare(
   app: App,
   shareId: string,
   fetchImpl: typeof fetch = fetch
 ): Promise<AssistantConversationShareResult> {
   const normalizedShareId = shareId.trim();
-  if (!/^share_[A-Za-z0-9_-]+$/u.test(normalizedShareId)) {
+  if (!isValidConversationShareId(normalizedShareId)) {
     return { ok: false, message: t("assistant.chatShareInvalidId") };
   }
   const connection = resolveConversationShareConnection(app);
@@ -120,6 +98,10 @@ export async function revokeConversationShare(
     return { ok: false, message: shareServiceError(response.status, payload) };
   }
   return { ok: true, message: t("assistant.chatShareRevoked"), shareId: normalizedShareId };
+}
+
+function isValidConversationShareId(value: string): boolean {
+  return /^[A-Za-z0-9_-]{1,80}$/u.test(value);
 }
 
 function resolveConversationShareConnection(app: App):
