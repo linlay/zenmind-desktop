@@ -1250,7 +1250,6 @@ export function AppSidebar({
   const showBootstrapChatFallback = Boolean(
     bootstrapActive &&
     normalizedBootstrapAgentKey &&
-    resolvedChatDefaultAgentKey === normalizedBootstrapAgentKey &&
     !bootstrapSeedChatIndexed,
   );
   const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);

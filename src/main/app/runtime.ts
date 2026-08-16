@@ -166,7 +166,7 @@ import { cleanupRetiredPluginUserData } from "../retired-plugins";
 import { cleanupProgramDataForVersion } from "../program-data-cleanup";
 import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../bridge/assistant-runtime";
 import { createAssistantRunWakeLock } from "../bridge/assistant-wake-lock";
-import { createAssistantBootstrapStateMonitor } from "../assistant/core/bootstrap-state";
+import { createFirstInstallBootstrapNavigation } from "../assistant/core/first-install-bootstrap-navigation";
 import { RealtimeBroker } from "../realtime/realtime-broker";
 import { createPluginClipboardBridge } from "../bridge/plugin-clipboard";
 import { createPluginBridgeRuntime, type PluginBridgeRuntime } from "../bridge/plugin-runtime";
@@ -239,17 +239,6 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
-  const assistantBootstrapStateMonitor = createAssistantBootstrapStateMonitor({
-    app,
-    platform: mainProcessContext.platform,
-    onChange: (state) => {
-      const targetWindow = appState.mainWindow;
-      if (targetWindow && !targetWindow.isDestroyed()) {
-        targetWindow.webContents.send("assistant.bootstrapStateChanged", state);
-      }
-    },
-  });
-  
   const startupRestoreController = createStartupRestoreController({
     onChange: (state) => {
       if (!appState.mainWindow || appState.mainWindow.isDestroyed()) {
@@ -452,6 +441,7 @@ export function createMainProcessRuntime() {
   });
   const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
   const isFirstDesktopInstall = !desktopDataRootExists(app);
+  const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   const runtimeRootAtProcessStart = resolveRuntimeRoot(app, mainProcessContext.platform);
   const runtimeRootExistedAtStartup = runtimeRootExists(app, mainProcessContext.platform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, mainProcessContext.platform);
@@ -1436,7 +1426,6 @@ export function createMainProcessRuntime() {
     setStartupPhase("runtime-env-ready");
   
     initializeUserDataRootsAndSettings();
-    assistantBootstrapStateMonitor.start();
     setStartupPhase("desktop-state-ready");
     const desktopSsoRestoreResult = await desktopSsoController.restoreDesktopSsoSession();
     applyDesktopSsoRestoreResult(desktopSsoRestoreResult);
@@ -1465,6 +1454,7 @@ export function createMainProcessRuntime() {
       bundledEnvZipExistsAtStartup,
       runtimeRootExistedAtStartup,
       runtimeRootAtProcessStart,
+      consumeFirstInstallBootstrapNavigation: () => firstInstallBootstrapNavigation.consume(),
       showFileDialog,
       showSaveDialog,
       showMessageBox,
@@ -1542,7 +1532,6 @@ export function createMainProcessRuntime() {
       disposeRealtimeBroker: () => realtimeBroker.dispose(),
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,
-      stopAssistantBootstrapStateMonitor: () => assistantBootstrapStateMonitor.stop(),
       stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop(),
       stopEnterpriseChatRuntime: () => enterpriseChatRuntime.stop()
     });

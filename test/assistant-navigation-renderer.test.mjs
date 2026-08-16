@@ -75,6 +75,7 @@ const {
   normalizeAssistantNavAgents,
   normalizeAssistantNavAgentItemsResult,
   resolveAssistantNavChatRuntimeAgent,
+  resolveFirstInstallBootstrapNavigationTarget,
 } = loadAssistantNavigationModule();
 
 test("assistant nav maps awaiting modes to the shared chat status labels", () => {
@@ -253,7 +254,7 @@ test("assistant nav Chats exclude projects and internal agents", () => {
   assert.equal(isAssistantNavChatAgent({ agentKey: "webOperator", mode: "CHAT" }), false);
 });
 
-test("assistant nav runtime Chat agent follows the strict OWNER bootstrap modes", () => {
+test("assistant nav runtime Chat agent always keeps the configured default agent", () => {
   const bootstrap = { agentKey: "bootstrap", displayName: "Bootstrap", recentChats: [] };
   const zenmi = { agentKey: "zenmi", displayName: "小宅", recentChats: [] };
 
@@ -261,11 +262,11 @@ test("assistant nav runtime Chat agent follows the strict OWNER bootstrap modes"
     resolveAssistantNavChatRuntimeAgent([bootstrap, zenmi], {
       defaultChatAgentKey: "zenmi",
       bootstrapAgentKey: "bootstrap",
-      bootstrapPending: true,
+      bootstrapNavigationRequested: true,
     }),
     {
-      agent: bootstrap,
-      agentKey: "bootstrap",
+      agent: zenmi,
+      agentKey: "zenmi",
       defaultAgentAvailable: true,
       bootstrapAgentAvailable: true,
       bootstrapActive: true,
@@ -275,7 +276,7 @@ test("assistant nav runtime Chat agent follows the strict OWNER bootstrap modes"
     resolveAssistantNavChatRuntimeAgent([bootstrap, zenmi], {
       defaultChatAgentKey: "zenmi",
       bootstrapAgentKey: "bootstrap",
-      bootstrapPending: false,
+      bootstrapNavigationRequested: false,
     }),
     {
       agent: zenmi,
@@ -289,11 +290,11 @@ test("assistant nav runtime Chat agent follows the strict OWNER bootstrap modes"
     resolveAssistantNavChatRuntimeAgent([zenmi], {
       defaultChatAgentKey: "zenmi",
       bootstrapAgentKey: "bootstrap",
-      bootstrapPending: true,
+      bootstrapNavigationRequested: true,
     }),
     {
-      agent: null,
-      agentKey: "bootstrap",
+      agent: zenmi,
+      agentKey: "zenmi",
       defaultAgentAvailable: true,
       bootstrapAgentAvailable: false,
       bootstrapActive: false,
@@ -303,7 +304,7 @@ test("assistant nav runtime Chat agent follows the strict OWNER bootstrap modes"
     resolveAssistantNavChatRuntimeAgent([bootstrap], {
       defaultChatAgentKey: "zenmi",
       bootstrapAgentKey: "bootstrap",
-      bootstrapPending: false,
+      bootstrapNavigationRequested: false,
     }),
     {
       agent: null,
@@ -329,6 +330,57 @@ test("assistant nav runtime Chat agent keeps ordinary default behavior without b
       bootstrapAgentAvailable: false,
       bootstrapActive: false,
     },
+  );
+});
+
+test("first-install bootstrap navigation opens the indexed seed Chat", () => {
+  const agents = [
+    { agentKey: "bootstrap", displayName: "Bootstrap", recentChats: [] },
+    { agentKey: "zenmi", displayName: "Zenmi", recentChats: [] },
+  ];
+
+  assert.deepEqual(
+    resolveFirstInstallBootstrapNavigationTarget(
+      agents,
+      [chat({ chatId: "seed-chat", agentKey: "bootstrap" })],
+      {
+        bootstrapAgentKey: "bootstrap",
+        bootstrapChatId: "seed-chat",
+        defaultChatAgentKey: "zenmi",
+      },
+    ),
+    { agentKey: "bootstrap", chatId: "seed-chat" },
+  );
+});
+
+test("first-install bootstrap navigation respects a deleted seed Chat", () => {
+  const agents = [
+    { agentKey: "bootstrap", displayName: "Bootstrap", recentChats: [] },
+    { agentKey: "zenmi", displayName: "Zenmi", recentChats: [] },
+  ];
+
+  assert.deepEqual(
+    resolveFirstInstallBootstrapNavigationTarget(agents, [], {
+      bootstrapAgentKey: "bootstrap",
+      bootstrapChatId: "deleted-seed-chat",
+      defaultChatAgentKey: "zenmi",
+    }),
+    { agentKey: "bootstrap" },
+  );
+});
+
+test("first-install bootstrap navigation falls back to the default agent", () => {
+  const agents = [
+    { agentKey: "zenmi", displayName: "Zenmi", recentChats: [] },
+  ];
+
+  assert.deepEqual(
+    resolveFirstInstallBootstrapNavigationTarget(agents, [], {
+      bootstrapAgentKey: "bootstrap",
+      bootstrapChatId: "seed-chat",
+      defaultChatAgentKey: "zenmi",
+    }),
+    { agentKey: "zenmi" },
   );
 });
 

@@ -119,6 +119,7 @@ export interface AssistantIpcHandlerContextDependencies {
   captureAssistantScreenshot: (...args: any[]) => unknown;
   openDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
   closeDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
+  consumeFirstInstallBootstrapNavigation: () => { shouldOpen: boolean };
 }
 
 export function createAssistantIpcHandlerOptions(
@@ -149,6 +150,7 @@ export function createAssistantIpcHandlerOptions(
     captureAssistantScreenshot: dependencies.captureAssistantScreenshot,
     openDesktopActionWorkbenchWindow: dependencies.openDesktopActionWorkbenchWindow,
     closeDesktopActionWorkbenchWindow: dependencies.closeDesktopActionWorkbenchWindow,
+    consumeFirstInstallBootstrapNavigation: dependencies.consumeFirstInstallBootstrapNavigation,
     platform: context.platform,
     getCurrentPageSnapshot: () => context.state.currentPageSnapshot,
     setCurrentPageSnapshot: (snapshot: unknown) => {

@@ -164,6 +164,7 @@ export type MainIpcRegistrationOptions = {
   reportRendererDiagnostic: (...args: any[]) => unknown;
   emitAssistantAttachmentProgress: (...args: any[]) => unknown;
   captureAssistantScreenshot: (...args: any[]) => unknown;
+  consumeFirstInstallBootstrapNavigation: () => { shouldOpen: boolean };
 };
 
 export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
@@ -214,7 +215,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     createAssistantAttachmentsFromFiles,
     captureAssistantScreenshot: options.captureAssistantScreenshot as any,
     openDesktopActionWorkbenchWindow: options.openDesktopActionWorkbenchWindow,
-    closeDesktopActionWorkbenchWindow: options.closeDesktopActionWorkbenchWindow
+    closeDesktopActionWorkbenchWindow: options.closeDesktopActionWorkbenchWindow,
+    consumeFirstInstallBootstrapNavigation: options.consumeFirstInstallBootstrapNavigation
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);

@@ -31,7 +31,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantBootstrapState, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -81,6 +81,7 @@ import {
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents,
   resolveAssistantNavChatRuntimeAgent,
+  resolveFirstInstallBootstrapNavigationTarget,
 } from "../assistantNavigation";
 import {
   AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS,
@@ -505,8 +506,7 @@ export function AppShell() {
     copilotRestoreInitializedRef.current = true;
   }
   const bootstrapInitialNavigationDoneRef = useRef(false);
-  const bootstrapHandoffNavigationDoneRef = useRef(false);
-  const lastOwnerProfileExistsRef = useRef<boolean | null>(null);
+  const firstInstallBootstrapNavigationRequestRef = useRef<Promise<{ shouldOpen: boolean }> | null>(null);
   const lastPrimaryRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -547,7 +547,8 @@ export function AppShell() {
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
-  const [assistantBootstrapState, setAssistantBootstrapState] = useState<AssistantBootstrapState | null>(null);
+  const [firstInstallBootstrapNavigationRequested, setFirstInstallBootstrapNavigationRequested] =
+    useState<boolean | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
@@ -558,23 +559,16 @@ export function AppShell() {
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
-  const bootstrapAgentConfigured = Boolean(assistantSettings?.bootstrapAgentKey.trim());
-  const assistantBootstrapStateReady = Boolean(
-    assistantSettings && (!bootstrapAgentConfigured || assistantBootstrapState),
-  );
-  const bootstrapPending = Boolean(
-    bootstrapAgentConfigured && assistantBootstrapState?.ownerProfileExists !== true,
-  );
   const chatRuntimeAgent = useMemo(
     () => resolveAssistantNavChatRuntimeAgent(chatNavAgentOptions, {
       defaultChatAgentKey: assistantSettings?.chatDefaultAgentKey,
       bootstrapAgentKey: assistantSettings?.bootstrapAgentKey,
-      bootstrapPending,
+      bootstrapNavigationRequested: firstInstallBootstrapNavigationRequested === true,
     }),
     [
       assistantSettings?.bootstrapAgentKey,
       assistantSettings?.chatDefaultAgentKey,
-      bootstrapPending,
+      firstInstallBootstrapNavigationRequested,
       chatNavAgentOptions,
     ],
   );
@@ -1331,46 +1325,30 @@ export function AppShell() {
   }, [assistantSettings?.bootstrapAgentKey, assistantSettings?.chatDefaultAgentKey, chatNavAgentOptions]);
 
   useEffect(() => {
-    const ownerProfileExists = assistantBootstrapState?.ownerProfileExists;
-    if (ownerProfileExists === undefined) {
-      return;
-    }
-    const previousOwnerProfileExists = lastOwnerProfileExistsRef.current;
-    if (previousOwnerProfileExists === true && !ownerProfileExists) {
-      bootstrapInitialNavigationDoneRef.current = false;
-      bootstrapHandoffNavigationDoneRef.current = false;
-    } else if (previousOwnerProfileExists === false && ownerProfileExists) {
-      bootstrapHandoffNavigationDoneRef.current = false;
-    }
-    lastOwnerProfileExistsRef.current = ownerProfileExists;
-  }, [assistantBootstrapState?.ownerProfileExists]);
-
-  useEffect(() => {
     if (
       bootstrapInitialNavigationDoneRef.current ||
       !assistantNavAgentsLoaded ||
       !assistantSettings ||
-      !assistantBootstrapStateReady
+      firstInstallBootstrapNavigationRequested !== true
     ) {
       return;
     }
 
-    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
-    const bootstrapAgent = chatRuntimeAgent.agent;
-    if (!chatRuntimeAgent.bootstrapActive || !bootstrapAgentKey || !bootstrapAgent) {
+    const target = resolveFirstInstallBootstrapNavigationTarget(
+      chatNavAgentOptions,
+      assistantNavChatItems,
+      {
+        defaultChatAgentKey: assistantSettings.chatDefaultAgentKey,
+        bootstrapAgentKey: assistantSettings.bootstrapAgentKey,
+        bootstrapChatId: assistantSettings.bootstrapChatId,
+      },
+    );
+    if (!target) {
       return;
     }
-
-    const bootstrapChatId = assistantSettings.bootstrapChatId.trim();
-    const seedChatIndexed = Boolean(
-      bootstrapChatId &&
-      assistantNavChatItems.some((chat) =>
-        chat.chatId === bootstrapChatId && chat.agentKey === bootstrapAgentKey,
-      ),
-    );
-    const targetRoute = seedChatIndexed
-      ? createAgentChatRoute(bootstrapAgentKey, bootstrapChatId)
-      : createAgentNewChatRoute(bootstrapAgentKey);
+    const targetRoute = target.chatId
+      ? createAgentChatRoute(target.agentKey, target.chatId)
+      : createAgentNewChatRoute(target.agentKey);
     const currentRoute = `${location.pathname}${location.search}`;
 
     bootstrapInitialNavigationDoneRef.current = true;
@@ -1380,10 +1358,10 @@ export function AppShell() {
   }, [
     assistantNavAgentsLoaded,
     assistantNavChatItems,
-    assistantBootstrapStateReady,
     assistantSettings,
     chatRuntimeAgent,
     chatNavAgentOptions,
+    firstInstallBootstrapNavigationRequested,
     location.pathname,
     location.search,
     navigate,
@@ -1392,11 +1370,10 @@ export function AppShell() {
   useEffect(() => {
     if (
       bootstrapInitialNavigationDoneRef.current ||
-      chatRuntimeAgent.bootstrapActive ||
+      firstInstallBootstrapNavigationRequested !== false ||
       location.pathname !== "/" ||
       !assistantNavAgentsLoaded ||
       !assistantSettings ||
-      !assistantBootstrapStateReady ||
       !chatRuntimeAgent.agent
     ) {
       return;
@@ -1404,51 +1381,10 @@ export function AppShell() {
     navigate(createAgentNewChatRoute(chatRuntimeAgent.agent.agentKey), { replace: true });
   }, [
     assistantNavAgentsLoaded,
-    assistantBootstrapStateReady,
     assistantSettings,
     chatRuntimeAgent.agent,
-    chatRuntimeAgent.bootstrapActive,
+    firstInstallBootstrapNavigationRequested,
     location.pathname,
-    navigate,
-  ]);
-
-  useEffect(() => {
-    if (!assistantNavAgentsLoaded || !assistantSettings || !assistantBootstrapStateReady) {
-      return;
-    }
-    if (bootstrapHandoffNavigationDoneRef.current) {
-      return;
-    }
-    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
-    const defaultChatAgentKey = assistantSettings.chatDefaultAgentKey.trim();
-    if (
-      !bootstrapAgentKey ||
-      !defaultChatAgentKey ||
-      bootstrapAgentKey === defaultChatAgentKey ||
-      assistantBootstrapState?.ownerProfileExists !== true ||
-      !chatRuntimeAgent.defaultAgentAvailable
-    ) {
-      return;
-    }
-
-    const route = readAgentRouteInfo(`${location.pathname}${location.search}`);
-    if (
-      route.agentKey !== bootstrapAgentKey
-    ) {
-      return;
-    }
-
-    bootstrapHandoffNavigationDoneRef.current = true;
-    navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
-  }, [
-    assistantNavAgentsLoaded,
-    assistantBootstrapState?.ownerProfileExists,
-    assistantBootstrapStateReady,
-    assistantSettings?.bootstrapAgentKey,
-    assistantSettings?.chatDefaultAgentKey,
-    chatRuntimeAgent.defaultAgentAvailable,
-    location.pathname,
-    location.search,
     navigate,
   ]);
 
@@ -1769,30 +1705,22 @@ export function AppShell() {
 
   useEffect(() => {
     let cancelled = false;
-    let bootstrapStateChanged = false;
-    const unsubscribe = window.electronAPI.assistant.onBootstrapStateChanged((state) => {
-      bootstrapStateChanged = true;
-      if (!cancelled) {
-        setAssistantBootstrapState(state);
-      }
-    });
+    firstInstallBootstrapNavigationRequestRef.current ??=
+      window.electronAPI.assistant.consumeFirstInstallBootstrapNavigation();
     Promise.all([
       window.electronAPI.assistant.getSettings(),
-      window.electronAPI.assistant.getBootstrapState(),
+      firstInstallBootstrapNavigationRequestRef.current,
     ])
-      .then(([settings, bootstrapState]) => {
+      .then(([settings, bootstrapNavigation]) => {
         if (!cancelled) {
           setAssistantSettings(settings);
-          if (!bootstrapStateChanged) {
-            setAssistantBootstrapState(bootstrapState);
-          }
+          setFirstInstallBootstrapNavigationRequested(bootstrapNavigation.shouldOpen === true);
         }
       })
       .catch(() => undefined);
 
     return () => {
       cancelled = true;
-      unsubscribe();
     };
   }, []);
 

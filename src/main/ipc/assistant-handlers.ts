@@ -9,7 +9,6 @@ import { PRODUCT_NAME } from "../../shared/brand";
 import type { AssistantNavigationListOptions } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
-import { getAssistantBootstrapState } from "../assistant/core/bootstrap-state";
 import {
   createConversationShare,
   revokeConversationShare
@@ -51,6 +50,7 @@ export interface AssistantIpcHandlerOptions {
   captureAssistantScreenshot: ((chatId: any) => any) | null;
   openDesktopActionWorkbenchWindow?: () => Promise<{ ok: boolean }> | { ok: boolean };
   closeDesktopActionWorkbenchWindow?: () => Promise<{ ok: boolean }> | { ok: boolean };
+  consumeFirstInstallBootstrapNavigation?: () => { shouldOpen: boolean };
   platform?: string;
 }
 
@@ -244,8 +244,8 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     (getAgentPlatformMinimaxSettingsPublic?.(app) ?? null) ?? getAssistantSettings?.(app)
   );
 
-  ipcMain.handle("assistant.getBootstrapState", async () =>
-    getAssistantBootstrapState(app, platform as NodeJS.Platform)
+  ipcMain.handle("assistant.consumeFirstInstallBootstrapNavigation", async () =>
+    options.consumeFirstInstallBootstrapNavigation?.() ?? { shouldOpen: false }
   );
 
   ipcMain.handle("assistant.saveSettings", async (_event: any, input: any) => {
