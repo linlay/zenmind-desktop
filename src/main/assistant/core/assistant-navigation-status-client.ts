@@ -25,8 +25,12 @@ import {
   readAgentPlatformPushEpochMillis,
   validateAgentPlatformPushTimeContract,
 } from "../../../shared/agent-platform-push-time-contract";
-import { getDesktopDeviceId } from "../../device-identity";
 import { t } from "../../i18n/main-i18n";
+import {
+  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
+  RealtimeBroker,
+} from "../../realtime/realtime-broker";
+import type { AgentPlatformRealtimeFrame } from "../../realtime/agent-platform-realtime-client";
 
 type AgentPlatformApiResponse<T> = {
   code?: number;
@@ -142,17 +146,6 @@ type NavigationPushEvent = {
   [key: string]: unknown;
 };
 
-type MinimalWebSocket = {
-  onopen: (() => void) | null;
-  onmessage: ((event: { data?: unknown }) => void) | null;
-  onclose: (() => void) | null;
-  onerror: (() => void) | null;
-  send: (data: string) => void;
-  close: (code?: number, reason?: string) => void;
-};
-
-type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
-
 type AssistantGitBranchCacheEntry = {
   branch: string;
   expiresAt: number;
@@ -196,9 +189,7 @@ const NAVIGATION_CHAT_LIMIT = 8;
 const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT + 1;
 const NAVIGATION_CHAT_AGENT_MODE = "REACT";
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
-const NAVIGATION_WS_REQUEST_TIMEOUT_MS = 8_000;
 const NAVIGATION_UNAVAILABLE_RETRY_MS = 12_000;
-const NAVIGATION_RECONNECT_MS = 10_000;
 const NAVIGATION_LIVE_FRAME_LIMIT = 20;
 const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
 const NAVIGATION_GIT_BRANCH_TIMEOUT_MS = 1_000;
@@ -460,30 +451,17 @@ function createApiUrl(baseUrl: string, pathname: string) {
 
 const ASSISTANT_NAVIGATION_WS_SOURCE = "desktop-nav";
 
-function createWsUrl(baseUrl: string, token: string, source = "", deviceId = "") {
-  const url = new URL("/ws", baseUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  if (token.trim()) {
-    url.searchParams.set("token", token.trim());
-  }
-  url.searchParams.set("source", source.trim());
-  url.searchParams.set("deviceId", deviceId.trim());
-  return url.toString();
-}
-
 function createRedactedWsEndpoint(baseUrl: string) {
   try {
-    const url = new URL("/ws", baseUrl);
+    const url = new URL(baseUrl);
     url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = "/ws";
+    url.search = "";
+    url.hash = "";
     return url.toString();
   } catch {
     return null;
   }
-}
-
-function getWebSocketConstructor(): MinimalWebSocketConstructor | null {
-  const candidate = (globalThis as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
-  return typeof candidate === "function" ? candidate : null;
 }
 
 function unwrapApiResponse<T>(payload: unknown): T {
@@ -1555,19 +1533,12 @@ export async function readAssistantCopilotAgentsFromPlatform(
 }
 
 export class AssistantNavigationStatusClient {
-  private ws: MinimalWebSocket | null = null;
-  private wsOpenPromise: Promise<void> | null = null;
-  private resolveWsOpen: (() => void) | null = null;
-  private rejectWsOpen: ((error: Error) => void) | null = null;
-  private readonly pendingWsRequests = new Map<string, {
-    resolve: (frame: NavigationPushFrame) => void;
-    reject: (error: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-  }>();
+  private readonly realtimeBroker: RealtimeBroker;
+  private readonly ownsRealtimeBroker: boolean;
+  private unsubscribePush: (() => void) | null = null;
   private wsRequestSequence = 0;
   private stopped = false;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private refreshInFlight: Promise<AssistantNavAgentItemsResult> | null = null;
   private refreshRequestedWhileInFlight = false;
   private runtimeStatusPushSequence = 0;
@@ -1592,17 +1563,22 @@ export class AssistantNavigationStatusClient {
     lastError: null,
     recentFrames: [],
   };
-  private lastBaseUrl = "";
-  private lastToken = "";
-
   constructor(private readonly options: {
     app: App;
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
+    realtimeBroker?: RealtimeBroker;
     onSnapshot: (result: AssistantNavAgentItemsResult) => void;
     onPushEvent?: (event: AssistantNavigationPushEvent) => void;
     onDebug?: (message: string) => void;
-  }) {}
+  }) {
+    this.ownsRealtimeBroker = !options.realtimeBroker;
+    this.realtimeBroker = options.realtimeBroker ?? new RealtimeBroker({
+      app: options.app,
+      issueAccessToken: options.issueAccessToken,
+      onDiagnostic: options.onDebug,
+    });
+  }
 
   start() {
     this.stopped = false;
@@ -1636,7 +1612,12 @@ export class AssistantNavigationStatusClient {
       lastError: null,
       recentFrames: [],
     });
-    this.closeWebSocket();
+    this.unsubscribePush?.();
+    this.unsubscribePush = null;
+    this.realtimeBroker.cleanupConsumer("assistant-navigation");
+    if (this.ownsRealtimeBroker) {
+      this.realtimeBroker.dispose();
+    }
   }
 
   getSnapshot() {
@@ -1644,8 +1625,17 @@ export class AssistantNavigationStatusClient {
   }
 
   getLiveStatus(): AssistantNavigationLiveStatus {
+    const brokerState = this.realtimeBroker.getConnectionState();
+    const reflectBrokerDisconnect = this.liveStatus.phase === "connected" &&
+      (brokerState.phase === "reconnecting" || brokerState.phase === "error" || brokerState.phase === "closed");
     return {
       ...this.liveStatus,
+      ...(reflectBrokerDisconnect
+        ? {
+            phase: brokerState.phase === "reconnecting" ? "reconnecting" as const : "error" as const,
+            lastError: brokerState.lastError ?? this.liveStatus.lastError,
+          }
+        : {}),
       recentFrames: this.liveStatus.recentFrames.map((frame) => ({ ...frame })),
     };
   }
@@ -1741,8 +1731,8 @@ export class AssistantNavigationStatusClient {
         NAVIGATION_AGENT_CHAT_LIMIT,
         items
       );
-      await this.connectWebSocket(baseUrl, token);
-      const chatSnapshot = await this.requestNavigationChats();
+      await this.connectRealtime(baseUrl, token);
+      const chatSnapshot = await this.requestNavigationChats(baseUrl, token);
       const refreshedResult = this.replayRuntimeStatusPushesSince({
         ok: true,
         items,
@@ -1760,7 +1750,7 @@ export class AssistantNavigationStatusClient {
       const message = error instanceof Error ? error.message : String(error);
       this.options.onDebug?.(message);
       this.updateLiveStatus({
-        phase: this.reconnectTimer ? "reconnecting" : "error",
+        phase: this.realtimeBroker.getConnectionPhase() === "reconnecting" ? "reconnecting" : "error",
         lastError: message,
       });
       if (isTimeContractViolation(error)) {
@@ -1846,105 +1836,78 @@ export class AssistantNavigationStatusClient {
     this.updateLiveStatus({ recentFrames });
   }
 
-  private connectWebSocket(baseUrl: string, token: string): Promise<void> {
-    const WebSocketConstructor = getWebSocketConstructor();
-    if (!WebSocketConstructor) {
-      this.recordLiveFrame({ direction: "connection", kind: "error", type: null });
-      this.updateLiveStatus({
-        phase: "error",
-        endpoint: createRedactedWsEndpoint(baseUrl),
-        lastError: "WebSocket is unavailable",
-      });
-      return Promise.reject(new Error("WebSocket is unavailable"));
-    }
-    if (this.ws && this.lastBaseUrl === baseUrl && this.lastToken === token) {
-      return this.wsOpenPromise ?? Promise.resolve();
-    }
-    this.closeWebSocket();
-    this.lastBaseUrl = baseUrl;
-    this.lastToken = token;
+  private async connectRealtime(baseUrl: string, token: string): Promise<void> {
     this.updateLiveStatus({
       phase: "connecting",
       endpoint: createRedactedWsEndpoint(baseUrl),
       lastError: null,
     });
     this.recordLiveFrame({ direction: "connection", kind: "connecting", type: null });
-    const socket = new WebSocketConstructor(
-      createWsUrl(
-        baseUrl,
-        token,
-        ASSISTANT_NAVIGATION_WS_SOURCE,
-        getDesktopDeviceId(this.options.app)
-      )
-    );
-    this.ws = socket;
-    this.wsOpenPromise = new Promise<void>((resolve, reject) => {
-      this.resolveWsOpen = resolve;
-      this.rejectWsOpen = reject;
-    });
-    socket.onmessage = (event) => this.handleWebSocketMessage(event.data);
-    socket.onclose = () => this.handleWebSocketClosed();
-    socket.onerror = () => this.handleWebSocketClosed();
-    socket.onopen = () => {
-      this.recordLiveFrame({ direction: "connection", kind: "connected", type: null });
-      this.updateLiveStatus({
-        phase: "connected",
-        connectedAt: nowEpochMillis(),
-        lastError: null,
+    try {
+      await this.realtimeBroker.ensureConnected(baseUrl, token);
+    } catch (error) {
+      this.recordLiveFrame({ direction: "connection", kind: "error", type: null });
+      throw error;
+    }
+    if (!this.unsubscribePush) {
+      this.unsubscribePush = this.realtimeBroker.subscribePush({
+        types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES],
+        kind: "internal",
+        consumerId: "assistant-navigation",
+        onPush: (frame) => this.handleRealtimeFrame(frame),
       });
-      this.resolveWsOpen?.();
-      this.resolveWsOpen = null;
-      this.rejectWsOpen = null;
-    };
-    return this.wsOpenPromise;
+    }
+    this.recordLiveFrame({ direction: "connection", kind: "connected", type: null });
+    this.updateLiveStatus({
+      phase: "connected",
+      connectedAt: nowEpochMillis(),
+      lastError: null,
+    });
   }
 
-  private async requestNavigationChats(): Promise<AssistantNavigationChatsSnapshot> {
-    const socket = this.ws;
-    if (!socket) {
-      throw new Error("agent-platform WebSocket is unavailable");
-    }
+  private async requestNavigationChats(
+    baseUrl: string,
+    token: string,
+  ): Promise<AssistantNavigationChatsSnapshot> {
     const id = `desktop-nav-chats-${++this.wsRequestSequence}`;
     const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        this.pendingWsRequests.delete(id);
-        reject(new Error("agent-platform WebSocket request timed out"));
-      }, NAVIGATION_WS_REQUEST_TIMEOUT_MS);
-      this.pendingWsRequests.set(id, { resolve, reject, timer });
-      try {
-        socket.send(JSON.stringify({
-          frame: "request",
-          type: "/api/chats",
-          id,
-          payload: {
-            mode: NAVIGATION_CHAT_AGENT_MODE,
-            limit: NAVIGATION_CHAT_PROBE_LIMIT,
-          },
-        }));
-        this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats" });
-      } catch (error) {
-        clearTimeout(timer);
-        this.pendingWsRequests.delete(id);
-        reject(error instanceof Error ? error : new Error(String(error)));
-      }
+      void this.realtimeBroker.forwardRequest({
+        baseUrl,
+        token,
+        localId: id,
+        consumerId: "assistant-navigation",
+        type: "/api/chats",
+        payload: {
+          mode: NAVIGATION_CHAT_AGENT_MODE,
+          limit: NAVIGATION_CHAT_PROBE_LIMIT,
+        },
+        onFrame: (response) => {
+          this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
+          this.recordLiveFrame({
+            direction: "inbound",
+            kind: toText(response.frame) === "error" ? "error" : "response",
+            type: toText(response.type) || null,
+          });
+          if (toText(response.frame) === "error") {
+            reject(new Error(toText(response.msg) || "agent-platform realtime request failed"));
+            return;
+          }
+          resolve(response as NavigationPushFrame);
+        },
+        onError: reject,
+      }).catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
+      this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats" });
     });
     return buildAssistantNavigationChatsSnapshotFromPlatform(
       unwrapApiResponse<unknown[]>(frame),
     );
   }
 
-  private handleWebSocketMessage(data: unknown) {
+  private handleRealtimeFrame(input: AgentPlatformRealtimeFrame) {
     if (this.stopped) {
       return;
     }
-    const raw = typeof data === "string" ? data : String(data ?? "");
-    let frame: NavigationPushFrame;
-    try {
-      frame = JSON.parse(raw) as NavigationPushFrame;
-    } catch {
-      this.recordLiveFrame({ direction: "inbound", kind: "invalid", type: null });
-      return;
-    }
+    const frame = input as NavigationPushFrame;
     this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
     const frameKind = toText(frame.frame);
     const frameType = toText(frame.type) || null;
@@ -1956,20 +1919,6 @@ export class AssistantNavigationStatusClient {
           ? "push"
           : "invalid";
     this.recordLiveFrame({ direction: "inbound", kind: liveFrameKind, type: frameType });
-    const requestId = toText(frame.id);
-    if ((frameKind === "response" || frameKind === "error") && requestId) {
-      const pending = this.pendingWsRequests.get(requestId);
-      if (pending) {
-        clearTimeout(pending.timer);
-        this.pendingWsRequests.delete(requestId);
-        if (frameKind === "error") {
-          pending.reject(new Error(toText(frame.msg) || "agent-platform WebSocket request failed"));
-        } else {
-          pending.resolve(frame);
-        }
-      }
-      return;
-    }
     if (frameKind !== "push") {
       return;
     }
@@ -2030,61 +1979,13 @@ export class AssistantNavigationStatusClient {
     this.scheduleRefresh(event.type === "chat.created" ? 0 : undefined);
   }
 
-  private handleWebSocketClosed() {
-    if (this.stopped) {
-      return;
-    }
-    this.closeWebSocket();
-    this.recordLiveFrame({ direction: "connection", kind: "closed", type: null });
-    this.updateLiveStatus({
-      phase: "reconnecting",
-      connectedAt: null,
-      lastError: "agent-platform WebSocket closed",
-    });
-    if (this.reconnectTimer) {
-      return;
-    }
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.scheduleRefresh(0);
-    }, NAVIGATION_RECONNECT_MS);
-  }
-
-  private closeWebSocket() {
-    const socket = this.ws;
-    this.ws = null;
-    const openError = new Error("agent-platform WebSocket closed");
-    this.rejectWsOpen?.(openError);
-    this.resolveWsOpen = null;
-    this.rejectWsOpen = null;
-    this.wsOpenPromise = null;
-    for (const [id, pending] of this.pendingWsRequests) {
-      clearTimeout(pending.timer);
-      pending.reject(openError);
-      this.pendingWsRequests.delete(id);
-    }
-    if (!socket) {
-      return;
-    }
-    socket.onopen = null;
-    socket.onmessage = null;
-    socket.onclose = null;
-    socket.onerror = null;
-    try {
-      socket.close(1000, "assistant navigation refresh");
-    } catch {
-      // Ignore close failures for sockets that are already closing.
-    }
-  }
-
   private clearTimers() {
-    for (const timer of [this.refreshTimer, this.reconnectTimer]) {
+    for (const timer of [this.refreshTimer]) {
       if (timer) {
         clearTimeout(timer);
       }
     }
     this.refreshTimer = null;
-    this.reconnectTimer = null;
   }
 }
 
@@ -2092,6 +1993,5 @@ export const __testInternals = {
   NAVIGATION_AGENT_CHAT_LIMIT,
   NAVIGATION_AGENT_HISTORY_LIMIT,
   NAVIGATION_CHAT_LIMIT,
-  createWsUrl,
   toPushEvent
 };

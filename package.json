@@ -17,6 +17,8 @@
     "i18n:keys": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs",
     "webapp-contract:generate": "node ./scripts/generate-webapp-contract.mjs",
     "webapp-contract:check": "node ./scripts/generate-webapp-contract.mjs --check",
+    "agent-webclient-contract:generate": "node ./scripts/generate-agent-webclient-contract.mjs",
+    "agent-webclient-contract:check": "node ./scripts/generate-agent-webclient-contract.mjs --check",
     "webapp:manifest:init": "node ./scripts/webapp-tooling.mjs manifest init",
     "webapp:manifest:validate": "node ./scripts/webapp-tooling.mjs manifest validate",
     "webapp:package:validate": "node ./scripts/webapp-tooling.mjs package validate",
@@ -35,8 +37,8 @@
     "dist:mac": "node ./scripts/dist-mac.mjs",
     "dist:win": "node ./scripts/dist-win.mjs",
     "dist:win-docker": "node ./scripts/dist-win.mjs --docker",
-    "test": "npm run webapp-contract:check && npm run i18n:check && npm run build && node --test ./test/*.test.mjs",
-    "test:unit": "npm run webapp-contract:check && npm run brand:prepare && npm run build:main:types && node --test ./test/*.test.mjs"
+    "test": "npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run i18n:check && npm run build && node --test ./test/*.test.mjs",
+    "test:unit": "npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:types && node --test ./test/*.test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.1",

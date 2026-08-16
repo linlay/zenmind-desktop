@@ -10,8 +10,12 @@ import {
   sanitizeDesktopPetUnreadCount,
   toDesktopPetText as toText
 } from "../../../shared/desktop-pet";
-import { getDesktopDeviceId } from "../../device-identity";
 import { t } from "../../i18n/main-i18n";
+import {
+  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
+  RealtimeBroker,
+} from "../../realtime/realtime-broker";
+import type { AgentPlatformRealtimeFrame } from "../../realtime/agent-platform-realtime-client";
 import { createApiUrl } from "./agent-platform-api";
 import type { DesktopPetBoundAgentStatus } from "./desktop-pet";
 import {
@@ -50,16 +54,6 @@ type ChatSummary = {
   hasPendingAwaiting?: unknown;
 };
 
-type MinimalWebSocket = {
-  onopen: (() => void) | null;
-  onmessage: ((event: { data?: unknown }) => void) | null;
-  onclose: (() => void) | null;
-  onerror: (() => void) | null;
-  close: (code?: number, reason?: string) => void;
-};
-
-type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
-
 export type AgentPlatformPetPushFrame = {
   frame?: unknown;
   type?: unknown;
@@ -69,7 +63,6 @@ export type AgentPlatformPetPushFrame = {
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const AGENT_PLATFORM_STATUS_STALE_MS = 90_000;
-const AGENT_PLATFORM_RECONNECT_MS = 10_000;
 const AGENT_PLATFORM_REFRESH_DEBOUNCE_MS = 350;
 const AGENT_PLATFORM_UNAVAILABLE_RETRY_MS = 12_000;
 const AGENT_PLATFORM_DONE_REFRESH_MS = 4_200;
@@ -112,24 +105,6 @@ function isObjectRecord(value: unknown): value is Record<string, unknown> {
 
 function toArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
-}
-
-const DESKTOP_PET_STATUS_WS_SOURCE = "desktop-pet";
-
-function createWsUrl(baseUrl: string, token: string, source = "", deviceId = "") {
-  const url = new URL("/ws", baseUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  if (token.trim()) {
-    url.searchParams.set("token", token.trim());
-  }
-  url.searchParams.set("source", source.trim());
-  url.searchParams.set("deviceId", deviceId.trim());
-  return url.toString();
-}
-
-function getWebSocketConstructor(): MinimalWebSocketConstructor | null {
-  const candidate = (globalThis as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
-  return typeof candidate === "function" ? candidate : null;
 }
 
 function compareChatFreshness(a: ChatSummary, b: ChatSummary) {
@@ -583,13 +558,12 @@ export function applyAgentPlatformCompletionReminder(
 }
 
 export class AgentPlatformPetStatusClient {
-  private ws: MinimalWebSocket | null = null;
+  private readonly realtimeBroker: RealtimeBroker;
+  private readonly ownsRealtimeBroker: boolean;
+  private unsubscribePush: (() => void) | null = null;
   private stopped = false;
   private refreshTimer: ReturnType<typeof setTimeout> | null = null;
-  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private staleTimer: ReturnType<typeof setTimeout> | null = null;
-  private lastBaseUrl = "";
-  private lastToken = "";
   private latestStatus: DesktopPetBoundAgentStatus | null = null;
   private finishedChats = new Map<string, number>();
 
@@ -597,12 +571,20 @@ export class AgentPlatformPetStatusClient {
     app: App;
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
+    realtimeBroker?: RealtimeBroker;
     onStatus: (status: DesktopPetBoundAgentStatus | null) => void;
     onAgents?: (agents: DesktopPetAgentOption[]) => void;
     onRunStarted?: (input: { runId: string; chatId: string | null; agentKey: string; timestamp: number }) => void;
     onRunFinished?: (input: { runId: string; chatId: string | null; agentKey: string; message: string; timestamp: number }) => void;
     onDebug?: (message: string) => void;
-  }) {}
+  }) {
+    this.ownsRealtimeBroker = !options.realtimeBroker;
+    this.realtimeBroker = options.realtimeBroker ?? new RealtimeBroker({
+      app: options.app,
+      issueAccessToken: options.issueAccessToken,
+      onDiagnostic: options.onDebug,
+    });
+  }
 
   start() {
     this.stopped = false;
@@ -612,7 +594,12 @@ export class AgentPlatformPetStatusClient {
   stop() {
     this.stopped = true;
     this.clearTimers();
-    this.closeWebSocket();
+    this.unsubscribePush?.();
+    this.unsubscribePush = null;
+    this.realtimeBroker.cleanupConsumer("desktop-pet-status");
+    if (this.ownsRealtimeBroker) {
+      this.realtimeBroker.dispose();
+    }
   }
 
   scheduleRefresh(delayMs = AGENT_PLATFORM_REFRESH_DEBOUNCE_MS) {
@@ -658,7 +645,7 @@ export class AgentPlatformPetStatusClient {
         chats
       });
       this.setStatus(nextStatus);
-      this.connectWebSocket(baseUrl, token);
+      await this.connectRealtime(baseUrl, token);
     } catch (error) {
       this.options.onDebug?.(error instanceof Error ? error.message : String(error));
       this.setStatus(null);
@@ -692,44 +679,23 @@ export class AgentPlatformPetStatusClient {
     }, AGENT_PLATFORM_STATUS_STALE_MS);
   }
 
-  private connectWebSocket(baseUrl: string, token: string) {
-    const WebSocketConstructor = getWebSocketConstructor();
-    if (!WebSocketConstructor) {
-      this.scheduleRefresh(AGENT_PLATFORM_UNAVAILABLE_RETRY_MS);
-      return;
+  private async connectRealtime(baseUrl: string, token: string) {
+    await this.realtimeBroker.ensureConnected(baseUrl, token);
+    if (!this.unsubscribePush) {
+      this.unsubscribePush = this.realtimeBroker.subscribePush({
+        types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES],
+        kind: "internal",
+        consumerId: "desktop-pet-status",
+        onPush: (frame) => this.handleRealtimeFrame(frame),
+      });
     }
-    if (this.ws && this.lastBaseUrl === baseUrl && this.lastToken === token) {
-      return;
-    }
-
-    this.closeWebSocket();
-    this.lastBaseUrl = baseUrl;
-    this.lastToken = token;
-    const wsUrl = createWsUrl(
-      baseUrl,
-      token,
-      DESKTOP_PET_STATUS_WS_SOURCE,
-      getDesktopDeviceId(this.options.app)
-    );
-    const socket = new WebSocketConstructor(wsUrl);
-    this.ws = socket;
-    socket.onmessage = (event) => this.handleWebSocketMessage(event.data);
-    socket.onclose = () => this.handleWebSocketClosed();
-    socket.onerror = () => this.handleWebSocketClosed();
-    socket.onopen = () => undefined;
   }
 
-  private handleWebSocketMessage(data: unknown) {
+  private handleRealtimeFrame(input: AgentPlatformRealtimeFrame) {
     if (this.stopped) {
       return;
     }
-    const raw = typeof data === "string" ? data : String(data ?? "");
-    let frame: AgentPlatformPetPushFrame;
-    try {
-      frame = JSON.parse(raw) as AgentPlatformPetPushFrame;
-    } catch {
-      return;
-    }
+    const frame = input as AgentPlatformPetPushFrame;
     if (toText(frame.frame) !== "push") {
       return;
     }
@@ -796,6 +762,16 @@ export class AgentPlatformPetStatusClient {
     }
   }
 
+  // Test/diagnostic compatibility only; production frames arrive from RealtimeBroker.
+  private handleWebSocketMessage(data: unknown) {
+    if (typeof data !== "string") return;
+    try {
+      this.handleRealtimeFrame(JSON.parse(data) as AgentPlatformRealtimeFrame);
+    } catch {
+      // Malformed diagnostic input is ignored.
+    }
+  }
+
   private rememberFinishedChat(chatId: string) {
     const now = Date.now();
     this.finishedChats.set(chatId, now);
@@ -806,51 +782,18 @@ export class AgentPlatformPetStatusClient {
     }
   }
 
-  private handleWebSocketClosed() {
-    if (this.stopped) {
-      return;
-    }
-    this.closeWebSocket();
-    if (this.reconnectTimer) {
-      return;
-    }
-    this.reconnectTimer = setTimeout(() => {
-      this.reconnectTimer = null;
-      this.scheduleRefresh(0);
-    }, AGENT_PLATFORM_RECONNECT_MS);
-  }
-
-  private closeWebSocket() {
-    const socket = this.ws;
-    this.ws = null;
-    if (!socket) {
-      return;
-    }
-    socket.onopen = null;
-    socket.onmessage = null;
-    socket.onclose = null;
-    socket.onerror = null;
-    try {
-      socket.close(1000, "desktop pet refresh");
-    } catch {
-      // Ignore close failures for already-closing sockets.
-    }
-  }
-
   private clearTimers() {
-    for (const timer of [this.refreshTimer, this.reconnectTimer, this.staleTimer]) {
+    for (const timer of [this.refreshTimer, this.staleTimer]) {
       if (timer) {
         clearTimeout(timer);
       }
     }
     this.refreshTimer = null;
-    this.reconnectTimer = null;
     this.staleTimer = null;
   }
 }
 
 export const __testInternals = {
   AGENT_PLATFORM_STATUS_STALE_MS,
-  createWsUrl,
   readFrameData
 };

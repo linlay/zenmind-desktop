@@ -77,6 +77,16 @@ export function handleServiceWebviewBridgeMessage(
     (payload.action === "getAccessToken" || payload.action === "refreshAccessToken")
   ) {
     const responseType = resolveServiceWebviewAuthResponseType(bridgeProtocol);
+    if (context.serviceId === "agent-webclient") {
+      const desktopAuthContext = context.desktopAuthContext?.trim() ?? "";
+      context.sendBridgeMessageToWebview({
+        type: responseType,
+        requestId: payload.requestId,
+        token: null,
+        ...(desktopAuthContext ? { desktopAuthContext } : {})
+      });
+      return true;
+    }
     void window.electronAPI.agentAuth
       .issueAccessToken(payload.reason === "unauthorized" ? "unauthorized" : "missing")
       .then((result) => {

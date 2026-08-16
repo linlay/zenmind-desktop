@@ -13,7 +13,6 @@ import {
   buildServiceWebviewUrl,
   getServiceWebviewAuthProtocol,
 } from "../../shared/auth-bridge";
-import { buildAgentWebclientAccessTokenInjectionScript } from "../../shared/agent-webclient-auth-injection";
 import {
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientHostRouteParamsEqual,
@@ -72,6 +71,7 @@ type ServiceWebviewSurfaceProps = {
   surfaceOwnershipActive?: boolean;
   embedPath?: string;
   surfaceLabel?: string;
+  ownerChatId?: string;
   skipContextRegistration?: boolean;
   devToolsTarget?: "copilot";
   loadInitialEmbeddedUrlDirectly?: boolean;
@@ -121,7 +121,9 @@ function resolveContextMenuSurfaceType(
   embedPath: string | undefined,
 ): WebviewContextMenuSurfaceType {
   if (serviceId !== "agent-webclient") return "service";
-  if (/project/iu.test(embedPath || "")) return "project";
+  if (/overview/iu.test(embedPath || "") || /overview/iu.test(surfaceId)) return "agent-summary";
+  if (/debug/iu.test(embedPath || "") || /debug/iu.test(surfaceId)) return "agent-debug";
+  if (/project/iu.test(embedPath || "")) return "agent-project";
   if (/copilot/iu.test(surfaceId)) return "agent-copilot";
   if (/chat/iu.test(surfaceId)) return "agent-chat";
   return "agent-management";
@@ -398,6 +400,7 @@ export function ServiceWebviewSurface({
   surfaceOwnershipActive,
   embedPath,
   surfaceLabel,
+  ownerChatId,
   skipContextRegistration,
   devToolsTarget,
   loadInitialEmbeddedUrlDirectly,
@@ -634,6 +637,7 @@ export function ServiceWebviewSurface({
       surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceId, effectiveEmbedPath),
       ...(serviceId ? { serviceId } : {}),
       pageRoute: surfaceRoute,
+      ...(ownerChatId?.trim() ? { ownerChatId: ownerChatId.trim() } : {}),
       label: serviceDisplayName || surfaceId,
       url: webUrl || embeddedUrl,
       active: ownsActiveSurface,
@@ -650,6 +654,7 @@ export function ServiceWebviewSurface({
     }).catch(() => undefined);
   }, [
     ownsActiveSurface,
+    ownerChatId,
     effectiveEmbedPath,
     embeddedUrl,
     serviceDisplayName,
@@ -1138,78 +1143,6 @@ export function ServiceWebviewSurface({
     }
   }
 
-  async function injectAgentWebclientAccessToken(token: string | null) {
-    if (service?.id !== "agent-webclient") {
-      return false;
-    }
-    const targetWebview = webviewRef.current;
-    if (!targetWebview) {
-      reportServiceWebviewDiagnostic("token-injection-skipped", {
-        reason: "webview-unavailable",
-      });
-      return false;
-    }
-
-    const desktopAuthContext = webviewReloadKey;
-    try {
-      const result = (await targetWebview.executeJavaScript(
-        buildAgentWebclientAccessTokenInjectionScript(
-          token,
-          desktopAuthContext,
-        ),
-        true,
-      )) as { tokenBeforeLength?: number; tokenAfterLength?: number } | null;
-      return Boolean(
-        token &&
-        desktopAuthContext &&
-        result &&
-        (result.tokenBeforeLength ?? 0) === 0 &&
-        (result.tokenAfterLength ?? 0) > 0,
-      );
-    } catch (reason) {
-      console.warn(
-        "[agent-webclient] failed to inject access token fallback",
-        reason instanceof Error ? reason.message : String(reason),
-      );
-      return false;
-    }
-  }
-
-  function seedAgentWebclientAccessToken() {
-    if (service?.id !== "agent-webclient" || !bridgeProtocol) {
-      return;
-    }
-    void window.electronAPI.agentAuth
-      .issueAccessToken("missing")
-      .then(async (result) => {
-        const token = result.ok ? result.token : null;
-        await injectAgentWebclientAccessToken(token);
-        sendBridgeMessageToWebview({
-          type: bridgeProtocol.responseType,
-          requestId: `agent_webclient_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          token,
-          desktopAuthContext: webviewReloadKey,
-        });
-        if (!result.ok) {
-          setBridgeError(result.message);
-        }
-      })
-      .catch((reason) => {
-        setBridgeError(
-          reason instanceof Error ? reason.message : String(reason),
-        );
-      });
-  }
-
-  function scheduleAgentWebclientAccessTokenSeeds() {
-    const delays = [0, 150, 500, 1000, 2000];
-    return delays.map((delay) =>
-      window.setTimeout(() => {
-        seedAgentWebclientAccessToken();
-      }, delay),
-    );
-  }
-
   function handleWebviewBridgeMessage(event: Event) {
     const channel = readEventString(event, "channel");
     if (channel !== SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL) {
@@ -1280,14 +1213,12 @@ export function ServiceWebviewSurface({
       syncWebviewState();
       refreshCurrentPageSnapshotTarget();
       sendServiceRouteToWebview(embeddedUrl, "initial");
-      seedAgentWebclientAccessToken();
     };
     const handleDidFinishLoad = () => {
       reportServiceWebviewDiagnostic("did-finish-load");
       syncWebviewState();
       refreshCurrentPageSnapshotTarget();
       sendServiceRouteToWebview(embeddedUrl, "route-sync");
-      seedAgentWebclientAccessToken();
     };
     const syncNavigationRoute = (event: Event) => {
       const nextUrl = readEventString(event, "url");
@@ -1341,7 +1272,6 @@ export function ServiceWebviewSurface({
       ) {
         sendServiceRouteToWebview(resolvedUrl, "navigation");
       }
-      seedAgentWebclientAccessToken();
     };
     const handleDidNavigate = (event: Event) => {
       syncNavigationRoute(event);
@@ -1370,11 +1300,8 @@ export function ServiceWebviewSurface({
     targetWebview.addEventListener("ipc-message", handleWebviewBridgeMessage);
     syncWebviewState();
     sendServiceRouteToWebview(embeddedUrl, "route-sync");
-    const seedTimers = scheduleAgentWebclientAccessTokenSeeds();
-
     return () => {
       reportServiceWebviewDiagnostic("listeners-detached");
-      seedTimers.forEach((timer) => window.clearTimeout(timer));
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
       targetWebview.removeEventListener("did-navigate", handleDidNavigate);
@@ -1411,7 +1338,6 @@ export function ServiceWebviewSurface({
     if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {
       return;
     }
-    seedAgentWebclientAccessToken();
   }, [
     active,
     bridgeReady,

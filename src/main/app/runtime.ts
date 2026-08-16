@@ -167,6 +167,7 @@ import { cleanupProgramDataForVersion } from "../program-data-cleanup";
 import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../bridge/assistant-runtime";
 import { createAssistantRunWakeLock } from "../bridge/assistant-wake-lock";
 import { createAssistantBootstrapStateMonitor } from "../assistant/core/bootstrap-state";
+import { RealtimeBroker } from "../realtime/realtime-broker";
 import { createPluginClipboardBridge } from "../bridge/plugin-clipboard";
 import { createPluginBridgeRuntime, type PluginBridgeRuntime } from "../bridge/plugin-runtime";
 import {
@@ -221,6 +222,11 @@ export function createMainProcessRuntime() {
   
   const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform, {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
+  });
+  const realtimeBroker = new RealtimeBroker({
+    app,
+    issueAccessToken: issueAgentAccessToken,
+    onDiagnostic: (message) => console.warn(`[agent-platform-realtime] ${message}`)
   });
   const pluginClipboardBridge = createPluginClipboardBridge({
     platform: mainProcessContext.platform,
@@ -631,7 +637,8 @@ export function createMainProcessRuntime() {
       pluginBridgeRuntime.publishAssistantActiveTasks(tasks, runningTaskCount),
     refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
     getResponsiveServiceState,
-    issueAgentAccessToken
+    issueAgentAccessToken,
+    realtimeBroker
   });
   pluginBridgeRuntime = createPluginBridgeRuntime({
     app,
@@ -724,6 +731,7 @@ export function createMainProcessRuntime() {
     cdpIntegration,
     getResponsiveServiceState,
     issueAgentAccessToken,
+    realtimeBroker,
     refreshDesktopSsoAccessToken: () => refreshDesktopSsoIdentityToken(true),
     canUseDesktopSsoCredentials: isDesktopSsoCredentialRuntimeReady,
     callAgentPlatform,
@@ -1439,6 +1447,9 @@ export function createMainProcessRuntime() {
       logsRuntime,
       petRuntime,
       browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
+      isTrustedAgentWebclientSession: (sender) => sender.session === session.fromPartition(
+        `persist:${STORAGE_NAMESPACE}-service-agent-webclient`,
+      ),
       enterpriseChatRuntime,
       desktopSsoController,
       startupRestoreController,
@@ -1513,6 +1524,7 @@ export function createMainProcessRuntime() {
       isNativeDialogOpen: () => appShellRuntime.isNativeDialogOpen(),
       emitPluginBeforeQuit: () => pluginBridgeRuntime.emitBeforeQuit(),
       prepareQuitUi,
+      beginRealtimeShutdown: () => realtimeBroker.beginShutdown(),
       runShutdownCleanup,
       writeInstallerShutdownAcks,
       releaseAssistantRunWakeLock: () => assistantRunWakeLock.release(),
@@ -1520,6 +1532,7 @@ export function createMainProcessRuntime() {
       stopAssistantBridgeRuntime: () => assistantBridgeRuntime.stop(),
       stopTunnelHubRuntime,
       stopAgentPlatformPetStatusClient,
+      disposeRealtimeBroker: () => realtimeBroker.dispose(),
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,
       stopAssistantBootstrapStateMonitor: () => assistantBootstrapStateMonitor.stop(),

@@ -1,4 +1,4 @@
-import type { App } from "electron";
+import type { App, WebContents } from "electron";
 import { createAppPairingPayload } from "../app-pairing";
 import { issueAgentAccessToken } from "../agent-auth";
 import {
@@ -104,6 +104,7 @@ import { registerKanbanIpcHandlers } from "./kanban-handlers";
 import { registerTunnelHubIpcHandlers } from "./tunnel-hub-handlers";
 import { registerWebIpcHandlers } from "./web-handlers";
 import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
+import { registerAgentWebclientBridgeIpcHandlers } from "./agent-webclient-bridge-handlers";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
@@ -121,6 +122,7 @@ export type MainIpcRegistrationOptions = {
   logsRuntime: LogsRuntime;
   petRuntime: DesktopPetRuntime;
   browserSurfaces: BrowserSurfaceRegistry;
+  isTrustedAgentWebclientSession: (sender: WebContents) => boolean;
   enterpriseChatRuntime: EnterpriseChatRuntime;
   desktopSsoController: any;
   startupRestoreController: any;
@@ -214,6 +216,32 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  registerAgentWebclientBridgeIpcHandlers(ipcMain, {
+    app,
+    browserSurfaces: options.browserSurfaces,
+    isTrustedAgentWebclientSession: options.isTrustedAgentWebclientSession,
+    realtimeBroker: assistantBridgeRuntime.realtimeBroker,
+    getServiceState,
+    issueAccessToken: issueAgentAccessToken,
+    dispatchWorkPanel: async ({ action, ownerChatId, args }) => {
+      const response = await handleDesktopActionRequest(desktopActionOptions, {
+        requestId: `workpanel-bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        action: `desktop.workpanel.${action}`,
+        args,
+        source: { chatId: ownerChatId }
+      });
+      if (response.ok) {
+        return response.result as any;
+      }
+      return {
+        ok: false,
+        error: {
+          code: (response.error?.code || "target_unavailable") as any,
+          message: response.error?.message || "WorkPanel renderer is unavailable"
+        }
+      };
+    }
+  });
   registerHelpIpcHandlers(ipcMain, app);
 
   registerServicesIpcHandlers(ipcMain, createServicesIpcHandlerOptions(context, {
@@ -331,7 +359,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     refreshKanbanConnection: () => state.kanbanRuntime?.refreshDeviceInfo(),
     stopTunnelHubRuntime,
     refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
-    stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
+    stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut(),
+    invalidateRealtimeIdentity: () => assistantBridgeRuntime.realtimeBroker.rotateIdentity()
   }));
   registerEnterpriseChatIpcHandlers(
     ipcMain,

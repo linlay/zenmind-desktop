@@ -358,6 +358,7 @@ export interface SsoIpcHandlerContextDependencies {
   stopTunnelHubRuntime?: (...args: any[]) => unknown;
   refreshEnterpriseChat?: (...args: any[]) => unknown;
   stopEnterpriseChat?: (...args: any[]) => unknown;
+  invalidateRealtimeIdentity?: (...args: any[]) => unknown;
 }
 
 export function createSsoIpcHandlerOptions(
@@ -377,7 +378,8 @@ export function createSsoIpcHandlerOptions(
     refreshKanbanConnection: dependencies.refreshKanbanConnection,
     stopTunnelHubRuntime: dependencies.stopTunnelHubRuntime,
     refreshEnterpriseChat: dependencies.refreshEnterpriseChat,
-    stopEnterpriseChat: dependencies.stopEnterpriseChat
+    stopEnterpriseChat: dependencies.stopEnterpriseChat,
+    invalidateRealtimeIdentity: dependencies.invalidateRealtimeIdentity
   };
 }
 

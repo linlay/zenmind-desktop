@@ -31,13 +31,16 @@
 - [ ] 上游明确退出时清除身份文件、派生 Cookie 和头像缓存；无关网站 Cookie 保留。
 - [ ] 临时断网时当前运行 fail closed，恢复网络后单次重试并刷新相关 surface。
 - [ ] 切换账号不会短暂显示上一账号资料或使用上一账号 token。
-- [ ] `agent-webclient` 可通过受信任 bridge 取 token；普通 Website/WebApp 无法调用该 bridge。
+- [ ] `agent-webclient` 的 HTTP/兼容 WS 可用，但 guest storage、页面全局、URL 和 bridge 响应均看不到 access token；普通 Website/WebApp 无法调用 Agent WebClient bridge。
 - [ ] 外链、下载、新窗口、导航回退和崩溃恢复均遵守所属 surface 策略。
 
 ## P0：智能助理与页面协作
 
 - [ ] Main Assistant 可创建或继续 Chat，流式事件按 run 归属展示并正确到达终态。
 - [ ] 断线不会自动重复提交已接受的 query；新请求可重新建立连接。
+- [ ] 同时运行 Main Assistant、导航 Push、桌宠、两个 Desktop WS `ap` 客户端和可信 WebClient bridge 时，Main 诊断仍只有一个 Agent Platform 物理连接。
+- [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
+- [ ] `/overview`（summary capability）与 `/debug` 只能只读订阅，不能成为 primary 或执行 interrupt/submit；旧 `/summary` 不再作为受信任 surface，伪造 Chat、Run、Surface 或 capability 被拒绝。
 - [ ] 附件上传失败时请求不会伪装成功，取消后临时资源被清理。
 - [ ] Copilot 在 Website/WebApp 间切换时更新页面上下文，旧 surface 失去控制权。
 - [ ] 页面选择、截图和文件等不同内容来源具有清晰的用户确认与结果反馈。
@@ -79,7 +82,9 @@
 - [ ] 只读与变更动作按定义执行；变更动作显示脱敏摘要并支持拒绝、仅本次和有限授权。
 - [ ] 等待确认期间切换页面或关闭目标，原请求被拒绝而不是作用到新页面。
 - [ ] CDP 页面控制只绑定当前活动 surface；导航到不受信任来源后旧 target 失效。
-- [ ] Chat Work Panel 的运行绑定、切换和释放不影响其他 Chat 或主窗口。
+- [ ] WorkPanel 的 WebClient/Web item 去重、激活和保活正确；切换 Chat/路由/item 不卸载 guest，关闭 item 只回收所属 guest 与临时 partition。
+- [ ] WorkPanel workspace 相互隔离；非法 URL/路径/跨 workspace 目标被拒绝，空 Native allowlist 返回 `unsupported_native_surface`，旧 Chat WorkPanel action 仍可映射到 item id。
+- [ ] macOS 隐藏面板前清除 first responder、下一 animation frame 恢复焦点；Windows 隐藏前 blur，且只在 active、`dom-ready` 和窗口聚焦时恢复。
 - [ ] 调试工作台仍经过正式执行器和确认策略，不成为权限旁路。
 - [ ] 断线不重放非幂等动作，重复 request identity 得到确定性处理。
 
@@ -105,6 +110,8 @@
 - [ ] 卸载后重装不会读取已声明删除的凭据、旧进程或孤立端口。
 
 ## 结束条件
+
+> 当前 Desktop-only 交付只证明所有 Main-owned Agent Platform 实时消费者共享一个 Broker physical client。旧 Agent WebClient bundle 仍可能直连兼容 `/ws`，Summary/Debug 独立生产模块和删除旧 action adapter 也尚未完成；在匹配 WebClient bundle 原子切换前，不得标记为 D13 最终发布候选。
 
 - [ ] 所有受影响 P0 通过；P1 失败已有明确风险判断和跟踪项。
 - [ ] 自动化测试、构建产物与手工测试使用同一版本和品牌配置。

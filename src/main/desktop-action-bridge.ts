@@ -1887,6 +1887,11 @@ async function executeAction(
     case "desktop.web.switchTab":
     case "desktop.web.interactElement":
     case "desktop.web.executeScript":
+    case "desktop.workpanel.getState":
+    case "desktop.workpanel.openItem":
+    case "desktop.workpanel.activateItem":
+    case "desktop.workpanel.closeItem":
+    case "desktop.workpanel.closeWorkspace":
     case "desktop.chatWorkPanel.getState":
     case "desktop.chatWorkPanel.open":
     case "desktop.chatWorkPanel.close":

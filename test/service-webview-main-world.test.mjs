@@ -8,6 +8,8 @@ const require = createRequire(import.meta.url);
 const {
   PAGE_TO_PRELOAD_EVENT,
   PRELOAD_TO_PAGE_EVENT,
+  AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT,
+  AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
   DESKTOP_WEBVIEW_BRIDGE_FLAG,
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
@@ -313,7 +315,7 @@ test("service webview main-world script does not forward websocket stream frames
   assert.deepEqual(captured, []);
 });
 
-test("service webview main-world script seeds tokens from auth responses", () => {
+test("service webview main-world script clears tokens from auth responses", () => {
   const { window } = createFakeWindow();
   window.sessionStorage.setItem("agent-webclient.appAccessToken", "stale-token");
   window.sessionStorage.setItem("agent-webclient.appAuthContext", "desktop-auth-old");
@@ -330,13 +332,13 @@ test("service webview main-world script seeds tokens from auth responses", () =>
     }
   });
 
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-1");
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), null);
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-current");
-  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-1");
+  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, undefined);
   assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
 });
 
-test("service webview main-world script keeps matching auth context while updating the token", () => {
+test("service webview main-world script keeps matching auth context without exposing a token", () => {
   const { window } = createFakeWindow();
   window.sessionStorage.setItem("agent-webclient.appAccessToken", "token-1");
   window.sessionStorage.setItem("agent-webclient.appAuthContext", "desktop-auth-current");
@@ -352,10 +354,32 @@ test("service webview main-world script keeps matching auth context while updati
     }
   });
 
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-2");
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), null);
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-current");
-  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-2");
+  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, undefined);
   assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
+});
+
+test("service webview main-world script exposes fixed Agent WebClient bridges", async () => {
+  const { window } = createFakeWindow();
+  const calls = [];
+  runMainWorldScript(window);
+  window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => calls.push(event.detail));
+
+  const realtime = window.__AGENT_WEBCLIENT_REALTIME_BRIDGE__;
+  const workpanel = window.__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__;
+  assert.deepEqual(Object.keys(realtime).sort(), ["hello", "onMessage", "request", "subscribe", "unsubscribe"]);
+  assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "openItem"]);
+  assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_REALTIME_BRIDGE__").writable, false);
+
+  const hello = realtime.hello();
+  assert.equal(calls[0].bridge, "realtime");
+  assert.equal(calls[0].method, "hello");
+  window.dispatchEvent({
+    type: AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
+    detail: { requestId: calls[0].requestId, result: { version: 1 } }
+  });
+  assert.deepEqual(await hello, { version: 1 });
 });
 
 test("service webview main-world script ignores removed legacy auth responses", () => {

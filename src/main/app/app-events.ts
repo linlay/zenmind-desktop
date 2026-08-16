@@ -19,6 +19,7 @@ export type MainAppEventsOptions = {
   beginInstallerShutdown: (commandLine: string[]) => void;
   isNativeDialogOpen: () => boolean;
   emitPluginBeforeQuit: () => void;
+  beginRealtimeShutdown: () => void;
   prepareQuitUi: () => void;
   runShutdownCleanup: () => Promise<ShutdownReport>;
   writeInstallerShutdownAcks: (report: ShutdownReport) => void;
@@ -27,6 +28,7 @@ export type MainAppEventsOptions = {
   stopAssistantBridgeRuntime: () => void;
   stopTunnelHubRuntime: () => unknown;
   stopAgentPlatformPetStatusClient: () => void;
+  disposeRealtimeBroker: () => void;
   unregisterPluginGlobalShortcuts: () => void;
   stopResourceDirectoryWatcher: () => void;
   stopAssistantBootstrapStateMonitor: () => void;
@@ -93,6 +95,7 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     }
     event.preventDefault();
     options.state.isHandlingQuit = true;
+    options.beginRealtimeShutdown();
     options.emitPluginBeforeQuit();
     options.prepareQuitUi();
     void options.runShutdownCleanup().then(async (report) => {
@@ -115,6 +118,7 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     options.stopAssistantBridgeRuntime();
     void options.stopTunnelHubRuntime();
     options.stopAgentPlatformPetStatusClient();
+    options.disposeRealtimeBroker();
     options.unregisterPluginGlobalShortcuts();
     options.globalShortcut.unregister(options.focusedWebviewDevToolsShortcut);
     options.stopResourceDirectoryWatcher();

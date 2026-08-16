@@ -32,6 +32,16 @@ import {
   PRELOAD_TO_PAGE_ACTION_EVENT,
   buildServiceWebviewMainWorldScript
 } from "./service-webview-main-world";
+import {
+  AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT,
+  AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT,
+  AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
+} from "./service-webview-main-world";
+import {
+  AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL,
+  AGENT_WEBCLIENT_REALTIME_MESSAGE_CHANNEL,
+  AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
+} from "../shared/contracts/agent-webclient-bridge";
 
 function isBridgeMessage(value: unknown): value is ServiceWebviewBridgeMessage {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -278,6 +288,46 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
   forwardDesktopBridgeRequest(payload, window.location.origin, "bridge-request");
 });
 
+window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => {
+  const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+  if (!detail || typeof detail !== "object" || typeof detail.requestId !== "string") return;
+  const channel = detail.bridge === "realtime"
+    ? AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL
+    : detail.bridge === "workpanel"
+      ? AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL
+      : "";
+  if (!channel || typeof detail.method !== "string") return;
+  const call = {
+    method: detail.method,
+    ...(detail.input === undefined ? {} : { input: detail.input }),
+    ...(detail.subscriptionId === undefined ? {} : { subscriptionId: detail.subscriptionId }),
+  };
+  void ipcRenderer.invoke(channel, call)
+    .then((result) => {
+      window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT, {
+        detail: { requestId: detail.requestId, result },
+      }));
+    })
+    .catch((error) => {
+      window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT, {
+        detail: {
+          requestId: detail.requestId,
+          result: {
+            ok: false,
+            error: {
+              code: "bridge_unavailable",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+        },
+      }));
+    });
+});
+
+ipcRenderer.on(AGENT_WEBCLIENT_REALTIME_MESSAGE_CHANNEL, (_event, message) => {
+  window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT, { detail: message }));
+});
+
 window.addEventListener("message", (event) => {
   if (
     isBridgeMessage(event.data) &&
@@ -302,7 +352,7 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, (_event, payload: Service
   }
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_EVENT, { detail: payload }));
   if (isAgentAuthResponseType(payload.type)) {
-    sendBridgeDebug("auth-response-seeded");
+    sendBridgeDebug("auth-response-forwarded");
   }
 });
 

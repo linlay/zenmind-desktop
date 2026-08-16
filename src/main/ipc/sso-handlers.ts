@@ -55,6 +55,7 @@ export interface SsoIpcHandlerOptions {
   stopTunnelHubRuntime?: () => Promise<unknown> | unknown;
   refreshEnterpriseChat?: () => Promise<unknown> | unknown;
   stopEnterpriseChat?: () => Promise<unknown> | unknown;
+  invalidateRealtimeIdentity?: () => void;
 }
 
 export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptions) {
@@ -185,6 +186,7 @@ export function registerSsoIpcHandlers(ipcMain: any, options: SsoIpcHandlerOptio
       onStatusChanged: desktopSsoController.broadcastStatus
     });
     if (result.ok) {
+      options.invalidateRealtimeIdentity?.();
       try {
         await options.stopEnterpriseChat?.();
       } catch (error) {

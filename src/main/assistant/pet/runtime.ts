@@ -53,6 +53,7 @@ import {
 import { DesktopPetPreviewProjector } from "./desktop-pet-preview";
 import { AgentPlatformPetStatusClient } from "./pet-status-client";
 import { AgentPlatformPetStreamClient } from "./pet-stream-client";
+import type { RealtimeBroker } from "../../realtime/realtime-broker";
 import { applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow } from "./window";
 
 export type DesktopPetRuntimeOptions = {
@@ -72,6 +73,7 @@ export type DesktopPetRuntimeOptions = {
   refreshTrayContextMenu: () => void;
   getResponsiveServiceState?: typeof defaultGetResponsiveServiceState;
   issueAgentAccessToken?: typeof defaultIssueAgentAccessToken;
+  realtimeBroker?: RealtimeBroker;
 };
 
 const DESKTOP_PET_RENDERER_WINDOW_MODES: readonly DesktopPetWindowMode[] = [
@@ -224,6 +226,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     AgentStreamClientClass: AgentPlatformPetStreamClient,
     getServiceState: getResponsiveServiceState,
     issueAccessToken: issueAgentAccessToken,
+    realtimeBroker: options.realtimeBroker,
     getSettings: () => state.desktopPetSettings,
     setAgentStatus: (status) => {
       state.desktopPetAgentStatus = status;

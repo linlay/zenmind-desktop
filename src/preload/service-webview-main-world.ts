@@ -10,10 +10,17 @@ import {
   AGENT_AUTH_RESPONSE_TYPE
 } from "../shared/auth-bridge";
 import { resolveServiceWebviewWsMonitorUrl } from "../shared/service-webview-ws-monitor";
+import {
+  AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL,
+  AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL,
+} from "../shared/contracts/agent-webclient-bridge";
 
 export const PAGE_TO_PRELOAD_EVENT = "__desktopServiceWebviewBridgeMessage";
 export const PRELOAD_TO_PAGE_EVENT = "__desktopServiceWebviewBridgeDeliver";
 export const PRELOAD_TO_PAGE_ACTION_EVENT = "__desktopServiceWebviewBridgeAction";
+export const AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT = "__agentWebclientBridgeInvoke";
+export const AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT = "__agentWebclientBridgeResult";
+export const AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT = "__agentWebclientBridgeMessage";
 export const DESKTOP_WEBVIEW_BRIDGE_FLAG = "__DESKTOP_WEBVIEW_BRIDGE__";
 const DESKTOP_WS_MONITOR_WRAPPED_FLAG = "__DESKTOP_WS_MONITOR_WRAPPED__";
 export const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = "agent-webclient.appAccessToken";
@@ -25,6 +32,11 @@ export function buildServiceWebviewMainWorldScript() {
   const PAGE_TO_PRELOAD_EVENT = ${JSON.stringify(PAGE_TO_PRELOAD_EVENT)};
   const PRELOAD_TO_PAGE_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_EVENT)};
   const PRELOAD_TO_PAGE_ACTION_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_ACTION_EVENT)};
+  const AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT)};
+  const AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT)};
+  const AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT)};
+  const AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL = ${JSON.stringify(AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL)};
+  const AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL = ${JSON.stringify(AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL)};
   const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
@@ -49,6 +61,73 @@ export function buildServiceWebviewMainWorldScript() {
     }
   })();
   const fromMainListeners = new Map();
+
+  function installAgentWebclientBridges() {
+    let requestSequence = 0;
+    const pending = new Map();
+    const realtimeListeners = new Set();
+    const invoke = (bridge, method, input, subscriptionId) => new Promise((resolve) => {
+      requestSequence += 1;
+      const requestId = "agent-webclient-bridge-" + Date.now() + "-" + requestSequence;
+      pending.set(requestId, resolve);
+      window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, {
+        detail: {
+          requestId,
+          bridge,
+          method,
+          ...(input === undefined ? {} : { input }),
+          ...(subscriptionId === undefined ? {} : { subscriptionId })
+        }
+      }));
+    });
+    window.addEventListener(AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT, (event) => {
+      const detail = event.detail;
+      const resolve = detail && pending.get(detail.requestId);
+      if (!resolve) return;
+      pending.delete(detail.requestId);
+      resolve(detail.result);
+    });
+    window.addEventListener(AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT, (event) => {
+      for (const listener of Array.from(realtimeListeners)) {
+        try {
+          listener(event.detail);
+        } catch {
+          // Isolate Agent WebClient listeners.
+        }
+      }
+    });
+    const realtime = Object.freeze({
+      hello: (input) => invoke("realtime", "hello", input),
+      request: (input) => invoke("realtime", "request", input),
+      subscribe: (input) => invoke("realtime", "subscribe", input),
+      unsubscribe: (subscriptionId) => invoke("realtime", "unsubscribe", undefined, subscriptionId),
+      onMessage: (listener) => {
+        if (typeof listener !== "function") return () => {};
+        realtimeListeners.add(listener);
+        return () => realtimeListeners.delete(listener);
+      }
+    });
+    const workpanel = Object.freeze({
+      openItem: (input) => invoke("workpanel", "openItem", input),
+      activateItem: (input) => invoke("workpanel", "activateItem", input),
+      closeItem: (input) => invoke("workpanel", "closeItem", input)
+    });
+    for (const [name, value] of [
+      [AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL, realtime],
+      [AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL, workpanel]
+    ]) {
+      try {
+        Object.defineProperty(window, name, {
+          configurable: false,
+          enumerable: false,
+          writable: false,
+          value
+        });
+      } catch {
+        // A previously installed preload owns the fixed bridge global.
+      }
+    }
+  }
 
   function emitFromMain(channel, payload) {
     const listeners = fromMainListeners.get(channel);
@@ -212,29 +291,25 @@ export function buildServiceWebviewMainWorldScript() {
     }
   }
 
-  function seedAgentAppAccessToken(payload) {
+  function clearAgentAppAccessToken(payload) {
     if (
       !payload ||
       payload.type !== AGENT_AUTH_RESPONSE_TYPE
     ) {
       return;
     }
-    const token = typeof payload.token === "string" ? payload.token.trim() : "";
     try {
       syncStoredAuthContext(payload);
-      if (token) {
-        window.sessionStorage.setItem(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY, token);
-      } else {
-        window.sessionStorage.removeItem(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY);
-      }
+      window.sessionStorage.removeItem(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY);
     } catch {
       // Ignore storage failures in restricted guest contexts.
     }
-    window.__AGENT_APP_ACCESS_TOKEN = token || undefined;
+    window.__AGENT_APP_ACCESS_TOKEN = undefined;
   }
 
   installWebSocketMonitorMetadata();
   installElectronAPICompat();
+  installAgentWebclientBridges();
 
   // Keep postMessage native: awaiting form iframes rely on browser-provided
   // child-to-parent event.source semantics.
@@ -249,7 +324,7 @@ export function buildServiceWebviewMainWorldScript() {
     if (!payload || typeof payload !== "object" || !BRIDGE_RESPONSE_TYPES.has(payload.type)) {
       return;
     }
-    seedAgentAppAccessToken(payload);
+    clearAgentAppAccessToken(payload);
     if (payload.type === ${JSON.stringify(DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE)}) {
       emitFromMain(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, payload);
     }

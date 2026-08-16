@@ -25,6 +25,7 @@ import { createKanbanRuntime } from "../kanban-runtime";
 import { configureTunnelHubRegistrationController } from "../tunnel-hub-registration";
 import { configureTunnelHubRuntime } from "../tunnel-hub-runtime";
 import type { AssistantRunWakeLock } from "./assistant-wake-lock";
+import type { RealtimeBroker } from "../realtime/realtime-broker";
 import {
   createDesktopMobileWebappCatalog,
   readDesktopMobileWebappItem
@@ -38,6 +39,7 @@ export type AssistantBridgeRuntimeOptions = {
   cdpIntegration: any;
   getResponsiveServiceState: (app: App, serviceId: string) => Promise<any>;
   issueAgentAccessToken: (app: App, reason: any) => Promise<any>;
+  realtimeBroker: RealtimeBroker;
   refreshDesktopSsoAccessToken?: () => Promise<string>;
   canUseDesktopSsoCredentials?: () => boolean;
   callAgentPlatform: (...args: any[]) => unknown;
@@ -69,6 +71,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     app: options.app,
     getServiceState: options.getResponsiveServiceState,
     issueAccessToken: options.issueAgentAccessToken,
+    realtimeBroker: options.realtimeBroker,
     wakeLock: options.assistantRunWakeLock,
     onEvent: (event) => {
       emitDesktopWsPush("assistant.event", event);
@@ -130,7 +133,8 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     issueAccessToken: options.issueAgentAccessToken,
     agentPlatformBridge: {
       getServiceState: options.getResponsiveServiceState,
-      issueAccessToken: options.issueAgentAccessToken
+      issueAccessToken: options.issueAgentAccessToken,
+      realtimeBroker: options.realtimeBroker
     },
     logger: console
   };
@@ -152,6 +156,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       app: options.app,
       getServiceState: options.getResponsiveServiceState,
       issueAccessToken: options.issueAgentAccessToken,
+      realtimeBroker: options.realtimeBroker,
       onSnapshot: options.emitAssistantNavigationAgentsChanged,
       onPushEvent: (event) => {
         if (event.type === "run.started" || event.type === "run.finished") {
@@ -208,6 +213,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
 
   return {
     assistantBridge,
+    realtimeBroker: options.realtimeBroker,
     desktopActionOptions,
     desktopWsServerOptions,
     start() {

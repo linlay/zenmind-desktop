@@ -9,6 +9,9 @@ export const WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION = "contextMenu.execute";
 export type WebviewContextMenuSurfaceType =
   | "agent-chat"
   | "agent-copilot"
+  | "agent-summary"
+  | "agent-debug"
+  | "agent-project"
   | "agent-management"
   | "project"
   | "browser"

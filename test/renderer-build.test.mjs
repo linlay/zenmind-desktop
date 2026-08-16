@@ -1628,7 +1628,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(serviceWebviewSurface, /embedPath: effectiveEmbedPath/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
-  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientSelectWorkerScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteAgentKey/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteNewChat/);
@@ -5969,7 +5969,7 @@ test("service webview surface provides webview-backed assistant context instead 
   );
   const directRouteLoadBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("function requestDirectWebviewRouteLoad"),
-    serviceWebviewSurface.indexOf("async function injectAgentWebclientAccessToken")
+    serviceWebviewSurface.indexOf("function handleWebviewBridgeMessage")
   );
 
   assert.match(serviceWebviewSurface, /registerAssistantPageContextProvider/);
@@ -6013,13 +6013,12 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /refreshServices/);
   assert.match(serviceWebviewSurface, /service-webview-error/);
   assert.match(serviceWebviewSurface, /buildAgentWebclientDesktopContext\(\s*getCurrentPageContextSnapshot\(\),?\s*\)/);
-  assert.match(serviceWebviewSurface, /seedAgentWebclientAccessToken/);
-  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /seedAgentWebclientAccessToken/);
+  assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.match(serviceWebviewSurface, /window\.electronAPI\.serviceWebview\.getPreloadUrl\(\)/);
   assert.match(serviceWebviewSurface, /if \(!bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return undefined;/);
   assert.match(serviceWebviewSurface, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadUrl,[\s\S]{0,120}webviewRenderKey/);
-  assert.match(serviceWebviewSurface, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
-  assert.match(serviceWebviewSurface, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*service\?\.id,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*\]/);
+  assert.match(serviceWebviewSurface, /ownerChatId\?: string/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(serviceWebviewSurface, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
   assert.match(serviceWebviewSurface, /normalizedCurrentUrl === embeddedUrl/);
@@ -6046,14 +6045,14 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.doesNotMatch(sendBridgeMessageBlock, /executeJavaScript/);
   assert.match(sendServiceRouteBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
   assert.doesNotMatch(sendServiceRouteBlock, /executeJavaScript/);
-  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientTokenReloadTimerRef/);
   assert.doesNotMatch(serviceWebviewSurface, /webviewRef\.current\?\.reload\(\)/);
-  assert.match(serviceWebviewSurface, /issueAccessToken\("missing"\)/);
-  assert.match(serviceWebviewSurface, /agent_webclient_seed_/);
+  assert.match(serviceWebviewSurface, /service\?\.id !== "agent-platform"[\s\S]{0,320}issueAccessToken\("missing"\)/);
   assert.match(serviceWebviewSurface, /handleServiceWebviewBridgeMessage/);
   assert.match(serviceWebviewBridgeHost, /resolveServiceWebviewAuthResponseType\(bridgeProtocol\)/);
   assert.match(serviceWebviewBridgeHost, /desktopAuthContext/);
+  assert.match(serviceWebviewBridgeHost, /context\.serviceId === "agent-webclient"[\s\S]{0,260}token:\s*null/);
   assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
@@ -6108,6 +6107,9 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_AUTH_CONTEXT = currentContext/);
+  assert.match(serviceWebviewMainWorld, /removeItem\(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY\)/);
+  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL/);
+  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL/);
   assert.doesNotMatch(serviceWebviewMainWorld, /socket\.addEventListener\("message"/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
   assert.match(serviceWebviewMainWorld, /resolveServiceWebviewWsMonitorUrl/);
@@ -6115,7 +6117,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewMainWorld, /initialWsSource/);
   assert.match(serviceWebviewPreload, /sendBridgeDebug/);
   assert.match(serviceWebviewPreload, /preload-installed/);
-  assert.match(serviceWebviewPreload, /auth-response-seeded/);
+  assert.match(serviceWebviewPreload, /auth-response-forwarded/);
   assert.match(serviceWebviewPreload, /isServiceWebviewBridgeRequestType/);
   assert.match(serviceWebviewPreload, /recentForwardedBridgeRequestKeys/);
   assert.match(serviceWebviewPreload, /function forwardDesktopBridgeRequest\(/);

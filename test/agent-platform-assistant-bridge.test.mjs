@@ -203,7 +203,7 @@ test("agent platform assistant bridge waits for a text completion", async () => 
     assert.equal(ws.sockets.length, 1);
     assert.equal(ws.queryRequests.length, 1);
     assert.match(ws.sockets[0].url, /^ws:\/\/127\.0\.0\.1:18888\/ws\?/u);
-    assert.equal(new URL(ws.sockets[0].url).searchParams.get("source"), "desktop-assistant");
+    assert.equal(new URL(ws.sockets[0].url).searchParams.get("source"), "desktop-main");
   } finally {
     bridge.dispose();
     globalThis.fetch = originalFetch;
@@ -382,44 +382,48 @@ test("agent platform assistant bridge shares one wake lock across concurrent run
     assert.deepEqual(wakeLock.calls, ["acquire"]);
     await waitFor(() => streams.length === 2, "expected both query streams to start");
 
-    sendStreamEvent(streams[0].socket, streams[0].frame, {
-      seq: 1,
+    const firstStream = streams.find((stream) => stream.body.runId === first.runId);
+    const secondStream = streams.find((stream) => stream.body.runId === second.runId);
+    assert.ok(firstStream);
+    assert.ok(secondStream);
+    sendStreamEvent(firstStream.socket, firstStream.frame, {
+      seq: 2,
       type: "content.delta",
-      runId: streams[0].body.runId,
-      chatId: streams[0].body.chatId,
+      runId: firstStream.body.runId,
+      chatId: firstStream.body.chatId,
       delta: "first",
       timestamp: EPOCH_MS
     });
-    sendStreamEvent(streams[0].socket, streams[0].frame, {
-      seq: 2,
+    sendStreamEvent(firstStream.socket, firstStream.frame, {
+      seq: 3,
       type: "run.complete",
-      runId: streams[0].body.runId,
-      chatId: streams[0].body.chatId,
+      runId: firstStream.body.runId,
+      chatId: firstStream.body.chatId,
       timestamp: EPOCH_MS + 1
     });
-    endStream(streams[0].socket, streams[0].frame, "done", 2);
+    endStream(firstStream.socket, firstStream.frame, "done", 3);
     await waitFor(
       () => events.some((event) => event.runId === first.runId && event.type === "run.complete"),
       "first run did not complete"
     );
     assert.deepEqual(wakeLock.calls, ["acquire"]);
 
-    sendStreamEvent(streams[1].socket, streams[1].frame, {
-      seq: 1,
+    sendStreamEvent(secondStream.socket, secondStream.frame, {
+      seq: 2,
       type: "content.delta",
-      runId: streams[1].body.runId,
-      chatId: streams[1].body.chatId,
+      runId: secondStream.body.runId,
+      chatId: secondStream.body.chatId,
       delta: "second",
       timestamp: EPOCH_MS + 2
     });
-    sendStreamEvent(streams[1].socket, streams[1].frame, {
-      seq: 2,
+    sendStreamEvent(secondStream.socket, secondStream.frame, {
+      seq: 3,
       type: "run.complete",
-      runId: streams[1].body.runId,
-      chatId: streams[1].body.chatId,
+      runId: secondStream.body.runId,
+      chatId: secondStream.body.chatId,
       timestamp: EPOCH_MS + 3
     });
-    endStream(streams[1].socket, streams[1].frame, "done", 2);
+    endStream(secondStream.socket, secondStream.frame, "done", 3);
     await waitFor(() => wakeLock.calls.includes("release"), "wake lock was not released after both runs completed");
     assert.deepEqual(wakeLock.calls, ["acquire", "release"]);
   } finally {
@@ -504,7 +508,7 @@ test("agent platform assistant bridge forwards startRun accessLevel and emits ag
     assert.equal(requests.length, 1);
     assert.equal(requests[0].frame, "request");
     assert.equal(requests[0].type, "/api/query");
-    assert.equal(requests[0].id, "request-stable-1");
+    assert.match(requests[0].id, /^desktop-query-/u);
     assert.deepEqual(events.map((event) => event.type), ["run.start", "content.delta", "run.complete"]);
     assert.equal(events[1].delta, "hi");
     assert.equal(events[1].runId, result.runId);
@@ -653,12 +657,12 @@ test("agent platform assistant bridge converges pre-accept frame, identity, and 
           agentKey: "codeAssistant",
           timestamp: EPOCH_MS,
         }),
-        expected: /identity conflict/u,
+        expected: /stream runId conflicts with registered Run/u,
       },
       {
         name: "acceptance timeout",
         configure: () => undefined,
-        expected: /timed out waiting for run\.start/u,
+        expected: /query acceptance timed out/u,
         acceptanceTimeout: 5,
       },
       {
@@ -726,7 +730,7 @@ test("agent platform assistant bridge recognizes run.cancel and rejects an envel
   }
 });
 
-test("agent platform assistant bridge interrupts known runs on disconnect and reconnects only for a new query", async () => {
+test("agent platform assistant bridge preserves accepted runs on disconnect without replaying query", async () => {
   const originalFetch = globalThis.fetch;
   const interrupts = [];
   let queryCount = 0;
@@ -762,18 +766,10 @@ test("agent platform assistant bridge interrupts known runs on disconnect and re
     });
     assert.equal(first.ok, true);
     ws.sockets[0].disconnect();
-    await waitFor(() => events.some((event) => event.type === "error"), "disconnect did not end the local transaction");
-    await waitFor(() => interrupts.length === 1, "disconnect did not request a best-effort interrupt");
-    assert.deepEqual(interrupts[0], {
-      runId: "run-disconnect-1",
-      agentKey: "codeAssistant",
-      message: "Desktop Assistant WebSocket disconnected.",
-    });
-
-    const second = await bridge.startRun({ message: "new request after disconnect" });
-    assert.equal(second.ok, true);
-    assert.equal(ws.sockets.length, 2);
-    assert.equal(ws.queryRequests.length, 2);
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    assert.equal(events.some((event) => event.type === "error"), false);
+    assert.equal(interrupts.length, 0);
+    assert.equal(ws.queryRequests.length, 1);
   } finally {
     bridge.dispose();
     globalThis.fetch = originalFetch;
@@ -875,11 +871,11 @@ test("agent platform assistant bridge responds to reverse requests and dispose c
     );
     assert.deepEqual(
       queryRequest.socket.sent.filter((frame) => frame.frame === "error").map((frame) => frame.type),
-      ["unsupported_in_current_view", "unknown_request_type", "duplicate_id"],
+      ["target_unavailable", "unsupported_in_current_view", "target_unavailable"],
     );
     assert.deepEqual(
       queryRequest.socket.sent.filter((frame) => frame.frame === "error").map((frame) => frame.data.code),
-      ["unsupported_in_current_view", "unknown_request_type", "duplicate_id"],
+      ["target_unavailable", "unsupported_in_current_view", "target_unavailable"],
     );
 
     bridge.dispose();

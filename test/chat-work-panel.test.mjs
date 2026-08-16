@@ -5,64 +5,61 @@ import path from "node:path";
 
 const read = (relativePath) => fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
 
-test("Chat Work Panel keeps the main chat surface single while mounting chat workspaces separately", () => {
+test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => {
   const embeddedHosts = read("src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx");
   const appShell = read("src/renderer/app-shell/AppShell.tsx");
-  const workPanelHost = read("src/renderer/chat-work-panel/ChatWorkPanelHost.tsx");
-  const workPanelSurface = read("src/renderer/chat-work-panel/ChatWorkPanelSurface.tsx");
-  const appShellCss = read("src/renderer/styles/app-shell.css");
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const reducer = read("src/shared/work-panel.ts");
+  const css = read("src/renderer/styles/app-shell.css");
 
   assert.match(embeddedHosts, /AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat"/u);
-  assert.match(embeddedHosts, /key=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/u);
-  assert.match(appShell, /useRef\(new Map<string, ChatWorkPanelWorkspace>\(\)\)/u);
-  assert.match(appShell, /chatWorkPanelWorkspaces\.map/u);
-  assert.match(appShell, /<ChatWorkPanelHost/u);
-  assert.match(workPanelHost, /workspaces\.map/u);
-  assert.match(workPanelSurface, /allowUserTabCreation/u);
-  assert.match(workPanelSurface, /allowTabUrlCopy/u);
-  assert.match(workPanelSurface, /showToolbar=\{false\}/u);
-  assert.match(workPanelSurface, /registerPublicWebSurface=\{false\}/u);
-  assert.match(workPanelSurface, /partition=\{workspace\.partition\}/u);
-  assert.match(appShellCss, /\.app-content\s*\{[^}]*display:\s*flex;/su);
-  assert.match(appShellCss, /\.chat-work-panel\s*\{[^}]*position:\s*relative;[^}]*flex:\s*0 0 var\(--chat-work-panel-width/su);
+  assert.match(appShell, /useState<WorkPanelState>\(EMPTY_WORK_PANEL_STATE\)/u);
+  assert.match(appShell, /reduceWorkPanelCommand\(workPanelStateRef\.current, command\)/u);
+  assert.match(appShell, /<WorkPanelHost/u);
+  assert.match(host, /state\.workspaces\.map/u);
+  assert.match(host, /workspace\.items\.map/u);
+  assert.match(host, /item\.descriptor\.kind === "webclient"/u);
+  assert.match(host, /item\.descriptor\.kind !== "web"/u);
+  assert.match(host, /<ServiceWebviewSurface/u);
+  assert.match(host, /<ExternalWebviewPage/u);
+  assert.match(host, /hidden=\{!visible\}/u);
+  assert.match(reducer, /stableKey:\s*`web:\$\{url\}`/u);
+  assert.match(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/overview\/iu/u);
+  assert.doesNotMatch(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/summary\/iu/u);
+  assert.match(css, /\.work-panel-host\s*\{[^}]*display:\s*contents;/su);
 });
 
-test("Chat Work Panel actions derive ownership from trusted source and expose target state", () => {
+test("WorkPanel actions derive ownership from trusted source and preserve a stateless legacy adapter", () => {
   const actions = read("src/shared/desktop-actions.ts");
-  const host = read("src/renderer/chat-work-panel/ChatWorkPanelHost.tsx");
-  const webview = read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx");
-  const gateway = read("src/main/embedded-cdp-gateway.ts");
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const reducer = read("src/shared/work-panel.ts");
   const bridge = read("src/main/desktop-action-bridge.ts");
 
+  for (const name of ["getState", "openItem", "activateItem", "closeItem", "closeWorkspace"]) {
+    assert.match(actions, new RegExp(`desktop\\.workpanel\\.${name}`, "u"));
+  }
   for (const name of ["getState", "open", "close", "openTab", "activateTab", "closeTab"]) {
     assert.match(actions, new RegExp(`desktop\\.chatWorkPanel\\.${name}`, "u"));
   }
   assert.match(host, /request\.source\?\.chatId/u);
-  assert.match(host, /\["chatId", "surfaceId", "agentKey"\]/u);
-  assert.match(webview, /getSurfaceTargetState/u);
-  assert.match(gateway, /target_not_owned_by_chat/u);
-  assert.match(gateway, /matchingTarget\.surface\.ownerChatId === requestedChatId/u);
+  assert.match(host, /desktop\.chatWorkPanel\.openTab/u);
+  assert.match(host, /descriptor:\s*\{ kind: "web", url/u);
+  assert.match(reducer, /legacyActionCount/u);
   assert.match(bridge, /request\.source\?\.chatId/u);
+  assert.doesNotMatch(host, /new Map<string, ChatWorkPanelWorkspace>/u);
 });
 
-test("Chat Work Panel UI has dynamic panel actions and a toolbar-free user tab strip", () => {
-  const sidebarContract = read("src/shared/sidebar-context-menu.ts");
-  const sidebar = read("src/renderer/app-shell/navigation/AppSidebar.tsx");
-  const workPanelHost = read("src/renderer/chat-work-panel/ChatWorkPanelHost.tsx");
-  const workPanelSurface = read("src/renderer/chat-work-panel/ChatWorkPanelSurface.tsx");
-  const appShellCss = read("src/renderer/styles/app-shell.css");
+test("WorkPanel enforces one ephemeral Web guest per item and explicit platform focus branches", () => {
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const reducer = read("src/shared/work-panel.ts");
 
-  assert.match(sidebarContract, /"chat\.workPanel\.open"/u);
-  assert.match(sidebarContract, /"chat\.workPanel\.close"/u);
-  assert.doesNotMatch(sidebar, /assistant-worker-chat-work-panel-button/u);
-  assert.match(sidebar, /actionId === "chat\.workPanel\.open"/u);
-  assert.match(sidebar, /actionId === "chat\.workPanel\.close"/u);
-  assert.match(sidebar, /onCloseChatWorkPanel\?\.\(chat\.chatId\)/u);
-  assert.doesNotMatch(workPanelSurface, /chat-work-panel-header/u);
-  assert.match(workPanelSurface, /allowUserTabCreation/u);
-  assert.match(workPanelSurface, /allowTabUrlCopy/u);
-  assert.match(workPanelSurface, /showToolbar=\{false\}/u);
-  assert.match(workPanelSurface, /showSurfaceCloseButton/u);
-  assert.match(workPanelSurface, /surfaceCloseLabel=\{t\("chatWorkPanel\.close"\)\}/u);
-  assert.match(appShellCss, /\.chat-work-panel \.external-webview-surface-close svg\s*\{[^}]*stroke:\s*currentColor;/su);
+  assert.match(host, /itemPartition\(workspace\.workspaceId, item\.itemId\)/u);
+  assert.match(host, /clearSession\?\.\(\{ partition \}\)/u);
+  assert.match(host, /allowUserTabCreation=\{false\}/u);
+  assert.match(host, /openPopupsInCurrentTab/u);
+  assert.match(host, /if \(isMac\)/u);
+  assert.match(host, /else if \(isWindows\)/u);
+  assert.match(host, /dataset\.workPanelDomReady === "true"/u);
+  assert.match(reducer, /unsupported_native_surface/u);
+  assert.match(reducer, /item\.pinned \|\| !item\.closable/u);
 });

@@ -689,13 +689,65 @@
 
 .chat-work-panel-body {
   position: absolute;
-  top: var(--chat-work-panel-top-inset);
+  top: calc(var(--chat-work-panel-top-inset) + 44px);
   right: 0;
   bottom: 0;
   left: 0;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.chat-work-panel-tabs {
+  position: absolute;
+  z-index: 2;
+  top: var(--chat-work-panel-top-inset);
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  height: 44px;
+  padding: 6px 8px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+  background: var(--browser-top, #f3f4f6);
+}
+
+.chat-work-panel-tabs > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 96px;
+  max-width: 220px;
+  height: 32px;
+  padding: 0 9px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 8px;
+  color: var(--browser-ink, inherit);
+  background: transparent;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.chat-work-panel-tabs > button[aria-selected="true"] {
+  background: var(--browser-tab-active, #fff);
+}
+
+.chat-work-panel-tabs > button > span {
+  margin-left: auto;
+  font-size: 16px;
+  line-height: 1;
+}
+
+.chat-work-panel-body > .service-webview-surface,
+.chat-work-panel-body > .external-webview-page,
+.chat-work-panel-body > div,
+.chat-work-panel-body > div > .service-webview-surface,
+.chat-work-panel-body > div > .external-webview-page {
+  width: 100%;
+  height: 100%;
 }
 
 .chat-work-panel .external-webview-page.has-browser-chrome {
@@ -1165,4 +1217,7 @@
   .desktop-global-search-row-agent {
     display: none;
   }
+}
+.work-panel-host {
+  display: contents;
 }
