@@ -56,6 +56,7 @@ import {
   readActionSelector,
 } from "../copilot/page-context/webActions";
 import { STORAGE_NAMESPACE } from "../../shared/brand";
+import type { EmbeddedCdpSurfaceRegistration } from "../../shared/embedded-cdp";
 import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
 import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
 import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
@@ -455,6 +456,7 @@ export function ServiceWebviewSurface({
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const surfaceRegistrationIdRef = useRef("");
+  const surfaceRegistrationRetryRef = useRef(0);
   if (!surfaceRegistrationIdRef.current) {
     surfaceRegistrationIdRef.current = createServiceSurfaceRegistrationId();
   }
@@ -630,7 +632,9 @@ export function ServiceWebviewSurface({
     } catch {
       return;
     }
-    void embeddedCdp.registerSurface({
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    const registration: EmbeddedCdpSurfaceRegistration = {
       registrationId: surfaceRegistrationIdRef.current,
       surfaceId,
       surfaceKind: "service",
@@ -651,7 +655,37 @@ export function ServiceWebviewSurface({
         isLoading,
       }],
       activeTabId: surfaceId,
-    }).catch(() => undefined);
+    };
+    void embeddedCdp.registerSurface(registration).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        surfaceRegistrationRetryRef.current = 0;
+        return;
+      }
+      const attempt = surfaceRegistrationRetryRef.current + 1;
+      surfaceRegistrationRetryRef.current = attempt;
+      reportServiceWebviewDiagnostic("surface-registration-rejected", {
+        attempt,
+        registrationId: registration.registrationId,
+        surfaceType: registration.surfaceType,
+      });
+      if (attempt <= 6) {
+        retryTimer = window.setTimeout(() => {
+          setWebviewSnapshotNonce((current) => current + 1);
+        }, Math.min(25 * (2 ** (attempt - 1)), 400));
+      }
+    }).catch((error) => {
+      if (cancelled) return;
+      reportServiceWebviewDiagnostic("surface-registration-failed", {
+        error: error instanceof Error ? error.message : String(error),
+        registrationId: registration.registrationId,
+        surfaceType: registration.surfaceType,
+      });
+    });
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
   }, [
     ownsActiveSurface,
     ownerChatId,
