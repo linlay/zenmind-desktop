@@ -128,8 +128,8 @@ function normalizeDescriptor(
   if (!context || !route || !route.startsWith("/") || route.startsWith("//") || route.includes("://")) return null;
   let stableKey = "";
   switch (descriptor.module) {
-    case "summary":
-      stableKey = context.chatId ? `summary:${context.chatId}` : "";
+    case "overview":
+      stableKey = context.chatId ? `overview:${context.chatId}` : "";
       break;
     case "debug":
       stableKey = context.chatId ? `debug:${context.chatId}:${context.runId || "current"}` : "";
@@ -208,7 +208,7 @@ export function reduceWorkPanelCommand(
       if (descriptorChatId && descriptorChatId !== ownerChatId) {
         return fail(state, "capability_denied", "WorkPanel item chat does not match its trusted workspace");
       }
-      if ((trustedDescriptor.module === "summary" || trustedDescriptor.module === "debug") && !descriptorChatId) {
+      if ((trustedDescriptor.module === "overview" || trustedDescriptor.module === "debug") && !descriptorChatId) {
         trustedDescriptor = {
           ...trustedDescriptor,
           context: { ...trustedDescriptor.context, chatId: ownerChatId },

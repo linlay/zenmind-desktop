@@ -174,7 +174,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     const validSurfaceTypes = new Set([
       "agent-chat",
       "agent-copilot",
-      "agent-summary",
+      "agent-overview",
       "agent-debug",
       "agent-project",
       "agent-management",

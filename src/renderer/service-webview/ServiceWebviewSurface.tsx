@@ -122,7 +122,7 @@ function resolveContextMenuSurfaceType(
   embedPath: string | undefined,
 ): WebviewContextMenuSurfaceType {
   if (serviceId !== "agent-webclient") return "service";
-  if (/overview/iu.test(embedPath || "") || /overview/iu.test(surfaceId)) return "agent-summary";
+  if (/overview/iu.test(embedPath || "") || /overview/iu.test(surfaceId)) return "agent-overview";
   if (/debug/iu.test(embedPath || "") || /debug/iu.test(surfaceId)) return "agent-debug";
   if (/project/iu.test(embedPath || "")) return "agent-project";
   if (/copilot/iu.test(surfaceId)) return "agent-copilot";

@@ -41,7 +41,7 @@
 - [ ] 同时运行 Main Assistant、导航 Push、桌宠、两个 Desktop WS `ap` 客户端和可信 WebClient bridge 时，Main 诊断仍只有一个 Agent Platform 物理连接。
 - [ ] About 连点五次开启 Debug 后，每个 webview 浮层同时显示脱敏 URL 与 `surfaceId`；设置页可打开并重复聚焦唯一的独立 Realtime Inspector，主窗口切换页面不关闭观察器。观察器能区分 Platform 物理 WS 收发和各 `surfaceId` 的 Bridge 收发，按方向、链路层、历史/当前 surface 和文本筛选不串线；冻结仅停止视图刷新而不停止后台采集，清空后不恢复旧条目。
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
-- [ ] `/overview`（summary capability）与 `/debug` 只能只读订阅，不能成为 primary 或执行 interrupt/submit；旧 `/summary` 不再作为受信任 surface，伪造 Chat、Run、Surface 或 capability 被拒绝。
+- [ ] `/overview`（`agent-overview`）与 `/debug` 只能只读订阅，不能成为 primary 或执行 interrupt/submit；旧 `/summary`、`agent-summary`、`module/role: "summary"` 不再被接受，伪造 Chat、Run、Surface 或 capability 被拒绝。
 - [ ] 附件上传失败时请求不会伪装成功，取消后临时资源被清理。
 - [ ] Copilot 在 Website/WebApp 间切换时更新页面上下文，旧 surface 失去控制权。
 - [ ] 页面选择、截图和文件等不同内容来源具有清晰的用户确认与结果反馈。

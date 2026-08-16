@@ -32,7 +32,7 @@ function createRegistration(targetOverrides = {}) {
     registrationId: "registration-1",
     surfaceId: "overview-1",
     surfaceKind: "service",
-    surfaceType: "agent-summary",
+    surfaceType: "agent-overview",
     serviceId: "agent-webclient",
     pageRoute: "/overview",
     tabId: "overview-1",
@@ -40,7 +40,7 @@ function createRegistration(targetOverrides = {}) {
     ownerWebContentsId: 1,
     active: true,
     currentUrl: "http://127.0.0.1:7079/overview?chatId=chat-1",
-    label: "Summary",
+    label: "Overview",
     ownerChatId: "chat-1",
     ...targetOverrides,
   };
@@ -99,7 +99,7 @@ test("Bridge diagnostics correlate inbound calls and outbound delivery with trus
   assert.deepEqual(registration.getDiagnostics().surfaces, [{
     surfaceId: "overview-1",
     webContentsId: 41,
-    kind: "agent-summary",
+    kind: "agent-overview",
     active: true,
     ownerChatId: "chat-1",
     route: "/overview",
@@ -110,20 +110,20 @@ test("Bridge diagnostics correlate inbound calls and outbound delivery with trus
   }]);
 });
 
-test("trusted bridge derives Summary capabilities and rejects control and forged chat identity", async () => {
+test("trusted bridge derives Overview capabilities and rejects control and forged chat identity", async () => {
   const { handlers, dispatched } = createRegistration();
   const sender = createSender();
   const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
   const hello = await realtime({ sender }, { method: "hello" });
   assert.equal(hello.version, 2);
-  assert.equal(hello.surface.kind, "agent-summary");
+  assert.equal(hello.surface.kind, "agent-overview");
   assert.equal(hello.surface.ownerChatId, "chat-1");
   assert.equal(hello.surface.capabilities.includes("run.control"), false);
   assert.equal(hello.surface.capabilities.includes("workpanel.open"), true);
   const workpanel = handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
   const opened = await workpanel({ sender }, { method: "openItem", input: {
     version: 2,
-    descriptor: { kind: "web", url: "https://example.test/summary-target" },
+    descriptor: { kind: "web", url: "https://example.test/overview-target" },
   }});
   assert.equal(opened.ok, true);
   assert.equal(dispatched.length, 1);
@@ -138,10 +138,15 @@ test("trusted bridge derives Summary capabilities and rejects control and forged
   assert.equal(control.error.code, "capability_denied");
 
   const forgedChat = await realtime({ sender }, { method: "subscribe", input: {
-    version: 2, kind: "run", role: "summary", chatId: "chat-forged", runId: "run-1", lastSeq: 0,
+    version: 2, kind: "run", role: "overview", chatId: "chat-forged", runId: "run-1", lastSeq: 0,
     owner: { kind: "agent", agentKey: "agent-1" },
   }});
   assert.equal(forgedChat.error.code, "capability_denied");
+  const legacyRole = await realtime({ sender }, { method: "subscribe", input: {
+    version: 2, kind: "run", role: "summary", chatId: "chat-1", runId: "run-1", lastSeq: 0,
+    owner: { kind: "agent", agentKey: "agent-1" },
+  }});
+  assert.equal(legacyRole.error.code, "invalid_request");
 });
 
 test("trusted WorkPanel bridge binds owner chat in Main and rejects an unregistered sender", async () => {

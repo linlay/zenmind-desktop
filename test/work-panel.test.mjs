@@ -16,12 +16,12 @@ function open(state, ownerChatId, descriptor, legacy = false) {
 
 test("WorkPanel derives stable identities, deduplicates items, and isolates workspaces", () => {
   const first = open(EMPTY_WORK_PANEL_STATE, "chat-1", {
-    kind: "webclient", module: "summary", route: "/overview", context: {}, title: "Summary",
+    kind: "webclient", module: "overview", route: "/overview", context: {}, title: "Overview",
   });
   assert.equal(first.ok, true);
-  assert.equal(first.item.stableKey, "summary:chat-1");
+  assert.equal(first.item.stableKey, "overview:chat-1");
   const duplicate = open(first.nextState, "chat-1", {
-    kind: "webclient", module: "summary", route: "/overview?new=1", context: { chatId: "chat-1" },
+    kind: "webclient", module: "overview", route: "/overview?new=1", context: { chatId: "chat-1" },
   });
   assert.equal(duplicate.item.itemId, first.item.itemId);
   assert.equal(duplicate.state.items.length, 1);
@@ -49,6 +49,9 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
   }).ok, false);
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "web", url: "https://example.test", stableKey: "caller-owned",
+  }).ok, false);
+  assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient", module: "summary", route: "/overview", context: { chatId: "chat" },
   }).ok, false);
   const native = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "native", surfaceKey: "not-registered", context: {},

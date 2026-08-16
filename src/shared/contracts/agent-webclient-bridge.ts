@@ -43,7 +43,7 @@ export type AgentWebclientBridgeErrorCode =
 export type AgentWebclientSurfaceKind =
   | "agent-chat"
   | "agent-copilot"
-  | "agent-summary"
+  | "agent-overview"
   | "agent-debug"
   | "agent-project";
 
@@ -141,7 +141,7 @@ export type AgentWebclientRealtimeRequest =
 
 export type AgentWebclientRunSubscriptionRole =
   | "primary"
-  | "summary"
+  | "overview"
   | "debug"
   | "internal";
 
@@ -241,7 +241,7 @@ export type WorkPanelContext = {
 };
 
 export type WorkPanelWebclientModule =
-  | "summary"
+  | "overview"
   | "debug"
   | "project"
   | "file-diff"
@@ -333,7 +333,7 @@ export function isAgentWebclientSurfaceKind(value: unknown): value is AgentWebcl
   return [
     "agent-chat",
     "agent-copilot",
-    "agent-summary",
+    "agent-overview",
     "agent-debug",
     "agent-project",
   ].includes(String(value));

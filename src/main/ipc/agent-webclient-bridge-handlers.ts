@@ -80,7 +80,7 @@ const CAPABILITIES: Record<AgentWebclientSurfaceKind, readonly AgentWebclientSur
     "run.query", "run.attach", "run.control", "run.visible.read", "push.subscribe",
     "workpanel.open", "workpanel.activate", "workpanel.close", "inbound.action.owner",
   ],
-  "agent-summary": [
+  "agent-overview": [
     "run.attach", "run.visible.read", "push.subscribe",
     "workpanel.open", "workpanel.activate", "workpanel.close",
   ],
@@ -116,7 +116,7 @@ function readText(value: unknown) {
 function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
   return value === "agent-chat" ||
     value === "agent-copilot" ||
-    value === "agent-summary" ||
+    value === "agent-overview" ||
     value === "agent-debug" ||
     value === "agent-project"
     ? value
@@ -178,7 +178,7 @@ function ensureSourceChat(context: SurfaceContext, chatId: string) {
   if (ownerChatId && ownerChatId !== chatId.trim()) {
     return failure("capability_denied", "Run chat does not match the trusted surface owner");
   }
-  if ((context.kind === "agent-chat" || context.kind === "agent-summary" || context.kind === "agent-debug") && !ownerChatId) {
+  if ((context.kind === "agent-chat" || context.kind === "agent-overview" || context.kind === "agent-debug") && !ownerChatId) {
     return failure("target_unavailable", "trusted surface owner chat is unavailable");
   }
   return null;
@@ -634,6 +634,9 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         }
       }
       if (input.kind !== "run") return failure("invalid_request", "unsupported subscription kind");
+      if (input.role !== "primary" && input.role !== "overview" && input.role !== "debug") {
+        return failure("invalid_request", "unsupported Run subscription role");
+      }
       const denied = requireCapability(context, "run.attach");
       if (denied) return denied;
       const owner = readOwner(input.owner);

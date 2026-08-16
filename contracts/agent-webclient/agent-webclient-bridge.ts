@@ -1,6 +1,6 @@
 // Generated from src/shared/contracts/agent-webclient-bridge.ts.
 // Do not edit this mirror directly.
-// sha256:0fe618fdd080ae5f1b88778c5378713af867dbb8809d9d18f655f99f56f4cd58
+// sha256:192a7772cea0c3314a58710838f94c288e1630633ac8c52fcaff1e2722b74e85
 
 /**
  * Canonical Desktop <-> Agent WebClient bridge contract.
@@ -47,7 +47,7 @@ export type AgentWebclientBridgeErrorCode =
 export type AgentWebclientSurfaceKind =
   | "agent-chat"
   | "agent-copilot"
-  | "agent-summary"
+  | "agent-overview"
   | "agent-debug"
   | "agent-project";
 
@@ -145,7 +145,7 @@ export type AgentWebclientRealtimeRequest =
 
 export type AgentWebclientRunSubscriptionRole =
   | "primary"
-  | "summary"
+  | "overview"
   | "debug"
   | "internal";
 
@@ -245,7 +245,7 @@ export type WorkPanelContext = {
 };
 
 export type WorkPanelWebclientModule =
-  | "summary"
+  | "overview"
   | "debug"
   | "project"
   | "file-diff"
@@ -337,7 +337,7 @@ export function isAgentWebclientSurfaceKind(value: unknown): value is AgentWebcl
   return [
     "agent-chat",
     "agent-copilot",
-    "agent-summary",
+    "agent-overview",
     "agent-debug",
     "agent-project",
   ].includes(String(value));
