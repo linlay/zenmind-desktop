@@ -129,7 +129,7 @@ export function ServiceWebviewSurfaceHost({
 
   return (
     <EmbeddedSurfaceSuspense>
-      {/* Keep service webview browsing contexts mounted so sidebar switches do not tear down live sessions. */}
+      {/* Keep browsing contexts mounted; page active/inactive lifecycle, not the sidebar, owns Run attach/detach. */}
       {nonAgentServiceIds.map((serviceId) => (
         <ServiceWebviewSurface
           key={serviceId}

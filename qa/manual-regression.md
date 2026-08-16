@@ -18,6 +18,10 @@
 
 - [ ] 首次启动完成资源发现、安装事务与核心服务启动，主窗口不会在未就绪时暴露失效入口。
 - [ ] 再次启动复用已安装版本和用户数据，不重复初始化、不覆盖服务自有配置。
+- [ ] 全新 Desktop 数据根且 seed Chat 存在时打开固定 Bootstrap Chat；同一进程只消费一次首装导航。
+- [ ] 全新 Desktop 数据根但 seed Chat 已删除时打开 Bootstrap Agent 新 Chat，不恢复或覆盖用户 Chats。
+- [ ] Bootstrap Agent 不可用时回退默认 Chat Agent；侧边栏、全局搜索和空路由的新 Chat 始终使用默认 Chat Agent。
+- [ ] Desktop 数据根已存在时，普通启动、覆盖安装、版本更新及保留数据后的重装均不进入 Bootstrap；`OWNER.md` 缺失、创建和删除都不改变导航。
 - [ ] 某一核心服务启动失败时，界面显示可诊断、可重试状态；其他事务不会被误报为成功。
 - [ ] 中断安装或强制结束进程后重启，临时目录被回收，稳定版本仍可用或事务可安全重试。
 - [ ] 正常退出按依赖顺序停止服务；超时服务不会无限阻塞应用退出。
@@ -45,7 +49,7 @@
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
 - [ ] 同一 Chat 内 Chat/Overview/Debug 切换不产生 query、attach 或 detach，并保持同一 `RunExecution`；独立 `/overview`、`/debug` 只 replay，不申请 live capability。
 - [ ] 新 Chat URL 只在关联 stream bootstrap identity 后晋升；`chat.created` push 只更新列表，不能猜测 query 归属。
-- [ ] inactive 后返回 Chat 时先 replay，再从 `lastSeq` attach；同一次切换只 detach/attach 一次，identity 尚未返回的 query 在 bootstrap 后补 detach。
+- [ ] 离开 Main Chat 页面、关闭 Copilot 或退出 Kanban Chat 页面时，存在 stream 的 observer 各只 detach 一次；进入对应页面时先请求 `/api/chat` replay，只有响应仍含 `activeRun` 才从服务端 `lastSeq` attach，identity 尚未返回的 query 在 bootstrap 后补 detach。左侧 Nav 只产生页面选择并展示 push 状态，不直接发 query/attach/detach。
 - [ ] 非 active、伪造或独立 Overview/Debug surface 的 query/attach 返回同 request id 的标准 Platform error frame；interrupt/submit/steer/access-level 保留真实 Platform `ApiError` 语义。
 - [ ] 附件上传失败时请求不会伪装成功，取消后临时资源被清理。
 - [ ] Copilot 在 Website/WebApp 间切换时更新页面上下文，旧 surface 失去控制权。
@@ -89,6 +93,7 @@
 - [ ] 等待确认期间切换页面或关闭目标，原请求被拒绝而不是作用到新页面。
 - [ ] CDP 页面控制只绑定当前活动 surface；导航到不受信任来源后旧 target 失效。
 - [ ] WorkPanel 的 WebClient/Web item 去重、激活和保活正确；切换 Chat/路由/item 不卸载 guest，关闭 item 只回收所属 guest 与临时 partition。
+- [ ] 可信 Agent WebClient 中的 WorkPanel 打开/激活/关闭按钮直接执行且不弹出 Desktop Action 确认；HTTP bridge、Desktop WS 和调试工作台的同名变更动作仍进入确认流程。
 - [ ] WorkPanel workspace 相互隔离；非法 URL/路径/跨 workspace 目标被拒绝，空 Native allowlist 返回 `unsupported_native_surface`，旧 Chat WorkPanel action 仍可映射到 item id。
 - [ ] macOS 隐藏面板前清除 first responder、下一 animation frame 恢复焦点；Windows 隐藏前 blur，且只在 active、`dom-ready` 和窗口聚焦时恢复。
 - [ ] 调试工作台仍经过正式执行器和确认策略，不成为权限旁路。

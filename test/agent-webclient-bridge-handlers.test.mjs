@@ -131,6 +131,113 @@ test("raw Frame Port forwards each Platform stream frame immediately and unchang
   assert.ok(runtime.traces.some((entry) => entry.direction === "desktop-to-surface"));
 });
 
+test("same-surface route loading does not destroy the logical socket or truncate its stream", async () => {
+  const target = createTarget(43);
+  let deliverFrame = () => undefined;
+  const runtime = createRegistration(new Map([[43, target]]), async ({ onFrame }) => {
+    deliverFrame = onFrame;
+  });
+  const sender = createSender(43, target.currentUrl);
+  await openSocket(runtime, sender, "socket-route-promotion");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-route-promotion",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-route-promotion",
+      payload: { requestId: "req-route-promotion", message: "我是谁", agentKey: "agent-43" },
+    }),
+  });
+  await flush();
+
+  deliverFrame({
+    frame: "stream",
+    id: "query-route-promotion",
+    streamId: "stream-route-promotion",
+    event: { seq: 1, type: "chat.start", chatId: "chat-canonical", timestamp: 1_786_898_607_643 },
+  });
+  sender.emit("did-start-loading");
+  deliverFrame({
+    frame: "stream",
+    id: "query-route-promotion",
+    streamId: "stream-route-promotion",
+    event: {
+      seq: 2,
+      type: "request.query",
+      requestId: "req-route-promotion",
+      chatId: "chat-canonical",
+      runId: "run-canonical",
+      agentKey: "agent-43",
+      timestamp: 1_786_898_607_644,
+    },
+  });
+  deliverFrame({
+    frame: "stream",
+    id: "query-route-promotion",
+    streamId: "stream-route-promotion",
+    event: { seq: 5, type: "content.delta", delta: "仍然收到", timestamp: 1_786_898_607_650 },
+  });
+
+  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 1);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 1);
+  assert.deepEqual(sentFrames(sender).map((frame) => frame.event?.seq), [1, 2, 5]);
+  assert.equal(
+    sender.messages.some(({ message }) => message.type === "close" && message.reason === "surface destroyed"),
+    false,
+  );
+});
+
+test("a new document socket detaches and supersedes the previous socket for the same surface", async () => {
+  const target = createTarget(44);
+  const forwardedTypes = [];
+  const runtime = createRegistration(new Map([[44, target]]), async (input) => {
+    forwardedTypes.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: "stream-old-document",
+        event: {
+          seq: 1,
+          type: "request.query",
+          chatId: "chat-old-document",
+          runId: "run-old-document",
+          agentKey: "agent-44",
+          timestamp: 1_786_898_607_643,
+        },
+      });
+    }
+  });
+  const sender = createSender(44, target.currentUrl);
+  await openSocket(runtime, sender, "socket-old-document");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-old-document",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-old-document",
+      payload: { requestId: "req-old-document", message: "hello", agentKey: "agent-44" },
+    }),
+  });
+  await flush();
+
+  await openSocket(runtime, sender, "socket-new-document");
+
+  assert.deepEqual(forwardedTypes, ["/api/query", "/api/detach"]);
+  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 1);
+  assert.deepEqual(
+    sender.messages.find(({ message }) =>
+      message.type === "close" && message.socketId === "socket-old-document"
+    )?.message,
+    {
+      socketId: "socket-old-document",
+      type: "close",
+      code: 1000,
+      reason: "logical socket superseded",
+    },
+  );
+});
+
 test("local validation returns a standard error frame with the original request id", async () => {
   const target = createTarget(42, {
     surfaceId: "overview-42",
@@ -204,6 +311,151 @@ test("surface handoff writes detach before the next live request", async () => {
   await flush();
   assert.deepEqual(order, ["/api/query", "/api/detach", "/api/query"]);
   assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
+});
+
+test("surface handoff waits for an explicit detach write and does not send a duplicate detach", async () => {
+  const firstTarget = createTarget(53, { ownerChatId: "chat-explicit-1" });
+  const secondTarget = createTarget(54, {
+    surfaceId: "agent-webclient-copilot-dock",
+    surfaceType: "agent-copilot",
+    ownerChatId: "chat-explicit-2",
+  });
+  const order = [];
+  let releaseExplicitDetach = () => undefined;
+  const explicitDetachWritten = new Promise((resolve) => {
+    releaseExplicitDetach = resolve;
+  });
+  const runtime = createRegistration(new Map([[53, firstTarget], [54, secondTarget]]), async (input) => {
+    order.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: `stream-explicit-${order.length}`,
+        event: {
+          seq: 1,
+          type: "run.start",
+          chatId: order.length === 1 ? "chat-explicit-1" : "chat-explicit-2",
+          runId: order.length === 1 ? "run-explicit-1" : "run-explicit-2",
+          agentKey: "agent-1",
+          timestamp: 1_786_890_000_001,
+        },
+      });
+    }
+    if (input.type === "/api/detach") {
+      await explicitDetachWritten;
+    }
+  });
+  const first = createSender(53, firstTarget.currentUrl);
+  const second = createSender(54, secondTarget.currentUrl);
+  await openSocket(runtime, first, "first-explicit");
+  await openSocket(runtime, second, "second-explicit");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
+    socketId: "first-explicit",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-explicit-1",
+      payload: { requestId: "req-explicit-1", message: "one", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
+    socketId: "first-explicit",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-explicit-1",
+      payload: { runId: "run-explicit-1", agentKey: "agent-1", reason: "surface_inactive" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: second }, {
+    socketId: "second-explicit",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-explicit-2",
+      payload: { requestId: "req-explicit-2", message: "two", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+  assert.deepEqual(order, ["/api/query", "/api/detach"]);
+
+  releaseExplicitDetach();
+  await flush();
+  await flush();
+
+  assert.deepEqual(order, ["/api/query", "/api/detach", "/api/query"]);
+  assert.equal(order.filter((type) => type === "/api/detach").length, 1);
+});
+
+test("same surface re-entry waits for its explicit detach write before attach", async () => {
+  const target = createTarget(55, { ownerChatId: "chat-same-surface" });
+  const order = [];
+  let releaseExplicitDetach = () => undefined;
+  const explicitDetachWritten = new Promise((resolve) => {
+    releaseExplicitDetach = resolve;
+  });
+  const runtime = createRegistration(new Map([[55, target]]), async (input) => {
+    order.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: "stream-same-surface",
+        event: {
+          seq: 1,
+          type: "run.start",
+          chatId: "chat-same-surface",
+          runId: "run-same-surface",
+          agentKey: "agent-1",
+          timestamp: 1_786_890_000_001,
+        },
+      });
+    }
+    if (input.type === "/api/detach") await explicitDetachWritten;
+  });
+  const sender = createSender(55, target.currentUrl);
+  await openSocket(runtime, sender, "same-surface");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "same-surface",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-same-surface",
+      payload: { requestId: "req-same-surface", message: "one", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "same-surface",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-same-surface",
+      payload: { runId: "run-same-surface", agentKey: "agent-1", reason: "surface_inactive" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "same-surface",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-same-surface",
+      payload: { runId: "run-same-surface", agentKey: "agent-1", lastSeq: 1 },
+    }),
+  });
+  await flush();
+  assert.deepEqual(order, ["/api/query", "/api/detach"]);
+
+  releaseExplicitDetach();
+  await flush();
+  await flush();
+
+  assert.deepEqual(order, ["/api/query", "/api/detach", "/api/attach"]);
+  assert.equal(order.filter((type) => type === "/api/detach").length, 1);
 });
 
 test("push broadcasts without acquiring live capability and close only cleans the logical socket", async () => {

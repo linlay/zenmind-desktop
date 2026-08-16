@@ -76,7 +76,9 @@ type LogicalSocket = {
   consumerId: string;
   requestIds: Set<string>;
   streams: Map<string, StreamBinding>;
+  detachBarrier: Promise<void>;
   unsubscribePush: (() => void) | null;
+  retiring: boolean;
   closed: boolean;
 };
 
@@ -290,10 +292,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   };
 
   const activateLiveSocket = async (socket: LogicalSocket) => {
-    if (activeLiveSocketKey === socket.key) return;
+    if (activeLiveSocketKey === socket.key) {
+      await socket.detachBarrier;
+      const pending = [...socket.streams.values()]
+        .filter((binding) => binding.suppressed && !binding.detachSent && binding.runId && binding.owner)
+        .map((binding) => detachBinding(socket, binding).catch(() => undefined));
+      await Promise.all(pending);
+      return;
+    }
     const previous = activeLiveSocketKey ? sockets.get(activeLiveSocketKey) : null;
     activeLiveSocketKey = socket.key;
     if (!previous) return;
+    await previous.detachBarrier;
     const pending: Promise<void>[] = [];
     for (const binding of previous.streams.values()) {
       binding.suppressed = true;
@@ -315,9 +325,31 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   const installSenderCleanup = (sender: WebContents) => {
     if (installedCleanup.has(sender.id)) return;
     installedCleanup.add(sender.id);
-    sender.once("did-start-loading", () => cleanupSender(sender.id));
     sender.once("destroyed", () => cleanupSender(sender.id));
     sender.once("render-process-gone", () => cleanupSender(sender.id));
+  };
+
+  const finishRetiringSocket = (socket: LogicalSocket) => {
+    if (!socket.retiring || socket.streams.size > 0) return;
+    closeSocket(socket, 1000, "logical socket superseded");
+  };
+
+  const retireSocket = async (socket: LogicalSocket) => {
+    if (socket.closed) return;
+    socket.retiring = true;
+    socket.unsubscribePush?.();
+    socket.unsubscribePush = null;
+    await socket.detachBarrier;
+    const detachable = [...socket.streams.values()].filter((binding) => {
+      binding.suppressed = true;
+      return Boolean(binding.runId && binding.owner);
+    });
+    await Promise.all(detachable.map(async (binding) => {
+      await detachBinding(socket, binding).catch(() => undefined);
+      socket.requestIds.delete(binding.localId);
+      socket.streams.delete(binding.localId);
+    }));
+    finishRetiringSocket(socket);
   };
 
   const resolveSocket = (sender: WebContents, socketId: string) =>
@@ -346,8 +378,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       return;
     }
     const key = socketKey(event.sender.id, socketId);
-    const existing = sockets.get(key);
-    if (existing) closeSocket(existing, 1000, "logical socket replaced");
+    const previousSockets = [...(senderSocketKeys.get(event.sender.id) ?? [])]
+      .map((previousKey) => sockets.get(previousKey))
+      .filter((previous): previous is LogicalSocket => Boolean(previous));
+    await Promise.all(previousSockets.map(retireSocket));
     const socket: LogicalSocket = {
       key,
       socketId,
@@ -355,7 +389,9 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       consumerId: `agent-webclient-frame-port:${key}`,
       requestIds: new Set(),
       streams: new Map(),
+      detachBarrier: Promise.resolve(),
       unsubscribePush: null,
+      retiring: false,
       closed: false,
     };
     sockets.set(key, socket);
@@ -422,10 +458,38 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       await activateLiveSocket(socket);
     }
     const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+    const explicitDetachBindings = frame.type === "/api/detach"
+      ? [...socket.streams.values()].filter((candidate) =>
+          !candidate.detachSent &&
+          Boolean(readText(payload.runId)) &&
+          candidate.runId === readText(payload.runId)
+        )
+      : [];
+    let releaseDetachBarrier: (() => void) | null = null;
+    if (explicitDetachBindings.length > 0) {
+      const pendingWrite = new Promise<void>((resolve) => {
+        releaseDetachBarrier = resolve;
+      });
+      socket.detachBarrier = socket.detachBarrier.then(() => pendingWrite);
+      for (const candidate of explicitDetachBindings) {
+        candidate.suppressed = true;
+        candidate.detachSent = true;
+      }
+    }
+    const finishExplicitDetachWrite = (written: boolean) => {
+      if (!written) {
+        for (const candidate of explicitDetachBindings) {
+          candidate.detachSent = false;
+        }
+      }
+      releaseDetachBarrier?.();
+      releaseDetachBarrier = null;
+    };
     let connection: { baseUrl: string; token: string };
     try {
       connection = await availability();
     } catch (error) {
+      finishExplicitDetachWrite(false);
       sendFrame(socket, frameError(
         frame.id,
         "connection_unavailable",
@@ -470,7 +534,12 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           if (binding) {
             updateBindingFromFrame(binding, upstreamFrame);
             if (binding.suppressed && !binding.detachSent && binding.runId && binding.owner) {
-              void detachBinding(socket, binding).catch(() => undefined);
+              void detachBinding(socket, binding).catch(() => undefined).finally(() => {
+                if (!socket.retiring) return;
+                socket.requestIds.delete(binding.localId);
+                socket.streams.delete(binding.localId);
+                finishRetiringSocket(socket);
+              });
             }
           }
           const frameKind = readText(upstreamFrame.frame);
@@ -481,15 +550,19 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           if (terminal) {
             socket.requestIds.delete(frame.id);
             socket.streams.delete(frame.id);
+            finishRetiringSocket(socket);
           }
         },
         onError: (error) => {
           socket.requestIds.delete(frame.id);
           socket.streams.delete(frame.id);
           sendFrame(socket, frameError(frame.id, "connection_unavailable", error.message));
+          finishRetiringSocket(socket);
         },
       });
+      finishExplicitDetachWrite(true);
     } catch (error) {
+      finishExplicitDetachWrite(false);
       socket.requestIds.delete(frame.id);
       socket.streams.delete(frame.id);
       sendFrame(socket, frameError(
@@ -497,6 +570,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         "connection_unavailable",
         error instanceof Error ? error.message : String(error),
       ));
+      finishRetiringSocket(socket);
     }
   };
 

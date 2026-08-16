@@ -20,7 +20,8 @@ const {
 const {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
-  SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
+  SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
 const {
   AGENT_AUTH_REQUEST_TYPE,
@@ -452,4 +453,26 @@ test("service webview main-world script emits route changes on current channel",
   });
 
   assert.deepEqual(currentChannelPayloads, [payload]);
+});
+
+test("service webview main-world script emits live surface lifecycle on its host channel", () => {
+  const { window } = createFakeWindow();
+  const lifecyclePayloads = [];
+  const payload = {
+    type: "desktopSurfaceActiveChanged",
+    active: false,
+    surfaceId: "agent-webclient-chat"
+  };
+
+  runMainWorldScript(window);
+  window.electronAPI.onFromMain(
+    SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL,
+    (_event, nextPayload) => lifecyclePayloads.push(nextPayload)
+  );
+  window.dispatchEvent({
+    type: PRELOAD_TO_PAGE_EVENT,
+    detail: payload
+  });
+
+  assert.deepEqual(lifecyclePayloads, [payload]);
 });

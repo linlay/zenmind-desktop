@@ -24,6 +24,7 @@ import { useI18n } from "../i18n/useI18n";
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+  DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
@@ -101,6 +102,12 @@ type VisibleSelectionToolbarState = Extract<
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
 const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
+const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
+  AGENT_WEBCLIENT_SOURCE_CHAT,
+  "agent-webclient-copilot",
+  "agent-webclient-copilot-dock",
+  "agent-webclient-kanban-chat",
+]);
 let serviceSurfaceRegistrationSequence = 0;
 
 function createServiceSurfaceRegistrationId() {
@@ -132,6 +139,10 @@ function resolveContextMenuSurfaceType(
 
 function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
   return serviceId === "agent-webclient" && surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT;
+}
+
+function isAgentWebclientLiveChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
+  return serviceId === "agent-webclient" && AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS.has(surfaceId || "");
 }
 
 function isAgentWebclientManagementSurface(serviceId: string | undefined, surfaceId: string | undefined) {
@@ -656,10 +667,16 @@ export function ServiceWebviewSurface({
       }],
       activeTabId: surfaceId,
     };
+    if (!ownsActiveSurface) {
+      sendLiveSurfaceLifecycleToWebview(false);
+    }
     void embeddedCdp.registerSurface(registration).then((result) => {
       if (cancelled) return;
       if (result.ok) {
         surfaceRegistrationRetryRef.current = 0;
+        if (ownsActiveSurface) {
+          sendLiveSurfaceLifecycleToWebview(true);
+        }
         return;
       }
       const attempt = surfaceRegistrationRetryRef.current + 1;
@@ -1041,6 +1058,20 @@ export function ServiceWebviewSurface({
       // Ignore bridge delivery while the guest webContents is being recreated.
     }
   }
+
+  function sendLiveSurfaceLifecycleToWebview(nextActive: boolean) {
+    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    sendBridgeMessageToWebview({
+      type: DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
+      active: nextActive,
+      surfaceId,
+    });
+  }
+
+  useEffect(() => {
+    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    return () => sendLiveSurfaceLifecycleToWebview(false);
+  }, [service?.id, surfaceId]);
 
   function dispatchServiceWebviewRouteEventToWebview(payload: Record<string, unknown>) {
     try {
