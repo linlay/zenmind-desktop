@@ -851,7 +851,7 @@ async function handleHttpRequest(record: AgentWebclientHostRecord, req: http.Inc
   if (isDesktopBridgeOnlyHttpPath(requestPath)) {
     writeJSON(res, 404, {
       error: "desktop_realtime_bridge_required",
-      message: "Agent Platform realtime and Run controls are available only through Desktop Bridge v2",
+      message: "Agent Platform realtime and Run controls are available only through the Desktop Platform Frame Port",
     });
     return;
   }

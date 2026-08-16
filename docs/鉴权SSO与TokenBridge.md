@@ -47,19 +47,19 @@ Cookie SSO 的主流程为：
 
 ### Agent WebClient Host 与可信 Bridge
 
-Agent WebClient guest 不接收 access token。普通 HTTP 请求继续经过 Desktop host，由 main 注入和刷新凭据；Realtime bridge 只接收结构化 query、attach、control 与订阅意图，物理连接和认证完全由 main 拥有。
+Agent WebClient guest 不接收 access token。普通 HTTP 请求继续经过 Desktop host，由 main 注入和刷新凭据；WebSocket-like Platform Frame Port 只收发序列化 Platform frame，物理连接和认证完全由 main 拥有。
 
 ```text
-页面发起结构化请求
-  -> 固定 preload bridge 转成专用 IPC
+页面发送 Platform request frame
+  -> 固定 preload Frame Port 转成专用 IPC
   -> main 从真实 sender 与 Surface Registry 派生身份和 capability
   -> main 使用自身凭据调用 host HTTP 或共享 Realtime Broker
-  -> 定向返回最小业务结果
+  -> 逐帧定向返回 Platform response/stream/error，push 按可信 socket 广播
 ```
 
-页面不能访问通用主进程 API。bridge 必须校验 origin、来源窗口、session partition、route、owner Chat 与活动状态；响应不能广播给其他 webview，也不能通过页面 URL 或 guest storage 传递 token。Bridge v2 不保留业务 `/ws`、SSE query/attach 或 HTTP Run control 兼容面；Program manifest 缺少 `/api` 的 `agent-platform-access-token` 声明，或重新声明 `/auth`、`/ws`、Agent Platform WebSocket/SSE 时，安装与启动必须失败。
+页面不能访问通用主进程 API。Frame Port 必须校验 origin、来源窗口、session partition、route、owner Chat 与活动状态；Run frame 不能广播给其他 webview，也不能通过页面 URL 或 guest storage 传递 token。Desktop 不保留 guest 业务 `/ws`、SSE query/attach 或 HTTP Run control 兼容面；Program manifest 缺少 `/api` 的 `agent-platform-access-token` 声明，或重新声明 `/auth`、`/ws`、Agent Platform WebSocket/SSE 时，安装与启动必须失败。
 
-Bridge v2 与 Agent WebClient bundle、vendored contract hash 和 Desktop 内置资源必须原子发布及回滚。v1 Desktop、v1 WebClient 或旧 manifest 与 v2 任一侧混用都属于不兼容部署，不允许回退到 Standalone transport。
+Frame Port contract 与 Agent WebClient bundle、vendored contract hash 和 Desktop 内置资源必须原子发布及回滚。旧 Realtime Bridge Desktop、旧 WebClient 或旧 manifest 与 Frame Port 任一侧混用都属于不兼容部署，不允许回退到 Standalone transport。
 
 ### 内置服务与 Host Bash
 

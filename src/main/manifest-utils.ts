@@ -847,7 +847,7 @@ function resolveDefaultDesktopHosting(serviceId: string, frontend: ManifestFront
   return undefined;
 }
 
-function assertAgentWebclientBridgeV2Hosting(
+function assertAgentWebclientPlatformFramePortHosting(
   serviceId: string,
   frontend: ManifestFrontend,
   hosting: ManifestDesktopHosting | undefined,
@@ -855,7 +855,7 @@ function assertAgentWebclientBridgeV2Hosting(
   if (serviceId !== "agent-webclient" || frontend.hostManaged !== true) return;
   const routes = hosting?.proxyRoutes ?? [];
   if (routes.some((route) => route.path === "/auth" || route.path === "/ws")) {
-    throw new Error("agent-webclient Bridge v2 manifest must not expose /auth or /ws");
+    throw new Error("agent-webclient Frame Port manifest must not expose /auth or /ws");
   }
   const apiRoute = routes.find((route) => route.match === "prefix" && route.path === "/api");
   if (
@@ -867,11 +867,11 @@ function assertAgentWebclientBridgeV2Hosting(
     Boolean(apiRoute.ssePaths?.length)
   ) {
     throw new Error(
-      "agent-webclient Bridge v2 manifest requires an HTTP-only authenticated /api route without SSE overrides",
+      "agent-webclient Frame Port manifest requires an HTTP-only authenticated /api route without SSE overrides",
     );
   }
   if (routes.some((route) => route.targetEnv === "BASE_URL" && route.websocket === true)) {
-    throw new Error("agent-webclient Bridge v2 manifest forbids Agent Platform WebSocket proxy routes");
+    throw new Error("agent-webclient Frame Port manifest forbids Agent Platform WebSocket proxy routes");
   }
 }
 
@@ -1023,7 +1023,7 @@ function resolveDesktop(
     (options.desktop?.hosting ? cloneDesktopHosting(options.desktop.hosting) : undefined) ??
     resolveDesktopHosting(raw) ??
     resolveDefaultDesktopHosting(serviceId, frontend);
-  assertAgentWebclientBridgeV2Hosting(serviceId, frontend, hosting);
+  assertAgentWebclientPlatformFramePortHosting(serviceId, frontend, hosting);
   const capabilities = resolveDesktopCapabilities(raw);
   const actions = resolveDesktopActions(raw, settings);
 

@@ -768,7 +768,7 @@ export const enUSMessages = {
   "settings.debug.logs.opened": "Log viewer opened.",
   "settings.debug.logs.failed": "Could not open log viewer.",
   "settings.debug.realtime.title": "Agent Realtime Path",
-  "settings.debug.realtime.description": "Inspect Desktop's unified physical WebSocket to Agent Platform and Bridge v2 deliveries to each Agent WebClient surface. Data stays in a bounded in-memory buffer for this process and sensitive fields are redacted.",
+  "settings.debug.realtime.description": "Inspect Desktop's unified physical WebSocket to Agent Platform and Frame Port deliveries to each Agent WebClient surface. Data stays in a bounded in-memory buffer for this process and sensitive fields are redacted.",
   "settings.debug.realtime.launchDescription": "Continuously inspect Platform WebSocket and per-surface Bridge frames in a separate DevTools-style window. It is resizable and stays open while you switch pages.",
   "settings.debug.realtime.openInspector": "Open Realtime Inspector",
   "settings.debug.realtime.opened": "Realtime Inspector opened.",

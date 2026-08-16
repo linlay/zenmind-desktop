@@ -21,7 +21,7 @@ async function listen(server) {
   return server.address().port;
 }
 
-test("Bridge v2 host injects and refreshes /api auth while blocking HTTP Run bypasses", async (t) => {
+test("Frame Port host injects and refreshes /api auth while blocking HTTP Run bypasses", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webclient-host-v2-"));
   const frontendDist = path.join(root, "frontend", "dist");
   fs.mkdirSync(frontendDist, { recursive: true });

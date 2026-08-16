@@ -11,7 +11,8 @@ import {
 } from "../shared/auth-bridge";
 import { resolveServiceWebviewWsMonitorUrl } from "../shared/service-webview-ws-monitor";
 import {
-  AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL,
+  AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL,
+  AGENT_WEBCLIENT_PLATFORM_WS_TRANSPORT_VERSION,
   AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL,
 } from "../shared/contracts/agent-webclient-bridge";
 
@@ -20,7 +21,10 @@ export const PRELOAD_TO_PAGE_EVENT = "__desktopServiceWebviewBridgeDeliver";
 export const PRELOAD_TO_PAGE_ACTION_EVENT = "__desktopServiceWebviewBridgeAction";
 export const AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT = "__agentWebclientBridgeInvoke";
 export const AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT = "__agentWebclientBridgeResult";
-export const AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT = "__agentWebclientBridgeMessage";
+export const AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT = "__agentWebclientPlatformWsOpen";
+export const AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT = "__agentWebclientPlatformWsSend";
+export const AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT = "__agentWebclientPlatformWsClose";
+export const AGENT_WEBCLIENT_PLATFORM_WS_EVENT = "__agentWebclientPlatformWsEvent";
 export const DESKTOP_WEBVIEW_BRIDGE_FLAG = "__DESKTOP_WEBVIEW_BRIDGE__";
 const DESKTOP_WS_MONITOR_WRAPPED_FLAG = "__DESKTOP_WS_MONITOR_WRAPPED__";
 export const AGENT_APP_ACCESS_TOKEN_STORAGE_KEY = "agent-webclient.appAccessToken";
@@ -34,8 +38,12 @@ export function buildServiceWebviewMainWorldScript() {
   const PRELOAD_TO_PAGE_ACTION_EVENT = ${JSON.stringify(PRELOAD_TO_PAGE_ACTION_EVENT)};
   const AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT)};
   const AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT)};
-  const AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT)};
-  const AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL = ${JSON.stringify(AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL)};
+  const AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT)};
+  const AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT)};
+  const AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT)};
+  const AGENT_WEBCLIENT_PLATFORM_WS_EVENT = ${JSON.stringify(AGENT_WEBCLIENT_PLATFORM_WS_EVENT)};
+  const AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL = ${JSON.stringify(AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL)};
+  const AGENT_WEBCLIENT_PLATFORM_WS_TRANSPORT_VERSION = ${JSON.stringify(AGENT_WEBCLIENT_PLATFORM_WS_TRANSPORT_VERSION)};
   const AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL = ${JSON.stringify(AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL)};
   const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
@@ -65,7 +73,7 @@ export function buildServiceWebviewMainWorldScript() {
   function installAgentWebclientBridges() {
     let requestSequence = 0;
     const pending = new Map();
-    const realtimeListeners = new Set();
+    const sockets = new Map();
     const invoke = (bridge, method, input) => new Promise((resolve) => {
       requestSequence += 1;
       const requestId = "agent-webclient-bridge-" + Date.now() + "-" + requestSequence;
@@ -86,33 +94,88 @@ export function buildServiceWebviewMainWorldScript() {
       pending.delete(detail.requestId);
       resolve(detail.result);
     });
-    window.addEventListener(AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT, (event) => {
-      for (const listener of Array.from(realtimeListeners)) {
-        try {
-          listener(event.detail);
-        } catch {
-          // Isolate Agent WebClient listeners.
+    class DesktopPlatformSocket {
+      constructor() {
+        requestSequence += 1;
+        this.socketId = "agent-webclient-platform-ws-" + Date.now() + "-" + requestSequence;
+        this.state = 0;
+        this.listeners = new Map();
+        sockets.set(this.socketId, this);
+        window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT, {
+          detail: { socketId: this.socketId }
+        }));
+      }
+      get readyState() {
+        return this.state;
+      }
+      send(data) {
+        if (this.state !== 1) throw new Error("Desktop Platform socket is not open");
+        if (typeof data !== "string") throw new TypeError("Desktop Platform socket only accepts serialized frames");
+        window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT, {
+          detail: { socketId: this.socketId, data }
+        }));
+      }
+      close(code, reason) {
+        if (this.state >= 2) return;
+        this.state = 2;
+        window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT, {
+          detail: {
+            socketId: this.socketId,
+            ...(Number.isInteger(code) ? { code } : {}),
+            ...(typeof reason === "string" ? { reason } : {})
+          }
+        }));
+      }
+      addEventListener(type, listener) {
+        if (typeof listener !== "function") return;
+        const listeners = this.listeners.get(type) || new Set();
+        listeners.add(listener);
+        this.listeners.set(type, listeners);
+      }
+      removeEventListener(type, listener) {
+        const listeners = this.listeners.get(type);
+        listeners?.delete(listener);
+        if (listeners?.size === 0) this.listeners.delete(type);
+      }
+      deliver(detail) {
+        if (!detail || detail.socketId !== this.socketId || this.state === 3) return;
+        if (detail.type === "open") this.state = 1;
+        if (detail.type === "close") {
+          this.state = 3;
+          sockets.delete(this.socketId);
+        }
+        const event = detail.type === "message"
+          ? new MessageEvent("message", { data: detail.data })
+          : Object.assign(new Event(detail.type), detail.type === "error"
+            ? { message: detail.message || "Desktop Platform socket error" }
+            : detail.type === "close"
+              ? { code: detail.code || 1000, reason: detail.reason || "" }
+              : {});
+        for (const listener of Array.from(this.listeners.get(detail.type) || [])) {
+          try {
+            listener.call(this, event);
+          } catch {
+            // Isolate socket listeners.
+          }
         }
       }
+    }
+    window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_EVENT, (event) => {
+      const detail = event.detail;
+      sockets.get(detail?.socketId)?.deliver(detail);
     });
-    const realtime = Object.freeze({
-      hello: (input) => invoke("realtime", "hello", input),
-      request: (input) => invoke("realtime", "request", input),
-      subscribe: (input) => invoke("realtime", "subscribe", input),
-      detach: (input) => invoke("realtime", "detach", input),
-      onMessage: (listener) => {
-        if (typeof listener !== "function") return () => {};
-        realtimeListeners.add(listener);
-        return () => realtimeListeners.delete(listener);
-      }
+    const platformWs = Object.freeze({
+      transportVersion: AGENT_WEBCLIENT_PLATFORM_WS_TRANSPORT_VERSION,
+      createSocket: () => new DesktopPlatformSocket()
     });
     const workpanel = Object.freeze({
+      getCapabilities: () => invoke("workpanel", "getCapabilities"),
       openItem: (input) => invoke("workpanel", "openItem", input),
       activateItem: (input) => invoke("workpanel", "activateItem", input),
       closeItem: (input) => invoke("workpanel", "closeItem", input)
     });
     for (const [name, value] of [
-      [AGENT_WEBCLIENT_REALTIME_BRIDGE_GLOBAL, realtime],
+      [AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL, platformWs],
       [AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL, workpanel]
     ]) {
       try {

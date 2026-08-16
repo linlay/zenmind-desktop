@@ -125,10 +125,9 @@ export interface AgentRealtimeDebugSurface {
   active: boolean;
   ownerChatId?: string;
   route: string;
-  subscriptionCount: number;
-  pendingOperationCount: number;
-  batchQueueCount: number;
-  updatedAt: EpochMilliseconds;
+  socketId: string;
+  pendingRequestCount: number;
+  activeStreamCount: number;
 }
 
 export interface AgentRealtimeDebugSnapshot {
@@ -161,11 +160,11 @@ export interface AgentRealtimeDebugSnapshot {
   };
   bridge: {
     registeredSenderCount: number;
-    connectionListenerCount: number;
-    subscriptionCount: number;
-    pendingOperationCount: number;
-    batchQueueCount: number;
-    bindingEpoch: number;
+    logicalSocketCount: number;
+    pendingRequestCount: number;
+    activeStreamCount: number;
+    activeLiveSurfaceCount: number;
+    activeLiveSocketKey: string | null;
   };
   surfaces: AgentRealtimeDebugSurface[];
   trace: AgentRealtimeDebugTraceEntry[];

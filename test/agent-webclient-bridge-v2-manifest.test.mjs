@@ -36,12 +36,12 @@ const apiRoute = {
   auth: "agent-platform-access-token",
 };
 
-test("Bridge v2 accepts only an authenticated HTTP Agent Platform route", () => {
+test("Frame Port bundle accepts only an authenticated HTTP Agent Platform route", () => {
   const normalized = normalize(manifest([voiceRoute, apiRoute]));
   assert.deepEqual(normalized.desktop.hosting.proxyRoutes, [voiceRoute, apiRoute]);
 });
 
-test("Bridge v2 rejects old or partially upgraded Agent WebClient manifests", () => {
+test("Frame Port bundle rejects old or partially upgraded Agent WebClient manifests", () => {
   assert.throws(
     () => normalize(manifest([{ ...apiRoute, auth: undefined }])),
     /authenticated \/api route/u,

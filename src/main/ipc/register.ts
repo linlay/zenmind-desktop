@@ -290,11 +290,11 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       },
       bridge: {
         registeredSenderCount: bridgeDiagnostics.registeredSenderCount,
-        connectionListenerCount: bridgeDiagnostics.connectionListenerCount,
-        subscriptionCount: bridgeDiagnostics.subscriptionCount,
-        pendingOperationCount: bridgeDiagnostics.pendingOperationCount,
-        batchQueueCount: bridgeDiagnostics.batchQueueCount,
-        bindingEpoch: bridgeDiagnostics.bindingEpoch,
+        logicalSocketCount: bridgeDiagnostics.logicalSocketCount,
+        pendingRequestCount: bridgeDiagnostics.pendingRequestCount,
+        activeStreamCount: bridgeDiagnostics.activeStreamCount,
+        activeLiveSurfaceCount: bridgeDiagnostics.activeLiveSurfaceCount,
+        activeLiveSocketKey: bridgeDiagnostics.activeLiveSocketKey,
       },
       surfaces: bridgeDiagnostics.surfaces,
       trace: normalizedAfterSequence === null

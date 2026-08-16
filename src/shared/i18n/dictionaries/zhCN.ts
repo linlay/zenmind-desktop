@@ -768,7 +768,7 @@ export const zhCNMessages = {
   "settings.debug.logs.opened": "日志窗口已打开。",
   "settings.debug.logs.failed": "日志窗口打开失败。",
   "settings.debug.realtime.title": "Agent 实时链路",
-  "settings.debug.realtime.description": "观察 Desktop 与 Agent 平台的统一物理 WebSocket，以及 Desktop 向各个 Agent Webclient 运行面的 Bridge v2 投递。数据仅保留在本次进程的有界内存中，敏感字段会脱敏。",
+  "settings.debug.realtime.description": "观察 Desktop 与 Agent 平台的统一物理 WebSocket，以及 Desktop 向各个 Agent WebClient 运行面的 Frame Port 投递。数据仅保留在本次进程的有界内存中，敏感字段会脱敏。",
   "settings.debug.realtime.launchDescription": "在独立的开发者工具风格窗口中持续观察平台 WebSocket 与各运行面 Bridge 的帧数据。窗口可调整大小，并可在切换页面时保持打开。",
   "settings.debug.realtime.openInspector": "打开实时链路观察器",
   "settings.debug.realtime.opened": "实时链路观察器已打开。",

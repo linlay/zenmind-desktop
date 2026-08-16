@@ -6,68 +6,69 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/ipc/agent-webclient-bridge-handlers.js");
 const {
-  AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
   AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } = require("../dist-electron/shared/contracts/agent-webclient-bridge.js");
 
-function createSender(id = 41) {
+function createSender(id, url) {
   const sender = new EventEmitter();
   sender.id = id;
   sender.messages = [];
   sender.isDestroyed = () => false;
   sender.getType = () => "webview";
-  sender.getURL = () => "http://127.0.0.1:7079/overview?chatId=chat-1";
-  sender.session = { getPartition: () => "persist:zenmind-service-agent-webclient" };
+  sender.getURL = () => url;
   sender.send = (channel, message) => sender.messages.push({ channel, message });
   return sender;
 }
 
-function createRegistration(targetOverrides = {}) {
-  const handlers = new Map();
-  const cleanups = [];
-  const cleared = [];
-  const dispatched = [];
-  const traces = [];
-  const target = {
-    registrationId: "registration-1",
-    surfaceId: "overview-1",
+function createTarget(id, overrides = {}) {
+  const url = `http://127.0.0.1:7079/agent/agent-${id}?chatId=chat-${id}`;
+  return {
+    registrationId: `registration-${id}`,
+    surfaceId: `agent-webclient-chat`,
     surfaceKind: "service",
-    surfaceType: "agent-overview",
+    surfaceType: "agent-chat",
     serviceId: "agent-webclient",
-    pageRoute: "/overview",
-    tabId: "overview-1",
-    webContentsId: 41,
+    pageRoute: `/agent/agent-${id}`,
+    tabId: `chat-${id}`,
+    webContentsId: id,
     ownerWebContentsId: 1,
     active: true,
-    currentUrl: "http://127.0.0.1:7079/overview?chatId=chat-1",
-    label: "Overview",
-    ownerChatId: "chat-1",
-    ...targetOverrides,
+    currentUrl: url,
+    label: "Chat",
+    ownerChatId: `chat-${id}`,
+    ...overrides,
   };
+}
+
+function createRegistration(targets, forwardRequest) {
+  const listeners = new Map();
+  const handlers = new Map();
+  const traces = [];
+  const cleaned = [];
+  const pushSubscribers = [];
+  const dispatched = [];
   const broker = {
-    getConnectionPhase: () => "connected",
-    getConnectionState: () => ({ generation: 7 }),
-    getVisibleBinding: () => null,
-    subscribeConnection: ({ onState }) => {
-      onState({ phase: "connected", generation: 7, key: null, physicalConnectionCount: 1, reconnectCount: 0 });
-      return () => cleanups.push("connection");
+    ensureConnected: async () => undefined,
+    forwardRequest,
+    subscribePush: ({ onPush }) => {
+      pushSubscribers.push(onPush);
+      return () => undefined;
     },
-    ensureConnected: async () => {},
-    subscribePush: () => {
-      const unsubscribe = () => cleanups.push("push");
-      return unsubscribe;
-    },
-    cleanupConsumer: (id) => cleanups.push(id),
-    clearVisibleBinding: (id) => cleared.push(id),
+    cleanupConsumer: (id) => cleaned.push(id),
     appendDebugTrace: (entry) => traces.push(entry),
   };
   const registration = registerAgentWebclientBridgeIpcHandlers({
-    handle(channel, handler) {
-      handlers.set(channel, handler);
-    },
+    on(channel, handler) { listeners.set(channel, handler); },
+    handle(channel, handler) { handlers.set(channel, handler); },
   }, {
     app: {},
-    browserSurfaces: { resolveWebviewSurfaceTarget: () => target },
+    browserSurfaces: {
+      resolveWebviewSurfaceTarget: (senderId) => targets.get(senderId) || null,
+    },
     isTrustedAgentWebclientSession: () => true,
     realtimeBroker: broker,
     getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
@@ -77,273 +78,172 @@ function createRegistration(targetOverrides = {}) {
       return { ok: true, workspaceId: "workspace-1" };
     },
   });
-  return { broker, cleanups, cleared, dispatched, handlers, registration, target, traces };
+  return { broker, cleaned, dispatched, handlers, listeners, pushSubscribers, registration, traces };
 }
 
-test("Bridge diagnostics correlate inbound calls and outbound delivery with trusted surfaceId", async () => {
-  const { handlers, registration, traces } = createRegistration();
-  const sender = createSender();
-  const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
-  await realtime({ sender }, { method: "hello", input: { version: 2 } });
-
-  assert.ok(traces.some((entry) =>
-    entry.direction === "surface-to-desktop" &&
-    entry.surfaceId === "overview-1" &&
-    entry.data.method === "hello",
-  ));
-  assert.ok(traces.some((entry) =>
-    entry.direction === "desktop-to-surface" &&
-    entry.surfaceId === "overview-1" &&
-    entry.data.kind === "connection",
-  ));
-  assert.deepEqual(registration.getDiagnostics().surfaces, [{
-    surfaceId: "overview-1",
-    webContentsId: 41,
-    kind: "agent-overview",
-    active: true,
-    ownerChatId: "chat-1",
-    route: "/overview",
-    updatedAt: registration.getDiagnostics().surfaces[0].updatedAt,
-    subscriptionCount: 0,
-    pendingOperationCount: 0,
-    batchQueueCount: 0,
-  }]);
-});
-
-test("trusted bridge derives Overview capabilities and rejects control and forged chat identity", async () => {
-  const { handlers, dispatched } = createRegistration();
-  const sender = createSender();
-  const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
-  const hello = await realtime({ sender }, { method: "hello" });
-  assert.equal(hello.version, 2);
-  assert.equal(hello.surface.kind, "agent-overview");
-  assert.equal(hello.surface.ownerChatId, "chat-1");
-  assert.equal(hello.surface.capabilities.includes("run.control"), false);
-  assert.equal(hello.surface.capabilities.includes("workpanel.open"), true);
-  const workpanel = handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
-  const opened = await workpanel({ sender }, { method: "openItem", input: {
-    version: 2,
-    descriptor: { kind: "web", url: "https://example.test/overview-target" },
-  }});
-  assert.equal(opened.ok, true);
-  assert.equal(dispatched.length, 1);
-  assert.equal(dispatched[0].action, "openItem");
-  const mismatched = await realtime({ sender }, { method: "hello", input: { version: 1 } });
-  assert.equal(mismatched.error.code, "version_mismatch");
-
-  const control = await realtime({ sender }, { method: "request", input: {
-    version: 2, operationId: "operation-1", kind: "run.control", control: "interrupt",
-    chatId: "chat-1", runId: "run-1", payload: {},
-  }});
-  assert.equal(control.error.code, "capability_denied");
-
-  const forgedChat = await realtime({ sender }, { method: "subscribe", input: {
-    version: 2, kind: "run", role: "overview", chatId: "chat-forged", runId: "run-1", lastSeq: 0,
-    owner: { kind: "agent", agentKey: "agent-1" },
-  }});
-  assert.equal(forgedChat.error.code, "capability_denied");
-  const legacyRole = await realtime({ sender }, { method: "subscribe", input: {
-    version: 2, kind: "run", role: "summary", chatId: "chat-1", runId: "run-1", lastSeq: 0,
-    owner: { kind: "agent", agentKey: "agent-1" },
-  }});
-  assert.equal(legacyRole.error.code, "invalid_request");
-});
-
-test("trusted WorkPanel bridge binds owner chat in Main and rejects an unregistered sender", async () => {
-  const registered = createRegistration({ surfaceType: "agent-project", ownerChatId: "chat-owner" });
-  const sender = createSender();
-  const workpanel = registered.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
-  const result = await workpanel({ sender }, { method: "openItem", input: {
-    version: 2,
-    descriptor: { kind: "web", url: "https://example.test/" },
-  }});
-  assert.equal(result.ok, true);
-  assert.equal(registered.dispatched[0].ownerChatId, "chat-owner");
-  assert.equal("ownerChatId" in registered.dispatched[0].args, false);
-
-  const forged = createRegistration();
-  forged.registration.target = null;
-  const deniedHandlerMap = new Map();
-  registerAgentWebclientBridgeIpcHandlers({ handle: (channel, handler) => deniedHandlerMap.set(channel, handler) }, {
-    app: {}, browserSurfaces: { resolveWebviewSurfaceTarget: () => null }, realtimeBroker: forged.broker,
-    isTrustedAgentWebclientSession: () => true,
-    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1" } }),
-    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
-    dispatchWorkPanel: async () => ({ ok: true }),
-  });
-  const denied = await deniedHandlerMap.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL)({ sender }, {
-    method: "openItem", input: { version: 2, descriptor: { kind: "web", url: "https://example.test" } },
-  });
-  assert.equal(denied.error.code, "surface_unavailable");
-});
-
-test("destroyed guest automatically cleans subscriptions, pending consumers, and visible binding", async () => {
-  const { handlers, cleanups, cleared } = createRegistration();
-  const sender = createSender();
-  const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
-  const subscribed = await realtime({ sender }, { method: "subscribe", input: {
-    version: 2, kind: "push", types: ["chat.updated"], filter: { chatId: "chat-1" },
-  }});
-  assert.equal(subscribed.ok, true);
-  sender.emit("destroyed");
-  assert.ok(cleanups.includes("push"));
-  assert.ok(cleanups.includes("connection"));
-  assert.ok(cleanups.includes("agent-webclient-surface:41"));
-  assert.deepEqual(cleared, ["surface:41"]);
-});
-
-test("reloading a guest clears subscriptions before the next preload registers", async () => {
-  const { handlers, cleanups, cleared } = createRegistration({ webContentsId: 42 });
-  const sender = createSender(42);
-  const realtime = handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
-  const subscribed = await realtime({ sender }, { method: "subscribe", input: {
-    version: 2, kind: "push", types: ["chat.updated"], filter: { chatId: "chat-1" },
-  }});
-  assert.equal(subscribed.ok, true);
-  sender.emit("did-start-loading");
-  assert.ok(cleanups.includes("push"));
-  assert.ok(cleanups.includes("agent-webclient-surface:42"));
-  assert.deepEqual(cleared, ["surface:42"]);
-});
-
-test("Bridge v2 accepts an ownerless active Agent surface query and returns canonical identity", async () => {
-  const registered = createRegistration({
-    surfaceType: "agent-chat",
-    ownerChatId: undefined,
-    pageRoute: "/agent/agent-1",
-  });
-  let brokerQuery;
-  registered.broker.query = (input) => {
-    brokerQuery = input;
-    queueMicrotask(() => input.onEvent({
-      type: "run.start",
-      timestamp: 1_771_888_000_000,
-      seq: 1,
-      chatId: "chat-canonical",
-      runId: "run-canonical",
-      agentKey: "agent-1",
-    }));
-    return {
-      accepted: Promise.resolve({
-        chatId: "chat-canonical",
-        runId: "run-canonical",
-        owner: { kind: "agent", agentKey: "agent-1" },
-      }),
-      completed: new Promise(() => {}),
-    };
-  };
-  registered.broker.bindVisibleRun = () => ({ epoch: 9 });
-  const sender = createSender();
-  const realtime = registered.handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
-  const result = await realtime({ sender }, { method: "request", input: {
-    version: 2,
-    operationId: "operation-new",
-    kind: "run.query",
-    owner: { kind: "agent", agentKey: "agent-1" },
-    payload: { message: "hello", agentKey: "agent-1" },
-  }});
-  assert.deepEqual(result, { ok: true, operationId: "operation-new" });
+async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
-  assert.equal("runId" in brokerQuery.payload, false);
-  assert.equal("chatId" in brokerQuery.payload, false);
-  assert.deepEqual(sender.messages.find(({ message }) => message.kind === "run.accepted").message, {
-    version: 2,
-    kind: "run.accepted",
-    operationId: "operation-new",
-    chatId: "chat-canonical",
-    runId: "run-canonical",
-    owner: { kind: "agent", agentKey: "agent-1" },
-  });
+}
 
-  const detached = await realtime({ sender }, { method: "detach", input: {
-    version: 2,
-    target: { kind: "operation", operationId: "operation-new" },
-  }});
-  assert.deepEqual(detached, { ok: true, operationId: "operation-new" });
+async function openSocket(runtime, sender, socketId) {
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+    { sender },
+    { socketId },
+  );
+  await flush();
+  assert.deepEqual(sender.messages.at(-1), {
+    channel: AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
+    message: { socketId, type: "open" },
+  });
+}
+
+function sentFrames(sender) {
+  return sender.messages.flatMap(({ channel, message }) =>
+    channel === AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL && message.type === "message"
+      ? [JSON.parse(message.data)]
+      : [],
+  );
+}
+
+test("raw Frame Port forwards each Platform stream frame immediately and unchanged", async () => {
+  const target = createTarget(41);
+  const targets = new Map([[41, target]]);
+  const incoming = [
+    { frame: "stream", id: "wss-1", streamId: "s-1", event: { seq: 1, type: "run.start", chatId: "chat-1", runId: "run-1", agentKey: "agent-1", timestamp: 1_786_890_000_001 } },
+    { frame: "stream", id: "wss-1", streamId: "s-1", event: { seq: 2, type: "content.delta", delta: "你", chatId: "chat-1", runId: "run-1", timestamp: 1_786_890_000_002 } },
+    { frame: "stream", id: "wss-1", streamId: "s-1", event: { seq: 3, type: "content.delta", delta: "好", chatId: "chat-1", runId: "run-1", timestamp: 1_786_890_000_003 } },
+  ];
+  const runtime = createRegistration(targets, async ({ localId, onFrame }) => {
+    for (const frame of incoming) onFrame({ ...frame, id: localId });
+  });
+  const sender = createSender(41, target.currentUrl);
+  await openSocket(runtime, sender, "socket-1");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-1",
+    data: JSON.stringify({ frame: "request", type: "/api/query", id: "wss-1", payload: { requestId: "req-1", message: "hello", agentKey: "agent-1" } }),
+  });
+  await flush();
+
+  assert.deepEqual(sentFrames(sender), incoming);
+  assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 1);
+  assert.ok(runtime.traces.some((entry) => entry.direction === "surface-to-desktop"));
+  assert.ok(runtime.traces.some((entry) => entry.direction === "desktop-to-surface"));
 });
 
-test("Bridge v2 returns the real Platform control response", async () => {
-  const registered = createRegistration({ surfaceType: "agent-chat" });
-  registered.broker.forwardRequest = async ({ localId, onFrame }) => {
-    onFrame({
-      frame: "error",
-      id: localId,
-      type: "awaiting_conflict",
-      code: 409,
-      msg: "awaiting state changed",
-      data: { awaitingId: "awaiting-1" },
-    });
-  };
-  const sender = createSender();
-  const realtime = registered.handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
-  const result = await realtime({ sender }, { method: "request", input: {
-    version: 2,
-    operationId: "submit-1",
-    kind: "run.control",
-    control: "submitAwaiting",
-    chatId: "chat-1",
-    runId: "run-1",
-    owner: { kind: "agent", agentKey: "agent-1" },
-    payload: { awaitingId: "awaiting-1", params: [] },
-  }});
-  assert.deepEqual(result, {
-    ok: true,
-    operationId: "submit-1",
-    response: {
-      status: 409,
-      code: 409,
-      msg: "awaiting state changed",
-      data: { awaitingId: "awaiting-1" },
+test("local validation returns a standard error frame with the original request id", async () => {
+  const target = createTarget(42, {
+    surfaceId: "overview-42",
+    surfaceType: "agent-overview",
+    pageRoute: "/overview",
+    currentUrl: "http://127.0.0.1:7079/overview?chatId=chat-42",
+  });
+  let forwarded = false;
+  const runtime = createRegistration(new Map([[42, target]]), async () => { forwarded = true; });
+  const sender = createSender(42, target.currentUrl);
+  await openSocket(runtime, sender, "socket-2");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-2",
+    data: JSON.stringify({ frame: "request", type: "/api/attach", id: "attach-denied", payload: { runId: "run-1", agentKey: "agent-1", lastSeq: 0 } }),
+  });
+  await flush();
+  assert.equal(forwarded, false);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "error",
+    id: "attach-denied",
+    type: "surface_unavailable",
+    code: 400,
+    status: 400,
+    msg: "only the active Chat surface may open a live Run stream",
+    data: {
+      code: "surface_unavailable",
+      message: "only the active Chat surface may open a live Run stream",
     },
   });
 });
 
-test("Bridge v2 routes all five Run controls over the Broker and preserves success payloads", async () => {
-  const registered = createRegistration({ surfaceType: "agent-chat" });
-  const forwarded = [];
-  registered.broker.forwardRequest = async (options) => {
-    forwarded.push({ type: options.type, payload: options.payload });
-    options.onFrame({
-      frame: "response",
-      id: options.localId,
-      code: 0,
-      msg: "success",
-      data: { routed: options.type },
-    });
-  };
-  const sender = createSender();
-  const realtime = registered.handlers.get(AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL);
-  const controls = [
-    ["interrupt", { message: "stop" }],
-    ["submitAwaiting", { awaitingId: "awaiting-1", params: [] }],
-    ["submitTool", { toolId: "tool-1", params: { accepted: true } }],
-    ["steer", { message: "continue" }],
-    ["updateAccessLevel", { accessLevel: "auto_approve" }],
-  ];
-  for (const [index, [control, payload]] of controls.entries()) {
-    const result = await realtime({ sender }, { method: "request", input: {
-      version: 2,
-      operationId: `control-${index}`,
-      kind: "run.control",
-      control,
-      chatId: "chat-1",
-      runId: "run-1",
-      owner: { kind: "agent", agentKey: "agent-1" },
-      payload,
-    }});
-    assert.equal(result.response.status, 200, control);
-    assert.equal(result.response.code, 0, control);
-  }
-  assert.deepEqual(forwarded.map(({ type }) => type), [
-    "/api/interrupt",
-    "/api/submit",
-    "/api/submit",
-    "/api/steer",
-    "/api/access-level",
-  ]);
-  for (const { payload } of forwarded) {
-    assert.equal(payload.chatId, "chat-1");
-    assert.equal(payload.runId, "run-1");
-    assert.equal(payload.agentKey, "agent-1");
-  }
+test("surface handoff writes detach before the next live request", async () => {
+  const firstTarget = createTarget(51, { ownerChatId: "chat-1" });
+  const secondTarget = createTarget(52, {
+    surfaceId: "agent-webclient-copilot-dock",
+    surfaceType: "agent-copilot",
+    ownerChatId: "chat-2",
+  });
+  const order = [];
+  const runtime = createRegistration(new Map([[51, firstTarget], [52, secondTarget]]), async (input) => {
+    order.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: `stream-${order.length}`,
+        event: {
+          seq: 1,
+          type: "run.start",
+          chatId: order.length === 1 ? "chat-1" : "chat-2",
+          runId: order.length === 1 ? "run-1" : "run-2",
+          agentKey: "agent-1",
+          timestamp: 1_786_890_000_001,
+        },
+      });
+    }
+  });
+  const first = createSender(51, firstTarget.currentUrl);
+  const second = createSender(52, secondTarget.currentUrl);
+  await openSocket(runtime, first, "first");
+  await openSocket(runtime, second, "second");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
+    socketId: "first",
+    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-1", payload: { requestId: "req-1", message: "one", agentKey: "agent-1" } }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: second }, {
+    socketId: "second",
+    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-2", payload: { requestId: "req-2", message: "two", agentKey: "agent-1" } }),
+  });
+  await flush();
+  assert.deepEqual(order, ["/api/query", "/api/detach", "/api/query"]);
+  assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
+});
+
+test("push broadcasts without acquiring live capability and close only cleans the logical socket", async () => {
+  const target = createTarget(61);
+  const runtime = createRegistration(new Map([[61, target]]), async () => undefined);
+  const sender = createSender(61, target.currentUrl);
+  await openSocket(runtime, sender, "socket-push");
+  runtime.pushSubscribers[0]({ frame: "push", type: "chat.created", data: { chatId: "chat-new" } });
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "push",
+    type: "chat.created",
+    data: { chatId: "chat-new" },
+  });
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL)({ sender }, {
+    socketId: "socket-push",
+    code: 1000,
+    reason: "guest closed",
+  });
+  assert.ok(runtime.cleaned.some((id) => id.includes("agent-webclient-frame-port")));
+  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 0);
+});
+
+test("WorkPanel retains an independent host capability query and version check", async () => {
+  const target = createTarget(71);
+  const runtime = createRegistration(new Map([[71, target]]), async () => undefined);
+  const sender = createSender(71, target.currentUrl);
+  const workpanel = runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+  assert.deepEqual(await workpanel({ sender }, { method: "getCapabilities" }), {
+    ok: true,
+    capabilities: ["workpanel.open", "workpanel.activate", "workpanel.close"],
+  });
+  const opened = await workpanel({ sender }, {
+    method: "openItem",
+    input: { version: 3, descriptor: { kind: "web", url: "https://example.test/" } },
+  });
+  assert.equal(opened.ok, true);
+  assert.equal(runtime.dispatched[0].ownerChatId, "chat-71");
+  const incompatible = await workpanel({ sender }, {
+    method: "openItem",
+    input: { version: 2, descriptor: { kind: "web", url: "https://example.test/" } },
+  });
+  assert.equal(incompatible.error.code, "version_mismatch");
 });

@@ -31,7 +31,7 @@
 - [ ] 上游明确退出时清除身份文件、派生 Cookie 和头像缓存；无关网站 Cookie 保留。
 - [ ] 临时断网时当前运行 fail closed，恢复网络后单次重试并刷新相关 surface。
 - [ ] 切换账号不会短暂显示上一账号资料或使用上一账号 token。
-- [ ] `agent-webclient` 的 HTTP/兼容 WS 可用，但 guest storage、页面全局、URL 和 bridge 响应均看不到 access token；普通 Website/WebApp 无法调用 Agent WebClient bridge。
+- [ ] `agent-webclient` 的 HTTP 与 Platform Frame Port 可用，guest 不建立真实 `/ws`，且 storage、页面全局、URL 和 frame 中均看不到 access token；普通 Website/WebApp 无法调用 Agent WebClient bridge。
 - [ ] 外链、下载、新窗口、导航回退和崩溃恢复均遵守所属 surface 策略。
 
 ## P0：智能助理与页面协作
@@ -41,7 +41,12 @@
 - [ ] 同时运行 Main Assistant、导航 Push、桌宠、两个 Desktop WS `ap` 客户端和可信 WebClient bridge 时，Main 诊断仍只有一个 Agent Platform 物理连接。
 - [ ] About 连点五次开启 Debug 后，每个 webview 浮层同时显示脱敏 URL 与 `surfaceId`；设置页可打开并重复聚焦唯一的独立 Realtime Inspector，主窗口切换页面不关闭观察器。观察器能区分 Platform 物理 WS 收发和各 `surfaceId` 的 Bridge 收发，按方向、链路层、历史/当前 surface 和文本筛选不串线；冻结仅停止视图刷新而不停止后台采集，清空后不恢复旧条目。
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
-- [ ] `/overview`（`agent-overview`）与 `/debug` 只能只读订阅，不能成为 primary 或执行 interrupt/submit；旧 `/summary`、`agent-summary`、`module/role: "summary"` 不再被接受，伪造 Chat、Run、Surface 或 capability 被拒绝。
+- [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
+- [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
+- [ ] 同一 Chat 内 Chat/Overview/Debug 切换不产生 query、attach 或 detach，并保持同一 `RunExecution`；独立 `/overview`、`/debug` 只 replay，不申请 live capability。
+- [ ] 新 Chat URL 只在关联 stream bootstrap identity 后晋升；`chat.created` push 只更新列表，不能猜测 query 归属。
+- [ ] inactive 后返回 Chat 时先 replay，再从 `lastSeq` attach；同一次切换只 detach/attach 一次，identity 尚未返回的 query 在 bootstrap 后补 detach。
+- [ ] 非 active、伪造或独立 Overview/Debug surface 的 query/attach 返回同 request id 的标准 Platform error frame；interrupt/submit/steer/access-level 保留真实 Platform `ApiError` 语义。
 - [ ] 附件上传失败时请求不会伪装成功，取消后临时资源被清理。
 - [ ] Copilot 在 Website/WebApp 间切换时更新页面上下文，旧 surface 失去控制权。
 - [ ] 页面选择、截图和文件等不同内容来源具有清晰的用户确认与结果反馈。
@@ -112,7 +117,7 @@
 
 ## 结束条件
 
-> 当前 Desktop-only 交付只证明所有 Main-owned Agent Platform 实时消费者共享一个 Broker physical client。旧 Agent WebClient bundle 仍可能直连兼容 `/ws`，Summary/Debug 独立生产模块和删除旧 action adapter 也尚未完成；在匹配 WebClient bundle 原子切换前，不得标记为 D13 最终发布候选。
+> Frame Port Desktop、匹配的 Agent WebClient bundle、vendored contract hash 与内置资源必须作为一个不可混用的发布单元验证。任何旧 Realtime Bridge、旧 Program bundle 或重新暴露 guest `/ws` 的 manifest 都不得标记为发布候选。
 
 - [ ] 所有受影响 P0 通过；P1 失败已有明确风险判断和跟踪项。
 - [ ] 自动化测试、构建产物与手工测试使用同一版本和品牌配置。

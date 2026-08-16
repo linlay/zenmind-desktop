@@ -10,6 +10,10 @@ const {
   PRELOAD_TO_PAGE_EVENT,
   AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT,
   AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
   DESKTOP_WEBVIEW_BRIDGE_FLAG,
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
@@ -123,6 +127,11 @@ function createFakeWindow(options = {}) {
 }
 
 function runMainWorldScript(window) {
+  class Event {
+    constructor(type) {
+      this.type = type;
+    }
+  }
   class CustomEvent {
     constructor(type, init = {}) {
       this.type = type;
@@ -140,6 +149,7 @@ function runMainWorldScript(window) {
 
   const context = vm.createContext({
     CustomEvent,
+    Event,
     MessageEvent,
     URL,
     URLSearchParams,
@@ -360,26 +370,44 @@ test("service webview main-world script keeps matching auth context without expo
   assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
 });
 
-test("service webview main-world script exposes fixed Agent WebClient bridges", async () => {
+test("service webview main-world script exposes a fixed WebSocket-like Platform Frame Port", async () => {
   const { window } = createFakeWindow();
-  const calls = [];
+  const opens = [];
+  const sends = [];
+  const closes = [];
   runMainWorldScript(window);
-  window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => calls.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT, (event) => opens.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT, (event) => sends.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT, (event) => closes.push(event.detail));
 
-  const realtime = window.__AGENT_WEBCLIENT_REALTIME_BRIDGE__;
+  const platformWs = window.__AGENT_WEBCLIENT_PLATFORM_WS__;
   const workpanel = window.__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__;
-  assert.deepEqual(Object.keys(realtime).sort(), ["detach", "hello", "onMessage", "request", "subscribe"]);
-  assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "openItem"]);
-  assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_REALTIME_BRIDGE__").writable, false);
+  assert.deepEqual(Object.keys(platformWs).sort(), ["createSocket", "transportVersion"]);
+  assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "getCapabilities", "openItem"]);
+  assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_PLATFORM_WS__").writable, false);
+  assert.equal(platformWs.transportVersion, 1);
 
-  const hello = realtime.hello();
-  assert.equal(calls[0].bridge, "realtime");
-  assert.equal(calls[0].method, "hello");
+  const socket = platformWs.createSocket();
+  assert.equal(socket.readyState, 0);
+  assert.equal(opens.length, 1);
+  const received = [];
+  socket.addEventListener("message", (event) => received.push(event.data));
   window.dispatchEvent({
-    type: AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
-    detail: { requestId: calls[0].requestId, result: { version: 1 } }
+    type: AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
+    detail: { socketId: opens[0].socketId, type: "open" }
   });
-  assert.deepEqual(await hello, { version: 1 });
+  assert.equal(socket.readyState, 1);
+  socket.send('{"frame":"request","type":"/api/query","id":"wss-1"}');
+  assert.equal(sends[0].socketId, opens[0].socketId);
+  window.dispatchEvent({
+    type: AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
+    detail: { socketId: opens[0].socketId, type: "message", data: '{"frame":"stream","id":"wss-1"}' }
+  });
+  assert.deepEqual(received, ['{"frame":"stream","id":"wss-1"}']);
+  socket.close(1000, "done");
+  assert.equal(closes[0].socketId, opens[0].socketId);
+  assert.equal(closes[0].code, 1000);
+  assert.equal(closes[0].reason, "done");
 });
 
 test("service webview main-world script ignores removed legacy auth responses", () => {

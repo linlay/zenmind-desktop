@@ -34,12 +34,17 @@ import {
 } from "./service-webview-main-world";
 import {
   AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT,
-  AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT,
   AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT,
 } from "./service-webview-main-world";
 import {
-  AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL,
-  AGENT_WEBCLIENT_REALTIME_MESSAGE_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
   AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } from "../shared/contracts/agent-webclient-bridge";
 
@@ -291,11 +296,7 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
 window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => {
   const detail = (event as CustomEvent<Record<string, unknown>>).detail;
   if (!detail || typeof detail !== "object" || typeof detail.requestId !== "string") return;
-  const channel = detail.bridge === "realtime"
-    ? AGENT_WEBCLIENT_REALTIME_INVOKE_CHANNEL
-    : detail.bridge === "workpanel"
-      ? AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL
-      : "";
+  const channel = detail.bridge === "workpanel" ? AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL : "";
   if (!channel || typeof detail.method !== "string") return;
   const call = {
     method: detail.method,
@@ -323,8 +324,29 @@ window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => {
     });
 });
 
-ipcRenderer.on(AGENT_WEBCLIENT_REALTIME_MESSAGE_CHANNEL, (_event, message) => {
-  window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_BRIDGE_MESSAGE_EVENT, { detail: message }));
+window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT, (event) => {
+  ipcRenderer.send(
+    AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
+    (event as CustomEvent<Record<string, unknown>>).detail,
+  );
+});
+
+window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT, (event) => {
+  ipcRenderer.send(
+    AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
+    (event as CustomEvent<Record<string, unknown>>).detail,
+  );
+});
+
+window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT, (event) => {
+  ipcRenderer.send(
+    AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL,
+    (event as CustomEvent<Record<string, unknown>>).detail,
+  );
+});
+
+ipcRenderer.on(AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL, (_event, message) => {
+  window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_PLATFORM_WS_EVENT, { detail: message }));
 });
 
 window.addEventListener("message", (event) => {

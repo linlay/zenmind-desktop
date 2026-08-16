@@ -1160,7 +1160,7 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   const deployScriptPath = lifecycleDeployScriptPathForArchive(service, archivePath);
   const deployScript = readArchiveEntryText(archivePath, deployScriptPath);
   validateLifecycleDeployProtocolText(service, archivePath, deployScriptPath, deployScript);
-  validateAgentWebclientBridgeV2Manifest(service, manifest, archivePath);
+  validateAgentWebclientPlatformFramePortManifest(service, manifest, archivePath);
 
   if (manifest?.frontend?.hostManaged !== true) {
     throw new Error(
@@ -1269,7 +1269,7 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   }
 }
 
-function validateAgentWebclientBridgeV2Manifest(service, manifest, sourceLabel) {
+function validateAgentWebclientPlatformFramePortManifest(service, manifest, sourceLabel) {
   if (service.id !== "agent-webclient") {
     return;
   }
@@ -1277,8 +1277,8 @@ function validateAgentWebclientBridgeV2Manifest(service, manifest, sourceLabel) 
   const fail = (reason) => {
     throw new Error(
       `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
-        `Bridge v2 manifest ${reason}.\n` +
-        `Please rebuild and atomically publish the Bridge v2 agent-webclient bundle.`
+        `Platform Frame Port manifest ${reason}.\n` +
+        `Please rebuild and atomically publish the Frame Port agent-webclient bundle.`
     );
   };
   if (!Array.isArray(routes)) {
@@ -1500,7 +1500,7 @@ export function validateBundleDirectory(service, directoryPath) {
   }
 
   validateBundleDirectoryContents(service, directoryPath);
-  validateAgentWebclientBridgeV2Manifest(service, manifest, directoryPath);
+  validateAgentWebclientPlatformFramePortManifest(service, manifest, directoryPath);
   validateAgentPlatformBundleDirectory(service, directoryPath);
   if (service.id === "agent-container-hub") {
     validateBundleDirectoryDeployProtocol(service, directoryPath);

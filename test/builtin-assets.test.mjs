@@ -1177,6 +1177,6 @@ test("syncBuiltinAssets rejects a legacy Agent WebClient manifest before packagi
       arch: "arm64",
       sourceRoots: [sourceRoot]
     }),
-    /agent-webclient[\s\S]*Bridge v2 manifest must not expose \/auth or \/ws/u
+    /agent-webclient[\s\S]*Frame Port manifest must not expose \/auth or \/ws/u
   );
 });
