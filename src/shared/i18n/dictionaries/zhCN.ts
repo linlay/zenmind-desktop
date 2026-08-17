@@ -2193,6 +2193,8 @@ export const zhCNMessages = {
   "service.missingImportTarget": "缺少 {label}",
   "service.tunnelHubTokenMissing": "Tunnel Hub 缺少中继令牌，请先登录并保存隧道设置",
   "service.containerEngineInstalledNotConnected": "{names} 已安装，但 daemon/VM 未连接，请先启动 Docker Desktop 或执行 podman machine start",
+  "service.containerEngineProbeTimedOut": "{names} 可用性检查超时，已跳过可选容器服务；这不会影响普通对话，请检查 Docker Desktop 或 Podman",
+  "service.containerEngineUnsafeLocation": "{names} 命令位于临时挂载卷或系统隔离路径（{locations}），已跳过可选容器服务；请将 Docker Desktop 正式安装到系统的“应用程序”文件夹后重试",
   "service.containerEngineMissing": "未检测到 Docker 或 Podman",
   "service.archivePackageLabel": "安装包",
   "service.verify.statusStill": "复查后服务状态仍为 {status}",
