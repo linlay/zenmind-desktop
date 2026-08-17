@@ -1,4 +1,4 @@
-import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import {
@@ -6,6 +6,7 @@ import {
   resolveSidebarMode,
 } from "./navigation/capabilityNavigation";
 import type { WebsiteFaviconCache } from "../components/Favicon";
+import { SidebarActionIcon } from "../components/BrandMark";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
@@ -62,6 +63,15 @@ import {
   toggleSidebarLayoutState,
   type SidebarLayoutState
 } from "../../shared/sidebar-layout";
+import {
+  WORK_PANEL_MIN_WIDTH,
+  WORK_PANEL_RESIZE_STEP,
+  clampWorkPanelWidth,
+  normalizeStoredWorkPanelWidth,
+  resolveDefaultWorkPanelWidth,
+  resolveWorkPanelMaxWidth,
+  resolveWorkPanelWidthFromDrag,
+} from "../../shared/work-panel-layout";
 import { getServiceDisplayName } from "../service-display";
 import {
   createWebNavOrderKey,
@@ -98,6 +108,7 @@ import {
   createAgentWebclientBusinessSearch,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
+  createAgentWebclientOverviewPath,
   createAgentWebclientProjectPath,
   createAgentWebclientRoute,
   findAgentWebclientRouteDefinition,
@@ -220,6 +231,7 @@ const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
 const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const WEB_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.web-group-order`;
+const WORK_PANEL_WIDTH_STORAGE_KEY = `${STORAGE_NAMESPACE}.work-panel-width`;
 const SETTINGS_SIDEBAR_WIDTH = 200;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
@@ -414,6 +426,12 @@ type SidebarResizeDragState = {
   startClientX: number;
 };
 
+type WorkPanelResizeDragState = {
+  initialWidth: number;
+  pointerId: number;
+  startClientX: number;
+};
+
 type SidebarNavigationHistory = {
   back: string[];
   forward: string[];
@@ -502,6 +520,9 @@ export function AppShell() {
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
+  const workPanelResizeStateRef = useRef<WorkPanelResizeDragState | null>(null);
+  const workPanelResizeCleanupRef = useRef<(() => void) | null>(null);
+  const appContentRef = useRef<HTMLDivElement | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const pendingAssistantDockOpenRequestRef = useRef<{ contextKey: string; embedPath: string } | null>(null);
   const assistantDockSessionsRef = useRef<Record<string, CopilotDockContextSession>>({});
@@ -607,6 +628,22 @@ export function AppShell() {
     forward: []
   });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+  const [isWorkPanelResizing, setIsWorkPanelResizing] = useState(false);
+  const [appContentWidth, setAppContentWidth] = useState(() =>
+    typeof window === "undefined" ? 0 : window.innerWidth
+  );
+  const [preferredWorkPanelWidth, setPreferredWorkPanelWidth] = useState(() => {
+    const fallbackWidth = resolveDefaultWorkPanelWidth(
+      typeof window === "undefined" ? 1440 : window.innerWidth,
+    );
+    if (typeof window === "undefined") return fallbackWidth;
+    try {
+      const savedValue = window.localStorage.getItem(WORK_PANEL_WIDTH_STORAGE_KEY);
+      return normalizeStoredWorkPanelWidth(savedValue ? JSON.parse(savedValue) : null, fallbackWidth);
+    } catch {
+      return fallbackWidth;
+    }
+  });
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
@@ -633,7 +670,13 @@ export function AppShell() {
     : null;
   const activeChatWorkPanelVisible = Boolean(
     activeChatWorkPanelChatId &&
-    workPanelState.workspaces.some((workspace) => workspace.ownerChatId === activeChatWorkPanelChatId)
+    workPanelState.visibleOwnerChatIds.includes(activeChatWorkPanelChatId)
+  );
+  const showMainChatWorkPanelToggle = activeEmbeddedAgentWebclientRoute?.kind === "chat";
+  const workPanelMaxWidth = resolveWorkPanelMaxWidth(appContentWidth || undefined);
+  const renderedWorkPanelWidth = clampWorkPanelWidth(
+    preferredWorkPanelWidth,
+    appContentWidth || undefined,
   );
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
@@ -2143,11 +2186,34 @@ export function AppShell() {
     }
   }, [sidebarState]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        WORK_PANEL_WIDTH_STORAGE_KEY,
+        JSON.stringify(preferredWorkPanelWidth),
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory WorkPanel width usable.
+    }
+  }, [preferredWorkPanelWidth]);
+
+  useEffect(() => {
+    const content = appContentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const updateWidth = () => setAppContentWidth(Math.round(content.getBoundingClientRect().width));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => () => {
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
     }
     sidebarResizeStateRef.current = null;
+    workPanelResizeCleanupRef.current?.();
+    workPanelResizeStateRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -2191,6 +2257,11 @@ export function AppShell() {
       window.removeEventListener("blur", finishSidebarResize);
     };
   }, [isSidebarResizing]);
+
+  useEffect(() => {
+    if (activeChatWorkPanelVisible) return;
+    workPanelResizeCleanupRef.current?.();
+  }, [activeChatWorkPanelVisible]);
 
   useEffect(() => {
     if (!pendingSidebarNavigationPath) {
@@ -2318,7 +2389,7 @@ export function AppShell() {
   }
 
   function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || isSidebarResizing || isSecondarySidebarMode) {
+    if (event.button !== 0 || isSidebarResizing || isWorkPanelResizing || isSecondarySidebarMode) {
       return;
     }
 
@@ -2328,6 +2399,87 @@ export function AppShell() {
       startClientX: event.clientX
     };
     setIsSidebarResizing(true);
+  }
+
+  function handleWorkPanelResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || isSidebarResizing || isWorkPanelResizing) return;
+    event.preventDefault();
+    workPanelResizeCleanupRef.current?.();
+    const resizer = event.currentTarget;
+    const dragState = {
+      initialWidth: renderedWorkPanelWidth,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+    };
+    workPanelResizeStateRef.current = dragState;
+    try {
+      resizer.setPointerCapture(event.pointerId);
+    } catch {
+      // The overlay still keeps subsequent pointer events inside the renderer.
+    }
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== dragState.pointerId) return;
+      if (pointerEvent.cancelable) pointerEvent.preventDefault();
+      setPreferredWorkPanelWidth(resolveWorkPanelWidthFromDrag({
+        initialWidth: dragState.initialWidth,
+        startClientX: dragState.startClientX,
+        currentClientX: pointerEvent.clientX,
+        availableWidth: appContentWidth || undefined,
+      }));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("blur", cleanup);
+      if (workPanelResizeCleanupRef.current === cleanup) {
+        workPanelResizeCleanupRef.current = null;
+      }
+      if (workPanelResizeStateRef.current?.pointerId === dragState.pointerId) {
+        workPanelResizeStateRef.current = null;
+      }
+      setIsWorkPanelResizing(false);
+      try {
+        if (resizer.hasPointerCapture(dragState.pointerId)) {
+          resizer.releasePointerCapture(dragState.pointerId);
+        }
+      } catch {
+        // Pointer capture can already be gone after crossing an embedded surface.
+      }
+    };
+    const handlePointerEnd = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === dragState.pointerId) cleanup();
+    };
+    workPanelResizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("blur", cleanup);
+    setIsWorkPanelResizing(true);
+  }
+
+  function handleWorkPanelResizerKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    let nextWidth: number | null = null;
+    switch (event.key) {
+      case "ArrowLeft":
+        nextWidth = renderedWorkPanelWidth + WORK_PANEL_RESIZE_STEP;
+        break;
+      case "ArrowRight":
+        nextWidth = renderedWorkPanelWidth - WORK_PANEL_RESIZE_STEP;
+        break;
+      case "Home":
+        nextWidth = WORK_PANEL_MIN_WIDTH;
+        break;
+      case "End":
+        nextWidth = workPanelMaxWidth;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setPreferredWorkPanelWidth(clampWorkPanelWidth(nextWidth, appContentWidth || undefined));
   }
 
   function requestSidebarNavigation(targetPath: string) {
@@ -2936,33 +3088,130 @@ export function AppShell() {
   }, []);
 
   const appShellStyle = {
-    "--app-sidebar-width": `${effectiveSidebarWidth}px`
+    "--app-sidebar-width": `${effectiveSidebarWidth}px`,
+    "--chat-work-panel-width": `${renderedWorkPanelWidth}px`,
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
 
   const dispatchWorkPanelCommand = useCallback((command: WorkPanelCommand) => {
-    const result = reduceWorkPanelCommand(workPanelStateRef.current, command);
+    let currentState = workPanelStateRef.current;
+    const isOverviewCommand = command.type === "openItem" &&
+      command.descriptor.kind === "webclient" &&
+      command.descriptor.module === "overview";
+    const shouldEnsureOverview = command.type === "showWorkspace" ||
+      (command.type === "openItem" && !isOverviewCommand);
+    const currentWorkspace = currentState.workspaces.find(
+      (workspace) => workspace.ownerChatId === command.ownerChatId,
+    );
+    const hasOverview = currentWorkspace?.items.some((item) =>
+      item.descriptor.kind === "webclient" && item.descriptor.module === "overview",
+    ) ?? false;
+
+    if (shouldEnsureOverview && !hasOverview) {
+      const descriptorAgentKey = command.type === "openItem" && command.descriptor.kind === "webclient"
+        ? command.descriptor.context.agentKey?.trim() ?? ""
+        : "";
+      const routeAgentKey = activeChatRouteInfo.chatId === command.ownerChatId
+        ? activeChatRouteInfo.agentKey.trim()
+        : "";
+      const previousActiveItemId = currentWorkspace?.activeItemId ?? null;
+      const ensured = reduceWorkPanelCommand(currentState, {
+        type: "openItem",
+        ownerChatId: command.ownerChatId,
+        descriptor: {
+          kind: "webclient",
+          module: "overview",
+          route: createAgentWebclientOverviewPath({
+            chatId: command.ownerChatId,
+            agentKey: descriptorAgentKey || routeAgentKey,
+          }),
+          context: {
+            chatId: command.ownerChatId,
+            ...((descriptorAgentKey || routeAgentKey) ? { agentKey: descriptorAgentKey || routeAgentKey } : {}),
+          },
+          title: t("chatWorkPanel.overview"),
+          pinned: true,
+          closable: false,
+        },
+      });
+      currentState = ensured.nextState;
+      if (command.type === "showWorkspace" && previousActiveItemId) {
+        currentState = reduceWorkPanelCommand(currentState, {
+          type: "activateItem",
+          ownerChatId: command.ownerChatId,
+          itemId: previousActiveItemId,
+        }).nextState;
+      }
+    }
+
+    const normalizedCommand = isOverviewCommand
+      ? {
+          ...command,
+          descriptor: { ...command.descriptor, pinned: true as const, closable: false as const },
+        }
+      : command;
+    const result = reduceWorkPanelCommand(currentState, normalizedCommand);
     if (result.nextState !== workPanelStateRef.current) {
       workPanelStateRef.current = result.nextState;
       setWorkPanelState(result.nextState);
     }
     return result;
-  }, []);
+  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, t]);
 
-  const ensureChatWorkPanelWorkspace = useCallback((chatId: string) => {
+  const ensureChatWorkPanelWorkspace = useCallback((chatId: string, agentKey: string) => {
     return dispatchWorkPanelCommand({
       type: "openItem",
       ownerChatId: chatId,
-      descriptor: { kind: "web", url: BUILTIN_BROWSER_DEFAULT_URL, title: t("chatWorkPanel.blankTab") },
+      descriptor: {
+        kind: "webclient",
+        module: "overview",
+        route: createAgentWebclientOverviewPath({ chatId, agentKey }),
+        context: { chatId, ...(agentKey.trim() ? { agentKey: agentKey.trim() } : {}) },
+        title: t("chatWorkPanel.overview"),
+        pinned: true,
+        closable: false,
+      },
     });
   }, [dispatchWorkPanelCommand, t]);
 
-  const closeChatWorkPanelWorkspace = useCallback((chatId: string) => {
-    dispatchWorkPanelCommand({ type: "closeWorkspace", ownerChatId: chatId });
+  const closeChatWorkPanelWorkspace = useCallback((chatId: string, force = false) => {
+    dispatchWorkPanelCommand({
+      type: "closeWorkspace",
+      ownerChatId: chatId,
+      force,
+    });
   }, [dispatchWorkPanelCommand]);
 
+  const toggleMainChatWorkPanel = useCallback(() => {
+    const chatId = activeChatWorkPanelChatId;
+    if (!chatId) return;
+    const currentState = workPanelStateRef.current;
+    if (currentState.visibleOwnerChatIds.includes(chatId)) {
+      dispatchWorkPanelCommand({ type: "hideWorkspace", ownerChatId: chatId });
+      return;
+    }
+    if (currentState.workspaces.some((workspace) => workspace.ownerChatId === chatId)) {
+      dispatchWorkPanelCommand({ type: "showWorkspace", ownerChatId: chatId });
+      return;
+    }
+    const agentKey = activeChatRouteInfo.agentKey.trim();
+    dispatchWorkPanelCommand({
+      type: "openItem",
+      ownerChatId: chatId,
+      descriptor: {
+        kind: "webclient",
+        module: "overview",
+        route: createAgentWebclientOverviewPath({ chatId, agentKey }),
+        context: { chatId, ...(agentKey ? { agentKey } : {}) },
+        title: t("chatWorkPanel.overview"),
+        pinned: true,
+        closable: false,
+      },
+    });
+  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelChatId, dispatchWorkPanelCommand, t]);
+
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
-    ensureChatWorkPanelWorkspace(chatId);
+    ensureChatWorkPanelWorkspace(chatId, agentKey);
     if (activeChatWorkPanelChatId !== chatId) {
       requestSidebarNavigation(createAgentChatRoute(agentKey, chatId));
     }
@@ -3046,6 +3295,7 @@ export function AppShell() {
         windowFullScreen ? "is-window-fullscreen" : "",
         effectiveSidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
+        isWorkPanelResizing ? "is-work-panel-resizing" : "",
         isSecondarySidebarMode ? "is-secondary-sidebar-mode" : "",
         sidebarMode === "capabilities" ? "is-capabilities-mode" : "",
         isSettingsRoute ? "is-settings-mode" : "",
@@ -3143,8 +3393,28 @@ export function AppShell() {
       >
         <span className="app-sidebar-resizer-line" aria-hidden="true" />
       </div>
-      <div className="app-content">
+      <div ref={appContentRef} className="app-content">
         <main className="app-main">
+          {showMainChatWorkPanelToggle ? (
+            <button
+              type="button"
+              className={`main-chat-work-panel-toggle${activeChatWorkPanelVisible ? " is-active" : ""}`}
+              aria-label={t(activeChatWorkPanelVisible
+                ? "sidebar.chat.workPanel.close"
+                : "sidebar.chat.workPanel.open")}
+              aria-pressed={activeChatWorkPanelVisible}
+              disabled={!activeChatWorkPanelChatId}
+              title={t(activeChatWorkPanelVisible
+                ? "sidebar.chat.workPanel.close"
+                : "sidebar.chat.workPanel.open")}
+              onClick={toggleMainChatWorkPanel}
+            >
+              <SidebarActionIcon
+                kind="sidebar_left"
+                className="main-chat-work-panel-toggle-icon"
+              />
+            </button>
+          ) : null}
           <ServiceWebviewSurfaceHost
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
@@ -3277,16 +3547,35 @@ export function AppShell() {
             <Route path="/help" element={<RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>} />
           </Routes>
         </main>
+        {activeChatWorkPanelVisible ? (
+          <div
+            className={`chat-work-panel-resizer${isWorkPanelResizing ? " is-active" : ""}`}
+            role="separator"
+            aria-label={t("chatWorkPanel.resize")}
+            aria-orientation="vertical"
+            aria-valuemin={WORK_PANEL_MIN_WIDTH}
+            aria-valuemax={workPanelMaxWidth}
+            aria-valuenow={renderedWorkPanelWidth}
+            tabIndex={0}
+            onKeyDown={handleWorkPanelResizerKeyDown}
+            onPointerDown={handleWorkPanelResizerPointerDown}
+          >
+            <span className="chat-work-panel-resizer-line" aria-hidden="true" />
+          </div>
+        ) : null}
         <WorkPanelHost
-          activeChatId={activeChatWorkPanelChatId}
+          activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           state={workPanelState}
           dispatchCommand={dispatchWorkPanelCommand}
           isMac={isMac}
           isWindows={isWindows}
         />
       </div>
-      {isSidebarResizing ? (
-        <div className="app-sidebar-resize-overlay" aria-hidden="true" />
+      {isSidebarResizing || isWorkPanelResizing ? (
+        <div
+          className={isWorkPanelResizing ? "chat-work-panel-resize-overlay" : "app-sidebar-resize-overlay"}
+          aria-hidden="true"
+        />
       ) : null}
       <AgentWebclientCopilotDock
         open={assistantCopilotOpen}

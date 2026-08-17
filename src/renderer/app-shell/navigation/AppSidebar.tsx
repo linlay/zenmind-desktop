@@ -1002,7 +1002,7 @@ type AppSidebarProps = {
   ) => Promise<void> | void;
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
-  onCloseChatWorkPanel?: (chatId: string) => void;
+  onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (input: WebsiteInput) => Promise<WebsiteResult>;
@@ -3160,7 +3160,7 @@ export function AppSidebar({
       return;
     }
 
-    onCloseChatWorkPanel?.(chat.chatId);
+    onCloseChatWorkPanel?.(chat.chatId, true);
 
     if (currentChatId === chat.chatId) {
       const agentKey = chat.agentKey.trim() || currentAgentKey;
@@ -3205,7 +3205,7 @@ export function AppSidebar({
         throw new Error(result.message || t("sidebar.chat.deleteFailed"));
       }
       setAssistantChatDeleteDialog(null);
-      onCloseChatWorkPanel?.(chat.chatId);
+      onCloseChatWorkPanel?.(chat.chatId, true);
 
       if (currentChatId === chat.chatId) {
         const agentKey = chat.agentKey.trim() || currentAgentKey;

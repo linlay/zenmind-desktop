@@ -50,7 +50,7 @@
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
 - [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
-- [ ] 同一 Chat 内 Chat/Overview/Debug 切换不产生 query、attach 或 detach，并保持同一 `RunExecution`；独立 `/overview`、`/debug` 只 replay，不申请 live capability。
+- [ ] Main Chat 仍是唯一 live surface；WorkPanel Overview/Debug 首次打开各只 HTTP replay 一次，隐藏再显示时各只再 replay 一次，全程不产生 query、attach、detach 或轮询。
 - [ ] 新 Chat URL 只在关联 stream bootstrap identity 后晋升；`chat.created` push 只更新列表，不能猜测 query 归属。
 - [ ] 离开 Main Chat 页面、关闭 Copilot 或退出 Kanban Chat 页面时，存在 stream 的 observer 各只 detach 一次；进入对应页面时先请求 `/api/chat` replay，只有响应仍含 `activeRun` 才从服务端 `lastSeq` attach，identity 尚未返回的 query 在 bootstrap 后补 detach。左侧 Nav 只产生页面选择并展示 push 状态，不直接发 query/attach/detach。
 - [ ] 非 active、伪造或独立 Overview/Debug surface 的 query/attach 返回同 request id 的标准 Platform error frame；interrupt/submit/steer/access-level 保留真实 Platform `ApiError` 语义。
@@ -98,6 +98,15 @@
 - [ ] WorkPanel 的 WebClient/Web item 去重、激活和保活正确；切换 Chat/路由/item 不卸载 guest，关闭 item 只回收所属 guest 与临时 partition。
 - [ ] 可信 Agent WebClient 中的 WorkPanel 打开/激活/关闭按钮直接执行且不弹出 Desktop Action 确认；HTTP bridge、Desktop WS 和调试工作台的同名变更动作仍进入确认流程。
 - [ ] WorkPanel workspace 相互隔离；非法 URL/路径/跨 workspace 目标被拒绝，空 Native allowlist 返回 `unsupported_native_surface`，旧 Chat WorkPanel action 仍可映射到 item id。
+- [ ] 仅 Main Chat 显示 Desktop WorkPanel 右上按钮；新对话尚无稳定 `chatId` 时按钮禁用，管理页、Copilot、Website、WebApp 和 Standalone WebClient 均无该 Desktop 入口，Desktop Agent guest 自身右上快捷组为空。
+- [ ] 首次点击右上按钮创建当前 Chat 的 Overview item；再次点击只隐藏，tabs、guest、active item 与宽度保持；再次打开恢复原 active item且不重建 guest。分别在两个 Chat 隐藏/恢复时 workspace 不串线，隐藏期间收到 Planning/Artifact/Web `openItem` 或 `activateItem` 会自动显示目标 workspace。
+- [ ] 关闭最后一个 tab、删除 Chat 或执行 `closeWorkspace` 后 workspace 与可见状态同时清理；右上按钮的“关闭”只 hide，不改变 `closeWorkspace` 的销毁语义。
+- [ ] WorkPanel 外层标签栏在浅色/深色主题下均呈现 Chrome 式 active/inactive/hover/focus 状态；无论由 Overview、产物或其他 item 打开，Overview 始终固定在第一位、按当前语言标题内容自适应宽度且不可关闭，其他 tab 保持弹性；每个 tab 显示匹配的 SVG 图标和省略标题，关闭按钮隐藏时不占宽度、仅以无底色图标在 hover/focus-within 覆盖标题末端，并提供宽于图标的横向点击区和标题渐隐区，其他 pinned/non-closable tab 不显示按钮且不渐隐；tab 右键可刷新并全屏显示/恢复工作面板，网页 tab 可复制当前实际 URL，内部 WebClient tab 不复制服务地址，且 Web item 内部不再显示重复标签栏。
+- [ ] WorkPanel 固定在 main-chat 右侧；鼠标拖动分隔条跨过 WebView 时不中断，键盘左右方向键每次调整 16px、Home/End 到最小/最大；WorkPanel 与 main-chat 均至少 420px，WorkPanel 不设固定最大宽度，仅由当前可用宽度和 main-chat 保底宽度限制。
+- [ ] macOS 与 Windows 分别检查 Main Chat 右上按钮偏移、窗口拖拽区、深浅主题、hover/active/disabled、`aria-pressed` 与键盘 focus ring；按钮不得被标题栏拖拽层或 WorkPanel resizer 遮挡。
+- [ ] 调整 WorkPanel 宽度后重启 Desktop、切换 Chat、切换深浅主题，宽度作为全局偏好保持；非法存储值恢复为 `clamp(420px, 42vw, 680px)` 默认语义，窗口宽度允许时 main-chat 与 WorkPanel 均遵守 420px 保底宽度。
+- [ ] WorkPanel 的 tab/header/WebView 获得焦点后，macOS `Cmd+W`、Windows `Ctrl+W` 可连续关闭当前 closable tab，最后一个关闭后销毁 workspace；auto-repeat、额外修饰键、keyUp 和 pinned tab 不触发关闭。
+- [ ] 普通 Chat、Browser、Website 及其他非 WorkPanel WebView 中的 `Cmd+W`/`Ctrl+W` 保持原行为，Main 不依据 URL 误判 WorkPanel guest。
 - [ ] macOS 隐藏面板前清除 first responder、下一 animation frame 恢复焦点；Windows 隐藏前 blur，且只在 active、`dom-ready` 和窗口聚焦时恢复。
 - [ ] 调试工作台仍经过正式执行器和确认策略，不成为权限旁路。
 - [ ] 断线不重放非幂等动作，重复 request identity 得到确定性处理。

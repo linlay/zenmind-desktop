@@ -570,6 +570,10 @@ export type DesktopGlobalSearchShortcut =
   | { kind: "attention"; slot: DesktopGlobalSearchShortcutSlot }
   | { kind: "agent"; slot: DesktopGlobalSearchShortcutSlot };
 export type DesktopGlobalSearchShortcutListener = (shortcut: DesktopGlobalSearchShortcut) => void;
+export type DesktopWorkPanelCloseShortcutRequest = { guestId: number };
+export type DesktopWorkPanelCloseShortcutListener = (
+  request: DesktopWorkPanelCloseShortcutRequest
+) => void;
 export type DesktopConfigChangedEvent = {
   reason: string;
   changedAt: string;
@@ -954,6 +958,7 @@ export interface DesktopApi {
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenGlobalSearch: (listener: () => void) => () => void;
   onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => () => void;
+  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;
   onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => () => void;

@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
 
 const {
+  handleAgentWebclientWorkPanelActionRequest,
   handleDesktopActionRequest,
   handleWebappPageActionRequest,
   handleDesktopCdpRequest,
@@ -279,6 +280,89 @@ test("desktop assistant chat forwards a general message without business prompts
   });
   assert.equal(oversized.ok, false);
   assert.equal(oversized.error.code, "assistant_message_too_long");
+});
+
+test("trusted Agent WebClient WorkPanel calls bypass external confirmation while public actions keep it", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererCalls = [];
+  const confirmationCalls = [];
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => {
+    confirmationCalls.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: { ok: true, workspaceId: "workpanel:chat-owner" }
+    };
+  };
+
+  for (const [action, args] of [
+    ["openItem", { descriptor: { kind: "web", url: "https://example.test/" } }],
+    ["activateItem", { itemId: "item-1" }],
+    ["closeItem", { itemId: "item-1" }]
+  ]) {
+    const response = await handleAgentWebclientWorkPanelActionRequest(options, {
+      requestId: `trusted-${action}`,
+      action,
+      ownerChatId: " chat-owner ",
+      args
+    });
+    assert.equal(response.ok, true, action);
+  }
+
+  assert.equal(confirmationCalls.length, 0);
+  assert.deepEqual(rendererCalls.map((request) => ({
+    requestId: request.requestId,
+    action: request.action,
+    args: request.args,
+    source: request.source
+  })), [
+    {
+      requestId: "trusted-openItem",
+      action: "desktop.workpanel.openItem",
+      args: { descriptor: { kind: "web", url: "https://example.test/" } },
+      source: { chatId: "chat-owner" }
+    },
+    {
+      requestId: "trusted-activateItem",
+      action: "desktop.workpanel.activateItem",
+      args: { itemId: "item-1" },
+      source: { chatId: "chat-owner" }
+    },
+    {
+      requestId: "trusted-closeItem",
+      action: "desktop.workpanel.closeItem",
+      args: { itemId: "item-1" },
+      source: { chatId: "chat-owner" }
+    }
+  ]);
+
+  const unsupported = await handleAgentWebclientWorkPanelActionRequest(options, {
+    action: "closeWorkspace",
+    ownerChatId: "chat-owner",
+    args: {}
+  });
+  assert.equal(unsupported.ok, false);
+  assert.equal(unsupported.error.code, "forbidden");
+  assert.equal(rendererCalls.length, 3);
+
+  const external = await handleDesktopActionRequest(options, {
+    requestId: "external-openItem",
+    action: "desktop.workpanel.openItem",
+    source: { chatId: "chat-owner" },
+    args: { descriptor: { kind: "web", url: "https://example.test/" } }
+  });
+  assert.equal(external.ok, false);
+  assert.equal(external.requiresConfirmation, true);
+  assert.equal(external.error.code, "user_cancelled");
+  assert.equal(confirmationCalls.length, 1);
+  assert.equal(confirmationCalls[0].requestId, "external-openItem");
+  assert.equal(rendererCalls.length, 3);
 });
 
 test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {

@@ -7,22 +7,47 @@ const {
 } = await import("../dist-electron/main/ipc/chat-work-panel-tab-context-menu-handlers.js");
 
 test("Work Panel tab context menu accepts coordinates only", () => {
-  assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({ x: 10.4, y: 20.6 }), {
+  assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({
+    mode: "work-panel",
+    x: 10.4,
+    y: 20.6,
+    canCopyUrl: true,
+    isFullscreen: false
+  }), {
+    mode: "work-panel",
     x: 10,
-    y: 21
+    y: 21,
+    canCopyUrl: true,
+    isFullscreen: false
   });
   assert.equal(normalizeChatWorkPanelTabContextMenuRequest({
+    mode: "work-panel",
     x: 10,
     y: 20,
+    canCopyUrl: true,
+    isFullscreen: false,
     url: "https://injected.example"
   }), null);
-  assert.equal(normalizeChatWorkPanelTabContextMenuRequest({ x: Number.POSITIVE_INFINITY, y: 20 }), null);
+  assert.equal(normalizeChatWorkPanelTabContextMenuRequest({
+    mode: "work-panel",
+    x: Number.POSITIVE_INFINITY,
+    y: 20,
+    canCopyUrl: true,
+    isFullscreen: false
+  }), null);
+  assert.equal(normalizeChatWorkPanelTabContextMenuRequest({ x: 10, y: 20 }), null);
+  assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({
+    mode: "copy-url",
+    x: 4,
+    y: 8
+  }), { mode: "copy-url", x: 4, y: 8 });
 });
 
-test("Work Panel tab context menu is main-window-owned and returns only copy-url", async () => {
+test("Work Panel tab context menu is main-window-owned and exposes bounded tab actions", async () => {
   let invokeHandler;
   let popupOptions;
   let builtTemplate;
+  let selectedActionId = "toggle-fullscreen";
   const sender = {};
   const ownerWindow = {
     isDestroyed: () => false,
@@ -43,7 +68,7 @@ test("Work Panel tab context menu is main-window-owned and returns only copy-url
         return {
           popup: (options) => {
             popupOptions = options;
-            template[0].click();
+            template.find((item) => item.id === selectedActionId).click();
             options.callback();
           }
         };
@@ -51,15 +76,49 @@ test("Work Panel tab context menu is main-window-owned and returns only copy-url
     }
   });
 
-  const result = await invokeHandler({ sender }, { x: 999, y: -10 });
-  assert.deepEqual(result, { actionId: "copy-url" });
-  assert.equal(builtTemplate.length, 1);
-  assert.equal(builtTemplate[0].id, "copy-url");
+  const result = await invokeHandler({ sender }, {
+    mode: "work-panel",
+    x: 999,
+    y: -10,
+    canCopyUrl: false,
+    isFullscreen: true
+  });
+  assert.deepEqual(result, { actionId: "toggle-fullscreen" });
+  assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
+    "reload",
+    "copy-url",
+    "separator",
+    "toggle-fullscreen"
+  ]);
+  assert.equal(builtTemplate.find((item) => item.id === "copy-url").enabled, false);
   assert.equal(popupOptions.window, ownerWindow);
   assert.equal(popupOptions.x, 299);
   assert.equal(popupOptions.y, 0);
 
-  assert.deepEqual(await invokeHandler({ sender: {} }, { x: 1, y: 2 }), {
+  selectedActionId = "copy-url";
+  assert.deepEqual(await invokeHandler({ sender }, {
+    mode: "work-panel",
+    x: 1,
+    y: 2,
+    canCopyUrl: true,
+    isFullscreen: false
+  }), { actionId: "copy-url" });
+  assert.equal(builtTemplate.find((item) => item.id === "copy-url").enabled, true);
+
+  assert.deepEqual(await invokeHandler({ sender }, {
+    mode: "copy-url",
+    x: 1,
+    y: 2
+  }), { actionId: "copy-url" });
+  assert.deepEqual(builtTemplate.map((item) => item.id), ["copy-url"]);
+
+  assert.deepEqual(await invokeHandler({ sender: {} }, {
+    mode: "work-panel",
+    x: 1,
+    y: 2,
+    canCopyUrl: true,
+    isFullscreen: false
+  }), {
     actionId: null
   });
 });

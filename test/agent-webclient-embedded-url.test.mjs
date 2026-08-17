@@ -14,6 +14,7 @@ const {
   createAgentWebclientAgentPath,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
+  createAgentWebclientOverviewPath,
   createAgentWebclientProjectPath,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource
@@ -91,6 +92,18 @@ test("project embedded URL carries project identity without a WebSocket source",
   assert.equal(url.searchParams.get("runId"), "run-2");
   assert.equal(url.searchParams.has("wsSource"), false);
   assert.equal(url.searchParams.has("desktopAuthContext"), false);
+});
+
+test("overview route requires the trusted chat identity and optionally carries the agent key", () => {
+  assert.equal(
+    createAgentWebclientOverviewPath({ chatId: "chat 1", agentKey: "知识库 alpha" }),
+    "/overview?chatId=chat+1&agentKey=%E7%9F%A5%E8%AF%86%E5%BA%93+alpha",
+  );
+  assert.equal(
+    createAgentWebclientOverviewPath({ chatId: "chat-2" }),
+    "/overview?chatId=chat-2",
+  );
+  assert.equal(createAgentWebclientOverviewPath({ chatId: "  " }), "");
 });
 
 test("main chat route comparison ignores host presentation params and their order", () => {

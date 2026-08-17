@@ -7,6 +7,7 @@ import {
 } from "electron";
 import {
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
+  type ChatWorkPanelTabContextMenuActionId,
   type ChatWorkPanelTabContextMenuPopupRequest,
   type ChatWorkPanelTabContextMenuPopupResult
 } from "../../shared/chat-work-panel-tab-context-menu";
@@ -29,9 +30,6 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
     return null;
   }
   const keys = Object.keys(value);
-  if (keys.length !== 2 || !keys.includes("x") || !keys.includes("y")) {
-    return null;
-  }
   if (
     typeof value.x !== "number" ||
     !Number.isFinite(value.x) ||
@@ -40,10 +38,35 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   ) {
     return null;
   }
-  return {
-    x: Math.round(value.x),
-    y: Math.round(value.y)
-  };
+  if (
+    value.mode === "copy-url" &&
+    keys.length === 3 &&
+    keys.includes("mode") &&
+    keys.includes("x") &&
+    keys.includes("y")
+  ) {
+    return { mode: "copy-url", x: Math.round(value.x), y: Math.round(value.y) };
+  }
+  if (
+    value.mode === "work-panel" &&
+    keys.length === 5 &&
+    keys.includes("mode") &&
+    keys.includes("x") &&
+    keys.includes("y") &&
+    keys.includes("canCopyUrl") &&
+    keys.includes("isFullscreen") &&
+    typeof value.canCopyUrl === "boolean" &&
+    typeof value.isFullscreen === "boolean"
+  ) {
+    return {
+      mode: "work-panel",
+      x: Math.round(value.x),
+      y: Math.round(value.y),
+      canCopyUrl: value.canCopyUrl,
+      isFullscreen: value.isFullscreen
+    };
+  }
+  return null;
 }
 
 export function registerChatWorkPanelTabContextMenuIpcHandlers(
@@ -74,18 +97,40 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
 
       return await new Promise<ChatWorkPanelTabContextMenuPopupResult>((resolve) => {
         let settled = false;
-        const settle = (actionId: "copy-url" | null) => {
+        const settle = (actionId: ChatWorkPanelTabContextMenuActionId | null) => {
           if (settled) {
             return;
           }
           settled = true;
           resolve({ actionId });
         };
-        const menu = Menu.buildFromTemplate([{
-          id: "copy-url",
-          label: t("webviewContextMenu.page.copy-url"),
-          click: () => settle("copy-url")
-        }]);
+        const menu = Menu.buildFromTemplate(request.mode === "copy-url"
+          ? [{
+              id: "copy-url",
+              label: t("webviewContextMenu.page.copy-url"),
+              click: () => settle("copy-url")
+            }]
+          : [
+              {
+                id: "reload",
+                label: t("webviewContextMenu.page.reload"),
+                click: () => settle("reload")
+              },
+              {
+                id: "copy-url",
+                label: t("webviewContextMenu.page.copy-url"),
+                enabled: request.canCopyUrl,
+                click: () => settle("copy-url")
+              },
+              { type: "separator" },
+              {
+                id: "toggle-fullscreen",
+                label: t(request.isFullscreen
+                  ? "chatWorkPanel.tabContextMenu.exitFullscreen"
+                  : "chatWorkPanel.tabContextMenu.enterFullscreen"),
+                click: () => settle("toggle-fullscreen")
+              }
+            ]);
         const contentBounds = ownerWindow.getContentBounds();
         menu.popup({
           window: ownerWindow,

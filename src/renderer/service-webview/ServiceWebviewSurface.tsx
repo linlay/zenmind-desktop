@@ -119,6 +119,16 @@ const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
 ]);
+const AGENT_WEBCLIENT_WORK_PANEL_ROLES = new Set<SurfaceIdentity["surfaceRole"]>([
+  "overview",
+  "debug",
+  "project",
+  "file-diff",
+  "artifact",
+  "planning",
+  "agent",
+  "copilot",
+]);
 let serviceSurfaceRegistrationSequence = 0;
 
 function createServiceSurfaceRegistrationId() {
@@ -154,6 +164,19 @@ function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: s
 
 function isAgentWebclientLiveChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
   return serviceId === "agent-webclient" && AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS.has(surfaceId || "");
+}
+
+function isAgentWebclientLifecycleSurface(
+  serviceId: string | undefined,
+  surfaceId: string | undefined,
+  surfaceIdentity: SurfaceIdentity,
+) {
+  if (isAgentWebclientLiveChatSurface(serviceId, surfaceId)) return true;
+  return serviceId === "agent-webclient" &&
+    surfaceIdentity.surfaceLevel === "child" &&
+    surfaceIdentity.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+    Boolean(surfaceIdentity.ownerChatId) &&
+    AGENT_WEBCLIENT_WORK_PANEL_ROLES.has(surfaceIdentity.surfaceRole);
 }
 
 function isAgentWebclientManagementSurface(serviceId: string | undefined, surfaceId: string | undefined) {
@@ -1085,7 +1108,7 @@ export function ServiceWebviewSurface({
   }
 
   function sendLiveSurfaceLifecycleToWebview(nextActive: boolean) {
-    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    if (!isAgentWebclientLifecycleSurface(serviceId, surfaceId, surfaceIdentity)) return;
     sendBridgeMessageToWebview({
       type: DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
       active: nextActive,
@@ -1094,9 +1117,16 @@ export function ServiceWebviewSurface({
   }
 
   useEffect(() => {
-    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    if (!isAgentWebclientLifecycleSurface(serviceId, surfaceId, surfaceIdentity)) return;
     return () => sendLiveSurfaceLifecycleToWebview(false);
-  }, [service?.id, surfaceId]);
+  }, [
+    serviceId,
+    surfaceId,
+    surfaceIdentity.surfaceLevel,
+    surfaceIdentity.surfaceRole,
+    surfaceIdentity.parentSurfaceId,
+    surfaceIdentity.ownerChatId,
+  ]);
 
   function dispatchServiceWebviewRouteEventToWebview(payload: Record<string, unknown>) {
     try {

@@ -20,19 +20,98 @@ test("WorkPanel derives stable identities, deduplicates items, and isolates work
   });
   assert.equal(first.ok, true);
   assert.equal(first.item.stableKey, "overview:chat-1");
+  assert.equal(first.item.pinned, true);
+  assert.equal(first.item.closable, false);
   const duplicate = open(first.nextState, "chat-1", {
     kind: "webclient", module: "overview", route: "/overview?new=1", context: { chatId: "chat-1" },
   });
   assert.equal(duplicate.item.itemId, first.item.itemId);
   assert.equal(duplicate.state.items.length, 1);
+  const deniedOverviewClose = reduceWorkPanelCommand(duplicate.nextState, {
+    type: "closeItem", ownerChatId: "chat-1", itemId: first.item.itemId,
+  });
+  assert.equal(deniedOverviewClose.ok, false);
 
   const web = open(duplicate.nextState, "chat-2", {
     kind: "web", url: "HTTPS://Example.com:443/path", title: "Web",
   });
   assert.equal(web.ok, true);
   assert.equal(web.nextState.workspaces.length, 2);
+  assert.deepEqual(web.nextState.visibleOwnerChatIds, ["chat-1", "chat-2"]);
   assert.notEqual(web.workspaceId, first.workspaceId);
   assert.equal(web.item.stableKey, "web:https://example.com/path");
+});
+
+test("WorkPanel hides without destroying state, restores the active item, and isolates visibility per chat", () => {
+  const first = open(EMPTY_WORK_PANEL_STATE, "chat-1", {
+    kind: "webclient", module: "overview", route: "/overview?chatId=chat-1", context: { chatId: "chat-1" },
+  });
+  const second = open(first.nextState, "chat-1", {
+    kind: "web", url: "https://example.test/second", title: "Second",
+  });
+  assert.equal(second.state.items[0].itemId, first.item.itemId);
+  const otherChat = open(second.nextState, "chat-2", {
+    kind: "webclient", module: "overview", route: "/overview?chatId=chat-2", context: { chatId: "chat-2" },
+  });
+
+  const hidden = reduceWorkPanelCommand(otherChat.nextState, {
+    type: "hideWorkspace", ownerChatId: "chat-1",
+  });
+  assert.equal(hidden.ok, true);
+  assert.equal(hidden.nextState.workspaces.length, 2);
+  assert.deepEqual(hidden.nextState.visibleOwnerChatIds, ["chat-2"]);
+  assert.equal(hidden.nextState.workspaces[0].activeItemId, second.item.itemId);
+
+  const shown = reduceWorkPanelCommand(hidden.nextState, {
+    type: "showWorkspace", ownerChatId: "chat-1",
+  });
+  assert.equal(shown.ok, true);
+  assert.deepEqual(shown.nextState.visibleOwnerChatIds, ["chat-2", "chat-1"]);
+  assert.equal(shown.state.activeItemId, second.item.itemId);
+});
+
+test("opening or activating an item reveals its workspace and destructive close clears visibility", () => {
+  const first = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient", module: "overview", route: "/overview", context: {},
+  });
+  const hidden = reduceWorkPanelCommand(first.nextState, {
+    type: "hideWorkspace", ownerChatId: "chat",
+  });
+  const planning = open(hidden.nextState, "chat", {
+    kind: "webclient", module: "planning", route: "/planning/node-1", context: { nodeId: "node-1" },
+  });
+  assert.deepEqual(planning.nextState.visibleOwnerChatIds, ["chat"]);
+  const hiddenAgain = reduceWorkPanelCommand(planning.nextState, {
+    type: "hideWorkspace", ownerChatId: "chat",
+  });
+  const activated = reduceWorkPanelCommand(hiddenAgain.nextState, {
+    type: "activateItem", ownerChatId: "chat", itemId: first.item.itemId,
+  });
+  assert.deepEqual(activated.nextState.visibleOwnerChatIds, ["chat"]);
+
+  const closed = reduceWorkPanelCommand(activated.nextState, {
+    type: "closeWorkspace", ownerChatId: "chat",
+  });
+  assert.equal(closed.ok, true);
+  assert.deepEqual(closed.nextState.visibleOwnerChatIds, []);
+  assert.deepEqual(closed.nextState.workspaces, []);
+});
+
+test("trusted Chat removal can destroy a workspace with pinned items without exposing force through the bridge", () => {
+  const pinned = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "web", url: "https://example.test/pinned", pinned: true,
+  });
+  const denied = reduceWorkPanelCommand(pinned.nextState, {
+    type: "closeWorkspace", ownerChatId: "chat",
+  });
+  assert.equal(denied.ok, false);
+
+  const removed = reduceWorkPanelCommand(pinned.nextState, {
+    type: "closeWorkspace", ownerChatId: "chat", force: true,
+  });
+  assert.equal(removed.ok, true);
+  assert.deepEqual(removed.nextState.workspaces, []);
+  assert.deepEqual(removed.nextState.visibleOwnerChatIds, []);
 });
 
 test("WorkPanel rejects untrusted URL/path/identity fields and an empty native registry", () => {
@@ -50,6 +129,14 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "web", url: "https://example.test", stableKey: "caller-owned",
   }).ok, false);
+  const mismatchedChat = open(EMPTY_WORK_PANEL_STATE, "chat-owner", {
+    kind: "webclient",
+    module: "overview",
+    route: "/overview?chatId=chat-forged",
+    context: { chatId: "chat-forged" },
+  });
+  assert.equal(mismatchedChat.ok, false);
+  assert.equal(mismatchedChat.error.code, "capability_denied");
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "webclient", module: "summary", route: "/overview", context: { chatId: "chat" },
   }).ok, false);
@@ -79,5 +166,30 @@ test("WorkPanel keeps pinned items, destroys the final closable workspace, and c
   });
   assert.equal(closed.ok, true);
   assert.equal(closed.nextState.workspaces.length, 0);
+  assert.deepEqual(closed.nextState.visibleOwnerChatIds, []);
   assert.equal(closed.nextState.legacyActionCount, 2);
+});
+
+test("WorkPanel closes active items consecutively and destroys the workspace after the last tab", () => {
+  const first = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "web", url: "https://example.test/first", title: "First",
+  });
+  const second = open(first.nextState, "chat", {
+    kind: "web", url: "https://example.test/second", title: "Second",
+  });
+  assert.equal(second.state.activeItemId, second.item.itemId);
+
+  const closeSecond = reduceWorkPanelCommand(second.nextState, {
+    type: "closeItem", ownerChatId: "chat", itemId: second.item.itemId,
+  });
+  assert.equal(closeSecond.ok, true);
+  assert.equal(closeSecond.state.items.length, 1);
+  assert.equal(closeSecond.state.activeItemId, first.item.itemId);
+
+  const closeFirst = reduceWorkPanelCommand(closeSecond.nextState, {
+    type: "closeItem", ownerChatId: "chat", itemId: first.item.itemId,
+  });
+  assert.equal(closeFirst.ok, true);
+  assert.equal(closeFirst.nextState.workspaces.length, 0);
+  assert.deepEqual(closeFirst.nextState.visibleOwnerChatIds, []);
 });

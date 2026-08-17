@@ -1,4 +1,16 @@
-import { lazy, Suspense, useEffect, useRef } from "react";
+import {
+  AppstoreOutlined,
+  BugOutlined,
+  CloseOutlined,
+  DashboardOutlined,
+  DeploymentUnitOutlined,
+  DiffOutlined,
+  FileTextOutlined,
+  GlobalOutlined,
+  ProjectOutlined,
+  RobotOutlined,
+} from "@ant-design/icons";
+import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import { BUILTIN_BROWSER_DEFAULT_URL } from "../../shared/browser-surfaces";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
@@ -44,6 +56,39 @@ function serializeLegacyWorkspace(workspace: WorkPanelState["workspaces"][number
     : { open: false, tabs: [] };
 }
 
+type WorkPanelItem = WorkPanelState["workspaces"][number]["items"][number];
+
+function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
+  if (item.descriptor.kind === "web") return <GlobalOutlined />;
+  if (item.descriptor.kind === "native") return <AppstoreOutlined />;
+  switch (item.descriptor.module) {
+    case "overview":
+      return <DashboardOutlined />;
+    case "debug":
+      return <BugOutlined />;
+    case "project":
+      return <ProjectOutlined />;
+    case "file-diff":
+      return <DiffOutlined />;
+    case "artifact":
+      return <FileTextOutlined />;
+    case "planning":
+      return <DeploymentUnitOutlined />;
+    case "agent":
+    case "copilot":
+      return <RobotOutlined />;
+  }
+}
+
+function readWebviewGuestId(webview: Electron.WebviewTag) {
+  try {
+    const guestId = webview.getWebContentsId();
+    return Number.isSafeInteger(guestId) && guestId > 0 ? guestId : null;
+  } catch {
+    return null;
+  }
+}
+
 export function WorkPanelHost({
   activeChatId,
   state,
@@ -55,7 +100,88 @@ export function WorkPanelHost({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef(state);
   const previousWebPartitionsRef = useRef(new Set<string>());
+  const [fullscreenOwnerChatId, setFullscreenOwnerChatId] = useState<string | null>(null);
   stateRef.current = state;
+
+  const closeActiveItem = (ownerChatId: string) => {
+    const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
+    const activeItem = workspace?.items.find((item) => item.itemId === workspace.activeItemId);
+    if (!activeItem || activeItem.pinned || !activeItem.closable) return false;
+    const result = dispatchCommand({
+      type: "closeItem",
+      ownerChatId,
+      itemId: activeItem.itemId,
+    });
+    return result.ok;
+  };
+
+  const findItemWebview = (ownerChatId: string, itemId: string) => {
+    const itemHosts = Array.from(
+      rootRef.current?.querySelectorAll<HTMLElement>("[data-work-panel-item]") ?? [],
+    );
+    const itemHost = itemHosts.find((candidate) =>
+      candidate.dataset.workPanelOwner === ownerChatId && candidate.dataset.workPanelItem === itemId,
+    );
+    return itemHost?.querySelector("webview") as Electron.WebviewTag | null;
+  };
+
+  const handleTabContextMenu = async (
+    event: ReactMouseEvent<HTMLDivElement>,
+    ownerChatId: string,
+    item: WorkPanelItem,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const result = await window.electronAPI.chatWorkPanelTabContextMenu.popup({
+      mode: "work-panel",
+      x: event.clientX,
+      y: event.clientY,
+      canCopyUrl: item.descriptor.kind === "web",
+      isFullscreen: fullscreenOwnerChatId === ownerChatId,
+    });
+    if (result.actionId === "reload") {
+      try {
+        findItemWebview(ownerChatId, item.itemId)?.reload();
+      } catch {
+        // The guest may have been replaced while the native menu was open.
+      }
+      return;
+    }
+    if (result.actionId === "copy-url" && item.descriptor.kind === "web") {
+      let currentUrl = "";
+      try {
+        currentUrl = normalizeWorkPanelWebUrl(findItemWebview(ownerChatId, item.itemId)?.getURL());
+      } catch {
+        // Fall back to the descriptor URL if the guest has already gone away.
+      }
+      await window.electronAPI.clipboard.writeText(currentUrl || item.descriptor.url);
+      return;
+    }
+    if (result.actionId === "toggle-fullscreen") {
+      if (fullscreenOwnerChatId === ownerChatId) {
+        setFullscreenOwnerChatId(null);
+        return;
+      }
+      const activation = dispatchCommand({
+        type: "activateItem",
+        ownerChatId,
+        itemId: item.itemId,
+      });
+      if (activation.ok) {
+        setFullscreenOwnerChatId(ownerChatId);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (!fullscreenOwnerChatId) return;
+    const workspaceStillVisible = activeChatId === fullscreenOwnerChatId && state.workspaces.some(
+      (workspace) => workspace.ownerChatId === fullscreenOwnerChatId,
+    );
+    if (!workspaceStillVisible) {
+      setFullscreenOwnerChatId(null);
+    }
+  }, [activeChatId, fullscreenOwnerChatId, state.workspaces]);
 
   useEffect(() => {
     const nextPartitions = new Set(
@@ -148,6 +274,49 @@ export function WorkPanelHost({
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    const isCloseShortcut = (event: KeyboardEvent) => {
+      if (event.type !== "keydown" || event.repeat || event.key.toLowerCase() !== "w") return false;
+      if (isMac) return event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+      if (isWindows) return event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
+      return false;
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && fullscreenOwnerChatId === activeChatId) {
+        setFullscreenOwnerChatId(null);
+        event.preventDefault();
+        event.stopPropagation();
+        return;
+      }
+      if (!isCloseShortcut(event)) return;
+      const activeElement = document.activeElement as HTMLElement | null;
+      const visiblePanel = activeElement?.closest<HTMLElement>(".chat-work-panel.is-visible");
+      if (!visiblePanel || !root.contains(visiblePanel)) return;
+      const ownerChatId = visiblePanel.dataset.workPanelChat || "";
+      if (!ownerChatId || !closeActiveItem(ownerChatId)) return;
+      event.preventDefault();
+      event.stopPropagation();
+    };
+    root.addEventListener("keydown", handleKeyDown, true);
+    const disposeGuestShortcut = window.electronAPI.onWorkPanelCloseShortcut(({ guestId }) => {
+      if (!Number.isSafeInteger(guestId) || guestId <= 0) return;
+      const webviews = Array.from(root.querySelectorAll("webview")) as Electron.WebviewTag[];
+      const matchingWebview = webviews.find((webview) => readWebviewGuestId(webview) === guestId);
+      const itemHost = matchingWebview?.closest<HTMLElement>("[data-work-panel-item]");
+      const ownerChatId = itemHost?.dataset.workPanelOwner || "";
+      const itemId = itemHost?.dataset.workPanelItem || "";
+      const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
+      if (!workspace || workspace.ownerChatId !== activeChatId || workspace.activeItemId !== itemId) return;
+      closeActiveItem(ownerChatId);
+    });
+    return () => {
+      root.removeEventListener("keydown", handleKeyDown, true);
+      disposeGuestShortcut();
+    };
+  }, [activeChatId, dispatchCommand, fullscreenOwnerChatId, isMac, isWindows]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
     const webviews = Array.from(root.querySelectorAll("webview")) as Electron.WebviewTag[];
     const markReady = (event: Event) => {
       (event.currentTarget as HTMLElement).dataset.workPanelDomReady = "true";
@@ -161,7 +330,9 @@ export function WorkPanelHost({
       if (activeElement && root.contains(activeElement)) activeElement.blur();
     } else {
       window.requestAnimationFrame(() => {
-        const webview = visible.querySelector("webview") as Electron.WebviewTag | null;
+        const webview = visible.querySelector(
+          "[data-work-panel-active=\"true\"] webview",
+        ) as Electron.WebviewTag | null;
         if (!webview) return;
         if (isMac) {
           webview.focus();
@@ -184,7 +355,10 @@ export function WorkPanelHost({
   }, [activeChatId, isMac, isWindows, state.workspaces]);
 
   return (
-    <div ref={rootRef} className="work-panel-host">
+    <div
+      ref={rootRef}
+      className={`work-panel-host${fullscreenOwnerChatId === activeChatId ? " is-fullscreen" : ""}`}
+    >
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeChatId;
         return (
@@ -196,81 +370,115 @@ export function WorkPanelHost({
             aria-label={t("chatWorkPanel.title")}
             data-work-panel-chat={workspace.ownerChatId}
           >
-            <div className="chat-work-panel-tabs" role="tablist">
-              {workspace.items.map((item) => (
-                <button
-                  key={item.itemId}
-                  type="button"
-                  role="tab"
-                  aria-selected={workspace.activeItemId === item.itemId}
-                  onClick={() => dispatchCommand({ type: "activateItem", ownerChatId: workspace.ownerChatId, itemId: item.itemId })}
-                >
-                  {item.title}
-                  {item.closable && !item.pinned ? (
-                    <span
-                      role="button"
-                      tabIndex={0}
-                      aria-label={t("chatWorkPanel.close")}
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        dispatchCommand({ type: "closeItem", ownerChatId: workspace.ownerChatId, itemId: item.itemId });
-                      }}
-                    >×</span>
-                  ) : null}
-                </button>
-              ))}
+            <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
+              {workspace.items.map((item) => {
+                const active = workspace.activeItemId === item.itemId;
+                const closable = item.closable && !item.pinned;
+                const overview = item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
+                return (
+                  <div
+                    key={item.itemId}
+                    className={`chat-work-panel-tab${active ? " is-active" : ""}${overview ? " is-overview" : ""}${closable ? " has-close" : ""}`}
+                    role="presentation"
+                    onContextMenu={(event) => {
+                      void handleTabContextMenu(event, workspace.ownerChatId, item).catch(() => undefined);
+                    }}
+                  >
+                    <button
+                      type="button"
+                      role="tab"
+                      className="chat-work-panel-tab-trigger"
+                      aria-selected={active}
+                      title={item.title}
+                      onClick={() => dispatchCommand({
+                        type: "activateItem",
+                        ownerChatId: workspace.ownerChatId,
+                        itemId: item.itemId,
+                      })}
+                    >
+                      <span className="chat-work-panel-tab-icon" aria-hidden="true">
+                        <WorkPanelItemIcon item={item} />
+                      </span>
+                      <span className="chat-work-panel-tab-title">{item.title}</span>
+                    </button>
+                    {closable ? (
+                      <button
+                        type="button"
+                        className="chat-work-panel-tab-close"
+                        aria-label={t("chatWorkPanel.closeTab", { title: item.title })}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          dispatchCommand({
+                            type: "closeItem",
+                            ownerChatId: workspace.ownerChatId,
+                            itemId: item.itemId,
+                          });
+                        }}
+                      >
+                        <CloseOutlined />
+                      </button>
+                    ) : null}
+                  </div>
+                );
+              })}
             </div>
             <div className="chat-work-panel-body">
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
                   const active = visible && workspace.activeItemId === item.itemId;
-                  if (item.descriptor.kind === "webclient") {
-                    return (
-                      <ServiceWebviewSurface
-                        key={item.itemId}
-                        active={active}
-                        embedPath={item.descriptor.route}
-                        hostTheme={document.documentElement.classList.contains("dark") ? "dark" : "light"}
-                        loadInitialEmbeddedUrlDirectly
-                        ownerChatId={workspace.ownerChatId}
-                        serviceId="agent-webclient"
-                        surfaceIdentity={createChatChildSurfaceIdentity(
-                          item.descriptor.module,
-                          item.stableKey,
-                          workspace.ownerChatId
-                        )}
-                        surfaceIdentityKey={item.stableKey}
-                        surfaceLabel={item.title}
-                      />
-                    );
-                  }
-                  if (item.descriptor.kind !== "web") return null;
                   return (
-                    <ExternalWebviewPage
+                    <div
                       key={item.itemId}
-                      active={active}
-                      allowTabUrlCopy
-                      allowUserTabCreation={false}
-                      cdpActive={false}
-                      chrome="browser"
-                      enableDesktopWebActions={false}
-                      openPopupsInCurrentTab
-                      ownerChatId={workspace.ownerChatId}
-                      partition={itemPartition(workspace.workspaceId, item.itemId)}
-                      publishPageContext={false}
-                      registerPublicWebSurface={false}
-                      showToolbar={false}
-                      surfaceIdentity={createChatChildSurfaceIdentity(
-                        "workpanel-web",
-                        item.stableKey,
-                        workspace.ownerChatId
-                      )}
-                      surfaceIdentityKey={item.stableKey}
-                      surfaceKind="chat-work-panel"
-                      surfaceLabel={item.title}
-                      title={item.title}
-                      url={item.descriptor.url}
-                    />
+                      className={`chat-work-panel-item${active ? " is-active" : ""}`}
+                      data-work-panel-active={active ? "true" : "false"}
+                      data-work-panel-item={item.itemId}
+                      data-work-panel-owner={workspace.ownerChatId}
+                      hidden={!active}
+                      aria-hidden={!active}
+                    >
+                      {item.descriptor.kind === "webclient" ? (
+                        <ServiceWebviewSurface
+                          active={active}
+                          embedPath={item.descriptor.route}
+                          hostTheme={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
+                          loadInitialEmbeddedUrlDirectly
+                          ownerChatId={workspace.ownerChatId}
+                          serviceId="agent-webclient"
+                          surfaceIdentity={createChatChildSurfaceIdentity(
+                            item.descriptor.module,
+                            item.stableKey,
+                            workspace.ownerChatId
+                          )}
+                          surfaceIdentityKey={item.stableKey}
+                          surfaceLabel={item.title}
+                        />
+                      ) : item.descriptor.kind === "web" ? (
+                        <ExternalWebviewPage
+                          active={active}
+                          allowTabUrlCopy
+                          allowUserTabCreation={false}
+                          cdpActive={false}
+                          chrome="browser"
+                          enableDesktopWebActions={false}
+                          openPopupsInCurrentTab
+                          ownerChatId={workspace.ownerChatId}
+                          partition={itemPartition(workspace.workspaceId, item.itemId)}
+                          publishPageContext={false}
+                          registerPublicWebSurface={false}
+                          showToolbar={false}
+                          surfaceIdentity={createChatChildSurfaceIdentity(
+                            "workpanel-web",
+                            item.stableKey,
+                            workspace.ownerChatId
+                          )}
+                          surfaceIdentityKey={item.stableKey}
+                          surfaceKind="chat-work-panel"
+                          surfaceLabel={item.title}
+                          title={item.title}
+                          url={item.descriptor.url}
+                        />
+                      ) : null}
+                    </div>
                   );
                 })}
               </Suspense>

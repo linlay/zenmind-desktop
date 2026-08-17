@@ -122,6 +122,8 @@ type AttachedWebviewOptions<
   getMainWindow(): TMainWindow | null;
   isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
   isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+  isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+  isWorkPanelWebview?(contents: TGuestContents): boolean;
   resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
   isGlobalSearchOverlayVisible?(): boolean;
   shouldDownloadUrl(url: string): boolean;
@@ -330,6 +332,8 @@ export function configureMainWindowWebContents<
     isSafeServiceUrl(value: string): unknown;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelWebview?(contents: TGuestContents): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isGlobalSearchOverlayVisible?(): boolean;
     shouldDownloadUrl(url: string): boolean;
@@ -412,6 +416,8 @@ export function configureMainWindowWebContents<
       getMainWindow: options.getMainWindow,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isWorkPanelWebview: options.isWorkPanelWebview,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: options.isGlobalSearchOverlayVisible,
       shouldDownloadUrl: options.shouldDownloadUrl,
@@ -642,6 +648,19 @@ export function configureAttachedWebview<
         return;
       }
       mainWindow.webContents.send("app.openGlobalSearch", { source: "webview", guestId: contents.id });
+      return;
+    }
+
+    if (
+      options.isWorkPanelWebview?.(contents) === true &&
+      options.isWorkPanelCloseShortcut?.(options.platform, input)
+    ) {
+      event.preventDefault();
+      const mainWindow = options.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send("app.workPanelCloseShortcut", { guestId: contents.id });
       return;
     }
 

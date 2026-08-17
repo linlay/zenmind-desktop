@@ -129,8 +129,10 @@ import {
   getFocusedWebviewDevToolsShortcut,
   isDevToolsShortcut,
   isGlobalSearchShortcut,
+  isWorkPanelCloseShortcut,
   resolveGlobalSearchCommandShortcut,
 } from "../platform-adapter";
+import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
 import { configureSystemIdentity } from "./system-identity";
 import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
 import {
@@ -561,6 +563,27 @@ export function createMainProcessRuntime() {
     parseSafeLoopbackWebUrl,
     isDevToolsShortcut,
     isGlobalSearchShortcut,
+    isWorkPanelCloseShortcut,
+    isWorkPanelWebview: (contents) => {
+      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+      return Boolean(
+        target?.active &&
+        target.surfaceLevel === "child" &&
+        target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+        target.ownerChatId &&
+        [
+          "overview",
+          "debug",
+          "project",
+          "file-diff",
+          "artifact",
+          "planning",
+          "agent",
+          "copilot",
+          "workpanel-web",
+        ].includes(target.surfaceRole)
+      );
+    },
     resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation,
     shouldOpenWebviewPopupInCurrentTab: (contents) =>

@@ -49,6 +49,19 @@ export function isGlobalSearchShortcut(platform: DesktopPlatform, input: Keyboar
   return false;
 }
 
+export function isWorkPanelCloseShortcut(platform: DesktopPlatform, input: KeyboardShortcutInput) {
+  if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "w") {
+    return false;
+  }
+  if (platform === "darwin") {
+    return Boolean(input.meta && !input.control && !input.alt && !input.shift);
+  }
+  if (platform === "win32") {
+    return Boolean(input.control && !input.meta && !input.alt && !input.shift);
+  }
+  return false;
+}
+
 export function resolveGlobalSearchCommandShortcut(
   platform: DesktopPlatform,
   input: KeyboardShortcutInput

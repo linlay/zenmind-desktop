@@ -10,6 +10,7 @@ import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry
 
 export type WorkPanelState = {
   workspaces: WorkPanelWorkspace[];
+  visibleOwnerChatIds: string[];
   legacyActionCount: number;
 };
 
@@ -17,7 +18,9 @@ export type WorkPanelCommand =
   | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; legacy?: boolean }
   | { type: "activateItem"; ownerChatId: string; itemId: string; legacy?: boolean }
   | { type: "closeItem"; ownerChatId: string; itemId: string; legacy?: boolean }
-  | { type: "closeWorkspace"; ownerChatId: string; legacy?: boolean };
+  | { type: "showWorkspace"; ownerChatId: string }
+  | { type: "hideWorkspace"; ownerChatId: string }
+  | { type: "closeWorkspace"; ownerChatId: string; legacy?: boolean; force?: boolean };
 
 export type WorkPanelCommandResult = WorkPanelBridgeResult & {
   nextState: WorkPanelState;
@@ -25,8 +28,19 @@ export type WorkPanelCommandResult = WorkPanelBridgeResult & {
 
 export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
   workspaces: [],
+  visibleOwnerChatIds: [],
   legacyActionCount: 0,
 };
+
+function withVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
+  return state.visibleOwnerChatIds.includes(ownerChatId)
+    ? state.visibleOwnerChatIds
+    : [...state.visibleOwnerChatIds, ownerChatId];
+}
+
+function withoutVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
+  return state.visibleOwnerChatIds.filter((chatId) => chatId !== ownerChatId);
+}
 
 function fail(
   state: WorkPanelState,
@@ -156,14 +170,15 @@ function normalizeDescriptor(
       break;
   }
   if (!stableKey) return null;
+  const isOverview = descriptor.module === "overview";
   const sanitized: WorkPanelItemDescriptor = {
     kind: "webclient",
     module: descriptor.module,
     route,
     context,
     ...(title ? { title } : {}),
-    ...(descriptor.pinned === true ? { pinned: true } : {}),
-    ...(descriptor.closable === false ? { closable: false } : {}),
+    ...(isOverview || descriptor.pinned === true ? { pinned: true } : {}),
+    ...(isOverview || descriptor.closable === false ? { closable: false } : {}),
   };
   return {
     descriptor: sanitized,
@@ -176,6 +191,10 @@ function workspaceId(ownerChatId: string) {
   return `workpanel:${stableWorkPanelHash(ownerChatId)}`;
 }
 
+function isOverviewItem(item: WorkPanelItem) {
+  return item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
+}
+
 export function reduceWorkPanelCommand(
   state: WorkPanelState,
   command: WorkPanelCommand,
@@ -184,13 +203,38 @@ export function reduceWorkPanelCommand(
   if (!ownerChatId) return fail(state, "invalid_request", "trusted owner chat is required");
   const index = state.workspaces.findIndex((workspace) => workspace.ownerChatId === ownerChatId);
   const current = index >= 0 ? state.workspaces[index] : null;
+  if (command.type === "hideWorkspace") {
+    if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
+    if (!state.visibleOwnerChatIds.includes(ownerChatId)) {
+      return { ok: true, workspaceId: current.workspaceId, state: current, nextState: state };
+    }
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      state: current,
+      nextState: { ...state, visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId) },
+    };
+  }
+  if (command.type === "showWorkspace") {
+    if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
+    if (state.visibleOwnerChatIds.includes(ownerChatId)) {
+      return { ok: true, workspaceId: current.workspaceId, state: current, nextState: state };
+    }
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      state: current,
+      nextState: { ...state, visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId) },
+    };
+  }
   if (command.type === "closeWorkspace") {
     if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
-    if (current.items.some((item) => item.pinned || !item.closable)) {
+    if (!command.force && current.items.some((item) => !isOverviewItem(item) && (item.pinned || !item.closable))) {
       return fail(state, "capability_denied", "workspace contains pinned or non-closable items");
     }
     const nextState = {
       workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
+      visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
       legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     };
     return { ok: true, workspaceId: current.workspaceId, nextState };
@@ -224,18 +268,33 @@ export function reduceWorkPanelCommand(
       activeItemId: null,
     };
     const existing = workspace.items.find((item) => item.stableKey === normalized.stableKey);
-    const item: WorkPanelItem = existing ?? {
-      itemId: `item:${stableWorkPanelHash(normalized.stableKey)}`,
-      stableKey: normalized.stableKey,
-      descriptor: normalized.descriptor,
-      title: normalized.title,
-      closable: normalized.descriptor.closable !== false,
-      pinned: normalized.descriptor.pinned === true,
-      createdAt: Date.now(),
-    };
+    const isOverview = normalized.descriptor.kind === "webclient" &&
+      normalized.descriptor.module === "overview";
+    const item: WorkPanelItem = existing
+      ? isOverview
+        ? {
+            ...existing,
+            descriptor: normalized.descriptor,
+            title: normalized.title,
+            closable: false,
+            pinned: true,
+          }
+        : existing
+      : {
+          itemId: `item:${stableWorkPanelHash(normalized.stableKey)}`,
+          stableKey: normalized.stableKey,
+          descriptor: normalized.descriptor,
+          title: normalized.title,
+          closable: normalized.descriptor.closable !== false,
+          pinned: normalized.descriptor.pinned === true,
+          createdAt: Date.now(),
+        };
+    const items = existing
+      ? workspace.items.map((currentItem) => currentItem.itemId === item.itemId ? item : currentItem)
+      : [...workspace.items, item];
     const nextWorkspace = {
       ...workspace,
-      items: existing ? workspace.items : [...workspace.items, item],
+      items: isOverview ? [item, ...items.filter((currentItem) => currentItem.itemId !== item.itemId)] : items,
       activeItemId: item.itemId,
     };
     const workspaces = [...state.workspaces];
@@ -243,6 +302,7 @@ export function reduceWorkPanelCommand(
     else workspaces.push(nextWorkspace);
     const nextState = {
       workspaces,
+      visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
       legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
@@ -261,6 +321,7 @@ export function reduceWorkPanelCommand(
       state: nextWorkspace,
       nextState: {
         workspaces,
+        visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
         legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
       },
     };
@@ -272,6 +333,7 @@ export function reduceWorkPanelCommand(
   if (items.length === 0) {
     const nextState = {
       workspaces: state.workspaces.filter((_, nextIndex) => nextIndex !== index),
+      visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
       legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     };
     return { ok: true, workspaceId: current.workspaceId, item, nextState };
@@ -288,6 +350,7 @@ export function reduceWorkPanelCommand(
     state: nextWorkspace,
     nextState: {
       workspaces,
+      visibleOwnerChatIds: state.visibleOwnerChatIds,
       legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     },
   };

@@ -58,7 +58,11 @@ import {
   createAssistantAttachmentsFromFiles,
   resolveAssistantAttachmentPath
 } from "../assistant/attachments/attachment-store";
-import { callAgentPlatform, handleDesktopActionRequest } from "../desktop-action-bridge";
+import {
+  callAgentPlatform,
+  handleAgentWebclientWorkPanelActionRequest,
+  handleDesktopActionRequest
+} from "../desktop-action-bridge";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
 import {
   generateBackupDirName,
@@ -228,11 +232,11 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     getServiceState,
     issueAccessToken: issueAgentAccessToken,
     dispatchWorkPanel: async ({ action, ownerChatId, args }) => {
-      const response = await handleDesktopActionRequest(desktopActionOptions, {
+      const response = await handleAgentWebclientWorkPanelActionRequest(desktopActionOptions, {
         requestId: `workpanel-bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        action: `desktop.workpanel.${action}`,
+        action,
+        ownerChatId,
         args,
-        source: { chatId: ownerChatId }
       });
       if (response.ok) {
         return response.result as any;

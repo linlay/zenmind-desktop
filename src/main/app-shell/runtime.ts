@@ -62,6 +62,8 @@ export type AppShellRuntimeOptions = {
   parseSafeLoopbackWebUrl: (value: string) => unknown;
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  isWorkPanelCloseShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  isWorkPanelWebview: (contents: Electron.WebContents) => boolean;
   resolveGlobalSearchCommandShortcut: (platform: NodeJS.Platform, input: any) => DesktopGlobalSearchShortcut | null;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
   shouldOpenWebviewPopupInCurrentTab: (contents: Electron.WebContents) => boolean;
@@ -230,6 +232,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isSafeServiceUrl: options.parseSafeLoopbackWebUrl,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isWorkPanelWebview: options.isWorkPanelWebview,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: () => mainWindowLifecycle.isGlobalSearchOverlayVisible(),
       shouldDownloadUrl: shouldDownloadUrlFromWebview,

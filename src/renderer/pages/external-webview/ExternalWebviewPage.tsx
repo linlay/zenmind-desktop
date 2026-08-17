@@ -1767,6 +1767,7 @@ export function ExternalWebviewPage({
     event.stopPropagation();
     const urlToCopy = tab.currentUrl;
     const result = await window.electronAPI.chatWorkPanelTabContextMenu.popup({
+      mode: "copy-url",
       x: event.clientX,
       y: event.clientY
     });

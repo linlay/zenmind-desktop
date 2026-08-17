@@ -15,7 +15,10 @@ const {
 } = await import("../dist-electron/main/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
-const { resolveGlobalSearchCommandShortcut } = await import("../dist-electron/main/platform-adapter.js");
+const {
+  isWorkPanelCloseShortcut,
+  resolveGlobalSearchCommandShortcut,
+} = await import("../dist-electron/main/platform-adapter.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -999,6 +1002,49 @@ test("attached webviews prioritize visible global search commands over edit shor
     channel: "app.globalSearchShortcut",
     payload: { kind: "action", actionId: "agents" },
   }]);
+});
+
+test("attached webviews forward close only for active registered WorkPanel guests", () => {
+  const target = new FakeWindow();
+  const macGuest = new FakeWebContents(91);
+  const windowsGuest = new FakeWebContents(92);
+  const ordinaryGuest = new FakeWebContents(93);
+  const prevented = { mac: false, windows: false, repeated: false, ordinary: false };
+  const baseOptions = {
+    getMainWindow: () => target,
+    isDevToolsShortcut: () => false,
+    isWorkPanelCloseShortcut,
+    isWorkPanelWebview: (contents) => contents.id !== ordinaryGuest.id,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async () => {},
+    schedule: (callback) => callback(),
+  };
+
+  configureAttachedWebview(macGuest, { ...baseOptions, platform: "darwin" });
+  configureAttachedWebview(windowsGuest, { ...baseOptions, platform: "win32" });
+  configureAttachedWebview(ordinaryGuest, { ...baseOptions, platform: "win32" });
+
+  macGuest.emit("before-input-event", { preventDefault: () => { prevented.mac = true; } }, {
+    type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false,
+  });
+  windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.windows = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
+  });
+  windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.repeated = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: true,
+  });
+  ordinaryGuest.emit("before-input-event", { preventDefault: () => { prevented.ordinary = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
+  });
+
+  assert.deepEqual(prevented, { mac: true, windows: true, repeated: false, ordinary: false });
+  assert.deepEqual(target.webContents.sentMessages, [
+    { channel: "app.workPanelCloseShortcut", payload: { guestId: 91 } },
+    { channel: "app.workPanelCloseShortcut", payload: { guestId: 92 } },
+  ]);
 });
 
 test("window manager grants media permissions only to the main window", async () => {

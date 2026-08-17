@@ -230,6 +230,21 @@ export function createAgentWebclientProjectPath(request: {
   return search ? `/project?${search}` : "/project";
 }
 
+export function createAgentWebclientOverviewPath(request: {
+  chatId: string;
+  agentKey?: string | null;
+}) {
+  const params = new URLSearchParams();
+  const chatId = request.chatId.trim();
+  const agentKey = request.agentKey?.trim() ?? "";
+  if (!chatId) return "";
+  params.set("chatId", chatId);
+  if (agentKey) {
+    params.set("agentKey", agentKey);
+  }
+  return `/overview?${params.toString()}`;
+}
+
 export function resolveAgentWebclientWsSource(
   surfaceId: string,
   embedPath: string | undefined

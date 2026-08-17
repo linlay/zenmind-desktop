@@ -153,8 +153,17 @@ type DesktopActionBridgeOptions = {
 
 type DesktopActionInvocationContext =
   | { kind: "desktop" }
+  | { kind: "agentWebclientWorkPanel" }
   | { kind: "webappPage"; webappId: string }
   | { kind: "webappBackend"; webappId: string };
+
+type AgentWebclientWorkPanelAction = "openItem" | "activateItem" | "closeItem";
+
+const AGENT_WEBCLIENT_WORKPANEL_ACTIONS = new Set<string>([
+  "openItem",
+  "activateItem",
+  "closeItem"
+]);
 
 type PlatformResponse<T> = {
   code?: number;
@@ -2209,6 +2218,32 @@ export async function handleDesktopActionRequest(
   request: DesktopActionCallRequest
 ) {
   return handleActionCall(options, request);
+}
+
+export async function handleAgentWebclientWorkPanelActionRequest(
+  options: DesktopActionBridgeOptions,
+  input: {
+    requestId?: string;
+    action: AgentWebclientWorkPanelAction;
+    ownerChatId: string;
+    args?: Record<string, unknown>;
+  }
+) {
+  const method = typeof input.action === "string" ? input.action.trim() : "";
+  const action = `desktop.workpanel.${method || "unknown"}`;
+  if (!AGENT_WEBCLIENT_WORKPANEL_ACTIONS.has(method)) {
+    return fail(action, "forbidden", "This action is unavailable to the Agent WebClient WorkPanel bridge.");
+  }
+  const ownerChatId = typeof input.ownerChatId === "string" ? input.ownerChatId.trim() : "";
+  if (!ownerChatId) {
+    return fail(action, "source_chat_required", "A trusted WorkPanel owner chat is required.");
+  }
+  return handleActionCall(options, {
+    ...(input.requestId ? { requestId: input.requestId } : {}),
+    action,
+    args: asRecord(input.args),
+    source: { chatId: ownerChatId }
+  }, { kind: "agentWebclientWorkPanel" });
 }
 
 export async function handleWebappPageActionRequest(

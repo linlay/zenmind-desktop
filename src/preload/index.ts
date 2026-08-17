@@ -29,6 +29,7 @@ import type {
   EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
   DesktopGlobalSearchShortcutListener,
+  DesktopWorkPanelCloseShortcutListener,
   ShutdownProgressListener,
   DesktopPetStateListener,
   DesktopLogTarget,
@@ -738,6 +739,19 @@ const api: DesktopApi = {
     ipcRenderer.on("app.globalSearchShortcut", handleGlobalSearchShortcut);
     return () => {
       ipcRenderer.off("app.globalSearchShortcut", handleGlobalSearchShortcut);
+    };
+  },
+  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => {
+    const handleWorkPanelCloseShortcut = (
+      _event: Electron.IpcRendererEvent,
+      request: Parameters<DesktopWorkPanelCloseShortcutListener>[0]
+    ) => {
+      listener(request);
+    };
+
+    ipcRenderer.on("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+    return () => {
+      ipcRenderer.off("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
     };
   },
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {
