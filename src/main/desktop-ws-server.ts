@@ -42,6 +42,10 @@ import { ensureIdentityCenterJwk } from "./identity-center-auth";
 import { getDesktopDeviceId } from "./device-identity";
 import { handleDesktopActionRequest } from "./desktop-action-bridge";
 import type { KanbanRuntime } from "./kanban-runtime";
+import {
+  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
+  RealtimeBroker,
+} from "./realtime/realtime-broker";
 
 export type DesktopWsAuthSession = {
   subject: string;
@@ -99,23 +103,11 @@ type DesktopWsStreamFrame = {
 
 type DesktopWsOutboundFrame = DesktopWsResponseFrame | DesktopWsErrorFrame | DesktopWsPushFrame | DesktopWsStreamFrame;
 
-type MinimalWebSocket = {
-  onopen: (() => void) | null;
-  onmessage: ((event: { data?: unknown }) => void) | null;
-  onclose: ((event?: unknown) => void) | null;
-  onerror: ((event?: unknown) => void) | null;
-  addEventListener?: (type: string, listener: (event?: unknown) => void) => void;
-  readyState?: number;
-  send: (data: string) => void;
-  close: (code?: number, reason?: string) => void;
-};
-
-type MinimalWebSocketConstructor = new (url: string) => MinimalWebSocket;
-
 type AgentPlatformBridgeOptions = {
   getServiceState: (app: App, serviceId: string) => Promise<ServiceState>;
   issueAccessToken: (app: App, reason: AgentAuthRefreshReason) => Promise<AgentAuthIssueResult>;
-  WebSocketConstructor?: MinimalWebSocketConstructor;
+  realtimeBroker?: RealtimeBroker;
+  WebSocketConstructor?: new (url: string) => import("./realtime/agent-platform-realtime-client").AgentPlatformRealtimeSocket;
 };
 
 export type DesktopWsServerOptions = {
@@ -190,11 +182,7 @@ const HEARTBEAT_INTERVAL_MS = 30_000;
 const AUTH_EXPIRING_WINDOW_MS = 5 * 60_000;
 const AUTH_EXPIRING_THROTTLE_MS = 60_000;
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
-const AGENT_PLATFORM_WS_SOURCE = "desktop-ws-bridge";
-const WS_OPEN_STATE = 1;
-const WS_CONNECTING_STATE = 0;
 const AGENT_PLATFORM_CONTROL_PUSH_TYPES = new Set(["connected", "heartbeat", "auth.expiring"]);
-const AGENT_PLATFORM_CONNECT_TIMEOUT_MS = 8_000;
 
 const activeServers = new Map<DesktopWsServerKind, DesktopWsServerRecord>();
 const tunnelSessionGroup: DesktopWsSessionGroup = {
@@ -347,46 +335,6 @@ function nowIso() {
 
 function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error);
-}
-
-function getWebSocketConstructor(options: AgentPlatformBridgeOptions): MinimalWebSocketConstructor | null {
-  if (options.WebSocketConstructor) {
-    return options.WebSocketConstructor;
-  }
-  const candidate = (globalThis as { WebSocket?: MinimalWebSocketConstructor }).WebSocket;
-  return typeof candidate === "function" ? candidate : null;
-}
-
-function createAgentPlatformWsUrl(app: App, baseUrl: string, token: string) {
-  const url = new URL("/ws", baseUrl);
-  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
-  url.searchParams.set("token", token);
-  url.searchParams.set("source", AGENT_PLATFORM_WS_SOURCE);
-  url.searchParams.set("deviceId", getDesktopDeviceId(app));
-  return url.toString();
-}
-
-async function decodeMessageData(data: unknown) {
-  if (typeof data === "string") {
-    return data;
-  }
-  if (data instanceof ArrayBuffer) {
-    return Buffer.from(data).toString("utf8");
-  }
-  if (ArrayBuffer.isView(data)) {
-    return Buffer.from(data.buffer, data.byteOffset, data.byteLength).toString("utf8");
-  }
-  if (asRecord(data).text && typeof asRecord(data).text === "function") {
-    const text = await (data as { text: () => Promise<unknown> }).text();
-    return typeof text === "string" ? text : String(text ?? "");
-  }
-  if (asRecord(data).arrayBuffer && typeof asRecord(data).arrayBuffer === "function") {
-    const buffer = await (data as { arrayBuffer: () => Promise<unknown> }).arrayBuffer();
-    if (buffer instanceof ArrayBuffer) {
-      return Buffer.from(buffer).toString("utf8");
-    }
-  }
-  return String(data ?? "");
 }
 
 function createSessionId() {
@@ -669,15 +617,33 @@ function withAgentPlatformNamespace(frame: Record<string, unknown>): DesktopWsOu
 }
 
 class AgentPlatformWsBridge {
-  private ws: MinimalWebSocket | null = null;
-  private opening: Promise<void> | null = null;
-  private readonly pendingRequests = new Map<string, string>();
+  private readonly broker: RealtimeBroker;
+  private readonly ownsBroker: boolean;
+  private readonly consumerId: string;
+  private readonly pendingRequestIds = new Set<string>();
+  private unsubscribePush: (() => void) | null = null;
 
   constructor(
     private readonly options: DesktopWsServerOptions,
     private readonly connection: DesktopWsConnection,
     private readonly logger: Pick<typeof console, "log" | "warn" | "error">
-  ) {}
+  ) {
+    const bridgeOptions = options.agentPlatformBridge;
+    this.consumerId = `desktop-ws-ap:${connection.id}`;
+    this.ownsBroker = !bridgeOptions?.realtimeBroker;
+    this.broker = bridgeOptions?.realtimeBroker ?? new RealtimeBroker({
+      app: options.app,
+      issueAccessToken: bridgeOptions?.issueAccessToken ?? (async () => ({
+        ok: false,
+        token: "",
+        message: "agent-platform bridge is not configured",
+      })),
+      createWebSocket: bridgeOptions?.WebSocketConstructor
+        ? (url) => new bridgeOptions.WebSocketConstructor!(url)
+        : undefined,
+      onDiagnostic: (message) => this.logger.warn?.(`[desktop-ws] ${message}`),
+    });
+  }
 
   async forwardRequest(req: DesktopWsRequestFrame) {
     const id = readText(req.id);
@@ -694,18 +660,47 @@ class AgentPlatformWsBridge {
       sendAgentPlatformError(this.connection, id, "agent_platform_unavailable", 503, "agent-platform bridge is not configured");
       return;
     }
+    if (this.pendingRequestIds.has(id)) {
+      sendAgentPlatformError(this.connection, id, "duplicate_id", 409, "request id is already active");
+      return;
+    }
 
     try {
-      await this.ensureConnected(this.options.agentPlatformBridge);
-      const socket = this.ws;
-      if (!socket || !this.isSocketOpen(socket)) {
-        throw new Error("agent-platform websocket is not open");
-      }
-      const { ns: _ns, ...forwarded } = req;
-      this.pendingRequests.set(id, type);
-      socket.send(JSON.stringify(forwarded));
+      const availability = await this.resolveAvailability(this.options.agentPlatformBridge);
+      await this.ensurePushSubscription(availability.baseUrl, availability.token);
+      this.pendingRequestIds.add(id);
+      await this.broker.forwardRequest({
+        baseUrl: availability.baseUrl,
+        token: availability.token,
+        localId: id,
+        consumerId: this.consumerId,
+        type,
+        payload: asRecord(req.payload),
+        stream: type === "/api/query" || type === "/api/attach",
+        onFrame: (frame) => {
+          const frameKind = readText(frame.frame);
+          const terminalStream = frameKind === "stream" && Boolean(readText(frame.reason));
+          if (frameKind === "response" || frameKind === "error" || terminalStream) {
+            this.pendingRequestIds.delete(id);
+          }
+          const namespaced = withAgentPlatformNamespace(frame);
+          if (namespaced) {
+            sendJson(this.connection, namespaced);
+          }
+        },
+        onError: (error) => {
+          this.pendingRequestIds.delete(id);
+          sendAgentPlatformError(
+            this.connection,
+            id,
+            error.name || "connection_unavailable",
+            503,
+            error.message,
+          );
+        },
+      });
     } catch (error) {
-      this.pendingRequests.delete(id);
+      this.pendingRequestIds.delete(id);
       sendAgentPlatformError(
         this.connection,
         id,
@@ -717,32 +712,16 @@ class AgentPlatformWsBridge {
   }
 
   close() {
-    this.rejectPending("agent-platform bridge closed");
-    this.closeSocket(1000, "desktop ws closed");
+    this.unsubscribePush?.();
+    this.unsubscribePush = null;
+    this.broker.cleanupConsumer(this.consumerId);
+    this.pendingRequestIds.clear();
+    if (this.ownsBroker) {
+      this.broker.dispose();
+    }
   }
 
-  private async ensureConnected(bridgeOptions: AgentPlatformBridgeOptions) {
-    if (this.ws && this.isSocketOpen(this.ws)) {
-      return;
-    }
-    if (this.ws && this.ws.readyState === WS_CONNECTING_STATE && this.opening) {
-      return this.opening;
-    }
-    if (this.opening) {
-      return this.opening;
-    }
-    this.opening = this.open(bridgeOptions).finally(() => {
-      this.opening = null;
-    });
-    return this.opening;
-  }
-
-  private async open(bridgeOptions: AgentPlatformBridgeOptions) {
-    const WebSocketConstructor = getWebSocketConstructor(bridgeOptions);
-    if (!WebSocketConstructor) {
-      throw new Error("current runtime does not provide WebSocket");
-    }
-
+  private async resolveAvailability(bridgeOptions: AgentPlatformBridgeOptions) {
     const serviceState = await bridgeOptions.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID);
     const baseUrl = serviceState.status === "running"
       ? serviceState.healthMeta.webUrl.trim() || (serviceState.healthMeta.port ? `http://127.0.0.1:${serviceState.healthMeta.port}` : "")
@@ -755,143 +734,27 @@ class AgentPlatformWsBridge {
     if (!tokenResult.ok || !tokenResult.token.trim()) {
       throw new Error(tokenResult.message || "agent-platform token unavailable");
     }
+    return { baseUrl, token: tokenResult.token.trim() };
+  }
 
-    this.closeSocket(1000, "agent-platform reconnect");
-    const wsUrl = createAgentPlatformWsUrl(this.options.app, baseUrl, tokenResult.token.trim());
-    await new Promise<void>((resolve, reject) => {
-      let settled = false;
-      const socket = new WebSocketConstructor(wsUrl);
-      this.ws = socket;
-      const timer = setTimeout(() => {
-        if (settled) {
-          return;
+  private async ensurePushSubscription(baseUrl: string, token: string) {
+    await this.broker.ensureConnected(baseUrl, token);
+    if (this.unsubscribePush) {
+      return;
+    }
+    this.unsubscribePush = this.broker.subscribePush({
+      types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES].filter((type) =>
+        !AGENT_PLATFORM_CONTROL_PUSH_TYPES.has(type),
+      ),
+      kind: "desktop-ws",
+      consumerId: this.consumerId,
+      onPush: (frame) => {
+        const namespaced = withAgentPlatformNamespace(frame);
+        if (namespaced) {
+          sendJson(this.connection, namespaced);
         }
-        settled = true;
-        this.closeSocket(1002, "agent-platform connect timeout");
-        reject(new Error("agent-platform websocket connect timeout"));
-      }, AGENT_PLATFORM_CONNECT_TIMEOUT_MS);
-
-      const finishOpen = () => {
-        if (settled) {
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        resolve();
-      };
-      const failOpen = (event?: unknown) => {
-        if (settled) {
-          this.handleSocketClosed(event);
-          return;
-        }
-        settled = true;
-        clearTimeout(timer);
-        this.closeSocket(1002, "agent-platform connect failed");
-        reject(new Error(`agent-platform websocket connect failed${this.eventDetail(event) ? `: ${this.eventDetail(event)}` : ""}`));
-      };
-      const handleMessage = (event?: unknown) => {
-        const data = asRecord(event).data;
-        void this.handleMessage(data);
-      };
-      if (typeof socket.addEventListener === "function") {
-        socket.addEventListener("open", finishOpen);
-        socket.addEventListener("message", handleMessage);
-        socket.addEventListener("close", failOpen);
-        socket.addEventListener("error", failOpen);
-      } else {
-        socket.onopen = finishOpen;
-        socket.onmessage = (event) => {
-          void this.handleMessage(event.data);
-        };
-        socket.onclose = failOpen;
-        socket.onerror = failOpen;
-      }
+      },
     });
-  }
-
-  private async handleMessage(data: unknown) {
-    let raw = "";
-    try {
-      raw = await decodeMessageData(data);
-    } catch (error) {
-      this.logger.warn?.(`[desktop-ws] failed to read agent-platform frame: ${errorMessage(error)}`);
-      return;
-    }
-
-    let frame: Record<string, unknown>;
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      frame = asRecord(parsed);
-    } catch (error) {
-      this.logger.warn?.(`[desktop-ws] failed to parse agent-platform frame: ${errorMessage(error)}`);
-      return;
-    }
-
-    const frameKind = readText(frame.frame);
-    const frameType = readText(frame.type);
-    if (frameKind === "push" && AGENT_PLATFORM_CONTROL_PUSH_TYPES.has(frameType)) {
-      return;
-    }
-    if ((frameKind === "response" || frameKind === "error") && readText(frame.id)) {
-      this.pendingRequests.delete(readText(frame.id));
-    }
-    const namespaced = withAgentPlatformNamespace(frame);
-    if (!namespaced) {
-      this.logger.warn?.(`[desktop-ws] dropped unknown agent-platform frame: ${frameKind || "unknown"}`);
-      return;
-    }
-    sendJson(this.connection, namespaced);
-  }
-
-  private handleSocketClosed(event?: unknown) {
-    this.rejectPending(`agent-platform websocket closed${this.eventDetail(event) ? `: ${this.eventDetail(event)}` : ""}`);
-    this.ws = null;
-  }
-
-  private rejectPending(message: string) {
-    for (const [id] of this.pendingRequests) {
-      sendAgentPlatformError(this.connection, id, "agent_platform_disconnected", 503, message);
-    }
-    this.pendingRequests.clear();
-  }
-
-  private closeSocket(code: number, reason: string) {
-    const socket = this.ws;
-    this.ws = null;
-    if (!socket) {
-      return;
-    }
-    socket.onopen = null;
-    socket.onmessage = null;
-    socket.onclose = null;
-    socket.onerror = null;
-    try {
-      socket.close(code, reason);
-    } catch {
-      // Ignore close failures for sockets that are already closed.
-    }
-  }
-
-  private isSocketOpen(socket: MinimalWebSocket) {
-    return typeof socket.readyState !== "number" || socket.readyState === WS_OPEN_STATE;
-  }
-
-  private eventDetail(event: unknown) {
-    const record = asRecord(event);
-    const parts: string[] = [];
-    if (typeof record.type === "string" && record.type) {
-      parts.push(`type=${record.type}`);
-    }
-    if (typeof record.code === "number") {
-      parts.push(`code=${record.code}`);
-    }
-    if (typeof record.reason === "string" && record.reason) {
-      parts.push(`reason=${record.reason}`);
-    }
-    if (typeof record.message === "string" && record.message) {
-      parts.push(`message=${record.message}`);
-    }
-    return parts.join(" ");
   }
 }
 

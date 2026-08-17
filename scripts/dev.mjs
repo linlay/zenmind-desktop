@@ -7,18 +7,18 @@ import {
 } from "./lib/electron-installation.mjs";
 import {
   assertBrandArtifactsConsistent,
+  loadBrandConfig,
   removeStaleRendererBuild,
-  syncBrandArtifacts,
   resolveBrandId
 } from "./lib/brand-config.mjs";
 import { hostArch, hostPlatform, isWindows, syncOsLabel } from "./platform/detect.mjs";
 import { npmCmd, run, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 
 const projectRoot = process.cwd();
-const brand = syncBrandArtifacts({ brandId: resolveBrandId() });
+const brand = loadBrandConfig(projectRoot, resolveBrandId());
 process.env.BRAND = brand.id;
 const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
-await runAndWait("node", ["./scripts/generate-app-icons.mjs"], brandProcessOptions({ cwd: projectRoot }));
+await runAndWait(npmCmd, ["run", "brand:prepare"], brandProcessOptions({ cwd: projectRoot }));
 if (removeStaleRendererBuild({ rootDir: projectRoot, brand })) {
   console.warn(`[dev] removed stale renderer output for BRAND=${brand.id}; Vite dev server will serve fresh assets.`);
 }
@@ -91,7 +91,7 @@ try {
 }
 // Keep dev bundled env resources explicit. Without ENV_ZIP this clears stale env.zip.
 await runAndWait("node", ["./scripts/sync-env-zip.mjs"], brandProcessOptions({ cwd: projectRoot }));
-await runAndWait(npmCmd, ["run", "build:main"], brandProcessOptions({ cwd: projectRoot }));
+await runAndWait(npmCmd, ["run", "build:main:prepared"], brandProcessOptions({ cwd: projectRoot }));
 
 track(run(npmCmd, ["exec", "vite", "--", "--host", "127.0.0.1"], brandProcessOptions({ cwd: projectRoot })));
 await waitForUrl("http://127.0.0.1:5173");

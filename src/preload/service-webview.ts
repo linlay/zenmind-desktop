@@ -32,6 +32,21 @@ import {
   PRELOAD_TO_PAGE_ACTION_EVENT,
   buildServiceWebviewMainWorldScript
 } from "./service-webview-main-world";
+import {
+  AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT,
+  AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT,
+} from "./service-webview-main-world";
+import {
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
+  AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
+} from "../shared/contracts/agent-webclient-bridge";
 
 function isBridgeMessage(value: unknown): value is ServiceWebviewBridgeMessage {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
@@ -278,6 +293,62 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
   forwardDesktopBridgeRequest(payload, window.location.origin, "bridge-request");
 });
 
+window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => {
+  const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+  if (!detail || typeof detail !== "object" || typeof detail.requestId !== "string") return;
+  const channel = detail.bridge === "workpanel" ? AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL : "";
+  if (!channel || typeof detail.method !== "string") return;
+  const call = {
+    method: detail.method,
+    ...(detail.input === undefined ? {} : { input: detail.input }),
+  };
+  void ipcRenderer.invoke(channel, call)
+    .then((result) => {
+      window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT, {
+        detail: { requestId: detail.requestId, result },
+      }));
+    })
+    .catch((error) => {
+      window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT, {
+        detail: {
+          requestId: detail.requestId,
+          result: {
+            ok: false,
+            error: {
+              code: "bridge_unavailable",
+              message: error instanceof Error ? error.message : String(error),
+            },
+          },
+        },
+      }));
+    });
+});
+
+window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT, (event) => {
+  ipcRenderer.send(
+    AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
+    (event as CustomEvent<Record<string, unknown>>).detail,
+  );
+});
+
+window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT, (event) => {
+  ipcRenderer.send(
+    AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
+    (event as CustomEvent<Record<string, unknown>>).detail,
+  );
+});
+
+window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT, (event) => {
+  ipcRenderer.send(
+    AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL,
+    (event as CustomEvent<Record<string, unknown>>).detail,
+  );
+});
+
+ipcRenderer.on(AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL, (_event, message) => {
+  window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_PLATFORM_WS_EVENT, { detail: message }));
+});
+
 window.addEventListener("message", (event) => {
   if (
     isBridgeMessage(event.data) &&
@@ -302,7 +373,7 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL, (_event, payload: Service
   }
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_EVENT, { detail: payload }));
   if (isAgentAuthResponseType(payload.type)) {
-    sendBridgeDebug("auth-response-seeded");
+    sendBridgeDebug("auth-response-forwarded");
   }
 });
 

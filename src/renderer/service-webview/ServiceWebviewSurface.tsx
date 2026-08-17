@@ -13,7 +13,6 @@ import {
   buildServiceWebviewUrl,
   getServiceWebviewAuthProtocol,
 } from "../../shared/auth-bridge";
-import { buildAgentWebclientAccessTokenInjectionScript } from "../../shared/agent-webclient-auth-injection";
 import {
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientHostRouteParamsEqual,
@@ -25,6 +24,7 @@ import { useI18n } from "../i18n/useI18n";
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+  DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
@@ -57,6 +57,7 @@ import {
   readActionSelector,
 } from "../copilot/page-context/webActions";
 import { STORAGE_NAMESPACE } from "../../shared/brand";
+import type { EmbeddedCdpSurfaceRegistration } from "../../shared/embedded-cdp";
 import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
 import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
 import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
@@ -72,6 +73,7 @@ type ServiceWebviewSurfaceProps = {
   surfaceOwnershipActive?: boolean;
   embedPath?: string;
   surfaceLabel?: string;
+  ownerChatId?: string;
   skipContextRegistration?: boolean;
   devToolsTarget?: "copilot";
   loadInitialEmbeddedUrlDirectly?: boolean;
@@ -100,6 +102,12 @@ type VisibleSelectionToolbarState = Extract<
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
 const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
+const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
+  AGENT_WEBCLIENT_SOURCE_CHAT,
+  "agent-webclient-copilot",
+  "agent-webclient-copilot-dock",
+  "agent-webclient-kanban-chat",
+]);
 let serviceSurfaceRegistrationSequence = 0;
 
 function createServiceSurfaceRegistrationId() {
@@ -121,7 +129,9 @@ function resolveContextMenuSurfaceType(
   embedPath: string | undefined,
 ): WebviewContextMenuSurfaceType {
   if (serviceId !== "agent-webclient") return "service";
-  if (/project/iu.test(embedPath || "")) return "project";
+  if (/overview/iu.test(embedPath || "") || /overview/iu.test(surfaceId)) return "agent-overview";
+  if (/debug/iu.test(embedPath || "") || /debug/iu.test(surfaceId)) return "agent-debug";
+  if (/project/iu.test(embedPath || "")) return "agent-project";
   if (/copilot/iu.test(surfaceId)) return "agent-copilot";
   if (/chat/iu.test(surfaceId)) return "agent-chat";
   return "agent-management";
@@ -129,6 +139,10 @@ function resolveContextMenuSurfaceType(
 
 function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
   return serviceId === "agent-webclient" && surfaceId === AGENT_WEBCLIENT_SOURCE_CHAT;
+}
+
+function isAgentWebclientLiveChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
+  return serviceId === "agent-webclient" && AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS.has(surfaceId || "");
 }
 
 function isAgentWebclientManagementSurface(serviceId: string | undefined, surfaceId: string | undefined) {
@@ -398,6 +412,7 @@ export function ServiceWebviewSurface({
   surfaceOwnershipActive,
   embedPath,
   surfaceLabel,
+  ownerChatId,
   skipContextRegistration,
   devToolsTarget,
   loadInitialEmbeddedUrlDirectly,
@@ -452,6 +467,7 @@ export function ServiceWebviewSurface({
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const surfaceRegistrationIdRef = useRef("");
+  const surfaceRegistrationRetryRef = useRef(0);
   if (!surfaceRegistrationIdRef.current) {
     surfaceRegistrationIdRef.current = createServiceSurfaceRegistrationId();
   }
@@ -627,13 +643,16 @@ export function ServiceWebviewSurface({
     } catch {
       return;
     }
-    void embeddedCdp.registerSurface({
+    let cancelled = false;
+    let retryTimer: number | null = null;
+    const registration: EmbeddedCdpSurfaceRegistration = {
       registrationId: surfaceRegistrationIdRef.current,
       surfaceId,
       surfaceKind: "service",
       surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceId, effectiveEmbedPath),
       ...(serviceId ? { serviceId } : {}),
       pageRoute: surfaceRoute,
+      ...(ownerChatId?.trim() ? { ownerChatId: ownerChatId.trim() } : {}),
       label: serviceDisplayName || surfaceId,
       url: webUrl || embeddedUrl,
       active: ownsActiveSurface,
@@ -647,9 +666,46 @@ export function ServiceWebviewSurface({
         isLoading,
       }],
       activeTabId: surfaceId,
-    }).catch(() => undefined);
+    };
+    if (!ownsActiveSurface) {
+      sendLiveSurfaceLifecycleToWebview(false);
+    }
+    void embeddedCdp.registerSurface(registration).then((result) => {
+      if (cancelled) return;
+      if (result.ok) {
+        surfaceRegistrationRetryRef.current = 0;
+        if (ownsActiveSurface) {
+          sendLiveSurfaceLifecycleToWebview(true);
+        }
+        return;
+      }
+      const attempt = surfaceRegistrationRetryRef.current + 1;
+      surfaceRegistrationRetryRef.current = attempt;
+      reportServiceWebviewDiagnostic("surface-registration-rejected", {
+        attempt,
+        registrationId: registration.registrationId,
+        surfaceType: registration.surfaceType,
+      });
+      if (attempt <= 6) {
+        retryTimer = window.setTimeout(() => {
+          setWebviewSnapshotNonce((current) => current + 1);
+        }, Math.min(25 * (2 ** (attempt - 1)), 400));
+      }
+    }).catch((error) => {
+      if (cancelled) return;
+      reportServiceWebviewDiagnostic("surface-registration-failed", {
+        error: error instanceof Error ? error.message : String(error),
+        registrationId: registration.registrationId,
+        surfaceType: registration.surfaceType,
+      });
+    });
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
   }, [
     ownsActiveSurface,
+    ownerChatId,
     effectiveEmbedPath,
     embeddedUrl,
     serviceDisplayName,
@@ -1003,6 +1059,20 @@ export function ServiceWebviewSurface({
     }
   }
 
+  function sendLiveSurfaceLifecycleToWebview(nextActive: boolean) {
+    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    sendBridgeMessageToWebview({
+      type: DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
+      active: nextActive,
+      surfaceId,
+    });
+  }
+
+  useEffect(() => {
+    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    return () => sendLiveSurfaceLifecycleToWebview(false);
+  }, [service?.id, surfaceId]);
+
   function dispatchServiceWebviewRouteEventToWebview(payload: Record<string, unknown>) {
     try {
       webviewRef.current?.send(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL, payload);
@@ -1138,78 +1208,6 @@ export function ServiceWebviewSurface({
     }
   }
 
-  async function injectAgentWebclientAccessToken(token: string | null) {
-    if (service?.id !== "agent-webclient") {
-      return false;
-    }
-    const targetWebview = webviewRef.current;
-    if (!targetWebview) {
-      reportServiceWebviewDiagnostic("token-injection-skipped", {
-        reason: "webview-unavailable",
-      });
-      return false;
-    }
-
-    const desktopAuthContext = webviewReloadKey;
-    try {
-      const result = (await targetWebview.executeJavaScript(
-        buildAgentWebclientAccessTokenInjectionScript(
-          token,
-          desktopAuthContext,
-        ),
-        true,
-      )) as { tokenBeforeLength?: number; tokenAfterLength?: number } | null;
-      return Boolean(
-        token &&
-        desktopAuthContext &&
-        result &&
-        (result.tokenBeforeLength ?? 0) === 0 &&
-        (result.tokenAfterLength ?? 0) > 0,
-      );
-    } catch (reason) {
-      console.warn(
-        "[agent-webclient] failed to inject access token fallback",
-        reason instanceof Error ? reason.message : String(reason),
-      );
-      return false;
-    }
-  }
-
-  function seedAgentWebclientAccessToken() {
-    if (service?.id !== "agent-webclient" || !bridgeProtocol) {
-      return;
-    }
-    void window.electronAPI.agentAuth
-      .issueAccessToken("missing")
-      .then(async (result) => {
-        const token = result.ok ? result.token : null;
-        await injectAgentWebclientAccessToken(token);
-        sendBridgeMessageToWebview({
-          type: bridgeProtocol.responseType,
-          requestId: `agent_webclient_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-          token,
-          desktopAuthContext: webviewReloadKey,
-        });
-        if (!result.ok) {
-          setBridgeError(result.message);
-        }
-      })
-      .catch((reason) => {
-        setBridgeError(
-          reason instanceof Error ? reason.message : String(reason),
-        );
-      });
-  }
-
-  function scheduleAgentWebclientAccessTokenSeeds() {
-    const delays = [0, 150, 500, 1000, 2000];
-    return delays.map((delay) =>
-      window.setTimeout(() => {
-        seedAgentWebclientAccessToken();
-      }, delay),
-    );
-  }
-
   function handleWebviewBridgeMessage(event: Event) {
     const channel = readEventString(event, "channel");
     if (channel !== SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL) {
@@ -1280,14 +1278,12 @@ export function ServiceWebviewSurface({
       syncWebviewState();
       refreshCurrentPageSnapshotTarget();
       sendServiceRouteToWebview(embeddedUrl, "initial");
-      seedAgentWebclientAccessToken();
     };
     const handleDidFinishLoad = () => {
       reportServiceWebviewDiagnostic("did-finish-load");
       syncWebviewState();
       refreshCurrentPageSnapshotTarget();
       sendServiceRouteToWebview(embeddedUrl, "route-sync");
-      seedAgentWebclientAccessToken();
     };
     const syncNavigationRoute = (event: Event) => {
       const nextUrl = readEventString(event, "url");
@@ -1341,7 +1337,6 @@ export function ServiceWebviewSurface({
       ) {
         sendServiceRouteToWebview(resolvedUrl, "navigation");
       }
-      seedAgentWebclientAccessToken();
     };
     const handleDidNavigate = (event: Event) => {
       syncNavigationRoute(event);
@@ -1370,11 +1365,8 @@ export function ServiceWebviewSurface({
     targetWebview.addEventListener("ipc-message", handleWebviewBridgeMessage);
     syncWebviewState();
     sendServiceRouteToWebview(embeddedUrl, "route-sync");
-    const seedTimers = scheduleAgentWebclientAccessTokenSeeds();
-
     return () => {
       reportServiceWebviewDiagnostic("listeners-detached");
-      seedTimers.forEach((timer) => window.clearTimeout(timer));
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
       targetWebview.removeEventListener("did-navigate", handleDidNavigate);
@@ -1411,7 +1403,6 @@ export function ServiceWebviewSurface({
     if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {
       return;
     }
-    seedAgentWebclientAccessToken();
   }, [
     active,
     bridgeReady,
@@ -1787,7 +1778,10 @@ export function ServiceWebviewSurface({
         </button>
       )}
       <div className="embedded-surface-frame-shell">
-        <WebviewDebugOverlay url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl} />
+        <WebviewDebugOverlay
+          url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl}
+          surfaceId={surfaceId}
+        />
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>
             {webviewLoadError ? (

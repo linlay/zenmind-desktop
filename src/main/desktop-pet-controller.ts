@@ -1139,6 +1139,7 @@ export interface DesktopPetClientLifecycleControllerOptions {
   AgentStreamClientClass: any;
   getServiceState: (app: any, serviceId: string) => Promise<any>;
   issueAccessToken: (app: any, reason: any) => Promise<any>;
+  realtimeBroker?: any;
   getSettings: () => DesktopPetSettingsLike;
   setAgentStatus: (status: any) => void;
   setAgentOptions: (options: any[]) => void;
@@ -1186,6 +1187,7 @@ export function createDesktopPetClientLifecycleController(
       app: options.app,
       getServiceState: options.getServiceState,
       issueAccessToken: options.issueAccessToken,
+      realtimeBroker: options.realtimeBroker,
       onStatus: (status: any) => {
         options.setAgentStatus(status);
         if (!status) {
@@ -1241,6 +1243,7 @@ export function createDesktopPetClientLifecycleController(
       app: options.app,
       getServiceState: options.getServiceState,
       issueAccessToken: options.issueAccessToken,
+      realtimeBroker: options.realtimeBroker,
       onEvent: (event: any) => {
         options.ingestAgentEvent(event, {
           source: "agent-platform-attach",

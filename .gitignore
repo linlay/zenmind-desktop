@@ -7,6 +7,10 @@ build/
 dist/
 dist-electron/
 src/shared/generated/
+public/brand-icon.png
+public/brand-mark.png
+public/tray-icon.png
+public/tray-icon.svg
 
 # Local environment
 .env

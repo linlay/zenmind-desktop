@@ -911,7 +911,7 @@ export function KanbanIssueDetailDialog({
               <ServiceWebviewSurface
                 key={`kanban-chat:${issue.id}:${selectedIssueChatId || chatEmbedPath}`}
                 active
-                surfaceOwnershipActive={false}
+                surfaceOwnershipActive
                 hostTheme={hostTheme}
                 serviceId="agent-webclient"
                 surfaceId="agent-webclient-kanban-chat"

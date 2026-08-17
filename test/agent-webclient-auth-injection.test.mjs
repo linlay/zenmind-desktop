@@ -1,205 +1,25 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import vm from "node:vm";
-import { createRequire } from "node:module";
+import fs from "node:fs";
+import path from "node:path";
 
-const require = createRequire(import.meta.url);
+const root = process.cwd();
+const read = (relativePath) => fs.readFileSync(path.join(root, relativePath), "utf8");
 
-const {
-  buildAgentWebclientAccessTokenInjectionScript
-} = require("../dist-electron/shared/agent-webclient-auth-injection.js");
-const {
-  AGENT_AUTH_REQUEST_TYPE,
-  AGENT_AUTH_RESPONSE_TYPE
-} = require("../dist-electron/shared/auth-bridge.js");
-
-function createStorage() {
-  const values = new Map();
-  return {
-    getItem(key) {
-      return values.has(key) ? values.get(key) : null;
-    },
-    removeItem(key) {
-      values.delete(key);
-    },
-    setItem(key, value) {
-      values.set(key, String(value));
-    }
-  };
-}
-
-function createEventTarget() {
-  const listeners = new Map();
-  return {
-    addEventListener(type, listener) {
-      const bucket = listeners.get(type) ?? new Set();
-      bucket.add(listener);
-      listeners.set(type, bucket);
-    },
-    dispatchEvent(event) {
-      const bucket = listeners.get(event.type) ?? new Set();
-      for (const listener of Array.from(bucket)) {
-        listener(event);
-      }
-    },
-    listenerCount(type) {
-      return listeners.get(type)?.size ?? 0;
-    },
-    removeEventListener(type, listener) {
-      listeners.get(type)?.delete(listener);
-    }
-  };
-}
-
-function createFakeWindow() {
-  const postMessageCalls = [];
-  const eventTarget = createEventTarget();
-  const window = {
-    location: {
-      origin: "http://example.test"
-    },
-    postMessage(value, targetOrigin, transfer) {
-      postMessageCalls.push({
-        targetOrigin,
-        transfer,
-        value
-      });
-      eventTarget.dispatchEvent({
-        data: value,
-        origin: window.location.origin,
-        source: window,
-        type: "message"
-      });
-    },
-    sessionStorage: createStorage(),
-    addEventListener: eventTarget.addEventListener,
-    dispatchEvent: eventTarget.dispatchEvent,
-    removeEventListener: eventTarget.removeEventListener
-  };
-
-  return {
-    listenerCount: eventTarget.listenerCount,
-    postMessageCalls,
-    window
-  };
-}
-
-function runInjectionScript(window, token, desktopAuthContext = "desktop-auth-1") {
-  class MessageEvent {
-    constructor(type, init = {}) {
-      this.type = type;
-      this.data = init.data;
-      this.origin = init.origin;
-      this.source = init.source;
-    }
-  }
-
-  const context = vm.createContext({
-    MessageEvent,
-    location: window.location,
-    window
-  });
-
-  return vm.runInContext(
-    buildAgentWebclientAccessTokenInjectionScript(token, desktopAuthContext),
-    context
-  );
-}
-
-function toPlainJson(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function removedProtocol(...parts) {
-  return parts.join(":");
-}
-
-test("agent-webclient token fallback does not overwrite window postMessage", () => {
-  const { listenerCount, window } = createFakeWindow();
-  const originalPostMessage = window.postMessage;
-
-  const result = runInjectionScript(window, "token-one");
-
-  assert.equal(window.postMessage, originalPostMessage);
-  assert.equal(window.__DESKTOP_WEBVIEW_BRIDGE__, true);
-  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-one");
-  assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-1");
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-one");
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-1");
-  assert.equal(listenerCount("message"), 1);
-  assert.deepEqual(toPlainJson(result), {
-    bridge: true,
-    tokenBeforeLength: 0,
-    tokenAfterLength: "token-one".length
-  });
+test("Agent WebClient guest token injection is removed", () => {
+  assert.equal(fs.existsSync(path.join(root, "src/shared/agent-webclient-auth-injection.ts")), false);
+  const surface = read("src/renderer/service-webview/ServiceWebviewSurface.tsx");
+  const mainWorld = read("src/preload/service-webview-main-world.ts");
+  const hostBridge = read("src/renderer/services/serviceWebviewBridgeHost.ts");
+  assert.doesNotMatch(surface, /seedAgentWebclientAccessToken|buildAgentWebclientAccessTokenInjectionScript/u);
+  assert.match(mainWorld, /removeItem\(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY\)/u);
+  assert.match(hostBridge, /context\.serviceId === "agent-webclient"[\s\S]{0,260}token:\s*null/u);
 });
 
-test("agent-webclient token fallback responds through message listener and updates repeated injections", () => {
-  const { listenerCount, window } = createFakeWindow();
-  const responses = [];
-
-  runInjectionScript(window, "token-one", "desktop-auth-1");
-  runInjectionScript(window, "token-two", "desktop-auth-2");
-  window.addEventListener("message", (event) => {
-    if (event.data?.type === AGENT_AUTH_RESPONSE_TYPE) {
-      responses.push(event.data);
-    }
-  });
-
-  window.dispatchEvent({
-    data: {
-      type: AGENT_AUTH_REQUEST_TYPE,
-      requestId: "request-1",
-      action: "getAccessToken"
-    },
-    origin: window.location.origin,
-    source: window,
-    type: "message"
-  });
-
-  assert.equal(window.postMessage.name, "postMessage");
-  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-two");
-  assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-2");
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-two");
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-2");
-  assert.equal(listenerCount("message"), 2);
-  assert.deepEqual(toPlainJson(responses), [
-    {
-      type: AGENT_AUTH_RESPONSE_TYPE,
-      requestId: "request-1",
-      token: "token-two",
-      desktopAuthContext: "desktop-auth-2"
-    }
-  ]);
-});
-
-test("agent-webclient token fallback ignores removed legacy auth request protocols", () => {
-  const { window } = createFakeWindow();
-  const responses = [];
-  const legacyRequestTypes = [
-    removedProtocol("desktop", "agent-app-auth", "request"),
-    removedProtocol("zenmind", "agent-app-auth", "request")
-  ];
-
-  runInjectionScript(window, "token-one");
-  window.addEventListener("message", (event) => {
-    if (event.data?.type === AGENT_AUTH_RESPONSE_TYPE) {
-      responses.push(event.data);
-    }
-  });
-
-  for (const requestType of legacyRequestTypes) {
-    window.dispatchEvent({
-      data: {
-        type: requestType,
-        requestId: `request-${responses.length + 1}`,
-        action: "getAccessToken"
-      },
-      origin: window.location.origin,
-      source: window,
-      type: "message"
-    });
-  }
-
-  assert.deepEqual(toPlainJson(responses), []);
+test("Desktop host injects HTTP auth and hard-blocks legacy realtime bypasses", () => {
+  const host = read("src/main/services/agent-webclient-host.ts");
+  assert.match(host, /authorization/u);
+  assert.match(host, /desktop_realtime_bridge_required/u);
+  assert.match(host, /DESKTOP_BRIDGE_ONLY_HTTP_PATHS/u);
+  assert.match(host, /requestPath\.startsWith\("\/api\/voice"\)/u);
 });

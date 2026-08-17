@@ -244,6 +244,26 @@ function writeDarwinCoreServiceArchive(sourceRoot, id, {
         authCapability: "auth.accessToken"
       }
     ];
+    manifest.desktop.hosting = {
+      proxyRoutes: [
+        {
+          match: "prefix",
+          path: "/api/voice",
+          targetEnv: "VOICE_BASE_URL",
+          optional: true,
+          http: true,
+          websocket: true
+        },
+        {
+          match: "prefix",
+          path: "/api",
+          targetEnv: "BASE_URL",
+          auth: "agent-platform-access-token",
+          http: true,
+          websocket: false
+        }
+      ]
+    };
   }
 
   if (id === "identity-center") {
@@ -1119,5 +1139,44 @@ test("syncBuiltinAssets rejects no-op agent-webclient deploy scripts", async (t)
       brandId: "cutej"
     }),
     /agent-webclient[\s\S]*(Missing lifecycle contract marker "--output-dir"|deploy is intentionally a no-op)/u
+  );
+});
+
+test("syncBuiltinAssets rejects a legacy Agent WebClient manifest before packaging", async (t) => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-builtin-assets-webclient-bridge-v1-"));
+  t.after(() => {
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  });
+
+  const sourceRoot = path.join(tempRoot, "release");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-container-hub");
+  writeDarwinCoreServiceArchive(sourceRoot, "identity-center");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-platform");
+  writeDarwinCoreServiceArchive(sourceRoot, "agent-webclient");
+
+  const archivePath = path.join(sourceRoot, "agent-webclient-v999.0.0-darwin-arm64.tar.gz");
+  const stagingRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-webclient-bridge-v1-stage-"));
+  execFileSync("tar", ["-xzf", archivePath, "-C", stagingRoot]);
+  const manifestPath = path.join(stagingRoot, "agent-webclient", "manifest.json");
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, "utf8"));
+  manifest.desktop.hosting.proxyRoutes.push({
+    match: "exact",
+    path: "/ws",
+    targetEnv: "BASE_URL",
+    http: false,
+    websocket: true
+  });
+  writeJson(manifestPath, manifest);
+  execFileSync("tar", ["-czf", archivePath, "-C", stagingRoot, "agent-webclient"]);
+  fs.rmSync(stagingRoot, { recursive: true, force: true });
+
+  const { syncBuiltinAssets } = await importBuiltinAssetsModule(`darwin-webclient-bridge-v1-${Date.now()}`);
+  assert.throws(
+    () => syncBuiltinAssets(tempRoot, {
+      os: "darwin",
+      arch: "arm64",
+      sourceRoots: [sourceRoot]
+    }),
+    /agent-webclient[\s\S]*Frame Port manifest must not expose \/auth or \/ws/u
   );
 });

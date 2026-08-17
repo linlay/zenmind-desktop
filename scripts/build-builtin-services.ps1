@@ -55,7 +55,7 @@ function Invoke-ServiceRelease {
     if (-not (Test-Path -LiteralPath (Join-Path $projectDir "Makefile") -PathType Leaf)) {
         throw "Missing Makefile: $projectDir"
     }
-    Write-Host "[build-all-dist] release $RepoName (ARCH=$SyncArch)"
+    Write-Host "[build-builtin-services] release $RepoName (ARCH=$SyncArch)"
     if ($DryRun) {
         Write-Host "  (cd $projectDir; clear VERSION TARGET_OS TARGET_ARCH PROGRAM_TARGETS PROGRAM_TARGET_MATRIX RELEASE_DRY_RUN GOOS GOARCH; make release ARCH=$SyncArch)"
         return
@@ -88,25 +88,25 @@ function Assert-AgentPlatformBuiltins {
     $projectDir = Join-Path $WorkspaceRoot "agent-platform"
     $cacheDir = Join-Path $projectDir "build/builtins/$SyncOS-$SyncArch"
     $manifestPath = Join-Path $cacheDir "builtins.manifest.json"
-    Write-Host "[build-all-dist] check agent-platform builtin cache ($SyncOS/$SyncArch)"
+    Write-Host "[build-builtin-services] check agent-platform builtin cache ($SyncOS/$SyncArch)"
     if ($DryRun) {
         Write-Host "  (require $manifestPath and the cached Windows builtin payloads)"
         return
     }
     if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
-        throw "Missing agent-platform builtin cache: $cacheDir. Build it manually before running build-all-dist.ps1."
+        throw "Missing agent-platform builtin cache: $cacheDir. Build it manually before running build-builtin-services.ps1."
     }
     $manifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8 | ConvertFrom-Json
     $expectedComponents = @("rg", "dbx", "httpx", "kbase-lance-engine", "poppler-pdftotext")
     $cachedComponents = @($manifest.components | ForEach-Object { $_.name })
     $missingComponents = @($expectedComponents | Where-Object { $_ -notin $cachedComponents })
     if ($missingComponents.Count -gt 0) {
-        throw "agent-platform builtin cache is incomplete (missing: $($missingComponents -join ', ')). Build it manually before running build-all-dist.ps1."
+        throw "agent-platform builtin cache is incomplete (missing: $($missingComponents -join ', ')). Build it manually before running build-builtin-services.ps1."
     }
     foreach ($relative in @("bin/rg.exe", "bin/dbx.exe", "bin/httpx.exe", "bin/kbase-lance-engine.exe", "bin/pdftotext.exe", "libexec/poppler-pdftotext/windows-amd64")) {
         $path = Join-Path $cacheDir $relative
         if (-not (Test-Path -LiteralPath $path)) {
-            throw "agent-platform builtin cache is missing: $path. Build it manually before running build-all-dist.ps1."
+            throw "agent-platform builtin cache is missing: $path. Build it manually before running build-builtin-services.ps1."
         }
     }
 }
@@ -119,7 +119,7 @@ function Sync-DesktopAssets {
     $arguments += "--os=$SyncOS"
     $arguments += "--arch=$SyncArch"
 
-    Write-Host "[build-all-dist] sync current upstream release packages into $DesktopRoot/build/resources/services"
+    Write-Host "[build-builtin-services] sync current upstream release packages into $DesktopRoot/build/resources/services"
     if ($DryRun) {
         Write-Host "  (cd $DesktopRoot; node $($arguments -join ' '))"
         return
@@ -139,8 +139,8 @@ if (-not (Test-Path -LiteralPath $WorkspaceRoot -PathType Container)) {
     throw "Workspace root does not exist: $WorkspaceRoot"
 }
 
-Write-Host "[build-all-dist] workspace=$WorkspaceRoot desktop=$DesktopRoot target=$SyncOS/$SyncArch"
+Write-Host "[build-builtin-services] workspace=$WorkspaceRoot desktop=$DesktopRoot target=$SyncOS/$SyncArch"
 Assert-AgentPlatformBuiltins
 foreach ($repoName in $ServiceRepos) { Invoke-ServiceRelease -RepoName $repoName }
 Sync-DesktopAssets
-Write-Host "[build-all-dist] synced 4 builtin service assets"
+Write-Host "[build-builtin-services] synced 4 builtin service assets"

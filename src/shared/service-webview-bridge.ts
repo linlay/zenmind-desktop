@@ -2,6 +2,7 @@ export const SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL = "desktop:service-webview:m
 export const SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL = "desktop:service-webview:deliver";
 export const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "desktop:service-webview:route";
 export const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action";
+export const SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL = "desktop:service-webview:surface-lifecycle";
 export const SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE = "desktop:service-webview:debug";
 
 export const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "desktop:agent-app-clipboard:request";
@@ -22,6 +23,7 @@ export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write
 export const PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE = "desktop:plugin-settings:write:response";
 export const DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE = "desktopContextChanged";
 export const DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE = "desktopRouteChanged";
+export const DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE = "desktopSurfaceActiveChanged";
 
 export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
@@ -44,7 +46,8 @@ export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
-  DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE
+  DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+  DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE
 ] as const;
 
 const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPE_SET = new Set<string>(SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES);
@@ -105,6 +108,8 @@ export type ServiceWebviewBridgeMessage = {
   token?: string | null;
   desktopAuthContext?: string;
   desktop?: unknown;
+  active?: boolean;
+  surfaceId?: string;
   stage?: string;
   message?: string;
   url?: string;

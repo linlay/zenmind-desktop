@@ -45,19 +45,21 @@ Cookie SSO 的主流程为：
 
 ## 凭据分发
 
-### 嵌入页面 Token Bridge
+### Agent WebClient Host 与可信 Bridge
 
-Token Bridge 仅向显式受信任的嵌入页面开放。当前主要消费者是 `agent-webclient`。
+Agent WebClient guest 不接收 access token。普通 HTTP 请求继续经过 Desktop host，由 main 注入和刷新凭据；WebSocket-like Platform Frame Port 只收发序列化 Platform frame，物理连接和认证完全由 main 拥有。
 
 ```text
-页面发起请求
-  -> preload 校验来源与消息形态
-  -> main 校验服务、partition 和窗口归属
-  -> 签发或读取任务所需 token
-  -> 定向回复请求页面
+页面发送 Platform request frame
+  -> 固定 preload Frame Port 转成专用 IPC
+  -> main 从真实 sender 与 Surface Registry 派生身份和 capability
+  -> main 使用自身凭据调用 host HTTP 或共享 Realtime Broker
+  -> 逐帧定向返回 Platform response/stream/error，push 按可信 socket 广播
 ```
 
-页面不能访问通用主进程 API。bridge 必须校验 origin、来源窗口、session partition 与请求上下文；响应不能广播给其他 webview，也不能通过页面 URL 传递。
+页面不能访问通用主进程 API。Frame Port 必须校验 origin、来源窗口、session partition、route、owner Chat 与活动状态；Run frame 不能广播给其他 webview，也不能通过页面 URL 或 guest storage 传递 token。Desktop 不保留 guest 业务 `/ws`、SSE query/attach 或 HTTP Run control 兼容面；Program manifest 缺少 `/api` 的 `agent-platform-access-token` 声明，或重新声明 `/auth`、`/ws`、Agent Platform WebSocket/SSE 时，安装与启动必须失败。
+
+Frame Port contract 与 Agent WebClient bundle、vendored contract hash 和 Desktop 内置资源必须原子发布及回滚。旧 Realtime Bridge Desktop、旧 WebClient 或旧 manifest 与 Frame Port 任一侧混用都属于不兼容部署，不允许回退到 Standalone transport。
 
 ### 内置服务与 Host Bash
 
@@ -93,4 +95,5 @@ Kanban、Market、Tunnel Hub 等消费者共享同一登录事实，但各自仍
 - 身份与 bridge 实现：`src/main/identity-center-auth.ts`、`src/main/agent-auth.ts`、`src/main/oidc-sso.ts`
 - shared contract：`src/shared/auth-bridge.ts`
 - webview 边界：`src/preload/service-webview-main-world.ts`
-- 恢复和安全语义：`test/oidc-sso.test.mjs`、`test/agent-webclient-auth-injection.test.mjs`
+- Realtime/WorkPanel bridge：`src/main/ipc/agent-webclient-bridge-handlers.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
+- 恢复和安全语义：`test/oidc-sso.test.mjs`、`test/service-webview-main-world.test.mjs`

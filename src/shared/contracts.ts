@@ -10,6 +10,8 @@ export * from "./contracts/marketplace";
 export * from "./contracts/kanban";
 export * from "./contracts/enterprise-chat";
 export * from "./contracts/desktop-api";
+export * from "./contracts/agent-webclient-bridge";
+export * from "./work-panel";
 export * from "./webapp-manifest";
 export * from "./webapp-bridge";
 export * from "./shutdown";

@@ -20,7 +20,7 @@ function getElectronBuilderCacheDir() {
 }
 
 async function syncWindowsBuiltinAssets(brand) {
-  await runAndWait(npmCmd, ["run", "sync:assets", "--", "--os=windows", "--arch=amd64"], withBrandEnv(brand, {
+  await runAndWait(process.execPath, ["./scripts/sync-builtin-assets.mjs", "--use-existing", "--os=windows", "--arch=amd64"], withBrandEnv(brand, {
     cwd: projectRoot
   }));
 }

@@ -70,6 +70,7 @@ export type RegisteredWebviewSurfaceTarget = {
   tabId: string;
   webContentsId: number;
   ownerWebContentsId: number;
+  active: boolean;
   currentUrl: string;
   label: string;
   ownerChatId?: string;
@@ -139,6 +140,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         tabId: tab.tabId,
         webContentsId: tab.webContentsId,
         ownerWebContentsId: surface.ownerWebContentsId,
+        active: surface.active && surface.activeTabId === tab.tabId,
         currentUrl: tab.currentUrl,
         label: surface.label
       });
@@ -172,6 +174,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     const validSurfaceTypes = new Set([
       "agent-chat",
       "agent-copilot",
+      "agent-overview",
+      "agent-debug",
+      "agent-project",
       "agent-management",
       "project",
       "browser",

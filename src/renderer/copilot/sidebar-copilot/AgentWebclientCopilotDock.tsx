@@ -93,6 +93,7 @@ export function AgentWebclientCopilotDock({
 }) {
   const { t } = useI18n();
   const [mounted, setMounted] = useState(open);
+  const liveSurfaceActive = open && !nativeDialogVisible;
   const normalizedRestoredEmbedPath = normalizeCopilotEmbedPath(restoredEmbedPath ?? "");
   const targetEmbedPath = openRequest
     ? buildAgentWebclientCopilotPath(openRequest, resolvedAgentKey)
@@ -163,7 +164,7 @@ export function AgentWebclientCopilotDock({
         <Suspense fallback={null}>
           <ServiceWebviewSurface
             key={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
-            active={open}
+            active={liveSurfaceActive}
             embedPath={targetEmbedPath}
             hostTheme={hostTheme}
             serviceId="agent-webclient"

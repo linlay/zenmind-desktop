@@ -1,4 +1,4 @@
-import type { App } from "electron";
+import type { App, WebContents } from "electron";
 import { createAppPairingPayload } from "../app-pairing";
 import { issueAgentAccessToken } from "../agent-auth";
 import {
@@ -104,6 +104,7 @@ import { registerKanbanIpcHandlers } from "./kanban-handlers";
 import { registerTunnelHubIpcHandlers } from "./tunnel-hub-handlers";
 import { registerWebIpcHandlers } from "./web-handlers";
 import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
+import { registerAgentWebclientBridgeIpcHandlers } from "./agent-webclient-bridge-handlers";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
@@ -111,6 +112,7 @@ import { registerHelpIpcHandlers } from "./help-handlers";
 import { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-handlers";
 import { registerChatWorkPanelTabContextMenuIpcHandlers } from "./chat-work-panel-tab-context-menu-handlers";
 import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
+import { requireEpochMillis } from "../../shared/time-contract";
 
 export type MainIpcRegistrationOptions = {
   app: App;
@@ -121,6 +123,7 @@ export type MainIpcRegistrationOptions = {
   logsRuntime: LogsRuntime;
   petRuntime: DesktopPetRuntime;
   browserSurfaces: BrowserSurfaceRegistry;
+  isTrustedAgentWebclientSession: (sender: WebContents) => boolean;
   enterpriseChatRuntime: EnterpriseChatRuntime;
   desktopSsoController: any;
   startupRestoreController: any;
@@ -139,6 +142,7 @@ export type MainIpcRegistrationOptions = {
   minimizeLogViewerWindow: (...args: any[]) => unknown;
   maximizeLogViewerWindow: (...args: any[]) => unknown;
   openAgentPlatformMonitorWindow: (...args: any[]) => unknown;
+  openAgentRealtimeInspectorWindow: (...args: any[]) => unknown;
   openDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
   closeDesktopActionWorkbenchWindow: (...args: any[]) => unknown;
   revealPathInFileManager: (...args: any[]) => unknown;
@@ -160,6 +164,7 @@ export type MainIpcRegistrationOptions = {
   reportRendererDiagnostic: (...args: any[]) => unknown;
   emitAssistantAttachmentProgress: (...args: any[]) => unknown;
   captureAssistantScreenshot: (...args: any[]) => unknown;
+  consumeFirstInstallBootstrapNavigation: () => { shouldOpen: boolean };
 };
 
 export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
@@ -210,10 +215,107 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     createAssistantAttachmentsFromFiles,
     captureAssistantScreenshot: options.captureAssistantScreenshot as any,
     openDesktopActionWorkbenchWindow: options.openDesktopActionWorkbenchWindow,
-    closeDesktopActionWorkbenchWindow: options.closeDesktopActionWorkbenchWindow
+    closeDesktopActionWorkbenchWindow: options.closeDesktopActionWorkbenchWindow,
+    consumeFirstInstallBootstrapNavigation: options.consumeFirstInstallBootstrapNavigation
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  const agentWebclientBridgeRuntime = registerAgentWebclientBridgeIpcHandlers(ipcMain, {
+    app,
+    browserSurfaces: options.browserSurfaces,
+    isTrustedAgentWebclientSession: options.isTrustedAgentWebclientSession,
+    realtimeBroker: assistantBridgeRuntime.realtimeBroker,
+    getServiceState,
+    issueAccessToken: issueAgentAccessToken,
+    dispatchWorkPanel: async ({ action, ownerChatId, args }) => {
+      const response = await handleDesktopActionRequest(desktopActionOptions, {
+        requestId: `workpanel-bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        action: `desktop.workpanel.${action}`,
+        args,
+        source: { chatId: ownerChatId }
+      });
+      if (response.ok) {
+        return response.result as any;
+      }
+      return {
+        ok: false,
+        error: {
+          code: (response.error?.code || "target_unavailable") as any,
+          message: response.error?.message || "WorkPanel renderer is unavailable"
+        }
+      };
+    }
+  });
+  const readAgentRealtimeDebugSnapshot = (afterSequence?: unknown) => {
+    const brokerDiagnostics = assistantBridgeRuntime.realtimeBroker.getDiagnostics();
+    const bridgeDiagnostics = agentWebclientBridgeRuntime.getDiagnostics();
+    const trace = assistantBridgeRuntime.realtimeBroker.getDebugTraceEntries();
+    const normalizedAfterSequence = typeof afterSequence === "number" &&
+      Number.isSafeInteger(afterSequence) && afterSequence >= 0
+      ? afterSequence
+      : null;
+    const replayEventCount = brokerDiagnostics.replay.reduce((total, item) =>
+      total + item.eventCount,
+    0);
+    const replayBytes = brokerDiagnostics.replay.reduce((total, item) =>
+      total + item.bytes,
+    0);
+    return {
+      capturedAt: requireEpochMillis(Date.now(), "agentRealtimeDebugSnapshot.capturedAt"),
+      connection: {
+        phase: brokerDiagnostics.connection.phase,
+        generation: brokerDiagnostics.connection.generation,
+        physicalConnectionCount: brokerDiagnostics.connection.physicalConnectionCount,
+        reconnectCount: brokerDiagnostics.connection.reconnectCount,
+        endpoint: brokerDiagnostics.connection.key?.endpoint || "",
+        ...(brokerDiagnostics.connection.lastError
+          ? { lastError: brokerDiagnostics.connection.lastError }
+          : {}),
+      },
+      broker: {
+        pendingRequestCount: brokerDiagnostics.pendingRequestCount,
+        activeStreamCount: brokerDiagnostics.activeStreamCount,
+        runCount: brokerDiagnostics.runCount,
+        localRunSubscriberCount: brokerDiagnostics.localRunSubscriberCount,
+        pushSubscriberCount: brokerDiagnostics.pushSubscriberCount,
+        connectionSubscriberCount: brokerDiagnostics.connectionSubscriberCount,
+        visibleBinding: brokerDiagnostics.visibleBinding,
+        replayEventCount,
+        replayBytes,
+        unknownFrameCount: brokerDiagnostics.unknownFrameCount,
+        unknownRequestIdCount: brokerDiagnostics.unknownRequestIdCount,
+        seqGapCount: brokerDiagnostics.seqGapCount,
+        staleFrameCount: brokerDiagnostics.staleFrameCount,
+        seqRegressionCount: brokerDiagnostics.seqRegressionCount,
+        duplicateTerminalCount: brokerDiagnostics.duplicateTerminalCount,
+        replayEvictionCount: brokerDiagnostics.replayEvictionCount,
+      },
+      bridge: {
+        registeredSenderCount: bridgeDiagnostics.registeredSenderCount,
+        logicalSocketCount: bridgeDiagnostics.logicalSocketCount,
+        pendingRequestCount: bridgeDiagnostics.pendingRequestCount,
+        activeStreamCount: bridgeDiagnostics.activeStreamCount,
+        activeLiveSurfaceCount: bridgeDiagnostics.activeLiveSurfaceCount,
+        activeLiveSocketKey: bridgeDiagnostics.activeLiveSocketKey,
+      },
+      surfaces: bridgeDiagnostics.surfaces,
+      trace: normalizedAfterSequence === null
+        ? trace
+        : trace.filter((entry) => entry.sequence > normalizedAfterSequence),
+    };
+  };
+  ipcMain.handle("diagnostics.getAgentRealtimeDebugSnapshot", async (_event: any, input?: unknown) =>
+    readAgentRealtimeDebugSnapshot(
+      input && typeof input === "object" ? (input as { afterSequence?: unknown }).afterSequence : undefined,
+    ),
+  );
+  ipcMain.handle("diagnostics.openAgentRealtimeInspector", async () =>
+    options.openAgentRealtimeInspectorWindow(),
+  );
+  ipcMain.handle("diagnostics.clearAgentRealtimeDebugTrace", async () => {
+    assistantBridgeRuntime.realtimeBroker.clearDebugTrace();
+    return readAgentRealtimeDebugSnapshot();
+  });
   registerHelpIpcHandlers(ipcMain, app);
 
   registerServicesIpcHandlers(ipcMain, createServicesIpcHandlerOptions(context, {
@@ -331,7 +433,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     refreshKanbanConnection: () => state.kanbanRuntime?.refreshDeviceInfo(),
     stopTunnelHubRuntime,
     refreshEnterpriseChat: () => options.enterpriseChatRuntime.refresh(),
-    stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut()
+    stopEnterpriseChat: () => options.enterpriseChatRuntime.handleSignedOut(),
+    invalidateRealtimeIdentity: () => assistantBridgeRuntime.realtimeBroker.rotateIdentity()
   }));
   registerEnterpriseChatIpcHandlers(
     ipcMain,

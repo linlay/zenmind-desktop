@@ -1,4 +1,5 @@
 const { spawnSync } = require("child_process");
+const { createHash } = require("crypto");
 const fs = require("fs");
 const path = require("path");
 
@@ -54,6 +55,41 @@ function getResourcesRoot(appPath) {
 
 function getServicesRoot(appPath) {
   return path.join(getResourcesRoot(appPath), "services");
+}
+
+function verifyMacPackageBranding(appPath, { projectRoot = "", brandId = "" } = {}) {
+  const resourcesRoot = getResourcesRoot(appPath);
+  const plistPath = path.join(appPath, "Contents", "Info.plist");
+  const plist = fs.readFileSync(plistPath, "utf8");
+  const iconMatch = plist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/u);
+  if (!iconMatch || !/^icon-[0-9a-f]{12}\.icns$/u.test(iconMatch[1])) {
+    throw new Error(`[verify-mac-services-signing] invalid content-addressed CFBundleIconFile in ${plistPath}`);
+  }
+
+  const iconPath = path.join(resourcesRoot, iconMatch[1]);
+  if (!fs.existsSync(iconPath)) {
+    throw new Error(`[verify-mac-services-signing] packaged app icon is missing: ${iconPath}`);
+  }
+  const iconHash = createHash("sha256").update(fs.readFileSync(iconPath)).digest("hex").slice(0, 12);
+  if (iconMatch[1] !== `icon-${iconHash}.icns`) {
+    throw new Error(`[verify-mac-services-signing] packaged app icon hash does not match CFBundleIconFile: ${iconMatch[1]}`);
+  }
+
+  for (const fileName of ["brand-icon.png", "brand-mark.png", "tray-icon.png"]) {
+    const filePath = path.join(resourcesRoot, fileName);
+    if (!fs.existsSync(filePath) || fs.statSync(filePath).size === 0) {
+      throw new Error(`[verify-mac-services-signing] packaged brand resource is missing or empty: ${filePath}`);
+    }
+    if (projectRoot && brandId) {
+      if (!/^[a-z0-9][a-z0-9_-]*$/u.test(brandId)) {
+        throw new Error(`[verify-mac-services-signing] invalid brand id for packaged resource verification: ${brandId}`);
+      }
+      const generatedPath = path.join(projectRoot, "build", "brands", brandId, "brand-assets", fileName);
+      if (!fs.existsSync(generatedPath) || Buffer.compare(fs.readFileSync(filePath), fs.readFileSync(generatedPath)) !== 0) {
+        throw new Error(`[verify-mac-services-signing] packaged brand resource differs from generated source: ${fileName}`);
+      }
+    }
+  }
 }
 
 function walkFiles(rootDir) {
@@ -122,10 +158,12 @@ function verifyMachOSignature(filePath) {
   }
 }
 
-function verifyAppServices(appPath) {
+function verifyAppServices(appPath, options = {}) {
   if (!fs.existsSync(appPath) || !fs.statSync(appPath).isDirectory()) {
     throw new Error(`[verify-mac-services-signing] app bundle not found: ${appPath}`);
   }
+
+  verifyMacPackageBranding(appPath, options);
 
   const servicesRoot = getServicesRoot(appPath);
   const files = walkFiles(servicesRoot);
@@ -153,13 +191,17 @@ function verifyAppServices(appPath) {
 }
 
 exports.verifyAppServices = verifyAppServices;
+exports.verifyMacPackageBranding = verifyMacPackageBranding;
 
 exports.default = async function (context) {
   if (context.electronPlatformName !== "darwin") {
     return;
   }
 
-  verifyAppServices(getAppPath(context));
+  verifyAppServices(getAppPath(context), {
+    projectRoot: context.packager?.projectDir || process.cwd(),
+    brandId: process.env.BRAND || ""
+  });
 };
 
 if (require.main === module) {

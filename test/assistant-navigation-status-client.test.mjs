@@ -276,19 +276,17 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   mutableStatus.recentFrames[0].type = "tampered";
   assert.equal(client.getLiveStatus().recentFrames[0].type, null);
 
-  sockets[0].onmessage?.({ data: "invalid-navigation-frame" });
-  assert.equal(client.getLiveStatus().recentFrames.at(-1)?.kind, "invalid");
-
+  // Raw orphan responses are rejected by the shared Broker before they reach
+  // this typed navigation consumer.
   for (let index = 0; index < 21; index += 1) {
     sockets[0].emit({ frame: "response", type: `diagnostic-${index}` });
   }
   const boundedFrames = client.getLiveStatus().recentFrames;
-  assert.equal(boundedFrames.length, 20);
+  assert.equal(boundedFrames.length, 4);
   assert.deepEqual(
     boundedFrames.map((frame) => frame.type),
-    Array.from({ length: 20 }, (_, index) => `diagnostic-${index + 1}`),
+    [null, null, "/api/chats", "/api/chats"],
   );
-  assert.ok(boundedFrames.every((frame) => frame.direction === "inbound" && frame.kind === "response"));
   assert.equal(pushEvents.length, 0);
 
   sockets[0].emit({ frame: "error", type: "run.finished" });
@@ -307,6 +305,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     lastRunContent: "updated from navigation push",
     updatedAt: EPOCH_MS + 50,
   }});
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(client.getSnapshot().chatItems[0].lastRunContent, "updated from navigation push");
   assert.equal(client.getSnapshot().chatItems[0].updatedAt, EPOCH_MS + 50);
   assert.equal(debugMessages.some((message) => message.includes("time_contract_violation")), false);
@@ -317,6 +316,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     runId: "run-newest",
     startedAt: EPOCH_MS + 60,
   }});
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(pushEvents.at(-1), {
     frame: "push",
     type: "run.started",
@@ -339,6 +339,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     createdAt: EPOCH_MS + 70,
     mode: "approval",
   }});
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, true);
   assert.equal(client.getSnapshot().chatItems[0].awaitingMode, "approval");
   await new Promise((resolve) => setTimeout(resolve, 450));
@@ -352,6 +353,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     awaitingId: "awaiting-1",
     answeredAt: EPOCH_MS + 80,
   }});
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(client.getSnapshot().chatItems[0].hasPendingAwaiting, false);
   assert.equal(client.getSnapshot().chatItems[0].hasActiveRun, true);
   await new Promise((resolve) => setTimeout(resolve, 450));
@@ -367,6 +369,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     finishReason: "complete",
     finishedAt: EPOCH_MS + 90,
   }});
+  await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(pushEvents.at(-1), {
     frame: "push",
     type: "run.finished",
@@ -388,6 +391,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     createdAt: EPOCH_MS + 90,
     mode: "question",
   }});
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(client.getSnapshot().chatItems.some((chat) => chat.chatId === "not-listed"), false);
   await new Promise((resolve) => setTimeout(resolve, 450));
   assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 6);
@@ -399,6 +403,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     chatName: "Newly created chat",
     createdAt: EPOCH_MS + 100,
   }});
+  await new Promise((resolve) => setImmediate(resolve));
   assert.equal(
     client.getSnapshot().chatItems.some((chat) => chat.chatId === "created-without-optimistic-insert"),
     false,
@@ -409,11 +414,11 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   sockets[0].emitClose();
   const reconnecting = client.getLiveStatus();
   assert.equal(reconnecting.phase, "reconnecting");
-  assert.match(reconnecting.lastError, /WebSocket closed/);
+  assert.match(reconnecting.lastError, /realtime connection closed/);
   assert.ok(reconnecting.recentFrames.some((frame) =>
     frame.kind === "push" && frame.type === "awaiting.answered",
   ));
-  assert.equal(reconnecting.recentFrames.at(-1)?.kind, "closed");
+  assert.notEqual(reconnecting.recentFrames.at(-1)?.kind, "closed");
 
   const reconnected = await client.refreshNow();
   assert.equal(sockets.length, 2);
@@ -689,6 +694,7 @@ test("assistant navigation live status reports WebSocket setup failures without 
   assert.match(status.lastError, /WebSocket is unavailable/);
   assert.equal(JSON.stringify(status).includes("secret-token"), false);
   assert.deepEqual(status.recentFrames.map(({ direction, kind, type }) => ({ direction, kind, type })), [
+    { direction: "connection", kind: "connecting", type: null },
     { direction: "connection", kind: "error", type: null },
   ]);
 });

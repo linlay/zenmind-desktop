@@ -18,6 +18,10 @@
 
 - [ ] 首次启动完成资源发现、安装事务与核心服务启动，主窗口不会在未就绪时暴露失效入口。
 - [ ] 再次启动复用已安装版本和用户数据，不重复初始化、不覆盖服务自有配置。
+- [ ] 全新 Desktop 数据根且 seed Chat 存在时打开固定 Bootstrap Chat；同一进程只消费一次首装导航。
+- [ ] 全新 Desktop 数据根但 seed Chat 已删除时打开 Bootstrap Agent 新 Chat，不恢复或覆盖用户 Chats。
+- [ ] Bootstrap Agent 不可用时回退默认 Chat Agent；侧边栏、全局搜索和空路由的新 Chat 始终使用默认 Chat Agent。
+- [ ] Desktop 数据根已存在时，普通启动、覆盖安装、版本更新及保留数据后的重装均不进入 Bootstrap；`OWNER.md` 缺失、创建和删除都不改变导航。
 - [ ] 某一核心服务启动失败时，界面显示可诊断、可重试状态；其他事务不会被误报为成功。
 - [ ] 中断安装或强制结束进程后重启，临时目录被回收，稳定版本仍可用或事务可安全重试。
 - [ ] 正常退出按依赖顺序停止服务；超时服务不会无限阻塞应用退出。
@@ -31,19 +35,28 @@
 - [ ] 上游明确退出时清除身份文件、派生 Cookie 和头像缓存；无关网站 Cookie 保留。
 - [ ] 临时断网时当前运行 fail closed，恢复网络后单次重试并刷新相关 surface。
 - [ ] 切换账号不会短暂显示上一账号资料或使用上一账号 token。
-- [ ] `agent-webclient` 可通过受信任 bridge 取 token；普通 Website/WebApp 无法调用该 bridge。
+- [ ] `agent-webclient` 的 HTTP 与 Platform Frame Port 可用，guest 不建立真实 `/ws`，且 storage、页面全局、URL 和 frame 中均看不到 access token；普通 Website/WebApp 无法调用 Agent WebClient bridge。
 - [ ] 外链、下载、新窗口、导航回退和崩溃恢复均遵守所属 surface 策略。
 
 ## P0：智能助理与页面协作
 
 - [ ] Main Assistant 可创建或继续 Chat，流式事件按 run 归属展示并正确到达终态。
 - [ ] 断线不会自动重复提交已接受的 query；新请求可重新建立连接。
+- [ ] 同时运行 Main Assistant、导航 Push、桌宠、两个 Desktop WS `ap` 客户端和可信 WebClient bridge 时，Main 诊断仍只有一个 Agent Platform 物理连接。
+- [ ] About 连点五次开启 Debug 后，每个 webview 浮层同时显示脱敏 URL 与 `surfaceId`；设置页可打开并重复聚焦唯一的独立 Realtime Inspector，主窗口切换页面不关闭观察器。观察器能区分 Platform 物理 WS 收发和各 `surfaceId` 的 Bridge 收发，按方向、链路层、历史/当前 surface 和文本筛选不串线；冻结仅停止视图刷新而不停止后台采集，清空后不恢复旧条目。
+- [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
+- [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
+- [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
+- [ ] 同一 Chat 内 Chat/Overview/Debug 切换不产生 query、attach 或 detach，并保持同一 `RunExecution`；独立 `/overview`、`/debug` 只 replay，不申请 live capability。
+- [ ] 新 Chat URL 只在关联 stream bootstrap identity 后晋升；`chat.created` push 只更新列表，不能猜测 query 归属。
+- [ ] 离开 Main Chat 页面、关闭 Copilot 或退出 Kanban Chat 页面时，存在 stream 的 observer 各只 detach 一次；进入对应页面时先请求 `/api/chat` replay，只有响应仍含 `activeRun` 才从服务端 `lastSeq` attach，identity 尚未返回的 query 在 bootstrap 后补 detach。左侧 Nav 只产生页面选择并展示 push 状态，不直接发 query/attach/detach。
+- [ ] 非 active、伪造或独立 Overview/Debug surface 的 query/attach 返回同 request id 的标准 Platform error frame；interrupt/submit/steer/access-level 保留真实 Platform `ApiError` 语义。
 - [ ] 附件上传失败时请求不会伪装成功，取消后临时资源被清理。
 - [ ] Copilot 在 Website/WebApp 间切换时更新页面上下文，旧 surface 失去控制权。
 - [ ] 页面选择、截图和文件等不同内容来源具有清晰的用户确认与结果反馈。
 - [ ] Agent Platform 未就绪、token 临期或事件时间非法时显示可恢复错误，不伪造运行状态。
 - [ ] 创建公开分享时，Platform Share SSE 导出、Desktop 上传、Tunnel SQLite BLOB 与公开 GET 响应的 SHA-256 完全一致；公开响应媒体类型为 `text/event-stream`。
-- [ ] 超过 2 MiB、非 NDJSON 或 Platform 非 2xx 响应不得触发分享上传；协调发布后旧分享链接返回 404。
+- [ ] 超过 2 MiB、非 `text/event-stream` 或 Platform 非 2xx 响应不得触发分享上传；协调发布后旧分享链接返回 404。
 
 ## P0：看板与云同步
 
@@ -81,7 +94,10 @@
 - [ ] 只读与变更动作按定义执行；变更动作显示脱敏摘要并支持拒绝、仅本次和有限授权。
 - [ ] 等待确认期间切换页面或关闭目标，原请求被拒绝而不是作用到新页面。
 - [ ] CDP 页面控制只绑定当前活动 surface；导航到不受信任来源后旧 target 失效。
-- [ ] Chat Work Panel 的运行绑定、切换和释放不影响其他 Chat 或主窗口。
+- [ ] WorkPanel 的 WebClient/Web item 去重、激活和保活正确；切换 Chat/路由/item 不卸载 guest，关闭 item 只回收所属 guest 与临时 partition。
+- [ ] 可信 Agent WebClient 中的 WorkPanel 打开/激活/关闭按钮直接执行且不弹出 Desktop Action 确认；HTTP bridge、Desktop WS 和调试工作台的同名变更动作仍进入确认流程。
+- [ ] WorkPanel workspace 相互隔离；非法 URL/路径/跨 workspace 目标被拒绝，空 Native allowlist 返回 `unsupported_native_surface`，旧 Chat WorkPanel action 仍可映射到 item id。
+- [ ] macOS 隐藏面板前清除 first responder、下一 animation frame 恢复焦点；Windows 隐藏前 blur，且只在 active、`dom-ready` 和窗口聚焦时恢复。
 - [ ] 调试工作台仍经过正式执行器和确认策略，不成为权限旁路。
 - [ ] 断线不重放非幂等动作，重复 request identity 得到确定性处理。
 
@@ -96,6 +112,9 @@
 ## P0：打包、升级与卸载
 
 - [ ] 安装包只包含目标品牌、平台和架构需要的资源，manifest 与资源摘要匹配。
+- [ ] 分别构建 ZenMind 与 CuteJ，核对 App/EXE、安装器、About、renderer 品牌标记和托盘图标均属于当前品牌且未串包。
+- [ ] macOS 核对 Finder、Dock 与 App 图标；Windows 核对 EXE、NSIS、安装后快捷方式、任务栏与托盘图标。
+- [ ] 使用相同 bundle id 覆盖安装图标不同的新版本，重新启动 Finder/Dock/任务栏场景后仍显示新图标，不回退到缓存中的旧图标。
 - [ ] macOS DMG 和 Windows NSIS 在干净机器可安装、首次启动、退出与再次启动。
 - [ ] 覆盖安装应用新版本后，品牌数据和服务自有数据保留，内置程序版本按事务升级。
 - [ ] 旧版升级失败时可继续使用上一稳定版本，临时/下载目录可回收。
@@ -104,6 +123,8 @@
 - [ ] 卸载后重装不会读取已声明删除的凭据、旧进程或孤立端口。
 
 ## 结束条件
+
+> Frame Port Desktop、匹配的 Agent WebClient bundle、vendored contract hash 与内置资源必须作为一个不可混用的发布单元验证。任何旧 Realtime Bridge、旧 Program bundle 或重新暴露 guest `/ws` 的 manifest 都不得标记为发布候选。
 
 - [ ] 所有受影响 P0 通过；P1 失败已有明确风险判断和跟踪项。
 - [ ] 自动化测试、构建产物与手工测试使用同一版本和品牌配置。

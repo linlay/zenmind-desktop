@@ -64,6 +64,7 @@ export function ServiceWebviewSurfaceHost({
   hostTheme,
   mountedServiceIds,
   onAgentChatFocusRequestHandled,
+  activeOwnerChatId,
 }: {
   activeServiceId: string | null;
   activeAgentWebclientRoute: AgentWebclientRouteItem | null;
@@ -71,6 +72,7 @@ export function ServiceWebviewSurfaceHost({
   hostTheme: ThemeMode;
   mountedServiceIds: string[];
   onAgentChatFocusRequestHandled?: (requestId: number) => void;
+  activeOwnerChatId?: string | null;
 }) {
   const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
   const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);
@@ -127,7 +129,7 @@ export function ServiceWebviewSurfaceHost({
 
   return (
     <EmbeddedSurfaceSuspense>
-      {/* Keep service webview browsing contexts mounted so sidebar switches do not tear down live sessions. */}
+      {/* Keep browsing contexts mounted; page active/inactive lifecycle, not the sidebar, owns Run attach/detach. */}
       {nonAgentServiceIds.map((serviceId) => (
         <ServiceWebviewSurface
           key={serviceId}
@@ -146,6 +148,7 @@ export function ServiceWebviewSurfaceHost({
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(agentChatRoute?.embedPath)}
           onFocusRequestHandled={onAgentChatFocusRequestHandled}
+          ownerChatId={activeOwnerChatId || undefined}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}
           surfaceId={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
           surfaceLabel={agentChatRoute?.label}

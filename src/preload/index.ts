@@ -5,7 +5,6 @@ import type {
   AssistantCreateCoderProjectRequest,
   AssistantCreateProjectRequest,
   AssistantEventListener,
-  AssistantBootstrapStateChangedListener,
   AssistantNavigationAgentsChangedListener,
   AssistantNavigationListOptions,
   AssistantNavigationPushEventListener,
@@ -166,7 +165,8 @@ const api: DesktopApi = {
   },
   assistant: {
     getSettings: () => ipcRenderer.invoke("assistant.getSettings"),
-    getBootstrapState: () => ipcRenderer.invoke("assistant.getBootstrapState"),
+    consumeFirstInstallBootstrapNavigation: () =>
+      ipcRenderer.invoke("assistant.consumeFirstInstallBootstrapNavigation"),
     saveSettings: (input: AssistantSettingsInput) => ipcRenderer.invoke("assistant.saveSettings", input),
     getMemorySettings: () => ipcRenderer.invoke("assistant.getMemorySettings"),
     saveMemorySettings: (input: AssistantMemorySettingsInput) =>
@@ -222,19 +222,6 @@ const api: DesktopApi = {
       ipcRenderer.on("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
       return () => {
         ipcRenderer.off("assistant.navigationAgentsChanged", handleNavigationAgentsChanged);
-      };
-    },
-    onBootstrapStateChanged: (listener: AssistantBootstrapStateChangedListener) => {
-      const handleBootstrapStateChanged = (
-        _event: Electron.IpcRendererEvent,
-        state: Parameters<AssistantBootstrapStateChangedListener>[0]
-      ) => {
-        listener(state);
-      };
-
-      ipcRenderer.on("assistant.bootstrapStateChanged", handleBootstrapStateChanged);
-      return () => {
-        ipcRenderer.off("assistant.bootstrapStateChanged", handleBootstrapStateChanged);
       };
     },
     onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => {
@@ -602,7 +589,13 @@ const api: DesktopApi = {
     },
     inspectIdentityAccessToken: (input) => ipcRenderer.invoke("diagnostics.inspectIdentityAccessToken", input),
     getTunnelDebugSnapshot: () => ipcRenderer.invoke("diagnostics.getTunnelDebugSnapshot"),
-    probeDesktopWs: (input) => ipcRenderer.invoke("diagnostics.probeDesktopWs", input)
+    probeDesktopWs: (input) => ipcRenderer.invoke("diagnostics.probeDesktopWs", input),
+    openAgentRealtimeInspector: () =>
+      ipcRenderer.invoke("diagnostics.openAgentRealtimeInspector"),
+    getAgentRealtimeDebugSnapshot: (input) =>
+      ipcRenderer.invoke("diagnostics.getAgentRealtimeDebugSnapshot", input),
+    clearAgentRealtimeDebugTrace: () =>
+      ipcRenderer.invoke("diagnostics.clearAgentRealtimeDebugTrace")
   },
   desktopPet: {
     getSettings: () => ipcRenderer.invoke("desktopPet.getSettings"),

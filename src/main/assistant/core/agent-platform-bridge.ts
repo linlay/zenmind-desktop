@@ -51,10 +51,10 @@ import {
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
 import {
-  AssistantWsDisconnectedError,
-  AssistantWsTransport,
-  type AssistantWsFactory,
-} from "./assistant-ws-transport";
+  RealtimeBroker,
+  type RealtimeQueryHandle,
+} from "../../realtime/realtime-broker";
+import type { AgentPlatformRealtimeSocketFactory } from "../../realtime/agent-platform-realtime-client";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const MAX_CONVERSATION_SHARE_BYTES = 2 << 20;
@@ -893,7 +893,8 @@ function normalizeAssistantAccessLevel(value: unknown): AssistantStartRunRequest
 
 export class AgentPlatformAssistantBridge {
   private readonly activeRuns = new Map<string, ActiveAssistantRun>();
-  private readonly wsTransport: AssistantWsTransport;
+  private readonly realtimeBroker: RealtimeBroker;
+  private readonly ownsRealtimeBroker: boolean;
   private disposed = false;
 
   constructor(private readonly options: {
@@ -902,11 +903,13 @@ export class AgentPlatformAssistantBridge {
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
     wakeLock?: AssistantRunWakeLock;
-    createWebSocket?: AssistantWsFactory;
+    realtimeBroker?: RealtimeBroker;
+    createWebSocket?: AgentPlatformRealtimeSocketFactory;
     assistantWsConnectTimeoutMs?: number;
     assistantWsAcceptanceTimeoutMs?: number;
   }) {
-    this.wsTransport = new AssistantWsTransport({
+    this.ownsRealtimeBroker = !options.realtimeBroker;
+    this.realtimeBroker = options.realtimeBroker ?? new RealtimeBroker({
       app: options.app,
       issueAccessToken: options.issueAccessToken,
       createWebSocket: options.createWebSocket,
@@ -1590,13 +1593,15 @@ export class AgentPlatformAssistantBridge {
       const references = await this.uploadAttachments(baseUrl, token, run.chatId, run.runId, request.attachments ?? []);
       const accessLevel = normalizeAssistantAccessLevel(request.accessLevel);
       const requestId = request.requestId?.trim() || run.runId;
-      const query = this.wsTransport.query({
+      const query: RealtimeQueryHandle = this.realtimeBroker.query({
         baseUrl,
         token,
         id: requestId,
         runId: run.runId,
         chatId: run.chatId,
-        agentKey: request.agentKey?.trim() || undefined,
+        ...(request.agentKey?.trim()
+          ? { owner: { kind: "agent" as const, agentKey: request.agentKey.trim() } }
+          : {}),
         signal: run.activeRun.controller.signal,
         payload: {
           requestId,
@@ -1656,7 +1661,9 @@ export class AgentPlatformAssistantBridge {
       let finalMessage = "";
       let sawTerminalEvent = false;
       const accepted = await query.accepted;
-      run.activeRun.agentKey = accepted.agentKey;
+      run.activeRun.agentKey = accepted.owner.kind === "agent"
+        ? accepted.owner.agentKey
+        : run.activeRun.agentKey;
       settleAcceptance({
         ok: true,
         runId: run.runId,
@@ -1686,7 +1693,12 @@ export class AgentPlatformAssistantBridge {
         chatId: run.chatId,
         message
       });
-      if (error instanceof AssistantWsDisconnectedError && run.activeRun.agentKey) {
+      if (
+        error instanceof Error &&
+        (error.name === "connection_lost_before_acceptance" ||
+          error.message.startsWith("connection_lost_before_acceptance:")) &&
+        run.activeRun.agentKey
+      ) {
         this.bestEffortInterrupt(run.runId, run.activeRun, "Desktop Assistant WebSocket disconnected.");
       }
       if ((error as Error).name === "AbortError") {
@@ -1732,7 +1744,9 @@ export class AgentPlatformAssistantBridge {
       activeRun.controller.abort();
     }
     this.activeRuns.clear();
-    this.wsTransport.dispose();
+    if (this.ownsRealtimeBroker) {
+      this.realtimeBroker.dispose();
+    }
     this.releaseWakeLockIfIdle();
   }
 

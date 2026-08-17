@@ -218,12 +218,51 @@ export type AssistantNavChatRuntimeAgent = {
   bootstrapActive: boolean;
 };
 
+export type FirstInstallBootstrapNavigationTarget = {
+  agentKey: string;
+  chatId?: string;
+};
+
+export function resolveFirstInstallBootstrapNavigationTarget(
+  agents: AssistantNavAgentItem[],
+  chats: AssistantNavChatItem[],
+  options: {
+    defaultChatAgentKey?: string;
+    bootstrapAgentKey?: string;
+    bootstrapChatId?: string;
+  },
+): FirstInstallBootstrapNavigationTarget | null {
+  const defaultChatAgentKey = toText(options.defaultChatAgentKey);
+  const bootstrapAgentKey = toText(options.bootstrapAgentKey);
+  const bootstrapChatId = toText(options.bootstrapChatId);
+  const bootstrapAgentAvailable = Boolean(
+    bootstrapAgentKey && agents.some((agent) => agent.agentKey === bootstrapAgentKey),
+  );
+
+  if (bootstrapAgentAvailable) {
+    const seedChatIndexed = Boolean(
+      bootstrapChatId && chats.some((chat) =>
+        chat.chatId === bootstrapChatId && chat.agentKey === bootstrapAgentKey,
+      ),
+    );
+    return {
+      agentKey: bootstrapAgentKey,
+      ...(seedChatIndexed ? { chatId: bootstrapChatId } : {}),
+    };
+  }
+
+  const defaultAgentAvailable = Boolean(
+    defaultChatAgentKey && agents.some((agent) => agent.agentKey === defaultChatAgentKey),
+  );
+  return defaultAgentAvailable ? { agentKey: defaultChatAgentKey } : null;
+}
+
 export function resolveAssistantNavChatRuntimeAgent(
   agents: AssistantNavAgentItem[],
   options: {
     defaultChatAgentKey?: string;
     bootstrapAgentKey?: string;
-    bootstrapPending?: boolean;
+    bootstrapNavigationRequested?: boolean;
   },
 ): AssistantNavChatRuntimeAgent {
   const defaultChatAgentKey = toText(options.defaultChatAgentKey);
@@ -234,16 +273,16 @@ export function resolveAssistantNavChatRuntimeAgent(
   const bootstrapAgent = bootstrapAgentKey
     ? agents.find((agent) => agent.agentKey === bootstrapAgentKey) ?? null
     : null;
-  const bootstrapPending = Boolean(bootstrapAgentKey && options.bootstrapPending);
-  const agent = bootstrapPending ? bootstrapAgent : defaultAgent;
-  const agentKey = bootstrapPending ? bootstrapAgentKey : defaultChatAgentKey;
+  const bootstrapNavigationRequested = Boolean(
+    bootstrapAgentKey && options.bootstrapNavigationRequested,
+  );
 
   return {
-    agent,
-    agentKey: agent?.agentKey ?? agentKey,
+    agent: defaultAgent,
+    agentKey: defaultAgent?.agentKey ?? defaultChatAgentKey,
     defaultAgentAvailable: Boolean(defaultAgent),
     bootstrapAgentAvailable: Boolean(bootstrapAgent),
-    bootstrapActive: Boolean(bootstrapPending && bootstrapAgent),
+    bootstrapActive: Boolean(bootstrapNavigationRequested && bootstrapAgent),
   };
 }
 

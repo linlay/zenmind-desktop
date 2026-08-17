@@ -166,7 +166,8 @@ import { cleanupRetiredPluginUserData } from "../retired-plugins";
 import { cleanupProgramDataForVersion } from "../program-data-cleanup";
 import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../bridge/assistant-runtime";
 import { createAssistantRunWakeLock } from "../bridge/assistant-wake-lock";
-import { createAssistantBootstrapStateMonitor } from "../assistant/core/bootstrap-state";
+import { createFirstInstallBootstrapNavigation } from "../assistant/core/first-install-bootstrap-navigation";
+import { RealtimeBroker } from "../realtime/realtime-broker";
 import { createPluginClipboardBridge } from "../bridge/plugin-clipboard";
 import { createPluginBridgeRuntime, type PluginBridgeRuntime } from "../bridge/plugin-runtime";
 import {
@@ -211,6 +212,7 @@ export function createMainProcessRuntime() {
   });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
+  const AGENT_REALTIME_INSPECTOR_ROUTE = "/agent-realtime-inspector";
   const DESKTOP_ACTION_WORKBENCH_ROUTE = "/desktop-action-workbench";
   const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, mainProcessContext.platform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
@@ -222,6 +224,11 @@ export function createMainProcessRuntime() {
   const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform, {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
   });
+  const realtimeBroker = new RealtimeBroker({
+    app,
+    issueAccessToken: issueAgentAccessToken,
+    onDiagnostic: (message) => console.warn(`[agent-platform-realtime] ${message}`)
+  });
   const pluginClipboardBridge = createPluginClipboardBridge({
     platform: mainProcessContext.platform,
     clipboard,
@@ -232,17 +239,6 @@ export function createMainProcessRuntime() {
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
-  const assistantBootstrapStateMonitor = createAssistantBootstrapStateMonitor({
-    app,
-    platform: mainProcessContext.platform,
-    onChange: (state) => {
-      const targetWindow = appState.mainWindow;
-      if (targetWindow && !targetWindow.isDestroyed()) {
-        targetWindow.webContents.send("assistant.bootstrapStateChanged", state);
-      }
-    },
-  });
-  
   const startupRestoreController = createStartupRestoreController({
     onChange: (state) => {
       if (!appState.mainWindow || appState.mainWindow.isDestroyed()) {
@@ -445,6 +441,7 @@ export function createMainProcessRuntime() {
   });
   const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
   const isFirstDesktopInstall = !desktopDataRootExists(app);
+  const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   const runtimeRootAtProcessStart = resolveRuntimeRoot(app, mainProcessContext.platform);
   const runtimeRootExistedAtStartup = runtimeRootExists(app, mainProcessContext.platform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, mainProcessContext.platform);
@@ -558,6 +555,7 @@ export function createMainProcessRuntime() {
     systemPreferences,
     t,
     logsRuntime,
+    agentRealtimeInspectorRoute: AGENT_REALTIME_INSPECTOR_ROUTE,
     desktopActionWorkbenchRoute: DESKTOP_ACTION_WORKBENCH_ROUTE,
     loadRendererRoute,
     parseSafeLoopbackWebUrl,
@@ -631,7 +629,8 @@ export function createMainProcessRuntime() {
       pluginBridgeRuntime.publishAssistantActiveTasks(tasks, runningTaskCount),
     refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
     getResponsiveServiceState,
-    issueAgentAccessToken
+    issueAgentAccessToken,
+    realtimeBroker
   });
   pluginBridgeRuntime = createPluginBridgeRuntime({
     app,
@@ -724,6 +723,7 @@ export function createMainProcessRuntime() {
     cdpIntegration,
     getResponsiveServiceState,
     issueAgentAccessToken,
+    realtimeBroker,
     refreshDesktopSsoAccessToken: () => refreshDesktopSsoIdentityToken(true),
     canUseDesktopSsoCredentials: isDesktopSsoCredentialRuntimeReady,
     callAgentPlatform,
@@ -979,6 +979,10 @@ export function createMainProcessRuntime() {
 
   async function openDesktopActionWorkbenchWindow() {
     return appShellRuntime.openDesktopActionWorkbenchWindow();
+  }
+
+  async function openAgentRealtimeInspectorWindow() {
+    return appShellRuntime.openAgentRealtimeInspectorWindow();
   }
 
   function closeDesktopActionWorkbenchWindow() {
@@ -1422,7 +1426,6 @@ export function createMainProcessRuntime() {
     setStartupPhase("runtime-env-ready");
   
     initializeUserDataRootsAndSettings();
-    assistantBootstrapStateMonitor.start();
     setStartupPhase("desktop-state-ready");
     const desktopSsoRestoreResult = await desktopSsoController.restoreDesktopSsoSession();
     applyDesktopSsoRestoreResult(desktopSsoRestoreResult);
@@ -1439,6 +1442,9 @@ export function createMainProcessRuntime() {
       logsRuntime,
       petRuntime,
       browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
+      isTrustedAgentWebclientSession: (sender) => sender.session === session.fromPartition(
+        `persist:${STORAGE_NAMESPACE}-service-agent-webclient`,
+      ),
       enterpriseChatRuntime,
       desktopSsoController,
       startupRestoreController,
@@ -1448,6 +1454,7 @@ export function createMainProcessRuntime() {
       bundledEnvZipExistsAtStartup,
       runtimeRootExistedAtStartup,
       runtimeRootAtProcessStart,
+      consumeFirstInstallBootstrapNavigation: () => firstInstallBootstrapNavigation.consume(),
       showFileDialog,
       showSaveDialog,
       showMessageBox,
@@ -1457,6 +1464,7 @@ export function createMainProcessRuntime() {
       minimizeLogViewerWindow,
       maximizeLogViewerWindow,
       openAgentPlatformMonitorWindow,
+      openAgentRealtimeInspectorWindow,
       openDesktopActionWorkbenchWindow,
       closeDesktopActionWorkbenchWindow,
       revealPathInFileManager,
@@ -1513,6 +1521,7 @@ export function createMainProcessRuntime() {
       isNativeDialogOpen: () => appShellRuntime.isNativeDialogOpen(),
       emitPluginBeforeQuit: () => pluginBridgeRuntime.emitBeforeQuit(),
       prepareQuitUi,
+      beginRealtimeShutdown: () => realtimeBroker.beginShutdown(),
       runShutdownCleanup,
       writeInstallerShutdownAcks,
       releaseAssistantRunWakeLock: () => assistantRunWakeLock.release(),
@@ -1520,9 +1529,9 @@ export function createMainProcessRuntime() {
       stopAssistantBridgeRuntime: () => assistantBridgeRuntime.stop(),
       stopTunnelHubRuntime,
       stopAgentPlatformPetStatusClient,
+      disposeRealtimeBroker: () => realtimeBroker.dispose(),
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,
-      stopAssistantBootstrapStateMonitor: () => assistantBootstrapStateMonitor.stop(),
       stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop(),
       stopEnterpriseChatRuntime: () => enterpriseChatRuntime.stop()
     });

@@ -7,7 +7,8 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { contentAddressMacAppIcon } = require("../scripts/fix-mac-sign.js");
+const { contentAddressMacAppIcon } = require("../scripts/after-pack.js");
+const { verifyMacPackageBranding } = require("../scripts/verify-mac-services-signing.js");
 
 function createMacAppFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-mac-icon-cache-"));
@@ -28,8 +29,14 @@ function createMacAppFixture(t) {
   );
   const icon = Buffer.from("current-cutej-icon");
   fs.writeFileSync(path.join(resourcesRoot, "icon.icns"), icon);
+  for (const fileName of ["brand-icon.png", "brand-mark.png", "tray-icon.png"]) {
+    fs.writeFileSync(path.join(resourcesRoot, fileName), Buffer.from(fileName));
+    const generatedPath = path.join(root, "build", "brands", "cutej", "brand-assets", fileName);
+    fs.mkdirSync(path.dirname(generatedPath), { recursive: true });
+    fs.writeFileSync(generatedPath, Buffer.from(fileName));
+  }
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  return { appPath, contentsRoot, resourcesRoot, icon };
+  return { root, appPath, contentsRoot, resourcesRoot, icon };
 }
 
 test("macOS packaged app icon uses a content-addressed filename before signing", (t) => {
@@ -46,4 +53,13 @@ test("macOS packaged app icon uses a content-addressed filename before signing",
   );
 
   assert.equal(contentAddressMacAppIcon(fixture.appPath), expectedIconFileName);
+  const brandingOptions = { projectRoot: fixture.root, brandId: "cutej" };
+  assert.doesNotThrow(() => verifyMacPackageBranding(fixture.appPath, brandingOptions));
+
+  fs.appendFileSync(path.join(fixture.resourcesRoot, "brand-mark.png"), "tampered");
+  assert.throws(() => verifyMacPackageBranding(fixture.appPath, brandingOptions), /brand resource differs/u);
+  fs.writeFileSync(path.join(fixture.resourcesRoot, "brand-mark.png"), "brand-mark.png");
+
+  fs.appendFileSync(path.join(fixture.resourcesRoot, expectedIconFileName), "tampered");
+  assert.throws(() => verifyMacPackageBranding(fixture.appPath), /icon hash does not match/u);
 });

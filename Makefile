@@ -46,13 +46,13 @@ else
 	@exit 1
 endif
 
-release-mac: icons
+release-mac:
 	npm run dist:mac
 
-release-win: icons
+release-win:
 	npm run dist:win
 
-release-win-docker: icons
+release-win-docker:
 	npm run dist:win-docker
 
 clean-dist:

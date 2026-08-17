@@ -31,7 +31,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantBootstrapState, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -81,6 +81,7 @@ import {
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents,
   resolveAssistantNavChatRuntimeAgent,
+  resolveFirstInstallBootstrapNavigationTarget,
 } from "../assistantNavigation";
 import {
   AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS,
@@ -100,16 +101,17 @@ import {
 import { decodeRoutePathSegment } from "../../shared/route-path";
 import { I18N_KEYS, isSupportedLocale, type TranslationKey } from "../../shared/i18n";
 import { EnterpriseChatFloatingPanel } from "../enterprise-chat/EnterpriseChatFloatingPanel";
-import { ChatWorkPanelHost } from "../chat-work-panel/ChatWorkPanelHost";
+import { WorkPanelHost } from "../work-panel/WorkPanelHost";
 import {
   ProjectFloatingWebviews,
   type ProjectFloatingWebviewEntry,
 } from "./project/ProjectFloatingWebviews";
 import {
-  CHAT_WORK_PANEL_BLANK_URL,
-  createChatWorkPanelSurfaceId,
-  type ChatWorkPanelWorkspace
-} from "../../shared/chat-work-panel";
+  EMPTY_WORK_PANEL_STATE,
+  reduceWorkPanelCommand,
+  type WorkPanelCommand,
+  type WorkPanelState,
+} from "../../shared/work-panel";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
@@ -220,21 +222,6 @@ const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclie
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
-let chatWorkPanelGenerationSequence = 0;
-
-function createChatWorkPanelWorkspace(chatId: string, initialUrl: string, initialTitle?: string) {
-  chatWorkPanelGenerationSequence += 1;
-  const generation = `${Date.now()}-${chatWorkPanelGenerationSequence}`;
-  return {
-    chatId,
-    surfaceId: createChatWorkPanelSurfaceId(chatId),
-    generation,
-    partition: `chat-work-panel-${generation}`,
-    initialUrl,
-    ...(initialTitle ? { initialTitle } : {})
-  } satisfies ChatWorkPanelWorkspace;
-}
-
 function RouteSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
 }
@@ -519,8 +506,7 @@ export function AppShell() {
     copilotRestoreInitializedRef.current = true;
   }
   const bootstrapInitialNavigationDoneRef = useRef(false);
-  const bootstrapHandoffNavigationDoneRef = useRef(false);
-  const lastOwnerProfileExistsRef = useRef<boolean | null>(null);
+  const firstInstallBootstrapNavigationRequestRef = useRef<Promise<{ shouldOpen: boolean }> | null>(null);
   const lastPrimaryRouteRef = useRef("/kanban");
   const aboutSettingsClickCountRef = useRef(0);
   const refreshServicesRef = useRef(refreshServices);
@@ -561,34 +547,28 @@ export function AppShell() {
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
-  const [assistantBootstrapState, setAssistantBootstrapState] = useState<AssistantBootstrapState | null>(null);
+  const [firstInstallBootstrapNavigationRequested, setFirstInstallBootstrapNavigationRequested] =
+    useState<boolean | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
   const [projectFloatingWebviews, setProjectFloatingWebviews] =
     useState<ProjectFloatingWebviewEntry[]>([]);
   const projectFloatingFocusRequestIdRef = useRef(0);
-  const [chatWorkPanelWorkspaces, setChatWorkPanelWorkspaces] = useState<ChatWorkPanelWorkspace[]>([]);
-  const chatWorkPanelWorkspacesRef = useRef(new Map<string, ChatWorkPanelWorkspace>());
+  const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
-  const bootstrapAgentConfigured = Boolean(assistantSettings?.bootstrapAgentKey.trim());
-  const assistantBootstrapStateReady = Boolean(
-    assistantSettings && (!bootstrapAgentConfigured || assistantBootstrapState),
-  );
-  const bootstrapPending = Boolean(
-    bootstrapAgentConfigured && assistantBootstrapState?.ownerProfileExists !== true,
-  );
   const chatRuntimeAgent = useMemo(
     () => resolveAssistantNavChatRuntimeAgent(chatNavAgentOptions, {
       defaultChatAgentKey: assistantSettings?.chatDefaultAgentKey,
       bootstrapAgentKey: assistantSettings?.bootstrapAgentKey,
-      bootstrapPending,
+      bootstrapNavigationRequested: firstInstallBootstrapNavigationRequested === true,
     }),
     [
       assistantSettings?.bootstrapAgentKey,
       assistantSettings?.chatDefaultAgentKey,
-      bootstrapPending,
+      firstInstallBootstrapNavigationRequested,
       chatNavAgentOptions,
     ],
   );
@@ -646,7 +626,7 @@ export function AppShell() {
     : null;
   const activeChatWorkPanelVisible = Boolean(
     activeChatWorkPanelChatId &&
-    chatWorkPanelWorkspaces.some((workspace) => workspace.chatId === activeChatWorkPanelChatId)
+    workPanelState.workspaces.some((workspace) => workspace.ownerChatId === activeChatWorkPanelChatId)
   );
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
@@ -1345,46 +1325,30 @@ export function AppShell() {
   }, [assistantSettings?.bootstrapAgentKey, assistantSettings?.chatDefaultAgentKey, chatNavAgentOptions]);
 
   useEffect(() => {
-    const ownerProfileExists = assistantBootstrapState?.ownerProfileExists;
-    if (ownerProfileExists === undefined) {
-      return;
-    }
-    const previousOwnerProfileExists = lastOwnerProfileExistsRef.current;
-    if (previousOwnerProfileExists === true && !ownerProfileExists) {
-      bootstrapInitialNavigationDoneRef.current = false;
-      bootstrapHandoffNavigationDoneRef.current = false;
-    } else if (previousOwnerProfileExists === false && ownerProfileExists) {
-      bootstrapHandoffNavigationDoneRef.current = false;
-    }
-    lastOwnerProfileExistsRef.current = ownerProfileExists;
-  }, [assistantBootstrapState?.ownerProfileExists]);
-
-  useEffect(() => {
     if (
       bootstrapInitialNavigationDoneRef.current ||
       !assistantNavAgentsLoaded ||
       !assistantSettings ||
-      !assistantBootstrapStateReady
+      firstInstallBootstrapNavigationRequested !== true
     ) {
       return;
     }
 
-    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
-    const bootstrapAgent = chatRuntimeAgent.agent;
-    if (!chatRuntimeAgent.bootstrapActive || !bootstrapAgentKey || !bootstrapAgent) {
+    const target = resolveFirstInstallBootstrapNavigationTarget(
+      chatNavAgentOptions,
+      assistantNavChatItems,
+      {
+        defaultChatAgentKey: assistantSettings.chatDefaultAgentKey,
+        bootstrapAgentKey: assistantSettings.bootstrapAgentKey,
+        bootstrapChatId: assistantSettings.bootstrapChatId,
+      },
+    );
+    if (!target) {
       return;
     }
-
-    const bootstrapChatId = assistantSettings.bootstrapChatId.trim();
-    const seedChatIndexed = Boolean(
-      bootstrapChatId &&
-      assistantNavChatItems.some((chat) =>
-        chat.chatId === bootstrapChatId && chat.agentKey === bootstrapAgentKey,
-      ),
-    );
-    const targetRoute = seedChatIndexed
-      ? createAgentChatRoute(bootstrapAgentKey, bootstrapChatId)
-      : createAgentNewChatRoute(bootstrapAgentKey);
+    const targetRoute = target.chatId
+      ? createAgentChatRoute(target.agentKey, target.chatId)
+      : createAgentNewChatRoute(target.agentKey);
     const currentRoute = `${location.pathname}${location.search}`;
 
     bootstrapInitialNavigationDoneRef.current = true;
@@ -1394,10 +1358,10 @@ export function AppShell() {
   }, [
     assistantNavAgentsLoaded,
     assistantNavChatItems,
-    assistantBootstrapStateReady,
     assistantSettings,
     chatRuntimeAgent,
     chatNavAgentOptions,
+    firstInstallBootstrapNavigationRequested,
     location.pathname,
     location.search,
     navigate,
@@ -1406,11 +1370,10 @@ export function AppShell() {
   useEffect(() => {
     if (
       bootstrapInitialNavigationDoneRef.current ||
-      chatRuntimeAgent.bootstrapActive ||
+      firstInstallBootstrapNavigationRequested !== false ||
       location.pathname !== "/" ||
       !assistantNavAgentsLoaded ||
       !assistantSettings ||
-      !assistantBootstrapStateReady ||
       !chatRuntimeAgent.agent
     ) {
       return;
@@ -1418,51 +1381,10 @@ export function AppShell() {
     navigate(createAgentNewChatRoute(chatRuntimeAgent.agent.agentKey), { replace: true });
   }, [
     assistantNavAgentsLoaded,
-    assistantBootstrapStateReady,
     assistantSettings,
     chatRuntimeAgent.agent,
-    chatRuntimeAgent.bootstrapActive,
+    firstInstallBootstrapNavigationRequested,
     location.pathname,
-    navigate,
-  ]);
-
-  useEffect(() => {
-    if (!assistantNavAgentsLoaded || !assistantSettings || !assistantBootstrapStateReady) {
-      return;
-    }
-    if (bootstrapHandoffNavigationDoneRef.current) {
-      return;
-    }
-    const bootstrapAgentKey = assistantSettings.bootstrapAgentKey.trim();
-    const defaultChatAgentKey = assistantSettings.chatDefaultAgentKey.trim();
-    if (
-      !bootstrapAgentKey ||
-      !defaultChatAgentKey ||
-      bootstrapAgentKey === defaultChatAgentKey ||
-      assistantBootstrapState?.ownerProfileExists !== true ||
-      !chatRuntimeAgent.defaultAgentAvailable
-    ) {
-      return;
-    }
-
-    const route = readAgentRouteInfo(`${location.pathname}${location.search}`);
-    if (
-      route.agentKey !== bootstrapAgentKey
-    ) {
-      return;
-    }
-
-    bootstrapHandoffNavigationDoneRef.current = true;
-    navigate(createAgentNewChatRoute(defaultChatAgentKey), { replace: true });
-  }, [
-    assistantNavAgentsLoaded,
-    assistantBootstrapState?.ownerProfileExists,
-    assistantBootstrapStateReady,
-    assistantSettings?.bootstrapAgentKey,
-    assistantSettings?.chatDefaultAgentKey,
-    chatRuntimeAgent.defaultAgentAvailable,
-    location.pathname,
-    location.search,
     navigate,
   ]);
 
@@ -1736,6 +1658,8 @@ export function AppShell() {
 
   useEffect(() => window.electronAPI.desktopShell.onShutdownProgress((progress) => {
     if (progress.phase === "preparing") {
+      workPanelStateRef.current = EMPTY_WORK_PANEL_STATE;
+      setWorkPanelState(EMPTY_WORK_PANEL_STATE);
       if (activeWebEntryKeyRef.current?.startsWith("webapp:")) {
         requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
       }
@@ -1781,30 +1705,22 @@ export function AppShell() {
 
   useEffect(() => {
     let cancelled = false;
-    let bootstrapStateChanged = false;
-    const unsubscribe = window.electronAPI.assistant.onBootstrapStateChanged((state) => {
-      bootstrapStateChanged = true;
-      if (!cancelled) {
-        setAssistantBootstrapState(state);
-      }
-    });
+    firstInstallBootstrapNavigationRequestRef.current ??=
+      window.electronAPI.assistant.consumeFirstInstallBootstrapNavigation();
     Promise.all([
       window.electronAPI.assistant.getSettings(),
-      window.electronAPI.assistant.getBootstrapState(),
+      firstInstallBootstrapNavigationRequestRef.current,
     ])
-      .then(([settings, bootstrapState]) => {
+      .then(([settings, bootstrapNavigation]) => {
         if (!cancelled) {
           setAssistantSettings(settings);
-          if (!bootstrapStateChanged) {
-            setAssistantBootstrapState(bootstrapState);
-          }
+          setFirstInstallBootstrapNavigationRequested(bootstrapNavigation.shouldOpen === true);
         }
       })
       .catch(() => undefined);
 
     return () => {
       cancelled = true;
-      unsubscribe();
     };
   }, []);
 
@@ -2976,38 +2892,26 @@ export function AppShell() {
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
 
-  const ensureChatWorkPanelWorkspace = useCallback((chatId: string, initialUrl = CHAT_WORK_PANEL_BLANK_URL, initialTitle?: string) => {
-    const normalizedChatId = chatId.trim();
-    const current = chatWorkPanelWorkspacesRef.current.get(normalizedChatId);
-    if (current) {
-      return current;
+  const dispatchWorkPanelCommand = useCallback((command: WorkPanelCommand) => {
+    const result = reduceWorkPanelCommand(workPanelStateRef.current, command);
+    if (result.nextState !== workPanelStateRef.current) {
+      workPanelStateRef.current = result.nextState;
+      setWorkPanelState(result.nextState);
     }
-    const workspace = createChatWorkPanelWorkspace(normalizedChatId, initialUrl, initialTitle);
-    const next = new Map(chatWorkPanelWorkspacesRef.current);
-    next.set(normalizedChatId, workspace);
-    chatWorkPanelWorkspacesRef.current = next;
-    setChatWorkPanelWorkspaces([...next.values()]);
-    return workspace;
+    return result;
   }, []);
 
+  const ensureChatWorkPanelWorkspace = useCallback((chatId: string) => {
+    return dispatchWorkPanelCommand({
+      type: "openItem",
+      ownerChatId: chatId,
+      descriptor: { kind: "web", url: BUILTIN_BROWSER_DEFAULT_URL, title: t("chatWorkPanel.blankTab") },
+    });
+  }, [dispatchWorkPanelCommand, t]);
+
   const closeChatWorkPanelWorkspace = useCallback((chatId: string) => {
-    const closingWorkspace = chatWorkPanelWorkspacesRef.current.get(chatId);
-    const next = new Map(chatWorkPanelWorkspacesRef.current);
-    next.delete(chatId);
-    chatWorkPanelWorkspacesRef.current = next;
-    setChatWorkPanelWorkspaces([...next.values()]);
-    if (closingWorkspace) {
-      window.setTimeout(() => {
-        const clearSession = window.electronAPI.chatWorkPanel?.clearSession;
-        if (typeof clearSession !== "function") {
-          return;
-        }
-        void clearSession({
-          partition: closingWorkspace.partition
-        }).catch(() => undefined);
-      }, 0);
-    }
-  }, []);
+    dispatchWorkPanelCommand({ type: "closeWorkspace", ownerChatId: chatId });
+  }, [dispatchWorkPanelCommand]);
 
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
     ensureChatWorkPanelWorkspace(chatId);
@@ -3125,7 +3029,7 @@ export function AppShell() {
           assistantNavAgents={assistantNavAgents}
           assistantNavChatItems={assistantNavChatItems}
           assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
-          chatWorkPanelOpenChatIds={chatWorkPanelWorkspaces.map((workspace) => workspace.chatId)}
+          chatWorkPanelOpenChatIds={workPanelState.workspaces.map((workspace) => workspace.ownerChatId)}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}
           chatNavAgentOptions={chatNavAgentOptions}
@@ -3196,6 +3100,7 @@ export function AppShell() {
           <ServiceWebviewSurfaceHost
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
+            activeOwnerChatId={activeChatWorkPanelChatId}
             agentChatFocusRequestId={activeAgentChatFocusRequestId}
             hostTheme={resolvedTheme}
             mountedServiceIds={mountedServiceIds}
@@ -3324,11 +3229,12 @@ export function AppShell() {
             <Route path="/help" element={<RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>} />
           </Routes>
         </main>
-        <ChatWorkPanelHost
+        <WorkPanelHost
           activeChatId={activeChatWorkPanelChatId}
-          workspaces={chatWorkPanelWorkspaces}
-          ensureWorkspace={ensureChatWorkPanelWorkspace}
-          closeWorkspace={closeChatWorkPanelWorkspace}
+          state={workPanelState}
+          dispatchCommand={dispatchWorkPanelCommand}
+          isMac={isMac}
+          isWindows={isWindows}
         />
       </div>
       {isSidebarResizing ? (

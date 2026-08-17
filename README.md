@@ -47,6 +47,8 @@ npm test
 
 开发模式会同步品牌与内置资源、编译 Electron 主进程、启动 Vite 和 Electron。测试入口 `npm test` 会先执行 i18n 检查和完整构建，再运行 `test/*.test.mjs`。
 
+需要重新构建并同步四个内置服务时，macOS/Linux 使用 `scripts/build-builtin-services.sh`，Windows 使用 `scripts/build-builtin-services.ps1`；普通开发与发布只校验已经同步的资源。
+
 ## 4. 目录结构
 
 ```text

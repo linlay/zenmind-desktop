@@ -8,13 +8,20 @@ const require = createRequire(import.meta.url);
 const {
   PAGE_TO_PRELOAD_EVENT,
   PRELOAD_TO_PAGE_EVENT,
+  AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT,
+  AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
   DESKTOP_WEBVIEW_BRIDGE_FLAG,
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
 const {
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
-  SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
+  SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL
 } = require("../dist-electron/shared/service-webview-bridge.js");
 const {
   AGENT_AUTH_REQUEST_TYPE,
@@ -121,6 +128,11 @@ function createFakeWindow(options = {}) {
 }
 
 function runMainWorldScript(window) {
+  class Event {
+    constructor(type) {
+      this.type = type;
+    }
+  }
   class CustomEvent {
     constructor(type, init = {}) {
       this.type = type;
@@ -138,6 +150,7 @@ function runMainWorldScript(window) {
 
   const context = vm.createContext({
     CustomEvent,
+    Event,
     MessageEvent,
     URL,
     URLSearchParams,
@@ -313,7 +326,7 @@ test("service webview main-world script does not forward websocket stream frames
   assert.deepEqual(captured, []);
 });
 
-test("service webview main-world script seeds tokens from auth responses", () => {
+test("service webview main-world script clears tokens from auth responses", () => {
   const { window } = createFakeWindow();
   window.sessionStorage.setItem("agent-webclient.appAccessToken", "stale-token");
   window.sessionStorage.setItem("agent-webclient.appAuthContext", "desktop-auth-old");
@@ -330,13 +343,13 @@ test("service webview main-world script seeds tokens from auth responses", () =>
     }
   });
 
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-1");
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), null);
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-current");
-  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-1");
+  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, undefined);
   assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
 });
 
-test("service webview main-world script keeps matching auth context while updating the token", () => {
+test("service webview main-world script keeps matching auth context without exposing a token", () => {
   const { window } = createFakeWindow();
   window.sessionStorage.setItem("agent-webclient.appAccessToken", "token-1");
   window.sessionStorage.setItem("agent-webclient.appAuthContext", "desktop-auth-current");
@@ -352,10 +365,50 @@ test("service webview main-world script keeps matching auth context while updati
     }
   });
 
-  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), "token-2");
+  assert.equal(window.sessionStorage.getItem("agent-webclient.appAccessToken"), null);
   assert.equal(window.sessionStorage.getItem("agent-webclient.appAuthContext"), "desktop-auth-current");
-  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, "token-2");
+  assert.equal(window.__AGENT_APP_ACCESS_TOKEN, undefined);
   assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
+});
+
+test("service webview main-world script exposes a fixed WebSocket-like Platform Frame Port", async () => {
+  const { window } = createFakeWindow();
+  const opens = [];
+  const sends = [];
+  const closes = [];
+  runMainWorldScript(window);
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT, (event) => opens.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT, (event) => sends.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT, (event) => closes.push(event.detail));
+
+  const platformWs = window.__AGENT_WEBCLIENT_PLATFORM_WS__;
+  const workpanel = window.__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__;
+  assert.deepEqual(Object.keys(platformWs).sort(), ["createSocket", "transportVersion"]);
+  assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "getCapabilities", "openItem"]);
+  assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_PLATFORM_WS__").writable, false);
+  assert.equal(platformWs.transportVersion, 1);
+
+  const socket = platformWs.createSocket();
+  assert.equal(socket.readyState, 0);
+  assert.equal(opens.length, 1);
+  const received = [];
+  socket.addEventListener("message", (event) => received.push(event.data));
+  window.dispatchEvent({
+    type: AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
+    detail: { socketId: opens[0].socketId, type: "open" }
+  });
+  assert.equal(socket.readyState, 1);
+  socket.send('{"frame":"request","type":"/api/query","id":"wss-1"}');
+  assert.equal(sends[0].socketId, opens[0].socketId);
+  window.dispatchEvent({
+    type: AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
+    detail: { socketId: opens[0].socketId, type: "message", data: '{"frame":"stream","id":"wss-1"}' }
+  });
+  assert.deepEqual(received, ['{"frame":"stream","id":"wss-1"}']);
+  socket.close(1000, "done");
+  assert.equal(closes[0].socketId, opens[0].socketId);
+  assert.equal(closes[0].code, 1000);
+  assert.equal(closes[0].reason, "done");
 });
 
 test("service webview main-world script ignores removed legacy auth responses", () => {
@@ -400,4 +453,26 @@ test("service webview main-world script emits route changes on current channel",
   });
 
   assert.deepEqual(currentChannelPayloads, [payload]);
+});
+
+test("service webview main-world script emits live surface lifecycle on its host channel", () => {
+  const { window } = createFakeWindow();
+  const lifecyclePayloads = [];
+  const payload = {
+    type: "desktopSurfaceActiveChanged",
+    active: false,
+    surfaceId: "agent-webclient-chat"
+  };
+
+  runMainWorldScript(window);
+  window.electronAPI.onFromMain(
+    SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL,
+    (_event, nextPayload) => lifecyclePayloads.push(nextPayload)
+  );
+  window.dispatchEvent({
+    type: PRELOAD_TO_PAGE_EVENT,
+    detail: payload
+  });
+
+  assert.deepEqual(lifecyclePayloads, [payload]);
 });

@@ -100,7 +100,6 @@ if (shouldSignDarwinBuiltinAssets()) {
   syncBuiltinAssetArgs.push("--sign-darwin");
 }
 await runAndWait("node", syncBuiltinAssetArgs, brandProcessOptions({ cwd: projectRoot }));
-await runAndWait(npmCmd, ["run", "icons"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, ["run", "stage:app", "--", "--os=darwin", "--arch=arm64"], brandProcessOptions({ cwd: projectRoot }));
 await runAndWait(npmCmd, [

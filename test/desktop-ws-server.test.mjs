@@ -20,6 +20,7 @@ const {
   DESKTOP_WS_HOST,
   DESKTOP_WS_LAN_BIND_HOST
 } = require("../dist-electron/shared/desktop-ws.js");
+const { RealtimeBroker } = require("../dist-electron/main/realtime/realtime-broker.js");
 
 function createApp(homePath) {
   return {
@@ -824,7 +825,11 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
             msg: "success",
             data: [{ key: "demo" }]
           });
-          this.emitMessage({ frame: "push", type: "chat.updated", data: { chatId: "chat-1" } });
+          this.emitMessage({
+            frame: "push",
+            type: "chat.updated",
+            data: { chatId: "chat-1", updatedAt: 1_771_888_000_000 }
+          });
         }
         if (frame.type === "/api/query") {
           this.emitMessage({
@@ -844,8 +849,17 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
     }
   }
 
+  const app = createApp(path.join(root, "home"));
+  const realtimeBroker = new RealtimeBroker({
+    app,
+    issueAccessToken: async () => ({ ok: true, token: "platform-token", message: "issued" }),
+    createWebSocket: (url) => new FakeAgentPlatformWebSocket(url),
+    heartbeatTimeoutMs: 0,
+  });
+  t.after(() => realtimeBroker.dispose());
+
   const started = await startDesktopWsServer({
-    app: createApp(path.join(root, "home")),
+    app,
     host: "127.0.0.1",
     port: 0,
     desktopActionOptions: {},
@@ -860,7 +874,7 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
     },
     getKanbanRuntime: () => null,
     agentPlatformBridge: {
-      WebSocketConstructor: FakeAgentPlatformWebSocket,
+      realtimeBroker,
       getServiceState: async () => ({
         status: "running",
         message: "",
@@ -899,12 +913,18 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
   assert.deepEqual(agents.data, [{ key: "demo" }]);
   assert.equal(FakeAgentPlatformWebSocket.sockets.length, 1);
   assert.equal(new URL(FakeAgentPlatformWebSocket.sockets[0].url).searchParams.get("token"), "platform-token");
-  assert.deepEqual(FakeAgentPlatformWebSocket.sockets[0].sent[0], {
-    frame: "request",
-    type: "/api/agents",
-    id: "ap-agents-1",
-    payload: { includeChats: 1 }
-  });
+  assert.equal(FakeAgentPlatformWebSocket.sockets[0].sent[0].frame, "request");
+  assert.equal(FakeAgentPlatformWebSocket.sockets[0].sent[0].type, "/api/agents");
+  assert.match(FakeAgentPlatformWebSocket.sockets[0].sent[0].id, /^desktop-forward-/u);
+  assert.notEqual(FakeAgentPlatformWebSocket.sockets[0].sent[0].id, "ap-agents-1");
+  assert.deepEqual(FakeAgentPlatformWebSocket.sockets[0].sent[0].payload, { includeChats: 1 });
+
+  const secondClient = await connectRawWebSocket(started.webSocketUrl, "bearer.test-token").open();
+  t.after(() => secondClient.close());
+  await secondClient.waitFor((message) => message.ns === "d" && message.type === "connected");
+  secondClient.send({ ns: "ap", frame: "request", type: "/api/agents", id: "same-local-id", payload: {} });
+  await secondClient.waitFor((message) => message.ns === "ap" && message.id === "same-local-id");
+  assert.equal(FakeAgentPlatformWebSocket.sockets.length, 1);
 
   const platformPush = await client.waitFor((message) => message.ns === "ap" && message.frame === "push" && message.type === "chat.updated");
   assert.equal(platformPush.data.chatId, "chat-1");

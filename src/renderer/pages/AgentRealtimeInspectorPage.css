@@ -1,0 +1,395 @@
+.agent-realtime-inspector {
+  --realtime-inspector-bg: #f7f8fa;
+  --realtime-inspector-panel: #ffffff;
+  --realtime-inspector-toolbar: #f1f3f4;
+  --realtime-inspector-border: #d7dbe0;
+  --realtime-inspector-text: #202124;
+  --realtime-inspector-muted: #687078;
+  --realtime-inspector-hover: #eef3f8;
+  --realtime-inspector-selected: #dbeafe;
+  --realtime-inspector-code: #fbfcfd;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+  display: grid;
+  grid-template-rows: auto auto auto minmax(0, 1fr) auto;
+  background: var(--realtime-inspector-bg);
+  color: var(--realtime-inspector-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  font-size: 12px;
+}
+
+:root[data-theme="dark"] .agent-realtime-inspector {
+  --realtime-inspector-bg: #202124;
+  --realtime-inspector-panel: #202124;
+  --realtime-inspector-toolbar: #292a2d;
+  --realtime-inspector-border: #3c4043;
+  --realtime-inspector-text: #e8eaed;
+  --realtime-inspector-muted: #9aa0a6;
+  --realtime-inspector-hover: #292d31;
+  --realtime-inspector-selected: #253b55;
+  --realtime-inspector-code: #1f2023;
+}
+
+.agent-realtime-inspector button,
+.agent-realtime-inspector input,
+.agent-realtime-inspector select {
+  font: inherit;
+}
+
+.agent-realtime-inspector-header {
+  min-height: 54px;
+  padding: 7px 10px;
+  display: grid;
+  grid-template-columns: minmax(260px, 1fr) auto auto;
+  align-items: center;
+  gap: 14px;
+  border-bottom: 1px solid var(--realtime-inspector-border);
+  background: var(--realtime-inspector-toolbar);
+}
+
+.agent-realtime-inspector-title {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.agent-realtime-inspector-title > div {
+  min-width: 0;
+}
+
+.agent-realtime-inspector-title h1 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.agent-realtime-inspector-title span:last-child {
+  display: block;
+  overflow: hidden;
+  color: var(--realtime-inspector-muted);
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-realtime-inspector-status {
+  width: 9px;
+  height: 9px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  background: #9aa0a6;
+  box-shadow: 0 0 0 3px rgba(154, 160, 166, 0.14);
+}
+
+.agent-realtime-inspector-status.is-connected {
+  background: #34a853;
+  box-shadow: 0 0 0 3px rgba(52, 168, 83, 0.16);
+}
+
+.agent-realtime-inspector-status.is-connecting {
+  background: #f9ab00;
+  box-shadow: 0 0 0 3px rgba(249, 171, 0, 0.16);
+}
+
+.agent-realtime-inspector-connection,
+.agent-realtime-inspector-actions,
+.agent-realtime-inspector-layer-tabs {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.agent-realtime-inspector-connection span {
+  padding: 2px 6px;
+  color: var(--realtime-inspector-muted);
+  border-right: 1px solid var(--realtime-inspector-border);
+  white-space: nowrap;
+}
+
+.agent-realtime-inspector-connection span:last-child {
+  border-right: 0;
+}
+
+.agent-realtime-inspector-actions button,
+.agent-realtime-inspector-layer-tabs button,
+.agent-realtime-inspector-filters > button {
+  min-height: 27px;
+  padding: 3px 9px;
+  border: 1px solid var(--realtime-inspector-border);
+  border-radius: 4px;
+  background: var(--realtime-inspector-panel);
+  color: var(--realtime-inspector-text);
+  cursor: pointer;
+}
+
+.agent-realtime-inspector-actions button:hover:not(:disabled),
+.agent-realtime-inspector-layer-tabs button:hover,
+.agent-realtime-inspector-filters > button:hover {
+  background: var(--realtime-inspector-hover);
+}
+
+.agent-realtime-inspector-actions button.is-active,
+.agent-realtime-inspector-layer-tabs button.is-active,
+.agent-realtime-inspector-filters > button.is-active {
+  border-color: #1a73e8;
+  background: rgba(26, 115, 232, 0.12);
+  color: #1a73e8;
+}
+
+.agent-realtime-inspector-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.agent-realtime-inspector-filters {
+  min-height: 42px;
+  padding: 7px 10px;
+  display: grid;
+  grid-template-columns: auto minmax(180px, 1fr) minmax(138px, auto) minmax(180px, auto) auto;
+  align-items: center;
+  gap: 7px;
+  border-bottom: 1px solid var(--realtime-inspector-border);
+  background: var(--realtime-inspector-toolbar);
+}
+
+.agent-realtime-inspector-filters input,
+.agent-realtime-inspector-filters select {
+  height: 28px;
+  min-width: 0;
+  padding: 3px 8px;
+  border: 1px solid var(--realtime-inspector-border);
+  border-radius: 4px;
+  outline: none;
+  background: var(--realtime-inspector-panel);
+  color: var(--realtime-inspector-text);
+}
+
+.agent-realtime-inspector-filters input:focus,
+.agent-realtime-inspector-filters select:focus {
+  border-color: #1a73e8;
+  box-shadow: 0 0 0 1px #1a73e8;
+}
+
+.agent-realtime-inspector-error {
+  padding: 5px 10px;
+  border-bottom: 1px solid rgba(234, 67, 53, 0.45);
+  background: rgba(234, 67, 53, 0.12);
+  color: #c5221f;
+}
+
+:root[data-theme="dark"] .agent-realtime-inspector-error {
+  color: #f28b82;
+}
+
+.agent-realtime-inspector-workspace {
+  min-height: 0;
+  display: grid;
+  grid-template-columns: minmax(560px, 62%) minmax(320px, 38%);
+  background: var(--realtime-inspector-panel);
+}
+
+.agent-realtime-inspector-frames,
+.agent-realtime-inspector-detail {
+  min-width: 0;
+  min-height: 0;
+}
+
+.agent-realtime-inspector-frames {
+  display: grid;
+  grid-template-rows: 28px minmax(0, 1fr);
+  border-right: 1px solid var(--realtime-inspector-border);
+}
+
+.agent-realtime-inspector-frame-head,
+.agent-realtime-inspector-frame {
+  display: grid;
+  grid-template-columns: 94px 66px 104px minmax(130px, 1.1fr) minmax(130px, 1fr) 66px;
+  align-items: center;
+  gap: 0;
+}
+
+.agent-realtime-inspector-frame-head {
+  border-bottom: 1px solid var(--realtime-inspector-border);
+  background: var(--realtime-inspector-toolbar);
+  color: var(--realtime-inspector-muted);
+  font-weight: 600;
+}
+
+.agent-realtime-inspector-frame-head span,
+.agent-realtime-inspector-frame > * {
+  min-width: 0;
+  padding: 0 7px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-realtime-inspector-frame-head span + span,
+.agent-realtime-inspector-frame > * + * {
+  border-left: 1px solid var(--realtime-inspector-border);
+}
+
+.agent-realtime-inspector-frame-list {
+  min-height: 0;
+  overflow: auto;
+  scrollbar-color: var(--realtime-inspector-border) transparent;
+}
+
+.agent-realtime-inspector-frame {
+  width: 100%;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--realtime-inspector-border) 58%, transparent);
+  background: transparent;
+  color: var(--realtime-inspector-text);
+  text-align: left;
+  cursor: default;
+}
+
+.agent-realtime-inspector-frame:hover {
+  background: var(--realtime-inspector-hover);
+}
+
+.agent-realtime-inspector-frame.is-selected {
+  background: var(--realtime-inspector-selected);
+}
+
+.agent-realtime-inspector-frame time,
+.agent-realtime-inspector-frame code,
+.agent-realtime-inspector-frame strong {
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.agent-realtime-inspector-frame.is-platform-to-desktop code,
+.agent-realtime-inspector-frame.is-desktop-to-surface code {
+  color: #1a73e8;
+}
+
+.agent-realtime-inspector-frame.is-desktop-to-platform code,
+.agent-realtime-inspector-frame.is-surface-to-desktop code {
+  color: #b06000;
+}
+
+:root[data-theme="dark"] .agent-realtime-inspector-frame.is-desktop-to-platform code,
+:root[data-theme="dark"] .agent-realtime-inspector-frame.is-surface-to-desktop code {
+  color: #f9ab00;
+}
+
+.agent-realtime-inspector-detail {
+  display: grid;
+  grid-template-rows: 29px minmax(0, 1fr);
+  background: var(--realtime-inspector-code);
+}
+
+.agent-realtime-inspector-detail-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--realtime-inspector-border);
+  background: var(--realtime-inspector-toolbar);
+}
+
+.agent-realtime-inspector-detail-tabs button {
+  padding: 0 14px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--realtime-inspector-muted);
+  cursor: pointer;
+}
+
+.agent-realtime-inspector-detail-tabs button.is-active {
+  border-bottom-color: #1a73e8;
+  color: var(--realtime-inspector-text);
+}
+
+.agent-realtime-inspector-detail pre {
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  color: var(--realtime-inspector-text);
+  font: 11px/1.55 "SFMono-Regular", Consolas, monospace;
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.agent-realtime-inspector-context {
+  min-height: 0;
+  margin: 0;
+  padding: 8px 10px;
+  overflow: auto;
+}
+
+.agent-realtime-inspector-context div {
+  display: grid;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 10px;
+  padding: 7px 3px;
+  border-bottom: 1px solid var(--realtime-inspector-border);
+}
+
+.agent-realtime-inspector-context dt {
+  color: var(--realtime-inspector-muted);
+}
+
+.agent-realtime-inspector-context dd {
+  min-width: 0;
+  margin: 0;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  overflow-wrap: anywhere;
+}
+
+.agent-realtime-inspector-empty {
+  min-height: 120px;
+  display: grid;
+  place-items: center;
+  padding: 20px;
+  color: var(--realtime-inspector-muted);
+  text-align: center;
+}
+
+.agent-realtime-inspector-footer {
+  min-height: 25px;
+  padding: 3px 10px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border-top: 1px solid var(--realtime-inspector-border);
+  background: var(--realtime-inspector-toolbar);
+  color: var(--realtime-inspector-muted);
+}
+
+.agent-realtime-inspector-footer span:last-child {
+  margin-left: auto;
+}
+
+@media (max-width: 1050px) {
+  .agent-realtime-inspector-header {
+    grid-template-columns: minmax(240px, 1fr) auto;
+  }
+
+  .agent-realtime-inspector-connection {
+    display: none;
+  }
+
+  .agent-realtime-inspector-filters {
+    grid-template-columns: auto minmax(160px, 1fr) minmax(130px, auto) minmax(160px, auto) auto;
+  }
+
+  .agent-realtime-inspector-workspace {
+    grid-template-columns: minmax(500px, 58%) minmax(300px, 42%);
+  }
+
+  .agent-realtime-inspector-frame-head,
+  .agent-realtime-inspector-frame {
+    grid-template-columns: 82px 58px 92px minmax(110px, 1fr) minmax(110px, 1fr) 58px;
+  }
+}

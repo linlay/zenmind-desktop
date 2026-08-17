@@ -1628,7 +1628,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(serviceWebviewSurface, /embedPath: effectiveEmbedPath/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
-  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientSelectWorkerScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteAgentKey/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteNewChat/);
@@ -4514,29 +4514,28 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
   assert.match(contracts, /type AssistantCreateCoderProjectResult = AssistantCreateProjectResult/);
   assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
-  assert.match(contracts, /interface AssistantBootstrapState[\s\S]*?ownerProfileExists: boolean/);
-  assert.match(contracts, /AssistantBootstrapStateChangedListener/);
+  assert.match(contracts, /interface AssistantFirstInstallBootstrapNavigationResult[\s\S]*?shouldOpen: boolean/);
   assert.match(contracts, /AssistantNavigationPushEventListener/);
   assert.match(contracts, /listAgents: \(\) => Promise<DesktopPetAgentOption\[\]>/);
-  assert.match(contracts, /getBootstrapState: \(\) => Promise<AssistantBootstrapState>/);
+  assert.match(contracts, /consumeFirstInstallBootstrapNavigation: \(\) => Promise<AssistantFirstInstallBootstrapNavigationResult>/);
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
   assert.match(contracts, /getNavigationLiveStatus: \(\) => Promise<AssistantNavigationLiveStatus>/);
   assert.match(contracts, /createProject:\s*\(input: AssistantCreateProjectRequest\) => Promise<AssistantCreateProjectResult>/);
   assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
-  assert.match(preload, /getBootstrapState: \(\) => ipcRenderer\.invoke\("assistant\.getBootstrapState"\)/);
+  assert.match(preload, /consumeFirstInstallBootstrapNavigation: \(\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.consumeFirstInstallBootstrapNavigation"\)/);
   assert.match(preload, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) =>\s*ipcRenderer\.invoke\("assistant\.listNavigationAgents", options\)/);
   assert.match(preload, /getNavigationLiveStatus: \(\) => ipcRenderer\.invoke\("assistant\.getNavigationLiveStatus"\)/);
   assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createProject:\s*\(input: AssistantCreateProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createProject", input\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
-  assert.match(preload, /onBootstrapStateChanged/);
+  assert.doesNotMatch(preload, /onBootstrapStateChanged|assistant\.bootstrapStateChanged/);
   assert.match(preload, /onNavigationPushEvent/);
   assert.match(mainIpcRegister, /registerAssistantIpcHandlers\(ipcMain,/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listAgents"/);
-  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getBootstrapState"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.consumeFirstInstallBootstrapNavigation"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listNavigationAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getNavigationLiveStatus"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
@@ -4556,7 +4555,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
   assert.match(assistantHandlers, /lastError:\s*null,\s*recentFrames:\s*\[\]/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?assistant\.navigationAgentsChanged/);
-  assert.match(mainProcess, /createAssistantBootstrapStateMonitor\([\s\S]*?assistant\.bootstrapStateChanged/);
+  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);[\s\S]*?createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\)/);
+  assert.doesNotMatch(mainProcess, /createAssistantBootstrapStateMonitor|assistant\.bootstrapStateChanged/);
   assert.match(mainProcess, /function emitAssistantNavigationPushEvent[\s\S]*?assistant\.navigationPushEvent/);
   assert.match(assistantRuntime, /emitAssistantNavigationPushEvent\(event\)/);
   assert.match(assistantHandlers, /ok:\s*false,[\s\S]*?items:\s*\[\]/);
@@ -4573,7 +4573,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.doesNotMatch(appSidebar, /readEpochMillis/);
   assert.doesNotMatch(globalSearchRows, /readEpochMillis/);
   assert.match(appShell, /onNavigationAgentsChanged/);
-  assert.match(appShell, /onBootstrapStateChanged/);
+  assert.match(appShell, /consumeFirstInstallBootstrapNavigation/);
+  assert.doesNotMatch(appShell, /onBootstrapStateChanged|getBootstrapState|ownerProfileExists/);
   assert.doesNotMatch(appShell, /onNavigationPushEvent/);
   assert.match(appShell, /setAssistantNavAgents\(nextItems\)/);
   assert.match(appShell, /const \[assistantNavChatItems, setAssistantNavChatItems\] = useState<AssistantNavChatItem\[\]>\(\[\]\);/);
@@ -4916,7 +4917,7 @@ test("assistant navigation agents refresh immediately after startup services bec
   assert.match(appShell, /if \(agentPlatformRunning\) \{[\s\S]*?refreshAssistantNavAgents\(\)/);
 });
 
-test("OWNER-driven bootstrap initialization stays in Chats and strictly restores the configured default agent", () => {
+test("first-install bootstrap navigation stays optional and keeps the configured default Chat agent", () => {
   const appShell = readAppShellSource();
   const assistantNavigation = readSourceFile("src", "renderer", "assistantNavigation.ts");
   const appSidebar = readSourceFile(
@@ -4933,21 +4934,22 @@ test("OWNER-driven bootstrap initialization stays in Chats and strictly restores
   assert.doesNotMatch(appShell, /shouldAutoOpenBootstrapAgent|createBootstrapAgentRoute|startupBootstrapNavigationDoneRef/);
   assert.doesNotMatch(startupGateHelper, /shouldAutoOpenBootstrapAgent|isBootstrapOwnedRoute/);
   assert.match(appShell, /const bootstrapInitialNavigationDoneRef = useRef\(false\)/);
-  assert.match(appShell, /const bootstrapHandoffNavigationDoneRef = useRef\(false\)/);
-  assert.match(appShell, /assistantNavChatItems\.some\(\(chat\) =>[\s\S]*?chat\.chatId === bootstrapChatId && chat\.agentKey === bootstrapAgentKey/);
-  assert.match(appShell, /seedChatIndexed[\s\S]*?createAgentChatRoute\(bootstrapAgentKey, bootstrapChatId\)[\s\S]*?createAgentNewChatRoute\(bootstrapAgentKey\)/);
+  assert.match(appShell, /firstInstallBootstrapNavigationRequestRef/);
+  assert.match(appShell, /consumeFirstInstallBootstrapNavigation\(\)/);
+  assert.match(appShell, /resolveFirstInstallBootstrapNavigationTarget\([\s\S]*?assistantNavChatItems/);
+  assert.match(appShell, /target\.chatId[\s\S]*?createAgentChatRoute\(target\.agentKey, target\.chatId\)[\s\S]*?createAgentNewChatRoute\(target\.agentKey\)/);
   assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current = true;[\s\S]*?navigate\(targetRoute, \{ replace: true \}\)/);
-  assert.match(appShell, /bootstrapInitialNavigationDoneRef\.current \|\|[\s\S]*?chatRuntimeAgent\.bootstrapActive \|\|[\s\S]*?location\.pathname !== "\/"/);
+  assert.match(appShell, /firstInstallBootstrapNavigationRequested !== false \|\|[\s\S]*?location\.pathname !== "\/"/);
   assert.match(assistantNavigation, /export function resolveAssistantNavChatRuntimeAgent\(/);
-  assert.match(assistantNavigation, /const bootstrapPending = Boolean\(bootstrapAgentKey && options\.bootstrapPending\)/);
-  assert.match(assistantNavigation, /const agent = bootstrapPending \? bootstrapAgent : defaultAgent;/);
-  assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapPending && bootstrapAgent\)/);
+  assert.match(assistantNavigation, /agent: defaultAgent,/);
+  assert.match(assistantNavigation, /agentKey: defaultAgent\?\.agentKey \?\? defaultChatAgentKey/);
+  assert.match(assistantNavigation, /bootstrapActive: Boolean\(bootstrapNavigationRequested && bootstrapAgent\)/);
+  assert.match(assistantNavigation, /export function resolveFirstInstallBootstrapNavigationTarget\(/);
   assert.match(appShell, /const chatRuntimeAgent = useMemo\([\s\S]*?resolveAssistantNavChatRuntimeAgent\(chatNavAgentOptions/);
-  assert.match(appShell, /bootstrapPending,/);
-  assert.match(appShell, /Promise\.all\(\[[\s\S]*?assistant\.getSettings\(\)[\s\S]*?assistant\.getBootstrapState\(\)/);
-  assert.match(appShell, /!assistantBootstrapStateReady/);
-  assert.match(appShell, /if \(!chatRuntimeAgent\.bootstrapActive \|\| !bootstrapAgentKey \|\| !bootstrapAgent\)/);
+  assert.match(appShell, /bootstrapNavigationRequested: firstInstallBootstrapNavigationRequested === true/);
+  assert.match(appShell, /Promise\.all\(\[[\s\S]*?assistant\.getSettings\(\)[\s\S]*?firstInstallBootstrapNavigationRequestRef\.current/);
   assert.match(appShell, /chatDefaultAgentKey=\{chatRuntimeAgent\.agentKey\}/);
+  assert.match(appShell, /defaultChatAgentKey=\{chatRuntimeAgent\.agentKey\}/);
   assert.match(appShell, /bootstrapActive=\{chatRuntimeAgent\.bootstrapActive\}/);
   assert.match(appShell, /bootstrapAgentKey=\{normalizedBootstrapAgentKey\}/);
   assert.match(appShell, /bootstrapChatId=\{assistantSettings\?\.bootstrapChatId\}/);
@@ -4955,12 +4957,7 @@ test("OWNER-driven bootstrap initialization stays in Chats and strictly restores
   assert.doesNotMatch(appShell, /onNavigationPushEvent\(\(event\) =>/);
   assert.doesNotMatch(appShell, /run\.complete/);
   assert.doesNotMatch(appShell, /chatRuntimeAgent\.bootstrapActive[\s\S]*?window\.setInterval\([\s\S]*?refreshAssistantNavAgents\(\)[\s\S]*?2_000/);
-  assert.match(appShell, /!chatRuntimeAgent\.defaultAgentAvailable/);
-  assert.match(appShell, /assistantBootstrapState\?\.ownerProfileExists !== true/);
-  assert.match(appShell, /if \(bootstrapHandoffNavigationDoneRef\.current\) \{\s*return;/);
-  assert.match(appShell, /route\.agentKey !== bootstrapAgentKey/);
-  assert.match(appShell, /navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/);
-  assert.match(appShell, /bootstrapHandoffNavigationDoneRef\.current = true;[\s\S]*?navigate\(createAgentNewChatRoute\(defaultChatAgentKey\), \{ replace: true \}\)/);
+  assert.doesNotMatch(appShell, /assistantBootstrapState|ownerProfileExists|bootstrapHandoffNavigationDoneRef/);
   assert.doesNotMatch(appShell, /visibleAssistantNavChatItems/);
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
   assert.match(appShell, /if \(bootstrapAgentKey\) \{[\s\S]*?chatDefaultAgentMigrationRef\.current = "";[\s\S]*?return;/);
@@ -4970,8 +4967,10 @@ test("OWNER-driven bootstrap initialization stays in Chats and strictly restores
   assert.match(appSidebar, /function createBootstrapChatTargetRoute\(\)[\s\S]*?createAgentChatRoute\(\s*normalizedBootstrapAgentKey,\s*normalizedBootstrapChatId,?\s*\)[\s\S]*?createAgentNewChatRoute\(normalizedBootstrapAgentKey\)/);
   assert.match(appSidebar, /isBootstrapSeedChat \? "is-bootstrap-guide"/);
   assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?is-bootstrap-guide/);
-  assert.match(zhDictionary, /"sidebar\.bootstrapChat\.cta": "点击我完成初始化工作"/);
+  assert.match(zhDictionary, /"sidebar\.bootstrapChat\.cta": "开始使用"/);
+  assert.match(zhDictionary, /用户初始化是可选的/);
   assert.match(enDictionary, /"sidebar\.bootstrapChat\.cta":/);
+  assert.match(enDictionary, /User setup is optional/);
   assert.match(appSidebar, /function renderBootstrapGuideCard\(\)/);
   assert.match(appSidebar, /function renderBootstrapGuideFloatingBubbles\(\)/);
   assert.match(appSidebar, /closest\("\.app-shell"\)/);
@@ -4999,6 +4998,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   const mainProcess = readMainProcessRuntimeSource();
   const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
   const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
+  const ipcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const registry = fs.readFileSync(
@@ -5021,6 +5021,12 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   ].join("\n");
   const petActionBlock = bridge.match(/async function executePetAction[\s\S]*?\n}\n\nasync function executeAction/)?.[0] ?? "";
   const petStateContract = contracts.match(/export interface DesktopPetState \{[\s\S]*?\n\}/)?.[0] ?? "";
+  const trustedWorkPanelHandler = bridge.match(
+    /export async function handleAgentWebclientWorkPanelActionRequest[\s\S]*?\n}\n\nexport async function handleWebappPageActionRequest/,
+  )?.[0] ?? "";
+  const trustedWorkPanelDispatch = ipcRegister.match(
+    /dispatchWorkPanel: async[\s\S]*?\n    }\n  \}\);/,
+  )?.[0] ?? "";
 
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_HOST\s*=\s*"127\.0\.0\.1"/);
   assert.match(actionCatalog, /DESKTOP_ACTION_BRIDGE_PORT\s*=\s*11788/);
@@ -5110,6 +5116,12 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)\.general\.desktopActionConfirmationEnabled/);
   assert.match(bridge, /PageControlGrantStore/);
   assert.match(bridge, /t\("desktopAction\.pageControlGrant"\)/);
+  assert.match(trustedWorkPanelHandler, /AGENT_WEBCLIENT_WORKPANEL_ACTIONS\.has\(method\)/);
+  assert.match(trustedWorkPanelHandler, /source: \{ chatId: ownerChatId \}/);
+  assert.match(trustedWorkPanelHandler, /kind: "agentWebclientWorkPanel"/);
+  assert.doesNotMatch(trustedWorkPanelHandler, /permissionMode|full_access|confirmDesktopActionIfNeeded/);
+  assert.match(trustedWorkPanelDispatch, /handleAgentWebclientWorkPanelActionRequest/);
+  assert.doesNotMatch(trustedWorkPanelDispatch, /handleDesktopActionRequest|permissionMode|full_access/);
   const directCdpHandler = bridge.match(/export async function handleDesktopCdpRequest[\s\S]*?function isLocalhostRequest/)?.[0] ?? "";
   assert.doesNotMatch(directCdpHandler, /confirmDesktopActionIfNeeded|confirmMutatingAction|desktopActionConfirmationEnabled/);
   assert.doesNotMatch(bridge, /小宅助理/);
@@ -5969,7 +5981,7 @@ test("service webview surface provides webview-backed assistant context instead 
   );
   const directRouteLoadBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("function requestDirectWebviewRouteLoad"),
-    serviceWebviewSurface.indexOf("async function injectAgentWebclientAccessToken")
+    serviceWebviewSurface.indexOf("function handleWebviewBridgeMessage")
   );
 
   assert.match(serviceWebviewSurface, /registerAssistantPageContextProvider/);
@@ -6013,13 +6025,12 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /refreshServices/);
   assert.match(serviceWebviewSurface, /service-webview-error/);
   assert.match(serviceWebviewSurface, /buildAgentWebclientDesktopContext\(\s*getCurrentPageContextSnapshot\(\),?\s*\)/);
-  assert.match(serviceWebviewSurface, /seedAgentWebclientAccessToken/);
-  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /seedAgentWebclientAccessToken/);
+  assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.match(serviceWebviewSurface, /window\.electronAPI\.serviceWebview\.getPreloadUrl\(\)/);
   assert.match(serviceWebviewSurface, /if \(!bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return undefined;/);
   assert.match(serviceWebviewSurface, /bridgeReady,[\s\S]{0,120}serviceWebviewPreloadUrl,[\s\S]{0,120}webviewRenderKey/);
-  assert.match(serviceWebviewSurface, /if \(active === false \|\| !bridgeReady \|\| !serviceWebviewPreloadUrl\) \{[\s\S]{0,80}return;[\s\S]{0,120}seedAgentWebclientAccessToken\(\)/);
-  assert.match(serviceWebviewSurface, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*service\?\.id,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*\]/);
+  assert.match(serviceWebviewSurface, /ownerChatId\?: string/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(serviceWebviewSurface, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
   assert.match(serviceWebviewSurface, /normalizedCurrentUrl === embeddedUrl/);
@@ -6046,14 +6057,14 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.doesNotMatch(sendBridgeMessageBlock, /executeJavaScript/);
   assert.match(sendServiceRouteBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
   assert.doesNotMatch(sendServiceRouteBlock, /executeJavaScript/);
-  assert.match(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
+  assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientTokenReloadTimerRef/);
   assert.doesNotMatch(serviceWebviewSurface, /webviewRef\.current\?\.reload\(\)/);
-  assert.match(serviceWebviewSurface, /issueAccessToken\("missing"\)/);
-  assert.match(serviceWebviewSurface, /agent_webclient_seed_/);
+  assert.match(serviceWebviewSurface, /service\?\.id !== "agent-platform"[\s\S]{0,320}issueAccessToken\("missing"\)/);
   assert.match(serviceWebviewSurface, /handleServiceWebviewBridgeMessage/);
   assert.match(serviceWebviewBridgeHost, /resolveServiceWebviewAuthResponseType\(bridgeProtocol\)/);
   assert.match(serviceWebviewBridgeHost, /desktopAuthContext/);
+  assert.match(serviceWebviewBridgeHost, /context\.serviceId === "agent-webclient"[\s\S]{0,260}token:\s*null/);
   assert.match(serviceWebviewBridgeHost, /SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE/);
   assert.match(serviceWebviewBridgeHost, /AGENT_APP_CLIPBOARD_REQUEST_TYPE/);
   assert.doesNotMatch(serviceWebviewBridgeHost, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
@@ -6108,6 +6119,10 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAccessToken/);
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_AUTH_CONTEXT = currentContext/);
+  assert.match(serviceWebviewMainWorld, /removeItem\(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY\)/);
+  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL/);
+  assert.match(serviceWebviewMainWorld, /createSocket/);
+  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL/);
   assert.doesNotMatch(serviceWebviewMainWorld, /socket\.addEventListener\("message"/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
   assert.match(serviceWebviewMainWorld, /resolveServiceWebviewWsMonitorUrl/);
@@ -6115,7 +6130,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewMainWorld, /initialWsSource/);
   assert.match(serviceWebviewPreload, /sendBridgeDebug/);
   assert.match(serviceWebviewPreload, /preload-installed/);
-  assert.match(serviceWebviewPreload, /auth-response-seeded/);
+  assert.match(serviceWebviewPreload, /auth-response-forwarded/);
   assert.match(serviceWebviewPreload, /isServiceWebviewBridgeRequestType/);
   assert.match(serviceWebviewPreload, /recentForwardedBridgeRequestKeys/);
   assert.match(serviceWebviewPreload, /function forwardDesktopBridgeRequest\(/);
@@ -7769,10 +7784,12 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
     webviewDebugUrl.redactWebviewDebugUrl("https://example.test/?API-Key=secret&token=other"),
     "https://example.test/?API-Key=REDACTED&token=REDACTED"
   );
-  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\} \/>/u);
-  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} \/>/u);
+  assert.match(webviewDebugOverlay, /surfaceId:\s*\{displaySurfaceId\}/u);
+  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceId=\{surfaceId\}/u);
+  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceId=\{surfaceId\} \/>/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*none;/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*none;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-surface-id/u);
   assert.match(externalWebviewStyles, /\.embedded-surface-page \.webview-debug-url-overlay/u);
 });
 

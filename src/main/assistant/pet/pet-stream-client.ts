@@ -1,53 +1,18 @@
 import type { App } from "electron";
 import type { AgentAuthIssueResult, ServiceId, ServiceState } from "../../../shared/contracts";
-import { DesktopPetSseParser, type DesktopPetPreviewEvent } from "./desktop-pet-preview";
+import type { DesktopPetPreviewEvent } from "./desktop-pet-preview";
+import { RealtimeBroker } from "../../realtime/realtime-broker";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
-const ATTACH_RECONNECT_MS = 800;
-
-function createApiUrl(baseUrl: string, pathname: string) {
-  const url = new URL(pathname, baseUrl);
-  return url.toString();
-}
-
-function readErrorCode(value: unknown) {
-  if (typeof value !== "object" || value === null) {
-    return "";
-  }
-  const record = value as Record<string, unknown>;
-  return typeof record.code === "string" ? record.code : "";
-}
-
-async function readErrorText(response: Response) {
-  try {
-    const text = await response.text();
-    if (!text.trim()) {
-      return `HTTP ${response.status}`;
-    }
-    try {
-      const payload = JSON.parse(text) as Record<string, unknown>;
-      const code = readErrorCode(payload);
-      const message = typeof payload.msg === "string"
-        ? payload.msg
-        : typeof payload.message === "string"
-          ? payload.message
-          : text;
-      return code ? `${code}: ${message}` : message;
-    } catch {
-      return text;
-    }
-  } catch {
-    return `HTTP ${response.status}`;
-  }
-}
 
 export class AgentPlatformPetStreamClient {
+  private readonly realtimeBroker: RealtimeBroker;
+  private readonly ownsRealtimeBroker: boolean;
   private active: {
     runId: string;
-    chatId: string | null;
+    chatId: string;
     lastSeq: number;
-    controller: AbortController;
-    reconnectTimer: ReturnType<typeof setTimeout> | null;
+    unsubscribe: (() => void) | null;
     done: boolean;
   } | null = null;
 
@@ -55,13 +20,26 @@ export class AgentPlatformPetStreamClient {
     app: App;
     getServiceState: (app: App, serviceId: ServiceId) => Promise<ServiceState>;
     issueAccessToken: (app: App, reason: "missing" | "unauthorized") => Promise<AgentAuthIssueResult>;
+    realtimeBroker?: RealtimeBroker;
     onEvent: (event: DesktopPetPreviewEvent) => void;
     onDebug?: (message: string) => void;
-  }) {}
+  }) {
+    this.ownsRealtimeBroker = !options.realtimeBroker;
+    this.realtimeBroker = options.realtimeBroker ?? new RealtimeBroker({
+      app: options.app,
+      issueAccessToken: options.issueAccessToken,
+      onDiagnostic: options.onDebug,
+    });
+  }
 
   attach(runId: string, chatId?: string | null) {
     const trimmedRunId = runId.trim();
+    const trimmedChatId = chatId?.trim() || "";
     if (!trimmedRunId) {
+      return;
+    }
+    if (!trimmedChatId) {
+      this.options.onDebug?.("agent-platform realtime attach requires the source chatId");
       return;
     }
     if (this.active?.runId === trimmedRunId && !this.active.done) {
@@ -70,11 +48,10 @@ export class AgentPlatformPetStreamClient {
     this.stop();
     this.active = {
       runId: trimmedRunId,
-      chatId: chatId || null,
+      chatId: trimmedChatId,
       lastSeq: 0,
-      controller: new AbortController(),
-      reconnectTimer: null,
-      done: false
+      unsubscribe: null,
+      done: false,
     };
     void this.attachOnce(trimmedRunId);
   }
@@ -86,24 +63,11 @@ export class AgentPlatformPetStreamClient {
       return;
     }
     active.done = true;
-    if (active.reconnectTimer) {
-      clearTimeout(active.reconnectTimer);
+    active.unsubscribe?.();
+    this.realtimeBroker.cleanupConsumer(`desktop-pet-stream:${active.runId}`);
+    if (this.ownsRealtimeBroker) {
+      this.realtimeBroker.rotateIdentity();
     }
-    active.controller.abort();
-  }
-
-  private scheduleReconnect(runId: string) {
-    const active = this.active;
-    if (!active || active.runId !== runId || active.done || active.reconnectTimer) {
-      return;
-    }
-    active.reconnectTimer = setTimeout(() => {
-      if (!this.active || this.active.runId !== runId) {
-        return;
-      }
-      this.active.reconnectTimer = null;
-      void this.attachOnce(runId);
-    }, ATTACH_RECONNECT_MS);
   }
 
   private async attachOnce(runId: string) {
@@ -111,7 +75,6 @@ export class AgentPlatformPetStreamClient {
     if (!active || active.runId !== runId || active.done) {
       return;
     }
-
     try {
       const serviceState = await this.options.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID);
       const baseUrl = serviceState.status === "running" ? serviceState.healthMeta.webUrl.trim() : "";
@@ -119,88 +82,46 @@ export class AgentPlatformPetStreamClient {
         this.options.onDebug?.("agent-platform is not running");
         return;
       }
-
       const tokenResult = await this.options.issueAccessToken(this.options.app, "missing");
-      if (!tokenResult.ok || !tokenResult.token.trim()) {
+      const token = tokenResult.ok ? tokenResult.token.trim() : "";
+      if (!token) {
         this.options.onDebug?.(tokenResult.message || "agent-platform token unavailable");
         return;
       }
-
-      const url = new URL(createApiUrl(baseUrl, "/api/attach"));
-      url.searchParams.set("runId", runId);
-      url.searchParams.set("lastSeq", String(active.lastSeq));
-      const response = await fetch(url.toString(), {
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${tokenResult.token.trim()}`
-        },
-        signal: active.controller.signal
-      });
-
-      if (!response.ok) {
-        const errorText = await readErrorText(response);
-        this.options.onDebug?.(`agent-platform attach failed: ${errorText}`);
-        if (!errorText.includes("SEQ_EXPIRED")) {
-          this.scheduleReconnect(runId);
-        }
-        return;
-      }
-      await this.consumeResponse(runId, response);
-    } catch (error) {
-      if ((error as Error).name === "AbortError") {
-        return;
-      }
-      this.options.onDebug?.(error instanceof Error ? error.message : String(error));
-      this.scheduleReconnect(runId);
-    }
-  }
-
-  private async consumeResponse(runId: string, response: Response) {
-    const active = this.active;
-    if (!active || active.runId !== runId || !response.body) {
-      return;
-    }
-
-    const parser = new DesktopPetSseParser();
-    const reader = response.body.getReader();
-    const decoder = new TextDecoder();
-    let sawDone = false;
-
-    try {
-      while (true) {
-        const { done, value } = await reader.read();
-        const chunk = decoder.decode(value || new Uint8Array(), { stream: !done });
-        const result = done ? parser.finish() : parser.push(chunk);
-        for (const error of result.errors) {
-          this.options.onDebug?.(`[desktop-pet attach sse] ${error}`);
-        }
-        for (const event of result.events) {
-          if (!this.active || this.active.runId !== runId) {
+      const subscription = this.realtimeBroker.subscribeRun({
+        baseUrl,
+        token,
+        runId,
+        chatId: active.chatId,
+        lastSeq: active.lastSeq,
+        kind: "internal",
+        consumerId: `desktop-pet-stream:${runId}`,
+        onEvent: (event) => {
+          const current = this.active;
+          if (!current || current.runId !== runId || current.done) {
             return;
           }
-          if (event.seq && event.seq > this.active.lastSeq) {
-            this.active.lastSeq = event.seq;
+          if (typeof event.seq === "number" && event.seq > current.lastSeq) {
+            current.lastSeq = event.seq;
           }
-          this.options.onEvent(event);
-        }
-        if (result.done) {
-          sawDone = true;
-        }
-        if (done) {
-          break;
-        }
+          this.options.onEvent(event as DesktopPetPreviewEvent);
+        },
+        onComplete: () => {
+          if (this.active?.runId === runId) {
+            this.active.done = true;
+            this.active.unsubscribe?.();
+            this.active.unsubscribe = null;
+          }
+        },
+        onError: (error) => this.options.onDebug?.(error.message),
+      });
+      if (this.active?.runId === runId) {
+        this.active.unsubscribe = subscription.unsubscribe;
+      } else {
+        subscription.unsubscribe();
       }
-    } finally {
-      reader.releaseLock();
+    } catch (error) {
+      this.options.onDebug?.(error instanceof Error ? error.message : String(error));
     }
-
-    if (!this.active || this.active.runId !== runId) {
-      return;
-    }
-    if (sawDone) {
-      this.active.done = true;
-      return;
-    }
-    this.scheduleReconnect(runId);
   }
 }

@@ -1,0 +1,501 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
+const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/ipc/agent-webclient-bridge-handlers.js");
+const {
+  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
+  AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
+} = require("../dist-electron/shared/contracts/agent-webclient-bridge.js");
+
+function createSender(id, url) {
+  const sender = new EventEmitter();
+  sender.id = id;
+  sender.messages = [];
+  sender.isDestroyed = () => false;
+  sender.getType = () => "webview";
+  sender.getURL = () => url;
+  sender.send = (channel, message) => sender.messages.push({ channel, message });
+  return sender;
+}
+
+function createTarget(id, overrides = {}) {
+  const url = `http://127.0.0.1:7079/agent/agent-${id}?chatId=chat-${id}`;
+  return {
+    registrationId: `registration-${id}`,
+    surfaceId: `agent-webclient-chat`,
+    surfaceKind: "service",
+    surfaceType: "agent-chat",
+    serviceId: "agent-webclient",
+    pageRoute: `/agent/agent-${id}`,
+    tabId: `chat-${id}`,
+    webContentsId: id,
+    ownerWebContentsId: 1,
+    active: true,
+    currentUrl: url,
+    label: "Chat",
+    ownerChatId: `chat-${id}`,
+    ...overrides,
+  };
+}
+
+function createRegistration(targets, forwardRequest) {
+  const listeners = new Map();
+  const handlers = new Map();
+  const traces = [];
+  const cleaned = [];
+  const pushSubscribers = [];
+  const dispatched = [];
+  const broker = {
+    ensureConnected: async () => undefined,
+    forwardRequest,
+    subscribePush: ({ onPush }) => {
+      pushSubscribers.push(onPush);
+      return () => undefined;
+    },
+    cleanupConsumer: (id) => cleaned.push(id),
+    appendDebugTrace: (entry) => traces.push(entry),
+  };
+  const registration = registerAgentWebclientBridgeIpcHandlers({
+    on(channel, handler) { listeners.set(channel, handler); },
+    handle(channel, handler) { handlers.set(channel, handler); },
+  }, {
+    app: {},
+    browserSurfaces: {
+      resolveWebviewSurfaceTarget: (senderId) => targets.get(senderId) || null,
+    },
+    isTrustedAgentWebclientSession: () => true,
+    realtimeBroker: broker,
+    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
+    issueAccessToken: async () => ({ ok: true, token: "main-only-token", message: "" }),
+    dispatchWorkPanel: async (input) => {
+      dispatched.push(input);
+      return { ok: true, workspaceId: "workspace-1" };
+    },
+  });
+  return { broker, cleaned, dispatched, handlers, listeners, pushSubscribers, registration, traces };
+}
+
+async function flush() {
+  await new Promise((resolve) => setImmediate(resolve));
+}
+
+async function openSocket(runtime, sender, socketId) {
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+    { sender },
+    { socketId },
+  );
+  await flush();
+  assert.deepEqual(sender.messages.at(-1), {
+    channel: AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
+    message: { socketId, type: "open" },
+  });
+}
+
+function sentFrames(sender) {
+  return sender.messages.flatMap(({ channel, message }) =>
+    channel === AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL && message.type === "message"
+      ? [JSON.parse(message.data)]
+      : [],
+  );
+}
+
+test("raw Frame Port forwards each Platform stream frame immediately and unchanged", async () => {
+  const target = createTarget(41);
+  const targets = new Map([[41, target]]);
+  const incoming = [
+    { frame: "stream", id: "wss-1", streamId: "s-1", event: { seq: 1, type: "run.start", chatId: "chat-1", runId: "run-1", agentKey: "agent-1", timestamp: 1_786_890_000_001 } },
+    { frame: "stream", id: "wss-1", streamId: "s-1", event: { seq: 2, type: "content.delta", delta: "你", chatId: "chat-1", runId: "run-1", timestamp: 1_786_890_000_002 } },
+    { frame: "stream", id: "wss-1", streamId: "s-1", event: { seq: 3, type: "content.delta", delta: "好", chatId: "chat-1", runId: "run-1", timestamp: 1_786_890_000_003 } },
+  ];
+  const runtime = createRegistration(targets, async ({ localId, onFrame }) => {
+    for (const frame of incoming) onFrame({ ...frame, id: localId });
+  });
+  const sender = createSender(41, target.currentUrl);
+  await openSocket(runtime, sender, "socket-1");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-1",
+    data: JSON.stringify({ frame: "request", type: "/api/query", id: "wss-1", payload: { requestId: "req-1", message: "hello", agentKey: "agent-1" } }),
+  });
+  await flush();
+
+  assert.deepEqual(sentFrames(sender), incoming);
+  assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 1);
+  assert.ok(runtime.traces.some((entry) => entry.direction === "surface-to-desktop"));
+  assert.ok(runtime.traces.some((entry) => entry.direction === "desktop-to-surface"));
+});
+
+test("same-surface route loading does not destroy the logical socket or truncate its stream", async () => {
+  const target = createTarget(43);
+  let deliverFrame = () => undefined;
+  const runtime = createRegistration(new Map([[43, target]]), async ({ onFrame }) => {
+    deliverFrame = onFrame;
+  });
+  const sender = createSender(43, target.currentUrl);
+  await openSocket(runtime, sender, "socket-route-promotion");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-route-promotion",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-route-promotion",
+      payload: { requestId: "req-route-promotion", message: "我是谁", agentKey: "agent-43" },
+    }),
+  });
+  await flush();
+
+  deliverFrame({
+    frame: "stream",
+    id: "query-route-promotion",
+    streamId: "stream-route-promotion",
+    event: { seq: 1, type: "chat.start", chatId: "chat-canonical", timestamp: 1_786_898_607_643 },
+  });
+  sender.emit("did-start-loading");
+  deliverFrame({
+    frame: "stream",
+    id: "query-route-promotion",
+    streamId: "stream-route-promotion",
+    event: {
+      seq: 2,
+      type: "request.query",
+      requestId: "req-route-promotion",
+      chatId: "chat-canonical",
+      runId: "run-canonical",
+      agentKey: "agent-43",
+      timestamp: 1_786_898_607_644,
+    },
+  });
+  deliverFrame({
+    frame: "stream",
+    id: "query-route-promotion",
+    streamId: "stream-route-promotion",
+    event: { seq: 5, type: "content.delta", delta: "仍然收到", timestamp: 1_786_898_607_650 },
+  });
+
+  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 1);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 1);
+  assert.deepEqual(sentFrames(sender).map((frame) => frame.event?.seq), [1, 2, 5]);
+  assert.equal(
+    sender.messages.some(({ message }) => message.type === "close" && message.reason === "surface destroyed"),
+    false,
+  );
+});
+
+test("a new document socket detaches and supersedes the previous socket for the same surface", async () => {
+  const target = createTarget(44);
+  const forwardedTypes = [];
+  const runtime = createRegistration(new Map([[44, target]]), async (input) => {
+    forwardedTypes.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: "stream-old-document",
+        event: {
+          seq: 1,
+          type: "request.query",
+          chatId: "chat-old-document",
+          runId: "run-old-document",
+          agentKey: "agent-44",
+          timestamp: 1_786_898_607_643,
+        },
+      });
+    }
+  });
+  const sender = createSender(44, target.currentUrl);
+  await openSocket(runtime, sender, "socket-old-document");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-old-document",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-old-document",
+      payload: { requestId: "req-old-document", message: "hello", agentKey: "agent-44" },
+    }),
+  });
+  await flush();
+
+  await openSocket(runtime, sender, "socket-new-document");
+
+  assert.deepEqual(forwardedTypes, ["/api/query", "/api/detach"]);
+  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 1);
+  assert.deepEqual(
+    sender.messages.find(({ message }) =>
+      message.type === "close" && message.socketId === "socket-old-document"
+    )?.message,
+    {
+      socketId: "socket-old-document",
+      type: "close",
+      code: 1000,
+      reason: "logical socket superseded",
+    },
+  );
+});
+
+test("local validation returns a standard error frame with the original request id", async () => {
+  const target = createTarget(42, {
+    surfaceId: "overview-42",
+    surfaceType: "agent-overview",
+    pageRoute: "/overview",
+    currentUrl: "http://127.0.0.1:7079/overview?chatId=chat-42",
+  });
+  let forwarded = false;
+  const runtime = createRegistration(new Map([[42, target]]), async () => { forwarded = true; });
+  const sender = createSender(42, target.currentUrl);
+  await openSocket(runtime, sender, "socket-2");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-2",
+    data: JSON.stringify({ frame: "request", type: "/api/attach", id: "attach-denied", payload: { runId: "run-1", agentKey: "agent-1", lastSeq: 0 } }),
+  });
+  await flush();
+  assert.equal(forwarded, false);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "error",
+    id: "attach-denied",
+    type: "surface_unavailable",
+    code: 400,
+    status: 400,
+    msg: "only the active Chat surface may open a live Run stream",
+    data: {
+      code: "surface_unavailable",
+      message: "only the active Chat surface may open a live Run stream",
+    },
+  });
+});
+
+test("surface handoff writes detach before the next live request", async () => {
+  const firstTarget = createTarget(51, { ownerChatId: "chat-1" });
+  const secondTarget = createTarget(52, {
+    surfaceId: "agent-webclient-copilot-dock",
+    surfaceType: "agent-copilot",
+    ownerChatId: "chat-2",
+  });
+  const order = [];
+  const runtime = createRegistration(new Map([[51, firstTarget], [52, secondTarget]]), async (input) => {
+    order.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: `stream-${order.length}`,
+        event: {
+          seq: 1,
+          type: "run.start",
+          chatId: order.length === 1 ? "chat-1" : "chat-2",
+          runId: order.length === 1 ? "run-1" : "run-2",
+          agentKey: "agent-1",
+          timestamp: 1_786_890_000_001,
+        },
+      });
+    }
+  });
+  const first = createSender(51, firstTarget.currentUrl);
+  const second = createSender(52, secondTarget.currentUrl);
+  await openSocket(runtime, first, "first");
+  await openSocket(runtime, second, "second");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
+    socketId: "first",
+    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-1", payload: { requestId: "req-1", message: "one", agentKey: "agent-1" } }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: second }, {
+    socketId: "second",
+    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-2", payload: { requestId: "req-2", message: "two", agentKey: "agent-1" } }),
+  });
+  await flush();
+  assert.deepEqual(order, ["/api/query", "/api/detach", "/api/query"]);
+  assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
+});
+
+test("surface handoff waits for an explicit detach write and does not send a duplicate detach", async () => {
+  const firstTarget = createTarget(53, { ownerChatId: "chat-explicit-1" });
+  const secondTarget = createTarget(54, {
+    surfaceId: "agent-webclient-copilot-dock",
+    surfaceType: "agent-copilot",
+    ownerChatId: "chat-explicit-2",
+  });
+  const order = [];
+  let releaseExplicitDetach = () => undefined;
+  const explicitDetachWritten = new Promise((resolve) => {
+    releaseExplicitDetach = resolve;
+  });
+  const runtime = createRegistration(new Map([[53, firstTarget], [54, secondTarget]]), async (input) => {
+    order.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: `stream-explicit-${order.length}`,
+        event: {
+          seq: 1,
+          type: "run.start",
+          chatId: order.length === 1 ? "chat-explicit-1" : "chat-explicit-2",
+          runId: order.length === 1 ? "run-explicit-1" : "run-explicit-2",
+          agentKey: "agent-1",
+          timestamp: 1_786_890_000_001,
+        },
+      });
+    }
+    if (input.type === "/api/detach") {
+      await explicitDetachWritten;
+    }
+  });
+  const first = createSender(53, firstTarget.currentUrl);
+  const second = createSender(54, secondTarget.currentUrl);
+  await openSocket(runtime, first, "first-explicit");
+  await openSocket(runtime, second, "second-explicit");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
+    socketId: "first-explicit",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-explicit-1",
+      payload: { requestId: "req-explicit-1", message: "one", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
+    socketId: "first-explicit",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-explicit-1",
+      payload: { runId: "run-explicit-1", agentKey: "agent-1", reason: "surface_inactive" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: second }, {
+    socketId: "second-explicit",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-explicit-2",
+      payload: { requestId: "req-explicit-2", message: "two", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+  assert.deepEqual(order, ["/api/query", "/api/detach"]);
+
+  releaseExplicitDetach();
+  await flush();
+  await flush();
+
+  assert.deepEqual(order, ["/api/query", "/api/detach", "/api/query"]);
+  assert.equal(order.filter((type) => type === "/api/detach").length, 1);
+});
+
+test("same surface re-entry waits for its explicit detach write before attach", async () => {
+  const target = createTarget(55, { ownerChatId: "chat-same-surface" });
+  const order = [];
+  let releaseExplicitDetach = () => undefined;
+  const explicitDetachWritten = new Promise((resolve) => {
+    releaseExplicitDetach = resolve;
+  });
+  const runtime = createRegistration(new Map([[55, target]]), async (input) => {
+    order.push(input.type);
+    if (input.type === "/api/query") {
+      input.onFrame({
+        frame: "stream",
+        id: input.localId,
+        streamId: "stream-same-surface",
+        event: {
+          seq: 1,
+          type: "run.start",
+          chatId: "chat-same-surface",
+          runId: "run-same-surface",
+          agentKey: "agent-1",
+          timestamp: 1_786_890_000_001,
+        },
+      });
+    }
+    if (input.type === "/api/detach") await explicitDetachWritten;
+  });
+  const sender = createSender(55, target.currentUrl);
+  await openSocket(runtime, sender, "same-surface");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "same-surface",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-same-surface",
+      payload: { requestId: "req-same-surface", message: "one", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "same-surface",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-same-surface",
+      payload: { runId: "run-same-surface", agentKey: "agent-1", reason: "surface_inactive" },
+    }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "same-surface",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-same-surface",
+      payload: { runId: "run-same-surface", agentKey: "agent-1", lastSeq: 1 },
+    }),
+  });
+  await flush();
+  assert.deepEqual(order, ["/api/query", "/api/detach"]);
+
+  releaseExplicitDetach();
+  await flush();
+  await flush();
+
+  assert.deepEqual(order, ["/api/query", "/api/detach", "/api/attach"]);
+  assert.equal(order.filter((type) => type === "/api/detach").length, 1);
+});
+
+test("push broadcasts without acquiring live capability and close only cleans the logical socket", async () => {
+  const target = createTarget(61);
+  const runtime = createRegistration(new Map([[61, target]]), async () => undefined);
+  const sender = createSender(61, target.currentUrl);
+  await openSocket(runtime, sender, "socket-push");
+  runtime.pushSubscribers[0]({ frame: "push", type: "chat.created", data: { chatId: "chat-new" } });
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "push",
+    type: "chat.created",
+    data: { chatId: "chat-new" },
+  });
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL)({ sender }, {
+    socketId: "socket-push",
+    code: 1000,
+    reason: "guest closed",
+  });
+  assert.ok(runtime.cleaned.some((id) => id.includes("agent-webclient-frame-port")));
+  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 0);
+});
+
+test("WorkPanel retains an independent host capability query and version check", async () => {
+  const target = createTarget(71);
+  const runtime = createRegistration(new Map([[71, target]]), async () => undefined);
+  const sender = createSender(71, target.currentUrl);
+  const workpanel = runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+  assert.deepEqual(await workpanel({ sender }, { method: "getCapabilities" }), {
+    ok: true,
+    capabilities: ["workpanel.open", "workpanel.activate", "workpanel.close"],
+  });
+  const opened = await workpanel({ sender }, {
+    method: "openItem",
+    input: { version: 3, descriptor: { kind: "web", url: "https://example.test/" } },
+  });
+  assert.equal(opened.ok, true);
+  assert.equal(runtime.dispatched[0].ownerChatId, "chat-71");
+  const incompatible = await workpanel({ sender }, {
+    method: "openItem",
+    input: { version: 2, descriptor: { kind: "web", url: "https://example.test/" } },
+  });
+  assert.equal(incompatible.error.code, "version_mismatch");
+});

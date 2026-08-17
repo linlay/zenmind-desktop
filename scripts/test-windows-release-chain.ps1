@@ -25,7 +25,7 @@ try {
     & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PlatformRoot "scripts/sync-local-builtins.ps1") -Target windows/amd64
     if ($LASTEXITCODE -ne 0) { throw "Native builtin preparation failed" }
 
-    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $DesktopRoot "scripts/build-all-dist.ps1") -SyncOS windows -SyncArch amd64 -WorkspaceRoot $WorkspaceRoot
+    & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $DesktopRoot "scripts/build-builtin-services.ps1") -SyncOS windows -SyncArch amd64 -WorkspaceRoot $WorkspaceRoot
     if ($LASTEXITCODE -ne 0) { throw "Desktop four-service orchestration failed" }
 
     Add-Type -AssemblyName System.IO.Compression.FileSystem

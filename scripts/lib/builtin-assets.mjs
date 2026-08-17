@@ -896,7 +896,7 @@ function validateExistingSyncedAssets(projectRoot, platform = {}, options = {}) 
       if (archivedAsset) {
         throw new Error(
           `cannot sign existing Darwin builtin archive for ${archivedAsset.service.id}: ${archivedAsset.assetPath}\n` +
-            "Run scripts/build-all-dist.sh --sync-os darwin --sync-arch arm64 to sync Darwin services as directories."
+            "Run scripts/build-builtin-services.sh --sync-os darwin --sync-arch arm64 to sync Darwin services as directories."
         );
       }
 
@@ -955,8 +955,6 @@ function compareBuiltinVersions(leftVersion, rightVersion) {
   }
   return 0;
 }
-
-export const builtinServices = discoverBuiltinServices();
 
 function normalizeRequiredPath(relativePath) {
   return relativePath
@@ -1162,6 +1160,7 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
   const deployScriptPath = lifecycleDeployScriptPathForArchive(service, archivePath);
   const deployScript = readArchiveEntryText(archivePath, deployScriptPath);
   validateLifecycleDeployProtocolText(service, archivePath, deployScriptPath, deployScript);
+  validateAgentWebclientPlatformFramePortManifest(service, manifest, archivePath);
 
   if (manifest?.frontend?.hostManaged !== true) {
     throw new Error(
@@ -1267,6 +1266,41 @@ function validateAgentWebclientBundleArchive(service, archivePath) {
         `Missing desktop capability requirement verifyRunning agent-platform waitHttp /api/runtime-info with auth.accessToken in manifest.json.\n` +
         `Please rebuild the Desktop-ready agent-webclient bundle with manifest-declared platform readiness dependencies.`
     );
+  }
+}
+
+function validateAgentWebclientPlatformFramePortManifest(service, manifest, sourceLabel) {
+  if (service.id !== "agent-webclient") {
+    return;
+  }
+  const routes = manifest?.desktop?.hosting?.proxyRoutes;
+  const fail = (reason) => {
+    throw new Error(
+      `invalid builtin bundle for ${service.id}: ${sourceLabel}\n` +
+        `Platform Frame Port manifest ${reason}.\n` +
+        `Please rebuild and atomically publish the Frame Port agent-webclient bundle.`
+    );
+  };
+  if (!Array.isArray(routes)) {
+    fail("is missing desktop.hosting.proxyRoutes");
+  }
+  if (routes.some((route) => route?.path === "/auth" || route?.path === "/ws")) {
+    fail("must not expose /auth or /ws");
+  }
+  const apiRoutes = routes.filter((route) => route?.match === "prefix" && route?.path === "/api");
+  const apiRoute = apiRoutes[0];
+  if (
+    apiRoutes.length !== 1 ||
+    apiRoute?.targetEnv !== "BASE_URL" ||
+    apiRoute?.auth !== "agent-platform-access-token" ||
+    apiRoute?.http !== true ||
+    apiRoute?.websocket === true ||
+    (Array.isArray(apiRoute?.ssePaths) && apiRoute.ssePaths.length > 0)
+  ) {
+    fail("requires exactly one authenticated HTTP-only /api route without SSE overrides");
+  }
+  if (routes.some((route) => route?.targetEnv === "BASE_URL" && route?.websocket === true)) {
+    fail("must not expose an Agent Platform WebSocket route");
   }
 }
 
@@ -1466,6 +1500,7 @@ export function validateBundleDirectory(service, directoryPath) {
   }
 
   validateBundleDirectoryContents(service, directoryPath);
+  validateAgentWebclientPlatformFramePortManifest(service, manifest, directoryPath);
   validateAgentPlatformBundleDirectory(service, directoryPath);
   if (service.id === "agent-container-hub") {
     validateBundleDirectoryDeployProtocol(service, directoryPath);
@@ -1489,7 +1524,7 @@ export function syncBuiltinAssets(projectRoot = process.cwd(), options = {}) {
     }
     throw new Error(
       `missing current Desktop builtin service assets for ${formatPlatformLabel(platform)}: ${outputRoot}\n` +
-        `Run scripts/build-all-dist.sh${os ? ` --sync-os ${os}` : ""}${arch ? ` --sync-arch ${arch}` : ""} to build and sync them, ` +
+        `Run scripts/build-builtin-services.${os === "windows" ? "ps1 -SyncOS windows -SyncArch amd64" : `sh${os ? ` --sync-os ${os}` : ""}${arch ? ` --sync-arch ${arch}` : ""}`} to build and sync them, ` +
         `or set ${BUILTIN_ASSETS_SOURCE_ENV} to a directory containing the complete release assets.`
     );
   }

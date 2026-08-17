@@ -26,6 +26,31 @@ const DEV_CORS_ALLOWED_ORIGINS = new Set([
 ]);
 const DEV_CORS_ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const DEV_CORS_ALLOW_HEADERS = "Content-Type, Authorization, Accept, Cache-Control";
+const DESKTOP_BRIDGE_ONLY_HTTP_PATHS = new Set([
+  "/api/query",
+  "/api/attach",
+  "/api/submit",
+  "/api/interrupt",
+  "/api/steer",
+  "/api/access-level",
+]);
+
+function isDesktopBridgeOnlyHttpPath(requestPath: string) {
+  let decodedPath = requestPath;
+  try {
+    decodedPath = decodeURIComponent(requestPath);
+  } catch {
+    // A malformed encoded path must never be forwarded to a broader /api route.
+    return requestPath.startsWith("/api/") || requestPath.startsWith("/ws");
+  }
+  const normalizedPath = decodedPath.replace(/\/{2,}/gu, "/").replace(/\/+$/u, "") || "/";
+  if (normalizedPath === "/ws" || normalizedPath.startsWith("/ws/")) {
+    return true;
+  }
+  return [...DESKTOP_BRIDGE_ONLY_HTTP_PATHS].some(
+    (pathPrefix) => normalizedPath === pathPrefix || normalizedPath.startsWith(`${pathPrefix}/`),
+  );
+}
 
 type Logger = Pick<typeof console, "error" | "warn" | "log">;
 
@@ -823,6 +848,13 @@ async function handleHttpRequest(record: AgentWebclientHostRecord, req: http.Inc
   }
 
   const requestPath = parseRequestPath(req.url);
+  if (isDesktopBridgeOnlyHttpPath(requestPath)) {
+    writeJSON(res, 404, {
+      error: "desktop_realtime_bridge_required",
+      message: "Agent Platform realtime and Run controls are available only through the Desktop Platform Frame Port",
+    });
+    return;
+  }
   if (requestPath === record.hosting.runtimeConfigPath && (req.method === "GET" || req.method === "HEAD")) {
     const payload = createRuntimeConfigScript(readRuntimeConfig(record));
     res.writeHead(200, {
@@ -871,6 +903,13 @@ async function handleUpgrade(
   head: Buffer
 ) {
   const requestPath = parseRequestPath(req.url);
+  if (!requestPath.startsWith("/api/voice")) {
+    writeDisabledWebSocketUpgrade(socket, {
+      status: 404,
+      json: { error: "desktop_realtime_bridge_required" },
+    });
+    return;
+  }
   const proxyRoute = findProxyRoute(record, requestPath, "websocket");
   if (proxyRoute) {
     const target = resolveRouteTarget(record, proxyRoute);

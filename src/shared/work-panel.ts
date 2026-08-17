@@ -1,0 +1,294 @@
+import type {
+  AgentWebclientBridgeErrorCode,
+  WorkPanelBridgeResult,
+  WorkPanelContext,
+  WorkPanelItem,
+  WorkPanelItemDescriptor,
+  WorkPanelWorkspace,
+} from "./contracts/agent-webclient-bridge";
+import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry";
+
+export type WorkPanelState = {
+  workspaces: WorkPanelWorkspace[];
+  legacyActionCount: number;
+};
+
+export type WorkPanelCommand =
+  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; legacy?: boolean }
+  | { type: "activateItem"; ownerChatId: string; itemId: string; legacy?: boolean }
+  | { type: "closeItem"; ownerChatId: string; itemId: string; legacy?: boolean }
+  | { type: "closeWorkspace"; ownerChatId: string; legacy?: boolean };
+
+export type WorkPanelCommandResult = WorkPanelBridgeResult & {
+  nextState: WorkPanelState;
+};
+
+export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
+  workspaces: [],
+  legacyActionCount: 0,
+};
+
+function fail(
+  state: WorkPanelState,
+  code: AgentWebclientBridgeErrorCode,
+  message: string,
+): WorkPanelCommandResult {
+  return { ok: false, error: { code, message }, nextState: state };
+}
+
+export function stableWorkPanelHash(value: string) {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    first = Math.imul(first ^ code, 0x01000193);
+    second = Math.imul(second ^ code, 0x85ebca6b);
+  }
+  return `${(first >>> 0).toString(36)}${(second >>> 0).toString(36)}`;
+}
+
+function cleanIdentity(value: unknown, max = 512) {
+  const text = typeof value === "string" ? value.trim() : "";
+  return text && text.length <= max ? text : "";
+}
+
+function normalizeRelativePath(value: unknown) {
+  const raw = cleanIdentity(value, 2_048).replace(/\\/gu, "/");
+  if (!raw || raw.startsWith("/") || /^[a-z]:\//iu.test(raw) || raw.startsWith("//")) {
+    return "";
+  }
+  const parts = raw.split("/").filter((part) => part && part !== ".");
+  if (parts.length === 0 || parts.some((part) => part === "..")) {
+    return "";
+  }
+  return parts.join("/");
+}
+
+function normalizeContext(input: WorkPanelContext): WorkPanelContext | null {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const allowed = new Set([
+    "chatId", "runId", "agentKey", "projectId", "artifactId", "nodeId", "relativePath",
+  ]);
+  if (Object.keys(input).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
+    return null;
+  }
+  const context: WorkPanelContext = {};
+  for (const key of ["chatId", "runId", "agentKey", "projectId", "artifactId", "nodeId"] as const) {
+    const value = cleanIdentity(input[key]);
+    if (input[key] !== undefined && !value) return null;
+    if (value) context[key] = value;
+  }
+  if (input.relativePath !== undefined) {
+    const relativePath = normalizeRelativePath(input.relativePath);
+    if (!relativePath) return null;
+    context.relativePath = relativePath;
+  }
+  return context;
+}
+
+export function normalizeWorkPanelWebUrl(value: unknown) {
+  const raw = cleanIdentity(value, 8_192);
+  try {
+    const url = new URL(raw);
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) return "";
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
+
+function normalizeDescriptor(
+  descriptor: WorkPanelItemDescriptor,
+): { descriptor: WorkPanelItemDescriptor; stableKey: string; title: string } | null {
+  if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) return null;
+  const keys = Object.keys(descriptor);
+  const title = cleanIdentity(descriptor.title, 160);
+  if (descriptor.kind === "native") return null;
+  if (descriptor.kind === "web") {
+    if (keys.some((key) => !["kind", "url", "title", "pinned", "closable"].includes(key))) return null;
+    const url = normalizeWorkPanelWebUrl(descriptor.url);
+    if (!url) return null;
+    const sanitized: WorkPanelItemDescriptor = {
+      kind: "web",
+      url,
+      ...(title ? { title } : {}),
+      ...(descriptor.pinned === true ? { pinned: true } : {}),
+      ...(descriptor.closable === false ? { closable: false } : {}),
+    };
+    return {
+      descriptor: sanitized,
+      stableKey: `web:${url}`,
+      title: title || new URL(url).hostname,
+    };
+  }
+  if (descriptor.kind !== "webclient") return null;
+  if (keys.some((key) => !["kind", "module", "route", "context", "title", "pinned", "closable"].includes(key))) return null;
+  const context = normalizeContext(descriptor.context);
+  const route = cleanIdentity(descriptor.route, 2_048);
+  if (!context || !route || !route.startsWith("/") || route.startsWith("//") || route.includes("://")) return null;
+  let stableKey = "";
+  switch (descriptor.module) {
+    case "overview":
+      stableKey = context.chatId ? `overview:${context.chatId}` : "";
+      break;
+    case "debug":
+      stableKey = context.chatId ? `debug:${context.chatId}:${context.runId || "current"}` : "";
+      break;
+    case "project":
+      stableKey = context.projectId ? `project:${context.projectId}` : "";
+      break;
+    case "file-diff":
+      stableKey = context.runId && context.relativePath
+        ? `file-diff:${context.runId}:${context.relativePath}`
+        : "";
+      break;
+    case "artifact":
+      stableKey = context.artifactId ? `artifact:${context.artifactId}` : "";
+      break;
+    case "planning":
+      stableKey = context.nodeId ? `planning:${context.nodeId}` : "";
+      break;
+    case "agent":
+    case "copilot":
+      stableKey = context.agentKey
+        ? `${descriptor.module}:${context.agentKey}:${context.chatId || "global"}`
+        : "";
+      break;
+  }
+  if (!stableKey) return null;
+  const sanitized: WorkPanelItemDescriptor = {
+    kind: "webclient",
+    module: descriptor.module,
+    route,
+    context,
+    ...(title ? { title } : {}),
+    ...(descriptor.pinned === true ? { pinned: true } : {}),
+    ...(descriptor.closable === false ? { closable: false } : {}),
+  };
+  return {
+    descriptor: sanitized,
+    stableKey,
+    title: title || descriptor.module,
+  };
+}
+
+function workspaceId(ownerChatId: string) {
+  return `workpanel:${stableWorkPanelHash(ownerChatId)}`;
+}
+
+export function reduceWorkPanelCommand(
+  state: WorkPanelState,
+  command: WorkPanelCommand,
+): WorkPanelCommandResult {
+  const ownerChatId = cleanIdentity(command.ownerChatId);
+  if (!ownerChatId) return fail(state, "invalid_request", "trusted owner chat is required");
+  const index = state.workspaces.findIndex((workspace) => workspace.ownerChatId === ownerChatId);
+  const current = index >= 0 ? state.workspaces[index] : null;
+  if (command.type === "closeWorkspace") {
+    if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
+    if (current.items.some((item) => item.pinned || !item.closable)) {
+      return fail(state, "capability_denied", "workspace contains pinned or non-closable items");
+    }
+    const nextState = {
+      workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
+      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+    };
+    return { ok: true, workspaceId: current.workspaceId, nextState };
+  }
+  if (command.type === "openItem") {
+    if (command.descriptor.kind === "native") {
+      if (!isRegisteredWorkPanelNativeSurface(command.descriptor.surfaceKey)) {
+        return fail(state, "unsupported_native_surface", "no native WorkPanel surface is registered");
+      }
+      return fail(state, "unsupported_native_surface", "registered native WorkPanel host is not implemented");
+    }
+    let trustedDescriptor = command.descriptor;
+    if (trustedDescriptor.kind === "webclient") {
+      const descriptorChatId = cleanIdentity(trustedDescriptor.context?.chatId);
+      if (descriptorChatId && descriptorChatId !== ownerChatId) {
+        return fail(state, "capability_denied", "WorkPanel item chat does not match its trusted workspace");
+      }
+      if ((trustedDescriptor.module === "overview" || trustedDescriptor.module === "debug") && !descriptorChatId) {
+        trustedDescriptor = {
+          ...trustedDescriptor,
+          context: { ...trustedDescriptor.context, chatId: ownerChatId },
+        };
+      }
+    }
+    const normalized = normalizeDescriptor(trustedDescriptor);
+    if (!normalized) return fail(state, "invalid_request", "invalid WorkPanel item descriptor");
+    const workspace: WorkPanelWorkspace = current ?? {
+      workspaceId: workspaceId(ownerChatId),
+      ownerChatId,
+      items: [],
+      activeItemId: null,
+    };
+    const existing = workspace.items.find((item) => item.stableKey === normalized.stableKey);
+    const item: WorkPanelItem = existing ?? {
+      itemId: `item:${stableWorkPanelHash(normalized.stableKey)}`,
+      stableKey: normalized.stableKey,
+      descriptor: normalized.descriptor,
+      title: normalized.title,
+      closable: normalized.descriptor.closable !== false,
+      pinned: normalized.descriptor.pinned === true,
+      createdAt: Date.now(),
+    };
+    const nextWorkspace = {
+      ...workspace,
+      items: existing ? workspace.items : [...workspace.items, item],
+      activeItemId: item.itemId,
+    };
+    const workspaces = [...state.workspaces];
+    if (index >= 0) workspaces[index] = nextWorkspace;
+    else workspaces.push(nextWorkspace);
+    const nextState = {
+      workspaces,
+      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+    };
+    return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
+  }
+  if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
+  const itemIndex = current.items.findIndex((item) => item.itemId === cleanIdentity(command.itemId));
+  if (itemIndex < 0) return fail(state, "target_unavailable", "WorkPanel item is unavailable");
+  const item = current.items[itemIndex];
+  if (command.type === "activateItem") {
+    const nextWorkspace = { ...current, activeItemId: item.itemId };
+    const workspaces = state.workspaces.map((workspace, nextIndex) => nextIndex === index ? nextWorkspace : workspace);
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      item,
+      state: nextWorkspace,
+      nextState: {
+        workspaces,
+        legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+      },
+    };
+  }
+  if (item.pinned || !item.closable) {
+    return fail(state, "capability_denied", "pinned or non-closable WorkPanel item cannot be closed");
+  }
+  const items = current.items.filter((_, nextIndex) => nextIndex !== itemIndex);
+  if (items.length === 0) {
+    const nextState = {
+      workspaces: state.workspaces.filter((_, nextIndex) => nextIndex !== index),
+      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+    };
+    return { ok: true, workspaceId: current.workspaceId, item, nextState };
+  }
+  const activeItemId = current.activeItemId === item.itemId
+    ? items[Math.min(itemIndex, items.length - 1)].itemId
+    : current.activeItemId;
+  const nextWorkspace = { ...current, items, activeItemId };
+  const workspaces = state.workspaces.map((workspace, nextIndex) => nextIndex === index ? nextWorkspace : workspace);
+  return {
+    ok: true,
+    workspaceId: current.workspaceId,
+    item,
+    state: nextWorkspace,
+    nextState: {
+      workspaces,
+      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+    },
+  };
+}
