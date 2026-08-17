@@ -3,7 +3,12 @@ export const SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL = "desktop:service-webview:d
 export const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "desktop:service-webview:route";
 export const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action";
 export const SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL = "desktop:service-webview:surface-lifecycle";
+export const SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL = "desktop:service-webview:modal-overlay-state";
 export const SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE = "desktop:service-webview:debug";
+
+export type ServiceWebviewModalOverlayState = {
+  visible: boolean;
+};
 
 export const AGENT_APP_CLIPBOARD_REQUEST_TYPE = "desktop:agent-app-clipboard:request";
 export const AGENT_APP_CLIPBOARD_RESPONSE_TYPE = "desktop:agent-app-clipboard:response";

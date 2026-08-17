@@ -163,6 +163,7 @@ export type MainIpcRegistrationOptions = {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance: () => void;
   setGlobalSearchOverlayVisible: (visible: boolean) => void;
+  setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
   emitLocaleChanged: (...args: any[]) => unknown;
   captureDesktopScreenshotForWebview: () => unknown;
   reportRendererDiagnostic: (...args: any[]) => unknown;
@@ -193,6 +194,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     issueAgentPlatformAccessToken: issueAgentAccessToken,
     desktopLogStreamSubscriptions: logsRuntime.getDesktopLogSubscriptions(),
     setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible,
+    setWebviewModalOverlayVisible: options.setWebviewModalOverlayVisible,
     setWorkPanelKeyboardFocusActive: (active) => {
       context.state.workPanelKeyboardFocusActive = active;
     }

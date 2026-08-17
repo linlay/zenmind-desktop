@@ -619,6 +619,7 @@ export interface DesktopApi {
     beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
+    setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
     setWorkPanelKeyboardFocusActive: (active: boolean) => void;
     requestWindowClose: () => void;
     getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;

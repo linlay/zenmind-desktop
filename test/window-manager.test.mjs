@@ -363,6 +363,41 @@ test("main window lifecycle masks Windows caption controls while global search i
   });
 });
 
+test("main window lifecycle keeps Windows caption controls masked until every webview modal closes", () => {
+  const target = new FakeWindow();
+  const controller = createMainWindowLifecycleController({
+    platform: "win32",
+    getWindow: () => target,
+    createWindow: () => target,
+    clearWindow: () => {},
+    nativeTheme: { shouldUseDarkColors: false }
+  });
+
+  controller.setWebviewModalOverlayVisible("service-webview:chat", true);
+  controller.setWebviewModalOverlayVisible("service-webview:management", true);
+  controller.setWebviewModalOverlayVisible("service-webview:chat", false);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#D4D5D9",
+    symbolColor: "#D4D5D9",
+    height: 44
+  });
+
+  controller.setGlobalSearchOverlayVisible(true);
+  controller.setWebviewModalOverlayVisible("service-webview:management", false);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#D4D5D9",
+    symbolColor: "#D4D5D9",
+    height: 44
+  });
+
+  controller.setGlobalSearchOverlayVisible(false);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#FFFFFF",
+    symbolColor: "#1F2937",
+    height: 44
+  });
+});
+
 test("main window activation restores, shows and focuses the window before navigating", () => {
   const target = new FakeWindow();
   target.minimized = true;

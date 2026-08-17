@@ -824,6 +824,7 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
 ) {
   let pendingCloseCancel: (() => void) | null = null;
   let globalSearchOverlayVisible = false;
+  const webviewModalOverlaySources = new Set<string>();
 
   function cancelPendingClose() {
     pendingCloseCancel?.();
@@ -962,7 +963,8 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     if (options.platform === "win32") {
       const shouldUseDarkColors = options.nativeTheme?.shouldUseDarkColors ?? false;
       targetWindow.setBackgroundColor(resolveWindowsBackgroundColor(shouldUseDarkColors));
-      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors, globalSearchOverlayVisible));
+      const windowOverlayVisible = globalSearchOverlayVisible || webviewModalOverlaySources.size > 0;
+      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors, windowOverlayVisible));
       return;
     }
     targetWindow.setBackgroundColor("#FFFFFF");
@@ -975,6 +977,22 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
 
   function isGlobalSearchOverlayVisible() {
     return globalSearchOverlayVisible;
+  }
+
+  function setWebviewModalOverlayVisible(sourceId: string, visible: boolean) {
+    const normalizedSourceId = sourceId.trim();
+    if (!normalizedSourceId) {
+      return;
+    }
+    if (visible) {
+      if (webviewModalOverlaySources.has(normalizedSourceId)) {
+        return;
+      }
+      webviewModalOverlaySources.add(normalizedSourceId);
+    } else if (!webviewModalOverlaySources.delete(normalizedSourceId)) {
+      return;
+    }
+    applyAppearance(options.getWindow());
   }
 
   function attachRendererDiagnostics(targetWindow: TWindow) {
@@ -1005,7 +1023,8 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     hideForClose,
     isGlobalSearchOverlayVisible,
     normalizeBeforeShow,
-    setGlobalSearchOverlayVisible
+    setGlobalSearchOverlayVisible,
+    setWebviewModalOverlayVisible
   };
 }
 
