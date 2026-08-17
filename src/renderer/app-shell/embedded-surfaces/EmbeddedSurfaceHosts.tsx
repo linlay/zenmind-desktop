@@ -15,6 +15,13 @@ import {
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import type { WebEntryKey } from "../../../shared/contracts/webs";
 import { useI18n } from "../../i18n/useI18n";
+import {
+  COPILOT_CHAT_SURFACE_ID,
+  MAIN_CHAT_SURFACE_ID,
+  createServiceSurfaceIdentity,
+  createSurfaceIdentity,
+  createWebEntrySurfaceIdentity
+} from "../../../shared/surface-identity";
 
 type ThemeMode = "light" | "dark";
 
@@ -36,8 +43,8 @@ type EmbeddedSidebarItem = {
   runtimeMessage?: string;
 };
 
-const AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat";
-const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = "agent-webclient-copilot";
+const AGENT_WEBCLIENT_CHAT_SURFACE_ID = MAIN_CHAT_SURFACE_ID;
+const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = COPILOT_CHAT_SURFACE_ID;
 
 function EmbeddedSurfaceSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
@@ -100,8 +107,10 @@ export function ServiceWebviewSurfaceHost({
         ? AGENT_WEBCLIENT_CHAT_SURFACE_ID
         : activeAgentWebclientRouteKind === "copilot"
           ? AGENT_WEBCLIENT_COPILOT_SURFACE_ID
-          : AGENT_WEBCLIENT_SERVICE_ID
-      : activeServiceId;
+          : createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID).surfaceId
+      : activeServiceId
+        ? createServiceSurfaceIdentity(activeServiceId).surfaceId
+        : null;
   const nonAgentServiceIds = mountedServiceIds.filter((serviceId) => serviceId !== AGENT_WEBCLIENT_SERVICE_ID);
   const shouldRenderAgentChatSurface = agentWebclientMounted && Boolean(agentChatRoute);
   const shouldRenderCopilotSurface = agentWebclientMounted && Boolean(copilotRoute);
@@ -150,7 +159,9 @@ export function ServiceWebviewSurfaceHost({
           onFocusRequestHandled={onAgentChatFocusRequestHandled}
           ownerChatId={activeOwnerChatId || undefined}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}
-          surfaceId={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
+          surfaceIdentity={createSurfaceIdentity("main-chat", "", {
+            ownerChatId: activeOwnerChatId || undefined
+          })}
           surfaceLabel={agentChatRoute?.label}
         />
       ) : null}
@@ -162,7 +173,7 @@ export function ServiceWebviewSurfaceHost({
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(copilotRoute?.embedPath)}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}
-          surfaceId={AGENT_WEBCLIENT_COPILOT_SURFACE_ID}
+          surfaceIdentity={createSurfaceIdentity("copilot-chat")}
           surfaceLabel={copilotRoute?.label}
         />
       ) : null}
@@ -174,7 +185,8 @@ export function ServiceWebviewSurfaceHost({
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={activeAgentWebclientRouteKind === "management" && Boolean(activeAgentWebclientRoute?.embedPath)}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}
-          surfaceId={AGENT_WEBCLIENT_SERVICE_ID}
+          surfaceIdentity={createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID)}
+          surfaceIdentityKey={AGENT_WEBCLIENT_SERVICE_ID}
           surfaceLabel={activeAgentWebclientRoute?.label}
         />
       ) : null}
@@ -205,6 +217,7 @@ export function BuiltinBrowserSurfaceHost({
     <EmbeddedSurfaceSuspense>
       <ExternalWebviewPage
         surfaceId={BUILTIN_BROWSER_SURFACE_ID}
+        surfaceIdentity={createSurfaceIdentity("browser")}
         surfaceLabel={BUILTIN_BROWSER_SURFACE_LABEL}
         active={active}
         title={BUILTIN_BROWSER_SURFACE_LABEL}
@@ -278,7 +291,9 @@ export function WebSurfaceHost({
           <ExternalWebviewPage
             key={entryKey}
             active={activeEntryKey === entryKey}
-            surfaceId={entryKey}
+            surfaceIdentity={createWebEntrySurfaceIdentity(item.kind ?? "website", entryKey)}
+            surfaceIdentityKey={entryKey}
+            surfaceRoute={`/webs/${entryKey}`}
             surfaceKind={item.kind}
             surfaceLabel={item.label}
             title={item.label}
@@ -341,7 +356,10 @@ export function ExternalItemRoute({
   return (
     <EmbeddedSurfaceSuspense>
       <ExternalWebviewPage
-        surfaceId={itemId}
+        surfaceIdentity={item.kind ? createWebEntrySurfaceIdentity(item.kind, itemId) : undefined}
+        surfaceIdentityKey={item.kind ? itemId : undefined}
+        surfaceKind={item.kind}
+        surfaceRoute={`/webs/${itemId}`}
         surfaceLabel={item.label}
         title={item.label}
         url={item.url}

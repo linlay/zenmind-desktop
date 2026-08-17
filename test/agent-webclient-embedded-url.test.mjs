@@ -34,7 +34,7 @@ function buildAgentWebclientUrl(surfaceId, embedPath) {
 
 test("agent chat embedded URL keeps chat WebSocket source without auth context", () => {
   const url = buildAgentWebclientUrl(
-    "agent-webclient-chat",
+    "main-chat",
     "/agent/zenmi?chatId=chat-1"
   );
 
@@ -48,7 +48,7 @@ test("agent chat embedded URL keeps chat WebSocket source without auth context",
 
 test("copilot embedded URL keeps copilot WebSocket source", () => {
   const url = buildAgentWebclientUrl(
-    "agent-webclient-copilot",
+    "copilot-chat",
     "/copilot/zenmi"
   );
 
@@ -81,7 +81,7 @@ test("project embedded URL carries project identity without a WebSocket source",
     runId: "run-2"
   });
   const url = buildAgentWebclientUrl(
-    "agent-webclient-project:%E7%9F%A5%E8%AF%86%E5%BA%93%20alpha",
+    "proj:fixture",
     embedPath
   );
 

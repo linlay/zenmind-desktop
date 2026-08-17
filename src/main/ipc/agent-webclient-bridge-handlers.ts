@@ -28,15 +28,21 @@ import {
   AGENT_PLATFORM_KNOWN_PUSH_TYPES,
   RealtimeBroker,
 } from "../realtime/realtime-broker";
+import {
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID,
+  MAIN_CHAT_SURFACE_ID
+} from "../../shared/surface-identity";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
 
 const LIVE_CHAT_SURFACE_IDS = new Set([
-  "agent-webclient-chat",
-  "agent-webclient-copilot",
-  "agent-webclient-copilot-dock",
-  "agent-webclient-kanban-chat",
+  MAIN_CHAT_SURFACE_ID,
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID,
 ]);
 
 const LIVE_REQUEST_TYPES = new Set([
@@ -231,12 +237,19 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   const sendEvent = (socket: LogicalSocket, event: AgentWebclientPlatformWsEvent) => {
     if (socket.closed || socket.sender.isDestroyed()) return;
     socket.sender.send(AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL, event);
+    const target = options.browserSurfaces.resolveWebviewSurfaceTarget(socket.sender.id);
     options.realtimeBroker.appendDebugTrace({
       layer: "surface-bridge",
       direction: "desktop-to-surface",
       data: event.type === "message" ? JSON.parse(event.data) : event,
-      surfaceId: options.browserSurfaces.resolveWebviewSurfaceTarget(socket.sender.id)?.surfaceId,
+      surfaceId: target?.surfaceId,
       webContentsId: socket.sender.id,
+      surfaceKind: target?.surfaceType,
+      surfaceRole: target?.surfaceRole,
+      surfaceLevel: target?.surfaceLevel,
+      parentSurfaceId: target?.parentSurfaceId,
+      interaction: target?.interaction,
+      route: target?.pageRoute || socket.sender.getURL(),
     });
   };
 
@@ -519,6 +532,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       surfaceId: context.target.surfaceId,
       webContentsId: event.sender.id,
       surfaceKind: context.kind,
+      surfaceRole: context.target.surfaceRole,
+      surfaceLevel: context.target.surfaceLevel,
+      parentSurfaceId: context.target.parentSurfaceId,
+      interaction: context.target.interaction,
       route: context.target.pageRoute || event.sender.getURL(),
     });
     try {
@@ -644,19 +661,24 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       activeStreamCount: [...sockets.values()].reduce((sum, socket) => sum + socket.streams.size, 0),
       activeLiveSurfaceCount: activeLiveSocketKey ? 1 : 0,
       activeLiveSocketKey,
-      surfaces: [...sockets.values()].map((socket) => {
+      surfaces: [...sockets.values()].flatMap((socket) => {
         const target = options.browserSurfaces.resolveWebviewSurfaceTarget(socket.sender.id);
-        return {
-          surfaceId: target?.surfaceId || "",
+        if (!target) return [];
+        return [{
+          surfaceId: target.surfaceId,
           webContentsId: socket.sender.id,
-          kind: trustedKind(target?.surfaceType) || "agent-chat",
-          active: Boolean(target?.active),
-          ownerChatId: target?.ownerChatId,
-          route: target?.pageRoute || socket.sender.getURL(),
+          kind: trustedKind(target.surfaceType) || "agent-chat",
+          surfaceRole: target.surfaceRole,
+          surfaceLevel: target.surfaceLevel,
+          parentSurfaceId: target.parentSurfaceId,
+          interaction: target.interaction,
+          active: Boolean(target.active),
+          ownerChatId: target.ownerChatId,
+          route: target.pageRoute || socket.sender.getURL(),
           socketId: socket.socketId,
           pendingRequestCount: socket.requestIds.size,
           activeStreamCount: socket.streams.size,
-        };
+        }];
       }),
     }),
   };

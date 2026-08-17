@@ -18,6 +18,9 @@ const {
 const {
   createBrowserSurfaceRegistry
 } = require("../dist-electron/main/browser-surface-registry.js");
+const {
+  createWebEntrySurfaceIdentity
+} = require("../dist-electron/shared/surface-identity.js");
 
 function createLoggerSink() {
   const events = [];
@@ -67,7 +70,7 @@ test("desktop cdp helper times out with sanitized debug details", async () => {
     returnByValue: true
   }, {
     targetId: "desktop-target",
-    surfaceId: "website:target",
+    surfaceId: "site:target",
     webContentsId: 99,
     url: "https://example.test/path?token=super-secret#hash",
     title: "Example Page",
@@ -79,7 +82,7 @@ test("desktop cdp helper times out with sanitized debug details", async () => {
   assert.equal(error.code, DESKTOP_CDP_TARGET_TIMEOUT_CODE);
   assert.equal(error.details.method, "Runtime.evaluate");
   assert.equal(error.details.targetId, "desktop-target");
-  assert.equal(error.details.surfaceId, "website:target");
+  assert.equal(error.details.surfaceId, "site:target");
   assert.equal(error.details.webContentsId, 99);
   assert.equal(error.details.url, "https://example.test/path");
   assert.deepEqual(error.details.paramKeys, ["expression", "returnByValue"]);
@@ -101,7 +104,7 @@ test("embedded cdp gateway command execution times out instead of hanging", asyn
     webContentsId: 42
   };
   const surface = {
-    id: "website:slow",
+    id: "site:slow",
     label: "Slow Page",
     url: "https://example.test/slow?token=secret",
     surfaceKind: "website",
@@ -135,7 +138,7 @@ test("embedded cdp gateway command execution times out instead of hanging", asyn
 
   assert.equal(isDesktopCdpTimeoutError(error), true);
   assert.equal(error.code, DESKTOP_CDP_TARGET_TIMEOUT_CODE);
-  assert.equal(error.details.surfaceId, "website:slow");
+  assert.equal(error.details.surfaceId, "site:slow");
   assert.equal(error.details.webContentsId, 42);
   assert.equal(error.details.url, "https://example.test/live");
   assert.deepEqual(error.details.paramKeys, ["expression", "returnByValue"]);
@@ -150,7 +153,7 @@ test("embedded cdp target ids survive guest replacement but change with a new su
     webContentsId: 41
   };
   const surface = {
-    id: "website:stable",
+    id: "site:stable",
     targetGeneration: "surface-generation-1",
     label: "Stable",
     url: "https://example.test/",
@@ -179,7 +182,7 @@ test("embedded cdp Target.closeTarget delegates the current tab to the host tran
     webContentsId: 71
   };
   const surface = {
-    id: "website:close",
+    id: "site:close",
     targetGeneration: "close-generation",
     label: "Close",
     url: "https://example.test/",
@@ -303,7 +306,7 @@ test("embedded cdp target queries expose every live tab from the current surface
       activeTabId: "browser-tab"
     },
     {
-      id: "website:background",
+      id: "site:background",
       label: "Background",
       url: "https://background.example/",
       surfaceKind: "website",
@@ -318,7 +321,7 @@ test("embedded cdp target queries expose every live tab from the current surface
       activeTabId: "background-tab"
     },
     {
-      id: "website:current",
+      id: "site:current",
       label: "Current Site",
       url: "https://current.example/",
       surfaceKind: "website",
@@ -336,16 +339,16 @@ test("embedded cdp target queries expose every live tab from the current surface
   const response = await gateway.executeCommand({ method: "Target.getTargets" });
   assert.deepEqual(
     response.result.targetInfos.map((target) => target.surfaceId),
-    ["website:current", "website:current"]
+    ["site:current", "site:current"]
   );
   assert.deepEqual(response.result.targetInfos.map((target) => target.tabId), ["current-tab-1", "current-tab-2"]);
   assert.equal(new Set(response.result.targetInfos.map((target) => target.targetId)).size, 2);
-  assert.equal(response.result.currentTargetInfo.surfaceId, "website:current");
+  assert.equal(response.result.currentTargetInfo.surfaceId, "site:current");
   assert.equal(response.result.currentTargetInfo.tabId, "current-tab-2");
   assert.equal(response.result.currentTargetId, response.result.currentTargetInfo.targetId);
-  assert.equal(response.result.currentSurfaceId, "website:current");
+  assert.equal(response.result.currentSurfaceId, "site:current");
   assert.equal(response.result.activeTabId, "current-tab-2");
-  assert.equal(response.surfaceId, "website:current");
+  assert.equal(response.surfaceId, "site:current");
   assert.equal(response.result.targetInfos.filter((target) => target.current).length, 1);
 
   const currentResponse = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
@@ -377,7 +380,7 @@ test("embedded cdp target queries return an explicit empty current state without
     webContentsId: 501
   };
   const backgroundSurface = {
-    id: "website:background",
+    id: "site:background",
     label: "Background",
     url: "https://background.example/",
     surfaceKind: "website",
@@ -415,7 +418,7 @@ test("embedded cdp target queries return an explicit empty current state without
 
   const emptyGateway = new EmbeddedCdpGateway({
     getSurfaces: () => [{
-      id: "website:closed",
+      id: "site:closed",
       label: "Closed",
       url: "https://closed.example/",
       surfaceKind: "website",
@@ -466,7 +469,7 @@ test("embedded cdp commands require a target from the current surface and allow 
   };
   const surfaces = [
     {
-      id: "website:current",
+      id: "site:current",
       label: "Current",
       url: "https://example.test/",
       surfaceKind: "website",
@@ -476,7 +479,7 @@ test("embedded cdp commands require a target from the current surface and allow 
       activeTabId: "tab-active"
     },
     {
-      id: "website:background",
+      id: "site:background",
       label: "Background",
       url: "https://other.test/",
       surfaceKind: "website",
@@ -504,7 +507,7 @@ test("embedded cdp commands require a target from the current surface and allow 
     targetId: inactiveTargetId
   });
   assert.equal(result.targetId, inactiveTargetId);
-  assert.equal(result.surfaceId, "website:current");
+  assert.equal(result.surfaceId, "site:current");
   assert.deepEqual(sentCommands, [{ id: 302, method: "Runtime.evaluate", params: { expression: "1+1" } }]);
 
   const backgroundTargetId = gatewayInternals.stableTargetId(surfaces[1], backgroundTab);
@@ -552,7 +555,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
   const otherTab = { tabId: "other-tab", currentUrl: "https://work.example/other", title: "Other", webContentsId: 503 };
   const surfaces = [
     {
-      id: "website:current",
+      id: "site:current",
       targetGeneration: "current-1",
       label: "Current",
       url: currentTab.currentUrl,
@@ -563,7 +566,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
       activeTabId: currentTab.tabId
     },
     {
-      id: "chat-work-panel:owned",
+      id: "web:owned",
       targetGeneration: "owned-1",
       label: "Work Panel",
       url: ownedTab.currentUrl,
@@ -575,7 +578,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
       activeTabId: ownedTab.tabId
     },
     {
-      id: "chat-work-panel:other",
+      id: "web:other",
       targetGeneration: "other-1",
       label: "Work Panel",
       url: otherTab.currentUrl,
@@ -594,7 +597,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
   });
 
   const targets = await gateway.executeCommand({ method: "Target.getTargets" });
-  assert.deepEqual(targets.result.targetInfos.map((target) => target.surfaceId), ["website:current"]);
+  assert.deepEqual(targets.result.targetInfos.map((target) => target.surfaceId), ["site:current"]);
 
   const ownedTargetId = gatewayInternals.stableTargetId(surfaces[1], ownedTab);
   const result = await gateway.executeCommand({
@@ -603,7 +606,7 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
     targetId: ownedTargetId,
     source: { chatId: "chat-owned" }
   });
-  assert.equal(result.surfaceId, "chat-work-panel:owned");
+  assert.equal(result.surfaceId, "web:owned");
   assert.equal(sentCommands.at(-1).id, 502);
 
   await assert.rejects(
@@ -628,14 +631,16 @@ test("embedded cdp authorizes chat-owned Work Panel targets without changing cur
 });
 
 test("browser surface registry uses explicit guest registrations for complete surface tab state", () => {
+  const docsIdentity = createWebEntrySurfaceIdentity("website", "website:docs");
+  const appIdentity = createWebEntrySurfaceIdentity("webapp", "webapp:app");
   let currentPageSnapshot = {
     pageKind: "webview",
-    surfaceId: "website:docs",
+    surfaceId: docsIdentity.surfaceId,
     webContentsId: 101,
     pageContext: {
       browserTarget: {
         kind: "webview",
-        surfaceId: "website:docs",
+        surfaceId: docsIdentity.surfaceId,
         currentUrl: "https://redirected.example/live"
       }
     }
@@ -701,11 +706,13 @@ test("browser surface registry uses explicit guest registrations for complete su
     getCurrentPageSnapshot: () => currentPageSnapshot
   });
 
-  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "website:docs").open, false);
+  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === docsIdentity.surfaceId).open, false);
   assert.equal(registry.registerSurface({
     registrationId: "docs-registration",
-    surfaceId: "website:docs",
+    ...docsIdentity,
+    surfaceIdentityKey: "website:docs",
     surfaceKind: "website",
+    pageRoute: "/webs/website:docs",
     label: "Docs",
     url: "https://docs.example/",
     active: true,
@@ -733,8 +740,10 @@ test("browser surface registry uses explicit guest registrations for complete su
   }, 7), true);
   assert.equal(registry.registerSurface({
     registrationId: "app-registration",
-    surfaceId: "webapp:app",
+    ...appIdentity,
+    surfaceIdentityKey: "webapp:app",
     surfaceKind: "webapp",
+    pageRoute: "/webs/webapp:app",
     label: "App",
     url: "http://127.0.0.1:19001/",
     active: false,
@@ -751,8 +760,9 @@ test("browser surface registry uses explicit guest registrations for complete su
   }, 7), true);
 
   const surfaces = registry.listBrowserSurfaces();
-  const docs = surfaces.find((surface) => surface.id === "website:docs");
-  const app = surfaces.find((surface) => surface.id === "webapp:app");
+  const registeredSurfaces = registry.listRegisteredSurfaces();
+  const docs = surfaces.find((surface) => surface.id === docsIdentity.surfaceId);
+  const app = surfaces.find((surface) => surface.id === appIdentity.surfaceId);
   assert.equal(docs.open, true);
   assert.equal(docs.active, true);
   assert.equal(docs.currentUrl, "https://redirected.example/live");
@@ -762,6 +772,11 @@ test("browser surface registry uses explicit guest registrations for complete su
   assert.deepEqual(docs.tabs.map((tab) => tab.tabId), ["docs-tab-active", "docs-tab-background"]);
   assert.equal(app.open, true);
   assert.equal(app.active, false);
+  assert.deepEqual(
+    registeredSurfaces.map((surface) => surface.surfaceId).sort(),
+    [appIdentity.surfaceId, docsIdentity.surfaceId].sort()
+  );
+  assert.equal(registeredSurfaces.find((surface) => surface.surfaceId === docsIdentity.surfaceId).entryKey, "website:docs");
   assert.equal(registry.findRegisteredSurfaceWebContents("website:docs"), docsContents);
   assert.equal(registry.findRegisteredSurfaceWebContents("website:docs", "docs-tab-background"), docsBackgroundContents);
 
@@ -770,17 +785,17 @@ test("browser surface registry uses explicit guest registrations for complete su
     surfaceId: "website:docs"
   }, 7), false);
   docsContents.destroyed = true;
-  const docsWithoutActiveGuest = registry.listBrowserSurfaces().find((surface) => surface.id === "website:docs");
+  const docsWithoutActiveGuest = registry.listBrowserSurfaces().find((surface) => surface.id === docsIdentity.surfaceId);
   assert.equal(docsWithoutActiveGuest.open, true);
   assert.equal(docsWithoutActiveGuest.activeTabId, "docs-tab-background");
   assert.equal(docsWithoutActiveGuest.targetGeneration, "docs-registration");
   assert.deepEqual(docsWithoutActiveGuest.tabs.map((tab) => tab.tabId), ["docs-tab-background"]);
   docsBackgroundContents.destroyed = true;
-  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "website:docs").open, false);
+  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === docsIdentity.surfaceId).open, false);
 
   currentPageSnapshot = null;
   registry.unregisterSurfacesForOwner(7);
-  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === "webapp:app").open, false);
+  assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === appIdentity.surfaceId).open, false);
 });
 
 test("current page cdp inspector uses the shared command helper", () => {

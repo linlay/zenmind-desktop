@@ -61,6 +61,15 @@ import type { EmbeddedCdpSurfaceRegistration } from "../../shared/embedded-cdp";
 import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
 import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
 import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
+import {
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID,
+  MAIN_CHAT_SURFACE_ID,
+  createServiceSurfaceIdentity,
+  resolveLegacyFixedSurfaceId,
+  type SurfaceIdentity
+} from "../../shared/surface-identity";
 import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
@@ -69,6 +78,8 @@ type ServiceWebviewSurfaceProps = {
   hostTheme: "light" | "dark";
   serviceId?: string;
   surfaceId?: string;
+  surfaceIdentity?: SurfaceIdentity;
+  surfaceIdentityKey?: string;
   active?: boolean | undefined;
   surfaceOwnershipActive?: boolean;
   embedPath?: string;
@@ -101,12 +112,12 @@ type VisibleSelectionToolbarState = Extract<
 
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
-const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
+const AGENT_WEBCLIENT_SOURCE_CHAT = MAIN_CHAT_SURFACE_ID;
 const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
   AGENT_WEBCLIENT_SOURCE_CHAT,
-  "agent-webclient-copilot",
-  "agent-webclient-copilot-dock",
-  "agent-webclient-kanban-chat",
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID,
 ]);
 let serviceSurfaceRegistrationSequence = 0;
 
@@ -146,7 +157,7 @@ function isAgentWebclientLiveChatSurface(serviceId: string | undefined, surfaceI
 }
 
 function isAgentWebclientManagementSurface(serviceId: string | undefined, surfaceId: string | undefined) {
-  return serviceId === "agent-webclient" && surfaceId === "agent-webclient";
+  return serviceId === "agent-webclient" && surfaceId === createServiceSurfaceIdentity("agent-webclient").surfaceId;
 }
 
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
@@ -408,6 +419,8 @@ export function ServiceWebviewSurface({
   hostTheme,
   serviceId: serviceIdProp,
   surfaceId: surfaceIdProp,
+  surfaceIdentity: surfaceIdentityProp,
+  surfaceIdentityKey,
   active,
   surfaceOwnershipActive,
   embedPath,
@@ -429,7 +442,11 @@ export function ServiceWebviewSurface({
     pluginId?: string;
   }>();
   const serviceId = serviceIdProp ?? routeServiceId ?? routePluginId ?? "";
-  const surfaceId = surfaceIdProp?.trim() || serviceId;
+  const surfaceIdentity = surfaceIdentityProp ?? createServiceSurfaceIdentity(serviceId);
+  const resolvedSurfaceIdentityKey = surfaceIdentityKey?.trim() || (
+    surfaceIdentity.surfaceRole === "service" ? serviceId.trim() : ""
+  );
+  const surfaceId = surfaceIdentity.surfaceId || surfaceIdProp?.trim() || serviceId;
   const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
@@ -647,7 +664,8 @@ export function ServiceWebviewSurface({
     let retryTimer: number | null = null;
     const registration: EmbeddedCdpSurfaceRegistration = {
       registrationId: surfaceRegistrationIdRef.current,
-      surfaceId,
+      ...surfaceIdentity,
+      ...(resolvedSurfaceIdentityKey ? { surfaceIdentityKey: resolvedSurfaceIdentityKey } : {}),
       surfaceKind: "service",
       surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceId, effectiveEmbedPath),
       ...(serviceId ? { serviceId } : {}),
@@ -711,6 +729,13 @@ export function ServiceWebviewSurface({
     serviceDisplayName,
     serviceId,
     surfaceId,
+    surfaceIdentity.interaction,
+    surfaceIdentity.ownerChatId,
+    surfaceIdentity.parentSurfaceId,
+    surfaceIdentity.surfaceId,
+    surfaceIdentity.surfaceLevel,
+    surfaceIdentity.surfaceRole,
+    resolvedSurfaceIdentityKey,
     surfaceRoute,
     webUrl,
     webviewCurrentUrl,
@@ -1562,6 +1587,7 @@ export function ServiceWebviewSurface({
       return {
         surface: {
           id: surfaceId,
+          ...surfaceIdentity,
           kind: "service",
           label: serviceDisplayName,
           url: embeddedUrl || webUrl,
@@ -1632,7 +1658,11 @@ export function ServiceWebviewSurface({
     function requestTargetsDifferentSurface(args: Record<string, unknown>) {
       const targetSurfaceId =
         typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
-      return Boolean(targetSurfaceId && targetSurfaceId !== surfaceId);
+      return Boolean(
+        targetSurfaceId &&
+        resolveLegacyFixedSurfaceId(targetSurfaceId) !== surfaceId &&
+        targetSurfaceId !== serviceId
+      );
     }
 
     return registerDesktopActionProviderForScope(
@@ -1780,7 +1810,7 @@ export function ServiceWebviewSurface({
       <div className="embedded-surface-frame-shell">
         <WebviewDebugOverlay
           url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl}
-          surfaceId={surfaceId}
+          surfaceIdentity={surfaceIdentity}
         />
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>

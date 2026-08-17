@@ -4,6 +4,7 @@ import type {
   AgentRealtimeDebugTraceLayer,
 } from "../../shared/contracts";
 import { requireEpochMillis } from "../../shared/time-contract";
+import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../../shared/surface-identity";
 
 const DEFAULT_MAX_ENTRIES = 500;
 const MAX_TRACE_DEPTH = 8;
@@ -137,6 +138,10 @@ export class RealtimeDebugTraceBuffer {
     surfaceId?: string;
     webContentsId?: number;
     surfaceKind?: string;
+    surfaceRole?: SurfaceRole;
+    surfaceLevel?: SurfaceLevel;
+    parentSurfaceId?: string;
+    interaction?: SurfaceInteraction;
     route?: string;
   }) {
     this.sequence += 1;
@@ -149,6 +154,10 @@ export class RealtimeDebugTraceBuffer {
       ...(input.surfaceId?.trim() ? { surfaceId: input.surfaceId.trim() } : {}),
       ...(Number.isSafeInteger(input.webContentsId) ? { webContentsId: input.webContentsId } : {}),
       ...(input.surfaceKind?.trim() ? { surfaceKind: input.surfaceKind.trim() } : {}),
+      ...(input.surfaceRole ? { surfaceRole: input.surfaceRole } : {}),
+      ...(input.surfaceLevel ? { surfaceLevel: input.surfaceLevel } : {}),
+      ...(input.parentSurfaceId?.trim() ? { parentSurfaceId: input.parentSurfaceId.trim() } : {}),
+      ...(input.interaction ? { interaction: input.interaction } : {}),
       ...(input.route?.trim() ? { route: redactSensitiveText(input.route.trim()) } : {}),
     };
     this.entries.push(entry);

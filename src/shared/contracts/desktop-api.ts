@@ -29,6 +29,7 @@ import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
 import type { ChatWorkPanelClearSessionRequest } from "../chat-work-panel";
 import type { DesktopHelpSettings } from "../help";
+import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
 import type {
   EnterpriseChatAttachmentData,
@@ -115,6 +116,10 @@ export interface AgentRealtimeDebugTraceEntry {
   surfaceId?: string;
   webContentsId?: number;
   surfaceKind?: string;
+  surfaceRole?: SurfaceRole;
+  surfaceLevel?: SurfaceLevel;
+  parentSurfaceId?: string;
+  interaction?: SurfaceInteraction;
   route?: string;
 }
 
@@ -122,6 +127,10 @@ export interface AgentRealtimeDebugSurface {
   surfaceId: string;
   webContentsId: number;
   kind: AgentWebclientSurfaceKind;
+  surfaceRole: SurfaceRole;
+  surfaceLevel: SurfaceLevel;
+  parentSurfaceId?: string;
+  interaction: SurfaceInteraction;
   active: boolean;
   ownerChatId?: string;
   route: string;

@@ -276,15 +276,15 @@ test("main agent webclient keeps chat and copilot webviews separate from managem
     "EmbeddedSurfaceHosts.tsx"
   );
 
-  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat"/);
-  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = "agent-webclient-copilot"/);
+  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_CHAT_SURFACE_ID = MAIN_CHAT_SURFACE_ID/);
+  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = COPILOT_CHAT_SURFACE_ID/);
   assert.match(surfaceHosts, /lastAgentChatRouteRef/);
   assert.match(surfaceHosts, /lastCopilotRouteRef/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "chat"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "copilot"/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
   assert.match(surfaceHosts, /serviceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
 });
@@ -326,7 +326,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /path=\{routePattern\}[\s\S]*?element=\{null\}/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
   assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/project"[\s\S]*?"\/registries"[\s\S]*?\]/);
   assert.match(routeDefinitions, /function resolveAgentWebclientWsSource\([\s\S]*?return undefined;/);
   assert.doesNotMatch(routeDefinitions, /desktop-agent-webclient/);
@@ -1608,8 +1608,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /activeEmbeddedAgentWebclientRoute[\s\S]*?\? AGENT_WEBCLIENT_SERVICE_ID[\s\S]*?: resolveServiceSurfaceRouteId\(location\.pathname\)/);
   assert.match(appShell, /findAgentWebclientRouteDefinition\(pathname\)/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
-  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
-  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
+  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
+  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
   assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?navigate\(targetPath\);[\s\S]*?return true;/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)/);
@@ -3262,17 +3262,17 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(resolver, /"\/control-center"[\s\S]*?"controlCenter"/);
   assert.match(appShell, /resolveDesktopCopilotPreference/);
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
-  assert.match(appShell, /\[assistantDockSessions, setAssistantDockSessions\] = useState<Record<string, CopilotDockSurfaceSession>>\(\{\}\)/);
+  assert.match(appShell, /\[assistantDockSessions, setAssistantDockSessions\] = useState<Record<string, CopilotDockContextSession>>\(\{\}\)/);
   assert.match(appShell, /isAgentWebclientMainRoute =[\s\S]*?location\.pathname === ASSISTANT_TARGET_PATH \|\|[\s\S]*?isSingleAgentWebclientRoute\(location\.pathname\)/);
-  assert.match(appShell, /currentCopilotSurfaceId = activeWebEntryKey \|\|/);
-  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotSurfaceId\] \?\? null/);
+  assert.match(appShell, /currentCopilotContextKey = activeWebEntryKey \|\|/);
+  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotContextKey\] \?\? null/);
   assert.match(appShell, /assistantDockOpen = Boolean\(currentCopilotSession\)/);
   assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute/);
   assert.doesNotMatch(appShell, /assistantDockOpenPath/);
   assert.match(appShell, /assistantLauncherDisabled=\{isAgentWebclientMainRoute\}/);
   assert.match(appShell, /open=\{assistantCopilotOpen\}/);
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
-  assert.match(appShell, /function closeAssistantDock\(\)[\s\S]*?setAssistantDockOpenRequest\(null\)[\s\S]*?pendingAssistantDockOpenRequestRef\.current = null[\s\S]*?updateCopilotDockSurfaceSession\(currentCopilotSurfaceId, null\)/);
+  assert.match(appShell, /function closeAssistantDock\(\)[\s\S]*?setAssistantDockOpenRequest\(null\)[\s\S]*?pendingAssistantDockOpenRequestRef\.current = null[\s\S]*?updateCopilotDockContextSession\(currentCopilotContextKey, null\)/);
   assert.match(appShell, /<BuiltinBrowserSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
   assert.match(appShell, /<WebSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
   assert.match(appShell, /<ExternalItemRoute[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
@@ -3284,16 +3284,16 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /<AgentWebclientCopilotDock/);
   assert.match(appShell, /resolvedCopilotAgentKey = activeWebEntry[\s\S]{0,180}activeWebEntry\.copilotAgentKey \|\| assistantSettings\?\.desktopHelperAgentKey \|\| DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
   assert.match(appShell, /resolvedAgentKey=\{resolvedCopilotAgentKey\}/);
-  assert.match(appShell, /pendingAssistantDockOpenRequestRef = useRef<\{ surfaceId: string; embedPath: string \} \| null>\(null\)/);
-  assert.match(appShell, /pendingAssistantDockOpenRequestRef\.current = request[\s\S]{0,100}\{ surfaceId: currentCopilotSurfaceId, embedPath \}/);
-  assert.match(appShell, /pendingRequest\?\.surfaceId === currentCopilotSurfaceId[\s\S]*?pendingRequest\.embedPath === embedPath[\s\S]*?setAssistantDockOpenRequest\(null\)/);
-  assert.match(appShell, /writeCopilotDockSessionSnapshot\(\{ surfaces: nextSessions \}\)/);
+  assert.match(appShell, /pendingAssistantDockOpenRequestRef = useRef<\{ contextKey: string; embedPath: string \} \| null>\(null\)/);
+  assert.match(appShell, /pendingAssistantDockOpenRequestRef\.current = request[\s\S]{0,100}\{ contextKey: currentCopilotContextKey, embedPath \}/);
+  assert.match(appShell, /pendingRequest\?\.contextKey === currentCopilotContextKey[\s\S]*?pendingRequest\.embedPath === embedPath[\s\S]*?setAssistantDockOpenRequest\(null\)/);
+  assert.match(appShell, /writeCopilotDockSessionSnapshot\(\{ contexts: nextSessions \}\)/);
   assert.match(appShell, /restoredEmbedPath=\{currentCopilotSession\?\.embedPath \?\? ""\}/);
   assert.match(appShell, /const targetAgentKey = readCopilotAgentKeyFromUrl\(targetEmbedPath\) \|\|[\s\S]*?resolveTargetAgentKey\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /const targetEmbedPath = openRequest\s*\? buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
   assert.match(appShell, /key=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
-  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
+  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-dock"/);
   assert.match(appShell, /function mergeWebsiteItems\(currentItems: WebEntry\[\], nextWebsiteItems: WebsiteEntry\[\]\)/);
   assert.match(appShell, /websiteAgentSyncRequestRef = useRef\(""\)/);
   assert.match(appShell, /function handleCopilotSelectedAgentKeyChange\(agentKey: string\)[\s\S]*?activeWebEntry\?\.kind !== "website"/);
@@ -5991,7 +5991,8 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /skipContextRegistration\?: boolean/);
   assert.match(serviceWebviewSurface, /loadInitialEmbeddedUrlDirectly\?: boolean/);
   assert.match(serviceWebviewSurface, /suppressInitialLoadingCopy\?: boolean/);
-  assert.match(serviceWebviewSurface, /const surfaceId = surfaceIdProp\?\.trim\(\) \|\| serviceId/);
+  assert.match(serviceWebviewSurface, /const surfaceIdentity = surfaceIdentityProp \?\? createServiceSurfaceIdentity\(serviceId\)/);
+  assert.match(serviceWebviewSurface, /const surfaceId = surfaceIdentity\.surfaceId \|\| surfaceIdProp\?\.trim\(\) \|\| serviceId/);
   assert.match(serviceWebviewSurface, /resolveAgentWebclientWsSource/);
   assert.match(serviceWebviewSurface, /wsSource/);
   assert.match(serviceWebviewSurface, /registerServiceSurfaceWebviewRef\(surfaceId, webviewRef\)/);
@@ -6001,7 +6002,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /loadInitialEmbeddedUrlDirectly[\s\S]{0,120}\?\s*\(initialWebviewSrcRef\.current\?\.url \?\? embeddedUrl\)[\s\S]{0,80}:\s*webviewOriginSrcUrl/);
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const kanbanDetailDialog = readSourceFile("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
-  assert.match(kanbanDetailDialog, /surfaceId="agent-webclient-kanban-chat"/);
+  assert.match(kanbanDetailDialog, /surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
   assert.match(kanbanDetailDialog, /surfaceOwnershipActive=\{false\}/);
   assert.match(kanbanDetailDialog, /loadInitialEmbeddedUrlDirectly/);
   assert.match(kanbanDetailDialog, /suppressInitialLoadingCopy/);
@@ -6173,7 +6174,7 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
   assert.match(cdpIntegration, /kind:\s*"webview"/);
   assert.match(cdpIntegration, /webContentsId:\s*input\.contents\?\.id/);
   assert.match(cdpIntegration, /active:\s*snapshotMatchesService/);
-  assert.match(cdpIntegration, /currentPageSnapshot\.surfaceId === input\.service\.id/);
+  assert.match(cdpIntegration, /currentPageSnapshot\.surfaceId === surfaceIdentity\.surfaceId/);
   assert.match(cdpIntegration, /findWebContentsById\(currentPageSnapshot\.webContentsId\)/);
   assert.doesNotMatch(cdpIntegration, /failed to list iframe targets/);
 });
@@ -6218,14 +6219,14 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(styles, /\.external-webview-tab-trigger:focus-visible/u);
   assert.match(styles, /:root\[data-theme="dark"\] \.external-webview-tab\.is-active/u);
   assert.match(copilotSession, /window\.sessionStorage/u);
-  assert.match(copilotSession, /version:\s*3/u);
+  assert.match(copilotSession, /version:\s*4/u);
   assert.match(copilotSession, /safeParams\.set\("chatId", chatId\)/u);
-  assert.match(copilotSession, /surfaces:\s*Record<string, CopilotDockSurfaceSession>/u);
+  assert.match(copilotSession, /contexts:\s*Record<string, CopilotDockContextSession>/u);
   assert.doesNotMatch(copilotSession, /localStorage/u);
   assert.doesNotMatch(copilotSession, /openPath/u);
   assert.doesNotMatch(appShell, /snapshot\.openPath/u);
-  assert.match(appShell, /snapshot\.surfaces/u);
-  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotSurfaceId\] \?\? null/u);
+  assert.match(appShell, /snapshot\.contexts/u);
+  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotContextKey\] \?\? null/u);
   assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute/u);
   assert.match(appShell, /clearCopilotDockSessionSnapshot\(\)/u);
   assert.match(copilotDock, /restoredEmbedPath/u);
@@ -6234,7 +6235,7 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(copilotDock, /readCopilotChatId\(embedPath\)/u);
   assert.match(serviceWebviewSurface, /updateWebviewCurrentUrl\(resolvedUrl, "guest"\)/u);
   assert.match(serviceWebviewSurface, /addEventListener\(\s*"did-navigate-in-page"/u);
-  assert.match(appShell, /handleCopilotCurrentEmbedPathChange[\s\S]{0,360}updateCopilotDockSurfaceSession\(currentCopilotSurfaceId/u);
+  assert.match(appShell, /handleCopilotCurrentEmbedPathChange[\s\S]{0,360}updateCopilotDockContextSession\(currentCopilotContextKey/u);
 });
 
 test("desktop web surface state reads one exact surface without an active-surface fallback", () => {
@@ -6758,7 +6759,7 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(preload, /copilot:\s*\{[\s\S]{0,140}publishDevToolsTarget:\s*\(target\) => ipcRenderer\.invoke\("copilot\.publishDevToolsTarget", target\)/);
   assert.match(contracts, /interface CopilotDevToolsTargetInput/);
   assert.match(contracts, /copilot:\s*\{[\s\S]{0,180}publishDevToolsTarget:\s*\(target: CopilotDevToolsTargetInput\)/);
-  assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}"agent-webclient-copilot-dock"/);
+  assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}COPILOT_DOCK_SURFACE_ID/);
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
   assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*appState\.copilotDevToolsTarget/);
@@ -7785,8 +7786,9 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
     "https://example.test/?API-Key=REDACTED&token=REDACTED"
   );
   assert.match(webviewDebugOverlay, /surfaceId:\s*\{displaySurfaceId\}/u);
-  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceId=\{surfaceId\}/u);
-  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceId=\{surfaceId\} \/>/u);
+  assert.match(webviewDebugOverlay, /displayBreadcrumb/u);
+  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceIdentity=\{surfaceIdentity\}/u);
+  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceIdentity=\{surfaceIdentity\} \/>/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*none;/u);
   assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*none;/u);
   assert.match(externalWebviewStyles, /\.webview-debug-surface-id/u);

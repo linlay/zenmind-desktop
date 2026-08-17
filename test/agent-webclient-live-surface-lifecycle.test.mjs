@@ -9,13 +9,13 @@ const read = (...parts) => readFileSync(path.join(projectRoot, ...parts), "utf8"
 
 test("all three Desktop live Chat surface kinds publish active lifecycle to their mounted guest", () => {
   const surface = read("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
-  for (const surfaceId of [
-    "agent-webclient-chat",
-    "agent-webclient-copilot",
-    "agent-webclient-copilot-dock",
-    "agent-webclient-kanban-chat",
+  for (const surfaceIdConstant of [
+    "MAIN_CHAT_SURFACE_ID",
+    "COPILOT_CHAT_SURFACE_ID",
+    "COPILOT_DOCK_SURFACE_ID",
+    "KANBAN_CHAT_SURFACE_ID",
   ]) {
-    assert.match(surface, new RegExp(`['\"]${surfaceId}['\"]`));
+    assert.match(surface, new RegExp(`\\b${surfaceIdConstant}\\b`));
   }
   assert.match(surface, /DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE/);
   assert.match(

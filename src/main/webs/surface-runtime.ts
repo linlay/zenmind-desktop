@@ -139,7 +139,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
       };
     }
 
-    options.navigateMainWindow(`/webs/${surface.id}`);
+    options.navigateMainWindow(`/webs/${surface.entryKey || surface.id}`);
     for (let attempt = 0; attempt < 24; attempt += 1) {
       await options.delay(250);
       const contents = browserSurfaceRegistry.findWebContentsForSurfaceUrl(surface.url);

@@ -49,7 +49,7 @@ function loadSessionModule() {
 test("copilot dock session snapshot keeps only relative route identity", () => {
   const { api, values } = loadSessionModule();
   api.writeCopilotDockSessionSnapshot({
-    surfaces: {
+    contexts: {
       "website:docs": {
         embedPath: "https://webclient.example/copilot/helper?chatId=chat-1&token=secret&code=hidden",
         agentKey: "helper",
@@ -66,8 +66,8 @@ test("copilot dock session snapshot keeps only relative route identity", () => {
   assert.equal(serialized.includes("hidden"), false);
   assert.equal(serialized.includes("/copilot/helper?chatId=chat-1"), true);
   assert.deepEqual(api.readCopilotDockSessionSnapshot(), {
-    version: 3,
-    surfaces: {
+    version: 4,
+    contexts: {
       "website:docs": {
         embedPath: "/copilot/helper?chatId=chat-1",
         agentKey: "helper",
@@ -91,10 +91,10 @@ test("copilot dock session captures a promoted WebClient chat URL", () => {
   );
 });
 
-test("copilot dock session keeps each surface on its own historical chat", () => {
+test("copilot dock session keeps each context on its own historical chat", () => {
   const { api } = loadSessionModule();
   api.writeCopilotDockSessionSnapshot({
-    surfaces: {
+    contexts: {
       "website:docs": {
         embedPath: "/copilot/docs-agent?chatId=docs-history",
         agentKey: "docs-agent",
@@ -108,7 +108,7 @@ test("copilot dock session keeps each surface on its own historical chat", () =>
     }
   });
 
-  assert.deepEqual(api.readCopilotDockSessionSnapshot()?.surfaces, {
+  assert.deepEqual(api.readCopilotDockSessionSnapshot()?.contexts, {
     "website:docs": {
       embedPath: "/copilot/docs-agent?chatId=docs-history",
       agentKey: "docs-agent",
@@ -125,7 +125,7 @@ test("copilot dock session keeps each surface on its own historical chat", () =>
 test("copilot dock session rejects non-copilot paths and clears on explicit close", () => {
   const { api, values } = loadSessionModule();
   api.writeCopilotDockSessionSnapshot({
-    surfaces: {
+    contexts: {
       "website:docs": {
         embedPath: "/agents/helper?chatId=chat-1",
         agentKey: "helper"
@@ -135,7 +135,7 @@ test("copilot dock session rejects non-copilot paths and clears on explicit clos
   assert.equal(values.size, 0);
 
   api.writeCopilotDockSessionSnapshot({
-    surfaces: {
+    contexts: {
       "website:docs": {
         embedPath: "/copilot/helper",
         agentKey: "helper"
@@ -146,6 +146,32 @@ test("copilot dock session rejects non-copilot paths and clears on explicit clos
   api.clearCopilotDockSessionSnapshot();
   assert.equal(values.size, 0);
   assert.equal(api.readCopilotDockSessionSnapshot(), null);
+});
+
+test("copilot dock session migrates v3 surface keys to v4 context keys", () => {
+  const { api, values } = loadSessionModule();
+  values.set(api.__testInternals.COPILOT_DOCK_SESSION_KEY, JSON.stringify({
+    version: 3,
+    surfaces: {
+      "website:docs": {
+        embedPath: "/copilot/helper?chatId=chat-3",
+        agentKey: "helper",
+        chatId: "chat-3"
+      }
+    }
+  }));
+
+  assert.deepEqual(api.readCopilotDockSessionSnapshot(), {
+    version: 4,
+    contexts: {
+      "website:docs": {
+        embedPath: "/copilot/helper?chatId=chat-3",
+        agentKey: "helper",
+        chatId: "chat-3"
+      }
+    }
+  });
+  assert.equal(JSON.parse([...values.values()][0]).version, 4);
 });
 
 test("copilot dock session discards the old single-surface snapshots", () => {

@@ -156,7 +156,7 @@ test("RealtimeBroker multiplexes concurrent Runs and local request ids over one 
   broker.appendDebugTrace({
     layer: "surface-bridge",
     direction: "surface-to-desktop",
-    surfaceId: "agent-webclient-chat",
+    surfaceId: "main-chat",
     data: {
       token: "must-not-leak",
       nested: { authorization: "Bearer must-not-leak" },

@@ -12,7 +12,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   const reducer = read("src/shared/work-panel.ts");
   const css = read("src/renderer/styles/app-shell.css");
 
-  assert.match(embeddedHosts, /AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat"/u);
+  assert.match(embeddedHosts, /AGENT_WEBCLIENT_CHAT_SURFACE_ID = MAIN_CHAT_SURFACE_ID/u);
   assert.match(appShell, /useState<WorkPanelState>\(EMPTY_WORK_PANEL_STATE\)/u);
   assert.match(appShell, /reduceWorkPanelCommand\(workPanelStateRef\.current, command\)/u);
   assert.match(appShell, /<WorkPanelHost/u);

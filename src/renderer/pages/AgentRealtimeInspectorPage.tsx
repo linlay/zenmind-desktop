@@ -319,7 +319,11 @@ export function AgentRealtimeInspectorPage() {
                 <time>{formatFrameTime(entry.recordedAt, locale)}</time>
                 <code>{directionGlyph(entry.direction)}</code>
                 <span>{entry.layer === "platform-ws" ? "Platform WS" : "Surface Bridge"}</span>
-                <strong title={entry.surfaceId || ""}>{entry.surfaceId || "—"}</strong>
+                <strong title={entry.surfaceId || ""}>
+                  {entry.surfaceId
+                    ? `${entry.parentSurfaceId ? `${entry.parentSurfaceId} › ` : ""}${entry.surfaceRole || entry.surfaceId}`
+                    : "—"}
+                </strong>
                 <span title={describeTrace(entry)}>{describeTrace(entry)}</span>
                 <span>{presentation.size}</span>
               </button>
@@ -347,6 +351,10 @@ export function AgentRealtimeInspectorPage() {
               <div><dt>{t("settings.debug.realtime.direction")}</dt><dd>{selectedEntry.direction}</dd></div>
               <div><dt>{t("settings.debug.realtime.layer")}</dt><dd>{selectedEntry.layer}</dd></div>
               <div><dt>surfaceId</dt><dd>{selectedEntry.surfaceId || "—"}</dd></div>
+              <div><dt>surface role</dt><dd>{selectedEntry.surfaceRole || selectedSurface?.surfaceRole || "—"}</dd></div>
+              <div><dt>surface level</dt><dd>{selectedEntry.surfaceLevel || selectedSurface?.surfaceLevel || "—"}</dd></div>
+              <div><dt>parentSurfaceId</dt><dd>{selectedEntry.parentSurfaceId || selectedSurface?.parentSurfaceId || "—"}</dd></div>
+              <div><dt>interaction</dt><dd>{selectedEntry.interaction || selectedSurface?.interaction || "—"}</dd></div>
               <div><dt>surface kind</dt><dd>{selectedEntry.surfaceKind || selectedSurface?.kind || "—"}</dd></div>
               <div><dt>webContentsId</dt><dd>{selectedEntry.webContentsId ?? selectedSurface?.webContentsId ?? "—"}</dd></div>
               <div><dt>route</dt><dd>{selectedEntry.route || selectedSurface?.route || "—"}</dd></div>

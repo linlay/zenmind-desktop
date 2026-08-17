@@ -2,6 +2,12 @@ import {
   decodeRoutePathSegment,
   encodeRoutePathSegment
 } from "./route-path";
+import {
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID,
+  MAIN_CHAT_SURFACE_ID
+} from "./surface-identity";
 
 export const AGENT_WEBCLIENT_SERVICE_ID = "agent-webclient";
 export const AGENT_WEBCLIENT_TARGET_PATH = "/agents";
@@ -115,12 +121,12 @@ export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
 ] as const;
 
 const AGENT_WEBCLIENT_CHAT_SURFACE_IDS = new Set([
-  "agent-webclient-chat",
-  "agent-webclient-kanban-chat"
+  MAIN_CHAT_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID
 ]);
 const AGENT_WEBCLIENT_COPILOT_SURFACE_IDS = new Set([
-  "agent-webclient-copilot",
-  "agent-webclient-copilot-dock"
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID
 ]);
 
 const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([

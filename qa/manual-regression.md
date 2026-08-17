@@ -44,6 +44,9 @@
 - [ ] 断线不会自动重复提交已接受的 query；新请求可重新建立连接。
 - [ ] 同时运行 Main Assistant、导航 Push、桌宠、两个 Desktop WS `ap` 客户端和可信 WebClient bridge 时，Main 诊断仍只有一个 Agent Platform 物理连接。
 - [ ] About 连点五次开启 Debug 后，每个 webview 浮层同时显示脱敏 URL 与 `surfaceId`；设置页可打开并重复聚焦唯一的独立 Realtime Inspector，主窗口切换页面不关闭观察器。观察器能区分 Platform 物理 WS 收发和各 `surfaceId` 的 Bridge 收发，按方向、链路层、历史/当前 surface 和文本筛选不串线；冻结仅停止视图刷新而不停止后台采集，清空后不恢复旧条目。
+- [ ] Debug 浮层和 Realtime Inspector 使用 canonical 短 ID，并显示 `parent › role · surfaceId`；Overview/Debug 不暴露原始 chatId、runId 或 URL，且保持只读。
+- [ ] macOS 与 Windows 分别验证 Browser 多标签只登记一个 `browser` surface；打开新 URL 或执行长时间 Office 操作不会新增 surface，收藏 Website/WebApp 重启后仍得到相同 `site:` / `app:` ID。
+- [ ] 全页面 Copilot 与右侧 Copilot Dock 分别显示 `copilot-chat` 和 `copilot-dock`；切换 Browser、Website、WebApp 和原生页面时，Dock 会话按 context 恢复且父级关系不会串到前一个页面。
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
 - [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。

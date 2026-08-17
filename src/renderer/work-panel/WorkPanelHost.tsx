@@ -4,6 +4,7 @@ import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from ".
 import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
 import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 import { useI18n } from "../i18n/useI18n";
+import { createChatChildSurfaceIdentity } from "../../shared/surface-identity";
 
 const ExternalWebviewPage = lazy(() =>
   import("../pages/external-webview/ExternalWebviewPage").then((module) => ({ default: module.ExternalWebviewPage })),
@@ -233,7 +234,12 @@ export function WorkPanelHost({
                         loadInitialEmbeddedUrlDirectly
                         ownerChatId={workspace.ownerChatId}
                         serviceId="agent-webclient"
-                        surfaceId={`workpanel-${item.itemId}`}
+                        surfaceIdentity={createChatChildSurfaceIdentity(
+                          item.descriptor.module,
+                          item.stableKey,
+                          workspace.ownerChatId
+                        )}
+                        surfaceIdentityKey={item.stableKey}
                         surfaceLabel={item.title}
                       />
                     );
@@ -254,7 +260,12 @@ export function WorkPanelHost({
                       publishPageContext={false}
                       registerPublicWebSurface={false}
                       showToolbar={false}
-                      surfaceId={`workpanel-web:${stableWorkPanelHash(item.itemId)}`}
+                      surfaceIdentity={createChatChildSurfaceIdentity(
+                        "workpanel-web",
+                        item.stableKey,
+                        workspace.ownerChatId
+                      )}
+                      surfaceIdentityKey={item.stableKey}
                       surfaceKind="chat-work-panel"
                       surfaceLabel={item.title}
                       title={item.title}

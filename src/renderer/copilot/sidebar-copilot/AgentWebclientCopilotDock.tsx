@@ -2,6 +2,10 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
 import { createAgentWebclientCopilotPath } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
+import {
+  COPILOT_DOCK_SURFACE_ID,
+  createSurfaceIdentity
+} from "../../../shared/surface-identity";
 import { useI18n } from "../../i18n/useI18n";
 import {
   normalizeCopilotEmbedPath,
@@ -13,7 +17,7 @@ const ServiceWebviewSurface = lazy(() =>
 );
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
-const AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID = "agent-webclient-copilot-dock";
+const AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID = COPILOT_DOCK_SURFACE_ID;
 type CopilotUrlChangeSource = "host" | "guest";
 
 function normalizeAgentKey(value = "") {
@@ -76,6 +80,7 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible,
   openRequest,
   restoredEmbedPath,
+  parentSurfaceId,
   resolvedAgentKey,
   onRunningRunIdChange,
   onSelectedAgentKeyChange,
@@ -86,6 +91,7 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible: boolean;
   openRequest: AssistantWorkerOpenRequest | null;
   restoredEmbedPath?: string;
+  parentSurfaceId?: string;
   resolvedAgentKey: string;
   onRunningRunIdChange: (runId: string | null) => void;
   onSelectedAgentKeyChange?: (agentKey: string) => void;
@@ -168,7 +174,7 @@ export function AgentWebclientCopilotDock({
             embedPath={targetEmbedPath}
             hostTheme={hostTheme}
             serviceId="agent-webclient"
-            surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
+            surfaceIdentity={createSurfaceIdentity("copilot-dock", "", { parentSurfaceId })}
             surfaceLabel={t("copilotDock.surfaceLabel")}
             skipContextRegistration
             devToolsTarget="copilot"

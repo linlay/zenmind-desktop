@@ -38,6 +38,7 @@ import { createAgentWebclientRoute } from "../../../shared/agent-webclient-route
 import type { SupportedLocale, TranslateFunction } from "../../../shared/i18n";
 import { useDebugMode } from "../../debug/DebugModeContext";
 import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
+import { createSurfaceIdentity } from "../../../shared/surface-identity";
 import { resolveKanbanIssueRuns, resolveKanbanStatusTimeline } from "./issueDetailHistory";
 import { resolveKanbanIssueFields } from "./issueFieldResolution";
 
@@ -911,10 +912,10 @@ export function KanbanIssueDetailDialog({
               <ServiceWebviewSurface
                 key={`kanban-chat:${issue.id}:${selectedIssueChatId || chatEmbedPath}`}
                 active
-                surfaceOwnershipActive
+                surfaceOwnershipActive={false}
                 hostTheme={hostTheme}
                 serviceId="agent-webclient"
-                surfaceId="agent-webclient-kanban-chat"
+                surfaceIdentity={createSurfaceIdentity("kanban-chat")}
                 surfaceLabel={t("kanban.chat.surfaceLabel")}
                 embedPath={chatEmbedPath}
                 skipContextRegistration

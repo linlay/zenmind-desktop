@@ -28,7 +28,7 @@ function createTarget(id, overrides = {}) {
   const url = `http://127.0.0.1:7079/agent/agent-${id}?chatId=chat-${id}`;
   return {
     registrationId: `registration-${id}`,
-    surfaceId: `agent-webclient-chat`,
+    surfaceId: "main-chat",
     surfaceKind: "service",
     surfaceType: "agent-chat",
     serviceId: "agent-webclient",
@@ -272,7 +272,7 @@ test("local validation returns a standard error frame with the original request 
 test("surface handoff writes detach before the next live request", async () => {
   const firstTarget = createTarget(51, { ownerChatId: "chat-1" });
   const secondTarget = createTarget(52, {
-    surfaceId: "agent-webclient-copilot-dock",
+    surfaceId: "copilot-dock",
     surfaceType: "agent-copilot",
     ownerChatId: "chat-2",
   });
@@ -316,7 +316,7 @@ test("surface handoff writes detach before the next live request", async () => {
 test("surface handoff waits for an explicit detach write and does not send a duplicate detach", async () => {
   const firstTarget = createTarget(53, { ownerChatId: "chat-explicit-1" });
   const secondTarget = createTarget(54, {
-    surfaceId: "agent-webclient-copilot-dock",
+    surfaceId: "copilot-dock",
     surfaceType: "agent-copilot",
     ownerChatId: "chat-explicit-2",
   });

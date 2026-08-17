@@ -9,6 +9,13 @@ import { useLocation } from "react-router-dom";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
 import type { EmbeddedCdpSurfaceKind } from "../../../shared/embedded-cdp";
+import {
+  createChatChildSurfaceIdentity,
+  createSurfaceIdentity,
+  createWebEntrySurfaceIdentity,
+  resolveLegacyFixedSurfaceId,
+  type SurfaceIdentity
+} from "../../../shared/surface-identity";
 import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID } from "../../../shared/browser-surfaces";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import { closeWebTabFromOrder } from "../../../shared/web-tab-lifecycle";
@@ -59,6 +66,9 @@ type ExternalWebviewPageProps = {
   url: string;
   active?: boolean | undefined;
   surfaceId?: string;
+  surfaceIdentity?: SurfaceIdentity;
+  surfaceIdentityKey?: string;
+  surfaceRoute?: string;
   surfaceKind?: EmbeddedCdpSurfaceKind;
   surfaceLabel?: string;
   chrome?: "browser" | "app";
@@ -157,6 +167,7 @@ type ExternalWebviewPaneProps = {
   tab: ExternalWebviewTabState;
   active: boolean;
   surfaceId?: string;
+  surfaceIdentity?: SurfaceIdentity;
   surfaceLabel?: string;
   onTabStateChange: (tabId: string, patch: ExternalWebviewTabPatch) => void;
   onWebviewRefChange: (tabId: string, webview: Electron.WebviewTag | null) => void;
@@ -298,6 +309,7 @@ function ExternalWebviewPane({
   tab,
   active,
   surfaceId,
+  surfaceIdentity,
   surfaceLabel,
   onTabStateChange,
   onWebviewRefChange,
@@ -454,7 +466,7 @@ function ExternalWebviewPane({
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
       })}
-      <WebviewDebugOverlay url={tab.currentUrl} surfaceId={surfaceId} />
+      <WebviewDebugOverlay url={tab.currentUrl} surfaceIdentity={surfaceIdentity} />
     </div>
   );
 }
@@ -463,7 +475,10 @@ export function ExternalWebviewPage({
   title,
   url,
   active,
-  surfaceId,
+  surfaceId: surfaceIdProp,
+  surfaceIdentity: surfaceIdentityProp,
+  surfaceIdentityKey,
+  surfaceRoute: surfaceRouteProp,
   surfaceKind,
   surfaceLabel,
   chrome = "browser",
@@ -497,14 +512,24 @@ export function ExternalWebviewPage({
   const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
   const [surfaceRegistrationId] = useState(createSurfaceRegistrationId);
-  const registeredSurfaceKind = surfaceKind ?? (surfaceId === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
-  const registeredSurfaceRoute = registeredSurfaceKind === "chat-work-panel"
+  const registeredSurfaceKind = surfaceKind ?? (surfaceIdProp === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
+  const surfaceIdentity = surfaceIdentityProp ?? (
+    registeredSurfaceKind === "browser"
+      ? createSurfaceIdentity("browser")
+      : registeredSurfaceKind === "website" || registeredSurfaceKind === "webapp"
+        ? createWebEntrySurfaceIdentity(registeredSurfaceKind, surfaceIdentityKey || surfaceIdProp || "")
+        : registeredSurfaceKind === "chat-work-panel"
+          ? createChatChildSurfaceIdentity("workpanel-web", surfaceIdentityKey || surfaceIdProp || "", ownerChatId || "")
+          : null
+  );
+  const surfaceId = surfaceIdentity?.surfaceId || surfaceIdProp;
+  const registeredSurfaceRoute = surfaceRouteProp ?? (registeredSurfaceKind === "chat-work-panel"
     ? ""
     : surfaceId === BUILTIN_BROWSER_SURFACE_ID
       ? BUILTIN_BROWSER_ROUTE
       : surfaceId
         ? `/webs/${surfaceId}`
-        : currentRoute;
+        : currentRoute);
   const faviconReportedRef = useRef(false);
   const initialFaviconTabIdRef = useRef("");
   const surfaceClassName = [
@@ -584,7 +609,7 @@ export function ExternalWebviewPage({
 
   const syncEmbeddedCdpSurface = async (state: ExternalWebviewBrowserState) => {
     const embeddedCdp = getEmbeddedCdpSurfaceApi();
-    if (!embeddedCdp || !registeredSurfaceKind || !surfaceId) {
+    if (!embeddedCdp || !registeredSurfaceKind || !surfaceId || !surfaceIdentity) {
       return;
     }
     const registeredTabs = state.tabs
@@ -611,7 +636,8 @@ export function ExternalWebviewPage({
       : registeredTabs[0]?.tabId ?? null;
     const response = await embeddedCdp.registerSurface({
       registrationId: surfaceRegistrationId,
-      surfaceId,
+      ...surfaceIdentity,
+      ...(surfaceIdentityKey?.trim() ? { surfaceIdentityKey: surfaceIdentityKey.trim() } : {}),
       surfaceKind: registeredSurfaceKind,
       surfaceType: registeredSurfaceKind,
       pageRoute: registeredSurfaceRoute,
@@ -1078,6 +1104,13 @@ export function ExternalWebviewPage({
     registeredSurfaceKind,
     surfaceRegistrationId,
     surfaceId,
+    surfaceIdentity?.interaction,
+    surfaceIdentity?.ownerChatId,
+    surfaceIdentity?.parentSurfaceId,
+    surfaceIdentity?.surfaceId,
+    surfaceIdentity?.surfaceLevel,
+    surfaceIdentity?.surfaceRole,
+    surfaceIdentityKey,
     surfaceLabel,
     title,
     url
@@ -1200,6 +1233,12 @@ export function ExternalWebviewPage({
     return {
       surface: {
         id: surfaceId ?? "",
+        surfaceId: surfaceId ?? "",
+        surfaceRole: surfaceIdentity?.surfaceRole ?? "browser",
+        surfaceLevel: surfaceIdentity?.surfaceLevel ?? "root",
+        ...(surfaceIdentity?.parentSurfaceId ? { parentSurfaceId: surfaceIdentity.parentSurfaceId } : {}),
+        ...(surfaceIdentity?.ownerChatId ? { ownerChatId: surfaceIdentity.ownerChatId } : {}),
+        interaction: surfaceIdentity?.interaction ?? "interactive",
         kind: registeredSurfaceKind === "chat-work-panel"
           ? "browser" as const
           : registeredSurfaceKind ?? "browser" as const,
@@ -1402,7 +1441,14 @@ export function ExternalWebviewPage({
 
     function requestTargetsDifferentSurface(args: Record<string, unknown>) {
       const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
-      return Boolean(targetSurfaceId && surfaceId && targetSurfaceId !== surfaceId);
+      const canonicalTargetSurfaceId = resolveLegacyFixedSurfaceId(targetSurfaceId);
+      return Boolean(
+        targetSurfaceId &&
+        surfaceId &&
+        canonicalTargetSurfaceId !== surfaceId &&
+        targetSurfaceId !== surfaceIdProp &&
+        targetSurfaceId !== surfaceIdentityKey
+      );
     }
 
     return registerDesktopActionProviderForScope("web", async (request) => {
@@ -1924,6 +1970,7 @@ export function ExternalWebviewPage({
             tab={tab}
             active={tab.id === browserState.activeTabId}
             surfaceId={surfaceId}
+            surfaceIdentity={surfaceIdentity ?? undefined}
             surfaceLabel={surfaceLabel ?? title}
             onTabStateChange={handleTabStateChange}
             onCloseRequested={(tabId) => {

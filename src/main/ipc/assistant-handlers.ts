@@ -9,6 +9,7 @@ import { PRODUCT_NAME } from "../../shared/brand";
 import type { AssistantNavigationListOptions } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
+import { COPILOT_DOCK_SURFACE_ID } from "../../shared/surface-identity";
 import {
   createConversationShare,
   revokeConversationShare
@@ -73,7 +74,7 @@ async function saveAssistantChatExport(
 }
 
 const COPILOT_DEVTOOLS_SURFACE_IDS = new Set([
-  "agent-webclient-copilot-dock"
+  COPILOT_DOCK_SURFACE_ID
 ]);
 
 function readOptionalString(value: unknown) {
