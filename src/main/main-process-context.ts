@@ -79,6 +79,7 @@ export interface ShellIpcHandlerContextDependencies {
   issueAgentPlatformAccessToken?: (...args: any[]) => unknown;
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
+  setWebviewModalOverlayVisible?: (sourceId: string, visible: boolean) => void;
   setWorkPanelKeyboardFocusActive?: (active: boolean) => void;
 }
 
@@ -99,6 +100,7 @@ export function createShellIpcHandlerOptions(
     issueAgentPlatformAccessToken: dependencies.issueAgentPlatformAccessToken,
     desktopLogStreamSubscriptions: dependencies.desktopLogStreamSubscriptions,
     setGlobalSearchOverlayVisible: dependencies.setGlobalSearchOverlayVisible,
+    setWebviewModalOverlayVisible: dependencies.setWebviewModalOverlayVisible,
     setWorkPanelKeyboardFocusActive: dependencies.setWorkPanelKeyboardFocusActive
   };
 }

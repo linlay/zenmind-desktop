@@ -27,8 +27,10 @@ import {
   DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
+  SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   type ServiceWebviewBridgeMessage,
+  type ServiceWebviewModalOverlayState,
 } from "../../shared/service-webview-bridge";
 import { handleServiceWebviewBridgeMessage } from "../services/serviceWebviewBridgeHost";
 import { getServiceDisplayName } from "../service-display";
@@ -506,6 +508,7 @@ export function ServiceWebviewSurface({
   const [webviewSnapshotNonce, setWebviewSnapshotNonce] = useState(0);
   const [selectionToolbarState, setSelectionToolbarState] =
     useState<VisibleSelectionToolbarState | null>(null);
+  const [webviewModalOverlayVisible, setWebviewModalOverlayVisible] = useState(false);
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== "hidden");
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
@@ -516,6 +519,14 @@ export function ServiceWebviewSurface({
   if (!surfaceRegistrationIdRef.current) {
     surfaceRegistrationIdRef.current = createServiceSurfaceRegistrationId();
   }
+  const windowModalOverlaySourceId = `service-webview:${surfaceId}`;
+  // Child surfaces only mask their own panel; root/utility surfaces occupy the
+  // main content area and should extend that mask into Windows window controls.
+  const shouldMaskWindowControls =
+    active !== false &&
+    ownsActiveSurface &&
+    surfaceIdentity.surfaceLevel !== "child" &&
+    webviewModalOverlayVisible;
   const lastHandledFocusRequestIdRef = useRef(0);
   const lastDirectWebviewRouteRef = useRef("");
   const lastHostAppliedChatRouteRef = useRef("");
@@ -553,11 +564,28 @@ export function ServiceWebviewSurface({
       return;
     }
     setSelectionToolbarState(null);
+    setWebviewModalOverlayVisible(false);
     webviewRef.current = node;
     if (node) {
       setWebviewSnapshotNonce((current) => current + 1);
     }
   }, []);
+
+  useEffect(() => {
+    window.electronAPI.desktopShell.setWebviewModalOverlayVisible(
+      windowModalOverlaySourceId,
+      shouldMaskWindowControls,
+    );
+  }, [shouldMaskWindowControls, windowModalOverlaySourceId]);
+
+  useEffect(() => {
+    return () => {
+      window.electronAPI.desktopShell.setWebviewModalOverlayVisible(
+        windowModalOverlaySourceId,
+        false,
+      );
+    };
+  }, [windowModalOverlaySourceId]);
 
   useEffect(() => {
     return window.electronAPI.serviceWebview.onSelectionToolbarState((state) => {
@@ -1291,6 +1319,13 @@ export function ServiceWebviewSurface({
 
   function handleWebviewBridgeMessage(event: Event) {
     const channel = readEventString(event, "channel");
+    if (channel === SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL) {
+      const [state] = ((event as Event & { args?: unknown[] }).args ?? []) as [
+        ServiceWebviewModalOverlayState?,
+      ];
+      setWebviewModalOverlayVisible(state?.visible === true);
+      return;
+    }
     if (channel !== SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL) {
       return;
     }

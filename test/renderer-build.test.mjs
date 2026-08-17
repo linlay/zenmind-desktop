@@ -6167,6 +6167,31 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(globalStyles, /\.service-webview-error\s*\{/);
 });
 
+test("Windows service webview modal overlays mask native caption controls", () => {
+  const serviceWebviewPreload = readSourceFile("src", "preload", "service-webview.ts");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
+  const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
+  const desktopPreload = readSourceFile("src", "preload", "index.ts");
+  const desktopContracts = readSharedContractsSource();
+  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+
+  assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL = "desktop:service-webview:modal-overlay-state"/);
+  assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_MODAL_MASK_SELECTOR = "\.ant-modal-mask"/);
+  assert.match(serviceWebviewPreload, /process\.platform === "win32"/);
+  assert.match(serviceWebviewPreload, /new MutationObserver\(\(mutations\) =>/);
+  assert.match(serviceWebviewPreload, /sendToHost\(SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL/);
+  assert.match(serviceWebviewSurface, /active !== false[\s\S]{0,140}ownsActiveSurface[\s\S]{0,140}surfaceIdentity\.surfaceLevel !== "child"/);
+  assert.match(serviceWebviewSurface, /channel === SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL/);
+  assert.match(serviceWebviewSurface, /setWebviewModalOverlayVisible\(state\?\.visible === true\)/);
+  assert.match(serviceWebviewSurface, /desktopShell\.setWebviewModalOverlayVisible\(/);
+  assert.match(desktopContracts, /setWebviewModalOverlayVisible: \(sourceId: string, visible: boolean\) => void/);
+  assert.match(desktopPreload, /setWebviewModalOverlayVisible:\s*\(sourceId: string, visible: boolean\)/);
+  assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.setWebviewModalOverlayVisible"/);
+  assert.match(shellHandlers, /ownerWindow !== mainWindow/);
+  assert.match(windowManager, /globalSearchOverlayVisible \|\| webviewModalOverlaySources\.size > 0/);
+});
+
 test("embedded cdp exposes service frontends as webview surfaces", () => {
   const cdpIntegration = readSourceFile("src", "main", "cdp-integration.ts");
 

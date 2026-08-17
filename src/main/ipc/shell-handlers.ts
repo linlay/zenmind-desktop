@@ -88,6 +88,7 @@ type ShellIpcOptions = {
   }>;
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
+  setWebviewModalOverlayVisible?: (sourceId: string, visible: boolean) => void;
   setWorkPanelKeyboardFocusActive?: (active: boolean) => void;
 };
 
@@ -336,6 +337,20 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
 
   ipcMain.on("desktopShell.setGlobalSearchOverlayVisible", (_event: IpcMainEvent, visible: unknown) => {
     options.setGlobalSearchOverlayVisible?.(visible === true);
+  });
+
+  ipcMain.on("desktopShell.setWebviewModalOverlayVisible", (
+    event: IpcMainEvent,
+    sourceId: unknown,
+    visible: unknown
+  ) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    const normalizedSourceId = typeof sourceId === "string" ? sourceId.trim() : "";
+    if (!ownerWindow || ownerWindow !== mainWindow || !normalizedSourceId || normalizedSourceId.length > 200) {
+      return;
+    }
+    options.setWebviewModalOverlayVisible?.(normalizedSourceId, visible === true);
   });
 
   ipcMain.on("desktopShell.setWorkPanelKeyboardFocusActive", (event: IpcMainEvent, active: unknown) => {
