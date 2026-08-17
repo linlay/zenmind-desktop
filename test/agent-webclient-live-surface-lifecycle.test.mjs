@@ -31,3 +31,23 @@ test("Desktop live Chat and trusted WorkPanel child surfaces publish active life
   );
   assert.match(surface, /return \(\) => sendLiveSurfaceLifecycleToWebview\(false\)/);
 });
+
+test("main Chat metadata refreshes do not replay active lifecycle for the same mounted guest", () => {
+  const surface = read("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
+  const lifecycleSender = surface.slice(
+    surface.indexOf("function sendLiveSurfaceLifecycleToWebview"),
+    surface.indexOf("function dispatchServiceWebviewRouteEventToWebview"),
+  );
+  const lifecycleCleanupEffect = lifecycleSender.slice(
+    lifecycleSender.indexOf("const liveSurfaceLifecycleEnabled"),
+  );
+
+  assert.match(surface, /lastLiveSurfaceLifecycleRef/u);
+  assert.match(lifecycleSender, /const webContentsId = readWebviewContentsId\(webviewRef\.current\)/u);
+  assert.match(
+    lifecycleSender,
+    /previous\?\.active === nextActive[\s\S]*?previous\.webContentsId === webContentsId[\s\S]*?return;/u,
+  );
+  assert.match(lifecycleCleanupEffect, /liveSurfaceLifecycleEnabled/u);
+  assert.doesNotMatch(lifecycleCleanupEffect, /surfaceIdentity\.ownerChatId/u);
+});

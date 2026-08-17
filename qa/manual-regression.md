@@ -50,6 +50,7 @@
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
 - [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
+- [ ] 在 Main Chat 连续切换多个普通、运行中和空消息 Chat；每次只请求目标 `chatId`，owner Chat/registry 元数据更新不产生伪造的 inactive→active lifecycle，也不强制 replay 上一个 Chat。
 - [ ] Main Chat 仍是唯一 live surface；WorkPanel Overview/Debug 首次打开各只 HTTP replay 一次，隐藏再显示时各只再 replay 一次，全程不产生 query、attach、detach 或轮询。
 - [ ] 新 Chat URL 只在关联 stream bootstrap identity 后晋升；`chat.created` push 只更新列表，不能猜测 query 归属。
 - [ ] 离开 Main Chat 页面、关闭 Copilot 或退出 Kanban Chat 页面时，存在 stream 的 observer 各只 detach 一次；进入对应页面时先请求 `/api/chat` replay，只有响应仍含 `activeRun` 才从服务端 `lastSeq` attach，identity 尚未返回的 query 在 bootstrap 后补 detach。左侧 Nav 只产生页面选择并展示 push 状态，不直接发 query/attach/detach。

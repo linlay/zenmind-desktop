@@ -515,6 +515,10 @@ export function ServiceWebviewSurface({
   const lastDirectWebviewRouteRef = useRef("");
   const lastHostAppliedChatRouteRef = useRef("");
   const lastReportedCurrentUrlRef = useRef("");
+  const lastLiveSurfaceLifecycleRef = useRef<{
+    active: boolean;
+    webContentsId: number | undefined;
+  } | null>(null);
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
   const surfaceVisibilityProps =
     active === undefined
@@ -1109,23 +1113,40 @@ export function ServiceWebviewSurface({
 
   function sendLiveSurfaceLifecycleToWebview(nextActive: boolean) {
     if (!isAgentWebclientLifecycleSurface(serviceId, surfaceId, surfaceIdentity)) return;
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const previous = lastLiveSurfaceLifecycleRef.current;
+    // Registry metadata (for example ownerChatId) can change while the same
+    // guest stays active. Only a real active transition or guest replacement
+    // may trigger WebClient replay/attach recovery.
+    if (
+      previous?.active === nextActive &&
+      previous.webContentsId === webContentsId
+    ) {
+      return;
+    }
     sendBridgeMessageToWebview({
       type: DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
       active: nextActive,
       surfaceId,
     });
+    lastLiveSurfaceLifecycleRef.current = {
+      active: nextActive,
+      webContentsId,
+    };
   }
 
-  useEffect(() => {
-    if (!isAgentWebclientLifecycleSurface(serviceId, surfaceId, surfaceIdentity)) return;
-    return () => sendLiveSurfaceLifecycleToWebview(false);
-  }, [
+  const liveSurfaceLifecycleEnabled = isAgentWebclientLifecycleSurface(
     serviceId,
     surfaceId,
-    surfaceIdentity.surfaceLevel,
-    surfaceIdentity.surfaceRole,
-    surfaceIdentity.parentSurfaceId,
-    surfaceIdentity.ownerChatId,
+    surfaceIdentity,
+  );
+  useEffect(() => {
+    if (!liveSurfaceLifecycleEnabled) return;
+    return () => sendLiveSurfaceLifecycleToWebview(false);
+  }, [
+    liveSurfaceLifecycleEnabled,
+    serviceId,
+    surfaceId,
   ]);
 
   function dispatchServiceWebviewRouteEventToWebview(payload: Record<string, unknown>) {
