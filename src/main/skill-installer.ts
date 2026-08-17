@@ -10,7 +10,6 @@ import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
 import { getInstallDir, getServiceState } from "./services/manager";
 import { t } from "./i18n/main-i18n";
 import { resolveRuntimeRootPath } from "./runtime-root";
-import { assertNoRemovedSkillsMarketRuntimeDir } from "./env-bootstrap";
 
 type SkillMetadata = {
   id: string;
@@ -129,7 +128,6 @@ function resolveDesktopRuntimeRoot(app: App) {
 
 export function getSkillsCenterDir(app: App) {
   const runtimeRoot = resolveDesktopRuntimeRoot(app);
-  assertNoRemovedSkillsMarketRuntimeDir(runtimeRoot);
   return path.join(runtimeRoot, "skills-center");
 }
 

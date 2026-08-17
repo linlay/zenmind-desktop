@@ -153,16 +153,8 @@ export function runtimeRootExists(app: AppPathReader, platform: NodeJS.Platform 
   }
 }
 
-export function assertNoRemovedSkillsMarketRuntimeDir(root: string) {
-  const removedPath = path.join(root, REMOVED_SKILLS_MARKET_DIR_NAME);
-  if (fs.existsSync(removedPath)) {
-    throw new Error(t("envBootstrap.removedSkillsMarketRuntime", { path: removedPath }));
-  }
-}
-
 export function runtimeEnvExists(app: AppPathReader, platform: NodeJS.Platform = process.platform) {
   const root = resolveRuntimeRoot(app, platform);
-  assertNoRemovedSkillsMarketRuntimeDir(root);
   if (!runtimeRootExists(app, platform)) {
     return false;
   }
@@ -184,7 +176,6 @@ export function runtimeEnvNeedsBundledSeedRefresh(app: AppPathReader, platform: 
     return false;
   }
   const root = resolveRuntimeRoot(app, platform);
-  assertNoRemovedSkillsMarketRuntimeDir(root);
   if (!runtimeRootExists(app, platform)) {
     return false;
   }
@@ -1042,7 +1033,6 @@ export async function importEnvZipToRuntime(
   }
 
   const targetRoot = resolveRuntimeRoot(app, platform);
-  assertNoRemovedSkillsMarketRuntimeDir(targetRoot);
 
   const zipBuffer = await fs.promises.readFile(zipPath);
   const zip = await JSZip.loadAsync(zipBuffer);
