@@ -2071,7 +2071,6 @@ export const zhCNMessages = {
   "envBootstrap.firstInstallZipOnly": "首次安装只能导入 env.zip。",
   "envBootstrap.emptyImport": "env.zip 内没有可导入的文件。",
   "envBootstrap.backupExists": "旧环境备份目录已存在：{path}",
-  "envBootstrap.removedSkillsMarketRuntime": "不支持旧版运行目录：{path}。请先备份旧运行环境，再还原使用新版技能中心目录的全新环境。",
   "envBootstrap.removedSkillsMarketArchive": "不支持旧版环境包内容：{path}。请使用包含新版技能中心目录的环境包。",
 
   "identityCenterAuth.missingBinaryAndWindowsScript": "identity-center 缺少后端二进制文件：backend/{binaryName} 且缺少 Windows 脚本：scripts/{subcommand}.ps1",

@@ -618,6 +618,10 @@ test("installSkillFromPath rejects non-zip skill archives but accepts SKILL.md",
   const app = createApp(root);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
+  const unrelatedSkillMarketFile = path.join(root, "home", ".cutej", "skills-market", "keep.txt");
+  fs.mkdirSync(path.dirname(unrelatedSkillMarketFile), { recursive: true });
+  fs.writeFileSync(unrelatedSkillMarketFile, "keep\n", "utf8");
+
   for (const extension of [".tar.gz", ".tgz", ".skill"]) {
     const archivePath = path.join(root, `local-skill${extension}`);
     fs.writeFileSync(archivePath, "not a supported local skill package\n", "utf8");
@@ -633,6 +637,7 @@ test("installSkillFromPath rejects non-zip skill archives but accepts SKILL.md",
 
   assert.equal(result.ok, true);
   assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "local-skill"), "SKILL.md")), true);
+  assert.equal(fs.readFileSync(unrelatedSkillMarketFile, "utf8"), "keep\n");
 });
 
 test("refreshMarketCatalog combines catalog plugins with catalog skills", async (t) => {
