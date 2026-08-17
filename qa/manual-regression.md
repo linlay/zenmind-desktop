@@ -105,7 +105,7 @@
 - [ ] 仅 Main Chat 显示 Desktop WorkPanel 右上按钮；新对话尚无稳定 `chatId` 时按钮禁用，管理页、Copilot、Website、WebApp 和 Standalone WebClient 均无该 Desktop 入口，Desktop Agent guest 自身右上快捷组为空。
 - [ ] 首次点击右上按钮创建当前 Chat 的 Overview item；再次点击只隐藏，tabs、guest、active item 与宽度保持；再次打开恢复原 active item且不重建 guest。分别在两个 Chat 隐藏/恢复时 workspace 不串线，隐藏期间收到 Planning/Artifact/Web `openItem` 或 `activateItem` 会自动显示目标 workspace。
 - [ ] 关闭最后一个 tab、删除 Chat 或执行 `closeWorkspace` 后 workspace 与可见状态同时清理；右上按钮的“关闭”只 hide，不改变 `closeWorkspace` 的销毁语义。
-- [ ] WorkPanel 外层标签栏在浅色/深色主题下均呈现 Chrome 式 active/inactive/hover/focus 状态；无论由 Overview、产物或其他 item 打开，Overview 始终固定在第一位、按当前语言标题内容自适应宽度且不可关闭，其他 tab 保持弹性；每个 tab 显示匹配的 SVG 图标和省略标题，关闭按钮隐藏时不占宽度、仅以无底色图标在 hover/focus-within 覆盖标题末端，并提供宽于图标的横向点击区和标题渐隐区，其他 pinned/non-closable tab 不显示按钮且不渐隐；tab 右键可刷新并全屏显示/恢复工作面板，网页 tab 可复制当前实际 URL，内部 WebClient tab 不复制服务地址，且 Web item 内部不再显示重复标签栏。
+- [ ] WorkPanel 外层标签栏在浅色/深色主题下均呈现 Chrome 式 active/inactive/hover/focus 状态；无论由 Overview、产物或其他 item 打开，Overview 始终固定在第一位、按当前语言标题内容自适应宽度且不可关闭；其他 tab 同样按图标与标题内容决定宽度，仅受 88px 最小宽度和 240px 最大宽度约束，不主动瓜分空白空间；每个 tab 显示匹配的 SVG 图标和省略标题，关闭按钮隐藏时不占宽度、仅以无底色图标在 hover/focus-within 覆盖标题末端，并提供宽于图标的横向点击区和标题渐隐区，其他 pinned/non-closable tab 不显示按钮且不渐隐；tab 右键可刷新并全屏显示/恢复工作面板，网页 tab 可复制当前实际 URL，内部 WebClient tab 不复制服务地址，且 Web item 内部不再显示重复标签栏。
 - [ ] WorkPanel 固定在 main-chat 右侧；鼠标拖动分隔条跨过 WebView 时不中断，键盘左右方向键每次调整 16px、Home/End 到最小/最大；WorkPanel 与 main-chat 均至少 420px，WorkPanel 不设固定最大宽度，仅由当前可用宽度和 main-chat 保底宽度限制。
 - [ ] macOS 与 Windows 分别检查 Main Chat 右上按钮偏移、窗口拖拽区、深浅主题、hover/active/disabled、`aria-pressed` 与键盘 focus ring；按钮不得被标题栏拖拽层或 WorkPanel resizer 遮挡。
 - [ ] 调整 WorkPanel 宽度后重启 Desktop、切换 Chat、切换深浅主题，宽度作为全局偏好保持；非法存储值恢复为 `clamp(420px, 42vw, 680px)` 默认语义，窗口宽度允许时 main-chat 与 WorkPanel 均遵守 420px 保底宽度。

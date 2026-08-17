@@ -834,10 +834,11 @@
 
 .chat-work-panel-tab {
   position: relative;
-  flex: 1 1 176px;
+  flex: 0 1 auto;
   display: flex;
   align-items: center;
-  min-width: 112px;
+  width: fit-content;
+  min-width: 88px;
   max-width: 240px;
   height: var(--chat-work-panel-tab-height);
   border: 0;
@@ -918,7 +919,7 @@
   align-items: center;
   gap: 8px;
   min-width: 0;
-  padding: 0 6px 0 8px;
+  padding: 0 10px;
   overflow: hidden;
   border: 0;
   border-radius: 10px 8px 0 0;
