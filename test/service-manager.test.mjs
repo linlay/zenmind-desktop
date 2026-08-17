@@ -1846,37 +1846,46 @@ function computeAssetSignature(assetPath) {
   return `${stat.size}:${hash}`;
 }
 
-function isCommandLookup(command, args, name) {
-  return (
-    (command === "where.exe" && args[0] === name) ||
-    (command === "sh" && args[0] === "-lc" && args[1] === `command -v ${name}`)
-  );
+function createContainerEngineProbeState(reachableEngine = "", options = {}) {
+  const installed = new Set(options.installed ?? (reachableEngine ? [reachableEngine] : []));
+  const timedOut = new Set(options.timedOut ?? []);
+  const unsafe = new Set(options.unsafe ?? []);
+  const probes = ["docker", "podman"].map((engine) => ({
+    engine,
+    command: installed.has(engine) || timedOut.has(engine) || unsafe.has(engine) ? `/test/bin/${engine}` : "",
+    installed: installed.has(engine) || timedOut.has(engine) || unsafe.has(engine),
+    reachable: engine === reachableEngine,
+    message: unsafe.has(engine)
+      ? `container engine command points to a mounted volume: /Volumes/Docker/${engine}`
+      : timedOut.has(engine) ? "container engine command timed out" : "",
+    failure: engine === reachableEngine
+      ? null
+      : unsafe.has(engine)
+        ? "unsafe-location"
+        : timedOut.has(engine) ? "timeout" : installed.has(engine) ? "unreachable" : "not-installed",
+    elapsedMs: timedOut.has(engine) ? 100 : 0
+  }));
+  const resolution = reachableEngine
+    ? {
+        name: reachableEngine,
+        command: `/test/bin/${reachableEngine}`,
+        env: { ...process.env },
+        platform: process.platform
+      }
+    : null;
+  return {
+    engine: reachableEngine,
+    resolution,
+    probes
+  };
 }
 
-function withSpawnSyncMock(mockImplementation, run) {
-  const previousSpawnSync = childProcess.spawnSync;
-  const previousShell = process.env.SHELL;
-  __testInternals.clearContainerEngineProbeCache();
-  __testInternals.commandEnv.setShellPathEntriesCacheForTests({
-    entries: [],
-    succeeded: false
-  });
-  childProcess.spawnSync = mockImplementation;
-  delete process.env.SHELL;
-
-  try {
-    return run();
-  } finally {
-    childProcess.spawnSync = previousSpawnSync;
-    __testInternals.clearContainerEngineProbeCache();
-    __testInternals.commandEnv.resetShellPathEntriesCache();
-    if (previousShell === undefined) {
-      delete process.env.SHELL;
-    } else {
-      process.env.SHELL = previousShell;
-    }
-  }
+function setContainerEngineProbeState(reachableEngine = "", options = {}) {
+  const result = createContainerEngineProbeState(reachableEngine, options);
+  __testInternals.containerEngine.setProbeOverrideForTests(() => result);
 }
+
+setContainerEngineProbeState();
 
 async function withEnvPatch(patch, fn) {
   const previous = new Map();
@@ -4437,142 +4446,64 @@ test("decodePowerShellCapturePayload restores UTF-8 error text", () => {
   });
 });
 
-test("containerEngineAvailable requires a reachable engine daemon", () => {
-  const detected = withSpawnSyncMock((command, args = []) => {
-    if (isCommandLookup(command, args, "docker")) {
-      return createSpawnSyncResult(0, { stdout: "docker\n" });
-    }
-    if (isCommandLookup(command, args, "podman")) {
-      return createSpawnSyncResult(0, { stdout: "podman\n" });
-    }
-    if ((command === "docker" || command === "podman") && args[0] === "info") {
-      return createSpawnSyncResult(1);
-    }
-    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
-  }, () => __testInternals.containerEngineAvailable());
-
-  assert.equal(detected, "");
+test("containerEngineAvailable requires a reachable engine daemon", async () => {
+  setContainerEngineProbeState("", { installed: ["docker", "podman"] });
+  assert.equal(await __testInternals.containerEngineAvailable(), "");
+  setContainerEngineProbeState();
 });
 
-test("containerEngineAvailable falls back to podman when docker daemon is unreachable", () => {
-  const detected = withSpawnSyncMock((command, args = []) => {
-    if (isCommandLookup(command, args, "docker")) {
-      return createSpawnSyncResult(0, { stdout: "docker\n" });
-    }
-    if (isCommandLookup(command, args, "podman")) {
-      return createSpawnSyncResult(0, { stdout: "podman\n" });
-    }
-    if (command === "docker" && args[0] === "info") {
-      return createSpawnSyncResult(1);
-    }
-    if (command === "podman" && args[0] === "info") {
-      return createSpawnSyncResult(0);
-    }
-    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
-  }, () => __testInternals.containerEngineAvailable());
-
-  assert.equal(detected, "podman");
-});
-
-test("probeContainerEngines reuses cached daemon checks when requested", () => {
-  let infoCalls = 0;
-
-  const results = withSpawnSyncMock((command, args = []) => {
-    if (isCommandLookup(command, args, "docker")) {
-      return createSpawnSyncResult(0, { stdout: "docker\n" });
-    }
-    if (isCommandLookup(command, args, "podman")) {
-      return createSpawnSyncResult(0, { stdout: "podman\n" });
-    }
-    if ((command === "docker" || command === "podman") && args[0] === "info") {
-      infoCalls += 1;
-      return createSpawnSyncResult(1);
-    }
-    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
-  }, () => [
-    __testInternals.probeContainerEngines({ cache: true }),
-    __testInternals.probeContainerEngines({ cache: true })
-  ]);
-
-  assert.equal(results[0].engine, "");
-  assert.equal(results[1].engine, "");
-  assert.equal(infoCalls, 2);
-});
-
-test("containerEngineAvailable finds a Windows podman.exe when command lookup misses it", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-podman-path-"));
-  const dockerFallbackPaths = new Set([
-    path.join(tempRoot, "docker"),
-    path.join(tempRoot, "docker.exe")
-  ]);
-  const podmanFallbackPaths = new Set([
-    path.join(tempRoot, "podman"),
-    path.join(tempRoot, "podman.exe")
-  ]);
-  for (const commandPath of [...dockerFallbackPaths, ...podmanFallbackPaths]) {
-    fs.writeFileSync(commandPath, "", "utf8");
-  }
-
-  const detected = await withEnvPatch({
-    PATH: tempRoot,
-    Path: tempRoot,
-    LOCALAPPDATA: path.join(tempRoot, "LocalAppData")
-  }, async () => withSpawnSyncMock((command, args = []) => {
-    if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
-      return createSpawnSyncResult(1);
-    }
-    if (dockerFallbackPaths.has(command) && args[0] === "info") {
-      return createSpawnSyncResult(1);
-    }
-    if (podmanFallbackPaths.has(command) && args[0] === "info") {
-      return createSpawnSyncResult(0);
-    }
-    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
-  }, () => __testInternals.containerEngineAvailable()));
-
-  assert.equal(detected, "podman");
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+test("containerEngineAvailable falls back to podman when docker daemon is unreachable", async () => {
+  setContainerEngineProbeState("podman", { installed: ["docker", "podman"] });
+  assert.equal(await __testInternals.containerEngineAvailable(), "podman");
+  setContainerEngineProbeState();
 });
 
 test("probeContainerEngines reports installed engines separately from daemon readiness", async () => {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-podman-not-ready-"));
-  const dockerFallbackPaths = new Set([
-    path.join(tempRoot, "docker"),
-    path.join(tempRoot, "docker.exe")
-  ]);
-  const podmanFallbackPaths = new Set([
-    path.join(tempRoot, "podman"),
-    path.join(tempRoot, "podman.exe")
-  ]);
-  for (const commandPath of [...dockerFallbackPaths, ...podmanFallbackPaths]) {
-    fs.writeFileSync(commandPath, "", "utf8");
-  }
-
-  const result = await withEnvPatch({
-    PATH: tempRoot,
-    Path: tempRoot,
-    LOCALAPPDATA: path.join(tempRoot, "LocalAppData")
-  }, async () => withSpawnSyncMock((command, args = []) => {
-    if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
-      return createSpawnSyncResult(1);
-    }
-    if (dockerFallbackPaths.has(command) && args[0] === "info") {
-      return createSpawnSyncResult(1);
-    }
-    if (podmanFallbackPaths.has(command) && args[0] === "info") {
-      return createSpawnSyncResult(1, {
-        stderr: "Cannot connect to Podman. failed to connect: dial tcp 127.0.0.1:64571"
-      });
-    }
-    assert.fail(`unexpected spawnSync call: ${command} ${args.join(" ")}`);
-  }, () => __testInternals.probeContainerEngines()));
+  setContainerEngineProbeState("", { installed: ["docker", "podman"] });
+  const result = await __testInternals.probeContainerEngines();
 
   assert.equal(result.engine, "");
   const podman = result.probes.find((probe) => probe.engine === "podman");
   assert.equal(podman.installed, true);
   assert.equal(podman.reachable, false);
-  assert.match(podman.message, /Cannot connect to Podman/);
-  fs.rmSync(tempRoot, { recursive: true, force: true });
+  assert.equal(podman.failure, "unreachable");
+  setContainerEngineProbeState();
+});
+
+test("getServiceState explains unsafe mounted container engine locations", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-engine-unsafe-"));
+  const { assetsRoot, userDataRoot } = createContainerHubBundleFixture(tempRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+    setContainerEngineProbeState("", { unsafe: ["docker"] });
+    const state = await getServiceState(app, "agent-container-hub");
+    assert.equal(state.status, "dependency-missing");
+    assert.match(state.message, /临时挂载卷|temporary mounted/u);
+  } finally {
+    setContainerEngineProbeState();
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
+});
+
+test("getServiceState explains timed-out container engine probes without blocking core services", async () => {
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-container-engine-timeout-"));
+  const { assetsRoot, userDataRoot } = createContainerHubBundleFixture(tempRoot);
+  const { app, restore } = loadBuiltinsForTest(userDataRoot, assetsRoot);
+
+  try {
+    await installBuiltinService(app, "agent-container-hub");
+    setContainerEngineProbeState("", { timedOut: ["docker"] });
+    const state = await getServiceState(app, "agent-container-hub");
+    assert.equal(state.status, "dependency-missing");
+    assert.match(state.message, /超时|timed out/u);
+  } finally {
+    setContainerEngineProbeState();
+    restore();
+    fs.rmSync(tempRoot, { recursive: true, force: true });
+  }
 });
 
 test("installBuiltinService force reinstalls healthy install and preserves deploy-owned env", async () => {
@@ -5390,29 +5321,16 @@ test("startService returns a port conflict error for agent-container-hub when an
     testCoreServicePortBase: port - 3
   });
   const service = getBuiltinService("agent-container-hub");
-  const previousSpawnSync = childProcess.spawnSync;
   const server = net.createServer();
 
   try {
+    setContainerEngineProbeState("docker", { installed: ["docker"] });
     await installBuiltinService(app, service.id);
     writeTestEnv(userDataRoot, service.id, `BIND_ADDR=127.0.0.1:${port}\n`);
     await new Promise((resolve, reject) => {
       server.once("error", reject);
       server.listen(port, "127.0.0.1", resolve);
     });
-
-    childProcess.spawnSync = (command, args = [], options = {}) => {
-      if (isCommandLookup(command, args, "docker")) {
-        return createSpawnSyncResult(0);
-      }
-      if (isCommandLookup(command, args, "podman")) {
-        return createSpawnSyncResult(1);
-      }
-      if (command === "docker" && args[0] === "info") {
-        return createSpawnSyncResult(0);
-      }
-      return previousSpawnSync(command, args, options);
-    };
 
     const state = await getServiceState(app, service.id);
     if (state.status !== "error") {
@@ -5427,7 +5345,7 @@ test("startService returns a port conflict error for agent-container-hub when an
     assert.equal(result.service.status, "error");
     assert.match(result.message, new RegExp(`端口 ${port} 已被其他进程占用`));
   } finally {
-    childProcess.spawnSync = previousSpawnSync;
+    setContainerEngineProbeState();
     await new Promise((resolve) => server.close(resolve));
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
@@ -5452,9 +5370,9 @@ test("startService verifies command success and reports delayed container hub cr
     testCoreServicePortBase: port - 3
   });
   const service = getBuiltinService("agent-container-hub");
-  const previousSpawnSync = childProcess.spawnSync;
 
   try {
+    setContainerEngineProbeState("docker", { installed: ["docker"] });
     await installBuiltinService(app, service.id);
     const initStatePath = __testInternals.getInitializationStatePath(installDir);
     fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
@@ -5468,19 +5386,6 @@ test("startService verifies command success and reports delayed container hub cr
       "utf8"
     );
 
-    childProcess.spawnSync = (command, args = [], options = {}) => {
-      if (isCommandLookup(command, args, "docker")) {
-        return createSpawnSyncResult(0);
-      }
-      if (isCommandLookup(command, args, "podman")) {
-        return createSpawnSyncResult(1);
-      }
-      if (command === "docker" && args[0] === "info") {
-        return createSpawnSyncResult(0);
-      }
-      return previousSpawnSync(command, args, options);
-    };
-
     const result = await startService(app, service.id);
 
     assert.equal(result.ok, false);
@@ -5492,7 +5397,7 @@ test("startService verifies command success and reports delayed container hub cr
     assert.match(result.message, /启动命令已执行|启动命令执行过/);
     assert.match(result.message, /复查失败|未确认启动/);
   } finally {
-    childProcess.spawnSync = previousSpawnSync;
+    setContainerEngineProbeState();
     restore();
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
@@ -5547,9 +5452,9 @@ test("startService verifies running container hub with port and runtime-info pro
     testCoreServicePortBase: port - 3
   });
   const service = getBuiltinService("agent-container-hub");
-  const previousSpawnSync = childProcess.spawnSync;
 
   try {
+    setContainerEngineProbeState("docker", { installed: ["docker"] });
     await installBuiltinService(app, service.id);
     const initStatePath = __testInternals.getInitializationStatePath(installDir);
     fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
@@ -5563,19 +5468,6 @@ test("startService verifies running container hub with port and runtime-info pro
       "utf8"
     );
 
-    childProcess.spawnSync = (command, args = [], options = {}) => {
-      if (isCommandLookup(command, args, "docker")) {
-        return createSpawnSyncResult(0);
-      }
-      if (isCommandLookup(command, args, "podman")) {
-        return createSpawnSyncResult(1);
-      }
-      if (command === "docker" && args[0] === "info") {
-        return createSpawnSyncResult(0);
-      }
-      return previousSpawnSync(command, args, options);
-    };
-
     const result = await startService(app, service.id);
 
     assert.equal(result.ok, true, JSON.stringify(result, null, 2));
@@ -5586,7 +5478,7 @@ test("startService verifies running container hub with port and runtime-info pro
     assert.equal(result.verification.httpOk, true);
     assert.equal(result.verification.runtimeInfoOk, true);
   } finally {
-    childProcess.spawnSync = previousSpawnSync;
+    setContainerEngineProbeState();
     const pidPath = getTestPidPath(userDataRoot, service.id, "agent-container-hub.pid");
     const pid = Number(fs.existsSync(pidPath) ? fs.readFileSync(pidPath, "utf8").trim() : 0);
     if (pid > 0) {
@@ -5642,12 +5534,12 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
     testCoreServicePortBase: port - 3
   });
   const service = getBuiltinService("agent-container-hub");
-  const previousSpawnSync = childProcess.spawnSync;
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
 
   process.env.SERVICE_VERIFY_DELAY_MS = "50";
 
   try {
+    setContainerEngineProbeState("docker", { installed: ["docker"] });
     await installBuiltinService(app, service.id);
     const initStatePath = __testInternals.getInitializationStatePath(installDir);
     fs.mkdirSync(path.dirname(initStatePath), { recursive: true });
@@ -5661,19 +5553,6 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
       "utf8"
     );
 
-    childProcess.spawnSync = (command, args = [], options = {}) => {
-      if (isCommandLookup(command, args, "docker")) {
-        return createSpawnSyncResult(0);
-      }
-      if (isCommandLookup(command, args, "podman")) {
-        return createSpawnSyncResult(1);
-      }
-      if (command === "docker" && args[0] === "info") {
-        return createSpawnSyncResult(0);
-      }
-      return previousSpawnSync(command, args, options);
-    };
-
     const result = await startService(app, service.id);
 
     assert.equal(result.ok, true, JSON.stringify(result, null, 2));
@@ -5682,7 +5561,7 @@ test("startService waits for delayed container hub runtime-info readiness", asyn
     assert.equal(result.verification.portListening, true);
     assert.equal(result.verification.runtimeInfoOk, true);
   } finally {
-    childProcess.spawnSync = previousSpawnSync;
+    setContainerEngineProbeState();
     if (previousVerifyDelay === undefined) {
       delete process.env.SERVICE_VERIFY_DELAY_MS;
     } else {
@@ -5997,7 +5876,6 @@ test("startService starts agent-platform when desktop-managed container hub is u
   addContainerHubAssetToFixture(fixture);
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
-  const previousSpawnSync = childProcess.spawnSync;
 
   try {
     await installBuiltinService(app, "agent-container-hub");
@@ -6011,16 +5889,6 @@ test("startService starts agent-platform when desktop-managed container hub is u
       "utf8"
     );
 
-    childProcess.spawnSync = (command, args = [], options = {}) => {
-      if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
-        return createSpawnSyncResult(1);
-      }
-      if ((command === "docker" || command === "podman") && args[0] === "info") {
-        return createSpawnSyncResult(1);
-      }
-      return spawnSync(command, args, options);
-    };
-
     const result = await startService(app, "agent-platform");
 
     assert.equal(result.ok, true, result.message);
@@ -6031,7 +5899,6 @@ test("startService starts agent-platform when desktop-managed container hub is u
       .filter(Boolean);
     assert.equal(startArgs.includes("--runtime-dir"), false);
   } finally {
-    childProcess.spawnSync = previousSpawnSync;
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
@@ -7152,22 +7019,11 @@ test("restoreRunningServices skips unavailable install-only container hub", asyn
   addContainerHubAssetToFixture(fixture);
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
-  const previousSpawnSync = childProcess.spawnSync;
   const startupEvents = [];
 
   try {
     await installBuiltinService(app, "agent-container-hub");
     __testInternals.writeLastRunningServices(app, ["agent-container-hub"]);
-
-    childProcess.spawnSync = (command, args = [], options = {}) => {
-      if (isCommandLookup(command, args, "docker") || isCommandLookup(command, args, "podman")) {
-        return createSpawnSyncResult(1);
-      }
-      if ((command === "docker" || command === "podman") && args[0] === "info") {
-        return createSpawnSyncResult(1);
-      }
-      return spawnSync(command, args, options);
-    };
 
     const result = await restoreRunningServices(app, {
       onStarting: (serviceId) => {
@@ -7192,7 +7048,6 @@ test("restoreRunningServices skips unavailable install-only container hub", asyn
     assert.equal(webclientState.status, "running");
     assert.equal(fs.existsSync(path.join(webclientInstallDir, "run", "started.txt")), false);
   } finally {
-    childProcess.spawnSync = previousSpawnSync;
     await stopStartupCoreProcesses(app);
     restore();
     fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
