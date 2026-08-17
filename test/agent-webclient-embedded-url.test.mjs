@@ -86,24 +86,24 @@ test("project embedded URL carries project identity without a WebSocket source",
     embedPath
   );
 
-  assert.equal(url.pathname, "/project");
-  assert.equal(url.searchParams.get("agentKey"), "知识库 alpha");
+  assert.equal(url.pathname, "/project/%E7%9F%A5%E8%AF%86%E5%BA%93%20alpha");
+  assert.equal(url.searchParams.has("agentKey"), false);
   assert.equal(url.searchParams.get("chatId"), "chat-1");
   assert.equal(url.searchParams.get("runId"), "run-2");
   assert.equal(url.searchParams.has("wsSource"), false);
   assert.equal(url.searchParams.has("desktopAuthContext"), false);
 });
 
-test("overview route requires the trusted chat identity and optionally carries the agent key", () => {
+test("overview route requires chat and path agent identities", () => {
   assert.equal(
     createAgentWebclientOverviewPath({ chatId: "chat 1", agentKey: "知识库 alpha" }),
-    "/overview?chatId=chat+1&agentKey=%E7%9F%A5%E8%AF%86%E5%BA%93+alpha",
+    "/overview/%E7%9F%A5%E8%AF%86%E5%BA%93%20alpha?chatId=chat+1",
   );
   assert.equal(
-    createAgentWebclientOverviewPath({ chatId: "chat-2" }),
-    "/overview?chatId=chat-2",
+    createAgentWebclientOverviewPath({ chatId: "chat-2", agentKey: "agent-2" }),
+    "/overview/agent-2?chatId=chat-2",
   );
-  assert.equal(createAgentWebclientOverviewPath({ chatId: "  " }), "");
+  assert.equal(createAgentWebclientOverviewPath({ chatId: "  ", agentKey: "agent-2" }), "");
 });
 
 test("main chat route comparison ignores host presentation params and their order", () => {

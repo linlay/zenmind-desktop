@@ -327,7 +327,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
-  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/project"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/overview\/"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
   assert.match(routeDefinitions, /function resolveAgentWebclientWsSource\([\s\S]*?return undefined;/);
   assert.doesNotMatch(routeDefinitions, /desktop-agent-webclient/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
@@ -6355,7 +6355,9 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
 
   assert.match(appMenu, /quitWithoutConfirmation:\s*\(\) => void;/);
   assert.match(macWindowMenuItem, /label:\s*options\.t\("menu\.window"\)/);
-  assert.match(macWindowMenuItem, /role:\s*"close"/);
+  assert.match(macWindowMenuItem, /label:\s*options\.t\("menu\.closeWindow"\)/);
+  assert.match(macWindowMenuItem, /click:\s*\(\) => options\.requestCloseWindow\(\)/);
+  assert.doesNotMatch(macWindowMenuItem, /role:\s*"close"/);
   assert.match(macWindowMenuItem, /accelerator:\s*"Command\+W"/);
   assert.match(macQuitMenuItem, /accelerator:\s*"Command\+Q"/);
   assert.match(macQuitMenuItem, /if \(event\.triggeredByAccelerator\)/);
@@ -6367,6 +6369,8 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
     "Command+Q should keep the confirmation path before menu clicks quit without confirmation"
   );
   assert.match(appMenuRuntimeOptions, /requestQuit:\s*options\.requestAppQuit/);
+  assert.match(appMenuRuntimeOptions, /requestCloseWindow:/);
+  assert.match(appMenuRuntimeOptions, /fallbackToWindowClose:\s*true/);
   assert.match(appMenuRuntimeOptions, /quitWithoutConfirmation:\s*options\.beginAppQuitWithoutConfirmation/);
 
   assert.doesNotMatch(appEvents, /requestAppQuit:\s*\(\) => void;/);
@@ -7751,7 +7755,7 @@ test("embedded browser closing the final tab closes its webview surface", () => 
   assert.match(externalWebviewPage, /closedSurface,[\s\S]{0,100}remainingTabIds/u);
 });
 
-test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overlay", () => {
+test("debug-unlocked Desktop WebViews show a copyable, redacted identity and URL overlay", () => {
   const appShell = readAppShellSource();
   const debugModeContext = readSourceFile("src", "renderer", "debug", "DebugModeContext.ts");
   const webviewDebugOverlay = readSourceFile("src", "renderer", "components", "WebviewDebugOverlay.tsx");
@@ -7774,7 +7778,7 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
   assert.match(appShell, /DebugModeContext\.Provider value=\{debugSettingsUnlocked\}/u);
   assert.match(debugModeContext, /createContext\(false\)/u);
   assert.match(webviewDebugOverlay, /redactWebviewDebugUrl/u);
-  assert.match(webviewDebugOverlay, /aria-hidden="true"/u);
+  assert.doesNotMatch(webviewDebugOverlay, /aria-hidden="true"/u);
   assert.equal(
     webviewDebugUrl.redactWebviewDebugUrl(
       "https://example.test/path?access_token=secret&visible=1#id_token=hidden&route=overview"
@@ -7785,12 +7789,33 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
     webviewDebugUrl.redactWebviewDebugUrl("https://example.test/?API-Key=secret&token=other"),
     "https://example.test/?API-Key=REDACTED&token=REDACTED"
   );
-  assert.match(webviewDebugOverlay, /surfaceId:\s*\{displaySurfaceId\}/u);
-  assert.match(webviewDebugOverlay, /displayBreadcrumb/u);
+  const mainChatIdentity = {
+    surfaceId: "main-chat",
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    ownerChatId: "chat-123",
+    interaction: "interactive"
+  };
+  assert.equal(
+    webviewDebugUrl.formatWebviewDebugSurfaceLabel(mainChatIdentity),
+    "surface: main-chat"
+  );
+  const clipboardText = webviewDebugUrl.buildWebviewDebugClipboardText(
+    "https://example.test/chat?token=secret&visible=1",
+    mainChatIdentity
+  );
+  assert.match(clipboardText, /^surface: main-chat$/mu);
+  assert.match(clipboardText, /token=REDACTED/u);
+  assert.doesNotMatch(clipboardText, /secret/u);
+  assert.doesNotMatch(clipboardText, /ownerChatId|chat-123/u);
+  assert.match(webviewDebugOverlay, /formatWebviewDebugSurfaceLabel/u);
+  assert.match(webviewDebugOverlay, /clipboard\.writeText\(copyText\)/u);
+  assert.match(webviewDebugOverlay, /settings\.debug\.webviewOverlay\.copyAll/u);
   assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceIdentity=\{surfaceIdentity\}/u);
   assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceIdentity=\{surfaceIdentity\} \/>/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*none;/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*none;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*auto;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*text;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay:hover \.webview-debug-copy-button/u);
   assert.match(externalWebviewStyles, /\.webview-debug-surface-id/u);
   assert.match(externalWebviewStyles, /\.embedded-surface-page \.webview-debug-url-overlay/u);
 });

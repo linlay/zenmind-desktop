@@ -122,9 +122,13 @@ const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
 const AGENT_WEBCLIENT_WORK_PANEL_ROLES = new Set<SurfaceIdentity["surfaceRole"]>([
   "overview",
   "debug",
+  "btw",
+  "source",
   "project",
   "file-diff",
   "artifact",
+  "reference",
+  "file",
   "planning",
   "agent",
   "copilot",
@@ -152,6 +156,7 @@ function resolveContextMenuSurfaceType(
   if (serviceId !== "agent-webclient") return "service";
   if (/overview/iu.test(embedPath || "") || /overview/iu.test(surfaceId)) return "agent-overview";
   if (/debug/iu.test(embedPath || "") || /debug/iu.test(surfaceId)) return "agent-debug";
+  if (/\/btw\//iu.test(embedPath || "") || /\bbtw\b/iu.test(surfaceId)) return "agent-btw";
   if (/project/iu.test(embedPath || "")) return "agent-project";
   if (/copilot/iu.test(surfaceId)) return "agent-copilot";
   if (/chat/iu.test(surfaceId)) return "agent-chat";

@@ -41,6 +41,7 @@ export const enUSMessages = {
   "menu.settings": "Settings",
   "menu.settingsEllipsis": "Settings...",
   "menu.window": "Window",
+  "menu.closeWindow": "Close Window",
   "menu.quit": "Quit {appName}",
 
   "webviewContextMenu.edit.undo": "Undo",
@@ -680,6 +681,9 @@ export const enUSMessages = {
   "settings.debug.label": "Debug",
   "settings.debug.description": "Developer-only local debugging tools.",
   "settings.debug.closeAction": "Close debug",
+  "settings.debug.webviewOverlay.copyAll": "Copy all",
+  "settings.debug.webviewOverlay.copied": "Copied",
+  "settings.debug.webviewOverlay.copyFailed": "Copy failed",
   "settings.debug.categories.label": "Debug categories",
   "settings.debug.categories.device": "Device",
   "settings.debug.categories.state": "State",

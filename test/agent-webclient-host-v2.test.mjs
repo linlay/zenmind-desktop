@@ -85,7 +85,7 @@ test("Frame Port host injects and refreshes /api auth while blocking HTTP Run by
   ]);
 
   for (const route of [
-    "/ws", "/ws/", "/api/query", "/api/query/", "/api/%71uery", "/api/attach", "/api/submit",
+    "/ws", "/ws/", "/api/query", "/api/query/", "/api/%71uery", "/api/btw", "/api/attach", "/api/submit",
     "/api/interrupt", "/api/steer", "/api/access-level",
   ]) {
     const blocked = await fetch(`${baseUrl}${route}`, { method: route === "/ws" ? "GET" : "POST" });

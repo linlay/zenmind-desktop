@@ -9,6 +9,7 @@ export type BuildApplicationMenuOptions = {
   platform: NodeJS.Platform;
   t: TranslateFunction;
   openSettings: () => void;
+  requestCloseWindow: () => void;
   requestQuit: () => void;
   quitWithoutConfirmation: () => void;
 };
@@ -29,7 +30,11 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
     ? {
         label: options.t("menu.window"),
         submenu: [
-          { role: "close", accelerator: "Command+W" },
+          {
+            label: options.t("menu.closeWindow"),
+            accelerator: "Command+W",
+            click: () => options.requestCloseWindow()
+          },
           { role: "minimize" },
           { role: "zoom" },
           { type: "separator" },

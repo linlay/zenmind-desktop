@@ -192,7 +192,10 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     openLogViewerWindow: options.openLogViewerWindow,
     issueAgentPlatformAccessToken: issueAgentAccessToken,
     desktopLogStreamSubscriptions: logsRuntime.getDesktopLogSubscriptions(),
-    setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible
+    setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible,
+    setWorkPanelKeyboardFocusActive: (active) => {
+      context.state.workPanelKeyboardFocusActive = active;
+    }
   }));
   registerSidebarContextMenuIpcHandlers(ipcMain, {
     getMainWindow: () => context.state.mainWindow

@@ -627,7 +627,7 @@
   left: 12px;
   z-index: 9998;
   max-width: calc(100% - 24px);
-  padding: 3px 6px;
+  padding: 3px 92px 3px 6px;
   border: 1px solid rgba(100, 116, 139, 0.22);
   border-radius: 4px;
   background: rgba(248, 250, 252, 0.68);
@@ -636,15 +636,58 @@
   font-size: 11px;
   line-height: 1.35;
   overflow-wrap: anywhere;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-select: none;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .webview-debug-surface-id {
   margin-bottom: 2px;
   color: var(--accent-strong);
   font-weight: 700;
+}
+
+.webview-debug-copy-button {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-width: 78px;
+  padding: 2px 6px;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.78);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.webview-debug-url-overlay:hover .webview-debug-copy-button,
+.webview-debug-url-overlay:focus-within .webview-debug-copy-button,
+.webview-debug-copy-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.webview-debug-copy-button:hover,
+.webview-debug-copy-button:focus-visible {
+  background: rgba(255, 255, 255, 0.96);
+  outline: none;
+}
+
+.webview-debug-copy-button.is-copied {
+  color: #15803d;
+}
+
+.webview-debug-copy-button.is-failed {
+  color: #b91c1c;
 }
 
 .embedded-surface-page .webview-debug-url-overlay {
@@ -656,6 +699,16 @@
   border-color: rgba(203, 213, 225, 0.2);
   background: rgba(15, 23, 42, 0.62);
   color: rgba(226, 232, 240, 0.74);
+}
+
+:root[data-theme="dark"] .webview-debug-copy-button {
+  border-color: rgba(203, 213, 225, 0.24);
+  background: rgba(30, 41, 59, 0.88);
+}
+
+:root[data-theme="dark"] .webview-debug-copy-button:hover,
+:root[data-theme="dark"] .webview-debug-copy-button:focus-visible {
+  background: rgba(51, 65, 85, 0.96);
 }
 
 .external-webview-frame {

@@ -71,7 +71,12 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
     case "file-diff":
       return <DiffOutlined />;
     case "artifact":
+    case "reference":
+    case "file":
+    case "source":
       return <FileTextOutlined />;
+    case "btw":
+      return <RobotOutlined />;
     case "planning":
       return <DeploymentUnitOutlined />;
     case "agent":
@@ -103,15 +108,30 @@ export function WorkPanelHost({
   const [fullscreenOwnerChatId, setFullscreenOwnerChatId] = useState<string | null>(null);
   stateRef.current = state;
 
-  const closeActiveItem = (ownerChatId: string) => {
+  const closeWorkPanelStep = (ownerChatId: string) => {
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
+    if (!workspace) return false;
     const activeItem = workspace?.items.find((item) => item.itemId === workspace.activeItemId);
-    if (!activeItem || activeItem.pinned || !activeItem.closable) return false;
+    const closableItems = workspace.items.filter((item) => item.closable && !item.pinned);
+    const itemToClose = activeItem?.closable && !activeItem.pinned
+      ? activeItem
+      : closableItems[closableItems.length - 1];
+    if (itemToClose) {
+      const result = dispatchCommand({
+        type: "closeItem",
+        ownerChatId,
+        itemId: itemToClose.itemId,
+      });
+      return result.ok;
+    }
     const result = dispatchCommand({
-      type: "closeItem",
+      type: "closeWorkspace",
       ownerChatId,
-      itemId: activeItem.itemId,
+      force: true,
     });
+    if (result.ok) {
+      window.electronAPI.desktopShell.setWorkPanelKeyboardFocusActive(false);
+    }
     return result.ok;
   };
 
@@ -274,6 +294,34 @@ export function WorkPanelHost({
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
+    let workPanelFocusActive: boolean | null = null;
+    const publishFocusState = (active: boolean) => {
+      if (workPanelFocusActive === active) return;
+      workPanelFocusActive = active;
+      window.electronAPI.desktopShell.setWorkPanelKeyboardFocusActive(active);
+    };
+    const updateFocusState = (target: EventTarget | null) => {
+      const element = target instanceof Element ? target : null;
+      const visiblePanel = element?.closest<HTMLElement>(".chat-work-panel.is-visible");
+      publishFocusState(Boolean(visiblePanel && root.contains(visiblePanel)));
+    };
+    const handlePointerDown = (event: PointerEvent) => {
+      updateFocusState(event.target);
+    };
+    const handleFocusIn = () => publishFocusState(true);
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    root.addEventListener("focusin", handleFocusIn, true);
+    updateFocusState(document.activeElement);
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      root.removeEventListener("focusin", handleFocusIn, true);
+      publishFocusState(false);
+    };
+  }, [activeChatId]);
+
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
     const isCloseShortcut = (event: KeyboardEvent) => {
       if (event.type !== "keydown" || event.repeat || event.key.toLowerCase() !== "w") return false;
       if (isMac) return event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
@@ -292,12 +340,32 @@ export function WorkPanelHost({
       const visiblePanel = activeElement?.closest<HTMLElement>(".chat-work-panel.is-visible");
       if (!visiblePanel || !root.contains(visiblePanel)) return;
       const ownerChatId = visiblePanel.dataset.workPanelChat || "";
-      if (!ownerChatId || !closeActiveItem(ownerChatId)) return;
+      if (!ownerChatId) return;
       event.preventDefault();
       event.stopPropagation();
+      closeWorkPanelStep(ownerChatId);
     };
     root.addEventListener("keydown", handleKeyDown, true);
-    const disposeGuestShortcut = window.electronAPI.onWorkPanelCloseShortcut(({ guestId }) => {
+    const disposeGuestShortcut = window.electronAPI.onWorkPanelCloseShortcut(({
+      guestId,
+      fallbackToWindowClose,
+      workPanelFocused,
+    }) => {
+      if (guestId === null) {
+        const activeElement = document.activeElement as HTMLElement | null;
+        const visiblePanel = activeElement?.closest<HTMLElement>(".chat-work-panel.is-visible");
+        const ownerChatId = visiblePanel && root.contains(visiblePanel)
+          ? visiblePanel.dataset.workPanelChat || ""
+          : "";
+        if (ownerChatId) {
+          closeWorkPanelStep(ownerChatId);
+        } else if (workPanelFocused && activeChatId) {
+          closeWorkPanelStep(activeChatId);
+        } else if (fallbackToWindowClose) {
+          window.electronAPI.desktopShell.requestWindowClose();
+        }
+        return;
+      }
       if (!Number.isSafeInteger(guestId) || guestId <= 0) return;
       const webviews = Array.from(root.querySelectorAll("webview")) as Electron.WebviewTag[];
       const matchingWebview = webviews.find((webview) => readWebviewGuestId(webview) === guestId);
@@ -306,7 +374,7 @@ export function WorkPanelHost({
       const itemId = itemHost?.dataset.workPanelItem || "";
       const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
       if (!workspace || workspace.ownerChatId !== activeChatId || workspace.activeItemId !== itemId) return;
-      closeActiveItem(ownerChatId);
+      closeWorkPanelStep(ownerChatId);
     });
     return () => {
       root.removeEventListener("keydown", handleKeyDown, true);

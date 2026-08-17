@@ -46,8 +46,8 @@
 - [ ] Main Assistant 可创建或继续 Chat，流式事件按 run 归属展示并正确到达终态。
 - [ ] 断线不会自动重复提交已接受的 query；新请求可重新建立连接。
 - [ ] 同时运行 Main Assistant、导航 Push、桌宠、两个 Desktop WS `ap` 客户端和可信 WebClient bridge 时，Main 诊断仍只有一个 Agent Platform 物理连接。
-- [ ] About 连点五次开启 Debug 后，每个 webview 浮层同时显示脱敏 URL 与 `surfaceId`；设置页可打开并重复聚焦唯一的独立 Realtime Inspector，主窗口切换页面不关闭观察器。观察器能区分 Platform 物理 WS 收发和各 `surfaceId` 的 Bridge 收发，按方向、链路层、历史/当前 surface 和文本筛选不串线；冻结仅停止视图刷新而不停止后台采集，清空后不恢复旧条目。
-- [ ] Debug 浮层和 Realtime Inspector 使用 canonical 短 ID，并显示 `parent › role · surfaceId`；Overview/Debug 不暴露原始 chatId、runId 或 URL，且保持只读。
+- [ ] About 连点五次开启 Debug 后，每个 webview 浮层同时显示脱敏 URL 与 Surface 身份；鼠标移入浮层显示“复制全部”，复制内容包含浮层中的 Surface 标签与脱敏 URL，不额外暴露 ownerChatId 等内部字段，成功/失败反馈清晰；设置页可打开并重复聚焦唯一的独立 Realtime Inspector，主窗口切换页面不关闭观察器。观察器能区分 Platform 物理 WS 收发和各 `surfaceId` 的 Bridge 收发，按方向、链路层、历史/当前 surface 和文本筛选不串线；冻结仅停止视图刷新而不停止后台采集，清空后不恢复旧条目。
+- [ ] Debug 浮层和 Realtime Inspector 使用 canonical 短 ID；根 Surface 的 role 与 ID 相同时只显示一次，子 Surface 显示 `parent › role · surfaceId`。Overview/Debug 不暴露原始 chatId、runId 或 URL，且保持只读。
 - [ ] macOS 与 Windows 分别验证 Browser 多标签只登记一个 `browser` surface；打开新 URL 或执行长时间 Office 操作不会新增 surface，收藏 Website/WebApp 重启后仍得到相同 `site:` / `app:` ID。
 - [ ] 全页面 Copilot 与右侧 Copilot Dock 分别显示 `copilot-chat` 和 `copilot-dock`；切换 Browser、Website、WebApp 和原生页面时，Dock 会话按 context 恢复且父级关系不会串到前一个页面。
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
@@ -104,13 +104,13 @@
 - [ ] WorkPanel workspace 相互隔离；非法 URL/路径/跨 workspace 目标被拒绝，空 Native allowlist 返回 `unsupported_native_surface`，旧 Chat WorkPanel action 仍可映射到 item id。
 - [ ] 仅 Main Chat 显示 Desktop WorkPanel 右上按钮；新对话尚无稳定 `chatId` 时按钮禁用，管理页、Copilot、Website、WebApp 和 Standalone WebClient 均无该 Desktop 入口，Desktop Agent guest 自身右上快捷组为空。
 - [ ] 首次点击右上按钮创建当前 Chat 的 Overview item；再次点击只隐藏，tabs、guest、active item 与宽度保持；再次打开恢复原 active item且不重建 guest。分别在两个 Chat 隐藏/恢复时 workspace 不串线，隐藏期间收到 Planning/Artifact/Web `openItem` 或 `activateItem` 会自动显示目标 workspace。
-- [ ] 关闭最后一个 tab、删除 Chat 或执行 `closeWorkspace` 后 workspace 与可见状态同时清理；右上按钮的“关闭”只 hide，不改变 `closeWorkspace` 的销毁语义。
+- [ ] 删除 Chat、执行 `closeWorkspace`，或在已无 closable tab 时通过关闭快捷键回收 WorkPanel 后，workspace 与可见状态同时清理；固定 Overview 不可单独关闭，右上按钮的“关闭”只 hide，不改变 `closeWorkspace` 的销毁语义。
 - [ ] WorkPanel 外层标签栏在浅色/深色主题下均呈现 Chrome 式 active/inactive/hover/focus 状态；无论由 Overview、产物或其他 item 打开，Overview 始终固定在第一位、按当前语言标题内容自适应宽度且不可关闭；其他 tab 同样按图标与标题内容决定宽度，仅受 88px 最小宽度和 240px 最大宽度约束，不主动瓜分空白空间；每个 tab 显示匹配的 SVG 图标和省略标题，关闭按钮隐藏时不占宽度、仅以无底色图标在 hover/focus-within 覆盖标题末端，并提供宽于图标的横向点击区和标题渐隐区，其他 pinned/non-closable tab 不显示按钮且不渐隐；tab 右键可刷新并全屏显示/恢复工作面板，网页 tab 可复制当前实际 URL，内部 WebClient tab 不复制服务地址，且 Web item 内部不再显示重复标签栏。
 - [ ] WorkPanel 固定在 main-chat 右侧；鼠标拖动分隔条跨过 WebView 时不中断，键盘左右方向键每次调整 16px、Home/End 到最小/最大；WorkPanel 与 main-chat 均至少 420px，WorkPanel 不设固定最大宽度，仅由当前可用宽度和 main-chat 保底宽度限制。
 - [ ] macOS 与 Windows 分别检查 Main Chat 右上按钮偏移、窗口拖拽区、深浅主题、hover/active/disabled、`aria-pressed` 与键盘 focus ring；按钮不得被标题栏拖拽层或 WorkPanel resizer 遮挡。
 - [ ] 调整 WorkPanel 宽度后重启 Desktop、切换 Chat、切换深浅主题，宽度作为全局偏好保持；非法存储值恢复为 `clamp(420px, 42vw, 680px)` 默认语义，窗口宽度允许时 main-chat 与 WorkPanel 均遵守 420px 保底宽度。
-- [ ] WorkPanel 的 tab/header/WebView 获得焦点后，macOS `Cmd+W`、Windows `Ctrl+W` 可连续关闭当前 closable tab，最后一个关闭后销毁 workspace；auto-repeat、额外修饰键、keyUp 和 pinned tab 不触发关闭。
-- [ ] 普通 Chat、Browser、Website 及其他非 WorkPanel WebView 中的 `Cmd+W`/`Ctrl+W` 保持原行为，Main 不依据 URL 误判 WorkPanel guest。
+- [ ] 点击或键盘聚焦 WorkPanel 的 tab/header/WebView 后，即使后续焦点进入其 `<webview>` 或关闭 tab 导致 DOM 焦点变化，macOS `Cmd+W`、Windows `Ctrl+W` 仍每次先关闭 active closable tab；若当前为固定 Overview 等不可关闭项，则关闭最后一个 closable tab；没有 closable tab 时下一次关闭整个 WorkPanel（包含 Overview），再下一次恢复为 Desktop 窗口默认关闭/隐藏。点击 WorkPanel 外部会立即恢复窗口默认行为；auto-repeat、额外修饰键和 keyUp 不触发该序列。
+- [ ] 普通 Chat、Browser、Website 及其他非 WorkPanel WebView 中的 `Cmd+W`/`Ctrl+W` 保持原行为；WorkPanel 被回收、隐藏或用户点击面板外部后 Main 立即释放拦截，且不依据 URL 误判 WorkPanel guest。
 - [ ] macOS 隐藏面板前清除 first responder、下一 animation frame 恢复焦点；Windows 隐藏前 blur，且只在 active、`dom-ready` 和窗口聚焦时恢复。
 - [ ] 调试工作台仍经过正式执行器和确认策略，不成为权限旁路。
 - [ ] 断线不重放非幂等动作，重复 request identity 得到确定性处理。

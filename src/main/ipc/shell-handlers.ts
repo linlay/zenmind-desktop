@@ -56,6 +56,7 @@ type ShellIpcOptions = {
   };
   platform?: NodeJS.Platform | string;
   mainWindow?: BrowserWindow | null;
+  getMainWindow?: () => BrowserWindow | null;
   showFileDialog?: (
     options: { title: string; properties: Array<"openDirectory" | "createDirectory"> },
     ownerWindow?: BrowserWindow | null
@@ -87,6 +88,7 @@ type ShellIpcOptions = {
   }>;
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
+  setWorkPanelKeyboardFocusActive?: (active: boolean) => void;
 };
 
 type DesktopDownloadPayload = {
@@ -334,6 +336,34 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
 
   ipcMain.on("desktopShell.setGlobalSearchOverlayVisible", (_event: IpcMainEvent, visible: unknown) => {
     options.setGlobalSearchOverlayVisible?.(visible === true);
+  });
+
+  ipcMain.on("desktopShell.setWorkPanelKeyboardFocusActive", (event: IpcMainEvent, active: unknown) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (
+      !ownerWindow ||
+      ownerWindow.isDestroyed() ||
+      !mainWindow ||
+      ownerWindow !== mainWindow
+    ) {
+      return;
+    }
+    options.setWorkPanelKeyboardFocusActive?.(active === true);
+  });
+
+  ipcMain.on("desktopShell.requestWindowClose", (event: IpcMainEvent) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (
+      !ownerWindow ||
+      ownerWindow.isDestroyed() ||
+      !mainWindow ||
+      ownerWindow !== mainWindow
+    ) {
+      return;
+    }
+    ownerWindow.close();
   });
 
   ipcMain.handle("clipboard.writeText", async (_event: IpcMainInvokeEvent, text: string) => {

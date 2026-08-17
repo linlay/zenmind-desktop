@@ -79,6 +79,7 @@ export interface ShellIpcHandlerContextDependencies {
   issueAgentPlatformAccessToken?: (...args: any[]) => unknown;
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
+  setWorkPanelKeyboardFocusActive?: (active: boolean) => void;
 }
 
 export function createShellIpcHandlerOptions(
@@ -89,6 +90,7 @@ export function createShellIpcHandlerOptions(
     platform: context.platform,
     app: context.app,
     mainWindow: context.state.mainWindow,
+    getMainWindow: () => context.state.mainWindow,
     showFileDialog: dependencies.showFileDialog,
     revealPathInFileManager: dependencies.revealPathInFileManager,
     captureDesktopScreenshot: dependencies.captureDesktopScreenshot,
@@ -96,7 +98,8 @@ export function createShellIpcHandlerOptions(
     openLogViewerWindow: dependencies.openLogViewerWindow,
     issueAgentPlatformAccessToken: dependencies.issueAgentPlatformAccessToken,
     desktopLogStreamSubscriptions: dependencies.desktopLogStreamSubscriptions,
-    setGlobalSearchOverlayVisible: dependencies.setGlobalSearchOverlayVisible
+    setGlobalSearchOverlayVisible: dependencies.setGlobalSearchOverlayVisible,
+    setWorkPanelKeyboardFocusActive: dependencies.setWorkPanelKeyboardFocusActive
   };
 }
 

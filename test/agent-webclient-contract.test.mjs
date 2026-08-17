@@ -15,7 +15,7 @@ test("Agent WebClient contract mirror is deterministic and versioned", () => {
   const digest = crypto.createHash("sha256").update(canonical).digest("hex");
   const generated = fs.readFileSync(mirror, "utf8");
   assert.match(generated, new RegExp(`^// Generated[\\s\\S]*// sha256:${digest}\\n`, "u"));
-  assert.match(canonical, /AGENT_WEBCLIENT_BRIDGE_VERSION = 2 as const/u);
+  assert.match(canonical, /AGENT_WEBCLIENT_BRIDGE_VERSION = 3 as const/u);
   assert.match(canonical, /"version_mismatch"/u);
   assert.equal(spawnSync(process.execPath, ["scripts/generate-agent-webclient-contract.mjs", "--check"], {
     cwd: root,

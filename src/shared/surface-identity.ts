@@ -8,9 +8,13 @@ export const SURFACE_ROLES = [
   "copilot-dock",
   "overview",
   "debug",
+  "btw",
+  "source",
   "project",
   "file-diff",
   "artifact",
+  "reference",
+  "file",
   "planning",
   "agent",
   "copilot",
@@ -63,9 +67,13 @@ const DYNAMIC_ROLE_PREFIXES: Partial<Record<SurfaceRole, string>> = {
   webapp: "app",
   overview: "ov",
   debug: "dbg",
+  btw: "btw",
+  source: "src",
   project: "proj",
   "file-diff": "diff",
   artifact: "art",
+  reference: "ref",
+  file: "file",
   planning: "plan",
   agent: "agt",
   copilot: "cpl",
@@ -78,9 +86,13 @@ const CHILD_ROLES = new Set<SurfaceRole>([
   "copilot-dock",
   "overview",
   "debug",
+  "btw",
+  "source",
   "project",
   "file-diff",
   "artifact",
+  "reference",
+  "file",
   "planning",
   "agent",
   "copilot",
@@ -88,7 +100,9 @@ const CHILD_ROLES = new Set<SurfaceRole>([
 ]);
 
 const UTILITY_ROLES = new Set<SurfaceRole>(["service", "help", "plugin-settings"]);
-const READ_ONLY_ROLES = new Set<SurfaceRole>(["overview", "debug"]);
+const READ_ONLY_ROLES = new Set<SurfaceRole>([
+  "overview", "debug", "source", "artifact", "reference", "file", "planning",
+]);
 
 export function stableSurfaceHash(value: string) {
   const normalized = value.trim();
@@ -169,7 +183,7 @@ export function createPluginSettingsSurfaceIdentity(pluginId: string) {
 
 export function createChatChildSurfaceIdentity(
   role: Extract<SurfaceRole,
-    "overview" | "debug" | "project" | "file-diff" | "artifact" | "planning" | "agent" | "copilot" | "workpanel-web">,
+    "overview" | "debug" | "btw" | "source" | "project" | "file-diff" | "artifact" | "reference" | "file" | "planning" | "agent" | "copilot" | "workpanel-web">,
   identityKey: string,
   ownerChatId: string,
   parentSurfaceId: string | undefined = MAIN_CHAT_SURFACE_ID,

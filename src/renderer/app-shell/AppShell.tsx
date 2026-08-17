@@ -3115,6 +3115,7 @@ export function AppShell() {
         ? activeChatRouteInfo.agentKey.trim()
         : "";
       const previousActiveItemId = currentWorkspace?.activeItemId ?? null;
+      const overviewAgentKey = descriptorAgentKey || routeAgentKey;
       const ensured = reduceWorkPanelCommand(currentState, {
         type: "openItem",
         ownerChatId: command.ownerChatId,
@@ -3123,17 +3124,18 @@ export function AppShell() {
           module: "overview",
           route: createAgentWebclientOverviewPath({
             chatId: command.ownerChatId,
-            agentKey: descriptorAgentKey || routeAgentKey,
+            agentKey: overviewAgentKey,
           }),
           context: {
             chatId: command.ownerChatId,
-            ...((descriptorAgentKey || routeAgentKey) ? { agentKey: descriptorAgentKey || routeAgentKey } : {}),
+            agentKey: overviewAgentKey,
           },
           title: t("chatWorkPanel.overview"),
           pinned: true,
           closable: false,
         },
       });
+      if (!ensured.ok) return ensured;
       currentState = ensured.nextState;
       if (command.type === "showWorkspace" && previousActiveItemId) {
         currentState = reduceWorkPanelCommand(currentState, {
@@ -3159,14 +3161,15 @@ export function AppShell() {
   }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, t]);
 
   const ensureChatWorkPanelWorkspace = useCallback((chatId: string, agentKey: string) => {
+    const normalizedAgentKey = agentKey.trim();
     return dispatchWorkPanelCommand({
       type: "openItem",
       ownerChatId: chatId,
       descriptor: {
         kind: "webclient",
         module: "overview",
-        route: createAgentWebclientOverviewPath({ chatId, agentKey }),
-        context: { chatId, ...(agentKey.trim() ? { agentKey: agentKey.trim() } : {}) },
+        route: createAgentWebclientOverviewPath({ chatId, agentKey: normalizedAgentKey }),
+        context: { chatId, agentKey: normalizedAgentKey },
         title: t("chatWorkPanel.overview"),
         pinned: true,
         closable: false,
@@ -3195,6 +3198,7 @@ export function AppShell() {
       return;
     }
     const agentKey = activeChatRouteInfo.agentKey.trim();
+    if (!agentKey) return;
     dispatchWorkPanelCommand({
       type: "openItem",
       ownerChatId: chatId,
@@ -3202,7 +3206,7 @@ export function AppShell() {
         kind: "webclient",
         module: "overview",
         route: createAgentWebclientOverviewPath({ chatId, agentKey }),
-        context: { chatId, ...(agentKey ? { agentKey } : {}) },
+        context: { chatId, agentKey },
         title: t("chatWorkPanel.overview"),
         pinned: true,
         closable: false,

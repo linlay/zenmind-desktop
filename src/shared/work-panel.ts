@@ -78,24 +78,29 @@ function normalizeRelativePath(value: unknown) {
   return parts.join("/");
 }
 
-function normalizeContext(input: WorkPanelContext): WorkPanelContext | null {
+function normalizeContext(input: unknown): Record<string, string> | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
+  const record = input as Record<string, unknown>;
   const allowed = new Set([
-    "chatId", "runId", "agentKey", "projectId", "artifactId", "nodeId", "relativePath",
+    "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
+    "publishId", "sourceId", "btwId", "path",
   ]);
-  if (Object.keys(input).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
+  if (Object.keys(record).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
     return null;
   }
-  const context: WorkPanelContext = {};
-  for (const key of ["chatId", "runId", "agentKey", "projectId", "artifactId", "nodeId"] as const) {
-    const value = cleanIdentity(input[key]);
-    if (input[key] !== undefined && !value) return null;
+  const context: Record<string, string> = {};
+  for (const key of [
+    "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
+    "publishId", "sourceId", "btwId",
+  ] as const) {
+    const value = cleanIdentity(record[key]);
+    if (record[key] !== undefined && !value) return null;
     if (value) context[key] = value;
   }
-  if (input.relativePath !== undefined) {
-    const relativePath = normalizeRelativePath(input.relativePath);
-    if (!relativePath) return null;
-    context.relativePath = relativePath;
+  if (record.path !== undefined) {
+    const path = normalizeRelativePath(record.path);
+    if (!path) return null;
+    context.path = path;
   }
   return context;
 }
@@ -143,24 +148,50 @@ function normalizeDescriptor(
   let stableKey = "";
   switch (descriptor.module) {
     case "overview":
-      stableKey = context.chatId ? `overview:${context.chatId}` : "";
+      stableKey = context.agentKey && context.chatId ? `overview:${context.agentKey}:${context.chatId}` : "";
       break;
     case "debug":
-      stableKey = context.chatId ? `debug:${context.chatId}:${context.runId || "current"}` : "";
+      stableKey = context.agentKey && context.chatId ? `debug:${context.agentKey}:${context.chatId}` : "";
+      break;
+    case "btw":
+      stableKey = context.agentKey && context.chatId
+        ? `btw:${context.agentKey}:${context.chatId}:${context.btwId || "current"}`
+        : "";
+      break;
+    case "source":
+      stableKey = context.agentKey && context.chatId && context.publishId && context.sourceId
+        ? `source:${context.agentKey}:${context.chatId}:${context.btwId || "main"}:${context.publishId}:${context.sourceId}`
+        : "";
       break;
     case "project":
-      stableKey = context.projectId ? `project:${context.projectId}` : "";
+      stableKey = context.agentKey && (!context.runId || context.chatId)
+        ? `project:${context.agentKey}:${context.chatId || "workspace"}:${context.runId || "all"}:${context.path || "root"}`
+        : "";
       break;
     case "file-diff":
-      stableKey = context.runId && context.relativePath
-        ? `file-diff:${context.runId}:${context.relativePath}`
+      stableKey = context.agentKey && context.chatId && context.runId && context.path
+        ? `file-diff:${context.agentKey}:${context.chatId}:${context.runId}:${context.path}`
         : "";
       break;
     case "artifact":
-      stableKey = context.artifactId ? `artifact:${context.artifactId}` : "";
+      stableKey = context.agentKey && context.chatId && context.artifactId
+        ? `artifact:${context.agentKey}:${context.chatId}:${context.artifactId}`
+        : "";
+      break;
+    case "reference":
+      stableKey = context.agentKey && context.chatId && context.referenceId
+        ? `reference:${context.agentKey}:${context.chatId}:${context.referenceId}`
+        : "";
+      break;
+    case "file":
+      stableKey = context.agentKey && context.path
+        ? `file:${context.agentKey}:${context.path}`
+        : "";
       break;
     case "planning":
-      stableKey = context.nodeId ? `planning:${context.nodeId}` : "";
+      stableKey = context.agentKey && context.chatId && context.planningId
+        ? `planning:${context.agentKey}:${context.chatId}:${context.planningId}`
+        : "";
       break;
     case "agent":
     case "copilot":
@@ -171,7 +202,7 @@ function normalizeDescriptor(
   }
   if (!stableKey) return null;
   const isOverview = descriptor.module === "overview";
-  const sanitized: WorkPanelItemDescriptor = {
+  const sanitized = {
     kind: "webclient",
     module: descriptor.module,
     route,
@@ -179,7 +210,7 @@ function normalizeDescriptor(
     ...(title ? { title } : {}),
     ...(isOverview || descriptor.pinned === true ? { pinned: true } : {}),
     ...(isOverview || descriptor.closable === false ? { closable: false } : {}),
-  };
+  } as WorkPanelItemDescriptor;
   return {
     descriptor: sanitized,
     stableKey,
@@ -248,7 +279,9 @@ export function reduceWorkPanelCommand(
     }
     let trustedDescriptor = command.descriptor;
     if (trustedDescriptor.kind === "webclient") {
-      const descriptorChatId = cleanIdentity(trustedDescriptor.context?.chatId);
+      const descriptorChatId = cleanIdentity(
+        (trustedDescriptor.context as { chatId?: unknown })?.chatId,
+      );
       if (descriptorChatId && descriptorChatId !== ownerChatId) {
         return fail(state, "capability_denied", "WorkPanel item chat does not match its trusted workspace");
       }

@@ -28,6 +28,7 @@ const DEV_CORS_ALLOW_METHODS = "GET, POST, PUT, PATCH, DELETE, OPTIONS";
 const DEV_CORS_ALLOW_HEADERS = "Content-Type, Authorization, Accept, Cache-Control";
 const DESKTOP_BRIDGE_ONLY_HTTP_PATHS = new Set([
   "/api/query",
+  "/api/btw",
   "/api/attach",
   "/api/submit",
   "/api/interrupt",

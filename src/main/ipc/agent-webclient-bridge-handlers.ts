@@ -48,6 +48,7 @@ const LIVE_CHAT_SURFACE_IDS = new Set([
 const LIVE_REQUEST_TYPES = new Set([
   "/api/query",
   "/api/attach",
+  "/api/btw",
 ]);
 
 const RUN_CONTROL_TYPES = new Set([
@@ -66,7 +67,7 @@ type SurfaceContext = {
 
 type StreamBinding = {
   localId: string;
-  type: "/api/query" | "/api/attach";
+  type: "/api/query" | "/api/attach" | "/api/btw";
   chatId: string;
   runId: string;
   owner: AgentWebclientRunOwner | null;
@@ -101,6 +102,7 @@ function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
     value === "agent-copilot" ||
     value === "agent-overview" ||
     value === "agent-debug" ||
+    value === "agent-btw" ||
     value === "agent-project"
     ? value
     : null;
@@ -464,8 +466,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       return;
     }
     if (isLive) {
-      if (!LIVE_CHAT_SURFACE_IDS.has(context.target.surfaceId) || !context.target.active) {
-        sendFrame(socket, frameError(frame.id, "surface_unavailable", "only the active Chat surface may open a live Run stream"));
+      const isLiveChat = LIVE_CHAT_SURFACE_IDS.has(context.target.surfaceId);
+      const isBTW = context.kind === "agent-btw" &&
+        context.target.surfaceRole === "btw" &&
+        context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+        Boolean(context.target.ownerChatId);
+      const allowedSurface = frame.type === "/api/query"
+        ? isLiveChat
+        : frame.type === "/api/btw" || frame.type === "/api/attach"
+          ? isLiveChat || isBTW
+          : false;
+      if (!allowedSurface || !context.target.active) {
+        sendFrame(socket, frameError(frame.id, "surface_unavailable", "only the active Chat or BTW surface may open this live Run stream"));
         return;
       }
       await activateLiveSocket(socket);
@@ -515,7 +527,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     const binding: StreamBinding | null = isLive
       ? {
           localId: frame.id,
-          type: frame.type as "/api/query" | "/api/attach",
+          type: frame.type as "/api/query" | "/api/attach" | "/api/btw",
           chatId: readText(payload.chatId),
           runId: readText(payload.runId),
           owner: readOwner(payload),

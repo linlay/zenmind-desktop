@@ -244,6 +244,8 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     };
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelKeyboardFocusActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isHandlingQuit(): boolean;
     clearWindow(targetWindow: TWindow): void;
@@ -291,6 +293,18 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     if (options.isGlobalSearchShortcut?.(options.platform, input)) {
       event.preventDefault();
       targetWindow.webContents.send("app.openGlobalSearch", { source: "main" });
+      return;
+    }
+
+    if (
+      options.isWorkPanelKeyboardFocusActive?.() === true &&
+      options.isWorkPanelCloseShortcut?.(options.platform, input)
+    ) {
+      event.preventDefault();
+      targetWindow.webContents.send("app.workPanelCloseShortcut", {
+        guestId: null,
+        workPanelFocused: true
+      });
       return;
     }
 

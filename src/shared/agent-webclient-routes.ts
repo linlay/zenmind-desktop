@@ -187,7 +187,7 @@ export function createAgentWebclientCopilotPath(
   search?: string | URLSearchParams | null
 ) {
   const encodedAgentKey = encodeRoutePathSegment(agentKey);
-  const basePath = encodedAgentKey ? `/copilot/${encodedAgentKey}` : "/copilot";
+  const basePath = encodedAgentKey ? `/copilot/${encodedAgentKey}` : AGENT_WEBCLIENT_TARGET_PATH;
   return `${basePath}${normalizeRouteSearch(search)}`;
 }
 
@@ -217,32 +217,29 @@ export function createAgentWebclientProjectPath(request: {
   const agentKey = request.agentKey?.trim() ?? "";
   const chatId = request.chatId?.trim() ?? "";
   const runId = request.runId?.trim() ?? "";
-  if (agentKey) {
-    params.set("agentKey", agentKey);
-  }
+  const encodedAgentKey = encodeRoutePathSegment(agentKey);
+  if (!encodedAgentKey) return "";
   if (chatId) {
     params.set("chatId", chatId);
   }
-  if (runId) {
+  if (runId && chatId) {
     params.set("runId", runId);
   }
   const search = params.toString();
-  return search ? `/project?${search}` : "/project";
+  return `/project/${encodedAgentKey}${search ? `?${search}` : ""}`;
 }
 
 export function createAgentWebclientOverviewPath(request: {
   chatId: string;
-  agentKey?: string | null;
+  agentKey: string;
 }) {
   const params = new URLSearchParams();
   const chatId = request.chatId.trim();
   const agentKey = request.agentKey?.trim() ?? "";
-  if (!chatId) return "";
+  const encodedAgentKey = encodeRoutePathSegment(agentKey);
+  if (!chatId || !encodedAgentKey) return "";
   params.set("chatId", chatId);
-  if (agentKey) {
-    params.set("agentKey", agentKey);
-  }
-  return `/overview?${params.toString()}`;
+  return `/overview/${encodedAgentKey}?${params.toString()}`;
 }
 
 export function resolveAgentWebclientWsSource(

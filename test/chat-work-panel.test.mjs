@@ -113,6 +113,10 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /work-panel-host\$\{fullscreenOwnerChatId === activeChatId \? " is-fullscreen" : ""\}/u);
   assert.match(host, /const closable = item\.closable && !item\.pinned/u);
   assert.match(host, /onWorkPanelCloseShortcut/u);
+  assert.match(host, /guestId === null/u);
+  assert.match(host, /setWorkPanelKeyboardFocusActive/u);
+  assert.match(host, /const closableItems = workspace\.items\.filter/u);
+  assert.match(host, /type: "closeWorkspace"[\s\S]*?force: true/u);
   assert.match(host, /data-work-panel-active/u);
   assert.match(css, /\.chat-work-panel-tab:hover \.chat-work-panel-tab-close/u);
   assert.match(css, /\.chat-work-panel-tab:focus-within \.chat-work-panel-tab-close/u);
@@ -127,4 +131,34 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(appShell, /role="separator"[\s\S]*chat-work-panel-resizer/u);
   assert.match(appShell, /setPointerCapture\(event\.pointerId\)/u);
   assert.match(appShell, /window\.addEventListener\("pointermove", handlePointerMove, true\)/u);
+});
+
+test("WorkPanel close shortcut focus ownership is wired across renderer preload and main", () => {
+  const contracts = read("src/shared/contracts/desktop-api.ts");
+  const preload = read("src/preload/index.ts");
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const shellHandlers = read("src/main/ipc/shell-handlers.ts");
+  const mainContext = read("src/main/main-process-context.ts");
+  const windowManager = read("src/main/window-manager.ts");
+  const runtime = read("src/main/app-shell/runtime.ts");
+
+  assert.match(contracts, /DesktopWorkPanelCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;[\s\S]*?workPanelFocused\?: boolean;/u);
+  assert.match(contracts, /setWorkPanelKeyboardFocusActive: \(active: boolean\) => void/u);
+  assert.match(contracts, /requestWindowClose: \(\) => void/u);
+  assert.match(preload, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
+  assert.match(preload, /desktopShell\.requestWindowClose/u);
+  assert.match(host, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/u);
+  assert.match(host, /root\.addEventListener\("focusin", handleFocusIn, true\)/u);
+  assert.match(host, /publishFocusState\(false\)/u);
+  assert.match(shellHandlers, /getMainWindow\?\.\(\) \?\? options\.mainWindow/u);
+  assert.match(shellHandlers, /ownerWindow !== mainWindow/u);
+  assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.requestWindowClose"/u);
+  assert.match(mainContext, /getMainWindow: \(\) => context\.state\.mainWindow/u);
+  assert.match(windowManager, /isWorkPanelKeyboardFocusActive\?\.\(\) === true/u);
+  assert.match(windowManager, /app\.workPanelCloseShortcut"[\s\S]*?guestId: null,[\s\S]*?workPanelFocused: true/u);
+  assert.match(runtime, /isWorkPanelKeyboardFocusActive: \(\) => options\.state\.workPanelKeyboardFocusActive/u);
+  assert.match(runtime, /fallbackToWindowClose: true/u);
+  assert.match(runtime, /workPanelFocused: options\.state\.workPanelKeyboardFocusActive/u);
+  assert.match(host, /workPanelFocused && activeChatId/u);
+  assert.match(host, /else if \(fallbackToWindowClose\)/u);
 });

@@ -242,8 +242,8 @@ test("local validation returns a standard error frame with the original request 
   const target = createTarget(42, {
     surfaceId: "overview-42",
     surfaceType: "agent-overview",
-    pageRoute: "/overview",
-    currentUrl: "http://127.0.0.1:7079/overview?chatId=chat-42",
+    pageRoute: "/overview/agent-42",
+    currentUrl: "http://127.0.0.1:7079/overview/agent-42?chatId=chat-42",
   });
   let forwarded = false;
   const runtime = createRegistration(new Map([[42, target]]), async () => { forwarded = true; });
@@ -261,12 +261,41 @@ test("local validation returns a standard error frame with the original request 
     type: "surface_unavailable",
     code: 400,
     status: 400,
-    msg: "only the active Chat surface may open a live Run stream",
+    msg: "only the active Chat or BTW surface may open this live Run stream",
     data: {
       code: "surface_unavailable",
-      message: "only the active Chat surface may open a live Run stream",
+      message: "only the active Chat or BTW surface may open this live Run stream",
     },
   });
+});
+
+test("active BTW child may start or attach BTW streams but cannot start a main query", async () => {
+  const target = createTarget(49, {
+    surfaceId: "btw:child",
+    surfaceType: "agent-btw",
+    surfaceRole: "btw",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    ownerChatId: "chat-49",
+    pageRoute: "/btw/agent-49",
+    currentUrl: "http://127.0.0.1:7079/btw/agent-49?chatId=chat-49",
+  });
+  const forwarded = [];
+  const runtime = createRegistration(new Map([[49, target]]), async ({ type }) => forwarded.push(type));
+  const sender = createSender(49, target.currentUrl);
+  await openSocket(runtime, sender, "socket-btw");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-btw",
+    data: JSON.stringify({ frame: "request", type: "/api/btw", id: "btw-1", payload: { chatId: "chat-49", message: "why", agentKey: "agent-49" } }),
+  });
+  await flush();
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-btw",
+    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-denied", payload: { chatId: "chat-49", message: "no", agentKey: "agent-49" } }),
+  });
+  await flush();
+  assert.deepEqual(forwarded, ["/api/btw"]);
+  assert.equal(sentFrames(sender).at(-1).type, "surface_unavailable");
 });
 
 test("surface handoff writes detach before the next live request", async () => {

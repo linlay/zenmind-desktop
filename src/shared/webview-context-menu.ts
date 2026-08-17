@@ -11,6 +11,7 @@ export type WebviewContextMenuSurfaceType =
   | "agent-copilot"
   | "agent-overview"
   | "agent-debug"
+  | "agent-btw"
   | "agent-project"
   | "agent-management"
   | "project"

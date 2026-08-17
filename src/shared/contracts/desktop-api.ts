@@ -570,7 +570,11 @@ export type DesktopGlobalSearchShortcut =
   | { kind: "attention"; slot: DesktopGlobalSearchShortcutSlot }
   | { kind: "agent"; slot: DesktopGlobalSearchShortcutSlot };
 export type DesktopGlobalSearchShortcutListener = (shortcut: DesktopGlobalSearchShortcut) => void;
-export type DesktopWorkPanelCloseShortcutRequest = { guestId: number };
+export type DesktopWorkPanelCloseShortcutRequest = {
+  guestId: number | null;
+  fallbackToWindowClose?: boolean;
+  workPanelFocused?: boolean;
+};
 export type DesktopWorkPanelCloseShortcutListener = (
   request: DesktopWorkPanelCloseShortcutRequest
 ) => void;
@@ -615,6 +619,8 @@ export interface DesktopApi {
     beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
+    setWorkPanelKeyboardFocusActive: (active: boolean) => void;
+    requestWindowClose: () => void;
     getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
     onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
     onShutdownProgress: (listener: ShutdownProgressListener) => (() => void);

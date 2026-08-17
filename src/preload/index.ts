@@ -99,6 +99,9 @@ const api: DesktopApi = {
     beginWindowDrag: (point: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.beginWindowDrag", point),
     endWindowDrag: () => ipcRenderer.invoke("desktopShell.endWindowDrag"),
     setGlobalSearchOverlayVisible: (visible: boolean) => ipcRenderer.send("desktopShell.setGlobalSearchOverlayVisible", visible),
+    setWorkPanelKeyboardFocusActive: (active: boolean) =>
+      ipcRenderer.send("desktopShell.setWorkPanelKeyboardFocusActive", active),
+    requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
     getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
     onWindowStateChanged: (listener: DesktopWindowStateListener) => {
       const handleWindowStateChanged = (

@@ -637,6 +637,65 @@ test("window manager opens Desktop global search from the main window shortcut",
   assert.equal(target.webContents.toggleDevToolsCount, 0);
 });
 
+test("main window forwards close shortcuts only while WorkPanel owns keyboard focus", () => {
+  const target = new FakeWindow();
+  let workPanelFocused = true;
+  let prevented = false;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "darwin",
+    lifecycle: {
+      applyAppearance: () => {},
+      hideForClose: () => {},
+      cancelPendingClose: () => {},
+    },
+    isDevToolsShortcut: () => false,
+    isWorkPanelCloseShortcut,
+    isWorkPanelKeyboardFocusActive: () => workPanelFocused,
+    isHandlingQuit: () => false,
+    clearWindow: () => {},
+  });
+
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, {
+    type: "keyDown",
+    key: "w",
+    meta: true,
+    control: false,
+    alt: false,
+    shift: false,
+    isAutoRepeat: false,
+  });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(target.webContents.sentMessages, [{
+    channel: "app.workPanelCloseShortcut",
+    payload: { guestId: null, workPanelFocused: true },
+  }]);
+
+  workPanelFocused = false;
+  prevented = false;
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, {
+    type: "keyDown",
+    key: "w",
+    meta: true,
+    control: false,
+    alt: false,
+    shift: false,
+    isAutoRepeat: false,
+  });
+
+  assert.equal(prevented, false);
+  assert.equal(target.webContents.sentMessages.length, 1);
+});
+
 test("main window forwards global search commands only while the overlay is visible", () => {
   const target = new FakeWindow();
   let visible = true;

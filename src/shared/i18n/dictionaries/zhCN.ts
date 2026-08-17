@@ -41,6 +41,7 @@ export const zhCNMessages = {
   "menu.settings": "设置",
   "menu.settingsEllipsis": "设置...",
   "menu.window": "窗口",
+  "menu.closeWindow": "关闭窗口",
   "menu.quit": "退出 {appName}",
 
   "webviewContextMenu.edit.undo": "撤销",
@@ -680,6 +681,9 @@ export const zhCNMessages = {
   "settings.debug.label": "调试",
   "settings.debug.description": "仅供开发者使用的本地调试工具。",
   "settings.debug.closeAction": "关闭调试",
+  "settings.debug.webviewOverlay.copyAll": "复制全部",
+  "settings.debug.webviewOverlay.copied": "已复制",
+  "settings.debug.webviewOverlay.copyFailed": "复制失败",
   "settings.debug.categories.label": "调试分类",
   "settings.debug.categories.device": "设备",
   "settings.debug.categories.state": "状态",

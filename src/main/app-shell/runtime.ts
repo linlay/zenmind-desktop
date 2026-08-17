@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import {
   BrowserWindow,
+  webContents as electronWebContents,
   type App,
   type NativeTheme,
   type Session,
@@ -213,6 +214,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   }
 
   function createWindow() {
+    options.state.workPanelKeyboardFocusActive = false;
     options.state.mainWindow = new BrowserWindow(buildMainWindowOptions({
       platform: options.platform,
       preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
@@ -261,11 +263,14 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       lifecycle: mainWindowLifecycle,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isWorkPanelKeyboardFocusActive: () => options.state.workPanelKeyboardFocusActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isHandlingQuit: () => options.state.isHandlingQuit,
       clearWindow: (windowToClear) => {
         if (options.state.mainWindow === windowToClear) {
           options.state.mainWindow = null;
+          options.state.workPanelKeyboardFocusActive = false;
         }
       },
       restoreFloatingWindowsForFullscreen: () => options.restoreDesktopPetWindowLayering()
@@ -306,6 +311,26 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       t: options.t,
       openSettings: () => navigateMainWindow("/settings"),
+      requestCloseWindow: () => {
+        const targetWindow = BrowserWindow.getFocusedWindow();
+        if (!targetWindow || targetWindow.isDestroyed()) {
+          return;
+        }
+        if (targetWindow !== options.state.mainWindow) {
+          targetWindow.close();
+          return;
+        }
+        const focusedContents = electronWebContents.getFocusedWebContents();
+        const focusedWorkPanelGuest = focusedContents && focusedContents !== targetWindow.webContents &&
+          options.isWorkPanelWebview(focusedContents)
+          ? focusedContents
+          : null;
+        targetWindow.webContents.send("app.workPanelCloseShortcut", {
+          guestId: focusedWorkPanelGuest?.id ?? null,
+          fallbackToWindowClose: true,
+          workPanelFocused: options.state.workPanelKeyboardFocusActive
+        });
+      },
       requestQuit: options.requestAppQuit,
       quitWithoutConfirmation: options.beginAppQuitWithoutConfirmation
     });
