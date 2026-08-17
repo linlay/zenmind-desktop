@@ -842,7 +842,7 @@
   display: flex;
   align-items: center;
   width: fit-content;
-  min-width: 160px;
+  min-width: 88px;
   max-width: 240px;
   height: var(--chat-work-panel-tab-height);
   border: 0;
@@ -975,7 +975,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 24px;
+  width: 34px;
   height: 24px;
   margin: 0;
   padding: 0;

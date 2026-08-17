@@ -37,7 +37,7 @@ function createWebContentsApi(contents, focusedContents) {
   };
 }
 
-test("current webview DevTools shortcut prefers a live Copilot target", () => {
+test("current webview DevTools shortcut prefers the focused main-chat over stale fallback targets", () => {
   const focusedWebview = new FakeWebContents(1);
   const snapshotWebview = new FakeWebContents(2);
   const copilotWebview = new FakeWebContents(3);
@@ -56,11 +56,62 @@ test("current webview DevTools shortcut prefers a live Copilot target", () => {
     webContents: createWebContentsApi([focusedWebview, snapshotWebview, copilotWebview], focusedWebview)
   });
 
+  assert.deepEqual(result, { ok: true, source: "focused" });
+  assert.equal(focusedWebview.openCount, 1);
+  assert.deepEqual(focusedWebview.devtoolsOpenOptions, { mode: "detach" });
+  assert.equal(copilotWebview.openCount, 0);
+  assert.equal(snapshotWebview.openCount, 0);
+});
+
+test("current webview DevTools shortcut follows focus across multiple WorkPanel webviews", () => {
+  const mainChatWebview = new FakeWebContents(1);
+  const overviewWebview = new FakeWebContents(2);
+  const artifactWebview = new FakeWebContents(3);
+
+  const result = openCurrentWebviewDevTools({
+    currentPageSnapshot: {
+      route: "/agent/default",
+      pageKey: "webview:/agent/default:main-chat",
+      pageKind: "webview",
+      webContentsId: mainChatWebview.id,
+      pageContext: null
+    },
+    webContents: createWebContentsApi(
+      [mainChatWebview, overviewWebview, artifactWebview],
+      artifactWebview
+    )
+  });
+
+  assert.deepEqual(result, { ok: true, source: "focused" });
+  assert.equal(mainChatWebview.openCount, 0);
+  assert.equal(overviewWebview.openCount, 0);
+  assert.equal(artifactWebview.openCount, 1);
+  assert.deepEqual(artifactWebview.devtoolsOpenOptions, { mode: "detach" });
+});
+
+test("current webview DevTools shortcut uses a live Copilot target when no webview is focused", () => {
+  const focusedWindow = new FakeWebContents(1, "window");
+  const snapshotWebview = new FakeWebContents(2);
+  const copilotWebview = new FakeWebContents(3);
+
+  const result = openCurrentWebviewDevTools({
+    preferredWebviewDevToolsTarget: {
+      webContentsId: copilotWebview.id
+    },
+    currentPageSnapshot: {
+      route: "/service/agent-webclient",
+      pageKey: "webview:/service/agent-webclient:agent-webclient",
+      pageKind: "webview",
+      webContentsId: snapshotWebview.id,
+      pageContext: null
+    },
+    webContents: createWebContentsApi([focusedWindow, snapshotWebview, copilotWebview], focusedWindow)
+  });
+
   assert.deepEqual(result, { ok: true, source: "copilot" });
   assert.equal(copilotWebview.openCount, 1);
   assert.deepEqual(copilotWebview.devtoolsOpenOptions, { mode: "detach" });
   assert.equal(snapshotWebview.openCount, 0);
-  assert.equal(focusedWebview.openCount, 0);
 });
 
 test("current webview DevTools shortcut falls back when Copilot target is stale", () => {
@@ -80,7 +131,7 @@ test("current webview DevTools shortcut falls back when Copilot target is stale"
       webContentsId: snapshotWebview.id,
       pageContext: null
     },
-    webContents: createWebContentsApi([focusedWebview, snapshotWebview, copilotWebview], focusedWebview)
+    webContents: createWebContentsApi([focusedWebview, snapshotWebview, copilotWebview], null)
   });
 
   assert.deepEqual(result, { ok: true, source: "snapshot" });
@@ -106,7 +157,7 @@ test("current webview DevTools shortcut ignores a non-webview Copilot target", (
   assert.equal(focusedWebview.openCount, 1);
 });
 
-test("current webview DevTools shortcut prefers the active snapshot webview", () => {
+test("current webview DevTools shortcut uses the active snapshot when no webview is focused", () => {
   const focusedWebview = new FakeWebContents(1);
   const snapshotWebview = new FakeWebContents(2);
 
@@ -118,7 +169,7 @@ test("current webview DevTools shortcut prefers the active snapshot webview", ()
       webContentsId: snapshotWebview.id,
       pageContext: null
     },
-    webContents: createWebContentsApi([focusedWebview, snapshotWebview], focusedWebview)
+    webContents: createWebContentsApi([focusedWebview, snapshotWebview], null)
   });
 
   assert.deepEqual(result, { ok: true, source: "snapshot" });

@@ -495,6 +495,7 @@ export function WorkPanelHost({
                           )}
                           surfaceIdentityKey={item.stableKey}
                           surfaceLabel={item.title}
+                          skipContextRegistration
                         />
                       ) : item.descriptor.kind === "web" ? (
                         <ExternalWebviewPage

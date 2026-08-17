@@ -114,6 +114,7 @@
 - [ ] 调整 WorkPanel 宽度后重启 Desktop、切换 Chat、切换深浅主题，宽度作为全局偏好保持；非法存储值恢复为 `clamp(420px, 42vw, 680px)` 默认语义，窗口宽度允许时 main-chat 与 WorkPanel 均遵守 420px 保底宽度。
 - [ ] 点击或键盘聚焦 WorkPanel 的 tab/header/WebView 后，即使后续焦点进入其 `<webview>` 或关闭 tab 导致 DOM 焦点变化，macOS `Cmd+W`、Windows `Ctrl+W` 仍每次先关闭 active closable tab；若当前为固定 Overview 等不可关闭项，则关闭最后一个 closable tab；没有 closable tab 时下一次关闭整个 WorkPanel（包含 Overview），再下一次恢复为 Desktop 窗口默认关闭/隐藏。点击 WorkPanel 外部会立即恢复窗口默认行为；auto-repeat、额外修饰键和 keyUp 不触发该序列。
 - [ ] 普通 Chat、Browser、Website 及其他非 WorkPanel WebView 中的 `Cmd+W`/`Ctrl+W` 保持原行为；WorkPanel 被回收、隐藏或用户点击面板外部后 Main 立即释放拦截，且不依据 URL 误判 WorkPanel guest。
+- [ ] macOS `Cmd+Shift+D`、Windows `Ctrl+Shift+D` 始终为当前实际聚焦的 WebView 打开独立 DevTools；在 main-chat 与包含 Overview、Artifact、Web 等多个 guest 的 WorkPanel 间逐一点击并触发时目标正确，隐藏 WorkPanel 后不再命中陈旧的 `/overview`；没有 WebView 焦点时才使用 Copilot 或当前页面快照兜底。
 - [ ] macOS 隐藏面板前清除 first responder、下一 animation frame 恢复焦点；Windows 隐藏前 blur，且只在 active、`dom-ready` 和窗口聚焦时恢复。
 - [ ] 调试工作台仍经过正式执行器和确认策略，不成为权限旁路。
 - [ ] 断线不重放非幂等动作，重复 request identity 得到确定性处理。

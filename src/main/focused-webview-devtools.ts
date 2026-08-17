@@ -46,6 +46,15 @@ export function openCurrentWebviewDevTools(options: {
   webContents: WebContentsLookup;
 }) {
   const { preferredWebviewDevToolsTarget, currentPageSnapshot, webContents } = options;
+  // Split views can keep several guests alive at once, so the exact focused guest
+  // must win before longer-lived Copilot and page-snapshot fallbacks.
+  const focusedResult = openFocusedWebviewDevTools(
+    webContents.getFocusedWebContents()
+  );
+  if (focusedResult.ok) {
+    return { ok: true as const, source: "focused" as const };
+  }
+
   if (typeof preferredWebviewDevToolsTarget?.webContentsId === "number") {
     const preferredContents = webContents.fromId(preferredWebviewDevToolsTarget.webContentsId);
     if (isLiveWebviewContents(preferredContents)) {
@@ -65,10 +74,5 @@ export function openCurrentWebviewDevTools(options: {
     }
   }
 
-  const focusedResult = openFocusedWebviewDevTools(
-    webContents.getFocusedWebContents()
-  );
-  return focusedResult.ok
-    ? { ok: true as const, source: "focused" as const }
-    : focusedResult;
+  return focusedResult;
 }
