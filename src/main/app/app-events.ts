@@ -42,6 +42,7 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
 
   let readyCompleted = false;
   let pendingDesktopOpen = Boolean(findDesktopOpenDeepLink(options.initialCommandLine));
+  let pendingMainWindowOpen = false;
 
   const openDesktopHome = () => {
     if (!readyCompleted) {
@@ -70,6 +71,10 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
       openDesktopHome();
       return;
     }
+    if (!readyCompleted) {
+      pendingMainWindowOpen = true;
+      return;
+    }
     options.showMainWindow();
   });
 
@@ -78,7 +83,11 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     readyCompleted = true;
     if (pendingDesktopOpen) {
       pendingDesktopOpen = false;
+      pendingMainWindowOpen = false;
       options.showMainWindow("/");
+    } else if (pendingMainWindowOpen) {
+      pendingMainWindowOpen = false;
+      options.showMainWindow();
     }
     options.app.on("activate", () => {
       if (options.isNativeDialogOpen()) {
