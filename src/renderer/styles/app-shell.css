@@ -828,6 +828,10 @@
   -webkit-app-region: no-drag;
 }
 
+.chat-work-panel.has-panel-toggle .chat-work-panel-tabs {
+  padding-right: 46px;
+}
+
 .chat-work-panel-tabs::-webkit-scrollbar {
   display: none;
 }

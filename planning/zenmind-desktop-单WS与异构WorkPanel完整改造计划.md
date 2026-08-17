@@ -83,14 +83,16 @@ WorkPanel 同时支持：
 新契约使用：
 
 - `desktop.workpanel.getState`；
-- `desktop.workpanel.openItem`；
-- `desktop.workpanel.activateItem`；
-- `desktop.workpanel.closeItem`；
-- 必要时增加 `desktop.workpanel.closeWorkspace`。
+- `desktop.workpanel.openTab`；
+- `desktop.workpanel.openWeb`；
+- `desktop.workpanel.refreshWeb`；
+- `desktop.workpanel.activateTab`；
+- `desktop.workpanel.closeTab`；
+- `desktop.workpanel.closeWorkpanel`。
 
 不在 Desktop 内把 `webclient.sidebar.*` 隐式翻译成 WorkPanel Action。未来由 Agent Platform/调用方判断目标是 WebClient 还是 Desktop；当前需要打开 Desktop WorkPanel 时直接发送 `desktop.workpanel.*`。
 
-旧 `desktop.chatWorkPanel.*` 只作为 Desktop 现有调用方的短期兼容入口，不进入新的 WebClient 契约，并在调用方迁移完成后删除。
+WorkPanel Action 采用断代升级，所有调用方原子切换到当前注册表。
 
 ### 1.8 本期默认不修改 Agent Platform
 
@@ -150,7 +152,7 @@ WorkPanel 同时支持：
 
 1. `AssistantWsTransport` 目前是 Assistant 专用 owner，WebClient 仍可能拥有自己的 WS；目标是一个共享 Realtime owner。
 2. 当前 Chat WorkPanel contract 主要是 `{url,title}`，不能表达 Summary、Debug 或 Native Surface。
-3. 当前 Action namespace 是 `desktop.chatWorkPanel.*`，需要迁移到 `desktop.workpanel.*`。
+3. WorkPanel Action 只允许当前 `desktop.workpanel.*` 契约，不维护平行动作 namespace。
 4. 当前 `ChatWorkPanelSurface` 基本只包装 `ExternalWebviewPage`，不能承载判别联合 item。
 5. 当前 guest 与 Main 之间没有完整的 Run/Push/visible binding bridge contract。
 6. 当前 push 处理主要服务既有 Assistant 行为，尚未形成多 Surface typed subscription。
@@ -162,7 +164,7 @@ WorkPanel 同时支持：
 - WebClient guest 自连 WS 与 Main Broker 同时作为正式 owner；
 - Assistant 使用旧 WS、WebClient 使用新 WS，两条连接永久并存；
 - Summary 为了显示同一 Run 再单独 attach；
-- 新 `desktop.workpanel.*` 与旧 action 各维护一份 WorkPanel state；
+- 两套 Action 入口各维护一份 WorkPanel state；
 - bridge 失败后单次操作偷偷回落到旧 WS；
 - accepted query 因切换 Surface 或重连被重新提交。
 
@@ -656,10 +658,12 @@ Agent/Copilot workspace 的建议默认组合：
 
 ```ts
 desktop.workpanel.getState({ workspaceId? })
-desktop.workpanel.openItem({ descriptor })
-desktop.workpanel.activateItem({ itemId })
-desktop.workpanel.closeItem({ itemId })
-desktop.workpanel.closeWorkspace({ workspaceId }) // 仅确有调用方时增加
+desktop.workpanel.openTab({ descriptor })
+desktop.workpanel.openWeb({ url })
+desktop.workpanel.refreshWeb({ url })
+desktop.workpanel.activateTab({ tabId })
+desktop.workpanel.closeTab({ tabId })
+desktop.workpanel.closeWorkpanel()
 ```
 
 调用方不能任意指定其他 Chat 的 workspace。Main 从可信 action source 或 Surface owner 推导实际 workspace，再与参数交叉校验。
@@ -671,28 +675,12 @@ desktop.workpanel.closeWorkspace({ workspaceId }) // 仅确有调用方时增加
 - WebClient Summary/Project 的 OpenTargetIntent；
 - Agent Platform 的 `desktop.workpanel.*`；
 - Desktop 原生菜单/按钮；
-- 旧 `desktop.chatWorkPanel.*` 兼容 adapter。
 
 不能让 preload bridge、Desktop Action Bridge 和 UI click 各自修改 workspace map。
 
-### 13.3 旧 Action 迁移
+### 13.3 Action 原子切换
 
-短期映射：
-
-```text
-desktop.chatWorkPanel.getState     -> desktop.workpanel.getState
-desktop.chatWorkPanel.openTab      -> desktop.workpanel.openItem(kind="web")
-desktop.chatWorkPanel.activateTab  -> desktop.workpanel.activateItem
-desktop.chatWorkPanel.closeTab     -> desktop.workpanel.closeItem
-desktop.chatWorkPanel.close        -> internal closeWorkspace
-```
-
-兼容层要求：
-
-- 只做参数转换，不保存第二份状态；
-- 发出 deprecation metric/log；
-- 新 WebClient 和新 Platform Action 不得继续调用旧名称；
-- 稳定观察期确认无调用后删除。
+Action 定义、Main 分发、renderer provider、内部菜单调用、自动测试和调用方必须在同一版本切到当前 `desktop.workpanel.*` 契约。未知 namespace、旧动作名和旧参数一律返回 `unknown_action` 或 `invalid_request`，不做兼容转换。
 
 ### 13.4 安全校验
 
@@ -815,7 +803,7 @@ desktop.chatWorkPanel.close        -> internal closeWorkspace
 - IPC batch 大小、频率、queue latency；
 - dropped stale epoch、unknown id、duplicate terminal、seq gap；
 - Surface register/unregister 与泄漏检查；
-- 旧 `desktop.chatWorkPanel.*` 调用量。
+- unknown WorkPanel Action 调用量。
 
 日志不得包含 Token、完整 prompt、敏感文件内容或整段 event payload。
 
@@ -912,7 +900,7 @@ WebClient `/debug` 是业务/传输观察 Surface，不等于开放 Main 的全�
 3. 落地 `desktop.workpanel.*`。
 4. Main 绑定可信 owner workspace/chat/run。
 5. 实现 stable key 去重与安全校验。
-6. 旧 `desktop.chatWorkPanel.*` 只保留无状态兼容 adapter。
+6. Action 定义、分发与状态只保留当前协议。
 
 完成条件：所有 ingress 修改同一份 workspace state，新旧 open Web URL 行为一致。
 
@@ -985,10 +973,10 @@ WebClient `/debug` 是业务/传输观察 Surface，不等于开放 Main 的全�
 
 1. Desktop 与匹配版本 Agent WebClient bundle 一起发布。
 2. `DESKTOP_APP=true` 默认走 DesktopRealtimeTransport，无额外 rollout flag。
-3. 观察 physical WS、错误率、replay、旧 action 指标。
+3. 观察 physical WS、错误率、replay 和 unknown action 指标。
 4. 删除 guest 直连 Desktop 模式路径。
 5. 删除旧 Assistant 物理 WS owner。
-6. 旧 `desktop.chatWorkPanel.*` 无调用后删除兼容层。
+6. 确认发布产物中的 WorkPanel Action 与当前注册表一致。
 7. 更新最终设计文档和手工回归清单。
 
 完成条件：所有永久所有权已收口，无双栈、无静默 fallback、无旧 action 新调用。
@@ -1041,7 +1029,7 @@ WebClient `/debug` 是业务/传输观察 Surface，不等于开放 Main 的全�
 - pinned/non-closable item 不能被普通 close。
 - 重复 stable key open 只 activate。
 - 不同 chat/workspace 不能串 item。
-- 旧 `desktop.chatWorkPanel.openTab` 在兼容期仍能打开 Web item。
+- `openTab`、`openWeb`、`refreshWeb`、`activateTab`、`closeTab` 和 `closeWorkpanel` 均只接受当前参数契约。
 
 ### 19.6 Summary/Debug/OpenTarget
 
@@ -1154,10 +1142,9 @@ npm test
 - `desktop.workpanel.*` 是新的唯一正式 Action namespace。
 - WebClient OpenTargetIntent 与 Platform Desktop Action 进入同一 WorkPanelCommandService。
 - 重复目标按 stable key activate，不重复创建。
-- 旧 `desktop.chatWorkPanel.*` 只在迁移期兼容，最终可删除。
+- WorkPanel Action 只包含当前注册表声明的入口。
 - Assistant、Kanban、Pet 等不再维护独立 Agent Platform WS owner。
 - 重连不重复 accepted query，seq gap 使用 canonical replay。
 - Surface 销毁、guest crash、renderer reload、app quit 无 listener/subscription/timer 泄漏。
 - macOS 与 Windows 的 WebView 生命周期差异均有显式实现和验证。
 - 设计文档、契约生成检查、自动测试和手工回归同步完成。
-

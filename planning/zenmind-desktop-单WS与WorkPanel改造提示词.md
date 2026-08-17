@@ -171,7 +171,7 @@ type WorkPanelItem =
 - 被隐藏的 WebView 和 Native Surface 必须保持状态，但停止不必要的绘制、焦点和快捷键处理；
 - 不同 chat/workspace 的 item 必须隔离，不得仅凭页面传入的 chatId 跨 workspace 打开。
 
-现有 `desktop.chatWorkPanel.openTab({url,title})` 需要保留兼容，同时新增结构化的 `openItem`/`activateItem` contract。迁移完成前不要破坏现有 Agent Action 调用。
+WorkPanel Action 采用断代升级，只提供结构化的 `openTab`/`activateTab` contract，以及按 URL 调用的 `openWeb`/`refreshWeb`；所有调用方原子切换到当前注册表。
 
 ### 8. Summary 点击打开 WorkPanel Tab
 
@@ -221,7 +221,7 @@ Main/Renderer 必须校验：调用 Surface、owner chat、路径归属、URL sc
 9. WorkPanel 同时包含 WebClient、Native、Web item，切换不卸载；
 10. 关闭一个 item 只清理其自身，后台 Run 和其他 Surface 不受影响；
 11. 重连、Token 刷新、`seq_expired`、Surface 崩溃和应用退出均无 listener/subscription 泄漏；
-12. 现有 `desktop.chatWorkPanel.openTab` 回归通过。
+12. WorkPanel Action 定义、分发和调用方只包含当前 `desktop.workpanel.*` 契约。
 
 执行仓库现有 lint、typecheck、unit/integration test、build，并按 `qa/manual-regression.md` 补充这次跨 WebView/WorkPanel 的手工回归项。对 macOS 和 Windows 的 WebView 隐藏、焦点、快捷键、路径和生命周期差异写显式平台分支并分别验证。
 

@@ -294,6 +294,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       "agent-copilot",
       "agent-overview",
       "agent-debug",
+      "agent-btw",
       "agent-project",
       "agent-management",
       "project",

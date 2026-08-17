@@ -65,9 +65,12 @@ Standalone 网站部署必须显式使用 `DESKTOP_APP=false` 或空值，并继
 
 当前统一使用 `desktop.workpanel.*`，不再把 Desktop WorkPanel 描述成 WebClient Sidebar：
 
-- `desktop.workpanel.openItem`
-- `desktop.workpanel.activateItem`
-- `desktop.workpanel.closeItem`
+- `desktop.workpanel.openTab`
+- `desktop.workpanel.openWeb`
+- `desktop.workpanel.refreshWeb`
+- `desktop.workpanel.activateTab`
+- `desktop.workpanel.closeTab`
+- `desktop.workpanel.closeWorkpanel`
 - 如确有需要，再增加受限的 `desktop.workpanel.getState`
 
 `webclient.sidebar.openUrl` 不在 WebClient 内隐式转译。调用方应直接改用 `desktop.workpanel.*`。
@@ -455,7 +458,7 @@ type OpenTargetIntent =
 通过 trusted bridge 调用：
 
 ```text
-desktop.workpanel.openItem(intent)
+desktop.workpanel.openTab(intent)
   -> Desktop 校验来源和权限
   -> stable target key 查重
   -> 已存在则 activate
@@ -787,4 +790,3 @@ owner 迁移类提交必须整步完成，禁止在同一生产路径同时保�
 - 业务 feature 不直接依赖 wsClient、push singleton、Run endpoint 或 Desktop wire DTO。
 - 每个 listener、execution、pending、observer、timer 都有确定 cleanup。
 - test、boundaries、i18n、build 和跨仓 E2E 全部通过。
-

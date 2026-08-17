@@ -19,9 +19,11 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /className=\{`main-chat-work-panel-toggle/u);
   assert.match(appShell, /kind="sidebar_left"/u);
   assert.match(appShell, /className="main-chat-work-panel-toggle-icon"/u);
+  assert.match(appShell, /!activeChatWorkPanelVisible \? mainChatWorkPanelToggle : null/u);
+  assert.match(appShell, /panelToggle=\{activeChatWorkPanelVisible \? mainChatWorkPanelToggle : null\}/u);
   assert.doesNotMatch(appShell, /LayoutOutlined/u);
   assert.match(appShell, /disabled=\{!activeChatWorkPanelChatId\}/u);
-  assert.match(appShell, /createAgentWebclientOverviewPath\(\{ chatId, agentKey \}\)/u);
+  assert.match(appShell, /createAgentWebclientOverviewPath\(\{ chatId \}\)/u);
   assert.match(appShell, /shouldEnsureOverview/u);
   assert.match(appShell, /pinned: true/u);
   assert.match(appShell, /closable: false/u);
@@ -35,6 +37,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(host, /<ServiceWebviewSurface/u);
   assert.match(host, /<ExternalWebviewPage/u);
   assert.match(host, /hidden=\{!visible\}/u);
+  assert.match(host, /visible \? panelToggle : null/u);
   assert.match(reducer, /stableKey:\s*`web:\$\{url\}`/u);
   assert.match(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/overview\/iu/u);
   assert.doesNotMatch(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/summary\/iu/u);
@@ -45,24 +48,21 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(css, /\.main-chat-work-panel-toggle:focus-visible/u);
   assert.match(css, /\.main-chat-work-panel-toggle\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*6px/su);
   assert.match(css, /\.main-chat-work-panel-toggle-icon\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;[^}]*transform:\s*scaleX\(-1\)/su);
+  assert.match(css, /\.chat-work-panel\.has-panel-toggle \.chat-work-panel-tabs\s*\{[^}]*padding-right:\s*46px/su);
 });
 
-test("WorkPanel actions derive ownership from trusted source and preserve a stateless legacy adapter", () => {
+test("WorkPanel actions derive ownership from trusted source and expose the canonical namespace", () => {
   const actions = read("src/shared/desktop-actions.ts");
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
-  const reducer = read("src/shared/work-panel.ts");
   const bridge = read("src/main/desktop-action-bridge.ts");
 
-  for (const name of ["getState", "openItem", "activateItem", "closeItem", "closeWorkspace"]) {
+  for (const name of ["getState", "openTab", "openWeb", "refreshWeb", "activateTab", "closeTab", "closeWorkpanel"]) {
     assert.match(actions, new RegExp(`desktop\\.workpanel\\.${name}`, "u"));
   }
-  for (const name of ["getState", "open", "close", "openTab", "activateTab", "closeTab"]) {
-    assert.match(actions, new RegExp(`desktop\\.chatWorkPanel\\.${name}`, "u"));
-  }
   assert.match(host, /request\.source\?\.chatId/u);
-  assert.match(host, /desktop\.chatWorkPanel\.openTab/u);
+  assert.match(host, /case "desktop\.workpanel\.openWeb"[\s\S]*?descriptor: \{ kind: "web", url \}/u);
+  assert.match(host, /case "desktop\.workpanel\.refreshWeb"[\s\S]*?candidate\.descriptor\.url === url[\s\S]*?webview\.reload\(\)[\s\S]*?type: "activateItem"/u);
   assert.match(host, /descriptor:\s*\{ kind: "web", url/u);
-  assert.match(reducer, /legacyActionCount/u);
   assert.match(bridge, /request\.source\?\.chatId/u);
   assert.doesNotMatch(host, /new Map<string, ChatWorkPanelWorkspace>/u);
   assert.match(read("src/renderer/app-shell/navigation/AppSidebar.tsx"), /onCloseChatWorkPanel\?\.\(chat\.chatId, true\)/u);

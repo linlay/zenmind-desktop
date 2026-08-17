@@ -231,15 +231,10 @@ export function createAgentWebclientProjectPath(request: {
 
 export function createAgentWebclientOverviewPath(request: {
   chatId: string;
-  agentKey: string;
 }) {
-  const params = new URLSearchParams();
   const chatId = request.chatId.trim();
-  const agentKey = request.agentKey?.trim() ?? "";
-  const encodedAgentKey = encodeRoutePathSegment(agentKey);
-  if (!chatId || !encodedAgentKey) return "";
-  params.set("chatId", chatId);
-  return `/overview/${encodedAgentKey}?${params.toString()}`;
+  const encodedChatId = encodeRoutePathSegment(chatId);
+  return encodedChatId ? `/overview/${encodedChatId}` : "";
 }
 
 export function resolveAgentWebclientWsSource(

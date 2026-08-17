@@ -94,16 +94,17 @@ test("project embedded URL carries project identity without a WebSocket source",
   assert.equal(url.searchParams.has("desktopAuthContext"), false);
 });
 
-test("overview route requires chat and path agent identities", () => {
+test("overview route uses the chat identity as its only dynamic path segment", () => {
   assert.equal(
-    createAgentWebclientOverviewPath({ chatId: "chat 1", agentKey: "知识库 alpha" }),
-    "/overview/%E7%9F%A5%E8%AF%86%E5%BA%93%20alpha?chatId=chat+1",
+    createAgentWebclientOverviewPath({ chatId: "chat 1" }),
+    "/overview/chat%201",
   );
   assert.equal(
-    createAgentWebclientOverviewPath({ chatId: "chat-2", agentKey: "agent-2" }),
-    "/overview/agent-2?chatId=chat-2",
+    createAgentWebclientOverviewPath({ chatId: "对话/二" }),
+    "/overview/%E5%AF%B9%E8%AF%9D%2F%E4%BA%8C",
   );
-  assert.equal(createAgentWebclientOverviewPath({ chatId: "  ", agentKey: "agent-2" }), "");
+  assert.equal(createAgentWebclientOverviewPath({ chatId: "  " }), "");
+  assert.equal(new URL(createAgentWebclientOverviewPath({ chatId: "chat-2" }), "https://example.test").search, "");
 });
 
 test("main chat route comparison ignores host presentation params and their order", () => {

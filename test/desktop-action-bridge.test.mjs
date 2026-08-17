@@ -324,20 +324,20 @@ test("trusted Agent WebClient WorkPanel calls bypass external confirmation while
   })), [
     {
       requestId: "trusted-openItem",
-      action: "desktop.workpanel.openItem",
+      action: "desktop.workpanel.openTab",
       args: { descriptor: { kind: "web", url: "https://example.test/" } },
       source: { chatId: "chat-owner" }
     },
     {
       requestId: "trusted-activateItem",
-      action: "desktop.workpanel.activateItem",
-      args: { itemId: "item-1" },
+      action: "desktop.workpanel.activateTab",
+      args: { tabId: "item-1" },
       source: { chatId: "chat-owner" }
     },
     {
       requestId: "trusted-closeItem",
-      action: "desktop.workpanel.closeItem",
-      args: { itemId: "item-1" },
+      action: "desktop.workpanel.closeTab",
+      args: { tabId: "item-1" },
       source: { chatId: "chat-owner" }
     }
   ]);
@@ -353,7 +353,7 @@ test("trusted Agent WebClient WorkPanel calls bypass external confirmation while
 
   const external = await handleDesktopActionRequest(options, {
     requestId: "external-openItem",
-    action: "desktop.workpanel.openItem",
+    action: "desktop.workpanel.openTab",
     source: { chatId: "chat-owner" },
     args: { descriptor: { kind: "web", url: "https://example.test/" } }
   });
@@ -363,6 +363,57 @@ test("trusted Agent WebClient WorkPanel calls bypass external confirmation while
   assert.equal(confirmationCalls.length, 1);
   assert.equal(confirmationCalls[0].requestId, "external-openItem");
   assert.equal(rendererCalls.length, 3);
+});
+
+test("formal WorkPanel Web actions dispatch URL requests to the renderer", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererCalls = [];
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: { ok: true, workspaceId: "workpanel:chat-owner" }
+    };
+  };
+
+  for (const action of ["desktop.workpanel.openWeb", "desktop.workpanel.refreshWeb"]) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      source: { chatId: "chat-owner" },
+      args: { url: "https://example.test/page" },
+      permissionMode: "full_access"
+    });
+    assert.equal(response.ok, true, action);
+  }
+
+  assert.deepEqual(rendererCalls.map(({ action, args, source }) => ({ action, args, source })), [
+    {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/page" },
+      source: { chatId: "chat-owner" }
+    },
+    {
+      action: "desktop.workpanel.refreshWeb",
+      args: { url: "https://example.test/page" },
+      source: { chatId: "chat-owner" }
+    }
+  ]);
+  assert.deepEqual(
+    DESKTOP_ACTION_DEFINITIONS
+      .filter(({ category }) => category === "workpanel")
+      .map(({ name }) => name),
+    [
+      "desktop.workpanel.getState",
+      "desktop.workpanel.openTab",
+      "desktop.workpanel.openWeb",
+      "desktop.workpanel.refreshWeb",
+      "desktop.workpanel.activateTab",
+      "desktop.workpanel.closeTab",
+      "desktop.workpanel.closeWorkpanel"
+    ]
+  );
 });
 
 test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {

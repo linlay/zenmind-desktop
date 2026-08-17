@@ -400,7 +400,7 @@ export function createMainProcessRuntime() {
     switchTab: async (surfaceId, tabId, ownerChatId) => {
       const response = await callDesktopActionRenderer({
         requestId: `cdp-switch-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: ownerChatId ? "desktop.chatWorkPanel.activateTab" : "desktop.web.switchTab",
+        action: ownerChatId ? "desktop.workpanel.activateTab" : "desktop.web.switchTab",
         args: ownerChatId ? { tabId } : { surfaceId, tabId },
         ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
       }, {
@@ -415,7 +415,7 @@ export function createMainProcessRuntime() {
     closeTab: async (surfaceId, tabId, ownerChatId) => {
       const response = await callDesktopActionRenderer({
         requestId: `cdp-close-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: ownerChatId ? "desktop.chatWorkPanel.closeTab" : "desktop.web.closeTab",
+        action: ownerChatId ? "desktop.workpanel.closeTab" : "desktop.web.closeTab",
         args: ownerChatId ? { tabId } : { surfaceId, tabId },
         ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
       }, {

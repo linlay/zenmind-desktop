@@ -327,7 +327,9 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
-  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/overview\/"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/overview\/"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(manifestContracts, /"\/resource-view\/"/u);
+  assert.doesNotMatch(manifestContracts, /"\/(?:artifact|reference)-view\/"/u);
   assert.match(routeDefinitions, /function resolveAgentWebclientWsSource\([\s\S]*?return undefined;/);
   assert.doesNotMatch(routeDefinitions, /desktop-agent-webclient/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);

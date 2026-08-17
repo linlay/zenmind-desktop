@@ -10,20 +10,20 @@ const {
 } = require("../dist-electron/shared/work-panel.js");
 const { WORK_PANEL_NATIVE_SURFACE_ALLOWLIST } = require("../dist-electron/shared/work-panel-native-registry.js");
 
-function open(state, ownerChatId, descriptor, legacy = false) {
-  return reduceWorkPanelCommand(state, { type: "openItem", ownerChatId, descriptor, legacy });
+function open(state, ownerChatId, descriptor) {
+  return reduceWorkPanelCommand(state, { type: "openItem", ownerChatId, descriptor });
 }
 
 test("WorkPanel derives stable identities, deduplicates items, and isolates workspaces", () => {
   const first = open(EMPTY_WORK_PANEL_STATE, "chat-1", {
-    kind: "webclient", module: "overview", route: "/overview/agent-1?chatId=chat-1", context: { agentKey: "agent-1", chatId: "chat-1" }, title: "Overview",
+    kind: "webclient", module: "overview", route: "/overview/chat-1", context: { agentKey: "agent-1", chatId: "chat-1" }, title: "Overview",
   });
   assert.equal(first.ok, true);
   assert.equal(first.item.stableKey, "overview:agent-1:chat-1");
   assert.equal(first.item.pinned, true);
   assert.equal(first.item.closable, false);
   const duplicate = open(first.nextState, "chat-1", {
-    kind: "webclient", module: "overview", route: "/overview/agent-1?chatId=chat-1", context: { agentKey: "agent-1", chatId: "chat-1" },
+    kind: "webclient", module: "overview", route: "/overview/chat-1", context: { agentKey: "agent-1", chatId: "chat-1" },
   });
   assert.equal(duplicate.item.itemId, first.item.itemId);
   assert.equal(duplicate.state.items.length, 1);
@@ -44,14 +44,14 @@ test("WorkPanel derives stable identities, deduplicates items, and isolates work
 
 test("WorkPanel hides without destroying state, restores the active item, and isolates visibility per chat", () => {
   const first = open(EMPTY_WORK_PANEL_STATE, "chat-1", {
-    kind: "webclient", module: "overview", route: "/overview/agent-1?chatId=chat-1", context: { agentKey: "agent-1", chatId: "chat-1" },
+    kind: "webclient", module: "overview", route: "/overview/chat-1", context: { agentKey: "agent-1", chatId: "chat-1" },
   });
   const second = open(first.nextState, "chat-1", {
     kind: "web", url: "https://example.test/second", title: "Second",
   });
   assert.equal(second.state.items[0].itemId, first.item.itemId);
   const otherChat = open(second.nextState, "chat-2", {
-    kind: "webclient", module: "overview", route: "/overview/agent-1?chatId=chat-2", context: { agentKey: "agent-1", chatId: "chat-2" },
+    kind: "webclient", module: "overview", route: "/overview/chat-2", context: { agentKey: "agent-1", chatId: "chat-2" },
   });
 
   const hidden = reduceWorkPanelCommand(otherChat.nextState, {
@@ -72,13 +72,13 @@ test("WorkPanel hides without destroying state, restores the active item, and is
 
 test("opening or activating an item reveals its workspace and destructive close clears visibility", () => {
   const first = open(EMPTY_WORK_PANEL_STATE, "chat", {
-    kind: "webclient", module: "overview", route: "/overview/agent-1?chatId=chat", context: { agentKey: "agent-1", chatId: "chat" },
+    kind: "webclient", module: "overview", route: "/overview/chat", context: { agentKey: "agent-1", chatId: "chat" },
   });
   const hidden = reduceWorkPanelCommand(first.nextState, {
     type: "hideWorkspace", ownerChatId: "chat",
   });
   const planning = open(hidden.nextState, "chat", {
-    kind: "webclient", module: "planning", route: "/planning-view/agent-1?chatId=chat&planningId=planning-1", context: { agentKey: "agent-1", chatId: "chat", planningId: "planning-1" },
+    kind: "webclient", module: "planning", route: "/planning-view/planning-1?chatId=chat", context: { agentKey: "agent-1", chatId: "chat", planningId: "planning-1" },
   });
   assert.deepEqual(planning.nextState.visibleOwnerChatIds, ["chat"]);
   const hiddenAgain = reduceWorkPanelCommand(planning.nextState, {
@@ -132,7 +132,7 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
   const mismatchedChat = open(EMPTY_WORK_PANEL_STATE, "chat-owner", {
     kind: "webclient",
     module: "overview",
-    route: "/overview/agent?chatId=chat-forged",
+    route: "/overview/chat-forged",
     context: { agentKey: "agent", chatId: "chat-forged" },
   });
   assert.equal(mismatchedChat.ok, false);
@@ -149,24 +149,26 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
 
 test("WorkPanel derives distinct canonical identities for every independent WebClient surface", () => {
   const descriptors = [
-    ["btw", { agentKey: "agent", chatId: "chat", btwId: "btw-1" }, "btw:agent:chat:btw-1"],
-    ["source", { agentKey: "agent", chatId: "chat", btwId: "btw-1", publishId: "pub", sourceId: "src" }, "source:agent:chat:btw-1:pub:src"],
-    ["planning", { agentKey: "agent", chatId: "chat", planningId: "plan" }, "planning:agent:chat:plan"],
-    ["artifact", { agentKey: "agent", chatId: "chat", artifactId: "art" }, "artifact:agent:chat:art"],
-    ["reference", { agentKey: "agent", chatId: "chat", referenceId: "ref" }, "reference:agent:chat:ref"],
-    ["file", { agentKey: "agent", path: "src/app.ts" }, "file:agent:src/app.ts"],
-    ["file-diff", { agentKey: "agent", chatId: "chat", runId: "run", path: "src/app.ts" }, "file-diff:agent:chat:run:src/app.ts"],
+    ["btw", "/btw/chat?btwId=btw-1", { agentKey: "agent", chatId: "chat", btwId: "btw-1" }, "btw:agent:chat:btw-1"],
+    ["source", "/source-view/src?chatId=chat&chunkId=chunk-1", { agentKey: "agent", chatId: "chat", btwId: "btw-1", publishId: "pub", sourceId: "src" }, "source:agent:chat:btw-1:pub:src"],
+    ["planning", "/planning-view/plan?chatId=chat", { agentKey: "agent", chatId: "chat", planningId: "plan" }, "planning:agent:chat:plan"],
+    ["artifact", "/resource-view/agent?chatId=chat&file=artifacts%2Frun%2Freport.pdf", { agentKey: "agent", chatId: "chat", artifactId: "art" }, "artifact:agent:chat:art"],
+    ["reference", "/resource-view/agent?chatId=chat&file=references%2Fdocument.pdf", { agentKey: "agent", chatId: "chat", referenceId: "ref" }, "reference:agent:chat:ref"],
+    ["file", "/file-view/agent?path=src%2Fapp.ts&line=20", { agentKey: "agent", path: "src/app.ts" }, "file:agent:src/app.ts"],
+    ["project", "/project/agent?chatId=chat&path=src%2Fapp.ts", { agentKey: "agent", chatId: "chat", path: "src/app.ts" }, "project:agent:chat:all:src/app.ts"],
+    ["file-diff", "/project/agent?chatId=chat&runId=run&path=src%2Fapp.ts&view=diff", { agentKey: "agent", chatId: "chat", runId: "run", path: "src/app.ts" }, "file-diff:agent:chat:run:src/app.ts"],
   ];
   let state = EMPTY_WORK_PANEL_STATE;
-  for (const [module, context, stableKey] of descriptors) {
-    const result = open(state, "chat", { kind: "webclient", module, route: `/${module}/agent`, context });
+  for (const [module, route, context, stableKey] of descriptors) {
+    const result = open(state, "chat", { kind: "webclient", module, route, context });
     assert.equal(result.ok, true, module);
     assert.equal(result.item.stableKey, stableKey);
+    assert.equal(result.item.descriptor.route, route);
     state = result.nextState;
   }
 });
 
-test("WorkPanel keeps pinned items, destroys the final closable workspace, and counts legacy adapters", () => {
+test("WorkPanel keeps pinned items and destroys the final closable workspace", () => {
   const pinned = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "web", url: "https://example.test/pinned", pinned: true,
   });
@@ -176,17 +178,15 @@ test("WorkPanel keeps pinned items, destroys the final closable workspace, and c
   assert.equal(denied.ok, false);
   assert.equal(denied.error.code, "capability_denied");
 
-  const legacy = open(EMPTY_WORK_PANEL_STATE, "chat", {
-    kind: "web", url: "https://example.test/legacy",
-  }, true);
-  assert.equal(legacy.nextState.legacyActionCount, 1);
-  const closed = reduceWorkPanelCommand(legacy.nextState, {
-    type: "closeItem", ownerChatId: "chat", itemId: legacy.item.itemId, legacy: true,
+  const closable = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "web", url: "https://example.test/closable",
+  });
+  const closed = reduceWorkPanelCommand(closable.nextState, {
+    type: "closeItem", ownerChatId: "chat", itemId: closable.item.itemId,
   });
   assert.equal(closed.ok, true);
   assert.equal(closed.nextState.workspaces.length, 0);
   assert.deepEqual(closed.nextState.visibleOwnerChatIds, []);
-  assert.equal(closed.nextState.legacyActionCount, 2);
 });
 
 test("WorkPanel closes active items consecutively and destroys the workspace after the last tab", () => {

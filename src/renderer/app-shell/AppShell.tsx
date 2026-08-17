@@ -3124,7 +3124,6 @@ export function AppShell() {
           module: "overview",
           route: createAgentWebclientOverviewPath({
             chatId: command.ownerChatId,
-            agentKey: overviewAgentKey,
           }),
           context: {
             chatId: command.ownerChatId,
@@ -3168,7 +3167,7 @@ export function AppShell() {
       descriptor: {
         kind: "webclient",
         module: "overview",
-        route: createAgentWebclientOverviewPath({ chatId, agentKey: normalizedAgentKey }),
+        route: createAgentWebclientOverviewPath({ chatId }),
         context: { chatId, agentKey: normalizedAgentKey },
         title: t("chatWorkPanel.overview"),
         pinned: true,
@@ -3205,7 +3204,7 @@ export function AppShell() {
       descriptor: {
         kind: "webclient",
         module: "overview",
-        route: createAgentWebclientOverviewPath({ chatId, agentKey }),
+        route: createAgentWebclientOverviewPath({ chatId }),
         context: { chatId, agentKey },
         title: t("chatWorkPanel.overview"),
         pinned: true,
@@ -3275,6 +3274,27 @@ export function AppShell() {
       current.filter((entry) => entry.agentKey !== agentKey),
     );
   }, []);
+
+  const mainChatWorkPanelToggle = showMainChatWorkPanelToggle ? (
+    <button
+      type="button"
+      className={`main-chat-work-panel-toggle${activeChatWorkPanelVisible ? " is-active" : ""}`}
+      aria-label={t(activeChatWorkPanelVisible
+        ? "sidebar.chat.workPanel.close"
+        : "sidebar.chat.workPanel.open")}
+      aria-pressed={activeChatWorkPanelVisible}
+      disabled={!activeChatWorkPanelChatId}
+      title={t(activeChatWorkPanelVisible
+        ? "sidebar.chat.workPanel.close"
+        : "sidebar.chat.workPanel.open")}
+      onClick={toggleMainChatWorkPanel}
+    >
+      <SidebarActionIcon
+        kind="sidebar_left"
+        className="main-chat-work-panel-toggle-icon"
+      />
+    </button>
+  ) : null;
 
   return (
     <DebugModeContext.Provider value={debugSettingsUnlocked}>
@@ -3399,26 +3419,7 @@ export function AppShell() {
       </div>
       <div ref={appContentRef} className="app-content">
         <main className="app-main">
-          {showMainChatWorkPanelToggle ? (
-            <button
-              type="button"
-              className={`main-chat-work-panel-toggle${activeChatWorkPanelVisible ? " is-active" : ""}`}
-              aria-label={t(activeChatWorkPanelVisible
-                ? "sidebar.chat.workPanel.close"
-                : "sidebar.chat.workPanel.open")}
-              aria-pressed={activeChatWorkPanelVisible}
-              disabled={!activeChatWorkPanelChatId}
-              title={t(activeChatWorkPanelVisible
-                ? "sidebar.chat.workPanel.close"
-                : "sidebar.chat.workPanel.open")}
-              onClick={toggleMainChatWorkPanel}
-            >
-              <SidebarActionIcon
-                kind="sidebar_left"
-                className="main-chat-work-panel-toggle-icon"
-              />
-            </button>
-          ) : null}
+          {!activeChatWorkPanelVisible ? mainChatWorkPanelToggle : null}
           <ServiceWebviewSurfaceHost
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
@@ -3571,6 +3572,7 @@ export function AppShell() {
           activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           state={workPanelState}
           dispatchCommand={dispatchWorkPanelCommand}
+          panelToggle={activeChatWorkPanelVisible ? mainChatWorkPanelToggle : null}
           isMac={isMac}
           isWindows={isWindows}
         />

@@ -242,8 +242,8 @@ test("local validation returns a standard error frame with the original request 
   const target = createTarget(42, {
     surfaceId: "overview-42",
     surfaceType: "agent-overview",
-    pageRoute: "/overview/agent-42",
-    currentUrl: "http://127.0.0.1:7079/overview/agent-42?chatId=chat-42",
+    pageRoute: "/overview/chat-42",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-42",
   });
   let forwarded = false;
   const runtime = createRegistration(new Map([[42, target]]), async () => { forwarded = true; });
@@ -277,8 +277,8 @@ test("active BTW child may start or attach BTW streams but cannot start a main q
     surfaceLevel: "child",
     parentSurfaceId: "main-chat",
     ownerChatId: "chat-49",
-    pageRoute: "/btw/agent-49",
-    currentUrl: "http://127.0.0.1:7079/btw/agent-49?chatId=chat-49",
+    pageRoute: "/btw/chat-49",
+    currentUrl: "http://127.0.0.1:7079/btw/chat-49",
   });
   const forwarded = [];
   const runtime = createRegistration(new Map([[49, target]]), async ({ type }) => forwarded.push(type));

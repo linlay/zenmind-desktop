@@ -99,15 +99,18 @@
 - [ ] 只读与变更动作按定义执行；变更动作显示脱敏摘要并支持拒绝、仅本次和有限授权。
 - [ ] 等待确认期间切换页面或关闭目标，原请求被拒绝而不是作用到新页面。
 - [ ] CDP 页面控制只绑定当前活动 surface；导航到不受信任来源后旧 target 失效。
-- [ ] WorkPanel 的 WebClient/Web item 去重、激活和保活正确；切换 Chat/路由/item 不卸载 guest，关闭 item 只回收所属 guest 与临时 partition。
+- [ ] WorkPanel 的 WebClient/Web item 按 `module/context` 去重、按 `route` 导航，激活和保活正确；切换 Chat/路由/item 不卸载 guest，关闭 item 只回收所属 guest 与临时 partition。
 - [ ] 可信 Agent WebClient 中的 WorkPanel 打开/激活/关闭按钮直接执行且不弹出 Desktop Action 确认；HTTP bridge、Desktop WS 和调试工作台的同名变更动作仍进入确认流程。
-- [ ] WorkPanel workspace 相互隔离；非法 URL/路径/跨 workspace 目标被拒绝，空 Native allowlist 返回 `unsupported_native_surface`，旧 Chat WorkPanel action 仍可映射到 item id。
+- [ ] WorkPanel workspace 相互隔离；非法 URL/路径/跨 workspace 目标被拒绝，空 Native allowlist 返回 `unsupported_native_surface`；动作列表与执行器只接受当前 `desktop.workpanel.*` 契约。
+- [ ] `desktop.workpanel.openWeb` 按规范化 HTTP(S) URL 打开或激活网页 item；`desktop.workpanel.refreshWeb` 仅刷新并激活同一 owner Chat 中 URL 匹配的现有 WebView，非法 URL、缺失 workspace、跨 Chat 或不存在的网页均被拒绝。
 - [ ] 仅 Main Chat 显示 Desktop WorkPanel 右上按钮；新对话尚无稳定 `chatId` 时按钮禁用，管理页、Copilot、Website、WebApp 和 Standalone WebClient 均无该 Desktop 入口，Desktop Agent guest 自身右上快捷组为空。
-- [ ] 首次点击右上按钮创建当前 Chat 的 Overview item；再次点击只隐藏，tabs、guest、active item 与宽度保持；再次打开恢复原 active item且不重建 guest。分别在两个 Chat 隐藏/恢复时 workspace 不串线，隐藏期间收到 Planning/Artifact/Web `openItem` 或 `activateItem` 会自动显示目标 workspace。
-- [ ] 删除 Chat、执行 `closeWorkspace`，或在已无 closable tab 时通过关闭快捷键回收 WorkPanel 后，workspace 与可见状态同时清理；固定 Overview 不可单独关闭，右上按钮的“关闭”只 hide，不改变 `closeWorkspace` 的销毁语义。
+- [ ] 首次点击右上按钮创建当前 Chat 的 Overview item；再次点击只隐藏，tabs、guest、active item 与宽度保持；再次打开恢复原 active item且不重建 guest。分别在两个 Chat 隐藏/恢复时 workspace 不串线，隐藏期间收到 Planning/Artifact/Web `openTab` 或 `activateTab` 会自动显示目标 workspace。
+- [ ] WorkPanel Overview、Debug、BTW 分别使用 `/overview/:chatId`、`/debug/:chatId`、`/btw/:chatId`；Source 与 Planning 使用各自身份作为 path 参数；Workspace File、Project 与 Diff 使用 canonical route，并保持路径仅编码一次。
+- [ ] Artifact 与 Reference 保留各自 module/context 和稳定去重身份，但都打开 `/resource-view/:agentKey?chatId=...&file=...`；缺少合法 preview URL 时不创建 item，Desktop 不生成 `/artifact-view/:agentKey`、`/reference-view/:agentKey` 或旧的 Overview/Debug/BTW Agent 路径。
+- [ ] 删除 Chat、执行 `closeWorkpanel`，或在已无 closable tab 时通过关闭快捷键回收 WorkPanel 后，workspace 与可见状态同时清理；固定 Overview 不可单独关闭，右上按钮的“关闭”只 hide，不改变面板销毁语义。
 - [ ] WorkPanel 外层标签栏在浅色/深色主题下均呈现 Chrome 式 active/inactive/hover/focus 状态；无论由 Overview、产物或其他 item 打开，Overview 始终固定在第一位、按当前语言标题内容自适应宽度且不可关闭；其他 tab 同样按图标与标题内容决定宽度，仅受 88px 最小宽度和 240px 最大宽度约束，不主动瓜分空白空间；每个 tab 显示匹配的 SVG 图标和省略标题，关闭按钮隐藏时不占宽度、仅以无底色图标在 hover/focus-within 覆盖标题末端，并提供宽于图标的横向点击区和标题渐隐区，其他 pinned/non-closable tab 不显示按钮且不渐隐；tab 右键可刷新并全屏显示/恢复工作面板，网页 tab 可复制当前实际 URL，内部 WebClient tab 不复制服务地址，且 Web item 内部不再显示重复标签栏。
 - [ ] WorkPanel 固定在 main-chat 右侧；鼠标拖动分隔条跨过 WebView 时不中断，键盘左右方向键每次调整 16px、Home/End 到最小/最大；WorkPanel 与 main-chat 均至少 420px，WorkPanel 不设固定最大宽度，仅由当前可用宽度和 main-chat 保底宽度限制。
-- [ ] macOS 与 Windows 分别检查 Main Chat 右上按钮偏移、窗口拖拽区、深浅主题、hover/active/disabled、`aria-pressed` 与键盘 focus ring；按钮不得被标题栏拖拽层或 WorkPanel resizer 遮挡。
+- [ ] macOS 与 Windows 分别检查 Main Chat 右上按钮偏移、窗口拖拽区、深浅主题、hover/active/disabled、`aria-pressed` 与键盘 focus ring；展开 WorkPanel 后按钮移入 WorkPanel 右上角且保持相同屏幕坐标，鼠标不移动即可再次点击收起；按钮不得被标题栏拖拽层、标签或 WorkPanel resizer 遮挡。
 - [ ] 调整 WorkPanel 宽度后重启 Desktop、切换 Chat、切换深浅主题，宽度作为全局偏好保持；非法存储值恢复为 `clamp(420px, 42vw, 680px)` 默认语义，窗口宽度允许时 main-chat 与 WorkPanel 均遵守 420px 保底宽度。
 - [ ] 点击或键盘聚焦 WorkPanel 的 tab/header/WebView 后，即使后续焦点进入其 `<webview>` 或关闭 tab 导致 DOM 焦点变化，macOS `Cmd+W`、Windows `Ctrl+W` 仍每次先关闭 active closable tab；若当前为固定 Overview 等不可关闭项，则关闭最后一个 closable tab；没有 closable tab 时下一次关闭整个 WorkPanel（包含 Overview），再下一次恢复为 Desktop 窗口默认关闭/隐藏。点击 WorkPanel 外部会立即恢复窗口默认行为；auto-repeat、额外修饰键和 keyUp 不触发该序列。
 - [ ] 普通 Chat、Browser、Website 及其他非 WorkPanel WebView 中的 `Cmd+W`/`Ctrl+W` 保持原行为；WorkPanel 被回收、隐藏或用户点击面板外部后 Main 立即释放拦截，且不依据 URL 误判 WorkPanel guest。

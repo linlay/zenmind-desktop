@@ -11,16 +11,15 @@ import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry
 export type WorkPanelState = {
   workspaces: WorkPanelWorkspace[];
   visibleOwnerChatIds: string[];
-  legacyActionCount: number;
 };
 
 export type WorkPanelCommand =
-  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; legacy?: boolean }
-  | { type: "activateItem"; ownerChatId: string; itemId: string; legacy?: boolean }
-  | { type: "closeItem"; ownerChatId: string; itemId: string; legacy?: boolean }
+  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor }
+  | { type: "activateItem"; ownerChatId: string; itemId: string }
+  | { type: "closeItem"; ownerChatId: string; itemId: string }
   | { type: "showWorkspace"; ownerChatId: string }
   | { type: "hideWorkspace"; ownerChatId: string }
-  | { type: "closeWorkspace"; ownerChatId: string; legacy?: boolean; force?: boolean };
+  | { type: "closeWorkspace"; ownerChatId: string; force?: boolean };
 
 export type WorkPanelCommandResult = WorkPanelBridgeResult & {
   nextState: WorkPanelState;
@@ -29,7 +28,6 @@ export type WorkPanelCommandResult = WorkPanelBridgeResult & {
 export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
   workspaces: [],
   visibleOwnerChatIds: [],
-  legacyActionCount: 0,
 };
 
 function withVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
@@ -266,7 +264,6 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     };
     return { ok: true, workspaceId: current.workspaceId, nextState };
   }
@@ -336,7 +333,6 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces,
       visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
   }
@@ -355,7 +351,6 @@ export function reduceWorkPanelCommand(
       nextState: {
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
-        legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
       },
     };
   }
@@ -367,7 +362,6 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces: state.workspaces.filter((_, nextIndex) => nextIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     };
     return { ok: true, workspaceId: current.workspaceId, item, nextState };
   }
@@ -384,7 +378,6 @@ export function reduceWorkPanelCommand(
     nextState: {
       workspaces,
       visibleOwnerChatIds: state.visibleOwnerChatIds,
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
     },
   };
 }

@@ -63,7 +63,8 @@ test("surface registry rejects a forged identity and cascades child removal", ()
     [72, { id: 72, getType: () => "webview", isDestroyed: () => false }],
     [73, { id: 73, getType: () => "webview", isDestroyed: () => false }],
     [74, { id: 74, getType: () => "webview", isDestroyed: () => false }],
-    [75, { id: 75, getType: () => "webview", isDestroyed: () => false }]
+    [75, { id: 75, getType: () => "webview", isDestroyed: () => false }],
+    [76, { id: 76, getType: () => "webview", isDestroyed: () => false }]
   ]);
   const registry = createBrowserSurfaceRegistry({
     webContents: {
@@ -122,6 +123,12 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.notEqual(debug.surfaceId, overview.surfaceId);
   assert.equal(registry.resolveWebviewSurfaceTarget(73).interaction, "read-only");
 
+  const btwKey = "btw:agent-1:chat-1:btw-1";
+  const btw = createChatChildSurfaceIdentity("btw", btwKey, "chat-1");
+  assert.equal(registry.registerSurface(registration(btw, 76, "agent-btw", btwKey), 7), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(76).surfaceRole, "btw");
+  assert.equal(registry.resolveWebviewSurfaceTarget(76).interaction, "interactive");
+
   const projectKey = "agent:detached-project";
   const detachedProject = createSurfaceIdentity("project", projectKey);
   assert.equal(registry.registerSurface(registration(detachedProject, 74, "project", projectKey), 7), true);
@@ -137,6 +144,7 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   }, 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(72), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(73), null);
+  assert.equal(registry.resolveWebviewSurfaceTarget(76), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(74).surfaceId, detachedProject.surfaceId);
   registry.unregisterSurfacesForOwner(7);
   assert.equal(registry.resolveWebviewSurfaceTarget(74), null);

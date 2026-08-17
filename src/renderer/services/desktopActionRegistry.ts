@@ -37,7 +37,7 @@ async function handleDefaultAction(request: DesktopActionRendererRequest) {
   if (request.action.startsWith("desktop.web.")) {
     return actionError("web_action_unavailable", translate("desktopAction.webUnavailable"));
   }
-  if (request.action.startsWith("desktop.chatWorkPanel.") || request.action.startsWith("desktop.workpanel.")) {
+  if (request.action.startsWith("desktop.workpanel.")) {
     return actionError("chat_work_panel_unavailable", "The chat Work Panel is unavailable.");
   }
   if (
@@ -63,7 +63,7 @@ function getProviderScopesForAction(action: string): DesktopActionProviderScope[
   if (action.startsWith("desktop.web.")) {
     return ["web", "global"];
   }
-  if (action.startsWith("desktop.chatWorkPanel.") || action.startsWith("desktop.workpanel.")) {
+  if (action.startsWith("desktop.workpanel.")) {
     return ["global"];
   }
   return ["page", "global"];

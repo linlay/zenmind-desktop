@@ -165,6 +165,12 @@ const AGENT_WEBCLIENT_WORKPANEL_ACTIONS = new Set<string>([
   "closeItem"
 ]);
 
+const AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS: Record<AgentWebclientWorkPanelAction, string> = {
+  openItem: "desktop.workpanel.openTab",
+  activateItem: "desktop.workpanel.activateTab",
+  closeItem: "desktop.workpanel.closeTab"
+};
+
 type PlatformResponse<T> = {
   code?: number;
   msg?: string;
@@ -1897,16 +1903,12 @@ async function executeAction(
     case "desktop.web.interactElement":
     case "desktop.web.executeScript":
     case "desktop.workpanel.getState":
-    case "desktop.workpanel.openItem":
-    case "desktop.workpanel.activateItem":
-    case "desktop.workpanel.closeItem":
-    case "desktop.workpanel.closeWorkspace":
-    case "desktop.chatWorkPanel.getState":
-    case "desktop.chatWorkPanel.open":
-    case "desktop.chatWorkPanel.close":
-    case "desktop.chatWorkPanel.openTab":
-    case "desktop.chatWorkPanel.activateTab":
-    case "desktop.chatWorkPanel.closeTab":
+    case "desktop.workpanel.openTab":
+    case "desktop.workpanel.openWeb":
+    case "desktop.workpanel.refreshWeb":
+    case "desktop.workpanel.activateTab":
+    case "desktop.workpanel.closeTab":
+    case "desktop.workpanel.closeWorkpanel":
       return callRendererAction(options, request, args);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
@@ -2230,10 +2232,11 @@ export async function handleAgentWebclientWorkPanelActionRequest(
   }
 ) {
   const method = typeof input.action === "string" ? input.action.trim() : "";
-  const action = `desktop.workpanel.${method || "unknown"}`;
   if (!AGENT_WEBCLIENT_WORKPANEL_ACTIONS.has(method)) {
-    return fail(action, "forbidden", "This action is unavailable to the Agent WebClient WorkPanel bridge.");
+    return fail(`desktop.workpanel.${method || "unknown"}`, "forbidden", "This action is unavailable to the Agent WebClient WorkPanel bridge.");
   }
+  const bridgeAction = method as AgentWebclientWorkPanelAction;
+  const action = AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS[bridgeAction];
   const ownerChatId = typeof input.ownerChatId === "string" ? input.ownerChatId.trim() : "";
   if (!ownerChatId) {
     return fail(action, "source_chat_required", "A trusted WorkPanel owner chat is required.");
@@ -2241,7 +2244,9 @@ export async function handleAgentWebclientWorkPanelActionRequest(
   return handleActionCall(options, {
     ...(input.requestId ? { requestId: input.requestId } : {}),
     action,
-    args: asRecord(input.args),
+    args: bridgeAction === "openItem"
+      ? asRecord(input.args)
+      : { tabId: readString(asRecord(input.args), "itemId") },
     source: { chatId: ownerChatId }
   }, { kind: "agentWebclientWorkPanel" });
 }

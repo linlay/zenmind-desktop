@@ -10,8 +10,7 @@ import {
   ProjectOutlined,
   RobotOutlined,
 } from "@ant-design/icons";
-import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { BUILTIN_BROWSER_DEFAULT_URL } from "../../shared/browser-surfaces";
+import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
 import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
@@ -29,6 +28,7 @@ type WorkPanelHostProps = {
   activeChatId: string | null;
   state: WorkPanelState;
   dispatchCommand(command: WorkPanelCommand): WorkPanelCommandResult;
+  panelToggle?: ReactNode;
   isMac: boolean;
   isWindows: boolean;
 };
@@ -39,21 +39,6 @@ function actionError(code: string, message: string, details?: unknown) {
 
 function itemPartition(workspaceId: string, itemId: string) {
   return `work-panel-${stableWorkPanelHash(workspaceId)}-${stableWorkPanelHash(itemId)}`;
-}
-
-function serializeLegacyWorkspace(workspace: WorkPanelState["workspaces"][number] | null) {
-  return workspace
-    ? {
-        open: true,
-        surfaceId: workspace.workspaceId,
-        activeTabId: workspace.activeItemId ?? undefined,
-        tabs: workspace.items.map((item) => ({
-          id: item.itemId,
-          title: item.title,
-          ...(item.descriptor.kind === "web" ? { url: item.descriptor.url } : {}),
-        })),
-      }
-    : { open: false, tabs: [] };
 }
 
 type WorkPanelItem = WorkPanelState["workspaces"][number]["items"][number];
@@ -98,6 +83,7 @@ export function WorkPanelHost({
   activeChatId,
   state,
   dispatchCommand,
+  panelToggle,
   isMac,
   isWindows,
 }: WorkPanelHostProps) {
@@ -217,79 +203,68 @@ export function WorkPanelHost({
   }, [state.workspaces]);
 
   useEffect(() => registerDesktopActionProviderForScope("global", async (request) => {
-    const formal = request.action.startsWith("desktop.workpanel.");
-    const legacy = request.action.startsWith("desktop.chatWorkPanel.");
-    if (!formal && !legacy) return null;
+    if (!request.action.startsWith("desktop.workpanel.")) return null;
     const ownerChatId = request.source?.chatId?.trim() || "";
     if (!ownerChatId) return actionError("source_chat_required", "A trusted source.chatId is required.");
     const args = request.args ?? {};
     const forbidden = ["chatId", "workspaceId", "stableKey", "preload", "webPreferences"].filter((key) => key in args);
     if (forbidden.length > 0) return actionError("invalid_request", `WorkPanel does not accept: ${forbidden.join(", ")}.`);
     const current = () => stateRef.current.workspaces.find((workspace) => workspace.ownerChatId === ownerChatId) ?? null;
-    const execute = (command: WorkPanelCommand, legacyResponse = false) => {
+    const execute = (command: WorkPanelCommand) => {
       const result = dispatchCommand(command);
       const { nextState: _nextState, ...publicResult } = result;
-      if (result.ok && legacyResponse) {
-        const workspace = result.nextState.workspaces.find((item) => item.ownerChatId === ownerChatId) ?? null;
-        return { ok: true as const, result: serializeLegacyWorkspace(workspace) };
-      }
       return publicResult.ok
         ? { ok: true as const, result: publicResult }
         : { ok: false as const, error: publicResult.error };
     };
 
-    if (formal) {
-      switch (request.action) {
-        case "desktop.workpanel.getState": {
-          const workspace = current();
-          return { ok: true, result: { ok: true, workspaceId: workspace?.workspaceId || "", state: workspace ?? undefined } };
-        }
-        case "desktop.workpanel.openItem":
-          return execute({ type: "openItem", ownerChatId, descriptor: args.descriptor as any });
-        case "desktop.workpanel.activateItem":
-          return execute({ type: "activateItem", ownerChatId, itemId: String(args.itemId || "") });
-        case "desktop.workpanel.closeItem":
-          return execute({ type: "closeItem", ownerChatId, itemId: String(args.itemId || "") });
-        case "desktop.workpanel.closeWorkspace":
-          return execute({ type: "closeWorkspace", ownerChatId });
-        default:
-          return null;
-      }
-    }
-
     switch (request.action) {
-      case "desktop.chatWorkPanel.getState": {
+      case "desktop.workpanel.getState": {
         const workspace = current();
-        return { ok: true, result: serializeLegacyWorkspace(workspace) };
+        return { ok: true, result: { ok: true, workspaceId: workspace?.workspaceId || "", state: workspace ?? undefined } };
       }
-      case "desktop.chatWorkPanel.open":
+      case "desktop.workpanel.openTab":
+        return execute({ type: "openItem", ownerChatId, descriptor: args.descriptor as any });
+      case "desktop.workpanel.openWeb": {
+        const url = normalizeWorkPanelWebUrl(args.url);
+        if (!url) return actionError("invalid_url", "url must use http: or https: without credentials.");
         return execute({
           type: "openItem",
           ownerChatId,
-          legacy: true,
-          descriptor: { kind: "web", url: BUILTIN_BROWSER_DEFAULT_URL, title: t("chatWorkPanel.blankTab") },
-        }, true);
-      case "desktop.chatWorkPanel.close":
-        return execute({ type: "closeWorkspace", ownerChatId, legacy: true }, true);
-      case "desktop.chatWorkPanel.openTab": {
-        const requestedUrl = String(args.url || "").trim();
-        const url = requestedUrl === "about:blank" ? BUILTIN_BROWSER_DEFAULT_URL : normalizeWorkPanelWebUrl(requestedUrl);
-        if (!url) return actionError("invalid_url", "url must use http: or https:.");
-        return execute({
-          type: "openItem",
-          ownerChatId,
-          legacy: true,
-          descriptor: { kind: "web", url, ...(typeof args.title === "string" ? { title: args.title } : {}) },
-        }, true);
+          descriptor: { kind: "web", url },
+        });
       }
-      case "desktop.chatWorkPanel.activateTab":
-        return execute({ type: "activateItem", ownerChatId, itemId: String(args.tabId || ""), legacy: true }, true);
-      case "desktop.chatWorkPanel.closeTab":
-        return execute({ type: "closeItem", ownerChatId, itemId: String(args.tabId || ""), legacy: true }, true);
+      case "desktop.workpanel.refreshWeb": {
+        const url = normalizeWorkPanelWebUrl(args.url);
+        if (!url) return actionError("invalid_url", "url must use http: or https: without credentials.");
+        const workspace = current();
+        if (!workspace) return actionError("target_unavailable", "WorkPanel workspace is unavailable.");
+        const item = workspace.items.find((candidate) =>
+          candidate.descriptor.kind === "web" && candidate.descriptor.url === url,
+        );
+        if (!item) return actionError("target_unavailable", "WorkPanel WebView item is unavailable.");
+        const webview = findItemWebview(ownerChatId, item.itemId);
+        if (!webview) return actionError("target_unavailable", "WorkPanel WebView guest is unavailable.");
+        try {
+          webview.reload();
+        } catch (error) {
+          return actionError(
+            "target_unavailable",
+            error instanceof Error ? error.message : "WorkPanel WebView could not be refreshed.",
+          );
+        }
+        return execute({ type: "activateItem", ownerChatId, itemId: item.itemId });
+      }
+      case "desktop.workpanel.activateTab":
+        return execute({ type: "activateItem", ownerChatId, itemId: String(args.tabId || "") });
+      case "desktop.workpanel.closeTab":
+        return execute({ type: "closeItem", ownerChatId, itemId: String(args.tabId || "") });
+      case "desktop.workpanel.closeWorkpanel":
+        return execute({ type: "closeWorkspace", ownerChatId });
       default:
         return null;
     }
-  }), [dispatchCommand, t]);
+  }), [dispatchCommand]);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -432,12 +407,13 @@ export function WorkPanelHost({
         return (
           <aside
             key={workspace.workspaceId}
-            className={`chat-work-panel${visible ? " is-visible" : ""}`}
+            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && panelToggle ? " has-panel-toggle" : ""}`}
             hidden={!visible}
             aria-hidden={!visible}
             aria-label={t("chatWorkPanel.title")}
             data-work-panel-chat={workspace.ownerChatId}
           >
+            {visible ? panelToggle : null}
             <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
               {workspace.items.map((item) => {
                 const active = workspace.activeItemId === item.itemId;
