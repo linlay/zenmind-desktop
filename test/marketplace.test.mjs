@@ -275,8 +275,8 @@ async function main() {
   if (/^#!\\/bin\\/sh\\s+set -eu\\s+exit 1\\s*$/u.test(script.trim())) {
     process.exit(1);
   }
-  if (args[0] === "info") {
-    const match = /if \\[ "\\$1" = "info" \\]; then\\s+exit ([0-9]+)/u.exec(script);
+  if (args[0] === "version") {
+    const match = /if \\[ "\\$1" = "version" \\]; then\\s+exit ([0-9]+)/u.exec(script);
     process.exit(match ? Number(match[1]) : 2);
   }
   if (args[0] === "image" && args[1] === "ls") {
@@ -832,7 +832,7 @@ test("listMarketItems resolves sandbox images when Docker is outside the inherit
   fs.mkdirSync(inheritedPathDir, { recursive: true });
   writeFakeContainerEngine(enginePathDir, "docker", `#!/bin/sh
 set -eu
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
@@ -968,7 +968,7 @@ test("listMarketItems lists local sandbox images from the container engine", asy
 
   writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
 set -eu
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
@@ -1007,7 +1007,7 @@ test("listMarketItems falls back to podman when docker is unreachable", async (t
 
   writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
 set -eu
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 1
 fi
 echo "unexpected docker command: $*" >&2
@@ -1015,7 +1015,7 @@ exit 2
 `);
   writeFakeContainerEngine(binDir, "podman", `#!/bin/sh
 set -eu
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "ls" ]; then
@@ -1091,7 +1091,7 @@ test("importSandboxImageFromPath loads a local image archive with the container 
   writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
 set -eu
 printf '%s\\n' "$*" >> "${logPath}"
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "load" ]; then
@@ -1127,7 +1127,7 @@ test("importSandboxImageFromPath streams progress while the container engine is 
 
   writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
 set -eu
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "load" ]; then
@@ -1195,7 +1195,7 @@ test("importSandboxImageFromPath extracts an image bundle before loading its ima
   writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
 set -eu
 printf '%s\\n' "$*" >> "${logPath}"
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "load" ]; then
@@ -1227,7 +1227,7 @@ test("deleteSandboxImage removes a local image with the container engine", async
   writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
 set -eu
 printf '%s\\n' "$*" >> "${logPath}"
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "rm" ]; then
@@ -1261,7 +1261,7 @@ test("exportSandboxImageToPath saves a local image archive with the container en
   writeFakeContainerEngine(binDir, "docker", `#!/bin/sh
 set -eu
 printf '%s\\n' "$*" >> "${logPath}"
-if [ "$1" = "info" ]; then
+if [ "$1" = "version" ]; then
   exit 0
 fi
 if [ "$1" = "image" ] && [ "$2" = "save" ]; then

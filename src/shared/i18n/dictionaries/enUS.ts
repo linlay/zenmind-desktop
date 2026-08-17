@@ -2198,6 +2198,8 @@ export const enUSMessages = {
   "service.missingImportTarget": "Missing {label}",
   "service.tunnelHubTokenMissing": "Tunnel Hub is missing a relay token. Sign in and save Tunnel settings first",
   "service.containerEngineInstalledNotConnected": "{names} is installed, but daemon/VM is not connected. Start Docker Desktop or run podman machine start first",
+  "service.containerEngineProbeTimedOut": "The {names} availability check timed out, so the optional container service was skipped. Regular chat is unaffected; check Docker Desktop or Podman",
+  "service.containerEngineUnsafeLocation": "The {names} command is under a temporary mounted or translocated path ({locations}), so the optional container service was skipped. Install Docker Desktop under /Applications and retry",
   "service.containerEngineMissing": "Docker or Podman was not detected",
   "service.archivePackageLabel": "install package",
   "service.verify.statusStill": "Service status is still {status} after verification",
