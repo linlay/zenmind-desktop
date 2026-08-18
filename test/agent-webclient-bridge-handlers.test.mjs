@@ -209,6 +209,71 @@ test("raw Frame Port forwards ordinary Platform request and response frames for 
   assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
 });
 
+test("management File surface forwards /api/file but cannot acquire a live Run lease", async () => {
+  const target = createTarget(46, {
+    surfaceId: "file:project-path",
+    surfaceType: "agent-management",
+    surfaceRole: "file",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-46",
+    pageRoute: "/file-viewer/agent-46",
+    currentUrl: "http://127.0.0.1:7079/file-viewer/agent-46?path=%2FUsers%2Fdemo%2FProject%2Fsrc%2Fapp.ts",
+  });
+  const forwarded = [];
+  const runtime = createRegistration(new Map([[46, target]]), async (input) => {
+    forwarded.push(input.type);
+    input.onFrame({
+      frame: "response",
+      id: input.localId,
+      type: input.type,
+      code: 0,
+      data: { requestedPath: "/Users/demo/Project/src/app.ts", content: "export {};" },
+    });
+  });
+  const sender = createSender(46, target.currentUrl);
+  await openSocket(runtime, sender, "socket-file-data");
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-file-data",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/file",
+      id: "file-detail-46",
+      payload: { agentKey: "agent-46", path: "/Users/demo/Project/src/app.ts" },
+    }),
+  });
+  await flush();
+
+  assert.deepEqual(forwarded, ["/api/file"]);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "response",
+    id: "file-detail-46",
+    type: "/api/file",
+    code: 0,
+    data: { requestedPath: "/Users/demo/Project/src/app.ts", content: "export {};" },
+  });
+
+  for (const [type, id, payload] of [
+    ["/api/query", "file-query-denied", { agentKey: "agent-46", message: "no" }],
+    ["/api/attach", "file-attach-denied", { agentKey: "agent-46", runId: "run-46", lastSeq: 0 }],
+    ["/api/btw", "file-btw-denied", { agentKey: "agent-46", chatId: "chat-46", message: "no" }],
+  ]) {
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+      socketId: "socket-file-data",
+      data: JSON.stringify({ frame: "request", type, id, payload }),
+    });
+    await flush();
+    assert.equal(sentFrames(sender).at(-1).type, "surface_unavailable");
+    assert.equal(sentFrames(sender).at(-1).id, id);
+  }
+
+  assert.deepEqual(forwarded, ["/api/file"]);
+  assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 0);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+});
+
 test("Frame Port waits for a trusted WebView surface registration before opening", async () => {
   const targets = new Map();
   const forwarded = [];

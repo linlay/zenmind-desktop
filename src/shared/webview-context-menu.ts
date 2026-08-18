@@ -1,3 +1,5 @@
+import type { SurfaceRole } from "./surface-identity";
+
 export const WEBVIEW_CONTEXT_MENU_SEMANTIC_VERSION = 1 as const;
 
 export const WEBVIEW_CONTEXT_MENU_SEMANTIC_RESPONSE_CHANNEL =
@@ -21,6 +23,30 @@ export type WebviewContextMenuSurfaceType =
   | "chat-work-panel"
   | "help"
   | "service";
+
+export function resolveAgentWebclientWebviewSurfaceType(
+  surfaceRole: SurfaceRole,
+): WebviewContextMenuSurfaceType {
+  switch (surfaceRole) {
+    case "main-chat":
+    case "kanban-chat":
+      return "agent-chat";
+    case "copilot-chat":
+    case "copilot-dock":
+    case "copilot":
+      return "agent-copilot";
+    case "overview":
+      return "agent-overview";
+    case "debug":
+      return "agent-debug";
+    case "btw":
+      return "agent-btw";
+    case "project":
+      return "agent-project";
+    default:
+      return "agent-management";
+  }
+}
 
 export type WebviewContextMenuActionId =
   | "edit.undo"

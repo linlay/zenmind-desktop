@@ -59,7 +59,8 @@ export type AgentWebclientSurfaceKind =
   | "agent-overview"
   | "agent-debug"
   | "agent-btw"
-  | "agent-project";
+  | "agent-project"
+  | "agent-management";
 
 export type AgentWebclientSurfaceCapability =
   | "run.query"
@@ -326,5 +327,6 @@ export function isAgentWebclientSurfaceKind(value: unknown): value is AgentWebcl
     "agent-debug",
     "agent-btw",
     "agent-project",
+    "agent-management",
   ].includes(String(value));
 }

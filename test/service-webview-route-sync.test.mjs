@@ -45,6 +45,22 @@ test("service webview surface labels real plugins separately from built-in servi
   assert.match(dictionaries, /"serviceWebview\.kind\.service": "SERVICE"/);
 });
 
+test("Agent WebClient surface classification uses structured role instead of route contents", () => {
+  const surfaceSource = readServiceWebviewSurfaceSource();
+  const classifier = surfaceSource.slice(
+    surfaceSource.indexOf("function resolveContextMenuSurfaceType"),
+    surfaceSource.indexOf("function isAgentWebclientChatSurface"),
+  );
+
+  assert.match(classifier, /surfaceRole: SurfaceIdentity\["surfaceRole"\]/u);
+  assert.match(classifier, /resolveAgentWebclientWebviewSurfaceType\(surfaceRole\)/u);
+  assert.doesNotMatch(classifier, /embedPath|surfaceId|\/project\/iu/u);
+  assert.match(
+    surfaceSource,
+    /surfaceType: resolveContextMenuSurfaceType\(serviceId, surfaceIdentity\.surfaceRole\)/u,
+  );
+});
+
 test("service webview surface does not sync API resource navigations back into the embedded app router", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const routeSyncBlock = serviceWebviewSurface.slice(

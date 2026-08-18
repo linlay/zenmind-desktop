@@ -15,6 +15,9 @@ const {
   createBrowserSurfaceRegistry,
   registeredSurfaceIdentitiesConflict
 } = await import("../dist-electron/main/browser-surface-registry.js");
+const {
+  resolveAgentWebclientWebviewSurfaceType
+} = await import("../dist-electron/shared/webview-context-menu.js");
 
 test("surface identity uses readable singleton roots and stable domain-prefixed dynamic ids", () => {
   assert.equal(createSurfaceIdentity("main-chat").surfaceId, "main-chat");
@@ -58,6 +61,30 @@ test("surface identity separates hierarchy and interaction from the short id", (
   }
 });
 
+test("Agent WebClient surface type follows the trusted semantic role", () => {
+  for (const [role, expected] of [
+    ["main-chat", "agent-chat"],
+    ["kanban-chat", "agent-chat"],
+    ["copilot-chat", "agent-copilot"],
+    ["copilot-dock", "agent-copilot"],
+    ["copilot", "agent-copilot"],
+    ["overview", "agent-overview"],
+    ["debug", "agent-debug"],
+    ["btw", "agent-btw"],
+    ["project", "agent-project"],
+    ["file", "agent-management"],
+    ["file-diff", "agent-management"],
+    ["source", "agent-management"],
+    ["artifact", "agent-management"],
+    ["reference", "agent-management"],
+    ["planning", "agent-management"],
+    ["agent", "agent-management"],
+    ["service", "agent-management"],
+  ]) {
+    assert.equal(resolveAgentWebclientWebviewSurfaceType(role), expected, role);
+  }
+});
+
 test("surface registry rejects a forged identity and cascades child removal", () => {
   const guests = new Map([
     [71, { id: 71, getType: () => "webview", isDestroyed: () => false }],
@@ -65,7 +92,8 @@ test("surface registry rejects a forged identity and cascades child removal", ()
     [73, { id: 73, getType: () => "webview", isDestroyed: () => false }],
     [74, { id: 74, getType: () => "webview", isDestroyed: () => false }],
     [75, { id: 75, getType: () => "webview", isDestroyed: () => false }],
-    [76, { id: 76, getType: () => "webview", isDestroyed: () => false }]
+    [76, { id: 76, getType: () => "webview", isDestroyed: () => false }],
+    [77, { id: 77, getType: () => "webview", isDestroyed: () => false }]
   ]);
   const registry = createBrowserSurfaceRegistry({
     webContents: {
@@ -130,9 +158,22 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(76).surfaceRole, "btw");
   assert.equal(registry.resolveWebviewSurfaceTarget(76).interaction, "interactive");
 
+  const fileKey = "file:agent-1:/Users/demo/Project/project-file.ts";
+  const file = createChatChildSurfaceIdentity("file", fileKey, "chat-1");
+  assert.equal(registry.registerSurface(
+    registration(file, 77, "agent-management", fileKey),
+    7
+  ), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceRole, "file");
+  assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceType, "agent-management");
+
   const projectKey = "agent:detached-project";
   const detachedProject = createSurfaceIdentity("project", projectKey);
-  assert.equal(registry.registerSurface(registration(detachedProject, 74, "project", projectKey), 7), true);
+  assert.equal(registry.registerSurface(
+    registration(detachedProject, 74, "agent-project", projectKey),
+    7
+  ), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(74).surfaceType, "agent-project");
 
   assert.equal(registeredSurfaceIdentitiesConflict(
     { surfaceId: "site:forced-collision", surfaceRole: "website", surfaceIdentityKey: "website:first" },
@@ -146,6 +187,7 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(72), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(73), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(76), null);
+  assert.equal(registry.resolveWebviewSurfaceTarget(77), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(74).surfaceId, detachedProject.surfaceId);
   registry.unregisterSurfacesForOwner(7);
   assert.equal(registry.resolveWebviewSurfaceTarget(74), null);

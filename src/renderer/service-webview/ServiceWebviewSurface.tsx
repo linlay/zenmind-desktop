@@ -61,7 +61,10 @@ import {
 import { STORAGE_NAMESPACE } from "../../shared/brand";
 import type { EmbeddedCdpSurfaceRegistration } from "../../shared/embedded-cdp";
 import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
-import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
+import {
+  resolveAgentWebclientWebviewSurfaceType,
+  type WebviewContextMenuSurfaceType,
+} from "../../shared/webview-context-menu";
 import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
 import {
   COPILOT_CHAT_SURFACE_ID,
@@ -152,17 +155,10 @@ function getEmbeddedCdpSurfaceApi() {
 
 function resolveContextMenuSurfaceType(
   serviceId: string,
-  surfaceId: string,
-  embedPath: string | undefined,
+  surfaceRole: SurfaceIdentity["surfaceRole"],
 ): WebviewContextMenuSurfaceType {
   if (serviceId !== "agent-webclient") return "service";
-  if (/overview/iu.test(embedPath || "") || /overview/iu.test(surfaceId)) return "agent-overview";
-  if (/debug/iu.test(embedPath || "") || /debug/iu.test(surfaceId)) return "agent-debug";
-  if (/\/btw\//iu.test(embedPath || "") || /\bbtw\b/iu.test(surfaceId)) return "agent-btw";
-  if (/project/iu.test(embedPath || "")) return "agent-project";
-  if (/copilot/iu.test(surfaceId)) return "agent-copilot";
-  if (/chat/iu.test(surfaceId)) return "agent-chat";
-  return "agent-management";
+  return resolveAgentWebclientWebviewSurfaceType(surfaceRole);
 }
 
 function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
@@ -727,7 +723,7 @@ export function ServiceWebviewSurface({
       ...surfaceIdentity,
       ...(resolvedSurfaceIdentityKey ? { surfaceIdentityKey: resolvedSurfaceIdentityKey } : {}),
       surfaceKind: "service",
-      surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceId, effectiveEmbedPath),
+      surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceIdentity.surfaceRole),
       ...(serviceId ? { serviceId } : {}),
       pageRoute: surfaceRoute,
       ...(ownerChatId?.trim() ? { ownerChatId: ownerChatId.trim() } : {}),

@@ -96,7 +96,8 @@ function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
     value === "agent-overview" ||
     value === "agent-debug" ||
     value === "agent-btw" ||
-    value === "agent-project"
+    value === "agent-project" ||
+    value === "agent-management"
     ? value
     : null;
 }
