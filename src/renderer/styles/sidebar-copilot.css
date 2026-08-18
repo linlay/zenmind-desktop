@@ -41,8 +41,9 @@
   top: 8px;
   right: 8px;
   bottom: 8px;
-  left: 8px;
-  width: auto;
+  left: auto;
+  width: min(var(--assistant-dock-embedded-width), calc(100% - 16px));
+  max-width: 640px;
   border: 1px solid rgba(148, 163, 184, 0.28);
   border-radius: 18px;
 }
@@ -82,6 +83,49 @@
   outline: none;
 }
 
+.copilot-dock-close-button {
+  position: absolute;
+  z-index: 6;
+  top: 8px;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--bg-elev-2, #eef2f7) 82%, transparent);
+  color: var(--ink-soft);
+  cursor: pointer;
+  appearance: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 0.16s ease,
+    border-color 0.16s ease,
+    color 0.16s ease;
+}
+
+.copilot-dock-close-button:hover,
+.copilot-dock-close-button:focus-visible {
+  border-color: rgba(148, 163, 184, 0.24);
+  background: color-mix(in srgb, var(--bg-elev-2, #eef2f7) 96%, transparent);
+  color: var(--ink);
+}
+
+.copilot-dock-close-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent, #2563eb) 48%, transparent);
+  outline-offset: 1px;
+}
+
+.copilot-dock-close-button-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
 .agent-webclient-copilot-dock .embedded-surface-page,
 .agent-webclient-copilot-dock .embedded-surface-frame-shell,
 .agent-webclient-copilot-dock .service-webview-error {
@@ -96,6 +140,11 @@
 
 :root[data-theme="dark"] .copilot-dock-resizer-line {
   background: rgba(255, 255, 255, 0.16);
+}
+
+:root[data-theme="dark"] .copilot-dock-close-button {
+  background: color-mix(in srgb, var(--bg-elev-2, #253044) 82%, transparent);
+  color: rgba(203, 213, 225, 0.86);
 }
 
 :root[data-theme="dark"] .copilot-dock-resizer:hover .copilot-dock-resizer-line,

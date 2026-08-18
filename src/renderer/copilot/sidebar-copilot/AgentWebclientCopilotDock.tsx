@@ -8,6 +8,7 @@ import {
   type PointerEvent as ReactPointerEvent
 } from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { createAgentWebclientCopilotPath } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
 import {
@@ -15,6 +16,7 @@ import {
   createSurfaceIdentity
 } from "../../../shared/surface-identity";
 import { useI18n } from "../../i18n/useI18n";
+import { SidebarActionIcon } from "../../components/BrandMark";
 import {
   normalizeCopilotEmbedPath,
   readCopilotChatId
@@ -91,6 +93,7 @@ export function AgentWebclientCopilotDock({
   parentSurfaceId,
   resolvedAgentKey,
   resize,
+  onClose,
   onRunningRunIdChange,
   onSelectedAgentKeyChange,
   onCurrentEmbedPathChange
@@ -110,6 +113,7 @@ export function AgentWebclientCopilotDock({
     onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
     onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
   };
+  onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
   onSelectedAgentKeyChange?: (agentKey: string) => void;
   onCurrentEmbedPathChange?: (embedPath: string, agentKey: string, chatId?: string) => void;
@@ -198,6 +202,17 @@ export function AgentWebclientCopilotDock({
         >
           <span className="copilot-dock-resizer-line" aria-hidden="true" />
         </div>
+      ) : null}
+      {open ? (
+        <button
+          type="button"
+          className="copilot-dock-close-button"
+          aria-label={t("sidebar.copilot.close", { appName: PRODUCT_NAME })}
+          title={t("sidebar.copilot.close", { appName: PRODUCT_NAME })}
+          onClick={onClose}
+        >
+          <SidebarActionIcon kind="close" className="copilot-dock-close-button-icon" />
+        </button>
       ) : null}
       {mounted ? (
         <Suspense fallback={null}>

@@ -52,7 +52,8 @@
 - [ ] Debug 浮层和 Realtime Inspector 使用 canonical 短 ID；根 Surface 的 role 与 ID 相同时只显示一次，子 Surface 显示 `parent › role · surfaceId`。Overview/Debug 不暴露原始 chatId、runId 或 URL，且保持只读。
 - [ ] macOS 与 Windows 分别验证 Browser 多标签只登记一个 `browser` surface；打开新 URL 或执行长时间 Office 操作不会新增 surface，收藏 Website/WebApp 重启后仍得到相同 `site:` / `app:` ID。
 - [ ] 全页面 Copilot 与右侧 Copilot Dock 分别显示 `copilot-chat` 和 `copilot-dock`；切换 Browser、Website、WebApp 和原生页面时，Dock 会话按 context 恢复且父级关系不会串到前一个页面。
-- [ ] Website、WebApp、Browser、Service 和原生页面共用右侧 Copilot Dock 宽度；鼠标拖拽及方向键/Home/End 均限制在 320–640px，并为左侧正文保留至少 800px。切换页面、关闭重开和重启应用后恢复全局首选宽度；可用内容不足 1120px 时切换覆盖模式且停止拖拽，空间恢复后还原首选宽度。macOS/Windows 及亮色/暗色主题均无拖拽中断或残留遮罩。
+- [ ] Website、WebApp、Browser、Service 和原生页面共用右侧 Copilot Dock 宽度；鼠标拖拽及方向键/Home/End 均限制在 320–640px，并为左侧正文保留至少 800px。切换页面、关闭重开和重启应用后恢复全局首选宽度；可用内容不足 1120px 时切换为非全屏的右侧覆盖模式，宽度仍按全局首选值且最大 640px，同时停止拖拽；空间恢复后还原侧边布局。macOS/Windows 及亮色/暗色主题均无拖拽中断或残留遮罩。
+- [ ] Website、WebApp 与 Browser 在 Copilot 关闭时只在页面最右上角显示宿主打开按钮，位置与 Main Chat 的 WorkPanel 按钮一致；打开后入口隐藏，Copilot WebView 右上角显示 Desktop 原生关闭按钮，且不与 `/copilot` 顶栏操作重叠。macOS/Windows、侧边与右侧覆盖模式、亮色/暗色主题下均可点击并有清晰焦点态。
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
 - [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。

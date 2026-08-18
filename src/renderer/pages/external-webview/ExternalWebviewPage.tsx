@@ -486,7 +486,6 @@ export function ExternalWebviewPage({
   refreshOnDesktopSso = false,
   assistantDockOpen = false,
   onOpenAssistantDock,
-  onCloseAssistantDock,
   onCloseSurface,
   showSurfaceCloseButton = false,
   surfaceCloseLabel,
@@ -537,6 +536,7 @@ export function ExternalWebviewPage({
     appChrome ? "" : "has-browser-chrome",
     !appChrome && !showToolbar ? "is-toolbarless-browser" : "",
     appChrome ? "is-app-surface" : "",
+    onOpenAssistantDock && !assistantDockOpen ? "has-copilot-launcher" : "",
     active === false ? "is-inactive-surface" : ""
   ].filter(Boolean).join(" ");
   const surfaceVisibilityProps = active === undefined
@@ -1776,11 +1776,7 @@ export function ExternalWebviewPage({
     }
   };
 
-  const handleAssistantDockToggle = () => {
-    if (assistantDockOpen) {
-      onCloseAssistantDock?.();
-      return;
-    }
+  const handleAssistantDockOpen = () => {
     onOpenAssistantDock?.();
   };
 
@@ -1944,26 +1940,24 @@ export function ExternalWebviewPage({
               aria-label={t("externalWebview.address")}
             />
           </div>
-          {onOpenAssistantDock ? (
-            <button
-              type="button"
-              className={`external-webview-copilot-button${assistantDockOpen ? " is-active" : ""}`}
-              onClick={handleAssistantDockToggle}
-              aria-label={assistantDockOpen
-                ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
-                : t("sidebar.copilot.open", { appName: PRODUCT_NAME })}
-              aria-expanded={assistantDockOpen}
-              title={t("sidebar.copilot.title")}
-            >
-              <SidebarActionIcon
-                kind="sidebar_right"
-                className="external-webview-copilot-button-icon"
-              />
-            </button>
-          ) : null}
         </div> : null}
         </div>
       )}
+      {onOpenAssistantDock && !assistantDockOpen ? (
+        <button
+          type="button"
+          className="external-webview-copilot-button"
+          onClick={handleAssistantDockOpen}
+          aria-label={t("sidebar.copilot.open", { appName: PRODUCT_NAME })}
+          aria-expanded={false}
+          title={t("sidebar.copilot.title")}
+        >
+          <SidebarActionIcon
+            kind="sidebar_right"
+            className="external-webview-copilot-button-icon"
+          />
+        </button>
+      ) : null}
       <div className={`embedded-surface-frame-shell external-webview-frame-shell${appChrome ? " is-app-surface" : ""}`}>
         {browserState.tabs.map((tab) => (
           <ExternalWebviewPane

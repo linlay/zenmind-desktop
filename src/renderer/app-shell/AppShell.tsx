@@ -3780,6 +3780,7 @@ export function AppShell() {
           onKeyDown: handleCopilotDockResizerKeyDown,
           onPointerDown: handleCopilotDockResizerPointerDown,
         } : undefined}
+        onClose={closeAssistantDock}
         onRunningRunIdChange={setAssistantRunningRunId}
         onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
         onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}

@@ -166,6 +166,10 @@
   padding: 6px 8px 0;
 }
 
+.external-webview-page.has-copilot-launcher .external-webview-tabbar {
+  padding-right: 44px;
+}
+
 .external-webview-tab-strip {
   display: flex;
   align-items: flex-end;
@@ -443,6 +447,13 @@
   color: var(--browser-ink);
 }
 
+.external-webview-copilot-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--browser-accent) 48%, transparent);
+  outline-offset: 1px;
+  background: var(--browser-button-hover);
+  color: var(--browser-ink);
+}
+
 .external-webview-tab-add {
   flex: none;
   width: 28px;
@@ -492,17 +503,28 @@
 }
 
 .external-webview-copilot-button {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 14px;
   flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
-.external-webview-copilot-button.is-active {
-  background: var(--browser-hover);
-  color: var(--browser-ink);
+.app-shell.is-mac-platform .external-webview-copilot-button {
+  top: 12px;
+  right: 14px;
+}
+
+.app-shell.is-windows-platform .external-webview-copilot-button {
+  top: calc(var(--windows-titlebar-overlay-height) + 10px);
+  right: 14px;
 }
 
 .external-webview-copilot-button-icon {

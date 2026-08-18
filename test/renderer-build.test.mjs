@@ -5911,8 +5911,10 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.doesNotMatch(externalWebviewPage, /external-webview-debug-sidebar/);
   assert.doesNotMatch(externalWebviewPage, /manual_debug/);
   assert.match(externalWebviewPage, /external-webview-copilot-button/);
-  assert.match(externalWebviewPage, /const handleAssistantDockToggle = \(\) => \{[\s\S]*?if \(assistantDockOpen\) \{[\s\S]*?onCloseAssistantDock\?\.\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?onOpenAssistantDock\?\.\(\);/);
-  assert.match(externalWebviewPage, /onClick=\{handleAssistantDockToggle\}/);
+  assert.match(externalWebviewPage, /const handleAssistantDockOpen = \(\) => \{[\s\S]*?onOpenAssistantDock\?\.\(\);/);
+  assert.match(externalWebviewPage, /onOpenAssistantDock && !assistantDockOpen \? "has-copilot-launcher" : ""/);
+  assert.match(externalWebviewPage, /onOpenAssistantDock && !assistantDockOpen/);
+  assert.match(externalWebviewPage, /onClick=\{handleAssistantDockOpen\}/);
   assert.match(externalWebviewPage, /canGoForward:\s*boolean/);
   assert.match(externalWebviewPage, /nextPatch\.canGoForward = webview\.canGoForward\(\)/);
   assert.match(externalWebviewPage, /const handleGoForward = \(\) => \{[\s\S]*?activeWebview\.goForward\(\)/);
@@ -5921,7 +5923,6 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.doesNotMatch(externalWebviewPage, /function RefreshIcon\(/);
   assert.match(externalWebviewPage, /<SidebarActionIcon[\s\S]*?kind="sidebar_right"[\s\S]*?className="external-webview-copilot-button-icon"/);
   assert.doesNotMatch(externalWebviewStyles, /filter:\s*grayscale/);
-  assert.match(externalWebviewPage, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.open", \{ appName: PRODUCT_NAME \}\)/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
   assert.doesNotMatch(externalWebviewPage, /window\.electronAPI\.webview\.openDevTools/);
@@ -5929,8 +5930,10 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.doesNotMatch(externalWebviewStyles, /external-webview-bookmark/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-devtools-toggle/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-debug/);
-  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\s*\{/);
-  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\.is-active\s*\{/);
+  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*14px;/);
+  assert.match(externalWebviewStyles, /\.external-webview-page\.has-copilot-launcher \.external-webview-tabbar\s*\{[\s\S]*?padding-right:\s*44px;/);
+  assert.match(externalWebviewStyles, /\.app-shell\.is-mac-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*12px;/);
+  assert.match(externalWebviewStyles, /\.app-shell\.is-windows-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 10px\);/);
   assert.doesNotMatch(appShell, /external-webview-debug-sidebar/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
@@ -6773,6 +6776,9 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
   assert.match(dockComponent, /skipContextRegistration/);
   assert.match(dockComponent, /devToolsTarget="copilot"/);
   assert.match(dockComponent, /loadInitialEmbeddedUrlDirectly/);
+  assert.match(appShell, /<AgentWebclientCopilotDock[\s\S]*?onClose=\{closeAssistantDock\}/);
+  assert.match(dockComponent, /className="copilot-dock-close-button"[\s\S]*?onClick=\{onClose\}/);
+  assert.match(dockComponent, /<SidebarActionIcon kind="close" className="copilot-dock-close-button-icon" \/>/);
   assert.doesNotMatch(appShell, /<AssistantDock/);
   assert.doesNotMatch(appShell, /openAssistantDock\("compact"\)/);
   assert.doesNotMatch(appShell, /onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\("compact"\)/);
@@ -6801,7 +6807,10 @@ test("assistant dock supports a persistent accessible width resizer and narrow o
   assert.match(dockComponent, /role="separator"[\s\S]{0,240}aria-valuenow=\{resize\.width\}/u);
   assert.match(dockComponent, /tabIndex=\{0\}[\s\S]{0,120}onPointerDown=\{resize\.onPointerDown\}/u);
   assert.match(globalStyles, /\.app-shell\.has-assistant-dock-overlay \.app-content\s*\{[\s\S]*?margin-right:\s*0;/u);
+  assert.match(globalStyles, /\.app-shell\.has-assistant-dock-overlay \.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?width:\s*min\(var\(--assistant-dock-embedded-width\),\s*calc\(100% - 16px\)\);[\s\S]*?max-width:\s*640px;/u);
+  assert.match(globalStyles, /@media \(max-width:\s*1080px\)[\s\S]*?\.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?max-width:\s*640px;/u);
   assert.match(globalStyles, /\.copilot-dock-resizer\s*\{[\s\S]*?cursor:\s*col-resize;/u);
+  assert.match(globalStyles, /\.copilot-dock-close-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*8px;[\s\S]*?right:\s*8px;/u);
   assert.match(globalStyles, /\.copilot-dock-resize-overlay/u);
 });
 
