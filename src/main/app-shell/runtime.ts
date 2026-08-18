@@ -215,6 +215,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
 
   function createWindow() {
     options.state.workPanelKeyboardFocusActive = false;
+    options.state.focusedWebviewDevToolsTargetId = null;
     options.state.mainWindow = new BrowserWindow(buildMainWindowOptions({
       platform: options.platform,
       preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
@@ -245,6 +246,16 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       onWebviewNavigation: options.handleDesktopSsoWebviewNavigation,
       shouldOpenPopupInCurrentTab: options.shouldOpenWebviewPopupInCurrentTab,
       attachWebviewContextMenu: options.attachWebviewContextMenu,
+      onWebviewFocusChanged: (webContentsId, focused) => {
+        if (focused) {
+          options.state.focusedWebviewDevToolsTargetId = webContentsId;
+        } else if (options.state.focusedWebviewDevToolsTargetId === webContentsId) {
+          options.state.focusedWebviewDevToolsTargetId = null;
+        }
+      },
+      onMainRendererFocused: () => {
+        options.state.focusedWebviewDevToolsTargetId = null;
+      },
       getHelpUrl: () => readHelpSettings(options.app, options.platform).url,
       isHelpWebview: (contents) =>
         contents.session === options.session.fromPartition(DESKTOP_HELP_WEBVIEW_PARTITION),
@@ -271,6 +282,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
         if (options.state.mainWindow === windowToClear) {
           options.state.mainWindow = null;
           options.state.workPanelKeyboardFocusActive = false;
+          options.state.focusedWebviewDevToolsTargetId = null;
         }
       },
       restoreFloatingWindowsForFullscreen: () => options.restoreDesktopPetWindowLayering()

@@ -1107,6 +1107,10 @@ export function createMainProcessRuntime() {
     }
     const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
       openCurrentWebviewDevTools({
+        focusedWebviewDevToolsTarget: Number.isSafeInteger(appState.focusedWebviewDevToolsTargetId) &&
+          Number(appState.focusedWebviewDevToolsTargetId) > 0
+          ? { webContentsId: Number(appState.focusedWebviewDevToolsTargetId) }
+          : null,
         preferredWebviewDevToolsTarget: appState.copilotDevToolsTarget,
         currentPageSnapshot: appState.currentPageSnapshot,
         webContents,

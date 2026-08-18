@@ -101,6 +101,7 @@ type WebviewAttachResult =
 type AttachedWebviewLike = {
   id: number;
   session?: unknown;
+  isFocused?(): boolean;
   on(eventName: string, listener: (...args: any[]) => void): unknown;
   copy(): void;
   cut(): void;
@@ -357,6 +358,8 @@ export function configureMainWindowWebContents<
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
     shouldOpenPopupInCurrentTab?(contents: TGuestContents): boolean;
     attachWebviewContextMenu?(contents: TGuestContents): void;
+    onWebviewFocusChanged?(webContentsId: number, focused: boolean): void;
+    onMainRendererFocused?(): void;
     getHelpUrl?(): string;
     isHelpWebview?(contents: TGuestContents): boolean;
     openExternal(url: string): Promise<unknown>;
@@ -380,6 +383,10 @@ export function configureMainWindowWebContents<
       preloadPath,
       error: error?.stack || String(error)
     });
+  });
+
+  targetWindow.webContents.on("focus", () => {
+    options.onMainRendererFocused?.();
   });
 
   targetWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
@@ -424,6 +431,12 @@ export function configureMainWindowWebContents<
   });
 
   targetWindow.webContents.on("did-attach-webview", (_event, contents: TGuestContents) => {
+    const publishFocused = () => options.onWebviewFocusChanged?.(contents.id, true);
+    const publishBlurred = () => options.onWebviewFocusChanged?.(contents.id, false);
+    contents.on("focus", publishFocused);
+    contents.on("blur", publishBlurred);
+    contents.on("destroyed", publishBlurred);
+    if (contents.isFocused?.()) publishFocused();
     options.attachWebviewContextMenu?.(contents);
     configureAttachedWebview(contents, {
       platform: options.platform,

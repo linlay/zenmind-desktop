@@ -849,6 +849,7 @@ test("window manager wires webview preload validation and guest webview behavior
   const target = new FakeWindow();
   const guest = new FakeWebContents(64);
   const reports = [];
+  const focusChanges = [];
   const prevented = { attach: false };
 
   configureMainWindowWebContents(target, {
@@ -862,6 +863,12 @@ test("window manager wires webview preload validation and guest webview behavior
     resolveOpenDisposition: () => "external",
     collectLoadDiagnostics: async () => ({}),
     report: (source, details) => reports.push({ source, details }),
+    onWebviewFocusChanged: (webContentsId, focused) => {
+      focusChanges.push({ webContentsId, focused });
+    },
+    onMainRendererFocused: () => {
+      focusChanges.push({ webContentsId: null, focused: true });
+    },
     openExternal: async () => {},
     schedule: (callback) => callback()
   });
@@ -872,6 +879,11 @@ test("window manager wires webview preload validation and guest webview behavior
     }
   }, { preload: "C:/unexpected.js" }, { src: "https://example.test/" });
   target.webContents.emit("did-attach-webview", {}, guest);
+  guest.emit("focus");
+  guest.emit("blur");
+  guest.emit("focus");
+  target.webContents.emit("focus");
+  guest.emit("destroyed");
   guest.emit("before-input-event", {
     preventDefault: () => {}
   }, { key: "i" });
@@ -885,6 +897,13 @@ test("window manager wires webview preload validation and guest webview behavior
     }
   });
   assert.deepEqual(guest.devtoolsOpenOptions, { mode: "detach" });
+  assert.deepEqual(focusChanges, [
+    { webContentsId: 64, focused: true },
+    { webContentsId: 64, focused: false },
+    { webContentsId: 64, focused: true },
+    { webContentsId: null, focused: true },
+    { webContentsId: 64, focused: false }
+  ]);
 });
 
 test("window manager blocks an unexpected initial URL in the Help partition", () => {

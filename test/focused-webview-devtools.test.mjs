@@ -43,6 +43,9 @@ test("current webview DevTools shortcut prefers the focused main-chat over stale
   const copilotWebview = new FakeWebContents(3);
 
   const result = openCurrentWebviewDevTools({
+    focusedWebviewDevToolsTarget: {
+      webContentsId: focusedWebview.id
+    },
     preferredWebviewDevToolsTarget: {
       webContentsId: copilotWebview.id
     },
@@ -53,7 +56,7 @@ test("current webview DevTools shortcut prefers the focused main-chat over stale
       webContentsId: snapshotWebview.id,
       pageContext: null
     },
-    webContents: createWebContentsApi([focusedWebview, snapshotWebview, copilotWebview], focusedWebview)
+    webContents: createWebContentsApi([focusedWebview, snapshotWebview, copilotWebview], snapshotWebview)
   });
 
   assert.deepEqual(result, { ok: true, source: "focused" });
@@ -69,6 +72,9 @@ test("current webview DevTools shortcut follows focus across multiple WorkPanel 
   const artifactWebview = new FakeWebContents(3);
 
   const result = openCurrentWebviewDevTools({
+    focusedWebviewDevToolsTarget: {
+      webContentsId: artifactWebview.id
+    },
     currentPageSnapshot: {
       route: "/agent/default",
       pageKey: "webview:/agent/default:main-chat",
@@ -78,7 +84,7 @@ test("current webview DevTools shortcut follows focus across multiple WorkPanel 
     },
     webContents: createWebContentsApi(
       [mainChatWebview, overviewWebview, artifactWebview],
-      artifactWebview
+      overviewWebview
     )
   });
 

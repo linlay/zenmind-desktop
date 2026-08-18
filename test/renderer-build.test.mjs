@@ -6794,6 +6794,7 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}COPILOT_DOCK_SURFACE_ID/);
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
+  assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(appState\.focusedWebviewDevToolsTargetId\)/);
   assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*appState\.copilotDevToolsTarget/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
