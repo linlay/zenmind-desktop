@@ -122,7 +122,7 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(css, /\.chat-work-panel-tab:hover \.chat-work-panel-tab-close/u);
   assert.match(css, /\.chat-work-panel-tab:focus-within \.chat-work-panel-tab-close/u);
   assert.match(css, /\.chat-work-panel-tab\.is-overview\s*\{[^}]*flex:\s*0 0 auto;[^}]*width:\s*max-content;[^}]*min-width:\s*max-content;[^}]*max-width:\s*none/su);
-  assert.match(css, /\.chat-work-panel-tab\s*\{[^}]*flex:\s*0 1 auto;[^}]*width:\s*fit-content;[^}]*min-width:\s*88px;[^}]*max-width:\s*240px/su);
+  assert.match(css, /\.chat-work-panel-tab\s*\{[^}]*flex:\s*0 1 auto;[^}]*width:\s*fit-content;[^}]*min-width:\s*140px;[^}]*max-width:\s*240px/su);
   assert.match(css, /\.chat-work-panel-tab-trigger\s*\{[^}]*padding:\s*0 10px;/su);
   assert.match(css, /\.chat-work-panel-tab-close\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*width:\s*34px/su);
   assert.match(css, /\.chat-work-panel-tab\.has-close:hover \.chat-work-panel-tab-title[^}]*mask-image:\s*linear-gradient/su);

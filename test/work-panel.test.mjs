@@ -78,7 +78,7 @@ test("opening or activating an item reveals its workspace and destructive close 
     type: "hideWorkspace", ownerChatId: "chat",
   });
   const planning = open(hidden.nextState, "chat", {
-    kind: "webclient", module: "planning", route: "/planning-view/planning-1?chatId=chat", context: { agentKey: "agent-1", chatId: "chat", planningId: "planning-1" },
+    kind: "webclient", module: "planning", route: "/planning-viewer/planning-1?chatId=chat", context: { agentKey: "agent-1", chatId: "chat", planningId: "planning-1" },
   });
   assert.deepEqual(planning.nextState.visibleOwnerChatIds, ["chat"]);
   const hiddenAgain = reduceWorkPanelCommand(planning.nextState, {
@@ -127,6 +127,12 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
     kind: "webclient", module: "file-diff", route: "/project/agent?view=diff", context: { agentKey: "agent", chatId: "chat", runId: "run", path: "../escape.txt" },
   }).ok, false);
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient", module: "project", route: "/project/agent", context: { agentKey: "agent", path: "/absolute.txt" },
+  }).ok, false);
+  assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient", module: "project", route: "/project/agent", context: { agentKey: "agent", path: "../escape.txt" },
+  }).ok, false);
+  assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "web", url: "https://example.test", stableKey: "caller-owned",
   }).ok, false);
   const mismatchedChat = open(EMPTY_WORK_PANEL_STATE, "chat-owner", {
@@ -147,14 +153,53 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
   assert.equal(native.error.code, "unsupported_native_surface");
 });
 
+test("WorkPanel keeps Platform-resolvable File request paths and deduplicates normalized identities", () => {
+  const cases = [
+    ["src/app.ts", "src/app.ts"],
+    ["../outside.txt", "../outside.txt"],
+    ["/Users/demo/project/src/app.ts", "/Users/demo/project/src/app.ts"],
+    ["C:\\Users\\demo\\project\\src\\app.ts", "C:/Users/demo/project/src/app.ts"],
+    ["\\\\server\\share\\project\\src\\app.ts", "//server/share/project/src/app.ts"],
+    [" file with spaces ", " file with spaces "],
+  ];
+
+  for (const [requestedPath, normalizedPath] of cases) {
+    const descriptor = {
+      kind: "webclient",
+      module: "file",
+      route: `/file-viewer/agent?path=${encodeURIComponent(requestedPath)}`,
+      context: { agentKey: "agent", path: requestedPath },
+    };
+    const first = open(EMPTY_WORK_PANEL_STATE, "chat", descriptor);
+    assert.equal(first.ok, true, requestedPath);
+    assert.equal(first.item.descriptor.context.path, normalizedPath);
+    assert.equal(first.item.stableKey, `file:agent:${normalizedPath}`);
+
+    const duplicate = open(first.nextState, "chat", {
+      ...descriptor,
+      context: { agentKey: "agent", path: normalizedPath },
+    });
+    assert.equal(duplicate.ok, true, requestedPath);
+    assert.equal(duplicate.item.itemId, first.item.itemId, requestedPath);
+    assert.equal(duplicate.state.items.length, 1, requestedPath);
+  }
+
+  assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient", module: "file", route: "/file-viewer/agent", context: { agentKey: "agent", path: "bad\u0000path" },
+  }).ok, false);
+  assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient", module: "file", route: "/file-viewer/agent", context: { agentKey: "agent", path: "\n/etc/hosts" },
+  }).ok, false);
+});
+
 test("WorkPanel derives distinct canonical identities for every independent WebClient surface", () => {
   const descriptors = [
     ["btw", "/btw/chat?btwId=btw-1", { agentKey: "agent", chatId: "chat", btwId: "btw-1" }, "btw:agent:chat:btw-1"],
-    ["source", "/source-view/src?chatId=chat&chunkId=chunk-1", { agentKey: "agent", chatId: "chat", btwId: "btw-1", publishId: "pub", sourceId: "src" }, "source:agent:chat:btw-1:pub:src"],
-    ["planning", "/planning-view/plan?chatId=chat", { agentKey: "agent", chatId: "chat", planningId: "plan" }, "planning:agent:chat:plan"],
-    ["artifact", "/resource-view/agent?chatId=chat&file=artifacts%2Frun%2Freport.pdf", { agentKey: "agent", chatId: "chat", artifactId: "art" }, "artifact:agent:chat:art"],
-    ["reference", "/resource-view/agent?chatId=chat&file=references%2Fdocument.pdf", { agentKey: "agent", chatId: "chat", referenceId: "ref" }, "reference:agent:chat:ref"],
-    ["file", "/file-view/agent?path=src%2Fapp.ts&line=20", { agentKey: "agent", path: "src/app.ts" }, "file:agent:src/app.ts"],
+    ["source", "/source-viewer/src?chatId=chat&chunkId=chunk-1", { agentKey: "agent", chatId: "chat", btwId: "btw-1", publishId: "pub", sourceId: "src" }, "source:agent:chat:btw-1:pub:src"],
+    ["planning", "/planning-viewer/plan?chatId=chat", { agentKey: "agent", chatId: "chat", planningId: "plan" }, "planning:agent:chat:plan"],
+    ["artifact", "/resource-viewer/agent?chatId=chat&file=artifacts%2Frun%2Freport.pdf", { agentKey: "agent", chatId: "chat", artifactId: "art" }, "artifact:agent:chat:art"],
+    ["reference", "/resource-viewer/agent?chatId=chat&file=references%2Fdocument.pdf", { agentKey: "agent", chatId: "chat", referenceId: "ref" }, "reference:agent:chat:ref"],
+    ["file", "/file-viewer/agent?path=src%2Fapp.ts&line=20", { agentKey: "agent", path: "src/app.ts" }, "file:agent:src/app.ts"],
     ["project", "/project/agent?chatId=chat&path=src%2Fapp.ts", { agentKey: "agent", chatId: "chat", path: "src/app.ts" }, "project:agent:chat:all:src/app.ts"],
     ["file-diff", "/project/agent?chatId=chat&runId=run&path=src%2Fapp.ts&view=diff", { agentKey: "agent", chatId: "chat", runId: "run", path: "src/app.ts" }, "file-diff:agent:chat:run:src/app.ts"],
   ];

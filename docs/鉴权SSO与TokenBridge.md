@@ -47,7 +47,7 @@ Cookie SSO 的主流程为：
 
 ### Agent WebClient Host 与可信 Bridge
 
-Agent WebClient guest 不接收 access token。普通 HTTP 请求继续经过 Desktop host，由 main 注入和刷新凭据；WebSocket-like Platform Frame Port 只收发序列化 Platform frame，物理连接和认证完全由 main 拥有。
+Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都可通过 WebSocket-like Platform Frame Port 收发序列化 Platform frame；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。两条路径的物理连接和认证都完全由 main 拥有。
 
 ```text
 页面发送 Platform request frame

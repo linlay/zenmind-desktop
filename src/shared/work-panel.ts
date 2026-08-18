@@ -4,6 +4,7 @@ import type {
   WorkPanelContext,
   WorkPanelItem,
   WorkPanelItemDescriptor,
+  WorkPanelWebclientModule,
   WorkPanelWorkspace,
 } from "./contracts/agent-webclient-bridge";
 import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry";
@@ -76,7 +77,20 @@ function normalizeRelativePath(value: unknown) {
   return parts.join("/");
 }
 
-function normalizeContext(input: unknown): Record<string, string> | null {
+function normalizeFileRequestPath(value: unknown) {
+  const requestedPath = typeof value === "string" ? value : "";
+  if (
+    !requestedPath.trim() ||
+    requestedPath.length > 2_048 ||
+    /[\u0000-\u001f\u007f]/u.test(requestedPath)
+  ) return "";
+  return requestedPath.replace(/\\/gu, "/");
+}
+
+function normalizeContext(
+  input: unknown,
+  module: WorkPanelWebclientModule,
+): Record<string, string> | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const record = input as Record<string, unknown>;
   const allowed = new Set([
@@ -96,7 +110,9 @@ function normalizeContext(input: unknown): Record<string, string> | null {
     if (value) context[key] = value;
   }
   if (record.path !== undefined) {
-    const path = normalizeRelativePath(record.path);
+    const path = module === "file"
+      ? normalizeFileRequestPath(record.path)
+      : normalizeRelativePath(record.path);
     if (!path) return null;
     context.path = path;
   }
@@ -140,7 +156,7 @@ function normalizeDescriptor(
   }
   if (descriptor.kind !== "webclient") return null;
   if (keys.some((key) => !["kind", "module", "route", "context", "title", "pinned", "closable"].includes(key))) return null;
-  const context = normalizeContext(descriptor.context);
+  const context = normalizeContext(descriptor.context, descriptor.module);
   const route = cleanIdentity(descriptor.route, 2_048);
   if (!context || !route || !route.startsWith("/") || route.startsWith("//") || route.includes("://")) return null;
   let stableKey = "";

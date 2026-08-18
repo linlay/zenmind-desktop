@@ -51,14 +51,6 @@ const LIVE_REQUEST_TYPES = new Set([
   "/api/btw",
 ]);
 
-const RUN_CONTROL_TYPES = new Set([
-  "/api/detach",
-  "/api/interrupt",
-  "/api/submit",
-  "/api/steer",
-  "/api/access-level",
-]);
-
 type SurfaceContext = {
   sender: WebContents;
   target: RegisteredWebviewSurfaceTarget;
@@ -459,12 +451,9 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       sendFrame(socket, frameError(frame.id, "surface_unavailable", context.error.message));
       return;
     }
+    // Trusted one-shot Platform requests share the broker without acquiring the live Run lease.
+    // Only query/attach/BTW streams require the additional active-surface authorization below.
     const isLive = LIVE_REQUEST_TYPES.has(frame.type);
-    const isControl = RUN_CONTROL_TYPES.has(frame.type);
-    if (!isLive && !isControl) {
-      sendFrame(socket, frameError(frame.id, "capability_denied", `Desktop Frame Port does not allow ${frame.type}`));
-      return;
-    }
     if (isLive) {
       const isLiveChat = LIVE_CHAT_SURFACE_IDS.has(context.target.surfaceId);
       const isBTW = context.kind === "agent-btw" &&

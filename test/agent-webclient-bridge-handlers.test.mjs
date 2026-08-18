@@ -131,6 +131,58 @@ test("raw Frame Port forwards each Platform stream frame immediately and unchang
   assert.ok(runtime.traces.some((entry) => entry.direction === "desktop-to-surface"));
 });
 
+test("raw Frame Port forwards ordinary Platform request and response frames for a trusted surface", async () => {
+  const target = createTarget(45, {
+    surfaceId: "overview-45",
+    surfaceType: "agent-overview",
+    pageRoute: "/overview/chat-45",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-45",
+    active: false,
+  });
+  const forwarded = [];
+  const runtime = createRegistration(new Map([[45, target]]), async (input) => {
+    forwarded.push({
+      type: input.type,
+      payload: input.payload,
+      stream: input.stream,
+    });
+    input.onFrame({
+      frame: "response",
+      id: input.localId,
+      type: input.type,
+      code: 0,
+      data: { key: "agent-45" },
+    });
+  });
+  const sender = createSender(45, target.currentUrl);
+  await openSocket(runtime, sender, "socket-data-request");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-data-request",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/agent",
+      id: "agent-detail-45",
+      payload: { agentKey: "agent-45" },
+    }),
+  });
+  await flush();
+
+  assert.deepEqual(forwarded, [{
+    type: "/api/agent",
+    payload: { agentKey: "agent-45" },
+    stream: false,
+  }]);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "response",
+    id: "agent-detail-45",
+    type: "/api/agent",
+    code: 0,
+    data: { key: "agent-45" },
+  });
+  assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 0);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+});
+
 test("same-surface route loading does not destroy the logical socket or truncate its stream", async () => {
   const target = createTarget(43);
   let deliverFrame = () => undefined;
@@ -527,4 +579,47 @@ test("WorkPanel retains an independent host capability query and version check",
     input: { version: 2, descriptor: { kind: "web", url: "https://example.test/" } },
   });
   assert.equal(incompatible.error.code, "version_mismatch");
+});
+
+test("Overview WorkPanel child may open a Resource Viewer tab", async () => {
+  const target = createTarget(72, {
+    surfaceId: "ov:chat-72",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    ownerChatId: "chat-72",
+    pageRoute: "/overview/chat-72",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-72",
+  });
+  const runtime = createRegistration(new Map([[72, target]]), async () => undefined);
+  const sender = createSender(72, target.currentUrl);
+  const workpanel = runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+
+  assert.deepEqual(await workpanel({ sender }, { method: "getCapabilities" }), {
+    ok: true,
+    capabilities: ["workpanel.open", "workpanel.activate", "workpanel.close"],
+  });
+
+  const descriptor = {
+    kind: "webclient",
+    module: "artifact",
+    route: "/resource-viewer/agent-72?chatId=chat-72&file=artifacts%2Frun-1%2Freport.md",
+    context: {
+      agentKey: "agent-72",
+      chatId: "chat-72",
+      artifactId: "artifact-72",
+    },
+  };
+  const opened = await workpanel({ sender }, {
+    method: "openItem",
+    input: { version: 3, descriptor },
+  });
+
+  assert.equal(opened.ok, true);
+  assert.deepEqual(runtime.dispatched.at(-1), {
+    action: "openItem",
+    ownerChatId: "chat-72",
+    args: { descriptor },
+  });
 });
