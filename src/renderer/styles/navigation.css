@@ -11,8 +11,9 @@
   contain: layout paint;
   will-change: width;
   z-index: 2;
-  app-region: drag;
-  -webkit-app-region: drag;
+  /* Keep blank sidebar space in the pointer-driven window drag path. */
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
   cursor: grab;
   transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
 }
