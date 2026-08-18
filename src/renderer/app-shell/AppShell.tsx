@@ -3317,8 +3317,10 @@ export function AppShell() {
     ) ?? false;
 
     if (shouldEnsureOverview && !hasOverview) {
-      const descriptorAgentKey = command.type === "openItem" && command.descriptor.kind === "webclient"
-        ? command.descriptor.context.agentKey?.trim() ?? ""
+      const descriptorAgentKey = command.type === "openItem" &&
+        command.descriptor.kind === "webclient" &&
+        "agentKey" in command.descriptor.context
+        ? command.descriptor.context.agentKey.trim()
         : "";
       const routeAgentKey = activeChatRouteInfo.chatId === command.ownerChatId
         ? activeChatRouteInfo.agentKey.trim()
