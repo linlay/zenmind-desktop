@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 
 const {
   createLegacySurfaceIdAliases,
@@ -148,4 +149,70 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(74).surfaceId, detachedProject.surfaceId);
   registry.unregisterSurfacesForOwner(7);
   assert.equal(registry.resolveWebviewSurfaceTarget(74), null);
+});
+
+test("surface registry resolves delayed guest targets and cleans timeout or abort waiters", async () => {
+  const owner = new EventEmitter();
+  owner.isDestroyed = () => false;
+  const guests = new Map();
+  for (const id of [91, 92, 93, 94]) {
+    const guest = new EventEmitter();
+    guest.id = id;
+    guest.hostWebContents = owner;
+    guest.getType = () => "webview";
+    guest.isDestroyed = () => false;
+    guests.set(id, guest);
+  }
+  const guest = guests.get(91);
+  const registry = createBrowserSurfaceRegistry({
+    webContents: {
+      getAllWebContents: () => [...guests.values()],
+      fromId: (id) => guests.get(id)
+    },
+    listWebEntries: () => ({ items: [] }),
+    getCurrentPageSnapshot: () => null
+  });
+  const delayedTarget = registry.waitForWebviewSurfaceTarget(guest.id, 1_500);
+  let settled = false;
+  void delayedTarget.then(() => {
+    settled = true;
+  });
+  await Promise.resolve();
+  assert.equal(settled, false);
+
+  const identity = createSurfaceIdentity("main-chat");
+  assert.equal(registry.registerSurface({
+    registrationId: "generation-delayed-91",
+    ...identity,
+    surfaceKind: "service",
+    surfaceType: "agent-chat",
+    serviceId: "agent-webclient",
+    pageRoute: "/agent/agent-91",
+    label: "Chat",
+    url: "http://127.0.0.1:7788/",
+    active: true,
+    tabs: [{
+      tabId: "main-chat",
+      currentUrl: "http://127.0.0.1:7788/agent/agent-91",
+      title: "Chat",
+      webContentsId: guest.id,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false
+    }],
+    activeTabId: "main-chat"
+  }, 7), true);
+
+  assert.equal((await delayedTarget)?.surfaceId, "main-chat");
+  assert.equal((await registry.waitForWebviewSurfaceTarget(guest.id, 1_500))?.webContentsId, guest.id);
+  assert.equal(await registry.waitForWebviewSurfaceTarget(92, 5), null);
+
+  const abortController = new AbortController();
+  const abortedTarget = registry.waitForWebviewSurfaceTarget(93, 1_500, abortController.signal);
+  abortController.abort();
+  assert.equal(await abortedTarget, null);
+
+  const ownerDestroyedTarget = registry.waitForWebviewSurfaceTarget(94, 1_500);
+  owner.emit("destroyed");
+  assert.equal(await ownerDestroyedTarget, null);
 });

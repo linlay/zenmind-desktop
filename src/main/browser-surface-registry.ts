@@ -143,6 +143,10 @@ export function webEntryMatchesSurfaceTarget(item: BrowserSurface, target: strin
 export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOptions) {
   const registeredSurfaces = new Map<string, RegisteredSurface>();
   const registeredGuestTargets = new Map<number, RegisteredWebviewSurfaceTarget>();
+  const pendingGuestTargetWaiters = new Map<
+    number,
+    Set<(target: RegisteredWebviewSurfaceTarget | null) => void>
+  >();
   const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
   const reportedLegacyAliases = new Set<string>();
 
@@ -177,18 +181,36 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     return surfaceKind;
   }
 
-  function removeGuestTargetsForSurface(surfaceId: string) {
+  function settleGuestTargetWaiters(
+    webContentsId: number,
+    target: RegisteredWebviewSurfaceTarget | null,
+  ) {
+    const waiters = pendingGuestTargetWaiters.get(webContentsId);
+    if (!waiters) return;
+    pendingGuestTargetWaiters.delete(webContentsId);
+    for (const waiter of [...waiters]) waiter(target);
+  }
+
+  function removeGuestTargetsForSurface(surfaceId: string, settleWaiters = true) {
     for (const [webContentsId, target] of registeredGuestTargets) {
       if (target.surfaceId === surfaceId) {
         registeredGuestTargets.delete(webContentsId);
+        if (settleWaiters) settleGuestTargetWaiters(webContentsId, null);
       }
     }
   }
 
   function indexRegisteredSurface(surface: RegisteredSurface) {
-    removeGuestTargetsForSurface(surface.surfaceId);
+    const previousWebContentsIds = new Set<number>();
+    for (const [webContentsId, target] of registeredGuestTargets) {
+      if (target.surfaceId === surface.surfaceId) {
+        previousWebContentsIds.add(webContentsId);
+        registeredGuestTargets.delete(webContentsId);
+      }
+    }
+    const nextWebContentsIds = new Set<number>();
     for (const tab of surface.tabs) {
-      registeredGuestTargets.set(tab.webContentsId, {
+      const target: RegisteredWebviewSurfaceTarget = {
         registrationId: surface.registrationId,
         surfaceId: surface.surfaceId,
         surfaceKind: surface.surfaceKind,
@@ -206,7 +228,15 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         active: surface.active && surface.activeTabId === tab.tabId,
         currentUrl: tab.currentUrl,
         label: surface.label
-      });
+      };
+      nextWebContentsIds.add(tab.webContentsId);
+      registeredGuestTargets.set(tab.webContentsId, target);
+      settleGuestTargetWaiters(tab.webContentsId, target);
+    }
+    for (const webContentsId of previousWebContentsIds) {
+      if (!nextWebContentsIds.has(webContentsId)) {
+        settleGuestTargetWaiters(webContentsId, null);
+      }
     }
   }
 
@@ -520,6 +550,54 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     return next;
   }
 
+  function waitForWebviewSurfaceTarget(
+    webContentsId: number,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<RegisteredWebviewSurfaceTarget | null> {
+    const immediate = resolveWebviewSurfaceTarget(webContentsId);
+    if (immediate) return Promise.resolve(immediate);
+    if (
+      signal?.aborted ||
+      !Number.isSafeInteger(webContentsId) ||
+      webContentsId <= 0
+    ) {
+      return Promise.resolve(null);
+    }
+    const guest = options.webContents.fromId(webContentsId);
+    if (!guest || guest.isDestroyed() || guest.getType() !== "webview") {
+      return Promise.resolve(null);
+    }
+    const owner = guest.hostWebContents;
+    if (owner?.isDestroyed()) return Promise.resolve(null);
+    const normalizedTimeoutMs = Math.max(0, Math.floor(Number(timeoutMs) || 0));
+    return new Promise((resolve) => {
+      let timeout: ReturnType<typeof setTimeout> | null = null;
+      let settled = false;
+      const complete = (target: RegisteredWebviewSurfaceTarget | null) => {
+        if (settled) return;
+        settled = true;
+        if (timeout) clearTimeout(timeout);
+        signal?.removeEventListener("abort", handleAbort);
+        guest.removeListener("destroyed", handleAbort);
+        owner?.removeListener("destroyed", handleAbort);
+        const waiters = pendingGuestTargetWaiters.get(webContentsId);
+        waiters?.delete(complete);
+        if (waiters?.size === 0) pendingGuestTargetWaiters.delete(webContentsId);
+        resolve(target);
+      };
+      const handleAbort = () => complete(null);
+      const waiters = pendingGuestTargetWaiters.get(webContentsId) ?? new Set();
+      waiters.add(complete);
+      pendingGuestTargetWaiters.set(webContentsId, waiters);
+      signal?.addEventListener("abort", handleAbort, { once: true });
+      guest.once("destroyed", handleAbort);
+      owner?.once("destroyed", handleAbort);
+      timeout = setTimeout(() => complete(null), normalizedTimeoutMs);
+      if (signal?.aborted || guest.isDestroyed() || owner?.isDestroyed()) complete(null);
+    });
+  }
+
   function currentPageSnapshotMatchesSurface(surfaceId: string, contents?: WebContents | null) {
     const currentPageSnapshot = options.getCurrentPageSnapshot();
     const snapshotBrowserTarget = currentPageSnapshot?.pageContext?.browserTarget;
@@ -722,6 +800,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     registerSurface,
     resolveCanonicalSurfaceId,
     resolveWebviewSurfaceTarget,
+    waitForWebviewSurfaceTarget,
     unregisterSurface,
     unregisterSurfacesForOwner,
     webEntryMatchesSurfaceTarget

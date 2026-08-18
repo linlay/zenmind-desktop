@@ -15,12 +15,17 @@ const {
 
 function createSender(id, url) {
   const sender = new EventEmitter();
+  let destroyed = false;
   sender.id = id;
   sender.messages = [];
-  sender.isDestroyed = () => false;
+  sender.isDestroyed = () => destroyed;
   sender.getType = () => "webview";
   sender.getURL = () => url;
   sender.send = (channel, message) => sender.messages.push({ channel, message });
+  sender.destroy = () => {
+    destroyed = true;
+    sender.emit("destroyed");
+  };
   return sender;
 }
 
@@ -44,15 +49,23 @@ function createTarget(id, overrides = {}) {
   };
 }
 
-function createRegistration(targets, forwardRequest) {
+function createRegistration(targets, forwardRequest, overrides = {}) {
   const listeners = new Map();
   const handlers = new Map();
   const traces = [];
   const cleaned = [];
   const pushSubscribers = [];
   const dispatched = [];
+  const calls = {
+    ensureConnected: 0,
+    getServiceState: 0,
+    issueAccessToken: 0,
+    waitForSurface: 0,
+  };
   const broker = {
-    ensureConnected: async () => undefined,
+    ensureConnected: async () => {
+      calls.ensureConnected += 1;
+    },
     forwardRequest,
     subscribePush: ({ onPush }) => {
       pushSubscribers.push(onPush);
@@ -68,17 +81,30 @@ function createRegistration(targets, forwardRequest) {
     app: {},
     browserSurfaces: {
       resolveWebviewSurfaceTarget: (senderId) => targets.get(senderId) || null,
+      waitForWebviewSurfaceTarget: async (senderId, timeoutMs, signal) => {
+        calls.waitForSurface += 1;
+        if (overrides.waitForWebviewSurfaceTarget) {
+          return overrides.waitForWebviewSurfaceTarget(senderId, timeoutMs, signal);
+        }
+        return targets.get(senderId) || null;
+      },
     },
-    isTrustedAgentWebclientSession: () => true,
+    isTrustedAgentWebclientSession: overrides.isTrustedAgentWebclientSession ?? (() => true),
     realtimeBroker: broker,
-    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
-    issueAccessToken: async () => ({ ok: true, token: "main-only-token", message: "" }),
+    getServiceState: async () => {
+      calls.getServiceState += 1;
+      return { status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } };
+    },
+    issueAccessToken: async () => {
+      calls.issueAccessToken += 1;
+      return { ok: true, token: "main-only-token", message: "" };
+    },
     dispatchWorkPanel: async (input) => {
       dispatched.push(input);
       return { ok: true, workspaceId: "workspace-1" };
     },
   });
-  return { broker, cleaned, dispatched, handlers, listeners, pushSubscribers, registration, traces };
+  return { broker, calls, cleaned, dispatched, handlers, listeners, pushSubscribers, registration, traces };
 }
 
 async function flush() {
@@ -181,6 +207,164 @@ test("raw Frame Port forwards ordinary Platform request and response frames for 
   });
   assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 0);
   assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+});
+
+test("Frame Port waits for a trusted WebView surface registration before opening", async () => {
+  const targets = new Map();
+  const forwarded = [];
+  let releaseSurface = () => undefined;
+  let markWaitStarted = () => undefined;
+  const waitStarted = new Promise((resolve) => {
+    markWaitStarted = resolve;
+  });
+  const runtime = createRegistration(targets, async (input) => {
+    forwarded.push(input.type);
+    input.onFrame({
+      frame: "response",
+      id: input.localId,
+      type: input.type,
+      code: 0,
+      data: { key: "agent-81" },
+    });
+  }, {
+    waitForWebviewSurfaceTarget: (_senderId, timeoutMs) => {
+      assert.equal(timeoutMs, 1_500);
+      markWaitStarted();
+      return new Promise((resolve) => {
+        releaseSurface = resolve;
+      });
+    },
+  });
+  const target = createTarget(81);
+  const sender = createSender(81, target.currentUrl);
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+    { sender },
+    { socketId: "socket-delayed-surface" },
+  );
+  await waitStarted;
+
+  assert.deepEqual(sender.messages, []);
+  assert.deepEqual(runtime.calls, {
+    ensureConnected: 0,
+    getServiceState: 0,
+    issueAccessToken: 0,
+    waitForSurface: 1,
+  });
+
+  targets.set(sender.id, target);
+  releaseSurface(target);
+  await flush();
+  await flush();
+
+  assert.equal(
+    sender.messages.filter(({ message }) => message.type === "open").length,
+    1,
+  );
+  assert.equal(runtime.calls.ensureConnected, 1);
+  assert.equal(runtime.calls.getServiceState, 1);
+  assert.equal(runtime.calls.issueAccessToken, 1);
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-delayed-surface",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/agent",
+      id: "agent-after-registration",
+      payload: { agentKey: "agent-81" },
+    }),
+  });
+  await flush();
+
+  assert.deepEqual(forwarded, ["/api/agent"]);
+  assert.equal(sentFrames(sender).at(-1).data.key, "agent-81");
+});
+
+test("Frame Port rejects a missing surface after the bounded registration wait", async () => {
+  const runtime = createRegistration(new Map(), async () => {
+    assert.fail("request must not reach the Broker");
+  }, {
+    waitForWebviewSurfaceTarget: async (_senderId, timeoutMs) => {
+      assert.equal(timeoutMs, 1_500);
+      return null;
+    },
+  });
+  const sender = createSender(82, "http://127.0.0.1:7079/agent/agent-82");
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+    { sender },
+    { socketId: "socket-missing-surface" },
+  );
+  await flush();
+  await flush();
+
+  assert.deepEqual(sender.messages.map(({ message }) => message.type), ["error", "close"]);
+  assert.equal(sender.messages.at(-1).message.code, 1008);
+  assert.equal(sender.messages.at(-1).message.reason, "surface_unavailable");
+  assert.equal(runtime.calls.ensureConnected, 0);
+  assert.equal(runtime.calls.getServiceState, 0);
+  assert.equal(runtime.calls.issueAccessToken, 0);
+});
+
+test("Frame Port never waits for an untrusted or already-invalid surface", async () => {
+  const untrustedRuntime = createRegistration(new Map(), async () => undefined, {
+    isTrustedAgentWebclientSession: () => false,
+    waitForWebviewSurfaceTarget: async () => {
+      assert.fail("untrusted sender must not enter the registration wait");
+    },
+  });
+  const untrustedSender = createSender(83, "http://127.0.0.1:7079/agent/agent-83");
+  untrustedRuntime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+    { sender: untrustedSender },
+    { socketId: "socket-untrusted" },
+  );
+  await flush();
+  assert.equal(untrustedRuntime.calls.waitForSurface, 0);
+  assert.equal(untrustedSender.messages.at(-1).message.code, 1008);
+
+  for (const [id, overrides] of [
+    [84, { serviceId: "other-service" }],
+    [85, { currentUrl: "http://127.0.0.1:9999/agent/agent-85" }],
+  ]) {
+    const target = createTarget(id, overrides);
+    const runtime = createRegistration(new Map([[id, target]]), async () => undefined, {
+      waitForWebviewSurfaceTarget: async () => {
+        assert.fail("an already-invalid target must not enter the registration wait");
+      },
+    });
+    const sender = createSender(id, createTarget(id).currentUrl);
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+      { sender },
+      { socketId: `socket-invalid-${id}` },
+    );
+    await flush();
+    assert.equal(runtime.calls.waitForSurface, 0);
+    assert.equal(sender.messages.at(-1).message.code, 1008);
+  }
+});
+
+test("Frame Port cancels a pending surface wait when the guest is destroyed", async () => {
+  const runtime = createRegistration(new Map(), async () => {
+    assert.fail("destroyed guest must not reach the Broker");
+  }, {
+    waitForWebviewSurfaceTarget: (_senderId, _timeoutMs, signal) => new Promise((resolve) => {
+      signal.addEventListener("abort", () => resolve(null), { once: true });
+    }),
+  });
+  const sender = createSender(86, "http://127.0.0.1:7079/agent/agent-86");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+    { sender },
+    { socketId: "socket-destroyed-before-registration" },
+  );
+  await flush();
+
+  sender.destroy();
+  await flush();
+  await flush();
+
+  assert.deepEqual(sender.messages, []);
+  assert.equal(runtime.calls.waitForSurface, 1);
+  assert.equal(runtime.calls.ensureConnected, 0);
 });
 
 test("same-surface route loading does not destroy the logical socket or truncate its stream", async () => {

@@ -37,6 +37,7 @@ import {
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
+const SURFACE_REGISTRATION_WAIT_MS = 1_500;
 
 const LIVE_CHAT_SURFACE_IDS = new Set([
   MAIN_CHAT_SURFACE_ID,
@@ -106,6 +107,15 @@ function sameOrigin(left: string, right: string) {
   } catch {
     return false;
   }
+}
+
+function mayAwaitSurfaceRegistration(
+  sender: WebContents,
+  isTrustedSession: (sender: WebContents) => boolean,
+) {
+  return !sender.isDestroyed() &&
+    sender.getType() === "webview" &&
+    isTrustedSession(sender);
 }
 
 function authorizeSurface(
@@ -365,12 +375,39 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   const handleOpen = async (event: any, input: AgentWebclientPlatformWsOpenInput) => {
     const socketId = readText(input?.socketId);
     if (!socketId) return;
-    const context = authorizeSurface(
+    const initialTarget = options.browserSurfaces.resolveWebviewSurfaceTarget(event.sender.id);
+    let context = authorizeSurface(
       event.sender,
       options.browserSurfaces,
       options.isTrustedAgentWebclientSession,
     );
+    if (
+      "ok" in context &&
+      !initialTarget &&
+      mayAwaitSurfaceRegistration(event.sender, options.isTrustedAgentWebclientSession)
+    ) {
+      const abortController = new AbortController();
+      const abortWait = () => abortController.abort();
+      event.sender.once("destroyed", abortWait);
+      event.sender.once("render-process-gone", abortWait);
+      try {
+        await options.browserSurfaces.waitForWebviewSurfaceTarget(
+          event.sender.id,
+          SURFACE_REGISTRATION_WAIT_MS,
+          abortController.signal,
+        );
+      } finally {
+        event.sender.removeListener("destroyed", abortWait);
+        event.sender.removeListener("render-process-gone", abortWait);
+      }
+      context = authorizeSurface(
+        event.sender,
+        options.browserSurfaces,
+        options.isTrustedAgentWebclientSession,
+      );
+    }
     if ("ok" in context) {
+      if (event.sender.isDestroyed()) return;
       event.sender.send(AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL, {
         socketId,
         type: "error",
@@ -380,7 +417,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         socketId,
         type: "close",
         code: 1008,
-        reason: context.error.message,
+        reason: context.error.code,
       } satisfies AgentWebclientPlatformWsEvent);
       return;
     }
