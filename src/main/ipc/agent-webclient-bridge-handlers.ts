@@ -67,6 +67,10 @@ type StreamBinding = {
   lastSeq: number;
   suppressed: boolean;
   detachSent: boolean;
+  virtual: boolean;
+  visibleRegistered: boolean;
+  sourceId: string;
+  unsubscribe: (() => void) | null;
 };
 
 type LogicalSocket = {
@@ -161,6 +165,17 @@ function frameError(id: string, code: AgentWebclientBridgeErrorCode, message: st
     msg: message,
     data: { code, message },
   };
+}
+
+function bridgeErrorCode(error: unknown): AgentWebclientBridgeErrorCode {
+  const candidate = error instanceof Error ? error.name : "protocol_error";
+  return [
+    "bridge_unavailable", "version_mismatch", "invalid_request", "duplicate_id",
+    "connection_unavailable", "connection_lost_before_acceptance", "capability_denied",
+    "surface_unavailable", "target_unavailable", "ambiguous_action_target",
+    "unsupported_in_current_view", "unsupported_native_surface", "seq_expired",
+    "replay_required", "protocol_error", "backpressure",
+  ].includes(candidate) ? candidate as AgentWebclientBridgeErrorCode : "protocol_error";
 }
 
 function parseRequestFrame(serialized: string): AgentPlatformRequestFrame | null {
@@ -271,6 +286,11 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     socket.closed = true;
     socket.unsubscribePush?.();
     socket.unsubscribePush = null;
+    for (const binding of socket.streams.values()) {
+      binding.unsubscribe?.();
+      binding.unsubscribe = null;
+      if (binding.visibleRegistered) options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
+    }
     options.realtimeBroker.cleanupConsumer(socket.consumerId);
     sockets.delete(socket.key);
     const keys = senderSocketKeys.get(socket.sender.id);
@@ -288,8 +308,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   };
 
   const detachBinding = async (socket: LogicalSocket, binding: StreamBinding) => {
-    if (binding.detachSent || !binding.runId || !binding.owner) return;
+    if (binding.detachSent) return;
     binding.detachSent = true;
+    if (binding.virtual) {
+      binding.unsubscribe?.();
+      binding.unsubscribe = null;
+      return;
+    }
+    if (binding.visibleRegistered) {
+      options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
+      binding.visibleRegistered = false;
+    }
+    if (!binding.runId || !binding.owner) return;
     const { baseUrl, token } = await availability();
     await options.realtimeBroker.forwardRequest({
       baseUrl,
@@ -492,6 +522,13 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     // Trusted one-shot Platform requests share the broker without acquiring the live Run lease.
     // Only query/attach/BTW streams require the additional active-surface authorization below.
     const isLive = LIVE_REQUEST_TYPES.has(frame.type);
+    const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+    const ownerChatId = context.target.ownerChatId?.trim() || "";
+    const isReadonlyVirtualAttach = frame.type === "/api/attach" &&
+      (context.kind === "agent-overview" || context.kind === "agent-debug") &&
+      context.target.surfaceRole === (context.kind === "agent-overview" ? "overview" : "debug") &&
+      context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+      Boolean(ownerChatId);
     if (isLive) {
       const isLiveChat = LIVE_CHAT_SURFACE_IDS.has(context.target.surfaceId);
       const isBTW = context.kind === "agent-btw" &&
@@ -501,15 +538,35 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       const allowedSurface = frame.type === "/api/query"
         ? isLiveChat
         : frame.type === "/api/btw" || frame.type === "/api/attach"
-          ? isLiveChat || isBTW
+          ? isLiveChat || isBTW || isReadonlyVirtualAttach
           : false;
       if (!allowedSurface || !context.target.active) {
         sendFrame(socket, frameError(frame.id, "surface_unavailable", "only the active Chat or BTW surface may open this live Run stream"));
         return;
       }
-      await activateLiveSocket(socket);
+      if (!isReadonlyVirtualAttach) await activateLiveSocket(socket);
     }
-    const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+    if (frame.type === "/api/detach" && (context.kind === "agent-overview" || context.kind === "agent-debug")) {
+      const runId = readText(payload.runId);
+      const virtualBindings = [...socket.streams.values()].filter((candidate) =>
+        candidate.virtual && candidate.runId === runId,
+      );
+      for (const candidate of virtualBindings) {
+        candidate.detachSent = true;
+        candidate.unsubscribe?.();
+        candidate.unsubscribe = null;
+        socket.requestIds.delete(candidate.localId);
+        socket.streams.delete(candidate.localId);
+      }
+      sendFrame(socket, {
+        frame: "response",
+        id: frame.id,
+        type: frame.type,
+        code: 0,
+        data: {},
+      });
+      return;
+    }
     const explicitDetachBindings = frame.type === "/api/detach"
       ? [...socket.streams.values()].filter((candidate) =>
           !candidate.detachSent &&
@@ -526,6 +583,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       for (const candidate of explicitDetachBindings) {
         candidate.suppressed = true;
         candidate.detachSent = true;
+        if (candidate.visibleRegistered) {
+          options.realtimeBroker.releaseForwardedVisibleRun(candidate.sourceId);
+          candidate.visibleRegistered = false;
+        }
       }
     }
     const finishExplicitDetachWrite = (written: boolean) => {
@@ -555,12 +616,16 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       ? {
           localId: frame.id,
           type: frame.type as "/api/query" | "/api/attach" | "/api/btw",
-          chatId: readText(payload.chatId),
+          chatId: readText(payload.chatId) || ownerChatId,
           runId: readText(payload.runId),
           owner: readOwner(payload),
           lastSeq: Math.max(0, Number(payload.lastSeq) || 0),
           suppressed: false,
           detachSent: false,
+          virtual: isReadonlyVirtualAttach,
+          visibleRegistered: false,
+          sourceId: `${socket.key}:${frame.id}`,
+          unsubscribe: null,
         }
       : null;
     if (binding) socket.streams.set(frame.id, binding);
@@ -577,6 +642,76 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       interaction: context.target.interaction,
       route: context.target.pageRoute || event.sender.getURL(),
     });
+    if (binding?.virtual) {
+      try {
+        if (!binding.runId || !binding.chatId || !binding.owner) {
+          throw Object.assign(new Error("visible Run identity is incomplete"), { name: "invalid_request" });
+        }
+        const subscription = options.realtimeBroker.subscribeVisibleRun({
+          runId: binding.runId,
+          chatId: binding.chatId,
+          lastSeq: binding.lastSeq,
+          owner: binding.owner,
+          kind: "surface",
+          consumerId: socket.consumerId,
+          surfaceId: `surface:${event.sender.id}`,
+          onEvent: (runEvent) => sendFrame(socket, {
+            frame: "stream",
+            id: binding.localId,
+            event: runEvent,
+          }),
+          onComplete: (completed) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            sendFrame(socket, {
+              frame: "stream",
+              id: binding.localId,
+              reason: completed.reason,
+              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+            });
+            socket.requestIds.delete(binding.localId);
+            socket.streams.delete(binding.localId);
+          },
+          onError: (error) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            sendFrame(socket, frameError(binding.localId, bridgeErrorCode(error), error.message));
+            socket.requestIds.delete(binding.localId);
+            socket.streams.delete(binding.localId);
+          },
+        });
+        binding.unsubscribe = subscription.unsubscribe;
+        await subscription.ready;
+      } catch (error) {
+        socket.requestIds.delete(frame.id);
+        socket.streams.delete(frame.id);
+        sendFrame(socket, frameError(
+          frame.id,
+          bridgeErrorCode(error),
+          error instanceof Error ? error.message : String(error),
+        ));
+      }
+      return;
+    }
+    if (
+      binding?.type === "/api/attach" &&
+      context.target.surfaceId === MAIN_CHAT_SURFACE_ID &&
+      binding.chatId && binding.runId && binding.owner
+    ) {
+      try {
+        options.realtimeBroker.beginForwardedVisibleRun({
+          sourceId: binding.sourceId,
+          chatId: binding.chatId,
+          runId: binding.runId,
+          owner: binding.owner,
+          lastSeq: binding.lastSeq,
+          primarySurfaceId: `surface:${event.sender.id}`,
+        });
+        binding.visibleRegistered = true;
+      } catch {
+        // Main Chat remains authoritative even when its read-only mirror cannot bind.
+      }
+    }
     try {
       await options.realtimeBroker.forwardRequest({
         baseUrl,
@@ -588,7 +723,39 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         stream: isLive,
         onFrame: (upstreamFrame) => {
           if (binding) {
+            const previousLastSeq = binding.lastSeq;
             updateBindingFromFrame(binding, upstreamFrame);
+            const shouldMirrorVisibleRun =
+              context.target.surfaceId === MAIN_CHAT_SURFACE_ID &&
+              (binding.type === "/api/query" || binding.type === "/api/attach") &&
+              Boolean(binding.chatId && binding.runId && binding.owner);
+            if (shouldMirrorVisibleRun && !binding.visibleRegistered) {
+              try {
+                options.realtimeBroker.beginForwardedVisibleRun({
+                  sourceId: binding.sourceId,
+                  chatId: binding.chatId,
+                  runId: binding.runId,
+                  owner: binding.owner!,
+                  lastSeq: previousLastSeq,
+                  primarySurfaceId: `surface:${event.sender.id}`,
+                });
+                binding.visibleRegistered = true;
+              } catch {
+                // Main Chat remains authoritative even when its read-only mirror cannot bind.
+              }
+            }
+            if (binding.visibleRegistered && isPlainBridgeRecord(upstreamFrame.event)) {
+              try {
+                options.realtimeBroker.appendForwardedVisibleRunEvent({
+                  sourceId: binding.sourceId,
+                  runId: binding.runId,
+                  event: upstreamFrame.event,
+                });
+              } catch {
+                options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
+                binding.visibleRegistered = false;
+              }
+            }
             if (binding.suppressed && !binding.detachSent && binding.runId && binding.owner) {
               void detachBinding(socket, binding).catch(() => undefined).finally(() => {
                 if (!socket.retiring) return;
@@ -602,6 +769,19 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           const terminal = frameKind === "error" ||
             frameKind === "response" ||
             (frameKind === "stream" && Boolean(readText(upstreamFrame.reason)));
+          if (binding?.visibleRegistered && terminal) {
+            if (frameKind === "stream" && readText(upstreamFrame.reason)) {
+              options.realtimeBroker.completeForwardedVisibleRun({
+                sourceId: binding.sourceId,
+                runId: binding.runId,
+                reason: readText(upstreamFrame.reason),
+                ...(typeof upstreamFrame.lastSeq === "number" ? { lastSeq: upstreamFrame.lastSeq } : {}),
+              });
+            } else {
+              options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
+            }
+            binding.visibleRegistered = false;
+          }
           if (!binding?.suppressed || terminal) sendFrame(socket, upstreamFrame);
           if (terminal) {
             socket.requestIds.delete(frame.id);
@@ -610,6 +790,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           }
         },
         onError: (error) => {
+          if (binding?.visibleRegistered) {
+            options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
+            binding.visibleRegistered = false;
+          }
           socket.requestIds.delete(frame.id);
           socket.streams.delete(frame.id);
           sendFrame(socket, frameError(frame.id, "connection_unavailable", error.message));

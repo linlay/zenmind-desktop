@@ -74,6 +74,7 @@ type BrokerRun = {
   terminal: boolean;
   suspended: boolean;
   upstreamRequestId: string | null;
+  forwardedSourceId: string | null;
   query: QueryTransaction | null;
   replay: ReplayEvent[];
   replayBytes: number;
@@ -119,6 +120,7 @@ type RunSubscription = {
   lastSeq: number;
   kind: "surface" | "internal";
   consumerId: string;
+  surfaceId?: string;
   onEvent(event: Record<string, unknown>): void;
   onComplete?(result: RealtimeQueryCompleted): void;
   onError?(error: Error): void;
@@ -532,6 +534,7 @@ export class RealtimeBroker {
         terminal: false,
         suspended: false,
         upstreamRequestId: null,
+        forwardedSourceId: null,
         query: null,
         replay: [],
         replayBytes: 0,
@@ -567,7 +570,191 @@ export class RealtimeBroker {
     if (!runSubscription) return false;
     this.runSubscriptions.delete(subscriptionId);
     this.runsById.get(runSubscription.runId)?.subscribers.delete(subscriptionId);
+    if (runSubscription.surfaceId && this.visibleBinding) {
+      const stillSubscribed = [...this.runSubscriptions.values()].some((candidate) =>
+        candidate.surfaceId === runSubscription.surfaceId &&
+        candidate.runId === this.visibleBinding?.runId
+      );
+      if (!stillSubscribed) this.visibleBinding.consumerSurfaceIds.delete(runSubscription.surfaceId);
+    }
     return true;
+  }
+
+  beginForwardedVisibleRun(input: {
+    sourceId: string;
+    chatId: string;
+    runId: string;
+    owner: AgentWebclientRunOwner;
+    lastSeq?: number;
+    primarySurfaceId: string;
+  }) {
+    if (!this.acceptingDelivery) {
+      throw brokerError("connection_unavailable", "Realtime Broker is shutting down");
+    }
+    const sourceId = input.sourceId.trim();
+    const chatId = input.chatId.trim();
+    const runId = input.runId.trim();
+    const primarySurfaceId = input.primarySurfaceId.trim();
+    if (!sourceId || !chatId || !runId || !primarySurfaceId) {
+      throw brokerError("invalid_request", "forwarded visible Run identity is incomplete");
+    }
+    let run = this.runsById.get(runId);
+    if (!run) {
+      run = {
+        runId,
+        chatId,
+        owner: input.owner,
+        lastSeq: Math.max(0, input.lastSeq ?? 0),
+        terminal: false,
+        suspended: false,
+        upstreamRequestId: null,
+        forwardedSourceId: sourceId,
+        query: null,
+        replay: [],
+        replayBytes: 0,
+        subscribers: new Set(),
+      };
+      this.runsById.set(runId, run);
+    } else {
+      if (run.chatId !== chatId) {
+        throw brokerError("invalid_request", "runId belongs to a different chat");
+      }
+      if (run.forwardedSourceId && run.forwardedSourceId !== sourceId) {
+        throw brokerError("duplicate_id", "visible Run is already owned by another forwarded source");
+      }
+      if (run.terminal) {
+        throw brokerError("target_unavailable", "completed Run cannot become visible again");
+      }
+      run.forwardedSourceId = sourceId;
+      run.owner = input.owner;
+    }
+    this.visibleBinding = {
+      epoch: (this.visibleBinding?.epoch ?? 0) + 1,
+      chatId,
+      runId,
+      upstreamRequestId: sourceId,
+      primarySurfaceId,
+      consumerSurfaceIds: new Set([primarySurfaceId]),
+    };
+    return this.getVisibleBinding();
+  }
+
+  appendForwardedVisibleRunEvent(input: {
+    sourceId: string;
+    runId: string;
+    event: Record<string, unknown>;
+  }) {
+    const sourceId = input.sourceId.trim();
+    const run = this.runsById.get(input.runId.trim());
+    if (!run || run.forwardedSourceId !== sourceId || run.terminal) {
+      throw brokerError("target_unavailable", "forwarded visible Run source is unavailable");
+    }
+    this.consumeRunEvent(run, input.event, null);
+  }
+
+  completeForwardedVisibleRun(input: {
+    sourceId: string;
+    runId: string;
+    reason: string;
+    lastSeq?: number;
+  }) {
+    const sourceId = input.sourceId.trim();
+    const run = this.runsById.get(input.runId.trim());
+    if (!run || run.forwardedSourceId !== sourceId) return false;
+    run.forwardedSourceId = null;
+    const result = {
+      reason: input.reason.trim() || "done",
+      ...(input.lastSeq === undefined ? {} : { lastSeq: input.lastSeq }),
+    };
+    if (run.upstreamRequestId) {
+      for (const id of [...run.subscribers]) {
+        const subscription = this.runSubscriptions.get(id);
+        if (!subscription?.surfaceId) continue;
+        this.unsubscribe(id);
+        subscription.onComplete?.(result);
+      }
+    } else {
+      this.completeRun(run, result);
+    }
+    if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
+    return true;
+  }
+
+  releaseForwardedVisibleRun(sourceIdValue: string) {
+    const sourceId = sourceIdValue.trim();
+    if (!sourceId) return false;
+    const run = [...this.runsById.values()].find((candidate) =>
+      candidate.forwardedSourceId === sourceId,
+    );
+    if (!run) return false;
+    run.forwardedSourceId = null;
+    if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
+    const error = brokerError("replay_required", "primary visible Run source was released");
+    for (const id of [...run.subscribers]) {
+      const subscription = this.runSubscriptions.get(id);
+      if (!subscription?.surfaceId) continue;
+      this.unsubscribe(id);
+      subscription.onError?.(error);
+    }
+    return true;
+  }
+
+  subscribeVisibleRun(options: {
+    runId: string;
+    chatId: string;
+    lastSeq?: number;
+    owner?: AgentWebclientRunOwner;
+    kind: "surface" | "internal";
+    consumerId: string;
+    surfaceId: string;
+    onEvent(event: Record<string, unknown>): void;
+    onComplete?(result: RealtimeQueryCompleted): void;
+    onError?(error: Error): void;
+  }) {
+    if (!this.acceptingDelivery) {
+      throw brokerError("connection_unavailable", "Realtime Broker is shutting down");
+    }
+    const runId = options.runId.trim();
+    const chatId = options.chatId.trim();
+    const surfaceId = options.surfaceId.trim();
+    const binding = this.visibleBinding;
+    const run = this.runsById.get(runId);
+    if (
+      !runId || !chatId || !surfaceId ||
+      !binding || binding.runId !== runId || binding.chatId !== chatId ||
+      !run || run.chatId !== chatId || run.forwardedSourceId !== binding.upstreamRequestId
+    ) {
+      throw brokerError("target_unavailable", "requested Run is not the primary visible Run");
+    }
+    if (options.owner && run.owner && (
+      options.owner.kind !== run.owner.kind ||
+      (options.owner.kind === "agent" && run.owner.kind === "agent" && options.owner.agentKey !== run.owner.agentKey) ||
+      (options.owner.kind === "team" && run.owner.kind === "team" && options.owner.teamId !== run.owner.teamId)
+    )) {
+      throw brokerError("capability_denied", "requested Run owner does not match the visible Run");
+    }
+    const id = `visible-run-sub-${randomUUID()}`;
+    const subscription: RunSubscription = {
+      id,
+      runId,
+      chatId,
+      lastSeq: Math.max(0, options.lastSeq ?? 0),
+      kind: options.kind,
+      consumerId: options.consumerId,
+      surfaceId,
+      onEvent: options.onEvent,
+      onComplete: options.onComplete,
+      onError: options.onError,
+    };
+    this.replayToSubscriber(run, subscription);
+    this.runSubscriptions.set(id, subscription);
+    run.subscribers.add(id);
+    binding.consumerSurfaceIds.add(surfaceId);
+    return {
+      subscriptionId: id,
+      unsubscribe: () => this.unsubscribe(id),
+      ready: Promise.resolve(),
+    };
   }
 
   cleanupConsumer(consumerId: string) {
@@ -590,7 +777,11 @@ export class RealtimeBroker {
 
   setVisibleBinding(input: Omit<VisibleRunBinding, "epoch">) {
     const run = this.runsById.get(input.runId);
-    if (!run || run.chatId !== input.chatId || run.upstreamRequestId !== input.upstreamRequestId) {
+    if (
+      !run ||
+      run.chatId !== input.chatId ||
+      (run.upstreamRequestId !== input.upstreamRequestId && run.forwardedSourceId !== input.upstreamRequestId)
+    ) {
       throw brokerError("target_unavailable", "visible Run identity is not registered");
     }
     this.visibleBinding = {
@@ -947,6 +1138,7 @@ export class RealtimeBroker {
       terminal: false,
       suspended: false,
       upstreamRequestId: transaction.upstreamRequestId,
+      forwardedSourceId: null,
       query: transaction,
       replay: [],
       replayBytes: 0,

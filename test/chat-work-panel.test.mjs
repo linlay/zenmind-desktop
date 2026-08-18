@@ -40,7 +40,10 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(host, /hidden=\{!visible\}/u);
   assert.match(host, /visible && hasPanelToggle \? " has-panel-toggle" : ""/u);
   assert.match(reducer, /stableKey:\s*`web:\$\{url\}`/u);
-  assert.match(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/overview\/iu/u);
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /AGENT_WEBCLIENT_WORK_PANEL_ROLES[\s\S]*?"overview"/u,
+  );
   assert.doesNotMatch(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/summary\/iu/u);
   assert.match(css, /\.app-shell\.has-chat-work-panel \.work-panel-host\s*\{[^}]*var\(--chat-work-panel-width/su);
   assert.doesNotMatch(css, /\.work-panel-host\s*\{[^}]*display:\s*contents/su);

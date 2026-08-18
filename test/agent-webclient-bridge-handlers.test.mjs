@@ -56,6 +56,9 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
   const cleaned = [];
   const pushSubscribers = [];
   const dispatched = [];
+  const visibleRuns = new Map();
+  const visibleSubscriptions = new Map();
+  let visibleBinding = null;
   const calls = {
     ensureConnected: 0,
     getServiceState: 0,
@@ -70,6 +73,64 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
     subscribePush: ({ onPush }) => {
       pushSubscribers.push(onPush);
       return () => undefined;
+    },
+    beginForwardedVisibleRun: (input) => {
+      const run = visibleRuns.get(input.runId) ?? {
+        chatId: input.chatId,
+        runId: input.runId,
+        owner: input.owner,
+        sourceId: input.sourceId,
+        replay: [],
+        subscribers: new Set(),
+      };
+      run.sourceId = input.sourceId;
+      visibleRuns.set(input.runId, run);
+      visibleBinding = { ...input };
+    },
+    appendForwardedVisibleRunEvent: ({ sourceId, runId, event }) => {
+      const run = visibleRuns.get(runId);
+      if (!run || run.sourceId !== sourceId) throw new Error("visible source unavailable");
+      run.replay.push(event);
+      for (const id of run.subscribers) visibleSubscriptions.get(id)?.onEvent(event);
+    },
+    completeForwardedVisibleRun: ({ sourceId, runId, reason, lastSeq }) => {
+      const run = visibleRuns.get(runId);
+      if (!run || run.sourceId !== sourceId) return false;
+      for (const id of [...run.subscribers]) {
+        visibleSubscriptions.get(id)?.onComplete?.({ reason, lastSeq });
+      }
+      visibleBinding = null;
+      run.sourceId = null;
+      return true;
+    },
+    releaseForwardedVisibleRun: (sourceId) => {
+      const run = [...visibleRuns.values()].find((candidate) => candidate.sourceId === sourceId);
+      if (!run) return false;
+      for (const id of [...run.subscribers]) {
+        visibleSubscriptions.get(id)?.onError?.(Object.assign(new Error("replay required"), { name: "replay_required" }));
+      }
+      visibleBinding = null;
+      run.sourceId = null;
+      return true;
+    },
+    subscribeVisibleRun: (input) => {
+      const run = visibleRuns.get(input.runId);
+      if (!visibleBinding || !run || run.chatId !== input.chatId || run.sourceId !== visibleBinding.sourceId) {
+        throw Object.assign(new Error("visible Run unavailable"), { name: "target_unavailable" });
+      }
+      const id = `visible-${visibleSubscriptions.size + 1}`;
+      visibleSubscriptions.set(id, input);
+      run.subscribers.add(id);
+      for (const event of run.replay) {
+        if ((Number(event.seq) || 0) > (input.lastSeq || 0)) input.onEvent(event);
+      }
+      return {
+        ready: Promise.resolve(),
+        unsubscribe: () => {
+          visibleSubscriptions.delete(id);
+          run.subscribers.delete(id);
+        },
+      };
     },
     cleanupConsumer: (id) => cleaned.push(id),
     appendDebugTrace: (entry) => traces.push(entry),
@@ -104,7 +165,10 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       return { ok: true, workspaceId: "workspace-1" };
     },
   });
-  return { broker, calls, cleaned, dispatched, handlers, listeners, pushSubscribers, registration, traces };
+  return {
+    broker, calls, cleaned, dispatched, handlers, listeners, pushSubscribers,
+    registration, traces, visibleRuns, visibleSubscriptions,
+  };
 }
 
 async function flush() {
@@ -155,6 +219,183 @@ test("raw Frame Port forwards each Platform stream frame immediately and unchang
   assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 1);
   assert.ok(runtime.traces.some((entry) => entry.direction === "surface-to-desktop"));
   assert.ok(runtime.traces.some((entry) => entry.direction === "desktop-to-surface"));
+});
+
+test("Overview attaches to the Main Chat visible Run locally without another upstream stream", async () => {
+  const mainTarget = createTarget(47, {
+    ownerChatId: "chat-shared",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-shared",
+  });
+  const overviewTarget = createTarget(48, {
+    surfaceId: "overview:chat-shared",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-shared",
+    pageRoute: "/overview/chat-shared",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-shared",
+  });
+  const forwarded = [];
+  let deliverMain = () => undefined;
+  const runtime = createRegistration(
+    new Map([[47, mainTarget], [48, overviewTarget]]),
+    async (input) => {
+      forwarded.push(input.type);
+      if (input.type === "/api/query") deliverMain = input.onFrame;
+    },
+  );
+  const main = createSender(47, mainTarget.currentUrl);
+  const overview = createSender(48, overviewTarget.currentUrl);
+  await openSocket(runtime, main, "socket-main-visible");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: main }, {
+    socketId: "socket-main-visible",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-main-visible",
+      payload: { requestId: "req-visible", message: "hello", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+  const first = {
+    frame: "stream",
+    id: "query-main-visible",
+    event: {
+      type: "run.start",
+      timestamp: 1_786_890_100_001,
+      seq: 1,
+      chatId: "chat-shared",
+      runId: "run-shared",
+      agentKey: "agent-1",
+    },
+  };
+  deliverMain(first);
+
+  await openSocket(runtime, overview, "socket-overview-visible");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
+    socketId: "socket-overview-visible",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-visible",
+      payload: { runId: "run-shared", agentKey: "agent-1", lastSeq: 0 },
+    }),
+  });
+  await flush();
+
+  const second = {
+    frame: "stream",
+    id: "query-main-visible",
+    event: {
+      type: "content.delta",
+      timestamp: 1_786_890_100_002,
+      seq: 2,
+      chatId: "chat-shared",
+      runId: "run-shared",
+      delta: "live",
+    },
+  };
+  deliverMain(second);
+  await flush();
+
+  assert.deepEqual(forwarded, ["/api/query"]);
+  assert.deepEqual(sentFrames(main), [first, second]);
+  assert.deepEqual(
+    sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
+    [1, 2],
+  );
+  assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
+    socketId: "socket-overview-visible",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-overview-visible",
+      payload: { runId: "run-shared", agentKey: "agent-1", reason: "surface_inactive" },
+    }),
+  });
+  await flush();
+  assert.deepEqual(forwarded, ["/api/query"]);
+  assert.deepEqual(sentFrames(overview).at(-1), {
+    frame: "response",
+    id: "detach-overview-visible",
+    type: "/api/detach",
+    code: 0,
+    data: {},
+  });
+});
+
+test("a restored Main Chat attach exposes its visible Run before the first upstream event", async () => {
+  const mainTarget = createTarget(49, {
+    ownerChatId: "chat-restored",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-restored",
+  });
+  const overviewTarget = createTarget(50, {
+    surfaceId: "overview:chat-restored",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-restored",
+    pageRoute: "/overview/chat-restored",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-restored",
+  });
+  const forwarded = [];
+  let deliverMain = () => undefined;
+  const runtime = createRegistration(
+    new Map([[49, mainTarget], [50, overviewTarget]]),
+    async (input) => {
+      forwarded.push(input.type);
+      if (input.type === "/api/attach") deliverMain = input.onFrame;
+    },
+  );
+  const main = createSender(49, mainTarget.currentUrl);
+  const overview = createSender(50, overviewTarget.currentUrl);
+  await openSocket(runtime, main, "socket-main-restored");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: main }, {
+    socketId: "socket-main-restored",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-restored",
+      payload: { runId: "run-restored", agentKey: "agent-1", lastSeq: 12 },
+    }),
+  });
+  await flush();
+
+  await openSocket(runtime, overview, "socket-overview-restored");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
+    socketId: "socket-overview-restored",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-restored",
+      payload: { runId: "run-restored", agentKey: "agent-1", lastSeq: 12 },
+    }),
+  });
+  await flush();
+  assert.deepEqual(forwarded, ["/api/attach"]);
+
+  deliverMain({
+    frame: "stream",
+    id: "attach-main-restored",
+    event: {
+      type: "planning.update",
+      timestamp: 1_786_890_200_013,
+      seq: 13,
+      chatId: "chat-restored",
+      runId: "run-restored",
+    },
+  });
+  await flush();
+  assert.deepEqual(
+    sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
+    [13],
+  );
 });
 
 test("raw Frame Port forwards ordinary Platform request and response frames for a trusted surface", async () => {
@@ -272,6 +513,73 @@ test("management File surface forwards /api/file but cannot acquire a live Run l
   assert.deepEqual(forwarded, ["/api/file"]);
   assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 0);
   assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+});
+
+test("management Planning surface replays chat without live or WorkPanel-open capability", async () => {
+  const target = createTarget(47, {
+    surfaceId: "planning:chat-47:plan-47",
+    surfaceType: "agent-management",
+    surfaceRole: "planning",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-47",
+    pageRoute: "/planning-viewer/plan-47",
+    currentUrl: "http://127.0.0.1:7079/planning-viewer/plan-47?chatId=chat-47",
+  });
+  const forwarded = [];
+  const runtime = createRegistration(new Map([[47, target]]), async (input) => {
+    forwarded.push(input.type);
+    input.onFrame({
+      frame: "response",
+      id: input.localId,
+      type: input.type,
+      code: 0,
+      data: { id: "chat-47", messages: [] },
+    });
+  });
+  const sender = createSender(47, target.currentUrl);
+  await openSocket(runtime, sender, "socket-planning-data");
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-planning-data",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/chat",
+      id: "planning-replay-47",
+      payload: { chatId: "chat-47" },
+    }),
+  });
+  await flush();
+  assert.deepEqual(forwarded, ["/api/chat"]);
+  assert.equal(sentFrames(sender).at(-1).id, "planning-replay-47");
+
+  for (const [type, id, payload] of [
+    ["/api/query", "planning-query-denied", { agentKey: "agent-47", message: "no" }],
+    ["/api/attach", "planning-attach-denied", { agentKey: "agent-47", runId: "run-47", lastSeq: 0 }],
+    ["/api/btw", "planning-btw-denied", { agentKey: "agent-47", chatId: "chat-47", message: "no" }],
+  ]) {
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+      socketId: "socket-planning-data",
+      data: JSON.stringify({ frame: "request", type, id, payload }),
+    });
+    await flush();
+    assert.equal(sentFrames(sender).at(-1).type, "surface_unavailable");
+    assert.equal(sentFrames(sender).at(-1).id, id);
+  }
+
+  const workpanel = runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+  assert.deepEqual(await workpanel({ sender }, { method: "getCapabilities" }), {
+    ok: true,
+    capabilities: ["workpanel.activate", "workpanel.close"],
+  });
+  const opened = await workpanel({ sender }, {
+    method: "openItem",
+    input: { version: 3, descriptor: { kind: "web", url: "https://example.test/" } },
+  });
+  assert.equal(opened.error.code, "capability_denied");
+  assert.deepEqual(runtime.dispatched, []);
+  assert.deepEqual(forwarded, ["/api/chat"]);
 });
 
 test("Frame Port waits for a trusted WebView surface registration before opening", async () => {
@@ -830,7 +1138,7 @@ test("WorkPanel retains an independent host capability query and version check",
   assert.equal(incompatible.error.code, "version_mismatch");
 });
 
-test("Overview WorkPanel child may open a Resource Viewer tab", async () => {
+test("Overview WorkPanel child may open Resource Viewer and Planning tabs", async () => {
   const target = createTarget(72, {
     surfaceId: "ov:chat-72",
     surfaceType: "agent-overview",
@@ -870,5 +1178,22 @@ test("Overview WorkPanel child may open a Resource Viewer tab", async () => {
     action: "openItem",
     ownerChatId: "chat-72",
     args: { descriptor },
+  });
+
+  const planningDescriptor = {
+    kind: "webclient",
+    module: "planning",
+    route: "/planning-viewer/plan-72?chatId=chat-72",
+    context: { chatId: "chat-72", planningId: "plan-72" },
+  };
+  const planningOpened = await workpanel({ sender }, {
+    method: "openItem",
+    input: { version: 3, descriptor: planningDescriptor },
+  });
+  assert.equal(planningOpened.ok, true);
+  assert.deepEqual(runtime.dispatched.at(-1), {
+    action: "openItem",
+    ownerChatId: "chat-72",
+    args: { descriptor: planningDescriptor },
   });
 });

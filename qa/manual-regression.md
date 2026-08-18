@@ -58,10 +58,10 @@
 - [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
 - [ ] 在 Main Chat 连续切换多个普通、运行中和空消息 Chat；每次只请求目标 `chatId`，owner Chat/registry 元数据更新不产生伪造的 inactive→active lifecycle，也不强制 replay 上一个 Chat。
-- [ ] Main Chat 仍是唯一 live surface；WorkPanel Overview/Debug 首次打开各只 HTTP replay 一次，隐藏再显示时各只再 replay 一次，全程不产生 query、attach、detach 或轮询。
+- [ ] Main Chat 仍是唯一上游 live surface；WorkPanel Overview/Debug 首次打开先做一次 HTTP replay，再以 `lastSeq` 订阅 Main Chat 当前 visible Run 的 Desktop 本地镜像。主聊天后续 Planning、Plan Task、File Change 与内容事件无需切换标签即同步；抓包确认 Overview/Debug 不新增 Platform query/attach/detach 或轮询，隐藏时只释放本地 consumer，再显示时 replay/虚拟订阅恢复且不丢不重。
 - [ ] 新 Chat URL 只在关联 stream bootstrap identity 后晋升；`chat.created` push 只更新列表，不能猜测 query 归属。
 - [ ] 离开 Main Chat 页面、关闭 Copilot 或退出 Kanban Chat 页面时，存在 stream 的 observer 各只 detach 一次；进入对应页面时先请求 `/api/chat` replay，只有响应仍含 `activeRun` 才从服务端 `lastSeq` attach，identity 尚未返回的 query 在 bootstrap 后补 detach。左侧 Nav 只产生页面选择并展示 push 状态，不直接发 query/attach/detach。
-- [ ] 非 active、伪造或独立 Overview/Debug surface 的 query/attach 返回同 request id 的标准 Platform error frame；interrupt/submit/steer/access-level 保留真实 Platform `ApiError` 语义。
+- [ ] Overview/Debug 的 query 始终拒绝；非 active、伪造、跨 owner Chat、父级不是 Main Chat 或目标不是当前 visible Run 的 attach 返回同 request id 的标准 Platform error frame。合法只读虚拟 attach 只读取本地 replay/live fanout，interrupt/submit/steer/access-level 保留真实 Platform `ApiError` 语义。
 - [ ] 附件上传失败时请求不会伪装成功，取消后临时资源被清理。
 - [ ] Copilot 在 Website/WebApp 间切换时更新页面上下文，旧 surface 失去控制权。
 - [ ] 页面选择、截图和文件等不同内容来源具有清晰的用户确认与结果反馈。
@@ -110,6 +110,7 @@
 - [ ] 仅 Main Chat 显示 Desktop WorkPanel 右上按钮；新对话尚无稳定 `chatId` 时按钮禁用，管理页、Copilot、Website、WebApp 和 Standalone WebClient 均无该 Desktop 入口，Desktop Agent guest 自身右上快捷组为空。
 - [ ] 首次点击右上按钮创建当前 Chat 的 Overview item；再次点击只隐藏，tabs、guest、active item 与宽度保持；再次打开恢复原 active item且不重建 guest。分别在两个 Chat 隐藏/恢复时 workspace 不串线，隐藏期间收到 Planning/Artifact/Web `openTab` 或 `activateTab` 会自动显示目标 workspace。
 - [ ] WorkPanel Overview、Debug、BTW 分别使用 `/overview/:chatId`、`/debug/:chatId`、`/btw/:chatId`；Source 与 Planning 使用各自身份作为 path 参数；Workspace File、Project 与 Diff 使用 canonical route，并保持路径仅编码一次。WebClient 缺少 `currentWorker.workspaceDir` 时，点击 `cli-excelx/README.md` 的绝对链接仍立即创建 `/file-viewer/:agentKey` WorkPanel 并通过 `/api/file` 加载；POSIX、Windows 盘符与 UNC 文件路径即使含有 `Project/project` 也必须登记为 File management surface，真正的 Project 页面仍登记为 Project surface。
+- [ ] 从 Desktop 独立 Overview 点击 Planning 后，同一 Chat 的 WorkPanel 立即打开对应 `/planning-viewer/:planningId?chatId=...` 标签；重复点击只激活已有标签，不重复创建。Team Chat 在无唯一 `agentKey` 时仍可打开，不同 Chat 不串线，Standalone Planning 行为不变。
 - [ ] Artifact 与 Reference 保留各自 module/context 和稳定去重身份，但都打开 `/resource-viewer/:agentKey?chatId=...&file=...`；缺少合法 preview URL 时不创建 item，Desktop 不生成 `/artifact-view/:agentKey`、`/reference-view/:agentKey` 或旧的 Overview/Debug/BTW Agent 路径。
 - [ ] File、Artifact 与 Reference 均先打开面板再请求 Platform：Standalone 使用 Sidebar，Desktop 使用 WorkPanel；File 调用 `/api/file`，Artifact/Reference 调用 `/api/resource`。请求 `/etc/hosts`、跨 ChatScope、symlink 或 workspace 外资源时面板保持打开并显示 Platform 403，不静默写入 debugLines，也不由 Desktop/WebClient 依据本地 workspace 元数据提前拒绝。
 - [ ] 删除 Chat、执行 `closeWorkpanel`，或在已无 closable tab 时通过关闭快捷键回收 WorkPanel 后，workspace 与可见状态同时清理；固定 Overview 不可单独关闭，右上按钮的“关闭”只 hide，不改变面板销毁语义。

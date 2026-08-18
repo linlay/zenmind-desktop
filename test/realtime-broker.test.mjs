@@ -222,6 +222,74 @@ test("RealtimeBroker locally fans one Run out to Agent, Copilot, Overview and De
   for (const subscription of subscriptions) subscription.unsubscribe();
 });
 
+test("RealtimeBroker replays and fans out a forwarded visible Run without upstream attach", async (t) => {
+  const { broker, sockets } = createHarness(t);
+  broker.beginForwardedVisibleRun({
+    sourceId: "frame-port:main:query-1",
+    chatId: "chat-visible",
+    runId: "run-visible",
+    owner: { kind: "agent", agentKey: "coder" },
+    primarySurfaceId: "surface:main",
+  });
+  broker.appendForwardedVisibleRunEvent({
+    sourceId: "frame-port:main:query-1",
+    runId: "run-visible",
+    event: {
+      type: "run.start", timestamp: EPOCH_MS, seq: 1,
+      chatId: "chat-visible", runId: "run-visible", agentKey: "coder",
+    },
+  });
+
+  const overviewEvents = [];
+  const debugEvents = [];
+  const completed = [];
+  const overview = broker.subscribeVisibleRun({
+    chatId: "chat-visible",
+    runId: "run-visible",
+    lastSeq: 0,
+    owner: { kind: "agent", agentKey: "coder" },
+    kind: "surface",
+    consumerId: "overview-consumer",
+    surfaceId: "surface:overview",
+    onEvent: (event) => overviewEvents.push(event.type),
+    onComplete: (result) => completed.push(result.reason),
+  });
+  const debug = broker.subscribeVisibleRun({
+    chatId: "chat-visible",
+    runId: "run-visible",
+    lastSeq: 1,
+    kind: "surface",
+    consumerId: "debug-consumer",
+    surfaceId: "surface:debug",
+    onEvent: (event) => debugEvents.push(event.type),
+  });
+  await Promise.all([overview.ready, debug.ready]);
+
+  broker.appendForwardedVisibleRunEvent({
+    sourceId: "frame-port:main:query-1",
+    runId: "run-visible",
+    event: {
+      type: "content.delta", timestamp: EPOCH_MS + 1, seq: 2,
+      chatId: "chat-visible", runId: "run-visible", delta: "hello",
+    },
+  });
+  assert.deepEqual(overviewEvents, ["run.start", "content.delta"]);
+  assert.deepEqual(debugEvents, ["content.delta"]);
+  assert.equal(sockets.length, 0);
+  assert.equal(broker.getDiagnostics().visibleBinding.consumerCount, 3);
+
+  assert.equal(broker.completeForwardedVisibleRun({
+    sourceId: "frame-port:main:query-1",
+    runId: "run-visible",
+    reason: "complete",
+    lastSeq: 2,
+  }), true);
+  assert.deepEqual(completed, ["complete"]);
+  assert.equal(broker.getVisibleBinding(), null);
+  overview.unsubscribe();
+  debug.unsubscribe();
+});
+
 test("RealtimeBroker singleflights attach and strictly pairs rewritten response ids", async (t) => {
   const { broker, sockets, token } = createHarness(t);
   const firstEvents = [];

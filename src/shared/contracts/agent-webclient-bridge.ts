@@ -186,7 +186,7 @@ export type WorkPanelSourceContext = WorkPanelChatContext & {
   publishId: string;
   sourceId: string;
 };
-export type WorkPanelPlanningContext = WorkPanelChatContext & { planningId: string };
+export type WorkPanelPlanningContext = { chatId: string; planningId: string };
 export type WorkPanelArtifactContext = WorkPanelChatContext & { artifactId: string };
 export type WorkPanelReferenceContext = WorkPanelChatContext & { referenceId: string };
 export type WorkPanelFileContext = { agentKey: string; path: string };

@@ -78,7 +78,7 @@ test("opening or activating an item reveals its workspace and destructive close 
     type: "hideWorkspace", ownerChatId: "chat",
   });
   const planning = open(hidden.nextState, "chat", {
-    kind: "webclient", module: "planning", route: "/planning-viewer/planning-1?chatId=chat", context: { agentKey: "agent-1", chatId: "chat", planningId: "planning-1" },
+    kind: "webclient", module: "planning", route: "/planning-viewer/planning-1?chatId=chat", context: { chatId: "chat", planningId: "planning-1" },
   });
   assert.deepEqual(planning.nextState.visibleOwnerChatIds, ["chat"]);
   const hiddenAgain = reduceWorkPanelCommand(planning.nextState, {
@@ -196,7 +196,7 @@ test("WorkPanel derives distinct canonical identities for every independent WebC
   const descriptors = [
     ["btw", "/btw/chat?btwId=btw-1", { agentKey: "agent", chatId: "chat", btwId: "btw-1" }, "btw:agent:chat:btw-1"],
     ["source", "/source-viewer/src?chatId=chat&chunkId=chunk-1", { agentKey: "agent", chatId: "chat", btwId: "btw-1", publishId: "pub", sourceId: "src" }, "source:agent:chat:btw-1:pub:src"],
-    ["planning", "/planning-viewer/plan?chatId=chat", { agentKey: "agent", chatId: "chat", planningId: "plan" }, "planning:agent:chat:plan"],
+    ["planning", "/planning-viewer/plan?chatId=chat", { chatId: "chat", planningId: "plan" }, "planning:chat:plan"],
     ["artifact", "/resource-viewer/agent?chatId=chat&file=artifacts%2Frun%2Freport.pdf", { agentKey: "agent", chatId: "chat", artifactId: "art" }, "artifact:agent:chat:art"],
     ["reference", "/resource-viewer/agent?chatId=chat&file=references%2Fdocument.pdf", { agentKey: "agent", chatId: "chat", referenceId: "ref" }, "reference:agent:chat:ref"],
     ["file", "/file-viewer/agent?path=src%2Fapp.ts&line=20", { agentKey: "agent", path: "src/app.ts" }, "file:agent:src/app.ts"],
@@ -211,6 +211,53 @@ test("WorkPanel derives distinct canonical identities for every independent WebC
     assert.equal(result.item.descriptor.route, route);
     state = result.nextState;
   }
+});
+
+test("Planning identity does not require an agent and canonicalizes legacy descriptors", () => {
+  const current = open(EMPTY_WORK_PANEL_STATE, "team-chat", {
+    kind: "webclient",
+    module: "planning",
+    route: "/planning-viewer/plan-1?chatId=team-chat",
+    context: { chatId: "team-chat", planningId: "plan-1" },
+  });
+  assert.equal(current.ok, true);
+  assert.equal(current.item.stableKey, "planning:team-chat:plan-1");
+  assert.deepEqual(current.item.descriptor.context, {
+    chatId: "team-chat",
+    planningId: "plan-1",
+  });
+
+  const legacy = open(current.nextState, "team-chat", {
+    kind: "webclient",
+    module: "planning",
+    route: "/planning-viewer/plan-1?chatId=team-chat",
+    context: { agentKey: "legacy-agent", chatId: "team-chat", planningId: "plan-1" },
+  });
+  assert.equal(legacy.ok, true);
+  assert.equal(legacy.item.itemId, current.item.itemId);
+  assert.equal(legacy.state.items.length, 1);
+  assert.deepEqual(legacy.item.descriptor.context, {
+    chatId: "team-chat",
+    planningId: "plan-1",
+  });
+
+  const otherPlan = open(legacy.nextState, "team-chat", {
+    kind: "webclient",
+    module: "planning",
+    route: "/planning-viewer/plan-2?chatId=team-chat",
+    context: { chatId: "team-chat", planningId: "plan-2" },
+  });
+  assert.equal(otherPlan.ok, true);
+  assert.notEqual(otherPlan.item.itemId, current.item.itemId);
+
+  const mismatchedChat = open(EMPTY_WORK_PANEL_STATE, "team-chat", {
+    kind: "webclient",
+    module: "planning",
+    route: "/planning-viewer/plan-1?chatId=other-chat",
+    context: { chatId: "other-chat", planningId: "plan-1" },
+  });
+  assert.equal(mismatchedChat.ok, false);
+  assert.equal(mismatchedChat.error.code, "capability_denied");
 });
 
 test("WorkPanel keeps pinned items and destroys the final closable workspace", () => {

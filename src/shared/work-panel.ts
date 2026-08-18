@@ -94,7 +94,9 @@ function normalizeContext(
 ): Record<string, string> | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const record = input as Record<string, unknown>;
-  const allowed = new Set([
+  const allowed = new Set(module === "planning" ? [
+    "chatId", "planningId", "agentKey",
+  ] : [
     "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
     "publishId", "sourceId", "btwId", "path",
   ]);
@@ -116,6 +118,12 @@ function normalizeContext(
       : normalizeRelativePath(record.path);
     if (!path) return null;
     context.path = path;
+  }
+  if (module === "planning") {
+    return {
+      ...(context.chatId ? { chatId: context.chatId } : {}),
+      ...(context.planningId ? { planningId: context.planningId } : {}),
+    };
   }
   return context;
 }
@@ -204,8 +212,8 @@ function normalizeDescriptor(
         : "";
       break;
     case "planning":
-      stableKey = context.agentKey && context.chatId && context.planningId
-        ? `planning:${context.agentKey}:${context.chatId}:${context.planningId}`
+      stableKey = context.chatId && context.planningId
+        ? `planning:${context.chatId}:${context.planningId}`
         : "";
       break;
     case "agent":
