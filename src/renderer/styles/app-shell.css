@@ -33,10 +33,6 @@
   -webkit-backdrop-filter: none;
 }
 
-.app-shell.has-embedded-surface.is-mac-platform.has-service-webview-surface {
-  --app-window-drag-height: 24px;
-}
-
 .app-shell.has-browser-chrome-surface.is-mac-platform,
 .app-shell.has-browser-chrome-surface.is-windows-platform {
   --app-window-drag-height: 0px;
