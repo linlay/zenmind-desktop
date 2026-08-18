@@ -6778,6 +6778,33 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
   assert.doesNotMatch(appShell, /onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\("compact"\)/);
 });
 
+test("assistant dock supports a persistent accessible width resizer and narrow overlay mode", () => {
+  const appShell = readAppShellSource();
+  const dockComponent = readSourceFile(
+    "src",
+    "renderer",
+    "copilot",
+    "sidebar-copilot",
+    "AgentWebclientCopilotDock.tsx"
+  );
+  const globalStyles = readRendererStyles();
+
+  assert.match(appShell, /COPILOT_DOCK_WIDTH_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.copilot-dock-width`/u);
+  assert.match(appShell, /localStorage\.setItem\([\s\S]{0,120}COPILOT_DOCK_WIDTH_STORAGE_KEY/u);
+  assert.match(appShell, /"--assistant-dock-embedded-width": `\$\{renderedCopilotDockWidth\}px`/u);
+  assert.match(appShell, /shouldOverlayCopilotDock\(copilotDockAvailableWidth\)/u);
+  assert.match(appShell, /assistantCopilotOpen && copilotDockOverlayMode \? "has-assistant-dock-overlay"/u);
+  assert.match(appShell, /resolveCopilotDockWidthFromDrag\([\s\S]{0,240}availableWidth: copilotDockAvailableWidth/u);
+  assert.match(appShell, /case "ArrowLeft":[\s\S]{0,360}case "End":/u);
+  assert.match(appShell, /className=\{isCopilotDockResizing[\s\S]{0,180}"copilot-dock-resize-overlay"/u);
+  assert.match(dockComponent, /className=\{`copilot-dock-resizer/u);
+  assert.match(dockComponent, /role="separator"[\s\S]{0,240}aria-valuenow=\{resize\.width\}/u);
+  assert.match(dockComponent, /tabIndex=\{0\}[\s\S]{0,120}onPointerDown=\{resize\.onPointerDown\}/u);
+  assert.match(globalStyles, /\.app-shell\.has-assistant-dock-overlay \.app-content\s*\{[\s\S]*?margin-right:\s*0;/u);
+  assert.match(globalStyles, /\.copilot-dock-resizer\s*\{[\s\S]*?cursor:\s*col-resize;/u);
+  assert.match(globalStyles, /\.copilot-dock-resize-overlay/u);
+});
+
 test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", () => {
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const preload = readSourceFile("src", "preload", "index.ts");

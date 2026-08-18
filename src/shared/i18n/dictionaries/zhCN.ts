@@ -2702,6 +2702,7 @@ export const zhCNMessages = {
   "dialog.exportEmbeddedWebsites.title": "导出内嵌网站配置",
 
   "copilotDock.surfaceLabel": "助手",
+  "copilotDock.resize": "调整 Copilot 宽度",
   "desktopPet.name": "桌面宠物",
   "desktopPet.ariaLabel": "{appName} 桌面宠物",
   "desktopPet.openAssistant": "打开侧边栏助手",

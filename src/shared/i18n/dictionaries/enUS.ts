@@ -2702,6 +2702,7 @@ export const enUSMessages = {
   "dialog.exportEmbeddedWebsites.title": "Export embedded website config",
 
   "copilotDock.surfaceLabel": "Assistant",
+  "copilotDock.resize": "Resize Copilot",
   "desktopPet.name": "Desktop pet",
   "desktopPet.ariaLabel": "{appName} desktop pet",
   "desktopPet.openAssistant": "Open side assistant",

@@ -652,6 +652,15 @@
   border-right: 1px solid rgba(148, 163, 184, 0.18);
 }
 
+.app-shell.has-assistant-dock-overlay .app-content {
+  margin-right: 0;
+  border-right: 0;
+}
+
+.app-shell.is-copilot-dock-resizing .app-content {
+  transition: none;
+}
+
 .app-content::before {
   display: none;
 }
@@ -1083,7 +1092,8 @@
   outline: none;
 }
 
-.chat-work-panel-resize-overlay {
+.chat-work-panel-resize-overlay,
+.copilot-dock-resize-overlay {
   position: absolute;
   inset: 0;
   z-index: 40;
@@ -1093,7 +1103,8 @@
   -webkit-app-region: no-drag;
 }
 
-.app-shell.is-work-panel-resizing {
+.app-shell.is-work-panel-resizing,
+.app-shell.is-copilot-dock-resizing {
   user-select: none;
   -webkit-user-select: none;
 }

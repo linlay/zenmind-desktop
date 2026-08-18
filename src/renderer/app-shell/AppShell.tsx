@@ -72,6 +72,16 @@ import {
   resolveWorkPanelMaxWidth,
   resolveWorkPanelWidthFromDrag,
 } from "../../shared/work-panel-layout";
+import {
+  COPILOT_DOCK_MIN_WIDTH,
+  COPILOT_DOCK_RESIZE_STEP,
+  clampCopilotDockWidth,
+  normalizeStoredCopilotDockWidth,
+  resolveCopilotDockMaxWidth,
+  resolveCopilotDockWidthFromDrag,
+  resolveRenderedCopilotDockWidth,
+  shouldOverlayCopilotDock,
+} from "../../shared/copilot-dock-layout";
 import { getServiceDisplayName } from "../service-display";
 import {
   createWebNavOrderKey,
@@ -232,6 +242,7 @@ const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const WEB_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.web-group-order`;
 const WORK_PANEL_WIDTH_STORAGE_KEY = `${STORAGE_NAMESPACE}.work-panel-width`;
+const COPILOT_DOCK_WIDTH_STORAGE_KEY = `${STORAGE_NAMESPACE}.copilot-dock-width`;
 const SETTINGS_SIDEBAR_WIDTH = 200;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
@@ -432,6 +443,12 @@ type WorkPanelResizeDragState = {
   startClientX: number;
 };
 
+type CopilotDockResizeDragState = {
+  initialWidth: number;
+  pointerId: number;
+  startClientX: number;
+};
+
 type SidebarNavigationHistory = {
   back: string[];
   forward: string[];
@@ -522,6 +539,9 @@ export function AppShell() {
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
   const workPanelResizeStateRef = useRef<WorkPanelResizeDragState | null>(null);
   const workPanelResizeCleanupRef = useRef<(() => void) | null>(null);
+  const copilotDockResizeStateRef = useRef<CopilotDockResizeDragState | null>(null);
+  const copilotDockResizeCleanupRef = useRef<(() => void) | null>(null);
+  const appShellRef = useRef<HTMLDivElement | null>(null);
   const appContentRef = useRef<HTMLDivElement | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
   const pendingAssistantDockOpenRequestRef = useRef<{ contextKey: string; embedPath: string } | null>(null);
@@ -629,6 +649,10 @@ export function AppShell() {
   });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
   const [isWorkPanelResizing, setIsWorkPanelResizing] = useState(false);
+  const [isCopilotDockResizing, setIsCopilotDockResizing] = useState(false);
+  const [appShellWidth, setAppShellWidth] = useState(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth
+  );
   const [appContentWidth, setAppContentWidth] = useState(() =>
     typeof window === "undefined" ? 0 : window.innerWidth
   );
@@ -642,6 +666,17 @@ export function AppShell() {
       return normalizeStoredWorkPanelWidth(savedValue ? JSON.parse(savedValue) : null, fallbackWidth);
     } catch {
       return fallbackWidth;
+    }
+  });
+  const [preferredCopilotDockWidth, setPreferredCopilotDockWidth] = useState(() => {
+    if (typeof window === "undefined") {
+      return normalizeStoredCopilotDockWidth(null);
+    }
+    try {
+      const savedValue = window.localStorage.getItem(COPILOT_DOCK_WIDTH_STORAGE_KEY);
+      return normalizeStoredCopilotDockWidth(savedValue ? JSON.parse(savedValue) : null);
+    } catch {
+      return normalizeStoredCopilotDockWidth(null);
     }
   });
   const [startupTimedOut, setStartupTimedOut] = useState(false);
@@ -880,6 +915,14 @@ export function AppShell() {
   const effectiveSidebarWidth = isSecondarySidebarMode
     ? SETTINGS_SIDEBAR_WIDTH
     : renderedSidebarWidth;
+  const copilotDockAvailableWidth = Math.max(0, appShellWidth - effectiveSidebarWidth);
+  const copilotDockOverlayMode = shouldOverlayCopilotDock(copilotDockAvailableWidth);
+  const copilotDockMaxWidth = resolveCopilotDockMaxWidth(copilotDockAvailableWidth);
+  const renderedCopilotDockWidth = resolveRenderedCopilotDockWidth(
+    preferredCopilotDockWidth,
+    copilotDockAvailableWidth,
+  );
+  const copilotDockNativeDialogVisible = nativeDialogVisible || Boolean(desktopActionConfirmation);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return createDefaultSidebarNavOrderItems({
       kanbanEnabled,
@@ -2198,6 +2241,27 @@ export function AppShell() {
   }, [preferredWorkPanelWidth]);
 
   useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        COPILOT_DOCK_WIDTH_STORAGE_KEY,
+        JSON.stringify(preferredCopilotDockWidth),
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory Copilot Dock width usable.
+    }
+  }, [preferredCopilotDockWidth]);
+
+  useEffect(() => {
+    const shell = appShellRef.current;
+    if (!shell || typeof ResizeObserver === "undefined") return;
+    const updateWidth = () => setAppShellWidth(Math.round(shell.getBoundingClientRect().width));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const content = appContentRef.current;
     if (!content || typeof ResizeObserver === "undefined") return;
     const updateWidth = () => setAppContentWidth(Math.round(content.getBoundingClientRect().width));
@@ -2214,6 +2278,8 @@ export function AppShell() {
     sidebarResizeStateRef.current = null;
     workPanelResizeCleanupRef.current?.();
     workPanelResizeStateRef.current = null;
+    copilotDockResizeCleanupRef.current?.();
+    copilotDockResizeStateRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -2262,6 +2328,13 @@ export function AppShell() {
     if (activeChatWorkPanelVisible) return;
     workPanelResizeCleanupRef.current?.();
   }, [activeChatWorkPanelVisible]);
+
+  useEffect(() => {
+    if (assistantCopilotOpen && !copilotDockOverlayMode && !copilotDockNativeDialogVisible) {
+      return;
+    }
+    copilotDockResizeCleanupRef.current?.();
+  }, [assistantCopilotOpen, copilotDockNativeDialogVisible, copilotDockOverlayMode]);
 
   useEffect(() => {
     if (!pendingSidebarNavigationPath) {
@@ -2389,7 +2462,13 @@ export function AppShell() {
   }
 
   function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || isSidebarResizing || isWorkPanelResizing || isSecondarySidebarMode) {
+    if (
+      event.button !== 0 ||
+      isSidebarResizing ||
+      isWorkPanelResizing ||
+      isCopilotDockResizing ||
+      isSecondarySidebarMode
+    ) {
       return;
     }
 
@@ -2402,7 +2481,7 @@ export function AppShell() {
   }
 
   function handleWorkPanelResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || isSidebarResizing || isWorkPanelResizing) return;
+    if (event.button !== 0 || isSidebarResizing || isWorkPanelResizing || isCopilotDockResizing) return;
     event.preventDefault();
     workPanelResizeCleanupRef.current?.();
     const resizer = event.currentTarget;
@@ -2480,6 +2559,100 @@ export function AppShell() {
     event.preventDefault();
     event.stopPropagation();
     setPreferredWorkPanelWidth(clampWorkPanelWidth(nextWidth, appContentWidth || undefined));
+  }
+
+  function handleCopilotDockResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (
+      event.button !== 0 ||
+      isSidebarResizing ||
+      isWorkPanelResizing ||
+      isCopilotDockResizing ||
+      copilotDockOverlayMode ||
+      copilotDockNativeDialogVisible
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    copilotDockResizeCleanupRef.current?.();
+    const resizer = event.currentTarget;
+    const dragState = {
+      initialWidth: renderedCopilotDockWidth,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+    };
+    copilotDockResizeStateRef.current = dragState;
+    try {
+      resizer.setPointerCapture(event.pointerId);
+    } catch {
+      // The overlay still keeps subsequent pointer events inside the renderer.
+    }
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== dragState.pointerId) return;
+      if (pointerEvent.cancelable) pointerEvent.preventDefault();
+      setPreferredCopilotDockWidth(resolveCopilotDockWidthFromDrag({
+        initialWidth: dragState.initialWidth,
+        startClientX: dragState.startClientX,
+        currentClientX: pointerEvent.clientX,
+        availableWidth: copilotDockAvailableWidth,
+      }));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("blur", cleanup);
+      if (copilotDockResizeCleanupRef.current === cleanup) {
+        copilotDockResizeCleanupRef.current = null;
+      }
+      if (copilotDockResizeStateRef.current?.pointerId === dragState.pointerId) {
+        copilotDockResizeStateRef.current = null;
+      }
+      setIsCopilotDockResizing(false);
+      try {
+        if (resizer.hasPointerCapture(dragState.pointerId)) {
+          resizer.releasePointerCapture(dragState.pointerId);
+        }
+      } catch {
+        // Pointer capture can already be gone after crossing an embedded surface.
+      }
+    };
+    const handlePointerEnd = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === dragState.pointerId) cleanup();
+    };
+    copilotDockResizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("blur", cleanup);
+    setIsCopilotDockResizing(true);
+  }
+
+  function handleCopilotDockResizerKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    let nextWidth: number | null = null;
+    switch (event.key) {
+      case "ArrowLeft":
+        nextWidth = renderedCopilotDockWidth + COPILOT_DOCK_RESIZE_STEP;
+        break;
+      case "ArrowRight":
+        nextWidth = renderedCopilotDockWidth - COPILOT_DOCK_RESIZE_STEP;
+        break;
+      case "Home":
+        nextWidth = COPILOT_DOCK_MIN_WIDTH;
+        break;
+      case "End":
+        nextWidth = copilotDockMaxWidth;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setPreferredCopilotDockWidth(clampCopilotDockWidth(
+      nextWidth,
+      copilotDockAvailableWidth,
+    ));
   }
 
   function requestSidebarNavigation(targetPath: string) {
@@ -3090,6 +3263,7 @@ export function AppShell() {
   const appShellStyle = {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`,
     "--chat-work-panel-width": `${renderedWorkPanelWidth}px`,
+    "--assistant-dock-embedded-width": `${renderedCopilotDockWidth}px`,
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
 
@@ -3299,6 +3473,7 @@ export function AppShell() {
   return (
     <DebugModeContext.Provider value={debugSettingsUnlocked}>
       <div
+        ref={appShellRef}
         style={appShellStyle}
         onPointerDownCapture={handleWindowDragPointerDownCapture}
         className={[
@@ -3313,6 +3488,7 @@ export function AppShell() {
         showsEmptyContentSurface ? "has-empty-content-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
+        assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
@@ -3320,6 +3496,7 @@ export function AppShell() {
         effectiveSidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
         isWorkPanelResizing ? "is-work-panel-resizing" : "",
+        isCopilotDockResizing ? "is-copilot-dock-resizing" : "",
         isSecondarySidebarMode ? "is-secondary-sidebar-mode" : "",
         sidebarMode === "capabilities" ? "is-capabilities-mode" : "",
         isSettingsRoute ? "is-settings-mode" : "",
@@ -3577,9 +3754,13 @@ export function AppShell() {
           isWindows={isWindows}
         />
       </div>
-      {isSidebarResizing || isWorkPanelResizing ? (
+      {isSidebarResizing || isWorkPanelResizing || isCopilotDockResizing ? (
         <div
-          className={isWorkPanelResizing ? "chat-work-panel-resize-overlay" : "app-sidebar-resize-overlay"}
+          className={isCopilotDockResizing
+            ? "copilot-dock-resize-overlay"
+            : isWorkPanelResizing
+              ? "chat-work-panel-resize-overlay"
+              : "app-sidebar-resize-overlay"}
           aria-hidden="true"
         />
       ) : null}
@@ -3591,6 +3772,14 @@ export function AppShell() {
         restoredEmbedPath={currentCopilotSession?.embedPath ?? ""}
         parentSurfaceId={currentCopilotParentSurfaceId}
         resolvedAgentKey={resolvedCopilotAgentKey}
+        resize={assistantCopilotOpen && !copilotDockOverlayMode ? {
+          active: isCopilotDockResizing,
+          minWidth: COPILOT_DOCK_MIN_WIDTH,
+          maxWidth: copilotDockMaxWidth,
+          width: renderedCopilotDockWidth,
+          onKeyDown: handleCopilotDockResizerKeyDown,
+          onPointerDown: handleCopilotDockResizerPointerDown,
+        } : undefined}
         onRunningRunIdChange={setAssistantRunningRunId}
         onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
         onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}

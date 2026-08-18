@@ -1,4 +1,12 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
 import { createAgentWebclientCopilotPath } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
@@ -82,6 +90,7 @@ export function AgentWebclientCopilotDock({
   restoredEmbedPath,
   parentSurfaceId,
   resolvedAgentKey,
+  resize,
   onRunningRunIdChange,
   onSelectedAgentKeyChange,
   onCurrentEmbedPathChange
@@ -93,6 +102,14 @@ export function AgentWebclientCopilotDock({
   restoredEmbedPath?: string;
   parentSurfaceId?: string;
   resolvedAgentKey: string;
+  resize?: {
+    active: boolean;
+    minWidth: number;
+    maxWidth: number;
+    width: number;
+    onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  };
   onRunningRunIdChange: (runId: string | null) => void;
   onSelectedAgentKeyChange?: (agentKey: string) => void;
   onCurrentEmbedPathChange?: (embedPath: string, agentKey: string, chatId?: string) => void;
@@ -166,6 +183,22 @@ export function AgentWebclientCopilotDock({
       data-open-chat-id={openRequest?.chatId ?? ""}
       data-open-agent-key={targetAgentKey}
     >
+      {resize ? (
+        <div
+          className={`copilot-dock-resizer${resize.active ? " is-active" : ""}`}
+          role="separator"
+          aria-label={t("copilotDock.resize")}
+          aria-orientation="vertical"
+          aria-valuemin={resize.minWidth}
+          aria-valuemax={resize.maxWidth}
+          aria-valuenow={resize.width}
+          tabIndex={0}
+          onKeyDown={resize.onKeyDown}
+          onPointerDown={resize.onPointerDown}
+        >
+          <span className="copilot-dock-resizer-line" aria-hidden="true" />
+        </div>
+      ) : null}
       {mounted ? (
         <Suspense fallback={null}>
           <ServiceWebviewSurface
