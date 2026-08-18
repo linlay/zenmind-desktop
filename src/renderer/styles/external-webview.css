@@ -142,8 +142,9 @@
   padding: 0;
   background: var(--browser-top);
   border-bottom: 0;
-  app-region: drag;
-  -webkit-app-region: drag;
+  /* Electron drag regions suppress the pointerdown used by the window drag fallback. */
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;

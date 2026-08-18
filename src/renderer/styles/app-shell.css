@@ -33,6 +33,10 @@
   -webkit-backdrop-filter: none;
 }
 
+.app-shell.has-embedded-surface.is-mac-platform.has-service-webview-surface {
+  --app-window-drag-height: 24px;
+}
+
 .app-shell.has-browser-chrome-surface.is-mac-platform,
 .app-shell.has-browser-chrome-surface.is-windows-platform {
   --app-window-drag-height: 0px;
@@ -583,9 +587,11 @@
   min-height: 0;
   margin-left: var(--app-window-drag-left, var(--app-sidebar-width, 160px));
   margin-right: var(--app-window-drag-right, 0px);
-  app-region: drag;
-  -webkit-app-region: drag;
+  /* Keep the full lane interactive so the first press can enter the Pointer/IPC drag path. */
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
   pointer-events: auto;
+  touch-action: none;
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;
