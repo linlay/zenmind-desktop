@@ -1083,8 +1083,8 @@ test("sidebar row action buttons stay out of default tab order", () => {
     "AppSidebar.tsx"
   );
 
-  assert.match(sidebarSource, /className="assistant-worker-chat-menu-button"[\s\S]{0,220}tabIndex=\{-1\}/);
-  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-chat-menu-button sidebar-more-actions-button"[\s\S]{0,220}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /sidebar-website-status-action[\s\S]{0,300}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
@@ -1744,6 +1744,118 @@ test("Projects sidebar toggles without navigation and summarizes numeric awaitin
   assert.match(
     assistantOpenChatHandler,
     /if \(!chat\.isRead && !chat\.hasActiveRun\)[\s\S]*?markChatRead\(chat\.chatId, chat\.lastRunId \|\| undefined\)[\s\S]*?markAgentChatsRead\(chat\.agentKey\)/,
+  );
+});
+
+test("sidebar more-actions buttons match the Codex hover treatment", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css",
+  );
+  const brandMarkSource = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "BrandMark.tsx",
+  );
+  const assistantAgentRenderer =
+    sidebarSource.match(
+      /function renderAssistantAgent\([\s\S]*?function renderSidebarGroup\(/,
+    )?.[0] ?? "";
+  const moreActionsIndex = assistantAgentRenderer.indexOf(
+    'className="assistant-worker-icon-button sidebar-more-actions-button sidebar-agent-more-actions-button"',
+  );
+  const newChatIndex = assistantAgentRenderer.indexOf(
+    '<SidebarActionIcon kind="new_chat" />',
+  );
+
+  assert.ok(moreActionsIndex >= 0);
+  assert.ok(newChatIndex > moreActionsIndex);
+  assert.match(
+    assistantAgentRenderer,
+    /sidebar-agent-more-actions-button[\s\S]{0,360}handleOpenAgentMenu[\s\S]{0,180}<SidebarActionIcon kind="more_actions" \/>/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-actions\s*\{[\s\S]*?gap:\s*4px;/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-actions \.assistant-worker-icon-button\s*\{[\s\S]*?padding:\s*4px;[\s\S]*?color:\s*color-mix\(in oklab,\s*var\(--ink\) 50%,\s*transparent\);/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-actions \.assistant-worker-icon-button:hover,[\s\S]*?\.assistant-worker-actions \.assistant-worker-icon-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-agent-more-actions-button\s*\{[\s\S]*?margin-inline-end:\s*2px;/,
+  );
+  assert.match(
+    sidebarSource,
+    /className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"/,
+  );
+  assert.match(
+    sidebarSource,
+    /className="assistant-worker-chat-menu-button sidebar-more-actions-button"[\s\S]{0,360}<SidebarActionIcon kind="more_actions" \/>/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-more-actions-button\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*color-mix\(in oklab,\s*var\(--ink\) 50%,\s*transparent\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-more-actions-button:hover,[\s\S]*?\.sidebar-more-actions-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /:root\[data-theme="dark"\] \.sidebar-more-actions-button:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-more-actions-button:focus-visible(?:,[\s\S]{0,320})?\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    brandMarkSource,
+    /case "more_actions":[\s\S]*?<svg \{\.\.\.iconProps\} viewBox="0 0 16 16" stroke="none">[\s\S]*?M3\.33362 6\.80811[\s\S]*?M8\.00061 6\.80811[\s\S]*?M12\.6666 6\.80811/,
+  );
+  assert.match(
+    brandMarkSource,
+    /case "new_chat":[\s\S]*?<svg \{\.\.\.iconProps\} viewBox="0 0 16 16" stroke="none">[\s\S]*?M6\.33325 1\.88379[\s\S]*?M10\.8948 2\.375/,
+  );
+});
+
+test("website row close action removes the hover tile", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css",
+  );
+
+  assert.match(
+    sidebarSource,
+    /className=\{`assistant-worker-icon-button sidebar-website-status-action\$\{closing \? " is-closing" : ""\}`\}/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-website-child-row \.sidebar-website-status-action:hover,[\s\S]*?\.sidebar-website-child-row \.sidebar-website-status-action:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /:root\[data-theme="dark"\] \.sidebar-website-child-row \.sidebar-website-status-action:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-website-child-row \.sidebar-website-status-action:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
   );
 });
 
