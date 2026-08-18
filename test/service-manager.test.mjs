@@ -3107,7 +3107,7 @@ test("core builtin start commands run in daemon mode", () => {
       kind: "builtin",
       startCommand: ["start.ps1"]
     }),
-    ["start.ps1", "--daemon"]
+    ["start.ps1", "--runtime-mode=desktop", "--daemon"]
   );
   assert.deepEqual(
     __testInternals.getDesktopStartCommand({
@@ -3116,6 +3116,14 @@ test("core builtin start commands run in daemon mode", () => {
       startCommand: ["start.sh", "--daemon"]
     }),
     ["start.sh", "--daemon"]
+  );
+  assert.deepEqual(
+    __testInternals.getDesktopStartCommand({
+      id: "agent-platform",
+      kind: "builtin",
+      startCommand: ["start.sh", "--runtime-mode", "standalone", "--daemon"]
+    }),
+    ["start.sh", "--runtime-mode=desktop", "--daemon"]
   );
   assert.deepEqual(
     __testInternals.getDesktopStartCommand({

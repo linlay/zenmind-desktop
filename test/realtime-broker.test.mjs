@@ -352,3 +352,127 @@ test("RealtimeBroker closes the old identity generation before starting work for
   sockets[1].emit({ frame: "stream", id: secondQuery.id, reason: "complete", lastSeq: 1 });
   assert.equal((await second.completed).reason, "complete");
 });
+
+test("RealtimeBroker dispatches reverse Desktop Action and maps provider failures", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return request.action === "desktop.theme.get"
+        ? { ok: true, action: request.action, result: { theme: "dark" } }
+        : { ok: false, action: request.action, error: { code: "unknown_action", message: "unknown" } };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "desktop-action-ok",
+    payload: { requestId: "action-1", action: "desktop.theme.get", args: {}, source: { chatId: "chat-1" } },
+  });
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "desktop-action-error",
+    payload: { requestId: "action-2", action: "desktop.missing", args: {}, source: { chatId: "chat-1" } },
+  });
+  await nextTurn();
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "desktop-action-ok"), {
+    frame: "response",
+    type: "desktop.action.call",
+    id: "desktop-action-ok",
+    code: 0,
+    msg: "success",
+    data: { ok: true, action: "desktop.theme.get", result: { theme: "dark" } },
+  });
+  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "desktop-action-error"), {
+    frame: "error",
+    type: "unknown_action",
+    id: "desktop-action-error",
+    code: 400,
+    msg: "unknown",
+    data: { ok: false, action: "desktop.missing", error: { code: "unknown_action", message: "unknown" } },
+  });
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "desktop-action-ok",
+    payload: { requestId: "action-1", action: "desktop.theme.get", args: {}, source: { chatId: "chat-1" } },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 2);
+  assert.deepEqual(sockets[0].sent.filter((frame) => frame.id === "desktop-action-ok").at(-1), {
+    frame: "error",
+    type: "duplicate_id",
+    id: "desktop-action-ok",
+    code: 409,
+    msg: "Desktop bridge request id was already used",
+  });
+});
+
+test("RealtimeBroker chunks large Desktop JSON and screenshot responses below 256 KiB", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const screenshot = Buffer.alloc(420_000, 7).toString("base64");
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: true, action: request.action, result: { text: "x".repeat(420_000) } }),
+    cdp: async (request) => ({ ok: true, method: request.method, result: { data: screenshot } }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request", type: "desktop.action.call", id: "large-json",
+    payload: { action: "desktop.controlCenter.readServiceLog", args: {}, source: { chatId: "chat-1" } },
+  });
+  sockets[0].emit({
+    frame: "request", type: "desktop.cdp.call", id: "large-screenshot",
+    payload: { method: "Page.captureScreenshot", params: {}, source: { chatId: "chat-1" } },
+  });
+  for (let index = 0; index < 8; index += 1) await nextTurn();
+
+  for (const id of ["large-json", "large-screenshot"]) {
+    const chunks = sockets[0].sent.filter((frame) => frame.frame === "stream" && frame.id === id);
+    assert.ok(chunks.length > 1, id);
+    assert.deepEqual(chunks.map((frame) => frame.event.seq), chunks.map((_, index) => index + 1));
+    assert.ok(chunks.every((frame) => frame.event.chunk.length <= 256 * 1024), id);
+    const terminal = sockets[0].sent.find((frame) => frame.frame === "response" && frame.id === id);
+    assert.equal(terminal.code, 0);
+    assert.equal(terminal.data.streamed ?? terminal.data.result?.data?.streamed, true);
+    assert.equal(terminal.data.chunkCount ?? terminal.data.result?.data?.chunkCount, chunks.length);
+  }
+  assert.equal(
+    sockets[0].sent.find((frame) => frame.frame === "stream" && frame.id === "large-json").event.type,
+    "desktop.bridge.response.delta",
+  );
+  assert.equal(
+    sockets[0].sent.find((frame) => frame.frame === "stream" && frame.id === "large-screenshot").event.type,
+    "desktop.cdp.screenshot.delta",
+  );
+});
+
+test("RealtimeBroker stops reverse Desktop chunks after desktop.bridge.cancel", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: true, action: request.action, result: { text: "x".repeat(4_000_000) } }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "request", type: "desktop.action.call", id: "cancel-large",
+    payload: { action: "desktop.controlCenter.readServiceLog", args: {}, source: { chatId: "chat-1" } },
+  });
+  await nextTurn();
+  const chunksBeforeCancel = sockets[0].sent.filter((frame) => frame.frame === "stream" && frame.id === "cancel-large").length;
+  assert.ok(chunksBeforeCancel > 0);
+  sockets[0].emit({ frame: "push", type: "desktop.bridge.cancel", payload: { requestId: "cancel-large" } });
+  for (let index = 0; index < 3; index += 1) await nextTurn();
+
+  const frames = sockets[0].sent.filter((frame) => frame.id === "cancel-large");
+  assert.equal(frames.some((frame) => frame.frame === "response" || frame.frame === "error"), false);
+  assert.equal(frames.filter((frame) => frame.frame === "stream").length, chunksBeforeCancel);
+});

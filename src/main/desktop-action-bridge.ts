@@ -110,7 +110,7 @@ import { getAssistantSettings } from "./assistant/core/settings-store";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { authorizeWebappActionToken } from "./webs/webapps/action-tokens";
 
-type DesktopActionBridgeOptions = {
+export type DesktopActionBridgeOptions = {
   app: App;
   assistantBridge: AgentPlatformAssistantBridge;
   getMainWindow: () => BrowserWindow | null;
@@ -190,12 +190,13 @@ type AgentPlatformFetchOptions = {
   fetchImpl?: typeof fetch;
 };
 
-type DesktopCdpCallRequest = {
+export type DesktopCdpCallRequest = {
   requestId?: string;
   method?: string;
   params?: Record<string, unknown>;
   targetId?: string;
   sessionId?: string;
+  surfaceId?: string;
   source?: DesktopActionSource;
 };
 

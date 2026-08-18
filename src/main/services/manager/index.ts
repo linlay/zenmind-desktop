@@ -1943,15 +1943,31 @@ function isDaemonStartArg(value: string) {
 }
 
 function getDesktopStartCommand(service: Pick<ServiceDefinition, "id" | "kind" | "startCommand">) {
-  if (
-    service.kind !== "builtin" ||
-    !CORE_SERVICE_IDS.has(service.id) ||
-    service.startCommand.some(isDaemonStartArg)
-  ) {
+  if (service.kind !== "builtin" || !CORE_SERVICE_IDS.has(service.id)) {
     return service.startCommand;
   }
 
-  return [...service.startCommand, "--daemon"];
+  let command = [...service.startCommand];
+  if (service.id === "agent-platform") {
+    const withoutRuntimeMode: string[] = [];
+    for (let index = 0; index < command.length; index += 1) {
+      const arg = command[index];
+      if (arg === "--runtime-mode") {
+        index += 1;
+        continue;
+      }
+      if (arg.startsWith("--runtime-mode=")) continue;
+      withoutRuntimeMode.push(arg);
+    }
+    command = withoutRuntimeMode;
+    const daemonIndex = command.findIndex(isDaemonStartArg);
+    if (daemonIndex >= 0) command.splice(daemonIndex, 0, "--runtime-mode=desktop");
+    else command.push("--runtime-mode=desktop");
+  }
+  if (!command.some(isDaemonStartArg)) {
+    command.push("--daemon");
+  }
+  return command;
 }
 
 async function runServiceCommand(

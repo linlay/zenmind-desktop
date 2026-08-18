@@ -18,6 +18,13 @@ import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 const MAX_REPLAY_EVENTS = 2_000;
 const MAX_REPLAY_BYTES = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30_000;
+const DESKTOP_ACTION_REQUEST_TYPE = "desktop.action.call";
+const DESKTOP_CDP_REQUEST_TYPE = "desktop.cdp.call";
+const DESKTOP_RESPONSE_DELTA_EVENT_TYPE = "desktop.bridge.response.delta";
+const DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE = "desktop.cdp.screenshot.delta";
+const DESKTOP_STREAM_RAW_CHUNK_BYTES = 192 * 1024;
+const DESKTOP_SCREENSHOT_CHUNK_CHARS = 256 * 1024;
+const DESKTOP_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
 
 function unrefTimer<T extends ReturnType<typeof setTimeout>>(timer: T): T {
   (timer as T & { unref?: () => void }).unref?.();
@@ -132,6 +139,11 @@ type ConnectionSubscription = {
   onState(state: AgentPlatformRealtimeConnectionState): void;
 };
 
+export type DesktopBridgeRequestProvider = {
+  action(request: Record<string, unknown>): Promise<unknown>;
+  cdp(request: Record<string, unknown>): Promise<unknown>;
+};
+
 export type RealtimeQueryAccepted = {
   chatId: string;
   runId: string;
@@ -233,6 +245,9 @@ export class RealtimeBroker {
   private readonly pushSubscriptions = new Map<string, PushSubscription>();
   private readonly connectionSubscriptions = new Map<string, ConnectionSubscription>();
   private readonly terminalRequestIds = new Set<string>();
+  private readonly inboundDesktopRequests = new Map<string, AbortController>();
+  private readonly seenInboundDesktopRequestIds = new Set<string>();
+  private desktopBridgeProvider: DesktopBridgeRequestProvider | null = null;
   private visibleBinding: VisibleRunBinding | null = null;
   private disposed = false;
   private acceptingDelivery = true;
@@ -293,6 +308,10 @@ export class RealtimeBroker {
 
   getConnectionState() {
     return this.client.getState();
+  }
+
+  setDesktopBridgeProvider(provider: DesktopBridgeRequestProvider | null) {
+    this.desktopBridgeProvider = provider;
   }
 
   async ensureConnected(baseUrl: string, token: string) {
@@ -679,6 +698,9 @@ export class RealtimeBroker {
 
   beginShutdown() {
     this.acceptingDelivery = false;
+    for (const controller of this.inboundDesktopRequests.values()) controller.abort();
+    this.inboundDesktopRequests.clear();
+    this.seenInboundDesktopRequestIds.clear();
   }
 
   dispose() {
@@ -695,6 +717,10 @@ export class RealtimeBroker {
     this.runsById.clear();
     this.visibleBinding = null;
     this.terminalRequestIds.clear();
+    for (const controller of this.inboundDesktopRequests.values()) controller.abort();
+    this.inboundDesktopRequests.clear();
+    this.seenInboundDesktopRequestIds.clear();
+    this.desktopBridgeProvider = null;
     this.client.dispose();
   }
 
@@ -1131,6 +1157,13 @@ export class RealtimeBroker {
 
   private handlePush(frame: AgentPlatformRealtimeFrame) {
     const type = readText(frame.type);
+    if (type === "desktop.bridge.cancel") {
+      const requestId = readText(framePayload(frame).requestId);
+      const controller = this.inboundDesktopRequests.get(requestId);
+      controller?.abort();
+      this.inboundDesktopRequests.delete(requestId);
+      return;
+    }
     if (!AGENT_PLATFORM_KNOWN_PUSH_TYPES.has(type)) {
       this.diagnostics.unknownFrameCount += 1;
       return;
@@ -1155,6 +1188,10 @@ export class RealtimeBroker {
     const id = readText(frame.id);
     if (!id) return;
     const type = readText(frame.type);
+    if (type === DESKTOP_ACTION_REQUEST_TYPE || type === DESKTOP_CDP_REQUEST_TYPE) {
+      void this.handleDesktopBridgeRequest(id, type, frame);
+      return;
+    }
     const errorType = type.startsWith("webclient.")
       ? this.visibleBinding
         ? "unsupported_in_current_view"
@@ -1168,6 +1205,182 @@ export class RealtimeBroker {
         code: 409,
         msg: "Desktop could not prove a unique capable inbound request target",
         data: { code: errorType, message: "Inbound request target is unavailable" },
+      });
+    } catch {
+      // The connection is already unavailable.
+    }
+  }
+
+  private async handleDesktopBridgeRequest(
+    id: string,
+    type: typeof DESKTOP_ACTION_REQUEST_TYPE | typeof DESKTOP_CDP_REQUEST_TYPE,
+    frame: AgentPlatformRealtimeFrame,
+  ) {
+    if (this.inboundDesktopRequests.has(id) || this.seenInboundDesktopRequestIds.has(id)) {
+      this.sendDesktopBridgeError(id, "duplicate_id", 409, "Desktop bridge request id was already used");
+      return;
+    }
+    this.seenInboundDesktopRequestIds.add(id);
+    if (this.seenInboundDesktopRequestIds.size > 2_000) {
+      this.seenInboundDesktopRequestIds.delete(this.seenInboundDesktopRequestIds.values().next().value as string);
+    }
+    const provider = this.desktopBridgeProvider;
+    if (!provider) {
+      this.sendDesktopBridgeError(id, "desktop_provider_unavailable", 503, "Desktop bridge provider is unavailable");
+      return;
+    }
+    if (!isRecord(frame.payload)) {
+      this.sendDesktopBridgeError(id, "invalid_request", 400, "Desktop bridge payload must be an object");
+      return;
+    }
+    const controller = new AbortController();
+    this.inboundDesktopRequests.set(id, controller);
+    try {
+      const result = type === DESKTOP_ACTION_REQUEST_TYPE
+        ? await provider.action(frame.payload)
+        : await provider.cdp(frame.payload);
+      if (controller.signal.aborted) return;
+      if (!isRecord(result)) {
+        this.sendDesktopBridgeError(id, "invalid_desktop_response", 502, "Desktop bridge response must be an object");
+        return;
+      }
+      if (result.ok !== true) {
+        const error = isRecord(result.error) ? result.error : {};
+        this.sendDesktopBridgeError(
+          id,
+          readText(error.code) || "desktop_request_failed",
+          400,
+          readText(error.message) || "Desktop rejected the request",
+          result,
+        );
+        return;
+      }
+      await this.sendDesktopBridgeSuccess(id, type, result, controller.signal);
+    } catch (error) {
+      if (!controller.signal.aborted) {
+        this.sendDesktopBridgeError(
+          id,
+          "desktop_request_failed",
+          500,
+          error instanceof Error ? error.message : String(error),
+        );
+      }
+    } finally {
+      this.inboundDesktopRequests.delete(id);
+    }
+  }
+
+  private async sendDesktopBridgeSuccess(
+    id: string,
+    type: string,
+    result: Record<string, unknown>,
+    signal: AbortSignal,
+  ) {
+    const resultNode = isRecord(result.result) ? result.result : null;
+    const screenshot = type === DESKTOP_CDP_REQUEST_TYPE &&
+      readText(result.method) === "Page.captureScreenshot" &&
+      resultNode && typeof resultNode.data === "string"
+      ? resultNode.data.trim()
+      : "";
+    if (screenshot) {
+      const paddingBytes = screenshot.endsWith("==") ? 2 : screenshot.endsWith("=") ? 1 : 0;
+      const screenshotBytes = Math.floor((screenshot.length * 3) / 4) - paddingBytes;
+      if (screenshotBytes > DESKTOP_MAX_RESPONSE_BYTES) {
+        this.sendDesktopBridgeError(id, "desktop_response_too_large", 413, "Desktop screenshot exceeds 64 MiB");
+        return;
+      }
+      const streamId = `desktop-bridge-${randomUUID()}`;
+      let seq = 0;
+      for (let offset = 0; offset < screenshot.length; offset += DESKTOP_SCREENSHOT_CHUNK_CHARS) {
+        if (signal.aborted) return;
+        seq += 1;
+        this.sendDesktopBridgeChunk(id, streamId, seq, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, screenshot.slice(offset, offset + DESKTOP_SCREENSHOT_CHUNK_CHARS));
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      if (signal.aborted) return;
+      this.client.send({
+        frame: "response",
+        type,
+        id,
+        code: 0,
+        msg: "success",
+        data: {
+          ...result,
+          result: {
+            ...resultNode,
+            data: {
+              streamed: true,
+              streamId,
+              encoding: "base64",
+              chunkCount: seq,
+              totalBytes: screenshotBytes,
+            },
+          },
+        },
+      });
+      return;
+    }
+
+    const serialized = Buffer.from(JSON.stringify(result), "utf8");
+    if (serialized.byteLength > DESKTOP_MAX_RESPONSE_BYTES) {
+      this.sendDesktopBridgeError(id, "desktop_response_too_large", 413, "Desktop response exceeds 64 MiB");
+      return;
+    }
+    if (serialized.byteLength <= DESKTOP_STREAM_RAW_CHUNK_BYTES) {
+      this.client.send({ frame: "response", type, id, code: 0, msg: "success", data: result });
+      return;
+    }
+    const streamId = `desktop-bridge-${randomUUID()}`;
+    let seq = 0;
+    for (let offset = 0; offset < serialized.byteLength; offset += DESKTOP_STREAM_RAW_CHUNK_BYTES) {
+      if (signal.aborted) return;
+      seq += 1;
+      const chunk = serialized.subarray(offset, Math.min(offset + DESKTOP_STREAM_RAW_CHUNK_BYTES, serialized.byteLength));
+      this.sendDesktopBridgeChunk(id, streamId, seq, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, chunk.toString("base64"));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+    }
+    if (signal.aborted) return;
+    this.client.send({
+      frame: "response",
+      type,
+      id,
+      code: 0,
+      msg: "success",
+      data: {
+        streamed: true,
+        streamId,
+        encoding: "base64",
+        contentType: "application/json",
+        chunkCount: seq,
+        totalBytes: serialized.byteLength,
+      },
+    });
+  }
+
+  private sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string) {
+    this.client.send({
+      frame: "stream",
+      id,
+      streamId,
+      event: {
+        seq,
+        type,
+        timestamp: Date.now(),
+        encoding: "base64",
+        chunk,
+      },
+    });
+  }
+
+  private sendDesktopBridgeError(id: string, type: string, code: number, msg: string, data?: unknown) {
+    try {
+      this.client.send({
+        frame: "error",
+        type,
+        id,
+        code,
+        msg,
+        ...(data === undefined ? {} : { data }),
       });
     } catch {
       // The connection is already unavailable.
