@@ -3218,15 +3218,21 @@ export function AppShell() {
 
     const pointerId = event.pointerId;
     let ended = false;
+    let pointerCaptureRestoreFrame: number | null = null;
     const finishDrag = () => {
       if (ended) {
         return;
       }
       ended = true;
+      if (pointerCaptureRestoreFrame !== null) {
+        window.cancelAnimationFrame(pointerCaptureRestoreFrame);
+        pointerCaptureRestoreFrame = null;
+      }
       window.removeEventListener("pointerup", finishDrag, true);
       window.removeEventListener("pointercancel", finishDrag, true);
+      window.removeEventListener("mouseup", finishDragOnMouseUp, true);
       window.removeEventListener("blur", finishDrag, true);
-      dragTarget.removeEventListener("lostpointercapture", finishDrag, true);
+      dragTarget.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
       try {
         if (dragTarget.hasPointerCapture(pointerId)) {
           dragTarget.releasePointerCapture(pointerId);
@@ -3237,12 +3243,41 @@ export function AppShell() {
       windowDragEndRef.current = null;
       void desktopShell.endWindowDrag().catch(() => undefined);
     };
+    const finishDragOnMouseUp = (mouseEvent: globalThis.MouseEvent) => {
+      if (mouseEvent.button === 0) {
+        finishDrag();
+      }
+    };
+    const finishDragOnLostPointerCapture: EventListener = (captureEvent) => {
+      const pointerEvent = captureEvent as globalThis.PointerEvent;
+      // Window activation can drop capture while the first press is still held.
+      // Restore it after focus settles so the eventual release still reaches this window.
+      if (pointerEvent.buttons !== 0) {
+        if (pointerCaptureRestoreFrame !== null) {
+          window.cancelAnimationFrame(pointerCaptureRestoreFrame);
+        }
+        pointerCaptureRestoreFrame = window.requestAnimationFrame(() => {
+          pointerCaptureRestoreFrame = null;
+          if (ended) {
+            return;
+          }
+          try {
+            dragTarget.setPointerCapture(pointerId);
+          } catch {
+            // Window-level pointer/mouse release listeners and the main timeout remain as fallbacks.
+          }
+        });
+        return;
+      }
+      finishDrag();
+    };
 
     windowDragEndRef.current = finishDrag;
     window.addEventListener("pointerup", finishDrag, true);
     window.addEventListener("pointercancel", finishDrag, true);
+    window.addEventListener("mouseup", finishDragOnMouseUp, true);
     window.addEventListener("blur", finishDrag, true);
-    dragTarget.addEventListener("lostpointercapture", finishDrag, true);
+    dragTarget.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
     try {
       dragTarget.setPointerCapture(pointerId);
     } catch {

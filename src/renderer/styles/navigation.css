@@ -11,8 +11,9 @@
   contain: layout paint;
   will-change: width;
   z-index: 2;
-  app-region: drag;
-  -webkit-app-region: drag;
+  /* Keep blank sidebar space in the pointer-driven window drag path. */
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
   cursor: grab;
   transition: width 0.2s ease-in-out, min-width 0.2s ease-in-out;
 }
@@ -1810,6 +1811,7 @@
   display: none;
   align-items: center;
   justify-content: flex-end;
+  gap: 4px;
   height: 28px;
 }
 
@@ -1892,6 +1894,28 @@
 .assistant-worker-icon-button:hover {
   background: color-mix(in srgb, var(--ink-muted) 12%, transparent);
   color: var(--ink);
+}
+
+.sidebar-website-child-row .sidebar-website-status-action:hover,
+.sidebar-website-child-row .sidebar-website-status-action:focus-visible {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.assistant-worker-actions .assistant-worker-icon-button {
+  padding: 4px;
+  color: color-mix(in oklab, var(--ink) 50%, transparent);
+}
+
+.assistant-worker-actions .assistant-worker-icon-button:hover,
+.assistant-worker-actions .assistant-worker-icon-button:focus-visible {
+  background: transparent;
+  color: var(--ink);
+}
+
+.sidebar-agent-more-actions-button {
+  margin-inline-end: 2px;
 }
 
 .assistant-worker-icon-button:disabled {
@@ -2362,6 +2386,20 @@
 .assistant-worker-chat-menu-button:hover {
   background: color-mix(in srgb, var(--ink-muted) 12%, transparent);
   color: var(--ink);
+}
+
+.sidebar-more-actions-button {
+  padding: 4px;
+  background: transparent;
+  color: color-mix(in oklab, var(--ink) 50%, transparent);
+  box-shadow: none;
+}
+
+.sidebar-more-actions-button:hover,
+.sidebar-more-actions-button:focus-visible {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
 }
 
 .assistant-worker-chat-row:hover .assistant-worker-chat-menu-button,
@@ -3046,6 +3084,27 @@
 :root[data-theme="dark"] .assistant-worker-icon-button,
 :root[data-theme="dark"] .assistant-worker-chat-menu-button {
   color: #9aa4b2;
+}
+
+:root[data-theme="dark"] .assistant-worker-actions .assistant-worker-icon-button,
+:root[data-theme="dark"] .sidebar-more-actions-button {
+  color: color-mix(in oklab, var(--ink) 50%, transparent);
+}
+
+:root[data-theme="dark"] .assistant-worker-actions .assistant-worker-icon-button:hover,
+:root[data-theme="dark"] .assistant-worker-actions .assistant-worker-icon-button:focus-visible,
+:root[data-theme="dark"] .sidebar-more-actions-button:hover,
+:root[data-theme="dark"] .sidebar-more-actions-button:focus-visible {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+:root[data-theme="dark"] .sidebar-website-child-row .sidebar-website-status-action:hover,
+:root[data-theme="dark"] .sidebar-website-child-row .sidebar-website-status-action:focus-visible {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .sidebar-group-divider {
