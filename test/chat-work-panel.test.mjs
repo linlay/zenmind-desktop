@@ -19,8 +19,8 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /className=\{`main-chat-work-panel-toggle/u);
   assert.match(appShell, /kind="sidebar_left"/u);
   assert.match(appShell, /className="main-chat-work-panel-toggle-icon"/u);
-  assert.match(appShell, /!activeChatWorkPanelVisible \? mainChatWorkPanelToggle : null/u);
-  assert.match(appShell, /panelToggle=\{activeChatWorkPanelVisible \? mainChatWorkPanelToggle : null\}/u);
+  assert.match(appShell, /<div className="app-window-controls-layer">\s*\{mainChatWorkPanelToggle\}\s*<\/div>/u);
+  assert.match(appShell, /hasPanelToggle=\{activeChatWorkPanelVisible && showMainChatWorkPanelToggle\}/u);
   assert.doesNotMatch(appShell, /LayoutOutlined/u);
   assert.match(appShell, /disabled=\{!activeChatWorkPanelChatId\}/u);
   assert.match(appShell, /createAgentWebclientOverviewPath\(\{ chatId \}\)/u);
@@ -38,7 +38,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(host, /item\.descriptor\.kind === "webclient"[\s\S]*?<ServiceWebviewSurface[\s\S]*?skipContextRegistration[\s\S]*?\/>/u);
   assert.match(host, /<ExternalWebviewPage/u);
   assert.match(host, /hidden=\{!visible\}/u);
-  assert.match(host, /visible \? panelToggle : null/u);
+  assert.match(host, /visible && hasPanelToggle \? " has-panel-toggle" : ""/u);
   assert.match(reducer, /stableKey:\s*`web:\$\{url\}`/u);
   assert.match(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/overview\/iu/u);
   assert.doesNotMatch(read("src/renderer/service-webview/ServiceWebviewSurface.tsx"), /\/summary\/iu/u);
@@ -46,10 +46,14 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.doesNotMatch(css, /\.work-panel-host\s*\{[^}]*display:\s*contents/su);
   assert.match(css, /\.app-shell\.is-mac-platform \.main-chat-work-panel-toggle/u);
   assert.match(css, /\.app-shell\.is-windows-platform \.main-chat-work-panel-toggle/u);
+  assert.match(css, /\.app-shell\.is-mac-platform\.has-main-chat-work-panel-toggle\s*\{[^}]*--app-window-drag-right:\s*48px;/su);
+  assert.match(css, /\.app-window-controls-layer\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*z-index:\s*1001;[^}]*pointer-events:\s*none;/su);
+  assert.match(css, /\.app-window-controls-layer \.main-chat-work-panel-toggle\s*\{[^}]*pointer-events:\s*auto;/su);
   assert.match(css, /\.main-chat-work-panel-toggle:focus-visible/u);
   assert.match(css, /\.main-chat-work-panel-toggle\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*6px/su);
   assert.match(css, /\.main-chat-work-panel-toggle-icon\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;[^}]*transform:\s*scaleX\(-1\)/su);
   assert.match(css, /\.chat-work-panel\.has-panel-toggle \.chat-work-panel-tabs\s*\{[^}]*padding-right:\s*46px/su);
+  assert.match(css, /\.app-shell webview\s*\{[^}]*-webkit-user-select:\s*none;[^}]*user-select:\s*none;/su);
 });
 
 test("WorkPanel actions derive ownership from trusted source and expose the canonical namespace", () => {

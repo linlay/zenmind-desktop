@@ -51,6 +51,10 @@
   --app-window-drag-height: 0px;
 }
 
+.app-shell.is-mac-platform.has-main-chat-work-panel-toggle {
+  --app-window-drag-right: 48px;
+}
+
 .app-shell.is-mac-translucent-sidebar,
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
   background: transparent;
@@ -572,6 +576,16 @@
   -webkit-app-region: no-drag;
 }
 
+/*
+ * A <webview> is a selectable replaced element in the embedder document.
+ * Keep rapid host-control clicks from selecting the whole guest rectangle;
+ * selection inside the isolated guest document remains unaffected.
+ */
+.app-shell webview {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .app-window-drag-layer {
   position: absolute;
   inset: 0;
@@ -579,6 +593,17 @@
   display: flex;
   flex-direction: column;
   pointer-events: none;
+}
+
+.app-window-controls-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1001;
+  pointer-events: none;
+}
+
+.app-window-controls-layer .main-chat-work-panel-toggle {
+  pointer-events: auto;
 }
 
 .app-window-drag-region {
@@ -679,7 +704,7 @@
 
 .main-chat-work-panel-toggle {
   position: absolute;
-  z-index: 30;
+  z-index: 60;
   display: inline-flex;
   align-items: center;
   justify-content: center;

@@ -3525,6 +3525,7 @@ export function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
+        showMainChatWorkPanelToggle ? "has-main-chat-work-panel-toggle" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         windowFullScreen ? "is-window-fullscreen" : "",
@@ -3541,6 +3542,9 @@ export function AppShell() {
     >
       <div className="app-window-drag-layer" aria-hidden="true">
         <div className="app-window-drag-region" />
+      </div>
+      <div className="app-window-controls-layer">
+        {mainChatWorkPanelToggle}
       </div>
       <div className="app-sidebar-shell">
         <AppSidebar
@@ -3631,7 +3635,6 @@ export function AppShell() {
       </div>
       <div ref={appContentRef} className="app-content">
         <main className="app-main">
-          {!activeChatWorkPanelVisible ? mainChatWorkPanelToggle : null}
           <ServiceWebviewSurfaceHost
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
@@ -3784,7 +3787,7 @@ export function AppShell() {
           activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           state={workPanelState}
           dispatchCommand={dispatchWorkPanelCommand}
-          panelToggle={activeChatWorkPanelVisible ? mainChatWorkPanelToggle : null}
+          hasPanelToggle={activeChatWorkPanelVisible && showMainChatWorkPanelToggle}
           isMac={isMac}
           isWindows={isWindows}
         />

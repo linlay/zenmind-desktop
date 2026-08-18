@@ -10,7 +10,7 @@ import {
   ProjectOutlined,
   RobotOutlined,
 } from "@ant-design/icons";
-import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
 import type { ChatWorkPanelTabContextMenuProfile } from "../../shared/chat-work-panel-tab-context-menu";
@@ -34,7 +34,7 @@ type WorkPanelHostProps = {
   activeChatId: string | null;
   state: WorkPanelState;
   dispatchCommand(command: WorkPanelCommand): WorkPanelCommandResult;
-  panelToggle?: ReactNode;
+  hasPanelToggle?: boolean;
   isMac: boolean;
   isWindows: boolean;
 };
@@ -104,7 +104,7 @@ export function WorkPanelHost({
   activeChatId,
   state,
   dispatchCommand,
-  panelToggle,
+  hasPanelToggle,
   isMac,
   isWindows,
 }: WorkPanelHostProps) {
@@ -487,13 +487,12 @@ export function WorkPanelHost({
         return (
           <aside
             key={workspace.workspaceId}
-            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && panelToggle ? " has-panel-toggle" : ""}`}
+            className={`chat-work-panel${visible ? " is-visible" : ""}${visible && hasPanelToggle ? " has-panel-toggle" : ""}`}
             hidden={!visible}
             aria-hidden={!visible}
             aria-label={t("chatWorkPanel.title")}
             data-work-panel-chat={workspace.ownerChatId}
           >
-            {visible ? panelToggle : null}
             <div className="chat-work-panel-tabs" role="tablist" aria-label={t("chatWorkPanel.title")}>
               {workspace.items.map((item) => {
                 const active = workspace.activeItemId === item.itemId;
