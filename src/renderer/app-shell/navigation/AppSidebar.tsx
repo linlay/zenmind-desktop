@@ -4067,7 +4067,7 @@ export function AppSidebar({
               <Tooltip content={webappActionLabel}>
                 <button
                   type="button"
-                  className="assistant-worker-icon-button sidebar-website-child-action"
+                  className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"
                   aria-label={webappActionLabel}
                   title={webappActionLabel}
                   tabIndex={-1}
@@ -4213,7 +4213,7 @@ export function AppSidebar({
         {options.wrapItem ? options.wrapItem(item) : item}
         <button
           type="button"
-          className="assistant-worker-chat-menu-button"
+          className="assistant-worker-chat-menu-button sidebar-more-actions-button"
           aria-label={t("sidebar.chat.moreActions")}
           title={t("common.more")}
           tabIndex={-1}
@@ -4318,6 +4318,19 @@ export function AppSidebar({
         }
         headerActions={
           <span className="assistant-worker-actions">
+            <Tooltip content={t("sidebar.agent.moreActions")}>
+              <button
+                type="button"
+                className="assistant-worker-icon-button sidebar-more-actions-button sidebar-agent-more-actions-button"
+                aria-label={t("sidebar.agent.moreActionsFor", {
+                  name: agent.displayName,
+                })}
+                tabIndex={-1}
+                onClick={(event) => handleOpenAgentMenu(event, agent)}
+              >
+                <SidebarActionIcon kind="more_actions" />
+              </button>
+            </Tooltip>
             <Tooltip content={t("sidebar.agent.newChat")}>
               <button
                 type="button"
@@ -4329,19 +4342,6 @@ export function AppSidebar({
                 onClick={(event) => handleAssistantNewChat(event, agent)}
               >
                 <SidebarActionIcon kind="new_chat" />
-              </button>
-            </Tooltip>
-            <Tooltip content={t("sidebar.agent.moreActions")}>
-              <button
-                type="button"
-                className="assistant-worker-icon-button"
-                aria-label={t("sidebar.agent.moreActionsFor", {
-                  name: agent.displayName,
-                })}
-                tabIndex={-1}
-                onClick={(event) => handleOpenAgentMenu(event, agent)}
-              >
-                <SidebarActionIcon kind="more_actions" />
               </button>
             </Tooltip>
           </span>
