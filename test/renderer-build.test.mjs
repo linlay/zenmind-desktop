@@ -4321,7 +4321,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(externalWebviewPage, /\{appChrome \? null : \([\s\S]*?external-webview-browser-chrome/);
   assert.doesNotMatch(externalWebviewPage, /debugSidebarNode/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
-  assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?if \(appChrome\) \{[\s\S]*?return;[\s\S]*?\}/);
+  assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?target !== "desktop-browser"/);
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
   assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
   assert.doesNotMatch(embeddedSurfaceHosts, /WebappDialogSurface|<Modal/);
@@ -6117,7 +6117,9 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewPreload, /PRELOAD_TO_PAGE_ACTION_EVENT/);
-  assert.match(serviceWebviewPreload, /payload\.action !== "openChatHistory"/);
+  assert.match(serviceWebviewPreload, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/);
+  assert.match(serviceWebviewPreload, /WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION/);
+  assert.match(serviceWebviewPreload, /WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
   assert.match(serviceWebviewMainWorld, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewMainWorld, /PRELOAD_TO_PAGE_ACTION_EVENT/);

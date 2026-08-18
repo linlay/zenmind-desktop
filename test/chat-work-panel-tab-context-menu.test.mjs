@@ -6,34 +6,51 @@ const {
   registerChatWorkPanelTabContextMenuIpcHandlers
 } = await import("../dist-electron/main/ipc/chat-work-panel-tab-context-menu-handlers.js");
 
-test("Work Panel tab context menu accepts coordinates only", () => {
+test("Work Panel tab context menu accepts only bounded profile capabilities", () => {
   assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({
     mode: "work-panel",
     x: 10.4,
     y: 20.6,
-    canCopyUrl: true,
-    isFullscreen: false
+    profile: "artifact",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: false
   }), {
     mode: "work-panel",
     x: 10,
     y: 21,
-    canCopyUrl: true,
-    isFullscreen: false
+    profile: "artifact",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: false
   });
   assert.equal(normalizeChatWorkPanelTabContextMenuRequest({
     mode: "work-panel",
     x: 10,
     y: 20,
-    canCopyUrl: true,
+    profile: "artifact",
     isFullscreen: false,
+    canClose: true,
+    canCloseOthers: false,
     url: "https://injected.example"
   }), null);
   assert.equal(normalizeChatWorkPanelTabContextMenuRequest({
     mode: "work-panel",
     x: Number.POSITIVE_INFINITY,
     y: 20,
-    canCopyUrl: true,
-    isFullscreen: false
+    profile: "web",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: false
+  }), null);
+  assert.equal(normalizeChatWorkPanelTabContextMenuRequest({
+    mode: "work-panel",
+    x: 10,
+    y: 20,
+    profile: "injected-profile",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: false
   }), null);
   assert.equal(normalizeChatWorkPanelTabContextMenuRequest({ x: 10, y: 20 }), null);
   assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({
@@ -80,17 +97,25 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     mode: "work-panel",
     x: 999,
     y: -10,
-    canCopyUrl: false,
-    isFullscreen: true
+    profile: "artifact",
+    isFullscreen: true,
+    canClose: false,
+    canCloseOthers: true
   });
   assert.deepEqual(result, { actionId: "toggle-fullscreen" });
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
-    "reload",
-    "copy-url",
+    "download-resource",
+    "copy-title",
     "separator",
-    "toggle-fullscreen"
+    "reload",
+    "separator",
+    "toggle-fullscreen",
+    "separator",
+    "close-tab",
+    "close-other-tabs"
   ]);
-  assert.equal(builtTemplate.find((item) => item.id === "copy-url").enabled, false);
+  assert.equal(builtTemplate.find((item) => item.id === "close-tab").enabled, false);
+  assert.equal(builtTemplate.find((item) => item.id === "close-other-tabs").enabled, true);
   assert.equal(popupOptions.window, ownerWindow);
   assert.equal(popupOptions.x, 299);
   assert.equal(popupOptions.y, 0);
@@ -100,11 +125,37 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     mode: "work-panel",
     x: 1,
     y: 2,
-    canCopyUrl: true,
-    isFullscreen: false
+    profile: "web",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: false
   }), { actionId: "copy-url" });
-  assert.equal(builtTemplate.find((item) => item.id === "copy-url").enabled, true);
+  assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
+    "reload",
+    "copy-url",
+    "separator",
+    "toggle-fullscreen",
+    "separator",
+    "close-tab",
+    "close-other-tabs"
+  ]);
 
+  selectedActionId = "download-resource";
+  assert.deepEqual(await invokeHandler({ sender }, {
+    mode: "work-panel",
+    x: 1,
+    y: 2,
+    profile: "reference",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: true
+  }), { actionId: "download-resource" });
+  assert.match(
+    builtTemplate.find((item) => item.id === "download-resource").label,
+    /Resource|资源/u
+  );
+
+  selectedActionId = "copy-url";
   assert.deepEqual(await invokeHandler({ sender }, {
     mode: "copy-url",
     x: 1,
@@ -116,8 +167,10 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     mode: "work-panel",
     x: 1,
     y: 2,
-    canCopyUrl: true,
-    isFullscreen: false
+    profile: "default",
+    isFullscreen: false,
+    canClose: false,
+    canCloseOthers: false
   }), {
     actionId: null
   });

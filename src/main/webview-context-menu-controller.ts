@@ -93,6 +93,7 @@ export type WebviewContextMenuControllerOptions = {
   browserSurfaces: BrowserSurfaceRegistry;
   getMainWindow(): BrowserWindow | null;
   openBrowserUrl(input: { url: string; label?: string; requireOperableTarget?: boolean }): Promise<unknown>;
+  openWorkPanelUrl(input: { sourceGuestId: number; url: string }): void;
   openExternal(url: string): Promise<unknown>;
   isTrustedAgentWebclient(
     contents: WebContents,
@@ -521,6 +522,13 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
         const url = semanticLinkURL(context);
         if (isDesktopTabUrl(url)) {
           void options.openBrowserUrl({ url, requireOperableTarget: false });
+        }
+        return;
+      }
+      case "link.open-work-panel-tab": {
+        const url = semanticLinkURL(context);
+        if (context.surfaceType === "chat-work-panel" && isDesktopTabUrl(url)) {
+          options.openWorkPanelUrl({ sourceGuestId: contents.id, url });
         }
         return;
       }

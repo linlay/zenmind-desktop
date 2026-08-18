@@ -8,6 +8,7 @@ import {
 import {
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
   type ChatWorkPanelTabContextMenuActionId,
+  type ChatWorkPanelTabContextMenuProfile,
   type ChatWorkPanelTabContextMenuPopupRequest,
   type ChatWorkPanelTabContextMenuPopupResult
 } from "../../shared/chat-work-panel-tab-context-menu";
@@ -22,6 +23,13 @@ type ChatWorkPanelTabContextMenuHandlerOptions = {
 function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
+
+const WORK_PANEL_CONTEXT_MENU_PROFILES = new Set<ChatWorkPanelTabContextMenuProfile>([
+  "default",
+  "web",
+  "artifact",
+  "reference"
+]);
 
 export function normalizeChatWorkPanelTabContextMenuRequest(
   value: unknown
@@ -49,24 +57,103 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   }
   if (
     value.mode === "work-panel" &&
-    keys.length === 5 &&
+    keys.length === 7 &&
     keys.includes("mode") &&
     keys.includes("x") &&
     keys.includes("y") &&
-    keys.includes("canCopyUrl") &&
+    keys.includes("profile") &&
     keys.includes("isFullscreen") &&
-    typeof value.canCopyUrl === "boolean" &&
-    typeof value.isFullscreen === "boolean"
+    keys.includes("canClose") &&
+    keys.includes("canCloseOthers") &&
+    typeof value.profile === "string" &&
+    WORK_PANEL_CONTEXT_MENU_PROFILES.has(value.profile as ChatWorkPanelTabContextMenuProfile) &&
+    typeof value.isFullscreen === "boolean" &&
+    typeof value.canClose === "boolean" &&
+    typeof value.canCloseOthers === "boolean"
   ) {
     return {
       mode: "work-panel",
       x: Math.round(value.x),
       y: Math.round(value.y),
-      canCopyUrl: value.canCopyUrl,
-      isFullscreen: value.isFullscreen
+      profile: value.profile as ChatWorkPanelTabContextMenuProfile,
+      isFullscreen: value.isFullscreen,
+      canClose: value.canClose,
+      canCloseOthers: value.canCloseOthers
     };
   }
   return null;
+}
+
+function buildWorkPanelTemplate(
+  request: Extract<ChatWorkPanelTabContextMenuPopupRequest, { mode: "work-panel" }>,
+  settle: (actionId: ChatWorkPanelTabContextMenuActionId | null) => void
+) {
+  const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
+  const leadingItems = request.profile === "web"
+    ? [
+        {
+          id: "reload",
+          label: t("webviewContextMenu.page.reload"),
+          click: click("reload")
+        },
+        {
+          id: "copy-url",
+          label: t("webviewContextMenu.page.copy-url"),
+          click: click("copy-url")
+        }
+      ]
+    : request.profile === "artifact" || request.profile === "reference"
+      ? [
+          {
+            id: "download-resource",
+            label: t(request.profile === "artifact"
+              ? "chatWorkPanel.tabContextMenu.downloadArtifact"
+              : "chatWorkPanel.tabContextMenu.downloadReference"),
+            click: click("download-resource")
+          },
+          {
+            id: "copy-title",
+            label: t("chatWorkPanel.tabContextMenu.copyFilename"),
+            click: click("copy-title")
+          },
+          { type: "separator" as const },
+          {
+            id: "reload",
+            label: t("chatWorkPanel.tabContextMenu.reloadPreview"),
+            click: click("reload")
+          }
+        ]
+      : [
+          {
+            id: "reload",
+            label: t("webviewContextMenu.page.reload"),
+            click: click("reload")
+          }
+        ];
+  return [
+    ...leadingItems,
+    { type: "separator" as const },
+    {
+      id: "toggle-fullscreen",
+      label: t(request.isFullscreen
+        ? "chatWorkPanel.tabContextMenu.exitFullscreen"
+        : "chatWorkPanel.tabContextMenu.enterFullscreen"),
+      click: click("toggle-fullscreen")
+    },
+    { type: "separator" as const },
+    {
+      id: "close-tab",
+      label: t("chatWorkPanel.tabContextMenu.closeTab"),
+      enabled: request.canClose,
+      click: click("close-tab")
+    },
+    {
+      id: "close-other-tabs",
+      label: t("chatWorkPanel.tabContextMenu.closeOtherTabs"),
+      enabled: request.canCloseOthers,
+      click: click("close-other-tabs")
+    }
+  ];
 }
 
 export function registerChatWorkPanelTabContextMenuIpcHandlers(
@@ -110,27 +197,7 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
               label: t("webviewContextMenu.page.copy-url"),
               click: () => settle("copy-url")
             }]
-          : [
-              {
-                id: "reload",
-                label: t("webviewContextMenu.page.reload"),
-                click: () => settle("reload")
-              },
-              {
-                id: "copy-url",
-                label: t("webviewContextMenu.page.copy-url"),
-                enabled: request.canCopyUrl,
-                click: () => settle("copy-url")
-              },
-              { type: "separator" },
-              {
-                id: "toggle-fullscreen",
-                label: t(request.isFullscreen
-                  ? "chatWorkPanel.tabContextMenu.exitFullscreen"
-                  : "chatWorkPanel.tabContextMenu.enterFullscreen"),
-                click: () => settle("toggle-fullscreen")
-              }
-            ]);
+          : buildWorkPanelTemplate(request, settle));
         const contentBounds = ownerWindow.getContentBounds();
         menu.popup({
           window: ownerWindow,

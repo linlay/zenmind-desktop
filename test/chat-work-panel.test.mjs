@@ -33,7 +33,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(host, /state\.workspaces\.map/u);
   assert.match(host, /workspace\.items\.map/u);
   assert.match(host, /item\.descriptor\.kind === "webclient"/u);
-  assert.match(host, /canCopyUrl: item\.descriptor\.kind === "web"/u);
+  assert.match(host, /profile: tabContextMenuProfile\(item\)/u);
   assert.match(host, /<ServiceWebviewSurface/u);
   assert.match(host, /item\.descriptor\.kind === "webclient"[\s\S]*?<ServiceWebviewSurface[\s\S]*?skipContextRegistration[\s\S]*?\/>/u);
   assert.match(host, /<ExternalWebviewPage/u);
@@ -71,12 +71,20 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
 
 test("WorkPanel enforces one ephemeral Web guest per item and explicit platform focus branches", () => {
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const externalWebview = read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx");
   const reducer = read("src/shared/work-panel.ts");
 
   assert.match(host, /itemPartition\(workspace\.workspaceId, item\.itemId\)/u);
   assert.match(host, /clearSession\?\.\(\{ partition \}\)/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
-  assert.match(host, /openPopupsInCurrentTab/u);
+  assert.match(host, /target !== "work-panel"/u);
+  assert.match(host, /type: "openItem"[\s\S]*?descriptor: \{ kind: "web", url: normalizedUrl \}/u);
+  assert.match(host, /showLoadingProgress/u);
+  assert.match(host, /chat-work-panel-tab-loading-spinner/u);
+  assert.match(host, /onLoadingChange/u);
+  assert.match(externalWebview, /allowpopups: "true"/u);
+  assert.match(externalWebview, /target !== "desktop-browser"/u);
+  assert.doesNotMatch(externalWebview, /openPopupsInCurrentTab/u);
   assert.match(host, /if \(isMac\)/u);
   assert.match(host, /else if \(isWindows\)/u);
   assert.match(host, /dataset\.workPanelDomReady === "true"/u);
@@ -108,6 +116,11 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /item\.descriptor\.module === "overview"/u);
   assert.match(host, /result\.actionId === "reload"/u);
   assert.match(host, /result\.actionId === "copy-url"/u);
+  assert.match(host, /result\.actionId === "copy-title"/u);
+  assert.match(host, /result\.actionId === "download-resource"/u);
+  assert.match(host, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/u);
+  assert.match(host, /result\.actionId === "close-other-tabs"/u);
+  assert.match(host, /type: "closeOtherItems"/u);
   assert.match(host, /result\.actionId === "toggle-fullscreen"/u);
   assert.match(host, /findItemWebview\(ownerChatId, item\.itemId\)\?\.reload\(\)/u);
   assert.match(host, /normalizeWorkPanelWebUrl\(findItemWebview\(ownerChatId, item\.itemId\)\?\.getURL\(\)\)/u);
@@ -125,6 +138,7 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(css, /\.chat-work-panel-tab\s*\{[^}]*flex:\s*0 1 auto;[^}]*width:\s*fit-content;[^}]*min-width:\s*140px;[^}]*max-width:\s*240px/su);
   assert.match(css, /\.chat-work-panel-tab-trigger\s*\{[^}]*padding:\s*0 10px;/su);
   assert.match(css, /\.chat-work-panel-tab-close\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*width:\s*34px/su);
+  assert.match(css, /\.chat-work-panel-tab-loading-spinner/u);
   assert.match(css, /\.chat-work-panel-tab\.has-close:hover \.chat-work-panel-tab-title[^}]*mask-image:\s*linear-gradient/su);
   assert.match(css, /\.app-shell\.has-chat-work-panel \.work-panel-host\.is-fullscreen\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%/su);
   assert.match(css, /\.chat-work-panel \.external-webview-browser-chrome\s*\{\s*display:\s*none;/su);

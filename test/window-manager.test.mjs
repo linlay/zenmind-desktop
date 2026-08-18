@@ -1352,6 +1352,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
   assert.deepEqual(sentTabs, [{
     channel: "webview.openTab",
     payload: {
+      target: "desktop-browser",
       sourceGuestId: 42,
       url: "https://example.test/inside"
     }
@@ -1383,7 +1384,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
   ]);
 });
 
-test("Chat Work Panel popups navigate the source guest without creating a tab or external window", async () => {
+test("Chat Work Panel popups create an outer WorkPanel tab without navigating Desktop", async () => {
   const contents = new FakeWebContents(43);
   const sentTabs = [];
   const externalUrls = [];
@@ -1401,7 +1402,7 @@ test("Chat Work Panel popups navigate the source guest without creating a tab or
     resolveOpenDisposition: () => "tab",
     collectLoadDiagnostics: async () => ({}),
     report: () => {},
-    shouldOpenPopupInCurrentTab: () => true,
+    shouldOpenPopupInWorkPanelTab: () => true,
     openExternal: async (url) => {
       externalUrls.push(url);
     },
@@ -1412,7 +1413,14 @@ test("Chat Work Panel popups navigate the source guest without creating a tab or
   assert.deepEqual(contents.windowOpenHandler({ url: "javascript:alert(1)" }), { action: "deny" });
   await Promise.resolve();
 
-  assert.deepEqual(contents.loadedUrls, ["https://example.test/popup"]);
-  assert.deepEqual(sentTabs, []);
+  assert.deepEqual(contents.loadedUrls, []);
+  assert.deepEqual(sentTabs, [{
+    channel: "webview.openTab",
+    payload: {
+      target: "work-panel",
+      sourceGuestId: 43,
+      url: "https://example.test/popup"
+    }
+  }]);
   assert.deepEqual(externalUrls, []);
 });

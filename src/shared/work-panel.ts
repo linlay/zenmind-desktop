@@ -18,6 +18,7 @@ export type WorkPanelCommand =
   | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor }
   | { type: "activateItem"; ownerChatId: string; itemId: string }
   | { type: "closeItem"; ownerChatId: string; itemId: string }
+  | { type: "closeOtherItems"; ownerChatId: string; itemId: string }
   | { type: "showWorkspace"; ownerChatId: string }
   | { type: "hideWorkspace"; ownerChatId: string }
   | { type: "closeWorkspace"; ownerChatId: string; force?: boolean };
@@ -359,6 +360,25 @@ export function reduceWorkPanelCommand(
   if (command.type === "activateItem") {
     const nextWorkspace = { ...current, activeItemId: item.itemId };
     const workspaces = state.workspaces.map((workspace, nextIndex) => nextIndex === index ? nextWorkspace : workspace);
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      item,
+      state: nextWorkspace,
+      nextState: {
+        workspaces,
+        visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+      },
+    };
+  }
+  if (command.type === "closeOtherItems") {
+    const items = current.items.filter((candidate) =>
+      candidate.itemId === item.itemId || candidate.pinned || !candidate.closable,
+    );
+    const nextWorkspace = { ...current, items, activeItemId: item.itemId };
+    const workspaces = state.workspaces.map((workspace, nextIndex) =>
+      nextIndex === index ? nextWorkspace : workspace,
+    );
     return {
       ok: true,
       workspaceId: current.workspaceId,

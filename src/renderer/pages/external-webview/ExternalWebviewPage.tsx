@@ -85,9 +85,10 @@ type ExternalWebviewPageProps = {
   allowUserTabCreation?: boolean;
   allowTabUrlCopy?: boolean;
   showToolbar?: boolean;
+  showLoadingProgress?: boolean;
   enableDesktopWebActions?: boolean;
   registerPublicWebSurface?: boolean;
-  openPopupsInCurrentTab?: boolean;
+  onLoadingChange?: (isLoading: boolean) => void;
   cdpActive?: boolean;
   publishPageContext?: boolean;
   onControllerReady?: (controller: ExternalWebviewController | null) => void;
@@ -174,7 +175,6 @@ type ExternalWebviewPaneProps = {
   onCloseRequested: (tabId: string) => void;
   onDomReady: (tabId: string) => void;
   onFaviconDiscovered?: (faviconUrl: string) => void;
-  openPopupsInCurrentTab?: boolean;
 };
 
 function getFallbackTabTitle(defaultTitle: string, url: string) {
@@ -215,18 +215,6 @@ function normalizeEditableUrl(rawValue: string) {
 function readEventString(event: Event, key: string) {
   const candidate = (event as unknown as Record<string, unknown>)[key];
   return typeof candidate === "string" ? candidate : "";
-}
-
-function normalizeSameTabPopupUrl(rawValue: string) {
-  if (rawValue === BLANK_EXTERNAL_WEBVIEW_URL) {
-    return rawValue;
-  }
-  try {
-    const parsedUrl = new URL(rawValue);
-    return ["http:", "https:"].includes(parsedUrl.protocol) ? parsedUrl.toString() : null;
-  } catch {
-    return null;
-  }
 }
 
 function getUrlDisplayLabel(url: string) {
@@ -315,8 +303,7 @@ function ExternalWebviewPane({
   onWebviewRefChange,
   onCloseRequested,
   onDomReady,
-  onFaviconDiscovered,
-  openPopupsInCurrentTab = false
+  onFaviconDiscovered
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const initialSrcRef = useRef(tab.currentUrl);
@@ -391,9 +378,12 @@ function ExternalWebviewPane({
     const handleDidStopLoading = () => {
       syncFromWebview({ isLoading: false });
     };
+    const handleDidFailLoad = () => {
+      syncFromWebview({ isLoading: false });
+    };
     const handleDidNavigate = (event: Event) => {
       const nextUrl = readEventString(event, "url");
-      syncFromWebview(nextUrl ? { currentUrl: nextUrl, isLoading: false } : { isLoading: false });
+      syncFromWebview(nextUrl ? { currentUrl: nextUrl } : {});
     };
     const handleDidNavigateInPage = (event: Event) => {
       const nextUrl = readEventString(event, "url");
@@ -411,26 +401,14 @@ function ExternalWebviewPane({
         onFaviconDiscovered?.(nextFaviconUrl);
       }
     };
-    const handleNewWindow = (event: Event) => {
-      if (!openPopupsInCurrentTab) {
-        return;
-      }
-      event.preventDefault?.();
-      const nextUrl = normalizeSameTabPopupUrl(readEventString(event, "url"));
-      if (!nextUrl) {
-        return;
-      }
-      void webview.loadURL(nextUrl).catch(() => undefined);
-    };
-
     webview.addEventListener("dom-ready", handleDomReady);
     webview.addEventListener("did-start-loading", handleDidStartLoading);
     webview.addEventListener("did-stop-loading", handleDidStopLoading);
+    webview.addEventListener("did-fail-load", handleDidFailLoad);
     webview.addEventListener("did-navigate", handleDidNavigate);
     webview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
     webview.addEventListener("page-title-updated", handlePageTitleUpdated);
     webview.addEventListener("page-favicon-updated", handlePageFaviconUpdated);
-    webview.addEventListener("new-window", handleNewWindow);
     webview.addEventListener("close", handleClose);
     syncFromWebview();
 
@@ -438,14 +416,14 @@ function ExternalWebviewPane({
       webview.removeEventListener("dom-ready", handleDomReady);
       webview.removeEventListener("did-start-loading", handleDidStartLoading);
       webview.removeEventListener("did-stop-loading", handleDidStopLoading);
+      webview.removeEventListener("did-fail-load", handleDidFailLoad);
       webview.removeEventListener("did-navigate", handleDidNavigate);
       webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
-      webview.removeEventListener("new-window", handleNewWindow);
       webview.removeEventListener("close", handleClose);
     };
-  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onTabStateChange, openPopupsInCurrentTab, tab.currentUrl, tab.id]);
+  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onTabStateChange, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -461,7 +439,8 @@ function ExternalWebviewPane({
         src: initialSrcRef.current,
         title: tab.title,
         className: "embedded-surface-frame external-webview-frame",
-        ...(openPopupsInCurrentTab ? {} : { allowpopups: "true" }),
+        // Main receives popup requests and routes them to the owning surface.
+        allowpopups: "true",
         partition: tab.partition,
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
@@ -494,9 +473,10 @@ export function ExternalWebviewPage({
   allowUserTabCreation = true,
   allowTabUrlCopy = false,
   showToolbar = true,
+  showLoadingProgress = false,
   enableDesktopWebActions = true,
   registerPublicWebSurface = true,
-  openPopupsInCurrentTab = false,
+  onLoadingChange,
   cdpActive,
   publishPageContext = true,
   onControllerReady
@@ -1017,8 +997,8 @@ export function ExternalWebviewPage({
   };
 
   useEffect(() => {
-    return window.electronAPI.onWebviewOpenTab(({ sourceGuestId, url: nextUrl, partition, userAgent }) => {
-      if (appChrome) {
+    return window.electronAPI.onWebviewOpenTab(({ target, sourceGuestId, url: nextUrl, partition, userAgent }) => {
+      if (appChrome || target !== "desktop-browser") {
         return;
       }
       const currentState = browserStateRef.current;
@@ -1095,6 +1075,16 @@ export function ExternalWebviewPage({
   }, [refreshOnDesktopSso]);
 
   const activeTab = browserState.tabs.find((tab) => tab.id === browserState.activeTabId) ?? browserState.tabs[0];
+  const onLoadingChangeRef = useRef(onLoadingChange);
+  onLoadingChangeRef.current = onLoadingChange;
+
+  useEffect(() => {
+    onLoadingChangeRef.current?.(Boolean(activeTab?.isLoading));
+  }, [activeTab?.id, activeTab?.isLoading]);
+
+  useEffect(() => () => {
+    onLoadingChangeRef.current?.(false);
+  }, []);
 
   useEffect(() => {
     void syncEmbeddedCdpSurface(browserState).catch(() => undefined);
@@ -1959,6 +1949,15 @@ export function ExternalWebviewPage({
         </button>
       ) : null}
       <div className={`embedded-surface-frame-shell external-webview-frame-shell${appChrome ? " is-app-surface" : ""}`}>
+        {showLoadingProgress && activeTab?.isLoading ? (
+          <div
+            className="external-webview-loading-progress"
+            role="progressbar"
+            aria-label={t("common.loading")}
+          >
+            <span />
+          </div>
+        ) : null}
         {browserState.tabs.map((tab) => (
           <ExternalWebviewPane
             key={tab.id}
@@ -1990,7 +1989,6 @@ export function ExternalWebviewPage({
                   }
                 : undefined
             }
-            openPopupsInCurrentTab={openPopupsInCurrentTab}
           />
         ))}
       </div>

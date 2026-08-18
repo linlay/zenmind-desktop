@@ -123,7 +123,7 @@ test("link policy separates browser, trusted webclient and generic service surfa
   ]);
   assert.deepEqual(ids(context({ surfaceType: "chat-work-panel", linkURL })), [
     "link.open-current",
-    "link.open-desktop-tab",
+    "link.open-work-panel-tab",
     "link.open-external",
     "link.copy"
   ]);

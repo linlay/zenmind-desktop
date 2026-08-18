@@ -959,6 +959,31 @@
   line-height: 1;
 }
 
+.chat-work-panel-tab-icon.is-loading {
+  color: var(--work-panel-tab-focus);
+}
+
+.chat-work-panel-tab-loading-spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: chat-work-panel-tab-spin 780ms linear infinite;
+}
+
+@keyframes chat-work-panel-tab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-work-panel-tab-loading-spinner {
+    animation: none;
+  }
+}
+
 .chat-work-panel-tab-title {
   flex: 1 1 auto;
   min-width: 0;

@@ -33,6 +33,7 @@ export type WebviewContextMenuActionId =
   | "content.copy"
   | "code.copy"
   | "link.open-current"
+  | "link.open-work-panel-tab"
   | "link.open-desktop-tab"
   | "link.open-external"
   | "link.copy"

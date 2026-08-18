@@ -132,7 +132,7 @@ type AttachedWebviewOptions<
   collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
   report(source: string, details: Record<string, unknown>): void;
   onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
-  shouldOpenPopupInCurrentTab?(contents: TGuestContents): boolean;
+  shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
   getHelpUrl?(): string;
   isHelpWebview?(contents: TGuestContents): boolean;
   openExternal(url: string): Promise<unknown>;
@@ -356,7 +356,7 @@ export function configureMainWindowWebContents<
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
     report(source: string, details: Record<string, unknown>): void;
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
-    shouldOpenPopupInCurrentTab?(contents: TGuestContents): boolean;
+    shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
     attachWebviewContextMenu?(contents: TGuestContents): void;
     onWebviewFocusChanged?(webContentsId: number, focused: boolean): void;
     onMainRendererFocused?(): void;
@@ -452,7 +452,7 @@ export function configureMainWindowWebContents<
       collectLoadDiagnostics: options.collectLoadDiagnostics,
       report: options.report,
       onWebviewNavigation: options.onWebviewNavigation,
-      shouldOpenPopupInCurrentTab: options.shouldOpenPopupInCurrentTab,
+      shouldOpenPopupInWorkPanelTab: options.shouldOpenPopupInWorkPanelTab,
       getHelpUrl: options.getHelpUrl,
       isHelpWebview: options.isHelpWebview,
       openExternal: options.openExternal,
@@ -768,14 +768,16 @@ export function configureAttachedWebview<
   });
 
   contents.setWindowOpenHandler(({ url }) => {
-    if (options.shouldOpenPopupInCurrentTab?.(contents)) {
+    if (options.shouldOpenPopupInWorkPanelTab?.(contents)) {
       const nextUrl = normalizeChatWorkPanelUrl(url);
       if (nextUrl) {
-        void contents.loadURL(nextUrl).catch((error) => {
-          options.report("failed to navigate Work Panel popup in current tab", {
-            guestId: contents.id,
-            url: nextUrl,
-            error
+        options.schedule(() => {
+          const mainWindow = options.getMainWindow();
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.webContents.send("webview.openTab", {
+            target: "work-panel",
+            sourceGuestId: contents.id,
+            url: nextUrl
           });
         });
       }
@@ -808,6 +810,7 @@ export function configureAttachedWebview<
         }
 
         mainWindow.webContents.send("webview.openTab", {
+          target: "desktop-browser",
           sourceGuestId: contents.id,
           url
         });

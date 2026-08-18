@@ -257,3 +257,30 @@ test("WorkPanel closes active items consecutively and destroys the workspace aft
   assert.equal(closeFirst.nextState.workspaces.length, 0);
   assert.deepEqual(closeFirst.nextState.visibleOwnerChatIds, []);
 });
+
+test("WorkPanel closes other closable tabs while retaining pinned items and activating the target", () => {
+  const overview = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient", module: "overview", route: "/overview/chat", context: { agentKey: "agent", chatId: "chat" },
+  });
+  const artifact = open(overview.nextState, "chat", {
+    kind: "webclient", module: "artifact", route: "/resource-viewer/agent?chatId=chat&file=artifact.txt", context: { agentKey: "agent", chatId: "chat", artifactId: "artifact" },
+  });
+  const reference = open(artifact.nextState, "chat", {
+    kind: "webclient", module: "reference", route: "/resource-viewer/agent?chatId=chat&file=reference.txt", context: { agentKey: "agent", chatId: "chat", referenceId: "reference" },
+  });
+  const pinned = open(reference.nextState, "chat", {
+    kind: "web", url: "https://example.test/pinned", pinned: true,
+  });
+
+  const result = reduceWorkPanelCommand(pinned.nextState, {
+    type: "closeOtherItems", ownerChatId: "chat", itemId: artifact.item.itemId,
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.state.items.map((item) => item.itemId), [
+    overview.item.itemId,
+    artifact.item.itemId,
+    pinned.item.itemId,
+  ]);
+  assert.equal(result.state.activeItemId, artifact.item.itemId);
+  assert.deepEqual(result.nextState.visibleOwnerChatIds, ["chat"]);
+});

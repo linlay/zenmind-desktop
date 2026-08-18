@@ -122,7 +122,11 @@ export function buildWebviewContextMenuPolicy(
       ) {
         add("target", "link.open-current");
       }
-      if (isDesktopTabUrl(linkURL)) add("target", "link.open-desktop-tab");
+      if (context.surfaceType === "chat-work-panel" && isDesktopTabUrl(linkURL)) {
+        add("target", "link.open-work-panel-tab");
+      } else if (isDesktopTabUrl(linkURL)) {
+        add("target", "link.open-desktop-tab");
+      }
       if (isExternalApplicationUrl(linkURL)) add("target", "link.open-external");
       if (isExternalApplicationUrl(linkURL)) add("target", "link.copy");
     }

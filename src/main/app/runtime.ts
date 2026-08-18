@@ -274,6 +274,23 @@ export function createMainProcessRuntime() {
     browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
     getMainWindow: () => appState.mainWindow,
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
+    openWorkPanelUrl: ({ sourceGuestId, url }) => {
+      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(sourceGuestId);
+      const mainWindow = appState.mainWindow;
+      if (
+        !target ||
+        target.surfaceType !== "chat-work-panel" ||
+        !mainWindow ||
+        mainWindow.isDestroyed()
+      ) {
+        return;
+      }
+      mainWindow.webContents.send("webview.openTab", {
+        target: "work-panel",
+        sourceGuestId,
+        url
+      });
+    },
     openExternal: (url) => shell.openExternal(url),
     isTrustedAgentWebclient: async (contents, target) => {
       if (
@@ -586,7 +603,7 @@ export function createMainProcessRuntime() {
     },
     resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation,
-    shouldOpenWebviewPopupInCurrentTab: (contents) =>
+    shouldOpenWebviewPopupInWorkPanelTab: (contents) =>
       webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id)?.surfaceType === "chat-work-panel",
     attachWebviewContextMenu: webviewContextMenuController.attach,
     collectWebviewLoadDiagnostics,

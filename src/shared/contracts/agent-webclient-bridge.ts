@@ -11,6 +11,14 @@ export const AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL =
   "__AGENT_WEBCLIENT_PLATFORM_WS__" as const;
 export const AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL =
   "__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__" as const;
+export const AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION =
+  "workPanel.resource.downloadCurrent" as const;
+export const AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION = 1 as const;
+
+export type AgentWebclientWorkPanelResourceDownloadAction = {
+  action: typeof AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION;
+  version: typeof AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION;
+};
 
 export const AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL =
   "agentWebclient.platformWs.open" as const;

@@ -4,7 +4,17 @@ export const CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL =
 export type ChatWorkPanelTabContextMenuActionId =
   | "reload"
   | "copy-url"
+  | "copy-title"
+  | "download-resource"
+  | "close-tab"
+  | "close-other-tabs"
   | "toggle-fullscreen";
+
+export type ChatWorkPanelTabContextMenuProfile =
+  | "default"
+  | "web"
+  | "artifact"
+  | "reference";
 
 export type ChatWorkPanelTabContextMenuPopupRequest =
   | {
@@ -16,8 +26,10 @@ export type ChatWorkPanelTabContextMenuPopupRequest =
       mode: "work-panel";
       x: number;
       y: number;
-      canCopyUrl: boolean;
+      profile: ChatWorkPanelTabContextMenuProfile;
       isFullscreen: boolean;
+      canClose: boolean;
+      canCloseOthers: boolean;
     };
 
 export type ChatWorkPanelTabContextMenuPopupResult = {
