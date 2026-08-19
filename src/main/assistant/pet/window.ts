@@ -53,6 +53,10 @@ export function createDesktopPetBrowserWindow(options: {
     }
   });
 
+  if (isMac) {
+    win.excludedFromShownWindowsMenu = true;
+  }
+
   applyDesktopPetBrowserWindowLayering(win, options.platform);
 
   win.on("closed", options.onClosed);

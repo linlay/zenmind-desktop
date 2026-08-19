@@ -172,6 +172,7 @@
 }
 
 .external-webview-tab-strip {
+  --tab-curve-overhang: 12px;
   display: flex;
   align-items: flex-end;
   gap: 0;
@@ -179,7 +180,9 @@
   min-width: 0;
   max-width: calc(100% - 42px);
   overflow-x: auto;
-  padding-bottom: 0;
+  margin-inline: calc(-1 * var(--tab-curve-overhang));
+  padding: 0 var(--tab-curve-overhang);
+  scroll-padding-inline: var(--tab-curve-overhang);
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   app-region: no-drag;
@@ -206,7 +209,7 @@
   min-height: 32px;
   border: 0;
   border-radius: 14px 14px 0 0;
-  background: var(--browser-tab);
+  background: transparent;
   cursor: grab;
   transition:
     background 160ms ease,
@@ -233,7 +236,21 @@
 }
 
 .external-webview-tab:hover:not(.is-active) {
+  background: transparent;
+}
+
+.external-webview-tab:hover:not(.is-active)::before {
+  content: "";
+  position: absolute;
+  inset: 2px 4px 4px;
+  border-radius: 12px;
   background: var(--browser-tab-hover);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.external-webview-tab:hover:not(.is-active)::after {
+  content: none;
 }
 
 .external-webview-tab.is-active {
@@ -281,6 +298,8 @@
 }
 
 .external-webview-tab-trigger {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   flex: 1;
   display: flex;
@@ -372,7 +391,7 @@
 }
 
 :root[data-theme="dark"] .external-webview-tab:hover:not(.is-active) {
-  background: var(--browser-tab-hover);
+  background: transparent;
 }
 
 :root[data-theme="dark"] .external-webview-tab.is-active:hover {
@@ -423,6 +442,8 @@
 }
 
 .external-webview-tab-close {
+  position: relative;
+  z-index: 1;
   flex: none;
   width: 28px;
   height: 28px;
@@ -542,7 +563,7 @@
   min-height: 32px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  background: #edf1f5;
   border: 1px solid transparent;
   color: var(--browser-muted);
   transition:
