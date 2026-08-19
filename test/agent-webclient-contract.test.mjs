@@ -13,7 +13,7 @@ const mirror = path.join(root, "contracts/agent-webclient/agent-webclient-bridge
 test("Agent WebClient contract mirror is deterministic and versioned", () => {
   const canonical = fs.readFileSync(source, "utf8").replace(/\r\n/gu, "\n").trimEnd();
   const digest = crypto.createHash("sha256").update(canonical).digest("hex");
-  const generated = fs.readFileSync(mirror, "utf8");
+  const generated = fs.readFileSync(mirror, "utf8").replace(/\r\n/gu, "\n");
   assert.match(generated, new RegExp(`^// Generated[\\s\\S]*// sha256:${digest}\\n`, "u"));
   assert.match(canonical, /AGENT_WEBCLIENT_BRIDGE_VERSION = 3 as const/u);
   assert.match(canonical, /"version_mismatch"/u);
@@ -38,6 +38,26 @@ test("Agent WebClient contract check fails when canonical changes without its mi
     });
     assert.notEqual(result.status, 0);
     assert.match(`${result.stdout}${result.stderr}`, /contract is stale/u);
+  } finally {
+    fs.rmSync(temporary, { recursive: true, force: true });
+  }
+});
+
+test("Agent WebClient contract check accepts a CRLF mirror", () => {
+  const temporary = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-contract-crlf-"));
+  try {
+    fs.mkdirSync(path.join(temporary, "scripts"), { recursive: true });
+    fs.mkdirSync(path.join(temporary, "src/shared/contracts"), { recursive: true });
+    fs.mkdirSync(path.join(temporary, "contracts/agent-webclient"), { recursive: true });
+    fs.copyFileSync(path.join(root, "scripts/generate-agent-webclient-contract.mjs"), path.join(temporary, "scripts/generate-agent-webclient-contract.mjs"));
+    fs.copyFileSync(source, path.join(temporary, "src/shared/contracts/agent-webclient-bridge.ts"));
+    const crlfMirror = fs.readFileSync(mirror, "utf8").replace(/\r\n/gu, "\n").replace(/\n/gu, "\r\n");
+    fs.writeFileSync(path.join(temporary, "contracts/agent-webclient/agent-webclient-bridge.ts"), crlfMirror, "utf8");
+    const result = spawnSync(process.execPath, ["scripts/generate-agent-webclient-contract.mjs", "--check"], {
+      cwd: temporary,
+      encoding: "utf8",
+    });
+    assert.equal(result.status, 0, `${result.stdout}${result.stderr}`);
   } finally {
     fs.rmSync(temporary, { recursive: true, force: true });
   }
