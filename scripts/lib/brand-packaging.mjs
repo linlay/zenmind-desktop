@@ -70,6 +70,7 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
     files: [
       "dist-renderer/**/*",
       "dist-electron/**/*",
+      "scripts/webapp-tooling.mjs",
       "package.json",
       "node_modules/**/*",
       "!node_modules/@napi-rs/canvas-linux-*",
@@ -78,7 +79,8 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
       "!node_modules/**/*.map"
     ],
     asarUnpack: [
-      "node_modules/@napi-rs/canvas-*/**/*"
+      "node_modules/@napi-rs/canvas-*/**/*",
+      "scripts/webapp-tooling.mjs"
     ],
     npmRebuild: false,
     extraResources: [

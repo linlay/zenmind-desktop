@@ -1378,12 +1378,16 @@ function prepareRunningPluginFixture(userDataRoot, options = {}) {
 function createApp(userDataRoot, options = {}) {
   const {
     isPackaged = false,
+    appPath = process.cwd(),
     homePath = getTestHomeRoot(userDataRoot),
     appDataPath = path.join(userDataRoot, "app-data"),
     desktopPath = path.join(homePath, "Desktop")
   } = options;
   return {
     isPackaged,
+    getAppPath() {
+      return appPath;
+    },
     getPath(name) {
       switch (name) {
         case "userData":
@@ -2950,10 +2954,13 @@ test("service shell PATH probe skips shell execution on Windows", () => {
   });
 });
 
-test("service command env injects DESKTOP_DEVICE_ID only for identity-center", () => {
+test("service command env injects Desktop-owned runtime capabilities only into their consumers", () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-device-env-"));
   const userDataRoot = path.join(tempRoot, "user-data");
-  const app = createApp(userDataRoot);
+  const appPath = path.join(tempRoot, "desktop-app");
+  // The dev .app reports isPackaged=true while getAppPath() still points at
+  // the source checkout, so appPath shape is the authoritative distinction.
+  const app = createApp(userDataRoot, { appPath, isPackaged: true });
   const platformEnvPath = writeTestEnv(userDataRoot, "agent-platform", "SERVER_PORT=7078\n");
   const identityEnvPath = writeTestEnv(userDataRoot, "identity-center", "SERVER_PORT=7076\n");
   const pluginEnvPath = writeTestEnv(userDataRoot, "test-plugin", "PORT=9090\n", "plugins");
@@ -3019,10 +3026,17 @@ test("service command env injects DESKTOP_DEVICE_ID only for identity-center", (
     );
 
     assert.equal(platformEnv.DESKTOP_DEVICE_ID, undefined);
+    assert.equal(platformEnv.DESKTOP_ROOT, appPath);
+    assert.equal(
+      platformEnv.DESKTOP_WEBAPP_TOOLING_PATH,
+      path.join(appPath, "scripts", "webapp-tooling.mjs")
+    );
     assert.equal(typeof identityEnv.DESKTOP_DEVICE_ID, "string");
     assert.match(identityEnv.DESKTOP_DEVICE_ID, /^[0-9a-f-]{36}$/i);
     assert.notEqual(identityEnv.DESKTOP_DEVICE_ID, "external-device");
     assert.equal(pluginEnv.DESKTOP_DEVICE_ID, undefined);
+    assert.equal(identityEnv.DESKTOP_WEBAPP_TOOLING_PATH, undefined);
+    assert.equal(pluginEnv.DESKTOP_WEBAPP_TOOLING_PATH, undefined);
     assert.equal(pluginEnv.NODE_BIN, "/tmp/node");
     assert.equal(pluginEnv.PORT, "9090");
     assert.equal(pluginEnv.SERVICE_PROGRAM_DIR, pluginLayout.programDir);
@@ -3031,6 +3045,19 @@ test("service command env injects DESKTOP_DEVICE_ID only for identity-center", (
     assert.equal(pluginEnv.SERVICE_STATE_DIR, pluginLayout.stateDir);
     assert.equal(pluginEnv.SERVICE_LOG_DIR, pluginLayout.logDir);
     assert.equal(pluginEnv.SERVICE_ENV_PATH, pluginLayout.envPath);
+
+    const packagedAppPath = path.join(tempRoot, "resources", "app.asar");
+    const packagedPlatformEnv = __testInternals.buildDesktopServiceCommandEnv(
+      createApp(userDataRoot, { appPath: packagedAppPath, isPackaged: true }),
+      platformService,
+      platformLayout,
+      undefined
+    );
+    assert.equal(packagedPlatformEnv.DESKTOP_ROOT, `${packagedAppPath}.unpacked`);
+    assert.equal(
+      packagedPlatformEnv.DESKTOP_WEBAPP_TOOLING_PATH,
+      path.join(`${packagedAppPath}.unpacked`, "scripts", "webapp-tooling.mjs")
+    );
     assert.equal(fs.readFileSync(platformEnvPath, "utf8"), "SERVER_PORT=7078\n");
     assert.equal(fs.readFileSync(identityEnvPath, "utf8"), "SERVER_PORT=7076\n");
     assert.equal(fs.readFileSync(pluginEnvPath, "utf8"), "PORT=9090\n");

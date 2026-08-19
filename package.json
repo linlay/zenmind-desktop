@@ -17,6 +17,7 @@
     "i18n:keys": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs",
     "webapp-contract:generate": "node ./scripts/generate-webapp-contract.mjs",
     "webapp-contract:check": "node ./scripts/generate-webapp-contract.mjs --check",
+    "webapp-tooling:bundle": "node ./scripts/generate-webapp-tooling-bundle.mjs",
     "agent-webclient-contract:generate": "node ./scripts/generate-agent-webclient-contract.mjs",
     "agent-webclient-contract:check": "node ./scripts/generate-agent-webclient-contract.mjs --check",
     "webapp:manifest:init": "node ./scripts/webapp-tooling.mjs manifest init",
@@ -69,6 +70,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^36.2.1",
     "electron-builder": "^24.13.3",
+    "esbuild": "^0.27.7",
     "typescript": "^5.9.2",
     "vite": "^7.1.7"
   }

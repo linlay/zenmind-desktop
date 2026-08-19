@@ -92,6 +92,8 @@
 - [ ] 下载校验、取消、重试和缓存清理行为一致，恶意路径与不匹配摘要被拒绝。
 - [ ] Website 新增、排序、禁用和删除只影响 Desktop 入口，不误删站点自身数据。
 - [ ] Website 的 SSO、Copilot 与刷新能力按 manifest 显式生效，不依据 URL 猜测。
+- [ ] macOS 与 Windows 生产包均包含 `app.asar.unpacked/scripts/webapp-tooling.mjs`，从该路径可完成 manifest 初始化、项目校验、ZIP 构建与归档复验。
+- [ ] `agent-platform` 启动环境的 `DESKTOP_WEBAPP_TOOLING_PATH` 精确指向当前生产包 Tooling；旧 Skill 通过过渡 `DESKTOP_ROOT` 也能直接命中，不扫描用户目录或源码仓库。
 - [ ] WebApp v2 完成包校验、后端启动、gateway 访问、bridge 授权、停止和卸载。
 - [ ] WebApp 进程崩溃、端口冲突或 runtime 缺失时给出可恢复状态，不暴露任意本地端口。
 - [ ] 桌宠安装、窗口显示、状态订阅和 Agent 绑定正确；关闭或卸载后释放窗口与监听器。
