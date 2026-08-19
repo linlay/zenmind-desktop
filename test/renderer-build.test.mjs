@@ -7537,6 +7537,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPetWindow, /const isMac = options\.platform === "darwin";/);
   assert.match(desktopPetWindow, /const isWindows = options\.platform === "win32";/);
   assert.match(desktopPetWindow, /\.\.\.\(isMac \? \{ type: "panel" as const \} : \{\}\)/);
+  assert.match(desktopPetWindow, /if \(isMac\) \{[\s\S]{0,80}win\.excludedFromShownWindowsMenu = true;/);
   assert.match(desktopPetWindow, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
   assert.match(
     desktopPetWindow,

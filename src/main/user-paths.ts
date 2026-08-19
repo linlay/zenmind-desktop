@@ -144,8 +144,11 @@ export function getDataRoot(app: App, platform: NodeJS.Platform = process.platfo
 
 export const getDesktopRoot = getDataRoot;
 
-export function desktopDataRootExists(app: App) {
-  return fs.existsSync(getDesktopRootPath(app));
+export function desktopDataRootExists(
+  app: App,
+  platform: NodeJS.Platform = process.platform
+) {
+  return fs.existsSync(getDesktopRootPath(app, platform));
 }
 
 export function ensureDataRoot(app: App) {

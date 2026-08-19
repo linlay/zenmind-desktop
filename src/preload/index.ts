@@ -64,8 +64,15 @@ import type {
   WebviewSelectionToolbarStateListener
 } from "../shared/contracts";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
-import { CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/chat-work-panel-tab-context-menu";
+import {
+  CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
+  CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
+} from "../shared/chat-work-panel-tab-context-menu";
 import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
+import {
+  CANONICAL_CHAT_SYNC_REQUEST_CHANNEL,
+  CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
+} from "../shared/canonical-chat-sync";
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
 import { DEFAULT_LOCALE } from "../shared/i18n/locales";
@@ -90,7 +97,9 @@ const api: DesktopApi = {
   },
   chatWorkPanelTabContextMenu: {
     popup: (request: ChatWorkPanelTabContextMenuPopupRequest) =>
-      ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request)
+      ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request),
+    openLocalResource: (request) =>
+      ipcRenderer.invoke(CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL, request)
   },
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
@@ -135,6 +144,19 @@ const api: DesktopApi = {
         ipcRenderer.off("desktopShell.shutdownProgress", handleShutdownProgress);
       };
     }
+  },
+  canonicalChatSync: {
+    respond: (result) => ipcRenderer.send(CANONICAL_CHAT_SYNC_RESULT_CHANNEL, result),
+    onRequest: (listener) => {
+      const handleRequest = (
+        _event: Electron.IpcRendererEvent,
+        request: Parameters<typeof listener>[0],
+      ) => listener(request);
+      ipcRenderer.on(CANONICAL_CHAT_SYNC_REQUEST_CHANNEL, handleRequest);
+      return () => {
+        ipcRenderer.off(CANONICAL_CHAT_SYNC_REQUEST_CHANNEL, handleRequest);
+      };
+    },
   },
   desktopDownloads: {
     saveFile: (input) => ipcRenderer.invoke("desktopDownloads.saveFile", input)

@@ -5061,36 +5061,41 @@ export function SettingsPage({
                           <span>{t("settings.websites.listSubtitle", { count: websiteItems.length })}</span>
                         </div>
                       </div>
-                      <Button type="text" className="service-catalog-import" icon={<PlusOutlined />} onClick={beginAddWebsiteItem}>
+                      <Button
+                        type="text"
+                        className="service-catalog-import web-action-button is-secondary"
+                        icon={<PlusOutlined />}
+                        onClick={beginAddWebsiteItem}
+                      >
                         {t("settings.websites.addShort")}
                       </Button>
                     </div>
                     <div className="web-catalog-actions">
-                      <Button type="link" onClick={() => void handleImportWebsiteItems()} disabled={websiteTransferPending !== ""}>
+                      <Button
+                        type="text"
+                        className="web-action-button is-secondary"
+                        onClick={() => void handleImportWebsiteItems()}
+                        disabled={websiteTransferPending !== ""}
+                      >
                         {websiteTransferPending === "import" ? t("settings.websites.importing") : t("settings.websites.import")}
                       </Button>
-                      <Button type="link" onClick={() => void handleExportWebsiteItems()} disabled={websiteTransferPending !== ""}>
+                      <Button
+                        type="text"
+                        className="web-action-button is-secondary"
+                        onClick={() => void handleExportWebsiteItems()}
+                        disabled={websiteTransferPending !== ""}
+                      >
                         {websiteTransferPending === "export" ? t("settings.websites.exporting") : t("settings.websites.export")}
                       </Button>
                     </div>
                     <div className="service-nav-list" role="list" aria-label={t("settings.websites.addedTitle")}>
                       <Button
                         type="text"
-                        block
-                        autoInsertSpace={false}
-                        className={`service-nav-card is-compact-service web-nav-card${creatingWebsite ? " is-active" : ""}`}
+                        className="web-action-button is-secondary web-add-entry-action"
                         onClick={beginAddWebsiteItem}
                         aria-pressed={creatingWebsite}
                       >
-                        <span className="service-nav-card-head">
-                          <span className="service-nav-title-row">
-                            <span className="service-nav-card-title">{t("settings.websites.addTitle")}</span>
-                          </span>
-                          <span className="service-nav-version-status">
-                            <span className="status-dot idle" aria-hidden="true" />
-                            <span className="service-nav-status-label">{t("settings.websites.newEntry")}</span>
-                          </span>
-                        </span>
+                        {t("settings.websites.addTitle")}
                       </Button>
                       {websiteItems.length === 0 ? (
                         <div className="service-group-empty">{t("settings.websites.empty")}</div>
@@ -5175,7 +5180,13 @@ export function SettingsPage({
                       </span>
                     </label>
                     <div className="web-detail-actions">
-                      <Button type="primary" htmlType="submit" disabled={websitePending} loading={websitePending}>
+                      <Button
+                        type="primary"
+                        className="web-action-button is-primary"
+                        htmlType="submit"
+                        disabled={websitePending}
+                        loading={websitePending}
+                      >
                         {websitePending
                           ? (creatingWebsite ? t("settings.websites.adding") : t("settings.websites.updating"))
                           : (creatingWebsite ? t("settings.websites.add") : t("settings.websites.save"))}
@@ -5183,6 +5194,7 @@ export function SettingsPage({
                       {!creatingWebsite && selectedWebsite ? (
                         <Button
                           danger
+                          className="web-action-button is-danger"
                           disabled={deletingWebsiteId === selectedWebsite.id || websitePending}
                           loading={deletingWebsiteId === selectedWebsite.id}
                           onClick={() => void handleDeleteWebsiteItem(selectedWebsite)}

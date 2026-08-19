@@ -351,13 +351,25 @@ test("RealtimeBroker reports seq_expired instead of fabricating an evicted repla
   }
   await nextTurn();
   subscription.unsubscribe();
+  let expiredError;
   assert.throws(() => broker.subscribeRun({
     baseUrl: "http://127.0.0.1:11789", token, runId: "run-replay", chatId: "chat-replay", lastSeq: 0,
     kind: "surface", consumerId: "late", onEvent: () => {},
-  }), /seq_expired/);
+  }), (error) => {
+    expiredError = error;
+    return /seq_expired/.test(error.message);
+  });
   const replay = broker.getDiagnostics().replay.find((entry) => entry.runId === "run-replay");
   assert.equal(replay.eventCount, 2_000);
   assert.equal(broker.getDiagnostics().replayEvictionCount, 2);
+  assert.equal(expiredError.retryable, true);
+  assert.deepEqual(expiredError.details, {
+    requestedLastSeq: 0,
+    firstAvailableSeq: 3,
+    latestSeq: 2_002,
+    replayEventCount: 2_000,
+    replayBytes: replay.bytes,
+  });
 });
 
 test("RealtimeBroker restores an accepted Run with attach(lastSeq) and never resends query", async (t) => {
@@ -481,6 +493,88 @@ test("RealtimeBroker dispatches reverse Desktop Action and maps provider failure
     id: "desktop-action-ok",
     code: 409,
     msg: "Desktop bridge request id was already used",
+  });
+});
+
+test("RealtimeBroker waits for forwarded canonical Chat readiness before WorkPanel actions", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  let releaseReady;
+  const ready = new Promise((resolve) => { releaseReady = resolve; });
+  broker.registerForwardedRunActionReadiness({
+    sourceId: "main-chat:query-1",
+    chatId: "chat-ready",
+    runId: "run-ready",
+    ready,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: { workspaceId: "workpanel:chat-ready" } };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-before-ready",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/document" },
+      source: { chatId: "chat-ready", runId: "run-ready" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+
+  releaseReady();
+  await nextTurn();
+  assert.equal(calls.length, 1);
+  assert.equal(
+    sockets[0].sent.find((frame) => frame.id === "workpanel-before-ready")?.frame,
+    "response",
+  );
+});
+
+test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization failed", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  const rejected = Promise.reject(new Error("surface registration rejected"));
+  rejected.catch(() => undefined);
+  broker.registerForwardedRunActionReadiness({
+    sourceId: "main-chat:query-failed",
+    chatId: "chat-failed",
+    runId: "run-failed",
+    ready: rejected,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: {} };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-sync-failed",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/document" },
+      source: { chatId: "chat-failed", runId: "run-failed" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "workpanel-sync-failed"), {
+    frame: "error",
+    type: "source_chat_not_ready",
+    id: "workpanel-sync-failed",
+    code: 409,
+    msg: "source_chat_not_ready: surface registration rejected",
   });
 });
 

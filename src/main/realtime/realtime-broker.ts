@@ -141,6 +141,14 @@ type ConnectionSubscription = {
   onState(state: AgentPlatformRealtimeConnectionState): void;
 };
 
+type ForwardedRunActionReadiness = {
+  sourceId: string;
+  chatId: string;
+  runId: string;
+  ready: Promise<void>;
+  active: boolean;
+};
+
 export type DesktopBridgeRequestProvider = {
   action(request: Record<string, unknown>): Promise<unknown>;
   cdp(request: Record<string, unknown>): Promise<unknown>;
@@ -212,10 +220,17 @@ function isTerminalEvent(type: string) {
   ].includes(type);
 }
 
-function brokerError(code: string, message: string) {
+function brokerError(
+  code: string,
+  message: string,
+  options: { retryable?: boolean; details?: Record<string, unknown> } = {},
+) {
   const error = new Error(`${code}: ${message}`);
   error.name = code;
-  return error;
+  return Object.assign(error, {
+    ...(options.retryable === undefined ? {} : { retryable: options.retryable }),
+    ...(options.details ? { details: options.details } : {}),
+  });
 }
 
 function frameError(frame: AgentPlatformRealtimeFrame) {
@@ -249,6 +264,7 @@ export class RealtimeBroker {
   private readonly terminalRequestIds = new Set<string>();
   private readonly inboundDesktopRequests = new Map<string, AbortController>();
   private readonly seenInboundDesktopRequestIds = new Set<string>();
+  private readonly forwardedRunActionReadiness = new Map<string, ForwardedRunActionReadiness>();
   private desktopBridgeProvider: DesktopBridgeRequestProvider | null = null;
   private visibleBinding: VisibleRunBinding | null = null;
   private disposed = false;
@@ -639,6 +655,46 @@ export class RealtimeBroker {
     return this.getVisibleBinding();
   }
 
+  registerForwardedRunActionReadiness(input: {
+    sourceId: string;
+    chatId: string;
+    runId: string;
+    ready: Promise<void>;
+  }) {
+    const sourceId = input.sourceId.trim();
+    const chatId = input.chatId.trim();
+    const runId = input.runId.trim();
+    if (!sourceId || !chatId || !runId) {
+      throw brokerError("invalid_request", "forwarded Run action readiness identity is incomplete");
+    }
+    const existing = this.forwardedRunActionReadiness.get(runId);
+    if (existing && (
+      existing.sourceId !== sourceId ||
+      existing.chatId !== chatId
+    )) {
+      throw brokerError("duplicate_id", "forwarded Run action readiness identity conflicts");
+    }
+    const readiness = { sourceId, chatId, runId, ready: input.ready, active: true };
+    void readiness.ready.catch(() => undefined);
+    this.forwardedRunActionReadiness.set(runId, readiness);
+    while (this.forwardedRunActionReadiness.size > 2_000) {
+      const oldest = this.forwardedRunActionReadiness.keys().next().value as string | undefined;
+      if (!oldest) break;
+      this.forwardedRunActionReadiness.delete(oldest);
+    }
+  }
+
+  releaseForwardedRunActionReadiness(sourceIdValue: string) {
+    const sourceId = sourceIdValue.trim();
+    if (!sourceId) return false;
+    const readiness = [...this.forwardedRunActionReadiness.values()].find((candidate) =>
+      candidate.sourceId === sourceId,
+    );
+    if (!readiness) return false;
+    readiness.active = false;
+    return true;
+  }
+
   appendForwardedVisibleRunEvent(input: {
     sourceId: string;
     runId: string;
@@ -677,6 +733,7 @@ export class RealtimeBroker {
       this.completeRun(run, result);
     }
     if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
+    this.releaseForwardedRunActionReadiness(sourceId);
     return true;
   }
 
@@ -688,6 +745,7 @@ export class RealtimeBroker {
     );
     if (!run) return false;
     run.forwardedSourceId = null;
+    this.releaseForwardedRunActionReadiness(sourceId);
     if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
     const error = brokerError("replay_required", "primary visible Run source was released");
     for (const id of [...run.subscribers]) {
@@ -884,6 +942,7 @@ export class RealtimeBroker {
     this.runsById.clear();
     this.visibleBinding = null;
     this.terminalRequestIds.clear();
+    this.forwardedRunActionReadiness.clear();
     this.client.rotateIdentity();
   }
 
@@ -908,6 +967,7 @@ export class RealtimeBroker {
     this.runsById.clear();
     this.visibleBinding = null;
     this.terminalRequestIds.clear();
+    this.forwardedRunActionReadiness.clear();
     for (const controller of this.inboundDesktopRequests.values()) controller.abort();
     this.inboundDesktopRequests.clear();
     this.seenInboundDesktopRequestIds.clear();
@@ -1254,7 +1314,20 @@ export class RealtimeBroker {
   private replayToSubscriber(run: BrokerRun, subscription: RunSubscription) {
     const firstSeq = run.replay.find((entry) => entry.seq !== null)?.seq;
     if (firstSeq !== undefined && firstSeq !== null && subscription.lastSeq + 1 < firstSeq) {
-      throw brokerError("seq_expired", "requested Run cursor is outside the local replay window");
+      throw brokerError(
+        "seq_expired",
+        "requested Run cursor is outside the local replay window",
+        {
+          retryable: true,
+          details: {
+            requestedLastSeq: subscription.lastSeq,
+            firstAvailableSeq: firstSeq,
+            latestSeq: run.lastSeq,
+            replayEventCount: run.replay.length,
+            replayBytes: run.replayBytes,
+          },
+        },
+      );
     }
     for (const entry of run.replay) {
       if (entry.seq !== null && entry.seq <= subscription.lastSeq) continue;
@@ -1428,6 +1501,10 @@ export class RealtimeBroker {
     const controller = new AbortController();
     this.inboundDesktopRequests.set(id, controller);
     try {
+      if (type === DESKTOP_ACTION_REQUEST_TYPE) {
+        await this.awaitForwardedWorkPanelReadiness(frame.payload, controller.signal);
+        if (controller.signal.aborted) return;
+      }
       const result = type === DESKTOP_ACTION_REQUEST_TYPE
         ? await provider.action(frame.payload)
         : await provider.cdp(frame.payload);
@@ -1450,6 +1527,16 @@ export class RealtimeBroker {
       await this.sendDesktopBridgeSuccess(id, type, result, controller.signal);
     } catch (error) {
       if (!controller.signal.aborted) {
+        const errorCode = error instanceof Error ? error.name : "";
+        if (errorCode === "source_chat_not_ready" || errorCode === "protocol_error") {
+          this.sendDesktopBridgeError(
+            id,
+            errorCode,
+            409,
+            error instanceof Error ? error.message : String(error),
+          );
+          return;
+        }
         this.sendDesktopBridgeError(
           id,
           "desktop_request_failed",
@@ -1459,6 +1546,46 @@ export class RealtimeBroker {
       }
     } finally {
       this.inboundDesktopRequests.delete(id);
+    }
+  }
+
+  private async awaitForwardedWorkPanelReadiness(
+    payload: Record<string, unknown>,
+    signal: AbortSignal,
+  ) {
+    const action = readText(payload.action);
+    if (!action.startsWith("desktop.workpanel.")) return;
+    const source = isRecord(payload.source) ? payload.source : {};
+    const runId = readText(source.runId);
+    const chatId = readText(source.chatId);
+    if (!runId || !chatId) {
+      throw brokerError("protocol_error", "WorkPanel source must include canonical Chat and Run identity");
+    }
+    const readiness = this.forwardedRunActionReadiness.get(runId);
+    if (!readiness) {
+      const run = this.runsById.get(runId);
+      if (!run || run.chatId !== chatId || run.forwardedSourceId) {
+        throw brokerError("source_chat_not_ready", "WorkPanel source Run is not registered by the active Main Chat");
+      }
+      return;
+    }
+    if (readiness.chatId !== chatId) {
+      throw brokerError("protocol_error", "WorkPanel source Chat conflicts with its forwarded Run");
+    }
+    if (!readiness.active) {
+      throw brokerError("source_chat_not_ready", "WorkPanel source Main Chat is no longer active");
+    }
+    await Promise.race([
+      readiness.ready,
+      new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
+    ]).catch((error) => {
+      throw brokerError(
+        "source_chat_not_ready",
+        error instanceof Error ? error.message : String(error),
+      );
+    });
+    if (!signal.aborted && !readiness.active) {
+      throw brokerError("source_chat_not_ready", "WorkPanel source Main Chat is no longer active");
     }
   }
 

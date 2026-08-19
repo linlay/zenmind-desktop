@@ -37,8 +37,14 @@ import { getServiceDisplayName } from "../service-display";
 import { buildSettingsSectionPath } from "../settings/settingsRoutes";
 import type {
   AssistantPageContext,
+  CanonicalChatSyncRequest,
+  CanonicalChatSyncResult,
   DesktopPageContextSnapshot,
 } from "../../shared/contracts";
+import {
+  createCanonicalAgentChatRoute,
+  readAgentWebclientNewChatSource,
+} from "../../shared/canonical-chat-sync";
 import type { TranslateFunction } from "../../shared/i18n";
 import {
   buildInteractElementScript,
@@ -114,6 +120,11 @@ type VisibleSelectionToolbarState = Extract<
   WebviewSelectionToolbarState,
   { visible: true }
 >;
+
+type PendingCanonicalChatSync = {
+  request: CanonicalChatSyncRequest;
+  targetRoute: string;
+};
 
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
@@ -463,6 +474,7 @@ export function ServiceWebviewSurface({
   const location = useLocation();
   const navigate = useNavigate();
   const currentRoute = `${location.pathname}${location.search}`;
+  const currentRouteWithHash = `${location.pathname}${location.search}${location.hash}`;
   const { serviceId: routeServiceId, pluginId: routePluginId } = useParams<{
     serviceId?: string;
     pluginId?: string;
@@ -532,6 +544,7 @@ export function ServiceWebviewSurface({
     webContentsId: number | undefined;
   } | null>(null);
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
+  const pendingCanonicalChatSyncRef = useRef<PendingCanonicalChatSync | null>(null);
   const surfaceVisibilityProps =
     active === undefined
       ? {}
@@ -611,6 +624,73 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     onCurrentUrlChangeRef.current = onCurrentUrlChange;
   }, [onCurrentUrlChange]);
+
+  useEffect(() => {
+    if (!isAgentWebclientChatSurface(serviceId, surfaceId)) return undefined;
+    return window.electronAPI.canonicalChatSync.onRequest((request) => {
+      if (request.surfaceId !== surfaceId) return;
+      const respond = (result: CanonicalChatSyncResult) => {
+        window.electronAPI.canonicalChatSync.respond(result);
+      };
+      const webContentsId = readWebviewContentsId(webviewRef.current);
+      if (
+        active === false ||
+        request.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+        request.registrationId !== surfaceRegistrationIdRef.current ||
+        request.guestWebContentsId !== webContentsId
+      ) {
+        respond({
+          requestId: request.requestId,
+          ok: false,
+          code: "stale_source",
+          message: "canonical Chat request no longer belongs to the active Main Chat surface",
+        });
+        return;
+      }
+      const targetRoute = createCanonicalAgentChatRoute(currentRouteWithHash, request);
+      if (!targetRoute || ownerChatId?.trim()) {
+        respond({
+          requestId: request.requestId,
+          ok: false,
+          code: "route_mismatch",
+          message: "Desktop route no longer matches the new Chat query source",
+        });
+        return;
+      }
+      const previous = pendingCanonicalChatSyncRef.current;
+      if (previous && previous.request.requestId !== request.requestId) {
+        respond({
+          requestId: previous.request.requestId,
+          ok: false,
+          code: "stale_source",
+          message: "canonical Chat request was superseded by a newer query",
+        });
+      }
+      pendingCanonicalChatSyncRef.current = { request, targetRoute };
+      surfaceRegistrationRetryRef.current = 0;
+      navigate(targetRoute, { replace: true });
+    });
+  }, [
+    active,
+    currentRouteWithHash,
+    navigate,
+    ownerChatId,
+    serviceId,
+    surfaceId,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingCanonicalChatSyncRef.current;
+    if (!pending) return;
+    if (active !== false && currentRouteWithHash === pending.targetRoute) return;
+    pendingCanonicalChatSyncRef.current = null;
+    window.electronAPI.canonicalChatSync.respond({
+      requestId: pending.request.requestId,
+      ok: false,
+      code: "stale_source",
+      message: "Main Chat changed before canonical surface registration completed",
+    });
+  }, [active, currentRouteWithHash]);
 
   useEffect(() => {
     const requestId = Number.isSafeInteger(focusRequestId) && Number(focusRequestId) > 0
@@ -751,6 +831,33 @@ export function ServiceWebviewSurface({
         if (ownsActiveSurface) {
           sendLiveSurfaceLifecycleToWebview(true);
         }
+        const pending = pendingCanonicalChatSyncRef.current;
+        if (
+          pending &&
+          pending.request.registrationId === registration.registrationId &&
+          pending.request.guestWebContentsId === webContentsId &&
+          registration.ownerChatId?.trim() === pending.request.chatId
+        ) {
+          if (
+            ownsActiveSurface &&
+            ownerChatId?.trim() === pending.request.chatId &&
+            currentRouteWithHash === pending.targetRoute
+          ) {
+            pendingCanonicalChatSyncRef.current = null;
+            window.electronAPI.canonicalChatSync.respond({
+              requestId: pending.request.requestId,
+              ok: true,
+            });
+          } else {
+            pendingCanonicalChatSyncRef.current = null;
+            window.electronAPI.canonicalChatSync.respond({
+              requestId: pending.request.requestId,
+              ok: false,
+              code: "stale_source",
+              message: "Main Chat changed before canonical surface registration completed",
+            });
+          }
+        }
         return;
       }
       const attempt = surfaceRegistrationRetryRef.current + 1;
@@ -760,6 +867,21 @@ export function ServiceWebviewSurface({
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
       });
+      const pending = pendingCanonicalChatSyncRef.current;
+      if (
+        pending &&
+        pending.request.registrationId === registration.registrationId &&
+        pending.request.guestWebContentsId === webContentsId &&
+        registration.ownerChatId?.trim() === pending.request.chatId
+      ) {
+        pendingCanonicalChatSyncRef.current = null;
+        window.electronAPI.canonicalChatSync.respond({
+          requestId: pending.request.requestId,
+          ok: false,
+          code: "surface_registration_failure",
+          message: "Main Chat surface rejected its canonical owner registration",
+        });
+      }
       if (attempt <= 6) {
         retryTimer = window.setTimeout(() => {
           setWebviewSnapshotNonce((current) => current + 1);
@@ -772,6 +894,21 @@ export function ServiceWebviewSurface({
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
       });
+      const pending = pendingCanonicalChatSyncRef.current;
+      if (
+        pending &&
+        pending.request.registrationId === registration.registrationId &&
+        pending.request.guestWebContentsId === webContentsId &&
+        registration.ownerChatId?.trim() === pending.request.chatId
+      ) {
+        pendingCanonicalChatSyncRef.current = null;
+        window.electronAPI.canonicalChatSync.respond({
+          requestId: pending.request.requestId,
+          ok: false,
+          code: "surface_registration_failure",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
     return () => {
       cancelled = true;
@@ -780,6 +917,7 @@ export function ServiceWebviewSurface({
   }, [
     ownsActiveSurface,
     ownerChatId,
+    currentRouteWithHash,
     effectiveEmbedPath,
     embeddedUrl,
     serviceDisplayName,
@@ -1423,10 +1561,14 @@ export function ServiceWebviewSurface({
           );
         const isSameDesktopBusinessRoute = Boolean(nextChatRoute) &&
           areAgentWebclientChatBusinessRoutesEquivalent(currentRoute, nextChatRoute);
+        const newChatBootstrapOwnsPromotion = Boolean(
+          readAgentWebclientNewChatSource(currentRoute),
+        );
         if (
           nextChatRoute &&
           !isHostRouteEcho &&
-          !isSameDesktopBusinessRoute
+          !isSameDesktopBusinessRoute &&
+          !newChatBootstrapOwnsPromotion
         ) {
           navigate(nextChatRoute, { replace: true });
         }

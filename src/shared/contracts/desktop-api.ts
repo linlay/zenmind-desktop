@@ -14,6 +14,8 @@ import type {
   SidebarContextMenuPopupResult
 } from "../sidebar-context-menu";
 import type {
+  ChatWorkPanelOpenLocalResourceRequest,
+  ChatWorkPanelOpenLocalResourceResult,
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
@@ -31,6 +33,10 @@ import type { ChatWorkPanelClearSessionRequest } from "../chat-work-panel";
 import type { DesktopHelpSettings } from "../help";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
+import type {
+  CanonicalChatSyncRequestListener,
+  CanonicalChatSyncResult,
+} from "../canonical-chat-sync";
 import type {
   EnterpriseChatAttachmentData,
   EnterpriseChatAttachmentInput,
@@ -611,6 +617,9 @@ export interface DesktopApi {
     popup: (
       request: ChatWorkPanelTabContextMenuPopupRequest
     ) => Promise<ChatWorkPanelTabContextMenuPopupResult>;
+    openLocalResource: (
+      request: ChatWorkPanelOpenLocalResourceRequest
+    ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
@@ -629,6 +638,10 @@ export interface DesktopApi {
     ) => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
     onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
     onShutdownProgress: (listener: ShutdownProgressListener) => (() => void);
+  };
+  canonicalChatSync: {
+    respond: (result: CanonicalChatSyncResult) => void;
+    onRequest: (listener: CanonicalChatSyncRequestListener) => (() => void);
   };
   desktopDownloads: {
     saveFile: (input: {

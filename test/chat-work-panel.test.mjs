@@ -125,7 +125,12 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /result\.actionId === "copy-url"/u);
   assert.match(host, /result\.actionId === "copy-title"/u);
   assert.match(host, /result\.actionId === "download-resource"/u);
+  assert.match(host, /result\.actionId === "open-resource-default-app"/u);
   assert.match(host, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/u);
+  assert.match(host, /resolveChatWorkPanelLocalResourcePath/u);
+  assert.match(host, /openLocalResource/u);
+  assert.doesNotMatch(host, /resourceOpenIntentsRef/u);
+  assert.doesNotMatch(host, /consumeDesktopDownloadDisposition/u);
   assert.match(host, /result\.actionId === "close-other-tabs"/u);
   assert.match(host, /type: "closeOtherItems"/u);
   assert.match(host, /result\.actionId === "toggle-fullscreen"/u);

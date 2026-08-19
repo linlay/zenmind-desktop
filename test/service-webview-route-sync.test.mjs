@@ -127,6 +127,26 @@ test("agent chat suppresses host route echoes and semantic no-op navigations", (
   );
 });
 
+test("new Chat route ownership comes from chat.start canonical synchronization", () => {
+  const serviceWebviewSurface = readServiceWebviewSurfaceSource();
+  const navigationHandlerBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
+    serviceWebviewSurface.indexOf("const handleDidFailLoad = () =>"),
+  );
+  const registrationBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("const registration: EmbeddedCdpSurfaceRegistration"),
+    serviceWebviewSurface.indexOf("useEffect(() => {", serviceWebviewSurface.indexOf("const registration: EmbeddedCdpSurfaceRegistration")),
+  );
+
+  assert.match(serviceWebviewSurface, /canonicalChatSync\.onRequest/);
+  assert.match(serviceWebviewSurface, /if \(request\.surfaceId !== surfaceId\) return;/);
+  assert.match(serviceWebviewSurface, /createCanonicalAgentChatRoute\(currentRouteWithHash, request\)/);
+  assert.match(navigationHandlerBlock, /newChatBootstrapOwnsPromotion/);
+  assert.match(navigationHandlerBlock, /!newChatBootstrapOwnsPromotion/);
+  assert.match(registrationBlock, /ownerChatId\?\.trim\(\) === pending\.request\.chatId/);
+  assert.match(registrationBlock, /canonicalChatSync\.respond\(\{[\s\S]*?ok: true/u);
+});
+
 test("inactive agent webclient surfaces cannot take ownership of the Desktop route", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(
