@@ -11,15 +11,20 @@ import type {
 } from "../shared/contracts";
 import {
   asObject,
+  compareVersions,
   DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
+  configureMarketAccessTokenIssuer,
   getMarketDesktopDeviceHeaders,
   getMarketSettings,
+  loadMarketplaceCatalog,
   mergeCatalogItems,
   MarketCatalogItemNotFoundError,
   upsertInstalledRecord,
   normalizeCatalog,
+  marketRoute,
   normalizeMarketApiBaseUrl,
+  platformCandidates,
   readInstalledRecords,
   removeInstalledRecord,
   saveMarketSettings,
@@ -40,6 +45,11 @@ import {
   listPetMarketItems,
   uninstallPetMarketItem
 } from "./marketplace/pet-market";
+import {
+  installMcpMarketItem,
+  listMcpMarketItems,
+  uninstallMcpMarketItem
+} from "./marketplace/mcp-market";
 import {
   installPluginMarketItem,
   listPluginMarketItems,
@@ -65,6 +75,11 @@ import {
   uninstallSkillMarketItem
 } from "./marketplace/skill-market";
 import {
+  installSoftwarePackageMarketItem,
+  listSoftwarePackageMarketItems,
+  uninstallSoftwarePackageMarketItem
+} from "./marketplace/software-package-market";
+import {
   getSkillInstallDir,
   installSkillFromCommand as installSkillFromCommandInput,
   listInstalledSkills
@@ -74,6 +89,7 @@ import { t } from "./i18n/main-i18n";
 export {
   DEFAULT_MARKET_API_BASE_URL,
   DEFAULT_MARKETPLACE_CATALOG_URL,
+  configureMarketAccessTokenIssuer,
   getMarketSettings,
   saveMarketSettings,
   writeMarketSettingsIfAbsent
@@ -92,7 +108,9 @@ const MARKET_SECTIONS: readonly MarketSection[] = [
   "sandboxImages",
   "pets",
   "cli",
-  "websiteApps"
+  "mcps",
+  "websiteApps",
+  "softwarePackages"
 ];
 
 type IssueMarketAccessToken = (
@@ -111,27 +129,6 @@ class MarketApiRequestError extends Error {
   constructor(status: number, message: string) {
     super(message);
     this.status = status;
-  }
-}
-
-function marketRoute(type: MarketItemType) {
-  switch (type) {
-    case "skill":
-      return "skills";
-    case "plugin":
-      return "plugins";
-    case "agent":
-      return "agents";
-    case "sandbox-image":
-      return "sandbox-images";
-    case "pet":
-      return "pets";
-    case "cli":
-      return "cli-tools";
-    case "website-app":
-      return "webapps";
-    default:
-      return "skills";
   }
 }
 
@@ -213,7 +210,9 @@ function combineMarketSections(
   sandboxImageMarket: MarketSectionResult,
   petMarket: MarketSectionResult,
   cliMarket: MarketSectionResult,
-  websiteAppMarket: MarketSectionResult
+  mcpMarket: MarketSectionResult,
+  websiteAppMarket: MarketSectionResult,
+  softwarePackageMarket: MarketSectionResult
 ): MarketListResult {
   const message = [...new Set([
     pluginMarket.message,
@@ -222,12 +221,14 @@ function combineMarketSections(
     sandboxImageMarket.message,
     petMarket.message,
     cliMarket.message,
-    websiteAppMarket.message
+    mcpMarket.message,
+    websiteAppMarket.message,
+    softwarePackageMarket.message
   ].filter(Boolean))].join(" ");
   return {
     ok: true,
-    sourceUrl: websiteAppMarket.sourceUrl || cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || agentMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
-    offline: pluginMarket.offline || skillMarket.offline || agentMarket.offline || sandboxImageMarket.offline || petMarket.offline || cliMarket.offline || websiteAppMarket.offline,
+    sourceUrl: softwarePackageMarket.sourceUrl || websiteAppMarket.sourceUrl || mcpMarket.sourceUrl || cliMarket.sourceUrl || petMarket.sourceUrl || sandboxImageMarket.sourceUrl || agentMarket.sourceUrl || skillMarket.sourceUrl || pluginMarket.sourceUrl || DEFAULT_MARKETPLACE_CATALOG_URL,
+    offline: pluginMarket.offline || skillMarket.offline || agentMarket.offline || sandboxImageMarket.offline || petMarket.offline || cliMarket.offline || mcpMarket.offline || websiteAppMarket.offline || softwarePackageMarket.offline,
     message,
     items: [
       ...pluginMarket.items,
@@ -236,7 +237,9 @@ function combineMarketSections(
       ...sandboxImageMarket.items,
       ...petMarket.items,
       ...cliMarket.items,
-      ...websiteAppMarket.items
+      ...mcpMarket.items,
+      ...websiteAppMarket.items,
+      ...softwarePackageMarket.items
     ],
     pluginMessage: pluginMarket.message,
     pluginOffline: pluginMarket.offline,
@@ -250,8 +253,12 @@ function combineMarketSections(
     petOffline: petMarket.offline,
     cliMessage: cliMarket.message,
     cliOffline: cliMarket.offline,
+    mcpMessage: mcpMarket.message,
+    mcpOffline: mcpMarket.offline,
     websiteAppMessage: websiteAppMarket.message,
-    websiteAppOffline: websiteAppMarket.offline
+    websiteAppOffline: websiteAppMarket.offline,
+    softwarePackageMessage: softwarePackageMarket.message,
+    softwarePackageOffline: softwarePackageMarket.offline
   };
 }
 
@@ -263,7 +270,7 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
   const sections = new Set((options.sections ?? MARKET_SECTIONS).filter((section) =>
     MARKET_SECTIONS.includes(section)
   ));
-  const [pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, websiteAppMarket] = await Promise.all([
+  const [pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket] = await Promise.all([
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "plugins")
       ? listPluginMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
@@ -282,24 +289,17 @@ async function loadMarketSections(app: App, options: MarketplaceOptions = {}) {
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "cli")
       ? listCliMarketItems(app, options)
       : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "mcps")
+      ? listMcpMarketItems(app, options)
+      : EMPTY_MARKET_SECTION,
     shouldLoadMarketSection({ ...options, sections: [...sections] }, "websiteApps")
       ? listWebsiteAppMarketItems(app, options)
+      : EMPTY_MARKET_SECTION,
+    shouldLoadMarketSection({ ...options, sections: [...sections] }, "softwarePackages")
+      ? listSoftwarePackageMarketItems(app, options)
       : EMPTY_MARKET_SECTION
   ]);
-  return { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, websiteAppMarket };
-}
-
-function isMarketNotFoundError(error: unknown) {
-  if (error instanceof MarketCatalogItemNotFoundError) {
-    return true;
-  }
-  if (typeof error === "object" && error !== null && "code" in error && error.code === "market_catalog_item_not_found") {
-    return true;
-  }
-  return error instanceof Error && (
-    error.message.startsWith("Market item not found:") ||
-    /market item not found/iu.test(error.message)
-  );
+  return { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket };
 }
 
 async function resolveInstalledItemType(
@@ -313,42 +313,17 @@ async function resolveInstalledItemType(
     return record.type;
   }
 
-  const [pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, websiteAppMarket] = await Promise.all([
-    listPluginMarketItems(app, options),
-    listSkillMarketItems(app, options),
-    listCatalogOnlyMarketItems(app, "agent", options),
-    listSandboxImageMarketItems(app, options),
-    listPetMarketItems(app, options),
-    listCliMarketItems(app, options),
-    listWebsiteAppMarketItems(app, options)
-  ]);
-  if (pluginMarket.items.some((item) => item.id === itemId)) {
-    return "plugin";
-  }
-  if (skillMarket.items.some((item) => item.id === itemId)) {
-    return "skill";
-  }
-  if (agentMarket.items.some((item) => item.id === itemId)) {
-    return "agent";
-  }
-  if (sandboxImageMarket.items.some((item) => item.id === itemId)) {
-    return "sandbox-image";
-  }
-  if (petMarket.items.some((item) => item.id === itemId)) {
-    return "pet";
-  }
-  if (cliMarket.items.some((item) => item.id === itemId)) {
-    return "cli";
-  }
-  if (websiteAppMarket.items.some((item) => item.id === itemId)) {
-    return "website-app";
+  const catalog = await loadMarketplaceCatalog(app, options, "market uninstall catalog request");
+  const item = catalog.catalog.items.find((entry) => entry.id === itemId);
+  if (item) {
+    return item.type;
   }
   return "skill";
 }
 
 export async function refreshMarketCatalog(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
-  const { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, websiteAppMarket } = await loadMarketSections(app, options);
-  return combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, websiteAppMarket);
+  const { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket } = await loadMarketSections(app, options);
+  return combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket);
 }
 
 export async function listMarketItems(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
@@ -400,49 +375,34 @@ export async function installMarketItem(
   itemId: string,
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
-  try {
-    return await installPluginMarketItem(app, itemId, options);
-  } catch (error) {
-    if (!isMarketNotFoundError(error)) {
-      throw error;
-    }
+  const catalog = await loadMarketplaceCatalog(app, options, "market install catalog request");
+  const item = catalog.catalog.items.find((entry) => entry.id === itemId);
+  const installOptions: MarketplaceOptions = {
+    ...options,
+    catalogSnapshot: catalog.catalog
+  };
+  switch (item?.type) {
+    case "software-package":
+      return installSoftwarePackageMarketItem(app, itemId, installOptions);
+    case "plugin":
+      return installPluginMarketItem(app, itemId, installOptions);
+    case "sandbox-image":
+      return installSandboxTemplateMarketItem(app, itemId, installOptions);
+    case "pet":
+      return installPetMarketItem(app, itemId, installOptions);
+    case "cli":
+      return installCliMarketItem(app, itemId, installOptions);
+    case "mcp":
+      return installMcpMarketItem(app, itemId, installOptions);
+    case "website-app":
+      return installWebsiteAppMarketItem(app, itemId, installOptions);
+    case "agent":
+      return installAgentMarketItem(app, itemId, installOptions);
+    case "skill":
+      return installSkillMarketItem(app, itemId, installOptions);
+    default:
+      throw new MarketCatalogItemNotFoundError(itemId);
   }
-  try {
-    return await installSandboxTemplateMarketItem(app, itemId, options);
-  } catch (error) {
-    if (!isMarketNotFoundError(error)) {
-      throw error;
-    }
-  }
-  try {
-    return await installPetMarketItem(app, itemId, options);
-  } catch (error) {
-    if (!isMarketNotFoundError(error)) {
-      throw error;
-    }
-  }
-  try {
-    return await installCliMarketItem(app, itemId, options);
-  } catch (error) {
-    if (!isMarketNotFoundError(error)) {
-      throw error;
-    }
-  }
-  try {
-    return await installWebsiteAppMarketItem(app, itemId, options);
-  } catch (error) {
-    if (!isMarketNotFoundError(error)) {
-      throw error;
-    }
-  }
-  try {
-    return await installAgentMarketItem(app, itemId, options);
-  } catch (error) {
-    if (!isMarketNotFoundError(error)) {
-      throw error;
-    }
-  }
-  return installSkillMarketItem(app, itemId, options);
 }
 
 export async function updateMarketItem(app: App, itemId: string, options: MarketplaceOptions = {}) {
@@ -483,8 +443,12 @@ export async function uninstallMarketItem(
         ? await uninstallAgentMarketItem(app, itemId)
       : type === "website-app"
         ? await uninstallWebsiteAppMarketItem(app, itemId)
+        : type === "software-package"
+          ? await uninstallSoftwarePackageMarketItem(app, itemId)
         : type === "cli"
           ? await uninstallCliMarketItem(app, itemId, options)
+          : type === "mcp"
+            ? await uninstallMcpMarketItem(app, itemId)
           : await uninstallSkillMarketItem(app, itemId);
   if (result.ok && type !== "website-app") {
     removeInstalledRecord(app, itemId, type);
@@ -495,7 +459,9 @@ export async function uninstallMarketItem(
 export { buildSandboxImage, deleteSandboxImage, exportSandboxImageToPath, importSandboxImageFromPath };
 
 export const __testInternals = {
+  compareVersions,
   normalizeCatalog,
+  platformCandidates,
   selectAsset,
   readInstalledRecords
 };

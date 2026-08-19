@@ -194,8 +194,9 @@ import {
   type ResourceDirectoryWatcher
 } from "../resource-directory-watcher";
 import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
-import { refreshMarketCatalog } from "../marketplace";
+import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../marketplace";
 import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
+import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
 
 export function createMainProcessRuntime() {
   const startupPlatform = process.platform;
@@ -705,6 +706,15 @@ export function createMainProcessRuntime() {
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
     openExternal: shell.openExternal,
     onRestoreResult: applyDesktopSsoRestoreResult
+  });
+  configureMarketAccessTokenIssuer(async (_marketApp, reason) => {
+    const currentToken = isDesktopSsoCredentialRuntimeReady()
+      ? readDesktopSsoSiteAccessToken(_marketApp)
+      : "";
+    if (currentToken && reason === "missing") {
+      return currentToken;
+    }
+    return desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(true);
   });
   refreshDesktopSsoIdentityToken = async (force = false) => {
     const restoreResult = await desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded();

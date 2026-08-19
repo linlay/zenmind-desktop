@@ -3,25 +3,33 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   CalendarOutlined,
+  CheckCircleOutlined,
   CloudDownloadOutlined,
   CodeOutlined,
   CopyOutlined,
   DownloadOutlined,
   FilterOutlined,
   GlobalOutlined,
+  HddOutlined,
   HeartFilled,
   HeartOutlined,
   InfoCircleOutlined,
+  LinkOutlined,
+  PlusCircleOutlined,
+  PlusOutlined,
   ReloadOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
+  SearchOutlined,
   SmileOutlined,
   SortAscendingOutlined,
   UserOutlined
 } from "@ant-design/icons";
-import { Alert, Button, Card, Empty, Input, Modal, Tag } from "antd";
+import { Alert, Button, Card, Dropdown, Empty, Input, Modal, Tag } from "antd";
+import type { MenuProps } from "antd";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
+import { createAgentWebclientAgentPath } from "../../../shared/agent-webclient-routes";
 import { useNavigate } from "react-router-dom";
 import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
 import { getServiceDisplayName } from "../../service-display";
@@ -58,9 +66,29 @@ import "./StorefrontMarket.css";
 type RangeMode = "all" | "installed" | "updates";
 type SortMode = "popular" | "latest" | "rating";
 type SearchFilterMenu = "sort" | "scope" | null;
+type MarketFeedbackType = "success" | "info" | "warning" | "error";
+type SkillAssistantMode = "find" | "create";
+
+const SKILL_COMPOSER_INTENT: Record<SkillAssistantMode, "find-skill" | "create-skill"> = {
+  find: "find-skill",
+  create: "create-skill"
+};
 
 function isInstalledMarketItem(item: MarketItem) {
   return item.state === "installed" || item.state === "update-available" || item.state === "local-imported";
+}
+
+function isCloudMarketItem(item: MarketItem) {
+  return Boolean(item.marketplaceAvailable || item.source === "cloud");
+}
+
+function isCloudSkillStorefrontItem(item: MarketItem) {
+  return isCloudMarketItem(item) && (
+    item.state === "not-installed" ||
+    item.state === "update-available" ||
+    item.state === "incompatible" ||
+    item.state === "failed"
+  );
 }
 
 function isListOnlyMarketItem(item: MarketItem) {
@@ -74,6 +102,8 @@ function marketMessageForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "sandboxImages") return result.sandboxMessage ?? "";
   if (tab === "pets") return result.petMessage ?? "";
   if (tab === "websiteApps") return result.websiteAppMessage ?? "";
+  if (tab === "mcps") return result.mcpMessage ?? "";
+  if (tab === "softwarePackages") return result.softwarePackageMessage ?? "";
   return result.cliMessage ?? "";
 }
 
@@ -84,6 +114,8 @@ function marketOfflineForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "sandboxImages") return Boolean(result.sandboxOffline);
   if (tab === "pets") return Boolean(result.petOffline);
   if (tab === "websiteApps") return Boolean(result.websiteAppOffline);
+  if (tab === "mcps") return Boolean(result.mcpOffline);
+  if (tab === "softwarePackages") return Boolean(result.softwarePackageOffline);
   return Boolean(result.cliOffline);
 }
 
@@ -233,8 +265,12 @@ function marketTypeLabel(type: MarketItemType, t: ReturnType<typeof useI18n>["t"
       return t("market.type.pet");
     case "cli":
       return t("market.type.cli");
+    case "mcp":
+      return t("market.type.mcp");
     case "website-app":
       return t("market.type.websiteApp");
+    case "software-package":
+      return t("market.type.softwarePackage");
     case "plugin":
     default:
       return t("market.type.plugin");
@@ -253,8 +289,12 @@ function marketTypeIcon(type: MarketItemType) {
       return <SmileOutlined />;
     case "cli":
       return <CodeOutlined />;
+    case "mcp":
+      return <LinkOutlined />;
     case "website-app":
       return <GlobalOutlined />;
+    case "software-package":
+      return <HddOutlined />;
     case "plugin":
     default:
       return <AppstoreOutlined />;
@@ -486,7 +526,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const [busyItemId, setBusyItemId] = useState("");
   const [favoritingItemKey, setFavoritingItemKey] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [feedbackType, setFeedbackType] = useState<MarketFeedbackType>("info");
   const [isImporting, setIsImporting] = useState(false);
+  const [isOpeningSkillAssistant, setIsOpeningSkillAssistant] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<MarketItem | null>(null);
   const searchFilterRef = useRef<HTMLDivElement | null>(null);
 
@@ -509,18 +551,23 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   );
   const visibleItems = useMemo(
     () => sortMarketItems(
-      activeItems.filter((item) =>
-        rangeMatches(item, rangeMode) && matchesMarketItemQuery(item, query, t)
-      ),
+      activeItems.filter((item) => {
+        const matchesView = activeTab === "skills"
+          ? rangeMode === "installed"
+            ? isInstalledMarketItem(item)
+            : isCloudSkillStorefrontItem(item)
+          : rangeMatches(item, rangeMode);
+        return matchesView && matchesMarketItemQuery(item, query, t);
+      }),
       sortMode
     ),
-    [activeItems, query, rangeMode, sortMode, t]
+    [activeItems, activeTab, query, rangeMode, sortMode, t]
   );
   const marketStatusMessage = feedback || marketMessageForTab(marketResult, activeTab);
   const marketOffline = marketOfflineForTab(marketResult, activeTab);
-  const shouldShowMarketStatus = marketOffline && marketStatusMessage;
+  const shouldShowMarketStatus = Boolean(feedback) || Boolean(marketOffline && marketStatusMessage);
 
-  async function loadMarket(force = false) {
+  async function loadMarket(force = false, preserveFeedback = false) {
     setIsLoadingMarket(true);
     try {
       const commandName = force ? "refresh" : "list";
@@ -540,10 +587,14 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
           onTabChange(initialTab);
         }
       }
-      setFeedback("");
+      if (!preserveFeedback) {
+        setFeedback("");
+        setFeedbackType("info");
+      }
     } catch (reason) {
       console.warn("[market-storefront] failed to load market data", reason);
       setFeedback(normalizeError(reason));
+      setFeedbackType("error");
     } finally {
       setIsLoadingMarket(false);
     }
@@ -552,6 +603,11 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   useEffect(() => {
     void loadMarket(false);
   }, []);
+
+  useEffect(() => {
+    setRangeMode("all");
+    setSearchFilterMenu(null);
+  }, [activeTab]);
 
   useEffect(() => {
     if (!searchFilterMenu) {
@@ -577,9 +633,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     };
   }, [searchFilterMenu]);
 
-  async function refreshEverything(force = false) {
+  async function refreshEverything(force = false, preserveFeedback = false) {
     await refreshServices();
-    await loadMarket(force);
+    await loadMarket(force, preserveFeedback);
   }
 
   useEffect(() => {
@@ -596,12 +652,14 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         }
         const result = await command();
         setFeedback(result.message);
-        await refreshEverything(true);
+        setFeedbackType("success");
+        await refreshEverything(true, true);
         return { ok: true, result };
       } catch (reason) {
         console.warn(`[market-storefront] ${methodName} desktop action failed`, reason);
         const message = normalizeError(reason);
         setFeedback(message);
+        setFeedbackType("error");
         return {
           ok: false,
           error: {
@@ -617,6 +675,8 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   async function runMarketAction(item: MarketItem, actionName: "install" | "update" | "uninstall") {
     setBusyItemId(item.id);
+    setFeedback(t("market.action.installing"));
+    setFeedbackType("info");
     try {
       const action = getMarketMethod(actionName);
       if (!action) {
@@ -624,10 +684,12 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       }
       const result = await action(item.id);
       setFeedback(result.message);
-      await refreshEverything(true);
+      setFeedbackType("success");
+      await refreshEverything(true, true);
     } catch (reason) {
       console.warn(`[market-storefront] ${actionName} failed for ${item.id}`, reason);
       setFeedback(normalizeError(reason));
+      setFeedbackType("error");
     } finally {
       setBusyItemId("");
     }
@@ -636,10 +698,12 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   async function copyText(value: string, label: string) {
     if (!value.trim()) {
       setFeedback(t("market.cli.commandUnavailable"));
+      setFeedbackType("error");
       return;
     }
     const result = await window.electronAPI.clipboard.writeText(value);
     setFeedback(result.ok ? t("market.cli.copied", { label }) : (result.message ?? t("market.cli.copyFailed")));
+    setFeedbackType(result.ok ? "success" : "error");
   }
 
   async function toggleFavorite(item: MarketItem) {
@@ -668,9 +732,11 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         current && current.id === result.item.id && current.type === result.item.type ? result.item : current
       ));
       setFeedback(result.message);
+      setFeedbackType("success");
     } catch (reason) {
       console.warn(`[market-storefront] favorite toggle failed for ${item.id}`, reason);
       setFeedback(normalizeError(reason));
+      setFeedbackType("error");
     } finally {
       setFavoritingItemKey("");
     }
@@ -690,6 +756,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         }
         const result = await install();
         setFeedback(result.message);
+        setFeedbackType("success");
       } else if (activeTab === "skills") {
         const importSkill = getMarketMethod("importSkill");
         if (!importSkill) {
@@ -697,6 +764,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         }
         const result = await importSkill();
         setFeedback(result.message);
+        setFeedbackType("success");
       } else if (activeTab === "sandboxImages") {
         const importSandboxImage = getMarketMethod("importSandboxImage");
         if (!importSandboxImage) {
@@ -704,13 +772,40 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         }
         const result = await importSandboxImage();
         setFeedback(result.message);
+        setFeedbackType("success");
       }
-      await refreshEverything(true);
+      await refreshEverything(true, true);
     } catch (reason) {
       console.warn("[market-storefront] import action failed", reason);
       setFeedback(normalizeError(reason));
+      setFeedbackType("error");
     } finally {
       setIsImporting(false);
+    }
+  }
+
+  async function openSkillAssistant(mode: SkillAssistantMode) {
+    if (isOpeningSkillAssistant) {
+      return;
+    }
+    setIsOpeningSkillAssistant(true);
+    try {
+      const settings = await window.electronAPI.assistant.getSettings();
+      const agentKey = settings.chatDefaultAgentKey.trim() || settings.desktopHelperAgentKey.trim();
+      if (!agentKey) {
+        throw new Error(t("market.skill.assistant.agentUnavailable"));
+      }
+      const search = new URLSearchParams({
+        newChat: String(Date.now()),
+        composerIntent: SKILL_COMPOSER_INTENT[mode]
+      });
+      navigate(createAgentWebclientAgentPath(agentKey, search));
+    } catch (reason) {
+      console.warn("[market-storefront] skill assistant failed", reason);
+      setFeedback(normalizeError(reason) || t("market.skill.assistant.openFailed"));
+      setFeedbackType("error");
+    } finally {
+      setIsOpeningSkillAssistant(false);
     }
   }
 
@@ -727,16 +822,18 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     });
   }
 
-  function renderPrimaryAction(item: MarketItem) {
+  function renderPrimaryAction(item: MarketItem, compact = false) {
     const busy = busyItemId === item.id;
     if (isListOnlyMarketItem(item)) {
       return (
         <Button
-          className="market-store-action"
+          aria-label={t("market.action.details")}
+          className={`market-store-action ${compact ? "is-compact-icon" : ""}`}
           icon={<InfoCircleOutlined />}
           onClick={() => void openDetail(item)}
+          title={t("market.action.details")}
         >
-          {t("market.action.details")}
+          {compact ? null : t("market.action.details")}
         </Button>
       );
     }
@@ -746,21 +843,29 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       const copyValue = installed ? item.cliUninstallCommand : item.cliInstallCommand;
       return (
         <Button
-          className="market-store-action is-primary"
+          aria-label={copyLabel}
+          className={`market-store-action is-primary ${compact ? "is-compact-icon" : ""}`}
           icon={<CopyOutlined />}
           loading={busy}
           disabled={busy || !copyValue}
           onClick={() => void copyText(copyValue ?? "", copyLabel)}
+          title={copyLabel}
           type="primary"
         >
-          {copyLabel}
+          {compact ? null : copyLabel}
         </Button>
       );
     }
     if (item.state === "failed" || item.state === "incompatible") {
       return (
-        <Button className="market-store-action" disabled icon={<InfoCircleOutlined />}>
-          {marketItemStateLabel(item, t)}
+        <Button
+          aria-label={marketItemStateLabel(item, t)}
+          className={`market-store-action ${compact ? "is-compact-icon" : ""}`}
+          disabled
+          icon={<InfoCircleOutlined />}
+          title={marketItemStateLabel(item, t)}
+        >
+          {compact ? null : marketItemStateLabel(item, t)}
         </Button>
       );
     }
@@ -768,26 +873,32 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       const depsCount = marketItemDepsCount(item);
       return (
         <Button
-          className="market-store-action is-primary"
+          aria-label={depsCount > 0 ? t("market.action.installDeps", { count: depsCount }) : t("market.action.install")}
+          className={`market-store-action ${compact ? "is-compact-icon" : "is-primary"}`}
           disabled={busy}
+          icon={compact ? <PlusOutlined /> : undefined}
           loading={busy}
           onClick={() => void runMarketAction(item, "install")}
-          type="primary"
+          title={depsCount > 0 ? t("market.action.installDeps", { count: depsCount }) : t("market.action.install")}
+          type={compact ? "default" : "primary"}
         >
-          {busy ? t("market.action.installing") : depsCount > 0 ? t("market.action.installDeps", { count: depsCount }) : t("market.action.install")}
+          {compact ? null : busy ? t("market.action.installing") : depsCount > 0 ? t("market.action.installDeps", { count: depsCount }) : t("market.action.install")}
         </Button>
       );
     }
     if (item.state === "update-available") {
       return (
         <Button
-          className="market-store-action is-primary"
+          aria-label={t("market.action.update")}
+          className={`market-store-action is-primary ${compact ? "is-compact-icon" : ""}`}
           disabled={busy}
+          icon={compact ? <CloudDownloadOutlined /> : undefined}
           loading={busy}
           onClick={() => void runMarketAction(item, "update")}
+          title={t("market.action.update")}
           type="primary"
         >
-          {busy ? t("market.action.installing") : t("market.action.update")}
+          {compact ? null : busy ? t("market.action.installing") : t("market.action.update")}
         </Button>
       );
     }
@@ -798,7 +909,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         </Button>
       );
     }
-    if (item.type === "skill" || item.type === "pet" || item.type === "website-app") {
+    if (item.type === "skill" || item.type === "pet" || item.type === "mcp" || item.type === "website-app" || item.type === "software-package") {
       return (
         <Button
           className="market-store-action"
@@ -904,6 +1015,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     const service = item.type === "plugin" ? serviceById.get(item.id) ?? null : null;
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name, t) : item.name;
     const description = marketCardDescription(item);
+    const isCloudSource = isCloudMarketItem(item);
     const favoriteKey = `${item.type}:${item.id}`;
     const isFavoriting = favoritingItemKey === favoriteKey;
     const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
@@ -912,12 +1024,14 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
       item.type === "cli" ? t("market.detail.scriptedInstall") : "",
       item.type === "pet" ? t("market.detail.desktopPet") : "",
-      item.type === "website-app" ? t("market.type.websiteApp") : ""
+      item.type === "mcp" ? t("market.type.mcp") : "",
+      item.type === "website-app" ? t("market.type.websiteApp") : "",
+      item.type === "software-package" ? t("market.type.softwarePackage") : ""
     ].filter(Boolean))).slice(0, 3);
     return (
       <Card
         key={`${item.type}:${item.id}`}
-        className={`market-store-card is-${item.type}`}
+        className={`market-store-card is-${item.type} is-catalog`}
         classNames={{ body: "market-store-card-body" }}
         hoverable
         variant="outlined"
@@ -936,10 +1050,15 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
                 <span className="market-store-state-dot" aria-hidden="true" />
                 {marketItemStateLabel(item, t)}
               </span>
-              <span className="market-store-source-pill">{marketSourceLabel(item, t)}</span>
               {service ? <span className="market-store-source-pill">{serviceMetric(service)}</span> : null}
             </div>
             {description ? <p className="market-store-description">{description}</p> : null}
+          </div>
+          <div className="market-store-card-quick-action">
+            <span className={`market-store-origin-pill ${isCloudSource ? "is-cloud" : "is-local"}`}>
+              {marketSourceLabel(item, t)}
+            </span>
+            {renderPrimaryAction(item, true)}
           </div>
         </div>
         {chips.length > 0 ? (
@@ -974,9 +1093,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
               </button>
             </div>
           </div>
-          <div className="market-store-card-action">
-            {renderPrimaryAction(item)}
-          </div>
         </div>
       </Card>
     );
@@ -984,11 +1100,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   const toolbarImportLabel = activeTab === "plugins"
     ? t("market.plugin.import")
-    : activeTab === "skills"
-      ? t("market.skill.localImport")
-      : activeTab === "sandboxImages"
-        ? t("market.sandbox.import")
-        : "";
+    : activeTab === "sandboxImages"
+      ? t("market.sandbox.import")
+      : "";
   const sortOptions: Array<{ label: string; value: SortMode }> = [
     { label: t("market.sort.popular"), value: "popular" },
     { label: t("market.sort.latest"), value: "latest" },
@@ -1001,120 +1115,202 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   ];
   const sortFilterLabel = marketSortLabel(sortMode, t);
   const scopeFilterLabel = marketScopeLabel(rangeMode, t);
+  const activeTypeLabel = marketTypeLabel(itemType, t);
+  const installedItemCount = activeItems.filter(isInstalledMarketItem).length;
+  const sectionTitle = activeTab === "skills"
+    ? rangeMode === "installed"
+      ? t("market.storefront.installedSkillsTitle")
+      : t("market.storefront.cloudSkillsTitle")
+    : t("market.storefront.allTitle", { type: activeTypeLabel });
+  const emptyTitle = activeTab === "skills"
+    ? rangeMode === "installed"
+      ? t("market.storefront.noInstalled")
+      : t("market.storefront.noCloudSkills")
+    : t("market.storefront.emptyTitle");
+  const emptyDescription = activeTab === "skills"
+    ? rangeMode === "installed"
+      ? t("market.storefront.noInstalledDescription")
+      : t("market.storefront.noCloudSkillsDescription")
+    : t("market.storefront.emptyDescription");
+  const catalogSections = visibleItems.length > 0
+    ? [{ key: "all", title: sectionTitle, items: visibleItems }]
+    : [];
+  const skillAddMenu: MenuProps = {
+    items: [
+      {
+        key: "find",
+        icon: <SearchOutlined />,
+        label: t("market.skill.menu.find")
+      },
+      {
+        key: "import",
+        icon: <CloudDownloadOutlined />,
+        label: t("market.skill.localImport")
+      },
+      {
+        key: "create",
+        icon: <PlusCircleOutlined />,
+        label: t("market.skill.menu.create")
+      }
+    ],
+    onClick: ({ key }) => {
+      if (key === "import") {
+        void handleToolbarImport();
+        return;
+      }
+      void openSkillAssistant(key === "find" ? "find" : "create");
+    }
+  };
+  const marketHeaderTools = (
+    <div className="market-store-header-tools" aria-label={t("market.toolbar.filters")}>
+      <Input
+        allowClear
+        className="market-store-search"
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={t("market.search.storefront")}
+        prefix={<SearchOutlined />}
+        suffix={
+          <div className="market-store-search-filters" ref={searchFilterRef}>
+            <button
+              type="button"
+              className={`market-store-search-filter-button ${searchFilterMenu === "sort" ? "is-open" : ""} ${sortMode !== "popular" ? "is-active" : ""}`}
+              aria-label={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
+              aria-haspopup="true"
+              aria-expanded={searchFilterMenu === "sort"}
+              title={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
+              onClick={() => setSearchFilterMenu(searchFilterMenu === "sort" ? null : "sort")}
+            >
+              <SortAscendingOutlined />
+            </button>
+            {activeTab !== "skills" ? (
+              <button
+                type="button"
+                className={`market-store-search-filter-button ${searchFilterMenu === "scope" ? "is-open" : ""} ${rangeMode !== "all" ? "is-active" : ""}`}
+                aria-label={`${t("market.toolbar.scope")}: ${scopeFilterLabel}`}
+                aria-haspopup="true"
+                aria-expanded={searchFilterMenu === "scope"}
+                title={`${t("market.toolbar.scope")}: ${scopeFilterLabel}`}
+                onClick={() => setSearchFilterMenu(searchFilterMenu === "scope" ? null : "scope")}
+              >
+                <FilterOutlined />
+              </button>
+            ) : null}
+            {searchFilterMenu ? (
+              <div
+                className={`market-store-search-filter-menu is-${searchFilterMenu}`}
+                aria-label={searchFilterMenu === "sort" ? t("market.toolbar.sort") : t("market.toolbar.scope")}
+              >
+                {(searchFilterMenu === "sort" ? sortOptions : scopeOptions).map((option) => (
+                  <label key={option.value} className="market-store-search-filter-row">
+                    <input
+                      type="radio"
+                      name={`market-${searchFilterMenu}-filter`}
+                      checked={searchFilterMenu === "sort" ? sortMode === option.value : rangeMode === option.value}
+                      onChange={() => {
+                        if (searchFilterMenu === "sort") {
+                          setSortMode(option.value as SortMode);
+                        } else {
+                          setRangeMode(option.value as RangeMode);
+                        }
+                        setSearchFilterMenu(null);
+                      }}
+                    />
+                    <span>{option.label}</span>
+                  </label>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        }
+        value={query}
+      />
+      {activeTab === "skills" ? (
+        <Button
+          className={`market-store-toolbar-button is-installed ${rangeMode === "installed" ? "is-active" : ""}`}
+          aria-pressed={rangeMode === "installed"}
+          icon={<CheckCircleOutlined />}
+          onClick={() => setRangeMode(rangeMode === "installed" ? "all" : "installed")}
+        >
+          {t("market.toolbar.myInstalled")}
+          <span className="market-store-installed-count">{installedItemCount}</span>
+        </Button>
+      ) : null}
+      <Button
+        aria-label={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
+        title={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
+        className="market-store-toolbar-button is-icon-only"
+        icon={<ReloadOutlined />}
+        loading={isLoadingMarket}
+        onClick={() => void refreshEverything(true)}
+      />
+      {activeTab === "skills" ? (
+        <Dropdown
+          disabled={isImporting || isOpeningSkillAssistant}
+          menu={skillAddMenu}
+          placement="bottomRight"
+          trigger={["click"]}
+        >
+          <Button
+            className="market-store-toolbar-button is-add"
+            icon={<PlusCircleOutlined />}
+            loading={isImporting || isOpeningSkillAssistant}
+          >
+            {isImporting ? t("market.toolbar.importing") : t("market.toolbar.addSkill")}
+          </Button>
+        </Dropdown>
+      ) : toolbarImportLabel ? (
+        <Button
+          className="market-store-toolbar-button is-add"
+          icon={<PlusOutlined />}
+          loading={isImporting}
+          onClick={() => void handleToolbarImport()}
+        >
+          {isImporting ? t("market.toolbar.importing") : toolbarImportLabel}
+        </Button>
+      ) : null}
+    </div>
+  );
 
   return (
     <MarketPageFrame
       activeTab={activeTab}
       onTabChange={onTabChange}
       tabs={tabDefinitions}
+      toolbar={marketHeaderTools}
     >
       <div className="market-content market-storefront">
         {renderDetailDialog()}
-
-        <div className="market-filter-bar market-store-toolbar" aria-label={t("market.toolbar.filters")}>
-          <Input
-            allowClear
-            className="market-store-search"
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={t("market.search.storefront")}
-            prefix={<AppstoreOutlined />}
-            suffix={
-              <div className="market-store-search-filters" ref={searchFilterRef}>
-                <button
-                  type="button"
-                  className={`market-store-search-filter-button ${searchFilterMenu === "sort" ? "is-open" : ""} ${sortMode !== "popular" ? "is-active" : ""}`}
-                  aria-label={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
-                  aria-haspopup="true"
-                  aria-expanded={searchFilterMenu === "sort"}
-                  title={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
-                  onClick={() => setSearchFilterMenu(searchFilterMenu === "sort" ? null : "sort")}
-                >
-                  <SortAscendingOutlined />
-                </button>
-                <button
-                  type="button"
-                  className={`market-store-search-filter-button ${searchFilterMenu === "scope" ? "is-open" : ""} ${rangeMode !== "all" ? "is-active" : ""}`}
-                  aria-label={`${t("market.toolbar.scope")}: ${scopeFilterLabel}`}
-                  aria-haspopup="true"
-                  aria-expanded={searchFilterMenu === "scope"}
-                  title={`${t("market.toolbar.scope")}: ${scopeFilterLabel}`}
-                  onClick={() => setSearchFilterMenu(searchFilterMenu === "scope" ? null : "scope")}
-                >
-                  <FilterOutlined />
-                </button>
-                {searchFilterMenu ? (
-                  <div
-                    className={`market-store-search-filter-menu is-${searchFilterMenu}`}
-                    aria-label={searchFilterMenu === "sort" ? t("market.toolbar.sort") : t("market.toolbar.scope")}
-                  >
-                    {(searchFilterMenu === "sort" ? sortOptions : scopeOptions).map((option) => (
-                      <label key={option.value} className="market-store-search-filter-row">
-                        <input
-                          type="radio"
-                          name={`market-${searchFilterMenu}-filter`}
-                          checked={searchFilterMenu === "sort" ? sortMode === option.value : rangeMode === option.value}
-                          onChange={() => {
-                            if (searchFilterMenu === "sort") {
-                              setSortMode(option.value as SortMode);
-                            } else {
-                              setRangeMode(option.value as RangeMode);
-                            }
-                            setSearchFilterMenu(null);
-                          }}
-                        />
-                        <span>{option.label}</span>
-                      </label>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            }
-            value={query}
-          />
-          <div className="market-store-toolbar-actions">
-            <Button
-              aria-label={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
-              title={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
-              className="market-store-toolbar-button is-icon-only"
-              icon={<ReloadOutlined />}
-              loading={isLoadingMarket}
-              onClick={() => void refreshEverything(true)}
-            />
-            {toolbarImportLabel ? (
-              <Button
-                className="market-store-toolbar-button is-primary"
-                icon={<CloudDownloadOutlined />}
-                loading={isImporting}
-                onClick={() => void handleToolbarImport()}
-                type="primary"
-              >
-                {isImporting ? t("market.toolbar.importing") : toolbarImportLabel}
-              </Button>
-            ) : null}
-          </div>
-        </div>
-
         {shouldShowMarketStatus ? (
           <Alert
             className="market-status"
             message={marketStatusMessage}
             showIcon
-            type={marketOffline ? "warning" : "info"}
+            type={feedback ? feedbackType : "warning"}
           />
         ) : null}
 
         <div className="market-store-scroll">
           {visibleItems.length > 0 ? (
-            <div className="market-store-grid">
-              {visibleItems.map((item) => renderCard(item))}
+            <div className="market-store-sections">
+              {catalogSections.map((section) => (
+                <section className={`market-store-section is-${section.key}`} key={section.key}>
+                  <div className="market-store-section-head">
+                    <h2>{section.title}</h2>
+                    <span>{section.items.length}</span>
+                  </div>
+                  <div className="market-store-grid">
+                    {section.items.map((item) => renderCard(item))}
+                  </div>
+                </section>
+              ))}
             </div>
           ) : (
             <Empty
               className="market-store-empty"
-              description={<span>{t("market.storefront.emptyDescription")}</span>}
+              description={<span>{emptyDescription}</span>}
               image={Empty.PRESENTED_IMAGE_SIMPLE}
             >
-              <strong>{isLoadingMarket ? t("market.storefront.loading") : t("market.storefront.emptyTitle")}</strong>
+              <strong>{isLoadingMarket ? t("market.storefront.loading") : emptyTitle}</strong>
             </Empty>
           )}
         </div>

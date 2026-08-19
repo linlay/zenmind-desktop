@@ -44,11 +44,15 @@ export function marketSourceLabel(item: MarketItem, t: TranslateFunction) {
   if (item.type === "sandbox-image") {
     return item.containerEngine ? item.containerEngine : t("market.source.localImage");
   }
-  return item.source === "local" ? t("market.source.localImport") : t("market.source.cloud");
+  return item.marketplaceAvailable || item.source === "cloud"
+    ? t("market.source.cloud")
+    : t("market.source.localImport");
 }
 
 export function marketVersionLabel(item: MarketItem) {
-  const rawVersion = String(item.installedVersion ?? item.version ?? "").trim();
+  const rawVersion = String(
+    item.state === "update-available" ? item.version : (item.installedVersion ?? item.version ?? "")
+  ).trim();
   const version = /^[vV]\d/u.test(rawVersion) ? rawVersion.slice(1) : rawVersion;
   if (!version) {
     return item.type === "sandbox-image" ? "latest" : "";

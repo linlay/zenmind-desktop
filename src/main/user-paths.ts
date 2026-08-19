@@ -171,6 +171,10 @@ export function getPluginsRoot(app: App) {
   return path.join(getProgramsRoot(app), "plugins");
 }
 
+export function getSoftwarePackagesRoot(app: App) {
+  return path.join(getProgramsRoot(app), "software-packages");
+}
+
 export function getConfigRoot(app: App) {
   return path.join(getDataRoot(app), "config");
 }

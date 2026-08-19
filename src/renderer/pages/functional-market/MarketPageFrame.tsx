@@ -4,11 +4,12 @@ import {
   AppstoreOutlined,
   CodeOutlined,
   GlobalOutlined,
+  HddOutlined,
+  LinkOutlined,
   RobotOutlined,
   SafetyCertificateOutlined,
   SmileOutlined
 } from "@ant-design/icons";
-import { Badge, Segmented } from "antd";
 import type { MarketTab, MarketTabDefinition } from "./marketPageModel";
 import { useI18n } from "../../i18n/useI18n";
 import "./MarketPageFrame.css";
@@ -35,8 +36,12 @@ function marketTabIcon(tab: MarketTab) {
       return <SmileOutlined />;
     case "cli":
       return <CodeOutlined />;
+    case "mcps":
+      return <LinkOutlined />;
     case "websiteApps":
       return <GlobalOutlined />;
+    case "softwarePackages":
+      return <HddOutlined />;
     case "plugins":
     default:
       return <AppstoreOutlined />;
@@ -52,33 +57,31 @@ export function MarketPageFrame({
 }: MarketPageFrameProps) {
   const { t } = useI18n();
   const hasToolbar = Boolean(toolbar);
-  const tabOptions = tabs.map((tab) => ({
-    className: `tab-${tab.id}`,
-    label: (
-      <span className="market-tab-label">
-        <span className="market-tab-icon" aria-hidden="true">{marketTabIcon(tab.id)}</span>
-        <span className="market-tab-text">{tab.label}</span>
-        {typeof tab.count === "number" ? (
-          <Badge className="market-tab-count" count={tab.count} size="small" />
-        ) : null}
-      </span>
-    ),
-    value: tab.id
-  }));
-
   return (
     <section className="market-page">
       <div className="market-shell">
         <div className={hasToolbar ? "market-topbar has-toolbar" : "market-topbar"}>
-          <Segmented
-            aria-label={t("market.tabs.ariaLabel")}
-            block
-            className="market-tabs"
-            onChange={(value) => onTabChange(value as MarketTab)}
-            options={tabOptions}
-            size="large"
-            value={activeTab}
-          />
+          <div aria-label={t("market.tabs.ariaLabel")} className="market-tabs" role="tablist">
+            {tabs.map((tab) => {
+              const selected = tab.id === activeTab;
+              return (
+                <button
+                  aria-selected={selected}
+                  className={`market-tab-option tab-${tab.id} ${selected ? "is-selected" : ""}`}
+                  key={tab.id}
+                  onClick={() => onTabChange(tab.id)}
+                  role="tab"
+                  type="button"
+                >
+                  <span className="market-tab-icon" aria-hidden="true">{marketTabIcon(tab.id)}</span>
+                  <span className="market-tab-text">{tab.label}</span>
+                  {typeof tab.count === "number" && tab.count > 0 ? (
+                    <span className="market-tab-count">{tab.count}</span>
+                  ) : null}
+                </button>
+              );
+            })}
+          </div>
 
           {hasToolbar ? (
             <div className="market-toolbar">
