@@ -5898,7 +5898,9 @@ test("main service webviews bridge trusted top-lane drags from the guest preload
   assert.match(serviceWebviewPreload, /event\.stopImmediatePropagation\(\)/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.invoke\("desktopShell\.beginWindowDrag"/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.send\("desktopShell\.updateWindowDrag", latestScreenPoint\)/);
+  assert.match(serviceWebviewPreload, /finishDragOnPointerUp[\s\S]*?latestScreenPoint = \{ x: pointerEvent\.screenX, y: pointerEvent\.screenY \}[\s\S]*?ipcRenderer\.send\("desktopShell\.updateWindowDrag", latestScreenPoint\)[\s\S]*?finishDrag\(\)/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.invoke\("desktopShell\.endWindowDrag"\)/);
+  assert.doesNotMatch(serviceWebviewPreload, /window\.addEventListener\("blur", finishDrag/);
   assert.match(serviceWebviewPreload, /pointerEvent\.buttons !== 0[\s\S]*?requestAnimationFrame[\s\S]*?target\.setPointerCapture\(pointerId\)/);
   assert.match(readSourceFile("src", "main", "ipc", "shell-handlers.ts"), /ipcMain\.on\("desktopShell\.updateWindowDrag"[\s\S]*?updateWindowDragPosition\(resolveScreenPoint\(point\)\)/);
 });

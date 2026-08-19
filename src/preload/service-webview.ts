@@ -116,11 +116,10 @@ function installMainWindowDragBridge() {
         window.cancelAnimationFrame(pointerCaptureRestoreFrame);
         pointerCaptureRestoreFrame = null;
       }
-      window.removeEventListener("pointerup", finishDrag, true);
+      window.removeEventListener("pointerup", finishDragOnPointerUp, true);
       window.removeEventListener("pointermove", updateWindowDragOnPointerMove, true);
       window.removeEventListener("pointercancel", finishDrag, true);
       window.removeEventListener("mouseup", finishDragOnMouseUp, true);
-      window.removeEventListener("blur", finishDragOnBlur, true);
       target.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
       try {
         if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
@@ -130,11 +129,13 @@ function installMainWindowDragBridge() {
       if (finishActiveDrag === finishDrag) finishActiveDrag = null;
       void ipcRenderer.invoke("desktopShell.endWindowDrag").catch(() => undefined);
     };
+    const finishDragOnPointerUp = (pointerEvent: PointerEvent) => {
+      latestScreenPoint = { x: pointerEvent.screenX, y: pointerEvent.screenY };
+      ipcRenderer.send("desktopShell.updateWindowDrag", latestScreenPoint);
+      finishDrag();
+    };
     const finishDragOnMouseUp = (mouseEvent: MouseEvent) => {
       if (mouseEvent.button === 0) finishDrag();
-    };
-    const finishDragOnBlur = () => {
-      finishDrag();
     };
     const updateWindowDragOnPointerMove = (pointerEvent: PointerEvent) => {
       if (pointerEvent.pointerId !== pointerId || (pointerEvent.buttons & 1) === 0) return;
@@ -162,11 +163,10 @@ function installMainWindowDragBridge() {
     };
 
     finishActiveDrag = finishDrag;
-    window.addEventListener("pointerup", finishDrag, true);
+    window.addEventListener("pointerup", finishDragOnPointerUp, true);
     window.addEventListener("pointermove", updateWindowDragOnPointerMove, true);
     window.addEventListener("pointercancel", finishDrag, true);
     window.addEventListener("mouseup", finishDragOnMouseUp, true);
-    window.addEventListener("blur", finishDragOnBlur, true);
     target.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
     try {
       target.setPointerCapture(pointerId);
