@@ -80,6 +80,14 @@ function verifyPackagedBrandResources() {
   }
 }
 
+function verifyPackagedWebappTooling() {
+  const toolingPath = path.join(resourcesRoot, "scripts", "webapp-tooling.mjs");
+  assertExists(toolingPath, "packaged WebApp Tooling");
+  if (!fs.statSync(toolingPath).isFile() || fs.statSync(toolingPath).size === 0) {
+    throw new Error(`packaged WebApp Tooling is not a non-empty file: ${toolingPath}`);
+  }
+}
+
 function verifyBuilderIconConfig() {
   const configPath = electronBuilderConfigPath(projectRoot, brand.id);
   const config = JSON.parse(fs.readFileSync(configPath, "utf8"));
@@ -136,6 +144,7 @@ async function main() {
   await verifyGeneratedAppIcons({ rootDir: projectRoot, brandId: brand.id, platform: "win32" });
   verifyBuilderIconConfig();
   verifyPackagedBrandResources();
+  verifyPackagedWebappTooling();
   verifyNativeExecutableIcon();
   const paths = walkFileTree(resourcesRoot)
     .map((filePath) => path.relative(projectRoot, filePath).replace(/\\/g, "/"));

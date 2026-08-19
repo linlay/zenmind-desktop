@@ -2958,9 +2958,7 @@ test("service command env injects Desktop-owned runtime capabilities only into t
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-device-env-"));
   const userDataRoot = path.join(tempRoot, "user-data");
   const appPath = path.join(tempRoot, "desktop-app");
-  // The dev .app reports isPackaged=true while getAppPath() still points at
-  // the source checkout, so appPath shape is the authoritative distinction.
-  const app = createApp(userDataRoot, { appPath, isPackaged: true });
+  const app = createApp(userDataRoot, { appPath, isPackaged: false });
   const platformEnvPath = writeTestEnv(userDataRoot, "agent-platform", "SERVER_PORT=7078\n");
   const identityEnvPath = writeTestEnv(userDataRoot, "identity-center", "SERVER_PORT=7076\n");
   const pluginEnvPath = writeTestEnv(userDataRoot, "test-plugin", "PORT=9090\n", "plugins");
@@ -3053,10 +3051,11 @@ test("service command env injects Desktop-owned runtime capabilities only into t
       platformLayout,
       undefined
     );
-    assert.equal(packagedPlatformEnv.DESKTOP_ROOT, `${packagedAppPath}.unpacked`);
+    const packagedResourcesPath = path.dirname(packagedAppPath);
+    assert.equal(packagedPlatformEnv.DESKTOP_ROOT, packagedResourcesPath);
     assert.equal(
       packagedPlatformEnv.DESKTOP_WEBAPP_TOOLING_PATH,
-      path.join(`${packagedAppPath}.unpacked`, "scripts", "webapp-tooling.mjs")
+      path.join(packagedResourcesPath, "scripts", "webapp-tooling.mjs")
     );
     assert.equal(fs.readFileSync(platformEnvPath, "utf8"), "SERVER_PORT=7078\n");
     assert.equal(fs.readFileSync(identityEnvPath, "utf8"), "SERVER_PORT=7076\n");

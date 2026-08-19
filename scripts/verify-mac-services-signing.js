@@ -59,6 +59,10 @@ function getServicesRoot(appPath) {
 
 function verifyMacPackageBranding(appPath, { projectRoot = "", brandId = "" } = {}) {
   const resourcesRoot = getResourcesRoot(appPath);
+  const webappToolingPath = path.join(resourcesRoot, "scripts", "webapp-tooling.mjs");
+  if (!fs.existsSync(webappToolingPath) || !fs.statSync(webappToolingPath).isFile() || fs.statSync(webappToolingPath).size === 0) {
+    throw new Error(`[verify-mac-services-signing] packaged WebApp Tooling is missing or empty: ${webappToolingPath}`);
+  }
   const plistPath = path.join(appPath, "Contents", "Info.plist");
   const plist = fs.readFileSync(plistPath, "utf8");
   const iconMatch = plist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/u);

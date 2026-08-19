@@ -20,7 +20,7 @@ test("production WebApp tooling is standalone and completes the package workflow
   const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-production-webapp-tooling-"));
   t.after(() => fs.rmSync(temporaryRoot, { recursive: true, force: true }));
 
-  const toolingPath = path.join(temporaryRoot, "app.asar.unpacked", "scripts", "webapp-tooling.mjs");
+  const toolingPath = path.join(temporaryRoot, "Resources", "scripts", "webapp-tooling.mjs");
   await generateWebappToolingBundle({ rootDir: projectRoot, outputPath: toolingPath });
 
   const projectPath = path.join(temporaryRoot, "example");
@@ -37,18 +37,29 @@ test("production WebApp tooling is standalone and completes the package workflow
   assert.equal(runTooling(toolingPath, ["package", "validate", "--archive", archivePath]).ok, true);
 });
 
-test("electron-builder publishes WebApp tooling as an unpacked production file", () => {
+test("electron-builder publishes WebApp tooling as a directly executable extra resource", () => {
   const brand = loadBrandConfig(projectRoot, "cutej");
-  const config = electronBuilderConfig(brand, { os: "darwin", arch: "arm64" });
-  assert.ok(config.files.includes("scripts/webapp-tooling.mjs"));
-  assert.ok(config.asarUnpack.includes("scripts/webapp-tooling.mjs"));
+  for (const [target, targetKey] of [
+    [{ os: "darwin", arch: "arm64" }, "darwin-arm64"],
+    [{ os: "win32", arch: "x64" }, "win32-x64"]
+  ]) {
+    const config = electronBuilderConfig(brand, target);
+    assert.ok(!config.files.includes("scripts/webapp-tooling.mjs"));
+    assert.ok(!config.asarUnpack.includes("scripts/webapp-tooling.mjs"));
+    assert.ok(config.extraResources.some((item) => (
+      item.from === `build/brands/cutej/app/${targetKey}/scripts/webapp-tooling.mjs` &&
+      item.to === "scripts/webapp-tooling.mjs"
+    )));
+  }
 });
 
-test("packaged Desktop resolves the same Tooling path exposed to Agent Platform", () => {
-  const resourcesPath = path.join("C:\\", "Program Files", "CuteJ", "resources");
-  const appPath = path.join(resourcesPath, "app.asar");
+test("production Tooling has stable macOS and Windows resource paths", () => {
   assert.equal(
-    path.join(`${appPath}.unpacked`, "scripts", "webapp-tooling.mjs"),
-    path.join(resourcesPath, "app.asar.unpacked", "scripts", "webapp-tooling.mjs")
+    path.posix.join("/Applications/CuteJ.app/Contents/Resources", "scripts", "webapp-tooling.mjs"),
+    "/Applications/CuteJ.app/Contents/Resources/scripts/webapp-tooling.mjs"
+  );
+  assert.equal(
+    path.win32.join("C:\\Program Files\\CuteJ\\resources", "scripts", "webapp-tooling.mjs"),
+    "C:\\Program Files\\CuteJ\\resources\\scripts\\webapp-tooling.mjs"
   );
 });

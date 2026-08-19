@@ -1918,9 +1918,7 @@ function buildDesktopServiceCommandEnv(
   }
   if (service.id === "agent-platform") {
     const appRoot = app.getAppPath();
-    const toolingRoot = path.basename(appRoot).toLowerCase() === "app.asar"
-      ? `${appRoot}.unpacked`
-      : appRoot;
+    const toolingRoot = isDesktopDevelopmentRuntime(app) ? appRoot : path.dirname(appRoot);
     env.DESKTOP_WEBAPP_TOOLING_PATH = path.join(toolingRoot, "scripts", "webapp-tooling.mjs");
     // Compatibility for already-installed WebApp Builder Skills. New Skills
     // should consume DESKTOP_WEBAPP_TOOLING_PATH directly and never scan disks.

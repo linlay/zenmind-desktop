@@ -148,7 +148,7 @@ test("brand-config façade preserves the established exports across split module
   assert.ok(fs.readFileSync(path.join(projectRoot, "scripts", "lib", "brand-config.mjs"), "utf8").split("\n").length < 60);
 });
 
-test("afterPack owns only the macOS content-addressed icon repair", () => {
+test("afterPack keeps macOS icon repair isolated from unrelated packaging concerns", () => {
   const source = fs.readFileSync(path.join(projectRoot, "scripts", "after-pack.js"), "utf8");
   assert.match(source, /electronPlatformName !== "darwin"/u);
   assert.match(source, /contentAddressMacAppIcon/u);
