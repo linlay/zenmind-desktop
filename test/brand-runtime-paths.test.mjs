@@ -102,7 +102,7 @@ test("new Windows installs default directly to the brand runtime root under the 
     )?.[1] ?? "";
 
     assert.doesNotMatch(ensureDataRootDefault, new RegExp(`\\$PROFILE\\\\${productName} Data`, "u"));
-    assert.match(dataDirectoryPage, /StrCpy \$DesktopDataParent "\$PROFILE"/u);
+    assert.match(dataDirectoryPage, /StrCpy \$DesktopDataParent "\$DesktopDataRoot"/u);
   }
 });
 
@@ -799,7 +799,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.match(installerInclude, /WriteRegDWORD HKCU "Software\\cutej-desktop" "DataRootLayoutVersion" 2/u);
   assert.match(installerInclude, /ReadRegDWORD \$R0 HKCU "Software\\cutej-desktop" "LayoutVersion"[\s\S]*?\$DesktopDataRootLayoutVersion "2"/u);
   assert.match(installerInclude, /DeleteRegValue HKCU "Software\\cutej-desktop" "LayoutVersion"/u);
-  assert.match(installerInclude, /\$DesktopDataParent\\\.cutej/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataParent "\$0\\\.cutej"/u);
   assert.match(installerInclude, /cc\.cutej\.desktop\|cutej-desktop\|data-root\|v1/u);
   assert.match(installerInclude, /!macro customInit/u);
   assert.match(installerInclude, /!macro customUnInit/u);
@@ -835,7 +835,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.doesNotMatch(installerInclude, /%SYSTEMROOT%\\System32/u);
   assert.doesNotMatch(installerInclude, /!macro customRemoveFiles/u);
   assert.match(installerInclude, /\$\{FileExists\} "\$DesktopDataRoot\\\*\.\*"[\s\S]*?\$DesktopDataRootStored "0"/u);
-  assert.match(installerInclude, /\$\{GetParent\} "\$DesktopDataRoot" \$DesktopDataParent/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataParent "\$DesktopDataRoot"/u);
   assert.match(installerInclude, /Function CuteJEnsureDataRootDefault[\s\S]*?\$DesktopDataRoot != ""[\s\S]*?Return/u);
   assert.match(installerInclude, /CuteJ\.recovery-\$0\$1\$2-\$4\$5\$6/u);
   assert.match(installerInclude, /removeDesktopOwnedDataRetry:[\s\S]*?DesktopForceRemoveOwnedRoot \$DesktopOwnedDataRoot[\s\S]*?\$R4 < 2[\s\S]*?DesktopRestoreOwnerMarker \$DesktopOwnedDataRoot/u);
@@ -928,7 +928,7 @@ test("brand sync keeps ZenMind isolated defaults in generated artifacts", (t) =>
   assert.match(installerInclude, /ZenMindDataDirectoryPage/u);
   assert.match(installerInclude, /WriteRegStr HKCU "Software\\zenmind-desktop" "DataRoot"/u);
   assert.match(installerInclude, /WriteRegDWORD HKCU "Software\\zenmind-desktop" "DataRootLayoutVersion" 2/u);
-  assert.match(installerInclude, /\$DesktopDataParent\\\.zenmind/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataParent "\$0\\\.zenmind"/u);
   assert.match(installerInclude, /cc\.zenmind\.desktop\|zenmind-desktop\|data-root\|v1/u);
   assert.doesNotMatch(installerInclude, /RMDir \/r "\$DesktopDataRoot"/u);
   assert.match(safeRepairScript, /498936cc-d13d-526e-80bb-92867e6e1874/u);
@@ -1235,7 +1235,7 @@ test("Windows dist latest metadata refreshes stale installer aliases", (t) => {
   assert.equal(fs.readFileSync(path.join(outputDir, "CuteJ-Setup-0.3.12.exe.blockmap"), "utf8"), "fresh-blockmap");
 });
 
-test("Windows installer data directory page validates the parent before creating an owned root", () => {
+test("Windows installer data directory page requires the visible path to end with the owned root name", () => {
   const installerInclude = fs.readFileSync(
     path.join(projectRoot, "build", "brands", "cutej", "installer", "installer.nsh"),
     "utf8"
@@ -1263,8 +1263,14 @@ test("Windows installer data directory page validates the parent before creating
   assert.match(dataDirectoryPageLeave, /仅当你确认这是历史 CuteJ 数据目录时才继续/u);
   assert.match(dataDirectoryPageLeave, /CuteJDataDirectoryAdoptLegacy:[\s\S]*?StrCpy \$DesktopDataRootAdoptConfirmed "1"/u);
   assert.match(installerInclude, /StrCmp "\$\{ROOT\}" "\$PROFILE\\Downloads"/u);
-  assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$DesktopDataParent\\\.cutej"/u);
-  assert.match(installerInclude, /可选择数据父目录或已有的 \.cutej 数据目录/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataParent "\$0\\\.cutej"/u);
+  assert.match(installerInclude, /\$R2 == "\\"[\s\S]*?StrCpy \$DesktopDataParent "\$0\.cutej"/u);
+  assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$DesktopDataParent"/u);
+  assert.match(installerInclude, /请选择完整的 CuteJ 数据目录/u);
+  assert.match(installerInclude, /NSD_CreateLabel\} 0 24u 100% 12u "路径格式错误：数据目录必须以 \.cutej 结尾，否则无法安装。"/u);
+  assert.match(installerInclude, /Function CuteJValidateDataRootInput[\s\S]*?GetFileName\} "\$DesktopDataParent" \$R3[\s\S]*?EnableWindow \$R4 0[\s\S]*?NSD_Show\} \$DesktopDataRootErrorLabel/u);
+  assert.match(installerInclude, /NSD_OnChange\} \$DesktopDataRootInput CuteJValidateDataRootInput/u);
+  assert.match(dataDirectoryPageLeave, /\$R3 != "\.cutej"[\s\S]*?数据目录必须以 \.cutej 结尾。[\s\S]*?Abort/u);
   assert.doesNotMatch(installerInclude, /StrCmp "\$DesktopDataParent" "\$(?:PROFILE|DESKTOP|DOCUMENTS|APPDATA|LOCALAPPDATA)"/u);
   assert.ok(
     dataDirectoryPageLeave.indexOf('CreateDirectory "$DesktopDataParent"') <
@@ -1289,8 +1295,8 @@ test("Windows installer keeps the program root fixed while the data root remains
   assert.match(installerInclude, /!macro customPageAfterChangeDir\s+Page custom CuteJDataDirectoryPage CuteJDataDirectoryPageLeave\s+!macroend/u);
   assert.match(dataDirectoryPage, /Call CuteJEnsureDataRootDefault/u);
   assert.doesNotMatch(dataDirectoryPage, /DesktopDataRootStored[\s\S]*?Abort/u);
-  assert.match(dataDirectoryPage, /GetParent[\s\S]*?DesktopDataParent/u);
-  assert.match(installerInclude, /GetFileName\} "\$DesktopDataParent" \$R3[\s\S]*?\$R3 == "\.cutej"[\s\S]*?StrCpy \$DesktopDataRoot "\$DesktopDataParent"/u);
+  assert.match(dataDirectoryPage, /StrCpy \$DesktopDataParent "\$DesktopDataRoot"/u);
+  assert.match(installerInclude, /Function CuteJValidateDataRootInput[\s\S]*?\$R3 == "\.cutej"[\s\S]*?EnableWindow \$R4 1[\s\S]*?EnableWindow \$R4 0/u);
   assert.match(installerInclude, /!macro customInit[\s\S]*?setInstallModePerUser[\s\S]*?DesktopResolveDefaultInstallDir[\s\S]*?StrCpy \$INSTDIR "\$DesktopDefaultInstallDir"/u);
   assert.match(installerInclude, /!macro DesktopValidateStoredDataRootForInstall[\s\S]*?DesktopValidateOwnedRoot \$DesktopDataRoot \$R1[\s\S]*?\$\{FileExists\} "\$DesktopDataRoot\\\.desktop-owner"[\s\S]*?\$\{Silent\}/u);
   assert.match(installerInclude, /!macro customInit[\s\S]*?!insertmacro DesktopValidateStoredDataRootForInstall/u);
