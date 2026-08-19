@@ -581,13 +581,49 @@
 
 .settings-page .web-catalog-actions {
   display: flex;
-  gap: 8px;
+  gap: 4px;
   padding: 0 16px 12px;
 }
 
-.settings-page .web-catalog-actions .ant-btn {
-  height: 28px;
-  padding-inline: 8px;
+.settings-page .web-settings-page .web-action-button.ant-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  height: 32px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  box-shadow: none;
+}
+
+.settings-page .web-settings-page .web-action-button.ant-btn .anticon {
+  font-size: 14px;
+}
+
+.settings-page .web-settings-page .web-action-button.is-secondary.ant-btn {
+  border: 1px solid var(--control-center-border);
+  background: var(--control-center-card-muted);
+  color: var(--control-center-muted);
+}
+
+.settings-page .web-settings-page .web-action-button.is-secondary.ant-btn:hover:not(:disabled),
+.settings-page .web-settings-page .web-action-button.is-secondary.ant-btn:focus-visible:not(:disabled) {
+  border-color: var(--accent-border-subtle);
+  background: var(--accent-fill-subtle);
+  color: var(--control-center-text);
+}
+
+.settings-page .web-settings-page .web-detail-actions .web-action-button.ant-btn {
+  min-width: 64px;
+}
+
+.settings-page .web-settings-page .web-add-entry-action.ant-btn {
+  margin-bottom: 8px;
 }
 
 .settings-page .web-nav-card.ant-btn {
@@ -612,9 +648,7 @@
   background:
     linear-gradient(90deg, var(--accent-fill-soft), var(--accent-fill-subtle));
   color: var(--control-center-text);
-  box-shadow:
-    inset 3px 0 0 var(--accent),
-    0 0 0 1px var(--accent-border-faint);
+  box-shadow: none;
 }
 
 .settings-page .web-nav-card.ant-btn.is-active:hover,
@@ -679,9 +713,7 @@
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active {
   background: rgba(255, 255, 255, 0.075);
-  box-shadow:
-    inset 3px 0 0 rgba(var(--accent-rgb), 0.84),
-    0 0 0 1px rgba(255, 255, 255, 0.065);
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:hover,
