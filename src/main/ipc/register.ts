@@ -206,7 +206,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     getMainWindow: () => context.state.mainWindow
   });
   registerChatWorkPanelTabContextMenuIpcHandlers(ipcMain, {
-    getMainWindow: () => context.state.mainWindow
+    getMainWindow: () => context.state.mainWindow,
+    app,
+    platform: context.platform,
   });
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {

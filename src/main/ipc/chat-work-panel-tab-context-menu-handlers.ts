@@ -6,16 +6,27 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import {
+  CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
+  type ChatWorkPanelOpenLocalResourceResult,
   type ChatWorkPanelTabContextMenuActionId,
   type ChatWorkPanelTabContextMenuProfile,
   type ChatWorkPanelTabContextMenuPopupRequest,
   type ChatWorkPanelTabContextMenuPopupResult
 } from "../../shared/chat-work-panel-tab-context-menu";
+import {
+  normalizeChatWorkPanelOpenLocalResourceRequest,
+  openChatWorkPanelResourceInDefaultApp,
+} from "../chat-work-panel-resource-open";
 import { t } from "../i18n/main-i18n";
 
 type ChatWorkPanelTabContextMenuHandlerOptions = {
   getMainWindow(): BrowserWindow | null;
+  app?: Electron.App;
+  platform?: NodeJS.Platform | string;
+  openLocalResource?: (
+    request: Parameters<typeof openChatWorkPanelResourceInDefaultApp>[0],
+  ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
   BrowserWindow?: Pick<typeof ElectronBrowserWindow, "fromWebContents">;
   Menu?: Pick<typeof ElectronMenu, "buildFromTemplate">;
 };
@@ -112,6 +123,11 @@ function buildWorkPanelTemplate(
             click: click("download-resource")
           },
           {
+            id: "open-resource-default-app",
+            label: t("chatWorkPanel.tabContextMenu.openInDefaultApp"),
+            click: click("open-resource-default-app")
+          },
+          {
             id: "copy-title",
             label: t("chatWorkPanel.tabContextMenu.copyFilename"),
             click: click("copy-title")
@@ -162,6 +178,34 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
 ) {
   const BrowserWindow = options.BrowserWindow ?? ElectronBrowserWindow;
   const Menu = options.Menu ?? ElectronMenu;
+
+  ipcMain.handle(
+    CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
+    async (event: IpcMainInvokeEvent, value: unknown): Promise<ChatWorkPanelOpenLocalResourceResult> => {
+      const request = normalizeChatWorkPanelOpenLocalResourceRequest(value);
+      const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+      const mainWindow = options.getMainWindow();
+      if (
+        !request ||
+        !ownerWindow ||
+        !mainWindow ||
+        ownerWindow !== mainWindow ||
+        ownerWindow.isDestroyed()
+      ) {
+        return { ok: false, code: "invalid_request", message: t("chatWorkPanel.openDefault.invalidPath") };
+      }
+      if (options.openLocalResource) {
+        return options.openLocalResource(request);
+      }
+      if (!options.app) {
+        return { ok: false, code: "open_failed", message: t("chatWorkPanel.openDefault.unavailable") };
+      }
+      return openChatWorkPanelResourceInDefaultApp(request, {
+        app: options.app,
+        platform: options.platform,
+      });
+    },
+  );
 
   ipcMain.handle(
     CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,

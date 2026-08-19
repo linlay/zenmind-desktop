@@ -14,6 +14,8 @@ import type {
   SidebarContextMenuPopupResult
 } from "../sidebar-context-menu";
 import type {
+  ChatWorkPanelOpenLocalResourceRequest,
+  ChatWorkPanelOpenLocalResourceResult,
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
@@ -611,6 +613,9 @@ export interface DesktopApi {
     popup: (
       request: ChatWorkPanelTabContextMenuPopupRequest
     ) => Promise<ChatWorkPanelTabContextMenuPopupResult>;
+    openLocalResource: (
+      request: ChatWorkPanelOpenLocalResourceRequest
+    ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;

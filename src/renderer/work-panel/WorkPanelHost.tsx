@@ -13,7 +13,10 @@ import {
 import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
-import type { ChatWorkPanelTabContextMenuProfile } from "../../shared/chat-work-panel-tab-context-menu";
+import {
+  resolveChatWorkPanelLocalResourcePath,
+  type ChatWorkPanelTabContextMenuProfile,
+} from "../../shared/chat-work-panel-tab-context-menu";
 import {
   AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
   AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION,
@@ -200,12 +203,38 @@ export function WorkPanelHost({
       return;
     }
     if (
+      result.actionId === "open-resource-default-app" &&
+      item.descriptor.kind === "webclient" &&
+      (item.descriptor.module === "artifact" || item.descriptor.module === "reference")
+    ) {
+      const relativePath = resolveChatWorkPanelLocalResourcePath({
+        ownerChatId,
+        profile: item.descriptor.module,
+        route: item.descriptor.route,
+      });
+      if (!relativePath) {
+        console.warn("[work-panel] refused invalid local resource path", item.descriptor.route);
+        return;
+      }
+      const opened = await window.electronAPI.chatWorkPanelTabContextMenu.openLocalResource({
+        ownerChatId,
+        profile: item.descriptor.module,
+        relativePath,
+      });
+      if (!opened.ok) {
+        console.warn("[work-panel] failed to open local resource", opened.code, opened.message);
+      }
+      return;
+    }
+    if (
       result.actionId === "download-resource" &&
       item.descriptor.kind === "webclient" &&
       (item.descriptor.module === "artifact" || item.descriptor.module === "reference")
     ) {
+      const resourceWebview = findItemWebview(ownerChatId, item.itemId);
+      if (!resourceWebview) return;
       try {
-        findItemWebview(ownerChatId, item.itemId)?.send(
+        resourceWebview.send(
           SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
           {
             action: AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,

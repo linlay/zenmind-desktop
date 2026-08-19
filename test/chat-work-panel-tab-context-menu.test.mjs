@@ -61,7 +61,7 @@ test("Work Panel tab context menu accepts only bounded profile capabilities", ()
 });
 
 test("Work Panel tab context menu is main-window-owned and exposes bounded tab actions", async () => {
-  let invokeHandler;
+  const invokeHandlers = new Map();
   let popupOptions;
   let builtTemplate;
   let selectedActionId = "toggle-fullscreen";
@@ -71,8 +71,8 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     getContentBounds: () => ({ x: 100, y: 200, width: 300, height: 400 })
   };
   registerChatWorkPanelTabContextMenuIpcHandlers({
-    handle: (_channel, handler) => {
-      invokeHandler = handler;
+    handle: (channel, handler) => {
+      invokeHandlers.set(channel, handler);
     }
   }, {
     getMainWindow: () => ownerWindow,
@@ -92,6 +92,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
       }
     }
   });
+  const invokeHandler = invokeHandlers.get("chatWorkPanel.tabContextMenu.popup");
 
   const result = await invokeHandler({ sender }, {
     mode: "work-panel",
@@ -105,6 +106,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   assert.deepEqual(result, { actionId: "toggle-fullscreen" });
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
     "download-resource",
+    "open-resource-default-app",
     "copy-title",
     "separator",
     "reload",
@@ -154,6 +156,21 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     builtTemplate.find((item) => item.id === "download-resource").label,
     /Resource|资源/u
   );
+  assert.match(
+    builtTemplate.find((item) => item.id === "open-resource-default-app").label,
+    /Default App|默认应用/u
+  );
+
+  selectedActionId = "open-resource-default-app";
+  assert.deepEqual(await invokeHandler({ sender }, {
+    mode: "work-panel",
+    x: 1,
+    y: 2,
+    profile: "artifact",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: true
+  }), { actionId: "open-resource-default-app" });
 
   selectedActionId = "copy-url";
   assert.deepEqual(await invokeHandler({ sender }, {
@@ -174,4 +191,34 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   }), {
     actionId: null
   });
+});
+
+test("Work Panel local resource open IPC is main-window-owned", async () => {
+  const handlers = new Map();
+  const sender = {};
+  const ownerWindow = { isDestroyed: () => false };
+  const opened = [];
+  registerChatWorkPanelTabContextMenuIpcHandlers({
+    handle: (channel, handler) => handlers.set(channel, handler),
+  }, {
+    getMainWindow: () => ownerWindow,
+    BrowserWindow: {
+      fromWebContents: (contents) => contents === sender ? ownerWindow : null,
+    },
+    openLocalResource: async (request) => {
+      opened.push(request);
+      return { ok: true, path: "/runtime/chats/chat-1/artifacts/run/report.docx" };
+    },
+  });
+
+  const handler = handlers.get("chatWorkPanel.openLocalResource");
+  const request = {
+    ownerChatId: "chat-1",
+    relativePath: "artifacts/run/report.docx",
+    profile: "artifact",
+  };
+  assert.equal((await handler({ sender }, request)).ok, true);
+  assert.deepEqual(opened, [request]);
+  assert.equal((await handler({ sender: {} }, request)).code, "invalid_request");
+  assert.equal((await handler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");
 });
