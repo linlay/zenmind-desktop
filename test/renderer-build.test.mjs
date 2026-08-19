@@ -3180,7 +3180,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsPage, /settings\.general\.desktopActionConfirmation/);
   assert.match(assistantRuntime, /startDesktopWsServerForSettings/);
   assert.doesNotMatch(mainProcess, /void startDesktopWsServer\(\{\s*app,/);
-  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
+  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app, startupPlatform\);/);
   assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
   assert.match(mainProcess, /function refreshDesktopRuntimeConfigFromCanonicalFiles\(reason: string\)/);
   assert.match(mainProcess, /targetWindow\.webContents\.send\("settings\.desktopConfigChanged", event\)/);
@@ -4670,7 +4670,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
   assert.match(assistantHandlers, /lastError:\s*null,\s*recentFrames:\s*\[\]/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?assistant\.navigationAgentsChanged/);
-  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);[\s\S]*?createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\)/);
+  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app, startupPlatform\);[\s\S]*?createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\)/);
   assert.doesNotMatch(mainProcess, /createAssistantBootstrapStateMonitor|assistant\.bootstrapStateChanged/);
   assert.match(mainProcess, /function emitAssistantNavigationPushEvent[\s\S]*?assistant\.navigationPushEvent/);
   assert.match(assistantRuntime, /emitAssistantNavigationPushEvent\(event\)/);
@@ -5080,8 +5080,11 @@ test("first-install bootstrap navigation stays optional and keeps the configured
   assert.match(appSidebar, /isBootstrapSeedChat[\s\S]*?chat\.chatName \|\| t\("sidebar\.bootstrapChat\.cta"\)/);
   assert.match(appSidebar, /showBootstrapChatFallback[\s\S]*?!bootstrapSeedChatIndexed/);
   assert.match(appSidebar, /function createBootstrapChatTargetRoute\(\)[\s\S]*?createAgentChatRoute\(\s*normalizedBootstrapAgentKey,\s*normalizedBootstrapChatId,?\s*\)[\s\S]*?createAgentNewChatRoute\(normalizedBootstrapAgentKey\)/);
-  assert.match(appSidebar, /isBootstrapSeedChat \? "is-bootstrap-guide"/);
-  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?is-bootstrap-guide/);
+  assert.match(appSidebar, /const showBootstrapChatGuide =[\s\S]*?!bootstrapGuideDismissedBubbles\.chat/);
+  assert.match(appSidebar, /const showBootstrapHelpGuide =[\s\S]*?!bootstrapGuideDismissedBubbles\.help/);
+  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?showBootstrapChatGuide \? "is-bootstrap-guide"/);
+  assert.match(appSidebar, /isBootstrapSeedChat && showBootstrapChatGuide[\s\S]*?"is-bootstrap-guide"/);
+  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?assistant-worker-unread-dot chat-unread-dot[\s\S]*?worker-chat-name/);
   assert.match(zhDictionary, /"sidebar\.bootstrapChat\.cta": "开始使用"/);
   assert.match(zhDictionary, /用户初始化是可选的/);
   assert.match(enDictionary, /"sidebar\.bootstrapChat\.cta":/);
@@ -5091,8 +5094,10 @@ test("first-install bootstrap navigation stays optional and keeps the configured
   assert.match(appSidebar, /closest\("\.app-shell"\)/);
   assert.match(appSidebar, /createPortal\([\s\S]*?appShell,\s*\)/);
   assert.match(appSidebar, /BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000/);
+  assert.match(appSidebar, /window\.setTimeout\(\(\) => \{[\s\S]*?chat: true,[\s\S]*?help: true,[\s\S]*?BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS\);[\s\S]*?\}, \[bootstrapActive\]\);/);
   assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?setToolMenuOpen\(true\)/);
-  assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: bootstrapActive/);
+  assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: showBootstrapHelpGuide/);
+  assert.match(appSidebar, /showBootstrapHelpGuide \? "has-bootstrap-guide"/);
   assert.match(appSidebar, /sidebar\.bootstrapGuide\.actionChat/);
   assert.match(zhDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);
   assert.match(enDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);

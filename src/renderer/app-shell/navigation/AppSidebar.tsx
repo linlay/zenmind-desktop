@@ -1189,6 +1189,10 @@ export function AppSidebar({
   const activeSidebarChatId = activeNavigationRouteInfo.chatId;
   const normalizedBootstrapAgentKey = bootstrapAgentKey.trim();
   const normalizedBootstrapChatId = bootstrapChatId.trim();
+  const showBootstrapChatGuide =
+    bootstrapActive && !bootstrapGuideDismissedBubbles.chat;
+  const showBootstrapHelpGuide =
+    bootstrapActive && !bootstrapGuideDismissedBubbles.help;
   const showBootstrapGuideCard =
     bootstrapActive &&
     !bootstrapGuideCardDismissed &&
@@ -1632,7 +1636,7 @@ export function AppSidebar({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [bootstrapActive, normalizedBootstrapAgentKey, normalizedBootstrapChatId]);
+  }, [bootstrapActive]);
 
   useEffect(() => {
     if (!bootstrapActive || typeof window === "undefined") {
@@ -3817,9 +3821,10 @@ export function AppSidebar({
               ref={bootstrapGuideChatAnchorRef}
               type="button"
               className={[
+                "assistant-worker-chat-item",
                 "sidebar-chats-item",
                 "sidebar-chats-bootstrap-fallback",
-                "is-bootstrap-guide",
+                showBootstrapChatGuide ? "is-bootstrap-guide" : "",
                 bootstrapFallbackActive ? "is-active" : "",
               ]
                 .filter(Boolean)
@@ -3831,8 +3836,12 @@ export function AppSidebar({
                 roving,
               )}
             >
-              <span className="sidebar-chats-copy">
-                <span className="sidebar-chats-preview">
+              <span className="worker-chat-item-head">
+                <span
+                  className="assistant-worker-unread-dot chat-unread-dot"
+                  aria-hidden="true"
+                />
+                <span className="worker-chat-name">
                   {t("sidebar.bootstrapChat.cta")}
                 </span>
               </span>
@@ -3855,7 +3864,9 @@ export function AppSidebar({
               rowClassName: "sidebar-chats-row",
               itemClassName: [
                 "sidebar-chats-item",
-                isBootstrapSeedChat ? "is-bootstrap-guide" : "",
+                isBootstrapSeedChat && showBootstrapChatGuide
+                  ? "is-bootstrap-guide"
+                  : "",
               ]
                 .filter(Boolean)
                 .join(" "),
@@ -5082,7 +5093,7 @@ export function AppSidebar({
         className={[
           "sidebar-tool-menu",
           "sidebar-account-menu",
-          bootstrapActive ? "has-bootstrap-guide" : "",
+          showBootstrapHelpGuide ? "has-bootstrap-guide" : "",
           isCollapsed
             ? "is-from-collapsed-sidebar"
             : "is-from-expanded-sidebar",
@@ -5102,7 +5113,7 @@ export function AppSidebar({
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
         {renderToolLink(helpToolItem, {
           anchorRef: bootstrapGuideToolHelpAnchorRef,
-          bootstrapGuide: bootstrapActive,
+          bootstrapGuide: showBootstrapHelpGuide,
         })}
         {settingsToolItem ? renderToolLink(settingsToolItem) : null}
       </div>

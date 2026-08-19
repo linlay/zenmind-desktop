@@ -131,7 +131,33 @@ test("main runtime freezes first-install navigation before any startup initializ
 
   assert.match(
     runtimeSource,
-    /export function createMainProcessRuntime\(\) \{\s*const isFirstDesktopInstall = !desktopDataRootExists\(app\);\s*const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\);/,
+    /export function createMainProcessRuntime\(\) \{\s*const startupPlatform = process\.platform;\s*const isFirstDesktopInstall = !desktopDataRootExists\(app, startupPlatform\);\s*const runtimeRootAtProcessStart = resolveRuntimeRoot\(app, startupPlatform\);\s*const runtimeRootExistedAtStartup = runtimeRootExists\(app, startupPlatform\);\s*const runtimeEnvExistedAtStartup = runtimeEnvExists\(app, startupPlatform\);\s*const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\);/,
+  );
+});
+
+test("main runtime freezes the runtime-root snapshot before startup runtimes can create Desktop directories", () => {
+  const runtimeSource = fs.readFileSync(path.join(
+    __dirname,
+    "..",
+    "src",
+    "main",
+    "app",
+    "runtime.ts",
+  ), "utf8");
+
+  const runtimeRootSnapshotIndex = runtimeSource.indexOf(
+    "const runtimeRootExistedAtStartup = runtimeRootExists(app, startupPlatform);",
+  );
+  const firstRuntimeInitializationIndex = runtimeSource.indexOf(
+    "configureAgentMarketPlatformCaller(",
+  );
+
+  assert.notEqual(runtimeRootSnapshotIndex, -1);
+  assert.notEqual(firstRuntimeInitializationIndex, -1);
+  assert.ok(runtimeRootSnapshotIndex < firstRuntimeInitializationIndex);
+  assert.equal(
+    runtimeSource.indexOf("const runtimeRootExistedAtStartup =", runtimeRootSnapshotIndex + 1),
+    -1,
   );
 });
 
