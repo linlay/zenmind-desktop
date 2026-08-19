@@ -198,6 +198,8 @@ import { refreshMarketCatalog } from "../marketplace";
 import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
 
 export function createMainProcessRuntime() {
+  const isFirstDesktopInstall = !desktopDataRootExists(app);
+  const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   configureAgentMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, options)
   );
@@ -459,8 +461,6 @@ export function createMainProcessRuntime() {
     safeConsoleError
   });
   const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
-  const isFirstDesktopInstall = !desktopDataRootExists(app);
-  const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   const runtimeRootAtProcessStart = resolveRuntimeRoot(app, mainProcessContext.platform);
   const runtimeRootExistedAtStartup = runtimeRootExists(app, mainProcessContext.platform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, mainProcessContext.platform);

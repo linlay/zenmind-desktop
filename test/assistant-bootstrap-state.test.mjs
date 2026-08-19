@@ -1,5 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
@@ -23,6 +25,31 @@ const { registerAssistantIpcHandlers } = require(path.join(
   "ipc",
   "assistant-handlers.js",
 ));
+const { readEnterpriseImSettings } = require(path.join(
+  __dirname,
+  "..",
+  "dist-electron",
+  "main",
+  "enterprise-im-settings.js",
+));
+const { desktopDataRootExists } = require(path.join(
+  __dirname,
+  "..",
+  "dist-electron",
+  "main",
+  "user-paths.js",
+));
+
+function createTestApp(homePath) {
+  return {
+    getPath(name) {
+      if (name === "home") {
+        return homePath;
+      }
+      throw new Error(`Unexpected app path: ${name}`);
+    },
+  };
+}
 
 function registerFirstInstallNavigationHandler(navigation) {
   const handlers = new Map();
@@ -71,6 +98,41 @@ test("ordinary starts, updates, and data-preserving reinstalls do not open boots
 
   assert.deepEqual(navigation.consume(), { shouldOpen: false });
   assert.deepEqual(navigation.consume(), { shouldOpen: false });
+});
+
+test("first-install navigation snapshot survives later Desktop data-root creation", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-first-install-bootstrap-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  for (const platform of ["darwin", "win32"]) {
+    const app = createTestApp(path.join(root, platform, "home"));
+
+    assert.equal(desktopDataRootExists(app, platform), false);
+    const navigation = createFirstInstallBootstrapNavigation(
+      !desktopDataRootExists(app, platform),
+    );
+
+    readEnterpriseImSettings(app, platform);
+    assert.equal(desktopDataRootExists(app, platform), true);
+    assert.deepEqual(navigation.consume(), { shouldOpen: true });
+    assert.deepEqual(navigation.consume(), { shouldOpen: false });
+  }
+});
+
+test("main runtime freezes first-install navigation before any startup initialization", () => {
+  const runtimeSource = fs.readFileSync(path.join(
+    __dirname,
+    "..",
+    "src",
+    "main",
+    "app",
+    "runtime.ts",
+  ), "utf8");
+
+  assert.match(
+    runtimeSource,
+    /export function createMainProcessRuntime\(\) \{\s*const isFirstDesktopInstall = !desktopDataRootExists\(app\);\s*const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\);/,
+  );
 });
 
 test("assistant IPC exposes the process-local first-install navigation consumer", async () => {
