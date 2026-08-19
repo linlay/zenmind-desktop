@@ -991,6 +991,11 @@ test("agent platform assistant bridge atomically rejects malformed chat, search,
 
       await assert.rejects(bridge.listChats(), /time_contract_violation: chats\[1\]\.updatedAt/u);
       await assert.rejects(bridge.getChat("chat-1"), /time_contract_violation: chat\.updatedAt/u);
+      if (value === undefined) {
+        assert.equal((await bridge.getChatInfo("chat-1"))?.updatedAt, undefined);
+      } else {
+        await assert.rejects(bridge.getChatInfo("chat-1"), /time_contract_violation: chatInfo\.updatedAt/u);
+      }
       await assert.rejects(bridge.searchChats({ query: "time" }), /time_contract_violation: chatSearch\.results\[1\]\.timestamp/u);
       await assert.rejects(bridge.listMemoryItems(), /time_contract_violation: memory\.records\[0\]\.updatedAt/u);
     }
@@ -1142,6 +1147,87 @@ test("agent platform assistant bridge preserves nullable optional times and epoc
     assert.equal(memory.items[0].lastReferencedAt, 0);
     assert.equal(memory.items[1].lastReferencedAt, null);
     assert.equal(memory.stats.lastReferencedAt, 0);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge reads copyable chat information without raw messages", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  const payload = {
+    chatId: "chat/1",
+    chatName: "Planning",
+    agentKey: "agent-a",
+    firstAgentKey: "agent-a",
+    firstAgentName: "Agent A",
+    teamId: "team-a",
+    source: "desktop",
+    createdAt: EPOCH_MS,
+    updatedAt: EPOCH_MS + 1,
+    lastRunId: "run-9",
+    lastRunContent: "Done",
+    events: [{ type: "run.complete" }],
+  };
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify({ code: 0, msg: "ok", data: payload }), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const detail = await bridge.getChatInfo(" chat/1 ");
+    assert.equal(requests.length, 1);
+    assert.match(requests[0].url, /\/api\/chat\?chatId=chat%2F1&includeRawMessages=false$/u);
+    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
+    assert.deepEqual(detail, {
+      chatId: "chat/1",
+      chatName: "Planning",
+      agentKey: "agent-a",
+      firstAgentKey: "agent-a",
+      firstAgentName: "Agent A",
+      teamId: "team-a",
+      source: "desktop",
+      createdAt: EPOCH_MS,
+      updatedAt: EPOCH_MS + 1,
+      lastRunId: "run-9",
+      lastRunContent: "Done",
+      rawJson: JSON.stringify(payload, null, 2),
+    });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge handles empty and missing chat information", async () => {
+  const originalFetch = globalThis.fetch;
+  let requestCount = 0;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => {
+    requestCount += 1;
+    return new Response("not found", { status: 404 });
+  };
+
+  try {
+    assert.equal(await bridge.getChatInfo("   "), null);
+    assert.equal(await bridge.getChatInfo(null), null);
+    assert.equal(requestCount, 0);
+    assert.equal(await bridge.getChatInfo("missing"), null);
+    assert.equal(requestCount, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge surfaces chat information request failures", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response("platform unavailable", { status: 503 });
+  try {
+    await assert.rejects(bridge.getChatInfo("chat-1"), /platform unavailable/u);
   } finally {
     globalThis.fetch = originalFetch;
   }

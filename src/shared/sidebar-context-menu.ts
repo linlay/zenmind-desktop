@@ -18,6 +18,7 @@ export type SidebarContextMenuActionId =
   | "chat.workPanel.close"
   | "chat.archive"
   | "chat.delete"
+  | "chat.info"
   | "web.close"
   | "web.open-in-workspace"
   | "web.open-in-window"

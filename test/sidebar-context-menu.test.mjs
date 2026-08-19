@@ -87,7 +87,8 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
     "chat.share",
     "chat.rename",
     "chat.archive",
-    "chat.delete"
+    "chat.delete",
+    "chat.info"
   ]);
   assert.equal(ids({ kind: "chat", workPanelOpen: true })[0], "chat.workPanel.close");
   assert.deepEqual(ids({
@@ -205,6 +206,10 @@ test("workspace reveal menu uses native platform terminology", () => {
     resolveSidebarContextMenuLabelKey("agent.reveal-workspace", "linux"),
     "sidebar.agent.revealWorkspaceFileManager"
   );
+  assert.equal(
+    resolveSidebarContextMenuLabelKey("chat.info", "darwin"),
+    "sidebar.chat.info"
+  );
 });
 
 test("sidebar native menu is owned by the main window and returns only the clicked action", async () => {
@@ -250,8 +255,9 @@ test("sidebar native menu is owned by the main window and returns only the click
   assert.equal(popupOptions.y, 0);
   assert.deepEqual(
     builtTemplate.filter((item) => item.type !== "separator").map((item) => item.id),
-    ["chat.workPanel.open", "chat.export", "chat.share", "chat.rename", "chat.archive", "chat.delete"]
+    ["chat.workPanel.open", "chat.export", "chat.share", "chat.rename", "chat.archive", "chat.delete", "chat.info"]
   );
+  assert.equal(builtTemplate.filter((item) => item.type === "separator").length, 3);
 
   const rejected = await invokeHandler({ sender: {} }, {
     x: 1,

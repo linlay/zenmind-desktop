@@ -419,6 +419,10 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     assistantBridge?.getChat(chatId)
   );
 
+  ipcMain.handle("assistant.getChatInfo", async (_event: any, chatId: string) =>
+    assistantBridge?.getChatInfo(chatId)
+  );
+
   ipcMain.handle("assistant.searchChats", async (_event: any, request: any) =>
     assistantBridge?.searchChats(request)
   );

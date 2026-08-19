@@ -35,6 +35,7 @@ const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
   "chat.workPanel.close": "sidebar.chat.workPanel.close",
   "chat.archive": "sidebar.chat.archive",
   "chat.delete": "sidebar.chat.delete",
+  "chat.info": "sidebar.chat.info",
   "web.close": "sidebar.website.close",
   "web.open-in-workspace": "sidebar.webapp.openInWorkspace",
   "web.open-in-window": "sidebar.webapp.openInWindow",

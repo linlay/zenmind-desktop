@@ -89,6 +89,8 @@ import {
 } from "./capabilityNavigation";
 import { ConversationShareDialog } from "./ConversationShareDialog";
 import { useConversationShareDialog } from "./useConversationShareDialog";
+import { ChatInfoDialog } from "./ChatInfoDialog";
+import { useChatInfoDialog } from "./useChatInfoDialog";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -1148,6 +1150,7 @@ export function AppSidebar({
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
     useState<AssistantChatDeleteDialogState | null>(null);
   const conversationShareDialog = useConversationShareDialog(t);
+  const chatInfoDialog = useChatInfoDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const sidebarNavRef = useRef<HTMLElement | null>(null);
@@ -2130,6 +2133,7 @@ export function AppSidebar({
         "chat.workPanel.close",
         "chat.archive",
         "chat.delete",
+        "chat.info",
       ].includes(actionId);
     }
     if (actionId === "web.close") return target.canClose;
@@ -2226,6 +2230,8 @@ export function AppSidebar({
         await handleAssistantArchiveChat(chat);
       } else if (actionId === "chat.delete") {
         await handleAssistantDeleteChat(chat);
+      } else if (actionId === "chat.info") {
+        chatInfoDialog.open(chat);
       }
       return;
     }
@@ -5980,6 +5986,12 @@ export function AppSidebar({
                 onCreate={() => void conversationShareDialog.create()}
                 onCopy={() => void conversationShareDialog.copy()}
                 onRevoke={() => void conversationShareDialog.revoke()}
+              />
+              <ChatInfoDialog
+                state={chatInfoDialog.state}
+                t={t}
+                onRetry={chatInfoDialog.retry}
+                onClose={chatInfoDialog.close}
               />
               {renderCreateProjectDialog()}
               {renderWebsiteDialog()}

@@ -197,6 +197,7 @@ const api: DesktopApi = {
     clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
+    getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),

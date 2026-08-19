@@ -337,6 +337,21 @@ export interface AssistantChatDetail {
   events: AssistantRunEvent[];
 }
 
+export interface AssistantChatInfo {
+  chatId: string;
+  chatName: string;
+  agentKey: string;
+  firstAgentKey: string;
+  firstAgentName: string;
+  teamId: string;
+  source: string;
+  createdAt?: EpochMilliseconds;
+  updatedAt?: EpochMilliseconds;
+  lastRunId: string;
+  lastRunContent: string;
+  rawJson: string;
+}
+
 export interface AssistantSettingsPublic {
   baseURL: string;
   model: string;
