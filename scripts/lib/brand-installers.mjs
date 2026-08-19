@@ -61,6 +61,7 @@ Var /GLOBAL DesktopDataRootAdoptConfirmed
 Var /GLOBAL DesktopDataParent
 Var /GLOBAL DesktopDataRootInput
 Var /GLOBAL DesktopDataRootBrowseButton
+Var /GLOBAL DesktopDataRootErrorLabel
 !endif
 
 !macro DesktopReadOwnerMarker ROOT EXPECTED RESULT
@@ -325,8 +326,33 @@ Function ${nsisPrefix}BrowseDataDirectory
   nsDialogs::SelectFolderDialog "选择 ${productName} 数据存放位置" "$DesktopDataParent"
   Pop $0
   \${if} $0 != "error"
-    StrCpy $DesktopDataParent "$0"
+    \${GetFileName} "$0" $R3
+    \${if} $R3 == "${runtimeRootDirName}"
+      StrCpy $DesktopDataParent "$0"
+    \${else}
+      StrLen $R1 "$0"
+      IntOp $R1 $R1 - 1
+      StrCpy $R2 "$0" 1 $R1
+      \${if} $R2 == "\\"
+        StrCpy $DesktopDataParent "$0${runtimeRootDirName}"
+      \${else}
+        StrCpy $DesktopDataParent "$0\\${runtimeRootDirName}"
+      \${endif}
+    \${endif}
     \${NSD_SetText} $DesktopDataRootInput "$DesktopDataParent"
+  \${endif}
+FunctionEnd
+
+Function ${nsisPrefix}ValidateDataRootInput
+  \${NSD_GetText} $DesktopDataRootInput $DesktopDataParent
+  \${GetFileName} "$DesktopDataParent" $R3
+  GetDlgItem $R4 $HWNDPARENT 1
+  \${if} $R3 == "${runtimeRootDirName}"
+    EnableWindow $R4 1
+    \${NSD_Hide} $DesktopDataRootErrorLabel
+  \${else}
+    EnableWindow $R4 0
+    \${NSD_Show} $DesktopDataRootErrorLabel
   \${endif}
 FunctionEnd
 !endif
@@ -337,24 +363,24 @@ Function ${nsisPrefix}DataDirectoryPage
     Abort
   \${endif}
   Call ${nsisPrefix}EnsureDataRootDefault
-  \${if} $DesktopDataRoot != ""
-  \${andIf} $DesktopDataRootLayoutVersion == "2"
-    \${GetParent} "$DesktopDataRoot" $DesktopDataParent
-  \${else}
-    StrCpy $DesktopDataParent "$PROFILE"
-  \${endif}
+  StrCpy $DesktopDataParent "$DesktopDataRoot"
   nsDialogs::Create 1018
   Pop $0
   \${if} $0 == "error"
     Abort
   \${endif}
-  \${NSD_CreateLabel} 0 0 100% 32u "可选择数据父目录或已有的 ${runtimeRootDirName} 数据目录；选择父目录时，${productName} 只使用其中的专属目录，卸载不会删除父目录中的其他文件。"
+  \${NSD_CreateLabel} 0 0 100% 20u "请选择完整的 ${productName} 数据目录。"
   Pop $0
+  \${NSD_CreateLabel} 0 24u 100% 12u "路径格式错误：数据目录必须以 ${runtimeRootDirName} 结尾，否则无法安装。"
+  Pop $DesktopDataRootErrorLabel
+  SetCtlColors $DesktopDataRootErrorLabel 0xD92D20 transparent
   \${NSD_CreateDirRequest} 0 40u 74% 12u "$DesktopDataParent"
   Pop $DesktopDataRootInput
+  \${NSD_OnChange} $DesktopDataRootInput ${nsisPrefix}ValidateDataRootInput
   \${NSD_CreateBrowseButton} 78% 39u 22% 14u "浏览..."
   Pop $DesktopDataRootBrowseButton
   \${NSD_OnClick} $DesktopDataRootBrowseButton ${nsisPrefix}BrowseDataDirectory
+  Call ${nsisPrefix}ValidateDataRootInput
   nsDialogs::Show
 FunctionEnd
 
@@ -364,6 +390,11 @@ Function ${nsisPrefix}DataDirectoryPageLeave
   \${NSD_GetText} $DesktopDataRootInput $DesktopDataParent
   \${if} $DesktopDataParent == ""
     MessageBox MB_ICONEXCLAMATION "请选择 ${productName} 数据存放位置。"
+    Abort
+  \${endif}
+  \${GetFileName} "$DesktopDataParent" $R3
+  \${if} $R3 != "${runtimeRootDirName}"
+    MessageBox MB_ICONEXCLAMATION "${productName} 数据目录必须以 ${runtimeRootDirName} 结尾。"
     Abort
   \${endif}
   StrCpy $R0 "$DesktopDataParent" 2
@@ -403,12 +434,7 @@ Function ${nsisPrefix}DataDirectoryPageLeave
   \${if} $R1 != 0
     Goto ${nsisPrefix}DataDirectoryUnsafe
   \${endif}
-  \${GetFileName} "$DesktopDataParent" $R3
-  \${if} $R3 == "${runtimeRootDirName}"
-    StrCpy $DesktopDataRoot "$DesktopDataParent"
-  \${else}
-    StrCpy $DesktopDataRoot "$DesktopDataParent\\${runtimeRootDirName}"
-  \${endif}
+  StrCpy $DesktopDataRoot "$DesktopDataParent"
   ClearErrors
   CreateDirectory "$DesktopDataRoot"
   IfErrors ${nsisPrefix}DataDirectoryCreateFailed
