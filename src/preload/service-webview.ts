@@ -1,7 +1,8 @@
 import { ipcRenderer, webFrame } from "electron";
 import {
   AGENT_AUTH_REQUEST_TYPE,
-  AGENT_AUTH_RESPONSE_TYPE
+  AGENT_AUTH_RESPONSE_TYPE,
+  DESKTOP_WINDOW_DRAG_QUERY_PARAM
 } from "../shared/auth-bridge";
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -61,6 +62,134 @@ const recentForwardedBridgeRequestKeys = new Map<string, number>();
 let selectionGestureActive = false;
 let selectionToolbarFrame = 0;
 let selectionToolbarSignature = "";
+
+const SERVICE_WEBVIEW_WINDOW_DRAG_HEIGHT = process.platform === "win32" ? 44 : 24;
+const SERVICE_WEBVIEW_WINDOW_DRAG_BLOCK_SELECTOR = [
+  "button",
+  "a",
+  "input",
+  "textarea",
+  "select",
+  "[role='button']",
+  "[role='link']",
+  "[contenteditable='true']",
+  "[data-no-window-drag]"
+].join(",");
+
+function readMainWindowDragEnabled() {
+  try {
+    return new URL(window.location.href).searchParams.get(DESKTOP_WINDOW_DRAG_QUERY_PARAM) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function installMainWindowDragBridge() {
+  if (!readMainWindowDragEnabled()) return;
+  let finishActiveDrag: (() => void) | null = null;
+
+  window.addEventListener("pointerdown", (event) => {
+    if (
+      !event.isTrusted ||
+      event.button !== 0 ||
+      event.defaultPrevented ||
+      event.clientY < 0 ||
+      event.clientY > SERVICE_WEBVIEW_WINDOW_DRAG_HEIGHT
+    ) {
+      return;
+    }
+    const target = event.target instanceof Element ? event.target : null;
+    if (!target || target.closest(SERVICE_WEBVIEW_WINDOW_DRAG_BLOCK_SELECTOR)) return;
+
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    finishActiveDrag?.();
+
+    const pointerId = event.pointerId;
+    let ended = false;
+    let pointerCaptureRestoreFrame: number | null = null;
+    let latestScreenPoint = { x: event.screenX, y: event.screenY };
+    const finishDrag = () => {
+      if (ended) return;
+      ended = true;
+      if (pointerCaptureRestoreFrame !== null) {
+        window.cancelAnimationFrame(pointerCaptureRestoreFrame);
+        pointerCaptureRestoreFrame = null;
+      }
+      window.removeEventListener("pointerup", finishDrag, true);
+      window.removeEventListener("pointermove", updateWindowDragOnPointerMove, true);
+      window.removeEventListener("pointercancel", finishDrag, true);
+      window.removeEventListener("mouseup", finishDragOnMouseUp, true);
+      window.removeEventListener("blur", finishDragOnBlur, true);
+      target.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
+      try {
+        if (target.hasPointerCapture(pointerId)) target.releasePointerCapture(pointerId);
+      } catch {
+        // Capture can already be gone when focus crosses the guest boundary.
+      }
+      if (finishActiveDrag === finishDrag) finishActiveDrag = null;
+      void ipcRenderer.invoke("desktopShell.endWindowDrag").catch(() => undefined);
+    };
+    const finishDragOnMouseUp = (mouseEvent: MouseEvent) => {
+      if (mouseEvent.button === 0) finishDrag();
+    };
+    const finishDragOnBlur = () => {
+      finishDrag();
+    };
+    const updateWindowDragOnPointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== pointerId || (pointerEvent.buttons & 1) === 0) return;
+      latestScreenPoint = { x: pointerEvent.screenX, y: pointerEvent.screenY };
+      ipcRenderer.send("desktopShell.updateWindowDrag", latestScreenPoint);
+    };
+    const finishDragOnLostPointerCapture: EventListener = (captureEvent) => {
+      const pointerEvent = captureEvent as PointerEvent;
+      if (pointerEvent.buttons !== 0) {
+        if (pointerCaptureRestoreFrame !== null) {
+          window.cancelAnimationFrame(pointerCaptureRestoreFrame);
+        }
+        pointerCaptureRestoreFrame = window.requestAnimationFrame(() => {
+          pointerCaptureRestoreFrame = null;
+          if (ended) return;
+          try {
+            target.setPointerCapture(pointerId);
+          } catch {
+            // Window release listeners and the main-process timeout remain as fallbacks.
+          }
+        });
+        return;
+      }
+      finishDrag();
+    };
+
+    finishActiveDrag = finishDrag;
+    window.addEventListener("pointerup", finishDrag, true);
+    window.addEventListener("pointermove", updateWindowDragOnPointerMove, true);
+    window.addEventListener("pointercancel", finishDrag, true);
+    window.addEventListener("mouseup", finishDragOnMouseUp, true);
+    window.addEventListener("blur", finishDragOnBlur, true);
+    target.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
+    try {
+      target.setPointerCapture(pointerId);
+    } catch {
+      // The main-process cursor loop can continue without guest capture.
+    }
+
+    void ipcRenderer.invoke("desktopShell.beginWindowDrag", {
+      x: event.screenX,
+      y: event.screenY
+    }).then((result: { ok?: boolean } | undefined) => {
+      if (!result?.ok) {
+        finishDrag();
+        return;
+      }
+      if (!ended) ipcRenderer.send("desktopShell.updateWindowDrag", latestScreenPoint);
+    }).catch(finishDrag);
+  }, true);
+
+  window.addEventListener("pagehide", () => finishActiveDrag?.(), { once: true });
+}
+
+installMainWindowDragBridge();
 
 const SERVICE_WEBVIEW_MODAL_MASK_SELECTOR = ".ant-modal-mask";
 let modalOverlayFrame = 0;

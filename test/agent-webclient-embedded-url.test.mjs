@@ -20,7 +20,7 @@ const {
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
 
-function buildAgentWebclientUrl(surfaceId, embedPath) {
+function buildAgentWebclientUrl(surfaceId, embedPath, allowMainWindowDrag = false) {
   return new URL(buildServiceWebviewUrl(
     "agent-webclient",
     "http://127.0.0.1:7080/",
@@ -28,10 +28,26 @@ function buildAgentWebclientUrl(surfaceId, embedPath) {
       hostTheme: "light",
       hostLocale: "en-US",
       embedPath,
-      wsSource: resolveAgentWebclientWsSource(surfaceId, embedPath)
+      wsSource: resolveAgentWebclientWsSource(surfaceId, embedPath),
+      allowMainWindowDrag
     }
   ));
 }
+
+test("main service webview URL opts into the guest window drag bridge", () => {
+  const mainSurface = buildAgentWebclientUrl(
+    "main-chat",
+    "/agent/zenmi?chatId=chat-1",
+    true
+  );
+  const nestedSurface = buildAgentWebclientUrl(
+    "main-chat",
+    "/agent/zenmi?chatId=chat-1"
+  );
+
+  assert.equal(mainSurface.searchParams.get("desktopWindowDrag"), "1");
+  assert.equal(nestedSurface.searchParams.has("desktopWindowDrag"), false);
+});
 
 test("agent chat embedded URL keeps chat WebSocket source without auth context", () => {
   const url = buildAgentWebclientUrl(
@@ -109,7 +125,7 @@ test("overview route uses the chat identity as its only dynamic path segment", (
 
 test("main chat route comparison ignores host presentation params and their order", () => {
   const current =
-    "http://127.0.0.1:19011/agent/cutej?theme=dark&lang=zh-CN&wsSource=desktop-chat&chatId=chat-1";
+    "http://127.0.0.1:19011/agent/cutej?theme=dark&lang=zh-CN&wsSource=desktop-chat&desktopWindowDrag=1&chatId=chat-1";
   const target =
     "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&wsSource=desktop-chat&theme=light&lang=en-US";
 
@@ -142,16 +158,17 @@ test("main chat route comparison ignores host presentation params and their orde
 
 test("host presentation comparison detects every host parameter change", () => {
   const base =
-    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-chat";
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-chat&desktopWindowDrag=1";
   const reorderedBase =
-    "http://127.0.0.1:19011/agent/cutej?wsSource=desktop-chat&lang=zh-CN&hostTheme=light&theme=light&chatId=chat-1";
+    "http://127.0.0.1:19011/agent/cutej?desktopWindowDrag=1&wsSource=desktop-chat&lang=zh-CN&hostTheme=light&theme=light&chatId=chat-1";
 
   assert.equal(areAgentWebclientHostRouteParamsEqual(base, reorderedBase), true);
   for (const changed of [
     "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=dark&hostTheme=light&lang=zh-CN&wsSource=desktop-chat",
     "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=dark&lang=zh-CN&wsSource=desktop-chat",
     "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=en-US&wsSource=desktop-chat",
-    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-management"
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-management&desktopWindowDrag=1",
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-chat"
   ]) {
     assert.equal(areAgentWebclientHostRouteParamsEqual(base, changed), false);
   }

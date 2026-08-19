@@ -143,6 +143,7 @@ export function ServiceWebviewSurfaceHost({
         <ServiceWebviewSurface
           key={serviceId}
           active={activeServiceId === serviceId}
+          allowMainWindowDrag
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={shouldLoadInitialServiceUrlDirectly(serviceId)}
           serviceId={serviceId}
@@ -152,6 +153,7 @@ export function ServiceWebviewSurfaceHost({
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
+          allowMainWindowDrag
           embedPath={agentChatRoute?.embedPath}
           focusRequestId={agentChatFocusRequestId}
           hostTheme={hostTheme}
@@ -169,6 +171,7 @@ export function ServiceWebviewSurfaceHost({
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_COPILOT_SURFACE_ID}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "copilot"}
+          allowMainWindowDrag
           embedPath={copilotRoute?.embedPath}
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(copilotRoute?.embedPath)}
@@ -181,6 +184,7 @@ export function ServiceWebviewSurfaceHost({
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_SERVICE_ID}
           active
+          allowMainWindowDrag
           embedPath={activeAgentWebclientRouteKind === "management" ? activeAgentWebclientRoute?.embedPath : undefined}
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={activeAgentWebclientRouteKind === "management" && Boolean(activeAgentWebclientRoute?.embedPath)}

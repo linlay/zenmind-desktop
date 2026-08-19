@@ -47,7 +47,10 @@ type BuildServiceWebviewUrlOptions = {
   baseUrl?: string;
   embedPath?: string;
   wsSource?: string;
+  allowMainWindowDrag?: boolean;
 };
+
+export const DESKTOP_WINDOW_DRAG_QUERY_PARAM = "desktopWindowDrag";
 
 function getRuntimeUrlBase() {
   const location = (globalThis as { location?: { href?: string } }).location;
@@ -153,6 +156,9 @@ export function buildServiceWebviewUrl(
     if (options.wsSource?.trim()) {
       url.searchParams.set("wsSource", options.wsSource.trim());
     }
+  }
+  if (options.allowMainWindowDrag) {
+    url.searchParams.set(DESKTOP_WINDOW_DRAG_QUERY_PARAM, "1");
   }
   return url.toString();
 }

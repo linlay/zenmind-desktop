@@ -103,6 +103,7 @@ type ServiceWebviewSurfaceProps = {
   focusRequestId?: number | null;
   onFocusRequestHandled?: (requestId: number) => void;
   onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
+  allowMainWindowDrag?: boolean;
 };
 
 type EmbeddedWebScriptResult =
@@ -470,6 +471,7 @@ export function ServiceWebviewSurface({
   focusRequestId,
   onFocusRequestHandled,
   onCurrentUrlChange,
+  allowMainWindowDrag,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -760,6 +762,7 @@ export function ServiceWebviewSurface({
           : undefined,
       embedPath: effectiveEmbedPath,
       wsSource,
+      allowMainWindowDrag,
       baseUrl: service?.healthMeta.port
         ? `http://127.0.0.1:${service.healthMeta.port}`
         : undefined,
@@ -773,6 +776,7 @@ export function ServiceWebviewSurface({
     service?.id,
     webUrl,
     wsSource,
+    allowMainWindowDrag,
   ]);
 
   useEffect(() => {

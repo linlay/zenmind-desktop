@@ -8,6 +8,7 @@ import {
   KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
 } from "./surface-identity";
+import { DESKTOP_WINDOW_DRAG_QUERY_PARAM } from "./auth-bridge";
 
 export const AGENT_WEBCLIENT_SERVICE_ID = "agent-webclient";
 export const AGENT_WEBCLIENT_TARGET_PATH = "/agents";
@@ -133,7 +134,8 @@ const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
   "theme",
   "hostTheme",
   "lang",
-  "wsSource"
+  "wsSource",
+  DESKTOP_WINDOW_DRAG_QUERY_PARAM
 ]);
 
 function normalizeRouteSearch(

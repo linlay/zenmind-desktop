@@ -5851,6 +5851,58 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.doesNotMatch(mainProcess, /ipcMain\.handle\("windowDrag\.begin"/);
 });
 
+test("main service webviews bridge trusted top-lane drags from the guest preload", () => {
+  const embeddedSurfaceHosts = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx"
+  );
+  const serviceWebviewSurface = readSourceFile(
+    "src",
+    "renderer",
+    "service-webview",
+    "ServiceWebviewSurface.tsx"
+  );
+  const workPanelHost = readSourceFile("src", "renderer", "work-panel", "WorkPanelHost.tsx");
+  const copilotDock = readSourceFile(
+    "src",
+    "renderer",
+    "copilot",
+    "sidebar-copilot",
+    "AgentWebclientCopilotDock.tsx"
+  );
+  const projectFloatingWebviews = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "project",
+    "ProjectFloatingWebviews.tsx"
+  );
+  const serviceWebviewPreload = readSourceFile("src", "preload", "service-webview.ts");
+  const authBridge = readSourceFile("src", "shared", "auth-bridge.ts");
+
+  assert.match(authBridge, /DESKTOP_WINDOW_DRAG_QUERY_PARAM = "desktopWindowDrag"/);
+  assert.match(authBridge, /allowMainWindowDrag\?: boolean/);
+  assert.match(serviceWebviewSurface, /allowMainWindowDrag\?: boolean/);
+  assert.match(serviceWebviewSurface, /wsSource,[\s\S]*?allowMainWindowDrag,[\s\S]*?baseUrl:/);
+  assert.match(embeddedSurfaceHosts, /<ServiceWebviewSurface[\s\S]*?allowMainWindowDrag/);
+  assert.doesNotMatch(workPanelHost, /allowMainWindowDrag/);
+  assert.doesNotMatch(copilotDock, /allowMainWindowDrag/);
+  assert.doesNotMatch(projectFloatingWebviews, /allowMainWindowDrag/);
+  assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_WINDOW_DRAG_HEIGHT = process\.platform === "win32" \? 44 : 24/);
+  assert.match(serviceWebviewPreload, /event\.isTrusted/);
+  assert.match(serviceWebviewPreload, /event\.clientY > SERVICE_WEBVIEW_WINDOW_DRAG_HEIGHT/);
+  assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_WINDOW_DRAG_BLOCK_SELECTOR/);
+  assert.match(serviceWebviewPreload, /event\.stopImmediatePropagation\(\)/);
+  assert.match(serviceWebviewPreload, /ipcRenderer\.invoke\("desktopShell\.beginWindowDrag"/);
+  assert.match(serviceWebviewPreload, /ipcRenderer\.send\("desktopShell\.updateWindowDrag", latestScreenPoint\)/);
+  assert.match(serviceWebviewPreload, /ipcRenderer\.invoke\("desktopShell\.endWindowDrag"\)/);
+  assert.match(serviceWebviewPreload, /pointerEvent\.buttons !== 0[\s\S]*?requestAnimationFrame[\s\S]*?target\.setPointerCapture\(pointerId\)/);
+  assert.match(readSourceFile("src", "main", "ipc", "shell-handlers.ts"), /ipcMain\.on\("desktopShell\.updateWindowDrag"[\s\S]*?updateWindowDragPosition\(resolveScreenPoint\(point\)\)/);
+});
+
 test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const appState = readSourceFile("src", "main", "app-state.ts");

@@ -302,7 +302,11 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       return;
     }
 
-    const currentPoint = screen.getCursorScreenPoint();
+    updateWindowDragPosition(screen.getCursorScreenPoint());
+  }
+
+  function updateWindowDragPosition(currentPoint: { x: number; y: number }) {
+    if (!windowDragState) return;
     const deltaX = currentPoint.x - windowDragState.lastPoint.x;
     const deltaY = currentPoint.y - windowDragState.lastPoint.y;
     windowDragState.lastPoint = currentPoint;
@@ -486,6 +490,13 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   });
 
   ipcMain.handle("desktopShell.endWindowDrag", async () => endWindowDrag());
+
+  ipcMain.on("desktopShell.updateWindowDrag", (event: IpcMainEvent, point: unknown) => {
+    if (!windowDragState) return;
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? options.mainWindow;
+    if (!ownerWindow || ownerWindow !== windowDragState.ownerWindow) return;
+    updateWindowDragPosition(resolveScreenPoint(point));
+  });
 
   ipcMain.on("desktopShell.setGlobalSearchOverlayVisible", (_event: IpcMainEvent, visible: unknown) => {
     options.setGlobalSearchOverlayVisible?.(visible === true);
