@@ -59,7 +59,7 @@ test("macOS packaged app icon uses a content-addressed filename before signing",
   assert.doesNotThrow(() => verifyMacPackageBranding(fixture.appPath, brandingOptions));
 
   fs.rmSync(path.join(fixture.resourcesRoot, "scripts", "webapp-tooling.mjs"));
-  assert.throws(() => verifyMacPackageBranding(fixture.appPath), /WebApp Tooling is missing or empty/u);
+  assert.throws(() => verifyMacPackageBranding(fixture.appPath), /WebApp Tooling is missing/u);
   fs.writeFileSync(path.join(fixture.resourcesRoot, "scripts", "webapp-tooling.mjs"), "#!/usr/bin/env node\n");
 
   fs.appendFileSync(path.join(fixture.resourcesRoot, "brand-mark.png"), "tampered");

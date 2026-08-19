@@ -4,11 +4,18 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
+import { createRequire } from "node:module";
 import { generateWebappToolingBundle } from "../scripts/generate-webapp-tooling-bundle.mjs";
 import { loadBrandConfig } from "../scripts/lib/brand-config.mjs";
 import { electronBuilderConfig } from "../scripts/lib/brand-packaging.mjs";
 
 const projectRoot = process.cwd();
+const require = createRequire(import.meta.url);
+const {
+  WEBAPP_TOOLING_RESOURCE_RELATIVE_PATH,
+  resolvePackagedWebappToolingPath,
+  verifyPackagedWebappTooling
+} = require("../scripts/lib/webapp-tooling-resource.js");
 
 function runTooling(toolingPath, args) {
   const result = spawnSync(process.execPath, [toolingPath, ...args], { encoding: "utf8" });
@@ -48,7 +55,7 @@ test("electron-builder publishes WebApp tooling as a directly executable extra r
     assert.ok(!config.asarUnpack.includes("scripts/webapp-tooling.mjs"));
     assert.ok(config.extraResources.some((item) => (
       item.from === `build/brands/cutej/app/${targetKey}/scripts/webapp-tooling.mjs` &&
-      item.to === "scripts/webapp-tooling.mjs"
+      item.to === WEBAPP_TOOLING_RESOURCE_RELATIVE_PATH
     )));
   }
 });
@@ -62,4 +69,23 @@ test("production Tooling has stable macOS and Windows resource paths", () => {
     path.win32.join("C:\\Program Files\\CuteJ\\resources", "scripts", "webapp-tooling.mjs"),
     "C:\\Program Files\\CuteJ\\resources\\scripts\\webapp-tooling.mjs"
   );
+});
+
+test("packaged Tooling release gate rejects missing and empty resources", (t) => {
+  const resourcesRoot = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-tooling-resource-"));
+  t.after(() => fs.rmSync(resourcesRoot, { recursive: true, force: true }));
+  const toolingPath = resolvePackagedWebappToolingPath(resourcesRoot);
+
+  assert.throws(
+    () => verifyPackagedWebappTooling(resourcesRoot),
+    /packaged WebApp Tooling is missing/u
+  );
+  fs.mkdirSync(path.dirname(toolingPath), { recursive: true });
+  fs.writeFileSync(toolingPath, "");
+  assert.throws(
+    () => verifyPackagedWebappTooling(resourcesRoot),
+    /packaged WebApp Tooling is not a non-empty file/u
+  );
+  fs.writeFileSync(toolingPath, "#!/usr/bin/env node\n");
+  assert.equal(verifyPackagedWebappTooling(resourcesRoot), toolingPath);
 });
