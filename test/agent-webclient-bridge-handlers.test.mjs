@@ -328,6 +328,76 @@ test("Overview attaches to the Main Chat visible Run locally without another ups
   });
 });
 
+test("Overview seq_expired errors retain retryability and replay-window diagnostics", async () => {
+  const overviewTarget = createTarget(148, {
+    surfaceId: "overview:chat-expired",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-expired",
+    pageRoute: "/overview/chat-expired",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-expired",
+  });
+  const runtime = createRegistration(new Map([[148, overviewTarget]]), async () => {
+    throw new Error("Overview must not open an upstream stream");
+  });
+  runtime.broker.beginForwardedVisibleRun({
+    sourceId: "main-chat-source",
+    chatId: "chat-expired",
+    runId: "run-expired",
+    owner: { kind: "agent", agentKey: "agent-1" },
+  });
+  const details = {
+    requestedLastSeq: 0,
+    firstAvailableSeq: 3,
+    latestSeq: 2_002,
+    replayEventCount: 2_000,
+    replayBytes: 123_456,
+  };
+  runtime.broker.subscribeVisibleRun = () => {
+    throw Object.assign(
+      new Error("seq_expired: requested Run cursor is outside the local replay window"),
+      { name: "seq_expired", retryable: true, details },
+    );
+  };
+
+  const overview = createSender(148, overviewTarget.currentUrl);
+  await openSocket(runtime, overview, "socket-overview-expired");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
+    socketId: "socket-overview-expired",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-expired",
+      payload: { runId: "run-expired", agentKey: "agent-1", lastSeq: 0 },
+    }),
+  });
+  await flush();
+
+  assert.deepEqual(sentFrames(overview).at(-1), {
+    frame: "error",
+    id: "attach-overview-expired",
+    type: "seq_expired",
+    code: 400,
+    status: 400,
+    msg: "seq_expired: requested Run cursor is outside the local replay window",
+    data: {
+      code: "seq_expired",
+      message: "seq_expired: requested Run cursor is outside the local replay window",
+      retryable: true,
+      details,
+      error: {
+        code: "seq_expired",
+        message: "seq_expired: requested Run cursor is outside the local replay window",
+        retryable: true,
+        details,
+      },
+    },
+  });
+});
+
 test("a restored Main Chat attach exposes its visible Run before the first upstream event", async () => {
   const mainTarget = createTarget(49, {
     ownerChatId: "chat-restored",

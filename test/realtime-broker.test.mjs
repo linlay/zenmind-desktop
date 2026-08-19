@@ -351,13 +351,25 @@ test("RealtimeBroker reports seq_expired instead of fabricating an evicted repla
   }
   await nextTurn();
   subscription.unsubscribe();
+  let expiredError;
   assert.throws(() => broker.subscribeRun({
     baseUrl: "http://127.0.0.1:11789", token, runId: "run-replay", chatId: "chat-replay", lastSeq: 0,
     kind: "surface", consumerId: "late", onEvent: () => {},
-  }), /seq_expired/);
+  }), (error) => {
+    expiredError = error;
+    return /seq_expired/.test(error.message);
+  });
   const replay = broker.getDiagnostics().replay.find((entry) => entry.runId === "run-replay");
   assert.equal(replay.eventCount, 2_000);
   assert.equal(broker.getDiagnostics().replayEvictionCount, 2);
+  assert.equal(expiredError.retryable, true);
+  assert.deepEqual(expiredError.details, {
+    requestedLastSeq: 0,
+    firstAvailableSeq: 3,
+    latestSeq: 2_002,
+    replayEventCount: 2_000,
+    replayBytes: replay.bytes,
+  });
 });
 
 test("RealtimeBroker restores an accepted Run with attach(lastSeq) and never resends query", async (t) => {

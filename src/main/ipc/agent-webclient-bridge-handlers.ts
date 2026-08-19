@@ -151,11 +151,28 @@ function socketKey(senderId: number, socketId: string) {
 
 type PlatformFrameRecord = Record<string, unknown>;
 
-function frameError(id: string, code: AgentWebclientBridgeErrorCode, message: string): PlatformFrameRecord {
+type FrameErrorOptions = {
+  retryable?: boolean;
+  details?: Record<string, unknown>;
+};
+
+function frameError(
+  id: string,
+  code: AgentWebclientBridgeErrorCode,
+  message: string,
+  options: FrameErrorOptions = {},
+): PlatformFrameRecord {
   const status = code === "capability_denied" ? 403
     : code === "duplicate_id" ? 409
       : code === "connection_unavailable" ? 503
         : 400;
+  const structuredError = {
+    code,
+    message,
+    ...(options.retryable === undefined ? {} : { retryable: options.retryable }),
+    ...(options.details ? { details: options.details } : {}),
+  };
+  const hasMetadata = options.retryable !== undefined || Boolean(options.details);
   return {
     frame: "error",
     id,
@@ -163,7 +180,17 @@ function frameError(id: string, code: AgentWebclientBridgeErrorCode, message: st
     code: status,
     status,
     msg: message,
-    data: { code, message },
+    data: hasMetadata
+      ? { ...structuredError, error: structuredError }
+      : structuredError,
+  };
+}
+
+function frameErrorOptions(error: unknown): FrameErrorOptions {
+  if (!isPlainBridgeRecord(error)) return {};
+  return {
+    ...(typeof error.retryable === "boolean" ? { retryable: error.retryable } : {}),
+    ...(isPlainBridgeRecord(error.details) ? { details: error.details } : {}),
   };
 }
 
@@ -675,7 +702,12 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           onError: (error) => {
             binding.unsubscribe?.();
             binding.unsubscribe = null;
-            sendFrame(socket, frameError(binding.localId, bridgeErrorCode(error), error.message));
+            sendFrame(socket, frameError(
+              binding.localId,
+              bridgeErrorCode(error),
+              error.message,
+              frameErrorOptions(error),
+            ));
             socket.requestIds.delete(binding.localId);
             socket.streams.delete(binding.localId);
           },
@@ -689,6 +721,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           frame.id,
           bridgeErrorCode(error),
           error instanceof Error ? error.message : String(error),
+          frameErrorOptions(error),
         ));
       }
       return;

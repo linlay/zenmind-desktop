@@ -212,10 +212,17 @@ function isTerminalEvent(type: string) {
   ].includes(type);
 }
 
-function brokerError(code: string, message: string) {
+function brokerError(
+  code: string,
+  message: string,
+  options: { retryable?: boolean; details?: Record<string, unknown> } = {},
+) {
   const error = new Error(`${code}: ${message}`);
   error.name = code;
-  return error;
+  return Object.assign(error, {
+    ...(options.retryable === undefined ? {} : { retryable: options.retryable }),
+    ...(options.details ? { details: options.details } : {}),
+  });
 }
 
 function frameError(frame: AgentPlatformRealtimeFrame) {
@@ -1254,7 +1261,20 @@ export class RealtimeBroker {
   private replayToSubscriber(run: BrokerRun, subscription: RunSubscription) {
     const firstSeq = run.replay.find((entry) => entry.seq !== null)?.seq;
     if (firstSeq !== undefined && firstSeq !== null && subscription.lastSeq + 1 < firstSeq) {
-      throw brokerError("seq_expired", "requested Run cursor is outside the local replay window");
+      throw brokerError(
+        "seq_expired",
+        "requested Run cursor is outside the local replay window",
+        {
+          retryable: true,
+          details: {
+            requestedLastSeq: subscription.lastSeq,
+            firstAvailableSeq: firstSeq,
+            latestSeq: run.lastSeq,
+            replayEventCount: run.replay.length,
+            replayBytes: run.replayBytes,
+          },
+        },
+      );
     }
     for (const entry of run.replay) {
       if (entry.seq !== null && entry.seq <= subscription.lastSeq) continue;
