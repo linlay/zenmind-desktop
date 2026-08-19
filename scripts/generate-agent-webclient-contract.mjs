@@ -20,7 +20,9 @@ const generated = [
 ].join("\n");
 
 if (checkOnly) {
-  const current = fs.existsSync(outputPath) ? fs.readFileSync(outputPath, "utf8") : "";
+  const current = fs.existsSync(outputPath)
+    ? fs.readFileSync(outputPath, "utf8").replace(/\r\n/gu, "\n")
+    : "";
   if (current !== generated) {
     throw new Error(`generated Agent WebClient bridge contract is stale: ${path.relative(repoRoot, outputPath)}`);
   }
