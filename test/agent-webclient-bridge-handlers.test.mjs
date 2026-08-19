@@ -58,6 +58,8 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
   const dispatched = [];
   const visibleRuns = new Map();
   const visibleSubscriptions = new Map();
+  const runReadiness = new Map();
+  const canonicalSyncs = [];
   let visibleBinding = null;
   const calls = {
     ensureConnected: 0,
@@ -87,6 +89,16 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       visibleRuns.set(input.runId, run);
       visibleBinding = { ...input };
     },
+    registerForwardedRunActionReadiness: (input) => {
+      runReadiness.set(input.runId, input);
+    },
+    releaseForwardedRunActionReadiness: (sourceId) => {
+      const readiness = [...runReadiness.values()].find((item) => item.sourceId === sourceId);
+      if (!readiness) return false;
+      readiness.active = false;
+      return true;
+    },
+    getVisibleBinding: () => visibleBinding,
     appendForwardedVisibleRunEvent: ({ sourceId, runId, event }) => {
       const run = visibleRuns.get(runId);
       if (!run || run.sourceId !== sourceId) throw new Error("visible source unavailable");
@@ -160,6 +172,18 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       calls.issueAccessToken += 1;
       return { ok: true, token: "main-only-token", message: "" };
     },
+    syncCanonicalChat: overrides.syncCanonicalChat ?? (async (_ownerWebContentsId, input) => {
+      canonicalSyncs.push(input);
+      const target = targets.get(input.guestWebContentsId);
+      if (target) {
+        target.ownerChatId = input.chatId;
+        const url = new URL(target.currentUrl);
+        url.searchParams.delete("newChat");
+        url.searchParams.set("chatId", input.chatId);
+        target.currentUrl = url.toString();
+      }
+      return { requestId: `sync-${canonicalSyncs.length}`, ok: true };
+    }),
     dispatchWorkPanel: async (input) => {
       dispatched.push(input);
       return { ok: true, workspaceId: "workspace-1" };
@@ -167,7 +191,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
   });
   return {
     broker, calls, cleaned, dispatched, handlers, listeners, pushSubscribers,
-    registration, traces, visibleRuns, visibleSubscriptions,
+    canonicalSyncs, registration, runReadiness, traces, visibleRuns, visibleSubscriptions,
   };
 }
 
@@ -196,7 +220,10 @@ function sentFrames(sender) {
 }
 
 test("raw Frame Port forwards each Platform stream frame immediately and unchanged", async () => {
-  const target = createTarget(41);
+  const target = createTarget(41, {
+    ownerChatId: "chat-1",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-41?chatId=chat-1",
+  });
   const targets = new Map([[41, target]]);
   const incoming = [
     { frame: "stream", id: "wss-1", streamId: "s-1", event: { seq: 1, type: "run.start", chatId: "chat-1", runId: "run-1", agentKey: "agent-1", timestamp: 1_786_890_000_001 } },
@@ -465,6 +492,79 @@ test("a restored Main Chat attach exposes its visible Run before the first upstr
   assert.deepEqual(
     sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
     [13],
+  );
+});
+
+test("Overview waits for a new Main Chat query to publish its canonical Run identity", async () => {
+  const mainTarget = createTarget(51, {
+    ownerChatId: "chat-racing",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-racing",
+  });
+  const overviewTarget = createTarget(52, {
+    surfaceId: "overview:chat-racing",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-racing",
+    pageRoute: "/overview/chat-racing",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-racing",
+  });
+  let deliverMain = () => undefined;
+  const forwarded = [];
+  const runtime = createRegistration(
+    new Map([[51, mainTarget], [52, overviewTarget]]),
+    async (input) => {
+      forwarded.push(input.type);
+      if (input.type === "/api/query") deliverMain = input.onFrame;
+    },
+  );
+  const main = createSender(51, mainTarget.currentUrl);
+  const overview = createSender(52, overviewTarget.currentUrl);
+  await openSocket(runtime, main, "socket-main-racing");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: main }, {
+    socketId: "socket-main-racing",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-main-racing",
+      payload: { requestId: "req-racing", message: "hello", agentKey: "agent-1" },
+    }),
+  });
+  await flush();
+
+  await openSocket(runtime, overview, "socket-overview-racing");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
+    socketId: "socket-overview-racing",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-racing",
+      payload: { runId: "run-racing", agentKey: "agent-1", lastSeq: 0 },
+    }),
+  });
+  await flush();
+  assert.equal(sentFrames(overview).some((frame) => frame.frame === "error"), false);
+
+  deliverMain({
+    frame: "stream",
+    id: "query-main-racing",
+    event: {
+      type: "run.start",
+      timestamp: 1_786_890_300_001,
+      seq: 1,
+      chatId: "chat-racing",
+      runId: "run-racing",
+      agentKey: "agent-1",
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.deepEqual(forwarded, ["/api/query"]);
+  assert.deepEqual(
+    sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
+    [1],
   );
 });
 
@@ -811,7 +911,13 @@ test("Frame Port cancels a pending surface wait when the guest is destroyed", as
 });
 
 test("same-surface route loading does not destroy the logical socket or truncate its stream", async () => {
-  const target = createTarget(43);
+  const target = createTarget(43, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-43?newChat=new-43",
+  });
   let deliverFrame = () => undefined;
   const runtime = createRegistration(new Map([[43, target]]), async ({ onFrame }) => {
     deliverFrame = onFrame;
@@ -835,6 +941,9 @@ test("same-surface route loading does not destroy the logical socket or truncate
     streamId: "stream-route-promotion",
     event: { seq: 1, type: "chat.start", chatId: "chat-canonical", timestamp: 1_786_898_607_643 },
   });
+  assert.equal(runtime.canonicalSyncs.length, 1);
+  assert.equal(runtime.canonicalSyncs[0].chatId, "chat-canonical");
+  assert.equal(target.ownerChatId, "chat-canonical");
   sender.emit("did-start-loading");
   deliverFrame({
     frame: "stream",
@@ -864,6 +973,263 @@ test("same-surface route loading does not destroy the logical socket or truncate
     sender.messages.some(({ message }) => message.type === "close" && message.reason === "surface destroyed"),
     false,
   );
+});
+
+test("new Main Chat run.start registers WorkPanel readiness against chat.start synchronization", async () => {
+  const target = createTarget(73, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-73?newChat=nonce-73",
+  });
+  let deliverFrame = () => undefined;
+  let finishSync;
+  const syncResult = new Promise((resolve) => { finishSync = resolve; });
+  const runtime = createRegistration(
+    new Map([[73, target]]),
+    async ({ onFrame }) => { deliverFrame = onFrame; },
+    { syncCanonicalChat: async () => syncResult },
+  );
+  const sender = createSender(73, target.currentUrl);
+  await openSocket(runtime, sender, "socket-canonical-ready");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-canonical-ready",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-canonical-ready",
+      payload: { requestId: "req-73", message: "open", agentKey: "agent-73" },
+    }),
+  });
+  await flush();
+  deliverFrame({
+    frame: "stream",
+    id: "query-canonical-ready",
+    event: {
+      seq: 1,
+      payload: {
+        type: "chat.start",
+        timestamp: 1_786_898_700_001,
+        chatId: "chat-73",
+      },
+    },
+  });
+  assert.equal(runtime.runReadiness.size, 0);
+  deliverFrame({
+    frame: "stream",
+    id: "query-canonical-ready",
+    event: {
+      type: "run.start",
+      timestamp: 1_786_898_700_002,
+      seq: 2,
+      chatId: "chat-73",
+      runId: "run-73",
+      agentKey: "agent-73",
+    },
+  });
+  const readiness = runtime.runReadiness.get("run-73");
+  assert.ok(readiness);
+  let ready = false;
+  void readiness.ready.then(() => { ready = true; });
+  await flush();
+  assert.equal(ready, false);
+  finishSync({ requestId: "sync-73", ok: true });
+  await readiness.ready;
+  assert.equal(ready, true);
+});
+
+test("attachment-prebound new Chat synchronizes from the matching canonical request.query", async () => {
+  const target = createTarget(76, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-76?newChat=nonce-76",
+  });
+  let deliverFrame = () => undefined;
+  const runtime = createRegistration(new Map([[76, target]]), async ({ onFrame }) => {
+    deliverFrame = onFrame;
+  });
+  const sender = createSender(76, target.currentUrl);
+  await openSocket(runtime, sender, "socket-attachment-prebound");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-attachment-prebound",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-attachment-prebound",
+      payload: {
+        requestId: "req-76",
+        message: "edit this attachment",
+        agentKey: "agent-76",
+        chatId: "chat-76",
+        references: [{ id: "ref-76", type: "file", name: "form.docx" }],
+      },
+    }),
+  });
+  await flush();
+  deliverFrame({
+    frame: "stream",
+    id: "query-attachment-prebound",
+    event: {
+      type: "request.query",
+      timestamp: 1_786_898_700_010,
+      seq: 1,
+      requestId: "req-76",
+      chatId: "chat-76",
+      runId: "run-76",
+      agentKey: "agent-76",
+    },
+  });
+  assert.equal(runtime.canonicalSyncs.length, 1);
+  assert.equal(runtime.canonicalSyncs[0].chatId, "chat-76");
+  deliverFrame({
+    frame: "stream",
+    id: "query-attachment-prebound",
+    event: {
+      type: "run.start",
+      timestamp: 1_786_898_700_011,
+      seq: 2,
+      chatId: "chat-76",
+      runId: "run-76",
+      agentKey: "agent-76",
+    },
+  });
+  await runtime.runReadiness.get("run-76").ready;
+  assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
+test("canonical Main Chat owner permits continuation while the guest URL still has newChat", async () => {
+  const target = createTarget(77, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: "chat-77",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-77?newChat=stale-nonce-77",
+  });
+  let deliverFrame = () => undefined;
+  const runtime = createRegistration(new Map([[77, target]]), async ({ onFrame }) => {
+    deliverFrame = onFrame;
+  });
+  const sender = createSender(77, target.currentUrl);
+  await openSocket(runtime, sender, "socket-canonical-continuation");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-canonical-continuation",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-canonical-continuation",
+      payload: {
+        requestId: "req-77",
+        message: "continue",
+        agentKey: "agent-77",
+        chatId: "chat-77",
+      },
+    }),
+  });
+  await flush();
+  deliverFrame({
+    frame: "stream",
+    id: "query-canonical-continuation",
+    event: {
+      type: "run.start",
+      timestamp: 1_786_898_700_012,
+      seq: 1,
+      chatId: "chat-77",
+      runId: "run-77",
+      agentKey: "agent-77",
+    },
+  });
+  await runtime.runReadiness.get("run-77").ready;
+  assert.equal(runtime.canonicalSyncs.length, 0);
+  assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
+test("new Main Chat run.start without chat.start fails closed", async () => {
+  const target = createTarget(74, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-74?newChat=nonce-74",
+  });
+  let deliverFrame = () => undefined;
+  const runtime = createRegistration(new Map([[74, target]]), async ({ onFrame }) => {
+    deliverFrame = onFrame;
+  });
+  const sender = createSender(74, target.currentUrl);
+  await openSocket(runtime, sender, "socket-missing-chat-start");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-missing-chat-start",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-missing-chat-start",
+      payload: { requestId: "req-74", message: "open", agentKey: "agent-74" },
+    }),
+  });
+  await flush();
+  deliverFrame({
+    frame: "stream",
+    id: "query-missing-chat-start",
+    event: {
+      type: "run.start",
+      timestamp: 1_786_898_700_003,
+      seq: 1,
+      chatId: "chat-74",
+      runId: "run-74",
+      agentKey: "agent-74",
+    },
+  });
+  assert.match(sentFrames(sender).at(-1).msg, /requires chat\.start or a matching canonical request\.query/u);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+  await assert.rejects(runtime.runReadiness.get("run-74").ready, /requires chat\.start or a matching canonical request\.query/u);
+});
+
+test("new Main Chat rejects conflicting chat.start and run.start identities", async () => {
+  const target = createTarget(75, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-75?newChat=nonce-75",
+  });
+  let deliverFrame = () => undefined;
+  const runtime = createRegistration(new Map([[75, target]]), async ({ onFrame }) => {
+    deliverFrame = onFrame;
+  });
+  const sender = createSender(75, target.currentUrl);
+  await openSocket(runtime, sender, "socket-conflicting-chat");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-conflicting-chat",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-conflicting-chat",
+      payload: { requestId: "req-75", message: "open", agentKey: "agent-75" },
+    }),
+  });
+  await flush();
+  deliverFrame({
+    frame: "stream",
+    id: "query-conflicting-chat",
+    event: { type: "chat.start", timestamp: 1_786_898_700_004, seq: 1, chatId: "chat-75-a" },
+  });
+  deliverFrame({
+    frame: "stream",
+    id: "query-conflicting-chat",
+    event: {
+      type: "run.start",
+      timestamp: 1_786_898_700_005,
+      seq: 2,
+      chatId: "chat-75-b",
+      runId: "run-75",
+      agentKey: "agent-75",
+    },
+  });
+  assert.match(sentFrames(sender).at(-1).msg, /conflicts with the canonical Chat identity/u);
+  await assert.rejects(runtime.runReadiness.get("run-75").ready, /conflicts with the canonical Chat identity/u);
 });
 
 test("a new document socket detaches and supersedes the previous socket for the same surface", async () => {

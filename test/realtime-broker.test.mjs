@@ -496,6 +496,88 @@ test("RealtimeBroker dispatches reverse Desktop Action and maps provider failure
   });
 });
 
+test("RealtimeBroker waits for forwarded canonical Chat readiness before WorkPanel actions", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  let releaseReady;
+  const ready = new Promise((resolve) => { releaseReady = resolve; });
+  broker.registerForwardedRunActionReadiness({
+    sourceId: "main-chat:query-1",
+    chatId: "chat-ready",
+    runId: "run-ready",
+    ready,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: { workspaceId: "workpanel:chat-ready" } };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-before-ready",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/document" },
+      source: { chatId: "chat-ready", runId: "run-ready" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+
+  releaseReady();
+  await nextTurn();
+  assert.equal(calls.length, 1);
+  assert.equal(
+    sockets[0].sent.find((frame) => frame.id === "workpanel-before-ready")?.frame,
+    "response",
+  );
+});
+
+test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization failed", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  const rejected = Promise.reject(new Error("surface registration rejected"));
+  rejected.catch(() => undefined);
+  broker.registerForwardedRunActionReadiness({
+    sourceId: "main-chat:query-failed",
+    chatId: "chat-failed",
+    runId: "run-failed",
+    ready: rejected,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: {} };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-sync-failed",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/document" },
+      source: { chatId: "chat-failed", runId: "run-failed" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "workpanel-sync-failed"), {
+    frame: "error",
+    type: "source_chat_not_ready",
+    id: "workpanel-sync-failed",
+    code: 409,
+    msg: "source_chat_not_ready: surface registration rejected",
+  });
+});
+
 test("RealtimeBroker chunks large Desktop JSON and screenshot responses below 256 KiB", async (t) => {
   const { broker, sockets, token } = createHarness(t);
   const screenshot = Buffer.alloc(420_000, 7).toString("base64");

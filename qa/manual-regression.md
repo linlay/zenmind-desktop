@@ -59,7 +59,9 @@
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
 - [ ] 在 Main Chat 连续切换多个普通、运行中和空消息 Chat；每次只请求目标 `chatId`，owner Chat/registry 元数据更新不产生伪造的 inactive→active lifecycle，也不强制 replay 上一个 Chat。
 - [ ] Main Chat 仍是唯一上游 live surface；WorkPanel Overview/Debug 首次打开先做一次 HTTP replay，再以 `lastSeq` 订阅 Main Chat 当前 visible Run 的 Desktop 本地镜像。主聊天后续 Planning、Plan Task、File Change 与内容事件无需切换标签即同步；抓包确认 Overview/Debug 不新增 Platform query/attach/detach 或轮询，隐藏时只释放本地 consumer，再显示时 replay/虚拟订阅恢复且不丢不重。构造超过 2000 条或 4 MiB 的本地 replay 后用旧游标打开 Overview，首次 `seq_expired` 自动刷新 `/api/chat` 并重新订阅；持续过期时停止自动刷新、显示本地化错误和手动重试，Realtime Inspector 中错误包含 `requestedLastSeq`、`firstAvailableSeq`、`latestSeq`、事件数与字节数，且全程不出现第二条上游 observer。
-- [ ] 新 Chat URL 只在关联 stream bootstrap identity 后晋升；`chat.created` push 只更新列表，不能猜测 query 归属。
+- [ ] 普通新 Chat 收到关联 query stream 的 `chat.start` 后立即把 `newChat` 原位替换为 canonical `chatId`，并在 `run.start` 前完成 Main Chat surface owner 登记；`chat.created` push 只更新列表，不能猜测 query 归属。
+- [ ] 新 Chat 先上传 DOCX 等附件、附件暂存预建 canonical Chat 后，query stream 即使不重复 `chat.start`，也只在服务端 `request.query` 完整回显 outbound `requestId + chatId + owner` 后提升路由并登记 owner；首次回复调用 `desktop.workpanel.openWeb` 能当场打开编辑器，无需切出再切回 Chat。
+- [ ] 新 Chat 缺失合法 `chat.start`/匹配 `request.query`、Chat/Run 身份冲突、nonce/generation 过期、用户切走或 surface 登记失败时，WorkPanel 动作 fail closed 且不抢回导航；已有 canonical `ownerChatId` 的 Chat 即使 guest `currentUrl` 仍短暂保留旧 `newChat`，也可直接发起续聊并以匹配的 `run.start` 继续。
 - [ ] 离开 Main Chat 页面、关闭 Copilot 或退出 Kanban Chat 页面时，存在 stream 的 observer 各只 detach 一次；进入对应页面时先请求 `/api/chat` replay，只有响应仍含 `activeRun` 才从服务端 `lastSeq` attach，identity 尚未返回的 query 在 bootstrap 后补 detach。左侧 Nav 只产生页面选择并展示 push 状态，不直接发 query/attach/detach。
 - [ ] Overview/Debug 的 query 始终拒绝；非 active、伪造、跨 owner Chat、父级不是 Main Chat 或目标不是当前 visible Run 的 attach 返回同 request id 的标准 Platform error frame。合法只读虚拟 attach 只读取本地 replay/live fanout，interrupt/submit/steer/access-level 保留真实 Platform `ApiError` 语义。
 - [ ] 附件上传失败时请求不会伪装成功，取消后临时资源被清理。

@@ -34,6 +34,10 @@ import type { DesktopHelpSettings } from "../help";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
 import type {
+  CanonicalChatSyncRequestListener,
+  CanonicalChatSyncResult,
+} from "../canonical-chat-sync";
+import type {
   EnterpriseChatAttachmentData,
   EnterpriseChatAttachmentInput,
   EnterpriseChatCreateGroupInput,
@@ -634,6 +638,10 @@ export interface DesktopApi {
     ) => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
     onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
     onShutdownProgress: (listener: ShutdownProgressListener) => (() => void);
+  };
+  canonicalChatSync: {
+    respond: (result: CanonicalChatSyncResult) => void;
+    onRequest: (listener: CanonicalChatSyncRequestListener) => (() => void);
   };
   desktopDownloads: {
     saveFile: (input: {

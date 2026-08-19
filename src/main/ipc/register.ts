@@ -109,6 +109,7 @@ import { registerTunnelHubIpcHandlers } from "./tunnel-hub-handlers";
 import { registerWebIpcHandlers } from "./web-handlers";
 import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
 import { registerAgentWebclientBridgeIpcHandlers } from "./agent-webclient-bridge-handlers";
+import { registerCanonicalChatSyncIpc } from "./canonical-chat-sync";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
@@ -234,6 +235,20 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  const canonicalChatSync = registerCanonicalChatSyncIpc(ipcMain, {
+    resolveRenderer: (ownerWebContentsId) => {
+      const mainWindow = context.state.mainWindow;
+      if (
+        !mainWindow ||
+        mainWindow.isDestroyed() ||
+        mainWindow.webContents.isDestroyed() ||
+        mainWindow.webContents.id !== ownerWebContentsId
+      ) {
+        return null;
+      }
+      return mainWindow.webContents;
+    },
+  });
   const agentWebclientBridgeRuntime = registerAgentWebclientBridgeIpcHandlers(ipcMain, {
     app,
     browserSurfaces: options.browserSurfaces,
@@ -241,6 +256,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     realtimeBroker: assistantBridgeRuntime.realtimeBroker,
     getServiceState,
     issueAccessToken: issueAgentAccessToken,
+    syncCanonicalChat: (ownerWebContentsId, input) =>
+      canonicalChatSync.request(ownerWebContentsId, input),
     dispatchWorkPanel: async ({ action, ownerChatId, args }) => {
       const response = await handleAgentWebclientWorkPanelActionRequest(desktopActionOptions, {
         requestId: `workpanel-bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
