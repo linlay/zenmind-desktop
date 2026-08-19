@@ -94,19 +94,23 @@ function normalizeContext(
 ): Record<string, string> | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
   const record = input as Record<string, unknown>;
-  const allowed = new Set(module === "planning" ? [
-    "chatId", "planningId", "agentKey",
-  ] : [
-    "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
-    "publishId", "sourceId", "btwId", "path",
-  ]);
+  const allowed = new Set(
+    module === "planning"
+      ? ["chatId", "planningId", "agentKey"]
+      : module === "skill"
+        ? ["key"]
+        : [
+            "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
+            "publishId", "sourceId", "btwId", "path",
+          ],
+  );
   if (Object.keys(record).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
     return null;
   }
   const context: Record<string, string> = {};
   for (const key of [
     "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
-    "publishId", "sourceId", "btwId",
+    "publishId", "sourceId", "btwId", "key",
   ] as const) {
     const value = cleanIdentity(record[key]);
     if (record[key] !== undefined && !value) return null;
@@ -221,6 +225,9 @@ function normalizeDescriptor(
       stableKey = context.agentKey
         ? `${descriptor.module}:${context.agentKey}:${context.chatId || "global"}`
         : "";
+      break;
+    case "skill":
+      stableKey = context.key ? `skill:${context.key}` : "";
       break;
   }
   if (!stableKey) return null;
