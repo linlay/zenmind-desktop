@@ -11,7 +11,7 @@ import {
   normalizeCatalog,
   readInstalledRecords,
   removeInstalledRecord,
-  selectAsset,
+  resolveMarketAsset,
   upsertInstalledRecord,
   type Catalog,
   type MarketplaceOptions
@@ -64,11 +64,11 @@ export async function installAgentMarketItem(
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
   const catalog = await loadAgentCatalog(app, options);
-  const item = findCatalogItem(catalog, itemId, "agent");
+  const catalogItem = findCatalogItem(catalog, itemId, "agent");
   if (!agentPlatformCall) throw new Error("Agent installation is unavailable until agent-platform is ready.");
-  const selected = selectAsset(item);
-  if (!selected) throw new Error("No compatible agent package is available.");
-  const archivePath = await downloadAsset(app, item, selected.asset);
+  const resolved = await resolveMarketAsset(app, catalogItem, options);
+  const item = resolved.item;
+  const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   const tempRoot = fs.mkdtempSync(path.join(app.getPath("temp"), "desktop-agent-market-"));
   try {
     await extractArchiveToDir(archivePath, tempRoot);
@@ -99,9 +99,10 @@ export async function installAgentMarketItem(
       id: item.id,
       type: "agent",
       version: item.version,
+      platform: resolved.platform,
       source: "cloud",
-      assetUrl: selected.asset.url,
-      sha256: selected.asset.sha256,
+      assetUrl: resolved.asset.url,
+      sha256: resolved.asset.sha256,
       resourceKey: agentKey,
       installedAt: new Date().toISOString()
     });

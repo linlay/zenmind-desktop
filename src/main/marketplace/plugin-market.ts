@@ -12,7 +12,7 @@ import {
   loadMarketplaceCatalog,
   mergeCatalogItems,
   normalizeCatalog,
-  selectAsset,
+  resolveMarketAsset,
   upsertInstalledRecord,
   type Catalog,
   type MarketplaceOptions,
@@ -87,12 +87,10 @@ export async function installPluginMarketItem(
 ): Promise<MarketCommandResult> {
   assertPluginNotRetired(itemId);
   const { catalog } = await loadPluginCatalog(app, options);
-  const item = findCatalogItem(catalog, itemId, "plugin");
-  const selected = selectAsset(item);
-  if (!selected) {
-    throw new Error(t("market.main.platformUnavailable"));
-  }
-  const archivePath = await downloadAsset(app, item, selected.asset);
+  const catalogItem = findCatalogItem(catalog, itemId, "plugin");
+  const resolved = await resolveMarketAsset(app, catalogItem, options);
+  const item = resolved.item;
+  const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   try {
     const manifest = readManifestFromArchive(archivePath);
     const manifestKind = manifest && typeof manifest === "object" && !Array.isArray(manifest)
@@ -111,9 +109,10 @@ export async function installPluginMarketItem(
       id: item.id,
       type: "plugin",
       version: item.version,
+      platform: resolved.platform,
       source: "cloud",
-      assetUrl: selected.asset.url,
-      sha256: selected.asset.sha256,
+      assetUrl: resolved.asset.url,
+      sha256: resolved.asset.sha256,
       installPath,
       installedAt: new Date().toISOString()
     });

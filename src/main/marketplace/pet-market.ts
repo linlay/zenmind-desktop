@@ -24,7 +24,7 @@ import {
   loadMarketplaceCatalog,
   mergeCatalogItems,
   normalizeCatalog,
-  selectAsset,
+  resolveMarketAsset,
   upsertInstalledRecord,
   removeInstalledRecord,
   type Catalog,
@@ -295,12 +295,10 @@ export async function installPetMarketItem(
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
   const { catalog } = await loadPetCatalog(app, options);
-  const item = findCatalogItem(catalog, itemId, "pet");
-  const selected = selectAsset(item);
-  if (!selected) {
-    throw new Error(t("market.main.platformUnavailable"));
-  }
-  const archivePath = await downloadAsset(app, item, selected.asset);
+  const catalogItem = findCatalogItem(catalog, itemId, "pet");
+  const resolved = await resolveMarketAsset(app, catalogItem, options);
+  const item = resolved.item;
+  const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   const tempRoot = path.join(app.getPath("temp") || os.tmpdir(), "desktop-market-pets", `${item.id}-${Date.now()}`);
   const safePetDirName = normalizePetDirectoryName(item.id);
   if (!safePetDirName) {
@@ -340,9 +338,10 @@ export async function installPetMarketItem(
       id: item.id,
       type: "pet",
       version: item.version,
+      platform: resolved.platform,
       source: "cloud",
-      assetUrl: selected.asset.url,
-      sha256: selected.asset.sha256,
+      assetUrl: resolved.asset.url,
+      sha256: resolved.asset.sha256,
       installPath,
       installedAt: new Date().toISOString()
     });

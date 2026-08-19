@@ -38,6 +38,7 @@ export type InstalledRecord = {
   id: string;
   type: MarketItemType;
   version: string;
+  platform?: string;
   source: "cloud" | "local";
   assetUrl?: string;
   sha256?: string;
@@ -47,15 +48,24 @@ export type InstalledRecord = {
 };
 
 export type MarketplaceOptions = MarketListOptions & {
+  catalogSnapshot?: unknown;
   catalogUrl?: string;
   catalog?: Catalog;
   apiBaseUrl?: string;
   marketEnabled?: boolean;
   containerHubBaseUrl?: string;
   containerHubAuthToken?: string;
+  fetchImpl?: typeof fetch;
+  issueMarketAccessToken?: MarketAccessTokenIssuer;
 };
 
-export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "website-app">;
+export type MarketAccessTokenReason = "missing" | "unauthorized";
+export type MarketAccessTokenIssuer = (
+  app: App,
+  reason: MarketAccessTokenReason
+) => Promise<string> | string;
+
+export type InstallableMarketType = Extract<MarketItemType, "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "mcp" | "website-app" | "software-package">;
 
 export type MarketSectionResult = {
   items: MarketItem[];
@@ -80,6 +90,12 @@ export class MarketCatalogItemNotFoundError extends Error {
     this.name = "MarketCatalogItemNotFoundError";
     this.itemId = itemId;
   }
+}
+
+let configuredMarketAccessTokenIssuer: MarketAccessTokenIssuer | null = null;
+
+export function configureMarketAccessTokenIssuer(issuer: MarketAccessTokenIssuer | null) {
+  configuredMarketAccessTokenIssuer = issuer;
 }
 
 function ensureMarketplaceRoots(app: App) {
@@ -154,7 +170,9 @@ export function isMarketItemType(value: unknown): value is MarketItemType {
     value === "sandbox-image" ||
     value === "pet" ||
     value === "cli" ||
-    value === "website-app"
+    value === "mcp" ||
+    value === "website-app" ||
+    value === "software-package"
   );
 }
 
@@ -169,7 +187,9 @@ export function normalizeMarketItemType(value: unknown): MarketItemType | null {
     value === "sandbox-image" ||
     value === "pet" ||
     value === "cli" ||
-    value === "website-app"
+    value === "mcp" ||
+    value === "website-app" ||
+    value === "software-package"
   ) {
     return value;
   }
@@ -205,11 +225,12 @@ function isKnownArchiveType(value: string): value is MarketAsset["archiveType"] 
     value === "container-image" ||
     value === "pet" ||
     value === "cli" ||
+    value === "json" ||
     value === "website-app"
   );
 }
 
-function normalizeAsset(value: unknown): MarketAsset | null {
+export function normalizeAsset(value: unknown): MarketAsset | null {
   const raw = asObject(value);
   const url = asString(raw.url).trim();
   if (!url) {
@@ -349,6 +370,9 @@ function isDesktopInstallableAsset(
   if (item.type === "website-app") {
     return asset.archiveType === "zip" || asset.archiveType === "website-app";
   }
+  if (item.type === "software-package") {
+    return asset.archiveType === "zip" || asset.archiveType === "tar.gz";
+  }
   if (item.type === "sandbox-image") {
     if (item.sandboxKind === "container-image" || asset.archiveType === "container-image") {
       return asset.archiveType === "container-image" || asset.archiveType === "tar.gz";
@@ -364,6 +388,7 @@ function shouldRequireInstallableAsset(item: MarketCatalogItem) {
     item.type === "agent" ||
     item.type === "pet" ||
     item.type === "website-app" ||
+    item.type === "software-package" ||
     (item.type === "sandbox-image" && item.sandboxKind === "environment-template");
 }
 
@@ -526,6 +551,14 @@ export function getMarketplaceCatalogUrl(app: App, options: MarketplaceOptions =
   return catalogUrlFromApiBaseUrl(settings.apiBaseUrl);
 }
 
+export function getMarketApiBaseUrl(app: App, options: MarketplaceOptions = {}) {
+  if (options.apiBaseUrl !== undefined) {
+    return options.marketEnabled === false ? "" : normalizeMarketApiBaseUrl(options.apiBaseUrl);
+  }
+  const settings = getMarketSettings(app);
+  return settings.enabled === true ? settings.apiBaseUrl : "";
+}
+
 export function normalizeContainerHubBaseUrl(value: unknown) {
   const input = asString(value).trim().replace(/\/+$/u, "");
   if (!input) {
@@ -633,6 +666,120 @@ export function getMarketDesktopDeviceHeaders(app: App) {
   };
 }
 
+export function marketRoute(type: MarketItemType) {
+  switch (type) {
+    case "skill":
+      return "skills";
+    case "plugin":
+      return "plugins";
+    case "agent":
+      return "agents";
+    case "sandbox-image":
+      return "sandbox-images";
+    case "pet":
+      return "pets";
+    case "cli":
+      return "cli-tools";
+    case "mcp":
+      return "mcps";
+    case "website-app":
+      return "webapps";
+    case "software-package":
+      return "software-packages";
+  }
+}
+
+async function issueMarketAccessToken(
+  app: App,
+  reason: MarketAccessTokenReason,
+  options: MarketplaceOptions
+) {
+  const issuer = options.issueMarketAccessToken ?? configuredMarketAccessTokenIssuer;
+  if (!issuer) {
+    return "";
+  }
+  return String(await issuer(app, reason) || "").trim();
+}
+
+async function readMarketErrorMessage(response: Response, label: string) {
+  const fallback = `${label} failed: ${response.status}`;
+  try {
+    const text = await response.text();
+    if (!text.trim()) {
+      return fallback;
+    }
+    const data = JSON.parse(text) as unknown;
+    const raw = asObject(data);
+    const error = asObject(raw.error);
+    return asString(error.message).trim() || asString(raw.message).trim() || fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+export async function requestMarket(
+  app: App,
+  url: string,
+  init: RequestInit = {},
+  options: MarketplaceOptions = {},
+  label = "market request"
+) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  let token = await issueMarketAccessToken(app, "missing", options);
+  for (const reason of ["missing", "unauthorized"] as const) {
+    if (reason === "unauthorized") {
+      token = await issueMarketAccessToken(app, "unauthorized", options);
+    }
+    const response = await fetchImpl(url, {
+      ...init,
+      headers: {
+        ...getMarketDesktopDeviceHeaders(app),
+        ...Object.fromEntries(new Headers(init.headers).entries()),
+        ...(token ? { Authorization: `Bearer ${token}` } : {})
+      }
+    });
+    if (response.status === 401 && reason === "missing" && (options.issueMarketAccessToken || configuredMarketAccessTokenIssuer)) {
+      continue;
+    }
+    if (response.status === 401) {
+      throw new Error(t("market.main.marketAuthRequired"));
+    }
+    if (!response.ok) {
+      throw new Error(await readMarketErrorMessage(response, label));
+    }
+    return response;
+  }
+  throw new Error(t("market.main.marketAuthRequired"));
+}
+
+export async function requestMarketJson(
+  app: App,
+  url: string,
+  options: MarketplaceOptions = {},
+  label = "market request",
+  init: RequestInit = {}
+) {
+  const response = await requestMarket(app, url, init, options, label);
+  return response.json() as Promise<unknown>;
+}
+
+async function verifyMarketAuthentication(
+  app: App,
+  apiBaseUrl: string,
+  options: MarketplaceOptions
+) {
+  const response = asObject(await requestMarketJson(
+    app,
+    `${apiBaseUrl}/auth/me`,
+    options,
+    "market authentication request"
+  ));
+  const user = asObject(response.user);
+  if (!asString(user.id).trim()) {
+    throw new Error(t("market.main.marketAuthRequired"));
+  }
+}
+
 export async function fetchJson(url: string, label = "market request", headers: Record<string, string> = {}) {
   const response = await fetch(url, { headers });
   if (!response.ok) {
@@ -660,11 +807,14 @@ function extensionForAsset(asset: MarketAsset) {
   return ".zip";
 }
 
-export async function downloadAsset(app: App, item: MarketCatalogItem, asset: MarketAsset) {
-  const response = await fetch(asset.url);
-  if (!response.ok) {
-    throw new Error(t("market.main.downloadFailed", { status: response.status }));
-  }
+export async function downloadAsset(
+  app: App,
+  item: MarketCatalogItem,
+  asset: MarketAsset,
+  options: MarketplaceOptions = {},
+  downloadUrl = asset.url
+) {
+  const response = await requestMarket(app, downloadUrl, {}, options, "market asset download");
   const bytes = Buffer.from(await response.arrayBuffer());
   if (asset.sizeBytes > 0 && bytes.length !== asset.sizeBytes) {
     throw new Error(t("market.main.downloadSizeMismatch", { expected: asset.sizeBytes, actual: bytes.length }));
@@ -678,28 +828,90 @@ export async function downloadAsset(app: App, item: MarketCatalogItem, asset: Ma
   return downloadPath;
 }
 
-function compareVersions(left: string, right: string) {
-  const parse = (value: string) => value.replace(/^v/u, "").split(/[.-]/u).map((part) => Number.parseInt(part, 10) || 0);
-  const a = parse(left);
-  const b = parse(right);
-  const length = Math.max(a.length, b.length);
-  for (let index = 0; index < length; index += 1) {
-    const diff = (a[index] ?? 0) - (b[index] ?? 0);
+type ParsedSemanticVersion = {
+  core: [string, string, string];
+  prerelease: string[];
+};
+
+const SEMANTIC_VERSION_PATTERN = /^(?:v)?(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
+
+function parseSemanticVersion(value: string): ParsedSemanticVersion | null {
+  const match = SEMANTIC_VERSION_PATTERN.exec(String(value || "").trim());
+  if (!match) {
+    return null;
+  }
+  const prerelease = match[4] ? match[4].split(".") : [];
+  if (prerelease.some((identifier) => /^\d+$/u.test(identifier) && identifier.length > 1 && identifier.startsWith("0"))) {
+    return null;
+  }
+  return {
+    core: [match[1], match[2], match[3]],
+    prerelease
+  };
+}
+
+function compareNumericIdentifiers(left: string, right: string) {
+  if (left.length !== right.length) {
+    return left.length - right.length;
+  }
+  if (left === right) {
+    return 0;
+  }
+  return left < right ? -1 : 1;
+}
+
+export function compareVersions(left: string, right: string) {
+  const a = parseSemanticVersion(left);
+  const b = parseSemanticVersion(right);
+  if (!a || !b) {
+    return 0;
+  }
+  for (let index = 0; index < a.core.length; index += 1) {
+    const diff = compareNumericIdentifiers(a.core[index], b.core[index]);
     if (diff !== 0) {
       return diff;
     }
   }
+  if (a.prerelease.length === 0 || b.prerelease.length === 0) {
+    if (a.prerelease.length === b.prerelease.length) {
+      return 0;
+    }
+    return a.prerelease.length === 0 ? 1 : -1;
+  }
+  const length = Math.max(a.prerelease.length, b.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    const leftIdentifier = a.prerelease[index];
+    const rightIdentifier = b.prerelease[index];
+    if (leftIdentifier === undefined || rightIdentifier === undefined) {
+      return leftIdentifier === undefined ? -1 : 1;
+    }
+    if (leftIdentifier === rightIdentifier) {
+      continue;
+    }
+    const leftNumeric = /^\d+$/u.test(leftIdentifier);
+    const rightNumeric = /^\d+$/u.test(rightIdentifier);
+    if (leftNumeric && rightNumeric) {
+      return compareNumericIdentifiers(leftIdentifier, rightIdentifier);
+    }
+    if (leftNumeric !== rightNumeric) {
+      return leftNumeric ? -1 : 1;
+    }
+    return leftIdentifier < rightIdentifier ? -1 : 1;
+  }
   return 0;
 }
 
-function platformCandidates() {
-  if (process.platform === "win32") {
-    return [`windows-${process.arch === "arm64" ? "arm64" : "x64"}`, "windows-x64", "universal"];
-  }
-  if (process.platform === "darwin") {
-    return [`darwin-${process.arch}`, "darwin-arm64", "darwin-x64", "universal"];
-  }
-  return [`${process.platform}-${process.arch}`, "universal"];
+export function platformCandidates(
+  platform: NodeJS.Platform = process.platform,
+  arch: NodeJS.Architecture = process.arch
+) {
+  const platformName = platform === "win32" ? "windows" : platform;
+  const archAliases = arch === "x64"
+    ? platform === "darwin" ? ["x64", "amd64"] : ["amd64", "x64"]
+    : arch === "ia32"
+      ? ["x86", "ia32"]
+      : [arch];
+  return [...new Set(archAliases.map((alias) => `${platformName}-${alias}`)), "universal"];
 }
 
 export function selectAsset(item: Pick<MarketCatalogItem, "type" | "sandboxKind"> & { assets?: Record<string, MarketAsset> }) {
@@ -717,10 +929,108 @@ export function selectAsset(item: Pick<MarketCatalogItem, "type" | "sandboxKind"
   return null;
 }
 
-export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptions = {}, label = "market catalog request"): Promise<MarketplaceCatalogResult> {
-  if (options.catalog) {
+export type ResolvedMarketAsset = {
+  item: MarketCatalogItem;
+  platform: string;
+  asset: MarketAsset;
+  downloadUrl: string;
+};
+
+function currentDesktopVersion(app: App) {
+  try {
+    return typeof app.getVersion === "function" ? String(app.getVersion() || "").trim() : "";
+  } catch {
+    return "";
+  }
+}
+
+function assertDesktopVersionCompatible(app: App, item: MarketCatalogItem, platformSpec?: MarketPlatformSpec) {
+  const requiredVersion = platformSpec?.minDesktopVersion || item.minDesktopVersion || "";
+  const desktopVersion = currentDesktopVersion(app);
+  if (requiredVersion && desktopVersion && compareVersions(desktopVersion, requiredVersion) < 0) {
+    throw new Error(t("market.main.desktopVersionTooOld", {
+      current: desktopVersion,
+      required: requiredVersion
+    }));
+  }
+}
+
+export async function resolveMarketAsset(
+  app: App,
+  item: MarketCatalogItem,
+  options: MarketplaceOptions = {}
+): Promise<ResolvedMarketAsset> {
+  const selected = selectAsset(item);
+  if (!selected) {
+    throw new Error(t("market.main.platformUnavailable"));
+  }
+
+  const apiBaseUrl = getMarketApiBaseUrl(app, options).replace(/\/+$/u, "");
+  if (!apiBaseUrl || options.catalog) {
+    const platformSpec = item.platforms?.[selected.key];
+    assertDesktopVersionCompatible(app, item, platformSpec);
     return {
-      catalog: normalizeCatalog(options.catalog),
+      item,
+      platform: selected.key,
+      asset: selected.asset,
+      downloadUrl: selected.asset.url
+    };
+  }
+
+  await verifyMarketAuthentication(app, apiBaseUrl, options);
+
+  const route = marketRoute(item.type);
+  const query = new URLSearchParams({
+    version: item.version,
+    platform: selected.key
+  });
+  const resolved = asObject(await requestMarketJson(
+    app,
+    `${apiBaseUrl}/${route}/${encodeURIComponent(item.id)}/resolve?${query.toString()}`,
+    options,
+    "market resolve request"
+  ));
+  const resolvedItemRaw = asObject(resolved.item);
+  const resolvedId = asString(resolvedItemRaw.id).trim();
+  const resolvedType = normalizeMarketItemType(resolvedItemRaw.type);
+  if (resolvedId !== item.id || resolvedType !== item.type) {
+    throw new Error(t("market.main.resolveIdentityMismatch"));
+  }
+  const version = asString(resolved.version).trim();
+  const platform = asString(resolved.platform).trim() || selected.key;
+  const asset = normalizeAsset(resolved.asset);
+  if (version !== item.version || platform !== selected.key) {
+    throw new Error(t("market.main.resolveIdentityMismatch"));
+  }
+  if (!asset || !isDesktopInstallableAsset(item, asset)) {
+    throw new Error(t("market.main.platformUnavailable"));
+  }
+  const platformSpec = normalizePlatformSpec(platform, resolved.platformSpec) ?? item.platforms?.[platform];
+  const resolvedItem: MarketCatalogItem = {
+    ...item,
+    version,
+    minDesktopVersion: platformSpec?.minDesktopVersion || item.minDesktopVersion,
+    dependencies: platformSpec?.dependencies?.length ? platformSpec.dependencies : item.dependencies,
+    platforms: {
+      ...item.platforms,
+      ...(platformSpec ? { [platform]: platformSpec } : {})
+    },
+    assets: { [platform]: asset }
+  };
+  assertDesktopVersionCompatible(app, resolvedItem, platformSpec);
+  const downloadQuery = new URLSearchParams({ version, platform });
+  return {
+    item: resolvedItem,
+    platform,
+    asset,
+    downloadUrl: `${apiBaseUrl}/${route}/${encodeURIComponent(item.id)}/download?${downloadQuery.toString()}`
+  };
+}
+
+export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptions = {}, label = "market catalog request"): Promise<MarketplaceCatalogResult> {
+  if (options.catalog || options.catalogSnapshot) {
+    return {
+      catalog: normalizeCatalog(options.catalog ?? options.catalogSnapshot),
       offline: false,
       message: t("market.main.catalogLoaded"),
       sourceUrl: options.catalogUrl ?? getMarketplaceCatalogUrl(app, options)
@@ -737,7 +1047,7 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
     };
   }
   try {
-    const catalog = normalizeCatalog(await fetchJson(catalogUrl, label, getMarketDesktopDeviceHeaders(app)));
+    const catalog = normalizeCatalog(await requestMarketJson(app, catalogUrl, options, label));
     return {
       catalog,
       offline: false,
@@ -770,7 +1080,7 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
   } else if (localItem) {
     installedVersion = localItem.version;
     installPath = localItem.installPath;
-    state = "local-imported";
+    state = compareVersions(item.version, localItem.version) > 0 ? "update-available" : "local-imported";
     source = "local";
   }
   return {
@@ -782,6 +1092,7 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
     tags: item.tags,
     state,
     source,
+    marketplaceAvailable: true,
     installedVersion,
     installPath,
     serviceId: item.type === "plugin" ? item.id : undefined,

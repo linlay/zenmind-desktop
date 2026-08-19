@@ -15,7 +15,7 @@ import {
   loadMarketplaceCatalog,
   mergeCatalogItems,
   normalizeCatalog,
-  selectAsset,
+  resolveMarketAsset,
   upsertInstalledRecord,
   type Catalog,
   type MarketplaceOptions,
@@ -68,12 +68,10 @@ export async function installSkillMarketItem(
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
   const { catalog } = await loadSkillCatalog(app, options);
-  const item = findCatalogItem(catalog, itemId, "skill");
-  const selected = selectAsset(item);
-  if (!selected) {
-    throw new Error(t("market.main.platformUnavailable"));
-  }
-  const archivePath = await downloadAsset(app, item, selected.asset);
+  const catalogItem = findCatalogItem(catalog, itemId, "skill");
+  const resolved = await resolveMarketAsset(app, catalogItem, options);
+  const item = resolved.item;
+  const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   try {
     const result = await installSkillFromPath(app, archivePath, {
       source: "cloud",
@@ -91,9 +89,10 @@ export async function installSkillMarketItem(
       id: item.id,
       type: "skill",
       version: item.version,
+      platform: resolved.platform,
       source: "cloud",
-      assetUrl: selected.asset.url,
-      sha256: selected.asset.sha256,
+      assetUrl: resolved.asset.url,
+      sha256: resolved.asset.sha256,
       installPath: result.installPath ?? getSkillInstallDir(app, item.id),
       installedAt: new Date().toISOString()
     });

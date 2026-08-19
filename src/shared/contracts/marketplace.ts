@@ -1,5 +1,5 @@
-export type MarketItemType = "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "website-app";
-export type MarketSection = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "websiteApps";
+export type MarketItemType = "plugin" | "skill" | "agent" | "sandbox-image" | "pet" | "cli" | "mcp" | "website-app" | "software-package";
+export type MarketSection = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "mcps" | "websiteApps" | "softwarePackages";
 export type MarketInstallState =
   | "not-installed"
   | "installed"
@@ -24,6 +24,7 @@ export interface MarketAsset {
     | "container-image"
     | "pet"
     | "cli"
+    | "json"
     | "website-app";
   platform?: string;
   role?: string;
@@ -106,6 +107,7 @@ export interface MarketItem {
   tags: string[];
   state: MarketInstallState;
   source: "cloud" | "local";
+  marketplaceAvailable?: boolean;
   installedVersion?: string;
   minDesktopVersion?: string;
   installPath?: string;
@@ -163,8 +165,12 @@ export interface MarketListResult {
   petOffline?: boolean;
   cliMessage?: string;
   cliOffline?: boolean;
+  mcpMessage?: string;
+  mcpOffline?: boolean;
   websiteAppMessage?: string;
   websiteAppOffline?: boolean;
+  softwarePackageMessage?: string;
+  softwarePackageOffline?: boolean;
 }
 
 export interface MarketListOptions {

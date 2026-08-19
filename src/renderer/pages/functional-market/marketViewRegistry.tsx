@@ -9,7 +9,9 @@ const MARKET_VIEWS = {
   sandboxImages: StorefrontMarket,
   pets: StorefrontMarket,
   cli: StorefrontMarket,
-  websiteApps: StorefrontMarket
+  mcps: StorefrontMarket,
+  websiteApps: StorefrontMarket,
+  softwarePackages: StorefrontMarket
 } satisfies Record<MarketTab, ComponentType<MarketViewProps>>;
 
 export function getMarketView(tab: MarketTab) {

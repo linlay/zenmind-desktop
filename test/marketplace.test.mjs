@@ -10,6 +10,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
+const { load: loadYaml } = require("js-yaml");
 const {
   buildSandboxImage,
   DEFAULT_MARKETPLACE_CATALOG_URL,
@@ -34,6 +35,8 @@ const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/m
 const { readDesktopPetStoredState } = require("../dist-electron/main/assistant/pet/desktop-pet.js");
 const { readWebappItems } = require("../dist-electron/main/webs/webapps/store.js");
 const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/marketplace/agent-market.js");
+const { getSoftwarePackageInstallDir } = require("../dist-electron/main/marketplace/software-package-market.js");
+const { resolveRuntimeRoot } = require("../dist-electron/main/env-bootstrap.js");
 const {
   getDesktopConfigRoot,
   getDesktopPetsDataRoot,
@@ -42,9 +45,24 @@ const {
 } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
 
+test("platform candidates keep fallbacks within the current CPU architecture", () => {
+  const candidates = __testInternals.platformCandidates;
+  assert.deepEqual(candidates("darwin", "arm64"), ["darwin-arm64", "universal"]);
+  assert.deepEqual(candidates("darwin", "x64"), ["darwin-x64", "darwin-amd64", "universal"]);
+  assert.deepEqual(candidates("win32", "arm64"), ["windows-arm64", "universal"]);
+  assert.deepEqual(candidates("win32", "x64"), ["windows-amd64", "windows-x64", "universal"]);
+  assert.deepEqual(candidates("win32", "ia32"), ["windows-x86", "windows-ia32", "universal"]);
+  assert.deepEqual(candidates("linux", "x64"), ["linux-amd64", "linux-x64", "universal"]);
+  assert.equal(candidates("darwin", "x64").includes("darwin-arm64"), false);
+  assert.equal(candidates("win32", "arm64").includes("windows-amd64"), false);
+});
+
 function createApp(root) {
   return {
     isPackaged: false,
+    getVersion() {
+      return "0.3.40";
+    },
     getPath(name) {
       if (name === "userData") return path.join(root, "user-data");
       if (name === "home") return path.join(root, "home");
@@ -233,6 +251,18 @@ async function writeWebappArchive(root, options = {}) {
   );
   zip.file(`${id}/frontend/index.html`, "<!doctype html><div id=\"app\">cloud webapp</div>");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
+  return archivePath;
+}
+
+async function writeSoftwarePackageArchive(root, options = {}) {
+  const packageId = options.id ?? "python-test";
+  const archivePath = path.join(root, `${packageId}.zip`);
+  const zip = new JSZip();
+  zip.file(`${packageId}/bin/python`, options.content ?? "python executable\n", {
+    unixPermissions: 0o100755
+  });
+  zip.file(`${packageId}/README.txt`, "test software package\n");
+  fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer", platform: "UNIX" }));
   return archivePath;
 }
 
@@ -459,7 +489,7 @@ test("DEFAULT_MARKETPLACE_CATALOG_URL is empty until env config provides a marke
   assert.equal(DEFAULT_MARKETPLACE_CATALOG_URL, "");
 });
 
-test("normalizeCatalog keeps the seven public market types", () => {
+test("normalizeCatalog keeps all public market types including software packages", () => {
   const catalog = __testInternals.normalizeCatalog({
     schemaVersion: 1,
     items: [
@@ -501,6 +531,32 @@ test("normalizeCatalog keeps the seven public market types", () => {
             archiveType: "website-app"
           }
         }
+      },
+      {
+        id: "python-demo",
+        type: "software-package",
+        name: "Python Demo",
+        version: "3.14.6",
+        assets: {
+          universal: {
+            url: "https://example.com/python.zip",
+            sizeBytes: 1,
+            archiveType: "zip"
+          }
+        }
+      },
+      {
+        id: "search-mcp",
+        type: "mcp",
+        name: "Search MCP",
+        version: "1.0.0",
+        assets: {
+          universal: {
+            url: "https://example.com/search.mcp.json",
+            sizeBytes: 1,
+            archiveType: "json"
+          }
+        }
       }
     ]
   });
@@ -508,8 +564,81 @@ test("normalizeCatalog keeps the seven public market types", () => {
   assert.deepEqual(catalog.items.map((item) => [item.id, item.type]), [
     ["agent-demo", "agent"],
     ["cli-demo", "cli"],
-    ["webapp-demo", "website-app"]
+    ["webapp-demo", "website-app"],
+    ["python-demo", "software-package"],
+    ["search-mcp", "mcp"]
   ]);
+});
+
+test("installMarketItem writes and removes MCP YAML through the runtime registry directory", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-mcp-install-"));
+  const app = createApp(root);
+  fs.mkdirSync(path.join(root, "temp"), { recursive: true });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/auth/me", JSON.stringify({ user: { id: "market-user" } })],
+    ["/api/v1/desktop/catalog", JSON.stringify({
+      schemaVersion: 1,
+      items: [{
+        id: "remote-search",
+        type: "mcp",
+        name: "Remote Search",
+        version: "1.0.0",
+        description: "Search tools",
+        tags: ["search"],
+        assets: {}
+      }]
+    })],
+    ["/api/v1/mcps/remote-search/download", JSON.stringify({
+      market: {
+        id: "remote-search",
+        name: "Remote Search",
+        version: "1.0.0",
+        tools: ["search"]
+      },
+      mcpServers: {
+        "remote-search": {
+          type: "streamable-http",
+          url: "https://mcp.example.test/mcp"
+        }
+      }
+    })]
+  ]), async (baseUrl) => {
+    const options = {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      marketEnabled: true,
+      issueMarketAccessToken: () => "market-access-token"
+    };
+    const listed = await listMarketItems(app, { ...options, sections: ["mcps"] });
+    assert.equal(listed.items.find((item) => item.id === "remote-search")?.type, "mcp");
+
+    const installed = await installMarketItem(app, "remote-search", options);
+    assert.equal(installed.ok, true);
+    assert.equal(installed.type, "mcp");
+    assert.equal(installed.installPath, "registries/mcp-servers/remote-search.yml");
+    const registryFile = path.join(resolveRuntimeRoot(app), "registries", "mcp-servers", "remote-search.yml");
+    const registryContent = fs.readFileSync(registryFile, "utf8");
+    const registry = loadYaml(registryContent);
+    assert.equal(registry.serverKey, "remote-search");
+    assert.equal(registry.transport, "streamable-http");
+    assert.equal(registry.baseUrl, "https://mcp.example.test");
+    assert.equal(registry.endpointPath, "/mcp");
+    assert.equal(Object.hasOwn(registry, "tools"), false);
+
+    const removed = await uninstallMarketItem(app, "remote-search", options);
+    assert.equal(removed.ok, true);
+    assert.equal(fs.existsSync(registryFile), false);
+    assert.equal(__testInternals.readInstalledRecords(app).some((item) => item.type === "mcp"), false);
+
+    const manualContent = "serverKey: manual\ntransport: streamable-http\nbaseUrl: https://manual.example.test\n";
+    fs.writeFileSync(registryFile, manualContent, "utf8");
+    await assert.rejects(
+      () => installMarketItem(app, "remote-search", options),
+      (error) => error instanceof Error && /MCP/u.test(error.message)
+    );
+    assert.equal(fs.readFileSync(registryFile, "utf8"), manualContent);
+  });
 });
 
 test("normalizeCatalog keeps server assets for display while selectAsset only chooses installable assets", () => {
@@ -725,6 +854,61 @@ test("listMarketItems reads skill entries from the catalog", async (t) => {
   assert.equal(result.items.filter((item) => item.type === "skill").length, 2);
   assert.ok(result.items.some((item) => item.id === "first-skill"));
   assert.ok(result.items.some((item) => item.id === "second-skill"));
+});
+
+test("catalog skills remain visible as cloud updates when the same skill was imported locally", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-skill-cloud-local-"));
+  const app = createApp(root);
+  const installPath = getSkillInstallDir(app, "office-xlsx");
+  fs.mkdirSync(installPath, { recursive: true });
+  fs.writeFileSync(path.join(installPath, "SKILL.md"), "# Office XLSX\n", "utf8");
+  fs.writeFileSync(path.join(installPath, "skill.json"), `${JSON.stringify({
+    id: "office-xlsx",
+    name: "Local Office XLSX",
+    version: "0.0.0"
+  })}\n`, "utf8");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = await listMarketItems(app, {
+    sections: ["skills"],
+    catalog: {
+      schemaVersion: 1,
+      items: [{
+        id: "office-xlsx",
+        type: "skill",
+        name: "Office Excel 技能包",
+        version: "0.0.1",
+        description: "Cloud version",
+        tags: ["office"],
+        assets: {
+          universal: {
+            url: "https://market.example.test/office-xlsx.zip",
+            sizeBytes: 1,
+            archiveType: "zip"
+          }
+        }
+      }]
+    }
+  });
+  const item = result.items.find((entry) => entry.type === "skill" && entry.id === "office-xlsx");
+
+  assert.equal(item?.name, "Office Excel 技能包");
+  assert.equal(item?.version, "0.0.1");
+  assert.equal(item?.installedVersion, "0.0.0");
+  assert.equal(item?.state, "update-available");
+  assert.equal(item?.source, "local");
+  assert.equal(item?.marketplaceAvailable, true);
+});
+
+test("semantic version comparison marks only valid newer releases as updates", () => {
+  const compareVersions = __testInternals.compareVersions;
+
+  assert.equal(compareVersions("1.2.0", "1.1.9"), 1);
+  assert.equal(compareVersions("1.0.0-beta.11", "1.0.0-beta.2"), 1);
+  assert.equal(compareVersions("1.0.0", "1.0.0-rc.1"), 1);
+  assert.equal(compareVersions("1.0.0+build.2", "1.0.0+build.1"), 0);
+  assert.equal(compareVersions("1.0", "1.0.0"), 0);
+  assert.equal(compareVersions("1.0.0-01", "1.0.0"), 0);
 });
 
 test("listMarketItems reports an offline market when no market API is configured", async (t) => {
@@ -1828,49 +2012,6 @@ test("installMarketItem does not execute cli installs from Desktop", async (t) =
   assert.equal(fs.existsSync(path.join(root, "should-not-run")), false);
 });
 
-test("installMarketItem downloads and installs catalog cloud skills", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-skill-install-"));
-  const app = createApp(root);
-  const archivePath = writeRootSkillArchive(root, { id: "cloud-skill" });
-  const archiveBytes = fs.readFileSync(archivePath);
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  await withFixtureServer(new Map([
-    ["/cloud-skill.zip", archiveBytes]
-  ]), async (baseUrl) => {
-    const result = await installMarketItem(app, "cloud-skill", {
-      catalog: {
-        schemaVersion: 1,
-        items: [
-          {
-            id: "cloud-skill",
-            type: "skill",
-            name: "Cloud Skill",
-            version: "1.0.0",
-            description: "Cloud skill",
-            tags: ["cloud"],
-            assets: {
-              universal: {
-                url: `${baseUrl}/cloud-skill.zip`,
-                sha256: sha256(archivePath),
-                sizeBytes: archiveBytes.length,
-                archiveType: "zip"
-              }
-            }
-          }
-        ]
-      }
-    });
-
-    assert.equal(result.ok, true);
-    assert.equal(result.type, "skill");
-    assert.equal(result.state, "installed");
-    assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "cloud-skill"), "SKILL.md")), true);
-    assert.equal(JSON.parse(fs.readFileSync(path.join(getSkillInstallDir(app, "cloud-skill"), "skill.json"), "utf8")).name, "Cloud Skill");
-    assert.equal(fs.existsSync(path.join(root, "home", ".codex", "skills")), false);
-  });
-});
-
 test("installMarketItem installs and removes agent packages through agent-platform", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-agent-install-"));
   const app = createApp(root);
@@ -1932,6 +2073,7 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
   const archivePath = writeRootSkillArchive(root, { id: "saved-skill" });
   const archiveBytes = fs.readFileSync(archivePath);
   const catalogHeaders = [];
+  const resolveHeaders = [];
   const assetHeaders = [];
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   fs.mkdirSync(getDesktopConfigRoot(app), { recursive: true });
@@ -1949,6 +2091,11 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
   );
 
   await withFixtureServer(new Map([
+    ["/api/v1/auth/me", (req, res) => {
+      resolveHeaders.push(req.headers);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ user: { id: "market-user" } }));
+    }],
     ["/api/v1/desktop/catalog", (req, res) => {
       catalogHeaders.push(req.headers);
       const origin = `http://${req.headers.host}`;
@@ -1975,7 +2122,28 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
         ]
       }));
     }],
-    ["/saved-skill.zip", (req, res) => {
+    ["/api/v1/skills/saved-skill/resolve?version=1.0.0&platform=universal", (req, res) => {
+      resolveHeaders.push(req.headers);
+      const origin = `http://${req.headers.host}`;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        item: {
+          id: "saved-skill",
+          type: "skill"
+        },
+        version: "1.0.0",
+        platform: "universal",
+        platformSpec: { platform: "universal" },
+        asset: {
+          url: `${origin}/saved-skill.zip`,
+          sha256: sha256(archivePath),
+          sizeBytes: archiveBytes.length,
+          archiveType: "zip"
+        }
+      }));
+    }],
+    ["/api/v1/skills/saved-skill/download?version=1.0.0&platform=universal", (req, res) => {
       assetHeaders.push(req.headers);
       res.end(archiveBytes);
     }]
@@ -2000,9 +2168,148 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
     const result = await installMarketItem(app, "saved-skill");
     assert.equal(result.ok, true);
     assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "saved-skill"), "SKILL.md")), true);
+    assert.equal(resolveHeaders.length, 2);
+    assert.equal(resolveHeaders.every((headers) => typeof headers["x-desktop-device-id"] === "string"), true);
     assert.equal(assetHeaders.length, 1);
-    assert.equal(assetHeaders[0]["x-desktop-device-name-b64"], undefined);
-    assert.equal(assetHeaders[0]["x-desktop-device-id"], undefined);
+    assert.equal(assetHeaders[0]["x-desktop-device-name-b64"], Buffer.from("市场工作站", "utf8").toString("base64url"));
+    assert.equal(typeof assetHeaders[0]["x-desktop-device-id"], "string");
+  });
+});
+
+test("market catalog retries one unauthorized response with a refreshed Desktop SSO token", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-auth-refresh-"));
+  const app = createApp(root);
+  const authorizationHeaders = [];
+  const tokenReasons = [];
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/desktop/catalog", (req, res) => {
+      authorizationHeaders.push(req.headers.authorization ?? "");
+      if (req.headers.authorization !== "Bearer refreshed-market-token") {
+        res.statusCode = 401;
+        res.setHeader("content-type", "application/json");
+        res.end(JSON.stringify({ error: { message: "expired token" } }));
+        return;
+      }
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ schemaVersion: 1, items: [] }));
+    }]
+  ]), async (baseUrl) => {
+    const result = await listMarketItems(app, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      marketEnabled: true,
+      sections: ["softwarePackages"],
+      issueMarketAccessToken: (_marketApp, reason) => {
+        tokenReasons.push(reason);
+        return reason === "unauthorized" ? "refreshed-market-token" : "stale-market-token";
+      }
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.offline, false);
+    assert.deepEqual(tokenReasons, ["missing", "unauthorized"]);
+    assert.deepEqual(authorizationHeaders, ["Bearer stale-market-token", "Bearer refreshed-market-token"]);
+  });
+});
+
+test("installMarketItem resolves, downloads, installs and uninstalls software packages", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-software-install-"));
+  const app = createApp(root);
+  const archivePath = await writeSoftwarePackageArchive(root, { id: "python-test" });
+  const archiveBytes = fs.readFileSync(archivePath);
+  const platformKey = process.platform === "win32"
+    ? `windows-${process.arch === "arm64" ? "arm64" : "amd64"}`
+    : `${process.platform}-${process.arch}`;
+  const requests = [];
+  fs.mkdirSync(path.join(root, "temp"), { recursive: true });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/auth/me", (req, res) => {
+      requests.push({ path: req.url, authorization: req.headers.authorization });
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ user: { id: "market-user" } }));
+    }],
+    ["/api/v1/desktop/catalog", (req, res) => {
+      requests.push({ path: req.url, authorization: req.headers.authorization });
+      const origin = `http://${req.headers.host}`;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        items: [{
+          id: "python-test",
+          type: "software-package",
+          name: "Python Test",
+          version: "3.14.6",
+          description: "Portable Python fixture",
+          tags: ["python"],
+          assets: {
+            [platformKey]: {
+              url: `${origin}/ignored-direct-url.zip`,
+              sha256: sha256(archivePath),
+              sizeBytes: archiveBytes.length,
+              archiveType: "zip"
+            }
+          }
+        }]
+      }));
+    }],
+    [`/api/v1/software-packages/python-test/resolve?version=3.14.6&platform=${platformKey}`, (req, res) => {
+      requests.push({ path: req.url, authorization: req.headers.authorization });
+      const origin = `http://${req.headers.host}`;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        item: { id: "python-test", type: "software-package" },
+        version: "3.14.6",
+        platform: platformKey,
+        platformSpec: { platform: platformKey, minDesktopVersion: "0.3.30" },
+        asset: {
+          url: `${origin}/ignored-resolved-url.zip`,
+          sha256: sha256(archivePath),
+          sizeBytes: archiveBytes.length,
+          archiveType: "zip"
+        }
+      }));
+    }],
+    [`/api/v1/software-packages/python-test/download?version=3.14.6&platform=${platformKey}`, (req, res) => {
+      requests.push({ path: req.url, authorization: req.headers.authorization });
+      res.end(archiveBytes);
+    }]
+  ]), async (baseUrl) => {
+    const options = {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      marketEnabled: true,
+      issueMarketAccessToken: () => "market-access-token"
+    };
+    const result = await installMarketItem(app, "python-test", options);
+    const installPath = getSoftwarePackageInstallDir(app, "python-test", "3.14.6");
+    assert.equal(result.ok, true);
+    assert.equal(result.type, "software-package");
+    assert.equal(fs.readFileSync(path.join(installPath, "bin", "python"), "utf8"), "python executable\n");
+    assert.deepEqual(
+      JSON.parse(fs.readFileSync(path.join(path.dirname(installPath), "current.json"), "utf8")),
+      { version: "3.14.6", installPath }
+    );
+    const record = __testInternals.readInstalledRecords(app).find((item) => item.id === "python-test");
+    assert.equal(record?.type, "software-package");
+    assert.equal(record?.platform, platformKey);
+    assert.equal(requests.length, 4);
+    assert.deepEqual(requests.map((entry) => entry.path), [
+      "/api/v1/desktop/catalog",
+      "/api/v1/auth/me",
+      `/api/v1/software-packages/python-test/resolve?version=3.14.6&platform=${platformKey}`,
+      `/api/v1/software-packages/python-test/download?version=3.14.6&platform=${platformKey}`
+    ]);
+    assert.equal(requests.every((entry) => entry.authorization === "Bearer market-access-token"), true);
+    assert.equal(requests.some((entry) => entry.path.includes("ignored-direct-url")), false);
+    assert.equal(requests.some((entry) => entry.path.includes("ignored-resolved-url")), false);
+
+    const removed = await uninstallMarketItem(app, "python-test", options);
+    assert.equal(removed.ok, true);
+    assert.equal(fs.existsSync(path.dirname(installPath)), false);
+    assert.equal(__testInternals.readInstalledRecords(app).some((item) => item.id === "python-test"), false);
   });
 });
 
@@ -2408,56 +2715,6 @@ test("importSkillFromCommand rejects non npm and npx commands", async (t) => {
     () => importSkillFromCommand(app, "curl https://example.test/skill.tar.gz"),
     /仅支持 npm 或 npx/
   );
-});
-
-test("installMarketItem downloads plugin archives into the program plugins root", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-plugin-install-"));
-  const app = createApp(root);
-  const archivePath = writePluginArchive(root, { id: "cloud-plugin" });
-  const archiveBytes = fs.readFileSync(archivePath);
-  registryInternals.clearServices();
-  t.after(() => {
-    registryInternals.clearServices();
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-
-  await withFixtureServer(new Map([["/cloud-plugin.zip", archiveBytes]]), async (baseUrl) => {
-    const options = {
-      catalog: {
-        schemaVersion: 1,
-        items: [
-          {
-            id: "cloud-plugin",
-            type: "plugin",
-            name: "Cloud Plugin",
-            version: "1.0.0",
-            description: "Cloud plugin",
-            tags: [],
-            assets: {
-              universal: {
-                url: `${baseUrl}/cloud-plugin.zip`,
-                sha256: sha256(archivePath),
-                sizeBytes: archiveBytes.length,
-                archiveType: "zip"
-              }
-            }
-          }
-        ]
-      }
-    };
-
-    const result = await installMarketItem(app, "cloud-plugin", options);
-    const installPath = getPluginInstallDir(app, "cloud-plugin", "1.0.0");
-
-    assert.equal(result.ok, true);
-    assert.equal(result.type, "plugin");
-    assert.equal(result.serviceId, "cloud-plugin");
-    assert.match(installPath, /[\\/]plugins[\\/]cloud-plugin[\\/]1\.0\.0$/u);
-    assert.equal(fs.existsSync(path.join(installPath, "manifest.json")), true);
-
-    const listed = await listMarketItems(app, options);
-    assert.equal(listed.items.find((item) => item.id === "cloud-plugin")?.state, "installed");
-  });
 });
 
 test("installMarketItem downloads plugin archives but rejects builtin manifests", async (t) => {

@@ -29,7 +29,7 @@ import {
   mergeCatalogItems,
   normalizeContainerHubBaseUrl,
   normalizeCatalog,
-  selectAsset,
+  resolveMarketAsset,
   upsertInstalledRecord,
   type Catalog,
   type MarketplaceOptions,
@@ -624,15 +624,13 @@ export async function installSandboxTemplateMarketItem(
     loadSandboxTemplateCatalog(app, options),
     resolveContainerHubConfig(app, options)
   ]);
-  const item = findCatalogItem(market.catalog, itemId, "sandbox-image");
-  const selected = selectAsset(item);
-  if (!selected) {
-    throw new Error(t("market.main.platformUnavailable"));
-  }
+  const catalogItem = findCatalogItem(market.catalog, itemId, "sandbox-image");
   if (!config?.baseURL) {
     throw new Error(t("market.sandbox.buildRequiresContainerHub"));
   }
-  const archivePath = await downloadAsset(app, item, selected.asset);
+  const resolved = await resolveMarketAsset(app, catalogItem, options);
+  const item = resolved.item;
+  const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   const template = await readSandboxTemplatePackage(archivePath);
   try {
     const client = new ContainerHubClient(config);
@@ -645,9 +643,10 @@ export async function installSandboxTemplateMarketItem(
       id: item.id,
       type: "sandbox-image",
       version: item.version,
+      platform: resolved.platform,
       source: "cloud",
-      assetUrl: selected.asset.url,
-      sha256: selected.asset.sha256,
+      assetUrl: resolved.asset.url,
+      sha256: resolved.asset.sha256,
       installPath: template.environmentName,
       installedAt: new Date().toISOString()
     });

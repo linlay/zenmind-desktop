@@ -35,7 +35,7 @@ import {
   mergeCatalogItems,
   normalizeCatalog,
   removeInstalledRecord,
-  selectAsset,
+  resolveMarketAsset,
   upsertInstalledRecord,
   type Catalog,
   type MarketplaceOptions,
@@ -59,6 +59,7 @@ type WebsiteAppArchiveInstallOptions = {
   displayName?: string;
   version?: string;
   source?: "cloud" | "local";
+  platform?: string;
   assetUrl?: string;
   sha256?: string;
   removeArchive?: boolean;
@@ -262,19 +263,18 @@ export async function installWebsiteAppMarketItem(
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
   const { catalog } = await loadWebsiteAppCatalog(app, options);
-  const item = findCatalogItem(catalog, itemId, "website-app");
-  const selected = selectAsset(item);
-  if (!selected) {
-    throw new Error(t("market.main.platformUnavailable"));
-  }
-  const archivePath = await downloadAsset(app, item, selected.asset);
+  const catalogItem = findCatalogItem(catalog, itemId, "website-app");
+  const resolved = await resolveMarketAsset(app, catalogItem, options);
+  const item = resolved.item;
+  const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   return installWebsiteAppArchiveFromPath(app, archivePath, {
     expectedId: item.id,
     displayName: item.name,
     version: item.version,
     source: "cloud",
-    assetUrl: selected.asset.url,
-    sha256: selected.asset.sha256,
+    platform: resolved.platform,
+    assetUrl: resolved.asset.url,
+    sha256: resolved.asset.sha256,
     removeArchive: true
   });
 }
@@ -490,6 +490,7 @@ export async function installWebsiteAppArchiveFromPath(
         id: webapp.id,
         type: "website-app",
         version: webapp.version,
+        ...(options.platform ? { platform: options.platform } : {}),
         source: options.source ?? "local",
         ...(options.assetUrl ? { assetUrl: options.assetUrl } : {}),
         ...(options.sha256 ? { sha256: options.sha256 } : {}),
