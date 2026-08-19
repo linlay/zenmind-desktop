@@ -115,6 +115,16 @@ type AttachedWebviewLike = {
 
 type WebviewEditCommand = "copy" | "cut" | "paste" | "selectAll";
 
+function isWorkPanelFullscreenExitShortcut(input: any) {
+  return input?.type === "keyDown" &&
+    String(input?.key || "").toLowerCase() === "escape" &&
+    input?.isAutoRepeat !== true &&
+    input?.meta !== true &&
+    input?.control !== true &&
+    input?.alt !== true &&
+    input?.shift !== true;
+}
+
 type AttachedWebviewOptions<
   TMainWindow,
   TGuestContents extends AttachedWebviewLike = AttachedWebviewLike
@@ -125,6 +135,7 @@ type AttachedWebviewOptions<
   isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
   isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
   isWorkPanelWebview?(contents: TGuestContents): boolean;
+  isWorkPanelFullscreenActive?(): boolean;
   resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
   isGlobalSearchOverlayVisible?(): boolean;
   shouldDownloadUrl(url: string): boolean;
@@ -349,6 +360,7 @@ export function configureMainWindowWebContents<
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelWebview?(contents: TGuestContents): boolean;
+    isWorkPanelFullscreenActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isGlobalSearchOverlayVisible?(): boolean;
     shouldDownloadUrl(url: string): boolean;
@@ -445,6 +457,7 @@ export function configureMainWindowWebContents<
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
       isWorkPanelWebview: options.isWorkPanelWebview,
+      isWorkPanelFullscreenActive: options.isWorkPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: options.isGlobalSearchOverlayVisible,
       shouldDownloadUrl: options.shouldDownloadUrl,
@@ -675,6 +688,20 @@ export function configureAttachedWebview<
         return;
       }
       mainWindow.webContents.send("app.openGlobalSearch", { source: "webview", guestId: contents.id });
+      return;
+    }
+
+    if (
+      options.isWorkPanelWebview?.(contents) === true &&
+      options.isWorkPanelFullscreenActive?.() === true &&
+      isWorkPanelFullscreenExitShortcut(input)
+    ) {
+      event.preventDefault();
+      const mainWindow = options.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send("app.workPanelFullscreenExitShortcut", { guestId: contents.id });
       return;
     }
 

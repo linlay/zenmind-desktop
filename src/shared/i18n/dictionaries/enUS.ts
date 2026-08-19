@@ -68,7 +68,7 @@ export const enUSMessages = {
   "webviewContextMenu.page.back": "Back",
   "webviewContextMenu.page.forward": "Forward",
   "webviewContextMenu.page.reload": "Reload",
-  "webviewContextMenu.page.copy-url": "Copy Page Address",
+  "webviewContextMenu.page.copy-url": "Copy Current Address",
 
   "webviewSelectionToolbar.label": "Selected text actions",
   "webviewSelectionToolbar.addToChat": "Add to chat",
@@ -231,7 +231,7 @@ export const enUSMessages = {
   "chatWorkPanel.close": "Close Work Panel",
   "chatWorkPanel.closeTab": "Close {title}",
   "chatWorkPanel.resize": "Resize Work Panel",
-  "chatWorkPanel.tabContextMenu.enterFullscreen": "Show Work Panel Full Screen",
+  "chatWorkPanel.tabContextMenu.enterFullscreen": "Full Screen",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "Exit Full Screen",
   "chatWorkPanel.tabContextMenu.downloadArtifact": "Download Artifact File",
   "chatWorkPanel.tabContextMenu.downloadReference": "Download Resource File",
@@ -2458,6 +2458,8 @@ export const enUSMessages = {
   "shell.screenshotUnavailable": "Screenshot capability is unavailable.",
   "shell.invalidDelta": "Invalid scroll delta.",
   "shell.windowUnavailable": "Window unavailable.",
+  "shell.invalidFullscreenRequest": "Invalid full-screen request.",
+  "shell.windowFullscreenTimeout": "Window full-screen transition timed out.",
 
   "revealPath.openedDirectory": "Directory opened.",
   "revealPath.pathRequired": "Missing path to open.",

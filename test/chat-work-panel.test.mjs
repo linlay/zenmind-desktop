@@ -155,6 +155,53 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(appShell, /window\.addEventListener\("pointermove", handlePointerMove, true\)/u);
 });
 
+test("WorkPanel fullscreen owns native window state and exclusively covers the Desktop shell", () => {
+  const appShell = read("src/renderer/app-shell/AppShell.tsx");
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const css = read("src/renderer/styles/app-shell.css");
+  const contracts = read("src/shared/contracts/desktop-api.ts");
+  const preload = read("src/preload/index.ts");
+  const shellHandlers = read("src/main/ipc/shell-handlers.ts");
+  const zhCN = read("src/shared/i18n/dictionaries/zhCN.ts");
+  const enUS = read("src/shared/i18n/dictionaries/enUS.ts");
+
+  assert.match(contracts, /setWindowFullScreen:\s*\([\s\S]*?enabled: boolean[\s\S]*?isFullScreen: boolean/u);
+  assert.match(contracts, /setWorkPanelFullscreenActive: \(active: boolean\) => void/u);
+  assert.match(contracts, /onWorkPanelFullscreenExitShortcut: \(listener: \(\) => void\) => \(\) => void/u);
+  assert.match(preload, /setWindowFullScreen:\s*\(enabled: boolean\)\s*=>\s*ipcRenderer\.invoke\("desktopShell\.setWindowFullScreen", enabled\)/u);
+  assert.match(preload, /ipcRenderer\.send\("desktopShell\.setWorkPanelFullscreenActive", active\)/u);
+  assert.match(preload, /ipcRenderer\.on\("app\.workPanelFullscreenExitShortcut", listener\)/u);
+  assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.setWindowFullScreen"/u);
+  assert.match(shellHandlers, /ownerWindow !== mainWindow/u);
+  assert.match(shellHandlers, /typeof enabled !== "boolean"/u);
+  assert.match(shellHandlers, /WINDOW_FULLSCREEN_TRANSITION_TIMEOUT_MS = 3000/u);
+  assert.match(shellHandlers, /platform !== "darwin"/u);
+  assert.match(shellHandlers, /targetWindow\.once\("enter-full-screen"/u);
+  assert.match(shellHandlers, /targetWindow\.once\("leave-full-screen"/u);
+
+  assert.match(appShell, /workPanelEnteredNativeFullscreenRef/u);
+  assert.match(appShell, /desktopShell\.getWindowState\(\)/u);
+  assert.match(appShell, /desktopShell\.setWindowFullScreen\(true\)/u);
+  assert.match(appShell, /desktopShell\.setWindowFullScreen\(false\)/u);
+  assert.match(appShell, /desktopShell\.setWorkPanelFullscreenActive/u);
+  assert.match(appShell, /!state\.isFullScreen && workPanelFullscreenOwnerChatIdRef\.current/u);
+  assert.match(appShell, /workPanelFullscreenOwnerChatId \? "is-work-panel-fullscreen" : ""/u);
+  assert.match(appShell, /fullscreenOwnerChatId=\{workPanelFullscreenOwnerChatId\}/u);
+  assert.match(appShell, /onFullscreenChange=\{changeWorkPanelFullscreen\}/u);
+  assert.match(host, /await onFullscreenChange\(ownerChatId\)/u);
+  assert.match(host, /void onFullscreenChange\(null\)/u);
+  assert.match(host, /onWorkPanelFullscreenExitShortcut/u);
+
+  assert.match(css, /\.app-shell\.is-work-panel-fullscreen \.app-content\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*z-index:\s*2000;[^}]*margin-right:\s*0;/su);
+  assert.match(css, /\.app-shell\.is-work-panel-fullscreen \.app-content > \.app-main,[\s\S]*?visibility:\s*hidden;[\s\S]*?pointer-events:\s*none;/u);
+  assert.match(css, /:not\(\.app-content\):not\(\.desktop-action-confirmation-layer\):not\(\.desktop-global-search-layer\):not\(\.desktop-shutdown-overlay\)/u);
+
+  assert.match(zhCN, /"webviewContextMenu\.page\.copy-url": "复制当前地址"/u);
+  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "全屏显示"/u);
+  assert.match(enUS, /"webviewContextMenu\.page\.copy-url": "Copy Current Address"/u);
+  assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "Full Screen"/u);
+});
+
 test("WorkPanel close shortcut focus ownership is wired across renderer preload and main", () => {
   const contracts = read("src/shared/contracts/desktop-api.ts");
   const preload = read("src/preload/index.ts");

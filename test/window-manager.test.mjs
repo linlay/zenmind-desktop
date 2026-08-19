@@ -1160,6 +1160,58 @@ test("attached webviews forward close only for active registered WorkPanel guest
   ]);
 });
 
+test("attached WorkPanel webviews forward Escape only while panel fullscreen is active", () => {
+  const target = new FakeWindow();
+  const workPanelGuest = new FakeWebContents(94);
+  const ordinaryGuest = new FakeWebContents(95);
+  let fullscreenActive = false;
+  const prevented = { inactive: false, active: false, repeated: false, ordinary: false };
+  const baseOptions = {
+    platform: "win32",
+    getMainWindow: () => target,
+    isDevToolsShortcut: () => false,
+    isWorkPanelWebview: (contents) => contents.id === workPanelGuest.id,
+    isWorkPanelFullscreenActive: () => fullscreenActive,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async () => {},
+    schedule: (callback) => callback(),
+  };
+
+  configureAttachedWebview(workPanelGuest, baseOptions);
+  configureAttachedWebview(ordinaryGuest, baseOptions);
+
+  workPanelGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.inactive = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: false,
+  });
+  fullscreenActive = true;
+  workPanelGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.active = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: false,
+  });
+  workPanelGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.repeated = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: true,
+  });
+  ordinaryGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.ordinary = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: false,
+  });
+
+  assert.deepEqual(prevented, { inactive: false, active: true, repeated: false, ordinary: false });
+  assert.deepEqual(target.webContents.sentMessages, [{
+    channel: "app.workPanelFullscreenExitShortcut",
+    payload: { guestId: 94 },
+  }]);
+});
+
 test("window manager grants media permissions only to the main window", async () => {
   const permissionSession = new FakePermissionSession();
   const mainWindow = new FakeWindow();

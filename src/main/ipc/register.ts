@@ -197,6 +197,9 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     setWebviewModalOverlayVisible: options.setWebviewModalOverlayVisible,
     setWorkPanelKeyboardFocusActive: (active) => {
       context.state.workPanelKeyboardFocusActive = active;
+    },
+    setWorkPanelFullscreenActive: (active) => {
+      context.state.workPanelFullscreenActive = active;
     }
   }));
   registerSidebarContextMenuIpcHandlers(ipcMain, {

@@ -34,6 +34,8 @@ type WorkPanelHostProps = {
   activeChatId: string | null;
   state: WorkPanelState;
   dispatchCommand(command: WorkPanelCommand): WorkPanelCommandResult;
+  fullscreenOwnerChatId: string | null;
+  onFullscreenChange(ownerChatId: string | null): Promise<boolean>;
   hasPanelToggle?: boolean;
   isMac: boolean;
   isWindows: boolean;
@@ -104,6 +106,8 @@ export function WorkPanelHost({
   activeChatId,
   state,
   dispatchCommand,
+  fullscreenOwnerChatId,
+  onFullscreenChange,
   hasPanelToggle,
   isMac,
   isWindows,
@@ -112,7 +116,6 @@ export function WorkPanelHost({
   const rootRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef(state);
   const previousWebPartitionsRef = useRef(new Set<string>());
-  const [fullscreenOwnerChatId, setFullscreenOwnerChatId] = useState<string | null>(null);
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
   stateRef.current = state;
 
@@ -224,7 +227,7 @@ export function WorkPanelHost({
     }
     if (result.actionId === "toggle-fullscreen") {
       if (fullscreenOwnerChatId === ownerChatId) {
-        setFullscreenOwnerChatId(null);
+        await onFullscreenChange(null);
         return;
       }
       const activation = dispatchCommand({
@@ -233,20 +236,10 @@ export function WorkPanelHost({
         itemId: item.itemId,
       });
       if (activation.ok) {
-        setFullscreenOwnerChatId(ownerChatId);
+        await onFullscreenChange(ownerChatId);
       }
     }
   };
-
-  useEffect(() => {
-    if (!fullscreenOwnerChatId) return;
-    const workspaceStillVisible = activeChatId === fullscreenOwnerChatId && state.workspaces.some(
-      (workspace) => workspace.ownerChatId === fullscreenOwnerChatId,
-    );
-    if (!workspaceStillVisible) {
-      setFullscreenOwnerChatId(null);
-    }
-  }, [activeChatId, fullscreenOwnerChatId, state.workspaces]);
 
   useEffect(() => {
     const nextPartitions = new Set(
@@ -385,7 +378,7 @@ export function WorkPanelHost({
     };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && fullscreenOwnerChatId === activeChatId) {
-        setFullscreenOwnerChatId(null);
+        void onFullscreenChange(null);
         event.preventDefault();
         event.stopPropagation();
         return;
@@ -401,6 +394,11 @@ export function WorkPanelHost({
       closeWorkPanelStep(ownerChatId);
     };
     root.addEventListener("keydown", handleKeyDown, true);
+    const disposeFullscreenExitShortcut = window.electronAPI.onWorkPanelFullscreenExitShortcut(() => {
+      if (fullscreenOwnerChatId === activeChatId) {
+        void onFullscreenChange(null);
+      }
+    });
     const disposeGuestShortcut = window.electronAPI.onWorkPanelCloseShortcut(({
       guestId,
       fallbackToWindowClose,
@@ -433,9 +431,10 @@ export function WorkPanelHost({
     });
     return () => {
       root.removeEventListener("keydown", handleKeyDown, true);
+      disposeFullscreenExitShortcut();
       disposeGuestShortcut();
     };
-  }, [activeChatId, dispatchCommand, fullscreenOwnerChatId, isMac, isWindows]);
+  }, [activeChatId, dispatchCommand, fullscreenOwnerChatId, isMac, isWindows, onFullscreenChange]);
 
   useEffect(() => {
     const root = rootRef.current;

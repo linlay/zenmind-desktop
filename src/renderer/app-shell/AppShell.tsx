@@ -562,6 +562,11 @@ export function AppShell() {
   const chatDefaultAgentMigrationRef = useRef("");
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
+  const [workPanelFullscreenOwnerChatId, setWorkPanelFullscreenOwnerChatId] =
+    useState<string | null>(null);
+  const workPanelFullscreenOwnerChatIdRef = useRef<string | null>(null);
+  const workPanelEnteredNativeFullscreenRef = useRef(false);
+  const workPanelFullscreenTransitionPendingRef = useRef(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
@@ -788,6 +793,22 @@ export function AppShell() {
   );
   const activeSettingsSectionId = resolveSettingsSectionId(location.pathname, visibleSettingsSectionIds);
 
+  const clearWorkPanelFullscreen = useCallback(() => {
+    workPanelFullscreenOwnerChatIdRef.current = null;
+    workPanelEnteredNativeFullscreenRef.current = false;
+    setWorkPanelFullscreenOwnerChatId(null);
+  }, []);
+
+  useEffect(() => {
+    window.electronAPI.desktopShell.setWorkPanelFullscreenActive(
+      Boolean(workPanelFullscreenOwnerChatId)
+    );
+  }, [workPanelFullscreenOwnerChatId]);
+
+  useEffect(() => () => {
+    window.electronAPI.desktopShell.setWorkPanelFullscreenActive(false);
+  }, []);
+
   useEffect(() => {
     const desktopShell = window.electronAPI.desktopShell;
     if (!desktopShell.getWindowState || !desktopShell.onWindowStateChanged) {
@@ -798,12 +819,18 @@ export function AppShell() {
     void desktopShell.getWindowState().then((result) => {
       if (active && result.ok) {
         setWindowFullScreen(result.isFullScreen);
+        if (!result.isFullScreen && workPanelFullscreenOwnerChatIdRef.current) {
+          clearWorkPanelFullscreen();
+        }
       }
     }).catch(() => undefined);
 
     const unsubscribe = desktopShell.onWindowStateChanged((state) => {
       if (active) {
         setWindowFullScreen(state.isFullScreen);
+        if (!state.isFullScreen && workPanelFullscreenOwnerChatIdRef.current) {
+          clearWorkPanelFullscreen();
+        }
       }
     });
 
@@ -811,7 +838,71 @@ export function AppShell() {
       active = false;
       unsubscribe();
     };
-  }, []);
+  }, [clearWorkPanelFullscreen]);
+
+  const changeWorkPanelFullscreen = useCallback(async (ownerChatId: string | null) => {
+    const currentOwnerChatId = workPanelFullscreenOwnerChatIdRef.current;
+    if (ownerChatId) {
+      if (currentOwnerChatId === ownerChatId) return true;
+      if (currentOwnerChatId || workPanelFullscreenTransitionPendingRef.current) return false;
+
+      workPanelFullscreenTransitionPendingRef.current = true;
+      try {
+        const currentWindowState = await window.electronAPI.desktopShell.getWindowState();
+        if (!currentWindowState.ok) return false;
+        setWindowFullScreen(currentWindowState.isFullScreen);
+
+        let enteredNativeFullscreen = false;
+        if (!currentWindowState.isFullScreen) {
+          const transition = await window.electronAPI.desktopShell.setWindowFullScreen(true);
+          if (!transition.ok || !transition.isFullScreen) return false;
+          setWindowFullScreen(true);
+          enteredNativeFullscreen = true;
+        }
+
+        workPanelEnteredNativeFullscreenRef.current = enteredNativeFullscreen;
+        workPanelFullscreenOwnerChatIdRef.current = ownerChatId;
+        setWorkPanelFullscreenOwnerChatId(ownerChatId);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        workPanelFullscreenTransitionPendingRef.current = false;
+      }
+    }
+
+    if (!currentOwnerChatId) return true;
+    if (workPanelFullscreenTransitionPendingRef.current) return false;
+    if (!workPanelEnteredNativeFullscreenRef.current) {
+      clearWorkPanelFullscreen();
+      return true;
+    }
+
+    workPanelFullscreenTransitionPendingRef.current = true;
+    try {
+      const transition = await window.electronAPI.desktopShell.setWindowFullScreen(false);
+      if (!transition.ok && transition.isFullScreen) return false;
+      setWindowFullScreen(false);
+      clearWorkPanelFullscreen();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      workPanelFullscreenTransitionPendingRef.current = false;
+    }
+  }, [clearWorkPanelFullscreen]);
+
+  const forceExitWorkPanelFullscreen = useCallback(() => {
+    if (!workPanelFullscreenOwnerChatIdRef.current) return;
+    const shouldExitNativeFullscreen = workPanelEnteredNativeFullscreenRef.current;
+    clearWorkPanelFullscreen();
+    if (!shouldExitNativeFullscreen) return;
+    void window.electronAPI.desktopShell.setWindowFullScreen(false)
+      .then((result) => {
+        setWindowFullScreen(result.isFullScreen);
+      })
+      .catch(() => undefined);
+  }, [clearWorkPanelFullscreen]);
 
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
@@ -2330,6 +2421,24 @@ export function AppShell() {
   }, [activeChatWorkPanelVisible]);
 
   useEffect(() => {
+    const ownerChatId = workPanelFullscreenOwnerChatId;
+    if (!ownerChatId) return;
+    const workspaceStillVisible =
+      activeChatWorkPanelChatId === ownerChatId &&
+      workPanelState.visibleOwnerChatIds.includes(ownerChatId) &&
+      workPanelState.workspaces.some((workspace) => workspace.ownerChatId === ownerChatId);
+    if (!workspaceStillVisible) {
+      forceExitWorkPanelFullscreen();
+    }
+  }, [
+    activeChatWorkPanelChatId,
+    forceExitWorkPanelFullscreen,
+    workPanelFullscreenOwnerChatId,
+    workPanelState.visibleOwnerChatIds,
+    workPanelState.workspaces,
+  ]);
+
+  useEffect(() => {
     if (assistantCopilotOpen && !copilotDockOverlayMode && !copilotDockNativeDialogVisible) {
       return;
     }
@@ -3527,6 +3636,7 @@ export function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
+        workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
         showMainChatWorkPanelToggle ? "has-main-chat-work-panel-toggle" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
@@ -3789,6 +3899,8 @@ export function AppShell() {
           activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           state={workPanelState}
           dispatchCommand={dispatchWorkPanelCommand}
+          fullscreenOwnerChatId={workPanelFullscreenOwnerChatId}
+          onFullscreenChange={changeWorkPanelFullscreen}
           hasPanelToggle={activeChatWorkPanelVisible && showMainChatWorkPanelToggle}
           isMac={isMac}
           isWindows={isWindows}

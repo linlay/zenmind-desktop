@@ -215,6 +215,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
 
   function createWindow() {
     options.state.workPanelKeyboardFocusActive = false;
+    options.state.workPanelFullscreenActive = false;
     options.state.focusedWebviewDevToolsTargetId = null;
     options.state.mainWindow = new BrowserWindow(buildMainWindowOptions({
       platform: options.platform,
@@ -237,6 +238,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
       isWorkPanelWebview: options.isWorkPanelWebview,
+      isWorkPanelFullscreenActive: () => options.state.workPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: () => mainWindowLifecycle.isGlobalSearchOverlayVisible(),
       shouldDownloadUrl: shouldDownloadUrlFromWebview,
@@ -282,6 +284,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
         if (options.state.mainWindow === windowToClear) {
           options.state.mainWindow = null;
           options.state.workPanelKeyboardFocusActive = false;
+          options.state.workPanelFullscreenActive = false;
           options.state.focusedWebviewDevToolsTargetId = null;
         }
       },

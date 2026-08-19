@@ -103,8 +103,12 @@ const api: DesktopApi = {
       ipcRenderer.send("desktopShell.setWebviewModalOverlayVisible", sourceId, visible),
     setWorkPanelKeyboardFocusActive: (active: boolean) =>
       ipcRenderer.send("desktopShell.setWorkPanelKeyboardFocusActive", active),
+    setWorkPanelFullscreenActive: (active: boolean) =>
+      ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
     requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
     getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
+    setWindowFullScreen: (enabled: boolean) =>
+      ipcRenderer.invoke("desktopShell.setWindowFullScreen", enabled),
     onWindowStateChanged: (listener: DesktopWindowStateListener) => {
       const handleWindowStateChanged = (
         _event: Electron.IpcRendererEvent,
@@ -757,6 +761,12 @@ const api: DesktopApi = {
     ipcRenderer.on("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
     return () => {
       ipcRenderer.off("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+    };
+  },
+  onWorkPanelFullscreenExitShortcut: (listener: () => void) => {
+    ipcRenderer.on("app.workPanelFullscreenExitShortcut", listener);
+    return () => {
+      ipcRenderer.off("app.workPanelFullscreenExitShortcut", listener);
     };
   },
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {

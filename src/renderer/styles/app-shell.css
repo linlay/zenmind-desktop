@@ -688,6 +688,31 @@
   transition: none;
 }
 
+.app-shell.is-work-panel-fullscreen .app-content {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  flex: none;
+  width: 100%;
+  height: 100%;
+  margin-right: 0;
+  border-right: 0;
+  background: var(--embedded-surface-page-bg);
+  transition: none;
+}
+
+.app-shell.is-work-panel-fullscreen .app-content > .app-main,
+.app-shell.is-work-panel-fullscreen .app-content > .chat-work-panel-resizer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app-shell.is-work-panel-fullscreen
+  > :not(.app-content):not(.desktop-action-confirmation-layer):not(.desktop-global-search-layer):not(.desktop-shutdown-overlay) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .app-content::before {
   display: none;
 }

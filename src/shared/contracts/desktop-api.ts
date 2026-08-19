@@ -621,8 +621,12 @@ export interface DesktopApi {
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
     setWorkPanelKeyboardFocusActive: (active: boolean) => void;
+    setWorkPanelFullscreenActive: (active: boolean) => void;
     requestWindowClose: () => void;
     getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
+    setWindowFullScreen: (
+      enabled: boolean
+    ) => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
     onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
     onShutdownProgress: (listener: ShutdownProgressListener) => (() => void);
   };
@@ -966,6 +970,7 @@ export interface DesktopApi {
   onOpenGlobalSearch: (listener: () => void) => () => void;
   onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => () => void;
   onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => () => void;
+  onWorkPanelFullscreenExitShortcut: (listener: () => void) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;
   onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => () => void;

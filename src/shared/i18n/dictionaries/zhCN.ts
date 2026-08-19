@@ -68,7 +68,7 @@ export const zhCNMessages = {
   "webviewContextMenu.page.back": "后退",
   "webviewContextMenu.page.forward": "前进",
   "webviewContextMenu.page.reload": "刷新",
-  "webviewContextMenu.page.copy-url": "复制当前页面地址",
+  "webviewContextMenu.page.copy-url": "复制当前地址",
 
   "webviewSelectionToolbar.label": "所选文本快捷操作",
   "webviewSelectionToolbar.addToChat": "添加到对话",
@@ -231,7 +231,7 @@ export const zhCNMessages = {
   "chatWorkPanel.close": "关闭工作面板",
   "chatWorkPanel.closeTab": "关闭 {title}",
   "chatWorkPanel.resize": "调整工作面板宽度",
-  "chatWorkPanel.tabContextMenu.enterFullscreen": "全屏显示工作面板",
+  "chatWorkPanel.tabContextMenu.enterFullscreen": "全屏显示",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "退出全屏",
   "chatWorkPanel.tabContextMenu.downloadArtifact": "下载产物文件",
   "chatWorkPanel.tabContextMenu.downloadReference": "下载资源文件",
@@ -2458,6 +2458,8 @@ export const zhCNMessages = {
   "shell.screenshotUnavailable": "截屏能力暂不可用。",
   "shell.invalidDelta": "滚动参数无效。",
   "shell.windowUnavailable": "窗口不可用。",
+  "shell.invalidFullscreenRequest": "全屏请求无效。",
+  "shell.windowFullscreenTimeout": "窗口全屏切换超时。",
 
   "revealPath.openedDirectory": "已打开目录。",
   "revealPath.pathRequired": "缺少要打开的路径。",
