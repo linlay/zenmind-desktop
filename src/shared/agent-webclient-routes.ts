@@ -285,6 +285,16 @@ interface AgentWebclientChatNavigationIdentity {
   businessQueryEntries: Array<readonly [string, string]>;
 }
 
+export function readAgentWebclientAgentRouteKey(value: string): string {
+  try {
+    const url = new URL(value, "http://desktop.local");
+    const match = /^\/agent\/([^/]+)$/u.exec(url.pathname);
+    return match ? decodeRoutePathSegment(match[1]) ?? "" : "";
+  } catch {
+    return "";
+  }
+}
+
 function resolveAgentWebclientChatNavigationIdentity(
   value: string
 ): AgentWebclientChatNavigationIdentity | null {
@@ -398,6 +408,41 @@ export function resolveAgentWebclientDesktopChatRouteFromUrl(
 
   const businessSearch = createAgentWebclientBusinessSearch(parsed.searchParams);
   return createAgentWebclientAgentPath(agentKey, businessSearch);
+}
+
+/**
+ * Recognize a trusted WebClient worker switch without treating a bare Agent
+ * route as a canonical Chat identity. Desktop will mint the one-shot newChat
+ * source after this returns the new Agent key.
+ */
+export function resolveAgentWebclientDesktopAgentSwitchTarget(
+  value: string,
+  webviewSrcUrl: string,
+  currentDesktopRoute: string,
+): string {
+  let parsed: URL;
+  let src: URL;
+  try {
+    parsed = new URL(value);
+    src = new URL(webviewSrcUrl);
+  } catch {
+    return "";
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    (src.protocol !== "http:" && src.protocol !== "https:") ||
+    parsed.origin !== src.origin ||
+    Boolean(parsed.hash) ||
+    createAgentWebclientBusinessSearch(parsed.searchParams)
+  ) {
+    return "";
+  }
+
+  const targetAgentKey = readAgentWebclientAgentRouteKey(parsed.toString());
+  const currentAgentKey = readAgentWebclientAgentRouteKey(currentDesktopRoute);
+  return targetAgentKey && currentAgentKey && targetAgentKey !== currentAgentKey
+    ? targetAgentKey
+    : "";
 }
 
 export function findAgentWebclientRouteDefinition(pathname: string) {

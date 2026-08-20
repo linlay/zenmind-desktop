@@ -17,6 +17,9 @@ import {
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
+  createAgentWebclientAgentPath,
+  readAgentWebclientAgentRouteKey,
+  resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource,
 } from "../../shared/agent-webclient-routes";
@@ -555,6 +558,7 @@ export function ServiceWebviewSurface({
   const lastDirectWebviewRouteRef = useRef("");
   const lastHostAppliedChatRouteRef = useRef("");
   const lastReportedCurrentUrlRef = useRef("");
+  const lastAgentSwitchNewChatTimestampRef = useRef(0);
   const lastLiveSurfaceLifecycleRef = useRef<{
     active: boolean;
     webContentsId: number | undefined;
@@ -1614,6 +1618,13 @@ export function ServiceWebviewSurface({
           buildClientSideRouteNavigationScript(embeddedUrl),
           true,
         ).then((clientNavigationResult: unknown) => {
+          if (lastDirectWebviewRouteRef.current !== embeddedUrl) {
+            reportServiceWebviewDiagnostic("direct-route-client-navigation-stale", {
+              targetUrl: embeddedUrl,
+              latestTargetUrl: lastDirectWebviewRouteRef.current,
+            });
+            return;
+          }
           const resultRecord =
             clientNavigationResult &&
             typeof clientNavigationResult === "object" &&
@@ -1634,6 +1645,13 @@ export function ServiceWebviewSurface({
           });
           void targetWebview.loadURL(embeddedUrl);
         }).catch((reason: unknown) => {
+          if (lastDirectWebviewRouteRef.current !== embeddedUrl) {
+            reportServiceWebviewDiagnostic("direct-route-client-navigation-stale", {
+              targetUrl: embeddedUrl,
+              latestTargetUrl: lastDirectWebviewRouteRef.current,
+            });
+            return;
+          }
           reportServiceWebviewDiagnostic("direct-route-client-navigation-failed", {
             error: reason instanceof Error ? reason.message : String(reason),
           });
@@ -1760,6 +1778,26 @@ export function ServiceWebviewSurface({
         canSyncDesktopRoute &&
         isAgentWebclientChatSurface(service?.id, surfaceId)
       ) {
+        const switchedAgentKey = resolveAgentWebclientDesktopAgentSwitchTarget(
+          resolvedUrl,
+          webviewSrcUrl,
+          currentRoute,
+        );
+        if (switchedAgentKey) {
+          const nextTimestamp = Math.max(
+            Date.now(),
+            lastAgentSwitchNewChatTimestampRef.current + 1,
+          );
+          const newChat = String(nextTimestamp);
+          if (/^[1-9]\d{12}$/u.test(newChat)) {
+            lastAgentSwitchNewChatTimestampRef.current = nextTimestamp;
+            const params = new URLSearchParams({ newChat });
+            navigate(createAgentWebclientAgentPath(switchedAgentKey, params), {
+              replace: true,
+            });
+            return;
+          }
+        }
         const nextChatRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
           resolvedUrl,
           webviewSrcUrl,
@@ -1771,8 +1809,11 @@ export function ServiceWebviewSurface({
           );
         const isSameDesktopBusinessRoute = Boolean(nextChatRoute) &&
           areAgentWebclientChatBusinessRoutesEquivalent(currentRoute, nextChatRoute);
+        const newChatBootstrapSource = readAgentWebclientNewChatSource(currentRoute);
         const newChatBootstrapOwnsPromotion = Boolean(
-          readAgentWebclientNewChatSource(currentRoute),
+          newChatBootstrapSource &&
+          readAgentWebclientAgentRouteKey(nextChatRoute) ===
+            newChatBootstrapSource.agentKey,
         );
         if (
           nextChatRoute &&

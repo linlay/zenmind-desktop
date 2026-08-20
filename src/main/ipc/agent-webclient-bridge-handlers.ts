@@ -37,6 +37,7 @@ import {
   MAIN_CHAT_SURFACE_ID
 } from "../../shared/surface-identity";
 import { readAgentWebclientNewChatSource } from "../../shared/canonical-chat-sync";
+import { readAgentWebclientAgentRouteKey } from "../../shared/agent-webclient-routes";
 import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
@@ -294,6 +295,32 @@ function updateBindingFromFrame(binding: StreamBinding, frame: PlatformFrameReco
 
 function protocolError(message: string) {
   return Object.assign(new Error(message), { name: "protocol_error" });
+}
+
+function validateMainChatQueryAgentIdentity(
+  context: SurfaceContext,
+  payload: Record<string, unknown>,
+) {
+  if (
+    context.target.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+    context.target.surfaceType !== "agent-chat"
+  ) {
+    return;
+  }
+  const owner = readOwner(payload);
+  const routeAgentKeys = [
+    readAgentWebclientAgentRouteKey(context.sender.getURL()),
+    readAgentWebclientAgentRouteKey(context.target.currentUrl),
+    readAgentWebclientAgentRouteKey(context.target.pageRoute ?? ""),
+  ];
+  if (!routeAgentKeys.some(Boolean)) return;
+  if (
+    !owner ||
+    owner.kind !== "agent" ||
+    routeAgentKeys.some((agentKey) => !agentKey || agentKey !== owner.agentKey)
+  ) {
+    throw protocolError("query Agent owner does not match its active Main Chat route");
+  }
 }
 
 function resolveNewChatQuerySource(
@@ -921,6 +948,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     let newChatSource: StreamBinding["newChatSource"] = null;
     if (frame.type === "/api/query") {
       try {
+        validateMainChatQueryAgentIdentity(context, payload);
         newChatSource = resolveNewChatQuerySource(context.target, payload);
       } catch (error) {
         finishExplicitDetachWrite(false);

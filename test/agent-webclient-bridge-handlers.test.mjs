@@ -16,11 +16,13 @@ const {
 function createSender(id, url) {
   const sender = new EventEmitter();
   let destroyed = false;
+  let currentUrl = url;
   sender.id = id;
   sender.messages = [];
   sender.isDestroyed = () => destroyed;
   sender.getType = () => "webview";
-  sender.getURL = () => url;
+  sender.getURL = () => currentUrl;
+  sender.setURL = (nextUrl) => { currentUrl = nextUrl; };
   sender.send = (channel, message) => sender.messages.push({ channel, message });
   sender.destroy = () => {
     destroyed = true;
@@ -216,7 +218,8 @@ function sentFrames(sender) {
 test("raw Frame Port forwards each Platform stream frame immediately and unchanged", async () => {
   const target = createTarget(41, {
     ownerChatId: "chat-1",
-    currentUrl: "http://127.0.0.1:7079/agent/agent-41?chatId=chat-1",
+    pageRoute: "/agent/agent-1?chatId=chat-1",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-1",
   });
   const targets = new Map([[41, target]]);
   const incoming = [
@@ -245,6 +248,7 @@ test("raw Frame Port forwards each Platform stream frame immediately and unchang
 test("Overview attaches to the Main Chat visible Run locally without another upstream stream", async () => {
   const mainTarget = createTarget(47, {
     ownerChatId: "chat-shared",
+    pageRoute: "/agent/agent-1?chatId=chat-shared",
     currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-shared",
   });
   const overviewTarget = createTarget(48, {
@@ -492,6 +496,7 @@ test("a restored Main Chat attach exposes its visible Run before the first upstr
 test("Overview waits for a new Main Chat query to publish its canonical Run identity", async () => {
   const mainTarget = createTarget(51, {
     ownerChatId: "chat-racing",
+    pageRoute: "/agent/agent-1?chatId=chat-racing",
     currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-racing",
   });
   const overviewTarget = createTarget(52, {
@@ -969,6 +974,82 @@ test("same-surface route loading does not destroy the logical socket or truncate
   );
 });
 
+test("Main Chat query fails closed until an Agent switch route is fully registered", async () => {
+  const target = createTarget(143, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: "chat-agent-a",
+    pageRoute: "/agent/agent-a?chatId=chat-agent-a",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-b",
+  });
+  const forwarded = [];
+  const runtime = createRegistration(new Map([[143, target]]), async (input) => {
+    forwarded.push(input.type);
+  });
+  const sender = createSender(143, target.currentUrl);
+  await openSocket(runtime, sender, "socket-agent-switch");
+  const serviceStateCallsBeforeQuery = runtime.calls.getServiceState;
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-agent-switch",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-agent-switch-too-early",
+      payload: {
+        requestId: "req-agent-switch-too-early",
+        message: "too early",
+        agentKey: "agent-b",
+      },
+    }),
+  });
+  await flush();
+
+  assert.deepEqual(forwarded, []);
+  assert.equal(runtime.calls.getServiceState, serviceStateCallsBeforeQuery);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "error",
+    id: "query-agent-switch-too-early",
+    type: "protocol_error",
+    code: 400,
+    status: 400,
+    msg: "query Agent owner does not match its active Main Chat route",
+    data: {
+      code: "protocol_error",
+      message: "query Agent owner does not match its active Main Chat route",
+    },
+  });
+
+  const switchedUrl = "http://127.0.0.1:7079/agent/agent-b?newChat=1786898700001";
+  target.pageRoute = "/agent/agent-b?newChat=1786898700001";
+  target.currentUrl = switchedUrl;
+  target.ownerChatId = undefined;
+  sender.setURL(switchedUrl);
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
+    socketId: "socket-agent-switch",
+    data: JSON.stringify({
+      frame: "request",
+      type: "/api/query",
+      id: "query-agent-switch-ready",
+      payload: {
+        requestId: "req-agent-switch-ready",
+        message: "ready",
+        agentKey: "agent-b",
+      },
+    }),
+  });
+  await flush();
+
+  assert.deepEqual(forwarded, ["/api/query"]);
+  assert.equal(
+    sentFrames(sender).some((frame) =>
+      frame.id === "query-agent-switch-ready" && frame.frame === "error"
+    ),
+    false,
+  );
+});
+
 test("new Main Chat run.start registers a WorkPanel grant against chat.start synchronization", async () => {
   const target = createTarget(73, {
     surfaceRole: "main-chat",
@@ -1338,7 +1419,11 @@ test("active BTW child may start or attach BTW streams but cannot start a main q
 });
 
 test("surface handoff writes detach before the next live request", async () => {
-  const firstTarget = createTarget(51, { ownerChatId: "chat-1" });
+  const firstTarget = createTarget(51, {
+    ownerChatId: "chat-1",
+    pageRoute: "/agent/agent-1?chatId=chat-1",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-1",
+  });
   const secondTarget = createTarget(52, {
     surfaceId: "copilot-dock",
     surfaceType: "agent-copilot",
@@ -1384,7 +1469,11 @@ test("surface handoff writes detach before the next live request", async () => {
 });
 
 test("surface handoff waits for an explicit detach write and does not send a duplicate detach", async () => {
-  const firstTarget = createTarget(53, { ownerChatId: "chat-explicit-1" });
+  const firstTarget = createTarget(53, {
+    ownerChatId: "chat-explicit-1",
+    pageRoute: "/agent/agent-1?chatId=chat-explicit-1",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-explicit-1",
+  });
   const secondTarget = createTarget(54, {
     surfaceId: "copilot-dock",
     surfaceType: "agent-copilot",
@@ -1461,7 +1550,11 @@ test("surface handoff waits for an explicit detach write and does not send a dup
 });
 
 test("same surface re-entry waits for its explicit detach write before attach", async () => {
-  const target = createTarget(55, { ownerChatId: "chat-same-surface" });
+  const target = createTarget(55, {
+    ownerChatId: "chat-same-surface",
+    pageRoute: "/agent/agent-1?chatId=chat-same-surface",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-same-surface",
+  });
   const order = [];
   let releaseExplicitDetach = () => undefined;
   const explicitDetachWritten = new Promise((resolve) => {

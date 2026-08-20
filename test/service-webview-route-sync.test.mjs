@@ -127,6 +127,35 @@ test("agent chat suppresses host route echoes and semantic no-op navigations", (
   );
 });
 
+test("active Main Chat turns a bare different-Agent navigation into an ownerless new Chat route", () => {
+  const serviceWebviewSurface = readServiceWebviewSurfaceSource();
+  const navigationHandlerBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
+    serviceWebviewSurface.indexOf("const handleDidFailLoad = () =>"),
+  );
+  const switchIndex = navigationHandlerBlock.indexOf(
+    "resolveAgentWebclientDesktopAgentSwitchTarget(",
+  );
+  const canonicalIndex = navigationHandlerBlock.indexOf(
+    "resolveAgentWebclientDesktopChatRouteFromUrl(",
+  );
+
+  assert.ok(switchIndex >= 0 && switchIndex < canonicalIndex);
+  assert.match(
+    navigationHandlerBlock,
+    /Math\.max\([\s\S]*?Date\.now\(\)[\s\S]*?lastAgentSwitchNewChatTimestampRef\.current \+ 1/u,
+  );
+  assert.match(navigationHandlerBlock, /\/\^\[1-9\]\\d\{12\}\$\/u/u);
+  assert.match(
+    navigationHandlerBlock,
+    /navigate\(createAgentWebclientAgentPath\(switchedAgentKey, params\), \{[\s\S]*?replace: true/u,
+  );
+  assert.doesNotMatch(
+    navigationHandlerBlock.slice(switchIndex, canonicalIndex),
+    /setWebviewRenderKey|sendLiveSurfaceLifecycleToWebview/u,
+  );
+});
+
 test("new Chat route ownership comes from chat.start canonical synchronization", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(
@@ -141,6 +170,11 @@ test("new Chat route ownership comes from chat.start canonical synchronization",
   assert.match(serviceWebviewSurface, /canonicalChatSync\.onRequest/);
   assert.match(serviceWebviewSurface, /if \(request\.surfaceId !== surfaceId\) return;/);
   assert.match(serviceWebviewSurface, /createCanonicalAgentChatRoute\(currentRouteWithHash, request\)/);
+  assert.match(navigationHandlerBlock, /readAgentWebclientAgentRouteKey\(nextChatRoute\)/);
+  assert.match(
+    navigationHandlerBlock,
+    /readAgentWebclientAgentRouteKey\(nextChatRoute\) ===\s*newChatBootstrapSource\.agentKey/u,
+  );
   assert.match(navigationHandlerBlock, /newChatBootstrapOwnsPromotion/);
   assert.match(navigationHandlerBlock, /!newChatBootstrapOwnsPromotion/);
   assert.match(registrationBlock, /ownerChatId\?\.trim\(\) === pending\.request\.chatId/);
@@ -301,6 +335,10 @@ test("service webview surface falls back to loadURL when client-side route navig
   assert.match(directRouteLoadBlock, /direct-route-client-navigation-mismatch/);
   assert.match(directRouteLoadBlock, /clientNavigationResult/);
   assert.match(directRouteLoadBlock, /resolveServiceWebviewCurrentUrl\(/);
+  assert.match(
+    directRouteLoadBlock,
+    /lastDirectWebviewRouteRef\.current !== embeddedUrl[\s\S]*?direct-route-client-navigation-stale/u,
+  );
   assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(embeddedUrl\)/);
 });
 

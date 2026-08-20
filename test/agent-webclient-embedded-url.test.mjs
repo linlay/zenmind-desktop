@@ -16,6 +16,8 @@ const {
   createAgentWebclientManagementPath,
   createAgentWebclientOverviewPath,
   createAgentWebclientProjectPath,
+  readAgentWebclientAgentRouteKey,
+  resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
@@ -175,6 +177,61 @@ test("agent family paths keep non-ASCII keys at one encoding layer", () => {
     "/agent/100%25%E5%8A%A9%E6%89%8B"
   );
   assert.doesNotMatch(createAgentWebclientAgentPath("AI建设文档"), /%25E5/u);
+});
+
+test("agent route keys decode exactly one path layer", () => {
+  assert.equal(
+    readAgentWebclientAgentRouteKey("/agent/AI%E5%BB%BA%E8%AE%BE%E6%96%87%E6%A1%A3"),
+    "AI建设文档",
+  );
+  assert.equal(
+    readAgentWebclientAgentRouteKey("/agent/space%20and%20100%25"),
+    "space and 100%",
+  );
+  assert.equal(readAgentWebclientAgentRouteKey("/agents/worker"), "");
+  assert.equal(readAgentWebclientAgentRouteKey("/agent/bad%ZZ"), "");
+});
+
+test("desktop recognizes only a trusted bare route as an explicit Agent switch", () => {
+  const webviewSrcUrl = "http://127.0.0.1:19011/agents";
+  const currentRoute = "/agent/old%20agent?chatId=chat-old";
+
+  assert.equal(
+    resolveAgentWebclientDesktopAgentSwitchTarget(
+      "http://127.0.0.1:19011/agent/new%20agent?theme=dark&lang=zh-CN&wsSource=desktop-chat",
+      webviewSrcUrl,
+      currentRoute,
+    ),
+    "new agent",
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopAgentSwitchTarget(
+      "http://127.0.0.1:19011/agent/100%25%E5%8A%A9%E6%89%8B",
+      webviewSrcUrl,
+      currentRoute,
+    ),
+    "100%助手",
+  );
+
+  for (const rejectedUrl of [
+    "http://127.0.0.1:19011/agent/old%20agent",
+    "http://127.0.0.1:19011/agent/new%20agent?chatId=chat-new",
+    "http://127.0.0.1:19011/agent/new%20agent?newChat=1710000000000",
+    "http://127.0.0.1:19011/agent/new%20agent?history=1",
+    "http://127.0.0.1:19011/agent/new%20agent#history",
+    "http://127.0.0.1:19011/agents/new%20agent",
+    "http://127.0.0.1:19012/agent/new%20agent",
+  ]) {
+    assert.equal(
+      resolveAgentWebclientDesktopAgentSwitchTarget(
+        rejectedUrl,
+        webviewSrcUrl,
+        currentRoute,
+      ),
+      "",
+      rejectedUrl,
+    );
+  }
 });
 
 test("agent chat business routes compare semantic keys and ignore host params", () => {
