@@ -29,6 +29,8 @@ function createMacAppFixture(t) {
   );
   const icon = Buffer.from("current-cutej-icon");
   fs.writeFileSync(path.join(resourcesRoot, "icon.icns"), icon);
+  fs.mkdirSync(path.join(resourcesRoot, "scripts"), { recursive: true });
+  fs.writeFileSync(path.join(resourcesRoot, "scripts", "webapp-tooling.mjs"), "#!/usr/bin/env node\n");
   for (const fileName of ["brand-icon.png", "brand-mark.png", "tray-icon.png"]) {
     fs.writeFileSync(path.join(resourcesRoot, fileName), Buffer.from(fileName));
     const generatedPath = path.join(root, "build", "brands", "cutej", "brand-assets", fileName);
@@ -55,6 +57,10 @@ test("macOS packaged app icon uses a content-addressed filename before signing",
   assert.equal(contentAddressMacAppIcon(fixture.appPath), expectedIconFileName);
   const brandingOptions = { projectRoot: fixture.root, brandId: "cutej" };
   assert.doesNotThrow(() => verifyMacPackageBranding(fixture.appPath, brandingOptions));
+
+  fs.rmSync(path.join(fixture.resourcesRoot, "scripts", "webapp-tooling.mjs"));
+  assert.throws(() => verifyMacPackageBranding(fixture.appPath), /WebApp Tooling is missing/u);
+  fs.writeFileSync(path.join(fixture.resourcesRoot, "scripts", "webapp-tooling.mjs"), "#!/usr/bin/env node\n");
 
   fs.appendFileSync(path.join(fixture.resourcesRoot, "brand-mark.png"), "tampered");
   assert.throws(() => verifyMacPackageBranding(fixture.appPath, brandingOptions), /brand resource differs/u);
