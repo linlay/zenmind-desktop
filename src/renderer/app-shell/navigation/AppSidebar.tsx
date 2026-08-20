@@ -2124,6 +2124,7 @@ export function AppSidebar({
     if (target.kind === "chat") {
       return [
         "chat.export",
+        "chat.exportHtml",
         "chat.share",
         "chat.rename",
         "chat.workPanel.open",
@@ -2214,6 +2215,8 @@ export function AppSidebar({
       if (!chat) return;
       if (actionId === "chat.export") {
         await handleAssistantExportChat(chat);
+      } else if (actionId === "chat.exportHtml") {
+        await handleAssistantExportChatHtml(chat);
       } else if (actionId === "chat.share") {
         conversationShareDialog.open(chat.chatId, chat.chatName);
       } else if (actionId === "chat.rename") {
@@ -3092,6 +3095,25 @@ export function AppSidebar({
     }
   }
 
+  async function handleAssistantExportChatHtml(chat: AssistantNavChatItem) {
+    try {
+      const result = await window.electronAPI.assistant.exportChatHtml(chat.chatId);
+      if (!result.ok) {
+        window.alert(result.message || t("sidebar.chat.exportHtmlFailed"));
+        return;
+      }
+      if (result.filePath) {
+        window.alert(t("sidebar.chat.exportedTo", { path: result.filePath }));
+      }
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.chat.exportHtmlFailed"),
+      );
+    }
+  }
+
   function handleAssistantRenameChat(chat: AssistantNavChatItem) {
     setAssistantChatRenameDialog({
       chat,
@@ -3499,46 +3521,6 @@ export function AppSidebar({
     );
   }
 
-  function renderChatsShareButton(options: { inPopover?: boolean } = {}) {
-    if (!currentChatId) return null;
-    const currentChat = findAssistantNavChat(currentChatId);
-    const label = t("sidebar.chat.shareCurrent");
-    return (
-      <Tooltip content={label}>
-        <button
-          type="button"
-          className={[
-            "assistant-worker-icon-button",
-            "sidebar-chats-share-button",
-            options.inPopover ? "is-in-popover" : "",
-          ].filter(Boolean).join(" ")}
-          aria-label={label}
-          title={label}
-          tabIndex={options.inPopover ? undefined : -1}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            conversationShareDialog.open(
-              currentChatId,
-              currentChat?.chatName || t("sidebar.chat.current"),
-            );
-          }}
-        >
-          <SidebarActionIcon kind="share" />
-        </button>
-      </Tooltip>
-    );
-  }
-
-  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
-    return (
-      <>
-        {renderChatsShareButton(options)}
-        {renderChatsNewChatButton(options)}
-      </>
-    );
-  }
-
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
   ) {
@@ -3930,12 +3912,12 @@ export function AppSidebar({
         </span>
       ),
       headerSupplement: renderChatsDefaultAgentPicker(),
-      headerActions: renderChatsHeaderActions(),
+      headerActions: renderChatsNewChatButton(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
           <span>{item.label}</span>
           {renderChatsDefaultAgentPicker({ inPopover: true })}
-          {renderChatsHeaderActions({ inPopover: true })}
+          {renderChatsNewChatButton({ inPopover: true })}
         </div>
       ),
       renderChildren: ({ roving }) => renderChatsList({ roving }),
@@ -5978,8 +5960,12 @@ export function AppSidebar({
                 t={t}
                 onClose={conversationShareDialog.close}
                 onCreate={() => void conversationShareDialog.create()}
-                onCopy={() => void conversationShareDialog.copy()}
-                onRevoke={() => void conversationShareDialog.revoke()}
+                onRetryList={conversationShareDialog.retryList}
+                onExpirationChange={conversationShareDialog.setExpiration}
+                onCopy={(shareId) => void conversationShareDialog.copy(shareId)}
+                onRequestRevoke={conversationShareDialog.requestRevoke}
+                onCancelRevoke={conversationShareDialog.cancelRevoke}
+                onConfirmRevoke={() => void conversationShareDialog.confirmRevoke()}
               />
               {renderCreateProjectDialog()}
               {renderWebsiteDialog()}

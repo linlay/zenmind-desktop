@@ -98,6 +98,10 @@ function buildDarwinDevLaunchEnvironment(projectRoot, brand, serviceAssetsRoot) 
     DESKTOP_BUILTIN_ASSETS_ROOT: serviceAssetsRoot,
     DESKTOP_DEV_RESOURCES_ROOT: brandResourcesDir(projectRoot, brand),
     DESKTOP_NODE_BIN: process.env.DESKTOP_NODE_BIN || process.execPath,
+    DESKTOP_CONVERSATION_SHARE_RELAY_URL:
+      process.env.DESKTOP_CONVERSATION_SHARE_RELAY_URL || "",
+    DESKTOP_CONVERSATION_SHARE_TOKEN_FILE:
+      process.env.DESKTOP_CONVERSATION_SHARE_TOKEN_FILE || "",
     VITE_DEV_SERVER_URL: "http://127.0.0.1:5173"
   };
 }

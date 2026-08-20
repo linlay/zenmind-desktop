@@ -1429,8 +1429,9 @@ test("agent platform assistant bridge downloads chat export from the current pla
 
     assert.equal(result.ok, true);
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1");
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=markdown");
     assert.equal(requests[0].init.method, "GET");
+    assert.equal(requests[0].init.headers.Accept, "text/markdown, application/json");
     assert.equal(result.filename, "Renamed chat.md");
     assert.equal(result.bytes.toString("utf8"), "# Exported chat\n");
   } finally {
@@ -1438,40 +1439,65 @@ test("agent platform assistant bridge downloads chat export from the current pla
   }
 });
 
-test("agent platform assistant bridge downloads the safe share event stream without changing bytes", async () => {
+test("agent platform assistant bridge enforces Markdown media type and 2 MiB limit", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  const responses = [
+    new Response("<!doctype html>", {
+      status: 200,
+      headers: { "content-type": "text/html" }
+    }),
+    new Response("# Export", {
+      status: 200,
+      headers: {
+        "content-type": "text/markdown",
+        "content-length": String(2 * 1024 * 1024 + 1)
+      }
+    })
+  ];
+  globalThis.fetch = async () => responses.shift();
+
+  try {
+    const invalidContentType = await bridge.downloadChatExport("chat_1");
+    const tooLarge = await bridge.downloadChatExport("chat_1");
+
+    assert.equal(invalidContentType.ok, false);
+    assert.equal(tooLarge.ok, false);
+    assert.match(tooLarge.message, /2 MiB/u);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge downloads HTML export bytes unchanged", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];
+  const html = Buffer.from("<!doctype html><html><body>中文</body></html>", "utf8");
   const { bridge } = makeBridge();
   globalThis.fetch = async (url, init = {}) => {
     requests.push({ url: String(url), init });
-    return new Response([
-      `event: message\ndata: {"seq":1,"type":"chat.start","shareVersion":1,"chatName":"Transcript","timestamp":${EPOCH_MS}}`,
-      `event: message\ndata: {"seq":2,"type":"request.query","message":"hello","timestamp":${EPOCH_MS}}`,
-      `event: message\ndata: {"seq":3,"type":"content.snapshot","text":"ready","timestamp":${EPOCH_MS + 1}}`,
-      `event: message\ndata: {"seq":4,"type":"run.complete","timestamp":${EPOCH_MS + 2}}`,
-      "event: message\ndata: [DONE]",
-      ""
-    ].join("\n\n"), {
+    return new Response(html, {
       status: 200,
-      headers: { "content-type": "text/event-stream; charset=utf-8" }
+      headers: {
+        "content-type": "text/html; charset=utf-8",
+        "content-disposition": "attachment; filename*=UTF-8''Transcript%20safe.html"
+      }
     });
   };
 
   try {
-    const result = await bridge.downloadChatShareEventStream(" chat_1 ");
+    const result = await bridge.downloadChatHtmlExport(
+      " chat_1 ",
+      "http://127.0.0.1:11961",
+    );
 
     assert.equal(result.ok, true);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=sse");
-    assert.equal(requests[0].init.headers.Accept, "text/event-stream");
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=html");
+    assert.equal(requests[0].init.headers.Accept, "text/html, application/json");
     assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
-    assert.equal(Buffer.compare(result.bytes, Buffer.from([
-      `event: message\ndata: {"seq":1,"type":"chat.start","shareVersion":1,"chatName":"Transcript","timestamp":${EPOCH_MS}}`,
-      `event: message\ndata: {"seq":2,"type":"request.query","message":"hello","timestamp":${EPOCH_MS}}`,
-      `event: message\ndata: {"seq":3,"type":"content.snapshot","text":"ready","timestamp":${EPOCH_MS + 1}}`,
-      `event: message\ndata: {"seq":4,"type":"run.complete","timestamp":${EPOCH_MS + 2}}`,
-      "event: message\ndata: [DONE]",
-      ""
-    ].join("\n\n"))), 0);
+    assert.equal(requests[0].init.headers["X-Conversation-Export-Asset-Origin"], "http://127.0.0.1:11961");
+    assert.equal(result.filename, "Transcript safe.html");
+    assert.equal(Buffer.compare(result.bytes, html), 0);
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -1535,51 +1561,103 @@ test("agent platform assistant bridge rejects raw chat JSONL above 100 MiB", asy
   }
 });
 
-test("agent platform assistant bridge only enforces the safe event stream media type", async () => {
+test("agent platform assistant bridge enforces HTML media type and 20 MiB limit", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
   const responses = [
-    new Response("# Legacy export", {
+    new Response("# Markdown", {
       status: 200,
       headers: { "content-type": "text/markdown; charset=utf-8" }
     }),
-    new Response('{"type":"metadata"}\n{"type":"turn"}\n', {
+    new Response("<!doctype html>", {
       status: 200,
-      headers: { "content-type": "application/x-ndjson-legacy" }
-    }),
-    new Response(JSON.stringify({ code: 0, data: { exportVersion: 1 } }), {
-      status: 200,
-      headers: { "content-type": "application/json" }
+      headers: {
+        "content-type": "text/html",
+        "content-length": String(20 * 1024 * 1024 + 1)
+      }
     })
   ];
   globalThis.fetch = async () => responses.shift();
 
   try {
-    const markdown = await bridge.downloadChatShareEventStream("chat_1");
-    const invalidContentType = await bridge.downloadChatShareEventStream("chat_1");
-    const oldJSON = await bridge.downloadChatShareEventStream("chat_1");
+    const invalidContentType = await bridge.downloadChatHtmlExport("chat_1", "https://tunnel.example.test");
+    const tooLarge = await bridge.downloadChatHtmlExport("chat_1", "https://tunnel.example.test");
 
-    assert.equal(markdown.ok, false);
     assert.equal(invalidContentType.ok, false);
-    assert.equal(oldJSON.ok, false);
+    assert.equal(tooLarge.ok, false);
+    assert.match(tooLarge.message, /20 MiB/u);
   } finally {
     globalThis.fetch = originalFetch;
   }
 });
 
-test("agent platform assistant bridge rejects a safe event stream above 2 MiB", async () => {
+test("agent platform assistant bridge creates shares through Platform with separate authorization headers", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify({
+      code: 0,
+      msg: "success",
+      data: {
+        id: "share_abc",
+        url: "https://share.example.test/share/share_abc",
+        createdAt: 1_786_960_800_000,
+        expiresAt: 1_789_552_800_000,
+        lastAccessedAt: null
+      }
+    }), {
+      status: 201,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const result = await bridge.createChatShare({
+      chatId: " chat_1 ",
+      expiration: "30d",
+      tunnelOrigin: "https://tunnel.example.test",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.record.expiresAt, 1_789_552_800_000);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/share");
+    assert.equal(requests[0].init.method, "POST");
+    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
+    assert.equal(requests[0].init.headers["X-Conversation-Export-Asset-Origin"], "https://tunnel.example.test");
+    assert.equal(requests[0].init.headers["X-Conversation-Share-Authorization"], "Bearer tunnel-token");
+    assert.deepEqual(JSON.parse(requests[0].init.body), { chatId: "chat_1", expiration: "30d" });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects an invalid share response", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
-  globalThis.fetch = async () => new Response("{}\n", {
-    status: 200,
-    headers: {
-      "content-type": "text/event-stream",
-      "content-length": String(2 * 1024 * 1024 + 1)
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    code: 0,
+    data: {
+      id: "share_abc",
+      url: "https://share.example.test/share/share_abc",
+      createdAt: "2026-08-17T10:00:00.000Z",
+      expiresAt: 1_789_552_800_000,
+      lastAccessedAt: null
     }
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
   });
 
   try {
-    const result = await bridge.downloadChatShareEventStream("chat_1");
+    const result = await bridge.createChatShare({
+      chatId: "chat_1",
+      expiration: "30d",
+      tunnelOrigin: "https://tunnel.example.test",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
 
     assert.equal(result.ok, false);
   } finally {
@@ -1587,19 +1665,178 @@ test("agent platform assistant bridge rejects a safe event stream above 2 MiB", 
   }
 });
 
-test("agent platform assistant bridge returns a Platform error without reading a share event stream", async () => {
+test("agent platform assistant bridge rejects a non-increasing share expiration", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
-  globalThis.fetch = async () => new Response(
-    JSON.stringify({ code: 404, msg: "chat not found" }),
-    { status: 404, headers: { "content-type": "application/json" } }
-  );
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    code: 0,
+    data: {
+      id: "share_abc",
+      url: "https://share.example.test/share/share_abc",
+      createdAt: 1_786_960_800_000,
+      expiresAt: 1_786_960_800_000,
+      lastAccessedAt: null
+    }
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
 
   try {
-    const result = await bridge.downloadChatShareEventStream("chat_1");
+    const result = await bridge.createChatShare({
+      chatId: "chat_1",
+      expiration: "30d",
+      tunnelOrigin: "https://tunnel.example.test",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
 
     assert.equal(result.ok, false);
-    assert.match(result.message, /chat not found/u);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects unsafe Tunnel origins before fetching", async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response();
+  };
+
+  try {
+    const result = await bridge.createChatShare({
+      chatId: "chat_1",
+      expiration: "30d",
+      tunnelOrigin: "http://tunnel.example.test/path",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge accepts explicit permanent share metadata", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    code: 0,
+    data: {
+      id: "share_permanent",
+      url: "https://share.example.test/share/share_permanent",
+      createdAt: 1_786_960_800_000,
+      expiresAt: null,
+      lastAccessedAt: null
+    }
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+
+  try {
+    const result = await bridge.createChatShare({
+      chatId: "chat_1",
+      expiration: "permanent",
+      tunnelOrigin: "https://tunnel.example.test",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.record.expiresAt, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge lists share metadata through Platform", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify({
+      code: 0,
+      data: {
+        items: [{
+          id: "share_abc",
+          url: "https://share.example.test/share/share_abc",
+          createdAt: 1_786_960_800_000,
+          expiresAt: null,
+          lastAccessedAt: 1_786_961_100_000
+        }]
+      }
+    }), {
+      status: 200,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    const result = await bridge.listChatShares({
+      chatId: " chat_1 ",
+      tunnelOrigin: "https://tunnel.example.test",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.records[0].lastAccessedAt, 1_786_961_100_000);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/shares?chatId=chat_1");
+    assert.equal(requests[0].init.method, "GET");
+    assert.equal(requests[0].init.headers["X-Conversation-Share-Authorization"], "Bearer tunnel-token");
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects unsupported expiration before fetching", async () => {
+  const originalFetch = globalThis.fetch;
+  let called = false;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response();
+  };
+
+  try {
+    const result = await bridge.createChatShare({
+      chatId: "chat_1",
+      expiration: "90d",
+      tunnelOrigin: "https://tunnel.example.test",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
+
+    assert.equal(result.ok, false);
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge revokes shares through Platform", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(null, { status: 204 });
+  };
+
+  try {
+    const result = await bridge.revokeChatShare({
+      shareId: "share_abc",
+      tunnelOrigin: "https://tunnel.example.test",
+      tunnelAuthorization: "Bearer tunnel-token"
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/share/share_abc");
+    assert.equal(requests[0].init.method, "DELETE");
+    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
+    assert.equal(requests[0].init.headers["X-Conversation-Share-Authorization"], "Bearer tunnel-token");
   } finally {
     globalThis.fetch = originalFetch;
   }

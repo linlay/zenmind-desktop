@@ -2496,7 +2496,26 @@ test("agent-webclient host-managed start args require base-url only", () => {
     }, null, 2)}\n`, "utf8");
     assert.deepEqual(
       [...__testInternals.resolveAgentWebclientHostStartOverrides(app).entries()],
-      [["BASE_URL", "http://127.0.0.1:7078"], ["DESKTOP_APP", "true"]]
+      [
+        ["BASE_URL", "http://127.0.0.1:7078"],
+        ["DESKTOP_APP", "true"]
+      ]
+    );
+
+    fs.writeFileSync(path.join(getDesktopConfigRoot(app), "tunnel-hub.json"), `${JSON.stringify({
+      enabled: true,
+      relayUrl: "wss://tunnel.example.test/tunnel",
+      deviceId: "test-device",
+      tlsInsecureSkipVerify: false,
+      reconnectSeconds: 3
+    }, null, 2)}\n`, "utf8");
+    assert.deepEqual(
+      [...__testInternals.resolveAgentWebclientHostStartOverrides(app).entries()],
+      [
+        ["BASE_URL", "http://127.0.0.1:7078"],
+        ["DESKTOP_APP", "true"],
+        ["CONVERSATION_EXPORT_ASSET_ORIGIN", "https://tunnel.example.test"]
+      ]
     );
   } finally {
     restore();
@@ -6703,7 +6722,8 @@ test("startService applies agent-webclient host-managed base-url start arg over 
 
     const runtimeConfigResponse = await fetch(new URL("/runtime-config.js", webclientStart.service.healthMeta.webUrl));
     assert.equal(runtimeConfigResponse.status, 200);
-    assert.match(await runtimeConfigResponse.text(), /"DESKTOP_APP":"true"/u);
+    const runtimeConfigScript = await runtimeConfigResponse.text();
+    assert.match(runtimeConfigScript, /"DESKTOP_APP":"true"/u);
   } finally {
     await stopStartupCoreProcesses(app);
     await new Promise((resolve) => upstream.close(resolve));

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { App } from "electron";
+import { isAssistantConversationShareExpiration } from "../../../shared/contracts";
 import type {
   AgentAuthIssueResult,
   AssistantAttachment,
@@ -12,6 +13,11 @@ import type {
   AssistantChatSearchResponse,
   AssistantChatSearchResult,
   AssistantChatSummary,
+  AssistantConversationShareCreateResult,
+  AssistantConversationShareListResult,
+  AssistantConversationShareRecord,
+  AssistantConversationShareRequest,
+  AssistantConversationShareRevokeResult,
   AssistantEvent,
   AssistantMemoryItem,
   AssistantMemorySettings,
@@ -55,9 +61,14 @@ import {
   type RealtimeQueryHandle,
 } from "../../realtime/realtime-broker";
 import type { AgentPlatformRealtimeSocketFactory } from "../../realtime/agent-platform-realtime-client";
+import {
+  CONVERSATION_EXPORT_ASSET_ORIGIN_HEADER,
+  CONVERSATION_SHARE_AUTHORIZATION_HEADER,
+  MAX_CONVERSATION_HTML_BYTES
+} from "./conversation-export-contract";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
-const MAX_CONVERSATION_SHARE_BYTES = 2 << 20;
+const MAX_CONVERSATION_MARKDOWN_BYTES = 2 << 20;
 const MAX_RAW_CHAT_JSONL_BYTES = 100 * 1024 * 1024;
 const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "createdAt",
@@ -86,10 +97,6 @@ type ApiResponse<T> = {
 type AgentPlatformChatExportResult =
   | { ok: true; message: string; filename: string; bytes: Buffer }
   | { ok: false; message: string; filename: string; bytes?: never };
-
-export type AgentPlatformChatShareEventStreamResult =
-  | { ok: true; bytes: Buffer }
-  | { ok: false; message: string; bytes?: never };
 
 export type AgentPlatformRawChatJSONLResult =
   | { ok: true; filename: string; bytes: Buffer }
@@ -282,7 +289,11 @@ function isPendingAwaitingPayload(value: unknown): boolean {
     return false;
   }
   const status = readString(record.status).trim().toLowerCase();
-  if (["answered", "cancelled", "canceled", "completed", "done", "error", "failed", "resolved", "timeout"].includes(status)) {
+  if (
+    ["answered", "cancelled", "canceled", "completed", "done", "error", "failed", "resolved", "timeout"].includes(
+      status
+    )
+  ) {
     return false;
   }
   if (record.hasPendingAwaiting === true || readNumber(record.awaitingCount) > 0) {
@@ -291,11 +302,13 @@ function isPendingAwaitingPayload(value: unknown): boolean {
   if (record.hasPendingAwaiting === false) {
     return false;
   }
-  return type === "awaiting.asking" ||
+  return (
+    type === "awaiting.asking" ||
     status === "awaiting" ||
     status === "pending" ||
     Boolean(readString(record.awaitingId)) ||
-    isPendingAwaitingPayload(record.awaiting);
+    isPendingAwaitingPayload(record.awaiting)
+  );
 }
 
 function readRequiredPlatformTimestamp(value: unknown, field: string) {
@@ -338,7 +351,7 @@ function normalizeAwaitingPayload(value: unknown, path: string): AssistantEvent[
   const createdAt = readOptionalPlatformTimestamp(record.createdAt, `${path}.createdAt`);
   return {
     ...(record as Omit<NonNullable<AssistantEvent["awaiting"]>, "createdAt">),
-    ...(createdAt !== undefined ? { createdAt } : {}),
+    ...(createdAt !== undefined ? { createdAt } : {})
   } as AssistantEvent["awaiting"];
 }
 
@@ -385,11 +398,8 @@ async function readErrorText(response: Response) {
     try {
       const payload = JSON.parse(text) as Record<string, unknown>;
       const code = readErrorCode(payload);
-      const message = typeof payload.msg === "string"
-        ? payload.msg
-        : typeof payload.message === "string"
-          ? payload.message
-          : text;
+      const message =
+        typeof payload.msg === "string" ? payload.msg : typeof payload.message === "string" ? payload.message : text;
       return code ? `${code}: ${message}` : message;
     } catch {
       return text;
@@ -399,17 +409,24 @@ async function readErrorText(response: Response) {
   }
 }
 
-class ResponseBytesTooLargeError extends Error {}
+class ResponseBytesTooLargeError extends Error {
+  constructor(
+    readonly actualBytes: number,
+    readonly limitBytes: number
+  ) {
+    super(`response is ${actualBytes} bytes; limit is ${limitBytes} bytes`);
+  }
+}
 
 async function readResponseBytesWithLimit(response: Response, maxBytes: number) {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw new ResponseBytesTooLargeError();
+    throw new ResponseBytesTooLargeError(declaredLength, maxBytes);
   }
   if (!response.body) {
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length > maxBytes) {
-      throw new ResponseBytesTooLargeError();
+      throw new ResponseBytesTooLargeError(bytes.length, maxBytes);
     }
     return bytes;
   }
@@ -426,7 +443,7 @@ async function readResponseBytesWithLimit(response: Response, maxBytes: number) 
     totalBytes += chunk.length;
     if (totalBytes > maxBytes) {
       await reader.cancel().catch(() => undefined);
-      throw new ResponseBytesTooLargeError();
+      throw new ResponseBytesTooLargeError(totalBytes, maxBytes);
     }
     chunks.push(chunk);
   }
@@ -462,6 +479,118 @@ function unwrapApiResponse<T>(payload: unknown): T {
     return response.data;
   }
   return payload as T;
+}
+
+function isValidConversationShareId(value: string) {
+  return /^[A-Za-z0-9_-]{1,80}$/u.test(value);
+}
+
+function isValidTunnelApiOrigin(value: string) {
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.toLowerCase();
+    const loopback = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
+    return value === parsed.origin && (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback));
+  } catch {
+    return false;
+  }
+}
+
+function isValidTunnelAuthorization(value: string) {
+  return /^Bearer [^\s]+$/u.test(value);
+}
+
+function isSafeConversationShareUrl(value: string) {
+  try {
+    const parsed = new URL(value);
+    const hostname = parsed.hostname.toLowerCase();
+    const loopback = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
+    return (
+      !parsed.username &&
+      !parsed.password &&
+      (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback))
+    );
+  } catch {
+    return false;
+  }
+}
+
+function readConversationShareRecord(value: unknown): AssistantConversationShareRecord | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+  const payload = value as Record<string, unknown>;
+  try {
+    const shareId = readString(payload.id).trim();
+    const url = readString(payload.url).trim();
+    if (
+      !isValidConversationShareId(shareId) ||
+      !isSafeConversationShareUrl(url) ||
+      !Object.prototype.hasOwnProperty.call(payload, "expiresAt") ||
+      !Object.prototype.hasOwnProperty.call(payload, "lastAccessedAt")
+    ) {
+      return null;
+    }
+    const createdAt = requireAgentPlatformEpochMillis(payload.createdAt, "conversationShare.createdAt");
+    const expiresAt = parseOptionalNullableAgentPlatformEpochMillis(payload.expiresAt, "conversationShare.expiresAt");
+    const lastAccessedAt = parseOptionalNullableAgentPlatformEpochMillis(
+      payload.lastAccessedAt,
+      "conversationShare.lastAccessedAt"
+    );
+    if (
+      expiresAt === undefined ||
+      lastAccessedAt === undefined ||
+      (expiresAt !== null && expiresAt <= createdAt) ||
+      (lastAccessedAt !== null && lastAccessedAt < createdAt)
+    ) {
+      return null;
+    }
+    return { shareId, url, createdAt, expiresAt, lastAccessedAt };
+  } catch {
+    return null;
+  }
+}
+
+async function readConversationShareCreateResult(
+  response: Response,
+  expiration: AssistantConversationShareRequest["expiration"]
+): Promise<AssistantConversationShareCreateResult> {
+  try {
+    const record = readConversationShareRecord(unwrapApiResponse<unknown>(await response.json()));
+    if (
+      !record ||
+      record.lastAccessedAt !== null ||
+      (expiration === "permanent" ? record.expiresAt !== null : record.expiresAt === null)
+    ) {
+      return { ok: false, message: t("assistant.chatShareInvalidResponse") };
+    }
+    return {
+      ok: true,
+      message: t("assistant.chatShareCreated"),
+      record
+    };
+  } catch {
+    return { ok: false, message: t("assistant.chatShareInvalidResponse") };
+  }
+}
+
+async function readConversationShareError(response: Response, action: "create" | "list" | "revoke") {
+  if (response.status === 401 || response.status === 403) {
+    return t("assistant.chatShareUnauthorized");
+  }
+  if (response.status === 405 || response.status === 501) {
+    return t("assistant.chatSharePlatformUnsupported");
+  }
+  if (response.status === 413) {
+    return t("assistant.chatShareSnapshotTooLarge");
+  }
+  if (response.status === 404 && action === "revoke") {
+    return t("assistant.chatShareMissing");
+  }
+  if (response.status === 502 || response.status === 503 || response.status === 504) {
+    return t("assistant.chatShareTunnelFailed", { status: response.status });
+  }
+  return readErrorText(response);
 }
 
 function dataUrlToBlob(dataUrl: string, fallbackMimeType: string) {
@@ -598,9 +727,7 @@ function readFinalAssistantTextFromMessages(messages: unknown): string {
 
 function resolvePlatformChatFile(app: App, chatId: string): string {
   const safeChatId = /^[A-Za-z0-9_-]+$/u.test(chatId) ? chatId : "";
-  return safeChatId
-    ? path.join(resolveRuntimeRoot(app), "chats", `${safeChatId}.jsonl`)
-    : "";
+  return safeChatId ? path.join(resolveRuntimeRoot(app), "chats", `${safeChatId}.jsonl`) : "";
 }
 
 function readFinalAssistantTextFromChatFile(filePath: string, runId: string): string {
@@ -689,7 +816,8 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
 }
 
 function isAssistantRunTerminalEvent(event: AssistantEvent) {
-  return event.type === "done" ||
+  return (
+    event.type === "done" ||
     event.type === "run.complete" ||
     event.type === "error" ||
     event.type === "stopped" ||
@@ -697,7 +825,8 @@ function isAssistantRunTerminalEvent(event: AssistantEvent) {
     event.type === "run.cancel" ||
     event.type === "run.stopped" ||
     event.type === "run.interrupt" ||
-    event.type === "run.expired";
+    event.type === "run.expired"
+  );
 }
 
 function mapChatSummary(summary: PlatformChatSummary, path: string): AssistantChatSummary | null {
@@ -747,11 +876,14 @@ function mapChatSearchResult(value: unknown, path: string): AssistantChatSearchR
   };
 }
 
-function mapChatSearchResponse(payload: PlatformChatSearchResponse | null | undefined, fallbackQuery: string): AssistantChatSearchResponse {
+function mapChatSearchResponse(
+  payload: PlatformChatSearchResponse | null | undefined,
+  fallbackQuery: string
+): AssistantChatSearchResponse {
   const results = Array.isArray(payload?.results)
     ? payload.results
-      .map((item, index) => mapChatSearchResult(item, `chatSearch.results[${index}]`))
-      .filter((item): item is AssistantChatSearchResult => Boolean(item))
+        .map((item, index) => mapChatSearchResult(item, `chatSearch.results[${index}]`))
+        .filter((item): item is AssistantChatSearchResult => Boolean(item))
     : [];
   const rawCount = Number(payload?.count);
   const hasCount = payload && typeof payload === "object" && "count" in payload && Number.isFinite(rawCount);
@@ -800,9 +932,11 @@ function chatHasPendingAwaiting(summary: PlatformChatSummary) {
 }
 
 function readChatAwaitingMode(summary: PlatformChatSummary) {
-  return readAwaitingMode(summary.awaitingMode) ||
+  return (
+    readAwaitingMode(summary.awaitingMode) ||
     readAwaitingMode(summary.mode) ||
-    readAwaitingPayloadMode(summary.awaiting);
+    readAwaitingPayloadMode(summary.awaiting)
+  );
 }
 
 function mapRunMessages(run: PlatformRunSummary, path: string): AssistantChatMessage[] {
@@ -1088,17 +1222,14 @@ export class AgentPlatformAssistantBridge {
     if (!availability.ok) {
       return { ok: false, message: availability.message };
     }
-    const params = request.action === "submit"
-      ? request.params ?? []
-      : [{ action: request.action, reason: request.reason || "" }];
+    const params =
+      request.action === "submit" ? (request.params ?? []) : [{ action: request.action, reason: request.reason || "" }];
     const response = await this.platformFetch(availability.baseUrl, "/api/submit", {
       method: "POST",
       headers: this.jsonHeaders(availability.token),
       body: JSON.stringify({
         runId,
-        ...(this.activeRuns.get(runId)?.agentKey
-          ? { agentKey: this.activeRuns.get(runId)?.agentKey }
-          : {}),
+        ...(this.activeRuns.get(runId)?.agentKey ? { agentKey: this.activeRuns.get(runId)?.agentKey } : {}),
         awaitingId: request.awaitingId,
         params
       })
@@ -1164,8 +1295,8 @@ export class AgentPlatformAssistantBridge {
     const data = await this.getJson<PlatformChatSummary[]>("/api/chats");
     return Array.isArray(data)
       ? data
-        .map((summary, index) => mapChatSummary(summary, `chats[${index}]`))
-        .filter((summary): summary is AssistantChatSummary => summary !== null)
+          .map((summary, index) => mapChatSummary(summary, `chats[${index}]`))
+          .filter((summary): summary is AssistantChatSummary => summary !== null)
       : [];
   }
 
@@ -1174,21 +1305,34 @@ export class AgentPlatformAssistantBridge {
     if (!trimmedChatId) {
       return null;
     }
-    const data = await this.getJson<PlatformChatDetail>(`/api/chat?chatId=${encodeURIComponent(trimmedChatId)}&includeRawMessages=true`, {
-      allowNotFound: true
-    });
+    const data = await this.getJson<PlatformChatDetail>(
+      `/api/chat?chatId=${encodeURIComponent(trimmedChatId)}&includeRawMessages=true`,
+      {
+        allowNotFound: true
+      }
+    );
     if (!data) {
       return null;
     }
     validatePresentPlatformTimes(data as Record<string, unknown>, "chat");
     const events = Array.isArray(data.events)
       ? data.events
-        .map((event, index) => normalizePlatformEvent(
-          event,
-          { runId: readString(event.runId), chatId: trimmedChatId },
-          `chat.events[${index}]`,
-        ))
-        .filter((event): event is AssistantRunEvent => Boolean(event && event.type !== "delta" && event.type !== "done" && event.type !== "error" && event.type !== "stopped"))
+          .map((event, index) =>
+            normalizePlatformEvent(
+              event,
+              { runId: readString(event.runId), chatId: trimmedChatId },
+              `chat.events[${index}]`
+            )
+          )
+          .filter((event): event is AssistantRunEvent =>
+            Boolean(
+              event &&
+              event.type !== "delta" &&
+              event.type !== "done" &&
+              event.type !== "error" &&
+              event.type !== "stopped"
+            )
+          )
       : [];
     const messages = Array.isArray(data.runs)
       ? data.runs.flatMap((run, index) => mapRunMessages(run, `chat.runs[${index}]`))
@@ -1371,7 +1515,11 @@ export class AgentPlatformAssistantBridge {
   async downloadChatExport(chatId: string): Promise<AgentPlatformChatExportResult> {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
-      return { ok: false, message: t("assistant.chatIdRequired"), filename: "" };
+      return {
+        ok: false,
+        message: t("assistant.chatIdRequired"),
+        filename: ""
+      };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -1379,27 +1527,182 @@ export class AgentPlatformAssistantBridge {
     }
     const response = await this.platformFetch(
       availability.baseUrl,
-      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}`,
+      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=markdown`,
       {
         method: "GET",
         headers: {
-          Accept: "application/octet-stream, application/json",
+          Accept: "text/markdown, application/json",
           Authorization: `Bearer ${availability.token}`
         }
       }
     );
     if (!response.ok) {
-      return { ok: false, message: await readErrorText(response), filename: "" };
+      return {
+        ok: false,
+        message: await readErrorText(response),
+        filename: ""
+      };
     }
-    const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.md`;
-    const bytes = Buffer.from(await response.arrayBuffer());
-    return { ok: true, message: t("assistant.chatExportDownloaded"), filename, bytes };
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    if (contentType !== "text/markdown") {
+      return {
+        ok: false,
+        message: t("assistant.chatExportUnsupported"),
+        filename: ""
+      };
+    }
+    try {
+      return {
+        ok: true,
+        message: t("assistant.chatExportDownloaded"),
+        filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.md`,
+        bytes: await readResponseBytesWithLimit(response, MAX_CONVERSATION_MARKDOWN_BYTES)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message:
+          error instanceof ResponseBytesTooLargeError
+            ? t("assistant.chatExportTooLarge")
+            : t("assistant.chatExportReadFailed"),
+        filename: ""
+      };
+    }
   }
 
-  async downloadChatShareEventStream(chatId: string): Promise<AgentPlatformChatShareEventStreamResult> {
+  async downloadChatHtmlExport(chatId: string, assetOrigin: string): Promise<AgentPlatformChatExportResult> {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
+      return {
+        ok: false,
+        message: t("assistant.chatIdRequired"),
+        filename: ""
+      };
+    }
+    const normalizedAssetOrigin = assetOrigin.trim();
+    if (!isValidTunnelApiOrigin(normalizedAssetOrigin)) {
+      return {
+        ok: false,
+        message: t("assistant.chatShareTunnelConfigInvalid"),
+        filename: ""
+      };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message, filename: "" };
+    }
+    const response = await this.platformFetch(
+      availability.baseUrl,
+      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=html`,
+      {
+        method: "GET",
+        headers: {
+          Accept: "text/html, application/json",
+          Authorization: `Bearer ${availability.token}`,
+          [CONVERSATION_EXPORT_ASSET_ORIGIN_HEADER]: normalizedAssetOrigin
+        }
+      }
+    );
+    if (!response.ok) {
+      return {
+        ok: false,
+        message:
+          response.status === 405 || response.status === 501
+            ? t("assistant.chatHtmlExportUnsupported")
+            : await readErrorText(response),
+        filename: ""
+      };
+    }
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    if (contentType !== "text/html") {
+      return {
+        ok: false,
+        message: t("assistant.chatHtmlExportUnsupported"),
+        filename: ""
+      };
+    }
+    try {
+      return {
+        ok: true,
+        message: t("assistant.chatHtmlExportDownloaded"),
+        filename:
+          filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.html`,
+        bytes: await readResponseBytesWithLimit(response, MAX_CONVERSATION_HTML_BYTES)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        filename: "",
+        message:
+          error instanceof ResponseBytesTooLargeError
+            ? t("assistant.chatHtmlExportTooLarge", {
+                actual: error.actualBytes,
+                limit: error.limitBytes
+              })
+            : t("assistant.chatHtmlExportReadFailed")
+      };
+    }
+  }
+
+  async createChatShare(input: {
+    chatId: string;
+    expiration: AssistantConversationShareRequest["expiration"];
+    tunnelOrigin: string;
+    tunnelAuthorization: string;
+  }): Promise<AssistantConversationShareCreateResult> {
+    const chatId = input.chatId.trim();
+    if (!chatId) {
       return { ok: false, message: t("assistant.chatIdRequired") };
+    }
+    if (!isAssistantConversationShareExpiration(input.expiration)) {
+      return { ok: false, message: t("assistant.chatShareExpirationInvalid") };
+    }
+    const tunnelOrigin = input.tunnelOrigin.trim();
+    const tunnelAuthorization = input.tunnelAuthorization.trim();
+    if (!isValidTunnelApiOrigin(tunnelOrigin) || !isValidTunnelAuthorization(tunnelAuthorization)) {
+      return {
+        ok: false,
+        message: t("assistant.chatShareTunnelConfigInvalid")
+      };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(availability.baseUrl, "/api/chat/share", {
+      method: "POST",
+      headers: this.jsonHeaders(availability.token, {
+        [CONVERSATION_EXPORT_ASSET_ORIGIN_HEADER]: tunnelOrigin,
+        [CONVERSATION_SHARE_AUTHORIZATION_HEADER]: tunnelAuthorization
+      }),
+      body: JSON.stringify({ chatId, expiration: input.expiration }),
+      signal: AbortSignal.timeout(20_000)
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: await readConversationShareError(response, "create")
+      };
+    }
+    return readConversationShareCreateResult(response, input.expiration);
+  }
+
+  async listChatShares(input: {
+    chatId: string;
+    tunnelOrigin: string;
+    tunnelAuthorization: string;
+  }): Promise<AssistantConversationShareListResult> {
+    const chatId = input.chatId.trim();
+    if (!chatId) {
+      return { ok: false, message: t("assistant.chatIdRequired") };
+    }
+    const tunnelOrigin = input.tunnelOrigin.trim();
+    const tunnelAuthorization = input.tunnelAuthorization.trim();
+    if (!isValidTunnelApiOrigin(tunnelOrigin) || !isValidTunnelAuthorization(tunnelAuthorization)) {
+      return {
+        ok: false,
+        message: t("assistant.chatShareTunnelConfigInvalid")
+      };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -1407,35 +1710,82 @@ export class AgentPlatformAssistantBridge {
     }
     const response = await this.platformFetch(
       availability.baseUrl,
-      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=sse`,
+      `/api/chat/shares?chatId=${encodeURIComponent(chatId)}`,
       {
         method: "GET",
-        headers: {
-          Accept: "text/event-stream",
-          Authorization: `Bearer ${availability.token}`
-        }
+        headers: this.jsonHeaders(availability.token, {
+          [CONVERSATION_EXPORT_ASSET_ORIGIN_HEADER]: tunnelOrigin,
+          [CONVERSATION_SHARE_AUTHORIZATION_HEADER]: tunnelAuthorization
+        }),
+        signal: AbortSignal.timeout(15_000)
       }
     );
     if (!response.ok) {
-      return { ok: false, message: await readErrorText(response) };
-    }
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-    if (contentType !== "text/event-stream") {
-      return { ok: false, message: t("assistant.chatSharePlatformUnsupported") };
-    }
-    try {
-      return {
-        ok: true,
-        bytes: await readResponseBytesWithLimit(response, MAX_CONVERSATION_SHARE_BYTES)
-      };
-    } catch (error) {
       return {
         ok: false,
-        message: error instanceof ResponseBytesTooLargeError
-          ? t("assistant.chatShareSnapshotTooLarge")
-          : t("assistant.chatShareTranscriptReadFailed")
+        message: await readConversationShareError(response, "list")
       };
     }
+    try {
+      const payload = unwrapApiResponse<{ items?: unknown }>(await response.json());
+      if (!Array.isArray(payload.items)) {
+        return { ok: false, message: t("assistant.chatShareInvalidResponse") };
+      }
+      const records: AssistantConversationShareRecord[] = [];
+      const seen = new Set<string>();
+      for (const item of payload.items) {
+        const record = readConversationShareRecord(item);
+        if (!record || seen.has(record.shareId)) {
+          return {
+            ok: false,
+            message: t("assistant.chatShareInvalidResponse")
+          };
+        }
+        seen.add(record.shareId);
+        records.push(record);
+      }
+      return { ok: true, message: "", records };
+    } catch {
+      return { ok: false, message: t("assistant.chatShareInvalidResponse") };
+    }
+  }
+
+  async revokeChatShare(input: {
+    shareId: string;
+    tunnelOrigin: string;
+    tunnelAuthorization: string;
+  }): Promise<AssistantConversationShareRevokeResult> {
+    const shareId = input.shareId.trim();
+    if (!isValidConversationShareId(shareId)) {
+      return { ok: false, message: t("assistant.chatShareInvalidId") };
+    }
+    const tunnelOrigin = input.tunnelOrigin.trim();
+    const tunnelAuthorization = input.tunnelAuthorization.trim();
+    if (!isValidTunnelApiOrigin(tunnelOrigin) || !isValidTunnelAuthorization(tunnelAuthorization)) {
+      return {
+        ok: false,
+        message: t("assistant.chatShareTunnelConfigInvalid")
+      };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, message: availability.message };
+    }
+    const response = await this.platformFetch(availability.baseUrl, `/api/chat/share/${encodeURIComponent(shareId)}`, {
+      method: "DELETE",
+      headers: this.jsonHeaders(availability.token, {
+        [CONVERSATION_EXPORT_ASSET_ORIGIN_HEADER]: tunnelOrigin,
+        [CONVERSATION_SHARE_AUTHORIZATION_HEADER]: tunnelAuthorization
+      }),
+      signal: AbortSignal.timeout(15_000)
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        message: await readConversationShareError(response, "revoke")
+      };
+    }
+    return { ok: true, message: t("assistant.chatShareRevoked"), shareId };
   }
 
   async downloadRawChatJSONL(chatId: string): Promise<AgentPlatformRawChatJSONLResult> {
@@ -1461,27 +1811,24 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    const contentType = response.headers.get("content-type")
-      ?.split(";", 1)[0]
-      ?.trim()
-      .toLowerCase() ?? "";
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
     if (contentType !== "text/plain" && contentType !== "application/x-ndjson") {
       return { ok: false, message: t("assistant.rawChatJsonlUnsupported") };
     }
     try {
       return {
         ok: true,
-        filename: filenameFromContentDisposition(
-          response.headers.get("content-disposition")
-        ) || `${trimmedChatId}.jsonl`,
+        filename:
+          filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.jsonl`,
         bytes: await readResponseBytesWithLimit(response, MAX_RAW_CHAT_JSONL_BYTES)
       };
     } catch (error) {
       return {
         ok: false,
-        message: error instanceof ResponseBytesTooLargeError
-          ? t("assistant.rawChatJsonlTooLarge")
-          : t("assistant.rawChatJsonlReadFailed")
+        message:
+          error instanceof ResponseBytesTooLargeError
+            ? t("assistant.rawChatJsonlTooLarge")
+            : t("assistant.rawChatJsonlReadFailed")
       };
     }
   }
@@ -1509,11 +1856,11 @@ export class AgentPlatformAssistantBridge {
     const history = historyResult.status === "fulfilled" ? historyResult.value.events : [];
     const audits = Array.isArray(history)
       ? history.map((event, index) => ({
-        operation: readString(event.operation),
-        status: "ok",
-        reason: readString(event.reason),
-        timestamp: readRequiredPlatformTimestamp(event.ts, `memory.history[${index}].ts`),
-      }))
+          operation: readString(event.operation),
+          status: "ok",
+          reason: readString(event.reason),
+          timestamp: readRequiredPlatformTimestamp(event.ts, `memory.history[${index}].ts`)
+        }))
       : [];
     const recentAudit = audits[0] ?? null;
     return {
@@ -1521,7 +1868,7 @@ export class AgentPlatformAssistantBridge {
       stats: this.createMemoryStats(items),
       storage: this.createPlatformMemoryStorage(),
       directoryPath: "",
-      recentAudit,
+      recentAudit
     };
   }
 
@@ -1534,8 +1881,8 @@ export class AgentPlatformAssistantBridge {
     const data = await this.getJson<PlatformMemoryRecordsResponse>("/api/memory/record/list?limit=200");
     const items = Array.isArray(data.results)
       ? data.results
-        .map((item, index) => mapMemoryRecord(item, `memory.records[${index}]`))
-        .filter((item): item is AssistantMemoryItem => item !== null)
+          .map((item, index) => mapMemoryRecord(item, `memory.records[${index}]`))
+          .filter((item): item is AssistantMemoryItem => item !== null)
       : [];
     return {
       items,
@@ -1600,7 +1947,12 @@ export class AgentPlatformAssistantBridge {
         runId: run.runId,
         chatId: run.chatId,
         ...(request.agentKey?.trim()
-          ? { owner: { kind: "agent" as const, agentKey: request.agentKey.trim() } }
+          ? {
+              owner: {
+                kind: "agent" as const,
+                agentKey: request.agentKey.trim()
+              }
+            }
           : {}),
         signal: run.activeRun.controller.signal,
         payload: {
@@ -1627,27 +1979,30 @@ export class AgentPlatformAssistantBridge {
           stream: true
         },
         onEvent: async (event, eventPath) => {
-          const normalizedEvent = normalizePlatformEvent(event, {
-            runId: run.runId,
-            chatId: run.chatId,
-            source: request.source,
-          }, eventPath);
+          const normalizedEvent = normalizePlatformEvent(
+            event,
+            {
+              runId: run.runId,
+              chatId: run.chatId,
+              source: request.source
+            },
+            eventPath
+          );
           if (!normalizedEvent) {
             throw new Error("time_contract_violation: stream event.type is required");
           }
           const eventText = readAssistantEventOutputText(normalizedEvent);
-          const delta = normalizedEvent.type === "content.delta"
-            ? normalizedEvent.delta || eventText
-            : "";
+          const delta = normalizedEvent.type === "content.delta" ? normalizedEvent.delta || eventText : "";
           if (delta) {
             finalMessage += delta;
           }
           if (isAssistantRunTerminalEvent(normalizedEvent)) {
             sawTerminalEvent = true;
-            const terminalMessage = normalizedEvent.message ||
+            const terminalMessage =
+              normalizedEvent.message ||
               eventText ||
               finalMessage.trim() ||
-              await this.readPersistedFinalAssistantMessage(run.chatId, run.runId);
+              (await this.readPersistedFinalAssistantMessage(run.chatId, run.runId));
             if (!finalMessage && terminalMessage) {
               finalMessage = terminalMessage;
             }
@@ -1656,14 +2011,12 @@ export class AgentPlatformAssistantBridge {
             }
           }
           this.options.onEvent(normalizedEvent);
-        },
+        }
       });
       let finalMessage = "";
       let sawTerminalEvent = false;
       const accepted = await query.accepted;
-      run.activeRun.agentKey = accepted.owner.kind === "agent"
-        ? accepted.owner.agentKey
-        : run.activeRun.agentKey;
+      run.activeRun.agentKey = accepted.owner.kind === "agent" ? accepted.owner.agentKey : run.activeRun.agentKey;
       settleAcceptance({
         ok: true,
         runId: run.runId,
@@ -1684,9 +2037,12 @@ export class AgentPlatformAssistantBridge {
         message: finalMessage.trim()
       };
     } catch (error) {
-      const message = (error as Error).name === "AbortError"
-        ? t("assistant.stopped")
-        : error instanceof Error ? error.message : String(error);
+      const message =
+        (error as Error).name === "AbortError"
+          ? t("assistant.stopped")
+          : error instanceof Error
+            ? error.message
+            : String(error);
       settleAcceptance({
         ok: false,
         runId: run.runId,
@@ -1711,7 +2067,13 @@ export class AgentPlatformAssistantBridge {
             message
           });
         }
-        return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
+        return {
+          ok: false,
+          runId: run.runId,
+          chatId: run.chatId,
+          text: "",
+          message
+        };
       }
       if (!this.disposed) {
         this.options.onEvent({
@@ -1723,7 +2085,13 @@ export class AgentPlatformAssistantBridge {
           error: message
         });
       }
-      return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
+      return {
+        ok: false,
+        runId: run.runId,
+        chatId: run.chatId,
+        text: "",
+        message
+      };
     } finally {
       if (this.activeRuns.get(run.runId) === run.activeRun) {
         this.activeRuns.delete(run.runId);
@@ -1842,17 +2210,21 @@ export class AgentPlatformAssistantBridge {
   }
 
   private async resolvePlatform(): Promise<
-    | { ok: true; baseUrl: string; token: string }
-    | { ok: false; message: string }
+    { ok: true; baseUrl: string; token: string } | { ok: false; message: string }
   > {
-    const serviceState = await this.options.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID).catch((error) => ({
-      status: "error",
-      message: error instanceof Error ? error.message : String(error),
-      healthMeta: { webUrl: "", port: null }
-    } as Pick<ServiceState, "status" | "message" | "healthMeta">));
-    const baseUrl = serviceState.status === "running"
-      ? serviceState.healthMeta.webUrl.trim() || (serviceState.healthMeta.port ? `http://127.0.0.1:${serviceState.healthMeta.port}` : "")
-      : "";
+    const serviceState = await this.options.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID).catch(
+      (error) =>
+        ({
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+          healthMeta: { webUrl: "", port: null }
+        }) as Pick<ServiceState, "status" | "message" | "healthMeta">
+    );
+    const baseUrl =
+      serviceState.status === "running"
+        ? serviceState.healthMeta.webUrl.trim() ||
+          (serviceState.healthMeta.port ? `http://127.0.0.1:${serviceState.healthMeta.port}` : "")
+        : "";
     if (!baseUrl) {
       return {
         ok: false,

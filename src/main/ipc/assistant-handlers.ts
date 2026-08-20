@@ -6,13 +6,15 @@ import {
 } from "../download-paths";
 import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
-import type { AssistantNavigationListOptions } from "../../shared/contracts";
+import type { AssistantConversationShareRequest, AssistantNavigationListOptions } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
 import {
   createConversationShare,
+  listConversationShares,
   revokeConversationShare
 } from "../assistant/core/conversation-share-controller";
+import { saveConversationHtmlExport } from "../assistant/core/conversation-html-export";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -466,12 +468,20 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     saveAssistantChatExport(assistantBridge, chatId, app, platform)
   );
 
-  ipcMain.handle("assistant.shareChat", async (_event: any, chatId: string) =>
-    createConversationShare(app, assistantBridge, chatId)
+  ipcMain.handle("assistant.exportChatHtml", async (_event: any, chatId: string) =>
+    saveConversationHtmlExport(app, assistantBridge, chatId, platform)
+  );
+
+  ipcMain.handle("assistant.shareChat", async (_event: any, request: AssistantConversationShareRequest) =>
+    createConversationShare(app, assistantBridge, request)
+  );
+
+  ipcMain.handle("assistant.listChatShares", async (_event: any, chatId: string) =>
+    listConversationShares(app, assistantBridge, chatId)
   );
 
   ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>
-    revokeConversationShare(app, shareId)
+    revokeConversationShare(app, assistantBridge, shareId)
   );
 
   // ---------------------------------------------------------------------------

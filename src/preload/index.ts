@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
   AssistantChatSearchRequest,
+  AssistantConversationShareRequest,
   AssistantCreateCoderProjectRequest,
   AssistantCreateProjectRequest,
   AssistantEventListener,
@@ -209,7 +210,9 @@ const api: DesktopApi = {
     renameChat: (chatId: string, chatName: string) => ipcRenderer.invoke("assistant.renameChat", chatId, chatName),
     archiveChat: (chatId: string) => ipcRenderer.invoke("assistant.archiveChat", chatId),
     exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),
-    shareChat: (chatId: string) => ipcRenderer.invoke("assistant.shareChat", chatId),
+    exportChatHtml: (chatId: string) => ipcRenderer.invoke("assistant.exportChatHtml", chatId),
+    shareChat: (request: AssistantConversationShareRequest) => ipcRenderer.invoke("assistant.shareChat", request),
+    listChatShares: (chatId: string) => ipcRenderer.invoke("assistant.listChatShares", chatId),
     revokeChatShare: (shareId: string) => ipcRenderer.invoke("assistant.revokeChatShare", shareId),
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => {
       const handleNavigationAgentsChanged = (

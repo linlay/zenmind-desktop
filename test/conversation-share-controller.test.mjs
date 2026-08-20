@@ -7,11 +7,25 @@ import path from "node:path";
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const {
   createConversationShare,
+  listConversationShares,
   revokeConversationShare
 } = await import("../dist-electron/main/assistant/core/conversation-share-controller.js");
 
+function restoreEnvironment(t, names) {
+  const original = new Map(names.map((name) => [name, process.env[name]]));
+  t.after(() => {
+    for (const [name, value] of original) {
+      if (value === undefined) {
+        delete process.env[name];
+      } else {
+        process.env[name] = value;
+      }
+    }
+  });
+}
+
 function createFixture(t) {
-  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-conversation-share-"));
+  const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "conversation-share-"));
   const homeRoot = path.join(tempRoot, "home");
   const app = {
     getPath(name) {
@@ -38,99 +52,198 @@ function createFixture(t) {
   return app;
 }
 
-const eventStreamBytes = Buffer.from([
-  'event: message\ndata: {"seq":1,"type":"chat.start","shareVersion":1,"chatName":"Release plan","timestamp":1700000000000}',
-  'event: message\ndata: {"seq":2,"type":"request.query","message":"hello","timestamp":1700000000000}',
-  'event: message\ndata: {"seq":3,"type":"content.snapshot","text":"ready","timestamp":1700000001000}',
-  'event: message\ndata: {"seq":4,"type":"run.complete","timestamp":1700000001000}',
-  "event: message\ndata: [DONE]",
-  ""
-].join("\n\n"), "utf8");
+function successfulShare(recordOverrides = {}) {
+  return {
+    ok: true,
+    message: "created",
+    record: {
+      shareId: "opaque_abc",
+      url: "https://share.example.test/share/opaque_abc",
+      createdAt: 1_786_363_200_000,
+      expiresAt: 1_788_955_200_000,
+      lastAccessedAt: null,
+      ...recordOverrides
+    }
+  };
+}
 
-test("createConversationShare uploads the platform event stream bytes unchanged", async (t) => {
+function bridgeWithCalls(calls, result = successfulShare()) {
+  return {
+    async createChatShare(input) {
+      calls.push({ method: "create", input });
+      return result;
+    },
+    async listChatShares(input) {
+      calls.push({ method: "list", input });
+      return { ok: true, message: "", records: [result.record] };
+    },
+    async revokeChatShare(input) {
+      calls.push({ method: "revoke", input });
+      return { ok: true, message: "revoked", shareId: input.shareId };
+    }
+  };
+}
+
+function shareRequest(chatId, expiration = "30d") {
+  return { chatId, expiration };
+}
+
+test("createConversationShare delegates HTML share orchestration to Agent Platform", async (t) => {
   const app = createFixture(t);
   const calls = [];
-  const result = await createConversationShare(
-    app,
-    { downloadChatShareEventStream: async () => ({ ok: true, bytes: eventStreamBytes }) },
-    "chat-1",
-    async (url, init) => {
-      calls.push({ url, init });
-      return new Response(JSON.stringify({
-        id: "opaque_abc",
-        url: "https://share.example.test/share/opaque_abc",
-        createdAt: "2026-08-10T12:00:00Z"
-      }), { status: 201, headers: { "Content-Type": "application/json" } });
-    }
-  );
+  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest(" chat-1 "));
 
   assert.equal(result.ok, true);
-  assert.equal(result.url, "https://share.example.test/share/opaque_abc");
-  assert.equal(calls[0].url, "https://tunnel.example.test/api/desktop/shares");
-  assert.equal(calls[0].init.headers.Authorization.startsWith("Bearer header."), true);
-  assert.equal(calls[0].init.headers["Content-Type"], "text/event-stream");
-  assert.equal(Buffer.compare(Buffer.from(calls[0].init.body), eventStreamBytes), 0);
+  assert.equal(result.record.url, "https://share.example.test/share/opaque_abc");
+  assert.equal(result.record.expiresAt, 1_788_955_200_000);
+  assert.equal(calls[0].method, "create");
+  assert.equal(calls[0].input.chatId, "chat-1");
+  assert.equal(calls[0].input.expiration, "30d");
+  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
+  assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
 });
 
-test("createConversationShare does not upload when the platform export fails", async (t) => {
+test("development share relay override targets the local Tunnel without replacing saved settings", async (t) => {
+  restoreEnvironment(t, ["DESKTOP_CONVERSATION_SHARE_RELAY_URL"]);
+  process.env.DESKTOP_CONVERSATION_SHARE_RELAY_URL = "ws://127.0.0.1:11961/tunnel";
   const app = createFixture(t);
-  let called = false;
-  const result = await createConversationShare(
-    app,
-    { downloadChatShareEventStream: async () => ({ ok: false, message: "unsupported" }) },
-    "chat-1",
-    async () => {
-      called = true;
-      return new Response();
-    }
-  );
+  app.isPackaged = false;
+  const calls = [];
 
-  assert.deepEqual(result, { ok: false, message: "unsupported" });
+  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].input.tunnelOrigin, "http://127.0.0.1:11961");
+  const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
+  const saved = JSON.parse(fs.readFileSync(path.join(desktopRoot, "config", "desktop", "tunnel-hub.json"), "utf8"));
+  assert.equal(saved.relayUrl, "wss://tunnel.example.test/tunnel");
+});
+
+test("development share token file overrides the cached website token", async (t) => {
+  restoreEnvironment(t, ["DESKTOP_CONVERSATION_SHARE_TOKEN_FILE"]);
+  const app = createFixture(t);
+  app.isPackaged = false;
+  const tokenPath = path.join(app.getPath("home"), "local-share-token");
+  const payload = Buffer.from(JSON.stringify({ sub: "local-user", exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
+  const localToken = `local.${payload}.signature`;
+  fs.writeFileSync(tokenPath, localToken);
+  process.env.DESKTOP_CONVERSATION_SHARE_TOKEN_FILE = tokenPath;
+  const calls = [];
+
+  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].input.tunnelAuthorization, `Bearer ${localToken}`);
+});
+
+test("packaged Desktop ignores the local share relay override", async (t) => {
+  restoreEnvironment(t, ["DESKTOP_CONVERSATION_SHARE_RELAY_URL"]);
+  process.env.DESKTOP_CONVERSATION_SHARE_RELAY_URL = "ws://127.0.0.1:11961/tunnel";
+  const app = createFixture(t);
+  app.isPackaged = true;
+  const calls = [];
+
+  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
+});
+
+test("createConversationShare resolves login before calling Agent Platform", async (t) => {
+  const app = createFixture(t);
+  const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
+  fs.rmSync(path.join(desktopRoot, "secrets", "sso-site-token.json"));
+  let called = false;
+  const result = await createConversationShare(app, {
+    async createChatShare() {
+      called = true;
+      return successfulShare();
+    },
+    async revokeChatShare() {
+      called = true;
+      return { ok: true, message: "revoked" };
+    }
+  }, shareRequest("chat-1"));
+
+  assert.equal(result.ok, false);
   assert.equal(called, false);
 });
 
-test("the Desktop share event stream path contains no parsing or reserialization step", () => {
+test("createConversationShare does not expose private authorization on bridge failures", async (t) => {
+  const app = createFixture(t);
+  const result = await createConversationShare(app, {
+    async createChatShare(input) {
+      throw new Error(input.tunnelAuthorization);
+    },
+    async revokeChatShare() {
+      return { ok: true, message: "revoked" };
+    }
+  }, shareRequest("chat-1"));
+
+  assert.equal(result.ok, false);
+  assert.doesNotMatch(result.message, /Bearer|header\./u);
+});
+
+test("createConversationShare rejects unsupported expiration before calling Agent Platform", async (t) => {
+  const app = createFixture(t);
+  let called = false;
+  const bridge = bridgeWithCalls([]);
+  const originalCreate = bridge.createChatShare;
+  bridge.createChatShare = async (...args) => {
+    called = true;
+    return originalCreate(...args);
+  };
+  const result = await createConversationShare(app, bridge, {
+    chatId: "chat-1",
+    expiration: "90d"
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(called, false);
+});
+
+test("Desktop share controller contains no SSE, HTML bytes, or direct Tunnel data-plane request", () => {
   const controllerSource = fs.readFileSync(
     new URL("../src/main/assistant/core/conversation-share-controller.ts", import.meta.url),
     "utf8"
   );
-  const bridgeSource = fs.readFileSync(
-    new URL("../src/main/assistant/core/agent-platform-bridge.ts", import.meta.url),
-    "utf8"
-  );
-  const downloadMethod = bridgeSource.slice(
-    bridgeSource.indexOf("async downloadChatShareEventStream"),
-    bridgeSource.indexOf("async downloadRawChatJSONL")
-  );
 
-  assert.match(controllerSource, /body: eventStreamResult\.bytes/u);
-  assert.doesNotMatch(downloadMethod, /JSON\.(?:parse|stringify)/u);
-  assert.doesNotMatch(downloadMethod, /\.text\(\)/u);
-  assert.equal(fs.existsSync(new URL(
-    "../src/main/assistant/core/conversation-share-types.ts",
-    import.meta.url
-  )), false);
+  assert.doesNotMatch(controllerSource, /downloadChatShareEventStream|text\/event-stream|\/api\/desktop\/shares|body:\s*.*bytes/u);
+  assert.doesNotMatch(controllerSource, /Date\.parse|RFC3339|isIsoTimestamp/u);
+  assert.match(controllerSource, /assistantBridge\.createChatShare/u);
+  assert.match(controllerSource, /assistantBridge\.listChatShares/u);
+  assert.match(controllerSource, /assistantBridge\.revokeChatShare/u);
 });
 
-test("revokeConversationShare calls the owner-authenticated Tunnel endpoint", async (t) => {
+test("listConversationShares delegates to Agent Platform with the current chat and Tunnel connection", async (t) => {
   const app = createFixture(t);
   const calls = [];
-  const result = await revokeConversationShare(app, "share_abc", async (url, init) => {
-    calls.push({ url, init });
-    return new Response(null, { status: 204 });
-  });
+  const result = await listConversationShares(app, bridgeWithCalls(calls), " chat-1 ");
+
   assert.equal(result.ok, true);
-  assert.equal(calls[0].url, "https://tunnel.example.test/api/desktop/shares/share_abc");
-  assert.equal(calls[0].init.method, "DELETE");
+  assert.equal(result.records.length, 1);
+  assert.equal(calls[0].method, "list");
+  assert.equal(calls[0].input.chatId, "chat-1");
+  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
+});
+
+test("revokeConversationShare delegates to Agent Platform with current Tunnel connection", async (t) => {
+  const app = createFixture(t);
+  const calls = [];
+  const result = await revokeConversationShare(app, bridgeWithCalls(calls), "share_abc");
+
+  assert.equal(result.ok, true);
+  assert.equal(calls[0].method, "revoke");
+  assert.equal(calls[0].input.shareId, "share_abc");
+  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
+  assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
 });
 
 test("revokeConversationShare accepts a prefixless opaque id", async (t) => {
   const app = createFixture(t);
   const calls = [];
-  const result = await revokeConversationShare(app, "opaque-abc_123", async (url, init) => {
-    calls.push({ url, init });
-    return new Response(null, { status: 204 });
-  });
+  const result = await revokeConversationShare(app, bridgeWithCalls(calls), "opaque-abc_123");
+
   assert.equal(result.ok, true);
-  assert.equal(calls[0].url, "https://tunnel.example.test/api/desktop/shares/opaque-abc_123");
+  assert.equal(calls[0].input.shareId, "opaque-abc_123");
 });

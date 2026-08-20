@@ -15,6 +15,24 @@ import { hostArch, hostPlatform, isWindows, syncOsLabel } from "./platform/detec
 import { npmCmd, run, runAndWait, withBrandEnv } from "./platform/spawn.mjs";
 
 const projectRoot = process.cwd();
+const conversationShareRelayUrlArgument = process.argv.find((argument) =>
+  argument.startsWith("--conversation-share-relay-url=")
+);
+const conversationShareTokenFileArgument = process.argv.find((argument) =>
+  argument.startsWith("--conversation-share-token-file=")
+);
+const conversationShareRelayUrl = conversationShareRelayUrlArgument
+  ?.slice("--conversation-share-relay-url=".length)
+  .trim() || process.env.DESKTOP_CONVERSATION_SHARE_RELAY_URL?.trim() || "";
+const conversationShareTokenFile = conversationShareTokenFileArgument
+  ?.slice("--conversation-share-token-file=".length)
+  .trim() || process.env.DESKTOP_CONVERSATION_SHARE_TOKEN_FILE?.trim() || "";
+if (conversationShareRelayUrl) {
+  process.env.DESKTOP_CONVERSATION_SHARE_RELAY_URL = conversationShareRelayUrl;
+}
+if (conversationShareTokenFile) {
+  process.env.DESKTOP_CONVERSATION_SHARE_TOKEN_FILE = conversationShareTokenFile;
+}
 const brand = loadBrandConfig(projectRoot, resolveBrandId());
 process.env.BRAND = brand.id;
 const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);

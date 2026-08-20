@@ -49,6 +49,17 @@ npm test
 
 需要重新构建并同步四个内置服务时，macOS/Linux 使用 `scripts/build-builtin-services.sh`，Windows 使用 `scripts/build-builtin-services.ps1`；普通开发与发布只校验已经同步的资源。
 
+### 本地分享短链联调
+
+本地 Tunnel 监听 `127.0.0.1:11961` 时，可通过开发态专用入口让 Desktop 临时使用本地 Relay：
+
+```bash
+npm run dev:share-local -- \
+  --conversation-share-token-file=/absolute/path/to/token
+```
+
+Token 文件只保存本地 Tunnel 接受的临时 Bearer Token，不得提交。该命令只对当前开发进程生效，不会改写正式 Tunnel 设置或正式登录凭证；联调完成后按工作区根目录的 `LOCAL_SHARE_DEBUG_CLEANUP.md` 回退临时代码和配置。
+
 ## 4. 目录结构
 
 ```text
