@@ -403,7 +403,6 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     for (const binding of socket.streams.values()) {
       binding.unsubscribe?.();
       binding.unsubscribe = null;
-      options.realtimeBroker.releaseForwardedRunActionReadiness(binding.sourceId);
       if (binding.visibleRegistered) options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
     }
     options.realtimeBroker.cleanupConsumer(socket.consumerId);
@@ -434,7 +433,6 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
       binding.visibleRegistered = false;
     }
-    options.realtimeBroker.releaseForwardedRunActionReadiness(binding.sourceId);
     if (!binding.runId || !binding.owner) return;
     const { baseUrl, token } = await availability();
     await options.realtimeBroker.forwardRequest({
@@ -519,25 +517,28 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   const resolveSocket = (sender: WebContents, socketId: string) =>
     sockets.get(socketKey(sender.id, socketId)) ?? null;
 
-  const registerRejectedRunReadiness = (
+  const registerRejectedRunGrant = (
     binding: StreamBinding,
     event: Record<string, unknown>,
     error: unknown,
   ) => {
     const runId = readText(event.runId);
     const chatId = readText(event.chatId);
-    if (!runId || !chatId || binding.type !== "/api/query") return;
+    const owner = readOwner(event);
+    if (!runId || !chatId || !owner || binding.type !== "/api/query") return;
     const rejected = Promise.reject(error);
     void rejected.catch(() => undefined);
     try {
-      options.realtimeBroker.registerForwardedRunActionReadiness({
+      options.realtimeBroker.registerForwardedRunActionGrant({
         sourceId: binding.sourceId,
         chatId,
         runId,
+        owner,
         ready: rejected,
+        replaceExisting: false,
       });
     } catch {
-      // Preserve the first readiness identity registered for this Run.
+      // Preserve the first canonical grant identity registered for this Run.
     }
   };
 
@@ -655,10 +656,11 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       return;
     }
     const ready = binding.canonicalChatReady ?? Promise.resolve();
-    options.realtimeBroker.registerForwardedRunActionReadiness({
+    options.realtimeBroker.registerForwardedRunActionGrant({
       sourceId: binding.sourceId,
       chatId,
       runId,
+      owner,
       ready,
     });
     binding.chatId = chatId;
@@ -1063,10 +1065,11 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       binding.chatId && binding.runId && binding.owner
     ) {
       try {
-        options.realtimeBroker.registerForwardedRunActionReadiness({
+        options.realtimeBroker.registerForwardedRunActionGrant({
           sourceId: binding.sourceId,
           chatId: binding.chatId,
           runId: binding.runId,
+          owner: binding.owner,
           ready: Promise.resolve(),
         });
         options.realtimeBroker.beginForwardedVisibleRun({
@@ -1112,7 +1115,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             } catch (error) {
               const normalizedEvent = readNormalizedStreamEvent(upstreamFrame);
               if (normalizedEvent) {
-                registerRejectedRunReadiness(binding, normalizedEvent, error);
+                registerRejectedRunGrant(binding, normalizedEvent, error);
               }
               binding.protocolFailed = true;
               binding.suppressed = true;

@@ -25,6 +25,7 @@ import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../shared/service-webv
 import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 import { useI18n } from "../i18n/useI18n";
 import { createChatChildSurfaceIdentity } from "../../shared/surface-identity";
+import { createAgentWebclientOverviewPath } from "../../shared/agent-webclient-routes";
 
 const ExternalWebviewPage = lazy(() =>
   import("../pages/external-webview/ExternalWebviewPage").then((module) => ({ default: module.ExternalWebviewPage })),
@@ -310,8 +311,11 @@ export function WorkPanelHost({
     if (!request.action.startsWith("desktop.workpanel.")) return null;
     const ownerChatId = request.source?.chatId?.trim() || "";
     if (!ownerChatId) return actionError("source_chat_required", "A trusted source.chatId is required.");
+    const ownerAgentKey = request.source?.agentKey?.trim() || "";
     const args = request.args ?? {};
-    const forbidden = ["chatId", "workspaceId", "stableKey", "preload", "webPreferences"].filter((key) => key in args);
+    const forbidden = [
+      "chatId", "ownerChatId", "agentKey", "runId", "workspaceId", "stableKey", "preload", "webPreferences",
+    ].filter((key) => key in args);
     if (forbidden.length > 0) return actionError("invalid_request", `WorkPanel does not accept: ${forbidden.join(", ")}.`);
     const current = () => stateRef.current.workspaces.find((workspace) => workspace.ownerChatId === ownerChatId) ?? null;
     const execute = (command: WorkPanelCommand) => {
@@ -321,17 +325,47 @@ export function WorkPanelHost({
         ? { ok: true as const, result: publicResult }
         : { ok: false as const, error: publicResult.error };
     };
+    const ensureTrustedWorkspace = () => {
+      if (current()) return null;
+      if (!ownerAgentKey) {
+        return actionError(
+          "source_owner_required",
+          "A trusted source.agentKey is required to create a WorkPanel workspace.",
+        );
+      }
+      const created = execute({
+        type: "openItem",
+        ownerChatId,
+        descriptor: {
+          kind: "webclient",
+          module: "overview",
+          route: createAgentWebclientOverviewPath({ chatId: ownerChatId }),
+          context: { chatId: ownerChatId, agentKey: ownerAgentKey },
+          title: t("chatWorkPanel.overview"),
+          pinned: true,
+          closable: false,
+        },
+      });
+      return created.ok ? null : created;
+    };
 
     switch (request.action) {
       case "desktop.workpanel.getState": {
         const workspace = current();
         return { ok: true, result: { ok: true, workspaceId: workspace?.workspaceId || "", state: workspace ?? undefined } };
       }
-      case "desktop.workpanel.openTab":
+      case "desktop.workpanel.openTab": {
+        if (ownerAgentKey) {
+          const bootstrapFailure = ensureTrustedWorkspace();
+          if (bootstrapFailure) return bootstrapFailure;
+        }
         return execute({ type: "openItem", ownerChatId, descriptor: args.descriptor as any });
+      }
       case "desktop.workpanel.openWeb": {
         const url = normalizeWorkPanelWebUrl(args.url);
         if (!url) return actionError("invalid_url", "url must use http: or https: without credentials.");
+        const bootstrapFailure = ensureTrustedWorkspace();
+        if (bootstrapFailure) return bootstrapFailure;
         return execute({
           type: "openItem",
           ownerChatId,
@@ -368,7 +402,7 @@ export function WorkPanelHost({
       default:
         return null;
     }
-  }), [dispatchCommand]);
+  }), [dispatchCommand, t]);
 
   useEffect(() => {
     const root = rootRef.current;

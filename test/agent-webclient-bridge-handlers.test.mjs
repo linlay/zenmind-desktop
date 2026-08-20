@@ -89,14 +89,8 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       visibleRuns.set(input.runId, run);
       visibleBinding = { ...input };
     },
-    registerForwardedRunActionReadiness: (input) => {
+    registerForwardedRunActionGrant: (input) => {
       runReadiness.set(input.runId, input);
-    },
-    releaseForwardedRunActionReadiness: (sourceId) => {
-      const readiness = [...runReadiness.values()].find((item) => item.sourceId === sourceId);
-      if (!readiness) return false;
-      readiness.active = false;
-      return true;
     },
     getVisibleBinding: () => visibleBinding,
     appendForwardedVisibleRunEvent: ({ sourceId, runId, event }) => {
@@ -975,7 +969,7 @@ test("same-surface route loading does not destroy the logical socket or truncate
   );
 });
 
-test("new Main Chat run.start registers WorkPanel readiness against chat.start synchronization", async () => {
+test("new Main Chat run.start registers a WorkPanel grant against chat.start synchronization", async () => {
   const target = createTarget(73, {
     surfaceRole: "main-chat",
     surfaceLevel: "root",
@@ -1385,6 +1379,8 @@ test("surface handoff writes detach before the next live request", async () => {
   await flush();
   assert.deepEqual(order, ["/api/query", "/api/detach", "/api/query"]);
   assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
+  assert.equal(runtime.runReadiness.has("run-1"), true);
+  assert.deepEqual(runtime.runReadiness.get("run-1").owner, { kind: "agent", agentKey: "agent-1" });
 });
 
 test("surface handoff waits for an explicit detach write and does not send a duplicate detach", async () => {
@@ -1530,6 +1526,7 @@ test("same surface re-entry waits for its explicit detach write before attach", 
 
   assert.deepEqual(order, ["/api/query", "/api/detach", "/api/attach"]);
   assert.equal(order.filter((type) => type === "/api/detach").length, 1);
+  assert.match(runtime.runReadiness.get("run-same-surface").sourceId, /attach-same-surface/u);
 });
 
 test("push broadcasts without acquiring live capability and close only cleans the logical socket", async () => {

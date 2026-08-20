@@ -141,12 +141,17 @@ type ConnectionSubscription = {
   onState(state: AgentPlatformRealtimeConnectionState): void;
 };
 
-type ForwardedRunActionReadiness = {
+type ForwardedRunActionGrant = {
   sourceId: string;
   chatId: string;
   runId: string;
+  owner: AgentWebclientRunOwner;
+  generation: number;
+  state: "pending" | "ready" | "failed";
+  failureMessage: string;
   ready: Promise<void>;
-  active: boolean;
+  superseded: Promise<void>;
+  supersede(): void;
 };
 
 export type DesktopBridgeRequestProvider = {
@@ -204,6 +209,14 @@ function readText(value: unknown) {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function sameRunOwner(first: AgentWebclientRunOwner, second: AgentWebclientRunOwner) {
+  return first.kind === second.kind && (
+    first.kind === "agent" && second.kind === "agent"
+      ? first.agentKey === second.agentKey
+      : first.kind === "team" && second.kind === "team" && first.teamId === second.teamId
+  );
 }
 
 function isTerminalEvent(type: string) {
@@ -264,7 +277,7 @@ export class RealtimeBroker {
   private readonly terminalRequestIds = new Set<string>();
   private readonly inboundDesktopRequests = new Map<string, AbortController>();
   private readonly seenInboundDesktopRequestIds = new Set<string>();
-  private readonly forwardedRunActionReadiness = new Map<string, ForwardedRunActionReadiness>();
+  private readonly forwardedRunActionGrants = new Map<string, ForwardedRunActionGrant>();
   private desktopBridgeProvider: DesktopBridgeRequestProvider | null = null;
   private visibleBinding: VisibleRunBinding | null = null;
   private disposed = false;
@@ -655,44 +668,84 @@ export class RealtimeBroker {
     return this.getVisibleBinding();
   }
 
-  registerForwardedRunActionReadiness(input: {
+  registerForwardedRunActionGrant(input: {
     sourceId: string;
     chatId: string;
     runId: string;
+    owner: AgentWebclientRunOwner;
     ready: Promise<void>;
+    replaceExisting?: boolean;
   }) {
     const sourceId = input.sourceId.trim();
     const chatId = input.chatId.trim();
     const runId = input.runId.trim();
     if (!sourceId || !chatId || !runId) {
-      throw brokerError("invalid_request", "forwarded Run action readiness identity is incomplete");
+      throw brokerError("invalid_request", "forwarded Run WorkPanel grant identity is incomplete");
     }
-    const existing = this.forwardedRunActionReadiness.get(runId);
+    const existing = this.forwardedRunActionGrants.get(runId);
     if (existing && (
-      existing.sourceId !== sourceId ||
-      existing.chatId !== chatId
+      existing.chatId !== chatId ||
+      !sameRunOwner(existing.owner, input.owner)
     )) {
-      throw brokerError("duplicate_id", "forwarded Run action readiness identity conflicts");
+      throw brokerError("duplicate_id", "forwarded Run WorkPanel grant identity conflicts");
     }
-    const readiness = { sourceId, chatId, runId, ready: input.ready, active: true };
-    void readiness.ready.catch(() => undefined);
-    this.forwardedRunActionReadiness.set(runId, readiness);
-    while (this.forwardedRunActionReadiness.size > 2_000) {
-      const oldest = this.forwardedRunActionReadiness.keys().next().value as string | undefined;
+    if (existing && input.replaceExisting === false) return;
+    const generation = (existing?.generation ?? 0) + 1;
+    let supersede: () => void = () => undefined;
+    const superseded = new Promise<void>((resolve) => {
+      supersede = resolve;
+    });
+    const grant: ForwardedRunActionGrant = {
+      sourceId,
+      chatId,
+      runId,
+      owner: input.owner,
+      generation,
+      state: "pending",
+      failureMessage: "",
+      ready: Promise.resolve(),
+      superseded,
+      supersede,
+    };
+    grant.ready = input.ready.then(
+      () => {
+        const current = this.forwardedRunActionGrants.get(runId);
+        if (current !== grant || current.generation !== generation) return;
+        current.state = "ready";
+        current.failureMessage = "";
+      },
+      (error) => {
+        const current = this.forwardedRunActionGrants.get(runId);
+        if (current === grant && current.generation === generation) {
+          current.state = "failed";
+          current.failureMessage = error instanceof Error ? error.message : String(error);
+        }
+        throw error;
+      },
+    );
+    void grant.ready.catch(() => undefined);
+    existing?.supersede();
+    this.forwardedRunActionGrants.set(runId, grant);
+    while (this.forwardedRunActionGrants.size > 2_000) {
+      const oldest = this.forwardedRunActionGrants.keys().next().value as string | undefined;
       if (!oldest) break;
-      this.forwardedRunActionReadiness.delete(oldest);
+      this.revokeForwardedRunActionGrant(oldest);
     }
   }
 
-  releaseForwardedRunActionReadiness(sourceIdValue: string) {
-    const sourceId = sourceIdValue.trim();
-    if (!sourceId) return false;
-    const readiness = [...this.forwardedRunActionReadiness.values()].find((candidate) =>
-      candidate.sourceId === sourceId,
-    );
-    if (!readiness) return false;
-    readiness.active = false;
+  revokeForwardedRunActionGrant(runIdValue: string) {
+    const runId = runIdValue.trim();
+    if (!runId) return false;
+    const grant = this.forwardedRunActionGrants.get(runId);
+    if (!grant) return false;
+    this.forwardedRunActionGrants.delete(runId);
+    grant.supersede();
     return true;
+  }
+
+  private clearForwardedRunActionGrants() {
+    for (const grant of this.forwardedRunActionGrants.values()) grant.supersede();
+    this.forwardedRunActionGrants.clear();
   }
 
   appendForwardedVisibleRunEvent(input: {
@@ -733,7 +786,7 @@ export class RealtimeBroker {
       this.completeRun(run, result);
     }
     if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
-    this.releaseForwardedRunActionReadiness(sourceId);
+    this.revokeForwardedRunActionGrant(run.runId);
     return true;
   }
 
@@ -745,7 +798,6 @@ export class RealtimeBroker {
     );
     if (!run) return false;
     run.forwardedSourceId = null;
-    this.releaseForwardedRunActionReadiness(sourceId);
     if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
     const error = brokerError("replay_required", "primary visible Run source was released");
     for (const id of [...run.subscribers]) {
@@ -942,7 +994,7 @@ export class RealtimeBroker {
     this.runsById.clear();
     this.visibleBinding = null;
     this.terminalRequestIds.clear();
-    this.forwardedRunActionReadiness.clear();
+    this.clearForwardedRunActionGrants();
     this.client.rotateIdentity();
   }
 
@@ -967,7 +1019,7 @@ export class RealtimeBroker {
     this.runsById.clear();
     this.visibleBinding = null;
     this.terminalRequestIds.clear();
-    this.forwardedRunActionReadiness.clear();
+    this.clearForwardedRunActionGrants();
     for (const controller of this.inboundDesktopRequests.values()) controller.abort();
     this.inboundDesktopRequests.clear();
     this.seenInboundDesktopRequestIds.clear();
@@ -1343,6 +1395,7 @@ export class RealtimeBroker {
     }
     run.terminal = true;
     run.suspended = false;
+    this.revokeForwardedRunActionGrant(run.runId);
     if (run.upstreamRequestId) {
       this.terminalRequestIds.add(run.upstreamRequestId);
       if (this.terminalRequestIds.size > 2_000) {
@@ -1439,6 +1492,18 @@ export class RealtimeBroker {
       this.options.onDiagnostic?.(`time_contract_violation: push.${type}.${invalidTime}`);
       return;
     }
+    if (type === "run.finished" || type === "run.complete") {
+      const runId = pushIdentity(frame, "runId");
+      this.revokeForwardedRunActionGrant(runId);
+      const run = this.runsById.get(runId);
+      if (run && !run.terminal && run.query === null) {
+        const payload = framePayload(frame);
+        this.completeRun(run, {
+          reason: readText(payload.finishReason) || readText(payload.status) || "finished",
+          ...(typeof payload.lastSeq === "number" ? { lastSeq: payload.lastSeq } : {}),
+        });
+      }
+    }
     for (const subscription of this.pushSubscriptions.values()) {
       if (!subscription.types.has(type)) continue;
       const filter = subscription.filter;
@@ -1529,11 +1594,22 @@ export class RealtimeBroker {
       if (!controller.signal.aborted) {
         const errorCode = error instanceof Error ? error.name : "";
         if (errorCode === "source_chat_not_ready" || errorCode === "protocol_error") {
+          const brokerFailure = error as Error & {
+            retryable?: boolean;
+            details?: Record<string, unknown>;
+          };
+          const failureData = {
+            ...(typeof brokerFailure.retryable === "boolean"
+              ? { retryable: brokerFailure.retryable }
+              : {}),
+            ...(brokerFailure.details ? { details: brokerFailure.details } : {}),
+          };
           this.sendDesktopBridgeError(
             id,
             errorCode,
             409,
             error instanceof Error ? error.message : String(error),
+            Object.keys(failureData).length > 0 ? failureData : undefined,
           );
           return;
         }
@@ -1561,31 +1637,78 @@ export class RealtimeBroker {
     if (!runId || !chatId) {
       throw brokerError("protocol_error", "WorkPanel source must include canonical Chat and Run identity");
     }
-    const readiness = this.forwardedRunActionReadiness.get(runId);
-    if (!readiness) {
+    const grant = this.forwardedRunActionGrants.get(runId);
+    if (!grant) {
       const run = this.runsById.get(runId);
-      if (!run || run.chatId !== chatId || run.forwardedSourceId) {
-        throw brokerError("source_chat_not_ready", "WorkPanel source Run is not registered by the active Main Chat");
+      if (!run || run.chatId !== chatId || run.forwardedSourceId || run.terminal) {
+        throw brokerError(
+          "source_chat_not_ready",
+          "WorkPanel source Run does not have a canonical Chat grant",
+          {
+            retryable: false,
+            details: { recovery: "reattach_source_chat" },
+          },
+        );
+      }
+      if (!run.owner) {
+        throw brokerError("protocol_error", "WorkPanel source Run owner is unavailable");
+      }
+      if (run.owner.kind !== "agent") {
+        throw brokerError(
+          "source_chat_not_ready",
+          "WorkPanel is unavailable for a Team-owned Run",
+          { retryable: false, details: { recovery: "unsupported_run_owner" } },
+        );
+      }
+      if (readText(source.agentKey) !== run.owner.agentKey) {
+        throw brokerError("protocol_error", "WorkPanel source Agent conflicts with its Run owner");
       }
       return;
     }
-    if (readiness.chatId !== chatId) {
+    if (grant.chatId !== chatId) {
       throw brokerError("protocol_error", "WorkPanel source Chat conflicts with its forwarded Run");
     }
-    if (!readiness.active) {
-      throw brokerError("source_chat_not_ready", "WorkPanel source Main Chat is no longer active");
+    if (grant.owner.kind !== "agent") {
+      throw brokerError(
+        "source_chat_not_ready",
+        "WorkPanel is unavailable for a Team-owned Run",
+        { retryable: false, details: { recovery: "unsupported_run_owner" } },
+      );
+    }
+    if (readText(source.agentKey) !== grant.owner.agentKey) {
+      throw brokerError("protocol_error", "WorkPanel source Agent conflicts with its forwarded Run");
+    }
+    if (grant.state === "failed") {
+      throw brokerError(
+        "source_chat_not_ready",
+        grant.failureMessage || "canonical Chat synchronization failed",
+        { retryable: false, details: { recovery: "reattach_source_chat" } },
+      );
     }
     await Promise.race([
-      readiness.ready,
+      grant.ready,
+      grant.superseded,
       new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
     ]).catch((error) => {
+      const current = this.forwardedRunActionGrants.get(runId);
+      if (current && current.generation !== grant.generation) return;
       throw brokerError(
         "source_chat_not_ready",
         error instanceof Error ? error.message : String(error),
+        { retryable: false, details: { recovery: "reattach_source_chat" } },
       );
     });
-    if (!signal.aborted && !readiness.active) {
-      throw brokerError("source_chat_not_ready", "WorkPanel source Main Chat is no longer active");
+    if (signal.aborted) return;
+    const current = this.forwardedRunActionGrants.get(runId);
+    if (!current) {
+      throw brokerError(
+        "source_chat_not_ready",
+        "WorkPanel source Run grant ended before the action was dispatched",
+        { retryable: false, details: { recovery: "run_finished" } },
+      );
+    }
+    if (current.generation !== grant.generation) {
+      await this.awaitForwardedWorkPanelReadiness(payload, signal);
     }
   }
 

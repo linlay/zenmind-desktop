@@ -68,6 +68,11 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
     assert.match(actions, new RegExp(`desktop\\.workpanel\\.${name}`, "u"));
   }
   assert.match(host, /request\.source\?\.chatId/u);
+  assert.match(host, /request\.source\?\.agentKey/u);
+  assert.match(host, /const ensureTrustedWorkspace/u);
+  assert.match(host, /createAgentWebclientOverviewPath\(\{ chatId: ownerChatId \}\)/u);
+  assert.match(host, /context: \{ chatId: ownerChatId, agentKey: ownerAgentKey \}/u);
+  assert.match(host, /case "desktop\.workpanel\.openWeb"[\s\S]*?ensureTrustedWorkspace\(\)[\s\S]*?descriptor: \{ kind: "web", url \}/u);
   assert.match(host, /case "desktop\.workpanel\.openWeb"[\s\S]*?descriptor: \{ kind: "web", url \}/u);
   assert.match(host, /case "desktop\.workpanel\.refreshWeb"[\s\S]*?candidate\.descriptor\.url === url[\s\S]*?webview\.reload\(\)[\s\S]*?type: "activateItem"/u);
   assert.match(host, /descriptor:\s*\{ kind: "web", url/u);

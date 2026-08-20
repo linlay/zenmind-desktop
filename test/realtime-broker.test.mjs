@@ -496,15 +496,16 @@ test("RealtimeBroker dispatches reverse Desktop Action and maps provider failure
   });
 });
 
-test("RealtimeBroker waits for forwarded canonical Chat readiness before WorkPanel actions", async (t) => {
+test("RealtimeBroker waits for a forwarded canonical Chat grant before WorkPanel actions", async (t) => {
   const { broker, sockets, token } = createHarness(t);
   const calls = [];
   let releaseReady;
   const ready = new Promise((resolve) => { releaseReady = resolve; });
-  broker.registerForwardedRunActionReadiness({
+  broker.registerForwardedRunActionGrant({
     sourceId: "main-chat:query-1",
     chatId: "chat-ready",
     runId: "run-ready",
+    owner: { kind: "agent", agentKey: "coder" },
     ready,
   });
   broker.setDesktopBridgeProvider({
@@ -523,7 +524,7 @@ test("RealtimeBroker waits for forwarded canonical Chat readiness before WorkPan
     payload: {
       action: "desktop.workpanel.openWeb",
       args: { url: "https://example.test/document" },
-      source: { chatId: "chat-ready", runId: "run-ready" },
+      source: { chatId: "chat-ready", runId: "run-ready", agentKey: "coder" },
     },
   });
   await nextTurn();
@@ -543,10 +544,11 @@ test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization 
   const calls = [];
   const rejected = Promise.reject(new Error("surface registration rejected"));
   rejected.catch(() => undefined);
-  broker.registerForwardedRunActionReadiness({
+  broker.registerForwardedRunActionGrant({
     sourceId: "main-chat:query-failed",
     chatId: "chat-failed",
     runId: "run-failed",
+    owner: { kind: "agent", agentKey: "coder" },
     ready: rejected,
   });
   broker.setDesktopBridgeProvider({
@@ -564,7 +566,7 @@ test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization 
     payload: {
       action: "desktop.workpanel.openWeb",
       args: { url: "https://example.test/document" },
-      source: { chatId: "chat-failed", runId: "run-failed" },
+      source: { chatId: "chat-failed", runId: "run-failed", agentKey: "coder" },
     },
   });
   await nextTurn();
@@ -575,7 +577,167 @@ test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization 
     id: "workpanel-sync-failed",
     code: 409,
     msg: "source_chat_not_ready: surface registration rejected",
+    data: { retryable: false, details: { recovery: "reattach_source_chat" } },
   });
+});
+
+test("RealtimeBroker keeps a WorkPanel grant after the visible observer detaches", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  const owner = { kind: "agent", agentKey: "coder" };
+  broker.beginForwardedVisibleRun({
+    sourceId: "main-chat:query-background",
+    chatId: "chat-background",
+    runId: "run-background",
+    owner,
+    primarySurfaceId: "surface:main-chat",
+  });
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-background",
+    chatId: "chat-background",
+    runId: "run-background",
+    owner,
+    ready: Promise.resolve(),
+  });
+  assert.equal(broker.releaseForwardedVisibleRun("main-chat:query-background"), true);
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: { workspaceId: "workpanel:chat-background" } };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-after-detach",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/background" },
+      source: { chatId: "chat-background", runId: "run-background", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+
+  assert.equal(calls.length, 1);
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-after-detach")?.frame, "response");
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-wrong-owner",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/forged" },
+      source: { chatId: "chat-background", runId: "run-background", agentKey: "other-agent" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 1);
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-wrong-owner")?.type, "protocol_error");
+});
+
+test("RealtimeBroker lets a canonical reattach replace a stale WorkPanel grant attempt", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  const owner = { kind: "agent", agentKey: "coder" };
+  let rejectStale;
+  const staleReady = new Promise((_, reject) => { rejectStale = reject; });
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-stale",
+    chatId: "chat-recovered",
+    runId: "run-recovered",
+    owner,
+    ready: staleReady,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: {} };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-after-reattach",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/recovered" },
+      source: { chatId: "chat-recovered", runId: "run-recovered", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:attach-recovered",
+    chatId: "chat-recovered",
+    runId: "run-recovered",
+    owner,
+    ready: Promise.resolve(),
+  });
+  await nextTurn();
+  rejectStale(new Error("stale source finished late"));
+  await nextTurn();
+
+  assert.equal(calls.length, 1);
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-after-reattach")?.frame, "response");
+});
+
+test("RealtimeBroker revokes a background WorkPanel grant at the forwarded Run terminal", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const owner = { kind: "agent", agentKey: "coder" };
+  broker.beginForwardedVisibleRun({
+    sourceId: "main-chat:query-terminal",
+    chatId: "chat-terminal",
+    runId: "run-terminal",
+    owner,
+    primarySurfaceId: "surface:main-chat",
+  });
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-terminal",
+    chatId: "chat-terminal",
+    runId: "run-terminal",
+    owner,
+    ready: Promise.resolve(),
+  });
+  broker.releaseForwardedVisibleRun("main-chat:query-terminal");
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: true, action: request.action, result: {} }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "push",
+    type: "run.finished",
+    data: {
+      runId: "run-terminal",
+      chatId: "chat-terminal",
+      status: "completed",
+      finishReason: "complete",
+      finishedAt: EPOCH_MS,
+    },
+  });
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-after-terminal",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/terminal" },
+      source: { chatId: "chat-terminal", runId: "run-terminal", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+
+  const terminal = sockets[0].sent.find((frame) => frame.id === "workpanel-after-terminal");
+  assert.equal(terminal?.frame, "error");
+  assert.equal(terminal?.type, "source_chat_not_ready");
+  assert.equal(terminal?.data?.retryable, false);
 });
 
 test("RealtimeBroker chunks large Desktop JSON and screenshot responses below 256 KiB", async (t) => {
