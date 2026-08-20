@@ -599,6 +599,7 @@ export function createMainProcessRuntime() {
           "planning",
           "agent",
           "copilot",
+          "skill",
           "workpanel-web",
         ].includes(target.surfaceRole)
       );

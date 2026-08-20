@@ -93,6 +93,8 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
     case "agent":
     case "copilot":
       return <RobotOutlined />;
+    case "skill":
+      return <AppstoreOutlined />;
   }
 }
 

@@ -55,6 +55,7 @@ test("surface identity separates hierarchy and interaction from the short id", (
   for (const [role, key, rawValue] of [
     ["project", "agent:private-agent", "private-agent"],
     ["artifact", "artifact:private-item", "private-item"],
+    ["skill", "skill:private-skill", "private-skill"],
     ["workpanel-web", "web:https://private.example/path", "private.example"],
   ]) {
     assert.equal(createSurfaceIdentity(role, key).surfaceId.includes(rawValue), false);
@@ -79,6 +80,7 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
     ["reference", "agent-management"],
     ["planning", "agent-management"],
     ["agent", "agent-management"],
+    ["skill", "agent-management"],
     ["service", "agent-management"],
   ]) {
     assert.equal(resolveAgentWebclientWebviewSurfaceType(role), expected, role);
@@ -93,7 +95,8 @@ test("surface registry rejects a forged identity and cascades child removal", ()
     [74, { id: 74, getType: () => "webview", isDestroyed: () => false }],
     [75, { id: 75, getType: () => "webview", isDestroyed: () => false }],
     [76, { id: 76, getType: () => "webview", isDestroyed: () => false }],
-    [77, { id: 77, getType: () => "webview", isDestroyed: () => false }]
+    [77, { id: 77, getType: () => "webview", isDestroyed: () => false }],
+    [78, { id: 78, getType: () => "webview", isDestroyed: () => false }]
   ]);
   const registry = createBrowserSurfaceRegistry({
     webContents: {
@@ -167,6 +170,15 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceRole, "file");
   assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceType, "agent-management");
 
+  const skillKey = "skill:pdf";
+  const skill = createChatChildSurfaceIdentity("skill", skillKey, "chat-1");
+  assert.equal(registry.registerSurface(
+    registration(skill, 78, "agent-management", skillKey),
+    7
+  ), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(78).surfaceRole, "skill");
+  assert.equal(registry.resolveWebviewSurfaceTarget(78).surfaceType, "agent-management");
+
   const projectKey = "agent:detached-project";
   const detachedProject = createSurfaceIdentity("project", projectKey);
   assert.equal(registry.registerSurface(
@@ -188,6 +200,7 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(73), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(76), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(77), null);
+  assert.equal(registry.resolveWebviewSurfaceTarget(78), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(74).surfaceId, detachedProject.surfaceId);
   registry.unregisterSurfacesForOwner(7);
   assert.equal(registry.resolveWebviewSurfaceTarget(74), null);
