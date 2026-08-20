@@ -1891,9 +1891,11 @@
   }
 }
 
-.assistant-worker-icon-button:hover {
-  background: color-mix(in srgb, var(--ink-muted) 12%, transparent);
+.assistant-worker-icon-button:hover,
+.assistant-worker-icon-button:focus-visible {
+  background: transparent;
   color: var(--ink);
+  box-shadow: none;
 }
 
 .sidebar-website-child-row .sidebar-website-status-action:hover,
@@ -3274,6 +3276,13 @@
 :root[data-theme="dark"] .assistant-worker-icon-button,
 :root[data-theme="dark"] .assistant-worker-chat-menu-button {
   color: #9aa4b2;
+}
+
+:root[data-theme="dark"] .assistant-worker-icon-button:hover,
+:root[data-theme="dark"] .assistant-worker-icon-button:focus-visible {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: none;
 }
 
 :root[data-theme="dark"] .assistant-worker-actions .assistant-worker-icon-button,
