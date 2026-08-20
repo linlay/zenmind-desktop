@@ -288,12 +288,30 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
       };
     }
   };
+  const cachedAppInfo = {
+    productName: "ZenMind Cached",
+    version: "v7.6.5",
+    buildTime: "2026-08-20T01:02:03.000Z"
+  };
+  const desktopActionConfirmationCalls = [];
+  const desktopActionRendererCalls = [];
   const started = await startDesktopWsServer({
     app: createApp(path.join(root, "home")),
     host: "127.0.0.1",
     port: 0,
     desktopActionOptions: {
-      getKanbanRuntime: () => kanbanRuntime
+      getKanbanRuntime: () => kanbanRuntime,
+      getDesktopAppInfo: () => cachedAppInfo,
+      getMainWindow: () => ({ isDestroyed: () => false }),
+      getCurrentPageSnapshot: () => null,
+      confirmRendererAction: async (request) => {
+        desktopActionConfirmationCalls.push(request);
+        return { requestId: request.requestId, decision: "cancel" };
+      },
+      callRendererAction: async (request) => {
+        desktopActionRendererCalls.push(request);
+        return { requestId: request.requestId, action: request.action, ok: true, result: {} };
+      }
     },
     assistantBridge: {
       listAgents: async () => [],
@@ -361,6 +379,10 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.deepEqual(hello.data.namespaces, { d: "desktop", ap: "agent-platform", wa: "webapp" });
   assert.ok(hello.data.requestTypes.includes("action.call"));
   assert.ok(hello.data.requestTypes.includes("webapp.list"));
+
+  client.send({ frame: "request", type: "runtime.info", id: "runtime-info-1", payload: {} });
+  const runtimeInfo = await client.waitFor((message) => message.id === "runtime-info-1");
+  assert.deepEqual(runtimeInfo.data, cachedAppInfo);
 
   client.send({ frame: "request", type: "webapp.list", id: "webapp-list-1", payload: {} });
   const webappList = await client.waitFor((message) => message.id === "webapp-list-1");
@@ -442,6 +464,36 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.ok(actionNames.includes("pet.list"));
   assert.ok(actionNames.includes("pet.set"));
   assert.ok(actionNames.includes("general.deviceName"));
+  assert.ok(actionNames.includes("runtime.info"));
+  assert.ok(actionNames.includes("runtime.diagnostics"));
+  assert.equal(
+    actionList.data.actions.find((action) => action.action === "runtime.diagnostics").confirmation,
+    "sensitive-read"
+  );
+  client.send({
+    frame: "request",
+    type: "action.call",
+    id: "runtime-info-action-1",
+    payload: { action: "runtime.info", args: {} }
+  });
+  const runtimeInfoAction = await client.waitFor((message) => message.id === "runtime-info-action-1");
+  assert.deepEqual(runtimeInfoAction.data.result, cachedAppInfo);
+  client.send({
+    frame: "request",
+    type: "action.call",
+    id: "workpanel-open-web-action-1",
+    payload: {
+      action: "workpanel.openWeb",
+      args: { url: "https://example.test/editor" },
+      source: { chatId: "chat-1", runId: "run-1", agentKey: "coder" }
+    }
+  });
+  const workPanelOpenWeb = await client.waitFor((message) => message.id === "workpanel-open-web-action-1");
+  assert.equal(workPanelOpenWeb.frame, "error");
+  assert.equal(workPanelOpenWeb.type, "user_cancelled");
+  assert.equal(workPanelOpenWeb.data.requiresConfirmation, true);
+  assert.equal(desktopActionConfirmationCalls.length, 1);
+  assert.equal(desktopActionRendererCalls.length, 0);
   assert.ok(actionNames.includes("theme.get"));
   assert.ok(actionNames.includes("theme.set"));
   assert.ok(actionNames.includes("locale.get"));

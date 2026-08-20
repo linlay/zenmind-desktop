@@ -266,6 +266,59 @@ export interface DesktopAppInfo {
   buildTime: string;
 }
 
+export interface DesktopRuntimeDiagnosticDeviceInfo {
+  deviceId: string;
+  deviceName: string;
+  hostname: string;
+  username: string;
+  platform: string;
+  arch: string;
+}
+
+export interface DesktopRuntimeDiagnosticPaths {
+  homeDir: string;
+  dataRoot: string;
+  appPath: string;
+  execPath: string;
+}
+
+export interface DesktopRuntimeVersions {
+  electronVersion: string;
+  nodeVersion: string;
+  isPackaged: boolean;
+}
+
+export interface DesktopRuntimeCredentialSummary {
+  present: boolean;
+  expiresAt: EpochMilliseconds | null;
+  expired: boolean | null;
+  preview: string;
+}
+
+export interface DesktopRuntimeDiagnosticService {
+  id: ServiceId;
+  name: string;
+  kind: "builtin" | "plugin";
+  version: string;
+  installed: boolean;
+  status: ServiceState["status"];
+  installDir: string;
+  pid: number | null;
+  port: number | null;
+  webUrl: string;
+}
+
+export interface DesktopRuntimeDiagnostics {
+  app: DesktopAppInfo;
+  device: DesktopRuntimeDiagnosticDeviceInfo;
+  paths: DesktopRuntimeDiagnosticPaths;
+  runtime: DesktopRuntimeVersions;
+  credentials: {
+    desktopSso: DesktopRuntimeCredentialSummary;
+  };
+  services: DesktopRuntimeDiagnosticService[];
+}
+
 export type DesktopDeviceIdentityMachineSource =
   | "darwinIOPlatformUUID"
   | "windowsMachineGuid"

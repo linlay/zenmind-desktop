@@ -114,10 +114,12 @@
 - [ ] WebSocket 握手验证 scope/device，会话心跳、临期刷新与订阅重连正常。
 - [ ] HTTP bridge 仅监听 loopback，并拒绝超大、畸形、未知或越权请求。
 - [ ] 只读与变更动作按定义执行；变更动作显示脱敏摘要并支持拒绝、仅本次和有限授权。
+- [ ] `desktop.runtime.info` 与 Desktop WS `runtime.info` 返回相同的启动缓存产品名、版本和构建时间；`desktop.runtime.diagnostics` 默认先显示仅含数据类别的确认，取消时不读取，允许后只返回设备、路径、运行时、canonical SSO token 末四位摘要和服务状态，响应与日志均不出现 token 原文或 token 文件路径；WebApp page/backend 调用被拒绝。
 - [ ] 等待确认期间切换页面或关闭目标，原请求被拒绝而不是作用到新页面。
 - [ ] CDP 页面控制只绑定当前活动 surface；导航到不受信任来源后旧 target 失效。
 - [ ] WorkPanel 的 WebClient/Web item 按 `module/context` 去重、按 `route` 导航，激活和保活正确；切换 Chat/路由/item 不卸载 guest，关闭 item 只回收所属 guest 与临时 partition。
 - [ ] 可信 Agent WebClient 中的 WorkPanel 打开/激活/关闭按钮直接执行且不弹出 Desktop Action 确认；HTTP bridge、Desktop WS 和调试工作台的同名变更动作仍进入确认流程。
+- [ ] Platform 反向 `desktop.workpanel.openWeb/refreshWeb` 仅在匹配的 Run grant 已就绪时不弹确认；grant 缺失、身份冲突或过期仍 fail closed，Platform 的其他 WorkPanel 动作以及 HTTP bridge、Desktop WS、企业聊天和普通 Action handler 不获得该豁免。
 - [ ] WorkPanel workspace 相互隔离；非法 URL、Project/File Diff 的绝对或 `..` 路径、跨 workspace 目标被拒绝，File descriptor 的相对、POSIX、Windows 盘符与 UNC 请求路径被接受，空 Native allowlist 返回 `unsupported_native_surface`；动作列表与执行器只接受当前 `desktop.workpanel.*` 契约。
 - [ ] `desktop.workpanel.openWeb` 按规范化 HTTP(S) URL 打开或激活网页 item；网页内普通链接在当前 WorkPanel tab 导航，`target="_blank"`、`window.open()` 和内容右键“在新工作面板标签打开”创建同一 owner Chat 的新外层 Web item，不切换到 Desktop Browser 根路由、不创建隐藏的内部标签或额外窗口；加载期间外层 tab 显示 spinner、内容顶部显示细进度条，完成/失败后清除；`desktop.workpanel.refreshWeb` 仅刷新并激活同一 owner Chat 中 URL 匹配的现有 WebView，非法 URL、缺失 workspace、跨 Chat 或不存在的网页均被拒绝。
 - [ ] 仅 Main Chat 显示 Desktop WorkPanel 右上按钮；新对话尚无稳定 `chatId` 时按钮禁用，管理页、Copilot、Website、WebApp 和 Standalone WebClient 均无该 Desktop 入口，Desktop Agent guest 自身右上快捷组为空。

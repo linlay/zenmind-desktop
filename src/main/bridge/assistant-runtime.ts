@@ -4,6 +4,7 @@ import type {
   AssistantNavAgentItemsResult,
   AssistantNavigationPushEvent,
   DesktopMobileWebappItem,
+  DesktopAppInfo,
   DesktopWebappChangedReason,
   DesktopWsServerStartOptions
 } from "../../shared/contracts";
@@ -11,6 +12,7 @@ import { AgentPlatformAssistantBridge } from "../assistant/core/agent-platform-b
 import { AssistantNavigationStatusClient } from "../assistant/core/assistant-navigation-status-client";
 import { callDesktopActionConfirmation, callDesktopActionRenderer } from "../desktop-action-renderer";
 import {
+  handleAgentPlatformDesktopActionRequest,
   handleDesktopActionRequest,
   handleDesktopCdpRequest,
   startDesktopActionBridge,
@@ -36,6 +38,7 @@ import { webappManager } from "../webs/webapps/manager";
 
 export type AssistantBridgeRuntimeOptions = {
   app: App;
+  desktopAppInfo: DesktopAppInfo;
   context: MainProcessContext;
   assistantRunWakeLock: AssistantRunWakeLock;
   cdpIntegration: any;
@@ -109,6 +112,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
 
   const desktopActionOptions = createDesktopActionOptions(options.context, {
     assistantBridge,
+    desktopAppInfo: options.desktopAppInfo,
     navigate: options.showMainWindow,
     openLogViewer: options.openLogViewerWindow,
     showFileDialog: options.showFileDialog,
@@ -126,7 +130,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     desktopPet: options.desktopPet
   });
   options.realtimeBroker.setDesktopBridgeProvider({
-    action: (request) => handleDesktopActionRequest(desktopActionOptions, request as any),
+    action: (request) => handleAgentPlatformDesktopActionRequest(desktopActionOptions, request as any),
     cdp: (request) => handleDesktopCdpRequest(desktopActionOptions, request as any),
   });
 

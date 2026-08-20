@@ -1,5 +1,7 @@
 import type { MainAppState } from "./app-state";
 import type { LogStreamSubscriptionRegistry } from "./logs/subscriptions";
+import type { DesktopAppInfo } from "../shared/contracts";
+import { createDesktopRuntimeDiagnostics } from "./desktop-runtime-info";
 
 export interface MainProcessContext {
   state: MainAppState;
@@ -20,6 +22,7 @@ export function createMainProcessContext(options: MainProcessContext): MainProce
 
 export interface DesktopActionContextDependencies {
   assistantBridge: unknown;
+  desktopAppInfo: DesktopAppInfo;
   navigate: (...args: any[]) => unknown;
   openLogViewer: (...args: any[]) => unknown;
   showFileDialog?: (...args: any[]) => unknown;
@@ -44,6 +47,12 @@ export function createDesktopActionOptions(
   return {
     app: context.app as any,
     assistantBridge: dependencies.assistantBridge as any,
+    getDesktopAppInfo: () => dependencies.desktopAppInfo,
+    getDesktopRuntimeDiagnostics: () => createDesktopRuntimeDiagnostics(
+      context.app as any,
+      dependencies.desktopAppInfo,
+      { platform: context.platform }
+    ),
     getMainWindow: () => context.state.mainWindow,
     getCurrentPageSnapshot: () => context.state.currentPageSnapshot,
     navigate: dependencies.navigate,

@@ -770,6 +770,7 @@ export function createMainProcessRuntime() {
   });
   assistantBridgeRuntime = createAssistantBridgeRuntime({
     app,
+    desktopAppInfo,
     context: mainProcessContext,
     assistantRunWakeLock,
     cdpIntegration,

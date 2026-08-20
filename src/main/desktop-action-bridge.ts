@@ -10,8 +10,10 @@ import type {
   DesktopActionConfirmationResponse,
   DesktopActionRendererRequest,
   DesktopActionRendererResponse,
+  DesktopAppInfo,
   DesktopPageContextSnapshot,
   DesktopPetState,
+  DesktopRuntimeDiagnostics,
   DesktopWebappChangedReason,
   KanbanIssueInput,
   KanbanIssueMoveInput,
@@ -39,6 +41,7 @@ import {
   isDesktopActionMutating,
   type DesktopActionCallRequest,
   type DesktopActionCallResponse,
+  type DesktopActionConfirmationPolicy,
   type DesktopActionError,
   type DesktopActionSource
 } from "../shared/desktop-actions";
@@ -113,6 +116,8 @@ import { authorizeWebappActionToken } from "./webs/webapps/action-tokens";
 export type DesktopActionBridgeOptions = {
   app: App;
   assistantBridge: AgentPlatformAssistantBridge;
+  getDesktopAppInfo: () => DesktopAppInfo;
+  getDesktopRuntimeDiagnostics: () => Promise<DesktopRuntimeDiagnostics>;
   getMainWindow: () => BrowserWindow | null;
   getCurrentPageSnapshot: () => DesktopPageContextSnapshot | null;
   navigate: (targetPath: string) => void;
@@ -153,6 +158,7 @@ export type DesktopActionBridgeOptions = {
 
 type DesktopActionInvocationContext =
   | { kind: "desktop" }
+  | { kind: "agentPlatform" }
   | { kind: "agentWebclientWorkPanel" }
   | { kind: "webappPage"; webappId: string }
   | { kind: "webappBackend"; webappId: string };
@@ -170,6 +176,16 @@ const AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS: Record<AgentWebclientWorkPanelA
   activateItem: "desktop.workpanel.activateTab",
   closeItem: "desktop.workpanel.closeTab"
 };
+
+const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
+  "desktop.workpanel.openWeb",
+  "desktop.workpanel.refreshWeb"
+]);
+
+const ARGUMENT_FREE_RUNTIME_ACTIONS = new Set([
+  "desktop.runtime.info",
+  "desktop.runtime.diagnostics"
+]);
 
 type PlatformResponse<T> = {
   code?: number;
@@ -944,6 +960,29 @@ function buildMutatingActionConfirmationRequest(
   };
 }
 
+function buildSensitiveReadConfirmationRequest(
+  request: DesktopActionCallRequest
+): DesktopActionConfirmationRequest {
+  const categories = t("desktopAction.sensitiveReadCategories");
+  return {
+    requestId: getConfirmationRequestId(request),
+    kind: "action",
+    title: t("desktopAction.sensitiveReadTitle"),
+    summary: t("desktopAction.sensitiveReadSummary"),
+    description: t("desktopAction.sensitiveReadDescription"),
+    fields: [
+      { label: t("desktopAction.sensitiveReadFieldCategories"), value: categories }
+    ],
+    details: t("desktopAction.sensitiveReadDetail", { categories }),
+    buttons: [
+      { decision: "cancel", label: t("common.cancel"), variant: "cancel" },
+      { decision: "confirm", label: t("desktopAction.sensitiveReadConfirm"), variant: "primary" }
+    ],
+    defaultDecision: "confirm",
+    cancelDecision: "cancel"
+  };
+}
+
 async function confirmMutatingAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
@@ -1147,7 +1186,8 @@ async function isLowRiskPageControlAction(
 async function confirmDesktopActionIfNeeded(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
-  args: Record<string, unknown>
+  args: Record<string, unknown>,
+  confirmationPolicy?: DesktopActionConfirmationPolicy
 ): Promise<DesktopActionCallResponse | null> {
   if (!readDesktopProfileFromRoot(getDesktopConfigRoot(options.app)).general.desktopActionConfirmationEnabled) {
     return null;
@@ -1156,6 +1196,22 @@ async function confirmDesktopActionIfNeeded(
   const permissionMode = readRequestPermissionMode(request, args);
   if (permissionMode === "full_access") {
     return null;
+  }
+  if (confirmationPolicy === "sensitive-read") {
+    const decision = await requestDesktopActionConfirmation(
+      options,
+      buildSensitiveReadConfirmationRequest(request),
+      options.getMainWindow()
+    );
+    if (decision === "confirm") {
+      return null;
+    }
+    return {
+      ok: false,
+      action,
+      requiresConfirmation: true,
+      error: actionError("user_cancelled", t("desktopAction.userCancelled"))
+    };
   }
   const snapshot = options.getCurrentPageSnapshot();
   if (permissionMode === "page_control" && await isLowRiskPageControlAction(action, args, snapshot)) {
@@ -1798,6 +1854,13 @@ async function executeAction(
   const action = request.action;
   const args = asRecord(request.args);
 
+  if (
+    action === "desktop.runtime.diagnostics" &&
+    (invocation.kind === "webappPage" || invocation.kind === "webappBackend")
+  ) {
+    return fail(action, "forbidden", "Runtime diagnostics are unavailable to WebApp pages and backends.");
+  }
+
   if (WEBAPP_PAGE_ONLY_ACTIONS.has(action)) {
     return invocation.kind === "webappPage"
       ? executeNativeWebappAction(options, action, args, invocation.webappId)
@@ -1919,6 +1982,10 @@ async function executeAction(
         configuredDeviceName: deviceInfo.configuredDeviceName
       });
     }
+    case "desktop.runtime.info":
+      return ok(action, options.getDesktopAppInfo());
+    case "desktop.runtime.diagnostics":
+      return ok(action, await options.getDesktopRuntimeDiagnostics());
     case "desktop.navigate.toRoute": {
       const route = readString(args, "route") || readString(args, "path");
       if (!route.startsWith("/")) {
@@ -2142,11 +2209,15 @@ async function handleActionCallRaw(
   invocation: DesktopActionInvocationContext = { kind: "desktop" }
 ): Promise<DesktopActionCallResponse> {
   const action = typeof request.action === "string" ? request.action.trim() : "";
-  if (!action || !getDesktopActionDefinition(action)) {
+  const definition = action ? getDesktopActionDefinition(action) : null;
+  if (!action || !definition) {
     return fail(action || "unknown", "unknown_action", `unknown action: ${action || "(empty)"}`);
   }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);
+  if (ARGUMENT_FREE_RUNTIME_ACTIONS.has(action) && Object.keys(args).length > 0) {
+    return fail(action, "invalid_args", `${action} does not accept args.`);
+  }
   if (CURRENT_PAGE_WEB_ACTIONS.has(action)) {
     const snapshot = options.getCurrentPageSnapshot();
     if (
@@ -2160,8 +2231,17 @@ async function handleActionCallRaw(
       });
     }
   }
-  if (isDesktopActionMutating(action) && invocation.kind === "desktop") {
-    const confirmationResponse = await confirmDesktopActionIfNeeded(options, normalizedRequest, args);
+  const confirmationEligibleInvocation = invocation.kind === "desktop" || invocation.kind === "agentPlatform";
+  const agentPlatformConfirmationExempt = invocation.kind === "agentPlatform" &&
+    AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS.has(action);
+  const requiresConfirmation = isDesktopActionMutating(action) || definition.confirmation === "sensitive-read";
+  if (requiresConfirmation && confirmationEligibleInvocation && !agentPlatformConfirmationExempt) {
+    const confirmationResponse = await confirmDesktopActionIfNeeded(
+      options,
+      normalizedRequest,
+      args,
+      definition.confirmation
+    );
     if (confirmationResponse) {
       return confirmationResponse;
     }
@@ -2222,6 +2302,13 @@ export async function handleDesktopActionRequest(
   request: DesktopActionCallRequest
 ) {
   return handleActionCall(options, request);
+}
+
+export async function handleAgentPlatformDesktopActionRequest(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest
+) {
+  return handleActionCall(options, request, { kind: "agentPlatform" });
 }
 
 export async function handleAgentWebclientWorkPanelActionRequest(
@@ -2486,6 +2573,7 @@ export function stopDesktopActionBridge() {
 export const __testInternals = {
   buildDesktopActionConfirmationDetail,
   buildMutatingActionConfirmationRequest,
+  buildSensitiveReadConfirmationRequest,
   buildPageControlActionConfirmationRequest,
   normalizeActionResponseTimePayload,
   sanitizeConfirmationUrl,
