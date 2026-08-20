@@ -9,6 +9,10 @@ import {
 import { readDesktopSsoSiteAccessToken } from "../../sso-site-token";
 import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
 import { readTunnelHubSettings } from "../../tunnel-hub-settings";
+import {
+  isTunnelHubForbiddenHostname,
+  isTunnelHubLoopbackHostname,
+} from "../../tunnel-hub-url-policy";
 import { t } from "../../i18n/main-i18n";
 import { isDesktopDevelopmentRuntime } from "../../development-runtime";
 
@@ -142,7 +146,7 @@ function resolveConversationTunnelOrigin(
   try {
     const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
     const allowedDevelopmentOrigin = isDesktopDevelopmentRuntime(app) && isLoopbackHttpOrigin(origin);
-    if (!isHttpsOrigin(origin) && !allowedDevelopmentOrigin) {
+    if (!isAllowedHttpsTunnelOrigin(origin) && !allowedDevelopmentOrigin) {
       throw new Error("Tunnel share API must use HTTPS.");
     }
     return { ok: true, origin };
@@ -157,15 +161,17 @@ function isLoopbackHttpOrigin(value: string): boolean {
     const hostname = parsed.hostname.toLowerCase();
     return parsed.protocol === "http:" &&
       value === parsed.origin &&
-      (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]");
+      isTunnelHubLoopbackHostname(hostname);
   } catch {
     return false;
   }
 }
 
-function isHttpsOrigin(value: string) {
+function isAllowedHttpsTunnelOrigin(value: string) {
   const parsed = new URL(value);
-  return parsed.protocol === "https:" && value === parsed.origin;
+  return parsed.protocol === "https:" &&
+    value === parsed.origin &&
+    !isTunnelHubForbiddenHostname(parsed.hostname);
 }
 
 function messageFromError(error: unknown) {

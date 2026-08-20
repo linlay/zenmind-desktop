@@ -1634,6 +1634,50 @@ test("agent platform assistant bridge creates shares through Platform with separ
   }
 });
 
+test("agent platform assistant bridge accepts canonical loopback Tunnel origins and share URLs", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    const tunnelOrigin = init.headers["X-Conversation-Export-Asset-Origin"];
+    return new Response(JSON.stringify({
+      code: 0,
+      data: {
+        id: "share_local",
+        url: `${tunnelOrigin}/share/share_local`,
+        createdAt: 1_786_960_800_000,
+        expiresAt: 1_789_552_800_000,
+        lastAccessedAt: null
+      }
+    }), {
+      status: 201,
+      headers: { "content-type": "application/json" }
+    });
+  };
+
+  try {
+    for (const tunnelOrigin of [
+      "http://localhost:18181",
+      "http://127.0.0.1:18181",
+      "http://[::1]:18181"
+    ]) {
+      const result = await bridge.createChatShare({
+        chatId: "chat_1",
+        expiration: "30d",
+        tunnelOrigin,
+        tunnelAuthorization: "Bearer tunnel-token"
+      });
+
+      assert.equal(result.ok, true, tunnelOrigin);
+      assert.equal(result.record.url, `${tunnelOrigin}/share/share_local`, tunnelOrigin);
+    }
+    assert.equal(requests.length, 3);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge rejects an invalid share response", async () => {
   const originalFetch = globalThis.fetch;
   const { bridge } = makeBridge();
@@ -1706,15 +1750,60 @@ test("agent platform assistant bridge rejects unsafe Tunnel origins before fetch
   };
 
   try {
-    const result = await bridge.createChatShare({
-      chatId: "chat_1",
-      expiration: "30d",
-      tunnelOrigin: "http://tunnel.example.test/path",
-      tunnelAuthorization: "Bearer tunnel-token"
-    });
+    for (const tunnelOrigin of [
+      "http://tunnel.example.test/path",
+      "https://127.0.0.2:18181",
+      "https://demo.localhost:18181",
+      "https://0.0.0.0:18181"
+    ]) {
+      const result = await bridge.createChatShare({
+        chatId: "chat_1",
+        expiration: "30d",
+        tunnelOrigin,
+        tunnelAuthorization: "Bearer tunnel-token"
+      });
 
-    assert.equal(result.ok, false);
+      assert.equal(result.ok, false, tunnelOrigin);
+    }
     assert.equal(called, false);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge rejects non-canonical local share response URLs", async () => {
+  const originalFetch = globalThis.fetch;
+  const responses = [
+    "https://127.0.0.2:18181/share/share_abc",
+    "https://demo.localhost:18181/share/share_abc",
+    "https://0.0.0.0:18181/share/share_abc",
+    "http://share.example.test/share/share_abc"
+  ];
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    code: 0,
+    data: {
+      id: "share_abc",
+      url: responses.shift(),
+      createdAt: 1_786_960_800_000,
+      expiresAt: 1_789_552_800_000,
+      lastAccessedAt: null
+    }
+  }), {
+    status: 201,
+    headers: { "content-type": "application/json" }
+  });
+
+  try {
+    for (let index = 0; index < 4; index += 1) {
+      const result = await bridge.createChatShare({
+        chatId: "chat_1",
+        expiration: "30d",
+        tunnelOrigin: "https://tunnel.example.test",
+        tunnelAuthorization: "Bearer tunnel-token"
+      });
+      assert.equal(result.ok, false);
+    }
   } finally {
     globalThis.fetch = originalFetch;
   }

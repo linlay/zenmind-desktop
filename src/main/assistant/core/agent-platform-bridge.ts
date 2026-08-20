@@ -57,6 +57,10 @@ import {
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
 import {
+  isTunnelHubForbiddenHostname,
+  isTunnelHubLoopbackHostname,
+} from "../../tunnel-hub-url-policy";
+import {
   RealtimeBroker,
   type RealtimeQueryHandle,
 } from "../../realtime/realtime-broker";
@@ -489,8 +493,10 @@ function isValidTunnelApiOrigin(value: string) {
   try {
     const parsed = new URL(value);
     const hostname = parsed.hostname.toLowerCase();
-    const loopback = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
-    return value === parsed.origin && (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback));
+    const loopback = isTunnelHubLoopbackHostname(hostname);
+    return !isTunnelHubForbiddenHostname(hostname) &&
+      value === parsed.origin &&
+      (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback));
   } catch {
     return false;
   }
@@ -504,10 +510,11 @@ function isSafeConversationShareUrl(value: string) {
   try {
     const parsed = new URL(value);
     const hostname = parsed.hostname.toLowerCase();
-    const loopback = hostname === "127.0.0.1" || hostname === "localhost" || hostname === "[::1]";
+    const loopback = isTunnelHubLoopbackHostname(hostname);
     return (
       !parsed.username &&
       !parsed.password &&
+      !isTunnelHubForbiddenHostname(hostname) &&
       (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback))
     );
   } catch {

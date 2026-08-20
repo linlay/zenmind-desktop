@@ -91,33 +91,48 @@ test("createConversationShare delegates HTML share orchestration to Agent Platfo
   assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
 });
 
-test("development share uses the configured loopback Tunnel and normal site token", async (t) => {
-  const app = createFixture(t, { relayUrl: "ws://127.0.0.1:18181/tunnel" });
-  app.isPackaged = false;
-  const calls = [];
+test("development share accepts only the three canonical loopback Tunnel hosts", async (t) => {
+  for (const [relayUrl, expectedOrigin] of [
+    ["ws://localhost:18181/tunnel", "http://localhost:18181"],
+    ["ws://127.0.0.1:18181/tunnel", "http://127.0.0.1:18181"],
+    ["ws://[::1]:18181/tunnel", "http://[::1]:18181"]
+  ]) {
+    const app = createFixture(t, { relayUrl });
+    app.isPackaged = false;
+    const calls = [];
 
-  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
+    const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
 
-  assert.equal(result.ok, true);
-  assert.equal(calls[0].input.tunnelOrigin, "http://127.0.0.1:18181");
-  assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
+    assert.equal(result.ok, true, relayUrl);
+    assert.equal(calls[0].input.tunnelOrigin, expectedOrigin, relayUrl);
+    assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true, relayUrl);
+  }
 });
 
-test("packaged Desktop rejects a configured loopback Tunnel for sharing", async (t) => {
-  const app = createFixture(t, { relayUrl: "ws://127.0.0.1:18181/tunnel" });
-  app.isPackaged = true;
-  const calls = [];
+test("packaged Desktop rejects plaintext Tunnel sharing for all canonical loopback hosts", async (t) => {
+  for (const relayUrl of [
+    "ws://localhost:18181/tunnel",
+    "ws://127.0.0.1:18181/tunnel",
+    "ws://[::1]:18181/tunnel"
+  ]) {
+    const app = createFixture(t, { relayUrl });
+    app.isPackaged = true;
+    const calls = [];
 
-  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
+    const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
 
-  assert.equal(result.ok, false);
-  assert.equal(calls.length, 0);
+    assert.equal(result.ok, false, relayUrl);
+    assert.equal(calls.length, 0, relayUrl);
+  }
 });
 
-test("development share fails closed for disabled or non-loopback HTTP Tunnel settings", async (t) => {
+test("development share fails closed for disabled, remote plaintext, or reserved local Tunnel settings", async (t) => {
   for (const tunnelOverrides of [
     { enabled: false },
-    { relayUrl: "ws://192.0.2.1:18181/tunnel" }
+    { relayUrl: "ws://192.0.2.1:18181/tunnel" },
+    { relayUrl: "wss://127.0.0.2:18181/tunnel" },
+    { relayUrl: "wss://demo.localhost:18181/tunnel" },
+    { relayUrl: "wss://0.0.0.0:18181/tunnel" }
   ]) {
     const app = createFixture(t, tunnelOverrides);
     app.isPackaged = false;
