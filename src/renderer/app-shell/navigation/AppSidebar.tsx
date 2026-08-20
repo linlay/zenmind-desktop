@@ -3509,44 +3509,8 @@ export function AppSidebar({
     );
   }
 
-  function renderChatsShareButton(options: { inPopover?: boolean } = {}) {
-    if (!currentChatId) return null;
-    const currentChat = findAssistantNavChat(currentChatId);
-    const label = t("sidebar.chat.shareCurrent");
-    return (
-      <Tooltip content={label}>
-        <button
-          type="button"
-          className={[
-            "assistant-worker-icon-button",
-            "sidebar-chats-share-button",
-            options.inPopover ? "is-in-popover" : "",
-          ].filter(Boolean).join(" ")}
-          aria-label={label}
-          title={label}
-          tabIndex={options.inPopover ? undefined : -1}
-          onClick={(event) => {
-            event.preventDefault();
-            event.stopPropagation();
-            conversationShareDialog.open(
-              currentChatId,
-              currentChat?.chatName || t("sidebar.chat.current"),
-            );
-          }}
-        >
-          <SidebarActionIcon kind="share" />
-        </button>
-      </Tooltip>
-    );
-  }
-
   function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
-    return (
-      <>
-        {renderChatsShareButton(options)}
-        {renderChatsNewChatButton(options)}
-      </>
-    );
+    return renderChatsNewChatButton(options);
   }
 
   function renderChatsDefaultAgentPicker(

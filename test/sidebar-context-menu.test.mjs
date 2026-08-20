@@ -131,6 +131,16 @@ test("sidebar renderer accepts every chat action exposed by the native menu", ()
   }
 });
 
+test("sidebar chat sharing remains available from the menu without a header button", () => {
+  const sidebarSource = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
+    "utf8"
+  );
+  assert.doesNotMatch(sidebarSource, /sidebar-chats-share-button/u);
+  assert.match(sidebarSource, /actionId === "chat\.share"/u);
+  assert.match(sidebarSource, /conversationShareDialog\.open\(chat\.chatId, chat\.chatName\)/u);
+});
+
 test("sidebar native context request validation rejects injected and malformed fields", () => {
   const valid = normalizeSidebarContextMenuRequest({
     x: 10.4,
