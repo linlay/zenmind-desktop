@@ -43,7 +43,7 @@
 
 `/agent` 和 `/copilot` 可以并发运行，但 Desktop 同一时刻只有一个“可见 live stream”。主 Chat 和 Summary 同时出现时，它们是同一个可见流的两个消费者，不是两次上游 attach。
 
-Platform 发起的反向 Action 不能向所有 Surface 广播。当前 `webclient.*` 反向 request 没有携带来源 `runId/chatId`，因此只有当 Broker 能证明目标唯一时，才允许交给当前可见、可交互的 Action owner；并发 Run 导致来源不唯一时必须 fail closed。若未来要求隐藏后台 Run 也能精确定向执行反向 Action，再单独评估最小协议扩展，本次不预先改 Platform。
+Platform 发起的反向 Desktop Action 不能向 Surface 广播。Platform 使用当前 run target 选择连接；Desktop Main Broker 收到统一 envelope 后直接调用 Action handler。目标缺失或断连时 fail closed。
 
 ## 不可变原则
 
@@ -75,7 +75,6 @@ type VisibleStreamBinding = {
   chatId: string;
   runId: string;
   upstreamRequestId: string;
-  actionOwnerSurfaceId: string;
   consumerSurfaceIds: Set<string>; // 通常为主 Chat + Summary
 };
 ```
@@ -85,7 +84,7 @@ type VisibleStreamBinding = {
 - `response/error`：严格按上游 requestId 回给发起者；
 - `stream`：先按 requestId 找到 active stream，再根据 visible binding 投递；
 - `push`：按 type/filter 分发给显式订阅者；
-- Platform `request`：先做来源可判定性与能力检查；只有目标唯一时才交给当前 visible binding 的 action owner，并将其 response/error 原样配对回传。
+- Platform `request`：只接受统一 Desktop Action/CDP envelope，由 Main 直接调用对应 handler，并将其 response/error 配对回传。
 
 任何未知 id、重复 terminal、非法 seq、非法 frame 都必须可观测并 fail closed，不能广播猜测。
 
@@ -113,7 +112,6 @@ Broker 允许一条 WS 上存在多个 active stream，这用于 `/agent`、`/co
 - open/attach/detach stream；
 - subscribe/unsubscribe push；
 - bind/unbind visible stream consumer；
-- register/unregister action owner；
 - 回应 Platform 反向 request。
 
 Main 必须从真实 `webContents`/frame、BrowserSurfaceRegistry、partition、origin 和 Desktop 当前路由计算身份与能力，不信任页面自报的 `surfaceId`、chatId、capabilities 或 target URL。
@@ -126,19 +124,9 @@ Main 必须从真实 `webContents`/frame、BrowserSurfaceRegistry、partition、
 
 Surface 销毁时必须释放 pending request、push subscription、stream consumer、action handler、timer 和 IPC listener。最后一个 UI consumer 离开不默认 interrupt 后台 Run。
 
-### 5. 反向 Action 不需要 Platform Surface 改造
+### 5. 反向 Action 由 Platform 统一路由
 
-当前 Platform 会把 Run 的 WebClient target 绑定到物理连接，但 `webclient.*` 反向 frame 本身不携带来源 `runId/chatId`。在 Desktop 单连接模式中，Broker 采用如下规则：
-
-- 只有当前可见的 Agent/Copilot Surface 可以成为 action owner；
-- Summary、Project、隐藏 Surface 永远不是 owner；
-- 同一时刻最多一个 owner，切换必须原子解绑旧 owner、绑定新 owner；
-- 只有 Broker 能证明当前物理连接上恰好一个可能发出该类 Action 的 active Run，且它就是 visible binding 时，才能把 request 交给 owner；
-- 存在多个并发 action-capable Run 或来源无法证明时，返回 `ambiguous_action_target`，不能仅凭“当前可见”猜测来源；
-- 没有 owner、owner 已销毁或能力不匹配时，返回结构化错误，例如 `unsupported_in_current_view` 或 `target_unavailable`；
-- 绝不把反向 request 广播给所有 guest，也不选“最后响应的 Surface”。
-
-这是本期在不改 Platform 下的明确产品约束：并发运行和 stream 展示仍可用，但目标不唯一时 WebClient 反向 Action 会被拒绝。请在代码、设计文档和测试中写清楚。如果未来要求并发 Run 也能精确定向反向 Action，需让 Platform 在反向 request 中回传最小的 opaque run correlation；它无需理解 Desktop Surface，但必须提供可验证的关联信息。
+Platform 把 run 绑定到发起它的 client target，并按 runtime mode 选择 provider：Desktop 模式通过 `desktop.action.call` 交给 Main Broker；Standalone 模式只允许根 agent-webclient 执行 `desktop.workpanel.*`。Desktop Main 不再把反向动作转发给 `/agent*` 或 `/copilot*` guest。目标缺失、断连或 runtime 不支持时直接返回结构化错误，绝不广播或选择其他连接。
 
 ### 6. Summary 与主 Chat 共用 visible binding
 
@@ -215,7 +203,7 @@ Main/Renderer 必须校验：调用 Surface、owner chat、路径归属、URL sc
 3. 主 Chat 与 Summary 同屏时，上游 attach 为 1，事件顺序与 seq 一致；
 4. 切换 visible binding 后，旧 epoch 事件不进入新页面；
 5. 多个 push subscriber 可按 type 收到通知，unsubscribe 后停止；
-6. Platform 反向 request 仅在来源唯一时到当前 action owner；多 active Run、无 owner、隐藏 owner、已销毁 owner均返回结构化错误；
+6. Platform 根据 runtime mode 与当前 run target 路由反向 request；缺失、断连或 runtime 不支持时返回结构化错误；
 7. Summary 文件变化持续更新，点击后 WorkPanel 新增或激活对应 Tab；
 8. 重复点击同一稳定目标不重复创建 Tab；
 9. WorkPanel 同时包含 WebClient、Native、Web item，切换不卸载；

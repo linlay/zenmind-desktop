@@ -59,7 +59,7 @@ Standalone 网站部署必须显式使用 `DESKTOP_APP=false` 或空值，并继
 - `/summary`：当前 Chat/Run 的实时只读摘要模块。
 - `/debug`：当前 Chat/Run 的实时只读事件调试模块。
 - 二者可以被 Desktop WorkPanel 作为独立 WebClient WebView item 使用。
-- 二者不装配 Composer、Voice、BTW、Worker 管理、Run controls 或 Platform Action owner。
+- 二者不装配 Composer、Voice、BTW、Worker 管理、Run controls，也不参与 Platform 反向 Action 路由。
 
 ### 1.5 WorkPanel Action 命名
 
@@ -73,7 +73,7 @@ Standalone 网站部署必须显式使用 `DESKTOP_APP=false` 或空值，并继
 - `desktop.workpanel.closeWorkpanel`
 - 如确有需要，再增加受限的 `desktop.workpanel.getState`
 
-`webclient.sidebar.openUrl` 不在 WebClient 内隐式转译。调用方应直接改用 `desktop.workpanel.*`。
+调用方直接使用 `desktop.workpanel.*`，WebClient 内不维护平行动作名或隐式转译。
 
 Platform 后续负责判断目标是 Standalone WebClient 还是 Desktop；本次 WebClient 不实现 Platform 的跨宿主路由决策。
 
@@ -271,8 +271,8 @@ interface PushTransport {
 
 - handler 按 request type 唯一注册。
 - response/error 与原 requestId 配对。
-- 子路由 `/agent`、`/copilot`、`/summary`、`/debug` 不注册 Sidebar Action handler。
-- `DESKTOP_APP=true` 时不注册 `webclient.sidebar.*`。
+- 只有根路由注册 Standalone WorkPanel handler；`/agent`、`/copilot`、`/summary`、`/debug` 不注册动作处理器。
+- `DESKTOP_APP=true` 时不注册 Standalone WorkPanel provider。
 - WebClient 不处理 `desktop.workpanel.*` 的 Platform 目标选择。
 
 ## 7. 路由与 Shell 装配
@@ -391,7 +391,7 @@ context generation++
 - 继续受现有 `DEBUG_PANEL_ENABLED` 控制。
 - 使用 `useReadonlyRunSurfaceRuntime(role=debug)`。
 - 不装配 Composer、Voice、BTW、Worker、Action runtime。
-- 不注册 Platform Action owner。
+- 不参与 Platform 反向 Action 路由。
 - Debug event 保留有界上限，避免长 Run 无限增长。
 
 ## 10. 可见 Run 与多消费者
@@ -508,14 +508,14 @@ Notification 与 Subscription 不得同时消费同一 Run raw event。
 
 ### 13.1 Standalone 网站
 
-完整网站 `/` 可以在过渡期保留必要 `webclient.sidebar.*` handler，但必须通过 `InboundRequestTransport` 注册，不能为此额外初始化 WsClient。
+完整网站 `/` 只通过 `InboundRequestTransport` 注册 `desktop.action.call` WorkPanel handler，不能为此额外初始化 WsClient。
 
 ### 13.2 独立子路由
 
 `/agent`、`/copilot`、`/summary`、`/debug` 无 WebClient RightSidebar：
 
-- 不注册 `webclient.sidebar.getState/setState/openUrl/refreshUrl`。
-- 收到旧 action 时返回 `unsupported_in_current_view`。
+- 不注册 WorkPanel handler。
+- 收到不属于当前 Surface 的 request 时返回 `unsupported_in_current_view`。
 - 页面主动打开目标使用 OpenTarget adapter，不模拟 Sidebar state。
 
 ### 13.3 Desktop

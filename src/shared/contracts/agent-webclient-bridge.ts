@@ -41,7 +41,6 @@ export const AGENT_WEBCLIENT_BRIDGE_ERROR_CODES = [
   "capability_denied",
   "surface_unavailable",
   "target_unavailable",
-  "ambiguous_action_target",
   "unsupported_in_current_view",
   "unsupported_native_surface",
   "seq_expired",
@@ -70,8 +69,7 @@ export type AgentWebclientSurfaceCapability =
   | "push.subscribe"
   | "workpanel.open"
   | "workpanel.activate"
-  | "workpanel.close"
-  | "inbound.action.owner";
+  | "workpanel.close";
 
 export type AgentWebclientConnectionPhase =
   | "idle"

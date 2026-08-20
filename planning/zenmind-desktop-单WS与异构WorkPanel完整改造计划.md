@@ -90,7 +90,7 @@ WorkPanel 同时支持：
 - `desktop.workpanel.closeTab`；
 - `desktop.workpanel.closeWorkpanel`。
 
-不在 Desktop 内把 `webclient.sidebar.*` 隐式翻译成 WorkPanel Action。未来由 Agent Platform/调用方判断目标是 WebClient 还是 Desktop；当前需要打开 Desktop WorkPanel 时直接发送 `desktop.workpanel.*`。
+Desktop 只接收正式 `desktop.workpanel.*` WorkPanel Action，不维护平行命名空间或隐式翻译层。
 
 WorkPanel Action 采用断代升级，所有调用方原子切换到当前注册表。
 
@@ -452,19 +452,18 @@ Main 从以下信息组合确定 Surface：
 - capability；
 - owner chat/workspace；
 - arbitrary route/URL；
-- action owner 标记。
 
 ### 10.2 Capability 矩阵
 
-| Surface | Run request | Run control | Visible raw stream | Push | OpenTarget | Inbound Action owner |
-| --- | --- | --- | --- | --- | --- | --- |
-| `agent-chat` | 自身上下文 | 自身 Run | primary | 是 | 是 | 可成为唯一 owner |
-| `agent-copilot` | 自身上下文 | 自身 Run | primary | 是 | 是 | 可成为唯一 owner |
-| `agent-summary` | 否 | 否 | 只读 consumer | 是 | 是 | 否 |
-| `agent-debug` | 否 | 否 | 只读 consumer | 是 | 受限 | 否 |
-| `agent-project` | 否 | 否 | 默认否 | 受限 | 是 | 否 |
-| 普通 Web item | 否 | 否 | 否 | 否 | URL 自身导航 | 否 |
-| Native item | 按 allowlist | 按 allowlist | 按 allowlist | 按 allowlist | 按 allowlist | 默认否 |
+| Surface | Run request | Run control | Visible raw stream | Push | OpenTarget |
+| --- | --- | --- | --- | --- | --- |
+| `agent-chat` | 自身上下文 | 自身 Run | primary | 是 | 是 |
+| `agent-copilot` | 自身上下文 | 自身 Run | primary | 是 | 是 |
+| `agent-summary` | 否 | 否 | 只读 consumer | 是 | 是 |
+| `agent-debug` | 否 | 否 | 只读 consumer | 是 | 受限 |
+| `agent-project` | 否 | 否 | 默认否 | 受限 | 是 |
+| 普通 Web item | 否 | 否 | 否 | 否 | URL 自身导航 |
+| Native item | 按 allowlist | 按 allowlist | 按 allowlist | 按 allowlist | 按 allowlist |
 
 具体 capability 必须由 Main 的 allowlist 显式赋予，不能用“非禁即允”。
 
@@ -515,43 +514,23 @@ Desktop 保存手写 canonical contract，WebClient 使用确定性脚本生成 
 
 Desktop build/test 必须包含 `generate --check`，防止 Desktop canonical 与打包的 WebClient mirror 漂移。
 
-## 11. 反向 Request 与 Action 定向
+## 11. 统一反向 Request
 
-### 11.1 两条入口不要混淆
+### 11.1 Platform 选择 provider
 
-Desktop 需要区分：
-
-1. Agent Platform 通过既有 Desktop Action 通路发送 `desktop.workpanel.*`；
-2. 共享 Agent Platform WS 上发往 WebClient target 的 inbound `request`。
-
-第一类由 Desktop Action Bridge 执行，并利用现有可信来源上下文绑定 workspace/chat/run。第二类如果 frame 没有足够的来源关联，不能仅凭“当前可见 Surface”猜测目标。
+Agent 只提交统一的 `desktop.*` action。Platform 使用当前 run 的内存 target，并按 runtime mode 选择 provider：Desktop 模式发送 `desktop.action.call` 给 Desktop Main Broker；Standalone 模式只把 `desktop.workpanel.*` 发给根 agent-webclient。`/agent*`、`/copilot*` 等 guest 不处理反向动作。
 
 ### 11.2 `desktop.workpanel.*`
 
-- 由 Desktop 执行，不发送给 WebClient Sidebar；
+- Desktop 模式由 Main 直接执行；
 - Main 校验 action 名称、来源上下文、参数和 owner workspace；
 - 转成内部 `WorkPanelCommand`；
 - Renderer command service 更新唯一 WorkPanel state；
 - 返回稳定的 item/workspace 结果或错误。
 
-### 11.3 WebClient inbound request
+### 11.3 Fail closed
 
-只有同时满足以下条件才可定向到当前 Agent/Copilot action owner：
-
-- owner 存在且未销毁；
-- owner capability 匹配 action；
-- Broker 能用协议上下文证明来源 Run 唯一；
-- 来源 Run 等于当前 visible binding；
-- binding epoch 未失效。
-
-否则返回结构化错误：
-
-- `ambiguous_action_target`；
-- `unsupported_in_current_view`；
-- `target_unavailable`；
-- `capability_denied`。
-
-禁止向所有 guest 广播，也禁止“最后一个响应者获胜”。
+Platform 找不到当前 run target、连接已断开或 runtime 不支持该 action 时直接返回结构化错误。Desktop Broker 对未知 request type 返回 `unsupported_in_current_view`；任何一层都不得广播、猜测或选择其他连接。
 
 ## 12. WorkPanel 领域模型
 
@@ -709,7 +688,7 @@ Action 定义、Main 分发、renderer provider、内部菜单调用、自动测
 - 使用 WebClient `/debug` route；
 - 作为独立 WorkPanel item；
 - 只读观察当前 visible binding 的原始/派生诊断和连接状态；
-- 不能成为 Action owner；
+- 不参与 Platform 反向 Action 路由；
 - 默认不接收 Token、Main 内部对象或其他 Run 的未授权数据；
 - 是否默认打开由 Desktop 调试配置决定，不影响其独立模块地位。
 
@@ -932,7 +911,7 @@ WebClient `/debug` 是业务/传输观察 Surface，不等于开放 Main 的全�
 2. Summary/Debug 只读订阅 visible binding。
 3. 主 Chat + Summary/Debug 共享一个上游 attach。
 4. Summary 文件变化、Artifact、Planning live 更新。
-5. Debug 不成为 action owner。
+5. Debug 不参与 Platform 反向 Action 路由。
 6. 切换 chat/run 使用 epoch + snapshot/replay。
 
 完成条件：Summary 与主 Chat 同屏无重复 upstream attach，隐藏/显示不丢状态。
@@ -1015,9 +994,8 @@ WebClient `/debug` 是业务/传输观察 Surface，不等于开放 Main 的全�
 
 - guest 伪造 surfaceId、chatId、runId、capability 被拒绝。
 - Summary/Debug 不能 start/interrupt/steer/submit。
-- hidden/destroyed Surface 不能成为 action owner。
-- 多 action-capable Run 且来源不明确时返回 `ambiguous_action_target`。
-- 无 owner、错误 owner、错误 workspace 返回稳定错误。
+- Platform 反向 request 不转发给 hidden/destroyed Surface。
+- 当前 run target 缺失、断连或 runtime 不支持时返回稳定错误。
 - 非法 module route、native surface key、URL scheme、path 被拒绝。
 
 ### 19.5 WorkPanel

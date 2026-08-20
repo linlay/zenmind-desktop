@@ -6,7 +6,7 @@
 
 `agent-platform` 默认不需要理解 Desktop Surface，也不需要负责 Surface 的注册、销毁和分发。Desktop 可以利用 Agent Platform 现有的“一条 WebSocket 承载多个 request/stream”能力，在 Main 进程内完成 Surface 级路由。
 
-`/agent` 和 `/copilot` 可以并发运行，但当前产品同一时刻只有一个可见 live stream 和一个可交互 Action owner。Stream/push 的复用与分发完全可以由 Desktop 完成，本期不需要给 Agent Platform 增加 Surface 多路复用协议。反向 `webclient.*` request 目前不携带来源 Run；并发时 Desktop 无法证明其目标，因此一期必须拒绝歧义 Action，不能误投给当前可见 owner。
+`/agent` 和 `/copilot` 可以并发运行，但当前产品同一时刻只有一个可见 live stream。Stream/push 的复用与分发由 Desktop 完成；反向 Desktop Action 使用携带可信 Run 来源的统一 envelope，并由 Platform 根据 runtime mode 与当前 run target 选择 Desktop 或 Standalone provider。
 
 ## 2. 四条不可变原则
 
@@ -88,7 +88,7 @@ IPC sender / surfaceId
 
 ### 4.3 Preload 与安全边界
 
-- preload 只暴露受限的 register、request、subscribe、detach 和 action response 能力。
+- preload 只暴露受限的 register、request、subscribe 和 detach 能力。
 - Main 从真实 IPC sender、BrowserSurfaceRegistry、partition 和 origin 计算 Surface 权限。
 - 不信任页面自报的 `surfaceId`、capability 或目标 URL。
 - `/summary` 是只读 Run consumer，不具备 start、interrupt、submit 和 steer 权限，但必须接收当前可见 stream 中的文件变化、Artifacts、Planning 和任务状态。
@@ -166,15 +166,7 @@ Agent Platform 继续作为 WebClient Standalone 和 Desktop 共用的独立后�
 
 ### 6.2 反向 Action 的边界
 
-当一条 Desktop WebSocket 同时代理多个交互 Surface 时，Platform 发送的反向 request 只能定位物理连接。当前产品用“并发 Run、单可见 stream、单 Action owner”收敛 UI 能力，但反向 request 仍要 fail closed：
-
-- 当前可见 `/agent` 或 `/copilot` 是唯一 Action owner。
-- 主 Chat 和 Summary 可以同时消费同一 stream，但 Summary 不成为 Action target。
-- `/project` 和隐藏 Surface 不能成为 Action target。
-- 只有 Desktop 能证明连接上唯一可能发出 Action 的 active Run 就是当前 visible run 时，才交给 owner。
-- 多个 action-capable Run 并发、无 owner、owner 已销毁或能力不匹配时，Desktop 明确拒绝，不猜测、不广播。
-
-因此本期 Agent Platform 不需要“管理逻辑 Surface”。代价是歧义场景下反向 Action 不可用。未来只有在确认“并发 Run 也必须精确执行反向 Action”时，才让 Platform 回传最小的 opaque run correlation；Platform 仍不需要理解 Surface。
+Agent 只提交统一的 `desktop.*` action。Platform 使用当前 run 的内存 target，并按 runtime mode 路由：Desktop 模式发送 `desktop.action.call` 给 Desktop Main Broker；Standalone 模式只把 `desktop.workpanel.*` 发送给根 agent-webclient。`/agent*`、`/copilot*` 等子路由不是动作 provider。目标缺失或断连时直接失败，不猜测、不广播，也不选择其他连接。
 
 ## 7. 最小实施顺序
 
@@ -194,9 +186,9 @@ Agent Platform 继续作为 WebClient Standalone 和 Desktop 共用的独立后�
 
    同时挂载 WebClient WebView、原生 Surface 和普通 Web Surface，验证隐藏不卸载。
 
-5. **收敛反向 Action owner**
+5. **验证统一反向 Action 路由**
 
-   Desktop 只允许当前可见 Agent/Copilot 注册 Action handler；无 owner 或多 active Run 来源不唯一时 fail closed，并验证并发后台 Run 不会收到、误投或抢占 Action。
+   验证 Platform 按 runtime mode 与当前 run target 选择 Desktop 或 Standalone provider；目标缺失、断连或 runtime 不支持时 fail closed。
 
 6. **迁移与旧路径下线**
 

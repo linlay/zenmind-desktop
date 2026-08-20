@@ -126,7 +126,7 @@ frame=stream
 - Run/Chat 切换后的清理和历史恢复；
 - live event 到达时的增量刷新。
 
-Summary 只读取当前 visible conversation projection。它不能注册 Platform 反向 Action handler，也不能成为 Action owner。
+Summary 只读取当前 visible conversation projection，不参与 Platform 反向 Action 路由。
 
 ### 6. Summary 点击统一发出语义化 Open Target Intent
 
@@ -152,9 +152,7 @@ type OpenTargetIntent =
 
 ### 7. Platform 反向 Action 边界
 
-`/agent` 或 `/copilot` 中只有当前可见、可交互的 Chat runtime 可以注册反向 Action handler。`/summary`、`/project` 和隐藏的后台会话不得抢占 handler。
-
-Desktop transport 可能因为多个 active Run 导致 Action 来源无法判定而返回 `ambiguous_action_target`。WebClient 应将其作为明确的能力限制展示/记录，不能绕过 Bridge 自建 WS 重试，也不能把请求广播给隐藏模块。
+WebClient 业务模块不选择反向 Action provider。Platform 根据 runtime mode 与当前 run target 路由统一的 `desktop.*` action；Standalone 仅由根路由提供 `desktop.workpanel.*` handler，`/agent*`、`/copilot*`、`/summary*` 和 `/project*` 都不注册动作处理器。
 
 这条链路与 “Summary 点击打开 WorkPanel” 是两个方向不同的协议，不能复用成模糊的任意消息：
 
@@ -180,8 +178,8 @@ Desktop transport 可能因为多个 active Run 导致 Action 来源无法判定
 5. `push` 可被多个订阅者接收，unsubscribe 后不再接收；
 6. visible binding 切换后，旧 epoch 的迟到 stream 被丢弃；
 7. Summary 点击在 Standalone 使用本地 adapter，在 Desktop 发送结构化 intent；
-8. `/summary` 不具备 start/interrupt/submit/steer 和反向 Action handler；
-9. Desktop 返回 `ambiguous_action_target` 时不重试到其他 Surface、不自建 WS；
+8. `/summary` 不具备 start/interrupt/submit/steer，也不参与反向 Action 路由；
+9. 反向 Action 目标缺失、断连或 runtime 不支持时不重试到其他 Surface、不自建 WS；
 10. 根网站及四个模块路由可直达、刷新、返回；
 11. Desktop adapter 不出现业务 `new WebSocket` fallback。
 

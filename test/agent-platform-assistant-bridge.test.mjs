@@ -862,20 +862,20 @@ test("agent platform assistant bridge responds to reverse requests and dispose c
   try {
     const started = await bridge.startRun({ message: "reverse actions" });
     assert.equal(started.ok, true);
-    queryRequest.socket.receive({ frame: "request", type: "webclient.sidebar.setState", id: "reverse-1", payload: {} });
+    queryRequest.socket.receive({ frame: "request", type: "unsupported.request", id: "reverse-1", payload: {} });
     queryRequest.socket.receive({ frame: "request", type: "desktop.unknown", id: "reverse-2", payload: {} });
-    queryRequest.socket.receive({ frame: "request", type: "webclient.sidebar.setState", id: "reverse-1", payload: {} });
+    queryRequest.socket.receive({ frame: "request", type: "unsupported.request", id: "reverse-1", payload: {} });
     await waitFor(
       () => queryRequest.socket.sent.filter((frame) => frame.frame === "error").length === 3,
       "reverse request errors were not sent",
     );
     assert.deepEqual(
       queryRequest.socket.sent.filter((frame) => frame.frame === "error").map((frame) => frame.type),
-      ["target_unavailable", "unsupported_in_current_view", "target_unavailable"],
+      ["unsupported_in_current_view", "unsupported_in_current_view", "unsupported_in_current_view"],
     );
     assert.deepEqual(
       queryRequest.socket.sent.filter((frame) => frame.frame === "error").map((frame) => frame.data.code),
-      ["target_unavailable", "unsupported_in_current_view", "target_unavailable"],
+      ["unsupported_in_current_view", "unsupported_in_current_view", "unsupported_in_current_view"],
     );
 
     bridge.dispose();

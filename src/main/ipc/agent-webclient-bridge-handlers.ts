@@ -218,7 +218,7 @@ function bridgeErrorCode(error: unknown): AgentWebclientBridgeErrorCode {
   return [
     "bridge_unavailable", "version_mismatch", "invalid_request", "duplicate_id",
     "connection_unavailable", "connection_lost_before_acceptance", "capability_denied",
-    "surface_unavailable", "target_unavailable", "ambiguous_action_target",
+    "surface_unavailable", "target_unavailable",
     "unsupported_in_current_view", "unsupported_native_surface", "seq_expired",
     "replay_required", "protocol_error", "backpressure",
   ].includes(candidate) ? candidate as AgentWebclientBridgeErrorCode : "protocol_error";

@@ -1522,11 +1522,7 @@ export class RealtimeBroker {
       void this.handleDesktopBridgeRequest(id, type, frame);
       return;
     }
-    const errorType = type.startsWith("webclient.")
-      ? this.visibleBinding
-        ? "unsupported_in_current_view"
-        : "target_unavailable"
-      : "unsupported_in_current_view";
+    const errorType = "unsupported_in_current_view";
     try {
       this.client.send({
         frame: "error",
