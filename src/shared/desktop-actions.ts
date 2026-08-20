@@ -176,6 +176,7 @@ export interface DesktopActionSource {
   runId?: string;
   chatId?: string;
   agentKey?: string;
+  teamId?: string;
   webappId?: string;
 }
 

@@ -808,7 +808,8 @@ function summarizeConfirmationSource(source: DesktopActionSource | undefined) {
   return [
     `runId=${source?.runId?.trim() || "-"}`,
     `chatId=${source?.chatId?.trim() || "-"}`,
-    `agentKey=${source?.agentKey?.trim() || "-"}`
+    `agentKey=${source?.agentKey?.trim() || "-"}`,
+    `teamId=${source?.teamId?.trim() || "-"}`
   ].join(", ");
 }
 

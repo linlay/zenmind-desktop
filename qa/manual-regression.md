@@ -135,6 +135,9 @@
 - [ ] macOS `Cmd+Shift+D`、Windows `Ctrl+Shift+D` 始终为当前实际聚焦的 WebView 打开独立 DevTools；在 main-chat 与包含 Overview、Artifact、Web 等多个 guest 的 WorkPanel 间逐一点击并触发时目标正确，隐藏 WorkPanel 后不再命中陈旧的 `/overview`；没有 WebView 焦点时才使用 Copilot 或当前页面快照兜底。
 - [ ] macOS 隐藏面板前清除 first responder、下一 animation frame 恢复焦点；Windows 隐藏前 blur，且只在 active、`dom-ready` 和窗口聚焦时恢复。
 - [ ] 调试工作台仍经过正式执行器和确认策略，不成为权限旁路。
+- [ ] 在普通主 Run 中用 `run_query` 创建独立新对话；父 Run 结束后，子 Run 连续执行三次 `desktop.website.add`、一次 `desktop.pet.show` 和一次 `desktop.theme.set({themeMode:"dark"})` 均到达当前 Desktop Main，不出现 `run_target_missing`，响应 request ID 不串线。
+- [ ] 独立 Run 没有 WorkPanel grant 时，`desktop.workpanel.*` 已到达 Desktop 但返回 `source_chat_not_ready`；已有合法 grant 的直接 Run 行为不变，不能打开其他 Chat 的 workspace。
+- [ ] Desktop Main 断开时新动作返回 `desktop_main_disconnected`；同一 device 重连后后续动作恢复，断线期间已发送的 Website/Theme 等变更动作不自动重放。Standalone 仍返回原有 run target/unsupported 错误。
 - [ ] 断线不重放非幂等动作，重复 request identity 得到确定性处理。
 
 ## P1：导航与通用界面

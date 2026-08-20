@@ -1668,6 +1668,25 @@ test("desktop action confirmation detail exposes debug context with redacted arg
   assert.doesNotMatch(detail, new RegExp("x".repeat(200), "u"));
 });
 
+test("desktop action confirmation detail preserves Team run identity", () => {
+  const detail = __testInternals.buildDesktopActionConfirmationDetail({
+    requestId: "request-team",
+    action: "desktop.theme.set",
+    source: {
+      runId: "run-team",
+      chatId: "chat-team",
+      teamId: "research"
+    }
+  }, {
+    themeMode: "dark"
+  });
+
+  assert.match(detail, /runId=run-team/u);
+  assert.match(detail, /chatId=chat-team/u);
+  assert.match(detail, /agentKey=-/u);
+  assert.match(detail, /teamId=research/u);
+});
+
 test("desktop action confirmation request keeps compact fields free of debug context", () => {
   const payload = __testInternals.buildMutatingActionConfirmationRequest({
     requestId: "request-123",
