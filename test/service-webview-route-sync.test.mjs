@@ -147,6 +147,43 @@ test("new Chat route ownership comes from chat.start canonical synchronization",
   assert.match(registrationBlock, /canonicalChatSync\.respond\(\{[\s\S]*?ok: true/u);
 });
 
+test("resend prepares an ownerless new Chat surface before acknowledging the guest", () => {
+  const serviceWebviewSurface = readServiceWebviewSurfaceSource();
+  const bridgeContracts = fs.readFileSync(
+    path.join(projectRoot, "src", "shared", "service-webview-bridge.ts"),
+    "utf8",
+  );
+  const bridgeHost = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "services", "serviceWebviewBridgeHost.ts"),
+    "utf8",
+  );
+  const registrationBlock = serviceWebviewSurface.slice(
+    serviceWebviewSurface.indexOf("const registration: EmbeddedCdpSurfaceRegistration"),
+    serviceWebviewSurface.indexOf("useEffect(() => {", serviceWebviewSurface.indexOf("const registration: EmbeddedCdpSurfaceRegistration")),
+  );
+
+  assert.match(
+    bridgeContracts,
+    /desktop:agent-webclient:new-chat:prepare/u,
+  );
+  assert.match(
+    bridgeContracts,
+    /desktop:agent-webclient:new-chat:prepared/u,
+  );
+  assert.match(
+    bridgeHost,
+    /context\.serviceId !== "agent-webclient"[\s\S]*?!context\.prepareAgentWebclientNewChat/u,
+  );
+  assert.match(
+    serviceWebviewSurface,
+    /surfaceId !== MAIN_CHAT_SURFACE_ID[\s\S]*?ownerChatId\?\.trim\(\) !== normalizedRequest\.sourceChatId/u,
+  );
+  assert.match(
+    registrationBlock,
+    /currentRouteWithHash === pendingPreparation\.targetRoute[\s\S]*?!registration\.ownerChatId\?\.trim\(\)[\s\S]*?finishNewChatPreparation\(pendingPreparation, \{ ok: true \}\)/u,
+  );
+});
+
 test("inactive agent webclient surfaces cannot take ownership of the Desktop route", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(

@@ -22,6 +22,10 @@ export const DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE = "desktop:screenshot:captu
 export const DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE = "desktop:screenshot:capture:response";
 export const DESKTOP_WEBS_LIST_REQUEST_TYPE = "desktop:webs:list";
 export const DESKTOP_WEBS_LIST_RESPONSE_TYPE = "desktop:webs:list:response";
+export const AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE =
+  "desktop:agent-webclient:new-chat:prepare";
+export const AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE =
+  "desktop:agent-webclient:new-chat:prepared";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -37,6 +41,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_DOWNLOAD_FILE_REQUEST_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
+  AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -48,6 +53,7 @@ export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
   DESKTOP_DOWNLOAD_FILE_RESPONSE_TYPE,
   DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_WEBS_LIST_RESPONSE_TYPE,
+  AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -115,6 +121,9 @@ export type ServiceWebviewBridgeMessage = {
   desktop?: unknown;
   active?: boolean;
   surfaceId?: string;
+  agentKey?: string;
+  sourceChatId?: string;
+  newChat?: string;
   stage?: string;
   message?: string;
   url?: string;

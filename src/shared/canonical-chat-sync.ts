@@ -65,3 +65,48 @@ export function createCanonicalAgentChatRoute(
   url.searchParams.set("chatId", chatId);
   return `${url.pathname}${url.search}${url.hash}`;
 }
+
+export type AgentWebclientNewChatPrepareInput = {
+  agentKey: string;
+  sourceChatId: string;
+  newChat: string;
+};
+
+/**
+ * Convert an exact canonical Main Chat route into its one-shot new Chat source.
+ * All previous conversation-scoped query state is deliberately discarded.
+ */
+export function createPreparedAgentChatRoute(
+  currentRoute: string,
+  input: AgentWebclientNewChatPrepareInput,
+) {
+  const agentKey = input.agentKey.trim();
+  const sourceChatId = input.sourceChatId.trim();
+  const newChat = input.newChat.trim();
+  if (!agentKey || !sourceChatId || !/^[1-9]\d{12}$/u.test(newChat)) {
+    return "";
+  }
+
+  try {
+    const url = new URL(currentRoute, "http://desktop.local");
+    const match = /^\/agent\/([^/]+)$/u.exec(url.pathname);
+    const routeAgentKey = match ? decodeRoutePathSegment(match[1]) : null;
+    const chatIds = url.searchParams
+      .getAll("chatId")
+      .map((value) => value.trim())
+      .filter(Boolean);
+    if (
+      routeAgentKey !== agentKey ||
+      chatIds.length !== 1 ||
+      chatIds[0] !== sourceChatId ||
+      url.searchParams.has("newChat")
+    ) {
+      return "";
+    }
+
+    const search = new URLSearchParams({ newChat });
+    return `${url.pathname}?${search.toString()}`;
+  } catch {
+    return "";
+  }
+}

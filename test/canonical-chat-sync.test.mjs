@@ -7,6 +7,7 @@ const {
   CANONICAL_CHAT_SYNC_REQUEST_CHANNEL,
   CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
   createCanonicalAgentChatRoute,
+  createPreparedAgentChatRoute,
   readAgentWebclientNewChatSource,
 } = require("../dist-electron/shared/canonical-chat-sync.js");
 const {
@@ -32,6 +33,47 @@ test("canonical Chat route promotion preserves unrelated query parameters and ha
       agentKey: "编程",
       newChat: "stale",
       chatId: "chat-canonical",
+    }),
+    "",
+  );
+});
+
+test("new Chat preparation accepts only the exact canonical source route", () => {
+  assert.equal(
+    createPreparedAgentChatRoute(
+      "/agent/%E7%BC%96%E7%A8%8B?chatId=chat-old&history=1#events",
+      {
+        agentKey: "编程",
+        sourceChatId: "chat-old",
+        newChat: "1783680000000",
+      },
+    ),
+    "/agent/%E7%BC%96%E7%A8%8B?newChat=1783680000000",
+  );
+  assert.equal(
+    createPreparedAgentChatRoute("/agent/coder?chatId=other", {
+      agentKey: "coder",
+      sourceChatId: "chat-old",
+      newChat: "1783680000000",
+    }),
+    "",
+  );
+  assert.equal(
+    createPreparedAgentChatRoute(
+      "/agent/coder?chatId=chat-old&newChat=1783680000000",
+      {
+        agentKey: "coder",
+        sourceChatId: "chat-old",
+        newChat: "1783680000001",
+      },
+    ),
+    "",
+  );
+  assert.equal(
+    createPreparedAgentChatRoute("/agent/coder?chatId=chat-old", {
+      agentKey: "coder",
+      sourceChatId: "chat-old",
+      newChat: "nonce",
     }),
     "",
   );

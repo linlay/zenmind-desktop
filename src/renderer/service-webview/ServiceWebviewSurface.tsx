@@ -22,6 +22,7 @@ import {
 } from "../../shared/agent-webclient-routes";
 import { useI18n } from "../i18n/useI18n";
 import {
+  AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
@@ -43,6 +44,7 @@ import type {
 } from "../../shared/contracts";
 import {
   createCanonicalAgentChatRoute,
+  createPreparedAgentChatRoute,
   readAgentWebclientNewChatSource,
 } from "../../shared/canonical-chat-sync";
 import type { TranslateFunction } from "../../shared/i18n";
@@ -124,6 +126,20 @@ type VisibleSelectionToolbarState = Extract<
 type PendingCanonicalChatSync = {
   request: CanonicalChatSyncRequest;
   targetRoute: string;
+};
+
+type PendingNewChatPreparation = {
+  request: {
+    requestId: string;
+    agentKey: string;
+    sourceChatId: string;
+    newChat: string;
+  };
+  sourceRoute: string;
+  targetRoute: string;
+  registrationId: string;
+  guestWebContentsId: number;
+  timeoutId: number;
 };
 
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
@@ -545,6 +561,9 @@ export function ServiceWebviewSurface({
   } | null>(null);
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
   const pendingCanonicalChatSyncRef = useRef<PendingCanonicalChatSync | null>(null);
+  const pendingNewChatPreparationRef = useRef<PendingNewChatPreparation | null>(null);
+  const currentRouteWithHashRef = useRef(currentRouteWithHash);
+  currentRouteWithHashRef.current = currentRouteWithHash;
   const surfaceVisibilityProps =
     active === undefined
       ? {}
@@ -556,6 +575,16 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     return registerServiceSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
+
+  useEffect(() => {
+    return () => {
+      const pending = pendingNewChatPreparationRef.current;
+      if (pending) {
+        window.clearTimeout(pending.timeoutId);
+        pendingNewChatPreparationRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const syncDocumentVisibility = () => {
@@ -775,6 +804,141 @@ export function ServiceWebviewSurface({
     wsSource,
   ]);
 
+  const finishNewChatPreparation = useCallback((
+    pending: PendingNewChatPreparation,
+    result: { ok: true } | { ok: false; message: string },
+    restoreSourceRoute = false,
+  ) => {
+    if (
+      pendingNewChatPreparationRef.current?.request.requestId !==
+      pending.request.requestId
+    ) {
+      return;
+    }
+    pendingNewChatPreparationRef.current = null;
+    window.clearTimeout(pending.timeoutId);
+    sendBridgeMessageToWebview({
+      type: AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
+      requestId: pending.request.requestId,
+      ok: result.ok,
+      ...(!result.ok ? { message: result.message } : {}),
+    });
+    if (
+      restoreSourceRoute &&
+      currentRouteWithHashRef.current === pending.targetRoute
+    ) {
+      navigate(pending.sourceRoute, { replace: true });
+    }
+  }, [navigate]);
+
+  const prepareAgentWebclientNewChat = useCallback((request: {
+    requestId: string;
+    agentKey: string;
+    sourceChatId: string;
+    newChat: string;
+  }): { ok: true } | { ok: false; message: string } => {
+    const normalizedRequest = {
+      requestId: request.requestId.trim(),
+      agentKey: request.agentKey.trim(),
+      sourceChatId: request.sourceChatId.trim(),
+      newChat: request.newChat.trim(),
+    };
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const targetRoute = createPreparedAgentChatRoute(
+      currentRouteWithHash,
+      normalizedRequest,
+    );
+    const guestRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
+      readCurrentWebviewUrl(),
+      embeddedUrl,
+    );
+    if (
+      serviceId !== "agent-webclient" ||
+      surfaceId !== MAIN_CHAT_SURFACE_ID ||
+      active === false ||
+      !ownsActiveSurface ||
+      !webContentsId ||
+      !normalizedRequest.requestId ||
+      normalizedRequest.requestId.length > 128 ||
+      normalizedRequest.agentKey.length > 256 ||
+      normalizedRequest.sourceChatId.length > 512 ||
+      ownerChatId?.trim() !== normalizedRequest.sourceChatId ||
+      !targetRoute ||
+      !guestRoute ||
+      !areAgentWebclientChatBusinessRoutesEquivalent(
+        currentRouteWithHash,
+        guestRoute,
+      )
+    ) {
+      return {
+        ok: false,
+        message: "new Chat preparation does not match the active Main Chat source",
+      };
+    }
+    if (pendingNewChatPreparationRef.current) {
+      return {
+        ok: false,
+        message: "another new Chat preparation is already in progress",
+      };
+    }
+
+    const pending: PendingNewChatPreparation = {
+      request: normalizedRequest,
+      sourceRoute: currentRouteWithHash,
+      targetRoute,
+      registrationId: surfaceRegistrationIdRef.current,
+      guestWebContentsId: webContentsId,
+      timeoutId: 0,
+    };
+    pending.timeoutId = window.setTimeout(() => {
+      finishNewChatPreparation(
+        pending,
+        { ok: false, message: "new Chat surface preparation timed out" },
+        true,
+      );
+    }, 8_000);
+    pendingNewChatPreparationRef.current = pending;
+    surfaceRegistrationRetryRef.current = 0;
+    navigate(targetRoute);
+    return { ok: true };
+  }, [
+    active,
+    currentRouteWithHash,
+    embeddedUrl,
+    finishNewChatPreparation,
+    navigate,
+    ownerChatId,
+    ownsActiveSurface,
+    serviceId,
+    surfaceId,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingNewChatPreparationRef.current;
+    if (!pending) return;
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    if (
+      active !== false &&
+      ownsActiveSurface &&
+      webContentsId === pending.guestWebContentsId &&
+      (currentRouteWithHash === pending.sourceRoute ||
+        currentRouteWithHash === pending.targetRoute)
+    ) {
+      return;
+    }
+    finishNewChatPreparation(
+      pending,
+      { ok: false, message: "Main Chat changed before new Chat preparation completed" },
+      true,
+    );
+  }, [
+    active,
+    currentRouteWithHash,
+    finishNewChatPreparation,
+    ownsActiveSurface,
+    webviewSnapshotNonce,
+  ]);
+
   useEffect(() => {
     const embeddedCdp = getEmbeddedCdpSurfaceApi();
     const targetWebview = webviewRef.current;
@@ -831,6 +995,21 @@ export function ServiceWebviewSurface({
         if (ownsActiveSurface) {
           sendLiveSurfaceLifecycleToWebview(true);
         }
+        const pendingPreparation = pendingNewChatPreparationRef.current;
+        const registeredNewChatSource = readAgentWebclientNewChatSource(currentUrl);
+        if (
+          pendingPreparation &&
+          pendingPreparation.registrationId === registration.registrationId &&
+          pendingPreparation.guestWebContentsId === webContentsId &&
+          ownsActiveSurface &&
+          currentRouteWithHash === pendingPreparation.targetRoute &&
+          !registration.ownerChatId?.trim() &&
+          registeredNewChatSource?.agentKey ===
+            pendingPreparation.request.agentKey &&
+          registeredNewChatSource.newChat === pendingPreparation.request.newChat
+        ) {
+          finishNewChatPreparation(pendingPreparation, { ok: true });
+        }
         const pending = pendingCanonicalChatSyncRef.current;
         if (
           pending &&
@@ -867,6 +1046,19 @@ export function ServiceWebviewSurface({
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
       });
+      const pendingPreparation = pendingNewChatPreparationRef.current;
+      if (
+        pendingPreparation &&
+        pendingPreparation.registrationId === registration.registrationId &&
+        pendingPreparation.guestWebContentsId === webContentsId &&
+        currentRouteWithHash === pendingPreparation.targetRoute
+      ) {
+        finishNewChatPreparation(
+          pendingPreparation,
+          { ok: false, message: "Main Chat surface rejected its new Chat registration" },
+          true,
+        );
+      }
       const pending = pendingCanonicalChatSyncRef.current;
       if (
         pending &&
@@ -894,6 +1086,22 @@ export function ServiceWebviewSurface({
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
       });
+      const pendingPreparation = pendingNewChatPreparationRef.current;
+      if (
+        pendingPreparation &&
+        pendingPreparation.registrationId === registration.registrationId &&
+        pendingPreparation.guestWebContentsId === webContentsId &&
+        currentRouteWithHash === pendingPreparation.targetRoute
+      ) {
+        finishNewChatPreparation(
+          pendingPreparation,
+          {
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          },
+          true,
+        );
+      }
       const pending = pendingCanonicalChatSyncRef.current;
       if (
         pending &&
@@ -922,6 +1130,7 @@ export function ServiceWebviewSurface({
     embeddedUrl,
     serviceDisplayName,
     serviceId,
+    finishNewChatPreparation,
     surfaceId,
     surfaceIdentity.interaction,
     surfaceIdentity.ownerChatId,
@@ -1471,11 +1680,12 @@ export function ServiceWebviewSurface({
     }
 
     handleServiceWebviewBridgeMessage(payload, {
-      serviceId: service?.id,
+      serviceId: service?.id ?? serviceId,
       bridgeProtocol,
       desktopAuthContext:
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       sendBridgeMessageToWebview,
+      prepareAgentWebclientNewChat,
       setBridgeError,
       logDebug: (stage, message) => {
         console.info("[service-webview]", service?.id || "service", stage, message);
