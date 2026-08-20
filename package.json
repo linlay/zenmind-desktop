@@ -33,7 +33,6 @@
     "build": "npm run brand:prepare && npm run build:main:prepared && npm run build:renderer:prepared",
     "stage:app": "node ./scripts/stage-app.mjs",
     "dev": "node ./scripts/dev.mjs",
-    "dev:share-local": "node ./scripts/dev.mjs --conversation-share-relay-url=ws://127.0.0.1:11961/tunnel",
     "start": "npm run dev",
     "dist:mac": "node ./scripts/dist-mac.mjs",
     "dist:win": "node ./scripts/dist-win.mjs",

@@ -235,7 +235,6 @@ export const zhCNMessages = {
   "assistant.chatShareInvalidId": "分享标识无效。",
   "assistant.chatShareRevoked": "分享链接已撤销。",
   "assistant.chatShareLoginRequired": `请先登录 ${PRODUCT_NAME} 账号，再创建分享链接。`,
-  "assistant.chatShareLocalTokenInvalid": "本地分享调试 Token 文件不存在或内容无效。",
   "assistant.chatShareTunnelRequired": "请先在设置中启用 Tunnel 服务。",
   "assistant.chatShareTunnelUrlInvalid": "Tunnel 服务地址无效：{message}",
   "assistant.chatShareTunnelConfigInvalid": "Tunnel 分享服务配置无效。",

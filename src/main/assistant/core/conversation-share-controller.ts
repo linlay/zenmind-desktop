@@ -1,5 +1,3 @@
-import fs from "node:fs";
-import path from "node:path";
 import type { App } from "electron";
 import {
   isAssistantConversationShareExpiration,
@@ -13,9 +11,6 @@ import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registrat
 import { readTunnelHubSettings } from "../../tunnel-hub-settings";
 import { t } from "../../i18n/main-i18n";
 import { isDesktopDevelopmentRuntime } from "../../development-runtime";
-
-const LOCAL_SHARE_RELAY_ENV = "DESKTOP_CONVERSATION_SHARE_RELAY_URL";
-const LOCAL_SHARE_TOKEN_FILE_ENV = "DESKTOP_CONVERSATION_SHARE_TOKEN_FILE";
 
 type ConversationShareBridge = {
   createChatShare(input: {
@@ -119,27 +114,11 @@ function isValidConversationShareId(value: string): boolean {
 function resolveConversationShareConnection(app: App):
   | { ok: true; origin: string; token: string }
   | { ok: false; message: string } {
-  const developmentRuntime = isDesktopDevelopmentRuntime(app);
-  const developmentTokenFile = developmentRuntime
-    ? process.env[LOCAL_SHARE_TOKEN_FILE_ENV]?.trim() || ""
-    : "";
-  const developmentToken = developmentTokenFile
-    ? readDevelopmentConversationShareToken(developmentTokenFile)
-    : "";
-  if (developmentTokenFile && !developmentToken) {
-    return { ok: false, message: t("assistant.chatShareLocalTokenInvalid") };
-  }
-  const token = developmentToken || readDesktopSsoSiteAccessToken(app);
+  const token = readDesktopSsoSiteAccessToken(app);
   if (!token) {
     return { ok: false, message: t("assistant.chatShareLoginRequired") };
   }
-  const developmentRelayUrl = developmentRuntime
-    ? process.env[LOCAL_SHARE_RELAY_ENV]?.trim() || ""
-    : "";
-  const assetOrigin = resolveConversationTunnelOrigin(app, true, {
-    relayUrlOverride: developmentRelayUrl,
-    allowLoopbackHTTP: developmentRuntime,
-  });
+  const assetOrigin = resolveConversationTunnelOrigin(app, true);
   if (!assetOrigin.ok) return assetOrigin;
   return { ok: true, origin: assetOrigin.origin, token };
 }
@@ -153,39 +132,22 @@ export function resolveConversationAssetOrigin(app: App):
 function resolveConversationTunnelOrigin(
   app: App,
   requireEnabled: boolean,
-  options: {
-    relayUrlOverride?: string;
-    allowLoopbackHTTP?: boolean;
-  } = {},
 ):
   | { ok: true; origin: string }
   | { ok: false; message: string } {
   const settings = readTunnelHubSettings(app);
-  const relayUrlOverride = options.relayUrlOverride?.trim() || "";
-  const relayUrl = relayUrlOverride || settings.relayUrl;
-  if (!relayUrl || (requireEnabled && !relayUrlOverride && !settings.enabled)) {
+  if (!settings.relayUrl || (requireEnabled && !settings.enabled)) {
     return { ok: false, message: t("assistant.chatShareTunnelRequired") };
   }
   try {
-    const origin = deriveTunnelHubRegistrationApiOrigin(relayUrl);
-    if (!isHttpsOrigin(origin) && !(options.allowLoopbackHTTP && isLoopbackHttpOrigin(origin))) {
+    const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
+    const allowedDevelopmentOrigin = isDesktopDevelopmentRuntime(app) && isLoopbackHttpOrigin(origin);
+    if (!isHttpsOrigin(origin) && !allowedDevelopmentOrigin) {
       throw new Error("Tunnel share API must use HTTPS.");
     }
     return { ok: true, origin };
   } catch (error) {
     return { ok: false, message: t("assistant.chatShareTunnelUrlInvalid", { message: messageFromError(error) }) };
-  }
-}
-
-function readDevelopmentConversationShareToken(tokenFile: string): string {
-  if (!path.isAbsolute(tokenFile)) {
-    return "";
-  }
-  try {
-    const token = fs.readFileSync(tokenFile, "utf8").trim();
-    return /^[^\s.]+\.[^\s.]+\.[^\s.]+$/u.test(token) ? token : "";
-  } catch {
-    return "";
   }
 }
 

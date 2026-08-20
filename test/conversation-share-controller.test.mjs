@@ -11,20 +11,7 @@ const {
   revokeConversationShare
 } = await import("../dist-electron/main/assistant/core/conversation-share-controller.js");
 
-function restoreEnvironment(t, names) {
-  const original = new Map(names.map((name) => [name, process.env[name]]));
-  t.after(() => {
-    for (const [name, value] of original) {
-      if (value === undefined) {
-        delete process.env[name];
-      } else {
-        process.env[name] = value;
-      }
-    }
-  });
-}
-
-function createFixture(t) {
+function createFixture(t, tunnelOverrides = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "conversation-share-"));
   const homeRoot = path.join(tempRoot, "home");
   const app = {
@@ -44,7 +31,8 @@ function createFixture(t) {
     relayUrl: "wss://tunnel.example.test/tunnel",
     deviceId: "share-test-device",
     tlsInsecureSkipVerify: false,
-    reconnectSeconds: 3
+    reconnectSeconds: 3,
+    ...tunnelOverrides
   }));
   const payload = Buffer.from(JSON.stringify({ sub: "user-1", exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
   fs.writeFileSync(tokenPath, JSON.stringify({ accessToken: `header.${payload}.signature` }));
@@ -103,50 +91,43 @@ test("createConversationShare delegates HTML share orchestration to Agent Platfo
   assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
 });
 
-test("development share relay override targets the local Tunnel without replacing saved settings", async (t) => {
-  restoreEnvironment(t, ["DESKTOP_CONVERSATION_SHARE_RELAY_URL"]);
-  process.env.DESKTOP_CONVERSATION_SHARE_RELAY_URL = "ws://127.0.0.1:11961/tunnel";
-  const app = createFixture(t);
+test("development share uses the configured loopback Tunnel and normal site token", async (t) => {
+  const app = createFixture(t, { relayUrl: "ws://127.0.0.1:18181/tunnel" });
   app.isPackaged = false;
   const calls = [];
 
   const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
 
   assert.equal(result.ok, true);
-  assert.equal(calls[0].input.tunnelOrigin, "http://127.0.0.1:11961");
-  const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
-  const saved = JSON.parse(fs.readFileSync(path.join(desktopRoot, "config", "desktop", "tunnel-hub.json"), "utf8"));
-  assert.equal(saved.relayUrl, "wss://tunnel.example.test/tunnel");
+  assert.equal(calls[0].input.tunnelOrigin, "http://127.0.0.1:18181");
+  assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
 });
 
-test("development share token file overrides the cached website token", async (t) => {
-  restoreEnvironment(t, ["DESKTOP_CONVERSATION_SHARE_TOKEN_FILE"]);
-  const app = createFixture(t);
-  app.isPackaged = false;
-  const tokenPath = path.join(app.getPath("home"), "local-share-token");
-  const payload = Buffer.from(JSON.stringify({ sub: "local-user", exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
-  const localToken = `local.${payload}.signature`;
-  fs.writeFileSync(tokenPath, localToken);
-  process.env.DESKTOP_CONVERSATION_SHARE_TOKEN_FILE = tokenPath;
-  const calls = [];
-
-  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
-
-  assert.equal(result.ok, true);
-  assert.equal(calls[0].input.tunnelAuthorization, `Bearer ${localToken}`);
-});
-
-test("packaged Desktop ignores the local share relay override", async (t) => {
-  restoreEnvironment(t, ["DESKTOP_CONVERSATION_SHARE_RELAY_URL"]);
-  process.env.DESKTOP_CONVERSATION_SHARE_RELAY_URL = "ws://127.0.0.1:11961/tunnel";
-  const app = createFixture(t);
+test("packaged Desktop rejects a configured loopback Tunnel for sharing", async (t) => {
+  const app = createFixture(t, { relayUrl: "ws://127.0.0.1:18181/tunnel" });
   app.isPackaged = true;
   const calls = [];
 
   const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
 
-  assert.equal(result.ok, true);
-  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
+  assert.equal(result.ok, false);
+  assert.equal(calls.length, 0);
+});
+
+test("development share fails closed for disabled or non-loopback HTTP Tunnel settings", async (t) => {
+  for (const tunnelOverrides of [
+    { enabled: false },
+    { relayUrl: "ws://192.0.2.1:18181/tunnel" }
+  ]) {
+    const app = createFixture(t, tunnelOverrides);
+    app.isPackaged = false;
+    const calls = [];
+
+    const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
+
+    assert.equal(result.ok, false);
+    assert.equal(calls.length, 0);
+  }
 });
 
 test("createConversationShare resolves login before calling Agent Platform", async (t) => {

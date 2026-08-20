@@ -235,7 +235,6 @@ export const enUSMessages = {
   "assistant.chatShareInvalidId": "The share identifier is invalid.",
   "assistant.chatShareRevoked": "Share link revoked.",
   "assistant.chatShareLoginRequired": `Sign in to ${PRODUCT_NAME} before creating a share link.`,
-  "assistant.chatShareLocalTokenInvalid": "The local share debug token file is missing or invalid.",
   "assistant.chatShareTunnelRequired": "Enable Tunnel in Settings before creating a share link.",
   "assistant.chatShareTunnelUrlInvalid": "The Tunnel service URL is invalid: {message}",
   "assistant.chatShareTunnelConfigInvalid": "The Tunnel share service configuration is invalid.",

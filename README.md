@@ -51,14 +51,9 @@ npm test
 
 ### 本地分享短链联调
 
-本地 Tunnel 监听 `127.0.0.1:11961` 时，可通过开发态专用入口让 Desktop 临时使用本地 Relay：
+本地联调复用正常配置与登录链路：在 `desktop-init.json` 或设置页中把 SSO 指向本地认证服务、启用 Tunnel 并填写本地 Loopback Relay，然后执行 `npm run dev` 并正常登录。登录生成的站点 Token 与 Tunnel 的 issuer、audience、公钥和 scope 必须一致；Desktop 不接受命令行或环境变量提供的分享专用 Relay 与 Token 旁路。
 
-```bash
-npm run dev:share-local -- \
-  --conversation-share-token-file=/absolute/path/to/token
-```
-
-Token 文件只保存本地 Tunnel 接受的临时 Bearer Token，不得提交。该命令只对当前开发进程生效，不会改写正式 Tunnel 设置或正式登录凭证；联调完成后按工作区根目录的 `LOCAL_SHARE_DEBUG_CLEANUP.md` 回退临时代码和配置。
+开发运行时允许从 Loopback WS Relay 派生 HTTP 分享 API；打包应用和非 Loopback 地址仍要求 TLS。
 
 ## 4. 目录结构
 
