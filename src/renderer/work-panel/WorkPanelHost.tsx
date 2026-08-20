@@ -9,6 +9,7 @@ import {
   GlobalOutlined,
   ProjectOutlined,
   RobotOutlined,
+  SafetyCertificateOutlined,
 } from "@ant-design/icons";
 import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
@@ -90,6 +91,8 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
       return <RobotOutlined />;
     case "planning":
       return <DeploymentUnitOutlined />;
+    case "skill":
+      return <SafetyCertificateOutlined />;
     case "agent":
     case "copilot":
       return <RobotOutlined />;

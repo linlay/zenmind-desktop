@@ -16,6 +16,7 @@ export const SURFACE_ROLES = [
   "reference",
   "file",
   "planning",
+  "skill",
   "agent",
   "copilot",
   "workpanel-web",
@@ -75,6 +76,7 @@ const DYNAMIC_ROLE_PREFIXES: Partial<Record<SurfaceRole, string>> = {
   reference: "ref",
   file: "file",
   planning: "plan",
+  skill: "skl",
   agent: "agt",
   copilot: "cpl",
   "workpanel-web": "web",
@@ -94,6 +96,7 @@ const CHILD_ROLES = new Set<SurfaceRole>([
   "reference",
   "file",
   "planning",
+  "skill",
   "agent",
   "copilot",
   "workpanel-web",
@@ -101,7 +104,7 @@ const CHILD_ROLES = new Set<SurfaceRole>([
 
 const UTILITY_ROLES = new Set<SurfaceRole>(["service", "help", "plugin-settings"]);
 const READ_ONLY_ROLES = new Set<SurfaceRole>([
-  "overview", "debug", "source", "artifact", "reference", "file", "planning",
+  "overview", "debug", "source", "artifact", "reference", "file", "planning", "skill",
 ]);
 
 export function stableSurfaceHash(value: string) {
@@ -183,7 +186,7 @@ export function createPluginSettingsSurfaceIdentity(pluginId: string) {
 
 export function createChatChildSurfaceIdentity(
   role: Extract<SurfaceRole,
-    "overview" | "debug" | "btw" | "source" | "project" | "file-diff" | "artifact" | "reference" | "file" | "planning" | "agent" | "copilot" | "workpanel-web">,
+    "overview" | "debug" | "btw" | "source" | "project" | "file-diff" | "artifact" | "reference" | "file" | "planning" | "skill" | "agent" | "copilot" | "workpanel-web">,
   identityKey: string,
   ownerChatId: string,
   parentSurfaceId: string | undefined = MAIN_CHAT_SURFACE_ID,

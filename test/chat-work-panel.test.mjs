@@ -37,6 +37,11 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(host, /<ServiceWebviewSurface/u);
   assert.match(host, /item\.descriptor\.kind === "webclient"[\s\S]*?<ServiceWebviewSurface[\s\S]*?skipContextRegistration[\s\S]*?\/>/u);
   assert.match(host, /<ExternalWebviewPage/u);
+  assert.match(host, /case "skill":[\s\S]*?<SafetyCertificateOutlined/u);
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /AGENT_WEBCLIENT_WORK_PANEL_ROLES[\s\S]*?"skill"/u,
+  );
   assert.match(host, /hidden=\{!visible\}/u);
   assert.match(host, /visible && hasPanelToggle \? " has-panel-toggle" : ""/u);
   assert.match(reducer, /stableKey:\s*`web:\$\{url\}`/u);

@@ -146,6 +146,7 @@ const AGENT_WEBCLIENT_WORK_PANEL_ROLES = new Set<SurfaceIdentity["surfaceRole"]>
   "reference",
   "file",
   "planning",
+  "skill",
   "agent",
   "copilot",
 ]);

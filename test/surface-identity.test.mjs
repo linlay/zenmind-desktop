@@ -52,6 +52,13 @@ test("surface identity separates hierarchy and interaction from the short id", (
   assert.equal(service.surfaceLevel, "utility");
   assert.equal(surfaceIdentityMatchesPolicy(createSurfaceIdentity("main-chat"), "forged-key"), false);
 
+  const skill = createChatChildSurfaceIdentity("skill", "skill:find-skills", "chat-secret");
+  assert.match(skill.surfaceId, /^skl:[a-z0-9]+$/u);
+  assert.equal(skill.surfaceId.includes("find-skills"), false);
+  assert.equal(skill.surfaceLevel, "child");
+  assert.equal(skill.interaction, "read-only");
+  assert.equal(surfaceIdentityMatchesPolicy(skill, "skill:find-skills"), true);
+
   for (const [role, key, rawValue] of [
     ["project", "agent:private-agent", "private-agent"],
     ["artifact", "artifact:private-item", "private-item"],
@@ -78,6 +85,7 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
     ["artifact", "agent-management"],
     ["reference", "agent-management"],
     ["planning", "agent-management"],
+    ["skill", "agent-management"],
     ["agent", "agent-management"],
     ["service", "agent-management"],
   ]) {
@@ -93,7 +101,8 @@ test("surface registry rejects a forged identity and cascades child removal", ()
     [74, { id: 74, getType: () => "webview", isDestroyed: () => false }],
     [75, { id: 75, getType: () => "webview", isDestroyed: () => false }],
     [76, { id: 76, getType: () => "webview", isDestroyed: () => false }],
-    [77, { id: 77, getType: () => "webview", isDestroyed: () => false }]
+    [77, { id: 77, getType: () => "webview", isDestroyed: () => false }],
+    [78, { id: 78, getType: () => "webview", isDestroyed: () => false }]
   ]);
   const registry = createBrowserSurfaceRegistry({
     webContents: {
@@ -166,6 +175,15 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   ), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceRole, "file");
   assert.equal(registry.resolveWebviewSurfaceTarget(77).surfaceType, "agent-management");
+
+  const skillKey = "skill:find-skills";
+  const skill = createChatChildSurfaceIdentity("skill", skillKey, "chat-1");
+  assert.equal(registry.registerSurface(
+    registration(skill, 78, "agent-management", skillKey),
+    7
+  ), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(78).surfaceRole, "skill");
+  assert.equal(registry.resolveWebviewSurfaceTarget(78).interaction, "read-only");
 
   const projectKey = "agent:detached-project";
   const detachedProject = createSurfaceIdentity("project", projectKey);
