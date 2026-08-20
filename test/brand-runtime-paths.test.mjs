@@ -1268,7 +1268,7 @@ test("Windows installer data directory page requires the visible path to end wit
   assert.match(installerInclude, /StrCpy \$DesktopDataRoot "\$DesktopDataParent"/u);
   assert.match(installerInclude, /请选择完整的 CuteJ 数据目录/u);
   assert.match(installerInclude, /NSD_CreateLabel\} 0 24u 100% 12u "路径格式错误：数据目录必须以 \.cutej 结尾，否则无法安装。"/u);
-  assert.match(installerInclude, /Function CuteJValidateDataRootInput[\s\S]*?GetFileName\} "\$DesktopDataParent" \$R3[\s\S]*?EnableWindow \$R4 0[\s\S]*?NSD_Show\} \$DesktopDataRootErrorLabel/u);
+  assert.match(installerInclude, /Function CuteJValidateDataRootInput[\s\S]*?GetFileName\} "\$DesktopDataParent" \$R3[\s\S]*?EnableWindow \$R4 1[\s\S]*?ShowWindow \$DesktopDataRootErrorLabel \$\{SW_HIDE\}[\s\S]*?EnableWindow \$R4 0[\s\S]*?ShowWindow \$DesktopDataRootErrorLabel \$\{SW_SHOW\}/u);
   assert.match(installerInclude, /NSD_OnChange\} \$DesktopDataRootInput CuteJValidateDataRootInput/u);
   assert.match(dataDirectoryPageLeave, /\$R3 != "\.cutej"[\s\S]*?数据目录必须以 \.cutej 结尾。[\s\S]*?Abort/u);
   assert.doesNotMatch(installerInclude, /StrCmp "\$DesktopDataParent" "\$(?:PROFILE|DESKTOP|DOCUMENTS|APPDATA|LOCALAPPDATA)"/u);
