@@ -194,7 +194,6 @@ export const enUSMessages = {
   "sidebar.chat.export": "Export",
   "sidebar.chat.share": "Share link",
   "sidebar.chat.shareTitle": "Share Chat",
-  "sidebar.chat.shareCurrent": "Share current chat",
   "sidebar.chat.current": "Current chat",
   "sidebar.chat.shareConfirm": "This creates a read-only conversation snapshot that anyone with the link can open. Later messages will not be synced.",
   "sidebar.chat.shareCreate": "Create share link",

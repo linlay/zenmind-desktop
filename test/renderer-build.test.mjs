@@ -1879,7 +1879,6 @@ test("sidebar header icon buttons use color-only hover feedback", () => {
     "sidebar-assistant-sort-button",
     "sidebar-assistant-refresh-button",
     "sidebar-assistant-project-button",
-    "sidebar-chats-share-button",
     "sidebar-chats-new-button",
     "sidebar-website-add-button",
   ]) {

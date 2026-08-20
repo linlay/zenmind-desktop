@@ -194,7 +194,6 @@ export const zhCNMessages = {
   "sidebar.chat.export": "导出",
   "sidebar.chat.share": "分享链接",
   "sidebar.chat.shareTitle": "分享对话",
-  "sidebar.chat.shareCurrent": "分享当前对话",
   "sidebar.chat.current": "当前对话",
   "sidebar.chat.shareConfirm": "将创建一个无需登录即可访问的只读对话快照。后续消息不会自动同步到此链接。",
   "sidebar.chat.shareCreate": "创建分享链接",
