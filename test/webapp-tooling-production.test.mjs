@@ -5,7 +5,10 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { generateWebappToolingBundle } from "../scripts/generate-webapp-tooling-bundle.mjs";
+import {
+  generateWebappToolingBundle,
+  WEBAPP_TOOLING_SOURCE_RELATIVE_PATH
+} from "../scripts/generate-webapp-tooling-bundle.mjs";
 import { loadBrandConfig } from "../scripts/lib/brand-config.mjs";
 import { electronBuilderConfig } from "../scripts/lib/brand-packaging.mjs";
 
@@ -16,6 +19,12 @@ const {
   resolvePackagedWebappToolingPath,
   verifyPackagedWebappTooling
 } = require("../scripts/lib/webapp-tooling-resource.js");
+
+test("TypeScript is the only authoritative WebApp Tooling source", () => {
+  assert.equal(WEBAPP_TOOLING_SOURCE_RELATIVE_PATH, "src/tooling/webapp-tooling.ts");
+  assert.equal(fs.existsSync(path.join(projectRoot, WEBAPP_TOOLING_SOURCE_RELATIVE_PATH)), true);
+  assert.equal(fs.existsSync(path.join(projectRoot, "scripts", "webapp-tooling.mjs")), false);
+});
 
 function runTooling(toolingPath, args) {
   const result = spawnSync(process.execPath, [toolingPath, ...args], { encoding: "utf8" });

@@ -7,6 +7,7 @@ import { pathToFileURL } from "node:url";
 import { build } from "esbuild";
 
 const projectRoot = process.cwd();
+export const WEBAPP_TOOLING_SOURCE_RELATIVE_PATH = "src/tooling/webapp-tooling.ts";
 
 function parseOutputArg(argv) {
   const outputIndex = argv.indexOf("--output");
@@ -24,7 +25,7 @@ export async function generateWebappToolingBundle({
   fs.mkdirSync(path.dirname(absoluteOutputPath), { recursive: true });
 
   await build({
-    entryPoints: [path.join(rootDir, "scripts", "webapp-tooling.mjs")],
+    entryPoints: [path.join(rootDir, ...WEBAPP_TOOLING_SOURCE_RELATIVE_PATH.split("/"))],
     outfile: absoluteOutputPath,
     bundle: true,
     platform: "node",

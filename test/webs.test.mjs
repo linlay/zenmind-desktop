@@ -612,7 +612,7 @@ test("Tooling and Desktop installer share path and native artifact policy", asyn
   fs.mkdirSync(path.join(projectRoot, ".mypy_cache"), { recursive: true });
   fs.writeFileSync(path.join(projectRoot, ".mypy_cache", "cache.bin"), "cache", "utf8");
   const tooling = spawnSync(process.execPath, [
-    path.join(process.cwd(), "scripts", "webapp-tooling.mjs"),
+    path.join(process.cwd(), "scripts", "run-webapp-tooling.mjs"),
     "package",
     "validate",
     "--project",
@@ -634,7 +634,7 @@ test("Tooling and Desktop installer share path and native artifact policy", asyn
   const nativeProjectRoot = writeWebapp(root, "tooling-native-app");
   fs.writeFileSync(path.join(nativeProjectRoot, "addon.node"), "not-native", "utf8");
   const nativeTooling = spawnSync(process.execPath, [
-    path.join(process.cwd(), "scripts", "webapp-tooling.mjs"),
+    path.join(process.cwd(), "scripts", "run-webapp-tooling.mjs"),
     "package",
     "validate",
     "--project",
