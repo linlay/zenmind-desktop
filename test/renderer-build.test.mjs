@@ -1860,6 +1860,44 @@ test("website row close action removes the hover tile", () => {
   );
 });
 
+test("sidebar header icon buttons use color-only hover feedback", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css",
+  );
+
+  for (const className of [
+    "sidebar-assistant-sort-button",
+    "sidebar-assistant-refresh-button",
+    "sidebar-assistant-project-button",
+    "sidebar-chats-share-button",
+    "sidebar-chats-new-button",
+    "sidebar-website-add-button",
+  ]) {
+    assert.match(
+      sidebarSource,
+      new RegExp(`assistant-worker-icon-button[\\s\\S]{0,180}${className}`),
+    );
+  }
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-icon-button:hover,[\s\S]*?\.assistant-worker-icon-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /:root\[data-theme="dark"\] \.assistant-worker-icon-button:hover,[\s\S]*?:root\[data-theme="dark"\] \.assistant-worker-icon-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+});
+
 test("assistant sidebar chat history selection follows the current chat route", () => {
   const sidebarSource = readSourceFile(
     "src",
