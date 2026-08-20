@@ -235,8 +235,6 @@ export interface TunnelHubSettings {
   enabled: boolean;
   relayUrl: string;
   deviceId: string;
-  hasRelayToken: boolean;
-  relayTokenPreview: string;
   publicHost: string;
   publicUrl: string;
   webSocketUrl: string;
@@ -249,9 +247,6 @@ export interface TunnelHubSettingsInput {
   enabled?: boolean;
   relayUrl?: string;
   deviceId?: string;
-  relayToken?: string;
-  clearRelayToken?: boolean;
-  rotateRelayToken?: boolean;
   tlsInsecureSkipVerify?: boolean;
   reconnectSeconds?: number;
 }

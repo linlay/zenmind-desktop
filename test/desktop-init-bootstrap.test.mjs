@@ -1074,7 +1074,6 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
     tunnelHub: {
       relayUrl: "wss://relay.example.test/tunnel",
       deviceId: "mac-mini-office",
-      relayToken: "init-relay-token",
       tlsInsecureSkipVerify: true
     }
   });
@@ -1084,6 +1083,7 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
   const tunnelSettingsPath = path.join(desktop, "config", "desktop", "tunnel-hub.json");
   const tokenPath = path.join(desktop, "secrets", "tunnel-hub-token");
   const registrationTokenPath = path.join(desktop, "secrets", "tunnel-hub-registration-token");
+  const deviceSecretPath = path.join(desktop, "secrets", "tunnel-hub-device-secret");
   const tunnelSettings = readJson(tunnelSettingsPath);
   const bootstrapState = readJson(path.join(desktop, "state", "desktop", "bootstrap.json"));
 
@@ -1095,15 +1095,15 @@ test("desktop-init bootstrap applies Tunnel Hub defaults without auto enabling",
     deviceId: "mac-mini-office",
     publicHost: "",
     lastRegisteredAt: "",
-    rotateRelayToken: false,
     tlsInsecureSkipVerify: false,
     reconnectSeconds: 3
   });
   assert.equal("relayToken" in tunnelSettings, false);
   assert.equal("registrationToken" in tunnelSettings, false);
   assert.equal("deviceSecret" in tunnelSettings, false);
-  assert.equal(readText(tokenPath), "init-relay-token");
+  assert.equal(fs.existsSync(tokenPath), false);
   assert.equal(fs.existsSync(registrationTokenPath), false);
+  assert.equal(fs.existsSync(deviceSecretPath), false);
   assert.equal(bootstrapState.appliedResult.tunnelHub, "applied");
 });
 
@@ -1283,14 +1283,10 @@ test("desktop-init bootstrap writes canonical macOS SSO config and state", (t) =
       namePath: "name",
       emailPath: "email",
       avatarUrlPath: "picture"
-    },
-    siteTokenBridge: {
-      startUrl: "https://www.zenmind.cc/api/auth/desktop-sso/start",
-      exchangeUrl: "https://www.zenmind.cc/api/auth/desktop-sso/session"
     }
   });
   assert.equal(sso.userInfo.url, "https://auth.zenmind.cc/application/o/userinfo/");
-  assert.equal(sso.siteTokenBridge.startUrl, "https://www.zenmind.cc/api/auth/desktop-sso/start");
+  assert.equal("siteTokenBridge" in sso, false);
   if (process.platform !== "win32") {
     assert.equal(fs.statSync(ssoPath).mode & 0o777, 0o600);
   }

@@ -367,7 +367,6 @@ export interface SsoIpcHandlerContextDependencies {
   desktopSsoController: unknown;
   getDesktopSsoStatus: (...args: any[]) => unknown;
   startDesktopSsoLogin: (...args: any[]) => unknown;
-  startDesktopSsoSiteTokenBridge: (...args: any[]) => unknown;
   logoutDesktopSso: (...args: any[]) => unknown;
   failDesktopSsoFlow: (...args: any[]) => unknown;
   cancelDesktopSsoLogin: (...args: any[]) => unknown;
@@ -388,7 +387,6 @@ export function createSsoIpcHandlerOptions(
     desktopSsoController: dependencies.desktopSsoController,
     getDesktopSsoStatus: dependencies.getDesktopSsoStatus,
     startDesktopSsoLogin: dependencies.startDesktopSsoLogin,
-    startDesktopSsoSiteTokenBridge: dependencies.startDesktopSsoSiteTokenBridge,
     logoutDesktopSso: dependencies.logoutDesktopSso,
     failDesktopSsoFlow: dependencies.failDesktopSsoFlow,
     cancelDesktopSsoLogin: dependencies.cancelDesktopSsoLogin,

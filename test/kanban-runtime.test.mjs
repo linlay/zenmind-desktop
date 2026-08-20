@@ -8,7 +8,6 @@ process.env.DESKTOP_KANBAN_REMOTE_START_ACK_TIMEOUT_MS = "20";
 
 const { APP_BRAND } = await import("../dist-electron/shared/brand.js");
 const { KanbanRuntime, readKanbanSettings, readKanbanWsConfig } = await import("../dist-electron/main/kanban-runtime.js");
-const { readDesktopSsoSiteTokenFile } = await import("../dist-electron/main/sso-site-token.js");
 const {
   listDesktopKanbanRunEvents,
   recordDesktopKanbanCommandReceipt,
@@ -60,7 +59,7 @@ function encodeJwtPart(value) {
   return Buffer.from(JSON.stringify(value)).toString("base64url");
 }
 
-function createSiteJwt(payload = {}) {
+function createSsoJwt(payload = {}) {
   return `${encodeJwtPart({ alg: "RS256", typ: "JWT" })}.${encodeJwtPart({
     sub: "user-1",
     name: "Lin Lay",
@@ -70,17 +69,8 @@ function createSiteJwt(payload = {}) {
   })}.signature`;
 }
 
-function writeSsoSiteToken(app, payload = {}, options = {}) {
-  const token = options.token || createSiteJwt(payload);
-  const fieldName = options.fieldName || "accessToken";
-  const tokenPath = path.join(desktopRoot(app), "secrets", "sso-site-token.json");
-  fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
-  fs.writeFileSync(tokenPath, `${JSON.stringify({ [fieldName]: token }, null, 2)}\n`, "utf8");
-  return token;
-}
-
 function writeCanonicalSsoAccessToken(app, payload = {}) {
-  const token = createSiteJwt(payload);
+  const token = createSsoJwt(payload);
   const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-access-token.txt");
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
   fs.writeFileSync(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
@@ -101,8 +91,6 @@ test("Kanban websocket config uses only the canonical desktop SSO access token",
   });
   assert.equal(readKanbanWsConfig(app), null);
 
-  const ignoredSiteToken = writeSsoSiteToken(app);
-  assert.ok(ignoredSiteToken);
   process.env.DESKTOP_KANBAN_TOKEN = "env-token";
   t.after(() => {
     delete process.env.DESKTOP_KANBAN_TOKEN;
@@ -119,23 +107,6 @@ test("Kanban websocket config uses only the canonical desktop SSO access token",
     selectedProjectId: "default"
   });
 
-});
-
-test("desktop sso site token helper reads claims and rejects bad tokens", (t) => {
-  const app = createTempApp(t);
-
-  const token = writeSsoSiteToken(app, { sub: "user-2", name: "User Two", email: "user2@example.test" }, { fieldName: "access_token" });
-  const record = readDesktopSsoSiteTokenFile(app);
-  assert.equal(record.token, token);
-  assert.equal(record.user.sub, "user-2");
-  assert.equal(record.user.name, "User Two");
-  assert.equal(record.user.email, "user2@example.test");
-
-  writeSsoSiteToken(app, {}, { token: "not-a-jwt" });
-  assert.equal(readDesktopSsoSiteTokenFile(app), null);
-
-  writeSsoSiteToken(app, { exp: Math.floor(Date.now() / 1000) - 60 });
-  assert.equal(readDesktopSsoSiteTokenFile(app), null);
 });
 
 test("Kanban server URL preserves explicit disabled setting", (t) => {

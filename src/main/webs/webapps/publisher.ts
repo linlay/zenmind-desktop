@@ -163,8 +163,8 @@ function requireLoopbackTarget(targetUrl: string) {
 
 async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: string, active: boolean) {
   const settings = readTunnelHubSettings(app);
-  const siteToken = readTunnelHubRegistrationBearerToken(app);
-  if (!siteToken) {
+  const canonicalToken = readTunnelHubRegistrationBearerToken(app);
+  if (!canonicalToken) {
     throw new Error(t("webapp.publishSignInRequired"));
   }
   if (!settings.enabled || !settings.relayUrl || !settings.deviceId) {
@@ -177,7 +177,7 @@ async function registerTunnelRoute(app: App, item: WebappEntry, targetUrl: strin
     {
       method: "PUT",
       headers: {
-        "Authorization": `Bearer ${siteToken}`,
+        "Authorization": `Bearer ${canonicalToken}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ targetUrl: requireLoopbackTarget(targetUrl), active }),

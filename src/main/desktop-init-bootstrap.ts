@@ -460,7 +460,9 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
     return "absent";
   }
   const ssoPath = resolveDesktopSsoConfigPath(app, platform);
-  writeJsonFile(ssoPath, ssoDefaults);
+  const canonicalSsoDefaults = { ...ssoDefaults };
+  delete canonicalSsoDefaults.siteTokenBridge;
+  writeJsonFile(ssoPath, canonicalSsoDefaults);
   return "applied";
 }
 
@@ -484,8 +486,6 @@ function applyTunnelHubDefaults(
     enabled: tunnelHubDefaults.enabled === true,
     relayUrl: filteredRelayUrl,
     deviceId: readText(tunnelHubDefaults.deviceId),
-    relayToken: readText(tunnelHubDefaults.relayToken),
-    rotateRelayToken: tunnelHubDefaults.rotateRelayToken === true,
     tlsInsecureSkipVerify: false,
     reconnectSeconds: typeof tunnelHubDefaults.reconnectSeconds === "number"
       ? tunnelHubDefaults.reconnectSeconds

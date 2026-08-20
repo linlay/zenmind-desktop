@@ -15,9 +15,8 @@ import {
   ensureTunnelHubRegistrationReady
 } from "./tunnel-hub-registration";
 import {
-  clearLegacyTunnelHubRegistrationToken,
+  clearLegacyTunnelHubSecrets,
   readTunnelHubSettings,
-  readTunnelHubRelayToken,
   readTunnelHubRegistrationBearerToken,
   saveTunnelHubSettings
 } from "./tunnel-hub-settings";
@@ -27,7 +26,7 @@ type Logger = Pick<typeof console, "log" | "warn" | "error">;
 
 type TunnelClientFactoryInput = {
   relayUrl: string;
-  relayToken: string;
+  identityToken: string;
   deviceId: string;
   desktopWsServerOptions: DesktopWsServerOptions;
   tlsInsecureSkipVerify: boolean;
@@ -215,7 +214,7 @@ export class TunnelHubRuntime {
   }
 
   private async startInternal(): Promise<TunnelHubRuntimeCommandResult> {
-    clearLegacyTunnelHubRegistrationToken(this.options.app);
+    clearLegacyTunnelHubSecrets(this.options.app);
     if (this.options.canUseDesktopSsoCredentials?.() === false) {
       this.stopNetworkMonitor();
       this.phase = "stopped";
@@ -241,17 +240,13 @@ export class TunnelHubRuntime {
     try {
       const ready = await ensureTunnelHubRegistrationReady(this.options.app);
       this.setPhase(ready.registered ? "registered" : "connecting");
-      if (!readTunnelHubRegistrationBearerToken(this.options.app)) {
+      if (!ready.identityToken) {
         throw new Error("Sign in before starting Tunnel Hub.");
       }
       const nextSettings = readTunnelHubSettings(this.options.app);
-      const token = readTunnelHubRelayToken(this.options.app);
-      if (!token) {
-        throw new Error("Tunnel Hub relay token is missing after registration.");
-      }
       const relayUrl = nextSettings.relayUrl;
       this.setPhase("connecting");
-      await this.connectTunnel(relayUrl, token, nextSettings.deviceId);
+      await this.connectTunnel(relayUrl, ready.identityToken, nextSettings.deviceId);
       this.lastConnectedAt = new Date().toISOString();
       this.setPhase("connected");
       this.log(`connected relay=${relayUrl}`);
@@ -268,10 +263,10 @@ export class TunnelHubRuntime {
     }
   }
 
-  private async connectTunnel(relayUrl: string, relayToken: string, deviceId: string) {
+  private async connectTunnel(relayUrl: string, identityToken: string, deviceId: string) {
     const client = this.createTunnelClient({
       relayUrl,
-      relayToken,
+      identityToken,
       deviceId,
       desktopWsServerOptions: this.options.desktopWsServerOptions,
       tlsInsecureSkipVerify: false,

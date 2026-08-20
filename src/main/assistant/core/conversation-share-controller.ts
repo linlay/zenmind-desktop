@@ -1,6 +1,6 @@
 import type { App } from "electron";
 import type { AssistantConversationShareResult } from "../../../shared/contracts";
-import { readDesktopSsoSiteAccessToken } from "../../sso-site-token";
+import { readDesktopSsoAccessToken } from "../../oidc-sso";
 import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
 import { readTunnelHubSettings } from "../../tunnel-hub-settings";
 import {
@@ -125,7 +125,7 @@ export async function revokeConversationShare(
 function resolveConversationShareConnection(app: App):
   | { ok: true; origin: string; token: string }
   | { ok: false; message: string } {
-  const token = readDesktopSsoSiteAccessToken(app);
+  const token = readDesktopSsoAccessToken(app);
   if (!token) {
     return { ok: false, message: t("assistant.chatShareLoginRequired") };
   }

@@ -40,6 +40,7 @@
 - [ ] 上游明确退出时清除身份文件、派生 Cookie 和头像缓存；无关网站 Cookie 保留。
 - [ ] 临时断网时当前运行 fail closed，恢复网络后单次重试并刷新相关 surface。
 - [ ] 切换账号不会短暂显示上一账号资料或使用上一账号 token。
+- [ ] Cookie SSO 通过官网会话换取 canonical access token 后，Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布均可复用；磁盘只存在 `state/desktop/sso-access-token.txt`，启动会删除旧 `secrets/sso-site-token.json`，刷新和退出后不会重新创建第二份 token。
 - [ ] `agent-webclient` 的 HTTP 与 Platform Frame Port 可用，guest 不建立真实 `/ws`，且 storage、页面全局、URL 和 frame 中均看不到 access token；普通 Website/WebApp 无法调用 Agent WebClient bridge。
 - [ ] macOS 与 Windows 冷启动后直接进入 Main Chat；即使首个 WebClient 数据请求是 WS `/api/agent` 且没有 `/api/agents` 预热，页面也不出现 `Failed to load agent`。Realtime Inspector 中只出现一个有效 logical socket 与唯一物理 WS，随后 `/api/chat` 正常返回，不出现 `capability_denied` 或对应 Platform HTTP 请求。
 - [ ] 人为让可信 Main Chat 的 Frame Port open 早于 Surface Registry 登记：1500ms 内完成登记时握手继续且期间没有 token/Broker 访问；永久缺失、错误 origin/service、非可信 session 或 guest 销毁时 fail closed，且 Platform 不收到请求。

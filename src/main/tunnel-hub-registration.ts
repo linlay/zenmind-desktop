@@ -2,7 +2,6 @@ import type { App } from "electron";
 import {
   ensureTunnelHubDeviceId,
   normalizeRelayUrl,
-  readTunnelHubRelayTokenRotationRequest,
   readTunnelHubSettings,
   readTunnelHubRegistrationBearerToken,
   recordTunnelHubRegistrationResult
@@ -27,8 +26,6 @@ type TunnelHubRegistrationResponse = {
   publicHost?: unknown;
   publicUrl?: unknown;
   webSocketUrl?: unknown;
-  agentToken?: unknown;
-  relayToken?: unknown;
 };
 
 type TunnelHubRegistrationControllerOptions = {
@@ -79,25 +76,26 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
     return {
       ok: true,
       registered: false,
-      skipped: true
+      skipped: true,
+      identityToken: ""
     };
   }
   if (!controllerOptions) {
     throw new Error("Tunnel Hub registration controller is not configured.");
   }
 
-  const siteToken = readTunnelHubRegistrationBearerToken(app);
-  if (!siteToken) {
+  const canonicalToken = readTunnelHubRegistrationBearerToken(app);
+  if (!canonicalToken) {
     return {
       ok: true,
       registered: false,
-      skipped: false
+      skipped: false,
+      identityToken: ""
     };
   }
 
   const deviceId = ensureTunnelHubDeviceId(app);
   const deviceInfo = getDesktopDeviceInfo(app);
-  const rotateToken = readTunnelHubRelayTokenRotationRequest(app) || settings.hasRelayToken === false;
   const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
   const fetchImpl = controllerOptions.fetch ?? globalThis.fetch as unknown as FetchLike | undefined;
   if (typeof fetchImpl !== "function") {
@@ -113,8 +111,7 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
       },
       body: JSON.stringify({
         deviceId,
-        deviceName: deviceInfo.deviceName || deviceId,
-        rotateToken
+        deviceName: deviceInfo.deviceName || deviceId
       })
     });
     return {
@@ -122,11 +119,13 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
       raw: await response.text()
     };
   };
-  let { response, raw } = await requestRegistration(siteToken);
+  let identityToken = canonicalToken;
+  let { response, raw } = await requestRegistration(identityToken);
   if (response.status === 401 && controllerOptions.refreshIdentityToken) {
     const refreshedIdentityToken = (await controllerOptions.refreshIdentityToken()).trim();
     if (refreshedIdentityToken) {
-      ({ response, raw } = await requestRegistration(refreshedIdentityToken));
+      identityToken = refreshedIdentityToken;
+      ({ response, raw } = await requestRegistration(identityToken));
     }
   }
   if (!response.ok) {
@@ -138,8 +137,7 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
   const data = parseRegistrationResponse(raw);
   const registrationRecord = {
     deviceId: readText(data.deviceId) || deviceId,
-    relayUrl: readText(data.relayUrl) || settings.relayUrl,
-    relayToken: readText(data.agentToken) || readText(data.relayToken)
+    relayUrl: readText(data.relayUrl) || settings.relayUrl
   };
   const publicHost = readText(data.publicHost);
   const publicUrl = readText(data.publicUrl);
@@ -158,7 +156,8 @@ export async function ensureTunnelHubRegistrationReady(app: App) {
   return {
     ok: true,
     registered: true,
-    skipped: false
+    skipped: false,
+    identityToken
   };
 }
 

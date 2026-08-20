@@ -9,7 +9,7 @@
 Desktop 把身份能力拆成三层：
 
 - `identity-center` 提供本地身份基础、密钥与 App access token。
-- Desktop 主进程持有 SSO 会话、canonical access token 和派生凭据，并负责校验、换票、刷新与撤销。
+- Desktop 主进程持有 SSO 会话和唯一的 canonical access token，并负责校验、换取、刷新与撤销。服务内部的短期 session 或一次性票据不得成为第二份持久 Desktop access token。
 - renderer、webview 和外部服务只获得完成当前任务所需的最小信息，不直接接触 Cookie、私钥或服务间短期票据。
 
 主进程是凭据边界。renderer 只接收规范化用户状态、本地头像协议 URL 和经授权的短期结果；日志、URL、普通配置与页面上下文不得携带原始凭据。
@@ -67,11 +67,13 @@ Desktop 通过受控文件协议把 canonical token 的路径交给 `agent-platf
 
 Workspace Terminal、容器、代理、ACP、MCP、LSP 与 sidecar 默认不继承该凭据。扩展新的注入面必须单独完成威胁分析和授权设计。
 
-### 业务服务换票
+### 业务服务授权
 
 企业聊天等业务服务使用 canonical token 在主进程内换取自己的短期 session 或一次性票据。派生凭据只存在于所属 runtime，不进入 renderer、webview、持久配置或日志。
 
-Kanban、Market、Tunnel Hub 等消费者共享同一登录事实，但各自仍需遵守自己的服务边界和失败策略，不能各自启动隐式的第二套登录流程。
+Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布统一使用同一枚 canonical token。Cookie SSO 通过官网会话换回的结果直接发布为 canonical token；Desktop 不再启动额外 site-token bridge，也不持久化 `sso-site-token.json`。各消费者可以在 401 后请求 Main 刷新 canonical token 一次，但不能自行登录、换取或保存另一枚 Desktop access token。
+
+Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secret。Main 使用当前 canonical SSO JWT 调用设备注册 API，并通过加密 WebSocket 的首个 `tunnel.open` 帧提交同一身份和 `deviceId`；Relay 必须验证 JWT 签名、issuer、audience、有效期、`tunnel` scope，以及该用户对设备的所有权。普通 Agent 的独立 bearer token 协议不受此约束影响。
 
 ## Session 与页面隔离
 
@@ -85,7 +87,10 @@ Kanban、Market、Tunnel Hub 等消费者共享同一登录事实，但各自仍
 
 - 凭据写入 secrets/state 层，不进入普通 config、命令行、页面 URL 或遥测。
 - canonical 文件发布必须原子化；撤销失败应显式返回，不能假装退出完成。
+- canonical access token 只有一个持久事实源；启动恢复会清理已退役的重复 site-token 文件，任何消费者都不得重新创建或读取它。
 - 临时故障遵循 fail closed：当前运行不使用未经重新验证的站点身份。
+- Tunnel Hub 身份 JWT 只能由 Main 放入 WSS 首帧，不进入 URL、renderer、日志或 Tunnel 配置；Relay 应在 JWT 到期时终止对应 Desktop session，Desktop 再通过正常刷新和重连取得新 JWT。
+- `tunnel-hub-token`、`tunnel-hub-device-secret` 与旧 registration token 都是已废弃凭据；读取或保存 Tunnel Hub 设置以及 runtime 启动时必须清理，不得作为 SSO 缺失时的回退。
 - JWT 的 `iat`、`exp` 仅在校验内部使用 Unix 秒；进入 shared contract 的时间点统一转换为 `EpochMilliseconds`，参见[时间契约](时间契约.md)。
 - macOS 与 Windows 的凭据文件权限、脚本入口和系统 session 行为必须显式实现并分别验证。
 - Desktop WebSocket 的客户端身份校验属于[桌面协议与动作桥](桌面协议与动作桥.md)，不得与页面 Token Bridge 混为一套协议。
@@ -96,4 +101,5 @@ Kanban、Market、Tunnel Hub 等消费者共享同一登录事实，但各自仍
 - shared contract：`src/shared/auth-bridge.ts`
 - webview 边界：`src/preload/service-webview-main-world.ts`
 - Realtime/WorkPanel bridge：`src/main/ipc/agent-webclient-bridge-handlers.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
+- Tunnel Hub 身份桥：`src/main/tunnel-hub-registration.ts`、`src/main/tunnel-hub-runtime.ts`、`src/main/tunnel-client-endpoint.ts`
 - 恢复和安全语义：`test/oidc-sso.test.mjs`、`test/service-webview-main-world.test.mjs`

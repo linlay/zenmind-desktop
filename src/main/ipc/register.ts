@@ -4,11 +4,11 @@ import { issueAgentAccessToken } from "../agent-auth";
 import {
   cancelDesktopSsoLogin,
   failDesktopSsoFlow,
+  getDesktopSsoAccessToken,
   getDesktopSsoStatus,
   isDesktopSsoCredentialRuntimeReady,
   logoutDesktopSso,
-  startDesktopSsoLogin,
-  startDesktopSsoSiteTokenBridge
+  startDesktopSsoLogin
 } from "../oidc-sso";
 import { loadBuiltinServices } from "../builtin-loader";
 import {
@@ -116,7 +116,6 @@ import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
 import { registerHelpIpcHandlers } from "./help-handlers";
 import { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-handlers";
 import { registerChatWorkPanelTabContextMenuIpcHandlers } from "./chat-work-panel-tab-context-menu-handlers";
-import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
 import { requireEpochMillis } from "../../shared/time-contract";
 
 export type MainIpcRegistrationOptions = {
@@ -421,7 +420,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, {
       issueAgentAccessToken: async (_app, reason) => {
         let token = isDesktopSsoCredentialRuntimeReady()
-          ? readDesktopSsoSiteAccessToken(marketApp)
+          ? getDesktopSsoAccessToken() || ""
           : "";
         if (reason === "unauthorized" || !token) {
           token = await options.desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded?.(true) || "";
@@ -456,7 +455,6 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     desktopSsoController: options.desktopSsoController,
     getDesktopSsoStatus,
     startDesktopSsoLogin,
-    startDesktopSsoSiteTokenBridge,
     logoutDesktopSso,
     failDesktopSsoFlow,
     cancelDesktopSsoLogin,

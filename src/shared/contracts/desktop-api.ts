@@ -233,17 +233,6 @@ export interface DesktopSsoLogoutResult {
   message: string;
 }
 
-export interface DesktopSsoSiteTokenBridgeStartResult {
-  ok: boolean;
-  configured: boolean;
-  required: boolean;
-  startUrl?: string;
-  browserOrigin?: string;
-  browserLabel?: string;
-  openMode?: "embedded" | "system";
-  message: string;
-}
-
 export interface DesktopSsoCancelResult {
   ok: boolean;
   status: DesktopSsoStatus;

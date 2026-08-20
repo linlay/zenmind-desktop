@@ -54,14 +54,10 @@ function desktopRoot(homePath) {
   return path.join(homePath, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
 }
 
-function writeSsoSiteToken(homePath, token = "runtime-site-token") {
-  const secretsRoot = path.join(desktopRoot(homePath), "secrets");
-  fs.mkdirSync(secretsRoot, { recursive: true });
-  fs.writeFileSync(
-    path.join(secretsRoot, "sso-site-token.json"),
-    JSON.stringify({ accessToken: token }),
-    "utf8"
-  );
+function writeDesktopSsoAccessToken(homePath, token = "runtime-sso-access-token") {
+  const stateRoot = path.join(desktopRoot(homePath), "state", "desktop");
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${token}\n`, "utf8");
 }
 
 function createDesktopWsServerOptions(app, overrides = {}) {
@@ -417,22 +413,24 @@ function createFakeRelay(runScenario) {
   };
 }
 
-test("Tunnel Hub runtime requires SSO even when a relay token exists", async (t) => {
+test("Tunnel Hub runtime requires SSO and clears legacy tunnel secrets", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-runtime-sso-required-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  writeSsoSiteToken(homePath);
+  writeDesktopSsoAccessToken(homePath);
   assert.equal(saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl: "wss://relay.example.test/tunnel",
     deviceId: "mac-mini-office"
   }).ok, true);
   const secretsRoot = path.join(desktopRoot(homePath), "secrets");
+  fs.mkdirSync(secretsRoot, { recursive: true });
   fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-token"), "cached-relay-token\n", "utf8");
   fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-registration-token"), "legacy-registration-secret\n", "utf8");
-  fs.rmSync(path.join(secretsRoot, "sso-site-token.json"), { force: true });
+  fs.writeFileSync(path.join(secretsRoot, "tunnel-hub-device-secret"), "legacy-device-secret\n", "utf8");
+  fs.rmSync(path.join(desktopRoot(homePath), "state", "desktop", "sso-access-token.txt"), { force: true });
 
   const connectCalls = [];
   const runtime = new TunnelHubRuntime({
@@ -462,7 +460,9 @@ test("Tunnel Hub runtime requires SSO even when a relay token exists", async (t)
   assert.match(result.message, /Sign in/u);
   assert.equal(connectCalls.length, 0);
   assert.equal(readTunnelHubSettings(app).enabled, false);
+  assert.equal(fs.existsSync(path.join(secretsRoot, "tunnel-hub-token")), false);
   assert.equal(fs.existsSync(path.join(secretsRoot, "tunnel-hub-registration-token")), false);
+  assert.equal(fs.existsSync(path.join(secretsRoot, "tunnel-hub-device-secret")), false);
 });
 
 test("Tunnel Hub runtime registers desktop broker before connecting integrated tunnel", async (t) => {
@@ -487,8 +487,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
         publicHost: "mac-mini-office.relay.example.test",
         publicUrl: "https://mac-mini-office.relay.example.test",
         webSocketUrl: "wss://mac-mini-office.relay.example.test/ws",
-        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
-        agentToken: "returned-runtime-token"
+        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`
       }));
     });
   });
@@ -499,7 +498,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   });
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
-  writeSsoSiteToken(homePath, "runtime-registration-secret");
+  writeDesktopSsoAccessToken(homePath, "runtime-registration-secret");
   assert.equal(saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
@@ -542,7 +541,7 @@ test("Tunnel Hub runtime registers desktop broker before connecting integrated t
   assert.equal(registrations[0].authorization, "Bearer runtime-registration-secret");
   assert.equal(connectCalls.length, 1);
   assert.equal(connectCalls[0].relayUrl, relayUrl);
-  assert.equal(connectCalls[0].relayToken, "returned-runtime-token");
+  assert.equal(connectCalls[0].identityToken, "runtime-registration-secret");
   assert.equal(connectCalls[0].deviceId, "mac-mini-office");
   assert.equal(connectCalls[0].tlsInsecureSkipVerify, false);
   assert.equal(typeof connectCalls[0].desktopWsServerOptions.verifyToken, "undefined");
@@ -576,7 +575,7 @@ test("Tunnel Hub runtime reconnects tunnel when network signature changes", asyn
     fs.rmSync(root, { recursive: true, force: true });
   });
 
-  writeSsoSiteToken(homePath, "runtime-network-change-secret");
+  writeDesktopSsoAccessToken(homePath, "runtime-network-change-secret");
   assert.equal(saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl: "wss://relay.example.test/tunnel",
@@ -594,8 +593,7 @@ test("Tunnel Hub runtime reconnects tunnel when network signature changes", asyn
         async text() {
           return JSON.stringify({
             deviceId: "mac-mini-office",
-            relayUrl: "wss://relay.example.test/tunnel",
-            agentToken: `runtime-token-${registrations.length}`
+            relayUrl: "wss://relay.example.test/tunnel"
           });
         }
       };
@@ -688,7 +686,7 @@ test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol through fu
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: {
       app,
@@ -724,7 +722,7 @@ test("Tunnel Client endpoint forwards ns=d stream to Desktop protocol through fu
   assert.equal(fakeRelay.tunnelOpenRequest.ns, "d");
   assert.equal(fakeRelay.tunnelOpenRequest.frame, "request");
   assert.equal(fakeRelay.tunnelOpenRequest.type, "tunnel.open");
-  assert.equal(fakeRelay.tunnelOpenRequest.payload.agentToken, "relay-token");
+  assert.equal(fakeRelay.tunnelOpenRequest.payload.identityToken, "relay-token");
   assert.equal(fakeRelay.tunnelOpenRequest.payload.deviceId, "mac-mini-office");
   assert.equal(fakeRelay.tunnelOpenRequest.payload.client, "zenmind-desktop");
   assert.deepEqual(fakeRelay.tunnelOpenRequest.payload.capabilities, [
@@ -766,7 +764,7 @@ test("Tunnel Client endpoint rejects desktop.websocket.open without payload auth
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app, {
       verifyToken: async () => {
@@ -887,7 +885,7 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app, {
       agentPlatformBridge: {
@@ -985,7 +983,7 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app),
     logger: { log() {}, warn() {}, error() {} }
@@ -1064,7 +1062,7 @@ test("Tunnel Client endpoint authenticates mobile ns=wa streams before proxying"
   let verified = 0;
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app, {
       listMobileWebapps: () => ({
@@ -1132,7 +1130,7 @@ test("Tunnel Client endpoint rejects unauthenticated mobile ns=wa streams", asyn
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app),
     logger: { log() {}, warn() {}, error() {} }
@@ -1192,7 +1190,7 @@ test("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body leng
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app),
     logger: { log() {}, warn() {}, error() {} }
@@ -1296,7 +1294,7 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app),
     logger: { log() {}, warn() {}, error() {} }
@@ -1339,7 +1337,7 @@ test("Tunnel Client endpoint rejects invalid ns=wa envelope", async (t) => {
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app),
     logger: { log() {}, warn() {}, error() {} }
@@ -1393,7 +1391,7 @@ test("Tunnel Client endpoint rejects non-loopback ns=wa upstream hosts", async (
   const relayAddress = await listen(fakeRelay.server);
   const client = new TunnelClientEndpoint({
     relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-    relayToken: "relay-token",
+    identityToken: "relay-token",
     deviceId: "mac-mini-office",
     desktopWsServerOptions: createDesktopWsServerOptions(app),
     logger: { log() {}, warn() {}, error() {} }
@@ -1510,7 +1508,7 @@ test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
     const relayAddress = await listen(fakeRelay.server);
     const client = new TunnelClientEndpoint({
       relayUrl: `ws://127.0.0.1:${relayAddress.port}/tunnel`,
-      relayToken: "relay-token",
+      identityToken: "relay-token",
       deviceId: "mac-mini-office",
       desktopWsServerOptions: createDesktopWsServerOptions(app),
       logger: { log() {}, warn() {}, error() {} }

@@ -531,8 +531,6 @@ const defaultTunnelHubSettings: TunnelHubSettings = {
   enabled: false,
   relayUrl: "",
   deviceId: "",
-  hasRelayToken: false,
-  relayTokenPreview: "",
   publicHost: "",
   publicUrl: "",
   webSocketUrl: "",
