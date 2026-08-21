@@ -2786,7 +2786,7 @@ export function AppShell() {
     return true;
   }
 
-  function requestGlobalSearchNavigation(targetPath: string) {
+  function requestNavigationWithAgentChatFocus(targetPath: string) {
     const targetRoute = resolveNavigationRoute(targetPath);
     if (isSingleAgentWebclientRoute(resolveNavigationPathname(targetRoute))) {
       agentChatFocusRequestIdRef.current += 1;
@@ -3715,6 +3715,7 @@ export function AppShell() {
           onExportWebappItem={exportWebappItem}
           onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}
+          onRequestAgentChatNavigate={requestNavigationWithAgentChatFocus}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
           onNavigateItem={undefined}
@@ -4065,7 +4066,7 @@ export function AppShell() {
         shortcutPlatform={isMac ? "darwin" : isWindows ? "win32" : null}
         t={t}
         onClose={() => setGlobalSearchOpen(false)}
-        onNavigate={requestGlobalSearchNavigation}
+        onNavigate={requestNavigationWithAgentChatFocus}
       />
       <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
       </div>

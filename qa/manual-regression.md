@@ -49,6 +49,7 @@
 ## P0：智能助理与页面协作
 
 - [ ] Main Assistant 可创建或继续 Chat，流式事件按 run 归属展示并正确到达终态。
+- [ ] 分别点击 Chats 标题栏和 Projects 内项目标题栏的“新建对话”，切换到 New Chat 后输入框立即获得焦点并可直接输入；Cmd+K 的 New Chat 保持相同行为。macOS 与 Windows 均验证。
 - [ ] 断线不会自动重复提交已接受的 query；新请求可重新建立连接。
 - [ ] 同时运行 Main Assistant、导航 Push、桌宠、两个 Desktop WS `ap` 客户端和可信 WebClient bridge 时，Main 诊断仍只有一个 Agent Platform 物理连接。
 - [ ] About 连点五次开启 Debug 后，每个 webview 浮层同时显示脱敏 URL 与 Surface 身份；鼠标移入浮层显示“复制全部”，复制内容包含浮层中的 Surface 标签与脱敏 URL，不额外暴露 ownerChatId 等内部字段，成功/失败反馈清晰；设置页可打开并重复聚焦唯一的独立 Realtime Inspector，主窗口切换页面不关闭观察器。观察器能区分 Platform 物理 WS 收发和各 `surfaceId` 的 Bridge 收发，按方向、链路层、历史/当前 surface 和文本筛选不串线；冻结仅停止视图刷新而不停止后台采集，清空后不恢复旧条目。

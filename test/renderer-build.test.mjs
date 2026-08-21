@@ -1378,7 +1378,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.ok(markAllReadHandlerStart > newChatHandlerStart);
   const newChatHandler = sidebarSource.slice(newChatHandlerStart, markAllReadHandlerStart);
   assert.doesNotMatch(newChatHandler, /preferNewChat|createAgentSelectionRoute/);
-  assert.match(newChatHandler, /requestNavigate\(\s*createAgentNewChatRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
+  assert.match(newChatHandler, /requestNavigate\(\s*createAgentNewChatRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true,?\s*\}\s*\)/);
   const activeChatIdStart = sidebarSource.indexOf("function getActiveSidebarChatId");
   const routeActiveStart = sidebarSource.indexOf("function isRouteActive", activeChatIdStart);
   assert.ok(activeChatIdStart >= 0);

@@ -202,6 +202,7 @@ type AgentSelectionOptions = {
 
 type NavigateOptions = {
   retriggerAgentRoute?: boolean;
+  focusAgentChat?: boolean;
 };
 
 type CoderAcpProxyOption = {
@@ -1018,6 +1019,7 @@ type AppSidebarProps = {
   onExportWebappItem?: (item: WebEntry) => Promise<WebappExportResult>;
   onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
+  onRequestAgentChatNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
@@ -1082,6 +1084,7 @@ export function AppSidebar({
   onExportWebappItem,
   onRemoveWebappItem,
   onRequestNavigate,
+  onRequestAgentChatNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
   onNavigateItem,
@@ -1914,7 +1917,10 @@ export function AppSidebar({
     if (targetPath === currentRoute) {
       return;
     }
-    if (onRequestNavigate && !onRequestNavigate(targetPath)) {
+    const requestNavigation = options.focusAgentChat
+      ? onRequestAgentChatNavigate ?? onRequestNavigate
+      : onRequestNavigate;
+    if (requestNavigation && !requestNavigation(targetPath)) {
       return;
     }
     onNavigateItem?.();
@@ -2831,6 +2837,7 @@ export function AppSidebar({
     setExpandedAssistantAgentKey(agent.agentKey);
     requestNavigate(createAgentNewChatRoute(agent.agentKey), {
       retriggerAgentRoute: true,
+      focusAgentChat: true,
     });
   }
 
@@ -2844,7 +2851,7 @@ export function AppSidebar({
     }
     requestNavigate(
       createAgentNewChatRoute(runtime.resolvedChatDefaultAgentKey),
-      { retriggerAgentRoute: true },
+      { retriggerAgentRoute: true, focusAgentChat: true },
     );
   }
 
