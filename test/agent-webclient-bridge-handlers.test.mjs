@@ -6,10 +6,10 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/ipc/agent-webclient-bridge-handlers.js");
 const {
-  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
   AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } = require("../dist-electron/shared/contracts/agent-webclient-bridge.js");
 
@@ -78,6 +78,17 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       pushSubscribers.push(onPush);
       return () => undefined;
     },
+    subscribeConnection: ({ onState }) => {
+      onState({
+        phase: "connected",
+        generation: 1,
+        physicalConnectionCount: 1,
+        reconnectCount: 0,
+        key: { endpoint: "http://127.0.0.1:7078", identitySessionId: "identity-1" },
+        physicalSessionId: "platform-1",
+      });
+      return () => undefined;
+    },
     beginForwardedVisibleRun: (input) => {
       const run = visibleRuns.get(input.runId) ?? {
         chatId: input.chatId,
@@ -143,8 +154,11 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
     cleanupConsumer: (id) => cleaned.push(id),
     appendDebugTrace: (entry) => traces.push(entry),
   };
+  Object.assign(broker, overrides.realtimeBroker ?? {});
   const registration = registerAgentWebclientBridgeIpcHandlers({
-    on(channel, handler) { listeners.set(channel, handler); },
+    on(channel, handler) {
+      listeners.set(channel, handler);
+    },
     handle(channel, handler) { handlers.set(channel, handler); },
   }, {
     app: {},
@@ -195,25 +209,118 @@ async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
-async function openSocket(runtime, sender, socketId) {
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+async function openSession(runtime, sender, sessionId) {
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
     { sender },
-    { socketId },
+    { sessionId: sessionId },
   );
   await flush();
-  assert.deepEqual(sender.messages.at(-1), {
-    channel: AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
-    message: { socketId, type: "open" },
-  });
+  const delivered = sender.messages.at(-1);
+  assert.equal(delivered.channel, AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL);
+  assert.equal(delivered.message.sessionId, sessionId);
+  assert.equal(delivered.message.type, "state");
+  assert.deepEqual(
+    { ...delivered.message.state, logicalGeneration: 0 },
+    {
+      phase: "connected",
+      logicalGeneration: 0,
+      physicalGeneration: 1,
+      reconnectCount: 0,
+      retryable: false,
+      physicalSessionId: "platform-1",
+    },
+  );
 }
 
 function sentFrames(sender) {
   return sender.messages.flatMap(({ channel, message }) =>
-    channel === AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL && message.type === "message"
-      ? [JSON.parse(message.data)]
+    channel === AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL && message.type === "frame"
+      ? [message.frame]
       : [],
   );
 }
+
+test("transient physical connection failure keeps the logical Frame Port open", async () => {
+  const target = createTarget(40);
+  const targets = new Map([[40, target]]);
+  let stateListener = null;
+  const runtime = createRegistration(targets, async () => undefined, {
+    realtimeBroker: {
+      ensureConnected: async () => {
+        throw new Error("PLATFORM_CONNECTION_UNAVAILABLE: retrying");
+      },
+      subscribeConnection: ({ onState }) => {
+        stateListener = onState;
+        onState({
+          phase: "reconnecting",
+          generation: 2,
+          physicalConnectionCount: 0,
+          reconnectCount: 1,
+          key: null,
+          lastError: "PLATFORM_CONNECTION_UNAVAILABLE: retrying",
+        });
+        return () => undefined;
+      },
+    },
+  });
+  const sender = createSender(40, target.currentUrl);
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
+    { sender },
+    { sessionId: "logical-session-stable" },
+  );
+  await flush();
+
+  assert.equal(sender.messages.some(({ message }) => message.type === "close"), false);
+  assert.equal(sender.messages.at(-1).message.type, "state");
+  assert.equal(sender.messages.at(-1).message.state.phase, "reconnecting");
+  stateListener({
+    phase: "connected",
+    generation: 3,
+    physicalConnectionCount: 1,
+    reconnectCount: 2,
+    key: null,
+    physicalSessionId: "physical-after-reconnect",
+  });
+  assert.equal(sender.messages.at(-1).message.sessionId, "logical-session-stable");
+  assert.equal(sender.messages.at(-1).message.state.phase, "connected");
+  assert.equal(sender.messages.at(-1).message.state.physicalGeneration, 3);
+});
+
+test("protocol mismatch permanently closes the logical Frame Port", async () => {
+  const target = createTarget(39);
+  const targets = new Map([[39, target]]);
+  const runtime = createRegistration(targets, async () => undefined, {
+    realtimeBroker: {
+      ensureConnected: async () => {
+        throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: v2 required");
+      },
+      subscribeConnection: ({ onState }) => {
+        onState({
+          phase: "closed",
+          generation: 1,
+          physicalConnectionCount: 0,
+          reconnectCount: 0,
+          key: null,
+          lastError: "PLATFORM_WS_PROTOCOL_MISMATCH: v2 required",
+        });
+        return () => undefined;
+      },
+    },
+  });
+  const sender = createSender(39, target.currentUrl);
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
+    { sender },
+    { sessionId: "logical-protocol-mismatch" },
+  );
+  await flush();
+
+  const close = sender.messages.find(({ message }) => message.type === "close")?.message;
+  assert.equal(close.sessionId, "logical-protocol-mismatch");
+  assert.equal(close.event.reason, "protocol_mismatch");
+  assert.equal(close.event.error.code, "PLATFORM_WS_PROTOCOL_MISMATCH");
+});
 
 test("raw Frame Port forwards each Platform stream frame immediately and unchanged", async () => {
   const target = createTarget(41, {
@@ -231,10 +338,10 @@ test("raw Frame Port forwards each Platform stream frame immediately and unchang
     for (const frame of incoming) onFrame({ ...frame, id: localId });
   });
   const sender = createSender(41, target.currentUrl);
-  await openSocket(runtime, sender, "socket-1");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-1",
-    data: JSON.stringify({ frame: "request", type: "/api/query", id: "wss-1", payload: { requestId: "req-1", message: "hello", agentKey: "agent-1" } }),
+  await openSession(runtime, sender, "session-1");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-1",
+    frame: { frame: "request", type: "/api/query", id: "wss-1", payload: { requestId: "req-1", message: "hello", agentKey: "agent-1" } },
   });
   await flush();
 
@@ -273,15 +380,15 @@ test("Overview attaches to the Main Chat visible Run locally without another ups
   );
   const main = createSender(47, mainTarget.currentUrl);
   const overview = createSender(48, overviewTarget.currentUrl);
-  await openSocket(runtime, main, "socket-main-visible");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: main }, {
-    socketId: "socket-main-visible",
-    data: JSON.stringify({
+  await openSession(runtime, main, "session-main-visible");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-visible",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-main-visible",
       payload: { requestId: "req-visible", message: "hello", agentKey: "agent-1" },
-    }),
+    },
   });
   await flush();
   const first = {
@@ -298,15 +405,15 @@ test("Overview attaches to the Main Chat visible Run locally without another ups
   };
   deliverMain(first);
 
-  await openSocket(runtime, overview, "socket-overview-visible");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
-    socketId: "socket-overview-visible",
-    data: JSON.stringify({
+  await openSession(runtime, overview, "session-overview-visible");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-visible",
+    frame: {
       frame: "request",
       type: "/api/attach",
       id: "attach-overview-visible",
       payload: { runId: "run-shared", agentKey: "agent-1", lastSeq: 0 },
-    }),
+    },
   });
   await flush();
 
@@ -333,14 +440,14 @@ test("Overview attaches to the Main Chat visible Run locally without another ups
   );
   assert.equal(runtime.registration.getDiagnostics().activeLiveSurfaceCount, 1);
 
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
-    socketId: "socket-overview-visible",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-visible",
+    frame: {
       frame: "request",
       type: "/api/detach",
       id: "detach-overview-visible",
       payload: { runId: "run-shared", agentKey: "agent-1", reason: "surface_inactive" },
-    }),
+    },
   });
   await flush();
   assert.deepEqual(forwarded, ["/api/query"]);
@@ -389,15 +496,15 @@ test("Overview seq_expired errors retain retryability and replay-window diagnost
   };
 
   const overview = createSender(148, overviewTarget.currentUrl);
-  await openSocket(runtime, overview, "socket-overview-expired");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
-    socketId: "socket-overview-expired",
-    data: JSON.stringify({
+  await openSession(runtime, overview, "session-overview-expired");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-expired",
+    frame: {
       frame: "request",
       type: "/api/attach",
       id: "attach-overview-expired",
       payload: { runId: "run-expired", agentKey: "agent-1", lastSeq: 0 },
-    }),
+    },
   });
   await flush();
 
@@ -450,27 +557,27 @@ test("a restored Main Chat attach exposes its visible Run before the first upstr
   );
   const main = createSender(49, mainTarget.currentUrl);
   const overview = createSender(50, overviewTarget.currentUrl);
-  await openSocket(runtime, main, "socket-main-restored");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: main }, {
-    socketId: "socket-main-restored",
-    data: JSON.stringify({
+  await openSession(runtime, main, "session-main-restored");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-restored",
+    frame: {
       frame: "request",
       type: "/api/attach",
       id: "attach-main-restored",
       payload: { runId: "run-restored", agentKey: "agent-1", lastSeq: 12 },
-    }),
+    },
   });
   await flush();
 
-  await openSocket(runtime, overview, "socket-overview-restored");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
-    socketId: "socket-overview-restored",
-    data: JSON.stringify({
+  await openSession(runtime, overview, "session-overview-restored");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-restored",
+    frame: {
       frame: "request",
       type: "/api/attach",
       id: "attach-overview-restored",
       payload: { runId: "run-restored", agentKey: "agent-1", lastSeq: 12 },
-    }),
+    },
   });
   await flush();
   assert.deepEqual(forwarded, ["/api/attach"]);
@@ -521,27 +628,27 @@ test("Overview waits for a new Main Chat query to publish its canonical Run iden
   );
   const main = createSender(51, mainTarget.currentUrl);
   const overview = createSender(52, overviewTarget.currentUrl);
-  await openSocket(runtime, main, "socket-main-racing");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: main }, {
-    socketId: "socket-main-racing",
-    data: JSON.stringify({
+  await openSession(runtime, main, "session-main-racing");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-racing",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-main-racing",
       payload: { requestId: "req-racing", message: "hello", agentKey: "agent-1" },
-    }),
+    },
   });
   await flush();
 
-  await openSocket(runtime, overview, "socket-overview-racing");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: overview }, {
-    socketId: "socket-overview-racing",
-    data: JSON.stringify({
+  await openSession(runtime, overview, "session-overview-racing");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-racing",
+    frame: {
       frame: "request",
       type: "/api/attach",
       id: "attach-overview-racing",
       payload: { runId: "run-racing", agentKey: "agent-1", lastSeq: 0 },
-    }),
+    },
   });
   await flush();
   assert.equal(sentFrames(overview).some((frame) => frame.frame === "error"), false);
@@ -591,15 +698,15 @@ test("raw Frame Port forwards ordinary Platform request and response frames for 
     });
   });
   const sender = createSender(45, target.currentUrl);
-  await openSocket(runtime, sender, "socket-data-request");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-data-request",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-data-request");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-data-request",
+    frame: {
       frame: "request",
       type: "/api/agent",
       id: "agent-detail-45",
       payload: { agentKey: "agent-45" },
-    }),
+    },
   });
   await flush();
 
@@ -643,16 +750,16 @@ test("management File surface forwards /api/file but cannot acquire a live Run l
     });
   });
   const sender = createSender(46, target.currentUrl);
-  await openSocket(runtime, sender, "socket-file-data");
+  await openSession(runtime, sender, "session-file-data");
 
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-file-data",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-file-data",
+    frame: {
       frame: "request",
       type: "/api/file",
       id: "file-detail-46",
       payload: { agentKey: "agent-46", path: "/Users/demo/Project/src/app.ts" },
-    }),
+    },
   });
   await flush();
 
@@ -670,9 +777,9 @@ test("management File surface forwards /api/file but cannot acquire a live Run l
     ["/api/attach", "file-attach-denied", { agentKey: "agent-46", runId: "run-46", lastSeq: 0 }],
     ["/api/btw", "file-btw-denied", { agentKey: "agent-46", chatId: "chat-46", message: "no" }],
   ]) {
-    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-      socketId: "socket-file-data",
-      data: JSON.stringify({ frame: "request", type, id, payload }),
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+      sessionId: "session-file-data",
+      frame: { frame: "request", type, id, payload },
     });
     await flush();
     assert.equal(sentFrames(sender).at(-1).type, "surface_unavailable");
@@ -708,16 +815,16 @@ test("management Planning surface replays chat without live or WorkPanel-open ca
     });
   });
   const sender = createSender(47, target.currentUrl);
-  await openSocket(runtime, sender, "socket-planning-data");
+  await openSession(runtime, sender, "session-planning-data");
 
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-planning-data",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-planning-data",
+    frame: {
       frame: "request",
       type: "/api/chat",
       id: "planning-replay-47",
       payload: { chatId: "chat-47" },
-    }),
+    },
   });
   await flush();
   assert.deepEqual(forwarded, ["/api/chat"]);
@@ -728,9 +835,9 @@ test("management Planning surface replays chat without live or WorkPanel-open ca
     ["/api/attach", "planning-attach-denied", { agentKey: "agent-47", runId: "run-47", lastSeq: 0 }],
     ["/api/btw", "planning-btw-denied", { agentKey: "agent-47", chatId: "chat-47", message: "no" }],
   ]) {
-    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-      socketId: "socket-planning-data",
-      data: JSON.stringify({ frame: "request", type, id, payload }),
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+      sessionId: "session-planning-data",
+      frame: { frame: "request", type, id, payload },
     });
     await flush();
     assert.equal(sentFrames(sender).at(-1).type, "surface_unavailable");
@@ -744,7 +851,7 @@ test("management Planning surface replays chat without live or WorkPanel-open ca
   });
   const opened = await workpanel({ sender }, {
     method: "openItem",
-    input: { version: 3, descriptor: { kind: "web", url: "https://example.test/" } },
+    input: { version: 4, descriptor: { kind: "web", url: "https://example.test/" } },
   });
   assert.equal(opened.error.code, "capability_denied");
   assert.deepEqual(runtime.dispatched, []);
@@ -780,9 +887,9 @@ test("Frame Port waits for a trusted WebView surface registration before opening
   const target = createTarget(81);
   const sender = createSender(81, target.currentUrl);
 
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
     { sender },
-    { socketId: "socket-delayed-surface" },
+    { sessionId: "session-delayed-surface" },
   );
   await waitStarted;
 
@@ -800,21 +907,21 @@ test("Frame Port waits for a trusted WebView surface registration before opening
   await flush();
 
   assert.equal(
-    sender.messages.filter(({ message }) => message.type === "open").length,
+    sender.messages.filter(({ message }) => message.type === "state" && message.state.phase === "connected").length,
     1,
   );
   assert.equal(runtime.calls.ensureConnected, 1);
   assert.equal(runtime.calls.getServiceState, 1);
   assert.equal(runtime.calls.issueAccessToken, 1);
 
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-delayed-surface",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-delayed-surface",
+    frame: {
       frame: "request",
       type: "/api/agent",
       id: "agent-after-registration",
       payload: { agentKey: "agent-81" },
-    }),
+    },
   });
   await flush();
 
@@ -833,16 +940,16 @@ test("Frame Port rejects a missing surface after the bounded registration wait",
   });
   const sender = createSender(82, "http://127.0.0.1:7079/agent/agent-82");
 
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
     { sender },
-    { socketId: "socket-missing-surface" },
+    { sessionId: "session-missing-surface" },
   );
   await flush();
   await flush();
 
-  assert.deepEqual(sender.messages.map(({ message }) => message.type), ["error", "close"]);
-  assert.equal(sender.messages.at(-1).message.code, 1008);
-  assert.equal(sender.messages.at(-1).message.reason, "surface_unavailable");
+  assert.deepEqual(sender.messages.map(({ message }) => message.type), ["close"]);
+  assert.equal(sender.messages.at(-1).message.event.reason, "protocol_mismatch");
+  assert.equal(sender.messages.at(-1).message.event.error.code, "DESKTOP_BRIDGE_INCOMPATIBLE");
   assert.equal(runtime.calls.ensureConnected, 0);
   assert.equal(runtime.calls.getServiceState, 0);
   assert.equal(runtime.calls.issueAccessToken, 0);
@@ -856,13 +963,13 @@ test("Frame Port never waits for an untrusted or already-invalid surface", async
     },
   });
   const untrustedSender = createSender(83, "http://127.0.0.1:7079/agent/agent-83");
-  untrustedRuntime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+  untrustedRuntime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
     { sender: untrustedSender },
-    { socketId: "socket-untrusted" },
+    { sessionId: "session-untrusted" },
   );
   await flush();
   assert.equal(untrustedRuntime.calls.waitForSurface, 0);
-  assert.equal(untrustedSender.messages.at(-1).message.code, 1008);
+  assert.equal(untrustedSender.messages.at(-1).message.event.error.code, "DESKTOP_BRIDGE_INCOMPATIBLE");
 
   for (const [id, overrides] of [
     [84, { serviceId: "other-service" }],
@@ -875,13 +982,13 @@ test("Frame Port never waits for an untrusted or already-invalid surface", async
       },
     });
     const sender = createSender(id, createTarget(id).currentUrl);
-    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
       { sender },
-      { socketId: `socket-invalid-${id}` },
+      { sessionId: `session-invalid-${id}` },
     );
     await flush();
     assert.equal(runtime.calls.waitForSurface, 0);
-    assert.equal(sender.messages.at(-1).message.code, 1008);
+    assert.equal(sender.messages.at(-1).message.event.error.code, "DESKTOP_BRIDGE_INCOMPATIBLE");
   }
 });
 
@@ -894,9 +1001,9 @@ test("Frame Port cancels a pending surface wait when the guest is destroyed", as
     }),
   });
   const sender = createSender(86, "http://127.0.0.1:7079/agent/agent-86");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL)(
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
     { sender },
-    { socketId: "socket-destroyed-before-registration" },
+    { sessionId: "session-destroyed-before-registration" },
   );
   await flush();
 
@@ -909,7 +1016,7 @@ test("Frame Port cancels a pending surface wait when the guest is destroyed", as
   assert.equal(runtime.calls.ensureConnected, 0);
 });
 
-test("same-surface route loading does not destroy the logical socket or truncate its stream", async () => {
+test("same-surface route loading does not destroy the logical Session or truncate its stream", async () => {
   const target = createTarget(43, {
     surfaceRole: "main-chat",
     surfaceLevel: "root",
@@ -922,15 +1029,15 @@ test("same-surface route loading does not destroy the logical socket or truncate
     deliverFrame = onFrame;
   });
   const sender = createSender(43, target.currentUrl);
-  await openSocket(runtime, sender, "socket-route-promotion");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-route-promotion",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-route-promotion");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-route-promotion",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-route-promotion",
       payload: { requestId: "req-route-promotion", message: "我是谁", agentKey: "agent-43" },
-    }),
+    },
   });
   await flush();
 
@@ -965,7 +1072,7 @@ test("same-surface route loading does not destroy the logical socket or truncate
     event: { seq: 5, type: "content.delta", delta: "仍然收到", timestamp: 1_786_898_607_650 },
   });
 
-  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 1);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 1);
   assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 1);
   assert.deepEqual(sentFrames(sender).map((frame) => frame.event?.seq), [1, 2, 5]);
   assert.equal(
@@ -988,12 +1095,12 @@ test("Main Chat query fails closed until an Agent switch route is fully register
     forwarded.push(input.type);
   });
   const sender = createSender(143, target.currentUrl);
-  await openSocket(runtime, sender, "socket-agent-switch");
+  await openSession(runtime, sender, "session-agent-switch");
   const serviceStateCallsBeforeQuery = runtime.calls.getServiceState;
 
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-agent-switch",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-agent-switch",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-agent-switch-too-early",
@@ -1002,7 +1109,7 @@ test("Main Chat query fails closed until an Agent switch route is fully register
         message: "too early",
         agentKey: "agent-b",
       },
-    }),
+    },
   });
   await flush();
 
@@ -1026,9 +1133,9 @@ test("Main Chat query fails closed until an Agent switch route is fully register
   target.currentUrl = switchedUrl;
   target.ownerChatId = undefined;
   sender.setURL(switchedUrl);
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-agent-switch",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-agent-switch",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-agent-switch-ready",
@@ -1037,7 +1144,7 @@ test("Main Chat query fails closed until an Agent switch route is fully register
         message: "ready",
         agentKey: "agent-b",
       },
-    }),
+    },
   });
   await flush();
 
@@ -1067,15 +1174,15 @@ test("new Main Chat run.start registers a WorkPanel grant against chat.start syn
     { syncCanonicalChat: async () => syncResult },
   );
   const sender = createSender(73, target.currentUrl);
-  await openSocket(runtime, sender, "socket-canonical-ready");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-canonical-ready",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-canonical-ready");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-canonical-ready",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-canonical-ready",
       payload: { requestId: "req-73", message: "open", agentKey: "agent-73" },
-    }),
+    },
   });
   await flush();
   deliverFrame({
@@ -1127,10 +1234,10 @@ test("attachment-prebound new Chat synchronizes from the matching canonical requ
     deliverFrame = onFrame;
   });
   const sender = createSender(76, target.currentUrl);
-  await openSocket(runtime, sender, "socket-attachment-prebound");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-attachment-prebound",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-attachment-prebound");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-attachment-prebound",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-attachment-prebound",
@@ -1141,7 +1248,7 @@ test("attachment-prebound new Chat synchronizes from the matching canonical requ
         chatId: "chat-76",
         references: [{ id: "ref-76", type: "file", name: "form.docx" }],
       },
-    }),
+    },
   });
   await flush();
   deliverFrame({
@@ -1188,10 +1295,10 @@ test("canonical Main Chat owner permits continuation while the guest URL still h
     deliverFrame = onFrame;
   });
   const sender = createSender(77, target.currentUrl);
-  await openSocket(runtime, sender, "socket-canonical-continuation");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-canonical-continuation",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-canonical-continuation");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-canonical-continuation",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-canonical-continuation",
@@ -1201,7 +1308,7 @@ test("canonical Main Chat owner permits continuation while the guest URL still h
         agentKey: "agent-77",
         chatId: "chat-77",
       },
-    }),
+    },
   });
   await flush();
   deliverFrame({
@@ -1234,15 +1341,15 @@ test("new Main Chat run.start without chat.start fails closed", async () => {
     deliverFrame = onFrame;
   });
   const sender = createSender(74, target.currentUrl);
-  await openSocket(runtime, sender, "socket-missing-chat-start");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-missing-chat-start",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-missing-chat-start");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-missing-chat-start",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-missing-chat-start",
       payload: { requestId: "req-74", message: "open", agentKey: "agent-74" },
-    }),
+    },
   });
   await flush();
   deliverFrame({
@@ -1275,15 +1382,15 @@ test("new Main Chat rejects conflicting chat.start and run.start identities", as
     deliverFrame = onFrame;
   });
   const sender = createSender(75, target.currentUrl);
-  await openSocket(runtime, sender, "socket-conflicting-chat");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-conflicting-chat",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-conflicting-chat");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-conflicting-chat",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-conflicting-chat",
       payload: { requestId: "req-75", message: "open", agentKey: "agent-75" },
-    }),
+    },
   });
   await flush();
   deliverFrame({
@@ -1307,7 +1414,7 @@ test("new Main Chat rejects conflicting chat.start and run.start identities", as
   await assert.rejects(runtime.runReadiness.get("run-75").ready, /conflicts with the canonical Chat identity/u);
 });
 
-test("a new document socket detaches and supersedes the previous socket for the same surface", async () => {
+test("a new document session detaches and supersedes the previous session for the same surface", async () => {
   const target = createTarget(44);
   const forwardedTypes = [];
   const runtime = createRegistration(new Map([[44, target]]), async (input) => {
@@ -1329,31 +1436,30 @@ test("a new document socket detaches and supersedes the previous socket for the 
     }
   });
   const sender = createSender(44, target.currentUrl);
-  await openSocket(runtime, sender, "socket-old-document");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-old-document",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "session-old-document");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-old-document",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-old-document",
       payload: { requestId: "req-old-document", message: "hello", agentKey: "agent-44" },
-    }),
+    },
   });
   await flush();
 
-  await openSocket(runtime, sender, "socket-new-document");
+  await openSession(runtime, sender, "session-new-document");
 
   assert.deepEqual(forwardedTypes, ["/api/query", "/api/detach"]);
-  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 1);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 1);
   assert.deepEqual(
     sender.messages.find(({ message }) =>
-      message.type === "close" && message.socketId === "socket-old-document"
+      message.type === "close" && message.sessionId === "session-old-document"
     )?.message,
     {
-      socketId: "socket-old-document",
+      sessionId: "session-old-document",
       type: "close",
-      code: 1000,
-      reason: "logical socket superseded",
+      event: { reason: "surface_inactive" },
     },
   );
 });
@@ -1368,10 +1474,10 @@ test("local validation returns a standard error frame with the original request 
   let forwarded = false;
   const runtime = createRegistration(new Map([[42, target]]), async () => { forwarded = true; });
   const sender = createSender(42, target.currentUrl);
-  await openSocket(runtime, sender, "socket-2");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-2",
-    data: JSON.stringify({ frame: "request", type: "/api/attach", id: "attach-denied", payload: { runId: "run-1", agentKey: "agent-1", lastSeq: 0 } }),
+  await openSession(runtime, sender, "session-2");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-2",
+    frame: { frame: "request", type: "/api/attach", id: "attach-denied", payload: { runId: "run-1", agentKey: "agent-1", lastSeq: 0 } },
   });
   await flush();
   assert.equal(forwarded, false);
@@ -1403,15 +1509,15 @@ test("active BTW child may start or attach BTW streams but cannot start a main q
   const forwarded = [];
   const runtime = createRegistration(new Map([[49, target]]), async ({ type }) => forwarded.push(type));
   const sender = createSender(49, target.currentUrl);
-  await openSocket(runtime, sender, "socket-btw");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-btw",
-    data: JSON.stringify({ frame: "request", type: "/api/btw", id: "btw-1", payload: { chatId: "chat-49", message: "why", agentKey: "agent-49" } }),
+  await openSession(runtime, sender, "session-btw");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-btw",
+    frame: { frame: "request", type: "/api/btw", id: "btw-1", payload: { chatId: "chat-49", message: "why", agentKey: "agent-49" } },
   });
   await flush();
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "socket-btw",
-    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-denied", payload: { chatId: "chat-49", message: "no", agentKey: "agent-49" } }),
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-btw",
+    frame: { frame: "request", type: "/api/query", id: "query-denied", payload: { chatId: "chat-49", message: "no", agentKey: "agent-49" } },
   });
   await flush();
   assert.deepEqual(forwarded, ["/api/btw"]);
@@ -1450,16 +1556,16 @@ test("surface handoff writes detach before the next live request", async () => {
   });
   const first = createSender(51, firstTarget.currentUrl);
   const second = createSender(52, secondTarget.currentUrl);
-  await openSocket(runtime, first, "first");
-  await openSocket(runtime, second, "second");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
-    socketId: "first",
-    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-1", payload: { requestId: "req-1", message: "one", agentKey: "agent-1" } }),
+  await openSession(runtime, first, "first");
+  await openSession(runtime, second, "second");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: first }, {
+    sessionId: "first",
+    frame: { frame: "request", type: "/api/query", id: "query-1", payload: { requestId: "req-1", message: "one", agentKey: "agent-1" } },
   });
   await flush();
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: second }, {
-    socketId: "second",
-    data: JSON.stringify({ frame: "request", type: "/api/query", id: "query-2", payload: { requestId: "req-2", message: "two", agentKey: "agent-1" } }),
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: second }, {
+    sessionId: "second",
+    frame: { frame: "request", type: "/api/query", id: "query-2", payload: { requestId: "req-2", message: "two", agentKey: "agent-1" } },
   });
   await flush();
   assert.deepEqual(order, ["/api/query", "/api/detach", "/api/query"]);
@@ -1507,36 +1613,36 @@ test("surface handoff waits for an explicit detach write and does not send a dup
   });
   const first = createSender(53, firstTarget.currentUrl);
   const second = createSender(54, secondTarget.currentUrl);
-  await openSocket(runtime, first, "first-explicit");
-  await openSocket(runtime, second, "second-explicit");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
-    socketId: "first-explicit",
-    data: JSON.stringify({
+  await openSession(runtime, first, "first-explicit");
+  await openSession(runtime, second, "second-explicit");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: first }, {
+    sessionId: "first-explicit",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-explicit-1",
       payload: { requestId: "req-explicit-1", message: "one", agentKey: "agent-1" },
-    }),
+    },
   });
   await flush();
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: first }, {
-    socketId: "first-explicit",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: first }, {
+    sessionId: "first-explicit",
+    frame: {
       frame: "request",
       type: "/api/detach",
       id: "detach-explicit-1",
       payload: { runId: "run-explicit-1", agentKey: "agent-1", reason: "surface_inactive" },
-    }),
+    },
   });
   await flush();
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender: second }, {
-    socketId: "second-explicit",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: second }, {
+    sessionId: "second-explicit",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-explicit-2",
       payload: { requestId: "req-explicit-2", message: "two", agentKey: "agent-1" },
-    }),
+    },
   });
   await flush();
   assert.deepEqual(order, ["/api/query", "/api/detach"]);
@@ -1580,35 +1686,35 @@ test("same surface re-entry waits for its explicit detach write before attach", 
     if (input.type === "/api/detach") await explicitDetachWritten;
   });
   const sender = createSender(55, target.currentUrl);
-  await openSocket(runtime, sender, "same-surface");
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "same-surface",
-    data: JSON.stringify({
+  await openSession(runtime, sender, "same-surface");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "same-surface",
+    frame: {
       frame: "request",
       type: "/api/query",
       id: "query-same-surface",
       payload: { requestId: "req-same-surface", message: "one", agentKey: "agent-1" },
-    }),
+    },
   });
   await flush();
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "same-surface",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "same-surface",
+    frame: {
       frame: "request",
       type: "/api/detach",
       id: "detach-same-surface",
       payload: { runId: "run-same-surface", agentKey: "agent-1", reason: "surface_inactive" },
-    }),
+    },
   });
   await flush();
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL)({ sender }, {
-    socketId: "same-surface",
-    data: JSON.stringify({
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "same-surface",
+    frame: {
       frame: "request",
       type: "/api/attach",
       id: "attach-same-surface",
       payload: { runId: "run-same-surface", agentKey: "agent-1", lastSeq: 1 },
-    }),
+    },
   });
   await flush();
   assert.deepEqual(order, ["/api/query", "/api/detach"]);
@@ -1622,24 +1728,40 @@ test("same surface re-entry waits for its explicit detach write before attach", 
   assert.match(runtime.runReadiness.get("run-same-surface").sourceId, /attach-same-surface/u);
 });
 
-test("push broadcasts without acquiring live capability and close only cleans the logical socket", async () => {
+test("push broadcasts without acquiring live capability and close only cleans the logical Session", async () => {
   const target = createTarget(61);
   const runtime = createRegistration(new Map([[61, target]]), async () => undefined);
   const sender = createSender(61, target.currentUrl);
-  await openSocket(runtime, sender, "socket-push");
+  await openSession(runtime, sender, "session-push");
+  assert.deepEqual(runtime.registration.getDiagnostics().logicalSessions.at(-1), {
+    logicalSessionId: "session-push",
+    surfaceId: target.surfaceId,
+    webContentsId: 61,
+    phase: "connected",
+    logicalGeneration: 1,
+    physicalGeneration: 1,
+    reconnectCount: 0,
+    openedAt: runtime.registration.getDiagnostics().logicalSessions.at(-1).openedAt,
+    pendingRequestCount: 0,
+    activeStreamCount: 0,
+  });
   runtime.pushSubscribers[0]({ frame: "push", type: "chat.created", data: { chatId: "chat-new" } });
   assert.deepEqual(sentFrames(sender).at(-1), {
     frame: "push",
     type: "chat.created",
     data: { chatId: "chat-new" },
   });
-  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_CHANNEL)({ sender }, {
-    socketId: "socket-push",
-    code: 1000,
-    reason: "guest closed",
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL)({ sender }, {
+    sessionId: "session-push",
+    reason: "disposed",
   });
   assert.ok(runtime.cleaned.some((id) => id.includes("agent-webclient-frame-port")));
-  assert.equal(runtime.registration.getDiagnostics().logicalSocketCount, 0);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessionCount, 0);
+  assert.equal(runtime.registration.getDiagnostics().logicalSessions.at(-1).phase, "closed");
+  assert.equal(runtime.registration.getDiagnostics().logicalSessions.at(-1).closeReason, "disposed");
+  assert.equal(runtime.registration.getDiagnostics().logicalSessions.at(-1).surfaceId, target.surfaceId);
+  assert.ok(runtime.registration.getDiagnostics().logicalSessions.at(-1).closedAt >=
+    runtime.registration.getDiagnostics().logicalSessions.at(-1).openedAt);
 });
 
 test("WorkPanel retains an independent host capability query and version check", async () => {
@@ -1653,7 +1775,7 @@ test("WorkPanel retains an independent host capability query and version check",
   });
   const opened = await workpanel({ sender }, {
     method: "openItem",
-    input: { version: 3, descriptor: { kind: "web", url: "https://example.test/" } },
+    input: { version: 4, descriptor: { kind: "web", url: "https://example.test/" } },
   });
   assert.equal(opened.ok, true);
   assert.equal(runtime.dispatched[0].ownerChatId, "chat-71");
@@ -1696,7 +1818,7 @@ test("Overview WorkPanel child may open Resource Viewer and Planning tabs", asyn
   };
   const opened = await workpanel({ sender }, {
     method: "openItem",
-    input: { version: 3, descriptor },
+    input: { version: 4, descriptor },
   });
 
   assert.equal(opened.ok, true);
@@ -1714,7 +1836,7 @@ test("Overview WorkPanel child may open Resource Viewer and Planning tabs", asyn
   };
   const planningOpened = await workpanel({ sender }, {
     method: "openItem",
-    input: { version: 3, descriptor: planningDescriptor },
+    input: { version: 4, descriptor: planningDescriptor },
   });
   assert.equal(planningOpened.ok, true);
   assert.deepEqual(runtime.dispatched.at(-1), {

@@ -7,7 +7,10 @@ import type {
 import { getDesktopDeviceId } from "../device-identity";
 
 const DEFAULT_CONNECT_TIMEOUT_MS = 10_000;
-const DEFAULT_HEARTBEAT_TIMEOUT_MS = 60_000;
+const PLATFORM_WS_PROTOCOL_VERSION = 2;
+const MIN_HEARTBEAT_INTERVAL_MS = 5_000;
+const MAX_HEARTBEAT_INTERVAL_MS = 120_000;
+const MAX_SILENCE_TIMEOUT_MS = 600_000;
 const DEFAULT_MAX_FRAME_BYTES = 8 * 1024 * 1024;
 const AUTH_REQUEST_TIMEOUT_MS = 10_000;
 const RECONNECT_BASE_MS = 500;
@@ -44,7 +47,17 @@ export type AgentPlatformRealtimeConnectionState = {
   physicalConnectionCount: 0 | 1;
   reconnectCount: number;
   key: RealtimeConnectionKey | null;
+  physicalSessionId?: string;
+  lastInboundAt?: number;
+  lastHeartbeatAt?: number;
+  closeReason?: string;
   lastError?: string;
+};
+
+type AgentPlatformHandshake = {
+  sessionId: string;
+  heartbeatIntervalMs: number;
+  silenceTimeoutMs: number;
 };
 
 type InternalPending = {
@@ -146,6 +159,41 @@ function frameError(frame: AgentPlatformRealtimeFrame) {
   return new Error(`${code}: ${message}`);
 }
 
+function readSafeInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) ? value : null;
+}
+
+function validateConnectedHandshake(frame: AgentPlatformRealtimeFrame): AgentPlatformHandshake {
+  const data = frame.data;
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: connected.data must be an object");
+  }
+  const payload = data as Record<string, unknown>;
+  if (payload.protocolVersion !== PLATFORM_WS_PROTOCOL_VERSION) {
+    throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: Agent Platform WebSocket protocol v2 is required");
+  }
+  const sessionId = readText(payload.sessionId);
+  const serverTime = readSafeInteger(payload.serverTime);
+  const liveness = payload.liveness;
+  if (!sessionId || serverTime === null || !liveness || typeof liveness !== "object" || Array.isArray(liveness)) {
+    throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: connected handshake fields are invalid");
+  }
+  const policy = liveness as Record<string, unknown>;
+  const heartbeatIntervalMs = readSafeInteger(policy.heartbeatIntervalMs);
+  const silenceTimeoutMs = readSafeInteger(policy.silenceTimeoutMs);
+  if (
+    heartbeatIntervalMs === null ||
+    heartbeatIntervalMs < MIN_HEARTBEAT_INTERVAL_MS ||
+    heartbeatIntervalMs > MAX_HEARTBEAT_INTERVAL_MS ||
+    silenceTimeoutMs === null ||
+    silenceTimeoutMs < (2 * heartbeatIntervalMs) + 10_000 ||
+    silenceTimeoutMs > MAX_SILENCE_TIMEOUT_MS
+  ) {
+    throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: connected liveness policy is invalid");
+  }
+  return { sessionId, heartbeatIntervalMs, silenceTimeoutMs };
+}
+
 export class AgentPlatformRealtimeClient {
   private socket: AgentPlatformRealtimeSocket | null = null;
   private connectPromise: Promise<void> | null = null;
@@ -158,6 +206,13 @@ export class AgentPlatformRealtimeClient {
   private reconnectAttempt = 0;
   private generation = 0;
   private reconnectCount = 0;
+  private physicalSessionId = "";
+  private lastPhysicalSessionId = "";
+  private negotiatedSilenceTimeoutMs = 0;
+  private lastInboundAt = 0;
+  private lastHeartbeatAt = 0;
+  private lastHeartbeatSequence = 0;
+  private lastCloseReason = "";
   private disposed = false;
   private intentionallyClosing = false;
   private refreshPromise: Promise<void> | null = null;
@@ -274,6 +329,7 @@ export class AgentPlatformRealtimeClient {
     } catch {
       // Local ownership is already cleared.
     }
+    this.lastCloseReason = "app_shutdown";
     this.publishState("closed", 0);
   }
 
@@ -288,6 +344,12 @@ export class AgentPlatformRealtimeClient {
       physicalConnectionCount,
       reconnectCount: this.reconnectCount,
       key: this.currentKey ? { ...this.currentKey } : null,
+      ...(this.physicalSessionId || this.lastPhysicalSessionId
+        ? { physicalSessionId: this.physicalSessionId || this.lastPhysicalSessionId }
+        : {}),
+      ...(this.lastInboundAt ? { lastInboundAt: this.lastInboundAt } : {}),
+      ...(this.lastHeartbeatAt ? { lastHeartbeatAt: this.lastHeartbeatAt } : {}),
+      ...(this.lastCloseReason ? { closeReason: this.lastCloseReason } : {}),
       ...(lastError ? { lastError } : {}),
     };
     this.options.onState?.(this.getState());
@@ -297,6 +359,7 @@ export class AgentPlatformRealtimeClient {
     this.intentionallyClosing = true;
     this.clearReconnectTimer();
     this.clearHeartbeatTimer();
+    this.lastHeartbeatSequence = 0;
     this.rejectConnect?.(new Error(`connection_unavailable: ${reason}`));
     this.rejectConnect = null;
     this.connectPromise = null;
@@ -309,6 +372,7 @@ export class AgentPlatformRealtimeClient {
       // Ignore a stale socket close failure.
     }
     this.intentionallyClosing = false;
+    this.lastCloseReason = reason;
     this.publishState("idle", 0);
   }
 
@@ -347,17 +411,26 @@ export class AgentPlatformRealtimeClient {
         reject(error);
       };
       this.rejectConnect = rejectOnce;
-      socket.onopen = resolveOnce;
+      socket.onopen = () => {
+        // The physical socket is not usable until Platform's protocol-v2
+        // connected handshake has been validated.
+      };
       socket.onmessage = (event) => {
-        void this.handleMessage(socket, generation, event.data).catch((error) => {
-          this.options.onDiagnostic?.(error instanceof Error ? error.message : String(error));
-          this.handleClosed(socket, generation, error instanceof Error ? error : new Error(String(error)));
-          try {
-            socket.close(1002, "invalid realtime frame");
-          } catch {
-            // handleClosed already cleared local ownership.
-          }
-        });
+        void this.handleMessage(socket, generation, event.data)
+          .then((handshakeCompleted) => {
+            if (handshakeCompleted) resolveOnce();
+          })
+          .catch((error) => {
+            const normalized = error instanceof Error ? error : new Error(String(error));
+            rejectOnce(normalized);
+            this.options.onDiagnostic?.(normalized.message);
+            this.handleClosed(socket, generation, normalized);
+            try {
+              socket.close(1002, "invalid realtime frame");
+            } catch {
+              // handleClosed already cleared local ownership.
+            }
+          });
       };
       socket.onerror = () => {
         const error = new Error("connection_unavailable: Agent Platform realtime connection failed");
@@ -370,7 +443,7 @@ export class AgentPlatformRealtimeClient {
         this.handleClosed(socket, generation, error);
       };
       timer = unrefTimer(setTimeout(() => {
-        const error = new Error("connection_unavailable: Agent Platform realtime connection timed out");
+        const error = new Error("PLATFORM_WS_HANDSHAKE_TIMEOUT: Agent Platform protocol-v2 handshake timed out");
         rejectOnce(error);
         this.handleClosed(socket, generation, error);
         try {
@@ -394,12 +467,11 @@ export class AgentPlatformRealtimeClient {
     socket: AgentPlatformRealtimeSocket,
     generation: number,
     data: unknown,
-  ) {
+  ): Promise<boolean> {
     if (socket !== this.socket || generation !== this.generation) {
       this.options.onStaleFrame?.();
-      return;
+      return false;
     }
-    this.resetHeartbeatTimer(socket, generation);
     const text = await readFrameText(
       data,
       this.options.maxFrameBytes ?? DEFAULT_MAX_FRAME_BYTES,
@@ -411,6 +483,49 @@ export class AgentPlatformRealtimeClient {
     const frame = parsed as AgentPlatformRealtimeFrame;
     this.options.onTrace?.("in", frame);
     const kind = readText(frame.frame);
+    const type = readText(frame.type);
+    const now = Date.now();
+    if (this.state.phase !== "connected") {
+      if (kind !== "push" || type !== "connected") {
+        throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: connected must be the first Platform frame");
+      }
+      const handshake = validateConnectedHandshake(frame);
+      this.physicalSessionId = handshake.sessionId;
+      this.lastPhysicalSessionId = handshake.sessionId;
+      this.negotiatedSilenceTimeoutMs = handshake.silenceTimeoutMs;
+      this.lastHeartbeatSequence = 0;
+      this.lastInboundAt = now;
+      this.resetHeartbeatTimer(socket, generation);
+      return true;
+    }
+    if (kind === "push" && type === "connected") {
+      throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: duplicate connected handshake");
+    }
+    if (!["request", "response", "stream", "push", "error"].includes(kind)) {
+      throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: invalid Platform frame envelope");
+    }
+    this.lastInboundAt = now;
+    this.resetHeartbeatTimer(socket, generation);
+    if (kind === "push" && type === "heartbeat") {
+      const payload = frame.data;
+      if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+        throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: heartbeat.data must be an object");
+      }
+      const heartbeat = payload as Record<string, unknown>;
+      if (
+        readText(heartbeat.sessionId) !== this.physicalSessionId ||
+        readSafeInteger(heartbeat.sequence) === null ||
+        (readSafeInteger(heartbeat.sequence) ?? 0) <= this.lastHeartbeatSequence ||
+        readSafeInteger(heartbeat.timestamp) === null
+      ) {
+        throw new Error("PLATFORM_WS_PROTOCOL_MISMATCH: heartbeat fields are invalid");
+      }
+      this.lastHeartbeatSequence = readSafeInteger(heartbeat.sequence) ?? 0;
+      this.lastHeartbeatAt = now;
+      this.refreshLivenessState();
+      return false;
+    }
+    this.refreshLivenessState();
     const id = readText(frame.id);
     if ((kind === "response" || kind === "error") && id) {
       const pending = this.internalPending.get(id);
@@ -419,7 +534,7 @@ export class AgentPlatformRealtimeClient {
         clearTimeout(pending.timer);
         if (kind === "error") pending.reject(frameError(frame));
         else pending.resolve(frame);
-        return;
+        return false;
       }
     }
     if (kind === "push" && readText(frame.type) === "auth.expiring") {
@@ -431,9 +546,10 @@ export class AgentPlatformRealtimeClient {
           // handleClosed already cleared local ownership.
         }
       });
-      return;
+      return false;
     }
     this.options.onFrame(frame, generation);
+    return false;
   }
 
   private handleClosed(
@@ -447,9 +563,17 @@ export class AgentPlatformRealtimeClient {
     this.socket = null;
     this.connectPromise = null;
     this.clearHeartbeatTimer();
+    this.physicalSessionId = "";
+    this.negotiatedSilenceTimeoutMs = 0;
+    this.lastHeartbeatSequence = 0;
     this.rejectInternalPending(error);
-    this.publishState(this.disposed ? "closed" : "reconnecting", 0, error.message);
-    if (!this.disposed && !this.intentionallyClosing && this.currentBaseUrl && this.currentToken) {
+    const protocolMismatch = error.message.startsWith("PLATFORM_WS_PROTOCOL_MISMATCH");
+    this.lastCloseReason = error.message;
+    this.publishState(this.disposed || protocolMismatch ? "closed" : "reconnecting", 0, error.message);
+    if (
+      !protocolMismatch && !this.disposed && !this.intentionallyClosing &&
+      this.currentBaseUrl && this.currentToken
+    ) {
       this.scheduleReconnect();
     }
   }
@@ -545,10 +669,10 @@ export class AgentPlatformRealtimeClient {
     generation: number,
   ) {
     this.clearHeartbeatTimer();
-    const timeoutMs = this.options.heartbeatTimeoutMs ?? DEFAULT_HEARTBEAT_TIMEOUT_MS;
+    const timeoutMs = this.options.heartbeatTimeoutMs ?? this.negotiatedSilenceTimeoutMs;
     if (timeoutMs <= 0) return;
     this.heartbeatTimer = unrefTimer(setTimeout(() => {
-      const error = new Error("connection_unavailable: Agent Platform heartbeat timed out");
+      const error = new Error("PLATFORM_CONNECTION_UNAVAILABLE: Agent Platform inbound silence timed out");
       this.handleClosed(socket, generation, error);
       try {
         socket.close(1000, "heartbeat timeout");
@@ -574,5 +698,14 @@ export class AgentPlatformRealtimeClient {
       pending.reject(error);
       this.internalPending.delete(id);
     }
+  }
+
+  private refreshLivenessState() {
+    this.state = {
+      ...this.state,
+      ...(this.lastInboundAt ? { lastInboundAt: this.lastInboundAt } : {}),
+      ...(this.lastHeartbeatAt ? { lastHeartbeatAt: this.lastHeartbeatAt } : {}),
+      ...(this.lastCloseReason ? { closeReason: this.lastCloseReason } : {}),
+    };
   }
 }

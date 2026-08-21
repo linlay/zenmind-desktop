@@ -181,6 +181,84 @@
   color: #c5221f;
 }
 
+.agent-realtime-inspector-health {
+  min-height: 0;
+  border-bottom: 1px solid var(--realtime-inspector-border);
+  background: var(--realtime-inspector-panel);
+}
+
+.agent-realtime-inspector-health-grid {
+  min-height: 96px;
+  max-height: 148px;
+  display: grid;
+  grid-template-columns: minmax(320px, 1.05fr) minmax(360px, 1fr) minmax(360px, 1fr);
+  overflow: auto;
+}
+
+.agent-realtime-inspector-health-grid article {
+  min-width: 0;
+  padding: 7px 10px;
+  border-right: 1px solid var(--realtime-inspector-border);
+}
+
+.agent-realtime-inspector-health-grid article:last-child {
+  border-right: 0;
+}
+
+.agent-realtime-inspector-health-grid h2 {
+  margin: 0 0 5px;
+  color: var(--realtime-inspector-muted);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.agent-realtime-inspector-health-grid dl {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 3px 10px;
+}
+
+.agent-realtime-inspector-health-grid dl div {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 82px minmax(0, 1fr);
+  gap: 6px;
+}
+
+.agent-realtime-inspector-health-grid dt,
+.agent-realtime-inspector-health-list p {
+  margin: 0;
+  color: var(--realtime-inspector-muted);
+}
+
+.agent-realtime-inspector-health-grid dd,
+.agent-realtime-inspector-health-list span,
+.agent-realtime-inspector-health-list code {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  font-family: "SFMono-Regular", Consolas, monospace;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-realtime-inspector-health-list > div {
+  min-width: 0;
+  min-height: 17px;
+  display: grid;
+  grid-template-columns: minmax(86px, 1.3fr) minmax(52px, 0.8fr) minmax(54px, 0.7fr) minmax(70px, 0.8fr) minmax(32px, 0.4fr) minmax(62px, 1fr);
+  align-items: center;
+  gap: 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--realtime-inspector-border) 45%, transparent);
+}
+
+.agent-realtime-inspector-health-list .is-wide {
+  grid-column: span 2;
+}
+
 :root[data-theme="dark"] .agent-realtime-inspector-error {
   color: #f28b82;
 }
@@ -378,6 +456,10 @@
 
   .agent-realtime-inspector-connection {
     display: none;
+  }
+
+  .agent-realtime-inspector-health-grid {
+    grid-template-columns: 320px 360px 360px;
   }
 
   .agent-realtime-inspector-filters {

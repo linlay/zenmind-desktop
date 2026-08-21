@@ -10,10 +10,10 @@ const {
   PRELOAD_TO_PAGE_EVENT,
   AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT,
   AGENT_WEBCLIENT_BRIDGE_RESULT_EVENT,
-  AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT,
-  AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT,
-  AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT,
-  AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_EVENT,
+  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT,
   DESKTOP_WEBVIEW_BRIDGE_FLAG,
   buildServiceWebviewMainWorldScript
 } = require("../dist-electron/preload/service-webview-main-world.js");
@@ -371,44 +371,57 @@ test("service webview main-world script keeps matching auth context without expo
   assert.equal(window.__AGENT_APP_AUTH_CONTEXT, "desktop-auth-current");
 });
 
-test("service webview main-world script exposes a fixed WebSocket-like Platform Frame Port", async () => {
+test("service webview main-world script exposes a fixed typed Platform Frame Port", async () => {
   const { window } = createFakeWindow();
   const opens = [];
   const sends = [];
   const closes = [];
   runMainWorldScript(window);
-  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_OPEN_EVENT, (event) => opens.push(event.detail));
-  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_SEND_EVENT, (event) => sends.push(event.detail));
-  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_WS_CLOSE_EVENT, (event) => closes.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_EVENT, (event) => opens.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_EVENT, (event) => sends.push(event.detail));
+  window.addEventListener(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_EVENT, (event) => closes.push(event.detail));
 
-  const platformWs = window.__AGENT_WEBCLIENT_PLATFORM_WS__;
+  const platformFramePort = window.__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__;
   const workpanel = window.__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__;
-  assert.deepEqual(Object.keys(platformWs).sort(), ["createSocket", "transportVersion"]);
+  assert.deepEqual(Object.keys(platformFramePort).sort(), ["createSession", "transportVersion"]);
   assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "getCapabilities", "openItem"]);
-  assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_PLATFORM_WS__").writable, false);
-  assert.equal(platformWs.transportVersion, 1);
+  assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__").writable, false);
+  assert.equal(platformFramePort.transportVersion, 2);
 
-  const socket = platformWs.createSocket();
-  assert.equal(socket.readyState, 0);
+  const session = platformFramePort.createSession();
   assert.equal(opens.length, 1);
-  const received = [];
-  socket.addEventListener("message", (event) => received.push(event.data));
+  const frames = [];
+  const states = [];
+  const closed = [];
+  session.onFrame((frame) => frames.push(frame));
+  session.onState((state) => states.push(state));
+  session.onClose((event) => closed.push(event));
   window.dispatchEvent({
-    type: AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
-    detail: { socketId: opens[0].socketId, type: "open" }
+    type: AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT,
+    detail: {
+      sessionId: opens[0].sessionId,
+      type: "state",
+      state: { phase: "connected", logicalGeneration: 1, physicalGeneration: 1, reconnectCount: 0, retryable: false }
+    }
   });
-  assert.equal(socket.readyState, 1);
-  socket.send('{"frame":"request","type":"/api/query","id":"wss-1"}');
-  assert.equal(sends[0].socketId, opens[0].socketId);
+  assert.equal(states[0].phase, "connected");
+  session.send({ frame: "request", type: "/api/query", id: "wss-1" });
+  assert.equal(sends[0].sessionId, opens[0].sessionId);
+  assert.deepEqual(sends[0].frame, { frame: "request", type: "/api/query", id: "wss-1" });
   window.dispatchEvent({
-    type: AGENT_WEBCLIENT_PLATFORM_WS_EVENT,
-    detail: { socketId: opens[0].socketId, type: "message", data: '{"frame":"stream","id":"wss-1"}' }
+    type: AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT,
+    detail: { sessionId: opens[0].sessionId, type: "frame", frame: { frame: "stream", id: "wss-1" } }
   });
-  assert.deepEqual(received, ['{"frame":"stream","id":"wss-1"}']);
-  socket.close(1000, "done");
-  assert.equal(closes[0].socketId, opens[0].socketId);
-  assert.equal(closes[0].code, 1000);
-  assert.equal(closes[0].reason, "done");
+  assert.deepEqual(frames, [{ frame: "stream", id: "wss-1" }]);
+  session.close("disposed");
+  assert.equal(closes[0].sessionId, opens[0].sessionId);
+  assert.equal(closes[0].reason, "disposed");
+  window.dispatchEvent({
+    type: AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT,
+    detail: { sessionId: opens[0].sessionId, type: "close", event: { reason: "app_shutdown" } }
+  });
+  assert.equal(closed.length, 1);
+  assert.equal(closed[0].reason, "app_shutdown");
 });
 
 test("service webview main-world script ignores removed legacy auth responses", () => {

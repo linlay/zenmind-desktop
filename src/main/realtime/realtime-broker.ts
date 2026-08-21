@@ -73,6 +73,9 @@ type BrokerRun = {
   lastSeq: number;
   terminal: boolean;
   suspended: boolean;
+  restoreInFlight: boolean;
+  restoreCount: number;
+  lastRestoreResult: string;
   upstreamRequestId: string | null;
   forwardedSourceId: string | null;
   query: QueryTransaction | null;
@@ -562,6 +565,9 @@ export class RealtimeBroker {
         lastSeq: Math.max(0, options.lastSeq ?? 0),
         terminal: false,
         suspended: false,
+        restoreInFlight: false,
+        restoreCount: 0,
+        lastRestoreResult: "never",
         upstreamRequestId: null,
         forwardedSourceId: null,
         query: null,
@@ -636,6 +642,9 @@ export class RealtimeBroker {
         lastSeq: Math.max(0, input.lastSeq ?? 0),
         terminal: false,
         suspended: false,
+        restoreInFlight: false,
+        restoreCount: 0,
+        lastRestoreResult: "never",
         upstreamRequestId: null,
         forwardedSourceId: sourceId,
         query: null,
@@ -960,6 +969,9 @@ export class RealtimeBroker {
         eventCount: run.replay.length,
         bytes: run.replayBytes,
         lastSeq: run.lastSeq,
+        state: run.terminal ? "terminal" : run.restoreInFlight ? "restoring" : run.suspended ? "suspended" : "active",
+        restoreCount: run.restoreCount,
+        lastRestoreResult: run.lastRestoreResult,
       })),
       ...this.diagnostics,
     };
@@ -1037,7 +1049,6 @@ export class RealtimeBroker {
     if (state.phase === "connected" && previous !== "connected") {
       for (const run of this.runsById.values()) {
         if (run.suspended && !run.terminal) {
-          run.suspended = false;
           void this.restoreRun(run);
         }
       }
@@ -1048,9 +1059,14 @@ export class RealtimeBroker {
       "connection_lost_before_acceptance",
       state.lastError || "Agent Platform realtime connection lost",
     );
+    const requestError = brokerError(
+      "connection_unavailable",
+      state.lastError || "Agent Platform realtime connection lost",
+      { retryable: true },
+    );
     for (const pending of [...this.pendingRequests.values()]) {
       this.cleanupPending(pending.upstreamId);
-      pending.onError(disconnectError);
+      pending.onError(requestError);
     }
     for (const transaction of [...this.queriesByRequestId.values()]) {
       if (!transaction.acceptedValue) {
@@ -1249,6 +1265,9 @@ export class RealtimeBroker {
       lastSeq: 0,
       terminal: false,
       suspended: false,
+      restoreInFlight: false,
+      restoreCount: 0,
+      lastRestoreResult: "never",
       upstreamRequestId: transaction.upstreamRequestId,
       forwardedSourceId: null,
       query: transaction,
@@ -1453,24 +1472,39 @@ export class RealtimeBroker {
 
   private async restoreRun(run: BrokerRun) {
     const state = this.client.getState();
-    if (state.phase !== "connected") return;
+    if (
+      state.phase !== "connected" || run.terminal || run.restoreInFlight ||
+      Boolean(run.upstreamRequestId)
+    ) return;
+    run.restoreInFlight = true;
+    run.restoreCount += 1;
     const id = `desktop-attach-${randomUUID()}`;
-    run.upstreamRequestId = id;
-    this.client.send({
-      frame: "request",
-      type: "/api/attach",
-      id,
-      payload: {
-        runId: run.runId,
-        chatId: run.chatId,
-        lastSeq: run.lastSeq,
-        ...(run.owner?.kind === "agent"
-          ? { agentKey: run.owner.agentKey }
-          : run.owner?.kind === "team"
-            ? { teamId: run.owner.teamId }
-            : {}),
-      },
-    });
+    try {
+      run.upstreamRequestId = id;
+      this.client.send({
+        frame: "request",
+        type: "/api/attach",
+        id,
+        payload: {
+          runId: run.runId,
+          chatId: run.chatId,
+          lastSeq: run.lastSeq,
+          ...(run.owner?.kind === "agent"
+            ? { agentKey: run.owner.agentKey }
+            : run.owner?.kind === "team"
+              ? { teamId: run.owner.teamId }
+              : {}),
+        },
+      });
+      run.suspended = false;
+      run.lastRestoreResult = `attached:${state.generation}:${run.lastSeq}`;
+    } catch (error) {
+      run.upstreamRequestId = null;
+      run.suspended = true;
+      run.lastRestoreResult = `failed:${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      run.restoreInFlight = false;
+    }
   }
 
   private handlePush(frame: AgentPlatformRealtimeFrame) {

@@ -36,6 +36,11 @@ test("Agent Realtime Inspector uses a compact frame list and separate payload co
   assert.match(app, /location\.pathname === "\/agent-realtime-inspector"/);
   assert.match(page, /className="agent-realtime-inspector-frame-list"/);
   assert.match(page, /detailTab === "payload"/);
+  assert.match(page, /settings\.debug\.realtime\.physicalConnection/);
+  assert.match(page, /settings\.debug\.realtime\.logicalFramePorts/);
+  assert.match(page, /settings\.debug\.realtime\.runRecovery/);
+  assert.match(page, /connection\?\.lastHeartbeatAt/);
+  assert.match(page, /run\.lastRestoreResult/);
   assert.match(page, /snapshot\?\.trace\.forEach/);
   assert.match(page, /surfaceId !== "all" && entry\.surfaceId !== surfaceId/);
   assert.match(page, /window\.setInterval\(\(\) => void loadSnapshot\(\), 500\)/);

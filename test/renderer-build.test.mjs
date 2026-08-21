@@ -6287,8 +6287,8 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_AUTH_CONTEXT = currentContext/);
   assert.match(serviceWebviewMainWorld, /removeItem\(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY\)/);
-  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL/);
-  assert.match(serviceWebviewMainWorld, /createSocket/);
+  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_GLOBAL/);
+  assert.match(serviceWebviewMainWorld, /createSession/);
   assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL/);
   assert.doesNotMatch(serviceWebviewMainWorld, /socket\.addEventListener\("message"/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);

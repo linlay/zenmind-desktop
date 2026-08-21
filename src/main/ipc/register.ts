@@ -298,6 +298,18 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         physicalConnectionCount: brokerDiagnostics.connection.physicalConnectionCount,
         reconnectCount: brokerDiagnostics.connection.reconnectCount,
         endpoint: brokerDiagnostics.connection.key?.endpoint || "",
+        ...(brokerDiagnostics.connection.physicalSessionId
+          ? { physicalSessionId: brokerDiagnostics.connection.physicalSessionId }
+          : {}),
+        ...(brokerDiagnostics.connection.lastInboundAt
+          ? { lastInboundAt: requireEpochMillis(brokerDiagnostics.connection.lastInboundAt, "agentRealtimeDebugSnapshot.connection.lastInboundAt") }
+          : {}),
+        ...(brokerDiagnostics.connection.lastHeartbeatAt
+          ? { lastHeartbeatAt: requireEpochMillis(brokerDiagnostics.connection.lastHeartbeatAt, "agentRealtimeDebugSnapshot.connection.lastHeartbeatAt") }
+          : {}),
+        ...(brokerDiagnostics.connection.closeReason
+          ? { closeReason: brokerDiagnostics.connection.closeReason }
+          : {}),
         ...(brokerDiagnostics.connection.lastError
           ? { lastError: brokerDiagnostics.connection.lastError }
           : {}),
@@ -322,13 +334,27 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       },
       bridge: {
         registeredSenderCount: bridgeDiagnostics.registeredSenderCount,
-        logicalSocketCount: bridgeDiagnostics.logicalSocketCount,
+        logicalSessionCount: bridgeDiagnostics.logicalSessionCount,
         pendingRequestCount: bridgeDiagnostics.pendingRequestCount,
         activeStreamCount: bridgeDiagnostics.activeStreamCount,
         activeLiveSurfaceCount: bridgeDiagnostics.activeLiveSurfaceCount,
-        activeLiveSocketKey: bridgeDiagnostics.activeLiveSocketKey,
+        activeLiveSessionKey: bridgeDiagnostics.activeLiveSessionKey,
       },
       surfaces: bridgeDiagnostics.surfaces,
+      logicalSessions: bridgeDiagnostics.logicalSessions.map((session) => ({
+        ...session,
+        openedAt: requireEpochMillis(session.openedAt, "agentRealtimeDebugSnapshot.logicalSession.openedAt"),
+        ...("closedAt" in session && typeof session.closedAt === "number"
+          ? { closedAt: requireEpochMillis(session.closedAt, "agentRealtimeDebugSnapshot.logicalSession.closedAt") }
+          : {}),
+      })),
+      runRecovery: brokerDiagnostics.replay.map((run) => ({
+        runId: run.runId,
+        lastSeq: run.lastSeq,
+        state: run.state,
+        restoreCount: run.restoreCount,
+        lastRestoreResult: run.lastRestoreResult,
+      })),
       trace: normalizedAfterSequence === null
         ? trace
         : trace.filter((entry) => entry.sequence > normalizedAfterSequence),

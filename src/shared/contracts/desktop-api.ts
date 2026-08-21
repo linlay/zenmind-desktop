@@ -142,9 +142,32 @@ export interface AgentRealtimeDebugSurface {
   active: boolean;
   ownerChatId?: string;
   route: string;
-  socketId: string;
+  logicalSessionId: string;
   pendingRequestCount: number;
   activeStreamCount: number;
+}
+
+export interface AgentRealtimeDebugLogicalSession {
+  logicalSessionId: string;
+  surfaceId: string;
+  webContentsId: number;
+  phase: "connecting" | "connected" | "reconnecting" | "closed";
+  logicalGeneration: number;
+  physicalGeneration: number;
+  reconnectCount: number;
+  openedAt: EpochMilliseconds;
+  closedAt?: EpochMilliseconds;
+  closeReason?: string;
+  pendingRequestCount: number;
+  activeStreamCount: number;
+}
+
+export interface AgentRealtimeDebugRunRecovery {
+  runId: string;
+  lastSeq: number;
+  state: "active" | "suspended" | "restoring" | "terminal";
+  restoreCount: number;
+  lastRestoreResult: string;
 }
 
 export interface AgentRealtimeDebugSnapshot {
@@ -155,6 +178,10 @@ export interface AgentRealtimeDebugSnapshot {
     physicalConnectionCount: 0 | 1;
     reconnectCount: number;
     endpoint: string;
+    physicalSessionId?: string;
+    lastInboundAt?: EpochMilliseconds;
+    lastHeartbeatAt?: EpochMilliseconds;
+    closeReason?: string;
     lastError?: string;
   };
   broker: {
@@ -177,13 +204,15 @@ export interface AgentRealtimeDebugSnapshot {
   };
   bridge: {
     registeredSenderCount: number;
-    logicalSocketCount: number;
+    logicalSessionCount: number;
     pendingRequestCount: number;
     activeStreamCount: number;
     activeLiveSurfaceCount: number;
-    activeLiveSocketKey: string | null;
+    activeLiveSessionKey: string | null;
   };
   surfaces: AgentRealtimeDebugSurface[];
+  logicalSessions: AgentRealtimeDebugLogicalSession[];
+  runRecovery: AgentRealtimeDebugRunRecovery[];
   trace: AgentRealtimeDebugTraceEntry[];
 }
 

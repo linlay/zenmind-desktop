@@ -49,6 +49,10 @@ function formatFrameTime(value: number, locale: string) {
   }).format(new Date(value));
 }
 
+function formatDiagnosticTime(value: number | undefined, locale: string) {
+  return value ? formatFrameTime(value, locale) : "—";
+}
+
 function formatPayloadSize(json: string) {
   const bytes = new TextEncoder().encode(json).byteLength;
   return bytes < 1024 ? `${bytes} B` : `${(bytes / 1024).toFixed(1)} KB`;
@@ -284,9 +288,56 @@ export function AgentRealtimeInspectorPage() {
         </button>
       </section>
 
-      {message || connection?.lastError ? (
-        <div className="agent-realtime-inspector-error" role="status">{message || connection?.lastError}</div>
-      ) : null}
+      <section className="agent-realtime-inspector-health" aria-label="Realtime connection diagnostics">
+        {message || connection?.lastError ? (
+          <div className="agent-realtime-inspector-error" role="status">{message || connection?.lastError}</div>
+        ) : null}
+        <div className="agent-realtime-inspector-health-grid">
+          <article>
+            <h2>{t("settings.debug.realtime.physicalConnection")}</h2>
+            <dl>
+              <div><dt>phase</dt><dd>{connection?.phase || "idle"}</dd></div>
+              <div><dt>sessionId</dt><dd title={connection?.physicalSessionId}>{connection?.physicalSessionId || "—"}</dd></div>
+              <div><dt>generation</dt><dd>{connection?.generation ?? 0}</dd></div>
+              <div><dt>last inbound</dt><dd>{formatDiagnosticTime(connection?.lastInboundAt, locale)}</dd></div>
+              <div><dt>last heartbeat</dt><dd>{formatDiagnosticTime(connection?.lastHeartbeatAt, locale)}</dd></div>
+              <div><dt>reconnects</dt><dd>{connection?.reconnectCount ?? 0}</dd></div>
+              <div><dt>close reason</dt><dd title={connection?.closeReason}>{connection?.closeReason || "—"}</dd></div>
+            </dl>
+          </article>
+          <article>
+            <h2>{t("settings.debug.realtime.logicalFramePorts")}</h2>
+            <div className="agent-realtime-inspector-health-list">
+              {(snapshot?.logicalSessions || []).slice(-6).reverse().map((session) => (
+                <div key={`${session.logicalSessionId}:${session.openedAt}`}>
+                  <code title={session.logicalSessionId}>{session.logicalSessionId}</code>
+                  <span>{session.surfaceId || "—"}</span>
+                  <span>{session.phase}</span>
+                  <span>L{session.logicalGeneration} / P{session.physicalGeneration}</span>
+                  <span>↻ {session.reconnectCount}</span>
+                  <span title={session.closeReason}>{session.closeReason || formatDiagnosticTime(session.openedAt, locale)}</span>
+                </div>
+              ))}
+              {!snapshot?.logicalSessions.length ? <p>{t("settings.debug.realtime.noLogicalSessions")}</p> : null}
+            </div>
+          </article>
+          <article>
+            <h2>{t("settings.debug.realtime.runRecovery")}</h2>
+            <div className="agent-realtime-inspector-health-list">
+              {(snapshot?.runRecovery || []).slice(-6).reverse().map((run) => (
+                <div key={run.runId}>
+                  <code title={run.runId}>{run.runId}</code>
+                  <span>seq {run.lastSeq}</span>
+                  <span>{run.state}</span>
+                  <span>restore {run.restoreCount}</span>
+                  <span className="is-wide" title={run.lastRestoreResult}>{run.lastRestoreResult}</span>
+                </div>
+              ))}
+              {!snapshot?.runRecovery.length ? <p>{t("settings.debug.realtime.noTrackedRuns")}</p> : null}
+            </div>
+          </article>
+        </div>
+      </section>
 
       <section className="agent-realtime-inspector-workspace">
         <div className="agent-realtime-inspector-frames">

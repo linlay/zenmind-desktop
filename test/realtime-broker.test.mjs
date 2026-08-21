@@ -23,7 +23,7 @@ function nextTurn() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function createHarness(t) {
+function createHarness(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-realtime-broker-"));
   const sockets = [];
   class FakeSocket {
@@ -35,7 +35,20 @@ function createHarness(t) {
       this.onclose = null;
       this.onerror = null;
       sockets.push(this);
-      queueMicrotask(() => this.onopen?.());
+      queueMicrotask(() => {
+        this.onopen?.();
+        if (options.autoHandshake === false) return;
+        this.emit({
+          frame: "push",
+          type: "connected",
+          data: {
+            protocolVersion: 2,
+            sessionId: `platform-${sockets.length}`,
+            serverTime: EPOCH_MS,
+            liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 },
+          },
+        });
+      });
     }
 
     send(data) {
@@ -57,7 +70,7 @@ function createHarness(t) {
     issueAccessToken: async () => ({ ok: true, token: jwt(), message: "" }),
     createWebSocket: (url) => new FakeSocket(url),
     connectTimeoutMs: 100,
-    heartbeatTimeoutMs: 0,
+    heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? 0,
     acceptanceTimeoutMs: 500,
   });
   t.after(() => {
@@ -66,6 +79,74 @@ function createHarness(t) {
   });
   return { broker, sockets, token: jwt() };
 }
+
+test("physical realtime connection waits for the Platform v2 handshake", async (t) => {
+  const { broker, sockets, token } = createHarness(t, { autoHandshake: false });
+  const connecting = broker.ensureConnected("http://127.0.0.1:8080", token);
+  await nextTurn();
+  assert.equal(broker.getConnectionState().phase, "connecting");
+  assert.equal(sockets.length, 1);
+
+  sockets[0].emit({
+    frame: "push",
+    type: "connected",
+    data: {
+      protocolVersion: 2,
+      sessionId: "platform-handshake-1",
+      serverTime: EPOCH_MS,
+      liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 },
+    },
+  });
+  await connecting;
+  assert.deepEqual(
+    {
+      phase: broker.getConnectionState().phase,
+      sessionId: broker.getConnectionState().physicalSessionId,
+    },
+    { phase: "connected", sessionId: "platform-handshake-1" },
+  );
+});
+
+test("valid heartbeat and business frames continuously refresh physical liveness", async (t) => {
+  const { broker, sockets, token } = createHarness(t, { heartbeatTimeoutMs: 35 });
+  await broker.ensureConnected("http://127.0.0.1:8080", token);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  sockets[0].emit({
+    frame: "push",
+    type: "heartbeat",
+    data: { sessionId: "platform-1", sequence: 1, timestamp: EPOCH_MS + 1 },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  sockets[0].emit({ frame: "push", type: "run.updated", data: { runId: "run-1" } });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const state = broker.getConnectionState();
+  assert.equal(state.phase, "connected");
+  assert.equal(state.physicalSessionId, "platform-1");
+  assert.ok(state.lastInboundAt >= state.lastHeartbeatAt);
+  assert.equal(sockets.length, 1);
+});
+
+test("non-monotonic protocol-v2 heartbeat closes without retrying the incompatible connection", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  await broker.ensureConnected("http://127.0.0.1:8080", token);
+  sockets[0].emit({
+    frame: "push",
+    type: "heartbeat",
+    data: { sessionId: "platform-1", sequence: 2, timestamp: EPOCH_MS + 2 },
+  });
+  sockets[0].emit({
+    frame: "push",
+    type: "heartbeat",
+    data: { sessionId: "platform-1", sequence: 2, timestamp: EPOCH_MS + 3 },
+  });
+  await nextTurn();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+
+  assert.equal(broker.getConnectionState().phase, "closed");
+  assert.match(broker.getConnectionState().lastError, /PLATFORM_WS_PROTOCOL_MISMATCH/u);
+  assert.equal(sockets.length, 1);
+});
 
 test("realtime connection identity excludes token rotation claims and normalizes endpoint", () => {
   const first = jwt({ exp: 100, jti: "one" });

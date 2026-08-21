@@ -838,6 +838,16 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
       queueMicrotask(() => {
         this.readyState = 1;
         this.emit("open", { type: "open" });
+        this.emitMessage({
+          frame: "push",
+          type: "connected",
+          data: {
+            protocolVersion: 2,
+            sessionId: "platform-1",
+            serverTime: 1_786_890_000_000,
+            liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 },
+          },
+        });
       });
     }
 
@@ -867,8 +877,11 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
       assert.equal("ns" in frame, false);
       queueMicrotask(() => {
         if (frame.type === "/api/agents") {
-          this.emitMessage({ frame: "push", type: "connected", data: { sessionId: "platform-1" } });
-          this.emitMessage({ frame: "push", type: "heartbeat", data: { timestamp: 1 } });
+          this.emitMessage({
+            frame: "push",
+            type: "heartbeat",
+            data: { sessionId: "platform-1", sequence: 1, timestamp: 1_786_890_030_000 },
+          });
           this.emitMessage({
             frame: "response",
             type: "/api/agents",
