@@ -249,7 +249,7 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
   );
 });
 
-test("global search and sidebar new Chat navigation restore focus to the active main chat webview once", () => {
+test("global search and sidebar Chat navigation restore focus to the active main chat webview once", () => {
   const appShell = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
     "utf8",
@@ -325,6 +325,10 @@ test("global search and sidebar new Chat navigation restore focus to the active 
     appSidebar.indexOf("function handleAssistantNewChat"),
     appSidebar.indexOf("function startChatsNewChat"),
   );
+  const openChatBlock = appSidebar.slice(
+    appSidebar.indexOf("async function handleAssistantOpenChat"),
+    appSidebar.indexOf("function handleAssistantOpenChatMenu"),
+  );
   const chatsNewChatBlock = appSidebar.slice(
     appSidebar.indexOf("function startChatsNewChat"),
     appSidebar.indexOf("function focusChatsDefaultAgentMenuItem"),
@@ -335,6 +339,7 @@ test("global search and sidebar new Chat navigation restore focus to the active 
   );
   assert.match(projectNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
   assert.match(chatsNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
+  assert.match(openChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
 });
 
 test("service webview surface reports webview breadcrumbs for post-crash diagnosis", () => {

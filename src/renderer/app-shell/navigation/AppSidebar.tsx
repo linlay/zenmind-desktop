@@ -3061,6 +3061,7 @@ export function AppSidebar({
     }
     requestNavigate(createAgentChatRoute(chat.agentKey, chat.chatId), {
       retriggerAgentRoute: true,
+      focusAgentChat: true,
     });
   }
 
