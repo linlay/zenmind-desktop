@@ -2,12 +2,15 @@ export const CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL =
   "chatWorkPanel.tabContextMenu.popup";
 export const CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL =
   "chatWorkPanel.openLocalResource";
+export const CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL =
+  "chatWorkPanel.revealLocalResource";
 
 export type ChatWorkPanelTabContextMenuActionId =
   | "reload"
   | "copy-url"
   | "copy-title"
   | "download-resource"
+  | "reveal-resource"
   | "open-resource-default-app"
   | "close-tab"
   | "close-other-tabs"
@@ -53,6 +56,10 @@ export type ChatWorkPanelOpenLocalResourceResult = {
   code?: "invalid_request" | "not_found" | "not_file" | "path_outside_chat" | "open_failed";
   message?: string;
 };
+
+export type ChatWorkPanelRevealLocalResourceRequest = ChatWorkPanelOpenLocalResourceRequest;
+
+export type ChatWorkPanelRevealLocalResourceResult = ChatWorkPanelOpenLocalResourceResult;
 
 export function resolveChatWorkPanelLocalResourcePath(input: {
   ownerChatId: string;

@@ -7,8 +7,10 @@ import {
 } from "electron";
 import {
   CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
+  CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
   type ChatWorkPanelOpenLocalResourceResult,
+  type ChatWorkPanelRevealLocalResourceResult,
   type ChatWorkPanelTabContextMenuActionId,
   type ChatWorkPanelTabContextMenuProfile,
   type ChatWorkPanelTabContextMenuPopupRequest,
@@ -17,6 +19,7 @@ import {
 import {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   openChatWorkPanelResourceInDefaultApp,
+  revealChatWorkPanelResourceInFileManager,
 } from "../chat-work-panel-resource-open";
 import { t } from "../i18n/main-i18n";
 
@@ -27,6 +30,9 @@ type ChatWorkPanelTabContextMenuHandlerOptions = {
   openLocalResource?: (
     request: Parameters<typeof openChatWorkPanelResourceInDefaultApp>[0],
   ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
+  revealLocalResource?: (
+    request: Parameters<typeof revealChatWorkPanelResourceInFileManager>[0],
+  ) => Promise<ChatWorkPanelRevealLocalResourceResult>;
   BrowserWindow?: Pick<typeof ElectronBrowserWindow, "fromWebContents">;
   Menu?: Pick<typeof ElectronMenu, "buildFromTemplate">;
 };
@@ -97,7 +103,8 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
 
 function buildWorkPanelTemplate(
   request: Extract<ChatWorkPanelTabContextMenuPopupRequest, { mode: "work-panel" }>,
-  settle: (actionId: ChatWorkPanelTabContextMenuActionId | null) => void
+  settle: (actionId: ChatWorkPanelTabContextMenuActionId | null) => void,
+  platform: NodeJS.Platform | string,
 ) {
   const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
   const leadingItems = request.profile === "web"
@@ -121,6 +128,15 @@ function buildWorkPanelTemplate(
               ? "chatWorkPanel.tabContextMenu.downloadArtifact"
               : "chatWorkPanel.tabContextMenu.downloadReference"),
             click: click("download-resource")
+          },
+          {
+            id: "reveal-resource",
+            label: t(platform === "darwin"
+              ? "chatWorkPanel.tabContextMenu.revealInFinder"
+              : platform === "win32"
+                ? "chatWorkPanel.tabContextMenu.revealInExplorer"
+                : "chatWorkPanel.tabContextMenu.revealInFileManager"),
+            click: click("reveal-resource")
           },
           {
             id: "open-resource-default-app",
@@ -208,6 +224,34 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
   );
 
   ipcMain.handle(
+    CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL,
+    async (event: IpcMainInvokeEvent, value: unknown): Promise<ChatWorkPanelRevealLocalResourceResult> => {
+      const request = normalizeChatWorkPanelOpenLocalResourceRequest(value);
+      const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+      const mainWindow = options.getMainWindow();
+      if (
+        !request ||
+        !ownerWindow ||
+        !mainWindow ||
+        ownerWindow !== mainWindow ||
+        ownerWindow.isDestroyed()
+      ) {
+        return { ok: false, code: "invalid_request", message: t("chatWorkPanel.reveal.invalidPath") };
+      }
+      if (options.revealLocalResource) {
+        return options.revealLocalResource(request);
+      }
+      if (!options.app) {
+        return { ok: false, code: "open_failed", message: t("chatWorkPanel.reveal.unavailable") };
+      }
+      return revealChatWorkPanelResourceInFileManager(request, {
+        app: options.app,
+        platform: options.platform,
+      });
+    },
+  );
+
+  ipcMain.handle(
     CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
     async (
       event: IpcMainInvokeEvent,
@@ -241,7 +285,7 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
               label: t("webviewContextMenu.page.copy-url"),
               click: () => settle("copy-url")
             }]
-          : buildWorkPanelTemplate(request, settle));
+          : buildWorkPanelTemplate(request, settle, options.platform ?? process.platform));
         const contentBounds = ownerWindow.getContentBounds();
         menu.popup({
           window: ownerWindow,

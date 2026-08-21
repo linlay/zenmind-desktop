@@ -106,6 +106,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   assert.deepEqual(result, { actionId: "toggle-fullscreen" });
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
     "download-resource",
+    "reveal-resource",
     "open-resource-default-app",
     "copy-title",
     "separator",
@@ -160,6 +161,21 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     builtTemplate.find((item) => item.id === "open-resource-default-app").label,
     /Default App|默认应用/u
   );
+  assert.match(
+    builtTemplate.find((item) => item.id === "reveal-resource").label,
+    /Finder|Explorer|File Manager|访达|文件/u
+  );
+
+  selectedActionId = "reveal-resource";
+  assert.deepEqual(await invokeHandler({ sender }, {
+    mode: "work-panel",
+    x: 1,
+    y: 2,
+    profile: "reference",
+    isFullscreen: false,
+    canClose: true,
+    canCloseOthers: true
+  }), { actionId: "reveal-resource" });
 
   selectedActionId = "open-resource-default-app";
   assert.deepEqual(await invokeHandler({ sender }, {
@@ -193,11 +209,54 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   });
 });
 
-test("Work Panel local resource open IPC is main-window-owned", async () => {
+test("Work Panel reveal menu uses platform-native file manager labels", async () => {
+  for (const scenario of [
+    { platform: "darwin", label: /Finder|访达/u },
+    { platform: "win32", label: /Explorer|文件资源管理器/u },
+    { platform: "linux", label: /File Manager|文件管理器/u },
+  ]) {
+    const handlers = new Map();
+    const sender = {};
+    const ownerWindow = {
+      isDestroyed: () => false,
+      getContentBounds: () => ({ x: 0, y: 0, width: 300, height: 400 }),
+    };
+    let builtTemplate;
+    registerChatWorkPanelTabContextMenuIpcHandlers({
+      handle: (channel, handler) => handlers.set(channel, handler),
+    }, {
+      getMainWindow: () => ownerWindow,
+      platform: scenario.platform,
+      BrowserWindow: {
+        fromWebContents: (contents) => contents === sender ? ownerWindow : null,
+      },
+      Menu: {
+        buildFromTemplate: (template) => {
+          builtTemplate = template;
+          return { popup: ({ callback }) => callback() };
+        },
+      },
+    });
+
+    await handlers.get("chatWorkPanel.tabContextMenu.popup")({ sender }, {
+      mode: "work-panel",
+      x: 1,
+      y: 2,
+      profile: "artifact",
+      isFullscreen: false,
+      canClose: true,
+      canCloseOthers: false,
+    });
+    assert.match(builtTemplate.find((item) => item.id === "reveal-resource").label, scenario.label);
+  }
+});
+
+test("Work Panel local resource open and reveal IPCs are main-window-owned", async () => {
   const handlers = new Map();
   const sender = {};
   const ownerWindow = { isDestroyed: () => false };
   const opened = [];
+  const revealed = [];
   registerChatWorkPanelTabContextMenuIpcHandlers({
     handle: (channel, handler) => handlers.set(channel, handler),
   }, {
@@ -207,6 +266,10 @@ test("Work Panel local resource open IPC is main-window-owned", async () => {
     },
     openLocalResource: async (request) => {
       opened.push(request);
+      return { ok: true, path: "/runtime/chats/chat-1/artifacts/run/report.docx" };
+    },
+    revealLocalResource: async (request) => {
+      revealed.push(request);
       return { ok: true, path: "/runtime/chats/chat-1/artifacts/run/report.docx" };
     },
   });
@@ -221,4 +284,10 @@ test("Work Panel local resource open IPC is main-window-owned", async () => {
   assert.deepEqual(opened, [request]);
   assert.equal((await handler({ sender: {} }, request)).code, "invalid_request");
   assert.equal((await handler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");
+
+  const revealHandler = handlers.get("chatWorkPanel.revealLocalResource");
+  assert.equal((await revealHandler({ sender }, request)).ok, true);
+  assert.deepEqual(revealed, [request]);
+  assert.equal((await revealHandler({ sender: {} }, request)).code, "invalid_request");
+  assert.equal((await revealHandler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");
 });

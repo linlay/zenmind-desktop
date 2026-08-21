@@ -16,6 +16,8 @@ import type {
 import type {
   ChatWorkPanelOpenLocalResourceRequest,
   ChatWorkPanelOpenLocalResourceResult,
+  ChatWorkPanelRevealLocalResourceRequest,
+  ChatWorkPanelRevealLocalResourceResult,
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
@@ -662,6 +664,9 @@ export interface DesktopApi {
     openLocalResource: (
       request: ChatWorkPanelOpenLocalResourceRequest
     ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
+    revealLocalResource: (
+      request: ChatWorkPanelRevealLocalResourceRequest
+    ) => Promise<ChatWorkPanelRevealLocalResourceResult>;
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;

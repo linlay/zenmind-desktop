@@ -9,6 +9,7 @@ const {
 const {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   openChatWorkPanelResourceInDefaultApp,
+  revealChatWorkPanelResourceInFileManager,
 } = await import("../dist-electron/main/chat-work-panel-resource-open.js");
 
 test("Resource Viewer route yields only a chat-scoped artifact/reference path", () => {
@@ -94,6 +95,27 @@ for (const scenario of [
     assert.equal(result.path, scenario.expectedPath);
     assert.deepEqual(openedPaths, [scenario.expectedPath]);
   });
+
+  test(`reveals the existing ${scenario.name} chat artifact in the file manager`, async () => {
+    const revealedPaths = [];
+    const result = await revealChatWorkPanelResourceInFileManager({
+      ownerChatId: "chat-72",
+      relativePath: "artifacts/run-1/report.docx",
+      profile: "artifact",
+    }, {
+      app: {},
+      platform: scenario.platform,
+      resolveRuntimeRoot: () => scenario.runtimeRoot,
+      existsSync: (targetPath) => targetPath === scenario.expectedChatRoot || targetPath === scenario.expectedPath,
+      realpathSync: (targetPath) => targetPath,
+      statSync: () => ({ isFile: () => true }),
+      showItemInFolder: (targetPath) => revealedPaths.push(targetPath),
+    });
+
+    assert.equal(result.ok, true);
+    assert.equal(result.path, scenario.expectedPath);
+    assert.deepEqual(revealedPaths, [scenario.expectedPath]);
+  });
 }
 
 test("realpath validation rejects a chat artifact symlink escaping the chat directory", async () => {
@@ -115,6 +137,29 @@ test("realpath validation rejects a chat artifact symlink escaping the chat dire
 
   assert.equal(result.ok, false);
   assert.equal(result.code, "path_outside_chat");
+});
+
+test("reveal does not hand an escaping chat artifact symlink to the file manager", async () => {
+  const revealedPaths = [];
+  const result = await revealChatWorkPanelResourceInFileManager({
+    ownerChatId: "chat-72",
+    relativePath: "artifacts/run-1/report.docx",
+    profile: "artifact",
+  }, {
+    app: {},
+    platform: "darwin",
+    resolveRuntimeRoot: () => "/runtime",
+    existsSync: () => true,
+    realpathSync: (targetPath) => targetPath.endsWith("report.docx")
+      ? "/outside/report.docx"
+      : targetPath,
+    statSync: () => ({ isFile: () => true }),
+    showItemInFolder: (targetPath) => revealedPaths.push(targetPath),
+  });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.code, "path_outside_chat");
+  assert.deepEqual(revealedPaths, []);
 });
 
 test("Windows rejects drive or alternate-stream syntax inside an artifact path", async () => {

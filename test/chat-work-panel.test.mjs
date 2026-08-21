@@ -115,7 +115,9 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
     "BugOutlined",
     "ProjectOutlined",
     "DiffOutlined",
+    "ExportOutlined",
     "FileTextOutlined",
+    "FolderOpenOutlined",
     "DeploymentUnitOutlined",
     "RobotOutlined",
     "CloseOutlined",
@@ -131,9 +133,16 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /result\.actionId === "copy-title"/u);
   assert.match(host, /result\.actionId === "download-resource"/u);
   assert.match(host, /result\.actionId === "open-resource-default-app"/u);
+  assert.match(host, /result\.actionId === "reveal-resource"/u);
   assert.match(host, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/u);
   assert.match(host, /resolveChatWorkPanelLocalResourcePath/u);
   assert.match(host, /openLocalResource/u);
+  assert.match(host, /revealLocalResource/u);
+  assert.match(host, /className="chat-work-panel-resource-actions"/u);
+  assert.match(host, /<Button[\s\S]*?block[\s\S]*?className="chat-work-panel-resource-action"/u);
+  assert.match(host, /<Button[\s\S]*?type="primary"[\s\S]*?className="chat-work-panel-resource-action"/u);
+  assert.match(host, /chatWorkPanel\.tabContextMenu\.revealInFinder/u);
+  assert.match(host, /chatWorkPanel\.tabContextMenu\.revealInExplorer/u);
   assert.doesNotMatch(host, /resourceOpenIntentsRef/u);
   assert.doesNotMatch(host, /consumeDesktopDownloadDisposition/u);
   assert.match(host, /result\.actionId === "close-other-tabs"/u);
@@ -156,6 +165,9 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(css, /\.chat-work-panel-tab-trigger\s*\{[^}]*padding:\s*0 10px;/su);
   assert.match(css, /\.chat-work-panel-tab-close\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*width:\s*34px/su);
   assert.match(css, /\.chat-work-panel-tab-loading-spinner/u);
+  assert.match(css, /\.chat-work-panel-resource-actions\s*\{[^}]*inset:\s*0;[^}]*flex-direction:\s*column;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/su);
+  assert.match(css, /\.chat-work-panel-resource-action\.ant-btn\s*\{[^}]*width:\s*min\(220px,[^}]*height:\s*36px;[^}]*border-radius:\s*8px;/su);
+  assert.doesNotMatch(css, /\.chat-work-panel-item\.has-resource-actions > \.service-webview-surface/u);
   assert.match(css, /\.chat-work-panel-tab\.has-close:hover \.chat-work-panel-tab-title[^}]*mask-image:\s*linear-gradient/su);
   assert.match(css, /\.app-shell\.has-chat-work-panel \.work-panel-host\.is-fullscreen\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%/su);
   assert.match(css, /\.chat-work-panel \.external-webview-browser-chrome\s*\{\s*display:\s*none;/su);
@@ -210,6 +222,10 @@ test("WorkPanel fullscreen owns native window state and exclusively covers the D
   assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "全屏显示"/u);
   assert.match(enUS, /"webviewContextMenu\.page\.copy-url": "Copy Current Address"/u);
   assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "Full Screen"/u);
+  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.revealInFinder": "在访达中显示"/u);
+  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.revealInExplorer": "在文件资源管理器中显示"/u);
+  assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.revealInFinder": "Reveal in Finder"/u);
+  assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.revealInExplorer": "Show in File Explorer"/u);
 });
 
 test("WorkPanel close shortcut focus ownership is wired across renderer preload and main", () => {
