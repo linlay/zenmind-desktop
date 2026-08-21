@@ -1038,6 +1038,76 @@ test("desktop sso strips a Bearer scheme from cookie token responses", () => {
   );
 });
 
+test("desktop sso selects the cookie token matching the configured issuer and audience", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-cookie-token-selection-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  const devIssuer = "https://eiam.dev.example.test/auth/oidc/dev";
+  const devAudience = "dev-client";
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: embeddedLoginOrigin,
+    loginUrl: embeddedLoginUrl,
+    appendLoginState: false,
+    cookieAccessTokenExchange: {
+      url: embeddedTokenExchangeUrl,
+      method: "GET",
+      accessTokenIssuer: devIssuer,
+      accessTokenAudience: devAudience
+    }
+  });
+  const configResult = __testInternals.loadDesktopSsoConfig(app, "darwin");
+  assert.equal(configResult.configured, true);
+  assert.equal(configResult.config.cookieAccessTokenExchange.accessTokenIssuer, devIssuer);
+  assert.equal(configResult.config.cookieAccessTokenExchange.accessTokenAudience, devAudience);
+
+  const productionToken = createUnsignedJwt({
+    sub: "cookie-user",
+    iss: "https://eiam.prod.example.test/auth/oidc/prod",
+    aud: "prod-client",
+    exp: Math.floor(Date.now() / 1000) + 3600
+  });
+  const developmentToken = createUnsignedJwt({
+    sub: "cookie-user",
+    iss: devIssuer,
+    aud: ["another-client", devAudience],
+    exp: Math.floor(Date.now() / 1000) + 3600
+  });
+  assert.equal(
+    __testInternals.readCookieAccessTokenFromResponse({
+      access_token: productionToken,
+      environments: { dev: { id_token: `Bearer ${developmentToken}` } }
+    }, configResult.config),
+    developmentToken
+  );
+  assert.throws(
+    () => __testInternals.readCookieAccessTokenFromResponse({ access_token: productionToken }, configResult.config),
+    /no token matching issuer|没有匹配 Issuer/iu
+  );
+});
+
+test("desktop sso requires cookie token issuer and audience selectors together", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-cookie-token-selection-config-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  writeSsoConfig(app, {
+    enabled: true,
+    browserMode: "embedded",
+    browserOrigin: embeddedLoginOrigin,
+    loginUrl: embeddedLoginUrl,
+    appendLoginState: false,
+    cookieAccessTokenExchange: {
+      url: embeddedTokenExchangeUrl,
+      method: "GET",
+      accessTokenIssuer: "https://eiam.dev.example.test/auth/oidc/dev"
+    }
+  });
+  const result = __testInternals.loadDesktopSsoConfig(app, "darwin");
+  assert.equal(result.configured, true);
+  assert.match(result.error, /must be configured together|必须同时配置/iu);
+});
+
 test("desktop sso exchanges Cookie plus CSRF into one JWT for both token files", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-cookie-token-exchange-"));
   t.after(() => {

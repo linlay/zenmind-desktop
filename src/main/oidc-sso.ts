@@ -74,6 +74,8 @@ type CookieAccessTokenExchangeConfig = {
   headers: Record<string, string>;
   body?: string;
   accessTokenPath: string;
+  accessTokenIssuer?: string;
+  accessTokenAudience?: string;
 };
 
 export type DesktopSsoBrowserSessionConfig = {
@@ -853,6 +855,11 @@ function normalizeCookieAccessTokenExchangeConfig(
   const headers = normalizeCookieAccessTokenExchangeHeaders(exchangeRecord);
   const body = normalizeCookieAccessTokenExchangeBody(exchangeRecord, method, headers);
   const accessTokenPath = getRecordString(exchangeRecord, "accessTokenPath") || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
+  const accessTokenIssuer = getRecordString(exchangeRecord, "accessTokenIssuer");
+  const accessTokenAudience = getRecordString(exchangeRecord, "accessTokenAudience");
+  if (Boolean(accessTokenIssuer) !== Boolean(accessTokenAudience)) {
+    throw new Error(t("sso.config.cookieTokenIdentityPairRequired"));
+  }
   const rawCsrfUrl = getRecordString(exchangeRecord, "csrfUrl");
   return {
     url: new URL(rawUrl, baseOrigin).toString(),
@@ -860,7 +867,11 @@ function normalizeCookieAccessTokenExchangeConfig(
     method,
     headers,
     ...(body !== undefined ? { body } : {}),
-    accessTokenPath
+    accessTokenPath,
+    ...(accessTokenIssuer ? {
+      accessTokenIssuer: normalizeHttpUrl(accessTokenIssuer, accessTokenIssuer, "cookieAccessTokenExchange.accessTokenIssuer"),
+      accessTokenAudience
+    } : {})
   };
 }
 
@@ -2557,7 +2568,76 @@ function normalizeCookieAccessToken(value: unknown) {
   return (bearerMatch?.[1] || token).trim();
 }
 
+function cookieAccessTokenMatchesIdentity(
+  token: string,
+  issuer: string,
+  audience: string
+) {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return false;
+  }
+  try {
+    const payload = decodeJsonPart(parts[1]);
+    const tokenIssuer = normalizeStringClaim(payload.iss);
+    const rawAudience = payload.aud;
+    const audiences = Array.isArray(rawAudience)
+      ? rawAudience.filter((item): item is string => typeof item === "string")
+      : [normalizeStringClaim(rawAudience)].filter(Boolean);
+    return tokenIssuer === issuer && audiences.includes(audience);
+  } catch {
+    return false;
+  }
+}
+
+function collectCookieAccessTokenCandidates(
+  value: unknown,
+  candidates: Set<string>,
+  depth = 0
+) {
+  if (depth > 6 || candidates.size > 64 || value == null) {
+    return;
+  }
+  if (typeof value === "string") {
+    const token = normalizeCookieAccessToken(value);
+    if (token.split(".").length === 3) {
+      candidates.add(token);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 64)) {
+      collectCookieAccessTokenCandidates(item, candidates, depth + 1);
+    }
+    return;
+  }
+  if (typeof value === "object") {
+    for (const item of Object.values(value as Record<string, unknown>).slice(0, 64)) {
+      collectCookieAccessTokenCandidates(item, candidates, depth + 1);
+    }
+  }
+}
+
+function selectCookieAccessTokenByIdentity(value: unknown, config: CookieAccessTokenExchangeConfig) {
+  const issuer = config.accessTokenIssuer || "";
+  const audience = config.accessTokenAudience || "";
+  const candidates = new Set<string>();
+  collectCookieAccessTokenCandidates(value, candidates);
+  const matches = [...candidates].filter((token) => cookieAccessTokenMatchesIdentity(token, issuer, audience));
+  if (matches.length === 0) {
+    throw new Error(t("sso.token.cookieAccessTokenIdentityNotFound", { issuer, audience }));
+  }
+  if (matches.length > 1) {
+    throw new Error(t("sso.token.cookieAccessTokenIdentityAmbiguous", { issuer, audience }));
+  }
+  return matches[0];
+}
+
 function readCookieAccessTokenFromResponse(value: unknown, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+  const exchangeConfig = config.cookieAccessTokenExchange;
+  if (exchangeConfig?.accessTokenIssuer && exchangeConfig.accessTokenAudience) {
+    return selectCookieAccessTokenByIdentity(value, exchangeConfig);
+  }
   const rawAccessToken = normalizeCookieAccessToken(value);
   if (rawAccessToken) {
     return rawAccessToken;

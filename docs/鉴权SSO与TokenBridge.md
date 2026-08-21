@@ -29,6 +29,8 @@ Cookie SSO 的主流程为：
   -> 发布 authenticated 状态
 ```
 
+当 Cookie 换票响应同时包含生产与开发等多个 JWT 时，环境配置必须用预期 Issuer 与 Audience 精确选择 canonical token，不能依赖字段顺序或默认取第一个 token。未验证的 JWT claims 只用于从响应候选中筛选；最终 token 仍由对应服务按签名、Issuer、Audience 与有效期完成授权校验。没有唯一匹配项时登录换票失败关闭，不回退到其他环境 token。
+
 会话、用户信息和 access token 是三个独立结果。交互式登录允许部分成功并向用户说明缺失步骤；不能用某一步的成功伪造另一步，也不能从未经验证的 token claims 推导用户身份。
 
 ## 启动恢复
