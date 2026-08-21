@@ -15,7 +15,10 @@ const {
 } = await import("../dist-electron/main/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
-const { resolveGlobalSearchCommandShortcut } = await import("../dist-electron/main/platform-adapter.js");
+const {
+  isWorkPanelCloseShortcut,
+  resolveGlobalSearchCommandShortcut,
+} = await import("../dist-electron/main/platform-adapter.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -360,6 +363,41 @@ test("main window lifecycle masks Windows caption controls while global search i
   });
 });
 
+test("main window lifecycle keeps Windows caption controls masked until every webview modal closes", () => {
+  const target = new FakeWindow();
+  const controller = createMainWindowLifecycleController({
+    platform: "win32",
+    getWindow: () => target,
+    createWindow: () => target,
+    clearWindow: () => {},
+    nativeTheme: { shouldUseDarkColors: false }
+  });
+
+  controller.setWebviewModalOverlayVisible("service-webview:chat", true);
+  controller.setWebviewModalOverlayVisible("service-webview:management", true);
+  controller.setWebviewModalOverlayVisible("service-webview:chat", false);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#D4D5D9",
+    symbolColor: "#D4D5D9",
+    height: 44
+  });
+
+  controller.setGlobalSearchOverlayVisible(true);
+  controller.setWebviewModalOverlayVisible("service-webview:management", false);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#D4D5D9",
+    symbolColor: "#D4D5D9",
+    height: 44
+  });
+
+  controller.setGlobalSearchOverlayVisible(false);
+  assert.deepEqual(target.titleBarOverlay, {
+    color: "#FFFFFF",
+    symbolColor: "#1F2937",
+    height: 44
+  });
+});
+
 test("main window activation restores, shows and focuses the window before navigating", () => {
   const target = new FakeWindow();
   target.minimized = true;
@@ -634,6 +672,65 @@ test("window manager opens Desktop global search from the main window shortcut",
   assert.equal(target.webContents.toggleDevToolsCount, 0);
 });
 
+test("main window forwards close shortcuts only while WorkPanel owns keyboard focus", () => {
+  const target = new FakeWindow();
+  let workPanelFocused = true;
+  let prevented = false;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "darwin",
+    lifecycle: {
+      applyAppearance: () => {},
+      hideForClose: () => {},
+      cancelPendingClose: () => {},
+    },
+    isDevToolsShortcut: () => false,
+    isWorkPanelCloseShortcut,
+    isWorkPanelKeyboardFocusActive: () => workPanelFocused,
+    isHandlingQuit: () => false,
+    clearWindow: () => {},
+  });
+
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, {
+    type: "keyDown",
+    key: "w",
+    meta: true,
+    control: false,
+    alt: false,
+    shift: false,
+    isAutoRepeat: false,
+  });
+
+  assert.equal(prevented, true);
+  assert.deepEqual(target.webContents.sentMessages, [{
+    channel: "app.workPanelCloseShortcut",
+    payload: { guestId: null, workPanelFocused: true },
+  }]);
+
+  workPanelFocused = false;
+  prevented = false;
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {
+      prevented = true;
+    },
+  }, {
+    type: "keyDown",
+    key: "w",
+    meta: true,
+    control: false,
+    alt: false,
+    shift: false,
+    isAutoRepeat: false,
+  });
+
+  assert.equal(prevented, false);
+  assert.equal(target.webContents.sentMessages.length, 1);
+});
+
 test("main window forwards global search commands only while the overlay is visible", () => {
   const target = new FakeWindow();
   let visible = true;
@@ -752,6 +849,7 @@ test("window manager wires webview preload validation and guest webview behavior
   const target = new FakeWindow();
   const guest = new FakeWebContents(64);
   const reports = [];
+  const focusChanges = [];
   const prevented = { attach: false };
 
   configureMainWindowWebContents(target, {
@@ -765,6 +863,12 @@ test("window manager wires webview preload validation and guest webview behavior
     resolveOpenDisposition: () => "external",
     collectLoadDiagnostics: async () => ({}),
     report: (source, details) => reports.push({ source, details }),
+    onWebviewFocusChanged: (webContentsId, focused) => {
+      focusChanges.push({ webContentsId, focused });
+    },
+    onMainRendererFocused: () => {
+      focusChanges.push({ webContentsId: null, focused: true });
+    },
     openExternal: async () => {},
     schedule: (callback) => callback()
   });
@@ -775,6 +879,11 @@ test("window manager wires webview preload validation and guest webview behavior
     }
   }, { preload: "C:/unexpected.js" }, { src: "https://example.test/" });
   target.webContents.emit("did-attach-webview", {}, guest);
+  guest.emit("focus");
+  guest.emit("blur");
+  guest.emit("focus");
+  target.webContents.emit("focus");
+  guest.emit("destroyed");
   guest.emit("before-input-event", {
     preventDefault: () => {}
   }, { key: "i" });
@@ -788,6 +897,13 @@ test("window manager wires webview preload validation and guest webview behavior
     }
   });
   assert.deepEqual(guest.devtoolsOpenOptions, { mode: "detach" });
+  assert.deepEqual(focusChanges, [
+    { webContentsId: 64, focused: true },
+    { webContentsId: 64, focused: false },
+    { webContentsId: 64, focused: true },
+    { webContentsId: null, focused: true },
+    { webContentsId: 64, focused: false }
+  ]);
 });
 
 test("window manager blocks an unexpected initial URL in the Help partition", () => {
@@ -1001,6 +1117,101 @@ test("attached webviews prioritize visible global search commands over edit shor
   }]);
 });
 
+test("attached webviews forward close only for active registered WorkPanel guests", () => {
+  const target = new FakeWindow();
+  const macGuest = new FakeWebContents(91);
+  const windowsGuest = new FakeWebContents(92);
+  const ordinaryGuest = new FakeWebContents(93);
+  const prevented = { mac: false, windows: false, repeated: false, ordinary: false };
+  const baseOptions = {
+    getMainWindow: () => target,
+    isDevToolsShortcut: () => false,
+    isWorkPanelCloseShortcut,
+    isWorkPanelWebview: (contents) => contents.id !== ordinaryGuest.id,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async () => {},
+    schedule: (callback) => callback(),
+  };
+
+  configureAttachedWebview(macGuest, { ...baseOptions, platform: "darwin" });
+  configureAttachedWebview(windowsGuest, { ...baseOptions, platform: "win32" });
+  configureAttachedWebview(ordinaryGuest, { ...baseOptions, platform: "win32" });
+
+  macGuest.emit("before-input-event", { preventDefault: () => { prevented.mac = true; } }, {
+    type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false,
+  });
+  windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.windows = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
+  });
+  windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.repeated = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: true,
+  });
+  ordinaryGuest.emit("before-input-event", { preventDefault: () => { prevented.ordinary = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
+  });
+
+  assert.deepEqual(prevented, { mac: true, windows: true, repeated: false, ordinary: false });
+  assert.deepEqual(target.webContents.sentMessages, [
+    { channel: "app.workPanelCloseShortcut", payload: { guestId: 91 } },
+    { channel: "app.workPanelCloseShortcut", payload: { guestId: 92 } },
+  ]);
+});
+
+test("attached WorkPanel webviews forward Escape only while panel fullscreen is active", () => {
+  const target = new FakeWindow();
+  const workPanelGuest = new FakeWebContents(94);
+  const ordinaryGuest = new FakeWebContents(95);
+  let fullscreenActive = false;
+  const prevented = { inactive: false, active: false, repeated: false, ordinary: false };
+  const baseOptions = {
+    platform: "win32",
+    getMainWindow: () => target,
+    isDevToolsShortcut: () => false,
+    isWorkPanelWebview: (contents) => contents.id === workPanelGuest.id,
+    isWorkPanelFullscreenActive: () => fullscreenActive,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: () => "external",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async () => {},
+    schedule: (callback) => callback(),
+  };
+
+  configureAttachedWebview(workPanelGuest, baseOptions);
+  configureAttachedWebview(ordinaryGuest, baseOptions);
+
+  workPanelGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.inactive = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: false,
+  });
+  fullscreenActive = true;
+  workPanelGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.active = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: false,
+  });
+  workPanelGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.repeated = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: true,
+  });
+  ordinaryGuest.emit("before-input-event", {
+    preventDefault: () => { prevented.ordinary = true; }
+  }, {
+    type: "keyDown", key: "Escape", isAutoRepeat: false,
+  });
+
+  assert.deepEqual(prevented, { inactive: false, active: true, repeated: false, ordinary: false });
+  assert.deepEqual(target.webContents.sentMessages, [{
+    channel: "app.workPanelFullscreenExitShortcut",
+    payload: { guestId: 94 },
+  }]);
+});
+
 test("window manager grants media permissions only to the main window", async () => {
   const permissionSession = new FakePermissionSession();
   const mainWindow = new FakeWindow();
@@ -1193,6 +1404,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
   assert.deepEqual(sentTabs, [{
     channel: "webview.openTab",
     payload: {
+      target: "desktop-browser",
       sourceGuestId: 42,
       url: "https://example.test/inside"
     }
@@ -1224,7 +1436,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
   ]);
 });
 
-test("Chat Work Panel popups navigate the source guest without creating a tab or external window", async () => {
+test("Chat Work Panel popups create an outer WorkPanel tab without navigating Desktop", async () => {
   const contents = new FakeWebContents(43);
   const sentTabs = [];
   const externalUrls = [];
@@ -1242,7 +1454,7 @@ test("Chat Work Panel popups navigate the source guest without creating a tab or
     resolveOpenDisposition: () => "tab",
     collectLoadDiagnostics: async () => ({}),
     report: () => {},
-    shouldOpenPopupInCurrentTab: () => true,
+    shouldOpenPopupInWorkPanelTab: () => true,
     openExternal: async (url) => {
       externalUrls.push(url);
     },
@@ -1253,7 +1465,14 @@ test("Chat Work Panel popups navigate the source guest without creating a tab or
   assert.deepEqual(contents.windowOpenHandler({ url: "javascript:alert(1)" }), { action: "deny" });
   await Promise.resolve();
 
-  assert.deepEqual(contents.loadedUrls, ["https://example.test/popup"]);
-  assert.deepEqual(sentTabs, []);
+  assert.deepEqual(contents.loadedUrls, []);
+  assert.deepEqual(sentTabs, [{
+    channel: "webview.openTab",
+    payload: {
+      target: "work-panel",
+      sourceGuestId: 43,
+      url: "https://example.test/popup"
+    }
+  }]);
   assert.deepEqual(externalUrls, []);
 });

@@ -1,18 +1,18 @@
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
 
-const COPILOT_DOCK_SESSION_VERSION = 3;
+const COPILOT_DOCK_SESSION_VERSION = 4;
 const COPILOT_DOCK_SESSION_KEY = `${STORAGE_NAMESPACE}.copilot-dock-session`;
 const COPILOT_PATH = "/copilot";
 
-export type CopilotDockSurfaceSession = {
+export type CopilotDockContextSession = {
   embedPath: string;
   agentKey: string;
   chatId?: string;
 };
 
 export type CopilotDockSessionSnapshot = {
-  version: 3;
-  surfaces: Record<string, CopilotDockSurfaceSession>;
+  version: 4;
+  contexts: Record<string, CopilotDockContextSession>;
 };
 
 export function normalizeCopilotEmbedPath(value: string) {
@@ -54,23 +54,27 @@ export function readCopilotDockSessionSnapshot(): CopilotDockSessionSnapshot | n
     if (!raw) {
       return null;
     }
-    const value = JSON.parse(raw) as Partial<CopilotDockSessionSnapshot>;
-    if (
-      value.version !== COPILOT_DOCK_SESSION_VERSION ||
-      !value.surfaces ||
-      typeof value.surfaces !== "object" ||
-      Array.isArray(value.surfaces)
-    ) {
+    const value = JSON.parse(raw) as {
+      version?: unknown;
+      contexts?: unknown;
+      surfaces?: unknown;
+    };
+    const rawContexts = value.version === COPILOT_DOCK_SESSION_VERSION
+      ? value.contexts
+      : value.version === 3
+        ? value.surfaces
+        : null;
+    if (!rawContexts || typeof rawContexts !== "object" || Array.isArray(rawContexts)) {
       clearCopilotDockSessionSnapshot();
       return null;
     }
-    const surfaces: Record<string, CopilotDockSurfaceSession> = {};
-    for (const [rawSurfaceId, rawSession] of Object.entries(value.surfaces)) {
-      const surfaceId = normalizeCopilotSurfaceId(rawSurfaceId);
-      if (!surfaceId || !rawSession || typeof rawSession !== "object" || Array.isArray(rawSession)) {
+    const contexts: Record<string, CopilotDockContextSession> = {};
+    for (const [rawContextKey, rawSession] of Object.entries(rawContexts)) {
+      const contextKey = normalizeCopilotContextKey(rawContextKey);
+      if (!contextKey || !rawSession || typeof rawSession !== "object" || Array.isArray(rawSession)) {
         continue;
       }
-      const candidate = rawSession as Partial<CopilotDockSurfaceSession>;
+      const candidate = rawSession as Partial<CopilotDockContextSession>;
       const embedPath = normalizeCopilotEmbedPath(typeof candidate.embedPath === "string" ? candidate.embedPath : "");
       const agentKey = typeof candidate.agentKey === "string" ? candidate.agentKey.trim() : "";
       const chatId = typeof candidate.chatId === "string"
@@ -79,20 +83,24 @@ export function readCopilotDockSessionSnapshot(): CopilotDockSessionSnapshot | n
       if (!embedPath || !agentKey) {
         continue;
       }
-      surfaces[surfaceId] = {
+      contexts[contextKey] = {
         embedPath,
         agentKey,
         ...(chatId ? { chatId } : {})
       };
     }
-    if (Object.keys(surfaces).length === 0) {
+    if (Object.keys(contexts).length === 0) {
       clearCopilotDockSessionSnapshot();
       return null;
     }
-    return {
+    const snapshot: CopilotDockSessionSnapshot = {
       version: COPILOT_DOCK_SESSION_VERSION,
-      surfaces
+      contexts
     };
+    if (value.version === 3) {
+      window.sessionStorage.setItem(COPILOT_DOCK_SESSION_KEY, JSON.stringify(snapshot));
+    }
+    return snapshot;
   } catch {
     clearCopilotDockSessionSnapshot();
     return null;
@@ -105,47 +113,47 @@ export function writeCopilotDockSessionSnapshot(
   if (typeof window === "undefined") {
     return;
   }
-  const surfaces: Record<string, CopilotDockSurfaceSession> = {};
-  for (const [rawSurfaceId, rawSession] of Object.entries(input.surfaces)) {
-    const surfaceId = normalizeCopilotSurfaceId(rawSurfaceId);
+  const contexts: Record<string, CopilotDockContextSession> = {};
+  for (const [rawContextKey, rawSession] of Object.entries(input.contexts)) {
+    const contextKey = normalizeCopilotContextKey(rawContextKey);
     const embedPath = normalizeCopilotEmbedPath(rawSession.embedPath);
     const agentKey = rawSession.agentKey.trim();
     const chatId = rawSession.chatId?.trim() || readCopilotChatId(embedPath);
-    if (!surfaceId || !embedPath || !agentKey) {
+    if (!contextKey || !embedPath || !agentKey) {
       continue;
     }
-    surfaces[surfaceId] = {
+    contexts[contextKey] = {
       embedPath,
       agentKey,
       ...(chatId ? { chatId } : {})
     };
   }
-  if (Object.keys(surfaces).length === 0) {
+  if (Object.keys(contexts).length === 0) {
     clearCopilotDockSessionSnapshot();
     return;
   }
   try {
     window.sessionStorage.setItem(COPILOT_DOCK_SESSION_KEY, JSON.stringify({
       version: COPILOT_DOCK_SESSION_VERSION,
-      surfaces
+      contexts
     } satisfies CopilotDockSessionSnapshot));
   } catch {
     // Session restoration is best-effort and must never block the Dock.
   }
 }
 
-function normalizeCopilotSurfaceId(value: string) {
-  const surfaceId = value.trim();
+function normalizeCopilotContextKey(value: string) {
+  const contextKey = value.trim();
   if (
-    !surfaceId ||
-    surfaceId.length > 512 ||
-    surfaceId === "__proto__" ||
-    surfaceId === "prototype" ||
-    surfaceId === "constructor"
+    !contextKey ||
+    contextKey.length > 512 ||
+    contextKey === "__proto__" ||
+    contextKey === "prototype" ||
+    contextKey === "constructor"
   ) {
     return "";
   }
-  return surfaceId;
+  return contextKey;
 }
 
 export function clearCopilotDockSessionSnapshot() {

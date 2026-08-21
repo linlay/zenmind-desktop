@@ -85,7 +85,7 @@ test("Kanban detail opens independently from create and preserves the cloud read
   assert.doesNotMatch(detail, /issue\.reviewerId|kanban\.detail\.reviewer/);
   assert.doesNotMatch(detail, /kanban-detail-footer|const editing = !isCloud/);
   assert.match(detail, /className="kanban-detail-window-actions"[\s\S]{0,700}kanban\.chat\.view[\s\S]{0,900}kanban\.detail\.editIssue[\s\S]{0,500}kanban-detail-close/);
-  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-layout[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceId="agent-webclient-kanban-chat"/);
+  assert.match(detail, /chatEmbedPath \? \([\s\S]{0,300}kanban-detail-chat-layout[\s\S]{0,2500}<ServiceWebviewSurface[\s\S]{0,500}surfaceOwnershipActive=\{false\}[\s\S]{0,500}surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
   assert.match(detail, /chatEmbedPath \? t\("kanban\.chat\.viewIssue"\) : t\("kanban\.chat\.view"\)/);
   assert.match(detail, /disabled=\{!chatEmbedPath && !latestOpenableIssueChat\}/);
   assert.match(detail, /return \[\.\.\.chatsByChatId\.values\(\)\]\.sort\(compareIssueChatTime\)/);

@@ -8,6 +8,7 @@ import {
   type EmbeddedCdpSurfaceKind
 } from "../shared/embedded-cdp";
 import { PRODUCT_NAME } from "../shared/brand";
+import type { SurfaceIdentity } from "../shared/surface-identity";
 import {
   DESKTOP_CDP_TARGET_TIMEOUT_CODE,
   isDesktopCdpTimeoutError,
@@ -15,7 +16,7 @@ import {
   sendDesktopCdpCommand
 } from "./desktop-cdp-debugger";
 
-export type EmbeddedCdpSurface = {
+export type EmbeddedCdpSurface = SurfaceIdentity & {
   id: string;
   targetGeneration?: string;
   label: string;
@@ -170,6 +171,10 @@ function targetDescriptor(
     surfaceId: surface.id,
     tabId: tab.tabId,
     surfaceKind: surface.surfaceKind,
+    surfaceRole: surface.surfaceRole,
+    surfaceLevel: surface.surfaceLevel,
+    parentSurfaceId: surface.parentSurfaceId || "",
+    interaction: surface.interaction,
     open: surface.open,
     surfaceRoute: surface.surfaceRoute || "",
     copilotAgentKey: surface.copilotAgentKey || ""
@@ -191,6 +196,10 @@ function targetInfoDescriptor(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfa
     surfaceId: surface.id,
     tabId: tab.tabId,
     surfaceKind: surface.surfaceKind,
+    surfaceRole: surface.surfaceRole,
+    surfaceLevel: surface.surfaceLevel,
+    parentSurfaceId: surface.parentSurfaceId || "",
+    interaction: surface.interaction,
     open: surface.open,
     surfaceRoute: surface.surfaceRoute || "",
     copilotAgentKey: surface.copilotAgentKey || ""

@@ -1,6 +1,6 @@
 {
   "name": "desktop",
-  "version": "0.3.40",
+  "version": "0.3.50",
   "private": true,
   "description": "桌面壳",
   "main": "dist-electron/main/index.js",
@@ -17,16 +17,18 @@
     "i18n:keys": "node ./scripts/i18n/validate-dictionaries.mjs && node ./scripts/i18n/validate-language-separation.mjs",
     "webapp-contract:generate": "node ./scripts/generate-webapp-contract.mjs",
     "webapp-contract:check": "node ./scripts/generate-webapp-contract.mjs --check",
+    "webapp-tooling:bundle": "npm run typecheck:tooling && node ./scripts/generate-webapp-tooling-bundle.mjs",
     "agent-webclient-contract:generate": "node ./scripts/generate-agent-webclient-contract.mjs",
     "agent-webclient-contract:check": "node ./scripts/generate-agent-webclient-contract.mjs --check",
-    "webapp:manifest:init": "node ./scripts/webapp-tooling.mjs manifest init",
-    "webapp:manifest:validate": "node ./scripts/webapp-tooling.mjs manifest validate",
-    "webapp:package:validate": "node ./scripts/webapp-tooling.mjs package validate",
-    "webapp:package:build": "node ./scripts/webapp-tooling.mjs package build",
+    "webapp:manifest:init": "node ./scripts/run-webapp-tooling.mjs manifest init",
+    "webapp:manifest:validate": "node ./scripts/run-webapp-tooling.mjs manifest validate",
+    "webapp:package:validate": "node ./scripts/run-webapp-tooling.mjs package validate",
+    "webapp:package:build": "node ./scripts/run-webapp-tooling.mjs package build",
     "build:main:types": "tsc -p tsconfig.main.json",
+    "typecheck:tooling": "tsc -p tsconfig.tooling.json --noEmit",
     "typecheck:renderer": "tsc -p tsconfig.json --noEmit",
     "build:main:bundle": "node ./scripts/build-main-bundle.mjs",
-    "build:main:prepared": "npm run build:main:types && npm run build:main:bundle",
+    "build:main:prepared": "npm run build:main:types && npm run typecheck:tooling && npm run build:main:bundle",
     "build:renderer:prepared": "npm run typecheck:renderer && vite build",
     "build:main": "npm run brand:sync && npm run build:main:prepared",
     "build:renderer": "npm run brand:prepare && npm run build:renderer:prepared",
@@ -38,7 +40,7 @@
     "dist:win": "node ./scripts/dist-win.mjs",
     "dist:win-docker": "node ./scripts/dist-win.mjs --docker",
     "test": "npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run i18n:check && npm run build && node --test ./test/*.test.mjs",
-    "test:unit": "npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:types && node --test ./test/*.test.mjs"
+    "test:unit": "npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:types && npm run typecheck:tooling && node --test ./test/*.test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.1",
@@ -69,6 +71,7 @@
     "@vitejs/plugin-react": "^5.0.4",
     "electron": "^36.2.1",
     "electron-builder": "^24.13.3",
+    "esbuild": "^0.27.7",
     "typescript": "^5.9.2",
     "vite": "^7.1.7"
   }

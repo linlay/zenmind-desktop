@@ -1,8 +1,22 @@
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent as ReactKeyboardEvent,
+  type PointerEvent as ReactPointerEvent
+} from "react";
 import type { AssistantWorkerOpenRequest } from "../../../shared/contracts";
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { createAgentWebclientCopilotPath } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
+import {
+  COPILOT_DOCK_SURFACE_ID,
+  createSurfaceIdentity
+} from "../../../shared/surface-identity";
 import { useI18n } from "../../i18n/useI18n";
+import { SidebarActionIcon } from "../../components/BrandMark";
 import {
   normalizeCopilotEmbedPath,
   readCopilotChatId
@@ -13,7 +27,7 @@ const ServiceWebviewSurface = lazy(() =>
 );
 
 const AGENT_WEBCLIENT_COPILOT_PATH = "/copilot";
-const AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID = "agent-webclient-copilot-dock";
+const AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID = COPILOT_DOCK_SURFACE_ID;
 type CopilotUrlChangeSource = "host" | "guest";
 
 function normalizeAgentKey(value = "") {
@@ -76,7 +90,10 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible,
   openRequest,
   restoredEmbedPath,
+  parentSurfaceId,
   resolvedAgentKey,
+  resize,
+  onClose,
   onRunningRunIdChange,
   onSelectedAgentKeyChange,
   onCurrentEmbedPathChange
@@ -86,7 +103,17 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible: boolean;
   openRequest: AssistantWorkerOpenRequest | null;
   restoredEmbedPath?: string;
+  parentSurfaceId?: string;
   resolvedAgentKey: string;
+  resize?: {
+    active: boolean;
+    minWidth: number;
+    maxWidth: number;
+    width: number;
+    onKeyDown: (event: ReactKeyboardEvent<HTMLDivElement>) => void;
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => void;
+  };
+  onClose: () => void;
   onRunningRunIdChange: (runId: string | null) => void;
   onSelectedAgentKeyChange?: (agentKey: string) => void;
   onCurrentEmbedPathChange?: (embedPath: string, agentKey: string, chatId?: string) => void;
@@ -160,6 +187,33 @@ export function AgentWebclientCopilotDock({
       data-open-chat-id={openRequest?.chatId ?? ""}
       data-open-agent-key={targetAgentKey}
     >
+      {resize ? (
+        <div
+          className={`copilot-dock-resizer${resize.active ? " is-active" : ""}`}
+          role="separator"
+          aria-label={t("copilotDock.resize")}
+          aria-orientation="vertical"
+          aria-valuemin={resize.minWidth}
+          aria-valuemax={resize.maxWidth}
+          aria-valuenow={resize.width}
+          tabIndex={0}
+          onKeyDown={resize.onKeyDown}
+          onPointerDown={resize.onPointerDown}
+        >
+          <span className="copilot-dock-resizer-line" aria-hidden="true" />
+        </div>
+      ) : null}
+      {open ? (
+        <button
+          type="button"
+          className="copilot-dock-close-button"
+          aria-label={t("sidebar.copilot.close", { appName: PRODUCT_NAME })}
+          title={t("sidebar.copilot.close", { appName: PRODUCT_NAME })}
+          onClick={onClose}
+        >
+          <SidebarActionIcon kind="close" className="copilot-dock-close-button-icon" />
+        </button>
+      ) : null}
       {mounted ? (
         <Suspense fallback={null}>
           <ServiceWebviewSurface
@@ -168,7 +222,7 @@ export function AgentWebclientCopilotDock({
             embedPath={targetEmbedPath}
             hostTheme={hostTheme}
             serviceId="agent-webclient"
-            surfaceId={AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID}
+            surfaceIdentity={createSurfaceIdentity("copilot-dock", "", { parentSurfaceId })}
             surfaceLabel={t("copilotDock.surfaceLabel")}
             skipContextRegistration
             devToolsTarget="copilot"

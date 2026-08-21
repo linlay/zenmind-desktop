@@ -7,13 +7,15 @@ import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareCreateResult, AssistantConversationShareListResult, AssistantConversationShareRequest, AssistantConversationShareRevokeResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantFirstInstallBootstrapNavigationResult, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { AssistantChatDetail, AssistantChatInfo, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareCreateResult, AssistantConversationShareListResult, AssistantConversationShareRequest, AssistantConversationShareRevokeResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantFirstInstallBootstrapNavigationResult, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type {
   SidebarContextMenuPopupRequest,
   SidebarContextMenuPopupResult
 } from "../sidebar-context-menu";
 import type {
+  ChatWorkPanelOpenLocalResourceRequest,
+  ChatWorkPanelOpenLocalResourceResult,
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
@@ -29,7 +31,12 @@ import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
 import type { ChatWorkPanelClearSessionRequest } from "../chat-work-panel";
 import type { DesktopHelpSettings } from "../help";
+import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
+import type {
+  CanonicalChatSyncRequestListener,
+  CanonicalChatSyncResult,
+} from "../canonical-chat-sync";
 import type {
   EnterpriseChatAttachmentData,
   EnterpriseChatAttachmentInput,
@@ -115,6 +122,10 @@ export interface AgentRealtimeDebugTraceEntry {
   surfaceId?: string;
   webContentsId?: number;
   surfaceKind?: string;
+  surfaceRole?: SurfaceRole;
+  surfaceLevel?: SurfaceLevel;
+  parentSurfaceId?: string;
+  interaction?: SurfaceInteraction;
   route?: string;
 }
 
@@ -122,6 +133,10 @@ export interface AgentRealtimeDebugSurface {
   surfaceId: string;
   webContentsId: number;
   kind: AgentWebclientSurfaceKind;
+  surfaceRole: SurfaceRole;
+  surfaceLevel: SurfaceLevel;
+  parentSurfaceId?: string;
+  interaction: SurfaceInteraction;
   active: boolean;
   ownerChatId?: string;
   route: string;
@@ -561,6 +576,14 @@ export type DesktopGlobalSearchShortcut =
   | { kind: "attention"; slot: DesktopGlobalSearchShortcutSlot }
   | { kind: "agent"; slot: DesktopGlobalSearchShortcutSlot };
 export type DesktopGlobalSearchShortcutListener = (shortcut: DesktopGlobalSearchShortcut) => void;
+export type DesktopWorkPanelCloseShortcutRequest = {
+  guestId: number | null;
+  fallbackToWindowClose?: boolean;
+  workPanelFocused?: boolean;
+};
+export type DesktopWorkPanelCloseShortcutListener = (
+  request: DesktopWorkPanelCloseShortcutRequest
+) => void;
 export type DesktopConfigChangedEvent = {
   reason: string;
   changedAt: string;
@@ -594,6 +617,9 @@ export interface DesktopApi {
     popup: (
       request: ChatWorkPanelTabContextMenuPopupRequest
     ) => Promise<ChatWorkPanelTabContextMenuPopupResult>;
+    openLocalResource: (
+      request: ChatWorkPanelOpenLocalResourceRequest
+    ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
@@ -602,9 +628,20 @@ export interface DesktopApi {
     beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
+    setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
+    setWorkPanelKeyboardFocusActive: (active: boolean) => void;
+    setWorkPanelFullscreenActive: (active: boolean) => void;
+    requestWindowClose: () => void;
     getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
+    setWindowFullScreen: (
+      enabled: boolean
+    ) => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
     onWindowStateChanged: (listener: DesktopWindowStateListener) => (() => void);
     onShutdownProgress: (listener: ShutdownProgressListener) => (() => void);
+  };
+  canonicalChatSync: {
+    respond: (result: CanonicalChatSyncResult) => void;
+    onRequest: (listener: CanonicalChatSyncRequestListener) => (() => void);
   };
   desktopDownloads: {
     saveFile: (input: {
@@ -670,6 +707,7 @@ export interface DesktopApi {
     clearMemoryItems: () => Promise<{ ok: boolean; message: string; deletedCount: number }>;
     listChats: () => Promise<AssistantChatSummary[]>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
+    getChatInfo: (chatId: string) => Promise<AssistantChatInfo | null>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
     captureScreenshot: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
@@ -947,6 +985,8 @@ export interface DesktopApi {
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenGlobalSearch: (listener: () => void) => () => void;
   onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => () => void;
+  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => () => void;
+  onWorkPanelFullscreenExitShortcut: (listener: () => void) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;
   onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => () => void;

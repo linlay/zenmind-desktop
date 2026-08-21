@@ -33,6 +33,9 @@ export interface MainAppState {
   shutdownReport: ShutdownReport | null;
   serviceMutationQueue: Promise<void>;
   mainWindowSidebarTranslucencyEnabled: boolean;
+  workPanelKeyboardFocusActive: boolean;
+  workPanelFullscreenActive: boolean;
+  focusedWebviewDevToolsTargetId: number | null;
   currentPageSnapshot: DesktopPageContextSnapshot | null;
   copilotDevToolsTarget: CopilotDevToolsTarget | null;
   desktopPetSettings: DesktopPetSettingsState;
@@ -72,6 +75,9 @@ export function createMainAppState(initialState: Partial<MainAppState> = {}): Ma
     shutdownReport: initialState.shutdownReport ?? null,
     serviceMutationQueue: initialState.serviceMutationQueue ?? Promise.resolve(),
     mainWindowSidebarTranslucencyEnabled: initialState.mainWindowSidebarTranslucencyEnabled ?? true,
+    workPanelKeyboardFocusActive: initialState.workPanelKeyboardFocusActive ?? false,
+    workPanelFullscreenActive: initialState.workPanelFullscreenActive ?? false,
+    focusedWebviewDevToolsTargetId: initialState.focusedWebviewDevToolsTargetId ?? null,
     currentPageSnapshot: initialState.currentPageSnapshot ?? null,
     copilotDevToolsTarget: initialState.copilotDevToolsTarget ?? null,
     desktopPetSettings: initialState.desktopPetSettings as DesktopPetSettingsState,

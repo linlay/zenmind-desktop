@@ -156,7 +156,7 @@ test("RealtimeBroker multiplexes concurrent Runs and local request ids over one 
   broker.appendDebugTrace({
     layer: "surface-bridge",
     direction: "surface-to-desktop",
-    surfaceId: "agent-webclient-chat",
+    surfaceId: "main-chat",
     data: {
       token: "must-not-leak",
       nested: { authorization: "Bearer must-not-leak" },
@@ -222,6 +222,74 @@ test("RealtimeBroker locally fans one Run out to Agent, Copilot, Overview and De
   for (const subscription of subscriptions) subscription.unsubscribe();
 });
 
+test("RealtimeBroker replays and fans out a forwarded visible Run without upstream attach", async (t) => {
+  const { broker, sockets } = createHarness(t);
+  broker.beginForwardedVisibleRun({
+    sourceId: "frame-port:main:query-1",
+    chatId: "chat-visible",
+    runId: "run-visible",
+    owner: { kind: "agent", agentKey: "coder" },
+    primarySurfaceId: "surface:main",
+  });
+  broker.appendForwardedVisibleRunEvent({
+    sourceId: "frame-port:main:query-1",
+    runId: "run-visible",
+    event: {
+      type: "run.start", timestamp: EPOCH_MS, seq: 1,
+      chatId: "chat-visible", runId: "run-visible", agentKey: "coder",
+    },
+  });
+
+  const overviewEvents = [];
+  const debugEvents = [];
+  const completed = [];
+  const overview = broker.subscribeVisibleRun({
+    chatId: "chat-visible",
+    runId: "run-visible",
+    lastSeq: 0,
+    owner: { kind: "agent", agentKey: "coder" },
+    kind: "surface",
+    consumerId: "overview-consumer",
+    surfaceId: "surface:overview",
+    onEvent: (event) => overviewEvents.push(event.type),
+    onComplete: (result) => completed.push(result.reason),
+  });
+  const debug = broker.subscribeVisibleRun({
+    chatId: "chat-visible",
+    runId: "run-visible",
+    lastSeq: 1,
+    kind: "surface",
+    consumerId: "debug-consumer",
+    surfaceId: "surface:debug",
+    onEvent: (event) => debugEvents.push(event.type),
+  });
+  await Promise.all([overview.ready, debug.ready]);
+
+  broker.appendForwardedVisibleRunEvent({
+    sourceId: "frame-port:main:query-1",
+    runId: "run-visible",
+    event: {
+      type: "content.delta", timestamp: EPOCH_MS + 1, seq: 2,
+      chatId: "chat-visible", runId: "run-visible", delta: "hello",
+    },
+  });
+  assert.deepEqual(overviewEvents, ["run.start", "content.delta"]);
+  assert.deepEqual(debugEvents, ["content.delta"]);
+  assert.equal(sockets.length, 0);
+  assert.equal(broker.getDiagnostics().visibleBinding.consumerCount, 3);
+
+  assert.equal(broker.completeForwardedVisibleRun({
+    sourceId: "frame-port:main:query-1",
+    runId: "run-visible",
+    reason: "complete",
+    lastSeq: 2,
+  }), true);
+  assert.deepEqual(completed, ["complete"]);
+  assert.equal(broker.getVisibleBinding(), null);
+  overview.unsubscribe();
+  debug.unsubscribe();
+});
+
 test("RealtimeBroker singleflights attach and strictly pairs rewritten response ids", async (t) => {
   const { broker, sockets, token } = createHarness(t);
   const firstEvents = [];
@@ -283,13 +351,25 @@ test("RealtimeBroker reports seq_expired instead of fabricating an evicted repla
   }
   await nextTurn();
   subscription.unsubscribe();
+  let expiredError;
   assert.throws(() => broker.subscribeRun({
     baseUrl: "http://127.0.0.1:11789", token, runId: "run-replay", chatId: "chat-replay", lastSeq: 0,
     kind: "surface", consumerId: "late", onEvent: () => {},
-  }), /seq_expired/);
+  }), (error) => {
+    expiredError = error;
+    return /seq_expired/.test(error.message);
+  });
   const replay = broker.getDiagnostics().replay.find((entry) => entry.runId === "run-replay");
   assert.equal(replay.eventCount, 2_000);
   assert.equal(broker.getDiagnostics().replayEvictionCount, 2);
+  assert.equal(expiredError.retryable, true);
+  assert.deepEqual(expiredError.details, {
+    requestedLastSeq: 0,
+    firstAvailableSeq: 3,
+    latestSeq: 2_002,
+    replayEventCount: 2_000,
+    replayBytes: replay.bytes,
+  });
 });
 
 test("RealtimeBroker restores an accepted Run with attach(lastSeq) and never resends query", async (t) => {
@@ -351,4 +431,372 @@ test("RealtimeBroker closes the old identity generation before starting work for
   await second.accepted;
   sockets[1].emit({ frame: "stream", id: secondQuery.id, reason: "complete", lastSeq: 1 });
   assert.equal((await second.completed).reason, "complete");
+});
+
+test("RealtimeBroker dispatches reverse Desktop Action and maps provider failures", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return request.action === "desktop.theme.get"
+        ? { ok: true, action: request.action, result: { theme: "dark" } }
+        : { ok: false, action: request.action, error: { code: "unknown_action", message: "unknown" } };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "desktop-action-ok",
+    payload: { requestId: "action-1", action: "desktop.theme.get", args: {}, source: { chatId: "chat-1" } },
+  });
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "desktop-action-error",
+    payload: { requestId: "action-2", action: "desktop.missing", args: {}, source: { chatId: "chat-1" } },
+  });
+  await nextTurn();
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "desktop-action-ok"), {
+    frame: "response",
+    type: "desktop.action.call",
+    id: "desktop-action-ok",
+    code: 0,
+    msg: "success",
+    data: { ok: true, action: "desktop.theme.get", result: { theme: "dark" } },
+  });
+  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "desktop-action-error"), {
+    frame: "error",
+    type: "unknown_action",
+    id: "desktop-action-error",
+    code: 400,
+    msg: "unknown",
+    data: { ok: false, action: "desktop.missing", error: { code: "unknown_action", message: "unknown" } },
+  });
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "desktop-action-ok",
+    payload: { requestId: "action-1", action: "desktop.theme.get", args: {}, source: { chatId: "chat-1" } },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 2);
+  assert.deepEqual(sockets[0].sent.filter((frame) => frame.id === "desktop-action-ok").at(-1), {
+    frame: "error",
+    type: "duplicate_id",
+    id: "desktop-action-ok",
+    code: 409,
+    msg: "Desktop bridge request id was already used",
+  });
+});
+
+test("RealtimeBroker waits for a forwarded canonical Chat grant before WorkPanel actions", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  let releaseReady;
+  const ready = new Promise((resolve) => { releaseReady = resolve; });
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-1",
+    chatId: "chat-ready",
+    runId: "run-ready",
+    owner: { kind: "agent", agentKey: "coder" },
+    ready,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: { workspaceId: "workpanel:chat-ready" } };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-before-ready",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/document" },
+      source: { chatId: "chat-ready", runId: "run-ready", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+
+  releaseReady();
+  await nextTurn();
+  assert.equal(calls.length, 1);
+  assert.equal(
+    sockets[0].sent.find((frame) => frame.id === "workpanel-before-ready")?.frame,
+    "response",
+  );
+});
+
+test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization failed", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  const rejected = Promise.reject(new Error("surface registration rejected"));
+  rejected.catch(() => undefined);
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-failed",
+    chatId: "chat-failed",
+    runId: "run-failed",
+    owner: { kind: "agent", agentKey: "coder" },
+    ready: rejected,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: {} };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-sync-failed",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/document" },
+      source: { chatId: "chat-failed", runId: "run-failed", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "workpanel-sync-failed"), {
+    frame: "error",
+    type: "source_chat_not_ready",
+    id: "workpanel-sync-failed",
+    code: 409,
+    msg: "source_chat_not_ready: surface registration rejected",
+    data: { retryable: false, details: { recovery: "reattach_source_chat" } },
+  });
+});
+
+test("RealtimeBroker keeps a WorkPanel grant after the visible observer detaches", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  const owner = { kind: "agent", agentKey: "coder" };
+  broker.beginForwardedVisibleRun({
+    sourceId: "main-chat:query-background",
+    chatId: "chat-background",
+    runId: "run-background",
+    owner,
+    primarySurfaceId: "surface:main-chat",
+  });
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-background",
+    chatId: "chat-background",
+    runId: "run-background",
+    owner,
+    ready: Promise.resolve(),
+  });
+  assert.equal(broker.releaseForwardedVisibleRun("main-chat:query-background"), true);
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: { workspaceId: "workpanel:chat-background" } };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-after-detach",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/background" },
+      source: { chatId: "chat-background", runId: "run-background", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+
+  assert.equal(calls.length, 1);
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-after-detach")?.frame, "response");
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-wrong-owner",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/forged" },
+      source: { chatId: "chat-background", runId: "run-background", agentKey: "other-agent" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 1);
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-wrong-owner")?.type, "protocol_error");
+});
+
+test("RealtimeBroker lets a canonical reattach replace a stale WorkPanel grant attempt", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const calls = [];
+  const owner = { kind: "agent", agentKey: "coder" };
+  let rejectStale;
+  const staleReady = new Promise((_, reject) => { rejectStale = reject; });
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-stale",
+    chatId: "chat-recovered",
+    runId: "run-recovered",
+    owner,
+    ready: staleReady,
+  });
+  broker.setDesktopBridgeProvider({
+    action: async (request) => {
+      calls.push(request);
+      return { ok: true, action: request.action, result: {} };
+    },
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-after-reattach",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/recovered" },
+      source: { chatId: "chat-recovered", runId: "run-recovered", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+  assert.equal(calls.length, 0);
+
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:attach-recovered",
+    chatId: "chat-recovered",
+    runId: "run-recovered",
+    owner,
+    ready: Promise.resolve(),
+  });
+  await nextTurn();
+  rejectStale(new Error("stale source finished late"));
+  await nextTurn();
+
+  assert.equal(calls.length, 1);
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-after-reattach")?.frame, "response");
+});
+
+test("RealtimeBroker revokes a background WorkPanel grant at the forwarded Run terminal", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const owner = { kind: "agent", agentKey: "coder" };
+  broker.beginForwardedVisibleRun({
+    sourceId: "main-chat:query-terminal",
+    chatId: "chat-terminal",
+    runId: "run-terminal",
+    owner,
+    primarySurfaceId: "surface:main-chat",
+  });
+  broker.registerForwardedRunActionGrant({
+    sourceId: "main-chat:query-terminal",
+    chatId: "chat-terminal",
+    runId: "run-terminal",
+    owner,
+    ready: Promise.resolve(),
+  });
+  broker.releaseForwardedVisibleRun("main-chat:query-terminal");
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: true, action: request.action, result: {} }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "push",
+    type: "run.finished",
+    data: {
+      runId: "run-terminal",
+      chatId: "chat-terminal",
+      status: "completed",
+      finishReason: "complete",
+      finishedAt: EPOCH_MS,
+    },
+  });
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "workpanel-after-terminal",
+    payload: {
+      action: "desktop.workpanel.openWeb",
+      args: { url: "https://example.test/terminal" },
+      source: { chatId: "chat-terminal", runId: "run-terminal", agentKey: "coder" },
+    },
+  });
+  await nextTurn();
+
+  const terminal = sockets[0].sent.find((frame) => frame.id === "workpanel-after-terminal");
+  assert.equal(terminal?.frame, "error");
+  assert.equal(terminal?.type, "source_chat_not_ready");
+  assert.equal(terminal?.data?.retryable, false);
+});
+
+test("RealtimeBroker chunks large Desktop JSON and screenshot responses below 256 KiB", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const screenshot = Buffer.alloc(420_000, 7).toString("base64");
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: true, action: request.action, result: { text: "x".repeat(420_000) } }),
+    cdp: async (request) => ({ ok: true, method: request.method, result: { data: screenshot } }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+
+  sockets[0].emit({
+    frame: "request", type: "desktop.action.call", id: "large-json",
+    payload: { action: "desktop.controlCenter.readServiceLog", args: {}, source: { chatId: "chat-1" } },
+  });
+  sockets[0].emit({
+    frame: "request", type: "desktop.cdp.call", id: "large-screenshot",
+    payload: { method: "Page.captureScreenshot", params: {}, source: { chatId: "chat-1" } },
+  });
+  for (let index = 0; index < 8; index += 1) await nextTurn();
+
+  for (const id of ["large-json", "large-screenshot"]) {
+    const chunks = sockets[0].sent.filter((frame) => frame.frame === "stream" && frame.id === id);
+    assert.ok(chunks.length > 1, id);
+    assert.deepEqual(chunks.map((frame) => frame.event.seq), chunks.map((_, index) => index + 1));
+    assert.ok(chunks.every((frame) => frame.event.chunk.length <= 256 * 1024), id);
+    const terminal = sockets[0].sent.find((frame) => frame.frame === "response" && frame.id === id);
+    assert.equal(terminal.code, 0);
+    assert.equal(terminal.data.streamed ?? terminal.data.result?.data?.streamed, true);
+    assert.equal(terminal.data.chunkCount ?? terminal.data.result?.data?.chunkCount, chunks.length);
+  }
+  assert.equal(
+    sockets[0].sent.find((frame) => frame.frame === "stream" && frame.id === "large-json").event.type,
+    "desktop.bridge.response.delta",
+  );
+  assert.equal(
+    sockets[0].sent.find((frame) => frame.frame === "stream" && frame.id === "large-screenshot").event.type,
+    "desktop.cdp.screenshot.delta",
+  );
+});
+
+test("RealtimeBroker stops reverse Desktop chunks after desktop.bridge.cancel", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  broker.setDesktopBridgeProvider({
+    action: async (request) => ({ ok: true, action: request.action, result: { text: "x".repeat(4_000_000) } }),
+    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
+  });
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  sockets[0].emit({
+    frame: "request", type: "desktop.action.call", id: "cancel-large",
+    payload: { action: "desktop.controlCenter.readServiceLog", args: {}, source: { chatId: "chat-1" } },
+  });
+  await nextTurn();
+  const chunksBeforeCancel = sockets[0].sent.filter((frame) => frame.frame === "stream" && frame.id === "cancel-large").length;
+  assert.ok(chunksBeforeCancel > 0);
+  sockets[0].emit({ frame: "push", type: "desktop.bridge.cancel", payload: { requestId: "cancel-large" } });
+  for (let index = 0; index < 3; index += 1) await nextTurn();
+
+  const frames = sockets[0].sent.filter((frame) => frame.id === "cancel-large");
+  assert.equal(frames.some((frame) => frame.frame === "response" || frame.frame === "error"), false);
+  assert.equal(frames.filter((frame) => frame.frame === "stream").length, chunksBeforeCancel);
 });

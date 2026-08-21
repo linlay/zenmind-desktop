@@ -11,6 +11,8 @@ import { AgentPlatformAssistantBridge } from "../assistant/core/agent-platform-b
 import { AssistantNavigationStatusClient } from "../assistant/core/assistant-navigation-status-client";
 import { callDesktopActionConfirmation, callDesktopActionRenderer } from "../desktop-action-renderer";
 import {
+  handleDesktopActionRequest,
+  handleDesktopCdpRequest,
   startDesktopActionBridge,
   stopDesktopActionBridge
 } from "../desktop-action-bridge";
@@ -122,6 +124,10 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     cdpIntegration: options.cdpIntegration,
     emitWebappChanged,
     desktopPet: options.desktopPet
+  });
+  options.realtimeBroker.setDesktopBridgeProvider({
+    action: (request) => handleDesktopActionRequest(desktopActionOptions, request as any),
+    cdp: (request) => handleDesktopCdpRequest(desktopActionOptions, request as any),
   });
 
   const desktopWsServerOptions = {
@@ -240,6 +246,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     emitWebappChanged,
     refreshDesktopActionBridge,
     stop() {
+      options.realtimeBroker.setDesktopBridgeProvider(null);
       webappManager.runtime.setPublicationChangeListener(null);
       void options.cdpIntegration.stop();
       stopDesktopActionBridge();

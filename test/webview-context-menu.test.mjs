@@ -14,6 +14,9 @@ const {
 const {
   createBrowserSurfaceRegistry
 } = await import("../dist-electron/main/browser-surface-registry.js");
+const {
+  createSurfaceIdentity
+} = await import("../dist-electron/shared/surface-identity.js");
 
 function context(patch = {}) {
   return {
@@ -120,7 +123,7 @@ test("link policy separates browser, trusted webclient and generic service surfa
   ]);
   assert.deepEqual(ids(context({ surfaceType: "chat-work-panel", linkURL })), [
     "link.open-current",
-    "link.open-desktop-tab",
+    "link.open-work-panel-tab",
     "link.open-external",
     "link.copy"
   ]);
@@ -237,11 +240,11 @@ test("surface registry reverse index follows replacement and rejects cross-surfa
     listWebEntries: () => ({ items: [] }),
     getCurrentPageSnapshot: () => null
   });
-  const registration = (surfaceId, guestId) => ({
+  const registration = (identity, guestId, surfaceType = "agent-chat") => ({
     registrationId: "generation-1",
-    surfaceId,
+    ...identity,
     surfaceKind: "service",
-    surfaceType: "agent-chat",
+    surfaceType,
     serviceId: "agent-webclient",
     pageRoute: "/chat",
     label: "Chat",
@@ -258,10 +261,12 @@ test("surface registry reverse index follows replacement and rejects cross-surfa
     }],
     activeTabId: "chat"
   });
-  assert.equal(registry.registerSurface(registration("chat", 41), 7), true);
+  const mainChat = createSurfaceIdentity("main-chat");
+  const copilotChat = createSurfaceIdentity("copilot-chat");
+  assert.equal(registry.registerSurface(registration(mainChat, 41), 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(41).registrationId, "generation-1");
-  assert.equal(registry.registerSurface(registration("other", 41), 7), false);
-  assert.equal(registry.registerSurface(registration("chat", 42), 7), true);
+  assert.equal(registry.registerSurface(registration(copilotChat, 41, "agent-copilot"), 7), false);
+  assert.equal(registry.registerSurface(registration(mainChat, 42), 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(41), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(42).registrationId, "generation-1");
 });

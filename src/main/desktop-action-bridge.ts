@@ -110,7 +110,7 @@ import { getAssistantSettings } from "./assistant/core/settings-store";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { authorizeWebappActionToken } from "./webs/webapps/action-tokens";
 
-type DesktopActionBridgeOptions = {
+export type DesktopActionBridgeOptions = {
   app: App;
   assistantBridge: AgentPlatformAssistantBridge;
   getMainWindow: () => BrowserWindow | null;
@@ -153,8 +153,23 @@ type DesktopActionBridgeOptions = {
 
 type DesktopActionInvocationContext =
   | { kind: "desktop" }
+  | { kind: "agentWebclientWorkPanel" }
   | { kind: "webappPage"; webappId: string }
   | { kind: "webappBackend"; webappId: string };
+
+type AgentWebclientWorkPanelAction = "openItem" | "activateItem" | "closeItem";
+
+const AGENT_WEBCLIENT_WORKPANEL_ACTIONS = new Set<string>([
+  "openItem",
+  "activateItem",
+  "closeItem"
+]);
+
+const AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS: Record<AgentWebclientWorkPanelAction, string> = {
+  openItem: "desktop.workpanel.openTab",
+  activateItem: "desktop.workpanel.activateTab",
+  closeItem: "desktop.workpanel.closeTab"
+};
 
 type PlatformResponse<T> = {
   code?: number;
@@ -175,12 +190,13 @@ type AgentPlatformFetchOptions = {
   fetchImpl?: typeof fetch;
 };
 
-type DesktopCdpCallRequest = {
+export type DesktopCdpCallRequest = {
   requestId?: string;
   method?: string;
   params?: Record<string, unknown>;
   targetId?: string;
   sessionId?: string;
+  surfaceId?: string;
   source?: DesktopActionSource;
 };
 
@@ -792,7 +808,8 @@ function summarizeConfirmationSource(source: DesktopActionSource | undefined) {
   return [
     `runId=${source?.runId?.trim() || "-"}`,
     `chatId=${source?.chatId?.trim() || "-"}`,
-    `agentKey=${source?.agentKey?.trim() || "-"}`
+    `agentKey=${source?.agentKey?.trim() || "-"}`,
+    `teamId=${source?.teamId?.trim() || "-"}`
   ].join(", ");
 }
 
@@ -1888,16 +1905,12 @@ async function executeAction(
     case "desktop.web.interactElement":
     case "desktop.web.executeScript":
     case "desktop.workpanel.getState":
-    case "desktop.workpanel.openItem":
-    case "desktop.workpanel.activateItem":
-    case "desktop.workpanel.closeItem":
-    case "desktop.workpanel.closeWorkspace":
-    case "desktop.chatWorkPanel.getState":
-    case "desktop.chatWorkPanel.open":
-    case "desktop.chatWorkPanel.close":
-    case "desktop.chatWorkPanel.openTab":
-    case "desktop.chatWorkPanel.activateTab":
-    case "desktop.chatWorkPanel.closeTab":
+    case "desktop.workpanel.openTab":
+    case "desktop.workpanel.openWeb":
+    case "desktop.workpanel.refreshWeb":
+    case "desktop.workpanel.activateTab":
+    case "desktop.workpanel.closeTab":
+    case "desktop.workpanel.closeWorkpanel":
       return callRendererAction(options, request, args);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
@@ -2209,6 +2222,35 @@ export async function handleDesktopActionRequest(
   request: DesktopActionCallRequest
 ) {
   return handleActionCall(options, request);
+}
+
+export async function handleAgentWebclientWorkPanelActionRequest(
+  options: DesktopActionBridgeOptions,
+  input: {
+    requestId?: string;
+    action: AgentWebclientWorkPanelAction;
+    ownerChatId: string;
+    args?: Record<string, unknown>;
+  }
+) {
+  const method = typeof input.action === "string" ? input.action.trim() : "";
+  if (!AGENT_WEBCLIENT_WORKPANEL_ACTIONS.has(method)) {
+    return fail(`desktop.workpanel.${method || "unknown"}`, "forbidden", "This action is unavailable to the Agent WebClient WorkPanel bridge.");
+  }
+  const bridgeAction = method as AgentWebclientWorkPanelAction;
+  const action = AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS[bridgeAction];
+  const ownerChatId = typeof input.ownerChatId === "string" ? input.ownerChatId.trim() : "";
+  if (!ownerChatId) {
+    return fail(action, "source_chat_required", "A trusted WorkPanel owner chat is required.");
+  }
+  return handleActionCall(options, {
+    ...(input.requestId ? { requestId: input.requestId } : {}),
+    action,
+    args: bridgeAction === "openItem"
+      ? asRecord(input.args)
+      : { tabId: readString(asRecord(input.args), "itemId") },
+    source: { chatId: ownerChatId }
+  }, { kind: "agentWebclientWorkPanel" });
 }
 
 export async function handleWebappPageActionRequest(

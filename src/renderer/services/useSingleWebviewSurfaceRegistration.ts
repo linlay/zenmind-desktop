@@ -1,5 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
+import type { SurfaceIdentity } from "../../shared/surface-identity";
 
 let registrationSequence = 0;
 
@@ -10,7 +11,8 @@ function createRegistrationId() {
 
 export function useSingleWebviewSurfaceRegistration(options: {
   webviewRef: RefObject<Electron.WebviewTag | null>;
-  surfaceId: string;
+  surfaceIdentity: SurfaceIdentity;
+  surfaceIdentityKey?: string;
   surfaceType: WebviewContextMenuSurfaceType;
   serviceId?: string;
   pageRoute: string;
@@ -29,7 +31,7 @@ export function useSingleWebviewSurfaceRegistration(options: {
     const webview = options.webviewRef.current;
     if (
       !webview ||
-      !options.surfaceId ||
+      !options.surfaceIdentity.surfaceId ||
       typeof embeddedCdp?.registerSurface !== "function" ||
       typeof embeddedCdp?.unregisterSurface !== "function"
     ) {
@@ -39,9 +41,13 @@ export function useSingleWebviewSurfaceRegistration(options: {
       try {
         const webContentsId = webview.getWebContentsId();
         if (!Number.isSafeInteger(webContentsId) || webContentsId <= 0) return;
+        const surfaceId = options.surfaceIdentity.surfaceId;
         void embeddedCdp.registerSurface({
           registrationId: registrationIdRef.current,
-          surfaceId: options.surfaceId,
+          ...options.surfaceIdentity,
+          ...(options.surfaceIdentityKey?.trim()
+            ? { surfaceIdentityKey: options.surfaceIdentityKey.trim() }
+            : {}),
           surfaceKind: "service",
           surfaceType: options.surfaceType,
           ...(options.serviceId ? { serviceId: options.serviceId } : {}),
@@ -50,7 +56,7 @@ export function useSingleWebviewSurfaceRegistration(options: {
           url: options.url,
           active: options.active !== false,
           tabs: [{
-            tabId: options.surfaceId,
+            tabId: surfaceId,
             currentUrl: webview.getURL() || options.url,
             title: webview.getTitle() || options.label,
             webContentsId,
@@ -58,7 +64,7 @@ export function useSingleWebviewSurfaceRegistration(options: {
             canGoForward: webview.canGoForward(),
             isLoading: webview.isLoading(),
           }],
-          activeTabId: options.surfaceId,
+          activeTabId: surfaceId,
         }).catch(() => undefined);
       } catch {
         // A guest can be replaced between a DOM event and registration.
@@ -78,7 +84,7 @@ export function useSingleWebviewSurfaceRegistration(options: {
       for (const eventName of events) webview.removeEventListener(eventName, sync);
       void embeddedCdp.unregisterSurface({
         registrationId,
-        surfaceId: options.surfaceId,
+        surfaceId: options.surfaceIdentity.surfaceId,
       }).catch(() => undefined);
     };
   }, [
@@ -87,7 +93,13 @@ export function useSingleWebviewSurfaceRegistration(options: {
     options.pageRoute,
     options.refreshKey,
     options.serviceId,
-    options.surfaceId,
+    options.surfaceIdentity.interaction,
+    options.surfaceIdentity.ownerChatId,
+    options.surfaceIdentity.parentSurfaceId,
+    options.surfaceIdentity.surfaceId,
+    options.surfaceIdentity.surfaceLevel,
+    options.surfaceIdentity.surfaceRole,
+    options.surfaceIdentityKey,
     options.surfaceType,
     options.url,
     options.webviewRef,

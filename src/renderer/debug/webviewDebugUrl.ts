@@ -1,3 +1,5 @@
+import type { SurfaceIdentity } from "../../shared/surface-identity";
+
 const REDACTED_URL_VALUE = "REDACTED";
 const SENSITIVE_URL_PARAMETER_NAMES = new Set([
   "accesstoken",
@@ -71,4 +73,32 @@ export function redactWebviewDebugUrl(value: string) {
   } catch {
     return redactUnparseableUrl(rawUrl);
   }
+}
+
+export function formatWebviewDebugSurfaceLabel(surfaceIdentity?: SurfaceIdentity) {
+  const surfaceId = surfaceIdentity?.surfaceId.trim() || "";
+  const surfaceRole = surfaceIdentity?.surfaceRole.trim() || "";
+  const parentSurfaceId = surfaceIdentity?.parentSurfaceId?.trim() || "";
+  const parentPrefix = parentSurfaceId ? `${parentSurfaceId} › ` : "";
+
+  if (surfaceId && surfaceId === surfaceRole) {
+    return `${parentPrefix}surface: ${surfaceId}`;
+  }
+  if (surfaceRole && surfaceId) {
+    return `${parentPrefix}role: ${surfaceRole} · surfaceId: ${surfaceId}`;
+  }
+  if (surfaceRole) {
+    return `${parentPrefix}role: ${surfaceRole}`;
+  }
+  return surfaceId ? `${parentPrefix}surfaceId: ${surfaceId}` : "";
+}
+
+export function buildWebviewDebugClipboardText(
+  url: string,
+  surfaceIdentity?: SurfaceIdentity,
+) {
+  const lines = [formatWebviewDebugSurfaceLabel(surfaceIdentity)].filter(Boolean);
+  const displayUrl = redactWebviewDebugUrl(url);
+  if (displayUrl) lines.push(`url: ${displayUrl}`);
+  return lines.join("\n");
 }

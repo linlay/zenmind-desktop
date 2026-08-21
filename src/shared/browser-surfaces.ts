@@ -1,4 +1,7 @@
-export const BUILTIN_BROWSER_SURFACE_ID = "chrome";
+import { BROWSER_SURFACE_ID } from "./surface-identity";
+
+export const BUILTIN_BROWSER_SURFACE_ID = BROWSER_SURFACE_ID;
+export const LEGACY_BUILTIN_BROWSER_SURFACE_ID = "chrome";
 export const BUILTIN_BROWSER_SURFACE_LABEL = "Chrome";
 export const BUILTIN_BROWSER_DEFAULT_URL = "https://www.google.com/";
 export const BUILTIN_BROWSER_ROUTE = "/chrome";
@@ -28,6 +31,7 @@ export function isBuiltinBrowserSurfaceTarget(target: string) {
   }
   return (
     normalized === BUILTIN_BROWSER_SURFACE_ID ||
+    normalized === LEGACY_BUILTIN_BROWSER_SURFACE_ID ||
     normalized === BUILTIN_BROWSER_SURFACE_LABEL ||
     normalized === "browser" ||
     BUILTIN_BROWSER_SEARCH_ENGINES.some((engine) =>

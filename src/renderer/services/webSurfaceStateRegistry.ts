@@ -12,6 +12,11 @@ export type WebSurfaceTabState = {
 export type WebSurfaceState = {
   surface: {
     id: string;
+    surfaceId: string;
+    surfaceRole: SurfaceRole;
+    surfaceLevel: SurfaceLevel;
+    parentSurfaceId?: string;
+    interaction: SurfaceInteraction;
     kind: "website" | "webapp" | "browser" | "service";
     label: string;
     url: string;
@@ -41,3 +46,4 @@ export function registerWebSurfaceStateProvider(surfaceId: string, read: WebSurf
 export function readWebSurfaceState(surfaceId: string) {
   return providers.get(surfaceId.trim())?.read() ?? null;
 }
+import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../../shared/surface-identity";

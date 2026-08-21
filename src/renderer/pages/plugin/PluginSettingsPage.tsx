@@ -12,6 +12,7 @@ import {
 import { handleServiceWebviewBridgeMessage } from "../../services/serviceWebviewBridgeHost";
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
 import { useSingleWebviewSurfaceRegistration } from "../../services/useSingleWebviewSurfaceRegistration";
+import { createPluginSettingsSurfaceIdentity } from "../../../shared/surface-identity";
 
 type PluginSettingsPageProps = {
   hostTheme: "light" | "dark";
@@ -52,7 +53,8 @@ export function PluginSettingsPage({ hostTheme }: PluginSettingsPageProps) {
 
   useSingleWebviewSurfaceRegistration({
     webviewRef,
-    surfaceId: `plugin-settings:${pluginId}`,
+    surfaceIdentity: createPluginSettingsSurfaceIdentity(pluginId),
+    surfaceIdentityKey: pluginId,
     surfaceType: "service",
     serviceId: pluginId,
     pageRoute: `/plugins/${pluginId}/settings`,

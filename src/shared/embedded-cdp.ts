@@ -1,4 +1,5 @@
 import type { WebviewContextMenuSurfaceType } from "./webview-context-menu";
+import type { SurfaceIdentity } from "./surface-identity";
 
 export const EMBEDDED_CDP_GATEWAY_HOST = "127.0.0.1";
 export const EMBEDDED_CDP_GATEWAY_PORT = 11789;
@@ -42,9 +43,10 @@ export type EmbeddedCdpSurfaceTabRegistration = {
   isLoading: boolean;
 };
 
-export type EmbeddedCdpSurfaceRegistration = {
+export type EmbeddedCdpSurfaceRegistration = SurfaceIdentity & {
   registrationId: string;
-  surfaceId: string;
+  /** Internal stable key used by Main to verify dynamic IDs and reject hash collisions. */
+  surfaceIdentityKey?: string;
   surfaceKind: EmbeddedCdpSurfaceKind;
   surfaceType?: WebviewContextMenuSurfaceType;
   serviceId?: string;

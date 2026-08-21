@@ -67,18 +67,26 @@ export function registerEmbeddedCdpIpcHandlers(
       if (!snapshot) {
         return { ok: false };
       }
+      const canonicalSurfaceId = snapshot.registered.surfaceId;
       return {
         ok: true,
-        surfaceId,
+        surfaceId: canonicalSurfaceId,
         activeTabId: snapshot.registered.activeTabId,
         targets: snapshot.tabs.map((tab) => ({
           tabId: tab.tabId,
           targetId: createEmbeddedCdpTargetId({
-            id: surfaceId,
+            surfaceId: canonicalSurfaceId,
+            id: canonicalSurfaceId,
             targetGeneration: registrationId,
             label: snapshot.registered.label,
             url: snapshot.registered.url,
             surfaceKind: snapshot.registered.surfaceKind,
+            surfaceRole: snapshot.registered.surfaceRole,
+            surfaceLevel: snapshot.registered.surfaceLevel,
+            ...(snapshot.registered.parentSurfaceId
+              ? { parentSurfaceId: snapshot.registered.parentSurfaceId }
+              : {}),
+            interaction: snapshot.registered.interaction,
             open: true
           }, tab),
           currentUrl: tab.currentUrl,

@@ -6,14 +6,27 @@ import {
   type IpcMainInvokeEvent
 } from "electron";
 import {
+  CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
+  type ChatWorkPanelOpenLocalResourceResult,
+  type ChatWorkPanelTabContextMenuActionId,
+  type ChatWorkPanelTabContextMenuProfile,
   type ChatWorkPanelTabContextMenuPopupRequest,
   type ChatWorkPanelTabContextMenuPopupResult
 } from "../../shared/chat-work-panel-tab-context-menu";
+import {
+  normalizeChatWorkPanelOpenLocalResourceRequest,
+  openChatWorkPanelResourceInDefaultApp,
+} from "../chat-work-panel-resource-open";
 import { t } from "../i18n/main-i18n";
 
 type ChatWorkPanelTabContextMenuHandlerOptions = {
   getMainWindow(): BrowserWindow | null;
+  app?: Electron.App;
+  platform?: NodeJS.Platform | string;
+  openLocalResource?: (
+    request: Parameters<typeof openChatWorkPanelResourceInDefaultApp>[0],
+  ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
   BrowserWindow?: Pick<typeof ElectronBrowserWindow, "fromWebContents">;
   Menu?: Pick<typeof ElectronMenu, "buildFromTemplate">;
 };
@@ -22,6 +35,13 @@ function isPlainRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
+const WORK_PANEL_CONTEXT_MENU_PROFILES = new Set<ChatWorkPanelTabContextMenuProfile>([
+  "default",
+  "web",
+  "artifact",
+  "reference"
+]);
+
 export function normalizeChatWorkPanelTabContextMenuRequest(
   value: unknown
 ): ChatWorkPanelTabContextMenuPopupRequest | null {
@@ -29,9 +49,6 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
     return null;
   }
   const keys = Object.keys(value);
-  if (keys.length !== 2 || !keys.includes("x") || !keys.includes("y")) {
-    return null;
-  }
   if (
     typeof value.x !== "number" ||
     !Number.isFinite(value.x) ||
@@ -40,10 +57,119 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   ) {
     return null;
   }
-  return {
-    x: Math.round(value.x),
-    y: Math.round(value.y)
-  };
+  if (
+    value.mode === "copy-url" &&
+    keys.length === 3 &&
+    keys.includes("mode") &&
+    keys.includes("x") &&
+    keys.includes("y")
+  ) {
+    return { mode: "copy-url", x: Math.round(value.x), y: Math.round(value.y) };
+  }
+  if (
+    value.mode === "work-panel" &&
+    keys.length === 7 &&
+    keys.includes("mode") &&
+    keys.includes("x") &&
+    keys.includes("y") &&
+    keys.includes("profile") &&
+    keys.includes("isFullscreen") &&
+    keys.includes("canClose") &&
+    keys.includes("canCloseOthers") &&
+    typeof value.profile === "string" &&
+    WORK_PANEL_CONTEXT_MENU_PROFILES.has(value.profile as ChatWorkPanelTabContextMenuProfile) &&
+    typeof value.isFullscreen === "boolean" &&
+    typeof value.canClose === "boolean" &&
+    typeof value.canCloseOthers === "boolean"
+  ) {
+    return {
+      mode: "work-panel",
+      x: Math.round(value.x),
+      y: Math.round(value.y),
+      profile: value.profile as ChatWorkPanelTabContextMenuProfile,
+      isFullscreen: value.isFullscreen,
+      canClose: value.canClose,
+      canCloseOthers: value.canCloseOthers
+    };
+  }
+  return null;
+}
+
+function buildWorkPanelTemplate(
+  request: Extract<ChatWorkPanelTabContextMenuPopupRequest, { mode: "work-panel" }>,
+  settle: (actionId: ChatWorkPanelTabContextMenuActionId | null) => void
+) {
+  const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
+  const leadingItems = request.profile === "web"
+    ? [
+        {
+          id: "reload",
+          label: t("webviewContextMenu.page.reload"),
+          click: click("reload")
+        },
+        {
+          id: "copy-url",
+          label: t("webviewContextMenu.page.copy-url"),
+          click: click("copy-url")
+        }
+      ]
+    : request.profile === "artifact" || request.profile === "reference"
+      ? [
+          {
+            id: "download-resource",
+            label: t(request.profile === "artifact"
+              ? "chatWorkPanel.tabContextMenu.downloadArtifact"
+              : "chatWorkPanel.tabContextMenu.downloadReference"),
+            click: click("download-resource")
+          },
+          {
+            id: "open-resource-default-app",
+            label: t("chatWorkPanel.tabContextMenu.openInDefaultApp"),
+            click: click("open-resource-default-app")
+          },
+          {
+            id: "copy-title",
+            label: t("chatWorkPanel.tabContextMenu.copyFilename"),
+            click: click("copy-title")
+          },
+          { type: "separator" as const },
+          {
+            id: "reload",
+            label: t("chatWorkPanel.tabContextMenu.reloadPreview"),
+            click: click("reload")
+          }
+        ]
+      : [
+          {
+            id: "reload",
+            label: t("webviewContextMenu.page.reload"),
+            click: click("reload")
+          }
+        ];
+  return [
+    ...leadingItems,
+    { type: "separator" as const },
+    {
+      id: "toggle-fullscreen",
+      label: t(request.isFullscreen
+        ? "chatWorkPanel.tabContextMenu.exitFullscreen"
+        : "chatWorkPanel.tabContextMenu.enterFullscreen"),
+      click: click("toggle-fullscreen")
+    },
+    { type: "separator" as const },
+    {
+      id: "close-tab",
+      label: t("chatWorkPanel.tabContextMenu.closeTab"),
+      enabled: request.canClose,
+      click: click("close-tab")
+    },
+    {
+      id: "close-other-tabs",
+      label: t("chatWorkPanel.tabContextMenu.closeOtherTabs"),
+      enabled: request.canCloseOthers,
+      click: click("close-other-tabs")
+    }
+  ];
 }
 
 export function registerChatWorkPanelTabContextMenuIpcHandlers(
@@ -52,6 +178,34 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
 ) {
   const BrowserWindow = options.BrowserWindow ?? ElectronBrowserWindow;
   const Menu = options.Menu ?? ElectronMenu;
+
+  ipcMain.handle(
+    CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
+    async (event: IpcMainInvokeEvent, value: unknown): Promise<ChatWorkPanelOpenLocalResourceResult> => {
+      const request = normalizeChatWorkPanelOpenLocalResourceRequest(value);
+      const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+      const mainWindow = options.getMainWindow();
+      if (
+        !request ||
+        !ownerWindow ||
+        !mainWindow ||
+        ownerWindow !== mainWindow ||
+        ownerWindow.isDestroyed()
+      ) {
+        return { ok: false, code: "invalid_request", message: t("chatWorkPanel.openDefault.invalidPath") };
+      }
+      if (options.openLocalResource) {
+        return options.openLocalResource(request);
+      }
+      if (!options.app) {
+        return { ok: false, code: "open_failed", message: t("chatWorkPanel.openDefault.unavailable") };
+      }
+      return openChatWorkPanelResourceInDefaultApp(request, {
+        app: options.app,
+        platform: options.platform,
+      });
+    },
+  );
 
   ipcMain.handle(
     CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
@@ -74,18 +228,20 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
 
       return await new Promise<ChatWorkPanelTabContextMenuPopupResult>((resolve) => {
         let settled = false;
-        const settle = (actionId: "copy-url" | null) => {
+        const settle = (actionId: ChatWorkPanelTabContextMenuActionId | null) => {
           if (settled) {
             return;
           }
           settled = true;
           resolve({ actionId });
         };
-        const menu = Menu.buildFromTemplate([{
-          id: "copy-url",
-          label: t("webviewContextMenu.page.copy-url"),
-          click: () => settle("copy-url")
-        }]);
+        const menu = Menu.buildFromTemplate(request.mode === "copy-url"
+          ? [{
+              id: "copy-url",
+              label: t("webviewContextMenu.page.copy-url"),
+              click: () => settle("copy-url")
+            }]
+          : buildWorkPanelTemplate(request, settle));
         const contentBounds = ownerWindow.getContentBounds();
         menu.popup({
           window: ownerWindow,

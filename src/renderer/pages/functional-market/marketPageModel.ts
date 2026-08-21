@@ -6,7 +6,7 @@ import type {
 } from "@shared/contracts";
 import type { TranslateFunction, TranslationKey } from "@shared/i18n";
 
-export type MarketTab = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "websiteApps";
+export type MarketTab = "plugins" | "skills" | "agents" | "sandboxImages" | "pets" | "cli" | "mcps" | "websiteApps" | "softwarePackages";
 export type SkillScope = "all" | "cloud" | "local";
 
 export interface MarketTabDefinition {
@@ -56,10 +56,20 @@ const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: Transla
     title: "market.tab.cli.title",
     subtitle: "market.tab.cli.subtitle"
   },
+  mcps: {
+    label: "market.tab.mcps.label",
+    title: "market.tab.mcps.title",
+    subtitle: "market.tab.mcps.subtitle"
+  },
   websiteApps: {
     label: "market.tab.websiteApps.label",
     title: "market.tab.websiteApps.title",
     subtitle: "market.tab.websiteApps.subtitle"
+  },
+  softwarePackages: {
+    label: "market.tab.softwarePackages.label",
+    title: "market.tab.softwarePackages.title",
+    subtitle: "market.tab.softwarePackages.subtitle"
   }
 };
 
@@ -70,7 +80,9 @@ export const MARKET_TAB_ITEM_TYPES: Record<MarketTab, MarketItemType> = {
   sandboxImages: "sandbox-image",
   pets: "pet",
   cli: "cli",
-  websiteApps: "website-app"
+  mcps: "mcp",
+  websiteApps: "website-app",
+  softwarePackages: "software-package"
 };
 
 export function marketTabForItemType(type: MarketItemType): MarketTab | null {
@@ -177,8 +189,12 @@ export function createEmptyMarketResult(): MarketListResult {
     petOffline: false,
     cliMessage: "",
     cliOffline: false,
+    mcpMessage: "",
+    mcpOffline: false,
     websiteAppMessage: "",
-    websiteAppOffline: false
+    websiteAppOffline: false,
+    softwarePackageMessage: "",
+    softwarePackageOffline: false
   };
 }
 

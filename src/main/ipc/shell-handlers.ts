@@ -41,6 +41,117 @@ type DesktopScreenshotCaptureResult = {
   cancelled?: boolean;
 };
 
+const WINDOW_FULLSCREEN_TRANSITION_TIMEOUT_MS = 3000;
+
+type FullScreenTransitionWindow = Pick<
+  BrowserWindow,
+  "isDestroyed" | "isFullScreen" | "off" | "once" | "setFullScreen"
+>;
+
+export type WindowFullScreenTransitionResult = {
+  ok: boolean;
+  isFullScreen: boolean;
+  reason?: "transition_timeout" | "window_unavailable";
+  message?: string;
+};
+
+export function transitionWindowFullScreen(
+  targetWindow: FullScreenTransitionWindow,
+  enabled: boolean,
+  options: {
+    platform?: NodeJS.Platform | string;
+    timeoutMs?: number;
+  } = {}
+): Promise<WindowFullScreenTransitionResult> {
+  if (targetWindow.isDestroyed()) {
+    return Promise.resolve({ ok: false, isFullScreen: false, reason: "window_unavailable" });
+  }
+  if (targetWindow.isFullScreen() === enabled) {
+    return Promise.resolve({ ok: true, isFullScreen: enabled });
+  }
+
+  const platform = options.platform ?? process.platform;
+  const timeoutMs = options.timeoutMs ?? WINDOW_FULLSCREEN_TRANSITION_TIMEOUT_MS;
+
+  return new Promise((resolve) => {
+    let settled = false;
+    let timeout: ReturnType<typeof setTimeout> | null = null;
+    const cleanup = () => {
+      if (timeout) {
+        clearTimeout(timeout);
+        timeout = null;
+      }
+      try {
+        if (enabled) {
+          targetWindow.off("enter-full-screen", handleTransition);
+        } else {
+          targetWindow.off("leave-full-screen", handleTransition);
+        }
+        targetWindow.off("closed", handleClosed);
+      } catch {
+        // A destroyed BrowserWindow may no longer accept listener changes.
+      }
+    };
+    const finish = (result: WindowFullScreenTransitionResult) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(result);
+    };
+    const readActualState = () => {
+      if (targetWindow.isDestroyed()) return false;
+      try {
+        return targetWindow.isFullScreen();
+      } catch {
+        return false;
+      }
+    };
+    function handleTransition() {
+      const isFullScreen = readActualState();
+      finish({
+        ok: isFullScreen === enabled,
+        isFullScreen,
+        ...(isFullScreen === enabled ? {} : { reason: "transition_timeout" as const })
+      });
+    }
+    function handleClosed() {
+      finish({ ok: false, isFullScreen: false, reason: "window_unavailable" });
+    }
+
+    if (enabled) {
+      targetWindow.once("enter-full-screen", handleTransition);
+    } else {
+      targetWindow.once("leave-full-screen", handleTransition);
+    }
+    targetWindow.once("closed", handleClosed);
+    timeout = setTimeout(() => {
+      const isFullScreen = readActualState();
+      finish({
+        ok: isFullScreen === enabled,
+        isFullScreen,
+        ...(isFullScreen === enabled ? {} : { reason: "transition_timeout" as const })
+      });
+    }, timeoutMs);
+
+    try {
+      targetWindow.setFullScreen(enabled);
+      if (platform !== "darwin") {
+        const isFullScreen = readActualState();
+        if (isFullScreen === enabled) {
+          finish({ ok: true, isFullScreen });
+        }
+      }
+    } catch (error) {
+      finish({
+        ok: false,
+        isFullScreen: readActualState(),
+        reason: targetWindow.isDestroyed() ? "window_unavailable" : "transition_timeout",
+        message: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+}
+
 type ShellIpcOptions = {
   shell?: typeof electronShell;
   clipboard?: typeof electronClipboard;
@@ -56,6 +167,7 @@ type ShellIpcOptions = {
   };
   platform?: NodeJS.Platform | string;
   mainWindow?: BrowserWindow | null;
+  getMainWindow?: () => BrowserWindow | null;
   showFileDialog?: (
     options: { title: string; properties: Array<"openDirectory" | "createDirectory"> },
     ownerWindow?: BrowserWindow | null
@@ -87,6 +199,9 @@ type ShellIpcOptions = {
   }>;
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
+  setWebviewModalOverlayVisible?: (sourceId: string, visible: boolean) => void;
+  setWorkPanelKeyboardFocusActive?: (active: boolean) => void;
+  setWorkPanelFullscreenActive?: (active: boolean) => void;
 };
 
 type DesktopDownloadPayload = {
@@ -285,6 +400,46 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
   });
 
+  ipcMain.handle("desktopShell.setWindowFullScreen", async (
+    event: IpcMainInvokeEvent,
+    enabled: unknown
+  ) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (
+      !ownerWindow ||
+      ownerWindow.isDestroyed() ||
+      !mainWindow ||
+      ownerWindow !== mainWindow
+    ) {
+      return {
+        ok: false as const,
+        isFullScreen: false,
+        message: t("shell.windowUnavailable")
+      };
+    }
+    if (typeof enabled !== "boolean") {
+      return {
+        ok: false as const,
+        isFullScreen: ownerWindow.isFullScreen(),
+        message: t("shell.invalidFullscreenRequest")
+      };
+    }
+
+    const result = await transitionWindowFullScreen(ownerWindow, enabled, {
+      platform: options.platform
+    });
+    return result.ok
+      ? { ok: true as const, isFullScreen: result.isFullScreen }
+      : {
+          ok: false as const,
+          isFullScreen: result.isFullScreen,
+          message: result.message ?? t(result.reason === "transition_timeout"
+            ? "shell.windowFullscreenTimeout"
+            : "shell.windowUnavailable")
+        };
+  });
+
   ipcMain.handle("desktopShell.moveWindowBy", async (event: IpcMainInvokeEvent, delta: unknown) => {
     try {
       const input = delta && typeof delta === "object" ? delta as Record<string, unknown> : {};
@@ -334,6 +489,62 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
 
   ipcMain.on("desktopShell.setGlobalSearchOverlayVisible", (_event: IpcMainEvent, visible: unknown) => {
     options.setGlobalSearchOverlayVisible?.(visible === true);
+  });
+
+  ipcMain.on("desktopShell.setWebviewModalOverlayVisible", (
+    event: IpcMainEvent,
+    sourceId: unknown,
+    visible: unknown
+  ) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    const normalizedSourceId = typeof sourceId === "string" ? sourceId.trim() : "";
+    if (!ownerWindow || ownerWindow !== mainWindow || !normalizedSourceId || normalizedSourceId.length > 200) {
+      return;
+    }
+    options.setWebviewModalOverlayVisible?.(normalizedSourceId, visible === true);
+  });
+
+  ipcMain.on("desktopShell.setWorkPanelKeyboardFocusActive", (event: IpcMainEvent, active: unknown) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (
+      !ownerWindow ||
+      ownerWindow.isDestroyed() ||
+      !mainWindow ||
+      ownerWindow !== mainWindow
+    ) {
+      return;
+    }
+    options.setWorkPanelKeyboardFocusActive?.(active === true);
+  });
+
+  ipcMain.on("desktopShell.setWorkPanelFullscreenActive", (event: IpcMainEvent, active: unknown) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (
+      !ownerWindow ||
+      ownerWindow.isDestroyed() ||
+      !mainWindow ||
+      ownerWindow !== mainWindow
+    ) {
+      return;
+    }
+    options.setWorkPanelFullscreenActive?.(active === true);
+  });
+
+  ipcMain.on("desktopShell.requestWindowClose", (event: IpcMainEvent) => {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (
+      !ownerWindow ||
+      ownerWindow.isDestroyed() ||
+      !mainWindow ||
+      ownerWindow !== mainWindow
+    ) {
+      return;
+    }
+    ownerWindow.close();
   });
 
   ipcMain.handle("clipboard.writeText", async (_event: IpcMainInvokeEvent, text: string) => {

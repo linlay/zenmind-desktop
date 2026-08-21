@@ -78,6 +78,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
     options.navigateMainWindow(BUILTIN_BROWSER_ROUTE);
     await options.delay(450);
     options.state.mainWindow?.webContents.send("webview.openTab", {
+      target: "desktop-browser",
       sourceGuestId: -1,
       url: targetUrl,
       partition: input.partition,
@@ -139,7 +140,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
       };
     }
 
-    options.navigateMainWindow(`/webs/${surface.id}`);
+    options.navigateMainWindow(`/webs/${surface.entryKey || surface.id}`);
     for (let attempt = 0; attempt < 24; attempt += 1) {
       await options.delay(250);
       const contents = browserSurfaceRegistry.findWebContentsForSurfaceUrl(surface.url);

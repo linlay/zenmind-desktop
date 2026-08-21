@@ -12,8 +12,10 @@ import {
   SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
+  SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
-  type ServiceWebviewBridgeMessage
+  type ServiceWebviewBridgeMessage,
+  type ServiceWebviewModalOverlayState
 } from "../shared/service-webview-bridge";
 import {
   WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION,
@@ -45,6 +47,7 @@ import {
   AGENT_WEBCLIENT_PLATFORM_WS_EVENT_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_WS_OPEN_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_WS_SEND_CHANNEL,
+  AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
   AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } from "../shared/contracts/agent-webclient-bridge";
 
@@ -58,6 +61,95 @@ const recentForwardedBridgeRequestKeys = new Map<string, number>();
 let selectionGestureActive = false;
 let selectionToolbarFrame = 0;
 let selectionToolbarSignature = "";
+
+const SERVICE_WEBVIEW_MODAL_MASK_SELECTOR = ".ant-modal-mask";
+let modalOverlayFrame = 0;
+let modalOverlayVisible = false;
+
+function isVisibleModalMask(element: Element) {
+  if (!(element instanceof HTMLElement) || element.hidden) return false;
+  const style = window.getComputedStyle(element);
+  if (
+    style.display === "none" ||
+    style.visibility === "hidden" ||
+    Number.parseFloat(style.opacity || "1") === 0
+  ) {
+    return false;
+  }
+  const rect = element.getBoundingClientRect();
+  return rect.width > 0 && rect.height > 0;
+}
+
+function readModalOverlayVisible() {
+  return Array.from(document.querySelectorAll(SERVICE_WEBVIEW_MODAL_MASK_SELECTOR))
+    .some(isVisibleModalMask);
+}
+
+function publishModalOverlayState(visible: boolean) {
+  if (visible === modalOverlayVisible) return;
+  modalOverlayVisible = visible;
+  ipcRenderer.sendToHost(SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL, {
+    visible
+  } satisfies ServiceWebviewModalOverlayState);
+}
+
+function scheduleModalOverlayPublish() {
+  if (modalOverlayFrame) return;
+  modalOverlayFrame = window.requestAnimationFrame(() => {
+    modalOverlayFrame = 0;
+    publishModalOverlayState(readModalOverlayVisible());
+  });
+}
+
+function nodeContainsModalMask(node: Node) {
+  if (node.nodeType !== Node.ELEMENT_NODE) return false;
+  const element = node as Element;
+  return element.matches(SERVICE_WEBVIEW_MODAL_MASK_SELECTOR) ||
+    Boolean(element.querySelector(SERVICE_WEBVIEW_MODAL_MASK_SELECTOR));
+}
+
+function mutationsAffectModalOverlay(mutations: MutationRecord[]) {
+  return mutations.some((mutation) => {
+    if (mutation.type === "attributes") {
+      return nodeContainsModalMask(mutation.target);
+    }
+    return [...mutation.addedNodes, ...mutation.removedNodes].some(nodeContainsModalMask);
+  });
+}
+
+function installModalOverlayTracking() {
+  const root = document.documentElement;
+  if (!root) {
+    document.addEventListener("DOMContentLoaded", installModalOverlayTracking, { once: true });
+    return;
+  }
+  const observer = new MutationObserver((mutations) => {
+    if (mutationsAffectModalOverlay(mutations)) {
+      scheduleModalOverlayPublish();
+    }
+  });
+  observer.observe(root, {
+    attributes: true,
+    attributeFilter: ["aria-hidden", "class", "hidden", "style"],
+    childList: true,
+    subtree: true
+  });
+  scheduleModalOverlayPublish();
+  window.addEventListener("pagehide", () => {
+    observer.disconnect();
+    if (modalOverlayFrame) {
+      window.cancelAnimationFrame(modalOverlayFrame);
+      modalOverlayFrame = 0;
+    }
+    publishModalOverlayState(false);
+  }, { once: true });
+}
+
+// Windows caption controls are native and render above the guest page, so the
+// host must mirror the guest's modal-mask state into its titleBarOverlay.
+if (process.platform === "win32") {
+  installModalOverlayTracking();
+}
 
 function selectionElement(node: Node | null) {
   if (!node) return null;
@@ -391,6 +483,7 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<s
     typeof payload !== "object" ||
     ![
       "openChatHistory",
+      AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
       WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
       WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION
     ].includes(String(payload.action || ""))

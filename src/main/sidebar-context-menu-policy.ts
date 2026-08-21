@@ -206,7 +206,8 @@ export function buildSidebarContextMenuPolicy(
       { id: "chat.share", group: 1, enabled: true },
       { id: "chat.rename", group: 1, enabled: true },
       { id: "chat.archive", group: 2, enabled: true },
-      { id: "chat.delete", group: 2, enabled: true }
+      { id: "chat.delete", group: 2, enabled: true },
+      { id: "chat.info", group: 3, enabled: true }
     ];
   }
 

@@ -126,6 +126,7 @@ import {
   resolveAcpCommandForDesktop
 } from "./env-normalization";
 import {
+  __testInternals as containerEngineTestInternals,
   clearContainerEngineProbeCache,
   containerEngineAvailable,
   probeContainerEngines
@@ -659,7 +660,7 @@ function appendDesktopManagedLayoutFlags(
   return command;
 }
 
-function collectPrerequisites(
+async function collectPrerequisites(
   app: App,
   service: ServiceDefinition,
   layout: ServiceLayout,
@@ -682,20 +683,29 @@ function collectPrerequisites(
   }
 
   if (service.id === "agent-container-hub") {
-    const engineProbe = probeContainerEngines({ cache: options.cacheContainerEngineProbe });
+    const engineProbe = await probeContainerEngines({
+      cache: options.cacheContainerEngineProbe !== false
+    });
     if (!engineProbe.engine) {
+      const unsafe = engineProbe.probes.filter((probe) => probe.failure === "unsafe-location");
+      const timedOut = engineProbe.probes.filter((probe) =>
+        probe.failure === "timeout" || probe.failure === "path-timeout"
+      );
       const installed = engineProbe.probes.filter((probe) => probe.installed);
-      if (installed.length > 0) {
+      if (unsafe.length > 0) {
+        const names = unsafe.map((probe) => probe.engine).join(" / ");
+        const locations = unsafe.map((probe) => probe.command).filter(Boolean).join(" / ");
+        prerequisites.push(t("service.containerEngineUnsafeLocation", { names, locations }));
+      } else if (timedOut.length > 0) {
+        const names = timedOut.map((probe) => probe.engine).join(" / ");
+        prerequisites.push(t("service.containerEngineProbeTimedOut", { names }));
+      } else if (installed.length > 0) {
         const names = installed.map((probe) => probe.engine).join(" / ");
         prerequisites.push(t("service.containerEngineInstalledNotConnected", { names }));
       } else {
         prerequisites.push(t("service.containerEngineMissing"));
       }
     }
-  }
-
-  if (false && service.id === "agent-container-hub" && !containerEngineAvailable()) {
-    prerequisites.push(t("service.containerEngineMissing"));
   }
 
   return prerequisites;
@@ -1083,7 +1093,7 @@ export async function getServiceState(
     initializationState?.status === "succeeded" && initializationState.version === service.version;
   const prerequisites =
     installed && missingRuntimeFiles.length === 0 && initializationSucceeded && !responsiveRead
-      ? collectPrerequisites(app, service, layout, {
+      ? await collectPrerequisites(app, service, layout, {
         cacheContainerEngineProbe: options.cacheContainerEngineProbe
       })
       : [];
@@ -1912,6 +1922,14 @@ function buildDesktopServiceCommandEnv(
   if (service.id === "identity-center") {
     env.DESKTOP_DEVICE_ID = getDesktopDeviceId(app);
   }
+  if (service.id === "agent-platform") {
+    const appRoot = app.getAppPath();
+    const toolingRoot = isDesktopDevelopmentRuntime(app) ? appRoot : path.dirname(appRoot);
+    env.DESKTOP_WEBAPP_TOOLING_PATH = path.join(toolingRoot, "scripts", "webapp-tooling.mjs");
+    // Compatibility for already-installed WebApp Builder Skills. New Skills
+    // should consume DESKTOP_WEBAPP_TOOLING_PATH directly and never scan disks.
+    env.DESKTOP_ROOT = toolingRoot;
+  }
   return env;
 }
 
@@ -1939,15 +1957,31 @@ function isDaemonStartArg(value: string) {
 }
 
 function getDesktopStartCommand(service: Pick<ServiceDefinition, "id" | "kind" | "startCommand">) {
-  if (
-    service.kind !== "builtin" ||
-    !CORE_SERVICE_IDS.has(service.id) ||
-    service.startCommand.some(isDaemonStartArg)
-  ) {
+  if (service.kind !== "builtin" || !CORE_SERVICE_IDS.has(service.id)) {
     return service.startCommand;
   }
 
-  return [...service.startCommand, "--daemon"];
+  let command = [...service.startCommand];
+  if (service.id === "agent-platform") {
+    const withoutRuntimeMode: string[] = [];
+    for (let index = 0; index < command.length; index += 1) {
+      const arg = command[index];
+      if (arg === "--runtime-mode") {
+        index += 1;
+        continue;
+      }
+      if (arg.startsWith("--runtime-mode=")) continue;
+      withoutRuntimeMode.push(arg);
+    }
+    command = withoutRuntimeMode;
+    const daemonIndex = command.findIndex(isDaemonStartArg);
+    if (daemonIndex >= 0) command.splice(daemonIndex, 0, "--runtime-mode=desktop");
+    else command.push("--runtime-mode=desktop");
+  }
+  if (!command.some(isDaemonStartArg)) {
+    command.push("--daemon");
+  }
+  return command;
 }
 
 async function runServiceCommand(
@@ -2026,6 +2060,11 @@ async function startServiceInternal(
   serviceId: ServiceId,
   options: StartServiceOptions = {}
 ): Promise<ServiceCommandResult> {
+  if (serviceId === "agent-container-hub") {
+    // A manual start is an explicit retry after Docker/Podman may have been
+    // installed or started, so it must not reuse a recent negative probe.
+    clearContainerEngineProbeCache();
+  }
   const current = await getServiceState(app, serviceId, options.stateReadOptions);
   const service = getService(serviceId);
   if (service.serviceMode === "resource") {
@@ -3591,6 +3630,7 @@ export const __testInternals = {
   getWebUrl,
   containerEngineAvailable,
   probeContainerEngines,
+  containerEngine: containerEngineTestInternals,
   commandEnv: commandEnvTestInternals,
   fixShellScriptPermissions,
   listMissingRuntimeFiles,

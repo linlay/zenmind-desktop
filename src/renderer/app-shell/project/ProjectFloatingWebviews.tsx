@@ -6,6 +6,7 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { ServiceWebviewSurface } from "../../service-webview/ServiceWebviewSurface";
+import { createSurfaceIdentity } from "../../../shared/surface-identity";
 import { useI18n } from "../../i18n/useI18n";
 
 export type ProjectFloatingWebviewEntry = {
@@ -102,10 +103,6 @@ function createInitialFloatingPosition(
     isWindows,
     windowFullScreen,
   );
-}
-
-function createProjectSurfaceId(agentKey: string) {
-  return `agent-webclient-project:${encodeURIComponent(agentKey)}`;
 }
 
 function ProjectFloatingWebviewPanel({
@@ -275,7 +272,8 @@ function ProjectFloatingWebviewPanel({
           active
           surfaceOwnershipActive={false}
           serviceId="agent-webclient"
-          surfaceId={createProjectSurfaceId(entry.agentKey)}
+          surfaceIdentity={createSurfaceIdentity("project", entry.agentKey)}
+          surfaceIdentityKey={entry.agentKey}
           surfaceLabel={title}
           hostTheme={hostTheme}
           embedPath={entry.embedPath}

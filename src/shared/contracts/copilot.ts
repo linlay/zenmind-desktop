@@ -37,6 +37,7 @@ export interface AssistantNavigationPushEvent {
 export type AssistantNavigationPushEventListener = (event: AssistantNavigationPushEvent) => void;
 
 export interface WebviewOpenTabRequest {
+  target: "desktop-browser" | "work-panel";
   sourceGuestId: number;
   url: string;
   partition?: string;
@@ -375,6 +376,21 @@ export interface AssistantChatDetail {
   summary: AssistantChatSummary;
   messages: AssistantChatMessage[];
   events: AssistantRunEvent[];
+}
+
+export interface AssistantChatInfo {
+  chatId: string;
+  chatName: string;
+  agentKey: string;
+  firstAgentKey: string;
+  firstAgentName: string;
+  teamId: string;
+  source: string;
+  createdAt?: EpochMilliseconds;
+  updatedAt?: EpochMilliseconds;
+  lastRunId: string;
+  lastRunContent: string;
+  rawJson: string;
 }
 
 export interface AssistantSettingsPublic {

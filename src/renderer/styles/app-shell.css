@@ -47,6 +47,10 @@
   --app-window-drag-height: 0px;
 }
 
+.app-shell.is-mac-platform.has-main-chat-work-panel-toggle {
+  --app-window-drag-right: 48px;
+}
+
 .app-shell.is-mac-translucent-sidebar,
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
   background: transparent;
@@ -568,6 +572,16 @@
   -webkit-app-region: no-drag;
 }
 
+/*
+ * A <webview> is a selectable replaced element in the embedder document.
+ * Keep rapid host-control clicks from selecting the whole guest rectangle;
+ * selection inside the isolated guest document remains unaffected.
+ */
+.app-shell webview {
+  -webkit-user-select: none;
+  user-select: none;
+}
+
 .app-window-drag-layer {
   position: absolute;
   inset: 0;
@@ -577,15 +591,28 @@
   pointer-events: none;
 }
 
+.app-window-controls-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 1001;
+  pointer-events: none;
+}
+
+.app-window-controls-layer .main-chat-work-panel-toggle {
+  pointer-events: auto;
+}
+
 .app-window-drag-region {
   flex: 0 0 var(--app-window-drag-height, 12px);
   height: var(--app-window-drag-height, 12px);
   min-height: 0;
   margin-left: var(--app-window-drag-left, var(--app-sidebar-width, 160px));
   margin-right: var(--app-window-drag-right, 0px);
-  app-region: drag;
-  -webkit-app-region: drag;
+  /* Keep the full lane interactive so the first press can enter the Pointer/IPC drag path. */
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
   pointer-events: auto;
+  touch-action: none;
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;
@@ -652,6 +679,40 @@
   border-right: 1px solid rgba(148, 163, 184, 0.18);
 }
 
+.app-shell.has-assistant-dock-overlay .app-content {
+  margin-right: 0;
+  border-right: 0;
+}
+
+.app-shell.is-copilot-dock-resizing .app-content {
+  transition: none;
+}
+
+.app-shell.is-work-panel-fullscreen .app-content {
+  position: absolute;
+  inset: 0;
+  z-index: 2000;
+  flex: none;
+  width: 100%;
+  height: 100%;
+  margin-right: 0;
+  border-right: 0;
+  background: var(--embedded-surface-page-bg);
+  transition: none;
+}
+
+.app-shell.is-work-panel-fullscreen .app-content > .app-main,
+.app-shell.is-work-panel-fullscreen .app-content > .chat-work-panel-resizer {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app-shell.is-work-panel-fullscreen
+  > :not(.app-content):not(.desktop-action-confirmation-layer):not(.desktop-global-search-layer):not(.desktop-shutdown-overlay) {
+  visibility: hidden;
+  pointer-events: none;
+}
+
 .app-content::before {
   display: none;
 }
@@ -662,21 +723,116 @@
   min-width: 0;
 }
 
-.app-shell.has-chat-work-panel {
-  --chat-work-panel-width: clamp(360px, 42vw, 680px);
+.main-chat-work-panel-toggle {
+  position: absolute;
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(71, 85, 105, 0.84);
+  cursor: pointer;
+  appearance: none;
+  touch-action: manipulation;
+  transition:
+    background-color 0.2s ease-in-out,
+    border-color 0.2s ease-in-out,
+    color 0.2s ease-in-out,
+    opacity 0.2s ease-in-out;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-shell.is-mac-platform .main-chat-work-panel-toggle {
+  top: 12px;
+  right: 14px;
+}
+
+.app-shell.is-windows-platform .main-chat-work-panel-toggle {
+  top: calc(var(--windows-titlebar-overlay-height) + 10px);
+  right: 14px;
+}
+
+.main-chat-work-panel-toggle:hover:not(:disabled),
+.main-chat-work-panel-toggle:focus-visible:not(:disabled) {
+  color: #1f2937;
+  background: rgba(136, 151, 172, 0.1);
+}
+
+.main-chat-work-panel-toggle:focus-visible {
+  outline: none;
+}
+
+.main-chat-work-panel-toggle:disabled {
+  opacity: 0.34;
+  cursor: not-allowed;
+}
+
+.main-chat-work-panel-toggle-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  transform: scaleX(-1);
+  transform-origin: center;
+}
+
+:root[data-theme="dark"] .main-chat-work-panel-toggle {
+  color: rgba(203, 213, 225, 0.8);
+}
+
+:root[data-theme="dark"] .main-chat-work-panel-toggle:hover:not(:disabled),
+:root[data-theme="dark"] .main-chat-work-panel-toggle:focus-visible:not(:disabled) {
+  color: var(--ink);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.work-panel-host {
+  flex: 0 0 0;
+  width: 0;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.app-shell.has-chat-work-panel .work-panel-host {
+  flex-basis: var(--chat-work-panel-width, 360px);
+  width: var(--chat-work-panel-width, 360px);
+}
+
+.app-shell.has-chat-work-panel .work-panel-host.is-fullscreen {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  flex: 0 0 auto;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
 }
 
 .chat-work-panel {
   --chat-work-panel-top-inset: 0px;
+  --chat-work-panel-tab-height: 32px;
+  --chat-work-panel-tabs-top-padding: 8px;
+  --chat-work-panel-tabs-height: calc(var(--chat-work-panel-tab-height) + var(--chat-work-panel-tabs-top-padding));
+  --work-panel-tab-strip: #dee6ee;
+  --work-panel-tab-active: #ffffff;
+  --work-panel-tab-hover: rgba(255, 255, 255, 0.6);
+  --work-panel-tab-separator: rgba(95, 99, 104, 0.2);
+  --work-panel-tab-ink: #202124;
+  --work-panel-tab-muted: #5f6368;
+  --work-panel-tab-focus: #1a73e8;
   position: relative;
   z-index: 12;
   display: block;
-  flex: 0 0 var(--chat-work-panel-width, clamp(360px, 42vw, 680px));
-  width: var(--chat-work-panel-width, clamp(360px, 42vw, 680px));
+  width: 100%;
   height: 100%;
   min-width: 0;
   overflow: hidden;
-  border-left: 1px solid rgba(148, 163, 184, 0.24);
   background: var(--embedded-surface-page-bg);
   box-shadow: -10px 0 28px rgba(15, 23, 42, 0.08);
   app-region: no-drag;
@@ -689,13 +845,28 @@
 
 .chat-work-panel-body {
   position: absolute;
-  top: calc(var(--chat-work-panel-top-inset) + 44px);
+  top: calc(var(--chat-work-panel-top-inset) + var(--chat-work-panel-tabs-height));
   right: 0;
   bottom: 0;
   left: 0;
   min-width: 0;
   min-height: 0;
   overflow: hidden;
+}
+
+.chat-work-panel-item,
+.chat-work-panel-item > .service-webview-surface,
+.chat-work-panel-item > .external-webview-page {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.chat-work-panel-item[hidden] {
+  display: none !important;
 }
 
 .chat-work-panel-tabs {
@@ -705,174 +876,344 @@
   right: 0;
   left: 0;
   display: flex;
-  align-items: center;
-  gap: 4px;
-  height: 44px;
-  padding: 6px 8px;
+  align-items: flex-end;
+  gap: 0;
+  height: var(--chat-work-panel-tabs-height);
+  padding: var(--chat-work-panel-tabs-top-padding) 8px 0;
   overflow-x: auto;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
-  background: var(--browser-top, #f3f4f6);
+  overflow-y: hidden;
+  overscroll-behavior-x: contain;
+  scrollbar-width: none;
+  background: var(--work-panel-tab-strip);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
 }
 
-.chat-work-panel-tabs > button {
-  display: inline-flex;
+.chat-work-panel.has-panel-toggle .chat-work-panel-tabs {
+  padding-right: 46px;
+}
+
+.chat-work-panel-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.chat-work-panel-tab {
+  position: relative;
+  flex: 0 1 auto;
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  min-width: 140px;
+  max-width: 240px;
+  height: var(--chat-work-panel-tab-height);
+  border: 0;
+  border-radius: 10px 10px 0 0;
+  background: transparent;
+  color: var(--work-panel-tab-muted);
+  overflow: visible;
+  transition: background-color 160ms ease, color 160ms ease;
+  user-select: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.chat-work-panel-tab.is-overview {
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: max-content;
+  max-width: none;
+}
+
+.chat-work-panel-tab.is-overview .chat-work-panel-tab-trigger {
+  flex: 0 0 auto;
+  width: max-content;
+  gap: 4px;
+}
+
+.chat-work-panel-tab.is-overview .chat-work-panel-tab-title {
+  flex: 0 0 auto;
+  overflow: visible;
+  text-overflow: clip;
+}
+
+.chat-work-panel-tab:hover:not(.is-active) {
+  background: var(--work-panel-tab-hover);
+}
+
+.chat-work-panel-tab.is-active {
+  z-index: 1;
+  color: var(--work-panel-tab-ink);
+  background: var(--work-panel-tab-active);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28) inset;
+}
+
+.chat-work-panel-tab.is-active::before,
+.chat-work-panel-tab.is-active::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  width: 8px;
+  height: 8px;
+  pointer-events: none;
+}
+
+.chat-work-panel-tab.is-active::before {
+  left: -8px;
+  background: radial-gradient(circle at top left, transparent 0 7px, var(--work-panel-tab-active) 7.5px);
+}
+
+.chat-work-panel-tab.is-active::after {
+  right: -8px;
+  background: radial-gradient(circle at top right, transparent 0 7px, var(--work-panel-tab-active) 7.5px);
+}
+
+.chat-work-panel-tab:not(.is-active):not(:last-child)::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  right: 0;
+  width: 1px;
+  height: 18px;
+  background: var(--work-panel-tab-separator);
+}
+
+.chat-work-panel-tab-trigger {
+  flex: 1 1 auto;
+  align-self: stretch;
+  display: flex;
   align-items: center;
   gap: 8px;
-  min-width: 96px;
-  max-width: 220px;
-  height: 32px;
-  padding: 0 9px;
+  min-width: 0;
+  padding: 0 10px;
   overflow: hidden;
   border: 0;
-  border-radius: 8px;
-  color: var(--browser-ink, inherit);
+  border-radius: 10px 8px 0 0;
   background: transparent;
-  white-space: nowrap;
-  text-overflow: ellipsis;
+  color: inherit;
+  text-align: left;
+  cursor: default;
 }
 
-.chat-work-panel-tabs > button[aria-selected="true"] {
-  background: var(--browser-tab-active, #fff);
+.chat-work-panel-tab-trigger:focus-visible {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--work-panel-tab-focus);
 }
 
-.chat-work-panel-tabs > button > span {
-  margin-left: auto;
+.chat-work-panel-tab-icon {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  color: inherit;
   font-size: 16px;
   line-height: 1;
 }
 
-.chat-work-panel-body > .service-webview-surface,
-.chat-work-panel-body > .external-webview-page,
-.chat-work-panel-body > div,
-.chat-work-panel-body > div > .service-webview-surface,
-.chat-work-panel-body > div > .external-webview-page {
-  width: 100%;
-  height: 100%;
+.chat-work-panel-tab-icon.is-loading {
+  color: var(--work-panel-tab-focus);
+}
+
+.chat-work-panel-tab-loading-spinner {
+  width: 12px;
+  height: 12px;
+  border: 1.5px solid color-mix(in srgb, currentColor 22%, transparent);
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: chat-work-panel-tab-spin 780ms linear infinite;
+}
+
+@keyframes chat-work-panel-tab-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-work-panel-tab-loading-spinner {
+    animation: none;
+  }
+}
+
+.chat-work-panel-tab-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-work-panel-tab.has-close:hover .chat-work-panel-tab-title,
+.chat-work-panel-tab.has-close:focus-within .chat-work-panel-tab-title {
+  -webkit-mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 48px), transparent 100%);
+  mask-image: linear-gradient(to right, #000 0, #000 calc(100% - 48px), transparent 100%);
+}
+
+.chat-work-panel-tab-close {
+  position: absolute;
+  z-index: 2;
+  top: 50%;
+  right: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 24px;
+  margin: 0;
+  padding: 0;
+  transform: translateY(-50%);
+  visibility: hidden;
+  opacity: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: inherit;
+  cursor: default;
+  transition: opacity 120ms ease;
+}
+
+/* 视觉遮罩：大的模糊圆底（30×30），仅视觉展示，不拦截点击 */
+.chat-work-panel-tab-close::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 30px;
+  height: 30px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(95, 99, 104, 0.22) 0%, rgba(95, 99, 104, 0.08) 58%, transparent 100%);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.chat-work-panel-tab-close:hover::before,
+.chat-work-panel-tab-close:focus-visible::before {
+  opacity: 1;
+}
+
+.chat-work-panel-tab:hover .chat-work-panel-tab-close,
+.chat-work-panel-tab:focus-within .chat-work-panel-tab-close {
+  visibility: visible;
+  opacity: 1;
+}
+
+.chat-work-panel-tab-close:hover,
+.chat-work-panel-tab-close:focus-visible {
+  outline: none;
+  color: var(--work-panel-tab-ink);
+}
+
+.chat-work-panel-tab-close:focus-visible {
+  box-shadow: 0 0 0 2px var(--work-panel-tab-focus);
+}
+
+.chat-work-panel-tab-close svg {
+  width: 13px;
+  height: 13px;
 }
 
 .chat-work-panel .external-webview-page.has-browser-chrome {
   margin: 0;
 }
 
-.chat-work-panel .external-webview-page {
-  --browser-top: #f3f4f6;
-  --browser-tab-active: #ffffff;
-}
-
-:root[data-theme="dark"] .chat-work-panel .external-webview-page {
-  --browser-top: #232323;
-  --browser-tab-active: #171717;
-}
-
 .chat-work-panel .external-webview-browser-chrome {
-  border-bottom: 1px solid var(--browser-edge);
-  cursor: default;
-}
-
-.chat-work-panel .external-webview-browser-chrome:active {
-  cursor: default;
-}
-
-.chat-work-panel .external-webview-tabbar {
-  gap: 4px;
-  min-height: 48px;
-  padding: 8px 10px;
-}
-
-.chat-work-panel .external-webview-tab-strip {
-  flex: 1 1 auto;
-  align-items: center;
-  max-width: 100%;
-}
-
-.chat-work-panel .external-webview-tab {
-  flex: 0 1 240px;
-  min-width: 104px;
-  min-height: 32px;
-  max-width: 260px;
-  border-radius: 10px;
-  overflow: hidden;
-  background: transparent;
-}
-
-.chat-work-panel .external-webview-tab.is-active,
-.chat-work-panel .external-webview-tab.is-active:hover {
-  background: var(--browser-tab-active);
-  box-shadow: none;
-}
-
-.chat-work-panel .external-webview-tab::before,
-.chat-work-panel .external-webview-tab::after,
-.chat-work-panel .external-webview-tab:not(.is-active)::after {
-  content: none;
-}
-
-.chat-work-panel .external-webview-tab-trigger {
-  min-height: 32px;
-  padding: 0 10px;
-}
-
-.chat-work-panel .external-webview-tab-close {
-  width: 26px;
-  height: 26px;
-  margin-right: 3px;
-}
-
-.chat-work-panel .external-webview-tab-add {
-  margin-left: 2px;
+  display: none;
 }
 
 .chat-work-panel .external-webview-frame-shell {
   border-top: 0;
 }
 
-.chat-work-panel .external-webview-surface-close {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  width: 28px;
-  height: 28px;
-  margin: 0 0 0 6px;
-  padding: 0;
-  border: 0;
-  border-radius: 7px;
-  color: var(--browser-muted);
+.chat-work-panel-resizer {
+  --work-panel-resizer-hitbox: 12px;
+  position: relative;
+  z-index: 14;
+  align-self: stretch;
+  flex: 0 0 var(--work-panel-resizer-hitbox);
+  width: var(--work-panel-resizer-hitbox);
+  margin-right: calc(var(--work-panel-resizer-hitbox) / -2);
+  margin-left: calc(var(--work-panel-resizer-hitbox) / -2);
+  cursor: col-resize;
+  touch-action: none;
   background: transparent;
-  cursor: pointer;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
-.chat-work-panel .external-webview-surface-close:hover,
-.chat-work-panel .external-webview-surface-close:focus-visible {
-  color: var(--browser-ink);
-  background: var(--browser-button-hover);
+.chat-work-panel-resizer-line {
+  position: absolute;
+  inset-block: 0;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(83, 96, 112, 0.2);
+  pointer-events: none;
+  transition: width 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
 
-.chat-work-panel .external-webview-surface-close svg {
-  width: 16px;
-  height: 16px;
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 1.8;
-  stroke-linecap: round;
-  stroke-linejoin: round;
+.chat-work-panel-resizer:hover .chat-work-panel-resizer-line,
+.chat-work-panel-resizer:focus-visible .chat-work-panel-resizer-line,
+.chat-work-panel-resizer.is-active .chat-work-panel-resizer-line {
+  width: 3px;
+  background: rgba(38, 99, 235, 0.42);
+  box-shadow: 0 0 12px rgba(38, 99, 235, 0.18);
+}
+
+.chat-work-panel-resizer:focus-visible {
+  outline: none;
+}
+
+.chat-work-panel-resize-overlay,
+.copilot-dock-resize-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  cursor: col-resize;
+  background: transparent;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-shell.is-work-panel-resizing,
+.app-shell.is-copilot-dock-resizing {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+:root[data-theme="dark"] .chat-work-panel {
+  --work-panel-tab-strip: #2b3138;
+  --work-panel-tab-active: #1f2329;
+  --work-panel-tab-hover: rgba(255, 255, 255, 0.12);
+  --work-panel-tab-separator: rgba(255, 255, 255, 0.12);
+  --work-panel-tab-ink: #f1f3f4;
+  --work-panel-tab-muted: #bdc1c6;
+  --work-panel-tab-focus: #8ab4f8;
+  box-shadow: -10px 0 28px rgba(0, 0, 0, 0.18);
+}
+
+:root[data-theme="dark"] .chat-work-panel-tab.is-active {
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
+}
+
+:root[data-theme="dark"] .chat-work-panel-resizer-line {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+:root[data-theme="dark"] .chat-work-panel-resizer:hover .chat-work-panel-resizer-line,
+:root[data-theme="dark"] .chat-work-panel-resizer:focus-visible .chat-work-panel-resizer-line,
+:root[data-theme="dark"] .chat-work-panel-resizer.is-active .chat-work-panel-resizer-line {
+  background: rgba(79, 136, 255, 0.48);
+  box-shadow: 0 0 14px rgba(79, 136, 255, 0.2);
 }
 
 .app-shell.is-windows-platform .chat-work-panel {
   --chat-work-panel-top-inset: var(--windows-titlebar-overlay-height);
-}
-
-.app-shell.is-windows-platform .chat-work-panel .external-webview-tabbar,
-.app-shell.is-windows-platform .chat-work-panel .external-webview-toolbar {
-  padding-right: 8px;
-}
-
-@media (max-width: 900px) {
-  .app-shell.has-chat-work-panel {
-    --chat-work-panel-width: clamp(320px, 50vw, 460px);
-  }
 }
 
 .desktop-global-search-layer {
@@ -1217,7 +1558,4 @@
   .desktop-global-search-row-agent {
     display: none;
   }
-}
-.work-panel-host {
-  display: contents;
 }

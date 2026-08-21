@@ -276,15 +276,15 @@ test("main agent webclient keeps chat and copilot webviews separate from managem
     "EmbeddedSurfaceHosts.tsx"
   );
 
-  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_CHAT_SURFACE_ID = "agent-webclient-chat"/);
-  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = "agent-webclient-copilot"/);
+  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_CHAT_SURFACE_ID = MAIN_CHAT_SURFACE_ID/);
+  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = COPILOT_CHAT_SURFACE_ID/);
   assert.match(surfaceHosts, /lastAgentChatRouteRef/);
   assert.match(surfaceHosts, /lastCopilotRouteRef/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "chat"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "copilot"/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
   assert.match(surfaceHosts, /serviceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
 });
@@ -326,8 +326,11 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /path=\{routePattern\}[\s\S]*?element=\{null\}/);
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
-  assert.match(surfaceHosts, /surfaceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
-  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/project"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/overview\/"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(manifestContracts, /"\/resource-viewer\/"/u);
+  assert.doesNotMatch(manifestContracts, /"\/(?:source|planning|resource|file)-view\/"|"\/web-view"/u);
+  assert.doesNotMatch(manifestContracts, /"\/(?:artifact|reference)-view\/"/u);
   assert.match(routeDefinitions, /function resolveAgentWebclientWsSource\([\s\S]*?return undefined;/);
   assert.doesNotMatch(routeDefinitions, /desktop-agent-webclient/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
@@ -1081,8 +1084,8 @@ test("sidebar row action buttons stay out of default tab order", () => {
     "AppSidebar.tsx"
   );
 
-  assert.match(sidebarSource, /className="assistant-worker-chat-menu-button"[\s\S]{0,220}tabIndex=\{-1\}/);
-  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-chat-menu-button sidebar-more-actions-button"[\s\S]{0,220}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /sidebar-website-status-action[\s\S]{0,300}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
@@ -1635,8 +1638,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /activeEmbeddedAgentWebclientRoute[\s\S]*?\? AGENT_WEBCLIENT_SERVICE_ID[\s\S]*?: resolveServiceSurfaceRouteId\(location\.pathname\)/);
   assert.match(appShell, /findAgentWebclientRouteDefinition\(pathname\)/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
-  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_CHAT_SURFACE_ID\}/);
-  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_SURFACE_ID\}/);
+  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
+  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
   assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?navigate\(targetPath\);[\s\S]*?return true;/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)/);
@@ -1769,6 +1772,156 @@ test("Projects sidebar toggles without navigation and summarizes numeric awaitin
   assert.match(
     assistantOpenChatHandler,
     /if \(!chat\.isRead && !chat\.hasActiveRun\)[\s\S]*?markChatRead\(chat\.chatId, chat\.lastRunId \|\| undefined\)[\s\S]*?markAgentChatsRead\(chat\.agentKey\)/,
+  );
+});
+
+test("sidebar more-actions buttons match the Codex hover treatment", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css",
+  );
+  const brandMarkSource = readSourceFile(
+    "src",
+    "renderer",
+    "components",
+    "BrandMark.tsx",
+  );
+  const assistantAgentRenderer =
+    sidebarSource.match(
+      /function renderAssistantAgent\([\s\S]*?function renderSidebarGroup\(/,
+    )?.[0] ?? "";
+  const moreActionsIndex = assistantAgentRenderer.indexOf(
+    'className="assistant-worker-icon-button sidebar-more-actions-button sidebar-agent-more-actions-button"',
+  );
+  const newChatIndex = assistantAgentRenderer.indexOf(
+    '<SidebarActionIcon kind="new_chat" />',
+  );
+
+  assert.ok(moreActionsIndex >= 0);
+  assert.ok(newChatIndex > moreActionsIndex);
+  assert.match(
+    assistantAgentRenderer,
+    /sidebar-agent-more-actions-button[\s\S]{0,360}handleOpenAgentMenu[\s\S]{0,180}<SidebarActionIcon kind="more_actions" \/>/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-actions\s*\{[\s\S]*?gap:\s*4px;/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-actions \.assistant-worker-icon-button\s*\{[\s\S]*?padding:\s*4px;[\s\S]*?color:\s*color-mix\(in oklab,\s*var\(--ink\) 50%,\s*transparent\);/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-actions \.assistant-worker-icon-button:hover,[\s\S]*?\.assistant-worker-actions \.assistant-worker-icon-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-agent-more-actions-button\s*\{[\s\S]*?margin-inline-end:\s*2px;/,
+  );
+  assert.match(
+    sidebarSource,
+    /className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"/,
+  );
+  assert.match(
+    sidebarSource,
+    /className="assistant-worker-chat-menu-button sidebar-more-actions-button"[\s\S]{0,360}<SidebarActionIcon kind="more_actions" \/>/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-more-actions-button\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*color-mix\(in oklab,\s*var\(--ink\) 50%,\s*transparent\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-more-actions-button:hover,[\s\S]*?\.sidebar-more-actions-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /:root\[data-theme="dark"\] \.sidebar-more-actions-button:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-more-actions-button:focus-visible(?:,[\s\S]{0,320})?\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    brandMarkSource,
+    /case "more_actions":[\s\S]*?<svg \{\.\.\.iconProps\} viewBox="0 0 16 16" stroke="none">[\s\S]*?M3\.33362 6\.80811[\s\S]*?M8\.00061 6\.80811[\s\S]*?M12\.6666 6\.80811/,
+  );
+  assert.match(
+    brandMarkSource,
+    /case "new_chat":[\s\S]*?<svg \{\.\.\.iconProps\} viewBox="0 0 16 16" stroke="none">[\s\S]*?M6\.33325 1\.88379[\s\S]*?M10\.8948 2\.375/,
+  );
+});
+
+test("website row close action removes the hover tile", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css",
+  );
+
+  assert.match(
+    sidebarSource,
+    /className=\{`assistant-worker-icon-button sidebar-website-status-action\$\{closing \? " is-closing" : ""\}`\}/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-website-child-row \.sidebar-website-status-action:hover,[\s\S]*?\.sidebar-website-child-row \.sidebar-website-status-action:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /:root\[data-theme="dark"\] \.sidebar-website-child-row \.sidebar-website-status-action:hover,[\s\S]*?:root\[data-theme="dark"\] \.sidebar-website-child-row \.sidebar-website-status-action:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+});
+
+test("sidebar header icon buttons use color-only hover feedback", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css",
+  );
+
+  for (const className of [
+    "sidebar-assistant-sort-button",
+    "sidebar-assistant-refresh-button",
+    "sidebar-assistant-project-button",
+    "sidebar-chats-share-button",
+    "sidebar-chats-new-button",
+    "sidebar-website-add-button",
+  ]) {
+    assert.match(
+      sidebarSource,
+      new RegExp(`assistant-worker-icon-button[\\s\\S]{0,180}${className}`),
+    );
+  }
+  assert.match(
+    navigationStyles,
+    /\.assistant-worker-icon-button:hover,[\s\S]*?\.assistant-worker-icon-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
+  );
+  assert.match(
+    navigationStyles,
+    /:root\[data-theme="dark"\] \.assistant-worker-icon-button:hover,[\s\S]*?:root\[data-theme="dark"\] \.assistant-worker-icon-button:focus-visible\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?color:\s*var\(--ink\);[\s\S]*?box-shadow:\s*none;/,
   );
 });
 
@@ -3092,7 +3245,7 @@ test("sidebar translucency is fixed and not user configurable", () => {
   assert.match(settingsPage, /settings\.general\.desktopActionConfirmation/);
   assert.match(assistantRuntime, /startDesktopWsServerForSettings/);
   assert.doesNotMatch(mainProcess, /void startDesktopWsServer\(\{\s*app,/);
-  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);/);
+  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app, startupPlatform\);/);
   assert.match(mainProcess, /initializeMainI18n\(app, \{ isFirstInstall: isFirstDesktopInstall \}\)/);
   assert.match(mainProcess, /function refreshDesktopRuntimeConfigFromCanonicalFiles\(reason: string\)/);
   assert.match(mainProcess, /targetWindow\.webContents\.send\("settings\.desktopConfigChanged", event\)/);
@@ -3289,17 +3442,17 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(resolver, /"\/control-center"[\s\S]*?"controlCenter"/);
   assert.match(appShell, /resolveDesktopCopilotPreference/);
   assert.match(appShell, /assistantLauncherVisible = currentCopilotPreference\?\.enabled !== false/);
-  assert.match(appShell, /\[assistantDockSessions, setAssistantDockSessions\] = useState<Record<string, CopilotDockSurfaceSession>>\(\{\}\)/);
+  assert.match(appShell, /\[assistantDockSessions, setAssistantDockSessions\] = useState<Record<string, CopilotDockContextSession>>\(\{\}\)/);
   assert.match(appShell, /isAgentWebclientMainRoute =[\s\S]*?location\.pathname === ASSISTANT_TARGET_PATH \|\|[\s\S]*?isSingleAgentWebclientRoute\(location\.pathname\)/);
-  assert.match(appShell, /currentCopilotSurfaceId = activeWebEntryKey \|\|/);
-  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotSurfaceId\] \?\? null/);
+  assert.match(appShell, /currentCopilotContextKey = activeWebEntryKey \|\|/);
+  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotContextKey\] \?\? null/);
   assert.match(appShell, /assistantDockOpen = Boolean\(currentCopilotSession\)/);
   assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute/);
   assert.doesNotMatch(appShell, /assistantDockOpenPath/);
   assert.match(appShell, /assistantLauncherDisabled=\{isAgentWebclientMainRoute\}/);
   assert.match(appShell, /open=\{assistantCopilotOpen\}/);
   assert.match(appShell, /assistantLauncherVisible=\{assistantLauncherVisible\}/);
-  assert.match(appShell, /function closeAssistantDock\(\)[\s\S]*?setAssistantDockOpenRequest\(null\)[\s\S]*?pendingAssistantDockOpenRequestRef\.current = null[\s\S]*?updateCopilotDockSurfaceSession\(currentCopilotSurfaceId, null\)/);
+  assert.match(appShell, /function closeAssistantDock\(\)[\s\S]*?setAssistantDockOpenRequest\(null\)[\s\S]*?pendingAssistantDockOpenRequestRef\.current = null[\s\S]*?updateCopilotDockContextSession\(currentCopilotContextKey, null\)/);
   assert.match(appShell, /<BuiltinBrowserSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
   assert.match(appShell, /<WebSurfaceHost[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
   assert.match(appShell, /<ExternalItemRoute[\s\S]*?assistantDockOpen=\{assistantCopilotOpen\}[\s\S]*?onOpenAssistantDock=\{\(\) => openAssistantDock\(\)\}[\s\S]*?onCloseAssistantDock=\{closeAssistantDock\}/);
@@ -3311,16 +3464,16 @@ test("page-level copilot controls sidebar visibility and assistant agent followi
   assert.match(appShell, /<AgentWebclientCopilotDock/);
   assert.match(appShell, /resolvedCopilotAgentKey = activeWebEntry[\s\S]{0,180}activeWebEntry\.copilotAgentKey \|\| assistantSettings\?\.desktopHelperAgentKey \|\| DEFAULT_DESKTOP_HELPER_AGENT_KEY/);
   assert.match(appShell, /resolvedAgentKey=\{resolvedCopilotAgentKey\}/);
-  assert.match(appShell, /pendingAssistantDockOpenRequestRef = useRef<\{ surfaceId: string; embedPath: string \} \| null>\(null\)/);
-  assert.match(appShell, /pendingAssistantDockOpenRequestRef\.current = request[\s\S]{0,100}\{ surfaceId: currentCopilotSurfaceId, embedPath \}/);
-  assert.match(appShell, /pendingRequest\?\.surfaceId === currentCopilotSurfaceId[\s\S]*?pendingRequest\.embedPath === embedPath[\s\S]*?setAssistantDockOpenRequest\(null\)/);
-  assert.match(appShell, /writeCopilotDockSessionSnapshot\(\{ surfaces: nextSessions \}\)/);
+  assert.match(appShell, /pendingAssistantDockOpenRequestRef = useRef<\{ contextKey: string; embedPath: string \} \| null>\(null\)/);
+  assert.match(appShell, /pendingAssistantDockOpenRequestRef\.current = request[\s\S]{0,100}\{ contextKey: currentCopilotContextKey, embedPath \}/);
+  assert.match(appShell, /pendingRequest\?\.contextKey === currentCopilotContextKey[\s\S]*?pendingRequest\.embedPath === embedPath[\s\S]*?setAssistantDockOpenRequest\(null\)/);
+  assert.match(appShell, /writeCopilotDockSessionSnapshot\(\{ contexts: nextSessions \}\)/);
   assert.match(appShell, /restoredEmbedPath=\{currentCopilotSession\?\.embedPath \?\? ""\}/);
   assert.match(appShell, /const targetAgentKey = readCopilotAgentKeyFromUrl\(targetEmbedPath\) \|\|[\s\S]*?resolveTargetAgentKey\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /const targetEmbedPath = openRequest\s*\? buildAgentWebclientCopilotPath\(openRequest, resolvedAgentKey\)/);
   assert.match(appShell, /data-open-agent-key=\{targetAgentKey\}/);
   assert.match(appShell, /key=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
-  assert.match(appShell, /surfaceId=\{AGENT_WEBCLIENT_COPILOT_DOCK_SURFACE_ID\}/);
+  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-dock"/);
   assert.match(appShell, /function mergeWebsiteItems\(currentItems: WebEntry\[\], nextWebsiteItems: WebsiteEntry\[\]\)/);
   assert.match(appShell, /websiteAgentSyncRequestRef = useRef\(""\)/);
   assert.match(appShell, /function handleCopilotSelectedAgentKeyChange\(agentKey: string\)[\s\S]*?activeWebEntry\?\.kind !== "website"/);
@@ -4345,7 +4498,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.match(externalWebviewPage, /\{appChrome \? null : \([\s\S]*?external-webview-browser-chrome/);
   assert.doesNotMatch(externalWebviewPage, /debugSidebarNode/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
-  assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?if \(appChrome\) \{[\s\S]*?return;[\s\S]*?\}/);
+  assert.match(externalWebviewPage, /onWebviewOpenTab[\s\S]*?target !== "desktop-browser"/);
   assert.match(embeddedSurfaceHosts, /runtimeStatus/);
   assert.match(embeddedSurfaceHosts, /chrome=\{item\.chrome\}/);
   assert.doesNotMatch(embeddedSurfaceHosts, /WebappDialogSurface|<Modal/);
@@ -4582,7 +4735,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
   assert.match(assistantHandlers, /lastError:\s*null,\s*recentFrames:\s*\[\]/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?assistant\.navigationAgentsChanged/);
-  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app\);[\s\S]*?createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\)/);
+  assert.match(mainProcess, /const isFirstDesktopInstall = !desktopDataRootExists\(app, startupPlatform\);[\s\S]*?createFirstInstallBootstrapNavigation\(isFirstDesktopInstall\)/);
   assert.doesNotMatch(mainProcess, /createAssistantBootstrapStateMonitor|assistant\.bootstrapStateChanged/);
   assert.match(mainProcess, /function emitAssistantNavigationPushEvent[\s\S]*?assistant\.navigationPushEvent/);
   assert.match(assistantRuntime, /emitAssistantNavigationPushEvent\(event\)/);
@@ -4992,8 +5145,11 @@ test("first-install bootstrap navigation stays optional and keeps the configured
   assert.match(appSidebar, /isBootstrapSeedChat[\s\S]*?chat\.chatName \|\| t\("sidebar\.bootstrapChat\.cta"\)/);
   assert.match(appSidebar, /showBootstrapChatFallback[\s\S]*?!bootstrapSeedChatIndexed/);
   assert.match(appSidebar, /function createBootstrapChatTargetRoute\(\)[\s\S]*?createAgentChatRoute\(\s*normalizedBootstrapAgentKey,\s*normalizedBootstrapChatId,?\s*\)[\s\S]*?createAgentNewChatRoute\(normalizedBootstrapAgentKey\)/);
-  assert.match(appSidebar, /isBootstrapSeedChat \? "is-bootstrap-guide"/);
-  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?is-bootstrap-guide/);
+  assert.match(appSidebar, /const showBootstrapChatGuide =[\s\S]*?!bootstrapGuideDismissedBubbles\.chat/);
+  assert.match(appSidebar, /const showBootstrapHelpGuide =[\s\S]*?!bootstrapGuideDismissedBubbles\.help/);
+  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?showBootstrapChatGuide \? "is-bootstrap-guide"/);
+  assert.match(appSidebar, /isBootstrapSeedChat && showBootstrapChatGuide[\s\S]*?"is-bootstrap-guide"/);
+  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?assistant-worker-unread-dot chat-unread-dot[\s\S]*?worker-chat-name/);
   assert.match(zhDictionary, /"sidebar\.bootstrapChat\.cta": "开始使用"/);
   assert.match(zhDictionary, /用户初始化是可选的/);
   assert.match(enDictionary, /"sidebar\.bootstrapChat\.cta":/);
@@ -5003,8 +5159,10 @@ test("first-install bootstrap navigation stays optional and keeps the configured
   assert.match(appSidebar, /closest\("\.app-shell"\)/);
   assert.match(appSidebar, /createPortal\([\s\S]*?appShell,\s*\)/);
   assert.match(appSidebar, /BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000/);
+  assert.match(appSidebar, /window\.setTimeout\(\(\) => \{[\s\S]*?chat: true,[\s\S]*?help: true,[\s\S]*?BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS\);[\s\S]*?\}, \[bootstrapActive\]\);/);
   assert.match(appSidebar, /bootstrapGuideToolMenuAutoOpenedRef[\s\S]*?setToolMenuOpen\(true\)/);
-  assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: bootstrapActive/);
+  assert.match(appSidebar, /renderToolLink\(helpToolItem,\s*\{[\s\S]*?bootstrapGuide: showBootstrapHelpGuide/);
+  assert.match(appSidebar, /showBootstrapHelpGuide \? "has-bootstrap-guide"/);
   assert.match(appSidebar, /sidebar\.bootstrapGuide\.actionChat/);
   assert.match(zhDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);
   assert.match(enDictionary, /"sidebar\.bootstrapGuide\.chatMessage":/);
@@ -5601,6 +5759,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     /\.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
   );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
+  assert.doesNotMatch(globalStyles, /\.app-shell\.has-embedded-surface\.is-mac-platform\.has-service-webview-surface\s*\{/);
   assert.doesNotMatch(globalStyles, /--mac-embedded-titlebar-height:/);
   assert.doesNotMatch(
     globalStyles,
@@ -5629,8 +5788,8 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     /\.embedded-surface-page-embedded\s+\.pan-drag-region/
   );
   assert.ok(externalBrowserChromeRule, "missing .external-webview-browser-chrome rule");
-  assert.match(externalBrowserChromeRule, /app-region:\s*drag;/);
-  assert.match(externalBrowserChromeRule, /-webkit-app-region:\s*drag;/);
+  assert.match(externalBrowserChromeRule, /app-region:\s*no-drag;/);
+  assert.match(externalBrowserChromeRule, /-webkit-app-region:\s*no-drag;/);
   assert.match(
     globalStyles,
     /\.external-webview-page\.is-app-surface\s*\{[^}]*margin:\s*-28px -24px -28px;[^}]*background:\s*transparent;[^}]*overflow:\s*hidden;/
@@ -5660,15 +5819,11 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.doesNotMatch(serviceWebviewSurface, /embedded-surface-page-agent-webclient/);
   assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-service-webview-surface\s+\.app-window-drag-region\s*\{/
-  );
-  assert.doesNotMatch(
-    globalStyles,
     /\.app-shell\.is-mac-platform\.has-service-webview-surface\.has-assistant-dock-full\s+\.app-window-drag-region\s*\{/
   );
 });
 
-test("window drag uses app-region plus desktopShell drag fallback", () => {
+test("window drag targets keep pointer events for the desktopShell fallback", () => {
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
   const sidebarSource = fs.readFileSync(
@@ -5702,13 +5857,14 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.match(dragRegionRule, /height:\s*var\(--app-window-drag-height,\s*12px\);/);
   assert.match(dragRegionRule, /margin-left:\s*var\(--app-window-drag-left,\s*var\(--app-sidebar-width,\s*160px\)\);/);
   assert.match(dragRegionRule, /margin-right:\s*var\(--app-window-drag-right,\s*0px\);/);
-  assert.match(dragRegionRule, /app-region:\s*drag;/);
-  assert.match(dragRegionRule, /-webkit-app-region:\s*drag;/);
+  assert.match(dragRegionRule, /app-region:\s*no-drag;/);
+  assert.match(dragRegionRule, /-webkit-app-region:\s*no-drag;/);
   assert.match(dragRegionRule, /pointer-events:\s*auto;/);
+  assert.match(dragRegionRule, /touch-action:\s*none;/);
   assert.match(dragRegionRule, /cursor:\s*grab;/);
   assert.doesNotMatch(dragRegionRule, /(?:^|\n)\s*(?:left|right):/);
-  assert.match(sidebarShellRule, /app-region:\s*drag;/);
-  assert.match(sidebarShellRule, /-webkit-app-region:\s*drag;/);
+  assert.match(sidebarShellRule, /app-region:\s*no-drag;/);
+  assert.match(sidebarShellRule, /-webkit-app-region:\s*no-drag;/);
   assert.match(sidebarShellRule, /cursor:\s*grab;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\s*\{[^}]*--app-window-drag-left:\s*220px;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-overlay-sidebar\.has-right-corner-toggle\s*\{[^}]*--app-window-drag-left:\s*0px;[^}]*--app-window-drag-right:\s*72px;/);
@@ -5744,7 +5900,12 @@ test("window drag uses app-region plus desktopShell drag fallback", () => {
   assert.match(appShell, /desktopShell\.endWindowDrag\(\)/);
   assert.match(appShell, /window\.addEventListener\("pointerup", finishDrag, true\)/);
   assert.match(appShell, /window\.addEventListener\("pointercancel", finishDrag, true\)/);
+  assert.match(appShell, /window\.addEventListener\("mouseup", finishDragOnMouseUp, true\)/);
   assert.match(appShell, /window\.addEventListener\("blur", finishDrag, true\)/);
+  assert.doesNotMatch(appShell, /pointerEvent\.buttons === 0[\s\S]*?finishDrag\(\)/);
+  assert.match(appShell, /finishDragOnLostPointerCapture:\s*EventListener[\s\S]*?captureEvent as globalThis\.PointerEvent[\s\S]*?pointerEvent\.buttons !== 0[\s\S]*?requestAnimationFrame[\s\S]*?dragTarget\.setPointerCapture\(pointerId\)[\s\S]*?return;[\s\S]*?finishDrag\(\)/);
+  assert.match(appShell, /dragTarget\.addEventListener\("lostpointercapture", finishDragOnLostPointerCapture, true\)/);
+  assert.doesNotMatch(appShell, /dragTarget\.addEventListener\("lostpointercapture", finishDrag, true\)/);
   assert.match(appShell, /dragTarget\.setPointerCapture\(pointerId\)/);
   assert.match(preload, /beginWindowDrag:\s*\(point: \{ x: number; y: number \}\) => ipcRenderer\.invoke\("desktopShell\.beginWindowDrag", point\)/);
   assert.match(preload, /endWindowDrag:\s*\(\) => ipcRenderer\.invoke\("desktopShell\.endWindowDrag"\)/);
@@ -5935,8 +6096,10 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.doesNotMatch(externalWebviewPage, /external-webview-debug-sidebar/);
   assert.doesNotMatch(externalWebviewPage, /manual_debug/);
   assert.match(externalWebviewPage, /external-webview-copilot-button/);
-  assert.match(externalWebviewPage, /const handleAssistantDockToggle = \(\) => \{[\s\S]*?if \(assistantDockOpen\) \{[\s\S]*?onCloseAssistantDock\?\.\(\);[\s\S]*?return;[\s\S]*?\}[\s\S]*?onOpenAssistantDock\?\.\(\);/);
-  assert.match(externalWebviewPage, /onClick=\{handleAssistantDockToggle\}/);
+  assert.match(externalWebviewPage, /const handleAssistantDockOpen = \(\) => \{[\s\S]*?onOpenAssistantDock\?\.\(\);/);
+  assert.match(externalWebviewPage, /onOpenAssistantDock && !assistantDockOpen \? "has-copilot-launcher" : ""/);
+  assert.match(externalWebviewPage, /onOpenAssistantDock && !assistantDockOpen/);
+  assert.match(externalWebviewPage, /onClick=\{handleAssistantDockOpen\}/);
   assert.match(externalWebviewPage, /canGoForward:\s*boolean/);
   assert.match(externalWebviewPage, /nextPatch\.canGoForward = webview\.canGoForward\(\)/);
   assert.match(externalWebviewPage, /const handleGoForward = \(\) => \{[\s\S]*?activeWebview\.goForward\(\)/);
@@ -5945,7 +6108,6 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.doesNotMatch(externalWebviewPage, /function RefreshIcon\(/);
   assert.match(externalWebviewPage, /<SidebarActionIcon[\s\S]*?kind="sidebar_right"[\s\S]*?className="external-webview-copilot-button-icon"/);
   assert.doesNotMatch(externalWebviewStyles, /filter:\s*grayscale/);
-  assert.match(externalWebviewPage, /t\("sidebar\.copilot\.close", \{ appName: PRODUCT_NAME \}\)/);
   assert.match(externalWebviewPage, /t\("sidebar\.copilot\.open", \{ appName: PRODUCT_NAME \}\)/);
   assert.doesNotMatch(externalWebviewPage, /bookmarkMenuNode/);
   assert.doesNotMatch(externalWebviewPage, /window\.electronAPI\.webview\.openDevTools/);
@@ -5953,8 +6115,10 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.doesNotMatch(externalWebviewStyles, /external-webview-bookmark/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-devtools-toggle/);
   assert.doesNotMatch(externalWebviewStyles, /external-webview-debug/);
-  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\s*\{/);
-  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\.is-active\s*\{/);
+  assert.match(externalWebviewStyles, /\.external-webview-copilot-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*14px;/);
+  assert.match(externalWebviewStyles, /\.external-webview-page\.has-copilot-launcher \.external-webview-tabbar\s*\{[\s\S]*?padding-right:\s*44px;/);
+  assert.match(externalWebviewStyles, /\.app-shell\.is-mac-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*12px;/);
+  assert.match(externalWebviewStyles, /\.app-shell\.is-windows-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 10px\);/);
   assert.doesNotMatch(appShell, /external-webview-debug-sidebar/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
@@ -6018,7 +6182,8 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /skipContextRegistration\?: boolean/);
   assert.match(serviceWebviewSurface, /loadInitialEmbeddedUrlDirectly\?: boolean/);
   assert.match(serviceWebviewSurface, /suppressInitialLoadingCopy\?: boolean/);
-  assert.match(serviceWebviewSurface, /const surfaceId = surfaceIdProp\?\.trim\(\) \|\| serviceId/);
+  assert.match(serviceWebviewSurface, /const surfaceIdentity = surfaceIdentityProp \?\? createServiceSurfaceIdentity\(serviceId\)/);
+  assert.match(serviceWebviewSurface, /const surfaceId = surfaceIdentity\.surfaceId \|\| surfaceIdProp\?\.trim\(\) \|\| serviceId/);
   assert.match(serviceWebviewSurface, /resolveAgentWebclientWsSource/);
   assert.match(serviceWebviewSurface, /wsSource/);
   assert.match(serviceWebviewSurface, /registerServiceSurfaceWebviewRef\(surfaceId, webviewRef\)/);
@@ -6028,7 +6193,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /loadInitialEmbeddedUrlDirectly[\s\S]{0,120}\?\s*\(initialWebviewSrcRef\.current\?\.url \?\? embeddedUrl\)[\s\S]{0,80}:\s*webviewOriginSrcUrl/);
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const kanbanDetailDialog = readSourceFile("src", "renderer", "pages", "kanban", "KanbanIssueDetailDialog.tsx");
-  assert.match(kanbanDetailDialog, /surfaceId="agent-webclient-kanban-chat"/);
+  assert.match(kanbanDetailDialog, /surfaceIdentity=\{createSurfaceIdentity\("kanban-chat"\)\}/);
   assert.match(kanbanDetailDialog, /surfaceOwnershipActive=\{false\}/);
   assert.match(kanbanDetailDialog, /loadInitialEmbeddedUrlDirectly/);
   assert.match(kanbanDetailDialog, /suppressInitialLoadingCopy/);
@@ -6137,7 +6302,9 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewPreload, /PRELOAD_TO_PAGE_ACTION_EVENT/);
-  assert.match(serviceWebviewPreload, /payload\.action !== "openChatHistory"/);
+  assert.match(serviceWebviewPreload, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/);
+  assert.match(serviceWebviewPreload, /WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION/);
+  assert.match(serviceWebviewPreload, /WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION/);
   assert.match(serviceWebviewMainWorld, /MessageEvent\("message"/);
   assert.match(serviceWebviewMainWorld, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewMainWorld, /PRELOAD_TO_PAGE_ACTION_EVENT/);
@@ -6193,6 +6360,31 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(globalStyles, /\.service-webview-error\s*\{/);
 });
 
+test("Windows service webview modal overlays mask native caption controls", () => {
+  const serviceWebviewPreload = readSourceFile("src", "preload", "service-webview.ts");
+  const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
+  const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
+  const desktopPreload = readSourceFile("src", "preload", "index.ts");
+  const desktopContracts = readSharedContractsSource();
+  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+
+  assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL = "desktop:service-webview:modal-overlay-state"/);
+  assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_MODAL_MASK_SELECTOR = "\.ant-modal-mask"/);
+  assert.match(serviceWebviewPreload, /process\.platform === "win32"/);
+  assert.match(serviceWebviewPreload, /new MutationObserver\(\(mutations\) =>/);
+  assert.match(serviceWebviewPreload, /sendToHost\(SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL/);
+  assert.match(serviceWebviewSurface, /active !== false[\s\S]{0,140}ownsActiveSurface[\s\S]{0,140}surfaceIdentity\.surfaceLevel !== "child"/);
+  assert.match(serviceWebviewSurface, /channel === SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL/);
+  assert.match(serviceWebviewSurface, /setWebviewModalOverlayVisible\(state\?\.visible === true\)/);
+  assert.match(serviceWebviewSurface, /desktopShell\.setWebviewModalOverlayVisible\(/);
+  assert.match(desktopContracts, /setWebviewModalOverlayVisible: \(sourceId: string, visible: boolean\) => void/);
+  assert.match(desktopPreload, /setWebviewModalOverlayVisible:\s*\(sourceId: string, visible: boolean\)/);
+  assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.setWebviewModalOverlayVisible"/);
+  assert.match(shellHandlers, /ownerWindow !== mainWindow/);
+  assert.match(windowManager, /globalSearchOverlayVisible \|\| webviewModalOverlaySources\.size > 0/);
+});
+
 test("embedded cdp exposes service frontends as webview surfaces", () => {
   const cdpIntegration = readSourceFile("src", "main", "cdp-integration.ts");
 
@@ -6200,7 +6392,7 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
   assert.match(cdpIntegration, /kind:\s*"webview"/);
   assert.match(cdpIntegration, /webContentsId:\s*input\.contents\?\.id/);
   assert.match(cdpIntegration, /active:\s*snapshotMatchesService/);
-  assert.match(cdpIntegration, /currentPageSnapshot\.surfaceId === input\.service\.id/);
+  assert.match(cdpIntegration, /currentPageSnapshot\.surfaceId === surfaceIdentity\.surfaceId/);
   assert.match(cdpIntegration, /findWebContentsById\(currentPageSnapshot\.webContentsId\)/);
   assert.doesNotMatch(cdpIntegration, /failed to list iframe targets/);
 });
@@ -6245,14 +6437,14 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(styles, /\.external-webview-tab-trigger:focus-visible/u);
   assert.match(styles, /:root\[data-theme="dark"\] \.external-webview-tab\.is-active/u);
   assert.match(copilotSession, /window\.sessionStorage/u);
-  assert.match(copilotSession, /version:\s*3/u);
+  assert.match(copilotSession, /version:\s*4/u);
   assert.match(copilotSession, /safeParams\.set\("chatId", chatId\)/u);
-  assert.match(copilotSession, /surfaces:\s*Record<string, CopilotDockSurfaceSession>/u);
+  assert.match(copilotSession, /contexts:\s*Record<string, CopilotDockContextSession>/u);
   assert.doesNotMatch(copilotSession, /localStorage/u);
   assert.doesNotMatch(copilotSession, /openPath/u);
   assert.doesNotMatch(appShell, /snapshot\.openPath/u);
-  assert.match(appShell, /snapshot\.surfaces/u);
-  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotSurfaceId\] \?\? null/u);
+  assert.match(appShell, /snapshot\.contexts/u);
+  assert.match(appShell, /currentCopilotSession = assistantDockSessions\[currentCopilotContextKey\] \?\? null/u);
   assert.match(appShell, /assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute/u);
   assert.match(appShell, /clearCopilotDockSessionSnapshot\(\)/u);
   assert.match(copilotDock, /restoredEmbedPath/u);
@@ -6261,7 +6453,7 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(copilotDock, /readCopilotChatId\(embedPath\)/u);
   assert.match(serviceWebviewSurface, /updateWebviewCurrentUrl\(resolvedUrl, "guest"\)/u);
   assert.match(serviceWebviewSurface, /addEventListener\(\s*"did-navigate-in-page"/u);
-  assert.match(appShell, /handleCopilotCurrentEmbedPathChange[\s\S]{0,360}updateCopilotDockSurfaceSession\(currentCopilotSurfaceId/u);
+  assert.match(appShell, /handleCopilotCurrentEmbedPathChange[\s\S]{0,360}updateCopilotDockContextSession\(currentCopilotContextKey/u);
 });
 
 test("desktop web surface state reads one exact surface without an active-surface fallback", () => {
@@ -6432,7 +6624,9 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
 
   assert.match(appMenu, /quitWithoutConfirmation:\s*\(\) => void;/);
   assert.match(macWindowMenuItem, /label:\s*options\.t\("menu\.window"\)/);
-  assert.match(macWindowMenuItem, /role:\s*"close"/);
+  assert.match(macWindowMenuItem, /label:\s*options\.t\("menu\.closeWindow"\)/);
+  assert.match(macWindowMenuItem, /click:\s*\(\) => options\.requestCloseWindow\(\)/);
+  assert.doesNotMatch(macWindowMenuItem, /role:\s*"close"/);
   assert.match(macWindowMenuItem, /accelerator:\s*"Command\+W"/);
   assert.match(macQuitMenuItem, /accelerator:\s*"Command\+Q"/);
   assert.match(macQuitMenuItem, /if \(event\.triggeredByAccelerator\)/);
@@ -6444,6 +6638,8 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
     "Command+Q should keep the confirmation path before menu clicks quit without confirmation"
   );
   assert.match(appMenuRuntimeOptions, /requestQuit:\s*options\.requestAppQuit/);
+  assert.match(appMenuRuntimeOptions, /requestCloseWindow:/);
+  assert.match(appMenuRuntimeOptions, /fallbackToWindowClose:\s*true/);
   assert.match(appMenuRuntimeOptions, /quitWithoutConfirmation:\s*options\.beginAppQuitWithoutConfirmation/);
 
   assert.doesNotMatch(appEvents, /requestAppQuit:\s*\(\) => void;/);
@@ -6818,9 +7014,42 @@ test("assistant dock opens the agent webclient copilot in right-side embedded mo
   assert.match(dockComponent, /skipContextRegistration/);
   assert.match(dockComponent, /devToolsTarget="copilot"/);
   assert.match(dockComponent, /loadInitialEmbeddedUrlDirectly/);
+  assert.match(appShell, /<AgentWebclientCopilotDock[\s\S]*?onClose=\{closeAssistantDock\}/);
+  assert.match(dockComponent, /className="copilot-dock-close-button"[\s\S]*?onClick=\{onClose\}/);
+  assert.match(dockComponent, /<SidebarActionIcon kind="close" className="copilot-dock-close-button-icon" \/>/);
   assert.doesNotMatch(appShell, /<AssistantDock/);
   assert.doesNotMatch(appShell, /openAssistantDock\("compact"\)/);
   assert.doesNotMatch(appShell, /onOpenAssistantWorker[\s\S]{0,180}openAssistantDock\("compact"\)/);
+});
+
+test("assistant dock supports a persistent accessible width resizer and narrow overlay mode", () => {
+  const appShell = readAppShellSource();
+  const dockComponent = readSourceFile(
+    "src",
+    "renderer",
+    "copilot",
+    "sidebar-copilot",
+    "AgentWebclientCopilotDock.tsx"
+  );
+  const globalStyles = readRendererStyles();
+
+  assert.match(appShell, /COPILOT_DOCK_WIDTH_STORAGE_KEY = `\$\{STORAGE_NAMESPACE\}\.copilot-dock-width`/u);
+  assert.match(appShell, /localStorage\.setItem\([\s\S]{0,120}COPILOT_DOCK_WIDTH_STORAGE_KEY/u);
+  assert.match(appShell, /"--assistant-dock-embedded-width": `\$\{renderedCopilotDockWidth\}px`/u);
+  assert.match(appShell, /shouldOverlayCopilotDock\(copilotDockAvailableWidth\)/u);
+  assert.match(appShell, /assistantCopilotOpen && copilotDockOverlayMode \? "has-assistant-dock-overlay"/u);
+  assert.match(appShell, /resolveCopilotDockWidthFromDrag\([\s\S]{0,240}availableWidth: copilotDockAvailableWidth/u);
+  assert.match(appShell, /case "ArrowLeft":[\s\S]{0,360}case "End":/u);
+  assert.match(appShell, /className=\{isCopilotDockResizing[\s\S]{0,180}"copilot-dock-resize-overlay"/u);
+  assert.match(dockComponent, /className=\{`copilot-dock-resizer/u);
+  assert.match(dockComponent, /role="separator"[\s\S]{0,240}aria-valuenow=\{resize\.width\}/u);
+  assert.match(dockComponent, /tabIndex=\{0\}[\s\S]{0,120}onPointerDown=\{resize\.onPointerDown\}/u);
+  assert.match(globalStyles, /\.app-shell\.has-assistant-dock-overlay \.app-content\s*\{[\s\S]*?margin-right:\s*0;/u);
+  assert.match(globalStyles, /\.app-shell\.has-assistant-dock-overlay \.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?width:\s*min\(var\(--assistant-dock-embedded-width\),\s*calc\(100% - 16px\)\);[\s\S]*?max-width:\s*640px;/u);
+  assert.match(globalStyles, /@media \(max-width:\s*1080px\)[\s\S]*?\.agent-webclient-copilot-dock\s*\{[\s\S]*?left:\s*auto;[\s\S]*?max-width:\s*640px;/u);
+  assert.match(globalStyles, /\.copilot-dock-resizer\s*\{[\s\S]*?cursor:\s*col-resize;/u);
+  assert.match(globalStyles, /\.copilot-dock-close-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*8px;[\s\S]*?right:\s*8px;/u);
+  assert.match(globalStyles, /\.copilot-dock-resize-overlay/u);
 });
 
 test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", () => {
@@ -6836,9 +7065,10 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(preload, /copilot:\s*\{[\s\S]{0,140}publishDevToolsTarget:\s*\(target\) => ipcRenderer\.invoke\("copilot\.publishDevToolsTarget", target\)/);
   assert.match(contracts, /interface CopilotDevToolsTargetInput/);
   assert.match(contracts, /copilot:\s*\{[\s\S]{0,180}publishDevToolsTarget:\s*\(target: CopilotDevToolsTargetInput\)/);
-  assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}"agent-webclient-copilot-dock"/);
+  assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}COPILOT_DOCK_SURFACE_ID/);
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
+  assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(appState\.focusedWebviewDevToolsTargetId\)/);
   assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*appState\.copilotDevToolsTarget/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
@@ -7428,6 +7658,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPetWindow, /const isMac = options\.platform === "darwin";/);
   assert.match(desktopPetWindow, /const isWindows = options\.platform === "win32";/);
   assert.match(desktopPetWindow, /\.\.\.\(isMac \? \{ type: "panel" as const \} : \{\}\)/);
+  assert.match(desktopPetWindow, /if \(isMac\) \{[\s\S]{0,80}win\.excludedFromShownWindowsMenu = true;/);
   assert.match(desktopPetWindow, /\.\.\.\(isWindows \? \{ thickFrame: false \} : \{\}\)/);
   assert.match(
     desktopPetWindow,
@@ -7828,7 +8059,7 @@ test("embedded browser closing the final tab closes its webview surface", () => 
   assert.match(externalWebviewPage, /closedSurface,[\s\S]{0,100}remainingTabIds/u);
 });
 
-test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overlay", () => {
+test("debug-unlocked Desktop WebViews show a copyable, redacted identity and URL overlay", () => {
   const appShell = readAppShellSource();
   const debugModeContext = readSourceFile("src", "renderer", "debug", "DebugModeContext.ts");
   const webviewDebugOverlay = readSourceFile("src", "renderer", "components", "WebviewDebugOverlay.tsx");
@@ -7851,7 +8082,7 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
   assert.match(appShell, /DebugModeContext\.Provider value=\{debugSettingsUnlocked\}/u);
   assert.match(debugModeContext, /createContext\(false\)/u);
   assert.match(webviewDebugOverlay, /redactWebviewDebugUrl/u);
-  assert.match(webviewDebugOverlay, /aria-hidden="true"/u);
+  assert.doesNotMatch(webviewDebugOverlay, /aria-hidden="true"/u);
   assert.equal(
     webviewDebugUrl.redactWebviewDebugUrl(
       "https://example.test/path?access_token=secret&visible=1#id_token=hidden&route=overview"
@@ -7862,11 +8093,33 @@ test("debug-unlocked Desktop WebViews show a non-interactive, redacted URL overl
     webviewDebugUrl.redactWebviewDebugUrl("https://example.test/?API-Key=secret&token=other"),
     "https://example.test/?API-Key=REDACTED&token=REDACTED"
   );
-  assert.match(webviewDebugOverlay, /surfaceId:\s*\{displaySurfaceId\}/u);
-  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceId=\{surfaceId\}/u);
-  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceId=\{surfaceId\} \/>/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*none;/u);
-  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*none;/u);
+  const mainChatIdentity = {
+    surfaceId: "main-chat",
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    ownerChatId: "chat-123",
+    interaction: "interactive"
+  };
+  assert.equal(
+    webviewDebugUrl.formatWebviewDebugSurfaceLabel(mainChatIdentity),
+    "surface: main-chat"
+  );
+  const clipboardText = webviewDebugUrl.buildWebviewDebugClipboardText(
+    "https://example.test/chat?token=secret&visible=1",
+    mainChatIdentity
+  );
+  assert.match(clipboardText, /^surface: main-chat$/mu);
+  assert.match(clipboardText, /token=REDACTED/u);
+  assert.doesNotMatch(clipboardText, /secret/u);
+  assert.doesNotMatch(clipboardText, /ownerChatId|chat-123/u);
+  assert.match(webviewDebugOverlay, /formatWebviewDebugSurfaceLabel/u);
+  assert.match(webviewDebugOverlay, /clipboard\.writeText\(copyText\)/u);
+  assert.match(webviewDebugOverlay, /settings\.debug\.webviewOverlay\.copyAll/u);
+  assert.match(serviceWebviewSurface, /<WebviewDebugOverlay[\s\S]{0,180}url=\{webviewCurrentUrl \|\| embeddedUrl \|\| webviewSrcUrl\}[\s\S]{0,100}surfaceIdentity=\{surfaceIdentity\}/u);
+  assert.match(externalWebviewPage, /<WebviewDebugOverlay url=\{tab\.currentUrl\} surfaceIdentity=\{surfaceIdentity\} \/>/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?pointer-events:\s*auto;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay\s*\{[\s\S]*?user-select:\s*text;/u);
+  assert.match(externalWebviewStyles, /\.webview-debug-url-overlay:hover \.webview-debug-copy-button/u);
   assert.match(externalWebviewStyles, /\.webview-debug-surface-id/u);
   assert.match(externalWebviewStyles, /\.embedded-surface-page \.webview-debug-url-overlay/u);
 });

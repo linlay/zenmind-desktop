@@ -101,6 +101,7 @@ type WebviewAttachResult =
 type AttachedWebviewLike = {
   id: number;
   session?: unknown;
+  isFocused?(): boolean;
   on(eventName: string, listener: (...args: any[]) => void): unknown;
   copy(): void;
   cut(): void;
@@ -114,6 +115,16 @@ type AttachedWebviewLike = {
 
 type WebviewEditCommand = "copy" | "cut" | "paste" | "selectAll";
 
+function isWorkPanelFullscreenExitShortcut(input: any) {
+  return input?.type === "keyDown" &&
+    String(input?.key || "").toLowerCase() === "escape" &&
+    input?.isAutoRepeat !== true &&
+    input?.meta !== true &&
+    input?.control !== true &&
+    input?.alt !== true &&
+    input?.shift !== true;
+}
+
 type AttachedWebviewOptions<
   TMainWindow,
   TGuestContents extends AttachedWebviewLike = AttachedWebviewLike
@@ -122,6 +133,9 @@ type AttachedWebviewOptions<
   getMainWindow(): TMainWindow | null;
   isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
   isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+  isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+  isWorkPanelWebview?(contents: TGuestContents): boolean;
+  isWorkPanelFullscreenActive?(): boolean;
   resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
   isGlobalSearchOverlayVisible?(): boolean;
   shouldDownloadUrl(url: string): boolean;
@@ -129,7 +143,7 @@ type AttachedWebviewOptions<
   collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
   report(source: string, details: Record<string, unknown>): void;
   onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
-  shouldOpenPopupInCurrentTab?(contents: TGuestContents): boolean;
+  shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
   getHelpUrl?(): string;
   isHelpWebview?(contents: TGuestContents): boolean;
   openExternal(url: string): Promise<unknown>;
@@ -242,6 +256,8 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     };
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelKeyboardFocusActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isHandlingQuit(): boolean;
     clearWindow(targetWindow: TWindow): void;
@@ -292,6 +308,18 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
       return;
     }
 
+    if (
+      options.isWorkPanelKeyboardFocusActive?.() === true &&
+      options.isWorkPanelCloseShortcut?.(options.platform, input)
+    ) {
+      event.preventDefault();
+      targetWindow.webContents.send("app.workPanelCloseShortcut", {
+        guestId: null,
+        workPanelFocused: true
+      });
+      return;
+    }
+
     if (!options.isDevToolsShortcut(options.platform, input)) {
       return;
     }
@@ -330,6 +358,9 @@ export function configureMainWindowWebContents<
     isSafeServiceUrl(value: string): unknown;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isWorkPanelWebview?(contents: TGuestContents): boolean;
+    isWorkPanelFullscreenActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isGlobalSearchOverlayVisible?(): boolean;
     shouldDownloadUrl(url: string): boolean;
@@ -337,8 +368,10 @@ export function configureMainWindowWebContents<
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
     report(source: string, details: Record<string, unknown>): void;
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
-    shouldOpenPopupInCurrentTab?(contents: TGuestContents): boolean;
+    shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
     attachWebviewContextMenu?(contents: TGuestContents): void;
+    onWebviewFocusChanged?(webContentsId: number, focused: boolean): void;
+    onMainRendererFocused?(): void;
     getHelpUrl?(): string;
     isHelpWebview?(contents: TGuestContents): boolean;
     openExternal(url: string): Promise<unknown>;
@@ -362,6 +395,10 @@ export function configureMainWindowWebContents<
       preloadPath,
       error: error?.stack || String(error)
     });
+  });
+
+  targetWindow.webContents.on("focus", () => {
+    options.onMainRendererFocused?.();
   });
 
   targetWindow.webContents.on("will-attach-webview", (event, webPreferences, params) => {
@@ -406,12 +443,21 @@ export function configureMainWindowWebContents<
   });
 
   targetWindow.webContents.on("did-attach-webview", (_event, contents: TGuestContents) => {
+    const publishFocused = () => options.onWebviewFocusChanged?.(contents.id, true);
+    const publishBlurred = () => options.onWebviewFocusChanged?.(contents.id, false);
+    contents.on("focus", publishFocused);
+    contents.on("blur", publishBlurred);
+    contents.on("destroyed", publishBlurred);
+    if (contents.isFocused?.()) publishFocused();
     options.attachWebviewContextMenu?.(contents);
     configureAttachedWebview(contents, {
       platform: options.platform,
       getMainWindow: options.getMainWindow,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isWorkPanelWebview: options.isWorkPanelWebview,
+      isWorkPanelFullscreenActive: options.isWorkPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: options.isGlobalSearchOverlayVisible,
       shouldDownloadUrl: options.shouldDownloadUrl,
@@ -419,7 +465,7 @@ export function configureMainWindowWebContents<
       collectLoadDiagnostics: options.collectLoadDiagnostics,
       report: options.report,
       onWebviewNavigation: options.onWebviewNavigation,
-      shouldOpenPopupInCurrentTab: options.shouldOpenPopupInCurrentTab,
+      shouldOpenPopupInWorkPanelTab: options.shouldOpenPopupInWorkPanelTab,
       getHelpUrl: options.getHelpUrl,
       isHelpWebview: options.isHelpWebview,
       openExternal: options.openExternal,
@@ -645,6 +691,33 @@ export function configureAttachedWebview<
       return;
     }
 
+    if (
+      options.isWorkPanelWebview?.(contents) === true &&
+      options.isWorkPanelFullscreenActive?.() === true &&
+      isWorkPanelFullscreenExitShortcut(input)
+    ) {
+      event.preventDefault();
+      const mainWindow = options.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send("app.workPanelFullscreenExitShortcut", { guestId: contents.id });
+      return;
+    }
+
+    if (
+      options.isWorkPanelWebview?.(contents) === true &&
+      options.isWorkPanelCloseShortcut?.(options.platform, input)
+    ) {
+      event.preventDefault();
+      const mainWindow = options.getMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) {
+        return;
+      }
+      mainWindow.webContents.send("app.workPanelCloseShortcut", { guestId: contents.id });
+      return;
+    }
+
     if (!options.isDevToolsShortcut(options.platform, input)) {
       return;
     }
@@ -722,14 +795,16 @@ export function configureAttachedWebview<
   });
 
   contents.setWindowOpenHandler(({ url }) => {
-    if (options.shouldOpenPopupInCurrentTab?.(contents)) {
+    if (options.shouldOpenPopupInWorkPanelTab?.(contents)) {
       const nextUrl = normalizeChatWorkPanelUrl(url);
       if (nextUrl) {
-        void contents.loadURL(nextUrl).catch((error) => {
-          options.report("failed to navigate Work Panel popup in current tab", {
-            guestId: contents.id,
-            url: nextUrl,
-            error
+        options.schedule(() => {
+          const mainWindow = options.getMainWindow();
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.webContents.send("webview.openTab", {
+            target: "work-panel",
+            sourceGuestId: contents.id,
+            url: nextUrl
           });
         });
       }
@@ -762,6 +837,7 @@ export function configureAttachedWebview<
         }
 
         mainWindow.webContents.send("webview.openTab", {
+          target: "desktop-browser",
           sourceGuestId: contents.id,
           url
         });
@@ -791,6 +867,7 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
 ) {
   let pendingCloseCancel: (() => void) | null = null;
   let globalSearchOverlayVisible = false;
+  const webviewModalOverlaySources = new Set<string>();
 
   function cancelPendingClose() {
     pendingCloseCancel?.();
@@ -929,7 +1006,8 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     if (options.platform === "win32") {
       const shouldUseDarkColors = options.nativeTheme?.shouldUseDarkColors ?? false;
       targetWindow.setBackgroundColor(resolveWindowsBackgroundColor(shouldUseDarkColors));
-      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors, globalSearchOverlayVisible));
+      const windowOverlayVisible = globalSearchOverlayVisible || webviewModalOverlaySources.size > 0;
+      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors, windowOverlayVisible));
       return;
     }
     targetWindow.setBackgroundColor("#FFFFFF");
@@ -942,6 +1020,22 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
 
   function isGlobalSearchOverlayVisible() {
     return globalSearchOverlayVisible;
+  }
+
+  function setWebviewModalOverlayVisible(sourceId: string, visible: boolean) {
+    const normalizedSourceId = sourceId.trim();
+    if (!normalizedSourceId) {
+      return;
+    }
+    if (visible) {
+      if (webviewModalOverlaySources.has(normalizedSourceId)) {
+        return;
+      }
+      webviewModalOverlaySources.add(normalizedSourceId);
+    } else if (!webviewModalOverlaySources.delete(normalizedSourceId)) {
+      return;
+    }
+    applyAppearance(options.getWindow());
   }
 
   function attachRendererDiagnostics(targetWindow: TWindow) {
@@ -972,7 +1066,8 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     hideForClose,
     isGlobalSearchOverlayVisible,
     normalizeBeforeShow,
-    setGlobalSearchOverlayVisible
+    setGlobalSearchOverlayVisible,
+    setWebviewModalOverlayVisible
   };
 }
 

@@ -859,6 +859,7 @@ test("validateBundleDirectory rejects a Windows agent-platform sidecar without t
     id: "agent-platform",
     version: "v999.0.0",
     platform: { os: "windows", arch: "amd64" },
+    desktop: { runtimeResources: "v1" },
     runtime: { requiredPaths: ["manifest.json", "bin/kbase-lance-engine"] }
   });
 
@@ -868,6 +869,7 @@ test("validateBundleDirectory rejects a Windows agent-platform sidecar without t
       id: "agent-platform",
       version: "v999.0.0",
       platform: { os: "windows", arch: "amd64" },
+      desktop: { runtimeResources: "v1" },
       requiredBundleEntries: ["manifest.json", "bin/kbase-lance-engine"]
     }, directoryPath),
     /Missing required agent-platform sidecar contract bin\/kbase-lance-engine\.exe/u

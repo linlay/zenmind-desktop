@@ -7,6 +7,7 @@ import {
 } from "../../shared/help";
 import { useI18n } from "../i18n/useI18n";
 import { useSingleWebviewSurfaceRegistration } from "../services/useSingleWebviewSurfaceRegistration";
+import { createSurfaceIdentity } from "../../shared/surface-identity";
 import "./HelpPage.css";
 
 type SettingsState =
@@ -75,7 +76,7 @@ export function HelpPage({ hostTheme }: HelpPageProps) {
 
   useSingleWebviewSurfaceRegistration({
     webviewRef,
-    surfaceId: "desktop-help",
+    surfaceIdentity: createSurfaceIdentity("help"),
     surfaceType: "help",
     pageRoute: "/help",
     label: t("nav.help"),

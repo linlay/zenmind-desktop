@@ -4,20 +4,24 @@ import type {
   WorkPanelContext,
   WorkPanelItem,
   WorkPanelItemDescriptor,
+  WorkPanelWebclientModule,
   WorkPanelWorkspace,
 } from "./contracts/agent-webclient-bridge";
 import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry";
 
 export type WorkPanelState = {
   workspaces: WorkPanelWorkspace[];
-  legacyActionCount: number;
+  visibleOwnerChatIds: string[];
 };
 
 export type WorkPanelCommand =
-  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor; legacy?: boolean }
-  | { type: "activateItem"; ownerChatId: string; itemId: string; legacy?: boolean }
-  | { type: "closeItem"; ownerChatId: string; itemId: string; legacy?: boolean }
-  | { type: "closeWorkspace"; ownerChatId: string; legacy?: boolean };
+  | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor }
+  | { type: "activateItem"; ownerChatId: string; itemId: string }
+  | { type: "closeItem"; ownerChatId: string; itemId: string }
+  | { type: "closeOtherItems"; ownerChatId: string; itemId: string }
+  | { type: "showWorkspace"; ownerChatId: string }
+  | { type: "hideWorkspace"; ownerChatId: string }
+  | { type: "closeWorkspace"; ownerChatId: string; force?: boolean };
 
 export type WorkPanelCommandResult = WorkPanelBridgeResult & {
   nextState: WorkPanelState;
@@ -25,8 +29,18 @@ export type WorkPanelCommandResult = WorkPanelBridgeResult & {
 
 export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
   workspaces: [],
-  legacyActionCount: 0,
+  visibleOwnerChatIds: [],
 };
+
+function withVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
+  return state.visibleOwnerChatIds.includes(ownerChatId)
+    ? state.visibleOwnerChatIds
+    : [...state.visibleOwnerChatIds, ownerChatId];
+}
+
+function withoutVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
+  return state.visibleOwnerChatIds.filter((chatId) => chatId !== ownerChatId);
+}
 
 function fail(
   state: WorkPanelState,
@@ -64,24 +78,56 @@ function normalizeRelativePath(value: unknown) {
   return parts.join("/");
 }
 
-function normalizeContext(input: WorkPanelContext): WorkPanelContext | null {
+function normalizeFileRequestPath(value: unknown) {
+  const requestedPath = typeof value === "string" ? value : "";
+  if (
+    !requestedPath.trim() ||
+    requestedPath.length > 2_048 ||
+    /[\u0000-\u001f\u007f]/u.test(requestedPath)
+  ) return "";
+  return requestedPath.replace(/\\/gu, "/");
+}
+
+function normalizeContext(
+  input: unknown,
+  module: WorkPanelWebclientModule,
+): Record<string, string> | null {
   if (!input || typeof input !== "object" || Array.isArray(input)) return null;
-  const allowed = new Set([
-    "chatId", "runId", "agentKey", "projectId", "artifactId", "nodeId", "relativePath",
-  ]);
-  if (Object.keys(input).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
+  const record = input as Record<string, unknown>;
+  const allowed = new Set(
+    module === "planning"
+      ? ["chatId", "planningId", "agentKey"]
+      : module === "skill"
+        ? ["key"]
+        : [
+            "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
+            "publishId", "sourceId", "btwId", "path",
+          ],
+  );
+  if (Object.keys(record).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
     return null;
   }
-  const context: WorkPanelContext = {};
-  for (const key of ["chatId", "runId", "agentKey", "projectId", "artifactId", "nodeId"] as const) {
-    const value = cleanIdentity(input[key]);
-    if (input[key] !== undefined && !value) return null;
+  const context: Record<string, string> = {};
+  for (const key of [
+    "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
+    "publishId", "sourceId", "btwId", "key",
+  ] as const) {
+    const value = cleanIdentity(record[key]);
+    if (record[key] !== undefined && !value) return null;
     if (value) context[key] = value;
   }
-  if (input.relativePath !== undefined) {
-    const relativePath = normalizeRelativePath(input.relativePath);
-    if (!relativePath) return null;
-    context.relativePath = relativePath;
+  if (record.path !== undefined) {
+    const path = module === "file"
+      ? normalizeFileRequestPath(record.path)
+      : normalizeRelativePath(record.path);
+    if (!path) return null;
+    context.path = path;
+  }
+  if (module === "planning") {
+    return {
+      ...(context.chatId ? { chatId: context.chatId } : {}),
+      ...(context.planningId ? { planningId: context.planningId } : {}),
+    };
   }
   return context;
 }
@@ -123,30 +169,56 @@ function normalizeDescriptor(
   }
   if (descriptor.kind !== "webclient") return null;
   if (keys.some((key) => !["kind", "module", "route", "context", "title", "pinned", "closable"].includes(key))) return null;
-  const context = normalizeContext(descriptor.context);
+  const context = normalizeContext(descriptor.context, descriptor.module);
   const route = cleanIdentity(descriptor.route, 2_048);
   if (!context || !route || !route.startsWith("/") || route.startsWith("//") || route.includes("://")) return null;
   let stableKey = "";
   switch (descriptor.module) {
     case "overview":
-      stableKey = context.chatId ? `overview:${context.chatId}` : "";
+      stableKey = context.agentKey && context.chatId ? `overview:${context.agentKey}:${context.chatId}` : "";
       break;
     case "debug":
-      stableKey = context.chatId ? `debug:${context.chatId}:${context.runId || "current"}` : "";
+      stableKey = context.agentKey && context.chatId ? `debug:${context.agentKey}:${context.chatId}` : "";
+      break;
+    case "btw":
+      stableKey = context.agentKey && context.chatId
+        ? `btw:${context.agentKey}:${context.chatId}:${context.btwId || "current"}`
+        : "";
+      break;
+    case "source":
+      stableKey = context.agentKey && context.chatId && context.publishId && context.sourceId
+        ? `source:${context.agentKey}:${context.chatId}:${context.btwId || "main"}:${context.publishId}:${context.sourceId}`
+        : "";
       break;
     case "project":
-      stableKey = context.projectId ? `project:${context.projectId}` : "";
+      stableKey = context.agentKey && (!context.runId || context.chatId)
+        ? `project:${context.agentKey}:${context.chatId || "workspace"}:${context.runId || "all"}:${context.path || "root"}`
+        : "";
       break;
     case "file-diff":
-      stableKey = context.runId && context.relativePath
-        ? `file-diff:${context.runId}:${context.relativePath}`
+      stableKey = context.agentKey && context.chatId && context.runId && context.path
+        ? `file-diff:${context.agentKey}:${context.chatId}:${context.runId}:${context.path}`
         : "";
       break;
     case "artifact":
-      stableKey = context.artifactId ? `artifact:${context.artifactId}` : "";
+      stableKey = context.agentKey && context.chatId && context.artifactId
+        ? `artifact:${context.agentKey}:${context.chatId}:${context.artifactId}`
+        : "";
+      break;
+    case "reference":
+      stableKey = context.agentKey && context.chatId && context.referenceId
+        ? `reference:${context.agentKey}:${context.chatId}:${context.referenceId}`
+        : "";
+      break;
+    case "file":
+      stableKey = context.agentKey && context.path
+        ? `file:${context.agentKey}:${context.path}`
+        : "";
       break;
     case "planning":
-      stableKey = context.nodeId ? `planning:${context.nodeId}` : "";
+      stableKey = context.chatId && context.planningId
+        ? `planning:${context.chatId}:${context.planningId}`
+        : "";
       break;
     case "agent":
     case "copilot":
@@ -154,17 +226,21 @@ function normalizeDescriptor(
         ? `${descriptor.module}:${context.agentKey}:${context.chatId || "global"}`
         : "";
       break;
+    case "skill":
+      stableKey = context.key ? `skill:${context.key}` : "";
+      break;
   }
   if (!stableKey) return null;
-  const sanitized: WorkPanelItemDescriptor = {
+  const isOverview = descriptor.module === "overview";
+  const sanitized = {
     kind: "webclient",
     module: descriptor.module,
     route,
     context,
     ...(title ? { title } : {}),
-    ...(descriptor.pinned === true ? { pinned: true } : {}),
-    ...(descriptor.closable === false ? { closable: false } : {}),
-  };
+    ...(isOverview || descriptor.pinned === true ? { pinned: true } : {}),
+    ...(isOverview || descriptor.closable === false ? { closable: false } : {}),
+  } as WorkPanelItemDescriptor;
   return {
     descriptor: sanitized,
     stableKey,
@@ -176,6 +252,10 @@ function workspaceId(ownerChatId: string) {
   return `workpanel:${stableWorkPanelHash(ownerChatId)}`;
 }
 
+function isOverviewItem(item: WorkPanelItem) {
+  return item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
+}
+
 export function reduceWorkPanelCommand(
   state: WorkPanelState,
   command: WorkPanelCommand,
@@ -184,14 +264,38 @@ export function reduceWorkPanelCommand(
   if (!ownerChatId) return fail(state, "invalid_request", "trusted owner chat is required");
   const index = state.workspaces.findIndex((workspace) => workspace.ownerChatId === ownerChatId);
   const current = index >= 0 ? state.workspaces[index] : null;
+  if (command.type === "hideWorkspace") {
+    if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
+    if (!state.visibleOwnerChatIds.includes(ownerChatId)) {
+      return { ok: true, workspaceId: current.workspaceId, state: current, nextState: state };
+    }
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      state: current,
+      nextState: { ...state, visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId) },
+    };
+  }
+  if (command.type === "showWorkspace") {
+    if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
+    if (state.visibleOwnerChatIds.includes(ownerChatId)) {
+      return { ok: true, workspaceId: current.workspaceId, state: current, nextState: state };
+    }
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      state: current,
+      nextState: { ...state, visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId) },
+    };
+  }
   if (command.type === "closeWorkspace") {
     if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
-    if (current.items.some((item) => item.pinned || !item.closable)) {
+    if (!command.force && current.items.some((item) => !isOverviewItem(item) && (item.pinned || !item.closable))) {
       return fail(state, "capability_denied", "workspace contains pinned or non-closable items");
     }
     const nextState = {
       workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+      visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
     };
     return { ok: true, workspaceId: current.workspaceId, nextState };
   }
@@ -204,7 +308,9 @@ export function reduceWorkPanelCommand(
     }
     let trustedDescriptor = command.descriptor;
     if (trustedDescriptor.kind === "webclient") {
-      const descriptorChatId = cleanIdentity(trustedDescriptor.context?.chatId);
+      const descriptorChatId = cleanIdentity(
+        (trustedDescriptor.context as { chatId?: unknown })?.chatId,
+      );
       if (descriptorChatId && descriptorChatId !== ownerChatId) {
         return fail(state, "capability_denied", "WorkPanel item chat does not match its trusted workspace");
       }
@@ -224,18 +330,33 @@ export function reduceWorkPanelCommand(
       activeItemId: null,
     };
     const existing = workspace.items.find((item) => item.stableKey === normalized.stableKey);
-    const item: WorkPanelItem = existing ?? {
-      itemId: `item:${stableWorkPanelHash(normalized.stableKey)}`,
-      stableKey: normalized.stableKey,
-      descriptor: normalized.descriptor,
-      title: normalized.title,
-      closable: normalized.descriptor.closable !== false,
-      pinned: normalized.descriptor.pinned === true,
-      createdAt: Date.now(),
-    };
+    const isOverview = normalized.descriptor.kind === "webclient" &&
+      normalized.descriptor.module === "overview";
+    const item: WorkPanelItem = existing
+      ? isOverview
+        ? {
+            ...existing,
+            descriptor: normalized.descriptor,
+            title: normalized.title,
+            closable: false,
+            pinned: true,
+          }
+        : existing
+      : {
+          itemId: `item:${stableWorkPanelHash(normalized.stableKey)}`,
+          stableKey: normalized.stableKey,
+          descriptor: normalized.descriptor,
+          title: normalized.title,
+          closable: normalized.descriptor.closable !== false,
+          pinned: normalized.descriptor.pinned === true,
+          createdAt: Date.now(),
+        };
+    const items = existing
+      ? workspace.items.map((currentItem) => currentItem.itemId === item.itemId ? item : currentItem)
+      : [...workspace.items, item];
     const nextWorkspace = {
       ...workspace,
-      items: existing ? workspace.items : [...workspace.items, item],
+      items: isOverview ? [item, ...items.filter((currentItem) => currentItem.itemId !== item.itemId)] : items,
       activeItemId: item.itemId,
     };
     const workspaces = [...state.workspaces];
@@ -243,7 +364,7 @@ export function reduceWorkPanelCommand(
     else workspaces.push(nextWorkspace);
     const nextState = {
       workspaces,
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+      visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
   }
@@ -261,7 +382,26 @@ export function reduceWorkPanelCommand(
       state: nextWorkspace,
       nextState: {
         workspaces,
-        legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+        visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+      },
+    };
+  }
+  if (command.type === "closeOtherItems") {
+    const items = current.items.filter((candidate) =>
+      candidate.itemId === item.itemId || candidate.pinned || !candidate.closable,
+    );
+    const nextWorkspace = { ...current, items, activeItemId: item.itemId };
+    const workspaces = state.workspaces.map((workspace, nextIndex) =>
+      nextIndex === index ? nextWorkspace : workspace,
+    );
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      item,
+      state: nextWorkspace,
+      nextState: {
+        workspaces,
+        visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
       },
     };
   }
@@ -272,7 +412,7 @@ export function reduceWorkPanelCommand(
   if (items.length === 0) {
     const nextState = {
       workspaces: state.workspaces.filter((_, nextIndex) => nextIndex !== index),
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+      visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
     };
     return { ok: true, workspaceId: current.workspaceId, item, nextState };
   }
@@ -288,7 +428,7 @@ export function reduceWorkPanelCommand(
     state: nextWorkspace,
     nextState: {
       workspaces,
-      legacyActionCount: state.legacyActionCount + (command.legacy ? 1 : 0),
+      visibleOwnerChatIds: state.visibleOwnerChatIds,
     },
   };
 }

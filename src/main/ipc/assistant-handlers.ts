@@ -9,6 +9,7 @@ import { PRODUCT_NAME } from "../../shared/brand";
 import type { AssistantConversationShareRequest, AssistantNavigationListOptions } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import { t } from "../i18n/main-i18n";
+import { COPILOT_DOCK_SURFACE_ID } from "../../shared/surface-identity";
 import {
   createConversationShare,
   listConversationShares,
@@ -75,7 +76,7 @@ async function saveAssistantChatExport(
 }
 
 const COPILOT_DEVTOOLS_SURFACE_IDS = new Set([
-  "agent-webclient-copilot-dock"
+  COPILOT_DOCK_SURFACE_ID
 ]);
 
 function readOptionalString(value: unknown) {
@@ -418,6 +419,10 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
 
   ipcMain.handle("assistant.getChat", async (_event: any, chatId: string) =>
     assistantBridge?.getChat(chatId)
+  );
+
+  ipcMain.handle("assistant.getChatInfo", async (_event: any, chatId: string) =>
+    assistantBridge?.getChatInfo(chatId)
   );
 
   ipcMain.handle("assistant.searchChats", async (_event: any, request: any) =>

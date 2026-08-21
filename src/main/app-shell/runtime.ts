@@ -1,6 +1,7 @@
 import { pathToFileURL } from "node:url";
 import {
   BrowserWindow,
+  webContents as electronWebContents,
   type App,
   type NativeTheme,
   type Session,
@@ -62,9 +63,11 @@ export type AppShellRuntimeOptions = {
   parseSafeLoopbackWebUrl: (value: string) => unknown;
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  isWorkPanelCloseShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  isWorkPanelWebview: (contents: Electron.WebContents) => boolean;
   resolveGlobalSearchCommandShortcut: (platform: NodeJS.Platform, input: any) => DesktopGlobalSearchShortcut | null;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
-  shouldOpenWebviewPopupInCurrentTab: (contents: Electron.WebContents) => boolean;
+  shouldOpenWebviewPopupInWorkPanelTab: (contents: Electron.WebContents) => boolean;
   attachWebviewContextMenu: (contents: Electron.WebContents) => void;
   collectWebviewLoadDiagnostics: (contents: Electron.WebContents, validatedUrl: string) => Promise<Record<string, unknown>>;
   reportRendererDiagnostic: (source: string, details: Record<string, unknown>) => void;
@@ -211,6 +214,9 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   }
 
   function createWindow() {
+    options.state.workPanelKeyboardFocusActive = false;
+    options.state.workPanelFullscreenActive = false;
+    options.state.focusedWebviewDevToolsTargetId = null;
     options.state.mainWindow = new BrowserWindow(buildMainWindowOptions({
       platform: options.platform,
       preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
@@ -230,6 +236,9 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isSafeServiceUrl: options.parseSafeLoopbackWebUrl,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isWorkPanelWebview: options.isWorkPanelWebview,
+      isWorkPanelFullscreenActive: () => options.state.workPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: () => mainWindowLifecycle.isGlobalSearchOverlayVisible(),
       shouldDownloadUrl: shouldDownloadUrlFromWebview,
@@ -237,8 +246,18 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       collectLoadDiagnostics: options.collectWebviewLoadDiagnostics,
       report: options.safeConsoleError,
       onWebviewNavigation: options.handleDesktopSsoWebviewNavigation,
-      shouldOpenPopupInCurrentTab: options.shouldOpenWebviewPopupInCurrentTab,
+      shouldOpenPopupInWorkPanelTab: options.shouldOpenWebviewPopupInWorkPanelTab,
       attachWebviewContextMenu: options.attachWebviewContextMenu,
+      onWebviewFocusChanged: (webContentsId, focused) => {
+        if (focused) {
+          options.state.focusedWebviewDevToolsTargetId = webContentsId;
+        } else if (options.state.focusedWebviewDevToolsTargetId === webContentsId) {
+          options.state.focusedWebviewDevToolsTargetId = null;
+        }
+      },
+      onMainRendererFocused: () => {
+        options.state.focusedWebviewDevToolsTargetId = null;
+      },
       getHelpUrl: () => readHelpSettings(options.app, options.platform).url,
       isHelpWebview: (contents) =>
         contents.session === options.session.fromPartition(DESKTOP_HELP_WEBVIEW_PARTITION),
@@ -257,11 +276,16 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       lifecycle: mainWindowLifecycle,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
+      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isWorkPanelKeyboardFocusActive: () => options.state.workPanelKeyboardFocusActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isHandlingQuit: () => options.state.isHandlingQuit,
       clearWindow: (windowToClear) => {
         if (options.state.mainWindow === windowToClear) {
           options.state.mainWindow = null;
+          options.state.workPanelKeyboardFocusActive = false;
+          options.state.workPanelFullscreenActive = false;
+          options.state.focusedWebviewDevToolsTargetId = null;
         }
       },
       restoreFloatingWindowsForFullscreen: () => options.restoreDesktopPetWindowLayering()
@@ -302,6 +326,26 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       t: options.t,
       openSettings: () => navigateMainWindow("/settings"),
+      requestCloseWindow: () => {
+        const targetWindow = BrowserWindow.getFocusedWindow();
+        if (!targetWindow || targetWindow.isDestroyed()) {
+          return;
+        }
+        if (targetWindow !== options.state.mainWindow) {
+          targetWindow.close();
+          return;
+        }
+        const focusedContents = electronWebContents.getFocusedWebContents();
+        const focusedWorkPanelGuest = focusedContents && focusedContents !== targetWindow.webContents &&
+          options.isWorkPanelWebview(focusedContents)
+          ? focusedContents
+          : null;
+        targetWindow.webContents.send("app.workPanelCloseShortcut", {
+          guestId: focusedWorkPanelGuest?.id ?? null,
+          fallbackToWindowClose: true,
+          workPanelFocused: options.state.workPanelKeyboardFocusActive
+        });
+      },
       requestQuit: options.requestAppQuit,
       quitWithoutConfirmation: options.beginAppQuitWithoutConfirmation
     });
@@ -332,6 +376,8 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     navigateMainWindow,
     refreshMainWindowAppearance,
     setGlobalSearchOverlayVisible: (visible: boolean) => mainWindowLifecycle.setGlobalSearchOverlayVisible(visible),
+    setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) =>
+      mainWindowLifecycle.setWebviewModalOverlayVisible(sourceId, visible),
     createAppTray,
     buildApplicationMenu,
     refreshTrayContextMenu: () => appTrayController.refreshContextMenu(),

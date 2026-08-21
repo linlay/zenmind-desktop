@@ -129,8 +129,10 @@ import {
   getFocusedWebviewDevToolsShortcut,
   isDevToolsShortcut,
   isGlobalSearchShortcut,
+  isWorkPanelCloseShortcut,
   resolveGlobalSearchCommandShortcut,
 } from "../platform-adapter";
+import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
 import { configureSystemIdentity } from "./system-identity";
 import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
 import {
@@ -192,10 +194,17 @@ import {
   type ResourceDirectoryWatcher
 } from "../resource-directory-watcher";
 import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
-import { refreshMarketCatalog } from "../marketplace";
+import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../marketplace";
 import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
+import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
 
 export function createMainProcessRuntime() {
+  const startupPlatform = process.platform;
+  const isFirstDesktopInstall = !desktopDataRootExists(app, startupPlatform);
+  const runtimeRootAtProcessStart = resolveRuntimeRoot(app, startupPlatform);
+  const runtimeRootExistedAtStartup = runtimeRootExists(app, startupPlatform);
+  const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
+  const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   configureAgentMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, options)
   );
@@ -272,6 +281,23 @@ export function createMainProcessRuntime() {
     browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
     getMainWindow: () => appState.mainWindow,
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
+    openWorkPanelUrl: ({ sourceGuestId, url }) => {
+      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(sourceGuestId);
+      const mainWindow = appState.mainWindow;
+      if (
+        !target ||
+        target.surfaceType !== "chat-work-panel" ||
+        !mainWindow ||
+        mainWindow.isDestroyed()
+      ) {
+        return;
+      }
+      mainWindow.webContents.send("webview.openTab", {
+        target: "work-panel",
+        sourceGuestId,
+        url
+      });
+    },
     openExternal: (url) => shell.openExternal(url),
     isTrustedAgentWebclient: async (contents, target) => {
       if (
@@ -398,7 +424,7 @@ export function createMainProcessRuntime() {
     switchTab: async (surfaceId, tabId, ownerChatId) => {
       const response = await callDesktopActionRenderer({
         requestId: `cdp-switch-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: ownerChatId ? "desktop.chatWorkPanel.activateTab" : "desktop.web.switchTab",
+        action: ownerChatId ? "desktop.workpanel.activateTab" : "desktop.web.switchTab",
         args: ownerChatId ? { tabId } : { surfaceId, tabId },
         ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
       }, {
@@ -413,7 +439,7 @@ export function createMainProcessRuntime() {
     closeTab: async (surfaceId, tabId, ownerChatId) => {
       const response = await callDesktopActionRenderer({
         requestId: `cdp-close-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: ownerChatId ? "desktop.chatWorkPanel.closeTab" : "desktop.web.closeTab",
+        action: ownerChatId ? "desktop.workpanel.closeTab" : "desktop.web.closeTab",
         args: ownerChatId ? { tabId } : { surfaceId, tabId },
         ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
       }, {
@@ -440,11 +466,6 @@ export function createMainProcessRuntime() {
     safeConsoleError
   });
   const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
-  const isFirstDesktopInstall = !desktopDataRootExists(app);
-  const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
-  const runtimeRootAtProcessStart = resolveRuntimeRoot(app, mainProcessContext.platform);
-  const runtimeRootExistedAtStartup = runtimeRootExists(app, mainProcessContext.platform);
-  const runtimeEnvExistedAtStartup = runtimeEnvExists(app, mainProcessContext.platform);
   const bundledEnvZipExistsAtStartup = bundledEnvZipExists(app, mainProcessContext.platform);
   const bundledSeedRefreshNeededAtStartup =
     bundledEnvZipExistsAtStartup &&
@@ -561,9 +582,31 @@ export function createMainProcessRuntime() {
     parseSafeLoopbackWebUrl,
     isDevToolsShortcut,
     isGlobalSearchShortcut,
+    isWorkPanelCloseShortcut,
+    isWorkPanelWebview: (contents) => {
+      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+      return Boolean(
+        target?.active &&
+        target.surfaceLevel === "child" &&
+        target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+        target.ownerChatId &&
+        [
+          "overview",
+          "debug",
+          "project",
+          "file-diff",
+          "artifact",
+          "planning",
+          "agent",
+          "copilot",
+          "skill",
+          "workpanel-web",
+        ].includes(target.surfaceRole)
+      );
+    },
     resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation,
-    shouldOpenWebviewPopupInCurrentTab: (contents) =>
+    shouldOpenWebviewPopupInWorkPanelTab: (contents) =>
       webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id)?.surfaceType === "chat-work-panel",
     attachWebviewContextMenu: webviewContextMenuController.attach,
     collectWebviewLoadDiagnostics,
@@ -664,6 +707,15 @@ export function createMainProcessRuntime() {
     openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
     openExternal: shell.openExternal,
     onRestoreResult: applyDesktopSsoRestoreResult
+  });
+  configureMarketAccessTokenIssuer(async (_marketApp, reason) => {
+    const currentToken = isDesktopSsoCredentialRuntimeReady()
+      ? readDesktopSsoSiteAccessToken(_marketApp)
+      : "";
+    if (currentToken && reason === "missing") {
+      return currentToken;
+    }
+    return desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(true);
   });
   refreshDesktopSsoIdentityToken = async (force = false) => {
     const restoreResult = await desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded();
@@ -1084,6 +1136,10 @@ export function createMainProcessRuntime() {
     }
     const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
       openCurrentWebviewDevTools({
+        focusedWebviewDevToolsTarget: Number.isSafeInteger(appState.focusedWebviewDevToolsTargetId) &&
+          Number(appState.focusedWebviewDevToolsTargetId) > 0
+          ? { webContentsId: Number(appState.focusedWebviewDevToolsTargetId) }
+          : null,
         preferredWebviewDevToolsTarget: appState.copilotDevToolsTarget,
         currentPageSnapshot: appState.currentPageSnapshot,
         webContents,
@@ -1484,6 +1540,8 @@ export function createMainProcessRuntime() {
       refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
       refreshMainWindowAppearance: () => appShellRuntime.refreshMainWindowAppearance(),
       setGlobalSearchOverlayVisible: (visible) => appShellRuntime.setGlobalSearchOverlayVisible(visible),
+      setWebviewModalOverlayVisible: (sourceId, visible) =>
+        appShellRuntime.setWebviewModalOverlayVisible(sourceId, visible),
       emitLocaleChanged: settingsRuntime.emitLocaleChanged,
       captureDesktopScreenshotForWebview,
       reportRendererDiagnostic,

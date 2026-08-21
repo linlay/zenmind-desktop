@@ -7,15 +7,15 @@ import { createHash, randomBytes } from "node:crypto";
 import { pipeline } from "node:stream/promises";
 import { fileURLToPath } from "node:url";
 import JSZip from "jszip";
-import packageValidation from "../src/shared/webapp-package-validation.js";
+import packageValidation from "../shared/webapp-package-validation.js";
 import {
   WEBAPP_ID_PATTERN,
   WEBAPP_KEY_PATTERN,
   WEBAPP_MANIFEST_MAX_BYTES,
   parseWebappManifest
-} from "../contracts/webapp/webapp-manifest-validator.mjs";
+} from "../../contracts/webapp/webapp-manifest-validator.mjs";
 
-const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const {
   WEBAPP_PACKAGE_LIMITS,
   WebappPackageValidationError,
@@ -25,8 +25,28 @@ const {
   validateZipEntrySafety
 } = packageValidation;
 
+type ToolingStage = "arguments" | "manifest" | "package" | "archive" | "internal";
+type ToolingDetails = Record<string, unknown>;
+type ToolingOptions = Record<string, string | true>;
+type ManifestValidationIssue = {
+  path?: Array<string | number>;
+};
+type ManifestValidationError = Error & {
+  issues?: ManifestValidationIssue[];
+};
+type ToolingZipEntry = JSZip.JSZipObject & {
+  _data?: {
+    compressedSize?: number;
+    uncompressedSize?: number;
+  };
+};
+
 class ToolingError extends Error {
-  constructor(stage, code, message, details = {}) {
+  stage: ToolingStage;
+  code: string;
+  details: ToolingDetails;
+
+  constructor(stage: ToolingStage, code: string, message: string, details: ToolingDetails = {}) {
     super(message);
     this.name = "ToolingError";
     this.stage = stage;
@@ -35,8 +55,8 @@ class ToolingError extends Error {
   }
 }
 
-function parseOptions(values) {
-  const options = {};
+function parseOptions(values: string[]) {
+  const options: ToolingOptions = {};
   for (let index = 0; index < values.length; index += 1) {
     const token = values[index];
     if (!token?.startsWith("--")) {
@@ -54,7 +74,7 @@ function parseOptions(values) {
   return options;
 }
 
-function requireString(options, name) {
+function requireString(options: ToolingOptions, name: string) {
   const value = typeof options[name] === "string" ? options[name].trim() : "";
   if (!value) {
     throw new ToolingError("arguments", "missing_argument", `--${name} is required.`, {
@@ -64,18 +84,18 @@ function requireString(options, name) {
   return value;
 }
 
-function jsonResult(value) {
+function jsonResult(value: unknown) {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-function asToolingError(error) {
+function asToolingError(error: unknown) {
   if (error instanceof WebappPackageValidationError) {
     return new ToolingError(error.stage, error.code, error.message, error.details);
   }
   return error;
 }
 
-function readManifest(projectPath) {
+function readManifest(projectPath: string) {
   const manifestPath = path.join(projectPath, "webapp.json");
   let stat;
   try {
@@ -109,7 +129,8 @@ function readManifest(projectPath) {
   try {
     return parseWebappManifest(value);
   } catch (error) {
-    const issue = Array.isArray(error?.issues) ? error.issues[0] : null;
+    const validationError = error as ManifestValidationError;
+    const issue = Array.isArray(validationError.issues) ? validationError.issues[0] : null;
     throw new ToolingError("manifest", "manifest_invalid", error instanceof Error ? error.message : String(error), {
       path: manifestPath,
       ...(issue ? { field: issue.path?.join(".") || "webapp.json" } : {})
@@ -117,7 +138,7 @@ function readManifest(projectPath) {
   }
 }
 
-function validateProject(projectPath) {
+function validateProject(projectPath: string) {
   const absoluteProjectPath = path.resolve(projectPath);
   if (!fs.existsSync(absoluteProjectPath) || !fs.statSync(absoluteProjectPath).isDirectory()) {
     throw new ToolingError("package", "project_missing", "The WebApp project directory does not exist.", {
@@ -135,7 +156,7 @@ function validateProject(projectPath) {
   }
 }
 
-async function validateArchive(archivePath) {
+async function validateArchive(archivePath: string) {
   const absoluteArchivePath = path.resolve(archivePath);
   if (path.extname(absoluteArchivePath).toLowerCase() !== ".zip") {
     throw new ToolingError("archive", "unsupported_format", "WebApp packages must use the .zip format.", {
@@ -168,7 +189,7 @@ async function validateArchive(archivePath) {
       { path: absoluteArchivePath }
     );
   }
-  const entries = Object.values(zip.files);
+  const entries = Object.values(zip.files) as ToolingZipEntry[];
   try {
     const inspected = validateZipEntrySafety(entries.map((entry) => {
       const data = entry._data;
@@ -218,7 +239,7 @@ async function validateArchive(archivePath) {
   }
 }
 
-async function initManifest(options) {
+async function initManifest(options: ToolingOptions) {
   const projectPath = path.resolve(typeof options.project === "string" ? options.project : process.cwd());
   const key = requireString(options, "key");
   const label = requireString(options, "label");
@@ -276,7 +297,7 @@ async function initManifest(options) {
   };
 }
 
-async function buildPackage(options) {
+async function buildPackage(options: ToolingOptions) {
   const projectPath = path.resolve(typeof options.project === "string" ? options.project : process.cwd());
   const { manifest, files, totalBytes } = validateProject(projectPath);
   const outputPath = path.resolve(

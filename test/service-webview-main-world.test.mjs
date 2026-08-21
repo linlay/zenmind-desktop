@@ -461,7 +461,7 @@ test("service webview main-world script emits live surface lifecycle on its host
   const payload = {
     type: "desktopSurfaceActiveChanged",
     active: false,
-    surfaceId: "agent-webclient-chat"
+    surfaceId: "main-chat"
   };
 
   runMainWorldScript(window);

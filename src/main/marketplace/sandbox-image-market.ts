@@ -1,7 +1,6 @@
 import path from "node:path";
 import fs from "node:fs";
 import os from "node:os";
-import { execFile, spawn } from "node:child_process";
 import type { App } from "electron";
 import type {
   MarketCommandResult,
@@ -12,8 +11,8 @@ import type {
 import {
   type ContainerEngineName,
   type ContainerEngineResolution,
-  buildContainerEngineInvocation,
-  resolveContainerEngine
+  resolveContainerEngine,
+  runContainerEngineCommand
 } from "../container-engine";
 import { ContainerHubClient, type ContainerHubConfig, type ContainerHubEnvironment } from "../assistant/core/container-hub";
 import { extractArchiveToDir, listArchiveEntries } from "../archive-utils";
@@ -30,7 +29,7 @@ import {
   mergeCatalogItems,
   normalizeContainerHubBaseUrl,
   normalizeCatalog,
-  selectAsset,
+  resolveMarketAsset,
   upsertInstalledRecord,
   type Catalog,
   type MarketplaceOptions,
@@ -40,12 +39,6 @@ import {
 const CONTAINER_HUB_SERVICE_ID = "agent-container-hub";
 const IMAGE_COMMAND_TIMEOUT_MS = 300_000;
 const LIST_IMAGE_COMMAND_TIMEOUT_MS = 30_000;
-const CONTAINER_ENGINE_CACHE_SUCCESS_MS = 30_000;
-const CONTAINER_ENGINE_CACHE_MISS_MS = 10_000;
-
-let cachedContainerEngine:
-  | { engine: ContainerEngineResolution | null; expiresAt: number; cacheKey: string }
-  | null = null;
 
 interface SandboxImageImportOptions {
   taskId?: string;
@@ -219,29 +212,7 @@ function localContainerImageToMarketItem(image: LocalContainerImage, engine: Con
 }
 
 function resolveCachedContainerEngine() {
-  const now = Date.now();
-  const cacheKey = [
-    process.platform,
-    process.env.PATH ?? "",
-    process.env.Path ?? "",
-    process.env.DESKTOP_CONTAINER_ENGINE_PATHS ?? "",
-    process.env.ProgramFiles ?? "",
-    process.env.LOCALAPPDATA ?? ""
-  ].join("\u0000");
-  if (
-    cachedContainerEngine &&
-    cachedContainerEngine.cacheKey === cacheKey &&
-    cachedContainerEngine.expiresAt > now
-  ) {
-    return cachedContainerEngine.engine;
-  }
-  const engine = resolveContainerEngine();
-  cachedContainerEngine = {
-    engine,
-    expiresAt: now + (engine ? CONTAINER_ENGINE_CACHE_SUCCESS_MS : CONTAINER_ENGINE_CACHE_MISS_MS),
-    cacheKey
-  };
-  return engine;
+  return resolveContainerEngine({ cache: true });
 }
 
 async function listLocalContainerImages(): Promise<{
@@ -249,7 +220,7 @@ async function listLocalContainerImages(): Promise<{
   items: MarketItem[];
   message: string;
 }> {
-  const engine = resolveCachedContainerEngine();
+  const engine = await resolveCachedContainerEngine();
   if (!engine) {
     return {
       engine: null,
@@ -285,25 +256,18 @@ function runEngineCommand(
   args: string[],
   timeoutMs = IMAGE_COMMAND_TIMEOUT_MS
 ): Promise<{ stdout: string; stderr: string }> {
-  const invocation = buildContainerEngineInvocation(engine, args);
-  return new Promise((resolve, reject) => {
-    execFile(invocation.command, invocation.args, {
-      encoding: "utf8",
-      env: engine.env,
-      timeout: timeoutMs,
-      windowsHide: true,
-      windowsVerbatimArguments: invocation.windowsVerbatimArguments
-    }, (error, stdout, stderr) => {
-      if (error) {
-        const detail = String(stderr || stdout || error.message).trim();
-        reject(new Error(detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: args.join(" ") })));
-        return;
-      }
-      resolve({
-        stdout: String(stdout ?? ""),
-        stderr: String(stderr ?? "")
-      });
-    });
+  return runContainerEngineCommand(engine, args, { timeoutMs }).then((result) => {
+    if (result.timedOut) {
+      throw new Error(t("market.sandbox.engineCommandTimeout", { engine: engine.name, command: args.join(" ") }));
+    }
+    if (result.status !== 0) {
+      const detail = String(result.stderr || result.stdout || result.error).trim();
+      throw new Error(detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: args.join(" ") }));
+    }
+    return {
+      stdout: result.stdout,
+      stderr: result.stderr
+    };
   });
 }
 
@@ -338,70 +302,43 @@ function runStreamingEngineCommand(
   args: string[],
   onOutput: (event: { line: string; stream: "stdout" | "stderr" }) => void
 ): Promise<{ stdout: string; stderr: string }> {
-  const invocation = buildContainerEngineInvocation(engine, args);
-  return new Promise((resolve, reject) => {
-    const child = spawn(invocation.command, invocation.args, {
-      env: engine.env,
-      stdio: ["ignore", "pipe", "pipe"],
-      windowsHide: true,
-      windowsVerbatimArguments: invocation.windowsVerbatimArguments
-    });
-    let settled = false;
-    let stdout = "";
-    let stderr = "";
-    let pendingStdout = "";
-    let pendingStderr = "";
-
-    const finish = (fn: () => void) => {
-      if (settled) {
-        return;
-      }
-      settled = true;
-      clearTimeout(timeout);
-      fn();
+  let pendingStdout = "";
+  let pendingStderr = "";
+  const result = runContainerEngineCommand(engine, args, {
+    timeoutMs: IMAGE_COMMAND_TIMEOUT_MS,
+    onStdout: (chunk) => {
+      pendingStdout = collectOutputLines(
+        pendingStdout,
+        chunk,
+        (line) => onOutput({ line, stream: "stdout" })
+      );
+    },
+    onStderr: (chunk) => {
+      pendingStderr = collectOutputLines(
+        pendingStderr,
+        chunk,
+        (line) => onOutput({ line, stream: "stderr" })
+      );
+    }
+  });
+  return result.then((commandResult) => {
+    if (pendingStdout.trim()) {
+      onOutput({ line: pendingStdout.trim(), stream: "stdout" });
+    }
+    if (pendingStderr.trim()) {
+      onOutput({ line: pendingStderr.trim(), stream: "stderr" });
+    }
+    if (commandResult.timedOut) {
+      throw new Error(t("market.sandbox.engineCommandTimeout", { engine: engine.name, command: args.join(" ") }));
+    }
+    if (commandResult.status !== 0) {
+      const detail = String(commandResult.stderr || commandResult.stdout || commandResult.error).trim();
+      throw new Error(detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: args.join(" ") }));
+    }
+    return {
+      stdout: commandResult.stdout,
+      stderr: commandResult.stderr
     };
-    const flushPendingOutput = () => {
-      const stdoutLine = pendingStdout.trim();
-      if (stdoutLine) {
-        onOutput({ line: stdoutLine, stream: "stdout" });
-      }
-      const stderrLine = pendingStderr.trim();
-      if (stderrLine) {
-        onOutput({ line: stderrLine, stream: "stderr" });
-      }
-      pendingStdout = "";
-      pendingStderr = "";
-    };
-    const timeout = setTimeout(() => {
-      child.kill();
-      finish(() => reject(new Error(t("market.sandbox.engineCommandTimeout", { engine: engine.name, command: args.join(" ") }))));
-    }, IMAGE_COMMAND_TIMEOUT_MS);
-
-    child.stdout.setEncoding("utf8");
-    child.stdout.on("data", (chunk: string) => {
-      stdout += chunk;
-      pendingStdout = collectOutputLines(pendingStdout, chunk, (line) => onOutput({ line, stream: "stdout" }));
-    });
-
-    child.stderr.setEncoding("utf8");
-    child.stderr.on("data", (chunk: string) => {
-      stderr += chunk;
-      pendingStderr = collectOutputLines(pendingStderr, chunk, (line) => onOutput({ line, stream: "stderr" }));
-    });
-
-    child.on("error", (error) => {
-      finish(() => reject(error));
-    });
-
-    child.on("close", (code) => {
-      flushPendingOutput();
-      if (code !== 0) {
-        const detail = String(stderr || stdout).trim();
-        finish(() => reject(new Error(detail || t("market.sandbox.engineCommandFailed", { engine: engine.name, command: args.join(" ") }))));
-        return;
-      }
-      finish(() => resolve({ stdout, stderr }));
-    });
   });
 }
 
@@ -687,15 +624,13 @@ export async function installSandboxTemplateMarketItem(
     loadSandboxTemplateCatalog(app, options),
     resolveContainerHubConfig(app, options)
   ]);
-  const item = findCatalogItem(market.catalog, itemId, "sandbox-image");
-  const selected = selectAsset(item);
-  if (!selected) {
-    throw new Error(t("market.main.platformUnavailable"));
-  }
+  const catalogItem = findCatalogItem(market.catalog, itemId, "sandbox-image");
   if (!config?.baseURL) {
     throw new Error(t("market.sandbox.buildRequiresContainerHub"));
   }
-  const archivePath = await downloadAsset(app, item, selected.asset);
+  const resolved = await resolveMarketAsset(app, catalogItem, options);
+  const item = resolved.item;
+  const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   const template = await readSandboxTemplatePackage(archivePath);
   try {
     const client = new ContainerHubClient(config);
@@ -708,9 +643,10 @@ export async function installSandboxTemplateMarketItem(
       id: item.id,
       type: "sandbox-image",
       version: item.version,
+      platform: resolved.platform,
       source: "cloud",
-      assetUrl: selected.asset.url,
-      sha256: selected.asset.sha256,
+      assetUrl: resolved.asset.url,
+      sha256: resolved.asset.sha256,
       installPath: template.environmentName,
       installedAt: new Date().toISOString()
     });
@@ -752,7 +688,7 @@ export async function importSandboxImageFromPath(
     stage: "checking-engine",
     message: t("market.sandbox.checkingEngine")
   });
-  const engine = resolveContainerEngine();
+  const engine = await resolveContainerEngine({ cache: false });
   if (!engine) {
     emitSandboxImageImportProgress(options, {
       stage: "failed",
@@ -833,7 +769,7 @@ export async function deleteSandboxImage(
   if (!imageRef) {
     throw new Error(t("market.sandbox.missingImageName"));
   }
-  const engine = resolveContainerEngine();
+  const engine = await resolveContainerEngine({ cache: false });
   if (!engine) {
     throw new Error(t("market.sandbox.deleteRequiresEngine"));
   }
@@ -863,7 +799,7 @@ export async function exportSandboxImageToPath(
   if (!outputPath) {
     throw new Error(t("market.sandbox.missingExportPath"));
   }
-  const engine = resolveContainerEngine();
+  const engine = await resolveContainerEngine({ cache: false });
   if (!engine) {
     throw new Error(t("market.sandbox.exportRequiresEngine"));
   }

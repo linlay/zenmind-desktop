@@ -400,7 +400,7 @@ test("runtime env does not treat empty runtime directories as initialized", (t) 
   assert.equal(runtimeEnvExists(app, "win32"), true);
 });
 
-test("legacy skills-market runtime directories fail before Desktop writes skills-center", async (t) => {
+test("unrelated skills-market runtime directories do not block skills-center import", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-removed-skill-runtime-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -410,19 +410,16 @@ test("legacy skills-market runtime directories fail before Desktop writes skills
   fs.mkdirSync(removedRoot, { recursive: true });
   fs.writeFileSync(path.join(removedRoot, "keep.txt"), "keep\n", "utf8");
 
-  assert.throws(() => runtimeEnvExists(app, "darwin"), /skills-market/u);
+  assert.equal(runtimeEnvExists(app, "darwin"), false);
 
   const zipPath = path.join(root, "env.zip");
   await writeEnvZip(zipPath, {
     "env/VERSION": "1.0.0\n",
     "env/skills-center/demo/SKILL.md": "# Demo\n"
   });
-  await assert.rejects(
-    () => importEnvZipToRuntime(app, zipPath, "darwin", "1.0.0"),
-    /skills-market/u
-  );
+  await importEnvZipToRuntime(app, zipPath, "darwin", "1.0.0");
   assert.equal(fs.readFileSync(path.join(removedRoot, "keep.txt"), "utf8"), "keep\n");
-  assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-center")), false);
+  assert.equal(fs.existsSync(path.join(runtimeRoot, "skills-center", "demo", "SKILL.md")), true);
 });
 
 test("legacy skills-market env.zip is rejected before creating the runtime root", async (t) => {
@@ -444,7 +441,7 @@ test("legacy skills-market env.zip is rejected before creating the runtime root"
   assert.equal(fs.existsSync(runtimeRoot), false);
 });
 
-test("legacy and new skill directories together still fail without modifying either", (t) => {
+test("unrelated skills-market and skills-center directories can coexist", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-mixed-skill-runtime-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -457,7 +454,7 @@ test("legacy and new skill directories together still fail without modifying eit
   fs.writeFileSync(removedFile, "removed\n", "utf8");
   fs.writeFileSync(centerFile, "center\n", "utf8");
 
-  assert.throws(() => runtimeEnvExists(app, "win32"), /skills-market/u);
+  assert.equal(runtimeEnvExists(app, "win32"), true);
   assert.equal(fs.readFileSync(removedFile, "utf8"), "removed\n");
   assert.equal(fs.readFileSync(centerFile, "utf8"), "center\n");
 });

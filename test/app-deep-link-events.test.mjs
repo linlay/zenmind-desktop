@@ -69,3 +69,29 @@ test("Windows initial and second-instance deep links open only the Desktop home 
   fixture.options.app.emit("second-instance", {}, ["desktop", `${DESKTOP_OPEN_PROTOCOL_SCHEME}://settings`]);
   assert.deepEqual(fixture.shown, ["/", "/", undefined]);
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform} ordinary second-instance launches wait for startup before showing the main window`, async () => {
+    const fixture = createOptions(platform);
+    let signalReadyStarted;
+    const readyStarted = new Promise((resolve) => {
+      signalReadyStarted = resolve;
+    });
+    let finishReady;
+    fixture.options.onReady = () => new Promise((resolve) => {
+      finishReady = resolve;
+      signalReadyStarted();
+    });
+
+    registerMainAppEvents(fixture.options);
+    await readyStarted;
+
+    fixture.options.app.emit("second-instance", {}, ["desktop"]);
+    fixture.options.app.emit("second-instance", {}, ["desktop"]);
+    assert.deepEqual(fixture.shown, []);
+
+    finishReady();
+    await flushReadyHandlers();
+    assert.deepEqual(fixture.shown, [undefined]);
+  });
+}

@@ -30,6 +30,7 @@ import type {
   EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
   DesktopGlobalSearchShortcutListener,
+  DesktopWorkPanelCloseShortcutListener,
   ShutdownProgressListener,
   DesktopPetStateListener,
   DesktopLogTarget,
@@ -64,8 +65,15 @@ import type {
   WebviewSelectionToolbarStateListener
 } from "../shared/contracts";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
-import { CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/chat-work-panel-tab-context-menu";
+import {
+  CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
+  CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
+} from "../shared/chat-work-panel-tab-context-menu";
 import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
+import {
+  CANONICAL_CHAT_SYNC_REQUEST_CHANNEL,
+  CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
+} from "../shared/canonical-chat-sync";
 import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
 import { DEFAULT_LOCALE } from "../shared/i18n/locales";
@@ -90,7 +98,9 @@ const api: DesktopApi = {
   },
   chatWorkPanelTabContextMenu: {
     popup: (request: ChatWorkPanelTabContextMenuPopupRequest) =>
-      ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request)
+      ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request),
+    openLocalResource: (request) =>
+      ipcRenderer.invoke(CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL, request)
   },
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
@@ -99,7 +109,16 @@ const api: DesktopApi = {
     beginWindowDrag: (point: { x: number; y: number }) => ipcRenderer.invoke("desktopShell.beginWindowDrag", point),
     endWindowDrag: () => ipcRenderer.invoke("desktopShell.endWindowDrag"),
     setGlobalSearchOverlayVisible: (visible: boolean) => ipcRenderer.send("desktopShell.setGlobalSearchOverlayVisible", visible),
+    setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) =>
+      ipcRenderer.send("desktopShell.setWebviewModalOverlayVisible", sourceId, visible),
+    setWorkPanelKeyboardFocusActive: (active: boolean) =>
+      ipcRenderer.send("desktopShell.setWorkPanelKeyboardFocusActive", active),
+    setWorkPanelFullscreenActive: (active: boolean) =>
+      ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
+    requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
     getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
+    setWindowFullScreen: (enabled: boolean) =>
+      ipcRenderer.invoke("desktopShell.setWindowFullScreen", enabled),
     onWindowStateChanged: (listener: DesktopWindowStateListener) => {
       const handleWindowStateChanged = (
         _event: Electron.IpcRendererEvent,
@@ -126,6 +145,19 @@ const api: DesktopApi = {
         ipcRenderer.off("desktopShell.shutdownProgress", handleShutdownProgress);
       };
     }
+  },
+  canonicalChatSync: {
+    respond: (result) => ipcRenderer.send(CANONICAL_CHAT_SYNC_RESULT_CHANNEL, result),
+    onRequest: (listener) => {
+      const handleRequest = (
+        _event: Electron.IpcRendererEvent,
+        request: Parameters<typeof listener>[0],
+      ) => listener(request);
+      ipcRenderer.on(CANONICAL_CHAT_SYNC_REQUEST_CHANNEL, handleRequest);
+      return () => {
+        ipcRenderer.off(CANONICAL_CHAT_SYNC_REQUEST_CHANNEL, handleRequest);
+      };
+    },
   },
   desktopDownloads: {
     saveFile: (input) => ipcRenderer.invoke("desktopDownloads.saveFile", input)
@@ -188,6 +220,7 @@ const api: DesktopApi = {
     clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
+    getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),
@@ -741,6 +774,25 @@ const api: DesktopApi = {
     ipcRenderer.on("app.globalSearchShortcut", handleGlobalSearchShortcut);
     return () => {
       ipcRenderer.off("app.globalSearchShortcut", handleGlobalSearchShortcut);
+    };
+  },
+  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => {
+    const handleWorkPanelCloseShortcut = (
+      _event: Electron.IpcRendererEvent,
+      request: Parameters<DesktopWorkPanelCloseShortcutListener>[0]
+    ) => {
+      listener(request);
+    };
+
+    ipcRenderer.on("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+    return () => {
+      ipcRenderer.off("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+    };
+  },
+  onWorkPanelFullscreenExitShortcut: (listener: () => void) => {
+    ipcRenderer.on("app.workPanelFullscreenExitShortcut", listener);
+    return () => {
+      ipcRenderer.off("app.workPanelFullscreenExitShortcut", listener);
     };
   },
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => {

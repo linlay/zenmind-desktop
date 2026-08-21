@@ -58,7 +58,11 @@ import {
   createAssistantAttachmentsFromFiles,
   resolveAssistantAttachmentPath
 } from "../assistant/attachments/attachment-store";
-import { callAgentPlatform, handleDesktopActionRequest } from "../desktop-action-bridge";
+import {
+  callAgentPlatform,
+  handleAgentWebclientWorkPanelActionRequest,
+  handleDesktopActionRequest
+} from "../desktop-action-bridge";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
 import {
   generateBackupDirName,
@@ -105,6 +109,7 @@ import { registerTunnelHubIpcHandlers } from "./tunnel-hub-handlers";
 import { registerWebIpcHandlers } from "./web-handlers";
 import { registerEmbeddedCdpIpcHandlers } from "./embedded-cdp-handlers";
 import { registerAgentWebclientBridgeIpcHandlers } from "./agent-webclient-bridge-handlers";
+import { registerCanonicalChatSyncIpc } from "./canonical-chat-sync";
 import type { BrowserSurfaceRegistry } from "../browser-surface-registry";
 import type { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
@@ -159,6 +164,7 @@ export type MainIpcRegistrationOptions = {
   refreshTrayContextMenu: () => void;
   refreshMainWindowAppearance: () => void;
   setGlobalSearchOverlayVisible: (visible: boolean) => void;
+  setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
   emitLocaleChanged: (...args: any[]) => unknown;
   captureDesktopScreenshotForWebview: () => unknown;
   reportRendererDiagnostic: (...args: any[]) => unknown;
@@ -188,13 +194,22 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     openLogViewerWindow: options.openLogViewerWindow,
     issueAgentPlatformAccessToken: issueAgentAccessToken,
     desktopLogStreamSubscriptions: logsRuntime.getDesktopLogSubscriptions(),
-    setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible
+    setGlobalSearchOverlayVisible: options.setGlobalSearchOverlayVisible,
+    setWebviewModalOverlayVisible: options.setWebviewModalOverlayVisible,
+    setWorkPanelKeyboardFocusActive: (active) => {
+      context.state.workPanelKeyboardFocusActive = active;
+    },
+    setWorkPanelFullscreenActive: (active) => {
+      context.state.workPanelFullscreenActive = active;
+    }
   }));
   registerSidebarContextMenuIpcHandlers(ipcMain, {
     getMainWindow: () => context.state.mainWindow
   });
   registerChatWorkPanelTabContextMenuIpcHandlers(ipcMain, {
-    getMainWindow: () => context.state.mainWindow
+    getMainWindow: () => context.state.mainWindow,
+    app,
+    platform: context.platform,
   });
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {
@@ -220,6 +235,20 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   }));
 
   registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  const canonicalChatSync = registerCanonicalChatSyncIpc(ipcMain, {
+    resolveRenderer: (ownerWebContentsId) => {
+      const mainWindow = context.state.mainWindow;
+      if (
+        !mainWindow ||
+        mainWindow.isDestroyed() ||
+        mainWindow.webContents.isDestroyed() ||
+        mainWindow.webContents.id !== ownerWebContentsId
+      ) {
+        return null;
+      }
+      return mainWindow.webContents;
+    },
+  });
   const agentWebclientBridgeRuntime = registerAgentWebclientBridgeIpcHandlers(ipcMain, {
     app,
     browserSurfaces: options.browserSurfaces,
@@ -227,12 +256,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     realtimeBroker: assistantBridgeRuntime.realtimeBroker,
     getServiceState,
     issueAccessToken: issueAgentAccessToken,
+    syncCanonicalChat: (ownerWebContentsId, input) =>
+      canonicalChatSync.request(ownerWebContentsId, input),
     dispatchWorkPanel: async ({ action, ownerChatId, args }) => {
-      const response = await handleDesktopActionRequest(desktopActionOptions, {
+      const response = await handleAgentWebclientWorkPanelActionRequest(desktopActionOptions, {
         requestId: `workpanel-bridge-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-        action: `desktop.workpanel.${action}`,
+        action,
+        ownerChatId,
         args,
-        source: { chatId: ownerChatId }
       });
       if (response.ok) {
         return response.result as any;

@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import webappToolingResource from "./lib/webapp-tooling-resource.js";
 import {
   brandIconDir,
   brandRuntimeAssetDir,
@@ -10,6 +11,8 @@ import {
   resolveRequiredBrandId
 } from "./lib/brand-config.mjs";
 import { verifyGeneratedAppIcons } from "./generate-app-icons.mjs";
+
+const { verifyPackagedWebappTooling } = webappToolingResource;
 
 const projectRoot = process.cwd();
 const brandId = resolveRequiredBrandId(process.argv.slice(2), process.env, "verify-win-package");
@@ -136,6 +139,7 @@ async function main() {
   await verifyGeneratedAppIcons({ rootDir: projectRoot, brandId: brand.id, platform: "win32" });
   verifyBuilderIconConfig();
   verifyPackagedBrandResources();
+  verifyPackagedWebappTooling(resourcesRoot, { errorPrefix: "[verify-win-package]" });
   verifyNativeExecutableIcon();
   const paths = walkFileTree(resourcesRoot)
     .map((filePath) => path.relative(projectRoot, filePath).replace(/\\/g, "/"));

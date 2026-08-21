@@ -251,8 +251,9 @@ code {
     top: 8px;
     right: 8px;
     bottom: 8px;
-    left: 8px;
-    width: auto;
+    left: auto;
+    width: min(var(--assistant-dock-embedded-width), calc(100% - 16px));
+    max-width: 640px;
     border-radius: 18px;
     border: 1px solid rgba(148, 163, 184, 0.28);
   }

@@ -64,7 +64,7 @@ test("floating project surfaces remain loaded without taking active surface owne
     host,
     /<ServiceWebviewSurface[\s\S]*?active[\s\S]*?surfaceOwnershipActive=\{false\}[\s\S]*?skipContextRegistration/,
   );
-  assert.match(host, /createProjectSurfaceId\(entry\.agentKey\)/);
+  assert.match(host, /createSurfaceIdentity\("project", entry\.agentKey\)/);
   assert.match(host, /setPointerCapture\(event\.pointerId\)/);
   assert.match(host, /clampFloatingPosition/);
   assert.match(surface, /const ownsActiveSurface = surfaceOwnershipActive \?\? active !== false/);

@@ -16,7 +16,7 @@ test("agent webclient management restores switch the Desktop shell to the chat r
 
   assert.match(
     source,
-    /function isAgentWebclientManagementSurface[\s\S]*?serviceId === "agent-webclient" && surfaceId === "agent-webclient"/u,
+    /function isAgentWebclientManagementSurface[\s\S]*?serviceId === "agent-webclient" && surfaceId === createServiceSurfaceIdentity\("agent-webclient"\)\.surfaceId/u,
   );
   assert.match(
     navigationHandler,

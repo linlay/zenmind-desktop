@@ -8,6 +8,7 @@ import type {
   AssistantAttachment,
   AssistantAwaitingMode,
   AssistantChatDetail,
+  AssistantChatInfo,
   AssistantChatMessage,
   AssistantChatSearchRequest,
   AssistantChatSearchResponse,
@@ -160,10 +161,18 @@ type PlatformRunSummary = {
 type PlatformChatDetail = {
   chatId?: unknown;
   chatName?: unknown;
+  agentKey?: unknown;
+  firstAgentKey?: unknown;
+  firstAgentName?: unknown;
+  teamId?: unknown;
+  source?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
+  lastRunId?: unknown;
+  lastRunContent?: unknown;
   events?: Array<Record<string, unknown>>;
   runs?: PlatformRunSummary[];
+  [key: string]: unknown;
 };
 
 type PlatformChatSearchResponse = {
@@ -1355,6 +1364,40 @@ export class AgentPlatformAssistantBridge {
       },
       messages,
       events
+    };
+  }
+
+  async getChatInfo(chatId: string): Promise<AssistantChatInfo | null> {
+    const trimmedChatId = typeof chatId === "string" ? chatId.trim() : "";
+    if (!trimmedChatId) {
+      return null;
+    }
+    const data = await this.getJson<PlatformChatDetail>(
+      `/api/chat?chatId=${encodeURIComponent(trimmedChatId)}&includeRawMessages=false`,
+      { allowNotFound: true },
+    );
+    if (!data) {
+      return null;
+    }
+    if (typeof data !== "object" || Array.isArray(data)) {
+      throw new Error("Agent Platform returned an invalid chat detail response.");
+    }
+    validatePresentPlatformTimes(data, "chatInfo");
+    const createdAt = readOptionalPlatformTimestamp(data.createdAt, "chatInfo.createdAt");
+    const updatedAt = readOptionalPlatformTimestamp(data.updatedAt, "chatInfo.updatedAt");
+    return {
+      chatId: readString(data.chatId) || trimmedChatId,
+      chatName: readString(data.chatName),
+      agentKey: readString(data.agentKey),
+      firstAgentKey: readString(data.firstAgentKey),
+      firstAgentName: readString(data.firstAgentName),
+      teamId: readString(data.teamId),
+      source: readString(data.source),
+      ...(createdAt !== undefined && createdAt !== null ? { createdAt } : {}),
+      ...(updatedAt !== undefined && updatedAt !== null ? { updatedAt } : {}),
+      lastRunId: readString(data.lastRunId),
+      lastRunContent: readString(data.lastRunContent),
+      rawJson: JSON.stringify(data, null, 2),
     };
   }
 

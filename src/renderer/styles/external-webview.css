@@ -142,8 +142,9 @@
   padding: 0;
   background: var(--browser-top);
   border-bottom: 0;
-  app-region: drag;
-  -webkit-app-region: drag;
+  /* Electron drag regions suppress the pointerdown used by the window drag fallback. */
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
   cursor: grab;
   -webkit-user-select: none;
   user-select: none;
@@ -166,7 +167,12 @@
   padding: 6px 8px 0;
 }
 
+.external-webview-page.has-copilot-launcher .external-webview-tabbar {
+  padding-right: 44px;
+}
+
 .external-webview-tab-strip {
+  --tab-curve-overhang: 12px;
   display: flex;
   align-items: flex-end;
   gap: 0;
@@ -174,7 +180,9 @@
   min-width: 0;
   max-width: calc(100% - 42px);
   overflow-x: auto;
-  padding-bottom: 0;
+  margin-inline: calc(-1 * var(--tab-curve-overhang));
+  padding: 0 var(--tab-curve-overhang);
+  scroll-padding-inline: var(--tab-curve-overhang);
   overscroll-behavior-x: contain;
   scrollbar-width: none;
   app-region: no-drag;
@@ -201,7 +209,7 @@
   min-height: 32px;
   border: 0;
   border-radius: 14px 14px 0 0;
-  background: var(--browser-tab);
+  background: transparent;
   cursor: grab;
   transition:
     background 160ms ease,
@@ -228,7 +236,21 @@
 }
 
 .external-webview-tab:hover:not(.is-active) {
+  background: transparent;
+}
+
+.external-webview-tab:hover:not(.is-active)::before {
+  content: "";
+  position: absolute;
+  inset: 2px 4px 4px;
+  border-radius: 12px;
   background: var(--browser-tab-hover);
+  z-index: 0;
+  pointer-events: none;
+}
+
+.external-webview-tab:hover:not(.is-active)::after {
+  content: none;
 }
 
 .external-webview-tab.is-active {
@@ -276,6 +298,8 @@
 }
 
 .external-webview-tab-trigger {
+  position: relative;
+  z-index: 1;
   min-width: 0;
   flex: 1;
   display: flex;
@@ -367,7 +391,7 @@
 }
 
 :root[data-theme="dark"] .external-webview-tab:hover:not(.is-active) {
-  background: var(--browser-tab-hover);
+  background: transparent;
 }
 
 :root[data-theme="dark"] .external-webview-tab.is-active:hover {
@@ -418,6 +442,8 @@
 }
 
 .external-webview-tab-close {
+  position: relative;
+  z-index: 1;
   flex: none;
   width: 28px;
   height: 28px;
@@ -440,6 +466,13 @@
 .external-webview-copilot-button:hover {
   background: var(--browser-button-hover);
   border-color: var(--browser-edge);
+  color: var(--browser-ink);
+}
+
+.external-webview-copilot-button:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--browser-accent) 48%, transparent);
+  outline-offset: 1px;
+  background: var(--browser-button-hover);
   color: var(--browser-ink);
 }
 
@@ -492,17 +525,28 @@
 }
 
 .external-webview-copilot-button {
+  position: absolute;
+  z-index: 3;
+  top: 12px;
+  right: 14px;
   flex: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 10px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border-radius: 6px;
+  cursor: pointer;
   app-region: no-drag;
   -webkit-app-region: no-drag;
 }
 
-.external-webview-copilot-button.is-active {
-  background: var(--browser-hover);
-  color: var(--browser-ink);
+.app-shell.is-mac-platform .external-webview-copilot-button {
+  top: 12px;
+  right: 14px;
+}
+
+.app-shell.is-windows-platform .external-webview-copilot-button {
+  top: calc(var(--windows-titlebar-overlay-height) + 10px);
+  right: 14px;
 }
 
 .external-webview-copilot-button-icon {
@@ -519,7 +563,7 @@
   min-height: 32px;
   padding: 0 14px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.92);
+  background: #edf1f5;
   border: 1px solid transparent;
   color: var(--browser-muted);
   transition:
@@ -611,6 +655,47 @@
   background: transparent;
 }
 
+.external-webview-loading-progress {
+  position: absolute;
+  z-index: 4;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 2px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--browser-accent) 12%, transparent);
+  pointer-events: none;
+}
+
+.external-webview-loading-progress > span {
+  display: block;
+  width: 38%;
+  height: 100%;
+  border-radius: 999px;
+  background: var(--browser-accent);
+  box-shadow: 0 0 8px var(--browser-accent-glow);
+  animation: external-webview-loading-progress 1.05s ease-in-out infinite;
+}
+
+@keyframes external-webview-loading-progress {
+  from {
+    transform: translateX(-120%);
+  }
+  to {
+    transform: translateX(365%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .external-webview-loading-progress > span {
+    width: 100%;
+    opacity: 0.72;
+    animation: none;
+    transform: none;
+  }
+
+}
+
 .external-webview-panel {
   position: absolute;
   inset: 0;
@@ -627,7 +712,7 @@
   left: 12px;
   z-index: 9998;
   max-width: calc(100% - 24px);
-  padding: 3px 6px;
+  padding: 3px 92px 3px 6px;
   border: 1px solid rgba(100, 116, 139, 0.22);
   border-radius: 4px;
   background: rgba(248, 250, 252, 0.68);
@@ -636,15 +721,58 @@
   font-size: 11px;
   line-height: 1.35;
   overflow-wrap: anywhere;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-select: none;
+  pointer-events: auto;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .webview-debug-surface-id {
   margin-bottom: 2px;
   color: var(--accent-strong);
   font-weight: 700;
+}
+
+.webview-debug-copy-button {
+  position: absolute;
+  top: 3px;
+  right: 4px;
+  min-width: 78px;
+  padding: 2px 6px;
+  border: 1px solid rgba(100, 116, 139, 0.3);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.78);
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-2px);
+  transition: opacity 120ms ease, transform 120ms ease, background-color 120ms ease;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.webview-debug-url-overlay:hover .webview-debug-copy-button,
+.webview-debug-url-overlay:focus-within .webview-debug-copy-button,
+.webview-debug-copy-button:focus-visible {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.webview-debug-copy-button:hover,
+.webview-debug-copy-button:focus-visible {
+  background: rgba(255, 255, 255, 0.96);
+  outline: none;
+}
+
+.webview-debug-copy-button.is-copied {
+  color: #15803d;
+}
+
+.webview-debug-copy-button.is-failed {
+  color: #b91c1c;
 }
 
 .embedded-surface-page .webview-debug-url-overlay {
@@ -656,6 +784,16 @@
   border-color: rgba(203, 213, 225, 0.2);
   background: rgba(15, 23, 42, 0.62);
   color: rgba(226, 232, 240, 0.74);
+}
+
+:root[data-theme="dark"] .webview-debug-copy-button {
+  border-color: rgba(203, 213, 225, 0.24);
+  background: rgba(30, 41, 59, 0.88);
+}
+
+:root[data-theme="dark"] .webview-debug-copy-button:hover,
+:root[data-theme="dark"] .webview-debug-copy-button:focus-visible {
+  background: rgba(51, 65, 85, 0.96);
 }
 
 .external-webview-frame {

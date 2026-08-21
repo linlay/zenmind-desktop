@@ -2,6 +2,7 @@ const { spawnSync } = require("child_process");
 const { createHash } = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { verifyPackagedWebappTooling } = require("./lib/webapp-tooling-resource.js");
 
 const MACHO_MAGICS = new Set([
   0xfeedface,
@@ -59,6 +60,7 @@ function getServicesRoot(appPath) {
 
 function verifyMacPackageBranding(appPath, { projectRoot = "", brandId = "" } = {}) {
   const resourcesRoot = getResourcesRoot(appPath);
+  verifyPackagedWebappTooling(resourcesRoot, { errorPrefix: "[verify-mac-services-signing]" });
   const plistPath = path.join(appPath, "Contents", "Info.plist");
   const plist = fs.readFileSync(plistPath, "utf8");
   const iconMatch = plist.match(/<key>CFBundleIconFile<\/key>\s*<string>([^<]+)<\/string>/u);

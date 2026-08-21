@@ -1,4 +1,4 @@
-import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
 import {
@@ -6,6 +6,7 @@ import {
   resolveSidebarMode,
 } from "./navigation/capabilityNavigation";
 import type { WebsiteFaviconCache } from "../components/Favicon";
+import { SidebarActionIcon } from "../components/BrandMark";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
@@ -18,7 +19,7 @@ import {
   clearCopilotDockSessionSnapshot,
   readCopilotDockSessionSnapshot,
   writeCopilotDockSessionSnapshot,
-  type CopilotDockSurfaceSession,
+  type CopilotDockContextSession,
   type CopilotDockSessionSnapshot
 } from "../copilot/sidebar-copilot/copilotDockSession";
 import { DebugModeContext } from "../debug/DebugModeContext";
@@ -46,6 +47,12 @@ import {
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../../shared/browser-surfaces";
+import {
+  createServiceSurfaceIdentity,
+  createSurfaceIdentity,
+  createWebEntrySurfaceIdentity,
+  resolveLegacyFixedSurfaceId
+} from "../../shared/surface-identity";
 import { STORAGE_NAMESPACE } from "../../shared/brand";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
@@ -56,6 +63,25 @@ import {
   toggleSidebarLayoutState,
   type SidebarLayoutState
 } from "../../shared/sidebar-layout";
+import {
+  WORK_PANEL_MIN_WIDTH,
+  WORK_PANEL_RESIZE_STEP,
+  clampWorkPanelWidth,
+  normalizeStoredWorkPanelWidth,
+  resolveDefaultWorkPanelWidth,
+  resolveWorkPanelMaxWidth,
+  resolveWorkPanelWidthFromDrag,
+} from "../../shared/work-panel-layout";
+import {
+  COPILOT_DOCK_MIN_WIDTH,
+  COPILOT_DOCK_RESIZE_STEP,
+  clampCopilotDockWidth,
+  normalizeStoredCopilotDockWidth,
+  resolveCopilotDockMaxWidth,
+  resolveCopilotDockWidthFromDrag,
+  resolveRenderedCopilotDockWidth,
+  shouldOverlayCopilotDock,
+} from "../../shared/copilot-dock-layout";
 import { getServiceDisplayName } from "../service-display";
 import {
   createWebNavOrderKey,
@@ -92,6 +118,7 @@ import {
   createAgentWebclientBusinessSearch,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
+  createAgentWebclientOverviewPath,
   createAgentWebclientProjectPath,
   createAgentWebclientRoute,
   findAgentWebclientRouteDefinition,
@@ -214,6 +241,8 @@ const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
 const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const WEB_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.web-group-order`;
+const WORK_PANEL_WIDTH_STORAGE_KEY = `${STORAGE_NAMESPACE}.work-panel-width`;
+const COPILOT_DOCK_WIDTH_STORAGE_KEY = `${STORAGE_NAMESPACE}.copilot-dock-width`;
 const SETTINGS_SIDEBAR_WIDTH = 200;
 const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
 const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "/service/agent-webclient";
@@ -222,6 +251,7 @@ const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclie
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
+const REPORTED_LEGACY_PUBLIC_SURFACE_IDS = new Set<string>();
 function RouteSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
 }
@@ -407,6 +437,18 @@ type SidebarResizeDragState = {
   startClientX: number;
 };
 
+type WorkPanelResizeDragState = {
+  initialWidth: number;
+  pointerId: number;
+  startClientX: number;
+};
+
+type CopilotDockResizeDragState = {
+  initialWidth: number;
+  pointerId: number;
+  startClientX: number;
+};
+
 type SidebarNavigationHistory = {
   back: string[];
   forward: string[];
@@ -495,9 +537,15 @@ export function AppShell() {
   const { services, loading: servicesLoading, error: servicesError, refresh: refreshServices } = useServices();
   const sidebarNavigationUnlockTimerRef = useRef<number | null>(null);
   const sidebarResizeStateRef = useRef<SidebarResizeDragState | null>(null);
+  const workPanelResizeStateRef = useRef<WorkPanelResizeDragState | null>(null);
+  const workPanelResizeCleanupRef = useRef<(() => void) | null>(null);
+  const copilotDockResizeStateRef = useRef<CopilotDockResizeDragState | null>(null);
+  const copilotDockResizeCleanupRef = useRef<(() => void) | null>(null);
+  const appShellRef = useRef<HTMLDivElement | null>(null);
+  const appContentRef = useRef<HTMLDivElement | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
-  const pendingAssistantDockOpenRequestRef = useRef<{ surfaceId: string; embedPath: string } | null>(null);
-  const assistantDockSessionsRef = useRef<Record<string, CopilotDockSurfaceSession>>({});
+  const pendingAssistantDockOpenRequestRef = useRef<{ contextKey: string; embedPath: string } | null>(null);
+  const assistantDockSessionsRef = useRef<Record<string, CopilotDockContextSession>>({});
   const pendingCopilotRestoreRef = useRef<CopilotDockSessionSnapshot | null>(null);
   const copilotRestoreInitializedRef = useRef(false);
   const copilotRestoreAttemptedRef = useRef(false);
@@ -514,6 +562,11 @@ export function AppShell() {
   const chatDefaultAgentMigrationRef = useRef("");
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
+  const [workPanelFullscreenOwnerChatId, setWorkPanelFullscreenOwnerChatId] =
+    useState<string | null>(null);
+  const workPanelFullscreenOwnerChatIdRef = useRef<string | null>(null);
+  const workPanelEnteredNativeFullscreenRef = useRef(false);
+  const workPanelFullscreenTransitionPendingRef = useRef(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
@@ -543,7 +596,7 @@ export function AppShell() {
   const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
-  const [assistantDockSessions, setAssistantDockSessions] = useState<Record<string, CopilotDockSurfaceSession>>({});
+  const [assistantDockSessions, setAssistantDockSessions] = useState<Record<string, CopilotDockContextSession>>({});
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [, setAssistantRunningRunId] = useState<string | null>(null);
   const [assistantSettings, setAssistantSettings] = useState<AssistantSettingsPublic | null>(null);
@@ -600,6 +653,37 @@ export function AppShell() {
     forward: []
   });
   const [isSidebarResizing, setIsSidebarResizing] = useState(false);
+  const [isWorkPanelResizing, setIsWorkPanelResizing] = useState(false);
+  const [isCopilotDockResizing, setIsCopilotDockResizing] = useState(false);
+  const [appShellWidth, setAppShellWidth] = useState(() =>
+    typeof window === "undefined" ? 1440 : window.innerWidth
+  );
+  const [appContentWidth, setAppContentWidth] = useState(() =>
+    typeof window === "undefined" ? 0 : window.innerWidth
+  );
+  const [preferredWorkPanelWidth, setPreferredWorkPanelWidth] = useState(() => {
+    const fallbackWidth = resolveDefaultWorkPanelWidth(
+      typeof window === "undefined" ? 1440 : window.innerWidth,
+    );
+    if (typeof window === "undefined") return fallbackWidth;
+    try {
+      const savedValue = window.localStorage.getItem(WORK_PANEL_WIDTH_STORAGE_KEY);
+      return normalizeStoredWorkPanelWidth(savedValue ? JSON.parse(savedValue) : null, fallbackWidth);
+    } catch {
+      return fallbackWidth;
+    }
+  });
+  const [preferredCopilotDockWidth, setPreferredCopilotDockWidth] = useState(() => {
+    if (typeof window === "undefined") {
+      return normalizeStoredCopilotDockWidth(null);
+    }
+    try {
+      const savedValue = window.localStorage.getItem(COPILOT_DOCK_WIDTH_STORAGE_KEY);
+      return normalizeStoredCopilotDockWidth(savedValue ? JSON.parse(savedValue) : null);
+    } catch {
+      return normalizeStoredCopilotDockWidth(null);
+    }
+  });
   const [startupTimedOut, setStartupTimedOut] = useState(false);
   const [startupCardDismissed, setStartupCardDismissed] = useState(false);
   const [startupRestoreState, setStartupRestoreState] = useState<StartupRestoreState | null>(null);
@@ -626,7 +710,13 @@ export function AppShell() {
     : null;
   const activeChatWorkPanelVisible = Boolean(
     activeChatWorkPanelChatId &&
-    workPanelState.workspaces.some((workspace) => workspace.ownerChatId === activeChatWorkPanelChatId)
+    workPanelState.visibleOwnerChatIds.includes(activeChatWorkPanelChatId)
+  );
+  const showMainChatWorkPanelToggle = activeEmbeddedAgentWebclientRoute?.kind === "chat";
+  const workPanelMaxWidth = resolveWorkPanelMaxWidth(appContentWidth || undefined);
+  const renderedWorkPanelWidth = clampWorkPanelWidth(
+    preferredWorkPanelWidth,
+    appContentWidth || undefined,
   );
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
@@ -703,6 +793,22 @@ export function AppShell() {
   );
   const activeSettingsSectionId = resolveSettingsSectionId(location.pathname, visibleSettingsSectionIds);
 
+  const clearWorkPanelFullscreen = useCallback(() => {
+    workPanelFullscreenOwnerChatIdRef.current = null;
+    workPanelEnteredNativeFullscreenRef.current = false;
+    setWorkPanelFullscreenOwnerChatId(null);
+  }, []);
+
+  useEffect(() => {
+    window.electronAPI.desktopShell.setWorkPanelFullscreenActive(
+      Boolean(workPanelFullscreenOwnerChatId)
+    );
+  }, [workPanelFullscreenOwnerChatId]);
+
+  useEffect(() => () => {
+    window.electronAPI.desktopShell.setWorkPanelFullscreenActive(false);
+  }, []);
+
   useEffect(() => {
     const desktopShell = window.electronAPI.desktopShell;
     if (!desktopShell.getWindowState || !desktopShell.onWindowStateChanged) {
@@ -713,12 +819,18 @@ export function AppShell() {
     void desktopShell.getWindowState().then((result) => {
       if (active && result.ok) {
         setWindowFullScreen(result.isFullScreen);
+        if (!result.isFullScreen && workPanelFullscreenOwnerChatIdRef.current) {
+          clearWorkPanelFullscreen();
+        }
       }
     }).catch(() => undefined);
 
     const unsubscribe = desktopShell.onWindowStateChanged((state) => {
       if (active) {
         setWindowFullScreen(state.isFullScreen);
+        if (!state.isFullScreen && workPanelFullscreenOwnerChatIdRef.current) {
+          clearWorkPanelFullscreen();
+        }
       }
     });
 
@@ -726,7 +838,71 @@ export function AppShell() {
       active = false;
       unsubscribe();
     };
-  }, []);
+  }, [clearWorkPanelFullscreen]);
+
+  const changeWorkPanelFullscreen = useCallback(async (ownerChatId: string | null) => {
+    const currentOwnerChatId = workPanelFullscreenOwnerChatIdRef.current;
+    if (ownerChatId) {
+      if (currentOwnerChatId === ownerChatId) return true;
+      if (currentOwnerChatId || workPanelFullscreenTransitionPendingRef.current) return false;
+
+      workPanelFullscreenTransitionPendingRef.current = true;
+      try {
+        const currentWindowState = await window.electronAPI.desktopShell.getWindowState();
+        if (!currentWindowState.ok) return false;
+        setWindowFullScreen(currentWindowState.isFullScreen);
+
+        let enteredNativeFullscreen = false;
+        if (!currentWindowState.isFullScreen) {
+          const transition = await window.electronAPI.desktopShell.setWindowFullScreen(true);
+          if (!transition.ok || !transition.isFullScreen) return false;
+          setWindowFullScreen(true);
+          enteredNativeFullscreen = true;
+        }
+
+        workPanelEnteredNativeFullscreenRef.current = enteredNativeFullscreen;
+        workPanelFullscreenOwnerChatIdRef.current = ownerChatId;
+        setWorkPanelFullscreenOwnerChatId(ownerChatId);
+        return true;
+      } catch {
+        return false;
+      } finally {
+        workPanelFullscreenTransitionPendingRef.current = false;
+      }
+    }
+
+    if (!currentOwnerChatId) return true;
+    if (workPanelFullscreenTransitionPendingRef.current) return false;
+    if (!workPanelEnteredNativeFullscreenRef.current) {
+      clearWorkPanelFullscreen();
+      return true;
+    }
+
+    workPanelFullscreenTransitionPendingRef.current = true;
+    try {
+      const transition = await window.electronAPI.desktopShell.setWindowFullScreen(false);
+      if (!transition.ok && transition.isFullScreen) return false;
+      setWindowFullScreen(false);
+      clearWorkPanelFullscreen();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      workPanelFullscreenTransitionPendingRef.current = false;
+    }
+  }, [clearWorkPanelFullscreen]);
+
+  const forceExitWorkPanelFullscreen = useCallback(() => {
+    if (!workPanelFullscreenOwnerChatIdRef.current) return;
+    const shouldExitNativeFullscreen = workPanelEnteredNativeFullscreenRef.current;
+    clearWorkPanelFullscreen();
+    if (!shouldExitNativeFullscreen) return;
+    void window.electronAPI.desktopShell.setWindowFullScreen(false)
+      .then((result) => {
+        setWindowFullScreen(result.isFullScreen);
+      })
+      .catch(() => undefined);
+  }, [clearWorkPanelFullscreen]);
 
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
     services.find((service) => service.id === serviceId) ?? null
@@ -801,16 +977,27 @@ export function AppShell() {
     location.pathname === ASSISTANT_TARGET_PATH ||
     isSingleAgentWebclientRoute(location.pathname) ||
     isCopilotAgentWebclientRoute(location.pathname);
-  const currentCopilotSurfaceId = activeWebEntryKey || (
+  const currentCopilotContextKey = activeWebEntryKey || (
     location.pathname === BUILTIN_BROWSER_ROUTE
       ? BUILTIN_BROWSER_SURFACE_ID
       : `desktop-route:${location.pathname}`
   );
-  const currentCopilotSession = assistantDockSessions[currentCopilotSurfaceId] ?? null;
+  const currentCopilotParentSurfaceId = activeWebEntry && activeWebEntryKey
+    ? createWebEntrySurfaceIdentity(activeWebEntry.kind, activeWebEntryKey).surfaceId
+    : location.pathname === BUILTIN_BROWSER_ROUTE
+      ? BUILTIN_BROWSER_SURFACE_ID
+      : activeServiceId
+        ? activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeEmbeddedAgentWebclientRoute?.kind === "chat"
+          ? createSurfaceIdentity("main-chat").surfaceId
+          : activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeEmbeddedAgentWebclientRoute?.kind === "copilot"
+            ? createSurfaceIdentity("copilot-chat").surfaceId
+            : createServiceSurfaceIdentity(activeServiceId).surfaceId
+        : undefined;
+  const currentCopilotSession = assistantDockSessions[currentCopilotContextKey] ?? null;
   const assistantDockOpen = Boolean(currentCopilotSession);
   const assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute;
   const currentAssistantDockOpenRequest =
-    pendingAssistantDockOpenRequestRef.current?.surfaceId === currentCopilotSurfaceId
+    pendingAssistantDockOpenRequestRef.current?.contextKey === currentCopilotContextKey
       ? assistantDockOpenRequest
       : null;
   const sidebarCollapsed = sidebarState.mode === "collapsed";
@@ -819,6 +1006,14 @@ export function AppShell() {
   const effectiveSidebarWidth = isSecondarySidebarMode
     ? SETTINGS_SIDEBAR_WIDTH
     : renderedSidebarWidth;
+  const copilotDockAvailableWidth = Math.max(0, appShellWidth - effectiveSidebarWidth);
+  const copilotDockOverlayMode = shouldOverlayCopilotDock(copilotDockAvailableWidth);
+  const copilotDockMaxWidth = resolveCopilotDockMaxWidth(copilotDockAvailableWidth);
+  const renderedCopilotDockWidth = resolveRenderedCopilotDockWidth(
+    preferredCopilotDockWidth,
+    copilotDockAvailableWidth,
+  );
+  const copilotDockNativeDialogVisible = nativeDialogVisible || Boolean(desktopActionConfirmation);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return createDefaultSidebarNavOrderItems({
       kanbanEnabled,
@@ -1509,9 +1704,9 @@ export function AppShell() {
     }
     const embedPath = createAgentWebclientCopilotPath(requestedAgentKey, params);
     pendingAssistantDockOpenRequestRef.current = request
-      ? { surfaceId: currentCopilotSurfaceId, embedPath }
+      ? { contextKey: currentCopilotContextKey, embedPath }
       : null;
-    updateCopilotDockSurfaceSession(currentCopilotSurfaceId, {
+    updateCopilotDockContextSession(currentCopilotContextKey, {
       embedPath,
       agentKey: requestedAgentKey,
       ...(requestedChatId ? { chatId: requestedChatId } : {})
@@ -1521,21 +1716,21 @@ export function AppShell() {
   function closeAssistantDock() {
     setAssistantDockOpenRequest(null);
     pendingAssistantDockOpenRequestRef.current = null;
-    updateCopilotDockSurfaceSession(currentCopilotSurfaceId, null);
+    updateCopilotDockContextSession(currentCopilotContextKey, null);
   }
 
   function handleCopilotCurrentEmbedPathChange(embedPath: string, agentKey: string, chatId?: string) {
     if (!assistantDockOpen) {
       return;
     }
-    updateCopilotDockSurfaceSession(currentCopilotSurfaceId, {
+    updateCopilotDockContextSession(currentCopilotContextKey, {
       embedPath,
       agentKey,
       ...(chatId ? { chatId } : {})
     });
     const pendingRequest = pendingAssistantDockOpenRequestRef.current;
     if (
-      pendingRequest?.surfaceId === currentCopilotSurfaceId &&
+      pendingRequest?.contextKey === currentCopilotContextKey &&
       pendingRequest.embedPath === embedPath
     ) {
       pendingAssistantDockOpenRequestRef.current = null;
@@ -1543,15 +1738,15 @@ export function AppShell() {
     }
   }
 
-  function updateCopilotDockSurfaceSession(
-    surfaceId: string,
-    session: CopilotDockSurfaceSession | null
+  function updateCopilotDockContextSession(
+    contextKey: string,
+    session: CopilotDockContextSession | null
   ) {
     const nextSessions = { ...assistantDockSessionsRef.current };
     if (session) {
-      nextSessions[surfaceId] = session;
+      nextSessions[contextKey] = session;
     } else {
-      delete nextSessions[surfaceId];
+      delete nextSessions[contextKey];
     }
     assistantDockSessionsRef.current = nextSessions;
     setAssistantDockSessions(nextSessions);
@@ -1559,7 +1754,7 @@ export function AppShell() {
       clearCopilotDockSessionSnapshot();
       return;
     }
-    writeCopilotDockSessionSnapshot({ surfaces: nextSessions });
+    writeCopilotDockSessionSnapshot({ contexts: nextSessions });
   }
 
   async function handleEnvImport() {
@@ -1736,19 +1931,19 @@ export function AppShell() {
     }
     pendingAssistantDockOpenRequestRef.current = null;
     setAssistantDockOpenRequest(null);
-    assistantDockSessionsRef.current = snapshot.surfaces;
-    setAssistantDockSessions(snapshot.surfaces);
+    assistantDockSessionsRef.current = snapshot.contexts;
+    setAssistantDockSessions(snapshot.contexts);
   }, [assistantSettings]);
 
   useEffect(() => {
     if (
       pendingAssistantDockOpenRequestRef.current &&
-      pendingAssistantDockOpenRequestRef.current.surfaceId !== currentCopilotSurfaceId
+      pendingAssistantDockOpenRequestRef.current.contextKey !== currentCopilotContextKey
     ) {
       pendingAssistantDockOpenRequestRef.current = null;
       setAssistantDockOpenRequest(null);
     }
-  }, [currentCopilotSurfaceId]);
+  }, [currentCopilotContextKey]);
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
@@ -2125,11 +2320,57 @@ export function AppShell() {
     }
   }, [sidebarState]);
 
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        WORK_PANEL_WIDTH_STORAGE_KEY,
+        JSON.stringify(preferredWorkPanelWidth),
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory WorkPanel width usable.
+    }
+  }, [preferredWorkPanelWidth]);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        COPILOT_DOCK_WIDTH_STORAGE_KEY,
+        JSON.stringify(preferredCopilotDockWidth),
+      );
+    } catch {
+      // Ignore persistence failures and keep the in-memory Copilot Dock width usable.
+    }
+  }, [preferredCopilotDockWidth]);
+
+  useEffect(() => {
+    const shell = appShellRef.current;
+    if (!shell || typeof ResizeObserver === "undefined") return;
+    const updateWidth = () => setAppShellWidth(Math.round(shell.getBoundingClientRect().width));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(shell);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
+    const content = appContentRef.current;
+    if (!content || typeof ResizeObserver === "undefined") return;
+    const updateWidth = () => setAppContentWidth(Math.round(content.getBoundingClientRect().width));
+    updateWidth();
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
+
   useEffect(() => () => {
     if (sidebarNavigationUnlockTimerRef.current !== null) {
       window.clearTimeout(sidebarNavigationUnlockTimerRef.current);
     }
     sidebarResizeStateRef.current = null;
+    workPanelResizeCleanupRef.current?.();
+    workPanelResizeStateRef.current = null;
+    copilotDockResizeCleanupRef.current?.();
+    copilotDockResizeStateRef.current = null;
   }, []);
 
   useEffect(() => {
@@ -2173,6 +2414,36 @@ export function AppShell() {
       window.removeEventListener("blur", finishSidebarResize);
     };
   }, [isSidebarResizing]);
+
+  useEffect(() => {
+    if (activeChatWorkPanelVisible) return;
+    workPanelResizeCleanupRef.current?.();
+  }, [activeChatWorkPanelVisible]);
+
+  useEffect(() => {
+    const ownerChatId = workPanelFullscreenOwnerChatId;
+    if (!ownerChatId) return;
+    const workspaceStillVisible =
+      activeChatWorkPanelChatId === ownerChatId &&
+      workPanelState.visibleOwnerChatIds.includes(ownerChatId) &&
+      workPanelState.workspaces.some((workspace) => workspace.ownerChatId === ownerChatId);
+    if (!workspaceStillVisible) {
+      forceExitWorkPanelFullscreen();
+    }
+  }, [
+    activeChatWorkPanelChatId,
+    forceExitWorkPanelFullscreen,
+    workPanelFullscreenOwnerChatId,
+    workPanelState.visibleOwnerChatIds,
+    workPanelState.workspaces,
+  ]);
+
+  useEffect(() => {
+    if (assistantCopilotOpen && !copilotDockOverlayMode && !copilotDockNativeDialogVisible) {
+      return;
+    }
+    copilotDockResizeCleanupRef.current?.();
+  }, [assistantCopilotOpen, copilotDockNativeDialogVisible, copilotDockOverlayMode]);
 
   useEffect(() => {
     if (!pendingSidebarNavigationPath) {
@@ -2300,7 +2571,13 @@ export function AppShell() {
   }
 
   function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
-    if (event.button !== 0 || isSidebarResizing || isSecondarySidebarMode) {
+    if (
+      event.button !== 0 ||
+      isSidebarResizing ||
+      isWorkPanelResizing ||
+      isCopilotDockResizing ||
+      isSecondarySidebarMode
+    ) {
       return;
     }
 
@@ -2310,6 +2587,181 @@ export function AppShell() {
       startClientX: event.clientX
     };
     setIsSidebarResizing(true);
+  }
+
+  function handleWorkPanelResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (event.button !== 0 || isSidebarResizing || isWorkPanelResizing || isCopilotDockResizing) return;
+    event.preventDefault();
+    workPanelResizeCleanupRef.current?.();
+    const resizer = event.currentTarget;
+    const dragState = {
+      initialWidth: renderedWorkPanelWidth,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+    };
+    workPanelResizeStateRef.current = dragState;
+    try {
+      resizer.setPointerCapture(event.pointerId);
+    } catch {
+      // The overlay still keeps subsequent pointer events inside the renderer.
+    }
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== dragState.pointerId) return;
+      if (pointerEvent.cancelable) pointerEvent.preventDefault();
+      setPreferredWorkPanelWidth(resolveWorkPanelWidthFromDrag({
+        initialWidth: dragState.initialWidth,
+        startClientX: dragState.startClientX,
+        currentClientX: pointerEvent.clientX,
+        availableWidth: appContentWidth || undefined,
+      }));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("blur", cleanup);
+      if (workPanelResizeCleanupRef.current === cleanup) {
+        workPanelResizeCleanupRef.current = null;
+      }
+      if (workPanelResizeStateRef.current?.pointerId === dragState.pointerId) {
+        workPanelResizeStateRef.current = null;
+      }
+      setIsWorkPanelResizing(false);
+      try {
+        if (resizer.hasPointerCapture(dragState.pointerId)) {
+          resizer.releasePointerCapture(dragState.pointerId);
+        }
+      } catch {
+        // Pointer capture can already be gone after crossing an embedded surface.
+      }
+    };
+    const handlePointerEnd = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === dragState.pointerId) cleanup();
+    };
+    workPanelResizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("blur", cleanup);
+    setIsWorkPanelResizing(true);
+  }
+
+  function handleWorkPanelResizerKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    let nextWidth: number | null = null;
+    switch (event.key) {
+      case "ArrowLeft":
+        nextWidth = renderedWorkPanelWidth + WORK_PANEL_RESIZE_STEP;
+        break;
+      case "ArrowRight":
+        nextWidth = renderedWorkPanelWidth - WORK_PANEL_RESIZE_STEP;
+        break;
+      case "Home":
+        nextWidth = WORK_PANEL_MIN_WIDTH;
+        break;
+      case "End":
+        nextWidth = workPanelMaxWidth;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setPreferredWorkPanelWidth(clampWorkPanelWidth(nextWidth, appContentWidth || undefined));
+  }
+
+  function handleCopilotDockResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
+    if (
+      event.button !== 0 ||
+      isSidebarResizing ||
+      isWorkPanelResizing ||
+      isCopilotDockResizing ||
+      copilotDockOverlayMode ||
+      copilotDockNativeDialogVisible
+    ) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    copilotDockResizeCleanupRef.current?.();
+    const resizer = event.currentTarget;
+    const dragState = {
+      initialWidth: renderedCopilotDockWidth,
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+    };
+    copilotDockResizeStateRef.current = dragState;
+    try {
+      resizer.setPointerCapture(event.pointerId);
+    } catch {
+      // The overlay still keeps subsequent pointer events inside the renderer.
+    }
+
+    const handlePointerMove = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId !== dragState.pointerId) return;
+      if (pointerEvent.cancelable) pointerEvent.preventDefault();
+      setPreferredCopilotDockWidth(resolveCopilotDockWidthFromDrag({
+        initialWidth: dragState.initialWidth,
+        startClientX: dragState.startClientX,
+        currentClientX: pointerEvent.clientX,
+        availableWidth: copilotDockAvailableWidth,
+      }));
+    };
+    const cleanup = () => {
+      window.removeEventListener("pointermove", handlePointerMove, true);
+      window.removeEventListener("pointerup", handlePointerEnd, true);
+      window.removeEventListener("pointercancel", handlePointerEnd, true);
+      window.removeEventListener("blur", cleanup);
+      if (copilotDockResizeCleanupRef.current === cleanup) {
+        copilotDockResizeCleanupRef.current = null;
+      }
+      if (copilotDockResizeStateRef.current?.pointerId === dragState.pointerId) {
+        copilotDockResizeStateRef.current = null;
+      }
+      setIsCopilotDockResizing(false);
+      try {
+        if (resizer.hasPointerCapture(dragState.pointerId)) {
+          resizer.releasePointerCapture(dragState.pointerId);
+        }
+      } catch {
+        // Pointer capture can already be gone after crossing an embedded surface.
+      }
+    };
+    const handlePointerEnd = (pointerEvent: PointerEvent) => {
+      if (pointerEvent.pointerId === dragState.pointerId) cleanup();
+    };
+    copilotDockResizeCleanupRef.current = cleanup;
+    window.addEventListener("pointermove", handlePointerMove, true);
+    window.addEventListener("pointerup", handlePointerEnd, true);
+    window.addEventListener("pointercancel", handlePointerEnd, true);
+    window.addEventListener("blur", cleanup);
+    setIsCopilotDockResizing(true);
+  }
+
+  function handleCopilotDockResizerKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
+    let nextWidth: number | null = null;
+    switch (event.key) {
+      case "ArrowLeft":
+        nextWidth = renderedCopilotDockWidth + COPILOT_DOCK_RESIZE_STEP;
+        break;
+      case "ArrowRight":
+        nextWidth = renderedCopilotDockWidth - COPILOT_DOCK_RESIZE_STEP;
+        break;
+      case "Home":
+        nextWidth = COPILOT_DOCK_MIN_WIDTH;
+        break;
+      case "End":
+        nextWidth = copilotDockMaxWidth;
+        break;
+      default:
+        return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    setPreferredCopilotDockWidth(clampCopilotDockWidth(
+      nextWidth,
+      copilotDockAvailableWidth,
+    ));
   }
 
   function requestSidebarNavigation(targetPath: string) {
@@ -2527,7 +2979,8 @@ export function AppShell() {
       const serviceSurfaces = services
         .filter((service) => service.status === "running" && service.frontendMode !== "none" && service.healthMeta.webUrl)
         .map((service) => ({
-          id: service.id,
+          ...createServiceSurfaceIdentity(service.id),
+          id: createServiceSurfaceIdentity(service.id).surfaceId,
           kind: "service" as const,
           label: getServiceDisplayName(service.id, service.name, t),
           url: service.healthMeta.webUrl,
@@ -2539,6 +2992,7 @@ export function AppShell() {
 
       return [
         {
+          ...createSurfaceIdentity("browser"),
           id: BUILTIN_BROWSER_SURFACE_ID,
           kind: "browser" as const,
           label: BUILTIN_BROWSER_SURFACE_LABEL,
@@ -2547,7 +3001,8 @@ export function AppShell() {
           active: location.pathname === BUILTIN_BROWSER_ROUTE
         },
         ...[...webItemMap.entries()].map(([entryKey, item]) => ({
-          id: entryKey,
+          ...createWebEntrySurfaceIdentity(item.kind, entryKey),
+          id: createWebEntrySurfaceIdentity(item.kind, entryKey).surfaceId,
           kind: item.kind,
           label: item.label,
           url: item.url,
@@ -2556,6 +3011,32 @@ export function AppShell() {
         })),
         ...serviceSurfaces
       ];
+    }
+
+    function resolvePublicSurfaceIdAlias(surfaceId: string) {
+      const fixed = resolveLegacyFixedSurfaceId(surfaceId);
+      if (fixed !== surfaceId) {
+        reportLegacyPublicSurfaceId(surfaceId, fixed);
+        return fixed;
+      }
+      const webItem = webItemMap.get(surfaceId as WebEntryKey);
+      if (webItem) {
+        const canonical = createWebEntrySurfaceIdentity(webItem.kind, surfaceId).surfaceId;
+        reportLegacyPublicSurfaceId(surfaceId, canonical);
+        return canonical;
+      }
+      if (services.some((service) => service.id === surfaceId)) {
+        const canonical = createServiceSurfaceIdentity(surfaceId).surfaceId;
+        reportLegacyPublicSurfaceId(surfaceId, canonical);
+        return canonical;
+      }
+      return surfaceId;
+    }
+
+    function reportLegacyPublicSurfaceId(legacy: string, canonical: string) {
+      if (!legacy || legacy === canonical || REPORTED_LEGACY_PUBLIC_SURFACE_IDS.has(legacy)) return;
+      REPORTED_LEGACY_PUBLIC_SURFACE_IDS.add(legacy);
+      console.warn(`[surface-identity] deprecated surfaceId "${legacy}" accepted; use "${canonical}"`);
     }
 
     function surfaceMatchesTarget(
@@ -2591,7 +3072,8 @@ export function AppShell() {
         case "desktop.web.listSurfaces":
           return { ok: true, result: { surfaces: createSurfaceList() } };
         case "desktop.web.getSurfaceState": {
-          const surfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+          const requestedSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
+          const surfaceId = resolvePublicSurfaceIdAlias(requestedSurfaceId);
           if (!surfaceId) {
             return {
               ok: false,
@@ -2845,15 +3327,21 @@ export function AppShell() {
 
     const pointerId = event.pointerId;
     let ended = false;
+    let pointerCaptureRestoreFrame: number | null = null;
     const finishDrag = () => {
       if (ended) {
         return;
       }
       ended = true;
+      if (pointerCaptureRestoreFrame !== null) {
+        window.cancelAnimationFrame(pointerCaptureRestoreFrame);
+        pointerCaptureRestoreFrame = null;
+      }
       window.removeEventListener("pointerup", finishDrag, true);
       window.removeEventListener("pointercancel", finishDrag, true);
+      window.removeEventListener("mouseup", finishDragOnMouseUp, true);
       window.removeEventListener("blur", finishDrag, true);
-      dragTarget.removeEventListener("lostpointercapture", finishDrag, true);
+      dragTarget.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
       try {
         if (dragTarget.hasPointerCapture(pointerId)) {
           dragTarget.releasePointerCapture(pointerId);
@@ -2864,12 +3352,41 @@ export function AppShell() {
       windowDragEndRef.current = null;
       void desktopShell.endWindowDrag().catch(() => undefined);
     };
+    const finishDragOnMouseUp = (mouseEvent: globalThis.MouseEvent) => {
+      if (mouseEvent.button === 0) {
+        finishDrag();
+      }
+    };
+    const finishDragOnLostPointerCapture: EventListener = (captureEvent) => {
+      const pointerEvent = captureEvent as globalThis.PointerEvent;
+      // Window activation can drop capture while the first press is still held.
+      // Restore it after focus settles so the eventual release still reaches this window.
+      if (pointerEvent.buttons !== 0) {
+        if (pointerCaptureRestoreFrame !== null) {
+          window.cancelAnimationFrame(pointerCaptureRestoreFrame);
+        }
+        pointerCaptureRestoreFrame = window.requestAnimationFrame(() => {
+          pointerCaptureRestoreFrame = null;
+          if (ended) {
+            return;
+          }
+          try {
+            dragTarget.setPointerCapture(pointerId);
+          } catch {
+            // Window-level pointer/mouse release listeners and the main timeout remain as fallbacks.
+          }
+        });
+        return;
+      }
+      finishDrag();
+    };
 
     windowDragEndRef.current = finishDrag;
     window.addEventListener("pointerup", finishDrag, true);
     window.addEventListener("pointercancel", finishDrag, true);
+    window.addEventListener("mouseup", finishDragOnMouseUp, true);
     window.addEventListener("blur", finishDrag, true);
-    dragTarget.addEventListener("lostpointercapture", finishDrag, true);
+    dragTarget.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
     try {
       dragTarget.setPointerCapture(pointerId);
     } catch {
@@ -2888,33 +3405,136 @@ export function AppShell() {
   }, []);
 
   const appShellStyle = {
-    "--app-sidebar-width": `${effectiveSidebarWidth}px`
+    "--app-sidebar-width": `${effectiveSidebarWidth}px`,
+    "--chat-work-panel-width": `${renderedWorkPanelWidth}px`,
+    "--assistant-dock-embedded-width": `${renderedCopilotDockWidth}px`,
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
 
   const dispatchWorkPanelCommand = useCallback((command: WorkPanelCommand) => {
-    const result = reduceWorkPanelCommand(workPanelStateRef.current, command);
+    let currentState = workPanelStateRef.current;
+    const isOverviewCommand = command.type === "openItem" &&
+      command.descriptor.kind === "webclient" &&
+      command.descriptor.module === "overview";
+    const shouldEnsureOverview = command.type === "showWorkspace" ||
+      (command.type === "openItem" && !isOverviewCommand);
+    const currentWorkspace = currentState.workspaces.find(
+      (workspace) => workspace.ownerChatId === command.ownerChatId,
+    );
+    const hasOverview = currentWorkspace?.items.some((item) =>
+      item.descriptor.kind === "webclient" && item.descriptor.module === "overview",
+    ) ?? false;
+
+    if (shouldEnsureOverview && !hasOverview) {
+      const descriptorAgentKey = command.type === "openItem" &&
+        command.descriptor.kind === "webclient" &&
+        "agentKey" in command.descriptor.context
+        ? command.descriptor.context.agentKey.trim()
+        : "";
+      const routeAgentKey = activeChatRouteInfo.chatId === command.ownerChatId
+        ? activeChatRouteInfo.agentKey.trim()
+        : "";
+      const previousActiveItemId = currentWorkspace?.activeItemId ?? null;
+      const overviewAgentKey = descriptorAgentKey || routeAgentKey;
+      const ensured = reduceWorkPanelCommand(currentState, {
+        type: "openItem",
+        ownerChatId: command.ownerChatId,
+        descriptor: {
+          kind: "webclient",
+          module: "overview",
+          route: createAgentWebclientOverviewPath({
+            chatId: command.ownerChatId,
+          }),
+          context: {
+            chatId: command.ownerChatId,
+            agentKey: overviewAgentKey,
+          },
+          title: t("chatWorkPanel.overview"),
+          pinned: true,
+          closable: false,
+        },
+      });
+      if (!ensured.ok) return ensured;
+      currentState = ensured.nextState;
+      if (command.type === "showWorkspace" && previousActiveItemId) {
+        currentState = reduceWorkPanelCommand(currentState, {
+          type: "activateItem",
+          ownerChatId: command.ownerChatId,
+          itemId: previousActiveItemId,
+        }).nextState;
+      }
+    }
+
+    const normalizedCommand = isOverviewCommand
+      ? {
+          ...command,
+          descriptor: { ...command.descriptor, pinned: true as const, closable: false as const },
+        }
+      : command;
+    const result = reduceWorkPanelCommand(currentState, normalizedCommand);
     if (result.nextState !== workPanelStateRef.current) {
       workPanelStateRef.current = result.nextState;
       setWorkPanelState(result.nextState);
     }
     return result;
-  }, []);
+  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, t]);
 
-  const ensureChatWorkPanelWorkspace = useCallback((chatId: string) => {
+  const ensureChatWorkPanelWorkspace = useCallback((chatId: string, agentKey: string) => {
+    const normalizedAgentKey = agentKey.trim();
     return dispatchWorkPanelCommand({
       type: "openItem",
       ownerChatId: chatId,
-      descriptor: { kind: "web", url: BUILTIN_BROWSER_DEFAULT_URL, title: t("chatWorkPanel.blankTab") },
+      descriptor: {
+        kind: "webclient",
+        module: "overview",
+        route: createAgentWebclientOverviewPath({ chatId }),
+        context: { chatId, agentKey: normalizedAgentKey },
+        title: t("chatWorkPanel.overview"),
+        pinned: true,
+        closable: false,
+      },
     });
   }, [dispatchWorkPanelCommand, t]);
 
-  const closeChatWorkPanelWorkspace = useCallback((chatId: string) => {
-    dispatchWorkPanelCommand({ type: "closeWorkspace", ownerChatId: chatId });
+  const closeChatWorkPanelWorkspace = useCallback((chatId: string, force = false) => {
+    dispatchWorkPanelCommand({
+      type: "closeWorkspace",
+      ownerChatId: chatId,
+      force,
+    });
   }, [dispatchWorkPanelCommand]);
 
+  const toggleMainChatWorkPanel = useCallback(() => {
+    const chatId = activeChatWorkPanelChatId;
+    if (!chatId) return;
+    const currentState = workPanelStateRef.current;
+    if (currentState.visibleOwnerChatIds.includes(chatId)) {
+      dispatchWorkPanelCommand({ type: "hideWorkspace", ownerChatId: chatId });
+      return;
+    }
+    if (currentState.workspaces.some((workspace) => workspace.ownerChatId === chatId)) {
+      dispatchWorkPanelCommand({ type: "showWorkspace", ownerChatId: chatId });
+      return;
+    }
+    const agentKey = activeChatRouteInfo.agentKey.trim();
+    if (!agentKey) return;
+    dispatchWorkPanelCommand({
+      type: "openItem",
+      ownerChatId: chatId,
+      descriptor: {
+        kind: "webclient",
+        module: "overview",
+        route: createAgentWebclientOverviewPath({ chatId }),
+        context: { chatId, agentKey },
+        title: t("chatWorkPanel.overview"),
+        pinned: true,
+        closable: false,
+      },
+    });
+  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelChatId, dispatchWorkPanelCommand, t]);
+
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
-    ensureChatWorkPanelWorkspace(chatId);
+    ensureChatWorkPanelWorkspace(chatId, agentKey);
     if (activeChatWorkPanelChatId !== chatId) {
       requestSidebarNavigation(createAgentChatRoute(agentKey, chatId));
     }
@@ -2975,9 +3595,31 @@ export function AppShell() {
     );
   }, []);
 
+  const mainChatWorkPanelToggle = showMainChatWorkPanelToggle ? (
+    <button
+      type="button"
+      className={`main-chat-work-panel-toggle${activeChatWorkPanelVisible ? " is-active" : ""}`}
+      aria-label={t(activeChatWorkPanelVisible
+        ? "sidebar.chat.workPanel.close"
+        : "sidebar.chat.workPanel.open")}
+      aria-pressed={activeChatWorkPanelVisible}
+      disabled={!activeChatWorkPanelChatId}
+      title={t(activeChatWorkPanelVisible
+        ? "sidebar.chat.workPanel.close"
+        : "sidebar.chat.workPanel.open")}
+      onClick={toggleMainChatWorkPanel}
+    >
+      <SidebarActionIcon
+        kind="sidebar_left"
+        className="main-chat-work-panel-toggle-icon"
+      />
+    </button>
+  ) : null;
+
   return (
     <DebugModeContext.Provider value={debugSettingsUnlocked}>
       <div
+        ref={appShellRef}
         style={appShellStyle}
         onPointerDownCapture={handleWindowDragPointerDownCapture}
         className={[
@@ -2992,12 +3634,17 @@ export function AppShell() {
         showsEmptyContentSurface ? "has-empty-content-surface" : "",
         assistantCopilotOpen ? "has-assistant-dock" : "",
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
+        assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
+        workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
+        showMainChatWorkPanelToggle ? "has-main-chat-work-panel-toggle" : "",
         isMac ? "is-mac-platform" : "",
         isWindows ? "is-windows-platform" : "",
         windowFullScreen ? "is-window-fullscreen" : "",
         effectiveSidebarCollapsed ? "is-sidebar-collapsed" : "",
         isSidebarResizing ? "is-sidebar-resizing" : "",
+        isWorkPanelResizing ? "is-work-panel-resizing" : "",
+        isCopilotDockResizing ? "is-copilot-dock-resizing" : "",
         isSecondarySidebarMode ? "is-secondary-sidebar-mode" : "",
         sidebarMode === "capabilities" ? "is-capabilities-mode" : "",
         isSettingsRoute ? "is-settings-mode" : "",
@@ -3007,6 +3654,9 @@ export function AppShell() {
     >
       <div className="app-window-drag-layer" aria-hidden="true">
         <div className="app-window-drag-region" />
+      </div>
+      <div className="app-window-controls-layer">
+        {mainChatWorkPanelToggle}
       </div>
       <div className="app-sidebar-shell">
         <AppSidebar
@@ -3095,7 +3745,7 @@ export function AppShell() {
       >
         <span className="app-sidebar-resizer-line" aria-hidden="true" />
       </div>
-      <div className="app-content">
+      <div ref={appContentRef} className="app-content">
         <main className="app-main">
           <ServiceWebviewSurfaceHost
             activeServiceId={activeServiceId}
@@ -3229,16 +3879,42 @@ export function AppShell() {
             <Route path="/help" element={<RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>} />
           </Routes>
         </main>
+        {activeChatWorkPanelVisible ? (
+          <div
+            className={`chat-work-panel-resizer${isWorkPanelResizing ? " is-active" : ""}`}
+            role="separator"
+            aria-label={t("chatWorkPanel.resize")}
+            aria-orientation="vertical"
+            aria-valuemin={WORK_PANEL_MIN_WIDTH}
+            aria-valuemax={workPanelMaxWidth}
+            aria-valuenow={renderedWorkPanelWidth}
+            tabIndex={0}
+            onKeyDown={handleWorkPanelResizerKeyDown}
+            onPointerDown={handleWorkPanelResizerPointerDown}
+          >
+            <span className="chat-work-panel-resizer-line" aria-hidden="true" />
+          </div>
+        ) : null}
         <WorkPanelHost
-          activeChatId={activeChatWorkPanelChatId}
+          activeChatId={activeChatWorkPanelVisible ? activeChatWorkPanelChatId : null}
           state={workPanelState}
           dispatchCommand={dispatchWorkPanelCommand}
+          fullscreenOwnerChatId={workPanelFullscreenOwnerChatId}
+          onFullscreenChange={changeWorkPanelFullscreen}
+          hasPanelToggle={activeChatWorkPanelVisible && showMainChatWorkPanelToggle}
           isMac={isMac}
           isWindows={isWindows}
         />
       </div>
-      {isSidebarResizing ? (
-        <div className="app-sidebar-resize-overlay" aria-hidden="true" />
+      {isSidebarResizing || isWorkPanelResizing || isCopilotDockResizing ? (
+        <div
+          className={isCopilotDockResizing
+            ? "copilot-dock-resize-overlay"
+            : isWorkPanelResizing
+              ? "chat-work-panel-resize-overlay"
+              : "app-sidebar-resize-overlay"}
+          aria-hidden="true"
+        />
       ) : null}
       <AgentWebclientCopilotDock
         open={assistantCopilotOpen}
@@ -3246,7 +3922,17 @@ export function AppShell() {
         nativeDialogVisible={nativeDialogVisible || Boolean(desktopActionConfirmation)}
         openRequest={currentAssistantDockOpenRequest}
         restoredEmbedPath={currentCopilotSession?.embedPath ?? ""}
+        parentSurfaceId={currentCopilotParentSurfaceId}
         resolvedAgentKey={resolvedCopilotAgentKey}
+        resize={assistantCopilotOpen && !copilotDockOverlayMode ? {
+          active: isCopilotDockResizing,
+          minWidth: COPILOT_DOCK_MIN_WIDTH,
+          maxWidth: copilotDockMaxWidth,
+          width: renderedCopilotDockWidth,
+          onKeyDown: handleCopilotDockResizerKeyDown,
+          onPointerDown: handleCopilotDockResizerPointerDown,
+        } : undefined}
+        onClose={closeAssistantDock}
         onRunningRunIdChange={setAssistantRunningRunId}
         onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
         onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}

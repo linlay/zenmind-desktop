@@ -6,6 +6,7 @@ import {
   type EmbeddedCdpSurfaceTab
 } from "./embedded-cdp-gateway";
 import type { BrowserSurfaceRegistry } from "./browser-surface-registry";
+import { createServiceSurfaceIdentity } from "../shared/surface-identity";
 
 type ServiceLister = () => Promise<ServiceState[]> | ServiceState[];
 
@@ -34,10 +35,11 @@ export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): Emb
     return null;
   }
   const currentPageSnapshot = input.currentPageSnapshot;
+  const surfaceIdentity = createServiceSurfaceIdentity(input.service.id);
   const snapshotBrowserTarget = currentPageSnapshot?.pageContext?.browserTarget;
   const snapshotMatchesService = currentPageSnapshot?.pageKind === "webview" && (
-    currentPageSnapshot.surfaceId === input.service.id ||
-    snapshotBrowserTarget?.surfaceId === input.service.id ||
+    currentPageSnapshot.surfaceId === surfaceIdentity.surfaceId ||
+    snapshotBrowserTarget?.surfaceId === surfaceIdentity.surfaceId ||
     (typeof input.contents?.id === "number" && currentPageSnapshot.webContentsId === input.contents.id)
   );
   const surfaceRoute = snapshotMatchesService
@@ -47,11 +49,12 @@ export function createEmbeddedCdpServiceSurface(input: ServiceSurfaceInput): Emb
     ? snapshotBrowserTarget.currentUrl
     : "";
   const documentTitle = snapshotMatchesService ? currentPageSnapshot?.pageContext?.title : "";
-  const tabId = `service-tab:${input.service.id}`;
+  const tabId = `service-tab:${surfaceIdentity.surfaceId}`;
   const currentUrl = snapshotCurrentUrl || input.contents?.getURL() || webUrl;
   const title = documentTitle || input.service.name || input.service.id;
   return {
-    id: input.service.id,
+    ...surfaceIdentity,
+    id: surfaceIdentity.surfaceId,
     label: input.service.name || input.service.id,
     url: webUrl,
     kind: "webview",
@@ -79,15 +82,25 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
   let embeddedCdpGateway: EmbeddedCdpGateway | null = null;
 
   async function listSurfaces(): Promise<EmbeddedCdpSurface[]> {
-    const webviewSurfaces = options.browserSurfaces.listBrowserSurfaces().map((surface) => ({
+    const registeredSurfaces = options.browserSurfaces.listRegisteredSurfaces().map((surface) => ({
       ...surface,
       kind: "webview" as const,
       copilotAgentKey: surface.copilotAgentKey || ""
     }));
-    const chatWorkPanelSurfaces = options.browserSurfaces.listChatWorkPanelSurfaces().map((surface) => ({
+    const registeredSurfaceIds = new Set(registeredSurfaces.map((surface) => surface.surfaceId));
+    const webviewSurfaces = options.browserSurfaces.listBrowserSurfaces()
+      .filter((surface) => !registeredSurfaceIds.has(surface.surfaceId))
+      .map((surface) => ({
+        ...surface,
+        kind: "webview" as const,
+        copilotAgentKey: surface.copilotAgentKey || ""
+      }));
+    const chatWorkPanelSurfaces = options.browserSurfaces.listChatWorkPanelSurfaces()
+      .filter((surface) => !registeredSurfaceIds.has(surface.surfaceId))
+      .map((surface) => ({
       ...surface,
       kind: "webview" as const
-    }));
+      }));
 
     let serviceSurfaces: EmbeddedCdpSurface[] = [];
     try {
@@ -98,12 +111,19 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
         "";
       const surfaces = await Promise.all(services.map(async (service): Promise<EmbeddedCdpSurface | null> => {
         const webUrl = service.status === "running" ? service.healthMeta.webUrl.trim() : "";
-        const isCurrentService = currentPageSnapshot?.pageKind === "webview" && currentSurfaceId === service.id;
-        const contents = isCurrentService
+        const isCurrentService = currentPageSnapshot?.pageKind === "webview" &&
+          currentSurfaceId === createServiceSurfaceIdentity(service.id).surfaceId;
+        let contents = isCurrentService
           ? typeof currentPageSnapshot.webContentsId === "number"
             ? options.browserSurfaces.findWebContentsById(currentPageSnapshot.webContentsId)
             : null
           : options.browserSurfaces.findWebContentsForSurfaceUrl(webUrl);
+        const registeredTarget = contents
+          ? options.browserSurfaces.resolveWebviewSurfaceTarget(contents.id)
+          : null;
+        if (registeredTarget && registeredTarget.surfaceId !== createServiceSurfaceIdentity(service.id).surfaceId) {
+          contents = null;
+        }
         const surface = createEmbeddedCdpServiceSurface({
           service,
           currentPageSnapshot,
@@ -115,12 +135,14 @@ export function createCdpIntegration(options: CdpIntegrationOptions) {
         }
         return surface;
       }));
-      serviceSurfaces = surfaces.filter((surface): surface is EmbeddedCdpSurface => surface !== null);
+      serviceSurfaces = surfaces.filter((surface): surface is EmbeddedCdpSurface => (
+        surface !== null && !registeredSurfaceIds.has(surface.surfaceId)
+      ));
     } catch (error) {
       console.warn("[embedded-cdp] failed to list service webview targets", error);
     }
 
-    return [...webviewSurfaces, ...serviceSurfaces, ...chatWorkPanelSurfaces];
+    return [...registeredSurfaces, ...webviewSurfaces, ...serviceSurfaces, ...chatWorkPanelSurfaces];
   }
 
   function resolveWebContents(_surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab): WebContents | null {

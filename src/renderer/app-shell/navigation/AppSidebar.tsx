@@ -89,6 +89,8 @@ import {
 } from "./capabilityNavigation";
 import { ConversationShareDialog } from "./ConversationShareDialog";
 import { useConversationShareDialog } from "./useConversationShareDialog";
+import { ChatInfoDialog } from "./ChatInfoDialog";
+import { useChatInfoDialog } from "./useChatInfoDialog";
 
 type SidebarNavItem = {
   orderKey: SidebarNavOrderItemKey;
@@ -1002,7 +1004,7 @@ type AppSidebarProps = {
   ) => Promise<void> | void;
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
-  onCloseChatWorkPanel?: (chatId: string) => void;
+  onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
   onCreateWebsiteItem?: (input: WebsiteInput) => Promise<WebsiteResult>;
@@ -1148,6 +1150,7 @@ export function AppSidebar({
   const [assistantChatDeleteDialog, setAssistantChatDeleteDialog] =
     useState<AssistantChatDeleteDialogState | null>(null);
   const conversationShareDialog = useConversationShareDialog(t);
+  const chatInfoDialog = useChatInfoDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
   const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const sidebarNavRef = useRef<HTMLElement | null>(null);
@@ -1186,6 +1189,10 @@ export function AppSidebar({
   const activeSidebarChatId = activeNavigationRouteInfo.chatId;
   const normalizedBootstrapAgentKey = bootstrapAgentKey.trim();
   const normalizedBootstrapChatId = bootstrapChatId.trim();
+  const showBootstrapChatGuide =
+    bootstrapActive && !bootstrapGuideDismissedBubbles.chat;
+  const showBootstrapHelpGuide =
+    bootstrapActive && !bootstrapGuideDismissedBubbles.help;
   const showBootstrapGuideCard =
     bootstrapActive &&
     !bootstrapGuideCardDismissed &&
@@ -1629,7 +1636,7 @@ export function AppSidebar({
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [bootstrapActive, normalizedBootstrapAgentKey, normalizedBootstrapChatId]);
+  }, [bootstrapActive]);
 
   useEffect(() => {
     if (!bootstrapActive || typeof window === "undefined") {
@@ -2131,6 +2138,7 @@ export function AppSidebar({
         "chat.workPanel.close",
         "chat.archive",
         "chat.delete",
+        "chat.info",
       ].includes(actionId);
     }
     if (actionId === "web.close") return target.canClose;
@@ -2229,6 +2237,8 @@ export function AppSidebar({
         await handleAssistantArchiveChat(chat);
       } else if (actionId === "chat.delete") {
         await handleAssistantDeleteChat(chat);
+      } else if (actionId === "chat.info") {
+        chatInfoDialog.open(chat);
       }
       return;
     }
@@ -3182,7 +3192,7 @@ export function AppSidebar({
       return;
     }
 
-    onCloseChatWorkPanel?.(chat.chatId);
+    onCloseChatWorkPanel?.(chat.chatId, true);
 
     if (currentChatId === chat.chatId) {
       const agentKey = chat.agentKey.trim() || currentAgentKey;
@@ -3227,7 +3237,7 @@ export function AppSidebar({
         throw new Error(result.message || t("sidebar.chat.deleteFailed"));
       }
       setAssistantChatDeleteDialog(null);
-      onCloseChatWorkPanel?.(chat.chatId);
+      onCloseChatWorkPanel?.(chat.chatId, true);
 
       if (currentChatId === chat.chatId) {
         const agentKey = chat.agentKey.trim() || currentAgentKey;
@@ -3521,6 +3531,10 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
+    return renderChatsNewChatButton(options);
+  }
+
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
   ) {
@@ -3793,9 +3807,10 @@ export function AppSidebar({
               ref={bootstrapGuideChatAnchorRef}
               type="button"
               className={[
+                "assistant-worker-chat-item",
                 "sidebar-chats-item",
                 "sidebar-chats-bootstrap-fallback",
-                "is-bootstrap-guide",
+                showBootstrapChatGuide ? "is-bootstrap-guide" : "",
                 bootstrapFallbackActive ? "is-active" : "",
               ]
                 .filter(Boolean)
@@ -3807,8 +3822,12 @@ export function AppSidebar({
                 roving,
               )}
             >
-              <span className="sidebar-chats-copy">
-                <span className="sidebar-chats-preview">
+              <span className="worker-chat-item-head">
+                <span
+                  className="assistant-worker-unread-dot chat-unread-dot"
+                  aria-hidden="true"
+                />
+                <span className="worker-chat-name">
                   {t("sidebar.bootstrapChat.cta")}
                 </span>
               </span>
@@ -3831,7 +3850,9 @@ export function AppSidebar({
               rowClassName: "sidebar-chats-row",
               itemClassName: [
                 "sidebar-chats-item",
-                isBootstrapSeedChat ? "is-bootstrap-guide" : "",
+                isBootstrapSeedChat && showBootstrapChatGuide
+                  ? "is-bootstrap-guide"
+                  : "",
               ]
                 .filter(Boolean)
                 .join(" "),
@@ -4049,7 +4070,7 @@ export function AppSidebar({
               <Tooltip content={webappActionLabel}>
                 <button
                   type="button"
-                  className="assistant-worker-icon-button sidebar-website-child-action"
+                  className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"
                   aria-label={webappActionLabel}
                   title={webappActionLabel}
                   tabIndex={-1}
@@ -4195,7 +4216,7 @@ export function AppSidebar({
         {options.wrapItem ? options.wrapItem(item) : item}
         <button
           type="button"
-          className="assistant-worker-chat-menu-button"
+          className="assistant-worker-chat-menu-button sidebar-more-actions-button"
           aria-label={t("sidebar.chat.moreActions")}
           title={t("common.more")}
           tabIndex={-1}
@@ -4300,6 +4321,19 @@ export function AppSidebar({
         }
         headerActions={
           <span className="assistant-worker-actions">
+            <Tooltip content={t("sidebar.agent.moreActions")}>
+              <button
+                type="button"
+                className="assistant-worker-icon-button sidebar-more-actions-button sidebar-agent-more-actions-button"
+                aria-label={t("sidebar.agent.moreActionsFor", {
+                  name: agent.displayName,
+                })}
+                tabIndex={-1}
+                onClick={(event) => handleOpenAgentMenu(event, agent)}
+              >
+                <SidebarActionIcon kind="more_actions" />
+              </button>
+            </Tooltip>
             <Tooltip content={t("sidebar.agent.newChat")}>
               <button
                 type="button"
@@ -4311,19 +4345,6 @@ export function AppSidebar({
                 onClick={(event) => handleAssistantNewChat(event, agent)}
               >
                 <SidebarActionIcon kind="new_chat" />
-              </button>
-            </Tooltip>
-            <Tooltip content={t("sidebar.agent.moreActions")}>
-              <button
-                type="button"
-                className="assistant-worker-icon-button"
-                aria-label={t("sidebar.agent.moreActionsFor", {
-                  name: agent.displayName,
-                })}
-                tabIndex={-1}
-                onClick={(event) => handleOpenAgentMenu(event, agent)}
-              >
-                <SidebarActionIcon kind="more_actions" />
               </button>
             </Tooltip>
           </span>
@@ -5058,7 +5079,7 @@ export function AppSidebar({
         className={[
           "sidebar-tool-menu",
           "sidebar-account-menu",
-          bootstrapActive ? "has-bootstrap-guide" : "",
+          showBootstrapHelpGuide ? "has-bootstrap-guide" : "",
           isCollapsed
             ? "is-from-collapsed-sidebar"
             : "is-from-expanded-sidebar",
@@ -5078,7 +5099,7 @@ export function AppSidebar({
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
         {renderToolLink(helpToolItem, {
           anchorRef: bootstrapGuideToolHelpAnchorRef,
-          bootstrapGuide: bootstrapActive,
+          bootstrapGuide: showBootstrapHelpGuide,
         })}
         {settingsToolItem ? renderToolLink(settingsToolItem) : null}
       </div>
@@ -5966,6 +5987,12 @@ export function AppSidebar({
                 onRequestRevoke={conversationShareDialog.requestRevoke}
                 onCancelRevoke={conversationShareDialog.cancelRevoke}
                 onConfirmRevoke={() => void conversationShareDialog.confirmRevoke()}
+              />
+              <ChatInfoDialog
+                state={chatInfoDialog.state}
+                t={t}
+                onRetry={chatInfoDialog.retry}
+                onClose={chatInfoDialog.close}
               />
               {renderCreateProjectDialog()}
               {renderWebsiteDialog()}

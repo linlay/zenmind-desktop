@@ -17,26 +17,39 @@ import {
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
+  createAgentWebclientAgentPath,
+  readAgentWebclientAgentRouteKey,
+  resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource,
 } from "../../shared/agent-webclient-routes";
 import { useI18n } from "../i18n/useI18n";
 import {
+  AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
+  SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   type ServiceWebviewBridgeMessage,
+  type ServiceWebviewModalOverlayState,
 } from "../../shared/service-webview-bridge";
 import { handleServiceWebviewBridgeMessage } from "../services/serviceWebviewBridgeHost";
 import { getServiceDisplayName } from "../service-display";
 import { buildSettingsSectionPath } from "../settings/settingsRoutes";
 import type {
   AssistantPageContext,
+  CanonicalChatSyncRequest,
+  CanonicalChatSyncResult,
   DesktopPageContextSnapshot,
 } from "../../shared/contracts";
+import {
+  createCanonicalAgentChatRoute,
+  createPreparedAgentChatRoute,
+  readAgentWebclientNewChatSource,
+} from "../../shared/canonical-chat-sync";
 import type { TranslateFunction } from "../../shared/i18n";
 import {
   buildInteractElementScript,
@@ -59,8 +72,20 @@ import {
 import { STORAGE_NAMESPACE } from "../../shared/brand";
 import type { EmbeddedCdpSurfaceRegistration } from "../../shared/embedded-cdp";
 import { WebviewDebugOverlay } from "../components/WebviewDebugOverlay";
-import type { WebviewContextMenuSurfaceType } from "../../shared/webview-context-menu";
+import {
+  resolveAgentWebclientWebviewSurfaceType,
+  type WebviewContextMenuSurfaceType,
+} from "../../shared/webview-context-menu";
 import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
+import {
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID,
+  MAIN_CHAT_SURFACE_ID,
+  createServiceSurfaceIdentity,
+  resolveLegacyFixedSurfaceId,
+  type SurfaceIdentity
+} from "../../shared/surface-identity";
 import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
@@ -69,6 +94,8 @@ type ServiceWebviewSurfaceProps = {
   hostTheme: "light" | "dark";
   serviceId?: string;
   surfaceId?: string;
+  surfaceIdentity?: SurfaceIdentity;
+  surfaceIdentityKey?: string;
   active?: boolean | undefined;
   surfaceOwnershipActive?: boolean;
   embedPath?: string;
@@ -99,14 +126,47 @@ type VisibleSelectionToolbarState = Extract<
   { visible: true }
 >;
 
+type PendingCanonicalChatSync = {
+  request: CanonicalChatSyncRequest;
+  targetRoute: string;
+};
+
+type PendingNewChatPreparation = {
+  request: {
+    requestId: string;
+    agentKey: string;
+    sourceChatId: string;
+    newChat: string;
+  };
+  sourceRoute: string;
+  targetRoute: string;
+  registrationId: string;
+  guestWebContentsId: number;
+  timeoutId: number;
+};
+
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
-const AGENT_WEBCLIENT_SOURCE_CHAT = "agent-webclient-chat";
+const AGENT_WEBCLIENT_SOURCE_CHAT = MAIN_CHAT_SURFACE_ID;
 const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
   AGENT_WEBCLIENT_SOURCE_CHAT,
-  "agent-webclient-copilot",
-  "agent-webclient-copilot-dock",
-  "agent-webclient-kanban-chat",
+  COPILOT_CHAT_SURFACE_ID,
+  COPILOT_DOCK_SURFACE_ID,
+  KANBAN_CHAT_SURFACE_ID,
+]);
+const AGENT_WEBCLIENT_WORK_PANEL_ROLES = new Set<SurfaceIdentity["surfaceRole"]>([
+  "overview",
+  "debug",
+  "btw",
+  "source",
+  "project",
+  "file-diff",
+  "artifact",
+  "reference",
+  "file",
+  "planning",
+  "agent",
+  "copilot",
 ]);
 let serviceSurfaceRegistrationSequence = 0;
 
@@ -125,16 +185,10 @@ function getEmbeddedCdpSurfaceApi() {
 
 function resolveContextMenuSurfaceType(
   serviceId: string,
-  surfaceId: string,
-  embedPath: string | undefined,
+  surfaceRole: SurfaceIdentity["surfaceRole"],
 ): WebviewContextMenuSurfaceType {
   if (serviceId !== "agent-webclient") return "service";
-  if (/overview/iu.test(embedPath || "") || /overview/iu.test(surfaceId)) return "agent-overview";
-  if (/debug/iu.test(embedPath || "") || /debug/iu.test(surfaceId)) return "agent-debug";
-  if (/project/iu.test(embedPath || "")) return "agent-project";
-  if (/copilot/iu.test(surfaceId)) return "agent-copilot";
-  if (/chat/iu.test(surfaceId)) return "agent-chat";
-  return "agent-management";
+  return resolveAgentWebclientWebviewSurfaceType(surfaceRole);
 }
 
 function isAgentWebclientChatSurface(serviceId: string | undefined, surfaceId: string | undefined) {
@@ -145,8 +199,21 @@ function isAgentWebclientLiveChatSurface(serviceId: string | undefined, surfaceI
   return serviceId === "agent-webclient" && AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS.has(surfaceId || "");
 }
 
+function isAgentWebclientLifecycleSurface(
+  serviceId: string | undefined,
+  surfaceId: string | undefined,
+  surfaceIdentity: SurfaceIdentity,
+) {
+  if (isAgentWebclientLiveChatSurface(serviceId, surfaceId)) return true;
+  return serviceId === "agent-webclient" &&
+    surfaceIdentity.surfaceLevel === "child" &&
+    surfaceIdentity.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+    Boolean(surfaceIdentity.ownerChatId) &&
+    AGENT_WEBCLIENT_WORK_PANEL_ROLES.has(surfaceIdentity.surfaceRole);
+}
+
 function isAgentWebclientManagementSurface(serviceId: string | undefined, surfaceId: string | undefined) {
-  return serviceId === "agent-webclient" && surfaceId === "agent-webclient";
+  return serviceId === "agent-webclient" && surfaceId === createServiceSurfaceIdentity("agent-webclient").surfaceId;
 }
 
 const WEBVIEW_PAGE_CONTEXT_SCRIPT = `(() => {
@@ -408,6 +475,8 @@ export function ServiceWebviewSurface({
   hostTheme,
   serviceId: serviceIdProp,
   surfaceId: surfaceIdProp,
+  surfaceIdentity: surfaceIdentityProp,
+  surfaceIdentityKey,
   active,
   surfaceOwnershipActive,
   embedPath,
@@ -424,12 +493,17 @@ export function ServiceWebviewSurface({
   const location = useLocation();
   const navigate = useNavigate();
   const currentRoute = `${location.pathname}${location.search}`;
+  const currentRouteWithHash = `${location.pathname}${location.search}${location.hash}`;
   const { serviceId: routeServiceId, pluginId: routePluginId } = useParams<{
     serviceId?: string;
     pluginId?: string;
   }>();
   const serviceId = serviceIdProp ?? routeServiceId ?? routePluginId ?? "";
-  const surfaceId = surfaceIdProp?.trim() || serviceId;
+  const surfaceIdentity = surfaceIdentityProp ?? createServiceSurfaceIdentity(serviceId);
+  const resolvedSurfaceIdentityKey = surfaceIdentityKey?.trim() || (
+    surfaceIdentity.surfaceRole === "service" ? serviceId.trim() : ""
+  );
+  const surfaceId = surfaceIdentity.surfaceId || surfaceIdProp?.trim() || serviceId;
   const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const { locale, t } = useI18n();
   const { services, refresh: refreshServices } = useServices();
@@ -461,6 +535,7 @@ export function ServiceWebviewSurface({
   const [webviewSnapshotNonce, setWebviewSnapshotNonce] = useState(0);
   const [selectionToolbarState, setSelectionToolbarState] =
     useState<VisibleSelectionToolbarState | null>(null);
+  const [webviewModalOverlayVisible, setWebviewModalOverlayVisible] = useState(false);
   const [serviceWebviewPreloadUrl, setServiceWebviewPreloadUrl] = useState("");
   const [documentVisible, setDocumentVisible] = useState(() => document.visibilityState !== "hidden");
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
@@ -471,11 +546,28 @@ export function ServiceWebviewSurface({
   if (!surfaceRegistrationIdRef.current) {
     surfaceRegistrationIdRef.current = createServiceSurfaceRegistrationId();
   }
+  const windowModalOverlaySourceId = `service-webview:${surfaceId}`;
+  // Child surfaces only mask their own panel; root/utility surfaces occupy the
+  // main content area and should extend that mask into Windows window controls.
+  const shouldMaskWindowControls =
+    active !== false &&
+    ownsActiveSurface &&
+    surfaceIdentity.surfaceLevel !== "child" &&
+    webviewModalOverlayVisible;
   const lastHandledFocusRequestIdRef = useRef(0);
   const lastDirectWebviewRouteRef = useRef("");
   const lastHostAppliedChatRouteRef = useRef("");
   const lastReportedCurrentUrlRef = useRef("");
+  const lastAgentSwitchNewChatTimestampRef = useRef(0);
+  const lastLiveSurfaceLifecycleRef = useRef<{
+    active: boolean;
+    webContentsId: number | undefined;
+  } | null>(null);
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
+  const pendingCanonicalChatSyncRef = useRef<PendingCanonicalChatSync | null>(null);
+  const pendingNewChatPreparationRef = useRef<PendingNewChatPreparation | null>(null);
+  const currentRouteWithHashRef = useRef(currentRouteWithHash);
+  currentRouteWithHashRef.current = currentRouteWithHash;
   const surfaceVisibilityProps =
     active === undefined
       ? {}
@@ -487,6 +579,16 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     return registerServiceSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
+
+  useEffect(() => {
+    return () => {
+      const pending = pendingNewChatPreparationRef.current;
+      if (pending) {
+        window.clearTimeout(pending.timeoutId);
+        pendingNewChatPreparationRef.current = null;
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const syncDocumentVisibility = () => {
@@ -504,11 +606,28 @@ export function ServiceWebviewSurface({
       return;
     }
     setSelectionToolbarState(null);
+    setWebviewModalOverlayVisible(false);
     webviewRef.current = node;
     if (node) {
       setWebviewSnapshotNonce((current) => current + 1);
     }
   }, []);
+
+  useEffect(() => {
+    window.electronAPI.desktopShell.setWebviewModalOverlayVisible(
+      windowModalOverlaySourceId,
+      shouldMaskWindowControls,
+    );
+  }, [shouldMaskWindowControls, windowModalOverlaySourceId]);
+
+  useEffect(() => {
+    return () => {
+      window.electronAPI.desktopShell.setWebviewModalOverlayVisible(
+        windowModalOverlaySourceId,
+        false,
+      );
+    };
+  }, [windowModalOverlaySourceId]);
 
   useEffect(() => {
     return window.electronAPI.serviceWebview.onSelectionToolbarState((state) => {
@@ -538,6 +657,73 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     onCurrentUrlChangeRef.current = onCurrentUrlChange;
   }, [onCurrentUrlChange]);
+
+  useEffect(() => {
+    if (!isAgentWebclientChatSurface(serviceId, surfaceId)) return undefined;
+    return window.electronAPI.canonicalChatSync.onRequest((request) => {
+      if (request.surfaceId !== surfaceId) return;
+      const respond = (result: CanonicalChatSyncResult) => {
+        window.electronAPI.canonicalChatSync.respond(result);
+      };
+      const webContentsId = readWebviewContentsId(webviewRef.current);
+      if (
+        active === false ||
+        request.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+        request.registrationId !== surfaceRegistrationIdRef.current ||
+        request.guestWebContentsId !== webContentsId
+      ) {
+        respond({
+          requestId: request.requestId,
+          ok: false,
+          code: "stale_source",
+          message: "canonical Chat request no longer belongs to the active Main Chat surface",
+        });
+        return;
+      }
+      const targetRoute = createCanonicalAgentChatRoute(currentRouteWithHash, request);
+      if (!targetRoute || ownerChatId?.trim()) {
+        respond({
+          requestId: request.requestId,
+          ok: false,
+          code: "route_mismatch",
+          message: "Desktop route no longer matches the new Chat query source",
+        });
+        return;
+      }
+      const previous = pendingCanonicalChatSyncRef.current;
+      if (previous && previous.request.requestId !== request.requestId) {
+        respond({
+          requestId: previous.request.requestId,
+          ok: false,
+          code: "stale_source",
+          message: "canonical Chat request was superseded by a newer query",
+        });
+      }
+      pendingCanonicalChatSyncRef.current = { request, targetRoute };
+      surfaceRegistrationRetryRef.current = 0;
+      navigate(targetRoute, { replace: true });
+    });
+  }, [
+    active,
+    currentRouteWithHash,
+    navigate,
+    ownerChatId,
+    serviceId,
+    surfaceId,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingCanonicalChatSyncRef.current;
+    if (!pending) return;
+    if (active !== false && currentRouteWithHash === pending.targetRoute) return;
+    pendingCanonicalChatSyncRef.current = null;
+    window.electronAPI.canonicalChatSync.respond({
+      requestId: pending.request.requestId,
+      ok: false,
+      code: "stale_source",
+      message: "Main Chat changed before canonical surface registration completed",
+    });
+  }, [active, currentRouteWithHash]);
 
   useEffect(() => {
     const requestId = Number.isSafeInteger(focusRequestId) && Number(focusRequestId) > 0
@@ -622,6 +808,141 @@ export function ServiceWebviewSurface({
     wsSource,
   ]);
 
+  const finishNewChatPreparation = useCallback((
+    pending: PendingNewChatPreparation,
+    result: { ok: true } | { ok: false; message: string },
+    restoreSourceRoute = false,
+  ) => {
+    if (
+      pendingNewChatPreparationRef.current?.request.requestId !==
+      pending.request.requestId
+    ) {
+      return;
+    }
+    pendingNewChatPreparationRef.current = null;
+    window.clearTimeout(pending.timeoutId);
+    sendBridgeMessageToWebview({
+      type: AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
+      requestId: pending.request.requestId,
+      ok: result.ok,
+      ...(!result.ok ? { message: result.message } : {}),
+    });
+    if (
+      restoreSourceRoute &&
+      currentRouteWithHashRef.current === pending.targetRoute
+    ) {
+      navigate(pending.sourceRoute, { replace: true });
+    }
+  }, [navigate]);
+
+  const prepareAgentWebclientNewChat = useCallback((request: {
+    requestId: string;
+    agentKey: string;
+    sourceChatId: string;
+    newChat: string;
+  }): { ok: true } | { ok: false; message: string } => {
+    const normalizedRequest = {
+      requestId: request.requestId.trim(),
+      agentKey: request.agentKey.trim(),
+      sourceChatId: request.sourceChatId.trim(),
+      newChat: request.newChat.trim(),
+    };
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const targetRoute = createPreparedAgentChatRoute(
+      currentRouteWithHash,
+      normalizedRequest,
+    );
+    const guestRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
+      readCurrentWebviewUrl(),
+      embeddedUrl,
+    );
+    if (
+      serviceId !== "agent-webclient" ||
+      surfaceId !== MAIN_CHAT_SURFACE_ID ||
+      active === false ||
+      !ownsActiveSurface ||
+      !webContentsId ||
+      !normalizedRequest.requestId ||
+      normalizedRequest.requestId.length > 128 ||
+      normalizedRequest.agentKey.length > 256 ||
+      normalizedRequest.sourceChatId.length > 512 ||
+      ownerChatId?.trim() !== normalizedRequest.sourceChatId ||
+      !targetRoute ||
+      !guestRoute ||
+      !areAgentWebclientChatBusinessRoutesEquivalent(
+        currentRouteWithHash,
+        guestRoute,
+      )
+    ) {
+      return {
+        ok: false,
+        message: "new Chat preparation does not match the active Main Chat source",
+      };
+    }
+    if (pendingNewChatPreparationRef.current) {
+      return {
+        ok: false,
+        message: "another new Chat preparation is already in progress",
+      };
+    }
+
+    const pending: PendingNewChatPreparation = {
+      request: normalizedRequest,
+      sourceRoute: currentRouteWithHash,
+      targetRoute,
+      registrationId: surfaceRegistrationIdRef.current,
+      guestWebContentsId: webContentsId,
+      timeoutId: 0,
+    };
+    pending.timeoutId = window.setTimeout(() => {
+      finishNewChatPreparation(
+        pending,
+        { ok: false, message: "new Chat surface preparation timed out" },
+        true,
+      );
+    }, 8_000);
+    pendingNewChatPreparationRef.current = pending;
+    surfaceRegistrationRetryRef.current = 0;
+    navigate(targetRoute);
+    return { ok: true };
+  }, [
+    active,
+    currentRouteWithHash,
+    embeddedUrl,
+    finishNewChatPreparation,
+    navigate,
+    ownerChatId,
+    ownsActiveSurface,
+    serviceId,
+    surfaceId,
+  ]);
+
+  useEffect(() => {
+    const pending = pendingNewChatPreparationRef.current;
+    if (!pending) return;
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    if (
+      active !== false &&
+      ownsActiveSurface &&
+      webContentsId === pending.guestWebContentsId &&
+      (currentRouteWithHash === pending.sourceRoute ||
+        currentRouteWithHash === pending.targetRoute)
+    ) {
+      return;
+    }
+    finishNewChatPreparation(
+      pending,
+      { ok: false, message: "Main Chat changed before new Chat preparation completed" },
+      true,
+    );
+  }, [
+    active,
+    currentRouteWithHash,
+    finishNewChatPreparation,
+    ownsActiveSurface,
+    webviewSnapshotNonce,
+  ]);
+
   useEffect(() => {
     const embeddedCdp = getEmbeddedCdpSurfaceApi();
     const targetWebview = webviewRef.current;
@@ -647,9 +968,10 @@ export function ServiceWebviewSurface({
     let retryTimer: number | null = null;
     const registration: EmbeddedCdpSurfaceRegistration = {
       registrationId: surfaceRegistrationIdRef.current,
-      surfaceId,
+      ...surfaceIdentity,
+      ...(resolvedSurfaceIdentityKey ? { surfaceIdentityKey: resolvedSurfaceIdentityKey } : {}),
       surfaceKind: "service",
-      surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceId, effectiveEmbedPath),
+      surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceIdentity.surfaceRole),
       ...(serviceId ? { serviceId } : {}),
       pageRoute: surfaceRoute,
       ...(ownerChatId?.trim() ? { ownerChatId: ownerChatId.trim() } : {}),
@@ -677,6 +999,48 @@ export function ServiceWebviewSurface({
         if (ownsActiveSurface) {
           sendLiveSurfaceLifecycleToWebview(true);
         }
+        const pendingPreparation = pendingNewChatPreparationRef.current;
+        const registeredNewChatSource = readAgentWebclientNewChatSource(currentUrl);
+        if (
+          pendingPreparation &&
+          pendingPreparation.registrationId === registration.registrationId &&
+          pendingPreparation.guestWebContentsId === webContentsId &&
+          ownsActiveSurface &&
+          currentRouteWithHash === pendingPreparation.targetRoute &&
+          !registration.ownerChatId?.trim() &&
+          registeredNewChatSource?.agentKey ===
+            pendingPreparation.request.agentKey &&
+          registeredNewChatSource.newChat === pendingPreparation.request.newChat
+        ) {
+          finishNewChatPreparation(pendingPreparation, { ok: true });
+        }
+        const pending = pendingCanonicalChatSyncRef.current;
+        if (
+          pending &&
+          pending.request.registrationId === registration.registrationId &&
+          pending.request.guestWebContentsId === webContentsId &&
+          registration.ownerChatId?.trim() === pending.request.chatId
+        ) {
+          if (
+            ownsActiveSurface &&
+            ownerChatId?.trim() === pending.request.chatId &&
+            currentRouteWithHash === pending.targetRoute
+          ) {
+            pendingCanonicalChatSyncRef.current = null;
+            window.electronAPI.canonicalChatSync.respond({
+              requestId: pending.request.requestId,
+              ok: true,
+            });
+          } else {
+            pendingCanonicalChatSyncRef.current = null;
+            window.electronAPI.canonicalChatSync.respond({
+              requestId: pending.request.requestId,
+              ok: false,
+              code: "stale_source",
+              message: "Main Chat changed before canonical surface registration completed",
+            });
+          }
+        }
         return;
       }
       const attempt = surfaceRegistrationRetryRef.current + 1;
@@ -686,6 +1050,34 @@ export function ServiceWebviewSurface({
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
       });
+      const pendingPreparation = pendingNewChatPreparationRef.current;
+      if (
+        pendingPreparation &&
+        pendingPreparation.registrationId === registration.registrationId &&
+        pendingPreparation.guestWebContentsId === webContentsId &&
+        currentRouteWithHash === pendingPreparation.targetRoute
+      ) {
+        finishNewChatPreparation(
+          pendingPreparation,
+          { ok: false, message: "Main Chat surface rejected its new Chat registration" },
+          true,
+        );
+      }
+      const pending = pendingCanonicalChatSyncRef.current;
+      if (
+        pending &&
+        pending.request.registrationId === registration.registrationId &&
+        pending.request.guestWebContentsId === webContentsId &&
+        registration.ownerChatId?.trim() === pending.request.chatId
+      ) {
+        pendingCanonicalChatSyncRef.current = null;
+        window.electronAPI.canonicalChatSync.respond({
+          requestId: pending.request.requestId,
+          ok: false,
+          code: "surface_registration_failure",
+          message: "Main Chat surface rejected its canonical owner registration",
+        });
+      }
       if (attempt <= 6) {
         retryTimer = window.setTimeout(() => {
           setWebviewSnapshotNonce((current) => current + 1);
@@ -698,6 +1090,37 @@ export function ServiceWebviewSurface({
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
       });
+      const pendingPreparation = pendingNewChatPreparationRef.current;
+      if (
+        pendingPreparation &&
+        pendingPreparation.registrationId === registration.registrationId &&
+        pendingPreparation.guestWebContentsId === webContentsId &&
+        currentRouteWithHash === pendingPreparation.targetRoute
+      ) {
+        finishNewChatPreparation(
+          pendingPreparation,
+          {
+            ok: false,
+            message: error instanceof Error ? error.message : String(error),
+          },
+          true,
+        );
+      }
+      const pending = pendingCanonicalChatSyncRef.current;
+      if (
+        pending &&
+        pending.request.registrationId === registration.registrationId &&
+        pending.request.guestWebContentsId === webContentsId &&
+        registration.ownerChatId?.trim() === pending.request.chatId
+      ) {
+        pendingCanonicalChatSyncRef.current = null;
+        window.electronAPI.canonicalChatSync.respond({
+          requestId: pending.request.requestId,
+          ok: false,
+          code: "surface_registration_failure",
+          message: error instanceof Error ? error.message : String(error),
+        });
+      }
     });
     return () => {
       cancelled = true;
@@ -706,11 +1129,20 @@ export function ServiceWebviewSurface({
   }, [
     ownsActiveSurface,
     ownerChatId,
+    currentRouteWithHash,
     effectiveEmbedPath,
     embeddedUrl,
     serviceDisplayName,
     serviceId,
+    finishNewChatPreparation,
     surfaceId,
+    surfaceIdentity.interaction,
+    surfaceIdentity.ownerChatId,
+    surfaceIdentity.parentSurfaceId,
+    surfaceIdentity.surfaceId,
+    surfaceIdentity.surfaceLevel,
+    surfaceIdentity.surfaceRole,
+    resolvedSurfaceIdentityKey,
     surfaceRoute,
     webUrl,
     webviewCurrentUrl,
@@ -1060,18 +1492,42 @@ export function ServiceWebviewSurface({
   }
 
   function sendLiveSurfaceLifecycleToWebview(nextActive: boolean) {
-    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    if (!isAgentWebclientLifecycleSurface(serviceId, surfaceId, surfaceIdentity)) return;
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const previous = lastLiveSurfaceLifecycleRef.current;
+    // Registry metadata (for example ownerChatId) can change while the same
+    // guest stays active. Only a real active transition or guest replacement
+    // may trigger WebClient replay/attach recovery.
+    if (
+      previous?.active === nextActive &&
+      previous.webContentsId === webContentsId
+    ) {
+      return;
+    }
     sendBridgeMessageToWebview({
       type: DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
       active: nextActive,
       surfaceId,
     });
+    lastLiveSurfaceLifecycleRef.current = {
+      active: nextActive,
+      webContentsId,
+    };
   }
 
+  const liveSurfaceLifecycleEnabled = isAgentWebclientLifecycleSurface(
+    serviceId,
+    surfaceId,
+    surfaceIdentity,
+  );
   useEffect(() => {
-    if (!isAgentWebclientLiveChatSurface(service?.id, surfaceId)) return;
+    if (!liveSurfaceLifecycleEnabled) return;
     return () => sendLiveSurfaceLifecycleToWebview(false);
-  }, [service?.id, surfaceId]);
+  }, [
+    liveSurfaceLifecycleEnabled,
+    serviceId,
+    surfaceId,
+  ]);
 
   function dispatchServiceWebviewRouteEventToWebview(payload: Record<string, unknown>) {
     try {
@@ -1162,6 +1618,13 @@ export function ServiceWebviewSurface({
           buildClientSideRouteNavigationScript(embeddedUrl),
           true,
         ).then((clientNavigationResult: unknown) => {
+          if (lastDirectWebviewRouteRef.current !== embeddedUrl) {
+            reportServiceWebviewDiagnostic("direct-route-client-navigation-stale", {
+              targetUrl: embeddedUrl,
+              latestTargetUrl: lastDirectWebviewRouteRef.current,
+            });
+            return;
+          }
           const resultRecord =
             clientNavigationResult &&
             typeof clientNavigationResult === "object" &&
@@ -1182,6 +1645,13 @@ export function ServiceWebviewSurface({
           });
           void targetWebview.loadURL(embeddedUrl);
         }).catch((reason: unknown) => {
+          if (lastDirectWebviewRouteRef.current !== embeddedUrl) {
+            reportServiceWebviewDiagnostic("direct-route-client-navigation-stale", {
+              targetUrl: embeddedUrl,
+              latestTargetUrl: lastDirectWebviewRouteRef.current,
+            });
+            return;
+          }
           reportServiceWebviewDiagnostic("direct-route-client-navigation-failed", {
             error: reason instanceof Error ? reason.message : String(reason),
           });
@@ -1210,6 +1680,13 @@ export function ServiceWebviewSurface({
 
   function handleWebviewBridgeMessage(event: Event) {
     const channel = readEventString(event, "channel");
+    if (channel === SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL) {
+      const [state] = ((event as Event & { args?: unknown[] }).args ?? []) as [
+        ServiceWebviewModalOverlayState?,
+      ];
+      setWebviewModalOverlayVisible(state?.visible === true);
+      return;
+    }
     if (channel !== SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL) {
       return;
     }
@@ -1221,11 +1698,12 @@ export function ServiceWebviewSurface({
     }
 
     handleServiceWebviewBridgeMessage(payload, {
-      serviceId: service?.id,
+      serviceId: service?.id ?? serviceId,
       bridgeProtocol,
       desktopAuthContext:
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       sendBridgeMessageToWebview,
+      prepareAgentWebclientNewChat,
       setBridgeError,
       logDebug: (stage, message) => {
         console.info("[service-webview]", service?.id || "service", stage, message);
@@ -1300,6 +1778,26 @@ export function ServiceWebviewSurface({
         canSyncDesktopRoute &&
         isAgentWebclientChatSurface(service?.id, surfaceId)
       ) {
+        const switchedAgentKey = resolveAgentWebclientDesktopAgentSwitchTarget(
+          resolvedUrl,
+          webviewSrcUrl,
+          currentRoute,
+        );
+        if (switchedAgentKey) {
+          const nextTimestamp = Math.max(
+            Date.now(),
+            lastAgentSwitchNewChatTimestampRef.current + 1,
+          );
+          const newChat = String(nextTimestamp);
+          if (/^[1-9]\d{12}$/u.test(newChat)) {
+            lastAgentSwitchNewChatTimestampRef.current = nextTimestamp;
+            const params = new URLSearchParams({ newChat });
+            navigate(createAgentWebclientAgentPath(switchedAgentKey, params), {
+              replace: true,
+            });
+            return;
+          }
+        }
         const nextChatRoute = resolveAgentWebclientDesktopChatRouteFromUrl(
           resolvedUrl,
           webviewSrcUrl,
@@ -1311,10 +1809,17 @@ export function ServiceWebviewSurface({
           );
         const isSameDesktopBusinessRoute = Boolean(nextChatRoute) &&
           areAgentWebclientChatBusinessRoutesEquivalent(currentRoute, nextChatRoute);
+        const newChatBootstrapSource = readAgentWebclientNewChatSource(currentRoute);
+        const newChatBootstrapOwnsPromotion = Boolean(
+          newChatBootstrapSource &&
+          readAgentWebclientAgentRouteKey(nextChatRoute) ===
+            newChatBootstrapSource.agentKey,
+        );
         if (
           nextChatRoute &&
           !isHostRouteEcho &&
-          !isSameDesktopBusinessRoute
+          !isSameDesktopBusinessRoute &&
+          !newChatBootstrapOwnsPromotion
         ) {
           navigate(nextChatRoute, { replace: true });
         }
@@ -1562,6 +2067,7 @@ export function ServiceWebviewSurface({
       return {
         surface: {
           id: surfaceId,
+          ...surfaceIdentity,
           kind: "service",
           label: serviceDisplayName,
           url: embeddedUrl || webUrl,
@@ -1632,7 +2138,11 @@ export function ServiceWebviewSurface({
     function requestTargetsDifferentSurface(args: Record<string, unknown>) {
       const targetSurfaceId =
         typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
-      return Boolean(targetSurfaceId && targetSurfaceId !== surfaceId);
+      return Boolean(
+        targetSurfaceId &&
+        resolveLegacyFixedSurfaceId(targetSurfaceId) !== surfaceId &&
+        targetSurfaceId !== serviceId
+      );
     }
 
     return registerDesktopActionProviderForScope(
@@ -1780,7 +2290,7 @@ export function ServiceWebviewSurface({
       <div className="embedded-surface-frame-shell">
         <WebviewDebugOverlay
           url={webviewCurrentUrl || embeddedUrl || webviewSrcUrl}
-          surfaceId={surfaceId}
+          surfaceIdentity={surfaceIdentity}
         />
         {bridgeReady && serviceWebviewPreloadUrl ? (
           <>

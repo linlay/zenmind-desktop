@@ -5,6 +5,8 @@ import {
 } from "../../shared/auth-bridge";
 import type { PluginSettingsValues } from "../../shared/contracts";
 import {
+  AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
+  AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
@@ -31,6 +33,12 @@ export type ServiceWebviewBridgeHostContext = {
   bridgeProtocol?: ServiceWebviewAuthProtocol | null;
   desktopAuthContext?: string;
   sendBridgeMessageToWebview: (payload: ServiceWebviewBridgeMessage) => void;
+  prepareAgentWebclientNewChat?: (request: {
+    requestId: string;
+    agentKey: string;
+    sourceChatId: string;
+    newChat: string;
+  }) => { ok: true } | { ok: false; message: string };
   setBridgeError: (message: string) => void;
   logDebug?: (stage: string, message: string) => void;
 };
@@ -67,6 +75,43 @@ export function handleServiceWebviewBridgeMessage(
 
   if (isServiceWebviewBridgeMessageType(payload.type, SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE)) {
     context.logDebug?.(String(payload.stage || ""), String(payload.message || ""));
+    return true;
+  }
+
+  if (
+    isServiceWebviewBridgeMessageType(
+      payload.type,
+      AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
+    )
+  ) {
+    const responseType = AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE;
+    if (
+      context.serviceId !== "agent-webclient" ||
+      !context.prepareAgentWebclientNewChat
+    ) {
+      sendFailure(
+        context,
+        responseType,
+        payload.requestId,
+        "new Chat preparation is unavailable for this surface",
+      );
+      return true;
+    }
+    const result = context.prepareAgentWebclientNewChat({
+      requestId: payload.requestId!,
+      agentKey: typeof payload.agentKey === "string" ? payload.agentKey : "",
+      sourceChatId:
+        typeof payload.sourceChatId === "string" ? payload.sourceChatId : "",
+      newChat: typeof payload.newChat === "string" ? payload.newChat : "",
+    });
+    if (!result.ok) {
+      sendFailure(
+        context,
+        responseType,
+        payload.requestId,
+        result.message,
+      );
+    }
     return true;
   }
 
