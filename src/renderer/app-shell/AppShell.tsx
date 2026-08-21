@@ -3340,7 +3340,7 @@ export function AppShell() {
       window.removeEventListener("pointerup", finishDrag, true);
       window.removeEventListener("pointercancel", finishDrag, true);
       window.removeEventListener("mouseup", finishDragOnMouseUp, true);
-      window.removeEventListener("blur", finishDrag, true);
+      window.removeEventListener("blur", finishDragOnWindowBlur);
       dragTarget.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
       try {
         if (dragTarget.hasPointerCapture(pointerId)) {
@@ -3354,6 +3354,13 @@ export function AppShell() {
     };
     const finishDragOnMouseUp = (mouseEvent: globalThis.MouseEvent) => {
       if (mouseEvent.button === 0) {
+        finishDrag();
+      }
+    };
+    const finishDragOnWindowBlur = (blurEvent: globalThis.FocusEvent) => {
+      // A focused <webview> also emits blur when the pointer returns to the host drag lane.
+      // Only the Window's own blur should cancel the active drag.
+      if (blurEvent.target === window) {
         finishDrag();
       }
     };
@@ -3385,7 +3392,7 @@ export function AppShell() {
     window.addEventListener("pointerup", finishDrag, true);
     window.addEventListener("pointercancel", finishDrag, true);
     window.addEventListener("mouseup", finishDragOnMouseUp, true);
-    window.addEventListener("blur", finishDrag, true);
+    window.addEventListener("blur", finishDragOnWindowBlur);
     dragTarget.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
     try {
       dragTarget.setPointerCapture(pointerId);

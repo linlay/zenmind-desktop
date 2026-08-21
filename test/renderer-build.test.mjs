@@ -5705,7 +5705,7 @@ test("market route keeps the unified native drag overlay", () => {
   assert.match(appShell, /className="app-window-drag-layer"[\s\S]*className="app-window-drag-region"/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
   assert.match(globalStyles, /\.app-shell\s*\{[^}]*--app-window-drag-height:\s*12px;/);
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*flex:\s*0 0 var\(--app-window-drag-height,\s*12px\);/);
+  assert.match(globalStyles, /\.app-window-drag-layer\s*\{[^}]*height:\s*var\(--app-window-drag-height,\s*12px\);/);
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
 });
 
@@ -5734,6 +5734,22 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-embedded-surface\.is-mac-platform\.has-service-webview-surface\s*\{/);
   assert.doesNotMatch(globalStyles, /--mac-embedded-titlebar-height:/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content\s*\{[^}]*padding-top:\s*var\(--app-window-drag-height\);/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content::before\s*\{[^}]*inset:\s*0 0 auto;[^}]*display:\s*block;[^}]*height:\s*var\(--app-window-drag-height\);[^}]*background:\s*var\(--embedded-surface-page-bg\);[^}]*pointer-events:\s*none;/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region\s*\{[^}]*position:\s*relative;[^}]*background:\s*var\(--embedded-surface-page-bg\);[^}]*box-shadow:\s*none;/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{[^}]*top:\s*3px;[^}]*left:\s*50%;[^}]*width:\s*28px;[^}]*height:\s*2px;[^}]*background:\s*var\(--desktop-ui-border\);[^}]*pointer-events:\s*none;/
+  );
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-service-webview-surface \.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*padding-top:/
@@ -5820,16 +5836,17 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShellRule, /--app-window-drag-right:\s*0px;/);
   assert.ok(dragLayerRule, "missing .app-window-drag-layer rule");
   assert.match(dragLayerRule, /position:\s*absolute;/);
-  assert.match(dragLayerRule, /inset:\s*0;/);
+  assert.match(dragLayerRule, /top:\s*0;/);
+  assert.match(dragLayerRule, /left:\s*var\(--app-window-drag-left,\s*var\(--app-sidebar-width,\s*160px\)\);/);
+  assert.match(dragLayerRule, /right:\s*var\(--app-window-drag-right,\s*0px\);/);
+  assert.match(dragLayerRule, /height:\s*var\(--app-window-drag-height,\s*12px\);/);
   assert.match(dragLayerRule, /z-index:\s*1000;/);
-  assert.match(dragLayerRule, /display:\s*flex;/);
-  assert.match(dragLayerRule, /flex-direction:\s*column;/);
-  assert.match(dragLayerRule, /pointer-events:\s*none;/);
+  assert.match(dragLayerRule, /pointer-events:\s*auto;/);
+  assert.match(dragLayerRule, /cursor:\s*grab;/);
   assert.ok(dragRegionRule, "missing .app-window-drag-region rule");
-  assert.match(dragRegionRule, /flex:\s*0 0 var\(--app-window-drag-height,\s*12px\);/);
-  assert.match(dragRegionRule, /height:\s*var\(--app-window-drag-height,\s*12px\);/);
-  assert.match(dragRegionRule, /margin-left:\s*var\(--app-window-drag-left,\s*var\(--app-sidebar-width,\s*160px\)\);/);
-  assert.match(dragRegionRule, /margin-right:\s*var\(--app-window-drag-right,\s*0px\);/);
+  assert.match(dragRegionRule, /width:\s*100%;/);
+  assert.match(dragRegionRule, /height:\s*100%;/);
+  assert.match(dragRegionRule, /margin:\s*0;/);
   assert.match(dragRegionRule, /app-region:\s*no-drag;/);
   assert.match(dragRegionRule, /-webkit-app-region:\s*no-drag;/);
   assert.match(dragRegionRule, /pointer-events:\s*auto;/);
@@ -5874,7 +5891,10 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShell, /window\.addEventListener\("pointerup", finishDrag, true\)/);
   assert.match(appShell, /window\.addEventListener\("pointercancel", finishDrag, true\)/);
   assert.match(appShell, /window\.addEventListener\("mouseup", finishDragOnMouseUp, true\)/);
-  assert.match(appShell, /window\.addEventListener\("blur", finishDrag, true\)/);
+  assert.match(appShell, /finishDragOnWindowBlur[\s\S]*?blurEvent\.target === window[\s\S]*?finishDrag\(\)/);
+  assert.match(appShell, /window\.addEventListener\("blur", finishDragOnWindowBlur\)/);
+  assert.match(appShell, /window\.removeEventListener\("blur", finishDragOnWindowBlur\)/);
+  assert.doesNotMatch(appShell, /window\.addEventListener\("blur", finishDragOnWindowBlur, true\)/);
   assert.doesNotMatch(appShell, /pointerEvent\.buttons === 0[\s\S]*?finishDrag\(\)/);
   assert.match(appShell, /finishDragOnLostPointerCapture:\s*EventListener[\s\S]*?captureEvent as globalThis\.PointerEvent[\s\S]*?pointerEvent\.buttons !== 0[\s\S]*?requestAnimationFrame[\s\S]*?dragTarget\.setPointerCapture\(pointerId\)[\s\S]*?return;[\s\S]*?finishDrag\(\)/);
   assert.match(appShell, /dragTarget\.addEventListener\("lostpointercapture", finishDragOnLostPointerCapture, true\)/);
