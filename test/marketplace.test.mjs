@@ -2176,7 +2176,7 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
   });
 });
 
-test("market catalog retries one unauthorized response with a refreshed Desktop SSO token", async (t) => {
+test("public market catalog does not require or refresh a Desktop SSO token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-auth-refresh-"));
   const app = createApp(root);
   const authorizationHeaders = [];
@@ -2186,12 +2186,6 @@ test("market catalog retries one unauthorized response with a refreshed Desktop 
   await withFixtureServer(new Map([
     ["/api/v1/desktop/catalog", (req, res) => {
       authorizationHeaders.push(req.headers.authorization ?? "");
-      if (req.headers.authorization !== "Bearer refreshed-market-token") {
-        res.statusCode = 401;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ error: { message: "expired token" } }));
-        return;
-      }
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ schemaVersion: 1, items: [] }));
     }]
@@ -2208,8 +2202,8 @@ test("market catalog retries one unauthorized response with a refreshed Desktop 
 
     assert.equal(result.ok, true);
     assert.equal(result.offline, false);
-    assert.deepEqual(tokenReasons, ["missing", "unauthorized"]);
-    assert.deepEqual(authorizationHeaders, ["Bearer stale-market-token", "Bearer refreshed-market-token"]);
+    assert.deepEqual(tokenReasons, []);
+    assert.deepEqual(authorizationHeaders, [""]);
   });
 });
 
@@ -2302,7 +2296,8 @@ test("installMarketItem resolves, downloads, installs and uninstalls software pa
       `/api/v1/software-packages/python-test/resolve?version=3.14.6&platform=${platformKey}`,
       `/api/v1/software-packages/python-test/download?version=3.14.6&platform=${platformKey}`
     ]);
-    assert.equal(requests.every((entry) => entry.authorization === "Bearer market-access-token"), true);
+    assert.equal(requests[0].authorization, undefined);
+    assert.equal(requests.slice(1).every((entry) => entry.authorization === "Bearer market-access-token"), true);
     assert.equal(requests.some((entry) => entry.path.includes("ignored-direct-url")), false);
     assert.equal(requests.some((entry) => entry.path.includes("ignored-resolved-url")), false);
 

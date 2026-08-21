@@ -763,6 +763,22 @@ export async function requestMarketJson(
   return response.json() as Promise<unknown>;
 }
 
+export async function requestPublicMarketJson(
+  app: App,
+  url: string,
+  options: MarketplaceOptions = {},
+  label = "market public request"
+) {
+  const fetchImpl = options.fetchImpl ?? fetch;
+  const response = await fetchImpl(url, {
+    headers: getMarketDesktopDeviceHeaders(app)
+  });
+  if (!response.ok) {
+    throw new Error(await readMarketErrorMessage(response, label));
+  }
+  return response.json() as Promise<unknown>;
+}
+
 async function verifyMarketAuthentication(
   app: App,
   apiBaseUrl: string,
@@ -1047,7 +1063,7 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
     };
   }
   try {
-    const catalog = normalizeCatalog(await requestMarketJson(app, catalogUrl, options, label));
+    const catalog = normalizeCatalog(await requestPublicMarketJson(app, catalogUrl, options, label));
     return {
       catalog,
       offline: false,
