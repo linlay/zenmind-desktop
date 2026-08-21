@@ -6,174 +6,154 @@ import {
   type AssistantConversationShareRequest,
   type AssistantConversationShareRevokeResult,
 } from "../../../shared/contracts";
-import { readDesktopSsoSiteAccessToken } from "../../sso-site-token";
-import { deriveTunnelHubRegistrationApiOrigin } from "../../tunnel-hub-registration";
-import { readTunnelHubSettings } from "../../tunnel-hub-settings";
-import {
-  isTunnelHubForbiddenHostname,
-  isTunnelHubLoopbackHostname,
-} from "../../tunnel-hub-url-policy";
 import { t } from "../../i18n/main-i18n";
-import { isDesktopDevelopmentRuntime } from "../../development-runtime";
+import { resolveConversationShareTarget } from "./conversation-share-target";
+import {
+  TunnelConversationShareError,
+  type ConversationShareCreator,
+  type ConversationShareReader,
+  type ConversationShareRevoker,
+} from "./tunnel-conversation-share-client";
 
-type ConversationShareBridge = {
-  createChatShare(input: {
-    chatId: string;
-    expiration: AssistantConversationShareRequest["expiration"];
-    tunnelOrigin: string;
-    tunnelAuthorization: string;
-  }): Promise<AssistantConversationShareCreateResult>;
-  listChatShares(input: {
-    chatId: string;
-    tunnelOrigin: string;
-    tunnelAuthorization: string;
-  }): Promise<AssistantConversationShareListResult>;
-  revokeChatShare(input: {
-    shareId: string;
-    tunnelOrigin: string;
-    tunnelAuthorization: string;
-  }): Promise<AssistantConversationShareRevokeResult>;
+type ConversationHtmlRenderer = {
+  downloadChatHtmlExport(
+    chatId: string,
+    assetOrigin: string,
+  ): Promise<
+    | { ok: true; bytes: Buffer; filename: string; message: string }
+    | { ok: false; message: string }
+  >;
 };
 
 export async function createConversationShare(
   app: App,
-  assistantBridge: ConversationShareBridge,
+  documentRenderer: ConversationHtmlRenderer,
+  shareCreator: ConversationShareCreator,
   request: AssistantConversationShareRequest,
 ): Promise<AssistantConversationShareCreateResult> {
-  const normalizedChatId = typeof request?.chatId === "string" ? request.chatId.trim() : "";
-  if (!normalizedChatId) {
+  const conversationId = typeof request?.chatId === "string" ? request.chatId.trim() : "";
+  if (!conversationId) {
     return { ok: false, message: t("assistant.chatIdRequired") };
+  }
+  if (!isValidConversationId(conversationId)) {
+    return { ok: false, message: t("assistant.chatShareConversationIdInvalid") };
   }
   if (!isAssistantConversationShareExpiration(request.expiration)) {
     return { ok: false, message: t("assistant.chatShareExpirationInvalid") };
   }
-  const connection = resolveConversationShareConnection(app);
-  if (!connection.ok) {
-    return connection;
+  const target = resolveConversationShareTarget(app);
+  if (!target.ok) {
+    return target;
   }
+
+  let rendered: Awaited<ReturnType<ConversationHtmlRenderer["downloadChatHtmlExport"]>>;
   try {
-    return await assistantBridge.createChatShare({
-      chatId: normalizedChatId,
-      expiration: request.expiration,
-      tunnelOrigin: connection.origin,
-      tunnelAuthorization: `Bearer ${connection.token}`
-    });
+    rendered = await documentRenderer.downloadChatHtmlExport(
+      conversationId,
+      target.target.origin,
+    );
   } catch {
     return { ok: false, message: t("assistant.chatShareRequestFailed") };
+  }
+  if (!rendered.ok) {
+    return { ok: false, message: rendered.message };
+  }
+
+  try {
+    const record = await shareCreator.create({
+      target: target.target,
+      conversationId,
+      expiration: request.expiration,
+      html: rendered.bytes,
+    });
+    return {
+      ok: true,
+      message: t("assistant.chatShareCreated"),
+      record,
+    };
+  } catch (error) {
+    return { ok: false, message: mapTunnelShareError(error, "create") };
   }
 }
 
 export async function listConversationShares(
   app: App,
-  assistantBridge: ConversationShareBridge,
+  shareReader: ConversationShareReader,
   chatId: string,
 ): Promise<AssistantConversationShareListResult> {
-  const normalizedChatId = typeof chatId === "string" ? chatId.trim() : "";
-  if (!normalizedChatId) {
+  const conversationId = typeof chatId === "string" ? chatId.trim() : "";
+  if (!conversationId) {
     return { ok: false, message: t("assistant.chatIdRequired") };
   }
-  const connection = resolveConversationShareConnection(app);
-  if (!connection.ok) {
-    return connection;
+  if (!isValidConversationId(conversationId)) {
+    return { ok: false, message: t("assistant.chatShareConversationIdInvalid") };
+  }
+  const target = resolveConversationShareTarget(app);
+  if (!target.ok) {
+    return target;
   }
   try {
-    return await assistantBridge.listChatShares({
-      chatId: normalizedChatId,
-      tunnelOrigin: connection.origin,
-      tunnelAuthorization: `Bearer ${connection.token}`
-    });
-  } catch {
-    return { ok: false, message: t("assistant.chatShareRequestFailed") };
+    const records = await shareReader.list(target.target, conversationId);
+    return { ok: true, message: "", records };
+  } catch (error) {
+    return { ok: false, message: mapTunnelShareError(error, "list") };
   }
 }
 
 export async function revokeConversationShare(
   app: App,
-  assistantBridge: ConversationShareBridge,
+  shareRevoker: ConversationShareRevoker,
   shareId: string,
 ): Promise<AssistantConversationShareRevokeResult> {
-  const normalizedShareId = shareId.trim();
-  if (!isValidConversationShareId(normalizedShareId)) {
+  const normalizedShareId = typeof shareId === "string" ? shareId.trim() : "";
+  if (!/^[A-Za-z0-9_-]{1,80}$/u.test(normalizedShareId)) {
     return { ok: false, message: t("assistant.chatShareInvalidId") };
   }
-  const connection = resolveConversationShareConnection(app);
-  if (!connection.ok) {
-    return connection;
+  const target = resolveConversationShareTarget(app);
+  if (!target.ok) {
+    return target;
   }
   try {
-    return await assistantBridge.revokeChatShare({
+    await shareRevoker.revoke(target.target, normalizedShareId);
+    return {
+      ok: true,
+      message: t("assistant.chatShareRevoked"),
       shareId: normalizedShareId,
-      tunnelOrigin: connection.origin,
-      tunnelAuthorization: `Bearer ${connection.token}`
-    });
-  } catch {
-    return { ok: false, message: t("assistant.chatShareRequestFailed") };
-  }
-}
-
-function isValidConversationShareId(value: string): boolean {
-  return /^[A-Za-z0-9_-]{1,80}$/u.test(value);
-}
-
-function resolveConversationShareConnection(app: App):
-  | { ok: true; origin: string; token: string }
-  | { ok: false; message: string } {
-  const token = readDesktopSsoSiteAccessToken(app);
-  if (!token) {
-    return { ok: false, message: t("assistant.chatShareLoginRequired") };
-  }
-  const assetOrigin = resolveConversationTunnelOrigin(app, true);
-  if (!assetOrigin.ok) return assetOrigin;
-  return { ok: true, origin: assetOrigin.origin, token };
-}
-
-export function resolveConversationAssetOrigin(app: App):
-  | { ok: true; origin: string }
-  | { ok: false; message: string } {
-  return resolveConversationTunnelOrigin(app, false);
-}
-
-function resolveConversationTunnelOrigin(
-  app: App,
-  requireEnabled: boolean,
-):
-  | { ok: true; origin: string }
-  | { ok: false; message: string } {
-  const settings = readTunnelHubSettings(app);
-  if (!settings.relayUrl || (requireEnabled && !settings.enabled)) {
-    return { ok: false, message: t("assistant.chatShareTunnelRequired") };
-  }
-  try {
-    const origin = deriveTunnelHubRegistrationApiOrigin(settings.relayUrl);
-    const allowedDevelopmentOrigin = isDesktopDevelopmentRuntime(app) && isLoopbackHttpOrigin(origin);
-    if (!isAllowedHttpsTunnelOrigin(origin) && !allowedDevelopmentOrigin) {
-      throw new Error("Tunnel share API must use HTTPS.");
-    }
-    return { ok: true, origin };
+    };
   } catch (error) {
-    return { ok: false, message: t("assistant.chatShareTunnelUrlInvalid", { message: messageFromError(error) }) };
+    return { ok: false, message: mapTunnelShareError(error, "revoke") };
   }
 }
 
-function isLoopbackHttpOrigin(value: string): boolean {
-  try {
-    const parsed = new URL(value);
-    const hostname = parsed.hostname.toLowerCase();
-    return parsed.protocol === "http:" &&
-      value === parsed.origin &&
-      isTunnelHubLoopbackHostname(hostname);
-  } catch {
-    return false;
+function mapTunnelShareError(
+  error: unknown,
+  action: "create" | "list" | "revoke",
+): string {
+  if (!(error instanceof TunnelConversationShareError)) {
+    return t("assistant.chatShareRequestFailed");
   }
+  if (error.status === 401 || error.status === 403) {
+    return t("assistant.chatShareUnauthorized");
+  }
+  if (error.status === 413) {
+    return t("assistant.chatShareSnapshotTooLarge");
+  }
+  if (error.status === 404 && action === "revoke") {
+    return t("assistant.chatShareMissing");
+  }
+  if (
+    error.kind === "timeout" ||
+    error.kind === "unavailable" ||
+    (error.status !== undefined && error.status >= 500)
+  ) {
+    return t("assistant.chatShareTunnelUnavailable");
+  }
+  if (error.kind === "invalid_response") {
+    return t("assistant.chatShareInvalidResponse");
+  }
+  return t("assistant.chatShareRequestFailed");
 }
 
-function isAllowedHttpsTunnelOrigin(value: string) {
-  const parsed = new URL(value);
-  return parsed.protocol === "https:" &&
-    value === parsed.origin &&
-    !isTunnelHubForbiddenHostname(parsed.hostname);
-}
-
-function messageFromError(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
+function isValidConversationId(value: string): boolean {
+  return Buffer.byteLength(value, "utf8") <= 255 && !/\p{Cc}/u.test(value);
 }

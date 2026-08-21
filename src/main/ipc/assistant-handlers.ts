@@ -16,6 +16,7 @@ import {
   revokeConversationShare
 } from "../assistant/core/conversation-share-controller";
 import { saveConversationHtmlExport } from "../assistant/core/conversation-html-export";
+import { TunnelConversationShareClient } from "../assistant/core/tunnel-conversation-share-client";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -133,6 +134,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     closeDesktopActionWorkbenchWindow,
     platform = process.platform
   } = options;
+  const conversationShareClient = new TunnelConversationShareClient();
 
   // ---------------------------------------------------------------------------
   // currentPage — pure snapshot state
@@ -478,15 +480,15 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   );
 
   ipcMain.handle("assistant.shareChat", async (_event: any, request: AssistantConversationShareRequest) =>
-    createConversationShare(app, assistantBridge, request)
+    createConversationShare(app, assistantBridge, conversationShareClient, request)
   );
 
   ipcMain.handle("assistant.listChatShares", async (_event: any, chatId: string) =>
-    listConversationShares(app, assistantBridge, chatId)
+    listConversationShares(app, conversationShareClient, chatId)
   );
 
   ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>
-    revokeConversationShare(app, assistantBridge, shareId)
+    revokeConversationShare(app, conversationShareClient, shareId)
   );
 
   // ---------------------------------------------------------------------------

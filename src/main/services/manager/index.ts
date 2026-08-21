@@ -190,7 +190,7 @@ import {
 } from "../../env-bootstrap";
 import { applyDesktopInitVersionUpgrade } from "../../desktop-init-bootstrap";
 import { isDesktopDevelopmentRuntime } from "../../development-runtime";
-import { resolveConversationAssetOrigin } from "../../assistant/core/conversation-share-controller";
+import { resolveConversationAssetOrigin } from "../../assistant/core/conversation-share-target";
 import {
   completeDesktopServiceConfigUpgrade,
   DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,

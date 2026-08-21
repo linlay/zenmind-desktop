@@ -4,7 +4,7 @@ import type { AssistantNavActionResult } from "../../../shared/contracts";
 import { getAssistantExportDefaultPath, getAvailableFilePath, getPlatformPath } from "../../download-paths";
 import { t } from "../../i18n/main-i18n";
 import { MAX_CONVERSATION_HTML_BYTES } from "./conversation-export-contract";
-import { resolveConversationAssetOrigin } from "./conversation-share-controller";
+import { resolveConversationAssetOrigin } from "./conversation-share-target";
 
 export { MAX_CONVERSATION_HTML_BYTES } from "./conversation-export-contract";
 

@@ -10,6 +10,9 @@ const {
   listConversationShares,
   revokeConversationShare
 } = await import("../dist-electron/main/assistant/core/conversation-share-controller.js");
+const {
+  TunnelConversationShareError
+} = await import("../dist-electron/main/assistant/core/tunnel-conversation-share-client.js");
 
 function createFixture(t, tunnelOverrides = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "conversation-share-"));
@@ -40,206 +43,234 @@ function createFixture(t, tunnelOverrides = {}) {
   return app;
 }
 
-function successfulShare(recordOverrides = {}) {
+function shareRecord(overrides = {}) {
   return {
-    ok: true,
-    message: "created",
-    record: {
-      shareId: "opaque_abc",
-      url: "https://share.example.test/share/opaque_abc",
-      createdAt: 1_786_363_200_000,
-      expiresAt: 1_788_955_200_000,
-      lastAccessedAt: null,
-      ...recordOverrides
-    }
+    shareId: "opaque_abc",
+    url: "https://share.example.test/share/opaque_abc",
+    createdAt: 1_786_363_200_000,
+    expiresAt: 1_788_955_200_000,
+    lastAccessedAt: null,
+    ...overrides
   };
 }
 
-function bridgeWithCalls(calls, result = successfulShare()) {
-  return {
-    async createChatShare(input) {
-      calls.push({ method: "create", input });
-      return result;
-    },
-    async listChatShares(input) {
-      calls.push({ method: "list", input });
-      return { ok: true, message: "", records: [result.record] };
-    },
-    async revokeChatShare(input) {
-      calls.push({ method: "revoke", input });
-      return { ok: true, message: "revoked", shareId: input.shareId };
-    }
-  };
-}
-
-function shareRequest(chatId, expiration = "30d") {
-  return { chatId, expiration };
-}
-
-test("createConversationShare delegates HTML share orchestration to Agent Platform", async (t) => {
+test("createConversationShare renders once, then forwards the same Buffer to Tunnel", async (t) => {
   const app = createFixture(t);
+  const html = Buffer.from("<!doctype html><title>share</title>");
   const calls = [];
-  const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest(" chat-1 "));
+  const renderer = {
+    async downloadChatHtmlExport(chatId, assetOrigin) {
+      calls.push({ method: "render", chatId, assetOrigin });
+      return { ok: true, bytes: html, filename: "chat.html", message: "" };
+    }
+  };
+  const client = {
+    async create(input) {
+      calls.push({ method: "create", input });
+      return shareRecord();
+    }
+  };
+
+  const result = await createConversationShare(app, renderer, client, {
+    chatId: " chat-1 ",
+    expiration: "30d"
+  });
 
   assert.equal(result.ok, true);
-  assert.equal(result.record.url, "https://share.example.test/share/opaque_abc");
-  assert.equal(result.record.expiresAt, 1_788_955_200_000);
-  assert.equal(calls[0].method, "create");
-  assert.equal(calls[0].input.chatId, "chat-1");
-  assert.equal(calls[0].input.expiration, "30d");
-  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
-  assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
+  assert.deepEqual(calls.map((call) => call.method), ["render", "create"]);
+  assert.equal(calls[0].chatId, "chat-1");
+  assert.equal(calls[0].assetOrigin, "https://tunnel.example.test");
+  assert.equal(calls[1].input.html, html);
+  assert.equal(calls[1].input.conversationId, "chat-1");
+  assert.equal(calls[1].input.expiration, "30d");
+  assert.equal(calls[1].input.target.origin, "https://tunnel.example.test");
+  assert.match(calls[1].input.target.accessToken, /^header\./u);
 });
 
-test("development share accepts only the three canonical loopback Tunnel hosts", async (t) => {
+test("createConversationShare resolves login and Tunnel before rendering HTML", async (t) => {
+  const app = createFixture(t);
+  const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
+  fs.rmSync(path.join(desktopRoot, "secrets", "sso-site-token.json"));
+  let rendered = false;
+  let created = false;
+
+  const result = await createConversationShare(app, {
+    async downloadChatHtmlExport() {
+      rendered = true;
+      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+    }
+  }, {
+    async create() {
+      created = true;
+      return shareRecord();
+    }
+  }, { chatId: "chat-1", expiration: "30d" });
+
+  assert.equal(result.ok, false);
+  assert.equal(rendered, false);
+  assert.equal(created, false);
+});
+
+test("createConversationShare does not call Tunnel when HTML generation fails", async (t) => {
+  const app = createFixture(t);
+  let created = false;
+  const result = await createConversationShare(app, {
+    async downloadChatHtmlExport() {
+      return { ok: false, message: "render failed" };
+    }
+  }, {
+    async create() {
+      created = true;
+      return shareRecord();
+    }
+  }, { chatId: "chat-1", expiration: "30d" });
+
+  assert.deepEqual(result, { ok: false, message: "render failed" });
+  assert.equal(created, false);
+});
+
+test("createConversationShare rejects invalid expiration before resolving dependencies", async (t) => {
+  const app = createFixture(t);
+  let called = false;
+  const result = await createConversationShare(app, {
+    async downloadChatHtmlExport() {
+      called = true;
+      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+    }
+  }, {
+    async create() {
+      called = true;
+      return shareRecord();
+    }
+  }, { chatId: "chat-1", expiration: "90d" });
+
+  assert.equal(result.ok, false);
+  assert.equal(called, false);
+});
+
+test("createConversationShare rejects an invalid conversation id before rendering", async (t) => {
+  const app = createFixture(t);
+  let called = false;
+  const result = await createConversationShare(app, {
+    async downloadChatHtmlExport() {
+      called = true;
+      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+    }
+  }, {
+    async create() {
+      called = true;
+      return shareRecord();
+    }
+  }, { chatId: `chat-${"x".repeat(256)}`, expiration: "30d" });
+
+  assert.equal(result.ok, false);
+  assert.equal(called, false);
+});
+
+test("development allows canonical loopback Tunnel origins while packaged Desktop rejects plaintext", async (t) => {
   for (const [relayUrl, expectedOrigin] of [
     ["ws://localhost:18181/tunnel", "http://localhost:18181"],
     ["ws://127.0.0.1:18181/tunnel", "http://127.0.0.1:18181"],
     ["ws://[::1]:18181/tunnel", "http://[::1]:18181"]
   ]) {
-    const app = createFixture(t, { relayUrl });
-    app.isPackaged = false;
-    const calls = [];
+    const developmentApp = createFixture(t, { relayUrl });
+    developmentApp.isPackaged = false;
+    let developmentOrigin = "";
+    const renderer = {
+      async downloadChatHtmlExport(_chatId, assetOrigin) {
+        developmentOrigin = assetOrigin;
+        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+      }
+    };
+    const client = { async create() { return shareRecord(); } };
+    const developmentResult = await createConversationShare(
+      developmentApp,
+      renderer,
+      client,
+      { chatId: "chat-1", expiration: "30d" }
+    );
+    assert.equal(developmentResult.ok, true, relayUrl);
+    assert.equal(developmentOrigin, expectedOrigin, relayUrl);
 
-    const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
-
-    assert.equal(result.ok, true, relayUrl);
-    assert.equal(calls[0].input.tunnelOrigin, expectedOrigin, relayUrl);
-    assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true, relayUrl);
+    const packagedApp = createFixture(t, { relayUrl });
+    packagedApp.isPackaged = true;
+    let packagedRendered = false;
+    const packagedResult = await createConversationShare(packagedApp, {
+      async downloadChatHtmlExport() {
+        packagedRendered = true;
+        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+      }
+    }, client, { chatId: "chat-1", expiration: "30d" });
+    assert.equal(packagedResult.ok, false, relayUrl);
+    assert.equal(packagedRendered, false, relayUrl);
   }
 });
 
-test("packaged Desktop rejects plaintext Tunnel sharing for all canonical loopback hosts", async (t) => {
-  for (const relayUrl of [
-    "ws://localhost:18181/tunnel",
-    "ws://127.0.0.1:18181/tunnel",
-    "ws://[::1]:18181/tunnel"
-  ]) {
-    const app = createFixture(t, { relayUrl });
-    app.isPackaged = true;
-    const calls = [];
-
-    const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
-
-    assert.equal(result.ok, false, relayUrl);
-    assert.equal(calls.length, 0, relayUrl);
-  }
-});
-
-test("development share fails closed for disabled, remote plaintext, or reserved local Tunnel settings", async (t) => {
-  for (const tunnelOverrides of [
-    { enabled: false },
-    { relayUrl: "ws://192.0.2.1:18181/tunnel" },
-    { relayUrl: "wss://127.0.0.2:18181/tunnel" },
-    { relayUrl: "wss://demo.localhost:18181/tunnel" },
-    { relayUrl: "wss://0.0.0.0:18181/tunnel" }
-  ]) {
-    const app = createFixture(t, tunnelOverrides);
-    app.isPackaged = false;
-    const calls = [];
-
-    const result = await createConversationShare(app, bridgeWithCalls(calls), shareRequest("chat-1"));
-
-    assert.equal(result.ok, false);
-    assert.equal(calls.length, 0);
-  }
-});
-
-test("createConversationShare resolves login before calling Agent Platform", async (t) => {
+test("list and revoke use only the Tunnel client", async (t) => {
   const app = createFixture(t);
-  const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
-  fs.rmSync(path.join(desktopRoot, "secrets", "sso-site-token.json"));
-  let called = false;
-  const result = await createConversationShare(app, {
-    async createChatShare() {
-      called = true;
-      return successfulShare();
+  const calls = [];
+  const client = {
+    async list(target, conversationId) {
+      calls.push({ method: "list", target, conversationId });
+      return [shareRecord({ expiresAt: null })];
     },
-    async revokeChatShare() {
-      called = true;
-      return { ok: true, message: "revoked" };
+    async revoke(target, shareId) {
+      calls.push({ method: "revoke", target, shareId });
     }
-  }, shareRequest("chat-1"));
-
-  assert.equal(result.ok, false);
-  assert.equal(called, false);
-});
-
-test("createConversationShare does not expose private authorization on bridge failures", async (t) => {
-  const app = createFixture(t);
-  const result = await createConversationShare(app, {
-    async createChatShare(input) {
-      throw new Error(input.tunnelAuthorization);
-    },
-    async revokeChatShare() {
-      return { ok: true, message: "revoked" };
-    }
-  }, shareRequest("chat-1"));
-
-  assert.equal(result.ok, false);
-  assert.doesNotMatch(result.message, /Bearer|header\./u);
-});
-
-test("createConversationShare rejects unsupported expiration before calling Agent Platform", async (t) => {
-  const app = createFixture(t);
-  let called = false;
-  const bridge = bridgeWithCalls([]);
-  const originalCreate = bridge.createChatShare;
-  bridge.createChatShare = async (...args) => {
-    called = true;
-    return originalCreate(...args);
   };
-  const result = await createConversationShare(app, bridge, {
-    chatId: "chat-1",
-    expiration: "90d"
-  });
 
-  assert.equal(result.ok, false);
-  assert.equal(called, false);
+  const listed = await listConversationShares(app, client, " chat-1 ");
+  const revoked = await revokeConversationShare(app, client, "opaque-abc_123");
+
+  assert.equal(listed.ok, true);
+  assert.equal(revoked.ok, true);
+  assert.deepEqual(calls.map((call) => call.method), ["list", "revoke"]);
+  assert.equal(calls[0].conversationId, "chat-1");
+  assert.equal(calls[1].shareId, "opaque-abc_123");
+  assert.equal(calls[0].target.origin, "https://tunnel.example.test");
 });
 
-test("Desktop share controller contains no SSE, HTML bytes, or direct Tunnel data-plane request", () => {
+test("controller maps typed Tunnel failures without exposing secrets", async (t) => {
+  const app = createFixture(t);
+  const cases = [
+    [new TunnelConversationShareError("rejected", 401), /权限|credential|permission/iu],
+    [new TunnelConversationShareError("rejected", 413), /过大|too large/iu],
+    [new TunnelConversationShareError("invalid_response"), /无效|invalid/iu],
+    [new TunnelConversationShareError("timeout"), /不可用|unavailable/iu],
+    [new TunnelConversationShareError("rejected", 503), /不可用|unavailable/iu]
+  ];
+  for (const [error, messagePattern] of cases) {
+    const result = await listConversationShares(app, {
+      async list() {
+        throw error;
+      }
+    }, "chat-1");
+    assert.equal(result.ok, false);
+    assert.match(result.message, messagePattern);
+    assert.doesNotMatch(result.message, /Bearer|header\./u);
+  }
+
+  const revoked = await revokeConversationShare(app, {
+    async revoke() {
+      throw new TunnelConversationShareError("rejected", 404);
+    }
+  }, "share_abc");
+  assert.equal(revoked.ok, false);
+  assert.match(revoked.message, /不存在|revoked|no longer exists/iu);
+});
+
+test("Desktop sharing source keeps Platform as an HTML renderer only", () => {
   const controllerSource = fs.readFileSync(
     new URL("../src/main/assistant/core/conversation-share-controller.ts", import.meta.url),
     "utf8"
   );
+  const bridgeSource = fs.readFileSync(
+    new URL("../src/main/assistant/core/agent-platform-bridge.ts", import.meta.url),
+    "utf8"
+  );
 
-  assert.doesNotMatch(controllerSource, /downloadChatShareEventStream|text\/event-stream|\/api\/desktop\/shares|body:\s*.*bytes/u);
-  assert.doesNotMatch(controllerSource, /Date\.parse|RFC3339|isIsoTimestamp/u);
-  assert.match(controllerSource, /assistantBridge\.createChatShare/u);
-  assert.match(controllerSource, /assistantBridge\.listChatShares/u);
-  assert.match(controllerSource, /assistantBridge\.revokeChatShare/u);
-});
-
-test("listConversationShares delegates to Agent Platform with the current chat and Tunnel connection", async (t) => {
-  const app = createFixture(t);
-  const calls = [];
-  const result = await listConversationShares(app, bridgeWithCalls(calls), " chat-1 ");
-
-  assert.equal(result.ok, true);
-  assert.equal(result.records.length, 1);
-  assert.equal(calls[0].method, "list");
-  assert.equal(calls[0].input.chatId, "chat-1");
-  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
-});
-
-test("revokeConversationShare delegates to Agent Platform with current Tunnel connection", async (t) => {
-  const app = createFixture(t);
-  const calls = [];
-  const result = await revokeConversationShare(app, bridgeWithCalls(calls), "share_abc");
-
-  assert.equal(result.ok, true);
-  assert.equal(calls[0].method, "revoke");
-  assert.equal(calls[0].input.shareId, "share_abc");
-  assert.equal(calls[0].input.tunnelOrigin, "https://tunnel.example.test");
-  assert.equal(calls[0].input.tunnelAuthorization.startsWith("Bearer header."), true);
-});
-
-test("revokeConversationShare accepts a prefixless opaque id", async (t) => {
-  const app = createFixture(t);
-  const calls = [];
-  const result = await revokeConversationShare(app, bridgeWithCalls(calls), "opaque-abc_123");
-
-  assert.equal(result.ok, true);
-  assert.equal(calls[0].input.shareId, "opaque-abc_123");
+  assert.match(controllerSource, /downloadChatHtmlExport/u);
+  assert.match(controllerSource, /shareCreator\.create/u);
+  assert.doesNotMatch(bridgeSource, /createChatShare|listChatShares|revokeChatShare/u);
+  assert.doesNotMatch(bridgeSource, /X-Conversation-Share-Authorization/u);
 });
