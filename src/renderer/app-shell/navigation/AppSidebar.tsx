@@ -3531,10 +3531,6 @@ export function AppSidebar({
     );
   }
 
-  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
-    return renderChatsNewChatButton(options);
-  }
-
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
   ) {
