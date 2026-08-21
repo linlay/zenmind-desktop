@@ -61,6 +61,35 @@ export type ChatWorkPanelRevealLocalResourceRequest = ChatWorkPanelOpenLocalReso
 
 export type ChatWorkPanelRevealLocalResourceResult = ChatWorkPanelOpenLocalResourceResult;
 
+// Keep this set aligned with Agent WebClient's detectViewerContentKind(). The
+// Resource Viewer route currently derives contentKind from the file name only,
+// so Desktop can make the same presentation-only decision without reading the
+// file or weakening Main's path validation.
+const CHAT_WORK_PANEL_PREVIEWABLE_RESOURCE_EXTENSIONS = new Set([
+  "aac", "apng", "avif", "bmp", "c", "cpp", "css", "csv", "flac", "gif",
+  "go", "heic", "heif", "htm", "html", "ico", "java", "jpeg", "jpg", "js",
+  "json", "log", "m4a", "m4v", "md", "mjs", "mov", "mp3", "mp4", "mpeg",
+  "mpg", "oga", "ogg", "ogv", "opus", "pdf", "png", "py", "rb", "rs",
+  "sh", "sql", "svg", "tif", "tiff", "ts", "tsx", "txt", "wav", "weba",
+  "webm", "webp", "xhtml", "xml", "yaml", "yml",
+]);
+
+export function shouldShowChatWorkPanelLocalResourceActions(input: {
+  ownerChatId: string;
+  profile: ChatWorkPanelLocalResourceProfile;
+  route: string;
+}) {
+  const relativePath = resolveChatWorkPanelLocalResourcePath(input);
+  if (!relativePath) return false;
+  const previewPath = relativePath.split(/[?#]/u, 1)[0];
+  const filename = previewPath.split("/").pop() || "";
+  const lastDotIndex = filename.lastIndexOf(".");
+  const extension = lastDotIndex >= 0 && lastDotIndex < filename.length - 1
+    ? filename.slice(lastDotIndex + 1).toLowerCase()
+    : "";
+  return !CHAT_WORK_PANEL_PREVIEWABLE_RESOURCE_EXTENSIONS.has(extension);
+}
+
 export function resolveChatWorkPanelLocalResourcePath(input: {
   ownerChatId: string;
   profile: ChatWorkPanelLocalResourceProfile;

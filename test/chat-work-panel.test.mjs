@@ -139,6 +139,9 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /openLocalResource/u);
   assert.match(host, /revealLocalResource/u);
   assert.match(host, /className="chat-work-panel-resource-actions"/u);
+  assert.match(host, /shouldShowChatWorkPanelLocalResourceActions/u);
+  assert.match(host, /const showLocalResourceActions = Boolean/u);
+  assert.match(host, /showLocalResourceActions \? \(/u);
   assert.match(host, /<Button[\s\S]*?block[\s\S]*?className="chat-work-panel-resource-action"/u);
   assert.match(host, /<Button[\s\S]*?type="primary"[\s\S]*?className="chat-work-panel-resource-action"/u);
   assert.match(host, /chatWorkPanel\.tabContextMenu\.revealInFinder/u);

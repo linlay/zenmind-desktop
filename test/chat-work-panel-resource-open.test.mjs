@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 const require = createRequire(import.meta.url);
 const {
   resolveChatWorkPanelLocalResourcePath,
+  shouldShowChatWorkPanelLocalResourceActions,
 } = require("../dist-electron/shared/chat-work-panel-tab-context-menu.js");
 const {
   normalizeChatWorkPanelOpenLocalResourceRequest,
@@ -40,6 +41,39 @@ test("Resource Viewer route yields only a chat-scoped artifact/reference path", 
       profile: "artifact",
       route,
     }), "");
+  }
+});
+
+test("local resource actions appear only for formats Resource Viewer cannot preview", () => {
+  const routeFor = (filename) =>
+    `/resource-viewer/agent-72?chatId=chat-72&file=${encodeURIComponent(`artifacts/run-1/${filename}`)}`;
+  for (const filename of [
+    "dashboard.html",
+    "document.pdf",
+    "photo.png",
+    "notes.md",
+    "data.json",
+    "recording.mp3",
+    "demo.mp4",
+  ]) {
+    assert.equal(shouldShowChatWorkPanelLocalResourceActions({
+      ownerChatId: "chat-72",
+      profile: "artifact",
+      route: routeFor(filename),
+    }), false, filename);
+  }
+  for (const filename of [
+    "slides.pptx",
+    "document.docx",
+    "workbook.xlsx",
+    "archive.zip",
+    "unknown-resource",
+  ]) {
+    assert.equal(shouldShowChatWorkPanelLocalResourceActions({
+      ownerChatId: "chat-72",
+      profile: "artifact",
+      route: routeFor(filename),
+    }), true, filename);
   }
 });
 

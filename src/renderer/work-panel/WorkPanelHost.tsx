@@ -18,6 +18,7 @@ import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from ".
 import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
 import {
   resolveChatWorkPanelLocalResourcePath,
+  shouldShowChatWorkPanelLocalResourceActions,
   type ChatWorkPanelTabContextMenuProfile,
 } from "../../shared/chat-work-panel-tab-context-menu";
 import {
@@ -663,20 +664,29 @@ export function WorkPanelHost({
                 {workspace.items.map((item) => {
                   const active = visible && workspace.activeItemId === item.itemId;
                   const resourceProfile = localResourceProfile(item);
+                  const showLocalResourceActions = Boolean(
+                    resourceProfile &&
+                    item.descriptor.kind === "webclient" &&
+                    shouldShowChatWorkPanelLocalResourceActions({
+                      ownerChatId: workspace.ownerChatId,
+                      profile: resourceProfile,
+                      route: item.descriptor.route,
+                    }),
+                  );
                   const localResourceActionBusy = busyLocalResourceItems.has(
                     itemRuntimeKey(workspace.ownerChatId, item.itemId),
                   );
                   return (
                     <div
                       key={item.itemId}
-                      className={`chat-work-panel-item${active ? " is-active" : ""}${resourceProfile ? " has-resource-actions" : ""}`}
+                      className={`chat-work-panel-item${active ? " is-active" : ""}${showLocalResourceActions ? " has-resource-actions" : ""}`}
                       data-work-panel-active={active ? "true" : "false"}
                       data-work-panel-item={item.itemId}
                       data-work-panel-owner={workspace.ownerChatId}
                       hidden={!active}
                       aria-hidden={!active}
                     >
-                      {resourceProfile ? (
+                      {showLocalResourceActions ? (
                         <div
                           className="chat-work-panel-resource-actions"
                           role="group"
