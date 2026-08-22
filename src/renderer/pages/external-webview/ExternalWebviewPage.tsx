@@ -18,6 +18,7 @@ import {
 } from "../../../shared/surface-identity";
 import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID } from "../../../shared/browser-surfaces";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
+import { normalizeWebviewBlobPopupUrl } from "../../../shared/webview-popup";
 import { closeWebTabFromOrder } from "../../../shared/web-tab-lifecycle";
 import {
   buildInteractElementScript,
@@ -997,12 +998,25 @@ export function ExternalWebviewPage({
   };
 
   useEffect(() => {
-    return window.electronAPI.onWebviewOpenTab(({ target, sourceGuestId, url: nextUrl, partition, userAgent }) => {
+    return window.electronAPI.onWebviewOpenTab(({
+      target,
+      navigationKind,
+      sourceGuestId,
+      url: requestedUrl,
+      partition,
+      userAgent,
+    }) => {
       if (appChrome || target !== "desktop-browser") {
         return;
       }
       const currentState = browserStateRef.current;
       const sourceTab = currentState.tabs.find((tab) => tab.guestId === sourceGuestId);
+      const nextUrl = navigationKind === "blob"
+        ? normalizeWebviewBlobPopupUrl(requestedUrl)
+        : requestedUrl;
+      if (!nextUrl || (navigationKind === "blob" && !sourceTab)) {
+        return;
+      }
       const isHostOpenRequest = sourceGuestId < 0;
       if (isHostOpenRequest) {
         if (!activeRef.current) {

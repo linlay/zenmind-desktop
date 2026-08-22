@@ -86,7 +86,9 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   const externalWebview = read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx");
   const reducer = read("src/shared/work-panel.ts");
 
-  assert.match(host, /itemPartition\(workspace\.workspaceId, item\.itemId\)/u);
+  assert.match(host, /resolveWorkPanelWebSessionKey\([\s\S]{0,100}workspace\.workspaceId,[\s\S]{0,80}item\.itemId/u);
+  assert.match(host, /type: "openBlobPopup"/u);
+  assert.match(host, /navigationKind === "blob"/u);
   assert.match(host, /clearSession\?\.\(\{ partition \}\)/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
   assert.match(host, /target !== "work-panel"/u);

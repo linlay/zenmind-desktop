@@ -38,6 +38,7 @@ export type AssistantNavigationPushEventListener = (event: AssistantNavigationPu
 
 export interface WebviewOpenTabRequest {
   target: "desktop-browser" | "work-panel";
+  navigationKind: "network" | "blob";
   sourceGuestId: number;
   url: string;
   partition?: string;

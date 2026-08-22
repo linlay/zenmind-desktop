@@ -79,6 +79,7 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
     await options.delay(450);
     options.state.mainWindow?.webContents.send("webview.openTab", {
       target: "desktop-browser",
+      navigationKind: "network",
       sourceGuestId: -1,
       url: targetUrl,
       partition: input.partition,

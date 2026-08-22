@@ -109,6 +109,7 @@
 - [ ] 下载校验、取消、重试和缓存清理行为一致，恶意路径与不匹配摘要被拒绝。
 - [ ] Website 新增、排序、禁用和删除只影响 Desktop 入口，不误删站点自身数据。
 - [ ] Website 的 SSO、Copilot 与刷新能力按 manifest 显式生效，不依据 URL 猜测。
+- [ ] macOS 与 Windows 分别在 Website 页面通过 `window.open(blobPdf)` 和 `target="_blank"` 打开 PDF；预览在同一 Website surface 的新标签中加载并继承 SSO partition，不触发下载、系统浏览器或 `failed to open external popup url`。`blob:null`、跨 creator origin 和非 Website guest 的 Blob popup 被拒绝。
 - [ ] macOS 与 Windows 生产包均包含 `Resources/scripts/webapp-tooling.mjs`，从该路径可完成 manifest 初始化、项目校验、ZIP 构建与归档复验，且 `app.asar` 内不再携带重复副本。
 - [ ] `agent-platform` 启动环境的 `DESKTOP_WEBAPP_TOOLING_PATH` 精确指向当前生产包 Tooling；旧 Skill 通过过渡 `DESKTOP_ROOT` 也能直接命中，不扫描用户目录或源码仓库。
 - [ ] WebApp v2 完成包校验、后端启动、gateway 访问、bridge 授权、停止和卸载。
@@ -128,6 +129,7 @@
 - [ ] Platform 反向 `desktop.workpanel.openWeb/refreshWeb` 仅在匹配的 Run grant 已就绪时不弹确认；grant 缺失、身份冲突或过期仍 fail closed，Platform 的其他 WorkPanel 动作以及 HTTP bridge、Desktop WS、企业聊天和普通 Action handler 不获得该豁免。
 - [ ] WorkPanel workspace 相互隔离；非法 URL、Project/File Diff 的绝对或 `..` 路径、跨 workspace 目标被拒绝，File descriptor 的相对、POSIX、Windows 盘符与 UNC 请求路径被接受，空 Native allowlist 返回 `unsupported_native_surface`；动作列表与执行器只接受当前 `desktop.workpanel.*` 契约。
 - [ ] `desktop.workpanel.openWeb` 按规范化 HTTP(S) URL 打开或激活网页 item；网页内普通链接在当前 WorkPanel tab 导航，`target="_blank"`、`window.open()` 和内容右键“在新工作面板标签打开”创建同一 owner Chat 的新外层 Web item，不切换到 Desktop Browser 根路由、不创建隐藏的内部标签或额外窗口；加载期间外层 tab 显示 spinner、内容顶部显示细进度条，完成/失败后清除；`desktop.workpanel.refreshWeb` 仅刷新并激活同一 owner Chat 中 URL 匹配的现有 WebView，非法 URL、缺失 workspace、跨 Chat 或不存在的网页均被拒绝。
+- [ ] macOS 与 Windows 分别在 WorkPanel Web item 内通过 `window.open(blobPdf)` 和 `target="_blank"` 打开 PDF；新预览成为同一 owner Chat 的外层标签并继承来源临时 session。先关闭来源 item 时预览保持可用且 session 不清理，关闭最后一个共享标签后才清理；公共 `desktop.workpanel.openWeb/openTab`、Agent Bridge 和地址输入继续拒绝直接 `blob:`。
 - [ ] 仅 Main Chat 显示 Desktop WorkPanel 右上按钮；新对话尚无稳定 `chatId` 时按钮禁用，管理页、Copilot、Website、WebApp 和 Standalone WebClient 均无该 Desktop 入口，Desktop Agent guest 自身右上快捷组为空。
 - [ ] 首次点击右上按钮创建当前 Chat 的 Overview item；再次点击只隐藏，tabs、guest、active item 与宽度保持；再次打开恢复原 active item且不重建 guest。分别在两个 Chat 隐藏/恢复时 workspace 不串线，隐藏期间收到 Planning/Artifact/Web `openTab` 或 `activateTab` 会自动显示目标 workspace。
 - [ ] WorkPanel Overview、Debug、BTW 分别使用 `/overview/:chatId`、`/debug/:chatId`、`/btw/:chatId`；Source 与 Planning 使用各自身份作为 path 参数；Workspace File、Project 与 Diff 使用 canonical route，并保持路径仅编码一次。WebClient 缺少 `currentWorker.workspaceDir` 时，点击 `cli-excelx/README.md` 的绝对链接仍立即创建 `/file-viewer/:agentKey` WorkPanel 并通过 `/api/file` 加载；POSIX、Windows 盘符与 UNC 文件路径即使含有 `Project/project` 也必须登记为 File management surface，真正的 Project 页面仍登记为 Project surface。

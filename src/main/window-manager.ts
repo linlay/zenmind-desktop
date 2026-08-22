@@ -9,6 +9,10 @@ import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args
 import type { LocaleSettings } from "../shared/i18n/types";
 import type { DesktopGlobalSearchShortcut } from "../shared/contracts/desktop-api";
 import { normalizeChatWorkPanelUrl } from "../shared/chat-work-panel";
+import {
+  isBlobSchemeUrl,
+  normalizeWebviewBlobPopupForSource,
+} from "../shared/webview-popup";
 import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
@@ -101,6 +105,7 @@ type WebviewAttachResult =
 type AttachedWebviewLike = {
   id: number;
   session?: unknown;
+  getURL(): string;
   isFocused?(): boolean;
   on(eventName: string, listener: (...args: any[]) => void): unknown;
   copy(): void;
@@ -110,8 +115,13 @@ type AttachedWebviewLike = {
   paste(): void;
   selectAll(): void;
   loadURL(url: string): Promise<unknown>;
-  setWindowOpenHandler(handler: (details: { url: string }) => { action: "deny" }): void;
+  setWindowOpenHandler(handler: (details: {
+    url: string;
+    referrer?: { url?: string };
+  }) => { action: "deny" }): void;
 };
+
+type BlobPopupTarget = "desktop-browser" | "work-panel";
 
 type WebviewEditCommand = "copy" | "cut" | "paste" | "selectAll";
 
@@ -139,11 +149,12 @@ type AttachedWebviewOptions<
   resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
   isGlobalSearchOverlayVisible?(): boolean;
   shouldDownloadUrl(url: string): boolean;
-  resolveOpenDisposition(url: string): "download" | "tab" | "external";
+  resolveOpenDisposition(url: string): "download" | "tab" | "blob" | "external";
   collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
   report(source: string, details: Record<string, unknown>): void;
   onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
   shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
+  resolveBlobPopupTarget?(contents: TGuestContents): BlobPopupTarget | null;
   getHelpUrl?(): string;
   isHelpWebview?(contents: TGuestContents): boolean;
   openExternal(url: string): Promise<unknown>;
@@ -364,11 +375,12 @@ export function configureMainWindowWebContents<
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isGlobalSearchOverlayVisible?(): boolean;
     shouldDownloadUrl(url: string): boolean;
-    resolveOpenDisposition(url: string): "download" | "tab" | "external";
+    resolveOpenDisposition(url: string): "download" | "tab" | "blob" | "external";
     collectLoadDiagnostics(contents: TGuestContents, validatedUrl: string): Promise<Record<string, unknown>>;
     report(source: string, details: Record<string, unknown>): void;
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
     shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
+    resolveBlobPopupTarget?(contents: TGuestContents): BlobPopupTarget | null;
     attachWebviewContextMenu?(contents: TGuestContents): void;
     onWebviewFocusChanged?(webContentsId: number, focused: boolean): void;
     onMainRendererFocused?(): void;
@@ -466,6 +478,7 @@ export function configureMainWindowWebContents<
       report: options.report,
       onWebviewNavigation: options.onWebviewNavigation,
       shouldOpenPopupInWorkPanelTab: options.shouldOpenPopupInWorkPanelTab,
+      resolveBlobPopupTarget: options.resolveBlobPopupTarget,
       getHelpUrl: options.getHelpUrl,
       isHelpWebview: options.isHelpWebview,
       openExternal: options.openExternal,
@@ -794,7 +807,31 @@ export function configureAttachedWebview<
     });
   });
 
-  contents.setWindowOpenHandler(({ url }) => {
+  contents.setWindowOpenHandler(({ url, referrer }) => {
+    if (isBlobSchemeUrl(url)) {
+      const normalizedBlobUrl = normalizeWebviewBlobPopupForSource(
+        url,
+        contents.getURL(),
+        referrer?.url,
+      );
+      const blobTarget = normalizedBlobUrl
+        ? options.resolveBlobPopupTarget?.(contents) ?? null
+        : null;
+      if (normalizedBlobUrl && blobTarget) {
+        options.schedule(() => {
+          const mainWindow = options.getMainWindow();
+          if (!mainWindow || mainWindow.isDestroyed()) return;
+          mainWindow.webContents.send("webview.openTab", {
+            target: blobTarget,
+            navigationKind: "blob",
+            sourceGuestId: contents.id,
+            url: normalizedBlobUrl
+          });
+        });
+      }
+      return { action: "deny" };
+    }
+
     if (options.shouldOpenPopupInWorkPanelTab?.(contents)) {
       const nextUrl = normalizeChatWorkPanelUrl(url);
       if (nextUrl) {
@@ -803,6 +840,7 @@ export function configureAttachedWebview<
           if (!mainWindow || mainWindow.isDestroyed()) return;
           mainWindow.webContents.send("webview.openTab", {
             target: "work-panel",
+            navigationKind: "network",
             sourceGuestId: contents.id,
             url: nextUrl
           });
@@ -838,6 +876,7 @@ export function configureAttachedWebview<
 
         mainWindow.webContents.send("webview.openTab", {
           target: "desktop-browser",
+          navigationKind: "network",
           sourceGuestId: contents.id,
           url
         });

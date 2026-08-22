@@ -68,6 +68,9 @@ export type AppShellRuntimeOptions = {
   resolveGlobalSearchCommandShortcut: (platform: NodeJS.Platform, input: any) => DesktopGlobalSearchShortcut | null;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
   shouldOpenWebviewPopupInWorkPanelTab: (contents: Electron.WebContents) => boolean;
+  resolveBlobPopupTarget: (
+    contents: Electron.WebContents,
+  ) => "desktop-browser" | "work-panel" | null;
   attachWebviewContextMenu: (contents: Electron.WebContents) => void;
   collectWebviewLoadDiagnostics: (contents: Electron.WebContents, validatedUrl: string) => Promise<Record<string, unknown>>;
   reportRendererDiagnostic: (source: string, details: Record<string, unknown>) => void;
@@ -247,6 +250,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       report: options.safeConsoleError,
       onWebviewNavigation: options.handleDesktopSsoWebviewNavigation,
       shouldOpenPopupInWorkPanelTab: options.shouldOpenWebviewPopupInWorkPanelTab,
+      resolveBlobPopupTarget: options.resolveBlobPopupTarget,
       attachWebviewContextMenu: options.attachWebviewContextMenu,
       onWebviewFocusChanged: (webContentsId, focused) => {
         if (focused) {

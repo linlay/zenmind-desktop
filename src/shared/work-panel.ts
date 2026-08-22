@@ -8,14 +8,20 @@ import type {
   WorkPanelWorkspace,
 } from "./contracts/agent-webclient-bridge";
 import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry";
+import {
+  getWebviewBlobPopupHostname,
+  normalizeWebviewBlobPopupUrl,
+} from "./webview-popup";
 
 export type WorkPanelState = {
   workspaces: WorkPanelWorkspace[];
   visibleOwnerChatIds: string[];
+  webSessionKeysByItemId: Record<string, string>;
 };
 
 export type WorkPanelCommand =
   | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor }
+  | { type: "openBlobPopup"; ownerChatId: string; sourceItemId: string; url: string }
   | { type: "activateItem"; ownerChatId: string; itemId: string }
   | { type: "closeItem"; ownerChatId: string; itemId: string }
   | { type: "closeOtherItems"; ownerChatId: string; itemId: string }
@@ -30,7 +36,32 @@ export type WorkPanelCommandResult = WorkPanelBridgeResult & {
 export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
   workspaces: [],
   visibleOwnerChatIds: [],
+  webSessionKeysByItemId: {},
 };
+
+function workPanelWebSessionMapKey(workspaceId: string, itemId: string) {
+  return `${workspaceId}\u0000${itemId}`;
+}
+
+export function resolveWorkPanelWebSessionKey(
+  state: WorkPanelState,
+  workspaceId: string,
+  itemId: string,
+) {
+  return state.webSessionKeysByItemId[workPanelWebSessionMapKey(workspaceId, itemId)] || itemId;
+}
+
+function removeWorkPanelWebSessionKeys(
+  state: WorkPanelState,
+  workspaceId: string,
+  itemIds: string[],
+) {
+  if (itemIds.length === 0) return state.webSessionKeysByItemId;
+  const removed = new Set(itemIds.map((itemId) => workPanelWebSessionMapKey(workspaceId, itemId)));
+  return Object.fromEntries(
+    Object.entries(state.webSessionKeysByItemId).filter(([itemId]) => !removed.has(itemId)),
+  );
+}
 
 function withVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
   return state.visibleOwnerChatIds.includes(ownerChatId)
@@ -296,8 +327,52 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
+      webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
+        state,
+        current.workspaceId,
+        current.items.map((item) => item.itemId),
+      ),
     };
     return { ok: true, workspaceId: current.workspaceId, nextState };
+  }
+  if (command.type === "openBlobPopup") {
+    if (!current) return fail(state, "target_unavailable", "WorkPanel workspace is unavailable");
+    const sourceItemId = cleanIdentity(command.sourceItemId);
+    const sourceItem = current.items.find((item) => item.itemId === sourceItemId);
+    if (!sourceItem || sourceItem.descriptor.kind !== "web") {
+      return fail(state, "target_unavailable", "WorkPanel popup source is unavailable");
+    }
+    const url = normalizeWebviewBlobPopupUrl(command.url);
+    if (!url) return fail(state, "invalid_request", "invalid WorkPanel Blob popup URL");
+    const sessionKey = resolveWorkPanelWebSessionKey(state, current.workspaceId, sourceItem.itemId);
+    const stableKey = `blob:${sessionKey}:${url}`;
+    const existing = current.items.find((item) => item.stableKey === stableKey);
+    const item: WorkPanelItem = existing ?? {
+      itemId: `item:${stableWorkPanelHash(stableKey)}`,
+      stableKey,
+      descriptor: { kind: "web", url },
+      title: getWebviewBlobPopupHostname(url) || sourceItem.title,
+      closable: true,
+      pinned: false,
+      createdAt: Date.now(),
+    };
+    const nextWorkspace = {
+      ...current,
+      items: existing ? current.items : [...current.items, item],
+      activeItemId: item.itemId,
+    };
+    const workspaces = state.workspaces.map((workspace, nextIndex) =>
+      nextIndex === index ? nextWorkspace : workspace,
+    );
+    const nextState = {
+      workspaces,
+      visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+      webSessionKeysByItemId: {
+        ...state.webSessionKeysByItemId,
+        [workPanelWebSessionMapKey(current.workspaceId, item.itemId)]: sessionKey,
+      },
+    };
+    return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
   }
   if (command.type === "openItem") {
     if (command.descriptor.kind === "native") {
@@ -365,6 +440,7 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces,
       visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+      webSessionKeysByItemId: state.webSessionKeysByItemId,
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
   }
@@ -383,6 +459,7 @@ export function reduceWorkPanelCommand(
       nextState: {
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+        webSessionKeysByItemId: state.webSessionKeysByItemId,
       },
     };
   }
@@ -402,6 +479,13 @@ export function reduceWorkPanelCommand(
       nextState: {
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
+        webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
+          state,
+          current.workspaceId,
+          current.items
+            .filter((candidate) => !items.some((remaining) => remaining.itemId === candidate.itemId))
+            .map((candidate) => candidate.itemId),
+        ),
       },
     };
   }
@@ -413,6 +497,11 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces: state.workspaces.filter((_, nextIndex) => nextIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
+      webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
+        state,
+        current.workspaceId,
+        [item.itemId],
+      ),
     };
     return { ok: true, workspaceId: current.workspaceId, item, nextState };
   }
@@ -429,6 +518,11 @@ export function reduceWorkPanelCommand(
     nextState: {
       workspaces,
       visibleOwnerChatIds: state.visibleOwnerChatIds,
+      webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
+        state,
+        current.workspaceId,
+        [item.itemId],
+      ),
     },
   };
 }
