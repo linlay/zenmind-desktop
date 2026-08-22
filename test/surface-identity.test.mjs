@@ -24,6 +24,10 @@ test("surface identity uses readable singleton roots and stable domain-prefixed 
   assert.equal(createSurfaceIdentity("copilot-chat").surfaceId, "copilot-chat");
   assert.equal(createSurfaceIdentity("kanban-chat").surfaceId, "kanban-chat");
   assert.equal(createSurfaceIdentity("browser").surfaceId, "browser");
+  const history = createSurfaceIdentity("history");
+  assert.equal(history.surfaceId, "history");
+  assert.equal(history.surfaceLevel, "utility");
+  assert.equal(history.interaction, "interactive");
 
   const entryKey = "website:https://docs.example/private/path";
   const website = createWebEntrySurfaceIdentity("website", entryKey);
@@ -82,6 +86,7 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
     ["agent", "agent-management"],
     ["skill", "agent-management"],
     ["service", "agent-management"],
+    ["history", "agent-management"],
   ]) {
     assert.equal(resolveAgentWebclientWebviewSurfaceType(role), expected, role);
   }
@@ -96,7 +101,8 @@ test("surface registry rejects a forged identity and cascades child removal", ()
     [75, { id: 75, getType: () => "webview", isDestroyed: () => false }],
     [76, { id: 76, getType: () => "webview", isDestroyed: () => false }],
     [77, { id: 77, getType: () => "webview", isDestroyed: () => false }],
-    [78, { id: 78, getType: () => "webview", isDestroyed: () => false }]
+    [78, { id: 78, getType: () => "webview", isDestroyed: () => false }],
+    [79, { id: 79, getType: () => "webview", isDestroyed: () => false }]
   ]);
   const registry = createBrowserSurfaceRegistry({
     webContents: {
@@ -184,6 +190,14 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(78).surfaceRole, "skill");
   assert.equal(registry.resolveWebviewSurfaceTarget(78).surfaceType, "agent-management");
 
+  const history = createSurfaceIdentity("history");
+  assert.equal(registry.registerSurface(
+    { ...registration(history, 79, "agent-management"), active: false },
+    7
+  ), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(79).surfaceRole, "history");
+  assert.equal(registry.resolveWebviewSurfaceTarget(79).active, false);
+
   const projectKey = "agent:detached-project";
   const detachedProject = createSurfaceIdentity("project", projectKey);
   assert.equal(registry.registerSurface(
@@ -206,9 +220,11 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(76), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(77), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(78), null);
+  assert.equal(registry.resolveWebviewSurfaceTarget(79).surfaceId, "history");
   assert.equal(registry.resolveWebviewSurfaceTarget(74).surfaceId, detachedProject.surfaceId);
   registry.unregisterSurfacesForOwner(7);
   assert.equal(registry.resolveWebviewSurfaceTarget(74), null);
+  assert.equal(registry.resolveWebviewSurfaceTarget(79), null);
 });
 
 test("Main Chat registry preserves canonical ownership and waits for coherent identity transitions", async () => {

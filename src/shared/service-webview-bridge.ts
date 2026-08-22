@@ -26,6 +26,8 @@ export const AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE =
   "desktop:agent-webclient:new-chat:prepare";
 export const AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE =
   "desktop:agent-webclient:new-chat:prepared";
+export const AGENT_WEBCLIENT_HISTORY_OPEN_CHAT_REQUEST_TYPE =
+  "desktop:agent-webclient:history-open-chat";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -42,6 +44,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
+  AGENT_WEBCLIENT_HISTORY_OPEN_CHAT_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -122,6 +125,7 @@ export type ServiceWebviewBridgeMessage = {
   active?: boolean;
   surfaceId?: string;
   agentKey?: string;
+  chatId?: string;
   sourceChatId?: string;
   newChat?: string;
   stage?: string;

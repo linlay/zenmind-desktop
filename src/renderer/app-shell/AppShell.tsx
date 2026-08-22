@@ -10,6 +10,7 @@ import { SidebarActionIcon } from "../components/BrandMark";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
+import { ChatHistoryDialog } from "./history/ChatHistoryDialog";
 import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, ServiceWebviewSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
@@ -146,6 +147,10 @@ type AgentChatFocusRequest = {
   id: number;
   sourceRoute: string;
   targetRoute: string;
+};
+type ChatHistoryDialogRequest = {
+  id: number;
+  agentKey: string;
 };
 type WebappRuntimeViewState = {
   status: "idle" | "starting" | "running" | "blocked" | "error";
@@ -626,6 +631,9 @@ export function AppShell() {
     ],
   );
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const chatHistoryDialogRequestIdRef = useRef(0);
+  const [chatHistoryDialog, setChatHistoryDialog] =
+    useState<ChatHistoryDialogRequest | null>(null);
   const agentChatFocusRequestIdRef = useRef(0);
   const [pendingAgentChatFocusRequest, setPendingAgentChatFocusRequest] =
     useState<AgentChatFocusRequest | null>(null);
@@ -771,6 +779,7 @@ export function AppShell() {
   const currentRoute = `${location.pathname}${location.search}`;
   const activeAgentChatFocusRequestId =
     !globalSearchOpen &&
+    !chatHistoryDialog &&
     pendingAgentChatFocusRequest?.targetRoute === currentRoute
       ? pendingAgentChatFocusRequest.id
       : null;
@@ -1013,7 +1022,8 @@ export function AppShell() {
     preferredCopilotDockWidth,
     copilotDockAvailableWidth,
   );
-  const copilotDockNativeDialogVisible = nativeDialogVisible || Boolean(desktopActionConfirmation);
+  const copilotDockNativeDialogVisible =
+    nativeDialogVisible || Boolean(desktopActionConfirmation) || Boolean(chatHistoryDialog);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return createDefaultSidebarNavOrderItems({
       kanbanEnabled,
@@ -2799,6 +2809,22 @@ export function AppShell() {
     return requestSidebarNavigation(targetPath);
   }
 
+  function openChatHistoryDialog(agentKey = "") {
+    chatHistoryDialogRequestIdRef.current += 1;
+    setChatHistoryDialog({
+      id: chatHistoryDialogRequestIdRef.current,
+      agentKey: agentKey.trim(),
+    });
+  }
+
+  function openChatFromHistoryDialog(request: {
+    agentKey: string;
+    chatId: string;
+  }) {
+    setChatHistoryDialog(null);
+    requestNavigationWithAgentChatFocus(createAgentWebclientRoute(request));
+  }
+
   function handleAgentChatFocusRequestHandled(requestId: number) {
     setPendingAgentChatFocusRequest((current) =>
       current?.id === requestId ? null : current
@@ -3707,6 +3733,7 @@ export function AppShell() {
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
           onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
+          onOpenChatHistory={openChatHistoryDialog}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
@@ -3927,7 +3954,7 @@ export function AppShell() {
       <AgentWebclientCopilotDock
         open={assistantCopilotOpen}
         hostTheme={resolvedTheme}
-        nativeDialogVisible={nativeDialogVisible || Boolean(desktopActionConfirmation)}
+        nativeDialogVisible={copilotDockNativeDialogVisible}
         openRequest={currentAssistantDockOpenRequest}
         restoredEmbedPath={currentCopilotSession?.embedPath ?? ""}
         parentSurfaceId={currentCopilotParentSurfaceId}
@@ -4065,6 +4092,17 @@ export function AppShell() {
         request={desktopActionConfirmation}
         onDecision={handleDesktopActionConfirmationDecision}
       />
+      {chatHistoryDialog ? (
+        <ChatHistoryDialog
+          key={chatHistoryDialog.id}
+          agentKey={chatHistoryDialog.agentKey}
+          hostTheme={resolvedTheme}
+          isMac={isMac}
+          isWindows={isWindows}
+          onClose={() => setChatHistoryDialog(null)}
+          onOpenChat={openChatFromHistoryDialog}
+        />
+      ) : null}
       <DesktopGlobalSearchOverlay
         open={globalSearchOpen}
         agents={assistantNavAgents}

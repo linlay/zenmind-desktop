@@ -482,7 +482,6 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<s
     !payload ||
     typeof payload !== "object" ||
     ![
-      "openChatHistory",
       AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
       WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
       WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION

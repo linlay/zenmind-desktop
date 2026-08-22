@@ -7,6 +7,7 @@ import type { PluginSettingsValues } from "../../shared/contracts";
 import {
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
+  AGENT_WEBCLIENT_HISTORY_OPEN_CHAT_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
   AGENT_APP_CLIPBOARD_RESPONSE_TYPE,
   DESKTOP_DIALOG_SELECT_DIRECTORY_REQUEST_TYPE,
@@ -39,6 +40,10 @@ export type ServiceWebviewBridgeHostContext = {
     sourceChatId: string;
     newChat: string;
   }) => { ok: true } | { ok: false; message: string };
+  openAgentWebclientHistoryChat?: (request: {
+    agentKey: string;
+    chatId: string;
+  }) => void;
   setBridgeError: (message: string) => void;
   logDebug?: (stage: string, message: string) => void;
 };
@@ -75,6 +80,29 @@ export function handleServiceWebviewBridgeMessage(
 
   if (isServiceWebviewBridgeMessageType(payload.type, SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE)) {
     context.logDebug?.(String(payload.stage || ""), String(payload.message || ""));
+    return true;
+  }
+
+  if (
+    isServiceWebviewBridgeMessageType(
+      payload.type,
+      AGENT_WEBCLIENT_HISTORY_OPEN_CHAT_REQUEST_TYPE,
+    )
+  ) {
+    const agentKey = typeof payload.agentKey === "string"
+      ? payload.agentKey.trim()
+      : "";
+    const chatId = typeof payload.chatId === "string"
+      ? payload.chatId.trim()
+      : "";
+    if (
+      context.serviceId === "agent-webclient" &&
+      context.openAgentWebclientHistoryChat &&
+      agentKey &&
+      chatId
+    ) {
+      context.openAgentWebclientHistoryChat({ agentKey, chatId });
+    }
     return true;
   }
 

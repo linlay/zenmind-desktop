@@ -1311,9 +1311,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /if \(attentionChatId\) \{\s*return createAgentChatRoute\(agent\.agentKey, attentionChatId\);/);
   assert.match(sidebarSource, /if \(!options\.preferNewChat\) \{\s*return createAgentDefaultRoute\(agent\);/);
   assert.match(sidebarSource, /return createAgentNewChatRoute\(agent\.agentKey\);/);
-  assert.match(sidebarSource, /function createAgentHistoryRoute\(agentKey: string\)/);
-  assert.match(sidebarSource, /params\.set\("history", "1"\)/);
-  assert.match(sidebarSource, /params\.set\("historyRequest", String\(Date\.now\(\)\)\)/);
+  assert.doesNotMatch(sidebarSource, /createAgentHistoryRoute|historyRequest|historyRequested/);
   assert.doesNotMatch(sidebarSource, /createAgentEmbedPath/);
   assert.match(sidebarSource, /return createAgentWebclientAgentPath\(agentKey\)/);
   assert.match(sidebarSource, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
@@ -1351,12 +1349,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /agent\.latestPreview \|\| \(chatCount > 0 \? "" : t\("sidebar\.agent\.noChats"\)\)/);
   assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
   assert.match(sidebarSource, /chatCount > recentChats\.length \? \(/);
-  assert.match(sidebarSource, /historyRequested: url\.searchParams\.get\("history"\)\?\.trim\(\) === "1"/);
   assert.doesNotMatch(sidebarSource, /workerKey: `agent:\$\{agentKey\}`/);
-  assert.match(sidebarSource, /lastRouteAgentInfoRef = useRef\(readAgentRouteInfo\(currentRoute\)\)/);
-  assert.match(sidebarSource, /previousRouteAgentInfo\.historyRequested/);
-  assert.match(sidebarSource, /setExpandedAssistantAgentKey\(""\)/);
-  assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
+  assert.match(sidebarSource, /onOpenChatHistory\?\.\(agent\.agentKey\)/);
   assert.match(sidebarSource, /unread:\s*rowUnreadCount > 0 \? t\("sidebar\.chat\.unreadSuffix", \{ count: rowUnreadCount \}\) : ""/);
   assert.match(sidebarSource, /<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无相关会话/);
@@ -1673,7 +1667,7 @@ test("sidebar top navigation exposes scoped back and forward history controls", 
   assert.match(sidebarSource, /disabled=\{!sidebarNavigationCanGoForward\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateBack\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateForward\}/);
-  assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
+  assert.match(sidebarSource, /onOpenChatHistory\?: \(agentKey\?: string\) => void;/);
 
   assert.match(globalStyles, /\.sidebar-history-controls\s*\{/);
   assert.match(globalStyles, /\.sidebar-history-button:disabled\s*\{/);
@@ -1954,7 +1948,7 @@ test("sidebar assigns Chats and Projects a single route owner", () => {
   assert.match(sidebarSource, /isAssistantNavProjectAgent\(agent\)[\s\S]{0,80}return "assistants";/);
   assert.match(sidebarSource, /isAssistantNavChatAgent\(agent\)[\s\S]{0,80}return "chats";/);
   assert.match(sidebarSource, /chatItems\.some\([\s\S]{0,160}chat\.agentKey === agentKey && chat\.chatId === routeInfo\.chatId[\s\S]{0,100}return "chats";/);
-  assert.match(sidebarSource, /if \(routeInfo\.historyRequested\) \{\s*return "assistants";/);
+  assert.doesNotMatch(sidebarSource, /routeInfo\.historyRequested/);
   assert.match(sidebarSource, /routeInfo\.newChatRequested[\s\S]{0,160}agentKey === options\.defaultChatAgentKey[\s\S]{0,100}return "chats";/);
   assert.match(sidebarSource, /const navigationOwner = resolveSidebarNavigationOwner\([\s\S]*?activeNavigationRouteInfo[\s\S]*?chatNavigationAgentsByKey[\s\S]*?assistantNavChatItems/);
   assert.match(sidebarSource, /const activeNavigationRouteInfo = pendingAgentKey\s*\? pendingRouteAgentInfo\s*:\s*currentRouteAgentInfo;/);
@@ -2169,11 +2163,11 @@ test("Chats sidebar retains global chatItems and adds a default-agent history en
   assert.doesNotMatch(chatsListSource, /recentChats/);
   assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
   assert.match(chatsListSource, /worker-chat-more assistant-worker-more sidebar-chats-more/);
-  assert.match(sidebarSource, /createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?onOpenChatHistory\?\.\(\)/);
   assert.match(sidebarSource, /function dispatchAgentWebclientRouteToActiveWebview\(targetPath: string\)/);
-  assert.match(sidebarSource, /targetAgentInfo\.historyRequested \|\|\s*targetAgentInfo\.newChatRequested/);
+  assert.match(sidebarSource, /targetAgentInfo\.newChatRequested/);
   assert.match(sidebarSource, /dispatchAgentWebclientRouteToActiveWebview\(targetPath\)/);
-  assert.match(sidebarSource, /webview\.send\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, \{\s*action: "openChatHistory"/);
+  assert.doesNotMatch(sidebarSource, /openChatHistory|history=1/);
 });
 
 test("Chats sidebar reuses the Projects chat row status and unread layout", () => {
@@ -3372,7 +3366,7 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(popover, /children\.props\["aria-haspopup"\] \?\? "dialog"/);
 
   assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
-  assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?onOpenChatHistory\?\.\(\)/);
   assert.match(sidebarSource, /createSidebarChatsMoreFocusId\(\)/);
   assert.match(sidebarSource, /data-sidebar-nav-kind=\{roving \? "chats-more" : undefined\}/);
   assert.match(sidebarSource, /sidebar\.chats\.viewMoreHistory/);
@@ -6132,7 +6126,8 @@ test("web copilot dock yields to native dialogs", () => {
   assert.match(preload, /onNativeDialogVisibility/);
   assert.match(appShell, /nativeDialogVisible/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
-  assert.match(appShell, /nativeDialogVisible=\{nativeDialogVisible \|\| Boolean\(desktopActionConfirmation\)\}/);
+  assert.match(appShell, /const copilotDockNativeDialogVisible =[\s\S]*?Boolean\(chatHistoryDialog\)/);
+  assert.match(appShell, /nativeDialogVisible=\{copilotDockNativeDialogVisible\}/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\.is-native-dialog-open/);
 });
 
@@ -6223,7 +6218,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /lastHostAppliedChatRouteRef/);
   assert.match(serviceWebviewSurface, /function isAgentWebclientChatSurface\(/);
   assert.match(serviceWebviewSurface, /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/);
-  assert.match(serviceWebviewSurface, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]{0,900}navigate\(nextChatRoute, \{ replace: true \}\)/);
+  assert.match(serviceWebviewSurface, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
   assert.doesNotMatch(serviceWebviewSurface, /ChatRouteMessage/);
   assert.doesNotMatch(serviceWebviewSurface, /handleAgentWebclientChatRouteMessage/);
   assert.doesNotMatch(serviceWebviewSurface, /createAgentWebclientChatRoute/);

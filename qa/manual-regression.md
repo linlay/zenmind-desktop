@@ -65,6 +65,7 @@
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
 - [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
+- [ ] macOS 与 Windows 分别点击 Chats 与 Projects 的“查看更多历史”：Chats 打开未筛选 `/history`，Projects 以当前 Agent 预筛但可切换到 All/其他 Owner；Desktop 外层 route 不出现 `history=1`。dialog 支持关闭按钮、Esc、遮罩关闭、Tab/Shift+Tab 焦点约束和关闭后焦点恢复，亮色/暗色及窄窗口布局正确。选择记录后 dialog 关闭、Main Chat 打开并聚焦对应 `agentKey + chatId`；打开、筛选和关闭期间 active live surface 仍不超过一个，不发生额外 query/attach/detach。Agent WebClient 未就绪、加载失败和重试均留在 dialog 内显示可恢复状态。
 - [ ] 在 Main Chat 连续切换多个普通、运行中和空消息 Chat；每次只请求目标 `chatId`，owner Chat/registry 元数据更新不产生伪造的 inactive→active lifecycle，也不强制 replay 上一个 Chat。
 - [ ] macOS 与 Windows 分别从 `/agent/A?newChat=...` 和 `/agent/A?chatId=...` 在 guest 内切换到 Agent B：外层 route replace 为 `/agent/B?newChat=<新13位nonce>`、复用同一个 WebView、不重复 active lifecycle，旧 owner 清除且旧 observer 只 detach 一次；首条消息属于 B，并最终由匹配 query stream 收敛为 `/agent/B?chatId=...`。选择 B 的明确历史 Chat 时保留其 `chatId` 且不生成 `newChat`。
 - [ ] Main Chat 快速执行 A→B→C 时只有 C 的 ownerless `newChat` source 能登记和发送，A/B 的迟到导航不能抢回 URL。切换后立即发送时，在 payload owner、guest 实际 Agent 路由、Registry URL 和 Desktop page route 全部一致前返回本地 `protocol_error`，抓包确认 Agent Platform 未产生错误 Agent 的后台 Chat；跨域、错误路径、管理页、非 active surface 不触发切换。

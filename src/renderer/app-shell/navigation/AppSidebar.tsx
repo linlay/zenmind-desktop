@@ -74,7 +74,6 @@ import {
   createAgentWebclientRoute,
 } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
-import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
   SettingsSectionGroupId,
@@ -138,7 +137,6 @@ type SidebarNavigationOwner = "assistants" | "chats" | null;
 type AgentRouteInfo = {
   agentKey: string;
   chatId: string;
-  historyRequested: boolean;
   newChatRequested: boolean;
 };
 
@@ -556,7 +554,6 @@ function getRouteEmbedPath(route: string) {
 const EMPTY_AGENT_ROUTE_INFO: AgentRouteInfo = {
   agentKey: "",
   chatId: "",
-  historyRequested: false,
   newChatRequested: false,
 };
 
@@ -571,7 +568,6 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string): AgentRouteInfo {
     return {
       agentKey: decodeRoutePathSegment(match?.[1]) ?? "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
-      historyRequested: url.searchParams.get("history")?.trim() === "1",
       newChatRequested: url.searchParams.has("newChat"),
     };
   } catch {
@@ -597,7 +593,6 @@ function readAgentRouteInfo(route: string): AgentRouteInfo {
     return {
       agentKey: searchParams.get("agentKey")?.trim() ?? "",
       chatId: searchParams.get("chatId")?.trim() ?? "",
-      historyRequested: searchParams.get("history")?.trim() === "1",
       newChatRequested: searchParams.has("newChat"),
     };
   } catch {
@@ -639,10 +634,6 @@ function resolveSidebarNavigationOwner(
     )
   ) {
     return "chats";
-  }
-
-  if (routeInfo.historyRequested) {
-    return "assistants";
   }
 
   if (routeInfo.newChatRequested && agentKey === options.defaultChatAgentKey) {
@@ -689,13 +680,6 @@ function createAgentSelectionRoute(
   }
 
   return createAgentNewChatRoute(agent.agentKey);
-}
-
-function createAgentHistoryRoute(agentKey: string) {
-  const params = new URLSearchParams();
-  params.set("history", "1");
-  params.set("historyRequest", String(Date.now()));
-  return `${createAgentRoute(agentKey)}?${params.toString()}`;
 }
 
 function summarizeAgentStatus(
@@ -1005,6 +989,7 @@ type AppSidebarProps = {
   ) => Promise<void> | void;
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
+  onOpenChatHistory?: (agentKey?: string) => void;
   onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
@@ -1070,6 +1055,7 @@ export function AppSidebar({
   onRefreshAssistantNavAgents,
   onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
+  onOpenChatHistory,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
   onRefreshCopilotAgentOptions,
@@ -1155,7 +1141,6 @@ export function AppSidebar({
   const conversationShareDialog = useConversationShareDialog(t);
   const chatInfoDialog = useChatInfoDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
-  const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
@@ -1719,31 +1704,6 @@ export function AppSidebar({
   ]);
 
   useEffect(() => {
-    const previousRouteAgentInfo = lastRouteAgentInfoRef.current;
-    lastRouteAgentInfoRef.current = currentRouteAgentInfo;
-    if (
-      previousRouteAgentInfo.historyRequested &&
-      !currentRouteAgentInfo.historyRequested &&
-      currentAgentKey &&
-      currentChatId &&
-      previousRouteAgentInfo.agentKey === currentAgentKey &&
-      expandedAssistantAgentKey === currentAgentKey &&
-      (!pendingPath || pendingRouteAgentInfo.historyRequested)
-    ) {
-      lastAutoExpandedAssistantAgentKeyRef.current = currentAgentKey;
-      setExpandedAssistantAgentKey("");
-      return;
-    }
-  }, [
-    currentAgentKey,
-    currentChatId,
-    currentRouteAgentInfo,
-    expandedAssistantAgentKey,
-    pendingPath,
-    pendingRouteAgentInfo.historyRequested,
-  ]);
-
-  useEffect(() => {
     const matched = assistantNavAgents.find(
       (agent) => agent.agentKey === activeSidebarAgentKey,
     );
@@ -1862,22 +1822,6 @@ export function AppSidebar({
       return false;
     }
 
-    if (targetAgentInfo.historyRequested) {
-      try {
-        webview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
-          action: "openChatHistory",
-          data: {
-            workerKey: `agent:${targetAgentInfo.agentKey}`,
-            agentKey: targetAgentInfo.agentKey,
-          },
-        });
-        return true;
-      } catch (error) {
-        console.warn("[assistant] failed to open agent history", error);
-        return false;
-      }
-    }
-
     const script = `(() => {
       const target = new URL(${JSON.stringify(targetPath)}, window.location.href);
       const oldUrl = window.location.href;
@@ -1907,7 +1851,6 @@ export function AppSidebar({
       const targetAgentInfo = readAgentRouteInfo(targetPath);
       if (
         targetPath === currentRoute ||
-        targetAgentInfo.historyRequested ||
         targetAgentInfo.newChatRequested
       ) {
         dispatchAgentWebclientRouteToActiveWebview(targetPath);
@@ -3014,12 +2957,10 @@ export function AppSidebar({
   function handleChatsOpenHistory(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (!chatsHistoryAvailable || !resolvedChatDefaultAgentKey) {
+    if (!chatsHistoryAvailable) {
       return;
     }
-    requestNavigate(createAgentHistoryRoute(resolvedChatDefaultAgentKey), {
-      retriggerAgentRoute: true,
-    });
+    onOpenChatHistory?.();
   }
 
   async function handleAssistantMarkAllRead(
@@ -4369,9 +4310,7 @@ export function AppSidebar({
               data-sidebar-agent-key={roving ? agent.agentKey : undefined}
               onClick={(event) => {
                 event.stopPropagation();
-                requestNavigate(createAgentHistoryRoute(agent.agentKey), {
-                  retriggerAgentRoute: true,
-                });
+                onOpenChatHistory?.(agent.agentKey);
               }}
             >
               {t("sidebar.chat.viewMore", {
