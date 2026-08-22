@@ -113,13 +113,18 @@ test("surface registry rejects a forged identity and cascades child removal", ()
     surfaceKind: "service",
     surfaceType,
     serviceId: "agent-webclient",
-    pageRoute: "/chat",
+    pageRoute: identity.surfaceRole === "main-chat" ? "/agent/agent-1" : "/chat",
+    ...(identity.surfaceRole === "main-chat"
+      ? { pageRouteIdentity: "/agent/agent-1?chatId=chat-1" }
+      : {}),
     label: identity.surfaceRole,
     url: "http://127.0.0.1:7788/",
     active: true,
     tabs: [{
       tabId: `tab-${guestId}`,
-      currentUrl: "http://127.0.0.1:7788/ui/",
+      currentUrl: identity.surfaceRole === "main-chat"
+        ? "http://127.0.0.1:7788/agent/agent-1?chatId=chat-1"
+        : "http://127.0.0.1:7788/ui/",
       title: identity.surfaceRole,
       webContentsId: guestId,
       canGoBack: false,
@@ -129,7 +134,7 @@ test("surface registry rejects a forged identity and cascades child removal", ()
     activeTabId: `tab-${guestId}`
   });
 
-  const main = createSurfaceIdentity("main-chat");
+  const main = createSurfaceIdentity("main-chat", "", { ownerChatId: "chat-1" });
   assert.equal(registry.registerSurface(registration(main, 71, "agent-chat"), 7), true);
   assert.equal(registry.findRegisteredSurfaceWebContents("agent-webclient-chat"), guests.get(71));
   assert.equal(registry.registerSurface(registration({ ...main, interaction: "none" }, 72, "agent-chat"), 7), false);
@@ -206,6 +211,131 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(74), null);
 });
 
+test("Main Chat registry preserves canonical ownership and waits for coherent identity transitions", async () => {
+  const owner = new EventEmitter();
+  owner.isDestroyed = () => false;
+  const guest = new EventEmitter();
+  guest.id = 201;
+  guest.hostWebContents = owner;
+  guest.getType = () => "webview";
+  guest.isDestroyed = () => false;
+  const registry = createBrowserSurfaceRegistry({
+    webContents: {
+      getAllWebContents: () => [guest],
+      fromId: (id) => id === guest.id ? guest : null
+    },
+    listWebEntries: () => ({ items: [] }),
+    getCurrentPageSnapshot: () => null
+  });
+  const registration = ({
+    registrationId = "generation-201",
+    ownerChatId,
+    active = true,
+    pageRoute = "/agent/agent-201",
+    pageRouteIdentity,
+    currentUrl,
+  }) => ({
+    registrationId,
+    ...createSurfaceIdentity("main-chat", "", ownerChatId ? { ownerChatId } : {}),
+    surfaceKind: "service",
+    surfaceType: "agent-chat",
+    serviceId: "agent-webclient",
+    pageRoute,
+    pageRouteIdentity,
+    label: "Chat",
+    url: "http://127.0.0.1:7788/",
+    active,
+    tabs: [{
+      tabId: "main-chat",
+      currentUrl,
+      title: "Chat",
+      webContentsId: guest.id,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false
+    }],
+    activeTabId: "main-chat"
+  });
+
+  assert.equal(registry.registerSurface(registration({
+    ownerChatId: "chat-201",
+    pageRouteIdentity: "/agent/agent-201?chatId=chat-201",
+    currentUrl: "http://127.0.0.1:7788/agent/agent-201?chatId=chat-201",
+  }), 7), true);
+
+  assert.equal(registry.registerSurface(registration({
+    ownerChatId: undefined,
+    pageRouteIdentity: "/agent/agent-201?chatId=chat-201",
+    currentUrl: "http://127.0.0.1:7788/agent/agent-201?chatId=chat-201",
+  }), 7), false);
+  assert.equal(registry.resolveWebviewSurfaceTarget(guest.id).ownerChatId, "chat-201");
+
+  assert.equal(registry.registerSurface(registration({
+    ownerChatId: undefined,
+    pageRouteIdentity: "/agent/agent-201?newChat=nonce-202",
+    currentUrl: "http://127.0.0.1:7788/agent/agent-201?newChat=nonce-202",
+  }), 7), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(guest.id).ownerChatId, undefined);
+
+  const canonicalTarget = registry.waitForWebviewSurfaceTargetMatching(
+    guest.id,
+    (target) => target.ownerChatId === "chat-202",
+    1_500,
+  );
+  let canonicalWaitSettled = false;
+  void canonicalTarget.then(() => { canonicalWaitSettled = true; });
+  await Promise.resolve();
+  assert.equal(canonicalWaitSettled, false);
+
+  assert.equal(registry.registerSurface(registration({
+    ownerChatId: "chat-202",
+    pageRouteIdentity: "/agent/agent-201?chatId=chat-202",
+    currentUrl: "http://127.0.0.1:7788/agent/agent-201?newChat=nonce-202",
+  }), 7), true);
+  assert.equal((await canonicalTarget)?.ownerChatId, "chat-202");
+
+  assert.equal(registry.registerSurface(registration({
+    ownerChatId: undefined,
+    active: false,
+    pageRoute: "/browser",
+    pageRouteIdentity: "/browser",
+    currentUrl: "http://127.0.0.1:7788/agent/agent-201?chatId=chat-202",
+  }), 7), true);
+  assert.equal(registry.resolveWebviewSurfaceTarget(guest.id).active, false);
+  assert.equal(registry.resolveWebviewSurfaceTarget(guest.id).ownerChatId, "chat-202");
+  assert.equal(
+    registry.resolveWebviewSurfaceTarget(guest.id).pageRouteIdentity,
+    "/agent/agent-201?chatId=chat-202",
+  );
+
+  const replacedGenerationTarget = registry.waitForWebviewSurfaceTargetMatching(
+    guest.id,
+    (target) => target.ownerChatId === "chat-never",
+    1_500,
+  );
+  assert.equal(registry.registerSurface(registration({
+    registrationId: "generation-201-replaced",
+    ownerChatId: "chat-202",
+    pageRouteIdentity: "/agent/agent-201?chatId=chat-202",
+    currentUrl: "http://127.0.0.1:7788/agent/agent-201?chatId=chat-202",
+  }), 7), true);
+  assert.equal(await replacedGenerationTarget, null);
+
+  assert.equal(await registry.waitForWebviewSurfaceTargetMatching(
+    guest.id,
+    (target) => target.ownerChatId === "chat-never",
+    5,
+  ), null);
+
+  const destroyedGuestTarget = registry.waitForWebviewSurfaceTargetMatching(
+    guest.id,
+    (target) => target.ownerChatId === "chat-never",
+    1_500,
+  );
+  guest.emit("destroyed");
+  assert.equal(await destroyedGuestTarget, null);
+});
+
 test("surface registry resolves delayed guest targets and cleans timeout or abort waiters", async () => {
   const owner = new EventEmitter();
   owner.isDestroyed = () => false;
@@ -243,12 +373,13 @@ test("surface registry resolves delayed guest targets and cleans timeout or abor
     surfaceType: "agent-chat",
     serviceId: "agent-webclient",
     pageRoute: "/agent/agent-91",
+    pageRouteIdentity: "/agent/agent-91?newChat=nonce-91",
     label: "Chat",
     url: "http://127.0.0.1:7788/",
     active: true,
     tabs: [{
       tabId: "main-chat",
-      currentUrl: "http://127.0.0.1:7788/agent/agent-91",
+      currentUrl: "http://127.0.0.1:7788/agent/agent-91?newChat=nonce-91",
       title: "Chat",
       webContentsId: guest.id,
       canGoBack: false,

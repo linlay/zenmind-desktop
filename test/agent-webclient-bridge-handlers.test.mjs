@@ -33,7 +33,7 @@ function createSender(id, url) {
 
 function createTarget(id, overrides = {}) {
   const url = `http://127.0.0.1:7079/agent/agent-${id}?chatId=chat-${id}`;
-  return {
+  const target = {
     registrationId: `registration-${id}`,
     surfaceId: "main-chat",
     surfaceKind: "service",
@@ -49,6 +49,17 @@ function createTarget(id, overrides = {}) {
     ownerChatId: `chat-${id}`,
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, "pageRouteIdentity")) {
+    const pageRoute = target.pageRoute || "";
+    const routeWithIdentity = /[?&](?:chatId|newChat)=/u.test(pageRoute)
+      ? pageRoute
+      : target.ownerChatId
+        ? `${new URL(target.currentUrl).pathname}?chatId=${encodeURIComponent(target.ownerChatId)}`
+        : target.currentUrl;
+    const pageUrl = new URL(routeWithIdentity, "http://desktop.local");
+    target.pageRouteIdentity = `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`;
+  }
+  return target;
 }
 
 function createRegistration(targets, forwardRequest, overrides = {}) {
@@ -68,6 +79,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
     getServiceState: 0,
     issueAccessToken: 0,
     waitForSurface: 0,
+    waitForMatchingSurface: 0,
   };
   const broker = {
     ensureConnected: async () => {
@@ -172,6 +184,19 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
         }
         return targets.get(senderId) || null;
       },
+      waitForWebviewSurfaceTargetMatching: async (senderId, predicate, timeoutMs, signal) => {
+        calls.waitForMatchingSurface += 1;
+        if (overrides.waitForWebviewSurfaceTargetMatching) {
+          return overrides.waitForWebviewSurfaceTargetMatching(
+            senderId,
+            predicate,
+            timeoutMs,
+            signal,
+          );
+        }
+        const target = targets.get(senderId) || null;
+        return target && predicate(target) ? target : null;
+      },
     },
     isTrustedAgentWebclientSession: overrides.isTrustedAgentWebclientSession ?? (() => true),
     realtimeBroker: broker,
@@ -192,6 +217,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
         url.searchParams.delete("newChat");
         url.searchParams.set("chatId", input.chatId);
         target.currentUrl = url.toString();
+        target.pageRouteIdentity = `${url.pathname}${url.search}${url.hash}`;
       }
       return { requestId: `sync-${canonicalSyncs.length}`, ok: true };
     }),
@@ -1224,6 +1250,7 @@ test("Frame Port waits for a trusted WebView surface registration before opening
     getServiceState: 0,
     issueAccessToken: 0,
     waitForSurface: 1,
+    waitForMatchingSurface: 0,
   });
 
   targets.set(sender.id, target);
@@ -1455,6 +1482,7 @@ test("Main Chat query fails closed until an Agent switch route is fully register
 
   const switchedUrl = "http://127.0.0.1:7079/agent/agent-b?newChat=1786898700001";
   target.pageRoute = "/agent/agent-b?newChat=1786898700001";
+  target.pageRouteIdentity = "/agent/agent-b?newChat=1786898700001";
   target.currentUrl = switchedUrl;
   target.ownerChatId = undefined;
   sender.setURL(switchedUrl);
@@ -1651,6 +1679,268 @@ test("canonical Main Chat owner permits continuation while the guest URL still h
   await runtime.runReadiness.get("run-77").ready;
   assert.equal(runtime.canonicalSyncs.length, 0);
   assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
+test("persistent V2 Session waits for a delayed canonical owner before forwarding its second query", async () => {
+  const target = createTarget(177, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-177?newChat=nonce-177",
+  });
+  const targets = new Map([[177, target]]);
+  const forwarded = [];
+  const deliverById = new Map();
+  let releaseMatchingTarget = () => undefined;
+  let markWaitStarted = () => undefined;
+  const waitStarted = new Promise((resolve) => { markWaitStarted = resolve; });
+  const runtime = createRegistration(targets, async (input) => {
+    forwarded.push(input.type);
+    if (input.type === "/api/query") deliverById.set(input.localId, input.onFrame);
+  }, {
+    waitForWebviewSurfaceTargetMatching: (_senderId, predicate, timeoutMs, signal) => {
+      assert.equal(timeoutMs, 1_500);
+      markWaitStarted();
+      return new Promise((resolve) => {
+        const finish = (candidate) => resolve(candidate && predicate(candidate) ? candidate : null);
+        releaseMatchingTarget = finish;
+        signal.addEventListener("abort", () => finish(null), { once: true });
+      });
+    },
+  });
+  const sender = createSender(177, target.currentUrl);
+  await openSession(runtime, sender, "session-owner-convergence");
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-owner-convergence",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-owner-convergence-first",
+      payload: {
+        requestId: "req-owner-convergence-first",
+        message: "first",
+        agentKey: "agent-177",
+      },
+    },
+  });
+  await flush();
+  const deliverFirst = deliverById.get("query-owner-convergence-first");
+  assert.equal(typeof deliverFirst, "function");
+  deliverFirst({
+    frame: "stream",
+    id: "query-owner-convergence-first",
+    event: {
+      type: "chat.start",
+      seq: 1,
+      chatId: "chat-177-canonical",
+      timestamp: 1_786_898_700_020,
+    },
+  });
+  deliverFirst({
+    frame: "stream",
+    id: "query-owner-convergence-first",
+    event: {
+      type: "run.start",
+      seq: 2,
+      chatId: "chat-177-canonical",
+      runId: "run-177-first",
+      agentKey: "agent-177",
+      timestamp: 1_786_898_700_021,
+    },
+  });
+  await flush();
+
+  const canonicalUrl = "http://127.0.0.1:7079/agent/agent-177?chatId=chat-177-canonical";
+  target.currentUrl = canonicalUrl;
+  target.pageRouteIdentity = "/agent/agent-177?chatId=chat-177-canonical";
+  target.ownerChatId = undefined;
+  sender.setURL(canonicalUrl);
+  const callsBeforeSecond = { ...runtime.calls };
+  const activeStreamsBeforeSecond = runtime.registration.getDiagnostics().activeStreamCount;
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-owner-convergence",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-owner-convergence-second",
+      payload: {
+        requestId: "req-owner-convergence-second",
+        message: "second",
+        agentKey: "agent-177",
+        chatId: "chat-177-canonical",
+      },
+    },
+  });
+  await waitStarted;
+
+  assert.deepEqual(forwarded, ["/api/query"]);
+  assert.equal(runtime.calls.getServiceState, callsBeforeSecond.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeSecond.issueAccessToken);
+  assert.equal(runtime.calls.ensureConnected, callsBeforeSecond.ensureConnected);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, activeStreamsBeforeSecond);
+
+  target.ownerChatId = "chat-177-canonical";
+  releaseMatchingTarget(target);
+  await flush();
+  await flush();
+
+  assert.deepEqual(forwarded, ["/api/query", "/api/query"]);
+  assert.equal(
+    sentFrames(sender).some((frame) =>
+      frame.id === "query-owner-convergence-second" && frame.frame === "error"
+    ),
+    false,
+  );
+  const convergenceTraces = runtime.traces.filter(
+    (trace) => trace.data?.event === "main-chat-query-identity-convergence",
+  );
+  assert.deepEqual(convergenceTraces.map((trace) => trace.data.state), ["started", "ready"]);
+  assert.doesNotMatch(
+    JSON.stringify(convergenceTraces),
+    /chat-177-canonical|nonce-177|second/u,
+  );
+});
+
+test("Main Chat canonical owner convergence timeout fails before token or Broker access", async () => {
+  const target = createTarget(178, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-178?chatId=chat-178",
+    pageRouteIdentity: "/agent/agent-178?chatId=chat-178",
+  });
+  const forwarded = [];
+  const runtime = createRegistration(new Map([[178, target]]), async (input) => {
+    forwarded.push(input.type);
+  }, {
+    waitForWebviewSurfaceTargetMatching: async (_senderId, _predicate, timeoutMs) => {
+      assert.equal(timeoutMs, 1_500);
+      return null;
+    },
+  });
+  const sender = createSender(178, target.currentUrl);
+  await openSession(runtime, sender, "session-owner-timeout");
+  const callsBeforeQuery = { ...runtime.calls };
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-owner-timeout",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-owner-timeout",
+      payload: {
+        requestId: "req-owner-timeout",
+        message: "must stay local",
+        agentKey: "agent-178",
+        chatId: "chat-178",
+      },
+    },
+  });
+  await flush();
+  await flush();
+
+  assert.deepEqual(forwarded, []);
+  assert.equal(runtime.calls.getServiceState, callsBeforeQuery.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeQuery.issueAccessToken);
+  assert.equal(runtime.calls.ensureConnected, callsBeforeQuery.ensureConnected);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "error",
+    id: "query-owner-timeout",
+    type: "protocol_error",
+    code: 400,
+    status: 400,
+    msg: "Main Chat identity did not converge before query authorization",
+    data: {
+      code: "protocol_error",
+      message: "Main Chat identity did not converge before query authorization",
+    },
+  });
+});
+
+test("Main Chat rejects a wrong canonical Chat without entering identity convergence", async () => {
+  const target = createTarget(179, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+  });
+  const runtime = createRegistration(new Map([[179, target]]), async () => {
+    assert.fail("wrong canonical Chat must not reach the Broker");
+  }, {
+    waitForWebviewSurfaceTargetMatching: async () => {
+      assert.fail("an invalid Chat identity must not enter the convergence wait");
+    },
+  });
+  const sender = createSender(179, target.currentUrl);
+  await openSession(runtime, sender, "session-wrong-canonical-chat");
+  const callsBeforeQuery = { ...runtime.calls };
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-wrong-canonical-chat",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-wrong-canonical-chat",
+      payload: {
+        requestId: "req-wrong-canonical-chat",
+        message: "wrong chat",
+        agentKey: "agent-179",
+        chatId: "chat-other",
+      },
+    },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.waitForMatchingSurface, callsBeforeQuery.waitForMatchingSurface);
+  assert.equal(runtime.calls.getServiceState, callsBeforeQuery.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeQuery.issueAccessToken);
+  assert.match(sentFrames(sender).at(-1).msg, /canonical Chat query does not match/u);
+});
+
+test("Main Chat rechecks the real sender Chat even when Registry still has the old canonical owner", async () => {
+  const target = createTarget(180, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+  });
+  const runtime = createRegistration(new Map([[180, target]]), async () => {
+    assert.fail("a changed sender Chat must not reach the Broker");
+  }, {
+    waitForWebviewSurfaceTargetMatching: async () => {
+      assert.fail("an invalid sender Chat must not enter the convergence wait");
+    },
+  });
+  const sender = createSender(
+    180,
+    "http://127.0.0.1:7079/agent/agent-180?chatId=chat-other",
+  );
+  await openSession(runtime, sender, "session-sender-chat-changed");
+  const callsBeforeQuery = { ...runtime.calls };
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-sender-chat-changed",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-sender-chat-changed",
+      payload: {
+        requestId: "req-sender-chat-changed",
+        message: "must stay local",
+        agentKey: "agent-180",
+        chatId: "chat-180",
+      },
+    },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.waitForMatchingSurface, callsBeforeQuery.waitForMatchingSurface);
+  assert.equal(runtime.calls.getServiceState, callsBeforeQuery.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeQuery.issueAccessToken);
+  assert.match(sentFrames(sender).at(-1).msg, /owner does not match its sender route/u);
 });
 
 test("new Main Chat run.start without chat.start fails closed", async () => {

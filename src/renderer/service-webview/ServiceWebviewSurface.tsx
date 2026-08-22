@@ -974,6 +974,9 @@ export function ServiceWebviewSurface({
       surfaceType: resolveContextMenuSurfaceType(serviceId, surfaceIdentity.surfaceRole),
       ...(serviceId ? { serviceId } : {}),
       pageRoute: surfaceRoute,
+      ...(isAgentWebclientChatSurface(serviceId, surfaceId)
+        ? { pageRouteIdentity: currentRouteWithHash }
+        : {}),
       ...(ownerChatId?.trim() ? { ownerChatId: ownerChatId.trim() } : {}),
       label: serviceDisplayName || surfaceId,
       url: webUrl || embeddedUrl,

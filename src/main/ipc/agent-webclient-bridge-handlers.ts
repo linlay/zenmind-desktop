@@ -38,7 +38,10 @@ import {
   KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
 } from "../../shared/surface-identity";
-import { readAgentWebclientNewChatSource } from "../../shared/canonical-chat-sync";
+import {
+  readAgentWebclientCanonicalChatSource,
+  readAgentWebclientNewChatSource,
+} from "../../shared/canonical-chat-sync";
 import { readAgentWebclientAgentRouteKey } from "../../shared/agent-webclient-routes";
 import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
 
@@ -363,6 +366,54 @@ function protocolError(message: string) {
   return Object.assign(new Error(message), { name: "protocol_error" });
 }
 
+function sameNewChatSource(
+  left: ReturnType<typeof readAgentWebclientNewChatSource>,
+  right: ReturnType<typeof readAgentWebclientNewChatSource>,
+) {
+  return Boolean(
+    left &&
+    right &&
+    left.agentKey === right.agentKey &&
+    left.newChat === right.newChat
+  );
+}
+
+function describeMainChatRouteIdentity(value: string | undefined) {
+  if (readAgentWebclientNewChatSource(value ?? "")) return "new-chat";
+  if (readAgentWebclientCanonicalChatSource(value ?? "")) return "canonical";
+  if (readAgentWebclientAgentRouteKey(value ?? "")) return "agent-route";
+  return "invalid";
+}
+
+function mainChatQueryRouteAgentKeys(target: RegisteredWebviewSurfaceTarget) {
+  return [
+    readAgentWebclientAgentRouteKey(target.currentUrl),
+    readAgentWebclientAgentRouteKey(target.pageRouteIdentity ?? ""),
+    readAgentWebclientAgentRouteKey(target.pageRoute ?? ""),
+  ];
+}
+
+function validateMainChatQueryTargetAgentIdentity(
+  target: RegisteredWebviewSurfaceTarget,
+  payload: Record<string, unknown>,
+) {
+  if (
+    target.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+    target.surfaceType !== "agent-chat"
+  ) {
+    return;
+  }
+  const owner = readOwner(payload);
+  const routeAgentKeys = mainChatQueryRouteAgentKeys(target);
+  if (
+    !owner ||
+    owner.kind !== "agent" ||
+    routeAgentKeys.some((agentKey) => !agentKey || agentKey !== owner.agentKey)
+  ) {
+    throw protocolError("query Agent owner does not match its active Main Chat route");
+  }
+}
+
 function validateMainChatQueryAgentIdentity(
   context: SurfaceContext,
   payload: Record<string, unknown>,
@@ -373,17 +424,12 @@ function validateMainChatQueryAgentIdentity(
   ) {
     return;
   }
+  validateMainChatQueryTargetAgentIdentity(context.target, payload);
   const owner = readOwner(payload);
-  const routeAgentKeys = [
-    readAgentWebclientAgentRouteKey(context.sender.getURL()),
-    readAgentWebclientAgentRouteKey(context.target.currentUrl),
-    readAgentWebclientAgentRouteKey(context.target.pageRoute ?? ""),
-  ];
-  if (!routeAgentKeys.some(Boolean)) return;
   if (
     !owner ||
     owner.kind !== "agent" ||
-    routeAgentKeys.some((agentKey) => !agentKey || agentKey !== owner.agentKey)
+    readAgentWebclientAgentRouteKey(context.sender.getURL()) !== owner.agentKey
   ) {
     throw protocolError("query Agent owner does not match its active Main Chat route");
   }
@@ -395,26 +441,37 @@ function resolveNewChatQuerySource(
 ) {
   if (target.surfaceId !== MAIN_CHAT_SURFACE_ID || target.surfaceType !== "agent-chat") return null;
   const ownerChatId = target.ownerChatId?.trim() || "";
-  const source = readAgentWebclientNewChatSource(target.currentUrl);
+  const guestSource = readAgentWebclientNewChatSource(target.currentUrl);
+  const pageSource = readAgentWebclientNewChatSource(target.pageRouteIdentity ?? "");
   if (ownerChatId) {
     const payloadChatId = readText(payload.chatId);
-    if (source) {
+    const pageCanonical = readAgentWebclientCanonicalChatSource(
+      target.pageRouteIdentity ?? "",
+    );
+    if (!pageCanonical || pageCanonical.chatId !== ownerChatId) {
+      throw protocolError("canonical Chat owner does not match its Desktop route");
+    }
+    if (guestSource) {
       if (payloadChatId === ownerChatId) return null;
       throw protocolError("new Chat query source does not match its active Main Chat route");
+    }
+    const guestCanonical = readAgentWebclientCanonicalChatSource(target.currentUrl);
+    if (!guestCanonical || guestCanonical.chatId !== ownerChatId) {
+      throw protocolError("canonical Chat owner does not match its guest route");
     }
     if (payloadChatId && payloadChatId !== ownerChatId) {
       throw protocolError("canonical Chat query does not match its active Main Chat owner");
     }
     return null;
   }
-  if (!source) {
+  if (!sameNewChatSource(guestSource, pageSource)) {
     throw protocolError("new Chat query requires an exact agentKey and newChat route source");
   }
   const expectedOwner = readOwner(payload);
   if (
     !expectedOwner ||
     expectedOwner.kind !== "agent" ||
-    expectedOwner.agentKey !== source.agentKey
+    expectedOwner.agentKey !== guestSource!.agentKey
   ) {
     throw protocolError("new Chat query source does not match its active Main Chat route");
   }
@@ -422,9 +479,100 @@ function resolveNewChatQuerySource(
     registrationId: target.registrationId,
     ownerWebContentsId: target.ownerWebContentsId,
     guestWebContentsId: target.webContentsId,
-    agentKey: source.agentKey,
-    newChat: source.newChat,
+    agentKey: guestSource!.agentKey,
+    newChat: guestSource!.newChat,
   };
+}
+
+function validateMainChatQuerySenderChatIdentity(
+  context: SurfaceContext,
+  payload: Record<string, unknown>,
+  newChatSource: StreamBinding["newChatSource"],
+) {
+  if (
+    context.target.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+    context.target.surfaceType !== "agent-chat"
+  ) {
+    return;
+  }
+  const senderUrl = context.sender.getURL();
+  const ownerChatId = context.target.ownerChatId?.trim() || "";
+  if (ownerChatId) {
+    const senderNewChat = readAgentWebclientNewChatSource(senderUrl);
+    if (senderNewChat) {
+      if (readText(payload.chatId) === ownerChatId) return;
+      throw protocolError("new Chat query source does not match its active Main Chat route");
+    }
+    const senderCanonical = readAgentWebclientCanonicalChatSource(senderUrl);
+    if (!senderCanonical || senderCanonical.chatId !== ownerChatId) {
+      throw protocolError("canonical Chat owner does not match its sender route");
+    }
+    return;
+  }
+  const senderNewChat = readAgentWebclientNewChatSource(senderUrl);
+  if (
+    !newChatSource ||
+    !senderNewChat ||
+    senderNewChat.agentKey !== newChatSource.agentKey ||
+    senderNewChat.newChat !== newChatSource.newChat
+  ) {
+    throw protocolError("new Chat query requires an exact agentKey and newChat sender route");
+  }
+}
+
+function mainChatQueryTargetIsReady(
+  target: RegisteredWebviewSurfaceTarget,
+  payload: Record<string, unknown>,
+) {
+  try {
+    validateMainChatQueryTargetAgentIdentity(target, payload);
+    resolveNewChatQuerySource(target, payload);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function mainChatQueryTargetIsTransitional(
+  context: SurfaceContext,
+  payload: Record<string, unknown>,
+) {
+  const target = context.target;
+  if (
+    target.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+    target.surfaceType !== "agent-chat" ||
+    !target.active ||
+    target.ownerChatId?.trim()
+  ) {
+    return false;
+  }
+  try {
+    validateMainChatQueryAgentIdentity(context, payload);
+  } catch {
+    return false;
+  }
+  const pageNewChat = readAgentWebclientNewChatSource(target.pageRouteIdentity ?? "");
+  const pageCanonical = readAgentWebclientCanonicalChatSource(target.pageRouteIdentity ?? "");
+  const guestNewChat = readAgentWebclientNewChatSource(target.currentUrl);
+  const senderNewChat = readAgentWebclientNewChatSource(context.sender.getURL());
+  if (
+    pageNewChat &&
+    sameNewChatSource(pageNewChat, guestNewChat) &&
+    sameNewChatSource(pageNewChat, senderNewChat)
+  ) {
+    return false;
+  }
+
+  const payloadChatId = readText(payload.chatId);
+  const guestCanonical = readAgentWebclientCanonicalChatSource(target.currentUrl);
+  const senderCanonical = readAgentWebclientCanonicalChatSource(context.sender.getURL());
+  for (const canonical of [guestCanonical, senderCanonical]) {
+    if (canonical && payloadChatId && canonical.chatId !== payloadChatId) return false;
+  }
+  if (pageCanonical) {
+    return Boolean(payloadChatId && pageCanonical.chatId === payloadChatId);
+  }
+  return Boolean(pageNewChat);
 }
 
 export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
@@ -726,13 +874,39 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       newChat: binding.newChatSource.newChat,
       chatId,
     } satisfies Omit<CanonicalChatSyncRequest, "requestId">;
+    const traceCanonicalSync = (state: "ready" | "failed", reason: string) => {
+      const target = options.browserSurfaces.resolveWebviewSurfaceTarget(
+        binding.newChatSource!.guestWebContentsId,
+      );
+      options.realtimeBroker.appendDebugTrace({
+        layer: "surface-bridge",
+        direction: "desktop-to-surface",
+        data: {
+          event: "main-chat-canonical-sync",
+          state,
+          reason,
+          generation: binding.newChatSource!.registrationId,
+          ownerPresent: Boolean(target?.ownerChatId?.trim()),
+          routeKind: target?.ownerChatId?.trim() ? "canonical" : "new-chat",
+        },
+        surfaceId: MAIN_CHAT_SURFACE_ID,
+        webContentsId: binding.newChatSource!.guestWebContentsId,
+        surfaceKind: target?.surfaceType,
+        surfaceRole: target?.surfaceRole,
+        surfaceLevel: target?.surfaceLevel,
+        interaction: target?.interaction,
+        route: target?.pageRoute,
+      });
+    };
     const ready = options.syncCanonicalChat(
       binding.newChatSource.ownerWebContentsId,
       request,
     ).then((result) => {
       if (!result.ok) {
+        traceCanonicalSync("failed", result.code);
         throw Object.assign(new Error(result.message), { name: result.code });
       }
+      traceCanonicalSync("ready", "canonical_owner_registered");
     });
     void ready.catch(() => undefined);
     binding.canonicalChatReady = ready;
@@ -1044,6 +1218,111 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     }
   };
 
+  const resolveMainChatQueryAuthorization = async (input: {
+    session: LogicalSession;
+    context: SurfaceContext;
+    payload: Record<string, unknown>;
+  }) => {
+    try {
+      validateMainChatQueryAgentIdentity(input.context, input.payload);
+      const newChatSource = resolveNewChatQuerySource(input.context.target, input.payload);
+      validateMainChatQuerySenderChatIdentity(
+        input.context,
+        input.payload,
+        newChatSource,
+      );
+      return {
+        context: input.context,
+        newChatSource,
+      };
+    } catch (error) {
+      if (!mainChatQueryTargetIsTransitional(input.context, input.payload)) throw error;
+    }
+
+    const initialTarget = input.context.target;
+    const startedAt = Date.now();
+    const trace = (state: "started" | "ready" | "failed", reason: string) => {
+      options.realtimeBroker.appendDebugTrace({
+        layer: "surface-bridge",
+        direction: "surface-to-desktop",
+        data: {
+          event: "main-chat-query-identity-convergence",
+          state,
+          reason,
+          waitedMs: Date.now() - startedAt,
+          generation: initialTarget.registrationId,
+          ownerPresent: Boolean(
+            options.browserSurfaces
+              .resolveWebviewSurfaceTarget(input.context.sender.id)
+              ?.ownerChatId?.trim(),
+          ),
+          routeKind: describeMainChatRouteIdentity(initialTarget.pageRouteIdentity),
+        },
+        surfaceId: initialTarget.surfaceId,
+        webContentsId: input.context.sender.id,
+        surfaceKind: input.context.kind,
+        surfaceRole: initialTarget.surfaceRole,
+        surfaceLevel: initialTarget.surfaceLevel,
+        interaction: initialTarget.interaction,
+        route: initialTarget.pageRoute,
+      });
+    };
+    trace("started", "registered_surface_identity_is_transitional");
+
+    const abortController = new AbortController();
+    const abortWait = () => abortController.abort();
+    input.context.sender.once("destroyed", abortWait);
+    input.context.sender.once("render-process-gone", abortWait);
+    let matchedTarget: RegisteredWebviewSurfaceTarget | null = null;
+    try {
+      matchedTarget = await options.browserSurfaces.waitForWebviewSurfaceTargetMatching(
+        input.context.sender.id,
+        (candidate) =>
+          candidate.registrationId === initialTarget.registrationId &&
+          candidate.ownerWebContentsId === initialTarget.ownerWebContentsId &&
+          candidate.surfaceId === MAIN_CHAT_SURFACE_ID &&
+          candidate.active &&
+          mainChatQueryTargetIsReady(candidate, input.payload),
+        SURFACE_REGISTRATION_WAIT_MS,
+        abortController.signal,
+      );
+    } finally {
+      input.context.sender.removeListener("destroyed", abortWait);
+      input.context.sender.removeListener("render-process-gone", abortWait);
+    }
+    if (!matchedTarget || input.session.closed || input.context.sender.isDestroyed()) {
+      trace("failed", matchedTarget ? "logical_session_changed" : "registration_wait_expired");
+      throw protocolError("Main Chat identity did not converge before query authorization");
+    }
+
+    const nextContext = authorizeSurface(
+      input.context.sender,
+      options.browserSurfaces,
+      options.isTrustedAgentWebclientSession,
+    );
+    if (
+      "ok" in nextContext ||
+      nextContext.target.registrationId !== initialTarget.registrationId ||
+      nextContext.target.ownerWebContentsId !== initialTarget.ownerWebContentsId ||
+      !nextContext.target.active
+    ) {
+      trace("failed", "surface_generation_changed");
+      throw protocolError("Main Chat surface changed before query authorization completed");
+    }
+    try {
+      validateMainChatQueryAgentIdentity(nextContext, input.payload);
+      const newChatSource = resolveNewChatQuerySource(nextContext.target, input.payload);
+      validateMainChatQuerySenderChatIdentity(nextContext, input.payload, newChatSource);
+      trace("ready", nextContext.target.ownerChatId?.trim()
+        ? "canonical_owner_registered"
+        : "new_chat_source_registered");
+      return { context: nextContext, newChatSource };
+    } catch (error) {
+      trace("failed", "identity_changed_after_registration_match");
+      throw error;
+    }
+  };
+
   const handleOpen = async (event: any, input: AgentWebclientPlatformFramePortOpenInput) => {
     const sessionId = readText(input?.sessionId);
     if (!sessionId) return;
@@ -1179,7 +1458,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       sendFrame(session, frameError(frame.id, "duplicate_id", "request id is already active on this logical session"));
       return;
     }
-    const context = authorizeSurface(
+    let context = authorizeSurface(
       event.sender,
       options.browserSurfaces,
       options.isTrustedAgentWebclientSession,
@@ -1192,6 +1471,25 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     // Only query/attach/BTW streams require the additional active-surface authorization below.
     const isLive = LIVE_REQUEST_TYPES.has(frame.type);
     const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+    let newChatSource: StreamBinding["newChatSource"] = null;
+    if (frame.type === "/api/query") {
+      try {
+        const authorization = await resolveMainChatQueryAuthorization({
+          session,
+          context,
+          payload,
+        });
+        context = authorization.context;
+        newChatSource = authorization.newChatSource;
+      } catch (error) {
+        sendFrame(session, frameError(
+          frame.id,
+          "protocol_error",
+          error instanceof Error ? error.message : String(error),
+        ));
+        return;
+      }
+    }
     const ownerChatId = context.target.ownerChatId?.trim() || "";
     const isReadonlyVirtualAttach = frame.type === "/api/attach" &&
       (context.kind === "agent-overview" || context.kind === "agent-debug") &&
@@ -1267,21 +1565,6 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       releaseDetachBarrier?.();
       releaseDetachBarrier = null;
     };
-    let newChatSource: StreamBinding["newChatSource"] = null;
-    if (frame.type === "/api/query") {
-      try {
-        validateMainChatQueryAgentIdentity(context, payload);
-        newChatSource = resolveNewChatQuerySource(context.target, payload);
-      } catch (error) {
-        finishExplicitDetachWrite(false);
-        sendFrame(session, frameError(
-          frame.id,
-          "protocol_error",
-          error instanceof Error ? error.message : String(error),
-        ));
-        return;
-      }
-    }
     let connection: { baseUrl: string; token: string };
     try {
       connection = await availability();
