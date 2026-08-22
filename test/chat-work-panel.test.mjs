@@ -174,6 +174,7 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(css, /\.chat-work-panel-resource-action\.ant-btn\s*\{[^}]*width:\s*min\(220px,[^}]*height:\s*36px;[^}]*border-radius:\s*8px;/su);
   assert.doesNotMatch(css, /\.chat-work-panel-item\.has-resource-actions > \.service-webview-surface/u);
   assert.match(css, /\.chat-work-panel-tab\.has-close:hover \.chat-work-panel-tab-title[^}]*mask-image:\s*linear-gradient/su);
+  assert.doesNotMatch(css, /\.chat-work-panel-tab-close::before\s*\{/u);
   assert.match(css, /\.app-shell\.has-chat-work-panel \.work-panel-host\.is-fullscreen\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%/su);
   assert.match(css, /\.chat-work-panel \.external-webview-browser-chrome\s*\{\s*display:\s*none;/su);
   assert.match(appShell, /WORK_PANEL_WIDTH_STORAGE_KEY/u);

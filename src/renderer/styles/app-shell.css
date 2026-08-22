@@ -1148,27 +1148,6 @@
   transition: opacity 120ms ease;
 }
 
-/* 视觉遮罩：大的模糊圆底（30×30），仅视觉展示，不拦截点击 */
-.chat-work-panel-tab-close::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 30px;
-  height: 30px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: radial-gradient(circle, rgba(95, 99, 104, 0.22) 0%, rgba(95, 99, 104, 0.08) 58%, transparent 100%);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
-}
-
-.chat-work-panel-tab-close:hover::before,
-.chat-work-panel-tab-close:focus-visible::before {
-  opacity: 1;
-}
-
 .chat-work-panel-tab:hover .chat-work-panel-tab-close,
 .chat-work-panel-tab:focus-within .chat-work-panel-tab-close {
   visibility: visible;
