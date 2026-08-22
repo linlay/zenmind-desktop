@@ -371,6 +371,61 @@ test("RealtimeBroker replays and fans out a forwarded visible Run without upstre
   debug.unsubscribe();
 });
 
+test("RealtimeBroker explains why a requested visible Run cannot be subscribed", (t) => {
+  const { broker } = createHarness(t);
+  assert.throws(
+    () => broker.subscribeVisibleRun({
+      chatId: "chat-missing",
+      runId: "run-missing",
+      kind: "surface",
+      consumerId: "overview-missing",
+      surfaceId: "surface:overview",
+      onEvent() {},
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, true);
+      assert.deepEqual(error.details, {
+        stage: "broker_subscribe",
+        reason: "visible_binding_missing",
+        visibleBindingPresent: false,
+        runRegistered: false,
+      });
+      return true;
+    },
+  );
+
+  broker.beginForwardedVisibleRun({
+    sourceId: "frame-port:main:query-present",
+    chatId: "chat-present",
+    runId: "run-present",
+    owner: { kind: "agent", agentKey: "coder" },
+    primarySurfaceId: "surface:main",
+  });
+  assert.throws(
+    () => broker.subscribeVisibleRun({
+      chatId: "chat-requested",
+      runId: "run-requested",
+      kind: "surface",
+      consumerId: "overview-mismatch",
+      surfaceId: "surface:overview",
+      onEvent() {},
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, true);
+      assert.equal(error.details.stage, "broker_subscribe");
+      assert.equal(error.details.reason, "visible_binding_identity_mismatch");
+      assert.equal(error.details.visibleBindingPresent, true);
+      assert.equal(error.details.runRegistered, false);
+      assert.equal(typeof error.details.bindingEpoch, "number");
+      assert.equal(JSON.stringify(error.details).includes("chat-present"), false);
+      assert.equal(JSON.stringify(error.details).includes("run-present"), false);
+      return true;
+    },
+  );
+});
+
 test("RealtimeBroker singleflights attach and strictly pairs rewritten response ids", async (t) => {
   const { broker, sockets, token } = createHarness(t);
   const firstEvents = [];

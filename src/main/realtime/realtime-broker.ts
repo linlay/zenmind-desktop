@@ -838,12 +838,61 @@ export class RealtimeBroker {
     const surfaceId = options.surfaceId.trim();
     const binding = this.visibleBinding;
     const run = this.runsById.get(runId);
-    if (
-      !runId || !chatId || !surfaceId ||
-      !binding || binding.runId !== runId || binding.chatId !== chatId ||
-      !run || run.chatId !== chatId || run.forwardedSourceId !== binding.upstreamRequestId
-    ) {
-      throw brokerError("target_unavailable", "requested Run is not the primary visible Run");
+    const targetUnavailable = (
+      reason: string,
+      message: string,
+      retryable: boolean,
+    ) => brokerError("target_unavailable", message, {
+      retryable,
+      details: {
+        stage: "broker_subscribe",
+        reason,
+        visibleBindingPresent: Boolean(binding),
+        runRegistered: Boolean(run),
+        ...(binding ? { bindingEpoch: binding.epoch } : {}),
+      },
+    });
+    if (!runId || !chatId || !surfaceId) {
+      throw targetUnavailable(
+        "missing_request_identity",
+        "visible Run subscription identity is incomplete",
+        false,
+      );
+    }
+    if (!binding) {
+      throw targetUnavailable(
+        "visible_binding_missing",
+        "primary visible Run binding is not registered",
+        true,
+      );
+    }
+    if (binding.runId !== runId || binding.chatId !== chatId) {
+      throw targetUnavailable(
+        "visible_binding_identity_mismatch",
+        "primary visible binding belongs to another Run",
+        true,
+      );
+    }
+    if (!run) {
+      throw targetUnavailable(
+        "run_registry_missing",
+        "requested Run is not registered in the local replay registry",
+        true,
+      );
+    }
+    if (run.chatId !== chatId) {
+      throw targetUnavailable(
+        "run_chat_mismatch",
+        "requested Run belongs to another Chat",
+        false,
+      );
+    }
+    if (run.forwardedSourceId !== binding.upstreamRequestId) {
+      throw targetUnavailable(
+        "forwarded_source_mismatch",
+        "primary visible Run source changed before local subscription",
+        true,
+      );
     }
     if (options.owner && run.owner && (
       options.owner.kind !== run.owner.kind ||

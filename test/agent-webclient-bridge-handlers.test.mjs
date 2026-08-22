@@ -209,6 +209,14 @@ async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+async function waitUntil(predicate, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for test condition");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 async function openSession(runtime, sender, sessionId) {
   runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)(
     { sender },
@@ -671,6 +679,261 @@ test("Overview waits for a new Main Chat query to publish its canonical Run iden
   assert.deepEqual(
     sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
     [1],
+  );
+});
+
+test("Overview waits for the next Main Chat attach during a same-session Chat handoff", async () => {
+  const mainTarget = createTarget(151, {
+    ownerChatId: "chat-before-switch",
+    pageRoute: "/agent/agent-1?chatId=chat-before-switch",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-before-switch",
+  });
+  const overviewTarget = createTarget(152, {
+    surfaceId: "overview:chat-after-switch",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-after-switch",
+    pageRoute: "/overview/chat-after-switch",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-after-switch",
+  });
+  const forwarded = [];
+  const deliverByRun = new Map();
+  const runtime = createRegistration(
+    new Map([[151, mainTarget], [152, overviewTarget]]),
+    async (input) => {
+      forwarded.push({ type: input.type, localId: input.localId });
+      const runId = typeof input.payload?.runId === "string" ? input.payload.runId : "";
+      if (input.type === "/api/attach" && runId) deliverByRun.set(runId, input.onFrame);
+    },
+  );
+  const main = createSender(151, mainTarget.currentUrl);
+  const overview = createSender(152, overviewTarget.currentUrl);
+  await openSession(runtime, main, "session-main-switch");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-switch",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-before-switch",
+      payload: { runId: "run-before-switch", agentKey: "agent-1", lastSeq: 3 },
+    },
+  });
+  await flush();
+  const mainSessionBefore = runtime.registration.getDiagnostics().logicalSessions
+    .find((session) => session.webContentsId === 151 && session.phase !== "closed");
+
+  mainTarget.ownerChatId = "chat-after-switch";
+  mainTarget.pageRoute = "/agent/agent-1?chatId=chat-after-switch";
+  mainTarget.currentUrl = "http://127.0.0.1:7079/agent/agent-1?chatId=chat-after-switch";
+  main.setURL(mainTarget.currentUrl);
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-switch",
+    frame: {
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-main-before-switch",
+      payload: { runId: "run-before-switch", agentKey: "agent-1", reason: "surface_inactive" },
+    },
+  });
+  await flush();
+
+  await openSession(runtime, overview, "session-overview-switch");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-switch",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-after-switch",
+      payload: { runId: "run-after-switch", agentKey: "agent-1", lastSeq: 7 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(sentFrames(overview).some((frame) => frame.frame === "error"), false);
+  assert.equal(forwarded.some((entry) => entry.localId === "attach-overview-after-switch"), false);
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-switch",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-after-switch",
+      payload: { runId: "run-after-switch", agentKey: "agent-1", lastSeq: 7 },
+    },
+  });
+  await waitUntil(() => runtime.visibleSubscriptions.size === 1);
+  deliverByRun.get("run-after-switch")({
+    frame: "stream",
+    id: "attach-main-after-switch",
+    event: {
+      type: "content.delta",
+      timestamp: 1_786_890_400_008,
+      seq: 8,
+      chatId: "chat-after-switch",
+      runId: "run-after-switch",
+      delta: "live after switch",
+    },
+  });
+  await flush();
+
+  assert.deepEqual(forwarded.map((entry) => entry.type), [
+    "/api/attach",
+    "/api/detach",
+    "/api/attach",
+  ]);
+  assert.equal(forwarded.some((entry) => entry.localId === "attach-overview-after-switch"), false);
+  assert.deepEqual(
+    sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
+    [8],
+  );
+  const mainSessionAfter = runtime.registration.getDiagnostics().logicalSessions
+    .find((session) => session.webContentsId === 151 && session.phase !== "closed");
+  assert.equal(mainSessionAfter.logicalSessionId, mainSessionBefore.logicalSessionId);
+  assert.equal(mainSessionAfter.logicalGeneration, mainSessionBefore.logicalGeneration);
+  assert.equal(mainSessionAfter.physicalGeneration, mainSessionBefore.physicalGeneration);
+});
+
+test("Overview reports structured diagnostics after the Main Chat bind window expires", async () => {
+  const overviewTarget = createTarget(153, {
+    surfaceId: "overview:chat-bind-timeout",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-bind-timeout",
+    pageRoute: "/overview/chat-bind-timeout",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-bind-timeout",
+  });
+  const runtime = createRegistration(new Map([[153, overviewTarget]]), async () => {
+    assert.fail("Overview bind timeout must not open an upstream stream");
+  });
+  const overview = createSender(153, overviewTarget.currentUrl);
+  await openSession(runtime, overview, "session-overview-bind-timeout");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-timeout",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-bind-timeout",
+      payload: { runId: "run-bind-timeout", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await waitUntil(() => sentFrames(overview).some((frame) => frame.id === "attach-overview-bind-timeout"), 2_000);
+
+  const error = sentFrames(overview).find((frame) => frame.id === "attach-overview-bind-timeout");
+  assert.equal(error.frame, "error");
+  assert.equal(error.type, "target_unavailable");
+  assert.equal(error.data.retryable, true);
+  assert.equal(error.data.details.stage, "visible_run_bind");
+  assert.equal(error.data.details.reason, "primary_surface_transitioning");
+  assert.equal(error.data.details.primarySessionCount, 0);
+  assert.ok(error.data.details.waitedMs >= 1_500);
+  assert.ok(error.data.details.attemptCount > 1);
+  assert.equal(JSON.stringify(error.data.details).includes("chat-bind-timeout"), false);
+  assert.equal(JSON.stringify(error.data.details).includes("run-bind-timeout"), false);
+});
+
+test("Overview reauthorizes its surface while waiting for the Main Chat mirror", async () => {
+  const overviewTarget = createTarget(156, {
+    surfaceId: "overview:chat-bind-changed",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-bind-changed",
+    pageRoute: "/overview/chat-bind-changed",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-bind-changed",
+  });
+  const runtime = createRegistration(new Map([[156, overviewTarget]]), async () => {
+    assert.fail("an inactive Overview must not open an upstream stream");
+  });
+  const overview = createSender(156, overviewTarget.currentUrl);
+  await openSession(runtime, overview, "session-overview-bind-changed");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-changed",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-bind-changed",
+      payload: { runId: "run-bind-changed", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  overviewTarget.active = false;
+  await waitUntil(() => sentFrames(overview).some((frame) => frame.id === "attach-overview-bind-changed"));
+
+  const error = sentFrames(overview).find((frame) => frame.id === "attach-overview-bind-changed");
+  assert.equal(error.type, "surface_unavailable");
+  assert.equal(error.data.retryable, false);
+  assert.equal(error.data.details.stage, "visible_run_bind");
+  assert.equal(error.data.details.reason, "virtual_surface_changed");
+  assert.equal(runtime.visibleSubscriptions.size, 0);
+});
+
+test("Overview detach cancels a pending Main Chat bind without a late subscription", async () => {
+  const mainTarget = createTarget(154, {
+    ownerChatId: "chat-bind-cancelled",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-bind-cancelled",
+  });
+  const overviewTarget = createTarget(155, {
+    surfaceId: "overview:chat-bind-cancelled",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-bind-cancelled",
+    pageRoute: "/overview/chat-bind-cancelled",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-bind-cancelled",
+  });
+  const runtime = createRegistration(
+    new Map([[154, mainTarget], [155, overviewTarget]]),
+    async () => undefined,
+  );
+  const main = createSender(154, mainTarget.currentUrl);
+  const overview = createSender(155, overviewTarget.currentUrl);
+  await openSession(runtime, main, "session-main-bind-cancelled");
+  await openSession(runtime, overview, "session-overview-bind-cancelled");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-cancelled",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-bind-cancelled",
+      payload: { runId: "run-bind-cancelled", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-cancelled",
+    frame: {
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-overview-bind-cancelled",
+      payload: { runId: "run-bind-cancelled", agentKey: "agent-1", reason: "surface_inactive" },
+    },
+  });
+  await waitUntil(() => sentFrames(overview).some((frame) => frame.id === "detach-overview-bind-cancelled"));
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-bind-cancelled",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-bind-cancelled",
+      payload: { runId: "run-bind-cancelled", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.equal(runtime.visibleSubscriptions.size, 0);
+  assert.equal(
+    sentFrames(overview).some((frame) => frame.id === "attach-overview-bind-cancelled"),
+    false,
   );
 });
 

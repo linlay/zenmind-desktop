@@ -45,6 +45,7 @@ import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
 const SURFACE_REGISTRATION_WAIT_MS = 1_500;
+const VISIBLE_RUN_BIND_WAIT_MS = 1_500;
 const VISIBLE_RUN_BIND_RETRY_MS = 25;
 
 const LIVE_CHAT_SURFACE_IDS = new Set([
@@ -129,6 +130,31 @@ type ClosedLogicalSessionDiagnostic = {
   pendingRequestCount: number;
   activeStreamCount: number;
 };
+
+type VisibleRunBindReason =
+  | "primary_surface_transitioning"
+  | "primary_stream_not_ready"
+  | "primary_run_identity_pending"
+  | "primary_run_mismatch"
+  | "forwarded_source_transitioning";
+
+type VisibleRunBindSnapshot = {
+  stage: "visible_run_bind";
+  reason: VisibleRunBindReason;
+  visibleBindingPresent: boolean;
+  primarySessionCount: number;
+  activePrimarySessionCount: number;
+  matchingPrimarySessionCount: number;
+  matchingStreamCount: number;
+  pendingRunIdentityCount: number;
+  matchingRunStreamCount: number;
+  logicalGeneration?: number;
+  physicalGeneration?: number;
+};
+
+type PrimaryVisibleRunProbe =
+  | { state: "ready" }
+  | { state: "waiting"; snapshot: VisibleRunBindSnapshot };
 
 function failure(code: AgentWebclientBridgeErrorCode, message: string): AgentWebclientBridgeFailure {
   return { ok: false, error: { code, message } };
@@ -247,6 +273,16 @@ function bridgeErrorCode(error: unknown): AgentWebclientBridgeErrorCode {
     "unsupported_in_current_view", "unsupported_native_surface", "seq_expired",
     "replay_required", "protocol_error", "backpressure",
   ].includes(candidate) ? candidate as AgentWebclientBridgeErrorCode : "protocol_error";
+}
+
+function bridgeErrorWithMetadata(
+  code: AgentWebclientBridgeErrorCode,
+  message: string,
+  options: FrameErrorOptions,
+) {
+  const error = new Error(message);
+  error.name = code;
+  return Object.assign(error, options);
 }
 
 function parseRequestFrame(value: unknown): AgentPlatformRequestFrame | null {
@@ -792,21 +828,35 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     chatId: string;
     runId: string;
     owner: AgentWebclientRunOwner;
-  }): "ready" | "pending" | "unavailable" => {
+  }): PrimaryVisibleRunProbe => {
     const visible = options.realtimeBroker.getVisibleBinding();
-    if (visible?.chatId === input.chatId && visible.runId === input.runId) return "ready";
+    if (visible?.chatId === input.chatId && visible.runId === input.runId) {
+      return { state: "ready" };
+    }
 
-    let pending = false;
+    let primarySessionCount = 0;
+    let activePrimarySessionCount = 0;
+    let matchingPrimarySessionCount = 0;
+    let matchingStreamCount = 0;
+    let pendingRunIdentityCount = 0;
+    let matchingRunStreamCount = 0;
+    let forwardedSourceTransitioning = false;
+    let diagnosticSession: LogicalSession | null = null;
     for (const primarySession of sessions.values()) {
       if (primarySession.closed || primarySession.retiring) continue;
       const target = options.browserSurfaces.resolveWebviewSurfaceTarget(primarySession.sender.id);
+      if (target?.surfaceId !== MAIN_CHAT_SURFACE_ID) continue;
+      primarySessionCount += 1;
+      diagnosticSession ??= primarySession;
+      if (target.active) activePrimarySessionCount += 1;
       if (
-        target?.surfaceId !== MAIN_CHAT_SURFACE_ID ||
         target.ownerChatId?.trim() !== input.chatId ||
         !target.active
       ) {
         continue;
       }
+      matchingPrimarySessionCount += 1;
+      diagnosticSession = primarySession;
       for (const candidate of primarySession.streams.values()) {
         if (
           candidate.virtual ||
@@ -818,11 +868,13 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         ) {
           continue;
         }
+        matchingStreamCount += 1;
         if (!candidate.runId) {
-          pending = true;
+          pendingRunIdentityCount += 1;
           continue;
         }
         if (candidate.runId !== input.runId) continue;
+        matchingRunStreamCount += 1;
         try {
           options.realtimeBroker.beginForwardedVisibleRun({
             sourceId: candidate.sourceId,
@@ -833,13 +885,159 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             primarySurfaceId: `surface:${primarySession.sender.id}`,
           });
           candidate.visibleRegistered = true;
-          return "ready";
-        } catch {
-          return "unavailable";
+          return { state: "ready" };
+        } catch (error) {
+          if (bridgeErrorCode(error) === "duplicate_id") {
+            forwardedSourceTransitioning = true;
+            continue;
+          }
+          const existingDetails = isPlainBridgeRecord(error) && isPlainBridgeRecord(error.details)
+            ? error.details
+            : {};
+          throw bridgeErrorWithMetadata(
+            bridgeErrorCode(error),
+            error instanceof Error ? error.message : String(error),
+            {
+              ...(isPlainBridgeRecord(error) && typeof error.retryable === "boolean"
+                ? { retryable: error.retryable }
+                : {}),
+              details: {
+                ...existingDetails,
+                stage: "visible_run_bind",
+                reason: "primary_registration_failed",
+                visibleBindingPresent: Boolean(visible),
+                primarySessionCount,
+                activePrimarySessionCount,
+                matchingPrimarySessionCount,
+                matchingStreamCount,
+                pendingRunIdentityCount,
+                matchingRunStreamCount,
+                logicalGeneration: primarySession.logicalGeneration,
+                physicalGeneration: primarySession.physicalGeneration,
+              },
+            },
+          );
         }
       }
     }
-    return pending ? "pending" : "unavailable";
+    const reason: VisibleRunBindReason = forwardedSourceTransitioning
+      ? "forwarded_source_transitioning"
+      : matchingStreamCount === 0
+        ? matchingPrimarySessionCount === 0
+          ? "primary_surface_transitioning"
+          : "primary_stream_not_ready"
+        : pendingRunIdentityCount > 0
+          ? "primary_run_identity_pending"
+          : "primary_run_mismatch";
+    return {
+      state: "waiting",
+      snapshot: {
+        stage: "visible_run_bind",
+        reason,
+        visibleBindingPresent: Boolean(visible),
+        primarySessionCount,
+        activePrimarySessionCount,
+        matchingPrimarySessionCount,
+        matchingStreamCount,
+        pendingRunIdentityCount,
+        matchingRunStreamCount,
+        ...(diagnosticSession
+          ? {
+              logicalGeneration: diagnosticSession.logicalGeneration,
+              physicalGeneration: diagnosticSession.physicalGeneration,
+            }
+          : {}),
+      },
+    };
+  };
+
+  const waitForPrimaryVisibleRun = async (input: {
+    session: LogicalSession;
+    binding: StreamBinding;
+    sender: WebContents;
+    surfaceId: string;
+    kind: "agent-overview" | "agent-debug";
+  }) => {
+    const startedAt = Date.now();
+    const deadline = startedAt + VISIBLE_RUN_BIND_WAIT_MS;
+    let attemptCount = 0;
+    let lastSnapshot: VisibleRunBindSnapshot | null = null;
+    while (true) {
+      const { session, binding } = input;
+      if (
+        session.closed ||
+        session.retiring ||
+        binding.suppressed ||
+        binding.detachSent ||
+        session.streams.get(binding.localId) !== binding
+      ) {
+        return false;
+      }
+      const currentContext = authorizeSurface(
+        input.sender,
+        options.browserSurfaces,
+        options.isTrustedAgentWebclientSession,
+      );
+      const expectedRole = input.kind === "agent-overview" ? "overview" : "debug";
+      if (
+        "ok" in currentContext ||
+        currentContext.kind !== input.kind ||
+        currentContext.target.surfaceId !== input.surfaceId ||
+        currentContext.target.surfaceRole !== expectedRole ||
+        currentContext.target.parentSurfaceId !== MAIN_CHAT_SURFACE_ID ||
+        currentContext.target.ownerChatId?.trim() !== binding.chatId ||
+        !currentContext.target.active
+      ) {
+        throw bridgeErrorWithMetadata(
+          "surface_unavailable",
+          "read-only Run surface changed while waiting for the Main Chat mirror",
+          {
+            retryable: false,
+            details: {
+              ...(lastSnapshot ?? {
+                stage: "visible_run_bind",
+                visibleBindingPresent: Boolean(options.realtimeBroker.getVisibleBinding()),
+                primarySessionCount: 0,
+                activePrimarySessionCount: 0,
+                matchingPrimarySessionCount: 0,
+                matchingStreamCount: 0,
+                pendingRunIdentityCount: 0,
+                matchingRunStreamCount: 0,
+              }),
+              reason: "virtual_surface_changed",
+              waitedMs: Date.now() - startedAt,
+              attemptCount,
+            },
+          },
+        );
+      }
+      attemptCount += 1;
+      const probe = ensurePrimaryVisibleRun({
+        chatId: binding.chatId,
+        runId: binding.runId,
+        owner: binding.owner!,
+      });
+      if (probe.state === "ready") return true;
+      lastSnapshot = probe.snapshot;
+      const remainingMs = deadline - Date.now();
+      if (remainingMs <= 0) {
+        throw bridgeErrorWithMetadata(
+          "target_unavailable",
+          `Main Chat visible Run mirror was not ready within ${VISIBLE_RUN_BIND_WAIT_MS}ms (${probe.snapshot.reason})`,
+          {
+            retryable: true,
+            details: {
+              ...probe.snapshot,
+              waitedMs: Date.now() - startedAt,
+              attemptCount,
+            },
+          },
+        );
+      }
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, Math.min(VISIBLE_RUN_BIND_RETRY_MS, remainingMs));
+      });
+    }
   };
 
   const handleOpen = async (event: any, input: AgentWebclientPlatformFramePortOpenInput) => {
@@ -1139,22 +1337,14 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         if (!binding.runId || !binding.chatId || !binding.owner) {
           throw Object.assign(new Error("visible Run identity is incomplete"), { name: "invalid_request" });
         }
-        let primaryState = ensurePrimaryVisibleRun({
-          chatId: binding.chatId,
-          runId: binding.runId,
-          owner: binding.owner,
+        const ready = await waitForPrimaryVisibleRun({
+          session,
+          binding,
+          sender: event.sender,
+          surfaceId: context.target.surfaceId,
+          kind: context.kind as "agent-overview" | "agent-debug",
         });
-        if (primaryState === "pending") {
-          const deadline = Date.now() + SURFACE_REGISTRATION_WAIT_MS;
-          while (!session.closed && Date.now() < deadline && primaryState === "pending") {
-            await new Promise<void>((resolve) => setTimeout(resolve, VISIBLE_RUN_BIND_RETRY_MS));
-            primaryState = ensurePrimaryVisibleRun({
-              chatId: binding.chatId,
-              runId: binding.runId,
-              owner: binding.owner,
-            });
-          }
-        }
+        if (!ready) return;
         const subscription = options.realtimeBroker.subscribeVisibleRun({
           runId: binding.runId,
           chatId: binding.chatId,
@@ -1196,6 +1386,13 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         binding.unsubscribe = subscription.unsubscribe;
         await subscription.ready;
       } catch (error) {
+        if (
+          session.closed ||
+          binding.detachSent ||
+          session.streams.get(binding.localId) !== binding
+        ) {
+          return;
+        }
         session.requestIds.delete(frame.id);
         session.streams.delete(frame.id);
         sendFrame(session, frameError(
