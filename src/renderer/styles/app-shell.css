@@ -51,6 +51,21 @@
   --app-window-drag-right: 48px;
 }
 
+.app-shell.is-mac-platform.has-service-webview-surface .app-content {
+  padding-top: var(--app-window-drag-height);
+}
+
+.app-shell.is-mac-platform.has-service-webview-surface .app-content::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  z-index: 0;
+  display: block;
+  height: var(--app-window-drag-height);
+  background: var(--embedded-surface-page-bg);
+  pointer-events: none;
+}
+
 .app-shell.is-mac-translucent-sidebar,
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
   background: transparent;
@@ -584,11 +599,13 @@
 
 .app-window-drag-layer {
   position: absolute;
-  inset: 0;
+  top: 0;
+  left: var(--app-window-drag-left, var(--app-sidebar-width, 160px));
+  right: var(--app-window-drag-right, 0px);
+  height: var(--app-window-drag-height, 12px);
   z-index: 1000;
-  display: flex;
-  flex-direction: column;
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: grab;
 }
 
 .app-window-controls-layer {
@@ -603,11 +620,10 @@
 }
 
 .app-window-drag-region {
-  flex: 0 0 var(--app-window-drag-height, 12px);
-  height: var(--app-window-drag-height, 12px);
+  width: 100%;
+  height: 100%;
   min-height: 0;
-  margin-left: var(--app-window-drag-left, var(--app-sidebar-width, 160px));
-  margin-right: var(--app-window-drag-right, 0px);
+  margin: 0;
   /* Keep the full lane interactive so the first press can enter the Pointer/IPC drag path. */
   app-region: no-drag;
   -webkit-app-region: no-drag;
@@ -620,6 +636,30 @@
 
 .app-window-drag-region:active {
   cursor: grabbing;
+}
+
+.app-window-drag-layer:has(.app-window-drag-region:active) {
+  cursor: grabbing;
+}
+
+.app-shell.is-mac-platform.has-service-webview-surface .app-window-drag-region {
+  position: relative;
+  background: var(--embedded-surface-page-bg);
+  box-shadow: none;
+}
+
+.app-shell.is-mac-platform.has-service-webview-surface .app-window-drag-region::after {
+  content: "";
+  position: absolute;
+  top: 3px;
+  left: 50%;
+  width: 28px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--desktop-ui-border);
+  opacity: 0.62;
+  transform: translateX(-50%);
+  pointer-events: none;
 }
 
 .app-shell.has-kanban-controls .app-main {

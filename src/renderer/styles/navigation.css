@@ -292,7 +292,7 @@
 .sidebar-assistant-top-button-icon {
   width: 16px;
   height: 16px;
-  color: #94a3b8;
+  color: inherit;
 }
 
 .sidebar-assistant-top-button-icon svg,
@@ -314,6 +314,11 @@
 .sidebar-assistant-top-button:disabled {
   cursor: not-allowed;
   opacity: 0.52;
+}
+
+.sidebar-assistant-top-button.is-disabled:hover,
+.sidebar-assistant-top-button:disabled:hover {
+  opacity: 1;
 }
 
 .sidebar-custom-child-link {

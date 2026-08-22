@@ -4480,6 +4480,43 @@ test("decodePowerShellCapturePayload restores UTF-8 error text", () => {
   });
 });
 
+test("PowerShell service wrapper allows native stderr when the script exits successfully", async () => {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "native-stderr-success-"));
+  try {
+    const scriptPath = path.join(root, "native-stderr-success.ps1");
+    fs.writeFileSync(scriptPath, 'cmd.exe /d /c "echo warning 1>&2"\n', "utf8");
+
+    const result = await __testInternals.runExecFile(scriptPath, [], root);
+
+    assert.match(result.stderr, /warning/u);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("PowerShell service wrapper rejects native stderr when the native command fails", async () => {
+  if (process.platform !== "win32") {
+    return;
+  }
+
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "native-stderr-failure-"));
+  try {
+    const scriptPath = path.join(root, "native-stderr-failure.ps1");
+    fs.writeFileSync(scriptPath, 'cmd.exe /d /c "echo failed 1>&2 & exit /b 7"\n', "utf8");
+
+    await assert.rejects(
+      __testInternals.runExecFile(scriptPath, [], root),
+      /failed/u
+    );
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("containerEngineAvailable requires a reachable engine daemon", async () => {
   setContainerEngineProbeState("", { installed: ["docker", "podman"] });
   assert.equal(await __testInternals.containerEngineAvailable(), "");
