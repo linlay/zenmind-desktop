@@ -106,6 +106,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       runReadiness.set(input.runId, input);
     },
     getVisibleBinding: () => visibleBinding,
+    prepareForwardedVisibleRun: async () => false,
     appendForwardedVisibleRunEvent: ({ sourceId, runId, event }) => {
       const run = visibleRuns.get(runId);
       if (!run || run.sourceId !== sourceId) throw new Error("visible source unavailable");
@@ -465,6 +466,67 @@ test("Overview attaches to the Main Chat visible Run locally without another ups
     type: "/api/detach",
     code: 0,
     data: {},
+  });
+});
+
+test("Main Chat observer detach releases the local mirror without completing its Run", async () => {
+  const target = createTarget(159);
+  const order = [];
+  let deliverFrame = () => undefined;
+  let completed = 0;
+  let released = 0;
+  const runtime = createRegistration(
+    new Map([[159, target]]),
+    async ({ type, onFrame }) => {
+      order.push(type);
+      deliverFrame = onFrame;
+    },
+    {
+      realtimeBroker: {
+        prepareForwardedVisibleRun: async () => {
+          order.push("prepare-forwarded-visible-run");
+          return true;
+        },
+        completeForwardedVisibleRun: () => {
+          completed += 1;
+          return true;
+        },
+        releaseForwardedVisibleRun: () => {
+          released += 1;
+          return true;
+        },
+      },
+    },
+  );
+  const sender = createSender(159, target.currentUrl);
+  await openSession(runtime, sender, "session-main-observer-detach");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-main-observer-detach",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-observer-detach",
+      payload: { runId: "run-observer-detach", agentKey: "agent-159", lastSeq: 12 },
+    },
+  });
+  await flush();
+
+  assert.deepEqual(order, ["prepare-forwarded-visible-run", "/api/attach"]);
+  deliverFrame({
+    frame: "stream",
+    id: "attach-main-observer-detach",
+    reason: "detached",
+    lastSeq: 12,
+  });
+  await flush();
+
+  assert.equal(completed, 0);
+  assert.equal(released, 1);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "stream",
+    id: "attach-main-observer-detach",
+    reason: "detached",
+    lastSeq: 12,
   });
 });
 

@@ -164,6 +164,10 @@ function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isObserverDetachReason(reason: string) {
+  return reason.trim().toLowerCase() === "detached";
+}
+
 function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
   return value === "agent-chat" ||
     value === "agent-copilot" ||
@@ -1410,6 +1414,13 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       binding.chatId && binding.runId && binding.owner
     ) {
       try {
+        await options.realtimeBroker.prepareForwardedVisibleRun({
+          baseUrl,
+          token,
+          chatId: binding.chatId,
+          runId: binding.runId,
+          owner: binding.owner,
+        });
         options.realtimeBroker.registerForwardedRunActionGrant({
           sourceId: binding.sourceId,
           chatId: binding.chatId,
@@ -1521,11 +1532,12 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             }
           }
           if (binding?.visibleRegistered && terminal) {
-            if (frameKind === "stream" && readText(upstreamFrame.reason)) {
+            const streamReason = readText(upstreamFrame.reason);
+            if (frameKind === "stream" && streamReason && !isObserverDetachReason(streamReason)) {
               options.realtimeBroker.completeForwardedVisibleRun({
                 sourceId: binding.sourceId,
                 runId: binding.runId,
-                reason: readText(upstreamFrame.reason),
+                reason: streamReason,
                 ...(typeof upstreamFrame.lastSeq === "number" ? { lastSeq: upstreamFrame.lastSeq } : {}),
               });
             } else {
