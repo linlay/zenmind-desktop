@@ -3,21 +3,17 @@ import type { App } from "electron";
 import type { AssistantNavActionResult } from "../../../shared/contracts";
 import { getAssistantExportDefaultPath, getAvailableFilePath, getPlatformPath } from "../../download-paths";
 import { t } from "../../i18n/main-i18n";
-import { MAX_CONVERSATION_HTML_BYTES } from "./conversation-export-contract";
+import {
+  MAX_CONVERSATION_HTML_BYTES,
+  type ConversationHtmlRenderer
+} from "./conversation-export-contract";
 import { resolveConversationAssetOrigin } from "./conversation-share-target";
 
 export { MAX_CONVERSATION_HTML_BYTES } from "./conversation-export-contract";
 
-type ConversationHtmlExportBridge = {
-  downloadChatHtmlExport(
-    chatId: string,
-    assetOrigin: string
-  ): Promise<{ ok: true; bytes: Buffer; filename: string; message: string } | { ok: false; message: string }>;
-};
-
 export async function saveConversationHtmlExport(
   app: App,
-  assistantBridge: ConversationHtmlExportBridge,
+  renderer: ConversationHtmlRenderer,
   chatId: string,
   platform: NodeJS.Platform | string = process.platform
 ): Promise<AssistantNavActionResult> {
@@ -28,7 +24,7 @@ export async function saveConversationHtmlExport(
 
   const assetOrigin = resolveConversationAssetOrigin(app);
   if (!assetOrigin.ok) return assetOrigin;
-  const result = await assistantBridge.downloadChatHtmlExport(normalizedChatId, assetOrigin.origin);
+  const result = await renderer.renderChatHtml(normalizedChatId, assetOrigin.origin);
   if (!result.ok) return { ok: false, message: result.message };
   if (result.bytes.byteLength > MAX_CONVERSATION_HTML_BYTES) {
     return {

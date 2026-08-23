@@ -427,10 +427,15 @@ function writeJSON(res: http.ServerResponse, statusCode: number, body: unknown) 
 
 function sendFile(req: http.IncomingMessage, res: http.ServerResponse, filePath: string) {
   const stats = fs.statSync(filePath);
+  const basename = path.basename(filePath);
   res.writeHead(200, {
     "Content-Type": contentTypeForFile(filePath),
     "Content-Length": stats.size,
-    "Cache-Control": path.basename(filePath) === "index.html" ? "no-cache" : "public, max-age=31536000, immutable"
+    "Cache-Control": basename === "conversation.template.html"
+      ? "no-store"
+      : basename === "index.html"
+        ? "no-cache"
+        : "public, max-age=31536000, immutable"
   });
   if (req.method === "HEAD") {
     res.end();

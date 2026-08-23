@@ -6489,9 +6489,12 @@ test("assistant chat export writes directly to the download location", () => {
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 
-test("assistant static HTML export saves the complete document returned by Agent Platform", () => {
+test("assistant static HTML export saves the complete document returned by the persistent Worker", () => {
   const htmlExport = readSourceFile("src", "main", "assistant", "core", "conversation-html-export.ts");
   const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const htmlRenderService = readSourceFile("src", "main", "assistant", "core", "conversation-html-render-service.ts");
+  const htmlWorker = readSourceFile("src", "main", "assistant", "core", "conversation-html-worker.ts");
+  const mainBuild = readSourceFile("scripts", "build-main-bundle.mjs");
   const preload = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const shareDialog = readSourceFile("src", "renderer", "app-shell", "navigation", "ConversationShareDialog.tsx");
@@ -6499,10 +6502,16 @@ test("assistant static HTML export saves the complete document returned by Agent
   const copilotContract = readSourceFile("src", "shared", "contracts", "copilot.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
-  assert.match(htmlExport, /assistantBridge\.downloadChatHtmlExport\(normalizedChatId\)/u);
+  assert.match(htmlExport, /renderer\.renderChatHtml\(normalizedChatId/u);
   assert.match(htmlExport, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
   assert.match(htmlExport, /getAvailableFilePath/u);
   assert.doesNotMatch(htmlExport, /downloadChatShareEventStream|frontend\/dist|conversation\.template\.html|base64|Buffer\.concat|fetch\(|tunnel|showSaveDialog/iu);
+  assert.match(assistantHandlers, /new ConversationHtmlRenderService/u);
+  assert.match(assistantHandlers, /conversationHtmlRenderer\.start\(\)/u);
+  assert.match(htmlRenderService, /Buffer\.from\(response\.html\)/u);
+  assert.doesNotMatch(htmlRenderService, /Buffer\.concat|response\.text\(\)/u);
+  assert.match(htmlWorker, /postMessage\(response, \[response\.html\]\)/u);
+  assert.match(mainBuild, /"main\/conversation-html-worker"/u);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.exportChatHtml"/u);
   assert.match(preload, /exportChatHtml:\s*\(chatId: string\) => ipcRenderer\.invoke\("assistant\.exportChatHtml", chatId\)/u);
   assert.match(desktopApi, /exportChatHtml:\s*\(chatId: string\) => Promise<AssistantNavActionResult>/u);

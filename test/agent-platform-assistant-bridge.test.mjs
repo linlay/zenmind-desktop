@@ -1555,38 +1555,15 @@ test("agent platform assistant bridge enforces Markdown media type and 2 MiB lim
   }
 });
 
-test("agent platform assistant bridge downloads HTML export bytes unchanged", async () => {
-  const originalFetch = globalThis.fetch;
-  const requests = [];
-  const html = Buffer.from("<!doctype html><html><body>中文</body></html>", "utf8");
+test("agent platform assistant bridge creates a trusted Snapshot request descriptor", async () => {
   const { bridge } = makeBridge();
-  globalThis.fetch = async (url, init = {}) => {
-    requests.push({ url: String(url), init });
-    return new Response(html, {
-      status: 200,
-      headers: {
-        "content-type": "text/html; charset=utf-8",
-        "content-disposition": "attachment; filename*=UTF-8''Transcript%20safe.html"
-      }
-    });
-  };
+  const result = await bridge.createChatSnapshotRequest(" chat_1 ");
 
-  try {
-    const result = await bridge.downloadChatHtmlExport(
-      " chat_1 ",
-      "http://127.0.0.1:11961",
-    );
-
-    assert.equal(result.ok, true);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=html");
-    assert.equal(requests[0].init.headers.Accept, "text/html, application/json");
-    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
-    assert.equal(requests[0].init.headers["X-Conversation-Export-Asset-Origin"], "http://127.0.0.1:11961");
-    assert.equal(result.filename, "Transcript safe.html");
-    assert.equal(Buffer.compare(result.bytes, html), 0);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  assert.deepEqual(result, {
+    ok: true,
+    snapshotUrl: "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=snapshot",
+    bearerToken: "desktop-token"
+  });
 });
 
 test("agent platform assistant bridge preserves the original chat JSONL bytes", async () => {
@@ -1647,34 +1624,18 @@ test("agent platform assistant bridge rejects raw chat JSONL above 100 MiB", asy
   }
 });
 
-test("agent platform assistant bridge enforces HTML media type and 20 MiB limit", async () => {
-  const originalFetch = globalThis.fetch;
-  const { bridge } = makeBridge();
-  const responses = [
-    new Response("# Markdown", {
-      status: 200,
-      headers: { "content-type": "text/markdown; charset=utf-8" }
-    }),
-    new Response("<!doctype html>", {
-      status: 200,
-      headers: {
-        "content-type": "text/html",
-        "content-length": String(20 * 1024 * 1024 + 1)
-      }
+test("agent platform assistant bridge rejects non-loopback Snapshot endpoints", async () => {
+  const { bridge } = makeBridge({
+    getServiceState: async () => ({
+      status: "running",
+      message: "",
+      healthMeta: { webUrl: "https://platform.example.test", port: 443 }
     })
-  ];
-  globalThis.fetch = async () => responses.shift();
+  });
 
-  try {
-    const invalidContentType = await bridge.downloadChatHtmlExport("chat_1", "https://tunnel.example.test");
-    const tooLarge = await bridge.downloadChatHtmlExport("chat_1", "https://tunnel.example.test");
+  const result = await bridge.createChatSnapshotRequest("chat_1");
 
-    assert.equal(invalidContentType.ok, false);
-    assert.equal(tooLarge.ok, false);
-    assert.match(tooLarge.message, /20 MiB/u);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  assert.equal(result.ok, false);
 });
 
 test("agent platform assistant bridge recovers UTF-8 filenames from legacy quoted content disposition", async () => {

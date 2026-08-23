@@ -16,6 +16,7 @@ import {
   revokeConversationShare
 } from "../assistant/core/conversation-share-controller";
 import { saveConversationHtmlExport } from "../assistant/core/conversation-html-export";
+import { ConversationHtmlRenderService } from "../assistant/core/conversation-html-render-service";
 import { TunnelConversationShareClient } from "../assistant/core/tunnel-conversation-share-client";
 
 export interface AssistantIpcHandlerOptions {
@@ -135,6 +136,14 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     platform = process.platform
   } = options;
   const conversationShareClient = new TunnelConversationShareClient();
+  const conversationHtmlRenderer = new ConversationHtmlRenderService({
+    app,
+    snapshotProvider: assistantBridge
+  });
+  conversationHtmlRenderer.start();
+  app.once("will-quit", () => {
+    void conversationHtmlRenderer.dispose();
+  });
 
   // ---------------------------------------------------------------------------
   // currentPage — pure snapshot state
@@ -476,11 +485,11 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   );
 
   ipcMain.handle("assistant.exportChatHtml", async (_event: any, chatId: string) =>
-    saveConversationHtmlExport(app, assistantBridge, chatId, platform)
+    saveConversationHtmlExport(app, conversationHtmlRenderer, chatId, platform)
   );
 
   ipcMain.handle("assistant.shareChat", async (_event: any, request: AssistantConversationShareRequest) =>
-    createConversationShare(app, assistantBridge, conversationShareClient, request)
+    createConversationShare(app, conversationHtmlRenderer, conversationShareClient, request)
   );
 
   ipcMain.handle("assistant.listChatShares", async (_event: any, chatId: string) =>

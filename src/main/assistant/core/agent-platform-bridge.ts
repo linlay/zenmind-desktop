@@ -51,19 +51,12 @@ import {
 } from "./assistant-navigation-status-client";
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
-import {
-  isTunnelHubForbiddenHostname,
-  isTunnelHubLoopbackHostname,
-} from "../../tunnel-hub-url-policy";
+import { parseSafeLoopbackWebUrl } from "../../loopback-url";
 import {
   RealtimeBroker,
   type RealtimeQueryHandle,
 } from "../../realtime/realtime-broker";
 import type { AgentPlatformRealtimeSocketFactory } from "../../realtime/agent-platform-realtime-client";
-import {
-  CONVERSATION_EXPORT_ASSET_ORIGIN_HEADER,
-  MAX_CONVERSATION_HTML_BYTES
-} from "./conversation-export-contract";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const MAX_CONVERSATION_MARKDOWN_BYTES = 2 << 20;
@@ -485,19 +478,6 @@ function unwrapApiResponse<T>(payload: unknown): T {
     return response.data;
   }
   return payload as T;
-}
-
-function isValidTunnelApiOrigin(value: string) {
-  try {
-    const parsed = new URL(value);
-    const hostname = parsed.hostname.toLowerCase();
-    const loopback = isTunnelHubLoopbackHostname(hostname);
-    return !isTunnelHubForbiddenHostname(hostname) &&
-      value === parsed.origin &&
-      (parsed.protocol === "https:" || (parsed.protocol === "http:" && loopback));
-  } catch {
-    return false;
-  }
 }
 
 function dataUrlToBlob(dataUrl: string, fallbackMimeType: string) {
@@ -1511,78 +1491,30 @@ export class AgentPlatformAssistantBridge {
     }
   }
 
-  async downloadChatHtmlExport(chatId: string, assetOrigin: string): Promise<AgentPlatformChatExportResult> {
+  async createChatSnapshotRequest(chatId: string): Promise<
+    | { ok: true; snapshotUrl: string; bearerToken: string }
+    | { ok: false; message: string }
+  > {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
-      return {
-        ok: false,
-        message: t("assistant.chatIdRequired"),
-        filename: ""
-      };
-    }
-    const normalizedAssetOrigin = assetOrigin.trim();
-    if (!isValidTunnelApiOrigin(normalizedAssetOrigin)) {
-      return {
-        ok: false,
-        message: t("assistant.chatShareTunnelConfigInvalid"),
-        filename: ""
-      };
+      return { ok: false, message: t("assistant.chatIdRequired") };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
-      return { ok: false, message: availability.message, filename: "" };
+      return availability;
     }
-    const response = await this.platformFetch(
-      availability.baseUrl,
-      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=html`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "text/html, application/json",
-          Authorization: `Bearer ${availability.token}`,
-          [CONVERSATION_EXPORT_ASSET_ORIGIN_HEADER]: normalizedAssetOrigin
-        }
-      }
-    );
-    if (!response.ok) {
-      return {
-        ok: false,
-        message:
-          response.status === 405 || response.status === 501
-            ? t("assistant.chatHtmlExportUnsupported")
-            : await readErrorText(response),
-        filename: ""
-      };
+    const baseURL = parseSafeLoopbackWebUrl(availability.baseUrl);
+    if (!baseURL) {
+      return { ok: false, message: t("assistant.chatHtmlExportUnsupported") };
     }
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-    if (contentType !== "text/html") {
-      return {
-        ok: false,
-        message: t("assistant.chatHtmlExportUnsupported"),
-        filename: ""
-      };
-    }
-    try {
-      return {
-        ok: true,
-        message: t("assistant.chatHtmlExportDownloaded"),
-        filename:
-          filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.html`,
-        bytes: await readResponseBytesWithLimit(response, MAX_CONVERSATION_HTML_BYTES)
-      };
-    } catch (error) {
-      return {
-        ok: false,
-        filename: "",
-        message:
-          error instanceof ResponseBytesTooLargeError
-            ? t("assistant.chatHtmlExportTooLarge", {
-                actual: error.actualBytes,
-                limit: error.limitBytes
-              })
-            : t("assistant.chatHtmlExportReadFailed")
-      };
-    }
+    const snapshotURL = new URL("/api/chat/export", baseURL.origin);
+    snapshotURL.searchParams.set("chatId", trimmedChatId);
+    snapshotURL.searchParams.set("format", "snapshot");
+    return {
+      ok: true,
+      snapshotUrl: snapshotURL.toString(),
+      bearerToken: availability.token
+    };
   }
 
   async downloadRawChatJSONL(chatId: string): Promise<AgentPlatformRawChatJSONLResult> {

@@ -42,14 +42,14 @@ function createFixture(t) {
   return { app, downloads, root };
 }
 
-test("conversation HTML export writes the exact Platform bytes to Downloads", async (t) => {
+test("conversation HTML export writes the exact Worker-rendered bytes to Downloads", async (t) => {
   const { app, downloads } = createFixture(t);
   const html = Buffer.from("<!doctype html><html><body>中文</body></html>", "utf8");
   const bridge = {
-    async downloadChatHtmlExport(chatId, assetOrigin) {
+    async renderChatHtml(chatId, assetOrigin) {
       assert.equal(chatId, "chat-1");
       assert.equal(assetOrigin, "https://tunnel.example.test");
-      return { ok: true, message: "ok", filename: "Transcript.html", bytes: html };
+      return { ok: true, filename: "Transcript.html", bytes: html };
     }
   };
 
@@ -65,8 +65,8 @@ test("conversation HTML export avoids overwriting an existing file", async (t) =
   fs.mkdirSync(downloads, { recursive: true });
   fs.writeFileSync(path.join(downloads, "Transcript.html"), "existing");
   const bridge = {
-    async downloadChatHtmlExport() {
-      return { ok: true, message: "ok", filename: "Transcript.html", bytes: Buffer.from("new") };
+    async renderChatHtml() {
+      return { ok: true, filename: "Transcript.html", bytes: Buffer.from("new") };
     }
   };
 
@@ -81,10 +81,9 @@ test("conversation HTML export avoids overwriting an existing file", async (t) =
 test("conversation HTML export rejects a defense-in-depth response above 20 MiB", async (t) => {
   const { app, downloads } = createFixture(t);
   const bridge = {
-    async downloadChatHtmlExport() {
+    async renderChatHtml() {
       return {
         ok: true,
-        message: "ok",
         filename: "Transcript.html",
         bytes: Buffer.alloc(MAX_CONVERSATION_HTML_BYTES + 1)
       };
@@ -97,7 +96,7 @@ test("conversation HTML export rejects a defense-in-depth response above 20 MiB"
   assert.equal(fs.existsSync(downloads), false);
 });
 
-test("conversation HTML export keeps only Platform HTML filenames", () => {
+test("conversation HTML export keeps only rendered HTML filenames", () => {
   assert.equal(
     conversationHtmlFilename("Transcript.html", "chat-1"),
     "Transcript.html",

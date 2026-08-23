@@ -7,6 +7,7 @@ import {
   type AssistantConversationShareRevokeResult,
 } from "../../../shared/contracts";
 import { t } from "../../i18n/main-i18n";
+import type { ConversationHtmlRenderer } from "./conversation-export-contract";
 import { resolveConversationShareTarget } from "./conversation-share-target";
 import {
   TunnelConversationShareError,
@@ -14,16 +15,6 @@ import {
   type ConversationShareReader,
   type ConversationShareRevoker,
 } from "./tunnel-conversation-share-client";
-
-type ConversationHtmlRenderer = {
-  downloadChatHtmlExport(
-    chatId: string,
-    assetOrigin: string,
-  ): Promise<
-    | { ok: true; bytes: Buffer; filename: string; message: string }
-    | { ok: false; message: string }
-  >;
-};
 
 export async function createConversationShare(
   app: App,
@@ -46,9 +37,9 @@ export async function createConversationShare(
     return target;
   }
 
-  let rendered: Awaited<ReturnType<ConversationHtmlRenderer["downloadChatHtmlExport"]>>;
+  let rendered: Awaited<ReturnType<ConversationHtmlRenderer["renderChatHtml"]>>;
   try {
-    rendered = await documentRenderer.downloadChatHtmlExport(
+    rendered = await documentRenderer.renderChatHtml(
       conversationId,
       target.target.origin,
     );

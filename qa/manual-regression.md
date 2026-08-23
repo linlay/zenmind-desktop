@@ -76,20 +76,22 @@
 - [ ] 页面选择、截图和文件等不同内容来源具有清晰的用户确认与结果反馈。
 - [ ] Agent Platform 未就绪、token 临期或事件时间非法时显示可恢复错误，不伪造运行状态。
 - [ ] 展开侧边栏及收起态浮层的对话区头部均只显示“新建对话”，不显示分享快捷按钮；新建按钮的可用性与默认 Chat Agent 状态保持一致。
-- [ ] 从单条对话右键菜单创建公开分享时，Platform HTML renderer 输出、Tunnel SQLite BLOB 与公开 `GET /share/{id}` 响应的 SHA-256 完全一致；Desktop 不直接向 Tunnel POST，公开响应媒体类型为 `text/html; charset=utf-8`。
-- [ ] 未登录、Tunnel 未启用或 origin 非法时在调用 Platform 前失败；renderer、IPC 结果、错误和日志均不出现 Tunnel token 或私有 header 值。
+- [ ] 从单条对话右键菜单分别执行本地 HTML 导出和公开分享时，Desktop Worker 两次输出、Tunnel SQLite BLOB 与公开 `GET /share/{id}` 响应的 SHA-256 完全一致；Desktop main 直接向 Tunnel POST Worker 生成的字节，公开响应媒体类型为 `text/html; charset=utf-8`。
+- [ ] 未登录、Tunnel 未启用或 origin 非法时在提交 Worker 任务前失败；renderer、IPC 结果、错误和日志均不出现 Platform/Tunnel token 或私有 header 值。
 - [ ] 分享弹窗完整提供 5 分钟、30 分钟、1 小时、3 小时、1 天、5 天、15 天、30 天、永久九项；每次打开默认 30 天，创建请求期间只禁用创建区。
 - [ ] 每次打开弹窗都重新加载当前会话有效分享；加载失败可重试且不阻断创建，创建成功记录立即置顶，重新打开后 Tunnel 列表仍一致。
 - [ ] 每条记录显示创建时间、固定到期时间或“永久有效”、最近访问时间或“尚未访问”；复制链接本身不更新时间，未登录访客成功打开后重新进入弹窗可看到最近访问时间。
 - [ ] 撤销需二次确认且仅禁用当前记录；成功后记录立即移除且公开刷新稳定返回 404，失败时记录保留并显示明确错误。
-- [ ] Snapshot 或最终 HTML 超过 20 MiB、Platform 非 2xx 或 Tunnel 失败均不得留下可访问的半成品分享；协调发布后旧协议分享链接返回 404。
-- [ ] Desktop 原生菜单分别显示“导出 Markdown”和“导出静态 HTML”；HTML 导出使用 Platform 返回文件名、写入 Downloads（非 macOS/Windows 回退 Home），重名时追加序号且不覆盖原文件。
+- [ ] Snapshot 或最终 HTML 超过 20 MiB、Platform/WebClient 非 2xx 或 Tunnel 失败均不得留下可访问的半成品分享；协调发布后旧协议分享链接返回 404。
+- [ ] Desktop 原生菜单分别显示“导出 Markdown”和“导出静态 HTML”；HTML 导出使用 Snapshot 文件名派生的 `.html` 名称、写入 Downloads（非 macOS/Windows 回退 Home），重名时追加序号且不覆盖原文件。
 - [ ] 用 `file://` 打开导出的单个 HTML，验证品牌中性的粘性标题栏、AI 提示、消息间距、用户气泡、助手身份、复制反馈、折叠思考、只读页脚、明暗主题、窄屏和打印；公开外层无重复标题栏，仅底部“打开 {产品名}”保留一次运行时品牌，Mermaid/ECharts 只显示源码，图片不发起请求。
 - [ ] 在慢网下验证公开分享页先取得轻量 HTML，再从同一 asset-set hash 目录加载 `runtime.css` 与 `runtime.js`；初始 DOM 持续显示 Loading，并验证减少动态效果模式下不播放动画。
 - [ ] 导出 `request.query.timestamp` 比紧随其后的权威 `run.start.timestamp` 晚 1ms 的快照，页面仍展示完整内容并按真实 Run 起点计算耗时；后续 reasoning/content/终态的真实倒序仍失败关闭。
 - [ ] 导出页源码没有 `<style>` 和内联可执行脚本，唯一带正文的 script 为 Snapshot JSON；网络面板只允许当前 Tunnel origin 的 `/assets/conversation-export/<hash>/` 下带 SRI 的资源，本地开发验证 loopback origin、生产验证 HTTPS origin，且源码不残留资源 origin 占位符。
 - [ ] Mermaid/ECharts 资源不可用时正文仍可读，图表区域显示源码和失败提示；主 runtime 不可用时保留安全初始提示，不执行 Snapshot，页面不在可见 DOM 暴露 Snapshot 原文。
-- [ ] Platform 模板缺失、超过 256 KiB、profile/asset-set 错误、marker 缺失/重复、出现 `<style>` 或内联可执行脚本、异常 UTF-8、Snapshot 超限或最终 HTML 超限均失败关闭；Desktop 不读取 WebClient Program、不远程下载模板、不回退旧事件流协议，分享失败不创建 Tunnel 记录。
+- [ ] WebClient 模板缺失、超过 256 KiB、profile/asset-set 错误、Snapshot marker 缺失/重复、资源 marker 缺失、出现 `<style>` 或内联可执行脚本、异常 UTF-8、Snapshot 超限或最终 HTML 超限均失败关闭；Desktop Worker 只从 Service Manager 给出的当前 WebClient 回环地址请求模板，不读取 Program 文件、不回退旧 Platform HTML API，分享失败不创建 Tunnel 记录。
+- [ ] 预热同一个 Worker 后用 20 MiB Snapshot 连跑至少 20 次，拼接 p95 不超过 30 ms，Electron Main 事件循环最大额外阻塞不超过 10 ms；模板缓存命中时不重复请求，WebClient origin 或 service version 改变后重新请求。
+- [ ] Worker 网络请求拒绝重定向和非回环 Snapshot/模板 URL，分别验证 5 秒模板超时、15 秒 Snapshot 超时、Content-Type 错误、声明长度错误与实际超限；Worker 崩溃时当前任务失败，下一任务自动重建后成功。
 
 ## P0：看板与云同步
 

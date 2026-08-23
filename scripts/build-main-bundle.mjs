@@ -38,6 +38,7 @@ export async function buildMainBundle(rootDir = projectRoot) {
     entryPoints: {
       "main/index": path.join(rootSrc, "main", "index.ts"),
       "main/attachment-worker": path.join(rootSrc, "main", "assistant", "attachments", "attachment-worker.ts"),
+      "main/conversation-html-worker": path.join(rootSrc, "main", "assistant", "core", "conversation-html-worker.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts"),
       "preload/service-webview": path.join(rootSrc, "preload", "service-webview.ts")
     },
@@ -57,6 +58,11 @@ export async function buildMainBundle(rootDir = projectRoot) {
       ".node": "file"
     }
   });
+
+  const conversationWorker = path.join(outdir, "main", "conversation-html-worker.js");
+  if (!fs.statSync(conversationWorker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error("conversation HTML Worker bundle is missing");
+  }
 
   return outdir;
 }

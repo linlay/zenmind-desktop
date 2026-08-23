@@ -73,7 +73,7 @@ Workspace Terminal、容器、代理、ACP、MCP、LSP 与 sidecar 默认不继�
 
 Kanban、Market、Tunnel Hub 等消费者共享同一登录事实，但各自仍需遵守自己的服务边界和失败策略，不能各自启动隐式的第二套登录流程。
 
-对话分享使用一次请求内的最小凭据。Desktop main 读取当前 Tunnel site token 与经过校验的 API origin，只在直连 Tunnel 的标准 `Authorization: Bearer` 中使用；调用 HTML export 时只向 Platform 发送 Platform 自身 token 和资源 origin。Platform 不接收、校验或转发 Tunnel token。Desktop renderer、IPC 结果、日志和错误文本不得包含 token；无登录、Tunnel 未启用或 origin 无效时，Desktop 必须在生成 HTML 前失败关闭。
+对话分享使用一次请求内的最小凭据。Desktop main 读取当前 Tunnel site token 与经过校验的 API origin，只在直连 Tunnel 的标准 `Authorization: Bearer` 中使用；Platform 短期 token 仅随内部 Worker 消息进入 Snapshot 请求的标准 Header，不写入 URL、缓存、日志或错误信息。WebClient 模板请求不携带该 token，Platform 不接收、校验或转发 Tunnel token。Desktop renderer、IPC 结果、日志和错误文本不得包含任何 token；无登录、Tunnel 未启用或 origin 无效时，Desktop 必须在生成 HTML 前失败关闭。
 
 ## Session 与页面隔离
 

@@ -59,9 +59,9 @@ test("createConversationShare renders once, then forwards the same Buffer to Tun
   const html = Buffer.from("<!doctype html><title>share</title>");
   const calls = [];
   const renderer = {
-    async downloadChatHtmlExport(chatId, assetOrigin) {
+    async renderChatHtml(chatId, assetOrigin) {
       calls.push({ method: "render", chatId, assetOrigin });
-      return { ok: true, bytes: html, filename: "chat.html", message: "" };
+      return { ok: true, bytes: html, filename: "chat.html" };
     }
   };
   const client = {
@@ -95,9 +95,9 @@ test("createConversationShare resolves login and Tunnel before rendering HTML", 
   let created = false;
 
   const result = await createConversationShare(app, {
-    async downloadChatHtmlExport() {
+    async renderChatHtml() {
       rendered = true;
-      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
     }
   }, {
     async create() {
@@ -115,7 +115,7 @@ test("createConversationShare does not call Tunnel when HTML generation fails", 
   const app = createFixture(t);
   let created = false;
   const result = await createConversationShare(app, {
-    async downloadChatHtmlExport() {
+    async renderChatHtml() {
       return { ok: false, message: "render failed" };
     }
   }, {
@@ -133,9 +133,9 @@ test("createConversationShare rejects invalid expiration before resolving depend
   const app = createFixture(t);
   let called = false;
   const result = await createConversationShare(app, {
-    async downloadChatHtmlExport() {
+    async renderChatHtml() {
       called = true;
-      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
     }
   }, {
     async create() {
@@ -152,9 +152,9 @@ test("createConversationShare rejects an invalid conversation id before renderin
   const app = createFixture(t);
   let called = false;
   const result = await createConversationShare(app, {
-    async downloadChatHtmlExport() {
+    async renderChatHtml() {
       called = true;
-      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
     }
   }, {
     async create() {
@@ -177,9 +177,9 @@ test("development allows canonical loopback Tunnel origins while packaged Deskto
     developmentApp.isPackaged = false;
     let developmentOrigin = "";
     const renderer = {
-      async downloadChatHtmlExport(_chatId, assetOrigin) {
+      async renderChatHtml(_chatId, assetOrigin) {
         developmentOrigin = assetOrigin;
-        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
       }
     };
     const client = { async create() { return shareRecord(); } };
@@ -196,9 +196,9 @@ test("development allows canonical loopback Tunnel origins while packaged Deskto
     packagedApp.isPackaged = true;
     let packagedRendered = false;
     const packagedResult = await createConversationShare(packagedApp, {
-      async downloadChatHtmlExport() {
+      async renderChatHtml() {
         packagedRendered = true;
-        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html", message: "" };
+        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
       }
     }, client, { chatId: "chat-1", expiration: "30d" });
     assert.equal(packagedResult.ok, false, relayUrl);
@@ -259,7 +259,7 @@ test("controller maps typed Tunnel failures without exposing secrets", async (t)
   assert.match(revoked.message, /不存在|revoked|no longer exists/iu);
 });
 
-test("Desktop sharing source keeps Platform as an HTML renderer only", () => {
+test("Desktop sharing source keeps HTML rendering separate from Tunnel persistence", () => {
   const controllerSource = fs.readFileSync(
     new URL("../src/main/assistant/core/conversation-share-controller.ts", import.meta.url),
     "utf8"
@@ -269,7 +269,7 @@ test("Desktop sharing source keeps Platform as an HTML renderer only", () => {
     "utf8"
   );
 
-  assert.match(controllerSource, /downloadChatHtmlExport/u);
+  assert.match(controllerSource, /renderChatHtml/u);
   assert.match(controllerSource, /shareCreator\.create/u);
   assert.doesNotMatch(bridgeSource, /createChatShare|listChatShares|revokeChatShare/u);
   assert.doesNotMatch(bridgeSource, /X-Conversation-Share-Authorization/u);
