@@ -14,6 +14,10 @@ import {
   getSecretsRoot
 } from "./user-paths";
 import { getDesktopDeviceId } from "./device-identity";
+import {
+  isTunnelHubForbiddenHostname,
+  isTunnelHubLoopbackHostname,
+} from "./tunnel-hub-url-policy";
 
 const LEGACY_TUNNEL_SECRET_FILE_NAMES = [
   "tunnel-hub-registration-token",
@@ -91,7 +95,9 @@ export function normalizeRelayUrl(value: unknown) {
   try {
     const parsed = new URL(withProtocol);
     if (parsed.protocol === "http:") {
-      parsed.protocol = isLoopbackRelayHost(parsed.hostname) ? "ws:" : "wss:";
+      if (isTunnelHubLoopbackHostname(parsed.hostname)) {
+        parsed.protocol = "ws:";
+      }
     } else if (parsed.protocol === "https:") {
       parsed.protocol = "wss:";
     }
@@ -102,11 +108,6 @@ export function normalizeRelayUrl(value: unknown) {
   } catch {
     return trimmed;
   }
-}
-
-function isLoopbackRelayHost(hostname: string) {
-  const normalized = hostname.trim().toLowerCase();
-  return normalized === "localhost" || normalized === "127.0.0.1" || normalized === "::1" || normalized === "[::1]";
 }
 
 function readStoredString(value: unknown) {
@@ -179,13 +180,13 @@ function createDefaultDeviceId(app: App) {
 function isValidRelayUrl(relayUrl: string) {
   try {
     const parsed = new URL(relayUrl);
-    if (!parsed.host) {
+    if (!parsed.host || isTunnelHubForbiddenHostname(parsed.hostname)) {
       return false;
     }
     if (parsed.protocol === "wss:") {
       return true;
     }
-    return parsed.protocol === "ws:" && isLoopbackRelayHost(parsed.hostname);
+    return parsed.protocol === "ws:" && isTunnelHubLoopbackHostname(parsed.hostname);
   } catch {
     return false;
   }

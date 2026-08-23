@@ -186,6 +186,13 @@ function createActionRows(_currentAgentKey: string, t: TranslateFunction): Deskt
     },
     {
       kind: "action",
+      key: "action:history",
+      actionId: "history",
+      label: t("desktop.globalSearch.action.history"),
+      description: t("desktop.globalSearch.action.history.description")
+    },
+    {
+      kind: "action",
       key: "action:agents",
       actionId: "agents",
       label: t("desktop.globalSearch.action.agents"),

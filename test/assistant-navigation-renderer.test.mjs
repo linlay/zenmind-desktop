@@ -74,9 +74,35 @@ const {
   isAssistantNavProjectAgent,
   normalizeAssistantNavAgents,
   normalizeAssistantNavAgentItemsResult,
+  reorderAssistantNavProjectAgents,
   resolveAssistantNavChatRuntimeAgent,
   resolveFirstInstallBootstrapNavigationTarget,
 } = loadAssistantNavigationModule();
+
+test("assistant nav reorders only Project slots and appends omitted projects", () => {
+  const items = [
+    { agentKey: "chat-a", mode: "CHAT" },
+    { agentKey: "coder-a", mode: "CODER" },
+    { agentKey: "copilot", mode: "REACT" },
+    { agentKey: "kbase-b", mode: "KBASE" },
+    { agentKey: "coder-new", mode: "CODER" },
+  ];
+
+  const reordered = reorderAssistantNavProjectAgents(items, [
+    "kbase-b",
+    "coder-a",
+  ]);
+
+  assert.deepEqual(reordered.map((item) => item.agentKey), [
+    "chat-a",
+    "kbase-b",
+    "copilot",
+    "coder-a",
+    "coder-new",
+  ]);
+  assert.equal(reordered[0], items[0]);
+  assert.equal(reordered[2], items[2]);
+});
 
 test("assistant nav maps awaiting modes to the shared chat status labels", () => {
   assert.equal(getAssistantAwaitingStatusKey("question"), "sidebar.assistants.awaitingStatus.question");

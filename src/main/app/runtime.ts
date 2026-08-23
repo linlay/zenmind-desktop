@@ -291,6 +291,7 @@ export function createMainProcessRuntime() {
       }
       mainWindow.webContents.send("webview.openTab", {
         target: "work-panel",
+        navigationKind: "network",
         sourceGuestId,
         url
       });
@@ -605,6 +606,14 @@ export function createMainProcessRuntime() {
     handleDesktopSsoWebviewNavigation,
     shouldOpenWebviewPopupInWorkPanelTab: (contents) =>
       webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id)?.surfaceType === "chat-work-panel",
+    resolveBlobPopupTarget: (contents) => {
+      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+      if (target?.surfaceType === "chat-work-panel") return "work-panel";
+      if (target?.surfaceType === "website" || target?.surfaceType === "browser") {
+        return "desktop-browser";
+      }
+      return null;
+    },
     attachWebviewContextMenu: webviewContextMenuController.attach,
     collectWebviewLoadDiagnostics,
     reportRendererDiagnostic,

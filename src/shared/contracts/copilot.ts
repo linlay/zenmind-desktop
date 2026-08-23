@@ -38,6 +38,7 @@ export type AssistantNavigationPushEventListener = (event: AssistantNavigationPu
 
 export interface WebviewOpenTabRequest {
   target: "desktop-browser" | "work-panel";
+  navigationKind: "network" | "blob";
   sourceGuestId: number;
   url: string;
   partition?: string;
@@ -182,6 +183,29 @@ export interface AssistantChatSummary {
   messageCount: number;
 }
 
+export interface AssistantHistoryChatItem {
+  chatId: string;
+  chatName: string;
+  agentKey: string;
+  teamId?: string;
+  createdAt: EpochMilliseconds;
+  updatedAt: EpochMilliseconds;
+  lastRunId: string;
+  lastRunContent: string;
+  isRead: boolean;
+  hasActiveRun: boolean;
+  hasPendingAwaiting: boolean;
+  awaitingCount?: number;
+  awaitingMode?: AssistantAwaitingMode;
+}
+
+export interface AssistantHistoryChatsResult {
+  ok: boolean;
+  items: AssistantHistoryChatItem[];
+  message: string;
+  updatedAt: EpochMilliseconds;
+}
+
 export interface AssistantChatSearchRequest {
   query: string;
   limit?: number;
@@ -224,6 +248,30 @@ export interface AssistantNavChatItem {
   hasPendingAwaiting: boolean;
   awaitingCount?: number;
   awaitingMode?: AssistantAwaitingMode;
+}
+
+export type AssistantChatSortMode = "recent" | "manual";
+
+export interface AssistantChatOrderState {
+  sortMode: AssistantChatSortMode;
+  updatedAt?: EpochMilliseconds;
+}
+
+export type AssistantChatOrderMutationRequest =
+  | {
+      operation: "set_mode";
+      sortMode: AssistantChatSortMode;
+    }
+  | {
+      operation: "move";
+      chatId: string;
+      beforeChatId?: string;
+      afterChatId?: string;
+    };
+
+export interface AssistantChatOrderMutationResult extends AssistantChatOrderState {
+  ok: boolean;
+  message: string;
 }
 
 export type AssistantNavigationLivePhase =
@@ -290,8 +338,21 @@ export interface AssistantNavAgentItemsResult {
   activityItems?: AssistantNavAgentItem[];
   chatItems: AssistantNavChatItem[];
   chatItemsHasMore: boolean;
+  chatSortMode?: AssistantChatSortMode;
+  chatOrderingSupported?: boolean;
   message: string;
   updatedAt: EpochMilliseconds;
+}
+
+export interface AssistantReorderProjectsRequest {
+  agentKeys: string[];
+}
+
+export interface AssistantReorderProjectsResult {
+  ok: boolean;
+  agentKeys: string[];
+  message: string;
+  updatedAt?: EpochMilliseconds;
 }
 
 export type AssistantCreateProjectType = "coder" | "kbase";
@@ -323,13 +384,54 @@ export interface AssistantNavActionResult {
   filePath?: string;
 }
 
-export interface AssistantConversationShareResult {
-  ok: boolean;
-  message: string;
-  shareId?: string;
-  url?: string;
-  createdAt?: string;
+export const ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS = [
+  "5m",
+  "30m",
+  "1h",
+  "3h",
+  "1d",
+  "5d",
+  "15d",
+  "30d",
+  "permanent",
+] as const;
+
+export type AssistantConversationShareExpiration =
+  (typeof ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS)[number];
+
+export const DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION: AssistantConversationShareExpiration = "30d";
+
+export function isAssistantConversationShareExpiration(
+  value: unknown,
+): value is AssistantConversationShareExpiration {
+  return typeof value === "string" &&
+    ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS.some((expiration) => expiration === value);
 }
+
+export interface AssistantConversationShareRequest {
+  chatId: string;
+  expiration: AssistantConversationShareExpiration;
+}
+
+export interface AssistantConversationShareRecord {
+  shareId: string;
+  url: string;
+  createdAt: EpochMilliseconds;
+  expiresAt: EpochMilliseconds | null;
+  lastAccessedAt: EpochMilliseconds | null;
+}
+
+export type AssistantConversationShareCreateResult =
+  | { ok: true; message: string; record: AssistantConversationShareRecord }
+  | { ok: false; message: string };
+
+export type AssistantConversationShareListResult =
+  | { ok: true; message: string; records: AssistantConversationShareRecord[] }
+  | { ok: false; message: string };
+
+export type AssistantConversationShareRevokeResult =
+  | { ok: true; message: string; shareId: string }
+  | { ok: false; message: string };
 
 export interface AssistantChatDetail {
   summary: AssistantChatSummary;

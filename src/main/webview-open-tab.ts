@@ -1,3 +1,5 @@
+import { normalizeWebviewBlobPopupUrl } from "../shared/webview-popup";
+
 function parseHttpUrl(value: string) {
   try {
     const parsed = new URL(value);
@@ -50,6 +52,9 @@ export function shouldOpenUrlInDesktopTab(url: string) {
 export function resolveWebviewOpenDisposition(url: string) {
   if (shouldDownloadUrlFromWebview(url)) {
     return "download";
+  }
+  if (normalizeWebviewBlobPopupUrl(url)) {
+    return "blob";
   }
   return shouldOpenUrlInDesktopTab(url) ? "tab" : "external";
 }

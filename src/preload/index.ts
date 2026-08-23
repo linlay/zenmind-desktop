@@ -1,13 +1,16 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
+  AssistantChatOrderMutationRequest,
   AssistantChatSearchRequest,
+  AssistantConversationShareRequest,
   AssistantCreateCoderProjectRequest,
   AssistantCreateProjectRequest,
   AssistantEventListener,
   AssistantNavigationAgentsChangedListener,
   AssistantNavigationListOptions,
   AssistantNavigationPushEventListener,
+  AssistantReorderProjectsRequest,
   AssistantAttachmentProgressListener,
   AssistantMemorySettingsInput,
   AssistantPastedImageInput,
@@ -210,6 +213,10 @@ const api: DesktopApi = {
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: (options?: AssistantNavigationListOptions) =>
       ipcRenderer.invoke("assistant.listNavigationAgents", options),
+    updateChatOrder: (input: AssistantChatOrderMutationRequest) =>
+      ipcRenderer.invoke("assistant.updateChatOrder", input),
+    reorderProjects: (input: AssistantReorderProjectsRequest) =>
+      ipcRenderer.invoke("assistant.reorderProjects", input),
     getNavigationLiveStatus: () => ipcRenderer.invoke("assistant.getNavigationLiveStatus"),
     listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
     createProject: (input: AssistantCreateProjectRequest) =>
@@ -221,6 +228,7 @@ const api: DesktopApi = {
     deleteMemoryItem: (memoryId: string) => ipcRenderer.invoke("assistant.deleteMemoryItem", memoryId),
     clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
+    listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
@@ -245,7 +253,9 @@ const api: DesktopApi = {
     renameChat: (chatId: string, chatName: string) => ipcRenderer.invoke("assistant.renameChat", chatId, chatName),
     archiveChat: (chatId: string) => ipcRenderer.invoke("assistant.archiveChat", chatId),
     exportChat: (chatId: string) => ipcRenderer.invoke("assistant.exportChat", chatId),
-    shareChat: (chatId: string) => ipcRenderer.invoke("assistant.shareChat", chatId),
+    exportChatHtml: (chatId: string) => ipcRenderer.invoke("assistant.exportChatHtml", chatId),
+    shareChat: (request: AssistantConversationShareRequest) => ipcRenderer.invoke("assistant.shareChat", request),
+    listChatShares: (chatId: string) => ipcRenderer.invoke("assistant.listChatShares", chatId),
     revokeChatShare: (shareId: string) => ipcRenderer.invoke("assistant.revokeChatShare", shareId),
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => {
       const handleNavigationAgentsChanged = (

@@ -92,13 +92,14 @@ test("Tunnel Hub settings accept the canonical Desktop SSO access token", (t) =>
   assert.equal(result.settings.enabled, true);
 });
 
-test("Tunnel Hub settings normalize HTTP, HTTPS, WSS, and local WS relay URLs", (t) => {
+test("Tunnel Hub settings normalize secure remote and canonical loopback relay URLs", (t) => {
   const cases = [
     ["https://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
-    ["http://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
     ["wss://tunnel-hub.zenmind.cc", "wss://tunnel-hub.zenmind.cc/tunnel"],
+    ["http://localhost:8080/tunnel", "ws://localhost:8080/tunnel"],
     ["http://127.0.0.1:8080/tunnel", "ws://127.0.0.1:8080/tunnel"],
-    ["ws://127.0.0.1:8080/tunnel", "ws://127.0.0.1:8080/tunnel"]
+    ["ws://127.0.0.1:8080/tunnel", "ws://127.0.0.1:8080/tunnel"],
+    ["http://[::1]:8080/tunnel", "ws://[::1]:8080/tunnel"]
   ];
 
   for (const [input, expected] of cases) {
@@ -113,19 +114,28 @@ test("Tunnel Hub settings normalize HTTP, HTTPS, WSS, and local WS relay URLs", 
   }
 });
 
-test("Tunnel Hub settings reject non-loopback WS relay URLs", (t) => {
-  const app = createTempApp(t);
-  writeDesktopSsoAccessToken(app);
+test("Tunnel Hub settings reject remote plaintext and non-canonical loopback relay URLs", (t) => {
+  for (const relayUrl of [
+    "http://relay.example.test/tunnel",
+    "ws://relay.example.test/tunnel",
+    "ws://127.0.0.2:8080/tunnel",
+    "wss://127.0.0.2:8080/tunnel",
+    "ws://demo.localhost:8080/tunnel",
+    "wss://demo.localhost:8080/tunnel",
+    "ws://0.0.0.0:8080/tunnel"
+  ]) {
+    const app = createTempApp(t);
+    writeDesktopSsoAccessToken(app);
 
-  const result = saveTunnelHubSettings(app, {
-    enabled: true,
-    relayUrl: "ws://relay.example.test/tunnel"
-  });
+    const result = saveTunnelHubSettings(app, {
+      enabled: true,
+      relayUrl
+    });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.settings.enabled, false);
-  assert.equal(result.settings.relayUrl, "ws://relay.example.test/tunnel");
-  assert.match(result.message, /Relay URL/u);
+    assert.equal(result.ok, false, relayUrl);
+    assert.equal(result.settings.enabled, false, relayUrl);
+    assert.match(result.message, /Relay URL/u, relayUrl);
+  }
 });
 
 test("Tunnel Hub settings keep relay URL empty until explicitly configured", (t) => {

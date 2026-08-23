@@ -177,6 +177,10 @@ test("new Chat route ownership comes from chat.start canonical synchronization",
   );
   assert.match(navigationHandlerBlock, /newChatBootstrapOwnsPromotion/);
   assert.match(navigationHandlerBlock, /!newChatBootstrapOwnsPromotion/);
+  assert.match(
+    registrationBlock,
+    /isAgentWebclientChatSurface\(serviceId, surfaceId\)[\s\S]*?pageRouteIdentity: currentRouteWithHash/u,
+  );
   assert.match(registrationBlock, /ownerChatId\?\.trim\(\) === pending\.request\.chatId/);
   assert.match(registrationBlock, /canonicalChatSync\.respond\(\{[\s\S]*?ok: true/u);
 });

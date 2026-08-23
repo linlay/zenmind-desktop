@@ -15,7 +15,12 @@ import {
 import { Button } from "antd";
 import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
-import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
+import {
+  normalizeWorkPanelWebUrl,
+  resolveWorkPanelWebSessionKey,
+  stableWorkPanelHash,
+} from "../../shared/work-panel";
+import { normalizeWebviewBlobPopupUrl } from "../../shared/webview-popup";
 import {
   resolveChatWorkPanelLocalResourcePath,
   shouldShowChatWorkPanelLocalResourceActions,
@@ -326,19 +331,26 @@ export function WorkPanelHost({
     const nextPartitions = new Set(
       state.workspaces.flatMap((workspace) => workspace.items
         .filter((item) => item.descriptor.kind === "web")
-        .map((item) => itemPartition(workspace.workspaceId, item.itemId))),
+        .map((item) => itemPartition(
+          workspace.workspaceId,
+          resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
+        ))),
     );
     for (const partition of previousWebPartitionsRef.current) {
       if (nextPartitions.has(partition)) continue;
       void window.electronAPI.chatWorkPanel?.clearSession?.({ partition }).catch(() => undefined);
     }
     previousWebPartitionsRef.current = nextPartitions;
-  }, [state.workspaces]);
+  }, [state.webSessionKeysByItemId, state.workspaces]);
 
-  useEffect(() => window.electronAPI.onWebviewOpenTab(({ target, sourceGuestId, url }) => {
+  useEffect(() => window.electronAPI.onWebviewOpenTab(({
+    target,
+    navigationKind,
+    sourceGuestId,
+    url,
+  }) => {
     if (target !== "work-panel") return;
-    const normalizedUrl = normalizeWorkPanelWebUrl(url);
-    if (!normalizedUrl || !Number.isSafeInteger(sourceGuestId) || sourceGuestId <= 0) return;
+    if (!Number.isSafeInteger(sourceGuestId) || sourceGuestId <= 0) return;
     const webviews = Array.from(rootRef.current?.querySelectorAll("webview") ?? []) as Electron.WebviewTag[];
     const sourceWebview = webviews.find((webview) => readWebviewGuestId(webview) === sourceGuestId);
     const itemHost = sourceWebview?.closest<HTMLElement>("[data-work-panel-item]");
@@ -349,6 +361,19 @@ export function WorkPanelHost({
     );
     const sourceItem = sourceWorkspace?.items.find((item) => item.itemId === sourceItemId);
     if (!ownerChatId || sourceItem?.descriptor.kind !== "web") return;
+    if (navigationKind === "blob") {
+      const normalizedBlobUrl = normalizeWebviewBlobPopupUrl(url);
+      if (!normalizedBlobUrl) return;
+      dispatchCommand({
+        type: "openBlobPopup",
+        ownerChatId,
+        sourceItemId,
+        url: normalizedBlobUrl,
+      });
+      return;
+    }
+    const normalizedUrl = normalizeWorkPanelWebUrl(url);
+    if (!normalizedUrl) return;
     dispatchCommand({
       type: "openItem",
       ownerChatId,
@@ -757,7 +782,10 @@ export function WorkPanelHost({
                             });
                           }}
                           ownerChatId={workspace.ownerChatId}
-                          partition={itemPartition(workspace.workspaceId, item.itemId)}
+                          partition={itemPartition(
+                            workspace.workspaceId,
+                            resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
+                          )}
                           publishPageContext={false}
                           registerPublicWebSurface={false}
                           showToolbar={false}

@@ -33,7 +33,7 @@ function createSender(id, url) {
 
 function createTarget(id, overrides = {}) {
   const url = `http://127.0.0.1:7079/agent/agent-${id}?chatId=chat-${id}`;
-  return {
+  const target = {
     registrationId: `registration-${id}`,
     surfaceId: "main-chat",
     surfaceKind: "service",
@@ -49,6 +49,17 @@ function createTarget(id, overrides = {}) {
     ownerChatId: `chat-${id}`,
     ...overrides,
   };
+  if (!Object.hasOwn(overrides, "pageRouteIdentity")) {
+    const pageRoute = target.pageRoute || "";
+    const routeWithIdentity = /[?&](?:chatId|newChat)=/u.test(pageRoute)
+      ? pageRoute
+      : target.ownerChatId
+        ? `${new URL(target.currentUrl).pathname}?chatId=${encodeURIComponent(target.ownerChatId)}`
+        : target.currentUrl;
+    const pageUrl = new URL(routeWithIdentity, "http://desktop.local");
+    target.pageRouteIdentity = `${pageUrl.pathname}${pageUrl.search}${pageUrl.hash}`;
+  }
+  return target;
 }
 
 function createRegistration(targets, forwardRequest, overrides = {}) {
@@ -68,6 +79,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
     getServiceState: 0,
     issueAccessToken: 0,
     waitForSurface: 0,
+    waitForMatchingSurface: 0,
   };
   const broker = {
     ensureConnected: async () => {
@@ -106,6 +118,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       runReadiness.set(input.runId, input);
     },
     getVisibleBinding: () => visibleBinding,
+    prepareForwardedVisibleRun: async () => false,
     appendForwardedVisibleRunEvent: ({ sourceId, runId, event }) => {
       const run = visibleRuns.get(runId);
       if (!run || run.sourceId !== sourceId) throw new Error("visible source unavailable");
@@ -171,6 +184,19 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
         }
         return targets.get(senderId) || null;
       },
+      waitForWebviewSurfaceTargetMatching: async (senderId, predicate, timeoutMs, signal) => {
+        calls.waitForMatchingSurface += 1;
+        if (overrides.waitForWebviewSurfaceTargetMatching) {
+          return overrides.waitForWebviewSurfaceTargetMatching(
+            senderId,
+            predicate,
+            timeoutMs,
+            signal,
+          );
+        }
+        const target = targets.get(senderId) || null;
+        return target && predicate(target) ? target : null;
+      },
     },
     isTrustedAgentWebclientSession: overrides.isTrustedAgentWebclientSession ?? (() => true),
     realtimeBroker: broker,
@@ -191,6 +217,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
         url.searchParams.delete("newChat");
         url.searchParams.set("chatId", input.chatId);
         target.currentUrl = url.toString();
+        target.pageRouteIdentity = `${url.pathname}${url.search}${url.hash}`;
       }
       return { requestId: `sync-${canonicalSyncs.length}`, ok: true };
     }),
@@ -207,6 +234,14 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
 
 async function flush() {
   await new Promise((resolve) => setImmediate(resolve));
+}
+
+async function waitUntil(predicate, timeoutMs = 2_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for test condition");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
 }
 
 async function openSession(runtime, sender, sessionId) {
@@ -460,6 +495,67 @@ test("Overview attaches to the Main Chat visible Run locally without another ups
   });
 });
 
+test("Main Chat observer detach releases the local mirror without completing its Run", async () => {
+  const target = createTarget(159);
+  const order = [];
+  let deliverFrame = () => undefined;
+  let completed = 0;
+  let released = 0;
+  const runtime = createRegistration(
+    new Map([[159, target]]),
+    async ({ type, onFrame }) => {
+      order.push(type);
+      deliverFrame = onFrame;
+    },
+    {
+      realtimeBroker: {
+        prepareForwardedVisibleRun: async () => {
+          order.push("prepare-forwarded-visible-run");
+          return true;
+        },
+        completeForwardedVisibleRun: () => {
+          completed += 1;
+          return true;
+        },
+        releaseForwardedVisibleRun: () => {
+          released += 1;
+          return true;
+        },
+      },
+    },
+  );
+  const sender = createSender(159, target.currentUrl);
+  await openSession(runtime, sender, "session-main-observer-detach");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-main-observer-detach",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-observer-detach",
+      payload: { runId: "run-observer-detach", agentKey: "agent-159", lastSeq: 12 },
+    },
+  });
+  await flush();
+
+  assert.deepEqual(order, ["prepare-forwarded-visible-run", "/api/attach"]);
+  deliverFrame({
+    frame: "stream",
+    id: "attach-main-observer-detach",
+    reason: "detached",
+    lastSeq: 12,
+  });
+  await flush();
+
+  assert.equal(completed, 0);
+  assert.equal(released, 1);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "stream",
+    id: "attach-main-observer-detach",
+    reason: "detached",
+    lastSeq: 12,
+  });
+});
+
 test("Overview seq_expired errors retain retryability and replay-window diagnostics", async () => {
   const overviewTarget = createTarget(148, {
     surfaceId: "overview:chat-expired",
@@ -671,6 +767,261 @@ test("Overview waits for a new Main Chat query to publish its canonical Run iden
   assert.deepEqual(
     sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
     [1],
+  );
+});
+
+test("Overview waits for the next Main Chat attach during a same-session Chat handoff", async () => {
+  const mainTarget = createTarget(151, {
+    ownerChatId: "chat-before-switch",
+    pageRoute: "/agent/agent-1?chatId=chat-before-switch",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-before-switch",
+  });
+  const overviewTarget = createTarget(152, {
+    surfaceId: "overview:chat-after-switch",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-after-switch",
+    pageRoute: "/overview/chat-after-switch",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-after-switch",
+  });
+  const forwarded = [];
+  const deliverByRun = new Map();
+  const runtime = createRegistration(
+    new Map([[151, mainTarget], [152, overviewTarget]]),
+    async (input) => {
+      forwarded.push({ type: input.type, localId: input.localId });
+      const runId = typeof input.payload?.runId === "string" ? input.payload.runId : "";
+      if (input.type === "/api/attach" && runId) deliverByRun.set(runId, input.onFrame);
+    },
+  );
+  const main = createSender(151, mainTarget.currentUrl);
+  const overview = createSender(152, overviewTarget.currentUrl);
+  await openSession(runtime, main, "session-main-switch");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-switch",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-before-switch",
+      payload: { runId: "run-before-switch", agentKey: "agent-1", lastSeq: 3 },
+    },
+  });
+  await flush();
+  const mainSessionBefore = runtime.registration.getDiagnostics().logicalSessions
+    .find((session) => session.webContentsId === 151 && session.phase !== "closed");
+
+  mainTarget.ownerChatId = "chat-after-switch";
+  mainTarget.pageRoute = "/agent/agent-1?chatId=chat-after-switch";
+  mainTarget.currentUrl = "http://127.0.0.1:7079/agent/agent-1?chatId=chat-after-switch";
+  main.setURL(mainTarget.currentUrl);
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-switch",
+    frame: {
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-main-before-switch",
+      payload: { runId: "run-before-switch", agentKey: "agent-1", reason: "surface_inactive" },
+    },
+  });
+  await flush();
+
+  await openSession(runtime, overview, "session-overview-switch");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-switch",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-after-switch",
+      payload: { runId: "run-after-switch", agentKey: "agent-1", lastSeq: 7 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  assert.equal(sentFrames(overview).some((frame) => frame.frame === "error"), false);
+  assert.equal(forwarded.some((entry) => entry.localId === "attach-overview-after-switch"), false);
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-switch",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-after-switch",
+      payload: { runId: "run-after-switch", agentKey: "agent-1", lastSeq: 7 },
+    },
+  });
+  await waitUntil(() => runtime.visibleSubscriptions.size === 1);
+  deliverByRun.get("run-after-switch")({
+    frame: "stream",
+    id: "attach-main-after-switch",
+    event: {
+      type: "content.delta",
+      timestamp: 1_786_890_400_008,
+      seq: 8,
+      chatId: "chat-after-switch",
+      runId: "run-after-switch",
+      delta: "live after switch",
+    },
+  });
+  await flush();
+
+  assert.deepEqual(forwarded.map((entry) => entry.type), [
+    "/api/attach",
+    "/api/detach",
+    "/api/attach",
+  ]);
+  assert.equal(forwarded.some((entry) => entry.localId === "attach-overview-after-switch"), false);
+  assert.deepEqual(
+    sentFrames(overview).filter((frame) => frame.frame === "stream").map((frame) => frame.event?.seq),
+    [8],
+  );
+  const mainSessionAfter = runtime.registration.getDiagnostics().logicalSessions
+    .find((session) => session.webContentsId === 151 && session.phase !== "closed");
+  assert.equal(mainSessionAfter.logicalSessionId, mainSessionBefore.logicalSessionId);
+  assert.equal(mainSessionAfter.logicalGeneration, mainSessionBefore.logicalGeneration);
+  assert.equal(mainSessionAfter.physicalGeneration, mainSessionBefore.physicalGeneration);
+});
+
+test("Overview reports structured diagnostics after the Main Chat bind window expires", async () => {
+  const overviewTarget = createTarget(153, {
+    surfaceId: "overview:chat-bind-timeout",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-bind-timeout",
+    pageRoute: "/overview/chat-bind-timeout",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-bind-timeout",
+  });
+  const runtime = createRegistration(new Map([[153, overviewTarget]]), async () => {
+    assert.fail("Overview bind timeout must not open an upstream stream");
+  });
+  const overview = createSender(153, overviewTarget.currentUrl);
+  await openSession(runtime, overview, "session-overview-bind-timeout");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-timeout",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-bind-timeout",
+      payload: { runId: "run-bind-timeout", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await waitUntil(() => sentFrames(overview).some((frame) => frame.id === "attach-overview-bind-timeout"), 2_000);
+
+  const error = sentFrames(overview).find((frame) => frame.id === "attach-overview-bind-timeout");
+  assert.equal(error.frame, "error");
+  assert.equal(error.type, "target_unavailable");
+  assert.equal(error.data.retryable, true);
+  assert.equal(error.data.details.stage, "visible_run_bind");
+  assert.equal(error.data.details.reason, "primary_surface_transitioning");
+  assert.equal(error.data.details.primarySessionCount, 0);
+  assert.ok(error.data.details.waitedMs >= 1_500);
+  assert.ok(error.data.details.attemptCount > 1);
+  assert.equal(JSON.stringify(error.data.details).includes("chat-bind-timeout"), false);
+  assert.equal(JSON.stringify(error.data.details).includes("run-bind-timeout"), false);
+});
+
+test("Overview reauthorizes its surface while waiting for the Main Chat mirror", async () => {
+  const overviewTarget = createTarget(156, {
+    surfaceId: "overview:chat-bind-changed",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-bind-changed",
+    pageRoute: "/overview/chat-bind-changed",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-bind-changed",
+  });
+  const runtime = createRegistration(new Map([[156, overviewTarget]]), async () => {
+    assert.fail("an inactive Overview must not open an upstream stream");
+  });
+  const overview = createSender(156, overviewTarget.currentUrl);
+  await openSession(runtime, overview, "session-overview-bind-changed");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-changed",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-bind-changed",
+      payload: { runId: "run-bind-changed", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  overviewTarget.active = false;
+  await waitUntil(() => sentFrames(overview).some((frame) => frame.id === "attach-overview-bind-changed"));
+
+  const error = sentFrames(overview).find((frame) => frame.id === "attach-overview-bind-changed");
+  assert.equal(error.type, "surface_unavailable");
+  assert.equal(error.data.retryable, false);
+  assert.equal(error.data.details.stage, "visible_run_bind");
+  assert.equal(error.data.details.reason, "virtual_surface_changed");
+  assert.equal(runtime.visibleSubscriptions.size, 0);
+});
+
+test("Overview detach cancels a pending Main Chat bind without a late subscription", async () => {
+  const mainTarget = createTarget(154, {
+    ownerChatId: "chat-bind-cancelled",
+    currentUrl: "http://127.0.0.1:7079/agent/agent-1?chatId=chat-bind-cancelled",
+  });
+  const overviewTarget = createTarget(155, {
+    surfaceId: "overview:chat-bind-cancelled",
+    surfaceType: "agent-overview",
+    surfaceRole: "overview",
+    surfaceLevel: "child",
+    parentSurfaceId: "main-chat",
+    interaction: "read-only",
+    ownerChatId: "chat-bind-cancelled",
+    pageRoute: "/overview/chat-bind-cancelled",
+    currentUrl: "http://127.0.0.1:7079/overview/chat-bind-cancelled",
+  });
+  const runtime = createRegistration(
+    new Map([[154, mainTarget], [155, overviewTarget]]),
+    async () => undefined,
+  );
+  const main = createSender(154, mainTarget.currentUrl);
+  const overview = createSender(155, overviewTarget.currentUrl);
+  await openSession(runtime, main, "session-main-bind-cancelled");
+  await openSession(runtime, overview, "session-overview-bind-cancelled");
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-cancelled",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-overview-bind-cancelled",
+      payload: { runId: "run-bind-cancelled", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 40));
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: overview }, {
+    sessionId: "session-overview-bind-cancelled",
+    frame: {
+      frame: "request",
+      type: "/api/detach",
+      id: "detach-overview-bind-cancelled",
+      payload: { runId: "run-bind-cancelled", agentKey: "agent-1", reason: "surface_inactive" },
+    },
+  });
+  await waitUntil(() => sentFrames(overview).some((frame) => frame.id === "detach-overview-bind-cancelled"));
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender: main }, {
+    sessionId: "session-main-bind-cancelled",
+    frame: {
+      frame: "request",
+      type: "/api/attach",
+      id: "attach-main-bind-cancelled",
+      payload: { runId: "run-bind-cancelled", agentKey: "agent-1", lastSeq: 0 },
+    },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 60));
+
+  assert.equal(runtime.visibleSubscriptions.size, 0);
+  assert.equal(
+    sentFrames(overview).some((frame) => frame.id === "attach-overview-bind-cancelled"),
+    false,
   );
 });
 
@@ -899,6 +1250,7 @@ test("Frame Port waits for a trusted WebView surface registration before opening
     getServiceState: 0,
     issueAccessToken: 0,
     waitForSurface: 1,
+    waitForMatchingSurface: 0,
   });
 
   targets.set(sender.id, target);
@@ -1130,6 +1482,7 @@ test("Main Chat query fails closed until an Agent switch route is fully register
 
   const switchedUrl = "http://127.0.0.1:7079/agent/agent-b?newChat=1786898700001";
   target.pageRoute = "/agent/agent-b?newChat=1786898700001";
+  target.pageRouteIdentity = "/agent/agent-b?newChat=1786898700001";
   target.currentUrl = switchedUrl;
   target.ownerChatId = undefined;
   sender.setURL(switchedUrl);
@@ -1326,6 +1679,268 @@ test("canonical Main Chat owner permits continuation while the guest URL still h
   await runtime.runReadiness.get("run-77").ready;
   assert.equal(runtime.canonicalSyncs.length, 0);
   assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
+test("persistent V2 Session waits for a delayed canonical owner before forwarding its second query", async () => {
+  const target = createTarget(177, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-177?newChat=nonce-177",
+  });
+  const targets = new Map([[177, target]]);
+  const forwarded = [];
+  const deliverById = new Map();
+  let releaseMatchingTarget = () => undefined;
+  let markWaitStarted = () => undefined;
+  const waitStarted = new Promise((resolve) => { markWaitStarted = resolve; });
+  const runtime = createRegistration(targets, async (input) => {
+    forwarded.push(input.type);
+    if (input.type === "/api/query") deliverById.set(input.localId, input.onFrame);
+  }, {
+    waitForWebviewSurfaceTargetMatching: (_senderId, predicate, timeoutMs, signal) => {
+      assert.equal(timeoutMs, 1_500);
+      markWaitStarted();
+      return new Promise((resolve) => {
+        const finish = (candidate) => resolve(candidate && predicate(candidate) ? candidate : null);
+        releaseMatchingTarget = finish;
+        signal.addEventListener("abort", () => finish(null), { once: true });
+      });
+    },
+  });
+  const sender = createSender(177, target.currentUrl);
+  await openSession(runtime, sender, "session-owner-convergence");
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-owner-convergence",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-owner-convergence-first",
+      payload: {
+        requestId: "req-owner-convergence-first",
+        message: "first",
+        agentKey: "agent-177",
+      },
+    },
+  });
+  await flush();
+  const deliverFirst = deliverById.get("query-owner-convergence-first");
+  assert.equal(typeof deliverFirst, "function");
+  deliverFirst({
+    frame: "stream",
+    id: "query-owner-convergence-first",
+    event: {
+      type: "chat.start",
+      seq: 1,
+      chatId: "chat-177-canonical",
+      timestamp: 1_786_898_700_020,
+    },
+  });
+  deliverFirst({
+    frame: "stream",
+    id: "query-owner-convergence-first",
+    event: {
+      type: "run.start",
+      seq: 2,
+      chatId: "chat-177-canonical",
+      runId: "run-177-first",
+      agentKey: "agent-177",
+      timestamp: 1_786_898_700_021,
+    },
+  });
+  await flush();
+
+  const canonicalUrl = "http://127.0.0.1:7079/agent/agent-177?chatId=chat-177-canonical";
+  target.currentUrl = canonicalUrl;
+  target.pageRouteIdentity = "/agent/agent-177?chatId=chat-177-canonical";
+  target.ownerChatId = undefined;
+  sender.setURL(canonicalUrl);
+  const callsBeforeSecond = { ...runtime.calls };
+  const activeStreamsBeforeSecond = runtime.registration.getDiagnostics().activeStreamCount;
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-owner-convergence",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-owner-convergence-second",
+      payload: {
+        requestId: "req-owner-convergence-second",
+        message: "second",
+        agentKey: "agent-177",
+        chatId: "chat-177-canonical",
+      },
+    },
+  });
+  await waitStarted;
+
+  assert.deepEqual(forwarded, ["/api/query"]);
+  assert.equal(runtime.calls.getServiceState, callsBeforeSecond.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeSecond.issueAccessToken);
+  assert.equal(runtime.calls.ensureConnected, callsBeforeSecond.ensureConnected);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, activeStreamsBeforeSecond);
+
+  target.ownerChatId = "chat-177-canonical";
+  releaseMatchingTarget(target);
+  await flush();
+  await flush();
+
+  assert.deepEqual(forwarded, ["/api/query", "/api/query"]);
+  assert.equal(
+    sentFrames(sender).some((frame) =>
+      frame.id === "query-owner-convergence-second" && frame.frame === "error"
+    ),
+    false,
+  );
+  const convergenceTraces = runtime.traces.filter(
+    (trace) => trace.data?.event === "main-chat-query-identity-convergence",
+  );
+  assert.deepEqual(convergenceTraces.map((trace) => trace.data.state), ["started", "ready"]);
+  assert.doesNotMatch(
+    JSON.stringify(convergenceTraces),
+    /chat-177-canonical|nonce-177|second/u,
+  );
+});
+
+test("Main Chat canonical owner convergence timeout fails before token or Broker access", async () => {
+  const target = createTarget(178, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/agent/agent-178?chatId=chat-178",
+    pageRouteIdentity: "/agent/agent-178?chatId=chat-178",
+  });
+  const forwarded = [];
+  const runtime = createRegistration(new Map([[178, target]]), async (input) => {
+    forwarded.push(input.type);
+  }, {
+    waitForWebviewSurfaceTargetMatching: async (_senderId, _predicate, timeoutMs) => {
+      assert.equal(timeoutMs, 1_500);
+      return null;
+    },
+  });
+  const sender = createSender(178, target.currentUrl);
+  await openSession(runtime, sender, "session-owner-timeout");
+  const callsBeforeQuery = { ...runtime.calls };
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-owner-timeout",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-owner-timeout",
+      payload: {
+        requestId: "req-owner-timeout",
+        message: "must stay local",
+        agentKey: "agent-178",
+        chatId: "chat-178",
+      },
+    },
+  });
+  await flush();
+  await flush();
+
+  assert.deepEqual(forwarded, []);
+  assert.equal(runtime.calls.getServiceState, callsBeforeQuery.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeQuery.issueAccessToken);
+  assert.equal(runtime.calls.ensureConnected, callsBeforeQuery.ensureConnected);
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+  assert.deepEqual(sentFrames(sender).at(-1), {
+    frame: "error",
+    id: "query-owner-timeout",
+    type: "protocol_error",
+    code: 400,
+    status: 400,
+    msg: "Main Chat identity did not converge before query authorization",
+    data: {
+      code: "protocol_error",
+      message: "Main Chat identity did not converge before query authorization",
+    },
+  });
+});
+
+test("Main Chat rejects a wrong canonical Chat without entering identity convergence", async () => {
+  const target = createTarget(179, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+  });
+  const runtime = createRegistration(new Map([[179, target]]), async () => {
+    assert.fail("wrong canonical Chat must not reach the Broker");
+  }, {
+    waitForWebviewSurfaceTargetMatching: async () => {
+      assert.fail("an invalid Chat identity must not enter the convergence wait");
+    },
+  });
+  const sender = createSender(179, target.currentUrl);
+  await openSession(runtime, sender, "session-wrong-canonical-chat");
+  const callsBeforeQuery = { ...runtime.calls };
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-wrong-canonical-chat",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-wrong-canonical-chat",
+      payload: {
+        requestId: "req-wrong-canonical-chat",
+        message: "wrong chat",
+        agentKey: "agent-179",
+        chatId: "chat-other",
+      },
+    },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.waitForMatchingSurface, callsBeforeQuery.waitForMatchingSurface);
+  assert.equal(runtime.calls.getServiceState, callsBeforeQuery.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeQuery.issueAccessToken);
+  assert.match(sentFrames(sender).at(-1).msg, /canonical Chat query does not match/u);
+});
+
+test("Main Chat rechecks the real sender Chat even when Registry still has the old canonical owner", async () => {
+  const target = createTarget(180, {
+    surfaceRole: "main-chat",
+    surfaceLevel: "root",
+    interaction: "interactive",
+  });
+  const runtime = createRegistration(new Map([[180, target]]), async () => {
+    assert.fail("a changed sender Chat must not reach the Broker");
+  }, {
+    waitForWebviewSurfaceTargetMatching: async () => {
+      assert.fail("an invalid sender Chat must not enter the convergence wait");
+    },
+  });
+  const sender = createSender(
+    180,
+    "http://127.0.0.1:7079/agent/agent-180?chatId=chat-other",
+  );
+  await openSession(runtime, sender, "session-sender-chat-changed");
+  const callsBeforeQuery = { ...runtime.calls };
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+    sessionId: "session-sender-chat-changed",
+    frame: {
+      frame: "request",
+      type: "/api/query",
+      id: "query-sender-chat-changed",
+      payload: {
+        requestId: "req-sender-chat-changed",
+        message: "must stay local",
+        agentKey: "agent-180",
+        chatId: "chat-180",
+      },
+    },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.waitForMatchingSurface, callsBeforeQuery.waitForMatchingSurface);
+  assert.equal(runtime.calls.getServiceState, callsBeforeQuery.getServiceState);
+  assert.equal(runtime.calls.issueAccessToken, callsBeforeQuery.issueAccessToken);
+  assert.match(sentFrames(sender).at(-1).msg, /owner does not match its sender route/u);
 });
 
 test("new Main Chat run.start without chat.start fails closed", async () => {

@@ -7,6 +7,7 @@ const {
   EMPTY_WORK_PANEL_STATE,
   normalizeWorkPanelWebUrl,
   reduceWorkPanelCommand,
+  resolveWorkPanelWebSessionKey,
 } = require("../dist-electron/shared/work-panel.js");
 const { WORK_PANEL_NATIVE_SURFACE_ALLOWLIST } = require("../dist-electron/shared/work-panel-native-registry.js");
 
@@ -157,6 +158,142 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
   });
   assert.equal(native.ok, false);
   assert.equal(native.error.code, "unsupported_native_surface");
+});
+
+test("trusted WorkPanel Blob popups inherit their source session without widening public URL inputs", () => {
+  const source = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "web",
+    url: "https://example.test/attachments",
+    title: "Attachments",
+  });
+  assert.equal(source.ok, true);
+  assert.equal(open(source.nextState, "chat", {
+    kind: "web",
+    url: "blob:https://example.test/public-input",
+  }).ok, false);
+  assert.equal(normalizeWorkPanelWebUrl("blob:https://example.test/public-input"), "");
+
+  const blobUrl = "blob:https://example.test/6940b58b-49ce-43b3-a6f7-30405f5eb6c0";
+  const popup = reduceWorkPanelCommand(source.nextState, {
+    type: "openBlobPopup",
+    ownerChatId: "chat",
+    sourceItemId: source.item.itemId,
+    url: blobUrl,
+  });
+  assert.equal(popup.ok, true);
+  assert.equal(popup.item.descriptor.url, blobUrl);
+  assert.equal(popup.item.title, "example.test");
+  assert.equal(
+    resolveWorkPanelWebSessionKey(popup.nextState, popup.workspaceId, popup.item.itemId),
+    source.item.itemId,
+  );
+  assert.equal(
+    popup.item.stableKey,
+    `blob:${source.item.itemId}:${blobUrl}`,
+  );
+
+  const duplicate = reduceWorkPanelCommand(popup.nextState, {
+    type: "openBlobPopup",
+    ownerChatId: "chat",
+    sourceItemId: source.item.itemId,
+    url: blobUrl,
+  });
+  assert.equal(duplicate.ok, true);
+  assert.equal(duplicate.item.itemId, popup.item.itemId);
+  assert.equal(duplicate.state.items.length, 2);
+
+  const descendantUrl = "blob:https://example.test/2b2aaf61-d822-492f-87ad-16d1a40347ec";
+  const descendant = reduceWorkPanelCommand(duplicate.nextState, {
+    type: "openBlobPopup",
+    ownerChatId: "chat",
+    sourceItemId: popup.item.itemId,
+    url: descendantUrl,
+  });
+  assert.equal(descendant.ok, true);
+  assert.equal(
+    resolveWorkPanelWebSessionKey(
+      descendant.nextState,
+      descendant.workspaceId,
+      descendant.item.itemId,
+    ),
+    source.item.itemId,
+  );
+
+  const missingSource = reduceWorkPanelCommand(descendant.nextState, {
+    type: "openBlobPopup",
+    ownerChatId: "chat",
+    sourceItemId: "item:missing",
+    url: blobUrl,
+  });
+  assert.equal(missingSource.ok, false);
+  assert.equal(missingSource.error.code, "target_unavailable");
+
+  const closeSource = reduceWorkPanelCommand(descendant.nextState, {
+    type: "closeItem",
+    ownerChatId: "chat",
+    itemId: source.item.itemId,
+  });
+  assert.equal(closeSource.ok, true);
+  assert.equal(
+    resolveWorkPanelWebSessionKey(closeSource.nextState, popup.workspaceId, popup.item.itemId),
+    source.item.itemId,
+  );
+
+  const closePopup = reduceWorkPanelCommand(closeSource.nextState, {
+    type: "closeItem",
+    ownerChatId: "chat",
+    itemId: popup.item.itemId,
+  });
+  const closeDescendant = reduceWorkPanelCommand(closePopup.nextState, {
+    type: "closeItem",
+    ownerChatId: "chat",
+    itemId: descendant.item.itemId,
+  });
+  assert.equal(closeDescendant.ok, true);
+  assert.deepEqual(closeDescendant.nextState.webSessionKeysByItemId, {});
+});
+
+test("WorkPanel Blob session affinity remains isolated when item identities match across chats", () => {
+  const sourceA = open(EMPTY_WORK_PANEL_STATE, "chat-a", {
+    kind: "web",
+    url: "https://example.test/attachments",
+  });
+  const sourceB = open(sourceA.nextState, "chat-b", {
+    kind: "web",
+    url: "https://example.test/attachments",
+  });
+  assert.equal(sourceA.item.itemId, sourceB.item.itemId);
+  const blobUrl = "blob:https://example.test/8581db74-cfa7-4b25-bb8c-1b96cdfc98fa";
+  const popupA = reduceWorkPanelCommand(sourceB.nextState, {
+    type: "openBlobPopup",
+    ownerChatId: "chat-a",
+    sourceItemId: sourceA.item.itemId,
+    url: blobUrl,
+  });
+  const popupB = reduceWorkPanelCommand(popupA.nextState, {
+    type: "openBlobPopup",
+    ownerChatId: "chat-b",
+    sourceItemId: sourceB.item.itemId,
+    url: blobUrl,
+  });
+  assert.equal(popupA.item.itemId, popupB.item.itemId);
+  assert.equal(Object.keys(popupB.nextState.webSessionKeysByItemId).length, 2);
+
+  const closedA = reduceWorkPanelCommand(popupB.nextState, {
+    type: "closeWorkspace",
+    ownerChatId: "chat-a",
+    force: true,
+  });
+  assert.equal(closedA.ok, true);
+  assert.equal(Object.keys(closedA.nextState.webSessionKeysByItemId).length, 1);
+  assert.equal(
+    resolveWorkPanelWebSessionKey(
+      closedA.nextState,
+      popupB.workspaceId,
+      popupB.item.itemId,
+    ),
+    sourceB.item.itemId,
+  );
 });
 
 test("WorkPanel keeps Platform-resolvable File request paths and deduplicates normalized identities", () => {

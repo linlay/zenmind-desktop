@@ -19,6 +19,7 @@ const {
   isWorkPanelCloseShortcut,
   resolveGlobalSearchCommandShortcut,
 } = await import("../dist-electron/main/platform-adapter.js");
+const { resolveWebviewOpenDisposition } = await import("../dist-electron/main/webview-open-tab.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
@@ -142,13 +143,18 @@ class FakeWebContents extends EventEmitter {
   windowOpenHandler = null;
   editCommands = [];
 
-  constructor(id = 7, partition = "") {
+  constructor(id = 7, partition = "", currentUrl = "https://example.test/home") {
     super();
     this.id = id;
     this.partition = partition;
+    this.currentUrl = currentUrl;
     this.session = {
       partition
     };
+  }
+
+  getURL() {
+    return this.currentUrl;
   }
 
   downloadURL(url) {
@@ -1405,6 +1411,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
     channel: "webview.openTab",
     payload: {
       target: "desktop-browser",
+      navigationKind: "network",
       sourceGuestId: 42,
       url: "https://example.test/inside"
     }
@@ -1436,6 +1443,55 @@ test("window manager configures attached webviews for downloads, DevTools and po
   ]);
 });
 
+test("Website Blob popups stay bound to the source surface and never open externally", () => {
+  const contents = new FakeWebContents(44, "persist:desktop-sso", "https://example.test/attachments");
+  const sentTabs = [];
+  const externalUrls = [];
+
+  configureAttachedWebview(contents, {
+    platform: "darwin",
+    getMainWindow: () => ({
+      isDestroyed: () => false,
+      webContents: {
+        send: (channel, payload) => sentTabs.push({ channel, payload })
+      }
+    }),
+    isDevToolsShortcut: () => false,
+    shouldDownloadUrl: () => false,
+    resolveOpenDisposition: resolveWebviewOpenDisposition,
+    resolveBlobPopupTarget: () => "desktop-browser",
+    collectLoadDiagnostics: async () => ({}),
+    report: () => {},
+    openExternal: async (url) => {
+      externalUrls.push(url);
+    },
+    schedule: (callback) => callback()
+  });
+
+  const blobUrl = "blob:https://example.test/5ee09c6c-8350-43ec-a60a-c24bd0db57ed";
+  assert.deepEqual(contents.windowOpenHandler({
+    url: blobUrl,
+    referrer: { url: "https://example.test/attachments" }
+  }), { action: "deny" });
+  assert.deepEqual(contents.windowOpenHandler({
+    url: "blob:https://other.test/5ee09c6c-8350-43ec-a60a-c24bd0db57ed",
+    referrer: { url: "https://example.test/attachments" }
+  }), { action: "deny" });
+  assert.deepEqual(contents.windowOpenHandler({ url: "blob:null/opaque" }), { action: "deny" });
+
+  assert.deepEqual(sentTabs, [{
+    channel: "webview.openTab",
+    payload: {
+      target: "desktop-browser",
+      navigationKind: "blob",
+      sourceGuestId: 44,
+      url: blobUrl
+    }
+  }]);
+  assert.deepEqual(contents.downloadedUrls, []);
+  assert.deepEqual(externalUrls, []);
+});
+
 test("Chat Work Panel popups create an outer WorkPanel tab without navigating Desktop", async () => {
   const contents = new FakeWebContents(43);
   const sentTabs = [];
@@ -1455,6 +1511,7 @@ test("Chat Work Panel popups create an outer WorkPanel tab without navigating De
     collectLoadDiagnostics: async () => ({}),
     report: () => {},
     shouldOpenPopupInWorkPanelTab: () => true,
+    resolveBlobPopupTarget: () => "work-panel",
     openExternal: async (url) => {
       externalUrls.push(url);
     },
@@ -1462,17 +1519,34 @@ test("Chat Work Panel popups create an outer WorkPanel tab without navigating De
   });
 
   assert.deepEqual(contents.windowOpenHandler({ url: "https://example.test/popup" }), { action: "deny" });
+  const blobUrl = "blob:https://example.test/3f63f853-42f4-45aa-8960-0d537fde7e61";
+  assert.deepEqual(contents.windowOpenHandler({
+    url: blobUrl,
+    referrer: { url: "https://example.test/popup" }
+  }), { action: "deny" });
   assert.deepEqual(contents.windowOpenHandler({ url: "javascript:alert(1)" }), { action: "deny" });
   await Promise.resolve();
 
   assert.deepEqual(contents.loadedUrls, []);
-  assert.deepEqual(sentTabs, [{
-    channel: "webview.openTab",
-    payload: {
-      target: "work-panel",
-      sourceGuestId: 43,
-      url: "https://example.test/popup"
+  assert.deepEqual(sentTabs, [
+    {
+      channel: "webview.openTab",
+      payload: {
+        target: "work-panel",
+        navigationKind: "network",
+        sourceGuestId: 43,
+        url: "https://example.test/popup"
+      }
+    },
+    {
+      channel: "webview.openTab",
+      payload: {
+        target: "work-panel",
+        navigationKind: "blob",
+        sourceGuestId: 43,
+        url: blobUrl
+      }
     }
-  }]);
+  ]);
   assert.deepEqual(externalUrls, []);
 });

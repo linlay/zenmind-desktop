@@ -13,6 +13,11 @@ import {
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../shared/browser-surfaces";
+import {
+  readAgentWebclientCanonicalChatSource,
+  readAgentWebclientNewChatSource
+} from "../shared/canonical-chat-sync";
+import { readAgentWebclientAgentRouteKey } from "../shared/agent-webclient-routes";
 import { selectSurvivingTabId } from "../shared/web-tab-lifecycle";
 import {
   COPILOT_CHAT_SURFACE_ID,
@@ -92,6 +97,7 @@ export type RegisteredWebviewSurfaceTarget = {
   surfaceType: NonNullable<EmbeddedCdpSurfaceRegistration["surfaceType"]>;
   serviceId?: string;
   pageRoute?: string;
+  pageRouteIdentity?: string;
   tabId: string;
   webContentsId: number;
   ownerWebContentsId: number;
@@ -104,6 +110,120 @@ export type RegisteredWebviewSurfaceTarget = {
   parentSurfaceId?: string;
   interaction: SurfaceIdentity["interaction"];
 };
+
+type PendingGuestTargetWaiter = {
+  registrationId: string | null;
+  predicate(target: RegisteredWebviewSurfaceTarget): boolean;
+  complete(target: RegisteredWebviewSurfaceTarget | null): void;
+};
+
+function guestTargetMatches(
+  predicate: PendingGuestTargetWaiter["predicate"],
+  target: RegisteredWebviewSurfaceTarget,
+) {
+  try {
+    return predicate(target);
+  } catch {
+    return false;
+  }
+}
+
+function sameNewChatSource(
+  left: ReturnType<typeof readAgentWebclientNewChatSource>,
+  right: ReturnType<typeof readAgentWebclientNewChatSource>,
+) {
+  return Boolean(
+    left &&
+    right &&
+    left.agentKey === right.agentKey &&
+    left.newChat === right.newChat
+  );
+}
+
+function activeRegistrationTab(input: EmbeddedCdpSurfaceRegistration) {
+  const activeTabId = input.activeTabId?.trim() || "";
+  return activeTabId
+    ? input.tabs.find((tab) => tab.tabId.trim() === activeTabId) ?? null
+    : null;
+}
+
+function describeMainChatRoute(value: string | undefined) {
+  if (readAgentWebclientNewChatSource(value ?? "")) return "new-chat";
+  if (readAgentWebclientCanonicalChatSource(value ?? "")) return "canonical";
+  if (readAgentWebclientAgentRouteKey(value ?? "")) return "agent-route";
+  return "invalid";
+}
+
+function isMainChatSurfaceRegistration(input: EmbeddedCdpSurfaceRegistration) {
+  return input.surfaceId === MAIN_CHAT_SURFACE_ID &&
+    input.surfaceRole === "main-chat" &&
+    input.surfaceType === "agent-chat";
+}
+
+function preserveInactiveMainChatIdentity(
+  existing: EmbeddedCdpSurfaceRegistration | undefined,
+  input: EmbeddedCdpSurfaceRegistration,
+) {
+  if (!isMainChatSurfaceRegistration(input) || input.active || !existing) return input;
+  const {
+    ownerChatId: _ownerChatId,
+    pageRoute: _pageRoute,
+    pageRouteIdentity: _pageRouteIdentity,
+    ...rest
+  } = input;
+  return {
+    ...rest,
+    ...(existing.pageRoute ? { pageRoute: existing.pageRoute } : {}),
+    ...(existing.pageRouteIdentity
+      ? { pageRouteIdentity: existing.pageRouteIdentity }
+      : {}),
+    ...(existing.ownerChatId ? { ownerChatId: existing.ownerChatId } : {}),
+  };
+}
+
+function mainChatSurfaceRegistrationTransitionAllowed(
+  existing: Pick<EmbeddedCdpSurfaceRegistration, "ownerChatId"> | undefined,
+  input: EmbeddedCdpSurfaceRegistration,
+) {
+  if (!isMainChatSurfaceRegistration(input) || !input.active) return true;
+  const activeTab = activeRegistrationTab(input);
+  const pageRouteIdentity = input.pageRouteIdentity?.trim() || "";
+  const pageAgentKey = readAgentWebclientAgentRouteKey(pageRouteIdentity);
+  const publicPageAgentKey = readAgentWebclientAgentRouteKey(input.pageRoute ?? "");
+  const guestAgentKey = readAgentWebclientAgentRouteKey(activeTab?.currentUrl ?? "");
+  if (
+    !activeTab ||
+    !pageRouteIdentity ||
+    !pageAgentKey ||
+    pageAgentKey !== publicPageAgentKey ||
+    pageAgentKey !== guestAgentKey
+  ) {
+    return false;
+  }
+
+  const nextOwnerChatId = input.ownerChatId?.trim() || "";
+  if (nextOwnerChatId) {
+    const pageCanonical = readAgentWebclientCanonicalChatSource(pageRouteIdentity);
+    return Boolean(
+      pageCanonical &&
+      pageCanonical.agentKey === pageAgentKey &&
+      pageCanonical.chatId === nextOwnerChatId
+    );
+  }
+
+  const pageNewChat = readAgentWebclientNewChatSource(pageRouteIdentity);
+  if (!pageNewChat) return false;
+  const existingOwnerChatId = existing?.ownerChatId?.trim() || "";
+  if (!existingOwnerChatId) {
+    // During canonical promotion the guest may already expose chatId while
+    // the Desktop route still owns the one-shot newChat source.
+    return true;
+  }
+  return sameNewChatSource(
+    pageNewChat,
+    readAgentWebclientNewChatSource(activeTab.currentUrl),
+  );
+}
 
 export function normalizeSurfaceMatchText(value: string) {
   return value
@@ -145,7 +265,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   const registeredGuestTargets = new Map<number, RegisteredWebviewSurfaceTarget>();
   const pendingGuestTargetWaiters = new Map<
     number,
-    Set<(target: RegisteredWebviewSurfaceTarget | null) => void>
+    Set<PendingGuestTargetWaiter>
   >();
   const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
   const reportedLegacyAliases = new Set<string>();
@@ -187,8 +307,19 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   ) {
     const waiters = pendingGuestTargetWaiters.get(webContentsId);
     if (!waiters) return;
-    pendingGuestTargetWaiters.delete(webContentsId);
-    for (const waiter of [...waiters]) waiter(target);
+    for (const waiter of [...waiters]) {
+      if (
+        target === null ||
+        (waiter.registrationId && waiter.registrationId !== target.registrationId) ||
+        guestTargetMatches(waiter.predicate, target)
+      ) {
+        waiter.complete(
+          target && waiter.registrationId && waiter.registrationId !== target.registrationId
+            ? null
+            : target,
+        );
+      }
+    }
   }
 
   function removeGuestTargetsForSurface(surfaceId: string, settleWaiters = true) {
@@ -217,6 +348,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         surfaceType: surface.surfaceType ?? fallbackSurfaceType(surface.surfaceKind),
         ...(surface.serviceId ? { serviceId: surface.serviceId } : {}),
         ...(surface.pageRoute ? { pageRoute: surface.pageRoute } : {}),
+        ...(surface.pageRouteIdentity ? { pageRouteIdentity: surface.pageRouteIdentity } : {}),
         ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
         surfaceRole: surface.surfaceRole,
         surfaceLevel: surface.surfaceLevel,
@@ -351,6 +483,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       (input.surfaceType === undefined || validSurfaceTypes.has(input.surfaceType)) &&
       (input.serviceId === undefined || typeof input.serviceId === "string") &&
       (input.pageRoute === undefined || typeof input.pageRoute === "string") &&
+      (input.pageRouteIdentity === undefined || typeof input.pageRouteIdentity === "string") &&
       (input.ownerChatId === undefined || typeof input.ownerChatId === "string") &&
       identityMatchesRegistration(input) &&
       typeof input.label === "string" &&
@@ -392,38 +525,59 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     if (existingSurface && registeredSurfaceIdentitiesConflict(existingSurface, input)) {
       return false;
     }
-    const parentSurface = input.parentSurfaceId
-      ? registeredSurfaces.get(input.parentSurfaceId)
+    const registrationInput = preserveInactiveMainChatIdentity(existingSurface, input);
+    if (!mainChatSurfaceRegistrationTransitionAllowed(existingSurface, registrationInput)) {
+      const activeTab = activeRegistrationTab(registrationInput);
+      console.warn("[main-chat-registry] rejected incoherent owner transition", {
+        generation: registrationInput.registrationId.trim(),
+        existingOwner: Boolean(existingSurface?.ownerChatId?.trim()),
+        nextOwner: Boolean(registrationInput.ownerChatId?.trim()),
+        pageRouteKind: describeMainChatRoute(registrationInput.pageRouteIdentity),
+        guestRouteKind: describeMainChatRoute(activeTab?.currentUrl),
+      });
+      return false;
+    }
+    const parentSurface = registrationInput.parentSurfaceId
+      ? registeredSurfaces.get(registrationInput.parentSurfaceId)
       : undefined;
     if (
       parentSurface && (
         parentSurface.ownerWebContentsId !== ownerWebContentsId ||
-        Boolean(parentSurface.ownerChatId && input.ownerChatId && parentSurface.ownerChatId !== input.ownerChatId)
+        Boolean(
+          parentSurface.ownerChatId &&
+          registrationInput.ownerChatId &&
+          parentSurface.ownerChatId !== registrationInput.ownerChatId
+        )
       )
     ) return false;
-    for (const tab of input.tabs) {
+    for (const tab of registrationInput.tabs) {
       const claimed = registeredGuestTargets.get(tab.webContentsId);
-      if (claimed && claimed.surfaceId !== input.surfaceId) {
+      if (claimed && claimed.surfaceId !== registrationInput.surfaceId) {
         return false;
       }
     }
     const registered: RegisteredSurface = {
-      ...input,
-      registrationId: input.registrationId.trim(),
-      surfaceId: input.surfaceId.trim(),
-      label: input.label.trim(),
-      url: input.url.trim(),
-      tabs: input.tabs.map((tab) => ({
+      ...registrationInput,
+      registrationId: registrationInput.registrationId.trim(),
+      surfaceId: registrationInput.surfaceId.trim(),
+      label: registrationInput.label.trim(),
+      url: registrationInput.url.trim(),
+      tabs: registrationInput.tabs.map((tab) => ({
         ...tab,
         tabId: tab.tabId.trim(),
         currentUrl: tab.currentUrl.trim(),
         title: tab.title.trim(),
         ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl.trim() } : {})
       })),
-      activeTabId: input.activeTabId?.trim() || null,
-      ...(input.serviceId ? { serviceId: input.serviceId.trim() } : {}),
-      ...(input.pageRoute ? { pageRoute: input.pageRoute.trim() } : {}),
-      ...(input.ownerChatId ? { ownerChatId: input.ownerChatId.trim() } : {}),
+      activeTabId: registrationInput.activeTabId?.trim() || null,
+      ...(registrationInput.serviceId ? { serviceId: registrationInput.serviceId.trim() } : {}),
+      ...(registrationInput.pageRoute ? { pageRoute: registrationInput.pageRoute.trim() } : {}),
+      ...(registrationInput.pageRouteIdentity
+        ? { pageRouteIdentity: registrationInput.pageRouteIdentity.trim() }
+        : {}),
+      ...(registrationInput.ownerChatId
+        ? { ownerChatId: registrationInput.ownerChatId.trim() }
+        : {}),
       ownerWebContentsId
     };
     registeredSurfaces.set(canonicalSurfaceId, registered);
@@ -544,6 +698,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       currentUrl: tab.currentUrl,
       label: resolved.registered.label,
       ...(resolved.registered.pageRoute ? { pageRoute: resolved.registered.pageRoute } : {}),
+      ...(resolved.registered.pageRouteIdentity
+        ? { pageRouteIdentity: resolved.registered.pageRouteIdentity }
+        : {}),
       ...(resolved.registered.ownerChatId ? { ownerChatId: resolved.registered.ownerChatId } : {})
     };
     registeredGuestTargets.set(webContentsId, next);
@@ -555,14 +712,31 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     timeoutMs: number,
     signal?: AbortSignal,
   ): Promise<RegisteredWebviewSurfaceTarget | null> {
-    const immediate = resolveWebviewSurfaceTarget(webContentsId);
-    if (immediate) return Promise.resolve(immediate);
+    return waitForWebviewSurfaceTargetMatching(
+      webContentsId,
+      () => true,
+      timeoutMs,
+      signal,
+    );
+  }
+
+  function waitForWebviewSurfaceTargetMatching(
+    webContentsId: number,
+    predicate: (target: RegisteredWebviewSurfaceTarget) => boolean,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<RegisteredWebviewSurfaceTarget | null> {
     if (
       signal?.aborted ||
+      typeof predicate !== "function" ||
       !Number.isSafeInteger(webContentsId) ||
       webContentsId <= 0
     ) {
       return Promise.resolve(null);
+    }
+    const immediate = resolveWebviewSurfaceTarget(webContentsId);
+    if (immediate && guestTargetMatches(predicate, immediate)) {
+      return Promise.resolve(immediate);
     }
     const guest = options.webContents.fromId(webContentsId);
     if (!guest || guest.isDestroyed() || guest.getType() !== "webview") {
@@ -574,6 +748,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     return new Promise((resolve) => {
       let timeout: ReturnType<typeof setTimeout> | null = null;
       let settled = false;
+      let waiter: PendingGuestTargetWaiter;
       const complete = (target: RegisteredWebviewSurfaceTarget | null) => {
         if (settled) return;
         settled = true;
@@ -582,13 +757,18 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         guest.removeListener("destroyed", handleAbort);
         owner?.removeListener("destroyed", handleAbort);
         const waiters = pendingGuestTargetWaiters.get(webContentsId);
-        waiters?.delete(complete);
+        waiters?.delete(waiter);
         if (waiters?.size === 0) pendingGuestTargetWaiters.delete(webContentsId);
         resolve(target);
       };
       const handleAbort = () => complete(null);
+      waiter = {
+        registrationId: immediate?.registrationId ?? null,
+        predicate,
+        complete,
+      };
       const waiters = pendingGuestTargetWaiters.get(webContentsId) ?? new Set();
-      waiters.add(complete);
+      waiters.add(waiter);
       pendingGuestTargetWaiters.set(webContentsId, waiters);
       signal?.addEventListener("abort", handleAbort, { once: true });
       guest.once("destroyed", handleAbort);
@@ -801,6 +981,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     resolveCanonicalSurfaceId,
     resolveWebviewSurfaceTarget,
     waitForWebviewSurfaceTarget,
+    waitForWebviewSurfaceTargetMatching,
     unregisterSurface,
     unregisterSurfacesForOwner,
     webEntryMatchesSurfaceTarget

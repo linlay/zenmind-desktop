@@ -371,6 +371,182 @@ test("RealtimeBroker replays and fans out a forwarded visible Run without upstre
   debug.unsubscribe();
 });
 
+test("RealtimeBroker hands an internal observer to Main Chat without treating detached as Run completion", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const owner = { kind: "agent", agentKey: "coder" };
+  const internalEvents = [];
+  const completed = [];
+  const internal = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+    kind: "internal",
+    consumerId: "desktop-pet-stream:run-handoff",
+    onEvent: (event) => internalEvents.push(event.type),
+    onComplete: (result) => completed.push(result.reason),
+  });
+  await internal.ready;
+  const brokerAttach = sockets[0].sent.find((frame) => frame.type === "/api/attach");
+  assert.ok(brokerAttach);
+
+  assert.equal(await broker.prepareForwardedVisibleRun({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+  }), true);
+  broker.beginForwardedVisibleRun({
+    sourceId: "main-chat:attach-handoff",
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+    primarySurfaceId: "surface:main-chat",
+  });
+  await broker.forwardRequest({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    localId: "main-attach-handoff",
+    consumerId: "frame-port:main-chat",
+    type: "/api/attach",
+    payload: { runId: "run-handoff", agentKey: "coder", lastSeq: 0 },
+    stream: true,
+    onFrame() {},
+    onError() {},
+  });
+  assert.deepEqual(
+    sockets[0].sent.filter((frame) => ["/api/attach", "/api/detach"].includes(frame.type)).map((frame) => frame.type),
+    ["/api/attach", "/api/detach", "/api/attach"],
+  );
+
+  sockets[0].emit({
+    frame: "stream",
+    id: brokerAttach.id,
+    reason: "detached",
+    lastSeq: 0,
+  });
+  await nextTurn();
+  broker.appendForwardedVisibleRunEvent({
+    sourceId: "main-chat:attach-handoff",
+    runId: "run-handoff",
+    event: {
+      type: "content.delta",
+      timestamp: EPOCH_MS,
+      seq: 1,
+      chatId: "chat-handoff",
+      runId: "run-handoff",
+      delta: "still running",
+    },
+  });
+  assert.deepEqual(internalEvents, ["content.delta"]);
+  assert.deepEqual(completed, []);
+  assert.equal(broker.getDiagnostics().observerReleaseCount, 1);
+  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-handoff").state, "active");
+  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-handoff").observerSource, "forwarded");
+
+  const mirrored = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+    kind: "internal",
+    consumerId: "second-internal",
+    onEvent() {},
+  });
+  await mirrored.ready;
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/attach").length, 2);
+
+  assert.equal(broker.completeForwardedVisibleRun({
+    sourceId: "main-chat:attach-handoff",
+    runId: "run-handoff",
+    reason: "done",
+    lastSeq: 1,
+  }), true);
+  assert.deepEqual(completed, ["done"]);
+  assert.throws(
+    () => broker.beginForwardedVisibleRun({
+      sourceId: "main-chat:retry-after-done",
+      chatId: "chat-handoff",
+      runId: "run-handoff",
+      owner,
+      primarySurfaceId: "surface:main-chat",
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, false);
+      assert.deepEqual(error.details, {
+        stage: "broker_visible_registration",
+        reason: "run_registry_terminal",
+        terminalSource: "forwarded_stream",
+        terminalReason: "done",
+        hasUpstreamObserver: false,
+        hasForwardedSource: false,
+      });
+      return true;
+    },
+  );
+  internal.unsubscribe();
+  mirrored.unsubscribe();
+});
+
+test("RealtimeBroker explains why a requested visible Run cannot be subscribed", (t) => {
+  const { broker } = createHarness(t);
+  assert.throws(
+    () => broker.subscribeVisibleRun({
+      chatId: "chat-missing",
+      runId: "run-missing",
+      kind: "surface",
+      consumerId: "overview-missing",
+      surfaceId: "surface:overview",
+      onEvent() {},
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, true);
+      assert.deepEqual(error.details, {
+        stage: "broker_subscribe",
+        reason: "visible_binding_missing",
+        visibleBindingPresent: false,
+        runRegistered: false,
+      });
+      return true;
+    },
+  );
+
+  broker.beginForwardedVisibleRun({
+    sourceId: "frame-port:main:query-present",
+    chatId: "chat-present",
+    runId: "run-present",
+    owner: { kind: "agent", agentKey: "coder" },
+    primarySurfaceId: "surface:main",
+  });
+  assert.throws(
+    () => broker.subscribeVisibleRun({
+      chatId: "chat-requested",
+      runId: "run-requested",
+      kind: "surface",
+      consumerId: "overview-mismatch",
+      surfaceId: "surface:overview",
+      onEvent() {},
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, true);
+      assert.equal(error.details.stage, "broker_subscribe");
+      assert.equal(error.details.reason, "visible_binding_identity_mismatch");
+      assert.equal(error.details.visibleBindingPresent, true);
+      assert.equal(error.details.runRegistered, false);
+      assert.equal(typeof error.details.bindingEpoch, "number");
+      assert.equal(JSON.stringify(error.details).includes("chat-present"), false);
+      assert.equal(JSON.stringify(error.details).includes("run-present"), false);
+      return true;
+    },
+  );
+});
+
 test("RealtimeBroker singleflights attach and strictly pairs rewritten response ids", async (t) => {
   const { broker, sockets, token } = createHarness(t);
   const firstEvents = [];

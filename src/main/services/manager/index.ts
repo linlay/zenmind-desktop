@@ -190,6 +190,7 @@ import {
 } from "../../env-bootstrap";
 import { applyDesktopInitVersionUpgrade } from "../../desktop-init-bootstrap";
 import { isDesktopDevelopmentRuntime } from "../../development-runtime";
+import { resolveConversationAssetOrigin } from "../../assistant/core/conversation-share-target";
 import {
   completeDesktopServiceConfigUpgrade,
   DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,
@@ -425,10 +426,15 @@ function resolveAgentWebclientHostBaseUrl(app: App) {
 
 function resolveAgentWebclientHostStartOverrides(app: App) {
   const baseUrl = resolveAgentWebclientHostBaseUrl(app);
-  return new Map<string, string>([
+  const overrides = new Map<string, string>([
     ["BASE_URL", baseUrl],
     ["DESKTOP_APP", "true"]
   ]);
+  const assetOrigin = resolveConversationAssetOrigin(app);
+  if (assetOrigin.ok) {
+    overrides.set("CONVERSATION_EXPORT_ASSET_ORIGIN", assetOrigin.origin);
+  }
+  return overrides;
 }
 
 async function resolveAgentPlatformDeployPublicKeySourceFile(app: App) {

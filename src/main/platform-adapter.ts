@@ -96,6 +96,8 @@ export function resolveGlobalSearchCommandShortcut(
   switch (key) {
     case "n":
       return { kind: "action", actionId: "newChat" };
+    case "h":
+      return { kind: "action", actionId: "history" };
     case "a":
       return { kind: "action", actionId: "agents" };
     case "s":

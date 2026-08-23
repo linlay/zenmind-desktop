@@ -14,6 +14,8 @@ import type {
   AssistantChatSearchResult,
   AssistantChatSummary,
   AssistantEvent,
+  AssistantHistoryChatItem,
+  AssistantHistoryChatsResult,
   AssistantMemoryItem,
   AssistantMemorySettings,
   AssistantMemoryStats,
@@ -51,10 +53,7 @@ import {
 } from "./assistant-navigation-status-client";
 import { t } from "../../i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../env-bootstrap";
-import {
-  parseChatTranscriptJSONL,
-  type AgentPlatformChatTranscriptExportResult
-} from "./conversation-share-types";
+import { parseSafeLoopbackWebUrl } from "../../loopback-url";
 import {
   RealtimeBroker,
   type RealtimeQueryHandle,
@@ -62,6 +61,7 @@ import {
 import type { AgentPlatformRealtimeSocketFactory } from "../../realtime/agent-platform-realtime-client";
 
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
+const MAX_CONVERSATION_MARKDOWN_BYTES = 2 << 20;
 const MAX_RAW_CHAT_JSONL_BYTES = 100 * 1024 * 1024;
 const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "createdAt",
@@ -124,9 +124,12 @@ type PlatformChatSummary = {
   chatId?: unknown;
   chatName?: unknown;
   agentKey?: unknown;
+  firstAgentKey?: unknown;
   workerKey?: unknown;
+  teamId?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
+  lastRunId?: unknown;
   lastRunContent?: unknown;
   read?: unknown;
   isRead?: unknown;
@@ -136,6 +139,8 @@ type PlatformChatSummary = {
   awaitingMode?: unknown;
   mode?: unknown;
   status?: unknown;
+  activeRun?: unknown;
+  hasActiveRun?: unknown;
 };
 
 type PlatformRunSummary = {
@@ -290,7 +295,11 @@ function isPendingAwaitingPayload(value: unknown): boolean {
     return false;
   }
   const status = readString(record.status).trim().toLowerCase();
-  if (["answered", "cancelled", "canceled", "completed", "done", "error", "failed", "resolved", "timeout"].includes(status)) {
+  if (
+    ["answered", "cancelled", "canceled", "completed", "done", "error", "failed", "resolved", "timeout"].includes(
+      status
+    )
+  ) {
     return false;
   }
   if (record.hasPendingAwaiting === true || readNumber(record.awaitingCount) > 0) {
@@ -299,11 +308,13 @@ function isPendingAwaitingPayload(value: unknown): boolean {
   if (record.hasPendingAwaiting === false) {
     return false;
   }
-  return type === "awaiting.asking" ||
+  return (
+    type === "awaiting.asking" ||
     status === "awaiting" ||
     status === "pending" ||
     Boolean(readString(record.awaitingId)) ||
-    isPendingAwaitingPayload(record.awaiting);
+    isPendingAwaitingPayload(record.awaiting)
+  );
 }
 
 function readRequiredPlatformTimestamp(value: unknown, field: string) {
@@ -346,7 +357,7 @@ function normalizeAwaitingPayload(value: unknown, path: string): AssistantEvent[
   const createdAt = readOptionalPlatformTimestamp(record.createdAt, `${path}.createdAt`);
   return {
     ...(record as Omit<NonNullable<AssistantEvent["awaiting"]>, "createdAt">),
-    ...(createdAt !== undefined ? { createdAt } : {}),
+    ...(createdAt !== undefined ? { createdAt } : {})
   } as AssistantEvent["awaiting"];
 }
 
@@ -393,11 +404,8 @@ async function readErrorText(response: Response) {
     try {
       const payload = JSON.parse(text) as Record<string, unknown>;
       const code = readErrorCode(payload);
-      const message = typeof payload.msg === "string"
-        ? payload.msg
-        : typeof payload.message === "string"
-          ? payload.message
-          : text;
+      const message =
+        typeof payload.msg === "string" ? payload.msg : typeof payload.message === "string" ? payload.message : text;
       return code ? `${code}: ${message}` : message;
     } catch {
       return text;
@@ -407,17 +415,24 @@ async function readErrorText(response: Response) {
   }
 }
 
-class ResponseBytesTooLargeError extends Error {}
+class ResponseBytesTooLargeError extends Error {
+  constructor(
+    readonly actualBytes: number,
+    readonly limitBytes: number
+  ) {
+    super(`response is ${actualBytes} bytes; limit is ${limitBytes} bytes`);
+  }
+}
 
 async function readResponseBytesWithLimit(response: Response, maxBytes: number) {
   const declaredLength = Number(response.headers.get("content-length"));
   if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
-    throw new ResponseBytesTooLargeError();
+    throw new ResponseBytesTooLargeError(declaredLength, maxBytes);
   }
   if (!response.body) {
     const bytes = Buffer.from(await response.arrayBuffer());
     if (bytes.length > maxBytes) {
-      throw new ResponseBytesTooLargeError();
+      throw new ResponseBytesTooLargeError(bytes.length, maxBytes);
     }
     return bytes;
   }
@@ -430,11 +445,11 @@ async function readResponseBytesWithLimit(response: Response, maxBytes: number) 
     if (done) {
       break;
     }
-    const chunk = Buffer.from(value);
+    const chunk = Buffer.from(value.buffer, value.byteOffset, value.byteLength);
     totalBytes += chunk.length;
     if (totalBytes > maxBytes) {
       await reader.cancel().catch(() => undefined);
-      throw new ResponseBytesTooLargeError();
+      throw new ResponseBytesTooLargeError(totalBytes, maxBytes);
     }
     chunks.push(chunk);
   }
@@ -606,9 +621,7 @@ function readFinalAssistantTextFromMessages(messages: unknown): string {
 
 function resolvePlatformChatFile(app: App, chatId: string): string {
   const safeChatId = /^[A-Za-z0-9_-]+$/u.test(chatId) ? chatId : "";
-  return safeChatId
-    ? path.join(resolveRuntimeRoot(app), "chats", `${safeChatId}.jsonl`)
-    : "";
+  return safeChatId ? path.join(resolveRuntimeRoot(app), "chats", `${safeChatId}.jsonl`) : "";
 }
 
 function readFinalAssistantTextFromChatFile(filePath: string, runId: string): string {
@@ -697,7 +710,8 @@ function normalizePlatformEvent(raw: Record<string, unknown>, fallback: {
 }
 
 function isAssistantRunTerminalEvent(event: AssistantEvent) {
-  return event.type === "done" ||
+  return (
+    event.type === "done" ||
     event.type === "run.complete" ||
     event.type === "error" ||
     event.type === "stopped" ||
@@ -705,7 +719,8 @@ function isAssistantRunTerminalEvent(event: AssistantEvent) {
     event.type === "run.cancel" ||
     event.type === "run.stopped" ||
     event.type === "run.interrupt" ||
-    event.type === "run.expired";
+    event.type === "run.expired"
+  );
 }
 
 function mapChatSummary(summary: PlatformChatSummary, path: string): AssistantChatSummary | null {
@@ -724,6 +739,48 @@ function mapChatSummary(summary: PlatformChatSummary, path: string): AssistantCh
     updatedAt,
     lastMessage: readString(summary.lastRunContent),
     messageCount: 0
+  };
+}
+
+function mapHistoryChat(
+  summary: PlatformChatSummary,
+  path: string,
+): AssistantHistoryChatItem | null {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    throw new Error(`${path} must be an object`);
+  }
+  validatePresentPlatformTimes(summary as Record<string, unknown>, path);
+  validateAwaitingPayloadTimes(summary.awaiting, `${path}.awaiting`);
+  const chatId = readString(summary.chatId).trim();
+  const createdAt = readRequiredPlatformTimestamp(summary.createdAt, `${path}.createdAt`);
+  const updatedAt = readRequiredPlatformTimestamp(summary.updatedAt, `${path}.updatedAt`);
+  if (!chatId) {
+    return null;
+  }
+  const awaitingCount = Math.max(0, Math.floor(readNumber(summary.awaitingCount)));
+  const awaitingMode = readChatAwaitingMode(summary);
+  const teamId = readString(summary.teamId).trim();
+  const agentKey = (
+    readString(summary.agentKey) ||
+    readString(summary.firstAgentKey) ||
+    readString(summary.workerKey)
+  ).trim();
+  return {
+    chatId,
+    chatName: readString(summary.chatName).trim() || t("assistant.newChat"),
+    agentKey,
+    ...(teamId ? { teamId } : {}),
+    createdAt,
+    updatedAt,
+    lastRunId: readString(summary.lastRunId).trim(),
+    lastRunContent: readString(summary.lastRunContent),
+    isRead: readChatIsRead(summary),
+    hasActiveRun:
+      summary.hasActiveRun === true ||
+      (typeof summary.activeRun === "object" && summary.activeRun !== null),
+    hasPendingAwaiting: chatHasPendingAwaiting(summary),
+    ...(awaitingCount > 0 ? { awaitingCount } : {}),
+    ...(awaitingMode ? { awaitingMode } : {}),
   };
 }
 
@@ -755,11 +812,14 @@ function mapChatSearchResult(value: unknown, path: string): AssistantChatSearchR
   };
 }
 
-function mapChatSearchResponse(payload: PlatformChatSearchResponse | null | undefined, fallbackQuery: string): AssistantChatSearchResponse {
+function mapChatSearchResponse(
+  payload: PlatformChatSearchResponse | null | undefined,
+  fallbackQuery: string
+): AssistantChatSearchResponse {
   const results = Array.isArray(payload?.results)
     ? payload.results
-      .map((item, index) => mapChatSearchResult(item, `chatSearch.results[${index}]`))
-      .filter((item): item is AssistantChatSearchResult => Boolean(item))
+        .map((item, index) => mapChatSearchResult(item, `chatSearch.results[${index}]`))
+        .filter((item): item is AssistantChatSearchResult => Boolean(item))
     : [];
   const rawCount = Number(payload?.count);
   const hasCount = payload && typeof payload === "object" && "count" in payload && Number.isFinite(rawCount);
@@ -808,9 +868,11 @@ function chatHasPendingAwaiting(summary: PlatformChatSummary) {
 }
 
 function readChatAwaitingMode(summary: PlatformChatSummary) {
-  return readAwaitingMode(summary.awaitingMode) ||
+  return (
+    readAwaitingMode(summary.awaitingMode) ||
     readAwaitingMode(summary.mode) ||
-    readAwaitingPayloadMode(summary.awaiting);
+    readAwaitingPayloadMode(summary.awaiting)
+  );
 }
 
 function mapRunMessages(run: PlatformRunSummary, path: string): AssistantChatMessage[] {
@@ -1096,17 +1158,14 @@ export class AgentPlatformAssistantBridge {
     if (!availability.ok) {
       return { ok: false, message: availability.message };
     }
-    const params = request.action === "submit"
-      ? request.params ?? []
-      : [{ action: request.action, reason: request.reason || "" }];
+    const params =
+      request.action === "submit" ? (request.params ?? []) : [{ action: request.action, reason: request.reason || "" }];
     const response = await this.platformFetch(availability.baseUrl, "/api/submit", {
       method: "POST",
       headers: this.jsonHeaders(availability.token),
       body: JSON.stringify({
         runId,
-        ...(this.activeRuns.get(runId)?.agentKey
-          ? { agentKey: this.activeRuns.get(runId)?.agentKey }
-          : {}),
+        ...(this.activeRuns.get(runId)?.agentKey ? { agentKey: this.activeRuns.get(runId)?.agentKey } : {}),
         awaitingId: request.awaitingId,
         params
       })
@@ -1172,9 +1231,45 @@ export class AgentPlatformAssistantBridge {
     const data = await this.getJson<PlatformChatSummary[]>("/api/chats");
     return Array.isArray(data)
       ? data
-        .map((summary, index) => mapChatSummary(summary, `chats[${index}]`))
-        .filter((summary): summary is AssistantChatSummary => summary !== null)
+          .map((summary, index) => mapChatSummary(summary, `chats[${index}]`))
+          .filter((summary): summary is AssistantChatSummary => summary !== null)
       : [];
+  }
+
+  async listHistoryChats(): Promise<AssistantHistoryChatsResult> {
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return {
+        ok: false,
+        items: [],
+        message: availability.message,
+        updatedAt: nowEpochMillis(),
+      };
+    }
+    const response = await this.platformFetch(availability.baseUrl, "/api/chats", {
+      headers: this.jsonHeaders(availability.token),
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        items: [],
+        message: await readErrorText(response),
+        updatedAt: nowEpochMillis(),
+      };
+    }
+    const data = unwrapApiResponse<PlatformChatSummary[]>(await response.json());
+    const items = Array.isArray(data)
+      ? data
+        .map((summary, index) => mapHistoryChat(summary, `historyChats[${index}]`))
+        .filter((summary): summary is AssistantHistoryChatItem => summary !== null)
+        .sort((left, right) => right.updatedAt - left.updatedAt || left.chatId.localeCompare(right.chatId))
+      : [];
+    return {
+      ok: true,
+      items,
+      message: "",
+      updatedAt: nowEpochMillis(),
+    };
   }
 
   async getChat(chatId: string): Promise<AssistantChatDetail | null> {
@@ -1182,21 +1277,34 @@ export class AgentPlatformAssistantBridge {
     if (!trimmedChatId) {
       return null;
     }
-    const data = await this.getJson<PlatformChatDetail>(`/api/chat?chatId=${encodeURIComponent(trimmedChatId)}&includeRawMessages=true`, {
-      allowNotFound: true
-    });
+    const data = await this.getJson<PlatformChatDetail>(
+      `/api/chat?chatId=${encodeURIComponent(trimmedChatId)}&includeRawMessages=true`,
+      {
+        allowNotFound: true
+      }
+    );
     if (!data) {
       return null;
     }
     validatePresentPlatformTimes(data as Record<string, unknown>, "chat");
     const events = Array.isArray(data.events)
       ? data.events
-        .map((event, index) => normalizePlatformEvent(
-          event,
-          { runId: readString(event.runId), chatId: trimmedChatId },
-          `chat.events[${index}]`,
-        ))
-        .filter((event): event is AssistantRunEvent => Boolean(event && event.type !== "delta" && event.type !== "done" && event.type !== "error" && event.type !== "stopped"))
+          .map((event, index) =>
+            normalizePlatformEvent(
+              event,
+              { runId: readString(event.runId), chatId: trimmedChatId },
+              `chat.events[${index}]`
+            )
+          )
+          .filter((event): event is AssistantRunEvent =>
+            Boolean(
+              event &&
+              event.type !== "delta" &&
+              event.type !== "done" &&
+              event.type !== "error" &&
+              event.type !== "stopped"
+            )
+          )
       : [];
     const messages = Array.isArray(data.runs)
       ? data.runs.flatMap((run, index) => mapRunMessages(run, `chat.runs[${index}]`))
@@ -1413,7 +1521,11 @@ export class AgentPlatformAssistantBridge {
   async downloadChatExport(chatId: string): Promise<AgentPlatformChatExportResult> {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
-      return { ok: false, message: t("assistant.chatIdRequired"), filename: "" };
+      return {
+        ok: false,
+        message: t("assistant.chatIdRequired"),
+        filename: ""
+      };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
@@ -1421,62 +1533,73 @@ export class AgentPlatformAssistantBridge {
     }
     const response = await this.platformFetch(
       availability.baseUrl,
-      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}`,
+      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=markdown`,
       {
         method: "GET",
         headers: {
-          Accept: "application/octet-stream, application/json",
+          Accept: "text/markdown, application/json",
           Authorization: `Bearer ${availability.token}`
         }
       }
     );
     if (!response.ok) {
-      return { ok: false, message: await readErrorText(response), filename: "" };
+      return {
+        ok: false,
+        message: await readErrorText(response),
+        filename: ""
+      };
     }
-    const filename = filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.md`;
-    const bytes = Buffer.from(await response.arrayBuffer());
-    return { ok: true, message: t("assistant.chatExportDownloaded"), filename, bytes };
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+    if (contentType !== "text/markdown") {
+      return {
+        ok: false,
+        message: t("assistant.chatExportUnsupported"),
+        filename: ""
+      };
+    }
+    try {
+      return {
+        ok: true,
+        message: t("assistant.chatExportDownloaded"),
+        filename: filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.md`,
+        bytes: await readResponseBytesWithLimit(response, MAX_CONVERSATION_MARKDOWN_BYTES)
+      };
+    } catch (error) {
+      return {
+        ok: false,
+        message:
+          error instanceof ResponseBytesTooLargeError
+            ? t("assistant.chatExportTooLarge")
+            : t("assistant.chatExportReadFailed"),
+        filename: ""
+      };
+    }
   }
 
-  async downloadChatTranscriptExport(chatId: string): Promise<AgentPlatformChatTranscriptExportResult> {
+  async createChatSnapshotRequest(chatId: string): Promise<
+    | { ok: true; snapshotUrl: string; bearerToken: string }
+    | { ok: false; message: string }
+  > {
     const trimmedChatId = chatId.trim();
     if (!trimmedChatId) {
       return { ok: false, message: t("assistant.chatIdRequired") };
     }
     const availability = await this.resolvePlatform();
     if (!availability.ok) {
-      return { ok: false, message: availability.message };
+      return availability;
     }
-    const response = await this.platformFetch(
-      availability.baseUrl,
-      `/api/chat/export?chatId=${encodeURIComponent(trimmedChatId)}&format=raw`,
-      {
-        method: "GET",
-        headers: {
-          Accept: "application/x-ndjson",
-          Authorization: `Bearer ${availability.token}`
-        }
-      }
-    );
-    if (!response.ok) {
-      return { ok: false, message: await readErrorText(response) };
+    const baseURL = parseSafeLoopbackWebUrl(availability.baseUrl);
+    if (!baseURL) {
+      return { ok: false, message: t("assistant.chatHtmlExportUnsupported") };
     }
-    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
-    if (contentType !== "application/x-ndjson") {
-      return { ok: false, message: t("assistant.chatSharePlatformUnsupported") };
-    }
-    try {
-      const transcript = parseChatTranscriptJSONL(await response.text());
-      if (!transcript) {
-        return { ok: false, message: t("assistant.chatShareInvalidTranscript") };
-      }
-      return { ok: true, transcript };
-    } catch {
-      return {
-        ok: false,
-        message: t("assistant.chatShareTranscriptReadFailed")
-      };
-    }
+    const snapshotURL = new URL("/api/chat/export", baseURL.origin);
+    snapshotURL.searchParams.set("chatId", trimmedChatId);
+    snapshotURL.searchParams.set("format", "snapshot");
+    return {
+      ok: true,
+      snapshotUrl: snapshotURL.toString(),
+      bearerToken: availability.token
+    };
   }
 
   async downloadRawChatJSONL(chatId: string): Promise<AgentPlatformRawChatJSONLResult> {
@@ -1502,27 +1625,24 @@ export class AgentPlatformAssistantBridge {
     if (!response.ok) {
       return { ok: false, message: await readErrorText(response) };
     }
-    const contentType = response.headers.get("content-type")
-      ?.split(";", 1)[0]
-      ?.trim()
-      .toLowerCase() ?? "";
+    const contentType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
     if (contentType !== "text/plain" && contentType !== "application/x-ndjson") {
       return { ok: false, message: t("assistant.rawChatJsonlUnsupported") };
     }
     try {
       return {
         ok: true,
-        filename: filenameFromContentDisposition(
-          response.headers.get("content-disposition")
-        ) || `${trimmedChatId}.jsonl`,
+        filename:
+          filenameFromContentDisposition(response.headers.get("content-disposition")) || `${trimmedChatId}.jsonl`,
         bytes: await readResponseBytesWithLimit(response, MAX_RAW_CHAT_JSONL_BYTES)
       };
     } catch (error) {
       return {
         ok: false,
-        message: error instanceof ResponseBytesTooLargeError
-          ? t("assistant.rawChatJsonlTooLarge")
-          : t("assistant.rawChatJsonlReadFailed")
+        message:
+          error instanceof ResponseBytesTooLargeError
+            ? t("assistant.rawChatJsonlTooLarge")
+            : t("assistant.rawChatJsonlReadFailed")
       };
     }
   }
@@ -1550,11 +1670,11 @@ export class AgentPlatformAssistantBridge {
     const history = historyResult.status === "fulfilled" ? historyResult.value.events : [];
     const audits = Array.isArray(history)
       ? history.map((event, index) => ({
-        operation: readString(event.operation),
-        status: "ok",
-        reason: readString(event.reason),
-        timestamp: readRequiredPlatformTimestamp(event.ts, `memory.history[${index}].ts`),
-      }))
+          operation: readString(event.operation),
+          status: "ok",
+          reason: readString(event.reason),
+          timestamp: readRequiredPlatformTimestamp(event.ts, `memory.history[${index}].ts`)
+        }))
       : [];
     const recentAudit = audits[0] ?? null;
     return {
@@ -1562,7 +1682,7 @@ export class AgentPlatformAssistantBridge {
       stats: this.createMemoryStats(items),
       storage: this.createPlatformMemoryStorage(),
       directoryPath: "",
-      recentAudit,
+      recentAudit
     };
   }
 
@@ -1575,8 +1695,8 @@ export class AgentPlatformAssistantBridge {
     const data = await this.getJson<PlatformMemoryRecordsResponse>("/api/memory/record/list?limit=200");
     const items = Array.isArray(data.results)
       ? data.results
-        .map((item, index) => mapMemoryRecord(item, `memory.records[${index}]`))
-        .filter((item): item is AssistantMemoryItem => item !== null)
+          .map((item, index) => mapMemoryRecord(item, `memory.records[${index}]`))
+          .filter((item): item is AssistantMemoryItem => item !== null)
       : [];
     return {
       items,
@@ -1640,7 +1760,14 @@ export class AgentPlatformAssistantBridge {
         id: requestId,
         runId: run.runId,
         chatId: run.chatId,
-        owner: { kind: "agent", agentKey: request.agentKey?.trim() || "" },
+        ...(request.agentKey?.trim()
+          ? {
+              owner: {
+                kind: "agent" as const,
+                agentKey: request.agentKey.trim()
+              }
+            }
+          : {}),
         signal: run.activeRun.controller.signal,
         payload: {
           requestId,
@@ -1666,27 +1793,30 @@ export class AgentPlatformAssistantBridge {
           stream: true
         },
         onEvent: async (event, eventPath) => {
-          const normalizedEvent = normalizePlatformEvent(event, {
-            runId: run.runId,
-            chatId: run.chatId,
-            source: request.source,
-          }, eventPath);
+          const normalizedEvent = normalizePlatformEvent(
+            event,
+            {
+              runId: run.runId,
+              chatId: run.chatId,
+              source: request.source
+            },
+            eventPath
+          );
           if (!normalizedEvent) {
             throw new Error("time_contract_violation: stream event.type is required");
           }
           const eventText = readAssistantEventOutputText(normalizedEvent);
-          const delta = normalizedEvent.type === "content.delta"
-            ? normalizedEvent.delta || eventText
-            : "";
+          const delta = normalizedEvent.type === "content.delta" ? normalizedEvent.delta || eventText : "";
           if (delta) {
             finalMessage += delta;
           }
           if (isAssistantRunTerminalEvent(normalizedEvent)) {
             sawTerminalEvent = true;
-            const terminalMessage = normalizedEvent.message ||
+            const terminalMessage =
+              normalizedEvent.message ||
               eventText ||
               finalMessage.trim() ||
-              await this.readPersistedFinalAssistantMessage(run.chatId, run.runId);
+              (await this.readPersistedFinalAssistantMessage(run.chatId, run.runId));
             if (!finalMessage && terminalMessage) {
               finalMessage = terminalMessage;
             }
@@ -1695,14 +1825,12 @@ export class AgentPlatformAssistantBridge {
             }
           }
           this.options.onEvent(normalizedEvent);
-        },
+        }
       });
       let finalMessage = "";
       let sawTerminalEvent = false;
       const accepted = await query.accepted;
-      run.activeRun.agentKey = accepted.owner.kind === "agent"
-        ? accepted.owner.agentKey
-        : run.activeRun.agentKey;
+      run.activeRun.agentKey = accepted.owner.kind === "agent" ? accepted.owner.agentKey : run.activeRun.agentKey;
       settleAcceptance({
         ok: true,
         runId: run.runId,
@@ -1723,9 +1851,12 @@ export class AgentPlatformAssistantBridge {
         message: finalMessage.trim()
       };
     } catch (error) {
-      const message = (error as Error).name === "AbortError"
-        ? t("assistant.stopped")
-        : error instanceof Error ? error.message : String(error);
+      const message =
+        (error as Error).name === "AbortError"
+          ? t("assistant.stopped")
+          : error instanceof Error
+            ? error.message
+            : String(error);
       settleAcceptance({
         ok: false,
         runId: run.runId,
@@ -1750,7 +1881,13 @@ export class AgentPlatformAssistantBridge {
             message
           });
         }
-        return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
+        return {
+          ok: false,
+          runId: run.runId,
+          chatId: run.chatId,
+          text: "",
+          message
+        };
       }
       if (!this.disposed) {
         this.options.onEvent({
@@ -1762,7 +1899,13 @@ export class AgentPlatformAssistantBridge {
           error: message
         });
       }
-      return { ok: false, runId: run.runId, chatId: run.chatId, text: "", message };
+      return {
+        ok: false,
+        runId: run.runId,
+        chatId: run.chatId,
+        text: "",
+        message
+      };
     } finally {
       if (this.activeRuns.get(run.runId) === run.activeRun) {
         this.activeRuns.delete(run.runId);
@@ -1881,17 +2024,21 @@ export class AgentPlatformAssistantBridge {
   }
 
   private async resolvePlatform(): Promise<
-    | { ok: true; baseUrl: string; token: string }
-    | { ok: false; message: string }
+    { ok: true; baseUrl: string; token: string } | { ok: false; message: string }
   > {
-    const serviceState = await this.options.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID).catch((error) => ({
-      status: "error",
-      message: error instanceof Error ? error.message : String(error),
-      healthMeta: { webUrl: "", port: null }
-    } as Pick<ServiceState, "status" | "message" | "healthMeta">));
-    const baseUrl = serviceState.status === "running"
-      ? serviceState.healthMeta.webUrl.trim() || (serviceState.healthMeta.port ? `http://127.0.0.1:${serviceState.healthMeta.port}` : "")
-      : "";
+    const serviceState = await this.options.getServiceState(this.options.app, AGENT_PLATFORM_SERVICE_ID).catch(
+      (error) =>
+        ({
+          status: "error",
+          message: error instanceof Error ? error.message : String(error),
+          healthMeta: { webUrl: "", port: null }
+        }) as Pick<ServiceState, "status" | "message" | "healthMeta">
+    );
+    const baseUrl =
+      serviceState.status === "running"
+        ? serviceState.healthMeta.webUrl.trim() ||
+          (serviceState.healthMeta.port ? `http://127.0.0.1:${serviceState.healthMeta.port}` : "")
+        : "";
     if (!baseUrl) {
       return {
         ok: false,

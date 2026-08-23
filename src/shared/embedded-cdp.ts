@@ -51,6 +51,8 @@ export type EmbeddedCdpSurfaceRegistration = SurfaceIdentity & {
   surfaceType?: WebviewContextMenuSurfaceType;
   serviceId?: string;
   pageRoute?: string;
+  /** Main-only route snapshot used for authorization; never expose it in diagnostics. */
+  pageRouteIdentity?: string;
   ownerChatId?: string;
   label: string;
   url: string;
