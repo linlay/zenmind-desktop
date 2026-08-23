@@ -7,7 +7,60 @@ import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatInfo, AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantFirstInstallBootstrapNavigationResult, AssistantHistoryChatsResult, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type {
+  AssistantChatDetail,
+  AssistantChatInfo,
+  AssistantChatOrderMutationRequest,
+  AssistantChatOrderMutationResult,
+  AssistantChatSearchRequest,
+  AssistantChatSearchResponse,
+  AssistantChatSummary,
+  AssistantConversationShareCreateResult,
+  AssistantConversationShareListResult,
+  AssistantConversationShareRequest,
+  AssistantConversationShareRevokeResult,
+  AssistantCreateCoderProjectRequest,
+  AssistantCreateCoderProjectResult,
+  AssistantCreateProjectRequest,
+  AssistantCreateProjectResult,
+  AssistantEventListener,
+  AssistantFirstInstallBootstrapNavigationResult,
+  AssistantHistoryChatsResult,
+  AssistantMemoryItem,
+  AssistantMemorySettings,
+  AssistantMemorySettingsInput,
+  AssistantMemoryStats,
+  AssistantMemoryStorage,
+  AssistantMemorySummary,
+  AssistantNavActionResult,
+  AssistantNavAgentItemsResult,
+  AssistantNavigationAgentsChangedListener,
+  AssistantNavigationListOptions,
+  AssistantNavigationLiveStatus,
+  AssistantNavigationPushEventListener,
+  AssistantPastedImageInput,
+  AssistantReorderProjectsRequest,
+  AssistantReorderProjectsResult,
+  AssistantSettingsInput,
+  AssistantSettingsPublic,
+  AssistantStartRunRequest,
+  AssistantStartRunResult,
+  AssistantStopRunResult,
+  AssistantSubmitAwaitingRequest,
+  AssistantSubmitAwaitingResult,
+  AssistantVoiceCorrectionRequest,
+  AssistantVoiceCorrectionResult,
+  AssistantVoiceTranscriptionRequest,
+  AssistantVoiceTranscriptionResult,
+  AssistantWorkerOpenListener,
+  CopilotDevToolsTargetInput,
+  DesktopActionCallListener,
+  DesktopActionConfirmationListener,
+  DesktopActionConfirmationResponse,
+  DesktopActionRendererResponse,
+  DesktopPageContextSnapshot,
+  WebviewOpenTabListener,
+} from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type {
   SidebarContextMenuPopupRequest,
@@ -807,8 +860,10 @@ export interface DesktopApi {
     renameChat: (chatId: string, chatName: string) => Promise<AssistantNavActionResult>;
     archiveChat: (chatId: string) => Promise<AssistantNavActionResult>;
     exportChat: (chatId: string) => Promise<AssistantNavActionResult>;
-    shareChat: (chatId: string) => Promise<AssistantConversationShareResult>;
-    revokeChatShare: (shareId: string) => Promise<AssistantConversationShareResult>;
+    exportChatHtml: (chatId: string) => Promise<AssistantNavActionResult>;
+    shareChat: (request: AssistantConversationShareRequest) => Promise<AssistantConversationShareCreateResult>;
+    listChatShares: (chatId: string) => Promise<AssistantConversationShareListResult>;
+    revokeChatShare: (shareId: string) => Promise<AssistantConversationShareRevokeResult>;
     onNavigationAgentsChanged: (listener: AssistantNavigationAgentsChangedListener) => () => void;
     onNavigationPushEvent: (listener: AssistantNavigationPushEventListener) => () => void;
     onAssistantEvent: (listener: AssistantEventListener) => () => void;

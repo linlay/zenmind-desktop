@@ -79,6 +79,7 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
   assert.deepEqual(ids({ kind: "chat", workPanelOpen: false }), [
     "chat.workPanel.open",
     "chat.export",
+    "chat.exportHtml",
     "chat.share",
     "chat.rename",
     "chat.archive",
@@ -274,7 +275,7 @@ test("sidebar native menu is owned by the main window and returns only the click
   assert.equal(popupOptions.y, 0);
   assert.deepEqual(
     builtTemplate.filter((item) => item.type !== "separator").map((item) => item.id),
-    ["chat.workPanel.open", "chat.export", "chat.share", "chat.rename", "chat.archive", "chat.delete", "chat.info"]
+    ["chat.workPanel.open", "chat.export", "chat.exportHtml", "chat.share", "chat.rename", "chat.archive", "chat.delete", "chat.info"]
   );
   assert.equal(builtTemplate.filter((item) => item.type === "separator").length, 3);
 

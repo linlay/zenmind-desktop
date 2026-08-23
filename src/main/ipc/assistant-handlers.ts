@@ -7,10 +7,11 @@ import {
 import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
 import type {
-  AssistantNavigationListOptions,
   AssistantChatOrderMutationRequest,
   AssistantChatOrderMutationResult,
   AssistantChatSortMode,
+  AssistantConversationShareRequest,
+  AssistantNavigationListOptions,
   AssistantReorderProjectsRequest,
   AssistantReorderProjectsResult,
 } from "../../shared/contracts";
@@ -24,8 +25,12 @@ import { t } from "../i18n/main-i18n";
 import { COPILOT_DOCK_SURFACE_ID } from "../../shared/surface-identity";
 import {
   createConversationShare,
+  listConversationShares,
   revokeConversationShare
 } from "../assistant/core/conversation-share-controller";
+import { saveConversationHtmlExport } from "../assistant/core/conversation-html-export";
+import { ConversationHtmlRenderService } from "../assistant/core/conversation-html-render-service";
+import { TunnelConversationShareClient } from "../assistant/core/tunnel-conversation-share-client";
 import {
   createProjectAgentOrderPlan,
   validateProjectAgentOrderRequestKeys,
@@ -186,6 +191,15 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     closeDesktopActionWorkbenchWindow,
     platform = process.platform
   } = options;
+  const conversationShareClient = new TunnelConversationShareClient();
+  const conversationHtmlRenderer = new ConversationHtmlRenderService({
+    app,
+    snapshotProvider: assistantBridge
+  });
+  conversationHtmlRenderer.start();
+  app.once("will-quit", () => {
+    void conversationHtmlRenderer.dispose();
+  });
 
   // ---------------------------------------------------------------------------
   // currentPage — pure snapshot state
@@ -695,12 +709,20 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     saveAssistantChatExport(assistantBridge, chatId, app, platform)
   );
 
-  ipcMain.handle("assistant.shareChat", async (_event: any, chatId: string) =>
-    createConversationShare(app, assistantBridge, chatId)
+  ipcMain.handle("assistant.exportChatHtml", async (_event: any, chatId: string) =>
+    saveConversationHtmlExport(app, conversationHtmlRenderer, chatId, platform)
+  );
+
+  ipcMain.handle("assistant.shareChat", async (_event: any, request: AssistantConversationShareRequest) =>
+    createConversationShare(app, conversationHtmlRenderer, conversationShareClient, request)
+  );
+
+  ipcMain.handle("assistant.listChatShares", async (_event: any, chatId: string) =>
+    listConversationShares(app, conversationShareClient, chatId)
   );
 
   ipcMain.handle("assistant.revokeChatShare", async (_event: any, shareId: string) =>
-    revokeConversationShare(app, shareId)
+    revokeConversationShare(app, conversationShareClient, shareId)
   );
 
   // ---------------------------------------------------------------------------

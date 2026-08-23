@@ -66,12 +66,11 @@ function createWsHarness({ onQuery, onSend, autoOpen = true } = {}) {
       this.onerror = null;
       this.sent = [];
       this.closed = false;
+      this.opened = false;
       sockets.push(this);
       if (autoOpen) {
         queueMicrotask(() => {
-          if (!this.closed) {
-            this.onopen?.();
-          }
+          this.open();
         });
       }
     }
@@ -91,7 +90,24 @@ function createWsHarness({ onQuery, onSend, autoOpen = true } = {}) {
     }
 
     open() {
+      if (this.closed || this.opened) {
+        return;
+      }
+      this.opened = true;
       this.onopen?.();
+      this.receive({
+        frame: "push",
+        type: "connected",
+        data: {
+          protocolVersion: 2,
+          sessionId: `platform-${sockets.indexOf(this) + 1}`,
+          serverTime: EPOCH_MS,
+          liveness: {
+            heartbeatIntervalMs: 30_000,
+            silenceTimeoutMs: 100_000,
+          },
+        },
+      });
     }
 
     close() {
@@ -788,7 +804,7 @@ test("agent platform assistant bridge converges pre-accept frame, identity, and 
       {
         name: "connection timeout",
         configure: () => undefined,
-        expected: /connection timed out/u,
+        expected: /handshake timed out/u,
         autoOpen: false,
         connectTimeout: 5,
       },
@@ -1635,8 +1651,9 @@ test("agent platform assistant bridge downloads chat export from the current pla
 
     assert.equal(result.ok, true);
     assert.equal(requests.length, 1);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1");
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=markdown");
     assert.equal(requests[0].init.method, "GET");
+    assert.equal(requests[0].init.headers.Accept, "text/markdown, application/json");
     assert.equal(result.filename, "Renamed chat.md");
     assert.equal(result.bytes.toString("utf8"), "# Exported chat\n");
   } finally {
@@ -1644,47 +1661,45 @@ test("agent platform assistant bridge downloads chat export from the current pla
   }
 });
 
-test("agent platform assistant bridge downloads the generic JSONL transcript", async () => {
+test("agent platform assistant bridge enforces Markdown media type and 2 MiB limit", async () => {
   const originalFetch = globalThis.fetch;
-  const requests = [];
   const { bridge } = makeBridge();
-  globalThis.fetch = async (url, init = {}) => {
-    requests.push({ url: String(url), init });
-    return new Response([
-      JSON.stringify({
-        type: "metadata",
-        exportVersion: 1,
-        kind: "chat-transcript",
-        title: "Transcript",
-        createdAt: EPOCH_MS,
-        updatedAt: EPOCH_MS + 2
-      }),
-      JSON.stringify({
-        type: "turn",
-        startedAt: EPOCH_MS,
-        completedAt: EPOCH_MS + 2,
-        items: [
-          { kind: "user-message", content: "hello", createdAt: EPOCH_MS },
-          { kind: "assistant-message", content: "ready", createdAt: EPOCH_MS + 1 }
-        ]
-      })
-    ].join("\n") + "\n", {
+  const responses = [
+    new Response("<!doctype html>", {
       status: 200,
-      headers: { "content-type": "application/x-ndjson; charset=utf-8" }
-    });
-  };
+      headers: { "content-type": "text/html" }
+    }),
+    new Response("# Export", {
+      status: 200,
+      headers: {
+        "content-type": "text/markdown",
+        "content-length": String(2 * 1024 * 1024 + 1)
+      }
+    })
+  ];
+  globalThis.fetch = async () => responses.shift();
 
   try {
-    const result = await bridge.downloadChatTranscriptExport(" chat_1 ");
+    const invalidContentType = await bridge.downloadChatExport("chat_1");
+    const tooLarge = await bridge.downloadChatExport("chat_1");
 
-    assert.equal(result.ok, true);
-    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=raw");
-    assert.equal(requests[0].init.headers.Accept, "application/x-ndjson");
-    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
-    assert.equal(result.transcript.kind, "chat-transcript");
+    assert.equal(invalidContentType.ok, false);
+    assert.equal(tooLarge.ok, false);
+    assert.match(tooLarge.message, /2 MiB/u);
   } finally {
     globalThis.fetch = originalFetch;
   }
+});
+
+test("agent platform assistant bridge creates a trusted Snapshot request descriptor", async () => {
+  const { bridge } = makeBridge();
+  const result = await bridge.createChatSnapshotRequest(" chat_1 ");
+
+  assert.deepEqual(result, {
+    ok: true,
+    snapshotUrl: "http://127.0.0.1:18888/api/chat/export?chatId=chat_1&format=snapshot",
+    bearerToken: "desktop-token"
+  });
 });
 
 test("agent platform assistant bridge preserves the original chat JSONL bytes", async () => {
@@ -1745,64 +1760,18 @@ test("agent platform assistant bridge rejects raw chat JSONL above 100 MiB", asy
   }
 });
 
-test("agent platform assistant bridge rejects non-JSONL and invalid JSONL transcripts", async () => {
-  const originalFetch = globalThis.fetch;
-  const { bridge } = makeBridge();
-  const responses = [
-    new Response("# Legacy export", {
-      status: 200,
-      headers: { "content-type": "text/markdown; charset=utf-8" }
-    }),
-    new Response([
-      JSON.stringify({
-        type: "metadata",
-        exportVersion: 2,
-        kind: "chat-transcript",
-        title: "Unsupported",
-        createdAt: EPOCH_MS,
-        updatedAt: EPOCH_MS
-      }),
-      JSON.stringify({ type: "turn", startedAt: EPOCH_MS, items: [] })
-    ].join("\n"), {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson" }
-    }),
-    new Response('{"type":"metadata"}\nnot-json\n', {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson" }
-    }),
-    new Response('{"type":"metadata"}\n{"type":"turn"}\n', {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson-legacy" }
-    }),
-    new Response(JSON.stringify({ code: 0, data: { exportVersion: 1 } }), {
-      status: 200,
-      headers: { "content-type": "application/json" }
-    }),
-    new Response("", {
-      status: 200,
-      headers: { "content-type": "application/x-ndjson" }
+test("agent platform assistant bridge rejects non-loopback Snapshot endpoints", async () => {
+  const { bridge } = makeBridge({
+    getServiceState: async () => ({
+      status: "running",
+      message: "",
+      healthMeta: { webUrl: "https://platform.example.test", port: 443 }
     })
-  ];
-  globalThis.fetch = async () => responses.shift();
+  });
 
-  try {
-    const markdown = await bridge.downloadChatTranscriptExport("chat_1");
-    const invalidVersion = await bridge.downloadChatTranscriptExport("chat_1");
-    const malformed = await bridge.downloadChatTranscriptExport("chat_1");
-    const invalidContentType = await bridge.downloadChatTranscriptExport("chat_1");
-    const oldJSON = await bridge.downloadChatTranscriptExport("chat_1");
-    const empty = await bridge.downloadChatTranscriptExport("chat_1");
+  const result = await bridge.createChatSnapshotRequest("chat_1");
 
-    assert.equal(markdown.ok, false);
-    assert.equal(invalidVersion.ok, false);
-    assert.equal(malformed.ok, false);
-    assert.equal(invalidContentType.ok, false);
-    assert.equal(oldJSON.ok, false);
-    assert.equal(empty.ok, false);
-  } finally {
-    globalThis.fetch = originalFetch;
-  }
+  assert.equal(result.ok, false);
 });
 
 test("agent platform assistant bridge recovers UTF-8 filenames from legacy quoted content disposition", async () => {

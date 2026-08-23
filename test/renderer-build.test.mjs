@@ -1097,6 +1097,37 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.doesNotMatch(sidebarSource, /function renderAgentMenu\(\)/);
 });
 
+test("chat headers expose sorting and new chat while the chat menu keeps sharing", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx"
+  );
+  const brandMarkSource = readSourceFile("src", "renderer", "components", "BrandMark.tsx");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+  const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
+
+  assert.match(sidebarSource, /headerActions: renderChatsHeaderActions\(\)/u);
+  assert.match(
+    sidebarSource,
+    /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)[\s\S]{0,160}renderChatsHeaderActions\(\{ inPopover: true \}\)/u
+  );
+  assert.match(
+    sidebarSource,
+    /function renderChatsHeaderActions[\s\S]{0,1800}SidebarActionIcon kind="sort"[\s\S]{0,500}renderChatsNewChatButton\(options\)/u
+  );
+  assert.match(
+    sidebarSource,
+    /actionId === "chat\.share"[\s\S]{0,160}conversationShareDialog\.open\(chat\.chatId, chat\.chatName\)/u
+  );
+  assert.doesNotMatch(sidebarSource, /renderChatsShareButton|sidebar-chats-share-button|kind="share"/u);
+  assert.doesNotMatch(brandMarkSource, /\| "share"|case "share"/u);
+  assert.doesNotMatch(zhCN, /sidebar\.chat\.shareCurrent/u);
+  assert.doesNotMatch(enUS, /sidebar\.chat\.shareCurrent/u);
+});
+
 test("sidebar action buttons and right-clicks share native menus while selection popovers keep glass surfaces", () => {
   const sidebarSource = readSourceFile(
     "src",
@@ -6620,6 +6651,66 @@ test("assistant chat export writes directly to the download location", () => {
   assert.match(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat\/export\?chatId=/u);
   assert.doesNotMatch(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat-export/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
+});
+
+test("assistant static HTML export saves the complete document returned by the persistent Worker", () => {
+  const htmlExport = readSourceFile("src", "main", "assistant", "core", "conversation-html-export.ts");
+  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const htmlRenderService = readSourceFile("src", "main", "assistant", "core", "conversation-html-render-service.ts");
+  const htmlWorker = readSourceFile("src", "main", "assistant", "core", "conversation-html-worker.ts");
+  const mainBuild = readSourceFile("scripts", "build-main-bundle.mjs");
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
+  const shareDialog = readSourceFile("src", "renderer", "app-shell", "navigation", "ConversationShareDialog.tsx");
+  const shareDialogHook = readSourceFile("src", "renderer", "app-shell", "navigation", "useConversationShareDialog.ts");
+  const copilotContract = readSourceFile("src", "shared", "contracts", "copilot.ts");
+  const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
+
+  assert.match(htmlExport, /renderer\.renderChatHtml\(normalizedChatId/u);
+  assert.match(htmlExport, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
+  assert.match(htmlExport, /getAvailableFilePath/u);
+  assert.doesNotMatch(htmlExport, /downloadChatShareEventStream|frontend\/dist|conversation\.template\.html|base64|Buffer\.concat|fetch\(|tunnel|showSaveDialog/iu);
+  assert.match(assistantHandlers, /new ConversationHtmlRenderService/u);
+  assert.match(assistantHandlers, /conversationHtmlRenderer\.start\(\)/u);
+  assert.match(htmlRenderService, /Buffer\.from\(response\.html\)/u);
+  assert.doesNotMatch(htmlRenderService, /Buffer\.concat|response\.text\(\)/u);
+  assert.match(htmlWorker, /postMessage\(response, \[response\.html\]\)/u);
+  assert.match(mainBuild, /"main\/conversation-html-worker"/u);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.exportChatHtml"/u);
+  assert.match(preload, /exportChatHtml:\s*\(chatId: string\) => ipcRenderer\.invoke\("assistant\.exportChatHtml", chatId\)/u);
+  assert.match(desktopApi, /exportChatHtml:\s*\(chatId: string\) => Promise<AssistantNavActionResult>/u);
+  assert.match(copilotContract, /ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS[\s\S]*?"permanent"/u);
+  assert.match(copilotContract, /interface AssistantConversationShareRecord[\s\S]*?createdAt: EpochMilliseconds;[\s\S]*?lastAccessedAt: EpochMilliseconds \| null/u);
+  assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.5m": "5 分钟"/u);
+  assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.1h": "1 小时"/u);
+  assert.match(zhCN, /"sidebar\.chat\.shareExpiration\.30d": "30 天"/u);
+  assert.match(shareDialog, /value="5m"[\s\S]*?value="30d"[\s\S]*?value="permanent"/u);
+  assert.match(shareDialog, /sidebar\.chat\.shareLastAccessedAt/u);
+  assert.match(shareDialog, /sidebar\.chat\.sharePermanent/u);
+  assert.match(shareDialog, /formatEpochMillis/u);
+  assert.doesNotMatch(shareDialog, /Date\.parse/u);
+  assert.match(shareDialogHook, /DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION/u);
+  assert.match(shareDialogHook, /shareChat\(\{[\s\S]*?expiration: current\.expiration/u);
+  assert.match(shareDialogHook, /listChatShares\(chatId\)/u);
+  assert.match(shareDialogHook, /revokeChatShare\(shareId\)/u);
+  assert.match(shareDialogHook, /const generationRef = useRef\(0\)/u);
+  assert.match(shareDialogHook, /generationRef\.current === generation/u);
+});
+
+test("assistant share dialog keeps link and record actions stable", () => {
+  const shareDialog = readSourceFile("src", "renderer", "app-shell", "navigation", "ConversationShareDialog.tsx");
+  const shareDialogHook = readSourceFile("src", "renderer", "app-shell", "navigation", "useConversationShareDialog.ts");
+  const navigationCSS = readSourceFile("src", "renderer", "styles", "navigation.css");
+
+  assert.match(shareDialog, /sidebar-chat-share-link-control/u);
+  assert.match(shareDialog, /sidebar-chat-share-record-actions/u);
+  assert.match(shareDialog, /CheckOutlined[\s\S]*?CopyOutlined/u);
+  assert.doesNotMatch(shareDialog, /sidebar-chat-share-revoke-confirm/u);
+  assert.match(shareDialogHook, /COPY_FEEDBACK_DURATION_MS = 1_600/u);
+  assert.match(shareDialogHook, /window\.clearTimeout\(copyFeedbackTimerRef\.current\)/u);
+  assert.match(navigationCSS, /sidebar-chat-share-create-row \.sidebar-agent-primary-button[\s\S]*?height: 40px/u);
+  assert.match(navigationCSS, /sidebar-chat-share-link-control[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 84px/u);
+  assert.match(navigationCSS, /sidebar-chat-share-record-main[\s\S]*?grid-template-columns: minmax\(0, 1fr\) 200px/u);
 });
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {

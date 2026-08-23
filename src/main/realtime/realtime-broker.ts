@@ -93,7 +93,7 @@ type QueryTransaction = {
   chatId: string | null;
   expectedRunId: string;
   expectedChatId: string;
-  expectedOwner: AgentWebclientRunOwner;
+  expectedOwner: AgentWebclientRunOwner | null;
   accepted: Deferred<RealtimeQueryAccepted>;
   completed: Deferred<RealtimeQueryCompleted>;
   onEvent(event: Record<string, unknown>, path: string): Promise<void> | void;
@@ -370,7 +370,7 @@ export class RealtimeBroker {
     payload: Record<string, unknown>;
     runId?: string;
     chatId?: string;
-    owner: AgentWebclientRunOwner;
+    owner?: AgentWebclientRunOwner;
     signal?: AbortSignal;
     onEvent(event: Record<string, unknown>, path: string): Promise<void> | void;
   }): RealtimeQueryHandle {
@@ -400,7 +400,7 @@ export class RealtimeBroker {
       chatId: null,
       expectedRunId,
       expectedChatId,
-      expectedOwner: options.owner,
+      expectedOwner: options.owner ?? null,
       accepted,
       completed,
       onEvent: options.onEvent,
@@ -413,12 +413,12 @@ export class RealtimeBroker {
       signal: options.signal,
     };
     this.queriesByRequestId.set(upstreamRequestId, transaction);
-    transaction.acceptanceTimer = unrefTimer(setTimeout(() => {
+    transaction.acceptanceTimer = setTimeout(() => {
       this.failQuery(
         transaction,
         brokerError("connection_unavailable", "query acceptance timed out"),
       );
-    }, this.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS));
+    }, this.options.acceptanceTimeoutMs ?? REQUEST_TIMEOUT_MS);
     if (options.signal) {
       transaction.abortListener = () => {
         this.failQuery(transaction, brokerError("connection_unavailable", "query aborted"));
@@ -1349,7 +1349,7 @@ export class RealtimeBroker {
       throw brokerError("protocol_error", "run.start must include canonical chatId and runId");
     }
     if (transaction.expectedRunId && transaction.expectedRunId !== runId) {
-      throw brokerError("protocol_error", "run.start runId conflicts with query runId");
+      throw brokerError("protocol_error", "stream runId conflicts with registered Run");
     }
     if (transaction.expectedChatId && transaction.expectedChatId !== chatId) {
       throw brokerError("protocol_error", "run.start chatId conflicts with query chatId");
@@ -1363,11 +1363,11 @@ export class RealtimeBroker {
       ? { kind: "team", teamId }
       : { kind: "agent", agentKey };
     const expectedOwner = transaction.expectedOwner;
-    if (
+    if (expectedOwner && (
       owner.kind !== expectedOwner.kind ||
       (owner.kind === "agent" && expectedOwner.kind === "agent" && owner.agentKey !== expectedOwner.agentKey) ||
       (owner.kind === "team" && expectedOwner.kind === "team" && owner.teamId !== expectedOwner.teamId)
-    ) {
+    )) {
       throw brokerError("protocol_error", "run.start owner conflicts with query owner");
     }
     if (this.runsById.has(runId)) {

@@ -75,6 +75,8 @@ Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布统一使用�
 
 Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secret。Main 使用当前 canonical SSO JWT 调用设备注册 API，并通过加密 WebSocket 的首个 `tunnel.open` 帧提交同一身份和 `deviceId`；Relay 必须验证 JWT 签名、issuer、audience、有效期、`tunnel` scope，以及该用户对设备的所有权。普通 Agent 的独立 bearer token 协议不受此约束影响。
 
+对话分享使用一次请求内的最小凭据。Desktop main 读取当前 Tunnel site token 与经过校验的 API origin，只在直连 Tunnel 的标准 `Authorization: Bearer` 中使用；Platform 短期 token 仅随内部 Worker 消息进入 Snapshot 请求的标准 Header，不写入 URL、缓存、日志或错误信息。WebClient 模板请求不携带该 token，Platform 不接收、校验或转发 Tunnel token。Desktop renderer、IPC 结果、日志和错误文本不得包含任何 token；无登录、Tunnel 未启用或 origin 无效时，Desktop 必须在生成 HTML 前失败关闭。
+
 ## Session 与页面隔离
 
 - 登录页面和需要 Cookie SSO 的 Website 使用专用、持久化的 Electron partition。

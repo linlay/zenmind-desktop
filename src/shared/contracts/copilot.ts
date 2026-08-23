@@ -384,13 +384,54 @@ export interface AssistantNavActionResult {
   filePath?: string;
 }
 
-export interface AssistantConversationShareResult {
-  ok: boolean;
-  message: string;
-  shareId?: string;
-  url?: string;
-  createdAt?: string;
+export const ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS = [
+  "5m",
+  "30m",
+  "1h",
+  "3h",
+  "1d",
+  "5d",
+  "15d",
+  "30d",
+  "permanent",
+] as const;
+
+export type AssistantConversationShareExpiration =
+  (typeof ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS)[number];
+
+export const DEFAULT_ASSISTANT_CONVERSATION_SHARE_EXPIRATION: AssistantConversationShareExpiration = "30d";
+
+export function isAssistantConversationShareExpiration(
+  value: unknown,
+): value is AssistantConversationShareExpiration {
+  return typeof value === "string" &&
+    ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS.some((expiration) => expiration === value);
 }
+
+export interface AssistantConversationShareRequest {
+  chatId: string;
+  expiration: AssistantConversationShareExpiration;
+}
+
+export interface AssistantConversationShareRecord {
+  shareId: string;
+  url: string;
+  createdAt: EpochMilliseconds;
+  expiresAt: EpochMilliseconds | null;
+  lastAccessedAt: EpochMilliseconds | null;
+}
+
+export type AssistantConversationShareCreateResult =
+  | { ok: true; message: string; record: AssistantConversationShareRecord }
+  | { ok: false; message: string };
+
+export type AssistantConversationShareListResult =
+  | { ok: true; message: string; records: AssistantConversationShareRecord[] }
+  | { ok: false; message: string };
+
+export type AssistantConversationShareRevokeResult =
+  | { ok: true; message: string; shareId: string }
+  | { ok: false; message: string };
 
 export interface AssistantChatDetail {
   summary: AssistantChatSummary;

@@ -26,6 +26,11 @@ test("Frame Port host injects and refreshes /api auth while blocking HTTP Run by
   const frontendDist = path.join(root, "frontend", "dist");
   fs.mkdirSync(frontendDist, { recursive: true });
   fs.writeFileSync(path.join(frontendDist, "index.html"), "<!doctype html><title>fixture</title>");
+  fs.mkdirSync(path.join(frontendDist, "export"), { recursive: true });
+  fs.writeFileSync(
+    path.join(frontendDist, "export", "conversation.template.html"),
+    "<!doctype html>__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1____CONVERSATION_EXPORT_ASSET_ORIGIN__"
+  );
   const upstreamRequests = [];
   const upstream = http.createServer((req, res) => {
     upstreamRequests.push({ url: req.url, authorization: req.headers.authorization || "" });
@@ -83,6 +88,10 @@ test("Frame Port host injects and refreshes /api auth while blocking HTTP Run by
     "Bearer stale-token",
     "Bearer fresh-token",
   ]);
+
+  const templateResponse = await fetch(`${baseUrl}/export/conversation.template.html`);
+  assert.equal(templateResponse.status, 200);
+  assert.equal(templateResponse.headers.get("cache-control"), "no-store");
 
   for (const route of [
     "/ws", "/ws/", "/api/query", "/api/query/", "/api/%71uery", "/api/btw", "/api/attach", "/api/submit",

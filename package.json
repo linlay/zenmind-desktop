@@ -31,6 +31,7 @@
     "build:main:prepared": "npm run build:main:types && npm run typecheck:tooling && npm run build:main:bundle",
     "build:renderer:prepared": "npm run typecheck:renderer && vite build",
     "build:main": "npm run brand:sync && npm run build:main:prepared",
+    "benchmark:conversation-html-worker": "npm run build:main:types && node ./scripts/benchmark-conversation-html-worker.mjs",
     "build:renderer": "npm run brand:prepare && npm run build:renderer:prepared",
     "build": "npm run brand:prepare && npm run build:main:prepared && npm run build:renderer:prepared",
     "stage:app": "node ./scripts/stage-app.mjs",

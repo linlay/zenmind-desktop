@@ -2247,6 +2247,7 @@ export function AppSidebar({
     if (target.kind === "chat") {
       return [
         "chat.export",
+        "chat.exportHtml",
         "chat.share",
         "chat.rename",
         "chat.workPanel.open",
@@ -2338,6 +2339,8 @@ export function AppSidebar({
       if (!chat) return;
       if (actionId === "chat.export") {
         await handleAssistantExportChat(chat);
+      } else if (actionId === "chat.exportHtml") {
+        await handleAssistantExportChatHtml(chat);
       } else if (actionId === "chat.share") {
         conversationShareDialog.open(chat.chatId, chat.chatName);
       } else if (actionId === "chat.rename") {
@@ -3301,6 +3304,25 @@ export function AppSidebar({
     }
   }
 
+  async function handleAssistantExportChatHtml(chat: AssistantNavChatItem) {
+    try {
+      const result = await window.electronAPI.assistant.exportChatHtml(chat.chatId);
+      if (!result.ok) {
+        window.alert(result.message || t("sidebar.chat.exportHtmlFailed"));
+        return;
+      }
+      if (result.filePath) {
+        window.alert(t("sidebar.chat.exportedTo", { path: result.filePath }));
+      }
+    } catch (error) {
+      window.alert(
+        error instanceof Error
+          ? error.message
+          : t("sidebar.chat.exportHtmlFailed"),
+      );
+    }
+  }
+
   function handleAssistantRenameChat(chat: AssistantNavChatItem) {
     setAssistantChatRenameDialog({
       chat,
@@ -3947,7 +3969,6 @@ export function AppSidebar({
       </>
     );
   }
-
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
   ) {
@@ -6590,8 +6611,12 @@ export function AppSidebar({
                 t={t}
                 onClose={conversationShareDialog.close}
                 onCreate={() => void conversationShareDialog.create()}
-                onCopy={() => void conversationShareDialog.copy()}
-                onRevoke={() => void conversationShareDialog.revoke()}
+                onRetryList={conversationShareDialog.retryList}
+                onExpirationChange={conversationShareDialog.setExpiration}
+                onCopy={(shareId) => void conversationShareDialog.copy(shareId)}
+                onRequestRevoke={conversationShareDialog.requestRevoke}
+                onCancelRevoke={conversationShareDialog.cancelRevoke}
+                onConfirmRevoke={() => void conversationShareDialog.confirmRevoke()}
               />
               <ChatInfoDialog
                 state={chatInfoDialog.state}
