@@ -250,6 +250,30 @@ export interface AssistantNavChatItem {
   awaitingMode?: AssistantAwaitingMode;
 }
 
+export type AssistantChatSortMode = "recent" | "manual";
+
+export interface AssistantChatOrderState {
+  sortMode: AssistantChatSortMode;
+  updatedAt?: EpochMilliseconds;
+}
+
+export type AssistantChatOrderMutationRequest =
+  | {
+      operation: "set_mode";
+      sortMode: AssistantChatSortMode;
+    }
+  | {
+      operation: "move";
+      chatId: string;
+      beforeChatId?: string;
+      afterChatId?: string;
+    };
+
+export interface AssistantChatOrderMutationResult extends AssistantChatOrderState {
+  ok: boolean;
+  message: string;
+}
+
 export type AssistantNavigationLivePhase =
   | "idle"
   | "connecting"
@@ -314,6 +338,8 @@ export interface AssistantNavAgentItemsResult {
   activityItems?: AssistantNavAgentItem[];
   chatItems: AssistantNavChatItem[];
   chatItemsHasMore: boolean;
+  chatSortMode?: AssistantChatSortMode;
+  chatOrderingSupported?: boolean;
   message: string;
   updatedAt: EpochMilliseconds;
 }

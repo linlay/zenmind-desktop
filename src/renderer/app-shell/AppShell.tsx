@@ -1,6 +1,7 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode } from "../../shared/contracts";
 import {
   isCapabilityNavigationRoute,
   resolveSidebarMode,
@@ -610,6 +611,10 @@ export function AppShell() {
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
+  const [assistantChatSortMode, setAssistantChatSortMode] =
+    useState<AssistantChatSortMode>("recent");
+  const [assistantChatOrderingSupported, setAssistantChatOrderingSupported] =
+    useState(false);
   const [projectFloatingWebviews, setProjectFloatingWebviews] =
     useState<ProjectFloatingWebviewEntry[]>([]);
   const projectFloatingFocusRequestIdRef = useRef(0);
@@ -1445,9 +1450,64 @@ export function AppShell() {
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
         setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
+        setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
+        setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
       }
     } catch {
       // Keep the current live list while agent-platform is still warming up.
+    }
+  }
+
+  async function updateAssistantChatOrder(
+    input: AssistantChatOrderMutationRequest,
+  ): Promise<AssistantChatOrderMutationResult> {
+    const previousItems = assistantNavChatItems;
+    const previousMode = assistantChatSortMode;
+    if (input.operation === "set_mode") {
+      setAssistantChatSortMode(input.sortMode);
+    } else {
+      const anchorId = input.beforeChatId || input.afterChatId || "";
+      const activeIndex = previousItems.findIndex(
+        (chat) => chat.chatId === input.chatId,
+      );
+      const anchorIndex = previousItems.findIndex(
+        (chat) => chat.chatId === anchorId,
+      );
+      if (activeIndex >= 0 && anchorIndex >= 0 && activeIndex !== anchorIndex) {
+        const reordered = previousItems.slice();
+        const [moved] = reordered.splice(activeIndex, 1);
+        const nextAnchorIndex = reordered.findIndex(
+          (chat) => chat.chatId === anchorId,
+        );
+        reordered.splice(
+          input.beforeChatId ? nextAnchorIndex : nextAnchorIndex + 1,
+          0,
+          moved,
+        );
+        setAssistantNavChatItems(reordered);
+      }
+      setAssistantChatSortMode("manual");
+    }
+    try {
+      const result = await window.electronAPI.assistant.updateChatOrder(input);
+      if (!result.ok) {
+        setAssistantNavChatItems(previousItems);
+        setAssistantChatSortMode(previousMode);
+        return result;
+      }
+      setAssistantChatSortMode(result.sortMode);
+      await refreshAssistantNavAgents({ force: true });
+      return result;
+    } catch (error) {
+      setAssistantNavChatItems(previousItems);
+      setAssistantChatSortMode(previousMode);
+      return {
+        ok: false,
+        sortMode: previousMode,
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
+      };
     }
   }
 
@@ -1485,6 +1545,8 @@ export function AppShell() {
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
       setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
+      setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
+      setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
     });
 
     return () => {
@@ -3729,6 +3791,8 @@ export function AppShell() {
           assistantNavAgents={assistantNavAgents}
           assistantNavChatItems={assistantNavChatItems}
           assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
+          assistantChatSortMode={assistantChatSortMode}
+          assistantChatOrderingSupported={assistantChatOrderingSupported}
           chatWorkPanelOpenChatIds={workPanelState.workspaces.map((workspace) => workspace.ownerChatId)}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}
@@ -3748,6 +3812,7 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onUpdateAssistantChatOrder={updateAssistantChatOrder}
           onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
           onOpenChatHistory={openChatHistoryDialog}

@@ -297,6 +297,8 @@ export function normalizeAssistantNavAgentItemsResult(
     items: normalizeAssistantNavAgents(result.items),
     chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }),
     chatItemsHasMore: result.chatItemsHasMore === true,
+    chatSortMode: result.chatSortMode === "manual" ? "manual" : "recent",
+    chatOrderingSupported: result.chatOrderingSupported === true,
     ...(activityItems ? { activityItems } : {})
   };
 }

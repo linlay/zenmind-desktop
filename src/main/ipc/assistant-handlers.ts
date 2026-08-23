@@ -6,8 +6,18 @@ import {
 } from "../download-paths";
 import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
-import type { AssistantNavigationListOptions } from "../../shared/contracts";
+import type {
+  AssistantNavigationListOptions,
+  AssistantChatOrderMutationRequest,
+  AssistantChatOrderMutationResult,
+  AssistantChatSortMode,
+} from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
+import {
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot,
+} from "../desktop-profile-store";
+import { getDesktopConfigRoot } from "../user-paths";
 import { t } from "../i18n/main-i18n";
 import { COPILOT_DOCK_SURFACE_ID } from "../../shared/surface-identity";
 import {
@@ -146,6 +156,48 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   });
   const getWebContentsById = options.getWebContentsById ?? (() => null);
   const copilotDevToolsOwnerCleanupIds = new Set<number>();
+
+  function currentChatSortMode(): AssistantChatSortMode {
+    return readDesktopProfileFromRoot(
+      getDesktopConfigRoot(app, platform as NodeJS.Platform),
+    ).navigation.chatSortMode;
+  }
+
+  function normalizeChatOrderMutation(
+    input: AssistantChatOrderMutationRequest,
+  ): AssistantChatOrderMutationRequest {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error(t("assistant.chatOrderInvalidRequest"));
+    }
+    if (input.operation === "set_mode") {
+      if (input.sortMode !== "recent" && input.sortMode !== "manual") {
+        throw new Error(t("assistant.chatOrderInvalidRequest"));
+      }
+      return { operation: "set_mode", sortMode: input.sortMode };
+    }
+    if (input.operation !== "move") {
+      throw new Error(t("assistant.chatOrderInvalidRequest"));
+    }
+    const chatId = typeof input.chatId === "string" ? input.chatId.trim() : "";
+    const beforeChatId = typeof input.beforeChatId === "string"
+      ? input.beforeChatId.trim()
+      : "";
+    const afterChatId = typeof input.afterChatId === "string"
+      ? input.afterChatId.trim()
+      : "";
+    if (
+      !chatId ||
+      (Boolean(beforeChatId) === Boolean(afterChatId)) ||
+      chatId === (beforeChatId || afterChatId)
+    ) {
+      throw new Error(t("assistant.chatOrderInvalidRequest"));
+    }
+    return {
+      operation: "move",
+      chatId,
+      ...(beforeChatId ? { beforeChatId } : { afterChatId }),
+    };
+  }
 
   ipcMain.handle("currentPage.publishSnapshot", async (_event: any, snapshot: any) => {
     setSnapshot(snapshot);
@@ -335,6 +387,54 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         chatItemsHasMore: false,
         message: error instanceof Error ? error.message : t("assistant.agentPlatformUnavailable"),
         updatedAt: nowEpochMillis()
+      };
+    }
+  });
+
+  ipcMain.handle("assistant.updateChatOrder", async (
+    _event: unknown,
+    input: AssistantChatOrderMutationRequest,
+  ): Promise<AssistantChatOrderMutationResult> => {
+    const previousMode = currentChatSortMode();
+    try {
+      if (!callAgentPlatform) {
+        throw new Error(t("assistant.chatOrderUnavailable"));
+      }
+      const request = normalizeChatOrderMutation(input);
+      const response = await callAgentPlatform(
+        app,
+        "/api/chats/order",
+        { method: "PUT", body: request },
+      ) as Record<string, unknown> | null;
+      const sortMode = response?.sortMode;
+      if (sortMode !== "recent" && sortMode !== "manual") {
+        throw new Error(t("assistant.chatOrderInvalidResponse"));
+      }
+      const updatedAt = response?.updatedAt === undefined || response.updatedAt === null
+        ? undefined
+        : requireEpochMillis(
+            response.updatedAt,
+            "assistant.chatOrder.updatedAt",
+          );
+      updateDesktopProfileInRoot(
+        getDesktopConfigRoot(app, platform as NodeJS.Platform),
+        { navigation: { chatSortMode: sortMode } },
+      );
+      await assistantNavigationStatusClient?.refreshNow?.();
+      return {
+        ok: true,
+        sortMode,
+        message: t("assistant.chatOrderSaved"),
+        ...(updatedAt === undefined ? {} : { updatedAt }),
+      };
+    } catch (error) {
+      console.warn("[assistant] failed to update chat order", error);
+      return {
+        ok: false,
+        sortMode: previousMode,
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
       };
     }
   });

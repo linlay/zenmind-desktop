@@ -25,7 +25,9 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
     menuScope: "all",
     sortMode: "byTime",
     canCreateProject: false,
-    canCreateChat: false
+    canCreateChat: false,
+    chatSortMode: "recent",
+    chatOrderingSupported: true
   });
   assert.deepEqual(assistants.map((item) => item.id), [
     "group.sort-by-time",
@@ -41,7 +43,9 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
     menuScope: "sort",
     sortMode: "byName",
     canCreateProject: true,
-    canCreateChat: false
+    canCreateChat: false,
+    chatSortMode: "recent",
+    chatOrderingSupported: true
   }), ["group.sort-by-time", "group.sort-by-name"]);
 
   assert.deepEqual(ids({
@@ -50,15 +54,29 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
     menuScope: "all",
     sortMode: "byName",
     canCreateProject: true,
-    canCreateChat: true
-  }), ["group.new-chat"]);
+    canCreateChat: true,
+    chatSortMode: "manual",
+    chatOrderingSupported: true
+  }), ["group.chat-sort-recent", "group.chat-sort-manual", "group.new-chat"]);
+  assert.deepEqual(ids({
+    kind: "group",
+    groupId: "chats",
+    menuScope: "sort",
+    sortMode: "byName",
+    canCreateProject: true,
+    canCreateChat: true,
+    chatSortMode: "manual",
+    chatOrderingSupported: true
+  }), ["group.chat-sort-recent", "group.chat-sort-manual"]);
   assert.deepEqual(ids({
     kind: "group",
     groupId: "webs",
     menuScope: "all",
     sortMode: "byName",
     canCreateProject: true,
-    canCreateChat: true
+    canCreateChat: true,
+    chatSortMode: "recent",
+    chatOrderingSupported: false
   }), ["group.add-website", "group.import-webapp"]);
 });
 
@@ -198,7 +216,9 @@ test("sidebar native context request validation rejects injected and malformed f
       menuScope: "sort",
       sortMode: "byTime",
       canCreateProject: false,
-      canCreateChat: false
+      canCreateChat: false,
+      chatSortMode: "recent",
+      chatOrderingSupported: false
     }
   }), null);
 });

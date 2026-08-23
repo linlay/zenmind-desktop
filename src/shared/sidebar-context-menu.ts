@@ -6,6 +6,8 @@ export type SidebarContextMenuActionId =
   | "group.sort-by-name"
   | "group.new-project"
   | "group.new-chat"
+  | "group.chat-sort-recent"
+  | "group.chat-sort-manual"
   | "group.add-website"
   | "group.import-webapp"
   | "agent.reveal-workspace"
@@ -33,6 +35,8 @@ export type SidebarContextMenuTarget =
       sortMode: "byName" | "byTime";
       canCreateProject: boolean;
       canCreateChat: boolean;
+      chatSortMode: "recent" | "manual";
+      chatOrderingSupported: boolean;
     }
   | {
       kind: "agent";

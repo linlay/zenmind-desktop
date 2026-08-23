@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
+  AssistantChatSortMode,
   AssistantAwaitingMode,
   AssistantNavAgentIcon,
   AssistantNavAgentItem,
@@ -14,6 +15,11 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
+import {
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot,
+} from "../../desktop-profile-store";
+import { getDesktopConfigRoot } from "../../user-paths";
 import {
   isTimeContractViolation,
   isAgentPlatformEpochMilliseconds,
@@ -73,6 +79,11 @@ type PlatformChatSummary = {
   awaitingMode?: unknown;
   mode?: unknown;
   status?: unknown;
+};
+
+type PlatformChatOrder = {
+  sortMode?: unknown;
+  updatedAt?: unknown;
 };
 
 type PlatformAgentSummary = {
@@ -767,6 +778,11 @@ function mapNavigationChat(
 export type AssistantNavigationChatsSnapshot = {
   chatItems: AssistantNavChatItem[];
   chatItemsHasMore: boolean;
+};
+
+type AssistantNavigationChatOrderSnapshot = {
+  chatSortMode: AssistantChatSortMode;
+  chatOrderingSupported: boolean;
 };
 
 export function buildAssistantNavigationChatsSnapshotFromPlatform(
@@ -1549,6 +1565,8 @@ export class AssistantNavigationStatusClient {
     activityItems: [],
     chatItems: [],
     chatItemsHasMore: false,
+    chatSortMode: "recent",
+    chatOrderingSupported: false,
     message: t("assistant.navigationStatusUninitialized"),
     updatedAt: nowEpochMillis()
   };
@@ -1732,12 +1750,19 @@ export class AssistantNavigationStatusClient {
         items
       );
       await this.connectRealtime(baseUrl, token);
-      const chatSnapshot = await this.requestNavigationChats(baseUrl, token);
+      const [chatSnapshot, chatOrderSnapshot] = await Promise.all([
+        this.requestNavigationChats(baseUrl, token),
+        this.requestNavigationChatOrder(baseUrl, token),
+      ]);
+      if (chatOrderSnapshot.chatOrderingSupported) {
+        this.cacheChatSortMode(chatOrderSnapshot.chatSortMode);
+      }
       const refreshedResult = this.replayRuntimeStatusPushesSince({
         ok: true,
         items,
         activityItems,
         ...chatSnapshot,
+        ...chatOrderSnapshot,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowEpochMillis()
       }, runtimeStatusSequenceAtStart);
@@ -1903,6 +1928,74 @@ export class AssistantNavigationStatusClient {
     );
   }
 
+  private async requestNavigationChatOrder(
+    baseUrl: string,
+    token: string,
+  ): Promise<AssistantNavigationChatOrderSnapshot> {
+    const id = `desktop-nav-chat-order-${++this.wsRequestSequence}`;
+    try {
+      const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
+        void this.realtimeBroker.forwardRequest({
+          baseUrl,
+          token,
+          localId: id,
+          consumerId: "assistant-navigation",
+          type: "/api/chats/order",
+          payload: {},
+          onFrame: (response) => {
+            this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
+            this.recordLiveFrame({
+              direction: "inbound",
+              kind: toText(response.frame) === "error" ? "error" : "response",
+              type: toText(response.type) || null,
+            });
+            if (toText(response.frame) === "error") {
+              reject(new Error(toText(response.msg) || "chat ordering is unavailable"));
+              return;
+            }
+            resolve(response as NavigationPushFrame);
+          },
+          onError: reject,
+        }).catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
+        this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats/order" });
+      });
+      const data = unwrapApiResponse<PlatformChatOrder>(frame);
+      const sortMode = toText(data?.sortMode);
+      if (sortMode !== "recent" && sortMode !== "manual") {
+        throw new Error("agent-platform returned an invalid chat sort mode");
+      }
+      if (data?.updatedAt !== undefined && data.updatedAt !== null) {
+        requireAgentPlatformEpochMillis(
+          data.updatedAt,
+          "navigation.chatOrder.updatedAt",
+        );
+      }
+      return {
+        chatSortMode: sortMode,
+        chatOrderingSupported: true,
+      };
+    } catch (error) {
+      this.options.onDebug?.(
+        `[chat-order] unavailable; using recent: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        chatSortMode: "recent",
+        chatOrderingSupported: false,
+      };
+    }
+  }
+
+  private cacheChatSortMode(sortMode: AssistantChatSortMode) {
+    const profileRoot = getDesktopConfigRoot(this.options.app);
+    const current = readDesktopProfileFromRoot(profileRoot);
+    if (current.navigation.chatSortMode === sortMode) {
+      return;
+    }
+    updateDesktopProfileInRoot(profileRoot, {
+      navigation: { chatSortMode: sortMode },
+    });
+  }
+
   private handleRealtimeFrame(input: AgentPlatformRealtimeFrame) {
     if (this.stopped) {
       return;
@@ -1969,12 +2062,14 @@ export class AssistantNavigationStatusClient {
         activityItems: nextActivity.items,
         chatItems: nextChats.items,
         chatItemsHasMore: this.latestResult.chatItemsHasMore,
+        chatSortMode: this.latestResult.chatSortMode ?? "recent",
+        chatOrderingSupported: this.latestResult.chatOrderingSupported === true,
         message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowEpochMillis()
       });
     }
     // A new chat cannot be optimistically inserted into the global Chats list:
-    // the server owns its ordering and top-eight cutoff. Refresh it immediately
+    // the server owns its ordering and visible cutoff. Refresh it immediately
     // so the route mirrored from agent-webclient can select the new list item.
     this.scheduleRefresh(event.type === "chat.created" ? 0 : undefined);
   }

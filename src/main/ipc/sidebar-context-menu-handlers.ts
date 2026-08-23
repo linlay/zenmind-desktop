@@ -23,6 +23,8 @@ const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
   "group.sort-by-name": "sidebar.assistants.sortByName",
   "group.new-project": "sidebar.project.new",
   "group.new-chat": "sidebar.chats.newChat",
+  "group.chat-sort-recent": "sidebar.chats.sortRecent",
+  "group.chat-sort-manual": "sidebar.chats.sortManual",
   "group.add-website": "sidebar.website.new",
   "group.import-webapp": "sidebar.webapp.import",
   "agent.reveal-workspace": "sidebar.agent.revealWorkspaceFileManager",

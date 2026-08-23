@@ -53,14 +53,18 @@ export function normalizeSidebarContextMenuRequest(
         "menuScope",
         "sortMode",
         "canCreateProject",
-        "canCreateChat"
+        "canCreateChat",
+        "chatSortMode",
+        "chatOrderingSupported"
       ]) ||
       !["assistants", "chats", "webs"].includes(String(target.groupId)) ||
       !["all", "sort"].includes(String(target.menuScope)) ||
       (target.menuScope === "sort" && target.groupId !== "assistants") ||
       !["byName", "byTime"].includes(String(target.sortMode)) ||
       !isBoolean(target.canCreateProject) ||
-      !isBoolean(target.canCreateChat)
+      !isBoolean(target.canCreateChat) ||
+      !["recent", "manual"].includes(String(target.chatSortMode)) ||
+      !isBoolean(target.chatOrderingSupported)
     ) {
       return null;
     }
@@ -70,7 +74,9 @@ export function normalizeSidebarContextMenuRequest(
       menuScope: target.menuScope as "all" | "sort",
       sortMode: target.sortMode as "byName" | "byTime",
       canCreateProject: target.canCreateProject,
-      canCreateChat: target.canCreateChat
+      canCreateChat: target.canCreateChat,
+      chatSortMode: target.chatSortMode as "recent" | "manual",
+      chatOrderingSupported: target.chatOrderingSupported
     };
   } else if (target.kind === "agent") {
     if (
@@ -164,10 +170,30 @@ export function buildSidebarContextMenuPolicy(
       return items;
     }
     if (target.groupId === "chats") {
+      const sortItems: SidebarContextMenuPolicyItem[] = [
+        {
+          id: "group.chat-sort-recent",
+          group: 0,
+          enabled: target.chatOrderingSupported,
+          type: "radio",
+          checked: target.chatSortMode === "recent"
+        },
+        {
+          id: "group.chat-sort-manual",
+          group: 0,
+          enabled: target.chatOrderingSupported,
+          type: "radio",
+          checked: target.chatSortMode === "manual"
+        }
+      ];
+      if (target.menuScope === "sort") {
+        return sortItems;
+      }
       return [
+        ...sortItems,
         {
           id: "group.new-chat",
-          group: 0,
+          group: 1,
           enabled: target.canCreateChat
         }
       ];

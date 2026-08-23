@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
+  AssistantChatOrderMutationRequest,
   AssistantChatSearchRequest,
   AssistantCreateCoderProjectRequest,
   AssistantCreateProjectRequest,
@@ -210,6 +211,8 @@ const api: DesktopApi = {
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: (options?: AssistantNavigationListOptions) =>
       ipcRenderer.invoke("assistant.listNavigationAgents", options),
+    updateChatOrder: (input: AssistantChatOrderMutationRequest) =>
+      ipcRenderer.invoke("assistant.updateChatOrder", input),
     getNavigationLiveStatus: () => ipcRenderer.invoke("assistant.getNavigationLiveStatus"),
     listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
     createProject: (input: AssistantCreateProjectRequest) =>

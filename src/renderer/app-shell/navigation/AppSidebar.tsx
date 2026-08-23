@@ -16,6 +16,25 @@ import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import { CloseOutlined } from "@ant-design/icons";
 import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DraggableAttributes,
+  type DraggableSyntheticListeners,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
   SidebarActionIcon,
   SidebarIllustration,
   type SidebarIllustrationKind,
@@ -23,6 +42,9 @@ import {
 import { Favicon, type WebsiteFaviconCache } from "../../components/Favicon";
 import { buildWebsiteFaviconUrl } from "../../../shared/website-favicon";
 import type {
+  AssistantChatOrderMutationRequest,
+  AssistantChatOrderMutationResult,
+  AssistantChatSortMode,
   AssistantCreateProjectRequest,
   AssistantNavAgentItem,
   AssistantNavChatItem,
@@ -182,6 +204,17 @@ type AssistantChatDeleteDialogState = {
   error: string;
 };
 
+type AssistantChatDragActivator = {
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  setActivatorNodeRef: (element: HTMLButtonElement | null) => void;
+};
+
+type AssistantChatDropIndicator = {
+  chatId: string;
+  position: "before" | "after";
+};
+
 type AssistantChatRowOptions = {
   roving?: boolean;
   focusId?: string;
@@ -192,6 +225,7 @@ type AssistantChatRowOptions = {
   rowRole?: "listitem";
   previewText?: string;
   wrapItem?: (item: ReactElement) => ReactNode;
+  dragActivator?: AssistantChatDragActivator;
 };
 
 type AgentSelectionOptions = {
@@ -962,6 +996,43 @@ type SettingsSidebarSection = {
   description: string;
 };
 
+function SortableAssistantChat({
+  chat,
+  disabled,
+  dropIndicator,
+  renderItem,
+}: {
+  chat: AssistantNavChatItem;
+  disabled: boolean;
+  dropIndicator: "before" | "after" | null;
+  renderItem: (dragActivator: AssistantChatDragActivator) => ReactNode;
+}) {
+  const sortable = useSortable({ id: chat.chatId, disabled });
+  const style: CSSProperties = {
+    zIndex: sortable.isDragging ? 2 : undefined,
+  };
+  return (
+    <div
+      ref={sortable.setNodeRef}
+      style={style}
+      className={[
+        "sidebar-sortable-chat",
+        sortable.isDragging ? "is-dragging" : "",
+        disabled ? "is-drag-disabled" : "",
+        dropIndicator === "before" ? "has-drop-indicator-before" : "",
+        dropIndicator === "after" ? "has-drop-indicator-after" : "",
+      ].filter(Boolean).join(" ")}
+      role="listitem"
+    >
+      {renderItem({
+        attributes: sortable.attributes,
+        listeners: sortable.listeners,
+        setActivatorNodeRef: sortable.setActivatorNodeRef,
+      })}
+    </div>
+  );
+}
+
 type AppSidebarProps = {
   isCollapsed: boolean;
   isMac: boolean;
@@ -979,6 +1050,8 @@ type AppSidebarProps = {
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavChatItems?: AssistantNavChatItem[];
   assistantNavChatItemsHasMore?: boolean;
+  assistantChatSortMode?: AssistantChatSortMode;
+  assistantChatOrderingSupported?: boolean;
   chatWorkPanelOpenChatIds?: string[];
   assistantNavAgentsLoaded?: boolean;
   websitesLoaded?: boolean;
@@ -1000,6 +1073,9 @@ type AppSidebarProps = {
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
+  onUpdateAssistantChatOrder?: (
+    input: AssistantChatOrderMutationRequest,
+  ) => Promise<AssistantChatOrderMutationResult>;
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onOpenChatHistory?: (agentKey?: string) => void;
@@ -1047,6 +1123,8 @@ export function AppSidebar({
   assistantNavAgents = [],
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
+  assistantChatSortMode = "recent",
+  assistantChatOrderingSupported = false,
   chatWorkPanelOpenChatIds = [],
   assistantNavAgentsLoaded = true,
   websitesLoaded = true,
@@ -1066,6 +1144,7 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
+  onUpdateAssistantChatOrder,
   onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
   onOpenChatHistory,
@@ -1104,6 +1183,14 @@ export function AppSidebar({
   );
   const [assistantNavSortMode, setAssistantNavSortMode] =
     useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
+  const chatDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const [chatDropIndicator, setChatDropIndicator] =
+    useState<AssistantChatDropIndicator | null>(null);
+  const [chatOrderMutationPending, setChatOrderMutationPending] = useState(false);
+  const [chatOrderError, setChatOrderError] = useState("");
   const [refreshingAssistantNavAgents, setRefreshingAssistantNavAgents] =
     useState(false);
   const [chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen] =
@@ -1279,12 +1366,16 @@ export function AppSidebar({
     hasCreateProjectDialog: Boolean(createProjectDialog),
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
+    assistantChatSortMode,
+    assistantChatOrderingSupported,
+    chatOrderMutationPending,
     webOpenEntryKeys,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
     onOpenAgentProjectEditor,
+    onUpdateAssistantChatOrder,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
@@ -1294,12 +1385,16 @@ export function AppSidebar({
     hasCreateProjectDialog: Boolean(createProjectDialog),
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
+    assistantChatSortMode,
+    assistantChatOrderingSupported,
+    chatOrderMutationPending,
     webOpenEntryKeys,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
     onOpenAgentProjectEditor,
+    onUpdateAssistantChatOrder,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
@@ -2069,6 +2164,10 @@ export function AppSidebar({
         canCreateChat:
           Boolean(runtime.resolvedChatDefaultAgentKey) &&
           !runtime.chatDefaultAgentUnavailable,
+        chatSortMode: runtime.assistantChatSortMode,
+        chatOrderingSupported:
+          runtime.assistantChatOrderingSupported &&
+          !runtime.chatOrderMutationPending,
       };
     }
     if (subject.kind === "agent") {
@@ -2136,7 +2235,17 @@ export function AppSidebar({
         return target.groupId === "assistants" && target.canCreateProject;
       }
       if (actionId === "group.new-chat") {
-        return target.groupId === "chats" && target.canCreateChat;
+        return (
+          target.groupId === "chats" &&
+          target.menuScope !== "sort" &&
+          target.canCreateChat
+        );
+      }
+      if (
+        actionId === "group.chat-sort-recent" ||
+        actionId === "group.chat-sort-manual"
+      ) {
+        return target.groupId === "chats" && target.chatOrderingSupported;
       }
       return (
         target.groupId === "webs" &&
@@ -2214,6 +2323,10 @@ export function AppSidebar({
         await beginCreateProject();
       } else if (actionId === "group.new-chat") {
         startChatsNewChat();
+      } else if (actionId === "group.chat-sort-recent") {
+        await updateChatsSortMode("recent");
+      } else if (actionId === "group.chat-sort-manual") {
+        await updateChatsSortMode("manual");
       } else if (actionId === "group.add-website") {
         showWebsiteDialog();
       } else if (actionId === "group.import-webapp") {
@@ -3461,6 +3574,116 @@ export function AppSidebar({
     );
   }
 
+  async function updateChatsSortMode(sortMode: AssistantChatSortMode) {
+    if (
+      chatOrderMutationPending ||
+      !assistantChatOrderingSupported ||
+      !onUpdateAssistantChatOrder ||
+      sortMode === assistantChatSortMode
+    ) {
+      return;
+    }
+    setChatOrderMutationPending(true);
+    setChatOrderError("");
+    try {
+      const result = await onUpdateAssistantChatOrder({
+        operation: "set_mode",
+        sortMode,
+      });
+      if (!result.ok) {
+        setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
+      }
+    } catch (error) {
+      setChatOrderError(
+        error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
+      );
+    } finally {
+      setChatOrderMutationPending(false);
+    }
+  }
+
+  function handleChatDragStart(_event: DragStartEvent) {
+    if (chatOrderMutationPending) {
+      return;
+    }
+    setChatOrderError("");
+    setChatDropIndicator(null);
+  }
+
+  function resolveChatDropIndicator(
+    activeId: string,
+    overId: string,
+  ): AssistantChatDropIndicator | null {
+    if (!activeId || !overId || activeId === overId) {
+      return null;
+    }
+    const activeIndex = sidebarChatItems.findIndex(
+      (chat) => chat.chatId === activeId,
+    );
+    const overIndex = sidebarChatItems.findIndex(
+      (chat) => chat.chatId === overId,
+    );
+    if (activeIndex < 0 || overIndex < 0) {
+      return null;
+    }
+    return {
+      chatId: overId,
+      position: activeIndex > overIndex ? "before" : "after",
+    };
+  }
+
+  function handleChatDragOver(event: DragOverEvent) {
+    setChatDropIndicator(
+      event.over
+        ? resolveChatDropIndicator(
+            String(event.active.id),
+            String(event.over.id),
+          )
+        : null,
+    );
+  }
+
+  async function handleChatDragEnd(event: DragEndEvent) {
+    const dropIndicator = event.over
+      ? resolveChatDropIndicator(
+          String(event.active.id),
+          String(event.over.id),
+        )
+      : null;
+    setChatDropIndicator(null);
+    if (
+      chatOrderMutationPending ||
+      !assistantChatOrderingSupported ||
+      !onUpdateAssistantChatOrder ||
+      !dropIndicator
+    ) {
+      return;
+    }
+    const chatId = String(event.active.id);
+    const request: AssistantChatOrderMutationRequest =
+      dropIndicator.position === "before"
+        ? { operation: "move", chatId, beforeChatId: dropIndicator.chatId }
+        : { operation: "move", chatId, afterChatId: dropIndicator.chatId };
+    setChatOrderMutationPending(true);
+    setChatOrderError("");
+    try {
+      const result = await onUpdateAssistantChatOrder(request);
+      if (!result.ok) {
+        setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
+      }
+    } catch (error) {
+      setChatOrderError(
+        error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
+      );
+    } finally {
+      setChatOrderMutationPending(false);
+    }
+  }
+
   function renderAssistantSortButton(options: { tabIndex?: number } = {}) {
     return (
       <button
@@ -3606,7 +3829,43 @@ export function AppSidebar({
   }
 
   function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
-    return renderChatsNewChatButton(options);
+    const sortLabel = assistantChatOrderingSupported
+      ? assistantChatSortMode === "manual"
+        ? t("sidebar.chats.sortManual")
+        : t("sidebar.chats.sortRecent")
+      : t("sidebar.chats.sortUnavailable");
+    return (
+      <>
+        <Tooltip content={sortLabel}>
+          <button
+            type="button"
+            className="assistant-worker-icon-button sidebar-chats-sort-button"
+            aria-label={t("sidebar.chats.sortMenu")}
+            title={sortLabel}
+            tabIndex={options.inPopover ? undefined : -1}
+            disabled={!assistantChatOrderingSupported || chatOrderMutationPending}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openNativeSidebarContextMenu(
+                { kind: "group", groupId: "chats", menuScope: "sort" },
+                event.currentTarget,
+              );
+            }}
+          >
+            {chatOrderMutationPending ? (
+              <span
+                className="assistant-material-icon is-loading"
+                aria-hidden="true"
+              />
+            ) : (
+              <SidebarActionIcon kind="sort" />
+            )}
+          </button>
+        </Tooltip>
+        {renderChatsNewChatButton(options)}
+      </>
+    );
   }
 
   function renderChatsDefaultAgentPicker(
@@ -3868,6 +4127,99 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsRow(
+    chat: AssistantNavChatItem,
+    roving: boolean,
+    sortable: boolean,
+  ) {
+    const agent = getChatHoverAgent(chat);
+    const isBootstrapSeedChat = Boolean(
+      bootstrapActive &&
+      normalizedBootstrapChatId &&
+      chat.chatId === normalizedBootstrapChatId &&
+      chat.agentKey === normalizedBootstrapAgentKey,
+    );
+    const renderRow = (dragActivator?: AssistantChatDragActivator) =>
+      renderAssistantChatRow(chat, activeSidebarChatId, {
+        roving,
+        focusId: createSidebarChatsChatFocusId(chat.chatId),
+        navigationKind: "chats-chat",
+        rowClassName: "sidebar-chats-row",
+        itemClassName: [
+          "sidebar-chats-item",
+          isBootstrapSeedChat && showBootstrapChatGuide
+            ? "is-bootstrap-guide"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        itemRef: isBootstrapSeedChat
+          ? bootstrapGuideChatAnchorRef
+          : undefined,
+        rowRole: sortable ? undefined : "listitem",
+        previewText: isBootstrapSeedChat
+          ? chat.chatName || t("sidebar.bootstrapChat.cta")
+          : undefined,
+        dragActivator,
+        wrapItem: (item) => (
+          <Popover
+            trigger="hover"
+            placement="right-start"
+            closeOnOutsideClick={false}
+            shouldOpen={(trigger) => {
+              const title =
+                trigger.querySelector<HTMLElement>(".worker-chat-name");
+              return Boolean(title && title.scrollWidth > title.clientWidth);
+            }}
+            className="sidebar-chat-hover-card-surface"
+            content={renderChatHoverCard(agent, chat)}
+          >
+            {item}
+          </Popover>
+        ),
+      });
+    if (!sortable) {
+      return renderRow();
+    }
+    return (
+      <SortableAssistantChat
+        key={chat.chatId}
+        chat={chat}
+        disabled={chatOrderMutationPending}
+        dropIndicator={
+          chatDropIndicator?.chatId === chat.chatId
+            ? chatDropIndicator.position
+            : null
+        }
+        renderItem={renderRow}
+      />
+    );
+  }
+
+  function renderSortableChatsRows(roving: boolean) {
+    const sortable = roving && assistantChatOrderingSupported;
+    if (!sortable) {
+      return sidebarChatItems.map((chat) => renderChatsRow(chat, roving, false));
+    }
+    return (
+      <DndContext
+        sensors={chatDragSensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleChatDragStart}
+        onDragOver={handleChatDragOver}
+        onDragCancel={() => setChatDropIndicator(null)}
+        onDragEnd={(event) => void handleChatDragEnd(event)}
+      >
+        <SortableContext
+          items={sidebarChatItems.map((chat) => chat.chatId)}
+          strategy={verticalListSortingStrategy}
+        >
+          {sidebarChatItems.map((chat) => renderChatsRow(chat, roving, true))}
+        </SortableContext>
+      </DndContext>
+    );
+  }
+
   function renderChatsList(options: { roving?: boolean } = {}) {
     const roving = options.roving ?? true;
     const bootstrapFallbackActive =
@@ -3909,54 +4261,7 @@ export function AppSidebar({
           </div>
         ) : null}
         {sidebarChatItems.length > 0 ? (
-          sidebarChatItems.map((chat) => {
-            const agent = getChatHoverAgent(chat);
-            const isBootstrapSeedChat = Boolean(
-              bootstrapActive &&
-              normalizedBootstrapChatId &&
-              chat.chatId === normalizedBootstrapChatId &&
-              chat.agentKey === normalizedBootstrapAgentKey,
-            );
-            return renderAssistantChatRow(chat, activeSidebarChatId, {
-              roving,
-              focusId: createSidebarChatsChatFocusId(chat.chatId),
-              navigationKind: "chats-chat",
-              rowClassName: "sidebar-chats-row",
-              itemClassName: [
-                "sidebar-chats-item",
-                isBootstrapSeedChat && showBootstrapChatGuide
-                  ? "is-bootstrap-guide"
-                  : "",
-              ]
-                .filter(Boolean)
-                .join(" "),
-              itemRef: isBootstrapSeedChat
-                ? bootstrapGuideChatAnchorRef
-                : undefined,
-              rowRole: "listitem",
-              previewText: isBootstrapSeedChat
-                ? chat.chatName || t("sidebar.bootstrapChat.cta")
-                : undefined,
-              wrapItem: (item) => (
-                <Popover
-                  trigger="hover"
-                  placement="right-start"
-                  closeOnOutsideClick={false}
-                  shouldOpen={(trigger) => {
-                    const title =
-                      trigger.querySelector<HTMLElement>(".worker-chat-name");
-                    return Boolean(
-                      title && title.scrollWidth > title.clientWidth,
-                    );
-                  }}
-                  className="sidebar-chat-hover-card-surface"
-                  content={renderChatHoverCard(agent, chat)}
-                >
-                  {item}
-                </Popover>
-              ),
-            });
-          })
+          renderSortableChatsRows(roving)
         ) : !showBootstrapChatFallback ? (
           chatDefaultAgentUnavailable ? (
             <div className="sidebar-empty-hint">
@@ -4004,6 +4309,11 @@ export function AppSidebar({
         {chatDefaultAgentError ? (
           <div className="sidebar-chats-agent-error" role="alert">
             {chatDefaultAgentError}
+          </div>
+        ) : null}
+        {chatOrderError ? (
+          <div className="sidebar-chats-agent-error" role="alert">
+            {chatOrderError}
           </div>
         ) : null}
       </div>
@@ -4237,9 +4547,18 @@ export function AppSidebar({
       options.previewText ?? getAssistantChatDisplayText(chat, t);
     const focusId = options.focusId ?? createSidebarChatFocusId(chat.chatId);
     const navigationKind = options.navigationKind ?? "chat";
+    const dragActivator = options.dragActivator;
     const item = (
       <button
-        ref={options.itemRef}
+        ref={(element) => {
+          if (typeof options.itemRef === "function") {
+            options.itemRef(element);
+          } else if (options.itemRef) {
+            (options.itemRef as { current: HTMLButtonElement | null }).current =
+              element;
+          }
+          dragActivator?.setActivatorNodeRef(element);
+        }}
         type="button"
         className={[
           "assistant-worker-chat-item",
@@ -4254,6 +4573,13 @@ export function AppSidebar({
         onClick={() => void handleAssistantOpenChat(chat)}
         onDoubleClick={(event) => handleAssistantChatDoubleClick(event, chat)}
         {...getSidebarRovingItemProps(focusId, roving)}
+        {...dragActivator?.listeners}
+        aria-disabled={dragActivator?.attributes["aria-disabled"]}
+        aria-pressed={dragActivator?.attributes["aria-pressed"]}
+        aria-roledescription={
+          dragActivator?.attributes["aria-roledescription"]
+        }
+        aria-describedby={dragActivator?.attributes["aria-describedby"]}
         data-sidebar-nav-kind={roving ? navigationKind : undefined}
         data-sidebar-agent-key={
           roving ? chat.agentKey || currentAgentKey : undefined
