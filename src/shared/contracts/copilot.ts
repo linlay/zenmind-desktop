@@ -38,6 +38,7 @@ export type AssistantNavigationPushEventListener = (event: AssistantNavigationPu
 
 export interface WebviewOpenTabRequest {
   target: "desktop-browser" | "work-panel";
+  navigationKind: "network" | "blob";
   sourceGuestId: number;
   url: string;
   partition?: string;
@@ -182,6 +183,29 @@ export interface AssistantChatSummary {
   messageCount: number;
 }
 
+export interface AssistantHistoryChatItem {
+  chatId: string;
+  chatName: string;
+  agentKey: string;
+  teamId?: string;
+  createdAt: EpochMilliseconds;
+  updatedAt: EpochMilliseconds;
+  lastRunId: string;
+  lastRunContent: string;
+  isRead: boolean;
+  hasActiveRun: boolean;
+  hasPendingAwaiting: boolean;
+  awaitingCount?: number;
+  awaitingMode?: AssistantAwaitingMode;
+}
+
+export interface AssistantHistoryChatsResult {
+  ok: boolean;
+  items: AssistantHistoryChatItem[];
+  message: string;
+  updatedAt: EpochMilliseconds;
+}
+
 export interface AssistantChatSearchRequest {
   query: string;
   limit?: number;
@@ -224,6 +248,30 @@ export interface AssistantNavChatItem {
   hasPendingAwaiting: boolean;
   awaitingCount?: number;
   awaitingMode?: AssistantAwaitingMode;
+}
+
+export type AssistantChatSortMode = "recent" | "manual";
+
+export interface AssistantChatOrderState {
+  sortMode: AssistantChatSortMode;
+  updatedAt?: EpochMilliseconds;
+}
+
+export type AssistantChatOrderMutationRequest =
+  | {
+      operation: "set_mode";
+      sortMode: AssistantChatSortMode;
+    }
+  | {
+      operation: "move";
+      chatId: string;
+      beforeChatId?: string;
+      afterChatId?: string;
+    };
+
+export interface AssistantChatOrderMutationResult extends AssistantChatOrderState {
+  ok: boolean;
+  message: string;
 }
 
 export type AssistantNavigationLivePhase =
@@ -290,8 +338,21 @@ export interface AssistantNavAgentItemsResult {
   activityItems?: AssistantNavAgentItem[];
   chatItems: AssistantNavChatItem[];
   chatItemsHasMore: boolean;
+  chatSortMode?: AssistantChatSortMode;
+  chatOrderingSupported?: boolean;
   message: string;
   updatedAt: EpochMilliseconds;
+}
+
+export interface AssistantReorderProjectsRequest {
+  agentKeys: string[];
+}
+
+export interface AssistantReorderProjectsResult {
+  ok: boolean;
+  agentKeys: string[];
+  message: string;
+  updatedAt?: EpochMilliseconds;
 }
 
 export type AssistantCreateProjectType = "coder" | "kbase";

@@ -113,13 +113,30 @@ try {
         }
       }
     }
-    $output = & $scriptPath @scriptHash @scriptPos 2>&1
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      $output = & $scriptPath @scriptHash @scriptPos 2>&1
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
   } else {
-    $output = & $scriptPath @scriptArgs 2>&1
+    $previousErrorActionPreference = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+      $output = & $scriptPath @scriptArgs 2>&1
+    } finally {
+      $ErrorActionPreference = $previousErrorActionPreference
+    }
   }
   foreach ($item in @($output)) {
     if ($item -is [System.Management.Automation.ErrorRecord]) {
-      $hadError = $true
+      # Windows PowerShell converts stderr from a native child into an
+      # ErrorRecord even when that child exits successfully. Stderr is valid
+      # diagnostic output; the native exit code is the success signal.
+      if ([string]$item.FullyQualifiedErrorId -ne 'NativeCommandError') {
+        $hadError = $true
+      }
       Add-CapturedText $stderr ($item | Out-String)
     } elseif ($item -is [System.Management.Automation.InformationRecord]) {
       Add-CapturedText $stdout $item.MessageData
@@ -127,7 +144,7 @@ try {
       Add-CapturedText $stdout $item
     }
   }
-  if (-not $?) {
+  if (-not $? -and $LASTEXITCODE -ne 0) {
     $hadError = $true
   }
   if ($LASTEXITCODE) {

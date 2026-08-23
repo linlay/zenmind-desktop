@@ -91,10 +91,10 @@ function writeBrowserCookieRestoreCandidate(app, {
     updatedAt: "2026-08-01T00:00:00.000Z"
   }, null, 2)}\n`, "utf8");
   fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${accessToken}\n`, "utf8");
-  const siteTokenPath = __testInternals.getDesktopSsoSiteTokenFilePath(app);
-  fs.mkdirSync(path.dirname(siteTokenPath), { recursive: true });
-  fs.writeFileSync(siteTokenPath, `${JSON.stringify({
-    accessToken: "old-site-token"
+  const legacySiteTokenPath = path.join(path.dirname(path.dirname(stateRoot)), "secrets", "sso-site-token.json");
+  fs.mkdirSync(path.dirname(legacySiteTokenPath), { recursive: true });
+  fs.writeFileSync(legacySiteTokenPath, `${JSON.stringify({
+    accessToken: "retired-duplicate-token"
   })}\n`, "utf8");
   return stateRoot;
 }
@@ -105,7 +105,8 @@ function createHarness(startResult, options = {}) {
     openBrowserUrl: [],
     openEmbeddedLoginDialog: [],
     openSystemBrowserUrl: [],
-    siteTokenBridgeTickets: [],
+    canonicalTokenExchanges: 0,
+    webSessionExchanges: 0,
     clearBrowserCookies: [],
     broadcasts: [],
     kanbanRefreshes: 0,
@@ -122,15 +123,16 @@ function createHarness(startResult, options = {}) {
       broadcastStatus: (status) => calls.broadcasts.push(status),
       returnToApp: () => undefined,
       syncBrowserCookies: async () => undefined,
-      exchangeBrowserCookieAccessToken: async () => "",
-      exchangeWebSession: async () => false,
-      exchangeSiteTokenBridgeTicket: async (ticket) => {
-        calls.siteTokenBridgeTickets.push(ticket);
-        return true;
+      exchangeBrowserCookieAccessToken: async () => {
+        calls.canonicalTokenExchanges += 1;
+        return "canonical-token";
+      },
+      exchangeWebSession: async () => {
+        calls.webSessionExchanges += 1;
+        return false;
       },
       clearBrowserCookies: async () => { calls.clearBrowserCookies.push(true); },
       clearWebSessionCookies: async () => undefined,
-      clearSiteTokenBridgeCookies: async () => undefined,
       openBrowserUrl: async (input) => {
         calls.openBrowserUrl.push(input);
         return { ok: true };
@@ -152,12 +154,8 @@ function createHarness(startResult, options = {}) {
         await hooks.onBeforeStatusChanged(status, context);
         await hooks.onAfterStatusChanged?.(status, context);
       }
-      if (options.invokeSiteTokenBridgeTicket) {
-        await hooks.onSiteTokenBridgeTicket?.("site-ticket-1", { required: false });
-      }
       return startResult;
     },
-    startDesktopSsoSiteTokenBridge: options.startDesktopSsoSiteTokenBridge,
     logoutDesktopSso: async () => options.logoutResult ?? ({ ok: true, status: createStatus(false) }),
     failDesktopSsoFlow: (message) => ({ ...createStatus(false), error: message, message }),
     cancelDesktopSsoLogin: () => createStatus(false),
@@ -216,81 +214,24 @@ test("system desktop sso login still opens the system browser", async () => {
   }]);
 });
 
-test("desktop sso login opens system site token bridge after oidc success", async () => {
+test("desktop sso login exchanges the canonical token after the web session is ready", async () => {
   const status = createStatus(false);
   const { handlers, calls } = createHarness({
     ok: true,
     status,
     message: "started"
   }, {
-    invokeAuthenticatedHook: true,
-    startDesktopSsoSiteTokenBridge: () => ({
-      ok: true,
-      configured: true,
-      required: false,
-      startUrl: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
-      browserLabel: "ZenMind 登录",
-      openMode: "system",
-      message: "bridge opened"
-    })
+    invokeAuthenticatedHook: true
   });
 
   const result = await handlers.get("sso.startLogin")();
 
   assert.equal(result.ok, true);
-  assert.deepEqual(calls.openSystemBrowserUrl, [{
-    url: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
-    label: "ZenMind 登录"
-  }]);
-});
-
-test("desktop sso login opens embedded site token bridge when configured by browserMode", async () => {
-  const status = createStatus(false);
-  const { handlers, calls } = createHarness({
-    ok: true,
-    status,
-    message: "started"
-  }, {
-    invokeAuthenticatedHook: true,
-    startDesktopSsoSiteTokenBridge: () => ({
-      ok: true,
-      configured: true,
-      required: false,
-      startUrl: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
-      browserLabel: "ZenMind 登录",
-      browserOrigin: "https://app.example.test",
-      openMode: "embedded",
-      message: "bridge opened"
-    })
-  });
-
-  const result = await handlers.get("sso.startLogin")();
-
-  assert.equal(result.ok, true);
-  assert.equal(calls.openSystemBrowserUrl.length, 0);
-  assert.deepEqual(calls.openEmbeddedLoginDialog, [{
-    url: "https://site.example.test/api/auth/desktop-sso/start?state=site-state",
-    label: "ZenMind 登录",
-    browserOrigin: "https://app.example.test",
-    resolveRedirect: true
-  }]);
-});
-
-test("desktop sso site token bridge ticket is exchanged by the controller", async () => {
-  const status = createStatus(false);
-  const { handlers, calls } = createHarness({
-    ok: true,
-    status,
-    message: "started"
-  }, {
-    invokeSiteTokenBridgeTicket: true
-  });
-
-  const result = await handlers.get("sso.startLogin")();
-
-  assert.equal(result.ok, true);
-  assert.deepEqual(calls.siteTokenBridgeTickets, ["site-ticket-1"]);
+  assert.equal(calls.webSessionExchanges, 1);
+  assert.equal(calls.canonicalTokenExchanges, 1);
   assert.equal(calls.kanbanRefreshes, 1);
+  assert.equal(calls.openSystemBrowserUrl.length, 0);
+  assert.equal(calls.openEmbeddedLoginDialog.length, 0);
 });
 
 test("desktop sso logout stops Tunnel Hub runtime", async () => {
@@ -647,7 +588,10 @@ test("desktop sso restart 401 clears canonical files and known cookies", async (
   ]) {
     assert.equal(fs.existsSync(path.join(stateRoot, fileName)), false, `${fileName} should be removed`);
   }
-  assert.equal(fs.existsSync(__testInternals.getDesktopSsoSiteTokenFilePath(app)), false);
+  assert.equal(
+    fs.existsSync(path.join(path.dirname(path.dirname(stateRoot)), "secrets", "sso-site-token.json")),
+    false
+  );
   assert.ok(calls.defaultRemoves.some(({ name }) => name === "_oauth2_proxy"));
   assert.ok(calls.partitionRemoves.some(({ name }) => name === "_oauth2_proxy"));
 });
@@ -1070,130 +1014,4 @@ test("desktop sso cookie flow writes no state when browser session validation fa
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), false);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), false);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), false);
-});
-
-test("desktop sso site token bridge exchange stores returned token", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-site-token-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  const app = createApp(path.join(root, "home"));
-  writeSsoConfig(app, {
-    enabled: true,
-    providerLabel: "ZenMind",
-    browserMode: "system",
-    issuer: "https://auth.example.test/application/o/desktop/",
-    authorizeUrl: "https://auth.example.test/o/authorize/",
-    tokenUrl: "https://auth.example.test/application/o/token/",
-    clientId: "zenmind-desktop",
-    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
-    logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
-    siteTokenBridge: {
-      startUrl: "https://site.example.test/api/auth/desktop-sso/start",
-      exchangeUrl: "https://site.example.test/api/auth/desktop-sso/session"
-    }
-  });
-  const setCookies = [];
-  const fakeSession = {
-    cookies: {
-      set: async (details) => {
-        setCookies.push(details);
-      },
-      get: async () => [],
-      remove: async () => undefined
-    }
-  };
-  const controller = createDesktopSsoController({
-    app,
-    platform: "darwin",
-    session: {
-      defaultSession: fakeSession,
-      fromPartition: () => fakeSession
-    },
-    getMainWindow: () => null,
-    openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
-    openExternal: async () => undefined
-  });
-  let requestBody = null;
-  const fetchImpl = async (_url, init) => {
-    requestBody = JSON.parse(init.body);
-    return {
-      ok: true,
-      status: 200,
-      statusText: "OK",
-      headers: new Headers({ "set-cookie": "sid=abc; Path=/; HttpOnly" }),
-      json: async () => ({
-        ok: true,
-        accessToken: "site-access-token-1",
-        tokenType: "Bearer",
-        expiresAt: "2026-06-18T12:00:00Z",
-        issuer: "https://official.example.test",
-        audience: ["zenmind-market-server", "zenmind-tunnel-hub-server"],
-        scope: "profile market tunnel",
-        user: { id: 1, email: "desktop.user@example.test" }
-      })
-    };
-  };
-
-  const exchanged = await controller.exchangeSiteTokenBridgeTicket("site-ticket-1", fetchImpl);
-
-  assert.equal(exchanged, true);
-  assert.deepEqual(requestBody, { ticket: "site-ticket-1" });
-  assert.equal(setCookies.length, 4);
-  const tokenPath = __testInternals.getDesktopSsoSiteTokenFilePath(app);
-  const stored = JSON.parse(fs.readFileSync(tokenPath, "utf8"));
-  assert.equal(stored.accessToken, "site-access-token-1");
-  assert.deepEqual(stored.audience, ["zenmind-market-server", "zenmind-tunnel-hub-server"]);
-  assert.equal(stored.issuer, "https://official.example.test");
-  assert.equal(stored.scope, "profile market tunnel");
-});
-
-test("desktop sso site token bridge exchange fails without returned access token", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-site-token-missing-"));
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-
-  const app = createApp(path.join(root, "home"));
-  writeSsoConfig(app, {
-    enabled: true,
-    providerLabel: "ZenMind",
-    browserMode: "system",
-    issuer: "https://auth.example.test/application/o/desktop/",
-    authorizeUrl: "https://auth.example.test/o/authorize/",
-    tokenUrl: "https://auth.example.test/application/o/token/",
-    clientId: "zenmind-desktop",
-    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
-    logoutUrl: "https://auth.example.test/application/o/desktop/end-session/",
-    siteTokenBridge: {
-      startUrl: "https://site.example.test/api/auth/desktop-sso/start",
-      exchangeUrl: "https://site.example.test/api/auth/desktop-sso/session"
-    }
-  });
-  const fakeSession = {
-    cookies: {
-      set: async () => undefined,
-      get: async () => [],
-      remove: async () => undefined
-    }
-  };
-  const controller = createDesktopSsoController({
-    app,
-    platform: "darwin",
-    session: {
-      defaultSession: fakeSession,
-      fromPartition: () => fakeSession
-    },
-    getMainWindow: () => null,
-    openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
-    openExternal: async () => undefined
-  });
-
-  const exchanged = await controller.exchangeSiteTokenBridgeTicket("site-ticket-1", async () => ({
-    ok: true,
-    status: 200,
-    statusText: "OK",
-    headers: new Headers({ "set-cookie": "sid=abc; Path=/; HttpOnly" }),
-    json: async () => ({ ok: true, user: { id: 1 } })
-  }));
-
-  assert.equal(exchanged, false);
-  assert.equal(fs.existsSync(__testInternals.getDesktopSsoSiteTokenFilePath(app)), false);
 });

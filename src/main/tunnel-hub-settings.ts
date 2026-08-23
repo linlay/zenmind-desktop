@@ -8,14 +8,22 @@ import type {
   TunnelHubSettingsInput,
   TunnelHubSettingsResult
 } from "../shared/contracts";
-import { getDesktopConfigRoot, getSecretsRoot } from "./user-paths";
+import {
+  getDesktopConfigRoot,
+  getDesktopSsoAccessTokenFilePath,
+  getSecretsRoot
+} from "./user-paths";
 import { getDesktopDeviceId } from "./device-identity";
 import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname,
 } from "./tunnel-hub-url-policy";
 
-const SSO_SITE_TOKEN_FILE_NAME = "sso-site-token.json";
+const LEGACY_TUNNEL_SECRET_FILE_NAMES = [
+  "tunnel-hub-registration-token",
+  "tunnel-hub-token",
+  "tunnel-hub-device-secret"
+] as const;
 const DEFAULT_RECONNECT_SECONDS = 3;
 const MIN_RECONNECT_SECONDS = 1;
 const MAX_RECONNECT_SECONDS = 3600;
@@ -31,7 +39,6 @@ type StoredTunnelHubSettings = {
   publicUrl?: unknown;
   webSocketUrl?: unknown;
   lastRegisteredAt?: unknown;
-  rotateRelayToken?: unknown;
   tlsInsecureSkipVerify?: unknown;
   reconnectSeconds?: unknown;
 };
@@ -42,7 +49,6 @@ type WritableTunnelHubSettings = {
   deviceId?: string;
   publicHost?: string;
   lastRegisteredAt?: string;
-  rotateRelayToken?: boolean;
   tlsInsecureSkipVerify: boolean;
   reconnectSeconds: number;
 };
@@ -53,7 +59,6 @@ export type TunnelHubRegistrationRecord = {
   publicHost?: string;
   publicUrl?: string;
   webSocketUrl?: string;
-  relayToken?: string;
   lastRegisteredAt?: string;
 };
 
@@ -63,22 +68,6 @@ function ensureDir(targetPath: string) {
 
 function getSettingsPath(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDesktopConfigRoot(app, platform), "tunnel-hub.json");
-}
-
-function getTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getSecretsRoot(app, platform), "tunnel-hub-token");
-}
-
-function getRegistrationTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getSecretsRoot(app, platform), "tunnel-hub-registration-token");
-}
-
-function getSsoSiteTokenPath(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getSecretsRoot(app, platform), SSO_SITE_TOKEN_FILE_NAME);
-}
-
-function getDeviceSecretPath(app: App, platform: NodeJS.Platform = process.platform) {
-  return path.join(getSecretsRoot(app, platform), "tunnel-hub-device-secret");
 }
 
 function readStoredSettings(app: App, platform: NodeJS.Platform = process.platform): StoredTunnelHubSettings {
@@ -215,27 +204,11 @@ function normalizeReconnectSeconds(value: unknown) {
   return Math.max(MIN_RECONNECT_SECONDS, Math.min(MAX_RECONNECT_SECONDS, Math.trunc(parsed)));
 }
 
-function readSecretFile(secretPath: string) {
-  if (!fs.existsSync(secretPath)) {
-    return "";
+export function clearLegacyTunnelHubSecrets(app: App, platform: NodeJS.Platform = process.platform) {
+  const secretsRoot = getSecretsRoot(app, platform);
+  for (const fileName of LEGACY_TUNNEL_SECRET_FILE_NAMES) {
+    writeSecretFile(path.join(secretsRoot, fileName), "");
   }
-  try {
-    return fs.readFileSync(secretPath, "utf8").trim();
-  } catch {
-    return "";
-  }
-}
-
-function readTokenFile(app: App, platform: NodeJS.Platform = process.platform) {
-  return readSecretFile(getTokenPath(app, platform));
-}
-
-export function readTunnelHubRelayToken(app: App, platform: NodeJS.Platform = process.platform) {
-  return readTokenFile(app, platform);
-}
-
-export function clearLegacyTunnelHubRegistrationToken(app: App, platform: NodeJS.Platform = process.platform) {
-  writeSecretFile(getRegistrationTokenPath(app, platform), "");
 }
 
 function readJwtExpiresAtMs(token: string) {
@@ -252,22 +225,13 @@ function readJwtExpiresAtMs(token: string) {
   }
 }
 
-function readSsoSiteToken(app: App, platform: NodeJS.Platform = process.platform) {
-  const siteTokenPath = getSsoSiteTokenPath(app, platform);
-  if (!fs.existsSync(siteTokenPath)) {
+function readCanonicalDesktopSsoToken(app: App, platform: NodeJS.Platform = process.platform) {
+  const tokenPath = getDesktopSsoAccessTokenFilePath(app, platform);
+  if (!fs.existsSync(tokenPath)) {
     return "";
   }
   try {
-    const parsed = JSON.parse(fs.readFileSync(siteTokenPath, "utf8")) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-      return "";
-    }
-    const record = parsed as Record<string, unknown>;
-    const token = typeof record.accessToken === "string"
-      ? record.accessToken.trim()
-      : typeof record.access_token === "string"
-        ? record.access_token.trim()
-        : "";
+    const token = fs.readFileSync(tokenPath, "utf8").trim();
     const expiresAtMs = readJwtExpiresAtMs(token);
     if (!token || (expiresAtMs > 0 && expiresAtMs <= Date.now())) {
       return "";
@@ -279,40 +243,20 @@ function readSsoSiteToken(app: App, platform: NodeJS.Platform = process.platform
 }
 
 export function readTunnelHubRegistrationBearerToken(app: App, platform: NodeJS.Platform = process.platform) {
-  return readSsoSiteToken(app, platform);
-}
-
-export function ensureTunnelHubDeviceSecret(app: App, platform: NodeJS.Platform = process.platform) {
-  const current = readSecretFile(getDeviceSecretPath(app, platform));
-  if (current) {
-    return current;
-  }
-  const deviceSecret = crypto.randomBytes(32).toString("base64url");
-  writeSecretFile(getDeviceSecretPath(app, platform), deviceSecret);
-  return deviceSecret;
-}
-
-function previewToken(token: string) {
-  if (!token) {
-    return "";
-  }
-  if (token.length <= 4) {
-    return "****";
-  }
-  return `****${token.slice(-4)}`;
+  return readCanonicalDesktopSsoToken(app, platform);
 }
 
 export function readTunnelHubSettings(
   app: App,
   platform: NodeJS.Platform = process.platform
 ): TunnelHubSettings {
+  clearLegacyTunnelHubSecrets(app, platform);
   const stored = readStoredSettings(app, platform);
-  const token = readTunnelHubRelayToken(app, platform);
-  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app, platform);
+  const identityToken = readTunnelHubRegistrationBearerToken(app, platform);
   const relayUrl = normalizeRelayUrl(stored.relayUrl);
   const deviceId = normalizeTunnelHubDeviceId(stored.deviceId) || createDefaultDeviceId(app);
   const publicHost = readStoredPublicHost(stored);
-  const complete = Boolean(ssoSiteToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
+  const complete = Boolean(identityToken) && isValidRelayUrl(relayUrl) && isValidTunnelHubDeviceId(deviceId);
   const enabled = typeof stored.enabled === "boolean"
     ? stored.enabled && complete
     : complete;
@@ -320,8 +264,6 @@ export function readTunnelHubSettings(
     enabled,
     relayUrl,
     deviceId,
-    hasRelayToken: Boolean(token),
-    relayTokenPreview: previewToken(token),
     publicHost,
     publicUrl: publicUrlFromHost(publicHost),
     webSocketUrl: webSocketUrlFromHost(publicHost),
@@ -400,24 +342,12 @@ function writeSecretFile(secretPath: string, token: string) {
   }
 }
 
-function writeToken(app: App, token: string, platform: NodeJS.Platform = process.platform) {
-  writeSecretFile(getTokenPath(app, platform), token);
-}
-
-export function writeTunnelHubRelayToken(
-  app: App,
-  token: string,
-  platform: NodeJS.Platform = process.platform
-) {
-  writeToken(app, token.trim(), platform);
-}
-
 export function saveTunnelHubSettings(
   app: App,
   input: TunnelHubSettingsInput,
   platform: NodeJS.Platform = process.platform
 ): TunnelHubSettingsResult {
-  clearLegacyTunnelHubRegistrationToken(app, platform);
+  clearLegacyTunnelHubSecrets(app, platform);
   const current = readTunnelHubSettings(app, platform);
   const relayUrl = "relayUrl" in input ? normalizeRelayUrl(input.relayUrl) : current.relayUrl;
   const deviceId = "deviceId" in input && normalizeTunnelHubDeviceId(input.deviceId)
@@ -425,7 +355,7 @@ export function saveTunnelHubSettings(
     : current.deviceId || createDefaultDeviceId(app);
   const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds ?? current.reconnectSeconds);
   const requestedEnabled = typeof input.enabled === "boolean" ? input.enabled : current.enabled;
-  const ssoSiteToken = readTunnelHubRegistrationBearerToken(app, platform);
+  const identityToken = readTunnelHubRegistrationBearerToken(app, platform);
   const issues: string[] = [];
   if (!isValidTunnelHubDeviceId(deviceId)) {
     issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
@@ -434,7 +364,7 @@ export function saveTunnelHubSettings(
     if (!isValidRelayUrl(relayUrl)) {
       issues.push("Relay URL is invalid.");
     }
-    if (!ssoSiteToken) {
+    if (!identityToken) {
       issues.push("Sign in before enabling Tunnel Hub.");
     }
   }
@@ -446,20 +376,11 @@ export function saveTunnelHubSettings(
     deviceId,
     publicHost: deviceIdChanged ? "" : current.publicHost,
     lastRegisteredAt: deviceIdChanged ? "" : current.lastRegisteredAt,
-    rotateRelayToken: input.rotateRelayToken === true,
     tlsInsecureSkipVerify: false,
     reconnectSeconds
   };
   writeStoredSettings(app, nextSettings, platform);
 
-  if (input.clearRelayToken === true) {
-    writeToken(app, "", platform);
-  } else if (typeof input.relayToken === "string") {
-    const token = input.relayToken.trim();
-    if (token) {
-      writeToken(app, token, platform);
-    }
-  }
   if (issues.length > 0) {
     return {
       ok: false,
@@ -490,15 +411,10 @@ export function ensureTunnelHubDeviceId(app: App) {
     deviceId,
     publicHost: currentSettings.publicHost,
     lastRegisteredAt: currentSettings.lastRegisteredAt,
-    rotateRelayToken: readStoredSettings(app).rotateRelayToken === true,
     tlsInsecureSkipVerify: false,
     reconnectSeconds: currentSettings.reconnectSeconds
   });
   return deviceId;
-}
-
-export function readTunnelHubRelayTokenRotationRequest(app: App) {
-  return readStoredSettings(app).rotateRelayToken === true;
 }
 
 export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubRegistrationRecord) {
@@ -514,13 +430,9 @@ export function recordTunnelHubRegistrationResult(app: App, record: TunnelHubReg
     deviceId,
     publicHost,
     lastRegisteredAt: record.lastRegisteredAt?.trim() || new Date().toISOString(),
-    rotateRelayToken: false,
     tlsInsecureSkipVerify: false,
     reconnectSeconds: current.reconnectSeconds
   };
   writeStoredSettings(app, nextSettings);
-  if (record.relayToken?.trim()) {
-    writeToken(app, record.relayToken.trim());
-  }
   return readTunnelHubSettings(app);
 }

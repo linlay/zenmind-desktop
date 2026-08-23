@@ -66,12 +66,11 @@ function createWsHarness({ onQuery, onSend, autoOpen = true } = {}) {
       this.onerror = null;
       this.sent = [];
       this.closed = false;
+      this.opened = false;
       sockets.push(this);
       if (autoOpen) {
         queueMicrotask(() => {
-          if (!this.closed) {
-            this.onopen?.();
-          }
+          this.open();
         });
       }
     }
@@ -91,7 +90,24 @@ function createWsHarness({ onQuery, onSend, autoOpen = true } = {}) {
     }
 
     open() {
+      if (this.closed || this.opened) {
+        return;
+      }
+      this.opened = true;
       this.onopen?.();
+      this.receive({
+        frame: "push",
+        type: "connected",
+        data: {
+          protocolVersion: 2,
+          sessionId: `platform-${sockets.indexOf(this) + 1}`,
+          serverTime: EPOCH_MS,
+          liveness: {
+            heartbeatIntervalMs: 30_000,
+            silenceTimeoutMs: 100_000,
+          },
+        },
+      });
     }
 
     close() {
@@ -255,6 +271,126 @@ test("agent platform assistant bridge proxies global chat search with bearer tok
       ["chat-1", "coder", "deploy snippet"]
     ]);
     assert.equal(result.count, 1);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("agent platform assistant bridge maps the minimal native history DTO without leaking host credentials", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  const requests = [];
+  globalThis.fetch = async (url, init = {}) => {
+    requests.push({ url: String(url), init });
+    return new Response(JSON.stringify([
+      {
+        chatId: "chat-without-agent",
+        chatName: "Team-only chat",
+        teamId: "team-1",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS + 20,
+        lastRunId: "run-2",
+        lastRunContent: "Waiting for input",
+        read: { isRead: false },
+        awaitingCount: 2,
+        awaitingMode: "question",
+      },
+      {
+        chatId: "chat-agent",
+        chatName: "Release plan",
+        firstAgentKey: "release-agent",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS + 10,
+        lastRunId: "run-1",
+        lastRunContent: "Ready to ship",
+        isRead: true,
+        activeRun: { runId: "run-1" },
+      },
+    ]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  };
+
+  try {
+    const result = await bridge.listHistoryChats();
+
+    assert.equal(requests.length, 1);
+    assert.equal(requests[0].url, "http://127.0.0.1:18888/api/chats");
+    assert.equal(requests[0].init.headers.Authorization, "Bearer desktop-token");
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.items, [
+      {
+        chatId: "chat-without-agent",
+        chatName: "Team-only chat",
+        agentKey: "",
+        teamId: "team-1",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS + 20,
+        lastRunId: "run-2",
+        lastRunContent: "Waiting for input",
+        isRead: false,
+        hasActiveRun: false,
+        hasPendingAwaiting: true,
+        awaitingCount: 2,
+        awaitingMode: "question",
+      },
+      {
+        chatId: "chat-agent",
+        chatName: "Release plan",
+        agentKey: "release-agent",
+        createdAt: EPOCH_MS,
+        updatedAt: EPOCH_MS + 10,
+        lastRunId: "run-1",
+        lastRunContent: "Ready to ship",
+        isRead: true,
+        hasActiveRun: true,
+        hasPendingAwaiting: false,
+      },
+    ]);
+    assert.doesNotMatch(JSON.stringify(result), /desktop-token|127\.0\.0\.1:18888/u);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("native history reports platform unavailability and rejects malformed times", async () => {
+  const unavailable = makeBridge({
+    getServiceState: async () => ({
+      status: "stopped",
+      message: "platform stopped",
+      healthMeta: { webUrl: "", port: null },
+    }),
+  });
+  const unavailableResult = await unavailable.bridge.listHistoryChats();
+  assert.equal(unavailableResult.ok, false);
+  assert.deepEqual(unavailableResult.items, []);
+  assert.equal(unavailableResult.message, "platform stopped");
+  assert.equal(Number.isInteger(unavailableResult.updatedAt), true);
+
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response(JSON.stringify([{
+    chatId: "chat-invalid",
+    createdAt: EPOCH_MS,
+    updatedAt: "2026-07-13T00:00:00.000Z",
+  }]), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  });
+  try {
+    await assert.rejects(
+      bridge.listHistoryChats(),
+      /time_contract_violation: historyChats\[0\]\.updatedAt/u,
+    );
+    globalThis.fetch = async () => new Response(JSON.stringify([null]), {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+    await assert.rejects(
+      bridge.listHistoryChats(),
+      /historyChats\[0\] must be an object/u,
+    );
   } finally {
     globalThis.fetch = originalFetch;
   }
@@ -668,7 +804,7 @@ test("agent platform assistant bridge converges pre-accept frame, identity, and 
       {
         name: "connection timeout",
         configure: () => undefined,
-        expected: /connection timed out/u,
+        expected: /handshake timed out/u,
         autoOpen: false,
         connectTimeout: 5,
       },

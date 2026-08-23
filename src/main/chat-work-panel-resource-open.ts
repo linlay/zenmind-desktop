@@ -16,7 +16,25 @@ type OpenChatResourceDependencies = {
   realpathSync?: (targetPath: string) => string;
   statSync?: (targetPath: string) => { isFile(): boolean };
   openPath?: (targetPath: string) => Promise<string>;
+  showItemInFolder?: (targetPath: string) => void;
 };
+
+const RESOURCE_ERROR_KEYS = {
+  openDefault: {
+    invalidPath: "chatWorkPanel.openDefault.invalidPath",
+    notFound: "chatWorkPanel.openDefault.notFound",
+    notFile: "chatWorkPanel.openDefault.notFile",
+    outsideChat: "chatWorkPanel.openDefault.outsideChat",
+  },
+  reveal: {
+    invalidPath: "chatWorkPanel.reveal.invalidPath",
+    notFound: "chatWorkPanel.reveal.notFound",
+    notFile: "chatWorkPanel.reveal.notFile",
+    outsideChat: "chatWorkPanel.reveal.outsideChat",
+  },
+} as const;
+
+type LocalResourceAction = keyof typeof RESOURCE_ERROR_KEYS;
 
 function platformPathApi(platform: NodeJS.Platform | string, rootPath: string) {
   if (platform === "win32") {
@@ -94,17 +112,19 @@ export function normalizeChatWorkPanelOpenLocalResourceRequest(
     : null;
 }
 
-export async function openChatWorkPanelResourceInDefaultApp(
+function resolveChatWorkPanelResourceFile(
   request: ChatWorkPanelOpenLocalResourceRequest,
   dependencies: OpenChatResourceDependencies,
-): Promise<ChatWorkPanelOpenLocalResourceResult> {
+  action: LocalResourceAction,
+): ChatWorkPanelOpenLocalResourceResult {
+  const errorKeys = RESOURCE_ERROR_KEYS[action];
   const normalized = normalizeChatWorkPanelOpenLocalResourceRequest(request);
   if (!normalized) {
-    return fail("invalid_request", t("chatWorkPanel.openDefault.invalidPath"));
+    return fail("invalid_request", t(errorKeys.invalidPath));
   }
   const platform = dependencies.platform ?? process.platform;
   if (platform === "win32" && normalized.relativePath.includes(":")) {
-    return fail("invalid_request", t("chatWorkPanel.openDefault.invalidPath"));
+    return fail("invalid_request", t(errorKeys.invalidPath));
   }
   const runtimeRoot = (dependencies.resolveRuntimeRoot ?? resolvePreferredAgentPlatformRuntimeRoot)(
     dependencies.app,
@@ -113,14 +133,14 @@ export async function openChatWorkPanelResourceInDefaultApp(
   const chatRoot = pathApi.resolve(pathApi.join(runtimeRoot, "chats", normalized.ownerChatId));
   const candidatePath = pathApi.resolve(pathApi.join(chatRoot, normalized.relativePath));
   if (!isInside(chatRoot, candidatePath, pathApi)) {
-    return fail("path_outside_chat", t("chatWorkPanel.openDefault.outsideChat"), candidatePath);
+    return fail("path_outside_chat", t(errorKeys.outsideChat), candidatePath);
   }
 
   const existsSync = dependencies.existsSync ?? fs.existsSync;
   const realpathSync = dependencies.realpathSync ?? fs.realpathSync.native;
   const statSync = dependencies.statSync ?? fs.statSync;
   if (!existsSync(chatRoot) || !existsSync(candidatePath)) {
-    return fail("not_found", t("chatWorkPanel.openDefault.notFound"), candidatePath);
+    return fail("not_found", t(errorKeys.notFound), candidatePath);
   }
 
   let realChatRoot = "";
@@ -129,28 +149,61 @@ export async function openChatWorkPanelResourceInDefaultApp(
     realChatRoot = realpathSync(chatRoot);
     realCandidatePath = realpathSync(candidatePath);
   } catch {
-    return fail("not_found", t("chatWorkPanel.openDefault.notFound"), candidatePath);
+    return fail("not_found", t(errorKeys.notFound), candidatePath);
   }
   if (!isInside(realChatRoot, realCandidatePath, pathApi)) {
-    return fail("path_outside_chat", t("chatWorkPanel.openDefault.outsideChat"), realCandidatePath);
+    return fail("path_outside_chat", t(errorKeys.outsideChat), realCandidatePath);
   }
   if (!statSync(realCandidatePath).isFile()) {
-    return fail("not_file", t("chatWorkPanel.openDefault.notFile"), realCandidatePath);
+    return fail("not_file", t(errorKeys.notFile), realCandidatePath);
   }
 
+  return { ok: true, path: realCandidatePath };
+}
+
+export async function openChatWorkPanelResourceInDefaultApp(
+  request: ChatWorkPanelOpenLocalResourceRequest,
+  dependencies: OpenChatResourceDependencies,
+): Promise<ChatWorkPanelOpenLocalResourceResult> {
+  const resolved = resolveChatWorkPanelResourceFile(request, dependencies, "openDefault");
+  if (!resolved.ok || !resolved.path) return resolved;
+
   try {
-    const openError = await (dependencies.openPath ?? electronShell.openPath)(realCandidatePath);
-    if (openError) return fail("open_failed", openError, realCandidatePath);
+    const openError = await (dependencies.openPath ?? electronShell.openPath)(resolved.path);
+    if (openError) return fail("open_failed", openError, resolved.path);
     return {
       ok: true,
-      path: realCandidatePath,
+      path: resolved.path,
       message: t("chatWorkPanel.openDefault.opened"),
     };
   } catch (error) {
     return fail(
       "open_failed",
       error instanceof Error ? error.message : String(error),
-      realCandidatePath,
+      resolved.path,
+    );
+  }
+}
+
+export async function revealChatWorkPanelResourceInFileManager(
+  request: ChatWorkPanelOpenLocalResourceRequest,
+  dependencies: OpenChatResourceDependencies,
+): Promise<ChatWorkPanelOpenLocalResourceResult> {
+  const resolved = resolveChatWorkPanelResourceFile(request, dependencies, "reveal");
+  if (!resolved.ok || !resolved.path) return resolved;
+
+  try {
+    (dependencies.showItemInFolder ?? electronShell.showItemInFolder)(resolved.path);
+    return {
+      ok: true,
+      path: resolved.path,
+      message: t("chatWorkPanel.reveal.revealed"),
+    };
+  } catch (error) {
+    return fail(
+      "open_failed",
+      error instanceof Error ? error.message : String(error),
+      resolved.path,
     );
   }
 }

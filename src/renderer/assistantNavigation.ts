@@ -210,6 +210,43 @@ export function isAssistantNavChatAgent(
     !isAssistantNavProjectAgent(agent);
 }
 
+export function reorderAssistantNavProjectAgents(
+  items: AssistantNavAgentItem[],
+  requestedAgentKeys: string[],
+) {
+  const projectItems = items.filter(isAssistantNavProjectAgent);
+  const projectByKey = new Map(
+    projectItems.map((agent) => [agent.agentKey, agent] as const),
+  );
+  const seen = new Set<string>();
+  const orderedProjects: AssistantNavAgentItem[] = [];
+  for (const rawKey of requestedAgentKeys) {
+    const key = rawKey.trim();
+    const agent = projectByKey.get(key);
+    if (!agent || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    orderedProjects.push(agent);
+  }
+  for (const agent of projectItems) {
+    if (!seen.has(agent.agentKey)) {
+      seen.add(agent.agentKey);
+      orderedProjects.push(agent);
+    }
+  }
+
+  let projectIndex = 0;
+  return items.map((agent) => {
+    if (!isAssistantNavProjectAgent(agent)) {
+      return agent;
+    }
+    const orderedAgent = orderedProjects[projectIndex] ?? agent;
+    projectIndex += 1;
+    return orderedAgent;
+  });
+}
+
 export type AssistantNavChatRuntimeAgent = {
   agent: AssistantNavAgentItem | null;
   agentKey: string;
@@ -297,6 +334,8 @@ export function normalizeAssistantNavAgentItemsResult(
     items: normalizeAssistantNavAgents(result.items),
     chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }),
     chatItemsHasMore: result.chatItemsHasMore === true,
+    chatSortMode: result.chatSortMode === "manual" ? "manual" : "recent",
+    chatOrderingSupported: result.chatOrderingSupported === true,
     ...(activityItems ? { activityItems } : {})
   };
 }

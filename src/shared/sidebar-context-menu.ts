@@ -2,10 +2,10 @@ export const SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL =
   "sidebarContextMenu.popup";
 
 export type SidebarContextMenuActionId =
-  | "group.sort-by-time"
-  | "group.sort-by-name"
   | "group.new-project"
   | "group.new-chat"
+  | "group.chat-sort-recent"
+  | "group.chat-sort-manual"
   | "group.add-website"
   | "group.import-webapp"
   | "agent.reveal-workspace"
@@ -30,10 +30,11 @@ export type SidebarContextMenuTarget =
   | {
       kind: "group";
       groupId: "assistants" | "chats" | "webs";
-      menuScope: "all" | "sort";
-      sortMode: "byName" | "byTime";
       canCreateProject: boolean;
       canCreateChat: boolean;
+      chatSortMode: "recent" | "manual";
+      chatOrderingSupported: boolean;
+      menuScope?: "sort";
     }
   | {
       kind: "agent";

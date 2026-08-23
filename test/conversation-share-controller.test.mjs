@@ -26,7 +26,7 @@ function createFixture(t, tunnelOverrides = {}) {
   };
   const desktopRoot = path.join(homeRoot, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
   const configPath = path.join(desktopRoot, "config", "desktop", "tunnel-hub.json");
-  const tokenPath = path.join(desktopRoot, "secrets", "sso-site-token.json");
+  const tokenPath = path.join(desktopRoot, "state", "desktop", "sso-access-token.txt");
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
   fs.writeFileSync(configPath, JSON.stringify({
@@ -38,7 +38,7 @@ function createFixture(t, tunnelOverrides = {}) {
     ...tunnelOverrides
   }));
   const payload = Buffer.from(JSON.stringify({ sub: "user-1", exp: Math.floor(Date.now() / 1000) + 3600 })).toString("base64url");
-  fs.writeFileSync(tokenPath, JSON.stringify({ accessToken: `header.${payload}.signature` }));
+  fs.writeFileSync(tokenPath, `header.${payload}.signature\n`);
   t.after(() => fs.rmSync(tempRoot, { recursive: true, force: true }));
   return app;
 }
@@ -90,7 +90,7 @@ test("createConversationShare renders once, then forwards the same Buffer to Tun
 test("createConversationShare resolves login and Tunnel before rendering HTML", async (t) => {
   const app = createFixture(t);
   const desktopRoot = path.join(app.getPath("home"), APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
-  fs.rmSync(path.join(desktopRoot, "secrets", "sso-site-token.json"));
+  fs.rmSync(path.join(desktopRoot, "state", "desktop", "sso-access-token.txt"));
   let rendered = false;
   let created = false;
 

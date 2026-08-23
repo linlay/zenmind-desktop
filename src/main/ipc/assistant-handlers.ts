@@ -6,8 +6,21 @@ import {
 } from "../download-paths";
 import { buildProjectAgentCreateRequest, type ProjectCreateType } from "../assistant/core/coder-project";
 import { PRODUCT_NAME } from "../../shared/brand";
-import type { AssistantConversationShareRequest, AssistantNavigationListOptions } from "../../shared/contracts";
+import type {
+  AssistantChatOrderMutationRequest,
+  AssistantChatOrderMutationResult,
+  AssistantChatSortMode,
+  AssistantConversationShareRequest,
+  AssistantNavigationListOptions,
+  AssistantReorderProjectsRequest,
+  AssistantReorderProjectsResult,
+} from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
+import {
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot,
+} from "../desktop-profile-store";
+import { getDesktopConfigRoot } from "../user-paths";
 import { t } from "../i18n/main-i18n";
 import { COPILOT_DOCK_SURFACE_ID } from "../../shared/surface-identity";
 import {
@@ -18,6 +31,10 @@ import {
 import { saveConversationHtmlExport } from "../assistant/core/conversation-html-export";
 import { ConversationHtmlRenderService } from "../assistant/core/conversation-html-render-service";
 import { TunnelConversationShareClient } from "../assistant/core/tunnel-conversation-share-client";
+import {
+  createProjectAgentOrderPlan,
+  validateProjectAgentOrderRequestKeys,
+} from "../assistant/core/project-agent-order";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -94,6 +111,45 @@ function nowEpochMillis() {
   return requireEpochMillis(Date.now(), "desktop.assistantIpc.now");
 }
 
+function readAgentCatalogKeys(value: unknown, path: string) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array`);
+  }
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`${path}[${index}] must be an object`);
+    }
+    const key = typeof (item as Record<string, unknown>).key === "string"
+      ? String((item as Record<string, unknown>).key).trim()
+      : "";
+    if (!key) {
+      throw new Error(`${path}[${index}].key is required`);
+    }
+    return key;
+  });
+}
+
+function readAgentOrderKeys(value: unknown, path: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+  const order = (value as Record<string, unknown>).order;
+  if (!Array.isArray(order)) {
+    throw new Error(`${path}.order must be an array`);
+  }
+  const keys = order.map((item, index) => {
+    const key = typeof item === "string" ? item.trim() : "";
+    if (!key) {
+      throw new Error(`${path}.order[${index}] must be a non-empty agent key`);
+    }
+    return key;
+  });
+  if (new Set(keys).size !== keys.length) {
+    throw new Error(`${path}.order contains duplicate agent keys`);
+  }
+  return keys;
+}
+
 function isLiveWebviewContents(contents: any) {
   return Boolean(
     contents &&
@@ -159,6 +215,48 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   });
   const getWebContentsById = options.getWebContentsById ?? (() => null);
   const copilotDevToolsOwnerCleanupIds = new Set<number>();
+
+  function currentChatSortMode(): AssistantChatSortMode {
+    return readDesktopProfileFromRoot(
+      getDesktopConfigRoot(app, platform as NodeJS.Platform),
+    ).navigation.chatSortMode;
+  }
+
+  function normalizeChatOrderMutation(
+    input: AssistantChatOrderMutationRequest,
+  ): AssistantChatOrderMutationRequest {
+    if (!input || typeof input !== "object" || Array.isArray(input)) {
+      throw new Error(t("assistant.chatOrderInvalidRequest"));
+    }
+    if (input.operation === "set_mode") {
+      if (input.sortMode !== "recent" && input.sortMode !== "manual") {
+        throw new Error(t("assistant.chatOrderInvalidRequest"));
+      }
+      return { operation: "set_mode", sortMode: input.sortMode };
+    }
+    if (input.operation !== "move") {
+      throw new Error(t("assistant.chatOrderInvalidRequest"));
+    }
+    const chatId = typeof input.chatId === "string" ? input.chatId.trim() : "";
+    const beforeChatId = typeof input.beforeChatId === "string"
+      ? input.beforeChatId.trim()
+      : "";
+    const afterChatId = typeof input.afterChatId === "string"
+      ? input.afterChatId.trim()
+      : "";
+    if (
+      !chatId ||
+      (Boolean(beforeChatId) === Boolean(afterChatId)) ||
+      chatId === (beforeChatId || afterChatId)
+    ) {
+      throw new Error(t("assistant.chatOrderInvalidRequest"));
+    }
+    return {
+      operation: "move",
+      chatId,
+      ...(beforeChatId ? { beforeChatId } : { afterChatId }),
+    };
+  }
 
   ipcMain.handle("currentPage.publishSnapshot", async (_event: any, snapshot: any) => {
     setSnapshot(snapshot);
@@ -352,6 +450,129 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     }
   });
 
+  ipcMain.handle("assistant.updateChatOrder", async (
+    _event: unknown,
+    input: AssistantChatOrderMutationRequest,
+  ): Promise<AssistantChatOrderMutationResult> => {
+    const previousMode = currentChatSortMode();
+    try {
+      if (!callAgentPlatform) {
+        throw new Error(t("assistant.chatOrderUnavailable"));
+      }
+      const request = normalizeChatOrderMutation(input);
+      const response = await callAgentPlatform(
+        app,
+        "/api/chats/order",
+        { method: "PUT", body: request },
+      ) as Record<string, unknown> | null;
+      const sortMode = response?.sortMode;
+      if (sortMode !== "recent" && sortMode !== "manual") {
+        throw new Error(t("assistant.chatOrderInvalidResponse"));
+      }
+      const updatedAt = response?.updatedAt === undefined || response.updatedAt === null
+        ? undefined
+        : requireEpochMillis(
+            response.updatedAt,
+            "assistant.chatOrder.updatedAt",
+          );
+      updateDesktopProfileInRoot(
+        getDesktopConfigRoot(app, platform as NodeJS.Platform),
+        { navigation: { chatSortMode: sortMode } },
+      );
+      await assistantNavigationStatusClient?.refreshNow?.();
+      return {
+        ok: true,
+        sortMode,
+        message: t("assistant.chatOrderSaved"),
+        ...(updatedAt === undefined ? {} : { updatedAt }),
+      };
+    } catch (error) {
+      console.warn("[assistant] failed to update chat order", error);
+      return {
+        ok: false,
+        sortMode: previousMode,
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
+      };
+    }
+  });
+
+  ipcMain.handle("assistant.reorderProjects", async (
+    _event: unknown,
+    input: AssistantReorderProjectsRequest,
+  ): Promise<AssistantReorderProjectsResult> => {
+    const requestedAgentKeys = input && typeof input === "object" && !Array.isArray(input)
+      ? input.agentKeys
+      : undefined;
+    try {
+      const normalizedRequestedAgentKeys = validateProjectAgentOrderRequestKeys(
+        requestedAgentKeys,
+      );
+      if (!callAgentPlatform) {
+        return {
+          ok: false,
+          agentKeys: [],
+          message: t("assistant.projectOrderUnavailable"),
+        };
+      }
+      const projectAgents = await callAgentPlatform(
+        app,
+        "/api/agents?scope=nav&mode=CODER&mode=KBASE",
+      );
+      const agentOrder = await callAgentPlatform(app, "/api/agents/order");
+      const plan = createProjectAgentOrderPlan({
+        requestedProjectAgentKeys: normalizedRequestedAgentKeys,
+        currentProjectAgentKeys: readAgentCatalogKeys(
+          projectAgents,
+          "assistant.projectOrder.projects",
+        ),
+        fullAgentKeys: readAgentOrderKeys(
+          agentOrder,
+          "assistant.projectOrder.agentOrder",
+        ),
+      });
+      const response = await callAgentPlatform(
+        app,
+        "/api/agents/order",
+        { method: "PUT", body: { order: plan.fullAgentKeys } },
+      ) as Record<string, unknown> | null;
+      const savedAgentKeys = readAgentOrderKeys(
+        response,
+        "assistant.projectOrder.savedOrder",
+      );
+      const plannedProjectKeySet = new Set(plan.projectAgentKeys);
+      const savedProjectAgentKeys = savedAgentKeys.filter((key) =>
+        plannedProjectKeySet.has(key)
+      );
+      if (savedProjectAgentKeys.length !== plan.projectAgentKeys.length) {
+        throw new Error("saved Agent order is missing a Project agent");
+      }
+      const updatedAt = response?.updatedAt === undefined || response.updatedAt === null
+        ? undefined
+        : requireEpochMillis(
+            response.updatedAt,
+            "assistant.projectOrder.updatedAt",
+          );
+      assistantNavigationStatusClient?.scheduleRefresh?.(0);
+      return {
+        ok: true,
+        agentKeys: savedProjectAgentKeys,
+        message: t("assistant.projectOrderSaved"),
+        ...(updatedAt === undefined ? {} : { updatedAt }),
+      };
+    } catch (error) {
+      console.warn("[assistant] failed to reorder projects", error);
+      return {
+        ok: false,
+        agentKeys: [],
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.projectOrderSaveFailed"),
+      };
+    }
+  });
+
   ipcMain.handle("assistant.getNavigationLiveStatus", () =>
     assistantNavigationStatusClient?.getLiveStatus?.() ?? {
       phase: "idle",
@@ -426,6 +647,10 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   // ---------------------------------------------------------------------------
   ipcMain.handle("assistant.listChats", async () =>
     assistantBridge?.listChats()
+  );
+
+  ipcMain.handle("assistant.listHistoryChats", async () =>
+    assistantBridge?.listHistoryChats()
   );
 
   ipcMain.handle("assistant.getChat", async (_event: any, chatId: string) =>

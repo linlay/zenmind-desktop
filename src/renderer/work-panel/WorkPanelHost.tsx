@@ -5,16 +5,25 @@ import {
   DashboardOutlined,
   DeploymentUnitOutlined,
   DiffOutlined,
+  ExportOutlined,
   FileTextOutlined,
+  FolderOpenOutlined,
   GlobalOutlined,
   ProjectOutlined,
   RobotOutlined,
 } from "@ant-design/icons";
+import { Button } from "antd";
 import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
-import { normalizeWorkPanelWebUrl, stableWorkPanelHash } from "../../shared/work-panel";
+import {
+  normalizeWorkPanelWebUrl,
+  resolveWorkPanelWebSessionKey,
+  stableWorkPanelHash,
+} from "../../shared/work-panel";
+import { normalizeWebviewBlobPopupUrl } from "../../shared/webview-popup";
 import {
   resolveChatWorkPanelLocalResourcePath,
+  shouldShowChatWorkPanelLocalResourceActions,
   type ChatWorkPanelTabContextMenuProfile,
 } from "../../shared/chat-work-panel-tab-context-menu";
 import {
@@ -58,6 +67,16 @@ function itemRuntimeKey(ownerChatId: string, itemId: string) {
 }
 
 type WorkPanelItem = WorkPanelState["workspaces"][number]["items"][number];
+
+function localResourceProfile(item: WorkPanelItem) {
+  if (
+    item.descriptor.kind === "webclient" &&
+    (item.descriptor.module === "artifact" || item.descriptor.module === "reference")
+  ) {
+    return item.descriptor.module;
+  }
+  return null;
+}
 
 function tabContextMenuProfile(item: WorkPanelItem): ChatWorkPanelTabContextMenuProfile {
   if (item.descriptor.kind === "web") return "web";
@@ -123,7 +142,15 @@ export function WorkPanelHost({
   const stateRef = useRef(state);
   const previousWebPartitionsRef = useRef(new Set<string>());
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
+  const [busyLocalResourceItems, setBusyLocalResourceItems] = useState<Set<string>>(() => new Set());
   stateRef.current = state;
+
+  let revealLocalResourceLabel = t("chatWorkPanel.tabContextMenu.revealInFileManager");
+  if (isMac) {
+    revealLocalResourceLabel = t("chatWorkPanel.tabContextMenu.revealInFinder");
+  } else if (isWindows) {
+    revealLocalResourceLabel = t("chatWorkPanel.tabContextMenu.revealInExplorer");
+  }
 
   const closeWorkPanelStep = (ownerChatId: string) => {
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
@@ -160,6 +187,49 @@ export function WorkPanelHost({
       candidate.dataset.workPanelOwner === ownerChatId && candidate.dataset.workPanelItem === itemId,
     );
     return itemHost?.querySelector("webview") as Electron.WebviewTag | null;
+  };
+
+  const handleLocalResourceAction = async (
+    ownerChatId: string,
+    item: WorkPanelItem,
+    action: "reveal" | "open-default",
+  ) => {
+    const profile = localResourceProfile(item);
+    if (!profile || item.descriptor.kind !== "webclient") return;
+    const relativePath = resolveChatWorkPanelLocalResourcePath({
+      ownerChatId,
+      profile,
+      route: item.descriptor.route,
+    });
+    if (!relativePath) {
+      console.warn("[work-panel] refused invalid local resource path", item.descriptor.route);
+      return;
+    }
+
+    const runtimeKey = itemRuntimeKey(ownerChatId, item.itemId);
+    setBusyLocalResourceItems((current) => new Set(current).add(runtimeKey));
+    try {
+      const request = { ownerChatId, profile, relativePath };
+      const result = action === "reveal"
+        ? await window.electronAPI.chatWorkPanelTabContextMenu.revealLocalResource(request)
+        : await window.electronAPI.chatWorkPanelTabContextMenu.openLocalResource(request);
+      if (!result.ok) {
+        console.warn(
+          `[work-panel] failed to ${action === "reveal" ? "reveal" : "open"} local resource`,
+          result.code,
+          result.message,
+        );
+      }
+    } catch (error) {
+      console.warn("[work-panel] local resource action failed", error);
+    } finally {
+      setBusyLocalResourceItems((current) => {
+        if (!current.has(runtimeKey)) return current;
+        const next = new Set(current);
+        next.delete(runtimeKey);
+        return next;
+      });
+    }
   };
 
   const handleTabContextMenu = async (
@@ -205,28 +275,12 @@ export function WorkPanelHost({
       await window.electronAPI.clipboard.writeText(item.title);
       return;
     }
-    if (
-      result.actionId === "open-resource-default-app" &&
-      item.descriptor.kind === "webclient" &&
-      (item.descriptor.module === "artifact" || item.descriptor.module === "reference")
-    ) {
-      const relativePath = resolveChatWorkPanelLocalResourcePath({
-        ownerChatId,
-        profile: item.descriptor.module,
-        route: item.descriptor.route,
-      });
-      if (!relativePath) {
-        console.warn("[work-panel] refused invalid local resource path", item.descriptor.route);
-        return;
-      }
-      const opened = await window.electronAPI.chatWorkPanelTabContextMenu.openLocalResource({
-        ownerChatId,
-        profile: item.descriptor.module,
-        relativePath,
-      });
-      if (!opened.ok) {
-        console.warn("[work-panel] failed to open local resource", opened.code, opened.message);
-      }
+    if (result.actionId === "reveal-resource") {
+      await handleLocalResourceAction(ownerChatId, item, "reveal");
+      return;
+    }
+    if (result.actionId === "open-resource-default-app") {
+      await handleLocalResourceAction(ownerChatId, item, "open-default");
       return;
     }
     if (
@@ -277,19 +331,26 @@ export function WorkPanelHost({
     const nextPartitions = new Set(
       state.workspaces.flatMap((workspace) => workspace.items
         .filter((item) => item.descriptor.kind === "web")
-        .map((item) => itemPartition(workspace.workspaceId, item.itemId))),
+        .map((item) => itemPartition(
+          workspace.workspaceId,
+          resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
+        ))),
     );
     for (const partition of previousWebPartitionsRef.current) {
       if (nextPartitions.has(partition)) continue;
       void window.electronAPI.chatWorkPanel?.clearSession?.({ partition }).catch(() => undefined);
     }
     previousWebPartitionsRef.current = nextPartitions;
-  }, [state.workspaces]);
+  }, [state.webSessionKeysByItemId, state.workspaces]);
 
-  useEffect(() => window.electronAPI.onWebviewOpenTab(({ target, sourceGuestId, url }) => {
+  useEffect(() => window.electronAPI.onWebviewOpenTab(({
+    target,
+    navigationKind,
+    sourceGuestId,
+    url,
+  }) => {
     if (target !== "work-panel") return;
-    const normalizedUrl = normalizeWorkPanelWebUrl(url);
-    if (!normalizedUrl || !Number.isSafeInteger(sourceGuestId) || sourceGuestId <= 0) return;
+    if (!Number.isSafeInteger(sourceGuestId) || sourceGuestId <= 0) return;
     const webviews = Array.from(rootRef.current?.querySelectorAll("webview") ?? []) as Electron.WebviewTag[];
     const sourceWebview = webviews.find((webview) => readWebviewGuestId(webview) === sourceGuestId);
     const itemHost = sourceWebview?.closest<HTMLElement>("[data-work-panel-item]");
@@ -300,6 +361,19 @@ export function WorkPanelHost({
     );
     const sourceItem = sourceWorkspace?.items.find((item) => item.itemId === sourceItemId);
     if (!ownerChatId || sourceItem?.descriptor.kind !== "web") return;
+    if (navigationKind === "blob") {
+      const normalizedBlobUrl = normalizeWebviewBlobPopupUrl(url);
+      if (!normalizedBlobUrl) return;
+      dispatchCommand({
+        type: "openBlobPopup",
+        ownerChatId,
+        sourceItemId,
+        url: normalizedBlobUrl,
+      });
+      return;
+    }
+    const normalizedUrl = normalizeWorkPanelWebUrl(url);
+    if (!normalizedUrl) return;
     dispatchCommand({
       type: "openItem",
       ownerChatId,
@@ -614,16 +688,64 @@ export function WorkPanelHost({
               <Suspense fallback={null}>
                 {workspace.items.map((item) => {
                   const active = visible && workspace.activeItemId === item.itemId;
+                  const resourceProfile = localResourceProfile(item);
+                  const showLocalResourceActions = Boolean(
+                    resourceProfile &&
+                    item.descriptor.kind === "webclient" &&
+                    shouldShowChatWorkPanelLocalResourceActions({
+                      ownerChatId: workspace.ownerChatId,
+                      profile: resourceProfile,
+                      route: item.descriptor.route,
+                    }),
+                  );
+                  const localResourceActionBusy = busyLocalResourceItems.has(
+                    itemRuntimeKey(workspace.ownerChatId, item.itemId),
+                  );
                   return (
                     <div
                       key={item.itemId}
-                      className={`chat-work-panel-item${active ? " is-active" : ""}`}
+                      className={`chat-work-panel-item${active ? " is-active" : ""}${showLocalResourceActions ? " has-resource-actions" : ""}`}
                       data-work-panel-active={active ? "true" : "false"}
                       data-work-panel-item={item.itemId}
                       data-work-panel-owner={workspace.ownerChatId}
                       hidden={!active}
                       aria-hidden={!active}
                     >
+                      {showLocalResourceActions ? (
+                        <div
+                          className="chat-work-panel-resource-actions"
+                          role="group"
+                          aria-label={t("chatWorkPanel.resourceActions.label")}
+                        >
+                          <Button
+                            block
+                            className="chat-work-panel-resource-action"
+                            disabled={localResourceActionBusy}
+                            icon={<FolderOpenOutlined />}
+                            loading={localResourceActionBusy}
+                            title={revealLocalResourceLabel}
+                            onClick={() => {
+                              void handleLocalResourceAction(workspace.ownerChatId, item, "reveal");
+                            }}
+                          >
+                            <span>{revealLocalResourceLabel}</span>
+                          </Button>
+                          <Button
+                            block
+                            type="primary"
+                            className="chat-work-panel-resource-action"
+                            disabled={localResourceActionBusy}
+                            icon={<ExportOutlined />}
+                            loading={localResourceActionBusy}
+                            title={t("chatWorkPanel.tabContextMenu.openInDefaultApp")}
+                            onClick={() => {
+                              void handleLocalResourceAction(workspace.ownerChatId, item, "open-default");
+                            }}
+                          >
+                            <span>{t("chatWorkPanel.tabContextMenu.openInDefaultApp")}</span>
+                          </Button>
+                        </div>
+                      ) : null}
                       {item.descriptor.kind === "webclient" ? (
                         <ServiceWebviewSurface
                           active={active}
@@ -660,7 +782,10 @@ export function WorkPanelHost({
                             });
                           }}
                           ownerChatId={workspace.ownerChatId}
-                          partition={itemPartition(workspace.workspaceId, item.itemId)}
+                          partition={itemPartition(
+                            workspace.workspaceId,
+                            resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
+                          )}
                           publishPageContext={false}
                           registerPublicWebSurface={false}
                           showToolbar={false}

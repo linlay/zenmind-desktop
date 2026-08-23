@@ -58,6 +58,8 @@ const messages = {
   "desktop.globalSearch.group.chats": "Chats",
   "desktop.globalSearch.action.newChat": "New chat",
   "desktop.globalSearch.action.newChat.description": "Start current agent chat",
+  "desktop.globalSearch.action.history": "Open chat history",
+  "desktop.globalSearch.action.history.description": "Browse all chats",
   "desktop.globalSearch.action.agents": "Open agents",
   "desktop.globalSearch.action.agents.description": "Browse agents",
   "desktop.globalSearch.action.skills": "Open Skills Center",
@@ -128,7 +130,7 @@ test("desktop global search resolves the current agent and default sections", ()
   assert.deepEqual(sections.map((section) => section.id), ["actions", "agents", "chats"]);
   assert.deepEqual(
     rowsOfKind(sections, "action").map((row) => row.actionId),
-    ["newChat", "agents", "skills", "mcpConnectors", "settings"],
+    ["newChat", "history", "agents", "skills", "mcpConnectors", "settings"],
   );
   assert.equal(rowsOfKind(sections, "agent")[0].agentKey, "coder");
   assert.equal(rowsOfKind(sections, "chat")[0].chatId, "chat-1");

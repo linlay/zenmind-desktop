@@ -28,7 +28,6 @@ import {
   isDesktopSsoLoginCompletionUrl,
   logoutDesktopSso,
   startDesktopSsoLogin,
-  startDesktopSsoSiteTokenBridge,
 } from "../oidc-sso";
 import { loadBuiltinServices } from "../builtin-loader";
 import {
@@ -137,7 +136,6 @@ import { configureSystemIdentity } from "./system-identity";
 import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
 import {
   createDesktopSsoController,
-  openDesktopSsoSiteTokenBridge,
   type DesktopSsoRestoreResult
 } from "../sso-controller";
 import { createCdpIntegration } from "../cdp-integration";
@@ -196,7 +194,6 @@ import {
 import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
 import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../marketplace";
 import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
-import { readDesktopSsoSiteAccessToken } from "../sso-site-token";
 
 export function createMainProcessRuntime() {
   const startupPlatform = process.platform;
@@ -294,6 +291,7 @@ export function createMainProcessRuntime() {
       }
       mainWindow.webContents.send("webview.openTab", {
         target: "work-panel",
+        navigationKind: "network",
         sourceGuestId,
         url
       });
@@ -608,6 +606,14 @@ export function createMainProcessRuntime() {
     handleDesktopSsoWebviewNavigation,
     shouldOpenWebviewPopupInWorkPanelTab: (contents) =>
       webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id)?.surfaceType === "chat-work-panel",
+    resolveBlobPopupTarget: (contents) => {
+      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+      if (target?.surfaceType === "chat-work-panel") return "work-panel";
+      if (target?.surfaceType === "website" || target?.surfaceType === "browser") {
+        return "desktop-browser";
+      }
+      return null;
+    },
     attachWebviewContextMenu: webviewContextMenuController.attach,
     collectWebviewLoadDiagnostics,
     reportRendererDiagnostic,
@@ -710,7 +716,7 @@ export function createMainProcessRuntime() {
   });
   configureMarketAccessTokenIssuer(async (_marketApp, reason) => {
     const currentToken = isDesktopSsoCredentialRuntimeReady()
-      ? readDesktopSsoSiteAccessToken(_marketApp)
+      ? getDesktopSsoAccessToken() || ""
       : "";
     if (currentToken && reason === "missing") {
       return currentToken;
@@ -736,18 +742,6 @@ export function createMainProcessRuntime() {
     return accessToken;
   };
 
-  async function openConfiguredDesktopSsoSiteTokenBridge() {
-    const bridgeStart = startDesktopSsoSiteTokenBridge(app);
-    if (bridgeStart.configured && bridgeStart.startUrl) {
-      const bridgeOpenResult = await openDesktopSsoSiteTokenBridge(desktopSsoController, bridgeStart);
-      if (!bridgeOpenResult.ok && bridgeStart.required) {
-        throw new Error(bridgeOpenResult.message || bridgeStart.message || "Desktop SSO site token bridge open failed");
-      }
-    } else if (bridgeStart.configured && bridgeStart.required) {
-      throw new Error(bridgeStart.message || "Desktop SSO site token bridge is unavailable");
-    }
-  }
-
   const settingsRuntime = createSettingsRuntime({
     app,
     platform: mainProcessContext.platform,
@@ -770,6 +764,7 @@ export function createMainProcessRuntime() {
   });
   assistantBridgeRuntime = createAssistantBridgeRuntime({
     app,
+    desktopAppInfo,
     context: mainProcessContext,
     assistantRunWakeLock,
     cdpIntegration,
@@ -860,7 +855,6 @@ export function createMainProcessRuntime() {
           return;
         }
         completeDesktopSsoCookieLogin(app, accessToken);
-        await openConfiguredDesktopSsoSiteTokenBridge();
         finalizeDesktopSsoLoginAttempt();
         return;
       }
@@ -886,15 +880,6 @@ export function createMainProcessRuntime() {
         safeConsoleError("failed to exchange desktop sso browser access token", { url, error: message });
       }
 
-      if (accessToken) {
-        try {
-          await openConfiguredDesktopSsoSiteTokenBridge();
-        } catch (error) {
-          const message = error instanceof Error ? error.message : String(error);
-          stepErrors.push(message);
-          safeConsoleError("failed to open desktop sso site token bridge", { url, error: message });
-        }
-      }
       finalizeDesktopSsoLoginAttempt(stepErrors);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);

@@ -1,6 +1,7 @@
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   AssistantEvent,
+  AssistantChatOrderMutationRequest,
   AssistantChatSearchRequest,
   AssistantConversationShareRequest,
   AssistantCreateCoderProjectRequest,
@@ -9,6 +10,7 @@ import type {
   AssistantNavigationAgentsChangedListener,
   AssistantNavigationListOptions,
   AssistantNavigationPushEventListener,
+  AssistantReorderProjectsRequest,
   AssistantAttachmentProgressListener,
   AssistantMemorySettingsInput,
   AssistantPastedImageInput,
@@ -67,6 +69,7 @@ import type {
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
 import {
   CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
+  CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
 } from "../shared/chat-work-panel-tab-context-menu";
 import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
@@ -100,7 +103,9 @@ const api: DesktopApi = {
     popup: (request: ChatWorkPanelTabContextMenuPopupRequest) =>
       ipcRenderer.invoke(CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL, request),
     openLocalResource: (request) =>
-      ipcRenderer.invoke(CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL, request)
+      ipcRenderer.invoke(CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL, request),
+    revealLocalResource: (request) =>
+      ipcRenderer.invoke(CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL, request)
   },
   desktopShell: {
     openPath: (targetPath: string) => ipcRenderer.invoke("desktopShell.openPath", targetPath),
@@ -208,6 +213,10 @@ const api: DesktopApi = {
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: (options?: AssistantNavigationListOptions) =>
       ipcRenderer.invoke("assistant.listNavigationAgents", options),
+    updateChatOrder: (input: AssistantChatOrderMutationRequest) =>
+      ipcRenderer.invoke("assistant.updateChatOrder", input),
+    reorderProjects: (input: AssistantReorderProjectsRequest) =>
+      ipcRenderer.invoke("assistant.reorderProjects", input),
     getNavigationLiveStatus: () => ipcRenderer.invoke("assistant.getNavigationLiveStatus"),
     listCopilotAgents: () => ipcRenderer.invoke("assistant.listCopilotAgents"),
     createProject: (input: AssistantCreateProjectRequest) =>
@@ -219,6 +228,7 @@ const api: DesktopApi = {
     deleteMemoryItem: (memoryId: string) => ipcRenderer.invoke("assistant.deleteMemoryItem", memoryId),
     clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
+    listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),

@@ -12,6 +12,7 @@ const require = createRequire(import.meta.url);
 const JSZip = require("jszip");
 
 const {
+  handleAgentPlatformDesktopActionRequest,
   handleAgentWebclientWorkPanelActionRequest,
   handleDesktopActionRequest,
   handleWebappPageActionRequest,
@@ -40,8 +41,12 @@ const {
   getDesktopWebappDataRoot,
   getDesktopWebappLogsRoot,
   getDesktopWebappsDataRoot,
-  getDesktopWebappStateRoot
+  getDesktopWebappStateRoot,
+  getDesktopConfigRoot
 } = require("../dist-electron/main/user-paths.js");
+const {
+  updateDesktopProfileInRoot
+} = require("../dist-electron/main/desktop-profile-store.js");
 const {
   issueWebappActionToken,
   revokeWebappActionToken
@@ -107,7 +112,8 @@ function createDesktopActionOptions(t) {
     externalUrls: [],
     clipboardWrites: [],
     notifications: [],
-    navigation: []
+    navigation: [],
+    runtimeDiagnostics: 0
   };
 
   return {
@@ -115,6 +121,49 @@ function createDesktopActionOptions(t) {
     state,
     options: {
       app: createApp(homePath),
+      getDesktopAppInfo: () => ({
+        productName: "ZenMind Test",
+        version: "v9.8.7",
+        buildTime: "2026-08-20T01:02:03.000Z"
+      }),
+      getDesktopRuntimeDiagnostics: async () => {
+        calls.runtimeDiagnostics += 1;
+        return {
+          app: {
+            productName: "ZenMind Test",
+            version: "v9.8.7",
+            buildTime: "2026-08-20T01:02:03.000Z"
+          },
+          device: {
+            deviceId: "device-runtime",
+            deviceName: "Runtime Device",
+            hostname: "runtime-host",
+            username: "runtime-user",
+            platform: "darwin",
+            arch: "arm64"
+          },
+          paths: {
+            homeDir: homePath,
+            dataRoot: path.join(homePath, "Library", "Application Support", "ZenMind"),
+            appPath: process.cwd(),
+            execPath: "/Applications/ZenMind.app/Contents/MacOS/ZenMind"
+          },
+          runtime: {
+            electronVersion: "36.2.1",
+            nodeVersion: "22.0.0",
+            isPackaged: false
+          },
+          credentials: {
+            desktopSso: {
+              present: true,
+              expiresAt: 1_800_000_000_000,
+              expired: false,
+              preview: "****oken"
+            }
+          },
+          services: []
+        };
+      },
       assistantBridge: {
         listAgents: async () => [
           { agentKey: "summary-agent", displayName: "Summary", role: "assistant", unreadCount: 0 }
@@ -414,6 +463,55 @@ test("formal WorkPanel Web actions dispatch URL requests to the renderer", async
       "desktop.workpanel.closeWorkpanel"
     ]
   );
+});
+
+test("Agent Platform context exempts only WorkPanel openWeb and refreshWeb from confirmation", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererCalls = [];
+  const confirmationCalls = [];
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => {
+    confirmationCalls.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: { ok: true, workspaceId: "workpanel:chat-owner" }
+    };
+  };
+
+  for (const action of ["desktop.workpanel.openWeb", "desktop.workpanel.refreshWeb"]) {
+    const response = await handleAgentPlatformDesktopActionRequest(options, {
+      action,
+      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+      args: { url: "https://example.test/page" }
+    });
+    assert.equal(response.ok, true, action);
+  }
+  assert.equal(confirmationCalls.length, 0);
+  assert.equal(rendererCalls.length, 2);
+
+  const otherPlatformAction = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openTab",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { descriptor: { kind: "web", url: "https://example.test/page" } }
+  });
+  assert.equal(otherPlatformAction.ok, false);
+  assert.equal(otherPlatformAction.requiresConfirmation, true);
+
+  const ordinaryDesktopCall = await handleDesktopActionRequest(options, {
+    action: "desktop.workpanel.openWeb",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { url: "https://example.test/page" }
+  });
+  assert.equal(ordinaryDesktopCall.ok, false);
+  assert.equal(ordinaryDesktopCall.requiresConfirmation, true);
+  assert.equal(confirmationCalls.length, 2);
+  assert.equal(rendererCalls.length, 2);
 });
 
 test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {
@@ -1098,6 +1196,15 @@ test("Desktop Action Bridge keeps WebApp page and backend token scopes separate"
   assert.equal(backendChat.body.ok, true);
   assert.equal(calls.completions.length, 1);
 
+  const backendDiagnostics = await call(
+    "/webapps/actions/call",
+    backendToken,
+    "desktop.runtime.diagnostics"
+  );
+  assert.equal(backendDiagnostics.status, 403);
+  assert.equal(backendDiagnostics.body.error.code, "forbidden");
+  assert.equal(calls.runtimeDiagnostics, 0);
+
   const removedComplete = await call(
     "/webapps/actions/call",
     backendToken,
@@ -1283,6 +1390,107 @@ test("desktop general deviceName is read-only and exposes only the two name fiel
   assert.deepEqual(Object.keys(response.result).sort(), ["configuredDeviceName", "deviceName"]);
   assert.equal(typeof response.result.deviceName, "string");
   assert.equal(response.result.configuredDeviceName, "");
+});
+
+test("runtime actions publish stable read contracts and info uses startup-cached metadata", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const definitions = DESKTOP_ACTION_DEFINITIONS.filter(({ category }) => category === "runtime");
+
+  assert.deepEqual(definitions.map(({ name, kind, confirmation }) => ({ name, kind, confirmation })), [
+    { name: "desktop.runtime.info", kind: "read", confirmation: undefined },
+    { name: "desktop.runtime.diagnostics", kind: "read", confirmation: "sensitive-read" }
+  ]);
+
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.runtime.info"
+  });
+  assert.deepEqual(response, {
+    ok: true,
+    action: "desktop.runtime.info",
+    result: {
+      productName: "ZenMind Test",
+      version: "v9.8.7",
+      buildTime: "2026-08-20T01:02:03.000Z"
+    }
+  });
+
+  const invalid = await handleDesktopActionRequest(options, {
+    action: "desktop.runtime.info",
+    args: { verbose: true }
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, "invalid_args");
+});
+
+test("runtime diagnostics confirms before reading and honors confirmation bypass settings", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const confirmationCalls = [];
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => {
+    confirmationCalls.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+
+  const invalid = await handleDesktopActionRequest(options, {
+    action: "desktop.runtime.diagnostics",
+    args: { includeToken: true }
+  });
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.code, "invalid_args");
+  assert.equal(confirmationCalls.length, 0);
+  assert.equal(calls.runtimeDiagnostics, 0);
+
+  const cancelled = await handleDesktopActionRequest(options, {
+    requestId: "runtime-diagnostics-cancel",
+    action: "desktop.runtime.diagnostics"
+  });
+  assert.equal(cancelled.ok, false);
+  assert.equal(cancelled.requiresConfirmation, true);
+  assert.equal(cancelled.error.code, "user_cancelled");
+  assert.equal(calls.runtimeDiagnostics, 0);
+  assert.equal(confirmationCalls.length, 1);
+  assert.equal(confirmationCalls[0].fields.length, 1);
+  assert.match(confirmationCalls[0].fields[0].value, /SSO/u);
+  assert.doesNotMatch(JSON.stringify(confirmationCalls[0]), /runtime-host|runtime-user|\/Applications/u);
+
+  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+  const confirmed = await handleDesktopActionRequest(options, {
+    requestId: "runtime-diagnostics-confirm",
+    action: "desktop.runtime.diagnostics"
+  });
+  assert.equal(confirmed.ok, true);
+  assert.equal(calls.runtimeDiagnostics, 1);
+
+  options.confirmRendererAction = async () => {
+    assert.fail("full_access must not request confirmation");
+  };
+  const fullAccess = await handleDesktopActionRequest(options, {
+    action: "desktop.runtime.diagnostics",
+    permissionMode: "full_access"
+  });
+  assert.equal(fullAccess.ok, true);
+  assert.equal(calls.runtimeDiagnostics, 2);
+
+  updateDesktopProfileInRoot(getDesktopConfigRoot(options.app), {
+    general: { desktopActionConfirmationEnabled: false }
+  });
+  const globallyDisabled = await handleDesktopActionRequest(options, {
+    action: "desktop.runtime.diagnostics"
+  });
+  assert.equal(globallyDisabled.ok, true);
+  assert.equal(calls.runtimeDiagnostics, 3);
+});
+
+test("runtime diagnostics is forbidden to WebApp pages without reading data", async (t) => {
+  const { calls, options } = createDesktopActionOptions(t);
+  const response = await handleWebappPageActionRequest(options, webappId("runtime-diagnostics"), {
+    action: "desktop.runtime.diagnostics",
+    permissionMode: "full_access"
+  });
+
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "forbidden");
+  assert.equal(calls.runtimeDiagnostics, 0);
 });
 
 test("desktop action time normalization follows an explicit output schema", () => {

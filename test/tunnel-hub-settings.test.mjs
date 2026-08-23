@@ -39,7 +39,7 @@ function tunnelSettingsPath(app) {
   return path.join(desktopRoot(app), "config", "desktop", "tunnel-hub.json");
 }
 
-function tunnelTokenPath(app) {
+function legacyTunnelTokenPath(app) {
   return path.join(desktopRoot(app), "secrets", "tunnel-hub-token");
 }
 
@@ -47,21 +47,19 @@ function tunnelRegistrationTokenPath(app) {
   return path.join(desktopRoot(app), "secrets", "tunnel-hub-registration-token");
 }
 
-function writeSsoSiteToken(app, token = "desktop-site-token") {
-  const tokenPath = path.join(desktopRoot(app), "secrets", "sso-site-token.json");
-  fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
-  fs.writeFileSync(tokenPath, `${JSON.stringify({ accessToken: token })}\n`, "utf8");
+function tunnelDeviceSecretPath(app) {
+  return path.join(desktopRoot(app), "secrets", "tunnel-hub-device-secret");
 }
 
-function writeDesktopSsoAccessToken(app, token) {
+function writeDesktopSsoAccessToken(app, token = "desktop-sso-access-token") {
   const tokenPath = path.join(desktopRoot(app), "state", "desktop", "sso-access-token.txt");
   fs.mkdirSync(path.dirname(tokenPath), { recursive: true });
   fs.writeFileSync(tokenPath, `${token}\n`, { encoding: "utf8", mode: 0o600 });
 }
 
-test("Tunnel Hub settings normalize host-only relay URL with SSO site token", (t) => {
+test("Tunnel Hub settings normalize host-only relay URL with the canonical SSO token", (t) => {
   const app = createTempApp(t);
-  writeSsoSiteToken(app);
+  writeDesktopSsoAccessToken(app);
 
   const result = saveTunnelHubSettings(app, {
     enabled: true,
@@ -74,7 +72,6 @@ test("Tunnel Hub settings normalize host-only relay URL with SSO site token", (t
   assert.equal(result.settings.enabled, true);
   assert.equal(result.settings.relayUrl, "wss://tunnel-hub.zenmind.cc/tunnel");
   assert.match(result.settings.deviceId, /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/u);
-  assert.equal(result.settings.hasRelayToken, false);
   assert.equal(result.settings.tlsInsecureSkipVerify, false);
   assert.equal(result.settings.reconnectSeconds, 9);
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
@@ -82,7 +79,7 @@ test("Tunnel Hub settings normalize host-only relay URL with SSO site token", (t
   assert.equal(readTunnelHubSettings(app).enabled, true);
 });
 
-test("Tunnel Hub settings require a site token even when an active Desktop SSO access token exists", (t) => {
+test("Tunnel Hub settings accept the canonical Desktop SSO access token", (t) => {
   const app = createTempApp(t);
   writeDesktopSsoAccessToken(app, "active-desktop-login-token");
 
@@ -91,9 +88,8 @@ test("Tunnel Hub settings require a site token even when an active Desktop SSO a
     relayUrl: "tunnel-hub.zenmind.cc"
   });
 
-  assert.equal(result.ok, false);
-  assert.equal(result.settings.enabled, false);
-  assert.match(result.message, /Sign in/u);
+  assert.equal(result.ok, true);
+  assert.equal(result.settings.enabled, true);
 });
 
 test("Tunnel Hub settings normalize secure remote and canonical loopback relay URLs", (t) => {
@@ -108,7 +104,7 @@ test("Tunnel Hub settings normalize secure remote and canonical loopback relay U
 
   for (const [input, expected] of cases) {
     const app = createTempApp(t);
-    writeSsoSiteToken(app);
+    writeDesktopSsoAccessToken(app);
     const result = saveTunnelHubSettings(app, {
       enabled: true,
       relayUrl: input
@@ -129,7 +125,7 @@ test("Tunnel Hub settings reject remote plaintext and non-canonical loopback rel
     "ws://0.0.0.0:8080/tunnel"
   ]) {
     const app = createTempApp(t);
-    writeSsoSiteToken(app);
+    writeDesktopSsoAccessToken(app);
 
     const result = saveTunnelHubSettings(app, {
       enabled: true,
@@ -158,7 +154,7 @@ test("Tunnel Hub settings keep relay URL empty until explicitly configured", (t)
 
 test("Tunnel Hub enable requires an explicit relay URL", (t) => {
   const app = createTempApp(t);
-  writeSsoSiteToken(app);
+  writeDesktopSsoAccessToken(app);
 
   const result = saveTunnelHubSettings(app, {
     enabled: true
@@ -170,9 +166,13 @@ test("Tunnel Hub enable requires an explicit relay URL", (t) => {
   assert.match(result.message, /Relay URL/u);
 });
 
-test("Tunnel Hub settings persist device ID without storing registration token", (t) => {
+test("Tunnel Hub settings persist device ID and clear legacy tunnel credentials", (t) => {
   const app = createTempApp(t);
-  writeSsoSiteToken(app);
+  writeDesktopSsoAccessToken(app);
+  fs.mkdirSync(path.dirname(legacyTunnelTokenPath(app)), { recursive: true });
+  for (const secretPath of [legacyTunnelTokenPath(app), tunnelRegistrationTokenPath(app), tunnelDeviceSecretPath(app)]) {
+    fs.writeFileSync(secretPath, "legacy-secret\n", "utf8");
+  }
 
   const result = saveTunnelHubSettings(app, {
     enabled: true,
@@ -185,16 +185,18 @@ test("Tunnel Hub settings persist device ID without storing registration token",
   assert.equal(result.ok, true);
   assert.equal(result.settings.enabled, true);
   assert.equal(result.settings.deviceId, "mac-mini-office");
-  assert.equal(result.settings.hasRelayToken, false);
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
   assert.equal(stored.deviceId, "mac-mini-office");
   assert.equal("registrationToken" in stored, false);
   assert.equal("deviceSecret" in stored, false);
+  assert.equal(fs.existsSync(legacyTunnelTokenPath(app)), false);
+  assert.equal(fs.existsSync(tunnelRegistrationTokenPath(app)), false);
+  assert.equal(fs.existsSync(tunnelDeviceSecretPath(app)), false);
 });
 
 test("Tunnel Hub settings validate DNS-label device IDs", (t) => {
   const app = createTempApp(t);
-  writeSsoSiteToken(app);
+  writeDesktopSsoAccessToken(app);
 
   const result = saveTunnelHubSettings(app, {
     enabled: true,
@@ -207,9 +209,9 @@ test("Tunnel Hub settings validate DNS-label device IDs", (t) => {
   assert.match(result.message, /Device ID/u);
 });
 
-test("Tunnel Hub registration result stores returned relay token", (t) => {
+test("Tunnel Hub registration result stores public routing metadata without tunnel credentials", (t) => {
   const app = createTempApp(t);
-  writeSsoSiteToken(app);
+  writeDesktopSsoAccessToken(app);
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl: "wss://relay.example.test/tunnel",
@@ -222,15 +224,13 @@ test("Tunnel Hub registration result stores returned relay token", (t) => {
     relayUrl: "wss://relay.example.test/tunnel",
     publicHost: "mac-mini-office.relay.example.test",
     publicUrl: "https://mac-mini-office.relay.example.test",
-    webSocketUrl: "wss://mac-mini-office.relay.example.test/ws",
-    relayToken: "returned-relay-token"
+    webSocketUrl: "wss://mac-mini-office.relay.example.test/ws"
   });
 
   assert.equal(settings.publicHost, "mac-mini-office.relay.example.test");
   assert.equal(settings.publicUrl, "https://mac-mini-office.relay.example.test");
   assert.equal(settings.webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
-  assert.equal(settings.hasRelayToken, true);
-  assert.equal(fs.readFileSync(tunnelTokenPath(app), "utf8").trim(), "returned-relay-token");
+  assert.equal(fs.existsSync(legacyTunnelTokenPath(app)), false);
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
   assert.equal(stored.publicHost, "mac-mini-office.relay.example.test");
   assert.equal("publicUrl" in stored, false);
@@ -270,7 +270,7 @@ test("Tunnel Hub enable saves drafts but falls back to disabled when config is i
   const stored = JSON.parse(fs.readFileSync(tunnelSettingsPath(app), "utf8"));
   assert.equal(stored.enabled, false);
   assert.equal(stored.relayUrl, "wss://relay.example.test/tunnel");
-  assert.equal(fs.existsSync(tunnelTokenPath(app)), false);
+  assert.equal(fs.existsSync(legacyTunnelTokenPath(app)), false);
 });
 
 test("Tunnel Hub ignores and clears legacy registration token without SSO", (t) => {
@@ -292,7 +292,7 @@ test("Tunnel Hub ignores and clears legacy registration token without SSO", (t) 
 test("Tunnel Hub legacy settings without enabled are treated as enabled only when complete", (t) => {
   const app = createTempApp(t);
   fs.mkdirSync(path.dirname(tunnelSettingsPath(app)), { recursive: true });
-  fs.mkdirSync(path.dirname(tunnelTokenPath(app)), { recursive: true });
+  fs.mkdirSync(path.dirname(legacyTunnelTokenPath(app)), { recursive: true });
   fs.writeFileSync(tunnelSettingsPath(app), `${JSON.stringify({
     relayUrl: "wss://legacy.example.test/ws",
     tlsInsecureSkipVerify: true,
@@ -302,9 +302,9 @@ test("Tunnel Hub legacy settings without enabled are treated as enabled only whe
   assert.equal(readTunnelHubSettings(app).enabled, false);
   assert.equal(readTunnelHubSettings(app).tlsInsecureSkipVerify, false);
 
-  fs.writeFileSync(tunnelTokenPath(app), "legacy-token\n", "utf8");
+  fs.writeFileSync(legacyTunnelTokenPath(app), "legacy-token\n", "utf8");
   assert.equal(readTunnelHubSettings(app).enabled, false);
 
-  writeSsoSiteToken(app);
+  writeDesktopSsoAccessToken(app);
   assert.equal(readTunnelHubSettings(app).enabled, true);
 });

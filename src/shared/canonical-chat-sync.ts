@@ -32,15 +32,42 @@ export type CanonicalChatSyncRequestListener = (
   request: CanonicalChatSyncRequest,
 ) => void;
 
+function readAgentRouteKey(url: URL) {
+  const match = /^\/agent\/([^/]+)$/u.exec(url.pathname);
+  return match ? decodeRoutePathSegment(match[1]) : null;
+}
+
 export function readAgentWebclientNewChatSource(value: string) {
   try {
     const url = new URL(value, "http://desktop.local");
-    const match = /^\/agent\/([^/]+)$/u.exec(url.pathname);
-    const agentKey = match ? decodeRoutePathSegment(match[1]) : null;
-    const newChatValues = url.searchParams.getAll("newChat").map((item) => item.trim()).filter(Boolean);
-    const chatId = url.searchParams.get("chatId")?.trim() ?? "";
-    if (!agentKey || newChatValues.length !== 1 || chatId) return null;
-    return { agentKey, newChat: newChatValues[0] };
+    const agentKey = readAgentRouteKey(url);
+    const newChatValues = url.searchParams.getAll("newChat");
+    const newChat = newChatValues[0]?.trim() || "";
+    if (
+      !agentKey ||
+      newChatValues.length !== 1 ||
+      !newChat ||
+      url.searchParams.has("chatId")
+    ) return null;
+    return { agentKey, newChat };
+  } catch {
+    return null;
+  }
+}
+
+export function readAgentWebclientCanonicalChatSource(value: string) {
+  try {
+    const url = new URL(value, "http://desktop.local");
+    const agentKey = readAgentRouteKey(url);
+    const chatIdValues = url.searchParams.getAll("chatId");
+    const chatId = chatIdValues[0]?.trim() || "";
+    if (
+      !agentKey ||
+      chatIdValues.length !== 1 ||
+      !chatId ||
+      url.searchParams.has("newChat")
+    ) return null;
+    return { agentKey, chatId };
   } catch {
     return null;
   }

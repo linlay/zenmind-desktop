@@ -4,11 +4,14 @@ export const DESKTOP_ACTION_BRIDGE_URL = `http://${DESKTOP_ACTION_BRIDGE_HOST}:$
 
 export type DesktopActionKind = "read" | "validate" | "preview" | "apply" | "execute";
 
+export type DesktopActionConfirmationPolicy = "sensitive-read";
+
 export type DesktopActionDefinition = {
   name: string;
   kind: DesktopActionKind;
   category: string;
   description: string;
+  confirmation?: DesktopActionConfirmationPolicy;
   outputSchema?: DesktopActionOutputSchema;
 };
 
@@ -57,6 +60,9 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.native.notification.show", kind: "execute", category: "native", description: "Show a rate-limited system notification for the calling local WebApp. Args: { title, body? }." },
 
   { name: "desktop.general.deviceName", kind: "read", category: "general", description: "Read the effective and configured Desktop device names. Args: none. Returns: { deviceName, configuredDeviceName }." },
+
+  { name: "desktop.runtime.info", kind: "read", category: "runtime", description: "Read startup-cached Desktop product, version, and build metadata. Args: none. Returns: { productName, version, buildTime }." },
+  { name: "desktop.runtime.diagnostics", kind: "read", category: "runtime", confirmation: "sensitive-read", description: "Read sensitive Desktop device, path, runtime, canonical SSO credential summary, and internal service diagnostics. Args: none; raw credentials are never returned." },
 
   { name: "desktop.theme.get", kind: "read", category: "theme", description: "Read the Desktop theme. Args: none. Returns: { themeMode, resolvedTheme }." },
   { name: "desktop.theme.set", kind: "execute", category: "theme", description: "Set and persist the Desktop theme. Args: { themeMode: light|dark|system }. Returns: { themeMode, resolvedTheme }." },

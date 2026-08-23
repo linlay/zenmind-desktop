@@ -15,6 +15,7 @@ const {
 function registerProjectHandlers({
   assistantBridge = {},
   assistantNavigationStatusClient,
+  callAgentPlatform,
 } = {}) {
   const handlers = new Map();
   const calls = [];
@@ -40,16 +41,21 @@ function registerProjectHandlers({
     mainWindow: null,
     shell: null,
     showFileDialog: null,
-    async callAgentPlatform(_app, endpoint, options) {
-      calls.push({ path: endpoint, options });
-      if (endpoint === "/api/admin/agents/create") {
-        return {
-          key: "created-agent",
-          definition: options.body.definition
-        };
-      }
-      throw new Error(`unexpected endpoint ${endpoint}`);
-    },
+    callAgentPlatform: callAgentPlatform
+      ? async (_app, endpoint, options) => {
+          calls.push({ path: endpoint, options });
+          return callAgentPlatform(endpoint, options);
+        }
+      : async (_app, endpoint, options) => {
+          calls.push({ path: endpoint, options });
+          if (endpoint === "/api/admin/agents/create") {
+            return {
+              key: "created-agent",
+              definition: options.body.definition
+            };
+          }
+          throw new Error(`unexpected endpoint ${endpoint}`);
+        },
     handleDesktopActionRequest: null,
     DESKTOP_ACTION_DEFINITIONS: [],
     emitAssistantAttachmentProgress: null,
@@ -295,4 +301,103 @@ test("assistant.listNavigationAgents force refresh bypasses the cached navigatio
   assert.equal(await handler(null, { force: true }), refreshedResult);
   assert.equal(snapshotReads, 1);
   assert.equal(refreshCalls, 1);
+});
+
+test("assistant.reorderProjects writes the public valid catalog while preserving non-Project slots", async () => {
+  const { calls, handlers } = registerProjectHandlers({
+    async callAgentPlatform(endpoint, options) {
+      if (endpoint === "/api/agents?scope=nav&mode=CODER&mode=KBASE") {
+        return [{ key: "coder-a" }, { key: "coder-new" }, { key: "kbase-b" }];
+      }
+      if (endpoint === "/api/agents/order" && !options) {
+        return {
+          order: ["chat-a", "coder-a", "hidden-agent", "coder-new", "kbase-b"],
+        };
+      }
+      if (endpoint === "/api/agents/order") {
+        assert.equal(options.method, "PUT");
+        assert.deepEqual(options.body, {
+          order: [
+            "chat-a",
+            "kbase-b",
+            "hidden-agent",
+            "coder-a",
+            "coder-new",
+          ],
+        });
+        return {
+          order: ["chat-a", "kbase-b", "hidden-agent", "coder-a", "coder-new"],
+          updatedAt: 1_783_000_000_000,
+        };
+      }
+      throw new Error(`unexpected endpoint ${endpoint}`);
+    },
+  });
+
+  const result = await handlers.get("assistant.reorderProjects")(null, {
+    agentKeys: ["kbase-b", "coder-a"],
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.agentKeys, ["kbase-b", "coder-a", "coder-new"]);
+  assert.equal(result.updatedAt, 1_783_000_000_000);
+  assert.equal(typeof result.message, "string");
+  assert.ok(result.message.length > 0);
+  assert.equal(
+    calls.some((call) => call.path.startsWith("/api/admin/agents")),
+    false,
+  );
+  assert.deepEqual(calls.at(-1), { path: "scheduleRefresh", delay: 0 });
+});
+
+test("assistant.reorderProjects rejects invalid requests before reading Agent Platform", async () => {
+  const { calls, handlers } = registerProjectHandlers();
+
+  const result = await handlers.get("assistant.reorderProjects")(null, {
+    agentKeys: ["coder-a", "coder-a"],
+  });
+
+  assert.equal(result.ok, false);
+  assert.match(result.message, /duplicate agent keys/u);
+  assert.equal(calls.length, 0);
+});
+
+test("assistant.reorderProjects maps stale and Platform failures to structured results", async () => {
+  const stale = registerProjectHandlers({
+    async callAgentPlatform(endpoint) {
+      if (endpoint === "/api/agents?scope=nav&mode=CODER&mode=KBASE") {
+        return [{ key: "coder-a" }];
+      }
+      if (endpoint === "/api/agents/order") {
+        return { order: ["coder-a", "chat-a"] };
+      }
+      throw new Error(`unexpected endpoint ${endpoint}`);
+    },
+  });
+  const staleResult = await stale.handlers.get("assistant.reorderProjects")(null, {
+    agentKeys: ["deleted-project"],
+  });
+  assert.equal(staleResult.ok, false);
+  assert.match(staleResult.message, /no longer available: deleted-project/u);
+  assert.equal(
+    stale.calls.some((call) => call.path === "/api/agents/order" && call.options?.method === "PUT"),
+    false,
+  );
+
+  const platformFailure = registerProjectHandlers({
+    async callAgentPlatform(endpoint, options) {
+      if (endpoint === "/api/agents?scope=nav&mode=CODER&mode=KBASE") {
+        return [{ key: "coder-a" }];
+      }
+      if (endpoint === "/api/agents/order" && !options) {
+        return { order: ["coder-a"] };
+      }
+      throw new Error("agent-platform rejected order");
+    },
+  });
+  const platformResult = await platformFailure.handlers.get("assistant.reorderProjects")(null, {
+    agentKeys: ["coder-a"],
+  });
+  assert.equal(platformResult.ok, false);
+  assert.equal(platformResult.message, "agent-platform rejected order");
 });

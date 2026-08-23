@@ -72,7 +72,12 @@ type BrokerRun = {
   owner: AgentWebclientRunOwner | null;
   lastSeq: number;
   terminal: boolean;
+  terminalReason: string;
+  terminalSource: "query_stream" | "attach_stream" | "forwarded_stream" | "push" | null;
   suspended: boolean;
+  restoreInFlight: boolean;
+  restoreCount: number;
+  lastRestoreResult: string;
   upstreamRequestId: string | null;
   forwardedSourceId: string | null;
   query: QueryTransaction | null;
@@ -233,6 +238,10 @@ function isTerminalEvent(type: string) {
   ].includes(type);
 }
 
+function isObserverDetachReason(reason: string) {
+  return reason.trim().toLowerCase() === "detached";
+}
+
 function brokerError(
   code: string,
   message: string,
@@ -290,6 +299,7 @@ export class RealtimeBroker {
     staleFrameCount: 0,
     seqRegressionCount: 0,
     duplicateTerminalCount: 0,
+    observerReleaseCount: 0,
     replayEvictionCount: 0,
   };
 
@@ -561,7 +571,12 @@ export class RealtimeBroker {
           : null),
         lastSeq: Math.max(0, options.lastSeq ?? 0),
         terminal: false,
+        terminalReason: "",
+        terminalSource: null,
         suspended: false,
+        restoreInFlight: false,
+        restoreCount: 0,
+        lastRestoreResult: "never",
         upstreamRequestId: null,
         forwardedSourceId: null,
         query: null,
@@ -576,7 +591,7 @@ export class RealtimeBroker {
     this.replayToSubscriber(run, subscription);
     this.runSubscriptions.set(id, subscription);
     run.subscribers.add(id);
-    const ready = !run.terminal && !run.upstreamRequestId
+    const ready = !run.terminal && !run.upstreamRequestId && !run.forwardedSourceId
       ? this.startAttach(run, options.baseUrl, options.token).catch((error) => {
         subscription.onError?.(error instanceof Error ? error : new Error(String(error)));
         throw error;
@@ -635,7 +650,12 @@ export class RealtimeBroker {
         owner: input.owner,
         lastSeq: Math.max(0, input.lastSeq ?? 0),
         terminal: false,
+        terminalReason: "",
+        terminalSource: null,
         suspended: false,
+        restoreInFlight: false,
+        restoreCount: 0,
+        lastRestoreResult: "never",
         upstreamRequestId: null,
         forwardedSourceId: sourceId,
         query: null,
@@ -652,7 +672,21 @@ export class RealtimeBroker {
         throw brokerError("duplicate_id", "visible Run is already owned by another forwarded source");
       }
       if (run.terminal) {
-        throw brokerError("target_unavailable", "completed Run cannot become visible again");
+        throw brokerError(
+          "target_unavailable",
+          "completed Run cannot become visible again",
+          {
+            retryable: false,
+            details: {
+              stage: "broker_visible_registration",
+              reason: "run_registry_terminal",
+              terminalSource: run.terminalSource ?? "unknown",
+              terminalReason: run.terminalReason || "unknown",
+              hasUpstreamObserver: Boolean(run.upstreamRequestId),
+              hasForwardedSource: Boolean(run.forwardedSourceId),
+            },
+          },
+        );
       }
       run.forwardedSourceId = sourceId;
       run.owner = input.owner;
@@ -666,6 +700,45 @@ export class RealtimeBroker {
       consumerSurfaceIds: new Set([primarySurfaceId]),
     };
     return this.getVisibleBinding();
+  }
+
+  async prepareForwardedVisibleRun(input: {
+    baseUrl: string;
+    token: string;
+    chatId: string;
+    runId: string;
+    owner: AgentWebclientRunOwner;
+  }) {
+    const chatId = input.chatId.trim();
+    const runId = input.runId.trim();
+    const run = this.runsById.get(runId);
+    if (!run || run.terminal || run.forwardedSourceId || !run.upstreamRequestId) return false;
+    if (run.chatId !== chatId || (run.owner && !sameRunOwner(run.owner, input.owner))) {
+      throw brokerError(
+        "capability_denied",
+        "forwarded Run handoff identity does not match the registered observer",
+      );
+    }
+    await this.forwardRequest({
+      baseUrl: input.baseUrl,
+      token: input.token,
+      localId: `forwarded-handoff-${randomUUID()}`,
+      consumerId: "realtime-broker:forwarded-handoff",
+      type: "/api/detach",
+      payload: {
+        runId,
+        ...(input.owner.kind === "agent"
+          ? { agentKey: input.owner.agentKey }
+          : { teamId: input.owner.teamId }),
+        reason: "forwarded_source_handoff",
+      },
+      onFrame: () => undefined,
+      onError: (error) => this.options.onDiagnostic?.(
+        `forwarded_source_handoff_failed: ${error.message}`,
+      ),
+    });
+    run.lastRestoreResult = "observer_handoff_requested";
+    return true;
   }
 
   registerForwardedRunActionGrant(input: {
@@ -770,21 +843,16 @@ export class RealtimeBroker {
     const sourceId = input.sourceId.trim();
     const run = this.runsById.get(input.runId.trim());
     if (!run || run.forwardedSourceId !== sourceId) return false;
+    if (isObserverDetachReason(input.reason)) {
+      this.diagnostics.observerReleaseCount += 1;
+      return this.releaseForwardedVisibleRun(sourceId);
+    }
     run.forwardedSourceId = null;
     const result = {
       reason: input.reason.trim() || "done",
       ...(input.lastSeq === undefined ? {} : { lastSeq: input.lastSeq }),
     };
-    if (run.upstreamRequestId) {
-      for (const id of [...run.subscribers]) {
-        const subscription = this.runSubscriptions.get(id);
-        if (!subscription?.surfaceId) continue;
-        this.unsubscribe(id);
-        subscription.onComplete?.(result);
-      }
-    } else {
-      this.completeRun(run, result);
-    }
+    this.completeRun(run, result, "forwarded_stream");
     if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
     this.revokeForwardedRunActionGrant(run.runId);
     return true;
@@ -829,12 +897,61 @@ export class RealtimeBroker {
     const surfaceId = options.surfaceId.trim();
     const binding = this.visibleBinding;
     const run = this.runsById.get(runId);
-    if (
-      !runId || !chatId || !surfaceId ||
-      !binding || binding.runId !== runId || binding.chatId !== chatId ||
-      !run || run.chatId !== chatId || run.forwardedSourceId !== binding.upstreamRequestId
-    ) {
-      throw brokerError("target_unavailable", "requested Run is not the primary visible Run");
+    const targetUnavailable = (
+      reason: string,
+      message: string,
+      retryable: boolean,
+    ) => brokerError("target_unavailable", message, {
+      retryable,
+      details: {
+        stage: "broker_subscribe",
+        reason,
+        visibleBindingPresent: Boolean(binding),
+        runRegistered: Boolean(run),
+        ...(binding ? { bindingEpoch: binding.epoch } : {}),
+      },
+    });
+    if (!runId || !chatId || !surfaceId) {
+      throw targetUnavailable(
+        "missing_request_identity",
+        "visible Run subscription identity is incomplete",
+        false,
+      );
+    }
+    if (!binding) {
+      throw targetUnavailable(
+        "visible_binding_missing",
+        "primary visible Run binding is not registered",
+        true,
+      );
+    }
+    if (binding.runId !== runId || binding.chatId !== chatId) {
+      throw targetUnavailable(
+        "visible_binding_identity_mismatch",
+        "primary visible binding belongs to another Run",
+        true,
+      );
+    }
+    if (!run) {
+      throw targetUnavailable(
+        "run_registry_missing",
+        "requested Run is not registered in the local replay registry",
+        true,
+      );
+    }
+    if (run.chatId !== chatId) {
+      throw targetUnavailable(
+        "run_chat_mismatch",
+        "requested Run belongs to another Chat",
+        false,
+      );
+    }
+    if (run.forwardedSourceId !== binding.upstreamRequestId) {
+      throw targetUnavailable(
+        "forwarded_source_mismatch",
+        "primary visible Run source changed before local subscription",
+        true,
+      );
     }
     if (options.owner && run.owner && (
       options.owner.kind !== run.owner.kind ||
@@ -960,6 +1077,12 @@ export class RealtimeBroker {
         eventCount: run.replay.length,
         bytes: run.replayBytes,
         lastSeq: run.lastSeq,
+        state: run.terminal ? "terminal" : run.restoreInFlight ? "restoring" : run.suspended ? "suspended" : "active",
+        terminalReason: run.terminalReason || undefined,
+        terminalSource: run.terminalSource ?? undefined,
+        observerSource: run.forwardedSourceId ? "forwarded" : run.upstreamRequestId ? "broker" : "none",
+        restoreCount: run.restoreCount,
+        lastRestoreResult: run.lastRestoreResult,
       })),
       ...this.diagnostics,
     };
@@ -1037,7 +1160,6 @@ export class RealtimeBroker {
     if (state.phase === "connected" && previous !== "connected") {
       for (const run of this.runsById.values()) {
         if (run.suspended && !run.terminal) {
-          run.suspended = false;
           void this.restoreRun(run);
         }
       }
@@ -1048,9 +1170,14 @@ export class RealtimeBroker {
       "connection_lost_before_acceptance",
       state.lastError || "Agent Platform realtime connection lost",
     );
+    const requestError = brokerError(
+      "connection_unavailable",
+      state.lastError || "Agent Platform realtime connection lost",
+      { retryable: true },
+    );
     for (const pending of [...this.pendingRequests.values()]) {
       this.cleanupPending(pending.upstreamId);
-      pending.onError(disconnectError);
+      pending.onError(requestError);
     }
     for (const transaction of [...this.queriesByRequestId.values()]) {
       if (!transaction.acceptedValue) {
@@ -1148,10 +1275,14 @@ export class RealtimeBroker {
       this.failQuery(transaction, brokerError("protocol_error", "accepted query Run registry entry is missing"));
       return;
     }
+    if (isObserverDetachReason(reason)) {
+      this.releaseRunObserver(run, transaction.upstreamRequestId, reason, frame.lastSeq);
+      return;
+    }
     this.completeRun(run, {
       reason,
       ...(typeof frame.lastSeq === "number" ? { lastSeq: frame.lastSeq } : {}),
-    });
+    }, "query_stream");
   }
 
   private bufferProvisionalQueryEvent(
@@ -1248,7 +1379,12 @@ export class RealtimeBroker {
       owner,
       lastSeq: 0,
       terminal: false,
+      terminalReason: "",
+      terminalSource: null,
       suspended: false,
+      restoreInFlight: false,
+      restoreCount: 0,
+      lastRestoreResult: "never",
       upstreamRequestId: transaction.upstreamRequestId,
       forwardedSourceId: null,
       query: transaction,
@@ -1273,12 +1409,37 @@ export class RealtimeBroker {
       }
     }
     const reason = readText(frame.reason);
-    if (reason) {
-      this.completeRun(run, {
-        reason,
-        ...(typeof frame.lastSeq === "number" ? { lastSeq: frame.lastSeq } : {}),
-      });
+    if (!reason) return;
+    if (isObserverDetachReason(reason)) {
+      this.releaseRunObserver(run, readText(frame.id), reason, frame.lastSeq);
+      return;
     }
+    this.completeRun(run, {
+      reason,
+      ...(typeof frame.lastSeq === "number" ? { lastSeq: frame.lastSeq } : {}),
+    }, "attach_stream");
+  }
+
+  private releaseRunObserver(
+    run: BrokerRun,
+    requestId: string,
+    reason: string,
+    lastSeq: unknown,
+  ) {
+    if (typeof lastSeq === "number" && Number.isSafeInteger(lastSeq) && lastSeq >= 0) {
+      run.lastSeq = Math.max(run.lastSeq, lastSeq);
+    }
+    if (requestId) {
+      this.queriesByRequestId.delete(requestId);
+      this.terminalRequestIds.add(requestId);
+      if (this.terminalRequestIds.size > 2_000) {
+        this.terminalRequestIds.delete(this.terminalRequestIds.values().next().value as string);
+      }
+    }
+    if (!requestId || run.upstreamRequestId === requestId) run.upstreamRequestId = null;
+    run.suspended = !run.forwardedSourceId;
+    run.lastRestoreResult = `observer_released:${reason}`;
+    this.diagnostics.observerReleaseCount += 1;
   }
 
   private consumeRunEvent(
@@ -1388,12 +1549,18 @@ export class RealtimeBroker {
     }
   }
 
-  private completeRun(run: BrokerRun, result: RealtimeQueryCompleted) {
+  private completeRun(
+    run: BrokerRun,
+    result: RealtimeQueryCompleted,
+    source: NonNullable<BrokerRun["terminalSource"]>,
+  ) {
     if (run.terminal) {
       this.diagnostics.duplicateTerminalCount += 1;
       return;
     }
     run.terminal = true;
+    run.terminalReason = result.reason;
+    run.terminalSource = source;
     run.suspended = false;
     this.revokeForwardedRunActionGrant(run.runId);
     if (run.upstreamRequestId) {
@@ -1429,9 +1596,9 @@ export class RealtimeBroker {
   }
 
   private async startAttach(run: BrokerRun, baseUrl: string, token: string) {
-    if (run.upstreamRequestId || run.terminal) return;
+    if (run.upstreamRequestId || run.forwardedSourceId || run.terminal) return;
     await this.ensureConnected(baseUrl, token);
-    if (run.upstreamRequestId || run.terminal) return;
+    if (run.upstreamRequestId || run.forwardedSourceId || run.terminal) return;
     const id = `desktop-attach-${randomUUID()}`;
     run.upstreamRequestId = id;
     this.client.send({
@@ -1453,24 +1620,39 @@ export class RealtimeBroker {
 
   private async restoreRun(run: BrokerRun) {
     const state = this.client.getState();
-    if (state.phase !== "connected") return;
+    if (
+      state.phase !== "connected" || run.terminal || run.restoreInFlight ||
+      Boolean(run.upstreamRequestId) || Boolean(run.forwardedSourceId)
+    ) return;
+    run.restoreInFlight = true;
+    run.restoreCount += 1;
     const id = `desktop-attach-${randomUUID()}`;
-    run.upstreamRequestId = id;
-    this.client.send({
-      frame: "request",
-      type: "/api/attach",
-      id,
-      payload: {
-        runId: run.runId,
-        chatId: run.chatId,
-        lastSeq: run.lastSeq,
-        ...(run.owner?.kind === "agent"
-          ? { agentKey: run.owner.agentKey }
-          : run.owner?.kind === "team"
-            ? { teamId: run.owner.teamId }
-            : {}),
-      },
-    });
+    try {
+      run.upstreamRequestId = id;
+      this.client.send({
+        frame: "request",
+        type: "/api/attach",
+        id,
+        payload: {
+          runId: run.runId,
+          chatId: run.chatId,
+          lastSeq: run.lastSeq,
+          ...(run.owner?.kind === "agent"
+            ? { agentKey: run.owner.agentKey }
+            : run.owner?.kind === "team"
+              ? { teamId: run.owner.teamId }
+              : {}),
+        },
+      });
+      run.suspended = false;
+      run.lastRestoreResult = `attached:${state.generation}:${run.lastSeq}`;
+    } catch (error) {
+      run.upstreamRequestId = null;
+      run.suspended = true;
+      run.lastRestoreResult = `failed:${error instanceof Error ? error.message : String(error)}`;
+    } finally {
+      run.restoreInFlight = false;
+    }
   }
 
   private handlePush(frame: AgentPlatformRealtimeFrame) {
@@ -1501,7 +1683,7 @@ export class RealtimeBroker {
         this.completeRun(run, {
           reason: readText(payload.finishReason) || readText(payload.status) || "finished",
           ...(typeof payload.lastSeq === "number" ? { lastSeq: payload.lastSeq } : {}),
-        });
+        }, "push");
       }
     }
     for (const subscription of this.pushSubscriptions.values()) {

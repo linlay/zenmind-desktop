@@ -38,7 +38,7 @@ type TunnelStreamEnvelope = {
 
 export type TunnelClientEndpointOptions = {
   relayUrl: string;
-  relayToken: string;
+  identityToken: string;
   deviceId: string;
   desktopWsServerOptions: DesktopWsServerOptions;
   tlsInsecureSkipVerify?: boolean;
@@ -357,7 +357,7 @@ async function writeTunnelOpen(ws: TunnelHubWebSocketClient, options: TunnelClie
     type: "tunnel.open",
     id,
     payload: {
-      agentToken: options.relayToken,
+      identityToken: options.identityToken,
       deviceId: options.deviceId,
       client: TUNNEL_CLIENT_NAME,
       capabilities: TUNNEL_CLIENT_CAPABILITIES

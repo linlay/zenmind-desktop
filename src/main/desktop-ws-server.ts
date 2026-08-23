@@ -37,7 +37,6 @@ import type {
   KanbanIssueMoveInput,
   KanbanIssueUpdateInput
 } from "../shared/contracts";
-import { resolveDesktopAppInfo } from "./app-metadata";
 import { ensureIdentityCenterJwk } from "./identity-center-auth";
 import { getDesktopDeviceId } from "./device-identity";
 import { handleDesktopActionRequest } from "./desktop-action-bridge";
@@ -1017,7 +1016,7 @@ async function handleRequest(
       });
       return;
     case "runtime.info":
-      sendResponse(connection, namespace, type, id, resolveDesktopAppInfo(options.app));
+      sendResponse(connection, namespace, type, id, options.desktopActionOptions.getDesktopAppInfo());
       return;
     case "assistant.startRun":
       sendResponse(connection, namespace, type, id, await options.assistantBridge.startRun(asRecord(payload) as unknown as AssistantStartRunRequest));

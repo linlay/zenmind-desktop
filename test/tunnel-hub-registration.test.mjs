@@ -43,14 +43,10 @@ function desktopRoot(homePath) {
   return path.join(homePath, APP_BRAND.paths.runtimeRootDirName, APP_BRAND.paths.desktopDataSubdir);
 }
 
-function writeSsoSiteToken(homePath, token = "official-site-jwt") {
-  const secretsRoot = path.join(desktopRoot(homePath), "secrets");
-  fs.mkdirSync(secretsRoot, { recursive: true });
-  fs.writeFileSync(
-    path.join(secretsRoot, "sso-site-token.json"),
-    JSON.stringify({ accessToken: token }),
-    "utf8"
-  );
+function writeDesktopSsoAccessToken(homePath, token = "canonical-desktop-jwt") {
+  const stateRoot = path.join(desktopRoot(homePath), "state", "desktop");
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "sso-access-token.txt"), `${token}\n`, "utf8");
 }
 
 function listen(server) {
@@ -82,7 +78,7 @@ test("deriveTunnelHubRegistrationApiOrigin maps relay websocket URLs to HTTP API
   );
 });
 
-test("Tunnel Hub registration uses SSO site token and stores agent token", async (t) => {
+test("Tunnel Hub registration reuses the canonical Desktop SSO token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-registration-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
@@ -103,8 +99,7 @@ test("Tunnel Hub registration uses SSO site token and stores agent token", async
         publicHost: "mac-mini-office.relay.example.test",
         publicUrl: "https://mac-mini-office.relay.example.test",
         webSocketUrl: "wss://mac-mini-office.relay.example.test/ws",
-        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
-        agentToken: "returned-relay-token"
+        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`
       }));
     });
   });
@@ -129,7 +124,7 @@ test("Tunnel Hub registration uses SSO site token and stores agent token", async
   );
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
-  writeSsoSiteToken(homePath, "site-registration-secret");
+  writeDesktopSsoAccessToken(homePath, "canonical-registration-secret");
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
@@ -144,18 +139,18 @@ test("Tunnel Hub registration uses SSO site token and stores agent token", async
   const result = await ensureTunnelHubRegistrationReady(app);
   assert.equal(result.ok, true);
   assert.equal(result.registered, true);
+  assert.equal(result.identityToken, "canonical-registration-secret");
   assert.equal(registrations.length, 1);
   assert.equal(registrations[0].method, "POST");
   assert.equal(registrations[0].url, "/api/desktop/devices/register");
-  assert.equal(registrations[0].authorization, "Bearer site-registration-secret");
+  assert.equal(registrations[0].authorization, "Bearer canonical-registration-secret");
   assert.equal(registrations[0].body.deviceId, "mac-mini-office");
   assert.equal(registrations[0].body.deviceName, "Tunnel Studio");
   assert.equal("deviceSecret" in registrations[0].body, false);
 
   const settings = readTunnelHubSettings(app);
   assert.equal(settings.webSocketUrl, "wss://mac-mini-office.relay.example.test/ws");
-  assert.equal(settings.hasRelayToken, true);
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), true);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "secrets", "tunnel-hub-token")), false);
 });
 
 test("Tunnel Hub registration refreshes the Desktop JWT once after a 401", async (t) => {
@@ -164,7 +159,7 @@ test("Tunnel Hub registration refreshes the Desktop JWT once after a 401", async
   const app = createApp(homePath);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  writeSsoSiteToken(homePath, "stale-desktop-jwt");
+  writeDesktopSsoAccessToken(homePath, "stale-desktop-jwt");
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl: "wss://relay.example.test/tunnel",
@@ -191,8 +186,7 @@ test("Tunnel Hub registration refreshes the Desktop JWT once after a 401", async
         statusText: "OK",
         text: async () => JSON.stringify({
           deviceId: "mac-mini-office",
-          relayUrl: "wss://relay.example.test/tunnel",
-          relayToken: "relay-token"
+          relayUrl: "wss://relay.example.test/tunnel"
         })
       };
     },
@@ -205,6 +199,7 @@ test("Tunnel Hub registration refreshes the Desktop JWT once after a 401", async
 
   const result = await ensureTunnelHubRegistrationReady(app);
   assert.equal(result.registered, true);
+  assert.equal(result.identityToken, "fresh-desktop-jwt");
   assert.equal(refreshCalls, 1);
   assert.deepEqual(authorizations, [
     "Bearer stale-desktop-jwt",
@@ -213,7 +208,7 @@ test("Tunnel Hub registration refreshes the Desktop JWT once after a 401", async
 });
 
 test("Tunnel Hub registration ignores legacy registration token", async (t) => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-site-token-"));
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-canonical-token-"));
   const homePath = path.join(root, "home");
   const app = createApp(homePath);
   const registrations = [];
@@ -231,8 +226,7 @@ test("Tunnel Hub registration ignores legacy registration token", async (t) => {
         publicHost: "zm1234567890.m.zenmind.cc",
         publicUrl: "https://zm1234567890.m.zenmind.cc",
         webSocketUrl: "wss://zm1234567890.m.zenmind.cc/ws",
-        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`,
-        agentToken: "returned-relay-token"
+        relayUrl: `ws://127.0.0.1:${relay.address().port}/tunnel`
       }));
     });
   });
@@ -243,7 +237,7 @@ test("Tunnel Hub registration ignores legacy registration token", async (t) => {
   });
 
   const relayUrl = `ws://127.0.0.1:${relayAddress.port}/tunnel`;
-  writeSsoSiteToken(homePath);
+  writeDesktopSsoAccessToken(homePath);
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl,
@@ -251,6 +245,7 @@ test("Tunnel Hub registration ignores legacy registration token", async (t) => {
   });
   assert.equal(saved.ok, true);
   const secretsRoot = path.join(desktopRoot(homePath), "secrets");
+  fs.mkdirSync(secretsRoot, { recursive: true });
   fs.writeFileSync(
     path.join(secretsRoot, "tunnel-hub-registration-token"),
     "legacy-registration-secret\n",
@@ -264,7 +259,7 @@ test("Tunnel Hub registration ignores legacy registration token", async (t) => {
   const result = await ensureTunnelHubRegistrationReady(app);
   assert.equal(result.ok, true);
   assert.equal(registrations.length, 1);
-  assert.equal(registrations[0].authorization, "Bearer official-site-jwt");
+  assert.equal(registrations[0].authorization, "Bearer canonical-desktop-jwt");
   assert.equal(registrations[0].body.deviceId, "mac-mini-office");
 });
 
@@ -274,7 +269,7 @@ test("Tunnel Hub registration reports an unavailable Desktop API without exposin
   const app = createApp(homePath);
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  writeSsoSiteToken(homePath);
+  writeDesktopSsoAccessToken(homePath);
   const saved = saveTunnelHubSettings(app, {
     enabled: true,
     relayUrl: "wss://relay.example.test/tunnel",

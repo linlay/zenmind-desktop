@@ -3,6 +3,7 @@ import { execFile } from "node:child_process";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
+  AssistantChatSortMode,
   AssistantAwaitingMode,
   AssistantNavAgentIcon,
   AssistantNavAgentItem,
@@ -14,6 +15,11 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
+import {
+  readDesktopProfileFromRoot,
+  updateDesktopProfileInRoot,
+} from "../../desktop-profile-store";
+import { getDesktopConfigRoot } from "../../user-paths";
 import {
   isTimeContractViolation,
   isAgentPlatformEpochMilliseconds,
@@ -73,6 +79,11 @@ type PlatformChatSummary = {
   awaitingMode?: unknown;
   mode?: unknown;
   status?: unknown;
+};
+
+type PlatformChatOrder = {
+  sortMode?: unknown;
+  updatedAt?: unknown;
 };
 
 type PlatformAgentSummary = {
@@ -185,7 +196,7 @@ type AssistantNavigationRecordedRuntimeStatusPush = {
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const NAVIGATION_AGENT_HISTORY_LIMIT = 50;
 const NAVIGATION_AGENT_CHAT_LIMIT = NAVIGATION_AGENT_HISTORY_LIMIT;
-const NAVIGATION_CHAT_LIMIT = 8;
+const NAVIGATION_CHAT_LIMIT = 24;
 const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT + 1;
 const NAVIGATION_CHAT_AGENT_MODE = "REACT";
 const NAVIGATION_REFRESH_DEBOUNCE_MS = 350;
@@ -614,33 +625,6 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
   return left.chatId.localeCompare(right.chatId);
 }
 
-function readAgentTimestamp(agent: AssistantNavAgentItem) {
-  return agent.updatedAt ?? undefined;
-}
-
-function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
-  const rightTime = readAgentTimestamp(right);
-  const leftTime = readAgentTimestamp(left);
-  if (rightTime !== undefined && leftTime !== undefined && rightTime !== leftTime) {
-    return rightTime - leftTime;
-  }
-  if (leftTime === undefined && rightTime !== undefined) {
-    return 1;
-  }
-  if (leftTime !== undefined && rightTime === undefined) {
-    return -1;
-  }
-  const displayNameComparison = left.displayName.localeCompare(right.displayName, "zh-CN");
-  if (displayNameComparison !== 0) {
-    return displayNameComparison;
-  }
-  return left.agentKey.localeCompare(right.agentKey);
-}
-
-function sortNavigationAgents(items: AssistantNavAgentItem[]) {
-  return [...items].sort(compareNavigationAgents);
-}
-
 function mergeNavigationChats(
   primaryChats: AssistantNavChatItem[],
   secondaryChats: AssistantNavChatItem[]
@@ -720,15 +704,23 @@ function mergeNavigationAgentGroups(
   primaryItems: AssistantNavAgentItem[],
   secondaryItems: AssistantNavAgentItem[]
 ) {
-  const agentsByKey = new Map<string, AssistantNavAgentItem>();
-  for (const agent of primaryItems) {
-    agentsByKey.set(agent.agentKey, agent);
-  }
+  const mergedItems = primaryItems.slice();
+  const indexByKey = new Map(
+    mergedItems.map((agent, index) => [agent.agentKey, index] as const),
+  );
   for (const agent of secondaryItems) {
-    const existing = agentsByKey.get(agent.agentKey);
-    agentsByKey.set(agent.agentKey, existing ? mergeNavigationAgentItem(existing, agent) : agent);
+    const existingIndex = indexByKey.get(agent.agentKey);
+    if (existingIndex === undefined) {
+      indexByKey.set(agent.agentKey, mergedItems.length);
+      mergedItems.push(agent);
+      continue;
+    }
+    mergedItems[existingIndex] = mergeNavigationAgentItem(
+      mergedItems[existingIndex],
+      agent,
+    );
   }
-  return sortNavigationAgents([...agentsByKey.values()]);
+  return mergedItems;
 }
 
 function mapNavigationChat(
@@ -767,6 +759,11 @@ function mapNavigationChat(
 export type AssistantNavigationChatsSnapshot = {
   chatItems: AssistantNavChatItem[];
   chatItemsHasMore: boolean;
+};
+
+type AssistantNavigationChatOrderSnapshot = {
+  chatSortMode: AssistantChatSortMode;
+  chatOrderingSupported: boolean;
 };
 
 export function buildAssistantNavigationChatsSnapshotFromPlatform(
@@ -931,16 +928,16 @@ export function buildAssistantNavigationAgentsFromPlatformAgents(
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): AssistantNavAgentItem[] {
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
-  return sortNavigationAgents(agents
+  return agents
     .map((agent, index) => createNavigationAgentItem(agent, includeChatLimit, `navigation.agents[${index}]`))
-    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent)));
+    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent));
 }
 
 export function buildAssistantCopilotAgentsFromPlatformAgents(agentsInput: unknown): AssistantNavAgentItem[] {
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
-  return sortNavigationAgents(agents
+  return agents
     .map((agent, index) => createCopilotAgentItem(agent, `copilot.agents[${index}]`))
-    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent)));
+    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent));
 }
 
 function normalizePushType(type: string) {
@@ -1253,7 +1250,7 @@ function applyChatRuntimeStatusToAgents(
       : agent;
   });
   return {
-    items: changed ? sortNavigationAgents(nextItems) : currentItems,
+    items: changed ? nextItems : currentItems,
     changed,
     shouldRefresh: !changed,
   };
@@ -1336,7 +1333,7 @@ export function applyAssistantNavigationPush(
       recentChats: nextAgent.recentChats.map((chat) => ({ ...chat, isRead: true }))
     });
     nextItems[agentIndex] = nextAgent;
-    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: false };
+    return { items: nextItems, changed: true, shouldRefresh: false };
   }
 
   if (type === "chat.deleted" || type === "chat.archived") {
@@ -1347,7 +1344,7 @@ export function applyAssistantNavigationPush(
     nextAgent.chatCount = Math.max(0, nextAgent.chatCount - (chatIndex >= 0 ? 1 : 0));
     nextAgent.unreadCount = currentChat && !currentChat.isRead ? Math.max(0, nextAgent.unreadCount - 1) : nextAgent.unreadCount;
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
-    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: true };
+    return { items: nextItems, changed: true, shouldRefresh: true };
   }
 
   if (type === "chat.read" || type === "chat.unread") {
@@ -1365,7 +1362,7 @@ export function applyAssistantNavigationPush(
       type === "chat.read" ? "decrement" : "increment"
     );
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
-    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: false };
+    return { items: nextItems, changed: true, shouldRefresh: false };
   }
 
   if (
@@ -1388,7 +1385,7 @@ export function applyAssistantNavigationPush(
     nextAgent.unreadCount = readPushUnreadCount(event, nextAgent.unreadCount, "preserve");
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
     return {
-      items: sortNavigationAgents(nextItems),
+      items: nextItems,
       changed: true,
       shouldRefresh: false
     };
@@ -1549,6 +1546,8 @@ export class AssistantNavigationStatusClient {
     activityItems: [],
     chatItems: [],
     chatItemsHasMore: false,
+    chatSortMode: "recent",
+    chatOrderingSupported: false,
     message: t("assistant.navigationStatusUninitialized"),
     updatedAt: nowEpochMillis()
   };
@@ -1732,12 +1731,19 @@ export class AssistantNavigationStatusClient {
         items
       );
       await this.connectRealtime(baseUrl, token);
-      const chatSnapshot = await this.requestNavigationChats(baseUrl, token);
+      const [chatSnapshot, chatOrderSnapshot] = await Promise.all([
+        this.requestNavigationChats(baseUrl, token),
+        this.requestNavigationChatOrder(baseUrl, token),
+      ]);
+      if (chatOrderSnapshot.chatOrderingSupported) {
+        this.cacheChatSortMode(chatOrderSnapshot.chatSortMode);
+      }
       const refreshedResult = this.replayRuntimeStatusPushesSince({
         ok: true,
         items,
         activityItems,
         ...chatSnapshot,
+        ...chatOrderSnapshot,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowEpochMillis()
       }, runtimeStatusSequenceAtStart);
@@ -1903,6 +1909,74 @@ export class AssistantNavigationStatusClient {
     );
   }
 
+  private async requestNavigationChatOrder(
+    baseUrl: string,
+    token: string,
+  ): Promise<AssistantNavigationChatOrderSnapshot> {
+    const id = `desktop-nav-chat-order-${++this.wsRequestSequence}`;
+    try {
+      const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
+        void this.realtimeBroker.forwardRequest({
+          baseUrl,
+          token,
+          localId: id,
+          consumerId: "assistant-navigation",
+          type: "/api/chats/order",
+          payload: {},
+          onFrame: (response) => {
+            this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
+            this.recordLiveFrame({
+              direction: "inbound",
+              kind: toText(response.frame) === "error" ? "error" : "response",
+              type: toText(response.type) || null,
+            });
+            if (toText(response.frame) === "error") {
+              reject(new Error(toText(response.msg) || "chat ordering is unavailable"));
+              return;
+            }
+            resolve(response as NavigationPushFrame);
+          },
+          onError: reject,
+        }).catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
+        this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats/order" });
+      });
+      const data = unwrapApiResponse<PlatformChatOrder>(frame);
+      const sortMode = toText(data?.sortMode);
+      if (sortMode !== "recent" && sortMode !== "manual") {
+        throw new Error("agent-platform returned an invalid chat sort mode");
+      }
+      if (data?.updatedAt !== undefined && data.updatedAt !== null) {
+        requireAgentPlatformEpochMillis(
+          data.updatedAt,
+          "navigation.chatOrder.updatedAt",
+        );
+      }
+      return {
+        chatSortMode: sortMode,
+        chatOrderingSupported: true,
+      };
+    } catch (error) {
+      this.options.onDebug?.(
+        `[chat-order] unavailable; using recent: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return {
+        chatSortMode: "recent",
+        chatOrderingSupported: false,
+      };
+    }
+  }
+
+  private cacheChatSortMode(sortMode: AssistantChatSortMode) {
+    const profileRoot = getDesktopConfigRoot(this.options.app);
+    const current = readDesktopProfileFromRoot(profileRoot);
+    if (current.navigation.chatSortMode === sortMode) {
+      return;
+    }
+    updateDesktopProfileInRoot(profileRoot, {
+      navigation: { chatSortMode: sortMode },
+    });
+  }
+
   private handleRealtimeFrame(input: AgentPlatformRealtimeFrame) {
     if (this.stopped) {
       return;
@@ -1969,12 +2043,14 @@ export class AssistantNavigationStatusClient {
         activityItems: nextActivity.items,
         chatItems: nextChats.items,
         chatItemsHasMore: this.latestResult.chatItemsHasMore,
+        chatSortMode: this.latestResult.chatSortMode ?? "recent",
+        chatOrderingSupported: this.latestResult.chatOrderingSupported === true,
         message: t("assistant.navigationNotificationSynced"),
         updatedAt: nowEpochMillis()
       });
     }
     // A new chat cannot be optimistically inserted into the global Chats list:
-    // the server owns its ordering and top-eight cutoff. Refresh it immediately
+    // the server owns its ordering and visible cutoff. Refresh it immediately
     // so the route mirrored from agent-webclient can select the new list item.
     this.scheduleRefresh(event.type === "chat.created" ? 0 : undefined);
   }

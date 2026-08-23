@@ -23,7 +23,7 @@ function nextTurn() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
-function createHarness(t) {
+function createHarness(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-realtime-broker-"));
   const sockets = [];
   class FakeSocket {
@@ -35,7 +35,20 @@ function createHarness(t) {
       this.onclose = null;
       this.onerror = null;
       sockets.push(this);
-      queueMicrotask(() => this.onopen?.());
+      queueMicrotask(() => {
+        this.onopen?.();
+        if (options.autoHandshake === false) return;
+        this.emit({
+          frame: "push",
+          type: "connected",
+          data: {
+            protocolVersion: 2,
+            sessionId: `platform-${sockets.length}`,
+            serverTime: EPOCH_MS,
+            liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 },
+          },
+        });
+      });
     }
 
     send(data) {
@@ -57,7 +70,7 @@ function createHarness(t) {
     issueAccessToken: async () => ({ ok: true, token: jwt(), message: "" }),
     createWebSocket: (url) => new FakeSocket(url),
     connectTimeoutMs: 100,
-    heartbeatTimeoutMs: 0,
+    heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? 0,
     acceptanceTimeoutMs: 500,
   });
   t.after(() => {
@@ -66,6 +79,74 @@ function createHarness(t) {
   });
   return { broker, sockets, token: jwt() };
 }
+
+test("physical realtime connection waits for the Platform v2 handshake", async (t) => {
+  const { broker, sockets, token } = createHarness(t, { autoHandshake: false });
+  const connecting = broker.ensureConnected("http://127.0.0.1:8080", token);
+  await nextTurn();
+  assert.equal(broker.getConnectionState().phase, "connecting");
+  assert.equal(sockets.length, 1);
+
+  sockets[0].emit({
+    frame: "push",
+    type: "connected",
+    data: {
+      protocolVersion: 2,
+      sessionId: "platform-handshake-1",
+      serverTime: EPOCH_MS,
+      liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 },
+    },
+  });
+  await connecting;
+  assert.deepEqual(
+    {
+      phase: broker.getConnectionState().phase,
+      sessionId: broker.getConnectionState().physicalSessionId,
+    },
+    { phase: "connected", sessionId: "platform-handshake-1" },
+  );
+});
+
+test("valid heartbeat and business frames continuously refresh physical liveness", async (t) => {
+  const { broker, sockets, token } = createHarness(t, { heartbeatTimeoutMs: 35 });
+  await broker.ensureConnected("http://127.0.0.1:8080", token);
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  sockets[0].emit({
+    frame: "push",
+    type: "heartbeat",
+    data: { sessionId: "platform-1", sequence: 1, timestamp: EPOCH_MS + 1 },
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+  sockets[0].emit({ frame: "push", type: "run.updated", data: { runId: "run-1" } });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const state = broker.getConnectionState();
+  assert.equal(state.phase, "connected");
+  assert.equal(state.physicalSessionId, "platform-1");
+  assert.ok(state.lastInboundAt >= state.lastHeartbeatAt);
+  assert.equal(sockets.length, 1);
+});
+
+test("non-monotonic protocol-v2 heartbeat closes without retrying the incompatible connection", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  await broker.ensureConnected("http://127.0.0.1:8080", token);
+  sockets[0].emit({
+    frame: "push",
+    type: "heartbeat",
+    data: { sessionId: "platform-1", sequence: 2, timestamp: EPOCH_MS + 2 },
+  });
+  sockets[0].emit({
+    frame: "push",
+    type: "heartbeat",
+    data: { sessionId: "platform-1", sequence: 2, timestamp: EPOCH_MS + 3 },
+  });
+  await nextTurn();
+  await new Promise((resolve) => setTimeout(resolve, 120));
+
+  assert.equal(broker.getConnectionState().phase, "closed");
+  assert.match(broker.getConnectionState().lastError, /PLATFORM_WS_PROTOCOL_MISMATCH/u);
+  assert.equal(sockets.length, 1);
+});
 
 test("realtime connection identity excludes token rotation claims and normalizes endpoint", () => {
   const first = jwt({ exp: 100, jti: "one" });
@@ -288,6 +369,182 @@ test("RealtimeBroker replays and fans out a forwarded visible Run without upstre
   assert.equal(broker.getVisibleBinding(), null);
   overview.unsubscribe();
   debug.unsubscribe();
+});
+
+test("RealtimeBroker hands an internal observer to Main Chat without treating detached as Run completion", async (t) => {
+  const { broker, sockets, token } = createHarness(t);
+  const owner = { kind: "agent", agentKey: "coder" };
+  const internalEvents = [];
+  const completed = [];
+  const internal = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+    kind: "internal",
+    consumerId: "desktop-pet-stream:run-handoff",
+    onEvent: (event) => internalEvents.push(event.type),
+    onComplete: (result) => completed.push(result.reason),
+  });
+  await internal.ready;
+  const brokerAttach = sockets[0].sent.find((frame) => frame.type === "/api/attach");
+  assert.ok(brokerAttach);
+
+  assert.equal(await broker.prepareForwardedVisibleRun({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+  }), true);
+  broker.beginForwardedVisibleRun({
+    sourceId: "main-chat:attach-handoff",
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+    primarySurfaceId: "surface:main-chat",
+  });
+  await broker.forwardRequest({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    localId: "main-attach-handoff",
+    consumerId: "frame-port:main-chat",
+    type: "/api/attach",
+    payload: { runId: "run-handoff", agentKey: "coder", lastSeq: 0 },
+    stream: true,
+    onFrame() {},
+    onError() {},
+  });
+  assert.deepEqual(
+    sockets[0].sent.filter((frame) => ["/api/attach", "/api/detach"].includes(frame.type)).map((frame) => frame.type),
+    ["/api/attach", "/api/detach", "/api/attach"],
+  );
+
+  sockets[0].emit({
+    frame: "stream",
+    id: brokerAttach.id,
+    reason: "detached",
+    lastSeq: 0,
+  });
+  await nextTurn();
+  broker.appendForwardedVisibleRunEvent({
+    sourceId: "main-chat:attach-handoff",
+    runId: "run-handoff",
+    event: {
+      type: "content.delta",
+      timestamp: EPOCH_MS,
+      seq: 1,
+      chatId: "chat-handoff",
+      runId: "run-handoff",
+      delta: "still running",
+    },
+  });
+  assert.deepEqual(internalEvents, ["content.delta"]);
+  assert.deepEqual(completed, []);
+  assert.equal(broker.getDiagnostics().observerReleaseCount, 1);
+  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-handoff").state, "active");
+  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-handoff").observerSource, "forwarded");
+
+  const mirrored = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:11789",
+    token,
+    chatId: "chat-handoff",
+    runId: "run-handoff",
+    owner,
+    kind: "internal",
+    consumerId: "second-internal",
+    onEvent() {},
+  });
+  await mirrored.ready;
+  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/attach").length, 2);
+
+  assert.equal(broker.completeForwardedVisibleRun({
+    sourceId: "main-chat:attach-handoff",
+    runId: "run-handoff",
+    reason: "done",
+    lastSeq: 1,
+  }), true);
+  assert.deepEqual(completed, ["done"]);
+  assert.throws(
+    () => broker.beginForwardedVisibleRun({
+      sourceId: "main-chat:retry-after-done",
+      chatId: "chat-handoff",
+      runId: "run-handoff",
+      owner,
+      primarySurfaceId: "surface:main-chat",
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, false);
+      assert.deepEqual(error.details, {
+        stage: "broker_visible_registration",
+        reason: "run_registry_terminal",
+        terminalSource: "forwarded_stream",
+        terminalReason: "done",
+        hasUpstreamObserver: false,
+        hasForwardedSource: false,
+      });
+      return true;
+    },
+  );
+  internal.unsubscribe();
+  mirrored.unsubscribe();
+});
+
+test("RealtimeBroker explains why a requested visible Run cannot be subscribed", (t) => {
+  const { broker } = createHarness(t);
+  assert.throws(
+    () => broker.subscribeVisibleRun({
+      chatId: "chat-missing",
+      runId: "run-missing",
+      kind: "surface",
+      consumerId: "overview-missing",
+      surfaceId: "surface:overview",
+      onEvent() {},
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, true);
+      assert.deepEqual(error.details, {
+        stage: "broker_subscribe",
+        reason: "visible_binding_missing",
+        visibleBindingPresent: false,
+        runRegistered: false,
+      });
+      return true;
+    },
+  );
+
+  broker.beginForwardedVisibleRun({
+    sourceId: "frame-port:main:query-present",
+    chatId: "chat-present",
+    runId: "run-present",
+    owner: { kind: "agent", agentKey: "coder" },
+    primarySurfaceId: "surface:main",
+  });
+  assert.throws(
+    () => broker.subscribeVisibleRun({
+      chatId: "chat-requested",
+      runId: "run-requested",
+      kind: "surface",
+      consumerId: "overview-mismatch",
+      surfaceId: "surface:overview",
+      onEvent() {},
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.retryable, true);
+      assert.equal(error.details.stage, "broker_subscribe");
+      assert.equal(error.details.reason, "visible_binding_identity_mismatch");
+      assert.equal(error.details.visibleBindingPresent, true);
+      assert.equal(error.details.runRegistered, false);
+      assert.equal(typeof error.details.bindingEpoch, "number");
+      assert.equal(JSON.stringify(error.details).includes("chat-present"), false);
+      assert.equal(JSON.stringify(error.details).includes("run-present"), false);
+      return true;
+    },
+  );
 });
 
 test("RealtimeBroker singleflights attach and strictly pairs rewritten response ids", async (t) => {

@@ -16,6 +16,14 @@ function getDialogFocusableElements(dialog: HTMLElement) {
   ).filter((element) => element !== dialog && !element.hasAttribute("hidden"));
 }
 
+function isNativeEnterTarget(dialog: HTMLElement, element: Element | null) {
+  return element instanceof HTMLElement &&
+    dialog.contains(element) &&
+    element.matches(
+      "summary, button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), a[href], [contenteditable='true']"
+    );
+}
+
 export function DesktopActionConfirmationDialog({
   request,
   onDecision
@@ -33,10 +41,15 @@ export function DesktopActionConfirmationDialog({
     const previouslyFocusedElement = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
-    const focusTarget = defaultButtonRef.current ?? dialogRef.current;
-    focusTarget?.focus({ preventScroll: true });
+    const focusDefaultDecision = () => {
+      const focusTarget = defaultButtonRef.current ?? dialogRef.current;
+      focusTarget?.focus({ preventScroll: true });
+    };
+    focusDefaultDecision();
+    window.addEventListener("focus", focusDefaultDecision);
 
     return () => {
+      window.removeEventListener("focus", focusDefaultDecision);
       if (previouslyFocusedElement?.isConnected) {
         previouslyFocusedElement.focus({ preventScroll: true });
       }
@@ -54,10 +67,28 @@ export function DesktopActionConfirmationDialog({
         onDecision(request.cancelDecision);
         return;
       }
+      const dialog = dialogRef.current;
+      if (event.key === "Enter") {
+        if (dialog && isNativeEnterTarget(dialog, document.activeElement)) {
+          return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        if (
+          !event.isComposing &&
+          !event.repeat &&
+          !event.altKey &&
+          !event.ctrlKey &&
+          !event.metaKey &&
+          !event.shiftKey
+        ) {
+          defaultButtonRef.current?.click();
+        }
+        return;
+      }
       if (event.key !== "Tab") {
         return;
       }
-      const dialog = dialogRef.current;
       if (!dialog) {
         return;
       }

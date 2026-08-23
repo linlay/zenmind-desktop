@@ -18,19 +18,16 @@ import {
   getDesktopSsoCookieUserInfoConfig,
   getDesktopSsoProxyBrowserCookieDetails,
   getDesktopSsoStatus,
-  getDesktopSsoSiteTokenBridgeConfig,
-  getDesktopSsoSiteTokenBridgeCookieOrigins,
   getDesktopSsoWebSessionClearCookies,
   getDesktopSsoWebSessionExchangeConfig,
   markDesktopSsoRestoreTemporarilyUnavailable,
   parseDesktopSsoCookieUserInfo,
-  prepareDesktopSsoSessionRestore,
-  saveDesktopSsoSiteTokenFile
+  prepareDesktopSsoSessionRestore
 } from "./oidc-sso";
 import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "./platform-adapter";
 import { safeConsoleError } from "./safe-console";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../shared/sso";
-import type { DesktopSsoClaims, DesktopSsoSiteTokenBridgeStartResult } from "../shared/contracts";
+import type { DesktopSsoClaims } from "../shared/contracts";
 import { t } from "./i18n/main-i18n";
 
 export { DESKTOP_SSO_WEBVIEW_PARTITION };
@@ -89,11 +86,6 @@ type EmbeddedLoginDialogOpenInput = {
   label?: string;
   browserOrigin?: string;
   resolveRedirect?: boolean;
-};
-
-type DesktopSsoSiteTokenBridgeOpenController = {
-  openEmbeddedLoginDialog(input: EmbeddedLoginDialogOpenInput): Promise<{ ok: boolean; message?: string }>;
-  openSystemBrowserUrl(input: { url: string; label: string }): Promise<{ ok: boolean; message?: string }>;
 };
 
 type ElectronSessionAccess = {
@@ -429,25 +421,6 @@ function focusMainWindowAfterDesktopSso(options: DesktopSsoControllerOptions) {
   mainWindow.focus();
 }
 
-export function openDesktopSsoSiteTokenBridge(
-  controller: DesktopSsoSiteTokenBridgeOpenController,
-  bridgeStart: DesktopSsoSiteTokenBridgeStartResult
-) {
-  const label = bridgeStart.browserLabel || t("sso.iamLogin");
-  if (bridgeStart.openMode === "embedded") {
-    return controller.openEmbeddedLoginDialog({
-      url: bridgeStart.startUrl || "",
-      label,
-      browserOrigin: bridgeStart.browserOrigin,
-      resolveRedirect: true
-    });
-  }
-  return controller.openSystemBrowserUrl({
-    url: bridgeStart.startUrl || "",
-    label
-  });
-}
-
 export function createDesktopSsoController(options: DesktopSsoControllerOptions) {
   let accessTokenRefreshPromise: Promise<string> | null = null;
   let restorePromise: Promise<DesktopSsoRestoreResult> | null = null;
@@ -619,8 +592,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     const defaultSession = options.session.defaultSession;
     const knownOrigins = new Set([
       ...getDesktopSsoCookieMirrorOrigins(options.app),
-      ...getDesktopSsoWebSessionClearCookies(options.app).map((details) => new URL(details.url).origin),
-      ...getDesktopSsoSiteTokenBridgeCookieOrigins(options.app)
+      ...getDesktopSsoWebSessionClearCookies(options.app).map((details) => new URL(details.url).origin)
     ]);
     await Promise.all([...knownOrigins].map(async (origin) => {
       try {
@@ -1068,43 +1040,6 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       const responseBody = await response.json();
       return createWebSessionClaims(getRecordValue(responseBody, "user"), exchangeConfig.url, exchangeConfig.claims);
     },
-    async exchangeSiteTokenBridgeTicket(ticket: string, fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
-      const bridgeConfig = getDesktopSsoSiteTokenBridgeConfig(options.app);
-      const normalizedTicket = ticket.trim();
-      if (!bridgeConfig || !normalizedTicket) {
-        return false;
-      }
-      const response = await fetchImpl(bridgeConfig.exchangeUrl, {
-        method: "POST",
-        headers: {
-          Accept: "application/json",
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          ticket: normalizedTicket
-        })
-      });
-      if (!response.ok) {
-        throw new Error(`Desktop SSO site token bridge exchange failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
-      }
-      const setCookieHeaders = getDesktopSsoSetCookieHeaders(response.headers);
-      if (setCookieHeaders.length > 0) {
-        const targetSessions = [
-          options.session.defaultSession,
-          options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
-        ];
-        await applyDesktopSsoSetCookieHeadersToSessions(
-          targetSessions,
-          [bridgeConfig.exchangeUrl, ...bridgeConfig.cookieOrigins],
-          setCookieHeaders
-        );
-      }
-      if (typeof response.json !== "function") {
-        return setCookieHeaders.length > 0;
-      }
-      const responseBody = await response.json();
-      return saveDesktopSsoSiteTokenFile(options.app, responseBody);
-    },
     async logoutWebSession(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
       const exchangeConfig = getDesktopSsoWebSessionExchangeConfig(options.app);
       if (!exchangeConfig) {
@@ -1144,30 +1079,6 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       });
       if (!response.ok) {
         throw new Error(`Desktop SSO web session logout failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
-      }
-      return true;
-    },
-    async logoutSiteTokenBridge(fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
-      const bridgeConfig = getDesktopSsoSiteTokenBridgeConfig(options.app);
-      if (!bridgeConfig) {
-        return false;
-      }
-      const logoutUrl = new URL("/api/auth/logout", bridgeConfig.exchangeUrl).toString();
-      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
-      const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, logoutUrl);
-      const headers: Record<string, string> = {
-        Accept: "application/json"
-      };
-      if (cookieHeader) {
-        headers.Cookie = cookieHeader;
-      }
-      const response = await fetchImpl(logoutUrl, {
-        method: "POST",
-        headers,
-        body: ""
-      });
-      if (!response.ok) {
-        throw new Error(`Desktop SSO site token bridge logout failed: ${await readDesktopSsoWebSessionExchangeError(response)}`);
       }
       return true;
     },
@@ -1235,28 +1146,6 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           } catch {
             // Cookie removal is best effort; local Desktop auth state is already cleared.
           }
-        })
-      ));
-    },
-    async clearSiteTokenBridgeCookies() {
-      const origins = getDesktopSsoSiteTokenBridgeCookieOrigins(options.app);
-      if (origins.length === 0) {
-        return;
-      }
-      const targetSessions = [
-        options.session.defaultSession,
-        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
-      ];
-      await Promise.all(targetSessions.flatMap((targetSession) =>
-        origins.map(async (origin) => {
-          const cookies = await targetSession.cookies.get({ url: origin });
-          await Promise.all(cookies.map(async (cookie) => {
-            try {
-              await targetSession.cookies.remove(origin, cookie.name);
-            } catch {
-              // Cookie removal is best effort; local Desktop auth state is already cleared.
-            }
-          }));
         })
       ));
     }

@@ -7,7 +7,60 @@ import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatInfo, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareCreateResult, AssistantConversationShareListResult, AssistantConversationShareRequest, AssistantConversationShareRevokeResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantFirstInstallBootstrapNavigationResult, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type {
+  AssistantChatDetail,
+  AssistantChatInfo,
+  AssistantChatOrderMutationRequest,
+  AssistantChatOrderMutationResult,
+  AssistantChatSearchRequest,
+  AssistantChatSearchResponse,
+  AssistantChatSummary,
+  AssistantConversationShareCreateResult,
+  AssistantConversationShareListResult,
+  AssistantConversationShareRequest,
+  AssistantConversationShareRevokeResult,
+  AssistantCreateCoderProjectRequest,
+  AssistantCreateCoderProjectResult,
+  AssistantCreateProjectRequest,
+  AssistantCreateProjectResult,
+  AssistantEventListener,
+  AssistantFirstInstallBootstrapNavigationResult,
+  AssistantHistoryChatsResult,
+  AssistantMemoryItem,
+  AssistantMemorySettings,
+  AssistantMemorySettingsInput,
+  AssistantMemoryStats,
+  AssistantMemoryStorage,
+  AssistantMemorySummary,
+  AssistantNavActionResult,
+  AssistantNavAgentItemsResult,
+  AssistantNavigationAgentsChangedListener,
+  AssistantNavigationListOptions,
+  AssistantNavigationLiveStatus,
+  AssistantNavigationPushEventListener,
+  AssistantPastedImageInput,
+  AssistantReorderProjectsRequest,
+  AssistantReorderProjectsResult,
+  AssistantSettingsInput,
+  AssistantSettingsPublic,
+  AssistantStartRunRequest,
+  AssistantStartRunResult,
+  AssistantStopRunResult,
+  AssistantSubmitAwaitingRequest,
+  AssistantSubmitAwaitingResult,
+  AssistantVoiceCorrectionRequest,
+  AssistantVoiceCorrectionResult,
+  AssistantVoiceTranscriptionRequest,
+  AssistantVoiceTranscriptionResult,
+  AssistantWorkerOpenListener,
+  CopilotDevToolsTargetInput,
+  DesktopActionCallListener,
+  DesktopActionConfirmationListener,
+  DesktopActionConfirmationResponse,
+  DesktopActionRendererResponse,
+  DesktopPageContextSnapshot,
+  WebviewOpenTabListener,
+} from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type {
   SidebarContextMenuPopupRequest,
@@ -16,6 +69,8 @@ import type {
 import type {
   ChatWorkPanelOpenLocalResourceRequest,
   ChatWorkPanelOpenLocalResourceResult,
+  ChatWorkPanelRevealLocalResourceRequest,
+  ChatWorkPanelRevealLocalResourceResult,
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
@@ -140,9 +195,32 @@ export interface AgentRealtimeDebugSurface {
   active: boolean;
   ownerChatId?: string;
   route: string;
-  socketId: string;
+  logicalSessionId: string;
   pendingRequestCount: number;
   activeStreamCount: number;
+}
+
+export interface AgentRealtimeDebugLogicalSession {
+  logicalSessionId: string;
+  surfaceId: string;
+  webContentsId: number;
+  phase: "connecting" | "connected" | "reconnecting" | "closed";
+  logicalGeneration: number;
+  physicalGeneration: number;
+  reconnectCount: number;
+  openedAt: EpochMilliseconds;
+  closedAt?: EpochMilliseconds;
+  closeReason?: string;
+  pendingRequestCount: number;
+  activeStreamCount: number;
+}
+
+export interface AgentRealtimeDebugRunRecovery {
+  runId: string;
+  lastSeq: number;
+  state: "active" | "suspended" | "restoring" | "terminal";
+  restoreCount: number;
+  lastRestoreResult: string;
 }
 
 export interface AgentRealtimeDebugSnapshot {
@@ -153,6 +231,10 @@ export interface AgentRealtimeDebugSnapshot {
     physicalConnectionCount: 0 | 1;
     reconnectCount: number;
     endpoint: string;
+    physicalSessionId?: string;
+    lastInboundAt?: EpochMilliseconds;
+    lastHeartbeatAt?: EpochMilliseconds;
+    closeReason?: string;
     lastError?: string;
   };
   broker: {
@@ -175,13 +257,15 @@ export interface AgentRealtimeDebugSnapshot {
   };
   bridge: {
     registeredSenderCount: number;
-    logicalSocketCount: number;
+    logicalSessionCount: number;
     pendingRequestCount: number;
     activeStreamCount: number;
     activeLiveSurfaceCount: number;
-    activeLiveSocketKey: string | null;
+    activeLiveSessionKey: string | null;
   };
   surfaces: AgentRealtimeDebugSurface[];
+  logicalSessions: AgentRealtimeDebugLogicalSession[];
+  runRecovery: AgentRealtimeDebugRunRecovery[];
   trace: AgentRealtimeDebugTraceEntry[];
 }
 
@@ -233,17 +317,6 @@ export interface DesktopSsoLogoutResult {
   message: string;
 }
 
-export interface DesktopSsoSiteTokenBridgeStartResult {
-  ok: boolean;
-  configured: boolean;
-  required: boolean;
-  startUrl?: string;
-  browserOrigin?: string;
-  browserLabel?: string;
-  openMode?: "embedded" | "system";
-  message: string;
-}
-
 export interface DesktopSsoCancelResult {
   ok: boolean;
   status: DesktopSsoStatus;
@@ -264,6 +337,59 @@ export interface DesktopAppInfo {
   productName: string;
   version: string;
   buildTime: string;
+}
+
+export interface DesktopRuntimeDiagnosticDeviceInfo {
+  deviceId: string;
+  deviceName: string;
+  hostname: string;
+  username: string;
+  platform: string;
+  arch: string;
+}
+
+export interface DesktopRuntimeDiagnosticPaths {
+  homeDir: string;
+  dataRoot: string;
+  appPath: string;
+  execPath: string;
+}
+
+export interface DesktopRuntimeVersions {
+  electronVersion: string;
+  nodeVersion: string;
+  isPackaged: boolean;
+}
+
+export interface DesktopRuntimeCredentialSummary {
+  present: boolean;
+  expiresAt: EpochMilliseconds | null;
+  expired: boolean | null;
+  preview: string;
+}
+
+export interface DesktopRuntimeDiagnosticService {
+  id: ServiceId;
+  name: string;
+  kind: "builtin" | "plugin";
+  version: string;
+  installed: boolean;
+  status: ServiceState["status"];
+  installDir: string;
+  pid: number | null;
+  port: number | null;
+  webUrl: string;
+}
+
+export interface DesktopRuntimeDiagnostics {
+  app: DesktopAppInfo;
+  device: DesktopRuntimeDiagnosticDeviceInfo;
+  paths: DesktopRuntimeDiagnosticPaths;
+  runtime: DesktopRuntimeVersions;
+  credentials: {
+    desktopSso: DesktopRuntimeCredentialSummary;
+  };
+  services: DesktopRuntimeDiagnosticService[];
 }
 
 export type DesktopDeviceIdentityMachineSource =
@@ -569,7 +695,7 @@ export type DesktopWindowState = {
   isFullScreen: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
-export type DesktopGlobalSearchActionShortcutId = "newChat" | "agents" | "skills" | "mcpConnectors";
+export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "skills" | "mcpConnectors";
 export type DesktopGlobalSearchShortcutSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type DesktopGlobalSearchShortcut =
   | { kind: "action"; actionId: DesktopGlobalSearchActionShortcutId }
@@ -620,6 +746,9 @@ export interface DesktopApi {
     openLocalResource: (
       request: ChatWorkPanelOpenLocalResourceRequest
     ) => Promise<ChatWorkPanelOpenLocalResourceResult>;
+    revealLocalResource: (
+      request: ChatWorkPanelRevealLocalResourceRequest
+    ) => Promise<ChatWorkPanelRevealLocalResourceResult>;
   };
   desktopShell: {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
@@ -692,6 +821,8 @@ export interface DesktopApi {
     getMemorySummary: () => Promise<AssistantMemorySummary>;
     listAgents: () => Promise<DesktopPetAgentOption[]>;
     listNavigationAgents: (options?: AssistantNavigationListOptions) => Promise<AssistantNavAgentItemsResult>;
+    updateChatOrder: (input: AssistantChatOrderMutationRequest) => Promise<AssistantChatOrderMutationResult>;
+    reorderProjects: (input: AssistantReorderProjectsRequest) => Promise<AssistantReorderProjectsResult>;
     getNavigationLiveStatus: () => Promise<AssistantNavigationLiveStatus>;
     listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;
     createProject: (input: AssistantCreateProjectRequest) => Promise<AssistantCreateProjectResult>;
@@ -706,6 +837,7 @@ export interface DesktopApi {
     deleteMemoryItem: (memoryId: string) => Promise<{ ok: boolean; message: string }>;
     clearMemoryItems: () => Promise<{ ok: boolean; message: string; deletedCount: number }>;
     listChats: () => Promise<AssistantChatSummary[]>;
+    listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     getChatInfo: (chatId: string) => Promise<AssistantChatInfo | null>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;

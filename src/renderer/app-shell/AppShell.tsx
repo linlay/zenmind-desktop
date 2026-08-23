@@ -10,6 +10,7 @@ import { SidebarActionIcon } from "../components/BrandMark";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
+import { ChatHistoryDialog } from "./history/ChatHistoryDialog";
 import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, ServiceWebviewSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
@@ -32,7 +33,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -104,8 +105,10 @@ import {
 } from "../settings/settingsRoutes";
 import {
   isAssistantNavChatAgent,
+  isAssistantNavProjectAgent,
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents,
+  reorderAssistantNavProjectAgents,
   resolveAssistantNavChatRuntimeAgent,
   resolveFirstInstallBootstrapNavigationTarget,
 } from "../assistantNavigation";
@@ -146,6 +149,10 @@ type AgentChatFocusRequest = {
   id: number;
   sourceRoute: string;
   targetRoute: string;
+};
+type ChatHistoryDialogRequest = {
+  id: number;
+  agentKey: string;
 };
 type WebappRuntimeViewState = {
   status: "idle" | "starting" | "running" | "blocked" | "error";
@@ -605,6 +612,10 @@ export function AppShell() {
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
+  const [assistantChatSortMode, setAssistantChatSortMode] =
+    useState<AssistantChatSortMode>("recent");
+  const [assistantChatOrderingSupported, setAssistantChatOrderingSupported] =
+    useState(false);
   const [projectFloatingWebviews, setProjectFloatingWebviews] =
     useState<ProjectFloatingWebviewEntry[]>([]);
   const projectFloatingFocusRequestIdRef = useRef(0);
@@ -626,6 +637,9 @@ export function AppShell() {
     ],
   );
   const [globalSearchOpen, setGlobalSearchOpen] = useState(false);
+  const chatHistoryDialogRequestIdRef = useRef(0);
+  const [chatHistoryDialog, setChatHistoryDialog] =
+    useState<ChatHistoryDialogRequest | null>(null);
   const agentChatFocusRequestIdRef = useRef(0);
   const [pendingAgentChatFocusRequest, setPendingAgentChatFocusRequest] =
     useState<AgentChatFocusRequest | null>(null);
@@ -771,6 +785,7 @@ export function AppShell() {
   const currentRoute = `${location.pathname}${location.search}`;
   const activeAgentChatFocusRequestId =
     !globalSearchOpen &&
+    !chatHistoryDialog &&
     pendingAgentChatFocusRequest?.targetRoute === currentRoute
       ? pendingAgentChatFocusRequest.id
       : null;
@@ -1013,7 +1028,8 @@ export function AppShell() {
     preferredCopilotDockWidth,
     copilotDockAvailableWidth,
   );
-  const copilotDockNativeDialogVisible = nativeDialogVisible || Boolean(desktopActionConfirmation);
+  const copilotDockNativeDialogVisible =
+    nativeDialogVisible || Boolean(desktopActionConfirmation) || Boolean(chatHistoryDialog);
   const availableSidebarNavOrderItems = useMemo<SidebarNavOrderItem[]>(() => {
     return createDefaultSidebarNavOrderItems({
       kanbanEnabled,
@@ -1435,9 +1451,102 @@ export function AppShell() {
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
         setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
+        setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
+        setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
       }
     } catch {
       // Keep the current live list while agent-platform is still warming up.
+    }
+  }
+
+  async function reorderAssistantProjects(
+    input: AssistantReorderProjectsRequest,
+  ): Promise<AssistantReorderProjectsResult> {
+    const previousProjectAgentKeys = assistantNavAgents
+      .filter((agent) => isAssistantNavProjectAgent(agent))
+      .map((agent) => agent.agentKey);
+    setAssistantNavAgents((current) =>
+      reorderAssistantNavProjectAgents(current, input.agentKeys)
+    );
+    try {
+      const result = await window.electronAPI.assistant.reorderProjects(input);
+      if (!result.ok) {
+        setAssistantNavAgents((current) =>
+          reorderAssistantNavProjectAgents(current, previousProjectAgentKeys)
+        );
+        await refreshAssistantNavAgents({ force: true });
+        return result;
+      }
+      setAssistantNavAgents((current) =>
+        reorderAssistantNavProjectAgents(current, result.agentKeys)
+      );
+      await refreshAssistantNavAgents({ force: true });
+      return result;
+    } catch (error) {
+      setAssistantNavAgents((current) =>
+        reorderAssistantNavProjectAgents(current, previousProjectAgentKeys)
+      );
+      await refreshAssistantNavAgents({ force: true });
+      return {
+        ok: false,
+        agentKeys: previousProjectAgentKeys,
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.projectOrderSaveFailed"),
+      };
+    }
+  }
+
+  async function updateAssistantChatOrder(
+    input: AssistantChatOrderMutationRequest,
+  ): Promise<AssistantChatOrderMutationResult> {
+    const previousItems = assistantNavChatItems;
+    const previousMode = assistantChatSortMode;
+    if (input.operation === "set_mode") {
+      setAssistantChatSortMode(input.sortMode);
+    } else {
+      const anchorId = input.beforeChatId || input.afterChatId || "";
+      const activeIndex = previousItems.findIndex(
+        (chat) => chat.chatId === input.chatId,
+      );
+      const anchorIndex = previousItems.findIndex(
+        (chat) => chat.chatId === anchorId,
+      );
+      if (activeIndex >= 0 && anchorIndex >= 0 && activeIndex !== anchorIndex) {
+        const reordered = previousItems.slice();
+        const [moved] = reordered.splice(activeIndex, 1);
+        const nextAnchorIndex = reordered.findIndex(
+          (chat) => chat.chatId === anchorId,
+        );
+        reordered.splice(
+          input.beforeChatId ? nextAnchorIndex : nextAnchorIndex + 1,
+          0,
+          moved,
+        );
+        setAssistantNavChatItems(reordered);
+      }
+      setAssistantChatSortMode("manual");
+    }
+    try {
+      const result = await window.electronAPI.assistant.updateChatOrder(input);
+      if (!result.ok) {
+        setAssistantNavChatItems(previousItems);
+        setAssistantChatSortMode(previousMode);
+        return result;
+      }
+      setAssistantChatSortMode(result.sortMode);
+      await refreshAssistantNavAgents({ force: true });
+      return result;
+    } catch (error) {
+      setAssistantNavChatItems(previousItems);
+      setAssistantChatSortMode(previousMode);
+      return {
+        ok: false,
+        sortMode: previousMode,
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
+      };
     }
   }
 
@@ -1475,6 +1584,8 @@ export function AppShell() {
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
       setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
+      setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
+      setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
     });
 
     return () => {
@@ -2786,7 +2897,7 @@ export function AppShell() {
     return true;
   }
 
-  function requestGlobalSearchNavigation(targetPath: string) {
+  function requestNavigationWithAgentChatFocus(targetPath: string) {
     const targetRoute = resolveNavigationRoute(targetPath);
     if (isSingleAgentWebclientRoute(resolveNavigationPathname(targetRoute))) {
       agentChatFocusRequestIdRef.current += 1;
@@ -2797,6 +2908,22 @@ export function AppShell() {
       });
     }
     return requestSidebarNavigation(targetPath);
+  }
+
+  function openChatHistoryDialog(agentKey = "") {
+    chatHistoryDialogRequestIdRef.current += 1;
+    setChatHistoryDialog({
+      id: chatHistoryDialogRequestIdRef.current,
+      agentKey: agentKey.trim(),
+    });
+  }
+
+  function openChatFromHistoryDialog(request: {
+    agentKey: string;
+    chatId: string;
+  }) {
+    setChatHistoryDialog(null);
+    requestNavigationWithAgentChatFocus(createAgentWebclientRoute(request));
   }
 
   function handleAgentChatFocusRequestHandled(requestId: number) {
@@ -3340,7 +3467,7 @@ export function AppShell() {
       window.removeEventListener("pointerup", finishDrag, true);
       window.removeEventListener("pointercancel", finishDrag, true);
       window.removeEventListener("mouseup", finishDragOnMouseUp, true);
-      window.removeEventListener("blur", finishDrag, true);
+      window.removeEventListener("blur", finishDragOnWindowBlur);
       dragTarget.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
       try {
         if (dragTarget.hasPointerCapture(pointerId)) {
@@ -3354,6 +3481,13 @@ export function AppShell() {
     };
     const finishDragOnMouseUp = (mouseEvent: globalThis.MouseEvent) => {
       if (mouseEvent.button === 0) {
+        finishDrag();
+      }
+    };
+    const finishDragOnWindowBlur = (blurEvent: globalThis.FocusEvent) => {
+      // A focused <webview> also emits blur when the pointer returns to the host drag lane.
+      // Only the Window's own blur should cancel the active drag.
+      if (blurEvent.target === window) {
         finishDrag();
       }
     };
@@ -3385,7 +3519,7 @@ export function AppShell() {
     window.addEventListener("pointerup", finishDrag, true);
     window.addEventListener("pointercancel", finishDrag, true);
     window.addEventListener("mouseup", finishDragOnMouseUp, true);
-    window.addEventListener("blur", finishDrag, true);
+    window.addEventListener("blur", finishDragOnWindowBlur);
     dragTarget.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
     try {
       dragTarget.setPointerCapture(pointerId);
@@ -3503,6 +3637,23 @@ export function AppShell() {
       force,
     });
   }, [dispatchWorkPanelCommand]);
+
+  const handleHistoryChatRemoved = useCallback((
+    chat: AssistantHistoryChatItem,
+    nextChat: AssistantHistoryChatItem | null,
+  ) => {
+    closeChatWorkPanelWorkspace(chat.chatId, true);
+    if (activeChatRouteInfo.chatId === chat.chatId) {
+      const ownerAgentKey = chat.agentKey || activeChatRouteInfo.agentKey.trim();
+      const fallbackRoute = nextChat?.agentKey
+        ? createAgentChatRoute(nextChat.agentKey, nextChat.chatId)
+        : ownerAgentKey
+          ? createAgentWebclientRoute({ agentKey: ownerAgentKey })
+          : "/agents";
+      requestNavigationWithAgentChatFocus(fallbackRoute);
+    }
+    void refreshAssistantNavAgents({ force: true });
+  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, closeChatWorkPanelWorkspace, currentRoute]);
 
   const toggleMainChatWorkPanel = useCallback(() => {
     const chatId = activeChatWorkPanelChatId;
@@ -3679,6 +3830,8 @@ export function AppShell() {
           assistantNavAgents={assistantNavAgents}
           assistantNavChatItems={assistantNavChatItems}
           assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
+          assistantChatSortMode={assistantChatSortMode}
+          assistantChatOrderingSupported={assistantChatOrderingSupported}
           chatWorkPanelOpenChatIds={workPanelState.workspaces.map((workspace) => workspace.ownerChatId)}
           assistantNavAgentsLoaded={assistantNavAgentsLoaded}
           websitesLoaded={webItemsLoaded}
@@ -3698,8 +3851,11 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onReorderAssistantProjects={reorderAssistantProjects}
+          onUpdateAssistantChatOrder={updateAssistantChatOrder}
           onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
+          onOpenChatHistory={openChatHistoryDialog}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}
           onRefreshCopilotAgentOptions={refreshCopilotAgentOptions}
@@ -3715,6 +3871,7 @@ export function AppShell() {
           onExportWebappItem={exportWebappItem}
           onRemoveWebappItem={removeWebappItem}
           onRequestNavigate={requestSidebarNavigation}
+          onRequestAgentChatNavigate={requestNavigationWithAgentChatFocus}
           onSidebarNavigateBack={handleSidebarBackNavigation}
           onSidebarNavigateForward={handleSidebarForwardNavigation}
           onNavigateItem={undefined}
@@ -3919,7 +4076,7 @@ export function AppShell() {
       <AgentWebclientCopilotDock
         open={assistantCopilotOpen}
         hostTheme={resolvedTheme}
-        nativeDialogVisible={nativeDialogVisible || Boolean(desktopActionConfirmation)}
+        nativeDialogVisible={copilotDockNativeDialogVisible}
         openRequest={currentAssistantDockOpenRequest}
         restoredEmbedPath={currentCopilotSession?.embedPath ?? ""}
         parentSurfaceId={currentCopilotParentSurfaceId}
@@ -4057,6 +4214,18 @@ export function AppShell() {
         request={desktopActionConfirmation}
         onDecision={handleDesktopActionConfirmationDecision}
       />
+      {chatHistoryDialog ? (
+        <ChatHistoryDialog
+          key={chatHistoryDialog.id}
+          agentKey={chatHistoryDialog.agentKey}
+          agents={assistantNavAgents}
+          isMac={isMac}
+          isWindows={isWindows}
+          onClose={() => setChatHistoryDialog(null)}
+          onOpenChat={openChatFromHistoryDialog}
+          onChatRemoved={handleHistoryChatRemoved}
+        />
+      ) : null}
       <DesktopGlobalSearchOverlay
         open={globalSearchOpen}
         agents={assistantNavAgents}
@@ -4065,7 +4234,8 @@ export function AppShell() {
         shortcutPlatform={isMac ? "darwin" : isWindows ? "win32" : null}
         t={t}
         onClose={() => setGlobalSearchOpen(false)}
-        onNavigate={requestGlobalSearchNavigation}
+        onOpenHistory={() => openChatHistoryDialog()}
+        onNavigate={requestNavigationWithAgentChatFocus}
       />
       <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
       </div>

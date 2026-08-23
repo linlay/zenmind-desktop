@@ -8,6 +8,7 @@ const {
   CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
   createCanonicalAgentChatRoute,
   createPreparedAgentChatRoute,
+  readAgentWebclientCanonicalChatSource,
   readAgentWebclientNewChatSource,
 } = require("../dist-electron/shared/canonical-chat-sync.js");
 const {
@@ -77,6 +78,33 @@ test("new Chat preparation accepts only the exact canonical source route", () =>
     }),
     "",
   );
+});
+
+test("Main Chat route identity parsers reject ambiguous canonical and new Chat sources", () => {
+  assert.deepEqual(
+    readAgentWebclientCanonicalChatSource("/agent/coder?chatId=chat-1"),
+    { agentKey: "coder", chatId: "chat-1" },
+  );
+  assert.deepEqual(
+    readAgentWebclientNewChatSource("/agent/coder?newChat=nonce-1"),
+    { agentKey: "coder", newChat: "nonce-1" },
+  );
+  for (const source of [
+    "/agent/coder?chatId=",
+    "/agent/coder?chatId=chat-1&chatId=",
+    "/agent/coder?chatId=chat-1&newChat=nonce-1",
+    "/agent/coder/child?chatId=chat-1",
+  ]) {
+    assert.equal(readAgentWebclientCanonicalChatSource(source), null, source);
+  }
+  for (const source of [
+    "/agent/coder?newChat=",
+    "/agent/coder?newChat=nonce-1&newChat=",
+    "/agent/coder?newChat=nonce-1&chatId=",
+    "/agent/coder/child?newChat=nonce-1",
+  ]) {
+    assert.equal(readAgentWebclientNewChatSource(source), null, source);
+  }
 });
 
 test("canonical Chat IPC accepts an ACK only from the owning renderer", async () => {

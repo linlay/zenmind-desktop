@@ -177,6 +177,10 @@ test("new Chat route ownership comes from chat.start canonical synchronization",
   );
   assert.match(navigationHandlerBlock, /newChatBootstrapOwnsPromotion/);
   assert.match(navigationHandlerBlock, /!newChatBootstrapOwnsPromotion/);
+  assert.match(
+    registrationBlock,
+    /isAgentWebclientChatSurface\(serviceId, surfaceId\)[\s\S]*?pageRouteIdentity: currentRouteWithHash/u,
+  );
   assert.match(registrationBlock, /ownerChatId\?\.trim\(\) === pending\.request\.chatId/);
   assert.match(registrationBlock, /canonicalChatSync\.respond\(\{[\s\S]*?ok: true/u);
 });
@@ -249,9 +253,13 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
   );
 });
 
-test("global search chat navigation restores focus to the active main chat webview once", () => {
+test("global search and sidebar Chat navigation restore focus to the active main chat webview once", () => {
   const appShell = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
+    "utf8",
+  );
+  const appSidebar = fs.readFileSync(
+    path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
     "utf8",
   );
   const surfaceHosts = fs.readFileSync(
@@ -266,8 +274,8 @@ test("global search chat navigation restores focus to the active main chat webvi
     "utf8",
   );
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
-  const globalSearchNavigationBlock = appShell.slice(
-    appShell.indexOf("function requestGlobalSearchNavigation"),
+  const focusedChatNavigationBlock = appShell.slice(
+    appShell.indexOf("function requestNavigationWithAgentChatFocus"),
     appShell.indexOf("function navigateWithSidebarHistory"),
   );
   const chatSurfaceBlock = surfaceHosts.slice(
@@ -285,12 +293,13 @@ test("global search chat navigation restores focus to the active main chat webvi
 
   assert.match(appShell, /const activeAgentChatFocusRequestId =\s*!globalSearchOpen/);
   assert.match(appShell, /pendingAgentChatFocusRequest\?\.targetRoute === currentRoute/);
-  assert.match(globalSearchNavigationBlock, /isSingleAgentWebclientRoute\(resolveNavigationPathname\(targetRoute\)\)/);
-  assert.match(globalSearchNavigationBlock, /agentChatFocusRequestIdRef\.current \+= 1/);
-  assert.match(globalSearchNavigationBlock, /sourceRoute: currentRoute/);
-  assert.match(globalSearchNavigationBlock, /targetRoute/);
-  assert.match(globalSearchNavigationBlock, /return requestSidebarNavigation\(targetPath\)/);
-  assert.match(appShell, /onNavigate=\{requestGlobalSearchNavigation\}/);
+  assert.match(focusedChatNavigationBlock, /isSingleAgentWebclientRoute\(resolveNavigationPathname\(targetRoute\)\)/);
+  assert.match(focusedChatNavigationBlock, /agentChatFocusRequestIdRef\.current \+= 1/);
+  assert.match(focusedChatNavigationBlock, /sourceRoute: currentRoute/);
+  assert.match(focusedChatNavigationBlock, /targetRoute/);
+  assert.match(focusedChatNavigationBlock, /return requestSidebarNavigation\(targetPath\)/);
+  assert.match(appShell, /onNavigate=\{requestNavigationWithAgentChatFocus\}/);
+  assert.match(appShell, /onRequestAgentChatNavigate=\{requestNavigationWithAgentChatFocus\}/);
   assert.match(appShell, /currentRoute === pendingAgentChatFocusRequest\.sourceRoute/);
   assert.match(appShell, /currentRoute === pendingAgentChatFocusRequest\.targetRoute/);
   assert.match(appShell, /current\?\.id === pendingAgentChatFocusRequest\.id \? null : current/);
@@ -311,6 +320,30 @@ test("global search chat navigation restores focus to the active main chat webvi
     focusEffectBlock,
     /\[active, focusRequestId, onFocusRequestHandled, serviceId, surfaceId, webviewSnapshotNonce\]/,
   );
+
+  const sidebarNavigationBlock = appSidebar.slice(
+    appSidebar.indexOf("function requestNavigate"),
+    appSidebar.indexOf("function getSidebarRovingItemProps"),
+  );
+  const projectNewChatBlock = appSidebar.slice(
+    appSidebar.indexOf("function handleAssistantNewChat"),
+    appSidebar.indexOf("function startChatsNewChat"),
+  );
+  const openChatBlock = appSidebar.slice(
+    appSidebar.indexOf("async function handleAssistantOpenChat"),
+    appSidebar.indexOf("function handleAssistantOpenChatMenu"),
+  );
+  const chatsNewChatBlock = appSidebar.slice(
+    appSidebar.indexOf("function startChatsNewChat"),
+    appSidebar.indexOf("function focusChatsDefaultAgentMenuItem"),
+  );
+  assert.match(
+    sidebarNavigationBlock,
+    /options\.focusAgentChat\s*\? onRequestAgentChatNavigate \?\? onRequestNavigate\s*:\s*onRequestNavigate/,
+  );
+  assert.match(projectNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
+  assert.match(chatsNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
+  assert.match(openChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
 });
 
 test("service webview surface reports webview breadcrumbs for post-crash diagnosis", () => {

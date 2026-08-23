@@ -8,6 +8,7 @@ import {
   type DesktopCopilotPagePreferences
 } from "../shared/assistant-settings";
 import { sanitizeDesktopCopilotPagePreferences } from "../shared/page-copilot";
+import type { AssistantChatSortMode } from "../shared/contracts/copilot";
 
 export const DESKTOP_PROFILE_FILE = "profile.json";
 export const DEFAULT_VOICE_CORRECTION_ENABLED = true;
@@ -40,6 +41,7 @@ export type DesktopProfile = {
   navigation: {
     mainOrder: string[];
     webOrder: string[];
+    chatSortMode: AssistantChatSortMode;
     desktopCopilotPages: DesktopCopilotPagePreferences;
   };
 };
@@ -95,6 +97,10 @@ function normalizeTextArray(value: unknown) {
     .filter(Boolean);
 }
 
+function normalizeChatSortMode(value: unknown): AssistantChatSortMode {
+  return value === "manual" ? "manual" : "recent";
+}
+
 function normalizeDesktopProfile(
   value: unknown,
   options: DesktopProfileReadOptions = {}
@@ -142,6 +148,7 @@ function normalizeDesktopProfile(
     navigation: {
       mainOrder: normalizeTextArray(navigation.mainOrder),
       webOrder: normalizeTextArray(navigation.webOrder),
+      chatSortMode: normalizeChatSortMode(navigation.chatSortMode),
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
         navigation.desktopCopilotPages
       )

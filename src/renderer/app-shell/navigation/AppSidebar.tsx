@@ -16,6 +16,26 @@ import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
 import { CloseOutlined } from "@ant-design/icons";
 import {
+  DndContext,
+  KeyboardSensor,
+  MeasuringStrategy,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DraggableAttributes,
+  type DraggableSyntheticListeners,
+  type DragEndEvent,
+  type DragOverEvent,
+  type DragStartEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import {
   SidebarActionIcon,
   SidebarIllustration,
   type SidebarIllustrationKind,
@@ -23,10 +43,15 @@ import {
 import { Favicon, type WebsiteFaviconCache } from "../../components/Favicon";
 import { buildWebsiteFaviconUrl } from "../../../shared/website-favicon";
 import type {
+  AssistantChatOrderMutationRequest,
+  AssistantChatOrderMutationResult,
+  AssistantChatSortMode,
   AssistantCreateProjectRequest,
   AssistantNavAgentItem,
   AssistantNavChatItem,
   AssistantNavigationListOptions,
+  AssistantReorderProjectsRequest,
+  AssistantReorderProjectsResult,
   DesktopSsoStatus,
   ServiceState,
   WebEntry,
@@ -74,7 +99,6 @@ import {
   createAgentWebclientRoute,
 } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
-import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../../shared/service-webview-bridge";
 import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
   SettingsSectionGroupId,
@@ -125,7 +149,7 @@ type SidebarContextMenuSubject =
   | {
       kind: "group";
       groupId: SidebarGroupId;
-      menuScope?: "all" | "sort";
+      menuScope?: "sort";
     }
   | { kind: "agent"; agentKey: string }
   | { kind: "chat"; chatId: string }
@@ -138,7 +162,6 @@ type SidebarNavigationOwner = "assistants" | "chats" | null;
 type AgentRouteInfo = {
   agentKey: string;
   chatId: string;
-  historyRequested: boolean;
   newChatRequested: boolean;
 };
 
@@ -155,8 +178,6 @@ type SidebarStatusSummary = {
   unreadCount: number;
   pendingCount: number;
 };
-
-type AssistantNavSortMode = "byName" | "byTime";
 
 type MenuAnchorPoint = {
   x: number;
@@ -184,6 +205,29 @@ type AssistantChatDeleteDialogState = {
   error: string;
 };
 
+type AssistantChatDragActivator = {
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  setActivatorNodeRef: (element: HTMLButtonElement | null) => void;
+};
+
+type AssistantProjectDragActivator = {
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  setNodeRef: (element: HTMLButtonElement | null) => void;
+  setActivatorNodeRef: (element: HTMLButtonElement | null) => void;
+};
+
+type AssistantChatDropIndicator = {
+  chatId: string;
+  position: "before" | "after";
+};
+
+type AssistantProjectDropIndicator = {
+  agentKey: string;
+  position: "before" | "after";
+};
+
 type AssistantChatRowOptions = {
   roving?: boolean;
   focusId?: string;
@@ -194,6 +238,7 @@ type AssistantChatRowOptions = {
   rowRole?: "listitem";
   previewText?: string;
   wrapItem?: (item: ReactElement) => ReactNode;
+  dragActivator?: AssistantChatDragActivator;
 };
 
 type AgentSelectionOptions = {
@@ -202,6 +247,7 @@ type AgentSelectionOptions = {
 
 type NavigateOptions = {
   retriggerAgentRoute?: boolean;
+  focusAgentChat?: boolean;
 };
 
 type CoderAcpProxyOption = {
@@ -239,7 +285,6 @@ type BootstrapGuideDismissedBubbles = {
 };
 
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
-const SIDEBAR_ASSISTANT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-assistant-sort`;
 const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
 const BOOTSTRAP_GUIDE_BUBBLE_GAP = 12;
 const BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000;
@@ -277,6 +322,11 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
 ]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 const CHATS_VISIBLE_LIMIT = 8;
+const CHATS_VISIBLE_INCREMENT = 8;
+const CHATS_MAX_VISIBLE_LIMIT = 24;
+const PROJECT_CHATS_VISIBLE_LIMIT = 5;
+const PROJECT_CHATS_VISIBLE_INCREMENT = 5;
+const PROJECT_CHATS_MAX_VISIBLE_LIMIT = 20;
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS.filter(
     (routeDefinition) => routeDefinition.kind === "management",
@@ -490,23 +540,6 @@ function readInitialSidebarGroupState() {
   }
 }
 
-function normalizeAssistantNavSortMode(value: unknown): AssistantNavSortMode {
-  return value === "byName" || value === "byTime" ? value : "byTime";
-}
-
-function readInitialAssistantNavSortMode(): AssistantNavSortMode {
-  if (typeof window === "undefined") {
-    return "byTime";
-  }
-  try {
-    return normalizeAssistantNavSortMode(
-      window.localStorage.getItem(SIDEBAR_ASSISTANT_SORT_STORAGE_KEY),
-    );
-  } catch {
-    return "byTime";
-  }
-}
-
 function getRunningCoderAcpProxyOptions(
   services: ServiceState[],
   t: TranslateFunction,
@@ -555,7 +588,6 @@ function getRouteEmbedPath(route: string) {
 const EMPTY_AGENT_ROUTE_INFO: AgentRouteInfo = {
   agentKey: "",
   chatId: "",
-  historyRequested: false,
   newChatRequested: false,
 };
 
@@ -570,7 +602,6 @@ function readAgentInfoFromWebclientPath(pathWithQuery: string): AgentRouteInfo {
     return {
       agentKey: decodeRoutePathSegment(match?.[1]) ?? "",
       chatId: url.searchParams.get("chatId")?.trim() ?? "",
-      historyRequested: url.searchParams.get("history")?.trim() === "1",
       newChatRequested: url.searchParams.has("newChat"),
     };
   } catch {
@@ -596,7 +627,6 @@ function readAgentRouteInfo(route: string): AgentRouteInfo {
     return {
       agentKey: searchParams.get("agentKey")?.trim() ?? "",
       chatId: searchParams.get("chatId")?.trim() ?? "",
-      historyRequested: searchParams.get("history")?.trim() === "1",
       newChatRequested: searchParams.has("newChat"),
     };
   } catch {
@@ -638,10 +668,6 @@ function resolveSidebarNavigationOwner(
     )
   ) {
     return "chats";
-  }
-
-  if (routeInfo.historyRequested) {
-    return "assistants";
   }
 
   if (routeInfo.newChatRequested && agentKey === options.defaultChatAgentKey) {
@@ -688,13 +714,6 @@ function createAgentSelectionRoute(
   }
 
   return createAgentNewChatRoute(agent.agentKey);
-}
-
-function createAgentHistoryRoute(agentKey: string) {
-  const params = new URLSearchParams();
-  params.set("history", "1");
-  params.set("historyRequest", String(Date.now()));
-  return `${createAgentRoute(agentKey)}?${params.toString()}`;
 }
 
 function summarizeAgentStatus(
@@ -784,57 +803,6 @@ function getAssistantChatDisplayText(
   return chat.chatName || t("sidebar.chat.noPreview");
 }
 
-function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
-  return agent.updatedAt ?? undefined;
-}
-
-function compareAssistantAgentsByTime(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
-) {
-  const rightTime = readAssistantAgentLatestTimestamp(right);
-  const leftTime = readAssistantAgentLatestTimestamp(left);
-  if (
-    rightTime !== undefined &&
-    leftTime !== undefined &&
-    rightTime !== leftTime
-  ) {
-    return rightTime - leftTime;
-  }
-  if (leftTime === undefined && rightTime !== undefined) {
-    return 1;
-  }
-  if (leftTime !== undefined && rightTime === undefined) {
-    return -1;
-  }
-  return compareAssistantAgentsByName(left, right);
-}
-
-function compareAssistantAgentsByName(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
-) {
-  const displayNameComparison = left.displayName.localeCompare(
-    right.displayName,
-    "zh-CN",
-  );
-  if (displayNameComparison !== 0) {
-    return displayNameComparison;
-  }
-  return left.agentKey.localeCompare(right.agentKey);
-}
-
-function sortAssistantNavAgentsForMode(
-  items: AssistantNavAgentItem[],
-  sortMode: AssistantNavSortMode,
-) {
-  const compare =
-    sortMode === "byName"
-      ? compareAssistantAgentsByName
-      : compareAssistantAgentsByTime;
-  return [...items].sort(compare);
-}
-
 function createSidebarLinkFocusId(orderKey: SidebarNavOrderItemKey | string) {
   return `link:${orderKey}`;
 }
@@ -851,6 +819,10 @@ function createSidebarAgentMoreFocusId(agentKey: string) {
   return `agent-more:${agentKey}`;
 }
 
+function createSidebarAgentHistoryFocusId(agentKey: string) {
+  return `agent-history:${agentKey}`;
+}
+
 function createSidebarChatFocusId(chatId: string) {
   return `chat:${chatId}`;
 }
@@ -861,6 +833,10 @@ function createSidebarChatsChatFocusId(chatId: string) {
 
 function createSidebarChatsMoreFocusId() {
   return "chats-more";
+}
+
+function createSidebarChatsHistoryFocusId() {
+  return "chats-history";
 }
 
 function createSidebarWebFocusId(entryKey: WebEntryKey | string) {
@@ -964,6 +940,82 @@ type SettingsSidebarSection = {
   description: string;
 };
 
+function SortableAssistantProject({
+  agent,
+  disabled,
+  collapseForDrag,
+  dropIndicator,
+  renderItem,
+}: {
+  agent: AssistantNavAgentItem;
+  disabled: boolean;
+  collapseForDrag: boolean;
+  dropIndicator: "before" | "after" | null;
+  renderItem: (dragActivator: AssistantProjectDragActivator) => ReactNode;
+}) {
+  const sortable = useSortable({ id: agent.agentKey, disabled });
+  const style: CSSProperties = {
+    zIndex: sortable.isDragging ? 2 : undefined,
+  };
+  return (
+    <div
+      style={style}
+      className={[
+        "sidebar-sortable-project",
+        sortable.isDragging ? "is-dragging" : "",
+        disabled ? "is-drag-disabled" : "",
+        collapseForDrag ? "is-project-drag-active" : "",
+        dropIndicator === "before" ? "has-drop-indicator-before" : "",
+        dropIndicator === "after" ? "has-drop-indicator-after" : "",
+      ].filter(Boolean).join(" ")}
+    >
+      {renderItem({
+        attributes: sortable.attributes,
+        listeners: sortable.listeners,
+        setNodeRef: sortable.setNodeRef,
+        setActivatorNodeRef: sortable.setActivatorNodeRef,
+      })}
+    </div>
+  );
+}
+
+function SortableAssistantChat({
+  chat,
+  disabled,
+  dropIndicator,
+  renderItem,
+}: {
+  chat: AssistantNavChatItem;
+  disabled: boolean;
+  dropIndicator: "before" | "after" | null;
+  renderItem: (dragActivator: AssistantChatDragActivator) => ReactNode;
+}) {
+  const sortable = useSortable({ id: chat.chatId, disabled });
+  const style: CSSProperties = {
+    zIndex: sortable.isDragging ? 2 : undefined,
+  };
+  return (
+    <div
+      ref={sortable.setNodeRef}
+      style={style}
+      className={[
+        "sidebar-sortable-chat",
+        sortable.isDragging ? "is-dragging" : "",
+        disabled ? "is-drag-disabled" : "",
+        dropIndicator === "before" ? "has-drop-indicator-before" : "",
+        dropIndicator === "after" ? "has-drop-indicator-after" : "",
+      ].filter(Boolean).join(" ")}
+      role="listitem"
+    >
+      {renderItem({
+        attributes: sortable.attributes,
+        listeners: sortable.listeners,
+        setActivatorNodeRef: sortable.setActivatorNodeRef,
+      })}
+    </div>
+  );
+}
+
 type AppSidebarProps = {
   isCollapsed: boolean;
   isMac: boolean;
@@ -981,6 +1033,8 @@ type AppSidebarProps = {
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantNavChatItems?: AssistantNavChatItem[];
   assistantNavChatItemsHasMore?: boolean;
+  assistantChatSortMode?: AssistantChatSortMode;
+  assistantChatOrderingSupported?: boolean;
   chatWorkPanelOpenChatIds?: string[];
   assistantNavAgentsLoaded?: boolean;
   websitesLoaded?: boolean;
@@ -1002,8 +1056,15 @@ type AppSidebarProps = {
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
+  onReorderAssistantProjects?: (
+    input: AssistantReorderProjectsRequest,
+  ) => Promise<AssistantReorderProjectsResult>;
+  onUpdateAssistantChatOrder?: (
+    input: AssistantChatOrderMutationRequest,
+  ) => Promise<AssistantChatOrderMutationResult>;
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
+  onOpenChatHistory?: (agentKey?: string) => void;
   onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
   onRefreshCopilotAgentOptions?: () => Promise<void> | void;
@@ -1018,6 +1079,7 @@ type AppSidebarProps = {
   onExportWebappItem?: (item: WebEntry) => Promise<WebappExportResult>;
   onRemoveWebappItem?: (item: WebEntry) => Promise<WebappDeleteResult>;
   onRequestNavigate?: (targetPath: string) => boolean;
+  onRequestAgentChatNavigate?: (targetPath: string) => boolean;
   onSidebarNavigateBack?: () => void;
   onSidebarNavigateForward?: () => void;
   onNavigateItem?: () => void;
@@ -1047,6 +1109,8 @@ export function AppSidebar({
   assistantNavAgents = [],
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
+  assistantChatSortMode = "recent",
+  assistantChatOrderingSupported = false,
   chatWorkPanelOpenChatIds = [],
   assistantNavAgentsLoaded = true,
   websitesLoaded = true,
@@ -1066,8 +1130,11 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
+  onReorderAssistantProjects,
+  onUpdateAssistantChatOrder,
   onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
+  onOpenChatHistory,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
   onRefreshCopilotAgentOptions,
@@ -1082,6 +1149,7 @@ export function AppSidebar({
   onExportWebappItem,
   onRemoveWebappItem,
   onRequestNavigate,
+  onRequestAgentChatNavigate,
   onSidebarNavigateBack,
   onSidebarNavigateForward,
   onNavigateItem,
@@ -1100,8 +1168,23 @@ export function AppSidebar({
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
   );
-  const [assistantNavSortMode, setAssistantNavSortMode] =
-    useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
+  const projectDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const chatDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
+  const [activeProjectDragKey, setActiveProjectDragKey] = useState("");
+  const [projectDropIndicator, setProjectDropIndicator] =
+    useState<AssistantProjectDropIndicator | null>(null);
+  const [projectOrderSaving, setProjectOrderSaving] = useState(false);
+  const [projectOrderError, setProjectOrderError] = useState("");
+  const [chatDropIndicator, setChatDropIndicator] =
+    useState<AssistantChatDropIndicator | null>(null);
+  const [chatOrderMutationPending, setChatOrderMutationPending] = useState(false);
+  const [chatOrderError, setChatOrderError] = useState("");
   const [refreshingAssistantNavAgents, setRefreshingAssistantNavAgents] =
     useState(false);
   const [chatDefaultAgentMenuOpen, setChatDefaultAgentMenuOpen] =
@@ -1127,8 +1210,14 @@ export function AppSidebar({
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [forcedActiveManagementRoute, setForcedActiveManagementRoute] =
     useState("");
-  const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
-    useState("");
+  const [chatsVisibleLimit, setChatsVisibleLimit] = useState(
+    CHATS_VISIBLE_LIMIT,
+  );
+  const [expandedAssistantAgentKeys, setExpandedAssistantAgentKeys] =
+    useState<Set<string>>(() => new Set());
+  const [assistantAgentChatVisibleLimits, setAssistantAgentChatVisibleLimits] =
+    useState<Map<string, number>>(() => new Map<string, number>());
+  const expandedProjectsBeforeDragRef = useRef<Set<string> | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   const [createProjectDialog, setCreateProjectDialog] =
     useState<CreateProjectDialogState | null>(null);
@@ -1152,7 +1241,12 @@ export function AppSidebar({
   const conversationShareDialog = useConversationShareDialog(t);
   const chatInfoDialog = useChatInfoDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
-  const lastRouteAgentInfoRef = useRef(readAgentRouteInfo(currentRoute));
+  const chatsShowMoreFocusIndexRef = useRef<number | null>(null);
+  const assistantAgentShowMoreFocusRef = useRef<{
+    agentKey: string;
+    chatId: string;
+    index: number;
+  } | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
@@ -1202,6 +1296,11 @@ export function AppSidebar({
     () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
   );
+  const allProjectsExpanded =
+    primaryAssistantNavAgents.length > 0 &&
+    primaryAssistantNavAgents.every((agent) =>
+      expandedAssistantAgentKeys.has(agent.agentKey),
+    );
   const normalizedChatDefaultAgentKey = chatDefaultAgentKey.trim();
   const chatDefaultAgent = useMemo(
     () =>
@@ -1214,8 +1313,8 @@ export function AppSidebar({
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
   const sidebarChatItems = useMemo(
-    () => assistantNavChatItems.slice(0, CHATS_VISIBLE_LIMIT),
-    [assistantNavChatItems],
+    () => assistantNavChatItems.slice(0, chatsVisibleLimit),
+    [assistantNavChatItems, chatsVisibleLimit],
   );
   const chatNavigationAgentsByKey = useMemo(
     () =>
@@ -1267,12 +1366,16 @@ export function AppSidebar({
     hasCreateProjectDialog: Boolean(createProjectDialog),
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
+    assistantChatSortMode,
+    assistantChatOrderingSupported,
+    chatOrderMutationPending,
     webOpenEntryKeys,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
     onOpenAgentProjectEditor,
+    onUpdateAssistantChatOrder,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
@@ -1282,18 +1385,26 @@ export function AppSidebar({
     hasCreateProjectDialog: Boolean(createProjectDialog),
     resolvedChatDefaultAgentKey,
     chatDefaultAgentUnavailable,
+    assistantChatSortMode,
+    assistantChatOrderingSupported,
+    chatOrderMutationPending,
     webOpenEntryKeys,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
     isCollapsed,
     onOpenAgentProjectEditor,
+    onUpdateAssistantChatOrder,
     onOpenWebappWorkspace,
     onOpenWebappWindow,
     onExportWebappItem,
   };
+  const chatsShowMoreAvailable =
+    chatsVisibleLimit < CHATS_MAX_VISIBLE_LIMIT &&
+    assistantNavChatItems.length > chatsVisibleLimit;
   const chatsHistoryAvailable =
-    assistantNavChatItemsHasMore &&
+    (assistantNavChatItems.length > CHATS_VISIBLE_LIMIT ||
+      assistantNavChatItemsHasMore) &&
     Boolean(resolvedChatDefaultAgentKey) &&
     !chatDefaultAgentUnavailable;
   const activeChatsOverviewChatId = sidebarChatItems.some(
@@ -1305,19 +1416,6 @@ export function AppSidebar({
     () => summarizeAgentStatus(primaryAssistantNavAgents),
     [primaryAssistantNavAgents],
   );
-  const sortedAssistantNavAgents = useMemo(
-    () =>
-      sortAssistantNavAgentsForMode(
-        primaryAssistantNavAgents,
-        assistantNavSortMode,
-      ),
-    [primaryAssistantNavAgents, assistantNavSortMode],
-  );
-  const assistantNavSortLabel =
-    assistantNavSortMode === "byName"
-      ? t("sidebar.assistants.sortByName")
-      : t("sidebar.assistants.sortByTime");
-
   const normalizedSettingsSearchQuery = settingsSearchQuery
     .trim()
     .toLocaleLowerCase();
@@ -1496,6 +1594,24 @@ export function AppSidebar({
   }, [isSettingsMode]);
 
   useEffect(() => {
+    if (sidebarGroupState.chats) {
+      return;
+    }
+    chatsShowMoreFocusIndexRef.current = null;
+    setChatsVisibleLimit(CHATS_VISIBLE_LIMIT);
+  }, [sidebarGroupState.chats]);
+
+  useEffect(() => {
+    if (sidebarGroupState.assistants) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = null;
+    setAssistantAgentChatVisibleLimits((current) =>
+      current.size > 0 ? new Map<string, number>() : current,
+    );
+  }, [sidebarGroupState.assistants]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         SIDEBAR_GROUP_STATE_STORAGE_KEY,
@@ -1505,17 +1621,6 @@ export function AppSidebar({
       // Ignore localStorage failures in restricted renderer contexts.
     }
   }, [sidebarGroupState]);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        SIDEBAR_ASSISTANT_SORT_STORAGE_KEY,
-        assistantNavSortMode,
-      );
-    } catch {
-      // Ignore localStorage failures in restricted renderer contexts.
-    }
-  }, [assistantNavSortMode]);
 
   useEffect(() => {
     if (!websiteDialogOpen) {
@@ -1570,6 +1675,37 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [assistantChatDeleteDialog]);
+
+  useLayoutEffect(() => {
+    const focusIndex = chatsShowMoreFocusIndexRef.current;
+    if (focusIndex === null || chatsVisibleLimit <= focusIndex) {
+      return;
+    }
+    chatsShowMoreFocusIndexRef.current = null;
+    const firstRevealedChat = assistantNavChatItems[focusIndex];
+    if (firstRevealedChat) {
+      focusSidebarRovingItemById(
+        createSidebarChatsChatFocusId(firstRevealedChat.chatId),
+      );
+    }
+  }, [assistantNavChatItems, chatsVisibleLimit]);
+
+  useLayoutEffect(() => {
+    const pendingFocus = assistantAgentShowMoreFocusRef.current;
+    if (!pendingFocus) {
+      return;
+    }
+    const visibleLimit =
+      assistantAgentChatVisibleLimits.get(pendingFocus.agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    if (visibleLimit <= pendingFocus.index) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = null;
+    focusSidebarRovingItemById(
+      createSidebarChatFocusId(pendingFocus.chatId),
+    );
+  }, [assistantAgentChatVisibleLimits]);
 
   useLayoutEffect(() => {
     if (
@@ -1702,7 +1838,7 @@ export function AppSidebar({
       setSidebarNavFocusId(visibleItems[0].dataset.sidebarNavId || "");
     }
   }, [
-    expandedAssistantAgentKey,
+    expandedAssistantAgentKeys,
     isCollapsed,
     isPrimaryMode,
     navItems,
@@ -1711,33 +1847,8 @@ export function AppSidebar({
     sidebarGroupState.chats,
     sidebarGroupState.webs,
     sidebarNavFocusId,
-    sortedAssistantNavAgents,
+    primaryAssistantNavAgents,
     webNavItems,
-  ]);
-
-  useEffect(() => {
-    const previousRouteAgentInfo = lastRouteAgentInfoRef.current;
-    lastRouteAgentInfoRef.current = currentRouteAgentInfo;
-    if (
-      previousRouteAgentInfo.historyRequested &&
-      !currentRouteAgentInfo.historyRequested &&
-      currentAgentKey &&
-      currentChatId &&
-      previousRouteAgentInfo.agentKey === currentAgentKey &&
-      expandedAssistantAgentKey === currentAgentKey &&
-      (!pendingPath || pendingRouteAgentInfo.historyRequested)
-    ) {
-      lastAutoExpandedAssistantAgentKeyRef.current = currentAgentKey;
-      setExpandedAssistantAgentKey("");
-      return;
-    }
-  }, [
-    currentAgentKey,
-    currentChatId,
-    currentRouteAgentInfo,
-    expandedAssistantAgentKey,
-    pendingPath,
-    pendingRouteAgentInfo.historyRequested,
   ]);
 
   useEffect(() => {
@@ -1752,21 +1863,33 @@ export function AppSidebar({
       lastAutoExpandedAssistantAgentKeyRef.current !== matched.agentKey;
     if (activeAgentChanged) {
       lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
-      setExpandedAssistantAgentKey(matched.agentKey);
+      setExpandedAssistantAgentKeys((current) => {
+        if (current.has(matched.agentKey)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(matched.agentKey);
+        return next;
+      });
       return;
     }
-    if (expandedAssistantAgentKey) {
-      if (expandedAssistantAgentKey === matched.agentKey) {
-        lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
-      }
+    if (expandedAssistantAgentKeys.has(matched.agentKey)) {
+      lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
       return;
     }
     if (lastAutoExpandedAssistantAgentKeyRef.current === matched.agentKey) {
       return;
     }
     lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
-    setExpandedAssistantAgentKey(matched.agentKey);
-  }, [assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey]);
+    setExpandedAssistantAgentKeys((current) => {
+      if (current.has(matched.agentKey)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(matched.agentKey);
+      return next;
+    });
+  }, [assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKeys]);
 
   function handleItemClick(
     event: MouseEvent<HTMLAnchorElement>,
@@ -1859,22 +1982,6 @@ export function AppSidebar({
       return false;
     }
 
-    if (targetAgentInfo.historyRequested) {
-      try {
-        webview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
-          action: "openChatHistory",
-          data: {
-            workerKey: `agent:${targetAgentInfo.agentKey}`,
-            agentKey: targetAgentInfo.agentKey,
-          },
-        });
-        return true;
-      } catch (error) {
-        console.warn("[assistant] failed to open agent history", error);
-        return false;
-      }
-    }
-
     const script = `(() => {
       const target = new URL(${JSON.stringify(targetPath)}, window.location.href);
       const oldUrl = window.location.href;
@@ -1904,7 +2011,6 @@ export function AppSidebar({
       const targetAgentInfo = readAgentRouteInfo(targetPath);
       if (
         targetPath === currentRoute ||
-        targetAgentInfo.historyRequested ||
         targetAgentInfo.newChatRequested
       ) {
         dispatchAgentWebclientRouteToActiveWebview(targetPath);
@@ -1914,7 +2020,10 @@ export function AppSidebar({
     if (targetPath === currentRoute) {
       return;
     }
-    if (onRequestNavigate && !onRequestNavigate(targetPath)) {
+    const requestNavigation = options.focusAgentChat
+      ? onRequestAgentChatNavigate ?? onRequestNavigate
+      : onRequestNavigate;
+    if (requestNavigation && !requestNavigation(targetPath)) {
       return;
     }
     onNavigateItem?.();
@@ -2038,13 +2147,16 @@ export function AppSidebar({
       return {
         kind: "group",
         groupId: subject.groupId,
-        menuScope: subject.menuScope ?? "all",
-        sortMode: assistantNavSortMode,
         canCreateProject:
           !runtime.creatingProject && !runtime.hasCreateProjectDialog,
         canCreateChat:
           Boolean(runtime.resolvedChatDefaultAgentKey) &&
           !runtime.chatDefaultAgentUnavailable,
+        chatSortMode: runtime.assistantChatSortMode,
+        chatOrderingSupported:
+          runtime.assistantChatOrderingSupported &&
+          !runtime.chatOrderMutationPending,
+        ...(subject.menuScope === "sort" ? { menuScope: "sort" as const } : {}),
       };
     }
     if (subject.kind === "agent") {
@@ -2102,17 +2214,21 @@ export function AppSidebar({
     actionId: SidebarContextMenuActionId,
   ) {
     if (target.kind === "group") {
-      if (
-        actionId === "group.sort-by-time" ||
-        actionId === "group.sort-by-name"
-      ) {
-        return target.groupId === "assistants";
-      }
       if (actionId === "group.new-project") {
         return target.groupId === "assistants" && target.canCreateProject;
       }
       if (actionId === "group.new-chat") {
-        return target.groupId === "chats" && target.canCreateChat;
+        return (
+          target.groupId === "chats" &&
+          target.menuScope !== "sort" &&
+          target.canCreateChat
+        );
+      }
+      if (
+        actionId === "group.chat-sort-recent" ||
+        actionId === "group.chat-sort-manual"
+      ) {
+        return target.groupId === "chats" && target.chatOrderingSupported;
       }
       return (
         target.groupId === "webs" &&
@@ -2179,11 +2295,7 @@ export function AppSidebar({
       return;
     }
     if (subject.kind === "group") {
-      if (actionId === "group.sort-by-time") {
-        setAssistantNavSortMode("byTime");
-      } else if (actionId === "group.sort-by-name") {
-        setAssistantNavSortMode("byName");
-      } else if (
+      if (
         actionId === "group.new-project" &&
         currentTarget.kind === "group" &&
         currentTarget.canCreateProject
@@ -2191,6 +2303,10 @@ export function AppSidebar({
         await beginCreateProject();
       } else if (actionId === "group.new-chat") {
         startChatsNewChat();
+      } else if (actionId === "group.chat-sort-recent") {
+        await updateChatsSortMode("recent");
+      } else if (actionId === "group.chat-sort-manual") {
+        await updateChatsSortMode("manual");
       } else if (actionId === "group.add-website") {
         showWebsiteDialog();
       } else if (actionId === "group.import-webapp") {
@@ -2382,12 +2498,12 @@ export function AppSidebar({
       if (!agentKey) {
         return false;
       }
-      if (expandedAssistantAgentKey !== agentKey) {
+      if (!expandedAssistantAgentKeys.has(agentKey)) {
         const agent = findAssistantNavAgent(agentKey);
         if (agent) {
           handleAssistantAgentExpand(agent, true);
         } else {
-          setExpandedAssistantAgentKey(agentKey);
+          setAssistantAgentExpanded(agentKey, true);
         }
         return true;
       }
@@ -2409,8 +2525,8 @@ export function AppSidebar({
     }
     if (kind === "agent") {
       const agentKey = element.dataset.sidebarAgentKey || "";
-      if (agentKey && expandedAssistantAgentKey === agentKey) {
-        setExpandedAssistantAgentKey("");
+      if (agentKey && expandedAssistantAgentKeys.has(agentKey)) {
+        setAssistantAgentExpanded(agentKey, false);
         return true;
       }
       return false;
@@ -2421,7 +2537,14 @@ export function AppSidebar({
     if (kind === "chats-more") {
       return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
     }
-    if (kind === "chat" || kind === "agent-more") {
+    if (kind === "chats-history") {
+      return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
+    }
+    if (
+      kind === "chat" ||
+      kind === "agent-more" ||
+      kind === "agent-history"
+    ) {
       const agentKey = element.dataset.sidebarAgentKey || "";
       return agentKey
         ? focusSidebarRovingItemById(createSidebarAgentFocusId(agentKey))
@@ -2592,7 +2715,7 @@ export function AppSidebar({
       setCreateProjectDialog(null);
       await onRefreshAssistantNavAgents?.();
       if (result.agentKey) {
-        setExpandedAssistantAgentKey(result.agentKey);
+        setAssistantAgentExpanded(result.agentKey, true);
         requestNavigate(createAgentNewChatRoute(result.agentKey));
       }
     } catch (error) {
@@ -2818,11 +2941,39 @@ export function AppSidebar({
     );
   }
 
+  function setAssistantAgentExpanded(agentKey: string, expanded: boolean) {
+    if (!expanded) {
+      if (assistantAgentShowMoreFocusRef.current?.agentKey === agentKey) {
+        assistantAgentShowMoreFocusRef.current = null;
+      }
+      setAssistantAgentChatVisibleLimits((current) => {
+        if (!current.has(agentKey)) {
+          return current;
+        }
+        const next = new Map(current);
+        next.delete(agentKey);
+        return next;
+      });
+    }
+    setExpandedAssistantAgentKeys((current) => {
+      if (current.has(agentKey) === expanded) {
+        return current;
+      }
+      const next = new Set(current);
+      if (expanded) {
+        next.add(agentKey);
+      } else {
+        next.delete(agentKey);
+      }
+      return next;
+    });
+  }
+
   function handleAssistantAgentExpand(
     agent: AssistantNavAgentItem,
     expanded: boolean,
   ) {
-    setExpandedAssistantAgentKey(expanded ? agent.agentKey : "");
+    setAssistantAgentExpanded(agent.agentKey, expanded);
   }
 
   function handleAssistantNewChat(
@@ -2831,9 +2982,46 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    setExpandedAssistantAgentKey(agent.agentKey);
+    setAssistantAgentExpanded(agent.agentKey, true);
     requestNavigate(createAgentNewChatRoute(agent.agentKey), {
       retriggerAgentRoute: true,
+      focusAgentChat: true,
+    });
+  }
+
+  function handleAssistantProjectShowMore(
+    event: MouseEvent<HTMLButtonElement>,
+    agent: AssistantNavAgentItem,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const currentVisibleLimit =
+      assistantAgentChatVisibleLimits.get(agent.agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    if (currentVisibleLimit >= PROJECT_CHATS_MAX_VISIBLE_LIMIT) {
+      return;
+    }
+    const firstRevealedChat =
+      getAssistantNavAgentSortedChats(agent)[currentVisibleLimit];
+    if (!firstRevealedChat) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = {
+      agentKey: agent.agentKey,
+      chatId: firstRevealedChat.chatId,
+      index: currentVisibleLimit,
+    };
+    setAssistantAgentChatVisibleLimits((current) => {
+      const next = new Map(current);
+      next.set(
+        agent.agentKey,
+        Math.min(
+          (current.get(agent.agentKey) ?? PROJECT_CHATS_VISIBLE_LIMIT) +
+            PROJECT_CHATS_VISIBLE_INCREMENT,
+          PROJECT_CHATS_MAX_VISIBLE_LIMIT,
+        ),
+      );
+      return next;
     });
   }
 
@@ -2847,7 +3035,7 @@ export function AppSidebar({
     }
     requestNavigate(
       createAgentNewChatRoute(runtime.resolvedChatDefaultAgentKey),
-      { retriggerAgentRoute: true },
+      { retriggerAgentRoute: true, focusAgentChat: true },
     );
   }
 
@@ -3010,12 +3198,22 @@ export function AppSidebar({
   function handleChatsOpenHistory(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
-    if (!chatsHistoryAvailable || !resolvedChatDefaultAgentKey) {
+    if (!chatsHistoryAvailable) {
       return;
     }
-    requestNavigate(createAgentHistoryRoute(resolvedChatDefaultAgentKey), {
-      retriggerAgentRoute: true,
-    });
+    onOpenChatHistory?.();
+  }
+
+  function handleChatsShowMore(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!chatsShowMoreAvailable) {
+      return;
+    }
+    chatsShowMoreFocusIndexRef.current = chatsVisibleLimit;
+    setChatsVisibleLimit((current) =>
+      Math.min(current + CHATS_VISIBLE_INCREMENT, CHATS_MAX_VISIBLE_LIMIT),
+    );
   }
 
   async function handleAssistantMarkAllRead(
@@ -3057,6 +3255,7 @@ export function AppSidebar({
     }
     requestNavigate(createAgentChatRoute(chat.agentKey, chat.chatId), {
       retriggerAgentRoute: true,
+      focusAgentChat: true,
     });
   }
 
@@ -3387,32 +3586,232 @@ export function AppSidebar({
     );
   }
 
-  function renderAssistantSortButton(options: { tabIndex?: number } = {}) {
-    return (
-      <button
-        type="button"
-        className="assistant-worker-icon-button sidebar-assistant-sort-button"
-        aria-label={t("sidebar.assistants.sort")}
-        title={assistantNavSortLabel}
-        tabIndex={options.tabIndex}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openNativeSidebarContextMenu(
-            {
-              kind: "group",
-              groupId: "assistants",
-              menuScope: "sort",
-            },
-            event.currentTarget,
-            event.detail > 0
-              ? { x: event.clientX, y: event.clientY }
-              : undefined,
-          );
-        }}
-      >
-        <SidebarActionIcon kind="sort" />
-      </button>
+  async function updateChatsSortMode(sortMode: AssistantChatSortMode) {
+    if (
+      chatOrderMutationPending ||
+      !assistantChatOrderingSupported ||
+      !onUpdateAssistantChatOrder ||
+      sortMode === assistantChatSortMode
+    ) {
+      return;
+    }
+    setChatOrderMutationPending(true);
+    setChatOrderError("");
+    try {
+      const result = await onUpdateAssistantChatOrder({
+        operation: "set_mode",
+        sortMode,
+      });
+      if (!result.ok) {
+        setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
+      }
+    } catch (error) {
+      setChatOrderError(
+        error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
+      );
+    } finally {
+      setChatOrderMutationPending(false);
+    }
+  }
+
+  function handleChatDragStart(event: DragStartEvent) {
+    if (chatOrderMutationPending) {
+      return;
+    }
+    setChatOrderError("");
+    setChatDropIndicator(null);
+  }
+
+  function resolveChatDropIndicator(
+    activeId: string,
+    overId: string,
+  ): AssistantChatDropIndicator | null {
+    if (!activeId || !overId || activeId === overId) {
+      return null;
+    }
+    const activeIndex = sidebarChatItems.findIndex(
+      (chat) => chat.chatId === activeId,
+    );
+    const overIndex = sidebarChatItems.findIndex(
+      (chat) => chat.chatId === overId,
+    );
+    if (activeIndex < 0 || overIndex < 0) {
+      return null;
+    }
+    return {
+      chatId: overId,
+      position: activeIndex > overIndex ? "before" : "after",
+    };
+  }
+
+  function handleChatDragOver(event: DragOverEvent) {
+    setChatDropIndicator(
+      event.over
+        ? resolveChatDropIndicator(
+            String(event.active.id),
+            String(event.over.id),
+          )
+        : null,
+    );
+  }
+
+  async function handleChatDragEnd(event: DragEndEvent) {
+    const dropIndicator = event.over
+      ? resolveChatDropIndicator(
+          String(event.active.id),
+          String(event.over.id),
+        )
+      : null;
+    setChatDropIndicator(null);
+    if (
+      chatOrderMutationPending ||
+      !assistantChatOrderingSupported ||
+      !onUpdateAssistantChatOrder ||
+      !dropIndicator
+    ) {
+      return;
+    }
+    const chatId = String(event.active.id);
+    const request: AssistantChatOrderMutationRequest =
+      dropIndicator.position === "before"
+        ? { operation: "move", chatId, beforeChatId: dropIndicator.chatId }
+        : { operation: "move", chatId, afterChatId: dropIndicator.chatId };
+    setChatOrderMutationPending(true);
+    setChatOrderError("");
+    try {
+      const result = await onUpdateAssistantChatOrder(request);
+      if (!result.ok) {
+        setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
+      }
+    } catch (error) {
+      setChatOrderError(
+        error instanceof Error
+          ? error.message
+          : t("assistant.chatOrderSaveFailed"),
+      );
+    } finally {
+      setChatOrderMutationPending(false);
+    }
+  }
+
+  function handleProjectDragStart(event: DragStartEvent) {
+    if (projectOrderSaving) {
+      return;
+    }
+    expandedProjectsBeforeDragRef.current = new Set(expandedAssistantAgentKeys);
+    setExpandedAssistantAgentKeys(new Set());
+    setProjectOrderError("");
+    setProjectDropIndicator(null);
+    setActiveProjectDragKey(String(event.active.id));
+  }
+
+  function resolveProjectDropIndicator(
+    activeKey: string,
+    overKey: string,
+  ): AssistantProjectDropIndicator | null {
+    if (!activeKey || !overKey || activeKey === overKey) {
+      return null;
+    }
+    const activeIndex = primaryAssistantNavAgents.findIndex(
+      (agent) => agent.agentKey === activeKey,
+    );
+    const overIndex = primaryAssistantNavAgents.findIndex(
+      (agent) => agent.agentKey === overKey,
+    );
+    if (activeIndex < 0 || overIndex < 0) {
+      return null;
+    }
+    return {
+      agentKey: overKey,
+      position: activeIndex > overIndex ? "before" : "after",
+    };
+  }
+
+  function handleProjectDragOver(event: DragOverEvent) {
+    setProjectDropIndicator(
+      event.over
+        ? resolveProjectDropIndicator(
+            String(event.active.id),
+            String(event.over.id),
+          )
+        : null,
+    );
+  }
+
+  function finishProjectDrag() {
+    const expandedProjectKeys = expandedProjectsBeforeDragRef.current;
+    expandedProjectsBeforeDragRef.current = null;
+    setActiveProjectDragKey("");
+    setProjectDropIndicator(null);
+    if (expandedProjectKeys !== null) {
+      setExpandedAssistantAgentKeys(expandedProjectKeys);
+    }
+  }
+
+  async function handleProjectDragEnd(event: DragEndEvent) {
+    const dropIndicator = event.over
+      ? resolveProjectDropIndicator(
+          String(event.active.id),
+          String(event.over.id),
+        )
+      : null;
+    finishProjectDrag();
+    if (projectOrderSaving || !onReorderAssistantProjects || !dropIndicator) {
+      return;
+    }
+    const activeKey = String(event.active.id);
+    const nextAgentKeys = primaryAssistantNavAgents
+      .map((agent) => agent.agentKey)
+      .filter((agentKey) => agentKey !== activeKey);
+    const targetIndex = nextAgentKeys.indexOf(dropIndicator.agentKey);
+    if (targetIndex < 0) {
+      return;
+    }
+    nextAgentKeys.splice(
+      dropIndicator.position === "before" ? targetIndex : targetIndex + 1,
+      0,
+      activeKey,
+    );
+    setProjectOrderSaving(true);
+    setProjectOrderError("");
+    try {
+      const result = await onReorderAssistantProjects({
+        agentKeys: nextAgentKeys,
+      });
+      if (!result.ok) {
+        setProjectOrderError(
+          result.message || t("assistant.projectOrderSaveFailed"),
+        );
+      }
+    } catch (error) {
+      setProjectOrderError(
+        error instanceof Error
+          ? error.message
+          : t("assistant.projectOrderSaveFailed"),
+      );
+    } finally {
+      setProjectOrderSaving(false);
+    }
+  }
+
+  function handleToggleAllProjects(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (primaryAssistantNavAgents.length === 0 || activeProjectDragKey) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = null;
+    setAssistantAgentChatVisibleLimits((current) =>
+      current.size > 0 ? new Map<string, number>() : current,
+    );
+    setExpandedAssistantAgentKeys(
+      allProjectsExpanded
+        ? new Set()
+        : new Set(
+            primaryAssistantNavAgents.map((agent) => agent.agentKey),
+          ),
     );
   }
 
@@ -3531,6 +3930,45 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
+    const sortLabel = assistantChatOrderingSupported
+      ? assistantChatSortMode === "manual"
+        ? t("sidebar.chats.sortManual")
+        : t("sidebar.chats.sortRecent")
+      : t("sidebar.chats.sortUnavailable");
+    return (
+      <>
+        <Tooltip content={sortLabel}>
+          <button
+            type="button"
+            className="assistant-worker-icon-button sidebar-chats-sort-button"
+            aria-label={t("sidebar.chats.sortMenu")}
+            title={sortLabel}
+            tabIndex={options.inPopover ? undefined : -1}
+            disabled={!assistantChatOrderingSupported || chatOrderMutationPending}
+            onClick={(event) => {
+              event.preventDefault();
+              event.stopPropagation();
+              openNativeSidebarContextMenu(
+                { kind: "group", groupId: "chats", menuScope: "sort" },
+                event.currentTarget,
+              );
+            }}
+          >
+            {chatOrderMutationPending ? (
+              <span
+                className="assistant-material-icon is-loading"
+                aria-hidden="true"
+              />
+            ) : (
+              <SidebarActionIcon kind="sort" />
+            )}
+          </button>
+        </Tooltip>
+        {renderChatsNewChatButton(options)}
+      </>
+    );
+  }
   function renderChatsDefaultAgentPicker(
     options: { inPopover?: boolean } = {},
   ) {
@@ -3790,6 +4228,101 @@ export function AppSidebar({
     );
   }
 
+  function renderChatsRow(
+    chat: AssistantNavChatItem,
+    roving: boolean,
+    sortable: boolean,
+  ) {
+    const agent = getChatHoverAgent(chat);
+    const isBootstrapSeedChat = Boolean(
+      bootstrapActive &&
+      normalizedBootstrapChatId &&
+      chat.chatId === normalizedBootstrapChatId &&
+      chat.agentKey === normalizedBootstrapAgentKey,
+    );
+    const renderRow = (dragActivator?: AssistantChatDragActivator) =>
+      renderAssistantChatRow(chat, activeSidebarChatId, {
+        roving,
+        focusId: createSidebarChatsChatFocusId(chat.chatId),
+        navigationKind: "chats-chat",
+        rowClassName: "sidebar-chats-row",
+        itemClassName: [
+          "sidebar-chats-item",
+          isBootstrapSeedChat && showBootstrapChatGuide
+            ? "is-bootstrap-guide"
+            : "",
+        ]
+          .filter(Boolean)
+          .join(" "),
+        itemRef: isBootstrapSeedChat
+          ? bootstrapGuideChatAnchorRef
+          : undefined,
+        rowRole: sortable ? undefined : "listitem",
+        previewText: isBootstrapSeedChat
+          ? chat.chatName || t("sidebar.bootstrapChat.cta")
+          : undefined,
+        dragActivator,
+        wrapItem: (item) => (
+          <Popover
+            trigger="hover"
+            placement="right-start"
+            closeOnOutsideClick={false}
+            shouldOpen={(trigger) => {
+              const title =
+                trigger.querySelector<HTMLElement>(".worker-chat-name");
+              return Boolean(title && title.scrollWidth > title.clientWidth);
+            }}
+            className="sidebar-chat-hover-card-surface"
+            content={renderChatHoverCard(agent, chat)}
+          >
+            {item}
+          </Popover>
+        ),
+      });
+    if (!sortable) {
+      return renderRow();
+    }
+    return (
+      <SortableAssistantChat
+        key={chat.chatId}
+        chat={chat}
+        disabled={chatOrderMutationPending}
+        dropIndicator={
+          chatDropIndicator?.chatId === chat.chatId
+            ? chatDropIndicator.position
+            : null
+        }
+        renderItem={renderRow}
+      />
+    );
+  }
+
+  function renderSortableChatsRows(roving: boolean) {
+    const sortable = roving && assistantChatOrderingSupported;
+    if (!sortable) {
+      return sidebarChatItems.map((chat) => renderChatsRow(chat, roving, false));
+    }
+    return (
+      <DndContext
+        sensors={chatDragSensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleChatDragStart}
+        onDragOver={handleChatDragOver}
+        onDragCancel={() => {
+          setChatDropIndicator(null);
+        }}
+        onDragEnd={(event) => void handleChatDragEnd(event)}
+      >
+        <SortableContext
+          items={sidebarChatItems.map((chat) => chat.chatId)}
+          strategy={verticalListSortingStrategy}
+        >
+          {sidebarChatItems.map((chat) => renderChatsRow(chat, roving, true))}
+        </SortableContext>
+      </DndContext>
+    );
+  }
+
   function renderChatsList(options: { roving?: boolean } = {}) {
     const roving = options.roving ?? true;
     const bootstrapFallbackActive =
@@ -3831,54 +4364,7 @@ export function AppSidebar({
           </div>
         ) : null}
         {sidebarChatItems.length > 0 ? (
-          sidebarChatItems.map((chat) => {
-            const agent = getChatHoverAgent(chat);
-            const isBootstrapSeedChat = Boolean(
-              bootstrapActive &&
-              normalizedBootstrapChatId &&
-              chat.chatId === normalizedBootstrapChatId &&
-              chat.agentKey === normalizedBootstrapAgentKey,
-            );
-            return renderAssistantChatRow(chat, activeSidebarChatId, {
-              roving,
-              focusId: createSidebarChatsChatFocusId(chat.chatId),
-              navigationKind: "chats-chat",
-              rowClassName: "sidebar-chats-row",
-              itemClassName: [
-                "sidebar-chats-item",
-                isBootstrapSeedChat && showBootstrapChatGuide
-                  ? "is-bootstrap-guide"
-                  : "",
-              ]
-                .filter(Boolean)
-                .join(" "),
-              itemRef: isBootstrapSeedChat
-                ? bootstrapGuideChatAnchorRef
-                : undefined,
-              rowRole: "listitem",
-              previewText: isBootstrapSeedChat
-                ? chat.chatName || t("sidebar.bootstrapChat.cta")
-                : undefined,
-              wrapItem: (item) => (
-                <Popover
-                  trigger="hover"
-                  placement="right-start"
-                  closeOnOutsideClick={false}
-                  shouldOpen={(trigger) => {
-                    const title =
-                      trigger.querySelector<HTMLElement>(".worker-chat-name");
-                    return Boolean(
-                      title && title.scrollWidth > title.clientWidth,
-                    );
-                  }}
-                  className="sidebar-chat-hover-card-surface"
-                  content={renderChatHoverCard(agent, chat)}
-                >
-                  {item}
-                </Popover>
-              ),
-            });
-          })
+          renderSortableChatsRows(roving)
         ) : !showBootstrapChatFallback ? (
           chatDefaultAgentUnavailable ? (
             <div className="sidebar-empty-hint">
@@ -3888,26 +4374,49 @@ export function AppSidebar({
             <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
           )
         ) : null}
-        {chatsHistoryAvailable ? (
-          <button
-            type="button"
-            className="worker-chat-more assistant-worker-more sidebar-chats-more"
-            {...getSidebarRovingItemProps(
-              createSidebarChatsMoreFocusId(),
-              roving,
-            )}
-            data-sidebar-nav-kind={roving ? "chats-more" : undefined}
-            data-sidebar-agent-key={
-              roving ? resolvedChatDefaultAgentKey : undefined
-            }
-            onClick={handleChatsOpenHistory}
-          >
-            {t("sidebar.chats.viewMoreHistory")}
-          </button>
+        {chatsShowMoreAvailable || chatsHistoryAvailable ? (
+          <div className="sidebar-chats-actions">
+            {chatsShowMoreAvailable ? (
+              <button
+                type="button"
+                className="worker-chat-more assistant-worker-more sidebar-chats-more"
+                {...getSidebarRovingItemProps(
+                  createSidebarChatsMoreFocusId(),
+                  roving,
+                )}
+                data-sidebar-nav-kind={roving ? "chats-more" : undefined}
+                onClick={handleChatsShowMore}
+              >
+                {t("sidebar.chat.viewMoreSimple")}
+              </button>
+            ) : null}
+            {chatsHistoryAvailable ? (
+              <button
+                type="button"
+                className="worker-chat-more assistant-worker-more sidebar-chats-more"
+                {...getSidebarRovingItemProps(
+                  createSidebarChatsHistoryFocusId(),
+                  roving,
+                )}
+                data-sidebar-nav-kind={roving ? "chats-history" : undefined}
+                data-sidebar-agent-key={
+                  roving ? resolvedChatDefaultAgentKey : undefined
+                }
+                onClick={handleChatsOpenHistory}
+              >
+                {t("sidebar.chats.viewMoreHistory")}
+              </button>
+            ) : null}
+          </div>
         ) : null}
         {chatDefaultAgentError ? (
           <div className="sidebar-chats-agent-error" role="alert">
             {chatDefaultAgentError}
+          </div>
+        ) : null}
+        {chatOrderError ? (
+          <div className="sidebar-chats-agent-error" role="alert">
+            {chatOrderError}
           </div>
         ) : null}
       </div>
@@ -3929,12 +4438,12 @@ export function AppSidebar({
         </span>
       ),
       headerSupplement: renderChatsDefaultAgentPicker(),
-      headerActions: renderChatsNewChatButton(),
+      headerActions: renderChatsHeaderActions(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
           <span>{item.label}</span>
           {renderChatsDefaultAgentPicker({ inPopover: true })}
-          {renderChatsNewChatButton({ inPopover: true })}
+          {renderChatsHeaderActions({ inPopover: true })}
         </div>
       ),
       renderChildren: ({ roving }) => renderChatsList({ roving }),
@@ -4141,9 +4650,18 @@ export function AppSidebar({
       options.previewText ?? getAssistantChatDisplayText(chat, t);
     const focusId = options.focusId ?? createSidebarChatFocusId(chat.chatId);
     const navigationKind = options.navigationKind ?? "chat";
+    const dragActivator = options.dragActivator;
     const item = (
       <button
-        ref={options.itemRef}
+        ref={(element) => {
+          if (typeof options.itemRef === "function") {
+            options.itemRef(element);
+          } else if (options.itemRef) {
+            (options.itemRef as { current: HTMLButtonElement | null }).current =
+              element;
+          }
+          dragActivator?.setActivatorNodeRef(element);
+        }}
         type="button"
         className={[
           "assistant-worker-chat-item",
@@ -4158,6 +4676,13 @@ export function AppSidebar({
         onClick={() => void handleAssistantOpenChat(chat)}
         onDoubleClick={(event) => handleAssistantChatDoubleClick(event, chat)}
         {...getSidebarRovingItemProps(focusId, roving)}
+        {...dragActivator?.listeners}
+        aria-disabled={dragActivator?.attributes["aria-disabled"]}
+        aria-pressed={dragActivator?.attributes["aria-pressed"]}
+        aria-roledescription={
+          dragActivator?.attributes["aria-roledescription"]
+        }
+        aria-describedby={dragActivator?.attributes["aria-describedby"]}
         data-sidebar-nav-kind={roving ? navigationKind : undefined}
         data-sidebar-agent-key={
           roving ? chat.agentKey || currentAgentKey : undefined
@@ -4226,11 +4751,21 @@ export function AppSidebar({
 
   function renderAssistantAgent(
     agent: AssistantNavAgentItem,
-    options: { roving?: boolean } = {},
+    options: {
+      roving?: boolean;
+      dragActivator?: AssistantProjectDragActivator;
+    } = {},
   ) {
     const roving = options.roving ?? true;
+    const dragActivator = options.dragActivator;
     const allRecentChats = getAssistantNavAgentSortedChats(agent);
-    const recentChats = getAssistantNavAgentPreviewChats(agent);
+    const projectChatVisibleLimit =
+      assistantAgentChatVisibleLimits.get(agent.agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    const recentChats = getAssistantNavAgentPreviewChats(
+      agent,
+      projectChatVisibleLimit,
+    );
     const chatCount = Math.max(
       0,
       getAssistantNavAgentNonNegativeInteger(agent.chatCount),
@@ -4241,7 +4776,6 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
-    const rowUnreadCount = allRecentChats.filter((chat) => !chat.isRead).length;
     const awaitingChats = allRecentChats.filter(
       (chat) => chat.hasPendingAwaiting === true,
     );
@@ -4260,9 +4794,14 @@ export function AppSidebar({
     const selected =
       getActiveSidebarAgentKey() === agent.agentKey || Boolean(activeChatId);
     const agentRole = getAssistantAgentRoleLabel(agent);
+    const projectShowMoreAvailable =
+      projectChatVisibleLimit < PROJECT_CHATS_MAX_VISIBLE_LIMIT &&
+      allRecentChats.length > projectChatVisibleLimit;
+    const projectHistoryAvailable = chatCount > PROJECT_CHATS_VISIBLE_LIMIT;
     return (
       <Collapse
         key={agent.agentKey}
+        expanded={expandedAssistantAgentKeys.has(agent.agentKey)}
         className={[
           "assistant-worker-collapse-item",
           selected ? "is-selected" : "",
@@ -4270,6 +4809,10 @@ export function AppSidebar({
           .filter(Boolean)
           .join(" ")}
         onExpand={(val) => handleAssistantAgentExpand(agent, val)}
+        headerButtonRef={(element) => {
+          dragActivator?.setNodeRef(element);
+          dragActivator?.setActivatorNodeRef(element);
+        }}
         headerButtonProps={{
           className: "assistant-worker-header",
           onContextMenu: (event) => handleAgentContextMenu(event, agent),
@@ -4279,6 +4822,12 @@ export function AppSidebar({
           ),
           "data-sidebar-nav-kind": roving ? "agent" : undefined,
           "data-sidebar-agent-key": roving ? agent.agentKey : undefined,
+          ...dragActivator?.listeners,
+          "aria-disabled": dragActivator?.attributes["aria-disabled"],
+          "aria-pressed": dragActivator?.attributes["aria-pressed"],
+          "aria-roledescription":
+            dragActivator?.attributes["aria-roledescription"],
+          "aria-describedby": dragActivator?.attributes["aria-describedby"],
         }}
         header={
           <Flex gap={8} align="center" className="worker-panel-header">
@@ -4367,34 +4916,96 @@ export function AppSidebar({
           ) : chatCount === 0 ? (
             <div className="status-line">{t("sidebar.agent.noChats")}</div>
           ) : null}
-          {chatCount > recentChats.length ? (
-            <button
-              type="button"
-              className="worker-chat-more assistant-worker-more"
-              {...getSidebarRovingItemProps(
-                createSidebarAgentMoreFocusId(agent.agentKey),
-                roving,
-              )}
-              data-sidebar-nav-kind={roving ? "agent-more" : undefined}
-              data-sidebar-agent-key={roving ? agent.agentKey : undefined}
-              onClick={(event) => {
-                event.stopPropagation();
-                requestNavigate(createAgentHistoryRoute(agent.agentKey), {
-                  retriggerAgentRoute: true,
-                });
-              }}
-            >
-              {t("sidebar.chat.viewMore", {
-                count: chatCount,
-                unread:
-                  rowUnreadCount > 0
-                    ? t("sidebar.chat.unreadSuffix", { count: rowUnreadCount })
-                    : "",
-              })}
-            </button>
+          {projectShowMoreAvailable || projectHistoryAvailable ? (
+            <div className="sidebar-project-chat-actions">
+              {projectShowMoreAvailable ? (
+                <button
+                  type="button"
+                  className="worker-chat-more assistant-worker-more sidebar-project-chat-more"
+                  {...getSidebarRovingItemProps(
+                    createSidebarAgentMoreFocusId(agent.agentKey),
+                    roving,
+                  )}
+                  data-sidebar-nav-kind={roving ? "agent-more" : undefined}
+                  data-sidebar-agent-key={roving ? agent.agentKey : undefined}
+                  onClick={(event) =>
+                    handleAssistantProjectShowMore(event, agent)
+                  }
+                >
+                  {t("sidebar.chat.viewMoreSimple")}
+                </button>
+              ) : null}
+              {projectHistoryAvailable ? (
+                <button
+                  type="button"
+                  className="worker-chat-more assistant-worker-more sidebar-project-chat-more"
+                  {...getSidebarRovingItemProps(
+                    createSidebarAgentHistoryFocusId(agent.agentKey),
+                    roving,
+                  )}
+                  data-sidebar-nav-kind={roving ? "agent-history" : undefined}
+                  data-sidebar-agent-key={roving ? agent.agentKey : undefined}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenChatHistory?.(agent.agentKey);
+                  }}
+                >
+                  {t("sidebar.chats.viewMoreHistory")}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </Flex>
       </Collapse>
+    );
+  }
+
+  function renderSortableAssistantProjects() {
+    const dragDisabled =
+      projectOrderSaving ||
+      !onReorderAssistantProjects ||
+      primaryAssistantNavAgents.length < 2;
+    return (
+      <>
+        <DndContext
+          sensors={projectDragSensors}
+          collisionDetection={closestCenter}
+          measuring={{
+            droppable: { strategy: MeasuringStrategy.Always },
+          }}
+          onDragStart={handleProjectDragStart}
+          onDragOver={handleProjectDragOver}
+          onDragCancel={finishProjectDrag}
+          onDragEnd={(event) => void handleProjectDragEnd(event)}
+        >
+          <SortableContext
+            items={primaryAssistantNavAgents.map((agent) => agent.agentKey)}
+            strategy={verticalListSortingStrategy}
+          >
+            {primaryAssistantNavAgents.map((agent) => (
+              <SortableAssistantProject
+                key={agent.agentKey}
+                agent={agent}
+                disabled={dragDisabled}
+                collapseForDrag={Boolean(activeProjectDragKey)}
+                dropIndicator={
+                  projectDropIndicator?.agentKey === agent.agentKey
+                    ? projectDropIndicator.position
+                    : null
+                }
+                renderItem={(dragActivator) =>
+                  renderAssistantAgent(agent, { dragActivator })
+                }
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+        {projectOrderError ? (
+          <div className="sidebar-project-order-error" role="alert">
+            {projectOrderError}
+          </div>
+        ) : null}
+      </>
     );
   }
 
@@ -4445,14 +5056,8 @@ export function AppSidebar({
             {args.popoverHeader}
             {args.groupId === "assistants" ? (
               <div className="assistant-worker-collapse worker-collapse">
-                <div className="sidebar-assistant-popover-tools">
-                  <span className="sidebar-assistant-sort-label">
-                    {assistantNavSortLabel}
-                  </span>
-                  {renderAssistantSortButton()}
-                </div>
-                {sortedAssistantNavAgents.length > 0 ? (
-                  sortedAssistantNavAgents.map((agent) =>
+                {primaryAssistantNavAgents.length > 0 ? (
+                  primaryAssistantNavAgents.map((agent) =>
                     renderAssistantAgent(agent, { roving: false }),
                   )
                 ) : assistantNavAgentsLoaded ? (
@@ -4535,9 +5140,40 @@ export function AppSidebar({
         headerActions={
           <>
             {args.headerActions}
-            {args.groupId === "assistants"
-              ? renderAssistantSortButton({ tabIndex: -1 })
-              : null}
+            {args.groupId === "assistants" ? (
+              <Tooltip
+                content={
+                  allProjectsExpanded
+                    ? t("sidebar.assistants.collapseAll")
+                    : t("sidebar.assistants.expandAll")
+                }
+              >
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-assistant-expand-button"
+                  aria-label={
+                    allProjectsExpanded
+                      ? t("sidebar.assistants.collapseAll")
+                      : t("sidebar.assistants.expandAll")
+                  }
+                  title={
+                    allProjectsExpanded
+                      ? t("sidebar.assistants.collapseAll")
+                      : t("sidebar.assistants.expandAll")
+                  }
+                  tabIndex={-1}
+                  disabled={
+                    primaryAssistantNavAgents.length === 0 ||
+                    Boolean(activeProjectDragKey)
+                  }
+                  onClick={handleToggleAllProjects}
+                >
+                  <SidebarActionIcon
+                    kind={allProjectsExpanded ? "collapse_all" : "expand_all"}
+                  />
+                </button>
+              </Tooltip>
+            ) : null}
             {args.groupId === "assistants" ? (
               <Tooltip
                 content={
@@ -4621,10 +5257,8 @@ export function AppSidebar({
         >
           {args.groupId === "assistants" ? (
             <div className="assistant-worker-collapse worker-collapse">
-              {sortedAssistantNavAgents.length > 0 ? (
-                sortedAssistantNavAgents.map((agent) =>
-                  renderAssistantAgent(agent),
-                )
+              {primaryAssistantNavAgents.length > 0 ? (
+                renderSortableAssistantProjects()
               ) : assistantNavAgentsLoaded ? (
                 <div className="sidebar-empty-hint">
                   {t("sidebar.assistants.empty")}

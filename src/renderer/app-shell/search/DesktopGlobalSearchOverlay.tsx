@@ -35,6 +35,7 @@ type DesktopGlobalSearchOverlayProps = {
   shortcutPlatform: "darwin" | "win32" | null;
   t: TranslateFunction;
   onClose: () => void;
+  onOpenHistory: () => void;
   onNavigate: (targetPath: string) => void;
 };
 
@@ -93,10 +94,11 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
       activateGlobalSearchShortcut(shortcut, shortcutTargetsRef.current, {
         newChatAgentKey,
         onNavigate: props.onNavigate,
+        onOpenHistory: props.onOpenHistory,
         onClose: props.onClose
       });
     });
-  }, [newChatAgentKey, props.onClose, props.onNavigate, props.open]);
+  }, [newChatAgentKey, props.onClose, props.onNavigate, props.onOpenHistory, props.open]);
 
   useEffect(() => {
     if (!props.open) {
@@ -194,6 +196,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
       activateRow(activeRow, {
         newChatAgentKey,
         onNavigate: props.onNavigate,
+        onOpenHistory: props.onOpenHistory,
         onClose: props.onClose
       });
     }
@@ -257,6 +260,7 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
                     onClick={() => activateRow(row, {
                       newChatAgentKey,
                       onNavigate: props.onNavigate,
+                      onOpenHistory: props.onOpenHistory,
                       onClose: props.onClose
                     })}
                   >
@@ -304,8 +308,11 @@ export function DesktopGlobalSearchOverlay(props: DesktopGlobalSearchOverlayProp
 
 function activateRow(
   row: DesktopGlobalSearchRow,
-  options: { newChatAgentKey: string; onNavigate: (targetPath: string) => void; onClose: () => void }
+  options: GlobalSearchActivationOptions
 ) {
+  if (row.kind === "action" && activateAction(row.actionId, options)) {
+    return;
+  }
   const targetPath = resolveRowTargetPath(row, options.newChatAgentKey);
   if (!targetPath) {
     return;
@@ -317,14 +324,10 @@ function activateRow(
 function activateGlobalSearchShortcut(
   shortcut: DesktopGlobalSearchShortcut,
   targets: DesktopGlobalSearchShortcutTargets,
-  options: { newChatAgentKey: string; onNavigate: (targetPath: string) => void; onClose: () => void }
+  options: GlobalSearchActivationOptions
 ) {
   if (shortcut.kind === "action") {
-    const targetPath = resolveActionTargetPath(shortcut.actionId, options.newChatAgentKey);
-    if (targetPath) {
-      options.onNavigate(targetPath);
-      options.onClose();
-    }
+    activateAction(shortcut.actionId, options);
     return;
   }
   const target = shortcut.kind === "attention"
@@ -333,6 +336,28 @@ function activateGlobalSearchShortcut(
   if (target) {
     activateRow(target, options);
   }
+}
+
+type GlobalSearchActivationOptions = {
+  newChatAgentKey: string;
+  onNavigate: (targetPath: string) => void;
+  onOpenHistory: () => void;
+  onClose: () => void;
+};
+
+function activateAction(actionId: DesktopGlobalSearchActionId, options: GlobalSearchActivationOptions) {
+  if (actionId === "history") {
+    options.onClose();
+    options.onOpenHistory();
+    return true;
+  }
+  const targetPath = resolveActionTargetPath(actionId, options.newChatAgentKey);
+  if (!targetPath) {
+    return false;
+  }
+  options.onNavigate(targetPath);
+  options.onClose();
+  return true;
 }
 
 function resolveRowTargetPath(row: DesktopGlobalSearchRow, newChatAgentKey: string) {
@@ -396,6 +421,9 @@ function renderRowIcon(row: DesktopGlobalSearchRow, t: TranslateFunction) {
   if (row.actionId === "newChat") {
     return <SidebarActionIcon kind="new_chat" />;
   }
+  if (row.actionId === "history") {
+    return <ClockCircleOutlined />;
+  }
   if (row.actionId === "agents") {
     return <SidebarIllustration kind="agent" />;
   }
@@ -433,6 +461,8 @@ function formatShortcutLabel(
   return shortcut.kind === "action"
     ? shortcut.actionId === "newChat"
       ? "N"
+      : shortcut.actionId === "history"
+        ? "H"
       : shortcut.actionId === "agents"
         ? "A"
         : shortcut.actionId === "skills"
@@ -453,6 +483,8 @@ function formatAriaShortcut(
   const suffix = shortcut.kind === "action"
     ? shortcut.actionId === "newChat"
       ? "N"
+      : shortcut.actionId === "history"
+        ? "H"
       : shortcut.actionId === "agents"
         ? "A"
         : shortcut.actionId === "skills"

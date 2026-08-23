@@ -1088,6 +1088,7 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /sidebar-website-status-action[\s\S]{0,300}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-expand-button"[\s\S]{0,500}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /function openSidebarRovingContextMenu\(element: HTMLElement\)/);
   assert.doesNotMatch(sidebarSource, /function renderWebItemMenu\(\)/);
@@ -1096,7 +1097,7 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.doesNotMatch(sidebarSource, /function renderAgentMenu\(\)/);
 });
 
-test("chat headers only expose new chat while the chat menu keeps sharing", () => {
+test("chat headers expose sorting and new chat while the chat menu keeps sharing", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -1108,16 +1109,20 @@ test("chat headers only expose new chat while the chat menu keeps sharing", () =
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(sidebarSource, /headerActions: renderChatsNewChatButton\(\)/u);
+  assert.match(sidebarSource, /headerActions: renderChatsHeaderActions\(\)/u);
   assert.match(
     sidebarSource,
-    /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)[\s\S]{0,160}renderChatsNewChatButton\(\{ inPopover: true \}\)/u
+    /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)[\s\S]{0,160}renderChatsHeaderActions\(\{ inPopover: true \}\)/u
+  );
+  assert.match(
+    sidebarSource,
+    /function renderChatsHeaderActions[\s\S]{0,1800}SidebarActionIcon kind="sort"[\s\S]{0,500}renderChatsNewChatButton\(options\)/u
   );
   assert.match(
     sidebarSource,
     /actionId === "chat\.share"[\s\S]{0,160}conversationShareDialog\.open\(chat\.chatId, chat\.chatName\)/u
   );
-  assert.doesNotMatch(sidebarSource, /renderChatsShareButton|renderChatsHeaderActions|sidebar-chats-share-button|kind="share"/u);
+  assert.doesNotMatch(sidebarSource, /renderChatsShareButton|sidebar-chats-share-button|kind="share"/u);
   assert.doesNotMatch(brandMarkSource, /\| "share"|case "share"/u);
   assert.doesNotMatch(zhCN, /sidebar\.chat\.shareCurrent/u);
   assert.doesNotMatch(enUS, /sidebar\.chat\.shareCurrent/u);
@@ -1158,7 +1163,7 @@ test("sidebar action buttons and right-clicks share native menus while selection
   assert.match(sidebarSource, /function handleOpenAgentMenu\([\s\S]*?openNativeSidebarContextMenu\([\s\S]*?kind: "agent"/u);
   assert.match(sidebarSource, /sidebar-website-child-action[\s\S]{0,600}openNativeSidebarContextMenu\([\s\S]{0,120}kind: "web"/u);
   assert.match(sidebarSource, /sidebar-website-add-button[\s\S]{0,500}openNativeSidebarContextMenu\([\s\S]{0,120}kind: "group"/u);
-  assert.match(sidebarSource, /sidebar-assistant-sort-button[\s\S]{0,500}openNativeSidebarContextMenu\([\s\S]{0,160}menuScope: "sort"/u);
+  assert.doesNotMatch(sidebarSource, /sidebar-assistant-sort-button|menuScope: "sort"/u);
   assert.match(sidebarSource, /\{ x: event\.clientX, y: event\.clientY \}/u);
   assert.match(sidebarSource, /event\.clientX === 0 && event\.clientY === 0[\s\S]*?\? undefined[\s\S]*?: \{ x: event\.clientX, y: event\.clientY \}/u);
   assert.match(sidebarSource, /event\.key === "ContextMenu"[\s\S]*?event\.shiftKey && event\.key === "F10"[\s\S]*?openSidebarRovingContextMenu\(currentElement\)/u);
@@ -1241,6 +1246,8 @@ test("expanded sidebar uses one total vertical scrollbar", () => {
   const navigationStyles = readSourceFile("src", "renderer", "styles", "navigation.css");
 
   assert.match(navigationStyles, /\.sidebar-nav\s*\{[\s\S]*?overflow-y:\s*auto;/);
+  assert.doesNotMatch(navigationStyles, /(?:^|\n)\.sidebar-chats-list\s*\{[^}]*overflow-y:\s*auto;/);
+  assert.match(navigationStyles, /\.worker-popover-content \.sidebar-chats-list\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto;/);
   assert.match(navigationStyles, /\.worker-popover-content\.sidebar-website-children\s*\{[\s\S]*?max-height:[\s\S]*?overflow-y:\s*auto;/);
   assert.doesNotMatch(navigationStyles, /(?:^|\n)\.sidebar-website-children\s*\{[\s\S]*?overflow-y:\s*auto;/);
 });
@@ -1285,15 +1292,16 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
   assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{\s*assistants: true,\s*chats: true,\s*webs: true,/);
   assert.match(sidebarSource, /"data-sidebar-group-id": args\.groupId/);
-  assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
-  assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
+  assert.doesNotMatch(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY|AssistantNavSortMode/u);
   assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
   assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
-  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
-  assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
-  assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
-  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "refresh"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
+  assert.doesNotMatch(sidebarSource, /sortAssistantNavAgentsForMode|sidebar\.assistants\.sortBy(?:Name|Time)/u);
+  assert.match(sidebarSource, /<DndContext[\s\S]*?<SortableContext[\s\S]*?primaryAssistantNavAgents\.map/u);
+  assert.match(sidebarSource, /useSensor\(PointerSensor,[\s\S]*?useSensor\(KeyboardSensor/u);
+  assert.match(sidebarSource, /headerButtonRef=\{dragActivator\?\.setActivatorNodeRef\}[\s\S]*?\.\.\.dragActivator\?\.listeners/u);
+  assert.doesNotMatch(sidebarSource, /sidebar-project-drag-handle/u);
+  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "expand_all"[\s\S]*\| "collapse_all"[\s\S]*\| "refresh"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
   assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*?\| "chat"[\s\S]*?\| "project"/);
   assert.match(brandMarkSource, /SidebarIllustrationVariant = "compact" \| "rail"/);
@@ -1302,7 +1310,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(brandMarkSource, /case "project":[\s\S]*?<path d="M2 5\.2A2\.2/);
 
   assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
-  assert.match(sidebarSource, /<SidebarActionIcon kind="sort" \/>/);
+  assert.match(sidebarSource, /sidebar-chats-sort-button[\s\S]{0,500}<SidebarActionIcon kind="sort" \/>/u);
   assert.doesNotMatch(sidebarSource, /SortAscendingOutlined/);
   assert.match(brandMarkSource, /<path d="M6 5v14" \/>[\s\S]*?<path d="M3\.5 15\.5 6 18l2\.5-2\.5" \/>[\s\S]*?<path d="M12 7h8" \/>[\s\S]*?<path d="M12 12h6" \/>[\s\S]*?<path d="M12 17h4" \/>/);
   assert.doesNotMatch(brandMarkSource, /M13 8\.5h3|L14\.5 5|l-3 4\.5/);
@@ -1338,9 +1346,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /if \(attentionChatId\) \{\s*return createAgentChatRoute\(agent\.agentKey, attentionChatId\);/);
   assert.match(sidebarSource, /if \(!options\.preferNewChat\) \{\s*return createAgentDefaultRoute\(agent\);/);
   assert.match(sidebarSource, /return createAgentNewChatRoute\(agent\.agentKey\);/);
-  assert.match(sidebarSource, /function createAgentHistoryRoute\(agentKey: string\)/);
-  assert.match(sidebarSource, /params\.set\("history", "1"\)/);
-  assert.match(sidebarSource, /params\.set\("historyRequest", String\(Date\.now\(\)\)\)/);
+  assert.doesNotMatch(sidebarSource, /createAgentHistoryRoute|historyRequest|historyRequested/);
   assert.doesNotMatch(sidebarSource, /createAgentEmbedPath/);
   assert.match(sidebarSource, /return createAgentWebclientAgentPath\(agentKey\)/);
   assert.match(sidebarSource, /return createAgentWebclientRoute\(\{ agentKey, chatId \}\)/);
@@ -1350,19 +1356,36 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /function dispatchAgentRouteActionToActiveWebview\(targetPath: string\)/);
   assert.match(sidebarSource, /return `\$\{createAgentRoute\(agentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
   assert.doesNotMatch(sidebarSource, /newChatRequest/);
-  assert.match(sidebarSource, /setExpandedAssistantAgentKey\(result\.agentKey\);\s*requestNavigate\(createAgentNewChatRoute\(result\.agentKey\)\);/);
+  assert.match(sidebarSource, /setAssistantAgentExpanded\(result\.agentKey, true\);\s*requestNavigate\(createAgentNewChatRoute\(result\.agentKey\)\);/);
   assert.doesNotMatch(sidebarSource, /newChatRequested/);
   assert.match(sidebarSource, /requestNavigate\(\s*createAgentChatRoute\(chat\.agentKey \|\| currentAgentKey, chat\.chatId\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\},?\s*\)/);
   const assistantAgentExpandHandler =
     sidebarSource.match(/function handleAssistantAgentExpand[\s\S]*?function handleAssistantNewChat/)?.[0] ?? "";
   assert.match(
     assistantAgentExpandHandler,
-    /setExpandedAssistantAgentKey\(expanded \? agent\.agentKey : ""\);/,
+    /setAssistantAgentExpanded\(agent\.agentKey, expanded\);/,
   );
   assert.doesNotMatch(
     assistantAgentExpandHandler,
     /requestNavigate|createAgentSelectionRoute/,
   );
+  assert.match(
+    sidebarSource,
+    /const allProjectsExpanded =[\s\S]*?primaryAssistantNavAgents\.every\(\(agent\) =>[\s\S]*?expandedAssistantAgentKeys\.has\(agent\.agentKey\)/,
+  );
+  assert.match(
+    sidebarSource,
+    /function handleToggleAllProjects[\s\S]*?setAssistantAgentChatVisibleLimits[\s\S]*?new Map<string, number>\(\)[\s\S]*?allProjectsExpanded[\s\S]*?primaryAssistantNavAgents\.map\(\(agent\) => agent\.agentKey\)/,
+  );
+  assert.match(
+    sidebarSource,
+    /sidebar-assistant-expand-button[\s\S]*?kind=\{allProjectsExpanded \? "collapse_all" : "expand_all"\}/,
+  );
+  assert.match(
+    assistantAgentRenderer,
+    /const recentChats = getAssistantNavAgentPreviewChats\(\s*agent,\s*projectChatVisibleLimit,\s*\);/,
+  );
+  assert.match(sidebarSource, /const PROJECT_CHATS_VISIBLE_LIMIT = 5;/);
   assert.match(sidebarSource, /onExpand=\{\(val\) => handleAssistantAgentExpand\(agent, val\)\}/);
   assert.doesNotMatch(sidebarSource, /handleAssistantAgentHeaderClick/);
   assert.match(sidebarSource, /displayCurrentPathname\.startsWith\("\/agent\/"\)/);
@@ -1371,20 +1394,17 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /AssistantHistoryState/);
   assert.doesNotMatch(sidebarSource, /assistantHistory/);
   assert.doesNotMatch(sidebarSource, /renderAssistantHistory/);
-  assert.match(sidebarSource, /const recentChats = getAssistantNavAgentPreviewChats\(agent\);/);
+  assert.match(sidebarSource, /const recentChats = getAssistantNavAgentPreviewChats\(\s*agent,\s*projectChatVisibleLimit,\s*\);/);
   assert.match(sidebarSource, /const chatCount = Math\.max\(\s*0,\s*getAssistantNavAgentNonNegativeInteger\(agent\.chatCount\),\s*allRecentChats\.length,?\s*\);/);
-  assert.match(sidebarSource, /const rowUnreadCount = allRecentChats\.filter\(\(chat\) => !chat\.isRead\)\.length;/);
   assert.match(sidebarSource, /recentChats\.length > 0 \? \(/);
   assert.match(sidebarSource, /agent\.latestPreview \|\| \(chatCount > 0 \? "" : t\("sidebar\.agent\.noChats"\)\)/);
   assert.match(sidebarSource, /\) : chatCount === 0 \? \(\s*<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
-  assert.match(sidebarSource, /chatCount > recentChats\.length \? \(/);
-  assert.match(sidebarSource, /historyRequested: url\.searchParams\.get\("history"\)\?\.trim\(\) === "1"/);
+  assert.match(sidebarSource, /projectShowMoreAvailable \|\| projectHistoryAvailable \? \(/);
   assert.doesNotMatch(sidebarSource, /workerKey: `agent:\$\{agentKey\}`/);
-  assert.match(sidebarSource, /lastRouteAgentInfoRef = useRef\(readAgentRouteInfo\(currentRoute\)\)/);
-  assert.match(sidebarSource, /previousRouteAgentInfo\.historyRequested/);
-  assert.match(sidebarSource, /setExpandedAssistantAgentKey\(""\)/);
-  assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
-  assert.match(sidebarSource, /unread:\s*rowUnreadCount > 0 \? t\("sidebar\.chat\.unreadSuffix", \{ count: rowUnreadCount \}\) : ""/);
+  assert.match(sidebarSource, /onOpenChatHistory\?\.\(agent\.agentKey\)/);
+  assert.match(sidebarSource, /className="sidebar-project-chat-actions"/);
+  assert.match(sidebarSource, /t\("sidebar\.chat\.viewMoreSimple"\)/);
+  assert.match(sidebarSource, /t\("sidebar\.chats\.viewMoreHistory"\)/);
   assert.match(sidebarSource, /<div className="status-line">\{t\("sidebar\.agent\.noChats"\)\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /暂无相关会话/);
   assert.doesNotMatch(sidebarSource, /Math\.max\(agent\.chatCount, recentChats\.length\) > 5/);
@@ -1405,7 +1425,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.ok(markAllReadHandlerStart > newChatHandlerStart);
   const newChatHandler = sidebarSource.slice(newChatHandlerStart, markAllReadHandlerStart);
   assert.doesNotMatch(newChatHandler, /preferNewChat|createAgentSelectionRoute/);
-  assert.match(newChatHandler, /requestNavigate\(\s*createAgentNewChatRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
+  assert.match(newChatHandler, /requestNavigate\(\s*createAgentNewChatRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true,?\s*\}\s*\)/);
   const activeChatIdStart = sidebarSource.indexOf("function getActiveSidebarChatId");
   const routeActiveStart = sidebarSource.indexOf("function isRouteActive", activeChatIdStart);
   assert.ok(activeChatIdStart >= 0);
@@ -1435,7 +1455,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /worker-panel-time-label/);
   assert.doesNotMatch(sidebarSource, /<Tooltip content=\{t\("sidebar\.agent\.markAllRead"\)\}>/);
   assert.match(sidebarSource, /<Tooltip content=\{t\("sidebar\.agent\.newChat"\)\}>/);
-  assert.match(sidebarSource, /t\("sidebar\.chat\.viewMore", \{/);
+  assert.match(sidebarSource, /t\("sidebar\.chat\.viewMoreSimple"\)/);
   assert.match(sidebarSource, /getAssistantAwaitingStatusKey/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.approval/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.form/);
@@ -1700,7 +1720,7 @@ test("sidebar top navigation exposes scoped back and forward history controls", 
   assert.match(sidebarSource, /disabled=\{!sidebarNavigationCanGoForward\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateBack\}/);
   assert.match(sidebarSource, /onClick=\{onSidebarNavigateForward\}/);
-  assert.match(sidebarSource, /requestNavigate\(\s*createAgentHistoryRoute\(agent\.agentKey\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\}\s*\)/);
+  assert.match(sidebarSource, /onOpenChatHistory\?: \(agentKey\?: string\) => void;/);
 
   assert.match(globalStyles, /\.sidebar-history-controls\s*\{/);
   assert.match(globalStyles, /\.sidebar-history-button:disabled\s*\{/);
@@ -1731,7 +1751,7 @@ test("Projects sidebar toggles without navigation and summarizes numeric awaitin
 
   assert.match(
     assistantAgentExpandHandler,
-    /setExpandedAssistantAgentKey\(expanded \? agent\.agentKey : ""\);/,
+    /setAssistantAgentExpanded\(agent\.agentKey, expanded\);/,
   );
   assert.doesNotMatch(
     assistantAgentExpandHandler,
@@ -1903,7 +1923,7 @@ test("sidebar header icon buttons use color-only hover feedback", () => {
   );
 
   for (const className of [
-    "sidebar-assistant-sort-button",
+    "sidebar-assistant-expand-button",
     "sidebar-assistant-refresh-button",
     "sidebar-assistant-project-button",
     "sidebar-chats-share-button",
@@ -1942,8 +1962,8 @@ test("assistant sidebar chat history selection follows the current chat route", 
   assert.match(sidebarSource, /function getActiveSidebarChatId\(\s*agentKey: string,\s*chats: AssistantNavChatItem\[\] = \[\],\s*\)/);
   assert.match(sidebarSource, /agent\.agentKey === activeSidebarAgentKey/);
   assert.match(sidebarSource, /const activeAgentChanged =\s*lastAutoExpandedAssistantAgentKeyRef\.current !== matched\.agentKey;/);
-  assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,220}setExpandedAssistantAgentKey\(matched\.agentKey\);/);
-  assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey\]\);/);
+  assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,500}next\.add\(matched\.agentKey\);/);
+  assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKeys\]\);/);
   assert.match(sidebarSource, /const routeChatId = activeSidebarChatId;/);
   assert.match(sidebarSource, /if \(routeChatId\) \{[\s\S]{0,80}return routeChatId;/);
   assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey, allRecentChats\);/);
@@ -1981,7 +2001,7 @@ test("sidebar assigns Chats and Projects a single route owner", () => {
   assert.match(sidebarSource, /isAssistantNavProjectAgent\(agent\)[\s\S]{0,80}return "assistants";/);
   assert.match(sidebarSource, /isAssistantNavChatAgent\(agent\)[\s\S]{0,80}return "chats";/);
   assert.match(sidebarSource, /chatItems\.some\([\s\S]{0,160}chat\.agentKey === agentKey && chat\.chatId === routeInfo\.chatId[\s\S]{0,100}return "chats";/);
-  assert.match(sidebarSource, /if \(routeInfo\.historyRequested\) \{\s*return "assistants";/);
+  assert.doesNotMatch(sidebarSource, /routeInfo\.historyRequested/);
   assert.match(sidebarSource, /routeInfo\.newChatRequested[\s\S]{0,160}agentKey === options\.defaultChatAgentKey[\s\S]{0,100}return "chats";/);
   assert.match(sidebarSource, /const navigationOwner = resolveSidebarNavigationOwner\([\s\S]*?activeNavigationRouteInfo[\s\S]*?chatNavigationAgentsByKey[\s\S]*?assistantNavChatItems/);
   assert.match(sidebarSource, /const activeNavigationRouteInfo = pendingAgentKey\s*\? pendingRouteAgentInfo\s*:\s*currentRouteAgentInfo;/);
@@ -2089,17 +2109,17 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.form": "等待提交"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.question": "等待回答"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.planning": "等待实施"/);
-  assert.match(zhCN, /"sidebar\.assistants\.sortByName": "按名称"/);
-  assert.match(zhCN, /"sidebar\.assistants\.sortByTime": "按时间"/);
+  assert.match(zhCN, /"sidebar\.project\.dragHandle": "拖拽调整项目顺序：\{name\}"/);
+  assert.doesNotMatch(zhCN, /sidebar\.assistants\.sortBy(?:Name|Time)/u);
   assert.match(zhCN, /"nav\.archives": "已归档对话"/);
   assert.match(enUS, /"sidebar\.assistants\.empty": "No projects\. Hover over 'Projects' to add\."/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Await Appr"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Await Submit"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Ques"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.planning": "Await Impl"/);
-  assert.match(enUS, /"sidebar\.assistants\.sortByName": "By name"/);
+  assert.match(enUS, /"sidebar\.project\.dragHandle": "Drag to reorder project: \{name\}"/);
   assert.match(enUS, /"nav\.archives": "Archived Chats"/);
-  assert.match(enUS, /"sidebar\.assistants\.sortByTime": "By time"/);
+  assert.doesNotMatch(enUS, /sidebar\.assistants\.sortBy(?:Name|Time)/u);
 });
 
 test("assistant sidebar empty state waits for navigation load", () => {
@@ -2165,13 +2185,104 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
   assert.match(sidebarSource, /assistantNavChatItems\?: AssistantNavChatItem\[\]/);
   assert.match(sidebarSource, /const CHATS_VISIBLE_LIMIT = 8;/);
-  assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, CHATS_VISIBLE_LIMIT\)/);
+  assert.match(sidebarSource, /const CHATS_VISIBLE_INCREMENT = 8;/);
+  assert.match(sidebarSource, /const CHATS_MAX_VISIBLE_LIMIT = 24;/);
+  assert.match(sidebarSource, /const \[chatsVisibleLimit, setChatsVisibleLimit\] = useState\(\s*CHATS_VISIBLE_LIMIT,\s*\);/);
   assert.doesNotMatch(sidebarSource, /getAssistantNavRecentChatsOverview/);
   assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
-  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
+  assert.doesNotMatch(sidebarSource, /sortAssistantNavAgentsForMode|assistantNavSortMode/u);
+  assert.match(sidebarSource, /renderSortableAssistantProjects\(\)/u);
   assert.doesNotMatch(sidebarSource, /const CHATS_RECENT_LIMIT = 8;/);
   assert.match(appShell, /function getChatNavigationAgentOptions\(items: AssistantNavAgentItem\[\]\)[\s\S]*?items\.filter\(isAssistantNavChatAgent\)/);
   assert.match(appShell, /setChatNavAgentOptions\(getChatNavigationAgentOptions\(navigationItems\)\)/);
+});
+
+test("Projects chats expand from 5 to 20 and open history filtered by Project", () => {
+  const sidebarSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const navigationStyles = readSourceFile(
+    "src",
+    "renderer",
+    "styles",
+    "navigation.css",
+  );
+  const appShell = readAppShellSource();
+  const historyDialogSource = readSourceFile(
+    "src",
+    "renderer",
+    "app-shell",
+    "history",
+    "ChatHistoryDialog.tsx",
+  );
+  const projectShowMoreHandler =
+    sidebarSource.match(
+      /function handleAssistantProjectShowMore[\s\S]*?function startChatsNewChat/,
+    )?.[0] ?? "";
+  const projectRenderer =
+    sidebarSource.match(
+      /function renderAssistantAgent\([\s\S]*?function renderSortableAssistantProjects/,
+    )?.[0] ?? "";
+  const projectExpansionSetter =
+    sidebarSource.match(
+      /function setAssistantAgentExpanded[\s\S]*?function handleAssistantAgentExpand/,
+    )?.[0] ?? "";
+
+  assert.match(sidebarSource, /const PROJECT_CHATS_VISIBLE_LIMIT = 5;/);
+  assert.match(sidebarSource, /const PROJECT_CHATS_VISIBLE_INCREMENT = 5;/);
+  assert.match(sidebarSource, /const PROJECT_CHATS_MAX_VISIBLE_LIMIT = 20;/);
+  assert.match(
+    sidebarSource,
+    /useState<Map<string, number>>\(\(\) => new Map<string, number>\(\)\)/,
+  );
+  assert.match(
+    projectRenderer,
+    /getAssistantNavAgentPreviewChats\(\s*agent,\s*projectChatVisibleLimit,\s*\)/,
+  );
+  assert.match(
+    projectShowMoreHandler,
+    /Math\.min\(\s*\(current\.get\(agent\.agentKey\) \?\? PROJECT_CHATS_VISIBLE_LIMIT\) \+\s*PROJECT_CHATS_VISIBLE_INCREMENT,\s*PROJECT_CHATS_MAX_VISIBLE_LIMIT/,
+  );
+  assert.match(
+    projectRenderer,
+    /projectChatVisibleLimit < PROJECT_CHATS_MAX_VISIBLE_LIMIT &&\s*allRecentChats\.length > projectChatVisibleLimit/,
+  );
+  assert.match(
+    projectRenderer,
+    /const projectHistoryAvailable = chatCount > PROJECT_CHATS_VISIBLE_LIMIT;/,
+  );
+  assert.match(projectRenderer, /className="sidebar-project-chat-actions"/);
+  assert.match(projectRenderer, /data-sidebar-nav-kind=\{roving \? "agent-more" : undefined\}/);
+  assert.match(projectRenderer, /data-sidebar-nav-kind=\{roving \? "agent-history" : undefined\}/);
+  assert.match(projectRenderer, /onOpenChatHistory\?\.\(agent\.agentKey\)/);
+  assert.match(
+    projectExpansionSetter,
+    /if \(!expanded\)[\s\S]*?next\.delete\(agentKey\)/,
+  );
+  assert.match(
+    sidebarSource,
+    /function handleToggleAllProjects[\s\S]*?setAssistantAgentChatVisibleLimits\([\s\S]*?new Map<string, number>\(\)[\s\S]*?setExpandedAssistantAgentKeys/,
+  );
+  assert.match(
+    sidebarSource,
+    /if \(sidebarGroupState\.assistants\)[\s\S]*?setAssistantAgentChatVisibleLimits[\s\S]*?new Map<string, number>\(\)/,
+  );
+  assert.match(
+    navigationStyles,
+    /\.sidebar-project-chat-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*4px;/,
+  );
+  assert.match(
+    appShell,
+    /function openChatHistoryDialog\(agentKey = ""\)[\s\S]*?agentKey:\s*agentKey\.trim\(\)/,
+  );
+  assert.match(
+    historyDialogSource,
+    /const \[ownerKey, setOwnerKey\] = useState\(normalizedAgentKey \|\| ALL_OWNERS\);/,
+  );
 });
 
 test("Chats sidebar retains global chatItems and adds a default-agent history entry", () => {
@@ -2190,17 +2301,20 @@ test("Chats sidebar retains global chatItems and adds a default-agent history en
 
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
   assert.match(appShell, /assistantNavChatItemsHasMore=\{assistantNavChatItemsHasMore\}/);
-  assert.match(sidebarSource, /const sidebarChatItems = useMemo\(\s*\(\) => assistantNavChatItems\.slice\(0, CHATS_VISIBLE_LIMIT\)/);
+  assert.match(sidebarSource, /assistantNavChatItems\.slice\(0, chatsVisibleLimit\)/);
   assert.match(chatsListSource, /sidebarChatItems\.map\(\(chat\) =>/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey, chat\.chatId\)/);
   assert.doesNotMatch(chatsListSource, /recentChats/);
-  assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
-  assert.match(chatsListSource, /worker-chat-more assistant-worker-more sidebar-chats-more/);
-  assert.match(sidebarSource, /createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /const chatsShowMoreAvailable =\s*chatsVisibleLimit < CHATS_MAX_VISIBLE_LIMIT &&\s*assistantNavChatItems\.length > chatsVisibleLimit/);
+  assert.match(sidebarSource, /const chatsHistoryAvailable =\s*\(assistantNavChatItems\.length > CHATS_VISIBLE_LIMIT \|\|\s*assistantNavChatItemsHasMore\)/);
+  assert.match(chatsListSource, /className="sidebar-chats-actions"/);
+  assert.match(chatsListSource, /onClick=\{handleChatsShowMore\}[\s\S]{0,120}sidebar\.chat\.viewMoreSimple/);
+  assert.match(chatsListSource, /onClick=\{handleChatsOpenHistory\}[\s\S]{0,120}sidebar\.chats\.viewMoreHistory/);
+  assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?onOpenChatHistory\?\.\(\)/);
   assert.match(sidebarSource, /function dispatchAgentWebclientRouteToActiveWebview\(targetPath: string\)/);
-  assert.match(sidebarSource, /targetAgentInfo\.historyRequested \|\|\s*targetAgentInfo\.newChatRequested/);
+  assert.match(sidebarSource, /targetAgentInfo\.newChatRequested/);
   assert.match(sidebarSource, /dispatchAgentWebclientRouteToActiveWebview\(targetPath\)/);
-  assert.match(sidebarSource, /webview\.send\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, \{\s*action: "openChatHistory"/);
+  assert.doesNotMatch(sidebarSource, /openChatHistory|history=1/);
 });
 
 test("Chats sidebar reuses the Projects chat row status and unread layout", () => {
@@ -2223,6 +2337,7 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
   assert.match(chatsListSource, /navigationKind: "chats-chat"/);
   assert.match(chatsListSource, /rowClassName: "sidebar-chats-row"/);
   assert.match(chatsListSource, /itemClassName: \[\s*"sidebar-chats-item"/);
+  assert.match(styles, /\.sidebar-chats-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*4px;/);
   assert.match(chatsListSource, /wrapItem: \(item\) => \(/);
   assert.match(
     chatsListSource,
@@ -3398,18 +3513,22 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-label\s*\{/);
   assert.match(popover, /children\.props\["aria-haspopup"\] \?\? "dialog"/);
 
-  assert.match(sidebarSource, /const chatsHistoryAvailable =\s*assistantNavChatItemsHasMore/);
-  assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?createAgentHistoryRoute\(resolvedChatDefaultAgentKey\)/);
+  assert.match(sidebarSource, /const chatsHistoryAvailable =\s*\(assistantNavChatItems\.length > CHATS_VISIBLE_LIMIT \|\|\s*assistantNavChatItemsHasMore\)/);
+  assert.match(sidebarSource, /function handleChatsOpenHistory[\s\S]*?onOpenChatHistory\?\.\(\)/);
+  assert.match(sidebarSource, /function handleChatsShowMore[\s\S]*?Math\.min\(current \+ CHATS_VISIBLE_INCREMENT, CHATS_MAX_VISIBLE_LIMIT\)/);
+  assert.match(sidebarSource, /if \(sidebarGroupState\.chats\)[\s\S]*?setChatsVisibleLimit\(CHATS_VISIBLE_LIMIT\)/);
   assert.match(sidebarSource, /createSidebarChatsMoreFocusId\(\)/);
   assert.match(sidebarSource, /data-sidebar-nav-kind=\{roving \? "chats-more" : undefined\}/);
+  assert.match(sidebarSource, /createSidebarChatsHistoryFocusId\(\)/);
+  assert.match(sidebarSource, /data-sidebar-nav-kind=\{roving \? "chats-history" : undefined\}/);
   assert.match(sidebarSource, /sidebar\.chats\.viewMoreHistory/);
 
   assert.match(appShell, /const \[assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore\] = useState\(false\);/);
   assert.match(appShell, /setAssistantNavChatItemsHasMore\(nextResult\.chatItemsHasMore\)/);
   assert.match(appShell, /async function saveChatsDefaultAgent\(agentKey: string\)[\s\S]*?saveSettings\(\{[\s\S]*?chatDefaultAgentKey: normalizedAgentKey/);
   assert.match(appShell, /onChatsDefaultAgentChange=\{saveChatsDefaultAgent\}/);
-  assert.match(zhCN, /"sidebar\.chats\.viewMoreHistory": "查看更多历史"/);
-  assert.match(enUS, /"sidebar\.chats\.viewMoreHistory": "View more history"/);
+  assert.match(zhCN, /"sidebar\.chats\.viewMoreHistory": "查看历史"/);
+  assert.match(enUS, /"sidebar\.chats\.viewMoreHistory": "View history"/);
   assert.match(zhCN, /"sidebar\.chats\.defaultAgentMenuLabel": "设置对话的默认智能体"/);
   assert.match(enUS, /"sidebar\.chats\.defaultAgentMenuLabel": "Set the default agent for chats"/);
 });
@@ -4691,6 +4810,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /interface AssistantCreateProjectRequest/);
   assert.match(contracts, /type AssistantCreateProjectType = "coder" \| "kbase"/);
   assert.match(contracts, /interface AssistantCreateProjectResult/);
+  assert.match(contracts, /interface AssistantReorderProjectsRequest[\s\S]*?agentKeys: string\[\]/);
+  assert.match(contracts, /interface AssistantReorderProjectsResult[\s\S]*?updatedAt\?: EpochMilliseconds/);
   assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
   assert.match(contracts, /type AssistantCreateCoderProjectResult = AssistantCreateProjectResult/);
   assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
@@ -4701,6 +4822,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
   assert.match(contracts, /getNavigationLiveStatus: \(\) => Promise<AssistantNavigationLiveStatus>/);
   assert.match(contracts, /createProject:\s*\(input: AssistantCreateProjectRequest\) => Promise<AssistantCreateProjectResult>/);
+  assert.match(contracts, /reorderProjects:\s*\(input: AssistantReorderProjectsRequest\) => Promise<AssistantReorderProjectsResult>/);
   assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
@@ -4709,6 +4831,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(preload, /getNavigationLiveStatus: \(\) => ipcRenderer\.invoke\("assistant\.getNavigationLiveStatus"\)/);
   assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createProject:\s*\(input: AssistantCreateProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createProject", input\)/);
+  assert.match(preload, /reorderProjects:\s*\(input: AssistantReorderProjectsRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.reorderProjects", input\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
   assert.doesNotMatch(preload, /onBootstrapStateChanged|assistant\.bootstrapStateChanged/);
@@ -4720,16 +4843,21 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getNavigationLiveStatus"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createProject"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.reorderProjects"/);
+  assert.match(assistantHandlers, /"\/api\/agents\?scope=nav&mode=CODER&mode=KBASE"/);
+  assert.match(assistantHandlers, /"\/api\/agents\/order"[\s\S]{0,120}method: "PUT"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createCoderProject"/);
   assert.match(assistantHandlers, /callAgentPlatform\?\.?\(app, "\/api\/admin\/agents\/create"/);
   assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
   assert.match(assistantRuntime, /AssistantNavigationStatusClient/);
   assert.match(assistantNavigationStatusClient, /type: "\/api\/chats"/);
   assert.match(assistantNavigationStatusClient, /mode: NAVIGATION_CHAT_AGENT_MODE/);
+  assert.match(assistantNavigationStatusClient, /const NAVIGATION_CHAT_LIMIT = 24;/);
   assert.match(assistantNavigationStatusClient, /const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT \+ 1;/);
   assert.match(assistantNavigationStatusClient, /limit: NAVIGATION_CHAT_PROBE_LIMIT/);
   assert.match(assistantNavigationStatusClient, /buildAssistantNavigationChatsSnapshotFromPlatform/);
   assert.match(assistantNavigationStatusClient, /applyAssistantNavigationChatPush/);
+  assert.doesNotMatch(assistantNavigationStatusClient, /sortNavigationAgents|compareNavigationAgents/u);
   assert.match(assistantNavigationStatusClient, /getLiveStatus\(\): AssistantNavigationLiveStatus/);
   assert.match(assistantNavigationStatusClient, /const NAVIGATION_LIVE_FRAME_LIMIT = 20;/);
   assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
@@ -4888,14 +5016,17 @@ test("desktop global search contract is wired across main preload renderer and h
   );
   assert.match(appShell, /<DesktopGlobalSearchOverlay/);
   assert.match(appShell, /defaultChatAgentKey=\{chatRuntimeAgent\.agentKey\}/);
+  assert.match(appShell, /onOpenHistory=\{\(\) => openChatHistoryDialog\(\)\}/);
   assert.match(overlay, /searchChats\(\{ query: trimmedQuery, limit: 30 \}\)/);
   assert.match(overlay, /const newChatAgentKey = currentAgentKey \|\| props\.defaultChatAgentKey\.trim\(\)/);
+  assert.match(overlay, /if \(actionId === "history"\) \{[\s\S]*?options\.onClose\(\);[\s\S]*?options\.onOpenHistory\(\);/);
   assert.match(overlay, /params\.set\("newChat", String\(Date\.now\(\)\)\)/);
   assert.match(overlay, /return createAgentWebclientAgentPath\(newChatAgentKey, params\);/);
   assert.doesNotMatch(overlay, /newChatRequest/);
   assert.match(overlay, /import \{ SidebarActionIcon, SidebarIllustration \} from "\.\.\/\.\.\/components\/BrandMark";/);
   assert.match(overlay, /import \{ AgentIcon \} from "\.\.\/navigation\/AgentIcon";/);
   assert.match(overlay, /row\.actionId === "newChat"[\s\S]*?<SidebarActionIcon kind="new_chat" \/>/);
+  assert.match(overlay, /row\.actionId === "history"[\s\S]*?<ClockCircleOutlined \/>/);
   assert.match(overlay, /row\.actionId === "agents"[\s\S]*?<SidebarIllustration kind="agent" \/>/);
   assert.match(overlay, /row\.actionId === "skills"[\s\S]*?<SidebarIllustration kind="skill" \/>/);
   assert.match(overlay, /row\.actionId === "mcpConnectors"[\s\S]*?<SidebarIllustration kind="connector" \/>/);
@@ -4953,11 +5084,13 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(i18nEn, /"desktop\.globalSearch\.group\.awaiting": "Awaiting"/);
   assert.doesNotMatch(i18nEn, /desktop\.globalSearch\.status\.awaiting/);
   assert.match(i18nEn, /"desktop\.globalSearch\.group\.unread": "Unread chats"/);
+  assert.match(i18nEn, /"desktop\.globalSearch\.action\.history": "Open chat history"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.skills": "Open Skills Center"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.mcpConnectors": "Open MCP connections"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.awaiting": "等待中"/);
   assert.doesNotMatch(i18nZh, /desktop\.globalSearch\.status\.awaiting/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.unread": "未读聊天"/);
+  assert.match(i18nZh, /"desktop\.globalSearch\.action\.history": "打开对话历史"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.skills": "打开技能中心"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.mcpConnectors": "打开 MCP 连接"/);
 });
@@ -5440,10 +5573,20 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(dialog, /desktop-action-confirmation-buttons/);
   assert.match(dialog, /useLayoutEffect/);
   assert.match(dialog, /focusTarget\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(dialog, /window\.addEventListener\("focus", focusDefaultDecision\)/);
+  assert.match(dialog, /window\.removeEventListener\("focus", focusDefaultDecision\)/);
+  assert.match(dialog, /previouslyFocusedElement\?\.isConnected/);
   assert.match(dialog, /\[request\?\.defaultDecision, request\?\.requestId\]/);
   assert.doesNotMatch(dialog, /setTimeout/);
   assert.match(dialog, /event\.key === "Escape"/);
+  assert.match(dialog, /event\.key === "Enter"/);
+  assert.match(dialog, /isNativeEnterTarget\(dialog, document\.activeElement\)/);
+  assert.match(dialog, /defaultButtonRef\.current\?\.click\(\)/);
+  assert.match(dialog, /!event\.isComposing/);
+  assert.match(dialog, /!event\.repeat/);
   assert.match(dialog, /event\.key !== "Tab"/);
+  assert.match(dialog, /window\.addEventListener\("keydown", handleKeyDown, true\)/);
+  assert.match(dialog, /window\.removeEventListener\("keydown", handleKeyDown, true\)/);
   assert.doesNotMatch(dialog, /event\.key\s*===\s*"(?: |Space|Spacebar)"/);
   assert.match(dialog, /tabIndex=\{-1\}/);
   assert.match(dialog, /data-decision=\{button\.decision\}/);
@@ -5732,7 +5875,7 @@ test("market route keeps the unified native drag overlay", () => {
   assert.match(appShell, /className="app-window-drag-layer"[\s\S]*className="app-window-drag-region"/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-market-controls\s+\.app-window-drag-region\s*\{[\s\S]*?display:\s*none;/);
   assert.match(globalStyles, /\.app-shell\s*\{[^}]*--app-window-drag-height:\s*12px;/);
-  assert.match(globalStyles, /\.app-window-drag-region\s*\{[^}]*flex:\s*0 0 var\(--app-window-drag-height,\s*12px\);/);
+  assert.match(globalStyles, /\.app-window-drag-layer\s*\{[^}]*height:\s*var\(--app-window-drag-height,\s*12px\);/);
   assert.match(marketStyles, /-webkit-app-region:\s*no-drag;/);
 });
 
@@ -5761,6 +5904,22 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-embedded-surface\.is-mac-platform\.has-service-webview-surface\s*\{/);
   assert.doesNotMatch(globalStyles, /--mac-embedded-titlebar-height:/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content\s*\{[^}]*padding-top:\s*var\(--app-window-drag-height\);/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content::before\s*\{[^}]*inset:\s*0 0 auto;[^}]*display:\s*block;[^}]*height:\s*var\(--app-window-drag-height\);[^}]*background:\s*var\(--embedded-surface-page-bg\);[^}]*pointer-events:\s*none;/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region\s*\{[^}]*position:\s*relative;[^}]*background:\s*var\(--embedded-surface-page-bg\);[^}]*box-shadow:\s*none;/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{[^}]*top:\s*3px;[^}]*left:\s*50%;[^}]*width:\s*28px;[^}]*height:\s*2px;[^}]*background:\s*var\(--desktop-ui-border\);[^}]*pointer-events:\s*none;/
+  );
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-service-webview-surface \.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*padding-top:/
@@ -5847,16 +6006,17 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShellRule, /--app-window-drag-right:\s*0px;/);
   assert.ok(dragLayerRule, "missing .app-window-drag-layer rule");
   assert.match(dragLayerRule, /position:\s*absolute;/);
-  assert.match(dragLayerRule, /inset:\s*0;/);
+  assert.match(dragLayerRule, /top:\s*0;/);
+  assert.match(dragLayerRule, /left:\s*var\(--app-window-drag-left,\s*var\(--app-sidebar-width,\s*160px\)\);/);
+  assert.match(dragLayerRule, /right:\s*var\(--app-window-drag-right,\s*0px\);/);
+  assert.match(dragLayerRule, /height:\s*var\(--app-window-drag-height,\s*12px\);/);
   assert.match(dragLayerRule, /z-index:\s*1000;/);
-  assert.match(dragLayerRule, /display:\s*flex;/);
-  assert.match(dragLayerRule, /flex-direction:\s*column;/);
-  assert.match(dragLayerRule, /pointer-events:\s*none;/);
+  assert.match(dragLayerRule, /pointer-events:\s*auto;/);
+  assert.match(dragLayerRule, /cursor:\s*grab;/);
   assert.ok(dragRegionRule, "missing .app-window-drag-region rule");
-  assert.match(dragRegionRule, /flex:\s*0 0 var\(--app-window-drag-height,\s*12px\);/);
-  assert.match(dragRegionRule, /height:\s*var\(--app-window-drag-height,\s*12px\);/);
-  assert.match(dragRegionRule, /margin-left:\s*var\(--app-window-drag-left,\s*var\(--app-sidebar-width,\s*160px\)\);/);
-  assert.match(dragRegionRule, /margin-right:\s*var\(--app-window-drag-right,\s*0px\);/);
+  assert.match(dragRegionRule, /width:\s*100%;/);
+  assert.match(dragRegionRule, /height:\s*100%;/);
+  assert.match(dragRegionRule, /margin:\s*0;/);
   assert.match(dragRegionRule, /app-region:\s*no-drag;/);
   assert.match(dragRegionRule, /-webkit-app-region:\s*no-drag;/);
   assert.match(dragRegionRule, /pointer-events:\s*auto;/);
@@ -5901,7 +6061,10 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShell, /window\.addEventListener\("pointerup", finishDrag, true\)/);
   assert.match(appShell, /window\.addEventListener\("pointercancel", finishDrag, true\)/);
   assert.match(appShell, /window\.addEventListener\("mouseup", finishDragOnMouseUp, true\)/);
-  assert.match(appShell, /window\.addEventListener\("blur", finishDrag, true\)/);
+  assert.match(appShell, /finishDragOnWindowBlur[\s\S]*?blurEvent\.target === window[\s\S]*?finishDrag\(\)/);
+  assert.match(appShell, /window\.addEventListener\("blur", finishDragOnWindowBlur\)/);
+  assert.match(appShell, /window\.removeEventListener\("blur", finishDragOnWindowBlur\)/);
+  assert.doesNotMatch(appShell, /window\.addEventListener\("blur", finishDragOnWindowBlur, true\)/);
   assert.doesNotMatch(appShell, /pointerEvent\.buttons === 0[\s\S]*?finishDrag\(\)/);
   assert.match(appShell, /finishDragOnLostPointerCapture:\s*EventListener[\s\S]*?captureEvent as globalThis\.PointerEvent[\s\S]*?pointerEvent\.buttons !== 0[\s\S]*?requestAnimationFrame[\s\S]*?dragTarget\.setPointerCapture\(pointerId\)[\s\S]*?return;[\s\S]*?finishDrag\(\)/);
   assert.match(appShell, /dragTarget\.addEventListener\("lostpointercapture", finishDragOnLostPointerCapture, true\)/);
@@ -6139,7 +6302,8 @@ test("web copilot dock yields to native dialogs", () => {
   assert.match(preload, /onNativeDialogVisibility/);
   assert.match(appShell, /nativeDialogVisible/);
   assert.match(appShell, /<AgentWebclientCopilotDock/);
-  assert.match(appShell, /nativeDialogVisible=\{nativeDialogVisible \|\| Boolean\(desktopActionConfirmation\)\}/);
+  assert.match(appShell, /const copilotDockNativeDialogVisible =[\s\S]*?Boolean\(chatHistoryDialog\)/);
+  assert.match(appShell, /nativeDialogVisible=\{copilotDockNativeDialogVisible\}/);
   assert.match(globalStyles, /\.agent-webclient-copilot-dock\.is-native-dialog-open/);
 });
 
@@ -6230,7 +6394,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /lastHostAppliedChatRouteRef/);
   assert.match(serviceWebviewSurface, /function isAgentWebclientChatSurface\(/);
   assert.match(serviceWebviewSurface, /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/);
-  assert.match(serviceWebviewSurface, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]{0,900}navigate\(nextChatRoute, \{ replace: true \}\)/);
+  assert.match(serviceWebviewSurface, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
   assert.doesNotMatch(serviceWebviewSurface, /ChatRouteMessage/);
   assert.doesNotMatch(serviceWebviewSurface, /handleAgentWebclientChatRouteMessage/);
   assert.doesNotMatch(serviceWebviewSurface, /createAgentWebclientChatRoute/);
@@ -6314,8 +6478,8 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewMainWorld, /agent-webclient\.appAuthContext/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_AUTH_CONTEXT = currentContext/);
   assert.match(serviceWebviewMainWorld, /removeItem\(AGENT_APP_ACCESS_TOKEN_STORAGE_KEY\)/);
-  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_PLATFORM_WS_GLOBAL/);
-  assert.match(serviceWebviewMainWorld, /createSocket/);
+  assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_GLOBAL/);
+  assert.match(serviceWebviewMainWorld, /createSession/);
   assert.match(serviceWebviewMainWorld, /AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL/);
   assert.doesNotMatch(serviceWebviewMainWorld, /socket\.addEventListener\("message"/);
   assert.match(serviceWebviewMainWorld, /window\.__AGENT_APP_ACCESS_TOKEN/);
@@ -7759,7 +7923,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(ssoWebviewCompletionHandler, /fetchBrowserUserInfo\(\)[\s\S]{0,900}exchangeBrowserCookieAccessToken\(\)/);
   assert.match(ssoWebviewCompletionHandler, /t\("main\.ssoCookieExchangeNoAccessToken"\)/);
   assert.match(ssoWebviewCompletionHandler, /finalizeDesktopSsoLoginAttempt\(stepErrors\)/);
-  assert.match(ssoWebviewCompletionHandler, /if \(accessToken\) \{[\s\S]{0,180}openConfiguredDesktopSsoSiteTokenBridge\(\)/);
+  assert.doesNotMatch(ssoWebviewCompletionHandler, /SiteTokenBridge|siteTokenBridge|sso-site-token/u);
   assert.doesNotMatch(ssoWebviewCompletionHandler, /completeDesktopSsoBrowserLogin/);
   assert.doesNotMatch(appShell, /desktopSsoAutoLogin/);
   assert.doesNotMatch(appShell, /void handleDesktopSsoLogin\(\);/);

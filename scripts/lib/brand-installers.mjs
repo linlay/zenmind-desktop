@@ -349,10 +349,10 @@ Function ${nsisPrefix}ValidateDataRootInput
   GetDlgItem $R4 $HWNDPARENT 1
   \${if} $R3 == "${runtimeRootDirName}"
     EnableWindow $R4 1
-    \${NSD_Hide} $DesktopDataRootErrorLabel
+    ShowWindow $DesktopDataRootErrorLabel \${SW_HIDE}
   \${else}
     EnableWindow $R4 0
-    \${NSD_Show} $DesktopDataRootErrorLabel
+    ShowWindow $DesktopDataRootErrorLabel \${SW_SHOW}
   \${endif}
 FunctionEnd
 !endif
