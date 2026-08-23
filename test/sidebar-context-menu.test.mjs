@@ -18,41 +18,21 @@ function ids(target) {
   return buildSidebarContextMenuPolicy(target).map((item) => item.id);
 }
 
-test("sidebar group context menus preserve sorting and creation actions", () => {
+test("sidebar group context menus expose creation actions without project sorting", () => {
   const assistants = buildSidebarContextMenuPolicy({
     kind: "group",
     groupId: "assistants",
-    menuScope: "all",
-    sortMode: "byTime",
     canCreateProject: false,
     canCreateChat: false,
     chatSortMode: "recent",
     chatOrderingSupported: true
   });
-  assert.deepEqual(assistants.map((item) => item.id), [
-    "group.sort-by-time",
-    "group.sort-by-name",
-    "group.new-project"
-  ]);
-  assert.equal(assistants[0].checked, true);
-  assert.equal(assistants[1].checked, false);
-  assert.equal(assistants[2].enabled, false);
-  assert.deepEqual(ids({
-    kind: "group",
-    groupId: "assistants",
-    menuScope: "sort",
-    sortMode: "byName",
-    canCreateProject: true,
-    canCreateChat: false,
-    chatSortMode: "recent",
-    chatOrderingSupported: true
-  }), ["group.sort-by-time", "group.sort-by-name"]);
+  assert.deepEqual(assistants.map((item) => item.id), ["group.new-project"]);
+  assert.equal(assistants[0].enabled, false);
 
   assert.deepEqual(ids({
     kind: "group",
     groupId: "chats",
-    menuScope: "all",
-    sortMode: "byName",
     canCreateProject: true,
     canCreateChat: true,
     chatSortMode: "manual",
@@ -61,18 +41,15 @@ test("sidebar group context menus preserve sorting and creation actions", () => 
   assert.deepEqual(ids({
     kind: "group",
     groupId: "chats",
-    menuScope: "sort",
-    sortMode: "byName",
     canCreateProject: true,
     canCreateChat: true,
     chatSortMode: "manual",
-    chatOrderingSupported: true
+    chatOrderingSupported: true,
+    menuScope: "sort"
   }), ["group.chat-sort-recent", "group.chat-sort-manual"]);
   assert.deepEqual(ids({
     kind: "group",
     groupId: "webs",
-    menuScope: "all",
-    sortMode: "byName",
     canCreateProject: true,
     canCreateChat: true,
     chatSortMode: "recent",
@@ -213,12 +190,24 @@ test("sidebar native context request validation rejects injected and malformed f
     target: {
       kind: "group",
       groupId: "webs",
-      menuScope: "sort",
-      sortMode: "byTime",
       canCreateProject: false,
       canCreateChat: false,
       chatSortMode: "recent",
-      chatOrderingSupported: false
+      chatOrderingSupported: false,
+      sortMode: "byTime"
+    }
+  }), null);
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 1,
+    y: 2,
+    target: {
+      kind: "group",
+      groupId: "chats",
+      canCreateProject: false,
+      canCreateChat: true,
+      chatSortMode: "recent",
+      chatOrderingSupported: true,
+      menuScope: "create"
     }
   }), null);
 });

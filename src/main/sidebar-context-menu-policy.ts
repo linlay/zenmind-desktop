@@ -50,33 +50,29 @@ export function normalizeSidebarContextMenuRequest(
       !hasOnlyKeys(target, [
         "kind",
         "groupId",
-        "menuScope",
-        "sortMode",
         "canCreateProject",
         "canCreateChat",
         "chatSortMode",
-        "chatOrderingSupported"
+        "chatOrderingSupported",
+        "menuScope"
       ]) ||
       !["assistants", "chats", "webs"].includes(String(target.groupId)) ||
-      !["all", "sort"].includes(String(target.menuScope)) ||
-      (target.menuScope === "sort" && target.groupId !== "assistants") ||
-      !["byName", "byTime"].includes(String(target.sortMode)) ||
       !isBoolean(target.canCreateProject) ||
       !isBoolean(target.canCreateChat) ||
       !["recent", "manual"].includes(String(target.chatSortMode)) ||
-      !isBoolean(target.chatOrderingSupported)
+      !isBoolean(target.chatOrderingSupported) ||
+      (target.menuScope !== undefined && target.menuScope !== "sort")
     ) {
       return null;
     }
     normalizedTarget = {
       kind: "group",
       groupId: target.groupId as "assistants" | "chats" | "webs",
-      menuScope: target.menuScope as "all" | "sort",
-      sortMode: target.sortMode as "byName" | "byTime",
       canCreateProject: target.canCreateProject,
       canCreateChat: target.canCreateChat,
       chatSortMode: target.chatSortMode as "recent" | "manual",
-      chatOrderingSupported: target.chatOrderingSupported
+      chatOrderingSupported: target.chatOrderingSupported,
+      ...(target.menuScope === "sort" ? { menuScope: "sort" as const } : {})
     };
   } else if (target.kind === "agent") {
     if (
@@ -144,30 +140,11 @@ export function buildSidebarContextMenuPolicy(
 ): SidebarContextMenuPolicyItem[] {
   if (target.kind === "group") {
     if (target.groupId === "assistants") {
-      const items: SidebarContextMenuPolicyItem[] = [
-        {
-          id: "group.sort-by-time",
-          group: 0,
-          enabled: true,
-          type: "radio",
-          checked: target.sortMode === "byTime"
-        },
-        {
-          id: "group.sort-by-name",
-          group: 0,
-          enabled: true,
-          type: "radio",
-          checked: target.sortMode === "byName"
-        }
-      ];
-      if (target.menuScope === "all") {
-        items.push({
-          id: "group.new-project",
-          group: 1,
-          enabled: target.canCreateProject
-        });
-      }
-      return items;
+      return [{
+        id: "group.new-project",
+        group: 0,
+        enabled: target.canCreateProject
+      }];
     }
     if (target.groupId === "chats") {
       const sortItems: SidebarContextMenuPolicyItem[] = [

@@ -1752,26 +1752,25 @@
   transition: none;
 }
 
-.sidebar-project-drag-overlay {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  width: 196px;
-  min-height: 36px;
-  padding: 6px 10px;
-  border: 1px solid color-mix(in srgb, var(--accent) 26%, var(--line));
-  border-radius: 8px;
-  background: var(--sidebar-bg-solid, var(--bg));
-  color: var(--ink);
-  box-shadow: 0 12px 28px rgba(15, 23, 42, 0.2);
-  font-size: 14px;
+.sidebar-sortable-project.has-drop-indicator-before::before,
+.sidebar-sortable-project.has-drop-indicator-after::after {
+  content: "";
+  position: absolute;
+  z-index: 5;
+  right: 8px;
+  left: 8px;
+  height: 2px;
+  border-radius: 999px;
+  background: var(--accent);
+  pointer-events: none;
 }
 
-.sidebar-project-drag-overlay>span {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.sidebar-sortable-project.has-drop-indicator-before::before {
+  top: -1px;
+}
+
+.sidebar-sortable-project.has-drop-indicator-after::after {
+  bottom: -1px;
 }
 
 .sidebar-project-order-error {
@@ -2041,6 +2040,7 @@
 }
 
 .sidebar-nav-group>.Collapse-header .sidebar-assistant-project-button,
+.sidebar-nav-group>.Collapse-header .sidebar-assistant-expand-button,
 .sidebar-nav-group>.Collapse-header .sidebar-website-add-button,
 .sidebar-nav-group>.Collapse-header .sidebar-chats-sort-button,
 .sidebar-nav-group>.Collapse-header .sidebar-chats-new-button {

@@ -11,6 +11,8 @@ import type {
   AssistantChatOrderMutationRequest,
   AssistantChatOrderMutationResult,
   AssistantChatSortMode,
+  AssistantReorderProjectsRequest,
+  AssistantReorderProjectsResult,
 } from "../../shared/contracts";
 import { isTimeContractViolation, requireEpochMillis } from "../../shared/time-contract";
 import {
@@ -24,6 +26,10 @@ import {
   createConversationShare,
   revokeConversationShare
 } from "../assistant/core/conversation-share-controller";
+import {
+  createProjectAgentOrderPlan,
+  validateProjectAgentOrderRequestKeys,
+} from "../assistant/core/project-agent-order";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -98,6 +104,45 @@ function readOptionalFiniteNumber(value: unknown) {
 
 function nowEpochMillis() {
   return requireEpochMillis(Date.now(), "desktop.assistantIpc.now");
+}
+
+function readAgentCatalogKeys(value: unknown, path: string) {
+  if (!Array.isArray(value)) {
+    throw new Error(`${path} must be an array`);
+  }
+  return value.map((item, index) => {
+    if (!item || typeof item !== "object" || Array.isArray(item)) {
+      throw new Error(`${path}[${index}] must be an object`);
+    }
+    const key = typeof (item as Record<string, unknown>).key === "string"
+      ? String((item as Record<string, unknown>).key).trim()
+      : "";
+    if (!key) {
+      throw new Error(`${path}[${index}].key is required`);
+    }
+    return key;
+  });
+}
+
+function readAgentOrderKeys(value: unknown, path: string) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error(`${path} must be an object`);
+  }
+  const order = (value as Record<string, unknown>).order;
+  if (!Array.isArray(order)) {
+    throw new Error(`${path}.order must be an array`);
+  }
+  const keys = order.map((item, index) => {
+    const key = typeof item === "string" ? item.trim() : "";
+    if (!key) {
+      throw new Error(`${path}.order[${index}] must be a non-empty agent key`);
+    }
+    return key;
+  });
+  if (new Set(keys).size !== keys.length) {
+    throw new Error(`${path}.order contains duplicate agent keys`);
+  }
+  return keys;
 }
 
 function isLiveWebviewContents(contents: any) {
@@ -435,6 +480,81 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
         message: error instanceof Error
           ? error.message
           : t("assistant.chatOrderSaveFailed"),
+      };
+    }
+  });
+
+  ipcMain.handle("assistant.reorderProjects", async (
+    _event: unknown,
+    input: AssistantReorderProjectsRequest,
+  ): Promise<AssistantReorderProjectsResult> => {
+    const requestedAgentKeys = input && typeof input === "object" && !Array.isArray(input)
+      ? input.agentKeys
+      : undefined;
+    try {
+      const normalizedRequestedAgentKeys = validateProjectAgentOrderRequestKeys(
+        requestedAgentKeys,
+      );
+      if (!callAgentPlatform) {
+        return {
+          ok: false,
+          agentKeys: [],
+          message: t("assistant.projectOrderUnavailable"),
+        };
+      }
+      const projectAgents = await callAgentPlatform(
+        app,
+        "/api/agents?scope=nav&mode=CODER&mode=KBASE",
+      );
+      const agentOrder = await callAgentPlatform(app, "/api/agents/order");
+      const plan = createProjectAgentOrderPlan({
+        requestedProjectAgentKeys: normalizedRequestedAgentKeys,
+        currentProjectAgentKeys: readAgentCatalogKeys(
+          projectAgents,
+          "assistant.projectOrder.projects",
+        ),
+        fullAgentKeys: readAgentOrderKeys(
+          agentOrder,
+          "assistant.projectOrder.agentOrder",
+        ),
+      });
+      const response = await callAgentPlatform(
+        app,
+        "/api/agents/order",
+        { method: "PUT", body: { order: plan.fullAgentKeys } },
+      ) as Record<string, unknown> | null;
+      const savedAgentKeys = readAgentOrderKeys(
+        response,
+        "assistant.projectOrder.savedOrder",
+      );
+      const plannedProjectKeySet = new Set(plan.projectAgentKeys);
+      const savedProjectAgentKeys = savedAgentKeys.filter((key) =>
+        plannedProjectKeySet.has(key)
+      );
+      if (savedProjectAgentKeys.length !== plan.projectAgentKeys.length) {
+        throw new Error("saved Agent order is missing a Project agent");
+      }
+      const updatedAt = response?.updatedAt === undefined || response.updatedAt === null
+        ? undefined
+        : requireEpochMillis(
+            response.updatedAt,
+            "assistant.projectOrder.updatedAt",
+          );
+      assistantNavigationStatusClient?.scheduleRefresh?.(0);
+      return {
+        ok: true,
+        agentKeys: savedProjectAgentKeys,
+        message: t("assistant.projectOrderSaved"),
+        ...(updatedAt === undefined ? {} : { updatedAt }),
+      };
+    } catch (error) {
+      console.warn("[assistant] failed to reorder projects", error);
+      return {
+        ok: false,
+        agentKeys: [],
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.projectOrderSaveFailed"),
       };
     }
   });

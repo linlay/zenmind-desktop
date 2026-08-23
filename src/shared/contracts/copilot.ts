@@ -344,6 +344,17 @@ export interface AssistantNavAgentItemsResult {
   updatedAt: EpochMilliseconds;
 }
 
+export interface AssistantReorderProjectsRequest {
+  agentKeys: string[];
+}
+
+export interface AssistantReorderProjectsResult {
+  ok: boolean;
+  agentKeys: string[];
+  message: string;
+  updatedAt?: EpochMilliseconds;
+}
+
 export type AssistantCreateProjectType = "coder" | "kbase";
 
 export interface AssistantCreateProjectRequest {

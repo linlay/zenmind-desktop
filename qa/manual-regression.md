@@ -48,7 +48,10 @@
 
 ## P0：智能助理与页面协作
 
-- [ ] 展开侧栏后，每个 Project 初始显示 5 条 Chat，底部并排显示“查看更多”和“查看历史”；三次“查看更多”依次扩展到 10、15、20 条并聚焦第 6、11、16 条，到 20 条后不再显示“查看更多”。单独收起 Project 或收起 Projects 分组后恢复为 5 条；“查看历史”以当前 Project 的 Agent 初始化 Owner 筛选。
+- [ ] Agent Platform catalog 中混排普通、隐藏、无效、CODER 与 KBASE Agent 时，Projects 严格按 CODER/KBASE 投影顺序展示；activity 合并、Git branch 补全、Chat/Run Push 和手动刷新均不改变顺序，Copilot-only Agent 只追加且不插入已有位置。
+- [ ] 展开侧栏点击 Projects 的“全部展开 / 全部收起”：所有 Project 容器同步切换；执行全部展开时，即使部分 Project 此前点过“查看更多”，也全部重置为首批 5 条 Chat。之后单个 Project 底部仍并排显示“查看更多”和“查看历史”，三次“查看更多”分别扩展到 10、15、20 条并聚焦第 6、11、16 条，到 20 条后不再显示“查看更多”；“查看历史”打开以当前 Project 预筛且可切换 Owner 的 `/history?agentKey=...`。单独收起 Project、全部收起或收起 Projects 分组后重置为 5 条，拖拽排序的临时收起不重置；空列表时全部展开按钮禁用，收起侧栏 Popover 不显示该操作。
+- [ ] macOS 与 Windows 分别在展开侧栏用鼠标和键盘直接拖拽 Project 标题：标题前没有占宽手柄；开始拖拽立即收起全部 Projects，原 Project 只在原位变淡且定位不跳动，不显示浮动副本，其他 Project 不移位，目标 Project 前后显示与 Chat 相同的插入线；结束或取消后恢复拖拽前的完整展开集合，只移动整个 Project 及其 Chats 和运行状态。拖动同一位置不保存，保存期间不能再次拖动，普通点击标题、更多操作、新建 Chat 均不触发拖拽，窗口可拖动区域不受影响。收起侧栏 Popover 只显示当前排序且不能拖拽。
+- [ ] Project 换序成功后重启 Desktop 仍保留；抓包确认 Main 只调用 `/api/agents?scope=nav&mode=CODER&mode=KBASE` 与 public `GET/PUT /api/agents/order`，不读取 `/api/admin/agents` 或写 `/api/admin/agents/order`。在 Agent WebClient 管理页换序后 Desktop 通过 `catalog.updated` 自动收敛，Desktop 换序后 WebClient 同步显示；并发新建 Project 被追加到提交顺序末尾，普通与隐藏有效 Agent 的槽位不变，invalid Agent 槽位由 Platform 保存接口保护。Platform 拒绝或断线时立即回滚、显示错误并强制刷新。
 - [ ] Main Assistant 可创建或继续 Chat，流式事件按 run 归属展示并正确到达终态。
 - [ ] 分别点击 Chats 标题栏和 Projects 内项目标题栏的“新建对话”，切换到 New Chat 后输入框立即获得焦点并可直接输入；Cmd+K 的 New Chat 保持相同行为。Cmd+K 的 Actions 在 New Chat 后显示 Open chat history；面板打开时 macOS `Cmd+H` / Windows `Ctrl+H` 关闭 Cmd+K 并打开未筛选的原生 History，面板关闭时 macOS `Cmd+H` 仍保持系统默认的隐藏应用行为。macOS 与 Windows 均验证。
 - [ ] 分别从 Chats 和 Projects 点击普通或“等待回答”Chat，切换完成后 Main Chat 立即获得键盘焦点；“等待回答”Chat 无需额外点击页面即可直接用数字键 `1`/`2`/`3` 选择问题选项。macOS 与 Windows 均验证。

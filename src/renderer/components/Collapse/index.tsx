@@ -45,7 +45,8 @@ export const Collapse: React.FC<CollapseProps> = ({
   const headerRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(0);
-  const [innerExpanded, setInnerExpanded] = useState(expanded);
+  const [innerExpanded, setInnerExpanded] = useState(expanded ?? false);
+  const resolvedExpanded = expanded ?? innerExpanded;
   const handleExpand = (val: boolean) => {
     setInnerExpanded(val);
     onExpand?.(val);
@@ -57,7 +58,7 @@ export const Collapse: React.FC<CollapseProps> = ({
 
   useLayoutEffect(() => {
     measureContentHeight();
-  }, [children, innerExpanded, measureContentHeight]);
+  }, [children, resolvedExpanded, measureContentHeight]);
 
   useLayoutEffect(() => {
     const innerElement = innerRef.current;
@@ -75,7 +76,7 @@ export const Collapse: React.FC<CollapseProps> = ({
   }, [measureContentHeight]);
 
   const handleToggle = () => {
-    handleExpand(!innerExpanded);
+    handleExpand(!resolvedExpanded);
   };
   const {
     className: headerButtonClassName,
@@ -91,7 +92,7 @@ export const Collapse: React.FC<CollapseProps> = ({
       className={["Collapse-trigger", headerButtonClassName]
         .filter(Boolean)
         .join(" ")}
-      aria-expanded={innerExpanded}
+      aria-expanded={resolvedExpanded}
       aria-controls={contentId}
       onClick={(event) => {
         onHeaderButtonClick?.(event);
@@ -106,7 +107,7 @@ export const Collapse: React.FC<CollapseProps> = ({
 
   return (
     <div
-      className={["Collapse", innerExpanded ? "is-expanded" : "", className]
+      className={["Collapse", resolvedExpanded ? "is-expanded" : "", className]
         .filter(Boolean)
         .join(" ")}
     >
@@ -131,8 +132,8 @@ export const Collapse: React.FC<CollapseProps> = ({
       <div
         id={contentId}
         className="Collapse-content"
-        style={{ height: innerExpanded ? contentHeight : 0 }}
-        aria-hidden={!innerExpanded}
+        style={{ height: resolvedExpanded ? contentHeight : 0 }}
+        aria-hidden={!resolvedExpanded}
       >
         <div ref={innerRef} className="Collapse-contentInner">
           {children}

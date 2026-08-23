@@ -1,7 +1,6 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { AppSidebar } from "./navigation/AppSidebar";
-import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode } from "../../shared/contracts";
 import {
   isCapabilityNavigationRoute,
   resolveSidebarMode,
@@ -34,7 +33,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -106,8 +105,10 @@ import {
 } from "../settings/settingsRoutes";
 import {
   isAssistantNavChatAgent,
+  isAssistantNavProjectAgent,
   normalizeAssistantNavAgentItemsResult,
   normalizeAssistantNavAgents,
+  reorderAssistantNavProjectAgents,
   resolveAssistantNavChatRuntimeAgent,
   resolveFirstInstallBootstrapNavigationTarget,
 } from "../assistantNavigation";
@@ -1455,6 +1456,44 @@ export function AppShell() {
       }
     } catch {
       // Keep the current live list while agent-platform is still warming up.
+    }
+  }
+
+  async function reorderAssistantProjects(
+    input: AssistantReorderProjectsRequest,
+  ): Promise<AssistantReorderProjectsResult> {
+    const previousProjectAgentKeys = assistantNavAgents
+      .filter((agent) => isAssistantNavProjectAgent(agent))
+      .map((agent) => agent.agentKey);
+    setAssistantNavAgents((current) =>
+      reorderAssistantNavProjectAgents(current, input.agentKeys)
+    );
+    try {
+      const result = await window.electronAPI.assistant.reorderProjects(input);
+      if (!result.ok) {
+        setAssistantNavAgents((current) =>
+          reorderAssistantNavProjectAgents(current, previousProjectAgentKeys)
+        );
+        await refreshAssistantNavAgents({ force: true });
+        return result;
+      }
+      setAssistantNavAgents((current) =>
+        reorderAssistantNavProjectAgents(current, result.agentKeys)
+      );
+      await refreshAssistantNavAgents({ force: true });
+      return result;
+    } catch (error) {
+      setAssistantNavAgents((current) =>
+        reorderAssistantNavProjectAgents(current, previousProjectAgentKeys)
+      );
+      await refreshAssistantNavAgents({ force: true });
+      return {
+        ok: false,
+        agentKeys: previousProjectAgentKeys,
+        message: error instanceof Error
+          ? error.message
+          : t("assistant.projectOrderSaveFailed"),
+      };
     }
   }
 
@@ -3812,6 +3851,7 @@ export function AppShell() {
           onDesktopSsoLogout={handleDesktopSsoLogout}
           onRefreshDesktopSsoStatus={refreshDesktopSsoStatus}
           onRefreshAssistantNavAgents={refreshAssistantNavAgents}
+          onReorderAssistantProjects={reorderAssistantProjects}
           onUpdateAssistantChatOrder={updateAssistantChatOrder}
           onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}

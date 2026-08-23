@@ -625,33 +625,6 @@ function compareNavChats(left: AssistantNavChatItem, right: AssistantNavChatItem
   return left.chatId.localeCompare(right.chatId);
 }
 
-function readAgentTimestamp(agent: AssistantNavAgentItem) {
-  return agent.updatedAt ?? undefined;
-}
-
-function compareNavigationAgents(left: AssistantNavAgentItem, right: AssistantNavAgentItem) {
-  const rightTime = readAgentTimestamp(right);
-  const leftTime = readAgentTimestamp(left);
-  if (rightTime !== undefined && leftTime !== undefined && rightTime !== leftTime) {
-    return rightTime - leftTime;
-  }
-  if (leftTime === undefined && rightTime !== undefined) {
-    return 1;
-  }
-  if (leftTime !== undefined && rightTime === undefined) {
-    return -1;
-  }
-  const displayNameComparison = left.displayName.localeCompare(right.displayName, "zh-CN");
-  if (displayNameComparison !== 0) {
-    return displayNameComparison;
-  }
-  return left.agentKey.localeCompare(right.agentKey);
-}
-
-function sortNavigationAgents(items: AssistantNavAgentItem[]) {
-  return [...items].sort(compareNavigationAgents);
-}
-
 function mergeNavigationChats(
   primaryChats: AssistantNavChatItem[],
   secondaryChats: AssistantNavChatItem[]
@@ -731,15 +704,23 @@ function mergeNavigationAgentGroups(
   primaryItems: AssistantNavAgentItem[],
   secondaryItems: AssistantNavAgentItem[]
 ) {
-  const agentsByKey = new Map<string, AssistantNavAgentItem>();
-  for (const agent of primaryItems) {
-    agentsByKey.set(agent.agentKey, agent);
-  }
+  const mergedItems = primaryItems.slice();
+  const indexByKey = new Map(
+    mergedItems.map((agent, index) => [agent.agentKey, index] as const),
+  );
   for (const agent of secondaryItems) {
-    const existing = agentsByKey.get(agent.agentKey);
-    agentsByKey.set(agent.agentKey, existing ? mergeNavigationAgentItem(existing, agent) : agent);
+    const existingIndex = indexByKey.get(agent.agentKey);
+    if (existingIndex === undefined) {
+      indexByKey.set(agent.agentKey, mergedItems.length);
+      mergedItems.push(agent);
+      continue;
+    }
+    mergedItems[existingIndex] = mergeNavigationAgentItem(
+      mergedItems[existingIndex],
+      agent,
+    );
   }
-  return sortNavigationAgents([...agentsByKey.values()]);
+  return mergedItems;
 }
 
 function mapNavigationChat(
@@ -947,16 +928,16 @@ export function buildAssistantNavigationAgentsFromPlatformAgents(
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): AssistantNavAgentItem[] {
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
-  return sortNavigationAgents(agents
+  return agents
     .map((agent, index) => createNavigationAgentItem(agent, includeChatLimit, `navigation.agents[${index}]`))
-    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent)));
+    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent));
 }
 
 export function buildAssistantCopilotAgentsFromPlatformAgents(agentsInput: unknown): AssistantNavAgentItem[] {
   const agents = Array.isArray(agentsInput) ? agentsInput as PlatformAgentSummary[] : [];
-  return sortNavigationAgents(agents
+  return agents
     .map((agent, index) => createCopilotAgentItem(agent, `copilot.agents[${index}]`))
-    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent)));
+    .filter((agent): agent is AssistantNavAgentItem => Boolean(agent));
 }
 
 function normalizePushType(type: string) {
@@ -1269,7 +1250,7 @@ function applyChatRuntimeStatusToAgents(
       : agent;
   });
   return {
-    items: changed ? sortNavigationAgents(nextItems) : currentItems,
+    items: changed ? nextItems : currentItems,
     changed,
     shouldRefresh: !changed,
   };
@@ -1352,7 +1333,7 @@ export function applyAssistantNavigationPush(
       recentChats: nextAgent.recentChats.map((chat) => ({ ...chat, isRead: true }))
     });
     nextItems[agentIndex] = nextAgent;
-    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: false };
+    return { items: nextItems, changed: true, shouldRefresh: false };
   }
 
   if (type === "chat.deleted" || type === "chat.archived") {
@@ -1363,7 +1344,7 @@ export function applyAssistantNavigationPush(
     nextAgent.chatCount = Math.max(0, nextAgent.chatCount - (chatIndex >= 0 ? 1 : 0));
     nextAgent.unreadCount = currentChat && !currentChat.isRead ? Math.max(0, nextAgent.unreadCount - 1) : nextAgent.unreadCount;
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
-    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: true };
+    return { items: nextItems, changed: true, shouldRefresh: true };
   }
 
   if (type === "chat.read" || type === "chat.unread") {
@@ -1381,7 +1362,7 @@ export function applyAssistantNavigationPush(
       type === "chat.read" ? "decrement" : "increment"
     );
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
-    return { items: sortNavigationAgents(nextItems), changed: true, shouldRefresh: false };
+    return { items: nextItems, changed: true, shouldRefresh: false };
   }
 
   if (
@@ -1404,7 +1385,7 @@ export function applyAssistantNavigationPush(
     nextAgent.unreadCount = readPushUnreadCount(event, nextAgent.unreadCount, "preserve");
     nextItems[agentIndex] = refreshAgentDerivedFields(nextAgent);
     return {
-      items: sortNavigationAgents(nextItems),
+      items: nextItems,
       changed: true,
       shouldRefresh: false
     };

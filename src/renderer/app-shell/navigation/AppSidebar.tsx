@@ -18,6 +18,7 @@ import { CloseOutlined } from "@ant-design/icons";
 import {
   DndContext,
   KeyboardSensor,
+  MeasuringStrategy,
   PointerSensor,
   closestCenter,
   useSensor,
@@ -49,6 +50,8 @@ import type {
   AssistantNavAgentItem,
   AssistantNavChatItem,
   AssistantNavigationListOptions,
+  AssistantReorderProjectsRequest,
+  AssistantReorderProjectsResult,
   DesktopSsoStatus,
   ServiceState,
   WebEntry,
@@ -146,7 +149,7 @@ type SidebarContextMenuSubject =
   | {
       kind: "group";
       groupId: SidebarGroupId;
-      menuScope?: "all" | "sort";
+      menuScope?: "sort";
     }
   | { kind: "agent"; agentKey: string }
   | { kind: "chat"; chatId: string }
@@ -175,8 +178,6 @@ type SidebarStatusSummary = {
   unreadCount: number;
   pendingCount: number;
 };
-
-type AssistantNavSortMode = "byName" | "byTime";
 
 type MenuAnchorPoint = {
   x: number;
@@ -210,8 +211,20 @@ type AssistantChatDragActivator = {
   setActivatorNodeRef: (element: HTMLButtonElement | null) => void;
 };
 
+type AssistantProjectDragActivator = {
+  attributes: DraggableAttributes;
+  listeners: DraggableSyntheticListeners;
+  setNodeRef: (element: HTMLButtonElement | null) => void;
+  setActivatorNodeRef: (element: HTMLButtonElement | null) => void;
+};
+
 type AssistantChatDropIndicator = {
   chatId: string;
+  position: "before" | "after";
+};
+
+type AssistantProjectDropIndicator = {
+  agentKey: string;
   position: "before" | "after";
 };
 
@@ -272,7 +285,6 @@ type BootstrapGuideDismissedBubbles = {
 };
 
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
-const SIDEBAR_ASSISTANT_SORT_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-assistant-sort`;
 const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
 const BOOTSTRAP_GUIDE_BUBBLE_GAP = 12;
 const BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000;
@@ -525,23 +537,6 @@ function readInitialSidebarGroupState() {
       : defaultSidebarGroupState;
   } catch {
     return defaultSidebarGroupState;
-  }
-}
-
-function normalizeAssistantNavSortMode(value: unknown): AssistantNavSortMode {
-  return value === "byName" || value === "byTime" ? value : "byTime";
-}
-
-function readInitialAssistantNavSortMode(): AssistantNavSortMode {
-  if (typeof window === "undefined") {
-    return "byTime";
-  }
-  try {
-    return normalizeAssistantNavSortMode(
-      window.localStorage.getItem(SIDEBAR_ASSISTANT_SORT_STORAGE_KEY),
-    );
-  } catch {
-    return "byTime";
   }
 }
 
@@ -808,57 +803,6 @@ function getAssistantChatDisplayText(
   return chat.chatName || t("sidebar.chat.noPreview");
 }
 
-function readAssistantAgentLatestTimestamp(agent: AssistantNavAgentItem) {
-  return agent.updatedAt ?? undefined;
-}
-
-function compareAssistantAgentsByTime(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
-) {
-  const rightTime = readAssistantAgentLatestTimestamp(right);
-  const leftTime = readAssistantAgentLatestTimestamp(left);
-  if (
-    rightTime !== undefined &&
-    leftTime !== undefined &&
-    rightTime !== leftTime
-  ) {
-    return rightTime - leftTime;
-  }
-  if (leftTime === undefined && rightTime !== undefined) {
-    return 1;
-  }
-  if (leftTime !== undefined && rightTime === undefined) {
-    return -1;
-  }
-  return compareAssistantAgentsByName(left, right);
-}
-
-function compareAssistantAgentsByName(
-  left: AssistantNavAgentItem,
-  right: AssistantNavAgentItem,
-) {
-  const displayNameComparison = left.displayName.localeCompare(
-    right.displayName,
-    "zh-CN",
-  );
-  if (displayNameComparison !== 0) {
-    return displayNameComparison;
-  }
-  return left.agentKey.localeCompare(right.agentKey);
-}
-
-function sortAssistantNavAgentsForMode(
-  items: AssistantNavAgentItem[],
-  sortMode: AssistantNavSortMode,
-) {
-  const compare =
-    sortMode === "byName"
-      ? compareAssistantAgentsByName
-      : compareAssistantAgentsByTime;
-  return [...items].sort(compare);
-}
-
 function createSidebarLinkFocusId(orderKey: SidebarNavOrderItemKey | string) {
   return `link:${orderKey}`;
 }
@@ -996,6 +940,45 @@ type SettingsSidebarSection = {
   description: string;
 };
 
+function SortableAssistantProject({
+  agent,
+  disabled,
+  collapseForDrag,
+  dropIndicator,
+  renderItem,
+}: {
+  agent: AssistantNavAgentItem;
+  disabled: boolean;
+  collapseForDrag: boolean;
+  dropIndicator: "before" | "after" | null;
+  renderItem: (dragActivator: AssistantProjectDragActivator) => ReactNode;
+}) {
+  const sortable = useSortable({ id: agent.agentKey, disabled });
+  const style: CSSProperties = {
+    zIndex: sortable.isDragging ? 2 : undefined,
+  };
+  return (
+    <div
+      style={style}
+      className={[
+        "sidebar-sortable-project",
+        sortable.isDragging ? "is-dragging" : "",
+        disabled ? "is-drag-disabled" : "",
+        collapseForDrag ? "is-project-drag-active" : "",
+        dropIndicator === "before" ? "has-drop-indicator-before" : "",
+        dropIndicator === "after" ? "has-drop-indicator-after" : "",
+      ].filter(Boolean).join(" ")}
+    >
+      {renderItem({
+        attributes: sortable.attributes,
+        listeners: sortable.listeners,
+        setNodeRef: sortable.setNodeRef,
+        setActivatorNodeRef: sortable.setActivatorNodeRef,
+      })}
+    </div>
+  );
+}
+
 function SortableAssistantChat({
   chat,
   disabled,
@@ -1073,6 +1056,9 @@ type AppSidebarProps = {
   onRefreshAssistantNavAgents?: (
     options?: AssistantNavigationListOptions,
   ) => Promise<void> | void;
+  onReorderAssistantProjects?: (
+    input: AssistantReorderProjectsRequest,
+  ) => Promise<AssistantReorderProjectsResult>;
   onUpdateAssistantChatOrder?: (
     input: AssistantChatOrderMutationRequest,
   ) => Promise<AssistantChatOrderMutationResult>;
@@ -1144,6 +1130,7 @@ export function AppSidebar({
   onDesktopSsoLogout,
   onRefreshDesktopSsoStatus,
   onRefreshAssistantNavAgents,
+  onReorderAssistantProjects,
   onUpdateAssistantChatOrder,
   onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
@@ -1181,12 +1168,19 @@ export function AppSidebar({
   const [sidebarGroupState, setSidebarGroupState] = useState<SidebarGroupState>(
     readInitialSidebarGroupState,
   );
-  const [assistantNavSortMode, setAssistantNavSortMode] =
-    useState<AssistantNavSortMode>(readInitialAssistantNavSortMode);
+  const projectDragSensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
+  );
   const chatDragSensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates }),
   );
+  const [activeProjectDragKey, setActiveProjectDragKey] = useState("");
+  const [projectDropIndicator, setProjectDropIndicator] =
+    useState<AssistantProjectDropIndicator | null>(null);
+  const [projectOrderSaving, setProjectOrderSaving] = useState(false);
+  const [projectOrderError, setProjectOrderError] = useState("");
   const [chatDropIndicator, setChatDropIndicator] =
     useState<AssistantChatDropIndicator | null>(null);
   const [chatOrderMutationPending, setChatOrderMutationPending] = useState(false);
@@ -1219,10 +1213,11 @@ export function AppSidebar({
   const [chatsVisibleLimit, setChatsVisibleLimit] = useState(
     CHATS_VISIBLE_LIMIT,
   );
-  const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
-    useState("");
+  const [expandedAssistantAgentKeys, setExpandedAssistantAgentKeys] =
+    useState<Set<string>>(() => new Set());
   const [assistantAgentChatVisibleLimits, setAssistantAgentChatVisibleLimits] =
     useState<Map<string, number>>(() => new Map<string, number>());
+  const expandedProjectsBeforeDragRef = useRef<Set<string> | null>(null);
   const [creatingProject, setCreatingProject] = useState(false);
   const [createProjectDialog, setCreateProjectDialog] =
     useState<CreateProjectDialogState | null>(null);
@@ -1301,6 +1296,11 @@ export function AppSidebar({
     () => assistantNavAgents.filter(shouldShowAssistantInPrimaryNavigation),
     [assistantNavAgents],
   );
+  const allProjectsExpanded =
+    primaryAssistantNavAgents.length > 0 &&
+    primaryAssistantNavAgents.every((agent) =>
+      expandedAssistantAgentKeys.has(agent.agentKey),
+    );
   const normalizedChatDefaultAgentKey = chatDefaultAgentKey.trim();
   const chatDefaultAgent = useMemo(
     () =>
@@ -1416,19 +1416,6 @@ export function AppSidebar({
     () => summarizeAgentStatus(primaryAssistantNavAgents),
     [primaryAssistantNavAgents],
   );
-  const sortedAssistantNavAgents = useMemo(
-    () =>
-      sortAssistantNavAgentsForMode(
-        primaryAssistantNavAgents,
-        assistantNavSortMode,
-      ),
-    [primaryAssistantNavAgents, assistantNavSortMode],
-  );
-  const assistantNavSortLabel =
-    assistantNavSortMode === "byName"
-      ? t("sidebar.assistants.sortByName")
-      : t("sidebar.assistants.sortByTime");
-
   const normalizedSettingsSearchQuery = settingsSearchQuery
     .trim()
     .toLocaleLowerCase();
@@ -1636,17 +1623,6 @@ export function AppSidebar({
   }, [sidebarGroupState]);
 
   useEffect(() => {
-    try {
-      window.localStorage.setItem(
-        SIDEBAR_ASSISTANT_SORT_STORAGE_KEY,
-        assistantNavSortMode,
-      );
-    } catch {
-      // Ignore localStorage failures in restricted renderer contexts.
-    }
-  }, [assistantNavSortMode]);
-
-  useEffect(() => {
     if (!websiteDialogOpen) {
       return undefined;
     }
@@ -1726,7 +1702,9 @@ export function AppSidebar({
       return;
     }
     assistantAgentShowMoreFocusRef.current = null;
-    focusSidebarRovingItemById(createSidebarChatFocusId(pendingFocus.chatId));
+    focusSidebarRovingItemById(
+      createSidebarChatFocusId(pendingFocus.chatId),
+    );
   }, [assistantAgentChatVisibleLimits]);
 
   useLayoutEffect(() => {
@@ -1860,7 +1838,7 @@ export function AppSidebar({
       setSidebarNavFocusId(visibleItems[0].dataset.sidebarNavId || "");
     }
   }, [
-    expandedAssistantAgentKey,
+    expandedAssistantAgentKeys,
     isCollapsed,
     isPrimaryMode,
     navItems,
@@ -1869,7 +1847,7 @@ export function AppSidebar({
     sidebarGroupState.chats,
     sidebarGroupState.webs,
     sidebarNavFocusId,
-    sortedAssistantNavAgents,
+    primaryAssistantNavAgents,
     webNavItems,
   ]);
 
@@ -1885,21 +1863,33 @@ export function AppSidebar({
       lastAutoExpandedAssistantAgentKeyRef.current !== matched.agentKey;
     if (activeAgentChanged) {
       lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
-      setExpandedAssistantAgentKey(matched.agentKey);
+      setExpandedAssistantAgentKeys((current) => {
+        if (current.has(matched.agentKey)) {
+          return current;
+        }
+        const next = new Set(current);
+        next.add(matched.agentKey);
+        return next;
+      });
       return;
     }
-    if (expandedAssistantAgentKey) {
-      if (expandedAssistantAgentKey === matched.agentKey) {
-        lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
-      }
+    if (expandedAssistantAgentKeys.has(matched.agentKey)) {
+      lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
       return;
     }
     if (lastAutoExpandedAssistantAgentKeyRef.current === matched.agentKey) {
       return;
     }
     lastAutoExpandedAssistantAgentKeyRef.current = matched.agentKey;
-    setExpandedAssistantAgentKey(matched.agentKey);
-  }, [assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey]);
+    setExpandedAssistantAgentKeys((current) => {
+      if (current.has(matched.agentKey)) {
+        return current;
+      }
+      const next = new Set(current);
+      next.add(matched.agentKey);
+      return next;
+    });
+  }, [assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKeys]);
 
   function handleItemClick(
     event: MouseEvent<HTMLAnchorElement>,
@@ -2157,8 +2147,6 @@ export function AppSidebar({
       return {
         kind: "group",
         groupId: subject.groupId,
-        menuScope: subject.menuScope ?? "all",
-        sortMode: assistantNavSortMode,
         canCreateProject:
           !runtime.creatingProject && !runtime.hasCreateProjectDialog,
         canCreateChat:
@@ -2168,6 +2156,7 @@ export function AppSidebar({
         chatOrderingSupported:
           runtime.assistantChatOrderingSupported &&
           !runtime.chatOrderMutationPending,
+        ...(subject.menuScope === "sort" ? { menuScope: "sort" as const } : {}),
       };
     }
     if (subject.kind === "agent") {
@@ -2225,12 +2214,6 @@ export function AppSidebar({
     actionId: SidebarContextMenuActionId,
   ) {
     if (target.kind === "group") {
-      if (
-        actionId === "group.sort-by-time" ||
-        actionId === "group.sort-by-name"
-      ) {
-        return target.groupId === "assistants";
-      }
       if (actionId === "group.new-project") {
         return target.groupId === "assistants" && target.canCreateProject;
       }
@@ -2311,11 +2294,7 @@ export function AppSidebar({
       return;
     }
     if (subject.kind === "group") {
-      if (actionId === "group.sort-by-time") {
-        setAssistantNavSortMode("byTime");
-      } else if (actionId === "group.sort-by-name") {
-        setAssistantNavSortMode("byName");
-      } else if (
+      if (
         actionId === "group.new-project" &&
         currentTarget.kind === "group" &&
         currentTarget.canCreateProject
@@ -2516,12 +2495,12 @@ export function AppSidebar({
       if (!agentKey) {
         return false;
       }
-      if (expandedAssistantAgentKey !== agentKey) {
+      if (!expandedAssistantAgentKeys.has(agentKey)) {
         const agent = findAssistantNavAgent(agentKey);
         if (agent) {
           handleAssistantAgentExpand(agent, true);
         } else {
-          setExpandedAssistantAgentKey(agentKey);
+          setAssistantAgentExpanded(agentKey, true);
         }
         return true;
       }
@@ -2543,7 +2522,7 @@ export function AppSidebar({
     }
     if (kind === "agent") {
       const agentKey = element.dataset.sidebarAgentKey || "";
-      if (agentKey && expandedAssistantAgentKey === agentKey) {
+      if (agentKey && expandedAssistantAgentKeys.has(agentKey)) {
         setAssistantAgentExpanded(agentKey, false);
         return true;
       }
@@ -2733,7 +2712,7 @@ export function AppSidebar({
       setCreateProjectDialog(null);
       await onRefreshAssistantNavAgents?.();
       if (result.agentKey) {
-        setExpandedAssistantAgentKey(result.agentKey);
+        setAssistantAgentExpanded(result.agentKey, true);
         requestNavigate(createAgentNewChatRoute(result.agentKey));
       }
     } catch (error) {
@@ -2973,7 +2952,18 @@ export function AppSidebar({
         return next;
       });
     }
-    setExpandedAssistantAgentKey(expanded ? agentKey : "");
+    setExpandedAssistantAgentKeys((current) => {
+      if (current.has(agentKey) === expanded) {
+        return current;
+      }
+      const next = new Set(current);
+      if (expanded) {
+        next.add(agentKey);
+      } else {
+        next.delete(agentKey);
+      }
+      return next;
+    });
   }
 
   function handleAssistantAgentExpand(
@@ -3202,6 +3192,15 @@ export function AppSidebar({
     }
   }
 
+  function handleChatsOpenHistory(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!chatsHistoryAvailable) {
+      return;
+    }
+    onOpenChatHistory?.();
+  }
+
   function handleChatsShowMore(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
     event.stopPropagation();
@@ -3212,15 +3211,6 @@ export function AppSidebar({
     setChatsVisibleLimit((current) =>
       Math.min(current + CHATS_VISIBLE_INCREMENT, CHATS_MAX_VISIBLE_LIMIT),
     );
-  }
-
-  function handleChatsOpenHistory(event: MouseEvent<HTMLButtonElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    if (!chatsHistoryAvailable) {
-      return;
-    }
-    onOpenChatHistory?.();
   }
 
   async function handleAssistantMarkAllRead(
@@ -3604,7 +3594,7 @@ export function AppSidebar({
     }
   }
 
-  function handleChatDragStart(_event: DragStartEvent) {
+  function handleChatDragStart(event: DragStartEvent) {
     if (chatOrderMutationPending) {
       return;
     }
@@ -3684,32 +3674,122 @@ export function AppSidebar({
     }
   }
 
-  function renderAssistantSortButton(options: { tabIndex?: number } = {}) {
-    return (
-      <button
-        type="button"
-        className="assistant-worker-icon-button sidebar-assistant-sort-button"
-        aria-label={t("sidebar.assistants.sort")}
-        title={assistantNavSortLabel}
-        tabIndex={options.tabIndex}
-        onClick={(event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          openNativeSidebarContextMenu(
-            {
-              kind: "group",
-              groupId: "assistants",
-              menuScope: "sort",
-            },
-            event.currentTarget,
-            event.detail > 0
-              ? { x: event.clientX, y: event.clientY }
-              : undefined,
-          );
-        }}
-      >
-        <SidebarActionIcon kind="sort" />
-      </button>
+  function handleProjectDragStart(event: DragStartEvent) {
+    if (projectOrderSaving) {
+      return;
+    }
+    expandedProjectsBeforeDragRef.current = new Set(expandedAssistantAgentKeys);
+    setExpandedAssistantAgentKeys(new Set());
+    setProjectOrderError("");
+    setProjectDropIndicator(null);
+    setActiveProjectDragKey(String(event.active.id));
+  }
+
+  function resolveProjectDropIndicator(
+    activeKey: string,
+    overKey: string,
+  ): AssistantProjectDropIndicator | null {
+    if (!activeKey || !overKey || activeKey === overKey) {
+      return null;
+    }
+    const activeIndex = primaryAssistantNavAgents.findIndex(
+      (agent) => agent.agentKey === activeKey,
+    );
+    const overIndex = primaryAssistantNavAgents.findIndex(
+      (agent) => agent.agentKey === overKey,
+    );
+    if (activeIndex < 0 || overIndex < 0) {
+      return null;
+    }
+    return {
+      agentKey: overKey,
+      position: activeIndex > overIndex ? "before" : "after",
+    };
+  }
+
+  function handleProjectDragOver(event: DragOverEvent) {
+    setProjectDropIndicator(
+      event.over
+        ? resolveProjectDropIndicator(
+            String(event.active.id),
+            String(event.over.id),
+          )
+        : null,
+    );
+  }
+
+  function finishProjectDrag() {
+    const expandedProjectKeys = expandedProjectsBeforeDragRef.current;
+    expandedProjectsBeforeDragRef.current = null;
+    setActiveProjectDragKey("");
+    setProjectDropIndicator(null);
+    if (expandedProjectKeys !== null) {
+      setExpandedAssistantAgentKeys(expandedProjectKeys);
+    }
+  }
+
+  async function handleProjectDragEnd(event: DragEndEvent) {
+    const dropIndicator = event.over
+      ? resolveProjectDropIndicator(
+          String(event.active.id),
+          String(event.over.id),
+        )
+      : null;
+    finishProjectDrag();
+    if (projectOrderSaving || !onReorderAssistantProjects || !dropIndicator) {
+      return;
+    }
+    const activeKey = String(event.active.id);
+    const nextAgentKeys = primaryAssistantNavAgents
+      .map((agent) => agent.agentKey)
+      .filter((agentKey) => agentKey !== activeKey);
+    const targetIndex = nextAgentKeys.indexOf(dropIndicator.agentKey);
+    if (targetIndex < 0) {
+      return;
+    }
+    nextAgentKeys.splice(
+      dropIndicator.position === "before" ? targetIndex : targetIndex + 1,
+      0,
+      activeKey,
+    );
+    setProjectOrderSaving(true);
+    setProjectOrderError("");
+    try {
+      const result = await onReorderAssistantProjects({
+        agentKeys: nextAgentKeys,
+      });
+      if (!result.ok) {
+        setProjectOrderError(
+          result.message || t("assistant.projectOrderSaveFailed"),
+        );
+      }
+    } catch (error) {
+      setProjectOrderError(
+        error instanceof Error
+          ? error.message
+          : t("assistant.projectOrderSaveFailed"),
+      );
+    } finally {
+      setProjectOrderSaving(false);
+    }
+  }
+
+  function handleToggleAllProjects(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (primaryAssistantNavAgents.length === 0 || activeProjectDragKey) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = null;
+    setAssistantAgentChatVisibleLimits((current) =>
+      current.size > 0 ? new Map<string, number>() : current,
+    );
+    setExpandedAssistantAgentKeys(
+      allProjectsExpanded
+        ? new Set()
+        : new Set(
+            primaryAssistantNavAgents.map((agent) => agent.agentKey),
+          ),
     );
   }
 
@@ -4207,7 +4287,9 @@ export function AppSidebar({
         collisionDetection={closestCenter}
         onDragStart={handleChatDragStart}
         onDragOver={handleChatDragOver}
-        onDragCancel={() => setChatDropIndicator(null)}
+        onDragCancel={() => {
+          setChatDropIndicator(null);
+        }}
         onDragEnd={(event) => void handleChatDragEnd(event)}
       >
         <SortableContext
@@ -4648,9 +4730,13 @@ export function AppSidebar({
 
   function renderAssistantAgent(
     agent: AssistantNavAgentItem,
-    options: { roving?: boolean } = {},
+    options: {
+      roving?: boolean;
+      dragActivator?: AssistantProjectDragActivator;
+    } = {},
   ) {
     const roving = options.roving ?? true;
+    const dragActivator = options.dragActivator;
     const allRecentChats = getAssistantNavAgentSortedChats(agent);
     const projectChatVisibleLimit =
       assistantAgentChatVisibleLimits.get(agent.agentKey) ??
@@ -4694,6 +4780,7 @@ export function AppSidebar({
     return (
       <Collapse
         key={agent.agentKey}
+        expanded={expandedAssistantAgentKeys.has(agent.agentKey)}
         className={[
           "assistant-worker-collapse-item",
           selected ? "is-selected" : "",
@@ -4701,6 +4788,10 @@ export function AppSidebar({
           .filter(Boolean)
           .join(" ")}
         onExpand={(val) => handleAssistantAgentExpand(agent, val)}
+        headerButtonRef={(element) => {
+          dragActivator?.setNodeRef(element);
+          dragActivator?.setActivatorNodeRef(element);
+        }}
         headerButtonProps={{
           className: "assistant-worker-header",
           onContextMenu: (event) => handleAgentContextMenu(event, agent),
@@ -4710,6 +4801,12 @@ export function AppSidebar({
           ),
           "data-sidebar-nav-kind": roving ? "agent" : undefined,
           "data-sidebar-agent-key": roving ? agent.agentKey : undefined,
+          ...dragActivator?.listeners,
+          "aria-disabled": dragActivator?.attributes["aria-disabled"],
+          "aria-pressed": dragActivator?.attributes["aria-pressed"],
+          "aria-roledescription":
+            dragActivator?.attributes["aria-roledescription"],
+          "aria-describedby": dragActivator?.attributes["aria-describedby"],
         }}
         header={
           <Flex gap={8} align="center" className="worker-panel-header">
@@ -4842,6 +4939,55 @@ export function AppSidebar({
     );
   }
 
+  function renderSortableAssistantProjects() {
+    const dragDisabled =
+      projectOrderSaving ||
+      !onReorderAssistantProjects ||
+      primaryAssistantNavAgents.length < 2;
+    return (
+      <>
+        <DndContext
+          sensors={projectDragSensors}
+          collisionDetection={closestCenter}
+          measuring={{
+            droppable: { strategy: MeasuringStrategy.Always },
+          }}
+          onDragStart={handleProjectDragStart}
+          onDragOver={handleProjectDragOver}
+          onDragCancel={finishProjectDrag}
+          onDragEnd={(event) => void handleProjectDragEnd(event)}
+        >
+          <SortableContext
+            items={primaryAssistantNavAgents.map((agent) => agent.agentKey)}
+            strategy={verticalListSortingStrategy}
+          >
+            {primaryAssistantNavAgents.map((agent) => (
+              <SortableAssistantProject
+                key={agent.agentKey}
+                agent={agent}
+                disabled={dragDisabled}
+                collapseForDrag={Boolean(activeProjectDragKey)}
+                dropIndicator={
+                  projectDropIndicator?.agentKey === agent.agentKey
+                    ? projectDropIndicator.position
+                    : null
+                }
+                renderItem={(dragActivator) =>
+                  renderAssistantAgent(agent, { dragActivator })
+                }
+              />
+            ))}
+          </SortableContext>
+        </DndContext>
+        {projectOrderError ? (
+          <div className="sidebar-project-order-error" role="alert">
+            {projectOrderError}
+          </div>
+        ) : null}
+      </>
+    );
+  }
+
   function renderSidebarGroup(args: {
     groupId: SidebarGroupId;
     label: string;
@@ -4889,14 +5035,8 @@ export function AppSidebar({
             {args.popoverHeader}
             {args.groupId === "assistants" ? (
               <div className="assistant-worker-collapse worker-collapse">
-                <div className="sidebar-assistant-popover-tools">
-                  <span className="sidebar-assistant-sort-label">
-                    {assistantNavSortLabel}
-                  </span>
-                  {renderAssistantSortButton()}
-                </div>
-                {sortedAssistantNavAgents.length > 0 ? (
-                  sortedAssistantNavAgents.map((agent) =>
+                {primaryAssistantNavAgents.length > 0 ? (
+                  primaryAssistantNavAgents.map((agent) =>
                     renderAssistantAgent(agent, { roving: false }),
                   )
                 ) : assistantNavAgentsLoaded ? (
@@ -4979,9 +5119,40 @@ export function AppSidebar({
         headerActions={
           <>
             {args.headerActions}
-            {args.groupId === "assistants"
-              ? renderAssistantSortButton({ tabIndex: -1 })
-              : null}
+            {args.groupId === "assistants" ? (
+              <Tooltip
+                content={
+                  allProjectsExpanded
+                    ? t("sidebar.assistants.collapseAll")
+                    : t("sidebar.assistants.expandAll")
+                }
+              >
+                <button
+                  type="button"
+                  className="assistant-worker-icon-button sidebar-assistant-expand-button"
+                  aria-label={
+                    allProjectsExpanded
+                      ? t("sidebar.assistants.collapseAll")
+                      : t("sidebar.assistants.expandAll")
+                  }
+                  title={
+                    allProjectsExpanded
+                      ? t("sidebar.assistants.collapseAll")
+                      : t("sidebar.assistants.expandAll")
+                  }
+                  tabIndex={-1}
+                  disabled={
+                    primaryAssistantNavAgents.length === 0 ||
+                    Boolean(activeProjectDragKey)
+                  }
+                  onClick={handleToggleAllProjects}
+                >
+                  <SidebarActionIcon
+                    kind={allProjectsExpanded ? "collapse_all" : "expand_all"}
+                  />
+                </button>
+              </Tooltip>
+            ) : null}
             {args.groupId === "assistants" ? (
               <Tooltip
                 content={
@@ -5065,10 +5236,8 @@ export function AppSidebar({
         >
           {args.groupId === "assistants" ? (
             <div className="assistant-worker-collapse worker-collapse">
-              {sortedAssistantNavAgents.length > 0 ? (
-                sortedAssistantNavAgents.map((agent) =>
-                  renderAssistantAgent(agent),
-                )
+              {primaryAssistantNavAgents.length > 0 ? (
+                renderSortableAssistantProjects()
               ) : assistantNavAgentsLoaded ? (
                 <div className="sidebar-empty-hint">
                   {t("sidebar.assistants.empty")}

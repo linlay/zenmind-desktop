@@ -38,6 +38,8 @@ export type SidebarActionIconKind =
   | "back"
   | "forward"
   | "sort"
+  | "expand_all"
+  | "collapse_all"
   | "refresh"
   | "new_project"
   | "new_chat"
@@ -196,6 +198,22 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
           <path d="M12 7h8" />
           <path d="M12 12h6" />
           <path d="M12 17h4" />
+        </svg>
+      );
+    case "expand_all":
+      return (
+        <svg {...iconProps}>
+          <path d="m8 9 4-4 4 4" />
+          <path d="m8 15 4 4 4-4" />
+          <path d="M5 12h14" />
+        </svg>
+      );
+    case "collapse_all":
+      return (
+        <svg {...iconProps}>
+          <path d="m8 5 4 4 4-4" />
+          <path d="m8 19 4-4 4 4" />
+          <path d="M5 12h14" />
         </svg>
       );
     case "refresh":
