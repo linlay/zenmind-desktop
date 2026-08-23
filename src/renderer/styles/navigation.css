@@ -746,13 +746,15 @@
   line-height: 1.35;
 }
 
-.sidebar-chats-actions {
+.sidebar-chats-actions,
+.sidebar-project-chat-actions {
   display: flex;
   gap: 4px;
   margin-top: 2px;
 }
 
-.sidebar-chats-actions .sidebar-chats-more {
+.sidebar-chats-actions .sidebar-chats-more,
+.sidebar-project-chat-actions .sidebar-project-chat-more {
   flex: 1 1 0;
   width: auto;
   min-width: 0;

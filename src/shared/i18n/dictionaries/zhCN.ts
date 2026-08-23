@@ -304,7 +304,7 @@ export const zhCNMessages = {
   "sidebar.chats.defaultAgentSaveFailed": "保存 Chat 默认智能体失败。",
   "sidebar.chats.empty": "暂无对话。鼠标悬停「对话」即可新建。",
   "sidebar.chats.supportedBy": "由 {name} 支持",
-  "sidebar.chats.viewMoreHistory": "查看更多历史",
+  "sidebar.chats.viewMoreHistory": "查看历史",
   "sidebar.chats.card.agent": "智能体：{name}",
   "sidebar.chats.card.askedAt": "提问于：{time}",
   "sidebar.chats.card.status": "对话状态",

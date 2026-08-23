@@ -276,6 +276,11 @@ const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
 ]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 const CHATS_VISIBLE_LIMIT = 8;
+const CHATS_VISIBLE_INCREMENT = 8;
+const CHATS_MAX_VISIBLE_LIMIT = 24;
+const PROJECT_CHATS_VISIBLE_LIMIT = 5;
+const PROJECT_CHATS_VISIBLE_INCREMENT = 5;
+const PROJECT_CHATS_MAX_VISIBLE_LIMIT = 20;
 const AGENT_WEBCLIENT_MANAGEMENT_ROUTE_PATHS: Set<string> = new Set(
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS.filter(
     (routeDefinition) => routeDefinition.kind === "management",
@@ -836,6 +841,10 @@ function createSidebarAgentMoreFocusId(agentKey: string) {
   return `agent-more:${agentKey}`;
 }
 
+function createSidebarAgentHistoryFocusId(agentKey: string) {
+  return `agent-history:${agentKey}`;
+}
+
 function createSidebarChatFocusId(chatId: string) {
   return `chat:${chatId}`;
 }
@@ -846,6 +855,10 @@ function createSidebarChatsChatFocusId(chatId: string) {
 
 function createSidebarChatsMoreFocusId() {
   return "chats-more";
+}
+
+function createSidebarChatsHistoryFocusId() {
+  return "chats-history";
 }
 
 function createSidebarWebFocusId(entryKey: WebEntryKey | string) {
@@ -1116,8 +1129,13 @@ export function AppSidebar({
   const [settingsSearchQuery, setSettingsSearchQuery] = useState("");
   const [forcedActiveManagementRoute, setForcedActiveManagementRoute] =
     useState("");
+  const [chatsVisibleLimit, setChatsVisibleLimit] = useState(
+    CHATS_VISIBLE_LIMIT,
+  );
   const [expandedAssistantAgentKey, setExpandedAssistantAgentKey] =
     useState("");
+  const [assistantAgentChatVisibleLimits, setAssistantAgentChatVisibleLimits] =
+    useState<Map<string, number>>(() => new Map<string, number>());
   const [creatingProject, setCreatingProject] = useState(false);
   const [createProjectDialog, setCreateProjectDialog] =
     useState<CreateProjectDialogState | null>(null);
@@ -1141,6 +1159,12 @@ export function AppSidebar({
   const conversationShareDialog = useConversationShareDialog(t);
   const chatInfoDialog = useChatInfoDialog(t);
   const lastAutoExpandedAssistantAgentKeyRef = useRef("");
+  const chatsShowMoreFocusIndexRef = useRef<number | null>(null);
+  const assistantAgentShowMoreFocusRef = useRef<{
+    agentKey: string;
+    chatId: string;
+    index: number;
+  } | null>(null);
   const sidebarNavRef = useRef<HTMLElement | null>(null);
   const toolMenuOpenRequestIdRef = useRef(0);
   const bootstrapGuideToolMenuAutoOpenedRef = useRef(false);
@@ -1202,8 +1226,8 @@ export function AppSidebar({
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
   const sidebarChatItems = useMemo(
-    () => assistantNavChatItems.slice(0, CHATS_VISIBLE_LIMIT),
-    [assistantNavChatItems],
+    () => assistantNavChatItems.slice(0, chatsVisibleLimit),
+    [assistantNavChatItems, chatsVisibleLimit],
   );
   const chatNavigationAgentsByKey = useMemo(
     () =>
@@ -1280,8 +1304,12 @@ export function AppSidebar({
     onOpenWebappWindow,
     onExportWebappItem,
   };
+  const chatsShowMoreAvailable =
+    chatsVisibleLimit < CHATS_MAX_VISIBLE_LIMIT &&
+    assistantNavChatItems.length > chatsVisibleLimit;
   const chatsHistoryAvailable =
-    assistantNavChatItemsHasMore &&
+    (assistantNavChatItems.length > CHATS_VISIBLE_LIMIT ||
+      assistantNavChatItemsHasMore) &&
     Boolean(resolvedChatDefaultAgentKey) &&
     !chatDefaultAgentUnavailable;
   const activeChatsOverviewChatId = sidebarChatItems.some(
@@ -1484,6 +1512,24 @@ export function AppSidebar({
   }, [isSettingsMode]);
 
   useEffect(() => {
+    if (sidebarGroupState.chats) {
+      return;
+    }
+    chatsShowMoreFocusIndexRef.current = null;
+    setChatsVisibleLimit(CHATS_VISIBLE_LIMIT);
+  }, [sidebarGroupState.chats]);
+
+  useEffect(() => {
+    if (sidebarGroupState.assistants) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = null;
+    setAssistantAgentChatVisibleLimits((current) =>
+      current.size > 0 ? new Map<string, number>() : current,
+    );
+  }, [sidebarGroupState.assistants]);
+
+  useEffect(() => {
     try {
       window.localStorage.setItem(
         SIDEBAR_GROUP_STATE_STORAGE_KEY,
@@ -1558,6 +1604,35 @@ export function AppSidebar({
       document.removeEventListener("keydown", handleDocumentKeyDown);
     };
   }, [assistantChatDeleteDialog]);
+
+  useLayoutEffect(() => {
+    const focusIndex = chatsShowMoreFocusIndexRef.current;
+    if (focusIndex === null || chatsVisibleLimit <= focusIndex) {
+      return;
+    }
+    chatsShowMoreFocusIndexRef.current = null;
+    const firstRevealedChat = assistantNavChatItems[focusIndex];
+    if (firstRevealedChat) {
+      focusSidebarRovingItemById(
+        createSidebarChatsChatFocusId(firstRevealedChat.chatId),
+      );
+    }
+  }, [assistantNavChatItems, chatsVisibleLimit]);
+
+  useLayoutEffect(() => {
+    const pendingFocus = assistantAgentShowMoreFocusRef.current;
+    if (!pendingFocus) {
+      return;
+    }
+    const visibleLimit =
+      assistantAgentChatVisibleLimits.get(pendingFocus.agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    if (visibleLimit <= pendingFocus.index) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = null;
+    focusSidebarRovingItemById(createSidebarChatFocusId(pendingFocus.chatId));
+  }, [assistantAgentChatVisibleLimits]);
 
   useLayoutEffect(() => {
     if (
@@ -2356,7 +2431,7 @@ export function AppSidebar({
     if (kind === "agent") {
       const agentKey = element.dataset.sidebarAgentKey || "";
       if (agentKey && expandedAssistantAgentKey === agentKey) {
-        setExpandedAssistantAgentKey("");
+        setAssistantAgentExpanded(agentKey, false);
         return true;
       }
       return false;
@@ -2367,7 +2442,14 @@ export function AppSidebar({
     if (kind === "chats-more") {
       return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
     }
-    if (kind === "chat" || kind === "agent-more") {
+    if (kind === "chats-history") {
+      return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
+    }
+    if (
+      kind === "chat" ||
+      kind === "agent-more" ||
+      kind === "agent-history"
+    ) {
       const agentKey = element.dataset.sidebarAgentKey || "";
       return agentKey
         ? focusSidebarRovingItemById(createSidebarAgentFocusId(agentKey))
@@ -2764,11 +2846,28 @@ export function AppSidebar({
     );
   }
 
+  function setAssistantAgentExpanded(agentKey: string, expanded: boolean) {
+    if (!expanded) {
+      if (assistantAgentShowMoreFocusRef.current?.agentKey === agentKey) {
+        assistantAgentShowMoreFocusRef.current = null;
+      }
+      setAssistantAgentChatVisibleLimits((current) => {
+        if (!current.has(agentKey)) {
+          return current;
+        }
+        const next = new Map(current);
+        next.delete(agentKey);
+        return next;
+      });
+    }
+    setExpandedAssistantAgentKey(expanded ? agentKey : "");
+  }
+
   function handleAssistantAgentExpand(
     agent: AssistantNavAgentItem,
     expanded: boolean,
   ) {
-    setExpandedAssistantAgentKey(expanded ? agent.agentKey : "");
+    setAssistantAgentExpanded(agent.agentKey, expanded);
   }
 
   function handleAssistantNewChat(
@@ -2777,10 +2876,46 @@ export function AppSidebar({
   ) {
     event.preventDefault();
     event.stopPropagation();
-    setExpandedAssistantAgentKey(agent.agentKey);
+    setAssistantAgentExpanded(agent.agentKey, true);
     requestNavigate(createAgentNewChatRoute(agent.agentKey), {
       retriggerAgentRoute: true,
       focusAgentChat: true,
+    });
+  }
+
+  function handleAssistantProjectShowMore(
+    event: MouseEvent<HTMLButtonElement>,
+    agent: AssistantNavAgentItem,
+  ) {
+    event.preventDefault();
+    event.stopPropagation();
+    const currentVisibleLimit =
+      assistantAgentChatVisibleLimits.get(agent.agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    if (currentVisibleLimit >= PROJECT_CHATS_MAX_VISIBLE_LIMIT) {
+      return;
+    }
+    const firstRevealedChat =
+      getAssistantNavAgentSortedChats(agent)[currentVisibleLimit];
+    if (!firstRevealedChat) {
+      return;
+    }
+    assistantAgentShowMoreFocusRef.current = {
+      agentKey: agent.agentKey,
+      chatId: firstRevealedChat.chatId,
+      index: currentVisibleLimit,
+    };
+    setAssistantAgentChatVisibleLimits((current) => {
+      const next = new Map(current);
+      next.set(
+        agent.agentKey,
+        Math.min(
+          (current.get(agent.agentKey) ?? PROJECT_CHATS_VISIBLE_LIMIT) +
+            PROJECT_CHATS_VISIBLE_INCREMENT,
+          PROJECT_CHATS_MAX_VISIBLE_LIMIT,
+        ),
+      );
+      return next;
     });
   }
 
@@ -2952,6 +3087,18 @@ export function AppSidebar({
     } finally {
       setChatDefaultAgentPending(false);
     }
+  }
+
+  function handleChatsShowMore(event: MouseEvent<HTMLButtonElement>) {
+    event.preventDefault();
+    event.stopPropagation();
+    if (!chatsShowMoreAvailable) {
+      return;
+    }
+    chatsShowMoreFocusIndexRef.current = chatsVisibleLimit;
+    setChatsVisibleLimit((current) =>
+      Math.min(current + CHATS_VISIBLE_INCREMENT, CHATS_MAX_VISIBLE_LIMIT),
+    );
   }
 
   function handleChatsOpenHistory(event: MouseEvent<HTMLButtonElement>) {
@@ -3819,22 +3966,40 @@ export function AppSidebar({
             <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
           )
         ) : null}
-        {chatsHistoryAvailable ? (
-          <button
-            type="button"
-            className="worker-chat-more assistant-worker-more sidebar-chats-more"
-            {...getSidebarRovingItemProps(
-              createSidebarChatsMoreFocusId(),
-              roving,
-            )}
-            data-sidebar-nav-kind={roving ? "chats-more" : undefined}
-            data-sidebar-agent-key={
-              roving ? resolvedChatDefaultAgentKey : undefined
-            }
-            onClick={handleChatsOpenHistory}
-          >
-            {t("sidebar.chats.viewMoreHistory")}
-          </button>
+        {chatsShowMoreAvailable || chatsHistoryAvailable ? (
+          <div className="sidebar-chats-actions">
+            {chatsShowMoreAvailable ? (
+              <button
+                type="button"
+                className="worker-chat-more assistant-worker-more sidebar-chats-more"
+                {...getSidebarRovingItemProps(
+                  createSidebarChatsMoreFocusId(),
+                  roving,
+                )}
+                data-sidebar-nav-kind={roving ? "chats-more" : undefined}
+                onClick={handleChatsShowMore}
+              >
+                {t("sidebar.chat.viewMoreSimple")}
+              </button>
+            ) : null}
+            {chatsHistoryAvailable ? (
+              <button
+                type="button"
+                className="worker-chat-more assistant-worker-more sidebar-chats-more"
+                {...getSidebarRovingItemProps(
+                  createSidebarChatsHistoryFocusId(),
+                  roving,
+                )}
+                data-sidebar-nav-kind={roving ? "chats-history" : undefined}
+                data-sidebar-agent-key={
+                  roving ? resolvedChatDefaultAgentKey : undefined
+                }
+                onClick={handleChatsOpenHistory}
+              >
+                {t("sidebar.chats.viewMoreHistory")}
+              </button>
+            ) : null}
+          </div>
         ) : null}
         {chatDefaultAgentError ? (
           <div className="sidebar-chats-agent-error" role="alert">
@@ -4161,7 +4326,13 @@ export function AppSidebar({
   ) {
     const roving = options.roving ?? true;
     const allRecentChats = getAssistantNavAgentSortedChats(agent);
-    const recentChats = getAssistantNavAgentPreviewChats(agent);
+    const projectChatVisibleLimit =
+      assistantAgentChatVisibleLimits.get(agent.agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    const recentChats = getAssistantNavAgentPreviewChats(
+      agent,
+      projectChatVisibleLimit,
+    );
     const chatCount = Math.max(
       0,
       getAssistantNavAgentNonNegativeInteger(agent.chatCount),
@@ -4172,7 +4343,6 @@ export function AppSidebar({
       getAssistantNavAgentNonNegativeInteger(agent.unreadCount),
       getAssistantNavAgentNonNegativeInteger(agent.unreadChatCount),
     );
-    const rowUnreadCount = allRecentChats.filter((chat) => !chat.isRead).length;
     const awaitingChats = allRecentChats.filter(
       (chat) => chat.hasPendingAwaiting === true,
     );
@@ -4191,6 +4361,10 @@ export function AppSidebar({
     const selected =
       getActiveSidebarAgentKey() === agent.agentKey || Boolean(activeChatId);
     const agentRole = getAssistantAgentRoleLabel(agent);
+    const projectShowMoreAvailable =
+      projectChatVisibleLimit < PROJECT_CHATS_MAX_VISIBLE_LIMIT &&
+      allRecentChats.length > projectChatVisibleLimit;
+    const projectHistoryAvailable = chatCount > PROJECT_CHATS_VISIBLE_LIMIT;
     return (
       <Collapse
         key={agent.agentKey}
@@ -4298,29 +4472,44 @@ export function AppSidebar({
           ) : chatCount === 0 ? (
             <div className="status-line">{t("sidebar.agent.noChats")}</div>
           ) : null}
-          {chatCount > recentChats.length ? (
-            <button
-              type="button"
-              className="worker-chat-more assistant-worker-more"
-              {...getSidebarRovingItemProps(
-                createSidebarAgentMoreFocusId(agent.agentKey),
-                roving,
-              )}
-              data-sidebar-nav-kind={roving ? "agent-more" : undefined}
-              data-sidebar-agent-key={roving ? agent.agentKey : undefined}
-              onClick={(event) => {
-                event.stopPropagation();
-                onOpenChatHistory?.(agent.agentKey);
-              }}
-            >
-              {t("sidebar.chat.viewMore", {
-                count: chatCount,
-                unread:
-                  rowUnreadCount > 0
-                    ? t("sidebar.chat.unreadSuffix", { count: rowUnreadCount })
-                    : "",
-              })}
-            </button>
+          {projectShowMoreAvailable || projectHistoryAvailable ? (
+            <div className="sidebar-project-chat-actions">
+              {projectShowMoreAvailable ? (
+                <button
+                  type="button"
+                  className="worker-chat-more assistant-worker-more sidebar-project-chat-more"
+                  {...getSidebarRovingItemProps(
+                    createSidebarAgentMoreFocusId(agent.agentKey),
+                    roving,
+                  )}
+                  data-sidebar-nav-kind={roving ? "agent-more" : undefined}
+                  data-sidebar-agent-key={roving ? agent.agentKey : undefined}
+                  onClick={(event) =>
+                    handleAssistantProjectShowMore(event, agent)
+                  }
+                >
+                  {t("sidebar.chat.viewMoreSimple")}
+                </button>
+              ) : null}
+              {projectHistoryAvailable ? (
+                <button
+                  type="button"
+                  className="worker-chat-more assistant-worker-more sidebar-project-chat-more"
+                  {...getSidebarRovingItemProps(
+                    createSidebarAgentHistoryFocusId(agent.agentKey),
+                    roving,
+                  )}
+                  data-sidebar-nav-kind={roving ? "agent-history" : undefined}
+                  data-sidebar-agent-key={roving ? agent.agentKey : undefined}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenChatHistory?.(agent.agentKey);
+                  }}
+                >
+                  {t("sidebar.chats.viewMoreHistory")}
+                </button>
+              ) : null}
+            </div>
           ) : null}
         </Flex>
       </Collapse>

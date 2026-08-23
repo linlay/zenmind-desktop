@@ -304,7 +304,7 @@ export const enUSMessages = {
   "sidebar.chats.defaultAgentSaveFailed": "Failed to save the Chat default agent.",
   "sidebar.chats.empty": "No chats. Hover over 'Chats' to start.",
   "sidebar.chats.supportedBy": "Supported by {name}",
-  "sidebar.chats.viewMoreHistory": "View more history",
+  "sidebar.chats.viewMoreHistory": "View history",
   "sidebar.chats.card.agent": "Agent: {name}",
   "sidebar.chats.card.askedAt": "Asked: {time}",
   "sidebar.chats.card.status": "Chat status",

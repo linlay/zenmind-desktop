@@ -98,7 +98,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       createdAt: EPOCH_MS + 20,
       updatedAt: EPOCH_MS + 21,
     },
-    ...Array.from({ length: 9 }, (_, index) => ({
+    ...Array.from({ length: 25 }, (_, index) => ({
       chatId: `react-${index}`,
       chatName: `React ${index}`,
       agentKey: "zenmi",
@@ -242,10 +242,13 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 9 });
+  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 25 });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
-    ["react-newest", "react-0", "react-1", "react-2", "react-3", "react-4", "react-5", "react-6"],
+    [
+      "react-newest",
+      ...Array.from({ length: 23 }, (_item, index) => `react-${index}`),
+    ],
   );
   assert.equal(first.chatItems[0].isRead, false);
   assert.equal(first.chatItems[0].hasActiveRun, false);
@@ -814,9 +817,9 @@ test("assistant navigation maps the unified activeRun summary contract for Proje
   }
 });
 
-test("assistant navigation probes the ninth eligible Chat without exposing it in the sidebar snapshot", () => {
+test("assistant navigation probes the twenty-fifth eligible Chat without exposing it in the sidebar snapshot", () => {
   const snapshot = buildAssistantNavigationChatsSnapshotFromPlatform(
-    Array.from({ length: 9 }, (_item, index) => ({
+    Array.from({ length: 25 }, (_item, index) => ({
       chatId: `chat-${index + 1}`,
       agentKey: "zenmi",
       createdAt: EPOCH_MS + index,
@@ -824,11 +827,11 @@ test("assistant navigation probes the ninth eligible Chat without exposing it in
     })),
   );
 
-  assert.equal(snapshot.chatItems.length, 8);
+  assert.equal(snapshot.chatItems.length, 24);
   assert.equal(snapshot.chatItemsHasMore, true);
   assert.deepEqual(
     snapshot.chatItems.map((chat) => chat.chatId),
-    ["chat-1", "chat-2", "chat-3", "chat-4", "chat-5", "chat-6", "chat-7", "chat-8"],
+    Array.from({ length: 24 }, (_item, index) => `chat-${index + 1}`),
   );
 });
 
