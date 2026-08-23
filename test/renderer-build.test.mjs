@@ -5732,23 +5732,36 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     /\.embedded-surface-page\.embedded-surface-page-embedded\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*100%;[^}]*margin:\s*0;[^}]*overflow:\s*hidden;/
   );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform\s*\{[^}]*--app-window-drag-height:\s*8px;/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-chat-work-panel\s*\{[^}]*--app-window-drag-right:\s*var\(--chat-work-panel-width,\s*360px\);/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-chat-work-panel\s*\{[^}]*--app-window-drag-height:\s*0px;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-chat-work-panel \.chat-work-panel\s*\{[^}]*--chat-work-panel-tabs-top-padding:/
+  );
   assert.doesNotMatch(globalStyles, /\.app-shell\.has-embedded-surface\.is-mac-platform\.has-service-webview-surface\s*\{/);
   assert.doesNotMatch(globalStyles, /--mac-embedded-titlebar-height:/);
-  assert.match(
+  assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content\s*\{[^}]*padding-top:\s*var\(--app-window-drag-height\);/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content\s*\{[^}]*padding-top:/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content::before\s*\{/
+  );
+  assert.doesNotMatch(
+    globalStyles,
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region\s*\{[^}]*(?:background|box-shadow):/
   );
   assert.match(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-content::before\s*\{[^}]*inset:\s*0 0 auto;[^}]*display:\s*block;[^}]*height:\s*var\(--app-window-drag-height\);[^}]*background:\s*var\(--embedded-surface-page-bg\);[^}]*pointer-events:\s*none;/
-  );
-  assert.match(
-    globalStyles,
-    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region\s*\{[^}]*position:\s*relative;[^}]*background:\s*var\(--embedded-surface-page-bg\);[^}]*box-shadow:\s*none;/
-  );
-  assert.match(
-    globalStyles,
-    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{[^}]*top:\s*3px;[^}]*left:\s*50%;[^}]*width:\s*28px;[^}]*height:\s*2px;[^}]*background:\s*var\(--desktop-ui-border\);[^}]*pointer-events:\s*none;/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{[^}]*top:\s*3px;[^}]*left:\s*50%;[^}]*width:\s*28px;[^}]*height:\s*2px;[^}]*transform:\s*translateX\(-50%\);[^}]*pointer-events:\s*none;/
   );
   assert.doesNotMatch(
     globalStyles,

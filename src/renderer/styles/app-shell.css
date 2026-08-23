@@ -33,6 +33,10 @@
   -webkit-backdrop-filter: none;
 }
 
+.app-shell.is-mac-platform {
+  --app-window-drag-height: 8px;
+}
+
 .app-shell.has-browser-chrome-surface.is-mac-platform,
 .app-shell.has-browser-chrome-surface.is-windows-platform {
   --app-window-drag-height: 0px;
@@ -51,19 +55,8 @@
   --app-window-drag-right: 48px;
 }
 
-.app-shell.is-mac-platform.has-service-webview-surface .app-content {
-  padding-top: var(--app-window-drag-height);
-}
-
-.app-shell.is-mac-platform.has-service-webview-surface .app-content::before {
-  content: "";
-  position: absolute;
-  inset: 0 0 auto;
-  z-index: 0;
-  display: block;
-  height: var(--app-window-drag-height);
-  background: var(--embedded-surface-page-bg);
-  pointer-events: none;
+.app-shell.is-mac-platform.has-chat-work-panel {
+  --app-window-drag-right: var(--chat-work-panel-width, 360px);
 }
 
 .app-shell.is-mac-translucent-sidebar,
@@ -644,8 +637,6 @@
 
 .app-shell.is-mac-platform.has-service-webview-surface .app-window-drag-region {
   position: relative;
-  background: var(--embedded-surface-page-bg);
-  box-shadow: none;
 }
 
 .app-shell.is-mac-platform.has-service-webview-surface .app-window-drag-region::after {
