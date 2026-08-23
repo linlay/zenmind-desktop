@@ -1088,6 +1088,7 @@ test("sidebar row action buttons stay out of default tab order", () => {
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-more-actions-button sidebar-website-child-action"[\s\S]{0,220}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /sidebar-website-status-action[\s\S]{0,300}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-project-button"[\s\S]{0,240}tabIndex=\{-1\}/);
+  assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-assistant-expand-button"[\s\S]{0,500}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /className="assistant-worker-icon-button sidebar-website-add-button"[\s\S]{0,240}tabIndex=\{-1\}/);
   assert.match(sidebarSource, /function openSidebarRovingContextMenu\(element: HTMLElement\)/);
   assert.doesNotMatch(sidebarSource, /function renderWebItemMenu\(\)/);
@@ -1131,7 +1132,7 @@ test("sidebar action buttons and right-clicks share native menus while selection
   assert.match(sidebarSource, /function handleOpenAgentMenu\([\s\S]*?openNativeSidebarContextMenu\([\s\S]*?kind: "agent"/u);
   assert.match(sidebarSource, /sidebar-website-child-action[\s\S]{0,600}openNativeSidebarContextMenu\([\s\S]{0,120}kind: "web"/u);
   assert.match(sidebarSource, /sidebar-website-add-button[\s\S]{0,500}openNativeSidebarContextMenu\([\s\S]{0,120}kind: "group"/u);
-  assert.match(sidebarSource, /sidebar-assistant-sort-button[\s\S]{0,500}openNativeSidebarContextMenu\([\s\S]{0,160}menuScope: "sort"/u);
+  assert.doesNotMatch(sidebarSource, /sidebar-assistant-sort-button|menuScope: "sort"/u);
   assert.match(sidebarSource, /\{ x: event\.clientX, y: event\.clientY \}/u);
   assert.match(sidebarSource, /event\.clientX === 0 && event\.clientY === 0[\s\S]*?\? undefined[\s\S]*?: \{ x: event\.clientX, y: event\.clientY \}/u);
   assert.match(sidebarSource, /event\.key === "ContextMenu"[\s\S]*?event\.shiftKey && event\.key === "F10"[\s\S]*?openSidebarRovingContextMenu\(currentElement\)/u);
@@ -1260,15 +1261,16 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /SIDEBAR_GROUP_STATE_STORAGE_KEY/);
   assert.match(sidebarSource, /const defaultSidebarGroupState: SidebarGroupState = \{\s*assistants: true,\s*chats: true,\s*webs: true,/);
   assert.match(sidebarSource, /"data-sidebar-group-id": args\.groupId/);
-  assert.match(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY/);
-  assert.match(sidebarSource, /type AssistantNavSortMode = "byName" \| "byTime"/);
+  assert.doesNotMatch(sidebarSource, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY|AssistantNavSortMode/u);
   assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
   assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)/);
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
-  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
-  assert.match(sidebarSource, /sidebar\.assistants\.sortByName/);
-  assert.match(sidebarSource, /sidebar\.assistants\.sortByTime/);
-  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "refresh"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
+  assert.doesNotMatch(sidebarSource, /sortAssistantNavAgentsForMode|sidebar\.assistants\.sortBy(?:Name|Time)/u);
+  assert.match(sidebarSource, /<DndContext[\s\S]*?<SortableContext[\s\S]*?primaryAssistantNavAgents\.map/u);
+  assert.match(sidebarSource, /useSensor\(PointerSensor,[\s\S]*?useSensor\(KeyboardSensor/u);
+  assert.match(sidebarSource, /headerButtonRef=\{dragActivator\?\.setActivatorNodeRef\}[\s\S]*?\.\.\.dragActivator\?\.listeners/u);
+  assert.doesNotMatch(sidebarSource, /sidebar-project-drag-handle/u);
+  assert.match(brandMarkSource, /export type SidebarActionIconKind[\s\S]*\| "sidebar_left"[\s\S]*\| "sidebar_right"[\s\S]*\| "back"[\s\S]*\| "forward"[\s\S]*\| "sort"[\s\S]*\| "expand_all"[\s\S]*\| "collapse_all"[\s\S]*\| "refresh"[\s\S]*\| "new_project"[\s\S]*\| "new_chat"[\s\S]*\| "more_actions"[\s\S]*\| "double_check"[\s\S]*\| "close";/);
   assert.match(brandMarkSource, /export function SidebarActionIcon/);
   assert.match(brandMarkSource, /SidebarIllustrationKind[\s\S]*?\| "chat"[\s\S]*?\| "project"/);
   assert.match(brandMarkSource, /SidebarIllustrationVariant = "compact" \| "rail"/);
@@ -1277,7 +1279,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(brandMarkSource, /case "project":[\s\S]*?<path d="M2 5\.2A2\.2/);
 
   assert.match(sidebarSource, /<SidebarActionIcon[\s\S]*?kind="sidebar_left"[\s\S]*?className="app-sidebar-collapse-button-icon-panel"/);
-  assert.match(sidebarSource, /<SidebarActionIcon kind="sort" \/>/);
+  assert.match(sidebarSource, /sidebar-chats-sort-button[\s\S]{0,500}<SidebarActionIcon kind="sort" \/>/u);
   assert.doesNotMatch(sidebarSource, /SortAscendingOutlined/);
   assert.match(brandMarkSource, /<path d="M6 5v14" \/>[\s\S]*?<path d="M3\.5 15\.5 6 18l2\.5-2\.5" \/>[\s\S]*?<path d="M12 7h8" \/>[\s\S]*?<path d="M12 12h6" \/>[\s\S]*?<path d="M12 17h4" \/>/);
   assert.doesNotMatch(brandMarkSource, /M13 8\.5h3|L14\.5 5|l-3 4\.5/);
@@ -1307,7 +1309,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(assistantNavigationSource, /const runningChat = chats\.find\(\(chat\) => chat\.hasActiveRun === true\);/);
   assert.match(assistantNavigationSource, /latestChat\.hasPendingAwaiting === true/);
   assert.match(assistantNavigationSource, /latestChat\.isRead === false/);
-  assert.match(sidebarSource, /getAssistantNavAgentPreviewChats\(\s*agent,\s*projectChatVisibleLimit,\s*\)/);
+  assert.match(sidebarSource, /getAssistantNavAgentPreviewChats\(agent\)/);
   assert.match(sidebarSource, /getAssistantNavAgentSortedChats\(agent\)/);
   assert.match(sidebarSource, /const attentionChat = getAssistantNavAgentAttentionChat\(agent\);/);
   assert.match(sidebarSource, /if \(attentionChatId\) \{\s*return createAgentChatRoute\(agent\.agentKey, attentionChatId\);/);
@@ -1323,7 +1325,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /function dispatchAgentRouteActionToActiveWebview\(targetPath: string\)/);
   assert.match(sidebarSource, /return `\$\{createAgentRoute\(agentKey\)\}\?newChat=\$\{Date\.now\(\)\}`;/);
   assert.doesNotMatch(sidebarSource, /newChatRequest/);
-  assert.match(sidebarSource, /setExpandedAssistantAgentKey\(result\.agentKey\);\s*requestNavigate\(createAgentNewChatRoute\(result\.agentKey\)\);/);
+  assert.match(sidebarSource, /setAssistantAgentExpanded\(result\.agentKey, true\);\s*requestNavigate\(createAgentNewChatRoute\(result\.agentKey\)\);/);
   assert.doesNotMatch(sidebarSource, /newChatRequested/);
   assert.match(sidebarSource, /requestNavigate\(\s*createAgentChatRoute\(chat\.agentKey \|\| currentAgentKey, chat\.chatId\),\s*\{\s*retriggerAgentRoute:\s*true,?\s*\},?\s*\)/);
   const assistantAgentExpandHandler =
@@ -1336,6 +1338,23 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
     assistantAgentExpandHandler,
     /requestNavigate|createAgentSelectionRoute/,
   );
+  assert.match(
+    sidebarSource,
+    /const allProjectsExpanded =[\s\S]*?primaryAssistantNavAgents\.every\(\(agent\) =>[\s\S]*?expandedAssistantAgentKeys\.has\(agent\.agentKey\)/,
+  );
+  assert.match(
+    sidebarSource,
+    /function handleToggleAllProjects[\s\S]*?setAssistantAgentChatVisibleLimits[\s\S]*?new Map<string, number>\(\)[\s\S]*?allProjectsExpanded[\s\S]*?primaryAssistantNavAgents\.map\(\(agent\) => agent\.agentKey\)/,
+  );
+  assert.match(
+    sidebarSource,
+    /sidebar-assistant-expand-button[\s\S]*?kind=\{allProjectsExpanded \? "collapse_all" : "expand_all"\}/,
+  );
+  assert.match(
+    assistantAgentRenderer,
+    /const recentChats = getAssistantNavAgentPreviewChats\(\s*agent,\s*projectChatVisibleLimit,\s*\);/,
+  );
+  assert.match(sidebarSource, /const PROJECT_CHATS_VISIBLE_LIMIT = 5;/);
   assert.match(sidebarSource, /onExpand=\{\(val\) => handleAssistantAgentExpand\(agent, val\)\}/);
   assert.doesNotMatch(sidebarSource, /handleAssistantAgentHeaderClick/);
   assert.match(sidebarSource, /displayCurrentPathname\.startsWith\("\/agent\/"\)/);
@@ -1405,7 +1424,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(sidebarSource, /worker-panel-time-label/);
   assert.doesNotMatch(sidebarSource, /<Tooltip content=\{t\("sidebar\.agent\.markAllRead"\)\}>/);
   assert.match(sidebarSource, /<Tooltip content=\{t\("sidebar\.agent\.newChat"\)\}>/);
-  assert.match(sidebarSource, /t\("sidebar\.chat\.viewMore", \{/);
+  assert.match(sidebarSource, /t\("sidebar\.chat\.viewMoreSimple"\)/);
   assert.match(sidebarSource, /getAssistantAwaitingStatusKey/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.approval/);
   assert.match(sidebarSource, /sidebar\.assistants\.awaitingStatus\.form/);
@@ -1701,7 +1720,7 @@ test("Projects sidebar toggles without navigation and summarizes numeric awaitin
 
   assert.match(
     assistantAgentExpandHandler,
-    /setExpandedAssistantAgentKey\(expanded \? agent\.agentKey : ""\);/,
+    /setAssistantAgentExpanded\(agent\.agentKey, expanded\);/,
   );
   assert.doesNotMatch(
     assistantAgentExpandHandler,
@@ -1873,7 +1892,7 @@ test("sidebar header icon buttons use color-only hover feedback", () => {
   );
 
   for (const className of [
-    "sidebar-assistant-sort-button",
+    "sidebar-assistant-expand-button",
     "sidebar-assistant-refresh-button",
     "sidebar-assistant-project-button",
     "sidebar-chats-share-button",
@@ -1912,8 +1931,8 @@ test("assistant sidebar chat history selection follows the current chat route", 
   assert.match(sidebarSource, /function getActiveSidebarChatId\(\s*agentKey: string,\s*chats: AssistantNavChatItem\[\] = \[\],\s*\)/);
   assert.match(sidebarSource, /agent\.agentKey === activeSidebarAgentKey/);
   assert.match(sidebarSource, /const activeAgentChanged =\s*lastAutoExpandedAssistantAgentKeyRef\.current !== matched\.agentKey;/);
-  assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,220}setExpandedAssistantAgentKey\(matched\.agentKey\);/);
-  assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKey\]\);/);
+  assert.match(sidebarSource, /if \(activeAgentChanged\) \{[\s\S]{0,500}next\.add\(matched\.agentKey\);/);
+  assert.match(sidebarSource, /\}, \[assistantNavAgents, activeSidebarAgentKey, expandedAssistantAgentKeys\]\);/);
   assert.match(sidebarSource, /const routeChatId = activeSidebarChatId;/);
   assert.match(sidebarSource, /if \(routeChatId\) \{[\s\S]{0,80}return routeChatId;/);
   assert.match(sidebarSource, /const activeChatId = getActiveSidebarChatId\(agent\.agentKey, allRecentChats\);/);
@@ -2059,17 +2078,17 @@ test("assistant sidebar empty state is localized", () => {
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.form": "等待提交"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.question": "等待回答"/);
   assert.match(zhCN, /"sidebar\.assistants\.awaitingStatus\.planning": "等待实施"/);
-  assert.match(zhCN, /"sidebar\.assistants\.sortByName": "按名称"/);
-  assert.match(zhCN, /"sidebar\.assistants\.sortByTime": "按时间"/);
+  assert.match(zhCN, /"sidebar\.project\.dragHandle": "拖拽调整项目顺序：\{name\}"/);
+  assert.doesNotMatch(zhCN, /sidebar\.assistants\.sortBy(?:Name|Time)/u);
   assert.match(zhCN, /"nav\.archives": "已归档对话"/);
   assert.match(enUS, /"sidebar\.assistants\.empty": "No projects\. Hover over 'Projects' to add\."/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.approval": "Await Appr"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.form": "Await Submit"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.question": "Await Ques"/);
   assert.match(enUS, /"sidebar\.assistants\.awaitingStatus\.planning": "Await Impl"/);
-  assert.match(enUS, /"sidebar\.assistants\.sortByName": "By name"/);
+  assert.match(enUS, /"sidebar\.project\.dragHandle": "Drag to reorder project: \{name\}"/);
   assert.match(enUS, /"nav\.archives": "Archived Chats"/);
-  assert.match(enUS, /"sidebar\.assistants\.sortByTime": "By time"/);
+  assert.doesNotMatch(enUS, /sidebar\.assistants\.sortBy(?:Name|Time)/u);
 });
 
 test("assistant sidebar empty state waits for navigation load", () => {
@@ -2140,7 +2159,8 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   assert.match(sidebarSource, /const \[chatsVisibleLimit, setChatsVisibleLimit\] = useState\(\s*CHATS_VISIBLE_LIMIT,\s*\);/);
   assert.doesNotMatch(sidebarSource, /getAssistantNavRecentChatsOverview/);
   assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
-  assert.match(sidebarSource, /sortAssistantNavAgentsForMode\(primaryAssistantNavAgents, assistantNavSortMode\)/);
+  assert.doesNotMatch(sidebarSource, /sortAssistantNavAgentsForMode|assistantNavSortMode/u);
+  assert.match(sidebarSource, /renderSortableAssistantProjects\(\)/u);
   assert.doesNotMatch(sidebarSource, /const CHATS_RECENT_LIMIT = 8;/);
   assert.match(appShell, /function getChatNavigationAgentOptions\(items: AssistantNavAgentItem\[\]\)[\s\S]*?items\.filter\(isAssistantNavChatAgent\)/);
   assert.match(appShell, /setChatNavAgentOptions\(getChatNavigationAgentOptions\(navigationItems\)\)/);
@@ -2174,7 +2194,7 @@ test("Projects chats expand from 5 to 20 and open history filtered by Project", 
     )?.[0] ?? "";
   const projectRenderer =
     sidebarSource.match(
-      /function renderAssistantAgent\([\s\S]*?function renderSidebarGroup/,
+      /function renderAssistantAgent\([\s\S]*?function renderSortableAssistantProjects/,
     )?.[0] ?? "";
   const projectExpansionSetter =
     sidebarSource.match(
@@ -2200,6 +2220,10 @@ test("Projects chats expand from 5 to 20 and open history filtered by Project", 
     projectRenderer,
     /projectChatVisibleLimit < PROJECT_CHATS_MAX_VISIBLE_LIMIT &&\s*allRecentChats\.length > projectChatVisibleLimit/,
   );
+  assert.match(
+    projectRenderer,
+    /const projectHistoryAvailable = chatCount > PROJECT_CHATS_VISIBLE_LIMIT;/,
+  );
   assert.match(projectRenderer, /className="sidebar-project-chat-actions"/);
   assert.match(projectRenderer, /data-sidebar-nav-kind=\{roving \? "agent-more" : undefined\}/);
   assert.match(projectRenderer, /data-sidebar-nav-kind=\{roving \? "agent-history" : undefined\}/);
@@ -2207,6 +2231,10 @@ test("Projects chats expand from 5 to 20 and open history filtered by Project", 
   assert.match(
     projectExpansionSetter,
     /if \(!expanded\)[\s\S]*?next\.delete\(agentKey\)/,
+  );
+  assert.match(
+    sidebarSource,
+    /function handleToggleAllProjects[\s\S]*?setAssistantAgentChatVisibleLimits\([\s\S]*?new Map<string, number>\(\)[\s\S]*?setExpandedAssistantAgentKeys/,
   );
   assert.match(
     sidebarSource,
@@ -2278,6 +2306,7 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
   assert.match(chatsListSource, /navigationKind: "chats-chat"/);
   assert.match(chatsListSource, /rowClassName: "sidebar-chats-row"/);
   assert.match(chatsListSource, /itemClassName: \[\s*"sidebar-chats-item"/);
+  assert.match(styles, /\.sidebar-chats-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*4px;/);
   assert.match(chatsListSource, /wrapItem: \(item\) => \(/);
   assert.match(
     chatsListSource,
@@ -4750,6 +4779,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /interface AssistantCreateProjectRequest/);
   assert.match(contracts, /type AssistantCreateProjectType = "coder" \| "kbase"/);
   assert.match(contracts, /interface AssistantCreateProjectResult/);
+  assert.match(contracts, /interface AssistantReorderProjectsRequest[\s\S]*?agentKeys: string\[\]/);
+  assert.match(contracts, /interface AssistantReorderProjectsResult[\s\S]*?updatedAt\?: EpochMilliseconds/);
   assert.match(contracts, /interface AssistantCreateCoderProjectRequest/);
   assert.match(contracts, /type AssistantCreateCoderProjectResult = AssistantCreateProjectResult/);
   assert.match(contracts, /AssistantNavigationAgentsChangedListener/);
@@ -4760,6 +4791,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(contracts, /listNavigationAgents: \(options\?: AssistantNavigationListOptions\) => Promise<AssistantNavAgentItemsResult>/);
   assert.match(contracts, /getNavigationLiveStatus: \(\) => Promise<AssistantNavigationLiveStatus>/);
   assert.match(contracts, /createProject:\s*\(input: AssistantCreateProjectRequest\) => Promise<AssistantCreateProjectResult>/);
+  assert.match(contracts, /reorderProjects:\s*\(input: AssistantReorderProjectsRequest\) => Promise<AssistantReorderProjectsResult>/);
   assert.match(contracts, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) => Promise<AssistantCreateCoderProjectResult>/);
   assert.match(contracts, /markAgentChatsRead: \(agentKey: string\) => Promise<AssistantNavActionResult>/);
   assert.match(preload, /listAgents: \(\) => ipcRenderer\.invoke\("assistant\.listAgents"\)/);
@@ -4768,6 +4800,7 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(preload, /getNavigationLiveStatus: \(\) => ipcRenderer\.invoke\("assistant\.getNavigationLiveStatus"\)/);
   assert.match(preload, /listCopilotAgents: \(\) => ipcRenderer\.invoke\("assistant\.listCopilotAgents"\)/);
   assert.match(preload, /createProject:\s*\(input: AssistantCreateProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createProject", input\)/);
+  assert.match(preload, /reorderProjects:\s*\(input: AssistantReorderProjectsRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.reorderProjects", input\)/);
   assert.match(preload, /createCoderProject:\s*\(input: AssistantCreateCoderProjectRequest\) =>[\s\S]{0,120}ipcRenderer\.invoke\("assistant\.createCoderProject", input\)/);
   assert.match(preload, /onNavigationAgentsChanged/);
   assert.doesNotMatch(preload, /onBootstrapStateChanged|assistant\.bootstrapStateChanged/);
@@ -4779,16 +4812,21 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.getNavigationLiveStatus"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.listCopilotAgents"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createProject"/);
+  assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.reorderProjects"/);
+  assert.match(assistantHandlers, /"\/api\/agents\?scope=nav&mode=CODER&mode=KBASE"/);
+  assert.match(assistantHandlers, /"\/api\/agents\/order"[\s\S]{0,120}method: "PUT"/);
   assert.match(assistantHandlers, /ipcMain\.handle\("assistant\.createCoderProject"/);
   assert.match(assistantHandlers, /callAgentPlatform\?\.?\(app, "\/api\/admin\/agents\/create"/);
   assert.match(assistantHandlers, /assistantNavigationStatusClient\?\.scheduleRefresh\(0\)/);
   assert.match(assistantRuntime, /AssistantNavigationStatusClient/);
   assert.match(assistantNavigationStatusClient, /type: "\/api\/chats"/);
   assert.match(assistantNavigationStatusClient, /mode: NAVIGATION_CHAT_AGENT_MODE/);
+  assert.match(assistantNavigationStatusClient, /const NAVIGATION_CHAT_LIMIT = 24;/);
   assert.match(assistantNavigationStatusClient, /const NAVIGATION_CHAT_PROBE_LIMIT = NAVIGATION_CHAT_LIMIT \+ 1;/);
   assert.match(assistantNavigationStatusClient, /limit: NAVIGATION_CHAT_PROBE_LIMIT/);
   assert.match(assistantNavigationStatusClient, /buildAssistantNavigationChatsSnapshotFromPlatform/);
   assert.match(assistantNavigationStatusClient, /applyAssistantNavigationChatPush/);
+  assert.doesNotMatch(assistantNavigationStatusClient, /sortNavigationAgents|compareNavigationAgents/u);
   assert.match(assistantNavigationStatusClient, /getLiveStatus\(\): AssistantNavigationLiveStatus/);
   assert.match(assistantNavigationStatusClient, /const NAVIGATION_LIVE_FRAME_LIMIT = 20;/);
   assert.match(assistantNavigationStatusClient, /\.slice\(-NAVIGATION_LIVE_FRAME_LIMIT\)/);
@@ -5504,10 +5542,20 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(dialog, /desktop-action-confirmation-buttons/);
   assert.match(dialog, /useLayoutEffect/);
   assert.match(dialog, /focusTarget\?\.focus\(\{ preventScroll: true \}\)/);
+  assert.match(dialog, /window\.addEventListener\("focus", focusDefaultDecision\)/);
+  assert.match(dialog, /window\.removeEventListener\("focus", focusDefaultDecision\)/);
+  assert.match(dialog, /previouslyFocusedElement\?\.isConnected/);
   assert.match(dialog, /\[request\?\.defaultDecision, request\?\.requestId\]/);
   assert.doesNotMatch(dialog, /setTimeout/);
   assert.match(dialog, /event\.key === "Escape"/);
+  assert.match(dialog, /event\.key === "Enter"/);
+  assert.match(dialog, /isNativeEnterTarget\(dialog, document\.activeElement\)/);
+  assert.match(dialog, /defaultButtonRef\.current\?\.click\(\)/);
+  assert.match(dialog, /!event\.isComposing/);
+  assert.match(dialog, /!event\.repeat/);
   assert.match(dialog, /event\.key !== "Tab"/);
+  assert.match(dialog, /window\.addEventListener\("keydown", handleKeyDown, true\)/);
+  assert.match(dialog, /window\.removeEventListener\("keydown", handleKeyDown, true\)/);
   assert.doesNotMatch(dialog, /event\.key\s*===\s*"(?: |Space|Spacebar)"/);
   assert.match(dialog, /tabIndex=\{-1\}/);
   assert.match(dialog, /data-decision=\{button\.decision\}/);

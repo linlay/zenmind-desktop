@@ -20,6 +20,8 @@ const {
   readAssistantNavigationAgentsFromPlatform,
   resolveAssistantWorkspaceGitBranch,
 } = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
+const { readDesktopProfileFromRoot } = require("../dist-electron/main/desktop-profile-store.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
 
 const EPOCH_MS = 1_783_000_000_000;
 
@@ -72,6 +74,24 @@ function createPlatformActiveRun(overrides = {}) {
   };
 }
 
+function emitPlatformConnected(socket, sessionId = "platform-navigation-test") {
+  socket.onmessage?.({
+    data: JSON.stringify({
+      frame: "push",
+      type: "connected",
+      data: {
+        protocolVersion: 2,
+        sessionId,
+        serverTime: EPOCH_MS,
+        liveness: {
+          heartbeatIntervalMs: 30_000,
+          silenceTimeoutMs: 100_000,
+        },
+      },
+    }),
+  });
+}
+
 test("assistant navigation reads global REACT chats over WebSocket and keeps displayed chat status live", async (t) => {
   const originalFetch = globalThis.fetch;
   const originalWebSocket = globalThis.WebSocket;
@@ -98,7 +118,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       createdAt: EPOCH_MS + 20,
       updatedAt: EPOCH_MS + 21,
     },
-    ...Array.from({ length: 25 }, (_, index) => ({
+    ...Array.from({ length: 9 }, (_, index) => ({
       chatId: `react-${index}`,
       chatName: `React ${index}`,
       agentKey: "zenmi",
@@ -182,7 +202,10 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       this.onclose = null;
       this.onerror = null;
       sockets.push(this);
-      queueMicrotask(() => this.onopen?.());
+      queueMicrotask(() => {
+        this.onopen?.();
+        emitPlatformConnected(this, `platform-navigation-${sockets.length}`);
+      });
     }
 
     send(data) {
@@ -197,6 +220,16 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
             id: request.id,
             code: 0,
             data: response,
+          }),
+        }));
+      } else if (request.type === "/api/chats/order") {
+        queueMicrotask(() => this.onmessage?.({
+          data: JSON.stringify({
+            frame: "response",
+            type: "/api/chats/order",
+            id: request.id,
+            code: 0,
+            data: { sortMode: "manual", updatedAt: EPOCH_MS },
           }),
         }));
       }
@@ -247,14 +280,30 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     first.chatItems.map((chat) => chat.chatId),
     [
       "react-newest",
-      ...Array.from({ length: 23 }, (_item, index) => `react-${index}`),
+      "react-0",
+      "react-1",
+      "react-2",
+      "react-3",
+      "react-4",
+      "react-5",
+      "react-6",
+      "react-7",
+      "react-8",
     ],
   );
   assert.equal(first.chatItems[0].isRead, false);
   assert.equal(first.chatItems[0].hasActiveRun, false);
   assert.equal(first.chatItems[1].chatId, "react-0");
   assert.equal(first.chatItems[1].hasActiveRun, true);
-  assert.equal(first.chatItemsHasMore, true);
+  assert.equal(first.chatItemsHasMore, false);
+  assert.equal(first.chatSortMode, "manual");
+  assert.equal(first.chatOrderingSupported, true);
+  assert.equal(
+    readDesktopProfileFromRoot(
+      getDesktopConfigRoot({ getPath: () => temporaryAppData }),
+    ).navigation.chatSortMode,
+    "manual",
+  );
   const connected = client.getLiveStatus();
   assert.equal(connected.phase, "connected");
   assert.equal(connected.source, "desktop-nav");
@@ -272,7 +321,9 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
       { direction: "connection", kind: "connecting", type: null },
       { direction: "connection", kind: "connected", type: null },
       { direction: "outbound", kind: "request", type: "/api/chats" },
+      { direction: "outbound", kind: "request", type: "/api/chats/order" },
       { direction: "inbound", kind: "response", type: "/api/chats" },
+      { direction: "inbound", kind: "response", type: "/api/chats/order" },
     ],
   );
   const mutableStatus = client.getLiveStatus();
@@ -285,10 +336,10 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
     sockets[0].emit({ frame: "response", type: `diagnostic-${index}` });
   }
   const boundedFrames = client.getLiveStatus().recentFrames;
-  assert.equal(boundedFrames.length, 4);
+  assert.equal(boundedFrames.length, 6);
   assert.deepEqual(
     boundedFrames.map((frame) => frame.type),
-    [null, null, "/api/chats", "/api/chats"],
+    [null, null, "/api/chats", "/api/chats/order", "/api/chats", "/api/chats/order"],
   );
   assert.equal(pushEvents.length, 0);
 
@@ -398,7 +449,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   assert.equal(client.getSnapshot().chatItems.some((chat) => chat.chatId === "not-listed"), false);
   await new Promise((resolve) => setTimeout(resolve, 450));
   assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/chats").length, 6);
-  assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 8));
+  assert.ok(snapshots.some((snapshot) => snapshot.chatItems.length === 10));
 
   sockets[0].emit({ frame: "push", type: "chat.created", data: {
     agentKey: "zenmi",
@@ -418,14 +469,91 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
   const reconnecting = client.getLiveStatus();
   assert.equal(reconnecting.phase, "reconnecting");
   assert.match(reconnecting.lastError, /realtime connection closed/);
-  assert.ok(reconnecting.recentFrames.some((frame) =>
-    frame.kind === "push" && frame.type === "awaiting.answered",
-  ));
   assert.notEqual(reconnecting.recentFrames.at(-1)?.kind, "closed");
 
   const reconnected = await client.refreshNow();
   assert.equal(sockets.length, 2);
   assert.equal(reconnected.chatItems.find((chat) => chat.chatId === "react-0")?.hasActiveRun, true);
+});
+
+test("assistant navigation degrades old Platforms to recent without losing Chats", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const originalWebSocket = globalThis.WebSocket;
+  const temporaryAppData = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-nav-old-platform-"));
+  const debugMessages = [];
+
+  class FakeWebSocket {
+    constructor() {
+      this.onopen = null;
+      this.onmessage = null;
+      this.onclose = null;
+      this.onerror = null;
+      queueMicrotask(() => {
+        this.onopen?.();
+        emitPlatformConnected(this, "platform-old-order");
+      });
+    }
+
+    send(data) {
+      const request = JSON.parse(data);
+      if (request.type === "/api/chats") {
+        queueMicrotask(() => this.onmessage?.({
+          data: JSON.stringify({
+            frame: "response",
+            type: request.type,
+            id: request.id,
+            code: 0,
+            data: [createNavigationChat({ chatId: "legacy-chat" })],
+          }),
+        }));
+      } else if (request.type === "/api/chats/order") {
+        queueMicrotask(() => this.onmessage?.({
+          data: JSON.stringify({
+            frame: "error",
+            type: request.type,
+            id: request.id,
+            code: 404,
+            msg: "route not found",
+          }),
+        }));
+      }
+    }
+
+    close() {}
+  }
+
+  globalThis.WebSocket = FakeWebSocket;
+  globalThis.fetch = async () => ({
+    ok: true,
+    status: 200,
+    async json() {
+      return { code: 0, data: [{ key: "zenmi", name: "Zenmi", chats: [] }] };
+    },
+  });
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+    globalThis.WebSocket = originalWebSocket;
+    fs.rmSync(temporaryAppData, { recursive: true, force: true });
+  });
+
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => temporaryAppData },
+    getServiceState: async () => ({
+      status: "running",
+      healthMeta: { webUrl: "http://127.0.0.1:11789" },
+    }),
+    issueAccessToken: async () => ({ ok: true, token: "secret-token", message: "" }),
+    onSnapshot: () => {},
+    onDebug: (message) => debugMessages.push(message),
+  });
+  t.after(() => client.stop());
+
+  const snapshot = await client.refreshNow();
+  assert.equal(snapshot.ok, true);
+  assert.deepEqual(snapshot.chatItems.map((chat) => chat.chatId), ["legacy-chat"]);
+  assert.equal(snapshot.chatSortMode, "recent");
+  assert.equal(snapshot.chatOrderingSupported, false);
+  assert.ok(debugMessages.some((message) => message.includes("chat-order")));
 });
 
 test("assistant navigation replays chat runtime pushes that arrive during a snapshot refresh", async (t) => {
@@ -457,11 +585,26 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
       this.onclose = null;
       this.onerror = null;
       sockets.push(this);
-      queueMicrotask(() => this.onopen?.());
+      queueMicrotask(() => {
+        this.onopen?.();
+        emitPlatformConnected(this, `platform-refresh-${sockets.length}`);
+      });
     }
 
     send(data) {
       const request = JSON.parse(data);
+      if (request.type === "/api/chats/order") {
+        queueMicrotask(() => this.onmessage?.({
+          data: JSON.stringify({
+            frame: "response",
+            type: "/api/chats/order",
+            id: request.id,
+            code: 0,
+            data: { sortMode: "recent" },
+          }),
+        }));
+        return;
+      }
       if (request.type !== "/api/chats") {
         return;
       }
@@ -710,7 +853,10 @@ test("assistant navigation retains its last valid snapshot when a refreshed batc
 
   class FakeWebSocket {
     constructor() {
-      queueMicrotask(() => this.onopen?.());
+      queueMicrotask(() => {
+        this.onopen?.();
+        emitPlatformConnected(this, "platform-time-contract");
+      });
     }
 
     send(data) {
@@ -723,6 +869,16 @@ test("assistant navigation retains its last valid snapshot when a refreshed batc
             id: request.id,
             code: 0,
             data: chatResponse,
+          }),
+        }));
+      } else if (request.type === "/api/chats/order") {
+        queueMicrotask(() => this.onmessage?.({
+          data: JSON.stringify({
+            frame: "response",
+            type: "/api/chats/order",
+            id: request.id,
+            code: 0,
+            data: { sortMode: "recent" },
           }),
         }));
       }
@@ -985,8 +1141,8 @@ test("assistant navigation preserves absent optional agent times and rejects mal
     { key: "copilot-without-time", name: "Without time" },
     { key: "copilot-timestamped", name: "Timestamped", updatedAt: EPOCH_MS },
   ]);
-  assert.deepEqual(copilotAgents.map((agent) => agent.agentKey), ["copilot-timestamped", "copilot-without-time"]);
-  assert.equal(Object.hasOwn(copilotAgents[1], "updatedAt"), false);
+  assert.deepEqual(copilotAgents.map((agent) => agent.agentKey), ["copilot-without-time", "copilot-timestamped"]);
+  assert.equal(Object.hasOwn(copilotAgents[0], "updatedAt"), false);
 
   for (const value of [
     "2026-07-13T00:00:00.000Z",
@@ -1102,6 +1258,16 @@ test("assistant navigation activity agents include copilot-only chats for deskto
             createdAt: EPOCH_MS,
             updatedAt: EPOCH_MS + 1,
           }],
+        }, {
+          key: "zenmi",
+          name: "Duplicate Zenmi",
+          chats: [{
+            chatId: "copilot-zenmi-chat",
+            agentKey: "zenmi",
+            chatName: "Copilot duplicate chat",
+            createdAt: EPOCH_MS + 2,
+            updatedAt: EPOCH_MS + 3,
+          }],
         }]
       : [{ key: "zenmi", name: "Zenmi" }];
     return {
@@ -1119,11 +1285,74 @@ test("assistant navigation activity agents include copilot-only chats for deskto
     { scope: "nav", includeChats: "50" },
     { scope: "copilot", includeChats: "50" },
   ]);
+  assert.deepEqual(items.map((item) => item.agentKey), ["zenmi", "net-yu"]);
   const copilotAgent = items.find((item) => item.agentKey === "net-yu");
   assert.equal(copilotAgent?.displayName, "网驭智能体");
   assert.equal(copilotAgent?.unreadCount, 1);
   assert.equal(copilotAgent?.recentChats[0]?.chatId, "copilot-chat-1");
   assert.equal(copilotAgent?.recentChats[0]?.lastRunContent, "已完成网络诊断");
+  assert.equal(
+    items[0]?.recentChats.some((chat) => chat.chatId === "copilot-zenmi-chat"),
+    true,
+  );
+});
+
+test("assistant navigation client preserves the Platform nav catalog order", async (t) => {
+  const originalFetch = globalThis.fetch;
+  const requestedUrls = [];
+  t.after(() => {
+    globalThis.fetch = originalFetch;
+  });
+  globalThis.fetch = async (url) => {
+    requestedUrls.push(String(url));
+    return {
+      ok: true,
+      status: 200,
+      async json() {
+        return {
+          code: 0,
+          data: [
+            { key: "z-first", name: "Zulu", updatedAt: EPOCH_MS },
+            { key: "a-second", name: "Alpha", updatedAt: EPOCH_MS + 100 },
+            { key: "middle-third", name: "Middle" },
+          ],
+        };
+      },
+    };
+  };
+
+  const items = await readAssistantNavigationAgentsFromPlatform(
+    "http://127.0.0.1:11789",
+    "token",
+  );
+
+  assert.equal(new URL(requestedUrls[0]).searchParams.get("scope"), "nav");
+  assert.deepEqual(items.map((item) => item.agentKey), [
+    "z-first",
+    "a-second",
+    "middle-third",
+  ]);
+});
+
+test("assistant navigation pushes update agents in place without changing catalog order", () => {
+  const items = [
+    createAgent({ agentKey: "older-slot", displayName: "Zulu" }),
+    createAgent({ agentKey: "newer-slot", displayName: "Alpha" }),
+  ];
+  const result = applyAssistantNavigationPush(items, {
+    frame: "push",
+    type: "chat.read_all",
+    data: {
+      agentKey: "newer-slot",
+      updatedAt: EPOCH_MS + 10,
+    },
+  });
+
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.items.map((item) => item.agentKey), [
+    "older-slot",
+    "newer-slot",
+  ]);
 });
 
 test("assistant navigation requests enough chat history for sidebar attention priority", async (t) => {
