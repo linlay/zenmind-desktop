@@ -21,7 +21,6 @@ export const SURFACE_ROLES = [
   "skill",
   "workpanel-web",
   "service",
-  "history",
   "help",
   "plugin-settings",
 ] as const;
@@ -44,7 +43,6 @@ export const COPILOT_CHAT_SURFACE_ID = "copilot-chat";
 export const KANBAN_CHAT_SURFACE_ID = "kanban-chat";
 export const COPILOT_DOCK_SURFACE_ID = "copilot-dock";
 export const BROWSER_SURFACE_ID = "browser";
-export const HISTORY_SURFACE_ID = "history";
 export const HELP_SURFACE_ID = "help";
 
 export const LEGACY_FIXED_SURFACE_ID_ALIASES: Readonly<Record<string, string>> = Object.freeze({
@@ -62,7 +60,6 @@ const FIXED_ROLE_IDS: Partial<Record<SurfaceRole, string>> = {
   "kanban-chat": KANBAN_CHAT_SURFACE_ID,
   "copilot-dock": COPILOT_DOCK_SURFACE_ID,
   browser: BROWSER_SURFACE_ID,
-  history: HISTORY_SURFACE_ID,
   help: HELP_SURFACE_ID,
 };
 
@@ -105,7 +102,7 @@ const CHILD_ROLES = new Set<SurfaceRole>([
   "workpanel-web",
 ]);
 
-const UTILITY_ROLES = new Set<SurfaceRole>(["service", "history", "help", "plugin-settings"]);
+const UTILITY_ROLES = new Set<SurfaceRole>(["service", "help", "plugin-settings"]);
 const READ_ONLY_ROLES = new Set<SurfaceRole>([
   "overview", "debug", "source", "artifact", "reference", "file", "planning",
 ]);

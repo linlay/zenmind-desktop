@@ -33,7 +33,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -3537,6 +3537,23 @@ export function AppShell() {
     });
   }, [dispatchWorkPanelCommand]);
 
+  const handleHistoryChatRemoved = useCallback((
+    chat: AssistantHistoryChatItem,
+    nextChat: AssistantHistoryChatItem | null,
+  ) => {
+    closeChatWorkPanelWorkspace(chat.chatId, true);
+    if (activeChatRouteInfo.chatId === chat.chatId) {
+      const ownerAgentKey = chat.agentKey || activeChatRouteInfo.agentKey.trim();
+      const fallbackRoute = nextChat?.agentKey
+        ? createAgentChatRoute(nextChat.agentKey, nextChat.chatId)
+        : ownerAgentKey
+          ? createAgentWebclientRoute({ agentKey: ownerAgentKey })
+          : "/agents";
+      requestNavigationWithAgentChatFocus(fallbackRoute);
+    }
+    void refreshAssistantNavAgents({ force: true });
+  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, closeChatWorkPanelWorkspace, currentRoute]);
+
   const toggleMainChatWorkPanel = useCallback(() => {
     const chatId = activeChatWorkPanelChatId;
     if (!chatId) return;
@@ -4096,11 +4113,12 @@ export function AppShell() {
         <ChatHistoryDialog
           key={chatHistoryDialog.id}
           agentKey={chatHistoryDialog.agentKey}
-          hostTheme={resolvedTheme}
+          agents={assistantNavAgents}
           isMac={isMac}
           isWindows={isWindows}
           onClose={() => setChatHistoryDialog(null)}
           onOpenChat={openChatFromHistoryDialog}
+          onChatRemoved={handleHistoryChatRemoved}
         />
       ) : null}
       <DesktopGlobalSearchOverlay
@@ -4111,6 +4129,7 @@ export function AppShell() {
         shortcutPlatform={isMac ? "darwin" : isWindows ? "win32" : null}
         t={t}
         onClose={() => setGlobalSearchOpen(false)}
+        onOpenHistory={() => openChatHistoryDialog()}
         onNavigate={requestNavigationWithAgentChatFocus}
       />
       <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />

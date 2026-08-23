@@ -385,7 +385,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     if (input.surfaceType === "agent-chat") return ["main-chat", "kanban-chat"];
     if (input.surfaceType === "agent-copilot") return ["copilot-chat", "copilot-dock", "copilot"];
     if (input.surfaceType === "agent-management") {
-      return ["service", "history", "source", "file-diff", "artifact", "reference", "file", "planning", "agent", "skill"];
+      return ["service", "source", "file-diff", "artifact", "reference", "file", "planning", "agent", "skill"];
     }
     return ["service", "plugin-settings"];
   }
@@ -403,7 +403,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       input.serviceId?.trim() !== identityKey
     ) return false;
     if (
-      ["main-chat", "copilot-chat", "kanban-chat", "copilot-dock", "history", "overview", "debug", "btw", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
+      ["main-chat", "copilot-chat", "kanban-chat", "copilot-dock", "overview", "debug", "btw", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
       input.serviceId?.trim() !== "agent-webclient"
     ) return false;
     if (input.surfaceRole === "main-chat" && input.surfaceId !== MAIN_CHAT_SURFACE_ID) return false;

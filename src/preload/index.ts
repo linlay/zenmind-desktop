@@ -221,6 +221,7 @@ const api: DesktopApi = {
     deleteMemoryItem: (memoryId: string) => ipcRenderer.invoke("assistant.deleteMemoryItem", memoryId),
     clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
+    listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),

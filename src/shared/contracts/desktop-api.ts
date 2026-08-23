@@ -7,7 +7,7 @@ import type { DesktopPetAgentOption, DesktopPetSettings, DesktopPetSettingsInput
 import type { MarketCommandResult, MarketFavoriteInput, MarketFavoriteResult, MarketListOptions, MarketListResult, MarketSettings, MarketSettingsInput, SandboxImageImportProgressEvent } from "./marketplace";
 import type { KanbanChangedListener, KanbanCloudConfig, KanbanCloudConfigResult, KanbanDeleteResult, KanbanIssueInput, KanbanIssueMoveInput, KanbanIssueResult, KanbanIssueUpdateInput, KanbanListResult, KanbanRunIssueInput, KanbanRunIssueResult, KanbanSettingsInput, KanbanSettingsResult } from "./kanban";
 import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, AssistantAttachmentProgressListener } from "./attachments";
-import type { AssistantChatDetail, AssistantChatInfo, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantFirstInstallBootstrapNavigationResult, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
+import type { AssistantChatDetail, AssistantChatInfo, AssistantChatSearchRequest, AssistantChatSearchResponse, AssistantChatSummary, AssistantConversationShareResult, AssistantCreateCoderProjectRequest, AssistantCreateCoderProjectResult, AssistantCreateProjectRequest, AssistantCreateProjectResult, AssistantEventListener, AssistantFirstInstallBootstrapNavigationResult, AssistantHistoryChatsResult, AssistantMemoryItem, AssistantMemorySettings, AssistantMemorySettingsInput, AssistantMemoryStats, AssistantMemoryStorage, AssistantMemorySummary, AssistantNavActionResult, AssistantNavAgentItemsResult, AssistantNavigationAgentsChangedListener, AssistantNavigationListOptions, AssistantNavigationLiveStatus, AssistantNavigationPushEventListener, AssistantPastedImageInput, AssistantSettingsInput, AssistantSettingsPublic, AssistantStartRunRequest, AssistantStartRunResult, AssistantStopRunResult, AssistantSubmitAwaitingRequest, AssistantSubmitAwaitingResult, AssistantVoiceCorrectionRequest, AssistantVoiceCorrectionResult, AssistantVoiceTranscriptionRequest, AssistantVoiceTranscriptionResult, AssistantWorkerOpenListener, CopilotDevToolsTargetInput, DesktopActionCallListener, DesktopActionConfirmationListener, DesktopActionConfirmationResponse, DesktopActionRendererResponse, DesktopPageContextSnapshot, WebviewOpenTabListener } from "./copilot";
 import type { LocaleSettings, SupportedLocale } from "../i18n";
 import type {
   SidebarContextMenuPopupRequest,
@@ -642,7 +642,7 @@ export type DesktopWindowState = {
   isFullScreen: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
-export type DesktopGlobalSearchActionShortcutId = "newChat" | "agents" | "skills" | "mcpConnectors";
+export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "skills" | "mcpConnectors";
 export type DesktopGlobalSearchShortcutSlot = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type DesktopGlobalSearchShortcut =
   | { kind: "action"; actionId: DesktopGlobalSearchActionShortcutId }
@@ -782,6 +782,7 @@ export interface DesktopApi {
     deleteMemoryItem: (memoryId: string) => Promise<{ ok: boolean; message: string }>;
     clearMemoryItems: () => Promise<{ ok: boolean; message: string; deletedCount: number }>;
     listChats: () => Promise<AssistantChatSummary[]>;
+    listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     getChatInfo: (chatId: string) => Promise<AssistantChatInfo | null>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;

@@ -183,6 +183,29 @@ export interface AssistantChatSummary {
   messageCount: number;
 }
 
+export interface AssistantHistoryChatItem {
+  chatId: string;
+  chatName: string;
+  agentKey: string;
+  teamId?: string;
+  createdAt: EpochMilliseconds;
+  updatedAt: EpochMilliseconds;
+  lastRunId: string;
+  lastRunContent: string;
+  isRead: boolean;
+  hasActiveRun: boolean;
+  hasPendingAwaiting: boolean;
+  awaitingCount?: number;
+  awaitingMode?: AssistantAwaitingMode;
+}
+
+export interface AssistantHistoryChatsResult {
+  ok: boolean;
+  items: AssistantHistoryChatItem[];
+  message: string;
+  updatedAt: EpochMilliseconds;
+}
+
 export interface AssistantChatSearchRequest {
   query: string;
   limit?: number;

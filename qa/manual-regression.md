@@ -49,7 +49,7 @@
 ## P0：智能助理与页面协作
 
 - [ ] Main Assistant 可创建或继续 Chat，流式事件按 run 归属展示并正确到达终态。
-- [ ] 分别点击 Chats 标题栏和 Projects 内项目标题栏的“新建对话”，切换到 New Chat 后输入框立即获得焦点并可直接输入；Cmd+K 的 New Chat 保持相同行为。macOS 与 Windows 均验证。
+- [ ] 分别点击 Chats 标题栏和 Projects 内项目标题栏的“新建对话”，切换到 New Chat 后输入框立即获得焦点并可直接输入；Cmd+K 的 New Chat 保持相同行为。Cmd+K 的 Actions 在 New Chat 后显示 Open chat history；面板打开时 macOS `Cmd+H` / Windows `Ctrl+H` 关闭 Cmd+K 并打开未筛选的原生 History，面板关闭时 macOS `Cmd+H` 仍保持系统默认的隐藏应用行为。macOS 与 Windows 均验证。
 - [ ] 分别从 Chats 和 Projects 点击普通或“等待回答”Chat，切换完成后 Main Chat 立即获得键盘焦点；“等待回答”Chat 无需额外点击页面即可直接用数字键 `1`/`2`/`3` 选择问题选项。macOS 与 Windows 均验证。
 - [ ] 断线不会自动重复提交已接受的 query；新请求可重新建立连接。
 - [ ] 执行 `sleep 120`：103 秒附近不出现第二次 logical open 或 `WS_DISCONNECTED`，逻辑 Session ID 与请求关联不变；`run.finished` 直接到达原 Chat，无需切换 Chat 刷新。连续 30 分钟重复多次静默仍无误断线、重复 Run 或丢终态。
@@ -65,7 +65,7 @@
 - [ ] 已接受 Run 断线后从 `lastSeq` attach；过期 replay 游标返回明确错误，不伪造或跳过事件。
 - [ ] Platform 连续发送 N 条 delta 时，active Chat guest 收到 N 条独立 message，seq、streamId、timestamp、reason 与内容不变，源码和产物不存在 Run batch timer/queue。
 - [ ] Main Chat、Copilot Chat、Kanban Chat 任意切换时 active live surface 始终不超过一个；抓包确认旧 `/api/detach` 先于新 `/api/query` 或 `/api/attach`，detach 后后台 Run 不被 interrupt。
-- [ ] macOS 与 Windows 分别点击 Chats 与 Projects 的“查看更多历史”：Chats 打开未筛选 `/history`，Projects 以当前 Agent 预筛但可切换到 All/其他 Owner；Desktop 外层 route 不出现 `history=1`。dialog 支持关闭按钮、Esc、遮罩关闭、Tab/Shift+Tab 焦点约束和关闭后焦点恢复，亮色/暗色及窄窗口布局正确。选择记录后 dialog 关闭、Main Chat 打开并聚焦对应 `agentKey + chatId`；打开、筛选和关闭期间 active live surface 仍不超过一个，不发生额外 query/attach/detach。Agent WebClient 未就绪、加载失败和重试均留在 dialog 内显示可恢复状态。
+- [ ] macOS 与 Windows 分别验证 Chats 的“查看历史”打开全部记录，Projects 的入口以当前 Agent 初始化 Owner 筛选且可切换到 All/其他 Owner；Desktop route 不变化，也不创建 History WebView/surface。原生 Cmd+K 风格 dialog 约 720×640，顶部没有独立标题栏和关闭按钮，以搜索框作为视觉起点并显示 Esc 提示；Owner、起止日期与 Reset 收进类似 Kanban Projects Select 的 Filter popover，结果计数显示在 trigger 内，刷新、Esc、遮罩关闭、焦点约束和关闭后焦点恢复正常。记录保持单行标题和单行最后内容，hover/focus 显示导出、归档、删除；归档或删除同步关闭对应 Work Panel、刷新 Sidebar，并在当前 Chat 被移除时回退导航。整个过程中 active live surface 不超过一个，且不发生额外 query/attach/detach。
 - [ ] 在 Main Chat 连续切换多个普通、运行中和空消息 Chat；每次只请求目标 `chatId`，owner Chat/registry 元数据更新不产生伪造的 inactive→active lifecycle，也不强制 replay 上一个 Chat。
 - [ ] macOS 与 Windows 分别从 `/agent/A?newChat=...` 和 `/agent/A?chatId=...` 在 guest 内切换到 Agent B：外层 route replace 为 `/agent/B?newChat=<新13位nonce>`、复用同一个 WebView、不重复 active lifecycle，旧 owner 清除且旧 observer 只 detach 一次；首条消息属于 B，并最终由匹配 query stream 收敛为 `/agent/B?chatId=...`。选择 B 的明确历史 Chat 时保留其 `chatId` 且不生成 `newChat`。
 - [ ] Main Chat 快速执行 A→B→C 时只有 C 的 ownerless `newChat` source 能登记和发送，A/B 的迟到导航不能抢回 URL。切换后立即发送时，在 payload owner、guest 实际 Agent 路由、Registry URL 和 Desktop page route 全部一致前返回本地 `protocol_error`，抓包确认 Agent Platform 未产生错误 Agent 的后台 Chat；跨域、错误路径、管理页、非 active surface 不触发切换。

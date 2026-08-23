@@ -14,6 +14,8 @@ import type {
   AssistantChatSearchResult,
   AssistantChatSummary,
   AssistantEvent,
+  AssistantHistoryChatItem,
+  AssistantHistoryChatsResult,
   AssistantMemoryItem,
   AssistantMemorySettings,
   AssistantMemoryStats,
@@ -124,9 +126,12 @@ type PlatformChatSummary = {
   chatId?: unknown;
   chatName?: unknown;
   agentKey?: unknown;
+  firstAgentKey?: unknown;
   workerKey?: unknown;
+  teamId?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
+  lastRunId?: unknown;
   lastRunContent?: unknown;
   read?: unknown;
   isRead?: unknown;
@@ -136,6 +141,8 @@ type PlatformChatSummary = {
   awaitingMode?: unknown;
   mode?: unknown;
   status?: unknown;
+  activeRun?: unknown;
+  hasActiveRun?: unknown;
 };
 
 type PlatformRunSummary = {
@@ -727,6 +734,48 @@ function mapChatSummary(summary: PlatformChatSummary, path: string): AssistantCh
   };
 }
 
+function mapHistoryChat(
+  summary: PlatformChatSummary,
+  path: string,
+): AssistantHistoryChatItem | null {
+  if (!summary || typeof summary !== "object" || Array.isArray(summary)) {
+    throw new Error(`${path} must be an object`);
+  }
+  validatePresentPlatformTimes(summary as Record<string, unknown>, path);
+  validateAwaitingPayloadTimes(summary.awaiting, `${path}.awaiting`);
+  const chatId = readString(summary.chatId).trim();
+  const createdAt = readRequiredPlatformTimestamp(summary.createdAt, `${path}.createdAt`);
+  const updatedAt = readRequiredPlatformTimestamp(summary.updatedAt, `${path}.updatedAt`);
+  if (!chatId) {
+    return null;
+  }
+  const awaitingCount = Math.max(0, Math.floor(readNumber(summary.awaitingCount)));
+  const awaitingMode = readChatAwaitingMode(summary);
+  const teamId = readString(summary.teamId).trim();
+  const agentKey = (
+    readString(summary.agentKey) ||
+    readString(summary.firstAgentKey) ||
+    readString(summary.workerKey)
+  ).trim();
+  return {
+    chatId,
+    chatName: readString(summary.chatName).trim() || t("assistant.newChat"),
+    agentKey,
+    ...(teamId ? { teamId } : {}),
+    createdAt,
+    updatedAt,
+    lastRunId: readString(summary.lastRunId).trim(),
+    lastRunContent: readString(summary.lastRunContent),
+    isRead: readChatIsRead(summary),
+    hasActiveRun:
+      summary.hasActiveRun === true ||
+      (typeof summary.activeRun === "object" && summary.activeRun !== null),
+    hasPendingAwaiting: chatHasPendingAwaiting(summary),
+    ...(awaitingCount > 0 ? { awaitingCount } : {}),
+    ...(awaitingMode ? { awaitingMode } : {}),
+  };
+}
+
 function mapChatSearchResult(value: unknown, path: string): AssistantChatSearchResult | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -1175,6 +1224,42 @@ export class AgentPlatformAssistantBridge {
         .map((summary, index) => mapChatSummary(summary, `chats[${index}]`))
         .filter((summary): summary is AssistantChatSummary => summary !== null)
       : [];
+  }
+
+  async listHistoryChats(): Promise<AssistantHistoryChatsResult> {
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return {
+        ok: false,
+        items: [],
+        message: availability.message,
+        updatedAt: nowEpochMillis(),
+      };
+    }
+    const response = await this.platformFetch(availability.baseUrl, "/api/chats", {
+      headers: this.jsonHeaders(availability.token),
+    });
+    if (!response.ok) {
+      return {
+        ok: false,
+        items: [],
+        message: await readErrorText(response),
+        updatedAt: nowEpochMillis(),
+      };
+    }
+    const data = unwrapApiResponse<PlatformChatSummary[]>(await response.json());
+    const items = Array.isArray(data)
+      ? data
+        .map((summary, index) => mapHistoryChat(summary, `historyChats[${index}]`))
+        .filter((summary): summary is AssistantHistoryChatItem => summary !== null)
+        .sort((left, right) => right.updatedAt - left.updatedAt || left.chatId.localeCompare(right.chatId))
+      : [];
+    return {
+      ok: true,
+      items,
+      message: "",
+      updatedAt: nowEpochMillis(),
+    };
   }
 
   async getChat(chatId: string): Promise<AssistantChatDetail | null> {

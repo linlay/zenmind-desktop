@@ -108,10 +108,6 @@ type ServiceWebviewSurfaceProps = {
   focusRequestId?: number | null;
   onFocusRequestHandled?: (requestId: number) => void;
   onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
-  onAgentWebclientHistoryOpenChat?: (request: {
-    agentKey: string;
-    chatId: string;
-  }) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -493,7 +489,6 @@ export function ServiceWebviewSurface({
   focusRequestId,
   onFocusRequestHandled,
   onCurrentUrlChange,
-  onAgentWebclientHistoryOpenChat,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1712,10 +1707,6 @@ export function ServiceWebviewSurface({
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,
       sendBridgeMessageToWebview,
       prepareAgentWebclientNewChat,
-      openAgentWebclientHistoryChat:
-        surfaceIdentity.surfaceRole === "history"
-          ? onAgentWebclientHistoryOpenChat
-          : undefined,
       setBridgeError,
       logDebug: (stage, message) => {
         console.info("[service-webview]", service?.id || "service", stage, message);
@@ -1910,7 +1901,6 @@ export function ServiceWebviewSurface({
     embeddedUrl,
     currentRoute,
     navigate,
-    onAgentWebclientHistoryOpenChat,
     surfaceIdentity.surfaceRole,
     surfaceRoute,
     webviewSrcUrl,

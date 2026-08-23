@@ -27,6 +27,10 @@ test("global search command shortcuts map macOS Command actions and Option agent
     { kind: "action", actionId: "newChat" },
   );
   assert.deepEqual(
+    resolveGlobalSearchCommandShortcut("darwin", keyDown("h", { meta: true })),
+    { kind: "action", actionId: "history" },
+  );
+  assert.deepEqual(
     resolveGlobalSearchCommandShortcut("darwin", keyDown("A", { meta: true })),
     { kind: "action", actionId: "agents" },
   );
@@ -80,6 +84,10 @@ test("global search command shortcuts map Windows Ctrl actions and Alt agent slo
   assert.deepEqual(
     resolveGlobalSearchCommandShortcut("win32", keyDown("m", { control: true })),
     { kind: "action", actionId: "mcpConnectors" },
+  );
+  assert.deepEqual(
+    resolveGlobalSearchCommandShortcut("win32", keyDown("h", { control: true })),
+    { kind: "action", actionId: "history" },
   );
 });
 
