@@ -5905,6 +5905,18 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.match(globalStyles, /\.app-shell\.is-mac-platform\s*\{[^}]*--app-window-drag-height:\s*8px;/);
   assert.doesNotMatch(
     globalStyles,
+    /\.app-shell\.is-mac-platform\.has-main-chat-work-panel-toggle\s*\{[^}]*--app-window-drag-right:/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-window-controls-layer\s*\{[^}]*z-index:\s*1001;[^}]*pointer-events:\s*none;/
+  );
+  assert.match(
+    globalStyles,
+    /\.app-window-controls-layer \.main-chat-work-panel-toggle\s*\{[^}]*pointer-events:\s*auto;/
+  );
+  assert.doesNotMatch(
+    globalStyles,
     /\.app-shell\.is-mac-platform\.has-chat-work-panel\s*\{[^}]*--app-window-drag-right:/
   );
   assert.doesNotMatch(
