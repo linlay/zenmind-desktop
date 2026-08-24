@@ -17,6 +17,7 @@ import { NavLink } from "react-router-dom";
 import { CloseOutlined } from "@ant-design/icons";
 import {
   DndContext,
+  DragOverlay,
   KeyboardSensor,
   MeasuringStrategy,
   PointerSensor,
@@ -1181,6 +1182,7 @@ export function AppSidebar({
     useState<AssistantProjectDropIndicator | null>(null);
   const [projectOrderSaving, setProjectOrderSaving] = useState(false);
   const [projectOrderError, setProjectOrderError] = useState("");
+  const [activeChatDragId, setActiveChatDragId] = useState("");
   const [chatDropIndicator, setChatDropIndicator] =
     useState<AssistantChatDropIndicator | null>(null);
   const [chatOrderMutationPending, setChatOrderMutationPending] = useState(false);
@@ -1301,6 +1303,11 @@ export function AppSidebar({
     primaryAssistantNavAgents.every((agent) =>
       expandedAssistantAgentKeys.has(agent.agentKey),
     );
+  const activeProjectDragItem = activeProjectDragKey
+    ? primaryAssistantNavAgents.find(
+        (agent) => agent.agentKey === activeProjectDragKey,
+      ) ?? null
+    : null;
   const normalizedChatDefaultAgentKey = chatDefaultAgentKey.trim();
   const chatDefaultAgent = useMemo(
     () =>
@@ -1316,6 +1323,9 @@ export function AppSidebar({
     () => assistantNavChatItems.slice(0, chatsVisibleLimit),
     [assistantNavChatItems, chatsVisibleLimit],
   );
+  const activeChatDragItem = activeChatDragId
+    ? sidebarChatItems.find((chat) => chat.chatId === activeChatDragId) ?? null
+    : null;
   const chatNavigationAgentsByKey = useMemo(
     () =>
       new Map(
@@ -3622,6 +3632,7 @@ export function AppSidebar({
     }
     setChatOrderError("");
     setChatDropIndicator(null);
+    setActiveChatDragId(String(event.active.id));
   }
 
   function resolveChatDropIndicator(
@@ -3665,6 +3676,7 @@ export function AppSidebar({
         )
       : null;
     setChatDropIndicator(null);
+    setActiveChatDragId("");
     if (
       chatOrderMutationPending ||
       !assistantChatOrderingSupported ||
@@ -4310,6 +4322,7 @@ export function AppSidebar({
         onDragOver={handleChatDragOver}
         onDragCancel={() => {
           setChatDropIndicator(null);
+          setActiveChatDragId("");
         }}
         onDragEnd={(event) => void handleChatDragEnd(event)}
       >
@@ -4319,6 +4332,27 @@ export function AppSidebar({
         >
           {sidebarChatItems.map((chat) => renderChatsRow(chat, roving, true))}
         </SortableContext>
+        {typeof document !== "undefined"
+          ? createPortal(
+              <DragOverlay
+                adjustScale={false}
+                dropAnimation={null}
+                zIndex={130}
+              >
+                {activeChatDragItem ? (
+                  <div
+                    className="sidebar-navigation-drag-overlay sidebar-chat-drag-overlay"
+                    aria-hidden="true"
+                  >
+                    <span className="sidebar-navigation-drag-overlay-name">
+                      {getAssistantChatDisplayText(activeChatDragItem, t)}
+                    </span>
+                  </div>
+                ) : null}
+              </DragOverlay>,
+              document.body,
+            )
+          : null}
       </DndContext>
     );
   }
@@ -4999,6 +5033,27 @@ export function AppSidebar({
               />
             ))}
           </SortableContext>
+          {typeof document !== "undefined"
+            ? createPortal(
+                <DragOverlay
+                  adjustScale={false}
+                  dropAnimation={null}
+                  zIndex={130}
+                >
+                  {activeProjectDragItem ? (
+                    <div
+                      className="sidebar-navigation-drag-overlay sidebar-project-drag-overlay"
+                      aria-hidden="true"
+                    >
+                      <span className="sidebar-navigation-drag-overlay-name">
+                        {activeProjectDragItem.displayName}
+                      </span>
+                    </div>
+                  ) : null}
+                </DragOverlay>,
+                document.body,
+              )
+            : null}
         </DndContext>
         {projectOrderError ? (
           <div className="sidebar-project-order-error" role="alert">

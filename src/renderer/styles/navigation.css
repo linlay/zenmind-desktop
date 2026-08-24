@@ -922,6 +922,43 @@
   opacity: 0.35;
 }
 
+.sidebar-navigation-drag-overlay {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding: 5px 8px;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--surface-strong) 82%, transparent);
+  box-shadow: var(--panel-shadow);
+  color: var(--ink);
+  font: inherit;
+  line-height: 1.35;
+  opacity: 0.78;
+  pointer-events: none;
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
+.sidebar-chat-drag-overlay {
+  min-height: 29px;
+  font-size: 13px;
+}
+
+.sidebar-project-drag-overlay {
+  min-height: 36px;
+  font-size: 14px;
+}
+
+.sidebar-navigation-drag-overlay-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .sidebar-sortable-chat .sidebar-chats-item {
   cursor: grab;
   touch-action: none;

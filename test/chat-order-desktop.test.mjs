@@ -27,6 +27,7 @@ function registerChatOrderHandler(t, callAgentPlatform) {
       if (name === "home") return homePath;
       throw new Error(`unexpected app path ${name}`);
     },
+    once() {},
   };
   const handlers = new Map();
   const calls = [];
@@ -139,7 +140,7 @@ test("Desktop rejects invalid moves before Platform and preserves the cached mod
   );
 });
 
-test("expanded Chats drag directly with an insertion line and collapsed Chats do not", () => {
+test("expanded Chats drag with a portaled name preview and insertion line", () => {
   const sidebar = fs.readFileSync(
     path.join(projectRoot, "src/renderer/app-shell/navigation/AppSidebar.tsx"),
     "utf8",
@@ -153,14 +154,17 @@ test("expanded Chats drag directly with an insertion line and collapsed Chats do
     "utf8",
   );
   assert.doesNotMatch(sidebar, /sidebar-chat-drag-handle/u);
-  assert.doesNotMatch(sidebar, /sidebar-chat-drag-overlay/u);
+  assert.match(sidebar, /<DragOverlay[\s\S]*?sidebar-chat-drag-overlay[\s\S]*?document\.body/u);
+  assert.match(sidebar, /getAssistantChatDisplayText\(activeChatDragItem, t\)/u);
+  assert.match(sidebar, /setActiveChatDragId\(String\(event\.active\.id\)\)/u);
+  assert.match(sidebar, /setActiveChatDragId\(""\)/u);
   assert.match(sidebar, /renderItem\(\{[\s\S]*?attributes: sortable\.attributes,[\s\S]*?listeners: sortable\.listeners/u);
   assert.match(sidebar, /const sortable = roving && assistantChatOrderingSupported/u);
   assert.match(sidebar, /onDragOver=\{handleChatDragOver\}/u);
   assert.match(sidebar, /dropIndicator\.position === "before"[\s\S]*?beforeChatId[\s\S]*?afterChatId/u);
   assert.match(navigationStyles, /has-drop-indicator-before::before[\s\S]*?has-drop-indicator-after::after/u);
   assert.doesNotMatch(navigationStyles, /sidebar-chat-drag-handle/u);
-  assert.doesNotMatch(navigationStyles, /sidebar-chat-drag-overlay/u);
+  assert.match(navigationStyles, /\.sidebar-navigation-drag-overlay\s*\{[\s\S]*?opacity:\s*0\.78;[\s\S]*?pointer-events:\s*none;/u);
   assert.match(sidebar, /setChatOrderMutationPending\(true\)[\s\S]*?onUpdateAssistantChatOrder\(request\)[\s\S]*?setChatOrderMutationPending\(false\)/u);
   assert.match(appShell, /setAssistantNavChatItems\(reordered\)[\s\S]*?setAssistantChatSortMode\("manual"\)/u);
   assert.match(appShell, /if \(!result\.ok\)[\s\S]*?setAssistantNavChatItems\(previousItems\)[\s\S]*?setAssistantChatSortMode\(previousMode\)/u);

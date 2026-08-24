@@ -56,7 +56,8 @@ test("expanded Projects use direct pointer and keyboard sorting", () => {
   assert.match(sidebar, /droppable: \{ strategy: MeasuringStrategy\.Always \}/u);
   assert.doesNotMatch(sidebar, /<div\s+ref=\{sortable\.setNodeRef\}[\s\S]{0,300}sidebar-sortable-project/u);
   assert.doesNotMatch(sidebar, /sidebar-project-drag-handle/u);
-  assert.doesNotMatch(sidebar, /CSS\.Transform|<DragOverlay/u);
+  assert.doesNotMatch(sidebar, /CSS\.Transform/u);
+  assert.match(sidebar, /<DragOverlay[\s\S]*?sidebar-project-drag-overlay[\s\S]*?activeProjectDragItem\.displayName[\s\S]*?document\.body/u);
   assert.match(sidebar, /function resolveProjectDropIndicator[\s\S]*?position: activeIndex > overIndex \? "before" : "after"/u);
   assert.match(sidebar, /function handleProjectDragOver[\s\S]*?setProjectDropIndicator/u);
   assert.match(sidebar, /onDragOver=\{handleProjectDragOver\}/u);
@@ -73,7 +74,7 @@ test("expanded Projects use direct pointer and keyboard sorting", () => {
   assert.match(sidebar, /isCollapsed \? \([\s\S]*?primaryAssistantNavAgents\.map\(\(agent\) =>[\s\S]*?renderAssistantAgent\(agent, \{ roving: false \}\)/u);
   assert.match(styles, /\.sidebar-sortable-project \.assistant-worker-header\s*\{[\s\S]*?app-region: no-drag;[\s\S]*?-webkit-app-region: no-drag;[\s\S]*?touch-action: none;/u);
   assert.match(styles, /\.sidebar-sortable-project\.has-drop-indicator-before::before,[\s\S]*?\.sidebar-sortable-project\.has-drop-indicator-after::after[\s\S]*?height: 2px;[\s\S]*?background: var\(--accent\)/u);
-  assert.doesNotMatch(styles, /sidebar-project-drag-overlay/u);
+  assert.match(styles, /\.sidebar-project-drag-overlay\s*\{[\s\S]*?min-height:\s*36px;[\s\S]*?font-size:\s*14px;/u);
   assert.match(sidebar, /const allProjectsExpanded =[\s\S]*?primaryAssistantNavAgents\.every\(\(agent\) =>[\s\S]*?expandedAssistantAgentKeys\.has\(agent\.agentKey\)/u);
   assert.match(sidebar, /function handleToggleAllProjects[\s\S]*?setAssistantAgentChatVisibleLimits[\s\S]*?new Map<string, number>\(\)[\s\S]*?allProjectsExpanded[\s\S]*?new Set\([\s\S]*?primaryAssistantNavAgents\.map\(\(agent\) => agent\.agentKey\)/u);
   assert.match(sidebar, /sidebar-assistant-expand-button[\s\S]*?kind=\{allProjectsExpanded \? "collapse_all" : "expand_all"\}/u);
