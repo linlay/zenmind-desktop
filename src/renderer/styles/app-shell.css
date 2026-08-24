@@ -55,10 +55,6 @@
   --app-window-drag-right: 48px;
 }
 
-.app-shell.is-mac-platform.has-chat-work-panel {
-  --app-window-drag-right: var(--chat-work-panel-width, 360px);
-}
-
 .app-shell.is-mac-translucent-sidebar,
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
   background: transparent;
