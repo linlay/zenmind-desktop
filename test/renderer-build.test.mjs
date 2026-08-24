@@ -4447,15 +4447,15 @@ test("website Copilot association is exposed across webs desktop api layers", ()
 
   // Green dot CSS
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{/u);
-  assert.match(navigationCss, /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*5px;[\s\S]*?left:\s*auto;/u);
+  assert.match(navigationCss, /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*13px;[\s\S]*?left:\s*auto;/u);
   assert.match(navigationCss, /\.sidebar-website-child-actions\s*\{[\s\S]*?flex:\s*0 0 28px;[\s\S]*?width:\s*28px;[\s\S]*?overflow:\s*visible;/u);
   assert.match(navigationCss, /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;/u);
   assert.match(navigationCss, /\.sidebar-website-child-row:hover \.sidebar-website-child-action[\s\S]*?opacity:\s*1;/u);
-  assert.match(navigationCss, /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateX\(-12px\);/u);
+  assert.match(navigationCss, /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateX\(-20px\);/u);
   assert.match(navigationCss, /\.sidebar-website-child-row:hover \.sidebar-webapp-status-dot[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*scale\(1\);/u);
   assert.match(navigationCss, /\.sidebar-website-status-action\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/u);
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{[\s\S]*?position:\s*absolute;/u);
-  assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;/u);
+  assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*4px;[\s\S]*?right:\s*8px;/u);
   assert.match(navigationCss, /\.sidebar-website-favicon\s*\{/u);
 
   // Website label font-size 14px matching Chats
@@ -5945,9 +5945,9 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region\s*\{[^}]*(?:background|box-shadow):/
   );
-  assert.match(
+  assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{[^}]*top:\s*3px;[^}]*left:\s*50%;[^}]*width:\s*28px;[^}]*height:\s*2px;[^}]*transform:\s*translateX\(-50%\);[^}]*pointer-events:\s*none;/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{/
   );
   assert.doesNotMatch(
     globalStyles,
