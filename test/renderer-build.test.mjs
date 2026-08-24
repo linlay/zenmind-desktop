@@ -5896,6 +5896,8 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   assert.match(appShell, /has-embedded-surface/);
   assert.match(appShell, /usesServiceWebviewSurface/);
   assert.match(appShell, /has-service-webview-surface/);
+  assert.match(appShell, /const usesWebappSurface = activeWebEntry\?\.kind === "webapp";/);
+  assert.match(appShell, /usesWebappSurface \? "has-webapp-surface" : ""/);
   assert.match(appShell, /location\.pathname\.startsWith\("\/plugin-settings\/"\)/);
   assert.doesNotMatch(appShell, /shouldRenderAppMainDragRegion/);
   assert.doesNotMatch(appShell, /app-main-drag-region/);
@@ -5905,6 +5907,8 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform\s*\{[^}]*--app-window-drag-height:\s*8px;/);
+  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--windows-titlebar-background:\s*#FFFFFF;/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\s*\{[^}]*--windows-titlebar-background:\s*#111111;/);
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-main-chat-work-panel-toggle\s*\{[^}]*--app-window-drag-right:/
@@ -5964,6 +5968,10 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
   assert.match(globalStyles, /\.app-window-drag-layer\s*\{[^}]*z-index:\s*1000;/);
+  assert.match(
+    globalStyles,
+    /\.app-shell\.is-windows-platform\.has-webapp-surface \.app-window-drag-layer::before\s*\{[^}]*content:\s*"";[^}]*position:\s*absolute;[^}]*inset:\s*0 calc\(-1 \* var\(--app-window-drag-right\)\) 0 calc\(-1 \* var\(--app-window-drag-left\)\);[^}]*background:\s*var\(--windows-titlebar-background\);[^}]*pointer-events:\s*none;/
+  );
   assert.doesNotMatch(serviceWebviewSurface, /className="pan-drag-region"/);
   assert.doesNotMatch(pluginSettingsPage, /className="pan-drag-region"/);
   assert.doesNotMatch(externalWebviewPage, /className="pan-drag-region"/);
