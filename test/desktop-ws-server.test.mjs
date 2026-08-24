@@ -330,6 +330,42 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
       },
       callRendererAction: async (request) => {
         desktopActionRendererCalls.push(request);
+        if (request.action === "desktop.web.navigate") {
+          const activeTab = {
+            tabId: "tab-1",
+            title: "Example",
+            currentUrl: "https://example.test/next",
+            active: true,
+            isLoading: false,
+            canGoBack: true,
+            canGoForward: false,
+            guestId: 81
+          };
+          return {
+            requestId: request.requestId,
+            action: request.action,
+            ok: true,
+            result: {
+              surface: {
+                surfaceId: "browser",
+                surfaceRole: "browser",
+                surfaceLevel: "root",
+                interaction: "interactive",
+                kind: "browser",
+                label: "Browser",
+                url: "https://example.test/next",
+                route: "/browser",
+                open: true,
+                active: true,
+                webContentsId: 81
+              },
+              tabs: [activeTab],
+              activeTab,
+              targetTabId: "tab-1",
+              navigatedUrl: "https://example.test/next"
+            }
+          };
+        }
         return { requestId: request.requestId, action: request.action, ok: true, result: {} };
       }
     },
@@ -517,6 +553,55 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   client.send({
     frame: "request",
     type: "action.call",
+    id: "web-navigate-action-1",
+    payload: {
+      action: "web.navigate",
+      args: { surfaceId: "browser", tabId: "tab-1", url: "https://example.test/next" },
+      permissionMode: "full_access"
+    }
+  });
+  const webNavigateAction = await client.waitFor((message) => message.id === "web-navigate-action-1");
+  assert.deepEqual(webNavigateAction.data, {
+    ok: true,
+    action: "desktop.web.navigate",
+    result: {
+      surface: {
+        surfaceId: "browser",
+        surfaceRole: "browser",
+        surfaceLevel: "root",
+        interaction: "interactive",
+        kind: "browser",
+        label: "Browser",
+        url: "https://example.test/next",
+        route: "/browser",
+        open: true,
+        active: true
+      },
+      tabs: [{
+        tabId: "tab-1",
+        title: "Example",
+        currentUrl: "https://example.test/next",
+        active: true,
+        isLoading: false,
+        canGoBack: true,
+        canGoForward: false
+      }],
+      activeTab: {
+        tabId: "tab-1",
+        title: "Example",
+        currentUrl: "https://example.test/next",
+        active: true,
+        isLoading: false,
+        canGoBack: true,
+        canGoForward: false
+      },
+      targetTabId: "tab-1",
+      navigatedUrl: "https://example.test/next"
+    }
+  });
+  client.send({
+    frame: "request",
+    type: "action.call",
     id: "workpanel-open-web-action-1",
     payload: {
       action: "workpanel.openWeb",
@@ -529,7 +614,7 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   assert.equal(workPanelOpenWeb.type, "user_cancelled");
   assert.equal(workPanelOpenWeb.data.requiresConfirmation, true);
   assert.equal(desktopActionConfirmationCalls.length, 1);
-  assert.equal(desktopActionRendererCalls.length, 0);
+  assert.deepEqual(desktopActionRendererCalls.map((request) => request.action), ["desktop.web.navigate"]);
   assert.ok(actionNames.includes("theme.get"));
   assert.ok(actionNames.includes("theme.set"));
   assert.ok(actionNames.includes("locale.get"));

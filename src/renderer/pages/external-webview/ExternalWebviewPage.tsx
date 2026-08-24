@@ -8,6 +8,7 @@ import type {
 import { useLocation } from "react-router-dom";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { AssistantPageContext } from "../../../shared/contracts";
+import type { DesktopWebActionStateResult } from "../../../shared/desktop-actions";
 import type { EmbeddedCdpSurfaceKind } from "../../../shared/embedded-cdp";
 import {
   createChatChildSurfaceIdentity,
@@ -1147,17 +1148,6 @@ export function ExternalWebviewPage({
     };
   };
 
-  const serializeTab = (tab: ExternalWebviewTabState) => ({
-    id: tab.id,
-    title: tab.title,
-    currentUrl: tab.currentUrl,
-    faviconUrl: tab.faviconUrl,
-    guestId: tab.guestId,
-    canGoBack: tab.canGoBack,
-    canGoForward: tab.canGoForward,
-    isLoading: tab.isLoading
-  });
-
   function embeddedError(code: string, message: string, details?: unknown): EmbeddedWebScriptError {
     return {
       ok: false as const,
@@ -1203,35 +1193,6 @@ export function ExternalWebviewPage({
     }
   }
 
-  const getEmbeddedWebSurfaceState = () => {
-    const { currentState, currentActiveTab, activeWebview } = getActiveWebviewState();
-    let webContentsId = currentActiveTab?.guestId ?? null;
-    if (activeWebview) {
-      try {
-        webContentsId = activeWebview.getWebContentsId();
-      } catch {
-        // Keep the last synced guest id if Electron has not attached yet.
-      }
-    }
-    const activeTabSnapshot = currentActiveTab ? serializeTab({
-      ...currentActiveTab,
-      guestId: webContentsId
-    }) : null;
-    return {
-      surface: {
-        id: surfaceId,
-        label: surfaceLabel ?? title,
-        url,
-        active: activeRef.current,
-        currentUrl: activeTabSnapshot?.currentUrl ?? url,
-        title: activeTabSnapshot?.title ?? title,
-        webContentsId
-      },
-      tabs: currentState.tabs.map((tab) => serializeTab(tab)),
-      activeTab: activeTabSnapshot
-    };
-  };
-
   const getPublicWebSurfaceState = () => {
     const currentState = browserStateRef.current;
     return {
@@ -1263,6 +1224,16 @@ export function ExternalWebviewPage({
         canGoForward: tab.canGoForward
       })),
       activeTabId: currentState.activeTabId || null
+    };
+  };
+
+  const getDesktopWebActionState = (): DesktopWebActionStateResult => {
+    const state = getPublicWebSurfaceState();
+    const { id: _internalSurfaceId, ...surface } = state.surface;
+    return {
+      surface,
+      tabs: state.tabs,
+      activeTab: state.tabs.find((tab) => tab.tabId === state.activeTabId) ?? null
     };
   };
 
@@ -1491,7 +1462,10 @@ export function ExternalWebviewPage({
           }
           await targetWebview.loadURL(nextUrl);
           setAddressInputValue(nextUrl);
-          return { ok: true, result: { ...getEmbeddedWebSurfaceState(), navigatedUrl: nextUrl } };
+          return {
+            ok: true,
+            result: { ...getDesktopWebActionState(), targetTabId: tabId, navigatedUrl: nextUrl }
+          };
         }
         case "desktop.web.reload": {
           const tabId = readTargetTabId(args);
@@ -1500,7 +1474,7 @@ export function ExternalWebviewPage({
             return embeddedError("tab_unavailable", t("externalWebview.error.tabUnavailable"), { tabId });
           }
           targetWebview.reload();
-          return { ok: true, result: getEmbeddedWebSurfaceState() };
+          return { ok: true, result: { ...getDesktopWebActionState(), targetTabId: tabId } };
         }
         case "desktop.web.refreshSurface": {
           const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
@@ -1527,7 +1501,7 @@ export function ExternalWebviewPage({
             return embeddedError("cannot_go_back", t("externalWebview.error.cannotGoBack"), { tabId });
           }
           targetWebview.goBack();
-          return { ok: true, result: getEmbeddedWebSurfaceState() };
+          return { ok: true, result: { ...getDesktopWebActionState(), targetTabId: tabId } };
         }
         case "desktop.web.openTab": {
           const nextUrl = readActionUrl(args);
@@ -1536,7 +1510,7 @@ export function ExternalWebviewPage({
           }
           const preferredTitle = typeof args.title === "string" ? args.title : "";
           const nextTab = openTab(nextUrl, preferredTitle);
-          return { ok: true, result: { ...getEmbeddedWebSurfaceState(), openedTab: serializeTab(nextTab) } };
+          return { ok: true, result: { ...getDesktopWebActionState(), openedTabId: nextTab.id } };
         }
         case "desktop.web.closeTab": {
           const targetSurfaceId = typeof args.surfaceId === "string" ? args.surfaceId.trim() : "";
@@ -1548,7 +1522,16 @@ export function ExternalWebviewPage({
           if (!result) {
             return embeddedError("tab_not_found", t("externalWebview.error.tabNotFound"), { tabId });
           }
-          return { ok: true, result };
+          return {
+            ok: true,
+            result: {
+              ...(result.closedSurface
+                ? { surface: null, tabs: [], activeTab: null }
+                : getDesktopWebActionState()),
+              closedTabId: result.closedTabId,
+              closedSurface: result.closedSurface
+            }
+          };
         }
         case "desktop.web.switchTab": {
           const tabId = readTargetTabId(args);
@@ -1557,7 +1540,7 @@ export function ExternalWebviewPage({
           }
           setActiveTab(tabId);
           await syncEmbeddedCdpSurface(browserStateRef.current);
-          return { ok: true, result: { ...getEmbeddedWebSurfaceState(), activeTabId: tabId } };
+          return { ok: true, result: getDesktopWebActionState() };
         }
         default:
           return null;

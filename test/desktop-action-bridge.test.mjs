@@ -88,6 +88,95 @@ function webappId(key) {
   return `webapp-${createHash("sha256").update(key).digest("hex").slice(0, 16)}`;
 }
 
+function createWorkPanelWorkspace() {
+  return {
+    workspaceId: "workpanel:chat-owner",
+    ownerChatId: "chat-owner",
+    items: [
+      {
+        itemId: "item-1",
+        stableKey: "web:https://example.test/",
+        descriptor: { kind: "web", url: "https://example.test/" },
+        title: "Example",
+        closable: true,
+        pinned: false,
+        createdAt: 1_800_000_000_000
+      },
+      {
+        itemId: "item-2",
+        stableKey: "web:https://second.test/",
+        descriptor: { kind: "web", url: "https://second.test/" },
+        title: "Second",
+        closable: true,
+        pinned: false,
+        createdAt: 1_800_000_000_001
+      }
+    ],
+    activeItemId: "item-1"
+  };
+}
+
+function createWorkPanelRendererResult(action) {
+  const workspace = createWorkPanelWorkspace();
+  if (action === "desktop.workpanel.closeWorkpanel") {
+    return { ok: true, workspaceId: workspace.workspaceId };
+  }
+  return {
+    ok: true,
+    workspaceId: workspace.workspaceId,
+    item: workspace.items[0],
+    state: { ...workspace, internalLayout: { width: 800 } },
+    workspaces: [workspace, { workspaceId: "workpanel:other-chat", ownerChatId: "other-chat", items: [], activeItemId: null }]
+  };
+}
+
+function createWebActionState() {
+  const tabs = [
+    {
+      tabId: "tab-1",
+      title: "Example",
+      currentUrl: "https://example.test/",
+      faviconUrl: "https://example.test/favicon.ico",
+      active: true,
+      isLoading: false,
+      canGoBack: true,
+      canGoForward: false,
+      guestId: 991,
+      webContentsId: 992
+    },
+    {
+      tabId: "tab-2",
+      title: "Second",
+      currentUrl: "https://second.test/",
+      active: false,
+      isLoading: true,
+      canGoBack: false,
+      canGoForward: true,
+      guestId: 993
+    }
+  ];
+  return {
+    surface: {
+      id: "browser",
+      surfaceId: "browser",
+      surfaceRole: "browser",
+      surfaceLevel: "root",
+      interaction: "interactive",
+      kind: "browser",
+      label: "Browser",
+      url: "https://example.test/",
+      route: "/browser",
+      open: true,
+      active: true,
+      webContentsId: 992
+    },
+    tabs,
+    activeTab: { ...tabs[0] },
+    activeTabId: "tab-1",
+    unrelatedSurfaces: [{ surfaceId: "website:other" }]
+  };
+}
+
 function createDesktopActionOptions(t) {
   const homePath = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-action-bridge-"));
   t.after(() => fs.rmSync(homePath, { recursive: true, force: true }));
@@ -369,7 +458,7 @@ test("trusted Agent WebClient WorkPanel calls bypass external confirmation while
       requestId: request.requestId,
       action: request.action,
       ok: true,
-      result: { ok: true, workspaceId: "workpanel:chat-owner" }
+      result: createWorkPanelRendererResult(request.action)
     };
   };
 
@@ -446,7 +535,7 @@ test("formal WorkPanel Web actions dispatch URL requests to the renderer", async
       requestId: request.requestId,
       action: request.action,
       ok: true,
-      result: { ok: true, workspaceId: "workpanel:chat-owner" }
+      result: createWorkPanelRendererResult(request.action)
     };
   };
 
@@ -503,7 +592,7 @@ test("Agent Platform context exempts only WorkPanel openWeb and refreshWeb from 
       requestId: request.requestId,
       action: request.action,
       ok: true,
-      result: { ok: true, workspaceId: "workpanel:chat-owner" }
+      result: createWorkPanelRendererResult(request.action)
     };
   };
 
@@ -535,6 +624,223 @@ test("Agent Platform context exempts only WorkPanel openWeb and refreshWeb from 
   assert.equal(ordinaryDesktopCall.requiresConfirmation, true);
   assert.equal(confirmationCalls.length, 2);
   assert.equal(rendererCalls.length, 2);
+});
+
+test("P1 renderer mutations expose exact bounded post-action state", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const workspace = createWorkPanelWorkspace();
+  const webState = createWebActionState();
+  options.callRendererAction = async (request) => {
+    let result;
+    if (request.action === "desktop.web.activateSurface") {
+      result = { surface: expectedWebState.surface };
+    } else if (request.action.startsWith("desktop.web.")) {
+      result = {
+        ...webState,
+        ...(request.action === "desktop.web.navigate"
+          ? { targetTabId: "tab-1", navigatedUrl: "https://example.test/next", internalNavigationId: "nav-1" }
+          : {}),
+        ...(request.action === "desktop.web.reload" || request.action === "desktop.web.goBack"
+          ? { targetTabId: "tab-1" }
+          : {}),
+        ...(request.action === "desktop.web.openTab"
+          ? { openedTabId: "tab-1", openedTab: webState.activeTab }
+          : {}),
+        ...(request.action === "desktop.web.closeTab"
+          ? {
+              closedTabId: "tab-2",
+              closedSurface: false,
+              remainingTabIds: ["tab-1"],
+              activeTabId: "tab-1"
+            }
+          : {})
+      };
+    } else if (request.action.startsWith("desktop.workpanel.")) {
+      result = createWorkPanelRendererResult(request.action);
+    } else {
+      result = {
+        pageKey: "help",
+        preference: { enabled: true, agentKey: "helper" },
+        desktopCopilotPages: { help: { enabled: true }, market: { enabled: false } }
+      };
+    }
+    return { requestId: request.requestId, action: request.action, ok: true, result };
+  };
+
+  const expectedTabs = [
+    {
+      tabId: "tab-1",
+      title: "Example",
+      currentUrl: "https://example.test/",
+      faviconUrl: "https://example.test/favicon.ico",
+      active: true,
+      isLoading: false,
+      canGoBack: true,
+      canGoForward: false
+    },
+    {
+      tabId: "tab-2",
+      title: "Second",
+      currentUrl: "https://second.test/",
+      active: false,
+      isLoading: true,
+      canGoBack: false,
+      canGoForward: true
+    }
+  ];
+  const expectedWebState = {
+    surface: {
+      surfaceId: "browser",
+      surfaceRole: "browser",
+      surfaceLevel: "root",
+      interaction: "interactive",
+      kind: "browser",
+      label: "Browser",
+      url: "https://example.test/",
+      route: "/browser",
+      open: true,
+      active: true
+    },
+    tabs: expectedTabs,
+    activeTab: expectedTabs[0]
+  };
+  const activated = await handleDesktopActionRequest(options, {
+    action: "desktop.web.activateSurface",
+    args: { surfaceId: "browser" },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(activated, {
+    ok: true,
+    action: "desktop.web.activateSurface",
+    result: { surface: expectedWebState.surface }
+  });
+  const webExpectations = new Map([
+    ["desktop.web.navigate", { ...expectedWebState, targetTabId: "tab-1", navigatedUrl: "https://example.test/next" }],
+    ["desktop.web.reload", { ...expectedWebState, targetTabId: "tab-1" }],
+    ["desktop.web.goBack", { ...expectedWebState, targetTabId: "tab-1" }],
+    ["desktop.web.openTab", { ...expectedWebState, openedTabId: "tab-1" }],
+    ["desktop.web.closeTab", { ...expectedWebState, closedTabId: "tab-2", closedSurface: false }],
+    ["desktop.web.switchTab", expectedWebState]
+  ]);
+  for (const [action, expectedResult] of webExpectations) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      args: { surfaceId: "browser", tabId: "tab-1", url: "https://example.test/next" },
+      permissionMode: "full_access"
+    });
+    assert.deepEqual(response, { ok: true, action, result: expectedResult });
+    assert.equal(JSON.stringify(response).includes("guestId"), false);
+    assert.equal(JSON.stringify(response).includes("webContentsId"), false);
+  }
+
+  const workPanelExpectations = new Map([
+    ["desktop.workpanel.openTab", { workspace }],
+    ["desktop.workpanel.openWeb", { workspace }],
+    ["desktop.workpanel.refreshWeb", { workspace }],
+    ["desktop.workpanel.activateTab", { workspace }],
+    ["desktop.workpanel.closeTab", { closedItemId: "item-1", workspace }],
+    ["desktop.workpanel.closeWorkpanel", { workspaceId: workspace.workspaceId, closed: true }]
+  ]);
+  for (const [action, expectedResult] of workPanelExpectations) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      source: { chatId: "chat-owner", agentKey: "helper" },
+      args: { tabId: "item-1", url: "https://example.test/", descriptor: { kind: "web", url: "https://example.test/" } },
+      permissionMode: "full_access"
+    });
+    assert.deepEqual(response, { ok: true, action, result: expectedResult });
+  }
+
+  const copilot = await handleDesktopActionRequest(options, {
+    action: "desktop.copilot.setPagePreference",
+    args: { pageKey: "help", enabled: true, agentKey: "helper" },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(copilot, {
+    ok: true,
+    action: "desktop.copilot.setPagePreference",
+    result: { pageKey: "help", preference: { enabled: true, agentKey: "helper" } }
+  });
+
+  options.callRendererAction = async (request) => ({
+    requestId: request.requestId,
+    action: request.action,
+    ok: false,
+    error: {
+      code: "invalid_agent",
+      message: "The requested agent is unavailable.",
+      details: {
+        pageKey: "help",
+        agentKey: "missing",
+        agentOptions: [{ value: "helper", label: "Helper" }]
+      }
+    }
+  });
+  const invalidAgent = await handleDesktopActionRequest(options, {
+    action: "desktop.copilot.setPagePreference",
+    args: { pageKey: "help", agentKey: "missing" },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(invalidAgent.error.details.agentOptions, [{ value: "helper", label: "Helper" }]);
+});
+
+test("desktop.web.closeTab returns an explicit empty post-state after the final tab", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.callRendererAction = async (request) => ({
+    requestId: request.requestId,
+    action: request.action,
+    ok: true,
+    result: {
+      surface: null,
+      tabs: [],
+      activeTab: null,
+      closedTabId: "tab-1",
+      closedSurface: true,
+      remainingTabIds: [],
+      activeTabId: null
+    }
+  });
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.web.closeTab",
+    args: { surfaceId: "browser", tabId: "tab-1" },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(response, {
+    ok: true,
+    action: "desktop.web.closeTab",
+    result: {
+      surface: null,
+      tabs: [],
+      activeTab: null,
+      closedTabId: "tab-1",
+      closedSurface: true
+    }
+  });
+});
+
+test("desktop.workpanel.closeTab returns a null workspace when the reducer destroys it", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.callRendererAction = async (request) => ({
+    requestId: request.requestId,
+    action: request.action,
+    ok: true,
+    result: {
+      ok: true,
+      workspaceId: "workpanel:chat-owner",
+      item: createWorkPanelWorkspace().items[0]
+    }
+  });
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.workpanel.closeTab",
+    source: { chatId: "chat-owner" },
+    args: { tabId: "item-1" },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(response, {
+    ok: true,
+    action: "desktop.workpanel.closeTab",
+    result: { closedItemId: "item-1", workspace: null }
+  });
 });
 
 test("desktop.display routes to the Main renderer without confirmation", async (t) => {
@@ -724,10 +1030,11 @@ test("desktop.webapp.install only installs a local archive and validates its arg
     args: { archivePath, expectedId: id },
     permissionMode: "full_access"
   });
-  assert.equal(installed.ok, true, JSON.stringify(installed));
-  assert.equal(installed.result.itemId, id);
-  assert.equal(installed.result.operation, "installed");
-  assert.equal(installed.result.item.id, id);
+  assert.deepEqual(installed, {
+    ok: true,
+    action: "desktop.webapp.install",
+    result: { webappId: id, operation: "installed" }
+  });
   assert.equal(calls.navigation.length, 0);
 
   const status = await handleDesktopActionRequest(options, {
@@ -743,8 +1050,44 @@ test("desktop.webapp.install only installs a local archive and validates its arg
     args: { id },
     permissionMode: "full_access"
   });
-  assert.equal(started.ok, true);
-  assert.equal(started.result.ok, true);
+  assert.deepEqual(started, {
+    ok: true,
+    action: "desktop.webapp.start",
+    result: { webappId: id, status: "running" }
+  });
+
+  const restarted = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.restart",
+    args: { id },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(restarted, {
+    ok: true,
+    action: "desktop.webapp.restart",
+    result: { webappId: id, status: "running" }
+  });
+
+  const opened = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.open",
+    args: { id },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(opened, {
+    ok: true,
+    action: "desktop.webapp.open",
+    result: { webappId: id, status: "running", route: `/webs/webapp:${id}` }
+  });
+
+  const preferences = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.updatePreferences",
+    args: { id, patch: { label: "Lifecycle Preference", openMode: "dialog" } },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(preferences, {
+    ok: true,
+    action: "desktop.webapp.updatePreferences",
+    result: { webappId: id, label: "Lifecycle Preference", openMode: "dialog" }
+  });
 
   const updatedArchive = await writeStaticWebappArchive(
     options.app.getPath("home"),
@@ -757,10 +1100,12 @@ test("desktop.webapp.install only installs a local archive and validates its arg
     args: { archivePath: updatedArchive },
     permissionMode: "full_access"
   });
-  assert.equal(updated.ok, true);
-  assert.equal(updated.result.operation, "updated");
-  assert.equal(updated.result.item.label, "Lifecycle Updated");
-  assert.equal(calls.navigation.length, 0);
+  assert.deepEqual(updated, {
+    ok: true,
+    action: "desktop.webapp.install",
+    result: { webappId: id, operation: "updated" }
+  });
+  assert.deepEqual(calls.navigation, [`/webs/webapp:${id}`]);
 
   const updatedStatus = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
@@ -783,7 +1128,11 @@ test("desktop.webapp.install only installs a local archive and validates its arg
     args: { webappId: id },
     permissionMode: "full_access"
   });
-  assert.equal(uninstalled.ok, true);
+  assert.deepEqual(uninstalled, {
+    ok: true,
+    action: "desktop.webapp.uninstall",
+    result: { webappId: id }
+  });
   assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(options.app), id)), false);
   for (const removablePath of removablePaths) {
     assert.equal(fs.existsSync(removablePath), false);
@@ -820,7 +1169,11 @@ exec "${process.execPath}" "$@"
     args: { archivePath, expectedId: id },
     permissionMode: "full_access"
   });
-  assert.equal(installed.ok, true, JSON.stringify(installed));
+  assert.deepEqual(installed, {
+    ok: true,
+    action: "desktop.webapp.install",
+    result: { webappId: id, operation: "installed" }
+  });
   assert.equal(calls.fileDialogs.length, 1);
   assert.deepEqual(calls.fileDialogs[0].properties, ["openFile"]);
   assert.equal(
@@ -869,7 +1222,10 @@ test("runtime checks are side-effect free and publish requires an already runnin
     permissionMode: "full_access"
   });
   assert.equal(published.ok, false);
-  assert.equal(published.error.code, "webapp_not_running");
+  assert.equal(published.error.code, "webapp_publish_failed");
+  assert.equal(published.error.details.webappId, id);
+  assert.equal(published.error.details.operation, "publish");
+  assert.equal(published.error.details.state.status, "error");
 
   const status = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
@@ -883,7 +1239,11 @@ test("runtime checks are side-effect free and publish requires an already runnin
     args: { id },
     permissionMode: "full_access"
   });
-  assert.equal(started.result.ok, true);
+  assert.deepEqual(started, {
+    ok: true,
+    action: "desktop.webapp.start",
+    result: { webappId: id, status: "running" }
+  });
   const persistentDataPath = getDesktopWebappDataRoot(options.app, id);
   fs.mkdirSync(persistentDataPath, { recursive: true });
   fs.writeFileSync(path.join(persistentDataPath, "keep.txt"), "keep", "utf8");
@@ -893,7 +1253,11 @@ test("runtime checks are side-effect free and publish requires an already runnin
     args: { id },
     permissionMode: "full_access"
   });
-  assert.equal(unpublished.ok, true);
+  assert.deepEqual(unpublished, {
+    ok: true,
+    action: "desktop.webapp.unpublish",
+    result: { webappId: id, status: "unpublished" }
+  });
   const runningStatus = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.getStatus",
     args: { id },
@@ -901,11 +1265,239 @@ test("runtime checks are side-effect free and publish requires an already runnin
   });
   assert.equal(runningStatus.result.status, "running");
   assert.equal(fs.readFileSync(path.join(persistentDataPath, "keep.txt"), "utf8"), "keep");
-  await handleDesktopActionRequest(options, {
+  const stopped = await handleDesktopActionRequest(options, {
     action: "desktop.webapp.stop",
     args: { id },
     permissionMode: "full_access"
   });
+  assert.deepEqual(stopped, {
+    ok: true,
+    action: "desktop.webapp.stop",
+    result: { webappId: id, status: "stopped" }
+  });
+});
+
+test("desktop.webapp.publish exposes only its single-instance success result", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const id = webappId("publish-success");
+  options.publishWebapp = async () => ({
+    ok: true,
+    info: {
+      provider: "tunnel",
+      configured: true,
+      signedIn: true,
+      tunnelEnabled: true,
+      tunnelConnected: true,
+      deviceId: "device-1",
+      relayUrl: "wss://relay.example.test/ws"
+    },
+    state: {
+      id,
+      provider: "tunnel",
+      status: "published",
+      name: "publish-success",
+      routeId: "route-1",
+      publicHost: "public.example.test",
+      url: "https://public.example.test/app",
+      targetUrl: "http://127.0.0.1:12000",
+      active: true,
+      message: "Published",
+      updatedAt: "2026-08-24T00:00:00.000Z"
+    },
+    message: "Published",
+    otherWebapps: [{ id: webappId("other") }]
+  });
+
+  const response = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.publish",
+    args: { id },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(response, {
+    ok: true,
+    action: "desktop.webapp.publish",
+    result: { webappId: id, status: "published", publicUrl: "https://public.example.test/app" }
+  });
+
+  options.publishWebapp = async () => ({
+    ok: true,
+    info: {
+      provider: "tunnel",
+      configured: true,
+      signedIn: true,
+      tunnelEnabled: true,
+      tunnelConnected: true,
+      deviceId: "device-1",
+      relayUrl: "wss://relay.example.test/ws"
+    },
+    state: {
+      id,
+      provider: "tunnel",
+      status: "published",
+      name: "publish-success",
+      routeId: "route-1",
+      publicHost: "",
+      url: "",
+      targetUrl: "http://127.0.0.1:12000",
+      active: true,
+      message: "Published without a URL",
+      updatedAt: "2026-08-24T00:00:00.000Z"
+    },
+    message: "Published without a URL"
+  });
+  const invalid = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.publish",
+    args: { id },
+    permissionMode: "full_access"
+  });
+  assert.deepEqual(invalid, {
+    ok: false,
+    action: "desktop.webapp.publish",
+    error: {
+      code: "invalid_action_result",
+      message: "desktop.webapp.publish succeeded without the required public result fields.",
+      details: { webappId: id, operation: "publish", missingFields: ["state.url"] }
+    }
+  });
+});
+
+test("WebApp business failures use stable codes and retain only sanitized target diagnostics", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const id = webappId("missing-p1-webapp");
+
+  for (const [action, code] of [
+    ["desktop.webapp.start", "webapp_start_failed"],
+    ["desktop.webapp.stop", "webapp_stop_failed"],
+    ["desktop.webapp.restart", "webapp_restart_failed"],
+    ["desktop.webapp.open", "webapp_open_failed"],
+    ["desktop.webapp.updatePreferences", "webapp_update_failed"],
+    ["desktop.webapp.uninstall", "webapp_uninstall_failed"]
+  ]) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      args: { id, patch: { label: "Missing" } },
+      permissionMode: "full_access"
+    });
+    assert.equal(response.ok, false, action);
+    assert.equal(response.error.code, code, action);
+    assert.equal(response.error.details.webappId, id, action);
+    assert.equal(JSON.stringify(response.error.details).includes('"items"'), false, action);
+  }
+
+  const invalidArchivePath = path.join(options.app.getPath("home"), "invalid-webapp.zip");
+  fs.writeFileSync(invalidArchivePath, "not-a-zip", "utf8");
+  const installFailure = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath: invalidArchivePath, expectedId: id },
+    permissionMode: "full_access"
+  });
+  assert.equal(installFailure.ok, false);
+  assert.equal(installFailure.error.code, "webapp_install_failed");
+  assert.equal(installFailure.error.details.webappId, id);
+  assert.equal(installFailure.error.details.operation, "install");
+  assert.equal(installFailure.error.details.path, invalidArchivePath);
+  assert.equal(typeof installFailure.error.details.diagnostic.stage, "string");
+  assert.equal(typeof installFailure.error.details.diagnostic.code, "string");
+  assert.equal("items" in installFailure.error.details, false);
+
+  const blockedId = webappId("blocked-runtime-p1");
+  const blockedArchive = await writeStaticWebappArchive(
+    options.app.getPath("home"),
+    "blocked-runtime-p1",
+    "Blocked Runtime"
+  );
+  const installed = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    args: { archivePath: blockedArchive, expectedId: blockedId },
+    permissionMode: "full_access"
+  });
+  assert.equal(installed.ok, true);
+  const blockedRoot = path.join(getDesktopWebappsDataRoot(options.app), blockedId);
+  const blockedManifestPath = path.join(blockedRoot, "webapp.json");
+  const blockedManifest = JSON.parse(fs.readFileSync(blockedManifestPath, "utf8"));
+  blockedManifest.frontend.routeConfig.backendPrefixes = ["/api"];
+  blockedManifest.backend = {
+    command: { type: "runtime", runtime: "java", minimumVersion: "9999", entry: "backend/server.jar" },
+    args: [],
+    env: {},
+    health: { type: "http", path: "/api/health", startupTimeoutMs: 2_000 },
+    shutdownTimeoutMs: 1_000
+  };
+  fs.mkdirSync(path.join(blockedRoot, "backend"), { recursive: true });
+  fs.writeFileSync(path.join(blockedRoot, "backend", "server.jar"), "blocked", "utf8");
+  fs.writeFileSync(blockedManifestPath, JSON.stringify(blockedManifest), "utf8");
+  const blocked = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.start",
+    args: { id: blockedId },
+    permissionMode: "full_access"
+  });
+  assert.equal(blocked.ok, false, JSON.stringify(blocked));
+  assert.equal(blocked.error.code, "webapp_start_failed");
+  assert.deepEqual(blocked.error.details.item, {
+    id: blockedId,
+    label: "Blocked Runtime",
+    version: "1.0.0",
+    target: "any",
+    openMode: "workspace"
+  });
+  assert.equal(blocked.error.details.state.id, blockedId);
+  assert.equal(blocked.error.details.state.status, "blocked");
+  assert.equal(blocked.error.details.state.prerequisiteIssues.length > 0, true);
+  assert.equal("backend" in blocked.error.details.item, false);
+  assert.equal("items" in blocked.error.details, false);
+
+  const publishFailure = {
+    ok: false,
+    info: {
+      provider: "tunnel",
+      configured: true,
+      signedIn: false,
+      tunnelEnabled: true,
+      tunnelConnected: false,
+      deviceId: "device-1",
+      relayUrl: "wss://relay.example.test/ws?token=relay-secret",
+      accessToken: "must-not-leak"
+    },
+    state: {
+      id,
+      provider: "tunnel",
+      status: "error",
+      name: "missing-p1-webapp",
+      routeId: "route-1",
+      publicHost: "",
+      url: "",
+      targetUrl: "http://127.0.0.1:12000?token=runtime-secret",
+      active: false,
+      message: "authorization token=publish-secret",
+      updatedAt: "2026-08-24T00:00:00.000Z",
+      cookies: [{ value: "must-not-leak" }]
+    },
+    message: "publish failed token=outer-secret",
+    items: [{ id: webappId("other") }]
+  };
+  options.publishWebapp = async () => publishFailure;
+  options.unpublishWebapp = async () => publishFailure;
+
+  for (const [action, code, operation] of [
+    ["desktop.webapp.publish", "webapp_publish_failed", "publish"],
+    ["desktop.webapp.unpublish", "webapp_unpublish_failed", "unpublish"]
+  ]) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      args: { id },
+      permissionMode: "full_access"
+    });
+    assert.equal(response.ok, false, action);
+    assert.equal(response.error.code, code, action);
+    assert.equal(response.error.details.webappId, id, action);
+    assert.equal(response.error.details.operation, operation, action);
+    assert.equal(JSON.stringify(response).includes("must-not-leak"), false, action);
+    assert.equal(JSON.stringify(response).includes("outer-secret"), false, action);
+    assert.equal(JSON.stringify(response).includes("publish-secret"), false, action);
+    assert.equal(JSON.stringify(response).includes("runtime-secret"), false, action);
+    assert.equal(JSON.stringify(response).includes("relay-secret"), false, action);
+    assert.equal(JSON.stringify(response).includes('"items"'), false, action);
+  }
 });
 
 test("WebApp Bridge native actions require page scope and enforce their public contracts", async (t) => {
@@ -1374,7 +1966,13 @@ test("dedicated Desktop setting actions replace the removed generic Setting fami
       requestId: request.requestId,
       action: request.action,
       ok: true,
-      result: { handled: request.action }
+      result: request.action === "desktop.copilot.setPagePreference"
+        ? {
+            pageKey: "help",
+            preference: { enabled: true, agentKey: "helper" },
+            desktopCopilotPages: { help: { enabled: true, agentKey: "helper" }, market: { enabled: false } }
+          }
+        : { handled: request.action }
     };
   };
 
@@ -1392,7 +1990,14 @@ test("dedicated Desktop setting actions replace the removed generic Setting fami
       permissionMode: "full_access"
     });
     assert.equal(response.ok, true, action);
-    assert.equal(response.result.handled, action);
+    if (action === "desktop.copilot.setPagePreference") {
+      assert.deepEqual(response.result, {
+        pageKey: "help",
+        preference: { enabled: true, agentKey: "helper" }
+      });
+    } else {
+      assert.equal(response.result.handled, action);
+    }
   }
   assert.deepEqual(rendererActions.map((request) => request.action), [
     "desktop.theme.get",
@@ -1694,6 +2299,45 @@ test("desktop action HTTP and Agent Platform responses share the minimal pet res
     await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.pet.state" }),
     expected
   );
+});
+
+test("HTTP and Agent Platform receive the same projected P1 web result", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const port = await getFreeLoopbackPort();
+  t.after(() => stopDesktopActionBridge());
+  options.callRendererAction = async (request) => {
+    const state = createWebActionState();
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: {
+        ...state,
+        targetTabId: "tab-1",
+        navigatedUrl: "https://example.test/next"
+      }
+    };
+  };
+  writeDesktopActionBridgeSettingsConfig(options.app, { schemaVersion: 1, port });
+  const server = startDesktopActionBridge(options);
+  await waitForListening(server);
+
+  const request = {
+    action: "desktop.web.navigate",
+    args: { surfaceId: "browser", tabId: "tab-1", url: "https://example.test/next" },
+    permissionMode: "full_access"
+  };
+  const httpResponse = await postJsonUrl(
+    `http://${DESKTOP_ACTION_BRIDGE_HOST}:${port}/actions/call`,
+    request
+  );
+  const platformResponse = await handleAgentPlatformDesktopActionRequest(options, request);
+  assert.deepEqual(httpResponse, platformResponse);
+  assert.equal(JSON.stringify(httpResponse).includes("guestId"), false);
+  assert.equal(JSON.stringify(httpResponse).includes("webContentsId"), false);
+  assert.deepEqual(Object.keys(httpResponse.result), [
+    "surface", "tabs", "activeTab", "targetTabId", "navigatedUrl"
+  ]);
 });
 
 test("desktop pet actions reject unknown local appearances and removed legacy names", async (t) => {

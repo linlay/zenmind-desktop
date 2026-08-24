@@ -6653,6 +6653,18 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   assert.match(appShell, /handleCopilotCurrentEmbedPathChange[\s\S]{0,360}updateCopilotDockContextSession\(currentCopilotContextKey/u);
 });
 
+test("P1 web renderer builds public post-action state without Electron ids", () => {
+  const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
+
+  assert.match(externalWebview, /const getDesktopWebActionState = \(\): DesktopWebActionStateResult/u);
+  assert.match(externalWebview, /activeTab: state\.tabs\.find\(\(tab\) => tab\.tabId === state\.activeTabId\) \?\? null/u);
+  assert.match(externalWebview, /case "desktop\.web\.navigate"[\s\S]{0,700}targetTabId: tabId, navigatedUrl: nextUrl/u);
+  assert.match(externalWebview, /case "desktop\.web\.openTab"[\s\S]{0,420}openedTabId: nextTab\.id/u);
+  assert.match(externalWebview, /result\.closedSurface[\s\S]{0,140}surface: null, tabs: \[\], activeTab: null/u);
+  assert.doesNotMatch(externalWebview, /getEmbeddedWebSurfaceState/u);
+  assert.doesNotMatch(externalWebview, /openedTab:\s*serializeTab/u);
+});
+
 test("desktop web surface state reads one exact surface without an active-surface fallback", () => {
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");

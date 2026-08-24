@@ -21,7 +21,12 @@ import type {
   MarketListOptions,
   ServiceId,
   ServiceLogTarget,
-  ServiceOpenLogViewerRequest
+  ServiceOpenLogViewerRequest,
+  WebappCommandResult,
+  WebappEntry,
+  WebappPublishResult,
+  WebappRuntimeState,
+  WorkPanelWorkspace
 } from "../shared/contracts";
 import {
   WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES,
@@ -44,15 +49,42 @@ import {
   type DesktopActionConfirmationPolicy,
   type DesktopActionError,
   type DesktopActionSource,
+  type DesktopCopilotPreferenceResult,
   type DesktopKanbanDeleteResult,
   type DesktopKanbanIssueResult,
   type DesktopPetListResult,
   type DesktopPetSetResult,
   type DesktopPetStateResult,
   type DesktopPetVisibilityResult,
+  type DesktopWebActionStateResult,
+  type DesktopWebActionSurfaceSummary,
+  type DesktopWebActionTabSummary,
+  type DesktopWebCloseTabResult,
+  type DesktopWebNavigateResult,
+  type DesktopWebOpenTabResult,
+  type DesktopWebTargetTabResult,
+  type DesktopWebappInstallDiagnostic,
+  type DesktopWebappInstallFailureDetails,
+  type DesktopWebappInstallResult,
+  type DesktopWebappInvalidResultDetails,
+  type DesktopWebappOpenResult,
+  type DesktopWebappPreferenceFailureDetails,
+  type DesktopWebappPreferenceResult,
+  type DesktopWebappPublishFailureDetails,
+  type DesktopWebappPublishResult,
+  type DesktopWebappRuntimeFailureDetails,
+  type DesktopWebappRuntimeMutationResult,
+  type DesktopWebappSummary,
+  type DesktopWebappUninstallResult,
+  type DesktopWebappUnpublishResult,
+  type DesktopWorkPanelCloseResult,
+  type DesktopWorkPanelCloseTabResult,
+  type DesktopWorkPanelWorkspaceResult,
   type DesktopWebsiteItemResult,
   type DesktopWebsiteRemoveResult
 } from "../shared/desktop-actions";
+import { isDesktopCopilotPageKey } from "../shared/assistant-settings";
+import { isSurfaceRole } from "../shared/surface-identity";
 import { ActionBridgeTimeContractError, normalizeActionBridgeTimePayload } from "./action-bridge-time-normalizer";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-routes";
 import { DESKTOP_CDP_PUBLIC_METHODS } from "../shared/embedded-cdp";
@@ -71,7 +103,7 @@ import {
   startService,
   stopService
 } from "./services/manager";
-import { listWebEntries } from "./ipc/web-handlers";
+import { createWebappImportDiagnostic, listWebEntries } from "./ipc/web-handlers";
 import {
   addWebsiteItem,
   listWebsiteItems,
@@ -80,7 +112,6 @@ import {
 } from "./webs/websites/actions";
 import {
   webappManager,
-  WebappInstallPolicyError,
   WebappRuntimeRequiredError
 } from "./webs/webapps/manager";
 import { webappWindowManager } from "./webs/webapps/window-manager";
@@ -155,6 +186,8 @@ export type DesktopActionBridgeOptions = {
     result: unknown;
   }>;
   getKanbanRuntime?: () => KanbanRuntime | null;
+  publishWebapp?: typeof publishWebapp;
+  unpublishWebapp?: typeof unpublishWebapp;
   emitWebappChanged?: (reason: DesktopWebappChangedReason, webappId: string) => void;
   desktopPet?: {
     refreshState: () => DesktopPetState | Promise<DesktopPetState>;
@@ -1249,6 +1282,284 @@ async function confirmDesktopActionIfNeeded(
   };
 }
 
+const DESKTOP_WEB_POST_STATE_ACTIONS = new Set([
+  "desktop.web.navigate",
+  "desktop.web.reload",
+  "desktop.web.goBack",
+  "desktop.web.openTab",
+  "desktop.web.closeTab",
+  "desktop.web.switchTab"
+]);
+
+const DESKTOP_WORKPANEL_MUTATION_ACTIONS = new Set([
+  "desktop.workpanel.openTab",
+  "desktop.workpanel.openWeb",
+  "desktop.workpanel.refreshWeb",
+  "desktop.workpanel.activateTab",
+  "desktop.workpanel.closeTab",
+  "desktop.workpanel.closeWorkpanel"
+]);
+
+function projectDesktopWebActionSurface(
+  value: unknown,
+  missingFields: string[]
+): DesktopWebActionSurfaceSummary | null {
+  if (value === null) {
+    return null;
+  }
+  const surface = asRecord(value);
+  const surfaceId = typeof surface.surfaceId === "string" ? surface.surfaceId : "";
+  const surfaceRole = isSurfaceRole(surface.surfaceRole) ? surface.surfaceRole : null;
+  const surfaceLevel = surface.surfaceLevel === "root" || surface.surfaceLevel === "child" || surface.surfaceLevel === "utility"
+    ? surface.surfaceLevel
+    : null;
+  const interaction = surface.interaction === "interactive" || surface.interaction === "read-only" || surface.interaction === "none"
+    ? surface.interaction
+    : null;
+  const kind = surface.kind === "website" || surface.kind === "webapp" || surface.kind === "browser" || surface.kind === "service"
+    ? surface.kind
+    : null;
+  for (const [key, valid] of [
+    ["surface.surfaceId", Boolean(surfaceId)],
+    ["surface.surfaceRole", Boolean(surfaceRole)],
+    ["surface.surfaceLevel", Boolean(surfaceLevel)],
+    ["surface.interaction", Boolean(interaction)],
+    ["surface.kind", Boolean(kind)],
+    ["surface.label", typeof surface.label === "string"],
+    ["surface.url", typeof surface.url === "string"],
+    ["surface.route", typeof surface.route === "string"],
+    ["surface.open", typeof surface.open === "boolean"],
+    ["surface.active", typeof surface.active === "boolean"]
+  ] as const) {
+    if (!valid) missingFields.push(key);
+  }
+  if (!surfaceId || !surfaceRole || !surfaceLevel || !interaction || !kind ||
+    typeof surface.label !== "string" || typeof surface.url !== "string" || typeof surface.route !== "string" ||
+    typeof surface.open !== "boolean" || typeof surface.active !== "boolean") {
+    return null;
+  }
+  return {
+    surfaceId,
+    surfaceRole,
+    surfaceLevel,
+    ...(typeof surface.parentSurfaceId === "string" && surface.parentSurfaceId
+      ? { parentSurfaceId: surface.parentSurfaceId }
+      : {}),
+    ...(typeof surface.ownerChatId === "string" && surface.ownerChatId
+      ? { ownerChatId: surface.ownerChatId }
+      : {}),
+    interaction,
+    kind,
+    label: surface.label,
+    url: surface.url,
+    route: surface.route,
+    open: surface.open,
+    active: surface.active
+  };
+}
+
+function projectDesktopWebActionTab(
+  value: unknown,
+  field: string,
+  missingFields: string[]
+): DesktopWebActionTabSummary | null {
+  const tab = asRecord(value);
+  for (const [key, valid] of [
+    ["tabId", typeof tab.tabId === "string" && Boolean(tab.tabId)],
+    ["title", typeof tab.title === "string"],
+    ["currentUrl", typeof tab.currentUrl === "string"],
+    ["active", typeof tab.active === "boolean"],
+    ["isLoading", typeof tab.isLoading === "boolean"],
+    ["canGoBack", typeof tab.canGoBack === "boolean"],
+    ["canGoForward", typeof tab.canGoForward === "boolean"]
+  ] as const) {
+    if (!valid) missingFields.push(`${field}.${key}`);
+  }
+  if (typeof tab.tabId !== "string" || !tab.tabId || typeof tab.title !== "string" ||
+    typeof tab.currentUrl !== "string" || typeof tab.active !== "boolean" ||
+    typeof tab.isLoading !== "boolean" || typeof tab.canGoBack !== "boolean" ||
+    typeof tab.canGoForward !== "boolean") {
+    return null;
+  }
+  return {
+    tabId: tab.tabId,
+    title: tab.title,
+    currentUrl: tab.currentUrl,
+    ...(typeof tab.faviconUrl === "string" && tab.faviconUrl ? { faviconUrl: tab.faviconUrl } : {}),
+    active: tab.active,
+    isLoading: tab.isLoading,
+    canGoBack: tab.canGoBack,
+    canGoForward: tab.canGoForward
+  };
+}
+
+function projectDesktopWebActionState(value: unknown) {
+  const result = asRecord(value);
+  const missingFields: string[] = [];
+  const surface = projectDesktopWebActionSurface(result.surface, missingFields);
+  if (!Array.isArray(result.tabs)) {
+    missingFields.push("tabs");
+  }
+  const tabs = Array.isArray(result.tabs)
+    ? result.tabs.map((tab, index) => projectDesktopWebActionTab(tab, `tabs[${index}]`, missingFields))
+    : [];
+  let activeTab: DesktopWebActionTabSummary | null = null;
+  if (result.activeTab !== null) {
+    activeTab = projectDesktopWebActionTab(result.activeTab, "activeTab", missingFields);
+  }
+  if (result.activeTab === undefined) {
+    missingFields.push("activeTab");
+  }
+  if (tabs.some((tab) => tab === null)) {
+    return { state: null, missingFields };
+  }
+  return {
+    state: { surface, tabs: tabs as DesktopWebActionTabSummary[], activeTab } satisfies DesktopWebActionStateResult,
+    missingFields
+  };
+}
+
+function readWorkPanelWorkspace(value: unknown): WorkPanelWorkspace | null {
+  const workspace = asRecord(value);
+  if (!(typeof workspace.workspaceId === "string" && Boolean(workspace.workspaceId) &&
+    typeof workspace.ownerChatId === "string" && Boolean(workspace.ownerChatId) &&
+    Array.isArray(workspace.items) &&
+    (typeof workspace.activeItemId === "string" || workspace.activeItemId === null))) {
+    return null;
+  }
+  return {
+    workspaceId: workspace.workspaceId,
+    ownerChatId: workspace.ownerChatId,
+    items: workspace.items as WorkPanelWorkspace["items"],
+    activeItemId: workspace.activeItemId
+  };
+}
+
+function projectRendererActionResult(action: string, value: unknown): {
+  handled: boolean;
+  result?: unknown;
+  missingFields?: string[];
+} {
+  const source = asRecord(value);
+  if (DESKTOP_WEB_POST_STATE_ACTIONS.has(action)) {
+    const { state, missingFields } = projectDesktopWebActionState(source);
+    const missingPostState = state && action !== "desktop.web.closeTab"
+      ? [
+          ...(!state.surface ? ["surface"] : []),
+          ...(state.tabs.length === 0 ? ["tabs"] : []),
+          ...(!state.activeTab ? ["activeTab"] : [])
+        ]
+      : [];
+    if (!state || missingFields.length > 0 || missingPostState.length > 0) {
+      return {
+        handled: true,
+        missingFields: missingFields.length > 0 ? missingFields : missingPostState
+      };
+    }
+    if (action === "desktop.web.navigate") {
+      const targetTabId = typeof source.targetTabId === "string" ? source.targetTabId : "";
+      const navigatedUrl = typeof source.navigatedUrl === "string" ? source.navigatedUrl : "";
+      const missing = [
+        ...(!targetTabId ? ["targetTabId"] : []),
+        ...(!navigatedUrl ? ["navigatedUrl"] : [])
+      ];
+      return missing.length > 0
+        ? { handled: true, missingFields: missing }
+        : { handled: true, result: { ...state, targetTabId, navigatedUrl } satisfies DesktopWebNavigateResult };
+    }
+    if (action === "desktop.web.reload" || action === "desktop.web.goBack") {
+      const targetTabId = typeof source.targetTabId === "string" ? source.targetTabId : "";
+      return targetTabId
+        ? { handled: true, result: { ...state, targetTabId } satisfies DesktopWebTargetTabResult }
+        : { handled: true, missingFields: ["targetTabId"] };
+    }
+    if (action === "desktop.web.openTab") {
+      const openedTabId = typeof source.openedTabId === "string" ? source.openedTabId : "";
+      return openedTabId
+        ? { handled: true, result: { ...state, openedTabId } satisfies DesktopWebOpenTabResult }
+        : { handled: true, missingFields: ["openedTabId"] };
+    }
+    if (action === "desktop.web.closeTab") {
+      const closedTabId = typeof source.closedTabId === "string" ? source.closedTabId : "";
+      if (!closedTabId || typeof source.closedSurface !== "boolean") {
+        return {
+          handled: true,
+          missingFields: [...(!closedTabId ? ["closedTabId"] : []), ...(typeof source.closedSurface !== "boolean" ? ["closedSurface"] : [])]
+        };
+      }
+      if (source.closedSurface && (state.surface !== null || state.tabs.length > 0 || state.activeTab !== null)) {
+        return { handled: true, missingFields: ["surface=null", "tabs=[]", "activeTab=null"] };
+      }
+      if (!source.closedSurface && (!state.surface || state.tabs.length === 0 || !state.activeTab)) {
+        return {
+          handled: true,
+          missingFields: [
+            ...(!state.surface ? ["surface"] : []),
+            ...(state.tabs.length === 0 ? ["tabs"] : []),
+            ...(!state.activeTab ? ["activeTab"] : [])
+          ]
+        };
+      }
+      return {
+        handled: true,
+        result: { ...state, closedTabId, closedSurface: source.closedSurface } satisfies DesktopWebCloseTabResult
+      };
+    }
+    return { handled: true, result: state };
+  }
+
+  if (DESKTOP_WORKPANEL_MUTATION_ACTIONS.has(action)) {
+    const workspaceId = typeof source.workspaceId === "string" ? source.workspaceId : "";
+    if (action === "desktop.workpanel.closeWorkpanel") {
+      return workspaceId
+        ? { handled: true, result: { workspaceId, closed: true } satisfies DesktopWorkPanelCloseResult }
+        : { handled: true, missingFields: ["workspaceId"] };
+    }
+    const workspace = source.state === undefined ? null : readWorkPanelWorkspace(source.state);
+    if (action === "desktop.workpanel.closeTab") {
+      const closedItemId = readString(asRecord(source.item), "itemId");
+      if (!closedItemId || (source.state !== undefined && !workspace)) {
+        return {
+          handled: true,
+          missingFields: [...(!closedItemId ? ["item.itemId"] : []), ...(source.state !== undefined && !workspace ? ["state"] : [])]
+        };
+      }
+      return {
+        handled: true,
+        result: { closedItemId, workspace } satisfies DesktopWorkPanelCloseTabResult
+      };
+    }
+    if (!workspace) {
+      return { handled: true, missingFields: ["state"] };
+    }
+    return { handled: true, result: { workspace } satisfies DesktopWorkPanelWorkspaceResult };
+  }
+
+  if (action === "desktop.copilot.setPagePreference") {
+    const pageKey = typeof source.pageKey === "string" ? source.pageKey : "";
+    const preference = asRecord(source.preference);
+    if (!isDesktopCopilotPageKey(pageKey) || typeof preference.enabled !== "boolean" || typeof preference.agentKey !== "string") {
+      return {
+        handled: true,
+        missingFields: [
+          ...(!isDesktopCopilotPageKey(pageKey) ? ["pageKey"] : []),
+          ...(typeof preference.enabled !== "boolean" ? ["preference.enabled"] : []),
+          ...(typeof preference.agentKey !== "string" ? ["preference.agentKey"] : [])
+        ]
+      };
+    }
+    return {
+      handled: true,
+      result: {
+        pageKey,
+        preference: { enabled: preference.enabled, agentKey: preference.agentKey }
+      } satisfies DesktopCopilotPreferenceResult
+    };
+  }
+
+  return { handled: false };
+}
+
 async function callRendererAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
@@ -1260,7 +1571,7 @@ async function callRendererAction(
     args,
     source: request.source
   });
-  return {
+  const publicResponse = {
     ok: response.ok,
     action: request.action,
     ...(response.result === undefined ? {} : { result: response.result }),
@@ -1268,10 +1579,216 @@ async function callRendererAction(
     ...(response.requiresConfirmation === undefined ? {} : { requiresConfirmation: response.requiresConfirmation }),
     ...(response.error === undefined ? {} : { error: response.error })
   } satisfies DesktopActionCallResponse;
+  if (!response.ok) {
+    return publicResponse;
+  }
+  const projection = projectRendererActionResult(request.action, response.result);
+  if (!projection.handled) {
+    return publicResponse;
+  }
+  if (projection.missingFields && projection.missingFields.length > 0) {
+    return fail(
+      request.action,
+      "invalid_action_result",
+      `${request.action} succeeded without the required public result fields.`,
+      { missingFields: projection.missingFields }
+    );
+  }
+  return ok(request.action, projection.result);
 }
 
 function webappRoute(webappId: string) {
   return `/webs/webapp:${webappId}`;
+}
+
+function compactWebappItem(item: WebappEntry | null | undefined): DesktopWebappSummary | undefined {
+  if (!item) {
+    return undefined;
+  }
+  return {
+    id: item.id,
+    label: item.label,
+    version: item.version,
+    target: item.target,
+    openMode: item.openMode
+  };
+}
+
+function sanitizeWebappErrorText(value: string) {
+  return sanitizeConfirmationUrlText(value)
+    .replace(
+      /((?:access[_-]?token|api[_-]?key|authorization|client[_-]?secret|cookie|credential|jwt|password|private[_-]?key|refresh[_-]?token|secret|session[_-]?token|token)\s*[=:]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/giu,
+      "$1[REDACTED]"
+    )
+    .replace(/\b[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/gu, "[REDACTED]")
+    .replace(/\b(?:dk|th|sk)_[A-Za-z0-9_-]{8,}\b/gu, "[REDACTED]");
+}
+
+function sanitizeWebappDiagnosticValue(value: unknown, key = "", depth = 0): unknown {
+  if (isSensitiveConfirmationKey(key)) {
+    return "[REDACTED]";
+  }
+  if (typeof value === "string") {
+    return sanitizeWebappErrorText(value);
+  }
+  if (typeof value === "number" || typeof value === "boolean" || value === null || value === undefined) {
+    return value;
+  }
+  if (Array.isArray(value)) {
+    return value.map((item) => sanitizeWebappDiagnosticValue(item, key, depth + 1));
+  }
+  if (!value || typeof value !== "object" || depth >= 8) {
+    return "[object]";
+  }
+  const output: Record<string, unknown> = {};
+  for (const [entryKey, entryValue] of Object.entries(value as Record<string, unknown>)) {
+    const normalizedKey = entryKey.replace(/[\s._-]+/gu, "").toLowerCase();
+    if (normalizedKey === "items" || normalizedKey === "webapps") {
+      continue;
+    }
+    output[entryKey] = sanitizeWebappDiagnosticValue(entryValue, entryKey, depth + 1);
+  }
+  return output;
+}
+
+function projectWebappRuntimeState(state: WebappRuntimeState): WebappRuntimeState {
+  return {
+    id: state.id,
+    entryKey: state.entryKey,
+    kind: state.kind,
+    status: state.status,
+    version: state.version,
+    target: state.target,
+    launcher: state.launcher,
+    ownership: state.ownership,
+    runtimeVersion: state.runtimeVersion,
+    externalId: state.externalId,
+    prerequisiteIssues: state.prerequisiteIssues.map((issue) => ({
+      code: issue.code,
+      message: sanitizeWebappErrorText(issue.message),
+      ...(issue.required === undefined ? {} : { required: issue.required }),
+      ...(issue.detected === undefined ? {} : { detected: issue.detected })
+    })),
+    webUrl: sanitizeWebappErrorText(state.webUrl),
+    backendUrl: sanitizeWebappErrorText(state.backendUrl),
+    frontendPort: state.frontendPort,
+    backendPort: state.backendPort,
+    pid: state.pid,
+    message: sanitizeWebappErrorText(state.message),
+    ...(state.startedAt === undefined ? {} : { startedAt: state.startedAt }),
+    updatedAt: state.updatedAt
+  };
+}
+
+function webappRuntimeFailureDetails(
+  webappId: string,
+  operation: DesktopWebappRuntimeFailureDetails["operation"],
+  command: WebappCommandResult
+): DesktopWebappRuntimeFailureDetails {
+  const item = compactWebappItem(command.item);
+  return {
+    webappId,
+    operation,
+    ...(item ? { item } : {}),
+    ...(command.state ? { state: projectWebappRuntimeState(command.state) } : {})
+  };
+}
+
+function webappPreferenceFailureDetails(
+  webappId: string,
+  item: WebappEntry | null | undefined
+): DesktopWebappPreferenceFailureDetails {
+  const summary = compactWebappItem(item);
+  return { webappId, ...(summary ? { item: summary } : {}) };
+}
+
+function projectWebappPublishFailureDetails(
+  webappId: string,
+  operation: DesktopWebappPublishFailureDetails["operation"],
+  result: WebappPublishResult
+): DesktopWebappPublishFailureDetails {
+  return {
+    webappId,
+    operation,
+    info: {
+      provider: result.info.provider,
+      configured: result.info.configured,
+      signedIn: result.info.signedIn,
+      tunnelEnabled: result.info.tunnelEnabled,
+      tunnelConnected: result.info.tunnelConnected,
+      deviceId: result.info.deviceId,
+      relayUrl: sanitizeWebappErrorText(result.info.relayUrl)
+    },
+    state: {
+      id: result.state.id,
+      provider: result.state.provider,
+      status: result.state.status,
+      name: result.state.name,
+      routeId: result.state.routeId,
+      publicHost: result.state.publicHost,
+      url: sanitizeWebappErrorText(result.state.url),
+      targetUrl: sanitizeWebappErrorText(result.state.targetUrl),
+      active: result.state.active,
+      message: sanitizeWebappErrorText(result.state.message),
+      updatedAt: result.state.updatedAt
+    }
+  };
+}
+
+function invalidWebappActionResult(
+  action: string,
+  webappId: string,
+  operation: DesktopWebappInvalidResultDetails["operation"],
+  missingFields: string[]
+) {
+  return fail(
+    action,
+    "invalid_action_result",
+    `${action} succeeded without the required public result fields.`,
+    { webappId, operation, missingFields } satisfies DesktopWebappInvalidResultDetails
+  );
+}
+
+function isWebappRuntimeStateFor(
+  state: WebappRuntimeState | null,
+  webappId: string
+): state is WebappRuntimeState {
+  return Boolean(state && state.id === webappId && typeof state.status === "string");
+}
+
+function installFailureDetails(input: {
+  archivePath: string;
+  expectedId?: string;
+  webappId?: string;
+  executable?: string;
+  selectedPath?: string;
+  installPath?: string;
+  item?: WebappEntry | null;
+  diagnostic?: DesktopWebappInstallDiagnostic;
+}): DesktopWebappInstallFailureDetails {
+  const diagnosticDetails = input.diagnostic?.details
+    ? sanitizeWebappDiagnosticValue(input.diagnostic.details) as Record<string, unknown>
+    : undefined;
+  const diagnostic = input.diagnostic
+    ? {
+        stage: input.diagnostic.stage,
+        code: input.diagnostic.code,
+        message: sanitizeWebappErrorText(input.diagnostic.message),
+        ...(input.diagnostic.suggestion ? { suggestion: sanitizeWebappErrorText(input.diagnostic.suggestion) } : {}),
+        ...(diagnosticDetails ? { details: diagnosticDetails } : {})
+      }
+    : undefined;
+  const item = compactWebappItem(input.item);
+  return {
+    ...(input.webappId || input.expectedId ? { webappId: input.webappId || input.expectedId } : {}),
+    operation: "install",
+    ...(input.executable ? { executable: input.executable } : {}),
+    ...(input.selectedPath ? { selectedPath: input.selectedPath } : {}),
+    path: input.archivePath,
+    ...(input.installPath ? { installPath: input.installPath } : {}),
+    ...(item ? { item } : {}),
+    ...(diagnostic ? { diagnostic } : {})
+  };
 }
 
 function websiteRoute(websiteId: string) {
@@ -1286,19 +1803,50 @@ function notifyWebsChanged(options: DesktopActionBridgeOptions) {
   mainWindow.webContents.send("webs.changed", { changedAt: new Date().toISOString() });
 }
 
-async function openWebapp(options: DesktopActionBridgeOptions, action: string, webappId: string, installResult?: unknown) {
+async function executeWebappRuntimeMutation(
+  options: DesktopActionBridgeOptions,
+  action: string,
+  webappId: string,
+  operation: "start" | "stop" | "restart"
+) {
+  const command = await webappManager.runtime[operation](options.app, webappId);
+  if (!command.ok) {
+    return fail(
+      action,
+      `webapp_${operation}_failed`,
+      sanitizeWebappErrorText(command.message),
+      webappRuntimeFailureDetails(webappId, operation, command)
+    );
+  }
+  if (!isWebappRuntimeStateFor(command.state, webappId)) {
+    return invalidWebappActionResult(action, webappId, operation, ["state"]);
+  }
+  return ok(action, {
+    webappId,
+    status: command.state.status
+  } satisfies DesktopWebappRuntimeMutationResult);
+}
+
+async function openWebapp(options: DesktopActionBridgeOptions, action: string, webappId: string) {
   const command = await webappManager.runtime.start(options.app, webappId);
-  if (!command.ok || !command.state) {
-    return fail(action, "webapp_open_failed", command.message, command);
+  if (!command.ok) {
+    return fail(
+      action,
+      "webapp_open_failed",
+      sanitizeWebappErrorText(command.message),
+      webappRuntimeFailureDetails(webappId, "open", command)
+    );
+  }
+  if (!isWebappRuntimeStateFor(command.state, webappId)) {
+    return invalidWebappActionResult(action, webappId, "open", ["state"]);
   }
   const route = webappRoute(webappId);
   options.navigate(route);
   return ok(action, {
-    ...(installResult === undefined ? {} : { install: installResult }),
-    command,
-    state: command.state,
+    webappId,
+    status: command.state.status,
     route
-  });
+  } satisfies DesktopWebappOpenResult);
 }
 
 async function installWebapp(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
@@ -1324,11 +1872,16 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
   try {
     installResult = await webappManager.installArchive(options.app, archivePath, installOptions);
   } catch (error) {
-    if (error instanceof WebappInstallPolicyError) {
-      return fail(action, error.code, error.message, error.details);
-    }
     if (!(error instanceof WebappRuntimeRequiredError)) {
-      throw error;
+      const diagnostic = createWebappImportDiagnostic(error);
+      const diagnosticRecord = asRecord(diagnostic.details);
+      const relatedWebappId = readString(diagnosticRecord, "webappId") || readString(diagnosticRecord, "id") || expectedId;
+      return fail(
+        action,
+        "webapp_install_failed",
+        sanitizeWebappErrorText(diagnostic.message),
+        installFailureDetails({ archivePath, expectedId, webappId: relatedWebappId, diagnostic })
+      );
     }
     const dialogOptions: OpenDialogOptions = {
       title: `Select ${error.executable} executable for ${error.webappId}`,
@@ -1342,10 +1895,19 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
         : await dialog.showOpenDialog(dialogOptions);
     const executablePath = selection.canceled ? "" : String(selection.filePaths[0] || "").trim();
     if (!executablePath || !path.isAbsolute(executablePath)) {
-      return fail(action, error.code, error.message, {
-        webappId: error.webappId,
-        executable: error.executable
-      });
+      const diagnostic = createWebappImportDiagnostic(error);
+      return fail(
+        action,
+        "webapp_install_failed",
+        sanitizeWebappErrorText(error.message),
+        installFailureDetails({
+          archivePath,
+          expectedId,
+          webappId: error.webappId,
+          executable: error.executable,
+          diagnostic
+        })
+      );
     }
     webappManager.bindRuntimeExecutable(
       options.app,
@@ -1356,38 +1918,76 @@ async function installWebapp(options: DesktopActionBridgeOptions, action: string
     try {
       installResult = await webappManager.installArchive(options.app, archivePath, installOptions);
     } catch (retryError) {
-      if (retryError instanceof WebappInstallPolicyError) {
-        return fail(action, retryError.code, retryError.message, retryError.details);
-      }
       if (retryError instanceof WebappRuntimeRequiredError) {
-        return fail(action, retryError.code, retryError.message, {
-          webappId: retryError.webappId,
-          executable: retryError.executable,
-          selectedPath: executablePath
-        });
+        const diagnostic = createWebappImportDiagnostic(retryError);
+        return fail(
+          action,
+          "webapp_install_failed",
+          sanitizeWebappErrorText(retryError.message),
+          installFailureDetails({
+            archivePath,
+            expectedId,
+            webappId: retryError.webappId,
+            executable: retryError.executable,
+            selectedPath: executablePath,
+            diagnostic
+          })
+        );
       }
-      throw retryError;
+      const diagnostic = createWebappImportDiagnostic(retryError);
+      const diagnosticRecord = asRecord(diagnostic.details);
+      const relatedWebappId = readString(diagnosticRecord, "webappId") || readString(diagnosticRecord, "id") || expectedId;
+      return fail(
+        action,
+        "webapp_install_failed",
+        sanitizeWebappErrorText(diagnostic.message),
+        installFailureDetails({
+          archivePath,
+          expectedId,
+          webappId: relatedWebappId,
+          selectedPath: executablePath,
+          diagnostic
+        })
+      );
     }
   }
   const webappId = typeof installResult.itemId === "string" ? installResult.itemId.trim() : "";
   if (!installResult.ok || !webappId) {
-    return fail(action, "webapp_install_failed", installResult.message, installResult);
+    const diagnostic = {
+      stage: "install" as const,
+      code: "install_failed",
+      message: installResult.message || "WebApp installation failed.",
+      details: {
+        ...(webappId ? { webappId } : {}),
+        ...(installResult.installPath ? { installPath: installResult.installPath } : {})
+      }
+    };
+    return fail(
+      action,
+      "webapp_install_failed",
+      sanitizeWebappErrorText(diagnostic.message),
+      installFailureDetails({
+        archivePath,
+        expectedId,
+        webappId,
+        installPath: installResult.installPath,
+        diagnostic
+      })
+    );
   }
   const installedItem = listWebEntries(options.app).items.find((item) =>
     item.kind === "webapp" && item.id === webappId
   );
   if (!installedItem) {
-    return fail(action, "webapp_install_not_visible", "The installed WebApp is not visible in the Desktop sidebar.", installResult);
+    return invalidWebappActionResult(action, webappId, "install", ["item"]);
   }
   notifyWebsChanged(options);
   const operation = previousItemIds.has(webappId) ? "updated" : "installed";
   options.emitWebappChanged?.(operation, webappId);
   return ok(action, {
-    itemId: webappId,
-    operation,
-    item: installedItem,
-    message: installResult.message
-  });
+    webappId,
+    operation
+  } satisfies DesktopWebappInstallResult);
 }
 
 async function executeWebAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
@@ -1453,13 +2053,16 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     return ok(action, webappManager.runtime.checkRuntime(options.app, webappId));
   }
   if (action === "desktop.webapp.start") {
-    return ok(action, await webappManager.runtime.start(options.app, readWebappId(args)));
+    const webappId = readWebappId(args);
+    return executeWebappRuntimeMutation(options, action, webappId, "start");
   }
   if (action === "desktop.webapp.stop") {
-    return ok(action, await webappManager.runtime.stop(options.app, readWebappId(args)));
+    const webappId = readWebappId(args);
+    return executeWebappRuntimeMutation(options, action, webappId, "stop");
   }
   if (action === "desktop.webapp.restart") {
-    return ok(action, await webappManager.runtime.restart(options.app, readWebappId(args)));
+    const webappId = readWebappId(args);
+    return executeWebappRuntimeMutation(options, action, webappId, "restart");
   }
   if (action === "desktop.webapp.open") {
     return openWebapp(options, action, readWebappId(args));
@@ -1475,7 +2078,22 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
       notifyWebsChanged(options);
       options.emitWebappChanged?.("updated", webappId);
     }
-    return result.ok ? ok(action, result) : fail(action, "webapp_update_failed", result.message, result);
+    if (!result.ok) {
+      return fail(
+        action,
+        "webapp_update_failed",
+        sanitizeWebappErrorText(result.message),
+        webappPreferenceFailureDetails(webappId, result.item)
+      );
+    }
+    if (!result.item || result.item.id !== webappId) {
+      return invalidWebappActionResult(action, webappId, "update", ["item"]);
+    }
+    return ok(action, {
+      webappId,
+      label: result.item.label,
+      openMode: result.item.openMode
+    } satisfies DesktopWebappPreferenceResult);
   }
   if (action === "desktop.webapp.getPublishStatus") {
     const webappId = readWebappId(args);
@@ -1487,25 +2105,61 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
   if (action === "desktop.webapp.publish") {
     const webappId = readWebappId(args);
     const runtimeState = webappManager.runtime.getStatus(options.app, webappId);
-    if (!runtimeState) {
-      return fail(action, "webapp_not_found", t("webapp.notFound"), { webappId });
-    }
-    if (runtimeState.status !== "running" || !runtimeState.webUrl) {
-      return fail(action, "webapp_not_running", "Start the WebApp before publishing.", { webappId, status: runtimeState.status });
-    }
-    const result = await publishWebapp(options.app, webappId, runtimeState);
+    const result = await (options.publishWebapp ?? publishWebapp)(options.app, webappId, runtimeState);
     options.emitWebappChanged?.(result.ok ? "published" : "publish-failed", webappId);
-    return result.ok
-      ? ok(action, result)
-      : fail(action, "webapp_publish_failed", result.message, result);
+    if (!result.ok) {
+      return fail(
+        action,
+        "webapp_publish_failed",
+        sanitizeWebappErrorText(result.message),
+        projectWebappPublishFailureDetails(webappId, "publish", result)
+      );
+    }
+    if (result.state.id !== webappId || !result.state.status || !result.state.url) {
+      return invalidWebappActionResult(
+        action,
+        webappId,
+        "publish",
+        [
+          ...(result.state.id !== webappId ? ["state.id"] : []),
+          ...(!result.state.status ? ["state.status"] : []),
+          ...(!result.state.url ? ["state.url"] : [])
+        ]
+      );
+    }
+    return ok(action, {
+      webappId,
+      status: result.state.status,
+      publicUrl: result.state.url
+    } satisfies DesktopWebappPublishResult);
   }
   if (action === "desktop.webapp.unpublish") {
     const webappId = readWebappId(args);
-    const result = await unpublishWebapp(options.app, webappId);
+    const result = await (options.unpublishWebapp ?? unpublishWebapp)(options.app, webappId);
     options.emitWebappChanged?.(result.ok ? "unpublished" : "publish-failed", webappId);
-    return result.ok
-      ? ok(action, result)
-      : fail(action, "webapp_unpublish_failed", result.message, result);
+    if (!result.ok) {
+      return fail(
+        action,
+        "webapp_unpublish_failed",
+        sanitizeWebappErrorText(result.message),
+        projectWebappPublishFailureDetails(webappId, "unpublish", result)
+      );
+    }
+    if (result.state.id !== webappId || !result.state.status) {
+      return invalidWebappActionResult(
+        action,
+        webappId,
+        "unpublish",
+        [
+          ...(result.state.id !== webappId ? ["state.id"] : []),
+          ...(!result.state.status ? ["state.status"] : [])
+        ]
+      );
+    }
+    return ok(action, {
+      webappId,
+      status: result.state.status
+    } satisfies DesktopWebappUnpublishResult);
   }
   if (action === "desktop.webapp.install") {
     return installWebapp(options, action, args);
@@ -1514,10 +2168,18 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     const webappId = readWebappId(args);
     const result = await webappManager.remove(options.app, webappId);
     if (!result.ok) {
-      return fail(action, "webapp_uninstall_failed", result.message, result);
+      return fail(
+        action,
+        "webapp_uninstall_failed",
+        sanitizeWebappErrorText(result.message),
+        webappPreferenceFailureDetails(webappId, result.item)
+      );
+    }
+    if (!result.item || result.item.id !== webappId) {
+      return invalidWebappActionResult(action, webappId, "uninstall", ["item"]);
     }
     notifyWebsChanged(options);
-    return ok(action, result);
+    return ok(action, { webappId } satisfies DesktopWebappUninstallResult);
   }
   return fail(action, "unknown_action", `unknown WebApp action: ${action}`);
 }
