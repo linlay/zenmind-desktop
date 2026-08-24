@@ -2434,6 +2434,9 @@ export const zhCNMessages = {
   "desktopAction.sandboxImportRequiresPicker": "沙箱镜像导入需要用户在 Desktop 文件选择器中操作，暂不通过 HTTP bridge 执行。",
   "desktopAction.sandboxExportTargetRequired": "沙箱镜像导出需要提供 targetPath。",
   "desktopAction.stalePageTarget": "当前页面已切换，请刷新调试目标后重试。",
+  "desktopDisplay.nationalDayGreeting": "欢度国庆",
+  "desktopDisplay.invalidArgs": "显示效果参数无效。",
+  "desktopDisplay.targetUnavailable": "桌面主窗口已隐藏、最小化或不可用。",
 
   "website.listRead": "已读取内嵌网站。",
   "website.maxItems": "最多可添加 {count} 个内嵌网站。",

@@ -514,6 +514,54 @@ test("Agent Platform context exempts only WorkPanel openWeb and refreshWeb from 
   assert.equal(rendererCalls.length, 2);
 });
 
+test("desktop.display routes to the Main renderer without confirmation", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendererCalls = [];
+  let confirmationCalls = 0;
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async () => {
+    confirmationCalls += 1;
+    return { requestId: "unexpected", decision: "cancel" };
+  };
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: { status: "accepted", kind: "effect", effect: "fireworks", durationMs: 8_000 }
+    };
+  };
+
+  const response = await handleAgentPlatformDesktopActionRequest(options, {
+    requestId: "display-1",
+    action: "desktop.display",
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+    args: { kind: "effect", effect: "fireworks" }
+  });
+
+  assert.equal(response.ok, true);
+  assert.equal(confirmationCalls, 0);
+  assert.equal(rendererCalls.length, 1);
+  assert.deepEqual(rendererCalls[0].args, { kind: "effect", effect: "fireworks" });
+
+  for (const mainWindow of [
+    null,
+    { isDestroyed: () => false, isVisible: () => false, isMinimized: () => false },
+    { isDestroyed: () => false, isVisible: () => true, isMinimized: () => true },
+  ]) {
+    options.getMainWindow = () => mainWindow;
+    const unavailable = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.display",
+      source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+      args: { kind: "effect", effect: "snowfall" }
+    });
+    assert.equal(unavailable.ok, false);
+    assert.equal(unavailable.error.code, "display_target_unavailable");
+  }
+  assert.equal(rendererCalls.length, 1);
+});
+
 test("WebApp assistant chat uses its configured Desktop agent and forwards the message unchanged", async (t) => {
   const { calls, options } = createDesktopActionOptions(t);
   const id = webappId("assistant-app");
@@ -1843,7 +1891,6 @@ test("desktop action confirmation detail exposes debug context with redacted arg
       callback: "zenmind://auth/callback?token=secret#hash"
     },
     longText: "x".repeat(240),
-    confirmationSummary: "提醒主人喝水",
     alpha: "a",
     beta: "b",
     gamma: "c",

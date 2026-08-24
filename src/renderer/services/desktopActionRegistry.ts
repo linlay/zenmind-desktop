@@ -34,6 +34,9 @@ function actionError(code: string, message: string, details?: unknown) {
 }
 
 async function handleDefaultAction(request: DesktopActionRendererRequest) {
+  if (request.action === "desktop.display") {
+    return actionError("display_target_unavailable", translate("desktopDisplay.targetUnavailable"));
+  }
   if (request.action.startsWith("desktop.web.")) {
     return actionError("web_action_unavailable", translate("desktopAction.webUnavailable"));
   }
@@ -44,7 +47,8 @@ async function handleDefaultAction(request: DesktopActionRendererRequest) {
     request.action.startsWith("desktop.theme.") ||
     request.action.startsWith("desktop.locale.") ||
     request.action.startsWith("desktop.copilot.") ||
-    request.action.startsWith("desktop.general.")
+    request.action.startsWith("desktop.general.") ||
+    request.action === "desktop.display"
   ) {
     return actionError("settings_action_unavailable", translate("desktopAction.settingsUnavailable"));
   }
@@ -56,7 +60,8 @@ function getProviderScopesForAction(action: string): DesktopActionProviderScope[
     action.startsWith("desktop.theme.") ||
     action.startsWith("desktop.locale.") ||
     action.startsWith("desktop.copilot.") ||
-    action.startsWith("desktop.general.")
+    action.startsWith("desktop.general.") ||
+    action === "desktop.display"
   ) {
     return ["global"];
   }

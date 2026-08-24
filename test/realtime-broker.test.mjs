@@ -706,22 +706,36 @@ test("RealtimeBroker dispatches reverse Desktop Action and maps provider failure
 
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.theme.get",
     id: "desktop-action-ok",
-    payload: { requestId: "action-1", action: "desktop.theme.get", args: {}, source: { chatId: "chat-1" } },
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+    payload: {},
   });
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.theme.set",
     id: "desktop-action-error",
-    payload: { requestId: "action-2", action: "desktop.missing", args: {}, source: { chatId: "chat-1" } },
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+    payload: { themeMode: "dark" },
   });
   await nextTurn();
 
   assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], {
+    requestId: "desktop-action-ok",
+    action: "desktop.theme.get",
+    args: {},
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+  });
+  assert.deepEqual(calls[1], {
+    requestId: "desktop-action-error",
+    action: "desktop.theme.set",
+    args: { themeMode: "dark" },
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+  });
   assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "desktop-action-ok"), {
     frame: "response",
-    type: "desktop.action.call",
+    type: "desktop.theme.get",
     id: "desktop-action-ok",
     code: 0,
     msg: "success",
@@ -733,14 +747,15 @@ test("RealtimeBroker dispatches reverse Desktop Action and maps provider failure
     id: "desktop-action-error",
     code: 400,
     msg: "unknown",
-    data: { ok: false, action: "desktop.missing", error: { code: "unknown_action", message: "unknown" } },
+    data: { ok: false, action: "desktop.theme.set", error: { code: "unknown_action", message: "unknown" } },
   });
 
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.theme.get",
     id: "desktop-action-ok",
-    payload: { requestId: "action-1", action: "desktop.theme.get", args: {}, source: { chatId: "chat-1" } },
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+    payload: {},
   });
   await nextTurn();
   assert.equal(calls.length, 2);
@@ -751,6 +766,24 @@ test("RealtimeBroker dispatches reverse Desktop Action and maps provider failure
     code: 409,
     msg: "Desktop bridge request id was already used",
   });
+
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.action.call",
+    id: "legacy-action-envelope",
+    payload: { action: "desktop.theme.get", args: {} },
+  });
+  sockets[0].emit({
+    frame: "request",
+    type: "desktop.theme.get",
+    id: "conflicting-source",
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder", teamId: "team-1" },
+    payload: {},
+  });
+  await nextTurn();
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "legacy-action-envelope")?.type, "unknown_request_type");
+  assert.equal(sockets[0].sent.find((frame) => frame.id === "conflicting-source")?.type, "protocol_error");
+  assert.equal(calls.length, 2);
 });
 
 test("RealtimeBroker waits for a forwarded canonical Chat grant before WorkPanel actions", async (t) => {
@@ -776,13 +809,10 @@ test("RealtimeBroker waits for a forwarded canonical Chat grant before WorkPanel
 
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.workpanel.openWeb",
     id: "workpanel-before-ready",
-    payload: {
-      action: "desktop.workpanel.openWeb",
-      args: { url: "https://example.test/document" },
-      source: { chatId: "chat-ready", runId: "run-ready", agentKey: "coder" },
-    },
+    source: { chatId: "chat-ready", runId: "run-ready", agentKey: "coder" },
+    payload: { url: "https://example.test/document" },
   });
   await nextTurn();
   assert.equal(calls.length, 0);
@@ -818,13 +848,10 @@ test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization 
   await broker.ensureConnected("http://127.0.0.1:11789", token);
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.workpanel.openWeb",
     id: "workpanel-sync-failed",
-    payload: {
-      action: "desktop.workpanel.openWeb",
-      args: { url: "https://example.test/document" },
-      source: { chatId: "chat-failed", runId: "run-failed", agentKey: "coder" },
-    },
+    source: { chatId: "chat-failed", runId: "run-failed", agentKey: "coder" },
+    payload: { url: "https://example.test/document" },
   });
   await nextTurn();
   assert.equal(calls.length, 0);
@@ -868,13 +895,10 @@ test("RealtimeBroker keeps a WorkPanel grant after the visible observer detaches
 
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.workpanel.openWeb",
     id: "workpanel-after-detach",
-    payload: {
-      action: "desktop.workpanel.openWeb",
-      args: { url: "https://example.test/background" },
-      source: { chatId: "chat-background", runId: "run-background", agentKey: "coder" },
-    },
+    source: { chatId: "chat-background", runId: "run-background", agentKey: "coder" },
+    payload: { url: "https://example.test/background" },
   });
   await nextTurn();
 
@@ -883,13 +907,10 @@ test("RealtimeBroker keeps a WorkPanel grant after the visible observer detaches
 
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.workpanel.openWeb",
     id: "workpanel-wrong-owner",
-    payload: {
-      action: "desktop.workpanel.openWeb",
-      args: { url: "https://example.test/forged" },
-      source: { chatId: "chat-background", runId: "run-background", agentKey: "other-agent" },
-    },
+    source: { chatId: "chat-background", runId: "run-background", agentKey: "other-agent" },
+    payload: { url: "https://example.test/forged" },
   });
   await nextTurn();
   assert.equal(calls.length, 1);
@@ -919,13 +940,10 @@ test("RealtimeBroker lets a canonical reattach replace a stale WorkPanel grant a
   await broker.ensureConnected("http://127.0.0.1:11789", token);
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.workpanel.openWeb",
     id: "workpanel-after-reattach",
-    payload: {
-      action: "desktop.workpanel.openWeb",
-      args: { url: "https://example.test/recovered" },
-      source: { chatId: "chat-recovered", runId: "run-recovered", agentKey: "coder" },
-    },
+    source: { chatId: "chat-recovered", runId: "run-recovered", agentKey: "coder" },
+    payload: { url: "https://example.test/recovered" },
   });
   await nextTurn();
   assert.equal(calls.length, 0);
@@ -981,13 +999,10 @@ test("RealtimeBroker revokes a background WorkPanel grant at the forwarded Run t
   });
   sockets[0].emit({
     frame: "request",
-    type: "desktop.action.call",
+    type: "desktop.workpanel.openWeb",
     id: "workpanel-after-terminal",
-    payload: {
-      action: "desktop.workpanel.openWeb",
-      args: { url: "https://example.test/terminal" },
-      source: { chatId: "chat-terminal", runId: "run-terminal", agentKey: "coder" },
-    },
+    source: { chatId: "chat-terminal", runId: "run-terminal", agentKey: "coder" },
+    payload: { url: "https://example.test/terminal" },
   });
   await nextTurn();
 
@@ -1007,8 +1022,8 @@ test("RealtimeBroker chunks large Desktop JSON and screenshot responses below 25
   await broker.ensureConnected("http://127.0.0.1:11789", token);
 
   sockets[0].emit({
-    frame: "request", type: "desktop.action.call", id: "large-json",
-    payload: { action: "desktop.controlCenter.readServiceLog", args: {}, source: { chatId: "chat-1" } },
+    frame: "request", type: "desktop.controlCenter.readServiceLog", id: "large-json",
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" }, payload: {},
   });
   sockets[0].emit({
     frame: "request", type: "desktop.cdp.call", id: "large-screenshot",
@@ -1044,8 +1059,8 @@ test("RealtimeBroker stops reverse Desktop chunks after desktop.bridge.cancel", 
   });
   await broker.ensureConnected("http://127.0.0.1:11789", token);
   sockets[0].emit({
-    frame: "request", type: "desktop.action.call", id: "cancel-large",
-    payload: { action: "desktop.controlCenter.readServiceLog", args: {}, source: { chatId: "chat-1" } },
+    frame: "request", type: "desktop.controlCenter.readServiceLog", id: "cancel-large",
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" }, payload: {},
   });
   await nextTurn();
   const chunksBeforeCancel = sockets[0].sent.filter((frame) => frame.frame === "stream" && frame.id === "cancel-large").length;

@@ -4,7 +4,7 @@ export const DESKTOP_ACTION_BRIDGE_URL = `http://${DESKTOP_ACTION_BRIDGE_HOST}:$
 
 export type DesktopActionKind = "read" | "validate" | "preview" | "apply" | "execute";
 
-export type DesktopActionConfirmationPolicy = "sensitive-read";
+export type DesktopActionConfirmationPolicy = "sensitive-read" | "none";
 
 export type DesktopActionDefinition = {
   name: string;
@@ -69,6 +69,8 @@ export const DESKTOP_ACTION_DEFINITIONS = [
 
   { name: "desktop.locale.get", kind: "read", category: "locale", description: "Read the Desktop locale settings. Args: none. Returns LocaleSettings." },
   { name: "desktop.locale.set", kind: "execute", category: "locale", description: "Set and persist the Desktop locale, then broadcast the change. Args: { locale: zh-CN|en-US }. Returns LocaleSettings." },
+
+  { name: "desktop.display", kind: "execute", category: "display", confirmation: "none", description: "Show a transient effect in the Desktop Main Window. Args: { kind: effect, effect: fireworks|snowfall|nationalDay, durationMs? }." },
 
   { name: "desktop.copilot.getPagePreferences", kind: "read", category: "copilot", description: "Read all Desktop Copilot page preferences and available agent options. Args: none." },
   { name: "desktop.copilot.setPagePreference", kind: "execute", category: "copilot", description: "Update one Desktop Copilot page preference without replacing other pages. Args: { pageKey, enabled?, agentKey? }; pageKey: controlCenter|market|help|agents|schedules|skills." },

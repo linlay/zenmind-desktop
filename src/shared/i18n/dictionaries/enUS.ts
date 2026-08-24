@@ -2434,6 +2434,9 @@ export const enUSMessages = {
   "desktopAction.sandboxImportRequiresPicker": "Sandbox image import requires the user to operate the Desktop file picker, so it cannot run through the HTTP bridge.",
   "desktopAction.sandboxExportTargetRequired": "Sandbox image export requires targetPath.",
   "desktopAction.stalePageTarget": "The current page has changed. Refresh the debug target and try again.",
+  "desktopDisplay.nationalDayGreeting": "Happy National Day",
+  "desktopDisplay.invalidArgs": "Display effect arguments are invalid.",
+  "desktopDisplay.targetUnavailable": "The Desktop Main Window is hidden, minimized, or unavailable.",
 
   "website.listRead": "Embedded websites loaded.",
   "website.maxItems": "You can add up to {count} embedded websites.",

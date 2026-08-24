@@ -10,6 +10,7 @@ import { SidebarActionIcon } from "../components/BrandMark";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
+import { DesktopDisplayOverlay, type DesktopDisplayOverlayRequest } from "./DesktopDisplayOverlay";
 import { ChatHistoryDialog } from "./history/ChatHistoryDialog";
 import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, ServiceWebviewSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { EmptyContentSurface } from "./EmptyContentSurface";
@@ -42,6 +43,7 @@ import {
   resolveDesktopCopilotPreference
 } from "../../shared/page-copilot";
 import { shouldShowStartupProgressCard } from "../../shared/startup-gate";
+import { validateDesktopDisplayPayload } from "../../shared/desktop-display";
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
@@ -576,6 +578,8 @@ export function AppShell() {
   const workPanelFullscreenTransitionPendingRef = useRef(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
+  const [desktopDisplay, setDesktopDisplay] = useState<DesktopDisplayOverlayRequest | null>(null);
+  const desktopDisplayTokenRef = useRef(0);
   const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
   const [themePreferenceLoaded, setThemePreferenceLoaded] = useState(false);
   const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
@@ -3328,6 +3332,40 @@ export function AppShell() {
   }), [setLocale]);
 
   useEffect(() => registerDesktopActionProviderForScope("global", async (request) => {
+    if (request.action !== "desktop.display") {
+      return null;
+    }
+    const validation = validateDesktopDisplayPayload(request.args ?? {});
+    if (!validation.ok) {
+      return {
+        ok: false,
+        error: { code: "invalid_args", message: t("desktopDisplay.invalidArgs") }
+      };
+    }
+    if (document.visibilityState !== "visible" || window.innerWidth <= 0 || window.innerHeight <= 0) {
+      return {
+        ok: false,
+        error: {
+          code: "display_target_unavailable",
+          message: t("desktopDisplay.targetUnavailable")
+        }
+      };
+    }
+    const token = desktopDisplayTokenRef.current + 1;
+    desktopDisplayTokenRef.current = token;
+    setDesktopDisplay({ token, effect: validation.value.effect, durationMs: validation.value.durationMs });
+    return {
+      ok: true,
+      result: {
+        status: "accepted",
+        kind: validation.value.kind,
+        effect: validation.value.effect,
+        durationMs: validation.value.durationMs
+      }
+    };
+  }), [t]);
+
+  useEffect(() => registerDesktopActionProviderForScope("global", async (request) => {
     const args = request.args ?? {};
 
     if (request.action === "desktop.copilot.getPagePreferences") {
@@ -4237,6 +4275,16 @@ export function AppShell() {
         onOpenHistory={() => openChatHistoryDialog()}
         onNavigate={requestNavigationWithAgentChatFocus}
       />
+      {desktopDisplay ? (
+        <DesktopDisplayOverlay
+          key={desktopDisplay.token}
+          request={desktopDisplay}
+          greeting={t("desktopDisplay.nationalDayGreeting")}
+          onComplete={() => setDesktopDisplay((current) =>
+            current?.token === desktopDisplay.token ? null : current
+          )}
+        />
+      ) : null}
       <DesktopShutdownOverlay progress={shutdownProgress} version={desktopAppVersion} t={t} />
       </div>
     </DebugModeContext.Provider>

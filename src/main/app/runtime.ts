@@ -385,13 +385,12 @@ export function createMainProcessRuntime() {
       };
     },
     executeDesktopAction: async (request) => {
-      const { confirmationSummary: _ignoredConfirmationSummary, ...remoteArgs } = request.args;
       const response = await handleDesktopActionRequest(
         assistantBridgeRuntime.desktopActionOptions,
         {
           requestId: `enterprise-im-${request.messageId}`,
           action: request.action,
-          args: remoteArgs,
+          args: request.args,
           permissionMode: "full_access",
           source: {
             chatId: `enterprise-im:${request.conversationId}`

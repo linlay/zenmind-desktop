@@ -783,14 +783,12 @@ function sanitizeConfirmationValue(value: unknown, key = "", depth = 0): unknown
     return "[object]";
   }
   const record = value as Record<string, unknown>;
-  const entries = Object.entries(record)
-    .filter(([entryKey]) => entryKey !== "confirmationSummary")
-    .slice(0, CONFIRMATION_ARG_MAX_NESTED_KEYS);
+  const entries = Object.entries(record).slice(0, CONFIRMATION_ARG_MAX_NESTED_KEYS);
   const output: Record<string, unknown> = {};
   for (const [entryKey, entryValue] of entries) {
     output[entryKey] = sanitizeConfirmationValue(entryValue, entryKey, depth + 1);
   }
-  const hiddenCount = Object.keys(record).filter((entryKey) => entryKey !== "confirmationSummary").length - entries.length;
+  const hiddenCount = Object.keys(record).length - entries.length;
   if (hiddenCount > 0) {
     output["..."] = t("desktopAction.confirmDetailMore", { count: hiddenCount });
   }
@@ -804,7 +802,7 @@ function stringifyConfirmationArgValue(key: string, value: unknown) {
 }
 
 function summarizeConfirmationArgs(args: Record<string, unknown>) {
-  const entries = Object.entries(args).filter(([key]) => key !== "confirmationSummary");
+  const entries = Object.entries(args);
   if (entries.length === 0) {
     return t("desktopAction.confirmDetailArgsEmpty");
   }
@@ -928,10 +926,7 @@ function buildMutatingActionConfirmationRequest(
   snapshot: DesktopPageContextSnapshot | null
 ): DesktopActionConfirmationRequest {
   const action = request.action;
-  const providedSummary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
-    ? args.confirmationSummary.trim()
-    : "";
-  const summary = providedSummary || t("desktopAction.confirmSummary", { action });
+  const summary = t("desktopAction.confirmSummary", { action });
   const permissionMode = readRequestPermissionMode(request, args);
   const target = describeDesktopActionSnapshotTarget(snapshot);
   const argsSummary = summarizeConfirmationArgs(args);
@@ -1003,9 +998,7 @@ function buildPageControlActionConfirmationRequest(
   request: DesktopActionCallRequest,
   args: Record<string, unknown>
 ): DesktopActionConfirmationRequest {
-  const summary = typeof args.confirmationSummary === "string" && args.confirmationSummary.trim()
-    ? args.confirmationSummary.trim()
-    : t("desktopAction.pageControlSummary", { origin: scope.origin });
+  const summary = t("desktopAction.pageControlSummary", { origin: scope.origin });
   const targetLabel = [scope.surfaceLabel, scope.pageTitle].filter(Boolean).join(" · ") || scope.origin;
   const permissionMode = readRequestPermissionMode(request, args);
   return {
@@ -1128,7 +1121,7 @@ function collectStringValues(value: unknown, output: string[]) {
     return;
   }
   const record = value as Record<string, unknown>;
-  for (const key of ["selector", "elementSelector", "label", "text", "title", "name", "id", "className", "value", "href", "confirmationSummary"]) {
+  for (const key of ["selector", "elementSelector", "label", "text", "title", "name", "id", "className", "value", "href"]) {
     collectStringValues(record[key], output);
   }
 }
@@ -1867,6 +1860,23 @@ async function executeAction(
       : fail(action, "forbidden", "This native action is available only to an authorized local WebApp page.");
   }
 
+  if (action === "desktop.display") {
+    const targetWindow = options.getMainWindow();
+    const hidden = targetWindow && typeof targetWindow.isVisible === "function"
+      ? !targetWindow.isVisible()
+      : false;
+    const minimized = targetWindow && typeof targetWindow.isMinimized === "function"
+      ? targetWindow.isMinimized()
+      : false;
+    if (!targetWindow || targetWindow.isDestroyed() || hidden || minimized) {
+      return fail(
+        action,
+        "display_target_unavailable",
+        t("desktopDisplay.targetUnavailable")
+      );
+    }
+  }
+
   switch (action) {
     case "desktop.assistant.chat": {
       const isWebappInvocation = invocation.kind === "webappPage" || invocation.kind === "webappBackend";
@@ -1953,6 +1963,7 @@ async function executeAction(
     case "desktop.theme.set":
     case "desktop.locale.get":
     case "desktop.locale.set":
+    case "desktop.display":
     case "desktop.copilot.getPagePreferences":
     case "desktop.copilot.setPagePreference":
     case "desktop.web.listSurfaces":
@@ -2215,6 +2226,11 @@ async function handleActionCallRaw(
   }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);
+  for (const reservedField of ["source", ["confirmation", "Summary"].join("")]) {
+    if (Object.prototype.hasOwnProperty.call(args, reservedField)) {
+      return fail(action, "invalid_args", `${reservedField} is reserved.`);
+    }
+  }
   if (ARGUMENT_FREE_RUNTIME_ACTIONS.has(action) && Object.keys(args).length > 0) {
     return fail(action, "invalid_args", `${action} does not accept args.`);
   }
@@ -2234,7 +2250,8 @@ async function handleActionCallRaw(
   const confirmationEligibleInvocation = invocation.kind === "desktop" || invocation.kind === "agentPlatform";
   const agentPlatformConfirmationExempt = invocation.kind === "agentPlatform" &&
     AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS.has(action);
-  const requiresConfirmation = isDesktopActionMutating(action) || definition.confirmation === "sensitive-read";
+  const requiresConfirmation = definition.confirmation !== "none" &&
+    (isDesktopActionMutating(action) || definition.confirmation === "sensitive-read");
   if (requiresConfirmation && confirmationEligibleInvocation && !agentPlatformConfirmationExempt) {
     const confirmationResponse = await confirmDesktopActionIfNeeded(
       options,

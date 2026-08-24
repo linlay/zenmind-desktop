@@ -5430,7 +5430,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
   assert.match(bridge, /confirmRendererAction/);
   assert.match(bridge, /summarizeConfirmationArgs/);
   assert.match(bridge, /confirmDetailRedacted/);
-  assert.match(bridge, /confirmationSummary"\)/);
+  assert.doesNotMatch(bridge, /providedSummary/);
   assert.match(bridge, /readDesktopProfileFromRoot\(getDesktopConfigRoot\(options\.app\)\)\.general\.desktopActionConfirmationEnabled/);
   assert.match(bridge, /PageControlGrantStore/);
   assert.match(bridge, /t\("desktopAction\.pageControlGrant"\)/);
@@ -5509,7 +5509,7 @@ test("desktop action confirmation detail keeps debug context and redaction keys"
   assert.match(bridge, /function buildPageControlActionConfirmationRequest/);
   assert.match(bridge, /function summarizeConfirmationArgs/);
   assert.match(bridge, /function sanitizeConfirmationUrl/);
-  assert.match(bridge, /entryKey\) => entryKey !== "confirmationSummary"/);
+  assert.match(bridge, /Object\.entries\(record\)\.slice/);
   assert.match(bridge, /confirmMutatingAction\(\s*options,\s*request,\s*args,\s*snapshot/);
   assert.match(bridge, /confirmPageControlAction\(\s*options,\s*scope,\s*request,\s*args/);
   assert.match(bridge, /buildDesktopActionConfirmationDetail\(request, args/);

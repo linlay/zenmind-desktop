@@ -6,6 +6,7 @@ import type {
   AgentWebclientRunOwner,
 } from "../../shared/contracts";
 import { validateAgentPlatformPushTimeContract } from "../../shared/agent-platform-push-time-contract";
+import { getDesktopActionDefinition } from "../../shared/desktop-actions";
 import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
 import {
   AgentPlatformRealtimeClient,
@@ -18,7 +19,6 @@ import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 const MAX_REPLAY_EVENTS = 2_000;
 const MAX_REPLAY_BYTES = 4 * 1024 * 1024;
 const REQUEST_TIMEOUT_MS = 30_000;
-const DESKTOP_ACTION_REQUEST_TYPE = "desktop.action.call";
 const DESKTOP_CDP_REQUEST_TYPE = "desktop.cdp.call";
 const DESKTOP_RESPONSE_DELTA_EVENT_TYPE = "desktop.bridge.response.delta";
 const DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE = "desktop.cdp.screenshot.delta";
@@ -1700,19 +1700,19 @@ export class RealtimeBroker {
     const id = readText(frame.id);
     if (!id) return;
     const type = readText(frame.type);
-    if (type === DESKTOP_ACTION_REQUEST_TYPE || type === DESKTOP_CDP_REQUEST_TYPE) {
+    if (getDesktopActionDefinition(type) || type === DESKTOP_CDP_REQUEST_TYPE) {
       void this.handleDesktopBridgeRequest(id, type, frame);
       return;
     }
-    const errorType = "unsupported_in_current_view";
+    const errorType = "unknown_request_type";
     try {
       this.client.send({
         frame: "error",
         type: errorType,
         id,
         code: 409,
-        msg: "Desktop could not prove a unique capable inbound request target",
-        data: { code: errorType, message: "Inbound request target is unavailable" },
+        msg: "Desktop does not support this inbound request type",
+        data: { code: errorType, message: "Inbound request type is unknown" },
       });
     } catch {
       // The connection is already unavailable.
@@ -1721,7 +1721,7 @@ export class RealtimeBroker {
 
   private async handleDesktopBridgeRequest(
     id: string,
-    type: typeof DESKTOP_ACTION_REQUEST_TYPE | typeof DESKTOP_CDP_REQUEST_TYPE,
+    type: string,
     frame: AgentPlatformRealtimeFrame,
   ) {
     if (this.inboundDesktopRequests.has(id) || this.seenInboundDesktopRequestIds.has(id)) {
@@ -1744,12 +1744,31 @@ export class RealtimeBroker {
     const controller = new AbortController();
     this.inboundDesktopRequests.set(id, controller);
     try {
-      if (type === DESKTOP_ACTION_REQUEST_TYPE) {
-        await this.awaitForwardedWorkPanelReadiness(frame.payload, controller.signal);
+      const isDesktopAction = type !== DESKTOP_CDP_REQUEST_TYPE;
+      let actionRequest: Record<string, unknown> | null = null;
+      if (isDesktopAction) {
+        const source = isRecord(frame.source) ? frame.source : {};
+        const runId = readText(source.runId);
+        const chatId = readText(source.chatId);
+        const agentKey = readText(source.agentKey);
+        const teamId = readText(source.teamId);
+        if (!runId || !chatId || (agentKey && teamId)) {
+          throw brokerError(
+            "protocol_error",
+            "Desktop Action source must include runId and chatId and at most one Run owner",
+          );
+        }
+        await this.awaitForwardedWorkPanelReadiness(type, source, controller.signal);
         if (controller.signal.aborted) return;
+        actionRequest = {
+          requestId: id,
+          action: type,
+          args: frame.payload,
+          source,
+        };
       }
-      const result = type === DESKTOP_ACTION_REQUEST_TYPE
-        ? await provider.action(frame.payload)
+      const result = isDesktopAction
+        ? await provider.action(actionRequest as Record<string, unknown>)
         : await provider.cdp(frame.payload);
       if (controller.signal.aborted) return;
       if (!isRecord(result)) {
@@ -1804,12 +1823,11 @@ export class RealtimeBroker {
   }
 
   private async awaitForwardedWorkPanelReadiness(
-    payload: Record<string, unknown>,
+    action: string,
+    source: Record<string, unknown>,
     signal: AbortSignal,
   ) {
-    const action = readText(payload.action);
     if (!action.startsWith("desktop.workpanel.")) return;
-    const source = isRecord(payload.source) ? payload.source : {};
     const runId = readText(source.runId);
     const chatId = readText(source.chatId);
     if (!runId || !chatId) {
@@ -1886,7 +1904,7 @@ export class RealtimeBroker {
       );
     }
     if (current.generation !== grant.generation) {
-      await this.awaitForwardedWorkPanelReadiness(payload, signal);
+      await this.awaitForwardedWorkPanelReadiness(action, source, signal);
     }
   }
 
