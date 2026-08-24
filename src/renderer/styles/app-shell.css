@@ -26,7 +26,7 @@
 }
 
 :root[data-theme="dark"] .app-shell {
-  --windows-titlebar-background: #111111;
+  --windows-titlebar-background: #000000;
 }
 
 .app-shell.has-embedded-surface {
