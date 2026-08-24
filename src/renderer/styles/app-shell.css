@@ -51,6 +51,10 @@
   --app-window-drag-height: 0px;
 }
 
+.app-shell.is-windows-platform.has-main-chat-work-panel-toggle {
+  --app-window-drag-right: 48px;
+}
+
 .app-shell.is-mac-translucent-sidebar,
 .app-shell.is-mac-translucent-sidebar.has-embedded-surface {
   background: transparent;

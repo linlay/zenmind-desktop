@@ -5909,6 +5909,10 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(
     globalStyles,
+    /\.app-shell\.is-windows-platform\.has-main-chat-work-panel-toggle\s*\{[^}]*--app-window-drag-right:\s*48px;/
+  );
+  assert.match(
+    globalStyles,
     /\.app-window-controls-layer\s*\{[^}]*z-index:\s*1001;[^}]*pointer-events:\s*none;/
   );
   assert.match(
