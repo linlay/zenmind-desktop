@@ -217,6 +217,10 @@ test("resend prepares an ownerless new Chat surface before acknowledging the gue
     /surfaceId !== MAIN_CHAT_SURFACE_ID[\s\S]*?ownerChatId\?\.trim\(\) !== normalizedRequest\.sourceChatId/u,
   );
   assert.match(
+    serviceWebviewSurface,
+    /currentRouteWithHash === pendingPreparation\.targetRoute[\s\S]*?areAgentWebclientChatBusinessRoutesEquivalent\(\s*pendingPreparation\.sourceRoute,\s*currentUrl,[\s\S]*?return;/u,
+  );
+  assert.match(
     registrationBlock,
     /currentRouteWithHash === pendingPreparation\.targetRoute[\s\S]*?!registration\.ownerChatId\?\.trim\(\)[\s\S]*?finishNewChatPreparation\(pendingPreparation, \{ ok: true \}\)/u,
   );

@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { SupportedLocale } from "../shared/i18n";
@@ -64,20 +65,104 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function readJsonFile(filePath: string) {
+function recoverLeadingJsonObject(raw: string) {
+  let start = 0;
+  while (start < raw.length && /\s/u.test(raw[start] ?? "")) {
+    start += 1;
+  }
+  if (raw[start] !== "{") {
+    return null;
+  }
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+  for (let index = start; index < raw.length; index += 1) {
+    const character = raw[index];
+    if (inString) {
+      if (escaped) {
+        escaped = false;
+      } else if (character === "\\") {
+        escaped = true;
+      } else if (character === "\"") {
+        inString = false;
+      }
+      continue;
+    }
+    if (character === "\"") {
+      inString = true;
+      continue;
+    }
+    if (character === "{" || character === "[") {
+      depth += 1;
+      continue;
+    }
+    if (character !== "}" && character !== "]") {
+      continue;
+    }
+    depth -= 1;
+    if (depth !== 0) {
+      if (depth < 0) return null;
+      continue;
+    }
+    if (!raw.slice(index + 1).trim()) {
+      return null;
+    }
+    try {
+      return JSON.parse(raw.slice(start, index + 1)) as unknown;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+function writeJsonFile(filePath: string, value: unknown) {
+  const directory = path.dirname(filePath);
+  fs.mkdirSync(directory, { recursive: true });
+  const temporaryPath = path.join(
+    directory,
+    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`,
+  );
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8")) as unknown;
+    fs.writeFileSync(temporaryPath, `${JSON.stringify(value, null, 2)}\n`, {
+      encoding: "utf8",
+      mode: 0o600,
+    });
+    fs.renameSync(temporaryPath, filePath);
+  } finally {
+    fs.rmSync(temporaryPath, { force: true });
+  }
+}
+
+function readJsonFile(filePath: string) {
+  let raw: string;
+  try {
+    raw = fs.readFileSync(filePath, "utf8");
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code === "ENOENT") {
       return null;
     }
     throw error;
   }
-}
-
-function writeJsonFile(filePath: string, value: unknown) {
-  fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  try {
+    return JSON.parse(raw) as unknown;
+  } catch (error) {
+    const recovered = recoverLeadingJsonObject(raw);
+    if (recovered === null) {
+      throw error;
+    }
+    const backupPath = `${filePath}.corrupt-${Date.now()}-${process.pid}-${randomUUID()}`;
+    fs.renameSync(filePath, backupPath);
+    try {
+      writeJsonFile(filePath, recovered);
+    } catch (writeError) {
+      fs.renameSync(backupPath, filePath);
+      throw writeError;
+    }
+    console.warn(`[desktop-profile] recovered trailing corruption; backup=${backupPath}`);
+    return recovered;
+  }
 }
 
 function readText(value: unknown) {

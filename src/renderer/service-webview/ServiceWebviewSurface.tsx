@@ -964,6 +964,20 @@ export function ServiceWebviewSurface({
     } catch {
       return;
     }
+    const pendingPreparation = pendingNewChatPreparationRef.current;
+    if (
+      pendingPreparation &&
+      currentRouteWithHash === pendingPreparation.targetRoute &&
+      areAgentWebclientChatBusinessRoutesEquivalent(
+        pendingPreparation.sourceRoute,
+        currentUrl,
+      )
+    ) {
+      // The route navigation effect runs after this registration effect. Keep
+      // the canonical owner registered until the guest reaches the prepared
+      // newChat route, then webviewCurrentUrl will trigger a matching retry.
+      return;
+    }
     let cancelled = false;
     let retryTimer: number | null = null;
     const registration: EmbeddedCdpSurfaceRegistration = {
