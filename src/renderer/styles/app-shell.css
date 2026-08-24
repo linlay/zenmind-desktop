@@ -7,6 +7,7 @@
   --app-window-drag-right: 0px;
   --windows-titlebar-overlay-height: 44px;
   --windows-titlebar-control-width: 144px;
+  --windows-titlebar-background: #FFFFFF;
   position: relative;
   box-sizing: border-box;
   height: 100%;
@@ -22,6 +23,10 @@
   box-shadow: none;
   backdrop-filter: blur(32px) saturate(155%);
   -webkit-backdrop-filter: blur(32px) saturate(155%);
+}
+
+:root[data-theme="dark"] .app-shell {
+  --windows-titlebar-background: #000000;
 }
 
 .app-shell.has-embedded-surface {
@@ -591,6 +596,15 @@
   z-index: 1000;
   pointer-events: auto;
   cursor: grab;
+}
+
+/* Extend the WebApp drag lane behind the sidebar and native caption controls. */
+.app-shell.is-windows-platform.has-webapp-surface .app-window-drag-layer::before {
+  content: "";
+  position: absolute;
+  inset: 0 calc(-1 * var(--app-window-drag-right)) 0 calc(-1 * var(--app-window-drag-left));
+  background: var(--windows-titlebar-background);
+  pointer-events: none;
 }
 
 .app-window-controls-layer {
