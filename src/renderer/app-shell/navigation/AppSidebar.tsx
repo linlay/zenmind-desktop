@@ -5047,6 +5047,9 @@ export function AppSidebar({
     return isCollapsed ? (
       <Popover
         placement="right-start"
+        className={
+          args.groupId === "chats" ? "sidebar-chats-group-popover" : undefined
+        }
         content={
           <div
             className={`${groupChildrenClassName} worker-popover-content`}

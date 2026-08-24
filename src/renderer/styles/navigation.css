@@ -1463,6 +1463,10 @@
   padding: 4px;
 }
 
+div.sidebar-chats-group-popover {
+  overflow: visible;
+}
+
 .sidebar-group-children {
   display: flex;
   flex-direction: column;
