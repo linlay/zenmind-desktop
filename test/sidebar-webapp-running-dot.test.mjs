@@ -59,6 +59,10 @@ test("Website and WebApp status dots share the right alignment", () => {
   );
   assert.match(
     navigationCss,
+    /\.sidebar-website-status-close\s*\{[\s\S]*?top:\s*4px;[\s\S]*?right:\s*8px;[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/u,
+  );
+  assert.match(
+    navigationCss,
     /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateX\(-20px\);/u,
   );
   assert.match(

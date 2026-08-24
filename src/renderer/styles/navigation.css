@@ -1660,7 +1660,7 @@
 .sidebar-website-status-close {
   position: absolute;
   top: 4px;
-  right: 0;
+  right: 8px;
   width: 16px;
   height: 16px;
   opacity: 0;

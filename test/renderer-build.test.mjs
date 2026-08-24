@@ -4455,7 +4455,7 @@ test("website Copilot association is exposed across webs desktop api layers", ()
   assert.match(navigationCss, /\.sidebar-website-child-row:hover \.sidebar-webapp-status-dot[\s\S]*?opacity:\s*1;[\s\S]*?transform:\s*scale\(1\);/u);
   assert.match(navigationCss, /\.sidebar-website-status-action\s*\{[\s\S]*?flex:\s*0 0 24px;[\s\S]*?width:\s*24px;[\s\S]*?height:\s*24px;/u);
   assert.match(navigationCss, /\.sidebar-website-status-dot\s*\{[\s\S]*?position:\s*absolute;/u);
-  assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;/u);
+  assert.match(navigationCss, /\.sidebar-website-status-close\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?top:\s*4px;[\s\S]*?right:\s*8px;/u);
   assert.match(navigationCss, /\.sidebar-website-favicon\s*\{/u);
 
   // Website label font-size 14px matching Chats
