@@ -5945,9 +5945,9 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region\s*\{[^}]*(?:background|box-shadow):/
   );
-  assert.match(
+  assert.doesNotMatch(
     globalStyles,
-    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{[^}]*top:\s*3px;[^}]*left:\s*50%;[^}]*width:\s*28px;[^}]*height:\s*2px;[^}]*transform:\s*translateX\(-50%\);[^}]*pointer-events:\s*none;/
+    /\.app-shell\.is-mac-platform\.has-service-webview-surface \.app-window-drag-region::after\s*\{/
   );
   assert.doesNotMatch(
     globalStyles,
