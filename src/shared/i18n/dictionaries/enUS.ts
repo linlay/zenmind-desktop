@@ -287,7 +287,7 @@ export const enUSMessages = {
   "chatWorkPanel.close": "Close Work Panel",
   "chatWorkPanel.closeTab": "Close {title}",
   "chatWorkPanel.resize": "Resize Work Panel",
-  "chatWorkPanel.tabContextMenu.enterFullscreen": "Full Screen",
+  "chatWorkPanel.tabContextMenu.enterFullscreen": "Enter Full Screen",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "Exit Full Screen",
   "chatWorkPanel.tabContextMenu.downloadArtifact": "Download Artifact File",
   "chatWorkPanel.tabContextMenu.downloadReference": "Download Resource File",

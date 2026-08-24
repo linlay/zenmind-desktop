@@ -225,9 +225,12 @@ test("WorkPanel fullscreen owns native window state and exclusively covers the D
   assert.match(css, /:not\(\.app-content\):not\(\.desktop-action-confirmation-layer\):not\(\.desktop-global-search-layer\):not\(\.desktop-shutdown-overlay\)/u);
 
   assert.match(zhCN, /"webviewContextMenu\.page\.copy-url": "复制当前地址"/u);
-  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "全屏显示"/u);
+  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "进入全屏"/u);
   assert.match(enUS, /"webviewContextMenu\.page\.copy-url": "Copy Current Address"/u);
-  assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "Full Screen"/u);
+  assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.enterFullscreen": "Enter Full Screen"/u);
+  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.openInDefaultApp": "在默认应用中打开"/u);
+  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.closeTab": "关闭标签页"/u);
+  assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.closeOtherTabs": "关闭其他标签页"/u);
   assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.revealInFinder": "在访达中显示"/u);
   assert.match(zhCN, /"chatWorkPanel\.tabContextMenu\.revealInExplorer": "在文件资源管理器中显示"/u);
   assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.revealInFinder": "Reveal in Finder"/u);

@@ -107,64 +107,8 @@ function buildWorkPanelTemplate(
   platform: NodeJS.Platform | string,
 ) {
   const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
-  const leadingItems = request.profile === "web"
-    ? [
-        {
-          id: "reload",
-          label: t("webviewContextMenu.page.reload"),
-          click: click("reload")
-        },
-        {
-          id: "copy-url",
-          label: t("webviewContextMenu.page.copy-url"),
-          click: click("copy-url")
-        }
-      ]
-    : request.profile === "artifact" || request.profile === "reference"
-      ? [
-          {
-            id: "download-resource",
-            label: t(request.profile === "artifact"
-              ? "chatWorkPanel.tabContextMenu.downloadArtifact"
-              : "chatWorkPanel.tabContextMenu.downloadReference"),
-            click: click("download-resource")
-          },
-          {
-            id: "reveal-resource",
-            label: t(platform === "darwin"
-              ? "chatWorkPanel.tabContextMenu.revealInFinder"
-              : platform === "win32"
-                ? "chatWorkPanel.tabContextMenu.revealInExplorer"
-                : "chatWorkPanel.tabContextMenu.revealInFileManager"),
-            click: click("reveal-resource")
-          },
-          {
-            id: "open-resource-default-app",
-            label: t("chatWorkPanel.tabContextMenu.openInDefaultApp"),
-            click: click("open-resource-default-app")
-          },
-          {
-            id: "copy-title",
-            label: t("chatWorkPanel.tabContextMenu.copyFilename"),
-            click: click("copy-title")
-          },
-          { type: "separator" as const },
-          {
-            id: "reload",
-            label: t("chatWorkPanel.tabContextMenu.reloadPreview"),
-            click: click("reload")
-          }
-        ]
-      : [
-          {
-            id: "reload",
-            label: t("webviewContextMenu.page.reload"),
-            click: click("reload")
-          }
-        ];
-  return [
-    ...leadingItems,
-    { type: "separator" as const },
+  const resourceProfile = request.profile === "artifact" || request.profile === "reference";
+  const currentTabItems = [
     {
       id: "toggle-fullscreen",
       label: t(request.isFullscreen
@@ -172,7 +116,52 @@ function buildWorkPanelTemplate(
         : "chatWorkPanel.tabContextMenu.enterFullscreen"),
       click: click("toggle-fullscreen")
     },
-    { type: "separator" as const },
+    {
+      id: "reload",
+      label: t(resourceProfile
+        ? "chatWorkPanel.tabContextMenu.reloadPreview"
+        : "webviewContextMenu.page.reload"),
+      click: click("reload")
+    },
+    ...(request.profile === "web"
+      ? [{
+          id: "copy-url",
+          label: t("webviewContextMenu.page.copy-url"),
+          click: click("copy-url")
+        }]
+      : [])
+  ];
+  const crossEnvironmentItems = resourceProfile
+    ? [
+        {
+          id: "download-resource",
+          label: t(request.profile === "artifact"
+            ? "chatWorkPanel.tabContextMenu.downloadArtifact"
+            : "chatWorkPanel.tabContextMenu.downloadReference"),
+          click: click("download-resource")
+        },
+        {
+          id: "open-resource-default-app",
+          label: t("chatWorkPanel.tabContextMenu.openInDefaultApp"),
+          click: click("open-resource-default-app")
+        },
+        {
+          id: "reveal-resource",
+          label: t(platform === "darwin"
+            ? "chatWorkPanel.tabContextMenu.revealInFinder"
+            : platform === "win32"
+              ? "chatWorkPanel.tabContextMenu.revealInExplorer"
+              : "chatWorkPanel.tabContextMenu.revealInFileManager"),
+          click: click("reveal-resource")
+        },
+        {
+          id: "copy-title",
+          label: t("chatWorkPanel.tabContextMenu.copyFilename"),
+          click: click("copy-title")
+        }
+      ]
+    : [];
+  const closeItems = [
     {
       id: "close-tab",
       label: t("chatWorkPanel.tabContextMenu.closeTab"),
@@ -186,6 +175,11 @@ function buildWorkPanelTemplate(
       click: click("close-other-tabs")
     }
   ];
+  const groups = [currentTabItems, crossEnvironmentItems, closeItems]
+    .filter((group) => group.length > 0);
+  return groups.flatMap((group, index) =>
+    index === 0 ? group : [{ type: "separator" as const }, ...group]
+  );
 }
 
 export function registerChatWorkPanelTabContextMenuIpcHandlers(

@@ -105,20 +105,23 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   });
   assert.deepEqual(result, { actionId: "toggle-fullscreen" });
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
-    "download-resource",
-    "reveal-resource",
-    "open-resource-default-app",
-    "copy-title",
-    "separator",
+    "toggle-fullscreen",
     "reload",
     "separator",
-    "toggle-fullscreen",
+    "download-resource",
+    "open-resource-default-app",
+    "reveal-resource",
+    "copy-title",
     "separator",
     "close-tab",
     "close-other-tabs"
   ]);
   assert.equal(builtTemplate.find((item) => item.id === "close-tab").enabled, false);
   assert.equal(builtTemplate.find((item) => item.id === "close-other-tabs").enabled, true);
+  assert.match(
+    builtTemplate.find((item) => item.id === "toggle-fullscreen").label,
+    /Exit Full Screen|退出全屏/u
+  );
   assert.equal(popupOptions.window, ownerWindow);
   assert.equal(popupOptions.x, 299);
   assert.equal(popupOptions.y, 0);
@@ -134,14 +137,17 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     canCloseOthers: false
   }), { actionId: "copy-url" });
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
+    "toggle-fullscreen",
     "reload",
     "copy-url",
-    "separator",
-    "toggle-fullscreen",
     "separator",
     "close-tab",
     "close-other-tabs"
   ]);
+  assert.match(
+    builtTemplate.find((item) => item.id === "toggle-fullscreen").label,
+    /Enter Full Screen|进入全屏/u
+  );
 
   selectedActionId = "download-resource";
   assert.deepEqual(await invokeHandler({ sender }, {
@@ -196,6 +202,26 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   }), { actionId: "copy-url" });
   assert.deepEqual(builtTemplate.map((item) => item.id), ["copy-url"]);
 
+  selectedActionId = "reload";
+  assert.deepEqual(await invokeHandler({ sender }, {
+    mode: "work-panel",
+    x: 1,
+    y: 2,
+    profile: "default",
+    isFullscreen: false,
+    canClose: false,
+    canCloseOthers: false
+  }), { actionId: "reload" });
+  assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
+    "toggle-fullscreen",
+    "reload",
+    "separator",
+    "close-tab",
+    "close-other-tabs"
+  ]);
+  assert.equal(builtTemplate.find((item) => item.id === "close-tab").enabled, false);
+  assert.equal(builtTemplate.find((item) => item.id === "close-other-tabs").enabled, false);
+
   assert.deepEqual(await invokeHandler({ sender: {} }, {
     mode: "work-panel",
     x: 1,
@@ -207,6 +233,87 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   }), {
     actionId: null
   });
+});
+
+test("Work Panel tab context menu groups every profile without empty separators", async () => {
+  const handlers = new Map();
+  const sender = {};
+  const ownerWindow = {
+    isDestroyed: () => false,
+    getContentBounds: () => ({ x: 0, y: 0, width: 300, height: 400 })
+  };
+  let builtTemplate;
+  registerChatWorkPanelTabContextMenuIpcHandlers({
+    handle: (channel, handler) => handlers.set(channel, handler)
+  }, {
+    getMainWindow: () => ownerWindow,
+    platform: "darwin",
+    BrowserWindow: {
+      fromWebContents: (contents) => contents === sender ? ownerWindow : null
+    },
+    Menu: {
+      buildFromTemplate: (template) => {
+        builtTemplate = template;
+        return { popup: ({ callback }) => callback() };
+      }
+    }
+  });
+  const invokeHandler = handlers.get("chatWorkPanel.tabContextMenu.popup");
+  const scenarios = [
+    {
+      profile: "default",
+      expected: [
+        "toggle-fullscreen", "reload", "separator", "close-tab", "close-other-tabs"
+      ]
+    },
+    {
+      profile: "web",
+      expected: [
+        "toggle-fullscreen", "reload", "copy-url", "separator", "close-tab", "close-other-tabs"
+      ]
+    },
+    {
+      profile: "artifact",
+      expected: [
+        "toggle-fullscreen", "reload", "separator", "download-resource",
+        "open-resource-default-app", "reveal-resource", "copy-title",
+        "separator", "close-tab", "close-other-tabs"
+      ]
+    },
+    {
+      profile: "reference",
+      expected: [
+        "toggle-fullscreen", "reload", "separator", "download-resource",
+        "open-resource-default-app", "reveal-resource", "copy-title",
+        "separator", "close-tab", "close-other-tabs"
+      ]
+    }
+  ];
+
+  for (const scenario of scenarios) {
+    assert.deepEqual(await invokeHandler({ sender }, {
+      mode: "work-panel",
+      x: 1,
+      y: 2,
+      profile: scenario.profile,
+      isFullscreen: false,
+      canClose: true,
+      canCloseOthers: true
+    }), { actionId: null });
+    assert.deepEqual(
+      builtTemplate.map((item) => item.id ?? item.type),
+      scenario.expected,
+      scenario.profile
+    );
+    assert.notEqual(builtTemplate[0].type, "separator");
+    assert.notEqual(builtTemplate.at(-1).type, "separator");
+    assert.equal(
+      builtTemplate.some((item, index) =>
+        item.type === "separator" && builtTemplate[index + 1]?.type === "separator"
+      ),
+      false
+    );
+  }
 });
 
 test("Work Panel reveal menu uses platform-native file manager labels", async () => {
