@@ -1,3 +1,6 @@
+import type { KanbanIssue } from "./contracts/kanban";
+import type { WebsiteEntry } from "./contracts/webs";
+
 export const DESKTOP_ACTION_BRIDGE_HOST = "127.0.0.1";
 export const DESKTOP_ACTION_BRIDGE_PORT = 11788;
 export const DESKTOP_ACTION_BRIDGE_URL = `http://${DESKTOP_ACTION_BRIDGE_HOST}:${DESKTOP_ACTION_BRIDGE_PORT}`;
@@ -31,17 +34,57 @@ const WEBSITE_ENTRY_OUTPUT_SCHEMA = {
 const WEBSITE_ITEMS_OUTPUT_SCHEMA = {
   type: "object",
   properties: {
-    items: { type: "array", items: WEBSITE_ENTRY_OUTPUT_SCHEMA },
+    items: { type: "array", items: WEBSITE_ENTRY_OUTPUT_SCHEMA }
+  }
+} satisfies DesktopActionOutputSchema;
+
+const WEBSITE_ITEM_OUTPUT_SCHEMA = {
+  type: "object",
+  properties: {
     item: WEBSITE_ENTRY_OUTPUT_SCHEMA
   }
 } satisfies DesktopActionOutputSchema;
 
-const PET_STATE_OUTPUT_SCHEMA = {
-  type: "object",
-  properties: {
-    updatedAt: { "x-platform-time": "epoch-ms" }
-  }
-} satisfies DesktopActionOutputSchema;
+export interface DesktopPetStateResult {
+  supported: boolean;
+  enabled: boolean;
+  appearanceId: string;
+}
+
+export interface DesktopPetAppearanceSummary {
+  id: string;
+  displayName: string;
+  description: string;
+}
+
+export interface DesktopPetListResult {
+  appearanceId: string;
+  appearances: DesktopPetAppearanceSummary[];
+}
+
+export interface DesktopPetVisibilityResult {
+  enabled: boolean;
+}
+
+export interface DesktopPetSetResult {
+  appearanceId: string;
+}
+
+export interface DesktopWebsiteItemResult {
+  item: WebsiteEntry;
+}
+
+export interface DesktopWebsiteRemoveResult {
+  websiteId: string;
+}
+
+export interface DesktopKanbanIssueResult {
+  issue: KanbanIssue;
+}
+
+export interface DesktopKanbanDeleteResult {
+  deletedIssueId: string;
+}
 
 export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
@@ -96,9 +139,9 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.workpanel.closeWorkpanel", kind: "execute", category: "workpanel", description: "Close the trusted source chat WorkPanel." },
   { name: "desktop.site.list", kind: "read", category: "web", description: "List Desktop website entries and webapps." },
   { name: "desktop.website.list", kind: "read", category: "web", description: "List Desktop website entries.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
-  { name: "desktop.website.add", kind: "execute", category: "web", description: "Add one Desktop website entry. Args: { input: { label, url, copilotAgentKey? } } or top-level label/url; url is required. Do not send items/name-only batches.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
-  { name: "desktop.website.update", kind: "execute", category: "web", description: "Update one Desktop website entry. Args: id or websiteId plus { input|patch: { label?, url?, copilotAgentKey? } }.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
-  { name: "desktop.website.remove", kind: "execute", category: "web", description: "Remove one Desktop website entry.", outputSchema: WEBSITE_ITEMS_OUTPUT_SCHEMA },
+  { name: "desktop.website.add", kind: "execute", category: "web", description: "Add one Desktop website entry. Args: { input: { label, url, copilotAgentKey? } } or top-level label/url; url is required. Do not send items/name-only batches. Returns: { item }.", outputSchema: WEBSITE_ITEM_OUTPUT_SCHEMA },
+  { name: "desktop.website.update", kind: "execute", category: "web", description: "Update one Desktop website entry. Args: id or websiteId plus { input|patch: { label?, url?, copilotAgentKey? } }. Returns: { item }.", outputSchema: WEBSITE_ITEM_OUTPUT_SCHEMA },
+  { name: "desktop.website.remove", kind: "execute", category: "web", description: "Remove one Desktop website entry. Returns: { websiteId }." },
   { name: "desktop.website.open", kind: "execute", category: "web", description: "Open one Desktop website entry. Args: { websiteId|id }." },
   { name: "desktop.webapp.getStatus", kind: "read", category: "web", description: "Read a local webapp runtime status." },
   { name: "desktop.webapp.checkRuntime", kind: "validate", category: "web", description: "Check whether a local WebApp can run without starting it. Args: { webappId|id }." },
@@ -150,17 +193,17 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.skill.update", kind: "execute", category: "skill", description: "Update one editable text file in an agent-platform skill. Args: { skillKey|id, path?, content, baseSha256? }." },
 
   { name: "desktop.kanban.listIssues", kind: "read", category: "kanban", description: "List Desktop Kanban issues." },
-  { name: "desktop.kanban.getIssue", kind: "read", category: "kanban", description: "Read one Desktop Kanban issue." },
-  { name: "desktop.kanban.createIssue", kind: "execute", category: "kanban", description: "Create a Desktop Kanban issue." },
-  { name: "desktop.kanban.updateIssue", kind: "execute", category: "kanban", description: "Update a Desktop Kanban issue." },
-  { name: "desktop.kanban.deleteIssue", kind: "execute", category: "kanban", description: "Delete a Desktop Kanban issue." },
-  { name: "desktop.kanban.moveIssue", kind: "execute", category: "kanban", description: "Move a Desktop Kanban issue." },
+  { name: "desktop.kanban.getIssue", kind: "read", category: "kanban", description: "Read one Desktop Kanban issue. Returns: { issue }." },
+  { name: "desktop.kanban.createIssue", kind: "execute", category: "kanban", description: "Create a Desktop Kanban issue. Returns: { issue }." },
+  { name: "desktop.kanban.updateIssue", kind: "execute", category: "kanban", description: "Update a Desktop Kanban issue. Returns: { issue }." },
+  { name: "desktop.kanban.deleteIssue", kind: "execute", category: "kanban", description: "Delete a Desktop Kanban issue. Returns: { deletedIssueId }." },
+  { name: "desktop.kanban.moveIssue", kind: "execute", category: "kanban", description: "Move a Desktop Kanban issue. Returns: { issue }." },
 
-  { name: "desktop.pet.state", kind: "read", category: "pet", description: "Read Desktop pet state.", outputSchema: PET_STATE_OUTPUT_SCHEMA },
-  { name: "desktop.pet.show", kind: "execute", category: "pet", description: "Show the Desktop pet.", outputSchema: PET_STATE_OUTPUT_SCHEMA },
-  { name: "desktop.pet.hide", kind: "execute", category: "pet", description: "Hide the Desktop pet.", outputSchema: PET_STATE_OUTPUT_SCHEMA },
-  { name: "desktop.pet.list", kind: "read", category: "pet", description: "List local Desktop pet appearances." },
-  { name: "desktop.pet.set", kind: "execute", category: "pet", description: "Set the Desktop pet appearance.", outputSchema: PET_STATE_OUTPUT_SCHEMA }
+  { name: "desktop.pet.state", kind: "read", category: "pet", description: "Read Desktop pet control state. Returns: { supported, enabled, appearanceId }." },
+  { name: "desktop.pet.show", kind: "execute", category: "pet", description: "Show the Desktop pet. Returns: { enabled }." },
+  { name: "desktop.pet.hide", kind: "execute", category: "pet", description: "Hide the Desktop pet. Returns: { enabled }." },
+  { name: "desktop.pet.list", kind: "read", category: "pet", description: "List local Desktop pet appearance summaries. Returns: { appearanceId, appearances: [{ id, displayName, description }] }." },
+  { name: "desktop.pet.set", kind: "execute", category: "pet", description: "Set the Desktop pet appearance. Returns: { appearanceId }." }
 ] as const satisfies readonly DesktopActionDefinition[];
 
 export type DesktopActionName = typeof DESKTOP_ACTION_DEFINITIONS[number]["name"];

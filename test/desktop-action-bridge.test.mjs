@@ -93,15 +93,38 @@ function createDesktopActionOptions(t) {
   t.after(() => fs.rmSync(homePath, { recursive: true, force: true }));
 
   const appearances = [
-    { id: "classic", displayName: "Classic", description: "Builtin pet." },
-    { id: "user:dario", displayName: "Dario", description: "Local pet." }
+    {
+      id: "classic",
+      displayName: "Classic",
+      description: "Builtin pet.",
+      assetRoot: "/pets/classic",
+      manifestPath: "/pets/classic/pet.json",
+      spritesheetPath: "/pets/classic/spritesheet.png",
+      states: { idle: { row: 0, frames: 8 } },
+      signature: "classic-signature"
+    },
+    {
+      id: "user:dario",
+      displayName: "Dario",
+      description: "Local pet.",
+      assetRoot: "/pets/dario",
+      manifestPath: "/pets/dario/pet.json",
+      spritesheetPath: "/pets/dario/spritesheet.png",
+      states: { idle: { row: 0, frames: 8 }, celebrate: { row: 1, frames: 8 } },
+      signature: "dario-signature"
+    }
   ];
   const state = {
     supported: true,
     enabled: true,
     appearanceId: "classic",
     appearanceOptions: appearances,
-    updatedAt: "2026-01-01T00:00:00.000Z"
+    updatedAt: "2026-01-01T00:00:00.000Z",
+    windowVisible: true,
+    activeTasks: Array.from({ length: 20 }, (_, index) => ({ id: `task-${index}`, title: `Task ${index}` })),
+    messages: Array.from({ length: 20 }, (_, index) => ({ id: `message-${index}`, text: `Message ${index}` })),
+    agentStatus: { state: "working", agentKey: "helper" },
+    animationState: { name: "working", frame: 7 }
   };
   const calls = {
     refreshState: 0,
@@ -1268,23 +1291,31 @@ test("desktop pet actions expose the simplified local pet API", async (t) => {
   const stateResponse = await handleDesktopActionRequest(options, {
     action: "desktop.pet.state"
   });
-  assert.equal(stateResponse.ok, true);
-  assert.notEqual(stateResponse.result, state);
-  assert.deepEqual(stateResponse.result, {
-    ...state,
-    updatedAt: Date.parse(state.updatedAt)
+  assert.deepEqual(stateResponse, {
+    ok: true,
+    action: "desktop.pet.state",
+    result: {
+      supported: true,
+      enabled: true,
+      appearanceId: "classic"
+    }
   });
   assert.equal(state.updatedAt, "2026-01-01T00:00:00.000Z");
-  assert.equal("visible" in stateResponse.result, false);
   assert.equal(calls.refreshState, 1);
 
   const listResponse = await handleDesktopActionRequest(options, {
     action: "desktop.pet.list"
   });
-  assert.equal(listResponse.ok, true);
-  assert.deepEqual(listResponse.result, {
-    appearanceId: "classic",
-    appearances: state.appearanceOptions
+  assert.deepEqual(listResponse, {
+    ok: true,
+    action: "desktop.pet.list",
+    result: {
+      appearanceId: "classic",
+      appearances: [
+        { id: "classic", displayName: "Classic", description: "Builtin pet." },
+        { id: "user:dario", displayName: "Dario", description: "Local pet." }
+      ]
+    }
   });
 
   const setResponse = await handleDesktopActionRequest(options, {
@@ -1292,23 +1323,32 @@ test("desktop pet actions expose the simplified local pet API", async (t) => {
     args: { id: "user:dario" },
     permissionMode: "full_access"
   });
-  assert.equal(setResponse.ok, true);
+  assert.deepEqual(setResponse, {
+    ok: true,
+    action: "desktop.pet.set",
+    result: { appearanceId: "user:dario" }
+  });
   assert.deepEqual(calls.saveSettings, [{ appearanceId: "user:dario" }]);
-  assert.equal(setResponse.result.appearanceId, "user:dario");
 
   const showResponse = await handleDesktopActionRequest(options, {
     action: "desktop.pet.show",
     permissionMode: "full_access"
   });
-  assert.equal(showResponse.ok, true);
-  assert.equal(showResponse.result.enabled, true);
+  assert.deepEqual(showResponse, {
+    ok: true,
+    action: "desktop.pet.show",
+    result: { enabled: true }
+  });
 
   const hideResponse = await handleDesktopActionRequest(options, {
     action: "desktop.pet.hide",
     permissionMode: "full_access"
   });
-  assert.equal(hideResponse.ok, true);
-  assert.equal(hideResponse.result.enabled, false);
+  assert.deepEqual(hideResponse, {
+    ok: true,
+    action: "desktop.pet.hide",
+    result: { enabled: false }
+  });
 });
 
 test("desktop pet show reports a failure unless the window is actually enabled", async (t) => {
@@ -1322,7 +1362,7 @@ test("desktop pet show reports a failure unless the window is actually enabled",
 
   assert.equal(response.ok, false);
   assert.equal(response.error.code, "pet_enable_failed");
-  assert.equal(response.error.details.enabled, false);
+  assert.equal("details" in response.error, false);
 });
 
 test("dedicated Desktop setting actions replace the removed generic Setting family", async (t) => {
@@ -1624,8 +1664,8 @@ test("desktop action time schemas reject lossy epoch conversion but keep readabl
   );
 });
 
-test("desktop action HTTP responses normalize semantic timestamps", async (t) => {
-  const { options, state } = createDesktopActionOptions(t);
+test("desktop action HTTP and Agent Platform responses share the minimal pet result", async (t) => {
+  const { options } = createDesktopActionOptions(t);
   const port = await getFreeLoopbackPort();
   t.after(() => stopDesktopActionBridge());
 
@@ -1640,8 +1680,20 @@ test("desktop action HTTP responses normalize semantic timestamps", async (t) =>
     `http://${DESKTOP_ACTION_BRIDGE_HOST}:${port}/actions/call`,
     { action: "desktop.pet.state" }
   );
-  assert.equal(response.ok, true);
-  assert.equal(response.result.updatedAt, Date.parse(state.updatedAt));
+  const expected = {
+    ok: true,
+    action: "desktop.pet.state",
+    result: {
+      supported: true,
+      enabled: true,
+      appearanceId: "classic"
+    }
+  };
+  assert.deepEqual(response, expected);
+  assert.deepEqual(
+    await handleAgentPlatformDesktopActionRequest(options, { action: "desktop.pet.state" }),
+    expected
+  );
 });
 
 test("desktop pet actions reject unknown local appearances and removed legacy names", async (t) => {
@@ -1654,6 +1706,7 @@ test("desktop pet actions reject unknown local appearances and removed legacy na
   });
   assert.equal(missingResponse.ok, false);
   assert.equal(missingResponse.error.code, "pet_appearance_not_found");
+  assert.deepEqual(missingResponse.error.details, { appearanceId: "user:missing" });
   assert.deepEqual(calls.saveSettings, []);
 
   for (const action of [
@@ -1685,14 +1738,19 @@ test("desktop website add accepts item payloads and name alias", async (t) => {
     }
   });
 
-  assert.equal(response.ok, true);
-  assert.equal(response.result.ok, true, response.result.message);
-  assert.equal(response.result.item.label, "Weather.com");
-  assert.equal(response.result.item.url, "https://weather.com/");
-  assert.equal(response.result.items.length, 1);
+  const item = response.result.item;
+  assert.deepEqual(response, {
+    ok: true,
+    action: "desktop.website.add",
+    result: { item }
+  });
+  assert.equal(item.label, "Weather.com");
+  assert.equal(item.url, "https://weather.com/");
+  assert.equal(typeof item.createdAt, "number");
+  assert.equal(typeof item.updatedAt, "number");
 });
 
-test("desktop website add can be listed and reports an existing website as a business result", async (t) => {
+test("desktop website mutations return only the committed item or identifier", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const request = {
     action: "desktop.website.add",
@@ -1707,15 +1765,19 @@ test("desktop website add can be listed and reports an existing website as a bus
   };
 
   const added = await handleDesktopActionRequest(options, request);
-  assert.equal(added.ok, true);
-  assert.equal(added.result.ok, true, added.result.message);
-  assert.equal(typeof added.result.item.createdAt, "number");
-  assert.equal(typeof added.result.item.updatedAt, "number");
-  assert.equal(added.result.item.copilotAgentKey, "webOperator");
-  assert.equal("agentKey" in added.result.item, false);
+  const addedItem = added.result.item;
+  assert.deepEqual(added, {
+    ok: true,
+    action: "desktop.website.add",
+    result: { item: addedItem }
+  });
+  assert.equal(typeof addedItem.createdAt, "number");
+  assert.equal(typeof addedItem.updatedAt, "number");
+  assert.equal(addedItem.copilotAgentKey, "webOperator");
+  assert.equal("agentKey" in addedItem, false);
 
   const storedManifest = JSON.parse(fs.readFileSync(
-    getWebsitePath(options.app, added.result.item.id),
+    getWebsitePath(options.app, addedItem.id),
     "utf8"
   ));
   assert.match(storedManifest.createdAt, /^\d{4}-\d{2}-\d{2}T/u);
@@ -1735,10 +1797,65 @@ test("desktop website add can be listed and reports an existing website as a bus
   assert.equal(typeof listed.result.items[0].updatedAt, "number");
 
   const duplicate = await handleDesktopActionRequest(options, request);
-  assert.equal(duplicate.ok, true);
-  assert.equal(duplicate.result.ok, false);
-  assert.equal(duplicate.result.item.url, "https://www.weather.com.cn/");
-  assert.match(duplicate.result.message, /already exists|已经|已存在/u);
+  assert.deepEqual(duplicate, {
+    ok: false,
+    action: "desktop.website.add",
+    error: {
+      code: "website_add_failed",
+      message: duplicate.error.message,
+      details: { websiteId: addedItem.id }
+    }
+  });
+  assert.match(duplicate.error.message, /already exists|已经|已存在/u);
+
+  const updated = await handleDesktopActionRequest(options, {
+    action: "desktop.website.update",
+    permissionMode: "full_access",
+    args: {
+      websiteId: addedItem.id,
+      patch: { label: "中国天气" }
+    }
+  });
+  const updatedItem = updated.result.item;
+  assert.deepEqual(updated, {
+    ok: true,
+    action: "desktop.website.update",
+    result: { item: updatedItem }
+  });
+  assert.equal(updatedItem.label, "中国天气");
+  assert.equal(typeof updatedItem.createdAt, "number");
+  assert.equal(typeof updatedItem.updatedAt, "number");
+
+  const removed = await handleDesktopActionRequest(options, {
+    action: "desktop.website.remove",
+    permissionMode: "full_access",
+    args: { websiteId: addedItem.id }
+  });
+  assert.deepEqual(removed, {
+    ok: true,
+    action: "desktop.website.remove",
+    result: { websiteId: addedItem.id }
+  });
+
+  for (const [action, args, code] of [
+    ["desktop.website.update", { websiteId: addedItem.id, patch: { label: "Missing" } }, "website_update_failed"],
+    ["desktop.website.remove", { websiteId: addedItem.id }, "website_remove_failed"]
+  ]) {
+    const failed = await handleDesktopActionRequest(options, {
+      action,
+      permissionMode: "full_access",
+      args
+    });
+    assert.deepEqual(failed, {
+      ok: false,
+      action,
+      error: {
+        code,
+        message: failed.error.message,
+        details: { websiteId: addedItem.id }
+      }
+    });
+  }
 });
 
 test("desktop website add returns detailed input issues", async (t) => {
@@ -1754,14 +1871,174 @@ test("desktop website add returns detailed input issues", async (t) => {
     }
   });
 
-  assert.equal(response.ok, true);
-  assert.equal(response.result.ok, false);
-  assert.match(response.result.message, /url|网站地址/u);
-  assert.equal(response.result.issues.length, 1);
-  assert.equal(response.result.issues[0].field, "url");
-  assert.match(response.result.issues[0].message, /Website address is required|网站地址不能为空/u);
-  assert.equal(response.result.issues[0].expected, "non-empty string");
-  assert.equal(response.result.issues[0].received, "missing");
+  assert.equal(response.ok, false);
+  assert.equal(response.error.code, "website_add_failed");
+  assert.match(response.error.message, /url|网站地址/u);
+  assert.deepEqual(response, {
+    ok: false,
+    action: "desktop.website.add",
+    error: {
+      code: "website_add_failed",
+      message: response.error.message,
+      details: {
+        issues: [{
+          field: "url",
+          message: response.error.details.issues[0].message,
+          expected: "non-empty string",
+          received: "missing"
+        }]
+      }
+    }
+  });
+  assert.match(response.error.details.issues[0].message, /Website address is required|网站地址不能为空/u);
+});
+
+test("desktop kanban item actions return exact minimal results", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const issue = { id: "issue-1", title: "Original", status: "todo" };
+  const createdIssue = { id: "issue-2", title: "Created", status: "todo" };
+  const updatedIssue = { ...issue, title: "Updated" };
+  const movedIssue = { ...updatedIssue, status: "doing", position: 2 };
+  const snapshot = [{ ...issue }, { id: "issue-secret", title: "Must not leak", status: "done" }];
+  options.getKanbanRuntime = () => ({
+    listIssues: () => ({ ok: true, message: "snapshot", issues: snapshot, revision: 9 }),
+    createIssue: async () => ({ ok: true, message: "created", issue: createdIssue, issues: [...snapshot, createdIssue] }),
+    updateIssue: async () => ({ ok: true, message: "updated", issue: updatedIssue, issues: [updatedIssue, snapshot[1]] }),
+    deleteIssueWithAutomation: async () => ({ ok: true, message: "deleted", deletedIssueId: issue.id, issues: [snapshot[1]] }),
+    moveIssue: async () => ({ ok: true, message: "moved", issue: movedIssue, issues: [movedIssue, snapshot[1]] })
+  });
+
+  assert.deepEqual(
+    await handleDesktopActionRequest(options, {
+      action: "desktop.kanban.getIssue",
+      args: { id: issue.id }
+    }),
+    {
+      ok: true,
+      action: "desktop.kanban.getIssue",
+      result: { issue }
+    }
+  );
+  assert.deepEqual(
+    await handleDesktopActionRequest(options, {
+      action: "desktop.kanban.createIssue",
+      permissionMode: "full_access",
+      args: { input: { title: createdIssue.title } }
+    }),
+    {
+      ok: true,
+      action: "desktop.kanban.createIssue",
+      result: { issue: createdIssue }
+    }
+  );
+  assert.deepEqual(
+    await handleDesktopActionRequest(options, {
+      action: "desktop.kanban.updateIssue",
+      permissionMode: "full_access",
+      args: { id: issue.id, input: { title: updatedIssue.title } }
+    }),
+    {
+      ok: true,
+      action: "desktop.kanban.updateIssue",
+      result: { issue: updatedIssue }
+    }
+  );
+  assert.deepEqual(
+    await handleDesktopActionRequest(options, {
+      action: "desktop.kanban.deleteIssue",
+      permissionMode: "full_access",
+      args: { id: issue.id }
+    }),
+    {
+      ok: true,
+      action: "desktop.kanban.deleteIssue",
+      result: { deletedIssueId: issue.id }
+    }
+  );
+  assert.deepEqual(
+    await handleDesktopActionRequest(options, {
+      action: "desktop.kanban.moveIssue",
+      permissionMode: "full_access",
+      args: { id: issue.id, status: "doing", position: 2 }
+    }),
+    {
+      ok: true,
+      action: "desktop.kanban.moveIssue",
+      result: { issue: movedIssue }
+    }
+  );
+});
+
+test("desktop kanban business failures do not expose issue snapshots", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const leakedIssues = [{ id: "issue-secret", title: "Must not leak", status: "done" }];
+  options.getKanbanRuntime = () => ({
+    listIssues: () => ({ ok: true, message: "snapshot", issues: leakedIssues }),
+    createIssue: async () => ({ ok: false, message: "create rejected", issues: leakedIssues }),
+    updateIssue: async () => ({ ok: false, message: "update rejected", issues: leakedIssues }),
+    deleteIssueWithAutomation: async () => ({ ok: false, message: "delete rejected", issues: leakedIssues }),
+    moveIssue: async () => ({ ok: false, message: "move rejected", issues: leakedIssues })
+  });
+
+  assert.deepEqual(
+    await handleDesktopActionRequest(options, {
+      action: "desktop.kanban.getIssue",
+      args: { id: "issue-missing" }
+    }),
+    {
+      ok: false,
+      action: "desktop.kanban.getIssue",
+      error: {
+        code: "not_found",
+        message: "Kanban issue not found: issue-missing",
+        details: { issueId: "issue-missing" }
+      }
+    }
+  );
+
+  for (const [action, args, code, message, details] of [
+    ["desktop.kanban.createIssue", { input: { title: "Rejected" } }, "kanban_create_failed", "create rejected", undefined],
+    ["desktop.kanban.updateIssue", { id: "issue-1", input: { title: "Rejected" } }, "kanban_update_failed", "update rejected", { issueId: "issue-1" }],
+    ["desktop.kanban.deleteIssue", { id: "issue-1" }, "kanban_delete_failed", "delete rejected", { issueId: "issue-1" }],
+    ["desktop.kanban.moveIssue", { id: "issue-1", status: "doing", position: 1 }, "kanban_move_failed", "move rejected", { issueId: "issue-1" }]
+  ]) {
+    const expectedError = { code, message, ...(details ? { details } : {}) };
+    assert.deepEqual(
+      await handleDesktopActionRequest(options, {
+        action,
+        permissionMode: "full_access",
+        args
+      }),
+      { ok: false, action, error: expectedError }
+    );
+  }
+});
+
+test("desktop kanban rejects incomplete successful domain results", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.getKanbanRuntime = () => ({
+    listIssues: () => ({ ok: true, message: "snapshot", issues: [] }),
+    createIssue: async () => ({ ok: true, message: "created", issues: [] }),
+    updateIssue: async () => ({ ok: true, message: "updated", issues: [] }),
+    deleteIssueWithAutomation: async () => ({ ok: true, message: "deleted", issues: [] }),
+    moveIssue: async () => ({ ok: true, message: "moved", issues: [] })
+  });
+
+  for (const [action, args] of [
+    ["desktop.kanban.createIssue", { input: { title: "Incomplete" } }],
+    ["desktop.kanban.updateIssue", { id: "issue-1", input: { title: "Incomplete" } }],
+    ["desktop.kanban.deleteIssue", { id: "issue-1" }],
+    ["desktop.kanban.moveIssue", { id: "issue-1", status: "doing", position: 1 }]
+  ]) {
+    const response = await handleDesktopActionRequest(options, {
+      action,
+      permissionMode: "full_access",
+      args
+    });
+    assert.equal(response.ok, false, action);
+    assert.equal(response.error.code, "invalid_action_result", action);
+    assert.equal("details" in response.error, false, action);
+  }
 });
 
 test("desktop cdp bridge surfaces target timeout distinctly", async (t) => {

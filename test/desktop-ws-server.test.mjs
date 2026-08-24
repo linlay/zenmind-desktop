@@ -302,6 +302,26 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
     desktopActionOptions: {
       getKanbanRuntime: () => kanbanRuntime,
       getDesktopAppInfo: () => cachedAppInfo,
+      desktopPet: {
+        refreshState: async () => ({
+          supported: true,
+          enabled: false,
+          appearanceId: "classic",
+          appearanceOptions: [{
+            id: "classic",
+            displayName: "Classic",
+            description: "Builtin pet.",
+            states: { idle: { row: 0, frames: 8 } },
+            signature: "must-not-leak"
+          }],
+          messages: [{ id: "message-secret", text: "must not leak" }],
+          activeTasks: [{ id: "task-secret", title: "must not leak" }],
+          updatedAt: "2026-08-20T01:02:03.000Z"
+        }),
+        saveSettings: async () => { throw new Error("unexpected pet set"); },
+        show: async () => { throw new Error("unexpected pet show"); },
+        hide: async () => { throw new Error("unexpected pet hide"); }
+      },
       getMainWindow: () => ({ isDestroyed: () => false }),
       getCurrentPageSnapshot: () => null,
       confirmRendererAction: async (request) => {
@@ -478,6 +498,22 @@ test("desktop ws server exposes v1 request/response and push frames", async (t) 
   });
   const runtimeInfoAction = await client.waitFor((message) => message.id === "runtime-info-action-1");
   assert.deepEqual(runtimeInfoAction.data.result, cachedAppInfo);
+  client.send({
+    frame: "request",
+    type: "action.call",
+    id: "pet-state-action-1",
+    payload: { action: "pet.state", args: {} }
+  });
+  const petStateAction = await client.waitFor((message) => message.id === "pet-state-action-1");
+  assert.deepEqual(petStateAction.data, {
+    ok: true,
+    action: "desktop.pet.state",
+    result: {
+      supported: true,
+      enabled: false,
+      appearanceId: "classic"
+    }
+  });
   client.send({
     frame: "request",
     type: "action.call",

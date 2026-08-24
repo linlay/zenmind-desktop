@@ -43,7 +43,15 @@ import {
   type DesktopActionCallResponse,
   type DesktopActionConfirmationPolicy,
   type DesktopActionError,
-  type DesktopActionSource
+  type DesktopActionSource,
+  type DesktopKanbanDeleteResult,
+  type DesktopKanbanIssueResult,
+  type DesktopPetListResult,
+  type DesktopPetSetResult,
+  type DesktopPetStateResult,
+  type DesktopPetVisibilityResult,
+  type DesktopWebsiteItemResult,
+  type DesktopWebsiteRemoveResult
 } from "../shared/desktop-actions";
 import { ActionBridgeTimeContractError, normalizeActionBridgeTimePayload } from "./action-bridge-time-normalizer";
 import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-routes";
@@ -1390,13 +1398,39 @@ async function executeWebAction(options: DesktopActionBridgeOptions, action: str
     return ok(action, listWebsiteItems(options.app));
   }
   if (action === "desktop.website.add") {
-    return ok(action, addWebsiteItem(options.app, readWebsiteActionInput(args) as any));
+    const result = addWebsiteItem(options.app, readWebsiteActionInput(args) as any);
+    if (!result.ok) {
+      const issues = "issues" in result && Array.isArray(result.issues) ? result.issues : [];
+      const details = issues.length
+        ? { issues }
+        : result.item?.id
+          ? { websiteId: result.item.id }
+          : undefined;
+      return fail(action, "website_add_failed", result.message, details);
+    }
+    if (!result.item) {
+      return fail(action, "invalid_action_result", "Website add succeeded without an item.");
+    }
+    return ok(action, { item: result.item } satisfies DesktopWebsiteItemResult);
   }
   if (action === "desktop.website.update") {
-    return ok(action, updateWebsiteItem(options.app, readWebsiteId(args), readWebsiteActionInput(args) as any));
+    const websiteId = readWebsiteId(args);
+    const result = updateWebsiteItem(options.app, websiteId, readWebsiteActionInput(args) as any);
+    if (!result.ok) {
+      return fail(action, "website_update_failed", result.message, { websiteId });
+    }
+    if (!result.item) {
+      return fail(action, "invalid_action_result", "Website update succeeded without an item.");
+    }
+    return ok(action, { item: result.item } satisfies DesktopWebsiteItemResult);
   }
   if (action === "desktop.website.remove") {
-    return ok(action, removeWebsiteItem(options.app, readWebsiteId(args)));
+    const websiteId = readWebsiteId(args);
+    const result = removeWebsiteItem(options.app, websiteId);
+    if (!result.ok) {
+      return fail(action, "website_remove_failed", result.message, { websiteId });
+    }
+    return ok(action, { websiteId } satisfies DesktopWebsiteRemoveResult);
   }
   if (action === "desktop.website.open") {
     const websiteId = readWebsiteId(args);
@@ -1759,15 +1793,22 @@ async function executeKanbanAction(options: DesktopActionBridgeOptions, action: 
     const list = runtime.listIssues();
     const issue = list.issues.find((candidate) => candidate.id === id);
     return issue
-      ? ok(action, { ok: true, message: "Kanban issue loaded.", issue, issues: list.issues })
-      : fail(action, "not_found", `Kanban issue not found: ${id}`, { id });
+      ? ok(action, { issue } satisfies DesktopKanbanIssueResult)
+      : fail(action, "not_found", `Kanban issue not found: ${id}`, { issueId: id });
   }
   if (action === "desktop.kanban.createIssue") {
     const input = readKanbanInput(args);
     if (!input) {
       return fail(action, "invalid_args", "input object is required.");
     }
-    return ok(action, await runtime.createIssue(input as unknown as KanbanIssueInput));
+    const result = await runtime.createIssue(input as unknown as KanbanIssueInput);
+    if (!result.ok) {
+      return fail(action, "kanban_create_failed", result.message);
+    }
+    if (!result.issue) {
+      return fail(action, "invalid_action_result", "Kanban create succeeded without an issue.");
+    }
+    return ok(action, { issue: result.issue } satisfies DesktopKanbanIssueResult);
   }
   if (action === "desktop.kanban.updateIssue") {
     const id = readKanbanIssueId(args);
@@ -1775,20 +1816,41 @@ async function executeKanbanAction(options: DesktopActionBridgeOptions, action: 
     if (!id || !input) {
       return fail(action, "invalid_args", "id and input object are required.");
     }
-    return ok(action, await runtime.updateIssue(id, input as unknown as KanbanIssueUpdateInput));
+    const result = await runtime.updateIssue(id, input as unknown as KanbanIssueUpdateInput);
+    if (!result.ok) {
+      return fail(action, "kanban_update_failed", result.message, { issueId: id });
+    }
+    if (!result.issue) {
+      return fail(action, "invalid_action_result", "Kanban update succeeded without an issue.");
+    }
+    return ok(action, { issue: result.issue } satisfies DesktopKanbanIssueResult);
   }
   if (action === "desktop.kanban.deleteIssue") {
     const id = readKanbanIssueId(args);
     if (!id) {
       return fail(action, "invalid_args", "id is required.");
     }
-    return ok(action, await runtime.deleteIssueWithAutomation(id));
+    const result = await runtime.deleteIssueWithAutomation(id);
+    if (!result.ok) {
+      return fail(action, "kanban_delete_failed", result.message, { issueId: id });
+    }
+    if (!result.deletedIssueId) {
+      return fail(action, "invalid_action_result", "Kanban delete succeeded without a deletedIssueId.");
+    }
+    return ok(action, { deletedIssueId: result.deletedIssueId } satisfies DesktopKanbanDeleteResult);
   }
   const input = readKanbanMoveInput(args);
   if (!input) {
     return fail(action, "invalid_args", "id, status, and numeric position are required.");
   }
-  return ok(action, await runtime.moveIssue(input));
+  const result = await runtime.moveIssue(input);
+  if (!result.ok) {
+    return fail(action, "kanban_move_failed", result.message, { issueId: input.id });
+  }
+  if (!result.issue) {
+    return fail(action, "invalid_action_result", "Kanban move succeeded without an issue.");
+  }
+  return ok(action, { issue: result.issue } satisfies DesktopKanbanIssueResult);
 }
 
 async function executePetAction(options: DesktopActionBridgeOptions, action: string, args: Record<string, unknown>) {
@@ -1798,26 +1860,35 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
   }
   const state = await desktopPet.refreshState();
   if (action === "desktop.pet.state") {
-    return ok(action, state);
+    return ok(action, {
+      supported: state.supported,
+      enabled: state.enabled,
+      appearanceId: state.appearanceId
+    } satisfies DesktopPetStateResult);
   }
   if (action === "desktop.pet.list") {
     return ok(action, {
       appearanceId: state.appearanceId,
-      appearances: state.appearanceOptions
-    });
+      appearances: state.appearanceOptions.map(({ id, displayName, description }) => ({
+        id,
+        displayName,
+        description
+      }))
+    } satisfies DesktopPetListResult);
   }
   if (action === "desktop.pet.show") {
     if (!state.supported) {
-      return fail(action, "pet_unsupported", t("settings.desktopPet.enableUnavailable"), state);
+      return fail(action, "pet_unsupported", t("settings.desktopPet.enableUnavailable"));
     }
     const nextState = await desktopPet.show();
     if (!nextState.enabled) {
-      return fail(action, "pet_enable_failed", "Desktop pet could not be shown.", nextState);
+      return fail(action, "pet_enable_failed", "Desktop pet could not be shown.");
     }
-    return ok(action, nextState);
+    return ok(action, { enabled: nextState.enabled } satisfies DesktopPetVisibilityResult);
   }
   if (action === "desktop.pet.hide") {
-    return ok(action, await desktopPet.hide());
+    const nextState = await desktopPet.hide();
+    return ok(action, { enabled: nextState.enabled } satisfies DesktopPetVisibilityResult);
   }
   if (action !== "desktop.pet.set") {
     return fail(action, "unknown_action", `unknown action: ${action}`);
@@ -1827,16 +1898,16 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
     return fail(action, "invalid_args", "id or appearanceId is required.");
   }
   if (!state.supported) {
-    return fail(action, "pet_unsupported", t("settings.desktopPet.enableUnavailable"), state);
+    return fail(action, "pet_unsupported", t("settings.desktopPet.enableUnavailable"));
   }
   const appearance = state.appearanceOptions.find((candidate) => candidate.id === appearanceId);
   if (!appearance) {
     return fail(action, "pet_appearance_not_found", t("settings.desktopPet.enableUnavailable"), {
-      appearanceId,
-      appearances: state.appearanceOptions
+      appearanceId
     });
   }
-  return ok(action, await desktopPet.saveSettings({ appearanceId }));
+  const nextState = await desktopPet.saveSettings({ appearanceId });
+  return ok(action, { appearanceId: nextState.appearanceId } satisfies DesktopPetSetResult);
 }
 
 async function executeAction(
