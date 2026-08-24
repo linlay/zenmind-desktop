@@ -3496,6 +3496,7 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(sidebarSource, /chatDefaultAgentPending/);
   assert.match(sidebarSource, /headerSupplement: renderChatsDefaultAgentPicker\(\)/);
   assert.match(sidebarSource, /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)/);
+  assert.match(sidebarSource, /args\.groupId === "chats" \? "sidebar-chats-group-popover" : undefined/);
   assert.match(collapse, /headerSupplement\?: React\.ReactNode/);
   assert.match(collapse, /<div className="Collapse-headerSupplement">\{headerSupplement\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-label|chatAgentInlineLabel/);
@@ -3509,6 +3510,7 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(styles, /\.sidebar-chats-agent-trigger\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-menu-label\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-option-role\s*\{/);
+  assert.match(styles, /div\.sidebar-chats-group-popover\s*\{[\s\S]*?overflow:\s*visible;/);
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-select\s*\{/);
   assert.doesNotMatch(styles, /\.sidebar-chats-agent-label\s*\{/);
   assert.match(popover, /children\.props\["aria-haspopup"\] \?\? "dialog"/);
