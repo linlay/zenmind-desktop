@@ -19,6 +19,7 @@ const {
   createBrowserSurfaceRegistry
 } = require("../dist-electron/main/browser-surface-registry.js");
 const {
+  createSurfaceIdentity,
   createWebEntrySurfaceIdentity
 } = require("../dist-electron/shared/surface-identity.js");
 
@@ -143,6 +144,101 @@ test("embedded cdp gateway command execution times out instead of hanging", asyn
   assert.equal(error.details.url, "https://example.test/live");
   assert.deepEqual(error.details.paramKeys, ["expression", "returnByValue"]);
   assert.equal(hanging.attached, false);
+});
+
+test("embedded cdp Page.reload uses guest reload APIs without attaching the debugger", async () => {
+  const { logger, events } = createLoggerSink();
+  const calls = [];
+  let attached = false;
+  const tab = {
+    tabId: "reload-tab",
+    currentUrl: "https://example.test/reload",
+    title: "Reload",
+    webContentsId: 43
+  };
+  const surface = {
+    id: "site:reload",
+    surfaceId: "site:reload",
+    surfaceRole: "website",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    label: "Reload",
+    url: "https://example.test/reload",
+    surfaceKind: "website",
+    open: true,
+    active: true,
+    tabs: [tab],
+    activeTabId: tab.tabId
+  };
+  const contents = {
+    id: tab.webContentsId,
+    isDestroyed: () => false,
+    getURL: () => tab.currentUrl,
+    getTitle: () => tab.title,
+    reload: () => calls.push("reload"),
+    reloadIgnoringCache: () => calls.push("reloadIgnoringCache"),
+    debugger: {
+      isAttached: () => attached,
+      attach: () => {
+        attached = true;
+        calls.push("attach");
+      },
+      detach: () => {
+        attached = false;
+        calls.push("detach");
+      },
+      sendCommand: async () => {
+        calls.push("sendCommand");
+        return {};
+      }
+    }
+  };
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => [surface],
+    resolveWebContents: () => contents,
+    logger
+  });
+  const targetId = gatewayInternals.stableTargetId(surface, tab);
+
+  const normal = await gateway.executeCommand({
+    method: "Page.reload",
+    params: { ignoreCache: false },
+    targetId
+  });
+  assert.deepEqual(normal.result, {});
+  assert.deepEqual(calls, ["reload"]);
+  assert.equal(attached, false);
+
+  const connection = { sendJSON() {} };
+  const ignoredCache = await gateway.handleWebContentsCommand(
+    connection,
+    { surface, tab, targetId },
+    "Page.reload",
+    { ignoreCache: true }
+  );
+  assert.deepEqual(ignoredCache, {});
+  assert.deepEqual(calls, ["reload", "reloadIgnoringCache"]);
+  assert.equal(attached, false);
+  assert.equal(events.filter((event) => event.args[0] === "[desktop-cdp] host-command start").length, 2);
+  assert.equal(events.filter((event) => event.args[0] === "[desktop-cdp] host-command success").length, 2);
+
+  await assert.rejects(
+    gateway.executeCommand({
+      method: "Page.reload",
+      params: { ignoreCache: "false" },
+      targetId
+    }),
+    (error) => error?.code === "invalid_args" && /must be a boolean/u.test(error.message)
+  );
+  await assert.rejects(
+    gateway.executeCommand({
+      method: "Page.reload",
+      params: { loaderId: "unsupported" },
+      targetId
+    }),
+    (error) => error?.code === "invalid_args" && /only accepts/u.test(error.message)
+  );
+  assert.deepEqual(calls, ["reload", "reloadIgnoringCache"]);
 });
 
 test("embedded cdp target ids survive guest replacement but change with a new surface generation", () => {
@@ -370,6 +466,121 @@ test("embedded cdp target queries expose every live tab from the current surface
   assert.equal(attachingActiveTabResponse.result.currentTargetInfo, null);
   assert.equal(attachingActiveTabResponse.result.currentTargetId, null);
   assert.equal(attachingActiveTabResponse.result.activeTabId, null);
+});
+
+test("embedded cdp current target excludes active child surfaces and is registration-order independent", async () => {
+  const websiteTab = {
+    tabId: "website-tab",
+    currentUrl: "https://website.example/",
+    title: "Website",
+    webContentsId: 601
+  };
+  const dockTab = {
+    tabId: "copilot-dock",
+    currentUrl: "http://127.0.0.1:7079/copilot/helper",
+    title: "Copilot",
+    webContentsId: 602
+  };
+  const website = {
+    id: "site:website",
+    surfaceId: "site:website",
+    surfaceRole: "website",
+    surfaceLevel: "root",
+    interaction: "interactive",
+    label: "Website",
+    url: websiteTab.currentUrl,
+    surfaceKind: "website",
+    open: true,
+    active: true,
+    tabs: [websiteTab],
+    activeTabId: websiteTab.tabId
+  };
+  const dock = {
+    id: "copilot-dock",
+    surfaceId: "copilot-dock",
+    surfaceRole: "copilot-dock",
+    surfaceLevel: "child",
+    parentSurfaceId: website.id,
+    interaction: "interactive",
+    label: "Copilot",
+    url: dockTab.currentUrl,
+    surfaceKind: "service",
+    open: true,
+    active: true,
+    tabs: [dockTab],
+    activeTabId: dockTab.tabId
+  };
+  let surfaces = [dock, website];
+  const resolvedWebContentsIds = [];
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => surfaces,
+    resolveWebContents: (_surface, tab) => {
+      resolvedWebContentsIds.push(tab.webContentsId);
+      return null;
+    }
+  });
+
+  for (const ordered of [[dock, website], [website, dock]]) {
+    surfaces = ordered;
+    const response = await gateway.executeCommand({ method: "Target.getTargets" });
+    assert.deepEqual(response.result.targetInfos.map((target) => target.surfaceId), [website.id]);
+    assert.equal(response.result.currentSurfaceId, website.id);
+    assert.deepEqual((await gateway.listTargets()).map((target) => target.surfaceId), [website.id]);
+  }
+
+  await assert.rejects(
+    gateway.executeCommand({
+      method: "Runtime.evaluate",
+      params: { expression: "document.title" },
+      targetId: gatewayInternals.stableTargetId(dock, dockTab)
+    }),
+    (error) => error?.code === "target_not_in_current_surface"
+  );
+  assert.deepEqual(resolvedWebContentsIds, []);
+});
+
+test("embedded cdp current target fails closed when multiple public root surfaces are active", async () => {
+  const createActiveSurface = (suffix, webContentsId) => {
+    const tab = {
+      tabId: `tab-${suffix}`,
+      currentUrl: `https://${suffix}.example/`,
+      title: suffix,
+      webContentsId
+    };
+    return {
+      id: `site:${suffix}`,
+      surfaceId: `site:${suffix}`,
+      surfaceRole: "website",
+      surfaceLevel: "root",
+      interaction: "interactive",
+      label: suffix,
+      url: tab.currentUrl,
+      surfaceKind: "website",
+      open: true,
+      active: true,
+      tabs: [tab],
+      activeTabId: tab.tabId
+    };
+  };
+  const first = createActiveSurface("first", 611);
+  const second = createActiveSurface("second", 612);
+  const gateway = new EmbeddedCdpGateway({
+    getSurfaces: () => [first, second],
+    resolveWebContents: () => null
+  });
+
+  const response = await gateway.executeCommand({ method: "Target.getCurrentTarget" });
+  assert.equal(response.result.currentTargetId, null);
+  assert.equal(response.result.currentSurfaceId, null);
+  assert.deepEqual(await gateway.listTargets(), []);
+  await assert.rejects(
+    gateway.executeCommand({
+      method: "Runtime.evaluate",
+      params: { expression: "1+1" },
+      targetId: gatewayInternals.stableTargetId(first, first.tabs[0])
+    }),
+    (error) => error?.code === "target_not_in_current_surface"
+  );
 });
 
 test("embedded cdp target queries return an explicit empty current state without first-item fallback", async () => {
@@ -796,6 +1007,99 @@ test("browser surface registry uses explicit guest registrations for complete su
   currentPageSnapshot = null;
   registry.unregisterSurfacesForOwner(7);
   assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === appIdentity.surfaceId).open, false);
+});
+
+test("browser surface registry keeps Copilot Dock live-active while excluding it from public CDP current", () => {
+  const websiteIdentity = createWebEntrySurfaceIdentity("website", "website:current");
+  const dockIdentity = createSurfaceIdentity("copilot-dock", "", {
+    parentSurfaceId: websiteIdentity.surfaceId
+  });
+  const currentPageSnapshot = {
+    pageKind: "webview",
+    surfaceId: websiteIdentity.surfaceId,
+    webContentsId: 701,
+    pageContext: {
+      browserTarget: {
+        kind: "webview",
+        surfaceId: websiteIdentity.surfaceId,
+        currentUrl: "https://current.example/live"
+      }
+    }
+  };
+  const createContents = (id, url, title) => ({
+    id,
+    isDestroyed: () => false,
+    getType: () => "webview",
+    getURL: () => url,
+    getTitle: () => title
+  });
+  const contentsById = new Map([
+    [701, createContents(701, "https://current.example/live", "Current Website")],
+    [702, createContents(702, "http://127.0.0.1:7079/copilot/helper", "Copilot")]
+  ]);
+  const registry = createBrowserSurfaceRegistry({
+    webContents: {
+      getAllWebContents: () => [...contentsById.values()],
+      fromId: (id) => contentsById.get(id)
+    },
+    listWebEntries: () => ({
+      items: [{
+        id: "current",
+        entryKey: "website:current",
+        kind: "website",
+        label: "Current Website",
+        url: "https://current.example/"
+      }]
+    }),
+    getCurrentPageSnapshot: () => currentPageSnapshot
+  });
+
+  assert.equal(registry.registerSurface({
+    registrationId: "website-generation",
+    ...websiteIdentity,
+    surfaceIdentityKey: "website:current",
+    surfaceKind: "website",
+    surfaceType: "website",
+    pageRoute: "/webs/website:current",
+    label: "Current Website",
+    url: "https://current.example/",
+    active: true,
+    tabs: [{
+      tabId: "website-tab",
+      currentUrl: "https://current.example/live",
+      title: "Current Website",
+      webContentsId: 701,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false
+    }],
+    activeTabId: "website-tab"
+  }, 7), true);
+  assert.equal(registry.registerSurface({
+    registrationId: "dock-generation",
+    ...dockIdentity,
+    surfaceKind: "service",
+    surfaceType: "agent-copilot",
+    serviceId: "agent-webclient",
+    label: "Copilot",
+    url: "http://127.0.0.1:7079/copilot/helper",
+    active: true,
+    tabs: [{
+      tabId: "copilot-dock",
+      currentUrl: "http://127.0.0.1:7079/copilot/helper",
+      title: "Copilot",
+      webContentsId: 702,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false
+    }],
+    activeTabId: "copilot-dock"
+  }, 7), true);
+
+  assert.equal(registry.resolveWebviewSurfaceTarget(702).active, true);
+  const exported = registry.listRegisteredSurfaces();
+  assert.equal(exported.find((surface) => surface.surfaceId === websiteIdentity.surfaceId).active, true);
+  assert.equal(exported.find((surface) => surface.surfaceId === dockIdentity.surfaceId).active, false);
 });
 
 test("current page cdp inspector uses the shared command helper", () => {

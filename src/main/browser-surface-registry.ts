@@ -919,6 +919,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       if (!resolved) continue;
       const activeTab = resolved.activeTab;
       const registered = resolved.registered;
+      const activeContents = activeTab
+        ? options.webContents.fromId(activeTab.webContentsId)
+        : null;
       surfaces.push({
         id: registered.surfaceId,
         surfaceId: registered.surfaceId,
@@ -929,7 +932,12 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         targetGeneration: registered.registrationId,
         label: registered.label,
         url: registered.url,
-        active: registered.active,
+        // Registry active is also used by Agent WebClient live-surface lifecycle.
+        // Public CDP ownership is narrower: it must match the Desktop page snapshot
+        // and child surfaces such as Copilot Dock never become the current page.
+        active: registered.active &&
+          registered.surfaceLevel !== "child" &&
+          currentPageSnapshotMatchesSurface(registered.surfaceId, activeContents),
         currentUrl: activeTab?.currentUrl,
         title: activeTab?.title,
         webContentsId: activeTab?.webContentsId,

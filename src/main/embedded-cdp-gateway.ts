@@ -677,6 +677,9 @@ export class EmbeddedCdpGateway {
       await this.options.activateTarget?.(target.surface, target.tab);
       return {};
     }
+    if (method === "Page.reload") {
+      return this.reloadWebContents(target.surface, target.targetId, contents, params);
+    }
     const session = this.ensureDebuggerSession(connection, target.targetId, contents);
     return sendDesktopCdpCommand(session.debuggerRef, method, params, this.buildCommandDebugContext(target.surface, target.targetId, contents));
   }
@@ -695,6 +698,9 @@ export class EmbeddedCdpGateway {
     if (method === "Page.bringToFront") {
       await this.options.activateTarget?.(surface, tab);
       return {};
+    }
+    if (method === "Page.reload") {
+      return this.reloadWebContents(surface, targetId, contents, params);
     }
     const debuggerRef = contents.debugger;
     const ownsAttach = !debuggerRef.isAttached();
@@ -728,6 +734,47 @@ export class EmbeddedCdpGateway {
       timeoutMs: this.options.commandTimeoutMs,
       logger: this.options.logger
     };
+  }
+
+  private reloadWebContents(
+    surface: EmbeddedCdpSurface,
+    targetId: string,
+    contents: WebContents,
+    params: Record<string, unknown>
+  ) {
+    const extraParamKeys = Object.keys(params).filter((key) => key !== "ignoreCache");
+    if (extraParamKeys.length > 0) {
+      throw new EmbeddedCdpInvalidArgsError("Page.reload only accepts params.ignoreCache.");
+    }
+    const hasIgnoreCache = Object.prototype.hasOwnProperty.call(params, "ignoreCache");
+    if (hasIgnoreCache && typeof params.ignoreCache !== "boolean") {
+      throw new EmbeddedCdpInvalidArgsError("Page.reload params.ignoreCache must be a boolean.");
+    }
+    const ignoreCache = params.ignoreCache === true;
+    const logger = this.options.logger ?? console;
+    const details = {
+      method: "Page.reload",
+      targetId,
+      surfaceId: surface.id,
+      webContentsId: contents.id,
+      mode: ignoreCache ? "reloadIgnoringCache" : "reload"
+    };
+    logger.debug?.("[desktop-cdp] host-command start", details);
+    try {
+      if (ignoreCache) {
+        contents.reloadIgnoringCache();
+      } else {
+        contents.reload();
+      }
+      logger.debug?.("[desktop-cdp] host-command success", details);
+      return {};
+    } catch (error) {
+      logger.warn?.("[desktop-cdp] host-command failed", {
+        ...details,
+        error: error instanceof Error ? error.message : String(error)
+      });
+      throw error;
+    }
   }
 
   private async ensureWebContents(surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) {
@@ -808,7 +855,12 @@ export class EmbeddedCdpGateway {
   }
 
   private resolveCurrentSurface(surfaces: EmbeddedCdpSurface[]) {
-    return surfaces.find((surface) => surface.active) ?? null;
+    const currentSurfaces = surfaces.filter((surface) => (
+      surface.active &&
+      surface.surfaceLevel !== "child" &&
+      surface.surfaceKind !== "chat-work-panel"
+    ));
+    return currentSurfaces.length === 1 ? currentSurfaces[0] : null;
   }
 
   private targetsForSurface(surface: EmbeddedCdpSurface) {
