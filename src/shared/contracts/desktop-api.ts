@@ -754,7 +754,7 @@ export interface DesktopApi {
     openPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
     revealPath: (targetPath: string) => Promise<{ ok: boolean; path?: string; message?: string }>;
     moveWindowBy: (delta: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
-    beginWindowDrag: (point: { x: number; y: number }) => Promise<{ ok: boolean; message?: string }>;
+    beginWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
