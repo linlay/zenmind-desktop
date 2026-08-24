@@ -9,6 +9,8 @@ export const WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS = 12_000;
 export const WEBAPP_ID_PATTERN = /^webapp-[a-f0-9]{16}$/u;
 export const WEBAPP_KEY_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
 export const WEBAPP_AGENT_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+export const WEBAPP_COPILOT_SKILL_KEY_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+export const WEBAPP_COPILOT_MAX_SKILLS = 16;
 
 const SEMVER_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$/u;
 const MINIMUM_RUNTIME_VERSION_PATTERN = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,2}$/u;
@@ -355,6 +357,12 @@ const webappManifestV2Schema = z.strictObject({
     }).default({ backendPrefixes: [] })
   }),
   backend: webappBackendSchema.optional(),
+  copilot: z.strictObject({
+    agentKey: z.string().regex(WEBAPP_AGENT_KEY_PATTERN),
+    mustUseSkills: z.array(
+      z.string().min(3).max(64).regex(WEBAPP_COPILOT_SKILL_KEY_PATTERN)
+    ).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
+  }).optional(),
   desktopBridge: z.strictObject({
     version: z.literal(1)
   }).default({ version: 1 })
@@ -371,6 +379,27 @@ const webappManifestV2Schema = z.strictObject({
       path: ["frontend", "routeConfig", "backendPrefixes"],
       message: "backendPrefixes require a backend."
     });
+  }
+  if (value.copilot) {
+    const skills = new Set<string>();
+    value.copilot.mustUseSkills.forEach((skillKey, index) => {
+      const normalized = skillKey.toLowerCase();
+      if (skills.has(normalized)) {
+        context.addIssue({
+          code: "custom",
+          path: ["copilot", "mustUseSkills", index],
+          message: "mustUseSkills must be unique (case-insensitive)."
+        });
+      }
+      skills.add(normalized);
+    });
+    if (value.userConfig?.fields.some((field) => field.name === "agentKey")) {
+      context.addIssue({
+        code: "custom",
+        path: ["userConfig", "fields"],
+        message: "userConfig.agentKey cannot be declared together with fixed copilot configuration."
+      });
+    }
   }
   const prefixes = new Set<string>();
   value.frontend.routeConfig.backendPrefixes.forEach((prefix, index) => {
@@ -409,6 +438,7 @@ export type WebappManifest = z.infer<typeof webappManifestSchema>;
 export type WebappBackendConfig = WebappManifest["backend"];
 export type WebappFrontendConfig = WebappManifest["frontend"];
 export type WebappDesktopBridgeConfig = WebappManifest["desktopBridge"];
+export type WebappCopilotConfig = WebappManifest["copilot"];
 export type WebappUserConfig = NonNullable<WebappManifest["userConfig"]>;
 export type WebappUserConfigField = WebappUserConfig["fields"][number];
 

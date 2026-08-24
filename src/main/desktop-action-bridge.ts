@@ -1,9 +1,10 @@
 import http from "node:http";
+import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions } from "electron";
-import { clipboard, dialog, Notification, shell, systemPreferences } from "electron";
+import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions, WebContents } from "electron";
+import { clipboard, dialog, Notification, shell, systemPreferences, webContents } from "electron";
 import type {
   DesktopActionConfirmationDecision,
   DesktopActionConfirmationRequest,
@@ -60,6 +61,7 @@ import {
   type DesktopWebActionSurfaceSummary,
   type DesktopWebActionTabSummary,
   type DesktopWebCloseTabResult,
+  type DesktopWebExportArtifactResult,
   type DesktopWebNavigateResult,
   type DesktopWebOpenTabResult,
   type DesktopWebTargetTabResult,
@@ -151,14 +153,21 @@ import { getConfiguredDesktopActionBridgePort } from "./desktop-action-bridge-se
 import { getAssistantSettings } from "./assistant/core/settings-store";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { authorizeWebappActionToken } from "./webs/webapps/action-tokens";
+import {
+  getAvailableFilePath,
+  getDesktopDownloadDefaultPath,
+  sanitizeDownloadFilename
+} from "./download-paths";
 
 export type DesktopActionBridgeOptions = {
   app: App;
+  platform?: NodeJS.Platform;
   assistantBridge: AgentPlatformAssistantBridge;
   getDesktopAppInfo: () => DesktopAppInfo;
   getDesktopRuntimeDiagnostics: () => Promise<DesktopRuntimeDiagnostics>;
   getMainWindow: () => BrowserWindow | null;
   getCurrentPageSnapshot: () => DesktopPageContextSnapshot | null;
+  getWebContentsById?: (webContentsId: number) => WebContents | null;
   navigate: (targetPath: string) => void;
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   showFileDialog?: (
@@ -292,8 +301,23 @@ const PAGE_CONTROL_HIGH_RISK_PATTERN =
   /(\u63d0\u4ea4|\u5220\u9664|\u79fb\u9664|\u6e05\u7a7a|\u652f\u4ed8|\u4ed8\u6b3e|\u8d2d\u4e70|\u4e0b\u5355|\u8ba2\u5355|\u786e\u8ba4\u8ba2\u5355|\u9000\u6b3e|\u8f6c\u8d26|\u6388\u6743|\u786e\u8ba4\u6388\u6743|\u540c\u610f\u6388\u6743|\u5b89\u88c5|\u5378\u8f7d|\u542f\u52a8|\u505c\u6b62|\u91cd\u542f|\u53d1\u5e03|\u53d1\u9001|\u4fdd\u5b58|\u767b\u5f55|\u6ce8\u518c|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
 const CURRENT_PAGE_WEB_ACTIONS = new Set([
   "desktop.web.interactElement",
-  "desktop.web.executeScript"
+  "desktop.web.executeScript",
+  "desktop.web.exportArtifact"
 ]);
+const DESKTOP_WEB_EXPORT_FORMATS = ["png", "html", "project", "pdf"] as const;
+type DesktopWebExportFormat = typeof DESKTOP_WEB_EXPORT_FORMATS[number];
+const DESKTOP_WEB_EXPORT_MAX_BYTES = 32 * 1024 * 1024;
+const DESKTOP_WEB_EXPORT_PROVIDER_VERSION = 1;
+const DESKTOP_WEB_EXPORT_SPEC: Record<DesktopWebExportFormat, {
+  mimeType: string;
+  encoding: "base64" | "utf8";
+  extension: string;
+}> = {
+  png: { mimeType: "image/png", encoding: "base64", extension: ".png" },
+  html: { mimeType: "text/html", encoding: "utf8", extension: ".html" },
+  project: { mimeType: "application/json", encoding: "utf8", extension: ".poster-v2.json" },
+  pdf: { mimeType: "application/pdf", encoding: "base64", extension: ".pdf" }
+};
 const CONFIRMATION_ARG_MAX_KEYS = 8;
 const CONFIRMATION_ARG_MAX_NESTED_KEYS = 6;
 const CONFIRMATION_ARG_MAX_ARRAY_ITEMS = 4;
@@ -2572,6 +2596,246 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
   return ok(action, { appearanceId: nextState.appearanceId } satisfies DesktopPetSetResult);
 }
 
+type DesktopExportWebContents = Pick<
+  WebContents,
+  "executeJavaScript" | "isDestroyed" | "printToPDF"
+>;
+
+type DesktopExportProviderDescription = {
+  formats?: unknown;
+  suggestedFilenames?: unknown;
+};
+
+function isDesktopWebExportFormat(value: string): value is DesktopWebExportFormat {
+  return (DESKTOP_WEB_EXPORT_FORMATS as readonly string[]).includes(value);
+}
+
+function hasUnpairedUtf16Surrogate(value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function decodeStrictBase64(value: string) {
+  if (!value || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
+    return null;
+  }
+  const buffer = Buffer.from(value, "base64");
+  return value.replace(/=+$/u, "") === buffer.toString("base64").replace(/=+$/u, "")
+    ? buffer
+    : null;
+}
+
+function validateExportFilename(value: unknown, extension: string) {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > 240 ||
+    /[\\/\u0000-\u001f]/u.test(value) ||
+    !value.toLowerCase().endsWith(extension)
+  ) {
+    return "";
+  }
+  return value.trim();
+}
+
+function resolveCurrentRootWebapp(
+  options: DesktopActionBridgeOptions
+): { snapshot: DesktopPageContextSnapshot; contents: DesktopExportWebContents } | null {
+  const snapshot = options.getCurrentPageSnapshot();
+  if (
+    !snapshot ||
+    snapshot.pageKind !== "webview" ||
+    typeof snapshot.webContentsId !== "number" ||
+    !snapshot.surfaceId?.startsWith("app:") ||
+    !snapshot.surfaceRoute?.startsWith("/webs/webapp:")
+  ) {
+    return null;
+  }
+  const contents = options.getWebContentsById?.(snapshot.webContentsId) ??
+    webContents?.fromId(snapshot.webContentsId) ?? null;
+  if (!contents || contents.isDestroyed()) {
+    return null;
+  }
+  return { snapshot, contents };
+}
+
+async function readDesktopExportProvider(
+  contents: DesktopExportWebContents
+): Promise<
+  | { status: "ok"; description: DesktopExportProviderDescription }
+  | { status: "unavailable" }
+  | { status: "render_failed" }
+> {
+  try {
+    const result = await contents.executeJavaScript(`(async () => {
+      const provider = globalThis.__DESKTOP_WEBAPP_EXPORT__;
+      if (!provider || provider.version !== ${DESKTOP_WEB_EXPORT_PROVIDER_VERSION} || typeof provider.describe !== "function" || typeof provider.create !== "function") {
+        return { status: "unavailable" };
+      }
+      try {
+        return { status: "ok", description: await provider.describe() };
+      } catch {
+        return { status: "render_failed" };
+      }
+    })()`, true) as unknown;
+    const record = asRecord(result);
+    if (record.status === "ok") {
+      return { status: "ok", description: asRecord(record.description) };
+    }
+    return { status: record.status === "render_failed" ? "render_failed" : "unavailable" };
+  } catch {
+    return { status: "render_failed" };
+  }
+}
+
+async function createDesktopExportPayload(
+  contents: DesktopExportWebContents,
+  format: Exclude<DesktopWebExportFormat, "pdf">
+) {
+  try {
+    return await contents.executeJavaScript(`(async () => {
+      const provider = globalThis.__DESKTOP_WEBAPP_EXPORT__;
+      if (!provider || provider.version !== ${DESKTOP_WEB_EXPORT_PROVIDER_VERSION} || typeof provider.create !== "function") {
+        return { status: "unavailable" };
+      }
+      try {
+        return { status: "ok", payload: await provider.create({ format: ${JSON.stringify(format)} }) };
+      } catch {
+        return { status: "render_failed" };
+      }
+    })()`, true) as unknown;
+  } catch {
+    return { status: "render_failed" };
+  }
+}
+
+async function writeDesktopExportFile(
+  options: DesktopActionBridgeOptions,
+  filename: string,
+  data: Buffer
+) {
+  const platform = options.platform ?? process.platform;
+  const defaultPath = getDesktopDownloadDefaultPath(options.app, filename, platform);
+  const filePath = await getAvailableFilePath(defaultPath, { platform });
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`
+  );
+  try {
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.promises.writeFile(temporaryPath, data, { flag: "wx" });
+    await fs.promises.rename(temporaryPath, filePath);
+    return filePath;
+  } catch (error) {
+    await fs.promises.unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function executeDesktopWebExportArtifact(
+  options: DesktopActionBridgeOptions,
+  action: string,
+  args: Record<string, unknown>
+): Promise<DesktopActionCallResponse> {
+  const format = readString(args, "format").toLowerCase();
+  if (!isDesktopWebExportFormat(format)) {
+    return fail(action, "export_format_unsupported", "format must be png, html, project, or pdf.");
+  }
+  const target = resolveCurrentRootWebapp(options);
+  if (!target) {
+    return fail(action, "current_webapp_required", "The current active root surface must be a WebApp.");
+  }
+  const provider = await readDesktopExportProvider(target.contents);
+  if (provider.status === "unavailable") {
+    return fail(action, "export_provider_unavailable", "The current WebApp does not expose export provider v1.");
+  }
+  if (provider.status === "render_failed") {
+    return fail(action, "export_render_failed", "The WebApp export provider could not be inspected.");
+  }
+  const formats = Array.isArray(provider.description.formats)
+    ? provider.description.formats.filter((value): value is string => typeof value === "string")
+    : [];
+  if (!formats.includes(format)) {
+    return fail(action, "export_format_unsupported", `The current WebApp does not support ${format} export.`);
+  }
+
+  const spec = DESKTOP_WEB_EXPORT_SPEC[format];
+  let filename = "";
+  let data: Buffer | null = null;
+  if (format === "pdf") {
+    const suggestedFilenames = asRecord(provider.description.suggestedFilenames);
+    filename = validateExportFilename(suggestedFilenames.pdf, spec.extension) || "poster.pdf";
+    try {
+      data = await target.contents.printToPDF({
+        pageSize: "A4",
+        printBackground: true,
+        preferCSSPageSize: true
+      });
+    } catch {
+      return fail(action, "export_render_failed", "Desktop could not render the WebApp as PDF.");
+    }
+  } else {
+    const generated = asRecord(await createDesktopExportPayload(target.contents, format));
+    if (generated.status === "unavailable") {
+      return fail(action, "export_provider_unavailable", "The current WebApp export provider became unavailable.");
+    }
+    if (generated.status !== "ok") {
+      return fail(action, "export_render_failed", `The WebApp could not render ${format}.`);
+    }
+    const payload = asRecord(generated.payload);
+    filename = validateExportFilename(payload.filename, spec.extension);
+    if (
+      !filename ||
+      payload.mimeType !== spec.mimeType ||
+      payload.encoding !== spec.encoding ||
+      typeof payload.data !== "string"
+    ) {
+      return fail(action, "export_payload_invalid", "The WebApp returned an invalid export payload.");
+    }
+    if (spec.encoding === "base64") {
+      data = decodeStrictBase64(payload.data);
+    } else if (!hasUnpairedUtf16Surrogate(payload.data)) {
+      data = Buffer.from(payload.data, "utf8");
+    }
+    if (!data) {
+      return fail(action, "export_payload_invalid", "The WebApp returned malformed export data.");
+    }
+  }
+  if (!data || data.byteLength === 0) {
+    return fail(action, "export_payload_invalid", "The rendered export is empty.");
+  }
+  if (data.byteLength > DESKTOP_WEB_EXPORT_MAX_BYTES) {
+    return fail(action, "export_too_large", "The rendered export exceeds the 32 MiB limit.", {
+      sizeBytes: data.byteLength,
+      maxBytes: DESKTOP_WEB_EXPORT_MAX_BYTES
+    });
+  }
+
+  const safeFilename = sanitizeDownloadFilename(filename, `poster${spec.extension}`);
+  try {
+    const filePath = await writeDesktopExportFile(options, safeFilename, data);
+    return ok(action, {
+      surfaceId: target.snapshot.surfaceId!,
+      format,
+      filePath,
+      filename: path.basename(filePath),
+      mimeType: spec.mimeType,
+      sizeBytes: data.byteLength
+    } satisfies DesktopWebExportArtifactResult);
+  } catch {
+    return fail(action, "export_write_failed", "Desktop could not write the export to Downloads.");
+  }
+}
+
 async function executeAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
@@ -2719,6 +2983,8 @@ async function executeAction(
     case "desktop.workpanel.closeTab":
     case "desktop.workpanel.closeWorkpanel":
       return callRendererAction(options, request, args);
+    case "desktop.web.exportArtifact":
+      return executeDesktopWebExportArtifact(options, action, args);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
       return ok(action, {

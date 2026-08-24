@@ -1089,7 +1089,7 @@ class Doc {
 const version = {
   major: 4,
   minor: 4,
-  patch: 3
+  patch: 1
 };
 const $ZodType = /* @__PURE__ */ $constructor("$ZodType", (inst, def) => {
   var _a2;
@@ -2300,7 +2300,6 @@ const $ZodLiteral = /* @__PURE__ */ $constructor("$ZodLiteral", (inst, def) => {
 });
 const $ZodTransform = /* @__PURE__ */ $constructor("$ZodTransform", (inst, def) => {
   $ZodType.init(inst, def);
-  inst._zod.optin = "optional";
   inst._zod.parse = (payload, ctx) => {
     if (ctx.direction === "backward") {
       throw new $ZodEncodeError(inst.constructor.name);
@@ -2310,7 +2309,6 @@ const $ZodTransform = /* @__PURE__ */ $constructor("$ZodTransform", (inst, def) 
       const output = _out instanceof Promise ? _out : Promise.resolve(_out);
       return output.then((output2) => {
         payload.value = output2;
-        payload.fallback = true;
         return payload;
       });
     }
@@ -2318,12 +2316,11 @@ const $ZodTransform = /* @__PURE__ */ $constructor("$ZodTransform", (inst, def) 
       throw new $ZodAsyncError();
     }
     payload.value = _out;
-    payload.fallback = true;
     return payload;
   };
 });
 function handleOptionalResult(result, input) {
-  if (input === void 0 && (result.issues.length || result.fallback)) {
+  if (result.issues.length && input === void 0) {
     return { issues: [], value: void 0 };
   }
   return result;
@@ -2341,11 +2338,10 @@ const $ZodOptional = /* @__PURE__ */ $constructor("$ZodOptional", (inst, def) =>
   });
   inst._zod.parse = (payload, ctx) => {
     if (def.innerType._zod.optin === "optional") {
-      const input = payload.value;
       const result = def.innerType._zod.run(payload, ctx);
       if (result instanceof Promise)
-        return result.then((r) => handleOptionalResult(r, input));
-      return handleOptionalResult(result, input);
+        return result.then((r) => handleOptionalResult(r, payload.value));
+      return handleOptionalResult(result, payload.value);
     }
     if (payload.value === void 0) {
       return payload;
@@ -2444,7 +2440,7 @@ function handleNonOptionalResult(payload, inst) {
 }
 const $ZodCatch = /* @__PURE__ */ $constructor("$ZodCatch", (inst, def) => {
   $ZodType.init(inst, def);
-  inst._zod.optin = "optional";
+  defineLazy(inst._zod, "optin", () => def.innerType._zod.optin);
   defineLazy(inst._zod, "optout", () => def.innerType._zod.optout);
   defineLazy(inst._zod, "values", () => def.innerType._zod.values);
   inst._zod.parse = (payload, ctx) => {
@@ -2464,7 +2460,6 @@ const $ZodCatch = /* @__PURE__ */ $constructor("$ZodCatch", (inst, def) => {
             input: payload.value
           });
           payload.issues = [];
-          payload.fallback = true;
         }
         return payload;
       });
@@ -2479,7 +2474,6 @@ const $ZodCatch = /* @__PURE__ */ $constructor("$ZodCatch", (inst, def) => {
         input: payload.value
       });
       payload.issues = [];
-      payload.fallback = true;
     }
     return payload;
   };
@@ -2510,7 +2504,7 @@ function handlePipeResult(left, next, ctx) {
     left.aborted = true;
     return left;
   }
-  return next._zod.run({ value: left.value, issues: left.issues, fallback: left.fallback }, ctx);
+  return next._zod.run({ value: left.value, issues: left.issues }, ctx);
 }
 const $ZodReadonly = /* @__PURE__ */ $constructor("$ZodReadonly", (inst, def) => {
   $ZodType.init(inst, def);
@@ -3457,8 +3451,6 @@ function isTransforming(_schema, _ctx) {
     return isTransforming(def.keyType, ctx) || isTransforming(def.valueType, ctx);
   }
   if (def.type === "pipe") {
-    if (_schema._zod.traits.has("$ZodCodec"))
-      return true;
     return isTransforming(def.in, ctx) || isTransforming(def.out, ctx);
   }
   if (def.type === "object") {
@@ -3934,8 +3926,7 @@ const catchProcessor = (schema, ctx, json, params) => {
 };
 const pipeProcessor = (schema, ctx, _json, params) => {
   const def = schema._zod.def;
-  const inIsTransform = def.in._zod.traits.has("$ZodTransform");
-  const innerType = ctx.io === "input" ? inIsTransform ? def.out : def.in : def.out;
+  const innerType = ctx.io === "input" ? def.in._zod.def.type === "transform" ? def.out : def.in : def.out;
   process(innerType, ctx, params);
   const seen = ctx.seen.get(schema);
   seen.ref = innerType;
@@ -4788,12 +4779,10 @@ const ZodTransform = /* @__PURE__ */ $constructor("ZodTransform", (inst, def) =>
     if (output instanceof Promise) {
       return output.then((output2) => {
         payload.value = output2;
-        payload.fallback = true;
         return payload;
       });
     }
     payload.value = output;
-    payload.fallback = true;
     return payload;
   };
 });
@@ -4955,6 +4944,8 @@ const WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS = 12e3;
 const WEBAPP_ID_PATTERN = /^webapp-[a-f0-9]{16}$/u;
 const WEBAPP_KEY_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
 const WEBAPP_AGENT_KEY_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const WEBAPP_COPILOT_SKILL_KEY_PATTERN = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
+const WEBAPP_COPILOT_MAX_SKILLS = 16;
 const SEMVER_PATTERN = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-(?:0|[1-9]\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|[0-9]*[A-Za-z-][0-9A-Za-z-]*))*)?$/u;
 const MINIMUM_RUNTIME_VERSION_PATTERN = /^(?:0|[1-9]\d*)(?:\.(?:0|[1-9]\d*)){0,2}$/u;
 const ENV_KEY_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*$/u;
@@ -5248,6 +5239,12 @@ const webappManifestV2Schema = strictObject({
     }).default({ backendPrefixes: [] })
   }),
   backend: webappBackendSchema.optional(),
+  copilot: strictObject({
+    agentKey: string().regex(WEBAPP_AGENT_KEY_PATTERN),
+    mustUseSkills: array(
+      string().min(3).max(64).regex(WEBAPP_COPILOT_SKILL_KEY_PATTERN)
+    ).min(1).max(WEBAPP_COPILOT_MAX_SKILLS)
+  }).optional(),
   desktopBridge: strictObject({
     version: literal(1)
   }).default({ version: 1 })
@@ -5264,6 +5261,27 @@ const webappManifestV2Schema = strictObject({
       path: ["frontend", "routeConfig", "backendPrefixes"],
       message: "backendPrefixes require a backend."
     });
+  }
+  if (value.copilot) {
+    const skills = /* @__PURE__ */ new Set();
+    value.copilot.mustUseSkills.forEach((skillKey, index) => {
+      const normalized = skillKey.toLowerCase();
+      if (skills.has(normalized)) {
+        context.addIssue({
+          code: "custom",
+          path: ["copilot", "mustUseSkills", index],
+          message: "mustUseSkills must be unique (case-insensitive)."
+        });
+      }
+      skills.add(normalized);
+    });
+    if (value.userConfig?.fields.some((field) => field.name === "agentKey")) {
+      context.addIssue({
+        code: "custom",
+        path: ["userConfig", "fields"],
+        message: "userConfig.agentKey cannot be declared together with fixed copilot configuration."
+      });
+    }
   }
   const prefixes = /* @__PURE__ */ new Set();
   value.frontend.routeConfig.backendPrefixes.forEach((prefix, index) => {
@@ -5327,6 +5345,8 @@ export {
   WEBAPP_AGENT_KEY_PATTERN,
   WEBAPP_APP_CONFIG_MAX_BYTES,
   WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS,
+  WEBAPP_COPILOT_MAX_SKILLS,
+  WEBAPP_COPILOT_SKILL_KEY_PATTERN,
   WEBAPP_ID_PATTERN,
   WEBAPP_KEY_PATTERN,
   WEBAPP_MANIFEST_MAX_BYTES,

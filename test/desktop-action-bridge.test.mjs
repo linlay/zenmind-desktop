@@ -73,6 +73,9 @@ function createApp(homePath) {
       if (name === "documents") {
         return path.join(homePath, "Documents");
       }
+      if (name === "downloads") {
+        return path.join(homePath, "Downloads");
+      }
       assert.fail(`unexpected app.getPath(${name})`);
     },
     getAppPath() {
@@ -2071,6 +2074,129 @@ test("Desktop web actions retain page interaction while page reads use CDP", asy
     assert.equal(response.ok, false, action);
     assert.equal(response.error.code, "unknown_action", action);
   }
+});
+
+test("desktop web exportArtifact writes provider bytes to Downloads without returning payload data", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendered = [];
+  const snapshot = {
+    route: "/webs/webapp:webapp-0123456789abcdef",
+    pageKey: "poster-page",
+    pageKind: "webview",
+    surfaceId: "app:poster",
+    surfaceRoute: "/webs/webapp:webapp-0123456789abcdef",
+    webContentsId: 701,
+    pageContext: null
+  };
+  const contents = {
+    isDestroyed: () => false,
+    executeJavaScript: async (script) => {
+      if (script.includes("provider.describe")) {
+        return {
+          status: "ok",
+          description: {
+            formats: ["png", "html", "project", "pdf"],
+            suggestedFilenames: { pdf: "结构化海报.pdf" }
+          }
+        };
+      }
+      return {
+        status: "ok",
+        payload: {
+          filename: "结构化海报.html",
+          mimeType: "text/html",
+          encoding: "utf8",
+          data: "<!doctype html><title>结构化海报</title>"
+        }
+      };
+    },
+    printToPDF: async (printOptions) => {
+      rendered.push(printOptions);
+      return Buffer.from("pdf-result");
+    }
+  };
+  options.getCurrentPageSnapshot = () => snapshot;
+  options.getWebContentsById = (id) => id === 701 ? contents : null;
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+
+  const first = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "html" },
+    expectedPageKey: "poster-page"
+  });
+  const second = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "html" }
+  });
+  const pdf = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "pdf" }
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.result.surfaceId, "app:poster");
+  assert.equal(first.result.filename, "结构化海报.html");
+  assert.equal(first.result.mimeType, "text/html");
+  assert.equal("data" in first.result, false);
+  assert.equal(fs.readFileSync(first.result.filePath, "utf8"), "<!doctype html><title>结构化海报</title>");
+  assert.equal(second.result.filename, "结构化海报 (1).html");
+  assert.equal(pdf.result.filename, "结构化海报.pdf");
+  assert.deepEqual(rendered, [{ pageSize: "A4", printBackground: true, preferCSSPageSize: true }]);
+  assert.deepEqual(
+    fs.readdirSync(options.app.getPath("downloads")).filter((name) => name.startsWith(".")),
+    [],
+    "same-directory temporary files must be removed after the atomic rename"
+  );
+});
+
+test("desktop web exportArtifact rejects child surfaces, invalid payloads, and oversized files", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rootSnapshot = {
+    route: "/webs/webapp:webapp-0123456789abcdef",
+    pageKey: "poster-page",
+    pageKind: "webview",
+    surfaceId: "app:poster",
+    surfaceRoute: "/webs/webapp:webapp-0123456789abcdef",
+    webContentsId: 702,
+    pageContext: null
+  };
+  let mode = "invalid";
+  const contents = {
+    isDestroyed: () => false,
+    executeJavaScript: async (script) => {
+      if (script.includes("provider.describe")) {
+        return { status: "ok", description: { formats: ["png"] } };
+      }
+      return mode === "invalid"
+        ? { status: "ok", payload: { filename: "poster.png", mimeType: "image/jpeg", encoding: "base64", data: "eA==" } }
+        : { status: "ok", payload: { filename: "poster.png", mimeType: "image/png", encoding: "base64", data: Buffer.alloc(32 * 1024 * 1024 + 1).toString("base64") } };
+    },
+    printToPDF: async () => Buffer.from("pdf")
+  };
+  options.getCurrentPageSnapshot = () => ({ ...rootSnapshot, surfaceId: "copilot-dock" });
+  options.getWebContentsById = () => contents;
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+  const child = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "png" }
+  });
+  assert.equal(child.error.code, "current_webapp_required");
+
+  options.getCurrentPageSnapshot = () => rootSnapshot;
+  const invalid = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "png" }
+  });
+  assert.equal(invalid.error.code, "export_payload_invalid");
+
+  mode = "oversized";
+  const oversized = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "png" }
+  });
+  assert.equal(oversized.error.code, "export_too_large");
 });
 
 test("desktop general deviceName is read-only and exposes only the two name fields", async (t) => {

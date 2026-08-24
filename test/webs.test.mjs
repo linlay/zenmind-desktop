@@ -112,6 +112,7 @@ function manifest(key, overrides = {}) {
       }
     },
     ...(Object.hasOwn(overrides, "backend") ? { backend: overrides.backend } : {}),
+    ...(Object.hasOwn(overrides, "copilot") ? { copilot: overrides.copilot } : {}),
     desktopBridge: overrides.desktopBridge ?? { version: 1 }
   };
 }
@@ -274,6 +275,43 @@ test("manifest v2 defaults Desktop Bridge v1 and rejects legacy capability array
     }
   });
   assert.throws(() => parseWebappManifest(legacy));
+});
+
+test("manifest v2 validates fixed Copilot agent and forced skill configuration", () => {
+  const parsed = parseWebappManifest(manifest("poster-studio", {
+    copilot: {
+      agentKey: "webOperator",
+      mustUseSkills: ["poster-studio"]
+    }
+  }));
+  assert.deepEqual(parsed.copilot, {
+    agentKey: "webOperator",
+    mustUseSkills: ["poster-studio"]
+  });
+
+  assert.throws(() => parseWebappManifest(manifest("poster-conflict", {
+    copilot: { agentKey: "webOperator", mustUseSkills: ["poster-studio"] },
+    userConfig: {
+      fields: [{
+        name: "agentKey",
+        type: "select",
+        source: "desktop.agents",
+        label: "智能体"
+      }]
+    }
+  })));
+  assert.throws(() => parseWebappManifest(manifest("poster-duplicate", {
+    copilot: {
+      agentKey: "webOperator",
+      mustUseSkills: ["poster-studio", "poster-studio"]
+    }
+  })));
+  assert.throws(() => parseWebappManifest(manifest("poster-invalid-skill", {
+    copilot: {
+      agentKey: "webOperator",
+      mustUseSkills: ["../poster-studio"]
+    }
+  })));
 });
 
 test("WebApp SDK hides the internal config endpoint and sends only the chat message", async (t) => {

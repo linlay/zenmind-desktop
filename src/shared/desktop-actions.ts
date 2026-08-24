@@ -130,6 +130,15 @@ export interface DesktopWebActionStateResult {
   activeTab: DesktopWebActionTabSummary | null;
 }
 
+export interface DesktopWebExportArtifactResult {
+  surfaceId: string;
+  format: "png" | "html" | "project" | "pdf";
+  filePath: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface DesktopWebNavigateResult extends DesktopWebActionStateResult {
   targetTabId: string;
   navigatedUrl: string;
@@ -284,6 +293,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.getSurfaceState", kind: "read", category: "web", description: "Read one Desktop web surface and its complete tab state. Args: { surfaceId }." },
   { name: "desktop.web.interactElement", kind: "execute", category: "web", description: "Interact with an element in the current Desktop web page." },
   { name: "desktop.web.executeScript", kind: "execute", category: "web", description: "Execute a script in the current Desktop web page." },
+  { name: "desktop.web.exportArtifact", kind: "execute", category: "web", description: "Export an artifact from the current root WebApp directly to Downloads. Args: { format: png|html|project|pdf }. Returns an absolute filePath; payload bytes never enter the agent context." },
   { name: "desktop.web.activateSurface", kind: "execute", category: "web", description: "Activate a Desktop web surface." },
   { name: "desktop.web.navigate", kind: "execute", category: "web", description: "Navigate a Desktop web tab to a URL. Returns the public surface/tabs/activeTab post-state plus { targetTabId, navigatedUrl }; Electron guest and webContents ids are never returned." },
   { name: "desktop.web.reload", kind: "execute", category: "web", description: "Reload a Desktop web tab. Returns the public surface/tabs/activeTab post-state plus { targetTabId }; Electron guest and webContents ids are never returned." },
