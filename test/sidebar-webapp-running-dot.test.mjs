@@ -43,7 +43,7 @@ test("Website and WebApp status dots share the right alignment", () => {
   assert.match(appSidebar, /<SidebarActionIcon kind="more_actions" \/>/);
   assert.match(
     navigationCss,
-    /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*5px;[\s\S]*?left:\s*auto;/u,
+    /\.sidebar-webapp-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*13px;[\s\S]*?left:\s*auto;/u,
   );
   assert.match(
     navigationCss,
@@ -55,11 +55,11 @@ test("Website and WebApp status dots share the right alignment", () => {
   );
   assert.match(
     navigationCss,
-    /\.sidebar-website-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*5px;[\s\S]*?left:\s*auto;/u,
+    /\.sidebar-website-status-dot\s*\{[\s\S]*?top:\s*9px;[\s\S]*?right:\s*13px;[\s\S]*?left:\s*auto;/u,
   );
   assert.match(
     navigationCss,
-    /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateX\(-12px\);/u,
+    /\.sidebar-website-child-action\s*\{[\s\S]*?opacity:\s*0;[\s\S]*?transform:\s*translateX\(-20px\);/u,
   );
   assert.match(
     navigationCss,

@@ -1611,7 +1611,7 @@
   height: 24px;
   border-radius: 6px;
   opacity: 0;
-  transform: translateX(-12px);
+  transform: translateX(-20px);
   transition: opacity 0.16s ease-in-out;
 }
 
@@ -1623,7 +1623,7 @@
 
 .sidebar-webapp-status-dot {
   top: 9px;
-  right: 5px;
+  right: 13px;
   left: auto;
   pointer-events: none;
 }
@@ -1646,7 +1646,7 @@
 .sidebar-website-status-dot {
   position: absolute;
   top: 9px;
-  right: 5px;
+  right: 13px;
   left: auto;
   width: 6px;
   height: 6px;
