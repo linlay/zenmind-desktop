@@ -6087,7 +6087,8 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShell, /SIDEBAR_DRAG_BLOCK_SELECTOR/);
   assert.doesNotMatch(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
   assert.match(appShell, /event\.button !== 0/);
-  assert.match(appShell, /desktopShell\.beginWindowDrag\(\{ x: event\.screenX, y: event\.screenY \}\)/);
+  assert.match(appShell, /desktopShell\.beginWindowDrag\(\)/);
+  assert.doesNotMatch(appShell, /event\.screen[XY]/);
   assert.match(appShell, /desktopShell\.endWindowDrag\(\)/);
   assert.match(appShell, /window\.addEventListener\("pointerup", finishDrag, true\)/);
   assert.match(appShell, /window\.addEventListener\("pointercancel", finishDrag, true\)/);
@@ -6101,13 +6102,14 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShell, /dragTarget\.addEventListener\("lostpointercapture", finishDragOnLostPointerCapture, true\)/);
   assert.doesNotMatch(appShell, /dragTarget\.addEventListener\("lostpointercapture", finishDrag, true\)/);
   assert.match(appShell, /dragTarget\.setPointerCapture\(pointerId\)/);
-  assert.match(preload, /beginWindowDrag:\s*\(point: \{ x: number; y: number \}\) => ipcRenderer\.invoke\("desktopShell\.beginWindowDrag", point\)/);
+  assert.match(preload, /beginWindowDrag:\s*\(\) => ipcRenderer\.invoke\("desktopShell\.beginWindowDrag"\)/);
   assert.match(preload, /endWindowDrag:\s*\(\) => ipcRenderer\.invoke\("desktopShell\.endWindowDrag"\)/);
-  assert.match(contracts, /beginWindowDrag:\s*\(point: \{ x: number; y: number \}\) => Promise<\{ ok: boolean; message\?: string \}>/);
+  assert.match(contracts, /beginWindowDrag:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>/);
   assert.match(contracts, /endWindowDrag:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.beginWindowDrag"/);
   assert.match(shellHandlers, /ipcMain\.handle\("desktopShell\.endWindowDrag"/);
   assert.match(shellHandlers, /screen\.getCursorScreenPoint\(\)/);
+  assert.doesNotMatch(shellHandlers, /resolveScreenPoint/);
   assert.match(shellHandlers, /runSetInterval\(tickWindowDrag,\s*16\)/);
   assert.doesNotMatch(appShell, /window\.electronAPI\.windowDrag\.begin/);
   assert.doesNotMatch(contracts, /windowDrag:\s*\{/);

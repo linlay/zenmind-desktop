@@ -252,16 +252,6 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     return typeof payload.dataBase64 === "string";
   }
 
-  function resolveScreenPoint(input: unknown, fallbackPoint = screen.getCursorScreenPoint()) {
-    const payload = input && typeof input === "object" ? input as Record<string, unknown> : {};
-    const x = Number(payload.x);
-    const y = Number(payload.y);
-    return {
-      x: Number.isFinite(x) ? x : fallbackPoint.x,
-      y: Number.isFinite(y) ? y : fallbackPoint.y
-    };
-  }
-
   function clearWindowDragTimer() {
     if (!windowDragTimer) {
       return;
@@ -462,14 +452,16 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
   });
 
-  ipcMain.handle("desktopShell.beginWindowDrag", async (event: IpcMainInvokeEvent, point: unknown) => {
+  ipcMain.handle("desktopShell.beginWindowDrag", async (event: IpcMainInvokeEvent) => {
     try {
       const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? options.mainWindow;
       if (!ownerWindow || ownerWindow.isDestroyed() || ownerWindow.isFullScreen()) {
         return { ok: false as const, message: t("shell.windowUnavailable") };
       }
       clearWindowDragTimer();
-      const startPoint = resolveScreenPoint(point);
+      // Keep the whole drag in Electron's DIP coordinate space. Renderer screenX/screenY
+      // can use a different scale on Windows when displays have mixed DPI settings.
+      const startPoint = screen.getCursorScreenPoint();
       windowDragState = {
         ownerWindow,
         lastPoint: startPoint,

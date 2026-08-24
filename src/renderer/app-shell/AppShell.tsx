@@ -3565,7 +3565,7 @@ export function AppShell() {
       // The main-process cursor loop still keeps the drag alive across webview boundaries.
     }
 
-    void desktopShell.beginWindowDrag({ x: event.screenX, y: event.screenY }).then((result) => {
+    void desktopShell.beginWindowDrag().then((result) => {
       if (!result?.ok) {
         finishDrag();
       }

@@ -42,6 +42,33 @@ class FakeFullscreenWindow extends EventEmitter {
   }
 }
 
+class FakeDragWindow extends EventEmitter {
+  constructor(position = [80, 90]) {
+    super();
+    this.position = position;
+    this.moves = [];
+  }
+
+  isDestroyed() {
+    return false;
+  }
+
+  isFullScreen() {
+    return false;
+  }
+
+  getPosition() {
+    return this.position;
+  }
+
+  setPosition(x, y) {
+    this.position = [x, y];
+    this.moves.push([x, y]);
+  }
+
+  moveTop() {}
+}
+
 test("window fullscreen transition confirms synchronous Windows state", async () => {
   const target = new FakeFullscreenWindow();
   const result = await transitionWindowFullScreen(target, true, {
@@ -110,4 +137,40 @@ test("desktopShell fullscreen IPC accepts only boolean requests from the current
   assert.equal((await handler({ sender: otherSender }, false)).ok, false);
   assert.deepEqual(mainWindow.requests, [true]);
   assert.deepEqual(otherWindow.requests, []);
+});
+
+test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DPI displays", async () => {
+  const handlers = new Map();
+  const sender = {};
+  const mainWindow = new FakeDragWindow();
+  let cursorPoint = { x: 1920, y: 100 };
+  let dragTick = null;
+
+  registerShellIpcHandlers({
+    handle: (channel, handler) => handlers.set(channel, handler),
+    on: () => undefined
+  }, {
+    mainWindow,
+    BrowserWindow: {
+      fromWebContents: (contents) => contents === sender ? mainWindow : null
+    },
+    screen: {
+      getCursorScreenPoint: () => ({ ...cursorPoint })
+    },
+    setInterval: (callback) => {
+      dragTick = callback;
+      return 1;
+    },
+    clearInterval: () => undefined
+  });
+
+  const beginDrag = handlers.get("desktopShell.beginWindowDrag");
+  assert.equal(typeof beginDrag, "function");
+
+  // A legacy renderer point from another DPI coordinate space must not seed the drag.
+  assert.deepEqual(await beginDrag({ sender }, { x: 3840, y: 200 }), { ok: true });
+  cursorPoint = { x: 1935, y: 112 };
+  dragTick();
+
+  assert.deepEqual(mainWindow.moves, [[95, 102]]);
 });
