@@ -46,9 +46,11 @@ import type {
   DesktopPageContextSnapshot,
 } from "../../shared/contracts";
 import {
+  classifyAgentWebclientNewChatRegistration,
   createCanonicalAgentChatRoute,
   createPreparedAgentChatRoute,
   readAgentWebclientNewChatSource,
+  resolveAgentWebclientNewChatRegistrationOutcome,
 } from "../../shared/canonical-chat-sync";
 import type { TranslateFunction } from "../../shared/i18n";
 import {
@@ -895,6 +897,12 @@ export function ServiceWebviewSurface({
       timeoutId: 0,
     };
     pending.timeoutId = window.setTimeout(() => {
+      reportServiceWebviewDiagnostic("new-chat-preparation-timeout", {
+        requestId: pending.request.requestId,
+        agentKey: pending.request.agentKey,
+        sourceChatId: pending.request.sourceChatId,
+        newChat: pending.request.newChat,
+      });
       finishNewChatPreparation(
         pending,
         { ok: false, message: "new Chat surface preparation timed out" },
@@ -930,6 +938,13 @@ export function ServiceWebviewSurface({
     ) {
       return;
     }
+    reportServiceWebviewDiagnostic("new-chat-preparation-identity-changed", {
+      requestId: pending.request.requestId,
+      expectedRoute: pending.targetRoute,
+      currentRoute: currentRouteWithHash,
+      expectedGuestWebContentsId: pending.guestWebContentsId,
+      currentGuestWebContentsId: webContentsId,
+    });
     finishNewChatPreparation(
       pending,
       { ok: false, message: "Main Chat changed before new Chat preparation completed" },
@@ -992,30 +1007,69 @@ export function ServiceWebviewSurface({
       }],
       activeTabId: surfaceId,
     };
+    const readPendingNewChatRegistration = () => {
+      const pending = pendingNewChatPreparationRef.current;
+      if (
+        !pending ||
+        pending.registrationId !== registration.registrationId ||
+        pending.guestWebContentsId !== webContentsId ||
+        !ownsActiveSurface ||
+        registration.pageRouteIdentity !== pending.targetRoute
+      ) {
+        return null;
+      }
+      return {
+        pending,
+        state: classifyAgentWebclientNewChatRegistration({
+          sourceRoute: pending.sourceRoute,
+          targetRoute: pending.targetRoute,
+          pageRouteIdentity: registration.pageRouteIdentity,
+          guestUrl: currentUrl,
+          ownerChatId: registration.ownerChatId,
+        }),
+      };
+    };
     if (!ownsActiveSurface) {
       sendLiveSurfaceLifecycleToWebview(false);
     }
     void embeddedCdp.registerSurface(registration).then((result) => {
       if (cancelled) return;
+      const pendingRegistration = readPendingNewChatRegistration();
+      const pendingRegistrationOutcome = pendingRegistration
+        ? resolveAgentWebclientNewChatRegistrationOutcome(
+            pendingRegistration.state,
+            result.ok,
+          )
+        : null;
       if (result.ok) {
         surfaceRegistrationRetryRef.current = 0;
         if (ownsActiveSurface) {
           sendLiveSurfaceLifecycleToWebview(true);
         }
-        const pendingPreparation = pendingNewChatPreparationRef.current;
-        const registeredNewChatSource = readAgentWebclientNewChatSource(currentUrl);
-        if (
-          pendingPreparation &&
-          pendingPreparation.registrationId === registration.registrationId &&
-          pendingPreparation.guestWebContentsId === webContentsId &&
-          ownsActiveSurface &&
-          currentRouteWithHash === pendingPreparation.targetRoute &&
-          !registration.ownerChatId?.trim() &&
-          registeredNewChatSource?.agentKey ===
-            pendingPreparation.request.agentKey &&
-          registeredNewChatSource.newChat === pendingPreparation.request.newChat
-        ) {
-          finishNewChatPreparation(pendingPreparation, { ok: true });
+        if (pendingRegistrationOutcome === "acknowledge" && pendingRegistration) {
+          reportServiceWebviewDiagnostic("new-chat-preparation-ready", {
+            requestId: pendingRegistration.pending.request.requestId,
+            registrationState: pendingRegistration.state,
+          });
+          finishNewChatPreparation(pendingRegistration.pending, { ok: true });
+        } else if (pendingRegistrationOutcome === "wait" && pendingRegistration) {
+          reportServiceWebviewDiagnostic("new-chat-preparation-waiting-for-guest-route", {
+            requestId: pendingRegistration.pending.request.requestId,
+            registrationState: pendingRegistration.state,
+          });
+        } else if (pendingRegistrationOutcome === "fail" && pendingRegistration) {
+          reportServiceWebviewDiagnostic("new-chat-preparation-identity-changed", {
+            requestId: pendingRegistration.pending.request.requestId,
+            registrationState: pendingRegistration.state,
+          });
+          finishNewChatPreparation(
+            pendingRegistration.pending,
+            {
+              ok: false,
+              message: "Main Chat changed before new Chat surface preparation completed",
+            },
+            true,
+          );
         }
         const pending = pendingCanonicalChatSyncRef.current;
         if (
@@ -1052,17 +1106,17 @@ export function ServiceWebviewSurface({
         attempt,
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
+        newChatPreparationState: pendingRegistration?.state,
       });
-      const pendingPreparation = pendingNewChatPreparationRef.current;
-      if (
-        pendingPreparation &&
-        pendingPreparation.registrationId === registration.registrationId &&
-        pendingPreparation.guestWebContentsId === webContentsId &&
-        currentRouteWithHash === pendingPreparation.targetRoute
-      ) {
+      if (pendingRegistrationOutcome === "fail" && pendingRegistration) {
         finishNewChatPreparation(
-          pendingPreparation,
-          { ok: false, message: "Main Chat surface rejected its new Chat registration" },
+          pendingRegistration.pending,
+          {
+            ok: false,
+            message: pendingRegistration.state === "target_ready"
+              ? "Main Chat surface rejected its new Chat registration"
+              : "Main Chat changed before new Chat surface preparation completed",
+          },
           true,
         );
       }
@@ -1088,20 +1142,16 @@ export function ServiceWebviewSurface({
       }
     }).catch((error) => {
       if (cancelled) return;
+      const pendingRegistration = readPendingNewChatRegistration();
       reportServiceWebviewDiagnostic("surface-registration-failed", {
         error: error instanceof Error ? error.message : String(error),
         registrationId: registration.registrationId,
         surfaceType: registration.surfaceType,
+        newChatPreparationState: pendingRegistration?.state,
       });
-      const pendingPreparation = pendingNewChatPreparationRef.current;
-      if (
-        pendingPreparation &&
-        pendingPreparation.registrationId === registration.registrationId &&
-        pendingPreparation.guestWebContentsId === webContentsId &&
-        currentRouteWithHash === pendingPreparation.targetRoute
-      ) {
+      if (pendingRegistration) {
         finishNewChatPreparation(
-          pendingPreparation,
+          pendingRegistration.pending,
           {
             ok: false,
             message: error instanceof Error ? error.message : String(error),

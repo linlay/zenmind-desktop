@@ -6,10 +6,12 @@ const require = createRequire(import.meta.url);
 const {
   CANONICAL_CHAT_SYNC_REQUEST_CHANNEL,
   CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
+  classifyAgentWebclientNewChatRegistration,
   createCanonicalAgentChatRoute,
   createPreparedAgentChatRoute,
   readAgentWebclientCanonicalChatSource,
   readAgentWebclientNewChatSource,
+  resolveAgentWebclientNewChatRegistrationOutcome,
 } = require("../dist-electron/shared/canonical-chat-sync.js");
 const {
   registerCanonicalChatSyncIpc,
@@ -78,6 +80,68 @@ test("new Chat preparation accepts only the exact canonical source route", () =>
     }),
     "",
   );
+});
+
+test("new Chat registration waits for the source guest and acknowledges only the coherent target", () => {
+  const base = {
+    sourceRoute: "/agent/coder?chatId=chat-old",
+    targetRoute: "/agent/coder?newChat=1783680000000",
+    pageRouteIdentity: "/agent/coder?newChat=1783680000000",
+  };
+  const sourcePending = classifyAgentWebclientNewChatRegistration({
+    ...base,
+    guestUrl: "http://127.0.0.1:17080/agent/coder?chatId=chat-old",
+  });
+  assert.equal(sourcePending, "source_pending");
+  assert.equal(
+    resolveAgentWebclientNewChatRegistrationOutcome(sourcePending, false),
+    "wait",
+  );
+  assert.equal(
+    resolveAgentWebclientNewChatRegistrationOutcome(sourcePending, true),
+    "wait",
+  );
+
+  const targetReady = classifyAgentWebclientNewChatRegistration({
+    ...base,
+    guestUrl: "http://127.0.0.1:17080/agent/coder?newChat=1783680000000",
+  });
+  assert.equal(targetReady, "target_ready");
+  assert.equal(
+    resolveAgentWebclientNewChatRegistrationOutcome(targetReady, true),
+    "acknowledge",
+  );
+  assert.equal(
+    resolveAgentWebclientNewChatRegistrationOutcome(targetReady, false),
+    "fail",
+  );
+});
+
+test("new Chat registration rejects incoherent route and owner identities", () => {
+  const base = {
+    sourceRoute: "/agent/coder?chatId=chat-old",
+    targetRoute: "/agent/coder?newChat=1783680000000",
+    pageRouteIdentity: "/agent/coder?newChat=1783680000000",
+    guestUrl: "http://127.0.0.1:17080/agent/coder?newChat=1783680000000",
+  };
+  for (const input of [
+    { ...base, sourceRoute: "/agent/other?chatId=chat-old" },
+    { ...base, pageRouteIdentity: "/agent/coder?newChat=1783680000001" },
+    { ...base, guestUrl: "http://127.0.0.1:17080/agent/other?newChat=1783680000000" },
+    { ...base, guestUrl: "http://127.0.0.1:17080/agent/coder?chatId=chat-other" },
+    { ...base, ownerChatId: "chat-old" },
+  ]) {
+    const state = classifyAgentWebclientNewChatRegistration(input);
+    assert.equal(state, "invalid");
+    assert.equal(
+      resolveAgentWebclientNewChatRegistrationOutcome(state, true),
+      "fail",
+    );
+    assert.equal(
+      resolveAgentWebclientNewChatRegistrationOutcome(state, false),
+      "fail",
+    );
+  }
 });
 
 test("Main Chat route identity parsers reject ambiguous canonical and new Chat sources", () => {

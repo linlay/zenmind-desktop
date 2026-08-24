@@ -99,6 +99,66 @@ export type AgentWebclientNewChatPrepareInput = {
   newChat: string;
 };
 
+export type AgentWebclientNewChatRegistrationState =
+  | "source_pending"
+  | "target_ready"
+  | "invalid";
+
+export type AgentWebclientNewChatRegistrationOutcome =
+  | "wait"
+  | "acknowledge"
+  | "fail";
+
+export function classifyAgentWebclientNewChatRegistration(input: {
+  sourceRoute: string;
+  targetRoute: string;
+  pageRouteIdentity: string;
+  guestUrl: string;
+  ownerChatId?: string;
+}): AgentWebclientNewChatRegistrationState {
+  const source = readAgentWebclientCanonicalChatSource(input.sourceRoute);
+  const target = readAgentWebclientNewChatSource(input.targetRoute);
+  const pageTarget = readAgentWebclientNewChatSource(input.pageRouteIdentity);
+  if (
+    !source ||
+    !target ||
+    !pageTarget ||
+    input.ownerChatId?.trim() ||
+    source.agentKey !== target.agentKey ||
+    pageTarget.agentKey !== target.agentKey ||
+    pageTarget.newChat !== target.newChat
+  ) {
+    return "invalid";
+  }
+
+  const guestTarget = readAgentWebclientNewChatSource(input.guestUrl);
+  if (
+    guestTarget?.agentKey === target.agentKey &&
+    guestTarget.newChat === target.newChat
+  ) {
+    return "target_ready";
+  }
+
+  const guestSource = readAgentWebclientCanonicalChatSource(input.guestUrl);
+  if (
+    guestSource?.agentKey === source.agentKey &&
+    guestSource.chatId === source.chatId
+  ) {
+    return "source_pending";
+  }
+
+  return "invalid";
+}
+
+export function resolveAgentWebclientNewChatRegistrationOutcome(
+  state: AgentWebclientNewChatRegistrationState,
+  registrationAccepted: boolean,
+): AgentWebclientNewChatRegistrationOutcome {
+  if (state === "source_pending") return "wait";
+  if (state === "target_ready" && registrationAccepted) return "acknowledge";
+  return "fail";
+}
+
 /**
  * Convert an exact canonical Main Chat route into its one-shot new Chat source.
  * All previous conversation-scoped query state is deliberately discarded.

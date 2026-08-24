@@ -218,7 +218,35 @@ test("resend prepares an ownerless new Chat surface before acknowledging the gue
   );
   assert.match(
     registrationBlock,
-    /currentRouteWithHash === pendingPreparation\.targetRoute[\s\S]*?!registration\.ownerChatId\?\.trim\(\)[\s\S]*?finishNewChatPreparation\(pendingPreparation, \{ ok: true \}\)/u,
+    /registration\.pageRouteIdentity !== pending\.targetRoute[\s\S]*?classifyAgentWebclientNewChatRegistration/u,
+  );
+  assert.match(
+    registrationBlock,
+    /resolveAgentWebclientNewChatRegistrationOutcome\([\s\S]*?pendingRegistration\.state[\s\S]*?result\.ok/u,
+  );
+  assert.match(
+    registrationBlock,
+    /pendingRegistrationOutcome === "acknowledge"[\s\S]*?finishNewChatPreparation\(pendingRegistration\.pending, \{ ok: true \}\)/u,
+  );
+  assert.match(
+    registrationBlock,
+    /pendingRegistrationOutcome === "fail"[\s\S]*?Main Chat surface rejected its new Chat registration/u,
+  );
+  assert.match(
+    serviceWebviewSurface,
+    /new-chat-preparation-timeout[\s\S]*?new Chat surface preparation timed out/u,
+  );
+  assert.match(
+    serviceWebviewSurface,
+    /another new Chat preparation is already in progress/u,
+  );
+  assert.match(
+    serviceWebviewSurface,
+    /new-chat-preparation-identity-changed[\s\S]*?Main Chat changed before new Chat preparation completed/u,
+  );
+  assert.match(
+    registrationBlock,
+    /\.catch\(\(error\)[\s\S]*?if \(pendingRegistration\)[\s\S]*?finishNewChatPreparation/u,
   );
 });
 
