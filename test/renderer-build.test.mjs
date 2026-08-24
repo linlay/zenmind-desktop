@@ -5986,6 +5986,10 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(
     globalStyles,
+    /\.app-shell\.is-windows-platform \.external-webview-page\.is-app-surface\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*var\(--windows-titlebar-overlay-height\) 0 0;[^}]*height:\s*auto;[^}]*margin:\s*0;/
+  );
+  assert.match(
+    globalStyles,
     /\.external-webview-page\.is-app-surface\s+\.external-webview-frame-shell,\s*\.external-webview-page\.is-app-surface\s+\.external-webview-panel,\s*\.external-webview-page\.is-app-surface\s+\.external-webview-frame\s*\{[^}]*background:\s*transparent;/
   );
   assert.doesNotMatch(globalStyles, /\.app-main-drag-region\s*\{/);
