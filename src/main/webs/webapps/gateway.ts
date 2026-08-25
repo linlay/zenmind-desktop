@@ -5,6 +5,7 @@ import path from "node:path";
 import type { Duplex } from "node:stream";
 import type { App } from "electron";
 import type { WebappEntry } from "../../../shared/contracts";
+import { WEBAPP_BRIDGE_ACTIONS } from "../../../shared/webapp-bridge";
 import { getConfiguredDesktopActionBridgePort } from "../../desktop-action-bridge-settings";
 import { resolveWebappRelativePath } from "../common";
 import { isWebappActionAllowed } from "./capability-policy";
@@ -13,10 +14,16 @@ import {
   WEBAPP_BRIDGE_MODULE_PATH,
   WEBAPP_BRIDGE_MODULE_SOURCE
 } from "./bridge-module";
+import {
+  WEBAPP_IMAGE_UPLOAD_BODY_MAX_BYTES,
+  normalizeWebappImageUploadFile,
+  registerWebappImageUpload
+} from "./image-upload-registry";
 
 const HOST = "127.0.0.1";
 const DESKTOP_RESERVED_PREFIX = "/__desktop/";
 const DESKTOP_ACTION_PATH = "/__desktop/actions/call";
+const DESKTOP_ASSISTANT_IMAGE_UPLOAD_PATH = "/__desktop/assistant/image/uploads";
 export const WEBAPP_APP_CONFIG_PATH = "/__desktop/app-config.json";
 export const WEBAPP_USER_CONFIG_PATH = "/__desktop/user-config.json";
 const DESKTOP_ACTION_BODY_LIMIT = 64 * 1024;
@@ -63,6 +70,29 @@ function writeBridgeError(
       ...(details === undefined ? {} : { details })
     }
   }));
+}
+
+function writeBridgeResult(res: http.ServerResponse, status: number, payload: Record<string, unknown>) {
+  res.writeHead(status, {
+    "Content-Type": "application/json; charset=utf-8",
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff"
+  });
+  res.end(JSON.stringify({ ok: true, ...payload }));
+}
+
+function hasAuthorizedLocalOrigin(req: http.IncomingMessage) {
+  const origin = String(req.headers.origin || "").trim();
+  if (!origin) return false;
+  try {
+    const originUrl = new URL(origin);
+    const host = String(req.headers.host || "").toLowerCase();
+    const loopback = originUrl.protocol === "http:" &&
+      (originUrl.hostname === HOST || originUrl.hostname === "localhost");
+    return loopback && originUrl.host.toLowerCase() === host;
+  } catch {
+    return false;
+  }
 }
 
 function getRequestPath(urlValue: string | undefined) {
@@ -349,8 +379,8 @@ function proxyWebSocket(
   });
 }
 
-function readRequestBody(req: http.IncomingMessage, limit: number) {
-  return new Promise<string>((resolve, reject) => {
+function readRequestBuffer(req: http.IncomingMessage, limit: number) {
+  return new Promise<Buffer>((resolve, reject) => {
     const chunks: Buffer[] = [];
     let size = 0;
     req.on("data", (chunk: Buffer) => {
@@ -362,9 +392,73 @@ function readRequestBody(req: http.IncomingMessage, limit: number) {
       }
       chunks.push(chunk);
     });
-    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("end", () => resolve(Buffer.concat(chunks)));
     req.on("error", reject);
   });
+}
+
+async function readRequestBody(req: http.IncomingMessage, limit: number) {
+  return (await readRequestBuffer(req, limit)).toString("utf8");
+}
+
+async function handleAssistantImageUploadRequest(
+  options: { item: WebappEntry },
+  req: http.IncomingMessage,
+  res: http.ServerResponse
+) {
+  const action = WEBAPP_BRIDGE_ACTIONS.assistantImage;
+  if (req.method !== "POST") {
+    res.writeHead(405, { "Allow": "POST", "Cache-Control": "no-store" });
+    res.end();
+    return;
+  }
+  if (!hasAuthorizedLocalOrigin(req) || !isWebappActionAllowed(options.item, "localPageGateway", action)) {
+    writeBridgeError(res, 403, action, "forbidden", "Image upload is available only from the authorized local WebApp origin.");
+    return;
+  }
+  const contentType = String(req.headers["content-type"] || "").trim();
+  if (!/^multipart\/form-data;\s*boundary=/iu.test(contentType)) {
+    writeBridgeError(res, 415, action, "unsupported_media_type", "Content-Type must be multipart/form-data.");
+    return;
+  }
+  const declaredLength = Number(req.headers["content-length"]);
+  if (Number.isFinite(declaredLength) && declaredLength > WEBAPP_IMAGE_UPLOAD_BODY_MAX_BYTES) {
+    writeBridgeError(res, 413, action, "image_upload_too_large", "Image upload exceeds the Desktop Bridge limit.");
+    return;
+  }
+  try {
+    const body = await readRequestBuffer(req, WEBAPP_IMAGE_UPLOAD_BODY_MAX_BYTES);
+    const form = await new Response(new Uint8Array(body), {
+      headers: { "Content-Type": contentType }
+    }).formData();
+    const readImage = async (field: "source" | "mask") => {
+      const value = form.get(field);
+      if (!value || typeof value === "string") return undefined;
+      return normalizeWebappImageUploadFile({
+        name: "name" in value ? String(value.name || "") : "",
+        mimeType: value.type,
+        bytes: Buffer.from(await value.arrayBuffer())
+      }, { mask: field === "mask" });
+    };
+    const source = await readImage("source");
+    const mask = await readImage("mask");
+    const upload = registerWebappImageUpload({
+      webappId: options.item.id,
+      ...(source ? { source } : {}),
+      ...(mask ? { mask } : {})
+    });
+    writeBridgeResult(res, 201, upload);
+  } catch (error) {
+    const tooLarge = error instanceof Error && error.message === "request body too large";
+    writeBridgeError(
+      res,
+      tooLarge ? 413 : 400,
+      action,
+      tooLarge ? "image_upload_too_large" : "invalid_image_upload",
+      tooLarge ? "Image upload exceeds the Desktop Bridge limit." :
+        error instanceof Error ? error.message : "Image upload is invalid."
+    );
+  }
 }
 
 async function handleDesktopBridgeRequest(
@@ -377,34 +471,8 @@ async function handleDesktopBridgeRequest(
     res.end();
     return;
   }
-  const origin = String(req.headers.origin || "").trim();
-  if (!origin) {
-    writeBridgeError(
-      res,
-      403,
-      "unknown",
-      "forbidden",
-      "Desktop actions require the local WebApp origin"
-    );
-    return;
-  }
-  try {
-    const originUrl = new URL(origin);
-    const host = String(req.headers.host || "").toLowerCase();
-    const loopback = originUrl.protocol === "http:" &&
-      (originUrl.hostname === HOST || originUrl.hostname === "localhost");
-    if (!loopback || originUrl.host.toLowerCase() !== host) {
-      writeBridgeError(
-        res,
-        403,
-        "unknown",
-        "forbidden",
-        "Desktop actions are available only from the local WebApp origin"
-      );
-      return;
-    }
-  } catch {
-    writeBridgeError(res, 403, "unknown", "forbidden", "invalid request origin");
+  if (!hasAuthorizedLocalOrigin(req)) {
+    writeBridgeError(res, 403, "unknown", "forbidden", "Desktop actions are available only from the local WebApp origin");
     return;
   }
   let action = "";
@@ -511,6 +579,10 @@ export async function startWebappGateway(options: {
     }
     if (requestPath === DESKTOP_ACTION_PATH) {
       void handleDesktopBridgeRequest(options, req, res);
+      return;
+    }
+    if (requestPath === DESKTOP_ASSISTANT_IMAGE_UPLOAD_PATH) {
+      void handleAssistantImageUploadRequest(options, req, res);
       return;
     }
     if (requestPath === WEBAPP_APP_CONFIG_PATH) {

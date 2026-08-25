@@ -55,6 +55,11 @@ const {
   readWebappRuntimeSettings
 } = require("../dist-electron/main/webs/webapps/runtime-settings.js");
 const {
+  clearWebappImageUploadsForTest,
+  normalizeWebappImageUploadFile,
+  registerWebappImageUpload
+} = require("../dist-electron/main/webs/webapps/image-upload-registry.js");
+const {
   saveAssistantSettings
 } = require("../dist-electron/main/assistant/core/settings-store.js");
 
@@ -1120,6 +1125,91 @@ test("WebApp assistant chat uses its configured Desktop agent and forwards the m
   });
   assert.equal(oversized.ok, false);
   assert.equal(oversized.error.code, "assistant_message_too_long");
+});
+
+test("WebApp image action consumes a scoped upload and hardcodes Zenmi without exposing paths", async (t) => {
+  clearWebappImageUploadsForTest();
+  t.after(clearWebappImageUploadsForTest);
+  const { options } = createDesktopActionOptions(t);
+  const id = webappId("image-studio-zenmi");
+  const webappDir = path.join(getDesktopWebappsDataRoot(options.app), id);
+  fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
+  fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html>", "utf8");
+  fs.writeFileSync(path.join(webappDir, "webapp.json"), JSON.stringify({
+    schemaVersion: 2,
+    id,
+    key: "image-studio-zenmi",
+    label: "Image Studio",
+    version: "1.0.1",
+    target: "any",
+    appConfig: {},
+    frontend: { root: "frontend", index: "index.html", routeConfig: { backendPrefixes: [] } },
+    desktopBridge: { version: 1 }
+  }), "utf8");
+
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const upload = registerWebappImageUpload({
+    webappId: id,
+    source: normalizeWebappImageUploadFile({ name: "source.png", mimeType: "image/png", bytes: png }),
+    mask: normalizeWebappImageUploadFile({ name: "mask.png", mimeType: "image/png", bytes: png }, { mask: true })
+  });
+  const imageCalls = [];
+  options.assistantBridge.completeImage = async (request) => {
+    imageCalls.push(request);
+    return {
+      ok: true,
+      runId: request.runId,
+      chatId: "chat-image",
+      message: "done",
+      images: [{ name: "result.png", mimeType: "image/png", sizeBytes: png.length, sha256: "abc", dataBase64: png.toString("base64") }]
+    };
+  };
+  options.assistantBridge.stopRun = async () => ({ ok: true, message: "stopped" });
+  const response = await handleWebappPageActionRequest(options, id, {
+    action: "desktop.assistant.image",
+    args: {
+      requestId: "image_request_1",
+      uploadId: upload.uploadId,
+      operation: "inpaint",
+      prompt: "把杯子换成花瓶",
+      negativePrompt: "文字",
+      width: 1024,
+      height: 1024,
+      count: 1,
+      strength: .65,
+      seed: 42,
+      preserveComposition: true,
+      edgeMode: "strict"
+    }
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.result.agentKey, "zenmi");
+  assert.equal(response.result.provider, "desktop-zenmi");
+  assert.equal(Object.hasOwn(response.result.images[0], "path"), false);
+  assert.equal(imageCalls.length, 1);
+  assert.equal(imageCalls[0].agentKey, "zenmi");
+  assert.deepEqual(imageCalls[0].attachments.map((attachment) => attachment.id), ["image-studio-source", "image-studio-mask"]);
+  assert.equal(imageCalls[0].attachments.every((attachment) => attachment.dataUrl.startsWith("data:image/")), true);
+
+  const forged = await handleWebappPageActionRequest(options, id, {
+    action: "desktop.assistant.image",
+    args: {
+      requestId: "image_request_2",
+      operation: "generate",
+      prompt: "风景",
+      negativePrompt: "",
+      width: 1024,
+      height: 1024,
+      count: 1,
+      strength: .5,
+      seed: 1,
+      preserveComposition: true,
+      edgeMode: "strict",
+      agentKey: "other-agent"
+    }
+  });
+  assert.equal(forged.ok, false);
+  assert.equal(forged.error.code, "invalid_args");
 });
 
 test("removed desktop assistant complete action returns unknown_action", async (t) => {

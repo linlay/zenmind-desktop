@@ -2,6 +2,7 @@ export const WEBAPP_BRIDGE_VERSION = 1 as const;
 
 export const WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES = [
   "assistant.chat",
+  "assistant.image",
   "native.browser.external",
   "native.dialog.files",
   "native.dialog.directories",
@@ -48,6 +49,8 @@ export interface WebappBridgeCapabilitiesResult {
 export const WEBAPP_BRIDGE_ACTIONS = Object.freeze({
   capabilitiesList: "desktop.capabilities.list",
   assistantChat: "desktop.assistant.chat",
+  assistantImage: "desktop.assistant.image",
+  assistantImageCancel: "desktop.assistant.image.cancel",
   browserOpenExternal: "desktop.native.browser.openExternal",
   dialogSelectFiles: "desktop.native.dialog.selectFiles",
   dialogSelectDirectory: "desktop.native.dialog.selectDirectory",
@@ -61,6 +64,10 @@ export const WEBAPP_BRIDGE_ACTIONS = Object.freeze({
 export const WEBAPP_BRIDGE_CAPABILITY_ACTIONS: Readonly<Record<WebappBridgeCapability, readonly string[]>> =
   Object.freeze({
     "assistant.chat": Object.freeze([WEBAPP_BRIDGE_ACTIONS.assistantChat]),
+    "assistant.image": Object.freeze([
+      WEBAPP_BRIDGE_ACTIONS.assistantImage,
+      WEBAPP_BRIDGE_ACTIONS.assistantImageCancel
+    ]),
     "native.browser.external": Object.freeze([WEBAPP_BRIDGE_ACTIONS.browserOpenExternal]),
     "native.dialog.files": Object.freeze([WEBAPP_BRIDGE_ACTIONS.dialogSelectFiles]),
     "native.dialog.directories": Object.freeze([WEBAPP_BRIDGE_ACTIONS.dialogSelectDirectory]),

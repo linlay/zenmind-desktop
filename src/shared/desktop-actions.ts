@@ -261,6 +261,8 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
   { name: "desktop.assistant.chat", kind: "execute", category: "assistant", description: "Send a general message to the Desktop helper agent. Args: { message }." },
+  { name: "desktop.assistant.image", kind: "execute", category: "assistant", description: "Generate or edit images through the fixed Zenmi WebApp adapter. This action is available only to an authorized local WebApp page." },
+  { name: "desktop.assistant.image.cancel", kind: "execute", category: "assistant", description: "Cancel a running Zenmi image request owned by the calling local WebApp page." },
 
   { name: "desktop.capabilities.list", kind: "read", category: "capabilities", description: "List the capabilities exposed to the calling local WebApp page." },
 

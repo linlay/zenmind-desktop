@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
@@ -63,6 +63,7 @@ import type { AgentPlatformRealtimeSocketFactory } from "../../realtime/agent-pl
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const MAX_CONVERSATION_MARKDOWN_BYTES = 2 << 20;
 const MAX_RAW_CHAT_JSONL_BYTES = 100 * 1024 * 1024;
+const MAX_GENERATED_IMAGE_BYTES = 32 * 1024 * 1024;
 const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "createdAt",
   "updatedAt",
@@ -119,6 +120,52 @@ type PlatformUploadTicket = {
   sha256?: string;
   sandboxPath?: string;
 };
+
+export type AgentPlatformImageOperation =
+  | "generate"
+  | "imageToImage"
+  | "inpaint"
+  | "outpaint"
+  | "removeObject"
+  | "replaceBackground"
+  | "removeBackground"
+  | "enhance"
+  | "repairSelection";
+
+export type AgentPlatformImageCompletionRequest = Omit<AssistantStartRunRequest, "message"> & {
+  operation: AgentPlatformImageOperation;
+  prompt: string;
+  negativePrompt?: string;
+  width: number;
+  height: number;
+  count: number;
+  strength: number;
+  seed: number;
+  preserveComposition: boolean;
+  edgeMode: "strict" | "soft";
+};
+
+export type AgentPlatformImageCompletionResult =
+  | {
+      ok: true;
+      runId: string;
+      chatId: string;
+      message: string;
+      images: Array<{
+        name: string;
+        mimeType: "image/png" | "image/jpeg" | "image/webp";
+        sizeBytes: number;
+        sha256: string;
+        dataBase64: string;
+      }>;
+    }
+  | {
+      ok: false;
+      runId: string;
+      chatId: string;
+      message: string;
+      images: [];
+    };
 
 type PlatformChatSummary = {
   chatId?: unknown;
@@ -248,6 +295,69 @@ function createApiUrl(baseUrl: string, pathname: string) {
 
 function readString(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+const IMAGE_OPERATION_INSTRUCTIONS: Record<AgentPlatformImageOperation, string> = {
+  generate: "根据提示词生成一张全新图片。",
+  imageToImage: "以原图为编辑目标，根据提示词进行图生图修改。",
+  inpaint: "只重绘蒙版指定区域，未选区域保持不变。",
+  outpaint: "在保持主体与视觉风格的前提下智能扩展原图边界。",
+  removeObject: "移除蒙版区域内的对象，并根据周围内容自然补全。",
+  replaceBackground: "替换图片背景，主体的外观、姿态和细节保持稳定。",
+  removeBackground: "移除背景并保留主体，尽可能输出透明背景。",
+  enhance: "增强清晰度、细节与色彩，保持原内容和构图。",
+  repairSelection: "清除蒙版区域内的文字、标记或水印，并根据周围内容自然修复；素材已由用户确认拥有或获得授权。"
+};
+
+export function buildZenmiImageGenerateMessage(request: AgentPlatformImageCompletionRequest) {
+  const source = request.attachments?.find((attachment) => attachment.id === "image-studio-source");
+  const mask = request.attachments?.find((attachment) => attachment.id === "image-studio-mask");
+  const promptParts = [
+    IMAGE_OPERATION_INSTRUCTIONS[request.operation],
+    request.prompt.trim(),
+    request.negativePrompt?.trim() ? `避免出现：${request.negativePrompt.trim()}。` : "",
+    `重绘强度参考 ${Math.round(request.strength * 100)}%。`,
+    request.preserveComposition ? "保持原有构图。" : "允许重新组织构图。",
+    request.edgeMode === "strict" ? "严格限制修改范围。" : "允许自然影响蒙版边缘。",
+    `随机种子参考 ${request.seed}。`
+  ].filter(Boolean).join(" ");
+  const toolArgs: Record<string, unknown> = {
+    prompt: promptParts,
+    size: `${request.width}x${request.height}`,
+    n: request.count
+  };
+  if (source) {
+    toolArgs.images = [{ source_type: "reference_name", value: source.name }];
+  }
+  if (source && mask) {
+    toolArgs.mask = { source_type: "reference_name", value: mask.name, mode: "white_edit" };
+  }
+  return [
+    "你正在为 ZenMind Desktop 的图片工坊执行一次图片任务。",
+    "必须且只能调用一次 image_generate 工具；不要调用文件、Shell、浏览器、桌面控制或其他工具，也不要向用户追问。",
+    `请使用以下参数调用 image_generate：${JSON.stringify(toolArgs)}`,
+    "工具完成后只需简短确认，不要输出内部 path；图片工坊会从工具结果安全读取生成图片。"
+  ].join("\n");
+}
+
+function collectImageGenerateArtifacts(event: Record<string, unknown>, output: Array<Record<string, unknown>>) {
+  if (readString(event.type) !== "tool.result" || readString(event.toolName) !== "image_generate") return;
+  const result = event.result;
+  if (!result || typeof result !== "object" || Array.isArray(result)) return;
+  const images = (result as Record<string, unknown>).images;
+  if (!Array.isArray(images)) return;
+  for (const image of images) {
+    if (image && typeof image === "object" && !Array.isArray(image)) {
+      output.push(image as Record<string, unknown>);
+    }
+  }
+}
+
+function validGeneratedImageRelativePath(value: string) {
+  if (!value || value.startsWith("/") || value.includes("\\") || value.includes("\0") || value.includes("://")) {
+    return false;
+  }
+  return value.split("/").every((segment) => segment && segment !== "." && segment !== "..");
 }
 
 function readNumber(value: unknown) {
@@ -1065,7 +1175,11 @@ export class AgentPlatformAssistantBridge {
     return acceptance;
   }
 
-  async completeText(request: AssistantStartRunRequest): Promise<AssistantTextCompletionResult> {
+  async completeText(
+    request: AssistantStartRunRequest,
+    onRawEvent?: (event: Record<string, unknown>) => void,
+    strictAttachments = false
+  ): Promise<AssistantTextCompletionResult> {
     const message = request.message.trim();
     const chatId = request.chatId?.trim() || createChatId();
     const runId = request.runId?.trim() || createRunId();
@@ -1120,7 +1234,84 @@ export class AgentPlatformAssistantBridge {
       chatId,
       runId,
       activeRun,
+      onRawEvent,
+      strictAttachments,
     });
+  }
+
+  async completeImage(request: AgentPlatformImageCompletionRequest): Promise<AgentPlatformImageCompletionResult> {
+    const artifacts: Array<Record<string, unknown>> = [];
+    const completion = await this.completeText(
+      {
+        ...request,
+        message: buildZenmiImageGenerateMessage(request)
+      },
+      (event) => collectImageGenerateArtifacts(event, artifacts),
+      true
+    );
+    if (!completion.ok) {
+      return { ok: false, runId: completion.runId, chatId: completion.chatId, message: completion.message, images: [] };
+    }
+    if (artifacts.length === 0) {
+      return {
+        ok: false,
+        runId: completion.runId,
+        chatId: completion.chatId,
+        message: "Zenmi 未返回 image_generate 图片结果。",
+        images: []
+      };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, runId: completion.runId, chatId: completion.chatId, message: availability.message, images: [] };
+    }
+    const images: Extract<AgentPlatformImageCompletionResult, { ok: true }>["images"] = [];
+    for (const artifact of artifacts.slice(0, request.count)) {
+      const relativePath = readString(artifact.relativePath).trim();
+      if (!validGeneratedImageRelativePath(relativePath)) continue;
+      const resourceURL = new URL("/api/resource", availability.baseUrl);
+      resourceURL.searchParams.set("file", `${completion.chatId}/${relativePath}`);
+      const response = await this.platformFetch(availability.baseUrl, resourceURL.toString(), {
+        method: "GET",
+        headers: { Authorization: `Bearer ${availability.token}` }
+      });
+      if (!response.ok) continue;
+      const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+      if (mimeType !== "image/png" && mimeType !== "image/jpeg" && mimeType !== "image/webp") continue;
+      let bytes: Buffer;
+      try {
+        bytes = await readResponseBytesWithLimit(response, MAX_GENERATED_IMAGE_BYTES);
+      } catch {
+        continue;
+      }
+      if (bytes.length === 0) continue;
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      const expectedSha256 = readString(artifact.sha256).trim().toLowerCase();
+      if (expectedSha256 && expectedSha256 !== sha256) continue;
+      images.push({
+        name: path.basename(relativePath),
+        mimeType,
+        sizeBytes: bytes.length,
+        sha256,
+        dataBase64: bytes.toString("base64")
+      });
+    }
+    if (images.length === 0) {
+      return {
+        ok: false,
+        runId: completion.runId,
+        chatId: completion.chatId,
+        message: "Zenmi 已生成图片，但 Desktop 无法安全读取生成结果。",
+        images: []
+      };
+    }
+    return {
+      ok: true,
+      runId: completion.runId,
+      chatId: completion.chatId,
+      message: completion.message,
+      images
+    };
   }
 
   async stopRun(runId: string): Promise<AssistantStopRunResult> {
@@ -1740,6 +1931,8 @@ export class AgentPlatformAssistantBridge {
       runId: string;
       activeRun: ActiveAssistantRun;
       onAcceptance?: (result: AssistantStartRunResult) => void;
+      onRawEvent?: (event: Record<string, unknown>) => void;
+      strictAttachments?: boolean;
     }
   ): Promise<AssistantTextCompletionResult> {
     let acceptanceSettled = false;
@@ -1751,7 +1944,14 @@ export class AgentPlatformAssistantBridge {
       run.onAcceptance?.(result);
     };
     try {
-      const references = await this.uploadAttachments(baseUrl, token, run.chatId, run.runId, request.attachments ?? []);
+      const references = await this.uploadAttachments(
+        baseUrl,
+        token,
+        run.chatId,
+        run.runId,
+        request.attachments ?? [],
+        run.strictAttachments === true
+      );
       const accessLevel = normalizeAssistantAccessLevel(request.accessLevel);
       const requestId = request.requestId?.trim() || run.runId;
       const query: RealtimeQueryHandle = this.realtimeBroker.query({
@@ -1793,6 +1993,7 @@ export class AgentPlatformAssistantBridge {
           stream: true
         },
         onEvent: async (event, eventPath) => {
+          run.onRawEvent?.(event);
           const normalizedEvent = normalizePlatformEvent(
             event,
             {
@@ -1951,10 +2152,19 @@ export class AgentPlatformAssistantBridge {
     return "";
   }
 
-  private async uploadAttachments(baseUrl: string, token: string, chatId: string, runId: string, attachments: AssistantAttachment[]) {
+  private async uploadAttachments(
+    baseUrl: string,
+    token: string,
+    chatId: string,
+    runId: string,
+    attachments: AssistantAttachment[],
+    strict = false
+  ) {
     const references: PlatformUploadTicket[] = [];
     for (const attachment of attachments) {
-      const ticket = await this.uploadAttachment(baseUrl, token, chatId, runId, attachment).catch(() => null);
+      const ticket = strict
+        ? await this.uploadAttachment(baseUrl, token, chatId, runId, attachment)
+        : await this.uploadAttachment(baseUrl, token, chatId, runId, attachment).catch(() => null);
       if (ticket) {
         references.push(ticket);
       }

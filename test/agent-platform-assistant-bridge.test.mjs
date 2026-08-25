@@ -6,10 +6,37 @@ import os from "node:os";
 import path from "node:path";
 
 const require = createRequire(import.meta.url);
-const { AgentPlatformAssistantBridge } = require("../dist-electron/main/assistant/core/agent-platform-bridge.js");
+const {
+  AgentPlatformAssistantBridge,
+  buildZenmiImageGenerateMessage
+} = require("../dist-electron/main/assistant/core/agent-platform-bridge.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 const EPOCH_MS = 1_783_000_000_000;
+
+test("Zenmi image message requires exactly one image_generate call with source and white-edit mask", () => {
+  const message = buildZenmiImageGenerateMessage({
+    operation: "inpaint",
+    prompt: "把杯子换成花瓶",
+    negativePrompt: "文字",
+    width: 1024,
+    height: 768,
+    count: 2,
+    strength: .7,
+    seed: 42,
+    preserveComposition: true,
+    edgeMode: "strict",
+    attachments: [
+      { id: "image-studio-source", name: "image-studio-source.png" },
+      { id: "image-studio-mask", name: "image-studio-mask.png" }
+    ]
+  });
+  assert.match(message, /必须且只能调用一次 image_generate/u);
+  assert.match(message, /"source_type":"reference_name"/u);
+  assert.match(message, /"mode":"white_edit"/u);
+  assert.match(message, /"size":"1024x768"/u);
+  assert.doesNotMatch(message, /file:\/\//u);
+});
 
 function makeApp(homeDir = "/tmp") {
   return {
