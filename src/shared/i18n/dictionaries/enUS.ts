@@ -205,6 +205,7 @@ export const enUSMessages = {
   "sidebar.chat.unread": "Unread",
   "sidebar.chat.moreActions": "Chat more actions",
   "sidebar.chat.actions": "Chat actions",
+  "sidebar.chat.exportMenu": "Export",
   "sidebar.chat.export": "Export Markdown",
   "sidebar.chat.exportHtml": "Export static HTML",
   "sidebar.chat.share": "Share link",

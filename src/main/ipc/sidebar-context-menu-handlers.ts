@@ -15,10 +15,16 @@ import {
 import { t } from "../i18n/main-i18n";
 import {
   buildSidebarContextMenuPolicy,
-  normalizeSidebarContextMenuRequest
+  normalizeSidebarContextMenuRequest,
+  type SidebarContextMenuPolicyActionItem,
+  type SidebarContextMenuSubmenuId
 } from "../sidebar-context-menu-policy";
 
-const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
+type SidebarContextMenuLabelId =
+  | SidebarContextMenuActionId
+  | SidebarContextMenuSubmenuId;
+
+const LABEL_KEYS: Record<SidebarContextMenuLabelId, TranslationKey> = {
   "group.new-project": "sidebar.project.new",
   "group.new-chat": "sidebar.chats.newChat",
   "group.chat-sort-recent": "sidebar.chats.sortRecent",
@@ -28,6 +34,7 @@ const LABEL_KEYS: Record<SidebarContextMenuActionId, TranslationKey> = {
   "agent.reveal-workspace": "sidebar.agent.revealWorkspaceFileManager",
   "agent.open-project-editor": "sidebar.agent.openProjectEditor",
   "agent.edit": "sidebar.agent.edit",
+  "chat.exportMenu": "sidebar.chat.exportMenu",
   "chat.export": "sidebar.chat.export",
   "chat.exportHtml": "sidebar.chat.exportHtml",
   "chat.share": "sidebar.chat.share",
@@ -52,10 +59,10 @@ type SidebarContextMenuHandlerOptions = {
 };
 
 export function resolveSidebarContextMenuLabelKey(
-  actionId: SidebarContextMenuActionId,
+  itemId: SidebarContextMenuLabelId,
   platform: NodeJS.Platform | string = process.platform
 ): TranslationKey {
-  if (actionId === "agent.reveal-workspace") {
+  if (itemId === "agent.reveal-workspace") {
     if (platform === "darwin") {
       return "sidebar.agent.revealWorkspaceFinder";
     }
@@ -63,7 +70,7 @@ export function resolveSidebarContextMenuLabelKey(
       return "sidebar.agent.revealWorkspaceExplorer";
     }
   }
-  return LABEL_KEYS[actionId];
+  return LABEL_KEYS[itemId];
 }
 
 export function registerSidebarContextMenuIpcHandlers(
@@ -104,6 +111,16 @@ export function registerSidebarContextMenuIpcHandlers(
           settled = true;
           resolve({ actionId });
         };
+        const buildActionTemplate = (
+          item: SidebarContextMenuPolicyActionItem
+        ): MenuItemConstructorOptions => ({
+          id: item.id,
+          label: t(resolveSidebarContextMenuLabelKey(item.id, options.platform)),
+          type: item.type,
+          checked: item.checked,
+          enabled: item.enabled,
+          click: () => settle(item.id)
+        });
         const template: MenuItemConstructorOptions[] = [];
         let previousGroup: number | null = null;
         for (const item of policy) {
@@ -111,14 +128,16 @@ export function registerSidebarContextMenuIpcHandlers(
             template.push({ type: "separator" });
           }
           previousGroup = item.group;
-          template.push({
-            id: item.id,
-            label: t(resolveSidebarContextMenuLabelKey(item.id, options.platform)),
-            type: item.type,
-            checked: item.checked,
-            enabled: item.enabled,
-            click: () => settle(item.id)
-          });
+          if ("submenu" in item) {
+            template.push({
+              id: item.id,
+              label: t(resolveSidebarContextMenuLabelKey(item.id, options.platform)),
+              enabled: item.enabled,
+              submenu: item.submenu.map(buildActionTemplate)
+            });
+          } else {
+            template.push(buildActionTemplate(item));
+          }
         }
 
         const menu = Menu.buildFromTemplate(template);

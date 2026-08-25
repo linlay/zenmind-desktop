@@ -205,6 +205,7 @@ export const zhCNMessages = {
   "sidebar.chat.unread": "未读",
   "sidebar.chat.moreActions": "对话更多操作",
   "sidebar.chat.actions": "对话操作",
+  "sidebar.chat.exportMenu": "导出",
   "sidebar.chat.export": "导出 Markdown",
   "sidebar.chat.exportHtml": "导出静态 HTML",
   "sidebar.chat.share": "分享链接",

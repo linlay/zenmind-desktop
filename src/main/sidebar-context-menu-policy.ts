@@ -4,13 +4,23 @@ import type {
   SidebarContextMenuTarget
 } from "../shared/sidebar-context-menu";
 
-export type SidebarContextMenuPolicyItem = {
+export type SidebarContextMenuPolicyActionItem = {
   id: SidebarContextMenuActionId;
-  group: number;
   enabled: boolean;
   type?: "normal" | "radio";
   checked?: boolean;
 };
+
+export type SidebarContextMenuSubmenuId = "chat.exportMenu";
+
+export type SidebarContextMenuPolicyItem =
+  | (SidebarContextMenuPolicyActionItem & { group: number })
+  | {
+      id: SidebarContextMenuSubmenuId;
+      group: number;
+      enabled: boolean;
+      submenu: SidebarContextMenuPolicyActionItem[];
+    };
 
 const MAX_COORDINATE = 100_000;
 
@@ -204,8 +214,15 @@ export function buildSidebarContextMenuPolicy(
         group: 0,
         enabled: true
       },
-      { id: "chat.export", group: 1, enabled: true },
-      { id: "chat.exportHtml", group: 1, enabled: true },
+      {
+        id: "chat.exportMenu",
+        group: 1,
+        enabled: true,
+        submenu: [
+          { id: "chat.export", enabled: true },
+          { id: "chat.exportHtml", enabled: true }
+        ]
+      },
       { id: "chat.share", group: 1, enabled: true },
       { id: "chat.rename", group: 1, enabled: true },
       { id: "chat.archive", group: 2, enabled: true },
