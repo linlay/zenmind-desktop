@@ -572,6 +572,7 @@ test("formal WorkPanel Web actions dispatch URL requests to the renderer", async
       "desktop.workpanel.getState",
       "desktop.workpanel.openTab",
       "desktop.workpanel.openWeb",
+      "desktop.workpanel.openLocalFile",
       "desktop.workpanel.refreshWeb",
       "desktop.workpanel.activateTab",
       "desktop.workpanel.closeTab",
@@ -580,7 +581,147 @@ test("formal WorkPanel Web actions dispatch URL requests to the renderer", async
   );
 });
 
-test("Agent Platform context exempts only WorkPanel openWeb and refreshWeb from confirmation", async (t) => {
+test("Platform-only WorkPanel openLocalFile resolves a trusted workspace path without exposing it to the renderer", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const workspaceDir = path.join(options.app.getPath("home"), "workspace");
+  const artifactDir = path.join(workspaceDir, "artifacts");
+  const filePath = path.join(artifactDir, "report.html");
+  fs.mkdirSync(artifactDir, { recursive: true });
+  fs.writeFileSync(filePath, "<!doctype html><title>Report</title>");
+  const rendererCalls = [];
+  const preparedClaims = [];
+  const discardedClaims = [];
+  const confirmations = [];
+  options.assistantBridge.listNavigationAgents = async () => ({
+    ok: true,
+    items: [{
+      agentKey: "coder",
+      workspaceDir,
+      workspaceDirExists: true,
+      recentChats: [],
+    }],
+  });
+  options.getMainWindow = () => ({
+    isDestroyed: () => false,
+    webContents: {
+      id: 77,
+      isDestroyed: () => false,
+    },
+  });
+  options.prepareWorkPanelLocalFileClaim = (input) => {
+    preparedClaims.push(input);
+    return { claimId: "claim-1" };
+  };
+  options.discardWorkPanelLocalFileClaim = (claimId) => {
+    discardedClaims.push(claimId);
+    return true;
+  };
+  options.confirmRendererAction = async (request) => {
+    confirmations.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: createWorkPanelRendererResult(request.action),
+    };
+  };
+
+  const response = await handleAgentPlatformDesktopActionRequest(options, {
+    requestId: "platform-local-file",
+    action: "desktop.workpanel.openLocalFile",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { path: "artifacts/report.html", title: "Generated report" },
+  });
+  assert.equal(response.ok, true);
+  assert.equal(confirmations.length, 0);
+  assert.deepEqual(preparedClaims, [{
+    ownerChatId: "chat-owner",
+    rendererWebContentsId: 77,
+    filePath: fs.realpathSync.native(filePath),
+  }]);
+  assert.deepEqual(rendererCalls.map(({ action, args, source }) => ({ action, args, source })), [{
+    action: "desktop.workpanel.openLocalFile",
+    args: { claimId: "claim-1", title: "Generated report" },
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+  }]);
+  assert.equal(JSON.stringify(rendererCalls).includes(filePath), false);
+  assert.deepEqual(discardedClaims, ["claim-1"]);
+
+  for (const invoke of [
+    () => handleDesktopActionRequest(options, {
+      action: "desktop.workpanel.openLocalFile",
+      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+      args: { path: "artifacts/report.html" },
+      permissionMode: "full_access",
+    }),
+    () => handleWebappPageActionRequest(options, "webapp-test", {
+      action: "desktop.workpanel.openLocalFile",
+      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+      args: { path: "artifacts/report.html" },
+    }),
+    () => handleAgentWebclientWorkPanelActionRequest(options, {
+      action: "openLocalFile",
+      ownerChatId: "chat-owner",
+      args: { path: "artifacts/report.html" },
+    }),
+  ]) {
+    const denied = await invoke();
+    assert.equal(denied.ok, false);
+    assert.equal(denied.error.code, "forbidden");
+  }
+  assert.equal(confirmations.length, 0);
+  assert.equal(rendererCalls.length, 1);
+});
+
+test("WorkPanel openLocalFile fails closed for invalid paths and unavailable Agent workspaces", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.getMainWindow = () => ({
+    isDestroyed: () => false,
+    webContents: { id: 77, isDestroyed: () => false },
+  });
+  options.prepareWorkPanelLocalFileClaim = () => assert.fail("invalid paths must not prepare claims");
+  options.discardWorkPanelLocalFileClaim = () => true;
+  options.assistantBridge.listNavigationAgents = async () => ({
+    ok: true,
+    items: [{ agentKey: "coder", workspaceDir: "@chat", workspaceDirExists: false, recentChats: [] }],
+  });
+  const workspaceUnavailable = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openLocalFile",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { path: "artifacts/report.html" },
+  });
+  assert.equal(workspaceUnavailable.ok, false);
+  assert.equal(workspaceUnavailable.error.code, "workspace_unavailable");
+
+  const workspaceDir = path.join(options.app.getPath("home"), "workspace");
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  options.assistantBridge.listNavigationAgents = async () => ({
+    ok: true,
+    items: [{ agentKey: "coder", workspaceDir, workspaceDirExists: true, recentChats: [] }],
+  });
+  for (const invalidPath of ["../secret.txt", "/tmp/secret.txt", "file:///tmp/secret.txt"] ) {
+    const invalid = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.workpanel.openLocalFile",
+      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+      args: { path: invalidPath },
+    });
+    assert.equal(invalid.ok, false, invalidPath);
+    assert.equal(invalid.error.code, "invalid_path", invalidPath);
+  }
+  const missing = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openLocalFile",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { path: "missing.html" },
+  });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, "file_unavailable");
+});
+
+test("Agent Platform context exempts approved WorkPanel Web actions without exempting openTab", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const rendererCalls = [];
   const confirmationCalls = [];

@@ -475,3 +475,70 @@ test("WorkPanel closes other closable tabs while retaining pinned items and acti
   assert.equal(result.state.activeItemId, artifact.item.itemId);
   assert.deepEqual(result.nextState.visibleOwnerChatIds, ["chat"]);
 });
+
+test("WorkPanel keeps host-created WebApps and local files resource-deduplicated", () => {
+  const webapp = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webapp-ref", webappId: "demo-app", title: "Demo App",
+  });
+  assert.equal(webapp.ok, true);
+  assert.equal(webapp.item.stableKey, "webapp:demo-app");
+  const duplicateWebapp = open(webapp.nextState, "chat", {
+    kind: "webapp-ref", webappId: "demo-app", title: "Renamed by caller",
+  });
+  assert.equal(duplicateWebapp.item.itemId, webapp.item.itemId);
+  assert.equal(duplicateWebapp.state.items.length, 1);
+
+  const localFile = open(duplicateWebapp.nextState, "chat", {
+    kind: "local-file",
+    handleId: "opaque-handle",
+    fileName: "report.pdf",
+    previewKind: "pdf",
+  });
+  assert.equal(localFile.ok, true);
+  assert.equal(localFile.item.stableKey, "local-file:opaque-handle");
+  assert.equal(localFile.item.title, "report.pdf");
+  const duplicateFile = open(localFile.nextState, "chat", {
+    kind: "local-file",
+    handleId: "opaque-handle",
+    fileName: "report.pdf",
+    previewKind: "pdf",
+  });
+  assert.equal(duplicateFile.item.itemId, localFile.item.itemId);
+  assert.equal(duplicateFile.state.items.length, 2);
+});
+
+test("WorkPanel creates independent BTW instances unless a canonical BTW id is known", () => {
+  const first = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", instanceId: "instance-a" },
+  });
+  const second = open(first.nextState, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", instanceId: "instance-b" },
+  });
+  assert.notEqual(first.item.itemId, second.item.itemId);
+  assert.equal(second.state.items.length, 2);
+
+  const canonical = open(second.nextState, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", btwId: "btw-1", instanceId: "ignored-a" },
+  });
+  const canonicalDuplicate = open(canonical.nextState, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", btwId: "btw-1", instanceId: "ignored-b" },
+  });
+  assert.equal(canonical.item.itemId, canonicalDuplicate.item.itemId);
+});
+
+test("WorkPanel Web URL normalization adds HTTPS while still refusing credentials", () => {
+  assert.equal(normalizeWorkPanelWebUrl("example.test/path"), "https://example.test/path");
+  assert.equal(normalizeWorkPanelWebUrl("https://user:secret@example.test"), "");
+});

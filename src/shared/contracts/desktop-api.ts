@@ -84,7 +84,16 @@ import type {
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
-import type { ChatWorkPanelClearSessionRequest } from "../chat-work-panel";
+import type {
+  ChatWorkPanelClearSessionRequest,
+  WorkPanelLocalFileActionResult,
+  WorkPanelLocalFileClaimRequest,
+  WorkPanelLocalFileClaimResult,
+  WorkPanelLocalFileHandleRequest,
+  WorkPanelLocalFileReleaseRequest,
+  WorkPanelLocalFileSelectRequest,
+  WorkPanelLocalFileSelectionResult,
+} from "../chat-work-panel";
 import type { DesktopHelpSettings } from "../help";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
@@ -1029,6 +1038,13 @@ export interface DesktopApi {
   };
   chatWorkPanel: {
     clearSession: (input: ChatWorkPanelClearSessionRequest) => Promise<{ ok: boolean }>;
+    localFiles: {
+      select: (input: WorkPanelLocalFileSelectRequest) => Promise<WorkPanelLocalFileSelectionResult>;
+      claim: (input: WorkPanelLocalFileClaimRequest) => Promise<WorkPanelLocalFileClaimResult>;
+      release: (input: WorkPanelLocalFileReleaseRequest) => Promise<WorkPanelLocalFileActionResult>;
+      open: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
+      reveal: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
+    };
   };
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;
@@ -1094,6 +1110,7 @@ export interface DesktopApi {
       uninstall: (id: string) => Promise<WebappDeleteResult>;
       start: (id: string) => Promise<WebappCommandResult>;
       openWindow: (id: string) => Promise<WebappCommandResult>;
+      listOpenWindows: () => Promise<string[]>;
       stop: (id: string) => Promise<WebappCommandResult>;
       restart: (id: string) => Promise<WebappCommandResult>;
       getStatus: (id: string) => Promise<WebappStatusResult>;

@@ -599,7 +599,14 @@ const api: DesktopApi = {
     getSurfaceTargetState: (input) => ipcRenderer.invoke("embeddedCdp.getSurfaceTargetState", input)
   },
   chatWorkPanel: {
-    clearSession: (input) => ipcRenderer.invoke("chatWorkPanel.clearSession", input)
+    clearSession: (input) => ipcRenderer.invoke("chatWorkPanel.clearSession", input),
+    localFiles: {
+      select: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.select", input),
+      claim: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.claim", input),
+      release: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.release", input),
+      open: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.open", input),
+      reveal: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.reveal", input)
+    }
   },
   copilot: {
     publishDevToolsTarget: (target) => ipcRenderer.invoke("copilot.publishDevToolsTarget", target)
@@ -719,6 +726,7 @@ const api: DesktopApi = {
       uninstall: (id: string) => ipcRenderer.invoke("webs.webapps.uninstall", id),
       start: (id: string) => ipcRenderer.invoke("webs.webapps.start", id),
       openWindow: (id: string) => ipcRenderer.invoke("webs.webapps.openWindow", id),
+      listOpenWindows: () => ipcRenderer.invoke("webs.webapps.listOpenWindows"),
       stop: (id: string) => ipcRenderer.invoke("webs.webapps.stop", id),
       restart: (id: string) => ipcRenderer.invoke("webs.webapps.restart", id),
       getStatus: (id: string) => ipcRenderer.invoke("webs.webapps.getStatus", id),

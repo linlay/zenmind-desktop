@@ -9,11 +9,16 @@ import {
   FileTextOutlined,
   FolderOpenOutlined,
   GlobalOutlined,
+  MessageOutlined,
+  PlusOutlined,
   ProjectOutlined,
   RobotOutlined,
+  RightOutlined,
+  CodeOutlined,
 } from "@ant-design/icons";
 import { Button } from "antd";
-import { lazy, Suspense, useEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { createPortal } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
   normalizeWorkPanelWebUrl,
@@ -34,7 +39,15 @@ import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../shared/service-webv
 import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 import { useI18n } from "../i18n/useI18n";
 import { createChatChildSurfaceIdentity } from "../../shared/surface-identity";
-import { createAgentWebclientOverviewPath } from "../../shared/agent-webclient-routes";
+import {
+  createAgentWebclientBtwPath,
+  createAgentWebclientOverviewPath,
+  createAgentWebclientProjectPath,
+} from "../../shared/agent-webclient-routes";
+import {
+  createWorkPanelLocalFilePartition,
+  createWorkPanelLocalFileUrl,
+} from "../../shared/chat-work-panel";
 
 const ExternalWebviewPage = lazy(() =>
   import("../pages/external-webview/ExternalWebviewPage").then((module) => ({ default: module.ExternalWebviewPage })),
@@ -52,6 +65,16 @@ type WorkPanelHostProps = {
   hasPanelToggle?: boolean;
   isMac: boolean;
   isWindows: boolean;
+  launcher: {
+    agentKey: string;
+    agentMode: string;
+    projectEnabled: boolean;
+    projectDisabledReason?: string;
+    lastRunId?: string;
+    webapps: Array<{ id: string; label: string }>;
+    onOpenWebapp(ownerChatId: string, webapp: { id: string; label: string }): void;
+    onFocusWebappWindow(webappId: string): void;
+  };
 };
 
 function actionError(code: string, message: string, details?: unknown) {
@@ -91,6 +114,8 @@ function tabContextMenuProfile(item: WorkPanelItem): ChatWorkPanelTabContextMenu
 
 function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
   if (item.descriptor.kind === "web") return <GlobalOutlined />;
+  if (item.descriptor.kind === "webapp-ref") return <AppstoreOutlined />;
+  if (item.descriptor.kind === "local-file") return <FileTextOutlined />;
   if (item.descriptor.kind === "native") return <AppstoreOutlined />;
   switch (item.descriptor.module) {
     case "overview":
@@ -136,13 +161,24 @@ export function WorkPanelHost({
   hasPanelToggle,
   isMac,
   isWindows,
+  launcher,
 }: WorkPanelHostProps) {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef(state);
   const previousWebPartitionsRef = useRef(new Set<string>());
+  const previousLocalFileHandlesRef = useRef(new Map<string, string>());
+  const rendererGenerationRef = useRef(globalThis.crypto.randomUUID());
+  const addButtonRef = useRef<HTMLButtonElement | null>(null);
+  const addMenuRef = useRef<HTMLDivElement | null>(null);
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
   const [busyLocalResourceItems, setBusyLocalResourceItems] = useState<Set<string>>(() => new Set());
+  const [addMenuOwnerChatId, setAddMenuOwnerChatId] = useState<string | null>(null);
+  const [addMenuView, setAddMenuView] = useState<"root" | "web" | "webapp">("root");
+  const [addMenuStyle, setAddMenuStyle] = useState<CSSProperties>({});
+  const [webUrlInput, setWebUrlInput] = useState("");
+  const [webUrlError, setWebUrlError] = useState("");
+  const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
   stateRef.current = state;
 
   let revealLocalResourceLabel = t("chatWorkPanel.tabContextMenu.revealInFileManager");
@@ -151,6 +187,146 @@ export function WorkPanelHost({
   } else if (isWindows) {
     revealLocalResourceLabel = t("chatWorkPanel.tabContextMenu.revealInExplorer");
   }
+
+  const closeAddMenu = () => {
+    setAddMenuOwnerChatId(null);
+    setAddMenuView("root");
+    setWebUrlInput("");
+    setWebUrlError("");
+    void window.electronAPI.webs.webapps.listOpenWindows()
+      .then((ids) => setOpenWebappWindowIds(new Set(ids)))
+      .catch(() => setOpenWebappWindowIds(new Set()));
+  };
+
+  const updateAddMenuPosition = () => {
+    const button = addButtonRef.current;
+    if (!button) return;
+    const rect = button.getBoundingClientRect();
+    const width = 248;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    setAddMenuStyle({ left, top: rect.bottom + 6, width });
+  };
+
+  const openAddMenu = (ownerChatId: string) => {
+    if (addMenuOwnerChatId === ownerChatId) {
+      closeAddMenu();
+      return;
+    }
+    setAddMenuOwnerChatId(ownerChatId);
+    setAddMenuView("root");
+    setWebUrlInput("");
+    setWebUrlError("");
+    requestAnimationFrame(updateAddMenuPosition);
+  };
+
+  const focusMenuItem = (direction: "first" | "last" | "next" | "previous") => {
+    const menuItems = Array.from(
+      addMenuRef.current?.querySelectorAll<HTMLButtonElement>('[role="menuitem"]:not(:disabled)') ?? [],
+    );
+    if (menuItems.length === 0) return;
+    const currentIndex = menuItems.indexOf(document.activeElement as HTMLButtonElement);
+    if (direction === "first") menuItems[0].focus();
+    else if (direction === "last") menuItems[menuItems.length - 1].focus();
+    else if (direction === "next") menuItems[(currentIndex + 1 + menuItems.length) % menuItems.length].focus();
+    else menuItems[(currentIndex - 1 + menuItems.length) % menuItems.length].focus();
+  };
+
+  const handleAddMenuKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      closeAddMenu();
+      addButtonRef.current?.focus();
+    } else if (event.key === "ArrowDown") {
+      event.preventDefault();
+      focusMenuItem("next");
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      focusMenuItem("previous");
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      focusMenuItem("first");
+    } else if (event.key === "End") {
+      event.preventDefault();
+      focusMenuItem("last");
+    }
+  };
+
+  const openWebFromMenu = (ownerChatId: string) => {
+    const url = normalizeWorkPanelWebUrl(webUrlInput);
+    if (!url) {
+      setWebUrlError(t("chatWorkPanel.add.webInvalid"));
+      return;
+    }
+    dispatchCommand({ type: "openItem", ownerChatId, descriptor: { kind: "web", url } });
+    closeAddMenu();
+  };
+
+  const openSideChatFromMenu = (ownerChatId: string) => {
+    const agentKey = launcher.agentKey.trim();
+    const route = createAgentWebclientBtwPath({ chatId: ownerChatId });
+    if (!agentKey || !route) return;
+    dispatchCommand({
+      type: "openItem",
+      ownerChatId,
+      descriptor: {
+        kind: "webclient",
+        module: "btw",
+        route,
+        context: { agentKey, chatId: ownerChatId, instanceId: globalThis.crypto.randomUUID() },
+        title: t("chatWorkPanel.add.sideChat"),
+      },
+    });
+    closeAddMenu();
+  };
+
+  const openProjectFromMenu = (ownerChatId: string) => {
+    if (!launcher.projectEnabled) return;
+    const agentKey = launcher.agentKey.trim();
+    const route = createAgentWebclientProjectPath({
+      agentKey,
+      chatId: ownerChatId,
+      runId: launcher.lastRunId,
+    });
+    if (!route) return;
+    dispatchCommand({
+      type: "openItem",
+      ownerChatId,
+      descriptor: {
+        kind: "webclient",
+        module: "project",
+        route,
+        context: {
+          agentKey,
+          chatId: ownerChatId,
+          ...(launcher.lastRunId ? { runId: launcher.lastRunId } : {}),
+        },
+        title: t("chatWorkPanel.add.project"),
+      },
+    });
+    closeAddMenu();
+  };
+
+  const openFilesFromMenu = async (ownerChatId: string) => {
+    const result = await window.electronAPI.chatWorkPanel.localFiles.select({
+      ownerChatId,
+      rendererGeneration: rendererGenerationRef.current,
+    });
+    if (!result.ok) return;
+    for (const file of result.files) {
+      dispatchCommand({
+        type: "openItem",
+        ownerChatId,
+        descriptor: {
+          kind: "local-file",
+          handleId: file.handleId,
+          fileName: file.fileName,
+          previewKind: file.previewKind,
+          title: file.fileName,
+        },
+      });
+    }
+    closeAddMenu();
+  };
 
   const closeWorkPanelStep = (ownerChatId: string) => {
     const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
@@ -181,7 +357,7 @@ export function WorkPanelHost({
 
   const findItemWebview = (ownerChatId: string, itemId: string) => {
     const itemHosts = Array.from(
-      rootRef.current?.querySelectorAll<HTMLElement>("[data-work-panel-item]") ?? [],
+      document.querySelectorAll<HTMLElement>("[data-work-panel-item]"),
     );
     const itemHost = itemHosts.find((candidate) =>
       candidate.dataset.workPanelOwner === ownerChatId && candidate.dataset.workPanelItem === itemId,
@@ -343,6 +519,55 @@ export function WorkPanelHost({
     previousWebPartitionsRef.current = nextPartitions;
   }, [state.webSessionKeysByItemId, state.workspaces]);
 
+  useEffect(() => {
+    const nextHandles = new Map<string, string>();
+    for (const workspace of state.workspaces) {
+      for (const item of workspace.items) {
+        if (item.descriptor.kind === "local-file") {
+          nextHandles.set(item.descriptor.handleId, workspace.ownerChatId);
+        }
+      }
+    }
+    for (const [handleId, ownerChatId] of previousLocalFileHandlesRef.current) {
+      if (nextHandles.has(handleId)) continue;
+      void window.electronAPI.chatWorkPanel.localFiles.release({
+        ownerChatId,
+        rendererGeneration: rendererGenerationRef.current,
+        handleIds: [handleId],
+      }).catch(() => undefined);
+    }
+    previousLocalFileHandlesRef.current = nextHandles;
+  }, [state.workspaces]);
+
+  useEffect(() => () => {
+    for (const [handleId, ownerChatId] of previousLocalFileHandlesRef.current) {
+      void window.electronAPI.chatWorkPanel.localFiles.release({
+        ownerChatId,
+        rendererGeneration: rendererGenerationRef.current,
+        handleIds: [handleId],
+      }).catch(() => undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!addMenuOwnerChatId) return undefined;
+    const handlePointerDown = (event: PointerEvent) => {
+      const target = event.target as Node | null;
+      if (target && (addMenuRef.current?.contains(target) || addButtonRef.current?.contains(target))) return;
+      closeAddMenu();
+    };
+    const handleWindowChange = () => updateAddMenuPosition();
+    document.addEventListener("pointerdown", handlePointerDown, true);
+    window.addEventListener("resize", handleWindowChange);
+    window.addEventListener("scroll", handleWindowChange, true);
+    requestAnimationFrame(() => focusMenuItem("first"));
+    return () => {
+      document.removeEventListener("pointerdown", handlePointerDown, true);
+      window.removeEventListener("resize", handleWindowChange);
+      window.removeEventListener("scroll", handleWindowChange, true);
+    };
+  }, [addMenuOwnerChatId, addMenuView]);
+
   useEffect(() => window.electronAPI.onWebviewOpenTab(({
     target,
     navigationKind,
@@ -351,7 +576,7 @@ export function WorkPanelHost({
   }) => {
     if (target !== "work-panel") return;
     if (!Number.isSafeInteger(sourceGuestId) || sourceGuestId <= 0) return;
-    const webviews = Array.from(rootRef.current?.querySelectorAll("webview") ?? []) as Electron.WebviewTag[];
+    const webviews = Array.from(document.querySelectorAll("webview")) as Electron.WebviewTag[];
     const sourceWebview = webviews.find((webview) => readWebviewGuestId(webview) === sourceGuestId);
     const itemHost = sourceWebview?.closest<HTMLElement>("[data-work-panel-item]");
     const ownerChatId = itemHost?.dataset.workPanelOwner || "";
@@ -360,8 +585,12 @@ export function WorkPanelHost({
       (workspace) => workspace.ownerChatId === ownerChatId,
     );
     const sourceItem = sourceWorkspace?.items.find((item) => item.itemId === sourceItemId);
-    if (!ownerChatId || sourceItem?.descriptor.kind !== "web") return;
+    if (
+      !ownerChatId ||
+      (sourceItem?.descriptor.kind !== "web" && sourceItem?.descriptor.kind !== "webapp-ref")
+    ) return;
     if (navigationKind === "blob") {
+      if (sourceItem.descriptor.kind !== "web") return;
       const normalizedBlobUrl = normalizeWebviewBlobPopupUrl(url);
       if (!normalizedBlobUrl) return;
       dispatchCommand({
@@ -429,11 +658,18 @@ export function WorkPanelHost({
         return { ok: true, result: { ok: true, workspaceId: workspace?.workspaceId || "", state: workspace ?? undefined } };
       }
       case "desktop.workpanel.openTab": {
+        const descriptor = args.descriptor as { kind?: unknown } | undefined;
+        if (
+          !descriptor ||
+          (descriptor.kind !== "webclient" && descriptor.kind !== "web" && descriptor.kind !== "native")
+        ) {
+          return actionError("invalid_request", "This WorkPanel item kind is host-only.");
+        }
         if (ownerAgentKey) {
           const bootstrapFailure = ensureTrustedWorkspace();
           if (bootstrapFailure) return bootstrapFailure;
         }
-        return execute({ type: "openItem", ownerChatId, descriptor: args.descriptor as any });
+        return execute({ type: "openItem", ownerChatId, descriptor: descriptor as any });
       }
       case "desktop.workpanel.openWeb": {
         const url = normalizeWorkPanelWebUrl(args.url);
@@ -445,6 +681,61 @@ export function WorkPanelHost({
           ownerChatId,
           descriptor: { kind: "web", url },
         });
+      }
+      case "desktop.workpanel.openLocalFile": {
+        const claimId = typeof args.claimId === "string" ? args.claimId.trim() : "";
+        if (!claimId) return actionError("target_unavailable", "Local file claim is unavailable.");
+        const bootstrapFailure = ensureTrustedWorkspace();
+        if (bootstrapFailure) return bootstrapFailure;
+        const claimed = await window.electronAPI.chatWorkPanel.localFiles.claim({
+          ownerChatId,
+          rendererGeneration: rendererGenerationRef.current,
+          claimId,
+        });
+        if (!claimed.ok || !claimed.file) {
+          return actionError(
+            "target_unavailable",
+            claimed.message || "Local file claim is unavailable.",
+          );
+        }
+        const file = claimed.file;
+        const opened = execute({
+          type: "openItem",
+          ownerChatId,
+          descriptor: {
+            kind: "local-file",
+            handleId: file.handleId,
+            fileName: file.fileName,
+            previewKind: file.previewKind,
+            title: typeof args.title === "string" && args.title.trim()
+              ? args.title.trim()
+              : file.fileName,
+          },
+        });
+        if (!opened.ok) {
+          if (!claimed.reused) {
+            await window.electronAPI.chatWorkPanel.localFiles.release({
+              ownerChatId,
+              rendererGeneration: rendererGenerationRef.current,
+              handleIds: [file.handleId],
+            }).catch(() => undefined);
+          }
+          return opened;
+        }
+        if (claimed.reused && file.previewKind !== "unsupported") {
+          const item = current()?.items.find((candidate) =>
+            candidate.descriptor.kind === "local-file" &&
+            candidate.descriptor.handleId === file.handleId,
+          );
+          if (item) {
+            try {
+              findItemWebview(ownerChatId, item.itemId)?.reload();
+            } catch {
+              // The existing local preview may still be remounting after activation.
+            }
+          }
+        }
+        return opened;
       }
       case "desktop.workpanel.refreshWeb": {
         const url = normalizeWorkPanelWebUrl(args.url);
@@ -490,7 +781,11 @@ export function WorkPanelHost({
     const updateFocusState = (target: EventTarget | null) => {
       const element = target instanceof Element ? target : null;
       const visiblePanel = element?.closest<HTMLElement>(".chat-work-panel.is-visible");
-      publishFocusState(Boolean(visiblePanel && root.contains(visiblePanel)));
+      const canonicalWebapp = element?.closest<HTMLElement>(".canonical-webapp-surface.is-active");
+      publishFocusState(Boolean(
+        (visiblePanel && root.contains(visiblePanel)) ||
+        (canonicalWebapp?.dataset.workPanelOwner && canonicalWebapp.dataset.workPanelOwner === activeChatId),
+      ));
     };
     const handlePointerDown = (event: PointerEvent) => {
       updateFocusState(event.target);
@@ -559,7 +854,7 @@ export function WorkPanelHost({
         return;
       }
       if (!Number.isSafeInteger(guestId) || guestId <= 0) return;
-      const webviews = Array.from(root.querySelectorAll("webview")) as Electron.WebviewTag[];
+      const webviews = Array.from(document.querySelectorAll("webview")) as Electron.WebviewTag[];
       const matchingWebview = webviews.find((webview) => readWebviewGuestId(webview) === guestId);
       const itemHost = matchingWebview?.closest<HTMLElement>("[data-work-panel-item]");
       const ownerChatId = itemHost?.dataset.workPanelOwner || "";
@@ -683,6 +978,19 @@ export function WorkPanelHost({
                   </div>
                 );
               })}
+              <div className="chat-work-panel-add-tab" role="presentation">
+                <button
+                  ref={visible ? addButtonRef : undefined}
+                  type="button"
+                  className={`chat-work-panel-add-button${addMenuOwnerChatId === workspace.ownerChatId ? " is-open" : ""}`}
+                  aria-label={t("chatWorkPanel.add.openMenu")}
+                  aria-haspopup="menu"
+                  aria-expanded={addMenuOwnerChatId === workspace.ownerChatId}
+                  onClick={() => openAddMenu(workspace.ownerChatId)}
+                >
+                  <PlusOutlined />
+                </button>
+              </div>
             </div>
             <div className="chat-work-panel-body">
               <Suspense fallback={null}>
@@ -763,7 +1071,9 @@ export function WorkPanelHost({
                           surfaceLabel={item.title}
                           skipContextRegistration
                         />
-                      ) : item.descriptor.kind === "web" ? (
+                      ) : item.descriptor.kind === "web" || (
+                        item.descriptor.kind === "local-file" && item.descriptor.previewKind !== "unsupported"
+                      ) ? (
                         <ExternalWebviewPage
                           active={active}
                           allowTabUrlCopy
@@ -782,10 +1092,12 @@ export function WorkPanelHost({
                             });
                           }}
                           ownerChatId={workspace.ownerChatId}
-                          partition={itemPartition(
-                            workspace.workspaceId,
-                            resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
-                          )}
+                          partition={item.descriptor.kind === "local-file"
+                            ? createWorkPanelLocalFilePartition(item.descriptor.handleId)
+                            : itemPartition(
+                                workspace.workspaceId,
+                                resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
+                              )}
                           publishPageContext={false}
                           registerPublicWebSurface={false}
                           showToolbar={false}
@@ -799,8 +1111,43 @@ export function WorkPanelHost({
                           surfaceKind="chat-work-panel"
                           surfaceLabel={item.title}
                           title={item.title}
-                          url={item.descriptor.url}
+                          url={item.descriptor.kind === "local-file"
+                            ? createWorkPanelLocalFileUrl(item.descriptor.handleId, item.descriptor.fileName)
+                            : item.descriptor.url}
                         />
+                      ) : item.descriptor.kind === "local-file" ? (
+                        <div className="chat-work-panel-local-file-fallback">
+                          <FileTextOutlined aria-hidden="true" />
+                          <strong>{item.descriptor.fileName}</strong>
+                          <span>{t("chatWorkPanel.localFile.noPreview")}</span>
+                          <div className="chat-work-panel-local-file-actions">
+                            <Button
+                              icon={<FolderOpenOutlined />}
+                              onClick={() => {
+                                void window.electronAPI.chatWorkPanel.localFiles.reveal({
+                                  ownerChatId: workspace.ownerChatId,
+                                  rendererGeneration: rendererGenerationRef.current,
+                                  handleId: item.descriptor.kind === "local-file" ? item.descriptor.handleId : "",
+                                });
+                              }}
+                            >
+                              {revealLocalResourceLabel}
+                            </Button>
+                            <Button
+                              type="primary"
+                              icon={<ExportOutlined />}
+                              onClick={() => {
+                                void window.electronAPI.chatWorkPanel.localFiles.open({
+                                  ownerChatId: workspace.ownerChatId,
+                                  rendererGeneration: rendererGenerationRef.current,
+                                  handleId: item.descriptor.kind === "local-file" ? item.descriptor.handleId : "",
+                                });
+                              }}
+                            >
+                              {t("chatWorkPanel.tabContextMenu.openInDefaultApp")}
+                            </Button>
+                          </div>
+                        </div>
                       ) : null}
                     </div>
                   );
@@ -810,6 +1157,116 @@ export function WorkPanelHost({
           </aside>
         );
       })}
+      {addMenuOwnerChatId ? createPortal(
+        <div
+          ref={addMenuRef}
+          className="chat-work-panel-add-menu sidebar-operation-menu-popover"
+          style={addMenuStyle}
+          role="menu"
+          aria-label={t("chatWorkPanel.add.menu")}
+          onKeyDown={handleAddMenuKeyDown}
+        >
+          {addMenuView === "web" ? (
+            <form
+              className="chat-work-panel-add-web-form"
+              onSubmit={(event) => {
+                event.preventDefault();
+                openWebFromMenu(addMenuOwnerChatId);
+              }}
+            >
+              <button type="button" className="chat-work-panel-add-menu-back" onClick={() => setAddMenuView("root")}>
+                {t("chatWorkPanel.add.back")}
+              </button>
+              <label htmlFor="chat-work-panel-web-url">{t("chatWorkPanel.add.webPrompt")}</label>
+              <input
+                id="chat-work-panel-web-url"
+                autoFocus
+                value={webUrlInput}
+                placeholder="example.com"
+                onChange={(event) => {
+                  setWebUrlInput(event.target.value);
+                  setWebUrlError("");
+                }}
+              />
+              {webUrlError ? <span className="chat-work-panel-add-error">{webUrlError}</span> : null}
+              <Button type="primary" htmlType="submit" disabled={!webUrlInput.trim()}>
+                {t("chatWorkPanel.add.open")}
+              </Button>
+            </form>
+          ) : addMenuView === "webapp" ? (
+            <div className="chat-work-panel-add-webapp-list">
+              <button type="button" className="chat-work-panel-add-menu-back" onClick={() => setAddMenuView("root")}>
+                {t("chatWorkPanel.add.back")}
+              </button>
+              {launcher.webapps.length === 0 ? (
+                <span className="chat-work-panel-add-empty">{t("chatWorkPanel.add.noWebapps")}</span>
+              ) : launcher.webapps.map((webapp) => (
+                <button
+                  key={webapp.id}
+                  type="button"
+                  role="menuitem"
+                  className="chat-work-panel-add-menu-item"
+                  onClick={() => {
+                    if (openWebappWindowIds.has(webapp.id)) launcher.onFocusWebappWindow(webapp.id);
+                    else launcher.onOpenWebapp(addMenuOwnerChatId, webapp);
+                    closeAddMenu();
+                  }}
+                >
+                  <AppstoreOutlined aria-hidden="true" />
+                  <span>{webapp.label}</span>
+                  <small>{openWebappWindowIds.has(webapp.id) ? t("chatWorkPanel.add.webappInWindow") : t("chatWorkPanel.add.moveHere")}</small>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <>
+              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" disabled>
+                <CodeOutlined aria-hidden="true" />
+                <span>{t("chatWorkPanel.add.terminal")}</span>
+                <small>{t("chatWorkPanel.add.comingSoon")}</small>
+              </button>
+              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => setAddMenuView("web")}>
+                <GlobalOutlined aria-hidden="true" />
+                <span>{t("chatWorkPanel.add.web")}</span>
+              </button>
+              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => void openFilesFromMenu(addMenuOwnerChatId)}>
+                <FolderOpenOutlined aria-hidden="true" />
+                <span>{t("chatWorkPanel.add.files")}</span>
+              </button>
+              <button type="button" role="menuitem" className="chat-work-panel-add-menu-item" onClick={() => openSideChatFromMenu(addMenuOwnerChatId)}>
+                <MessageOutlined aria-hidden="true" />
+                <span>{t("chatWorkPanel.add.sideChat")}</span>
+              </button>
+              {launcher.agentMode === "CODER" || launcher.agentMode === "KBASE" ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className="chat-work-panel-add-menu-item"
+                  disabled={!launcher.projectEnabled}
+                  title={launcher.projectDisabledReason}
+                  onClick={() => openProjectFromMenu(addMenuOwnerChatId)}
+                >
+                  <ProjectOutlined aria-hidden="true" />
+                  <span>{t("chatWorkPanel.add.project")}</span>
+                  {!launcher.projectEnabled ? <small>{launcher.projectDisabledReason}</small> : null}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                role="menuitem"
+                className="chat-work-panel-add-menu-item"
+                disabled={launcher.webapps.length === 0}
+                onClick={() => setAddMenuView("webapp")}
+              >
+                <AppstoreOutlined aria-hidden="true" />
+                <span>{t("chatWorkPanel.add.webapp")}</span>
+                <RightOutlined className="chat-work-panel-add-menu-chevron" aria-hidden="true" />
+              </button>
+            </>
+          )}
+        </div>,
+        document.body,
+      ) : null}
     </div>
   );
 }

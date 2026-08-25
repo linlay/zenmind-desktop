@@ -84,6 +84,7 @@ type ExternalWebviewPageProps = {
   surfaceCloseLabel?: string;
   onFaviconDiscovered?: (faviconUrl: string) => void;
   ownerChatId?: string;
+  presentationScope?: "main-workspace" | "workpanel";
   allowUserTabCreation?: boolean;
   allowTabUrlCopy?: boolean;
   showToolbar?: boolean;
@@ -472,6 +473,7 @@ export function ExternalWebviewPage({
   surfaceCloseLabel,
   onFaviconDiscovered,
   ownerChatId,
+  presentationScope,
   allowUserTabCreation = true,
   allowTabUrlCopy = false,
   showToolbar = true,
@@ -624,6 +626,7 @@ export function ExternalWebviewPage({
       surfaceType: registeredSurfaceKind,
       pageRoute: registeredSurfaceRoute,
       ...(ownerChatId ? { ownerChatId } : {}),
+      ...(presentationScope ? { presentationScope } : {}),
       label: surfaceLabel ?? title,
       url,
       active: cdpActive ?? activeRef.current,
@@ -1117,6 +1120,9 @@ export function ExternalWebviewPage({
     surfaceIdentity?.surfaceRole,
     surfaceIdentityKey,
     surfaceLabel,
+    cdpActive,
+    ownerChatId,
+    presentationScope,
     title,
     url
   ]);

@@ -12,7 +12,16 @@ import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDial
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
 import { DesktopDisplayOverlay, type DesktopDisplayOverlayRequest } from "./DesktopDisplayOverlay";
 import { ChatHistoryDialog } from "./history/ChatHistoryDialog";
-import { BuiltinBrowserSurfaceHost, EmptyWebSurfaceRoute, WebRouteFallback, WebSurfaceHost, ExternalItemRoute, ServiceWebviewSurfaceHost } from "./embedded-surfaces/EmbeddedSurfaceHosts";
+import {
+  BuiltinBrowserSurfaceHost,
+  CanonicalWebappSurfaceHost,
+  EmptyWebSurfaceRoute,
+  WebRouteFallback,
+  WebSurfaceHost,
+  ExternalItemRoute,
+  ServiceWebviewSurfaceHost,
+  type WebappPresentationOwner,
+} from "./embedded-surfaces/EmbeddedSurfaceHosts";
 import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
@@ -625,6 +634,8 @@ export function AppShell() {
   const projectFloatingFocusRequestIdRef = useRef(0);
   const [workPanelState, setWorkPanelState] = useState<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
   const workPanelStateRef = useRef<WorkPanelState>(EMPTY_WORK_PANEL_STATE);
+  const [webappPresentationOwners, setWebappPresentationOwners] =
+    useState<Record<string, WebappPresentationOwner>>({});
   const [assistantNavAgentsLoaded, setAssistantNavAgentsLoaded] = useState(false);
   const [chatNavAgentOptions, setChatNavAgentOptions] = useState<AssistantNavAgentItem[]>([]);
   const chatRuntimeAgent = useMemo(
@@ -1150,9 +1161,7 @@ export function AppShell() {
     if (wasActive) {
       requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
     }
-    setMountedWebEntryKeys((current) =>
-      current.filter((entryKey) => entryKey !== item.entryKey)
-    );
+    disposeWebappPresentation(item);
 
     const result = await window.electronAPI.webs.webapps.uninstall(item.id);
     if (result.ok) {
@@ -1162,9 +1171,7 @@ export function AppShell() {
         return next;
       });
     } else {
-      setMountedWebEntryKeys((current) =>
-        current.includes(item.entryKey) ? current : [...current, item.entryKey]
-      );
+      if (wasActive) moveWebappPresentationToMain(item);
       if (wasActive) {
         requestSidebarNavigation(`/webs/${item.entryKey}`);
       }
@@ -1197,11 +1204,87 @@ export function AppShell() {
     });
   }
 
+  function removeWebappWorkPanelReferences(webappId: string, source = workPanelStateRef.current) {
+    let nextState = source;
+    const refs = source.workspaces.flatMap((workspace) => workspace.items.flatMap((item) =>
+      item.descriptor.kind === "webapp-ref" && item.descriptor.webappId === webappId
+        ? [{ ownerChatId: workspace.ownerChatId, itemId: item.itemId }]
+        : [],
+    ));
+    for (const reference of refs) {
+      nextState = reduceWorkPanelCommand(nextState, {
+        type: "closeItem",
+        ownerChatId: reference.ownerChatId,
+        itemId: reference.itemId,
+      }).nextState;
+    }
+    return nextState;
+  }
+
+  function commitWorkPanelState(nextState: WorkPanelState) {
+    if (nextState === workPanelStateRef.current) return;
+    workPanelStateRef.current = nextState;
+    setWorkPanelState(nextState);
+  }
+
+  function moveWebappPresentationToMain(item: WebappEntry) {
+    commitWorkPanelState(removeWebappWorkPanelReferences(item.id));
+    setWebappPresentationOwners((current) => ({
+      ...current,
+      [item.id]: { scope: "main-workspace" },
+    }));
+    setMountedWebEntryKeys((current) =>
+      current.includes(item.entryKey) ? current : [...current, item.entryKey],
+    );
+  }
+
+  function disposeWebappPresentation(item: WebappEntry) {
+    commitWorkPanelState(removeWebappWorkPanelReferences(item.id));
+    setWebappPresentationOwners((current) => {
+      if (!(item.id in current)) return current;
+      const next = { ...current };
+      delete next[item.id];
+      return next;
+    });
+    setMountedWebEntryKeys((current) => current.filter((entryKey) => entryKey !== item.entryKey));
+  }
+
+  async function ensureWebappRuntimeStarted(item: WebappEntry) {
+    const runtime = webappRuntimeById[item.id];
+    if (runtime?.status === "starting" || runtime?.status === "running") return;
+    if (webappStartInFlightRef.current.has(item.id) || webappStopInFlightRef.current.has(item.id)) return;
+    webappStartInFlightRef.current.add(item.id);
+    setWebappRuntimeById((current) => ({
+      ...current,
+      [item.id]: {
+        status: "starting",
+        webUrl: current[item.id]?.webUrl ?? "",
+        message: t("webapp.starting"),
+        state: current[item.id]?.state ?? null,
+      },
+    }));
+    try {
+      const result = await window.electronAPI.webs.webapps.start(item.id);
+      setWebappRuntimeById((current) => ({
+        ...current,
+        [item.id]: {
+          status: result.ok && result.state?.webUrl ? "running" : "error",
+          webUrl: result.state?.webUrl ?? "",
+          message: result.message,
+          state: result.state,
+        },
+      }));
+    } finally {
+      webappStartInFlightRef.current.delete(item.id);
+    }
+  }
+
   async function handleCloseWebEntry(item: WebEntry) {
     if (activeWebEntryKey === item.entryKey) {
       requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
     }
     if (item.kind === "webapp") {
+      disposeWebappPresentation(item);
       webappStopInFlightRef.current.add(item.id);
       try {
         const result = await window.electronAPI.webs.webapps.stop(item.id);
@@ -1248,6 +1331,8 @@ export function AppShell() {
       setMountedWebEntryKeys((current) =>
         current.filter((entryKey) => entryKey !== item.entryKey)
       );
+      commitWorkPanelState(removeWebappWorkPanelReferences(item.id));
+      setWebappPresentationOwners((current) => ({ ...current, [item.id]: { scope: "dialog" } }));
       if (activeWebEntryKey === item.entryKey) {
         requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
       }
@@ -1304,11 +1389,7 @@ export function AppShell() {
         updateWebItems(preferenceResult.items);
       }
 
-      setMountedWebEntryKeys((current) =>
-        current.includes(item.entryKey)
-          ? current
-          : [...current, item.entryKey]
-      );
+      moveWebappPresentationToMain(item);
       requestSidebarNavigation(`/webs/${item.entryKey}`);
     } catch (error) {
       setWebappRuntimeById((current) => {
@@ -1422,6 +1503,12 @@ export function AppShell() {
     const webappId = id.trim();
     if (!webappId) {
       return;
+    }
+    if (!state || state.status === "stopped") {
+      const item = webItemsRef.current.find(
+        (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === webappId,
+      );
+      if (item) disposeWebappPresentation(item);
     }
     setWebappRuntimeById((current) => {
       if (!state) {
@@ -1976,6 +2063,7 @@ export function AppShell() {
     if (progress.phase === "preparing") {
       workPanelStateRef.current = EMPTY_WORK_PANEL_STATE;
       setWorkPanelState(EMPTY_WORK_PANEL_STATE);
+      setWebappPresentationOwners({});
       if (activeWebEntryKeyRef.current?.startsWith("webapp:")) {
         requestSidebarNavigation(EMPTY_WEB_SURFACE_ROUTE);
       }
@@ -2605,6 +2693,15 @@ export function AppShell() {
         : [...current, activeWebEntryKey]
     );
   }, [activeWebEntryKey]);
+
+  useEffect(() => {
+    if (!activeWebEntryKey) return;
+    const item = webItems.find(
+      (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.entryKey === activeWebEntryKey,
+    );
+    if (!item || webappPresentationOwners[item.id]?.scope === "main-workspace") return;
+    moveWebappPresentationToMain(item);
+  }, [activeWebEntryKey, webItems]);
 
   useEffect(() => {
     const requestedWebappEntryKey = activeWebEntryKey;
@@ -3588,9 +3685,33 @@ export function AppShell() {
     "--assistant-dock-embedded-width": `${renderedCopilotDockWidth}px`,
   } as CSSProperties;
   const normalizedBootstrapAgentKey = assistantSettings?.bootstrapAgentKey.trim() ?? "";
+  const workPanelLauncherAgent = activeChatRouteInfo.agentKey
+    ? assistantNavAgents.find((agent) => agent.agentKey === activeChatRouteInfo.agentKey) ??
+      chatNavAgentOptions.find((agent) => agent.agentKey === activeChatRouteInfo.agentKey) ?? null
+    : null;
+  const workPanelLauncherAgentMode = workPanelLauncherAgent?.mode?.trim().toUpperCase() ?? "";
+  const workPanelProjectDisabledReason = workPanelLauncherAgentMode === "CODER"
+    ? !workPanelLauncherAgent?.workspaceDir?.trim()
+      ? t("sidebar.agent.workspaceUnavailable")
+      : workPanelLauncherAgent.workspaceDir.trim() === "@chat"
+        ? t("sidebar.agent.workspaceMissing")
+        : workPanelLauncherAgent.workspaceDirExists === false
+          ? t("sidebar.agent.workspaceNotFound")
+          : ""
+    : "";
+  const workPanelProjectEnabled = workPanelLauncherAgentMode === "KBASE" ||
+    (workPanelLauncherAgentMode === "CODER" && !workPanelProjectDisabledReason);
+  const workPanelLastRunId = activeChatWorkPanelChatId
+    ? assistantNavChatItems.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ??
+      workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ?? ""
+    : "";
+  const workPanelWebapps = webItems
+    .filter((item): item is WebappEntry => item.kind === "webapp")
+    .map((item) => ({ id: item.id, label: item.label }));
 
   const dispatchWorkPanelCommand = useCallback((command: WorkPanelCommand) => {
-    let currentState = workPanelStateRef.current;
+    const previousState = workPanelStateRef.current;
+    let currentState = previousState;
     const isOverviewCommand = command.type === "openItem" &&
       command.descriptor.kind === "webclient" &&
       command.descriptor.module === "overview";
@@ -3653,6 +3774,36 @@ export function AppShell() {
     if (result.nextState !== workPanelStateRef.current) {
       workPanelStateRef.current = result.nextState;
       setWorkPanelState(result.nextState);
+      const remainingWebappIds = new Set(
+        result.nextState.workspaces.flatMap((workspace) => workspace.items.flatMap((item) =>
+          item.descriptor.kind === "webapp-ref" ? [item.descriptor.webappId] : [],
+        )),
+      );
+      const removedWebappRefs = previousState.workspaces.flatMap((workspace) => workspace.items.flatMap((item) =>
+        item.descriptor.kind === "webapp-ref" && !result.nextState.workspaces.some((nextWorkspace) =>
+          nextWorkspace.items.some((nextItem) => nextItem.itemId === item.itemId),
+        )
+          ? [{ ownerChatId: workspace.ownerChatId, itemId: item.itemId, webappId: item.descriptor.webappId }]
+          : [],
+      ));
+      for (const removed of removedWebappRefs) {
+        if (remainingWebappIds.has(removed.webappId)) continue;
+        setWebappPresentationOwners((current) => {
+          const owner = current[removed.webappId];
+          if (
+            owner?.scope !== "workpanel" ||
+            owner.ownerChatId !== removed.ownerChatId ||
+            owner.itemId !== removed.itemId
+          ) return current;
+          const next = { ...current };
+          delete next[removed.webappId];
+          return next;
+        });
+        const entryKey = webItemsRef.current.find((item) => item.kind === "webapp" && item.id === removed.webappId)?.entryKey;
+        if (entryKey) {
+          setMountedWebEntryKeys((current) => current.filter((key) => key !== entryKey));
+        }
+      }
     }
     return result;
   }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, t]);
@@ -3673,6 +3824,47 @@ export function AppShell() {
       },
     });
   }, [dispatchWorkPanelCommand, t]);
+
+  async function handleOpenWebappInWorkPanel(
+    ownerChatId: string,
+    target: { id: string; label: string },
+  ) {
+    const item = webItemsRef.current.find(
+      (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.id === target.id,
+    );
+    if (!item) return;
+    const openWindowIds = await window.electronAPI.webs.webapps.listOpenWindows().catch((): string[] => []);
+    if (openWindowIds.includes(item.id)) {
+      await window.electronAPI.webs.webapps.openWindow(item.id).catch(() => undefined);
+      return;
+    }
+
+    let nextState = removeWebappWorkPanelReferences(item.id);
+    const opened = reduceWorkPanelCommand(nextState, {
+      type: "openItem",
+      ownerChatId,
+      descriptor: {
+        kind: "webapp-ref",
+        webappId: item.id,
+        title: item.label,
+      },
+    });
+    if (!opened.ok || !opened.item) return;
+    nextState = opened.nextState;
+    commitWorkPanelState(nextState);
+    setWebappPresentationOwners((current) => ({
+      ...current,
+      [item.id]: { scope: "workpanel", ownerChatId, itemId: opened.item!.itemId },
+    }));
+    setMountedWebEntryKeys((current) =>
+      current.includes(item.entryKey) ? current : [...current, item.entryKey],
+    );
+    void ensureWebappRuntimeStarted(item).catch(() => undefined);
+  }
+
+  function handleFocusWebappWindow(webappId: string) {
+    void window.electronAPI.webs.webapps.openWindow(webappId).catch(() => undefined);
+  }
 
   const closeChatWorkPanelWorkspace = useCallback((chatId: string, force = false) => {
     dispatchWorkPanelCommand({
@@ -4105,6 +4297,43 @@ export function AppShell() {
           hasPanelToggle={activeChatWorkPanelVisible && showMainChatWorkPanelToggle}
           isMac={isMac}
           isWindows={isWindows}
+          launcher={{
+            agentKey: activeChatRouteInfo.agentKey,
+            agentMode: workPanelLauncherAgentMode,
+            projectEnabled: workPanelProjectEnabled,
+            projectDisabledReason: workPanelProjectDisabledReason,
+            lastRunId: workPanelLastRunId,
+            webapps: workPanelWebapps,
+            onOpenWebapp: (ownerChatId, webapp) => {
+              void handleOpenWebappInWorkPanel(ownerChatId, webapp);
+            },
+            onFocusWebappWindow: handleFocusWebappWindow,
+          }}
+        />
+        <CanonicalWebappSurfaceHost
+          activeEntryKey={activeWebEntryKey}
+          itemMap={webItemMap}
+          mountedEntryKeys={mountedWebEntryKeys}
+          presentations={webappPresentationOwners}
+          workPanelState={workPanelState}
+          activeWorkPanelChatId={activeChatWorkPanelChatId}
+          workPanelVisible={activeChatWorkPanelVisible}
+          onCloseWebItem={(entryKey) => {
+            const item = webItemsRef.current.find(
+              (candidate): candidate is WebappEntry => candidate.kind === "webapp" && candidate.entryKey === entryKey,
+            );
+            if (!item) return;
+            const owner = webappPresentationOwners[item.id];
+            if (owner?.scope === "workpanel") {
+              dispatchWorkPanelCommand({
+                type: "closeItem",
+                ownerChatId: owner.ownerChatId,
+                itemId: owner.itemId,
+              });
+              return;
+            }
+            void handleCloseWebEntry(item);
+          }}
         />
       </div>
       {isSidebarResizing || isWorkPanelResizing || isCopilotDockResizing ? (

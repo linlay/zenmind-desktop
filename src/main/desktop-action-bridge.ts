@@ -158,6 +158,10 @@ import {
   getDesktopDownloadDefaultPath,
   sanitizeDownloadFilename
 } from "./download-paths";
+import {
+  resolveWorkPanelLocalFileFromWorkspace,
+  type WorkPanelLocalFilePathResolution,
+} from "./chat-work-panel-local-files";
 
 export type DesktopActionBridgeOptions = {
   app: App;
@@ -188,6 +192,12 @@ export type DesktopActionBridgeOptions = {
     onClick: () => void;
   }) => boolean;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
+  prepareWorkPanelLocalFileClaim?: (input: {
+    ownerChatId: string;
+    rendererWebContentsId: number;
+    filePath: string;
+  }) => { claimId: string } | null;
+  discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{
     targetId?: string;
@@ -229,6 +239,7 @@ const AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS: Record<AgentWebclientWorkPanelA
 
 const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
   "desktop.workpanel.openWeb",
+  "desktop.workpanel.openLocalFile",
   "desktop.workpanel.refreshWeb"
 ]);
 
@@ -1318,6 +1329,7 @@ const DESKTOP_WEB_POST_STATE_ACTIONS = new Set([
 const DESKTOP_WORKPANEL_MUTATION_ACTIONS = new Set([
   "desktop.workpanel.openTab",
   "desktop.workpanel.openWeb",
+  "desktop.workpanel.openLocalFile",
   "desktop.workpanel.refreshWeb",
   "desktop.workpanel.activateTab",
   "desktop.workpanel.closeTab",
@@ -2836,6 +2848,94 @@ async function executeDesktopWebExportArtifact(
   }
 }
 
+function validateOpenLocalFileArgs(
+  args: Record<string, unknown>,
+): { ok: true; path: string; title: string } | { ok: false; response: DesktopActionCallResponse } {
+  const action = "desktop.workpanel.openLocalFile";
+  const rejectedKeys = Object.keys(args).filter((key) => key !== "path" && key !== "title");
+  if (rejectedKeys.length > 0) {
+    return {
+      ok: false,
+      response: fail(action, "invalid_args", `openLocalFile does not accept: ${rejectedKeys.join(", ")}.`),
+    };
+  }
+  const requestedPath = typeof args.path === "string" ? args.path : "";
+  const title = typeof args.title === "string" ? args.title.trim() : "";
+  if (args.title !== undefined && (typeof args.title !== "string" || title.length > 160)) {
+    return {
+      ok: false,
+      response: fail(action, "invalid_args", "title must be a string of at most 160 characters."),
+    };
+  }
+  return { ok: true, path: requestedPath, title };
+}
+
+async function executeOpenLocalFileAction(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>,
+): Promise<DesktopActionCallResponse> {
+  const action = "desktop.workpanel.openLocalFile";
+  const validated = validateOpenLocalFileArgs(args);
+  if (!validated.ok) return validated.response;
+  const source = request.source;
+  const runId = source?.runId?.trim() || "";
+  const ownerChatId = source?.chatId?.trim() || "";
+  const agentKey = source?.agentKey?.trim() || "";
+  if (!runId || !ownerChatId || !agentKey || source?.teamId) {
+    return fail(action, "forbidden", "openLocalFile requires a trusted Agent-owned Platform Run.");
+  }
+
+  let workspaceResolution: WorkPanelLocalFilePathResolution;
+  try {
+    const navigation = await options.assistantBridge.listNavigationAgents();
+    const agent = navigation.ok
+      ? navigation.items.find((candidate) => candidate.agentKey === agentKey)
+      : null;
+    const workspaceDir = agent?.workspaceDir?.trim() || "";
+    if (!workspaceDir || workspaceDir === "@chat" || agent?.workspaceDirExists === false) {
+      return fail(action, "workspace_unavailable", "The Agent workspace is unavailable on this Desktop.");
+    }
+    workspaceResolution = resolveWorkPanelLocalFileFromWorkspace(
+      workspaceDir,
+      validated.path,
+      options.platform ?? process.platform,
+    );
+  } catch {
+    return fail(action, "workspace_unavailable", "Desktop could not resolve the Agent workspace.");
+  }
+  if (!workspaceResolution.ok) {
+    return fail(action, workspaceResolution.code, workspaceResolution.message);
+  }
+
+  const mainWindow = options.getMainWindow();
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed() ||
+    !options.prepareWorkPanelLocalFileClaim ||
+    !options.discardWorkPanelLocalFileClaim
+  ) {
+    return fail(action, "target_unavailable", "The Desktop WorkPanel renderer is unavailable.");
+  }
+  const prepared = options.prepareWorkPanelLocalFileClaim({
+    ownerChatId,
+    rendererWebContentsId: mainWindow.webContents.id,
+    filePath: workspaceResolution.filePath,
+  });
+  if (!prepared) {
+    return fail(action, "file_unavailable", "The requested local file became unavailable.");
+  }
+  try {
+    return await callRendererAction(options, request, {
+      claimId: prepared.claimId,
+      ...(validated.title ? { title: validated.title } : {}),
+    });
+  } finally {
+    options.discardWorkPanelLocalFileClaim(prepared.claimId);
+  }
+}
+
 async function executeAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
@@ -2978,11 +3078,14 @@ async function executeAction(
     case "desktop.workpanel.getState":
     case "desktop.workpanel.openTab":
     case "desktop.workpanel.openWeb":
+    case "desktop.workpanel.openLocalFile":
     case "desktop.workpanel.refreshWeb":
     case "desktop.workpanel.activateTab":
     case "desktop.workpanel.closeTab":
     case "desktop.workpanel.closeWorkpanel":
-      return callRendererAction(options, request, args);
+      return action === "desktop.workpanel.openLocalFile"
+        ? executeOpenLocalFileAction(options, request, args)
+        : callRendererAction(options, request, args);
     case "desktop.web.exportArtifact":
       return executeDesktopWebExportArtifact(options, action, args);
     case "desktop.general.deviceName": {
@@ -3222,6 +3325,9 @@ async function handleActionCallRaw(
   const definition = action ? getDesktopActionDefinition(action) : null;
   if (!action || !definition) {
     return fail(action || "unknown", "unknown_action", `unknown action: ${action || "(empty)"}`);
+  }
+  if (action === "desktop.workpanel.openLocalFile" && invocation.kind !== "agentPlatform") {
+    return fail(action, "forbidden", "openLocalFile is available only to an authorized internal Agent Platform Run.");
   }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);

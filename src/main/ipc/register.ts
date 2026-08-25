@@ -116,6 +116,7 @@ import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
 import { registerHelpIpcHandlers } from "./help-handlers";
 import { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-handlers";
 import { registerChatWorkPanelTabContextMenuIpcHandlers } from "./chat-work-panel-tab-context-menu-handlers";
+import { registerChatWorkPanelLocalFileIpcHandlers } from "../chat-work-panel-local-files";
 import { requireEpochMillis } from "../../shared/time-contract";
 
 export type MainIpcRegistrationOptions = {
@@ -209,6 +210,10 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     getMainWindow: () => context.state.mainWindow,
     app,
     platform: context.platform,
+  });
+  registerChatWorkPanelLocalFileIpcHandlers(ipcMain, {
+    getMainWindow: () => context.state.mainWindow,
+    showFileDialog: options.showFileDialog as any,
   });
 
   registerAssistantIpcHandlers(ipcMain, createAssistantIpcHandlerOptions(context, {

@@ -64,7 +64,7 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const bridge = read("src/main/desktop-action-bridge.ts");
 
-  for (const name of ["getState", "openTab", "openWeb", "refreshWeb", "activateTab", "closeTab", "closeWorkpanel"]) {
+  for (const name of ["getState", "openTab", "openWeb", "openLocalFile", "refreshWeb", "activateTab", "closeTab", "closeWorkpanel"]) {
     assert.match(actions, new RegExp(`desktop\\.workpanel\\.${name}`, "u"));
   }
   assert.match(host, /request\.source\?\.chatId/u);
@@ -104,6 +104,42 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(host, /dataset\.workPanelDomReady === "true"/u);
   assert.match(reducer, /unsupported_native_surface/u);
   assert.match(reducer, /item\.pinned \|\| !item\.closable/u);
+});
+
+test("WorkPanel add menu and canonical WebApp presentation keep host-only ownership", () => {
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const appShell = read("src/renderer/app-shell/AppShell.tsx");
+  const embeddedHosts = read("src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx");
+  const runtime = read("src/main/app/runtime.ts");
+  const localFiles = read("src/main/chat-work-panel-local-files.ts");
+  const css = read("src/renderer/styles/app-shell.css");
+
+  assert.match(host, /chat-work-panel-add-button/u);
+  assert.match(host, /createPortal\(/u);
+  assert.match(host, /chatWorkPanel\.add\.terminal[\s\S]*?disabled/u);
+  assert.match(host, /createAgentWebclientBtwPath/u);
+  assert.match(host, /instanceId: globalThis\.crypto\.randomUUID\(\)/u);
+  assert.match(host, /descriptor\.kind !== "webclient" && descriptor\.kind !== "web" && descriptor\.kind !== "native"/u);
+  assert.match(host, /className="chat-work-panel-add-menu sidebar-operation-menu-popover"/u);
+  assert.match(host, /const width = 248/u);
+  assert.match(css, /\.chat-work-panel-add-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/su);
+  assert.match(css, /\.chat-work-panel-add-menu\s*\{[^}]*padding:\s*6px;[^}]*background:\s*var\(--sidebar-operation-menu-bg\);[^}]*box-shadow:\s*var\(--sidebar-operation-menu-shadow\);/su);
+  assert.match(css, /\.chat-work-panel-add-menu-item\s*\{[^}]*min-height:\s*32px;[^}]*font-size:\s*14px;/su);
+
+  assert.match(appShell, /useState<Record<string, WebappPresentationOwner>>\(\{\}\)/u);
+  assert.match(appShell, /removeWebappWorkPanelReferences/u);
+  assert.match(appShell, /kind: "webapp-ref"/u);
+  assert.match(embeddedHosts, /export function CanonicalWebappSurfaceHost/u);
+  assert.match(embeddedHosts, /<CanonicalWebappSurface[\s\S]*?key=\{entryKey\}/u);
+  assert.match(embeddedHosts, /presentationScope=\{owner\.scope === "workpanel"/u);
+  assert.match(embeddedHosts, /cdpActive=\{owner\.scope === "main-workspace" && visible\}/u);
+  assert.match(runtime, /target\.presentationScope === "workpanel"/u);
+
+  assert.match(localFiles, /CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL/u);
+  assert.match(localFiles, /fs\.realpathSync\.native/u);
+  assert.match(localFiles, /session\.fromPartition\(partition, \{ cache: false \}\)/u);
+  assert.match(localFiles, /setPermissionRequestHandler/u);
+  assert.doesNotMatch(host, /filePath:\s*file\./u);
 });
 
 test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-aware close controls", () => {

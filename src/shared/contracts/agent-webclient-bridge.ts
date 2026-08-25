@@ -194,7 +194,10 @@ export type DesktopPlatformFramePort = {
 };
 
 export type WorkPanelChatContext = { agentKey: string; chatId: string };
-export type WorkPanelBTWContext = WorkPanelChatContext & { btwId?: string };
+export type WorkPanelBTWContext = WorkPanelChatContext & {
+  btwId?: string;
+  instanceId?: string;
+};
 export type WorkPanelSourceContext = WorkPanelChatContext & {
   btwId?: string;
   publishId: string;
@@ -277,6 +280,22 @@ export type WorkPanelItemDescriptor =
   | {
       kind: "web";
       url: string;
+      title?: string;
+      pinned?: boolean;
+      closable?: boolean;
+    }
+  | {
+      kind: "webapp-ref";
+      webappId: string;
+      title: string;
+      pinned?: boolean;
+      closable?: boolean;
+    }
+  | {
+      kind: "local-file";
+      handleId: string;
+      fileName: string;
+      previewKind: "html" | "pdf" | "image" | "text" | "audio" | "video" | "unsupported";
       title?: string;
       pinned?: boolean;
       closable?: boolean;

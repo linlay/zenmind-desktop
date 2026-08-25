@@ -237,6 +237,12 @@ export function createAgentWebclientOverviewPath(request: {
   return encodedChatId ? `/overview/${encodedChatId}` : "";
 }
 
+export function createAgentWebclientBtwPath(request: { chatId: string }) {
+  const chatId = request.chatId.trim();
+  const encodedChatId = encodeRoutePathSegment(chatId);
+  return encodedChatId ? `/btw/${encodedChatId}` : "";
+}
+
 export function resolveAgentWebclientWsSource(
   surfaceId: string,
   embedPath: string | undefined

@@ -183,6 +183,7 @@ export function registerWebIpcHandlers(ipcMain: any, options: WebIpcHandlerOptio
     (options.openWebappWindow ?? ((targetApp, webappId, sender) =>
       webappWindowManager.open(targetApp, webappId, sender)))(app, id, event?.sender)
   );
+  ipcMain.handle("webs.webapps.listOpenWindows", async () => webappWindowManager.openIds());
   ipcMain.handle("webs.webapps.list", async () => webappManager.listResult(app));
   ipcMain.handle("webs.webapps.import", async () => {
     const result = await showFileDialog({

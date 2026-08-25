@@ -12,6 +12,7 @@ const {
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientChatNavigationUrlsEquivalent,
   createAgentWebclientAgentPath,
+  createAgentWebclientBtwPath,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
   createAgentWebclientOverviewPath,
@@ -21,6 +22,11 @@ const {
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
+
+test("Side Chat routes use the canonical /btw/:chatId path", () => {
+  assert.equal(createAgentWebclientBtwPath({ chatId: "chat / 一" }), "/btw/chat%20%2F%20%E4%B8%80");
+  assert.equal(createAgentWebclientBtwPath({ chatId: "  " }), "");
+});
 
 function buildAgentWebclientUrl(surfaceId, embedPath) {
   return new URL(buildServiceWebviewUrl(

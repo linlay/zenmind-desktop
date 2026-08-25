@@ -1,6 +1,6 @@
 // Generated from src/shared/contracts/agent-webclient-bridge.ts.
 // Do not edit this mirror directly.
-// sha256:d28c04d0e9e56948844a35188ddb563333407bccda8d5b6422bde4759cd8a20f
+// sha256:f4ebe4eddb0951a867039d4588d44934e68620f301c1371a73571829dce65778
 
 /**
  * Canonical Desktop <-> Agent WebClient bridge contract.
@@ -198,7 +198,10 @@ export type DesktopPlatformFramePort = {
 };
 
 export type WorkPanelChatContext = { agentKey: string; chatId: string };
-export type WorkPanelBTWContext = WorkPanelChatContext & { btwId?: string };
+export type WorkPanelBTWContext = WorkPanelChatContext & {
+  btwId?: string;
+  instanceId?: string;
+};
 export type WorkPanelSourceContext = WorkPanelChatContext & {
   btwId?: string;
   publishId: string;
@@ -281,6 +284,22 @@ export type WorkPanelItemDescriptor =
   | {
       kind: "web";
       url: string;
+      title?: string;
+      pinned?: boolean;
+      closable?: boolean;
+    }
+  | {
+      kind: "webapp-ref";
+      webappId: string;
+      title: string;
+      pinned?: boolean;
+      closable?: boolean;
+    }
+  | {
+      kind: "local-file";
+      handleId: string;
+      fileName: string;
+      previewKind: "html" | "pdf" | "image" | "text" | "audio" | "video" | "unsupported";
       title?: string;
       pinned?: boolean;
       closable?: boolean;

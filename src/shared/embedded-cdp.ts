@@ -54,6 +54,7 @@ export type EmbeddedCdpSurfaceRegistration = SurfaceIdentity & {
   /** Main-only route snapshot used for authorization; never expose it in diagnostics. */
   pageRouteIdentity?: string;
   ownerChatId?: string;
+  presentationScope?: "main-workspace" | "workpanel";
   label: string;
   url: string;
   active: boolean;

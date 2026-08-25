@@ -112,6 +112,7 @@ import {
   registerDesktopSsoAvatarProtocol,
   registerDesktopSsoAvatarProtocolScheme,
 } from "../sso-avatar-protocol";
+import { registerChatWorkPanelLocalFileProtocolScheme } from "../chat-work-panel-local-files";
 import {
   isDesktopPetSupportedPlatform,
   saveDesktopPetSettings,
@@ -264,6 +265,7 @@ export function createMainProcessRuntime() {
   registerDesktopPetAssetProtocolScheme(protocol);
   registerWebsiteFaviconProtocolScheme(protocol);
   registerDesktopSsoAvatarProtocolScheme(protocol);
+  registerChatWorkPanelLocalFileProtocolScheme(protocol);
   
   const webSurfaceRuntime = createWebSurfaceRuntime({
     app,
@@ -283,7 +285,7 @@ export function createMainProcessRuntime() {
       const mainWindow = appState.mainWindow;
       if (
         !target ||
-        target.surfaceType !== "chat-work-panel" ||
+        (target.surfaceType !== "chat-work-panel" && target.presentationScope !== "workpanel") ||
         !mainWindow ||
         mainWindow.isDestroyed()
       ) {
@@ -583,31 +585,36 @@ export function createMainProcessRuntime() {
     isWorkPanelWebview: (contents) => {
       const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
       return Boolean(
-        target?.active &&
-        target.surfaceLevel === "child" &&
-        target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
-        target.ownerChatId &&
-        [
-          "overview",
-          "debug",
-          "project",
-          "file-diff",
-          "artifact",
-          "planning",
-          "agent",
-          "copilot",
-          "skill",
-          "workpanel-web",
-        ].includes(target.surfaceRole)
+        target &&
+        (target.presentationScope === "workpanel" || (target.active &&
+          target.surfaceLevel === "child" &&
+          target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
+          target.ownerChatId &&
+          [
+            "overview",
+            "debug",
+            "project",
+            "file-diff",
+            "artifact",
+            "planning",
+            "agent",
+            "copilot",
+            "skill",
+            "workpanel-web",
+          ].includes(target.surfaceRole)
+        ))
       );
     },
     resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation,
     shouldOpenWebviewPopupInWorkPanelTab: (contents) =>
-      webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id)?.surfaceType === "chat-work-panel",
+      (() => {
+        const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+        return target?.surfaceType === "chat-work-panel" || target?.presentationScope === "workpanel";
+      })(),
     resolveBlobPopupTarget: (contents) => {
       const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
-      if (target?.surfaceType === "chat-work-panel") return "work-panel";
+      if (target?.surfaceType === "chat-work-panel" || target?.presentationScope === "workpanel") return "work-panel";
       if (target?.surfaceType === "website" || target?.surfaceType === "browser") {
         return "desktop-browser";
       }

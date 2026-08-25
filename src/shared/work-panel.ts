@@ -132,7 +132,7 @@ function normalizeContext(
         ? ["key"]
         : [
             "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
-            "publishId", "sourceId", "btwId", "path",
+            "publishId", "sourceId", "btwId", "instanceId", "path",
           ],
   );
   if (Object.keys(record).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
@@ -141,7 +141,7 @@ function normalizeContext(
   const context: Record<string, string> = {};
   for (const key of [
     "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
-    "publishId", "sourceId", "btwId", "key",
+    "publishId", "sourceId", "btwId", "instanceId", "key",
   ] as const) {
     const value = cleanIdentity(record[key]);
     if (record[key] !== undefined && !value) return null;
@@ -164,7 +164,8 @@ function normalizeContext(
 }
 
 export function normalizeWorkPanelWebUrl(value: unknown) {
-  const raw = cleanIdentity(value, 8_192);
+  const input = cleanIdentity(value, 8_192);
+  const raw = input && !/^[a-z][a-z\d+.-]*:/iu.test(input) ? `https://${input}` : input;
   try {
     const url = new URL(raw);
     if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) return "";
@@ -181,6 +182,40 @@ function normalizeDescriptor(
   const keys = Object.keys(descriptor);
   const title = cleanIdentity(descriptor.title, 160);
   if (descriptor.kind === "native") return null;
+  if (descriptor.kind === "webapp-ref") {
+    if (keys.some((key) => !["kind", "webappId", "title", "pinned", "closable"].includes(key))) return null;
+    const webappId = cleanIdentity(descriptor.webappId, 256);
+    if (!webappId || !title) return null;
+    const sanitized: WorkPanelItemDescriptor = {
+      kind: "webapp-ref",
+      webappId,
+      title,
+      ...(descriptor.pinned === true ? { pinned: true } : {}),
+      ...(descriptor.closable === false ? { closable: false } : {}),
+    };
+    return { descriptor: sanitized, stableKey: `webapp:${webappId}`, title };
+  }
+  if (descriptor.kind === "local-file") {
+    if (keys.some((key) => !["kind", "handleId", "fileName", "previewKind", "title", "pinned", "closable"].includes(key))) return null;
+    const handleId = cleanIdentity(descriptor.handleId, 256);
+    const fileName = cleanIdentity(descriptor.fileName, 512);
+    const previewKind = descriptor.previewKind;
+    if (
+      !handleId ||
+      !fileName ||
+      !["html", "pdf", "image", "text", "audio", "video", "unsupported"].includes(previewKind)
+    ) return null;
+    const sanitized: WorkPanelItemDescriptor = {
+      kind: "local-file",
+      handleId,
+      fileName,
+      previewKind,
+      ...(title ? { title } : {}),
+      ...(descriptor.pinned === true ? { pinned: true } : {}),
+      ...(descriptor.closable === false ? { closable: false } : {}),
+    };
+    return { descriptor: sanitized, stableKey: `local-file:${handleId}`, title: title || fileName };
+  }
   if (descriptor.kind === "web") {
     if (keys.some((key) => !["kind", "url", "title", "pinned", "closable"].includes(key))) return null;
     const url = normalizeWorkPanelWebUrl(descriptor.url);
@@ -213,7 +248,7 @@ function normalizeDescriptor(
       break;
     case "btw":
       stableKey = context.agentKey && context.chatId
-        ? `btw:${context.agentKey}:${context.chatId}:${context.btwId || "current"}`
+        ? `btw:${context.agentKey}:${context.chatId}:${context.btwId || context.instanceId || "current"}`
         : "";
       break;
     case "source":

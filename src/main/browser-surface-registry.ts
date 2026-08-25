@@ -52,6 +52,7 @@ export type BrowserSurface = SurfaceIdentity & {
   tabs: BrowserSurfaceTab[];
   activeTabId: string | null;
   ownerChatId?: string;
+  presentationScope?: "main-workspace" | "workpanel";
 };
 
 export type BrowserSurfaceTab = EmbeddedCdpSurfaceTabRegistration;
@@ -105,6 +106,7 @@ export type RegisteredWebviewSurfaceTarget = {
   currentUrl: string;
   label: string;
   ownerChatId?: string;
+  presentationScope?: "main-workspace" | "workpanel";
   surfaceRole: SurfaceRole;
   surfaceLevel: SurfaceIdentity["surfaceLevel"];
   parentSurfaceId?: string;
@@ -350,6 +352,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         ...(surface.pageRoute ? { pageRoute: surface.pageRoute } : {}),
         ...(surface.pageRouteIdentity ? { pageRouteIdentity: surface.pageRouteIdentity } : {}),
         ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
+        ...(surface.presentationScope ? { presentationScope: surface.presentationScope } : {}),
         surfaceRole: surface.surfaceRole,
         surfaceLevel: surface.surfaceLevel,
         ...(surface.parentSurfaceId ? { parentSurfaceId: surface.parentSurfaceId } : {}),
@@ -485,6 +488,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       (input.pageRoute === undefined || typeof input.pageRoute === "string") &&
       (input.pageRouteIdentity === undefined || typeof input.pageRouteIdentity === "string") &&
       (input.ownerChatId === undefined || typeof input.ownerChatId === "string") &&
+      (input.presentationScope === undefined ||
+        input.presentationScope === "main-workspace" ||
+        (input.presentationScope === "workpanel" && input.surfaceKind === "webapp" && Boolean(input.ownerChatId?.trim()))) &&
       identityMatchesRegistration(input) &&
       typeof input.label === "string" &&
       typeof input.url === "string" &&

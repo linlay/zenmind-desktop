@@ -8,7 +8,10 @@ import {
 import { createInitialLocaleArguments } from "../shared/i18n/initial-locale-args";
 import type { LocaleSettings } from "../shared/i18n/types";
 import type { DesktopGlobalSearchShortcut } from "../shared/contracts/desktop-api";
-import { normalizeChatWorkPanelUrl } from "../shared/chat-work-panel";
+import {
+  CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL,
+  normalizeChatWorkPanelUrl,
+} from "../shared/chat-work-panel";
 import {
   isBlobSchemeUrl,
   normalizeWebviewBlobPopupForSource,
@@ -573,7 +576,13 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
 
   input.webPreferences.nodeIntegration = false;
   input.webPreferences.contextIsolation = true;
-  input.webPreferences.sandbox = false;
+  input.webPreferences.sandbox = (() => {
+    try {
+      return new URL(src).protocol === `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:`;
+    } catch {
+      return false;
+    }
+  })();
   if (usesServicePreload) {
     input.webPreferences.preload = input.servicePreloadPath;
   }

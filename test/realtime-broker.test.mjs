@@ -809,10 +809,10 @@ test("RealtimeBroker waits for a forwarded canonical Chat grant before WorkPanel
 
   sockets[0].emit({
     frame: "request",
-    type: "desktop.workpanel.openWeb",
+    type: "desktop.workpanel.openLocalFile",
     id: "workpanel-before-ready",
     source: { chatId: "chat-ready", runId: "run-ready", agentKey: "coder" },
-    payload: { url: "https://example.test/document" },
+    payload: { path: "artifacts/report.html" },
   });
   await nextTurn();
   assert.equal(calls.length, 0);

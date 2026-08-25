@@ -2,6 +2,7 @@ import type { MainAppState } from "./app-state";
 import type { LogStreamSubscriptionRegistry } from "./logs/subscriptions";
 import type { DesktopAppInfo } from "../shared/contracts";
 import { createDesktopRuntimeDiagnostics } from "./desktop-runtime-info";
+import { workPanelLocalFileRegistry } from "./chat-work-panel-local-files";
 
 export interface MainProcessContext {
   state: MainAppState;
@@ -46,6 +47,7 @@ export function createDesktopActionOptions(
 ): any {
   return {
     app: context.app as any,
+    platform: context.platform,
     assistantBridge: dependencies.assistantBridge as any,
     getDesktopAppInfo: () => dependencies.desktopAppInfo,
     getDesktopRuntimeDiagnostics: () => createDesktopRuntimeDiagnostics(
@@ -60,6 +62,13 @@ export function createDesktopActionOptions(
     showFileDialog: dependencies.showFileDialog,
     showSaveDialog: dependencies.showSaveDialog,
     callRendererAction: dependencies.callRendererAction,
+    prepareWorkPanelLocalFileClaim: (input: {
+      ownerChatId: string;
+      rendererWebContentsId: number;
+      filePath: string;
+    }) => workPanelLocalFileRegistry.prepareClaim(input),
+    discardWorkPanelLocalFileClaim: (claimId: string) =>
+      workPanelLocalFileRegistry.discardPreparedClaim(claimId),
     confirmRendererAction: dependencies.confirmRendererAction,
     executeCdpCommand: async (request: unknown) => {
       const gateway = dependencies.cdpIntegration.start();

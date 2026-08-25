@@ -1342,6 +1342,26 @@ test("window manager allows only service webview preload for loopback service UR
   assert.equal(webPreferences.contextIsolation, true);
   assert.equal(webPreferences.sandbox, false);
 
+  const localFilePreferences = {
+    nodeIntegration: true,
+    contextIsolation: false,
+    sandbox: false,
+  };
+  const localFile = prepareWebviewAttachPreferences({
+    webPreferences: localFilePreferences,
+    params: {
+      src: "zenmind-local-file://opaque-handle/index.html",
+      partition: "work-panel-local-file-test",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+  });
+  assert.equal(localFile.ok, true);
+  assert.equal(localFilePreferences.nodeIntegration, false);
+  assert.equal(localFilePreferences.contextIsolation, true);
+  assert.equal(localFilePreferences.sandbox, true);
+
   const blocked = prepareWebviewAttachPreferences({
     webPreferences: { preload: "C:/other/preload.js" },
     params: {
