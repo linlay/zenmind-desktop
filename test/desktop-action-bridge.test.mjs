@@ -1210,6 +1210,26 @@ test("WebApp image action consumes a scoped upload and hardcodes Zenmi without e
   });
   assert.equal(forged.ok, false);
   assert.equal(forged.error.code, "invalid_args");
+
+  const unaligned = await handleWebappPageActionRequest(options, id, {
+    action: "desktop.assistant.image",
+    args: {
+      requestId: "image_request_3",
+      operation: "generate",
+      prompt: "风景",
+      negativePrompt: "",
+      width: 1023,
+      height: 1537,
+      count: 1,
+      strength: .5,
+      seed: 1,
+      preserveComposition: true,
+      edgeMode: "strict"
+    }
+  });
+  assert.equal(unaligned.ok, false);
+  assert.equal(unaligned.error.code, "invalid_args");
+  assert.match(unaligned.error.message, /divisible by 16/u);
 });
 
 test("removed desktop assistant complete action returns unknown_action", async (t) => {

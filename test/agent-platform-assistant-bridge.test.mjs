@@ -38,6 +38,23 @@ test("Zenmi image message requires exactly one image_generate call with source a
   assert.doesNotMatch(message, /file:\/\//u);
 });
 
+function zenmiImageRequest(overrides = {}) {
+  return {
+    operation: "generate",
+    prompt: "清晨山谷",
+    negativePrompt: "文字",
+    width: 1024,
+    height: 1536,
+    count: 1,
+    strength: .6,
+    seed: 42,
+    preserveComposition: true,
+    edgeMode: "strict",
+    agentKey: "zenmi",
+    ...overrides
+  };
+}
+
 function makeApp(homeDir = "/tmp") {
   return {
     getPath(name) {
@@ -247,6 +264,149 @@ test("agent platform assistant bridge waits for a text completion", async () => 
     assert.equal(ws.queryRequests.length, 1);
     assert.match(ws.sockets[0].url, /^ws:\/\/127\.0\.0\.1:18888\/ws\?/u);
     assert.equal(new URL(ws.sockets[0].url).searchParams.get("source"), "desktop-main");
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Zenmi image completion stops the run after one successful tool result and requires ok images", async () => {
+  const originalFetch = globalThis.fetch;
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+  const requests = [];
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => {
+      acceptQuery(socket, frame);
+      sendStreamEvent(socket, frame, {
+        seq: 2,
+        runId: frame.payload.runId,
+        chatId: frame.payload.chatId,
+        timestamp: EPOCH_MS + 1,
+        type: "tool.start",
+        toolId: "tool-image-1",
+        toolName: "image_generate"
+      });
+      sendStreamEvent(socket, frame, {
+        seq: 3,
+        runId: frame.payload.runId,
+        chatId: frame.payload.chatId,
+        timestamp: EPOCH_MS + 2,
+        type: "tool.result",
+        toolId: "tool-image-1",
+        toolName: "image_generate",
+        result: { ok: true, images: [{ relativePath: "generated/result.png" }] }
+      });
+    }
+  });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    requests.push({ target, init });
+    if (target.includes("/api/interrupt")) return new Response("{}", { status: 200 });
+    if (target.includes("/api/resource")) return new Response(png, { status: 200, headers: { "content-type": "image/png" } });
+    throw new Error(`unexpected HTTP request ${target}`);
+  };
+  try {
+    const result = await bridge.completeImage(zenmiImageRequest());
+    assert.equal(result.ok, true);
+    assert.equal(result.images.length, 1);
+    assert.equal(result.message, "Zenmi 图片生成成功。");
+    assert.equal(requests.filter((request) => request.target.includes("/api/interrupt")).length, 1);
+    assert.equal(ws.queryRequests.length, 1);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Zenmi image completion treats a failed tool result as failure and never accepts the agent final text", async () => {
+  const originalFetch = globalThis.fetch;
+  const requests = [];
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => {
+      acceptQuery(socket, frame);
+      sendStreamEvent(socket, frame, {
+        seq: 2,
+        runId: frame.payload.runId,
+        chatId: frame.payload.chatId,
+        timestamp: EPOCH_MS + 1,
+        type: "tool.start",
+        toolId: "tool-image-1",
+        toolName: "image_generate"
+      });
+      sendStreamEvent(socket, frame, {
+        seq: 3,
+        runId: frame.payload.runId,
+        chatId: frame.payload.chatId,
+        timestamp: EPOCH_MS + 2,
+        type: "tool.result",
+        toolId: "tool-image-1",
+        toolName: "image_generate",
+        result: { ok: false, error: "image_generate_model_request_failed", message: "invalid size" }
+      });
+      sendStreamEvent(socket, frame, {
+        seq: 4,
+        runId: frame.payload.runId,
+        chatId: frame.payload.chatId,
+        timestamp: EPOCH_MS + 3,
+        type: "content.delta",
+        delta: "完成重绘任务"
+      });
+    }
+  });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url, init = {}) => {
+    const target = String(url);
+    requests.push({ target, init });
+    if (target.includes("/api/interrupt")) return new Response("{}", { status: 200 });
+    throw new Error(`unexpected HTTP request ${target}`);
+  };
+  try {
+    const result = await bridge.completeImage(zenmiImageRequest());
+    assert.equal(result.ok, false);
+    assert.match(result.message, /invalid size/u);
+    assert.equal(result.images.length, 0);
+    assert.equal(requests.filter((request) => request.target.includes("/api/resource")).length, 0);
+    assert.equal(requests.filter((request) => request.target.includes("/api/interrupt")).length, 1);
+  } finally {
+    bridge.dispose();
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test("Zenmi image completion terminates a second image_generate start before accepting another result", async () => {
+  const originalFetch = globalThis.fetch;
+  let interruptCount = 0;
+  const ws = createWsHarness({
+    onQuery: ({ socket, frame }) => {
+      acceptQuery(socket, frame);
+      for (const [index, toolId] of ["tool-image-1", "tool-image-2"].entries()) {
+        sendStreamEvent(socket, frame, {
+          seq: index + 2,
+          runId: frame.payload.runId,
+          chatId: frame.payload.chatId,
+          timestamp: EPOCH_MS + index + 1,
+          type: "tool.start",
+          toolId,
+          toolName: "image_generate"
+        });
+      }
+    }
+  });
+  const { bridge } = makeBridge({ createWebSocket: ws.createWebSocket });
+  globalThis.fetch = async (url) => {
+    const target = String(url);
+    if (target.includes("/api/interrupt")) {
+      interruptCount += 1;
+      return new Response("{}", { status: 200 });
+    }
+    throw new Error(`unexpected HTTP request ${target}`);
+  };
+  try {
+    const result = await bridge.completeImage(zenmiImageRequest());
+    assert.equal(result.ok, false);
+    assert.match(result.message, /第二次 image_generate/u);
+    assert.equal(interruptCount, 1);
   } finally {
     bridge.dispose();
     globalThis.fetch = originalFetch;

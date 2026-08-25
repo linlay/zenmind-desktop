@@ -425,6 +425,9 @@ function normalizeWebappImageRequest(args: Record<string, unknown>) {
     width > 16_384 || height > 16_384 || width * height > WEBAPP_IMAGE_MAX_PIXELS) {
     throw new Error("image output dimensions are invalid");
   }
+  if (width % 16 !== 0 || height % 16 !== 0) {
+    throw new Error("image output width and height must be divisible by 16");
+  }
   if (!Number.isInteger(count) || count < 1 || count > 4) throw new Error("image count must be between 1 and 4");
   if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error("image strength must be between 0 and 1");
   if (!Number.isInteger(seed) || seed < 0 || seed > 2_147_483_647) throw new Error("image seed is invalid");
