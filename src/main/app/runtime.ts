@@ -271,6 +271,9 @@ export function createMainProcessRuntime() {
     app,
     state: appState,
     webContents,
+    reportRegistrationDiagnostic: (diagnostic) => {
+      safeConsoleError("[surface-registration]", diagnostic);
+    },
     navigateMainWindow,
     delay,
     t

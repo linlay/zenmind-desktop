@@ -246,13 +246,18 @@ test("surface registry reverse index follows replacement and rejects cross-surfa
     surfaceKind: "service",
     surfaceType,
     serviceId: "agent-webclient",
-    pageRoute: "/chat",
+    pageRoute: identity.surfaceRole === "main-chat" ? "/agent/agent-41" : "/chat",
+    ...(identity.surfaceRole === "main-chat"
+      ? { pageRouteIdentity: "/agent/agent-41?newChat=nonce-41" }
+      : {}),
     label: "Chat",
     url: "http://127.0.0.1:7788/",
     active: true,
     tabs: [{
       tabId: "chat",
-      currentUrl: "http://127.0.0.1:7788/ui/",
+      currentUrl: identity.surfaceRole === "main-chat"
+        ? "http://127.0.0.1:7788/agent/agent-41?newChat=nonce-41"
+        : "http://127.0.0.1:7788/ui/",
       title: "Chat",
       webContentsId: guestId,
       canGoBack: false,

@@ -113,6 +113,7 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   const runtime = read("src/main/app/runtime.ts");
   const localFiles = read("src/main/chat-work-panel-local-files.ts");
   const css = read("src/renderer/styles/app-shell.css");
+  const sidebarCss = read("src/renderer/styles/sidebar-copilot.css");
 
   assert.match(host, /chat-work-panel-add-button/u);
   assert.match(host, /createPortal\(/u);
@@ -133,6 +134,16 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   assert.match(embeddedHosts, /<CanonicalWebappSurface[\s\S]*?key=\{entryKey\}/u);
   assert.match(embeddedHosts, /presentationScope=\{owner\.scope === "workpanel"/u);
   assert.match(embeddedHosts, /cdpActive=\{owner\.scope === "main-workspace" && visible\}/u);
+  assert.match(embeddedHosts, /filter\(\(entryKey\) => itemMap\.get\(entryKey\)\?\.kind !== "webapp"\)/u);
+  assert.match(
+    css,
+    /\.app-content > \.canonical-webapp-layer\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*z-index:\s*55;[^}]*flex:\s*none;[^}]*width:\s*100%;[^}]*height:\s*100%;/su,
+  );
+  assert.match(
+    css,
+    /\.canonical-webapp-surface > \.embedded-surface-page\.external-webview-page,[\s\S]*?margin:\s*0;/u,
+  );
+  assert.match(sidebarCss, /\.app-content > \*\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*1;/su);
   assert.match(runtime, /target\.presentationScope === "workpanel"/u);
 
   assert.match(localFiles, /CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL/u);
