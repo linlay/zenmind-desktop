@@ -3136,7 +3136,7 @@ async function executeAction(
           requestId: normalized.requestId,
           agentKey: "zenmi",
           source: "copilot",
-          action: "chat",
+          action: "image_studio",
           operation: normalized.operation as AgentPlatformImageOperation,
           prompt: normalized.prompt,
           negativePrompt: normalized.negativePrompt,

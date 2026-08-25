@@ -1188,6 +1188,7 @@ test("WebApp image action consumes a scoped upload and hardcodes Zenmi without e
   assert.equal(Object.hasOwn(response.result.images[0], "path"), false);
   assert.equal(imageCalls.length, 1);
   assert.equal(imageCalls[0].agentKey, "zenmi");
+  assert.equal(imageCalls[0].action, "image_studio");
   assert.deepEqual(imageCalls[0].attachments.map((attachment) => attachment.id), ["image-studio-source", "image-studio-mask"]);
   assert.equal(imageCalls[0].attachments.every((attachment) => attachment.dataUrl.startsWith("data:image/")), true);
 
