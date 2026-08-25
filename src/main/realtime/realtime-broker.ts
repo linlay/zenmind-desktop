@@ -13,6 +13,7 @@ import {
   type AgentPlatformRealtimeConnectionState,
   type AgentPlatformRealtimeFrame,
   type AgentPlatformRealtimeSocketFactory,
+  type RealtimeIdentityRotationReason,
 } from "./agent-platform-realtime-client";
 import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 
@@ -1100,7 +1101,8 @@ export class RealtimeBroker {
     this.debugTrace.clear();
   }
 
-  rotateIdentity() {
+  rotateIdentity(reason: RealtimeIdentityRotationReason = "explicit_identity_invalidation") {
+    this.options.onDiagnostic?.(`realtime_identity_rotation:${reason}`);
     const error = brokerError("connection_unavailable", "realtime identity was invalidated");
     for (const pending of [...this.pendingRequests.values()]) {
       this.cleanupPending(pending.upstreamId);
@@ -2033,8 +2035,9 @@ export class RealtimeBroker {
   }
 
   private prepareConnectionIdentity(baseUrl: string, token: string) {
-    if (this.client.requiresRotation(baseUrl, token)) {
-      this.rotateIdentity();
+    const reason = this.client.getRotationReason(baseUrl, token);
+    if (reason) {
+      this.rotateIdentity(reason);
     }
   }
 }

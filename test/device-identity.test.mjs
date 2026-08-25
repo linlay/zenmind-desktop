@@ -57,7 +57,10 @@ function withTempApp(prefix) {
   return {
     app,
     tempRoot,
-    cleanup: () => fs.rmSync(tempRoot, { recursive: true, force: true })
+    cleanup: () => {
+      __testInternals.clearDesktopDeviceIdentityCache(getDesktopDeviceIdentityPath(app));
+      fs.rmSync(tempRoot, { recursive: true, force: true });
+    }
   };
 }
 
@@ -138,6 +141,72 @@ test("device identity creates a v2 machine-bound identity and keeps it stable on
     assert.deepEqual(again, identity);
   } finally {
     cleanup();
+  }
+});
+
+test("device identity is cached for the process and callers receive defensive copies", () => {
+  for (const scenario of [
+    { prefix: "zenmind-device-identity-cache-darwin-", platform: "darwin", source: "darwinIOPlatformUUID" },
+    { prefix: "zenmind-device-identity-cache-win32-", platform: "win32", source: "windowsMachineGuid" }
+  ]) {
+    const { app, cleanup } = withTempApp(scenario.prefix);
+    try {
+      let probeCount = 0;
+      let currentMachineId = MACHINE_A;
+      const options = {
+        platform: scenario.platform,
+        now: fixedNow(CREATED_AT),
+        randomUUID: () => INSTALL_ID,
+        readMachineIdentity: () => {
+          probeCount += 1;
+          return machineIdentity(currentMachineId, scenario.source);
+        }
+      };
+      const first = getDesktopDeviceIdentity(app, options);
+      currentMachineId = MACHINE_B;
+      const second = getDesktopDeviceIdentity(app, options);
+
+      assert.equal(probeCount, 1);
+      assert.deepEqual(second, first);
+      second.deviceId = INSTALL_ID_2;
+      assert.equal(getDesktopDeviceIdentity(app, options).deviceId, first.deviceId);
+    } finally {
+      cleanup();
+    }
+  }
+});
+
+test("device identity preserves a stored machine binding when the startup probe is unavailable", () => {
+  for (const scenario of [
+    { prefix: "zenmind-device-identity-preserve-darwin-", platform: "darwin", source: "darwinIOPlatformUUID" },
+    { prefix: "zenmind-device-identity-preserve-win32-", platform: "win32", source: "windowsMachineGuid" }
+  ]) {
+    const { app, cleanup } = withTempApp(scenario.prefix);
+    try {
+      const first = getDesktopDeviceIdentity(app, {
+        platform: scenario.platform,
+        now: fixedNow(CREATED_AT),
+        randomUUID: () => INSTALL_ID,
+        readMachineIdentity: () => machineIdentity(MACHINE_A, scenario.source)
+      });
+      const storedBefore = fs.readFileSync(getDesktopDeviceIdentityPath(app), "utf8");
+      __testInternals.clearDesktopDeviceIdentityCache(getDesktopDeviceIdentityPath(app));
+
+      const preserved = getDesktopDeviceIdentity(app, {
+        platform: scenario.platform,
+        now: fixedNow(REBOUND_AT),
+        readMachineIdentity: () => ({
+          machineId: __testInternals.UNAVAILABLE_MACHINE_ID,
+          source: "unavailable"
+        })
+      });
+
+      assert.deepEqual(preserved, first);
+      assert.equal(preserved.lastMachineMismatchAt, undefined);
+      assert.equal(fs.readFileSync(getDesktopDeviceIdentityPath(app), "utf8"), storedBefore);
+    } finally {
+      cleanup();
+    }
   }
 });
 
@@ -264,6 +333,7 @@ test("device identity rebinds copied identity files to the current machine", () 
       randomUUID: () => INSTALL_ID,
       readMachineIdentity: () => machineIdentity(MACHINE_A)
     });
+    __testInternals.clearDesktopDeviceIdentityCache(getDesktopDeviceIdentityPath(app));
     const rebound = getDesktopDeviceIdentity(app, {
       platform: "darwin",
       now: fixedNow(REBOUND_AT),
@@ -316,11 +386,11 @@ test("device identity replaces legacy and corrupt files with v2 identities", () 
   }
 });
 
-test("device identity falls back when a system machine ID is unavailable", () => {
+test("device identity keeps an unavailable fallback stable until the next process start", () => {
   const { app, cleanup } = withTempApp("zenmind-device-identity-unavailable-");
   try {
     const identity = getDesktopDeviceIdentity(app, {
-      platform: "linux",
+      platform: "win32",
       now: fixedNow(CREATED_AT),
       randomUUID: () => INSTALL_ID,
       readMachineIdentity: () => ({
@@ -332,12 +402,29 @@ test("device identity falls back when a system machine ID is unavailable", () =>
     assert.equal(identity.machineSource, "unavailable");
     assert.equal(
       identity.deviceId,
-      __testInternals.deriveDeviceId("linux", __testInternals.UNAVAILABLE_MACHINE_ID, INSTALL_ID)
+      __testInternals.deriveDeviceId("win32", __testInternals.UNAVAILABLE_MACHINE_ID, INSTALL_ID)
     );
     assert.equal(
       identity.machineHash,
-      __testInternals.deriveMachineHash("linux", __testInternals.UNAVAILABLE_MACHINE_ID)
+      __testInternals.deriveMachineHash("win32", __testInternals.UNAVAILABLE_MACHINE_ID)
     );
+
+    const sameProcess = getDesktopDeviceIdentity(app, {
+      platform: "win32",
+      now: fixedNow(REBOUND_AT),
+      readMachineIdentity: () => assert.fail("cached identity must not probe the machine again")
+    });
+    assert.deepEqual(sameProcess, identity);
+
+    __testInternals.clearDesktopDeviceIdentityCache(getDesktopDeviceIdentityPath(app));
+    const rebound = getDesktopDeviceIdentity(app, {
+      platform: "win32",
+      now: fixedNow(REBOUND_AT),
+      readMachineIdentity: () => machineIdentity(MACHINE_B, "windowsMachineGuid")
+    });
+    assert.equal(rebound.deviceId, __testInternals.deriveDeviceId("win32", MACHINE_B, INSTALL_ID));
+    assert.equal(rebound.machineSource, "windowsMachineGuid");
+    assert.equal(rebound.lastMachineMismatchAt, REBOUND_AT);
   } finally {
     cleanup();
   }

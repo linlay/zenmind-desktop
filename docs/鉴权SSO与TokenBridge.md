@@ -43,6 +43,8 @@ Cookie SSO 的主流程为：
 
 首次启动后导入 SSO 配置，只能把状态变为“可登录”，不能绕过启动恢复重新发布旧凭据。账号切换必须先完成退出清理，再发起新登录。
 
+Desktop 设备身份与账号会话分开管理，但共同参与 Realtime generation 的身份键。Main 每个进程只在首次读取设备身份时探测一次 macOS IOPlatformUUID 或 Windows MachineGuid，确认后必须在该进程内保持同一 deviceId；若探测暂时不可用且磁盘已有有效机器绑定，必须保留原绑定且不得更新时间戳或改写身份文件。只有新进程首次读取到不同的有效机器标识时才重新绑定。账号、session、endpoint 或确认后的 deviceId 真实变化仍必须失效旧 generation，且不得恢复或自动重放未完成请求。
+
 ## 凭据分发
 
 ### Agent WebClient Host 与可信 Bridge

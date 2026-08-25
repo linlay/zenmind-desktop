@@ -41,6 +41,11 @@ export type RealtimeConnectionKey = {
   identitySessionId: string;
 };
 
+export type RealtimeIdentityRotationReason =
+  | "explicit_identity_invalidation"
+  | "endpoint_changed"
+  | "identity_session_changed";
+
 export type AgentPlatformRealtimeConnectionState = {
   phase: AgentWebclientConnectionPhase;
   generation: number;
@@ -247,8 +252,8 @@ export class AgentPlatformRealtimeClient {
     return { ...this.state, key: this.state.key ? { ...this.state.key } : null };
   }
 
-  requiresRotation(baseUrl: string, token: string) {
-    if (!this.currentKey) return false;
+  getRotationReason(baseUrl: string, token: string): RealtimeIdentityRotationReason | null {
+    if (!this.currentKey) return null;
     const nextKey = {
       endpoint: normalizeAgentPlatformRealtimeEndpoint(baseUrl),
       identitySessionId: createAgentPlatformIdentitySessionId(
@@ -256,8 +261,13 @@ export class AgentPlatformRealtimeClient {
         getDesktopDeviceId(this.options.app),
       ),
     };
-    return this.currentKey.endpoint !== nextKey.endpoint ||
-      this.currentKey.identitySessionId !== nextKey.identitySessionId;
+    if (this.currentKey.endpoint !== nextKey.endpoint) {
+      return "endpoint_changed";
+    }
+    if (this.currentKey.identitySessionId !== nextKey.identitySessionId) {
+      return "identity_session_changed";
+    }
+    return null;
   }
 
   async ensureConnected(baseUrl: string, token: string) {
@@ -270,12 +280,12 @@ export class AgentPlatformRealtimeClient {
       endpoint: normalizedBaseUrl,
       identitySessionId: createAgentPlatformIdentitySessionId(token, deviceId),
     };
-    if (
-      this.currentKey &&
-      (this.currentKey.endpoint !== nextKey.endpoint ||
-        this.currentKey.identitySessionId !== nextKey.identitySessionId)
-    ) {
-      this.rotateConnection("endpoint or identity changed");
+    if (this.currentKey) {
+      if (this.currentKey.endpoint !== nextKey.endpoint) {
+        this.rotateConnection("endpoint changed");
+      } else if (this.currentKey.identitySessionId !== nextKey.identitySessionId) {
+        this.rotateConnection("identity changed");
+      }
     }
     this.currentKey = nextKey;
     this.currentBaseUrl = normalizedBaseUrl;

@@ -26,6 +26,7 @@ function nextTurn() {
 function createHarness(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-realtime-broker-"));
   const sockets = [];
+  const diagnostics = [];
   class FakeSocket {
     constructor(url) {
       this.url = url;
@@ -72,12 +73,13 @@ function createHarness(t, options = {}) {
     connectTimeoutMs: 100,
     heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? 0,
     acceptanceTimeoutMs: 500,
+    onDiagnostic: (message) => diagnostics.push(message),
   });
   t.after(() => {
     broker.dispose();
     fs.rmSync(root, { recursive: true, force: true });
   });
-  return { broker, sockets, token: jwt() };
+  return { broker, diagnostics, sockets, token: jwt() };
 }
 
 test("physical realtime connection waits for the Platform v2 handshake", async (t) => {
@@ -160,6 +162,21 @@ test("realtime connection identity excludes token rotation claims and normalizes
     createAgentPlatformIdentitySessionId(jwt({ sid: "different" }), "device-1"),
   );
   assert.equal(normalizeAgentPlatformRealtimeEndpoint("HTTP://127.0.0.1:11789///?token=never-keyed"), "http://127.0.0.1:11789");
+});
+
+test("RealtimeBroker records redacted endpoint and explicit identity rotation reasons", async (t) => {
+  const { broker, diagnostics, sockets, token } = createHarness(t);
+  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  await broker.ensureConnected("http://127.0.0.1:11790", token);
+  assert.equal(sockets.length, 2);
+  assert.deepEqual(diagnostics, ["realtime_identity_rotation:endpoint_changed"]);
+
+  broker.rotateIdentity();
+  assert.deepEqual(diagnostics, [
+    "realtime_identity_rotation:endpoint_changed",
+    "realtime_identity_rotation:explicit_identity_invalidation",
+  ]);
+  assert.equal(diagnostics.some((message) => message.includes(token)), false);
 });
 
 test("RealtimeBroker multiplexes concurrent Runs and local request ids over one physical socket", async (t) => {
@@ -656,7 +673,7 @@ test("RealtimeBroker restores an accepted Run with attach(lastSeq) and never res
 });
 
 test("RealtimeBroker closes the old identity generation before starting work for a new identity", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
+  const { broker, diagnostics, sockets, token } = createHarness(t);
   const first = broker.query({
     baseUrl: "http://127.0.0.1:11789", token, id: "identity-one", runId: "run-one", chatId: "chat-one",
     owner: { kind: "agent", agentKey: "coder" },
@@ -675,6 +692,7 @@ test("RealtimeBroker closes the old identity generation before starting work for
     owner: { kind: "agent", agentKey: "coder" }, payload: {}, onEvent: () => {},
   });
   await assert.rejects(first.completed, /identity was invalidated/);
+  assert.deepEqual(diagnostics, ["realtime_identity_rotation:identity_session_changed"]);
   sockets[0].emit({ frame: "push", type: "chat.updated", data: { chatId: "stale" } });
   await nextTurn();
   assert.equal(sockets.length, 2);
