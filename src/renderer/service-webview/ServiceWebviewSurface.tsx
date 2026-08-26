@@ -44,6 +44,7 @@ import type {
   CanonicalChatSyncRequest,
   CanonicalChatSyncResult,
   DesktopPageContextSnapshot,
+  RendererDiagnosticReport,
 } from "../../shared/contracts";
 import {
   classifyAgentWebclientNewChatRegistration,
@@ -210,7 +211,42 @@ const AGENT_WEBCLIENT_WORK_PANEL_ROLES = new Set<SurfaceIdentity["surfaceRole"]>
   "agent",
   "copilot",
 ]);
+type ServiceWebviewDiagnosticLevel = "debug" | "warn" | "error";
+const SERVICE_WEBVIEW_DIAGNOSTIC_AGGREGATION_MS = 500;
+const SERVICE_WEBVIEW_ERROR_STAGES = new Set([
+  "direct-route-load-failed",
+  "execute-script-failed",
+]);
+const SERVICE_WEBVIEW_WARN_STAGES = new Set([
+  "direct-route-client-navigation-failed",
+  "execute-script-skipped",
+  "new-chat-preparation-identity-changed",
+  "new-chat-preparation-timeout",
+]);
 let serviceSurfaceRegistrationSequence = 0;
+
+function resolveServiceWebviewDiagnosticLevel(
+  stage: string,
+  details: Record<string, unknown>,
+): ServiceWebviewDiagnosticLevel {
+  if (stage === "did-fail-load") {
+    return details.errorCode === -3 ? "debug" : "error";
+  }
+  if (stage === "surface-registration-failed") {
+    return typeof details.attempt === "number" && details.attempt >= 3
+      ? "error"
+      : "warn";
+  }
+  if (stage === "surface-registration-rejected") {
+    return details.reason === "ownership_conflict" ||
+      details.reason === "invalid_registration"
+      ? "error"
+      : "warn";
+  }
+  if (SERVICE_WEBVIEW_ERROR_STAGES.has(stage)) return "error";
+  if (SERVICE_WEBVIEW_WARN_STAGES.has(stage)) return "warn";
+  return "debug";
+}
 
 function createServiceSurfaceRegistrationId() {
   serviceSurfaceRegistrationSequence += 1;
@@ -634,6 +670,11 @@ export function ServiceWebviewSurface({
     webContentsId: number | undefined;
   } | null>(null);
   const runtimeProtectionReasonsRef = useRef(new Set<string>());
+  const diagnosticBucketsRef = useRef(new Map<string, {
+    count: number;
+    timerId: number;
+    report: RendererDiagnosticReport;
+  }>());
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
   const pendingCanonicalChatSyncRef = useRef<PendingCanonicalChatSync | null>(null);
   const pendingNewChatPreparationRef = useRef<PendingNewChatPreparation | null>(null);
@@ -650,6 +691,13 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     return registerServiceSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
+
+  useEffect(() => () => {
+    for (const bucket of diagnosticBucketsRef.current.values()) {
+      window.clearTimeout(bucket.timerId);
+    }
+    diagnosticBucketsRef.current.clear();
+  }, []);
 
   useEffect(() => {
     return () => {
@@ -1376,6 +1424,10 @@ export function ServiceWebviewSurface({
     stage: string,
     details: Record<string, unknown> = {},
   ) {
+    const level = resolveServiceWebviewDiagnosticLevel(stage, details);
+    if (level === "debug" && !import.meta.env.DEV) {
+      return;
+    }
     const targetWebview = webviewRef.current;
     let currentUrl = "";
     let webContentsId: number | undefined;
@@ -1385,7 +1437,8 @@ export function ServiceWebviewSurface({
     } catch {
       // The guest can disappear during route changes or app shutdown.
     }
-    window.electronAPI.diagnostics?.reportRendererError({
+    const report: RendererDiagnosticReport = {
+      level,
       source: "service-webview",
       message: stage,
       filename: "ServiceWebviewSurface.tsx",
@@ -1402,7 +1455,56 @@ export function ServiceWebviewSurface({
         webContentsId,
         ...details,
       },
-    });
+    };
+    const sendReport = (nextReport: RendererDiagnosticReport) => {
+      window.electronAPI.diagnostics?.reportRendererError(nextReport);
+    };
+    if (level !== "debug") {
+      sendReport(report);
+      return;
+    }
+
+    const diagnosticUrl =
+      typeof details.url === "string"
+        ? details.url
+        : typeof details.targetUrl === "string"
+          ? details.targetUrl
+          : currentUrl;
+    const bucketKey = [
+      surfaceId,
+      webContentsId ?? "pending",
+      stage,
+      diagnosticUrl,
+    ].join("\u0000");
+    const existingBucket = diagnosticBucketsRef.current.get(bucketKey);
+    if (existingBucket) {
+      existingBucket.count += 1;
+      existingBucket.report = report;
+      return;
+    }
+
+    const bucket = {
+      count: 1,
+      timerId: 0,
+      report,
+    };
+    bucket.timerId = window.setTimeout(() => {
+      const currentBucket = diagnosticBucketsRef.current.get(bucketKey);
+      if (currentBucket !== bucket) return;
+      diagnosticBucketsRef.current.delete(bucketKey);
+      if (currentBucket.count > 1) {
+        sendReport({
+          ...currentBucket.report,
+          details: {
+            ...currentBucket.report.details,
+            aggregated: true,
+            repeatCount: currentBucket.count,
+          },
+        });
+      }
+    }, SERVICE_WEBVIEW_DIAGNOSTIC_AGGREGATION_MS);
+    diagnosticBucketsRef.current.set(bucketKey, bucket);
+    sendReport(report);
   }
 
   function readCurrentWebviewUrl() {

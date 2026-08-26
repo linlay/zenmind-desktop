@@ -1097,8 +1097,9 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
         return;
       }
       reporter("console-message", {
+        diagnosticLevel: level === 2 ? "warn" : "error",
         platform: options.platform,
-        level,
+        consoleLevel: level,
         message,
         line,
         sourceId

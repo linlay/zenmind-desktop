@@ -24,6 +24,7 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
 
   componentDidCatch(error: Error, errorInfo: ErrorInfo) {
     window.electronAPI.diagnostics?.reportRendererError({
+      level: "error",
       source: "react-error-boundary",
       message: error.message,
       stack: error.stack,

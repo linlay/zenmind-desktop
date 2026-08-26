@@ -9,7 +9,7 @@ import type {
   ServiceLogStreamEvent,
   ServiceLogStreamOptions
 } from "../../shared/contracts";
-import { getLogsRoot } from "../user-paths";
+import { getDataRoot } from "../user-paths";
 import {
   LOG_READ_WINDOW_BYTES,
   normalizeLogStreamOffset,
@@ -25,15 +25,30 @@ const DESKTOP_LOG_SERVICE_ID = "desktop";
 const KANBAN_WS_LOG_LIMIT_BYTES = 10 * 1024 * 1024;
 const REDACTED_LOG_VALUE = "[REDACTED]";
 const REDACTED_LOCAL_PAYLOAD = "[REDACTED_LOCAL_PAYLOAD]";
+const DESKTOP_LOG_FLUSH_INTERVAL_MS = 50;
+const DESKTOP_LOG_FLUSH_BYTES = 64 * 1024;
+const DESKTOP_LOG_EXIT_FLUSH_TIMEOUT_MS = 500;
+const DESKTOP_LOG_MAX_DEPTH = 4;
+const DESKTOP_LOG_MAX_ARRAY_LENGTH = 50;
+const DESKTOP_LOG_MAX_STRING_LENGTH = 4 * 1024;
+const DESKTOP_LOG_MAX_LINE_LENGTH = 64 * 1024;
 let consoleTeeInstalled = false;
+const desktopLogRoots = new WeakMap<object, Map<NodeJS.Platform, string>>();
 
-function getDesktopLogPath(app: App, target: DesktopLogTarget) {
+type DesktopLogBatchQueue = ReturnType<typeof createDesktopLogBatchQueue>;
+const desktopLogBatchQueues = new WeakMap<object, DesktopLogBatchQueue>();
+
+function getDesktopLogPath(
+  app: App,
+  target: DesktopLogTarget,
+  platform: NodeJS.Platform = process.platform,
+) {
   const filename = target === "error"
     ? "error.log"
     : target === "kanban-ws"
       ? "kanban-ws.log"
       : "main.log";
-  return path.join(getDesktopLogRoot(app), filename);
+  return path.join(getDesktopLogRoot(app, platform), filename);
 }
 
 function normalizeDesktopLogTarget(target: unknown): DesktopLogTarget {
@@ -43,26 +58,122 @@ function normalizeDesktopLogTarget(target: unknown): DesktopLogTarget {
   return "main";
 }
 
+function truncateLogString(value: string, maxLength = DESKTOP_LOG_MAX_STRING_LENGTH) {
+  if (value.length <= maxLength) return value;
+  return `${value.slice(0, maxLength)}…[truncated ${value.length - maxLength} chars]`;
+}
+
 function stringifyConsoleArgs(args: unknown[]) {
-  return args.map((arg) => {
+  const limitedArgs = args.slice(0, DESKTOP_LOG_MAX_ARRAY_LENGTH);
+  const serialized = limitedArgs.map((arg) => {
     if (typeof arg === "string") {
-      return arg;
+      return truncateLogString(arg);
     }
     return util.inspect(arg, {
-      depth: 8,
+      depth: DESKTOP_LOG_MAX_DEPTH,
+      maxArrayLength: DESKTOP_LOG_MAX_ARRAY_LENGTH,
+      maxStringLength: DESKTOP_LOG_MAX_STRING_LENGTH,
       breakLength: 160,
       compact: false
     });
-  }).join(" ");
+  });
+  if (args.length > limitedArgs.length) {
+    serialized.push(`…[${args.length - limitedArgs.length} more args]`);
+  }
+  return truncateLogString(serialized.join(" "), DESKTOP_LOG_MAX_LINE_LENGTH);
 }
 
-function appendDesktopLogLine(filePath: string, line: string) {
-  try {
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.appendFileSync(filePath, line, "utf8");
-  } catch {
-    // Logging must never break the Desktop process.
+function createDesktopLogBatchQueue() {
+  let pendingByPath = new Map<string, string[]>();
+  let pendingBytes = 0;
+  let flushTimer: ReturnType<typeof setTimeout> | null = null;
+  let writeChain = Promise.resolve();
+
+  const clearFlushTimer = () => {
+    if (flushTimer === null) return;
+    clearTimeout(flushTimer);
+    flushTimer = null;
+  };
+  const drain = () => {
+    clearFlushTimer();
+    if (pendingBytes === 0) return writeChain;
+    const batch = pendingByPath;
+    pendingByPath = new Map();
+    pendingBytes = 0;
+    const writeBatch = async () => {
+      await Promise.all(
+        [...batch].map(([filePath, lines]) =>
+          fs.promises.appendFile(filePath, lines.join(""), "utf8")
+        ),
+      );
+    };
+    writeChain = writeChain.then(writeBatch, writeBatch).catch(() => undefined);
+    return writeChain;
+  };
+  const scheduleFlush = () => {
+    if (flushTimer !== null) return;
+    flushTimer = setTimeout(() => {
+      flushTimer = null;
+      void drain();
+    }, DESKTOP_LOG_FLUSH_INTERVAL_MS);
+  };
+
+  return {
+    enqueue(filePath: string, line: string) {
+      const lines = pendingByPath.get(filePath) ?? [];
+      lines.push(line);
+      pendingByPath.set(filePath, lines);
+      pendingBytes += Buffer.byteLength(line, "utf8");
+      if (pendingBytes >= DESKTOP_LOG_FLUSH_BYTES) {
+        void drain();
+      } else {
+        scheduleFlush();
+      }
+    },
+    async flush() {
+      await drain();
+    },
+    hasPending() {
+      return pendingBytes > 0;
+    },
+  };
+}
+
+function getDesktopLogBatchQueue(app: App) {
+  const key = app as object;
+  const existing = desktopLogBatchQueues.get(key);
+  if (existing) return existing;
+  const created = createDesktopLogBatchQueue();
+  desktopLogBatchQueues.set(key, created);
+  return created;
+}
+
+export async function flushDesktopLogs(
+  app: App,
+  timeoutMs = DESKTOP_LOG_EXIT_FLUSH_TIMEOUT_MS,
+) {
+  const queue = getDesktopLogBatchQueue(app);
+  const flushUntilEmpty = async () => {
+    do {
+      await queue.flush();
+    } while (queue.hasPending());
+  };
+  const normalizedTimeoutMs = Math.max(0, Math.min(
+    DESKTOP_LOG_EXIT_FLUSH_TIMEOUT_MS,
+    Math.floor(Number(timeoutMs) || 0),
+  ));
+  if (normalizedTimeoutMs === 0) {
+    void flushUntilEmpty();
+    return;
   }
+  let timeout: ReturnType<typeof setTimeout> | null = null;
+  await Promise.race([
+    flushUntilEmpty(),
+    new Promise<void>((resolve) => {
+      timeout = setTimeout(resolve, normalizedTimeoutMs);
+    }),
+  ]);
+  if (timeout !== null) clearTimeout(timeout);
 }
 
 function trimLogFileToLimit(filePath: string, limitBytes: number) {
@@ -86,21 +197,41 @@ function trimLogFileToLimit(filePath: string, limitBytes: number) {
 function createConsoleTee(
   app: App,
   originalWriter: ConsoleWriter,
-  level: "debug" | "error" | "info" | "log" | "warn"
+  level: "debug" | "error" | "info" | "log" | "warn",
+  options: {
+    platform?: NodeJS.Platform;
+    queue?: DesktopLogBatchQueue;
+  } = {},
 ): ConsoleWriter {
+  const platform = options.platform ?? process.platform;
+  const queue = options.queue ?? getDesktopLogBatchQueue(app);
   return (...args: unknown[]) => {
     const line = `${new Date().toISOString()} ${level.toUpperCase()} ${stringifyConsoleArgs(args)}\n`;
-    appendDesktopLogLine(getDesktopLogPath(app, "main"), line);
-    if (level === "error") {
-      appendDesktopLogLine(getDesktopLogPath(app, "error"), line);
+    try {
+      queue.enqueue(getDesktopLogPath(app, "main", platform), line);
+      if (level === "error") {
+        queue.enqueue(getDesktopLogPath(app, "error", platform), line);
+      }
+    } catch {
+      // Logging must never break the Desktop process.
     }
     originalWriter(...args);
   };
 }
 
-export function getDesktopLogRoot(app: App) {
-  const root = path.join(getLogsRoot(app), "desktop");
+export function getDesktopLogRoot(
+  app: App,
+  platform: NodeJS.Platform = process.platform,
+) {
+  const key = app as object;
+  const cachedRoots = desktopLogRoots.get(key);
+  const cachedRoot = cachedRoots?.get(platform);
+  if (cachedRoot) return cachedRoot;
+  const root = path.join(getDataRoot(app, platform), "logs", "desktop");
   fs.mkdirSync(root, { recursive: true });
+  const nextRoots = cachedRoots ?? new Map<NodeJS.Platform, string>();
+  nextRoots.set(platform, root);
+  desktopLogRoots.set(key, nextRoots);
   return root;
 }
 
@@ -203,10 +334,13 @@ function sanitizeKanbanWsLogValue(value: unknown, key = "", seen = new WeakSet<o
   return sanitized;
 }
 
-export function appendKanbanWsLog(app: App, entry: unknown) {
+export function appendKanbanWsLog(
+  app: App,
+  entry: unknown,
+  platform: NodeJS.Platform = process.platform,
+) {
   try {
-    const filePath = getDesktopLogPath(app, "kanban-ws");
-    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    const filePath = getDesktopLogPath(app, "kanban-ws", platform);
     if (fs.existsSync(filePath)) {
       trimLogFileToLimit(filePath, KANBAN_WS_LOG_LIMIT_BYTES);
     }
@@ -234,19 +368,26 @@ export function installDesktopConsoleLogTee(app: App) {
     return;
   }
   consoleTeeInstalled = true;
-  console.log = createConsoleTee(app, console.log.bind(console), "log");
-  console.info = createConsoleTee(app, console.info.bind(console), "info");
-  console.warn = createConsoleTee(app, console.warn.bind(console), "warn");
-  console.error = createConsoleTee(app, console.error.bind(console), "error");
-  console.debug = createConsoleTee(app, console.debug.bind(console), "debug");
+  getDesktopLogRoot(app);
+  const queue = getDesktopLogBatchQueue(app);
+  const writerOptions = { queue };
+  console.log = createConsoleTee(app, console.log.bind(console), "log", writerOptions);
+  console.info = createConsoleTee(app, console.info.bind(console), "info", writerOptions);
+  console.warn = createConsoleTee(app, console.warn.bind(console), "warn", writerOptions);
+  console.error = createConsoleTee(app, console.error.bind(console), "error", writerOptions);
+  console.debug = createConsoleTee(app, console.debug.bind(console), "debug", writerOptions);
 }
 
 export function readDesktopLog(
   app: App,
   target: DesktopLogTarget,
-  options: ServiceLogReadOptions = {}
+  options: ServiceLogReadOptions = {},
+  platform: NodeJS.Platform = process.platform,
 ): ServiceLogReadResult {
-  return readServiceLogFile(getDesktopLogPath(app, normalizeDesktopLogTarget(target)), options);
+  return readServiceLogFile(
+    getDesktopLogPath(app, normalizeDesktopLogTarget(target), platform),
+    options,
+  );
 }
 
 export function watchDesktopLog(
@@ -374,5 +515,11 @@ export const __testInternals = {
   getDesktopLogPath,
   KANBAN_WS_LOG_LIMIT_BYTES,
   trimLogFileToLimit,
-  sanitizeKanbanWsLogValue
+  sanitizeKanbanWsLogValue,
+  flushDesktopLogs,
+  DESKTOP_LOG_FLUSH_INTERVAL_MS,
+  DESKTOP_LOG_FLUSH_BYTES,
+  DESKTOP_LOG_MAX_DEPTH,
+  DESKTOP_LOG_MAX_ARRAY_LENGTH,
+  DESKTOP_LOG_MAX_STRING_LENGTH
 };

@@ -727,7 +727,10 @@ export type DesktopConfigChangedEvent = {
 };
 export type DesktopConfigChangedListener = (event: DesktopConfigChangedEvent) => void;
 
+export type RendererDiagnosticLevel = "debug" | "warn" | "error";
+
 export interface RendererDiagnosticReport {
+  level: RendererDiagnosticLevel;
   source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview";
   message: string;
   details?: Record<string, unknown>;

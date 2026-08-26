@@ -374,11 +374,18 @@ test("global search and sidebar Chat navigation restore focus to the active main
   assert.match(openChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
 });
 
-test("service webview surface reports webview breadcrumbs for post-crash diagnosis", () => {
+test("service webview diagnostics suppress normal production lifecycle and aggregate dev breadcrumbs", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
 
   assert.match(serviceWebviewSurface, /function reportServiceWebviewDiagnostic/);
   assert.match(serviceWebviewSurface, /source:\s*"service-webview"/);
+  assert.match(
+    serviceWebviewSurface,
+    /level === "debug" && !import\.meta\.env\.DEV[\s\S]*?return;/u,
+  );
+  assert.match(serviceWebviewSurface, /resolveServiceWebviewDiagnosticLevel/u);
+  assert.match(serviceWebviewSurface, /SERVICE_WEBVIEW_DIAGNOSTIC_AGGREGATION_MS/u);
+  assert.match(serviceWebviewSurface, /repeatCount:\s*currentBucket\.count/u);
   assert.match(serviceWebviewSurface, /reportDiagnostic\("listeners-attached"\)/);
   assert.match(serviceWebviewSurface, /reportDiagnostic\("dom-ready"\)/);
   assert.match(serviceWebviewSurface, /reportDiagnostic\("navigation"/);

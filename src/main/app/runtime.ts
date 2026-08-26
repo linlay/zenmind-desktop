@@ -1201,10 +1201,24 @@ export function createMainProcessRuntime() {
   }
   
   function reportRendererDiagnostic(source: string, details: Record<string, unknown>) {
-    safeConsoleError("[renderer-diagnostic]", {
+    const diagnosticLevel =
+      details.diagnosticLevel === "debug" ||
+      details.diagnosticLevel === "warn" ||
+      details.diagnosticLevel === "error"
+        ? details.diagnosticLevel
+        : "error";
+    const payload = {
       source,
       ...details
-    });
+    };
+    if (diagnosticLevel === "debug") {
+      if (app.isPackaged) return;
+      console.debug("[renderer-diagnostic]", payload);
+    } else if (diagnosticLevel === "warn") {
+      console.warn("[renderer-diagnostic]", payload);
+    } else {
+      safeConsoleError("[renderer-diagnostic]", payload);
+    }
   }
   
   function createWindow() {
@@ -1607,6 +1621,7 @@ export function createMainProcessRuntime() {
       prepareQuitUi,
       beginRealtimeShutdown: () => realtimeBroker.beginShutdown(),
       runShutdownCleanup,
+      flushDesktopLogs: (timeoutMs) => logsRuntime.flush(timeoutMs),
       writeInstallerShutdownAcks,
       releaseAssistantRunWakeLock: () => assistantRunWakeLock.release(),
       clearDesktopPetIdleResetTimer,
