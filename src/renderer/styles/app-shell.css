@@ -645,6 +645,7 @@
 }
 
 .app-system-bar-product-name {
+  flex: 0 1 auto;
   overflow: hidden;
   color: var(--ink-muted);
   font-size: 11px;
@@ -653,6 +654,66 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   user-select: none;
+}
+
+.app-system-bar-primary-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  height: 24px;
+  margin-left: 4px;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-system-bar-action {
+  display: inline-grid;
+  flex: 0 0 24px;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  color: rgba(71, 85, 105, 0.78);
+  cursor: pointer;
+  appearance: none;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+  transition:
+    background-color 0.16s ease-in-out,
+    color 0.16s ease-in-out,
+    opacity 0.16s ease-in-out;
+}
+
+.app-system-bar-action:hover:not(:disabled),
+.app-system-bar-action:focus-visible:not(:disabled) {
+  background: var(--sidebar-operation-menu-hover);
+  color: var(--ink);
+  outline: none;
+}
+
+.app-system-bar-action.is-active {
+  background: var(--sidebar-operation-menu-hover);
+  color: var(--ink);
+}
+
+.app-system-bar-action:disabled {
+  cursor: default;
+  opacity: 0.34;
+}
+
+.app-system-bar-action svg,
+.app-system-bar-action .settings-sidebar-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+}
+
+:root[data-theme="dark"] .app-system-bar-action {
+  color: rgba(203, 213, 225, 0.72);
 }
 
 .app-system-bar-window-controls {

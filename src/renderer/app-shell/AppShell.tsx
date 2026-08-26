@@ -2,6 +2,7 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
 import {
   isCapabilityNavigationRoute,
   resolveSidebarMode,
@@ -66,7 +67,7 @@ import {
   createWebEntrySurfaceIdentity,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
-import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
+import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_MAX_WIDTH,
@@ -516,7 +517,7 @@ const BROWSER_CHROME_DRAG_BLOCK_SELECTOR = [
   ".external-webview-toolbar-location"
 ].join(",");
 
-const SIDEBAR_DRAG_BLOCK_SELECTOR = [
+const WINDOW_DRAG_BLOCK_SELECTOR = [
   "button",
   "a",
   "input",
@@ -529,12 +530,12 @@ const SIDEBAR_DRAG_BLOCK_SELECTOR = [
 
 function resolveWindowDragTarget(target: Element | null) {
   const dragRegion = target?.closest(".app-window-drag-region");
-  if (dragRegion) {
+  if (dragRegion && !target?.closest(WINDOW_DRAG_BLOCK_SELECTOR)) {
     return dragRegion;
   }
 
   const sidebarShell = target?.closest(".app-sidebar-shell");
-  if (sidebarShell && !target?.closest(SIDEBAR_DRAG_BLOCK_SELECTOR)) {
+  if (sidebarShell && !target?.closest(WINDOW_DRAG_BLOCK_SELECTOR)) {
     return sidebarShell;
   }
 
@@ -1951,6 +1952,17 @@ export function AppShell() {
     setAssistantDockOpenRequest(null);
     pendingAssistantDockOpenRequestRef.current = null;
     updateCopilotDockContextSession(currentCopilotContextKey, null);
+  }
+
+  function toggleSystemBarAssistantDock() {
+    if (isAgentWebclientMainRoute) {
+      return;
+    }
+    if (assistantCopilotOpen) {
+      closeAssistantDock();
+    } else {
+      openAssistantDock();
+    }
   }
 
   function handleCopilotCurrentEmbedPathChange(embedPath: string, agentKey: string, chatId?: string) {
@@ -4073,7 +4085,72 @@ export function AppShell() {
         >
           <div className="app-window-drag-region app-system-bar-drag-region">
             <BrandMark className="app-system-bar-brand-mark" ariaLabel={`${PRODUCT_NAME} Logo`} />
-            <span className="app-system-bar-product-name">{PRODUCT_NAME}</span>
+            {BRAND_ID !== "cutej" ? (
+              <span className="app-system-bar-product-name">{PRODUCT_NAME}</span>
+            ) : null}
+            {sidebarMode === "primary" ? (
+              <nav className="app-system-bar-primary-actions" aria-label={t("nav.main")}>
+                <button
+                  type="button"
+                  className="app-system-bar-action"
+                  aria-label={t("desktop.globalSearch.title")}
+                  title={t("desktop.globalSearch.shortcutHint")}
+                  onClick={() => setGlobalSearchOpen(true)}
+                >
+                  <SettingsSidebarIcon kind="search" />
+                </button>
+                <button
+                  type="button"
+                  className={`app-system-bar-action${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
+                  aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  aria-expanded={!effectiveSidebarCollapsed}
+                  onClick={toggleSidebarCollapsed}
+                >
+                  <SidebarActionIcon kind="sidebar_left" />
+                </button>
+                <button
+                  type="button"
+                  className="app-system-bar-action"
+                  aria-label={t("sidebar.navigation.back")}
+                  title={t("sidebar.navigation.back")}
+                  disabled={sidebarNavigationHistory.back.length === 0}
+                  onClick={handleSidebarBackNavigation}
+                >
+                  <SidebarActionIcon kind="back" />
+                </button>
+                <button
+                  type="button"
+                  className="app-system-bar-action"
+                  aria-label={t("sidebar.navigation.forward")}
+                  title={t("sidebar.navigation.forward")}
+                  disabled={sidebarNavigationHistory.forward.length === 0}
+                  onClick={handleSidebarForwardNavigation}
+                >
+                  <SidebarActionIcon kind="forward" />
+                </button>
+                {assistantLauncherVisible ? (
+                  <button
+                    type="button"
+                    className={`app-system-bar-action${assistantCopilotOpen ? " is-active" : ""}`}
+                    onClick={toggleSystemBarAssistantDock}
+                    aria-label={
+                      isAgentWebclientMainRoute
+                        ? t("sidebar.copilot.unavailableForPage", { appName: PRODUCT_NAME })
+                        : assistantCopilotOpen
+                          ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
+                          : t("sidebar.copilot.open", { appName: PRODUCT_NAME })
+                    }
+                    aria-disabled={isAgentWebclientMainRoute}
+                    aria-pressed={assistantCopilotOpen}
+                    disabled={isAgentWebclientMainRoute}
+                    title={t("sidebar.copilot.title")}
+                  >
+                    <SidebarActionIcon kind="sidebar_right" />
+                  </button>
+                ) : null}
+              </nav>
+            ) : null}
           </div>
           <div className="app-system-bar-window-controls" aria-hidden={windowControlsMasked}>
             <button

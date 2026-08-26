@@ -21,6 +21,14 @@ const windowManagerSource = fs.readFileSync(
   path.join(projectRoot, "src", "main", "window-manager.ts"),
   "utf8",
 );
+const appShellSource = fs.readFileSync(
+  path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
+  "utf8",
+);
+const appSidebarSource = fs.readFileSync(
+  path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"),
+  "utf8",
+);
 
 test("Windows 薄系统栏独立横跨主窗口并下移侧边栏与内容", () => {
   assert.match(
@@ -78,4 +86,38 @@ test("Windows 系统栏与页面使用同一主题背景色", () => {
     /const WINDOWS_BACKGROUND_DARK = "#181818";/u,
   );
   assert.doesNotMatch(windowManagerSource, /titleBarOverlay/u);
+});
+
+test("Windows 主导航动作紧跟品牌并从侧栏顶部移除", () => {
+  const brandIndex = appShellSource.indexOf('className="app-system-bar-brand-mark"');
+  const actionsIndex = appShellSource.indexOf('className="app-system-bar-primary-actions"');
+  const windowControlsIndex = appShellSource.indexOf('className="app-system-bar-window-controls"');
+
+  assert.ok(brandIndex >= 0);
+  assert.ok(actionsIndex > brandIndex);
+  assert.ok(windowControlsIndex > actionsIndex);
+  assert.match(
+    appShellSource,
+    /sidebarMode === "primary"[\s\S]{0,2200}desktop\.globalSearch\.title[\s\S]{0,1000}nav\.sidebar\.expand[\s\S]{0,1000}sidebar\.navigation\.back[\s\S]{0,800}sidebar\.navigation\.forward[\s\S]{0,1400}toggleSystemBarAssistantDock/u,
+  );
+  assert.match(
+    appShellSource,
+    /const dragRegion = target\?\.closest\("\.app-window-drag-region"\);\s*if \(dragRegion && !target\?\.closest\(WINDOW_DRAG_BLOCK_SELECTOR\)\)/u,
+  );
+  assert.match(
+    appShellSource,
+    /BRAND_ID !== "cutej" \? \(\s*<span className="app-system-bar-product-name">\{PRODUCT_NAME\}<\/span>/u,
+  );
+  assert.match(
+    appSidebarSource,
+    /!isWindows \? \([\s\S]{0,220}className="sidebar-chrome"/u,
+  );
+  assert.match(
+    appShellCss,
+    /\.app-system-bar-primary-actions\s*\{[^}]*display:\s*inline-flex;[^}]*gap:\s*2px;[^}]*height:\s*24px;[^}]*margin-left:\s*4px;/su,
+  );
+  assert.match(
+    appShellCss,
+    /\.app-system-bar-action\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*6px;/su,
+  );
 });

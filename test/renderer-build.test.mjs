@@ -6095,7 +6095,12 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShell, /target\?\.closest\("\.app-sidebar-shell"\)/);
   assert.match(appShell, /target\?\.closest\("\.external-webview-browser-chrome"\)/);
   assert.match(appShell, /browserChrome\.closest\("\.external-webview-page\.is-inactive-surface"\)/);
-  assert.match(appShell, /SIDEBAR_DRAG_BLOCK_SELECTOR/);
+  assert.match(appShell, /WINDOW_DRAG_BLOCK_SELECTOR/);
+  assert.match(appShell, /WINDOW_DRAG_BLOCK_SELECTOR = \[[\s\S]*?"button"/);
+  assert.match(
+    appShell,
+    /if \(dragRegion && !target\?\.closest\(WINDOW_DRAG_BLOCK_SELECTOR\)\)/,
+  );
   assert.doesNotMatch(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
   assert.match(appShell, /event\.button !== 0/);
   assert.match(appShell, /desktopShell\.beginWindowDrag\(\)/);
