@@ -213,6 +213,8 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   });
   registerChatWorkPanelLocalFileIpcHandlers(ipcMain, {
     getMainWindow: () => context.state.mainWindow,
+    getReviewPreloadUrl: () => options.getServiceWebviewPreloadUrl()
+      .replace(/service-webview\.js$/u, "work-panel-preview.js"),
     showFileDialog: options.showFileDialog as any,
   });
 

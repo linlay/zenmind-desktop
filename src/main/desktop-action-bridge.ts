@@ -201,6 +201,7 @@ export type DesktopActionBridgeOptions = {
     ownerChatId: string;
     rendererWebContentsId: number;
     filePath: string;
+    workspaceRelativePath: string;
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
@@ -3007,6 +3008,7 @@ async function executeOpenLocalFileAction(
     ownerChatId,
     rendererWebContentsId: mainWindow.webContents.id,
     filePath: workspaceResolution.filePath,
+    workspaceRelativePath: workspaceResolution.relativePath,
   });
   if (!prepared) {
     return fail(action, "file_unavailable", "The requested local file became unavailable.");

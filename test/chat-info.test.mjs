@@ -101,7 +101,16 @@ test("chat information dialog keeps WebClient behavior behind Desktop UI", () =>
     path.join(projectRoot, "src/preload/index.ts"),
     "utf8",
   );
+  const desktopApiSource = fs.readFileSync(
+    path.join(projectRoot, "src/shared/contracts/desktop-api.ts"),
+    "utf8",
+  );
   assert.match(dialogSource, /window\.electronAPI\.clipboard\.writeText\(value\)/u);
+  assert.match(dialogSource, /assistant\.revealChatInFolder\(/u);
+  assert.match(dialogSource, /setRevealFeedback\(result\.ok \? "idle" : "failed"\)/u);
+  assert.doesNotMatch(dialogSource, /sidebar\.chat\.infoDescription/u);
+  assert.doesNotMatch(dialogSource, /sidebar\.chat\.infoBasic/u);
+  assert.doesNotMatch(dialogSource, /revealFeedback === "revealed"/u);
   assert.match(dialogSource, /disabled=\{!state\.detail\?\.rawJson\}/u);
   assert.match(dialogSource, /buildChatInfoCopyAllText\(rows\)/u);
   assert.match(dialogSource, /event\.key !== "Escape"/u);
@@ -113,5 +122,15 @@ test("chat information dialog keeps WebClient behavior behind Desktop UI", () =>
     /actionId === "chat\.info"\) \{\s*chatInfoDialog\.open\(chat\)/u,
   );
   assert.match(ipcSource, /ipcMain\.handle\("assistant\.getChatInfo"/u);
+  assert.match(ipcSource, /ipcMain\.handle\("assistant\.revealChatInFolder"/u);
   assert.match(preloadSource, /getChatInfo: \(chatId: string\) => ipcRenderer\.invoke\("assistant\.getChatInfo", chatId\)/u);
+  assert.match(preloadSource, /revealChatInFolder: \(chatId: string\) => ipcRenderer\.invoke\("assistant\.revealChatInFolder", chatId\)/u);
+  assert.match(desktopApiSource, /revealChatInFolder: \(chatId: string\) => Promise<AssistantChatRevealResult>/u);
+
+  const enUSSource = fs.readFileSync(
+    path.join(projectRoot, "src/shared/i18n/dictionaries/enUS.ts"),
+    "utf8",
+  );
+  assert.match(enUSSource, /"sidebar\.chat\.infoTitle": "Chat information"/u);
+  assert.doesNotMatch(enUSSource, /"sidebar\.chat\.infoTitle": "Copy chat information"/u);
 });

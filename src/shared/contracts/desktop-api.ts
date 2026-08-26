@@ -10,6 +10,7 @@ import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, As
 import type {
   AssistantChatDetail,
   AssistantChatInfo,
+  AssistantChatRevealResult,
   AssistantChatOrderMutationRequest,
   AssistantChatOrderMutationResult,
   AssistantChatSearchRequest,
@@ -859,6 +860,7 @@ export interface DesktopApi {
     listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     getChatInfo: (chatId: string) => Promise<AssistantChatInfo | null>;
+    revealChatInFolder: (chatId: string) => Promise<AssistantChatRevealResult>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
     captureScreenshot: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
@@ -1049,6 +1051,7 @@ export interface DesktopApi {
   chatWorkPanel: {
     clearSession: (input: ChatWorkPanelClearSessionRequest) => Promise<{ ok: boolean }>;
     localFiles: {
+      getReviewPreloadUrl: () => Promise<string>;
       select: (input: WorkPanelLocalFileSelectRequest) => Promise<WorkPanelLocalFileSelectionResult>;
       claim: (input: WorkPanelLocalFileClaimRequest) => Promise<WorkPanelLocalFileClaimResult>;
       release: (input: WorkPanelLocalFileReleaseRequest) => Promise<WorkPanelLocalFileActionResult>;

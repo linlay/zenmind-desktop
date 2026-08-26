@@ -6,6 +6,7 @@ export const CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL =
   "chatWorkPanel.revealLocalResource";
 
 export type ChatWorkPanelTabContextMenuActionId =
+  | "toggle-review"
   | "reload"
   | "copy-url"
   | "copy-title"
@@ -34,6 +35,7 @@ export type ChatWorkPanelTabContextMenuPopupRequest =
       y: number;
       profile: ChatWorkPanelTabContextMenuProfile;
       isFullscreen: boolean;
+      reviewMode?: "unavailable" | "inactive" | "active";
       canClose: boolean;
       canCloseOthers: boolean;
     };

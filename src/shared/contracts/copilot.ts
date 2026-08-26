@@ -454,6 +454,11 @@ export interface AssistantChatInfo {
   rawJson: string;
 }
 
+export type AssistantChatRevealResult = {
+  ok: boolean;
+  message: string;
+};
+
 export interface AssistantSettingsPublic {
   baseURL: string;
   model: string;

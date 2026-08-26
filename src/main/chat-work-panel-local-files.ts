@@ -32,6 +32,9 @@ type LocalFileHandle = {
   fileName: string;
   rootRealPath: string;
   previewKind: WorkPanelLocalFilePreviewKind;
+  reviewKind?: "html" | "image";
+  workspaceRelativePath?: string;
+  reviewRevision?: string;
   partition: string;
   session: Session;
 };
@@ -41,6 +44,7 @@ type PendingLocalFileClaim = {
   ownerChatId: string;
   rendererWebContentsId: number;
   filePath: string;
+  workspaceRelativePath?: string;
   expiresAt: number;
   timeout: ReturnType<typeof setTimeout>;
 };
@@ -128,7 +132,7 @@ export function normalizeWorkPanelLocalFileRelativePath(value: unknown) {
 }
 
 export type WorkPanelLocalFilePathResolution =
-  | { ok: true; filePath: string }
+  | { ok: true; filePath: string; relativePath: string }
   | {
       ok: false;
       code: "invalid_path" | "workspace_unavailable" | "path_outside_workspace" | "file_unavailable";
@@ -168,7 +172,33 @@ export function resolveWorkPanelLocalFileFromWorkspace(
   } catch {
     return { ok: false, code: "file_unavailable", message: "The requested local file is unavailable." };
   }
-  return { ok: true, filePath };
+  return { ok: true, filePath, relativePath };
+}
+
+function getReviewKind(previewKind: WorkPanelLocalFilePreviewKind) {
+  return previewKind === "html" || previewKind === "image" ? previewKind : undefined;
+}
+
+function createLocalFileReviewRevision(filePath: string) {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.isFile() ? `${stat.size}:${Math.round(stat.mtimeMs)}` : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function selectionFromHandle(handle: LocalFileHandle): WorkPanelLocalFileSelection {
+  return {
+    handleId: handle.handleId,
+    fileName: handle.fileName,
+    previewKind: handle.previewKind,
+    ...(handle.reviewKind ? { reviewKind: handle.reviewKind } : {}),
+    ...(handle.workspaceRelativePath
+      ? { workspaceRelativePath: handle.workspaceRelativePath }
+      : {}),
+    ...(handle.reviewRevision ? { reviewRevision: handle.reviewRevision } : {}),
+  };
 }
 
 export function resolveLocalFileProtocolPath(handle: Pick<LocalFileHandle, "handleId" | "rootRealPath">, requestUrl: string) {
@@ -246,6 +276,22 @@ export class WorkPanelLocalFileRegistry {
     this.clearScheduled = options.clearScheduled ?? clearTimeout;
   }
 
+  isReviewableUrl(value: string) {
+    try {
+      const parsed = new URL(value);
+      const handleId = decodeURIComponent(parsed.hostname);
+      const handle = this.handles.get(handleId);
+      if (
+        parsed.protocol !== `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:` ||
+        !handle?.reviewKind ||
+        !handle.reviewRevision
+      ) return false;
+      return resolveLocalFileProtocolPath(handle, value) === handle.filePath;
+    } catch {
+      return false;
+    }
+  }
+
   private ownedHandle(request: WorkPanelLocalFileHandleRequest, sender: WebContents) {
     const handle = this.handles.get(cleanIdentity(request?.handleId, 256));
     return handle &&
@@ -282,6 +328,7 @@ export class WorkPanelLocalFileRegistry {
     ownerChatId: string;
     rendererWebContentsId: number;
     filePath: string;
+    workspaceRelativePath?: string;
   }) {
     const ownerChatId = cleanIdentity(input.ownerChatId);
     const rendererWebContentsId = Number.isSafeInteger(input.rendererWebContentsId) && input.rendererWebContentsId > 0
@@ -294,7 +341,14 @@ export class WorkPanelLocalFileRegistry {
     } catch {
       return null;
     }
-    if (!ownerChatId || !rendererWebContentsId) return null;
+    const workspaceRelativePath = input.workspaceRelativePath === undefined
+      ? ""
+      : normalizeWorkPanelLocalFileRelativePath(input.workspaceRelativePath);
+    if (
+      !ownerChatId ||
+      !rendererWebContentsId ||
+      (input.workspaceRelativePath !== undefined && !workspaceRelativePath)
+    ) return null;
     const claimId = this.createId();
     const expiresAt = this.now() + this.claimTtlMs;
     const claim = {
@@ -302,6 +356,7 @@ export class WorkPanelLocalFileRegistry {
       ownerChatId,
       rendererWebContentsId,
       filePath,
+      ...(workspaceRelativePath ? { workspaceRelativePath } : {}),
       expiresAt,
       timeout: undefined as unknown as ReturnType<typeof setTimeout>,
     } satisfies PendingLocalFileClaim;
@@ -340,6 +395,7 @@ export class WorkPanelLocalFileRegistry {
     ownerChatId: string,
     rendererGeneration: string,
     sender: WebContents,
+    workspaceRelativePath = "",
   ): Promise<{ file: WorkPanelLocalFileSelection; reused: boolean } | null> {
     let filePath = "";
     try {
@@ -355,12 +411,15 @@ export class WorkPanelLocalFileRegistry {
       handle.filePath === filePath,
     );
     if (existing) {
+      if (workspaceRelativePath) {
+        existing.workspaceRelativePath = workspaceRelativePath;
+        existing.reviewKind = getReviewKind(existing.previewKind);
+        existing.reviewRevision = existing.reviewKind
+          ? createLocalFileReviewRevision(filePath)
+          : undefined;
+      }
       return {
-        file: {
-          handleId: existing.handleId,
-          fileName: existing.fileName,
-          previewKind: existing.previewKind,
-        },
+        file: selectionFromHandle(existing),
         reused: true,
       };
     }
@@ -375,6 +434,8 @@ export class WorkPanelLocalFileRegistry {
       { urls: BLOCKED_LOCAL_FILE_REQUEST_PATTERNS },
       (_details, callback) => callback({ cancel: true }),
     );
+    const previewKind = classifyWorkPanelLocalFile(fileName);
+    const reviewKind = workspaceRelativePath ? getReviewKind(previewKind) : undefined;
     const handle: LocalFileHandle = {
       handleId,
       ownerChatId,
@@ -383,7 +444,10 @@ export class WorkPanelLocalFileRegistry {
       filePath,
       fileName,
       rootRealPath,
-      previewKind: classifyWorkPanelLocalFile(fileName),
+      previewKind,
+      ...(reviewKind ? { reviewKind } : {}),
+      ...(workspaceRelativePath ? { workspaceRelativePath } : {}),
+      ...(reviewKind ? { reviewRevision: createLocalFileReviewRevision(filePath) } : {}),
       partition,
       session: targetSession,
     };
@@ -395,7 +459,7 @@ export class WorkPanelLocalFileRegistry {
     });
     this.handles.set(handleId, handle);
     return {
-      file: { handleId, fileName, previewKind: handle.previewKind },
+      file: selectionFromHandle(handle),
       reused: false,
     };
   }
@@ -465,6 +529,7 @@ export class WorkPanelLocalFileRegistry {
       ownerChatId,
       rendererGeneration,
       sender,
+      claim.workspaceRelativePath,
     );
     return prepared
       ? { ok: true, file: prepared.file, reused: prepared.reused }
@@ -504,6 +569,7 @@ export function registerChatWorkPanelLocalFileIpcHandlers(
   ipcMain: Electron.IpcMain,
   options: {
     getMainWindow: () => BrowserWindow | null;
+    getReviewPreloadUrl: () => string;
     showFileDialog: (options: Electron.OpenDialogOptions, owner?: BrowserWindow | null) => Promise<Electron.OpenDialogReturnValue>;
   },
 ) {
@@ -511,6 +577,9 @@ export function registerChatWorkPanelLocalFileIpcHandlers(
     const mainWindow = options.getMainWindow();
     return Boolean(mainWindow && !mainWindow.isDestroyed() && mainWindow.webContents.id === sender.id);
   };
+  ipcMain.handle("chatWorkPanel.localFiles.getReviewPreloadUrl", async (event) =>
+    isMainRenderer(event.sender) ? options.getReviewPreloadUrl() : "",
+  );
   ipcMain.handle("chatWorkPanel.localFiles.select", async (event, request: WorkPanelLocalFileSelectRequest) => {
     if (!isMainRenderer(event.sender)) return { ok: false, files: [], message: "Unauthorized renderer." };
     return workPanelLocalFileRegistry.select(request, event.sender, options.showFileDialog, options.getMainWindow());

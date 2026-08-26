@@ -1092,6 +1092,235 @@
   min-height: 0;
 }
 
+.chat-work-panel-item {
+  container-type: inline-size;
+}
+
+.chat-work-panel-item.is-reviewing > .service-webview-surface,
+.chat-work-panel-item.is-reviewing > .external-webview-page,
+.chat-work-panel-item.is-reviewing > .chat-work-panel-local-file-fallback,
+.chat-work-panel-item.is-reviewing > .chat-work-panel-resource-actions {
+  top: 44px;
+  bottom: 250px;
+  height: auto;
+}
+
+.chat-work-panel-review-toolbar {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  right: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 44px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  background: color-mix(in srgb, var(--embedded-surface-page-bg) 94%, transparent);
+  color: var(--work-panel-tab-ink);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+
+.chat-work-panel-review-tool-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-work-panel-review-limit {
+  margin-right: auto;
+  color: var(--work-panel-tab-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.chat-work-panel-review-toolbar .ant-btn {
+  flex: 0 0 auto;
+  font-size: 11px;
+}
+
+.chat-work-panel-review-panel {
+  position: absolute;
+  z-index: 7;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  flex-direction: column;
+  height: 250px;
+  min-height: 0;
+  border-top: 1px solid var(--line-soft);
+  background: var(--embedded-surface-page-bg);
+  color: var(--work-panel-tab-ink);
+  box-shadow: 0 -10px 28px rgba(15, 23, 42, 0.09);
+}
+
+.chat-work-panel-review-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 10px 8px;
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.chat-work-panel-review-panel-header > div {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.chat-work-panel-review-panel-header strong {
+  font-size: 13px;
+}
+
+.chat-work-panel-review-panel-header span {
+  overflow: hidden;
+  color: var(--work-panel-tab-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-work-panel-review-list {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 8px;
+  overflow: auto;
+}
+
+.chat-work-panel-review-empty {
+  margin: auto;
+  padding: 18px;
+  color: var(--work-panel-tab-muted);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.chat-work-panel-review-annotation {
+  padding: 8px;
+  border: 1px solid var(--line-soft);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--embedded-surface-page-bg) 94%, var(--work-panel-tab-strip));
+}
+
+.chat-work-panel-review-annotation.is-invalid {
+  border-color: color-mix(in srgb, #ff4d4f 58%, var(--line-soft));
+}
+
+.chat-work-panel-review-annotation > header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.chat-work-panel-review-number,
+.chat-work-panel-tab-review-count {
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: #ff4d4f;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chat-work-panel-tab-review-count {
+  min-width: 17px;
+  height: 17px;
+  padding: 0 4px;
+  font-size: 10px;
+  pointer-events: none;
+}
+
+.chat-work-panel-review-target {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.chat-work-panel-review-target code {
+  display: block;
+  overflow: hidden;
+  color: var(--work-panel-tab-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-work-panel-review-element-summary {
+  margin: -2px 0 6px 26px;
+  overflow: hidden;
+  color: var(--work-panel-tab-muted);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-work-panel-review-invalid-copy,
+.chat-work-panel-review-error {
+  color: #cf1322;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.chat-work-panel-review-invalid-copy {
+  margin: -2px 0 6px 26px;
+}
+
+.chat-work-panel-review-error {
+  margin: 8px 8px 0;
+  padding: 7px 8px;
+  border-radius: 8px;
+  background: rgba(255, 77, 79, 0.1);
+}
+
+.chat-work-panel-review-annotation .ant-input-textarea-show-count::after {
+  color: var(--work-panel-tab-muted);
+  font-size: 9px;
+}
+
+@container (min-width: 720px) {
+  .chat-work-panel-item.is-reviewing > .service-webview-surface,
+  .chat-work-panel-item.is-reviewing > .external-webview-page,
+  .chat-work-panel-item.is-reviewing > .chat-work-panel-local-file-fallback,
+  .chat-work-panel-item.is-reviewing > .chat-work-panel-resource-actions {
+    right: 320px;
+    bottom: 0;
+  }
+
+  .chat-work-panel-review-toolbar {
+    right: 320px;
+  }
+
+  .chat-work-panel-review-panel {
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: auto;
+    width: 320px;
+    height: auto;
+    border-top: 0;
+    border-left: 1px solid var(--line-soft);
+    box-shadow: -10px 0 28px rgba(15, 23, 42, 0.09);
+  }
+}
+
 .chat-work-panel-item[hidden] {
   display: none !important;
 }
@@ -1614,6 +1843,208 @@
 
 .chat-work-panel .external-webview-browser-chrome {
   display: none;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser.has-browser-toolbar .external-webview-browser-chrome {
+  display: flex;
+  cursor: default;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-tabbar {
+  display: none;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar {
+  flex: 0 0 48px;
+  gap: 8px;
+  min-height: 48px;
+  padding: 9px 12px;
+  border-bottom: 1px solid #e3e7ec;
+  background: #f8fafc;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions {
+  flex: 0 0 auto;
+  gap: 5px;
+  height: 30px;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions::after {
+  content: "";
+  flex: 0 0 1px;
+  align-self: center;
+  width: 1px;
+  height: 20px;
+  margin-left: 9px;
+  background: #d7dce2;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button {
+  width: 34px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: #30343b;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: #eef2f6;
+  color: #1f2328;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button:focus-visible,
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid color-mix(in srgb, var(--browser-accent) 58%, transparent);
+  outline-offset: -2px;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button:disabled {
+  color: #aeb4bd;
+  opacity: 0.62;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location {
+  height: 30px;
+  min-height: 30px;
+  overflow: hidden;
+  padding: 0 0 0 10px;
+  border: 1px solid #dce2e8;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location:focus-within {
+  border-color: #dce2e8;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location.is-editing:focus-within {
+  border-color: var(--browser-accent);
+  box-shadow: 0 0 0 1px var(--browser-accent-glow);
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location-icon {
+  width: 15px;
+  height: 15px;
+  margin-right: 7px;
+  color: #6b7280;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location-icon svg {
+  width: 15px;
+  height: 15px;
+  fill: currentColor;
+  stroke: none;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location-input {
+  flex: 1 1 auto;
+  width: auto;
+  overflow: hidden;
+  font-size: 13px;
+  font-weight: 450;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 20px;
+  margin-left: 8px;
+  padding: 0 11px 0 9px;
+  border: 0;
+  border-left: 1px solid #d7dce2;
+  border-radius: 0;
+  background: transparent;
+  color: #3f4650;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 150ms ease, box-shadow 150ms ease, color 150ms ease;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit:hover {
+  background: #eef2f6;
+  color: #1f2328;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit svg {
+  width: 14px;
+  height: 14px;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+  background: #23272e;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #2b3037;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions::after,
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions::after {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button {
+  color: #e2e7ed;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button:hover:not(:disabled) {
+  border-color: transparent;
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button:disabled {
+  color: #777f89;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location:focus-within {
+  border-color: rgba(255, 255, 255, 0.18);
+  background: #2b3037;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location.is-editing:focus-within {
+  border-color: var(--browser-accent);
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location-icon {
+  color: #aeb4bd;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit {
+  color: #d8dde4;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .chat-work-panel .external-webview-frame-shell {

@@ -32,6 +32,12 @@ const allowedLinePatterns = [
 
 const allowedBlocks = [
   {
+    file: "src/shared/work-panel-review.ts",
+    start: /^export function buildWorkPanelReviewComposerDraft/u,
+    end: /^\}$/u,
+    reason: "fixed AI-facing WorkPanel review draft protocol"
+  },
+  {
     file: "src/shared/desktop-pet.ts",
     start: /DESKTOP_PET_DONE_FALLBACK_TEXT|DESKTOP_PET_GENERIC_PREVIEW_TEXTS|DESKTOP_PET_STATUS_HINT_TEXTS/u,
     end: /\]\s+as const;|\]\);|DESKTOP_PET_DONE_FALLBACK_TEXT/u,

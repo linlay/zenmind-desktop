@@ -28,6 +28,9 @@ export type WorkPanelLocalFileSelection = {
   handleId: string;
   fileName: string;
   previewKind: WorkPanelLocalFilePreviewKind;
+  reviewKind?: "html" | "image";
+  workspaceRelativePath?: string;
+  reviewRevision?: string;
 };
 
 export type WorkPanelLocalFileSelectRequest = {

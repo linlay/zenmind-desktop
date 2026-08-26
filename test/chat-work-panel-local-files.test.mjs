@@ -152,7 +152,9 @@ function createFakeSession() {
 test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and network-isolated", async () => {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-workpanel-claim-"));
   const filePath = path.join(tempRoot, "report.html");
+  const siblingPath = path.join(tempRoot, "sibling.html");
   fs.writeFileSync(filePath, "<!doctype html>");
+  fs.writeFileSync(siblingPath, "<!doctype html><title>sibling</title>");
   const fake = createFakeSession();
   const scheduled = [];
   let sequence = 0;
@@ -194,6 +196,9 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
       file: { handleId: "local-2", fileName: "report.html", previewKind: "html" },
       reused: false,
     });
+    assert.equal(registry.isReviewableUrl(
+      `zenmind-local-file://${claimed.file.handleId}/report.html`,
+    ), false);
     assert.equal(scheduled[0].cleared, true);
     assert.equal((await registry.claim({
       claimId: prepared.claimId,
@@ -205,6 +210,7 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
       ownerChatId: "chat-owner",
       rendererWebContentsId: sender.id,
       filePath,
+      workspaceRelativePath: "report.html",
     });
     const reused = await registry.claim({
       claimId: second.claimId,
@@ -214,6 +220,14 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
     assert.equal(reused.ok, true);
     assert.equal(reused.reused, true);
     assert.equal(reused.file.handleId, claimed.file.handleId);
+    assert.equal(reused.file.reviewKind, "html");
+    assert.equal(reused.file.workspaceRelativePath, "report.html");
+    assert.equal(registry.isReviewableUrl(
+      `zenmind-local-file://${claimed.file.handleId}/report.html`,
+    ), true);
+    assert.equal(registry.isReviewableUrl(
+      `zenmind-local-file://${claimed.file.handleId}/sibling.html`,
+    ), false);
 
     let permissionAllowed = true;
     fake.state.permissionRequestHandler({}, "media", (allowed) => {
@@ -235,6 +249,9 @@ test("WorkPanel local file claims are one-time, owner-bound, deduplicated, and n
       rendererGeneration: "renderer-1",
       handleIds: [claimed.file.handleId],
     }, sender), { ok: true });
+    assert.equal(registry.isReviewableUrl(
+      `zenmind-local-file://${claimed.file.handleId}/report.html`,
+    ), false);
     assert.deepEqual(fake.state.unhandled, ["zenmind-local-file"]);
     await new Promise((resolve) => setImmediate(resolve));
     assert.equal(fake.state.storageClears, 1);

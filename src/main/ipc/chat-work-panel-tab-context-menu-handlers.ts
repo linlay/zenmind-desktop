@@ -74,17 +74,19 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   }
   if (
     value.mode === "work-panel" &&
-    keys.length === 7 &&
+    (keys.length === 7 || keys.length === 8) &&
     keys.includes("mode") &&
     keys.includes("x") &&
     keys.includes("y") &&
     keys.includes("profile") &&
     keys.includes("isFullscreen") &&
+    (keys.length === 7 || keys.includes("reviewMode")) &&
     keys.includes("canClose") &&
     keys.includes("canCloseOthers") &&
     typeof value.profile === "string" &&
     WORK_PANEL_CONTEXT_MENU_PROFILES.has(value.profile as ChatWorkPanelTabContextMenuProfile) &&
     typeof value.isFullscreen === "boolean" &&
+    (value.reviewMode === undefined || value.reviewMode === "unavailable" || value.reviewMode === "inactive" || value.reviewMode === "active") &&
     typeof value.canClose === "boolean" &&
     typeof value.canCloseOthers === "boolean"
   ) {
@@ -94,6 +96,9 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
       y: Math.round(value.y),
       profile: value.profile as ChatWorkPanelTabContextMenuProfile,
       isFullscreen: value.isFullscreen,
+      ...(value.reviewMode === "inactive" || value.reviewMode === "active"
+        ? { reviewMode: value.reviewMode }
+        : {}),
       canClose: value.canClose,
       canCloseOthers: value.canCloseOthers
     };
@@ -109,6 +114,15 @@ function buildWorkPanelTemplate(
   const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
   const resourceProfile = request.profile === "artifact" || request.profile === "reference";
   const currentTabItems = [
+    ...(!request.reviewMode || request.reviewMode === "unavailable"
+      ? []
+      : [{
+          id: "toggle-review",
+          label: t(request.reviewMode === "active"
+            ? "chatWorkPanel.tabContextMenu.exitReview"
+            : "chatWorkPanel.tabContextMenu.enterReview"),
+          click: click("toggle-review")
+        }]),
     {
       id: "toggle-fullscreen",
       label: t(request.isFullscreen

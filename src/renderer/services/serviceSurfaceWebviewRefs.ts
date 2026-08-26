@@ -38,3 +38,7 @@ export function getActiveServiceSurfaceWebviewRef() {
 export function getActiveServiceSurfaceWebview() {
   return getActiveServiceSurfaceWebviewRef()?.current ?? null;
 }
+
+export function getServiceSurfaceWebview(surfaceId: string) {
+  return serviceSurfaceWebviewRefs.get(surfaceId)?.current ?? null;
+}
