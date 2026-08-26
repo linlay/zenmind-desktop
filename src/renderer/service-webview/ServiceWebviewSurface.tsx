@@ -110,6 +110,7 @@ type ServiceWebviewSurfaceProps = {
   focusRequestId?: number | null;
   onFocusRequestHandled?: (requestId: number) => void;
   onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
+  onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -491,6 +492,7 @@ export function ServiceWebviewSurface({
   focusRequestId,
   onFocusRequestHandled,
   onCurrentUrlChange,
+  onIpcMessage,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -1732,6 +1734,7 @@ export function ServiceWebviewSurface({
   }
 
   function handleWebviewBridgeMessage(event: Event) {
+    onIpcMessage?.(event as Event & { channel?: string; args?: unknown[] });
     const channel = readEventString(event, "channel");
     if (channel === SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL) {
       const [state] = ((event as Event & { args?: unknown[] }).args ?? []) as [
@@ -1942,6 +1945,7 @@ export function ServiceWebviewSurface({
     bridgeProtocol,
     bridgeReady,
     ownsActiveSurface,
+    onIpcMessage,
     serviceId,
     surfaceId,
     service?.id,

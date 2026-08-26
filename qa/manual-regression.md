@@ -6,8 +6,16 @@
 - 在浅色、深色、Windows 标题栏偏移和 WorkPanel 全屏下检查菜单定位、圆角、hover/focus、Esc、方向键、Home/End 与 Enter。
 - 确认菜单顺序为 Terminal、Web、Files、Side Chat、Project、WebApp；Terminal 禁用且没有快捷键或 PTY。
 - Web 输入无协议域名时补 `https://`；拒绝凭据和非 HTTP(S) URL。重复 URL 激活已有 tab，不共享 Website/SSO partition；popup 留在所属 Chat。
+- 激活普通 Web tab 时确认标签栏下只增加一行浏览器工具栏：后退、前进、刷新按真实导航状态启用，地址默认只读，点击“编辑”后可输入并以 Enter 导航、Esc 取消；WebClient、WebApp、本地文件和其他 item 不显示该行。
+- 在浅色、深色、默认窄 WorkPanel、拉宽与全屏状态检查分段按钮、地址截断、编辑按钮和键盘 focus；窄宽度仍保留完整编辑入口，地址安全截断且不挤出工具栏。
 - 连续新增两个 Side Chat，确认都导航 `/btw/:chatId` 且 guest/instance 独立；active BTW 可调用 BTW/attach，不能 query；切换、隐藏、关闭不取消后台 Run。
 - KBASE 显示可用 Project；CODER 仅在 workspace 有效时可用，并携带当前 chatId 与 lastRunId；普通 Agent 不显示 Project。
+
+## Chat information
+
+- 从 Chat 上下文菜单打开信息弹窗，确认标题为 `Chat information`，详情字段、逐项复制、`Copy all`、`Copy JSON`、关闭按钮及键盘 Esc 均正常，浅色与深色主题下层级、hover、focus 和滚动区域清晰。
+- macOS 点击 `Reveal in Finder`，Windows 点击 `Show in File Explorer`；有 Chat 目录时定位该目录，只有持久化 JSONL 时定位该文件，renderer 返回值和错误信息均不包含绝对路径。
+- 使用包含 `/`、`\\` 或 `..` 的伪造 Chat ID 调用 reveal IPC，确认请求被拒绝且不会打开任意目录。
 
 ## WebApp 单一展示所有权
 
@@ -26,6 +34,15 @@
 - 从带 canonical Chat grant 的内部 Platform Run 调用 `desktop.workpanel.openLocalFile`，确认 workspace 相对路径可打开；绝对路径、`file://`、`..`、缺失 workspace 及所有 HTTP/WS/WebApp/调试入口均失败且不弹确认。
 - 重复选择同一文件激活已有 tab；关闭 tab、关闭 workspace、移除 Chat 和退出 renderer 后句柄释放。
 - HTML 同目录相对图片/样式可加载；确认 HTTP(S)、WebSocket、FTP、外部导航和 popup 均被阻止，并且没有 Desktop SSO、Token、WebApp bridge、Node 或权限能力。用户手选与内部 Platform Agent 打开的本地文件必须使用相同隔离策略。
+
+## WorkPanel HTML/图片评审批注
+
+- 在 canonical Coder workspace 中分别打开 HTML 与图片；确认只有 Tab 右键出现“进入编辑模式”，普通 Web/WebApp、用户手选的项目外文件、PDF/文本及不支持 capability 的 Resource Viewer 不显示入口。
+- 图片在默认窄宽度、宽 WorkPanel、全屏、滚动和窗口缩放下框选多个区域；确认画面与列表编号一致，坐标按原图像素显示，删除中间区域后连续重新编号，最多 50 条且每条要求最多 1000 字。
+- HTML 进入元素选择后悬停并点击同名兄弟元素；确认页面链接/按钮不执行，批注显示唯一 Full XPath。滚动后定位框跟随；刷新、资源版本变化或删除目标元素后显示失效且不能交给智能体。跨域 iframe、Shadow DOM、伪元素和文本选择保持只读。
+- 在已有 Composer 内容时交接图片评审；确认原内容不被覆盖、使用分隔符追加固定格式草稿，并出现带编号矩形的临时 PNG。发送前观察网络请求，确认没有附件上传；点击发送后才上传并随 query 发送。取消、插入失败或图片导出失败时原批注仍保留。
+- 交接 HTML 时确认只包含 Full XPath 与修改要求，不包含完整 DOM、密码/表单值、Token、绝对路径或资源鉴权 URL。workspace 草稿要求原位修改；Artifact/Reference 草稿要求保留原资源并生成新版本。
+- 含草稿 tab、关闭其他 tab 和关闭 workspace 都出现确认；取消后草稿保留，确认后清理。退出应用后不恢复批注。分别在 macOS/Windows、浅色/深色、窄布局与 WorkPanel 全屏回归工具栏、底部抽屉/右栏、键盘焦点和不可点击数量徽标。
 - 覆盖 `..`、URL 编码穿越、符号链接；Windows 额外覆盖 junction/reparse point，所有目录越界均返回 404。
 - macOS 使用 Finder 定位和默认应用，Windows 使用 Explorer 定位和系统文件关联；renderer/API 响应中不出现绝对路径。
 

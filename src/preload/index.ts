@@ -231,6 +231,7 @@ const api: DesktopApi = {
     listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
+    revealChatInFolder: (chatId: string) => ipcRenderer.invoke("assistant.revealChatInFolder", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),
@@ -601,6 +602,7 @@ const api: DesktopApi = {
   chatWorkPanel: {
     clearSession: (input) => ipcRenderer.invoke("chatWorkPanel.clearSession", input),
     localFiles: {
+      getReviewPreloadUrl: () => ipcRenderer.invoke("chatWorkPanel.localFiles.getReviewPreloadUrl"),
       select: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.select", input),
       claim: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.claim", input),
       release: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.release", input),

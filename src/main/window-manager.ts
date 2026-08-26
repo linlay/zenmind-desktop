@@ -101,11 +101,17 @@ type WebviewAttachInput = {
   servicePreloadPath: string;
   servicePreloadUrl: string;
   isSafeServiceUrl(value: string): unknown;
+  isReviewableLocalFileUrl?(value: string): boolean;
 };
 
 type WebviewAttachResult =
   | { ok: true }
-  | { ok: false; reason: "unexpected-preload" | "unsafe-service-url"; preload?: string; src?: string };
+  | {
+      ok: false;
+      reason: "unexpected-preload" | "unsafe-service-url" | "unsafe-review-url";
+      preload?: string;
+      src?: string;
+    };
 
 type AttachedWebviewLike = {
   id: number;
@@ -372,6 +378,7 @@ export function configureMainWindowWebContents<
     servicePreloadPath: string;
     servicePreloadUrl: string;
     isSafeServiceUrl(value: string): unknown;
+    isReviewableLocalFileUrl?(value: string): boolean;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
@@ -424,7 +431,8 @@ export function configureMainWindowWebContents<
       params,
       servicePreloadPath: options.servicePreloadPath,
       servicePreloadUrl: options.servicePreloadUrl,
-      isSafeServiceUrl: options.isSafeServiceUrl
+      isSafeServiceUrl: options.isSafeServiceUrl,
+      isReviewableLocalFileUrl: options.isReviewableLocalFileUrl,
     });
 
     if (!result.ok && result.reason === "unexpected-preload") {
@@ -439,6 +447,14 @@ export function configureMainWindowWebContents<
     if (!result.ok && result.reason === "unsafe-service-url") {
       event.preventDefault();
       options.report("blocked service webview with unsafe url", {
+        src: result.src
+      });
+      return;
+    }
+
+    if (!result.ok && result.reason === "unsafe-review-url") {
+      event.preventDefault();
+      options.report("blocked WorkPanel review preload with unsafe url", {
         src: result.src
       });
       return;
@@ -556,10 +572,20 @@ export function configureMediaPermissions<TWindow extends MediaPermissionWindowL
 export function prepareWebviewAttachPreferences(input: WebviewAttachInput): WebviewAttachResult {
   const requestedPreload = String(input.webPreferences.preload || input.params.preload || "");
   const src = String(input.params.src || "");
+  const reviewPreloadPath = input.servicePreloadPath.replace(
+    /service-webview\.js$/u,
+    "work-panel-preview.js",
+  );
+  const reviewPreloadUrl = input.servicePreloadUrl.replace(
+    /service-webview\.js$/u,
+    "work-panel-preview.js",
+  );
   const usesServicePreload =
     requestedPreload === input.servicePreloadPath || requestedPreload === input.servicePreloadUrl;
+  const usesReviewPreload =
+    requestedPreload === reviewPreloadPath || requestedPreload === reviewPreloadUrl;
 
-  if (requestedPreload && !usesServicePreload) {
+  if (requestedPreload && !usesServicePreload && !usesReviewPreload) {
     return {
       ok: false,
       reason: "unexpected-preload",
@@ -576,6 +602,22 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
     };
   }
 
+  if (usesReviewPreload) {
+    try {
+      const parsed = new URL(src);
+      if (
+        parsed.protocol !== `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:` ||
+        parsed.username ||
+        parsed.password ||
+        input.isReviewableLocalFileUrl?.(src) !== true
+      ) {
+        return { ok: false, reason: "unsafe-review-url", src };
+      }
+    } catch {
+      return { ok: false, reason: "unsafe-review-url", src };
+    }
+  }
+
   input.webPreferences.nodeIntegration = false;
   input.webPreferences.contextIsolation = true;
   input.webPreferences.sandbox = (() => {
@@ -587,6 +629,8 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
   })();
   if (usesServicePreload) {
     input.webPreferences.preload = input.servicePreloadPath;
+  } else if (usesReviewPreload) {
+    input.webPreferences.preload = reviewPreloadPath;
   }
   return { ok: true };
 }

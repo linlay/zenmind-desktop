@@ -14,10 +14,54 @@ export const AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL =
 export const AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION =
   "workPanel.resource.downloadCurrent" as const;
 export const AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION = 1 as const;
+export const AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION =
+  "workPanel.previewReview.dispatch" as const;
+export const AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_VERSION = 1 as const;
+export const AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT =
+  "__agentWebclientWorkPanelPreviewReviewEvent" as const;
+export const AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION =
+  "workPanel.composer.insertDraft" as const;
+export const AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION = 1 as const;
 
 export type AgentWebclientWorkPanelResourceDownloadAction = {
   action: typeof AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION;
   version: typeof AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION;
+};
+
+export type AgentWebclientWorkPanelPreviewReviewAction = {
+  action: typeof AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION;
+  version: typeof AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_VERSION;
+  requestId: string;
+  operation: "capabilities" | "initialize" | "sync" | "export-image";
+  enabled?: boolean;
+  kind?: "html" | "image";
+  annotations?: unknown[];
+};
+
+export type AgentWebclientComposerDraftAction = {
+  action: typeof AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION;
+  version: typeof AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION;
+  requestId: string;
+  ownerChatId: string;
+  text: string;
+  attachment?: {
+    name: string;
+    mimeType: "image/png";
+    dataBase64: string;
+    sizeBytes: number;
+  };
+  reviewData: {
+    version: 1;
+    sourceKind: "workspace-file" | "artifact" | "reference";
+    kind: "html" | "image";
+    source: {
+      fileName: string;
+      revision: string;
+      relativePath?: string;
+      resourceId?: string;
+    };
+    annotations: unknown[];
+  };
 };
 
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL =
@@ -296,6 +340,9 @@ export type WorkPanelItemDescriptor =
       handleId: string;
       fileName: string;
       previewKind: "html" | "pdf" | "image" | "text" | "audio" | "video" | "unsupported";
+      reviewKind?: "html" | "image";
+      workspaceRelativePath?: string;
+      reviewRevision?: string;
       title?: string;
       pinned?: boolean;
       closable?: boolean;

@@ -91,12 +91,16 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(host, /navigationKind === "blob"/u);
   assert.match(host, /clearSession\?\.\(\{ partition \}\)/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
+  assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web"\}/u);
   assert.match(host, /target !== "work-panel"/u);
   assert.match(host, /type: "openItem"[\s\S]*?descriptor: \{ kind: "web", url: normalizedUrl \}/u);
   assert.match(host, /showLoadingProgress/u);
   assert.match(host, /chat-work-panel-tab-loading-spinner/u);
   assert.match(host, /onLoadingChange/u);
   assert.match(externalWebview, /allowpopups: "true"/u);
+  assert.match(externalWebview, /workPanelBrowser \? "is-work-panel-browser" : ""/u);
+  assert.match(externalWebview, /readOnly=\{workPanelBrowser && !addressInputUnlocked\}/u);
+  assert.match(externalWebview, /externalWebview\.editAddress/u);
   assert.match(externalWebview, /target !== "desktop-browser"/u);
   assert.doesNotMatch(externalWebview, /openPopupsInCurrentTab/u);
   assert.match(host, /if \(isMac\)/u);
@@ -104,6 +108,10 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(host, /dataset\.workPanelDomReady === "true"/u);
   assert.match(reducer, /unsupported_native_surface/u);
   assert.match(reducer, /item\.pinned \|\| !item\.closable/u);
+  assert.match(
+    read("src/renderer/styles/app-shell.css"),
+    /\.external-webview-page\.is-work-panel-browser\.has-browser-toolbar \.external-webview-browser-chrome\s*\{[^}]*display:\s*flex;/su,
+  );
 });
 
 test("WorkPanel add menu and canonical WebApp presentation keep host-only ownership", () => {

@@ -40,7 +40,8 @@ export async function buildMainBundle(rootDir = projectRoot) {
       "main/attachment-worker": path.join(rootSrc, "main", "assistant", "attachments", "attachment-worker.ts"),
       "main/conversation-html-worker": path.join(rootSrc, "main", "assistant", "core", "conversation-html-worker.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts"),
-      "preload/service-webview": path.join(rootSrc, "preload", "service-webview.ts")
+      "preload/service-webview": path.join(rootSrc, "preload", "service-webview.ts"),
+      "preload/work-panel-preview": path.join(rootSrc, "preload", "work-panel-preview.ts")
     },
     outdir,
     platform: "node",

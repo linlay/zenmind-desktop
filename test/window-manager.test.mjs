@@ -1357,11 +1357,69 @@ test("window manager allows only service webview preload for loopback service UR
     servicePreloadPath: "C:/app/preload/service-webview.js",
     servicePreloadUrl: "file:///app/preload/service-webview.js",
     isSafeServiceUrl: () => false,
+    isReviewableLocalFileUrl: () => true,
   });
   assert.equal(localFile.ok, true);
   assert.equal(localFilePreferences.nodeIntegration, false);
   assert.equal(localFilePreferences.contextIsolation, true);
   assert.equal(localFilePreferences.sandbox, true);
+
+  const reviewPreferences = {
+    preload: "file:///app/preload/work-panel-preview.js",
+    nodeIntegration: true,
+    contextIsolation: false,
+    sandbox: false,
+  };
+  const reviewLocalFile = prepareWebviewAttachPreferences({
+    webPreferences: reviewPreferences,
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "zenmind-local-file://opaque-handle/image.png",
+      partition: "work-panel-local-file-test",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+    isReviewableLocalFileUrl: () => true,
+  });
+  assert.equal(reviewLocalFile.ok, true);
+  assert.equal(reviewPreferences.preload, "C:/app/preload/work-panel-preview.js");
+  assert.equal(reviewPreferences.nodeIntegration, false);
+  assert.equal(reviewPreferences.contextIsolation, true);
+  assert.equal(reviewPreferences.sandbox, true);
+
+  const untrustedReview = prepareWebviewAttachPreferences({
+    webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "zenmind-local-file://user-selected/image.png",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+    isReviewableLocalFileUrl: () => false,
+  });
+  assert.deepEqual(untrustedReview, {
+    ok: false,
+    reason: "unsafe-review-url",
+    src: "zenmind-local-file://user-selected/image.png",
+  });
+
+  const unsafeReview = prepareWebviewAttachPreferences({
+    webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "https://example.test/image.png",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+  });
+  assert.deepEqual(unsafeReview, {
+    ok: false,
+    reason: "unsafe-review-url",
+    src: "https://example.test/image.png",
+  });
 
   const blocked = prepareWebviewAttachPreferences({
     webPreferences: { preload: "C:/other/preload.js" },

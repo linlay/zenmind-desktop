@@ -66,6 +66,7 @@ export function createDesktopActionOptions(
       ownerChatId: string;
       rendererWebContentsId: number;
       filePath: string;
+      workspaceRelativePath: string;
     }) => workPanelLocalFileRegistry.prepareClaim(input),
     discardWorkPanelLocalFileClaim: (claimId: string) =>
       workPanelLocalFileRegistry.discardPreparedClaim(claimId),

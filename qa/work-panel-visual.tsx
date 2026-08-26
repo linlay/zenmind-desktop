@@ -2,6 +2,7 @@ import React, { useCallback, useState } from "react";
 import ReactDOM from "react-dom/client";
 import { WorkPanelHost } from "../src/renderer/work-panel/WorkPanelHost";
 import { reduceWorkPanelCommand, type WorkPanelCommand, type WorkPanelState } from "../src/shared/work-panel";
+import { EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE } from "../src/shared/work-panel-review";
 import "../src/renderer/styles/theme.css";
 import "../src/renderer/styles/base.css";
 import "../src/renderer/styles/app-shell.css";
@@ -59,6 +60,7 @@ const initialState: WorkPanelState = {
   }],
   visibleOwnerChatIds: ["visual-chat"],
   webSessionKeysByItemId: {},
+  review: EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE,
 };
 
 function WorkPanelVisualQA() {

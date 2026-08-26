@@ -10,6 +10,11 @@ const {
   resolveWorkPanelWebSessionKey,
 } = require("../dist-electron/shared/work-panel.js");
 const { WORK_PANEL_NATIVE_SURFACE_ALLOWLIST } = require("../dist-electron/shared/work-panel-native-registry.js");
+const {
+  buildWorkPanelReviewComposerDraft,
+  normalizeWorkPanelNormalizedRect,
+  workPanelPixelRectFromNormalized,
+} = require("../dist-electron/shared/work-panel-review.js");
 
 function open(state, ownerChatId, descriptor) {
   return reduceWorkPanelCommand(state, { type: "openItem", ownerChatId, descriptor });
@@ -69,6 +74,200 @@ test("WorkPanel hides without destroying state, restores the active item, and is
   assert.equal(shown.ok, true);
   assert.deepEqual(shown.nextState.visibleOwnerChatIds, ["chat-2", "chat-1"]);
   assert.equal(shown.state.activeItemId, second.item.itemId);
+});
+
+test("WorkPanel keeps review drafts in runtime state, enforces one active tab, and renumbers regions", () => {
+  const first = open(EMPTY_WORK_PANEL_STATE, "chat-review", {
+    kind: "local-file",
+    handleId: "opaque-image-1",
+    fileName: "image.png",
+    previewKind: "image",
+    reviewKind: "image",
+    workspaceRelativePath: "design/image.png",
+    reviewRevision: "1200:100",
+  });
+  const second = open(first.nextState, "chat-review", {
+    kind: "local-file",
+    handleId: "opaque-image-2",
+    fileName: "other.png",
+    previewKind: "image",
+    reviewKind: "image",
+    workspaceRelativePath: "design/other.png",
+    reviewRevision: "900:200",
+  });
+  const started = reduceWorkPanelCommand(second.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    kind: "image",
+    source: {
+      sourceKind: "workspace-file",
+      fileName: "image.png",
+      relativePath: "design/image.png",
+      revision: "1200:100",
+    },
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.nextState.review.activeItemIdsByOwnerChatId["chat-review"], first.item.itemId);
+
+  const add = (state, id, x) => reduceWorkPanelCommand(state, {
+    type: "addImageReviewAnnotation",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    annotation: {
+      id,
+      rect: { x, y: 20, width: 30, height: 40 },
+      normalizedRect: { x: x / 1000, y: 0.02, width: 0.03, height: 0.04 },
+    },
+  });
+  const region1 = add(started.nextState, "region-1", 10);
+  const region2 = add(region1.nextState, "region-2", 50);
+  const described = reduceWorkPanelCommand(region2.nextState, {
+    type: "updateReviewAnnotation",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    annotationId: "region-2",
+    requirement: "删除这个图标",
+  });
+  const removed = reduceWorkPanelCommand(described.nextState, {
+    type: "removeReviewAnnotation",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    annotationId: "region-1",
+  });
+  const firstSession = Object.values(removed.nextState.review.sessionsByKey)[0];
+  assert.equal(firstSession.annotations.length, 1);
+  assert.equal(firstSession.annotations[0].number, 1);
+  assert.equal(firstSession.annotations[0].requirement, "删除这个图标");
+
+  const switched = reduceWorkPanelCommand(removed.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-review",
+    itemId: second.item.itemId,
+    kind: "image",
+    source: {
+      sourceKind: "workspace-file",
+      fileName: "other.png",
+      relativePath: "design/other.png",
+      revision: "900:200",
+    },
+  });
+  assert.equal(switched.nextState.review.activeItemIdsByOwnerChatId["chat-review"], second.item.itemId);
+  assert.equal(Object.keys(switched.nextState.review.sessionsByKey).length, 2);
+  const inactiveAdd = add(switched.nextState, "region-3", 90);
+  assert.equal(inactiveAdd.ok, false);
+  assert.equal(inactiveAdd.error.code, "capability_denied");
+
+  const refusedClose = reduceWorkPanelCommand(switched.nextState, {
+    type: "closeItem",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+  });
+  assert.equal(refusedClose.ok, false);
+  assert.equal(refusedClose.error.code, "capability_denied");
+  const forcedClose = reduceWorkPanelCommand(switched.nextState, {
+    type: "closeItem",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    force: true,
+  });
+  assert.equal(forcedClose.ok, true);
+  assert.equal(Object.keys(forcedClose.nextState.review.sessionsByKey).length, 1);
+});
+
+test("WorkPanel review coordinates remain source-pixel based across preview scaling", () => {
+  const normalized = normalizeWorkPanelNormalizedRect({
+    x: 120 / 1440,
+    y: 80 / 900,
+    width: 340 / 1440,
+    height: 96 / 900,
+  });
+  assert.ok(normalized);
+  assert.deepEqual(workPanelPixelRectFromNormalized(normalized, 1440, 900), {
+    x: 120,
+    y: 80,
+    width: 340,
+    height: 96,
+  });
+  assert.equal(normalizeWorkPanelNormalizedRect({
+    x: 0.9,
+    y: 0,
+    width: 0.2,
+    height: 0.2,
+  }), null);
+});
+
+test("WorkPanel review Composer drafts keep the fixed numbered coordinate and XPath protocol", () => {
+  const imageDraft = buildWorkPanelReviewComposerDraft({
+    version: 1,
+    ownerChatId: "chat-review",
+    itemId: "image-item",
+    kind: "image",
+    source: {
+      sourceKind: "workspace-file",
+      fileName: "image.png",
+      relativePath: "design/image.png",
+      revision: "1:1",
+    },
+    annotations: [{
+      id: "region-1",
+      number: 1,
+      kind: "image-region",
+      rect: { x: 120, y: 80, width: 340, height: 96 },
+      normalizedRect: { x: 120 / 1440, y: 80 / 900, width: 340 / 1440, height: 96 / 900 },
+      requirement: "将这里的主标题放大。",
+    }],
+    createdAt: 1,
+    updatedAt: 1,
+  }, { width: 1440, height: 900 });
+  assert.equal(imageDraft, [
+    "请根据以下标注修改 design/image.png。",
+    "",
+    "原图尺寸：1440 × 900",
+    "坐标格式：[x, y, width, height]，原点为图片左上角。",
+    "",
+    "标注区 1：坐标 [120, 80, 340, 96]",
+    "标注要求：将这里的主标题放大。",
+    "",
+    "只修改标注要求涉及的区域，其他内容保持不变。",
+    "原位修改 workspace 文件，完成后刷新当前 WorkPanel 标签页。",
+  ].join("\n"));
+
+  const htmlDraft = buildWorkPanelReviewComposerDraft({
+    version: 1,
+    ownerChatId: "chat-review",
+    itemId: "html-item",
+    kind: "html",
+    source: {
+      sourceKind: "artifact",
+      fileName: "index.html",
+      resourceId: "artifact-1",
+      revision: "v1",
+    },
+    annotations: [{
+      id: "element-1",
+      number: 1,
+      kind: "html-element",
+      fullXPath: "/html/body/header/button",
+      cssSelector: "header > button",
+      tagName: "button",
+      attributes: {},
+      textExcerpt: "保存",
+      rect: { x: 10, y: 10, width: 80, height: 32 },
+      requirement: "扩大按钮点击区域。",
+    }],
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  assert.equal(htmlDraft, [
+    "请根据以下元素批注修改 index.html。",
+    "",
+    "标注元素 1：/html/body/header/button",
+    "标注要求：扩大按钮点击区域。",
+    "",
+    "只修改标注要求涉及的元素，其他内容保持不变。",
+    "保留原资源，生成一个新版本，并在 WorkPanel 中打开新版本。",
+  ].join("\n"));
 });
 
 test("opening or activating an item reveals its workspace and destructive close clears visibility", () => {

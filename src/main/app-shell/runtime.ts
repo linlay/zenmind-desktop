@@ -40,6 +40,7 @@ import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
 import { AppTrayController } from "./tray";
 import { readHelpSettings } from "../help-settings";
+import { workPanelLocalFileRegistry } from "../chat-work-panel-local-files";
 
 export type AppShellRuntimeOptions = {
   app: App;
@@ -237,6 +238,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       servicePreloadPath: getServiceWebviewPreloadPath(),
       servicePreloadUrl: getServiceWebviewPreloadUrl(),
       isSafeServiceUrl: options.parseSafeLoopbackWebUrl,
+      isReviewableLocalFileUrl: (url) => workPanelLocalFileRegistry.isReviewableUrl(url),
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,

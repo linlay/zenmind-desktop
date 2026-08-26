@@ -12,22 +12,82 @@ import {
   getWebviewBlobPopupHostname,
   normalizeWebviewBlobPopupUrl,
 } from "./webview-popup";
+import {
+  EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE,
+  WORK_PANEL_REVIEW_MAX_ANNOTATIONS,
+  WORK_PANEL_REVIEW_MAX_REQUIREMENT_CHARS,
+  WORK_PANEL_REVIEW_VERSION,
+  getWorkPanelReviewSession,
+  hasWorkPanelReviewDraft,
+  normalizeWorkPanelNormalizedRect,
+  normalizeWorkPanelPixelRect,
+  renumberWorkPanelReviewAnnotations,
+  workPanelReviewSessionKey,
+  type HtmlElementAnnotation,
+  type ImageRegionAnnotation,
+  type ReviewSourceRevision,
+  type WorkPanelReviewKind,
+  type WorkPanelReviewRuntimeState,
+  type WorkPanelReviewSession,
+} from "./work-panel-review";
 
 export type WorkPanelState = {
   workspaces: WorkPanelWorkspace[];
   visibleOwnerChatIds: string[];
   webSessionKeysByItemId: Record<string, string>;
+  review: WorkPanelReviewRuntimeState;
 };
 
 export type WorkPanelCommand =
   | { type: "openItem"; ownerChatId: string; descriptor: WorkPanelItemDescriptor }
   | { type: "openBlobPopup"; ownerChatId: string; sourceItemId: string; url: string }
   | { type: "activateItem"; ownerChatId: string; itemId: string }
-  | { type: "closeItem"; ownerChatId: string; itemId: string }
-  | { type: "closeOtherItems"; ownerChatId: string; itemId: string }
+  | { type: "closeItem"; ownerChatId: string; itemId: string; force?: boolean }
+  | { type: "closeOtherItems"; ownerChatId: string; itemId: string; force?: boolean }
   | { type: "showWorkspace"; ownerChatId: string }
   | { type: "hideWorkspace"; ownerChatId: string }
-  | { type: "closeWorkspace"; ownerChatId: string; force?: boolean };
+  | { type: "closeWorkspace"; ownerChatId: string; force?: boolean }
+  | {
+      type: "startReview";
+      ownerChatId: string;
+      itemId: string;
+      kind: WorkPanelReviewKind;
+      source: ReviewSourceRevision;
+    }
+  | { type: "stopReview"; ownerChatId: string; itemId: string }
+  | { type: "discardReview"; ownerChatId: string; itemId: string }
+  | {
+      type: "addImageReviewAnnotation";
+      ownerChatId: string;
+      itemId: string;
+      annotation: Omit<ImageRegionAnnotation, "number" | "kind" | "requirement">;
+    }
+  | {
+      type: "addHtmlReviewAnnotation";
+      ownerChatId: string;
+      itemId: string;
+      annotation: Omit<HtmlElementAnnotation, "number" | "kind" | "requirement">;
+    }
+  | {
+      type: "updateReviewAnnotation";
+      ownerChatId: string;
+      itemId: string;
+      annotationId: string;
+      requirement: string;
+    }
+  | {
+      type: "removeReviewAnnotation";
+      ownerChatId: string;
+      itemId: string;
+      annotationId: string;
+    }
+  | {
+      type: "markReviewInvalid";
+      ownerChatId: string;
+      itemId: string;
+      reason: string;
+      annotationId?: string;
+    };
 
 export type WorkPanelCommandResult = WorkPanelBridgeResult & {
   nextState: WorkPanelState;
@@ -37,6 +97,7 @@ export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
   workspaces: [],
   visibleOwnerChatIds: [],
   webSessionKeysByItemId: {},
+  review: EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE,
 };
 
 function workPanelWebSessionMapKey(workspaceId: string, itemId: string) {
@@ -196,20 +257,38 @@ function normalizeDescriptor(
     return { descriptor: sanitized, stableKey: `webapp:${webappId}`, title };
   }
   if (descriptor.kind === "local-file") {
-    if (keys.some((key) => !["kind", "handleId", "fileName", "previewKind", "title", "pinned", "closable"].includes(key))) return null;
+    if (keys.some((key) => ![
+      "kind", "handleId", "fileName", "previewKind", "reviewKind", "workspaceRelativePath",
+      "reviewRevision", "title", "pinned", "closable",
+    ].includes(key))) return null;
     const handleId = cleanIdentity(descriptor.handleId, 256);
     const fileName = cleanIdentity(descriptor.fileName, 512);
     const previewKind = descriptor.previewKind;
+    const reviewKind = descriptor.reviewKind;
+    const workspaceRelativePath = descriptor.workspaceRelativePath === undefined
+      ? ""
+      : normalizeRelativePath(descriptor.workspaceRelativePath);
+    const reviewRevision = descriptor.reviewRevision === undefined
+      ? ""
+      : cleanIdentity(descriptor.reviewRevision, 512);
     if (
       !handleId ||
       !fileName ||
-      !["html", "pdf", "image", "text", "audio", "video", "unsupported"].includes(previewKind)
+      !["html", "pdf", "image", "text", "audio", "video", "unsupported"].includes(previewKind) ||
+      (reviewKind !== undefined && reviewKind !== "html" && reviewKind !== "image") ||
+      (reviewKind !== undefined && reviewKind !== previewKind) ||
+      (descriptor.workspaceRelativePath !== undefined && !workspaceRelativePath) ||
+      (descriptor.reviewRevision !== undefined && !reviewRevision) ||
+      Boolean(reviewKind) !== Boolean(workspaceRelativePath && reviewRevision)
     ) return null;
     const sanitized: WorkPanelItemDescriptor = {
       kind: "local-file",
       handleId,
       fileName,
       previewKind,
+      ...(reviewKind ? { reviewKind } : {}),
+      ...(workspaceRelativePath ? { workspaceRelativePath } : {}),
+      ...(reviewRevision ? { reviewRevision } : {}),
       ...(title ? { title } : {}),
       ...(descriptor.pinned === true ? { pinned: true } : {}),
       ...(descriptor.closable === false ? { closable: false } : {}),
@@ -322,6 +401,101 @@ function isOverviewItem(item: WorkPanelItem) {
   return item.descriptor.kind === "webclient" && item.descriptor.module === "overview";
 }
 
+function currentReviewState(state: WorkPanelState) {
+  return state.review ?? EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE;
+}
+
+function withoutReviewSessions(
+  review: WorkPanelReviewRuntimeState,
+  ownerChatId: string,
+  itemIds?: string[],
+): WorkPanelReviewRuntimeState {
+  const removedIds = itemIds ? new Set(itemIds) : null;
+  const sessionsByKey = Object.fromEntries(
+    Object.entries(review.sessionsByKey).filter(([, session]) =>
+      session.ownerChatId !== ownerChatId || (removedIds !== null && !removedIds.has(session.itemId)),
+    ),
+  );
+  const activeItemId = review.activeItemIdsByOwnerChatId[ownerChatId];
+  const removeActive = Boolean(
+    activeItemId && (removedIds === null || removedIds.has(activeItemId)),
+  );
+  if (sessionsByKey === review.sessionsByKey && !removeActive) return review;
+  const activeItemIdsByOwnerChatId = { ...review.activeItemIdsByOwnerChatId };
+  if (removeActive) delete activeItemIdsByOwnerChatId[ownerChatId];
+  return { sessionsByKey, activeItemIdsByOwnerChatId };
+}
+
+function hasReviewDraftForItems(
+  review: WorkPanelReviewRuntimeState,
+  ownerChatId: string,
+  itemIds: string[],
+) {
+  return itemIds.some((itemId) =>
+    hasWorkPanelReviewDraft(getWorkPanelReviewSession(review, ownerChatId, itemId)),
+  );
+}
+
+function normalizeReviewSource(source: ReviewSourceRevision) {
+  if (!source || typeof source !== "object" || Array.isArray(source)) return null;
+  const sourceKind = source.sourceKind;
+  const fileName = cleanIdentity(source.fileName, 512);
+  const revision = cleanIdentity(source.revision, 512);
+  const relativePath = source.relativePath === undefined
+    ? ""
+    : normalizeRelativePath(source.relativePath);
+  const resourceId = source.resourceId === undefined
+    ? ""
+    : cleanIdentity(source.resourceId, 512);
+  if (
+    !["workspace-file", "artifact", "reference"].includes(sourceKind) ||
+    !fileName ||
+    !revision ||
+    (source.relativePath !== undefined && !relativePath) ||
+    (source.resourceId !== undefined && !resourceId)
+  ) return null;
+  if (sourceKind === "workspace-file" && !relativePath) return null;
+  if (sourceKind !== "workspace-file" && !resourceId) return null;
+  return {
+    sourceKind,
+    fileName,
+    revision,
+    ...(relativePath ? { relativePath } : {}),
+    ...(resourceId ? { resourceId } : {}),
+  } satisfies ReviewSourceRevision;
+}
+
+function itemAcceptsReview(
+  item: WorkPanelItem,
+  kind: WorkPanelReviewKind,
+  source: ReviewSourceRevision,
+) {
+  if (item.descriptor.kind === "local-file") {
+    return source.sourceKind === "workspace-file" && item.descriptor.reviewKind === kind;
+  }
+  return item.descriptor.kind === "webclient" &&
+    (item.descriptor.module === "artifact" || item.descriptor.module === "reference") &&
+    source.sourceKind === item.descriptor.module;
+}
+
+function replaceReviewSession(
+  state: WorkPanelState,
+  session: WorkPanelReviewSession,
+  activate: boolean,
+): WorkPanelState {
+  const review = currentReviewState(state);
+  const key = workPanelReviewSessionKey(session.ownerChatId, session.itemId);
+  return {
+    ...state,
+    review: {
+      sessionsByKey: { ...review.sessionsByKey, [key]: session },
+      activeItemIdsByOwnerChatId: activate
+        ? { ...review.activeItemIdsByOwnerChatId, [session.ownerChatId]: session.itemId }
+        : review.activeItemIdsByOwnerChatId,
+    },
+  };
+}
+
 export function reduceWorkPanelCommand(
   state: WorkPanelState,
   command: WorkPanelCommand,
@@ -359,6 +533,16 @@ export function reduceWorkPanelCommand(
     if (!command.force && current.items.some((item) => !isOverviewItem(item) && (item.pinned || !item.closable))) {
       return fail(state, "capability_denied", "workspace contains pinned or non-closable items");
     }
+    if (
+      !command.force &&
+      hasReviewDraftForItems(
+        currentReviewState(state),
+        ownerChatId,
+        current.items.map((item) => item.itemId),
+      )
+    ) {
+      return fail(state, "capability_denied", "workspace contains unsent review annotations");
+    }
     const nextState = {
       workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
@@ -367,6 +551,7 @@ export function reduceWorkPanelCommand(
         current.workspaceId,
         current.items.map((item) => item.itemId),
       ),
+      review: withoutReviewSessions(currentReviewState(state), ownerChatId),
     };
     return { ok: true, workspaceId: current.workspaceId, nextState };
   }
@@ -406,6 +591,7 @@ export function reduceWorkPanelCommand(
         ...state.webSessionKeysByItemId,
         [workPanelWebSessionMapKey(current.workspaceId, item.itemId)]: sessionKey,
       },
+      review: currentReviewState(state),
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
   }
@@ -443,13 +629,13 @@ export function reduceWorkPanelCommand(
     const isOverview = normalized.descriptor.kind === "webclient" &&
       normalized.descriptor.module === "overview";
     const item: WorkPanelItem = existing
-      ? isOverview
+      ? isOverview || normalized.descriptor.kind === "local-file"
         ? {
             ...existing,
             descriptor: normalized.descriptor,
             title: normalized.title,
-            closable: false,
-            pinned: true,
+            closable: isOverview ? false : normalized.descriptor.closable !== false,
+            pinned: isOverview ? true : normalized.descriptor.pinned === true,
           }
         : existing
       : {
@@ -472,10 +658,35 @@ export function reduceWorkPanelCommand(
     const workspaces = [...state.workspaces];
     if (index >= 0) workspaces[index] = nextWorkspace;
     else workspaces.push(nextWorkspace);
+    let review = currentReviewState(state);
+    if (
+      existing?.descriptor.kind === "local-file" &&
+      item.descriptor.kind === "local-file" &&
+      existing.descriptor.reviewRevision &&
+      item.descriptor.reviewRevision &&
+      existing.descriptor.reviewRevision !== item.descriptor.reviewRevision
+    ) {
+      const key = workPanelReviewSessionKey(ownerChatId, item.itemId);
+      const session = review.sessionsByKey[key];
+      if (session) {
+        review = {
+          ...review,
+          sessionsByKey: {
+            ...review.sessionsByKey,
+            [key]: {
+              ...session,
+              invalidReason: "source_revision_changed",
+              updatedAt: Date.now(),
+            },
+          },
+        };
+      }
+    }
     const nextState = {
       workspaces,
       visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
       webSessionKeysByItemId: state.webSessionKeysByItemId,
+      review,
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
   }
@@ -483,6 +694,200 @@ export function reduceWorkPanelCommand(
   const itemIndex = current.items.findIndex((item) => item.itemId === cleanIdentity(command.itemId));
   if (itemIndex < 0) return fail(state, "target_unavailable", "WorkPanel item is unavailable");
   const item = current.items[itemIndex];
+  if (command.type === "startReview") {
+    const source = normalizeReviewSource(command.source);
+    if (!source || !itemAcceptsReview(item, command.kind, source)) {
+      return fail(state, "capability_denied", "WorkPanel item is not reviewable");
+    }
+    const now = Date.now();
+    const existing = getWorkPanelReviewSession(currentReviewState(state), ownerChatId, item.itemId);
+    const session: WorkPanelReviewSession = existing && existing.kind === command.kind
+      ? {
+          ...existing,
+          source,
+          invalidReason: existing.source.revision === source.revision
+            ? existing.invalidReason
+            : "source_revision_changed",
+          updatedAt: now,
+        }
+      : {
+          version: WORK_PANEL_REVIEW_VERSION,
+          ownerChatId,
+          itemId: item.itemId,
+          kind: command.kind,
+          source,
+          annotations: [],
+          createdAt: now,
+          updatedAt: now,
+        };
+    const nextState = replaceReviewSession(state, session, true);
+    return { ok: true, workspaceId: current.workspaceId, item, state: current, nextState };
+  }
+  if (command.type === "stopReview") {
+    const review = currentReviewState(state);
+    if (review.activeItemIdsByOwnerChatId[ownerChatId] !== item.itemId) {
+      return { ok: true, workspaceId: current.workspaceId, item, state: current, nextState: state };
+    }
+    const activeItemIdsByOwnerChatId = { ...review.activeItemIdsByOwnerChatId };
+    delete activeItemIdsByOwnerChatId[ownerChatId];
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      item,
+      state: current,
+      nextState: { ...state, review: { ...review, activeItemIdsByOwnerChatId } },
+    };
+  }
+  if (command.type === "discardReview") {
+    const review = withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]);
+    return {
+      ok: true,
+      workspaceId: current.workspaceId,
+      item,
+      state: current,
+      nextState: { ...state, review },
+    };
+  }
+  if (
+    command.type === "addImageReviewAnnotation" ||
+    command.type === "addHtmlReviewAnnotation" ||
+    command.type === "updateReviewAnnotation" ||
+    command.type === "removeReviewAnnotation" ||
+    command.type === "markReviewInvalid"
+  ) {
+    const session = getWorkPanelReviewSession(currentReviewState(state), ownerChatId, item.itemId);
+    if (!session) return fail(state, "target_unavailable", "WorkPanel review session is unavailable");
+    if (
+      (command.type === "addImageReviewAnnotation" || command.type === "addHtmlReviewAnnotation") &&
+      currentReviewState(state).activeItemIdsByOwnerChatId[ownerChatId] !== item.itemId
+    ) {
+      return fail(state, "capability_denied", "WorkPanel review session is not active");
+    }
+    const now = Date.now();
+    let nextSession = session;
+    if (command.type === "addImageReviewAnnotation") {
+      if (session.kind !== "image") return fail(state, "invalid_request", "review kind mismatch");
+      if (session.annotations.length >= WORK_PANEL_REVIEW_MAX_ANNOTATIONS) {
+        return fail(state, "capability_denied", "review annotation limit reached");
+      }
+      const id = cleanIdentity(command.annotation.id, 256);
+      const rect = normalizeWorkPanelPixelRect(command.annotation.rect);
+      const normalizedRect = normalizeWorkPanelNormalizedRect(command.annotation.normalizedRect);
+      if (!id || !rect || !normalizedRect || session.annotations.some((annotation) => annotation.id === id)) {
+        return fail(state, "invalid_request", "invalid review annotation id");
+      }
+      nextSession = {
+        ...session,
+        annotations: [
+          ...session.annotations,
+          {
+            id,
+            kind: "image-region",
+            number: session.annotations.length + 1,
+            rect,
+            normalizedRect,
+            requirement: "",
+          },
+        ],
+        updatedAt: now,
+      };
+    } else if (command.type === "addHtmlReviewAnnotation") {
+      if (session.kind !== "html") return fail(state, "invalid_request", "review kind mismatch");
+      if (session.annotations.length >= WORK_PANEL_REVIEW_MAX_ANNOTATIONS) {
+        return fail(state, "capability_denied", "review annotation limit reached");
+      }
+      const id = cleanIdentity(command.annotation.id, 256);
+      const fullXPath = cleanIdentity(command.annotation.fullXPath, 2_048);
+      const rect = normalizeWorkPanelPixelRect(command.annotation.rect);
+      const cssSelector = cleanIdentity(command.annotation.cssSelector, 1_024);
+      const tagName = cleanIdentity(command.annotation.tagName, 64).toLowerCase();
+      const textExcerpt = cleanIdentity(command.annotation.textExcerpt, 240);
+      const attributes = Object.fromEntries(
+        Object.entries(command.annotation.attributes ?? {})
+          .filter(([key, value]) =>
+            /^[a-z_:][a-z\d:_.-]*$/iu.test(key) &&
+            !/value|password|token|secret|authorization|cookie|href|src/iu.test(key) &&
+            typeof value === "string",
+          )
+          .slice(0, 12)
+          .map(([key, value]) => [key.slice(0, 64), String(value).slice(0, 160)]),
+      );
+      if (
+        !id ||
+        !/^\/html(?:\/|$)/u.test(fullXPath) ||
+        !rect ||
+        !/^[a-z][a-z\d-]*$/u.test(tagName) ||
+        session.annotations.some((annotation) => annotation.id === id)
+      ) {
+        return fail(state, "invalid_request", "invalid HTML review annotation");
+      }
+      nextSession = {
+        ...session,
+        annotations: [
+          ...session.annotations,
+          {
+            id,
+            fullXPath,
+            cssSelector,
+            tagName,
+            attributes,
+            textExcerpt,
+            rect,
+            kind: "html-element",
+            number: session.annotations.length + 1,
+            requirement: "",
+          },
+        ],
+        updatedAt: now,
+      };
+    } else if (command.type === "updateReviewAnnotation") {
+      const annotationId = cleanIdentity(command.annotationId, 256);
+      if (
+        !annotationId ||
+        typeof command.requirement !== "string" ||
+        command.requirement.length > WORK_PANEL_REVIEW_MAX_REQUIREMENT_CHARS
+      ) {
+        return fail(state, "invalid_request", "invalid review requirement");
+      }
+      let found = false;
+      const annotations = session.annotations.map((annotation) => {
+        if (annotation.id !== annotationId) return annotation;
+        found = true;
+        return { ...annotation, requirement: command.requirement };
+      });
+      if (!found) return fail(state, "target_unavailable", "review annotation is unavailable");
+      nextSession = { ...session, annotations, updatedAt: now };
+    } else if (command.type === "removeReviewAnnotation") {
+      const annotationId = cleanIdentity(command.annotationId, 256);
+      const annotations = session.annotations.filter((annotation) => annotation.id !== annotationId);
+      if (annotations.length === session.annotations.length) {
+        return fail(state, "target_unavailable", "review annotation is unavailable");
+      }
+      nextSession = {
+        ...session,
+        annotations: renumberWorkPanelReviewAnnotations(annotations),
+        updatedAt: now,
+      };
+    } else {
+      const reason = cleanIdentity(command.reason, 512);
+      const annotationId = cleanIdentity(command.annotationId, 256);
+      if (!reason) return fail(state, "invalid_request", "review invalidation reason is required");
+      if (annotationId) {
+        let found = false;
+        const annotations = session.annotations.map((annotation) => {
+          if (annotation.id !== annotationId) return annotation;
+          found = true;
+          return { ...annotation, invalidReason: reason };
+        });
+        if (!found) return fail(state, "target_unavailable", "review annotation is unavailable");
+        nextSession = { ...session, annotations, updatedAt: now };
+      } else {
+        nextSession = { ...session, invalidReason: reason, updatedAt: now };
+      }
+    }
+    const nextState = replaceReviewSession(state, nextSession, false);
+    return { ok: true, workspaceId: current.workspaceId, item, state: current, nextState };
+  }
   if (command.type === "activateItem") {
     const nextWorkspace = { ...current, activeItemId: item.itemId };
     const workspaces = state.workspaces.map((workspace, nextIndex) => nextIndex === index ? nextWorkspace : workspace);
@@ -495,6 +900,7 @@ export function reduceWorkPanelCommand(
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
         webSessionKeysByItemId: state.webSessionKeysByItemId,
+        review: currentReviewState(state),
       },
     };
   }
@@ -502,6 +908,15 @@ export function reduceWorkPanelCommand(
     const items = current.items.filter((candidate) =>
       candidate.itemId === item.itemId || candidate.pinned || !candidate.closable,
     );
+    const removedItemIds = current.items
+      .filter((candidate) => !items.some((remaining) => remaining.itemId === candidate.itemId))
+      .map((candidate) => candidate.itemId);
+    if (
+      !command.force &&
+      hasReviewDraftForItems(currentReviewState(state), ownerChatId, removedItemIds)
+    ) {
+      return fail(state, "capability_denied", "tabs contain unsent review annotations");
+    }
     const nextWorkspace = { ...current, items, activeItemId: item.itemId };
     const workspaces = state.workspaces.map((workspace, nextIndex) =>
       nextIndex === index ? nextWorkspace : workspace,
@@ -517,15 +932,22 @@ export function reduceWorkPanelCommand(
         webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
           state,
           current.workspaceId,
-          current.items
-            .filter((candidate) => !items.some((remaining) => remaining.itemId === candidate.itemId))
-            .map((candidate) => candidate.itemId),
+          removedItemIds,
         ),
+        review: withoutReviewSessions(currentReviewState(state), ownerChatId, removedItemIds),
       },
     };
   }
   if (item.pinned || !item.closable) {
     return fail(state, "capability_denied", "pinned or non-closable WorkPanel item cannot be closed");
+  }
+  if (
+    !command.force &&
+    hasWorkPanelReviewDraft(
+      getWorkPanelReviewSession(currentReviewState(state), ownerChatId, item.itemId),
+    )
+  ) {
+    return fail(state, "capability_denied", "tab contains unsent review annotations");
   }
   const items = current.items.filter((_, nextIndex) => nextIndex !== itemIndex);
   if (items.length === 0) {
@@ -537,6 +959,7 @@ export function reduceWorkPanelCommand(
         current.workspaceId,
         [item.itemId],
       ),
+      review: withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]),
     };
     return { ok: true, workspaceId: current.workspaceId, item, nextState };
   }
@@ -558,6 +981,7 @@ export function reduceWorkPanelCommand(
         current.workspaceId,
         [item.itemId],
       ),
+      review: withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]),
     },
   };
 }

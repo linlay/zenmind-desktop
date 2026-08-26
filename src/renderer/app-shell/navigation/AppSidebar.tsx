@@ -6679,6 +6679,8 @@ export function AppSidebar({
               <ChatInfoDialog
                 state={chatInfoDialog.state}
                 t={t}
+                isMac={isMac}
+                isWindows={isWindows}
                 onRetry={chatInfoDialog.retry}
                 onClose={chatInfoDialog.close}
               />
