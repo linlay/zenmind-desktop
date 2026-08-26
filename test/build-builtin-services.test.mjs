@@ -121,7 +121,8 @@ test("native PowerShell orchestrator preserves the public four-service release b
     previousIndex = index;
   }
   assert.match(source, /foreach \(\$repoName in \$ServiceRepos\)[\s\S]*--source=\$\(Join-Path/u);
-  assert.match(source, /& make release "ARCH=\$SyncArch"/u);
+  assert.match(source, /& cmd\.exe \/d \/s \/c "make release ARCH=\$SyncArch"/u);
+  assert.doesNotMatch(source, /& make release/u);
   assert.match(source, /Remove-Item "Env:\$name"/u);
   assert.match(source, /--os=\$SyncOS/u);
   assert.match(source, /--arch=\$SyncArch/u);
