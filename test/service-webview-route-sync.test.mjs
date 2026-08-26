@@ -69,7 +69,7 @@ test("service webview surface does not sync API resource navigations back into t
   );
   const navigationHandlerBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
-    serviceWebviewSurface.indexOf("const handleDidFailLoad = () =>"),
+    serviceWebviewSurface.indexOf("const handleDidFailLoad = (event: Event) =>"),
   );
 
   assert.match(serviceWebviewSurface, /function isServiceWebviewRouteSyncTarget/);
@@ -78,8 +78,8 @@ test("service webview surface does not sync API resource navigations back into t
   assert.match(routeSyncBlock, /pathname === "\/ws"/);
   assert.match(routeSyncBlock, /pathname === "\/runtime-config\.js"/);
   assert.match(navigationHandlerBlock, /readEventBoolean\(event, "isMainFrame"\) !== false/);
-  assert.match(navigationHandlerBlock, /isServiceWebviewRouteSyncTarget\(nextUrl, webviewSrcUrl\)/);
-  assert.match(navigationHandlerBlock, /sendServiceRouteToWebview\(resolvedUrl, "navigation"\)/);
+  assert.match(navigationHandlerBlock, /isServiceWebviewRouteSyncTarget\(nextUrl, context\.webviewSrcUrl\)/);
+  assert.match(navigationHandlerBlock, /context\.sendServiceRouteToWebview\(resolvedUrl, "navigation"\)/);
 });
 
 test("agent chat mirrors its business URL and only receives changed host params", () => {
@@ -110,7 +110,7 @@ test("agent chat suppresses host route echoes and semantic no-op navigations", (
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
-    serviceWebviewSurface.indexOf("const handleDidFailLoad = () =>"),
+    serviceWebviewSurface.indexOf("const handleDidFailLoad = (event: Event) =>"),
   );
 
   assert.match(
@@ -119,11 +119,11 @@ test("agent chat suppresses host route echoes and semantic no-op navigations", (
   );
   assert.match(
     navigationHandlerBlock,
-    /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/u,
+    /areAgentWebclientChatBusinessRoutesEquivalent\([\s\S]*?context\.currentRoute,[\s\S]*?nextChatRoute/u,
   );
   assert.match(
     navigationHandlerBlock,
-    /!isHostRouteEcho[\s\S]*?!isSameDesktopBusinessRoute[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/u,
+    /!isHostRouteEcho[\s\S]*?!isSameDesktopBusinessRoute[\s\S]*?context\.navigate\(nextChatRoute, \{ replace: true \}\)/u,
   );
 });
 
@@ -131,7 +131,7 @@ test("active Main Chat turns a bare different-Agent navigation into an ownerless
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
-    serviceWebviewSurface.indexOf("const handleDidFailLoad = () =>"),
+    serviceWebviewSurface.indexOf("const handleDidFailLoad = (event: Event) =>"),
   );
   const switchIndex = navigationHandlerBlock.indexOf(
     "resolveAgentWebclientDesktopAgentSwitchTarget(",
@@ -148,7 +148,7 @@ test("active Main Chat turns a bare different-Agent navigation into an ownerless
   assert.match(navigationHandlerBlock, /\/\^\[1-9\]\\d\{12\}\$\/u/u);
   assert.match(
     navigationHandlerBlock,
-    /navigate\(createAgentWebclientAgentPath\(switchedAgentKey, params\), \{[\s\S]*?replace: true/u,
+    /context\.navigate\(createAgentWebclientAgentPath\(switchedAgentKey, params\), \{[\s\S]*?replace: true/u,
   );
   assert.doesNotMatch(
     navigationHandlerBlock.slice(switchIndex, canonicalIndex),
@@ -160,7 +160,7 @@ test("new Chat route ownership comes from chat.start canonical synchronization",
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
-    serviceWebviewSurface.indexOf("const handleDidFailLoad = () =>"),
+    serviceWebviewSurface.indexOf("const handleDidFailLoad = (event: Event) =>"),
   );
   const registrationBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("const registration: EmbeddedCdpSurfaceRegistration"),
@@ -179,7 +179,7 @@ test("new Chat route ownership comes from chat.start canonical synchronization",
   assert.match(navigationHandlerBlock, /!newChatBootstrapOwnsPromotion/);
   assert.match(
     registrationBlock,
-    /isAgentWebclientChatSurface\(serviceId, surfaceId\)[\s\S]*?pageRouteIdentity: currentRouteWithHash/u,
+    /pageRouteIdentity:[\s\S]*?desiredDesktopRoute/u,
   );
   assert.match(registrationBlock, /ownerChatId\?\.trim\(\) === pending\.request\.chatId/);
   assert.match(registrationBlock, /canonicalChatSync\.respond\(\{[\s\S]*?ok: true/u);
@@ -254,30 +254,30 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const navigationHandlerBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("const syncNavigationRoute = (event: Event) =>"),
-    serviceWebviewSurface.indexOf("const handleDidFailLoad = () =>"),
+    serviceWebviewSurface.indexOf("const handleDidFailLoad = (event: Event) =>"),
   );
 
   assert.match(
     navigationHandlerBlock,
-    /const canSyncDesktopRoute = ownsActiveSurface;/,
+    /const canSyncDesktopRoute = context\.ownsActiveSurface;/,
   );
   assert.match(
     navigationHandlerBlock,
-    /canSyncDesktopRoute\s*&&\s*isAgentWebclientChatSurface\(service\?\.id, surfaceId\)/,
+    /canSyncDesktopRoute\s*&&\s*isAgentWebclientChatSurface\(context\.serviceId, context\.surfaceId\)/,
   );
   assert.match(
     navigationHandlerBlock,
-    /canSyncDesktopRoute\s*&&\s*isAgentWebclientManagementSurface\(service\?\.id, surfaceId\)/,
+    /canSyncDesktopRoute\s*&&\s*isAgentWebclientManagementSurface\(context\.serviceId, context\.surfaceId\)/,
   );
   assert.ok(
-    navigationHandlerBlock.indexOf("updateWebviewCurrentUrl(resolvedUrl") >= 0 &&
-      navigationHandlerBlock.indexOf("updateWebviewCurrentUrl(resolvedUrl") <
-        navigationHandlerBlock.indexOf("const canSyncDesktopRoute = ownsActiveSurface"),
+    navigationHandlerBlock.indexOf("context.updateWebviewCurrentUrl(resolvedUrl") >= 0 &&
+      navigationHandlerBlock.indexOf("context.updateWebviewCurrentUrl(resolvedUrl") <
+        navigationHandlerBlock.indexOf("const canSyncDesktopRoute = context.ownsActiveSurface"),
     "inactive surfaces should still record their current WebView URL",
   );
   assert.match(
     navigationHandlerBlock,
-    /sendServiceRouteToWebview\(resolvedUrl, "navigation"\)/,
+    /context\.sendServiceRouteToWebview\(resolvedUrl, "navigation"\)/,
   );
 });
 
@@ -379,9 +379,9 @@ test("service webview surface reports webview breadcrumbs for post-crash diagnos
 
   assert.match(serviceWebviewSurface, /function reportServiceWebviewDiagnostic/);
   assert.match(serviceWebviewSurface, /source:\s*"service-webview"/);
-  assert.match(serviceWebviewSurface, /reportServiceWebviewDiagnostic\("listeners-attached"\)/);
-  assert.match(serviceWebviewSurface, /reportServiceWebviewDiagnostic\("dom-ready"\)/);
-  assert.match(serviceWebviewSurface, /reportServiceWebviewDiagnostic\("navigation"/);
+  assert.match(serviceWebviewSurface, /reportDiagnostic\("listeners-attached"\)/);
+  assert.match(serviceWebviewSurface, /reportDiagnostic\("dom-ready"\)/);
+  assert.match(serviceWebviewSurface, /reportDiagnostic\("navigation"/);
   assert.match(serviceWebviewSurface, /reportServiceWebviewDiagnostic\("direct-route-load-url"/);
   assert.match(serviceWebviewSurface, /reportServiceWebviewDiagnostic\("direct-route-load-failed"/);
 });
@@ -398,9 +398,9 @@ test("service webview surface falls back to loadURL when client-side route navig
   assert.match(directRouteLoadBlock, /resolveServiceWebviewCurrentUrl\(/);
   assert.match(
     directRouteLoadBlock,
-    /lastDirectWebviewRouteRef\.current !== embeddedUrl[\s\S]*?direct-route-client-navigation-stale/u,
+    /isStaleTransition\(\)[\s\S]*?direct-route-client-navigation-stale/u,
   );
-  assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(targetUrl\)/);
 });
 
 test("main chat direct route loading uses business-route URL comparison", () => {
@@ -413,8 +413,44 @@ test("main chat direct route loading uses business-route URL comparison", () => 
   assert.match(serviceWebviewSurface, /areAgentWebclientChatNavigationUrlsEquivalent/);
   assert.match(
     directRouteLoadBlock,
-    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, embeddedUrl\)/,
+    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)/,
   );
+});
+
+test("service webview listeners stay bound across route and active-state changes", () => {
+  const source = readServiceWebviewSurfaceSource();
+  const listenerEffectStart = source.indexOf("const handleDomReady = () =>");
+  const listenerEffectEnd = source.indexOf("useEffect(() => {", listenerEffectStart);
+  const listenerEffect = source.slice(listenerEffectStart, listenerEffectEnd);
+
+  assert.match(source, /webviewEventContextRef\.current = \{/u);
+  assert.match(listenerEffect, /\}, \[bridgeReady, serviceWebviewPreloadUrl, webviewRenderKey\]\);/u);
+  assert.doesNotMatch(
+    listenerEffect.slice(listenerEffect.lastIndexOf("}, [")),
+    /embeddedUrl|currentRoute|ownsActiveSurface|ownerChatId/u,
+  );
+});
+
+test("main Chat queues the latest route until dom-ready and never retries deterministic rejection", () => {
+  const source = readServiceWebviewSurfaceSource();
+  const registrationBlock = source.slice(
+    source.indexOf("const mainChatSurface = isAgentWebclientChatSurface"),
+    source.indexOf("useEffect(() => {", source.indexOf("const mainChatSurface = isAgentWebclientChatSurface")),
+  );
+  const directRouteBlock = source.slice(
+    source.indexOf("function requestDirectWebviewRouteLoad"),
+    source.indexOf("function handleWebviewBridgeMessage"),
+  );
+
+  assert.match(registrationBlock, /const registrationActive = ownsActiveSurface && routeAligned/u);
+  assert.match(registrationBlock, /preserveRegisteredIdentity/u);
+  assert.match(registrationBlock, /result\.reason === "route_not_aligned"[\s\S]*?return;/u);
+  assert.doesNotMatch(registrationBlock, /attempt <= 6|Math\.min\(25/u);
+  assert.match(registrationBlock, /attempt <= 2[\s\S]*?attempt === 1 \? 100 : 300/u);
+  assert.match(directRouteBlock, /routeTransitionSequenceRef\.current \+ 1/u);
+  assert.match(directRouteBlock, /!domReady\.ready/u);
+  assert.match(directRouteBlock, /pendingDirectRouteTransitionRef\.current/u);
+  assert.match(source, /webviewDomReadyRef\.current = \{ ready: true, webContentsId \}/u);
 });
 
 test("main chat synchronizes changed host params without replaying its business route", () => {

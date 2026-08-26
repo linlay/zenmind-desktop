@@ -78,6 +78,7 @@ import type { WebviewSelectionToolbarStateListener } from "../webview-selection-
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
   EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRegistrationResult,
   EmbeddedCdpSurfaceRemoval,
   EmbeddedCdpSurfaceTargetStateRequest,
   EmbeddedCdpSurfaceTargetStateResult
@@ -1032,7 +1033,7 @@ export interface DesktopApi {
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
   };
   embeddedCdp: {
-    registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<{ ok: boolean }>;
+    registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<EmbeddedCdpSurfaceRegistrationResult>;
     unregisterSurface: (input: EmbeddedCdpSurfaceRemoval) => Promise<{ ok: boolean }>;
     getSurfaceTargetState: (input: EmbeddedCdpSurfaceTargetStateRequest) => Promise<EmbeddedCdpSurfaceTargetStateResult>;
   };

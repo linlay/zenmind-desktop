@@ -62,6 +62,15 @@ export type EmbeddedCdpSurfaceRegistration = SurfaceIdentity & {
   activeTabId: string | null;
 };
 
+export type EmbeddedCdpSurfaceRegistrationRejectReason =
+  | "route_not_aligned"
+  | "ownership_conflict"
+  | "invalid_registration";
+
+export type EmbeddedCdpSurfaceRegistrationResult =
+  | { ok: true }
+  | { ok: false; reason: EmbeddedCdpSurfaceRegistrationRejectReason };
+
 export type EmbeddedCdpSurfaceTargetState = {
   tabId: string;
   targetId: string;

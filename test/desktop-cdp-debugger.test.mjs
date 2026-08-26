@@ -917,8 +917,52 @@ test("browser surface registry uses explicit guest registrations for complete su
     getCurrentPageSnapshot: () => currentPageSnapshot
   });
 
+  assert.deepEqual(
+    registry.registerSurface({}, 7),
+    { ok: false, reason: "invalid_registration" }
+  );
+  const mainChatIdentity = createSurfaceIdentity("main-chat", "", {
+    ownerChatId: "chat-a"
+  });
+  const mainChatRegistration = {
+    registrationId: "main-chat-generation",
+    ...mainChatIdentity,
+    surfaceKind: "service",
+    surfaceType: "agent-chat",
+    serviceId: "agent-webclient",
+    pageRoute: "/agent/agent-a",
+    pageRouteIdentity: "/agent/agent-a?chatId=chat-a",
+    ownerChatId: "chat-a",
+    label: "Main Chat",
+    url: "http://127.0.0.1:7079/agent/agent-a?chatId=chat-a",
+    active: false,
+    tabs: [{
+      tabId: mainChatIdentity.surfaceId,
+      currentUrl: "http://127.0.0.1:7079/agent/agent-b?chatId=chat-a",
+      title: "Main Chat",
+      webContentsId: 103,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false
+    }],
+    activeTabId: mainChatIdentity.surfaceId
+  };
+  assert.deepEqual(registry.registerSurface(mainChatRegistration, 7), { ok: true });
+  assert.deepEqual(
+    registry.registerSurface(mainChatRegistration, 8),
+    { ok: false, reason: "ownership_conflict" }
+  );
+  assert.equal(registry.unregisterSurface({
+    registrationId: mainChatRegistration.registrationId,
+    surfaceId: mainChatIdentity.surfaceId
+  }, 7), true);
+  assert.deepEqual(
+    registry.registerSurface({ ...mainChatRegistration, active: true }, 7),
+    { ok: false, reason: "route_not_aligned" }
+  );
+
   assert.equal(registry.listBrowserSurfaces().find((surface) => surface.id === docsIdentity.surfaceId).open, false);
-  assert.equal(registry.registerSurface({
+  assert.deepEqual(registry.registerSurface({
     registrationId: "docs-registration",
     ...docsIdentity,
     surfaceIdentityKey: "website:docs",
@@ -948,8 +992,8 @@ test("browser surface registry uses explicit guest registrations for complete su
       }
     ],
     activeTabId: "docs-tab-active"
-  }, 7), true);
-  assert.equal(registry.registerSurface({
+  }, 7), { ok: true });
+  assert.deepEqual(registry.registerSurface({
     registrationId: "app-registration",
     ...appIdentity,
     surfaceIdentityKey: "webapp:app",
@@ -968,7 +1012,7 @@ test("browser surface registry uses explicit guest registrations for complete su
       isLoading: false
     }],
     activeTabId: "app-tab"
-  }, 7), true);
+  }, 7), { ok: true });
 
   const surfaces = registry.listBrowserSurfaces();
   const registeredSurfaces = registry.listRegisteredSurfaces();
@@ -1054,7 +1098,7 @@ test("browser surface registry keeps Copilot Dock live-active while excluding it
     getCurrentPageSnapshot: () => currentPageSnapshot
   });
 
-  assert.equal(registry.registerSurface({
+  assert.deepEqual(registry.registerSurface({
     registrationId: "website-generation",
     ...websiteIdentity,
     surfaceIdentityKey: "website:current",
@@ -1074,8 +1118,8 @@ test("browser surface registry keeps Copilot Dock live-active while excluding it
       isLoading: false
     }],
     activeTabId: "website-tab"
-  }, 7), true);
-  assert.equal(registry.registerSurface({
+  }, 7), { ok: true });
+  assert.deepEqual(registry.registerSurface({
     registrationId: "dock-generation",
     ...dockIdentity,
     surfaceKind: "service",
@@ -1094,7 +1138,7 @@ test("browser surface registry keeps Copilot Dock live-active while excluding it
       isLoading: false
     }],
     activeTabId: "copilot-dock"
-  }, 7), true);
+  }, 7), { ok: true });
 
   assert.equal(registry.resolveWebviewSurfaceTarget(702).active, true);
   const exported = registry.listRegisteredSurfaces();

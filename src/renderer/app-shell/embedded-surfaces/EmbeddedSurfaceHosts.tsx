@@ -25,7 +25,10 @@ import {
 
 type ThemeMode = "light" | "dark";
 
-type AgentWebclientRouteItem = Pick<AgentWebclientResolvedRoute, "embedPath" | "label" | "kind">;
+type AgentWebclientRouteItem = Pick<
+  AgentWebclientResolvedRoute,
+  "embedPath" | "label" | "kind" | "routePath"
+>;
 
 const ExternalWebviewPage = lazy(() =>
   import("../../pages/external-webview/ExternalWebviewPage").then((module) => ({ default: module.ExternalWebviewPage }))
@@ -90,10 +93,12 @@ export function ServiceWebviewSurfaceHost({
 }) {
   const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
   const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);
+  const lastAgentChatOwnerRef = useRef<string | null>(null);
   const lastCopilotRouteRef = useRef<AgentWebclientRouteItem | null>(null);
 
   if (activeAgentWebclientRouteKind === "chat") {
     lastAgentChatRouteRef.current = activeAgentWebclientRoute;
+    lastAgentChatOwnerRef.current = activeOwnerChatId ?? null;
   }
   if (activeAgentWebclientRouteKind === "copilot") {
     lastCopilotRouteRef.current = activeAgentWebclientRoute;
@@ -108,6 +113,10 @@ export function ServiceWebviewSurfaceHost({
     activeAgentWebclientRouteKind === "copilot"
       ? activeAgentWebclientRoute
       : lastCopilotRouteRef.current;
+  const agentChatOwnerChatId =
+    activeAgentWebclientRouteKind === "chat"
+      ? activeOwnerChatId ?? null
+      : lastAgentChatOwnerRef.current;
   const activeSurfaceId =
     activeServiceId === AGENT_WEBCLIENT_SERVICE_ID
       ? activeAgentWebclientRouteKind === "chat"
@@ -159,15 +168,16 @@ export function ServiceWebviewSurfaceHost({
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
+          desktopRoute={agentChatRoute?.routePath}
           embedPath={agentChatRoute?.embedPath}
           focusRequestId={agentChatFocusRequestId}
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(agentChatRoute?.embedPath)}
           onFocusRequestHandled={onAgentChatFocusRequestHandled}
-          ownerChatId={activeOwnerChatId || undefined}
+          ownerChatId={agentChatOwnerChatId || undefined}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}
           surfaceIdentity={createSurfaceIdentity("main-chat", "", {
-            ownerChatId: activeOwnerChatId || undefined
+            ownerChatId: agentChatOwnerChatId || undefined
           })}
           surfaceLabel={agentChatRoute?.label}
         />
@@ -176,6 +186,7 @@ export function ServiceWebviewSurfaceHost({
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_COPILOT_SURFACE_ID}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "copilot"}
+          desktopRoute={copilotRoute?.routePath}
           embedPath={copilotRoute?.embedPath}
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(copilotRoute?.embedPath)}
@@ -188,6 +199,7 @@ export function ServiceWebviewSurfaceHost({
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_SERVICE_ID}
           active
+          desktopRoute={activeAgentWebclientRoute?.routePath}
           embedPath={activeAgentWebclientRouteKind === "management" ? activeAgentWebclientRoute?.embedPath : undefined}
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={activeAgentWebclientRouteKind === "management" && Boolean(activeAgentWebclientRoute?.embedPath)}

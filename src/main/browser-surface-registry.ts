@@ -2,6 +2,7 @@ import type { WebContents } from "electron";
 import type { DesktopPageContextSnapshot } from "../shared/contracts";
 import type {
   EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRegistrationResult,
   EmbeddedCdpSurfaceRemoval,
   EmbeddedCdpSurfaceTabRegistration,
   EmbeddedCdpSiteSurfaceKind,
@@ -277,13 +278,6 @@ function activeRegistrationTab(input: EmbeddedCdpSurfaceRegistration) {
     : null;
 }
 
-function describeMainChatRoute(value: string | undefined) {
-  if (readAgentWebclientNewChatSource(value ?? "")) return "new-chat";
-  if (readAgentWebclientCanonicalChatSource(value ?? "")) return "canonical";
-  if (readAgentWebclientAgentRouteKey(value ?? "")) return "agent-route";
-  return "invalid";
-}
-
 function isMainChatSurfaceRegistration(input: EmbeddedCdpSurfaceRegistration) {
   return input.surfaceId === MAIN_CHAT_SURFACE_ID &&
     input.surfaceRole === "main-chat" &&
@@ -484,7 +478,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     ownerWebContentsId: number,
     reason: SurfaceRegistrationRejectionReason,
     details: Pick<SurfaceRegistrationDiagnostic, "invalidCheck" | "existing" | "conflict"> = {},
-  ) {
+  ): EmbeddedCdpSurfaceRegistrationResult {
     const diagnostic = createRegistrationDiagnostic(input, ownerWebContentsId, reason, details);
     const key = `${diagnostic.registrationId}\u0000${reason}`;
     const pending = pendingRegistrationDiagnostics.get(key);
@@ -492,12 +486,26 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       pending.count += 1;
       pending.diagnostic = diagnostic;
       scheduleRegistrationDiagnosticFlush(key);
-      return false;
+      return {
+        ok: false,
+        reason: reason === "invalid_registration"
+          ? "invalid_registration"
+          : reason === "main_chat_owner_transition_rejected"
+            ? "route_not_aligned"
+            : "ownership_conflict",
+      };
     }
     pendingRegistrationDiagnostics.set(key, { diagnostic, count: 1, timer: null });
     reportRegistrationDiagnostic(diagnostic);
     scheduleRegistrationDiagnosticFlush(key);
-    return false;
+    return {
+      ok: false,
+      reason: reason === "invalid_registration"
+        ? "invalid_registration"
+        : reason === "main_chat_owner_transition_rejected"
+          ? "route_not_aligned"
+          : "ownership_conflict",
+    };
   }
 
   function settleRegistrationDiagnostics(input: EmbeddedCdpSurfaceRegistration) {
@@ -906,7 +914,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     addDerivedAliases(registered);
     indexRegisteredSurface(registered);
     settleRegistrationDiagnostics(registrationInput);
-    return true;
+    return { ok: true } satisfies EmbeddedCdpSurfaceRegistrationResult;
   }
 
   function unregisterSurface(input: EmbeddedCdpSurfaceRemoval, ownerWebContentsId: number) {

@@ -52,9 +52,7 @@ export function registerEmbeddedCdpIpcHandlers(
     "embeddedCdp.registerSurface",
     (event, input: EmbeddedCdpSurfaceRegistration) => {
       ensureOwnerCleanup(event.sender);
-      return {
-        ok: browserSurfaces.registerSurface(input, event.sender.id)
-      };
+      return browserSurfaces.registerSurface(input, event.sender.id);
     }
   );
 
