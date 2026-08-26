@@ -1,5 +1,5 @@
 import { ArrowLeftOutlined, EditOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
-import { createElement, useEffect, useRef, useState } from "react";
+import { createElement, useCallback, useEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
   MouseEvent as ReactMouseEvent,
@@ -30,6 +30,7 @@ import { registerAssistantPageContextProvider } from "../../copilot/page-context
 import { publishCurrentPageContextSnapshot } from "../../services/currentPageContext";
 import { registerDesktopActionProviderForScope } from "../../services/desktopActionRegistry";
 import { registerWebSurfaceStateProvider } from "../../services/webSurfaceStateRegistry";
+import { registerSurfaceRuntimeDownloadListener } from "../../services/surfaceRuntimeDownloads";
 import { SidebarActionIcon } from "../../components/BrandMark";
 import {
   Favicon,
@@ -62,6 +63,17 @@ export type ExternalWebviewController = {
   activateTab: (tabId: string) => Promise<ExternalWebviewControllerState>;
   closeTab: (tabId: string) => Promise<ExternalWebviewControllerState | null>;
   unregisterSurface: () => Promise<void>;
+};
+
+export type ExternalWebviewRuntimeSnapshot = {
+  tabs: Array<{
+    title: string;
+    currentUrl: string;
+    faviconUrl?: string;
+    partition?: string;
+    userAgent?: string;
+  }>;
+  activeTabIndex: number;
 };
 
 type ExternalWebviewPageProps = {
@@ -99,6 +111,9 @@ type ExternalWebviewPageProps = {
   onTogglePageReview?: (page: { url: string; title: string }) => void;
   preloadUrl?: string;
   onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
+  onRuntimeProtectionChange?: (protectedFromSleep: boolean) => void;
+  initialRuntimeSnapshot?: ExternalWebviewRuntimeSnapshot | null;
+  onRuntimeSnapshotChange?: (snapshot: ExternalWebviewRuntimeSnapshot) => void;
   cdpActive?: boolean;
   publishPageContext?: boolean;
   onControllerReady?: (controller: ExternalWebviewController | null) => void;
@@ -187,6 +202,11 @@ type ExternalWebviewPaneProps = {
   preloadUrl?: string;
   onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
   onFaviconDiscovered?: (faviconUrl: string) => void;
+  onRuntimeProtectionChange?: (
+    tabId: string,
+    reason: string,
+    protectedFromSleep: boolean,
+  ) => void;
 };
 
 function getFallbackTabTitle(defaultTitle: string, url: string) {
@@ -317,7 +337,8 @@ function ExternalWebviewPane({
   onDomReady,
   preloadUrl,
   onIpcMessage,
-  onFaviconDiscovered
+  onFaviconDiscovered,
+  onRuntimeProtectionChange,
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
   const initialSrcRef = useRef(tab.currentUrl);
@@ -387,13 +408,22 @@ function ExternalWebviewPane({
       onCloseRequested(tab.id);
     };
     const handleDidStartLoading = () => {
+      onRuntimeProtectionChange?.(tab.id, "loading", true);
       syncFromWebview({ isLoading: true });
     };
     const handleDidStopLoading = () => {
+      onRuntimeProtectionChange?.(tab.id, "loading", false);
       syncFromWebview({ isLoading: false });
     };
     const handleDidFailLoad = () => {
+      onRuntimeProtectionChange?.(tab.id, "loading", false);
       syncFromWebview({ isLoading: false });
+    };
+    const handleMediaStartedPlaying = () => {
+      onRuntimeProtectionChange?.(tab.id, "media", true);
+    };
+    const handleMediaPaused = () => {
+      onRuntimeProtectionChange?.(tab.id, "media", false);
     };
     const handleDidNavigate = (event: Event) => {
       const nextUrl = readEventString(event, "url");
@@ -423,6 +453,8 @@ function ExternalWebviewPane({
     webview.addEventListener("did-navigate-in-page", handleDidNavigateInPage);
     webview.addEventListener("page-title-updated", handlePageTitleUpdated);
     webview.addEventListener("page-favicon-updated", handlePageFaviconUpdated);
+    webview.addEventListener("media-started-playing", handleMediaStartedPlaying);
+    webview.addEventListener("media-paused", handleMediaPaused);
     webview.addEventListener("close", handleClose);
     if (onIpcMessage) webview.addEventListener("ipc-message", onIpcMessage as EventListener);
     syncFromWebview();
@@ -436,10 +468,23 @@ function ExternalWebviewPane({
       webview.removeEventListener("did-navigate-in-page", handleDidNavigateInPage);
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
+      webview.removeEventListener("media-started-playing", handleMediaStartedPlaying);
+      webview.removeEventListener("media-paused", handleMediaPaused);
       webview.removeEventListener("close", handleClose);
       if (onIpcMessage) webview.removeEventListener("ipc-message", onIpcMessage as EventListener);
+      onRuntimeProtectionChange?.(tab.id, "loading", false);
+      onRuntimeProtectionChange?.(tab.id, "media", false);
     };
-  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onIpcMessage, onTabStateChange, tab.currentUrl, tab.id]);
+  }, [
+    onCloseRequested,
+    onDomReady,
+    onFaviconDiscovered,
+    onIpcMessage,
+    onRuntimeProtectionChange,
+    onTabStateChange,
+    tab.currentUrl,
+    tab.id,
+  ]);
 
   return (
     <div
@@ -501,6 +546,9 @@ export function ExternalWebviewPage({
   onTogglePageReview,
   preloadUrl,
   onIpcMessage,
+  onRuntimeProtectionChange,
+  initialRuntimeSnapshot,
+  onRuntimeSnapshotChange,
   cdpActive,
   publishPageContext = true,
   onControllerReady
@@ -514,6 +562,12 @@ export function ExternalWebviewPage({
   const desktopSsoAuthenticatedRef = useRef(false);
   const surfaceKeyRef = useRef(`${title}\u0000${url}\u0000${partition || ""}`);
   const activeRef = useRef(active !== false);
+  const runtimeProtectionReasonsRef = useRef(new Set<string>());
+  const runtimeDownloadTabIdsRef = useRef(new Map<string, string>());
+  const onRuntimeProtectionChangeRef = useRef(onRuntimeProtectionChange);
+  onRuntimeProtectionChangeRef.current = onRuntimeProtectionChange;
+  const onRuntimeSnapshotChangeRef = useRef(onRuntimeSnapshotChange);
+  onRuntimeSnapshotChangeRef.current = onRuntimeSnapshotChange;
   const [surfaceRegistrationId] = useState(createSurfaceRegistrationId);
   const registeredSurfaceKind = surfaceKind ?? (surfaceIdProp === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
   const workPanelBrowser = registeredSurfaceKind === "chat-work-panel";
@@ -554,6 +608,30 @@ export function ExternalWebviewPage({
         "aria-hidden": active === false
       };
 
+  const handleRuntimeProtectionChange = useCallback((
+    tabId: string,
+    reason: string,
+    protectedFromSleep: boolean,
+  ) => {
+    const key = `${tabId}:${reason}`;
+    const wasProtected = runtimeProtectionReasonsRef.current.size > 0;
+    if (protectedFromSleep) {
+      runtimeProtectionReasonsRef.current.add(key);
+    } else {
+      runtimeProtectionReasonsRef.current.delete(key);
+    }
+    const isProtected = runtimeProtectionReasonsRef.current.size > 0;
+    if (isProtected !== wasProtected) {
+      onRuntimeProtectionChangeRef.current?.(isProtected);
+    }
+  }, []);
+
+  useEffect(() => () => {
+    runtimeProtectionReasonsRef.current.clear();
+    runtimeDownloadTabIdsRef.current.clear();
+    onRuntimeProtectionChangeRef.current?.(false);
+  }, []);
+
   const createTab = (
     initialUrl: string,
     preferredTitle: string,
@@ -574,7 +652,28 @@ export function ExternalWebviewPage({
     } satisfies ExternalWebviewTabState;
   };
 
-  const createInitialBrowserState = () => {
+  const createInitialBrowserState = (restoreRuntimeSnapshot = false) => {
+    const snapshotTabs = restoreRuntimeSnapshot
+      ? initialRuntimeSnapshot?.tabs.filter((tab) => tab.currentUrl.trim())
+      : undefined;
+    if (snapshotTabs && snapshotTabs.length > 0) {
+      const tabs = snapshotTabs.map((tab) => ({
+        ...createTab(tab.currentUrl, tab.title, {
+          partition: tab.partition,
+          userAgent: tab.userAgent,
+        }),
+        faviconUrl: tab.faviconUrl,
+      }));
+      const activeTabIndex = Math.max(
+        0,
+        Math.min(initialRuntimeSnapshot?.activeTabIndex ?? 0, tabs.length - 1),
+      );
+      initialFaviconTabIdRef.current = tabs[activeTabIndex]?.id ?? tabs[0].id;
+      return {
+        tabs,
+        activeTabId: tabs[activeTabIndex]?.id ?? tabs[0].id,
+      } satisfies ExternalWebviewBrowserState;
+    }
     const initialTab = createTab(url, title);
     initialFaviconTabIdRef.current = initialTab.id;
     return {
@@ -583,13 +682,38 @@ export function ExternalWebviewPage({
     } satisfies ExternalWebviewBrowserState;
   };
 
-  const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(() => createInitialBrowserState());
+  const [browserState, setBrowserState] = useState<ExternalWebviewBrowserState>(
+    () => createInitialBrowserState(true),
+  );
   const [addressInputValue, setAddressInputValue] = useState(() => url);
   const [addressInputUnlocked, setAddressInputUnlocked] = useState(false);
   const [tabsOverflowing, setTabsOverflowing] = useState(false);
   const [draggingTabId, setDraggingTabId] = useState<string | null>(null);
   const [tabDragOffsetX, setTabDragOffsetX] = useState(0);
   const browserStateRef = useRef(browserState);
+  useEffect(() => registerSurfaceRuntimeDownloadListener((state) => {
+    if (state.active) {
+      const sourceTab = browserStateRef.current.tabs.find(
+        (tab) => tab.guestId === state.webContentsId,
+      );
+      if (!sourceTab) return;
+      runtimeDownloadTabIdsRef.current.set(state.downloadId, sourceTab.id);
+      handleRuntimeProtectionChange(
+        sourceTab.id,
+        `download:${state.downloadId}`,
+        true,
+      );
+      return;
+    }
+    const sourceTabId = runtimeDownloadTabIdsRef.current.get(state.downloadId);
+    if (!sourceTabId) return;
+    runtimeDownloadTabIdsRef.current.delete(state.downloadId);
+    handleRuntimeProtectionChange(
+      sourceTabId,
+      `download:${state.downloadId}`,
+      false,
+    );
+  }), [handleRuntimeProtectionChange]);
   const tabsStripRef = useRef<HTMLDivElement | null>(null);
   const tabPointerDragRef = useRef<{
     id: string;
@@ -665,6 +789,20 @@ export function ExternalWebviewPage({
 
   useEffect(() => {
     browserStateRef.current = browserState;
+    const activeTabIndex = Math.max(
+      0,
+      browserState.tabs.findIndex((tab) => tab.id === browserState.activeTabId),
+    );
+    onRuntimeSnapshotChangeRef.current?.({
+      tabs: browserState.tabs.map((tab) => ({
+        title: tab.title,
+        currentUrl: tab.currentUrl,
+        ...(tab.faviconUrl ? { faviconUrl: tab.faviconUrl } : {}),
+        ...(tab.partition ? { partition: tab.partition } : {}),
+        ...(tab.userAgent ? { userAgent: tab.userAgent } : {}),
+      })),
+      activeTabIndex,
+    });
   }, [browserState]);
 
   useEffect(() => {
@@ -679,7 +817,7 @@ export function ExternalWebviewPage({
     surfaceKeyRef.current = nextSurfaceKey;
     webviewRefs.current.clear();
     faviconReportedRef.current = false;
-    const nextState = createInitialBrowserState();
+    const nextState = createInitialBrowserState(false);
     browserStateRef.current = nextState;
     setBrowserState(nextState);
     setAddressInputValue(url);
@@ -2082,6 +2220,7 @@ export function ExternalWebviewPage({
                   }
                 : undefined
             }
+            onRuntimeProtectionChange={handleRuntimeProtectionChange}
           />
         ))}
       </div>

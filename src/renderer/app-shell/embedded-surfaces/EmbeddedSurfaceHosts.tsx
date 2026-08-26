@@ -14,6 +14,13 @@ import {
 } from "../../../shared/agent-webclient-routes";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import type { WebEntryKey } from "../../../shared/contracts/webs";
+import type { ExternalWebviewRuntimeSnapshot } from "../../pages/external-webview/ExternalWebviewPage";
+import {
+  AGENT_MANAGEMENT_RUNTIME_KEY,
+  BUILTIN_BROWSER_RUNTIME_KEY,
+  createServiceSurfaceRuntimeKey,
+  createWebSurfaceRuntimeKey,
+} from "../../../shared/surface-runtime-budget";
 import { useI18n } from "../../i18n/useI18n";
 import {
   MAIN_CHAT_SURFACE_ID,
@@ -79,26 +86,37 @@ export function ServiceWebviewSurfaceHost({
   agentChatFocusRequestId,
   hostTheme,
   mountedServiceIds,
+  agentManagementSurfaceMounted,
   onAgentChatFocusRequestHandled,
   activeOwnerChatId,
   onMainChatSurfaceRegistrationChange,
+  onSurfaceRuntimeProtectionChange,
 }: {
   activeServiceId: string | null;
   activeAgentWebclientRoute: AgentWebclientRouteItem | null;
   agentChatFocusRequestId?: number | null;
   hostTheme: ThemeMode;
   mountedServiceIds: string[];
+  agentManagementSurfaceMounted: boolean;
   onAgentChatFocusRequestHandled?: (requestId: number) => void;
   activeOwnerChatId?: string | null;
   onMainChatSurfaceRegistrationChange?: (snapshot: MainChatCommitSnapshot | null) => void;
+  onSurfaceRuntimeProtectionChange?: (
+    runtimeKey: string,
+    protectedFromSleep: boolean,
+  ) => void;
 }) {
   const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
   const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);
   const lastAgentChatOwnerRef = useRef<string | null>(null);
+  const lastManagementRouteRef = useRef<AgentWebclientRouteItem | null>(null);
 
   if (activeAgentWebclientRouteKind === "chat") {
     lastAgentChatRouteRef.current = activeAgentWebclientRoute;
     lastAgentChatOwnerRef.current = activeOwnerChatId ?? null;
+  }
+  if (activeAgentWebclientRouteKind === "management") {
+    lastManagementRouteRef.current = activeAgentWebclientRoute;
   }
 
   const agentWebclientMounted = mountedServiceIds.includes(AGENT_WEBCLIENT_SERVICE_ID);
@@ -110,6 +128,10 @@ export function ServiceWebviewSurfaceHost({
     activeAgentWebclientRouteKind === "chat"
       ? activeOwnerChatId ?? null
       : lastAgentChatOwnerRef.current;
+  const managementRoute =
+    activeAgentWebclientRouteKind === "management"
+      ? activeAgentWebclientRoute
+      : lastManagementRouteRef.current;
   const activeSurfaceId =
     activeServiceId === AGENT_WEBCLIENT_SERVICE_ID
       ? activeAgentWebclientRouteKind === "chat"
@@ -122,8 +144,11 @@ export function ServiceWebviewSurfaceHost({
   const shouldRenderAgentChatSurface = agentWebclientMounted && Boolean(agentChatRoute);
   const shouldRenderAgentManagementSurface =
     agentWebclientMounted &&
-    activeServiceId === AGENT_WEBCLIENT_SERVICE_ID &&
-    activeAgentWebclientRouteKind !== "chat";
+    Boolean(managementRoute) &&
+    (
+      agentManagementSurfaceMounted ||
+      (activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "management")
+    );
 
   useEffect(() => {
     setActiveServiceSurfaceId(activeSurfaceId);
@@ -150,6 +175,12 @@ export function ServiceWebviewSurfaceHost({
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={shouldLoadInitialServiceUrlDirectly(serviceId)}
           serviceId={serviceId}
+          onRuntimeProtectionChange={(protectedFromSleep) => {
+            onSurfaceRuntimeProtectionChange?.(
+              createServiceSurfaceRuntimeKey(serviceId),
+              protectedFromSleep,
+            );
+          }}
         />
       ))}
       {shouldRenderAgentChatSurface ? (
@@ -175,15 +206,21 @@ export function ServiceWebviewSurfaceHost({
       {shouldRenderAgentManagementSurface ? (
         <ServiceWebviewSurface
           key={AGENT_WEBCLIENT_SERVICE_ID}
-          active
-          desktopRoute={activeAgentWebclientRoute?.routePath}
-          embedPath={activeAgentWebclientRouteKind === "management" ? activeAgentWebclientRoute?.embedPath : undefined}
+          active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "management"}
+          desktopRoute={managementRoute?.routePath}
+          embedPath={managementRoute?.embedPath}
           hostTheme={hostTheme}
-          loadInitialEmbeddedUrlDirectly={activeAgentWebclientRouteKind === "management" && Boolean(activeAgentWebclientRoute?.embedPath)}
+          loadInitialEmbeddedUrlDirectly={Boolean(managementRoute?.embedPath)}
+          onRuntimeProtectionChange={(protectedFromSleep) => {
+            onSurfaceRuntimeProtectionChange?.(
+              AGENT_MANAGEMENT_RUNTIME_KEY,
+              protectedFromSleep,
+            );
+          }}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}
           surfaceIdentity={createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID)}
           surfaceIdentityKey={AGENT_WEBCLIENT_SERVICE_ID}
-          surfaceLabel={activeAgentWebclientRoute?.label}
+          surfaceLabel={managementRoute?.label}
         />
       ) : null}
     </EmbeddedSurfaceSuspense>
@@ -196,7 +233,8 @@ export function BuiltinBrowserSurfaceHost({
   onCloseSurface,
   assistantDockOpen,
   onOpenAssistantDock,
-  onCloseAssistantDock
+  onCloseAssistantDock,
+  onRuntimeProtectionChange,
 }: {
   active: boolean;
   mounted: boolean;
@@ -204,7 +242,12 @@ export function BuiltinBrowserSurfaceHost({
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
+  onRuntimeProtectionChange?: (
+    runtimeKey: string,
+    protectedFromSleep: boolean,
+  ) => void;
 }) {
+  const runtimeSnapshotRef = useRef<ExternalWebviewRuntimeSnapshot | null>(null);
   if (!mounted) {
     return null;
   }
@@ -218,10 +261,23 @@ export function BuiltinBrowserSurfaceHost({
         active={active}
         title={BUILTIN_BROWSER_SURFACE_LABEL}
         url={BUILTIN_BROWSER_DEFAULT_URL}
-        onCloseSurface={onCloseSurface}
+        initialRuntimeSnapshot={runtimeSnapshotRef.current}
+        onRuntimeSnapshotChange={(snapshot) => {
+          runtimeSnapshotRef.current = snapshot;
+        }}
+        onCloseSurface={onCloseSurface ? () => {
+          runtimeSnapshotRef.current = null;
+          onCloseSurface();
+        } : undefined}
         assistantDockOpen={assistantDockOpen}
         onOpenAssistantDock={onOpenAssistantDock}
         onCloseAssistantDock={onCloseAssistantDock}
+        onRuntimeProtectionChange={(protectedFromSleep) => {
+          onRuntimeProtectionChange?.(
+            BUILTIN_BROWSER_RUNTIME_KEY,
+            protectedFromSleep,
+          );
+        }}
       />
     </EmbeddedSurfaceSuspense>
   );
@@ -235,7 +291,8 @@ export function WebSurfaceHost({
   onWebsiteFaviconDiscovered,
   assistantDockOpen,
   onOpenAssistantDock,
-  onCloseAssistantDock
+  onCloseAssistantDock,
+  onRuntimeProtectionChange,
 }: {
   activeEntryKey: WebEntryKey | null;
   itemMap: Map<WebEntryKey, EmbeddedSidebarItem>;
@@ -249,8 +306,22 @@ export function WebSurfaceHost({
   assistantDockOpen?: boolean;
   onOpenAssistantDock?: () => void;
   onCloseAssistantDock?: () => void;
+  onRuntimeProtectionChange?: (
+    runtimeKey: string,
+    protectedFromSleep: boolean,
+  ) => void;
 }) {
   const { t } = useI18n();
+  const runtimeSnapshotsRef = useRef(
+    new Map<WebEntryKey, ExternalWebviewRuntimeSnapshot>(),
+  );
+  useEffect(() => {
+    for (const entryKey of runtimeSnapshotsRef.current.keys()) {
+      if (!itemMap.has(entryKey)) {
+        runtimeSnapshotsRef.current.delete(entryKey);
+      }
+    }
+  }, [itemMap]);
   const visibleEntryKeys = (
     activeEntryKey && itemMap.has(activeEntryKey) && !mountedEntryKeys.includes(activeEntryKey)
       ? [...mountedEntryKeys, activeEntryKey]
@@ -298,7 +369,14 @@ export function WebSurfaceHost({
             chrome={item.chrome}
             partition={resolveWebsiteSsoPartition(item)}
             refreshOnDesktopSso={isWebsite}
-            onCloseSurface={onCloseWebItem ? () => onCloseWebItem(entryKey) : undefined}
+            initialRuntimeSnapshot={runtimeSnapshotsRef.current.get(entryKey)}
+            onRuntimeSnapshotChange={(snapshot) => {
+              runtimeSnapshotsRef.current.set(entryKey, snapshot);
+            }}
+            onCloseSurface={onCloseWebItem ? () => {
+              runtimeSnapshotsRef.current.delete(entryKey);
+              onCloseWebItem(entryKey);
+            } : undefined}
             onFaviconDiscovered={
               isWebsite && onWebsiteFaviconDiscovered
                 ? (faviconUrl: string) =>
@@ -308,6 +386,12 @@ export function WebSurfaceHost({
             assistantDockOpen={assistantDockOpen}
             onOpenAssistantDock={onOpenAssistantDock}
             onCloseAssistantDock={onCloseAssistantDock}
+            onRuntimeProtectionChange={(protectedFromSleep) => {
+              onRuntimeProtectionChange?.(
+                createWebSurfaceRuntimeKey(entryKey),
+                protectedFromSleep,
+              );
+            }}
           />
         );
       })}

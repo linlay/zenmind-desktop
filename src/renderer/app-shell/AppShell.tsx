@@ -71,6 +71,16 @@ import {
 } from "../../shared/surface-identity";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
 import {
+  AGENT_MANAGEMENT_RUNTIME_KEY,
+  BUILTIN_BROWSER_RUNTIME_KEY,
+  SURFACE_RUNTIME_SWEEP_INTERVAL_MS,
+  createServiceSurfaceRuntimeKey,
+  createSurfaceRuntimeBudgetState,
+  createWebSurfaceRuntimeKey,
+  reconcileSurfaceRuntimeBudget,
+  type SurfaceRuntimeBudgetCandidate,
+} from "../../shared/surface-runtime-budget";
+import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_MAX_WIDTH,
   normalizeSidebarLayoutState,
@@ -829,9 +839,28 @@ export function AppShell() {
   const [mountedWebEntryKeys, setMountedWebEntryKeys] = useState<WebEntryKey[]>(() =>
     activeWebEntryKey ? [activeWebEntryKey] : []
   );
+  const [agentManagementSurfaceMounted, setAgentManagementSurfaceMounted] = useState(
+    () => activeEmbeddedAgentWebclientRoute?.kind === "management",
+  );
   const [builtinBrowserSurfaceMounted, setBuiltinBrowserSurfaceMounted] = useState(
     () => location.pathname === BUILTIN_BROWSER_ROUTE
   );
+  const [surfaceRuntimeProtectionKeys, setSurfaceRuntimeProtectionKeys] = useState<Set<string>>(
+    () => new Set(),
+  );
+  const surfaceRuntimeBudgetStateRef = useRef(createSurfaceRuntimeBudgetState());
+  const handleSurfaceRuntimeProtectionChange = useCallback((
+    runtimeKey: string,
+    protectedFromSleep: boolean,
+  ) => {
+    setSurfaceRuntimeProtectionKeys((current) => {
+      if (current.has(runtimeKey) === protectedFromSleep) return current;
+      const next = new Set(current);
+      if (protectedFromSleep) next.add(runtimeKey);
+      else next.delete(runtimeKey);
+      return next;
+    });
+  }, []);
   const usesEmbeddedSurface =
     Boolean(activeEmbeddedAgentWebclientRoute) ||
     (!bareAgentWebclientServiceRoute && location.pathname.startsWith("/service/")) ||
@@ -1087,6 +1116,111 @@ export function AppShell() {
         .map((item) => item.entryKey),
     [webItems, webappRuntimeById],
   );
+  const surfaceRuntimeBudgetCandidates = useMemo(() => {
+    const candidates: SurfaceRuntimeBudgetCandidate[] = [];
+    const serviceIds = new Set(mountedServiceIds);
+    if (activeServiceId) serviceIds.add(activeServiceId);
+    for (const serviceId of serviceIds) {
+      // Main Chat and Copilot share the Agent WebClient service host and are
+      // intentionally outside the evictable budget.
+      if (serviceId === AGENT_WEBCLIENT_SERVICE_ID) continue;
+      const key = createServiceSurfaceRuntimeKey(serviceId);
+      candidates.push({
+        key,
+        active: activeServiceId === serviceId,
+        protectedFromSleep: surfaceRuntimeProtectionKeys.has(key),
+      });
+    }
+
+    const managementActive =
+      activeServiceId === AGENT_WEBCLIENT_SERVICE_ID &&
+      activeEmbeddedAgentWebclientRoute?.kind === "management";
+    if (agentManagementSurfaceMounted || managementActive) {
+      candidates.push({
+        key: AGENT_MANAGEMENT_RUNTIME_KEY,
+        active: managementActive,
+        protectedFromSleep: surfaceRuntimeProtectionKeys.has(AGENT_MANAGEMENT_RUNTIME_KEY),
+      });
+    }
+
+    const webEntryKeys = new Set(mountedWebEntryKeys);
+    if (activeWebEntryKey) webEntryKeys.add(activeWebEntryKey);
+    for (const entryKey of webEntryKeys) {
+      const key = createWebSurfaceRuntimeKey(entryKey);
+      const item = webItemMap.get(entryKey);
+      const webappRuntimeProtected = item?.kind === "webapp" && (
+        item.runtimeStatus === "starting" || item.runtimeStatus === "running"
+      );
+      candidates.push({
+        key,
+        active: activeWebEntryKey === entryKey,
+        protectedFromSleep:
+          webappRuntimeProtected || surfaceRuntimeProtectionKeys.has(key),
+      });
+    }
+
+    if (shouldMountBuiltinBrowserSurface) {
+      candidates.push({
+        key: BUILTIN_BROWSER_RUNTIME_KEY,
+        active: usesBuiltinBrowserSurface,
+        protectedFromSleep: surfaceRuntimeProtectionKeys.has(BUILTIN_BROWSER_RUNTIME_KEY),
+      });
+    }
+    return candidates;
+  }, [
+    activeEmbeddedAgentWebclientRoute?.kind,
+    activeServiceId,
+    activeWebEntryKey,
+    agentManagementSurfaceMounted,
+    mountedServiceIds,
+    mountedWebEntryKeys,
+    shouldMountBuiltinBrowserSurface,
+    surfaceRuntimeProtectionKeys,
+    usesBuiltinBrowserSurface,
+    webItemMap,
+  ]);
+  const sweepSurfaceRuntimeBudget = useCallback((now = Date.now()) => {
+    const result = reconcileSurfaceRuntimeBudget(
+      surfaceRuntimeBudgetStateRef.current,
+      surfaceRuntimeBudgetCandidates,
+      now,
+    );
+    surfaceRuntimeBudgetStateRef.current = result.state;
+    if (result.sleepKeys.length === 0) return;
+
+    const sleepKeys = new Set(result.sleepKeys);
+    setMountedServiceIds((current) =>
+      current.filter((serviceId) =>
+        serviceId === AGENT_WEBCLIENT_SERVICE_ID ||
+        !sleepKeys.has(createServiceSurfaceRuntimeKey(serviceId))
+      )
+    );
+    setMountedWebEntryKeys((current) =>
+      current.filter((entryKey) => !sleepKeys.has(createWebSurfaceRuntimeKey(entryKey)))
+    );
+    if (sleepKeys.has(AGENT_MANAGEMENT_RUNTIME_KEY)) {
+      setAgentManagementSurfaceMounted(false);
+    }
+    if (sleepKeys.has(BUILTIN_BROWSER_RUNTIME_KEY)) {
+      setBuiltinBrowserSurfaceMounted(false);
+    }
+    setSurfaceRuntimeProtectionKeys((current) => {
+      const next = new Set([...current].filter((key) => !sleepKeys.has(key)));
+      return next.size === current.size ? current : next;
+    });
+  }, [surfaceRuntimeBudgetCandidates]);
+
+  useEffect(() => {
+    sweepSurfaceRuntimeBudget();
+  }, [currentRoute, sweepSurfaceRuntimeBudget]);
+
+  useEffect(() => {
+    const timer = window.setInterval(
+      () => sweepSurfaceRuntimeBudget(),
+      SURFACE_RUNTIME_SWEEP_INTERVAL_MS,
+    );
+    return () => window.clearInterval(timer);
+  }, [sweepSurfaceRuntimeBudget]);
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const usesWebappSurface = activeWebEntry?.kind === "webapp";
   const resolvedCopilotAgentKey = activeWebEntry
@@ -2838,6 +2972,16 @@ export function AppShell() {
   }, [activeServiceId]);
 
   useEffect(() => {
+    if (
+      activeServiceId !== AGENT_WEBCLIENT_SERVICE_ID ||
+      activeEmbeddedAgentWebclientRoute?.kind !== "management"
+    ) {
+      return;
+    }
+    setAgentManagementSurfaceMounted(true);
+  }, [activeEmbeddedAgentWebclientRoute?.kind, activeServiceId]);
+
+  useEffect(() => {
     if (!activeWebEntryKey) {
       return;
     }
@@ -4553,10 +4697,12 @@ export function AppShell() {
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
             activeOwnerChatId={desiredChatRouteChatId}
             agentChatFocusRequestId={activeAgentChatFocusRequestId}
+            agentManagementSurfaceMounted={agentManagementSurfaceMounted}
             hostTheme={resolvedTheme}
             mountedServiceIds={mountedServiceIds}
             onAgentChatFocusRequestHandled={handleAgentChatFocusRequestHandled}
             onMainChatSurfaceRegistrationChange={handleMainChatSurfaceRegistrationChange}
+            onSurfaceRuntimeProtectionChange={handleSurfaceRuntimeProtectionChange}
           />
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}
@@ -4568,6 +4714,7 @@ export function AppShell() {
             assistantDockOpen={assistantCopilotOpen}
             onOpenAssistantDock={() => openAssistantDock()}
             onCloseAssistantDock={closeAssistantDock}
+            onRuntimeProtectionChange={handleSurfaceRuntimeProtectionChange}
           />
           <WebSurfaceHost
             activeEntryKey={activeWebEntryKey}
@@ -4583,6 +4730,7 @@ export function AppShell() {
             assistantDockOpen={assistantCopilotOpen}
             onOpenAssistantDock={() => openAssistantDock()}
             onCloseAssistantDock={closeAssistantDock}
+            onRuntimeProtectionChange={handleSurfaceRuntimeProtectionChange}
           />
           <Routes>
             <Route
