@@ -121,6 +121,8 @@ const api: DesktopApi = {
     setWorkPanelFullscreenActive: (active: boolean) =>
       ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
     requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
+    minimizeWindow: () => ipcRenderer.invoke("desktopShell.minimizeWindow"),
+    toggleWindowMaximize: () => ipcRenderer.invoke("desktopShell.toggleWindowMaximize"),
     getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
     setWindowFullScreen: (enabled: boolean) =>
       ipcRenderer.invoke("desktopShell.setWindowFullScreen", enabled),

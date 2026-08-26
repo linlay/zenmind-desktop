@@ -22,14 +22,14 @@ const windowManagerSource = fs.readFileSync(
   "utf8",
 );
 
-test("Windows 标题栏只占右侧内容区并让侧边栏保持顶格", () => {
+test("Windows 薄系统栏独立横跨主窗口并下移侧边栏与内容", () => {
   assert.match(
     appShellCss,
-    /\.app-shell\.is-windows-platform\s*\{[^}]*--windows-titlebar-content-inset:\s*var\(--windows-titlebar-overlay-height\);[^}]*--app-window-drag-height:\s*var\(--windows-titlebar-overlay-height\);[^}]*--app-window-drag-left:\s*var\(--app-sidebar-width, 160px\);[^}]*--app-window-drag-right:\s*var\(--windows-titlebar-control-width\);/su,
+    /\.app-shell\.is-windows-platform\s*\{[^}]*--windows-titlebar-content-inset:\s*var\(--windows-titlebar-overlay-height\);[^}]*--app-window-drag-height:\s*0px;[^}]*--app-window-drag-left:\s*0px;[^}]*--app-window-drag-right:\s*0px;/su,
   );
-  assert.doesNotMatch(
+  assert.match(
     appShellCss,
-    /\.app-shell\.is-windows-platform\s*\{[^}]*padding-top:/su,
+    /\.app-shell\.is-windows-platform \.app-system-bar\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0 0 auto;[^}]*height:\s*var\(--windows-titlebar-overlay-height\);/su,
   );
   assert.match(
     appShellCss,
@@ -37,11 +37,11 @@ test("Windows 标题栏只占右侧内容区并让侧边栏保持顶格", () => 
   );
   assert.match(
     appShellCss,
-    /\.app-shell\.is-windows-platform \.app-window-drag-layer::before\s*\{[^}]*inset:\s*0 calc\(-1 \* var\(--app-window-drag-right\)\) 0 0;[^}]*background:\s*var\(--windows-titlebar-background\);/su,
+    /\.app-shell\.is-windows-platform \.app-sidebar-shell\s*\{[^}]*height:\s*calc\(100% - var\(--windows-titlebar-content-inset\)\);[^}]*margin-top:\s*var\(--windows-titlebar-content-inset\);/su,
   );
-  assert.doesNotMatch(
+  assert.match(
     appShellCss,
-    /\.app-shell\.has-browser-chrome-surface\.is-windows-platform\s*\{[^}]*--app-window-drag-height:\s*0px;/su,
+    /\.app-shell\.is-windows-platform \.app-window-drag-layer\s*\{[^}]*display:\s*none;/su,
   );
   assert.match(
     sidebarCopilotCss,
@@ -68,17 +68,14 @@ test("Windows 业务表面不再重复增加标题栏高度", () => {
   );
 });
 
-test("Windows 深色标题栏与右侧页面使用同一背景色", () => {
+test("Windows 系统栏与页面使用同一主题背景色", () => {
   assert.match(
     appShellCss,
     /--windows-titlebar-background:\s*var\(--bg-base\);/u,
   );
   assert.match(
     windowManagerSource,
-    /const WINDOWS_TITLEBAR_DARK = \{\s*color:\s*"#181818",\s*symbolColor:\s*"#F2F2F2"\s*\};/su,
-  );
-  assert.match(
-    windowManagerSource,
     /const WINDOWS_BACKGROUND_DARK = "#181818";/u,
   );
+  assert.doesNotMatch(windowManagerSource, /titleBarOverlay/u);
 });

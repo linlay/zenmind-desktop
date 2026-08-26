@@ -5,7 +5,7 @@
   --app-window-drag-height: 12px;
   --app-window-drag-left: var(--app-sidebar-width, 160px);
   --app-window-drag-right: 0px;
-  --windows-titlebar-overlay-height: 44px;
+  --windows-titlebar-overlay-height: 30px;
   --windows-titlebar-control-width: 144px;
   --windows-titlebar-background: var(--bg-base);
   position: relative;
@@ -48,9 +48,9 @@
 
 .app-shell.is-windows-platform {
   --windows-titlebar-content-inset: var(--windows-titlebar-overlay-height);
-  --app-window-drag-height: var(--windows-titlebar-overlay-height);
-  --app-window-drag-left: var(--app-sidebar-width, 160px);
-  --app-window-drag-right: var(--windows-titlebar-control-width);
+  --app-window-drag-height: 0px;
+  --app-window-drag-left: 0px;
+  --app-window-drag-right: 0px;
 }
 
 .app-shell.is-mac-platform.is-window-fullscreen {
@@ -605,13 +605,100 @@
   cursor: grab;
 }
 
-/* Give the Windows caption controls and drag lane one uninterrupted neutral row. */
-.app-shell.is-windows-platform .app-window-drag-layer::before {
-  content: "";
+.app-shell.is-windows-platform .app-window-drag-layer {
+  display: none;
+}
+
+.app-system-bar {
+  display: none;
+}
+
+.app-shell.is-windows-platform .app-system-bar {
   position: absolute;
-  inset: 0 calc(-1 * var(--app-window-drag-right)) 0 0;
+  inset: 0 0 auto;
+  z-index: 3400;
+  display: flex;
+  align-items: stretch;
+  width: 100%;
+  height: var(--windows-titlebar-overlay-height);
   background: var(--windows-titlebar-background);
+  border-bottom: 1px solid var(--line);
+  color: var(--ink);
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-system-bar-drag-region {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 6px;
+  width: auto;
+  min-width: 0;
+  padding: 0 10px;
+  cursor: default;
+}
+
+.app-system-bar-brand-mark {
+  --brand-mark-size: 14px;
+  flex: 0 0 14px;
+}
+
+.app-system-bar-product-name {
+  overflow: hidden;
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: none;
+}
+
+.app-system-bar-window-controls {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: stretch;
+  height: 100%;
+  opacity: 1;
+  pointer-events: auto;
+  transition: opacity 0.12s ease;
+}
+
+.app-system-bar.is-masked .app-system-bar-window-controls {
+  opacity: 0;
   pointer-events: none;
+}
+
+.app-system-bar-control {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--ink);
+  cursor: default;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.app-system-bar-control:hover,
+.app-system-bar-control:focus-visible {
+  background: var(--sidebar-operation-menu-hover);
+  outline: none;
+}
+
+.app-system-bar-control.is-close:hover,
+.app-system-bar-control.is-close:focus-visible {
+  background: #c42b1c;
+  color: #fff;
+}
+
+.app-system-bar-control .anticon {
+  font-size: 11px;
 }
 
 .app-window-controls-layer {
@@ -703,6 +790,12 @@
 .app-shell.is-windows-platform .app-content {
   margin-top: var(--windows-titlebar-content-inset);
   height: calc(100% - var(--windows-titlebar-content-inset));
+}
+
+.app-shell.is-windows-platform .app-sidebar-shell {
+  min-height: 0;
+  height: calc(100% - var(--windows-titlebar-content-inset));
+  margin-top: var(--windows-titlebar-content-inset);
 }
 
 .app-shell.has-assistant-dock-full .app-content {
