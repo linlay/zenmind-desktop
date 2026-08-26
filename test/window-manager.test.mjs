@@ -224,7 +224,7 @@ test("main window lifecycle hides Windows fullscreen windows without destroying 
   assert.equal(target.destroyed, false);
 });
 
-test("main window lifecycle sends Windows close requests to the tray instead of quitting", () => {
+test("main window lifecycle sends Windows close requests through quit confirmation", () => {
   const target = new FakeWindow();
   const controller = createMainWindowLifecycleController({
     platform: "win32",
@@ -233,12 +233,16 @@ test("main window lifecycle sends Windows close requests to the tray instead of 
     clearWindow: () => {}
   });
   let prevented = false;
+  let quitRequests = 0;
 
   configureMainWindowLifecycleEvents(target, {
     platform: "win32",
     lifecycle: controller,
     isDevToolsShortcut: () => false,
     isHandlingQuit: () => false,
+    requestAppQuit: () => {
+      quitRequests += 1;
+    },
     clearWindow: () => {}
   });
 
@@ -249,8 +253,39 @@ test("main window lifecycle sends Windows close requests to the tray instead of 
   });
 
   assert.equal(prevented, true);
-  assert.equal(target.hidden, true);
+  assert.equal(quitRequests, 1);
+  assert.equal(target.hidden, false);
   assert.equal(target.destroyed, false);
+});
+
+test("main window lifecycle allows Windows windows to close while quit is in progress", () => {
+  const target = new FakeWindow();
+  let prevented = false;
+  let quitRequests = 0;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "win32",
+    lifecycle: {
+      applyAppearance: () => {},
+      hideForClose: () => {},
+      cancelPendingClose: () => {}
+    },
+    isDevToolsShortcut: () => false,
+    isHandlingQuit: () => true,
+    requestAppQuit: () => {
+      quitRequests += 1;
+    },
+    clearWindow: () => {}
+  });
+
+  target.emit("close", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  });
+
+  assert.equal(prevented, false);
+  assert.equal(quitRequests, 0);
 });
 
 test("main window lifecycle hides macOS close requests without destroying the window", () => {
@@ -661,6 +696,7 @@ test("window manager toggles main renderer DevTools and wires close lifecycle ev
     },
     isDevToolsShortcut: (_platform, input) => input.key === "i",
     isHandlingQuit: () => false,
+    requestAppQuit: () => events.push({ type: "quit" }),
     clearWindow: (window) => events.push({ type: "clear", window })
   });
 
@@ -684,7 +720,7 @@ test("window manager toggles main renderer DevTools and wires close lifecycle ev
   assert.equal(target.webContents.closeDevToolsCount, 1);
   assert.equal(prevented.close, true);
   assert.deepEqual(events, [
-    { type: "hide", window: target },
+    { type: "quit" },
     { type: "cancel" },
     { type: "clear", window: target }
   ]);

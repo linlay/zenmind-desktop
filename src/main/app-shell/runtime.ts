@@ -298,6 +298,9 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isWorkPanelKeyboardFocusActive: () => options.state.workPanelKeyboardFocusActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isHandlingQuit: () => options.state.isHandlingQuit,
+      requestAppQuit: () => {
+        void quitConfirmationController.confirmAndRequestAppQuit();
+      },
       clearWindow: (windowToClear) => {
         if (options.state.mainWindow === windowToClear) {
           options.state.mainWindow = null;

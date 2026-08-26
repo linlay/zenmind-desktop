@@ -283,6 +283,7 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     isWorkPanelKeyboardFocusActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isHandlingQuit(): boolean;
+    requestAppQuit(): void;
     clearWindow(targetWindow: TWindow): void;
     restoreFloatingWindowsForFullscreen?: () => void;
   }
@@ -364,6 +365,10 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     }
     event.preventDefault();
     if (targetWindow.isDestroyed()) {
+      return;
+    }
+    if (options.platform === "win32") {
+      options.requestAppQuit();
       return;
     }
     options.lifecycle.hideForClose(targetWindow);

@@ -41,7 +41,7 @@ export function createQuitConfirmationController(options: QuitConfirmationContro
   let confirmationPromise: Promise<void> | null = null;
 
   async function confirmAndRequestAppQuit() {
-    if (options.platform !== "darwin") {
+    if (options.platform !== "darwin" && options.platform !== "win32") {
       options.requestQuitWithoutConfirmation();
       return;
     }
