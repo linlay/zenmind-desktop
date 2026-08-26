@@ -7,7 +7,7 @@
   --app-window-drag-right: 0px;
   --windows-titlebar-overlay-height: 44px;
   --windows-titlebar-control-width: 144px;
-  --windows-titlebar-background: #FFFFFF;
+  --windows-titlebar-background: var(--bg-base);
   position: relative;
   box-sizing: border-box;
   height: 100%;
@@ -25,10 +25,6 @@
   -webkit-backdrop-filter: blur(32px) saturate(155%);
 }
 
-:root[data-theme="dark"] .app-shell {
-  --windows-titlebar-background: #000000;
-}
-
 .app-shell.has-embedded-surface {
   --app-window-drag-height: 8px;
   border-radius: 0;
@@ -42,18 +38,25 @@
   --app-window-drag-height: 8px;
 }
 
-.app-shell.has-browser-chrome-surface.is-mac-platform,
-.app-shell.has-browser-chrome-surface.is-windows-platform {
+.app-shell.has-browser-chrome-surface.is-mac-platform {
   --app-window-drag-height: 0px;
 }
 
-.app-shell.has-embedded-surface.is-windows-platform:not(.has-browser-chrome-surface) {
+.app-shell.is-windows-platform {
+  --windows-titlebar-content-inset: var(--windows-titlebar-overlay-height);
   --app-window-drag-height: var(--windows-titlebar-overlay-height);
+  --app-window-drag-left: var(--app-sidebar-width, 160px);
   --app-window-drag-right: var(--windows-titlebar-control-width);
 }
 
 .app-shell.is-mac-platform.is-window-fullscreen {
   --app-window-drag-height: 0px;
+}
+
+.app-shell.is-windows-platform.is-window-fullscreen {
+  --windows-titlebar-content-inset: 0px;
+  --app-window-drag-height: 0px;
+  --app-window-drag-right: 0px;
 }
 
 .app-shell.is-mac-translucent-sidebar,
@@ -598,11 +601,11 @@
   cursor: grab;
 }
 
-/* Extend the WebApp drag lane behind the sidebar and native caption controls. */
-.app-shell.is-windows-platform.has-webapp-surface .app-window-drag-layer::before {
+/* Give the Windows caption controls and drag lane one uninterrupted neutral row. */
+.app-shell.is-windows-platform .app-window-drag-layer::before {
   content: "";
   position: absolute;
-  inset: 0 calc(-1 * var(--app-window-drag-right)) 0 calc(-1 * var(--app-window-drag-left));
+  inset: 0 calc(-1 * var(--app-window-drag-right)) 0 0;
   background: var(--windows-titlebar-background);
   pointer-events: none;
 }
@@ -654,7 +657,7 @@
 }
 
 .app-shell.is-windows-platform:not(.has-browser-chrome-surface):not(.has-kanban-controls):not(.has-market-controls) .app-main {
-  padding-top: calc(var(--windows-titlebar-overlay-height) + 12px);
+  padding-top: 12px;
 }
 
 /* The empty-content fallback owns the content surface; the window drag layer remains above it. */
@@ -693,6 +696,11 @@
   transition: margin-right 0.2s ease;
 }
 
+.app-shell.is-windows-platform .app-content {
+  margin-top: var(--windows-titlebar-content-inset);
+  height: calc(100% - var(--windows-titlebar-content-inset));
+}
+
 .app-shell.has-assistant-dock-full .app-content {
   margin-right: var(--assistant-dock-embedded-width);
   border-right: 1px solid rgba(148, 163, 184, 0.18);
@@ -718,6 +726,12 @@
   border-right: 0;
   background: var(--embedded-surface-page-bg);
   transition: none;
+}
+
+.app-shell.is-windows-platform.is-work-panel-fullscreen .app-content {
+  margin-top: 0;
+  inset: var(--windows-titlebar-content-inset) 0 0;
+  height: auto;
 }
 
 .app-shell.is-work-panel-fullscreen .app-content > .app-main,
@@ -1243,7 +1257,7 @@
 }
 
 .app-shell.is-windows-platform .chat-work-panel {
-  --chat-work-panel-top-inset: var(--windows-titlebar-overlay-height);
+  --chat-work-panel-top-inset: 0px;
 }
 
 .desktop-global-search-layer {

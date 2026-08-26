@@ -48,6 +48,14 @@
   border-radius: 18px;
 }
 
+.app-shell.is-windows-platform .agent-webclient-copilot-dock {
+  top: var(--windows-titlebar-content-inset);
+}
+
+.app-shell.is-windows-platform.has-assistant-dock-overlay .agent-webclient-copilot-dock {
+  top: calc(var(--windows-titlebar-content-inset) + 8px);
+}
+
 .copilot-dock-resizer {
   position: absolute;
   inset-block: 0;
