@@ -278,6 +278,13 @@ function activeRegistrationTab(input: EmbeddedCdpSurfaceRegistration) {
     : null;
 }
 
+function describeMainChatRoute(value: string | undefined) {
+  if (readAgentWebclientNewChatSource(value ?? "")) return "new-chat";
+  if (readAgentWebclientCanonicalChatSource(value ?? "")) return "canonical";
+  if (readAgentWebclientAgentRouteKey(value ?? "")) return "agent-route";
+  return "invalid";
+}
+
 function isMainChatSurfaceRegistration(input: EmbeddedCdpSurfaceRegistration) {
   return input.surfaceId === MAIN_CHAT_SURFACE_ID &&
     input.surfaceRole === "main-chat" &&

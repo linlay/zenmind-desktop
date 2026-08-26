@@ -417,6 +417,17 @@ function readInitialWebGroupOrder(): SidebarNavOrderItemKey[] {
     .filter((key) => key.startsWith("website:") || key.startsWith("webapp:"));
 }
 
+function areOrderKeysEqual(
+  left: SidebarNavOrderItemKey[],
+  right: SidebarNavOrderItemKey[]
+) {
+  return left.length === right.length && left.every((key, index) => key === right[index]);
+}
+
+function areWebEntriesEqual(left: WebEntry[], right: WebEntry[]) {
+  return left.length === right.length && JSON.stringify(left) === JSON.stringify(right);
+}
+
 function normalizeWebGroupOrder(
   candidate: SidebarNavOrderItemKey[],
   webItems: WebEntry[]
@@ -429,7 +440,7 @@ function normalizeWebGroupOrder(
       normalized.push(key);
     }
   }
-  return normalized;
+  return areOrderKeysEqual(candidate, normalized) ? candidate : normalized;
 }
 
 export const EXTERNAL_EXPERIMENTAL_ITEMS: readonly ExternalExperimentalItem[] = [];
@@ -1316,8 +1327,10 @@ export function AppShell() {
   }
 
   function updateWebItems(items: WebEntry[]) {
-    webItemsRef.current = items;
-    setWebItems(items);
+    if (!areWebEntriesEqual(webItemsRef.current, items)) {
+      webItemsRef.current = items;
+      setWebItems(items);
+    }
     setWebItemsLoaded(true);
     setWebGroupOrder((currentOrder) => normalizeWebGroupOrder(currentOrder, items));
     setFaviconCache((prev) => {

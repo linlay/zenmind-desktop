@@ -43,7 +43,7 @@ test("main Chat metadata refreshes do not replay active lifecycle for the same m
   );
 
   assert.match(surface, /lastLiveSurfaceLifecycleRef/u);
-  assert.match(lifecycleSender, /const webContentsId = readWebviewContentsId\(webviewRef\.current\)/u);
+  assert.match(lifecycleSender, /const webContentsId = readCurrentWebviewContentsId\(\)/u);
   assert.match(
     lifecycleSender,
     /previous\?\.active === nextActive[\s\S]*?previous\.webContentsId === webContentsId[\s\S]*?return;/u,

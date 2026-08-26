@@ -387,6 +387,41 @@ test("raw Frame Port forwards each Platform stream frame immediately and unchang
   assert.ok(runtime.traces.some((entry) => entry.direction === "desktop-to-surface"));
 });
 
+test("ordinary Frame Port requests reuse the resolved Agent Platform endpoint", async () => {
+  const target = createTarget(42);
+  const runtime = createRegistration(new Map([[42, target]]), async (input) => {
+    input.onFrame({
+      frame: "response",
+      id: input.localId,
+      type: input.type,
+      code: 0,
+      data: { chatId: input.payload.chatId },
+    });
+  });
+  const sender = createSender(42, target.currentUrl);
+  await openSession(runtime, sender, "session-cached-platform-endpoint");
+
+  for (const chatId of ["chat-first", "chat-second"]) {
+    runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, {
+      sessionId: "session-cached-platform-endpoint",
+      frame: {
+        frame: "request",
+        type: "/api/chat",
+        id: `load-${chatId}`,
+        payload: { chatId },
+      },
+    });
+    await waitUntil(() => sentFrames(sender).some((frame) => frame.id === `load-${chatId}`));
+  }
+
+  assert.equal(runtime.calls.getServiceState, 1);
+  assert.equal(runtime.calls.issueAccessToken, 3);
+  assert.deepEqual(
+    sentFrames(sender).filter((frame) => frame.type === "/api/chat").map((frame) => frame.data.chatId),
+    ["chat-first", "chat-second"],
+  );
+});
+
 test("Overview attaches to the Main Chat visible Run locally without another upstream stream", async () => {
   const mainTarget = createTarget(47, {
     ownerChatId: "chat-shared",

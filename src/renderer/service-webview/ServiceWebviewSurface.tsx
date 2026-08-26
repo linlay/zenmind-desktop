@@ -21,6 +21,7 @@ import {
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
+  resolveAgentWebclientDesktopMainChatRouteFromUrl,
   resolveAgentWebclientWsSource,
 } from "../../shared/agent-webclient-routes";
 import { useI18n } from "../i18n/useI18n";
@@ -163,6 +164,25 @@ type PendingDirectRouteTransition = {
   id: number;
   targetUrl: string;
 };
+
+type ServiceWebviewRuntimeSnapshot = {
+  webContentsId?: number;
+  currentUrl: string;
+  title: string;
+  canGoBack: boolean;
+  canGoForward: boolean;
+  isLoading: boolean;
+};
+
+function createEmptyServiceWebviewRuntimeSnapshot(): ServiceWebviewRuntimeSnapshot {
+  return {
+    currentUrl: "",
+    title: "",
+    canGoBack: false,
+    canGoForward: false,
+    isLoading: false,
+  };
+}
 
 type ServiceWebviewEventContext = {
   embeddedUrl: string;
@@ -408,7 +428,10 @@ function isMainChatRouteAligned(
   guestUrl: string,
   embeddedUrl: string,
 ) {
-  const guestRoute = resolveAgentWebclientDesktopChatRouteFromUrl(guestUrl, embeddedUrl);
+  const guestRoute = resolveAgentWebclientDesktopMainChatRouteFromUrl(
+    guestUrl,
+    embeddedUrl,
+  );
   return Boolean(
     guestRoute &&
     areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, guestRoute),
@@ -642,6 +665,9 @@ export function ServiceWebviewSurface({
   const [agentPlatformMonitorAccessToken, setAgentPlatformMonitorAccessToken] =
     useState("");
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
+  const webviewRuntimeSnapshotRef = useRef<ServiceWebviewRuntimeSnapshot>(
+    createEmptyServiceWebviewRuntimeSnapshot(),
+  );
   const surfaceRegistrationIdRef = useRef("");
   const surfaceRegistrationRetryRef = useRef(0);
   const registeredSafeSurfaceIdentityRef = useRef<RegisteredSafeSurfaceIdentity | null>(null);
@@ -688,6 +714,18 @@ export function ServiceWebviewSurface({
           "aria-hidden": !active,
         };
 
+  function readCurrentWebviewContentsId() {
+    const cachedWebContentsId = webviewRuntimeSnapshotRef.current.webContentsId;
+    if (cachedWebContentsId) {
+      return cachedWebContentsId;
+    }
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    if (webContentsId) {
+      webviewRuntimeSnapshotRef.current.webContentsId = webContentsId;
+    }
+    return webContentsId;
+  }
+
   useEffect(() => {
     return registerServiceSurfaceWebviewRef(surfaceId, webviewRef);
   }, [surfaceId]);
@@ -729,8 +767,10 @@ export function ServiceWebviewSurface({
     routeTransitionSequenceRef.current += 1;
     pendingDirectRouteTransitionRef.current = null;
     webviewDomReadyRef.current = { ready: false };
+    webviewRuntimeSnapshotRef.current = createEmptyServiceWebviewRuntimeSnapshot();
     webviewRef.current = node;
     if (node) {
+      setWebviewCurrentUrl("");
       setWebviewSnapshotNonce((current) => current + 1);
     }
   }, []);
@@ -753,7 +793,7 @@ export function ServiceWebviewSurface({
 
   useEffect(() => {
     return window.electronAPI.serviceWebview.onSelectionToolbarState((state) => {
-      const webContentsId = readWebviewContentsId(webviewRef.current);
+      const webContentsId = readCurrentWebviewContentsId();
       if (
         state.guestId !== webContentsId ||
         state.registrationId !== surfaceRegistrationIdRef.current ||
@@ -787,7 +827,7 @@ export function ServiceWebviewSurface({
       const respond = (result: CanonicalChatSyncResult) => {
         window.electronAPI.canonicalChatSync.respond(result);
       };
-      const webContentsId = readWebviewContentsId(webviewRef.current);
+      const webContentsId = readCurrentWebviewContentsId();
       if (
         active === false ||
         request.surfaceId !== MAIN_CHAT_SURFACE_ID ||
@@ -969,7 +1009,7 @@ export function ServiceWebviewSurface({
       sourceChatId: request.sourceChatId.trim(),
       newChat: request.newChat.trim(),
     };
-    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const webContentsId = readCurrentWebviewContentsId();
     const targetRoute = createPreparedAgentChatRoute(
       currentRouteWithHash,
       normalizedRequest,
@@ -1048,7 +1088,7 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     const pending = pendingNewChatPreparationRef.current;
     if (!pending) return;
-    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const webContentsId = readCurrentWebviewContentsId();
     if (
       active !== false &&
       ownsActiveSurface &&
@@ -1081,24 +1121,16 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     const embeddedCdp = getEmbeddedCdpSurfaceApi();
     const targetWebview = webviewRef.current;
-    const webContentsId = readWebviewContentsId(targetWebview);
+    const webContentsId = readCurrentWebviewContentsId();
     if (!embeddedCdp || !targetWebview || !webContentsId || !surfaceId) {
       return;
     }
-    let currentUrl = embeddedUrl;
-    let title = serviceDisplayName;
-    let canGoBack = false;
-    let canGoForward = false;
-    let isLoading = false;
-    try {
-      currentUrl = targetWebview.getURL() || webviewCurrentUrl || embeddedUrl;
-      title = targetWebview.getTitle() || serviceDisplayName;
-      canGoBack = targetWebview.canGoBack();
-      canGoForward = targetWebview.canGoForward();
-      isLoading = targetWebview.isLoading();
-    } catch {
-      return;
-    }
+    const runtimeSnapshot = webviewRuntimeSnapshotRef.current;
+    const currentUrl = runtimeSnapshot.currentUrl || embeddedUrl;
+    const title = runtimeSnapshot.title || serviceDisplayName;
+    const canGoBack = runtimeSnapshot.canGoBack;
+    const canGoForward = runtimeSnapshot.canGoForward;
+    const isLoading = runtimeSnapshot.isLoading;
     let cancelled = false;
     let retryTimer: number | null = null;
     const mainChatSurface = isAgentWebclientChatSurface(serviceId, surfaceId);
@@ -1428,15 +1460,9 @@ export function ServiceWebviewSurface({
     if (level === "debug" && !import.meta.env.DEV) {
       return;
     }
-    const targetWebview = webviewRef.current;
-    let currentUrl = "";
-    let webContentsId: number | undefined;
-    try {
-      currentUrl = targetWebview?.getURL() ?? "";
-      webContentsId = readWebviewContentsId(targetWebview);
-    } catch {
-      // The guest can disappear during route changes or app shutdown.
-    }
+    const runtimeSnapshot = webviewRuntimeSnapshotRef.current;
+    const currentUrl = runtimeSnapshot.currentUrl;
+    const webContentsId = runtimeSnapshot.webContentsId;
     const report: RendererDiagnosticReport = {
       level,
       source: "service-webview",
@@ -1508,22 +1534,22 @@ export function ServiceWebviewSurface({
   }
 
   function readCurrentWebviewUrl() {
-    try {
-      const webviewUrl = webviewRef.current?.getURL();
-      return typeof webviewUrl === "string" && webviewUrl.trim()
-        ? resolveServiceWebviewCurrentUrl(webviewUrl.trim(), embeddedUrl, webviewSrcUrl)
-        : embeddedUrl;
-    } catch {
-      return embeddedUrl;
-    }
+    const webviewUrl = webviewRuntimeSnapshotRef.current.currentUrl.trim();
+    return webviewUrl
+      ? resolveServiceWebviewCurrentUrl(webviewUrl, embeddedUrl, webviewSrcUrl)
+      : webviewSrcUrl || embeddedUrl;
   }
 
   function updateWebviewCurrentUrl(nextUrl: string, source: ServiceWebviewUrlChangeSource) {
-    setWebviewCurrentUrl(nextUrl);
-    if (!nextUrl || lastReportedCurrentUrlRef.current === nextUrl) {
+    if (source === "guest") {
+      webviewRuntimeSnapshotRef.current.currentUrl = nextUrl;
+      setWebviewCurrentUrl((current) => current === nextUrl ? current : nextUrl);
+    }
+    const reportKey = `${source}\u0000${nextUrl}`;
+    if (!nextUrl || lastReportedCurrentUrlRef.current === reportKey) {
       return;
     }
-    lastReportedCurrentUrlRef.current = nextUrl;
+    lastReportedCurrentUrlRef.current = reportKey;
     onCurrentUrlChangeRef.current?.(nextUrl, source);
   }
 
@@ -1563,13 +1589,13 @@ export function ServiceWebviewSurface({
       return;
     }
 
-    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const webContentsId = readCurrentWebviewContentsId();
     const isActive =
       ownsActiveSurface &&
       documentVisible &&
       service?.status === "running" &&
       typeof webContentsId === "number";
-    const currentUrl = webviewCurrentUrl || readCurrentWebviewUrl();
+    const currentUrl = webviewRuntimeSnapshotRef.current.currentUrl || readCurrentWebviewUrl();
     void window.electronAPI.copilot.publishDevToolsTarget({
       surfaceId,
       active: isActive,
@@ -1644,8 +1670,8 @@ export function ServiceWebviewSurface({
 
   const createCurrentPageDescriptor = () => {
     const currentUrl =
-      webviewCurrentUrl || readCurrentWebviewUrl() || embeddedUrl || webUrl;
-    const webContentsId = readWebviewContentsId(webviewRef.current);
+      webviewRuntimeSnapshotRef.current.currentUrl || readCurrentWebviewUrl() || embeddedUrl || webUrl;
+    const webContentsId = readCurrentWebviewContentsId();
     return {
       route: currentRoute,
       pageKey: `webview:${currentRoute}:${surfaceId}:${currentUrl || "webview"}`,
@@ -1764,7 +1790,7 @@ export function ServiceWebviewSurface({
 
   function sendLiveSurfaceLifecycleToWebview(nextActive: boolean) {
     if (!isAgentWebclientLifecycleSurface(serviceId, surfaceId, surfaceIdentity)) return;
-    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const webContentsId = readCurrentWebviewContentsId();
     const previous = lastLiveSurfaceLifecycleRef.current;
     // Registry metadata (for example ownerChatId) can change while the same
     // guest stays active. Only a real active transition or guest replacement
@@ -1847,7 +1873,7 @@ export function ServiceWebviewSurface({
     };
     pendingDirectRouteTransitionRef.current = transition;
     const targetWebview = webviewRef.current;
-    const webContentsId = readWebviewContentsId(targetWebview);
+    const webContentsId = readCurrentWebviewContentsId();
     const domReady = webviewDomReadyRef.current;
     if (
       !targetWebview ||
@@ -1884,7 +1910,7 @@ export function ServiceWebviewSurface({
     }
 
     try {
-      const currentUrl = targetWebview.getURL().trim();
+      const currentUrl = readCurrentWebviewUrl().trim();
       const normalizedCurrentUrl = currentUrl
         ? resolveServiceWebviewCurrentUrl(currentUrl, targetUrl, webviewSrcUrl)
         : "";
@@ -2029,13 +2055,7 @@ export function ServiceWebviewSurface({
   }
 
   function webviewLoadedChromeErrorPage() {
-    try {
-      return (
-        webviewRef.current?.getURL().startsWith("chrome-error://") ?? false
-      );
-    } catch {
-      return false;
-    }
+    return webviewRuntimeSnapshotRef.current.currentUrl.startsWith("chrome-error://");
   }
 
   function syncWebviewState() {
@@ -2097,7 +2117,7 @@ export function ServiceWebviewSurface({
     if (!context) return;
     if (
       state.active &&
-      readWebviewContentsId(webviewRef.current) !== state.webContentsId
+      readCurrentWebviewContentsId() !== state.webContentsId
     ) {
       return;
     }
@@ -2116,9 +2136,16 @@ export function ServiceWebviewSurface({
 
     const handleDomReady = () => {
       const webContentsId = readWebviewContentsId(targetWebview);
+      webviewRuntimeSnapshotRef.current.webContentsId = webContentsId;
       webviewDomReadyRef.current = { ready: true, webContentsId };
       const context = webviewEventContextRef.current;
       if (!context) return;
+      if (!webviewRuntimeSnapshotRef.current.currentUrl) {
+        context.updateWebviewCurrentUrl(
+          context.webviewSrcUrl || context.embeddedUrl,
+          "guest",
+        );
+      }
       context.reportDiagnostic("dom-ready");
       context.syncWebviewState();
       context.refreshCurrentPageSnapshotTarget();
@@ -2134,10 +2161,13 @@ export function ServiceWebviewSurface({
       context.sendServiceRouteToWebview(context.embeddedUrl, "route-sync");
     };
     const handleDidStartLoading = () => {
+      webviewRuntimeSnapshotRef.current.isLoading = true;
       webviewEventContextRef.current?.setRuntimeProtected("loading", true);
     };
     const handleDidStopLoading = () => {
+      webviewRuntimeSnapshotRef.current.isLoading = false;
       webviewEventContextRef.current?.setRuntimeProtected("loading", false);
+      webviewEventContextRef.current?.refreshCurrentPageSnapshotTarget();
     };
     const handleMediaStartedPlaying = () => {
       webviewEventContextRef.current?.setRuntimeProtected("media", true);
@@ -2160,6 +2190,11 @@ export function ServiceWebviewSurface({
             context.webviewSrcUrl,
           )
         : readCurrentWebviewUrl();
+      const previousUrl = webviewRuntimeSnapshotRef.current.currentUrl;
+      if (nextUrl && previousUrl && previousUrl !== resolvedUrl) {
+        webviewRuntimeSnapshotRef.current.canGoBack = true;
+        webviewRuntimeSnapshotRef.current.canGoForward = false;
+      }
       context.updateWebviewCurrentUrl(resolvedUrl, "guest");
       const canSyncDesktopRoute = context.ownsActiveSurface;
       if (
@@ -2240,6 +2275,9 @@ export function ServiceWebviewSurface({
     const handleDidNavigateInPage = (event: Event) => {
       syncNavigationRoute(event);
     };
+    const handlePageTitleUpdated = (event: Event) => {
+      webviewRuntimeSnapshotRef.current.title = readEventString(event, "title");
+    };
     const handleDidFailLoad = (event: Event) => {
       const context = webviewEventContextRef.current;
       if (!context) return;
@@ -2265,6 +2303,7 @@ export function ServiceWebviewSurface({
       "did-navigate-in-page",
       handleDidNavigateInPage,
     );
+    targetWebview.addEventListener("page-title-updated", handlePageTitleUpdated);
     targetWebview.addEventListener("did-fail-load", handleDidFailLoad);
     targetWebview.addEventListener("media-started-playing", handleMediaStartedPlaying);
     targetWebview.addEventListener("media-paused", handleMediaPaused);
@@ -2285,15 +2324,17 @@ export function ServiceWebviewSurface({
         "did-navigate-in-page",
         handleDidNavigateInPage,
       );
+      targetWebview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       targetWebview.removeEventListener("did-fail-load", handleDidFailLoad);
       targetWebview.removeEventListener("media-started-playing", handleMediaStartedPlaying);
       targetWebview.removeEventListener("media-paused", handleMediaPaused);
       targetWebview.removeEventListener("ipc-message", handleIpcMessage);
       webviewEventContextRef.current?.setRuntimeProtected("loading", false);
       webviewEventContextRef.current?.setRuntimeProtected("media", false);
-      if (webviewDomReadyRef.current.webContentsId === readWebviewContentsId(targetWebview)) {
+      if (webviewDomReadyRef.current.webContentsId === webviewRuntimeSnapshotRef.current.webContentsId) {
         webviewDomReadyRef.current = { ready: false };
       }
+      webviewRuntimeSnapshotRef.current = createEmptyServiceWebviewRuntimeSnapshot();
     };
   }, [bridgeReady, serviceWebviewPreloadUrl, webviewRenderKey]);
 
@@ -2446,15 +2487,10 @@ export function ServiceWebviewSurface({
     }
     return registerWebSurfaceStateProvider(surfaceId, () => {
       const targetWebview = webviewRef.current;
-      const currentUrl = webviewCurrentUrl || readCurrentWebviewUrl() || embeddedUrl || webUrl;
-      let canGoBack = false;
-      let canGoForward = false;
-      try {
-        canGoBack = targetWebview?.canGoBack() ?? false;
-        canGoForward = targetWebview?.canGoForward() ?? false;
-      } catch {
-        // The service guest may detach while its runtime is stopping.
-      }
+      const runtimeSnapshot = webviewRuntimeSnapshotRef.current;
+      const currentUrl = runtimeSnapshot.currentUrl || embeddedUrl || webUrl;
+      const canGoBack = runtimeSnapshot.canGoBack;
+      const canGoForward = runtimeSnapshot.canGoForward;
       const open = service.status === "running" && Boolean(targetWebview && embeddedUrl);
       const tabId = `service-tab:${surfaceId}`;
       return {

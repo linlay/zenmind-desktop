@@ -438,6 +438,15 @@ test("service webview listeners stay bound across route and active-state changes
   );
 });
 
+test("service webview route switching reads event-cached guest state without synchronous getters", () => {
+  const source = readServiceWebviewSurfaceSource();
+
+  assert.match(source, /webviewRuntimeSnapshotRef/u);
+  assert.match(source, /source === "guest"[\s\S]*?webviewRuntimeSnapshotRef\.current\.currentUrl = nextUrl/u);
+  assert.match(source, /addEventListener\("page-title-updated", handlePageTitleUpdated\)/u);
+  assert.doesNotMatch(source, /\.getURL\(\)|\.getTitle\(\)|\.canGoBack\(\)|\.canGoForward\(\)|\.isLoading\(\)/u);
+});
+
 test("main Chat queues the latest route until dom-ready and never retries deterministic rejection", () => {
   const source = readServiceWebviewSurfaceSource();
   const registrationBlock = source.slice(
