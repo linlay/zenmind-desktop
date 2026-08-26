@@ -78,6 +78,11 @@ test("default dev brand resolves to ZenMind when no brand is provided", () => {
   assert.equal(resolveBrandId([], { BRAND: "zenmind" }), "zenmind");
 });
 
+test("formal app IDs remain reverse-domain and isolated by brand", () => {
+  assert.equal(loadBrandConfig(projectRoot, "zenmind").appId, "cc.zenmind.desktop");
+  assert.equal(loadBrandConfig(projectRoot, "cutej").appId, "cc.cutej.desktop");
+});
+
 test("electron-builder Windows registry GUIDs stay aligned with the installed toolchain", () => {
   assert.equal(electronBuilderWindowsGuid("cc.cutej.desktop"), "6a975fec-3ca7-58ef-bfce-86a97ccbe0ca");
   assert.equal(electronBuilderWindowsGuid("cc.zenmind.desktop"), "498936cc-d13d-526e-80bb-92867e6e1874");

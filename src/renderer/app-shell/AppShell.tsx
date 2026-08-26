@@ -1,12 +1,14 @@
 import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
+import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
 import {
   isCapabilityNavigationRoute,
   resolveSidebarMode,
 } from "./navigation/capabilityNavigation";
 import type { WebsiteFaviconCache } from "../components/Favicon";
-import { SidebarActionIcon } from "../components/BrandMark";
+import { BrandMark, SidebarActionIcon } from "../components/BrandMark";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
@@ -65,7 +67,7 @@ import {
   createWebEntrySurfaceIdentity,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
-import { STORAGE_NAMESPACE } from "../../shared/brand";
+import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
 import {
   SIDEBAR_COLLAPSED_WIDTH,
   SIDEBAR_EXPANDED_MAX_WIDTH,
@@ -515,7 +517,7 @@ const BROWSER_CHROME_DRAG_BLOCK_SELECTOR = [
   ".external-webview-toolbar-location"
 ].join(",");
 
-const SIDEBAR_DRAG_BLOCK_SELECTOR = [
+const WINDOW_DRAG_BLOCK_SELECTOR = [
   "button",
   "a",
   "input",
@@ -528,12 +530,12 @@ const SIDEBAR_DRAG_BLOCK_SELECTOR = [
 
 function resolveWindowDragTarget(target: Element | null) {
   const dragRegion = target?.closest(".app-window-drag-region");
-  if (dragRegion) {
+  if (dragRegion && !target?.closest(WINDOW_DRAG_BLOCK_SELECTOR)) {
     return dragRegion;
   }
 
   const sidebarShell = target?.closest(".app-sidebar-shell");
-  if (sidebarShell && !target?.closest(SIDEBAR_DRAG_BLOCK_SELECTOR)) {
+  if (sidebarShell && !target?.closest(WINDOW_DRAG_BLOCK_SELECTOR)) {
     return sidebarShell;
   }
 
@@ -580,6 +582,8 @@ export function AppShell() {
   const chatDefaultAgentMigrationRef = useRef("");
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
+  const [windowMaximized, setWindowMaximized] = useState(false);
+  const [windowControlsMasked, setWindowControlsMasked] = useState(false);
   const [workPanelFullscreenOwnerChatId, setWorkPanelFullscreenOwnerChatId] =
     useState<string | null>(null);
   const workPanelFullscreenOwnerChatIdRef = useRef<string | null>(null);
@@ -849,6 +853,8 @@ export function AppShell() {
     void desktopShell.getWindowState().then((result) => {
       if (active && result.ok) {
         setWindowFullScreen(result.isFullScreen);
+        setWindowMaximized(result.isMaximized);
+        setWindowControlsMasked(result.windowControlsMasked);
         if (!result.isFullScreen && workPanelFullscreenOwnerChatIdRef.current) {
           clearWorkPanelFullscreen();
         }
@@ -858,6 +864,8 @@ export function AppShell() {
     const unsubscribe = desktopShell.onWindowStateChanged((state) => {
       if (active) {
         setWindowFullScreen(state.isFullScreen);
+        setWindowMaximized(state.isMaximized);
+        setWindowControlsMasked(state.windowControlsMasked);
         if (!state.isFullScreen && workPanelFullscreenOwnerChatIdRef.current) {
           clearWorkPanelFullscreen();
         }
@@ -869,6 +877,24 @@ export function AppShell() {
       unsubscribe();
     };
   }, [clearWorkPanelFullscreen]);
+
+  const minimizeMainWindow = useCallback(() => {
+    void window.electronAPI.desktopShell.minimizeWindow().catch(() => undefined);
+  }, []);
+
+  const toggleMainWindowMaximize = useCallback(() => {
+    void window.electronAPI.desktopShell.toggleWindowMaximize()
+      .then((result) => {
+        if (result.ok) {
+          setWindowMaximized(result.isMaximized);
+        }
+      })
+      .catch(() => undefined);
+  }, []);
+
+  const closeMainWindow = useCallback(() => {
+    window.electronAPI.desktopShell.requestWindowClose();
+  }, []);
 
   const changeWorkPanelFullscreen = useCallback(async (ownerChatId: string | null) => {
     const currentOwnerChatId = workPanelFullscreenOwnerChatIdRef.current;
@@ -1926,6 +1952,17 @@ export function AppShell() {
     setAssistantDockOpenRequest(null);
     pendingAssistantDockOpenRequestRef.current = null;
     updateCopilotDockContextSession(currentCopilotContextKey, null);
+  }
+
+  function toggleSystemBarAssistantDock() {
+    if (isAgentWebclientMainRoute) {
+      return;
+    }
+    if (assistantCopilotOpen) {
+      closeAssistantDock();
+    } else {
+      openAssistantDock();
+    }
   }
 
   function handleCopilotCurrentEmbedPathChange(embedPath: string, agentKey: string, chatId?: string) {
@@ -4041,6 +4078,116 @@ export function AppShell() {
         isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
     >
+      {isWindows && !windowFullScreen ? (
+        <header
+          className={`app-system-bar${windowControlsMasked ? " is-masked" : ""}`}
+          aria-label={t("windowControls.systemBar")}
+        >
+          <div className="app-window-drag-region app-system-bar-drag-region">
+            <BrandMark className="app-system-bar-brand-mark" ariaLabel={`${PRODUCT_NAME} Logo`} />
+            {BRAND_ID !== "cutej" ? (
+              <span className="app-system-bar-product-name">{PRODUCT_NAME}</span>
+            ) : null}
+            {sidebarMode === "primary" ? (
+              <nav className="app-system-bar-primary-actions" aria-label={t("nav.main")}>
+                <button
+                  type="button"
+                  className="app-system-bar-action"
+                  aria-label={t("desktop.globalSearch.title")}
+                  title={t("desktop.globalSearch.shortcutHint")}
+                  onClick={() => setGlobalSearchOpen(true)}
+                >
+                  <SettingsSidebarIcon kind="search" />
+                </button>
+                <button
+                  type="button"
+                  className={`app-system-bar-action${effectiveSidebarCollapsed ? " is-collapsed" : ""}`}
+                  aria-label={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  title={effectiveSidebarCollapsed ? t("nav.sidebar.expand") : t("nav.sidebar.collapse")}
+                  aria-expanded={!effectiveSidebarCollapsed}
+                  onClick={toggleSidebarCollapsed}
+                >
+                  <SidebarActionIcon kind="sidebar_left" />
+                </button>
+                <button
+                  type="button"
+                  className="app-system-bar-action"
+                  aria-label={t("sidebar.navigation.back")}
+                  title={t("sidebar.navigation.back")}
+                  disabled={sidebarNavigationHistory.back.length === 0}
+                  onClick={handleSidebarBackNavigation}
+                >
+                  <SidebarActionIcon kind="back" />
+                </button>
+                <button
+                  type="button"
+                  className="app-system-bar-action"
+                  aria-label={t("sidebar.navigation.forward")}
+                  title={t("sidebar.navigation.forward")}
+                  disabled={sidebarNavigationHistory.forward.length === 0}
+                  onClick={handleSidebarForwardNavigation}
+                >
+                  <SidebarActionIcon kind="forward" />
+                </button>
+                {assistantLauncherVisible ? (
+                  <button
+                    type="button"
+                    className={`app-system-bar-action${assistantCopilotOpen ? " is-active" : ""}`}
+                    onClick={toggleSystemBarAssistantDock}
+                    aria-label={
+                      isAgentWebclientMainRoute
+                        ? t("sidebar.copilot.unavailableForPage", { appName: PRODUCT_NAME })
+                        : assistantCopilotOpen
+                          ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
+                          : t("sidebar.copilot.open", { appName: PRODUCT_NAME })
+                    }
+                    aria-disabled={isAgentWebclientMainRoute}
+                    aria-pressed={assistantCopilotOpen}
+                    disabled={isAgentWebclientMainRoute}
+                    title={t("sidebar.copilot.title")}
+                  >
+                    <SidebarActionIcon kind="sidebar_right" />
+                  </button>
+                ) : null}
+              </nav>
+            ) : null}
+          </div>
+          <div className="app-system-bar-window-controls" aria-hidden={windowControlsMasked}>
+            <button
+              type="button"
+              className="app-system-bar-control"
+              onClick={minimizeMainWindow}
+              aria-label={t("windowControls.minimize")}
+              title={t("windowControls.minimize")}
+              tabIndex={windowControlsMasked ? -1 : 0}
+            >
+              <MinusOutlined aria-hidden="true" />
+            </button>
+            <button
+              type="button"
+              className="app-system-bar-control"
+              onClick={toggleMainWindowMaximize}
+              aria-label={windowMaximized ? t("windowControls.restore") : t("windowControls.maximize")}
+              title={windowMaximized ? t("windowControls.restore") : t("windowControls.maximize")}
+              tabIndex={windowControlsMasked ? -1 : 0}
+            >
+              {windowMaximized
+                ? <SwitcherOutlined aria-hidden="true" />
+                : <BorderOutlined aria-hidden="true" />}
+            </button>
+            <button
+              type="button"
+              className="app-system-bar-control is-close"
+              onClick={closeMainWindow}
+              aria-label={t("windowControls.close")}
+              title={t("windowControls.close")}
+              tabIndex={windowControlsMasked ? -1 : 0}
+            >
+              <CloseOutlined aria-hidden="true" />
+            </button>
+          </div>
+        </header>
+      ) : null}
       <div className="app-window-drag-layer" aria-hidden="true">
         <div className="app-window-drag-region" />
       </div>

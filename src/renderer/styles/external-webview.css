@@ -87,7 +87,7 @@
   overflow: hidden;
 }
 
-/* The Windows app shell already reserves the native caption row. */
+/* The Windows app shell already reserves the renderer-owned system bar. */
 .app-shell.is-windows-platform .external-webview-page.is-app-surface {
   position: absolute;
   inset: 0;
@@ -553,7 +553,7 @@
 }
 
 .app-shell.is-windows-platform .external-webview-copilot-button {
-  top: calc(var(--windows-titlebar-overlay-height) + 10px);
+  top: 10px;
   right: 14px;
 }
 

@@ -6492,89 +6492,91 @@ export function AppSidebar({
           shouldRenderCollapsed ? "app-sidebar is-collapsed" : "app-sidebar"
         }
       >
-        <div className="sidebar-chrome">
-          <div className={chromeToolbarClassName}>
-            <div className="sidebar-top-actions">
-              {isPrimaryMode ? (
-                <button
-                  type="button"
-                  className="app-sidebar-collapse-button sidebar-global-search-button is-compact"
-                  aria-label={t("desktop.globalSearch.title")}
-                  title={t("desktop.globalSearch.shortcutHint")}
-                  onClick={onOpenGlobalSearch}
-                >
-                  <SettingsSidebarIcon kind="search" />
-                </button>
-              ) : null}
-              {isPrimaryMode ? (
-                <SidebarCollapseToggle
-                  className="sidebar-collapsed-toggle-button"
-                  isCollapsed={isCollapsed}
-                  variant="compact"
-                  onToggleCollapsed={onToggleCollapsed}
-                  t={t}
-                />
-              ) : null}
-              {isPrimaryMode ? (
-                <div className="sidebar-history-controls">
+        {!isWindows ? (
+          <div className="sidebar-chrome">
+            <div className={chromeToolbarClassName}>
+              <div className="sidebar-top-actions">
+                {isPrimaryMode ? (
                   <button
                     type="button"
-                    className="sidebar-history-button"
-                    aria-label={t("sidebar.navigation.back")}
-                    title={t("sidebar.navigation.back")}
-                    disabled={!sidebarNavigationCanGoBack}
-                    onClick={onSidebarNavigateBack}
+                    className="app-sidebar-collapse-button sidebar-global-search-button is-compact"
+                    aria-label={t("desktop.globalSearch.title")}
+                    title={t("desktop.globalSearch.shortcutHint")}
+                    onClick={onOpenGlobalSearch}
                   >
-                    <SidebarActionIcon kind="back" />
+                    <SettingsSidebarIcon kind="search" />
                   </button>
+                ) : null}
+                {isPrimaryMode ? (
+                  <SidebarCollapseToggle
+                    className="sidebar-collapsed-toggle-button"
+                    isCollapsed={isCollapsed}
+                    variant="compact"
+                    onToggleCollapsed={onToggleCollapsed}
+                    t={t}
+                  />
+                ) : null}
+                {isPrimaryMode ? (
+                  <div className="sidebar-history-controls">
+                    <button
+                      type="button"
+                      className="sidebar-history-button"
+                      aria-label={t("sidebar.navigation.back")}
+                      title={t("sidebar.navigation.back")}
+                      disabled={!sidebarNavigationCanGoBack}
+                      onClick={onSidebarNavigateBack}
+                    >
+                      <SidebarActionIcon kind="back" />
+                    </button>
+                    <button
+                      type="button"
+                      className="sidebar-history-button"
+                      aria-label={t("sidebar.navigation.forward")}
+                      title={t("sidebar.navigation.forward")}
+                      disabled={!sidebarNavigationCanGoForward}
+                      onClick={onSidebarNavigateForward}
+                    >
+                      <SidebarActionIcon kind="forward" />
+                    </button>
+                  </div>
+                ) : null}
+                {isPrimaryMode && assistantLauncherVisible ? (
                   <button
                     type="button"
-                    className="sidebar-history-button"
-                    aria-label={t("sidebar.navigation.forward")}
-                    title={t("sidebar.navigation.forward")}
-                    disabled={!sidebarNavigationCanGoForward}
-                    onClick={onSidebarNavigateForward}
+                    className={[
+                      "app-sidebar-collapse-button",
+                      "sidebar-assistant-top-button",
+                      "is-compact",
+                      assistantDockOpen ? "is-assistant-open" : "",
+                      assistantLauncherDisabled ? "is-disabled" : "",
+                      isCollapsed ? "is-collapsed-state" : "is-expanded-state",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={handleAssistantDockClick}
+                    aria-label={
+                      assistantLauncherDisabled
+                        ? t("sidebar.copilot.unavailableForPage", {
+                            appName: PRODUCT_NAME,
+                          })
+                        : assistantDockOpen
+                          ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
+                          : t("sidebar.copilot.open", { appName: PRODUCT_NAME })
+                    }
+                    aria-disabled={assistantLauncherDisabled}
+                    aria-pressed={assistantDockOpen}
+                    disabled={assistantLauncherDisabled}
+                    title={t("sidebar.copilot.title")}
                   >
-                    <SidebarActionIcon kind="forward" />
+                    <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
+                      <SidebarActionIcon kind="sidebar_right" />
+                    </span>
                   </button>
-                </div>
-              ) : null}
-              {isPrimaryMode && assistantLauncherVisible ? (
-                <button
-                  type="button"
-                  className={[
-                    "app-sidebar-collapse-button",
-                    "sidebar-assistant-top-button",
-                    "is-compact",
-                    assistantDockOpen ? "is-assistant-open" : "",
-                    assistantLauncherDisabled ? "is-disabled" : "",
-                    isCollapsed ? "is-collapsed-state" : "is-expanded-state",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={handleAssistantDockClick}
-                  aria-label={
-                    assistantLauncherDisabled
-                      ? t("sidebar.copilot.unavailableForPage", {
-                          appName: PRODUCT_NAME,
-                        })
-                      : assistantDockOpen
-                        ? t("sidebar.copilot.close", { appName: PRODUCT_NAME })
-                        : t("sidebar.copilot.open", { appName: PRODUCT_NAME })
-                  }
-                  aria-disabled={assistantLauncherDisabled}
-                  aria-pressed={assistantDockOpen}
-                  disabled={assistantLauncherDisabled}
-                  title={t("sidebar.copilot.title")}
-                >
-                  <span className="app-sidebar-collapse-button-icon sidebar-assistant-top-button-icon">
-                    <SidebarActionIcon kind="sidebar_right" />
-                  </span>
-                </button>
-              ) : null}
+                ) : null}
+              </div>
             </div>
           </div>
-        </div>
+        ) : null}
 
         <nav
           ref={sidebarNavRef}

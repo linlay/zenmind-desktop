@@ -11,6 +11,10 @@ export type DesktopDevelopmentRuntimeContext = {
   execPath?: string;
 };
 
+export function resolveEffectiveAppId(appId: string, isDevelopmentRuntime: boolean) {
+  return isDevelopmentRuntime ? `${appId}.dev` : appId;
+}
+
 function isPathInside(parentPath: string, candidatePath: string) {
   const relative = path.relative(path.resolve(parentPath), path.resolve(candidatePath));
   return relative === "" || (

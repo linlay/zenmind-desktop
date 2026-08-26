@@ -5916,8 +5916,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform\s*\{[^}]*--app-window-drag-height:\s*8px;/);
-  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--windows-titlebar-background:\s*#FFFFFF;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\s*\{[^}]*--windows-titlebar-background:\s*#000000;/);
+  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--windows-titlebar-background:\s*var\(--bg-base\);/);
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-main-chat-work-panel-toggle\s*\{[^}]*--app-window-drag-right:/
@@ -5977,7 +5976,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
   assert.match(globalStyles, /\.app-window-drag-layer\s*\{[^}]*z-index:\s*1000;/);
-  assert.match(
+  assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-windows-platform\.has-webapp-surface \.app-window-drag-layer::before\s*\{[^}]*content:\s*"";[^}]*position:\s*absolute;[^}]*inset:\s*0 calc\(-1 \* var\(--app-window-drag-right\)\) 0 calc\(-1 \* var\(--app-window-drag-left\)\);[^}]*background:\s*var\(--windows-titlebar-background\);[^}]*pointer-events:\s*none;/
   );
@@ -6003,7 +6002,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(
     globalStyles,
-    /\.app-shell\.is-windows-platform \.external-webview-page\.is-app-surface\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*var\(--windows-titlebar-overlay-height\) 0 0;[^}]*height:\s*auto;[^}]*margin:\s*0;/
+    /\.app-shell\.is-windows-platform \.external-webview-page\.is-app-surface\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*auto;[^}]*margin:\s*0;/
   );
   assert.match(
     globalStyles,
@@ -6105,7 +6104,12 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShell, /target\?\.closest\("\.app-sidebar-shell"\)/);
   assert.match(appShell, /target\?\.closest\("\.external-webview-browser-chrome"\)/);
   assert.match(appShell, /browserChrome\.closest\("\.external-webview-page\.is-inactive-surface"\)/);
-  assert.match(appShell, /SIDEBAR_DRAG_BLOCK_SELECTOR/);
+  assert.match(appShell, /WINDOW_DRAG_BLOCK_SELECTOR/);
+  assert.match(appShell, /WINDOW_DRAG_BLOCK_SELECTOR = \[[\s\S]*?"button"/);
+  assert.match(
+    appShell,
+    /if \(dragRegion && !target\?\.closest\(WINDOW_DRAG_BLOCK_SELECTOR\)\)/,
+  );
   assert.doesNotMatch(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
   assert.match(appShell, /event\.button !== 0/);
   assert.match(appShell, /desktopShell\.beginWindowDrag\(\)/);
@@ -6169,12 +6173,16 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(appShellRuntime, /restoreFloatingWindowsForFullscreen: \(\) => options\.restoreDesktopPetWindowLayering\(\)/);
   assert.match(appRuntime, /restoreDesktopPetWindowLayering\s*\n\s*\}\);/);
   assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,120}petRuntime\.restoreWindowLayering\(\)/);
-  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;/);
-  assert.match(contracts, /getWindowState:\s*\(\) => Promise<\{ ok:\s*boolean; isFullScreen:\s*boolean; message\?:\s*string \}>;/);
+  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
+  assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/);
+  assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/);
+  assert.match(contracts, /getWindowState:\s*\(\) => Promise<\{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
   assert.match(contracts, /onWindowStateChanged:\s*\(listener:\s*DesktopWindowStateListener\) => \(\(\) => void\);/);
   assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.getWindowState"\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.minimizeWindow"\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.toggleWindowMaximize"\)/);
   assert.match(preload, /ipcRenderer\.on\("desktopShell\.windowStateChanged"/);
-  assert.match(windowManager, /targetWindow\.webContents\.send\("desktopShell\.windowStateChanged",\s*\{ isFullScreen:\s*targetWindow\.isFullScreen\(\) \}\);/);
+  assert.match(windowManager, /targetWindow\.webContents\.send\("desktopShell\.windowStateChanged",\s*\{[\s\S]{0,180}isFullScreen:\s*targetWindow\.isFullScreen\(\),[\s\S]{0,100}isMaximized:\s*targetWindow\.isMaximized\(\)/);
   assert.match(appShell, /const desktopShell = window\.electronAPI\.desktopShell;[\s\S]*?!desktopShell\.getWindowState \|\| !desktopShell\.onWindowStateChanged/);
   assert.match(appShell, /desktopShell\.getWindowState\(\)/);
   assert.match(appShell, /desktopShell\.onWindowStateChanged/);
@@ -6182,8 +6190,36 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(macFullscreenRule, /--app-window-drag-height:\s*0px;/);
   assert.doesNotMatch(macFullscreenRule, /padding-top:/);
   assert.doesNotMatch(globalStyles, /--mac-fullscreen-top-safe-area/u);
-  assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*44px;/);
-  assert.match(globalStyles, /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[\s\S]*?padding-top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 12px\);/);
+  assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*30px;/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-system-bar\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*var\(--windows-titlebar-overlay-height\);/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-sidebar-shell\s*\{[\s\S]*?height:\s*calc\(100% - var\(--windows-titlebar-content-inset\)\);[\s\S]*?margin-top:\s*var\(--windows-titlebar-content-inset\);/);
+  assert.match(appShell, /className={`app-system-bar\$\{windowControlsMasked \? " is-masked" : ""\}`}/);
+  assert.match(appShell, /desktopShell\.minimizeWindow\(\)/);
+  assert.match(appShell, /desktopShell\.toggleWindowMaximize\(\)/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[\s\S]*?padding-top:\s*12px;/);
+});
+
+test("Windows main renderer owns the thin system bar and bottom-docked DevTools", () => {
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appShell = readAppShellSource();
+  const contracts = readSharedContractsSource();
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const globalStyles = readRendererStyles();
+
+  assert.doesNotMatch(windowManager, /titleBarOverlay/u);
+  assert.match(windowManager, /titleBarStyle:\s*"hidden"/u);
+  assert.match(windowManager, /contents\.openDevTools\(\{ mode:\s*"bottom" \}\)/u);
+  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/u);
+  assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/u);
+  assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/u);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.minimizeWindow"\)/u);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.toggleWindowMaximize"\)/u);
+  assert.match(appShell, /className=\{`app-system-bar\$\{windowControlsMasked \? " is-masked" : ""\}`\}/u);
+  assert.match(appShell, /desktopShell\.minimizeWindow\(\)/u);
+  assert.match(appShell, /desktopShell\.toggleWindowMaximize\(\)/u);
+  assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*30px;/u);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-system-bar\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*var\(--windows-titlebar-overlay-height\);/u);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-sidebar-shell\s*\{[\s\S]*?height:\s*calc\(100% - var\(--windows-titlebar-content-inset\)\);[\s\S]*?margin-top:\s*var\(--windows-titlebar-content-inset\);/u);
 });
 
 test("main process keeps app identity visible in platform program bars", () => {
@@ -6193,7 +6229,8 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
   assert.match(mainProcess, /options\.app\.setName\(options\.productName\);/);
-  assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, options\.appId\);/);
+  assert.match(mainProcess, /resolveEffectiveAppId\([\s\S]*?options\.appId,[\s\S]*?isDesktopDevelopmentRuntime\(options\.app, \{ platform: options\.platform \}\)[\s\S]*?\);/);
+  assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, effectiveAppId\);/);
   assert.match(
     platformAdapter,
     /if \(platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(appId\);[\s\S]*?\}/
@@ -6335,7 +6372,7 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.match(externalWebviewStyles, /\.external-webview-copilot-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*14px;/);
   assert.match(externalWebviewStyles, /\.external-webview-page\.has-copilot-launcher \.external-webview-tabbar\s*\{[\s\S]*?padding-right:\s*44px;/);
   assert.match(externalWebviewStyles, /\.app-shell\.is-mac-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*12px;/);
-  assert.match(externalWebviewStyles, /\.app-shell\.is-windows-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 10px\);/);
+  assert.match(externalWebviewStyles, /\.app-shell\.is-windows-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*10px;/);
   assert.doesNotMatch(appShell, /external-webview-debug-sidebar/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
@@ -6578,7 +6615,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(globalStyles, /\.service-webview-error\s*\{/);
 });
 
-test("Windows service webview modal overlays mask native caption controls", () => {
+test("Windows service webview modal overlays mask renderer-owned window controls", () => {
   const serviceWebviewPreload = readSourceFile("src", "preload", "service-webview.ts");
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
@@ -6600,7 +6637,8 @@ test("Windows service webview modal overlays mask native caption controls", () =
   assert.match(desktopPreload, /setWebviewModalOverlayVisible:\s*\(sourceId: string, visible: boolean\)/);
   assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.setWebviewModalOverlayVisible"/);
   assert.match(shellHandlers, /ownerWindow !== mainWindow/);
-  assert.match(windowManager, /globalSearchOverlayVisible \|\| webviewModalOverlaySources\.size > 0/);
+  assert.match(windowManager, /return globalSearchOverlayVisible \|\| webviewModalOverlaySources\.size > 0/);
+  assert.match(windowManager, /windowControlsMasked:\s*isWindowControlsMasked\(\)/);
 });
 
 test("embedded cdp exposes service frontends as webview surfaces", () => {
@@ -6895,14 +6933,24 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
-  const helper = trayController.match(/export function getAppTrayIconCandidatePaths[\s\S]*?\n\}\n\nexport class/u)?.[0] ?? "";
-  const packagedBranch = helper.match(/^  if \(options\.isPackaged\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
-  const packagedDarwinBranch = packagedBranch.match(/if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu)?.[0] ?? "";
+  const helper = trayController.match(
+    /export function getAppTrayIconCandidatePaths[\s\S]*?\r?\n\}\r?\n\r?\nexport class/u
+  )?.[0] ?? "";
+  const packagedBranch = helper.match(
+    /^  if \(options\.isPackaged\) \{[\s\S]*?(?=^  if \(options\.platform === "darwin"\))/mu
+  )?.[0] ?? "";
+  const packagedDarwinBranch = helper.match(
+    /^    if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu
+  )?.[0] ?? "";
   const macDevBranch = helper.match(/^  if \(options\.platform === "darwin"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const windowsDevBranch = helper.match(/^  if \(options\.platform === "win32"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const createIconMethod = trayController.match(/private createIcon\(\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
+  assert.match(mainProcess, /iconPath:\s*windowsDevelopmentAppIconPath/u);
+  assert.match(mainProcess, /effectiveAppId:\s*systemIdentityRuntime\.effectiveAppId/u);
+  assert.match(mainProcess, /applyWindowsDevelopmentAppDetails\(targetWindow,\s*\{[\s\S]{0,240}?appId:\s*options\.effectiveAppId,[\s\S]{0,160}?iconPath:\s*windowsDevelopmentAppIconPath/u);
+  assert.match(mainProcess, /getWindowsDevelopmentAppIconPath\(\{[\s\S]{0,260}?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
   assert.match(trayController, /function platformFallbackIconPath/);
   assert.match(trayController, /APP_ICON_ASSET_DIRECTORIES\.brandAssets/);
@@ -6948,9 +6996,9 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
   assert.doesNotMatch(windowsDevBranch, /setTemplateImage/);
 
   assert(
-    indexOfRequired(windowsDevBranch, "fallbackIconPath") <
-      indexOfRequired(windowsDevBranch, "generatedTrayIconPath"),
-    "Windows dev tray lookup should prefer the active build ico before generated tray fallback"
+    indexOfRequired(windowsDevBranch, "generatedTrayIconPath") <
+      indexOfRequired(windowsDevBranch, "fallbackIconPath"),
+    "Windows dev tray lookup should prefer transparent generated tray art before the app ico fallback"
   );
   assert.doesNotMatch(windowsDevBranch, /rendererTrayIconPath/);
 });
@@ -8387,10 +8435,7 @@ test("help page uses the configured anonymous Help webview", () => {
   assert.match(helpPage, /createElement\("webview"/);
   assert.doesNotMatch(helpPage, /MarkdownContent|getHelpContent/);
   assert.match(appShell, /<HelpPage hostTheme=\{resolvedTheme\} \/>/);
-  assert.match(
-    helpPageCss,
-    /\.app-shell\.is-windows-platform \.help-webview-page\s*\{[\s\S]*?padding-top:\s*var\(--windows-titlebar-overlay-height\);/u
-  );
+  assert.doesNotMatch(helpPageCss, /\.app-shell\.is-windows-platform \.help-webview-page/u);
   assert.match(preload, /getSettings:\s*\(\) => ipcRenderer\.invoke\("help\.getSettings"\)/);
   assert.match(desktopApi, /help:\s*\{[\s\S]*?getSettings:\s*\(\) => Promise<DesktopHelpSettings>/u);
   assert.match(helpHandlers, /ipcMain\.handle\("help\.getSettings"/);

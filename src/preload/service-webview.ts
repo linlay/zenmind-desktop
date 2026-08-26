@@ -159,8 +159,8 @@ function installModalOverlayTracking() {
   }, { once: true });
 }
 
-// Windows caption controls are native and render above the guest page, so the
-// host must mirror the guest's modal-mask state into its titleBarOverlay.
+// The Windows system bar lives in the host renderer, outside the guest page, so
+// mirror guest modal state to let the host mask its window controls as well.
 if (process.platform === "win32") {
   installModalOverlayTracking();
 }

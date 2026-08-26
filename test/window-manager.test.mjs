@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 const {
+  applyWindowsDevelopmentAppDetails,
   buildMainWindowOptions,
   configureAttachedWebview,
   configureMediaPermissions,
@@ -25,16 +26,17 @@ class FakeWindow extends EventEmitter {
   destroyed = false;
   hidden = false;
   fullscreen = false;
+  maximized = false;
   restored = false;
   vibrancy = undefined;
   backgroundColor = "";
-  titleBarOverlay = null;
   minimized = false;
   shown = false;
   focused = false;
   webContents = new FakeMainWebContents();
   loadedUrls = [];
   loadedFiles = [];
+  appDetails = [];
   showCount = 0;
   focusCount = 0;
 
@@ -49,6 +51,10 @@ class FakeWindow extends EventEmitter {
 
   isFullScreen() {
     return this.fullscreen;
+  }
+
+  isMaximized() {
+    return this.maximized;
   }
 
   setFullScreen(value) {
@@ -90,8 +96,8 @@ class FakeWindow extends EventEmitter {
     this.backgroundColor = value;
   }
 
-  setTitleBarOverlay(value) {
-    this.titleBarOverlay = value;
+  setAppDetails(value) {
+    this.appDetails.push(value);
   }
 
   async loadURL(url) {
@@ -107,7 +113,9 @@ class FakeMainWebContents extends EventEmitter {
   id = 11;
   sentMessages = [];
   loadingMainFrame = false;
-  toggleDevToolsCount = 0;
+  devToolsOpened = false;
+  openedDevToolsOptions = [];
+  closeDevToolsCount = 0;
 
   isLoadingMainFrame() {
     return this.loadingMainFrame;
@@ -117,8 +125,18 @@ class FakeMainWebContents extends EventEmitter {
     this.sentMessages.push({ channel, payload });
   }
 
-  toggleDevTools() {
-    this.toggleDevToolsCount += 1;
+  isDevToolsOpened() {
+    return this.devToolsOpened;
+  }
+
+  openDevTools(options) {
+    this.devToolsOpened = true;
+    this.openedDevToolsOptions.push(options);
+  }
+
+  closeDevTools() {
+    this.devToolsOpened = false;
+    this.closeDevToolsCount += 1;
   }
 }
 
@@ -333,7 +351,7 @@ test("main window lifecycle applies macOS translucency only outside fullscreen",
   assert.equal(target.backgroundColor, "#FFFFFF");
 });
 
-test("main window lifecycle masks Windows caption controls while global search is open", () => {
+test("main window lifecycle publishes renderer-owned Windows control masking", () => {
   const target = new FakeWindow();
   const nativeTheme = { shouldUseDarkColors: false };
   const controller = createMainWindowLifecycleController({
@@ -346,31 +364,26 @@ test("main window lifecycle masks Windows caption controls while global search i
 
   controller.setGlobalSearchOverlayVisible(true);
   assert.equal(controller.isGlobalSearchOverlayVisible(), true);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#D4D5D9",
-    symbolColor: "#D4D5D9",
-    height: 44
+  assert.equal(controller.isWindowControlsMasked(), true);
+  assert.deepEqual(target.webContents.sentMessages.at(-1), {
+    channel: "desktopShell.windowStateChanged",
+    payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: true }
   });
 
   nativeTheme.shouldUseDarkColors = true;
   controller.applyAppearance(target);
   assert.equal(target.backgroundColor, "#181818");
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#0E0E0E",
-    symbolColor: "#0E0E0E",
-    height: 44
-  });
 
   controller.setGlobalSearchOverlayVisible(false);
   assert.equal(controller.isGlobalSearchOverlayVisible(), false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#181818",
-    symbolColor: "#F2F2F2",
-    height: 44
+  assert.equal(controller.isWindowControlsMasked(), false);
+  assert.deepEqual(target.webContents.sentMessages.at(-1), {
+    channel: "desktopShell.windowStateChanged",
+    payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false }
   });
 });
 
-test("main window lifecycle keeps Windows caption controls masked until every webview modal closes", () => {
+test("main window lifecycle keeps renderer controls masked until every webview modal closes", () => {
   const target = new FakeWindow();
   const controller = createMainWindowLifecycleController({
     platform: "win32",
@@ -383,25 +396,17 @@ test("main window lifecycle keeps Windows caption controls masked until every we
   controller.setWebviewModalOverlayVisible("service-webview:chat", true);
   controller.setWebviewModalOverlayVisible("service-webview:management", true);
   controller.setWebviewModalOverlayVisible("service-webview:chat", false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#D4D5D9",
-    symbolColor: "#D4D5D9",
-    height: 44
-  });
+  assert.equal(controller.isWindowControlsMasked(), true);
 
   controller.setGlobalSearchOverlayVisible(true);
   controller.setWebviewModalOverlayVisible("service-webview:management", false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#D4D5D9",
-    symbolColor: "#D4D5D9",
-    height: 44
-  });
+  assert.equal(controller.isWindowControlsMasked(), true);
 
   controller.setGlobalSearchOverlayVisible(false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#FFFFFF",
-    symbolColor: "#1F2937",
-    height: 44
+  assert.equal(controller.isWindowControlsMasked(), false);
+  assert.deepEqual(target.webContents.sentMessages.at(-1), {
+    channel: "desktopShell.windowStateChanged",
+    payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false }
   });
 });
 
@@ -482,7 +487,8 @@ test("window manager builds platform-specific main window options", () => {
   });
   const winOptions = buildMainWindowOptions({
     platform: "win32",
-    preloadPath: "C:/app/preload/index.js"
+    preloadPath: "C:/app/preload/index.js",
+    iconPath: "C:/app/build/brands/zenmind/icons/icon.ico"
   });
 
   assert.equal(macOptions.width, 1440);
@@ -498,13 +504,38 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.webPreferences.contextIsolation, true);
   assert.equal(macOptions.webPreferences.webviewTag, true);
   assert.equal(winOptions.titleBarStyle, "hidden");
-  assert.deepEqual(winOptions.titleBarOverlay, {
-    color: "#FFFFFF",
-    symbolColor: "#1F2937",
-    height: 44
-  });
+  assert.equal(winOptions.titleBarOverlay, undefined);
   assert.equal(winOptions.acceptFirstMouse, undefined);
   assert.equal(winOptions.backgroundColor, "#FFFFFF");
+  assert.equal(winOptions.icon, "C:/app/build/brands/zenmind/icons/icon.ico");
+  assert.equal(macOptions.icon, undefined);
+});
+
+test("window manager applies current brand app details only to Windows development windows", () => {
+  const windowsWindow = new FakeWindow();
+  const macWindow = new FakeWindow();
+
+  applyWindowsDevelopmentAppDetails(windowsWindow, {
+    platform: "win32",
+    appId: "cc.zenmind.desktop.dev",
+    iconPath: "C:/app/build/brands/zenmind/icons/icon.ico"
+  });
+  applyWindowsDevelopmentAppDetails(macWindow, {
+    platform: "darwin",
+    appId: "cc.zenmind.desktop.dev",
+    iconPath: "/app/build/brands/zenmind/icons/icon.ico"
+  });
+  applyWindowsDevelopmentAppDetails(windowsWindow, {
+    platform: "win32",
+    appId: "cc.zenmind.desktop"
+  });
+
+  assert.deepEqual(windowsWindow.appDetails, [{
+    appId: "cc.zenmind.desktop.dev",
+    appIconPath: "C:/app/build/brands/zenmind/icons/icon.ico",
+    appIconIndex: 0
+  }]);
+  assert.deepEqual(macWindow.appDetails, []);
 });
 
 test("window manager includes initial locale arguments for renderer bootstrap", () => {
@@ -594,6 +625,10 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
 
   target.emit("ready-to-show");
   target.emit("focus");
+  target.maximized = true;
+  target.emit("maximize");
+  target.maximized = false;
+  target.emit("unmaximize");
   target.fullscreen = true;
   target.emit("enter-full-screen");
   target.fullscreen = false;
@@ -604,13 +639,15 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
   assert.equal(restoredFloatingWindows, 2);
   assert.deepEqual(appearances, [target, target]);
   assert.deepEqual(target.webContents.sentMessages, [
-    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false } },
-    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: true } },
-    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false } }
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: true, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: true, isMaximized: false, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false } }
   ]);
 });
 
-test("window manager wires DevTools shortcuts and close lifecycle events", () => {
+test("window manager toggles main renderer DevTools and wires close lifecycle events", () => {
   const target = new FakeWindow();
   const events = [];
   const prevented = { shortcut: false, close: false };
@@ -632,6 +669,9 @@ test("window manager wires DevTools shortcuts and close lifecycle events", () =>
       prevented.shortcut = true;
     }
   }, { key: "i" });
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {}
+  }, { key: "i" });
   target.emit("close", {
     preventDefault: () => {
       prevented.close = true;
@@ -640,7 +680,8 @@ test("window manager wires DevTools shortcuts and close lifecycle events", () =>
   target.emit("closed");
 
   assert.equal(prevented.shortcut, true);
-  assert.equal(target.webContents.toggleDevToolsCount, 1);
+  assert.deepEqual(target.webContents.openedDevToolsOptions, [{ mode: "bottom" }]);
+  assert.equal(target.webContents.closeDevToolsCount, 1);
   assert.equal(prevented.close, true);
   assert.deepEqual(events, [
     { type: "hide", window: target },
@@ -676,7 +717,7 @@ test("window manager opens Desktop global search from the main window shortcut",
   assert.deepEqual(target.webContents.sentMessages, [
     { channel: "app.openGlobalSearch", payload: { source: "main" } }
   ]);
-  assert.equal(target.webContents.toggleDevToolsCount, 0);
+  assert.deepEqual(target.webContents.openedDevToolsOptions, []);
 });
 
 test("main window forwards close shortcuts only while WorkPanel owns keyboard focus", () => {
@@ -903,7 +944,8 @@ test("window manager wires webview preload validation and guest webview behavior
       src: "https://example.test/"
     }
   });
-  assert.deepEqual(guest.devtoolsOpenOptions, { mode: "detach" });
+  assert.equal(guest.devtoolsOpenOptions, null);
+  assert.deepEqual(target.webContents.openedDevToolsOptions, [{ mode: "bottom" }]);
   assert.deepEqual(focusChanges, [
     { webContentsId: 64, focused: true },
     { webContentsId: 64, focused: false },
@@ -1439,9 +1481,9 @@ test("window manager allows only service webview preload for loopback service UR
   });
 });
 
-test("window manager configures attached webviews for downloads, DevTools and popup routing", () => {
+test("window manager routes attached webview DevTools shortcuts to the main renderer", () => {
+  const mainWindow = new FakeWindow();
   const contents = new FakeWebContents(42);
-  const sentTabs = [];
   const externalUrls = [];
   const navigatedUrls = [];
   const diagnostics = [];
@@ -1449,12 +1491,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
 
   configureAttachedWebview(contents, {
     platform: "win32",
-    getMainWindow: () => ({
-      isDestroyed: () => false,
-      webContents: {
-        send: (channel, payload) => sentTabs.push({ channel, payload })
-      }
-    }),
+    getMainWindow: () => mainWindow,
     isDevToolsShortcut: (_platform, input) => input.key === "i",
     shouldDownloadUrl: (url) => url.endsWith(".zip"),
     resolveOpenDisposition: (url) => url.includes("inside") ? "tab" : "external",
@@ -1475,7 +1512,8 @@ test("window manager configures attached webviews for downloads, DevTools and po
     }
   }, { key: "i" });
   assert.equal(prevented.devtools, true);
-  assert.deepEqual(contents.devtoolsOpenOptions, { mode: "detach" });
+  assert.equal(contents.devtoolsOpenOptions, null);
+  assert.deepEqual(mainWindow.webContents.openedDevToolsOptions, [{ mode: "bottom" }]);
 
   contents.emit("will-navigate", {
     preventDefault: () => {
@@ -1486,7 +1524,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
   assert.deepEqual(contents.downloadedUrls, ["https://example.test/file.zip"]);
 
   assert.deepEqual(contents.windowOpenHandler({ url: "https://example.test/inside" }), { action: "deny" });
-  assert.deepEqual(sentTabs, [{
+  assert.deepEqual(mainWindow.webContents.sentMessages, [{
     channel: "webview.openTab",
     payload: {
       target: "desktop-browser",

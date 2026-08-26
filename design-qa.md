@@ -94,3 +94,109 @@ The reference uses a larger captured display scale and a wider native popover. T
 - [x] Preserve existing WebClient, WebApp, local-file, and review surfaces.
 
 final result: passed
+
+---
+
+# Windows System Bar Design QA
+
+## Evidence
+
+- Source visual truth: `C:\Users\Linlay\AppData\Local\Temp\codex-clipboard-673bd8fe-15f7-4883-b006-33aba3d71d2b.png`
+- Rendered implementation: `C:\Project\zenmind\zenmind-desktop\qa\windows-systembar-devtools.png`
+- Combined focused comparison: `C:\Project\zenmind\zenmind-desktop\qa\windows-systembar-comparison.png`
+- Full implementation capture before DevTools: `C:\Project\zenmind\zenmind-desktop\qa\windows-systembar-implementation.png`
+- Viewport and state: Windows light theme, Kanban route, isolated QA profile. The initial renderer viewport was `1490 × 968` CSS px. After the real `Ctrl+Shift+I` shortcut opened the main renderer DevTools at the bottom, the renderer viewport was `1490 × 668` CSS px and the system bar remained `1490 × 30` CSS px.
+- Pixel dimensions and density normalization: source `1956 × 114` px; implementation before DevTools `1862 × 1210` px; implementation with DevTools `1862 × 835` px. The implementation was captured at device scale factor `1.25`, then normalized to `1490` px width for the focused comparison. The source and implementation top rows were placed in the same `1490 × 164` comparison image.
+- Runtime evidence: a `devtools://devtools/bundled/devtools_app.html` target appeared after the shortcut; the main renderer stayed on `#/kanban`. No renderer console messages or runtime exceptions were observed during capture.
+- The isolated QA window loaded the live Kanban shell and existing desktop data; no startup overlay covered the system bar during the final capture.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual differences were found for the requested system-bar behavior.
+- The implementation preserves the reference's important structure: one thin full-width top row, product identity at the left, Windows window controls at the far right, a quiet divider below, and all application content beginning beneath the row.
+- P3, intentional product adaptation: the reference contains browser/navigation and menu commands. ZenMind shows its existing brand mark and product name instead because there are no equivalent top-level menu actions in this product. Adding non-functional reference commands would reduce clarity.
+
+## Required Fidelity Surfaces
+
+- Fonts and typography: the product label uses the existing Windows/system font stack at `11px`, medium weight, and muted color. It remains legible without competing with the business navigation below.
+- Spacing and layout rhythm: the refined bar is exactly `30px` high; icon/name alignment, `10px` horizontal padding, `42px` window-control hit areas, and the one-pixel divider form a lighter Windows-like rhythm. Sidebar and content begin below the bar with no double inset.
+- Colors and visual tokens: the bar uses `--bg-base`, `--ink`, `--ink-muted`, `--line`, and the existing hover token. Light capture is visually consistent with the reference's neutral title row; dark mode inherits the established ZenMind theme tokens.
+- Image quality and asset fidelity: the visible logo is the existing `BrandMark` source asset. Window controls use Ant Design icons already present in the product; no inline SVG, CSS drawing, emoji, or placeholder asset was introduced.
+- Copy and content: only the real product name, `ZenMind`, is shown. Accessible labels for the system bar and minimize/maximize/restore/close controls are localized in Chinese and English.
+
+## Interaction Evidence
+
+- A real `Ctrl+Shift+I` input was dispatched to the running main renderer. It opened main Electron DevTools at the bottom, reduced renderer height from `968` to `668` CSS px, and left the `1490 × 30` system bar unchanged at the top.
+- Source and unit tests confirm that the same shortcut received while an attached webview is focused is routed to the main renderer.
+- `Ctrl+Shift+D` remains implemented and tested only in `focused-webview-devtools.ts`; that code was not changed.
+- Minimize, maximize/restore, close-to-tray, authorization, maximize-state updates, and modal masking are covered by main/preload/renderer source checks and focused unit tests.
+
+## Comparison History
+
+- Iteration 1: compared the source top bar and the running implementation in the same normalized focused image. No P0/P1/P2 issue was identified, so no visual fix/re-capture iteration was required.
+- Iteration 2: refined the accepted system bar from `36px` to `30px`, with proportionally smaller brand, label, controls, padding, and gaps. Re-captured the running implementation and confirmed the slimmer rhythm without overlap or duplicated inset.
+
+## Implementation Checklist
+
+- [x] Independent thin Windows system bar.
+- [x] Renderer-owned minimize, maximize/restore, and close controls with restricted IPC.
+- [x] Main renderer DevTools routed from both main and guest focus and docked below the bar.
+- [x] Current-focus webview DevTools shortcut unchanged.
+- [x] Main content, Help, and app-surface offsets avoid duplicated titlebar spacing.
+- [x] Light-theme runtime capture, focused comparison, interaction check, console check, typechecks, production builds, and focused tests completed.
+
+final result: passed
+
+---
+
+# Windows System Bar Primary Actions Design QA
+
+## Evidence
+
+- Selected direction: `C:\Users\Linlay\.codex\generated_images\01a03c8b-e28c-7410-83f2-d98a37adff29\exec-62057ee1-1ba0-4c5f-898d-ad628f4061d7.png`
+- Running implementation: `C:\Project\zenmind\zenmind-desktop\qa\windows-systembar-actions-implementation.png`
+- Main renderer with DevTools open: `C:\Project\zenmind\zenmind-desktop\qa\windows-systembar-actions-devtools.png`
+- Combined comparison: `C:\Project\zenmind\zenmind-desktop\qa\windows-systembar-actions-comparison.png`
+- Viewport and state: Windows light theme, Kanban route, isolated QA profile, `1440 × 920` CSS px at device scale factor `1.25`.
+- Measured layout: the system bar stayed `1440 × 30` CSS px; the five-action group began at `x=87.34`, measured `128 × 24` CSS px, and every action measured `24 × 24` CSS px.
+
+## Findings
+
+- No actionable P0, P1, or P2 visual difference was found for the selected structural direction.
+- The implementation follows the selected direction's hierarchy: brand identity first, then Search, Sidebar, Back, Forward, and Assistant actions; the draggable title region fills the middle; native-looking window controls remain at the far right. ZenMind shows Logo and product name, while CuteJ uses its Logo alone at the user's request.
+- The generated direction is intentionally enlarged for concept review. The running implementation adapts that hierarchy to the user-approved `30px` production system bar instead of copying the concept image's display scale.
+- The former Windows sidebar toolbar is absent, so each action has one clear location and the Kanban content begins directly below the title row.
+
+## Required Fidelity Surfaces
+
+- Fonts and typography: when shown, the product name retains the existing system font, `11px` scale, medium weight, and muted color. CuteJ intentionally omits the title text, so no replacement typography was introduced.
+- Spacing and layout rhythm: the action group uses five `24px` square hit areas with `2px` gaps and `4px` separation after the product name, fitting the `30px` bar without increasing its height.
+- Colors and visual tokens: icons use the existing muted foreground and hover/focus tokens, so light and dark themes stay aligned with the current ZenMind shell.
+- Image quality and asset fidelity: BrandMark and the existing application icon components are reused. No handwritten SVG, CSS drawing, emoji, or placeholder graphic was added.
+- Copy and content: localized accessible labels are preserved for Search, Sidebar, Back, Forward, and Assistant; disabled navigation states remain visible and semantically disabled.
+
+## Interaction Evidence
+
+- Search opened the real global-search layer; the short delay between click and mounted layer explains why the immediate probe was false while the settled visibility probe was true.
+- Follow-up regression: the first implementation allowed the parent drag capture to consume button pointer-down events. Interactive descendants are now excluded before drag starts; the user confirmed the five controls respond in the live CuteJ window.
+- Sidebar collapse changed shell state and restored successfully.
+- Navigating to Automations enabled Back; Back returned to `#/kanban`; Forward returned to `#/automations`.
+- Assistant dock opened and closed successfully from the new top-row action.
+- A real `Ctrl+Shift+I` key sequence opened a `devtools://` target for the main renderer. Renderer height changed from `920` to `620` CSS px, proving bottom docking, while the system bar remained `1440 × 30` CSS px and retained all five actions.
+- `Ctrl+Shift+D` remains isolated in the focused-webview DevTools path and was not changed by this implementation.
+
+## Comparison History
+
+- Iteration 1: placed the selected direction and the live Windows capture in one comparison image, checking control order, left/right anchoring, duplicate-toolbar removal, spacing, visual weight, and title-bar height.
+- No P0/P1/P2 mismatch required a second visual iteration. The production result deliberately preserves the compact scale requested in the immediately preceding system-bar refinement.
+
+## Verification
+
+- [x] Renderer typecheck.
+- [x] Prepared renderer production build.
+- [x] Four focused Windows title-bar layout tests.
+- [x] Main renderer system-bar build assertion.
+- [x] Live search, collapse, navigation, assistant, and DevTools interaction probes.
+- [x] Combined visual comparison reviewed at original capture detail.
+
+final result: passed

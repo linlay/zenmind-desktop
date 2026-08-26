@@ -703,6 +703,8 @@ export type SandboxImageImportProgressListener = (event: SandboxImageImportProgr
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
 export type DesktopWindowState = {
   isFullScreen: boolean;
+  isMaximized: boolean;
+  windowControlsMasked: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
 export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "skills" | "mcpConnectors";
@@ -771,7 +773,15 @@ export interface DesktopApi {
     setWorkPanelKeyboardFocusActive: (active: boolean) => void;
     setWorkPanelFullscreenActive: (active: boolean) => void;
     requestWindowClose: () => void;
-    getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
+    minimizeWindow: () => Promise<{ ok: boolean; message?: string }>;
+    toggleWindowMaximize: () => Promise<{ ok: boolean; isMaximized: boolean; message?: string }>;
+    getWindowState: () => Promise<{
+      ok: boolean;
+      isFullScreen: boolean;
+      isMaximized: boolean;
+      windowControlsMasked: boolean;
+      message?: string;
+    }>;
     setWindowFullScreen: (
       enabled: boolean
     ) => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;

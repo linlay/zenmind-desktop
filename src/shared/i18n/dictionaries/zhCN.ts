@@ -3101,6 +3101,12 @@ export const zhCNMessages = {
   "desktop.globalSearch.action.settings.description": "调整 Desktop 偏好",
   "desktop.globalSearch.status.running": "运行中",
 
+  "windowControls.systemBar": "应用系统栏",
+  "windowControls.minimize": "最小化",
+  "windowControls.maximize": "最大化",
+  "windowControls.restore": "还原",
+  "windowControls.close": "关闭",
+
   "logViewer.titleFallback": "日志",
   "logViewer.window.minimize": "最小化",
   "logViewer.window.maximize": "最大化",

@@ -5,6 +5,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const Module = require("node:module");
+const { BRAND_ID } = await import("../dist-electron/shared/brand.js");
 const trayInstances = [];
 
 class FakeTray extends EventEmitter {
@@ -66,11 +67,37 @@ Module._load = function load(request, parent, isMain) {
 };
 
 let AppTrayController;
+let getAppTrayIconCandidatePaths;
+let getWindowsDevelopmentAppIconPath;
 try {
-  ({ AppTrayController } = require("../dist-electron/main/app-shell/tray.js"));
+  ({
+    AppTrayController,
+    getAppTrayIconCandidatePaths,
+    getWindowsDevelopmentAppIconPath
+  } = require("../dist-electron/main/app-shell/tray.js"));
 } finally {
   Module._load = originalLoad;
 }
+
+test("Windows development uses the generated app ICO for its main window and transparent art for its tray", () => {
+  const options = {
+    platform: "win32",
+    isPackaged: false,
+    mainDir: "C:\\app\\dist-electron",
+    resourcesPath: "C:\\app\\resources"
+  };
+
+  assert.equal(
+    getWindowsDevelopmentAppIconPath(options),
+    `C:\\app\\build\\brands\\${BRAND_ID}\\icons\\icon.ico`
+  );
+  assert.deepEqual(getAppTrayIconCandidatePaths(options).slice(0, 2), [
+    `C:\\app\\build\\brands\\${BRAND_ID}\\brand-assets\\tray-icon.png`,
+    `C:\\app\\build\\brands\\${BRAND_ID}\\icons\\icon.ico`
+  ]);
+  assert.equal(getWindowsDevelopmentAppIconPath({ ...options, isPackaged: true }), undefined);
+  assert.equal(getWindowsDevelopmentAppIconPath({ ...options, platform: "darwin" }), undefined);
+});
 
 test("Windows tray exposes app activation and an explicit quit action", () => {
   const calls = [];

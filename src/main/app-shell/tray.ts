@@ -77,6 +77,13 @@ function platformFallbackIconPath(options: AppTrayIconPathOptions) {
   );
 }
 
+export function getWindowsDevelopmentAppIconPath(options: AppTrayIconPathOptions) {
+  if (options.platform !== "win32" || options.isPackaged) {
+    return undefined;
+  }
+  return platformFallbackIconPath(options);
+}
+
 export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
   const generatedTrayIconPath = projectAssetPath(
     options,
@@ -134,8 +141,8 @@ export function getAppTrayIconCandidatePaths(options: AppTrayIconPathOptions) {
 
   if (options.platform === "win32") {
     return [
-      fallbackIconPath,
       generatedTrayIconPath,
+      fallbackIconPath,
       generatedBrandIconPath
     ];
   }

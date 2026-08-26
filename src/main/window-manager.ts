@@ -23,17 +23,6 @@ const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
 // macOS owns the native traffic-light size; keep the app chrome compact by
 // aligning the fixed-size controls with the renderer toolbar instead.
 const MAC_TRAFFIC_LIGHT_POSITION = { x: 10, y: 13 };
-const WINDOWS_TITLEBAR_OVERLAY_HEIGHT = 44;
-const WINDOWS_TITLEBAR_LIGHT = {
-  color: "#FFFFFF",
-  symbolColor: "#1F2937"
-};
-const WINDOWS_TITLEBAR_DARK = {
-  color: "#181818",
-  symbolColor: "#F2F2F2"
-};
-const WINDOWS_TITLEBAR_MASKED_LIGHT = "#D4D5D9";
-const WINDOWS_TITLEBAR_MASKED_DARK = "#0E0E0E";
 const WINDOWS_BACKGROUND_LIGHT = "#FFFFFF";
 const WINDOWS_BACKGROUND_DARK = "#181818";
 
@@ -43,11 +32,11 @@ type MainWindowLike = Pick<
   | "hide"
   | "isDestroyed"
   | "isFullScreen"
+  | "isMaximized"
   | "off"
   | "once"
   | "setBackgroundColor"
   | "setFullScreen"
-  | "setTitleBarOverlay"
   | "setVibrancy"
 > & Partial<Pick<BrowserWindow, "webContents">>;
 
@@ -60,16 +49,22 @@ type MainWindowActivationLike = Pick<
 
 type MainWindowRendererLoadLike = Pick<BrowserWindow, "loadFile" | "loadURL">;
 
+type MainRendererDevToolsContentsLike = Pick<
+  BrowserWindow["webContents"],
+  "closeDevTools" | "isDevToolsOpened" | "openDevTools"
+>;
+
 type MainWindowLifecycleEventsLike = Pick<
   BrowserWindow,
-  "focus" | "isDestroyed" | "isFullScreen" | "on" | "once" | "show"
+  "focus" | "isDestroyed" | "isFullScreen" | "isMaximized" | "on" | "once" | "show"
 > & {
-  webContents: Pick<BrowserWindow["webContents"], "on" | "send" | "toggleDevTools">;
+  webContents: MainRendererDevToolsContentsLike &
+    Pick<BrowserWindow["webContents"], "on" | "send">;
 };
 
 type MainWindowWebContentsLike = {
   isDestroyed(): boolean;
-  webContents: {
+  webContents: MainRendererDevToolsContentsLike & {
     on(eventName: string, listener: (...args: any[]) => void): unknown;
     send(channel: string, payload: unknown): void;
   };
@@ -122,7 +117,6 @@ type AttachedWebviewLike = {
   copy(): void;
   cut(): void;
   downloadURL(url: string): void;
-  openDevTools(options: { mode: "detach" }): void;
   paste(): void;
   selectAll(): void;
   loadURL(url: string): Promise<unknown>;
@@ -177,12 +171,11 @@ export function buildMainWindowOptions(input: {
   preloadPath: string;
   initialLocaleSettings?: LocaleSettings;
   shouldUseDarkColors?: boolean;
+  iconPath?: string;
 }): MainWindowOptions {
   const initialLocaleArguments = input.initialLocaleSettings
     ? createInitialLocaleArguments(input.initialLocaleSettings)
     : [];
-  const windowsTitleBarOverlay = resolveWindowsTitleBarOverlay(input.shouldUseDarkColors ?? false);
-
   return {
     width: 1440,
     height: 920,
@@ -207,10 +200,9 @@ export function buildMainWindowOptions(input: {
         }
       : input.platform === "win32"
         ? {
+            // The renderer owns the thin Windows system bar and window controls.
             titleBarStyle: "hidden" as const,
-            titleBarOverlay: {
-              ...windowsTitleBarOverlay
-            }
+            ...(input.iconPath ? { icon: input.iconPath } : {})
           }
         : {}),
     webPreferences: {
@@ -224,24 +216,40 @@ export function buildMainWindowOptions(input: {
   };
 }
 
-function resolveWindowsTitleBarOverlay(shouldUseDarkColors: boolean, masked = false) {
-  if (masked) {
-    const color = shouldUseDarkColors ? WINDOWS_TITLEBAR_MASKED_DARK : WINDOWS_TITLEBAR_MASKED_LIGHT;
-    return {
-      color,
-      symbolColor: color,
-      height: WINDOWS_TITLEBAR_OVERLAY_HEIGHT
-    };
+export function applyWindowsDevelopmentAppDetails(
+  targetWindow: Pick<BrowserWindow, "setAppDetails">,
+  input: {
+    platform: DesktopPlatform;
+    appId: string;
+    iconPath?: string;
   }
-  const palette = shouldUseDarkColors ? WINDOWS_TITLEBAR_DARK : WINDOWS_TITLEBAR_LIGHT;
-  return {
-    ...palette,
-    height: WINDOWS_TITLEBAR_OVERLAY_HEIGHT
-  };
+) {
+  if (input.platform !== "win32" || !input.iconPath) {
+    return;
+  }
+  targetWindow.setAppDetails({
+    appId: input.appId,
+    appIconPath: input.iconPath,
+    appIconIndex: 0
+  });
 }
 
 function resolveWindowsBackgroundColor(shouldUseDarkColors: boolean) {
   return shouldUseDarkColors ? WINDOWS_BACKGROUND_DARK : WINDOWS_BACKGROUND_LIGHT;
+}
+
+function toggleMainRendererDevTools(
+  contents: MainRendererDevToolsContentsLike
+) {
+  if (contents.isDevToolsOpened()) {
+    contents.closeDevTools();
+    return;
+  }
+
+  // Keep the renderer-owned system bar spanning the whole Windows window.
+  // Right-docked DevTools would split the inspected renderer horizontally and
+  // move its custom window controls away from the window's right edge.
+  contents.openDevTools({ mode: "bottom" });
 }
 
 export async function loadMainWindowRenderer(
@@ -275,6 +283,7 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
       hideForClose(targetWindow: TWindow): void;
       cancelPendingClose(): void;
       isGlobalSearchOverlayVisible?(): boolean;
+      isWindowControlsMasked?(): boolean;
     };
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
@@ -290,7 +299,11 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     if (targetWindow.isDestroyed()) {
       return;
     }
-    targetWindow.webContents.send("desktopShell.windowStateChanged", { isFullScreen: targetWindow.isFullScreen() });
+    targetWindow.webContents.send("desktopShell.windowStateChanged", {
+      isFullScreen: targetWindow.isFullScreen(),
+      isMaximized: targetWindow.isMaximized(),
+      windowControlsMasked: options.lifecycle.isWindowControlsMasked?.() ?? false
+    });
   }
 
   targetWindow.once("ready-to-show", () => {
@@ -313,6 +326,9 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     options.restoreFloatingWindowsForFullscreen?.();
     sendWindowState();
   });
+
+  targetWindow.on("maximize", sendWindowState);
+  targetWindow.on("unmaximize", sendWindowState);
 
   targetWindow.webContents.on("before-input-event", (event, input) => {
     const globalSearchCommandShortcut = options.lifecycle.isGlobalSearchOverlayVisible?.()
@@ -347,7 +363,7 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     }
 
     event.preventDefault();
-    targetWindow.webContents.toggleDevTools();
+    toggleMainRendererDevTools(targetWindow.webContents);
   });
 
   targetWindow.on("close", (event) => {
@@ -690,7 +706,7 @@ function runWebviewEditCommand(
 export function configureAttachedWebview<
   TMainWindow extends {
   isDestroyed(): boolean;
-  webContents: {
+  webContents: MainRendererDevToolsContentsLike & {
     send(channel: string, payload: unknown): void;
   };
   },
@@ -791,7 +807,11 @@ export function configureAttachedWebview<
     }
 
     event.preventDefault();
-    contents.openDevTools({ mode: "detach" });
+    const mainWindow = options.getMainWindow();
+    if (!mainWindow || mainWindow.isDestroyed()) {
+      return;
+    }
+    toggleMainRendererDevTools(mainWindow.webContents);
   });
 
   contents.on("did-fail-load", (_guestEvent, errorCode, errorDescription, validatedUrl, isMainFrame) => {
@@ -963,6 +983,21 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
   let globalSearchOverlayVisible = false;
   const webviewModalOverlaySources = new Set<string>();
 
+  function isWindowControlsMasked() {
+    return globalSearchOverlayVisible || webviewModalOverlaySources.size > 0;
+  }
+
+  function publishWindowState(targetWindow: TWindow | null) {
+    if (!targetWindow || targetWindow.isDestroyed() || !targetWindow.webContents) {
+      return;
+    }
+    targetWindow.webContents.send("desktopShell.windowStateChanged", {
+      isFullScreen: targetWindow.isFullScreen(),
+      isMaximized: targetWindow.isMaximized(),
+      windowControlsMasked: isWindowControlsMasked()
+    });
+  }
+
   function cancelPendingClose() {
     pendingCloseCancel?.();
     pendingCloseCancel = null;
@@ -1100,8 +1135,6 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     if (options.platform === "win32") {
       const shouldUseDarkColors = options.nativeTheme?.shouldUseDarkColors ?? false;
       targetWindow.setBackgroundColor(resolveWindowsBackgroundColor(shouldUseDarkColors));
-      const windowOverlayVisible = globalSearchOverlayVisible || webviewModalOverlaySources.size > 0;
-      targetWindow.setTitleBarOverlay(resolveWindowsTitleBarOverlay(shouldUseDarkColors, windowOverlayVisible));
       return;
     }
     targetWindow.setBackgroundColor("#FFFFFF");
@@ -1109,7 +1142,9 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
 
   function setGlobalSearchOverlayVisible(visible: boolean) {
     globalSearchOverlayVisible = visible;
-    applyAppearance(options.getWindow());
+    const targetWindow = options.getWindow();
+    applyAppearance(targetWindow);
+    publishWindowState(targetWindow);
   }
 
   function isGlobalSearchOverlayVisible() {
@@ -1129,7 +1164,9 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     } else if (!webviewModalOverlaySources.delete(normalizedSourceId)) {
       return;
     }
-    applyAppearance(options.getWindow());
+    const targetWindow = options.getWindow();
+    applyAppearance(targetWindow);
+    publishWindowState(targetWindow);
   }
 
   function attachRendererDiagnostics(targetWindow: TWindow) {
@@ -1159,6 +1196,7 @@ export function createMainWindowLifecycleController<TWindow extends MainWindowLi
     getWindowForActivation,
     hideForClose,
     isGlobalSearchOverlayVisible,
+    isWindowControlsMasked,
     normalizeBeforeShow,
     setGlobalSearchOverlayVisible,
     setWebviewModalOverlayVisible

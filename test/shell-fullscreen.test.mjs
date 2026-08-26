@@ -12,6 +12,8 @@ class FakeFullscreenWindow extends EventEmitter {
     super();
     this.destroyed = destroyed;
     this.fullscreen = fullscreen;
+    this.maximized = false;
+    this.minimized = false;
     this.mode = mode;
     this.requests = [];
   }
@@ -22,6 +24,24 @@ class FakeFullscreenWindow extends EventEmitter {
 
   isFullScreen() {
     return this.fullscreen;
+  }
+
+  isMaximized() {
+    return this.maximized;
+  }
+
+  minimize() {
+    this.minimized = true;
+  }
+
+  maximize() {
+    this.maximized = true;
+    this.emit("maximize");
+  }
+
+  unmaximize() {
+    this.maximized = false;
+    this.emit("unmaximize");
   }
 
   setFullScreen(enabled) {
@@ -137,6 +157,51 @@ test("desktopShell fullscreen IPC accepts only boolean requests from the current
   assert.equal((await handler({ sender: otherSender }, false)).ok, false);
   assert.deepEqual(mainWindow.requests, [true]);
   assert.deepEqual(otherWindow.requests, []);
+});
+
+test("desktopShell renderer window controls operate only on the current main window", async () => {
+  const handlers = new Map();
+  const sender = {};
+  const otherSender = {};
+  const mainWindow = new FakeFullscreenWindow();
+  const otherWindow = new FakeFullscreenWindow();
+
+  registerShellIpcHandlers({
+    handle: (channel, handler) => handlers.set(channel, handler),
+    on: () => undefined
+  }, {
+    platform: "win32",
+    mainWindow,
+    getMainWindow: () => mainWindow,
+    BrowserWindow: {
+      fromWebContents: (contents) => contents === sender
+        ? mainWindow
+        : contents === otherSender
+          ? otherWindow
+          : null
+    }
+  });
+
+  const minimize = handlers.get("desktopShell.minimizeWindow");
+  const toggleMaximize = handlers.get("desktopShell.toggleWindowMaximize");
+  const getWindowState = handlers.get("desktopShell.getWindowState");
+
+  assert.deepEqual(await minimize({ sender }), { ok: true });
+  assert.equal(mainWindow.minimized, true);
+  assert.deepEqual(await toggleMaximize({ sender }), { ok: true, isMaximized: true });
+  assert.deepEqual(await toggleMaximize({ sender }), { ok: true, isMaximized: false });
+  assert.deepEqual(await getWindowState({ sender }), {
+    ok: true,
+    isFullScreen: false,
+    isMaximized: false,
+    windowControlsMasked: false
+  });
+
+  assert.equal((await minimize({ sender: otherSender })).ok, false);
+  assert.equal((await toggleMaximize({ sender: otherSender })).ok, false);
+  assert.equal((await getWindowState({ sender: otherSender })).ok, false);
+  assert.equal(otherWindow.minimized, false);
+  assert.equal(otherWindow.maximized, false);
 });
 
 test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DPI displays", async () => {

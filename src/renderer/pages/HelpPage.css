@@ -6,10 +6,6 @@
   -webkit-app-region: no-drag;
 }
 
-.app-shell.is-windows-platform .help-webview-page {
-  padding-top: var(--windows-titlebar-overlay-height);
-}
-
 .help-webview-frame-shell {
   position: relative;
   width: 100%;
