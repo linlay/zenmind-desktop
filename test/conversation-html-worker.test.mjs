@@ -106,6 +106,8 @@ test("conversation HTML render service keeps template fetch and assembly inside 
   let serviceVersion = "1.0.0";
   let origin = "";
   let snapshotUrlOverride = "";
+  const snapshotFilename = "中文 对话 #100%.snapshot.json";
+  const snapshotContentDisposition = `attachment; filename*=UTF-8''${encodeURIComponent(snapshotFilename)}`;
   const server = http.createServer((req, res) => {
     const url = new URL(req.url || "/", "http://127.0.0.1");
     if (url.pathname === "/export/conversation.template.html") {
@@ -149,7 +151,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
           res.writeHead(200, {
             "Content-Type": "application/json; charset=utf-8",
             "Content-Length": String(snapshot.length),
-            "Content-Disposition": 'attachment; filename="worker.snapshot.json"'
+            "Content-Disposition": snapshotContentDisposition
           });
           res.end(snapshot, () => {
             activeSnapshotRequests -= 1;
@@ -160,7 +162,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
       res.writeHead(200, {
         "Content-Type": "application/json; charset=utf-8",
         "Content-Length": String(snapshot.length),
-        "Content-Disposition": 'attachment; filename="worker.snapshot.json"'
+        "Content-Disposition": snapshotContentDisposition
       });
       res.end(snapshot);
       return;
@@ -211,7 +213,7 @@ test("conversation HTML render service keeps template fetch and assembly inside 
 
   assert.equal(first.ok, true);
   assert.equal(second.ok, true);
-  assert.equal(first.filename, "worker.html");
+  assert.equal(first.filename, "中文 对话 #100%.html");
   assert.equal(templateRequests, 1);
   assert.equal(snapshotRequests, 2);
   assert.match(first.bytes.toString("utf8"), /安全 \\u003c\/script\\u003e/u);
