@@ -20,7 +20,9 @@ import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
 const MAC_FULLSCREEN_CLOSE_FALLBACK_MS = 2200;
-const MAC_TRAFFIC_LIGHT_POSITION = { x: 10, y: 16 };
+// macOS owns the native traffic-light size; keep the app chrome compact by
+// aligning the fixed-size controls with the renderer toolbar instead.
+const MAC_TRAFFIC_LIGHT_POSITION = { x: 10, y: 13 };
 const WINDOWS_TITLEBAR_OVERLAY_HEIGHT = 44;
 const WINDOWS_TITLEBAR_LIGHT = {
   color: "#FFFFFF",

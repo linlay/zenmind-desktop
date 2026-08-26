@@ -799,6 +799,17 @@ test("sidebar chrome keeps its 24px history hover feedback", () => {
   );
 });
 
+test("mac sidebar top chrome stays aligned with the compact native titlebar", () => {
+  const globalStyles = readRendererStyles();
+
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\s*\{[\s\S]*?--sidebar-toolbar-height:\s*33px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-chrome\s*\{[\s\S]*?margin-bottom:\s*8px;/);
+  assert.match(globalStyles, /\.sidebar-chrome-toolbar\.is-mac\s*\{[\s\S]*?margin-bottom:\s*2px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-top-actions\s*\{[\s\S]*?top:\s*9px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed\s*\{[\s\S]*?--sidebar-toolbar-height:\s*61px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{[\s\S]*?top:\s*35px;/);
+});
+
 test("sidebar collapse toggle moves into the top chrome with the outline sidebar icon", () => {
   const appShell = readAppShellSource();
   const sidebarSource = fs.readFileSync(
@@ -1548,8 +1559,6 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-primary-link\.sidebar-link-active \.sidebar-link-label,[\s\S]*?\.sidebar-tool-menu-trigger\.sidebar-link-active \.sidebar-link-label-collapsed\s*\{[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?:root\[data-theme="dark"\] \.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-top-actions\s*\{[\s\S]*?top:\s*12px;/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{[\s\S]*?top:\s*38px;/);
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;[\s\S]*?color:\s*#94a3b8;/);
   assert.match(globalStyles, /\.sidebar-action-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#475569;/);

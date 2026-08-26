@@ -489,7 +489,7 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.title, PRODUCT_NAME);
   assert.equal(macOptions.show, false);
   assert.equal(macOptions.titleBarStyle, "hidden");
-  assert.deepEqual(macOptions.trafficLightPosition, { x: 10, y: 16 });
+  assert.deepEqual(macOptions.trafficLightPosition, { x: 10, y: 13 });
   assert.equal(macOptions.acceptFirstMouse, true);
   assert.equal(macOptions.transparent, true);
   assert.equal(macOptions.vibrancy, "under-window");

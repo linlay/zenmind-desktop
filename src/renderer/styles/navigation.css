@@ -123,6 +123,10 @@
   user-select: none;
 }
 
+.app-shell.is-mac-platform .app-sidebar {
+  --sidebar-toolbar-height: 33px;
+}
+
 .app-shell.is-mac-translucent-sidebar .app-sidebar {
   border-top-left-radius: 0;
   border-bottom-left-radius: 0;
@@ -173,6 +177,10 @@
   z-index: 12;
 }
 
+.app-shell.is-mac-platform .sidebar-chrome {
+  margin-bottom: 8px;
+}
+
 .sidebar-chrome-toolbar {
   position: relative;
   z-index: 1;
@@ -188,7 +196,7 @@
 
 .sidebar-chrome-toolbar.is-mac {
   padding-left: var(--mac-traffic-light-safe-area);
-  margin-bottom: 6px;
+  margin-bottom: 2px;
 }
 
 .sidebar-collapsed-toggle-button {
@@ -215,7 +223,7 @@
 }
 
 .app-shell.is-mac-platform .sidebar-top-actions {
-  top: 12px;
+  top: 9px;
 }
 
 .sidebar-top-actions .sidebar-collapsed-toggle-button {
@@ -3716,7 +3724,7 @@ div.sidebar-chats-group-popover {
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed {
-  --sidebar-toolbar-height: 64px;
+  --sidebar-toolbar-height: 61px;
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-chrome-toolbar.is-mac {
@@ -3743,7 +3751,7 @@ div.sidebar-chats-group-popover {
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions {
-  top: 38px;
+  top: 35px;
   left: 0;
   right: 0;
   width: 100%;
