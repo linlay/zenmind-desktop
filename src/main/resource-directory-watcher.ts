@@ -44,6 +44,7 @@ type WatchDefinition = {
 type DomainState = {
   watchers: Map<string, Watcher>;
   timer: TimerHandle | null;
+  refreshWatchersOnDispatch: boolean;
 };
 
 export type ResourceDirectoryWatcherOptions = {
@@ -148,9 +149,9 @@ export function createResourceDirectoryWatcher(options: ResourceDirectoryWatcher
   const clearTimeoutImpl = options.clearTimeoutImpl ?? clearTimeout;
   const definitions = createWatchDefinitions(options.app);
   const states = new Map<ResourceDirectoryDomain, DomainState>([
-    ["webs", { watchers: new Map(), timer: null }],
-    ["pets", { watchers: new Map(), timer: null }],
-    ["plugins", { watchers: new Map(), timer: null }]
+    ["webs", { watchers: new Map(), timer: null, refreshWatchersOnDispatch: false }],
+    ["pets", { watchers: new Map(), timer: null, refreshWatchersOnDispatch: false }],
+    ["plugins", { watchers: new Map(), timer: null, refreshWatchersOnDispatch: false }]
   ]);
   let stopped = true;
 
@@ -193,8 +194,11 @@ export function createResourceDirectoryWatcher(options: ResourceDirectoryWatcher
         continue;
       }
       try {
-        const watcher = watchDirectory(fsImpl, platform, directoryPath, () => {
-          scheduleDomain(domain);
+        const watcher = watchDirectory(fsImpl, platform, directoryPath, (eventType) => {
+          // File content changes do not alter the watched directory set. Rebuilding
+          // every watcher for them creates a costly scan/write notification loop on
+          // Windows. A rename event is the structural signal for add/remove/rename.
+          scheduleDomain(domain, eventType === "rename");
         });
         state.watchers.set(directoryPath, watcher);
       } catch (error) {
@@ -218,17 +222,22 @@ export function createResourceDirectoryWatcher(options: ResourceDirectoryWatcher
     }
   }
 
-  function scheduleDomain(domain: ResourceDirectoryDomain) {
+  function scheduleDomain(domain: ResourceDirectoryDomain, refreshWatchers: boolean) {
     const state = states.get(domain);
     if (!state || stopped) {
       return;
     }
+    state.refreshWatchersOnDispatch ||= refreshWatchers;
     if (state.timer) {
       clearTimeoutImpl(state.timer);
     }
     state.timer = setTimeoutImpl(() => {
       state.timer = null;
-      refreshDomainWatchers(domain);
+      const shouldRefreshWatchers = state.refreshWatchersOnDispatch;
+      state.refreshWatchersOnDispatch = false;
+      if (shouldRefreshWatchers) {
+        refreshDomainWatchers(domain);
+      }
       dispatchDomain(domain);
     }, debounceMs);
   }
@@ -261,6 +270,7 @@ export function createResourceDirectoryWatcher(options: ResourceDirectoryWatcher
         clearTimeoutImpl(state.timer);
         state.timer = null;
       }
+      state.refreshWatchersOnDispatch = false;
       for (const watcher of state.watchers.values()) {
         watcher.close();
       }

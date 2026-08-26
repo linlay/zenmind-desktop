@@ -80,6 +80,10 @@ function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+function areDesktopProfilesEqual(left: DesktopProfile, right: DesktopProfile) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -164,7 +168,6 @@ export function readDesktopProfileFromRoot(
   rootDir: string,
   options: DesktopProfileReadOptions = {}
 ): DesktopProfile {
-  fs.mkdirSync(rootDir, { recursive: true });
   const profilePath = getDesktopProfilePath(rootDir);
   const parsed = readJsonFile(profilePath);
   return normalizeDesktopProfile(parsed, options);
@@ -172,13 +175,24 @@ export function readDesktopProfileFromRoot(
 
 export function writeDesktopProfileToRoot(rootDir: string, profile: DesktopProfile) {
   const normalized = normalizeDesktopProfile(profile);
-  writeJsonFile(getDesktopProfilePath(rootDir), normalized);
+  const profilePath = getDesktopProfilePath(rootDir);
+  try {
+    if (fs.existsSync(profilePath)) {
+      const current = normalizeDesktopProfile(readJsonFile(profilePath));
+      if (areDesktopProfilesEqual(current, normalized)) {
+        return normalized;
+      }
+    }
+  } catch {
+    // An explicit write also repairs malformed profile content.
+  }
+  writeJsonFile(profilePath, normalized);
   return normalized;
 }
 
 export function updateDesktopProfileInRoot(rootDir: string, patch: DesktopProfilePatch) {
   const current = readDesktopProfileFromRoot(rootDir);
-  return writeDesktopProfileToRoot(rootDir, {
+  const next = normalizeDesktopProfile({
     ...current,
     general: {
       ...current.general,
@@ -205,4 +219,9 @@ export function updateDesktopProfileInRoot(rootDir: string, patch: DesktopProfil
       ...patch.navigation
     }
   });
+  if (areDesktopProfilesEqual(current, next)) {
+    return current;
+  }
+  writeJsonFile(getDesktopProfilePath(rootDir), next);
+  return next;
 }

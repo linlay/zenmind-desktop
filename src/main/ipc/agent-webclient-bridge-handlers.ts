@@ -623,13 +623,51 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     });
   };
 
+  let cachedAgentPlatformBaseUrl = "";
+  let pendingAgentPlatformBaseUrl: Promise<string> | null = null;
+
+  const resolveAgentPlatformBaseUrl = () => {
+    if (cachedAgentPlatformBaseUrl) {
+      return Promise.resolve(cachedAgentPlatformBaseUrl);
+    }
+    if (pendingAgentPlatformBaseUrl) {
+      return pendingAgentPlatformBaseUrl;
+    }
+
+    const pending = options.getServiceState(options.app, AGENT_PLATFORM_SERVICE_ID)
+      .then((state) => {
+        const baseUrl = state.status === "running"
+          ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
+          : "";
+        if (!baseUrl) throw new Error("Agent Platform is unavailable");
+        cachedAgentPlatformBaseUrl = baseUrl;
+        return baseUrl;
+      })
+      .finally(() => {
+        if (pendingAgentPlatformBaseUrl === pending) {
+          pendingAgentPlatformBaseUrl = null;
+        }
+      });
+    pendingAgentPlatformBaseUrl = pending;
+    return pending;
+  };
+
+  const invalidateAgentPlatformBaseUrl = (baseUrl: string) => {
+    if (cachedAgentPlatformBaseUrl === baseUrl) {
+      cachedAgentPlatformBaseUrl = "";
+    }
+  };
+
   const availability = async () => {
-    const state = await options.getServiceState(options.app, AGENT_PLATFORM_SERVICE_ID);
-    const baseUrl = state.status === "running"
-      ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
-      : "";
-    if (!baseUrl) throw new Error("Agent Platform is unavailable");
-    const tokenResult = await options.issueAccessToken(options.app, "missing");
+    // The Platform endpoint belongs to the physical broker connection and is
+    // stable for the Desktop process lifetime. A full service-state read on
+    // every Frame Port request is especially expensive on Windows because it
+    // verifies process ownership and runtime files. Tokens keep their existing
+    // per-request expiry-aware cache path.
+    const [baseUrl, tokenResult] = await Promise.all([
+      resolveAgentPlatformBaseUrl(),
+      options.issueAccessToken(options.app, "missing"),
+    ]);
     const token = tokenResult.ok ? tokenResult.token.trim() : "";
     if (!token) throw new Error(tokenResult.message || "Agent Platform token is unavailable");
     return { baseUrl, token };
@@ -1817,6 +1855,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           finishRetiringSession(session);
         },
         onError: (error) => {
+          invalidateAgentPlatformBaseUrl(baseUrl);
           session.requestIds.delete(frame.id);
           sendFrame(session, frameError(frame.id, "connection_unavailable", error.message));
           finishRetiringSession(session);
@@ -1824,6 +1863,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       });
       finishExplicitDetachWrite(true);
     } catch (error) {
+      invalidateAgentPlatformBaseUrl(baseUrl);
       finishExplicitDetachWrite(false);
       session.requestIds.delete(frame.id);
       session.streams.delete(frame.id);

@@ -103,3 +103,34 @@ test("desktop profile leaves Chat agent unset instead of inheriting the sidebar 
 
   assert.equal(readDesktopProfileFromRoot(root).assistant.chat.agentKey, "chat-agent");
 });
+
+test("reading a missing desktop profile does not create its directory", (t) => {
+  const parent = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
+  const root = path.join(parent, "missing");
+  t.after(() => fs.rmSync(parent, { recursive: true, force: true }));
+
+  const profile = readDesktopProfileFromRoot(root);
+
+  assert.equal(profile.schemaVersion, 1);
+  assert.equal(fs.existsSync(root), false);
+});
+
+test("updating a desktop profile with identical values does not rewrite it", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));
+  const profilePath = path.join(root, "profile.json");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  updateDesktopProfileInRoot(root, {
+    navigation: { webOrder: ["website:docs"] }
+  });
+  const firstContent = fs.readFileSync(profilePath, "utf8");
+  const firstModifiedAt = fs.statSync(profilePath).mtimeMs;
+
+  await new Promise((resolve) => setTimeout(resolve, 30));
+  updateDesktopProfileInRoot(root, {
+    navigation: { webOrder: ["website:docs"] }
+  });
+
+  assert.equal(fs.readFileSync(profilePath, "utf8"), firstContent);
+  assert.equal(fs.statSync(profilePath).mtimeMs, firstModifiedAt);
+});

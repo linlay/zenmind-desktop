@@ -106,6 +106,8 @@ function createRuntime(targets, overrides = {}) {
     releasedRuns: [],
     cloneUnsubscribes: 0,
     debugTraces: [],
+    getServiceState: 0,
+    issueAccessToken: 0,
   };
   let activeRoot = null;
   let mainChatRoot = null;
@@ -207,8 +209,14 @@ function createRuntime(targets, overrides = {}) {
     },
     isTrustedAgentWebclientSession: () => true,
     realtimeBroker: broker,
-    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
-    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
+    getServiceState: async () => {
+      calls.getServiceState += 1;
+      return { status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } };
+    },
+    issueAccessToken: async () => {
+      calls.issueAccessToken += 1;
+      return { ok: true, token: "token", message: "" };
+    },
     syncCanonicalChat: async () => ({ requestId: "sync-1", ok: true }),
     dispatchWorkPanel: async () => ({ ok: true, workspaceId: "workspace-1" }),
     openResource: async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" }),
@@ -266,6 +274,31 @@ function emitRegisteredTarget(runtime, target) {
     },
   });
 }
+
+test("ordinary Frame Port requests reuse the resolved Agent Platform endpoint", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  await openSession(runtime, sender, "cached-platform-endpoint");
+
+  for (const chatId of ["chat-first", "chat-second"]) {
+    send(runtime, sender, "cached-platform-endpoint", {
+      frame: "request",
+      type: "/api/chat",
+      id: `load-${chatId}`,
+      payload: { chatId },
+    });
+    await flush();
+  }
+
+  assert.equal(runtime.calls.getServiceState, 1);
+  assert.equal(runtime.calls.issueAccessToken, 3);
+  assert.equal(runtime.calls.forwarded.length, 2);
+  assert.deepEqual(
+    runtime.calls.forwarded.map((request) => request.payload.chatId),
+    ["chat-first", "chat-second"],
+  );
+});
 
 test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2 ids", async () => {
   const target = mainTarget();

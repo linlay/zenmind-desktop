@@ -486,6 +486,54 @@ export function resolveAgentWebclientDesktopChatRouteFromUrl(
 }
 
 /**
+ * Resolve the trusted business route currently allowed to own Main Chat.
+ *
+ * Unlike canonical Chat navigation, a newly-created conversation is active
+ * before the WebClient promotes its one-shot `newChat` source to `chatId`.
+ * Keep both identities exact and mutually exclusive so a bare Agent route or
+ * an ambiguous query cannot become an interactive Desktop surface.
+ */
+export function resolveAgentWebclientDesktopMainChatRouteFromUrl(
+  value: string,
+  webviewSrcUrl: string
+) {
+  let parsed: URL;
+  let src: URL;
+  try {
+    parsed = new URL(value);
+    src = new URL(webviewSrcUrl);
+  } catch {
+    return "";
+  }
+  if (
+    (parsed.protocol !== "http:" && parsed.protocol !== "https:") ||
+    (src.protocol !== "http:" && src.protocol !== "https:") ||
+    parsed.origin !== src.origin
+  ) {
+    return "";
+  }
+
+  const match = /^\/agent\/([^/]+)$/u.exec(parsed.pathname);
+  const agentKey = match ? decodeRoutePathSegment(match[1]) : null;
+  const chatIds = parsed.searchParams.getAll("chatId");
+  const newChats = parsed.searchParams.getAll("newChat");
+  const hasCanonicalIdentity =
+    chatIds.length === 1 &&
+    Boolean(chatIds[0]?.trim()) &&
+    newChats.length === 0;
+  const hasNewChatIdentity =
+    newChats.length === 1 &&
+    Boolean(newChats[0]?.trim()) &&
+    chatIds.length === 0;
+  if (!agentKey || (!hasCanonicalIdentity && !hasNewChatIdentity)) {
+    return "";
+  }
+
+  const businessSearch = createAgentWebclientBusinessSearch(parsed.searchParams);
+  return createAgentWebclientAgentPath(agentKey, businessSearch);
+}
+
+/**
  * Recognize a trusted WebClient worker switch without treating a bare Agent
  * route as a canonical Chat identity. Desktop will mint the one-shot newChat
  * source after this returns the new Agent key.

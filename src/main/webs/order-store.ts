@@ -18,6 +18,10 @@ function normalizeEntryKeyArray(value: unknown) {
     : [];
 }
 
+function areEntryKeyArraysEqual(left: WebEntryKey[], right: WebEntryKey[]) {
+  return left.length === right.length && left.every((key, index) => key === right[index]);
+}
+
 export function getWebOrderPath(app: App, platform: NodeJS.Platform = process.platform) {
   return path.join(getDesktopWebsConfigRoot(app, platform), ORDER_FILE);
 }
@@ -68,18 +72,23 @@ export function writeWebOrderKeys(
 ) {
   const normalized = [...new Set(normalizeEntryKeyArray(keys))];
   const targetPath = getWebOrderPath(app, platform);
-  fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-  fs.writeFileSync(targetPath, `${JSON.stringify({
-    schemaVersion: 1,
-    entryKeys: normalized
-  }, null, 2)}\n`, "utf8");
+  let currentOrder: WebEntryKey[] | null = null;
+  try {
+    currentOrder = readOrderFile(app, platform);
+  } catch {
+    // Rewriting an invalid order file is the recovery path.
+  }
+  if (!currentOrder || !areEntryKeyArraysEqual(currentOrder, normalized)) {
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, `${JSON.stringify({
+      schemaVersion: 1,
+      entryKeys: normalized
+    }, null, 2)}\n`, "utf8");
+  }
 
-  const current = readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform));
   updateDesktopProfileInRoot(getDesktopConfigRoot(app, platform), {
     navigation: {
-      mainOrder: current.navigation.mainOrder,
-      webOrder: normalized,
-      desktopCopilotPages: current.navigation.desktopCopilotPages
+      webOrder: normalized
     }
   });
   return normalized;

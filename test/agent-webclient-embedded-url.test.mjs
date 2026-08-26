@@ -23,6 +23,7 @@ const {
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
+  resolveAgentWebclientDesktopMainChatRouteFromUrl,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
 
@@ -373,6 +374,38 @@ test("webview chat routes mirror all business params but no host params", () => 
       webviewSrcUrl,
     ),
     "",
+  );
+});
+
+test("main Chat alignment accepts exact newChat identities without accepting ambiguous routes", () => {
+  const webviewSrcUrl = "http://127.0.0.1:19011/agents";
+  const newChatUrl =
+    "http://127.0.0.1:19011/agent/cutej?newChat=1710000000000&theme=dark&lang=zh-CN&wsSource=desktop-chat";
+
+  assert.equal(
+    resolveAgentWebclientDesktopMainChatRouteFromUrl(newChatUrl, webviewSrcUrl),
+    "/agent/cutej?newChat=1710000000000"
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopMainChatRouteFromUrl(
+      newChatUrl.replace("newChat=1710000000000", ""),
+      webviewSrcUrl
+    ),
+    ""
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopMainChatRouteFromUrl(
+      `${newChatUrl}&chatId=stale-chat`,
+      webviewSrcUrl
+    ),
+    ""
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopMainChatRouteFromUrl(
+      newChatUrl.replace("127.0.0.1:19011", "127.0.0.1:19012"),
+      webviewSrcUrl
+    ),
+    ""
   );
 });
 
