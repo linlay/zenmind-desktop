@@ -1701,38 +1701,45 @@
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar {
-  flex: 0 0 40px;
+  flex: 0 0 48px;
   gap: 8px;
-  min-height: 40px;
-  padding: 5px 8px;
+  min-height: 48px;
+  padding: 9px 12px;
   border-bottom: 1px solid #e3e7ec;
   background: #f8fafc;
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions {
   flex: 0 0 auto;
-  gap: 0;
+  gap: 5px;
   height: 30px;
-  overflow: hidden;
-  border: 1px solid #dce2e8;
-  border-radius: 9px;
-  background: #ffffff;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions::after {
+  content: "";
+  flex: 0 0 1px;
+  align-self: center;
+  width: 1px;
+  height: 20px;
+  margin-left: 9px;
+  background: #d7dce2;
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button {
-  width: 30px;
-  height: 28px;
-  border: 0;
-  border-radius: 0;
+  width: 34px;
+  height: 30px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
   color: #30343b;
 }
 
-.chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button + .external-webview-toolbar-button {
-  border-left: 1px solid #e3e7ec;
-}
-
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button:hover:not(:disabled) {
-  border-color: #e3e7ec;
+  border-color: transparent;
   background: #eef2f6;
   color: #1f2328;
 }
@@ -1753,9 +1760,10 @@
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location {
   height: 30px;
   min-height: 30px;
-  padding: 0 10px;
+  overflow: hidden;
+  padding: 0 0 0 10px;
   border: 1px solid #dce2e8;
-  border-radius: 9px;
+  border-radius: 999px;
   background: #ffffff;
   box-shadow: none;
 }
@@ -1786,8 +1794,10 @@
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location-input {
+  flex: 1 1 auto;
+  width: auto;
   overflow: hidden;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 450;
   line-height: 1;
   text-overflow: ellipsis;
@@ -1800,12 +1810,14 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 30px;
-  padding: 0 10px;
-  border: 1px solid var(--browser-accent);
-  border-radius: 9px;
+  height: 20px;
+  margin-left: 8px;
+  padding: 0 11px 0 9px;
+  border: 0;
+  border-left: 1px solid #d7dce2;
+  border-radius: 0;
   background: transparent;
-  color: var(--browser-accent);
+  color: #3f4650;
   font: inherit;
   font-size: 12px;
   font-weight: 550;
@@ -1817,7 +1829,8 @@
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit:hover {
-  background: color-mix(in srgb, var(--browser-accent) 9%, transparent);
+  background: #eef2f6;
+  color: #1f2328;
 }
 
 .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit svg {
@@ -1830,22 +1843,26 @@
   background: #23272e;
 }
 
-:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions,
 :root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location {
   border-color: rgba(255, 255, 255, 0.18);
   background: #2b3037;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions::after,
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit {
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-actions::after {
+  background: rgba(255, 255, 255, 0.18);
 }
 
 :root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button {
   color: #e2e7ed;
 }
 
-:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button + .external-webview-toolbar-button {
-  border-left-color: rgba(255, 255, 255, 0.12);
-}
-
 :root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-button:hover:not(:disabled) {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: transparent;
   background: rgba(255, 255, 255, 0.08);
   color: #ffffff;
 }
@@ -1865,6 +1882,15 @@
 
 :root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-location-icon {
   color: #aeb4bd;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit {
+  color: #d8dde4;
+}
+
+:root[data-theme="dark"] .chat-work-panel .external-webview-page.is-work-panel-browser .external-webview-toolbar-edit:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: #ffffff;
 }
 
 .chat-work-panel .external-webview-frame-shell {

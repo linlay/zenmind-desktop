@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorkPanel Browser Toolbar Comparison</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 24px; background: #eef1f5; color: #20242a; font: 600 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      main { display: grid; gap: 20px; max-width: 1000px; margin: 0 auto; }
+      section { overflow: hidden; border: 1px solid #cfd5dc; border-radius: 12px; background: #fff; box-shadow: 0 8px 24px rgb(24 32 43 / 8%); }
+      h2 { margin: 0; padding: 10px 14px; border-bottom: 1px solid #dfe3e8; font-size: 14px; }
+      img { display: block; width: 100%; height: auto; }
+      .target-crop { height: 140px; overflow: hidden; }
+      .target-crop.is-dark img { margin-top: -333px; }
+      .implementation { display: grid; grid-template-columns: 1fr; }
+      .implementation figure { margin: 0; }
+      .implementation figcaption { padding: 8px 14px; border-block: 1px solid #dfe3e8; background: #f8fafc; }
+      .current-crop { height: 100px; overflow: hidden; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section>
+        <h2>目标参考：第二版</h2>
+        <div class="target-crop"><img src="./work-panel-browser-toolbar-reference.png" alt="第二版亮色参考" /></div>
+        <div class="target-crop is-dark"><img src="./work-panel-browser-toolbar-reference.png" alt="第二版暗色参考" /></div>
+      </section>
+      <section class="implementation">
+        <h2>当前实现</h2>
+        <figure>
+          <figcaption>亮色</figcaption>
+          <div class="current-crop"><img src="./work-panel-browser-toolbar-light.jpg" alt="当前亮色实现" /></div>
+        </figure>
+        <figure>
+          <figcaption>暗色</figcaption>
+          <div class="current-crop"><img src="./work-panel-browser-toolbar-dark.jpg" alt="当前暗色实现" /></div>
+        </figure>
+      </section>
+    </main>
+  </body>
+</html>

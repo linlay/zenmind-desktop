@@ -101,6 +101,10 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(externalWebview, /workPanelBrowser \? "is-work-panel-browser" : ""/u);
   assert.match(externalWebview, /readOnly=\{workPanelBrowser && !addressInputUnlocked\}/u);
   assert.match(externalWebview, /externalWebview\.editAddress/u);
+  assert.match(
+    externalWebview,
+    /external-webview-toolbar-location[\s\S]*?external-webview-toolbar-location-input[\s\S]*?external-webview-toolbar-edit/u,
+  );
   assert.match(externalWebview, /target !== "desktop-browser"/u);
   assert.doesNotMatch(externalWebview, /openPopupsInCurrentTab/u);
   assert.match(host, /if \(isMac\)/u);

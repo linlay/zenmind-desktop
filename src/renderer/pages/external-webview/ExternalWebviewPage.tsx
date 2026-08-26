@@ -1745,7 +1745,7 @@ export function ExternalWebviewPage({
     }
 
     const activeWebview = webviewRefs.current.get(activeTab.id);
-    if (!activeWebview) {
+    if (!activeWebview || typeof activeWebview.loadURL !== "function") {
       setAddressInputValue(normalizedUrl);
       if (workPanelBrowser) setAddressInputUnlocked(false);
       return;
@@ -1971,19 +1971,19 @@ export function ExternalWebviewPage({
               placeholder={t("externalWebview.addressPlaceholder")}
               aria-label={t("externalWebview.address")}
             />
+            {workPanelBrowser ? (
+              <button
+                type="button"
+                className="external-webview-toolbar-edit"
+                onClick={handleEditAddress}
+                aria-label={t("externalWebview.editAddress")}
+                title={t("externalWebview.editAddress")}
+              >
+                <EditOutlined aria-hidden="true" />
+                <span className="external-webview-toolbar-edit-label">{t("externalWebview.editAddress")}</span>
+              </button>
+            ) : null}
           </div>
-          {workPanelBrowser ? (
-            <button
-              type="button"
-              className="external-webview-toolbar-edit"
-              onClick={handleEditAddress}
-              aria-label={t("externalWebview.editAddress")}
-              title={t("externalWebview.editAddress")}
-            >
-              <EditOutlined aria-hidden="true" />
-              <span className="external-webview-toolbar-edit-label">{t("externalWebview.editAddress")}</span>
-            </button>
-          ) : null}
         </div> : null}
         </div>
       )}
