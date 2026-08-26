@@ -354,7 +354,7 @@ test("main window lifecycle masks Windows caption controls while global search i
 
   nativeTheme.shouldUseDarkColors = true;
   controller.applyAppearance(target);
-  assert.equal(target.backgroundColor, "#000000");
+  assert.equal(target.backgroundColor, "#181818");
   assert.deepEqual(target.titleBarOverlay, {
     color: "#0E0E0E",
     symbolColor: "#0E0E0E",
@@ -364,7 +364,7 @@ test("main window lifecycle masks Windows caption controls while global search i
   controller.setGlobalSearchOverlayVisible(false);
   assert.equal(controller.isGlobalSearchOverlayVisible(), false);
   assert.deepEqual(target.titleBarOverlay, {
-    color: "#000000",
+    color: "#181818",
     symbolColor: "#F2F2F2",
     height: 44
   });

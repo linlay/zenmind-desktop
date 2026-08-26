@@ -87,10 +87,10 @@
   overflow: hidden;
 }
 
-/* Keep Windows WebApp scrolling below the native caption controls. */
+/* The Windows app shell already reserves the native caption row. */
 .app-shell.is-windows-platform .external-webview-page.is-app-surface {
   position: absolute;
-  inset: var(--windows-titlebar-overlay-height) 0 0;
+  inset: 0;
   height: auto;
   margin: 0;
 }

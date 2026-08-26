@@ -24,13 +24,13 @@ const WINDOWS_TITLEBAR_LIGHT = {
   symbolColor: "#1F2937"
 };
 const WINDOWS_TITLEBAR_DARK = {
-  color: "#000000",
+  color: "#181818",
   symbolColor: "#F2F2F2"
 };
 const WINDOWS_TITLEBAR_MASKED_LIGHT = "#D4D5D9";
 const WINDOWS_TITLEBAR_MASKED_DARK = "#0E0E0E";
 const WINDOWS_BACKGROUND_LIGHT = "#FFFFFF";
-const WINDOWS_BACKGROUND_DARK = "#000000";
+const WINDOWS_BACKGROUND_DARK = "#181818";
 
 type MainWindowLike = Pick<
   BrowserWindow,
