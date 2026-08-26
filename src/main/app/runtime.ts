@@ -12,6 +12,7 @@ import {
   shell,
   session,
   systemPreferences,
+  type Session,
   webContents,
 } from "electron";
 import { issueAgentAccessToken } from "../agent-auth";
@@ -62,6 +63,10 @@ import {
   PRODUCT_NAME,
   STORAGE_NAMESPACE,
 } from "../../shared/brand";
+import {
+  SURFACE_RUNTIME_DOWNLOAD_STATE_CHANNEL,
+  type SurfaceRuntimeDownloadState,
+} from "../../shared/surface-runtime-budget";
 import {
   desktopDataRootExists,
   ensureDataRoot,
@@ -207,6 +212,33 @@ export function createMainProcessRuntime() {
     callAgentPlatform(app, targetPath, options)
   );
   const appState = createMainAppState();
+  const instrumentedSurfaceDownloadSessions = new WeakSet<Session>();
+  let surfaceDownloadSequence = 0;
+  const instrumentSurfaceDownloads = (targetSession: Session) => {
+    if (instrumentedSurfaceDownloadSessions.has(targetSession)) return;
+    instrumentedSurfaceDownloadSessions.add(targetSession);
+    targetSession.on("will-download", (_event, item, sourceContents) => {
+      if (sourceContents.getType() !== "webview") return;
+      const ownerContents = sourceContents.hostWebContents;
+      if (!ownerContents || ownerContents.isDestroyed()) return;
+
+      surfaceDownloadSequence += 1;
+      const downloadId = `surface-download-${surfaceDownloadSequence}`;
+      const publishDownloadState = (active: boolean) => {
+        if (ownerContents.isDestroyed()) return;
+        const state: SurfaceRuntimeDownloadState = {
+          downloadId,
+          webContentsId: sourceContents.id,
+          active,
+        };
+        ownerContents.send(SURFACE_RUNTIME_DOWNLOAD_STATE_CHANNEL, state);
+      };
+      publishDownloadState(true);
+      item.once("done", () => publishDownloadState(false));
+    });
+  };
+  app.on("session-created", instrumentSurfaceDownloads);
+  void app.whenReady().then(() => instrumentSurfaceDownloads(session.defaultSession));
   const mainProcessContext = createMainProcessContext({
     state: appState,
     app,

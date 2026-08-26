@@ -65,6 +65,7 @@ import {
 import { registerServiceSurfaceWebviewRef } from "../services/serviceSurfaceWebviewRefs";
 import { registerDesktopActionProviderForScope } from "../services/desktopActionRegistry";
 import { registerWebSurfaceStateProvider } from "../services/webSurfaceStateRegistry";
+import { registerSurfaceRuntimeDownloadListener } from "../services/surfaceRuntimeDownloads";
 import {
   EMBEDDED_WEB_INTERACT_ACTIONS,
   EMBEDDED_WEB_SCRIPT_MAX_BYTES,
@@ -111,6 +112,7 @@ type ServiceWebviewSurfaceProps = {
   focusRequestId?: number | null;
   onFocusRequestHandled?: (requestId: number) => void;
   onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
+  onRuntimeProtectionChange?: (protectedFromSleep: boolean) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -179,6 +181,10 @@ type ServiceWebviewEventContext = {
   navigate: (targetRoute: string, options?: { replace?: boolean }) => void;
   handleWebviewBridgeMessage: (event: Event) => void;
   requestDirectWebviewRouteLoad: () => void;
+  setRuntimeProtected: (
+    reason: string,
+    protectedFromSleep: boolean,
+  ) => void;
 };
 
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
@@ -546,6 +552,7 @@ export function ServiceWebviewSurface({
   focusRequestId,
   onFocusRequestHandled,
   onCurrentUrlChange,
+  onRuntimeProtectionChange,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -626,6 +633,7 @@ export function ServiceWebviewSurface({
     active: boolean;
     webContentsId: number | undefined;
   } | null>(null);
+  const runtimeProtectionReasonsRef = useRef(new Set<string>());
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
   const pendingCanonicalChatSyncRef = useRef<PendingCanonicalChatSync | null>(null);
   const pendingNewChatPreparationRef = useRef<PendingNewChatPreparation | null>(null);
@@ -1948,6 +1956,22 @@ export function ServiceWebviewSurface({
     }, 450);
   }
 
+  function setRuntimeProtected(
+    reason: string,
+    protectedFromSleep: boolean,
+  ) {
+    const wasProtected = runtimeProtectionReasonsRef.current.size > 0;
+    if (protectedFromSleep) {
+      runtimeProtectionReasonsRef.current.add(reason);
+    } else {
+      runtimeProtectionReasonsRef.current.delete(reason);
+    }
+    const isProtected = runtimeProtectionReasonsRef.current.size > 0;
+    if (isProtected !== wasProtected) {
+      onRuntimeProtectionChange?.(isProtected);
+    }
+  }
+
   webviewEventContextRef.current = {
     embeddedUrl,
     webviewSrcUrl,
@@ -1963,7 +1987,20 @@ export function ServiceWebviewSurface({
     navigate,
     handleWebviewBridgeMessage,
     requestDirectWebviewRouteLoad,
+    setRuntimeProtected,
   };
+
+  useEffect(() => registerSurfaceRuntimeDownloadListener((state) => {
+    const context = webviewEventContextRef.current;
+    if (!context) return;
+    if (
+      state.active &&
+      readWebviewContentsId(webviewRef.current) !== state.webContentsId
+    ) {
+      return;
+    }
+    context.setRuntimeProtected(`download:${state.downloadId}`, state.active);
+  }), []);
 
   useEffect(() => {
     if (!bridgeReady || !serviceWebviewPreloadUrl) {
@@ -1993,6 +2030,18 @@ export function ServiceWebviewSurface({
       context.syncWebviewState();
       context.refreshCurrentPageSnapshotTarget();
       context.sendServiceRouteToWebview(context.embeddedUrl, "route-sync");
+    };
+    const handleDidStartLoading = () => {
+      webviewEventContextRef.current?.setRuntimeProtected("loading", true);
+    };
+    const handleDidStopLoading = () => {
+      webviewEventContextRef.current?.setRuntimeProtected("loading", false);
+    };
+    const handleMediaStartedPlaying = () => {
+      webviewEventContextRef.current?.setRuntimeProtected("media", true);
+    };
+    const handleMediaPaused = () => {
+      webviewEventContextRef.current?.setRuntimeProtected("media", false);
     };
     const syncNavigationRoute = (event: Event) => {
       const context = webviewEventContextRef.current;
@@ -2092,6 +2141,7 @@ export function ServiceWebviewSurface({
     const handleDidFailLoad = (event: Event) => {
       const context = webviewEventContextRef.current;
       if (!context) return;
+      context.setRuntimeProtected("loading", false);
       context.reportDiagnostic("did-fail-load", {
         url: readEventString(event, "validatedURL") || readEventString(event, "url"),
         errorCode: readEventNumber(event, "errorCode"),
@@ -2106,12 +2156,16 @@ export function ServiceWebviewSurface({
     webviewEventContextRef.current?.reportDiagnostic("listeners-attached");
     targetWebview.addEventListener("dom-ready", handleDomReady);
     targetWebview.addEventListener("did-finish-load", handleDidFinishLoad);
+    targetWebview.addEventListener("did-start-loading", handleDidStartLoading);
+    targetWebview.addEventListener("did-stop-loading", handleDidStopLoading);
     targetWebview.addEventListener("did-navigate", handleDidNavigate);
     targetWebview.addEventListener(
       "did-navigate-in-page",
       handleDidNavigateInPage,
     );
     targetWebview.addEventListener("did-fail-load", handleDidFailLoad);
+    targetWebview.addEventListener("media-started-playing", handleMediaStartedPlaying);
+    targetWebview.addEventListener("media-paused", handleMediaPaused);
     targetWebview.addEventListener("ipc-message", handleIpcMessage);
     webviewEventContextRef.current?.syncWebviewState();
     const context = webviewEventContextRef.current;
@@ -2122,13 +2176,19 @@ export function ServiceWebviewSurface({
       webviewEventContextRef.current?.reportDiagnostic("listeners-detached");
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
+      targetWebview.removeEventListener("did-start-loading", handleDidStartLoading);
+      targetWebview.removeEventListener("did-stop-loading", handleDidStopLoading);
       targetWebview.removeEventListener("did-navigate", handleDidNavigate);
       targetWebview.removeEventListener(
         "did-navigate-in-page",
         handleDidNavigateInPage,
       );
       targetWebview.removeEventListener("did-fail-load", handleDidFailLoad);
+      targetWebview.removeEventListener("media-started-playing", handleMediaStartedPlaying);
+      targetWebview.removeEventListener("media-paused", handleMediaPaused);
       targetWebview.removeEventListener("ipc-message", handleIpcMessage);
+      webviewEventContextRef.current?.setRuntimeProtected("loading", false);
+      webviewEventContextRef.current?.setRuntimeProtected("media", false);
       if (webviewDomReadyRef.current.webContentsId === readWebviewContentsId(targetWebview)) {
         webviewDomReadyRef.current = { ready: false };
       }

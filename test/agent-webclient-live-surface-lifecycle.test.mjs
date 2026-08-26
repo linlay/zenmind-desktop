@@ -51,3 +51,85 @@ test("main Chat metadata refreshes do not replay active lifecycle for the same m
   assert.match(lifecycleCleanupEffect, /liveSurfaceLifecycleEnabled/u);
   assert.doesNotMatch(lifecycleCleanupEffect, /surfaceIdentity\.ownerChatId/u);
 });
+
+test("Agent WebClient management routes reuse one retained guest", () => {
+  const hosts = read(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx",
+  );
+  const appShell = read("src", "renderer", "app-shell", "AppShell.tsx");
+
+  assert.match(hosts, /lastManagementRouteRef/u);
+  assert.match(
+    hosts,
+    /activeAgentWebclientRouteKind === "management"[\s\S]*?lastManagementRouteRef\.current = activeAgentWebclientRoute/u,
+  );
+  assert.match(
+    hosts,
+    /key=\{AGENT_WEBCLIENT_SERVICE_ID\}[\s\S]*?desktopRoute=\{managementRoute\?\.routePath\}/u,
+  );
+  assert.match(hosts, /agentManagementSurfaceMounted/u);
+  assert.match(appShell, /setAgentManagementSurfaceMounted\(true\)/u);
+  assert.match(
+    appShell,
+    /agentManagementSurfaceMounted=\{agentManagementSurfaceMounted\}/u,
+  );
+});
+
+test("sleeping external guests retain lightweight tab state without retaining guest ids", () => {
+  const hosts = read(
+    "src",
+    "renderer",
+    "app-shell",
+    "embedded-surfaces",
+    "EmbeddedSurfaceHosts.tsx",
+  );
+  const externalWebview = read(
+    "src",
+    "renderer",
+    "pages",
+    "external-webview",
+    "ExternalWebviewPage.tsx",
+  );
+
+  assert.match(hosts, /runtimeSnapshotsRef/u);
+  assert.match(hosts, /initialRuntimeSnapshot=\{runtimeSnapshotsRef\.current\.get\(entryKey\)\}/u);
+  assert.match(hosts, /onRuntimeSnapshotChange=\{\(snapshot\) =>/u);
+  assert.match(externalWebview, /export type ExternalWebviewRuntimeSnapshot/u);
+  assert.match(externalWebview, /title: tab\.title,[\s\S]*?currentUrl: tab\.currentUrl/u);
+  assert.doesNotMatch(
+    externalWebview.slice(
+      externalWebview.indexOf("export type ExternalWebviewRuntimeSnapshot"),
+      externalWebview.indexOf("type ExternalWebviewPageProps"),
+    ),
+    /guestId|webContentsId/u,
+  );
+});
+
+test("downloads protect the initiating guest until Electron reports completion", () => {
+  const mainRuntime = read("src", "main", "app", "runtime.ts");
+  const preload = read("src", "preload", "index.ts");
+  const serviceSurface = read(
+    "src",
+    "renderer",
+    "service-webview",
+    "ServiceWebviewSurface.tsx",
+  );
+  const externalWebview = read(
+    "src",
+    "renderer",
+    "pages",
+    "external-webview",
+    "ExternalWebviewPage.tsx",
+  );
+
+  assert.match(mainRuntime, /targetSession\.on\("will-download"/u);
+  assert.match(mainRuntime, /publishDownloadState\(true\)/u);
+  assert.match(mainRuntime, /item\.once\("done", \(\) => publishDownloadState\(false\)\)/u);
+  assert.match(preload, /onSurfaceRuntimeDownloadState/u);
+  assert.match(serviceSurface, /download:\$\{state\.downloadId\}/u);
+  assert.match(externalWebview, /runtimeDownloadTabIdsRef/u);
+});

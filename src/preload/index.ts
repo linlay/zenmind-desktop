@@ -81,6 +81,10 @@ import type { DesktopActionCallRequest } from "../shared/desktop-actions";
 import { readInitialLocaleSettingsFromArgv } from "../shared/i18n/initial-locale-args";
 import { DEFAULT_LOCALE } from "../shared/i18n/locales";
 import type { LocaleSettings } from "../shared/i18n/types";
+import {
+  SURFACE_RUNTIME_DOWNLOAD_STATE_CHANNEL,
+  type SurfaceRuntimeDownloadState,
+} from "../shared/surface-runtime-budget";
 
 const fallbackInitialLocaleSettings: LocaleSettings = {
   locale: DEFAULT_LOCALE,
@@ -837,6 +841,27 @@ const api: DesktopApi = {
     ipcRenderer.on("webview.openTab", handleWebviewOpenTab);
     return () => {
       ipcRenderer.off("webview.openTab", handleWebviewOpenTab);
+    };
+  },
+  onSurfaceRuntimeDownloadState: (
+    listener: (state: SurfaceRuntimeDownloadState) => void,
+  ) => {
+    const handleSurfaceRuntimeDownloadState = (
+      _event: Electron.IpcRendererEvent,
+      state: SurfaceRuntimeDownloadState,
+    ) => {
+      listener(state);
+    };
+
+    ipcRenderer.on(
+      SURFACE_RUNTIME_DOWNLOAD_STATE_CHANNEL,
+      handleSurfaceRuntimeDownloadState,
+    );
+    return () => {
+      ipcRenderer.off(
+        SURFACE_RUNTIME_DOWNLOAD_STATE_CHANNEL,
+        handleSurfaceRuntimeDownloadState,
+      );
     };
   },
   onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => {

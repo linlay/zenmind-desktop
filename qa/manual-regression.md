@@ -43,3 +43,16 @@
 - 模拟启动时 MachineGuid 暂时不可读且已有有效设备身份，确认 Debug 仍显示原 deviceId，身份文件未改写，`lastMachineMismatchAt` 未更新，日志只记录保留已有身份的脱敏诊断。
 - 关闭 Desktop 后模拟有效 MachineGuid 发生变化并重新启动，确认首次读取重新生成 deviceId、更新 `lastMachineMismatchAt`，旧 Realtime generation 不被恢复或自动重放。
 - 在 macOS 重复上述稳定性检查，确认 IOPlatformUUID 临时不可读时同样保留已有身份，且正常启动不重复执行系统机器标识探测。
+## Windows WebView 性能与生命周期
+
+前置条件：使用同一套内置服务和同一份 `C:\Users\Len\.cutej` 数据，先正常退出并重新启动 CuteJ，分别记录 0.3.55 基线和待验收构建。
+
+- [ ] 连续切换 20 次同 Agent / 跨 Agent Chat，快速执行一次 A→B→C；最终只显示 C，点击反馈 p95 不高于 100ms，暖切换完成 p95 不高于 800ms。
+- [ ] 执行 10 轮 Chat→Skills→Agents→Automations→Chat；首次管理页允许创建一个 guest，后续管理页暖切换保持同一 `webContentsId`。
+- [ ] 暖切换期间 Main Chat 的 listener attach/detach 增量为 0，合法路由过渡不出现 `surface-registration-rejected` 或 `route_not_aligned` 错误。
+- [ ] 依次访问超过 10 个 Service、Website、WebApp 或 Browser 页面；可淘汰的 inactive guest 不超过 6 个。
+- [ ] 让 inactive guest 连续保持 5 分钟以上；renderer 数和 Private Bytes 应回落，重新打开时恢复 route 和网页 tab，但生成新的 guest identity。
+- [ ] 运行中/HITL Work Panel、运行中的 WebApp、正在加载、下载或播放媒体的 Surface 不进入 sleep；保护解除后重新参与 LRU。
+- [ ] 观察 `error.log`：合法暖切换增长为 0；真实加载或 IPC 错误仍可定位。
+- [ ] 以 0.5 秒间隔采样主进程 CPU：p95 不高于 0.15 CPU 秒，较 0.3.55 至少下降 50%，稳定空闲单核目标不高于 5%。
+- [ ] 若稳定空闲单核仍高于 5%，分别对主进程和 Desktop renderer 采集 15 秒 CPU profile，并记录最高热点后再继续修复。

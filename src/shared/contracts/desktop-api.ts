@@ -76,6 +76,7 @@ import type {
 } from "../chat-work-panel-tab-context-menu";
 import type { WebviewSelectionToolbarStateListener } from "../webview-selection-toolbar";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
+import type { SurfaceRuntimeDownloadState } from "../surface-runtime-budget";
 import type {
   EmbeddedCdpSurfaceRegistration,
   EmbeddedCdpSurfaceRegistrationResult,
@@ -1139,5 +1140,8 @@ export interface DesktopApi {
   onWorkPanelFullscreenExitShortcut: (listener: () => void) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;
+  onSurfaceRuntimeDownloadState: (
+    listener: (state: SurfaceRuntimeDownloadState) => void,
+  ) => () => void;
   onNativeDialogVisibility: (listener: NativeDialogVisibilityListener) => () => void;
 }
