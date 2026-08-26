@@ -17,6 +17,7 @@ import {
   prepareQuitUi as prepareQuitUiFromCleanup
 } from "../shutdown-cleanup";
 import {
+  applyWindowsDevelopmentAppDetails,
   buildMainWindowOptions,
   configureMediaPermissions as configureWindowMediaPermissions,
   configureMainWindowLifecycleEvents,
@@ -38,13 +39,14 @@ import { AgentRealtimeInspectorWindowController } from "./agent-realtime-inspect
 import { DesktopActionWorkbenchWindowController } from "./desktop-action-workbench-window";
 import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
-import { AppTrayController } from "./tray";
+import { AppTrayController, getWindowsDevelopmentAppIconPath } from "./tray";
 import { readHelpSettings } from "../help-settings";
 
 export type AppShellRuntimeOptions = {
   app: App;
   state: MainAppState;
   platform: NodeJS.Platform;
+  effectiveAppId: string;
   mainProcessDir: string;
   productName: string;
   resourcesPath: string;
@@ -158,6 +160,12 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     hideDesktopPet: () => options.hideDesktopPetWindow(),
     quitWithoutConfirmation: options.beginAppQuitWithoutConfirmation
   });
+  const windowsDevelopmentAppIconPath = getWindowsDevelopmentAppIconPath({
+    platform: options.platform,
+    isPackaged: options.app.isPackaged,
+    mainDir: options.mainProcessDir,
+    resourcesPath: options.resourcesPath
+  });
 
   if (options.platform === "win32") {
     options.nativeTheme.on("updated", () => refreshMainWindowAppearance());
@@ -224,9 +232,15 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       platform: options.platform,
       preloadPath: getMainPreloadPath(options.mainProcessDir, options.platform),
       initialLocaleSettings: getMainLocaleSettings(),
-      shouldUseDarkColors: options.nativeTheme.shouldUseDarkColors
+      shouldUseDarkColors: options.nativeTheme.shouldUseDarkColors,
+      iconPath: windowsDevelopmentAppIconPath
     }));
     const targetWindow = options.state.mainWindow;
+    applyWindowsDevelopmentAppDetails(targetWindow, {
+      platform: options.platform,
+      appId: options.effectiveAppId,
+      iconPath: windowsDevelopmentAppIconPath
+    });
 
     mainWindowLifecycle.applyAppearance(targetWindow);
     mainWindowLifecycle.attachRendererDiagnostics(targetWindow);

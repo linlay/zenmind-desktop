@@ -6215,7 +6215,8 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
   assert.match(mainProcess, /options\.app\.setName\(options\.productName\);/);
-  assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, options\.appId\);/);
+  assert.match(mainProcess, /resolveEffectiveAppId\([\s\S]*?options\.appId,[\s\S]*?isDesktopDevelopmentRuntime\(options\.app, \{ platform: options\.platform \}\)[\s\S]*?\);/);
+  assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, effectiveAppId\);/);
   assert.match(
     platformAdapter,
     /if \(platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(appId\);[\s\S]*?\}/
@@ -6918,14 +6919,24 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
-  const helper = trayController.match(/export function getAppTrayIconCandidatePaths[\s\S]*?\n\}\n\nexport class/u)?.[0] ?? "";
-  const packagedBranch = helper.match(/^  if \(options\.isPackaged\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
-  const packagedDarwinBranch = packagedBranch.match(/if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu)?.[0] ?? "";
+  const helper = trayController.match(
+    /export function getAppTrayIconCandidatePaths[\s\S]*?\r?\n\}\r?\n\r?\nexport class/u
+  )?.[0] ?? "";
+  const packagedBranch = helper.match(
+    /^  if \(options\.isPackaged\) \{[\s\S]*?(?=^  if \(options\.platform === "darwin"\))/mu
+  )?.[0] ?? "";
+  const packagedDarwinBranch = helper.match(
+    /^    if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu
+  )?.[0] ?? "";
   const macDevBranch = helper.match(/^  if \(options\.platform === "darwin"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const windowsDevBranch = helper.match(/^  if \(options\.platform === "win32"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const createIconMethod = trayController.match(/private createIcon\(\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
+  assert.match(mainProcess, /iconPath:\s*windowsDevelopmentAppIconPath/u);
+  assert.match(mainProcess, /effectiveAppId:\s*systemIdentityRuntime\.effectiveAppId/u);
+  assert.match(mainProcess, /applyWindowsDevelopmentAppDetails\(targetWindow,\s*\{[\s\S]{0,240}?appId:\s*options\.effectiveAppId,[\s\S]{0,160}?iconPath:\s*windowsDevelopmentAppIconPath/u);
+  assert.match(mainProcess, /getWindowsDevelopmentAppIconPath\(\{[\s\S]{0,260}?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
   assert.match(trayController, /function platformFallbackIconPath/);
   assert.match(trayController, /APP_ICON_ASSET_DIRECTORIES\.brandAssets/);
@@ -6971,9 +6982,9 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
   assert.doesNotMatch(windowsDevBranch, /setTemplateImage/);
 
   assert(
-    indexOfRequired(windowsDevBranch, "fallbackIconPath") <
-      indexOfRequired(windowsDevBranch, "generatedTrayIconPath"),
-    "Windows dev tray lookup should prefer the active build ico before generated tray fallback"
+    indexOfRequired(windowsDevBranch, "generatedTrayIconPath") <
+      indexOfRequired(windowsDevBranch, "fallbackIconPath"),
+    "Windows dev tray lookup should prefer transparent generated tray art before the app ico fallback"
   );
   assert.doesNotMatch(windowsDevBranch, /rendererTrayIconPath/);
 });

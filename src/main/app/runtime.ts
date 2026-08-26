@@ -569,6 +569,7 @@ export function createMainProcessRuntime() {
     app,
     state: appState,
     platform: mainProcessContext.platform,
+    effectiveAppId: systemIdentityRuntime.effectiveAppId,
     mainProcessDir: MAIN_PROCESS_DIR,
     productName: PRODUCT_NAME,
     resourcesPath: process.resourcesPath,

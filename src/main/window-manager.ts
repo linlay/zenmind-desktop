@@ -208,6 +208,24 @@ export function buildMainWindowOptions(input: {
   };
 }
 
+export function applyWindowsDevelopmentAppDetails(
+  targetWindow: Pick<BrowserWindow, "setAppDetails">,
+  input: {
+    platform: DesktopPlatform;
+    appId: string;
+    iconPath?: string;
+  }
+) {
+  if (input.platform !== "win32" || !input.iconPath) {
+    return;
+  }
+  targetWindow.setAppDetails({
+    appId: input.appId,
+    appIconPath: input.iconPath,
+    appIconIndex: 0
+  });
+}
+
 function resolveWindowsBackgroundColor(shouldUseDarkColors: boolean) {
   return shouldUseDarkColors ? WINDOWS_BACKGROUND_DARK : WINDOWS_BACKGROUND_LIGHT;
 }

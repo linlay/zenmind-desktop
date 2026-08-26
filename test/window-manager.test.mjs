@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 const {
+  applyWindowsDevelopmentAppDetails,
   buildMainWindowOptions,
   configureAttachedWebview,
   configureMediaPermissions,
@@ -35,6 +36,7 @@ class FakeWindow extends EventEmitter {
   webContents = new FakeMainWebContents();
   loadedUrls = [];
   loadedFiles = [];
+  appDetails = [];
   showCount = 0;
   focusCount = 0;
 
@@ -92,6 +94,10 @@ class FakeWindow extends EventEmitter {
 
   setBackgroundColor(value) {
     this.backgroundColor = value;
+  }
+
+  setAppDetails(value) {
+    this.appDetails.push(value);
   }
 
   async loadURL(url) {
@@ -503,6 +509,33 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(winOptions.backgroundColor, "#FFFFFF");
   assert.equal(winOptions.icon, "C:/app/build/brands/zenmind/icons/icon.ico");
   assert.equal(macOptions.icon, undefined);
+});
+
+test("window manager applies current brand app details only to Windows development windows", () => {
+  const windowsWindow = new FakeWindow();
+  const macWindow = new FakeWindow();
+
+  applyWindowsDevelopmentAppDetails(windowsWindow, {
+    platform: "win32",
+    appId: "cc.zenmind.desktop.dev",
+    iconPath: "C:/app/build/brands/zenmind/icons/icon.ico"
+  });
+  applyWindowsDevelopmentAppDetails(macWindow, {
+    platform: "darwin",
+    appId: "cc.zenmind.desktop.dev",
+    iconPath: "/app/build/brands/zenmind/icons/icon.ico"
+  });
+  applyWindowsDevelopmentAppDetails(windowsWindow, {
+    platform: "win32",
+    appId: "cc.zenmind.desktop"
+  });
+
+  assert.deepEqual(windowsWindow.appDetails, [{
+    appId: "cc.zenmind.desktop.dev",
+    appIconPath: "C:/app/build/brands/zenmind/icons/icon.ico",
+    appIconIndex: 0
+  }]);
+  assert.deepEqual(macWindow.appDetails, []);
 });
 
 test("window manager includes initial locale arguments for renderer bootstrap", () => {
