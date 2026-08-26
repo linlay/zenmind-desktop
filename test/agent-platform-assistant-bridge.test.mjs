@@ -36,6 +36,9 @@ test("Zenmi image message requires exactly one image_generate call with source a
   assert.match(message, /"mode":"white_edit"/u);
   assert.match(message, /"size":"1024x768"/u);
   assert.doesNotMatch(message, /file:\/\//u);
+  assert.doesNotMatch(message, /ZenMind Desktop/u);
+  assert.doesNotMatch(message, /工具完成后只需简短确认/u);
+  assert.doesNotMatch(message, /图片工坊会从工具结果/u);
 });
 
 function zenmiImageRequest(overrides = {}) {

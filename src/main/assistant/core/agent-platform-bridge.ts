@@ -333,10 +333,8 @@ export function buildZenmiImageGenerateMessage(request: AgentPlatformImageComple
     toolArgs.mask = { source_type: "reference_name", value: mask.name, mode: "white_edit" };
   }
   return [
-    "你正在为 ZenMind Desktop 的图片工坊执行一次图片任务。",
     "必须且只能调用一次 image_generate 工具；不要调用文件、Shell、浏览器、桌面控制或其他工具，也不要向用户追问。",
-    `请使用以下参数调用 image_generate：${JSON.stringify(toolArgs)}`,
-    "工具完成后只需简短确认，不要输出内部 path；图片工坊会从工具结果安全读取生成图片。"
+    `请使用以下参数调用 image_generate：${JSON.stringify(toolArgs)}`
   ].join("\n");
 }
 
