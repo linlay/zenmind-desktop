@@ -98,6 +98,10 @@ test("conversation HTML export rejects a defense-in-depth response above 20 MiB"
 
 test("conversation HTML export keeps only rendered HTML filenames", () => {
   assert.equal(
+    conversationHtmlFilename("中文 对话 #100%.html", "chat-1"),
+    "中文 对话 #100%.html",
+  );
+  assert.equal(
     conversationHtmlFilename("Transcript.html", "chat-1"),
     "Transcript.html",
   );

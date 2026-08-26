@@ -543,25 +543,6 @@ function readErrorCode(value: unknown) {
   return "";
 }
 
-function recoverLegacyUtf8Filename(value: string) {
-  if (!value || /[\u4e00-\u9fff]/u.test(value)) {
-    return value;
-  }
-  if (typeof TextDecoder === "undefined") {
-    return value;
-  }
-
-  try {
-    const bytes = Uint8Array.from(
-      Array.from(value, (char) => char.charCodeAt(0) & 0xff)
-    );
-    const decoded = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return decoded || value;
-  } catch {
-    return value;
-  }
-}
-
 async function readErrorText(response: Response) {
   try {
     const text = await response.text();
@@ -635,12 +616,10 @@ function filenameFromContentDisposition(value: string | null) {
   }
   const quotedMatch = /filename="([^"]+)"/i.exec(header);
   if (quotedMatch?.[1]) {
-    return recoverLegacyUtf8Filename(quotedMatch[1].trim());
+    return quotedMatch[1].trim();
   }
   const plainMatch = /filename=([^;]+)/i.exec(header);
-  return plainMatch?.[1]
-    ? recoverLegacyUtf8Filename(plainMatch[1].trim())
-    : "";
+  return plainMatch?.[1] ? plainMatch[1].trim() : "";
 }
 
 function unwrapApiResponse<T>(payload: unknown): T {

@@ -87,6 +87,14 @@
   overflow: hidden;
 }
 
+/* The Windows app shell already reserves the native caption row. */
+.app-shell.is-windows-platform .external-webview-page.is-app-surface {
+  position: absolute;
+  inset: 0;
+  height: auto;
+  margin: 0;
+}
+
 .external-webview-page.is-app-surface .external-webview-frame-shell,
 .external-webview-page.is-app-surface .external-webview-panel,
 .external-webview-page.is-app-surface .external-webview-frame {

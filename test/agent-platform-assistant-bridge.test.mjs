@@ -1961,10 +1961,9 @@ test("agent platform assistant bridge rejects non-loopback Snapshot endpoints", 
   assert.equal(result.ok, false);
 });
 
-test("agent platform assistant bridge recovers UTF-8 filenames from legacy quoted content disposition", async () => {
+test("agent platform assistant bridge decodes RFC 5987 UTF-8 filenames from content disposition", async () => {
   const originalFetch = globalThis.fetch;
-  const expectedFilename = "\u6211\u73b0\u5728.md";
-  const legacyQuotedFilename = Buffer.from(expectedFilename, "utf8").toString("latin1");
+  const expectedFilename = "中文 对话 #100%.md";
   const { bridge } = makeBridge();
   globalThis.fetch = async (_url, init = {}) => {
     assert.equal(init.headers.Authorization, "Bearer desktop-token");
@@ -1972,7 +1971,7 @@ test("agent platform assistant bridge recovers UTF-8 filenames from legacy quote
       status: 200,
       headers: {
         "content-type": "text/markdown; charset=utf-8",
-        "content-disposition": `attachment; filename="${legacyQuotedFilename}"`
+        "content-disposition": `attachment; filename*=UTF-8''${encodeURIComponent(expectedFilename)}`
       }
     });
   };

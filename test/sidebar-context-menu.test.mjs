@@ -18,6 +18,12 @@ function ids(target) {
   return buildSidebarContextMenuPolicy(target).map((item) => item.id);
 }
 
+function actionIds(target) {
+  return buildSidebarContextMenuPolicy(target).flatMap((item) =>
+    "submenu" in item ? item.submenu.map((action) => action.id) : [item.id]
+  );
+}
+
 test("sidebar group context menus expose creation actions without project sorting", () => {
   const assistants = buildSidebarContextMenuPolicy({
     kind: "group",
@@ -76,15 +82,24 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
   assert.equal(disabledAgentItems[0].enabled, false);
   assert.equal(disabledAgentItems[1].enabled, false);
   assert.equal(disabledAgentItems[2].enabled, true);
-  assert.deepEqual(ids({ kind: "chat", workPanelOpen: false }), [
+  const chatItems = buildSidebarContextMenuPolicy({
+    kind: "chat",
+    workPanelOpen: false
+  });
+  assert.deepEqual(chatItems.map((item) => item.id), [
     "chat.workPanel.open",
-    "chat.export",
-    "chat.exportHtml",
+    "chat.exportMenu",
     "chat.share",
     "chat.rename",
     "chat.archive",
     "chat.delete",
     "chat.info"
+  ]);
+  const exportMenu = chatItems.find((item) => item.id === "chat.exportMenu");
+  assert.ok(exportMenu && "submenu" in exportMenu);
+  assert.deepEqual(exportMenu.submenu.map((item) => item.id), [
+    "chat.export",
+    "chat.exportHtml"
   ]);
   assert.equal(ids({ kind: "chat", workPanelOpen: true })[0], "chat.workPanel.close");
   assert.deepEqual(ids({
@@ -122,7 +137,7 @@ test("sidebar renderer accepts every chat action exposed by the native menu", ()
   const chatActionGate = sidebarSource.match(
     /if \(target\.kind === "chat"\) \{([\s\S]*?)\n    \}/u
   )?.[1] ?? "";
-  for (const actionId of ids({ kind: "chat" })) {
+  for (const actionId of actionIds({ kind: "chat" })) {
     assert.match(chatActionGate, new RegExp(`"${actionId.replace(".", "\\.")}"`, "u"));
   }
 });
@@ -230,12 +245,17 @@ test("workspace reveal menu uses native platform terminology", () => {
     resolveSidebarContextMenuLabelKey("chat.info", "darwin"),
     "sidebar.chat.info"
   );
+  assert.equal(
+    resolveSidebarContextMenuLabelKey("chat.exportMenu", "darwin"),
+    "sidebar.chat.exportMenu"
+  );
 });
 
 test("sidebar native menu is owned by the main window and returns only the clicked action", async () => {
   let invokeHandler;
   let popupOptions;
   let builtTemplate;
+  let actionToClick = "chat.rename";
   const sender = {};
   const ownerWindow = {
     isDestroyed: () => false,
@@ -256,7 +276,14 @@ test("sidebar native menu is owned by the main window and returns only the click
         return {
           popup: (options) => {
             popupOptions = options;
-            template.find((item) => item.id === "chat.rename").click();
+            const item = template
+              .flatMap((entry) => [
+                entry,
+                ...(Array.isArray(entry.submenu) ? entry.submenu : [])
+              ])
+              .find((entry) => entry.id === actionToClick);
+            assert.ok(item);
+            item.click();
             options.callback();
           }
         };
@@ -275,9 +302,34 @@ test("sidebar native menu is owned by the main window and returns only the click
   assert.equal(popupOptions.y, 0);
   assert.deepEqual(
     builtTemplate.filter((item) => item.type !== "separator").map((item) => item.id),
-    ["chat.workPanel.open", "chat.export", "chat.exportHtml", "chat.share", "chat.rename", "chat.archive", "chat.delete", "chat.info"]
+    ["chat.workPanel.open", "chat.exportMenu", "chat.share", "chat.rename", "chat.archive", "chat.delete", "chat.info"]
   );
   assert.equal(builtTemplate.filter((item) => item.type === "separator").length, 3);
+  const exportMenu = builtTemplate.find((item) => item.id === "chat.exportMenu");
+  assert.ok(exportMenu);
+  assert.equal(exportMenu.click, undefined);
+  assert.ok(Array.isArray(exportMenu.submenu));
+  assert.deepEqual(exportMenu.submenu.map((item) => item.id), [
+    "chat.export",
+    "chat.exportHtml"
+  ]);
+  assert.equal(exportMenu.submenu.every((item) => typeof item.click === "function"), true);
+
+  actionToClick = "chat.export";
+  const markdownResult = await invokeHandler({ sender }, {
+    x: 10,
+    y: 20,
+    target: { kind: "chat", workPanelOpen: false }
+  });
+  assert.deepEqual(markdownResult, { actionId: "chat.export" });
+
+  actionToClick = "chat.exportHtml";
+  const htmlResult = await invokeHandler({ sender }, {
+    x: 10,
+    y: 20,
+    target: { kind: "chat", workPanelOpen: false }
+  });
+  assert.deepEqual(htmlResult, { actionId: "chat.exportHtml" });
 
   const rejected = await invokeHandler({ sender: {} }, {
     x: 1,

@@ -999,6 +999,7 @@ export function AppShell() {
     [webItems, webappRuntimeById],
   );
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
+  const usesWebappSurface = activeWebEntry?.kind === "webapp";
   const resolvedCopilotAgentKey = activeWebEntry
     ? activeWebEntry.copilotAgentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY
     : currentCopilotPreference?.agentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
@@ -4014,6 +4015,7 @@ export function AppShell() {
         usesEmbeddedSurface ? "has-embedded-surface" : "",
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
+        usesWebappSurface ? "has-webapp-surface" : "",
         usesServiceWebviewSurface ? "has-service-webview-surface" : "",
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
