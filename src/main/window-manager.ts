@@ -626,12 +626,14 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
   if (usesReviewPreload) {
     try {
       const parsed = new URL(src);
-      if (
-        parsed.protocol !== `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:` ||
-        parsed.username ||
-        parsed.password ||
-        input.isReviewableLocalFileUrl?.(src) !== true
-      ) {
+      const partition = String(input.params.partition || "");
+      const isTrustedLocalPreview =
+        parsed.protocol === `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:` &&
+        input.isReviewableLocalFileUrl?.(src) === true;
+      const isOrdinaryWorkPanelWeb =
+        (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+        /^work-panel-[a-z\d]+-[a-z\d]+$/u.test(partition);
+      if (parsed.username || parsed.password || (!isTrustedLocalPreview && !isOrdinaryWorkPanelWeb)) {
         return { ok: false, reason: "unsafe-review-url", src };
       }
     } catch {
@@ -641,7 +643,7 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
 
   input.webPreferences.nodeIntegration = false;
   input.webPreferences.contextIsolation = true;
-  input.webPreferences.sandbox = (() => {
+  input.webPreferences.sandbox = usesReviewPreload || (() => {
     try {
       return new URL(src).protocol === `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:`;
     } catch {

@@ -22,6 +22,7 @@ import {
   normalizeWorkPanelNormalizedRect,
   normalizeWorkPanelPixelRect,
   renumberWorkPanelReviewAnnotations,
+  sanitizeWorkPanelReviewWebUrl,
   workPanelReviewSessionKey,
   type HtmlElementAnnotation,
   type ImageRegionAnnotation,
@@ -440,28 +441,38 @@ function normalizeReviewSource(source: ReviewSourceRevision) {
   if (!source || typeof source !== "object" || Array.isArray(source)) return null;
   const sourceKind = source.sourceKind;
   const fileName = cleanIdentity(source.fileName, 512);
-  const revision = cleanIdentity(source.revision, 512);
+  const requestedRevision = cleanIdentity(source.revision, 512);
   const relativePath = source.relativePath === undefined
     ? ""
     : normalizeRelativePath(source.relativePath);
   const resourceId = source.resourceId === undefined
     ? ""
     : cleanIdentity(source.resourceId, 512);
+  const normalizedUrl = source.url === undefined
+    ? ""
+    : normalizeWorkPanelWebUrl(source.url);
+  const url = sourceKind === "web" && normalizedUrl
+    ? sanitizeWorkPanelReviewWebUrl(normalizedUrl)
+    : normalizedUrl;
+  const revision = sourceKind === "web" ? url : requestedRevision;
   if (
-    !["workspace-file", "artifact", "reference"].includes(sourceKind) ||
+    !["workspace-file", "artifact", "reference", "web"].includes(sourceKind) ||
     !fileName ||
     !revision ||
     (source.relativePath !== undefined && !relativePath) ||
-    (source.resourceId !== undefined && !resourceId)
+    (source.resourceId !== undefined && !resourceId) ||
+    (source.url !== undefined && !url)
   ) return null;
   if (sourceKind === "workspace-file" && !relativePath) return null;
-  if (sourceKind !== "workspace-file" && !resourceId) return null;
+  if ((sourceKind === "artifact" || sourceKind === "reference") && !resourceId) return null;
+  if (sourceKind === "web" && !url) return null;
   return {
     sourceKind,
     fileName,
     revision,
     ...(relativePath ? { relativePath } : {}),
     ...(resourceId ? { resourceId } : {}),
+    ...(url ? { url } : {}),
   } satisfies ReviewSourceRevision;
 }
 
@@ -472,6 +483,9 @@ function itemAcceptsReview(
 ) {
   if (item.descriptor.kind === "local-file") {
     return source.sourceKind === "workspace-file" && item.descriptor.reviewKind === kind;
+  }
+  if (item.descriptor.kind === "web") {
+    return kind === "html" && source.sourceKind === "web" && Boolean(source.url);
   }
   return item.descriptor.kind === "webclient" &&
     (item.descriptor.module === "artifact" || item.descriptor.module === "reference") &&

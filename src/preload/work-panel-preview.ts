@@ -33,17 +33,27 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }
 
-function isTrustedPreviewDocument() {
+function isReviewableDocument() {
   try {
     const url = new URL(window.location.href);
-    return url.protocol === `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:` && !url.username && !url.password;
+    return (
+      url.protocol === `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:` ||
+      url.protocol === "http:" ||
+      url.protocol === "https:"
+    ) && !url.username && !url.password;
   } catch {
     return false;
   }
 }
 
+function documentAcceptsReviewKind(kind: WorkPanelReviewKind) {
+  if (kind === "image") return Boolean(directImageElement());
+  const contentType = document.contentType.toLowerCase();
+  return contentType === "text/html" || contentType === "application/xhtml+xml";
+}
+
 function sendEvent(event: WorkPanelPreviewReviewEvent) {
-  if (!isTrustedPreviewDocument()) return;
+  if (!isReviewableDocument()) return;
   ipcRenderer.sendToHost(WORK_PANEL_PREVIEW_REVIEW_EVENT_CHANNEL, event);
 }
 
@@ -251,6 +261,7 @@ function renderImageAnnotations(root: HTMLDivElement) {
 }
 
 function renderHtmlAnnotations(root: HTMLDivElement) {
+  positionSelectionLayer(new DOMRect(0, 0, window.innerWidth, window.innerHeight));
   for (const annotation of annotations) {
     if (annotation.kind !== "html-element") continue;
     const element = resolveXPath(annotation.fullXPath);
@@ -273,9 +284,14 @@ function renderHtmlAnnotations(root: HTMLDivElement) {
   }
 }
 
+function reviewTargetAtPoint(clientX: number, clientY: number) {
+  const elements = document.elementsFromPoint(clientX, clientY);
+  return elements.find((element) => !element.closest(`#${OVERLAY_ROOT_ID}`)) ?? null;
+}
+
 function renderOverlay() {
   clearOverlay();
-  if (!reviewEnabled || !reviewKind || !isTrustedPreviewDocument()) return;
+  if (!reviewEnabled || !reviewKind || !isReviewableDocument()) return;
   const root = ensureOverlayRoot();
   if (reviewKind === "image") renderImageAnnotations(root);
   else renderHtmlAnnotations(root);
@@ -475,8 +491,8 @@ function inspectElement(element: Element) {
 function installHtmlSelection() {
   document.addEventListener("pointermove", (event) => {
     if (!reviewEnabled || reviewKind !== "html") return;
-    const element = document.elementFromPoint(event.clientX, event.clientY);
-    if (!element || element.closest(`#${OVERLAY_ROOT_ID}`)) return;
+    const element = reviewTargetAtPoint(event.clientX, event.clientY);
+    if (!element) return;
     const rect = element.getBoundingClientRect();
     hoverBox?.remove();
     hoverBox = rect.width > 0 && rect.height > 0 ? createBox(rect, undefined, true) : null;
@@ -493,8 +509,8 @@ function installHtmlSelection() {
     if (!reviewEnabled || reviewKind !== "html") return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    const element = document.elementFromPoint(event.clientX, event.clientY);
-    if (!element || element.closest(`#${OVERLAY_ROOT_ID}`)) return;
+    const element = reviewTargetAtPoint(event.clientX, event.clientY);
+    if (!element) return;
     const inspected = inspectElement(element);
     if (inspected) sendEvent(inspected);
   }, true);
@@ -599,15 +615,26 @@ async function exportAnnotatedImage(requestId: string, imageAnnotations: ImageRe
 }
 
 function handleAction(value: unknown) {
-  if (!isTrustedPreviewDocument() || !isRecord(value) || value.version !== WORK_PANEL_REVIEW_VERSION) return;
+  if (!isReviewableDocument() || !isRecord(value) || value.version !== WORK_PANEL_REVIEW_VERSION) return;
   const action = value.action;
   if (action === "initialize" || action === "sync") {
     const kind = value.kind === "html" || value.kind === "image" ? value.kind : null;
     if (!kind || typeof value.enabled !== "boolean") return;
     reviewKind = kind;
-    reviewEnabled = value.enabled;
     annotations = readAnnotations(value.annotations, kind);
     invalidAnnotationIds = new Set();
+    if (!documentAcceptsReviewKind(kind)) {
+      reviewEnabled = false;
+      clearOverlay();
+      sendEvent({
+        event: "unavailable",
+        version: WORK_PANEL_REVIEW_VERSION,
+        kind,
+        reason: "unsupported_document_type",
+      });
+      return;
+    }
+    reviewEnabled = value.enabled;
     renderOverlay();
     const image = kind === "image" ? directImageElement() : null;
     sendEvent({
@@ -625,7 +652,7 @@ function handleAction(value: unknown) {
   }
 }
 
-if (isTrustedPreviewDocument()) {
+if (isReviewableDocument()) {
   installImageSelection();
   installHtmlSelection();
   ipcRenderer.on(WORK_PANEL_PREVIEW_REVIEW_ACTION_CHANNEL, (_event, action: WorkPanelPreviewReviewAction) => {

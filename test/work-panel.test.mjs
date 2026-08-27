@@ -175,6 +175,90 @@ test("WorkPanel keeps review drafts in runtime state, enforces one active tab, a
   assert.equal(Object.keys(forcedClose.nextState.review.sessionsByKey).length, 1);
 });
 
+test("ordinary HTTP(S) WorkPanel pages support bounded top-level HTML element review", () => {
+  const opened = open(EMPTY_WORK_PANEL_STATE, "chat-web-review", {
+    kind: "web",
+    url: "https://example.test/page",
+    title: "Example page",
+  });
+  const started = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    kind: "html",
+    source: {
+      sourceKind: "web",
+      fileName: "Example page",
+      revision: "https://example.test/page?section=hero&access_token=secret#intro",
+      url: "https://example.test/page?section=hero&access_token=secret#intro",
+    },
+  });
+  assert.equal(started.ok, true);
+
+  const annotated = reduceWorkPanelCommand(started.nextState, {
+    type: "addHtmlReviewAnnotation",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    annotation: {
+      id: "web-element-1",
+      fullXPath: "/html/body/main/button",
+      cssSelector: "main > button",
+      tagName: "button",
+      attributes: { class: "primary", "data-token": "must-not-leak" },
+      textExcerpt: "Submit",
+      rect: { x: 40, y: 80, width: 120, height: 36 },
+    },
+  });
+  const described = reduceWorkPanelCommand(annotated.nextState, {
+    type: "updateReviewAnnotation",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    annotationId: "web-element-1",
+    requirement: "Make this primary action more prominent.",
+  });
+  const session = Object.values(described.nextState.review.sessionsByKey)[0];
+  assert.equal(session.annotations[0].attributes.class, "primary");
+  assert.equal(session.annotations[0].attributes["data-token"], undefined);
+  assert.equal(
+    session.source.url,
+    "https://example.test/page?section=hero&access_token=%5Bredacted%5D#intro",
+  );
+  assert.equal(session.source.revision, session.source.url);
+  assert.doesNotMatch(buildWorkPanelReviewComposerDraft(session), /secret/u);
+  assert.match(buildWorkPanelReviewComposerDraft(session), /^请根据以下元素批注修改 https:\/\/example\.test\/page\?section=hero&access_token=%5Bredacted%5D#intro。/u);
+  assert.match(buildWorkPanelReviewComposerDraft(session), /无法定位源码时先说明限制，不要猜测修改。/u);
+
+  const imageReview = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    kind: "image",
+    source: {
+      sourceKind: "web",
+      fileName: "Example page",
+      revision: "https://example.test/page",
+      url: "https://example.test/page",
+    },
+  });
+  assert.equal(imageReview.ok, false);
+  assert.equal(imageReview.error.code, "capability_denied");
+
+  const credentialedReview = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    kind: "html",
+    source: {
+      sourceKind: "web",
+      fileName: "Unsafe page",
+      revision: "https://user:secret@example.test/page",
+      url: "https://user:secret@example.test/page",
+    },
+  });
+  assert.equal(credentialedReview.ok, false);
+  assert.equal(credentialedReview.error.code, "capability_denied");
+});
+
 test("WorkPanel review coordinates remain source-pixel based across preview scaling", () => {
   const normalized = normalizeWorkPanelNormalizedRect({
     x: 120 / 1440,

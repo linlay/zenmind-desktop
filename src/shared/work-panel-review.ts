@@ -11,7 +11,7 @@ export const WORK_PANEL_PREVIEW_REVIEW_EVENT_CHANNEL =
   "workPanel.previewReview.event" as const;
 
 export type WorkPanelReviewKind = "image" | "html";
-export type WorkPanelReviewSourceKind = "workspace-file" | "artifact" | "reference";
+export type WorkPanelReviewSourceKind = "workspace-file" | "artifact" | "reference" | "web";
 
 export type WorkPanelPixelRect = {
   x: number;
@@ -82,7 +82,40 @@ export type ReviewSourceRevision = {
   revision: string;
   relativePath?: string;
   resourceId?: string;
+  url?: string;
 };
+
+const SENSITIVE_WEB_REVIEW_PARAMETER = /(?:^|[_-])(?:access[_-]?token|token|api[_-]?key|key|secret|password|passwd|authorization|auth|credential|session|jwt|code|signature|sig)(?:$|[_-])/iu;
+
+export function sanitizeWorkPanelReviewWebUrl(value: string) {
+  try {
+    const url = new URL(value);
+    if ((url.protocol !== "http:" && url.protocol !== "https:") || url.username || url.password) {
+      return "";
+    }
+    for (const key of new Set(url.searchParams.keys())) {
+      if (SENSITIVE_WEB_REVIEW_PARAMETER.test(key)) {
+        url.searchParams.set(key, "[redacted]");
+      }
+    }
+    let decodedHash = url.hash;
+    try {
+      decodedHash = decodeURIComponent(url.hash);
+    } catch {
+      // An invalid escape remains opaque and is preserved unless its raw form looks sensitive.
+    }
+    const hashContainsSensitiveParameter = decodedHash
+      .replace(/^#/u, "")
+      .split(/[?&;]/u)
+      .some((part) => SENSITIVE_WEB_REVIEW_PARAMETER.test(part.split("=")[0] ?? ""));
+    if (hashContainsSensitiveParameter) {
+      url.hash = "redacted";
+    }
+    return url.toString();
+  } catch {
+    return "";
+  }
+}
 
 export type ImageRegionAnnotation = {
   id: string;
@@ -162,6 +195,12 @@ export type WorkPanelPreviewReviewEvent =
       kind: WorkPanelReviewKind;
       width?: number;
       height?: number;
+    }
+  | {
+      event: "unavailable";
+      version: typeof WORK_PANEL_REVIEW_VERSION;
+      kind: WorkPanelReviewKind;
+      reason: "unsupported_document_type";
     }
   | {
       event: "image-region-created";
@@ -262,7 +301,9 @@ export function buildWorkPanelReviewComposerDraft(
   session: WorkPanelReviewSession,
   imageSize?: { width: number; height: number },
 ) {
-  const fileName = cleanDraftFilename(session.source.relativePath || session.source.fileName);
+  const fileName = cleanDraftFilename(
+    session.source.relativePath || session.source.url || session.source.fileName,
+  );
   if (session.kind === "image") {
     const size = imageSize && Number.isFinite(imageSize.width) && Number.isFinite(imageSize.height)
       ? `${Math.round(imageSize.width)} × ${Math.round(imageSize.height)}`
@@ -299,6 +340,8 @@ export function buildWorkPanelReviewComposerDraft(
   lines.push("只修改标注要求涉及的元素，其他内容保持不变。");
   if (session.source.sourceKind === "workspace-file") {
     lines.push("原位修改 workspace 文件，完成后刷新当前 WorkPanel 标签页。");
+  } else if (session.source.sourceKind === "web") {
+    lines.push("这是当前网页的可视化元素批注；请结合页面 URL 与元素定位修改对应实现，无法定位源码时先说明限制，不要猜测修改。");
   } else {
     lines.push("保留原资源，生成一个新版本，并在 WorkPanel 中打开新版本。");
   }

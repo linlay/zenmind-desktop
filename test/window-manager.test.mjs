@@ -1397,7 +1397,7 @@ test("window manager uses macOS native microphone access for allowed media reque
   assert.equal(await permissionSession.request({ id: 101 }, "media", { mediaTypes: ["audio"] }), false);
 });
 
-test("window manager allows only service webview preload for loopback service URLs", () => {
+test("window manager confines service and review preloads to their trusted webview surfaces", () => {
   const webPreferences = {
     preload: "file:///app/preload/service-webview.js",
     nodeIntegration: true,
@@ -1483,11 +1483,35 @@ test("window manager allows only service webview preload for loopback service UR
     src: "zenmind-local-file://user-selected/image.png",
   });
 
+  const webReviewPreferences = {
+    preload: "file:///app/preload/work-panel-preview.js",
+    nodeIntegration: true,
+    contextIsolation: false,
+    sandbox: false,
+  };
+  const webReview = prepareWebviewAttachPreferences({
+    webPreferences: webReviewPreferences,
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "https://example.test/page",
+      partition: "work-panel-abc123-def456",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+  });
+  assert.equal(webReview.ok, true);
+  assert.equal(webReviewPreferences.preload, "C:/app/preload/work-panel-preview.js");
+  assert.equal(webReviewPreferences.nodeIntegration, false);
+  assert.equal(webReviewPreferences.contextIsolation, true);
+  assert.equal(webReviewPreferences.sandbox, true);
+
   const unsafeReview = prepareWebviewAttachPreferences({
     webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
     params: {
       preload: "file:///app/preload/work-panel-preview.js",
-      src: "https://example.test/image.png",
+      src: "https://example.test/page",
+      partition: "desktop-browser",
     },
     servicePreloadPath: "C:/app/preload/service-webview.js",
     servicePreloadUrl: "file:///app/preload/service-webview.js",
@@ -1496,7 +1520,7 @@ test("window manager allows only service webview preload for loopback service UR
   assert.deepEqual(unsafeReview, {
     ok: false,
     reason: "unsafe-review-url",
-    src: "https://example.test/image.png",
+    src: "https://example.test/page",
   });
 
   const blocked = prepareWebviewAttachPreferences({

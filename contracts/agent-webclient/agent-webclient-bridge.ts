@@ -1,6 +1,6 @@
 // Generated from src/shared/contracts/agent-webclient-bridge.ts.
 // Do not edit this mirror directly.
-// sha256:12789715cf1df528ec26c5ddc0cb9fbb415ff62a7de6835928487b229c219f0e
+// sha256:21e81324647d7c4580e23b5acb0ac949fa8655b2dcaecb065cbc2b2f71b98f88
 
 /**
  * Canonical Desktop <-> Agent WebClient bridge contract.
@@ -56,13 +56,14 @@ export type AgentWebclientComposerDraftAction = {
   };
   reviewData: {
     version: 1;
-    sourceKind: "workspace-file" | "artifact" | "reference";
+    sourceKind: "workspace-file" | "artifact" | "reference" | "web";
     kind: "html" | "image";
     source: {
       fileName: string;
       revision: string;
       relativePath?: string;
       resourceId?: string;
+      url?: string;
     };
     annotations: unknown[];
   };

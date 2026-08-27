@@ -5,6 +5,7 @@ import {
   DashboardOutlined,
   DeploymentUnitOutlined,
   DiffOutlined,
+  EditOutlined,
   ExportOutlined,
   FileTextOutlined,
   FolderOpenOutlined,
@@ -68,6 +69,7 @@ import {
   createWorkPanelLocalFileUrl,
 } from "../../shared/chat-work-panel";
 import { WorkPanelReviewPanel } from "./WorkPanelReviewPanel";
+import { SidebarActionIcon } from "../components/BrandMark";
 
 const ExternalWebviewPage = lazy(() =>
   import("../pages/external-webview/ExternalWebviewPage").then((module) => ({ default: module.ExternalWebviewPage })),
@@ -172,6 +174,15 @@ function readWebviewGuestId(webview: Electron.WebviewTag) {
   }
 }
 
+function readWebviewUrl(webview: Electron.WebviewTag | null | undefined) {
+  if (!webview) return "";
+  try {
+    return normalizeWorkPanelWebUrl(webview.getURL());
+  } catch {
+    return "";
+  }
+}
+
 type ResourceReviewCapability = {
   kind: WorkPanelReviewKind;
   fileName: string;
@@ -201,7 +212,21 @@ function readReviewEvent(event: Event & { channel?: string; args?: unknown[] }) 
 function reviewSourceForItem(
   item: WorkPanelItem,
   capability?: ResourceReviewCapability,
+  webPage?: { url?: string; title?: string },
 ): { kind: WorkPanelReviewKind; source: ReviewSourceRevision } | null {
+  if (item.descriptor.kind === "web") {
+    const url = normalizeWorkPanelWebUrl(webPage?.url || item.descriptor.url);
+    if (!url) return null;
+    return {
+      kind: "html",
+      source: {
+        sourceKind: "web",
+        fileName: webPage?.title?.trim() || item.title || url,
+        revision: url,
+        url,
+      },
+    };
+  }
   if (
     item.descriptor.kind === "local-file" &&
     item.descriptor.reviewKind &&
@@ -577,12 +602,20 @@ export function WorkPanelHost({
       return;
     }
     if (payload.event === "ready") {
+      setReviewErrors((current) => ({ ...current, [runtimeKey]: "" }));
       setReviewPreviewMetadata((current) => ({
         ...current,
         [runtimeKey]: {
           ...(Number.isFinite(payload.width) ? { width: payload.width } : {}),
           ...(Number.isFinite(payload.height) ? { height: payload.height } : {}),
         },
+      }));
+      return;
+    }
+    if (payload.event === "unavailable") {
+      setReviewErrors((current) => ({
+        ...current,
+        [runtimeKey]: t("chatWorkPanel.review.unsupportedDocumentType"),
       }));
       return;
     }
@@ -642,6 +675,16 @@ export function WorkPanelHost({
     const webview = findItemWebview(ownerChatId, item.itemId);
     if (!webview) return false;
     try {
+      if (item.descriptor.kind === "web") {
+        webview.send(WORK_PANEL_PREVIEW_REVIEW_ACTION_CHANNEL, {
+          action: "sync",
+          version: WORK_PANEL_REVIEW_VERSION,
+          kind: "html",
+          enabled,
+          annotations: session?.annotations ?? [],
+        });
+        return true;
+      }
       if (item.descriptor.kind === "local-file") {
         if (!item.descriptor.reviewKind) return false;
         webview.send(WORK_PANEL_PREVIEW_REVIEW_ACTION_CHANNEL, {
@@ -675,7 +718,12 @@ export function WorkPanelHost({
     return false;
   };
 
-  const toggleReviewForItem = (ownerChatId: string, item: WorkPanelItem) => {
+  const toggleReviewForItem = (
+    ownerChatId: string,
+    item: WorkPanelItem,
+    webPage?: { url?: string; title?: string },
+  ) => {
+    const runtimeKey = itemRuntimeKey(ownerChatId, item.itemId);
     const review = stateRef.current.review;
     const active = review.activeItemIdsByOwnerChatId[ownerChatId] === item.itemId;
     if (active) {
@@ -689,8 +737,18 @@ export function WorkPanelHost({
       return;
     }
     const capability = resourceReviewCapabilities[itemRuntimeKey(ownerChatId, item.itemId)];
-    const reviewSource = reviewSourceForItem(item, capability);
+    const reviewSource = reviewSourceForItem(
+      item,
+      capability,
+      item.descriptor.kind === "web"
+        ? {
+            url: webPage?.url || readWebviewUrl(findItemWebview(ownerChatId, item.itemId)),
+            title: webPage?.title || item.title,
+          }
+        : undefined,
+    );
     if (!reviewSource) return;
+    setReviewErrors((current) => ({ ...current, [runtimeKey]: "" }));
     dispatchCommand({ type: "activateItem", ownerChatId, itemId: item.itemId });
     const started = dispatchCommand({
       type: "startReview",
@@ -810,6 +868,9 @@ export function WorkPanelHost({
             ...(session.source.resourceId
               ? { resourceId: session.source.resourceId }
               : {}),
+            ...(session.source.url
+              ? { url: session.source.url }
+              : {}),
           },
           annotations: session.annotations,
         },
@@ -920,6 +981,12 @@ export function WorkPanelHost({
     const reviewSource = reviewSourceForItem(
       item,
       resourceReviewCapabilities[itemRuntimeKey(ownerChatId, item.itemId)],
+      item.descriptor.kind === "web"
+        ? {
+            url: readWebviewUrl(findItemWebview(ownerChatId, item.itemId)),
+            title: item.title,
+          }
+        : undefined,
     );
     const reviewActive = stateRef.current.review.activeItemIdsByOwnerChatId[ownerChatId] === item.itemId;
     const result = await window.electronAPI.chatWorkPanelTabContextMenu.popup({
@@ -1621,13 +1688,19 @@ export function WorkPanelHost({
                   );
                   const reviewActive = state.review.activeItemIdsByOwnerChatId[workspace.ownerChatId] === item.itemId;
                   const reviewRuntimeKey = itemRuntimeKey(workspace.ownerChatId, item.itemId);
-                  const waitingForReviewPreload = item.descriptor.kind === "local-file" &&
-                    Boolean(item.descriptor.reviewKind) &&
-                    !reviewPreloadUrl;
+                  const resourceReviewCapability = resourceReviewCapabilities[reviewRuntimeKey];
+                  const showResourcePreviewToolbar = item.descriptor.kind === "webclient" &&
+                    (item.descriptor.module === "artifact" || item.descriptor.module === "reference");
+                  const webReviewPreloadEnabled = item.descriptor.kind === "web" &&
+                    Boolean(normalizeWorkPanelWebUrl(item.descriptor.url));
+                  const needsReviewPreload = webReviewPreloadEnabled || (
+                    item.descriptor.kind === "local-file" && Boolean(item.descriptor.reviewKind)
+                  );
+                  const waitingForReviewPreload = needsReviewPreload && !reviewPreloadUrl;
                   return (
                     <div
                       key={item.itemId}
-                      className={`chat-work-panel-item${active ? " is-active" : ""}${showLocalResourceActions ? " has-resource-actions" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}`}
+                      className={`chat-work-panel-item${active ? " is-active" : ""}${showLocalResourceActions ? " has-resource-actions" : ""}${showResourcePreviewToolbar ? " has-preview-toolbar" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}`}
                       data-work-panel-active={active ? "true" : "false"}
                       data-work-panel-item={item.itemId}
                       data-work-panel-owner={workspace.ownerChatId}
@@ -1667,6 +1740,81 @@ export function WorkPanelHost({
                           >
                             <span>{t("chatWorkPanel.tabContextMenu.openInDefaultApp")}</span>
                           </Button>
+                        </div>
+                      ) : null}
+                      {showResourcePreviewToolbar ? (
+                        <div
+                          className="chat-work-panel-preview-toolbar"
+                          role="toolbar"
+                          aria-label={t("chatWorkPanel.previewToolbar.label")}
+                        >
+                          <div className="external-webview-page is-work-panel-browser">
+                            <div className="external-webview-toolbar">
+                              <div className="external-webview-toolbar-actions">
+                                <button
+                                  type="button"
+                                  className="external-webview-toolbar-button"
+                                  onClick={() => {
+                                    const session = getWorkPanelReviewSession(
+                                      stateRef.current.review,
+                                      workspace.ownerChatId,
+                                      item.itemId,
+                                    );
+                                    if (hasWorkPanelReviewDraft(session) && !session?.invalidReason) {
+                                      dispatchCommand({
+                                        type: "markReviewInvalid",
+                                        ownerChatId: workspace.ownerChatId,
+                                        itemId: item.itemId,
+                                        reason: "preview_reloaded",
+                                      });
+                                    }
+                                    try {
+                                      findItemWebview(workspace.ownerChatId, item.itemId)?.reload();
+                                    } catch {
+                                      // The resource guest may have been replaced while this click was handled.
+                                    }
+                                  }}
+                                  aria-label={t("externalWebview.refresh")}
+                                  title={t("externalWebview.refresh")}
+                                >
+                                  <SidebarActionIcon kind="refresh" />
+                                </button>
+                              </div>
+                              <div className="external-webview-toolbar-location">
+                                <span className="external-webview-toolbar-location-icon" aria-hidden="true">
+                                  <FileTextOutlined />
+                                </span>
+                                <span
+                                  className="external-webview-toolbar-location-input is-static"
+                                  title={resourceReviewCapability?.fileName || item.title}
+                                >
+                                  {resourceReviewCapability?.fileName || item.title}
+                                </span>
+                                <button
+                                  type="button"
+                                  className={`external-webview-toolbar-edit${reviewActive ? " is-active" : ""}`}
+                                  disabled={!resourceReviewCapability}
+                                  onClick={() => toggleReviewForItem(workspace.ownerChatId, item)}
+                                  aria-label={t(reviewActive
+                                    ? "chatWorkPanel.tabContextMenu.exitReview"
+                                    : "chatWorkPanel.tabContextMenu.enterReview")}
+                                  aria-pressed={reviewActive}
+                                  title={resourceReviewCapability
+                                    ? t(reviewActive
+                                        ? "chatWorkPanel.tabContextMenu.exitReview"
+                                        : "chatWorkPanel.tabContextMenu.enterReview")
+                                    : t("chatWorkPanel.review.previewLoading")}
+                                >
+                                  <EditOutlined aria-hidden="true" />
+                                  <span className="external-webview-toolbar-edit-label">
+                                    {t(reviewActive
+                                      ? "externalWebview.finishPageReview"
+                                      : "externalWebview.editPage")}
+                                  </span>
+                                </button>
+                              </div>
+                            </div>
+                          </div>
                         </div>
                       ) : null}
                       {item.descriptor.kind === "webclient" ? (
@@ -1746,9 +1894,19 @@ export function WorkPanelHost({
                           publishPageContext={false}
                           preloadUrl={item.descriptor.kind === "local-file" && item.descriptor.reviewKind
                             ? reviewPreloadUrl
+                            : webReviewPreloadEnabled
+                              ? reviewPreloadUrl
+                              : undefined}
+                          pageReviewActive={reviewActive && reviewSession?.kind === "html"}
+                          onTogglePageReview={webReviewPreloadEnabled || (
+                            item.descriptor.kind === "local-file" && item.descriptor.reviewKind === "html"
+                          )
+                            ? (page) => toggleReviewForItem(workspace.ownerChatId, item, page)
                             : undefined}
                           registerPublicWebSurface={false}
-                          showToolbar={item.descriptor.kind === "web"}
+                          showToolbar={item.descriptor.kind === "web" || (
+                            item.descriptor.kind === "local-file" && item.descriptor.reviewKind === "html"
+                          )}
                           showLoadingProgress
                           surfaceIdentity={createChatChildSurfaceIdentity(
                             "workpanel-web",
@@ -1759,9 +1917,13 @@ export function WorkPanelHost({
                           surfaceKind="chat-work-panel"
                           surfaceLabel={item.title}
                           title={item.title}
+                          toolbarDocumentName={item.descriptor.kind === "local-file"
+                            ? item.descriptor.fileName
+                            : undefined}
                           url={item.descriptor.kind === "local-file"
                             ? createWorkPanelLocalFileUrl(item.descriptor.handleId, item.descriptor.fileName)
                             : item.descriptor.url}
+                          workPanelToolbarKind={item.descriptor.kind === "local-file" ? "document" : "web"}
                         />
                       ) : item.descriptor.kind === "local-file" ? (
                         <div className="chat-work-panel-local-file-fallback">

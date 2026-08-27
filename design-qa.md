@@ -51,7 +51,7 @@ The reference uses a larger captured display scale and a wider native popover. T
 - Source pixels: `1536 × 1024`; source contains light and dark conceptual states in one image.
 - Implementation pixels / CSS viewport / density: `960 × 520` at `960 × 520` CSS px, device density `1`; narrow evidence is `380 × 500` at `380 × 500` CSS px.
 - Density normalization: the source is a high-density concept capture, so toolbar crops were compared at a shared column width and judged by normalized control geometry and relative rhythm rather than raw source pixels.
-- State: active normal Web WorkPanel item; back enabled, forward disabled, address locked until Edit; light, dark, and narrow dark states checked.
+- State: active normal Web WorkPanel item; back enabled, forward disabled, address directly editable, page review inactive; light, dark, and narrow dark states checked.
 
 ### Findings
 
@@ -61,7 +61,7 @@ The reference uses a larger captured display scale and a wider native popover. T
 - Colors and visual tokens: light and dark backgrounds, borders, disabled states, hover fills, and focus accent remain theme-aware and preserve readable contrast.
 - Image and icon fidelity: existing Ant Design and product navigation icons are used; no raster substitutes, handcrafted SVGs, emoji, or CSS-drawn visible assets were introduced.
 - Copy and content: the address is realistic and `Edit` / `编辑` is localized through the existing dictionaries.
-- Accessibility and behavior: controls retain semantic button/textbox roles, labels and focus-visible states; Edit unlocks and selects the address, Escape restores it, Enter normalizes and navigates, and disabled Forward remains exposed correctly.
+- Accessibility and behavior: controls retain semantic button/textbox roles, labels and focus-visible states; the address selects on focus, Escape restores it, Enter normalizes and navigates, while Edit is a pressed-state toggle for HTML element review and disabled Forward remains exposed correctly.
 
 ### Comparison History
 
@@ -76,9 +76,9 @@ The reference uses a larger captured display scale and a wider native popover. T
 
 ### Interaction and Runtime Verification
 
-- Edit changes the address input from read-only to editable.
-- Escape restores `https://www.baidu.com/` and locks the field again.
-- Enter normalizes `example.com` to `https://example.com/` and locks the field again.
+- Clicking the address selects it for direct editing; Escape restores `https://www.baidu.com/`.
+- Enter normalizes `example.com` to `https://example.com/` and leaves the field in its normal display state.
+- Edit enters HTML element review, exposes `aria-pressed=true`, changes its label to Done/完成, and opens the WorkPanel review editor; Done exits selection mode without discarding annotations.
 - Back and Reload are clickable; Forward is disabled in the captured state.
 - Fresh browser QA session: `0` console errors. Two pre-existing React Router v7 future-flag warnings remain and are unrelated to this component.
 
@@ -88,10 +88,21 @@ The reference uses a larger captured display scale and a wider native popover. T
 
 ### Implementation Checklist
 
-- [x] Show the row only for normal Web WorkPanel items.
+- [x] Show back/forward/address only for normal Web WorkPanel items; trusted document variants use refresh/name/edit without exposing a path as an address.
 - [x] Match option 2's navigation, separator, address pill, and inline Edit composition.
-- [x] Support light, dark, hover, focus, disabled, edit, Escape, Enter, and narrow-width states.
-- [x] Preserve existing WebClient, WebApp, local-file, and review surfaces.
+- [x] Support light, dark, hover, focus, disabled, review-active, Escape, Enter, and narrow-width states.
+- [x] Preserve WebApp and unrelated WebClient surfaces; keep review-active layout compatible with Web, local HTML, and Artifact/Reference document toolbars.
+
+final result: passed
+
+## WorkPanel Local HTML and Artifact Toolbar Follow-up (2026-08-27)
+
+- Browser QA URLs: `?surface=local&theme=light`, `?surface=local&theme=dark`, and `?surface=artifact&theme=light` on the existing WorkPanel toolbar fixture.
+- Local HTML light/dark states reuse the selected option-2 geometry: a naked refresh action, separator, 30px document pill, file icon, safe filename, and inline Edit/Done.
+- The filename is static text rather than a fake editable address, so the UI never exposes or suggests editing the underlying absolute path.
+- Entering review keeps the document toolbar below the 44px review controls and beside the 320px annotation panel; Done remains visible and pressed at the mounted WorkPanel width.
+- Artifact/Reference uses the same 48px toolbar above its Service WebView. Edit is visibly disabled until the guest declares HTML/image capability, preventing a decorative no-op button; when capability arrives it uses the same active/Done state as local HTML.
+- Light and dark colors, focus rings, disabled states, truncation, icons, borders, and row rhythm are inherited from the already accepted browser toolbar rather than introducing a second visual system.
 
 final result: passed
 

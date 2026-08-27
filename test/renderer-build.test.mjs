@@ -8289,7 +8289,7 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /afterTabId: sourceTab\.id,[\s\S]{0,120}partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
 });
 
-test("embedded browser address entry remains editable while WorkPanel uses explicit Edit", () => {
+test("embedded browser address stays directly editable while WorkPanel Edit toggles page review", () => {
   const externalWebviewPage = readSourceFile(
     "src",
     "renderer",
@@ -8304,14 +8304,18 @@ test("embedded browser address entry remains editable while WorkPanel uses expli
   assert.match(externalWebviewPage, /const \[addressInputUnlocked, setAddressInputUnlocked\] = useState\(false\)/u);
   assert.match(externalWebviewPage, /useEffect\(\(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(false\);[\s\S]{0,80}\}, \[activeTab\?\.id\]\);/u);
   assert.match(externalWebviewPage, /if \(addressInputUnlocked\) \{[\s\S]{0,80}return;[\s\S]{0,80}\}[\s\S]{0,120}setAddressInputValue\(getEditableAddressInputValue\(activeTab\?\.currentUrl \?\? url\)\);/u);
-  assert.match(externalWebviewPage, /const handleAddressInputFocus = \(event: ReactFocusEvent<HTMLInputElement>\) => \{[\s\S]{0,80}if \(workPanelBrowser\) \{[\s\S]{0,120}return;[\s\S]{0,160}setAddressInputUnlocked\(true\);[\s\S]{0,80}event\.currentTarget\.select\(\);/u);
-  assert.match(externalWebviewPage, /const handleEditAddress = \(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(true\);[\s\S]{0,160}addressInputRef\.current\?\.focus\(\);[\s\S]{0,80}addressInputRef\.current\?\.select\(\);/u);
+  assert.match(externalWebviewPage, /const handleAddressInputFocus = \(event: ReactFocusEvent<HTMLInputElement>\) => \{[\s\S]{0,120}setAddressInputUnlocked\(true\);[\s\S]{0,80}event\.currentTarget\.select\(\);/u);
+  assert.doesNotMatch(externalWebviewPage, /handleEditAddress/u);
   assert.match(externalWebviewPage, /onChange=\{\(event\) => \{[\s\S]{0,80}setAddressInputValue\(event\.target\.value\);[\s\S]{0,40}\}\}/u);
   assert.match(externalWebviewPage, /if \(event\.key !== "Enter"\) \{/u);
   assert.match(externalWebviewPage, /onFocus=\{handleAddressInputFocus\}/u);
   assert.match(externalWebviewPage, /onBlur=\{\(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(false\);[\s\S]{0,160}setAddressInputValue\(getEditableAddressInputValue\(activeTab\?\.currentUrl \?\? url\)\);/u);
   assert.doesNotMatch(externalWebviewPage, /readOnly=\{!addressInputUnlocked\}/u);
-  assert.match(externalWebviewPage, /readOnly=\{workPanelBrowser && !addressInputUnlocked\}/u);
+  assert.doesNotMatch(externalWebviewPage, /readOnly=\{workPanelBrowser/u);
+  assert.match(externalWebviewPage, /onTogglePageReview\?: \(page: \{ url: string; title: string \}\) => void;/u);
+  assert.match(externalWebviewPage, /onClick=\{\(\) => onTogglePageReview\(\{/u);
+  assert.match(externalWebviewPage, /aria-pressed=\{pageReviewActive\}/u);
+  assert.match(externalWebviewPage, /externalWebview\.finishPageReview/u);
   assert.doesNotMatch(externalWebviewPage, /if \(!addressInputUnlocked\) \{[\s\S]{0,80}return;/u);
   assert.doesNotMatch(externalWebviewPage, /if \(!addressInputUnlocked \|\| event\.key !== "Enter"\) \{/u);
   assert.doesNotMatch(externalWebviewPage, /event\.detail < 3/u);

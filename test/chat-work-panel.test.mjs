@@ -91,7 +91,19 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(host, /navigationKind === "blob"/u);
   assert.match(host, /clearSession\?\.\(\{ partition \}\)/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
-  assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web"\}/u);
+  assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web" \|\| \([\s\S]*?item\.descriptor\.reviewKind === "html"/u);
+  assert.match(host, /workPanelToolbarKind=\{item\.descriptor\.kind === "local-file" \? "document" : "web"\}/u);
+  assert.match(host, /className="chat-work-panel-preview-toolbar"/u);
+  assert.match(host, /showResourcePreviewToolbar[\s\S]*?item\.descriptor\.module === "artifact"/u);
+  const workPanelStyles = read("src/renderer/styles/app-shell.css");
+  assert.match(
+    workPanelStyles,
+    /\.chat-work-panel-item\.has-preview-toolbar > \.embedded-surface-page\s*\{[^}]*top:\s*48px;[^}]*height:\s*auto;/su,
+  );
+  assert.doesNotMatch(
+    workPanelStyles,
+    /\.chat-work-panel-item\.has-preview-toolbar > \.service-webview-surface/u,
+  );
   assert.match(host, /target !== "work-panel"/u);
   assert.match(host, /type: "openItem"[\s\S]*?descriptor: \{ kind: "web", url: normalizedUrl \}/u);
   assert.match(host, /showLoadingProgress/u);
@@ -99,12 +111,28 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(host, /onLoadingChange/u);
   assert.match(externalWebview, /allowpopups: "true"/u);
   assert.match(externalWebview, /workPanelBrowser \? "is-work-panel-browser" : ""/u);
-  assert.match(externalWebview, /readOnly=\{workPanelBrowser && !addressInputUnlocked\}/u);
-  assert.match(externalWebview, /externalWebview\.editAddress/u);
+  assert.doesNotMatch(externalWebview, /readOnly=\{workPanelBrowser/u);
+  assert.match(externalWebview, /pageReviewActive\?: boolean;/u);
+  assert.match(externalWebview, /onTogglePageReview\?: \(page: \{ url: string; title: string \}\) => void;/u);
+  assert.match(externalWebview, /onClick=\{\(\) => onTogglePageReview\(\{/u);
+  assert.match(externalWebview, /aria-pressed=\{pageReviewActive\}/u);
+  assert.match(externalWebview, /externalWebview\.finishPageReview/u);
   assert.match(
     externalWebview,
     /external-webview-toolbar-location[\s\S]*?external-webview-toolbar-location-input[\s\S]*?external-webview-toolbar-edit/u,
   );
+  assert.match(host, /pageReviewActive=\{reviewActive && reviewSession\?\.kind === "html"\}/u);
+  assert.match(host, /const webReviewPreloadEnabled = item\.descriptor\.kind === "web" &&[\s\S]*?normalizeWorkPanelWebUrl\(item\.descriptor\.url\)/u);
+  assert.match(host, /onTogglePageReview=\{webReviewPreloadEnabled[\s\S]*?toggleReviewForItem/u);
+  assert.match(host, /webReviewPreloadEnabled[\s\S]{0,80}?reviewPreloadUrl/u);
+  const previewPreload = read("src/preload/work-panel-preview.ts");
+  assert.match(previewPreload, /url\.protocol === "http:" \|\|[\s\S]{0,40}url\.protocol === "https:"/u);
+  assert.match(previewPreload, /!url\.username && !url\.password/u);
+  assert.match(previewPreload, /document\.contentType\.toLowerCase\(\)/u);
+  assert.match(previewPreload, /"text\/html" \|\| contentType === "application\/xhtml\+xml"/u);
+  assert.match(previewPreload, /event: "unavailable"/u);
+  assert.match(previewPreload, /document\.elementsFromPoint\(clientX, clientY\)/u);
+  assert.match(previewPreload, /positionSelectionLayer\(new DOMRect\(0, 0, window\.innerWidth, window\.innerHeight\)\)/u);
   assert.match(externalWebview, /target !== "desktop-browser"/u);
   assert.doesNotMatch(externalWebview, /openPopupsInCurrentTab/u);
   assert.match(host, /if \(isMac\)/u);
@@ -115,6 +143,10 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(
     read("src/renderer/styles/app-shell.css"),
     /\.external-webview-page\.is-work-panel-browser\.has-browser-toolbar \.external-webview-browser-chrome\s*\{[^}]*display:\s*flex;/su,
+  );
+  assert.match(
+    read("src/renderer/styles/app-shell.css"),
+    /@container \(min-width: 720px\)[\s\S]*?\.chat-work-panel-item\.is-reviewing > \.external-webview-page[\s\S]*?right: 320px;[\s\S]*?width: auto;/u,
   );
 });
 

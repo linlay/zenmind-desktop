@@ -52,13 +52,14 @@ export type AgentWebclientComposerDraftAction = {
   };
   reviewData: {
     version: 1;
-    sourceKind: "workspace-file" | "artifact" | "reference";
+    sourceKind: "workspace-file" | "artifact" | "reference" | "web";
     kind: "html" | "image";
     source: {
       fileName: string;
       revision: string;
       relativePath?: string;
       resourceId?: string;
+      url?: string;
     };
     annotations: unknown[];
   };
