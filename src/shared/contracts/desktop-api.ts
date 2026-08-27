@@ -79,6 +79,7 @@ import type { WebviewSelectionToolbarStateListener } from "../webview-selection-
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
   EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRegistrationResult,
   EmbeddedCdpSurfaceRemoval,
   EmbeddedCdpSurfaceTargetStateRequest,
   EmbeddedCdpSurfaceTargetStateResult
@@ -743,7 +744,10 @@ export type DesktopConfigChangedEvent = {
 };
 export type DesktopConfigChangedListener = (event: DesktopConfigChangedEvent) => void;
 
+export type RendererDiagnosticLevel = "debug" | "warn" | "error";
+
 export interface RendererDiagnosticReport {
+  level: RendererDiagnosticLevel;
   source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview";
   message: string;
   details?: Record<string, unknown>;
@@ -1059,7 +1063,7 @@ export interface DesktopApi {
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
   };
   embeddedCdp: {
-    registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<{ ok: boolean }>;
+    registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<EmbeddedCdpSurfaceRegistrationResult>;
     unregisterSurface: (input: EmbeddedCdpSurfaceRemoval) => Promise<{ ok: boolean }>;
     getSurfaceTargetState: (input: EmbeddedCdpSurfaceTargetStateRequest) => Promise<EmbeddedCdpSurfaceTargetStateResult>;
   };

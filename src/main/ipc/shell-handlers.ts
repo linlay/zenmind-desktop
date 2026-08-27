@@ -662,8 +662,15 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
 
   ipcMain.on("diagnostics.rendererError", (event: IpcMainEvent, report: unknown) => {
     const rendererReport = report && typeof report === "object" ? report as Record<string, unknown> : {};
+    const diagnosticLevel =
+      rendererReport.level === "debug" ||
+      rendererReport.level === "warn" ||
+      rendererReport.level === "error"
+        ? rendererReport.level
+        : "error";
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
     options.reportRendererDiagnostic?.("renderer-error", {
+      diagnosticLevel,
       windowId: ownerWindow?.id ?? null,
       route: event.sender.getURL(),
       source: typeof rendererReport.source === "string" ? rendererReport.source : "unknown",

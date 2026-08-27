@@ -23,11 +23,11 @@ test("Desktop live Chat and trusted WorkPanel child surfaces publish active life
   assert.match(surface, /isAgentWebclientLifecycleSurface\(serviceId, surfaceId, surfaceIdentity\)/u);
   assert.match(
     surface,
-    /if \(!ownsActiveSurface\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(false\)[\s\S]*?registerSurface\(registration\)/,
+    /if \(!registrationActive\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(false\)[\s\S]*?registerSurface\(registration\)/,
   );
   assert.match(
     surface,
-    /registerSurface\(registration\)\.then\(\(result\) => \{[\s\S]*?if \(result\.ok\) \{[\s\S]*?if \(ownsActiveSurface\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(true\)/,
+    /registerSurface\(registration\)\.then\(\(result\) => \{[\s\S]*?if \(result\.ok\) \{[\s\S]*?if \(registrationActive\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(true\)/,
   );
   assert.match(surface, /return \(\) => sendLiveSurfaceLifecycleToWebview\(false\)/);
 });

@@ -306,6 +306,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     if (snapshot && typeof snapshot === "object") {
       const currentPage = snapshot as Record<string, unknown>;
       options.reportRendererDiagnostic?.("current-page", {
+        diagnosticLevel: "debug",
         route: currentPage.route,
         pageKey: currentPage.pageKey,
         pageKind: currentPage.pageKind,
@@ -318,6 +319,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       });
     } else {
       options.reportRendererDiagnostic?.("current-page", {
+        diagnosticLevel: "debug",
         cleared: true
       });
     }

@@ -19,7 +19,7 @@ import {
   CodeOutlined,
 } from "@ant-design/icons";
 import { Button } from "antd";
-import { lazy, Suspense, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
@@ -585,7 +585,7 @@ export function WorkPanelHost({
       pendingReviewRequestsRef.current.set(requestId, { resolve, timer });
     });
 
-  const handleReviewIpcMessage = (
+  const handleReviewIpcMessage = useCallback((
     ownerChatId: string,
     item: WorkPanelItem,
     event: Event & { channel?: string; args?: unknown[] },
@@ -633,32 +633,49 @@ export function WorkPanelHost({
           reason: "source_revision_changed",
         });
       }
-      setResourceReviewCapabilities((current) => ({
-        ...current,
-        [runtimeKey]: {
+      setResourceReviewCapabilities((current) => {
+        const nextCapability = {
           kind: capabilityKind,
           fileName: capabilityFileName.trim() || item.title,
           revision: capabilityRevision.trim() || item.stableKey,
-        },
-      }));
+        };
+        const previous = current[runtimeKey];
+        if (
+          previous?.kind === nextCapability.kind &&
+          previous.fileName === nextCapability.fileName &&
+          previous.revision === nextCapability.revision
+        ) {
+          return current;
+        }
+        return { ...current, [runtimeKey]: nextCapability };
+      });
       return;
     }
     if (payload.event === "ready") {
-      setReviewErrors((current) => ({ ...current, [runtimeKey]: "" }));
-      setReviewPreviewMetadata((current) => ({
-        ...current,
-        [runtimeKey]: {
+      setReviewErrors((current) => current[runtimeKey] === ""
+        ? current
+        : { ...current, [runtimeKey]: "" });
+      setReviewPreviewMetadata((current) => {
+        const nextMetadata = {
           ...(Number.isFinite(payload.width) ? { width: payload.width } : {}),
           ...(Number.isFinite(payload.height) ? { height: payload.height } : {}),
-        },
-      }));
+        };
+        const previous = current[runtimeKey];
+        if (
+          previous?.width === nextMetadata.width &&
+          previous?.height === nextMetadata.height
+        ) {
+          return current;
+        }
+        return { ...current, [runtimeKey]: nextMetadata };
+      });
       return;
     }
     if (payload.event === "unavailable") {
-      setReviewErrors((current) => ({
-        ...current,
-        [runtimeKey]: t("chatWorkPanel.review.unsupportedDocumentType"),
-      }));
+      const message = t("chatWorkPanel.review.unsupportedDocumentType");
+      setReviewErrors((current) => current[runtimeKey] === message
+        ? current
+        : { ...current, [runtimeKey]: message });
       return;
     }
     if (payload.event === "image-region-created") {
@@ -672,10 +689,19 @@ export function WorkPanelHost({
           normalizedRect: payload.normalizedRect,
         },
       });
-      setReviewPreviewMetadata((current) => ({
-        ...current,
-        [runtimeKey]: { width: payload.imageWidth, height: payload.imageHeight },
-      }));
+      setReviewPreviewMetadata((current) => {
+        const previous = current[runtimeKey];
+        if (
+          previous?.width === payload.imageWidth &&
+          previous?.height === payload.imageHeight
+        ) {
+          return current;
+        }
+        return {
+          ...current,
+          [runtimeKey]: { width: payload.imageWidth, height: payload.imageHeight },
+        };
+      });
       return;
     }
     if (payload.event === "html-element-selected") {
@@ -706,7 +732,7 @@ export function WorkPanelHost({
       return;
     }
     finishPendingReviewRequest(payload);
-  };
+  }, [dispatchCommand, t]);
 
   const sendReviewStateToPreview = (
     ownerChatId: string,

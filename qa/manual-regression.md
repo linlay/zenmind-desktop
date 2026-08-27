@@ -27,14 +27,20 @@
 - 激活普通 Web tab 时确认标签栏下只增加一行浏览器工具栏：后退、前进、刷新按真实导航状态启用；地址可直接点击输入并以 Enter 导航、Esc 取消。“编辑”进入网页元素批注并变为“完成”，不承担地址解锁。可批注的 `openLocalFile` HTML 与仍由 Resource Viewer 承载的 Artifact/Reference HTML 显示各自受限评审工具栏；原生图片、WebApp 与其他 item 不复用这行 WebView 工具栏。
 - 从 Main Chat 打开 PNG/JPEG/WebP Artifact 与 Reference，确认 Desktop WorkPanel 创建原生图片 tab 且不创建 Agent WebClient Resource Viewer WebView；PDF、HTML、SVG、GIF 与签名不匹配资源继续使用或拒绝进入既有 Viewer。Standalone Agent WebClient 不受影响。
 - 用截断或浏览器无法解码但签名仍匹配的图片回归原生预览：WorkPanel 保持可操作，不显示错误条或错误占位文案，编辑入口禁用，其他 tab 与 Main Chat 不受影响。
-- 原生图片预览态只显示文件信息、源尺寸、10%–800% 比例、缩放与编辑；验证适合窗口、100%、比例直接输入、触控板/Cmd/Ctrl 缩放、拖拽平移、窄 WorkPanel、拉宽、全屏和窗口 resize。
-- 编辑态验证批注、裁剪、90°旋转、水平/垂直翻转、尺寸、曝光/对比度/饱和度、矩形/椭圆/套索/画笔选区、添加/减去/反选/清除及 50 步撤销上限；像素修改前有批注时必须确认清除。超出 8192 单边或 4000 万像素时编辑入口禁用。
+- 原生图片预览态显示文件信息、源尺寸、10%–800% 比例、缩放、中性背景的编辑入口与打开方式；验证适合窗口、100%、比例直接输入、触控板/Cmd/Ctrl 缩放、拖拽平移、默认/其他应用打开、窄 WorkPanel、拉宽、全屏和窗口 resize。顶部宽度不足时换行，不出现横向滚动条。
+- 编辑态确认 Photo 工具位于左侧栏，顶部只保留完成、撤销/重做、缩放与保存；验证批注、裁剪、90°旋转、水平/垂直翻转、尺寸、曝光/对比度/饱和度、矩形/椭圆/套索/画笔选区、添加/减去/反选/清除及 50 步撤销上限。像素修改前有批注时必须确认清除；超出 8192 单边或 4000 万像素时编辑入口禁用。
 - 验证擦除对象必须有选区，移除/替换背景、扩图和增强每次只产生一个 Zenmi 候选，运行中仍可缩放/平移且可取消；失败不丢草稿，结果不自动写入 Artifact。
-- 每次保存都重新选择。Artifact 默认生成新 Artifact且可覆盖；Reference 仅可生成 Artifact；透明结果不覆盖 JPEG；revision 冲突禁用覆盖。新 Artifact 打开新 tab，覆盖保留原 tab并清空 dirty/undo。
+- 每次保存都重新选择，弹窗中的取消、覆盖原 Artifact、生成新 Artifact 在同一行等宽排列；Reference 只显示取消与生成新 Artifact。Artifact 默认生成新 Artifact且可覆盖；透明结果不覆盖 JPEG；revision 冲突禁用覆盖。新 Artifact 打开新 tab，覆盖保留原 tab并清空 dirty/undo。
 - macOS 验证 `.app`、Windows 验证 `.exe` 的无 shell 外部打开；有草稿时先提示只打开原文件。外部修改在无草稿时自动刷新，有草稿时只允许丢弃重载或另存新 Artifact；远端缓存先下载副本并明确不会回写。
 - 在浅色、深色、默认窄 WorkPanel、拉宽与全屏状态检查分段按钮、地址截断、编辑按钮和键盘 focus；窄宽度仍保留完整编辑入口，地址安全截断且不挤出工具栏。
 - 连续新增两个 Side Chat，确认都导航 `/btw/:chatId` 且 guest/instance 独立；active BTW 可调用 BTW/attach，不能 query；切换、隐藏、关闭不取消后台 Run。
 - KBASE 显示可用 Project；CODER 仅在 workspace 有效时可用，并携带当前 chatId 与 lastRunId；普通 Agent 不显示 Project。
+
+## WebView 生命周期与 Main Chat mirror
+
+- macOS 与 Windows 分别固定一个 Main Chat 和一个 WorkPanel WebClient guest，记录 `webContentsId` 后反复切换 Chat、WorkPanel tab、面板显示/隐藏和 active 状态；同一 generation 只能出现一次 `listeners-attached`，普通状态变化不得出现 `listeners-detached`，guest 被替换或卸载时才允许成对解绑。
+- 在 Main Chat guest 尚未 `dom-ready` 时快速触发 A→B→C 三次路由变化，确认只应用 C；过渡期 Registry 可返回 `route_not_aligned`，但不得高频重试、回滚到 A/B 或更换仍存活 guest 的 `webContentsId`。
+- 连续至少 30 次从 WorkPanel 打开当前 visible Run mirror，并穿插 Main Chat 快速切换；确认没有 `primary_stream_not_ready`。打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合。
 
 ## Chat information
 

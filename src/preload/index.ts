@@ -874,6 +874,7 @@ const api: DesktopApi = {
 
 window.addEventListener("error", (event) => {
   api.diagnostics.reportRendererError({
+    level: "error",
     source: "window-error",
     message: event.message || "Renderer window error",
     stack: event.error instanceof Error ? event.error.stack : undefined,
@@ -886,6 +887,7 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event.reason;
   api.diagnostics.reportRendererError({
+    level: "error",
     source: "unhandledrejection",
     message: reason instanceof Error ? reason.message : String(reason),
     stack: reason instanceof Error ? reason.stack : undefined
