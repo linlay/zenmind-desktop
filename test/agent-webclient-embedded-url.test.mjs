@@ -8,6 +8,7 @@ const {
   buildServiceWebviewUrl
 } = require("../dist-electron/shared/auth-bridge.js");
 const {
+  AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS,
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientChatNavigationUrlsEquivalent,
@@ -17,6 +18,7 @@ const {
   createAgentWebclientManagementPath,
   createAgentWebclientOverviewPath,
   createAgentWebclientProjectPath,
+  findAgentWebclientRouteDefinition,
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
@@ -55,14 +57,20 @@ test("agent chat embedded URL keeps chat WebSocket source without auth context",
   assert.equal(url.searchParams.has("desktopAuthContext"), false);
 });
 
-test("copilot embedded URL keeps copilot WebSocket source", () => {
+test("Copilot Dock embedded URL keeps copilot WebSocket source", () => {
   const url = buildAgentWebclientUrl(
-    "copilot-chat",
+    "copilot-dock",
     "/copilot/zenmi"
   );
 
   assert.equal(url.searchParams.get("wsSource"), "desktop-copilot");
   assert.equal(url.searchParams.has("desktopAuthContext"), false);
+});
+
+test("Desktop route catalog excludes full-page Copilot routes", () => {
+  assert.equal(findAgentWebclientRouteDefinition("/copilot"), null);
+  assert.equal(AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS.includes("/copilot/:agentKey"), false);
+  assert.equal(createAgentWebclientCopilotPath("zenmi"), "/copilot/zenmi");
 });
 
 test("management embedded URLs do not carry WebSocket source or auth context", () => {

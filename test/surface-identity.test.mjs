@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 const {
+  SURFACE_ROLES,
   createLegacySurfaceIdAliases,
   createChatChildSurfaceIdentity,
   createServiceSurfaceIdentity,
   createSurfaceIdentity,
   createWebEntrySurfaceIdentity,
+  resolveLegacyFixedSurfaceId,
   stableSurfaceHash,
   surfaceIdentityMatchesPolicy
 } = await import("../dist-electron/shared/surface-identity.js");
@@ -20,8 +22,9 @@ const {
 } = await import("../dist-electron/shared/webview-context-menu.js");
 
 test("surface identity uses readable singleton roots and stable domain-prefixed dynamic ids", () => {
+  assert.equal(SURFACE_ROLES.includes("copilot-chat"), false);
+  assert.equal(resolveLegacyFixedSurfaceId("agent-webclient-copilot"), "agent-webclient-copilot");
   assert.equal(createSurfaceIdentity("main-chat").surfaceId, "main-chat");
-  assert.equal(createSurfaceIdentity("copilot-chat").surfaceId, "copilot-chat");
   assert.equal(createSurfaceIdentity("kanban-chat").surfaceId, "kanban-chat");
   assert.equal(createSurfaceIdentity("browser").surfaceId, "browser");
   const entryKey = "website:https://docs.example/private/path";
@@ -65,7 +68,6 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
   for (const [role, expected] of [
     ["main-chat", "agent-chat"],
     ["kanban-chat", "agent-chat"],
-    ["copilot-chat", "agent-copilot"],
     ["copilot-dock", "agent-copilot"],
     ["copilot", "agent-copilot"],
     ["overview", "agent-overview"],

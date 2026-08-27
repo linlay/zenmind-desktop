@@ -1250,7 +1250,7 @@ test("assistant navigation activity agents include copilot-only chats for deskto
           role: "网络协同",
           stats: { unreadCount: 1 },
           chats: [{
-            chatId: "copilot-chat-1",
+            chatId: "helper-chat-1",
             agentKey: "net-yu",
             chatName: "网络诊断",
             lastRunContent: "已完成网络诊断",
@@ -1289,7 +1289,7 @@ test("assistant navigation activity agents include copilot-only chats for deskto
   const copilotAgent = items.find((item) => item.agentKey === "net-yu");
   assert.equal(copilotAgent?.displayName, "网驭智能体");
   assert.equal(copilotAgent?.unreadCount, 1);
-  assert.equal(copilotAgent?.recentChats[0]?.chatId, "copilot-chat-1");
+  assert.equal(copilotAgent?.recentChats[0]?.chatId, "helper-chat-1");
   assert.equal(copilotAgent?.recentChats[0]?.lastRunContent, "已完成网络诊断");
   assert.equal(
     items[0]?.recentChats.some((chat) => chat.chatId === "copilot-zenmi-chat"),

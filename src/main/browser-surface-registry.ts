@@ -21,7 +21,6 @@ import {
 import { readAgentWebclientAgentRouteKey } from "../shared/agent-webclient-routes";
 import { selectSurvivingTabId } from "../shared/web-tab-lifecycle";
 import {
-  COPILOT_CHAT_SURFACE_ID,
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
   LEGACY_FIXED_SURFACE_ID_ALIASES,
@@ -641,7 +640,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     if (input.surfaceType === "agent-btw") return ["btw"];
     if (input.surfaceType === "agent-project" || input.surfaceType === "project") return ["project"];
     if (input.surfaceType === "agent-chat") return ["main-chat", "kanban-chat"];
-    if (input.surfaceType === "agent-copilot") return ["copilot-chat", "copilot-dock", "copilot"];
+    if (input.surfaceType === "agent-copilot") return ["copilot-dock", "copilot"];
     if (input.surfaceType === "agent-management") {
       return ["service", "source", "file-diff", "artifact", "reference", "file", "planning", "agent", "skill"];
     }
@@ -669,12 +668,11 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       input.serviceId?.trim() !== identityKey
     ) return { ok: false, check: "service_identity_mismatch" };
     if (
-      ["main-chat", "copilot-chat", "kanban-chat", "copilot-dock", "overview", "debug", "btw", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
+      ["main-chat", "kanban-chat", "copilot-dock", "overview", "debug", "btw", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
       input.serviceId?.trim() !== "agent-webclient"
     ) return { ok: false, check: "agent_webclient_service_mismatch" };
     if (
       (input.surfaceRole === "main-chat" && input.surfaceId !== MAIN_CHAT_SURFACE_ID) ||
-      (input.surfaceRole === "copilot-chat" && input.surfaceId !== COPILOT_CHAT_SURFACE_ID) ||
       (input.surfaceRole === "kanban-chat" && input.surfaceId !== KANBAN_CHAT_SURFACE_ID) ||
       (input.surfaceRole === "copilot-dock" && input.surfaceId !== COPILOT_DOCK_SURFACE_ID)
     ) return { ok: false, check: "fixed_surface_id_mismatch" };

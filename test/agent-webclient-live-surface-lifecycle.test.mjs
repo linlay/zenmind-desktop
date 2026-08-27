@@ -11,7 +11,6 @@ test("Desktop live Chat and trusted WorkPanel child surfaces publish active life
   const surface = read("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   for (const surfaceIdConstant of [
     "MAIN_CHAT_SURFACE_ID",
-    "COPILOT_CHAT_SURFACE_ID",
     "COPILOT_DOCK_SURFACE_ID",
     "KANBAN_CHAT_SURFACE_ID",
   ]) {

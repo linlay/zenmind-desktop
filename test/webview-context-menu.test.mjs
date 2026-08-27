@@ -267,10 +267,10 @@ test("surface registry reverse index follows replacement and rejects cross-surfa
     activeTabId: "chat"
   });
   const mainChat = createSurfaceIdentity("main-chat");
-  const copilotChat = createSurfaceIdentity("copilot-chat");
+  const copilotDock = createSurfaceIdentity("copilot-dock");
   assert.equal(registry.registerSurface(registration(mainChat, 41), 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(41).registrationId, "generation-1");
-  assert.equal(registry.registerSurface(registration(copilotChat, 41, "agent-copilot"), 7), false);
+  assert.equal(registry.registerSurface(registration(copilotDock, 41, "agent-copilot"), 7), false);
   assert.equal(registry.registerSurface(registration(mainChat, 42), 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(41), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(42).registrationId, "generation-1");

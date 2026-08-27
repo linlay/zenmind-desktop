@@ -267,7 +267,7 @@ test("sidebar does not expose the built-in Chrome surface", () => {
   assert.doesNotMatch(sidebarSource, /BUILTIN_BROWSER_ROUTE/);
 });
 
-test("main agent webclient keeps chat and copilot webviews separate from management", () => {
+test("main agent webclient keeps chat separate from management and leaves Copilot to the dock", () => {
   const surfaceHosts = readSourceFile(
     "src",
     "renderer",
@@ -277,16 +277,13 @@ test("main agent webclient keeps chat and copilot webviews separate from managem
   );
 
   assert.match(surfaceHosts, /const AGENT_WEBCLIENT_CHAT_SURFACE_ID = MAIN_CHAT_SURFACE_ID/);
-  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = COPILOT_CHAT_SURFACE_ID/);
   assert.match(surfaceHosts, /lastAgentChatRouteRef/);
-  assert.match(surfaceHosts, /lastCopilotRouteRef/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "chat"/);
-  assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "copilot"/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
-  assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
   assert.match(surfaceHosts, /serviceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
+  assert.doesNotMatch(surfaceHosts, /COPILOT_CHAT_SURFACE_ID|lastCopilotRouteRef|"copilot-chat"/u);
 });
 
 test("agent webclient management routes render embedded webclient pages", () => {
@@ -313,7 +310,8 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(routeDefinitions, /routePath:\s*"\/copilot"[\s\S]*?mode:\s*"embedded"/);
+  assert.doesNotMatch(routeDefinitions, /routePath:\s*"\/copilot"/u);
+  assert.doesNotMatch(routeDefinitions, /"\/copilot\/:agentKey"/u);
   assert.match(sidebar, /to:\s*"\/agents"[\s\S]*?to:\s*"\/skills"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/registries"[\s\S]*?to:\s*"\/archives"[\s\S]*?to:\s*"\/market"/);
   assert.match(sidebar, /item\.to === "\/mcp-servers"/);
   assert.match(brandMark, /\|\s*"connector"[\s\S]*?case "connector":[\s\S]*?<circle cx="6" cy="12" r="3" \/>/);
@@ -1623,8 +1621,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/copilot\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
+  assert.doesNotMatch(appShell, /routePath:\s*"\/copilot"|"\/copilot\/:agentKey"|kind:\s*"copilot"/u);
+  assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
   assert.match(appShell, /"\/skills\/:skillKey"/);
   assert.match(appShell, /function resolveSkillManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?embedPath: `\/skills\/\$\{encodeURIComponent\(skillKey\)\}\$\{search\}`/);
   assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
@@ -1668,7 +1666,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /findAgentWebclientRouteDefinition\(pathname\)/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
   assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
-  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
+  assert.doesNotMatch(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
   assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?navigate\(targetPath\);[\s\S]*?return true;/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)/);

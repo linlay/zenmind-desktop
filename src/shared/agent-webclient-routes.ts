@@ -3,7 +3,6 @@ import {
   encodeRoutePathSegment
 } from "./route-path";
 import {
-  COPILOT_CHAT_SURFACE_ID,
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
@@ -20,11 +19,10 @@ export type AgentWebclientRouteKey =
   | "registries"
   | "mcp-servers"
   | "skills"
-  | "copilot"
   | "agent-chat"
   | "assistant-target";
 
-export type AgentWebclientRouteKind = "management" | "copilot" | "chat";
+export type AgentWebclientRouteKind = "management" | "chat";
 export type AgentWebclientRouteMode = "embedded";
 
 export type AgentWebclientRouteDefinition = {
@@ -102,20 +100,11 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     labelKey: "nav.skills",
     kind: "management",
     mode: "embedded"
-  },
-  {
-    key: "copilot",
-    routePath: "/copilot",
-    embedPath: "/copilot",
-    labelKey: "nav.assistants",
-    kind: "copilot",
-    mode: "embedded"
   }
 ] as const satisfies readonly AgentWebclientRouteDefinition[];
 
 export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
   "/agents/:agentKey",
-  "/copilot/:agentKey",
   "/agent/:agentKey",
   "/skills/:skillKey"
 ] as const;
@@ -125,7 +114,6 @@ const AGENT_WEBCLIENT_CHAT_SURFACE_IDS = new Set([
   KANBAN_CHAT_SURFACE_ID
 ]);
 const AGENT_WEBCLIENT_COPILOT_SURFACE_IDS = new Set([
-  COPILOT_CHAT_SURFACE_ID,
   COPILOT_DOCK_SURFACE_ID
 ]);
 

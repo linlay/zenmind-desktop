@@ -1671,11 +1671,11 @@ test("desktop pet reads copilot activity items when navigation items omit the ag
       unreadChatCount: 1,
       chatCount: 1,
       hasPendingAwaiting: false,
-      latestChatId: "copilot-chat-1",
+      latestChatId: "helper-chat-1",
       latestPreview: "已完成网络诊断",
       updatedAt: 1782302400000,
       recentChats: [{
-        chatId: "copilot-chat-1",
+        chatId: "helper-chat-1",
         chatName: "网络诊断",
         agentKey: "net-yu",
         updatedAt: 1782302400000,

@@ -1,6 +1,5 @@
 export const SURFACE_ROLES = [
   "main-chat",
-  "copilot-chat",
   "kanban-chat",
   "browser",
   "website",
@@ -39,7 +38,6 @@ export type SurfaceIdentity = {
 };
 
 export const MAIN_CHAT_SURFACE_ID = "main-chat";
-export const COPILOT_CHAT_SURFACE_ID = "copilot-chat";
 export const KANBAN_CHAT_SURFACE_ID = "kanban-chat";
 export const COPILOT_DOCK_SURFACE_ID = "copilot-dock";
 export const BROWSER_SURFACE_ID = "browser";
@@ -47,7 +45,6 @@ export const HELP_SURFACE_ID = "help";
 
 export const LEGACY_FIXED_SURFACE_ID_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   "agent-webclient-chat": MAIN_CHAT_SURFACE_ID,
-  "agent-webclient-copilot": COPILOT_CHAT_SURFACE_ID,
   "agent-webclient-kanban-chat": KANBAN_CHAT_SURFACE_ID,
   "agent-webclient-copilot-dock": COPILOT_DOCK_SURFACE_ID,
   chrome: BROWSER_SURFACE_ID,
@@ -56,7 +53,6 @@ export const LEGACY_FIXED_SURFACE_ID_ALIASES: Readonly<Record<string, string>> =
 
 const FIXED_ROLE_IDS: Partial<Record<SurfaceRole, string>> = {
   "main-chat": MAIN_CHAT_SURFACE_ID,
-  "copilot-chat": COPILOT_CHAT_SURFACE_ID,
   "kanban-chat": KANBAN_CHAT_SURFACE_ID,
   "copilot-dock": COPILOT_DOCK_SURFACE_ID,
   browser: BROWSER_SURFACE_ID,

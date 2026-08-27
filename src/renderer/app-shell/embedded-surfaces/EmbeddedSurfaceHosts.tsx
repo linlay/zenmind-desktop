@@ -16,7 +16,6 @@ import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import type { WebEntryKey } from "../../../shared/contracts/webs";
 import { useI18n } from "../../i18n/useI18n";
 import {
-  COPILOT_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID,
   createServiceSurfaceIdentity,
   createSurfaceIdentity,
@@ -54,7 +53,6 @@ export type WebappPresentationOwner =
   | { scope: "detached" };
 
 const AGENT_WEBCLIENT_CHAT_SURFACE_ID = MAIN_CHAT_SURFACE_ID;
-const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = COPILOT_CHAT_SURFACE_ID;
 
 function EmbeddedSurfaceSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
@@ -94,14 +92,10 @@ export function ServiceWebviewSurfaceHost({
   const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
   const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);
   const lastAgentChatOwnerRef = useRef<string | null>(null);
-  const lastCopilotRouteRef = useRef<AgentWebclientRouteItem | null>(null);
 
   if (activeAgentWebclientRouteKind === "chat") {
     lastAgentChatRouteRef.current = activeAgentWebclientRoute;
     lastAgentChatOwnerRef.current = activeOwnerChatId ?? null;
-  }
-  if (activeAgentWebclientRouteKind === "copilot") {
-    lastCopilotRouteRef.current = activeAgentWebclientRoute;
   }
 
   const agentWebclientMounted = mountedServiceIds.includes(AGENT_WEBCLIENT_SERVICE_ID);
@@ -109,10 +103,6 @@ export function ServiceWebviewSurfaceHost({
     activeAgentWebclientRouteKind === "chat"
       ? activeAgentWebclientRoute
       : lastAgentChatRouteRef.current;
-  const copilotRoute =
-    activeAgentWebclientRouteKind === "copilot"
-      ? activeAgentWebclientRoute
-      : lastCopilotRouteRef.current;
   const agentChatOwnerChatId =
     activeAgentWebclientRouteKind === "chat"
       ? activeOwnerChatId ?? null
@@ -121,20 +111,16 @@ export function ServiceWebviewSurfaceHost({
     activeServiceId === AGENT_WEBCLIENT_SERVICE_ID
       ? activeAgentWebclientRouteKind === "chat"
         ? AGENT_WEBCLIENT_CHAT_SURFACE_ID
-        : activeAgentWebclientRouteKind === "copilot"
-          ? AGENT_WEBCLIENT_COPILOT_SURFACE_ID
-          : createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID).surfaceId
+        : createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID).surfaceId
       : activeServiceId
         ? createServiceSurfaceIdentity(activeServiceId).surfaceId
         : null;
   const nonAgentServiceIds = mountedServiceIds.filter((serviceId) => serviceId !== AGENT_WEBCLIENT_SERVICE_ID);
   const shouldRenderAgentChatSurface = agentWebclientMounted && Boolean(agentChatRoute);
-  const shouldRenderCopilotSurface = agentWebclientMounted && Boolean(copilotRoute);
   const shouldRenderAgentManagementSurface =
     agentWebclientMounted &&
     activeServiceId === AGENT_WEBCLIENT_SERVICE_ID &&
-    activeAgentWebclientRouteKind !== "chat" &&
-    activeAgentWebclientRouteKind !== "copilot";
+    activeAgentWebclientRouteKind !== "chat";
 
   useEffect(() => {
     setActiveServiceSurfaceId(activeSurfaceId);
@@ -146,7 +132,6 @@ export function ServiceWebviewSurfaceHost({
   if (
     nonAgentServiceIds.length === 0 &&
     !shouldRenderAgentChatSurface &&
-    !shouldRenderCopilotSurface &&
     !shouldRenderAgentManagementSurface
   ) {
     return null;
@@ -181,19 +166,6 @@ export function ServiceWebviewSurfaceHost({
             ownerChatId: agentChatOwnerChatId || undefined
           })}
           surfaceLabel={agentChatRoute?.label}
-        />
-      ) : null}
-      {shouldRenderCopilotSurface ? (
-        <ServiceWebviewSurface
-          key={AGENT_WEBCLIENT_COPILOT_SURFACE_ID}
-          active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "copilot"}
-          desktopRoute={copilotRoute?.routePath}
-          embedPath={copilotRoute?.embedPath}
-          hostTheme={hostTheme}
-          loadInitialEmbeddedUrlDirectly={Boolean(copilotRoute?.embedPath)}
-          serviceId={AGENT_WEBCLIENT_SERVICE_ID}
-          surfaceIdentity={createSurfaceIdentity("copilot-chat")}
-          surfaceLabel={copilotRoute?.label}
         />
       ) : null}
       {shouldRenderAgentManagementSurface ? (

@@ -31,7 +31,6 @@ export function resolveAgentWebclientWebviewSurfaceType(
     case "main-chat":
     case "kanban-chat":
       return "agent-chat";
-    case "copilot-chat":
     case "copilot-dock":
     case "copilot":
       return "agent-copilot";
