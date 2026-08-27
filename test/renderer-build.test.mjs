@@ -5676,6 +5676,50 @@ test("native image byte and decode failures stay silent and inert", () => {
   assert.match(styles, /\.work-panel-image-zoom-control input\s*\{[\s\S]*?font-size:\s*12px;/u);
 });
 
+test("native image modes keep viewing actions on top and photo tools in a sidebar", () => {
+  const source = readSourceFile(
+    "src",
+    "renderer",
+    "work-panel",
+    "WorkPanelResourceImage.tsx"
+  );
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+
+  assert.match(
+    source,
+    /!editing \? \([\s\S]*?className="work-panel-image-open-with"[\s\S]*?className="work-panel-image-edit-button"[\s\S]*?\) : \(/u
+  );
+  assert.equal(source.match(/className="work-panel-image-open-with"/gu)?.length, 1);
+  assert.match(source, /className="work-panel-image-editor-sidebar"[\s\S]*?aria-orientation="vertical"/u);
+  assert.match(
+    source,
+    /className="work-panel-image-save-actions"[\s\S]*?chatWorkPanel\.image\.cancel[\s\S]*?chatWorkPanel\.image\.overwrite[\s\S]*?chatWorkPanel\.image\.saveNew/u
+  );
+  assert.match(styles, /\.work-panel-image-toolbar\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/u);
+  assert.doesNotMatch(styles, /\.work-panel-image-toolbar\s*\{[^}]*overflow-x:\s*auto;/u);
+  assert.match(styles, /\.work-panel-image-editor-sidebar\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*flex-direction:\s*column;[^}]*overflow-y:\s*auto;/u);
+  assert.match(styles, /\.work-panel-image-editor-sidebar button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
+  assert.match(styles, /\.work-panel-image-save-actions\s*\{[^}]*display:\s*flex;/u);
+});
+
+test("native image annotation and AI tools share visible region editing", () => {
+  const source = readSourceFile(
+    "src",
+    "renderer",
+    "work-panel",
+    "WorkPanelResourceImage.tsx"
+  );
+  const contract = readSourceFile("src", "shared", "work-panel-resource-image.ts");
+
+  assert.match(source, /setGesturePreview\(\{ kind: "annotate", points: \[drawStartRef\.current, point\] \}\)/u);
+  assert.match(source, /setActiveAnnotationId\(id\)/u);
+  assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
+  assert.match(source, /selectionMaskBase64\(annotationRegions\)/u);
+  assert.match(source, /runAi\("inpaint"\)/u);
+  assert.match(source, /className="work-panel-image-ai-region-actions"/u);
+  assert.match(contract, /\| "inpaint"[\s\S]*?\| "removeObject"/u);
+});
+
 test("plugin market guards stale preload market api before skill import", () => {
   const marketPage = [
     readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx"),
@@ -8230,6 +8274,7 @@ test("usage settings condense signed-out account context without changing API-ke
 });
 
 test("embedded browser accepts host-opened tabs after multiple tabs exist", () => {
+  const workPanelHost = readSourceFile("src", "renderer", "work-panel", "WorkPanelHost.tsx");
   const externalWebviewPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
     "utf8"
@@ -8265,6 +8310,10 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(embeddedSurfaceHosts, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/);
   assert.match(embeddedSurfaceHosts, /function resolveWebsiteSsoPartition\(item: EmbeddedSidebarItem\)[\s\S]{0,140}item\.kind === "website" \? DESKTOP_SSO_WEBVIEW_PARTITION : undefined/);
   assert.match(embeddedSurfaceHosts, /partition=\{resolveWebsiteSsoPartition\(item\)\}/);
+  assert.match(workPanelHost, /from "\.\.\/\.\.\/shared\/sso"/u);
+  assert.match(workPanelHost, /partition=\{item\.descriptor\.kind === "local-file"[\s\S]{0,180}DESKTOP_SSO_WEBVIEW_PARTITION\}/u);
+  assert.match(workPanelHost, /refreshOnDesktopSso=\{item\.descriptor\.kind === "web"/u);
+  assert.doesNotMatch(workPanelHost, /itemPartition|resolveWorkPanelWebSessionKey|previousWebPartitionsRef/u);
   assert.match(copilotContracts, /partition\?: string;/);
   assert.match(copilotContracts, /userAgent\?: string;/);
   assert.match(externalWebviewPage, /partition\?: string;/);

@@ -574,11 +574,17 @@ export class WorkPanelResourceImageRegistry {
       return { ok: false, requestId, message: "The flattened source image is invalid." };
     }
     const mask = request.maskDataBase64 ? decodeBase64(request.maskDataBase64) : null;
-    if (request.operation === "removeObject" && (!mask || detectImageMime(mask.subarray(0, 16)) !== "image/png")) {
-      return { ok: false, requestId, message: "Remove Object requires a PNG white edit mask." };
+    if (
+      (request.operation === "inpaint" || request.operation === "removeObject") &&
+      (!mask || detectImageMime(mask.subarray(0, 16)) !== "image/png")
+    ) {
+      return { ok: false, requestId, message: "This regional AI edit requires a PNG white edit mask." };
     }
     const prompt = cleanText(request.prompt, 4_000);
-    if ((request.operation === "replaceBackground" || request.operation === "outpaint") && !prompt) {
+    if (
+      (request.operation === "inpaint" || request.operation === "replaceBackground" || request.operation === "outpaint") &&
+      !prompt
+    ) {
       return { ok: false, requestId, message: "This operation requires a description." };
     }
     const runKey = `${handle.handleId}:${requestId}`;
@@ -587,8 +593,8 @@ export class WorkPanelResourceImageRegistry {
     }
     const runId = `run_nativeimg_${crypto.randomUUID().replace(/-/gu, "")}`;
     this.activeAiRuns.set(runKey, runId);
-    const attachments = [imageAttachment("native-image-source", `source.${request.sourceMimeType.split("/")[1]}`, request.sourceMimeType, source)];
-    if (mask) attachments.push(imageAttachment("native-image-mask", "mask.png", "image/png", mask));
+    const attachments = [imageAttachment("image-studio-source", `image-studio-source.${request.sourceMimeType.split("/")[1]}`, request.sourceMimeType, source)];
+    if (mask) attachments.push(imageAttachment("image-studio-mask", "image-studio-mask.png", "image/png", mask));
     let completion: AgentPlatformImageCompletionResult;
     try {
       completion = await runtime.assistantBridge.completeImage({

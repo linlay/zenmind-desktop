@@ -1,15 +1,23 @@
 import {
+  BgColorsOutlined,
+  BorderOutlined,
   CheckOutlined,
   CompressOutlined,
+  ControlOutlined,
   DragOutlined,
   EditOutlined,
   ExportOutlined,
+  ExpandOutlined,
+  HighlightOutlined,
   InfoCircleOutlined,
   LinkOutlined,
   PictureOutlined,
   RedoOutlined,
+  RobotOutlined,
+  RotateRightOutlined,
   SaveOutlined,
   ScissorOutlined,
+  ThunderboltOutlined,
   UndoOutlined,
   ZoomInOutlined,
   ZoomOutOutlined,
@@ -44,6 +52,11 @@ type Snapshot = {
 type SelectionTool = "rectangle" | "ellipse" | "lasso" | "brush";
 type SelectionMode = "add" | "subtract";
 type Point = { x: number; y: number };
+type GesturePreview = {
+  kind: "annotate" | "select";
+  shape?: SelectionTool;
+  points: Point[];
+};
 
 type WorkPanelResourceImageProps = {
   active: boolean;
@@ -113,6 +126,15 @@ function clamp(value: number, min: number, max: number) {
   return Math.max(min, Math.min(max, value));
 }
 
+function rectFromPoints(start: Point, end: Point) {
+  return {
+    x: Math.min(start.x, end.x),
+    y: Math.min(start.y, end.y),
+    width: Math.abs(start.x - end.x),
+    height: Math.abs(start.y - end.y),
+  };
+}
+
 function imageFormat(mimeType: string) {
   if (mimeType === "image/jpeg") return "JPEG";
   if (mimeType === "image/webp") return "WebP";
@@ -146,14 +168,19 @@ export function WorkPanelResourceImage({
   const [selectionTool, setSelectionTool] = useState<SelectionTool>("rectangle");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("add");
   const [brushSize, setBrushSize] = useState(40);
+  const [hasSelection, setHasSelection] = useState(false);
+  const [gesturePreview, setGesturePreview] = useState<GesturePreview | null>(null);
   const [cropRect, setCropRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [annotations, setAnnotations] = useState<ImageRegionAnnotation[]>([]);
+  const [activeAnnotationId, setActiveAnnotationId] = useState("");
   const [zoom, setZoom] = useState(100);
   const [fitMode, setFitMode] = useState(true);
   const [fitZoom, setFitZoom] = useState(100);
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjust, setAdjust] = useState({ exposure: 0, contrast: 0, saturation: 0 });
   const [resizeAspectLocked, setResizeAspectLocked] = useState(true);
+  const [aiOpen, setAiOpen] = useState(false);
+  const [aiInstruction, setAiInstruction] = useState("");
   const [aiBusy, setAiBusy] = useState<{ requestId: string; operation: WorkPanelResourceImageAiOperation } | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
@@ -193,6 +220,7 @@ export function WorkPanelResourceImage({
     setCropRect(null);
     const selection = selectionCanvasRef.current;
     selection?.getContext("2d")?.clearRect(0, 0, selection.width, selection.height);
+    setHasSelection(false);
   }, [historyIndex]);
 
   const readResource = useCallback(async () => {
@@ -217,6 +245,9 @@ export function WorkPanelResourceImage({
       setHistory([{ url, width: image.naturalWidth, height: image.naturalHeight, mimeType: resource.mimeType }]);
       setHistoryIndex(0);
       setAnnotations([]);
+      setActiveAnnotationId("");
+      setHasSelection(false);
+      setAiInstruction("");
       setSourceRevision(result.revision || resource.revision);
       setSourceConflict(false);
       setTool("pan");
@@ -231,6 +262,8 @@ export function WorkPanelResourceImage({
     if (!editing) {
       setTool("pan");
       setAdjustOpen(false);
+      setAiOpen(false);
+      setGesturePreview(null);
     }
   }, [editing]);
 
@@ -268,6 +301,7 @@ export function WorkPanelResourceImage({
     if (canvas.width === current.width && canvas.height === current.height) return;
     canvas.width = current.width;
     canvas.height = current.height;
+    setHasSelection(false);
   }, [current]);
 
   const requireAnnotationClear = useCallback(() => {
@@ -413,10 +447,11 @@ export function WorkPanelResourceImage({
       context.fill();
     }
     context.restore();
+    if (selectionMode === "add") setHasSelection(true);
   }, [brushSize, selectionMode]);
 
   const pointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
-    if (!current) return;
+    if (!current || event.button !== 0) return;
     if (aiBusy && tool !== "pan") return;
     if (tool === "pan") {
       const viewport = viewportRef.current;
@@ -429,6 +464,11 @@ export function WorkPanelResourceImage({
     if (!point) return;
     drawStartRef.current = point;
     drawPointsRef.current = [point];
+    if (tool === "annotate") {
+      setGesturePreview({ kind: "annotate", points: [point, point] });
+    } else if (tool === "select") {
+      setGesturePreview({ kind: "select", shape: selectionTool, points: [point] });
+    }
     event.currentTarget.setPointerCapture(event.pointerId);
   };
 
@@ -444,14 +484,15 @@ export function WorkPanelResourceImage({
     const point = pointFromEvent(event);
     if (!point) return;
     if (tool === "crop") {
-      setCropRect({
-        x: Math.min(drawStartRef.current.x, point.x),
-        y: Math.min(drawStartRef.current.y, point.y),
-        width: Math.abs(drawStartRef.current.x - point.x),
-        height: Math.abs(drawStartRef.current.y - point.y),
-      });
+      setCropRect(rectFromPoints(drawStartRef.current, point));
+    } else if (tool === "annotate") {
+      setGesturePreview({ kind: "annotate", points: [drawStartRef.current, point] });
     } else if (tool === "select") {
       drawPointsRef.current.push(point);
+      const points = selectionTool === "rectangle" || selectionTool === "ellipse"
+        ? [drawStartRef.current, point]
+        : [...drawPointsRef.current];
+      setGesturePreview({ kind: "select", shape: selectionTool, points });
     }
   };
 
@@ -461,27 +502,32 @@ export function WorkPanelResourceImage({
     if (!start) return;
     const end = pointFromEvent(event) || start;
     if (tool === "annotate" && current) {
-      const x = Math.min(start.x, end.x);
-      const y = Math.min(start.y, end.y);
-      const width = Math.abs(start.x - end.x);
-      const height = Math.abs(start.y - end.y);
-      if (width >= 3 && height >= 3 && annotations.length < 50) {
-        const requirement = window.prompt(t("chatWorkPanel.image.promptAnnotation"), "") ?? "";
-        if (requirement.trim()) {
-          setAnnotations((previous) => [...previous, {
-            id: globalThis.crypto.randomUUID(),
-            number: previous.length + 1,
-            kind: "image-region",
-            rect: { x, y, width, height },
-            normalizedRect: {
-              x: x / current.width,
-              y: y / current.height,
-              width: width / current.width,
-              height: height / current.height,
-            },
-            requirement: requirement.trim().slice(0, 1_000),
-          }]);
-        }
+      let rect = rectFromPoints(start, end);
+      if (rect.width < 3 || rect.height < 3) {
+        const size = Math.min(72 / (effectiveZoom / 100), current.width, current.height);
+        rect = {
+          x: clamp(start.x - size / 2, 0, Math.max(0, current.width - size)),
+          y: clamp(start.y - size / 2, 0, Math.max(0, current.height - size)),
+          width: size,
+          height: size,
+        };
+      }
+      if (rect.width > 0 && rect.height > 0 && annotations.length < 50) {
+        const id = globalThis.crypto.randomUUID();
+        setAnnotations((previous) => [...previous, {
+          id,
+          number: previous.length + 1,
+          kind: "image-region",
+          rect,
+          normalizedRect: {
+            x: rect.x / current.width,
+            y: rect.y / current.height,
+            width: rect.width / current.width,
+            height: rect.height / current.height,
+          },
+          requirement: "",
+        }]);
+        setActiveAnnotationId(id);
       }
     } else if (tool === "select") {
       const points = selectionTool === "rectangle" || selectionTool === "ellipse"
@@ -491,11 +537,13 @@ export function WorkPanelResourceImage({
     }
     drawStartRef.current = null;
     drawPointsRef.current = [];
+    setGesturePreview(null);
   };
 
   const clearSelection = () => {
     const canvas = selectionCanvasRef.current;
     canvas?.getContext("2d")?.clearRect(0, 0, canvas.width, canvas.height);
+    setHasSelection(false);
   };
 
   const invertSelection = () => {
@@ -512,13 +560,16 @@ export function WorkPanelResourceImage({
     context.globalCompositeOperation = "destination-out";
     context.drawImage(previous, 0, 0);
     context.globalCompositeOperation = "source-over";
+    setHasSelection(true);
   };
 
-  const selectionMaskBase64 = async () => {
+  const selectionMaskBase64 = async (annotationRegions: ImageRegionAnnotation[] = []) => {
     const selection = selectionCanvasRef.current;
     if (!selection) return "";
     const source = selection.getContext("2d")?.getImageData(0, 0, selection.width, selection.height);
-    if (!source || !source.data.some((value, index) => index % 4 === 3 && value > 0)) return "";
+    if (!source) return "";
+    const selectionPresent = source.data.some((value, index) => index % 4 === 3 && value > 0);
+    if (!selectionPresent && annotationRegions.length === 0) return "";
     const mask = document.createElement("canvas");
     mask.width = selection.width;
     mask.height = selection.height;
@@ -538,24 +589,58 @@ export function WorkPanelResourceImage({
       pixels.data[index + 3] = 255;
     }
     context.putImageData(pixels, 0, 0);
+    context.fillStyle = "white";
+    for (const annotation of annotationRegions) {
+      context.fillRect(
+        Math.round(annotation.rect.x),
+        Math.round(annotation.rect.y),
+        Math.max(1, Math.round(annotation.rect.width)),
+        Math.max(1, Math.round(annotation.rect.height)),
+      );
+    }
     return blobBase64(await canvasBlob(mask, "image/png"));
   };
 
   const runAi = async (operation: WorkPanelResourceImageAiOperation) => {
-    if (!current || aiBusy || !requireAnnotationClear()) return;
-    const maskDataBase64 = await selectionMaskBase64();
-    if (operation === "removeObject" && !maskDataBase64) {
-      setError(t("chatWorkPanel.image.selectionRequired"));
+    if (!current || aiBusy) return;
+    const consumesRegions = operation === "inpaint" || operation === "removeObject";
+    if (!consumesRegions && annotations.length > 0 && !window.confirm(t("chatWorkPanel.image.confirmClearAnnotations"))) {
+      return;
+    }
+    const annotationRegions = consumesRegions ? annotations : [];
+    const maskDataBase64 = await selectionMaskBase64(annotationRegions);
+    if (consumesRegions && !maskDataBase64) {
+      setError(t("chatWorkPanel.image.aiRegionRequired"));
       return;
     }
     let prompt = "";
     let targetWidth = current.width;
     let targetHeight = current.height;
-    if (operation === "replaceBackground" || operation === "outpaint") {
-      prompt = window.prompt(t(operation === "replaceBackground"
-        ? "chatWorkPanel.image.promptBackground"
-        : "chatWorkPanel.image.promptOutpaint"), "")?.trim() || "";
-      if (!prompt) return;
+    if (operation === "inpaint") {
+      const annotationInstructions = annotationRegions
+        .filter((annotation) => annotation.requirement.trim())
+        .map((annotation) => {
+          const rect = annotation.normalizedRect;
+          return t("chatWorkPanel.image.aiAnnotationInstruction", {
+            number: annotation.number,
+            requirement: annotation.requirement.trim(),
+            x: Math.round(rect.x * 100),
+            y: Math.round(rect.y * 100),
+            width: Math.round(rect.width * 100),
+            height: Math.round(rect.height * 100),
+          });
+        });
+      prompt = [...annotationInstructions, aiInstruction.trim()].filter(Boolean).join("\n");
+      if (!prompt) {
+        setError(t("chatWorkPanel.image.aiInstructionRequired"));
+        return;
+      }
+    } else if (operation === "replaceBackground" || operation === "outpaint") {
+      prompt = aiInstruction.trim();
+      if (!prompt) {
+        setError(t("chatWorkPanel.image.aiInstructionRequired"));
+        return;
+      }
     }
     if (operation === "outpaint") {
       const widthText = window.prompt(t("chatWorkPanel.image.promptWidth"), String(current.width));
@@ -574,6 +659,7 @@ export function WorkPanelResourceImage({
     const sourceDataBase64 = await blobBase64(sourceBlob);
     const requestId = globalThis.crypto.randomUUID();
     setTool("pan");
+    setAiOpen(false);
     setAiBusy({ requestId, operation });
     setError("");
     try {
@@ -629,6 +715,9 @@ export function WorkPanelResourceImage({
         });
       }
       clearSelection();
+      setAnnotations([]);
+      setActiveAnnotationId("");
+      setAiInstruction("");
     } finally {
       setAiBusy(null);
     }
@@ -829,88 +918,109 @@ export function WorkPanelResourceImage({
               </button>
             </Popover>
             <div className="work-panel-image-spacer" />
-            <button type="button" onClick={() => stepZoom(-1)} aria-label={t("chatWorkPanel.image.zoomOut")}><ZoomOutOutlined /></button>
-            <span className="work-panel-image-zoom-control">
-              <input
-                type="number"
-                min={10}
-                max={800}
-                value={Math.round(effectiveZoom)}
-                aria-label={t("chatWorkPanel.image.zoom")}
-                onChange={(event) => changeZoom(Number(event.target.value))}
-              />
-              <span>%</span>
-              <select aria-label={t("chatWorkPanel.image.zoom")} value="" onChange={(event) => {
-                const value = event.target.value;
-                if (value === "fit") setFitMode(true);
-                else if (value) changeZoom(Number(value));
-              }}>
-                <option value="" disabled>▾</option>
-                <option value="fit">{t("chatWorkPanel.image.fit")}</option>
-                {ZOOM_STEPS.map((step) => <option key={step} value={step}>{step}%</option>)}
-              </select>
-            </span>
-            <button type="button" onClick={() => stepZoom(1)} aria-label={t("chatWorkPanel.image.zoomIn")}><ZoomInOutlined /></button>
-            <button type="button" className="is-primary" disabled={editDisabled || !current} onClick={() => onEditingChange(true)}>
-              <EditOutlined /> {t("chatWorkPanel.image.edit")}
-            </button>
+            <div className="work-panel-image-toolbar-actions">
+              <button type="button" onClick={() => stepZoom(-1)} aria-label={t("chatWorkPanel.image.zoomOut")}><ZoomOutOutlined /></button>
+              <span className="work-panel-image-zoom-control">
+                <input
+                  type="number"
+                  min={10}
+                  max={800}
+                  value={Math.round(effectiveZoom)}
+                  aria-label={t("chatWorkPanel.image.zoom")}
+                  onChange={(event) => changeZoom(Number(event.target.value))}
+                />
+                <span>%</span>
+                <select aria-label={t("chatWorkPanel.image.zoom")} value="" onChange={(event) => {
+                  const value = event.target.value;
+                  if (value === "fit") setFitMode(true);
+                  else if (value) changeZoom(Number(value));
+                }}>
+                  <option value="" disabled>▾</option>
+                  <option value="fit">{t("chatWorkPanel.image.fit")}</option>
+                  {ZOOM_STEPS.map((step) => <option key={step} value={step}>{step}%</option>)}
+                </select>
+              </span>
+              <button type="button" onClick={() => stepZoom(1)} aria-label={t("chatWorkPanel.image.zoomIn")}><ZoomInOutlined /></button>
+              <span className="work-panel-image-open-with">
+                <ExportOutlined aria-hidden="true" />
+                <select aria-label={t("chatWorkPanel.image.openWith")} disabled={saveBusy} value="" onChange={(event) => {
+                  const mode = event.target.value as "default" | "choose";
+                  if (mode) void openExternal(mode);
+                }}>
+                  <option value="" disabled>{t(resource.localOriginal ? "chatWorkPanel.image.openWith" : "chatWorkPanel.image.downloadOpen")}</option>
+                  <option value="default">{t("chatWorkPanel.image.openDefault")}</option>
+                  <option value="choose">{t("chatWorkPanel.image.openOther")}</option>
+                </select>
+              </span>
+              <button type="button" className="work-panel-image-edit-button" disabled={editDisabled || !current} onClick={() => onEditingChange(true)}>
+                <EditOutlined /> {t("chatWorkPanel.image.edit")}
+              </button>
+            </div>
           </>
         ) : (
           <>
-            <button type="button" className="is-primary" disabled={Boolean(aiBusy) || saveBusy} onClick={() => onEditingChange(false)}><CheckOutlined /> {t("chatWorkPanel.image.done")}</button>
-            <button type="button" disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /></button>
-            <button type="button" disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /></button>
-            <span className="work-panel-image-separator" />
-            <button type="button" className={tool === "pan" ? "is-active" : ""} onClick={() => setTool("pan")}><DragOutlined /> {t("chatWorkPanel.image.pan")}</button>
-            <button type="button" className={tool === "annotate" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("annotate")}>{t("chatWorkPanel.image.annotate")}</button>
-            <button type="button" className={tool === "crop" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("crop")}><ScissorOutlined /> {t("chatWorkPanel.image.crop")}</button>
-            {tool === "crop" && cropRect ? <button type="button" onClick={() => void applyCrop()}>{t("chatWorkPanel.image.apply")}</button> : null}
-            <button type="button" disabled={Boolean(aiBusy)} onClick={() => void transform("rotate")}>{t("chatWorkPanel.image.rotate")}</button>
-            <button type="button" disabled={Boolean(aiBusy)} onClick={() => void transform("flip-x")}>{t("chatWorkPanel.image.flipHorizontal")}</button>
-            <button type="button" disabled={Boolean(aiBusy)} onClick={() => void transform("flip-y")}>{t("chatWorkPanel.image.flipVertical")}</button>
-            <button type="button" className={resizeAspectLocked ? "is-active" : ""} disabled={Boolean(aiBusy)} aria-pressed={resizeAspectLocked} onClick={() => setResizeAspectLocked((value) => !value)}><LinkOutlined /> {t("chatWorkPanel.image.lockAspect")}</button>
-            <button type="button" disabled={Boolean(aiBusy)} onClick={() => void resizeImage()}><CompressOutlined /> {t("chatWorkPanel.image.resize")}</button>
-            <button type="button" className={adjustOpen ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setAdjustOpen((value) => !value)}>{t("chatWorkPanel.image.adjust")}</button>
-            <button type="button" className={tool === "select" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("select")}>{t("chatWorkPanel.image.selection")}</button>
-            <div className="work-panel-image-more">
-              <select aria-label={t("chatWorkPanel.image.aiTools")} disabled={Boolean(aiBusy)} defaultValue="" onChange={(event) => {
-                const operation = event.target.value as WorkPanelResourceImageAiOperation;
-                event.target.value = "";
-                if (operation) void runAi(operation);
-              }}>
-                <option value="" disabled>{t("chatWorkPanel.image.photoTools")}</option>
-                <option value="removeObject">{t("chatWorkPanel.image.removeObject")}</option>
-                <option value="removeBackground">{t("chatWorkPanel.image.removeBackground")}</option>
-                <option value="replaceBackground">{t("chatWorkPanel.image.replaceBackground")}</option>
-                <option value="outpaint">{t("chatWorkPanel.image.outpaint")}</option>
-                <option value="enhance">{t("chatWorkPanel.image.enhance")}</option>
-              </select>
+            <div className="work-panel-image-toolbar-actions">
+              <button type="button" className="is-primary" disabled={Boolean(aiBusy) || saveBusy} onClick={() => onEditingChange(false)}><CheckOutlined /> {t("chatWorkPanel.image.done")}</button>
+              <button type="button" disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /> {t("chatWorkPanel.image.undo")}</button>
+              <button type="button" disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /> {t("chatWorkPanel.image.redo")}</button>
             </div>
             <div className="work-panel-image-spacer" />
-            <button type="button" onClick={() => stepZoom(-1)}><ZoomOutOutlined /></button>
-            <span className="work-panel-image-zoom-control is-compact">
-              <input type="number" min={10} max={800} value={Math.round(effectiveZoom)} onChange={(event) => changeZoom(Number(event.target.value))} />
-              <span>%</span>
-            </span>
-            <button type="button" onClick={() => stepZoom(1)}><ZoomInOutlined /></button>
-            <span className="work-panel-image-open-with">
-              <ExportOutlined aria-hidden="true" />
-              <select aria-label={t("chatWorkPanel.image.openWith")} disabled={Boolean(aiBusy) || saveBusy} value="" onChange={(event) => {
-                const mode = event.target.value as "default" | "choose";
-                if (mode) void openExternal(mode);
-              }}>
-                <option value="" disabled>{t(resource.localOriginal ? "chatWorkPanel.image.openWith" : "chatWorkPanel.image.downloadOpen")}</option>
-                <option value="default">{t("chatWorkPanel.image.openDefault")}</option>
-                <option value="choose">{t("chatWorkPanel.image.openOther")}</option>
-              </select>
-            </span>
-            <button type="button" className="is-primary" disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /> {t("chatWorkPanel.image.save")}</button>
+            <div className="work-panel-image-toolbar-actions">
+              <button type="button" onClick={() => stepZoom(-1)} aria-label={t("chatWorkPanel.image.zoomOut")}><ZoomOutOutlined /></button>
+              <span className="work-panel-image-zoom-control is-compact">
+                <input type="number" min={10} max={800} value={Math.round(effectiveZoom)} aria-label={t("chatWorkPanel.image.zoom")} onChange={(event) => changeZoom(Number(event.target.value))} />
+                <span>%</span>
+              </span>
+              <button type="button" onClick={() => stepZoom(1)} aria-label={t("chatWorkPanel.image.zoomIn")}><ZoomInOutlined /></button>
+              <button type="button" className="is-primary" disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /> {t("chatWorkPanel.image.save")}</button>
+            </div>
           </>
         )}
       </div>
 
+      <div className="work-panel-image-body">
+        {editing ? (
+          <aside className="work-panel-image-editor-sidebar" role="toolbar" aria-orientation="vertical" aria-label={t("chatWorkPanel.image.photoTools")}>
+            <div className="work-panel-image-editor-tool-group">
+              <button type="button" className={tool === "pan" ? "is-active" : ""} title={t("chatWorkPanel.image.pan")} aria-label={t("chatWorkPanel.image.pan")} onClick={() => setTool("pan")}><DragOutlined /></button>
+              <button type="button" className={tool === "annotate" ? "is-active" : ""} title={t("chatWorkPanel.image.annotate")} aria-label={t("chatWorkPanel.image.annotate")} disabled={Boolean(aiBusy)} onClick={() => setTool("annotate")}><HighlightOutlined /></button>
+              <button type="button" className={tool === "select" ? "is-active" : ""} title={t("chatWorkPanel.image.selection")} aria-label={t("chatWorkPanel.image.selection")} disabled={Boolean(aiBusy)} onClick={() => setTool("select")}><BorderOutlined /></button>
+              <button type="button" className={tool === "crop" ? "is-active" : ""} title={t("chatWorkPanel.image.crop")} aria-label={t("chatWorkPanel.image.crop")} disabled={Boolean(aiBusy)} onClick={() => setTool("crop")}><ScissorOutlined /></button>
+              {tool === "crop" && cropRect ? <button type="button" className="is-confirm" title={t("chatWorkPanel.image.apply")} aria-label={t("chatWorkPanel.image.apply")} onClick={() => void applyCrop()}><CheckOutlined /></button> : null}
+            </div>
+            <div className="work-panel-image-editor-tool-group is-secondary">
+              <button type="button" title={t("chatWorkPanel.image.rotate")} aria-label={t("chatWorkPanel.image.rotate")} disabled={Boolean(aiBusy)} onClick={() => void transform("rotate")}><RotateRightOutlined /></button>
+              <button type="button" title={t("chatWorkPanel.image.flipHorizontal")} aria-label={t("chatWorkPanel.image.flipHorizontal")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-x")}><span aria-hidden="true">↔</span></button>
+              <button type="button" title={t("chatWorkPanel.image.flipVertical")} aria-label={t("chatWorkPanel.image.flipVertical")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-y")}><span aria-hidden="true">↕</span></button>
+              <button type="button" className={resizeAspectLocked ? "is-active" : ""} title={t("chatWorkPanel.image.lockAspect")} aria-label={t("chatWorkPanel.image.lockAspect")} disabled={Boolean(aiBusy)} aria-pressed={resizeAspectLocked} onClick={() => setResizeAspectLocked((value) => !value)}><LinkOutlined /></button>
+              <button type="button" title={t("chatWorkPanel.image.resize")} aria-label={t("chatWorkPanel.image.resize")} disabled={Boolean(aiBusy)} onClick={() => void resizeImage()}><CompressOutlined /></button>
+              <button type="button" className={adjustOpen ? "is-active" : ""} title={t("chatWorkPanel.image.adjust")} aria-label={t("chatWorkPanel.image.adjust")} disabled={Boolean(aiBusy)} onClick={() => {
+                setAiOpen(false);
+                setAdjustOpen((value) => !value);
+              }}><ControlOutlined /></button>
+            </div>
+            <div className="work-panel-image-more">
+              <button type="button" className={aiOpen ? "is-active is-ai" : "is-ai"} title={t("chatWorkPanel.image.aiTools")} aria-label={t("chatWorkPanel.image.aiTools")} aria-expanded={aiOpen} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setError("");
+                setAiOpen((value) => !value);
+              }}><RobotOutlined /></button>
+            </div>
+          </aside>
+        ) : null}
+        <div className="work-panel-image-content">
+
+      {editing && tool === "annotate" ? (
+        <div className="work-panel-image-subtoolbar is-guidance" role="status">
+          <HighlightOutlined />
+          <strong>{t("chatWorkPanel.image.annotationHintTitle")}</strong>
+          <span>{t("chatWorkPanel.image.annotationHint")}</span>
+        </div>
+      ) : null}
+
       {editing && tool === "select" ? (
         <div className="work-panel-image-subtoolbar">
+          <span className="work-panel-image-subtoolbar-hint"><BorderOutlined /> {t("chatWorkPanel.image.selectionHint")}</span>
           <select value={selectionTool} onChange={(event) => setSelectionTool(event.target.value as SelectionTool)}>
             <option value="rectangle">{t("chatWorkPanel.image.selectionRectangle")}</option>
             <option value="ellipse">{t("chatWorkPanel.image.selectionEllipse")}</option>
@@ -940,6 +1050,42 @@ export function WorkPanelResourceImage({
         </div>
       ) : null}
 
+      {editing && aiOpen ? (
+        <section className={`work-panel-image-ai-panel${annotations.length > 0 ? " has-annotations" : ""}`} aria-label={t("chatWorkPanel.image.aiTools")}>
+          <header>
+            <span><ThunderboltOutlined /> <strong>{t("chatWorkPanel.image.aiTools")}</strong></span>
+            <button type="button" aria-label={t("common.close")} onClick={() => setAiOpen(false)}>×</button>
+          </header>
+          <p>{t("chatWorkPanel.image.aiPanelHint")}</p>
+          <div className="work-panel-image-ai-region-actions">
+            <button type="button" className={tool === "select" ? "is-active" : ""} onClick={() => setTool("select")}><BorderOutlined /> {t("chatWorkPanel.image.useSelection")}</button>
+            <button type="button" className={tool === "annotate" ? "is-active" : ""} onClick={() => setTool("annotate")}><HighlightOutlined /> {t("chatWorkPanel.image.useAnnotation")}</button>
+          </div>
+          <div className="work-panel-image-ai-region-status">
+            <span className={hasSelection ? "is-ready" : ""}>{hasSelection ? t("chatWorkPanel.image.selectionReady") : t("chatWorkPanel.image.selectionEmpty")}</span>
+            <span className={annotations.length > 0 ? "is-ready" : ""}>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
+          </div>
+          {error ? <div className="work-panel-image-ai-inline-error" role="alert">{error}</div> : null}
+          <label className="work-panel-image-ai-instruction">
+            <span>{t("chatWorkPanel.image.aiInstruction")}</span>
+            <textarea
+              value={aiInstruction}
+              maxLength={4_000}
+              placeholder={t("chatWorkPanel.image.aiInstructionPlaceholder")}
+              onChange={(event) => setAiInstruction(event.target.value)}
+            />
+          </label>
+          <div className="work-panel-image-ai-tools">
+            <button type="button" className="is-primary" onClick={() => void runAi("inpaint")}><ThunderboltOutlined /> {t("chatWorkPanel.image.smartEdit")}</button>
+            <button type="button" onClick={() => void runAi("removeObject")}><EditOutlined /> {t("chatWorkPanel.image.removeObject")}</button>
+            <button type="button" onClick={() => void runAi("removeBackground")}><BgColorsOutlined /> {t("chatWorkPanel.image.removeBackground")}</button>
+            <button type="button" onClick={() => void runAi("replaceBackground")}><PictureOutlined /> {t("chatWorkPanel.image.replaceBackground")}</button>
+            <button type="button" onClick={() => void runAi("outpaint")}><ExpandOutlined /> {t("chatWorkPanel.image.outpaint")}</button>
+            <button type="button" onClick={() => void runAi("enhance")}><ControlOutlined /> {t("chatWorkPanel.image.enhance")}</button>
+          </div>
+        </section>
+      ) : null}
+
       {sourceConflict ? (
         <div className="work-panel-image-conflict" role="alert">
           <span>{t("chatWorkPanel.image.sourceConflict")}</span>
@@ -965,16 +1111,44 @@ export function WorkPanelResourceImage({
               onPointerDown={pointerDown}
               onPointerMove={pointerMove}
               onPointerUp={pointerUp}
-              onPointerCancel={() => { panRef.current = null; drawStartRef.current = null; }}
+              onPointerCancel={() => {
+                panRef.current = null;
+                drawStartRef.current = null;
+                drawPointsRef.current = [];
+                setGesturePreview(null);
+              }}
             >
               <img src={current.url} alt={resource.fileName} draggable={false} style={{ filter: imageFilter }} />
               <canvas ref={selectionCanvasRef} className="work-panel-image-selection-layer" />
+              {gesturePreview?.kind === "select" && gesturePreview.points.length > 0 ? (
+                <svg className={`work-panel-image-selection-preview is-${selectionMode}`} viewBox={`0 0 ${current.width} ${current.height}`} preserveAspectRatio="none" aria-hidden="true">
+                  {gesturePreview.shape === "rectangle" && gesturePreview.points[1] ? (() => {
+                    const rect = rectFromPoints(gesturePreview.points[0], gesturePreview.points[1]);
+                    return <rect x={rect.x} y={rect.y} width={rect.width} height={rect.height} />;
+                  })() : null}
+                  {gesturePreview.shape === "ellipse" && gesturePreview.points[1] ? (() => {
+                    const rect = rectFromPoints(gesturePreview.points[0], gesturePreview.points[1]);
+                    return <ellipse cx={rect.x + rect.width / 2} cy={rect.y + rect.height / 2} rx={rect.width / 2} ry={rect.height / 2} />;
+                  })() : null}
+                  {gesturePreview.shape === "lasso" ? <polygon points={gesturePreview.points.map((point) => `${point.x},${point.y}`).join(" ")} /> : null}
+                  {gesturePreview.shape === "brush" ? <polyline points={gesturePreview.points.map((point) => `${point.x},${point.y}`).join(" ")} style={{ strokeWidth: brushSize }} /> : null}
+                </svg>
+              ) : null}
               {cropRect ? <div className="work-panel-image-crop-rect" style={{
                 left: cropRect.x * effectiveZoom / 100,
                 top: cropRect.y * effectiveZoom / 100,
                 width: cropRect.width * effectiveZoom / 100,
                 height: cropRect.height * effectiveZoom / 100,
               }} /> : null}
+              {gesturePreview?.kind === "annotate" && gesturePreview.points[1] ? (() => {
+                const rect = rectFromPoints(gesturePreview.points[0], gesturePreview.points[1]);
+                return <div className="work-panel-image-annotation is-preview" style={{
+                  left: rect.x * effectiveZoom / 100,
+                  top: rect.y * effectiveZoom / 100,
+                  width: rect.width * effectiveZoom / 100,
+                  height: rect.height * effectiveZoom / 100,
+                }}><span>+</span></div>;
+              })() : null}
               {annotations.map((annotation) => (
                 <div key={annotation.id} className="work-panel-image-annotation" style={{
                   left: annotation.rect.x * effectiveZoom / 100,
@@ -990,30 +1164,50 @@ export function WorkPanelResourceImage({
         ) : null}
       </div>
 
-      {editing && annotations.length > 0 ? (
-        <aside className="work-panel-image-annotations">
-          <strong>{t("chatWorkPanel.image.annotations")}</strong>
+      {editing && (tool === "annotate" || annotations.length > 0) ? (
+        <aside className={`work-panel-image-annotations${aiOpen ? " has-ai-panel" : ""}`}>
+          <header>
+            <strong>{t("chatWorkPanel.image.annotations")}</strong>
+            <span>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
+          </header>
+          {annotations.length === 0 ? <p>{t("chatWorkPanel.image.annotationEmpty")}</p> : null}
           {annotations.map((annotation) => (
             <label key={annotation.id}>
               <span>{annotation.number}</span>
-              <textarea value={annotation.requirement} maxLength={1_000} onChange={(event) => setAnnotations((items) => items.map((item) => item.id === annotation.id ? { ...item, requirement: event.target.value } : item))} />
-              <button type="button" onClick={() => setAnnotations((items) => items.filter((item) => item.id !== annotation.id).map((item, index) => ({ ...item, number: index + 1 })))}>{t("chatWorkPanel.image.remove")}</button>
+              <textarea
+                value={annotation.requirement}
+                maxLength={1_000}
+                autoFocus={annotation.id === activeAnnotationId}
+                placeholder={t("chatWorkPanel.image.annotationPlaceholder")}
+                onFocus={() => setActiveAnnotationId(annotation.id)}
+                onChange={(event) => setAnnotations((items) => items.map((item) => item.id === annotation.id ? { ...item, requirement: event.target.value } : item))}
+              />
+              <button type="button" onClick={() => {
+                setAnnotations((items) => items.filter((item) => item.id !== annotation.id).map((item, index) => ({ ...item, number: index + 1 })));
+                if (activeAnnotationId === annotation.id) setActiveAnnotationId("");
+              }}>{t("chatWorkPanel.image.remove")}</button>
             </label>
           ))}
-          <button type="button" className="is-primary" disabled={handoffBusy} onClick={() => void handoff()}>{t("chatWorkPanel.image.handoff")}</button>
+          {annotations.length > 0 ? (
+            <button type="button" className="is-primary" disabled={handoffBusy || annotations.some((annotation) => !annotation.requirement.trim())} onClick={() => void handoff()}>{t("chatWorkPanel.image.handoff")}</button>
+          ) : null}
         </aside>
       ) : null}
+        </div>
+      </div>
 
       {saveOpen ? (
         <div className="work-panel-image-modal-backdrop" role="presentation" onMouseDown={() => !saveBusy && setSaveOpen(false)}>
           <div className="work-panel-image-save-dialog" role="dialog" aria-modal="true" aria-label={t("chatWorkPanel.image.saveChoice")} onMouseDown={(event) => event.stopPropagation()}>
             <strong>{t("chatWorkPanel.image.saveChoice")}</strong>
             <p>{t("chatWorkPanel.image.saveChoiceDescription")}</p>
-            {resource.profile === "artifact" && !sourceConflict ? (
-              <button type="button" disabled={saveBusy} onClick={() => void save("overwrite")}>{t("chatWorkPanel.image.overwrite")}</button>
-            ) : null}
-            <button type="button" className="is-primary" disabled={saveBusy} onClick={() => void save("new-artifact")}>{t("chatWorkPanel.image.saveNew")}</button>
-            <button type="button" disabled={saveBusy} onClick={() => setSaveOpen(false)}>{t("chatWorkPanel.image.cancel")}</button>
+            <div className="work-panel-image-save-actions">
+              <button type="button" disabled={saveBusy} onClick={() => setSaveOpen(false)}>{t("chatWorkPanel.image.cancel")}</button>
+              {resource.profile === "artifact" && !sourceConflict ? (
+                <button type="button" disabled={saveBusy} onClick={() => void save("overwrite")}>{t("chatWorkPanel.image.overwrite")}</button>
+              ) : null}
+              <button type="button" className="is-primary" disabled={saveBusy} onClick={() => void save("new-artifact")}>{t("chatWorkPanel.image.saveNew")}</button>
+            </div>
           </div>
         </div>
       ) : null}

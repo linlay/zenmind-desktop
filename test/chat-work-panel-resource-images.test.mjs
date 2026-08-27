@@ -241,7 +241,7 @@ test("native image AI and Reference overwrite fail before privileged execution",
       edgeMode: "soft",
     }, webContents);
     assert.equal(ai.ok, false);
-    assert.match(ai.message, /requires a PNG white edit mask/u);
+    assert.match(ai.message, /regional AI edit requires a PNG white edit mask/u);
 
     const commit = await registry.commit({
       ...base,
@@ -253,6 +253,69 @@ test("native image AI and Reference overwrite fail before privileged execution",
     }, webContents);
     assert.equal(commit.ok, false);
     assert.match(commit.message, /References can only create a new Artifact/u);
+  } finally {
+    registry.dispose();
+    fs.rmSync(homePath, { recursive: true, force: true });
+  }
+});
+
+test("native image regional AI forwards the canonical source, mask, and instruction", async () => {
+  const homePath = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-native-ai-region-home-"));
+  const runtimeRoot = resolveRuntimeRootPath({ homePath, platform: process.platform });
+  const artifactRoot = path.join(runtimeRoot, "chats", "chat-ai", "artifacts", "run-ai");
+  fs.mkdirSync(artifactRoot, { recursive: true });
+  fs.writeFileSync(path.join(artifactRoot, "image.png"), PNG_1X1);
+  const calls = [];
+  const registry = new WorkPanelResourceImageRegistry();
+  configureRegistry(registry, homePath, {
+    assistantBridge: {
+      completeImage: async (input) => {
+        calls.push(input);
+        return { ok: false, runId: "run-ai", chatId: "chat-ai", message: "expected test stop" };
+      },
+      stopRun: async () => ({ ok: true }),
+    },
+  });
+  const webContents = sender(46);
+  try {
+    const prepared = await registry.prepareClaim({
+      ownerChatId: "chat-ai",
+      rendererWebContentsId: webContents.id,
+      profile: "artifact",
+      agentKey: "agent-ai",
+      chatId: "chat-ai",
+      resourceId: "artifact-ai",
+      relativePath: "artifacts/run-ai/image.png",
+    });
+    const claimed = await registry.claim({
+      claimId: prepared.claimId,
+      ownerChatId: "chat-ai",
+      rendererGeneration: "renderer-ai",
+    }, webContents);
+    const result = await registry.runAi({
+      ownerChatId: "chat-ai",
+      rendererGeneration: "renderer-ai",
+      handleId: claimed.resource.handleId,
+      requestId: "request-region",
+      expectedRevision: claimed.resource.revision,
+      operation: "inpaint",
+      sourceMimeType: "image/png",
+      sourceDataBase64: PNG_1X1.toString("base64"),
+      maskDataBase64: PNG_1X1.toString("base64"),
+      prompt: "Make the selected region blue",
+      width: 1,
+      height: 1,
+      preserveComposition: true,
+      edgeMode: "soft",
+    }, webContents);
+    assert.equal(result.ok, false);
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].operation, "inpaint");
+    assert.equal(calls[0].prompt, "Make the selected region blue");
+    assert.deepEqual(calls[0].attachments.map((attachment) => attachment.id), [
+      "image-studio-source",
+      "image-studio-mask",
+    ]);
   } finally {
     registry.dispose();
     fs.rmSync(homePath, { recursive: true, force: true });

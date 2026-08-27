@@ -60,6 +60,7 @@ export type WorkPanelResourceImageActionResult = {
 };
 
 export type WorkPanelResourceImageAiOperation =
+  | "inpaint"
   | "removeObject"
   | "removeBackground"
   | "replaceBackground"
