@@ -251,7 +251,6 @@ const initialState: WorkPanelState = {
     ],
   }],
   visibleOwnerChatIds: ["visual-chat"],
-  webSessionKeysByItemId: {},
   review: EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE,
 };
 

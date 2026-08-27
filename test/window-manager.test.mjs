@@ -16,6 +16,7 @@ const {
 } = await import("../dist-electron/main/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
+const { DESKTOP_SSO_WEBVIEW_PARTITION } = await import("../dist-electron/shared/sso.js");
 const {
   isWorkPanelCloseShortcut,
   resolveGlobalSearchCommandShortcut,
@@ -1494,7 +1495,7 @@ test("window manager confines service and review preloads to their trusted webvi
     params: {
       preload: "file:///app/preload/work-panel-preview.js",
       src: "https://example.test/page",
-      partition: "work-panel-abc123-def456",
+      partition: DESKTOP_SSO_WEBVIEW_PARTITION,
     },
     servicePreloadPath: "C:/app/preload/service-webview.js",
     servicePreloadUrl: "file:///app/preload/service-webview.js",
@@ -1505,6 +1506,23 @@ test("window manager confines service and review preloads to their trusted webvi
   assert.equal(webReviewPreferences.nodeIntegration, false);
   assert.equal(webReviewPreferences.contextIsolation, true);
   assert.equal(webReviewPreferences.sandbox, true);
+
+  const isolatedWorkPanelReview = prepareWebviewAttachPreferences({
+    webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "https://example.test/page",
+      partition: "work-panel-abc123-def456",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+  });
+  assert.deepEqual(isolatedWorkPanelReview, {
+    ok: false,
+    reason: "unsafe-review-url",
+    src: "https://example.test/page",
+  });
 
   const unsafeReview = prepareWebviewAttachPreferences({
     webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },

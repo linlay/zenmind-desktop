@@ -86,15 +86,17 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
   assert.match(read("src/renderer/app-shell/navigation/AppSidebar.tsx"), /onCloseChatWorkPanel\?\.\(chat\.chatId, true\)/u);
 });
 
-test("WorkPanel enforces one ephemeral Web guest per item and explicit platform focus branches", () => {
+test("WorkPanel Web guests share application cookies and keep explicit platform focus branches", () => {
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const externalWebview = read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx");
   const reducer = read("src/shared/work-panel.ts");
 
-  assert.match(host, /resolveWorkPanelWebSessionKey\([\s\S]{0,100}workspace\.workspaceId,[\s\S]{0,80}item\.itemId/u);
+  assert.match(host, /from "\.\.\/\.\.\/shared\/sso"/u);
+  assert.match(host, /partition=\{item\.descriptor\.kind === "local-file"[\s\S]{0,180}DESKTOP_SSO_WEBVIEW_PARTITION\}/u);
+  assert.match(host, /refreshOnDesktopSso=\{item\.descriptor\.kind === "web"/u);
+  assert.doesNotMatch(host, /resolveWorkPanelWebSessionKey|itemPartition|clearSession/u);
   assert.match(host, /type: "openBlobPopup"/u);
   assert.match(host, /navigationKind === "blob"/u);
-  assert.match(host, /clearSession\?\.\(\{ partition \}\)/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
   assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web" \|\| \([\s\S]*?item\.descriptor\.reviewKind === "html"/u);
   assert.match(host, /workPanelToolbarKind=\{item\.descriptor\.kind === "local-file" \? "document" : "web"\}/u);

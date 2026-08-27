@@ -24,9 +24,8 @@ import { createPortal } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
   normalizeWorkPanelWebUrl,
-  resolveWorkPanelWebSessionKey,
-  stableWorkPanelHash,
 } from "../../shared/work-panel";
+import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../shared/sso";
 import { normalizeWebviewBlobPopupUrl } from "../../shared/webview-popup";
 import {
   resolveChatWorkPanelLocalResourcePath,
@@ -107,10 +106,6 @@ type WorkPanelHostProps = {
 
 function actionError(code: string, message: string, details?: unknown) {
   return { ok: false as const, error: { code, message, ...(details === undefined ? {} : { details }) } };
-}
-
-function itemPartition(workspaceId: string, itemId: string) {
-  return `work-panel-${stableWorkPanelHash(workspaceId)}-${stableWorkPanelHash(itemId)}`;
 }
 
 function itemRuntimeKey(ownerChatId: string, itemId: string) {
@@ -302,7 +297,6 @@ export function WorkPanelHost({
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef(state);
-  const previousWebPartitionsRef = useRef(new Set<string>());
   const previousLocalFileHandlesRef = useRef(new Map<string, string>());
   const previousResourceImageHandlesRef = useRef(new Map<string, string>());
   const rendererGenerationRef = useRef(globalThis.crypto.randomUUID());
@@ -1315,22 +1309,6 @@ export function WorkPanelHost({
   }, []);
 
   useEffect(() => {
-    const nextPartitions = new Set(
-      state.workspaces.flatMap((workspace) => workspace.items
-        .filter((item) => item.descriptor.kind === "web")
-        .map((item) => itemPartition(
-          workspace.workspaceId,
-          resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
-        ))),
-    );
-    for (const partition of previousWebPartitionsRef.current) {
-      if (nextPartitions.has(partition)) continue;
-      void window.electronAPI.chatWorkPanel?.clearSession?.({ partition }).catch(() => undefined);
-    }
-    previousWebPartitionsRef.current = nextPartitions;
-  }, [state.webSessionKeysByItemId, state.workspaces]);
-
-  useEffect(() => {
     const nextHandles = new Map<string, string>();
     for (const workspace of state.workspaces) {
       for (const item of workspace.items) {
@@ -2093,10 +2071,7 @@ export function WorkPanelHost({
                           ownerChatId={workspace.ownerChatId}
                           partition={item.descriptor.kind === "local-file"
                             ? createWorkPanelLocalFilePartition(item.descriptor.handleId)
-                            : itemPartition(
-                                workspace.workspaceId,
-                                resolveWorkPanelWebSessionKey(state, workspace.workspaceId, item.itemId),
-                              )}
+                            : DESKTOP_SSO_WEBVIEW_PARTITION}
                           publishPageContext={false}
                           preloadUrl={item.descriptor.kind === "local-file" && item.descriptor.reviewKind
                             ? reviewPreloadUrl
@@ -2110,6 +2085,9 @@ export function WorkPanelHost({
                             ? (page) => toggleReviewForItem(workspace.ownerChatId, item, page)
                             : undefined}
                           registerPublicWebSurface={false}
+                          refreshOnDesktopSso={item.descriptor.kind === "web" && Boolean(
+                            normalizeWorkPanelWebUrl(item.descriptor.url),
+                          )}
                           showToolbar={item.descriptor.kind === "web" || (
                             item.descriptor.kind === "local-file" && item.descriptor.reviewKind === "html"
                           )}

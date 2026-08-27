@@ -81,8 +81,8 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## Session 与页面隔离
 
-- 登录页面和需要 Cookie SSO 的 Website 使用专用、持久化的 Electron partition。
-- 普通 WebApp、Help、浏览器页面与内置服务不因 URL 相似而继承 SSO 能力。
+- 登录页面、Website 与普通 WorkPanel Web 使用专用、持久化的 Desktop 应用浏览器 partition，共享 Chromium 管理的应用 Cookie；WorkPanel 仍不获得 token 文件或 Token Bridge。
+- 普通 WebApp、Help、内置 Browser 与内置服务不因 URL 相似而继承该应用 Cookie session 或 SSO 能力。
 - 登录成功后的页面刷新由显式 capability 控制，不根据路由或域名猜测。
 - 退出只清理配置中已知的身份来源与派生 Cookie，不影响无关网站数据。
 - 认证头像只允许来自配置的可信官网来源；主进程下载并转换为品牌隔离的本地协议 URL。

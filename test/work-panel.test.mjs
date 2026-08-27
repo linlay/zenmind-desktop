@@ -7,7 +7,6 @@ const {
   EMPTY_WORK_PANEL_STATE,
   normalizeWorkPanelWebUrl,
   reduceWorkPanelCommand,
-  resolveWorkPanelWebSessionKey,
 } = require("../dist-electron/shared/work-panel.js");
 const { WORK_PANEL_NATIVE_SURFACE_ALLOWLIST } = require("../dist-electron/shared/work-panel-native-registry.js");
 const {
@@ -465,7 +464,7 @@ test("WorkPanel rejects untrusted fields and only accepts the registered host na
   assert.equal(resourceImage.item.stableKey, "resource-image:artifact:agent:chat:artifact-1");
 });
 
-test("trusted WorkPanel Blob popups inherit their source session without widening public URL inputs", () => {
+test("trusted WorkPanel Blob popups stay source-bound without widening public URL inputs", () => {
   const source = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "web",
     url: "https://example.test/attachments",
@@ -488,14 +487,7 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
   assert.equal(popup.ok, true);
   assert.equal(popup.item.descriptor.url, blobUrl);
   assert.equal(popup.item.title, "example.test");
-  assert.equal(
-    resolveWorkPanelWebSessionKey(popup.nextState, popup.workspaceId, popup.item.itemId),
-    source.item.itemId,
-  );
-  assert.equal(
-    popup.item.stableKey,
-    `blob:${source.item.itemId}:${blobUrl}`,
-  );
+  assert.equal(popup.item.stableKey, `blob:${blobUrl}`);
 
   const duplicate = reduceWorkPanelCommand(popup.nextState, {
     type: "openBlobPopup",
@@ -515,14 +507,6 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
     url: descendantUrl,
   });
   assert.equal(descendant.ok, true);
-  assert.equal(
-    resolveWorkPanelWebSessionKey(
-      descendant.nextState,
-      descendant.workspaceId,
-      descendant.item.itemId,
-    ),
-    source.item.itemId,
-  );
 
   const missingSource = reduceWorkPanelCommand(descendant.nextState, {
     type: "openBlobPopup",
@@ -539,10 +523,7 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
     itemId: source.item.itemId,
   });
   assert.equal(closeSource.ok, true);
-  assert.equal(
-    resolveWorkPanelWebSessionKey(closeSource.nextState, popup.workspaceId, popup.item.itemId),
-    source.item.itemId,
-  );
+  assert.equal(closeSource.state.items.some((item) => item.itemId === popup.item.itemId), true);
 
   const closePopup = reduceWorkPanelCommand(closeSource.nextState, {
     type: "closeItem",
@@ -555,10 +536,10 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
     itemId: descendant.item.itemId,
   });
   assert.equal(closeDescendant.ok, true);
-  assert.deepEqual(closeDescendant.nextState.webSessionKeysByItemId, {});
+  assert.equal(closeDescendant.nextState.workspaces.length, 0);
 });
 
-test("WorkPanel Blob session affinity remains isolated when item identities match across chats", () => {
+test("WorkPanel Blob item identity remains isolated by workspace while application cookies are shared", () => {
   const sourceA = open(EMPTY_WORK_PANEL_STATE, "chat-a", {
     kind: "web",
     url: "https://example.test/attachments",
@@ -582,7 +563,6 @@ test("WorkPanel Blob session affinity remains isolated when item identities matc
     url: blobUrl,
   });
   assert.equal(popupA.item.itemId, popupB.item.itemId);
-  assert.equal(Object.keys(popupB.nextState.webSessionKeysByItemId).length, 2);
 
   const closedA = reduceWorkPanelCommand(popupB.nextState, {
     type: "closeWorkspace",
@@ -590,15 +570,9 @@ test("WorkPanel Blob session affinity remains isolated when item identities matc
     force: true,
   });
   assert.equal(closedA.ok, true);
-  assert.equal(Object.keys(closedA.nextState.webSessionKeysByItemId).length, 1);
-  assert.equal(
-    resolveWorkPanelWebSessionKey(
-      closedA.nextState,
-      popupB.workspaceId,
-      popupB.item.itemId,
-    ),
-    sourceB.item.itemId,
-  );
+  assert.equal(closedA.nextState.workspaces.length, 1);
+  assert.equal(closedA.nextState.workspaces[0].ownerChatId, "chat-b");
+  assert.equal(closedA.nextState.workspaces[0].items.some((item) => item.itemId === popupB.item.itemId), true);
 });
 
 test("WorkPanel keeps Platform-resolvable File request paths and deduplicates normalized identities", () => {

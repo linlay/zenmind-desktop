@@ -16,6 +16,7 @@ import {
   isBlobSchemeUrl,
   normalizeWebviewBlobPopupForSource,
 } from "../shared/webview-popup";
+import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../shared/sso";
 import type { DesktopPlatform } from "./platform-adapter";
 
 const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;
@@ -630,10 +631,10 @@ export function prepareWebviewAttachPreferences(input: WebviewAttachInput): Webv
       const isTrustedLocalPreview =
         parsed.protocol === `${CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL}:` &&
         input.isReviewableLocalFileUrl?.(src) === true;
-      const isOrdinaryWorkPanelWeb =
+      const isApplicationCookieWorkPanelWeb =
         (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-        /^work-panel-[a-z\d]+-[a-z\d]+$/u.test(partition);
-      if (parsed.username || parsed.password || (!isTrustedLocalPreview && !isOrdinaryWorkPanelWeb)) {
+        partition === DESKTOP_SSO_WEBVIEW_PARTITION;
+      if (parsed.username || parsed.password || (!isTrustedLocalPreview && !isApplicationCookieWorkPanelWeb)) {
         return { ok: false, reason: "unsafe-review-url", src };
       }
     } catch {

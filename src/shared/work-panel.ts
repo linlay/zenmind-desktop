@@ -35,7 +35,6 @@ import {
 export type WorkPanelState = {
   workspaces: WorkPanelWorkspace[];
   visibleOwnerChatIds: string[];
-  webSessionKeysByItemId: Record<string, string>;
   review: WorkPanelReviewRuntimeState;
 };
 
@@ -97,33 +96,8 @@ export type WorkPanelCommandResult = WorkPanelBridgeResult & {
 export const EMPTY_WORK_PANEL_STATE: WorkPanelState = {
   workspaces: [],
   visibleOwnerChatIds: [],
-  webSessionKeysByItemId: {},
   review: EMPTY_WORK_PANEL_REVIEW_RUNTIME_STATE,
 };
-
-function workPanelWebSessionMapKey(workspaceId: string, itemId: string) {
-  return `${workspaceId}\u0000${itemId}`;
-}
-
-export function resolveWorkPanelWebSessionKey(
-  state: WorkPanelState,
-  workspaceId: string,
-  itemId: string,
-) {
-  return state.webSessionKeysByItemId[workPanelWebSessionMapKey(workspaceId, itemId)] || itemId;
-}
-
-function removeWorkPanelWebSessionKeys(
-  state: WorkPanelState,
-  workspaceId: string,
-  itemIds: string[],
-) {
-  if (itemIds.length === 0) return state.webSessionKeysByItemId;
-  const removed = new Set(itemIds.map((itemId) => workPanelWebSessionMapKey(workspaceId, itemId)));
-  return Object.fromEntries(
-    Object.entries(state.webSessionKeysByItemId).filter(([itemId]) => !removed.has(itemId)),
-  );
-}
 
 function withVisibleWorkspace(state: WorkPanelState, ownerChatId: string) {
   return state.visibleOwnerChatIds.includes(ownerChatId)
@@ -619,11 +593,6 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces: state.workspaces.filter((_, itemIndex) => itemIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
-      webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
-        state,
-        current.workspaceId,
-        current.items.map((item) => item.itemId),
-      ),
       review: withoutReviewSessions(currentReviewState(state), ownerChatId),
     };
     return { ok: true, workspaceId: current.workspaceId, nextState };
@@ -637,8 +606,7 @@ export function reduceWorkPanelCommand(
     }
     const url = normalizeWebviewBlobPopupUrl(command.url);
     if (!url) return fail(state, "invalid_request", "invalid WorkPanel Blob popup URL");
-    const sessionKey = resolveWorkPanelWebSessionKey(state, current.workspaceId, sourceItem.itemId);
-    const stableKey = `blob:${sessionKey}:${url}`;
+    const stableKey = `blob:${url}`;
     const existing = current.items.find((item) => item.stableKey === stableKey);
     const item: WorkPanelItem = existing ?? {
       itemId: `item:${stableWorkPanelHash(stableKey)}`,
@@ -660,10 +628,6 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces,
       visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
-      webSessionKeysByItemId: {
-        ...state.webSessionKeysByItemId,
-        [workPanelWebSessionMapKey(current.workspaceId, item.itemId)]: sessionKey,
-      },
       review: currentReviewState(state),
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
@@ -757,7 +721,6 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces,
       visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
-      webSessionKeysByItemId: state.webSessionKeysByItemId,
       review,
     };
     return { ok: true, workspaceId: nextWorkspace.workspaceId, item, state: nextWorkspace, nextState };
@@ -971,7 +934,6 @@ export function reduceWorkPanelCommand(
       nextState: {
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
-        webSessionKeysByItemId: state.webSessionKeysByItemId,
         review: currentReviewState(state),
       },
     };
@@ -1001,11 +963,6 @@ export function reduceWorkPanelCommand(
       nextState: {
         workspaces,
         visibleOwnerChatIds: withVisibleWorkspace(state, ownerChatId),
-        webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
-          state,
-          current.workspaceId,
-          removedItemIds,
-        ),
         review: withoutReviewSessions(currentReviewState(state), ownerChatId, removedItemIds),
       },
     };
@@ -1026,11 +983,6 @@ export function reduceWorkPanelCommand(
     const nextState = {
       workspaces: state.workspaces.filter((_, nextIndex) => nextIndex !== index),
       visibleOwnerChatIds: withoutVisibleWorkspace(state, ownerChatId),
-      webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
-        state,
-        current.workspaceId,
-        [item.itemId],
-      ),
       review: withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]),
     };
     return { ok: true, workspaceId: current.workspaceId, item, nextState };
@@ -1048,11 +1000,6 @@ export function reduceWorkPanelCommand(
     nextState: {
       workspaces,
       visibleOwnerChatIds: state.visibleOwnerChatIds,
-      webSessionKeysByItemId: removeWorkPanelWebSessionKeys(
-        state,
-        current.workspaceId,
-        [item.itemId],
-      ),
       review: withoutReviewSessions(currentReviewState(state), ownerChatId, [item.itemId]),
     },
   };
