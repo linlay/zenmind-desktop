@@ -1,6 +1,6 @@
 // Generated from src/shared/contracts/agent-webclient-bridge.ts.
 // Do not edit this mirror directly.
-// sha256:21e81324647d7c4580e23b5acb0ac949fa8655b2dcaecb065cbc2b2f71b98f88
+// sha256:7f1d9e07012aab366a39895da2fc347a0e6457e4be23fd913e6f0e383b39fb84
 
 /**
  * Canonical Desktop <-> Agent WebClient bridge contract.
@@ -9,7 +9,7 @@
  * separately released Agent WebClient bundle and must not depend on Electron.
  */
 
-export const AGENT_WEBCLIENT_BRIDGE_VERSION = 4 as const;
+export const AGENT_WEBCLIENT_BRIDGE_VERSION = 5 as const;
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_TRANSPORT_VERSION = 2 as const;
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_GLOBAL =
   "__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__" as const;
@@ -92,6 +92,7 @@ export const AGENT_WEBCLIENT_BRIDGE_ERROR_CODES = [
   "target_unavailable",
   "unsupported_in_current_view",
   "unsupported_native_surface",
+  "unsupported_native_type",
   "seq_expired",
   "replay_required",
   "protocol_error",
@@ -321,7 +322,7 @@ export type WorkPanelItemDescriptor =
   | {
       kind: "native";
       surfaceKey: string;
-      context: Record<string, never>;
+      context: Record<string, string | number | boolean>;
       title?: string;
       pinned?: boolean;
       closable?: boolean;
@@ -375,6 +376,25 @@ export type WorkPanelOpenItemInput = {
   descriptor: WorkPanelItemDescriptor;
 };
 
+export type WorkPanelOpenResourceInput = {
+  version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
+  profile: "artifact" | "reference";
+  agentKey: string;
+  chatId: string;
+  resourceId: string;
+  relativePath: string;
+  title?: string;
+};
+
+export type WorkPanelOpenResourceResult =
+  | {
+      ok: true;
+      workspaceId: string;
+      itemId: string;
+      renderer: "native-image";
+    }
+  | AgentWebclientBridgeFailure;
+
 export type WorkPanelItemTargetInput = {
   version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
   itemId: string;
@@ -395,12 +415,13 @@ export type WorkPanelCapabilityResult =
 
 export type AgentWebclientWorkPanelBridge = {
   getCapabilities(): Promise<WorkPanelCapabilityResult>;
+  openResource(input: WorkPanelOpenResourceInput): Promise<WorkPanelOpenResourceResult>;
   openItem(input: WorkPanelOpenItemInput): Promise<WorkPanelBridgeResult>;
   activateItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
   closeItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
 };
 
-export function isAgentWebclientBridgeVersion(value: unknown): value is 4 {
+export function isAgentWebclientBridgeVersion(value: unknown): value is 5 {
   return value === AGENT_WEBCLIENT_BRIDGE_VERSION;
 }
 

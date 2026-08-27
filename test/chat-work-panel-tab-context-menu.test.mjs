@@ -461,13 +461,17 @@ test("Work Panel local resource open and reveal IPCs are main-window-owned", asy
     relativePath: "artifacts/run/report.docx",
     profile: "artifact",
   };
-  assert.equal((await handler({ sender }, request)).ok, true);
+  const openResult = await handler({ sender }, request);
+  assert.equal(openResult.ok, true);
+  assert.equal("path" in openResult, false);
   assert.deepEqual(opened, [request]);
   assert.equal((await handler({ sender: {} }, request)).code, "invalid_request");
   assert.equal((await handler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");
 
   const revealHandler = handlers.get("chatWorkPanel.revealLocalResource");
-  assert.equal((await revealHandler({ sender }, request)).ok, true);
+  const revealResult = await revealHandler({ sender }, request);
+  assert.equal(revealResult.ok, true);
+  assert.equal("path" in revealResult, false);
   assert.deepEqual(revealed, [request]);
   assert.equal((await revealHandler({ sender: {} }, request)).code, "invalid_request");
   assert.equal((await revealHandler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");

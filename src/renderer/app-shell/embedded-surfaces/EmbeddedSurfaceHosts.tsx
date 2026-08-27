@@ -160,6 +160,7 @@ export function ServiceWebviewSurfaceHost({
           key={AGENT_WEBCLIENT_CHAT_SURFACE_ID}
           active={activeServiceId === AGENT_WEBCLIENT_SERVICE_ID && activeAgentWebclientRouteKind === "chat"}
           embedPath={agentChatRoute?.embedPath}
+          enableAgentWebclientChatResourceActions
           focusRequestId={agentChatFocusRequestId}
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(agentChatRoute?.embedPath)}

@@ -20,6 +20,7 @@ import {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   openChatWorkPanelResourceInDefaultApp,
   revealChatWorkPanelResourceInFileManager,
+  toChatWorkPanelLocalResourceActionResult,
 } from "../chat-work-panel-resource-open";
 import { t } from "../i18n/main-i18n";
 
@@ -216,18 +217,30 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
         ownerWindow !== mainWindow ||
         ownerWindow.isDestroyed()
       ) {
-        return { ok: false, code: "invalid_request", message: t("chatWorkPanel.openDefault.invalidPath") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "invalid_request" },
+          "openDefault",
+        );
       }
       if (options.openLocalResource) {
-        return options.openLocalResource(request);
+        return toChatWorkPanelLocalResourceActionResult(
+          await options.openLocalResource(request),
+          "openDefault",
+        );
       }
       if (!options.app) {
-        return { ok: false, code: "open_failed", message: t("chatWorkPanel.openDefault.unavailable") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "open_failed" },
+          "openDefault",
+        );
       }
-      return openChatWorkPanelResourceInDefaultApp(request, {
-        app: options.app,
-        platform: options.platform,
-      });
+      return toChatWorkPanelLocalResourceActionResult(
+        await openChatWorkPanelResourceInDefaultApp(request, {
+          app: options.app,
+          platform: options.platform,
+        }),
+        "openDefault",
+      );
     },
   );
 
@@ -244,18 +257,30 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
         ownerWindow !== mainWindow ||
         ownerWindow.isDestroyed()
       ) {
-        return { ok: false, code: "invalid_request", message: t("chatWorkPanel.reveal.invalidPath") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "invalid_request" },
+          "reveal",
+        );
       }
       if (options.revealLocalResource) {
-        return options.revealLocalResource(request);
+        return toChatWorkPanelLocalResourceActionResult(
+          await options.revealLocalResource(request),
+          "reveal",
+        );
       }
       if (!options.app) {
-        return { ok: false, code: "open_failed", message: t("chatWorkPanel.reveal.unavailable") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "open_failed" },
+          "reveal",
+        );
       }
-      return revealChatWorkPanelResourceInFileManager(request, {
-        app: options.app,
-        platform: options.platform,
-      });
+      return toChatWorkPanelLocalResourceActionResult(
+        await revealChatWorkPanelResourceInFileManager(request, {
+          app: options.app,
+          platform: options.platform,
+        }),
+        "reveal",
+      );
     },
   );
 

@@ -69,6 +69,7 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
   const cleaned = [];
   const pushSubscribers = [];
   const dispatched = [];
+  const openedResources = [];
   const visibleRuns = new Map();
   const visibleSubscriptions = new Map();
   const runReadiness = new Map();
@@ -225,9 +226,13 @@ function createRegistration(targets, forwardRequest, overrides = {}) {
       dispatched.push(input);
       return { ok: true, workspaceId: "workspace-1" };
     },
+    openResource: overrides.openResource ?? (async (input) => {
+      openedResources.push(input);
+      return { ok: true, workspaceId: "workspace-1", itemId: "item-image-1", renderer: "native-image" };
+    }),
   });
   return {
-    broker, calls, cleaned, dispatched, handlers, listeners, pushSubscribers,
+    broker, calls, cleaned, dispatched, openedResources, handlers, listeners, pushSubscribers,
     canonicalSyncs, registration, runReadiness, traces, visibleRuns, visibleSubscriptions,
   };
 }
@@ -2399,6 +2404,71 @@ test("WorkPanel retains an independent host capability query and version check",
     input: { version: 2, descriptor: { kind: "web", url: "https://example.test/" } },
   });
   assert.equal(incompatible.error.code, "version_mismatch");
+});
+
+test("WorkPanel v5 opens validated resources through the native image host and keeps native descriptors private", async () => {
+  const target = createTarget(73);
+  const runtime = createRegistration(new Map([[73, target]]), async () => undefined);
+  const sender = createSender(73, target.currentUrl);
+  const workpanel = runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+  const input = {
+    version: 5,
+    profile: "artifact",
+    agentKey: "agent-73",
+    chatId: "chat-73",
+    resourceId: "artifact-73",
+    relativePath: "artifacts/run-73/image.png",
+    title: "image.png",
+  };
+  assert.deepEqual(await workpanel({ sender }, { method: "openResource", input }), {
+    ok: true,
+    workspaceId: "workspace-1",
+    itemId: "item-image-1",
+    renderer: "native-image",
+  });
+  assert.deepEqual(runtime.openedResources, [{
+    ownerChatId: "chat-73",
+    resource: {
+      profile: "artifact",
+      agentKey: "agent-73",
+      chatId: "chat-73",
+      resourceId: "artifact-73",
+      relativePath: "artifacts/run-73/image.png",
+      title: "image.png",
+    },
+  }]);
+
+  const mismatched = await workpanel({ sender }, {
+    method: "openResource",
+    input: { ...input, chatId: "chat-forged" },
+  });
+  assert.equal(mismatched.ok, false);
+  assert.equal(mismatched.error.code, "capability_denied");
+
+  for (const relativePath of [
+    "references/image.png",
+    "artifacts/../image.png",
+    "artifacts/%2e%2e/image.png",
+    "artifacts/%252e%252e/image.png",
+    "/artifacts/run-73/image.png",
+  ]) {
+    const invalidPath = await workpanel({ sender }, {
+      method: "openResource",
+      input: { ...input, relativePath },
+    });
+    assert.equal(invalidPath.ok, false, relativePath);
+    assert.equal(invalidPath.error.code, "invalid_request", relativePath);
+  }
+
+  const publicNative = await workpanel({ sender }, {
+    method: "openItem",
+    input: {
+      version: 5,
+      descriptor: { kind: "native", surfaceKey: "resource-image", context: {} },
+    },
+  });
+  assert.equal(publicNative.ok, false);
+  assert.equal(publicNative.error.code, "capability_denied");
 });
 
 test("Overview WorkPanel child may open Resource Viewer and Planning tabs", async () => {

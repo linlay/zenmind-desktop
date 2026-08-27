@@ -398,8 +398,10 @@ test("trusted Chat removal can destroy a workspace with pinned items without exp
   assert.deepEqual(removed.nextState.visibleOwnerChatIds, []);
 });
 
-test("WorkPanel rejects untrusted URL/path/identity fields and an empty native registry", () => {
-  assert.deepEqual(WORK_PANEL_NATIVE_SURFACE_ALLOWLIST, []);
+test("WorkPanel rejects untrusted fields and only accepts the registered host native image surface", () => {
+  assert.deepEqual(WORK_PANEL_NATIVE_SURFACE_ALLOWLIST, [
+    { surfaceKey: "resource-image", closableByDefault: true },
+  ]);
   for (const url of ["file:///tmp/secret", "javascript:alert(1)", "https://user:pass@example.test/"]) {
     assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", { kind: "web", url }).ok, false);
   }
@@ -441,6 +443,26 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
   });
   assert.equal(native.ok, false);
   assert.equal(native.error.code, "unsupported_native_surface");
+  const resourceImage = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "native",
+    surfaceKey: "resource-image",
+    context: {
+      handleId: "opaque-handle",
+      profile: "artifact",
+      agentKey: "agent",
+      chatId: "chat",
+      resourceId: "artifact-1",
+      relativePath: "artifacts/run/image.png",
+      fileName: "image.png",
+      mimeType: "image/png",
+      sizeBytes: 123,
+      revision: "123:456",
+      localOriginal: true,
+    },
+  });
+  assert.equal(resourceImage.ok, true);
+  assert.equal(resourceImage.item.descriptor.context.handleId, "opaque-handle");
+  assert.equal(resourceImage.item.stableKey, "resource-image:artifact:agent:chat:artifact-1");
 });
 
 test("trusted WorkPanel Blob popups inherit their source session without widening public URL inputs", () => {

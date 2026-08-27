@@ -26,6 +26,10 @@ export const AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE =
   "desktop:agent-webclient:new-chat:prepare";
 export const AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE =
   "desktop:agent-webclient:new-chat:prepared";
+export const AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE =
+  "desktop:agent-webclient:current-resource:action";
+export const AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE =
+  "desktop:agent-webclient:current-resource:action:response";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -42,6 +46,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE,
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
+  AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -54,6 +59,7 @@ export const SERVICE_WEBVIEW_BRIDGE_RESPONSE_TYPES = [
   DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE,
   DESKTOP_WEBS_LIST_RESPONSE_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
+  AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE,
   PLUGIN_SETTINGS_READ_RESPONSE_TYPE,
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
@@ -86,10 +92,79 @@ export type ServiceWebviewBridgeReservedCapability =
   | "screen.capture"
   | "notification";
 
+export type AgentWebclientCurrentResourceAction = "reveal" | "open-default";
+
+export type AgentWebclientCurrentResourceIdentity = {
+  chatId: string;
+  profile: "artifact" | "reference";
+  relativePath: string;
+};
+
+export type AgentWebclientCurrentResourceActionResult = {
+  ok: boolean;
+  code?: string;
+  message?: string;
+  available?: boolean;
+};
+
+export function normalizeAgentWebclientCurrentResourceIdentity(
+  value: unknown,
+): AgentWebclientCurrentResourceIdentity | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  const chatId = typeof record.chatId === "string" ? record.chatId.trim() : "";
+  const profile = record.profile === "artifact" || record.profile === "reference"
+    ? record.profile
+    : null;
+  const relativePath = typeof record.relativePath === "string"
+    ? record.relativePath.trim()
+    : "";
+  if (
+    !chatId ||
+    chatId.length > 512 ||
+    /[/\\\u0000-\u001f\u007f]/u.test(chatId) ||
+    !profile ||
+    !relativePath ||
+    relativePath.length > 2_048 ||
+    relativePath.startsWith("/") ||
+    relativePath.includes("\\") ||
+    /[\u0000-\u001f\u007f]/u.test(relativePath)
+  ) {
+    return null;
+  }
+  const parts = relativePath.split("/");
+  const expectedRoot = profile === "artifact" ? "artifacts" : "references";
+  if (
+    parts.length < 2 ||
+    parts[0] !== expectedRoot ||
+    parts.some((part) => {
+      if (!part || part === "." || part === "..") return true;
+      let probe = part;
+      for (let depth = 0; depth < 4; depth += 1) {
+        try {
+          const next = decodeURIComponent(probe);
+          if (next === "." || next === ".." || next.includes("/") || next.includes("\\")) {
+            return true;
+          }
+          if (next === probe) return false;
+          probe = next;
+        } catch {
+          return true;
+        }
+      }
+      return /%[\da-f]{2}/iu.test(probe);
+    })
+  ) {
+    return null;
+  }
+  return { chatId, profile, relativePath: parts.join("/") };
+}
+
 export type ServiceWebviewBridgeMessage = {
   type?: string;
   requestId?: string;
   action?: string;
+  code?: string;
   reason?: "missing" | "unauthorized" | "initial" | "navigation" | "route-sync";
   ok?: boolean;
   mode?: "directory";
@@ -120,6 +195,10 @@ export type ServiceWebviewBridgeMessage = {
   desktopAuthContext?: string;
   desktop?: unknown;
   active?: boolean;
+  available?: boolean;
+  chatId?: string;
+  profile?: "artifact" | "reference";
+  relativePath?: string;
   surfaceId?: string;
   agentKey?: string;
   sourceChatId?: string;

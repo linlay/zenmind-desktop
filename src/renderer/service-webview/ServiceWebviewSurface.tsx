@@ -33,6 +33,9 @@ import {
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
+  type AgentWebclientCurrentResourceAction,
+  type AgentWebclientCurrentResourceIdentity,
+  type AgentWebclientCurrentResourceActionResult,
   type ServiceWebviewBridgeMessage,
   type ServiceWebviewModalOverlayState,
 } from "../../shared/service-webview-bridge";
@@ -111,6 +114,11 @@ type ServiceWebviewSurfaceProps = {
   onFocusRequestHandled?: (requestId: number) => void;
   onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
   onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
+  onAgentWebclientCurrentResourceAction?: (
+    action: AgentWebclientCurrentResourceAction,
+    resource: AgentWebclientCurrentResourceIdentity,
+  ) => Promise<AgentWebclientCurrentResourceActionResult>;
+  enableAgentWebclientChatResourceActions?: boolean;
 };
 
 type EmbeddedWebScriptResult =
@@ -493,6 +501,8 @@ export function ServiceWebviewSurface({
   onFocusRequestHandled,
   onCurrentUrlChange,
   onIpcMessage,
+  onAgentWebclientCurrentResourceAction,
+  enableAgentWebclientChatResourceActions,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -510,6 +520,44 @@ export function ServiceWebviewSurface({
   const surfaceId = surfaceIdentity.surfaceId || surfaceIdProp?.trim() || serviceId;
   const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const { locale, t } = useI18n();
+  const runOwnedAgentWebclientResourceAction = useCallback(async (
+    action: AgentWebclientCurrentResourceAction,
+    resource: AgentWebclientCurrentResourceIdentity,
+  ): Promise<AgentWebclientCurrentResourceActionResult> => {
+    const normalizedOwnerChatId = ownerChatId?.trim() ?? "";
+    if (
+      !enableAgentWebclientChatResourceActions ||
+      !normalizedOwnerChatId ||
+      resource.chatId !== normalizedOwnerChatId
+    ) {
+      return {
+        ok: false,
+        code: "invalid_request",
+        message: t("chatWorkPanel.resourceActions.failed"),
+      };
+    }
+    try {
+      const request = {
+        ownerChatId: normalizedOwnerChatId,
+        profile: resource.profile,
+        relativePath: resource.relativePath,
+      };
+      return action === "reveal"
+        ? await window.electronAPI.chatWorkPanelTabContextMenu.revealLocalResource(request)
+        : await window.electronAPI.chatWorkPanelTabContextMenu.openLocalResource(request);
+    } catch {
+      return {
+        ok: false,
+        code: "open_failed",
+        message: t("chatWorkPanel.resourceActions.failed"),
+      };
+    }
+  }, [enableAgentWebclientChatResourceActions, ownerChatId, t]);
+  const currentResourceActionRunner = onAgentWebclientCurrentResourceAction ?? (
+    enableAgentWebclientChatResourceActions
+      ? runOwnedAgentWebclientResourceAction
+      : undefined
+  );
   const { services, refresh: refreshServices } = useServices();
   const service = services.find((s) => s.id === serviceId);
   const agentPlatformService =
@@ -1758,8 +1806,12 @@ export function ServiceWebviewSurface({
       bridgeProtocol,
       desktopAuthContext:
         service?.id === "agent-webclient" ? webviewReloadKey : undefined,
+      agentWebclientOwnerChatId: ownerChatId,
+      agentWebclientCurrentResourceActionErrorMessage:
+        t("chatWorkPanel.resourceActions.failed"),
       sendBridgeMessageToWebview,
       prepareAgentWebclientNewChat,
+      runAgentWebclientCurrentResourceAction: currentResourceActionRunner,
       setBridgeError,
       logDebug: (stage, message) => {
         console.info("[service-webview]", service?.id || "service", stage, message);

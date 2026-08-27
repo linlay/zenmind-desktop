@@ -23,6 +23,8 @@ import {
   type WorkPanelBridgeResult,
   type WorkPanelItemTargetInput,
   type WorkPanelOpenItemInput,
+  type WorkPanelOpenResourceInput,
+  type WorkPanelOpenResourceResult,
   type CanonicalChatSyncRequest,
   type CanonicalChatSyncResult,
 } from "../../shared/contracts";
@@ -44,6 +46,7 @@ import {
 } from "../../shared/canonical-chat-sync";
 import { readAgentWebclientAgentRouteKey } from "../../shared/agent-webclient-routes";
 import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
+import { normalizeChatWorkPanelOpenLocalResourceRequest } from "../chat-work-panel-resource-open";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
@@ -277,7 +280,7 @@ function bridgeErrorCode(error: unknown): AgentWebclientBridgeErrorCode {
     "bridge_unavailable", "version_mismatch", "invalid_request", "duplicate_id",
     "connection_unavailable", "connection_lost_before_acceptance", "capability_denied",
     "surface_unavailable", "target_unavailable",
-    "unsupported_in_current_view", "unsupported_native_surface", "seq_expired",
+    "unsupported_in_current_view", "unsupported_native_surface", "unsupported_native_type", "seq_expired",
     "replay_required", "protocol_error", "backpressure",
   ].includes(candidate) ? candidate as AgentWebclientBridgeErrorCode : "protocol_error";
 }
@@ -591,6 +594,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     ownerChatId: string;
     args: Record<string, unknown>;
   }): Promise<WorkPanelBridgeResult>;
+  openResource(input: {
+    ownerChatId: string;
+    resource: Omit<WorkPanelOpenResourceInput, "version">;
+  }): Promise<WorkPanelOpenResourceResult>;
 }) {
   const sessions = new Map<string, LogicalSession>();
   const senderSessionKeys = new Map<number, Set<string>>();
@@ -1897,14 +1904,60 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       "workpanel.close" as const,
     ];
     if (method === "getCapabilities") return { ok: true, capabilities };
-    const capabilityAllowed = method === "openItem"
+    const capabilityAllowed = method === "openItem" || method === "openResource"
       ? capabilities.includes("workpanel.open")
       : method === "activateItem" || method === "closeItem";
     if (!capabilityAllowed) return failure("capability_denied", `${context.kind} cannot call ${method}`);
-    const input = record.input as WorkPanelOpenItemInput | WorkPanelItemTargetInput;
-    if (!isPlainBridgeRecord(input) || !isAgentWebclientBridgeVersion(input.version)) {
+    const input = record.input as WorkPanelOpenItemInput | WorkPanelOpenResourceInput | WorkPanelItemTargetInput;
+    const compatibleVersion = isPlainBridgeRecord(input) && (
+      isAgentWebclientBridgeVersion(input.version) ||
+      (input.version === 4 && method !== "openResource")
+    );
+    if (!compatibleVersion) {
       return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);
     }
+    if (method === "openResource") {
+      const resourceInput = input as WorkPanelOpenResourceInput;
+      const allowedKeys = new Set([
+        "version", "profile", "agentKey", "chatId", "resourceId", "relativePath", "title",
+      ]);
+      if (
+        Object.keys(resourceInput).some((key) => !allowedKeys.has(key)) ||
+        (resourceInput.profile !== "artifact" && resourceInput.profile !== "reference") ||
+        !readText(resourceInput.agentKey) ||
+        !readText(resourceInput.chatId) ||
+        !readText(resourceInput.resourceId) ||
+        !readText(resourceInput.relativePath) ||
+        (resourceInput.title !== undefined && !readText(resourceInput.title))
+      ) return failure("invalid_request", "Invalid native image resource request");
+      if (resourceInput.chatId.trim() !== ownerChatId) {
+        return failure("capability_denied", "Resource chat does not match the trusted owner Chat");
+      }
+      const normalizedResource = normalizeChatWorkPanelOpenLocalResourceRequest({
+        ownerChatId,
+        profile: resourceInput.profile,
+        relativePath: resourceInput.relativePath,
+      });
+      if (!normalizedResource) {
+        return failure("invalid_request", "Invalid native image resource path");
+      }
+      return options.openResource({
+        ownerChatId,
+        resource: {
+          profile: resourceInput.profile,
+          agentKey: resourceInput.agentKey.trim(),
+          chatId: resourceInput.chatId.trim(),
+          resourceId: resourceInput.resourceId.trim(),
+          relativePath: normalizedResource.relativePath,
+          ...(resourceInput.title ? { title: resourceInput.title.trim() } : {}),
+        },
+      });
+    }
+    if (
+      method === "openItem" &&
+      isPlainBridgeRecord((input as WorkPanelOpenItemInput).descriptor) &&
+      (input as WorkPanelOpenItemInput).descriptor.kind === "native"
+    ) return failure("capability_denied", "Native WorkPanel descriptors are host-only");
     const args = method === "openItem"
       ? { descriptor: (input as WorkPanelOpenItemInput).descriptor }
       : { itemId: (input as WorkPanelItemTargetInput).itemId };

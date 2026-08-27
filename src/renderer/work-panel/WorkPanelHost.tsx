@@ -12,6 +12,7 @@ import {
   GlobalOutlined,
   MessageOutlined,
   PlusOutlined,
+  PictureOutlined,
   ProjectOutlined,
   RobotOutlined,
   RightOutlined,
@@ -30,6 +31,7 @@ import { normalizeWebviewBlobPopupUrl } from "../../shared/webview-popup";
 import {
   resolveChatWorkPanelLocalResourcePath,
   shouldShowChatWorkPanelLocalResourceActions,
+  type ChatWorkPanelOpenLocalResourceResult,
   type ChatWorkPanelTabContextMenuProfile,
 } from "../../shared/chat-work-panel-tab-context-menu";
 import {
@@ -40,7 +42,10 @@ import {
   AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
   AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION,
 } from "../../shared/contracts/agent-webclient-bridge";
-import { SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL } from "../../shared/service-webview-bridge";
+import {
+  SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
+  type AgentWebclientCurrentResourceIdentity,
+} from "../../shared/service-webview-bridge";
 import {
   WORK_PANEL_PREVIEW_REVIEW_ACTION_CHANNEL,
   WORK_PANEL_PREVIEW_REVIEW_EVENT_CHANNEL,
@@ -69,6 +74,7 @@ import {
   createWorkPanelLocalFileUrl,
 } from "../../shared/chat-work-panel";
 import { WorkPanelReviewPanel } from "./WorkPanelReviewPanel";
+import { WorkPanelResourceImage } from "./WorkPanelResourceImage";
 import { SidebarActionIcon } from "../components/BrandMark";
 
 const ExternalWebviewPage = lazy(() =>
@@ -123,6 +129,23 @@ function localResourceProfile(item: WorkPanelItem) {
   return null;
 }
 
+function matchesLocalResourceIdentity(
+  ownerChatId: string,
+  item: WorkPanelItem,
+  resource: AgentWebclientCurrentResourceIdentity,
+) {
+  const profile = localResourceProfile(item);
+  if (!profile || item.descriptor.kind !== "webclient") return false;
+  const relativePath = resolveChatWorkPanelLocalResourcePath({
+    ownerChatId,
+    profile,
+    route: item.descriptor.route,
+  });
+  return resource.chatId === ownerChatId &&
+    resource.profile === profile &&
+    resource.relativePath === relativePath;
+}
+
 function tabContextMenuProfile(item: WorkPanelItem): ChatWorkPanelTabContextMenuProfile {
   if (item.descriptor.kind === "web") return "web";
   if (item.descriptor.kind === "webclient" && item.descriptor.module === "artifact") {
@@ -138,7 +161,7 @@ function WorkPanelItemIcon({ item }: { item: WorkPanelItem }) {
   if (item.descriptor.kind === "web") return <GlobalOutlined />;
   if (item.descriptor.kind === "webapp-ref") return <AppstoreOutlined />;
   if (item.descriptor.kind === "local-file") return <FileTextOutlined />;
-  if (item.descriptor.kind === "native") return <AppstoreOutlined />;
+  if (item.descriptor.kind === "native") return <PictureOutlined />;
   switch (item.descriptor.module) {
     case "overview":
       return <DashboardOutlined />;
@@ -281,11 +304,11 @@ export function WorkPanelHost({
   const stateRef = useRef(state);
   const previousWebPartitionsRef = useRef(new Set<string>());
   const previousLocalFileHandlesRef = useRef(new Map<string, string>());
+  const previousResourceImageHandlesRef = useRef(new Map<string, string>());
   const rendererGenerationRef = useRef(globalThis.crypto.randomUUID());
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
   const [loadingWebItems, setLoadingWebItems] = useState<Set<string>>(() => new Set());
-  const [busyLocalResourceItems, setBusyLocalResourceItems] = useState<Set<string>>(() => new Set());
   const [addMenuOwnerChatId, setAddMenuOwnerChatId] = useState<string | null>(null);
   const [addMenuView, setAddMenuView] = useState<"root" | "web" | "webapp">("root");
   const [addMenuStyle, setAddMenuStyle] = useState<CSSProperties>({});
@@ -297,6 +320,7 @@ export function WorkPanelHost({
   const [reviewPreviewMetadata, setReviewPreviewMetadata] = useState<Record<string, ReviewPreviewMetadata>>({});
   const [reviewHandoffBusyKeys, setReviewHandoffBusyKeys] = useState<Set<string>>(() => new Set());
   const [reviewErrors, setReviewErrors] = useState<Record<string, string>>({});
+  const [activeImageEditorItemIds, setActiveImageEditorItemIds] = useState<Record<string, string>>({});
   const pendingReviewRequestsRef = useRef(new Map<string, PendingReviewRequest>());
   stateRef.current = state;
 
@@ -486,6 +510,15 @@ export function WorkPanelHost({
   ) => window.confirm(t(messageKey));
 
   const closeItemWithReviewProtection = (ownerChatId: string, itemId: string) => {
+    const nativeImageBusy = rootRef.current?.querySelector<HTMLElement>(
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-saving="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-ai-busy="true"]`,
+    );
+    if (nativeImageBusy) return false;
+    const dirtyNativeImage = rootRef.current?.querySelector<HTMLElement>(
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-dirty="true"]`,
+    );
+    if (dirtyNativeImage && !window.confirm(t("chatWorkPanel.image.confirmDiscardDraft"))) return false;
     const session = getWorkPanelReviewSession(stateRef.current.review, ownerChatId, itemId);
     const force = hasWorkPanelReviewDraft(session)
       ? confirmDiscardReview("chatWorkPanel.review.confirmDiscard")
@@ -502,6 +535,15 @@ export function WorkPanelHost({
     const hasDrafts = removedIds.some((removedId) =>
       hasWorkPanelReviewDraft(getWorkPanelReviewSession(stateRef.current.review, ownerChatId, removedId)),
     );
+    const hasNativeDrafts = removedIds.some((removedId) => rootRef.current?.querySelector(
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-dirty="true"]`,
+    ));
+    const hasBusyNativeImages = removedIds.some((removedId) => rootRef.current?.querySelector(
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-saving="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-ai-busy="true"]`,
+    ));
+    if (hasBusyNativeImages) return false;
+    if (hasNativeDrafts && !window.confirm(t("chatWorkPanel.image.confirmDiscardDraft"))) return false;
     const force = hasDrafts
       ? confirmDiscardReview("chatWorkPanel.review.confirmDiscardOthers")
       : false;
@@ -925,25 +967,83 @@ export function WorkPanelHost({
     }
   };
 
+  const handoffNativeImageReview = async (
+    ownerChatId: string,
+    item: WorkPanelItem,
+    input: {
+      annotations: import("../../shared/work-panel-review").ImageRegionAnnotation[];
+      dataBase64: string;
+      sizeBytes: number;
+      width: number;
+      height: number;
+    },
+  ) => {
+    if (
+      item.descriptor.kind !== "native" ||
+      item.descriptor.surfaceKey !== "resource-image" ||
+      input.sizeBytes <= 0 ||
+      input.sizeBytes > WORK_PANEL_REVIEW_MAX_PNG_BYTES
+    ) return false;
+    const context = item.descriptor.context;
+    const now = Date.now();
+    const session: WorkPanelReviewSession = {
+      version: WORK_PANEL_REVIEW_VERSION,
+      ownerChatId,
+      itemId: item.itemId,
+      kind: "image",
+      source: {
+        sourceKind: context.profile === "reference" ? "reference" : "artifact",
+        fileName: String(context.fileName || item.title),
+        revision: String(context.revision || ""),
+        relativePath: String(context.relativePath || ""),
+        resourceId: String(context.resourceId || ""),
+      },
+      annotations: input.annotations,
+      createdAt: now,
+      updatedAt: now,
+    };
+    const text = buildWorkPanelReviewComposerDraft(session, {
+      width: input.width,
+      height: input.height,
+    });
+    return insertReviewComposerDraft(ownerChatId, session, text, {
+      event: "image-exported",
+      version: WORK_PANEL_REVIEW_VERSION,
+      requestId: globalThis.crypto.randomUUID(),
+      ok: true,
+      dataUrl: `data:image/png;base64,${input.dataBase64}`,
+      width: input.width,
+      height: input.height,
+      sizeBytes: input.sizeBytes,
+    });
+  };
+
   const handleLocalResourceAction = async (
     ownerChatId: string,
     item: WorkPanelItem,
     action: "reveal" | "open-default",
-  ) => {
+  ): Promise<ChatWorkPanelOpenLocalResourceResult> => {
     const profile = localResourceProfile(item);
-    if (!profile || item.descriptor.kind !== "webclient") return;
+    if (!profile || item.descriptor.kind !== "webclient") {
+      return {
+        ok: false,
+        code: "invalid_request",
+        message: t("chatWorkPanel.resourceActions.failed"),
+      };
+    }
     const relativePath = resolveChatWorkPanelLocalResourcePath({
       ownerChatId,
       profile,
       route: item.descriptor.route,
     });
     if (!relativePath) {
-      console.warn("[work-panel] refused invalid local resource path", item.descriptor.route);
-      return;
+      return {
+        ok: false,
+        code: "invalid_request",
+        message: t("chatWorkPanel.resourceActions.failed"),
+      };
     }
 
-    const runtimeKey = itemRuntimeKey(ownerChatId, item.itemId);
-    setBusyLocalResourceItems((current) => new Set(current).add(runtimeKey));
     try {
       const request = { ownerChatId, profile, relativePath };
       const result = action === "reveal"
@@ -953,18 +1053,16 @@ export function WorkPanelHost({
         console.warn(
           `[work-panel] failed to ${action === "reveal" ? "reveal" : "open"} local resource`,
           result.code,
-          result.message,
         );
       }
-    } catch (error) {
-      console.warn("[work-panel] local resource action failed", error);
-    } finally {
-      setBusyLocalResourceItems((current) => {
-        if (!current.has(runtimeKey)) return current;
-        const next = new Set(current);
-        next.delete(runtimeKey);
-        return next;
-      });
+      return result;
+    } catch {
+      console.warn("[work-panel] local resource action failed");
+      return {
+        ok: false,
+        code: "open_failed",
+        message: t("chatWorkPanel.resourceActions.failed"),
+      };
     }
   };
 
@@ -1160,6 +1258,37 @@ export function WorkPanelHost({
   }, []);
 
   useEffect(() => {
+    const nextHandles = new Map<string, string>();
+    for (const workspace of state.workspaces) {
+      for (const item of workspace.items) {
+        if (item.descriptor.kind === "native" && item.descriptor.surfaceKey === "resource-image") {
+          const handleId = String(item.descriptor.context.handleId || "");
+          if (handleId) nextHandles.set(handleId, workspace.ownerChatId);
+        }
+      }
+    }
+    for (const [handleId, ownerChatId] of previousResourceImageHandlesRef.current) {
+      if (nextHandles.has(handleId)) continue;
+      void window.electronAPI.chatWorkPanel.resourceImages.release({
+        ownerChatId,
+        rendererGeneration: rendererGenerationRef.current,
+        handleIds: [handleId],
+      }).catch(() => undefined);
+    }
+    previousResourceImageHandlesRef.current = nextHandles;
+  }, [state.workspaces]);
+
+  useEffect(() => () => {
+    for (const [handleId, ownerChatId] of previousResourceImageHandlesRef.current) {
+      void window.electronAPI.chatWorkPanel.resourceImages.release({
+        ownerChatId,
+        rendererGeneration: rendererGenerationRef.current,
+        handleIds: [handleId],
+      }).catch(() => undefined);
+    }
+  }, []);
+
+  useEffect(() => {
     const nextPartitions = new Set(
       state.workspaces.flatMap((workspace) => workspace.items
         .filter((item) => item.descriptor.kind === "web")
@@ -1317,7 +1446,7 @@ export function WorkPanelHost({
         const descriptor = args.descriptor as { kind?: unknown } | undefined;
         if (
           !descriptor ||
-          (descriptor.kind !== "webclient" && descriptor.kind !== "web" && descriptor.kind !== "native")
+          (descriptor.kind !== "webclient" && descriptor.kind !== "web")
         ) {
           return actionError("invalid_request", "This WorkPanel item kind is host-only.");
         }
@@ -1326,6 +1455,41 @@ export function WorkPanelHost({
           if (bootstrapFailure) return bootstrapFailure;
         }
         return execute({ type: "openItem", ownerChatId, descriptor: descriptor as any });
+      }
+      case "desktop.workpanel.openResourceImage": {
+        const claimId = typeof args.claimId === "string" ? args.claimId.trim() : "";
+        if (!claimId) return actionError("target_unavailable", "Native image claim is unavailable.");
+        const bootstrapFailure = ensureTrustedWorkspace();
+        if (bootstrapFailure) return bootstrapFailure;
+        const claimed = await window.electronAPI.chatWorkPanel.resourceImages.claim({
+          ownerChatId,
+          rendererGeneration: rendererGenerationRef.current,
+          claimId,
+        });
+        if (!claimed.ok || !claimed.resource) {
+          return actionError("target_unavailable", claimed.message || "Native image claim is unavailable.");
+        }
+        const resource = claimed.resource;
+        const opened = execute({
+          type: "openItem",
+          ownerChatId,
+          descriptor: {
+            kind: "native",
+            surfaceKey: "resource-image",
+            context: { ...resource },
+            title: typeof args.title === "string" && args.title.trim()
+              ? args.title.trim()
+              : resource.fileName,
+          },
+        });
+        if (!opened.ok && !claimed.reused) {
+          await window.electronAPI.chatWorkPanel.resourceImages.release({
+            ownerChatId,
+            rendererGeneration: rendererGenerationRef.current,
+            handleIds: [resource.handleId],
+          }).catch(() => undefined);
+        }
+        return opened;
       }
       case "desktop.workpanel.openWeb": {
         const url = normalizeWorkPanelWebUrl(args.url);
@@ -1669,7 +1833,7 @@ export function WorkPanelHost({
                 {workspace.items.map((item) => {
                   const active = visible && workspace.activeItemId === item.itemId;
                   const resourceProfile = localResourceProfile(item);
-                  const showLocalResourceActions = Boolean(
+                  const supportsLocalResourceActions = Boolean(
                     resourceProfile &&
                     item.descriptor.kind === "webclient" &&
                     shouldShowChatWorkPanelLocalResourceActions({
@@ -1677,9 +1841,6 @@ export function WorkPanelHost({
                       profile: resourceProfile,
                       route: item.descriptor.route,
                     }),
-                  );
-                  const localResourceActionBusy = busyLocalResourceItems.has(
-                    itemRuntimeKey(workspace.ownerChatId, item.itemId),
                   );
                   const reviewSession = getWorkPanelReviewSession(
                     state.review,
@@ -1700,48 +1861,13 @@ export function WorkPanelHost({
                   return (
                     <div
                       key={item.itemId}
-                      className={`chat-work-panel-item${active ? " is-active" : ""}${showLocalResourceActions ? " has-resource-actions" : ""}${showResourcePreviewToolbar ? " has-preview-toolbar" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}`}
+                      className={`chat-work-panel-item${active ? " is-active" : ""}${showResourcePreviewToolbar ? " has-preview-toolbar" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}`}
                       data-work-panel-active={active ? "true" : "false"}
                       data-work-panel-item={item.itemId}
                       data-work-panel-owner={workspace.ownerChatId}
                       hidden={!active}
                       aria-hidden={!active}
                     >
-                      {showLocalResourceActions ? (
-                        <div
-                          className="chat-work-panel-resource-actions"
-                          role="group"
-                          aria-label={t("chatWorkPanel.resourceActions.label")}
-                        >
-                          <Button
-                            block
-                            className="chat-work-panel-resource-action"
-                            disabled={localResourceActionBusy}
-                            icon={<FolderOpenOutlined />}
-                            loading={localResourceActionBusy}
-                            title={revealLocalResourceLabel}
-                            onClick={() => {
-                              void handleLocalResourceAction(workspace.ownerChatId, item, "reveal");
-                            }}
-                          >
-                            <span>{revealLocalResourceLabel}</span>
-                          </Button>
-                          <Button
-                            block
-                            type="primary"
-                            className="chat-work-panel-resource-action"
-                            disabled={localResourceActionBusy}
-                            icon={<ExportOutlined />}
-                            loading={localResourceActionBusy}
-                            title={t("chatWorkPanel.tabContextMenu.openInDefaultApp")}
-                            onClick={() => {
-                              void handleLocalResourceAction(workspace.ownerChatId, item, "open-default");
-                            }}
-                          >
-                            <span>{t("chatWorkPanel.tabContextMenu.openInDefaultApp")}</span>
-                          </Button>
-                        </div>
-                      ) : null}
                       {showResourcePreviewToolbar ? (
                         <div
                           className="chat-work-panel-preview-toolbar"
@@ -1817,13 +1943,67 @@ export function WorkPanelHost({
                           </div>
                         </div>
                       ) : null}
-                      {item.descriptor.kind === "webclient" ? (
+                      {item.descriptor.kind === "native" && item.descriptor.surfaceKey === "resource-image" ? (
+                        <WorkPanelResourceImage
+                          active={active}
+                          editing={activeImageEditorItemIds[workspace.ownerChatId] === item.itemId}
+                          ownerChatId={workspace.ownerChatId}
+                          itemId={item.itemId}
+                          rendererGeneration={rendererGenerationRef.current}
+                          resource={item.descriptor.context as unknown as import("../../shared/work-panel-resource-image").WorkPanelResourceImageSelection}
+                          onEditingChange={(editing) => {
+                            setActiveImageEditorItemIds((current) => {
+                              if (editing) return { ...current, [workspace.ownerChatId]: item.itemId };
+                              if (current[workspace.ownerChatId] !== item.itemId) return current;
+                              const next = { ...current };
+                              delete next[workspace.ownerChatId];
+                              return next;
+                            });
+                          }}
+                          onCommitted={(resource) => {
+                            dispatchCommand({
+                              type: "openItem",
+                              ownerChatId: workspace.ownerChatId,
+                              descriptor: {
+                                kind: "native",
+                                surfaceKey: "resource-image",
+                                context: { ...resource },
+                                title: resource.fileName,
+                              },
+                            });
+                          }}
+                          onHandoff={(input) => handoffNativeImageReview(
+                            workspace.ownerChatId,
+                            item,
+                            input,
+                          )}
+                        />
+                      ) : item.descriptor.kind === "webclient" ? (
                         <ServiceWebviewSurface
                           active={active}
                           embedPath={item.descriptor.route}
                           hostTheme={document.documentElement.dataset.theme === "dark" ? "dark" : "light"}
                           loadInitialEmbeddedUrlDirectly
                           ownerChatId={workspace.ownerChatId}
+                          onAgentWebclientCurrentResourceAction={
+                            supportsLocalResourceActions
+                              ? (action, resource) => matchesLocalResourceIdentity(
+                                  workspace.ownerChatId,
+                                  item,
+                                  resource,
+                                )
+                                ? handleLocalResourceAction(
+                                    workspace.ownerChatId,
+                                    item,
+                                    action,
+                                  )
+                                : Promise.resolve({
+                                    ok: false,
+                                    code: "invalid_request" as const,
+                                    message: t("chatWorkPanel.resourceActions.failed"),
+                                  })
+                              : undefined
+                          }
                           onIpcMessage={(event) => handleReviewIpcMessage(
                             workspace.ownerChatId,
                             item,

@@ -5,6 +5,8 @@ import {
 } from "../../shared/auth-bridge";
 import type { PluginSettingsValues } from "../../shared/contracts";
 import {
+  AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
+  AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   AGENT_APP_CLIPBOARD_REQUEST_TYPE,
@@ -25,6 +27,10 @@ import {
   PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
   isServiceWebviewBridgeMessageType,
+  type AgentWebclientCurrentResourceAction,
+  type AgentWebclientCurrentResourceIdentity,
+  type AgentWebclientCurrentResourceActionResult,
+  normalizeAgentWebclientCurrentResourceIdentity,
   type ServiceWebviewBridgeMessage
 } from "../../shared/service-webview-bridge";
 
@@ -39,6 +45,12 @@ export type ServiceWebviewBridgeHostContext = {
     sourceChatId: string;
     newChat: string;
   }) => { ok: true } | { ok: false; message: string };
+  runAgentWebclientCurrentResourceAction?: (
+    action: AgentWebclientCurrentResourceAction,
+    resource: AgentWebclientCurrentResourceIdentity,
+  ) => Promise<AgentWebclientCurrentResourceActionResult>;
+  agentWebclientOwnerChatId?: string;
+  agentWebclientCurrentResourceActionErrorMessage?: string;
   setBridgeError: (message: string) => void;
   logDebug?: (stage: string, message: string) => void;
 };
@@ -75,6 +87,72 @@ export function handleServiceWebviewBridgeMessage(
 
   if (isServiceWebviewBridgeMessageType(payload.type, SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE)) {
     context.logDebug?.(String(payload.stage || ""), String(payload.message || ""));
+    return true;
+  }
+
+  if (
+    isServiceWebviewBridgeMessageType(
+      payload.type,
+      AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
+    )
+  ) {
+    const responseType = AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE;
+    const resource = normalizeAgentWebclientCurrentResourceIdentity(payload);
+    const ownerChatId = context.agentWebclientOwnerChatId?.trim() ?? "";
+    const available = Boolean(
+      resource &&
+      ownerChatId &&
+      resource.chatId === ownerChatId &&
+      context.serviceId === "agent-webclient" &&
+      context.runAgentWebclientCurrentResourceAction,
+    );
+    if (payload.action === "capabilities") {
+      context.sendBridgeMessageToWebview({
+        type: responseType,
+        requestId: payload.requestId,
+        ok: true,
+        available,
+      });
+      return true;
+    }
+    const action = payload.action === "reveal" || payload.action === "open-default"
+      ? payload.action
+      : null;
+    if (
+      context.serviceId !== "agent-webclient" ||
+      !context.runAgentWebclientCurrentResourceAction ||
+      !resource ||
+      !available ||
+      !action
+    ) {
+      sendFailure(
+        context,
+        responseType,
+        payload.requestId,
+        context.agentWebclientCurrentResourceActionErrorMessage ||
+          "current resource action is unavailable for this surface",
+      );
+      return true;
+    }
+    void context.runAgentWebclientCurrentResourceAction(action, resource)
+      .then((result) => {
+        context.sendBridgeMessageToWebview({
+          type: responseType,
+          requestId: payload.requestId,
+          ok: result.ok,
+          code: result.code,
+          message: result.message,
+        });
+      })
+      .catch(() => {
+        sendFailure(
+          context,
+          responseType,
+          payload.requestId,
+          context.agentWebclientCurrentResourceActionErrorMessage ||
+            "current resource action failed",
+        );
+      });
     return true;
   }
 

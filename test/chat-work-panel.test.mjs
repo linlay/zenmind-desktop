@@ -35,6 +35,11 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(host, /item\.descriptor\.kind === "webclient"/u);
   assert.match(host, /profile: tabContextMenuProfile\(item\)/u);
   assert.match(host, /<ServiceWebviewSurface/u);
+  assert.match(embeddedHosts, /enableAgentWebclientChatResourceActions/u);
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /runOwnedAgentWebclientResourceAction[\s\S]*?chatWorkPanelTabContextMenu\.revealLocalResource[\s\S]*?chatWorkPanelTabContextMenu\.openLocalResource/u,
+  );
   assert.match(host, /item\.descriptor\.kind === "webclient"[\s\S]*?<ServiceWebviewSurface[\s\S]*?skipContextRegistration[\s\S]*?\/>/u);
   assert.match(host, /<ExternalWebviewPage/u);
   assert.match(host, /hidden=\{!visible\}/u);
@@ -164,7 +169,8 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   assert.match(host, /chatWorkPanel\.add\.terminal[\s\S]*?disabled/u);
   assert.match(host, /createAgentWebclientBtwPath/u);
   assert.match(host, /instanceId: globalThis\.crypto\.randomUUID\(\)/u);
-  assert.match(host, /descriptor\.kind !== "webclient" && descriptor\.kind !== "web" && descriptor\.kind !== "native"/u);
+  assert.match(host, /descriptor\.kind !== "webclient" && descriptor\.kind !== "web"/u);
+  assert.match(host, /case "desktop\.workpanel\.openResourceImage"/u);
   assert.match(host, /className="chat-work-panel-add-menu sidebar-operation-menu-popover"/u);
   assert.match(host, /const width = 248/u);
   assert.match(css, /\.chat-work-panel-add-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/su);
@@ -231,12 +237,12 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /resolveChatWorkPanelLocalResourcePath/u);
   assert.match(host, /openLocalResource/u);
   assert.match(host, /revealLocalResource/u);
-  assert.match(host, /className="chat-work-panel-resource-actions"/u);
   assert.match(host, /shouldShowChatWorkPanelLocalResourceActions/u);
-  assert.match(host, /const showLocalResourceActions = Boolean/u);
-  assert.match(host, /showLocalResourceActions \? \(/u);
-  assert.match(host, /<Button[\s\S]*?block[\s\S]*?className="chat-work-panel-resource-action"/u);
-  assert.match(host, /<Button[\s\S]*?type="primary"[\s\S]*?className="chat-work-panel-resource-action"/u);
+  assert.match(host, /const supportsLocalResourceActions = Boolean/u);
+  assert.match(host, /onAgentWebclientCurrentResourceAction=\{/u);
+  assert.match(host, /supportsLocalResourceActions[\s\S]*?handleLocalResourceAction/u);
+  assert.doesNotMatch(host, /className="chat-work-panel-resource-actions"/u);
+  assert.doesNotMatch(host, /setLocalResourceActionErrors/u);
   assert.match(host, /chatWorkPanel\.tabContextMenu\.revealInFinder/u);
   assert.match(host, /chatWorkPanel\.tabContextMenu\.revealInExplorer/u);
   assert.doesNotMatch(host, /resourceOpenIntentsRef/u);
@@ -261,9 +267,8 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(css, /\.chat-work-panel-tab-trigger\s*\{[^}]*padding:\s*0 10px;/su);
   assert.match(css, /\.chat-work-panel-tab-close\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*width:\s*34px/su);
   assert.match(css, /\.chat-work-panel-tab-loading-spinner/u);
-  assert.match(css, /\.chat-work-panel-resource-actions\s*\{[^}]*inset:\s*0;[^}]*flex-direction:\s*column;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/su);
-  assert.match(css, /\.chat-work-panel-resource-action\.ant-btn\s*\{[^}]*width:\s*min\(220px,[^}]*height:\s*36px;[^}]*border-radius:\s*8px;/su);
-  assert.doesNotMatch(css, /\.chat-work-panel-item\.has-resource-actions > \.service-webview-surface/u);
+  assert.doesNotMatch(css, /\.chat-work-panel-resource-actions/u);
+  assert.doesNotMatch(css, /\.chat-work-panel-resource-action\.ant-btn/u);
   assert.match(css, /\.chat-work-panel-tab\.has-close:hover \.chat-work-panel-tab-title[^}]*mask-image:\s*linear-gradient/su);
   assert.doesNotMatch(css, /\.chat-work-panel-tab-close::before\s*\{/u);
   assert.match(css, /\.app-shell\.has-chat-work-panel \.work-panel-host\.is-fullscreen\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%/su);

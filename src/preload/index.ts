@@ -610,6 +610,20 @@ const api: DesktopApi = {
       release: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.release", input),
       open: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.open", input),
       reveal: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.reveal", input)
+    },
+    resourceImages: {
+      claim: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.claim", input),
+      read: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.read", input),
+      release: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.release", input),
+      openExternal: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.openExternal", input),
+      ai: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.ai", input),
+      cancelAi: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.cancelAi", input),
+      commit: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.commit", input),
+      onChanged: (listener) => {
+        const handler = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => listener(payload);
+        ipcRenderer.on("chatWorkPanel.resourceImages.changed", handler);
+        return () => ipcRenderer.off("chatWorkPanel.resourceImages.changed", handler);
+      }
     }
   },
   copilot: {

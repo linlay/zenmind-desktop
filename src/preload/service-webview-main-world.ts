@@ -189,6 +189,7 @@ export function buildServiceWebviewMainWorldScript() {
     });
     const workpanel = Object.freeze({
       getCapabilities: () => invoke("workpanel", "getCapabilities"),
+      openResource: (input) => invoke("workpanel", "openResource", input),
       openItem: (input) => invoke("workpanel", "openItem", input),
       activateItem: (input) => invoke("workpanel", "activateItem", input),
       closeItem: (input) => invoke("workpanel", "closeItem", input)

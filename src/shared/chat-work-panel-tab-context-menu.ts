@@ -52,10 +52,16 @@ export type ChatWorkPanelOpenLocalResourceRequest = {
   profile: ChatWorkPanelLocalResourceProfile;
 };
 
+export type ChatWorkPanelLocalResourceErrorCode =
+  | "invalid_request"
+  | "not_found"
+  | "not_file"
+  | "path_outside_chat"
+  | "open_failed";
+
 export type ChatWorkPanelOpenLocalResourceResult = {
   ok: boolean;
-  path?: string;
-  code?: "invalid_request" | "not_found" | "not_file" | "path_outside_chat" | "open_failed";
+  code?: ChatWorkPanelLocalResourceErrorCode;
   message?: string;
 };
 

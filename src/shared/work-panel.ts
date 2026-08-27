@@ -243,7 +243,66 @@ function normalizeDescriptor(
   if (!descriptor || typeof descriptor !== "object" || Array.isArray(descriptor)) return null;
   const keys = Object.keys(descriptor);
   const title = cleanIdentity(descriptor.title, 160);
-  if (descriptor.kind === "native") return null;
+  if (descriptor.kind === "native") {
+    if (
+      !isRegisteredWorkPanelNativeSurface(descriptor.surfaceKey) ||
+      descriptor.surfaceKey !== "resource-image" ||
+      keys.some((key) => !["kind", "surfaceKey", "context", "title", "pinned", "closable"].includes(key)) ||
+      !descriptor.context || typeof descriptor.context !== "object" || Array.isArray(descriptor.context)
+    ) return null;
+    const context = descriptor.context;
+    const allowedContextKeys = new Set([
+      "handleId", "profile", "agentKey", "chatId", "resourceId", "relativePath", "fileName",
+      "mimeType", "sizeBytes", "revision", "localOriginal",
+    ]);
+    if (Object.keys(context).some((key) => !allowedContextKeys.has(key))) return null;
+    const handleId = cleanIdentity(context.handleId, 256);
+    const profile = context.profile === "artifact" || context.profile === "reference" ? context.profile : "";
+    const agentKey = cleanIdentity(context.agentKey);
+    const chatId = cleanIdentity(context.chatId);
+    const resourceId = cleanIdentity(context.resourceId, 1_024);
+    const relativePath = normalizeRelativePath(context.relativePath);
+    const fileName = cleanIdentity(context.fileName, 512);
+    const mimeType = ["image/png", "image/jpeg", "image/webp"].includes(String(context.mimeType))
+      ? String(context.mimeType)
+      : "";
+    const sizeBytes = typeof context.sizeBytes === "number" && Number.isSafeInteger(context.sizeBytes) && context.sizeBytes >= 0
+      ? context.sizeBytes
+      : -1;
+    const revision = cleanIdentity(context.revision, 512);
+    const localOriginal = context.localOriginal === true || context.localOriginal === false
+      ? context.localOriginal
+      : null;
+    if (
+      !handleId || !profile || !agentKey || !chatId || !resourceId || !relativePath || !fileName ||
+      !mimeType || sizeBytes < 0 || !revision || localOriginal === null
+    ) return null;
+    const sanitized: WorkPanelItemDescriptor = {
+      kind: "native",
+      surfaceKey: "resource-image",
+      context: {
+        handleId,
+        profile,
+        agentKey,
+        chatId,
+        resourceId,
+        relativePath,
+        fileName,
+        mimeType,
+        sizeBytes,
+        revision,
+        localOriginal,
+      },
+      ...(title ? { title } : {}),
+      ...(descriptor.pinned === true ? { pinned: true } : {}),
+      ...(descriptor.closable === false ? { closable: false } : {}),
+    };
+    return {
+      descriptor: sanitized,
+      stableKey: `resource-image:${profile}:${agentKey}:${chatId}:${resourceId}`,
+      title: title || fileName,
+    };
+  }
   if (descriptor.kind === "webapp-ref") {
     if (keys.some((key) => !["kind", "webappId", "title", "pinned", "closable"].includes(key))) return null;
     const webappId = cleanIdentity(descriptor.webappId, 256);
@@ -614,7 +673,6 @@ export function reduceWorkPanelCommand(
       if (!isRegisteredWorkPanelNativeSurface(command.descriptor.surfaceKey)) {
         return fail(state, "unsupported_native_surface", "no native WorkPanel surface is registered");
       }
-      return fail(state, "unsupported_native_surface", "registered native WorkPanel host is not implemented");
     }
     let trustedDescriptor = command.descriptor;
     if (trustedDescriptor.kind === "webclient") {
@@ -643,7 +701,7 @@ export function reduceWorkPanelCommand(
     const isOverview = normalized.descriptor.kind === "webclient" &&
       normalized.descriptor.module === "overview";
     const item: WorkPanelItem = existing
-      ? isOverview || normalized.descriptor.kind === "local-file"
+      ? isOverview || normalized.descriptor.kind === "local-file" || normalized.descriptor.kind === "native"
         ? {
             ...existing,
             descriptor: normalized.descriptor,

@@ -5642,6 +5642,7 @@ test("built index uses relative asset paths", (t) => {
   assert.match(builtIndex, /(src|href)="\.?\/?assets\//);
   assert.match(builtIndex, exactPetProtocolPattern);
   assert.match(builtIndex, exactWebsiteFaviconProtocolPattern);
+  assert.match(builtIndex, /img-src[^";]*blob:/u);
   assert.match(builtIndex, new RegExp(`<title>${escapeRegExp(brand.productName)}</title>`, "u"));
 
   for (const entry of fs.readdirSync(path.join(projectRoot, "brands"), { withFileTypes: true })) {
@@ -5651,6 +5652,30 @@ test("built index uses relative asset paths", (t) => {
     assert.doesNotMatch(builtIndex, new RegExp(`${escapeRegExp(entry.name)}-pet:`, "u"));
     assert.doesNotMatch(builtIndex, new RegExp(`${escapeRegExp(entry.name)}-website-favicon:`, "u"));
   }
+});
+
+test("native image byte and decode failures stay silent and inert", () => {
+  const source = readSourceFile(
+    "src",
+    "renderer",
+    "work-panel",
+    "WorkPanelResourceImage.tsx"
+  );
+  const rendererIndex = readSourceFile("index.html");
+  const brandArtifacts = readSourceFile("scripts", "lib", "brand-artifacts.mjs");
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+
+  assert.match(source, /function imageBytes\(value: unknown\)/u);
+  assert.match(source, /if \(!bytes\?\.byteLength\) \{\s*setLoading\(false\);\s*return;\s*\}/u);
+  assert.match(source, /catch \{\s*URL\.revokeObjectURL\(url\);\s*\}/u);
+  assert.doesNotMatch(source, /chatWorkPanel\.image\.errorDecode/u);
+  assert.doesNotMatch(source, /chatWorkPanel\.image\.errorLoad/u);
+  assert.match(rendererIndex, /img-src[^";]*blob:/u);
+  assert.match(brandArtifacts, /img-src[^";]*blob:/u);
+  assert.match(styles, /\.work-panel-resource-image\s*\{[\s\S]*?font-size:\s*12px;/u);
+  assert.match(styles, /\.work-panel-image-file-name\s*\{[\s\S]*?font-size:\s*14px;/u);
+  assert.match(styles, /\.work-panel-image-toolbar button\.is-primary\s*\{[\s\S]*?font-size:\s*13px;/u);
+  assert.match(styles, /\.work-panel-image-zoom-control input\s*\{[\s\S]*?font-size:\s*12px;/u);
 });
 
 test("plugin market guards stale preload market api before skill import", () => {

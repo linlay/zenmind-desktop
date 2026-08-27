@@ -95,6 +95,21 @@ import type {
   WorkPanelLocalFileSelectRequest,
   WorkPanelLocalFileSelectionResult,
 } from "../chat-work-panel";
+import type {
+  WorkPanelResourceImageActionResult,
+  WorkPanelResourceImageAiCancelRequest,
+  WorkPanelResourceImageAiRequest,
+  WorkPanelResourceImageAiResult,
+  WorkPanelResourceImageChangedEvent,
+  WorkPanelResourceImageClaimRequest,
+  WorkPanelResourceImageClaimResult,
+  WorkPanelResourceImageCommitRequest,
+  WorkPanelResourceImageCommitResult,
+  WorkPanelResourceImageExternalOpenRequest,
+  WorkPanelResourceImageHandleRequest,
+  WorkPanelResourceImageReadResult,
+  WorkPanelResourceImageReleaseRequest,
+} from "../work-panel-resource-image";
 import type { DesktopHelpSettings } from "../help";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
@@ -1057,6 +1072,16 @@ export interface DesktopApi {
       release: (input: WorkPanelLocalFileReleaseRequest) => Promise<WorkPanelLocalFileActionResult>;
       open: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
       reveal: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
+    };
+    resourceImages: {
+      claim: (input: WorkPanelResourceImageClaimRequest) => Promise<WorkPanelResourceImageClaimResult>;
+      read: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageReadResult>;
+      release: (input: WorkPanelResourceImageReleaseRequest) => Promise<WorkPanelResourceImageActionResult>;
+      openExternal: (input: WorkPanelResourceImageExternalOpenRequest) => Promise<WorkPanelResourceImageActionResult>;
+      ai: (input: WorkPanelResourceImageAiRequest) => Promise<WorkPanelResourceImageAiResult>;
+      cancelAi: (input: WorkPanelResourceImageAiCancelRequest) => Promise<WorkPanelResourceImageActionResult>;
+      commit: (input: WorkPanelResourceImageCommitRequest) => Promise<WorkPanelResourceImageCommitResult>;
+      onChanged: (listener: (event: WorkPanelResourceImageChangedEvent) => void) => () => void;
     };
   };
   diagnostics: {
