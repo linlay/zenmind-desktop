@@ -1432,21 +1432,10 @@ export function WorkPanelResourceImage({
                 setAdjustOpen(false);
                 setCanvasSizeOpen(false);
                 discardSelectionTransform();
-                setTool("annotate");
-              }}><HighlightOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.smartEdit")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
-                setAdjustOpen(false);
-                setCanvasSizeOpen(false);
-                discardSelectionTransform();
                 setAiPromptOperation(null);
                 setError("");
-                if (annotations.length === 0 || annotations.some((annotation) => !annotation.requirement.trim())) {
-                  setTool("annotate");
-                  setError(t("chatWorkPanel.image.annotationRequired"));
-                  return;
-                }
-                void runAi("inpaint");
-              }}><ThunderboltOutlined /></ImageToolButton>
+                setTool("annotate");
+              }}><HighlightOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.removeObject")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
                 setCanvasSizeOpen(false);
                 discardSelectionTransform();

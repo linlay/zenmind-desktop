@@ -5736,7 +5736,8 @@ test("native image selection and annotations have distinct movable AI workflows"
   assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
   assert.match(source, /const consumesAnnotations = operation === "inpaint"/u);
   assert.match(source, /selectionMaskBase64\(annotationRegions, operation === "removeObject"\)/u);
-  assert.match(source, /chatWorkPanel\.image\.smartEdit[\s\S]*?annotations\.some[\s\S]*?runAi\("inpaint"\)/u);
+  assert.doesNotMatch(source, /<ImageToolButton label=\{t\("chatWorkPanel\.image\.smartEdit"\)\}/u);
+  assert.match(source, /work-panel-image-annotation-actions[\s\S]*?annotations\.some[\s\S]*?runAi\("inpaint"\)[\s\S]*?chatWorkPanel\.image\.smartEdit/u);
   assert.doesNotMatch(source, /aiPromptOperation === "inpaint"|value === "inpaint" \? null : "inpaint"/u);
   assert.match(source, /className="is-ai-tool"[\s\S]*?runAi\("removeObject"\)[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
   assert.doesNotMatch(source, /RobotOutlined|work-panel-image-ai-panel|work-panel-image-ai-tools/u);
