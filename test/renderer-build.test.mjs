@@ -5736,6 +5736,11 @@ test("native image selection and annotations have distinct movable AI workflows"
   assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
   assert.match(source, /const consumesAnnotations = operation === "inpaint"/u);
   assert.match(source, /selectionMaskBase64\(annotationRegions, operation === "removeObject"\)/u);
+  assert.match(source, /const maskDataBase64 = requiresMask\s*\? await selectionMaskBase64[\s\S]*?: ""/u);
+  assert.match(source, /catch \(reason\)[\s\S]*?aiFailedOperation[\s\S]*?setAiPromptOperation\(operation\)/u);
+  assert.match(source, /const aiOperationLabel[\s\S]*?chatWorkPanel\.image\.smartEdit[\s\S]*?chatWorkPanel\.image\.enhance/u);
+  assert.match(source, /aiRunningOperation[\s\S]*?aiOperationLabel\(aiBusy\.operation\)/u);
+  assert.match(styles, /\.work-panel-image-error,[\s\S]*?\.work-panel-image-ai-status\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*12;/u);
   assert.match(source, /type SelectionPurpose = "general" \| "removeObject"/u);
   assert.match(source, /chatWorkPanel\.image\.selection[\s\S]*?selectionPurpose === "general"[\s\S]*?setSelectionPurpose\("general"\)/u);
   assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?selectionPurpose === "removeObject"[\s\S]*?if \(hasSelection\)[\s\S]*?runAi\("removeObject"\)[\s\S]*?setTool\("select"\)/u);

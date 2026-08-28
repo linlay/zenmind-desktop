@@ -614,6 +614,13 @@ export class WorkPanelResourceImageRegistry {
         edgeMode: request.edgeMode,
         attachments,
       });
+    } catch (error) {
+      return {
+        ok: false,
+        requestId,
+        runId,
+        message: error instanceof Error ? error.message : String(error),
+      };
     } finally {
       this.activeAiRuns.delete(runKey);
     }

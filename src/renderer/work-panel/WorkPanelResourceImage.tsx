@@ -254,6 +254,7 @@ export function WorkPanelResourceImage({
   const [aiInstruction, setAiInstruction] = useState("");
   const [aiTargetSize, setAiTargetSize] = useState({ width: 0, height: 0 });
   const [aiBusy, setAiBusy] = useState<{ requestId: string; operation: WorkPanelResourceImageAiOperation } | null>(null);
+  const [aiSuccess, setAiSuccess] = useState("");
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [sourceConflict, setSourceConflict] = useState(false);
@@ -280,6 +281,19 @@ export function WorkPanelResourceImage({
   const editDisabled = Boolean(current && (
     current.width > 8_192 || current.height > 8_192 || current.width * current.height > 40_000_000
   ));
+  const aiOperationLabel = (operation: WorkPanelResourceImageAiOperation) => t(
+    operation === "inpaint"
+      ? "chatWorkPanel.image.smartEdit"
+      : operation === "removeObject"
+        ? "chatWorkPanel.image.removeObject"
+        : operation === "removeBackground"
+          ? "chatWorkPanel.image.removeBackground"
+          : operation === "replaceBackground"
+            ? "chatWorkPanel.image.replaceBackground"
+            : operation === "outpaint"
+              ? "chatWorkPanel.image.outpaint"
+              : "chatWorkPanel.image.enhance",
+  );
 
   const handleRequest = useMemo(() => ({
     ownerChatId,
@@ -336,6 +350,7 @@ export function WorkPanelResourceImage({
       setSelectionTransform(null);
       setAiPromptOperation(null);
       setAiInstruction("");
+      setAiSuccess("");
       setSourceRevision(result.revision || resource.revision);
       setSourceConflict(false);
       setTool("pan");
@@ -377,6 +392,7 @@ export function WorkPanelResourceImage({
     setAiPromptOperation(null);
     setAiInstruction("");
     setAiTargetSize({ width: 0, height: 0 });
+    setAiSuccess("");
     setSaveOpen(false);
     setSourceConflict(false);
     setFloatingControlsPosition(null);
@@ -1009,13 +1025,6 @@ export function WorkPanelResourceImage({
       return;
     }
     const annotationRegions = operation === "inpaint" ? annotations : [];
-    const maskDataBase64 = await selectionMaskBase64(annotationRegions, operation === "removeObject");
-    if (requiresMask && !maskDataBase64) {
-      setError(t(operation === "removeObject"
-        ? "chatWorkPanel.image.selectionRequired"
-        : "chatWorkPanel.image.annotationRequired"));
-      return;
-    }
     let prompt = "";
     let targetWidth = current.width;
     let targetHeight = current.height;
@@ -1050,14 +1059,33 @@ export function WorkPanelResourceImage({
         targetWidth > 8_192 || targetHeight > 8_192 || targetWidth * targetHeight > 40_000_000
       ) return;
     }
-    const sourceBlob = await fetch(current.url).then((response) => response.blob());
-    const sourceDataBase64 = await blobBase64(sourceBlob);
     const requestId = globalThis.crypto.randomUUID();
     setTool("pan");
     setAiPromptOperation(null);
     setAiBusy({ requestId, operation });
     setError("");
+    setAiSuccess("");
     try {
+      const maskDataBase64 = requiresMask
+        ? await selectionMaskBase64(annotationRegions, operation === "removeObject")
+        : "";
+      if (!maskDataBase64 && requiresMask) {
+        setError(t(operation === "removeObject"
+          ? "chatWorkPanel.image.selectionRequired"
+          : "chatWorkPanel.image.annotationRequired"));
+        if (operation === "removeObject") {
+          setSelectionPurpose("removeObject");
+          setTool("select");
+        } else {
+          setTool("annotate");
+        }
+        return;
+      }
+      const sourceBlob = await fetch(current.url).then((response) => {
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.blob();
+      });
+      const sourceDataBase64 = await blobBase64(sourceBlob);
       const result = await window.electronAPI.chatWorkPanel.resourceImages.ai({
         ...handleRequest,
         requestId,
@@ -1073,10 +1101,15 @@ export function WorkPanelResourceImage({
         edgeMode: "soft",
       });
       if (!result.ok || !result.image) {
-        setError(result.message || t("chatWorkPanel.image.aiFailed"));
+        setError(t("chatWorkPanel.image.aiFailedOperation", {
+          operation: aiOperationLabel(operation),
+          reason: result.message || t("chatWorkPanel.image.aiFailed"),
+        }));
         if (operation === "removeObject") {
           setSelectionPurpose("removeObject");
           setTool("select");
+        } else if (operation === "replaceBackground" || operation === "outpaint") {
+          setAiPromptOperation(operation);
         }
         return;
       }
@@ -1117,6 +1150,23 @@ export function WorkPanelResourceImage({
       setAnnotations([]);
       setActiveAnnotationId("");
       setAiInstruction("");
+      setAiSuccess(t("chatWorkPanel.image.aiSucceeded", {
+        operation: aiOperationLabel(operation),
+      }));
+    } catch (reason) {
+      const detail = reason instanceof Error ? reason.message.trim() : String(reason).trim();
+      setError(t("chatWorkPanel.image.aiFailedOperation", {
+        operation: aiOperationLabel(operation),
+        reason: detail || t("chatWorkPanel.image.aiFailed"),
+      }));
+      if (operation === "removeObject") {
+        setSelectionPurpose("removeObject");
+        setTool("select");
+      } else if (operation === "inpaint") {
+        setTool("annotate");
+      } else if (operation === "replaceBackground" || operation === "outpaint") {
+        setAiPromptOperation(operation);
+      }
     } finally {
       setAiBusy(null);
     }
@@ -1620,9 +1670,12 @@ export function WorkPanelResourceImage({
         </div>
       ) : null}
       {error ? <div className="work-panel-image-error" role="alert">{error}</div> : null}
+      {aiSuccess ? <div className="work-panel-image-ai-success" role="status">{aiSuccess}</div> : null}
       {aiBusy ? (
         <div className="work-panel-image-ai-status">
-          <span>{t("chatWorkPanel.image.aiRunning")}</span>
+          <span>{t("chatWorkPanel.image.aiRunningOperation", {
+            operation: aiOperationLabel(aiBusy.operation),
+          })}</span>
           <button type="button" onClick={() => void cancelAi()}>{t("chatWorkPanel.image.cancel")}</button>
         </div>
       ) : null}

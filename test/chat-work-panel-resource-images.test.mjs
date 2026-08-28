@@ -271,6 +271,7 @@ test("native image regional AI forwards the canonical source, mask, and instruct
     assistantBridge: {
       completeImage: async (input) => {
         calls.push(input);
+        if (input.operation === "enhance") throw new Error("image bridge unavailable");
         return { ok: false, runId: "run-ai", chatId: "chat-ai", message: "expected test stop" };
       },
       stopRun: async () => ({ ok: true }),
@@ -316,6 +317,24 @@ test("native image regional AI forwards the canonical source, mask, and instruct
       "image-studio-source",
       "image-studio-mask",
     ]);
+    const thrownFailure = await registry.runAi({
+      ownerChatId: "chat-ai",
+      rendererGeneration: "renderer-ai",
+      handleId: claimed.resource.handleId,
+      requestId: "request-enhance",
+      expectedRevision: claimed.resource.revision,
+      operation: "enhance",
+      sourceMimeType: "image/png",
+      sourceDataBase64: PNG_1X1.toString("base64"),
+      width: 1,
+      height: 1,
+      preserveComposition: true,
+      edgeMode: "soft",
+    }, webContents);
+    assert.equal(thrownFailure.ok, false);
+    assert.equal(thrownFailure.requestId, "request-enhance");
+    assert.equal(thrownFailure.message, "image bridge unavailable");
+    assert.equal(calls.length, 2);
   } finally {
     registry.dispose();
     fs.rmSync(homePath, { recursive: true, force: true });
