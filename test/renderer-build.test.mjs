@@ -5736,10 +5736,15 @@ test("native image selection and annotations have distinct movable AI workflows"
   assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
   assert.match(source, /const consumesAnnotations = operation === "inpaint"/u);
   assert.match(source, /selectionMaskBase64\(annotationRegions, operation === "removeObject"\)/u);
+  assert.match(source, /type SelectionPurpose = "general" \| "removeObject"/u);
+  assert.match(source, /chatWorkPanel\.image\.selection[\s\S]*?selectionPurpose === "general"[\s\S]*?setSelectionPurpose\("general"\)/u);
+  assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?selectionPurpose === "removeObject"[\s\S]*?if \(hasSelection\)[\s\S]*?runAi\("removeObject"\)[\s\S]*?setTool\("select"\)/u);
+  assert.match(source, /is-ai-selection[\s\S]*?removeObjectSelectionHint[\s\S]*?className="is-ai-action"[\s\S]*?disabled=\{!hasSelection[\s\S]*?removeSelectedObject/u);
+  assert.match(styles, /\.work-panel-image-subtoolbar button\.is-ai-action\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
   assert.doesNotMatch(source, /<ImageToolButton label=\{t\("chatWorkPanel\.image\.smartEdit"\)\}/u);
   assert.match(source, /work-panel-image-annotation-actions[\s\S]*?annotations\.some[\s\S]*?runAi\("inpaint"\)[\s\S]*?chatWorkPanel\.image\.smartEdit/u);
   assert.doesNotMatch(source, /aiPromptOperation === "inpaint"|value === "inpaint" \? null : "inpaint"/u);
-  assert.match(source, /className="is-ai-tool"[\s\S]*?runAi\("removeObject"\)[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
+  assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?runAi\("removeObject"\)[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
   assert.doesNotMatch(source, /RobotOutlined|work-panel-image-ai-panel|work-panel-image-ai-tools/u);
   assert.match(source, /beginFloatingPanelDrag[\s\S]*?setPointerCapture[\s\S]*?setFloatingControlsPosition[\s\S]*?setAnnotationsPanelPosition/u);
   assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-floating-drag-handle[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-parameter-panel[\s\S]*?work-panel-image-ai-prompt/u);

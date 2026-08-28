@@ -55,6 +55,7 @@ type Snapshot = {
 
 type SelectionTool = "rectangle" | "ellipse" | "lasso" | "brush";
 type SelectionMode = "add" | "subtract";
+type SelectionPurpose = "general" | "removeObject";
 type AiPromptOperation = "replaceBackground" | "outpaint";
 type Point = { x: number; y: number };
 type SelectionTransformState = {
@@ -231,6 +232,7 @@ export function WorkPanelResourceImage({
   const [tool, setTool] = useState<"pan" | "crop" | "annotate" | "select">("pan");
   const [selectionTool, setSelectionTool] = useState<SelectionTool>("rectangle");
   const [selectionMode, setSelectionMode] = useState<SelectionMode>("add");
+  const [selectionPurpose, setSelectionPurpose] = useState<SelectionPurpose>("general");
   const [brushSize, setBrushSize] = useState(40);
   const [hasSelection, setHasSelection] = useState(false);
   const [gesturePreview, setGesturePreview] = useState<GesturePreview | null>(null);
@@ -330,6 +332,7 @@ export function WorkPanelResourceImage({
       setAnnotations([]);
       setActiveAnnotationId("");
       setHasSelection(false);
+      setSelectionPurpose("general");
       setSelectionTransform(null);
       setAiPromptOperation(null);
       setAiInstruction("");
@@ -359,6 +362,7 @@ export function WorkPanelResourceImage({
     setTool("pan");
     setSelectionTool("rectangle");
     setSelectionMode("add");
+    setSelectionPurpose("general");
     setBrushSize(40);
     setHasSelection(false);
     setGesturePreview(null);
@@ -1070,6 +1074,10 @@ export function WorkPanelResourceImage({
       });
       if (!result.ok || !result.image) {
         setError(result.message || t("chatWorkPanel.image.aiFailed"));
+        if (operation === "removeObject") {
+          setSelectionPurpose("removeObject");
+          setTool("select");
+        }
         return;
       }
       const bytes = Uint8Array.from(atob(result.image.dataBase64), (char) => char.charCodeAt(0));
@@ -1380,8 +1388,10 @@ export function WorkPanelResourceImage({
                 setAdjustOpen(false);
                 setTool("pan");
               }}><DragOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.selection")} className={tool === "select" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
+              <ImageToolButton label={t("chatWorkPanel.image.selection")} className={tool === "select" && selectionPurpose === "general" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
                 setAdjustOpen(false);
+                setError("");
+                setSelectionPurpose("general");
                 setTool("select");
               }}><BorderOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.crop")} className={tool === "crop" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
@@ -1436,10 +1446,19 @@ export function WorkPanelResourceImage({
                 setError("");
                 setTool("annotate");
               }}><HighlightOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.removeObject")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
+              <ImageToolButton label={t("chatWorkPanel.image.removeObject")} className={tool === "select" && selectionPurpose === "removeObject" ? "is-ai-tool is-active" : "is-ai-tool"} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
                 setCanvasSizeOpen(false);
                 discardSelectionTransform();
-                void runAi("removeObject");
+                setAiPromptOperation(null);
+                setError("");
+                setSelectionPurpose("removeObject");
+                if (hasSelection) {
+                  void runAi("removeObject");
+                  return;
+                }
+                setSelectionMode("add");
+                setTool("select");
               }}><EditOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.removeBackground")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
                 setCanvasSizeOpen(false);
@@ -1490,8 +1509,10 @@ export function WorkPanelResourceImage({
             <span>{t("chatWorkPanel.image.toolSettings")}</span>
           </div>
           {tool === "select" ? (
-            <div className="work-panel-image-subtoolbar">
-              <span className="work-panel-image-subtoolbar-hint"><BorderOutlined /> {t("chatWorkPanel.image.selectionHint")}</span>
+            <div className={`work-panel-image-subtoolbar${selectionPurpose === "removeObject" ? " is-ai-selection" : ""}`}>
+              <span className="work-panel-image-subtoolbar-hint"><BorderOutlined /> {t(selectionPurpose === "removeObject"
+                ? "chatWorkPanel.image.removeObjectSelectionHint"
+                : "chatWorkPanel.image.selectionHint")}</span>
               <select value={selectionTool} onChange={(event) => setSelectionTool(event.target.value as SelectionTool)}>
                 <option value="rectangle">{t("chatWorkPanel.image.selectionRectangle")}</option>
                 <option value="ellipse">{t("chatWorkPanel.image.selectionEllipse")}</option>
@@ -1503,6 +1524,11 @@ export function WorkPanelResourceImage({
               {selectionTool === "brush" ? <input type="range" min={5} max={200} value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} /> : null}
               <button type="button" onClick={invertSelection}>{t("chatWorkPanel.image.selectionInvert")}</button>
               <button type="button" onClick={clearSelection}>{t("chatWorkPanel.image.selectionClear")}</button>
+              {selectionPurpose === "removeObject" ? (
+                <button type="button" className="is-ai-action" disabled={!hasSelection || Boolean(aiBusy)} onClick={() => void runAi("removeObject")}>
+                  <EditOutlined /> {t("chatWorkPanel.image.removeSelectedObject")}
+                </button>
+              ) : null}
             </div>
           ) : null}
 

@@ -1599,6 +1599,29 @@
   -webkit-backdrop-filter: blur(16px) saturate(125%);
 }
 
+.work-panel-image-floating-controls .work-panel-image-subtoolbar.is-ai-selection {
+  border-color: color-mix(in srgb, #7655ee 42%, var(--line-soft));
+}
+
+.work-panel-image-subtoolbar.is-ai-selection .work-panel-image-subtoolbar-hint {
+  color: #7663ef;
+}
+
+:root[data-theme="dark"] .work-panel-image-subtoolbar.is-ai-selection .work-panel-image-subtoolbar-hint {
+  color: #aaa4ff;
+}
+
+.work-panel-image-subtoolbar button.is-ai-action {
+  border-color: color-mix(in srgb, #6d5bea 58%, transparent);
+  color: #fff;
+  background: linear-gradient(145deg, #8056ff, #367df0);
+  box-shadow: 0 4px 14px color-mix(in srgb, #615eea 24%, transparent);
+}
+
+.work-panel-image-subtoolbar button.is-ai-action:hover:not(:disabled) {
+  background: linear-gradient(145deg, #8a64ff, #4389f7);
+}
+
 .work-panel-image-adjustments {
   z-index: 7;
   display: grid;
