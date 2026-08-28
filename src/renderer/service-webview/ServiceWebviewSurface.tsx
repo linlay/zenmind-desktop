@@ -95,6 +95,14 @@ import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
 
+export type ServiceWebviewSurfaceRegistrationState = {
+  active: boolean;
+  surfaceId: string;
+  registrationId: string;
+  webContentsId: number;
+  ownerChatId: string;
+};
+
 type ServiceWebviewSurfaceProps = {
   hostTheme: "light" | "dark";
   serviceId?: string;
@@ -114,6 +122,7 @@ type ServiceWebviewSurfaceProps = {
   focusRequestId?: number | null;
   onFocusRequestHandled?: (requestId: number) => void;
   onCurrentUrlChange?: (url: string, source: ServiceWebviewUrlChangeSource) => void;
+  onSurfaceRegistrationChange?: (state: ServiceWebviewSurfaceRegistrationState) => void;
   onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
   onAgentWebclientCurrentResourceAction?: (
     action: AgentWebclientCurrentResourceAction,
@@ -589,6 +598,7 @@ export function ServiceWebviewSurface({
   focusRequestId,
   onFocusRequestHandled,
   onCurrentUrlChange,
+  onSurfaceRegistrationChange,
   onIpcMessage,
   onAgentWebclientCurrentResourceAction,
   enableAgentWebclientChatResourceActions,
@@ -1232,6 +1242,15 @@ export function ServiceWebviewSurface({
         : null;
       if (result.ok) {
         surfaceRegistrationRetryRef.current = 0;
+        if (mainChatSurface) {
+          onSurfaceRegistrationChange?.({
+            active: registrationActive,
+            surfaceId: registration.surfaceId,
+            registrationId: registration.registrationId,
+            webContentsId,
+            ownerChatId: registration.ownerChatId?.trim() || "",
+          });
+        }
         if (registrationActive && mainChatSurface) {
           registeredSafeSurfaceIdentityRef.current = {
             registrationId: registration.registrationId,
@@ -1385,6 +1404,7 @@ export function ServiceWebviewSurface({
     };
   }, [
     ownsActiveSurface,
+    onSurfaceRegistrationChange,
     ownerChatId,
     desiredDesktopRoute,
     effectiveEmbedPath,

@@ -163,18 +163,33 @@ type RunSubscription = {
 };
 
 type RootObserverState = RootObserverIdentity & {
+  contextEpoch: string;
   runIds: Set<string>;
+  overviewLease: OverviewCloneLeaseState | null;
+};
+
+type OverviewCloneLeaseState = {
+  state: "pending_chat_identity" | "ready";
+  parentToken: string;
+  parentGeneration: string;
+  contextEpoch: string;
+  chatId: string | null;
+  runIds: Set<string>;
+  pendingCloneIds: Set<string>;
+  subscriberIds: Set<string>;
 };
 
 type PendingClone = {
   id: string;
+  kind: "overview" | "debug";
+  consumerId: string;
   observerToken: string;
   parentGeneration: string;
   runId: string;
   chatId: string;
   owner: AgentWebclientRunOwner;
   waitReason: "awaiting_run_start";
-  resolve(): void;
+  resolve(outcome: "ready" | "detached"): void;
   reject(error: Error): void;
 };
 
@@ -341,6 +356,7 @@ export class RealtimeBroker {
   private readonly seenInboundDesktopRequestIds = new Set<string>();
   private readonly runActionGrants = new Map<string, RunActionGrant>();
   private activeRootObserver: RootObserverState | null = null;
+  private mainChatRootObserver: RootObserverState | null = null;
   private readonly pendingClones = new Map<string, PendingClone>();
   private lastCloneCancellationReason = "";
   private desktopBridgeProvider: DesktopBridgeRequestProvider | null = null;
@@ -442,6 +458,29 @@ export class RealtimeBroker {
     return this.runChannels.delete(runChannelMapKey(run));
   }
 
+  private findRootObserver(tokenValue: string) {
+    const token = tokenValue.trim();
+    if (!token) return null;
+    if (this.mainChatRootObserver?.token === token) return this.mainChatRootObserver;
+    if (this.activeRootObserver?.token === token) return this.activeRootObserver;
+    return null;
+  }
+
+  private snapshotRootObserver(observer: RootObserverState | null) {
+    return observer
+      ? {
+          token: observer.token,
+          kind: observer.kind,
+          surfaceId: observer.surfaceId,
+          generation: observer.generation,
+          contextId: observer.contextId,
+          contextEpoch: observer.contextEpoch,
+          webContentsId: observer.webContentsId,
+          runIds: new Set(observer.runIds),
+        }
+      : null;
+  }
+
   async ensureConnected(baseUrl: string, token: string, lane: RealtimeLane = "primary") {
     if (this.disposed || !this.acceptingDelivery) {
       throw brokerError("connection_unavailable", "Realtime Broker is disposed");
@@ -485,6 +524,24 @@ export class RealtimeBroker {
       completed.reject(error);
       return { accepted: accepted.promise, completed: completed.promise };
     }
+    const observerToken = options.observerToken?.trim() || "";
+    const observer = observerToken ? this.findRootObserver(observerToken) : null;
+    if (observerToken && !observer) {
+      const error = brokerError("surface_generation_superseded", "Root Observer is no longer active");
+      accepted.reject(error);
+      completed.reject(error);
+      return { accepted: accepted.promise, completed: completed.promise };
+    }
+    if (
+      observer?.kind === "main_chat" &&
+      observer.overviewLease?.state === "ready" &&
+      expectedChatId && observer.overviewLease.chatId !== expectedChatId
+    ) {
+      const error = brokerError("protocol_error", "query Chat does not match the active Main Chat context");
+      accepted.reject(error);
+      completed.reject(error);
+      return { accepted: accepted.promise, completed: completed.promise };
+    }
     const upstreamRequestId = `desktop-query-${randomUUID()}`;
     const transaction: QueryTransaction = {
       lane,
@@ -506,7 +563,7 @@ export class RealtimeBroker {
       eventQueue: Promise.resolve(),
       acceptanceTimer: null,
       signal: options.signal,
-      rootObserverToken: options.observerToken?.trim() || null,
+      rootObserverToken: observerToken || null,
       consumerId: options.consumerId?.trim() || `query:${operationId}`,
       subscriptionId: null,
       baseUrl: options.baseUrl,
@@ -608,43 +665,113 @@ export class RealtimeBroker {
     if (!token || !surfaceId || !generation || !contextId || !Number.isSafeInteger(input.webContentsId)) {
       throw brokerError("invalid_request", "Root Observer identity is incomplete");
     }
-    const current = this.activeRootObserver;
-    if (current?.token === token && current.contextId === contextId) {
-      return this.getActiveRootObserver();
+    const current = input.kind === "main_chat"
+      ? this.mainChatRootObserver
+      : this.activeRootObserver?.kind === input.kind
+        ? this.activeRootObserver
+        : null;
+    if (current?.token === token) {
+      if (
+        input.kind === "main_chat" &&
+        current.overviewLease?.state === "pending_chat_identity" &&
+        contextId !== current.contextId
+      ) {
+        this.promoteMainChatRootObserver(token, contextId);
+      }
+      return input.kind === "main_chat"
+        ? this.getMainChatRootObserver()
+        : this.getActiveRootObserver();
     }
-    if (current) this.releaseRootObserver(current.token, "surface_generation_superseded");
-    this.activeRootObserver = {
+    const contextEpoch = `root-context-${randomUUID()}`;
+    const next: RootObserverState = {
       ...input,
       token,
       surfaceId,
       generation,
       contextId,
+      contextEpoch,
       runIds: new Set(),
+      overviewLease: input.kind === "main_chat"
+        ? {
+            state: contextId === `${surfaceId}:${generation}` ? "pending_chat_identity" : "ready",
+            parentToken: token,
+            parentGeneration: generation,
+            contextEpoch,
+            chatId: contextId === `${surfaceId}:${generation}` ? null : contextId,
+            runIds: new Set(),
+            pendingCloneIds: new Set(),
+            subscriberIds: new Set(),
+          }
+        : null,
     };
-    return this.getActiveRootObserver();
+    if (input.kind === "main_chat") {
+      this.mainChatRootObserver = next;
+      if (!this.activeRootObserver || this.activeRootObserver.kind === "main_chat") {
+        this.activeRootObserver = next;
+      }
+    } else {
+      const previousActive = this.activeRootObserver;
+      this.activeRootObserver = next;
+      if (previousActive && previousActive.kind !== "main_chat" && previousActive !== current) {
+        this.retireRootObserver(previousActive, "surface_generation_superseded");
+      }
+    }
+    if (current) this.retireRootObserver(current, "surface_generation_superseded");
+    return input.kind === "main_chat"
+      ? this.getMainChatRootObserver()
+      : this.getActiveRootObserver();
   }
 
   getActiveRootObserver() {
-    const observer = this.activeRootObserver;
-    return observer
-      ? { ...observer, runIds: new Set(observer.runIds) }
-      : null;
+    return this.snapshotRootObserver(this.activeRootObserver);
+  }
+
+  getMainChatRootObserver() {
+    return this.snapshotRootObserver(this.mainChatRootObserver);
+  }
+
+  promoteMainChatRootObserver(tokenValue: string, chatIdValue: string) {
+    const token = tokenValue.trim();
+    const chatId = chatIdValue.trim();
+    const observer = this.mainChatRootObserver;
+    if (!token || !chatId || !observer || observer.token !== token || !observer.overviewLease) {
+      throw brokerError("surface_generation_superseded", "Main Chat Root Observer is no longer active");
+    }
+    const lease = observer.overviewLease;
+    if (lease.state === "ready" && lease.chatId !== chatId) {
+      throw brokerError("protocol_error", "canonical Chat identity conflicts with the Main Chat context");
+    }
+    observer.contextId = chatId;
+    lease.state = "ready";
+    lease.chatId = chatId;
+    return this.getMainChatRootObserver();
   }
 
   releaseRootObserver(tokenValue: string, reason = "parent_observer_closed") {
     const token = tokenValue.trim();
     if (!token) return false;
-    const observer = this.activeRootObserver?.token === token ? this.activeRootObserver : null;
-    if (observer) this.activeRootObserver = null;
-    const cloneReason = reason === "surface_generation_superseded"
-      ? "surface_generation_superseded"
-      : "parent_observer_closed";
-    this.rejectPendingClones(token, cloneBindingError(cloneReason, "Main Chat observer is no longer active"));
+    const observer = this.findRootObserver(token);
+    if (!observer) return false;
+    if (this.mainChatRootObserver === observer) this.mainChatRootObserver = null;
+    if (this.activeRootObserver === observer) {
+      this.activeRootObserver = this.mainChatRootObserver;
+    }
+    this.retireRootObserver(observer, reason);
+    return true;
+  }
+
+  private retireRootObserver(observer: RootObserverState, reason: string) {
+    const token = observer.token;
+    this.detachPendingClones(token);
     for (const subscription of [...this.runSubscriptions.values()]) {
       if (subscription.observerToken !== token) continue;
       this.unsubscribe(subscription.id);
       if (subscription.role === "clone") {
-        subscription.onError?.(cloneBindingError(cloneReason, "Main Chat clone parent was released"));
+        const run = this.getRunChannel(subscription.runId, subscription.lane);
+        subscription.onComplete?.({
+          reason: "detached",
+          ...(run ? { lastSeq: run.lastSeq } : {}),
+        });
       }
     }
     for (const run of this.runChannels.values()) {
@@ -652,7 +779,6 @@ export class RealtimeBroker {
       void this.detachRunIfUnobserved(run, reason);
     }
     this.pruneRetainedTerminalRuns();
-    return Boolean(observer);
   }
 
   releaseObservedRun(observerTokenValue: string, runIdValue: string, reason = "surface_inactive") {
@@ -660,10 +786,15 @@ export class RealtimeBroker {
     const runId = runIdValue.trim();
     const run = this.getRunChannel(runId);
     if (!observerToken || !run || !run.rootObserverTokens.delete(observerToken)) return false;
-    this.activeRootObserver?.runIds.delete(runId);
+    const observer = this.findRootObserver(observerToken);
+    observer?.runIds.delete(runId);
+    observer?.overviewLease?.runIds.delete(runId);
     for (const subscription of [...this.runSubscriptions.values()]) {
       if (subscription.runId !== runId || subscription.observerToken !== observerToken) continue;
       this.unsubscribe(subscription.id);
+      if (subscription.role === "clone") {
+        subscription.onComplete?.({ reason: "detached", lastSeq: run.lastSeq });
+      }
     }
     void this.detachRunIfUnobserved(run, reason);
     this.pruneRetainedTerminalRuns();
@@ -671,6 +802,7 @@ export class RealtimeBroker {
   }
 
   async subscribeClone(options: {
+    kind?: "overview" | "debug";
     runId: string;
     chatId: string;
     lastSeq?: number;
@@ -680,12 +812,36 @@ export class RealtimeBroker {
     onComplete?(result: RealtimeQueryCompleted): void;
     onError?(error: Error): void;
   }) {
-    const observer = this.activeRootObserver;
-    if (!observer || observer.kind !== "main_chat" || observer.contextId !== options.chatId.trim()) {
+    const kind = options.kind ?? "debug";
+    const observer = this.mainChatRootObserver;
+    const chatId = options.chatId.trim();
+    const overviewLease = kind === "overview" ? observer?.overviewLease ?? null : null;
+    if (
+      !observer || observer.kind !== "main_chat" ||
+      (kind === "overview"
+        ? !overviewLease || overviewLease.state !== "ready" || overviewLease.chatId !== chatId
+        : observer.contextId !== chatId)
+    ) {
       throw cloneBindingError("parent_observer_closed", "active Main Chat observer does not match the clone");
     }
-    await this.waitForCloneRun(observer.token, options.runId, options.chatId, options.owner);
-    const current = this.activeRootObserver;
+    const waitOutcome = await this.waitForCloneRun(
+      kind,
+      observer.token,
+      options.runId,
+      options.chatId,
+      options.owner,
+      options.consumerId,
+    );
+    if (waitOutcome === "detached") {
+      const id = `clone-sub-${randomUUID()}`;
+      queueMicrotask(() => options.onComplete?.({ reason: "detached" }));
+      return {
+        subscriptionId: id,
+        unsubscribe: () => false,
+        ready: Promise.resolve(),
+      };
+    }
+    const current = this.mainChatRootObserver;
     const run = this.getRunChannel(options.runId);
     if (!current || current.token !== observer.token || !run || !run.rootObserverTokens.has(observer.token)) {
       throw cloneBindingError("surface_generation_superseded", "Main Chat observer changed before clone binding");
@@ -722,6 +878,7 @@ export class RealtimeBroker {
     }
     this.runSubscriptions.set(id, subscription);
     run.subscribers.add(id);
+    if (kind === "overview") overviewLease!.subscriberIds.add(id);
     this.diagnostics.cloneCreatedCount += 1;
     return {
       subscriptionId: id,
@@ -844,8 +1001,16 @@ export class RealtimeBroker {
     }
     if (subscription.role === "root_observer") {
       const observerToken = subscription.observerToken?.trim() || "";
-      if (!observerToken || this.activeRootObserver?.token !== observerToken) {
+      const observer = observerToken ? this.findRootObserver(observerToken) : null;
+      if (!observerToken || !observer) {
         throw brokerError("surface_generation_superseded", "Root Observer is no longer active");
+      }
+      if (
+        observer.kind === "main_chat" &&
+        observer.overviewLease?.state === "ready" &&
+        observer.overviewLease.chatId !== chatId
+      ) {
+        throw brokerError("protocol_error", "Run Chat does not match the active Main Chat context");
       }
     }
     this.replayToSubscriber(run, subscription);
@@ -864,9 +1029,11 @@ export class RealtimeBroker {
     run.subscribers.add(id);
     if (subscription.role === "root_observer") {
       const observerToken = subscription.observerToken!.trim();
+      const observer = this.findRootObserver(observerToken)!;
       run.operationGeneration += 1;
       run.rootObserverTokens.add(observerToken);
-      this.activeRootObserver!.runIds.add(run.runId);
+      observer.runIds.add(run.runId);
+      observer.overviewLease?.runIds.add(run.runId);
       this.notifyPendingClones(run);
     }
     run.baseUrl = options.baseUrl;
@@ -894,6 +1061,7 @@ export class RealtimeBroker {
     if (!runSubscription) return false;
     this.runSubscriptions.delete(subscriptionId);
     if (runSubscription.role === "clone") this.diagnostics.cloneRevokedCount += 1;
+    this.mainChatRootObserver?.overviewLease?.subscriberIds.delete(subscriptionId);
     const subscribedRun = this.getRunChannel(runSubscription.runId, runSubscription.lane);
     subscribedRun?.subscribers.delete(subscriptionId);
     if (subscribedRun && runSubscription.role === "root_observer" && runSubscription.observerToken) {
@@ -903,7 +1071,9 @@ export class RealtimeBroker {
         candidate.observerToken === runSubscription.observerToken
       );
       if (!stillObserved && subscribedRun.rootObserverTokens.delete(runSubscription.observerToken)) {
-        this.activeRootObserver?.runIds.delete(subscribedRun.runId);
+        const observer = this.findRootObserver(runSubscription.observerToken);
+        observer?.runIds.delete(subscribedRun.runId);
+        observer?.overviewLease?.runIds.delete(subscribedRun.runId);
         void this.detachRunIfUnobserved(subscribedRun, "surface_inactive");
       }
     }
@@ -1006,6 +1176,9 @@ export class RealtimeBroker {
     for (const subscription of [...this.connectionSubscriptions.values()]) {
       if (subscription.consumerId === consumerId) this.connectionSubscriptions.delete(subscription.id);
     }
+    for (const pending of [...this.pendingClones.values()]) {
+      if (pending.consumerId === consumerId) pending.reject(error);
+    }
   }
 
   getDiagnostics() {
@@ -1022,6 +1195,17 @@ export class RealtimeBroker {
       pushSubscriberCount: this.pushSubscriptions.size,
       connectionSubscriberCount: this.connectionSubscriptions.size,
       rootObserver: this.getActiveRootObserver(),
+      overviewLease: this.mainChatRootObserver?.overviewLease
+        ? {
+            state: this.mainChatRootObserver.overviewLease.state,
+            parentGeneration: this.mainChatRootObserver.overviewLease.parentGeneration,
+            contextEpoch: this.mainChatRootObserver.overviewLease.contextEpoch,
+            chatId: this.mainChatRootObserver.overviewLease.chatId ?? undefined,
+            runCount: this.mainChatRootObserver.overviewLease.runIds.size,
+            pendingSubscriberCount: this.mainChatRootObserver.overviewLease.pendingCloneIds.size,
+            uiSubscriberCount: this.mainChatRootObserver.overviewLease.subscriberIds.size,
+          }
+        : null,
       pendingClones: [...this.pendingClones.values()].map((pending) => ({
         observerToken: pending.observerToken,
         parentGeneration: pending.parentGeneration,
@@ -1094,6 +1278,7 @@ export class RealtimeBroker {
     for (const pending of [...this.pendingClones.values()]) pending.reject(error);
     this.pendingClones.clear();
     this.activeRootObserver = null;
+    this.mainChatRootObserver = null;
     this.terminalRequestIds.clear();
     this.clearRunActionGrants();
     this.clients.primary.rotateIdentity();
@@ -1122,6 +1307,7 @@ export class RealtimeBroker {
     for (const pending of [...this.pendingClones.values()]) pending.reject(error);
     this.pendingClones.clear();
     this.activeRootObserver = null;
+    this.mainChatRootObserver = null;
     this.terminalRequestIds.clear();
     this.clearRunActionGrants();
     for (const controller of this.inboundDesktopRequests.values()) controller.abort();
@@ -1406,10 +1592,12 @@ export class RealtimeBroker {
     transaction.chatId = chatId;
     this.setRunChannel(run);
     const observerToken = transaction.rootObserverToken;
-    if (observerToken && this.activeRootObserver?.token === observerToken) {
+    const observer = observerToken ? this.findRootObserver(observerToken) : null;
+    if (observerToken && observer) {
       run.operationGeneration += 1;
       run.rootObserverTokens.add(observerToken);
-      this.activeRootObserver.runIds.add(runId);
+      observer.runIds.add(runId);
+      observer.overviewLease?.runIds.add(runId);
       this.notifyPendingClones(run);
     } else if (observerToken) {
       void this.detachRunIfUnobserved(run, "surface_generation_superseded");
@@ -1420,7 +1608,7 @@ export class RealtimeBroker {
   private bindQuerySubscription(run: BrokerRun, transaction: QueryTransaction) {
     const observerToken = transaction.rootObserverToken;
     const role: RunSubscription["role"] = observerToken ? "root_observer" : "internal";
-    if (observerToken && this.activeRootObserver?.token !== observerToken) {
+    if (observerToken && !this.findRootObserver(observerToken)) {
       transaction.bufferedEvents = [];
       transaction.bufferedEventBytes = 0;
       return;
@@ -2126,10 +2314,12 @@ export class RealtimeBroker {
   }
 
   private waitForCloneRun(
+    kind: "overview" | "debug",
     observerToken: string,
     runIdValue: string,
     chatIdValue: string,
     owner: AgentWebclientRunOwner,
+    consumerId: string,
   ) {
     const runId = runIdValue.trim();
     const chatId = chatIdValue.trim();
@@ -2137,44 +2327,56 @@ export class RealtimeBroker {
     if (
       run && run.chatId === chatId && run.rootObserverTokens.has(observerToken) &&
       (!run.owner || sameRunOwner(run.owner, owner))
-    ) return Promise.resolve();
+    ) return Promise.resolve("ready" as const);
+    if (run && (run.chatId !== chatId || (run.owner && !sameRunOwner(run.owner, owner)))) {
+      return Promise.reject(cloneBindingError(
+        "visible_run_changed",
+        "requested Run identity does not match the active Main Chat lease",
+      ));
+    }
     const pendingQuery = [...this.queriesByRequestId.values()].some((transaction) =>
       transaction.rootObserverToken === observerToken &&
       transaction.runId === null &&
       transaction.expectedRunId === runId &&
       (!transaction.expectedChatId || transaction.expectedChatId === chatId)
     );
-    if (!pendingQuery) {
+    if (!pendingQuery && kind !== "overview") {
       return Promise.reject(cloneBindingError(
         "run_not_registered",
         "requested Run is not registered for the active Main Chat observer",
       ));
     }
-    return new Promise<void>((resolve, reject) => {
+    return new Promise<"ready" | "detached">((resolve, reject) => {
       const id = `pending-clone-${randomUUID()}`;
-      const parentGeneration = this.activeRootObserver?.token === observerToken
-        ? this.activeRootObserver.generation
+      const parent = this.findRootObserver(observerToken);
+      const parentGeneration = parent
+        ? parent.generation
         : "";
       this.pendingClones.set(id, {
         id,
+        kind,
+        consumerId,
         observerToken,
         parentGeneration,
         runId,
         chatId,
         owner,
         waitReason: "awaiting_run_start",
-        resolve: () => {
+        resolve: (outcome) => {
           this.pendingClones.delete(id);
-          resolve();
+          if (kind === "overview") parent?.overviewLease?.pendingCloneIds.delete(id);
+          resolve(outcome);
         },
         reject: (error) => {
           this.pendingClones.delete(id);
+          if (kind === "overview") parent?.overviewLease?.pendingCloneIds.delete(id);
           const details = (error as Error & { details?: unknown }).details;
           const reason = isRecord(details) ? readText(details.reason) : "";
           this.lastCloneCancellationReason = reason || error.name || "clone_cancelled";
           reject(error);
         },
       });
+      if (kind === "overview") parent?.overviewLease?.pendingCloneIds.add(id);
     });
   }
 
@@ -2186,13 +2388,19 @@ export class RealtimeBroker {
         pending.reject(cloneBindingError("visible_run_changed", "clone Run owner changed"));
         continue;
       }
-      pending.resolve();
+      pending.resolve("ready");
     }
   }
 
   private rejectPendingClones(observerToken: string, error: Error) {
     for (const pending of [...this.pendingClones.values()]) {
       if (pending.observerToken === observerToken) pending.reject(error);
+    }
+  }
+
+  private detachPendingClones(observerToken: string) {
+    for (const pending of [...this.pendingClones.values()]) {
+      if (pending.observerToken === observerToken) pending.resolve("detached");
     }
   }
 

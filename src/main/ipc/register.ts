@@ -547,6 +547,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         localRunSubscriberCount: brokerDiagnostics.localRunSubscriberCount,
         pushSubscriberCount: brokerDiagnostics.pushSubscriberCount,
         connectionSubscriberCount: brokerDiagnostics.connectionSubscriberCount,
+        overviewLease: brokerDiagnostics.overviewLease,
         pendingCloneCount: brokerDiagnostics.pendingClones.length,
         pendingClones: brokerDiagnostics.pendingClones.map((pending) => ({
           parentGeneration: pending.parentGeneration,

@@ -24,6 +24,8 @@ test("Agent Realtime Inspector opens as one independent resizable window", () =>
   assert.doesNotMatch(controller, /^\s*parent:/m);
   assert.match(runtime, /AGENT_REALTIME_INSPECTOR_ROUTE = "\/agent-realtime-inspector"/);
   assert.match(register, /ipcMain\.handle\("diagnostics\.openAgentRealtimeInspector"/);
+  assert.match(register, /overviewLease:\s*brokerDiagnostics\.overviewLease/);
+  assert.match(read("src", "shared", "contracts", "desktop-api.ts"), /state:\s*"pending_chat_identity" \| "ready"/);
   assert.match(preload, /openAgentRealtimeInspector: \(\) =>[\s\S]{0,100}diagnostics\.openAgentRealtimeInspector/);
 });
 

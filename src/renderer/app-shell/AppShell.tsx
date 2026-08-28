@@ -28,6 +28,7 @@ import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
+import type { ServiceWebviewSurfaceRegistrationState } from "../service-webview/ServiceWebviewSurface";
 import {
   clearCopilotDockSessionSnapshot,
   readCopilotDockSessionSnapshot,
@@ -580,6 +581,16 @@ export function AppShell() {
   const refreshServicesRef = useRef(refreshServices);
   const assistantNavAgentsRefreshIdRef = useRef(0);
   const chatDefaultAgentMigrationRef = useRef("");
+  const registeredMainChatSurfaceRef = useRef<{
+    registrationId: string;
+    chatId: string;
+    agentKey: string;
+  } | null>(null);
+  const pendingChatWorkPanelOpenRef = useRef<{
+    chatId: string;
+    agentKey: string;
+    action: "ensure" | "show";
+  } | null>(null);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const [windowMaximized, setWindowMaximized] = useState(false);
@@ -3878,6 +3889,67 @@ export function AppShell() {
     });
   }, [dispatchWorkPanelCommand, t]);
 
+  const completeChatWorkPanelOpen = useCallback((
+    chatId: string,
+    agentKey: string,
+    action: "ensure" | "show",
+  ) => {
+    if (action === "show") {
+      dispatchWorkPanelCommand({ type: "showWorkspace", ownerChatId: chatId });
+      return;
+    }
+    ensureChatWorkPanelWorkspace(chatId, agentKey);
+  }, [dispatchWorkPanelCommand, ensureChatWorkPanelWorkspace]);
+
+  const requestChatWorkPanelOpenWhenRegistered = useCallback((
+    chatIdValue: string,
+    agentKeyValue: string,
+    action: "ensure" | "show" = "ensure",
+  ) => {
+    const chatId = chatIdValue.trim();
+    const agentKey = agentKeyValue.trim();
+    if (!chatId || !agentKey) return;
+    const registered = registeredMainChatSurfaceRef.current;
+    const activeRouteMatches = activeChatRouteInfo.chatId === chatId &&
+      activeChatRouteInfo.agentKey.trim() === agentKey;
+    if (
+      activeRouteMatches &&
+      registered?.chatId === chatId &&
+      registered.agentKey === agentKey
+    ) {
+      completeChatWorkPanelOpen(chatId, agentKey, action);
+      return;
+    }
+    pendingChatWorkPanelOpenRef.current = { chatId, agentKey, action };
+  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, completeChatWorkPanelOpen]);
+
+  const handleMainChatSurfaceRegistrationChange = useCallback((
+    state: ServiceWebviewSurfaceRegistrationState,
+  ) => {
+    if (!state.active || !state.ownerChatId) {
+      if (registeredMainChatSurfaceRef.current?.registrationId === state.registrationId) {
+        registeredMainChatSurfaceRef.current = null;
+      }
+      return;
+    }
+    const agentKey = activeChatRouteInfo.agentKey.trim();
+    if (activeChatRouteInfo.chatId !== state.ownerChatId || !agentKey) return;
+    registeredMainChatSurfaceRef.current = {
+      registrationId: state.registrationId,
+      chatId: state.ownerChatId,
+      agentKey,
+    };
+    const pending = pendingChatWorkPanelOpenRef.current;
+    if (
+      pending &&
+      pending.chatId === state.ownerChatId &&
+      pending.agentKey === agentKey
+    ) {
+      pendingChatWorkPanelOpenRef.current = null;
+      completeChatWorkPanelOpen(pending.chatId, pending.agentKey, pending.action);
+    }
+  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, completeChatWorkPanelOpen]);
+
   async function handleOpenWebappInWorkPanel(
     ownerChatId: string,
     target: { id: string; label: string },
@@ -3953,32 +4025,21 @@ export function AppShell() {
       return;
     }
     if (currentState.workspaces.some((workspace) => workspace.ownerChatId === chatId)) {
-      dispatchWorkPanelCommand({ type: "showWorkspace", ownerChatId: chatId });
+      const agentKey = activeChatRouteInfo.agentKey.trim();
+      if (agentKey) requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "show");
       return;
     }
     const agentKey = activeChatRouteInfo.agentKey.trim();
     if (!agentKey) return;
-    dispatchWorkPanelCommand({
-      type: "openItem",
-      ownerChatId: chatId,
-      descriptor: {
-        kind: "webclient",
-        module: "overview",
-        route: createAgentWebclientOverviewPath({ chatId }),
-        context: { chatId, agentKey },
-        title: t("chatWorkPanel.overview"),
-        pinned: true,
-        closable: false,
-      },
-    });
-  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelChatId, dispatchWorkPanelCommand, t]);
+    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
+  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
 
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
-    ensureChatWorkPanelWorkspace(chatId, agentKey);
+    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
     if (activeChatWorkPanelChatId !== chatId) {
       requestSidebarNavigation(createAgentChatRoute(agentKey, chatId));
     }
-  }, [activeChatWorkPanelChatId, ensureChatWorkPanelWorkspace, requestSidebarNavigation]);
+  }, [activeChatWorkPanelChatId, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation]);
 
   const openAgentProjectEditorFromSidebar = useCallback((agent: AssistantNavAgentItem) => {
     const agentKey = agent.agentKey.trim();
@@ -4312,6 +4373,7 @@ export function AppShell() {
             hostTheme={resolvedTheme}
             mountedServiceIds={mountedServiceIds}
             onAgentChatFocusRequestHandled={handleAgentChatFocusRequestHandled}
+            onMainChatSurfaceRegistrationChange={handleMainChatSurfaceRegistrationChange}
           />
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}

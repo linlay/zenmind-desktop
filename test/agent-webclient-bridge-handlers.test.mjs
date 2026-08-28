@@ -107,6 +107,7 @@ function createRuntime(targets, overrides = {}) {
     cloneUnsubscribes: 0,
   };
   let activeRoot = null;
+  let mainChatRoot = null;
   const broker = {
     ensureConnected: async () => undefined,
     getConnectionState: () => ({
@@ -123,13 +124,22 @@ function createRuntime(targets, overrides = {}) {
     },
     subscribePush: () => () => undefined,
     activateRootObserver: (observer) => {
-      activeRoot = { ...observer, runIds: new Set() };
-      return activeRoot;
+      const next = { ...observer, contextEpoch: `context:${observer.token}`, runIds: new Set() };
+      if (observer.kind === "main_chat") mainChatRoot = next;
+      activeRoot = next;
+      return next;
     },
     getActiveRootObserver: () => activeRoot,
+    getMainChatRootObserver: () => mainChatRoot,
+    promoteMainChatRootObserver: (token, chatId) => {
+      if (!mainChatRoot || mainChatRoot.token !== token) throw new Error("stale Main Chat root");
+      mainChatRoot.contextId = chatId;
+      return mainChatRoot;
+    },
     releaseRootObserver: (token) => {
       calls.releasedRoots.push(token);
       if (activeRoot?.token === token) activeRoot = null;
+      if (mainChatRoot?.token === token) mainChatRoot = null;
       return true;
     },
     releaseObservedRun: (token, runId, reason) => {
@@ -202,13 +212,30 @@ function createRuntime(targets, overrides = {}) {
     dispatchWorkPanel: async () => ({ ok: true, workspaceId: "workspace-1" }),
     openResource: async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" }),
   });
+  const emitLifecycle = (event) => lifecycleListeners.forEach((listener) => listener(event));
+  for (const target of targets.values()) {
+    if (target.surfaceId !== "main-chat" || target.surfaceRole !== "main-chat" || !target.active) continue;
+    emitLifecycle({
+      type: "registered",
+      surface: {
+        registrationId: target.registrationId,
+        surfaceId: target.surfaceId,
+        surfaceRole: target.surfaceRole,
+        surfaceIdentityKey: target.surfaceIdentityKey || "",
+        active: target.active,
+        ownerChatId: target.ownerChatId || "",
+        ownerWebContentsId: target.ownerWebContentsId,
+        guestWebContentsIds: [target.webContentsId],
+      },
+    });
+  }
   return {
     broker,
     calls,
     registration,
     listeners,
     handlers,
-    emitLifecycle: (event) => lifecycleListeners.forEach((listener) => listener(event)),
+    emitLifecycle,
   };
 }
 
@@ -221,6 +248,22 @@ async function openSession(runtime, sender, sessionId) {
 
 function send(runtime, sender, sessionId, frame) {
   runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL)({ sender }, { sessionId, frame });
+}
+
+function emitRegisteredTarget(runtime, target) {
+  runtime.emitLifecycle({
+    type: "registered",
+    surface: {
+      registrationId: target.registrationId,
+      surfaceId: target.surfaceId,
+      surfaceRole: target.surfaceRole,
+      surfaceIdentityKey: target.surfaceIdentityKey || "",
+      active: target.active,
+      ownerChatId: target.ownerChatId || "",
+      ownerWebContentsId: target.ownerWebContentsId,
+      guestWebContentsIds: [target.webContentsId],
+    },
+  });
 }
 
 test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2 ids", async () => {
@@ -259,6 +302,7 @@ test("canonical Main Chat query waits for stale owner registration to converge",
     browserSurfaces: {
       waitForWebviewSurfaceTargetMatching: async (id, predicate) => {
         targets.set(id, ready);
+        emitRegisteredTarget(runtime, ready);
         return predicate(ready) ? ready : null;
       },
     },
@@ -330,6 +374,7 @@ test("new Chat query waits for a stale canonical owner to become the new-chat so
     browserSurfaces: {
       waitForWebviewSurfaceTargetMatching: async (id, predicate) => {
         targets.set(id, ready);
+        emitRegisteredTarget(runtime, ready);
         return predicate(ready) ? ready : null;
       },
     },
@@ -380,6 +425,47 @@ test("new Chat query waits for a stale canonical owner to become the new-chat so
   assert.equal(runtime.calls.queries.length, 1);
   assert.equal(runtime.calls.queries[0].payload.chatId, "chat-2");
   assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
+test("trusted Main Chat registration creates the Broker bundle before FramePort open", () => {
+  const main = mainTarget();
+  const runtime = createRuntime(new Map([[main.webContentsId, main]]));
+  const root = runtime.broker.getMainChatRootObserver();
+  assert.equal(root.kind, "main_chat");
+  assert.equal(root.generation, main.registrationId);
+  assert.equal(root.contextId, main.ownerChatId);
+});
+
+test("Overview may attach before the Main Chat live request without parent observer failure", async () => {
+  const main = mainTarget();
+  const overview = childTarget(102, "overview", "agent-overview");
+  const runtime = createRuntime(new Map([[101, main], [102, overview]]));
+  const overviewSender = createSender(102, overview.currentUrl);
+  await openSession(runtime, overviewSender, "overview-first");
+  send(runtime, overviewSender, "overview-first", {
+    frame: "request",
+    id: "overview-first-attach",
+    type: "/api/attach",
+    payload: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1", lastSeq: 0 },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.clones.length, 1);
+  assert.equal(runtime.calls.clones[0].kind, "overview");
+  assert.equal(sentFrames(overviewSender).some((frame) =>
+    frame.data?.error?.details?.reason === "parent_observer_closed"
+  ), false);
+
+  const mainSender = createSender(101, main.currentUrl);
+  await openSession(runtime, mainSender, "main-after-overview");
+  send(runtime, mainSender, "main-after-overview", {
+    frame: "request",
+    id: "main-after-overview-query",
+    type: "/api/query",
+    payload: { requestId: "rq", runId: "run-1", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+  });
+  await flush();
+  assert.equal(runtime.calls.queries.length, 1);
 });
 
 test("Overview and Debug attach only as local Main Chat clones", async () => {
@@ -436,6 +522,30 @@ test("clone detach is local and never releases or detaches the upstream Run", as
   assert.equal(runtime.calls.cloneUnsubscribes, 1);
   assert.equal(runtime.calls.releasedRuns.length, 0);
   assert.equal(runtime.calls.forwarded.length, 0);
+});
+
+test("Overview FramePort close releases only its UI subscriber", async () => {
+  const main = mainTarget();
+  const overview = childTarget(102, "overview", "agent-overview");
+  const runtime = createRuntime(new Map([[101, main], [102, overview]]));
+  const sender = createSender(102, overview.currentUrl);
+  await openSession(runtime, sender, "overview-close");
+  send(runtime, sender, "overview-close", {
+    frame: "request",
+    id: "overview-close-attach",
+    type: "/api/attach",
+    payload: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1", lastSeq: 0 },
+  });
+  await flush();
+
+  runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL)(
+    { sender },
+    { sessionId: "overview-close", reason: "surface_inactive" },
+  );
+  await flush();
+  assert.equal(runtime.calls.cloneUnsubscribes, 1);
+  assert.equal(runtime.calls.releasedRuns.length, 0);
+  assert.equal(runtime.calls.releasedRoots.length, 0);
 });
 
 test("BTW query and attach reuse the Main Chat observer but route to the BTW lane", async () => {
@@ -551,7 +661,7 @@ test("Registry inactivity releases the Root Observer without closing the FramePo
   assert.equal(sentFrames(sender).at(-1).id, "chat");
 });
 
-test("Registry context identity change revokes only the old Root Observer", async () => {
+test("Registry context identity change atomically replaces the old Main Chat bundle", async () => {
   const main = mainTarget();
   const runtime = createRuntime(new Map([[101, main]]));
   const sender = createSender(101, main.currentUrl);
@@ -574,12 +684,12 @@ test("Registry context identity change revokes only the old Root Observer", asyn
       guestWebContentsIds: [101],
     },
   });
-  assert.equal(runtime.broker.getActiveRootObserver(), null);
+  assert.equal(runtime.broker.getMainChatRootObserver().contextId, "main-chat:main-g1");
   assert.equal(sender.messages.some(({ message }) => message.type === "close"), false);
   assert.equal(sentFrames(sender).some((frame) => frame.id === "q" && frame.reason === "detached"), true);
 });
 
-test("FramePort close releases its Root Observer without interrupting a Run", async () => {
+test("FramePort close keeps the Registry-owned Main Chat bundle alive", async () => {
   const main = mainTarget();
   const runtime = createRuntime(new Map([[101, main]]));
   const sender = createSender(101, main.currentUrl);
@@ -593,7 +703,8 @@ test("FramePort close releases its Root Observer without interrupting a Run", as
     { sender },
     { sessionId: "main", reason: "surface_inactive" },
   );
-  assert.equal(runtime.calls.releasedRoots.length, 1);
+  assert.equal(runtime.calls.releasedRoots.length, 0);
+  assert.equal(runtime.broker.getMainChatRootObserver().contextId, "chat-1");
   assert.equal(runtime.calls.forwarded.some((call) => call.type === "/api/interrupt"), false);
 });
 

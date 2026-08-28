@@ -233,6 +233,192 @@ test("Main Chat clones use local replay and never create upstream attach", async
   assert.equal(requestOfType(socket("primary"), "/api/detach").length, 0);
 });
 
+test("Main Chat activation atomically creates its Overview lease before any live frame", (t) => {
+  const { broker } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+
+  const diagnostics = broker.getDiagnostics();
+  assert.equal(diagnostics.rootObserver.token, observer.token);
+  assert.equal(diagnostics.overviewLease.state, "ready");
+  assert.equal(diagnostics.overviewLease.parentGeneration, observer.generation);
+  assert.equal(diagnostics.overviewLease.chatId, observer.contextId);
+  assert.equal(diagnostics.overviewLease.runCount, 0);
+  assert.equal(diagnostics.overviewLease.pendingSubscriberCount, 0);
+  assert.equal(diagnostics.overviewLease.uiSubscriberCount, 0);
+});
+
+test("Overview waits on its existing lease until the Main Chat Run is registered", async (t) => {
+  const { broker, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const events = [];
+  let settled = false;
+  const pendingOverview = broker.subscribeClone({
+    kind: "overview",
+    runId: "run-late-main",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    consumerId: "overview-first-open",
+    onEvent: (event) => events.push(event.type),
+  }).then((subscription) => {
+    settled = true;
+    return subscription;
+  });
+  await nextTurn();
+  assert.equal(settled, false);
+  assert.equal(broker.getDiagnostics().overviewLease.pendingSubscriberCount, 1);
+
+  const main = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    runId: "run-late-main",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "surface",
+    role: "root_observer",
+    observerToken: observer.token,
+    consumerId: "main-chat-late-attach",
+    onEvent: () => undefined,
+  });
+  const overview = await pendingOverview;
+  await main.ready;
+
+  assert.equal(settled, true);
+  assert.equal(broker.getDiagnostics().overviewLease.pendingSubscriberCount, 0);
+  assert.equal(broker.getDiagnostics().overviewLease.uiSubscriberCount, 1);
+  assert.equal(broker.getDiagnostics().upstreamAttachCount, 1);
+  overview.unsubscribe();
+  assert.equal(broker.getDiagnostics().overviewLease.uiSubscriberCount, 0);
+  assert.deepEqual(events, []);
+});
+
+test("ownerless Main Chat promotes its Overview lease in place", (t) => {
+  const { broker } = createHarness(t);
+  const observer = rootObserver({ contextId: "main-chat:g1" });
+  const before = broker.activateRootObserver(observer);
+  assert.equal(broker.getDiagnostics().overviewLease.state, "pending_chat_identity");
+
+  const promoted = broker.promoteMainChatRootObserver(observer.token, "chat-canonical");
+  assert.equal(promoted.token, before.token);
+  assert.equal(promoted.contextEpoch, before.contextEpoch);
+  assert.equal(promoted.contextId, "chat-canonical");
+  assert.equal(broker.getDiagnostics().overviewLease.state, "ready");
+  assert.equal(broker.getDiagnostics().overviewLease.chatId, "chat-canonical");
+});
+
+test("normal Main Chat replacement completes Overview locally instead of reporting parent release", async (t) => {
+  const { broker, token } = createHarness(t);
+  const first = rootObserver();
+  broker.activateRootObserver(first);
+  const main = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    runId: "run-replaced",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "surface",
+    role: "root_observer",
+    observerToken: first.token,
+    consumerId: "main-before-replace",
+    onEvent: () => undefined,
+  });
+  await main.ready;
+  const completions = [];
+  const errors = [];
+  await broker.subscribeClone({
+    kind: "overview",
+    runId: "run-replaced",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    consumerId: "overview-before-replace",
+    onEvent: () => undefined,
+    onComplete: (result) => completions.push(result),
+    onError: (error) => errors.push(error.message),
+  });
+
+  broker.activateRootObserver(rootObserver({
+    token: "main-chat:g2:1:102:chat-2",
+    generation: "g2",
+    contextId: "chat-2",
+    webContentsId: 102,
+  }));
+  assert.equal(broker.getMainChatRootObserver().contextId, "chat-2");
+  assert.deepEqual(completions.map((result) => result.reason), ["detached"]);
+  assert.deepEqual(errors, []);
+});
+
+test("pending Overview also completes locally when its Main Chat is replaced", async (t) => {
+  const { broker } = createHarness(t);
+  broker.activateRootObserver(rootObserver());
+  const completions = [];
+  const errors = [];
+  const pending = broker.subscribeClone({
+    kind: "overview",
+    runId: "run-never-opened",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    consumerId: "overview-pending-replace",
+    onEvent: () => undefined,
+    onComplete: (result) => completions.push(result.reason),
+    onError: (error) => errors.push(error.message),
+  });
+  await nextTurn();
+  broker.activateRootObserver(rootObserver({
+    token: "main-chat:g2:1:102:chat-2",
+    generation: "g2",
+    contextId: "chat-2",
+    webContentsId: 102,
+  }));
+  await pending;
+  await nextTurn();
+  assert.deepEqual(completions, ["detached"]);
+  assert.deepEqual(errors, []);
+  assert.equal(broker.getDiagnostics().pendingClones.length, 0);
+});
+
+test("thirty Main Chat and Overview attach interleavings bind without retry", async (t) => {
+  const { broker, token } = createHarness(t);
+  for (let index = 0; index < 30; index += 1) {
+    const chatId = `chat-interleave-${index}`;
+    const runId = `run-interleave-${index}`;
+    const observer = rootObserver({
+      token: `main-chat:g${index}:1:101:${chatId}`,
+      generation: `g${index}`,
+      contextId: chatId,
+    });
+    broker.activateRootObserver(observer);
+    const subscribeOverview = () => broker.subscribeClone({
+      kind: "overview",
+      runId,
+      chatId,
+      owner: { kind: "agent", agentKey: "agent-1" },
+      consumerId: `overview-interleave-${index}`,
+      onEvent: () => undefined,
+    });
+    let overviewPromise;
+    if (index % 2 === 0) overviewPromise = subscribeOverview();
+    const main = broker.subscribeRun({
+      baseUrl: "http://127.0.0.1:8080",
+      token,
+      runId,
+      chatId,
+      owner: { kind: "agent", agentKey: "agent-1" },
+      kind: "surface",
+      role: "root_observer",
+      observerToken: observer.token,
+      consumerId: `main-interleave-${index}`,
+      onEvent: () => undefined,
+    });
+    overviewPromise ??= subscribeOverview();
+    const overview = await overviewPromise;
+    await main.ready;
+    overview.unsubscribe();
+  }
+  assert.equal(broker.getDiagnostics().pendingClones.length, 0);
+  assert.equal(broker.getDiagnostics().overviewLease.uiSubscriberCount, 0);
+});
+
 test("unknown clone Run fails deterministically without a readiness timeout", async (t) => {
   const { broker } = createHarness(t);
   broker.activateRootObserver(rootObserver());

@@ -29,6 +29,11 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /closable: false/u);
   assert.match(appShell, /type: "hideWorkspace"/u);
   assert.match(appShell, /type: "showWorkspace"/u);
+  assert.match(appShell, /pendingChatWorkPanelOpenRef/u);
+  assert.match(appShell, /requestChatWorkPanelOpenWhenRegistered/u);
+  assert.match(appShell, /handleMainChatSurfaceRegistrationChange/u);
+  assert.match(appShell, /onMainChatSurfaceRegistrationChange=\{handleMainChatSurfaceRegistrationChange\}/u);
+  assert.match(embeddedHosts, /onSurfaceRegistrationChange=\{onMainChatSurfaceRegistrationChange\}/u);
   assert.match(appShell, /activeChatId=\{activeChatWorkPanelVisible \? activeChatWorkPanelChatId : null\}/u);
   assert.match(host, /state\.workspaces\.map/u);
   assert.match(host, /workspace\.items\.map/u);
@@ -43,6 +48,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(host, /item\.descriptor\.kind === "webclient"[\s\S]*?<ServiceWebviewSurface[\s\S]*?skipContextRegistration[\s\S]*?\/>/u);
   assert.match(host, /<ExternalWebviewPage/u);
   assert.match(host, /hidden=\{!visible\}/u);
+  assert.match(host, /const active = visible && workspace\.activeItemId === item\.itemId/u);
   assert.match(host, /visible && hasPanelToggle \? " has-panel-toggle" : ""/u);
   assert.match(reducer, /stableKey:\s*`web:\$\{url\}`/u);
   assert.match(

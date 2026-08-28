@@ -332,6 +332,15 @@ export interface AgentRealtimeDebugSnapshot {
     localRunSubscriberCount: number;
     pushSubscriberCount: number;
     connectionSubscriberCount: number;
+    overviewLease: {
+      state: "pending_chat_identity" | "ready";
+      parentGeneration: string;
+      contextEpoch: string;
+      chatId?: string;
+      runCount: number;
+      pendingSubscriberCount: number;
+      uiSubscriberCount: number;
+    } | null;
     pendingCloneCount: number;
     pendingClones: Array<{
       parentGeneration: string;
@@ -368,6 +377,7 @@ export interface AgentRealtimeDebugSnapshot {
       surfaceId: string;
       generation: string;
       contextId: string;
+      contextEpoch: string;
       webContentsId: number;
       runIds: string[];
     } | null;

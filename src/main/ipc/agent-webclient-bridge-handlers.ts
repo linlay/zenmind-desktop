@@ -729,12 +729,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       binding.unsubscribe?.();
       binding.unsubscribe = null;
     }
-    if (session.rootObserverToken) {
-      options.realtimeBroker.releaseRootObserver(session.rootObserverToken, reason === "surface_inactive"
-        ? "parent_observer_closed"
-        : "surface_generation_superseded");
-      session.rootObserverToken = null;
-    }
+    // Root Observer ownership follows the trusted Surface Registry lifecycle,
+    // not the shorter-lived FramePort session. Retiring a page port therefore
+    // releases only its stream consumers; the Main Chat bundle stays intact.
+    session.rootObserverToken = null;
     options.realtimeBroker.cleanupConsumer(session.consumerId);
     sessions.delete(session.key);
     const keys = senderSessionKeys.get(session.sender.id);
@@ -787,33 +785,74 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   };
 
   options.browserSurfaces.subscribeLifecycle?.((event) => {
-    const active = options.realtimeBroker.getActiveRootObserver();
-    if (!active) return;
-    const isRootSurface = event.surface.surfaceRole === "main-chat" ||
-      event.surface.surfaceRole === "copilot-dock" ||
-      event.surface.surfaceRole === "kanban-chat";
-    if (!isRootSurface) return;
-    const sameSurface = event.surface.surfaceId === active.surfaceId;
-    const replacedByAnotherRoot = event.type === "registered" && event.surface.active && !sameSurface;
-    const registeredContextId = rootObserverContextId(event.surface);
-    const currentBecameInvalid = sameSurface && (
-      event.type === "unregistered" ||
-      !event.surface.active ||
-      event.surface.registrationId !== active.generation ||
-      !event.surface.guestWebContentsIds.includes(active.webContentsId) ||
-      registeredContextId !== active.contextId
+    if (
+      event.surface.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+      event.surface.surfaceRole !== "main-chat"
+    ) return;
+
+    const active = options.realtimeBroker.getMainChatRootObserver();
+    const guestWebContentsId = event.surface.guestWebContentsIds[0];
+    const sameGeneration = Boolean(
+      active &&
+      event.surface.registrationId === active.generation &&
+      guestWebContentsId === active.webContentsId,
     );
-    if (!replacedByAnotherRoot && !currentBecameInvalid) return;
-    for (const session of [...sessions.values()]) {
-      if (session.rootObserverToken !== active.token) continue;
-      releaseSessionRootObserver(session, active.token);
+
+    if (
+      event.type === "registered" &&
+      event.surface.active &&
+      Number.isSafeInteger(guestWebContentsId)
+    ) {
+      const registeredChatId = event.surface.ownerChatId.trim();
+      if (sameGeneration && active) {
+        if (registeredChatId && active.contextId !== registeredChatId) {
+          try {
+            options.realtimeBroker.promoteMainChatRootObserver(active.token, registeredChatId);
+            return;
+          } catch {
+            // A ready context changing under the same WebView generation is a
+            // real Chat switch and must replace the complete bundle below.
+          }
+        } else if (
+          registeredChatId === active.contextId ||
+          (!registeredChatId && active.contextId === `${event.surface.surfaceId}:${event.surface.registrationId}`)
+        ) {
+          return;
+        }
+      }
+
+      if (active) {
+        for (const session of [...sessions.values()]) {
+          if (session.rootObserverToken === active.token) {
+            releaseSessionRootObserver(session, active.token);
+          }
+        }
+      }
+      const contextId = rootObserverContextId(event.surface);
+      options.realtimeBroker.activateRootObserver({
+        token: [
+          event.surface.surfaceId,
+          event.surface.registrationId,
+          event.surface.ownerWebContentsId,
+          guestWebContentsId,
+          contextId,
+        ].join(":"),
+        kind: "main_chat",
+        surfaceId: event.surface.surfaceId,
+        generation: event.surface.registrationId,
+        contextId,
+        webContentsId: guestWebContentsId!,
+      });
+      return;
     }
-    options.realtimeBroker.releaseRootObserver(
-      active.token,
-      replacedByAnotherRoot || event.surface.registrationId !== active.generation
-        ? "surface_generation_superseded"
-        : "parent_observer_closed",
-    );
+
+    if (!active || !sameGeneration) return;
+    for (const session of [...sessions.values()]) {
+      if (session.rootObserverToken === active.token) {
+        releaseSessionRootObserver(session, active.token);
+      }
+    }
+    options.realtimeBroker.releaseRootObserver(active.token, "parent_observer_closed");
   });
 
   const detachBinding = async (session: LogicalSession, binding: StreamBinding) => {
@@ -821,7 +860,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     binding.detachSent = true;
     binding.unsubscribe?.();
     binding.unsubscribe = null;
-    if (binding.observerToken && binding.runId) {
+    if (!binding.virtual && binding.observerToken && binding.runId) {
       options.realtimeBroker.releaseObservedRun(binding.observerToken, binding.runId, "surface_inactive");
     }
   };
@@ -882,7 +921,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     }
     binding.canonicalChatId = chatId;
     binding.chatId = chatId;
-    if (!binding.newChatSource || binding.canonicalChatReady) return;
+    const promoteMainChatBundle = () => {
+      if (
+        binding.observerToken &&
+        options.realtimeBroker.getMainChatRootObserver()?.token === binding.observerToken
+      ) {
+        options.realtimeBroker.promoteMainChatRootObserver(binding.observerToken, chatId);
+      }
+    };
+    if (!binding.newChatSource || binding.canonicalChatReady) {
+      promoteMainChatBundle();
+      return;
+    }
     const request = {
       sourceId: binding.sourceId,
       surfaceId: MAIN_CHAT_SURFACE_ID,
@@ -924,6 +974,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         traceCanonicalSync("failed", result.code);
         throw Object.assign(new Error(result.message), { name: result.code });
       }
+      promoteMainChatBundle();
       traceCanonicalSync("ready", "canonical_owner_registered");
     });
     void ready.catch(() => undefined);
@@ -1331,21 +1382,45 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       const rootKind = rootObserverKind(context.target);
       if (rootKind) {
         const contextId = rootObserverContextId(context.target, readText(payload.chatId));
-        observerToken = createRootObserverToken(context.target, contextId);
-        if (session.rootObserverToken && session.rootObserverToken !== observerToken) {
-          options.realtimeBroker.releaseRootObserver(session.rootObserverToken, "surface_generation_superseded");
+        if (rootKind === "main_chat") {
+          const activeMain = options.realtimeBroker.getMainChatRootObserver();
+          const contextMatches = activeMain && (
+            activeMain.contextId === contextId ||
+            activeMain.contextId === `${context.target.surfaceId}:${context.target.registrationId}`
+          );
+          if (
+            !activeMain ||
+            activeMain.surfaceId !== context.target.surfaceId ||
+            activeMain.generation !== context.target.registrationId ||
+            activeMain.webContentsId !== event.sender.id ||
+            !contextMatches
+          ) {
+            sendFrame(session, frameError(
+              frame.id,
+              "target_unavailable",
+              "active Main Chat Broker bundle is unavailable",
+              { retryable: false, details: { reason: "surface_generation_superseded" } },
+            ));
+            return;
+          }
+          observerToken = activeMain.token;
+        } else {
+          observerToken = createRootObserverToken(context.target, contextId);
+          if (session.rootObserverToken && session.rootObserverToken !== observerToken) {
+            options.realtimeBroker.releaseRootObserver(session.rootObserverToken, "surface_generation_superseded");
+          }
+          options.realtimeBroker.activateRootObserver({
+            token: observerToken,
+            kind: rootKind,
+            surfaceId: context.target.surfaceId,
+            generation: context.target.registrationId,
+            contextId,
+            webContentsId: event.sender.id,
+          });
         }
-        options.realtimeBroker.activateRootObserver({
-          token: observerToken,
-          kind: rootKind,
-          surfaceId: context.target.surfaceId,
-          generation: context.target.registrationId,
-          contextId,
-          webContentsId: event.sender.id,
-        });
         session.rootObserverToken = observerToken;
       } else if (isBTW || isReadonlyVirtualAttach) {
-        const activeRoot = options.realtimeBroker.getActiveRootObserver();
+        const activeRoot = options.realtimeBroker.getMainChatRootObserver();
         if (
           !activeRoot || activeRoot.kind !== "main_chat" ||
           activeRoot.contextId !== ownerChatId
@@ -1386,7 +1461,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       const runId = readText(payload.runId);
       const rootToken = session.rootObserverToken || (
         context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID
-          ? options.realtimeBroker.getActiveRootObserver()?.token || null
+          ? options.realtimeBroker.getMainChatRootObserver()?.token || null
           : null
       );
       if (rootToken && runId) {
@@ -1494,6 +1569,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           throw Object.assign(new Error("visible Run identity is incomplete"), { name: "invalid_request" });
         }
         const subscription = await options.realtimeBroker.subscribeClone({
+          kind: context.kind === "agent-overview" ? "overview" : "debug",
           runId: binding.runId,
           chatId: binding.chatId,
           lastSeq: binding.lastSeq,
