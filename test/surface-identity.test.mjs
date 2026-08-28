@@ -88,6 +88,55 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
   }
 });
 
+test("surface registry rejects Copilot Dock on Kanban and emits trusted root lifecycle", () => {
+  const guest = { id: 61, getType: () => "webview", isDestroyed: () => false };
+  const registry = createBrowserSurfaceRegistry({
+    webContents: {
+      getAllWebContents: () => [guest],
+      fromId: (id) => id === guest.id ? guest : undefined,
+    },
+    listWebEntries: () => ({ items: [] }),
+    getCurrentPageSnapshot: () => null,
+  });
+  const events = [];
+  registry.subscribeLifecycle((event) => events.push(event));
+  const dock = createSurfaceIdentity("copilot-dock");
+  const registration = {
+    registrationId: "dock-generation-1",
+    ...dock,
+    surfaceIdentityKey: "desktop-route:/kanban",
+    surfaceKind: "service",
+    surfaceType: "agent-copilot",
+    serviceId: "agent-webclient",
+    pageRoute: "/kanban",
+    label: "Copilot Dock",
+    url: "http://127.0.0.1:7788/copilot/helper",
+    active: true,
+    tabs: [{
+      tabId: "dock-tab",
+      currentUrl: "http://127.0.0.1:7788/copilot/helper",
+      title: "Copilot Dock",
+      webContentsId: guest.id,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+    }],
+    activeTabId: "dock-tab",
+  };
+  assert.deepEqual(registry.registerSurfaceResult(registration, 7), {
+    ok: false,
+    reason: "invalid_registration",
+  });
+  assert.equal(events.length, 0);
+
+  const allowed = { ...registration, registrationId: "dock-generation-2", surfaceIdentityKey: "desktop-route:/settings", pageRoute: "/settings" };
+  assert.equal(registry.registerSurface(allowed, 7), true);
+  assert.equal(events[0].type, "registered");
+  assert.equal(events[0].surface.surfaceRole, "copilot-dock");
+  assert.equal(registry.unregisterSurface({ surfaceId: "copilot-dock", registrationId: "dock-generation-2" }, 7), true);
+  assert.equal(events[1].type, "unregistered");
+});
+
 test("surface registry rejects a forged identity and cascades child removal", () => {
   const guests = new Map([
     [71, { id: 71, getType: () => "webview", isDestroyed: () => false }],

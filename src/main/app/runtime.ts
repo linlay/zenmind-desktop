@@ -73,6 +73,7 @@ import { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
 import { redactEnterpriseChatSupportText } from "../enterprise-chat-support-bundle";
 import { readEnterpriseImSettings } from "../enterprise-im-settings";
 import { createLogsRuntime } from "../logs/runtime";
+import { isDesktopDevelopmentRuntime } from "../development-runtime";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
 import {
   bundledEnvZipExists,
@@ -1181,7 +1182,7 @@ export function createMainProcessRuntime() {
       ...details
     };
     if (diagnosticLevel === "debug") {
-      if (app.isPackaged) return;
+      if (!isDesktopDevelopmentRuntime(app)) return;
       console.debug("[renderer-diagnostic]", payload);
     } else if (diagnosticLevel === "warn") {
       console.warn("[renderer-diagnostic]", payload);

@@ -19,6 +19,7 @@ import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 
 const MAX_REPLAY_EVENTS = 2_000;
 const MAX_REPLAY_BYTES = 4 * 1024 * 1024;
+const MAX_RETAINED_TERMINAL_RUNS = 2_000;
 const REQUEST_TIMEOUT_MS = 30_000;
 const DESKTOP_CDP_REQUEST_TYPE = "desktop.cdp.call";
 const DESKTOP_RESPONSE_DELTA_EVENT_TYPE = "desktop.bridge.response.delta";
@@ -26,6 +27,19 @@ const DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE = "desktop.cdp.screenshot.delta";
 const DESKTOP_STREAM_RAW_CHUNK_BYTES = 192 * 1024;
 const DESKTOP_SCREENSHOT_CHUNK_CHARS = 256 * 1024;
 const DESKTOP_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+
+export type RealtimeLane = "primary" | "btw";
+export type RunChannelKey = { lane: RealtimeLane; runId: string };
+export type RootObserverKind = "main_chat" | "copilot_dock" | "kanban_chat";
+
+export type RootObserverIdentity = {
+  token: string;
+  kind: RootObserverKind;
+  surfaceId: string;
+  generation: string;
+  contextId: string;
+  webContentsId: number;
+};
 
 function unrefTimer<T extends ReturnType<typeof setTimeout>>(timer: T): T {
   (timer as T & { unref?: () => void }).unref?.();
@@ -65,29 +79,37 @@ type ReplayEvent = {
   event: Record<string, unknown>;
   bytes: number;
   seq: number | null;
+  path?: string;
 };
 
 type BrokerRun = {
+  lane: RealtimeLane;
   runId: string;
   chatId: string;
   owner: AgentWebclientRunOwner | null;
   lastSeq: number;
   terminal: boolean;
   terminalReason: string;
-  terminalSource: "query_stream" | "attach_stream" | "forwarded_stream" | "push" | null;
+  terminalSource: "query_stream" | "attach_stream" | "push" | null;
   suspended: boolean;
   restoreInFlight: boolean;
   restoreCount: number;
   lastRestoreResult: string;
   upstreamRequestId: string | null;
-  forwardedSourceId: string | null;
   query: QueryTransaction | null;
   replay: ReplayEvent[];
   replayBytes: number;
   subscribers: Set<string>;
+  rootObserverTokens: Set<string>;
+  baseUrl: string;
+  accessToken: string;
+  detachInFlight: Promise<void> | null;
+  operationGeneration: number;
 };
 
 type QueryTransaction = {
+  lane: RealtimeLane;
+  requestType: "/api/query" | "/api/btw";
   operationId: string;
   upstreamRequestId: string;
   runId: string | null;
@@ -106,9 +128,15 @@ type QueryTransaction = {
   acceptanceTimer: ReturnType<typeof setTimeout> | null;
   signal?: AbortSignal;
   abortListener?: () => void;
+  rootObserverToken: string | null;
+  consumerId: string;
+  subscriptionId: string | null;
+  baseUrl: string;
+  accessToken: string;
 };
 
 type PendingRequest = {
+  lane: RealtimeLane;
   consumerId: string;
   localId: string;
   upstreamId: string;
@@ -120,16 +148,34 @@ type PendingRequest = {
 };
 
 type RunSubscription = {
+  lane: RealtimeLane;
   id: string;
   runId: string;
   chatId: string;
   lastSeq: number;
   kind: "surface" | "internal";
   consumerId: string;
-  surfaceId?: string;
-  onEvent(event: Record<string, unknown>): void;
+  onEvent(event: Record<string, unknown>, path?: string): void;
   onComplete?(result: RealtimeQueryCompleted): void;
   onError?(error: Error): void;
+  role: "root_observer" | "clone" | "internal";
+  observerToken?: string;
+};
+
+type RootObserverState = RootObserverIdentity & {
+  runIds: Set<string>;
+};
+
+type PendingClone = {
+  id: string;
+  observerToken: string;
+  parentGeneration: string;
+  runId: string;
+  chatId: string;
+  owner: AgentWebclientRunOwner;
+  waitReason: "awaiting_run_start";
+  resolve(): void;
+  reject(error: Error): void;
 };
 
 type PushSubscription = {
@@ -143,11 +189,12 @@ type PushSubscription = {
 
 type ConnectionSubscription = {
   id: string;
+  lane: RealtimeLane;
   consumerId: string;
   onState(state: AgentPlatformRealtimeConnectionState): void;
 };
 
-type ForwardedRunActionGrant = {
+type RunActionGrant = {
   sourceId: string;
   chatId: string;
   runId: string;
@@ -174,15 +221,6 @@ export type RealtimeQueryCompleted = { reason: string; lastSeq?: number };
 export type RealtimeQueryHandle = {
   accepted: Promise<RealtimeQueryAccepted>;
   completed: Promise<RealtimeQueryCompleted>;
-};
-
-export type VisibleRunBinding = {
-  epoch: number;
-  chatId: string;
-  runId: string;
-  upstreamRequestId: string;
-  primarySurfaceId: string;
-  consumerSurfaceIds: Set<string>;
 };
 
 function createDeferred<T>(): Deferred<T> {
@@ -256,6 +294,16 @@ function brokerError(
   });
 }
 
+function cloneBindingError(
+  reason: "parent_observer_closed" | "visible_run_changed" | "run_not_registered" | "surface_generation_superseded",
+  message: string,
+) {
+  return brokerError("target_unavailable", message, {
+    retryable: false,
+    details: { reason },
+  });
+}
+
 function frameError(frame: AgentPlatformRealtimeFrame) {
   return brokerError(
     readText(frame.type) || "protocol_error",
@@ -275,21 +323,27 @@ function pushIdentity(frame: AgentPlatformRealtimeFrame, key: "chatId" | "runId"
   return readText(frame[key]) || readText(framePayload(frame)[key]);
 }
 
+function runChannelMapKey({ lane, runId }: RunChannelKey) {
+  return `${lane}\u0000${runId}`;
+}
+
 export class RealtimeBroker {
-  private readonly client: AgentPlatformRealtimeClient;
-  private connectionState: AgentPlatformRealtimeConnectionState;
+  private readonly clients: Record<RealtimeLane, AgentPlatformRealtimeClient>;
+  private readonly connectionStates: Record<RealtimeLane, AgentPlatformRealtimeConnectionState>;
   private readonly pendingRequests = new Map<string, PendingRequest>();
   private readonly queriesByRequestId = new Map<string, QueryTransaction>();
-  private readonly runsById = new Map<string, BrokerRun>();
+  private readonly runChannels = new Map<string, BrokerRun>();
   private readonly runSubscriptions = new Map<string, RunSubscription>();
   private readonly pushSubscriptions = new Map<string, PushSubscription>();
   private readonly connectionSubscriptions = new Map<string, ConnectionSubscription>();
   private readonly terminalRequestIds = new Set<string>();
   private readonly inboundDesktopRequests = new Map<string, AbortController>();
   private readonly seenInboundDesktopRequestIds = new Set<string>();
-  private readonly forwardedRunActionGrants = new Map<string, ForwardedRunActionGrant>();
+  private readonly runActionGrants = new Map<string, RunActionGrant>();
+  private activeRootObserver: RootObserverState | null = null;
+  private readonly pendingClones = new Map<string, PendingClone>();
+  private lastCloneCancellationReason = "";
   private desktopBridgeProvider: DesktopBridgeRequestProvider | null = null;
-  private visibleBinding: VisibleRunBinding | null = null;
   private disposed = false;
   private acceptingDelivery = true;
   private readonly debugTrace = new RealtimeDebugTraceBuffer();
@@ -302,6 +356,12 @@ export class RealtimeBroker {
     duplicateTerminalCount: 0,
     observerReleaseCount: 0,
     replayEvictionCount: 0,
+    seqExpiredCount: 0,
+    upstreamAttachCount: 0,
+    upstreamDetachCount: 0,
+    cloneCreatedCount: 0,
+    cloneRevokedCount: 0,
+    laneRotationCount: 0,
   };
 
   constructor(private readonly options: {
@@ -317,51 +377,77 @@ export class RealtimeBroker {
     onDiagnostic?(message: string): void;
     onConnectionState?(state: AgentPlatformRealtimeConnectionState): void;
   }) {
-    this.connectionState = {
+    const idleState = (): AgentPlatformRealtimeConnectionState => ({
       phase: "idle",
       generation: 0,
       physicalConnectionCount: 0,
       reconnectCount: 0,
       key: null,
-    };
-    this.client = new AgentPlatformRealtimeClient({
-      app: options.app,
-      issueAccessToken: options.issueAccessToken,
-      createWebSocket: options.createWebSocket,
-      connectTimeoutMs: options.connectTimeoutMs,
-      heartbeatTimeoutMs: options.heartbeatTimeoutMs,
-      onFrame: (frame, generation) => this.handleFrame(frame, generation),
-      onStaleFrame: () => {
-        this.diagnostics.staleFrameCount += 1;
-      },
-      onState: (state) => this.handleConnectionState(state),
-      onDiagnostic: options.onDiagnostic,
-      onTrace: (direction, frame) => this.debugTrace.append({
-        layer: "platform-ws",
-        direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
-        data: frame,
-      }),
     });
+    this.connectionStates = { primary: idleState(), btw: idleState() };
+    const createClient = (lane: RealtimeLane) => new AgentPlatformRealtimeClient({
+        app: options.app,
+        issueAccessToken: options.issueAccessToken,
+        createWebSocket: options.createWebSocket,
+        connectTimeoutMs: options.connectTimeoutMs,
+        heartbeatTimeoutMs: options.heartbeatTimeoutMs,
+        source: lane === "primary" ? "desktop-main" : "desktop-btw",
+        surfaceId: lane === "btw" ? "desktop-btw" : undefined,
+        onFrame: (frame, generation) => this.handleFrame(lane, frame, generation),
+        onStaleFrame: () => {
+          this.diagnostics.staleFrameCount += 1;
+        },
+        onState: (state) => this.handleConnectionState(lane, state),
+        onDiagnostic: (message) => options.onDiagnostic?.(`${lane}:${message}`),
+        onTrace: (direction, frame) => this.debugTrace.append({
+          layer: "platform-ws",
+          direction: direction === "in" ? "platform-to-desktop" : "desktop-to-platform",
+          data: { lane, ...frame },
+        }),
+      });
+    this.clients = { primary: createClient("primary"), btw: createClient("btw") };
   }
 
   getConnectionPhase(): AgentWebclientConnectionPhase {
-    return this.connectionState.phase;
+    return this.connectionStates.primary.phase;
   }
 
-  getConnectionState() {
-    return this.client.getState();
+  getConnectionState(lane: RealtimeLane = "primary") {
+    return this.clients[lane].getState();
+  }
+
+  getConnectionStates() {
+    return {
+      primary: this.clients.primary.getState(),
+      btw: this.clients.btw.getState(),
+    };
   }
 
   setDesktopBridgeProvider(provider: DesktopBridgeRequestProvider | null) {
     this.desktopBridgeProvider = provider;
   }
 
-  async ensureConnected(baseUrl: string, token: string) {
+  private getRunChannel(runIdValue: string, lane?: RealtimeLane) {
+    const runId = runIdValue.trim();
+    if (!runId) return undefined;
+    if (lane) return this.runChannels.get(runChannelMapKey({ lane, runId }));
+    return [...this.runChannels.values()].find((run) => run.runId === runId);
+  }
+
+  private setRunChannel(run: BrokerRun) {
+    this.runChannels.set(runChannelMapKey(run), run);
+  }
+
+  private deleteRunChannel(run: BrokerRun) {
+    return this.runChannels.delete(runChannelMapKey(run));
+  }
+
+  async ensureConnected(baseUrl: string, token: string, lane: RealtimeLane = "primary") {
     if (this.disposed || !this.acceptingDelivery) {
       throw brokerError("connection_unavailable", "Realtime Broker is disposed");
     }
     this.prepareConnectionIdentity(baseUrl, token);
-    await this.client.ensureConnected(baseUrl, token);
+    await this.clients[lane].ensureConnected(baseUrl, token);
   }
 
   query(options: {
@@ -374,12 +460,18 @@ export class RealtimeBroker {
     owner?: AgentWebclientRunOwner;
     signal?: AbortSignal;
     onEvent(event: Record<string, unknown>, path: string): Promise<void> | void;
+    consumerId?: string;
+    lane?: RealtimeLane;
+    requestType?: "/api/query" | "/api/btw";
+    observerToken?: string;
   }): RealtimeQueryHandle {
     const accepted = createDeferred<RealtimeQueryAccepted>();
     const completed = createDeferred<RealtimeQueryCompleted>();
     const operationId = options.id.trim();
     const expectedRunId = options.runId?.trim() || "";
     const expectedChatId = options.chatId?.trim() || "";
+    const lane = options.lane ?? (options.requestType === "/api/btw" ? "btw" : "primary");
+    const requestType = options.requestType ?? (lane === "btw" ? "/api/btw" : "/api/query");
     if (!this.acceptingDelivery) {
       const error = brokerError("connection_unavailable", "Realtime Broker is shutting down");
       accepted.reject(error);
@@ -395,6 +487,8 @@ export class RealtimeBroker {
     }
     const upstreamRequestId = `desktop-query-${randomUUID()}`;
     const transaction: QueryTransaction = {
+      lane,
+      requestType,
       operationId,
       upstreamRequestId,
       runId: null,
@@ -412,6 +506,11 @@ export class RealtimeBroker {
       eventQueue: Promise.resolve(),
       acceptanceTimer: null,
       signal: options.signal,
+      rootObserverToken: options.observerToken?.trim() || null,
+      consumerId: options.consumerId?.trim() || `query:${operationId}`,
+      subscriptionId: null,
+      baseUrl: options.baseUrl,
+      accessToken: options.token,
     };
     this.queriesByRequestId.set(upstreamRequestId, transaction);
     transaction.acceptanceTimer = setTimeout(() => {
@@ -426,14 +525,14 @@ export class RealtimeBroker {
       };
       options.signal.addEventListener("abort", transaction.abortListener, { once: true });
     }
-    void this.ensureConnected(options.baseUrl, options.token)
+    void this.ensureConnected(options.baseUrl, options.token, lane)
       .then(() => {
         if (options.signal?.aborted) {
           throw brokerError("connection_unavailable", "query aborted");
         }
-        this.client.send({
+        this.clients[lane].send({
           frame: "request",
-          type: "/api/query",
+          type: requestType,
           id: upstreamRequestId,
           payload: options.payload,
         });
@@ -452,6 +551,7 @@ export class RealtimeBroker {
     stream?: boolean;
     onFrame(frame: AgentPlatformRealtimeFrame): void;
     onError(error: Error): void;
+    lane?: RealtimeLane;
   }) {
     if (!this.acceptingDelivery) {
       throw brokerError("connection_unavailable", "Realtime Broker is shutting down");
@@ -459,6 +559,9 @@ export class RealtimeBroker {
     this.prepareConnectionIdentity(options.baseUrl, options.token);
     const localId = options.localId.trim();
     const type = options.type.trim();
+    const payloadRunId = readText(options.payload?.runId);
+    const registeredLane = payloadRunId ? this.getRunChannel(payloadRunId)?.lane : undefined;
+    const lane = options.lane ?? registeredLane ?? (type === "/api/btw" ? "btw" : "primary");
     if (!localId || !type) {
       throw brokerError("invalid_request", "request id and type are required");
     }
@@ -472,6 +575,7 @@ export class RealtimeBroker {
           pending.onError(brokerError("connection_unavailable", `${type} timed out`));
         }, REQUEST_TIMEOUT_MS));
     this.pendingRequests.set(upstreamId, {
+      lane,
       consumerId: options.consumerId,
       localId,
       upstreamId,
@@ -482,8 +586,8 @@ export class RealtimeBroker {
       onError: options.onError,
     });
     try {
-      await this.ensureConnected(options.baseUrl, options.token);
-      this.client.send({
+      await this.ensureConnected(options.baseUrl, options.token, lane);
+      this.clients[lane].send({
         frame: "request",
         type,
         id: upstreamId,
@@ -494,6 +598,136 @@ export class RealtimeBroker {
       throw error;
     }
     return upstreamId;
+  }
+
+  activateRootObserver(input: RootObserverIdentity) {
+    const token = input.token.trim();
+    const surfaceId = input.surfaceId.trim();
+    const generation = input.generation.trim();
+    const contextId = input.contextId.trim();
+    if (!token || !surfaceId || !generation || !contextId || !Number.isSafeInteger(input.webContentsId)) {
+      throw brokerError("invalid_request", "Root Observer identity is incomplete");
+    }
+    const current = this.activeRootObserver;
+    if (current?.token === token && current.contextId === contextId) {
+      return this.getActiveRootObserver();
+    }
+    if (current) this.releaseRootObserver(current.token, "surface_generation_superseded");
+    this.activeRootObserver = {
+      ...input,
+      token,
+      surfaceId,
+      generation,
+      contextId,
+      runIds: new Set(),
+    };
+    return this.getActiveRootObserver();
+  }
+
+  getActiveRootObserver() {
+    const observer = this.activeRootObserver;
+    return observer
+      ? { ...observer, runIds: new Set(observer.runIds) }
+      : null;
+  }
+
+  releaseRootObserver(tokenValue: string, reason = "parent_observer_closed") {
+    const token = tokenValue.trim();
+    if (!token) return false;
+    const observer = this.activeRootObserver?.token === token ? this.activeRootObserver : null;
+    if (observer) this.activeRootObserver = null;
+    const cloneReason = reason === "surface_generation_superseded"
+      ? "surface_generation_superseded"
+      : "parent_observer_closed";
+    this.rejectPendingClones(token, cloneBindingError(cloneReason, "Main Chat observer is no longer active"));
+    for (const subscription of [...this.runSubscriptions.values()]) {
+      if (subscription.observerToken !== token) continue;
+      this.unsubscribe(subscription.id);
+      if (subscription.role === "clone") {
+        subscription.onError?.(cloneBindingError(cloneReason, "Main Chat clone parent was released"));
+      }
+    }
+    for (const run of this.runChannels.values()) {
+      if (!run.rootObserverTokens.delete(token)) continue;
+      void this.detachRunIfUnobserved(run, reason);
+    }
+    this.pruneRetainedTerminalRuns();
+    return Boolean(observer);
+  }
+
+  releaseObservedRun(observerTokenValue: string, runIdValue: string, reason = "surface_inactive") {
+    const observerToken = observerTokenValue.trim();
+    const runId = runIdValue.trim();
+    const run = this.getRunChannel(runId);
+    if (!observerToken || !run || !run.rootObserverTokens.delete(observerToken)) return false;
+    this.activeRootObserver?.runIds.delete(runId);
+    for (const subscription of [...this.runSubscriptions.values()]) {
+      if (subscription.runId !== runId || subscription.observerToken !== observerToken) continue;
+      this.unsubscribe(subscription.id);
+    }
+    void this.detachRunIfUnobserved(run, reason);
+    this.pruneRetainedTerminalRuns();
+    return true;
+  }
+
+  async subscribeClone(options: {
+    runId: string;
+    chatId: string;
+    lastSeq?: number;
+    owner: AgentWebclientRunOwner;
+    consumerId: string;
+    onEvent(event: Record<string, unknown>): void;
+    onComplete?(result: RealtimeQueryCompleted): void;
+    onError?(error: Error): void;
+  }) {
+    const observer = this.activeRootObserver;
+    if (!observer || observer.kind !== "main_chat" || observer.contextId !== options.chatId.trim()) {
+      throw cloneBindingError("parent_observer_closed", "active Main Chat observer does not match the clone");
+    }
+    await this.waitForCloneRun(observer.token, options.runId, options.chatId, options.owner);
+    const current = this.activeRootObserver;
+    const run = this.getRunChannel(options.runId);
+    if (!current || current.token !== observer.token || !run || !run.rootObserverTokens.has(observer.token)) {
+      throw cloneBindingError("surface_generation_superseded", "Main Chat observer changed before clone binding");
+    }
+    if (run.chatId !== options.chatId.trim() || (run.owner && !sameRunOwner(run.owner, options.owner))) {
+      throw cloneBindingError("visible_run_changed", "clone Run identity no longer matches Main Chat");
+    }
+    const id = `clone-sub-${randomUUID()}`;
+    const subscription: RunSubscription = {
+      id,
+      lane: run.lane,
+      runId: run.runId,
+      chatId: run.chatId,
+      lastSeq: Math.max(0, options.lastSeq ?? 0),
+      kind: "surface",
+      consumerId: options.consumerId,
+      role: "clone",
+      observerToken: observer.token,
+      onEvent: options.onEvent,
+      onComplete: options.onComplete,
+      onError: options.onError,
+    };
+    this.replayToSubscriber(run, subscription);
+    if (run.terminal) {
+      queueMicrotask(() => options.onComplete?.({
+        reason: run.terminalReason || "done",
+        lastSeq: run.lastSeq,
+      }));
+      return {
+        subscriptionId: id,
+        unsubscribe: () => false,
+        ready: Promise.resolve(),
+      };
+    }
+    this.runSubscriptions.set(id, subscription);
+    run.subscribers.add(id);
+    this.diagnostics.cloneCreatedCount += 1;
+    return {
+      subscriptionId: id,
+      unsubscribe: () => this.unsubscribe(id),
+      ready: Promise.resolve(),
+    };
   }
 
   subscribePush(options: {
@@ -520,10 +754,12 @@ export class RealtimeBroker {
   subscribeConnection(options: {
     consumerId: string;
     onState(state: AgentPlatformRealtimeConnectionState): void;
+    lane?: RealtimeLane;
   }) {
+    const lane = options.lane ?? "primary";
     const id = `connection-sub-${randomUUID()}`;
-    this.connectionSubscriptions.set(id, { id, ...options });
-    options.onState(this.client.getState());
+    this.connectionSubscriptions.set(id, { id, ...options, lane });
+    options.onState(this.clients[lane].getState());
     return () => this.connectionSubscriptions.delete(id);
   }
 
@@ -540,6 +776,9 @@ export class RealtimeBroker {
     onEvent(event: Record<string, unknown>): void;
     onComplete?(result: RealtimeQueryCompleted): void;
     onError?(error: Error): void;
+    lane?: RealtimeLane;
+    role?: "root_observer" | "clone" | "internal";
+    observerToken?: string;
   }) {
     if (!this.acceptingDelivery) {
       throw brokerError("connection_unavailable", "Realtime Broker is shutting down");
@@ -547,11 +786,13 @@ export class RealtimeBroker {
     this.prepareConnectionIdentity(options.baseUrl, options.token);
     const runId = options.runId.trim();
     const chatId = options.chatId.trim();
+    const lane = options.lane ?? "primary";
     if (!runId || !chatId) {
       throw brokerError("invalid_request", "runId and chatId are required");
     }
     const id = `run-sub-${randomUUID()}`;
     const subscription: RunSubscription = {
+      lane,
       id,
       runId,
       chatId,
@@ -561,10 +802,16 @@ export class RealtimeBroker {
       onEvent: options.onEvent,
       onComplete: options.onComplete,
       onError: options.onError,
+      role: options.role ?? (options.kind === "internal" ? "internal" : "root_observer"),
+      ...(options.observerToken ? { observerToken: options.observerToken } : {}),
     };
-    let run = this.runsById.get(runId);
+    let run = this.getRunChannel(runId, lane);
     if (!run) {
+      if (this.getRunChannel(runId)) {
+        throw brokerError("invalid_request", "runId belongs to a different Realtime lane");
+      }
       run = {
+        lane,
         runId,
         chatId,
         owner: options.owner ?? (options.agentKey?.trim()
@@ -579,21 +826,53 @@ export class RealtimeBroker {
         restoreCount: 0,
         lastRestoreResult: "never",
         upstreamRequestId: null,
-        forwardedSourceId: null,
         query: null,
         replay: [],
         replayBytes: 0,
         subscribers: new Set(),
+        rootObserverTokens: new Set(),
+        baseUrl: options.baseUrl,
+        accessToken: options.token,
+        detachInFlight: null,
+        operationGeneration: 0,
       };
-      this.runsById.set(runId, run);
+      this.setRunChannel(run);
     } else if (run.chatId !== chatId) {
       throw brokerError("invalid_request", "runId belongs to a different chat");
+    } else if (options.owner && run.owner && !sameRunOwner(run.owner, options.owner)) {
+      throw brokerError("invalid_request", "runId belongs to a different Run owner");
+    }
+    if (subscription.role === "root_observer") {
+      const observerToken = subscription.observerToken?.trim() || "";
+      if (!observerToken || this.activeRootObserver?.token !== observerToken) {
+        throw brokerError("surface_generation_superseded", "Root Observer is no longer active");
+      }
     }
     this.replayToSubscriber(run, subscription);
+    if (run.terminal) {
+      queueMicrotask(() => options.onComplete?.({
+        reason: run.terminalReason || "done",
+        lastSeq: run.lastSeq,
+      }));
+      return {
+        subscriptionId: id,
+        unsubscribe: () => false,
+        ready: Promise.resolve(),
+      };
+    }
     this.runSubscriptions.set(id, subscription);
     run.subscribers.add(id);
-    const ready = !run.terminal && !run.upstreamRequestId && !run.forwardedSourceId
-      ? this.startAttach(run, options.baseUrl, options.token).catch((error) => {
+    if (subscription.role === "root_observer") {
+      const observerToken = subscription.observerToken!.trim();
+      run.operationGeneration += 1;
+      run.rootObserverTokens.add(observerToken);
+      this.activeRootObserver!.runIds.add(run.runId);
+      this.notifyPendingClones(run);
+    }
+    run.baseUrl = options.baseUrl;
+    run.accessToken = options.token;
+    const ready = !run.terminal && !run.upstreamRequestId
+      ? Promise.resolve(run.detachInFlight).then(() => this.startAttach(run, options.baseUrl, options.token)).catch((error) => {
         subscription.onError?.(error instanceof Error ? error : new Error(String(error)));
         throw error;
       })
@@ -614,135 +893,24 @@ export class RealtimeBroker {
     const runSubscription = this.runSubscriptions.get(subscriptionId);
     if (!runSubscription) return false;
     this.runSubscriptions.delete(subscriptionId);
-    this.runsById.get(runSubscription.runId)?.subscribers.delete(subscriptionId);
-    if (runSubscription.surfaceId && this.visibleBinding) {
-      const stillSubscribed = [...this.runSubscriptions.values()].some((candidate) =>
-        candidate.surfaceId === runSubscription.surfaceId &&
-        candidate.runId === this.visibleBinding?.runId
+    if (runSubscription.role === "clone") this.diagnostics.cloneRevokedCount += 1;
+    const subscribedRun = this.getRunChannel(runSubscription.runId, runSubscription.lane);
+    subscribedRun?.subscribers.delete(subscriptionId);
+    if (subscribedRun && runSubscription.role === "root_observer" && runSubscription.observerToken) {
+      const stillObserved = [...this.runSubscriptions.values()].some((candidate) =>
+        candidate.role === "root_observer" &&
+        candidate.runId === runSubscription.runId &&
+        candidate.observerToken === runSubscription.observerToken
       );
-      if (!stillSubscribed) this.visibleBinding.consumerSurfaceIds.delete(runSubscription.surfaceId);
+      if (!stillObserved && subscribedRun.rootObserverTokens.delete(runSubscription.observerToken)) {
+        this.activeRootObserver?.runIds.delete(subscribedRun.runId);
+        void this.detachRunIfUnobserved(subscribedRun, "surface_inactive");
+      }
     }
     return true;
   }
 
-  beginForwardedVisibleRun(input: {
-    sourceId: string;
-    chatId: string;
-    runId: string;
-    owner: AgentWebclientRunOwner;
-    lastSeq?: number;
-    primarySurfaceId: string;
-  }) {
-    if (!this.acceptingDelivery) {
-      throw brokerError("connection_unavailable", "Realtime Broker is shutting down");
-    }
-    const sourceId = input.sourceId.trim();
-    const chatId = input.chatId.trim();
-    const runId = input.runId.trim();
-    const primarySurfaceId = input.primarySurfaceId.trim();
-    if (!sourceId || !chatId || !runId || !primarySurfaceId) {
-      throw brokerError("invalid_request", "forwarded visible Run identity is incomplete");
-    }
-    let run = this.runsById.get(runId);
-    if (!run) {
-      run = {
-        runId,
-        chatId,
-        owner: input.owner,
-        lastSeq: Math.max(0, input.lastSeq ?? 0),
-        terminal: false,
-        terminalReason: "",
-        terminalSource: null,
-        suspended: false,
-        restoreInFlight: false,
-        restoreCount: 0,
-        lastRestoreResult: "never",
-        upstreamRequestId: null,
-        forwardedSourceId: sourceId,
-        query: null,
-        replay: [],
-        replayBytes: 0,
-        subscribers: new Set(),
-      };
-      this.runsById.set(runId, run);
-    } else {
-      if (run.chatId !== chatId) {
-        throw brokerError("invalid_request", "runId belongs to a different chat");
-      }
-      if (run.forwardedSourceId && run.forwardedSourceId !== sourceId) {
-        throw brokerError("duplicate_id", "visible Run is already owned by another forwarded source");
-      }
-      if (run.terminal) {
-        throw brokerError(
-          "target_unavailable",
-          "completed Run cannot become visible again",
-          {
-            retryable: false,
-            details: {
-              stage: "broker_visible_registration",
-              reason: "run_registry_terminal",
-              terminalSource: run.terminalSource ?? "unknown",
-              terminalReason: run.terminalReason || "unknown",
-              hasUpstreamObserver: Boolean(run.upstreamRequestId),
-              hasForwardedSource: Boolean(run.forwardedSourceId),
-            },
-          },
-        );
-      }
-      run.forwardedSourceId = sourceId;
-      run.owner = input.owner;
-    }
-    this.visibleBinding = {
-      epoch: (this.visibleBinding?.epoch ?? 0) + 1,
-      chatId,
-      runId,
-      upstreamRequestId: sourceId,
-      primarySurfaceId,
-      consumerSurfaceIds: new Set([primarySurfaceId]),
-    };
-    return this.getVisibleBinding();
-  }
-
-  async prepareForwardedVisibleRun(input: {
-    baseUrl: string;
-    token: string;
-    chatId: string;
-    runId: string;
-    owner: AgentWebclientRunOwner;
-  }) {
-    const chatId = input.chatId.trim();
-    const runId = input.runId.trim();
-    const run = this.runsById.get(runId);
-    if (!run || run.terminal || run.forwardedSourceId || !run.upstreamRequestId) return false;
-    if (run.chatId !== chatId || (run.owner && !sameRunOwner(run.owner, input.owner))) {
-      throw brokerError(
-        "capability_denied",
-        "forwarded Run handoff identity does not match the registered observer",
-      );
-    }
-    await this.forwardRequest({
-      baseUrl: input.baseUrl,
-      token: input.token,
-      localId: `forwarded-handoff-${randomUUID()}`,
-      consumerId: "realtime-broker:forwarded-handoff",
-      type: "/api/detach",
-      payload: {
-        runId,
-        ...(input.owner.kind === "agent"
-          ? { agentKey: input.owner.agentKey }
-          : { teamId: input.owner.teamId }),
-        reason: "forwarded_source_handoff",
-      },
-      onFrame: () => undefined,
-      onError: (error) => this.options.onDiagnostic?.(
-        `forwarded_source_handoff_failed: ${error.message}`,
-      ),
-    });
-    run.lastRestoreResult = "observer_handoff_requested";
-    return true;
-  }
-
-  registerForwardedRunActionGrant(input: {
+  registerRunActionGrant(input: {
     sourceId: string;
     chatId: string;
     runId: string;
@@ -754,14 +922,14 @@ export class RealtimeBroker {
     const chatId = input.chatId.trim();
     const runId = input.runId.trim();
     if (!sourceId || !chatId || !runId) {
-      throw brokerError("invalid_request", "forwarded Run WorkPanel grant identity is incomplete");
+      throw brokerError("invalid_request", "canonical Run WorkPanel grant identity is incomplete");
     }
-    const existing = this.forwardedRunActionGrants.get(runId);
+    const existing = this.runActionGrants.get(runId);
     if (existing && (
       existing.chatId !== chatId ||
       !sameRunOwner(existing.owner, input.owner)
     )) {
-      throw brokerError("duplicate_id", "forwarded Run WorkPanel grant identity conflicts");
+      throw brokerError("duplicate_id", "canonical Run WorkPanel grant identity conflicts");
     }
     if (existing && input.replaceExisting === false) return;
     const generation = (existing?.generation ?? 0) + 1;
@@ -769,7 +937,7 @@ export class RealtimeBroker {
     const superseded = new Promise<void>((resolve) => {
       supersede = resolve;
     });
-    const grant: ForwardedRunActionGrant = {
+    const grant: RunActionGrant = {
       sourceId,
       chatId,
       runId,
@@ -783,13 +951,13 @@ export class RealtimeBroker {
     };
     grant.ready = input.ready.then(
       () => {
-        const current = this.forwardedRunActionGrants.get(runId);
+        const current = this.runActionGrants.get(runId);
         if (current !== grant || current.generation !== generation) return;
         current.state = "ready";
         current.failureMessage = "";
       },
       (error) => {
-        const current = this.forwardedRunActionGrants.get(runId);
+        const current = this.runActionGrants.get(runId);
         if (current === grant && current.generation === generation) {
           current.state = "failed";
           current.failureMessage = error instanceof Error ? error.message : String(error);
@@ -799,190 +967,27 @@ export class RealtimeBroker {
     );
     void grant.ready.catch(() => undefined);
     existing?.supersede();
-    this.forwardedRunActionGrants.set(runId, grant);
-    while (this.forwardedRunActionGrants.size > 2_000) {
-      const oldest = this.forwardedRunActionGrants.keys().next().value as string | undefined;
+    this.runActionGrants.set(runId, grant);
+    while (this.runActionGrants.size > 2_000) {
+      const oldest = this.runActionGrants.keys().next().value as string | undefined;
       if (!oldest) break;
-      this.revokeForwardedRunActionGrant(oldest);
+      this.revokeRunActionGrant(oldest);
     }
   }
 
-  revokeForwardedRunActionGrant(runIdValue: string) {
+  revokeRunActionGrant(runIdValue: string) {
     const runId = runIdValue.trim();
     if (!runId) return false;
-    const grant = this.forwardedRunActionGrants.get(runId);
+    const grant = this.runActionGrants.get(runId);
     if (!grant) return false;
-    this.forwardedRunActionGrants.delete(runId);
+    this.runActionGrants.delete(runId);
     grant.supersede();
     return true;
   }
 
-  private clearForwardedRunActionGrants() {
-    for (const grant of this.forwardedRunActionGrants.values()) grant.supersede();
-    this.forwardedRunActionGrants.clear();
-  }
-
-  appendForwardedVisibleRunEvent(input: {
-    sourceId: string;
-    runId: string;
-    event: Record<string, unknown>;
-  }) {
-    const sourceId = input.sourceId.trim();
-    const run = this.runsById.get(input.runId.trim());
-    if (!run || run.forwardedSourceId !== sourceId || run.terminal) {
-      throw brokerError("target_unavailable", "forwarded visible Run source is unavailable");
-    }
-    this.consumeRunEvent(run, input.event, null);
-  }
-
-  completeForwardedVisibleRun(input: {
-    sourceId: string;
-    runId: string;
-    reason: string;
-    lastSeq?: number;
-  }) {
-    const sourceId = input.sourceId.trim();
-    const run = this.runsById.get(input.runId.trim());
-    if (!run || run.forwardedSourceId !== sourceId) return false;
-    if (isObserverDetachReason(input.reason)) {
-      this.diagnostics.observerReleaseCount += 1;
-      return this.releaseForwardedVisibleRun(sourceId);
-    }
-    run.forwardedSourceId = null;
-    const result = {
-      reason: input.reason.trim() || "done",
-      ...(input.lastSeq === undefined ? {} : { lastSeq: input.lastSeq }),
-    };
-    this.completeRun(run, result, "forwarded_stream");
-    if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
-    this.revokeForwardedRunActionGrant(run.runId);
-    return true;
-  }
-
-  releaseForwardedVisibleRun(sourceIdValue: string) {
-    const sourceId = sourceIdValue.trim();
-    if (!sourceId) return false;
-    const run = [...this.runsById.values()].find((candidate) =>
-      candidate.forwardedSourceId === sourceId,
-    );
-    if (!run) return false;
-    run.forwardedSourceId = null;
-    if (this.visibleBinding?.upstreamRequestId === sourceId) this.visibleBinding = null;
-    const error = brokerError("replay_required", "primary visible Run source was released");
-    for (const id of [...run.subscribers]) {
-      const subscription = this.runSubscriptions.get(id);
-      if (!subscription?.surfaceId) continue;
-      this.unsubscribe(id);
-      subscription.onError?.(error);
-    }
-    return true;
-  }
-
-  subscribeVisibleRun(options: {
-    runId: string;
-    chatId: string;
-    lastSeq?: number;
-    owner?: AgentWebclientRunOwner;
-    kind: "surface" | "internal";
-    consumerId: string;
-    surfaceId: string;
-    onEvent(event: Record<string, unknown>): void;
-    onComplete?(result: RealtimeQueryCompleted): void;
-    onError?(error: Error): void;
-  }) {
-    if (!this.acceptingDelivery) {
-      throw brokerError("connection_unavailable", "Realtime Broker is shutting down");
-    }
-    const runId = options.runId.trim();
-    const chatId = options.chatId.trim();
-    const surfaceId = options.surfaceId.trim();
-    const binding = this.visibleBinding;
-    const run = this.runsById.get(runId);
-    const targetUnavailable = (
-      reason: string,
-      message: string,
-      retryable: boolean,
-    ) => brokerError("target_unavailable", message, {
-      retryable,
-      details: {
-        stage: "broker_subscribe",
-        reason,
-        visibleBindingPresent: Boolean(binding),
-        runRegistered: Boolean(run),
-        ...(binding ? { bindingEpoch: binding.epoch } : {}),
-      },
-    });
-    if (!runId || !chatId || !surfaceId) {
-      throw targetUnavailable(
-        "missing_request_identity",
-        "visible Run subscription identity is incomplete",
-        false,
-      );
-    }
-    if (!binding) {
-      throw targetUnavailable(
-        "visible_binding_missing",
-        "primary visible Run binding is not registered",
-        true,
-      );
-    }
-    if (binding.runId !== runId || binding.chatId !== chatId) {
-      throw targetUnavailable(
-        "visible_binding_identity_mismatch",
-        "primary visible binding belongs to another Run",
-        true,
-      );
-    }
-    if (!run) {
-      throw targetUnavailable(
-        "run_registry_missing",
-        "requested Run is not registered in the local replay registry",
-        true,
-      );
-    }
-    if (run.chatId !== chatId) {
-      throw targetUnavailable(
-        "run_chat_mismatch",
-        "requested Run belongs to another Chat",
-        false,
-      );
-    }
-    if (run.forwardedSourceId !== binding.upstreamRequestId) {
-      throw targetUnavailable(
-        "forwarded_source_mismatch",
-        "primary visible Run source changed before local subscription",
-        true,
-      );
-    }
-    if (options.owner && run.owner && (
-      options.owner.kind !== run.owner.kind ||
-      (options.owner.kind === "agent" && run.owner.kind === "agent" && options.owner.agentKey !== run.owner.agentKey) ||
-      (options.owner.kind === "team" && run.owner.kind === "team" && options.owner.teamId !== run.owner.teamId)
-    )) {
-      throw brokerError("capability_denied", "requested Run owner does not match the visible Run");
-    }
-    const id = `visible-run-sub-${randomUUID()}`;
-    const subscription: RunSubscription = {
-      id,
-      runId,
-      chatId,
-      lastSeq: Math.max(0, options.lastSeq ?? 0),
-      kind: options.kind,
-      consumerId: options.consumerId,
-      surfaceId,
-      onEvent: options.onEvent,
-      onComplete: options.onComplete,
-      onError: options.onError,
-    };
-    this.replayToSubscriber(run, subscription);
-    this.runSubscriptions.set(id, subscription);
-    run.subscribers.add(id);
-    binding.consumerSurfaceIds.add(surfaceId);
-    return {
-      subscriptionId: id,
-      unsubscribe: () => this.unsubscribe(id),
-      ready: Promise.resolve(),
-    };
+  private clearRunActionGrants() {
+    for (const grant of this.runActionGrants.values()) grant.supersede();
+    this.runActionGrants.clear();
   }
 
   cleanupConsumer(consumerId: string) {
@@ -1003,85 +1008,53 @@ export class RealtimeBroker {
     }
   }
 
-  setVisibleBinding(input: Omit<VisibleRunBinding, "epoch">) {
-    const run = this.runsById.get(input.runId);
-    if (
-      !run ||
-      run.chatId !== input.chatId ||
-      (run.upstreamRequestId !== input.upstreamRequestId && run.forwardedSourceId !== input.upstreamRequestId)
-    ) {
-      throw brokerError("target_unavailable", "visible Run identity is not registered");
-    }
-    this.visibleBinding = {
-      ...input,
-      consumerSurfaceIds: new Set(input.consumerSurfaceIds),
-      epoch: (this.visibleBinding?.epoch ?? 0) + 1,
-    };
-    return this.getVisibleBinding();
-  }
-
-  bindVisibleRun(input: {
-    chatId: string;
-    runId: string;
-    primarySurfaceId: string;
-    consumerSurfaceIds?: Iterable<string>;
-  }) {
-    const run = this.runsById.get(input.runId);
-    if (!run || run.chatId !== input.chatId || !run.upstreamRequestId) {
-      throw brokerError("target_unavailable", "visible Run identity is not registered");
-    }
-    return this.setVisibleBinding({
-      chatId: input.chatId,
-      runId: input.runId,
-      upstreamRequestId: run.upstreamRequestId,
-      primarySurfaceId: input.primarySurfaceId,
-      consumerSurfaceIds: new Set(input.consumerSurfaceIds ?? [input.primarySurfaceId]),
-    });
-  }
-
-  clearVisibleBinding(primarySurfaceId?: string) {
-    if (primarySurfaceId && this.visibleBinding?.primarySurfaceId !== primarySurfaceId) {
-      return false;
-    }
-    this.visibleBinding = null;
-    return true;
-  }
-
-  getVisibleBinding() {
-    return this.visibleBinding
-      ? {
-          ...this.visibleBinding,
-          consumerSurfaceIds: new Set(this.visibleBinding.consumerSurfaceIds),
-        }
-      : null;
-  }
-
   getDiagnostics() {
     return {
-      connection: this.client.getState(),
+      connection: this.clients.primary.getState(),
+      connections: this.getConnectionStates(),
       pendingRequestCount: this.pendingRequests.size,
-      activeStreamCount: [...this.runsById.values()].filter((run) =>
+      pendingQueryCount: this.queriesByRequestId.size,
+      activeStreamCount: [...this.runChannels.values()].filter((run) =>
         Boolean(run.upstreamRequestId && !run.terminal),
       ).length,
-      runCount: this.runsById.size,
+      runCount: this.runChannels.size,
       localRunSubscriberCount: this.runSubscriptions.size,
       pushSubscriberCount: this.pushSubscriptions.size,
       connectionSubscriberCount: this.connectionSubscriptions.size,
-      visibleBinding: this.visibleBinding
-        ? {
-            epoch: this.visibleBinding.epoch,
-            consumerCount: this.visibleBinding.consumerSurfaceIds.size,
-          }
-        : null,
-      replay: [...this.runsById.values()].map((run) => ({
+      rootObserver: this.getActiveRootObserver(),
+      pendingClones: [...this.pendingClones.values()].map((pending) => ({
+        observerToken: pending.observerToken,
+        parentGeneration: pending.parentGeneration,
+        runId: pending.runId,
+        chatId: pending.chatId,
+        waitReason: pending.waitReason,
+      })),
+      lastCloneCancellationReason: this.lastCloneCancellationReason || undefined,
+      replay: [...this.runChannels.values()].map((run) => ({
+        lane: run.lane,
         runId: run.runId,
+        chatId: run.chatId,
         eventCount: run.replay.length,
         bytes: run.replayBytes,
         lastSeq: run.lastSeq,
-        state: run.terminal ? "terminal" : run.restoreInFlight ? "restoring" : run.suspended ? "suspended" : "active",
+        state: run.terminal
+          ? "terminal"
+          : run.detachInFlight
+            ? "detaching"
+            : run.rootObserverTokens.size > 0 || this.hasSystemRunLease(run)
+              ? "observed"
+              : "dormant",
         terminalReason: run.terminalReason || undefined,
         terminalSource: run.terminalSource ?? undefined,
-        observerSource: run.forwardedSourceId ? "forwarded" : run.upstreamRequestId ? "broker" : "none",
+        rootObserverCount: run.rootObserverTokens.size,
+        cloneCount: [...run.subscribers].filter((id) =>
+          this.runSubscriptions.get(id)?.role === "clone"
+        ).length,
+        upstreamState: run.detachInFlight
+          ? "detaching"
+          : run.upstreamRequestId
+            ? "attached"
+            : "detached",
         restoreCount: run.restoreCount,
         lastRestoreResult: run.lastRestoreResult,
       })),
@@ -1103,6 +1076,7 @@ export class RealtimeBroker {
 
   rotateIdentity(reason: RealtimeIdentityRotationReason = "explicit_identity_invalidation") {
     this.options.onDiagnostic?.(`realtime_identity_rotation:${reason}`);
+    this.diagnostics.laneRotationCount += 2;
     const error = brokerError("connection_unavailable", "realtime identity was invalidated");
     for (const pending of [...this.pendingRequests.values()]) {
       this.cleanupPending(pending.upstreamId);
@@ -1116,11 +1090,14 @@ export class RealtimeBroker {
     }
     this.queriesByRequestId.clear();
     this.runSubscriptions.clear();
-    this.runsById.clear();
-    this.visibleBinding = null;
+    this.runChannels.clear();
+    for (const pending of [...this.pendingClones.values()]) pending.reject(error);
+    this.pendingClones.clear();
+    this.activeRootObserver = null;
     this.terminalRequestIds.clear();
-    this.clearForwardedRunActionGrants();
-    this.client.rotateIdentity();
+    this.clearRunActionGrants();
+    this.clients.primary.rotateIdentity();
+    this.clients.btw.rotateIdentity();
   }
 
   beginShutdown() {
@@ -1141,27 +1118,34 @@ export class RealtimeBroker {
     this.runSubscriptions.clear();
     this.pushSubscriptions.clear();
     this.connectionSubscriptions.clear();
-    this.runsById.clear();
-    this.visibleBinding = null;
+    this.runChannels.clear();
+    for (const pending of [...this.pendingClones.values()]) pending.reject(error);
+    this.pendingClones.clear();
+    this.activeRootObserver = null;
     this.terminalRequestIds.clear();
-    this.clearForwardedRunActionGrants();
+    this.clearRunActionGrants();
     for (const controller of this.inboundDesktopRequests.values()) controller.abort();
     this.inboundDesktopRequests.clear();
     this.seenInboundDesktopRequestIds.clear();
     this.desktopBridgeProvider = null;
-    this.client.dispose();
+    this.clients.primary.dispose();
+    this.clients.btw.dispose();
   }
 
-  private handleConnectionState(state: AgentPlatformRealtimeConnectionState) {
-    const previous = this.connectionState.phase;
-    this.connectionState = state;
-    this.options.onConnectionState?.(state);
+  private handleConnectionState(lane: RealtimeLane, state: AgentPlatformRealtimeConnectionState) {
+    const previous = this.connectionStates[lane].phase;
+    this.connectionStates[lane] = state;
+    if (lane === "primary") this.options.onConnectionState?.(state);
     for (const subscription of this.connectionSubscriptions.values()) {
+      if (subscription.lane !== lane) continue;
       subscription.onState({ ...state, key: state.key ? { ...state.key } : null });
     }
     if (state.phase === "connected" && previous !== "connected") {
-      for (const run of this.runsById.values()) {
-        if (run.suspended && !run.terminal) {
+      for (const run of this.runChannels.values()) {
+        if (
+          run.lane === lane && run.suspended && !run.terminal &&
+          (run.rootObserverTokens.size > 0 || this.hasSystemRunLease(run))
+        ) {
           void this.restoreRun(run);
         }
       }
@@ -1178,15 +1162,17 @@ export class RealtimeBroker {
       { retryable: true },
     );
     for (const pending of [...this.pendingRequests.values()]) {
+      if (pending.lane !== lane) continue;
       this.cleanupPending(pending.upstreamId);
       pending.onError(requestError);
     }
     for (const transaction of [...this.queriesByRequestId.values()]) {
+      if (transaction.lane !== lane) continue;
       if (!transaction.acceptedValue) {
         this.failQuery(transaction, disconnectError);
         continue;
       }
-      const run = transaction.runId ? this.runsById.get(transaction.runId) : null;
+      const run = transaction.runId ? this.getRunChannel(transaction.runId, transaction.lane) : null;
       if (run) {
         run.suspended = true;
         run.upstreamRequestId = null;
@@ -1195,19 +1181,19 @@ export class RealtimeBroker {
     }
   }
 
-  private handleFrame(frame: AgentPlatformRealtimeFrame, generation: number) {
+  private handleFrame(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame, generation: number) {
     if (!this.acceptingDelivery) return;
-    if (generation !== this.connectionState.generation) {
+    if (generation !== this.connectionStates[lane].generation) {
       this.diagnostics.staleFrameCount += 1;
       return;
     }
     const kind = readText(frame.frame);
     if (kind === "push") {
-      this.handlePush(frame);
+      if (lane === "primary") this.handlePush(frame);
       return;
     }
     if (kind === "request") {
-      this.handleInboundRequest(frame);
+      this.handleInboundRequest(lane, frame);
       return;
     }
     if (!kind || !["response", "error", "stream"].includes(kind)) {
@@ -1221,12 +1207,24 @@ export class RealtimeBroker {
     }
     const query = this.queriesByRequestId.get(id);
     if (query) {
-      if (kind === "error") this.failQuery(query, frameError(frame));
+      if (query.lane !== lane) {
+        this.diagnostics.staleFrameCount += 1;
+        return;
+      }
+      if (kind === "error") {
+        const message = readText(frame.msg) || readText(frame.message);
+        const error = query.requestType === "/api/btw" &&
+          readText(frame.type) === "invalid_request" &&
+          message.includes("unknown type")
+          ? brokerError("btw_ws_unsupported", "Agent Platform does not support BTW over WebSocket")
+          : frameError(frame);
+        this.failQuery(query, error);
+      }
       else if (kind === "stream") this.handleQueryStream(query, frame);
       return;
     }
-    const run = [...this.runsById.values()].find((candidate) =>
-      candidate.upstreamRequestId === id,
+    const run = [...this.runChannels.values()].find((candidate) =>
+      candidate.lane === lane && candidate.upstreamRequestId === id,
     );
     if (run && kind === "stream") {
       this.handleRunStream(run, frame);
@@ -1234,6 +1232,10 @@ export class RealtimeBroker {
     }
     const pending = this.pendingRequests.get(id);
     if (pending) {
+      if (pending.lane !== lane) {
+        this.diagnostics.staleFrameCount += 1;
+        return;
+      }
       const outbound = { ...frame, id: pending.localId };
       pending.onFrame(outbound);
       const terminalStream = kind === "stream" && Boolean(readText(frame.reason));
@@ -1250,7 +1252,7 @@ export class RealtimeBroker {
   }
 
   private handleQueryStream(transaction: QueryTransaction, frame: AgentPlatformRealtimeFrame) {
-    let run = transaction.runId ? this.runsById.get(transaction.runId) : null;
+    let run = transaction.runId ? this.getRunChannel(transaction.runId, transaction.lane) : null;
     if (isRecord(frame.event)) {
       try {
         if (!run && readText(frame.event.type) !== "run.start") {
@@ -1260,6 +1262,7 @@ export class RealtimeBroker {
         if (!run) {
           run = this.registerProvisionalRun(transaction, frame.event);
           this.commitProvisionalQueryEvents(run, transaction);
+          this.bindQuerySubscription(run, transaction);
         }
         this.consumeRunEvent(run, frame.event, transaction);
       } catch (error) {
@@ -1314,7 +1317,7 @@ export class RealtimeBroker {
   }
 
   private commitProvisionalQueryEvents(run: BrokerRun, transaction: QueryTransaction) {
-    for (const { event } of transaction.bufferedEvents) {
+    for (const { event, path } of transaction.bufferedEvents) {
       const eventRunId = readText(event.runId);
       const eventChatId = readText(event.chatId);
       if (eventRunId && eventRunId !== run.runId) {
@@ -1334,7 +1337,7 @@ export class RealtimeBroker {
         if (run.lastSeq > 0 && seq > run.lastSeq + 1) this.diagnostics.seqGapCount += 1;
         run.lastSeq = seq;
       }
-      this.appendReplay(run, event, seq);
+      this.appendReplay(run, event, seq, path);
     }
   }
 
@@ -1372,10 +1375,11 @@ export class RealtimeBroker {
     )) {
       throw brokerError("protocol_error", "run.start owner conflicts with query owner");
     }
-    if (this.runsById.has(runId)) {
+    if (this.getRunChannel(runId)) {
       throw brokerError("duplicate_id", `runId ${runId} is already registered`);
     }
     const run: BrokerRun = {
+      lane: transaction.lane,
       runId,
       chatId,
       owner,
@@ -1388,16 +1392,62 @@ export class RealtimeBroker {
       restoreCount: 0,
       lastRestoreResult: "never",
       upstreamRequestId: transaction.upstreamRequestId,
-      forwardedSourceId: null,
       query: transaction,
       replay: [],
       replayBytes: 0,
       subscribers: new Set(),
+      rootObserverTokens: new Set(),
+      baseUrl: transaction.baseUrl,
+      accessToken: transaction.accessToken,
+      detachInFlight: null,
+      operationGeneration: 0,
     };
     transaction.runId = runId;
     transaction.chatId = chatId;
-    this.runsById.set(runId, run);
+    this.setRunChannel(run);
+    const observerToken = transaction.rootObserverToken;
+    if (observerToken && this.activeRootObserver?.token === observerToken) {
+      run.operationGeneration += 1;
+      run.rootObserverTokens.add(observerToken);
+      this.activeRootObserver.runIds.add(runId);
+      this.notifyPendingClones(run);
+    } else if (observerToken) {
+      void this.detachRunIfUnobserved(run, "surface_generation_superseded");
+    }
     return run;
+  }
+
+  private bindQuerySubscription(run: BrokerRun, transaction: QueryTransaction) {
+    const observerToken = transaction.rootObserverToken;
+    const role: RunSubscription["role"] = observerToken ? "root_observer" : "internal";
+    if (observerToken && this.activeRootObserver?.token !== observerToken) {
+      transaction.bufferedEvents = [];
+      transaction.bufferedEventBytes = 0;
+      return;
+    }
+    const id = `query-sub-${randomUUID()}`;
+    const subscription: RunSubscription = {
+      lane: run.lane,
+      id,
+      runId: run.runId,
+      chatId: run.chatId,
+      lastSeq: 0,
+      kind: role === "internal" ? "internal" : "surface",
+      consumerId: transaction.consumerId,
+      role,
+      ...(observerToken ? { observerToken } : {}),
+      onEvent: (event, eventPath) => {
+        const path = eventPath || `broker.${run.lane}[${run.runId}].events`;
+        transaction.eventQueue = transaction.eventQueue.then(() => transaction.onEvent(event, path));
+        void transaction.eventQueue.catch((error) => this.failQuery(transaction, error));
+      },
+    };
+    this.runSubscriptions.set(id, subscription);
+    run.subscribers.add(id);
+    transaction.subscriptionId = id;
+    this.replayToSubscriber(run, subscription);
+    transaction.bufferedEvents = [];
+    transaction.bufferedEventBytes = 0;
   }
 
   private handleRunStream(run: BrokerRun, frame: AgentPlatformRealtimeFrame) {
@@ -1431,6 +1481,9 @@ export class RealtimeBroker {
     if (typeof lastSeq === "number" && Number.isSafeInteger(lastSeq) && lastSeq >= 0) {
       run.lastSeq = Math.max(run.lastSeq, lastSeq);
     }
+    const transaction = run.query && (!requestId || run.query.upstreamRequestId === requestId)
+      ? run.query
+      : null;
     if (requestId) {
       this.queriesByRequestId.delete(requestId);
       this.terminalRequestIds.add(requestId);
@@ -1439,7 +1492,22 @@ export class RealtimeBroker {
       }
     }
     if (!requestId || run.upstreamRequestId === requestId) run.upstreamRequestId = null;
-    run.suspended = !run.forwardedSourceId;
+    if (transaction) {
+      run.query = null;
+      if (transaction.signal && transaction.abortListener) {
+        transaction.signal.removeEventListener("abort", transaction.abortListener);
+      }
+      if (transaction.subscriptionId) this.unsubscribe(transaction.subscriptionId);
+      const result: RealtimeQueryCompleted = {
+        reason: "detached",
+        ...(typeof lastSeq === "number" ? { lastSeq } : {}),
+      };
+      void transaction.eventQueue.then(
+        () => transaction.completed.resolve(result),
+        (error) => transaction.completed.reject(error),
+      );
+    }
+    run.suspended = true;
     run.lastRestoreResult = `observer_released:${reason}`;
     this.diagnostics.observerReleaseCount += 1;
   }
@@ -1479,7 +1547,7 @@ export class RealtimeBroker {
         if (isTerminalEvent(type)) {
           throw brokerError("protocol_error", "terminal event arrived before run.start");
         }
-        this.appendReplay(run, event, seq);
+        this.appendReplay(run, event, seq, path);
         transaction.bufferedEvents.push({ event, path });
         return;
       }
@@ -1494,29 +1562,23 @@ export class RealtimeBroker {
       }
       transaction.accepted.resolve(transaction.acceptedValue);
     }
-    this.appendReplay(run, event, seq);
-    if (transaction?.acceptedValue) {
-      const queued = transaction.bufferedEvents.splice(0);
-      transaction.bufferedEventBytes = 0;
-      queued.push({ event, path });
-      for (const item of queued) {
-        transaction.eventQueue = transaction.eventQueue.then(() =>
-          transaction.onEvent(item.event, item.path),
-        );
-      }
-      void transaction.eventQueue.catch((error) => this.failQuery(transaction, error));
-    }
+    this.appendReplay(run, event, seq, path);
     for (const id of run.subscribers) {
       const subscription = this.runSubscriptions.get(id);
       if (!subscription || (seq !== null && seq <= subscription.lastSeq)) continue;
       if (seq !== null) subscription.lastSeq = seq;
-      subscription.onEvent(event);
+      subscription.onEvent(event, path);
     }
   }
 
-  private appendReplay(run: BrokerRun, event: Record<string, unknown>, seq: number | null) {
+  private appendReplay(
+    run: BrokerRun,
+    event: Record<string, unknown>,
+    seq: number | null,
+    path?: string,
+  ) {
     const bytes = Buffer.byteLength(JSON.stringify(event));
-    run.replay.push({ event, bytes, seq });
+    run.replay.push({ event, bytes, seq, ...(path ? { path } : {}) });
     run.replayBytes += bytes;
     while (run.replay.length > MAX_REPLAY_EVENTS || run.replayBytes > MAX_REPLAY_BYTES) {
       const removed = run.replay.shift();
@@ -1529,6 +1591,7 @@ export class RealtimeBroker {
   private replayToSubscriber(run: BrokerRun, subscription: RunSubscription) {
     const firstSeq = run.replay.find((entry) => entry.seq !== null)?.seq;
     if (firstSeq !== undefined && firstSeq !== null && subscription.lastSeq + 1 < firstSeq) {
+      this.diagnostics.seqExpiredCount += 1;
       throw brokerError(
         "seq_expired",
         "requested Run cursor is outside the local replay window",
@@ -1547,7 +1610,7 @@ export class RealtimeBroker {
     for (const entry of run.replay) {
       if (entry.seq !== null && entry.seq <= subscription.lastSeq) continue;
       if (entry.seq !== null) subscription.lastSeq = entry.seq;
-      subscription.onEvent(entry.event);
+      subscription.onEvent(entry.event, entry.path);
     }
   }
 
@@ -1564,7 +1627,7 @@ export class RealtimeBroker {
     run.terminalReason = result.reason;
     run.terminalSource = source;
     run.suspended = false;
-    this.revokeForwardedRunActionGrant(run.runId);
+    this.revokeRunActionGrant(run.runId);
     if (run.upstreamRequestId) {
       this.terminalRequestIds.add(run.upstreamRequestId);
       if (this.terminalRequestIds.size > 2_000) {
@@ -1573,19 +1636,32 @@ export class RealtimeBroker {
       this.queriesByRequestId.delete(run.upstreamRequestId);
     }
     run.upstreamRequestId = null;
-    if (run.query) {
-      void run.query.eventQueue.then(
-        () => run.query?.completed.resolve(result),
-        (error) => run.query?.completed.reject(error),
+    const transaction = run.query;
+    run.query = null;
+    if (transaction) {
+      if (transaction.signal && transaction.abortListener) {
+        transaction.signal.removeEventListener("abort", transaction.abortListener);
+      }
+      void transaction.eventQueue.then(
+        () => transaction.completed.resolve(result),
+        (error) => transaction.completed.reject(error),
       );
     }
-    for (const id of run.subscribers) this.runSubscriptions.get(id)?.onComplete?.(result);
+    for (const id of [...run.subscribers]) {
+      const subscription = this.runSubscriptions.get(id);
+      subscription?.onComplete?.(result);
+      this.runSubscriptions.delete(id);
+    }
+    run.subscribers.clear();
+    this.pruneRetainedTerminalRuns();
   }
 
   private failQuery(transaction: QueryTransaction, error: unknown) {
     this.queriesByRequestId.delete(transaction.upstreamRequestId);
-    const run = transaction.runId ? this.runsById.get(transaction.runId) : null;
-    if (run && !transaction.acceptedValue) this.runsById.delete(run.runId);
+    const run = transaction.runId ? this.getRunChannel(transaction.runId, transaction.lane) : null;
+    if (run && !transaction.acceptedValue) this.deleteRunChannel(run);
+    if (transaction.subscriptionId) this.unsubscribe(transaction.subscriptionId);
+    if (run?.query === transaction) run.query = null;
     if (transaction.signal && transaction.abortListener) {
       transaction.signal.removeEventListener("abort", transaction.abortListener);
     }
@@ -1593,17 +1669,31 @@ export class RealtimeBroker {
       clearTimeout(transaction.acceptanceTimer);
       transaction.acceptanceTimer = null;
     }
+    if (transaction.rootObserverToken && transaction.expectedRunId) {
+      for (const pending of [...this.pendingClones.values()]) {
+        if (
+          pending.observerToken === transaction.rootObserverToken &&
+          pending.runId === transaction.expectedRunId
+        ) {
+          pending.reject(cloneBindingError(
+            "run_not_registered",
+            "the parent query ended before its RunChannel was registered",
+          ));
+        }
+      }
+    }
     transaction.accepted.reject(error);
     transaction.completed.reject(error);
   }
 
   private async startAttach(run: BrokerRun, baseUrl: string, token: string) {
-    if (run.upstreamRequestId || run.forwardedSourceId || run.terminal) return;
-    await this.ensureConnected(baseUrl, token);
-    if (run.upstreamRequestId || run.forwardedSourceId || run.terminal) return;
+    if (run.upstreamRequestId || run.terminal) return;
+    await this.ensureConnected(baseUrl, token, run.lane);
+    if (run.upstreamRequestId || run.terminal) return;
     const id = `desktop-attach-${randomUUID()}`;
     run.upstreamRequestId = id;
-    this.client.send({
+    this.diagnostics.upstreamAttachCount += 1;
+    this.clients[run.lane].send({
       frame: "request",
       type: "/api/attach",
       id,
@@ -1621,17 +1711,18 @@ export class RealtimeBroker {
   }
 
   private async restoreRun(run: BrokerRun) {
-    const state = this.client.getState();
+    const state = this.clients[run.lane].getState();
     if (
       state.phase !== "connected" || run.terminal || run.restoreInFlight ||
-      Boolean(run.upstreamRequestId) || Boolean(run.forwardedSourceId)
+      Boolean(run.upstreamRequestId)
     ) return;
     run.restoreInFlight = true;
     run.restoreCount += 1;
     const id = `desktop-attach-${randomUUID()}`;
     try {
       run.upstreamRequestId = id;
-      this.client.send({
+      this.diagnostics.upstreamAttachCount += 1;
+      this.clients[run.lane].send({
         frame: "request",
         type: "/api/attach",
         id,
@@ -1678,9 +1769,9 @@ export class RealtimeBroker {
     }
     if (type === "run.finished" || type === "run.complete") {
       const runId = pushIdentity(frame, "runId");
-      this.revokeForwardedRunActionGrant(runId);
-      const run = this.runsById.get(runId);
-      if (run && !run.terminal && run.query === null) {
+      this.revokeRunActionGrant(runId);
+      const run = this.getRunChannel(runId);
+      if (run && !run.terminal) {
         const payload = framePayload(frame);
         this.completeRun(run, {
           reason: readText(payload.finishReason) || readText(payload.status) || "finished",
@@ -1698,23 +1789,30 @@ export class RealtimeBroker {
     }
   }
 
-  private handleInboundRequest(frame: AgentPlatformRealtimeFrame) {
+  private handleInboundRequest(lane: RealtimeLane, frame: AgentPlatformRealtimeFrame) {
     const id = readText(frame.id);
     if (!id) return;
     const type = readText(frame.type);
-    if (getDesktopActionDefinition(type) || type === DESKTOP_CDP_REQUEST_TYPE) {
+    if (lane === "primary" && (getDesktopActionDefinition(type) || type === DESKTOP_CDP_REQUEST_TYPE)) {
       void this.handleDesktopBridgeRequest(id, type, frame);
       return;
     }
-    const errorType = "unknown_request_type";
+    const errorType = lane === "primary" ? "unsupported_in_current_view" : "unknown_request_type";
     try {
-      this.client.send({
+      this.clients[lane].send({
         frame: "error",
         type: errorType,
         id,
         code: 409,
-        msg: "Desktop does not support this inbound request type",
-        data: { code: errorType, message: "Inbound request type is unknown" },
+        msg: lane === "primary"
+          ? "Desktop cannot handle this request in the current view"
+          : "Desktop BTW lane does not support inbound requests",
+        data: {
+          code: errorType,
+          message: lane === "primary"
+            ? "Inbound request is unsupported in the current view"
+            : "Inbound request type is unknown",
+        },
       });
     } catch {
       // The connection is already unavailable.
@@ -1760,7 +1858,7 @@ export class RealtimeBroker {
             "Desktop Action source must include runId and chatId and at most one Run owner",
           );
         }
-        await this.awaitForwardedWorkPanelReadiness(type, source, controller.signal);
+        await this.awaitRunActionReadiness(type, source, controller.signal);
         if (controller.signal.aborted) return;
         actionRequest = {
           requestId: id,
@@ -1824,7 +1922,7 @@ export class RealtimeBroker {
     }
   }
 
-  private async awaitForwardedWorkPanelReadiness(
+  private async awaitRunActionReadiness(
     action: string,
     source: Record<string, unknown>,
     signal: AbortSignal,
@@ -1835,10 +1933,10 @@ export class RealtimeBroker {
     if (!runId || !chatId) {
       throw brokerError("protocol_error", "WorkPanel source must include canonical Chat and Run identity");
     }
-    const grant = this.forwardedRunActionGrants.get(runId);
+    const grant = this.runActionGrants.get(runId);
     if (!grant) {
-      const run = this.runsById.get(runId);
-      if (!run || run.chatId !== chatId || run.forwardedSourceId || run.terminal) {
+      const run = this.getRunChannel(runId);
+      if (!run || run.chatId !== chatId || run.terminal) {
         throw brokerError(
           "source_chat_not_ready",
           "WorkPanel source Run does not have a canonical Chat grant",
@@ -1864,7 +1962,7 @@ export class RealtimeBroker {
       return;
     }
     if (grant.chatId !== chatId) {
-      throw brokerError("protocol_error", "WorkPanel source Chat conflicts with its forwarded Run");
+      throw brokerError("protocol_error", "WorkPanel source Chat conflicts with its canonical Run");
     }
     if (grant.owner.kind !== "agent") {
       throw brokerError(
@@ -1874,7 +1972,7 @@ export class RealtimeBroker {
       );
     }
     if (readText(source.agentKey) !== grant.owner.agentKey) {
-      throw brokerError("protocol_error", "WorkPanel source Agent conflicts with its forwarded Run");
+      throw brokerError("protocol_error", "WorkPanel source Agent conflicts with its canonical Run");
     }
     if (grant.state === "failed") {
       throw brokerError(
@@ -1888,7 +1986,7 @@ export class RealtimeBroker {
       grant.superseded,
       new Promise<void>((resolve) => signal.addEventListener("abort", () => resolve(), { once: true })),
     ]).catch((error) => {
-      const current = this.forwardedRunActionGrants.get(runId);
+      const current = this.runActionGrants.get(runId);
       if (current && current.generation !== grant.generation) return;
       throw brokerError(
         "source_chat_not_ready",
@@ -1897,7 +1995,7 @@ export class RealtimeBroker {
       );
     });
     if (signal.aborted) return;
-    const current = this.forwardedRunActionGrants.get(runId);
+    const current = this.runActionGrants.get(runId);
     if (!current) {
       throw brokerError(
         "source_chat_not_ready",
@@ -1906,7 +2004,7 @@ export class RealtimeBroker {
       );
     }
     if (current.generation !== grant.generation) {
-      await this.awaitForwardedWorkPanelReadiness(action, source, signal);
+      await this.awaitRunActionReadiness(action, source, signal);
     }
   }
 
@@ -1938,7 +2036,7 @@ export class RealtimeBroker {
         await new Promise<void>((resolve) => setImmediate(resolve));
       }
       if (signal.aborted) return;
-      this.client.send({
+      this.clients.primary.send({
         frame: "response",
         type,
         id,
@@ -1967,7 +2065,7 @@ export class RealtimeBroker {
       return;
     }
     if (serialized.byteLength <= DESKTOP_STREAM_RAW_CHUNK_BYTES) {
-      this.client.send({ frame: "response", type, id, code: 0, msg: "success", data: result });
+      this.clients.primary.send({ frame: "response", type, id, code: 0, msg: "success", data: result });
       return;
     }
     const streamId = `desktop-bridge-${randomUUID()}`;
@@ -1980,7 +2078,7 @@ export class RealtimeBroker {
       await new Promise<void>((resolve) => setImmediate(resolve));
     }
     if (signal.aborted) return;
-    this.client.send({
+    this.clients.primary.send({
       frame: "response",
       type,
       id,
@@ -1998,7 +2096,7 @@ export class RealtimeBroker {
   }
 
   private sendDesktopBridgeChunk(id: string, streamId: string, seq: number, type: string, chunk: string) {
-    this.client.send({
+    this.clients.primary.send({
       frame: "stream",
       id,
       streamId,
@@ -2014,7 +2112,7 @@ export class RealtimeBroker {
 
   private sendDesktopBridgeError(id: string, type: string, code: number, msg: string, data?: unknown) {
     try {
-      this.client.send({
+      this.clients.primary.send({
         frame: "error",
         type,
         id,
@@ -2027,6 +2125,159 @@ export class RealtimeBroker {
     }
   }
 
+  private waitForCloneRun(
+    observerToken: string,
+    runIdValue: string,
+    chatIdValue: string,
+    owner: AgentWebclientRunOwner,
+  ) {
+    const runId = runIdValue.trim();
+    const chatId = chatIdValue.trim();
+    const run = this.getRunChannel(runId);
+    if (
+      run && run.chatId === chatId && run.rootObserverTokens.has(observerToken) &&
+      (!run.owner || sameRunOwner(run.owner, owner))
+    ) return Promise.resolve();
+    const pendingQuery = [...this.queriesByRequestId.values()].some((transaction) =>
+      transaction.rootObserverToken === observerToken &&
+      transaction.runId === null &&
+      transaction.expectedRunId === runId &&
+      (!transaction.expectedChatId || transaction.expectedChatId === chatId)
+    );
+    if (!pendingQuery) {
+      return Promise.reject(cloneBindingError(
+        "run_not_registered",
+        "requested Run is not registered for the active Main Chat observer",
+      ));
+    }
+    return new Promise<void>((resolve, reject) => {
+      const id = `pending-clone-${randomUUID()}`;
+      const parentGeneration = this.activeRootObserver?.token === observerToken
+        ? this.activeRootObserver.generation
+        : "";
+      this.pendingClones.set(id, {
+        id,
+        observerToken,
+        parentGeneration,
+        runId,
+        chatId,
+        owner,
+        waitReason: "awaiting_run_start",
+        resolve: () => {
+          this.pendingClones.delete(id);
+          resolve();
+        },
+        reject: (error) => {
+          this.pendingClones.delete(id);
+          const details = (error as Error & { details?: unknown }).details;
+          const reason = isRecord(details) ? readText(details.reason) : "";
+          this.lastCloneCancellationReason = reason || error.name || "clone_cancelled";
+          reject(error);
+        },
+      });
+    });
+  }
+
+  private notifyPendingClones(run: BrokerRun) {
+    for (const pending of [...this.pendingClones.values()]) {
+      if (pending.runId !== run.runId || pending.chatId !== run.chatId) continue;
+      if (!run.rootObserverTokens.has(pending.observerToken)) continue;
+      if (run.owner && !sameRunOwner(run.owner, pending.owner)) {
+        pending.reject(cloneBindingError("visible_run_changed", "clone Run owner changed"));
+        continue;
+      }
+      pending.resolve();
+    }
+  }
+
+  private rejectPendingClones(observerToken: string, error: Error) {
+    for (const pending of [...this.pendingClones.values()]) {
+      if (pending.observerToken === observerToken) pending.reject(error);
+    }
+  }
+
+  private pruneRetainedTerminalRuns() {
+    const removable = [...this.runChannels.values()].filter((run) =>
+      run.terminal &&
+      run.rootObserverTokens.size === 0 &&
+      run.subscribers.size === 0 &&
+      !run.query &&
+      !run.upstreamRequestId
+    );
+    while (removable.length > MAX_RETAINED_TERMINAL_RUNS) {
+      const run = removable.shift();
+      if (!run) break;
+      this.deleteRunChannel(run);
+    }
+  }
+
+  private hasSystemRunLease(run: BrokerRun) {
+    return [...run.subscribers].some((id) =>
+      this.runSubscriptions.get(id)?.role === "internal"
+    );
+  }
+
+  private detachRunIfUnobserved(run: BrokerRun, reason: string) {
+    if (
+      run.terminal || run.rootObserverTokens.size > 0 || this.hasSystemRunLease(run) ||
+      !run.upstreamRequestId || !run.baseUrl || !run.accessToken
+    ) return Promise.resolve();
+    if (run.detachInFlight) return run.detachInFlight;
+    run.suspended = true;
+    const operationGeneration = ++run.operationGeneration;
+    const detach = new Promise<void>((resolve) => {
+      void this.ensureConnected(run.baseUrl, run.accessToken, run.lane).then(() => {
+        if (
+          run.operationGeneration !== operationGeneration ||
+          run.rootObserverTokens.size > 0 ||
+          this.hasSystemRunLease(run)
+        ) {
+          run.suspended = false;
+          resolve();
+          return;
+        }
+        void this.forwardRequest({
+          baseUrl: run.baseUrl,
+          token: run.accessToken,
+          lane: run.lane,
+          localId: `observer-detach-${randomUUID()}`,
+          consumerId: `realtime-broker:${run.lane}:${run.runId}:detach`,
+          type: "/api/detach",
+          payload: {
+            runId: run.runId,
+            ...(run.owner?.kind === "agent"
+              ? { agentKey: run.owner.agentKey }
+              : run.owner?.kind === "team"
+                ? { teamId: run.owner.teamId }
+                : {}),
+            reason,
+          },
+          onFrame: (frame) => {
+            const payload = framePayload(frame);
+            const detachedRequestId = readText(payload.streamRequestId) ||
+              (payload.accepted === false ? run.upstreamRequestId || "" : "");
+            if (detachedRequestId) {
+              this.releaseRunObserver(run, detachedRequestId, "detached", payload.lastSeq);
+            }
+            resolve();
+          },
+          onError: () => resolve(),
+        }).catch(() => resolve());
+        this.diagnostics.upstreamDetachCount += 1;
+      }).catch(() => resolve());
+    }).finally(() => {
+      if (run.detachInFlight === detach) run.detachInFlight = null;
+      if (
+        (run.rootObserverTokens.size > 0 || this.hasSystemRunLease(run)) &&
+        !run.terminal && !run.upstreamRequestId
+      ) {
+        void this.startAttach(run, run.baseUrl, run.accessToken);
+      }
+    });
+    run.detachInFlight = detach;
+    return detach;
+  }
+
   private cleanupPending(upstreamId: string) {
     const pending = this.pendingRequests.get(upstreamId);
     if (!pending) return;
@@ -2035,7 +2286,8 @@ export class RealtimeBroker {
   }
 
   private prepareConnectionIdentity(baseUrl: string, token: string) {
-    const reason = this.client.getRotationReason(baseUrl, token);
+    const reason = this.clients.primary.getRotationReason(baseUrl, token) ??
+      this.clients.btw.getRotationReason(baseUrl, token);
     if (reason) {
       this.rotateIdentity(reason);
     }

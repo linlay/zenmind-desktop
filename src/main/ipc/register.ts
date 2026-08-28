@@ -122,6 +122,7 @@ import {
   workPanelResourceImageRegistry,
 } from "../chat-work-panel-resource-images";
 import { requireEpochMillis } from "../../shared/time-contract";
+import type { AgentRealtimeDebugTarget } from "../../shared/contracts";
 
 export type MainIpcRegistrationOptions = {
   app: App;
@@ -176,6 +177,134 @@ export type MainIpcRegistrationOptions = {
   captureAssistantScreenshot: (...args: any[]) => unknown;
   consumeFirstInstallBootstrapNavigation: () => { shouldOpen: boolean };
 };
+
+function sanitizeRealtimeDiagnosticUrl(value: string) {
+  const normalized = value.trim();
+  if (!normalized) return "";
+  try {
+    const parsed = new URL(normalized);
+    if (parsed.protocol === "file:") return "file:///(redacted)";
+    if (parsed.protocol === "data:" || parsed.protocol === "blob:") return `${parsed.protocol}(redacted)`;
+    parsed.username = "";
+    parsed.password = "";
+    parsed.search = "";
+    parsed.hash = "";
+    return parsed.toString().slice(0, 512);
+  } catch {
+    return normalized.split(/[?#]/u, 1)[0].slice(0, 512);
+  }
+}
+
+function createAgentRealtimeRuntimeDiagnostics(
+  app: App,
+  browserSurfaces: BrowserSurfaceRegistry,
+) {
+  const webContentsSnapshots = browserSurfaces.listWebContentsDiagnostics();
+  const webContentsById = new Map(webContentsSnapshots.map((contents) => [contents.webContentsId, contents]));
+  const claimedWebContentsIds = new Set<number>();
+  const surfaces = browserSurfaces.listDiagnosticSurfaces();
+  const targets: AgentRealtimeDebugTarget[] = surfaces.flatMap((surface): AgentRealtimeDebugTarget[] => {
+    if (surface.tabs.length === 0) {
+      return [{
+        targetId: `surface:${surface.registrationId}`,
+        surfaceId: surface.surfaceId,
+        registrationId: surface.registrationId,
+        label: surface.label,
+        surfaceKind: surface.surfaceKind,
+        surfaceType: surface.surfaceType,
+        surfaceRole: surface.surfaceRole,
+        surfaceLevel: surface.surfaceLevel,
+        ...(surface.parentSurfaceId ? { parentSurfaceId: surface.parentSurfaceId } : {}),
+        interaction: surface.interaction,
+        ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
+        ownerWebContentsId: surface.ownerWebContentsId,
+        url: sanitizeRealtimeDiagnosticUrl(surface.pageRoute || surface.url),
+        title: surface.label,
+        active: surface.active,
+        loading: false,
+        crashed: false,
+        devToolsOpened: false,
+        backgroundThrottling: true,
+        orphaned: false,
+      }];
+    }
+    return surface.tabs.map((tab) => {
+      claimedWebContentsIds.add(tab.webContentsId);
+      const contents = webContentsById.get(tab.webContentsId);
+      return {
+        targetId: `surface:${surface.registrationId}:${tab.tabId}`,
+        surfaceId: surface.surfaceId,
+        registrationId: surface.registrationId,
+        label: surface.tabs.length > 1 ? tab.title || surface.label : surface.label,
+        surfaceKind: surface.surfaceKind,
+        surfaceType: surface.surfaceType,
+        surfaceRole: surface.surfaceRole,
+        surfaceLevel: surface.surfaceLevel,
+        ...(surface.parentSurfaceId ? { parentSurfaceId: surface.parentSurfaceId } : {}),
+        interaction: surface.interaction,
+        ...(surface.ownerChatId ? { ownerChatId: surface.ownerChatId } : {}),
+        ownerWebContentsId: surface.ownerWebContentsId,
+        webContentsId: tab.webContentsId,
+        ...(contents ? { webContentsType: contents.type, pid: contents.osProcessId } : {}),
+        url: sanitizeRealtimeDiagnosticUrl(tab.currentUrl || surface.pageRoute || surface.url),
+        title: tab.title || surface.label,
+        active: surface.active && surface.activeTabId === tab.tabId,
+        loading: contents?.loading ?? tab.isLoading,
+        crashed: contents?.crashed ?? false,
+        devToolsOpened: contents?.devToolsOpened ?? false,
+        backgroundThrottling: contents?.backgroundThrottling ?? true,
+        orphaned: false,
+      };
+    });
+  });
+  for (const contents of webContentsSnapshots) {
+    if (claimedWebContentsIds.has(contents.webContentsId)) continue;
+    const orphaned = contents.type === "webview";
+    targets.push({
+      targetId: `webcontents:${contents.webContentsId}`,
+      label: contents.title || `${contents.type} ${contents.webContentsId}`,
+      webContentsId: contents.webContentsId,
+      webContentsType: contents.type,
+      pid: contents.osProcessId,
+      url: sanitizeRealtimeDiagnosticUrl(contents.url),
+      title: contents.title,
+      active: false,
+      loading: contents.loading,
+      crashed: contents.crashed,
+      devToolsOpened: contents.devToolsOpened,
+      backgroundThrottling: contents.backgroundThrottling,
+      orphaned,
+    });
+  }
+  const targetCountByPid = new Map<number, number>();
+  for (const target of targets) {
+    if (typeof target.pid !== "number" || target.pid <= 0) continue;
+    targetCountByPid.set(target.pid, (targetCountByPid.get(target.pid) || 0) + 1);
+  }
+  const processes = app.getAppMetrics().map((metric) => ({
+    pid: metric.pid,
+    type: metric.type,
+    ...(metric.name ? { name: metric.name } : {}),
+    ...(metric.serviceName ? { serviceName: metric.serviceName } : {}),
+    cpuPercent: metric.cpu.percentCPUUsage,
+    creationTime: metric.creationTime,
+    ...(typeof metric.sandboxed === "boolean" ? { sandboxed: metric.sandboxed } : {}),
+    workingSetBytes: metric.memory.workingSetSize * 1024,
+    peakWorkingSetBytes: metric.memory.peakWorkingSetSize * 1024,
+    ...(typeof metric.memory.privateBytes === "number"
+      ? { privateBytes: metric.memory.privateBytes * 1024 }
+      : {}),
+    targetCount: targetCountByPid.get(metric.pid) || 0,
+  }));
+  return {
+    surfaceCount: new Set(surfaces.map((surface) => surface.surfaceId)).size,
+    webviewCount: webContentsSnapshots.filter((contents) => contents.type === "webview").length,
+    orphanWebviewCount: targets.filter((target) => target.orphaned).length,
+    totalWorkingSetBytes: processes.reduce((total, item) => total + item.workingSetBytes, 0),
+    processes,
+    targets,
+  };
+}
 
 export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   const {
@@ -382,38 +511,52 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     const replayBytes = brokerDiagnostics.replay.reduce((total, item) =>
       total + item.bytes,
     0);
+    const mapConnection = (
+      source: "desktop-main" | "desktop-btw",
+      connection: typeof brokerDiagnostics.connections.primary,
+      lane: "primary" | "btw",
+    ) => ({
+      source,
+      phase: connection.phase,
+      generation: connection.generation,
+      physicalConnectionCount: connection.physicalConnectionCount,
+      reconnectCount: connection.reconnectCount,
+      endpoint: connection.key?.endpoint || "",
+      ...(connection.physicalSessionId ? { physicalSessionId: connection.physicalSessionId } : {}),
+      ...(connection.lastInboundAt
+        ? { lastInboundAt: requireEpochMillis(connection.lastInboundAt, `agentRealtimeDebugSnapshot.connections.${lane}.lastInboundAt`) }
+        : {}),
+      ...(connection.lastHeartbeatAt
+        ? { lastHeartbeatAt: requireEpochMillis(connection.lastHeartbeatAt, `agentRealtimeDebugSnapshot.connections.${lane}.lastHeartbeatAt`) }
+        : {}),
+      ...(connection.closeReason ? { closeReason: connection.closeReason } : {}),
+      ...(connection.lastError ? { lastError: connection.lastError } : {}),
+    });
     return {
       capturedAt: requireEpochMillis(Date.now(), "agentRealtimeDebugSnapshot.capturedAt"),
-      connection: {
-        phase: brokerDiagnostics.connection.phase,
-        generation: brokerDiagnostics.connection.generation,
-        physicalConnectionCount: brokerDiagnostics.connection.physicalConnectionCount,
-        reconnectCount: brokerDiagnostics.connection.reconnectCount,
-        endpoint: brokerDiagnostics.connection.key?.endpoint || "",
-        ...(brokerDiagnostics.connection.physicalSessionId
-          ? { physicalSessionId: brokerDiagnostics.connection.physicalSessionId }
-          : {}),
-        ...(brokerDiagnostics.connection.lastInboundAt
-          ? { lastInboundAt: requireEpochMillis(brokerDiagnostics.connection.lastInboundAt, "agentRealtimeDebugSnapshot.connection.lastInboundAt") }
-          : {}),
-        ...(brokerDiagnostics.connection.lastHeartbeatAt
-          ? { lastHeartbeatAt: requireEpochMillis(brokerDiagnostics.connection.lastHeartbeatAt, "agentRealtimeDebugSnapshot.connection.lastHeartbeatAt") }
-          : {}),
-        ...(brokerDiagnostics.connection.closeReason
-          ? { closeReason: brokerDiagnostics.connection.closeReason }
-          : {}),
-        ...(brokerDiagnostics.connection.lastError
-          ? { lastError: brokerDiagnostics.connection.lastError }
-          : {}),
+      runtime: createAgentRealtimeRuntimeDiagnostics(app, options.browserSurfaces),
+      connections: {
+        primary: mapConnection("desktop-main", brokerDiagnostics.connections.primary, "primary"),
+        btw: mapConnection("desktop-btw", brokerDiagnostics.connections.btw, "btw"),
       },
       broker: {
         pendingRequestCount: brokerDiagnostics.pendingRequestCount,
+        pendingQueryCount: brokerDiagnostics.pendingQueryCount,
         activeStreamCount: brokerDiagnostics.activeStreamCount,
         runCount: brokerDiagnostics.runCount,
         localRunSubscriberCount: brokerDiagnostics.localRunSubscriberCount,
         pushSubscriberCount: brokerDiagnostics.pushSubscriberCount,
         connectionSubscriberCount: brokerDiagnostics.connectionSubscriberCount,
-        visibleBinding: brokerDiagnostics.visibleBinding,
+        pendingCloneCount: brokerDiagnostics.pendingClones.length,
+        pendingClones: brokerDiagnostics.pendingClones.map((pending) => ({
+          parentGeneration: pending.parentGeneration,
+          runId: pending.runId,
+          chatId: pending.chatId,
+          waitReason: pending.waitReason,
+        })),
+        ...(brokerDiagnostics.lastCloneCancellationReason
+          ? { lastCloneCancellationReason: brokerDiagnostics.lastCloneCancellationReason }
+          : {}),
         replayEventCount,
         replayBytes,
         unknownFrameCount: brokerDiagnostics.unknownFrameCount,
@@ -423,14 +566,25 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         seqRegressionCount: brokerDiagnostics.seqRegressionCount,
         duplicateTerminalCount: brokerDiagnostics.duplicateTerminalCount,
         replayEvictionCount: brokerDiagnostics.replayEvictionCount,
+        observerReleaseCount: brokerDiagnostics.observerReleaseCount,
+        seqExpiredCount: brokerDiagnostics.seqExpiredCount,
+        upstreamAttachCount: brokerDiagnostics.upstreamAttachCount,
+        upstreamDetachCount: brokerDiagnostics.upstreamDetachCount,
+        cloneCreatedCount: brokerDiagnostics.cloneCreatedCount,
+        cloneRevokedCount: brokerDiagnostics.cloneRevokedCount,
+        laneRotationCount: brokerDiagnostics.laneRotationCount,
       },
       bridge: {
         registeredSenderCount: bridgeDiagnostics.registeredSenderCount,
         logicalSessionCount: bridgeDiagnostics.logicalSessionCount,
         pendingRequestCount: bridgeDiagnostics.pendingRequestCount,
         activeStreamCount: bridgeDiagnostics.activeStreamCount,
-        activeLiveSurfaceCount: bridgeDiagnostics.activeLiveSurfaceCount,
-        activeLiveSessionKey: bridgeDiagnostics.activeLiveSessionKey,
+        rootObserver: bridgeDiagnostics.activeRootObserver
+          ? {
+              ...bridgeDiagnostics.activeRootObserver,
+              runIds: [...bridgeDiagnostics.activeRootObserver.runIds],
+            }
+          : null,
       },
       surfaces: bridgeDiagnostics.surfaces,
       logicalSessions: bridgeDiagnostics.logicalSessions.map((session) => ({
@@ -441,9 +595,16 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
           : {}),
       })),
       runRecovery: brokerDiagnostics.replay.map((run) => ({
+        lane: run.lane,
         runId: run.runId,
+        chatId: run.chatId,
         lastSeq: run.lastSeq,
         state: run.state,
+        ...(run.terminalReason ? { terminalReason: run.terminalReason } : {}),
+        ...(run.terminalSource ? { terminalSource: run.terminalSource } : {}),
+        rootObserverCount: run.rootObserverCount,
+        cloneCount: run.cloneCount,
+        upstreamState: run.upstreamState,
         restoreCount: run.restoreCount,
         lastRestoreResult: run.lastRestoreResult,
       })),
@@ -460,6 +621,22 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   ipcMain.handle("diagnostics.openAgentRealtimeInspector", async () =>
     options.openAgentRealtimeInspectorWindow(),
   );
+  ipcMain.handle("diagnostics.openAgentRealtimeTargetDevTools", async (_event: any, input?: unknown) => {
+    const webContentsId = input && typeof input === "object"
+      ? Number((input as { webContentsId?: unknown }).webContentsId)
+      : 0;
+    if (!Number.isSafeInteger(webContentsId) || webContentsId <= 0) {
+      return { ok: false, message: "A valid WebContents ID is required" };
+    }
+    const diagnostic = options.browserSurfaces.listWebContentsDiagnostics()
+      .find((contents) => contents.webContentsId === webContentsId && contents.type === "webview");
+    const contents = diagnostic ? options.browserSurfaces.findWebContentsById(webContentsId) : null;
+    if (!contents || contents.isDestroyed()) {
+      return { ok: false, message: "The WebView is no longer available" };
+    }
+    contents.openDevTools({ mode: "detach" });
+    return { ok: true };
+  });
   ipcMain.handle("diagnostics.clearAgentRealtimeDebugTrace", async () => {
     assistantBridgeRuntime.realtimeBroker.clearDebugTrace();
     return readAgentRealtimeDebugSnapshot();

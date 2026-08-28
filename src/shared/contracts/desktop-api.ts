@@ -226,6 +226,46 @@ export interface AgentRealtimeDebugSurface {
   activeStreamCount: number;
 }
 
+export interface AgentRealtimeDebugProcess {
+  pid: number;
+  type: string;
+  name?: string;
+  serviceName?: string;
+  cpuPercent: number;
+  creationTime: number;
+  sandboxed?: boolean;
+  workingSetBytes: number;
+  peakWorkingSetBytes: number;
+  privateBytes?: number;
+  targetCount: number;
+}
+
+export interface AgentRealtimeDebugTarget {
+  targetId: string;
+  surfaceId?: string;
+  registrationId?: string;
+  label: string;
+  surfaceKind?: string;
+  surfaceType?: string;
+  surfaceRole?: SurfaceRole;
+  surfaceLevel?: SurfaceLevel;
+  parentSurfaceId?: string;
+  interaction?: SurfaceInteraction;
+  ownerChatId?: string;
+  ownerWebContentsId?: number;
+  webContentsId?: number;
+  webContentsType?: string;
+  pid?: number;
+  url: string;
+  title: string;
+  active: boolean;
+  loading: boolean;
+  crashed: boolean;
+  devToolsOpened: boolean;
+  backgroundThrottling: boolean;
+  orphaned: boolean;
+}
+
 export interface AgentRealtimeDebugLogicalSession {
   logicalSessionId: string;
   surfaceId: string;
@@ -242,35 +282,64 @@ export interface AgentRealtimeDebugLogicalSession {
 }
 
 export interface AgentRealtimeDebugRunRecovery {
+  lane: "primary" | "btw";
   runId: string;
+  chatId: string;
   lastSeq: number;
-  state: "active" | "suspended" | "restoring" | "terminal";
+  state: "observed" | "detaching" | "dormant" | "terminal";
+  terminalReason?: string;
+  terminalSource?: "query_stream" | "attach_stream" | "push";
+  rootObserverCount: number;
+  cloneCount: number;
+  upstreamState: "attached" | "detaching" | "detached";
   restoreCount: number;
   lastRestoreResult: string;
 }
 
+export interface AgentRealtimeDebugConnection {
+  source: "desktop-main" | "desktop-btw";
+  phase: AgentWebclientConnectionPhase;
+  generation: number;
+  physicalConnectionCount: 0 | 1;
+  reconnectCount: number;
+  endpoint: string;
+  physicalSessionId?: string;
+  lastInboundAt?: EpochMilliseconds;
+  lastHeartbeatAt?: EpochMilliseconds;
+  closeReason?: string;
+  lastError?: string;
+}
+
 export interface AgentRealtimeDebugSnapshot {
   capturedAt: EpochMilliseconds;
-  connection: {
-    phase: AgentWebclientConnectionPhase;
-    generation: number;
-    physicalConnectionCount: 0 | 1;
-    reconnectCount: number;
-    endpoint: string;
-    physicalSessionId?: string;
-    lastInboundAt?: EpochMilliseconds;
-    lastHeartbeatAt?: EpochMilliseconds;
-    closeReason?: string;
-    lastError?: string;
+  runtime: {
+    surfaceCount: number;
+    webviewCount: number;
+    orphanWebviewCount: number;
+    totalWorkingSetBytes: number;
+    processes: AgentRealtimeDebugProcess[];
+    targets: AgentRealtimeDebugTarget[];
+  };
+  connections: {
+    primary: AgentRealtimeDebugConnection;
+    btw: AgentRealtimeDebugConnection;
   };
   broker: {
     pendingRequestCount: number;
+    pendingQueryCount: number;
     activeStreamCount: number;
     runCount: number;
     localRunSubscriberCount: number;
     pushSubscriberCount: number;
     connectionSubscriberCount: number;
-    visibleBinding: { epoch: number; consumerCount: number } | null;
+    pendingCloneCount: number;
+    pendingClones: Array<{
+      parentGeneration: string;
+      runId: string;
+      chatId: string;
+      waitReason: "awaiting_run_start";
+    }>;
+    lastCloneCancellationReason?: string;
     replayEventCount: number;
     replayBytes: number;
     unknownFrameCount: number;
@@ -280,14 +349,28 @@ export interface AgentRealtimeDebugSnapshot {
     seqRegressionCount: number;
     duplicateTerminalCount: number;
     replayEvictionCount: number;
+    observerReleaseCount: number;
+    seqExpiredCount: number;
+    upstreamAttachCount: number;
+    upstreamDetachCount: number;
+    cloneCreatedCount: number;
+    cloneRevokedCount: number;
+    laneRotationCount: number;
   };
   bridge: {
     registeredSenderCount: number;
     logicalSessionCount: number;
     pendingRequestCount: number;
     activeStreamCount: number;
-    activeLiveSurfaceCount: number;
-    activeLiveSessionKey: string | null;
+    rootObserver: {
+      token: string;
+      kind: "main_chat" | "copilot_dock" | "kanban_chat";
+      surfaceId: string;
+      generation: string;
+      contextId: string;
+      webContentsId: number;
+      runIds: string[];
+    } | null;
   };
   surfaces: AgentRealtimeDebugSurface[];
   logicalSessions: AgentRealtimeDebugLogicalSession[];
@@ -1107,6 +1190,9 @@ export interface DesktopApi {
     getTunnelDebugSnapshot: () => Promise<TunnelDebugSnapshot>;
     probeDesktopWs: (input: { target: "localDebug" }) => Promise<DesktopWsProbeResult>;
     openAgentRealtimeInspector: () => Promise<{ ok: boolean }>;
+    openAgentRealtimeTargetDevTools: (input: {
+      webContentsId: number;
+    }) => Promise<{ ok: boolean; message?: string }>;
     getAgentRealtimeDebugSnapshot: (input?: {
       afterSequence?: number;
     }) => Promise<AgentRealtimeDebugSnapshot>;

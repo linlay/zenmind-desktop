@@ -1032,10 +1032,11 @@ export function AppShell() {
   const resolvedCopilotMustUseSkills = activeWebEntry?.kind === "webapp"
     ? activeWebEntry.copilotMustUseSkills ?? []
     : [];
-  const assistantLauncherVisible = currentCopilotPreference?.enabled !== false;
   const isAgentWebclientMainRoute =
     location.pathname === ASSISTANT_TARGET_PATH ||
     isSingleAgentWebclientRoute(location.pathname);
+  const copilotDockAllowed = !isKanbanRoute && !isAgentWebclientMainRoute;
+  const assistantLauncherVisible = copilotDockAllowed && currentCopilotPreference?.enabled !== false;
   const currentCopilotContextKey = activeWebEntryKey || (
     location.pathname === BUILTIN_BROWSER_ROUTE
       ? BUILTIN_BROWSER_SURFACE_ID
@@ -1052,7 +1053,7 @@ export function AppShell() {
         : undefined;
   const currentCopilotSession = assistantDockSessions[currentCopilotContextKey] ?? null;
   const assistantDockOpen = Boolean(currentCopilotSession);
-  const assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && !isAgentWebclientMainRoute;
+  const assistantCopilotOpen = assistantDockOpen && assistantLauncherVisible && copilotDockAllowed;
   const currentAssistantDockOpenRequest =
     pendingAssistantDockOpenRequestRef.current?.contextKey === currentCopilotContextKey
       ? assistantDockOpenRequest
@@ -1915,7 +1916,7 @@ export function AppShell() {
   }
 
   function openAssistantDock(request?: AssistantWorkerOpenRequest) {
-    if (isAgentWebclientMainRoute) {
+    if (!copilotDockAllowed) {
       return;
     }
     if (request) {
@@ -1952,7 +1953,7 @@ export function AppShell() {
   }
 
   function toggleSystemBarAssistantDock() {
-    if (isAgentWebclientMainRoute) {
+    if (!copilotDockAllowed) {
       return;
     }
     if (assistantCopilotOpen) {
@@ -2188,6 +2189,23 @@ export function AppShell() {
       setAssistantDockOpenRequest(null);
     }
   }, [currentCopilotContextKey]);
+
+  useEffect(() => {
+    if (copilotDockAllowed) return;
+    pendingAssistantDockOpenRequestRef.current = null;
+    setAssistantDockOpenRequest(null);
+    const forbiddenContextKey = "desktop-route:/kanban";
+    if (!assistantDockSessionsRef.current[forbiddenContextKey]) return;
+    const nextSessions = { ...assistantDockSessionsRef.current };
+    delete nextSessions[forbiddenContextKey];
+    assistantDockSessionsRef.current = nextSessions;
+    setAssistantDockSessions(nextSessions);
+    if (Object.keys(nextSessions).length === 0) {
+      clearCopilotDockSessionSnapshot();
+    } else {
+      writeCopilotDockSessionSnapshot({ contexts: nextSessions });
+    }
+  }, [copilotDockAllowed]);
 
   useEffect(() => {
     return window.electronAPI.onNavigate((targetPath) => {
@@ -4492,28 +4510,31 @@ export function AppShell() {
           aria-hidden="true"
         />
       ) : null}
-      <AgentWebclientCopilotDock
-        open={assistantCopilotOpen}
-        hostTheme={resolvedTheme}
-        nativeDialogVisible={copilotDockNativeDialogVisible}
-        openRequest={currentAssistantDockOpenRequest}
-        restoredEmbedPath={currentCopilotSession?.embedPath ?? ""}
-        parentSurfaceId={currentCopilotParentSurfaceId}
-        resolvedAgentKey={resolvedCopilotAgentKey}
-        mustUseSkills={resolvedCopilotMustUseSkills}
-        resize={assistantCopilotOpen && !copilotDockOverlayMode ? {
-          active: isCopilotDockResizing,
-          minWidth: COPILOT_DOCK_MIN_WIDTH,
-          maxWidth: copilotDockMaxWidth,
-          width: renderedCopilotDockWidth,
-          onKeyDown: handleCopilotDockResizerKeyDown,
-          onPointerDown: handleCopilotDockResizerPointerDown,
-        } : undefined}
-        onClose={closeAssistantDock}
-        onRunningRunIdChange={setAssistantRunningRunId}
-        onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
-        onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}
-      />
+      {copilotDockAllowed ? (
+        <AgentWebclientCopilotDock
+          open={assistantCopilotOpen}
+          hostTheme={resolvedTheme}
+          nativeDialogVisible={copilotDockNativeDialogVisible}
+          openRequest={currentAssistantDockOpenRequest}
+          restoredEmbedPath={currentCopilotSession?.embedPath ?? ""}
+          contextKey={currentCopilotContextKey}
+          parentSurfaceId={currentCopilotParentSurfaceId}
+          resolvedAgentKey={resolvedCopilotAgentKey}
+          mustUseSkills={resolvedCopilotMustUseSkills}
+          resize={assistantCopilotOpen && !copilotDockOverlayMode ? {
+            active: isCopilotDockResizing,
+            minWidth: COPILOT_DOCK_MIN_WIDTH,
+            maxWidth: copilotDockMaxWidth,
+            width: renderedCopilotDockWidth,
+            onKeyDown: handleCopilotDockResizerKeyDown,
+            onPointerDown: handleCopilotDockResizerPointerDown,
+          } : undefined}
+          onClose={closeAssistantDock}
+          onRunningRunIdChange={setAssistantRunningRunId}
+          onSelectedAgentKeyChange={handleCopilotSelectedAgentKeyChange}
+          onCurrentEmbedPathChange={handleCopilotCurrentEmbedPathChange}
+        />
+      ) : null}
       <EnterpriseChatFloatingPanel desktopSsoStatus={desktopSsoStatus} />
       <ProjectFloatingWebviews
         entries={projectFloatingWebviews}

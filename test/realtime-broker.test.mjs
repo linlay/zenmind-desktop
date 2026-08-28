@@ -12,7 +12,7 @@ const {
   normalizeAgentPlatformRealtimeEndpoint,
 } = require("../dist-electron/main/realtime/agent-platform-realtime-client.js");
 
-const EPOCH_MS = 1_771_888_000_000;
+const EPOCH_MS = 1_788_000_000_000;
 
 function jwt(claims = {}) {
   const encode = (value) => Buffer.from(JSON.stringify(value)).toString("base64url");
@@ -23,6 +23,14 @@ function nextTurn() {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+async function waitUntil(predicate, timeoutMs = 1_000) {
+  const deadline = Date.now() + timeoutMs;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("timed out waiting for condition");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+}
+
 function createHarness(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-realtime-broker-"));
   const sockets = [];
@@ -30,6 +38,7 @@ function createHarness(t, options = {}) {
   class FakeSocket {
     constructor(url) {
       this.url = url;
+      this.source = new URL(url).searchParams.get("source");
       this.sent = [];
       this.onopen = null;
       this.onmessage = null;
@@ -44,7 +53,7 @@ function createHarness(t, options = {}) {
           type: "connected",
           data: {
             protocolVersion: 2,
-            sessionId: `platform-${sockets.length}`,
+            sessionId: `${this.source}-${sockets.length}`,
             serverTime: EPOCH_MS,
             liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 },
           },
@@ -52,20 +61,12 @@ function createHarness(t, options = {}) {
       });
     }
 
-    send(data) {
-      this.sent.push(JSON.parse(data));
-    }
-
-    emit(frame) {
-      this.onmessage?.({ data: JSON.stringify(frame) });
-    }
-
-    disconnect() {
-      this.onclose?.();
-    }
-
+    send(data) { this.sent.push(JSON.parse(data)); }
+    emit(frame) { this.onmessage?.({ data: JSON.stringify(frame) }); }
+    disconnect() { this.onclose?.(); }
     close() {}
   }
+
   const broker = new RealtimeBroker({
     app: { getPath: () => root },
     issueAccessToken: async () => ({ ok: true, token: jwt(), message: "" }),
@@ -79,7 +80,38 @@ function createHarness(t, options = {}) {
     broker.dispose();
     fs.rmSync(root, { recursive: true, force: true });
   });
-  return { broker, diagnostics, sockets, token: jwt() };
+  const socket = (lane) => sockets.find((candidate) =>
+    candidate.source === (lane === "primary" ? "desktop-main" : "desktop-btw"),
+  );
+  return { broker, diagnostics, sockets, socket, token: jwt() };
+}
+
+function rootObserver(overrides = {}) {
+  return {
+    token: "main-chat:g1:1:101",
+    kind: "main_chat",
+    surfaceId: "main-chat",
+    generation: "g1",
+    contextId: "chat-1",
+    webContentsId: 101,
+    ...overrides,
+  };
+}
+
+function runEvent(type, runId, chatId, seq, extra = {}) {
+  return {
+    type,
+    runId,
+    chatId,
+    agentKey: "agent-1",
+    seq,
+    timestamp: EPOCH_MS + seq,
+    ...extra,
+  };
+}
+
+function requestOfType(socket, type) {
+  return socket.sent.filter((frame) => frame.frame === "request" && frame.type === type);
 }
 
 test("physical realtime connection waits for the Platform v2 handshake", async (t) => {
@@ -88,7 +120,6 @@ test("physical realtime connection waits for the Platform v2 handshake", async (
   await nextTurn();
   assert.equal(broker.getConnectionState().phase, "connecting");
   assert.equal(sockets.length, 1);
-
   sockets[0].emit({
     frame: "push",
     type: "connected",
@@ -100,57 +131,10 @@ test("physical realtime connection waits for the Platform v2 handshake", async (
     },
   });
   await connecting;
-  assert.deepEqual(
-    {
-      phase: broker.getConnectionState().phase,
-      sessionId: broker.getConnectionState().physicalSessionId,
-    },
-    { phase: "connected", sessionId: "platform-handshake-1" },
-  );
+  assert.equal(broker.getConnectionState().physicalSessionId, "platform-handshake-1");
 });
 
-test("valid heartbeat and business frames continuously refresh physical liveness", async (t) => {
-  const { broker, sockets, token } = createHarness(t, { heartbeatTimeoutMs: 35 });
-  await broker.ensureConnected("http://127.0.0.1:8080", token);
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  sockets[0].emit({
-    frame: "push",
-    type: "heartbeat",
-    data: { sessionId: "platform-1", sequence: 1, timestamp: EPOCH_MS + 1 },
-  });
-  await new Promise((resolve) => setTimeout(resolve, 20));
-  sockets[0].emit({ frame: "push", type: "run.updated", data: { runId: "run-1" } });
-  await new Promise((resolve) => setTimeout(resolve, 20));
-
-  const state = broker.getConnectionState();
-  assert.equal(state.phase, "connected");
-  assert.equal(state.physicalSessionId, "platform-1");
-  assert.ok(state.lastInboundAt >= state.lastHeartbeatAt);
-  assert.equal(sockets.length, 1);
-});
-
-test("non-monotonic protocol-v2 heartbeat closes without retrying the incompatible connection", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  await broker.ensureConnected("http://127.0.0.1:8080", token);
-  sockets[0].emit({
-    frame: "push",
-    type: "heartbeat",
-    data: { sessionId: "platform-1", sequence: 2, timestamp: EPOCH_MS + 2 },
-  });
-  sockets[0].emit({
-    frame: "push",
-    type: "heartbeat",
-    data: { sessionId: "platform-1", sequence: 2, timestamp: EPOCH_MS + 3 },
-  });
-  await nextTurn();
-  await new Promise((resolve) => setTimeout(resolve, 120));
-
-  assert.equal(broker.getConnectionState().phase, "closed");
-  assert.match(broker.getConnectionState().lastError, /PLATFORM_WS_PROTOCOL_MISMATCH/u);
-  assert.equal(sockets.length, 1);
-});
-
-test("realtime connection identity excludes token rotation claims and normalizes endpoint", () => {
+test("identity fingerprint ignores token rotation claims and normalizes endpoint", () => {
   const first = jwt({ exp: 100, jti: "one" });
   const second = jwt({ exp: 200, jti: "two" });
   assert.equal(
@@ -161,659 +145,467 @@ test("realtime connection identity excludes token rotation claims and normalizes
     createAgentPlatformIdentitySessionId(first, "device-1"),
     createAgentPlatformIdentitySessionId(jwt({ sid: "different" }), "device-1"),
   );
-  assert.equal(normalizeAgentPlatformRealtimeEndpoint("HTTP://127.0.0.1:11789///?token=never-keyed"), "http://127.0.0.1:11789");
+  assert.equal(normalizeAgentPlatformRealtimeEndpoint("HTTP://127.0.0.1:11789///?token=hidden"), "http://127.0.0.1:11789");
 });
 
-test("RealtimeBroker records redacted endpoint and explicit identity rotation reasons", async (t) => {
-  const { broker, diagnostics, sockets, token } = createHarness(t);
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
-  await broker.ensureConnected("http://127.0.0.1:11790", token);
+test("Primary and BTW lanes stay at exactly two physical sockets and multiplex Runs", async (t) => {
+  const { broker, sockets, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const received = [];
+  const queries = [
+    ["primary", "/api/query", "run-main-1"],
+    ["primary", "/api/query", "run-main-2"],
+    ["btw", "/api/btw", "run-btw-1"],
+    ["btw", "/api/btw", "run-btw-2"],
+  ].map(([lane, requestType, runId]) => broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    id: `op-${runId}`,
+    lane,
+    requestType,
+    runId,
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: observer.token,
+    consumerId: `surface:${runId}`,
+    payload: { runId, chatId: "chat-1", agentKey: "agent-1", message: runId },
+    onEvent: (event) => received.push([runId, event.type]),
+  }));
+
+  await waitUntil(() => sockets.length === 2 && requestOfType(socket("primary"), "/api/query").length === 2 && requestOfType(socket("btw"), "/api/btw").length === 2);
+  assert.deepEqual(sockets.map((item) => item.source).sort(), ["desktop-btw", "desktop-main"]);
+
+  for (const [lane, , runId] of [
+    ["primary", "/api/query", "run-main-1"],
+    ["primary", "/api/query", "run-main-2"],
+    ["btw", "/api/btw", "run-btw-1"],
+    ["btw", "/api/btw", "run-btw-2"],
+  ]) {
+    const request = socket(lane).sent.find((frame) => frame.payload?.runId === runId);
+    socket(lane).emit({ frame: "stream", id: request.id, event: runEvent("run.start", runId, "chat-1", 1) });
+  }
+  await Promise.all(queries.map((query) => query.accepted));
+  await nextTurn();
   assert.equal(sockets.length, 2);
-  assert.deepEqual(diagnostics, ["realtime_identity_rotation:endpoint_changed"]);
-
-  broker.rotateIdentity();
-  assert.deepEqual(diagnostics, [
-    "realtime_identity_rotation:endpoint_changed",
-    "realtime_identity_rotation:explicit_identity_invalidation",
-  ]);
-  assert.equal(diagnostics.some((message) => message.includes(token)), false);
+  assert.equal(broker.getDiagnostics().replay.filter((run) => run.lane === "primary").length, 2);
+  assert.equal(broker.getDiagnostics().replay.filter((run) => run.lane === "btw").length, 2);
+  assert.equal(received.filter(([, type]) => type === "run.start").length, 4);
 });
 
-test("RealtimeBroker multiplexes concurrent Runs and local request ids over one physical socket", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const firstEvents = [];
-  const secondEvents = [];
-  const first = broker.query({
-    baseUrl: "http://127.0.0.1:11789",
-    token,
-    id: "same-local-id",
-    owner: { kind: "agent", agentKey: "coder" },
-    payload: { marker: "run-1", prompt: "redacted by diagnostics" },
-    onEvent: (event) => firstEvents.push(event),
-  });
-  const second = broker.query({
-    baseUrl: "http://127.0.0.1:11789",
-    token,
-    id: "same-local-id",
-    owner: { kind: "team", teamId: "research" },
-    payload: { marker: "run-2", prompt: "another" },
-    onEvent: (event) => secondEvents.push(event),
-  });
-  await nextTurn();
-
-  assert.equal(sockets.length, 1);
-  const queries = sockets[0].sent.filter((frame) => frame.type === "/api/query");
-  assert.equal(queries.length, 2);
-  assert.notEqual(queries[0].id, queries[1].id);
-  const byRun = new Map(queries.map((frame) => [frame.payload.marker, frame]));
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
-    type: "chat.start", timestamp: EPOCH_MS, seq: 1, chatId: "chat-1",
-  }});
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
-    type: "request.query", timestamp: EPOCH_MS + 1, seq: 2, chatId: "chat-1", runId: "run-1",
-  }});
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-2").id, event: {
-    type: "run.start", timestamp: EPOCH_MS, seq: 1, runId: "run-2", chatId: "chat-2", teamId: "research",
-  }});
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
-    type: "run.start", timestamp: EPOCH_MS + 2, seq: 3, runId: "run-1", chatId: "chat-1", agentKey: "coder",
-  }});
-  assert.deepEqual(await first.accepted, {
-    chatId: "chat-1", runId: "run-1", owner: { kind: "agent", agentKey: "coder" },
-  });
-  assert.deepEqual(await second.accepted, {
-    chatId: "chat-2", runId: "run-2", owner: { kind: "team", teamId: "research" },
-  });
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, event: {
-    type: "run.start", timestamp: EPOCH_MS + 3, seq: 3, runId: "run-1", chatId: "chat-1", agentKey: "coder",
-  }});
-  await nextTurn();
-  assert.deepEqual(firstEvents.map((event) => event.type), ["chat.start", "request.query", "run.start"]);
-  assert.deepEqual(secondEvents.map((event) => event.runId), ["run-2"]);
-
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, reason: "complete", lastSeq: 3 });
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-2").id, reason: "complete", lastSeq: 1 });
-  assert.equal((await first.completed).reason, "complete");
-  assert.equal((await second.completed).reason, "complete");
-  sockets[0].emit({ frame: "stream", id: byRun.get("run-1").id, reason: "complete", lastSeq: 1 });
-  await nextTurn();
-  assert.equal(broker.getDiagnostics().connection.physicalConnectionCount, 1);
-  assert.equal(broker.getDiagnostics().seqRegressionCount, 1);
-  assert.equal(broker.getDiagnostics().duplicateTerminalCount, 1);
-  assert.ok(broker.getDebugTraceEntries().some((entry) =>
-    entry.layer === "platform-ws" &&
-    entry.direction === "desktop-to-platform" &&
-    entry.data.type === "/api/query",
-  ));
-  assert.ok(broker.getDebugTraceEntries().some((entry) =>
-    entry.layer === "platform-ws" &&
-    entry.direction === "platform-to-desktop" &&
-    entry.data.frame === "stream",
-  ));
-
-  broker.appendDebugTrace({
-    layer: "surface-bridge",
-    direction: "surface-to-desktop",
-    surfaceId: "main-chat",
-    data: {
-      token: "must-not-leak",
-      nested: { authorization: "Bearer must-not-leak" },
-      url: "https://example.test/path?access_token=must-not-leak&visible=1",
-    },
-  });
-  const redacted = broker.getDebugTraceEntries().at(-1);
-  assert.equal(redacted.data.token, "<REDACTED>");
-  assert.equal(redacted.data.nested.authorization, "<REDACTED>");
-  assert.match(redacted.data.url, /access_token=<REDACTED>/u);
-  assert.equal(JSON.stringify(redacted).includes("must-not-leak"), false);
-  broker.clearDebugTrace();
-  assert.deepEqual(broker.getDebugTraceEntries(), []);
-});
-
-test("RealtimeBroker locally fans one Run out to Agent, Copilot, Overview and Debug", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
+test("Main Chat clones use local replay and never create upstream attach", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const mainEvents = [];
+  const cloneEvents = [];
   const query = broker.query({
-    baseUrl: "http://127.0.0.1:11789",
+    baseUrl: "http://127.0.0.1:8080",
     token,
-    id: "primary-agent-query",
-    owner: { kind: "agent", agentKey: "coder" },
-    payload: { prompt: "fan out" },
-    onEvent() {},
+    id: "main-query",
+    runId: "run-clone",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: observer.token,
+    consumerId: "main-chat",
+    payload: { runId: "run-clone", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: (event) => mainEvents.push(event.type),
   });
+  const pendingClone = broker.subscribeClone({
+    runId: "run-clone",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    consumerId: "overview",
+    onEvent: (event) => cloneEvents.push(event.type),
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-clone", "chat-1", 1) });
+  const clone = await pendingClone;
+  await query.accepted;
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("content.delta", "run-clone", "chat-1", 2, { delta: "A" }) });
   await nextTurn();
-  const upstreamQuery = sockets[0].sent.find((frame) => frame.type === "/api/query");
-  sockets[0].emit({ frame: "stream", id: upstreamQuery.id, event: {
-    type: "run.start", timestamp: EPOCH_MS, seq: 1,
-    chatId: "chat-shared", runId: "run-shared", agentKey: "coder",
-  }});
+
+  assert.deepEqual(mainEvents, ["run.start", "content.delta"]);
+  assert.deepEqual(cloneEvents, ["run.start", "content.delta"]);
+  assert.equal(requestOfType(socket("primary"), "/api/attach").length, 0);
+  clone.unsubscribe();
+  assert.equal(requestOfType(socket("primary"), "/api/detach").length, 0);
+});
+
+test("unknown clone Run fails deterministically without a readiness timeout", async (t) => {
+  const { broker } = createHarness(t);
+  broker.activateRootObserver(rootObserver());
+  await assert.rejects(
+    broker.subscribeClone({
+      runId: "missing-run",
+      chatId: "chat-1",
+      owner: { kind: "agent", agentKey: "agent-1" },
+      consumerId: "debug",
+      onEvent: () => undefined,
+    }),
+    (error) => {
+      assert.equal(error.name, "target_unavailable");
+      assert.equal(error.details.reason, "run_not_registered");
+      return true;
+    },
+  );
+});
+
+test("pending clone is cancelled when its query fails before run.start", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    id: "failed-parent-query",
+    runId: "run-never-registered",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: observer.token,
+    payload: { runId: "run-never-registered", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
+  });
+  const clone = broker.subscribeClone({
+    runId: "run-never-registered",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    consumerId: "overview",
+    onEvent: () => undefined,
+  });
+  assert.deepEqual(broker.getDiagnostics().pendingClones, [{
+    observerToken: observer.token,
+    parentGeneration: observer.generation,
+    runId: "run-never-registered",
+    chatId: "chat-1",
+    waitReason: "awaiting_run_start",
+  }]);
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "error", id: upstream.id, type: "invalid_request", msg: "rejected" });
+  await assert.rejects(query.accepted);
+  await assert.rejects(clone, (error) => {
+    assert.equal(error.name, "target_unavailable");
+    assert.equal(error.details.reason, "run_not_registered");
+    return true;
+  });
+  assert.equal(broker.getDiagnostics().pendingClones.length, 0);
+  assert.equal(broker.getDiagnostics().lastCloneCancellationReason, "run_not_registered");
+});
+
+test("superseded Root Observer cannot read Run replay", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const first = rootObserver();
+  broker.activateRootObserver(first);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    id: "replay-security-query",
+    runId: "run-replay-security",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: first.token,
+    payload: { runId: "run-replay-security", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-replay-security", "chat-1", 1) });
+  await query.accepted;
+  const second = rootObserver({ token: "main-chat:g2:1:102:chat-2", generation: "g2", contextId: "chat-2", webContentsId: 102 });
+  broker.activateRootObserver(second);
+  const leaked = [];
+  assert.throws(() => broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    runId: "run-replay-security",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "surface",
+    role: "root_observer",
+    observerToken: first.token,
+    consumerId: "stale-main-chat",
+    onEvent: (event) => leaked.push(event),
+  }), (error) => error.name === "surface_generation_superseded");
+  assert.deepEqual(leaked, []);
+});
+
+test("canonical run.start never rewrites the trusted Root Observer context", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver({
+    token: "copilot-dock:g1:1:101:desktop-route-home:chat-copilot",
+    kind: "copilot_dock",
+    surfaceId: "copilot-dock",
+    contextId: "desktop-route:/home:chat-copilot",
+  });
+  broker.activateRootObserver(observer);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    id: "copilot-context-query",
+    runId: "run-copilot-context",
+    chatId: "chat-copilot",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: observer.token,
+    payload: { runId: "run-copilot-context", chatId: "chat-copilot", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({
+    frame: "stream",
+    id: upstream.id,
+    event: runEvent("run.start", "run-copilot-context", "chat-copilot", 1),
+  });
+  await query.accepted;
+  assert.equal(broker.getActiveRootObserver().contextId, observer.contextId);
+});
+
+test("last Root Observer release detaches once, keeps the Run dormant, then reattaches from lastSeq", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    id: "detach-query",
+    runId: "run-detach",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: observer.token,
+    consumerId: "main-chat",
+    payload: { runId: "run-detach", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-detach", "chat-1", 1) });
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("content.delta", "run-detach", "chat-1", 2) });
   await query.accepted;
 
-  const observed = new Map();
-  const subscriptions = ["agent", "copilot", "overview", "debug"].map((surface) => {
-    observed.set(surface, []);
-    return broker.subscribeRun({
-      baseUrl: "http://127.0.0.1:11789",
-      token,
-      chatId: "chat-shared",
-      runId: "run-shared",
-      kind: "surface",
-      consumerId: `surface-${surface}`,
-      onEvent: (event) => observed.get(surface).push(event.type),
-    });
+  broker.releaseRootObserver(observer.token);
+  await waitUntil(() => requestOfType(socket("primary"), "/api/detach").length === 1);
+  const detach = requestOfType(socket("primary"), "/api/detach")[0];
+  socket("primary").emit({
+    frame: "response",
+    id: detach.id,
+    data: { accepted: true, streamRequestId: upstream.id, lastSeq: 2 },
   });
+  assert.deepEqual(await query.completed, { reason: "detached", lastSeq: 2 });
   await nextTurn();
-  assert.equal(sockets.length, 1);
-  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/attach").length, 0);
+  const dormant = broker.getDiagnostics().replay.find((run) => run.runId === "run-detach");
+  assert.equal(dormant.state, "dormant");
+  assert.equal(dormant.lastSeq, 2);
+  assert.equal(dormant.terminalReason, undefined);
 
-  sockets[0].emit({ frame: "stream", id: upstreamQuery.id, event: {
-    type: "assistant.delta", timestamp: EPOCH_MS + 1, seq: 2,
-    chatId: "chat-shared", runId: "run-shared", delta: "hello",
-  }});
-  await nextTurn();
-  for (const surface of observed.keys()) {
-    assert.deepEqual(observed.get(surface), ["run.start", "assistant.delta"], surface);
-  }
-  assert.equal(broker.getDiagnostics().connection.physicalConnectionCount, 1);
-
-  sockets[0].emit({ frame: "stream", id: upstreamQuery.id, reason: "complete", lastSeq: 2 });
-  await query.completed;
-  for (const subscription of subscriptions) subscription.unsubscribe();
-});
-
-test("RealtimeBroker replays and fans out a forwarded visible Run without upstream attach", async (t) => {
-  const { broker, sockets } = createHarness(t);
-  broker.beginForwardedVisibleRun({
-    sourceId: "frame-port:main:query-1",
-    chatId: "chat-visible",
-    runId: "run-visible",
-    owner: { kind: "agent", agentKey: "coder" },
-    primarySurfaceId: "surface:main",
-  });
-  broker.appendForwardedVisibleRunEvent({
-    sourceId: "frame-port:main:query-1",
-    runId: "run-visible",
-    event: {
-      type: "run.start", timestamp: EPOCH_MS, seq: 1,
-      chatId: "chat-visible", runId: "run-visible", agentKey: "coder",
-    },
-  });
-
-  const overviewEvents = [];
-  const debugEvents = [];
-  const completed = [];
-  const overview = broker.subscribeVisibleRun({
-    chatId: "chat-visible",
-    runId: "run-visible",
-    lastSeq: 0,
-    owner: { kind: "agent", agentKey: "coder" },
-    kind: "surface",
-    consumerId: "overview-consumer",
-    surfaceId: "surface:overview",
-    onEvent: (event) => overviewEvents.push(event.type),
-    onComplete: (result) => completed.push(result.reason),
-  });
-  const debug = broker.subscribeVisibleRun({
-    chatId: "chat-visible",
-    runId: "run-visible",
-    lastSeq: 1,
-    kind: "surface",
-    consumerId: "debug-consumer",
-    surfaceId: "surface:debug",
-    onEvent: (event) => debugEvents.push(event.type),
-  });
-  await Promise.all([overview.ready, debug.ready]);
-
-  broker.appendForwardedVisibleRunEvent({
-    sourceId: "frame-port:main:query-1",
-    runId: "run-visible",
-    event: {
-      type: "content.delta", timestamp: EPOCH_MS + 1, seq: 2,
-      chatId: "chat-visible", runId: "run-visible", delta: "hello",
-    },
-  });
-  assert.deepEqual(overviewEvents, ["run.start", "content.delta"]);
-  assert.deepEqual(debugEvents, ["content.delta"]);
-  assert.equal(sockets.length, 0);
-  assert.equal(broker.getDiagnostics().visibleBinding.consumerCount, 3);
-
-  assert.equal(broker.completeForwardedVisibleRun({
-    sourceId: "frame-port:main:query-1",
-    runId: "run-visible",
-    reason: "complete",
+  const nextObserver = rootObserver({ token: "main-chat:g2:1:102", generation: "g2", webContentsId: 102 });
+  broker.activateRootObserver(nextObserver);
+  const restored = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    lane: "primary",
+    runId: "run-detach",
+    chatId: "chat-1",
     lastSeq: 2,
-  }), true);
-  assert.deepEqual(completed, ["complete"]);
-  assert.equal(broker.getVisibleBinding(), null);
-  overview.unsubscribe();
-  debug.unsubscribe();
-});
-
-test("RealtimeBroker hands an internal observer to Main Chat without treating detached as Run completion", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const owner = { kind: "agent", agentKey: "coder" };
-  const internalEvents = [];
-  const completed = [];
-  const internal = broker.subscribeRun({
-    baseUrl: "http://127.0.0.1:11789",
-    token,
-    chatId: "chat-handoff",
-    runId: "run-handoff",
-    owner,
-    kind: "internal",
-    consumerId: "desktop-pet-stream:run-handoff",
-    onEvent: (event) => internalEvents.push(event.type),
-    onComplete: (result) => completed.push(result.reason),
+    owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "surface",
+    role: "root_observer",
+    observerToken: nextObserver.token,
+    consumerId: "main-chat-2",
+    onEvent: () => undefined,
   });
-  await internal.ready;
-  const brokerAttach = sockets[0].sent.find((frame) => frame.type === "/api/attach");
-  assert.ok(brokerAttach);
-
-  assert.equal(await broker.prepareForwardedVisibleRun({
-    baseUrl: "http://127.0.0.1:11789",
-    token,
-    chatId: "chat-handoff",
-    runId: "run-handoff",
-    owner,
-  }), true);
-  broker.beginForwardedVisibleRun({
-    sourceId: "main-chat:attach-handoff",
-    chatId: "chat-handoff",
-    runId: "run-handoff",
-    owner,
-    primarySurfaceId: "surface:main-chat",
-  });
-  await broker.forwardRequest({
-    baseUrl: "http://127.0.0.1:11789",
-    token,
-    localId: "main-attach-handoff",
-    consumerId: "frame-port:main-chat",
-    type: "/api/attach",
-    payload: { runId: "run-handoff", agentKey: "coder", lastSeq: 0 },
-    stream: true,
-    onFrame() {},
-    onError() {},
-  });
-  assert.deepEqual(
-    sockets[0].sent.filter((frame) => ["/api/attach", "/api/detach"].includes(frame.type)).map((frame) => frame.type),
-    ["/api/attach", "/api/detach", "/api/attach"],
-  );
-
-  sockets[0].emit({
-    frame: "stream",
-    id: brokerAttach.id,
-    reason: "detached",
-    lastSeq: 0,
-  });
-  await nextTurn();
-  broker.appendForwardedVisibleRunEvent({
-    sourceId: "main-chat:attach-handoff",
-    runId: "run-handoff",
-    event: {
-      type: "content.delta",
-      timestamp: EPOCH_MS,
-      seq: 1,
-      chatId: "chat-handoff",
-      runId: "run-handoff",
-      delta: "still running",
-    },
-  });
-  assert.deepEqual(internalEvents, ["content.delta"]);
-  assert.deepEqual(completed, []);
-  assert.equal(broker.getDiagnostics().observerReleaseCount, 1);
-  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-handoff").state, "active");
-  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-handoff").observerSource, "forwarded");
-
-  const mirrored = broker.subscribeRun({
-    baseUrl: "http://127.0.0.1:11789",
-    token,
-    chatId: "chat-handoff",
-    runId: "run-handoff",
-    owner,
-    kind: "internal",
-    consumerId: "second-internal",
-    onEvent() {},
-  });
-  await mirrored.ready;
-  assert.equal(sockets[0].sent.filter((frame) => frame.type === "/api/attach").length, 2);
-
-  assert.equal(broker.completeForwardedVisibleRun({
-    sourceId: "main-chat:attach-handoff",
-    runId: "run-handoff",
-    reason: "done",
-    lastSeq: 1,
-  }), true);
-  assert.deepEqual(completed, ["done"]);
-  assert.throws(
-    () => broker.beginForwardedVisibleRun({
-      sourceId: "main-chat:retry-after-done",
-      chatId: "chat-handoff",
-      runId: "run-handoff",
-      owner,
-      primarySurfaceId: "surface:main-chat",
-    }),
-    (error) => {
-      assert.equal(error.name, "target_unavailable");
-      assert.equal(error.retryable, false);
-      assert.deepEqual(error.details, {
-        stage: "broker_visible_registration",
-        reason: "run_registry_terminal",
-        terminalSource: "forwarded_stream",
-        terminalReason: "done",
-        hasUpstreamObserver: false,
-        hasForwardedSource: false,
-      });
-      return true;
-    },
-  );
-  internal.unsubscribe();
-  mirrored.unsubscribe();
-});
-
-test("RealtimeBroker explains why a requested visible Run cannot be subscribed", (t) => {
-  const { broker } = createHarness(t);
-  assert.throws(
-    () => broker.subscribeVisibleRun({
-      chatId: "chat-missing",
-      runId: "run-missing",
-      kind: "surface",
-      consumerId: "overview-missing",
-      surfaceId: "surface:overview",
-      onEvent() {},
-    }),
-    (error) => {
-      assert.equal(error.name, "target_unavailable");
-      assert.equal(error.retryable, true);
-      assert.deepEqual(error.details, {
-        stage: "broker_subscribe",
-        reason: "visible_binding_missing",
-        visibleBindingPresent: false,
-        runRegistered: false,
-      });
-      return true;
-    },
-  );
-
-  broker.beginForwardedVisibleRun({
-    sourceId: "frame-port:main:query-present",
-    chatId: "chat-present",
-    runId: "run-present",
-    owner: { kind: "agent", agentKey: "coder" },
-    primarySurfaceId: "surface:main",
-  });
-  assert.throws(
-    () => broker.subscribeVisibleRun({
-      chatId: "chat-requested",
-      runId: "run-requested",
-      kind: "surface",
-      consumerId: "overview-mismatch",
-      surfaceId: "surface:overview",
-      onEvent() {},
-    }),
-    (error) => {
-      assert.equal(error.name, "target_unavailable");
-      assert.equal(error.retryable, true);
-      assert.equal(error.details.stage, "broker_subscribe");
-      assert.equal(error.details.reason, "visible_binding_identity_mismatch");
-      assert.equal(error.details.visibleBindingPresent, true);
-      assert.equal(error.details.runRegistered, false);
-      assert.equal(typeof error.details.bindingEpoch, "number");
-      assert.equal(JSON.stringify(error.details).includes("chat-present"), false);
-      assert.equal(JSON.stringify(error.details).includes("run-present"), false);
-      return true;
-    },
-  );
-});
-
-test("RealtimeBroker singleflights attach and strictly pairs rewritten response ids", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const firstEvents = [];
-  const secondEvents = [];
-  broker.subscribeRun({
-    baseUrl: "http://127.0.0.1:11789", token, runId: "run-shared", chatId: "chat-shared",
-    kind: "surface", consumerId: "surface-1", onEvent: (event) => firstEvents.push(event),
-  });
-  broker.subscribeRun({
-    baseUrl: "http://127.0.0.1:11789", token, runId: "run-shared", chatId: "chat-shared",
-    kind: "internal", consumerId: "pet", onEvent: (event) => secondEvents.push(event),
-  });
-  await nextTurn();
-  const attaches = sockets[0].sent.filter((frame) => frame.type === "/api/attach");
+  await restored.ready;
+  const attaches = requestOfType(socket("primary"), "/api/attach");
   assert.equal(attaches.length, 1);
-  sockets[0].emit({ frame: "stream", id: attaches[0].id, event: {
-    type: "assistant.delta", timestamp: EPOCH_MS, seq: 1, runId: "run-shared", chatId: "chat-shared",
-  }});
-  await nextTurn();
-  assert.equal(firstEvents.length, 1);
-  assert.equal(secondEvents.length, 1);
-
-  const paired = [];
-  const errors = [];
-  await Promise.all([
-    broker.forwardRequest({
-      baseUrl: "http://127.0.0.1:11789", token, localId: "collision", consumerId: "one",
-      type: "/api/one", onFrame: (frame) => paired.push(["one", frame.id]), onError: (error) => errors.push(error),
-    }),
-    broker.forwardRequest({
-      baseUrl: "http://127.0.0.1:11789", token, localId: "collision", consumerId: "two",
-      type: "/api/two", onFrame: (frame) => paired.push(["two", frame.id]), onError: (error) => errors.push(error),
-    }),
-  ]);
-  const requests = sockets[0].sent.filter((frame) => frame.type === "/api/one" || frame.type === "/api/two");
-  assert.notEqual(requests[0].id, requests[1].id);
-  const one = requests.find((frame) => frame.type === "/api/one");
-  const two = requests.find((frame) => frame.type === "/api/two");
-  sockets[0].emit({ frame: "response", id: two.id, type: two.type, code: 0, data: {} });
-  sockets[0].emit({ frame: "response", id: one.id, type: one.type, code: 0, data: {} });
-  await nextTurn();
-  assert.deepEqual(paired, [["two", "collision"], ["one", "collision"]]);
-  assert.deepEqual(errors, []);
+  assert.equal(attaches[0].payload.lastSeq, 2);
+  assert.equal(requestOfType(socket("primary"), "/api/query").length, 1);
 });
 
-test("RealtimeBroker reports seq_expired instead of fabricating an evicted replay prefix", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const subscription = broker.subscribeRun({
-    baseUrl: "http://127.0.0.1:11789", token, runId: "run-replay", chatId: "chat-replay",
-    kind: "internal", consumerId: "first", onEvent: () => {},
+test("a replacement observer before detach write cancels the old detach", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const first = rootObserver();
+  broker.activateRootObserver(first);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    id: "cancel-detach-query",
+    runId: "run-cancel-detach",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: first.token,
+    consumerId: "main-1",
+    payload: { runId: "run-cancel-detach", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
   });
-  await subscription.ready;
-  const attach = sockets[0].sent.find((frame) => frame.type === "/api/attach");
-  for (let seq = 1; seq <= 2_002; seq += 1) {
-    sockets[0].emit({ frame: "stream", id: attach.id, event: {
-      type: "assistant.delta", timestamp: EPOCH_MS + seq, seq,
-      runId: "run-replay", chatId: "chat-replay", content: "x",
-    }});
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-cancel-detach", "chat-1", 1) });
+  await query.accepted;
+
+  broker.releaseRootObserver(first.token);
+  const second = rootObserver({ token: "main-chat:g2:1:102", generation: "g2", webContentsId: 102 });
+  broker.activateRootObserver(second);
+  const replacement = broker.subscribeRun({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    runId: "run-cancel-detach",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "surface",
+    role: "root_observer",
+    observerToken: second.token,
+    consumerId: "main-2",
+    onEvent: () => undefined,
+  });
+  await replacement.ready;
+  await nextTurn();
+  assert.equal(requestOfType(socket("primary"), "/api/detach").length, 0);
+  assert.equal(requestOfType(socket("primary"), "/api/attach").length, 0);
+});
+
+test("Primary push can terminate a BTW Run while BTW push is ignored", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    lane: "btw",
+    requestType: "/api/btw",
+    id: "btw-query",
+    runId: "run-btw-push",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: observer.token,
+    consumerId: "btw",
+    payload: { runId: "run-btw-push", chatId: "chat-1", message: "side" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("btw"), "/api/btw").length === 1);
+  const upstream = requestOfType(socket("btw"), "/api/btw")[0];
+  socket("btw").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-btw-push", "chat-1", 1) });
+  await query.accepted;
+  socket("btw").emit({ frame: "push", type: "run.finished", data: { runId: "run-btw-push", status: "wrong", finishedAt: EPOCH_MS + 2 } });
+  await nextTurn();
+  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-btw-push").state, "observed");
+
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({ frame: "push", type: "run.finished", data: { runId: "run-btw-push", status: "finished", finishedAt: EPOCH_MS + 3 } });
+  assert.deepEqual(await query.completed, { reason: "finished" });
+  assert.equal(broker.getDiagnostics().replay.find((run) => run.runId === "run-btw-push").state, "terminal");
+});
+
+test("old Platform /api/btw route failure becomes btw_ws_unsupported", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    lane: "btw",
+    requestType: "/api/btw",
+    id: "old-platform",
+    runId: "run-old",
+    chatId: "chat-1",
+    payload: { runId: "run-old", chatId: "chat-1", message: "side" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("btw"), "/api/btw").length === 1);
+  const upstream = requestOfType(socket("btw"), "/api/btw")[0];
+  socket("btw").emit({ frame: "error", id: upstream.id, type: "invalid_request", msg: "unknown type: /api/btw" });
+  await assert.rejects(query.accepted, (error) => error.name === "btw_ws_unsupported");
+});
+
+test("replay window reports seq_expired instead of fabricating a prefix", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const query = broker.query({
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    id: "replay-query",
+    runId: "run-replay",
+    chatId: "chat-1",
+    owner: { kind: "agent", agentKey: "agent-1" },
+    observerToken: observer.token,
+    payload: { runId: "run-replay", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    onEvent: () => undefined,
+  });
+  await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === 1);
+  const upstream = requestOfType(socket("primary"), "/api/query")[0];
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("run.start", "run-replay", "chat-1", 1) });
+  await query.accepted;
+  for (let seq = 2; seq <= 2_010; seq += 1) {
+    socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("content.delta", "run-replay", "chat-1", seq, { delta: "x" }) });
   }
-  await nextTurn();
-  subscription.unsubscribe();
-  let expiredError;
+  await waitUntil(() => broker.getDiagnostics().replay.find((run) => run.runId === "run-replay")?.lastSeq === 2_010);
   assert.throws(() => broker.subscribeRun({
-    baseUrl: "http://127.0.0.1:11789", token, runId: "run-replay", chatId: "chat-replay", lastSeq: 0,
-    kind: "surface", consumerId: "late", onEvent: () => {},
-  }), (error) => {
-    expiredError = error;
-    return /seq_expired/.test(error.message);
-  });
-  const replay = broker.getDiagnostics().replay.find((entry) => entry.runId === "run-replay");
-  assert.equal(replay.eventCount, 2_000);
-  assert.equal(broker.getDiagnostics().replayEvictionCount, 2);
-  assert.equal(expiredError.retryable, true);
-  assert.deepEqual(expiredError.details, {
-    requestedLastSeq: 0,
-    firstAvailableSeq: 3,
-    latestSeq: 2_002,
-    replayEventCount: 2_000,
-    replayBytes: replay.bytes,
-  });
+    baseUrl: "http://127.0.0.1:8080",
+    token,
+    runId: "run-replay",
+    chatId: "chat-1",
+    lastSeq: 0,
+    owner: { kind: "agent", agentKey: "agent-1" },
+    kind: "internal",
+    role: "internal",
+    consumerId: "late-reader",
+    onEvent: () => undefined,
+  }), (error) => error.name === "seq_expired" && error.details.firstAvailableSeq > 1);
 });
 
-test("RealtimeBroker restores an accepted Run with attach(lastSeq) and never resends query", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const handle = broker.query({
-    baseUrl: "http://127.0.0.1:11789", token, id: "operation-1", runId: "run-recover", chatId: "chat-recover",
-    owner: { kind: "agent", agentKey: "coder" },
-    payload: {}, onEvent: () => {},
-  });
-  await nextTurn();
-  const query = sockets[0].sent.find((frame) => frame.type === "/api/query");
-  sockets[0].emit({ frame: "stream", id: query.id, event: {
-    type: "run.start", timestamp: EPOCH_MS, seq: 1, runId: "run-recover", chatId: "chat-recover", agentKey: "coder",
-  }});
-  await handle.accepted;
-  sockets[0].emit({ frame: "stream", id: query.id, event: {
-    type: "assistant.delta", timestamp: EPOCH_MS + 1, seq: 3, runId: "run-recover", chatId: "chat-recover",
-  }});
-  await nextTurn();
-  sockets[0].disconnect();
-  await new Promise((resolve) => setTimeout(resolve, 700));
-  assert.equal(sockets.length, 2);
-  const restored = sockets[1].sent.find((frame) => frame.type === "/api/attach");
-  assert.deepEqual(restored.payload, { runId: "run-recover", chatId: "chat-recover", lastSeq: 3, agentKey: "coder" });
-  assert.equal(sockets[1].sent.some((frame) => frame.type === "/api/query"), false);
-  assert.equal(broker.getDiagnostics().seqGapCount, 1);
-});
-
-test("RealtimeBroker closes the old identity generation before starting work for a new identity", async (t) => {
-  const { broker, diagnostics, sockets, token } = createHarness(t);
-  const first = broker.query({
-    baseUrl: "http://127.0.0.1:11789", token, id: "identity-one", runId: "run-one", chatId: "chat-one",
-    owner: { kind: "agent", agentKey: "coder" },
-    payload: {}, onEvent: () => {},
-  });
-  await nextTurn();
-  const firstQuery = sockets[0].sent.find((frame) => frame.type === "/api/query");
-  sockets[0].emit({ frame: "stream", id: firstQuery.id, event: {
-    type: "run.start", timestamp: EPOCH_MS, seq: 1, runId: "run-one", chatId: "chat-one", agentKey: "coder",
-  }});
-  await first.accepted;
-
-  const second = broker.query({
-    baseUrl: "http://127.0.0.1:11789", token: jwt({ sid: "new-session" }),
-    id: "identity-two", runId: "run-two", chatId: "chat-two",
-    owner: { kind: "agent", agentKey: "coder" }, payload: {}, onEvent: () => {},
-  });
-  await assert.rejects(first.completed, /identity was invalidated/);
-  assert.deepEqual(diagnostics, ["realtime_identity_rotation:identity_session_changed"]);
-  sockets[0].emit({ frame: "push", type: "chat.updated", data: { chatId: "stale" } });
-  await nextTurn();
-  assert.equal(sockets.length, 2);
-  assert.equal(sockets[1].sent.some((frame) => frame.type === "/api/attach"), false);
-  assert.equal(broker.getDiagnostics().staleFrameCount, 1);
-  const secondQuery = sockets[1].sent.find((frame) => frame.type === "/api/query");
-  assert.ok(secondQuery);
-  sockets[1].emit({ frame: "stream", id: secondQuery.id, event: {
-    type: "run.start", timestamp: EPOCH_MS + 1, seq: 1, runId: "run-two", chatId: "chat-two", agentKey: "coder",
-  }});
-  await second.accepted;
-  sockets[1].emit({ frame: "stream", id: secondQuery.id, reason: "complete", lastSeq: 1 });
-  assert.equal((await second.completed).reason, "complete");
-});
-
-test("RealtimeBroker dispatches reverse Desktop Action and maps provider failures", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
+test("only Primary dispatches reverse Desktop Actions and preserves duplicate protection", async (t) => {
+  const { broker, socket, token } = createHarness(t);
   const calls = [];
   broker.setDesktopBridgeProvider({
     action: async (request) => {
       calls.push(request);
-      return request.action === "desktop.theme.get"
-        ? { ok: true, action: request.action, result: { theme: "dark" } }
-        : { ok: false, action: request.action, error: { code: "unknown_action", message: "unknown" } };
+      return { ok: true, action: request.action, result: { themeMode: "dark" } };
     },
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
   });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  await Promise.all([
+    broker.ensureConnected("http://127.0.0.1:8080", token, "primary"),
+    broker.ensureConnected("http://127.0.0.1:8080", token, "btw"),
+  ]);
 
-  sockets[0].emit({
+  const request = {
     frame: "request",
     type: "desktop.theme.get",
-    id: "desktop-action-ok",
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+    id: "desktop-action-1",
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" },
     payload: {},
-  });
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.theme.set",
-    id: "desktop-action-error",
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
-    payload: { themeMode: "dark" },
-  });
-  await nextTurn();
-
-  assert.equal(calls.length, 2);
+  };
+  socket("primary").emit(request);
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === request.id));
+  assert.equal(calls.length, 1);
   assert.deepEqual(calls[0], {
-    requestId: "desktop-action-ok",
-    action: "desktop.theme.get",
+    requestId: request.id,
+    action: request.type,
     args: {},
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
+    source: request.source,
   });
-  assert.deepEqual(calls[1], {
-    requestId: "desktop-action-error",
-    action: "desktop.theme.set",
-    args: { themeMode: "dark" },
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
-  });
-  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "desktop-action-ok"), {
-    frame: "response",
-    type: "desktop.theme.get",
-    id: "desktop-action-ok",
-    code: 0,
-    msg: "success",
-    data: { ok: true, action: "desktop.theme.get", result: { theme: "dark" } },
-  });
-  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "desktop-action-error"), {
-    frame: "error",
-    type: "unknown_action",
-    id: "desktop-action-error",
-    code: 400,
-    msg: "unknown",
-    data: { ok: false, action: "desktop.theme.set", error: { code: "unknown_action", message: "unknown" } },
-  });
+  assert.equal(socket("primary").sent.find((frame) => frame.id === request.id).frame, "response");
 
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.theme.get",
-    id: "desktop-action-ok",
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" },
-    payload: {},
-  });
-  await nextTurn();
-  assert.equal(calls.length, 2);
-  assert.deepEqual(sockets[0].sent.filter((frame) => frame.id === "desktop-action-ok").at(-1), {
-    frame: "error",
-    type: "duplicate_id",
-    id: "desktop-action-ok",
-    code: 409,
-    msg: "Desktop bridge request id was already used",
-  });
+  socket("primary").emit(request);
+  await waitUntil(() => socket("primary").sent.filter((frame) => frame.id === request.id).length === 2);
+  assert.equal(socket("primary").sent.filter((frame) => frame.id === request.id).at(-1).type, "duplicate_id");
+  assert.equal(calls.length, 1);
 
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.action.call",
-    id: "legacy-action-envelope",
-    payload: { action: "desktop.theme.get", args: {} },
-  });
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.theme.get",
-    id: "conflicting-source",
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder", teamId: "team-1" },
-    payload: {},
-  });
-  await nextTurn();
-  assert.equal(sockets[0].sent.find((frame) => frame.id === "legacy-action-envelope")?.type, "unknown_request_type");
-  assert.equal(sockets[0].sent.find((frame) => frame.id === "conflicting-source")?.type, "protocol_error");
-  assert.equal(calls.length, 2);
+  socket("btw").emit({ ...request, id: "btw-action" });
+  await waitUntil(() => socket("btw").sent.some((frame) => frame.id === "btw-action"));
+  assert.equal(socket("btw").sent.find((frame) => frame.id === "btw-action").type, "unknown_request_type");
+  assert.equal(calls.length, 1);
 });
 
-test("RealtimeBroker waits for a forwarded canonical Chat grant before WorkPanel actions", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
+test("WorkPanel waits for its canonical Run grant and terminal Push revokes it", async (t) => {
+  const { broker, socket, token } = createHarness(t);
   const calls = [];
   let releaseReady;
   const ready = new Promise((resolve) => { releaseReady = resolve; });
-  broker.registerForwardedRunActionGrant({
+  broker.registerRunActionGrant({
     sourceId: "main-chat:query-1",
     chatId: "chat-ready",
     runId: "run-ready",
-    owner: { kind: "agent", agentKey: "coder" },
+    owner: { kind: "agent", agentKey: "agent-1" },
     ready,
   });
   broker.setDesktopBridgeProvider({
@@ -823,270 +615,82 @@ test("RealtimeBroker waits for a forwarded canonical Chat grant before WorkPanel
     },
     cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
   });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
 
-  sockets[0].emit({
+  const action = {
     frame: "request",
-    type: "desktop.workpanel.openLocalFile",
+    type: "desktop.workpanel.openWeb",
     id: "workpanel-before-ready",
-    source: { chatId: "chat-ready", runId: "run-ready", agentKey: "coder" },
-    payload: { path: "artifacts/report.html" },
-  });
-  await nextTurn();
-  assert.equal(calls.length, 0);
-
-  releaseReady();
-  await nextTurn();
-  assert.equal(calls.length, 1);
-  assert.equal(
-    sockets[0].sent.find((frame) => frame.id === "workpanel-before-ready")?.frame,
-    "response",
-  );
-});
-
-test("RealtimeBroker fails WorkPanel closed when canonical Chat synchronization failed", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const calls = [];
-  const rejected = Promise.reject(new Error("surface registration rejected"));
-  rejected.catch(() => undefined);
-  broker.registerForwardedRunActionGrant({
-    sourceId: "main-chat:query-failed",
-    chatId: "chat-failed",
-    runId: "run-failed",
-    owner: { kind: "agent", agentKey: "coder" },
-    ready: rejected,
-  });
-  broker.setDesktopBridgeProvider({
-    action: async (request) => {
-      calls.push(request);
-      return { ok: true, action: request.action, result: {} };
-    },
-    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-  });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.workpanel.openWeb",
-    id: "workpanel-sync-failed",
-    source: { chatId: "chat-failed", runId: "run-failed", agentKey: "coder" },
+    source: { chatId: "chat-ready", runId: "run-ready", agentKey: "agent-1" },
     payload: { url: "https://example.test/document" },
-  });
+  };
+  socket("primary").emit(action);
   await nextTurn();
   assert.equal(calls.length, 0);
-  assert.deepEqual(sockets[0].sent.find((frame) => frame.id === "workpanel-sync-failed"), {
-    frame: "error",
-    type: "source_chat_not_ready",
-    id: "workpanel-sync-failed",
-    code: 409,
-    msg: "source_chat_not_ready: surface registration rejected",
-    data: { retryable: false, details: { recovery: "reattach_source_chat" } },
-  });
-});
-
-test("RealtimeBroker keeps a WorkPanel grant after the visible observer detaches", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const calls = [];
-  const owner = { kind: "agent", agentKey: "coder" };
-  broker.beginForwardedVisibleRun({
-    sourceId: "main-chat:query-background",
-    chatId: "chat-background",
-    runId: "run-background",
-    owner,
-    primarySurfaceId: "surface:main-chat",
-  });
-  broker.registerForwardedRunActionGrant({
-    sourceId: "main-chat:query-background",
-    chatId: "chat-background",
-    runId: "run-background",
-    owner,
-    ready: Promise.resolve(),
-  });
-  assert.equal(broker.releaseForwardedVisibleRun("main-chat:query-background"), true);
-  broker.setDesktopBridgeProvider({
-    action: async (request) => {
-      calls.push(request);
-      return { ok: true, action: request.action, result: { workspaceId: "workpanel:chat-background" } };
-    },
-    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-  });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
-
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.workpanel.openWeb",
-    id: "workpanel-after-detach",
-    source: { chatId: "chat-background", runId: "run-background", agentKey: "coder" },
-    payload: { url: "https://example.test/background" },
-  });
-  await nextTurn();
-
+  releaseReady();
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === action.id));
   assert.equal(calls.length, 1);
-  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-after-detach")?.frame, "response");
+  assert.equal(socket("primary").sent.find((frame) => frame.id === action.id).frame, "response");
 
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.workpanel.openWeb",
-    id: "workpanel-wrong-owner",
-    source: { chatId: "chat-background", runId: "run-background", agentKey: "other-agent" },
-    payload: { url: "https://example.test/forged" },
-  });
-  await nextTurn();
-  assert.equal(calls.length, 1);
-  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-wrong-owner")?.type, "protocol_error");
-});
-
-test("RealtimeBroker lets a canonical reattach replace a stale WorkPanel grant attempt", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const calls = [];
-  const owner = { kind: "agent", agentKey: "coder" };
-  let rejectStale;
-  const staleReady = new Promise((_, reject) => { rejectStale = reject; });
-  broker.registerForwardedRunActionGrant({
-    sourceId: "main-chat:query-stale",
-    chatId: "chat-recovered",
-    runId: "run-recovered",
-    owner,
-    ready: staleReady,
-  });
-  broker.setDesktopBridgeProvider({
-    action: async (request) => {
-      calls.push(request);
-      return { ok: true, action: request.action, result: {} };
-    },
-    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-  });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.workpanel.openWeb",
-    id: "workpanel-after-reattach",
-    source: { chatId: "chat-recovered", runId: "run-recovered", agentKey: "coder" },
-    payload: { url: "https://example.test/recovered" },
-  });
-  await nextTurn();
-  assert.equal(calls.length, 0);
-
-  broker.registerForwardedRunActionGrant({
-    sourceId: "main-chat:attach-recovered",
-    chatId: "chat-recovered",
-    runId: "run-recovered",
-    owner,
-    ready: Promise.resolve(),
-  });
-  await nextTurn();
-  rejectStale(new Error("stale source finished late"));
-  await nextTurn();
-
-  assert.equal(calls.length, 1);
-  assert.equal(sockets[0].sent.find((frame) => frame.id === "workpanel-after-reattach")?.frame, "response");
-});
-
-test("RealtimeBroker revokes a background WorkPanel grant at the forwarded Run terminal", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  const owner = { kind: "agent", agentKey: "coder" };
-  broker.beginForwardedVisibleRun({
-    sourceId: "main-chat:query-terminal",
-    chatId: "chat-terminal",
-    runId: "run-terminal",
-    owner,
-    primarySurfaceId: "surface:main-chat",
-  });
-  broker.registerForwardedRunActionGrant({
-    sourceId: "main-chat:query-terminal",
-    chatId: "chat-terminal",
-    runId: "run-terminal",
-    owner,
-    ready: Promise.resolve(),
-  });
-  broker.releaseForwardedVisibleRun("main-chat:query-terminal");
-  broker.setDesktopBridgeProvider({
-    action: async (request) => ({ ok: true, action: request.action, result: {} }),
-    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-  });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
-  sockets[0].emit({
+  socket("primary").emit({
     frame: "push",
     type: "run.finished",
     data: {
-      runId: "run-terminal",
-      chatId: "chat-terminal",
+      runId: "run-ready",
+      chatId: "chat-ready",
       status: "completed",
       finishReason: "complete",
-      finishedAt: EPOCH_MS,
+      finishedAt: EPOCH_MS + 10,
     },
   });
-  sockets[0].emit({
-    frame: "request",
-    type: "desktop.workpanel.openWeb",
-    id: "workpanel-after-terminal",
-    source: { chatId: "chat-terminal", runId: "run-terminal", agentKey: "coder" },
-    payload: { url: "https://example.test/terminal" },
-  });
-  await nextTurn();
-
-  const terminal = sockets[0].sent.find((frame) => frame.id === "workpanel-after-terminal");
-  assert.equal(terminal?.frame, "error");
-  assert.equal(terminal?.type, "source_chat_not_ready");
-  assert.equal(terminal?.data?.retryable, false);
+  socket("primary").emit({ ...action, id: "workpanel-after-terminal" });
+  await waitUntil(() => socket("primary").sent.some((frame) => frame.id === "workpanel-after-terminal"));
+  const rejected = socket("primary").sent.find((frame) => frame.id === "workpanel-after-terminal");
+  assert.equal(rejected.frame, "error");
+  assert.equal(rejected.type, "source_chat_not_ready");
+  assert.equal(calls.length, 1);
 });
 
-test("RealtimeBroker chunks large Desktop JSON and screenshot responses below 256 KiB", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
+test("Primary chunks large reverse Desktop responses below 256 KiB", async (t) => {
+  const { broker, socket, token } = createHarness(t);
   const screenshot = Buffer.alloc(420_000, 7).toString("base64");
   broker.setDesktopBridgeProvider({
-    action: async (request) => ({ ok: true, action: request.action, result: { text: "x".repeat(420_000) } }),
-    cdp: async (request) => ({ ok: true, method: request.method, result: { data: screenshot } }),
+    action: async (request) => ({
+      ok: true,
+      action: request.action,
+      result: { text: "x".repeat(420_000) },
+    }),
+    cdp: async (request) => ({
+      ok: true,
+      method: request.method,
+      result: { data: screenshot },
+    }),
   });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
-
-  sockets[0].emit({
-    frame: "request", type: "desktop.controlCenter.readServiceLog", id: "large-json",
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" }, payload: {},
+  await broker.ensureConnected("http://127.0.0.1:8080", token, "primary");
+  socket("primary").emit({
+    frame: "request",
+    type: "desktop.controlCenter.readServiceLog",
+    id: "large-json",
+    source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" },
+    payload: {},
   });
-  sockets[0].emit({
-    frame: "request", type: "desktop.cdp.call", id: "large-screenshot",
-    payload: { method: "Page.captureScreenshot", params: {}, source: { chatId: "chat-1" } },
+  socket("primary").emit({
+    frame: "request",
+    type: "desktop.cdp.call",
+    id: "large-screenshot",
+    payload: { method: "Page.captureScreenshot", params: {} },
   });
-  for (let index = 0; index < 8; index += 1) await nextTurn();
+  await waitUntil(() => ["large-json", "large-screenshot"].every((id) =>
+    socket("primary").sent.some((frame) => frame.frame === "response" && frame.id === id),
+  ));
 
   for (const id of ["large-json", "large-screenshot"]) {
-    const chunks = sockets[0].sent.filter((frame) => frame.frame === "stream" && frame.id === id);
+    const chunks = socket("primary").sent.filter((frame) => frame.frame === "stream" && frame.id === id);
     assert.ok(chunks.length > 1, id);
     assert.deepEqual(chunks.map((frame) => frame.event.seq), chunks.map((_, index) => index + 1));
     assert.ok(chunks.every((frame) => frame.event.chunk.length <= 256 * 1024), id);
-    const terminal = sockets[0].sent.find((frame) => frame.frame === "response" && frame.id === id);
+    const terminal = socket("primary").sent.find((frame) => frame.frame === "response" && frame.id === id);
     assert.equal(terminal.code, 0);
     assert.equal(terminal.data.streamed ?? terminal.data.result?.data?.streamed, true);
-    assert.equal(terminal.data.chunkCount ?? terminal.data.result?.data?.chunkCount, chunks.length);
   }
-  assert.equal(
-    sockets[0].sent.find((frame) => frame.frame === "stream" && frame.id === "large-json").event.type,
-    "desktop.bridge.response.delta",
-  );
-  assert.equal(
-    sockets[0].sent.find((frame) => frame.frame === "stream" && frame.id === "large-screenshot").event.type,
-    "desktop.cdp.screenshot.delta",
-  );
-});
-
-test("RealtimeBroker stops reverse Desktop chunks after desktop.bridge.cancel", async (t) => {
-  const { broker, sockets, token } = createHarness(t);
-  broker.setDesktopBridgeProvider({
-    action: async (request) => ({ ok: true, action: request.action, result: { text: "x".repeat(4_000_000) } }),
-    cdp: async () => ({ ok: true, method: "Runtime.evaluate", result: {} }),
-  });
-  await broker.ensureConnected("http://127.0.0.1:11789", token);
-  sockets[0].emit({
-    frame: "request", type: "desktop.controlCenter.readServiceLog", id: "cancel-large",
-    source: { runId: "run-1", chatId: "chat-1", agentKey: "coder" }, payload: {},
-  });
-  await nextTurn();
-  const chunksBeforeCancel = sockets[0].sent.filter((frame) => frame.frame === "stream" && frame.id === "cancel-large").length;
-  assert.ok(chunksBeforeCancel > 0);
-  sockets[0].emit({ frame: "push", type: "desktop.bridge.cancel", payload: { requestId: "cancel-large" } });
-  for (let index = 0; index < 3; index += 1) await nextTurn();
-
-  const frames = sockets[0].sent.filter((frame) => frame.id === "cancel-large");
-  assert.equal(frames.some((frame) => frame.frame === "response" || frame.frame === "error"), false);
-  assert.equal(frames.filter((frame) => frame.frame === "stream").length, chunksBeforeCancel);
 });

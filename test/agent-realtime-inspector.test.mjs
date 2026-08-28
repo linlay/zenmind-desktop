@@ -27,26 +27,46 @@ test("Agent Realtime Inspector opens as one independent resizable window", () =>
   assert.match(preload, /openAgentRealtimeInspector: \(\) =>[\s\S]{0,100}diagnostics\.openAgentRealtimeInspector/);
 });
 
-test("Agent Realtime Inspector uses a compact frame list and separate payload context", () => {
+test("Desktop Runtime Observer combines targets, memory, topology, and realtime events", () => {
   const app = read("src", "renderer", "App.tsx");
   const page = read("src", "renderer", "pages", "AgentRealtimeInspectorPage.tsx");
   const styles = read("src", "renderer", "pages", "AgentRealtimeInspectorPage.css");
   const settings = read("src", "renderer", "pages", "settings", "SettingsPage.tsx");
 
   assert.match(app, /location\.pathname === "\/agent-realtime-inspector"/);
-  assert.match(page, /className="agent-realtime-inspector-frame-list"/);
-  assert.match(page, /detailTab === "payload"/);
-  assert.match(page, /settings\.debug\.realtime\.physicalConnection/);
-  assert.match(page, /settings\.debug\.realtime\.logicalFramePorts/);
-  assert.match(page, /settings\.debug\.realtime\.runRecovery/);
+  assert.match(page, /className="runtime-target-scroll"/);
+  assert.match(page, /type ViewId = "targets" \| "events" \| "topology" \| "system"/);
+  assert.match(page, /type DetailTab = "overview" \| "memory" \| "events" \| "raw"/);
+  assert.match(page, /MEMORY_HISTORY_WINDOW_MS = 5 \* 60 \* 1_000/);
+  assert.match(page, /openAgentRealtimeTargetDevTools/);
+  assert.match(page, /processMemoryExplanation/);
   assert.match(page, /connection\?\.lastHeartbeatAt/);
   assert.match(page, /run\.lastRestoreResult/);
-  assert.match(page, /snapshot\?\.trace\.forEach/);
-  assert.match(page, /surfaceId !== "all" && entry\.surfaceId !== surfaceId/);
+  assert.match(page, /eventSurfaceId !== "all" && entry\.surfaceId !== eventSurfaceId/);
   assert.match(page, /window\.setInterval\(\(\) => void loadSnapshot\(\), 500\)/);
-  assert.match(page, /settings\.debug\.realtime\.frozen/);
-  assert.match(styles, /grid-template-columns: minmax\(560px, 62%\) minmax\(320px, 38%\)/);
-  assert.match(styles, /height: 28px/);
+  assert.match(styles, /grid-template-columns: minmax\(680px, 1fr\) minmax\(330px, 360px\)/);
+  assert.match(styles, /--runtime-accent: #5790ff/);
+  assert.match(styles, /\.runtime-target-grid/);
   assert.match(settings, /diagnostics\.openAgentRealtimeInspector\(\)/);
   assert.doesNotMatch(settings, /diagnostics\.getAgentRealtimeDebugSnapshot\(\)/);
+});
+
+test("runtime diagnostics stay main-owned and sanitize target URLs", () => {
+  const register = read("src", "main", "ipc", "register.ts");
+  const registry = read("src", "main", "browser-surface-registry.ts");
+  const preload = read("src", "preload", "index.ts");
+  const contracts = read("src", "shared", "contracts", "desktop-api.ts");
+
+  assert.match(register, /createAgentRealtimeRuntimeDiagnostics/);
+  assert.match(register, /parsed\.username = ""/);
+  assert.match(register, /parsed\.password = ""/);
+  assert.match(register, /parsed\.search = ""/);
+  assert.match(register, /parsed\.hash = ""/);
+  assert.match(register, /app\.getAppMetrics\(\)/);
+  assert.match(registry, /listDiagnosticSurfaces/);
+  assert.match(registry, /listWebContentsDiagnostics/);
+  assert.match(preload, /diagnostics\.openAgentRealtimeTargetDevTools/);
+  assert.match(contracts, /runtime: \{/);
+  assert.match(contracts, /processes: AgentRealtimeDebugProcess\[\]/);
+  assert.match(contracts, /targets: AgentRealtimeDebugTarget\[\]/);
 });

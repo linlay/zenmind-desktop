@@ -663,6 +663,8 @@ const api: DesktopApi = {
     probeDesktopWs: (input) => ipcRenderer.invoke("diagnostics.probeDesktopWs", input),
     openAgentRealtimeInspector: () =>
       ipcRenderer.invoke("diagnostics.openAgentRealtimeInspector"),
+    openAgentRealtimeTargetDevTools: (input) =>
+      ipcRenderer.invoke("diagnostics.openAgentRealtimeTargetDevTools", input),
     getAgentRealtimeDebugSnapshot: (input) =>
       ipcRenderer.invoke("diagnostics.getAgentRealtimeDebugSnapshot", input),
     clearAgentRealtimeDebugTrace: () =>

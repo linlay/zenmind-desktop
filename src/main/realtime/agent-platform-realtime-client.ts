@@ -113,12 +113,15 @@ export function createAgentPlatformRealtimeUrl(
   baseUrl: string,
   token: string,
   deviceId: string,
+  source = "desktop-main",
+  surfaceId = "",
 ) {
   const url = new URL("/ws", baseUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("token", token);
-  url.searchParams.set("source", "desktop-main");
+  url.searchParams.set("source", source.trim() || "desktop-main");
   url.searchParams.set("deviceId", deviceId);
+  if (surfaceId.trim()) url.searchParams.set("surfaceId", surfaceId.trim());
   return url.toString();
 }
 
@@ -241,6 +244,8 @@ export class AgentPlatformRealtimeClient {
     heartbeatTimeoutMs?: number;
     maxFrameBytes?: number;
     random?: () => number;
+    source?: "desktop-main" | "desktop-btw";
+    surfaceId?: string;
     onFrame(frame: AgentPlatformRealtimeFrame, generation: number): void;
     onStaleFrame?(): void;
     onState?(state: AgentPlatformRealtimeConnectionState): void;
@@ -393,7 +398,13 @@ export class AgentPlatformRealtimeClient {
     const factory = this.options.createWebSocket ?? defaultSocketFactory;
     const deviceId = getDesktopDeviceId(this.options.app);
     const socket = factory(
-      createAgentPlatformRealtimeUrl(this.currentBaseUrl, this.currentToken, deviceId),
+      createAgentPlatformRealtimeUrl(
+        this.currentBaseUrl,
+        this.currentToken,
+        deviceId,
+        this.options.source,
+        this.options.surfaceId,
+      ),
     );
     this.generation += 1;
     const generation = this.generation;
@@ -657,7 +668,7 @@ export class AgentPlatformRealtimeClient {
   }
 
   private sendInternalRequest(type: string, payload: Record<string, unknown>) {
-    const id = `desktop-main-${type}-${randomUUID()}`;
+    const id = `${this.options.source ?? "desktop-main"}-${type}-${randomUUID()}`;
     return new Promise<AgentPlatformRealtimeFrame>((resolve, reject) => {
       const timer = unrefTimer(setTimeout(() => {
         this.internalPending.delete(id);

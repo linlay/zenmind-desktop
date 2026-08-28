@@ -230,11 +230,18 @@ export function isSurfaceRole(value: unknown): value is SurfaceRole {
 
 export function surfaceIdentityMatchesPolicy(identity: SurfaceIdentity, identityKey = "") {
   if (!isSurfaceRole(identity.surfaceRole)) return false;
-  if (FIXED_ROLE_IDS[identity.surfaceRole] && identityKey.trim()) return false;
-  const expected = createSurfaceIdentity(identity.surfaceRole, identityKey, {
+  if (
+    FIXED_ROLE_IDS[identity.surfaceRole] && identityKey.trim() &&
+    identity.surfaceRole !== "copilot-dock"
+  ) return false;
+  const expected = createSurfaceIdentity(
+    identity.surfaceRole,
+    identity.surfaceRole === "copilot-dock" ? "" : identityKey,
+    {
     parentSurfaceId: identity.parentSurfaceId,
     ownerChatId: identity.ownerChatId,
-  });
+    },
+  );
   return Boolean(
     expected.surfaceId &&
     identity.surfaceId.trim() === expected.surfaceId &&

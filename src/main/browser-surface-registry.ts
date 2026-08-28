@@ -104,6 +104,7 @@ export type SurfaceRegistrationInvalidCheck =
   | "service_identity_mismatch"
   | "agent_webclient_service_mismatch"
   | "fixed_surface_id_mismatch"
+  | "forbidden_route"
   | "missing_parent_surface"
   | "invalid_parent_surface"
   | "parent_cycle"
@@ -158,6 +159,51 @@ export type SurfaceRegistrationDiagnostic = {
 
 type RegisteredSurface = EmbeddedCdpSurfaceRegistration & {
   ownerWebContentsId: number;
+};
+
+export type BrowserSurfaceLifecycleEvent = {
+  type: "registered" | "unregistered";
+  surface: {
+    registrationId: string;
+    surfaceId: string;
+    surfaceRole: SurfaceRole;
+    surfaceIdentityKey: string;
+    active: boolean;
+    ownerChatId: string;
+    ownerWebContentsId: number;
+    guestWebContentsIds: number[];
+  };
+};
+
+export type BrowserSurfaceDiagnosticSnapshot = {
+  registrationId: string;
+  surfaceId: string;
+  surfaceKind: EmbeddedCdpSurfaceKind;
+  surfaceType: NonNullable<EmbeddedCdpSurfaceRegistration["surfaceType"]>;
+  surfaceRole: SurfaceRole;
+  surfaceLevel: SurfaceIdentity["surfaceLevel"];
+  interaction: SurfaceIdentity["interaction"];
+  parentSurfaceId?: string;
+  ownerChatId?: string;
+  ownerWebContentsId: number;
+  label: string;
+  url: string;
+  pageRoute?: string;
+  active: boolean;
+  tabs: BrowserSurfaceTab[];
+  activeTabId: string | null;
+};
+
+export type BrowserWebContentsDiagnosticSnapshot = {
+  webContentsId: number;
+  type: ReturnType<WebContents["getType"]>;
+  osProcessId: number;
+  url: string;
+  title: string;
+  loading: boolean;
+  crashed: boolean;
+  devToolsOpened: boolean;
+  backgroundThrottling: boolean;
 };
 
 type SurfaceRegistrationValidation =
@@ -224,6 +270,7 @@ export type RegisteredWebviewSurfaceTarget = {
   surfaceId: string;
   surfaceKind: EmbeddedCdpSurfaceKind;
   surfaceType: NonNullable<EmbeddedCdpSurfaceRegistration["surfaceType"]>;
+  surfaceIdentityKey?: string;
   serviceId?: string;
   pageRoute?: string;
   pageRouteIdentity?: string;
@@ -400,10 +447,39 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
   const reportedLegacyAliases = new Set<string>();
   const pendingRegistrationDiagnostics = new Map<string, PendingSurfaceRegistrationDiagnostic>();
+  const lifecycleListeners = new Set<(event: BrowserSurfaceLifecycleEvent) => void>();
   const registrationDiagnosticDedupWindowMs = Math.max(
     10,
     Math.min(options.registrationDiagnosticDedupWindowMs ?? 1_000, 10_000),
   );
+
+  function emitLifecycle(type: BrowserSurfaceLifecycleEvent["type"], surface: RegisteredSurface) {
+    const event: BrowserSurfaceLifecycleEvent = {
+      type,
+      surface: {
+        registrationId: surface.registrationId,
+        surfaceId: surface.surfaceId,
+        surfaceRole: surface.surfaceRole,
+        surfaceIdentityKey: surface.surfaceIdentityKey?.trim() || "",
+        active: surface.active,
+        ownerChatId: surface.ownerChatId?.trim() || "",
+        ownerWebContentsId: surface.ownerWebContentsId,
+        guestWebContentsIds: surface.tabs.map((tab) => tab.webContentsId),
+      },
+    };
+    for (const listener of lifecycleListeners) {
+      try {
+        listener(event);
+      } catch {
+        // Lifecycle observers must not affect surface registration.
+      }
+    }
+  }
+
+  function subscribeLifecycle(listener: (event: BrowserSurfaceLifecycleEvent) => void) {
+    lifecycleListeners.add(listener);
+    return () => lifecycleListeners.delete(listener);
+  }
 
   function reportRegistrationDiagnostic(diagnostic: SurfaceRegistrationDiagnostic) {
     try {
@@ -602,6 +678,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
         surfaceId: surface.surfaceId,
         surfaceKind: surface.surfaceKind,
         surfaceType: surface.surfaceType ?? fallbackSurfaceType(surface.surfaceKind),
+        ...(surface.surfaceIdentityKey
+          ? { surfaceIdentityKey: surface.surfaceIdentityKey.trim() }
+          : {}),
         ...(surface.serviceId ? { serviceId: surface.serviceId } : {}),
         ...(surface.pageRoute ? { pageRoute: surface.pageRoute } : {}),
         ...(surface.pageRouteIdentity ? { pageRouteIdentity: surface.pageRouteIdentity } : {}),
@@ -676,6 +755,10 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       (input.surfaceRole === "kanban-chat" && input.surfaceId !== KANBAN_CHAT_SURFACE_ID) ||
       (input.surfaceRole === "copilot-dock" && input.surfaceId !== COPILOT_DOCK_SURFACE_ID)
     ) return { ok: false, check: "fixed_surface_id_mismatch" };
+    if (
+      input.surfaceRole === "copilot-dock" &&
+      input.surfaceIdentityKey?.trim() === "desktop-route:/kanban"
+    ) return { ok: false, check: "forbidden_route" };
     if (input.surfaceLevel === "child") {
       if (!input.parentSurfaceId && input.surfaceRole !== "project" && input.surfaceRole !== "copilot-dock") {
         return { ok: false, check: "missing_parent_surface" };
@@ -921,6 +1004,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     registeredSurfaces.set(canonicalSurfaceId, registered);
     addDerivedAliases(registered);
     indexRegisteredSurface(registered);
+    emitLifecycle("registered", registered);
     settleRegistrationDiagnostics(registrationInput);
     return { ok: true } satisfies EmbeddedCdpSurfaceRegistrationResult;
   }
@@ -941,6 +1025,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       return false;
     }
     registeredSurfaces.delete(surfaceId);
+    emitLifecycle("unregistered", current);
     removeAliasesForSurface(surfaceId);
     removeGuestTargetsForSurface(surfaceId);
     removeChildSurfaces(surfaceId);
@@ -951,6 +1036,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     for (const [surfaceId, surface] of registeredSurfaces) {
       if (surface.ownerWebContentsId === ownerWebContentsId) {
         registeredSurfaces.delete(surfaceId);
+        emitLifecycle("unregistered", surface);
         removeAliasesForSurface(surfaceId);
         removeGuestTargetsForSurface(surfaceId);
         removeChildSurfaces(surfaceId);
@@ -971,6 +1057,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     });
     if (tabs.length === 0) {
       registeredSurfaces.delete(canonicalSurfaceId);
+      emitLifecycle("unregistered", registered);
       removeAliasesForSurface(canonicalSurfaceId);
       removeGuestTargetsForSurface(canonicalSurfaceId);
       removeChildSurfaces(canonicalSurfaceId);
@@ -997,7 +1084,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       .filter((surface) => surface.parentSurfaceId === parentSurfaceId)
       .map((surface) => surface.surfaceId);
     for (const childId of children) {
+      const child = registeredSurfaces.get(childId);
       registeredSurfaces.delete(childId);
+      if (child) emitLifecycle("unregistered", child);
       removeAliasesForSurface(childId);
       removeGuestTargetsForSurface(childId);
       removeChildSurfaces(childId);
@@ -1299,6 +1388,56 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     return surfaces;
   }
 
+  function listDiagnosticSurfaces(): BrowserSurfaceDiagnosticSnapshot[] {
+    const surfaces: BrowserSurfaceDiagnosticSnapshot[] = [];
+    for (const surfaceId of [...registeredSurfaces.keys()]) {
+      const resolved = resolveRegisteredSurface(surfaceId);
+      if (!resolved) continue;
+      const registered = resolved.registered;
+      surfaces.push({
+        registrationId: registered.registrationId,
+        surfaceId: registered.surfaceId,
+        surfaceKind: registered.surfaceKind,
+        surfaceType: registered.surfaceType ?? fallbackSurfaceType(registered.surfaceKind),
+        surfaceRole: registered.surfaceRole,
+        surfaceLevel: registered.surfaceLevel,
+        interaction: registered.interaction,
+        ...(registered.parentSurfaceId ? { parentSurfaceId: registered.parentSurfaceId } : {}),
+        ...(registered.ownerChatId ? { ownerChatId: registered.ownerChatId } : {}),
+        ownerWebContentsId: registered.ownerWebContentsId,
+        label: registered.label,
+        url: registered.url,
+        ...(registered.pageRoute ? { pageRoute: registered.pageRoute } : {}),
+        active: registered.active,
+        tabs: resolved.tabs,
+        activeTabId: registered.activeTabId,
+      });
+    }
+    return surfaces;
+  }
+
+  function listWebContentsDiagnostics(): BrowserWebContentsDiagnosticSnapshot[] {
+    return options.webContents.getAllWebContents().flatMap((contents) => {
+      try {
+        if (contents.isDestroyed()) return [];
+        return [{
+          webContentsId: contents.id,
+          type: contents.getType(),
+          osProcessId: contents.getOSProcessId(),
+          url: contents.getURL(),
+          title: contents.getTitle(),
+          loading: contents.isLoading(),
+          crashed: contents.isCrashed(),
+          devToolsOpened: contents.isDevToolsOpened(),
+          backgroundThrottling: contents.getBackgroundThrottling(),
+        }];
+      } catch {
+        // A WebContents can disappear between enumeration and inspection.
+        return [];
+      }
+    });
+  }
+
   function getRegisteredSurfaceSnapshot(
     surfaceId: string,
     registrationId: string,
@@ -1326,7 +1465,9 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     builtinBrowserSurface,
     listBrowserSurfaces,
     listChatWorkPanelSurfaces,
+    listDiagnosticSurfaces,
     listRegisteredSurfaces,
+    listWebContentsDiagnostics,
     getRegisteredSurfaceSnapshot,
     registerSurface,
     registerSurfaceResult,
@@ -1336,6 +1477,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     waitForWebviewSurfaceTargetMatching,
     unregisterSurface,
     unregisterSurfacesForOwner,
+    subscribeLifecycle,
     webEntryMatchesSurfaceTarget
   };
 }

@@ -102,6 +102,7 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible,
   openRequest,
   restoredEmbedPath,
+  contextKey,
   parentSurfaceId,
   resolvedAgentKey,
   mustUseSkills = [],
@@ -116,6 +117,7 @@ export function AgentWebclientCopilotDock({
   nativeDialogVisible: boolean;
   openRequest: AssistantWorkerOpenRequest | null;
   restoredEmbedPath?: string;
+  contextKey: string;
   parentSurfaceId?: string;
   resolvedAgentKey: string;
   mustUseSkills?: readonly string[];
@@ -237,6 +239,7 @@ export function AgentWebclientCopilotDock({
             hostTheme={hostTheme}
             serviceId="agent-webclient"
             surfaceIdentity={createSurfaceIdentity("copilot-dock", "", { parentSurfaceId })}
+            surfaceIdentityKey={contextKey}
             surfaceLabel={t("copilotDock.surfaceLabel")}
             skipContextRegistration
             devToolsTarget="copilot"

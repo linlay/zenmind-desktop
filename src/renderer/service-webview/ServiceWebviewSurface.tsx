@@ -1855,11 +1855,23 @@ export function ServiceWebviewSurface({
     if (isAgentWebclientChatSurface(service?.id, surfaceId)) {
       const currentUrl = readCurrentWebviewUrl();
       if (
-        !areAgentWebclientChatNavigationUrlsEquivalent(currentUrl, targetUrl) ||
+        areAgentWebclientChatNavigationUrlsEquivalent(currentUrl, targetUrl) &&
         areAgentWebclientHostRouteParamsEqual(currentUrl, targetUrl)
       ) {
+        reportServiceWebviewDiagnostic("chat-route-bridge-skipped", {
+          reason,
+          transitionId: routeTransitionSequenceRef.current,
+          currentUrl,
+          targetUrl,
+        });
         return;
       }
+      reportServiceWebviewDiagnostic("chat-route-bridge-sent", {
+        reason,
+        transitionId: routeTransitionSequenceRef.current,
+        currentUrl,
+        targetUrl,
+      });
     }
     const payload = buildServiceWebviewRouteChangedMessage(targetUrl, reason);
     if (!payload) {
@@ -1988,6 +2000,12 @@ export function ServiceWebviewSurface({
           if (resolvedResultUrl === targetUrl) {
             pendingDirectRouteTransitionRef.current = null;
             updateWebviewCurrentUrl(resolvedResultUrl, "guest");
+            reportServiceWebviewDiagnostic("direct-route-client-navigation-applied", {
+              transitionId,
+              previousUrl: currentUrl,
+              targetUrl,
+              resultUrl: resolvedResultUrl,
+            });
             return;
           }
           reportServiceWebviewDiagnostic("direct-route-client-navigation-mismatch", {

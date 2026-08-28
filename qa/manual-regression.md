@@ -28,7 +28,7 @@
 - 从 Main Chat 打开 PNG/JPEG/WebP Artifact 与 Reference，确认 Desktop WorkPanel 创建原生图片 tab 且不创建 Agent WebClient Resource Viewer WebView；PDF、HTML、SVG、GIF 与签名不匹配资源继续使用或拒绝进入既有 Viewer。Standalone Agent WebClient 不受影响。
 - 用截断或浏览器无法解码但签名仍匹配的图片回归原生预览：WorkPanel 保持可操作，不显示错误条或错误占位文案，编辑入口禁用，其他 tab 与 Main Chat 不受影响。
 - 原生图片预览态顶部固定为单行，不直接显示文件名；hover 或键盘 focus 信息按钮时显示完整文件名、格式/大小和源尺寸。验证 10%–800% 比例、缩放、中性背景的编辑入口与打开方式，以及适合窗口、100%、比例直接输入、触控板/Cmd/Ctrl 缩放、拖拽平移、默认/其他应用打开、窄 WorkPanel、拉宽、全屏和窗口 resize；不得出现第二行或横向滚动条。
-- 编辑态确认图片工具位于左侧 44px 单列图标栏，hover 后立即在右侧显示工具名，禁用项也能显示；AI 入口常态使用紫蓝描边与淡渐变，激活后使用实色紫蓝渐变。顶部只保留“回到显示模式”、撤销/重做、缩放与保存，并在窄 WorkPanel 中收敛为图标但始终保持一行、无横向滚动。分别打开批注、选区、调整和 AI 设置，确认它们在工具栏旁以浮层显示，内容过多只在浮层内部滚动，图片显示尺寸和适合窗口比例不发生跳变；再验证裁剪、90°旋转、水平/垂直翻转、尺寸、曝光/对比度/饱和度、矩形/椭圆/套索/画笔选区、添加/减去/反选/清除及 50 步撤销上限。像素修改前有批注时必须确认清除；超出 8192 单边或 4000 万像素时编辑入口禁用。
+- 编辑态确认图片工具位于左侧 44px 单列图标栏，hover 后立即在右侧显示工具名，禁用项也能显示；AI 入口常态使用紫蓝描边与淡渐变，激活后使用实色紫蓝渐变。顶部只保留“回到预览”、撤销/重做、缩放与保存，并在窄 WorkPanel 中让次要按钮收敛为图标但“回到预览”始终同时显示眼睛图标和文字，整行无换行、无横向滚动。分别打开批注、选区、调整和 AI 设置，确认它们在工具栏旁以浮层显示，内容过多只在浮层内部滚动，图片显示尺寸和适合窗口比例不发生跳变；再验证裁剪、90°旋转、水平/垂直翻转、尺寸、曝光/对比度/饱和度、矩形/椭圆/套索/画笔选区、添加/减去/反选/清除及 50 步撤销上限。像素修改前有批注时必须确认清除；超出 8192 单边或 4000 万像素时编辑入口禁用。
 - 验证擦除对象必须有选区，移除/替换背景、扩图和增强每次只产生一个 Zenmi 候选，运行中仍可缩放/平移且可取消；失败不丢草稿，结果不自动写入 Artifact。
 - 每次保存都重新选择，弹窗中的取消、覆盖原 Artifact、生成新 Artifact 在同一行等宽排列；Reference 只显示取消与生成新 Artifact。Artifact 默认生成新 Artifact且可覆盖；透明结果不覆盖 JPEG；revision 冲突禁用覆盖。新 Artifact 打开新 tab，覆盖保留原 tab并清空 dirty/undo。
 - macOS 验证 `.app`、Windows 验证 `.exe` 的无 shell 外部打开；有草稿时先提示只打开原文件。外部修改在无草稿时自动刷新，有草稿时只允许丢弃重载或另存新 Artifact；远端缓存先下载副本并明确不会回写。
@@ -36,12 +36,23 @@
 - 连续新增两个 Side Chat，确认都导航 `/btw/:chatId` 且 guest/instance 独立；active BTW 可调用 BTW/attach，不能 query；切换、隐藏、关闭不取消后台 Run。
 - KBASE 显示可用 Project；CODER 仅在 workspace 有效时可用，并携带当前 chatId 与 lastRunId；普通 Agent 不显示 Project。
 
-## WebView 生命周期与 Main Chat mirror
+## WebView 生命周期与全局 Realtime Broker
 
 - 在 Main Chat、Website/Browser 的 Copilot Dock 与 Kanban Chat 之间切换并分别发起对话，确认同一时刻只有当前 surface 持有 live observer；Dock 继续加载内部 `/copilot/:agentKey`，Desktop 不再挂载全页 `copilot-chat`。
 - macOS 与 Windows 分别固定一个 Main Chat 和一个 WorkPanel WebClient guest，记录 `webContentsId` 后反复切换 Chat、WorkPanel tab、面板显示/隐藏和 active 状态；同一 generation 只能出现一次 `listeners-attached`，普通状态变化不得出现 `listeners-detached`，guest 被替换或卸载时才允许成对解绑。
+- 从 Sidebar 依次打开不同 Agent 的多个历史 Chat，再触发新 Chat 和继续对话；确认 Desktop route、Main Chat guest URL、页面内容与 Registry owner 一致切换，`webContentsId` 保持不变，变化的 `chatId/newChat` 会经 route bridge 到达 WebClient，而不是只改变外层选中态。Inspector 中 Primary 物理 WS 全程保持同一条；旧 Chat 有 active Run 时只出现一次 detach，无 active Run 时不产生 detach，切换后的 `/api/chat` 仍在原 LogicalSession/Primary WS 上完成。Realtime 诊断中每次稳定 Chat 切换只允许一次目标 `chatId` 加载，不得在 surface active 恢复时紧随发出旧 `chatId` 的 `forceReload`。
 - 在 Main Chat guest 尚未 `dom-ready` 时快速触发 A→B→C 三次路由变化，确认只应用 C；过渡期 Registry 可返回 `route_not_aligned`，但不得高频重试、回滚到 A/B 或更换仍存活 guest 的 `webContentsId`。
-- 连续至少 30 次从 WorkPanel 打开当前 visible Run mirror，并穿插 Main Chat 快速切换；确认没有 `primary_stream_not_ready`。打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合。
+- 未使用 Side Chat 时在 Realtime Inspector 确认 Primary WS 为 1、BTW WS 为 0；首次 BTW 后变为 1+1。随后并发多个普通 Run、多个 BTW Run，并跨 Chat、WorkPanel 和 BTW tab 切换，确认物理 WS 总数始终不超过 2，RunChannel 数可以独立增加。
+- 连续至少 30 次在 Main Chat query 的 `run.start` 前后分别打开 Overview 与 Debug，并穿插 Main Chat 快速切换；确认 clone 从本地 replay 连续收到事件，不产生额外 upstream attach，关闭 clone 不产生 detach，也不出现 `primary_stream_not_ready` 或其他基于等待时长的错误。
+- Main Chat 离开、owner Chat/context 变化、surface generation 替换和 guest 销毁时，确认 Overview/Debug 同步失效；每个变为无 observer 的非终态 RunChannel 只发送一次 upstream detach，Platform Run 继续执行。返回原 Chat 后从 Inspector 显示的 lastSeq attach，query 不得重发。
+- 制造 detach/reattach 紧邻交接：detach 尚未写出时新 observer 应取消旧 detach；detach 已写出时新 attach 必须等待响应后从 lastSeq 开始。确认旧 generation 的迟到完成不会覆盖新 observer，且不重新出现 listeners attach/detach 高频抖动。
+- 分别断开 Primary 和 BTW，确认另一 lane 的 Inspector phase 与活动 Run 不被标记为断线；账号、endpoint 或 device identity 变化时两条 lane 一起轮换。Primary 收到 BTW runId 的 `run.finished` 后能收敛对应 BTW RunChannel。
+- 进入 Kanban 前先在其他页面打开 Copilot Dock；进入 `/kanban` 后确认 Dock guest 立即 inactive 并卸载，Launcher、System Bar、程序化 open/toggle 和旧 Kanban session 都不能恢复 Dock。Kanban Chat、claim、run prepare、native run 与事件同步继续正常；离开 Kanban 后其他页面原有 Dock session 可以恢复。
+- 打包环境正常操作不得持续写入 attach/detach/navigation debug，开发环境重复 debug 应在 500ms 窗口聚合；Inspector 和日志不得包含 token、Cookie、用户正文或完整业务帧。
+- 从设置的调试分类打开“桌面运行时观察器”，确认独立窗口可持续列出所有 Registry Surface、每个已打开 WebView 及未登记 WebView；Surface、WebContents ID、PID、owner、URL（不含查询参数/凭据）和 active/loading/crashed 状态与实际运行一致。
+- 在观察器中按 RSS、5 分钟增量和 CPU 排序，确认多个 WebView 共享 renderer PID 时显示同一进程 RSS 并明确标记 shared，不把进程内存伪装成单 WebView 独占内存；macOS 与 Windows 都能持续刷新且冻结后数值停止变化。
+- 选择任一存活 WebView 后切换概览、内存、事件和原始数据，确认复制快照不包含 URL query、hash、用户名或密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。
+- 切换 Targets、Events、Topology、System，确认原有 Primary/BTW、Frame Port、Run 恢复和跟踪帧诊断仍可查看；清空只删除有界 trace，不销毁 Surface、WebView 或 Broker 状态。
 
 ## Chat information
 

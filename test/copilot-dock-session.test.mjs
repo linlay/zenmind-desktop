@@ -66,7 +66,7 @@ test("copilot dock session snapshot keeps only relative route identity", () => {
   assert.equal(serialized.includes("hidden"), false);
   assert.equal(serialized.includes("/copilot/helper?chatId=chat-1"), true);
   assert.deepEqual(api.readCopilotDockSessionSnapshot(), {
-    version: 4,
+    version: 5,
     contexts: {
       "website:docs": {
         embedPath: "/copilot/helper?chatId=chat-1",
@@ -148,7 +148,7 @@ test("copilot dock session rejects non-copilot paths and clears on explicit clos
   assert.equal(api.readCopilotDockSessionSnapshot(), null);
 });
 
-test("copilot dock session migrates v3 surface keys to v4 context keys", () => {
+test("copilot dock session migrates v3 surface keys to v5 context keys", () => {
   const { api, values } = loadSessionModule();
   values.set(api.__testInternals.COPILOT_DOCK_SESSION_KEY, JSON.stringify({
     version: 3,
@@ -162,7 +162,7 @@ test("copilot dock session migrates v3 surface keys to v4 context keys", () => {
   }));
 
   assert.deepEqual(api.readCopilotDockSessionSnapshot(), {
-    version: 4,
+    version: 5,
     contexts: {
       "website:docs": {
         embedPath: "/copilot/helper?chatId=chat-3",
@@ -171,7 +171,36 @@ test("copilot dock session migrates v3 surface keys to v4 context keys", () => {
       }
     }
   });
-  assert.equal(JSON.parse([...values.values()][0]).version, 4);
+  assert.equal(JSON.parse([...values.values()][0]).version, 5);
+});
+
+test("copilot dock session drops the forbidden Kanban route while preserving other contexts", () => {
+  const { api } = loadSessionModule();
+  api.writeCopilotDockSessionSnapshot({
+    contexts: {
+      "desktop-route:/kanban": {
+        embedPath: "/copilot/helper?chatId=kanban-chat",
+        agentKey: "helper",
+        chatId: "kanban-chat"
+      },
+      "website:docs": {
+        embedPath: "/copilot/helper?chatId=docs-chat",
+        agentKey: "helper",
+        chatId: "docs-chat"
+      }
+    }
+  });
+
+  assert.deepEqual(api.readCopilotDockSessionSnapshot(), {
+    version: 5,
+    contexts: {
+      "website:docs": {
+        embedPath: "/copilot/helper?chatId=docs-chat",
+        agentKey: "helper",
+        chatId: "docs-chat"
+      }
+    }
+  });
 });
 
 test("copilot dock session discards the old single-surface snapshots", () => {

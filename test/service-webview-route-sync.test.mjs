@@ -89,7 +89,7 @@ test("service webview surface does not sync API resource navigations back into t
   assert.match(navigationHandlerBlock, /context\.sendServiceRouteToWebview\(resolvedUrl, "navigation"\)/);
 });
 
-test("agent chat mirrors its business URL and only receives changed host params", () => {
+test("agent chat receives changed business routes and host params without replaying semantic no-ops", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const routeDeliveryBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("function sendServiceRouteToWebview"),
@@ -107,7 +107,7 @@ test("agent chat mirrors its business URL and only receives changed host params"
   assert.match(serviceWebviewSurface, /function isAgentWebclientChatSurface/);
   assert.match(serviceWebviewSurface, /resolveAgentWebclientDesktopChatRouteFromUrl/);
   assert.match(serviceWebviewSurface, /lastHostAppliedChatRouteRef/);
-  assert.match(routeDeliveryBlock, /!areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)/);
+  assert.match(routeDeliveryBlock, /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)\s*&&/);
   assert.match(routeDeliveryBlock, /areAgentWebclientHostRouteParamsEqual\(currentUrl, targetUrl\)/);
   assert.match(contextBridgeBlock, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)/);
   assert.doesNotMatch(serviceWebviewSurface, /ChatRouteMessage/);
@@ -482,7 +482,7 @@ test("main Chat queues the latest route until dom-ready and never retries determ
   assert.match(source, /webviewDomReadyRef\.current = \{ ready: true, webContentsId \}/u);
 });
 
-test("main chat synchronizes changed host params without replaying its business route", () => {
+test("main chat routes every changed business or host target through the WebClient bridge", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const routeDispatchBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("function sendServiceRouteToWebview"),
@@ -491,7 +491,7 @@ test("main chat synchronizes changed host params without replaying its business 
 
   assert.match(
     routeDispatchBlock,
-    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)/,
+    /areAgentWebclientChatNavigationUrlsEquivalent\(currentUrl, targetUrl\)\s*&&/,
   );
   assert.match(
     routeDispatchBlock,

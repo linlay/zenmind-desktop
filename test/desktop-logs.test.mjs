@@ -110,7 +110,7 @@ test("renderer diagnostics keep warnings out of error.log and flush before quit"
   assert.match(shellHandlersSource, /diagnosticLevel/u);
   assert.match(runtimeSource, /diagnosticLevel === "warn"[\s\S]*?console\.warn/u);
   assert.match(runtimeSource, /else \{[\s\S]*?safeConsoleError\("\[renderer-diagnostic\]"/u);
-  assert.match(runtimeSource, /if \(app\.isPackaged\) return;/u);
+  assert.match(runtimeSource, /if \(!isDesktopDevelopmentRuntime\(app\)\) return;/u);
   assert.match(appEventsSource, /flushDesktopLogs\(500\)/u);
 });
 
