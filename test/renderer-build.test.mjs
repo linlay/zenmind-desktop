@@ -5694,7 +5694,8 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   assert.match(source, /className="work-panel-image-editor-sidebar"[\s\S]*?aria-orientation="vertical"/u);
   assert.match(source, /function ImageToolButton[\s\S]*?<Tooltip title=\{label\} placement="right" mouseEnterDelay=\{0\.15\}>/u);
   assert.doesNotMatch(source, /title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|apply|rotate|flipHorizontal|flipVertical|lockAspect|resize|adjust|aiTools)"\)\}/u);
-  assert.match(source, /<ImageToolbarButton label=\{t\("chatWorkPanel\.image\.done"\)\}[\s\S]*?<EyeOutlined \/><\/ImageToolbarButton>/u);
+  assert.match(source, /<ImageToolbarButton label=\{t\("chatWorkPanel\.image\.done"\)\} className="is-return-to-preview"[\s\S]*?<ArrowLeftOutlined \/><\/ImageToolbarButton>/u);
+  assert.match(source, /label=\{t\("chatWorkPanel\.image\.save"\)\} className=\{pixelDirty && !saveBusy && !aiBusy && !sourceConflict \? "is-primary" : ""\}/u);
   assert.match(
     source,
     /className="work-panel-image-save-actions"[\s\S]*?chatWorkPanel\.image\.cancel[\s\S]*?chatWorkPanel\.image\.overwrite[\s\S]*?chatWorkPanel\.image\.saveNew/u
@@ -5703,12 +5704,15 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   assert.match(styles, /\.work-panel-image-toolbar\.is-preview\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
   assert.match(styles, /\.work-panel-image-toolbar\.is-editing\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
   assert.match(styles, /@container \(max-width: 760px\)[\s\S]*?\.work-panel-image-toolbar\.is-editing \.work-panel-image-toolbar-button-label\s*\{[^}]*display:\s*none;/u);
+  assert.match(styles, /\.work-panel-image-toolbar\.is-editing \.is-return-to-preview \.work-panel-image-toolbar-button-label\s*\{[^}]*display:\s*inline;/u);
   assert.doesNotMatch(styles, /\.work-panel-image-toolbar\s*\{[^}]*overflow-x:\s*auto;/u);
   assert.match(styles, /\.work-panel-image-editor-sidebar\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*flex-direction:\s*column;[^}]*overflow-y:\s*auto;/u);
   assert.match(styles, /\.work-panel-image-editor-sidebar button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
   assert.match(styles, /\.work-panel-image-tool-tooltip-anchor\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
-  assert.match(styles, /button\.is-ai\s*\{[^}]*border-color:[^}]*linear-gradient\(145deg,[^}]*#7555ee[^}]*#3385f5/u);
-  assert.match(styles, /button\.is-ai\.is-active\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
+  assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?placement="rightTop"[\s\S]*?chatWorkPanel\.image\.transform[\s\S]*?chatWorkPanel\.image\.rotate[\s\S]*?chatWorkPanel\.image\.flipHorizontal[\s\S]*?chatWorkPanel\.image\.flipVertical[\s\S]*?chatWorkPanel\.image\.freeTransform/u);
+  assert.match(source, /chatWorkPanel\.image\.resize[\s\S]*?chatWorkPanel\.image\.canvasSize[\s\S]*?chatWorkPanel\.image\.adjust/u);
+  assert.match(styles, /button\.is-ai-tool\s*\{[^}]*border-color:[^}]*linear-gradient\(145deg,[^}]*#7555ee[^}]*#3385f5/u);
+  assert.match(styles, /button\.is-ai-tool\.is-active\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
   assert.match(styles, /\.work-panel-image-save-actions\s*\{[^}]*display:\s*flex;/u);
 });
 
@@ -5726,11 +5730,15 @@ test("native image annotation and AI tools share visible region editing", () => 
   assert.match(source, /setActiveAnnotationId\(id\)/u);
   assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
   assert.match(source, /selectionMaskBase64\(annotationRegions\)/u);
-  assert.match(source, /runAi\("inpaint"\)/u);
-  assert.match(source, /className="work-panel-image-ai-region-actions"/u);
-  assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-ai-panel/u);
+  assert.match(source, /setAiPromptOperation\(\(value\) => value === "inpaint" \? null : "inpaint"\)/u);
+  assert.match(source, /className="is-ai-tool"[\s\S]*?runAi\("removeObject"\)[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
+  assert.doesNotMatch(source, /RobotOutlined|work-panel-image-ai-panel|work-panel-image-ai-tools/u);
+  assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-parameter-panel[\s\S]*?work-panel-image-ai-prompt/u);
   assert.match(styles, /\.work-panel-image-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*max-height:\s*calc\(100% - 20px\);[^}]*overflow:\s*auto;/u);
-  assert.match(styles, /\.work-panel-image-ai-panel\s*\{[^}]*position:\s*static;[^}]*width:\s*100%;/u);
+  assert.match(source, /const applyCanvasSize = useCallback[\s\S]*?drawImage\(image, Math\.round\(\(width - current\.width\) \/ 2\)/u);
+  assert.match(source, /const beginSelectionTransform = async[\s\S]*?globalCompositeOperation = "destination-out"[\s\S]*?globalCompositeOperation = "destination-in"/u);
+  assert.match(source, /className="work-panel-image-selection-transform"[\s\S]*?\["nw", "ne", "sw", "se"\]/u);
+  assert.match(styles, /\.work-panel-image-selection-transform\s*\{[^}]*position:\s*absolute;[^}]*cursor:\s*move;/u);
   assert.match(contract, /\| "inpaint"[\s\S]*?\| "removeObject"/u);
 });
 

@@ -1,4 +1,5 @@
 import {
+  ArrowLeftOutlined,
   BgColorsOutlined,
   BorderOutlined,
   CheckOutlined,
@@ -6,15 +7,14 @@ import {
   ControlOutlined,
   DragOutlined,
   EditOutlined,
-  EyeOutlined,
   ExportOutlined,
   ExpandOutlined,
+  FullscreenOutlined,
   HighlightOutlined,
   InfoCircleOutlined,
   LinkOutlined,
   PictureOutlined,
   RedoOutlined,
-  RobotOutlined,
   RotateRightOutlined,
   SaveOutlined,
   ScissorOutlined,
@@ -54,7 +54,23 @@ type Snapshot = {
 
 type SelectionTool = "rectangle" | "ellipse" | "lasso" | "brush";
 type SelectionMode = "add" | "subtract";
+type AiPromptOperation = "inpaint" | "replaceBackground" | "outpaint";
 type Point = { x: number; y: number };
+type SelectionTransformState = {
+  baseUrl: string;
+  contentUrl: string;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  rotation: number;
+};
+type SelectionTransformDrag = {
+  mode: "move" | "nw" | "ne" | "sw" | "se";
+  clientX: number;
+  clientY: number;
+  initial: Pick<SelectionTransformState, "x" | "y" | "width" | "height">;
+};
 type GesturePreview = {
   kind: "annotate" | "select";
   shape?: SelectionTool;
@@ -191,6 +207,7 @@ export function WorkPanelResourceImage({
   const drawStartRef = useRef<Point | null>(null);
   const drawPointsRef = useRef<Point[]>([]);
   const panRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
+  const selectionTransformDragRef = useRef<SelectionTransformDrag | null>(null);
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -210,14 +227,30 @@ export function WorkPanelResourceImage({
   const [adjustOpen, setAdjustOpen] = useState(false);
   const [adjust, setAdjust] = useState({ exposure: 0, contrast: 0, saturation: 0 });
   const [resizeAspectLocked, setResizeAspectLocked] = useState(true);
-  const [aiOpen, setAiOpen] = useState(false);
+  const [canvasSizeOpen, setCanvasSizeOpen] = useState(false);
+  const [canvasTargetSize, setCanvasTargetSize] = useState({ width: 0, height: 0 });
+  const [selectionTransform, setSelectionTransform] = useState<SelectionTransformState | null>(null);
+  const [aiPromptOperation, setAiPromptOperation] = useState<AiPromptOperation | null>(null);
   const [aiInstruction, setAiInstruction] = useState("");
+  const [aiTargetSize, setAiTargetSize] = useState({ width: 0, height: 0 });
   const [aiBusy, setAiBusy] = useState<{ requestId: string; operation: WorkPanelResourceImageAiOperation } | null>(null);
   const [saveOpen, setSaveOpen] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [sourceConflict, setSourceConflict] = useState(false);
   const [sourceRevision, setSourceRevision] = useState(resource.revision);
   const [handoffBusy, setHandoffBusy] = useState(false);
+
+  const discardSelectionTransform = useCallback(() => {
+    setSelectionTransform((value) => {
+      if (!value) return null;
+      snapshotUrlsRef.current.delete(value.baseUrl);
+      snapshotUrlsRef.current.delete(value.contentUrl);
+      URL.revokeObjectURL(value.baseUrl);
+      URL.revokeObjectURL(value.contentUrl);
+      return null;
+    });
+    selectionTransformDragRef.current = null;
+  }, []);
 
   const current = history[historyIndex] || null;
   const effectiveZoom = fitMode ? fitZoom : zoom;
@@ -278,6 +311,8 @@ export function WorkPanelResourceImage({
       setAnnotations([]);
       setActiveAnnotationId("");
       setHasSelection(false);
+      setSelectionTransform(null);
+      setAiPromptOperation(null);
       setAiInstruction("");
       setSourceRevision(result.revision || resource.revision);
       setSourceConflict(false);
@@ -293,10 +328,16 @@ export function WorkPanelResourceImage({
     if (!editing) {
       setTool("pan");
       setAdjustOpen(false);
-      setAiOpen(false);
+      setCanvasSizeOpen(false);
+      discardSelectionTransform();
+      setAiPromptOperation(null);
       setGesturePreview(null);
     }
-  }, [editing]);
+  }, [discardSelectionTransform, editing]);
+
+  useEffect(() => {
+    discardSelectionTransform();
+  }, [discardSelectionTransform, historyIndex]);
 
   useEffect(() => {
     void readResource();
@@ -400,6 +441,29 @@ export function WorkPanelResourceImage({
     canvas.getContext("2d")?.drawImage(image, 0, 0, width, height);
     await snapshotFromCanvas(canvas, current.mimeType);
   }, [current, requireAnnotationClear, resizeAspectLocked, snapshotFromCanvas, t]);
+
+  const applyCanvasSize = useCallback(async () => {
+    if (!current || !requireAnnotationClear()) return;
+    const width = Math.round(canvasTargetSize.width);
+    const height = Math.round(canvasTargetSize.height);
+    if (
+      !Number.isFinite(width) || !Number.isFinite(height) ||
+      width < 1 || height < 1 || width > 8_192 || height > 8_192 || width * height > 40_000_000
+    ) return;
+    const image = await loadImage(current.url);
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    if (current.mimeType === "image/jpeg") {
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, width, height);
+    }
+    context.drawImage(image, Math.round((width - current.width) / 2), Math.round((height - current.height) / 2));
+    await snapshotFromCanvas(canvas, current.mimeType);
+    setCanvasSizeOpen(false);
+  }, [canvasTargetSize.height, canvasTargetSize.width, current, requireAnnotationClear, snapshotFromCanvas]);
 
   const applyCrop = useCallback(async () => {
     if (!current || !cropRect || !requireAnnotationClear()) return;
@@ -594,6 +658,170 @@ export function WorkPanelResourceImage({
     setHasSelection(true);
   };
 
+  const beginSelectionTransform = async () => {
+    const selection = selectionCanvasRef.current;
+    const selectionContext = selection?.getContext("2d");
+    if (!current || !selection || !selectionContext) return;
+    const pixels = selectionContext.getImageData(0, 0, selection.width, selection.height);
+    let minX = selection.width;
+    let minY = selection.height;
+    let maxX = -1;
+    let maxY = -1;
+    for (let y = 0; y < selection.height; y += 1) {
+      for (let x = 0; x < selection.width; x += 1) {
+        if (pixels.data[(y * selection.width + x) * 4 + 3] === 0) continue;
+        minX = Math.min(minX, x);
+        minY = Math.min(minY, y);
+        maxX = Math.max(maxX, x);
+        maxY = Math.max(maxY, y);
+      }
+    }
+    if (maxX < minX || maxY < minY) {
+      setError(t("chatWorkPanel.image.freeTransformSelectionRequired"));
+      return;
+    }
+    const mask = document.createElement("canvas");
+    mask.width = selection.width;
+    mask.height = selection.height;
+    const maskContext = mask.getContext("2d");
+    if (!maskContext) return;
+    const binaryMask = maskContext.createImageData(mask.width, mask.height);
+    for (let index = 0; index < pixels.data.length; index += 4) {
+      if (pixels.data[index + 3] === 0) continue;
+      binaryMask.data[index] = 255;
+      binaryMask.data[index + 1] = 255;
+      binaryMask.data[index + 2] = 255;
+      binaryMask.data[index + 3] = 255;
+    }
+    maskContext.putImageData(binaryMask, 0, 0);
+
+    const image = await loadImage(current.url);
+    const base = document.createElement("canvas");
+    base.width = current.width;
+    base.height = current.height;
+    const baseContext = base.getContext("2d");
+    const selected = document.createElement("canvas");
+    selected.width = current.width;
+    selected.height = current.height;
+    const selectedContext = selected.getContext("2d");
+    if (!baseContext || !selectedContext) return;
+    baseContext.drawImage(image, 0, 0);
+    baseContext.globalCompositeOperation = "destination-out";
+    baseContext.drawImage(mask, 0, 0);
+    selectedContext.drawImage(image, 0, 0);
+    selectedContext.globalCompositeOperation = "destination-in";
+    selectedContext.drawImage(mask, 0, 0);
+
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const content = document.createElement("canvas");
+    content.width = width;
+    content.height = height;
+    content.getContext("2d")?.drawImage(selected, minX, minY, width, height, 0, 0, width, height);
+    const [baseBlob, contentBlob] = await Promise.all([
+      canvasBlob(base, "image/png"),
+      canvasBlob(content, "image/png"),
+    ]);
+    discardSelectionTransform();
+    const baseUrl = URL.createObjectURL(baseBlob);
+    const contentUrl = URL.createObjectURL(contentBlob);
+    snapshotUrlsRef.current.add(baseUrl);
+    snapshotUrlsRef.current.add(contentUrl);
+    setAdjustOpen(false);
+    setCanvasSizeOpen(false);
+    setAiPromptOperation(null);
+    setError("");
+    setTool("pan");
+    setSelectionTransform({ baseUrl, contentUrl, x: minX, y: minY, width, height, rotation: 0 });
+  };
+
+  const applySelectionTransform = async () => {
+    if (!current || !selectionTransform || !requireAnnotationClear()) return;
+    const [base, content] = await Promise.all([
+      loadImage(selectionTransform.baseUrl),
+      loadImage(selectionTransform.contentUrl),
+    ]);
+    const canvas = document.createElement("canvas");
+    canvas.width = current.width;
+    canvas.height = current.height;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    if (current.mimeType === "image/jpeg") {
+      context.fillStyle = "#fff";
+      context.fillRect(0, 0, canvas.width, canvas.height);
+    }
+    context.drawImage(base, 0, 0);
+    context.save();
+    context.translate(
+      selectionTransform.x + selectionTransform.width / 2,
+      selectionTransform.y + selectionTransform.height / 2,
+    );
+    context.rotate(selectionTransform.rotation * Math.PI / 180);
+    context.drawImage(
+      content,
+      -selectionTransform.width / 2,
+      -selectionTransform.height / 2,
+      selectionTransform.width,
+      selectionTransform.height,
+    );
+    context.restore();
+    await snapshotFromCanvas(canvas, current.mimeType);
+    discardSelectionTransform();
+    clearSelection();
+  };
+
+  const beginSelectionTransformDrag = (mode: SelectionTransformDrag["mode"], event: ReactPointerEvent<HTMLElement>) => {
+    if (!selectionTransform) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    selectionTransformDragRef.current = {
+      mode,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      initial: {
+        x: selectionTransform.x,
+        y: selectionTransform.y,
+        width: selectionTransform.width,
+        height: selectionTransform.height,
+      },
+    };
+  };
+
+  const moveSelectionTransform = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = selectionTransformDragRef.current;
+    if (!drag || !current) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const dx = (event.clientX - drag.clientX) / (effectiveZoom / 100);
+    const dy = (event.clientY - drag.clientY) / (effectiveZoom / 100);
+    setSelectionTransform((value) => {
+      if (!value) return null;
+      if (drag.mode === "move") {
+        return {
+          ...value,
+          x: clamp(drag.initial.x + dx, 0, Math.max(0, current.width - drag.initial.width)),
+          y: clamp(drag.initial.y + dy, 0, Math.max(0, current.height - drag.initial.height)),
+        };
+      }
+      const movesLeft = drag.mode === "nw" || drag.mode === "sw";
+      const movesTop = drag.mode === "nw" || drag.mode === "ne";
+      const nextX = movesLeft
+        ? clamp(drag.initial.x + dx, 0, drag.initial.x + drag.initial.width - 1)
+        : drag.initial.x;
+      const nextY = movesTop
+        ? clamp(drag.initial.y + dy, 0, drag.initial.y + drag.initial.height - 1)
+        : drag.initial.y;
+      const nextWidth = movesLeft
+        ? drag.initial.width + drag.initial.x - nextX
+        : clamp(drag.initial.width + dx, 1, current.width - drag.initial.x);
+      const nextHeight = movesTop
+        ? drag.initial.height + drag.initial.y - nextY
+        : clamp(drag.initial.height + dy, 1, current.height - drag.initial.y);
+      return { ...value, x: nextX, y: nextY, width: nextWidth, height: nextHeight };
+    });
+  };
+
   const selectionMaskBase64 = async (annotationRegions: ImageRegionAnnotation[] = []) => {
     const selection = selectionCanvasRef.current;
     if (!selection) return "";
@@ -674,12 +902,8 @@ export function WorkPanelResourceImage({
       }
     }
     if (operation === "outpaint") {
-      const widthText = window.prompt(t("chatWorkPanel.image.promptWidth"), String(current.width));
-      if (widthText === null) return;
-      const heightText = window.prompt(t("chatWorkPanel.image.promptHeight"), String(current.height));
-      if (heightText === null) return;
-      targetWidth = Math.round(Number(widthText));
-      targetHeight = Math.round(Number(heightText));
+      targetWidth = Math.round(aiTargetSize.width);
+      targetHeight = Math.round(aiTargetSize.height);
       if (
         !Number.isFinite(targetWidth) || !Number.isFinite(targetHeight) ||
         targetWidth < current.width || targetHeight < current.height ||
@@ -690,7 +914,7 @@ export function WorkPanelResourceImage({
     const sourceDataBase64 = await blobBase64(sourceBlob);
     const requestId = globalThis.crypto.randomUUID();
     setTool("pan");
-    setAiOpen(false);
+    setAiPromptOperation(null);
     setAiBusy({ requestId, operation });
     setError("");
     try {
@@ -915,6 +1139,13 @@ export function WorkPanelResourceImage({
   const imageFilter = adjustOpen
     ? `brightness(${100 + adjust.exposure}%) contrast(${100 + adjust.contrast}%) saturate(${100 + adjust.saturation}%)`
     : undefined;
+  const aiPromptLabel = aiPromptOperation === "inpaint"
+    ? t("chatWorkPanel.image.smartEdit")
+    : aiPromptOperation === "replaceBackground"
+      ? t("chatWorkPanel.image.replaceBackground")
+      : aiPromptOperation === "outpaint"
+        ? t("chatWorkPanel.image.outpaint")
+        : "";
 
   return (
     <div
@@ -986,7 +1217,7 @@ export function WorkPanelResourceImage({
         ) : (
           <>
             <div className="work-panel-image-toolbar-actions">
-              <ImageToolbarButton label={t("chatWorkPanel.image.done")} className="is-primary" disabled={Boolean(aiBusy) || saveBusy} onClick={() => onEditingChange(false)}><EyeOutlined /></ImageToolbarButton>
+              <ImageToolbarButton label={t("chatWorkPanel.image.done")} className="is-return-to-preview" disabled={Boolean(aiBusy) || saveBusy} onClick={() => onEditingChange(false)}><ArrowLeftOutlined /></ImageToolbarButton>
               <ImageToolbarButton label={t("chatWorkPanel.image.undo")} disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /></ImageToolbarButton>
               <ImageToolbarButton label={t("chatWorkPanel.image.redo")} disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /></ImageToolbarButton>
             </div>
@@ -998,7 +1229,7 @@ export function WorkPanelResourceImage({
                 <span>%</span>
               </span>
               <button type="button" onClick={() => stepZoom(1)} aria-label={t("chatWorkPanel.image.zoomIn")}><ZoomInOutlined /></button>
-              <ImageToolbarButton label={t("chatWorkPanel.image.save")} className="is-primary" disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /></ImageToolbarButton>
+              <ImageToolbarButton label={t("chatWorkPanel.image.save")} className={pixelDirty && !saveBusy && !aiBusy && !sourceConflict ? "is-primary" : ""} disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /></ImageToolbarButton>
             </div>
           </>
         )}
@@ -1012,10 +1243,6 @@ export function WorkPanelResourceImage({
                 setAdjustOpen(false);
                 setTool("pan");
               }}><DragOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.annotate")} className={tool === "annotate" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
-                setAdjustOpen(false);
-                setTool("annotate");
-              }}><HighlightOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.selection")} className={tool === "select" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
                 setAdjustOpen(false);
                 setTool("select");
@@ -1027,29 +1254,93 @@ export function WorkPanelResourceImage({
               {tool === "crop" && cropRect ? <ImageToolButton label={t("chatWorkPanel.image.apply")} className="is-confirm" onClick={() => void applyCrop()}><CheckOutlined /></ImageToolButton> : null}
             </div>
             <div className="work-panel-image-editor-tool-group is-secondary">
-              <ImageToolButton label={t("chatWorkPanel.image.rotate")} disabled={Boolean(aiBusy)} onClick={() => void transform("rotate")}><RotateRightOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.flipHorizontal")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-x")}><span aria-hidden="true">↔</span></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.flipVertical")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-y")}><span aria-hidden="true">↕</span></ImageToolButton>
+              <Popover
+                trigger={["hover", "focus"]}
+                placement="rightTop"
+                mouseEnterDelay={0.15}
+                content={(
+                  <div className="work-panel-image-transform-flyout" role="menu" aria-label={t("chatWorkPanel.image.transform")}>
+                    <strong>{t("chatWorkPanel.image.transform")}</strong>
+                    <button type="button" role="menuitem" disabled={Boolean(aiBusy)} onClick={() => void transform("rotate")}><RotateRightOutlined /> {t("chatWorkPanel.image.rotate")}</button>
+                    <button type="button" role="menuitem" disabled={Boolean(aiBusy)} onClick={() => void transform("flip-x")}><span aria-hidden="true">↔</span> {t("chatWorkPanel.image.flipHorizontal")}</button>
+                    <button type="button" role="menuitem" disabled={Boolean(aiBusy)} onClick={() => void transform("flip-y")}><span aria-hidden="true">↕</span> {t("chatWorkPanel.image.flipVertical")}</button>
+                    <button type="button" role="menuitem" disabled={Boolean(aiBusy)} onClick={() => void beginSelectionTransform()}><ExpandOutlined /> {t("chatWorkPanel.image.freeTransform")}</button>
+                  </div>
+                )}
+              >
+                <span className="work-panel-image-tool-tooltip-anchor">
+                  <button type="button" aria-label={t("chatWorkPanel.image.transform")} aria-haspopup="menu" disabled={Boolean(aiBusy)}><RotateRightOutlined /></button>
+                </span>
+              </Popover>
               <ImageToolButton label={t("chatWorkPanel.image.lockAspect")} className={resizeAspectLocked ? "is-active" : ""} disabled={Boolean(aiBusy)} aria-pressed={resizeAspectLocked} onClick={() => setResizeAspectLocked((value) => !value)}><LinkOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.resize")} disabled={Boolean(aiBusy)} onClick={() => void resizeImage()}><CompressOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.canvasSize")} className={canvasSizeOpen ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setAiPromptOperation(null);
+                discardSelectionTransform();
+                setTool("pan");
+                if (current) setCanvasTargetSize({ width: current.width, height: current.height });
+                setCanvasSizeOpen((value) => !value);
+              }}><FullscreenOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.adjust")} className={adjustOpen ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
-                setAiOpen(false);
+                setAiPromptOperation(null);
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
                 setTool("pan");
                 setAdjustOpen((value) => !value);
               }}><ControlOutlined /></ImageToolButton>
-            </div>
-            <div className="work-panel-image-more">
-              <ImageToolButton label={t("chatWorkPanel.image.aiTools")} className={aiOpen ? "is-active is-ai" : "is-ai"} aria-expanded={aiOpen} disabled={Boolean(aiBusy)} onClick={() => {
+
+              <ImageToolButton label={t("chatWorkPanel.image.annotate")} className={tool === "annotate" ? "is-ai-tool is-active" : "is-ai-tool"} disabled={Boolean(aiBusy)} onClick={() => {
                 setAdjustOpen(false);
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
+                setTool("annotate");
+              }}><HighlightOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.smartEdit")} className={aiPromptOperation === "inpaint" ? "is-ai-tool is-active" : "is-ai-tool"} aria-pressed={aiPromptOperation === "inpaint"} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
                 setError("");
-                setAiOpen((value) => !value);
-              }}><RobotOutlined /></ImageToolButton>
+                setAiPromptOperation((value) => value === "inpaint" ? null : "inpaint");
+              }}><ThunderboltOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.removeObject")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
+                void runAi("removeObject");
+              }}><EditOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.removeBackground")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
+                void runAi("removeBackground");
+              }}><BgColorsOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.replaceBackground")} className={aiPromptOperation === "replaceBackground" ? "is-ai-tool is-active" : "is-ai-tool"} aria-pressed={aiPromptOperation === "replaceBackground"} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
+                setTool("pan");
+                setError("");
+                setAiPromptOperation((value) => value === "replaceBackground" ? null : "replaceBackground");
+              }}><PictureOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.outpaint")} className={aiPromptOperation === "outpaint" ? "is-ai-tool is-active" : "is-ai-tool"} aria-pressed={aiPromptOperation === "outpaint"} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
+                setTool("pan");
+                setError("");
+                if (current) setAiTargetSize({ width: current.width, height: current.height });
+                setAiPromptOperation((value) => value === "outpaint" ? null : "outpaint");
+              }}><ExpandOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.enhance")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
+                setCanvasSizeOpen(false);
+                discardSelectionTransform();
+                void runAi("enhance");
+              }}><ControlOutlined /></ImageToolButton>
             </div>
           </aside>
         ) : null}
         <div className="work-panel-image-content">
 
-      {editing && (tool === "annotate" || tool === "select" || adjustOpen || aiOpen) ? (
+      {editing && (tool === "annotate" || tool === "select" || adjustOpen || canvasSizeOpen || selectionTransform || aiPromptOperation) ? (
         <div className="work-panel-image-floating-controls">
           {tool === "annotate" ? (
             <div className="work-panel-image-subtoolbar is-guidance" role="status">
@@ -1091,22 +1382,53 @@ export function WorkPanelResourceImage({
             </div>
           ) : null}
 
-          {aiOpen ? (
-            <section className={`work-panel-image-ai-panel${annotations.length > 0 ? " has-annotations" : ""}`} aria-label={t("chatWorkPanel.image.aiTools")}>
+          {canvasSizeOpen ? (
+            <section className="work-panel-image-parameter-panel" aria-label={t("chatWorkPanel.image.canvasSize")}>
               <header>
-                <span><ThunderboltOutlined /> <strong>{t("chatWorkPanel.image.aiTools")}</strong></span>
-                <button type="button" aria-label={t("common.close")} onClick={() => setAiOpen(false)}>×</button>
+                <strong>{t("chatWorkPanel.image.canvasSize")}</strong>
+                <button type="button" aria-label={t("common.close")} onClick={() => setCanvasSizeOpen(false)}>×</button>
               </header>
-              <p>{t("chatWorkPanel.image.aiPanelHint")}</p>
-              <div className="work-panel-image-ai-region-actions">
-                <button type="button" className={tool === "select" ? "is-active" : ""} onClick={() => setTool("select")}><BorderOutlined /> {t("chatWorkPanel.image.useSelection")}</button>
-                <button type="button" className={tool === "annotate" ? "is-active" : ""} onClick={() => setTool("annotate")}><HighlightOutlined /> {t("chatWorkPanel.image.useAnnotation")}</button>
+              <div className="work-panel-image-parameter-fields">
+                <label><span>{t("chatWorkPanel.image.width")}</span><input type="number" min={1} max={8192} value={canvasTargetSize.width} onChange={(event) => setCanvasTargetSize((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
+                <label><span>{t("chatWorkPanel.image.height")}</span><input type="number" min={1} max={8192} value={canvasTargetSize.height} onChange={(event) => setCanvasTargetSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
               </div>
-              <div className="work-panel-image-ai-region-status">
-                <span className={hasSelection ? "is-ready" : ""}>{hasSelection ? t("chatWorkPanel.image.selectionReady") : t("chatWorkPanel.image.selectionEmpty")}</span>
-                <span className={annotations.length > 0 ? "is-ready" : ""}>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
+              <div className="work-panel-image-parameter-actions">
+                <button type="button" onClick={() => setCanvasSizeOpen(false)}>{t("common.cancel")}</button>
+                <button type="button" className="is-primary" onClick={() => void applyCanvasSize()}>{t("chatWorkPanel.image.apply")}</button>
               </div>
-              {error ? <div className="work-panel-image-ai-inline-error" role="alert">{error}</div> : null}
+            </section>
+          ) : null}
+
+          {selectionTransform ? (
+            <section className="work-panel-image-parameter-panel" aria-label={t("chatWorkPanel.image.freeTransform")}>
+              <header>
+                <strong>{t("chatWorkPanel.image.freeTransform")}</strong>
+                <button type="button" aria-label={t("common.close")} onClick={discardSelectionTransform}>×</button>
+              </header>
+              <div className="work-panel-image-parameter-fields is-transform">
+                <label><span>{t("chatWorkPanel.image.width")}</span><input type="number" min={1} max={current?.width || 8192} value={Math.round(selectionTransform.width)} onChange={(event) => setSelectionTransform((value) => value ? { ...value, width: Math.max(1, Number(event.target.value)) } : null)} /></label>
+                <label><span>{t("chatWorkPanel.image.height")}</span><input type="number" min={1} max={current?.height || 8192} value={Math.round(selectionTransform.height)} onChange={(event) => setSelectionTransform((value) => value ? { ...value, height: Math.max(1, Number(event.target.value)) } : null)} /></label>
+                <label><span>{t("chatWorkPanel.image.rotation")}</span><input type="number" min={-180} max={180} value={selectionTransform.rotation} onChange={(event) => setSelectionTransform((value) => value ? { ...value, rotation: clamp(Number(event.target.value), -180, 180) } : null)} /></label>
+              </div>
+              <div className="work-panel-image-parameter-actions">
+                <button type="button" onClick={discardSelectionTransform}>{t("common.cancel")}</button>
+                <button type="button" className="is-primary" onClick={() => void applySelectionTransform()}>{t("chatWorkPanel.image.apply")}</button>
+              </div>
+            </section>
+          ) : null}
+
+          {aiPromptOperation ? (
+            <section className="work-panel-image-ai-prompt" aria-label={aiPromptLabel}>
+              <header>
+                <span><ThunderboltOutlined /> <strong>{aiPromptLabel}</strong></span>
+                <button type="button" aria-label={t("common.close")} onClick={() => setAiPromptOperation(null)}>×</button>
+              </header>
+              {aiPromptOperation === "inpaint" ? (
+                <div className="work-panel-image-ai-region-status">
+                  <span className={hasSelection ? "is-ready" : ""}>{hasSelection ? t("chatWorkPanel.image.selectionReady") : t("chatWorkPanel.image.selectionEmpty")}</span>
+                  <span className={annotations.length > 0 ? "is-ready" : ""}>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
+                </div>
+              ) : null}
               <label className="work-panel-image-ai-instruction">
                 <span>{t("chatWorkPanel.image.aiInstruction")}</span>
                 <textarea
@@ -1116,13 +1438,15 @@ export function WorkPanelResourceImage({
                   onChange={(event) => setAiInstruction(event.target.value)}
                 />
               </label>
-              <div className="work-panel-image-ai-tools">
-                <button type="button" className="is-primary" onClick={() => void runAi("inpaint")}><ThunderboltOutlined /> {t("chatWorkPanel.image.smartEdit")}</button>
-                <button type="button" onClick={() => void runAi("removeObject")}><EditOutlined /> {t("chatWorkPanel.image.removeObject")}</button>
-                <button type="button" onClick={() => void runAi("removeBackground")}><BgColorsOutlined /> {t("chatWorkPanel.image.removeBackground")}</button>
-                <button type="button" onClick={() => void runAi("replaceBackground")}><PictureOutlined /> {t("chatWorkPanel.image.replaceBackground")}</button>
-                <button type="button" onClick={() => void runAi("outpaint")}><ExpandOutlined /> {t("chatWorkPanel.image.outpaint")}</button>
-                <button type="button" onClick={() => void runAi("enhance")}><ControlOutlined /> {t("chatWorkPanel.image.enhance")}</button>
+              {aiPromptOperation === "outpaint" ? (
+                <div className="work-panel-image-parameter-fields">
+                  <label><span>{t("chatWorkPanel.image.width")}</span><input type="number" min={current?.width || 1} max={8192} value={aiTargetSize.width} onChange={(event) => setAiTargetSize((value) => ({ ...value, width: Number(event.target.value) }))} /></label>
+                  <label><span>{t("chatWorkPanel.image.height")}</span><input type="number" min={current?.height || 1} max={8192} value={aiTargetSize.height} onChange={(event) => setAiTargetSize((value) => ({ ...value, height: Number(event.target.value) }))} /></label>
+                </div>
+              ) : null}
+              <div className="work-panel-image-parameter-actions">
+                <button type="button" onClick={() => setAiPromptOperation(null)}>{t("common.cancel")}</button>
+                <button type="button" className="is-primary" onClick={() => void runAi(aiPromptOperation)}>{aiPromptLabel}</button>
               </div>
             </section>
           ) : null}
@@ -1161,8 +1485,35 @@ export function WorkPanelResourceImage({
                 setGesturePreview(null);
               }}
             >
-              <img src={current.url} alt={resource.fileName} draggable={false} style={{ filter: imageFilter }} />
-              <canvas ref={selectionCanvasRef} className="work-panel-image-selection-layer" />
+              <img src={selectionTransform?.baseUrl || current.url} alt={resource.fileName} draggable={false} style={{ filter: imageFilter }} />
+              {selectionTransform ? (
+                <div
+                  className="work-panel-image-selection-transform"
+                  style={{
+                    left: selectionTransform.x * effectiveZoom / 100,
+                    top: selectionTransform.y * effectiveZoom / 100,
+                    width: selectionTransform.width * effectiveZoom / 100,
+                    height: selectionTransform.height * effectiveZoom / 100,
+                    transform: `rotate(${selectionTransform.rotation}deg)`,
+                  }}
+                  onPointerDown={(event) => beginSelectionTransformDrag("move", event)}
+                  onPointerMove={moveSelectionTransform}
+                  onPointerUp={() => { selectionTransformDragRef.current = null; }}
+                  onPointerCancel={() => { selectionTransformDragRef.current = null; }}
+                >
+                  <img src={selectionTransform.contentUrl} alt="" draggable={false} />
+                  {(["nw", "ne", "sw", "se"] as const).map((handle) => (
+                    <button
+                      key={handle}
+                      type="button"
+                      className={`is-${handle}`}
+                      aria-label={t("chatWorkPanel.image.resizeSelection")}
+                      onPointerDown={(event) => beginSelectionTransformDrag(handle, event)}
+                    />
+                  ))}
+                </div>
+              ) : null}
+              <canvas ref={selectionCanvasRef} className={`work-panel-image-selection-layer${selectionTransform ? " is-hidden" : ""}`} />
               {gesturePreview?.kind === "select" && gesturePreview.points.length > 0 ? (
                 <svg className={`work-panel-image-selection-preview is-${selectionMode}`} viewBox={`0 0 ${current.width} ${current.height}`} preserveAspectRatio="none" aria-hidden="true">
                   {gesturePreview.shape === "rectangle" && gesturePreview.points[1] ? (() => {
@@ -1208,7 +1559,7 @@ export function WorkPanelResourceImage({
       </div>
 
       {editing && (tool === "annotate" || annotations.length > 0) ? (
-        <aside className={`work-panel-image-annotations${aiOpen ? " has-ai-panel" : ""}`}>
+        <aside className={`work-panel-image-annotations${aiPromptOperation ? " has-ai-panel" : ""}`}>
           <header>
             <strong>{t("chatWorkPanel.image.annotations")}</strong>
             <span>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>

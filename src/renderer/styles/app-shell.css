@@ -1193,7 +1193,8 @@
 .work-panel-image-subtoolbar button,
 .work-panel-image-editor-sidebar button,
 .work-panel-image-adjustments button,
-.work-panel-image-ai-panel button,
+.work-panel-image-ai-prompt button,
+.work-panel-image-parameter-panel button,
 .work-panel-image-ai-status button,
 .work-panel-image-conflict button,
 .work-panel-image-annotations button,
@@ -1223,7 +1224,8 @@
 .work-panel-image-subtoolbar button:hover:not(:disabled),
 .work-panel-image-editor-sidebar button:hover:not(:disabled),
 .work-panel-image-adjustments button:hover:not(:disabled),
-.work-panel-image-ai-panel button:hover:not(:disabled),
+.work-panel-image-ai-prompt button:hover:not(:disabled),
+.work-panel-image-parameter-panel button:hover:not(:disabled),
 .work-panel-image-conflict button:hover:not(:disabled),
 .work-panel-image-annotations button:hover:not(:disabled),
 .work-panel-image-save-dialog button:hover:not(:disabled) {
@@ -1234,7 +1236,8 @@
 .work-panel-image-save-dialog button.is-primary,
 .work-panel-image-annotations button.is-primary,
 .work-panel-image-adjustments button.is-primary,
-.work-panel-image-ai-panel button.is-primary {
+.work-panel-image-ai-prompt button.is-primary,
+.work-panel-image-parameter-panel button.is-primary {
   color: #fff;
   background: var(--accent-color, #1677ff);
 }
@@ -1242,7 +1245,7 @@
 .work-panel-image-toolbar button.is-active,
 .work-panel-image-subtoolbar button.is-active,
 .work-panel-image-editor-sidebar button.is-active,
-.work-panel-image-ai-panel button.is-active {
+.work-panel-image-ai-prompt button.is-active {
   border-color: color-mix(in srgb, var(--accent-color, #1677ff) 42%, transparent);
   color: var(--accent-color, #1677ff);
   background: color-mix(in srgb, var(--accent-color, #1677ff) 13%, transparent);
@@ -1251,15 +1254,15 @@
 .work-panel-image-toolbar button:disabled,
 .work-panel-image-subtoolbar button:disabled,
 .work-panel-image-editor-sidebar button:disabled,
-.work-panel-image-ai-panel button:disabled,
+.work-panel-image-ai-prompt button:disabled,
+.work-panel-image-parameter-panel button:disabled,
 .work-panel-image-save-dialog button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
 }
 
 .work-panel-image-toolbar select,
-.work-panel-image-subtoolbar select,
-.work-panel-image-more select {
+.work-panel-image-subtoolbar select {
   height: 30px;
   max-width: 148px;
   border: 1px solid var(--line-soft);
@@ -1456,35 +1459,65 @@
   background: var(--accent-color, #1677ff);
 }
 
-.work-panel-image-editor-sidebar .work-panel-image-more {
-  width: 100%;
-  margin-top: auto;
-  padding-top: 5px;
-  border-top: 1px solid var(--line-soft);
-}
-
-.work-panel-image-editor-sidebar .work-panel-image-more .work-panel-image-tool-tooltip-anchor {
-  margin-inline: auto;
-}
-
-.work-panel-image-editor-sidebar .work-panel-image-more button.is-ai {
+.work-panel-image-editor-sidebar button.is-ai-tool {
   border-color: color-mix(in srgb, #5f56ef 34%, transparent);
   color: #6254e8;
   background: linear-gradient(145deg, color-mix(in srgb, #7555ee 14%, transparent), color-mix(in srgb, #3385f5 12%, transparent));
   box-shadow: inset 0 0 0 1px color-mix(in srgb, #4b7ff2 8%, transparent);
 }
 
-.work-panel-image-editor-sidebar .work-panel-image-more button.is-ai.is-active {
+.work-panel-image-editor-sidebar button.is-ai-tool.is-active {
   border-color: color-mix(in srgb, #4d6ff0 65%, transparent);
   color: #fff;
   background: linear-gradient(145deg, #8056ff, #367df0);
   box-shadow: 0 4px 14px color-mix(in srgb, #615eea 30%, transparent);
 }
 
-[data-theme="dark"] .work-panel-image-editor-sidebar .work-panel-image-more button.is-ai {
+[data-theme="dark"] .work-panel-image-editor-sidebar button.is-ai-tool {
   border-color: color-mix(in srgb, #8e85ff 48%, transparent);
   color: #aaa4ff;
   background: linear-gradient(145deg, rgb(117 85 238 / 22%), rgb(51 133 245 / 18%));
+}
+
+[data-theme="dark"] .work-panel-image-editor-sidebar button.is-ai-tool.is-active {
+  color: #fff;
+  background: linear-gradient(145deg, #8056ff, #367df0);
+}
+
+.work-panel-image-transform-flyout {
+  display: grid;
+  min-width: 168px;
+  gap: 3px;
+}
+
+.work-panel-image-transform-flyout > strong {
+  padding: 4px 8px 6px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.work-panel-image-transform-flyout > button {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  border-radius: 6px;
+  padding: 6px 8px;
+  color: inherit;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.work-panel-image-transform-flyout > button:hover:not(:disabled) {
+  background: var(--hover-bg);
+}
+
+.work-panel-image-transform-flyout > button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
 }
 
 .work-panel-image-subtoolbar.is-guidance {
@@ -1557,44 +1590,45 @@
   gap: 8px;
 }
 
-.work-panel-image-ai-panel {
-  position: static;
-  z-index: 9;
+.work-panel-image-ai-prompt,
+.work-panel-image-parameter-panel {
   display: grid;
   width: 100%;
-  max-height: none;
   overflow: auto;
   box-sizing: border-box;
   gap: 10px;
   padding: 12px;
-  border: 1px solid color-mix(in srgb, #7c4dff 30%, var(--line-soft));
+  border: 1px solid var(--line-soft);
   border-radius: 10px;
   background: color-mix(in srgb, var(--embedded-surface-page-bg) 97%, transparent);
   box-shadow: 0 14px 38px rgb(0 0 0 / 22%);
 }
 
-.work-panel-image-ai-panel.has-annotations {
-  max-height: 420px;
+.work-panel-image-ai-prompt {
+  border-color: color-mix(in srgb, #7c4dff 30%, var(--line-soft));
 }
 
-.work-panel-image-ai-panel header,
-.work-panel-image-ai-panel header > span {
+.work-panel-image-ai-prompt header,
+.work-panel-image-ai-prompt header > span,
+.work-panel-image-parameter-panel header {
   display: flex;
   align-items: center;
 }
 
-.work-panel-image-ai-panel header {
+.work-panel-image-ai-prompt header,
+.work-panel-image-parameter-panel header {
   justify-content: space-between;
   gap: 8px;
 }
 
-.work-panel-image-ai-panel header > span {
+.work-panel-image-ai-prompt header > span {
   gap: 7px;
   color: #7447ec;
   font-size: 13px;
 }
 
-.work-panel-image-ai-panel header > button {
+.work-panel-image-ai-prompt header > button,
+.work-panel-image-parameter-panel header > button {
   width: 26px;
   min-width: 26px;
   min-height: 26px;
@@ -1603,35 +1637,15 @@
   line-height: 1;
 }
 
-.work-panel-image-ai-panel > p,
 .work-panel-image-annotations > p {
   margin: 0;
   color: var(--text-secondary);
   line-height: 1.5;
 }
 
-.work-panel-image-ai-region-actions,
-.work-panel-image-ai-region-status,
-.work-panel-image-ai-tools {
+.work-panel-image-ai-region-status {
   display: grid;
   gap: 6px;
-}
-
-.work-panel-image-ai-region-actions {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-}
-
-.work-panel-image-ai-region-actions button,
-.work-panel-image-ai-tools button {
-  display: inline-flex;
-  min-width: 0;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  white-space: normal;
-}
-
-.work-panel-image-ai-region-status {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
@@ -1686,13 +1700,43 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, #7c4dff 13%, transparent);
 }
 
-.work-panel-image-ai-tools {
+.work-panel-image-parameter-fields {
+  display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.work-panel-image-ai-tools button.is-primary {
-  grid-column: 1 / -1;
-  background: linear-gradient(145deg, #8056ff, #5f42d9);
+.work-panel-image-parameter-fields.is-transform {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.work-panel-image-parameter-fields label {
+  display: grid;
+  gap: 4px;
+}
+
+.work-panel-image-parameter-fields label > span {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+
+.work-panel-image-parameter-fields input {
+  width: 100%;
+  height: 30px;
+  min-width: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--line-soft);
+  border-radius: 7px;
+  outline: none;
+  padding: 4px 7px;
+  color: inherit;
+  background: transparent;
+}
+
+.work-panel-image-parameter-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
 }
 
 .work-panel-image-conflict,
@@ -1769,6 +1813,62 @@
   cursor: crosshair;
 }
 
+.work-panel-image-selection-transform {
+  position: absolute;
+  z-index: 4;
+  box-sizing: border-box;
+  border: 1px solid #7c5cff;
+  outline: 1px solid rgb(255 255 255 / 72%);
+  cursor: move;
+  touch-action: none;
+  transform-origin: center;
+}
+
+.work-panel-image-selection-transform > img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  user-select: none;
+}
+
+.work-panel-image-selection-transform > button {
+  position: absolute;
+  width: 10px;
+  min-width: 10px;
+  height: 10px;
+  min-height: 10px;
+  border: 1px solid #6547e8;
+  border-radius: 2px;
+  padding: 0;
+  background: #fff;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 28%);
+}
+
+.work-panel-image-selection-transform > button.is-nw {
+  top: -6px;
+  left: -6px;
+  cursor: nwse-resize;
+}
+
+.work-panel-image-selection-transform > button.is-ne {
+  top: -6px;
+  right: -6px;
+  cursor: nesw-resize;
+}
+
+.work-panel-image-selection-transform > button.is-sw {
+  bottom: -6px;
+  left: -6px;
+  cursor: nesw-resize;
+}
+
+.work-panel-image-selection-transform > button.is-se {
+  right: -6px;
+  bottom: -6px;
+  cursor: nwse-resize;
+}
+
 .work-panel-image-canvas > img,
 .work-panel-image-selection-layer {
   position: absolute;
@@ -1781,6 +1881,10 @@
 
 .work-panel-image-selection-layer {
   pointer-events: none;
+}
+
+.work-panel-image-selection-layer.is-hidden {
+  opacity: 0;
 }
 
 .work-panel-image-selection-preview {
@@ -1996,6 +2100,15 @@
   .work-panel-image-toolbar.is-editing .work-panel-image-toolbar-button-anchor button {
     width: 30px;
     padding-inline: 0;
+  }
+
+  .work-panel-image-toolbar.is-editing .work-panel-image-toolbar-button-anchor button.is-return-to-preview {
+    width: auto;
+    padding-inline: 9px;
+  }
+
+  .work-panel-image-toolbar.is-editing .is-return-to-preview .work-panel-image-toolbar-button-label {
+    display: inline;
   }
 
   .work-panel-image-toolbar.is-editing .work-panel-image-spacer {
