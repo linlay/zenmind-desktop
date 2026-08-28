@@ -54,7 +54,7 @@ type Snapshot = {
 
 type SelectionTool = "rectangle" | "ellipse" | "lasso" | "brush";
 type SelectionMode = "add" | "subtract";
-type AiPromptOperation = "inpaint" | "replaceBackground" | "outpaint";
+type AiPromptOperation = "replaceBackground" | "outpaint";
 type Point = { x: number; y: number };
 type SelectionTransformState = {
   baseUrl: string;
@@ -70,6 +70,16 @@ type SelectionTransformDrag = {
   clientX: number;
   clientY: number;
   initial: Pick<SelectionTransformState, "x" | "y" | "width" | "height">;
+};
+type FloatingPanelKind = "tools" | "annotations";
+type FloatingPanelPosition = { x: number; y: number } | null;
+type FloatingPanelDrag = {
+  kind: FloatingPanelKind;
+  pointerId: number;
+  clientX: number;
+  clientY: number;
+  left: number;
+  top: number;
 };
 type GesturePreview = {
   kind: "annotate" | "select";
@@ -201,13 +211,17 @@ export function WorkPanelResourceImage({
 }: WorkPanelResourceImageProps) {
   const { t } = useI18n();
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
+  const floatingControlsRef = useRef<HTMLDivElement | null>(null);
+  const annotationsPanelRef = useRef<HTMLElement | null>(null);
   const selectionCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const snapshotUrlsRef = useRef(new Set<string>());
   const drawStartRef = useRef<Point | null>(null);
   const drawPointsRef = useRef<Point[]>([]);
   const panRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const selectionTransformDragRef = useRef<SelectionTransformDrag | null>(null);
+  const floatingPanelDragRef = useRef<FloatingPanelDrag | null>(null);
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -221,6 +235,8 @@ export function WorkPanelResourceImage({
   const [cropRect, setCropRect] = useState<{ x: number; y: number; width: number; height: number } | null>(null);
   const [annotations, setAnnotations] = useState<ImageRegionAnnotation[]>([]);
   const [activeAnnotationId, setActiveAnnotationId] = useState("");
+  const [floatingControlsPosition, setFloatingControlsPosition] = useState<FloatingPanelPosition>(null);
+  const [annotationsPanelPosition, setAnnotationsPanelPosition] = useState<FloatingPanelPosition>(null);
   const [zoom, setZoom] = useState(100);
   const [fitMode, setFitMode] = useState(true);
   const [fitZoom, setFitZoom] = useState(100);
@@ -253,6 +269,7 @@ export function WorkPanelResourceImage({
   }, []);
 
   const current = history[historyIndex] || null;
+  const activeAnnotation = annotations.find((annotation) => annotation.id === activeAnnotationId) || annotations[0] || null;
   const effectiveZoom = fitMode ? fitZoom : zoom;
   const pixelDirty = historyIndex > 0;
   const dirty = pixelDirty || annotations.length > 0;
@@ -332,8 +349,32 @@ export function WorkPanelResourceImage({
       discardSelectionTransform();
       setAiPromptOperation(null);
       setGesturePreview(null);
+      setFloatingControlsPosition(null);
+      setAnnotationsPanelPosition(null);
     }
   }, [discardSelectionTransform, editing]);
+
+  useEffect(() => {
+    const content = contentRef.current;
+    if (!content) return;
+    const keepPanelsVisible = () => {
+      const clampPosition = (
+        position: FloatingPanelPosition,
+        panel: HTMLElement | null,
+      ): FloatingPanelPosition => {
+        if (!position || !panel) return position;
+        return {
+          x: clamp(position.x, 0, Math.max(0, content.clientWidth - panel.offsetWidth)),
+          y: clamp(position.y, 0, Math.max(0, content.clientHeight - panel.offsetHeight)),
+        };
+      };
+      setFloatingControlsPosition((position) => clampPosition(position, floatingControlsRef.current));
+      setAnnotationsPanelPosition((position) => clampPosition(position, annotationsPanelRef.current));
+    };
+    const observer = new ResizeObserver(keepPanelsVisible);
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, []);
 
   useEffect(() => {
     discardSelectionTransform();
@@ -822,12 +863,15 @@ export function WorkPanelResourceImage({
     });
   };
 
-  const selectionMaskBase64 = async (annotationRegions: ImageRegionAnnotation[] = []) => {
+  const selectionMaskBase64 = async (
+    annotationRegions: ImageRegionAnnotation[] = [],
+    includeSelection = true,
+  ) => {
     const selection = selectionCanvasRef.current;
     if (!selection) return "";
     const source = selection.getContext("2d")?.getImageData(0, 0, selection.width, selection.height);
     if (!source) return "";
-    const selectionPresent = source.data.some((value, index) => index % 4 === 3 && value > 0);
+    const selectionPresent = includeSelection && source.data.some((value, index) => index % 4 === 3 && value > 0);
     if (!selectionPresent && annotationRegions.length === 0) return "";
     const mask = document.createElement("canvas");
     mask.width = selection.width;
@@ -841,7 +885,7 @@ export function WorkPanelResourceImage({
     context.drawImage(selection, 0, 0);
     const pixels = context.getImageData(0, 0, mask.width, mask.height);
     for (let index = 0; index < pixels.data.length; index += 4) {
-      const selected = source.data[index + 3] > 0;
+      const selected = includeSelection && source.data[index + 3] > 0;
       pixels.data[index] = selected ? 255 : 0;
       pixels.data[index + 1] = selected ? 255 : 0;
       pixels.data[index + 2] = selected ? 255 : 0;
@@ -860,16 +904,80 @@ export function WorkPanelResourceImage({
     return blobBase64(await canvasBlob(mask, "image/png"));
   };
 
+  const beginFloatingPanelDrag = (
+    kind: FloatingPanelKind,
+    event: ReactPointerEvent<HTMLElement>,
+  ) => {
+    if (event.button !== 0) return;
+    const panel = kind === "tools" ? floatingControlsRef.current : annotationsPanelRef.current;
+    if (!panel) return;
+    floatingPanelDragRef.current = {
+      kind,
+      pointerId: event.pointerId,
+      clientX: event.clientX,
+      clientY: event.clientY,
+      left: panel.offsetLeft,
+      top: panel.offsetTop,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const moveFloatingPanel = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = floatingPanelDragRef.current;
+    const content = contentRef.current;
+    if (!drag || drag.pointerId !== event.pointerId || !content) return;
+    const panel = drag.kind === "tools" ? floatingControlsRef.current : annotationsPanelRef.current;
+    if (!panel) return;
+    const position = {
+      x: clamp(
+        drag.left + event.clientX - drag.clientX,
+        0,
+        Math.max(0, content.clientWidth - panel.offsetWidth),
+      ),
+      y: clamp(
+        drag.top + event.clientY - drag.clientY,
+        0,
+        Math.max(0, content.clientHeight - panel.offsetHeight),
+      ),
+    };
+    if (drag.kind === "tools") setFloatingControlsPosition(position);
+    else setAnnotationsPanelPosition(position);
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  const endFloatingPanelDrag = (event: ReactPointerEvent<HTMLElement>) => {
+    const drag = floatingPanelDragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    floatingPanelDragRef.current = null;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    event.stopPropagation();
+  };
+
   const runAi = async (operation: WorkPanelResourceImageAiOperation) => {
     if (!current || aiBusy) return;
-    const consumesRegions = operation === "inpaint" || operation === "removeObject";
-    if (!consumesRegions && annotations.length > 0 && !window.confirm(t("chatWorkPanel.image.confirmClearAnnotations"))) {
+    const consumesAnnotations = operation === "inpaint";
+    const requiresMask = consumesAnnotations || operation === "removeObject";
+    if (!consumesAnnotations && annotations.length > 0 && !window.confirm(t("chatWorkPanel.image.confirmClearAnnotations"))) {
       return;
     }
-    const annotationRegions = consumesRegions ? annotations : [];
-    const maskDataBase64 = await selectionMaskBase64(annotationRegions);
-    if (consumesRegions && !maskDataBase64) {
-      setError(t("chatWorkPanel.image.aiRegionRequired"));
+    if (operation === "inpaint" && (
+      annotations.length === 0 || annotations.some((annotation) => !annotation.requirement.trim())
+    )) {
+      setTool("annotate");
+      setError(t("chatWorkPanel.image.annotationRequired"));
+      return;
+    }
+    const annotationRegions = operation === "inpaint" ? annotations : [];
+    const maskDataBase64 = await selectionMaskBase64(annotationRegions, operation === "removeObject");
+    if (requiresMask && !maskDataBase64) {
+      setError(t(operation === "removeObject"
+        ? "chatWorkPanel.image.selectionRequired"
+        : "chatWorkPanel.image.annotationRequired"));
       return;
     }
     let prompt = "";
@@ -889,11 +997,7 @@ export function WorkPanelResourceImage({
             height: Math.round(rect.height * 100),
           });
         });
-      prompt = [...annotationInstructions, aiInstruction.trim()].filter(Boolean).join("\n");
-      if (!prompt) {
-        setError(t("chatWorkPanel.image.aiInstructionRequired"));
-        return;
-      }
+      prompt = annotationInstructions.join("\n");
     } else if (operation === "replaceBackground" || operation === "outpaint") {
       prompt = aiInstruction.trim();
       if (!prompt) {
@@ -1139,13 +1243,11 @@ export function WorkPanelResourceImage({
   const imageFilter = adjustOpen
     ? `brightness(${100 + adjust.exposure}%) contrast(${100 + adjust.contrast}%) saturate(${100 + adjust.saturation}%)`
     : undefined;
-  const aiPromptLabel = aiPromptOperation === "inpaint"
-    ? t("chatWorkPanel.image.smartEdit")
-    : aiPromptOperation === "replaceBackground"
-      ? t("chatWorkPanel.image.replaceBackground")
-      : aiPromptOperation === "outpaint"
-        ? t("chatWorkPanel.image.outpaint")
-        : "";
+  const aiPromptLabel = aiPromptOperation === "replaceBackground"
+    ? t("chatWorkPanel.image.replaceBackground")
+    : aiPromptOperation === "outpaint"
+      ? t("chatWorkPanel.image.outpaint")
+      : "";
 
   return (
     <div
@@ -1296,12 +1398,18 @@ export function WorkPanelResourceImage({
                 discardSelectionTransform();
                 setTool("annotate");
               }}><HighlightOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.smartEdit")} className={aiPromptOperation === "inpaint" ? "is-ai-tool is-active" : "is-ai-tool"} aria-pressed={aiPromptOperation === "inpaint"} disabled={Boolean(aiBusy)} onClick={() => {
+              <ImageToolButton label={t("chatWorkPanel.image.smartEdit")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
                 setAdjustOpen(false);
                 setCanvasSizeOpen(false);
                 discardSelectionTransform();
+                setAiPromptOperation(null);
                 setError("");
-                setAiPromptOperation((value) => value === "inpaint" ? null : "inpaint");
+                if (annotations.length === 0 || annotations.some((annotation) => !annotation.requirement.trim())) {
+                  setTool("annotate");
+                  setError(t("chatWorkPanel.image.annotationRequired"));
+                  return;
+                }
+                void runAi("inpaint");
               }}><ThunderboltOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.removeObject")} className="is-ai-tool" disabled={Boolean(aiBusy)} onClick={() => {
                 setCanvasSizeOpen(false);
@@ -1338,18 +1446,24 @@ export function WorkPanelResourceImage({
             </div>
           </aside>
         ) : null}
-        <div className="work-panel-image-content">
+        <div ref={contentRef} className="work-panel-image-content">
 
-      {editing && (tool === "annotate" || tool === "select" || adjustOpen || canvasSizeOpen || selectionTransform || aiPromptOperation) ? (
-        <div className="work-panel-image-floating-controls">
-          {tool === "annotate" ? (
-            <div className="work-panel-image-subtoolbar is-guidance" role="status">
-              <HighlightOutlined />
-              <strong>{t("chatWorkPanel.image.annotationHintTitle")}</strong>
-              <span>{t("chatWorkPanel.image.annotationHint")}</span>
-            </div>
-          ) : null}
-
+      {editing && (tool === "select" || adjustOpen || canvasSizeOpen || selectionTransform || aiPromptOperation) ? (
+        <div
+          ref={floatingControlsRef}
+          className="work-panel-image-floating-controls"
+          style={floatingControlsPosition ? { left: floatingControlsPosition.x, top: floatingControlsPosition.y } : undefined}
+        >
+          <div
+            className="work-panel-image-floating-drag-handle"
+            onPointerDown={(event) => beginFloatingPanelDrag("tools", event)}
+            onPointerMove={moveFloatingPanel}
+            onPointerUp={endFloatingPanelDrag}
+            onPointerCancel={endFloatingPanelDrag}
+          >
+            <DragOutlined />
+            <span>{t("chatWorkPanel.image.toolSettings")}</span>
+          </div>
           {tool === "select" ? (
             <div className="work-panel-image-subtoolbar">
               <span className="work-panel-image-subtoolbar-hint"><BorderOutlined /> {t("chatWorkPanel.image.selectionHint")}</span>
@@ -1423,12 +1537,6 @@ export function WorkPanelResourceImage({
                 <span><ThunderboltOutlined /> <strong>{aiPromptLabel}</strong></span>
                 <button type="button" aria-label={t("common.close")} onClick={() => setAiPromptOperation(null)}>×</button>
               </header>
-              {aiPromptOperation === "inpaint" ? (
-                <div className="work-panel-image-ai-region-status">
-                  <span className={hasSelection ? "is-ready" : ""}>{hasSelection ? t("chatWorkPanel.image.selectionReady") : t("chatWorkPanel.image.selectionEmpty")}</span>
-                  <span className={annotations.length > 0 ? "is-ready" : ""}>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
-                </div>
-              ) : null}
               <label className="work-panel-image-ai-instruction">
                 <span>{t("chatWorkPanel.image.aiInstruction")}</span>
                 <textarea
@@ -1559,31 +1667,66 @@ export function WorkPanelResourceImage({
       </div>
 
       {editing && (tool === "annotate" || annotations.length > 0) ? (
-        <aside className={`work-panel-image-annotations${aiPromptOperation ? " has-ai-panel" : ""}`}>
-          <header>
-            <strong>{t("chatWorkPanel.image.annotations")}</strong>
+        <aside
+          ref={annotationsPanelRef}
+          className="work-panel-image-annotations"
+          style={annotationsPanelPosition ? { left: annotationsPanelPosition.x, top: annotationsPanelPosition.y, right: "auto" } : undefined}
+        >
+          <header
+            onPointerDown={(event) => beginFloatingPanelDrag("annotations", event)}
+            onPointerMove={moveFloatingPanel}
+            onPointerUp={endFloatingPanelDrag}
+            onPointerCancel={endFloatingPanelDrag}
+          >
+            <strong><DragOutlined /> {t("chatWorkPanel.image.annotations")}</strong>
             <span>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
           </header>
-          {annotations.length === 0 ? <p>{t("chatWorkPanel.image.annotationEmpty")}</p> : null}
-          {annotations.map((annotation) => (
-            <label key={annotation.id}>
-              <span>{annotation.number}</span>
+          <p className="work-panel-image-annotation-guidance">
+            <HighlightOutlined />
+            <span>{annotations.length === 0
+              ? t("chatWorkPanel.image.annotationEmpty")
+              : t("chatWorkPanel.image.annotationHint")}</span>
+          </p>
+          {annotations.length > 0 ? (
+            <div className="work-panel-image-annotation-list" role="list">
+              {annotations.map((annotation) => (
+                <button
+                  key={annotation.id}
+                  type="button"
+                  role="listitem"
+                  className={`${annotation.id === activeAnnotation?.id ? "is-active" : ""}${annotation.requirement.trim() ? "" : " is-incomplete"}`}
+                  onClick={() => setActiveAnnotationId(annotation.id)}
+                >
+                  <span>{annotation.number}</span>
+                  <span>{annotation.requirement.trim() || t("chatWorkPanel.image.annotationPlaceholder")}</span>
+                </button>
+              ))}
+            </div>
+          ) : null}
+          {activeAnnotation ? (
+            <label key={activeAnnotation.id} className="work-panel-image-annotation-editor">
+              <span>{t("chatWorkPanel.image.annotationRequirement", { number: activeAnnotation.number })}</span>
               <textarea
-                value={annotation.requirement}
+                value={activeAnnotation.requirement}
                 maxLength={1_000}
-                autoFocus={annotation.id === activeAnnotationId}
+                autoFocus={activeAnnotation.id === activeAnnotationId}
                 placeholder={t("chatWorkPanel.image.annotationPlaceholder")}
-                onFocus={() => setActiveAnnotationId(annotation.id)}
-                onChange={(event) => setAnnotations((items) => items.map((item) => item.id === annotation.id ? { ...item, requirement: event.target.value } : item))}
+                onChange={(event) => setAnnotations((items) => items.map((item) => item.id === activeAnnotation.id ? { ...item, requirement: event.target.value } : item))}
               />
               <button type="button" onClick={() => {
-                setAnnotations((items) => items.filter((item) => item.id !== annotation.id).map((item, index) => ({ ...item, number: index + 1 })));
-                if (activeAnnotationId === annotation.id) setActiveAnnotationId("");
+                const remaining = annotations
+                  .filter((annotation) => annotation.id !== activeAnnotation.id)
+                  .map((annotation, index) => ({ ...annotation, number: index + 1 }));
+                setAnnotations(remaining);
+                setActiveAnnotationId(remaining[0]?.id || "");
               }}>{t("chatWorkPanel.image.remove")}</button>
             </label>
-          ))}
+          ) : null}
           {annotations.length > 0 ? (
-            <button type="button" className="is-primary" disabled={handoffBusy || annotations.some((annotation) => !annotation.requirement.trim())} onClick={() => void handoff()}>{t("chatWorkPanel.image.handoff")}</button>
+            <div className="work-panel-image-annotation-actions">
+              <button type="button" className="is-primary" disabled={Boolean(aiBusy) || annotations.some((annotation) => !annotation.requirement.trim())} onClick={() => void runAi("inpaint")}>{t("chatWorkPanel.image.smartEdit")}</button>
+              <button type="button" disabled={handoffBusy || annotations.some((annotation) => !annotation.requirement.trim())} onClick={() => void handoff()}>{t("chatWorkPanel.image.handoff")}</button>
+            </div>
           ) : null}
         </aside>
       ) : null}

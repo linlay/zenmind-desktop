@@ -5716,7 +5716,7 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   assert.match(styles, /\.work-panel-image-save-actions\s*\{[^}]*display:\s*flex;/u);
 });
 
-test("native image annotation and AI tools share visible region editing", () => {
+test("native image selection and annotations have distinct movable AI workflows", () => {
   const source = readSourceFile(
     "src",
     "renderer",
@@ -5729,12 +5729,18 @@ test("native image annotation and AI tools share visible region editing", () => 
   assert.match(source, /setGesturePreview\(\{ kind: "annotate", points: \[drawStartRef\.current, point\] \}\)/u);
   assert.match(source, /setActiveAnnotationId\(id\)/u);
   assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
-  assert.match(source, /selectionMaskBase64\(annotationRegions\)/u);
-  assert.match(source, /setAiPromptOperation\(\(value\) => value === "inpaint" \? null : "inpaint"\)/u);
+  assert.match(source, /const consumesAnnotations = operation === "inpaint"/u);
+  assert.match(source, /selectionMaskBase64\(annotationRegions, operation === "removeObject"\)/u);
+  assert.match(source, /chatWorkPanel\.image\.smartEdit[\s\S]*?annotations\.some[\s\S]*?runAi\("inpaint"\)/u);
+  assert.doesNotMatch(source, /aiPromptOperation === "inpaint"|value === "inpaint" \? null : "inpaint"/u);
   assert.match(source, /className="is-ai-tool"[\s\S]*?runAi\("removeObject"\)[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
   assert.doesNotMatch(source, /RobotOutlined|work-panel-image-ai-panel|work-panel-image-ai-tools/u);
-  assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-parameter-panel[\s\S]*?work-panel-image-ai-prompt/u);
+  assert.match(source, /beginFloatingPanelDrag[\s\S]*?setPointerCapture[\s\S]*?setFloatingControlsPosition[\s\S]*?setAnnotationsPanelPosition/u);
+  assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-floating-drag-handle[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-parameter-panel[\s\S]*?work-panel-image-ai-prompt/u);
   assert.match(styles, /\.work-panel-image-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*max-height:\s*calc\(100% - 20px\);[^}]*overflow:\s*auto;/u);
+  assert.match(styles, /\.work-panel-image-floating-drag-handle\s*\{[^}]*cursor:\s*move;[^}]*touch-action:\s*none;/u);
+  assert.match(source, /work-panel-image-annotation-list[\s\S]*?activeAnnotation[\s\S]*?work-panel-image-annotation-editor[\s\S]*?runAi\("inpaint"\)/u);
+  assert.match(styles, /\.work-panel-image-annotations\s*\{[^}]*top:\s*12px;[^}]*right:\s*12px;[^}]*max-height:\s*calc\(100% - 24px\);/u);
   assert.match(source, /const applyCanvasSize = useCallback[\s\S]*?drawImage\(image, Math\.round\(\(width - current\.width\) \/ 2\)/u);
   assert.match(source, /const beginSelectionTransform = async[\s\S]*?globalCompositeOperation = "destination-out"[\s\S]*?globalCompositeOperation = "destination-in"/u);
   assert.match(source, /className="work-panel-image-selection-transform"[\s\S]*?\["nw", "ne", "sw", "se"\]/u);
