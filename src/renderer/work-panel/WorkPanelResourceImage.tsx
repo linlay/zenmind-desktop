@@ -27,6 +27,7 @@ import { Popover, Tooltip } from "antd";
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -222,6 +223,7 @@ export function WorkPanelResourceImage({
   const panRef = useRef<{ x: number; y: number; left: number; top: number } | null>(null);
   const selectionTransformDragRef = useRef<SelectionTransformDrag | null>(null);
   const floatingPanelDragRef = useRef<FloatingPanelDrag | null>(null);
+  const previousEditingRef = useRef(editing);
   const [history, setHistory] = useState<Snapshot[]>([]);
   const [historyIndex, setHistoryIndex] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -341,18 +343,48 @@ export function WorkPanelResourceImage({
     }
   }, [handleRequest, resource.mimeType, resource.revision]);
 
-  useEffect(() => {
-    if (!editing) {
-      setTool("pan");
-      setAdjustOpen(false);
-      setCanvasSizeOpen(false);
-      discardSelectionTransform();
-      setAiPromptOperation(null);
-      setGesturePreview(null);
-      setFloatingControlsPosition(null);
-      setAnnotationsPanelPosition(null);
-    }
-  }, [discardSelectionTransform, editing]);
+  const discardEditingDraft = useCallback(() => {
+    discardSelectionTransform();
+    for (const url of snapshotUrlsRef.current) URL.revokeObjectURL(url);
+    snapshotUrlsRef.current.clear();
+    const selection = selectionCanvasRef.current;
+    selection?.getContext("2d")?.clearRect(0, 0, selection.width, selection.height);
+    drawStartRef.current = null;
+    drawPointsRef.current = [];
+    panRef.current = null;
+    floatingPanelDragRef.current = null;
+    setHistory([]);
+    setHistoryIndex(0);
+    setError("");
+    setTool("pan");
+    setSelectionTool("rectangle");
+    setSelectionMode("add");
+    setBrushSize(40);
+    setHasSelection(false);
+    setGesturePreview(null);
+    setCropRect(null);
+    setAnnotations([]);
+    setActiveAnnotationId("");
+    setAdjustOpen(false);
+    setAdjust({ exposure: 0, contrast: 0, saturation: 0 });
+    setResizeAspectLocked(true);
+    setCanvasSizeOpen(false);
+    setCanvasTargetSize({ width: 0, height: 0 });
+    setAiPromptOperation(null);
+    setAiInstruction("");
+    setAiTargetSize({ width: 0, height: 0 });
+    setSaveOpen(false);
+    setSourceConflict(false);
+    setFloatingControlsPosition(null);
+    setAnnotationsPanelPosition(null);
+    void readResource();
+  }, [discardSelectionTransform, readResource]);
+
+  useLayoutEffect(() => {
+    const wasEditing = previousEditingRef.current;
+    previousEditingRef.current = editing;
+    if (wasEditing && !editing) discardEditingDraft();
+  }, [discardEditingDraft, editing]);
 
   useEffect(() => {
     const content = contentRef.current;
@@ -1319,7 +1351,10 @@ export function WorkPanelResourceImage({
         ) : (
           <>
             <div className="work-panel-image-toolbar-actions">
-              <ImageToolbarButton label={t("chatWorkPanel.image.done")} className="is-return-to-preview" disabled={Boolean(aiBusy) || saveBusy} onClick={() => onEditingChange(false)}><ArrowLeftOutlined /></ImageToolbarButton>
+              <ImageToolbarButton label={t("chatWorkPanel.image.done")} className="is-return-to-preview" disabled={Boolean(aiBusy) || saveBusy} onClick={() => {
+                setError("");
+                onEditingChange(false);
+              }}><ArrowLeftOutlined /></ImageToolbarButton>
               <ImageToolbarButton label={t("chatWorkPanel.image.undo")} disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /></ImageToolbarButton>
               <ImageToolbarButton label={t("chatWorkPanel.image.redo")} disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /></ImageToolbarButton>
             </div>

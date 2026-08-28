@@ -5695,6 +5695,8 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   assert.match(source, /function ImageToolButton[\s\S]*?<Tooltip title=\{label\} placement="right" mouseEnterDelay=\{0\.15\}>/u);
   assert.doesNotMatch(source, /title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|apply|rotate|flipHorizontal|flipVertical|lockAspect|resize|adjust|aiTools)"\)\}/u);
   assert.match(source, /<ImageToolbarButton label=\{t\("chatWorkPanel\.image\.done"\)\} className="is-return-to-preview"[\s\S]*?<ArrowLeftOutlined \/><\/ImageToolbarButton>/u);
+  assert.match(source, /const discardEditingDraft = useCallback[\s\S]*?setHistory\(\[\]\)[\s\S]*?setError\(""\)[\s\S]*?setAnnotations\(\[\]\)[\s\S]*?void readResource\(\)/u);
+  assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?wasEditing && !editing[\s\S]*?discardEditingDraft\(\)/u);
   assert.match(source, /label=\{t\("chatWorkPanel\.image\.save"\)\} className=\{pixelDirty && !saveBusy && !aiBusy && !sourceConflict \? "is-primary" : ""\}/u);
   assert.match(
     source,
