@@ -211,3 +211,46 @@ final result: passed
 - [x] Combined visual comparison reviewed at original capture detail.
 
 final result: passed
+
+---
+
+# Desktop Runtime Observer — Design QA
+
+## Evidence
+
+- Visual truth: `/Users/linlay/.codex/generated_images/01a04648-ecde-7041-a3fb-3886070d0185/exec-80a054eb-53c0-4644-a91e-c803a5a9c64d.png`
+- Implementation screenshot: `qa/runtime-observer-implementation-final.png`
+- Full-view comparison: `qa/runtime-observer-design-comparison-final.png`
+- Focused detail comparison: `qa/runtime-observer-detail-comparison.png`
+- Reference pixels: 1487 × 1058, normalized to 1440 × 1024 for comparison
+- Implementation pixels / CSS viewport: 1440 × 1024 at device scale factor 1
+- Compared state: dark theme, Targets view, `copilot-dock` selected, Overview detail tab, live sampling enabled
+
+## Findings and fixes
+
+| Severity | Finding | Resolution |
+| --- | --- | --- |
+| P1 | When the optional error row was absent, the body occupied the wrong grid row and left a large blank lower region. | Assigned explicit grid rows to the error banner and observer body. |
+| P2 | The application-level dark-theme `code` rule added blue boxes behind WebContents and PID cells. | Scoped a higher-specificity target-row code style to the observer. |
+| P2 | Overview was materially sparser than the selected design and hid the memory/event relationship. | Added compact five-minute memory and recent-event sections to Overview while retaining dedicated tabs. |
+| P2 | Only registered surfaces and orphan WebViews were visible, leaving live window/utility WebContents out of the runtime view. | Included every live WebContents and every Chromium process; only an unregistered WebView is marked orphaned. |
+
+## Functional verification
+
+- Search filters targets and process-only groups.
+- Pause/resume, refresh, clear trace, target selection, sorting, four main views, and four detail tabs respond correctly.
+- Memory values are explicitly process-level RSS; rows sharing a renderer are labelled `shared` rather than presenting invented per-WebView memory.
+- Target URLs are sanitized in the main process before reaching the renderer.
+- DevTools can only be opened for a currently live WebView.
+- Browser console contains no warnings or errors from the implementation.
+
+## Accepted P3 differences
+
+- Live target count and table density depend on the actual Electron runtime rather than being padded to match mock content.
+- Per-target reload was intentionally omitted from this read-oriented observer; refresh reloads diagnostics without mutating a WebView.
+- The memory curve uses real samples collected while the observer is open, so a fresh session begins with a short line rather than fabricated history.
+
+## Final result
+
+passed
+

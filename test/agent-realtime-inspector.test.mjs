@@ -40,6 +40,8 @@ test("Desktop Runtime Observer combines targets, memory, topology, and realtime 
   assert.match(page, /MEMORY_HISTORY_WINDOW_MS = 5 \* 60 \* 1_000/);
   assert.match(page, /openAgentRealtimeTargetDevTools/);
   assert.match(page, /processMemoryExplanation/);
+  assert.match(page, /className="runtime-detail-section runtime-overview-memory"/);
+  assert.match(page, /className="runtime-detail-events is-compact"/);
   assert.match(page, /connection\?\.lastHeartbeatAt/);
   assert.match(page, /run\.lastRestoreResult/);
   assert.match(page, /eventSurfaceId !== "all" && entry\.surfaceId !== eventSurfaceId/);
@@ -63,6 +65,8 @@ test("runtime diagnostics stay main-owned and sanitize target URLs", () => {
   assert.match(register, /parsed\.search = ""/);
   assert.match(register, /parsed\.hash = ""/);
   assert.match(register, /app\.getAppMetrics\(\)/);
+  assert.match(register, /const orphaned = contents\.type === "webview"/);
+  assert.doesNotMatch(register, /contents\.type !== "webview" \|\| claimedWebContentsIds/);
   assert.match(registry, /listDiagnosticSurfaces/);
   assert.match(registry, /listWebContentsDiagnostics/);
   assert.match(preload, /diagnostics\.openAgentRealtimeTargetDevTools/);
