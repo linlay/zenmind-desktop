@@ -1008,10 +1008,22 @@ export function WorkPanelResourceImage({
         {editing ? (
           <aside className="work-panel-image-editor-sidebar" role="toolbar" aria-orientation="vertical" aria-label={t("chatWorkPanel.image.photoTools")}>
             <div className="work-panel-image-editor-tool-group">
-              <ImageToolButton label={t("chatWorkPanel.image.pan")} className={tool === "pan" ? "is-active" : ""} onClick={() => setTool("pan")}><DragOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.annotate")} className={tool === "annotate" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("annotate")}><HighlightOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.selection")} className={tool === "select" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("select")}><BorderOutlined /></ImageToolButton>
-              <ImageToolButton label={t("chatWorkPanel.image.crop")} className={tool === "crop" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("crop")}><ScissorOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.pan")} className={tool === "pan" ? "is-active" : ""} onClick={() => {
+                setAdjustOpen(false);
+                setTool("pan");
+              }}><DragOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.annotate")} className={tool === "annotate" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setTool("annotate");
+              }}><HighlightOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.selection")} className={tool === "select" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setTool("select");
+              }}><BorderOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.crop")} className={tool === "crop" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
+                setAdjustOpen(false);
+                setTool("crop");
+              }}><ScissorOutlined /></ImageToolButton>
               {tool === "crop" && cropRect ? <ImageToolButton label={t("chatWorkPanel.image.apply")} className="is-confirm" onClick={() => void applyCrop()}><CheckOutlined /></ImageToolButton> : null}
             </div>
             <div className="work-panel-image-editor-tool-group is-secondary">
@@ -1022,6 +1034,7 @@ export function WorkPanelResourceImage({
               <ImageToolButton label={t("chatWorkPanel.image.resize")} disabled={Boolean(aiBusy)} onClick={() => void resizeImage()}><CompressOutlined /></ImageToolButton>
               <ImageToolButton label={t("chatWorkPanel.image.adjust")} className={adjustOpen ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
                 setAiOpen(false);
+                setTool("pan");
                 setAdjustOpen((value) => !value);
               }}><ControlOutlined /></ImageToolButton>
             </div>
@@ -1036,80 +1049,84 @@ export function WorkPanelResourceImage({
         ) : null}
         <div className="work-panel-image-content">
 
-      {editing && tool === "annotate" ? (
-        <div className="work-panel-image-subtoolbar is-guidance" role="status">
-          <HighlightOutlined />
-          <strong>{t("chatWorkPanel.image.annotationHintTitle")}</strong>
-          <span>{t("chatWorkPanel.image.annotationHint")}</span>
-        </div>
-      ) : null}
+      {editing && (tool === "annotate" || tool === "select" || adjustOpen || aiOpen) ? (
+        <div className="work-panel-image-floating-controls">
+          {tool === "annotate" ? (
+            <div className="work-panel-image-subtoolbar is-guidance" role="status">
+              <HighlightOutlined />
+              <strong>{t("chatWorkPanel.image.annotationHintTitle")}</strong>
+              <span>{t("chatWorkPanel.image.annotationHint")}</span>
+            </div>
+          ) : null}
 
-      {editing && tool === "select" ? (
-        <div className="work-panel-image-subtoolbar">
-          <span className="work-panel-image-subtoolbar-hint"><BorderOutlined /> {t("chatWorkPanel.image.selectionHint")}</span>
-          <select value={selectionTool} onChange={(event) => setSelectionTool(event.target.value as SelectionTool)}>
-            <option value="rectangle">{t("chatWorkPanel.image.selectionRectangle")}</option>
-            <option value="ellipse">{t("chatWorkPanel.image.selectionEllipse")}</option>
-            <option value="lasso">{t("chatWorkPanel.image.selectionLasso")}</option>
-            <option value="brush">{t("chatWorkPanel.image.selectionBrush")}</option>
-          </select>
-          <button type="button" className={selectionMode === "add" ? "is-active" : ""} onClick={() => setSelectionMode("add")}>{t("chatWorkPanel.image.selectionAdd")}</button>
-          <button type="button" className={selectionMode === "subtract" ? "is-active" : ""} onClick={() => setSelectionMode("subtract")}>{t("chatWorkPanel.image.selectionSubtract")}</button>
-          {selectionTool === "brush" ? <input type="range" min={5} max={200} value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} /> : null}
-          <button type="button" onClick={invertSelection}>{t("chatWorkPanel.image.selectionInvert")}</button>
-          <button type="button" onClick={clearSelection}>{t("chatWorkPanel.image.selectionClear")}</button>
-        </div>
-      ) : null}
+          {tool === "select" ? (
+            <div className="work-panel-image-subtoolbar">
+              <span className="work-panel-image-subtoolbar-hint"><BorderOutlined /> {t("chatWorkPanel.image.selectionHint")}</span>
+              <select value={selectionTool} onChange={(event) => setSelectionTool(event.target.value as SelectionTool)}>
+                <option value="rectangle">{t("chatWorkPanel.image.selectionRectangle")}</option>
+                <option value="ellipse">{t("chatWorkPanel.image.selectionEllipse")}</option>
+                <option value="lasso">{t("chatWorkPanel.image.selectionLasso")}</option>
+                <option value="brush">{t("chatWorkPanel.image.selectionBrush")}</option>
+              </select>
+              <button type="button" className={selectionMode === "add" ? "is-active" : ""} onClick={() => setSelectionMode("add")}>{t("chatWorkPanel.image.selectionAdd")}</button>
+              <button type="button" className={selectionMode === "subtract" ? "is-active" : ""} onClick={() => setSelectionMode("subtract")}>{t("chatWorkPanel.image.selectionSubtract")}</button>
+              {selectionTool === "brush" ? <input type="range" min={5} max={200} value={brushSize} onChange={(event) => setBrushSize(Number(event.target.value))} /> : null}
+              <button type="button" onClick={invertSelection}>{t("chatWorkPanel.image.selectionInvert")}</button>
+              <button type="button" onClick={clearSelection}>{t("chatWorkPanel.image.selectionClear")}</button>
+            </div>
+          ) : null}
 
-      {editing && adjustOpen ? (
-        <div className="work-panel-image-adjustments">
-          {(["exposure", "contrast", "saturation"] as const).map((key) => (
-            <label key={key}>
-              <span>{t(`chatWorkPanel.image.${key}`)}</span>
-              <input type="range" min={-100} max={100} value={adjust[key]} onChange={(event) => setAdjust((value) => ({ ...value, [key]: Number(event.target.value) }))} />
-              <output>{adjust[key]}</output>
-              <button type="button" onClick={() => setAdjust((value) => ({ ...value, [key]: 0 }))}>{t("chatWorkPanel.image.reset")}</button>
-            </label>
-          ))}
-          <button type="button" onClick={() => setAdjust({ exposure: 0, contrast: 0, saturation: 0 })}>{t("chatWorkPanel.image.resetAll")}</button>
-          <button type="button" className="is-primary" onClick={() => void applyAdjustments()}>{t("chatWorkPanel.image.apply")}</button>
-        </div>
-      ) : null}
+          {adjustOpen ? (
+            <div className="work-panel-image-adjustments">
+              {(["exposure", "contrast", "saturation"] as const).map((key) => (
+                <label key={key}>
+                  <span>{t(`chatWorkPanel.image.${key}`)}</span>
+                  <input type="range" min={-100} max={100} value={adjust[key]} onChange={(event) => setAdjust((value) => ({ ...value, [key]: Number(event.target.value) }))} />
+                  <output>{adjust[key]}</output>
+                  <button type="button" onClick={() => setAdjust((value) => ({ ...value, [key]: 0 }))}>{t("chatWorkPanel.image.reset")}</button>
+                </label>
+              ))}
+              <button type="button" onClick={() => setAdjust({ exposure: 0, contrast: 0, saturation: 0 })}>{t("chatWorkPanel.image.resetAll")}</button>
+              <button type="button" className="is-primary" onClick={() => void applyAdjustments()}>{t("chatWorkPanel.image.apply")}</button>
+            </div>
+          ) : null}
 
-      {editing && aiOpen ? (
-        <section className={`work-panel-image-ai-panel${annotations.length > 0 ? " has-annotations" : ""}`} aria-label={t("chatWorkPanel.image.aiTools")}>
-          <header>
-            <span><ThunderboltOutlined /> <strong>{t("chatWorkPanel.image.aiTools")}</strong></span>
-            <button type="button" aria-label={t("common.close")} onClick={() => setAiOpen(false)}>×</button>
-          </header>
-          <p>{t("chatWorkPanel.image.aiPanelHint")}</p>
-          <div className="work-panel-image-ai-region-actions">
-            <button type="button" className={tool === "select" ? "is-active" : ""} onClick={() => setTool("select")}><BorderOutlined /> {t("chatWorkPanel.image.useSelection")}</button>
-            <button type="button" className={tool === "annotate" ? "is-active" : ""} onClick={() => setTool("annotate")}><HighlightOutlined /> {t("chatWorkPanel.image.useAnnotation")}</button>
-          </div>
-          <div className="work-panel-image-ai-region-status">
-            <span className={hasSelection ? "is-ready" : ""}>{hasSelection ? t("chatWorkPanel.image.selectionReady") : t("chatWorkPanel.image.selectionEmpty")}</span>
-            <span className={annotations.length > 0 ? "is-ready" : ""}>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
-          </div>
-          {error ? <div className="work-panel-image-ai-inline-error" role="alert">{error}</div> : null}
-          <label className="work-panel-image-ai-instruction">
-            <span>{t("chatWorkPanel.image.aiInstruction")}</span>
-            <textarea
-              value={aiInstruction}
-              maxLength={4_000}
-              placeholder={t("chatWorkPanel.image.aiInstructionPlaceholder")}
-              onChange={(event) => setAiInstruction(event.target.value)}
-            />
-          </label>
-          <div className="work-panel-image-ai-tools">
-            <button type="button" className="is-primary" onClick={() => void runAi("inpaint")}><ThunderboltOutlined /> {t("chatWorkPanel.image.smartEdit")}</button>
-            <button type="button" onClick={() => void runAi("removeObject")}><EditOutlined /> {t("chatWorkPanel.image.removeObject")}</button>
-            <button type="button" onClick={() => void runAi("removeBackground")}><BgColorsOutlined /> {t("chatWorkPanel.image.removeBackground")}</button>
-            <button type="button" onClick={() => void runAi("replaceBackground")}><PictureOutlined /> {t("chatWorkPanel.image.replaceBackground")}</button>
-            <button type="button" onClick={() => void runAi("outpaint")}><ExpandOutlined /> {t("chatWorkPanel.image.outpaint")}</button>
-            <button type="button" onClick={() => void runAi("enhance")}><ControlOutlined /> {t("chatWorkPanel.image.enhance")}</button>
-          </div>
-        </section>
+          {aiOpen ? (
+            <section className={`work-panel-image-ai-panel${annotations.length > 0 ? " has-annotations" : ""}`} aria-label={t("chatWorkPanel.image.aiTools")}>
+              <header>
+                <span><ThunderboltOutlined /> <strong>{t("chatWorkPanel.image.aiTools")}</strong></span>
+                <button type="button" aria-label={t("common.close")} onClick={() => setAiOpen(false)}>×</button>
+              </header>
+              <p>{t("chatWorkPanel.image.aiPanelHint")}</p>
+              <div className="work-panel-image-ai-region-actions">
+                <button type="button" className={tool === "select" ? "is-active" : ""} onClick={() => setTool("select")}><BorderOutlined /> {t("chatWorkPanel.image.useSelection")}</button>
+                <button type="button" className={tool === "annotate" ? "is-active" : ""} onClick={() => setTool("annotate")}><HighlightOutlined /> {t("chatWorkPanel.image.useAnnotation")}</button>
+              </div>
+              <div className="work-panel-image-ai-region-status">
+                <span className={hasSelection ? "is-ready" : ""}>{hasSelection ? t("chatWorkPanel.image.selectionReady") : t("chatWorkPanel.image.selectionEmpty")}</span>
+                <span className={annotations.length > 0 ? "is-ready" : ""}>{t("chatWorkPanel.image.annotationCount", { count: annotations.length })}</span>
+              </div>
+              {error ? <div className="work-panel-image-ai-inline-error" role="alert">{error}</div> : null}
+              <label className="work-panel-image-ai-instruction">
+                <span>{t("chatWorkPanel.image.aiInstruction")}</span>
+                <textarea
+                  value={aiInstruction}
+                  maxLength={4_000}
+                  placeholder={t("chatWorkPanel.image.aiInstructionPlaceholder")}
+                  onChange={(event) => setAiInstruction(event.target.value)}
+                />
+              </label>
+              <div className="work-panel-image-ai-tools">
+                <button type="button" className="is-primary" onClick={() => void runAi("inpaint")}><ThunderboltOutlined /> {t("chatWorkPanel.image.smartEdit")}</button>
+                <button type="button" onClick={() => void runAi("removeObject")}><EditOutlined /> {t("chatWorkPanel.image.removeObject")}</button>
+                <button type="button" onClick={() => void runAi("removeBackground")}><BgColorsOutlined /> {t("chatWorkPanel.image.removeBackground")}</button>
+                <button type="button" onClick={() => void runAi("replaceBackground")}><PictureOutlined /> {t("chatWorkPanel.image.replaceBackground")}</button>
+                <button type="button" onClick={() => void runAi("outpaint")}><ExpandOutlined /> {t("chatWorkPanel.image.outpaint")}</button>
+                <button type="button" onClick={() => void runAi("enhance")}><ControlOutlined /> {t("chatWorkPanel.image.enhance")}</button>
+              </div>
+            </section>
+          ) : null}
+        </div>
       ) : null}
 
       {sourceConflict ? (

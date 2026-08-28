@@ -5707,6 +5707,8 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   assert.match(styles, /\.work-panel-image-editor-sidebar\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*flex-direction:\s*column;[^}]*overflow-y:\s*auto;/u);
   assert.match(styles, /\.work-panel-image-editor-sidebar button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
   assert.match(styles, /\.work-panel-image-tool-tooltip-anchor\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
+  assert.match(styles, /button\.is-ai\s*\{[^}]*border-color:[^}]*linear-gradient\(145deg,[^}]*#7555ee[^}]*#3385f5/u);
+  assert.match(styles, /button\.is-ai\.is-active\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
   assert.match(styles, /\.work-panel-image-save-actions\s*\{[^}]*display:\s*flex;/u);
 });
 
@@ -5717,6 +5719,7 @@ test("native image annotation and AI tools share visible region editing", () => 
     "work-panel",
     "WorkPanelResourceImage.tsx"
   );
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
   const contract = readSourceFile("src", "shared", "work-panel-resource-image.ts");
 
   assert.match(source, /setGesturePreview\(\{ kind: "annotate", points: \[drawStartRef\.current, point\] \}\)/u);
@@ -5725,6 +5728,9 @@ test("native image annotation and AI tools share visible region editing", () => 
   assert.match(source, /selectionMaskBase64\(annotationRegions\)/u);
   assert.match(source, /runAi\("inpaint"\)/u);
   assert.match(source, /className="work-panel-image-ai-region-actions"/u);
+  assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-ai-panel/u);
+  assert.match(styles, /\.work-panel-image-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*max-height:\s*calc\(100% - 20px\);[^}]*overflow:\s*auto;/u);
+  assert.match(styles, /\.work-panel-image-ai-panel\s*\{[^}]*position:\s*static;[^}]*width:\s*100%;/u);
   assert.match(contract, /\| "inpaint"[\s\S]*?\| "removeObject"/u);
 });
 
