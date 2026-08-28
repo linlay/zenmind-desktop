@@ -1360,6 +1360,7 @@ export function WorkPanelResourceImage({
                 trigger={["hover", "focus"]}
                 placement="rightTop"
                 mouseEnterDelay={0.15}
+                classNames={{ root: "work-panel-image-transform-popover" }}
                 content={(
                   <div className="work-panel-image-transform-flyout" role="menu" aria-label={t("chatWorkPanel.image.transform")}>
                     <strong>{t("chatWorkPanel.image.transform")}</strong>

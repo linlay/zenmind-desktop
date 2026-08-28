@@ -5710,6 +5710,9 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
   assert.match(styles, /\.work-panel-image-editor-sidebar button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
   assert.match(styles, /\.work-panel-image-tool-tooltip-anchor\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
   assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?placement="rightTop"[\s\S]*?chatWorkPanel\.image\.transform[\s\S]*?chatWorkPanel\.image\.rotate[\s\S]*?chatWorkPanel\.image\.flipHorizontal[\s\S]*?chatWorkPanel\.image\.flipVertical[\s\S]*?chatWorkPanel\.image\.freeTransform/u);
+  assert.match(source, /classNames=\{\{ root: "work-panel-image-transform-popover" \}\}/u);
+  assert.match(styles, /\.work-panel-image-transform-popover\s*\{[^}]*--antd-arrow-background-color:\s*var\(--embedded-surface-page-bg\);/u);
+  assert.match(styles, /\.work-panel-image-transform-popover \.ant-popover-inner\s*\{[^}]*background:\s*var\(--embedded-surface-page-bg\);/u);
   assert.match(source, /chatWorkPanel\.image\.resize[\s\S]*?chatWorkPanel\.image\.canvasSize[\s\S]*?chatWorkPanel\.image\.adjust/u);
   assert.match(styles, /button\.is-ai-tool\s*\{[^}]*border-color:[^}]*linear-gradient\(145deg,[^}]*#7555ee[^}]*#3385f5/u);
   assert.match(styles, /button\.is-ai-tool\.is-active\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
