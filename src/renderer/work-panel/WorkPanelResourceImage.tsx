@@ -1081,10 +1081,14 @@ export function WorkPanelResourceImage({
         }
         return;
       }
-      const sourceBlob = await fetch(current.url).then((response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return response.blob();
-      });
+      const sourceImage = await loadImage(current.url);
+      const sourceCanvas = document.createElement("canvas");
+      sourceCanvas.width = current.width;
+      sourceCanvas.height = current.height;
+      const sourceContext = sourceCanvas.getContext("2d");
+      if (!sourceContext) throw new Error("image_canvas_unavailable");
+      sourceContext.drawImage(sourceImage, 0, 0, current.width, current.height);
+      const sourceBlob = await canvasBlob(sourceCanvas, current.mimeType);
       const sourceDataBase64 = await blobBase64(sourceBlob);
       const result = await window.electronAPI.chatWorkPanel.resourceImages.ai({
         ...handleRequest,

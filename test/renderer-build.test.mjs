@@ -5737,6 +5737,8 @@ test("native image selection and annotations have distinct movable AI workflows"
   assert.match(source, /const consumesAnnotations = operation === "inpaint"/u);
   assert.match(source, /selectionMaskBase64\(annotationRegions, operation === "removeObject"\)/u);
   assert.match(source, /const maskDataBase64 = requiresMask\s*\? await selectionMaskBase64[\s\S]*?: ""/u);
+  assert.doesNotMatch(source, /fetch\(current\.url\)/u);
+  assert.match(source, /const sourceImage = await loadImage\(current\.url\)[\s\S]*?sourceContext\.drawImage\(sourceImage[\s\S]*?canvasBlob\(sourceCanvas, current\.mimeType\)/u);
   assert.match(source, /catch \(reason\)[\s\S]*?aiFailedOperation[\s\S]*?setAiPromptOperation\(operation\)/u);
   assert.match(source, /const aiOperationLabel[\s\S]*?chatWorkPanel\.image\.smartEdit[\s\S]*?chatWorkPanel\.image\.enhance/u);
   assert.match(source, /aiRunningOperation[\s\S]*?aiOperationLabel\(aiBusy\.operation\)/u);
