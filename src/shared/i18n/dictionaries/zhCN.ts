@@ -335,7 +335,7 @@ export const zhCNMessages = {
   "chatWorkPanel.image.zoomOut": "缩小",
   "chatWorkPanel.image.fit": "适合窗口",
   "chatWorkPanel.image.edit": "编辑",
-  "chatWorkPanel.image.done": "完成",
+  "chatWorkPanel.image.done": "回到显示模式",
   "chatWorkPanel.image.undo": "撤销",
   "chatWorkPanel.image.redo": "重做",
   "chatWorkPanel.image.pan": "选择 / 平移",

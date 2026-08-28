@@ -335,7 +335,7 @@ export const enUSMessages = {
   "chatWorkPanel.image.zoomOut": "Zoom out",
   "chatWorkPanel.image.fit": "Fit window",
   "chatWorkPanel.image.edit": "Edit",
-  "chatWorkPanel.image.done": "Done",
+  "chatWorkPanel.image.done": "Back to view mode",
   "chatWorkPanel.image.undo": "Undo",
   "chatWorkPanel.image.redo": "Redo",
   "chatWorkPanel.image.pan": "Select / pan",

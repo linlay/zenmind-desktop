@@ -5671,7 +5671,6 @@ test("native image byte and decode failures stay silent and inert", () => {
   assert.match(rendererIndex, /img-src[^";]*blob:/u);
   assert.match(brandArtifacts, /img-src[^";]*blob:/u);
   assert.match(styles, /\.work-panel-resource-image\s*\{[\s\S]*?font-size:\s*12px;/u);
-  assert.match(styles, /\.work-panel-image-file-name\s*\{[\s\S]*?font-size:\s*14px;/u);
   assert.match(styles, /\.work-panel-image-toolbar button\.is-primary\s*\{[\s\S]*?font-size:\s*13px;/u);
   assert.match(styles, /\.work-panel-image-zoom-control input\s*\{[\s\S]*?font-size:\s*12px;/u);
 });
@@ -5690,15 +5689,24 @@ test("native image modes keep viewing actions on top and photo tools in a sideba
     /!editing \? \([\s\S]*?className="work-panel-image-open-with"[\s\S]*?className="work-panel-image-edit-button"[\s\S]*?\) : \(/u
   );
   assert.equal(source.match(/className="work-panel-image-open-with"/gu)?.length, 1);
+  assert.doesNotMatch(source, /className="work-panel-image-file"/u);
+  assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?<strong>\{resource\.fileName\}<\/strong>/u);
   assert.match(source, /className="work-panel-image-editor-sidebar"[\s\S]*?aria-orientation="vertical"/u);
+  assert.match(source, /function ImageToolButton[\s\S]*?<Tooltip title=\{label\} placement="right" mouseEnterDelay=\{0\.15\}>/u);
+  assert.doesNotMatch(source, /title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|apply|rotate|flipHorizontal|flipVertical|lockAspect|resize|adjust|aiTools)"\)\}/u);
+  assert.match(source, /<ImageToolbarButton label=\{t\("chatWorkPanel\.image\.done"\)\}[\s\S]*?<EyeOutlined \/><\/ImageToolbarButton>/u);
   assert.match(
     source,
     /className="work-panel-image-save-actions"[\s\S]*?chatWorkPanel\.image\.cancel[\s\S]*?chatWorkPanel\.image\.overwrite[\s\S]*?chatWorkPanel\.image\.saveNew/u
   );
   assert.match(styles, /\.work-panel-image-toolbar\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/u);
+  assert.match(styles, /\.work-panel-image-toolbar\.is-preview\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
+  assert.match(styles, /\.work-panel-image-toolbar\.is-editing\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
+  assert.match(styles, /@container \(max-width: 760px\)[\s\S]*?\.work-panel-image-toolbar\.is-editing \.work-panel-image-toolbar-button-label\s*\{[^}]*display:\s*none;/u);
   assert.doesNotMatch(styles, /\.work-panel-image-toolbar\s*\{[^}]*overflow-x:\s*auto;/u);
   assert.match(styles, /\.work-panel-image-editor-sidebar\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*flex-direction:\s*column;[^}]*overflow-y:\s*auto;/u);
   assert.match(styles, /\.work-panel-image-editor-sidebar button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
+  assert.match(styles, /\.work-panel-image-tool-tooltip-anchor\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
   assert.match(styles, /\.work-panel-image-save-actions\s*\{[^}]*display:\s*flex;/u);
 });
 

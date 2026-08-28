@@ -6,6 +6,7 @@ import {
   ControlOutlined,
   DragOutlined,
   EditOutlined,
+  EyeOutlined,
   ExportOutlined,
   ExpandOutlined,
   HighlightOutlined,
@@ -22,14 +23,16 @@ import {
   ZoomInOutlined,
   ZoomOutOutlined,
 } from "@ant-design/icons";
-import { Popover } from "antd";
+import { Popover, Tooltip } from "antd";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
+  type ButtonHTMLAttributes,
   type PointerEvent as ReactPointerEvent,
+  type ReactNode,
   type WheelEvent as ReactWheelEvent,
 } from "react";
 import type { ImageRegionAnnotation } from "../../shared/work-panel-review";
@@ -57,6 +60,34 @@ type GesturePreview = {
   shape?: SelectionTool;
   points: Point[];
 };
+
+type ImageButtonProps = Omit<ButtonHTMLAttributes<HTMLButtonElement>, "aria-label" | "title" | "type"> & {
+  children: ReactNode;
+  label: string;
+};
+
+function ImageToolButton({ children, label, ...buttonProps }: ImageButtonProps) {
+  return (
+    <Tooltip title={label} placement="right" mouseEnterDelay={0.15}>
+      <span className="work-panel-image-tool-tooltip-anchor">
+        <button {...buttonProps} type="button" aria-label={label}>{children}</button>
+      </span>
+    </Tooltip>
+  );
+}
+
+function ImageToolbarButton({ children, label, ...buttonProps }: ImageButtonProps) {
+  return (
+    <Tooltip title={label} mouseEnterDelay={0.15}>
+      <span className="work-panel-image-toolbar-button-anchor">
+        <button {...buttonProps} type="button" aria-label={label}>
+          {children}
+          <span className="work-panel-image-toolbar-button-label">{label}</span>
+        </button>
+      </span>
+    </Tooltip>
+  );
+}
 
 type WorkPanelResourceImageProps = {
   active: boolean;
@@ -894,20 +925,15 @@ export function WorkPanelResourceImage({
       data-native-image-ai-busy={aiBusy ? "true" : "false"}
       tabIndex={0}
     >
-      <div className="work-panel-image-toolbar" role="toolbar" aria-label={t("chatWorkPanel.image.toolbar")}>
+      <div className={`work-panel-image-toolbar${editing ? " is-editing" : " is-preview"}`} role="toolbar" aria-label={t("chatWorkPanel.image.toolbar")}>
         {!editing ? (
           <>
-            <div className="work-panel-image-file" title={resource.fileName}>
-              <PictureOutlined aria-hidden="true" />
-              <span className="work-panel-image-file-name">{resource.fileName}</span>
-              <span className="work-panel-image-file-meta">{imageFormat(resource.mimeType)} · {formatBytes(resource.sizeBytes)}</span>
-              <span className="work-panel-image-file-size">{current ? `${current.width} × ${current.height}` : "—"}</span>
-            </div>
             <Popover
-              trigger="click"
+              trigger={["hover", "focus"]}
               title={t("chatWorkPanel.image.info")}
               content={(
                 <div className="work-panel-image-info-content">
+                  <strong>{resource.fileName}</strong>
                   <span>{imageFormat(resource.mimeType)} · {formatBytes(resource.sizeBytes)}</span>
                   <span>{current ? `${current.width} × ${current.height}` : "—"}</span>
                 </div>
@@ -960,9 +986,9 @@ export function WorkPanelResourceImage({
         ) : (
           <>
             <div className="work-panel-image-toolbar-actions">
-              <button type="button" className="is-primary" disabled={Boolean(aiBusy) || saveBusy} onClick={() => onEditingChange(false)}><CheckOutlined /> {t("chatWorkPanel.image.done")}</button>
-              <button type="button" disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /> {t("chatWorkPanel.image.undo")}</button>
-              <button type="button" disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /> {t("chatWorkPanel.image.redo")}</button>
+              <ImageToolbarButton label={t("chatWorkPanel.image.done")} className="is-primary" disabled={Boolean(aiBusy) || saveBusy} onClick={() => onEditingChange(false)}><EyeOutlined /></ImageToolbarButton>
+              <ImageToolbarButton label={t("chatWorkPanel.image.undo")} disabled={historyIndex <= 0 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}><UndoOutlined /></ImageToolbarButton>
+              <ImageToolbarButton label={t("chatWorkPanel.image.redo")} disabled={historyIndex >= history.length - 1 || Boolean(aiBusy)} onClick={() => setHistoryIndex((index) => Math.min(history.length - 1, index + 1))}><RedoOutlined /></ImageToolbarButton>
             </div>
             <div className="work-panel-image-spacer" />
             <div className="work-panel-image-toolbar-actions">
@@ -972,7 +998,7 @@ export function WorkPanelResourceImage({
                 <span>%</span>
               </span>
               <button type="button" onClick={() => stepZoom(1)} aria-label={t("chatWorkPanel.image.zoomIn")}><ZoomInOutlined /></button>
-              <button type="button" className="is-primary" disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /> {t("chatWorkPanel.image.save")}</button>
+              <ImageToolbarButton label={t("chatWorkPanel.image.save")} className="is-primary" disabled={!pixelDirty || saveBusy || Boolean(aiBusy) || sourceConflict} onClick={() => setSaveOpen(true)}><SaveOutlined /></ImageToolbarButton>
             </div>
           </>
         )}
@@ -982,29 +1008,29 @@ export function WorkPanelResourceImage({
         {editing ? (
           <aside className="work-panel-image-editor-sidebar" role="toolbar" aria-orientation="vertical" aria-label={t("chatWorkPanel.image.photoTools")}>
             <div className="work-panel-image-editor-tool-group">
-              <button type="button" className={tool === "pan" ? "is-active" : ""} title={t("chatWorkPanel.image.pan")} aria-label={t("chatWorkPanel.image.pan")} onClick={() => setTool("pan")}><DragOutlined /></button>
-              <button type="button" className={tool === "annotate" ? "is-active" : ""} title={t("chatWorkPanel.image.annotate")} aria-label={t("chatWorkPanel.image.annotate")} disabled={Boolean(aiBusy)} onClick={() => setTool("annotate")}><HighlightOutlined /></button>
-              <button type="button" className={tool === "select" ? "is-active" : ""} title={t("chatWorkPanel.image.selection")} aria-label={t("chatWorkPanel.image.selection")} disabled={Boolean(aiBusy)} onClick={() => setTool("select")}><BorderOutlined /></button>
-              <button type="button" className={tool === "crop" ? "is-active" : ""} title={t("chatWorkPanel.image.crop")} aria-label={t("chatWorkPanel.image.crop")} disabled={Boolean(aiBusy)} onClick={() => setTool("crop")}><ScissorOutlined /></button>
-              {tool === "crop" && cropRect ? <button type="button" className="is-confirm" title={t("chatWorkPanel.image.apply")} aria-label={t("chatWorkPanel.image.apply")} onClick={() => void applyCrop()}><CheckOutlined /></button> : null}
+              <ImageToolButton label={t("chatWorkPanel.image.pan")} className={tool === "pan" ? "is-active" : ""} onClick={() => setTool("pan")}><DragOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.annotate")} className={tool === "annotate" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("annotate")}><HighlightOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.selection")} className={tool === "select" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("select")}><BorderOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.crop")} className={tool === "crop" ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => setTool("crop")}><ScissorOutlined /></ImageToolButton>
+              {tool === "crop" && cropRect ? <ImageToolButton label={t("chatWorkPanel.image.apply")} className="is-confirm" onClick={() => void applyCrop()}><CheckOutlined /></ImageToolButton> : null}
             </div>
             <div className="work-panel-image-editor-tool-group is-secondary">
-              <button type="button" title={t("chatWorkPanel.image.rotate")} aria-label={t("chatWorkPanel.image.rotate")} disabled={Boolean(aiBusy)} onClick={() => void transform("rotate")}><RotateRightOutlined /></button>
-              <button type="button" title={t("chatWorkPanel.image.flipHorizontal")} aria-label={t("chatWorkPanel.image.flipHorizontal")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-x")}><span aria-hidden="true">↔</span></button>
-              <button type="button" title={t("chatWorkPanel.image.flipVertical")} aria-label={t("chatWorkPanel.image.flipVertical")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-y")}><span aria-hidden="true">↕</span></button>
-              <button type="button" className={resizeAspectLocked ? "is-active" : ""} title={t("chatWorkPanel.image.lockAspect")} aria-label={t("chatWorkPanel.image.lockAspect")} disabled={Boolean(aiBusy)} aria-pressed={resizeAspectLocked} onClick={() => setResizeAspectLocked((value) => !value)}><LinkOutlined /></button>
-              <button type="button" title={t("chatWorkPanel.image.resize")} aria-label={t("chatWorkPanel.image.resize")} disabled={Boolean(aiBusy)} onClick={() => void resizeImage()}><CompressOutlined /></button>
-              <button type="button" className={adjustOpen ? "is-active" : ""} title={t("chatWorkPanel.image.adjust")} aria-label={t("chatWorkPanel.image.adjust")} disabled={Boolean(aiBusy)} onClick={() => {
+              <ImageToolButton label={t("chatWorkPanel.image.rotate")} disabled={Boolean(aiBusy)} onClick={() => void transform("rotate")}><RotateRightOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.flipHorizontal")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-x")}><span aria-hidden="true">↔</span></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.flipVertical")} disabled={Boolean(aiBusy)} onClick={() => void transform("flip-y")}><span aria-hidden="true">↕</span></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.lockAspect")} className={resizeAspectLocked ? "is-active" : ""} disabled={Boolean(aiBusy)} aria-pressed={resizeAspectLocked} onClick={() => setResizeAspectLocked((value) => !value)}><LinkOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.resize")} disabled={Boolean(aiBusy)} onClick={() => void resizeImage()}><CompressOutlined /></ImageToolButton>
+              <ImageToolButton label={t("chatWorkPanel.image.adjust")} className={adjustOpen ? "is-active" : ""} disabled={Boolean(aiBusy)} onClick={() => {
                 setAiOpen(false);
                 setAdjustOpen((value) => !value);
-              }}><ControlOutlined /></button>
+              }}><ControlOutlined /></ImageToolButton>
             </div>
             <div className="work-panel-image-more">
-              <button type="button" className={aiOpen ? "is-active is-ai" : "is-ai"} title={t("chatWorkPanel.image.aiTools")} aria-label={t("chatWorkPanel.image.aiTools")} aria-expanded={aiOpen} disabled={Boolean(aiBusy)} onClick={() => {
+              <ImageToolButton label={t("chatWorkPanel.image.aiTools")} className={aiOpen ? "is-active is-ai" : "is-ai"} aria-expanded={aiOpen} disabled={Boolean(aiBusy)} onClick={() => {
                 setAdjustOpen(false);
                 setError("");
                 setAiOpen((value) => !value);
-              }}><RobotOutlined /></button>
+              }}><RobotOutlined /></ImageToolButton>
             </div>
           </aside>
         ) : null}
