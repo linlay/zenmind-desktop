@@ -3926,14 +3926,13 @@ export function AppShell() {
   const handleMainChatSurfaceRegistrationChange = useCallback((
     state: ServiceWebviewSurfaceRegistrationState,
   ) => {
-    if (!state.active || !state.ownerChatId) {
+    const agentKey = state.agentKey.trim();
+    if (!state.active || !state.ownerChatId || !agentKey) {
       if (registeredMainChatSurfaceRef.current?.registrationId === state.registrationId) {
         registeredMainChatSurfaceRef.current = null;
       }
       return;
     }
-    const agentKey = activeChatRouteInfo.agentKey.trim();
-    if (activeChatRouteInfo.chatId !== state.ownerChatId || !agentKey) return;
     registeredMainChatSurfaceRef.current = {
       registrationId: state.registrationId,
       chatId: state.ownerChatId,
@@ -3948,7 +3947,7 @@ export function AppShell() {
       pendingChatWorkPanelOpenRef.current = null;
       completeChatWorkPanelOpen(pending.chatId, pending.agentKey, pending.action);
     }
-  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, completeChatWorkPanelOpen]);
+  }, [completeChatWorkPanelOpen]);
 
   async function handleOpenWebappInWorkPanel(
     ownerChatId: string,

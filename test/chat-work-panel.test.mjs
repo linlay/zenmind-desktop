@@ -32,6 +32,23 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /pendingChatWorkPanelOpenRef/u);
   assert.match(appShell, /requestChatWorkPanelOpenWhenRegistered/u);
   assert.match(appShell, /handleMainChatSurfaceRegistrationChange/u);
+  assert.match(appShell, /const agentKey = state\.agentKey\.trim\(\)/u);
+  assert.doesNotMatch(
+    appShell,
+    /activeChatRouteInfo\.chatId !== state\.ownerChatId/u,
+  );
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /agentKey: readAgentWebclientAgentRouteKey\([\s\S]{0,160}registration\.pageRouteIdentity/u,
+  );
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /onSurfaceRegistrationChangeRef\.current\?\.\(\{/u,
+  );
+  assert.doesNotMatch(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /\[\s*ownsActiveSurface,\s*onSurfaceRegistrationChange,/u,
+  );
   assert.match(appShell, /onMainChatSurfaceRegistrationChange=\{handleMainChatSurfaceRegistrationChange\}/u);
   assert.match(embeddedHosts, /onSurfaceRegistrationChange=\{onMainChatSurfaceRegistrationChange\}/u);
   assert.match(appShell, /activeChatId=\{activeChatWorkPanelVisible \? activeChatWorkPanelChatId : null\}/u);

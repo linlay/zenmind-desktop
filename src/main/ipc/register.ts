@@ -600,6 +600,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
         runId: run.runId,
         chatId: run.chatId,
         lastSeq: run.lastSeq,
+        ...(run.lastEventType ? { lastEventType: run.lastEventType } : {}),
+        ...(run.lastEventSeq === undefined ? {} : { lastEventSeq: run.lastEventSeq }),
+        ...(run.lastPlanTaskEventType
+          ? { lastPlanTaskEventType: run.lastPlanTaskEventType }
+          : {}),
+        ...(run.lastPlanTaskEventSeq === undefined
+          ? {}
+          : { lastPlanTaskEventSeq: run.lastPlanTaskEventSeq }),
         state: run.state,
         ...(run.terminalReason ? { terminalReason: run.terminalReason } : {}),
         ...(run.terminalSource ? { terminalSource: run.terminalSource } : {}),

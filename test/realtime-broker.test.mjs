@@ -212,6 +212,7 @@ test("Main Chat clones use local replay and never create upstream attach", async
     onEvent: (event) => mainEvents.push(event.type),
   });
   const pendingClone = broker.subscribeClone({
+    kind: "overview",
     runId: "run-clone",
     chatId: "chat-1",
     owner: { kind: "agent", agentKey: "agent-1" },
@@ -224,11 +225,23 @@ test("Main Chat clones use local replay and never create upstream attach", async
   const clone = await pendingClone;
   await query.accepted;
   socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("content.delta", "run-clone", "chat-1", 2, { delta: "A" }) });
+  socket("primary").emit({ frame: "stream", id: upstream.id, event: runEvent("plan.update", "run-clone", "chat-1", 3, { tasks: [] }) });
   await nextTurn();
 
-  assert.deepEqual(mainEvents, ["run.start", "content.delta"]);
-  assert.deepEqual(cloneEvents, ["run.start", "content.delta"]);
+  assert.deepEqual(mainEvents, ["run.start", "content.delta", "plan.update"]);
+  assert.deepEqual(cloneEvents, ["run.start", "content.delta", "plan.update"]);
   assert.equal(requestOfType(socket("primary"), "/api/attach").length, 0);
+  const diagnostics = broker.getDiagnostics();
+  assert.deepEqual(diagnostics.overviewLease.runIds, ["run-clone"]);
+  assert.deepEqual(diagnostics.overviewLease.subscribers, [{
+    runId: "run-clone",
+    chatId: "chat-1",
+    lastSeq: 3,
+  }]);
+  assert.equal(diagnostics.replay[0].lastEventType, "plan.update");
+  assert.equal(diagnostics.replay[0].lastEventSeq, 3);
+  assert.equal(diagnostics.replay[0].lastPlanTaskEventType, "plan.update");
+  assert.equal(diagnostics.replay[0].lastPlanTaskEventSeq, 3);
   clone.unsubscribe();
   assert.equal(requestOfType(socket("primary"), "/api/detach").length, 0);
 });

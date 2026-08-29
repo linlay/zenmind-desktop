@@ -13,6 +13,8 @@ test("Agent Realtime Inspector opens as one independent resizable window", () =>
   const controller = read("src", "main", "app-shell", "agent-realtime-inspector-window.ts");
   const runtime = read("src", "main", "app", "runtime.ts");
   const register = read("src", "main", "ipc", "register.ts");
+  const bridge = read("src", "main", "ipc", "agent-webclient-bridge-handlers.ts");
+  const page = read("src", "renderer", "pages", "AgentRealtimeInspectorPage.tsx");
   const preload = read("src", "preload", "index.ts");
 
   assert.match(controller, /const existingWindow = this\.getWindow\(\)/);
@@ -25,7 +27,11 @@ test("Agent Realtime Inspector opens as one independent resizable window", () =>
   assert.match(runtime, /AGENT_REALTIME_INSPECTOR_ROUTE = "\/agent-realtime-inspector"/);
   assert.match(register, /ipcMain\.handle\("diagnostics\.openAgentRealtimeInspector"/);
   assert.match(register, /overviewLease:\s*brokerDiagnostics\.overviewLease/);
+  assert.match(register, /lastPlanTaskEventType/);
+  assert.match(bridge, /streams: \[\.\.\.session\.streams\.values\(\)\]\.map\(streamBindingDiagnostic\)/);
   assert.match(read("src", "shared", "contracts", "desktop-api.ts"), /state:\s*"pending_chat_identity" \| "ready"/);
+  assert.match(page, /<h2>Overview lease<\/h2>/);
+  assert.match(page, /run\.lastPlanTaskEventType/);
   assert.match(preload, /openAgentRealtimeInspector: \(\) =>[\s\S]{0,100}diagnostics\.openAgentRealtimeInspector/);
 });
 

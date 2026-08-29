@@ -279,6 +279,14 @@ export interface AgentRealtimeDebugLogicalSession {
   closeReason?: string;
   pendingRequestCount: number;
   activeStreamCount: number;
+  streams: Array<{
+    requestId: string;
+    type: "/api/query" | "/api/attach" | "/api/btw";
+    runId: string;
+    chatId: string;
+    lastSeq: number;
+    virtual: boolean;
+  }>;
 }
 
 export interface AgentRealtimeDebugRunRecovery {
@@ -286,6 +294,10 @@ export interface AgentRealtimeDebugRunRecovery {
   runId: string;
   chatId: string;
   lastSeq: number;
+  lastEventType?: string;
+  lastEventSeq?: number;
+  lastPlanTaskEventType?: string;
+  lastPlanTaskEventSeq?: number;
   state: "observed" | "detaching" | "dormant" | "terminal";
   terminalReason?: string;
   terminalSource?: "query_stream" | "attach_stream" | "push";
@@ -338,8 +350,14 @@ export interface AgentRealtimeDebugSnapshot {
       contextEpoch: string;
       chatId?: string;
       runCount: number;
+      runIds: string[];
       pendingSubscriberCount: number;
       uiSubscriberCount: number;
+      subscribers: Array<{
+        runId: string;
+        chatId: string;
+        lastSeq: number;
+      }>;
     } | null;
     pendingCloneCount: number;
     pendingClones: Array<{

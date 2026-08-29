@@ -133,7 +133,19 @@ type ClosedLogicalSessionDiagnostic = {
   closeReason: DesktopPlatformSessionClose["reason"];
   pendingRequestCount: number;
   activeStreamCount: number;
+  streams: ReturnType<typeof streamBindingDiagnostic>[];
 };
+
+function streamBindingDiagnostic(binding: StreamBinding) {
+  return {
+    requestId: binding.localId,
+    type: binding.type,
+    runId: binding.runId,
+    chatId: binding.chatId,
+    lastSeq: binding.lastSeq,
+    virtual: binding.virtual,
+  };
+}
 
 function failure(code: AgentWebclientBridgeErrorCode, message: string): AgentWebclientBridgeFailure {
   return { ok: false, error: { code, message } };
@@ -669,6 +681,22 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     });
   };
 
+  const sendRunEvent = (
+    session: LogicalSession,
+    binding: StreamBinding,
+    runEvent: Record<string, unknown>,
+  ) => {
+    const seq = Number(runEvent.seq);
+    if (Number.isSafeInteger(seq) && seq >= 0) {
+      binding.lastSeq = Math.max(binding.lastSeq, seq);
+    }
+    sendFrame(session, {
+      frame: "stream",
+      id: binding.localId,
+      event: runEvent,
+    });
+  };
+
   const framePortState = (
     session: LogicalSession,
     state: ReturnType<RealtimeBroker["getConnectionState"]>,
@@ -718,6 +746,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       closeReason: reason,
       pendingRequestCount: session.requestIds.size,
       activeStreamCount: session.streams.size,
+      streams: [...session.streams.values()].map(streamBindingDiagnostic),
     });
     if (closedLogicalSessions.length > 200) closedLogicalSessions.splice(0, closedLogicalSessions.length - 200);
     session.closed = true;
@@ -1575,11 +1604,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           lastSeq: binding.lastSeq,
           owner: binding.owner,
           consumerId: session.consumerId,
-          onEvent: (runEvent) => sendFrame(session, {
-            frame: "stream",
-            id: binding.localId,
-            event: runEvent,
-          }),
+          onEvent: (runEvent) => sendRunEvent(session, binding, runEvent),
           onComplete: (completed) => {
             binding.unsubscribe?.();
             binding.unsubscribe = null;
@@ -1652,11 +1677,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           role: "root_observer",
           observerToken,
           consumerId: session.consumerId,
-          onEvent: (runEvent) => sendFrame(session, {
-            frame: "stream",
-            id: binding.localId,
-            event: runEvent,
-          }),
+          onEvent: (runEvent) => sendRunEvent(session, binding, runEvent),
           onComplete: (completed) => {
             binding.unsubscribe?.();
             binding.unsubscribe = null;
@@ -1923,6 +1944,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             openedAt: session.openedAt,
             pendingRequestCount: session.requestIds.size,
             activeStreamCount: session.streams.size,
+            streams: [...session.streams.values()].map(streamBindingDiagnostic),
           }];
         }),
       ],

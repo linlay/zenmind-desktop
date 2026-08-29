@@ -1202,8 +1202,20 @@ export class RealtimeBroker {
             contextEpoch: this.mainChatRootObserver.overviewLease.contextEpoch,
             chatId: this.mainChatRootObserver.overviewLease.chatId ?? undefined,
             runCount: this.mainChatRootObserver.overviewLease.runIds.size,
+            runIds: [...this.mainChatRootObserver.overviewLease.runIds].sort(),
             pendingSubscriberCount: this.mainChatRootObserver.overviewLease.pendingCloneIds.size,
             uiSubscriberCount: this.mainChatRootObserver.overviewLease.subscriberIds.size,
+            subscribers: [...this.mainChatRootObserver.overviewLease.subscriberIds]
+              .flatMap((subscriptionId) => {
+                const subscription = this.runSubscriptions.get(subscriptionId);
+                return subscription
+                  ? [{
+                      runId: subscription.runId,
+                      chatId: subscription.chatId,
+                      lastSeq: subscription.lastSeq,
+                    }]
+                  : [];
+              }),
           }
         : null,
       pendingClones: [...this.pendingClones.values()].map((pending) => ({
@@ -1214,34 +1226,50 @@ export class RealtimeBroker {
         waitReason: pending.waitReason,
       })),
       lastCloneCancellationReason: this.lastCloneCancellationReason || undefined,
-      replay: [...this.runChannels.values()].map((run) => ({
-        lane: run.lane,
-        runId: run.runId,
-        chatId: run.chatId,
-        eventCount: run.replay.length,
-        bytes: run.replayBytes,
-        lastSeq: run.lastSeq,
-        state: run.terminal
-          ? "terminal"
-          : run.detachInFlight
+      replay: [...this.runChannels.values()].map((run) => {
+        const lastEvent = run.replay.at(-1);
+        let lastPlanTaskEvent: (typeof run.replay)[number] | undefined;
+        for (let index = run.replay.length - 1; index >= 0; index -= 1) {
+          const candidate = run.replay[index];
+          const type = readText(candidate?.event.type);
+          if (type.startsWith("plan.") || type.startsWith("task.")) {
+            lastPlanTaskEvent = candidate;
+            break;
+          }
+        }
+        return {
+          lane: run.lane,
+          runId: run.runId,
+          chatId: run.chatId,
+          eventCount: run.replay.length,
+          bytes: run.replayBytes,
+          lastSeq: run.lastSeq,
+          lastEventType: readText(lastEvent?.event.type) || undefined,
+          lastEventSeq: lastEvent?.seq ?? undefined,
+          lastPlanTaskEventType: readText(lastPlanTaskEvent?.event.type) || undefined,
+          lastPlanTaskEventSeq: lastPlanTaskEvent?.seq ?? undefined,
+          state: run.terminal
+            ? "terminal"
+            : run.detachInFlight
+              ? "detaching"
+              : run.rootObserverTokens.size > 0 || this.hasSystemRunLease(run)
+                ? "observed"
+                : "dormant",
+          terminalReason: run.terminalReason || undefined,
+          terminalSource: run.terminalSource ?? undefined,
+          rootObserverCount: run.rootObserverTokens.size,
+          cloneCount: [...run.subscribers].filter((id) =>
+            this.runSubscriptions.get(id)?.role === "clone"
+          ).length,
+          upstreamState: run.detachInFlight
             ? "detaching"
-            : run.rootObserverTokens.size > 0 || this.hasSystemRunLease(run)
-              ? "observed"
-              : "dormant",
-        terminalReason: run.terminalReason || undefined,
-        terminalSource: run.terminalSource ?? undefined,
-        rootObserverCount: run.rootObserverTokens.size,
-        cloneCount: [...run.subscribers].filter((id) =>
-          this.runSubscriptions.get(id)?.role === "clone"
-        ).length,
-        upstreamState: run.detachInFlight
-          ? "detaching"
-          : run.upstreamRequestId
-            ? "attached"
-            : "detached",
-        restoreCount: run.restoreCount,
-        lastRestoreResult: run.lastRestoreResult,
-      })),
+            : run.upstreamRequestId
+              ? "attached"
+              : "detached",
+          restoreCount: run.restoreCount,
+          lastRestoreResult: run.lastRestoreResult,
+        };
+      }),
       ...this.diagnostics,
     };
   }

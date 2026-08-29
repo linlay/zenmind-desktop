@@ -100,6 +100,7 @@ export type ServiceWebviewSurfaceRegistrationState = {
   surfaceId: string;
   registrationId: string;
   webContentsId: number;
+  agentKey: string;
   ownerChatId: string;
 };
 
@@ -726,6 +727,7 @@ export function ServiceWebviewSurface({
     report: RendererDiagnosticReport;
   }>());
   const onCurrentUrlChangeRef = useRef(onCurrentUrlChange);
+  const onSurfaceRegistrationChangeRef = useRef(onSurfaceRegistrationChange);
   const pendingCanonicalChatSyncRef = useRef<PendingCanonicalChatSync | null>(null);
   const pendingNewChatPreparationRef = useRef<PendingNewChatPreparation | null>(null);
   const currentRouteWithHashRef = useRef(currentRouteWithHash);
@@ -829,6 +831,10 @@ export function ServiceWebviewSurface({
   useEffect(() => {
     onCurrentUrlChangeRef.current = onCurrentUrlChange;
   }, [onCurrentUrlChange]);
+
+  useEffect(() => {
+    onSurfaceRegistrationChangeRef.current = onSurfaceRegistrationChange;
+  }, [onSurfaceRegistrationChange]);
 
   useEffect(() => {
     if (!isAgentWebclientChatSurface(serviceId, surfaceId)) return undefined;
@@ -1243,11 +1249,14 @@ export function ServiceWebviewSurface({
       if (result.ok) {
         surfaceRegistrationRetryRef.current = 0;
         if (mainChatSurface) {
-          onSurfaceRegistrationChange?.({
+          onSurfaceRegistrationChangeRef.current?.({
             active: registrationActive,
             surfaceId: registration.surfaceId,
             registrationId: registration.registrationId,
             webContentsId,
+            agentKey: readAgentWebclientAgentRouteKey(
+              registration.pageRouteIdentity || registration.pageRoute || currentUrl,
+            ),
             ownerChatId: registration.ownerChatId?.trim() || "",
           });
         }
@@ -1404,7 +1413,6 @@ export function ServiceWebviewSurface({
     };
   }, [
     ownsActiveSurface,
-    onSurfaceRegistrationChange,
     ownerChatId,
     desiredDesktopRoute,
     effectiveEmbedPath,

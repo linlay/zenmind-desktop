@@ -674,6 +674,33 @@ export function AgentRealtimeInspectorPage() {
                 ))}
               </article>
               <article>
+                <h2>Overview lease</h2>
+                {snapshot?.broker.overviewLease ? (
+                  <>
+                    <dl>
+                      <div><dt>State</dt><dd>{snapshot.broker.overviewLease.state}</dd></div>
+                      <div><dt>Chat</dt><dd>{snapshot.broker.overviewLease.chatId || "—"}</dd></div>
+                      <div><dt>Generation</dt><dd>{snapshot.broker.overviewLease.parentGeneration}</dd></div>
+                      <div><dt>Context epoch</dt><dd>{snapshot.broker.overviewLease.contextEpoch}</dd></div>
+                      <div><dt>Runs</dt><dd>{snapshot.broker.overviewLease.runIds.join(", ") || "—"}</dd></div>
+                      <div><dt>Pending / UI</dt><dd>{snapshot.broker.overviewLease.pendingSubscriberCount} / {snapshot.broker.overviewLease.uiSubscriberCount}</dd></div>
+                    </dl>
+                    <div className="runtime-system-list">
+                      {snapshot.broker.overviewLease.subscribers.map((subscriber, index) => (
+                        <div key={`${subscriber.runId}:${subscriber.chatId}:${index}`}>
+                          <code>{subscriber.runId}</code>
+                          <span>{subscriber.chatId}</span>
+                          <span>seq {subscriber.lastSeq}</span>
+                        </div>
+                      ))}
+                      {!snapshot.broker.overviewLease.subscribers.length
+                        ? <div className="runtime-empty">No Overview UI subscriber</div>
+                        : null}
+                    </div>
+                  </>
+                ) : <div className="runtime-empty">No active Overview lease</div>}
+              </article>
+              <article>
                 <h2>{t("settings.debug.realtime.logicalFramePorts")}</h2>
                 <div className="runtime-system-list">
                   {(snapshot?.logicalSessions || []).map((session) => (
@@ -682,6 +709,11 @@ export function AgentRealtimeInspectorPage() {
                       if (target) selectTarget(target);
                     }}>
                       <code>{session.logicalSessionId}</code><span>{session.surfaceId || "—"}</span><span>{session.phase}</span><span>L{session.logicalGeneration} / P{session.physicalGeneration}</span>
+                      {session.streams.map((stream) => (
+                        <span key={stream.requestId} title={`${stream.type} ${stream.chatId}`}>
+                          {stream.virtual ? "clone" : "root"} {stream.runId || "pending"} · seq {stream.lastSeq}
+                        </span>
+                      ))}
                     </button>
                   ))}
                   {!snapshot?.logicalSessions.length ? <div className="runtime-empty">{t("settings.debug.realtime.noLogicalSessions")}</div> : null}
@@ -692,7 +724,10 @@ export function AgentRealtimeInspectorPage() {
                 <div className="runtime-system-list">
                   {(snapshot?.runRecovery || []).map((run) => (
                     <div key={run.runId}>
-                      <code>{run.runId}</code><span>{run.lane}</span><span>seq {run.lastSeq}</span><span>{run.state} / {run.upstreamState}</span><span title={run.lastRestoreResult}>{run.lastRestoreResult}</span>
+                      <code>{run.runId}</code><span>{run.lane}</span><span>seq {run.lastSeq}</span><span>{run.state} / {run.upstreamState}</span><span>clones {run.cloneCount}</span>
+                      <span>last {run.lastEventType || "—"}{run.lastEventSeq === undefined ? "" : ` @${run.lastEventSeq}`}</span>
+                      <span>plan/task {run.lastPlanTaskEventType || "—"}{run.lastPlanTaskEventSeq === undefined ? "" : ` @${run.lastPlanTaskEventSeq}`}</span>
+                      <span title={run.lastRestoreResult}>{run.lastRestoreResult}</span>
                     </div>
                   ))}
                   {!snapshot?.runRecovery.length ? <div className="runtime-empty">{t("settings.debug.realtime.noTrackedRuns")}</div> : null}
