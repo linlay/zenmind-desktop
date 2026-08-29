@@ -1,5 +1,6 @@
 import {
   AppstoreOutlined,
+  ArrowLeftOutlined,
   BugOutlined,
   CloseOutlined,
   DashboardOutlined,
@@ -1865,7 +1866,7 @@ export function WorkPanelHost({
                   return (
                     <div
                       key={item.itemId}
-                      className={`chat-work-panel-item${active ? " is-active" : ""}${showResourcePreviewToolbar ? " has-preview-toolbar" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}`}
+                      className={`chat-work-panel-item${active ? " is-active" : ""}${showResourcePreviewToolbar ? " has-preview-toolbar" : ""}${reviewActive && reviewSession ? " is-reviewing" : ""}${reviewActive && reviewSession?.kind === "html" ? " is-html-review" : ""}`}
                       data-work-panel-active={active ? "true" : "false"}
                       data-work-panel-item={item.itemId}
                       data-work-panel-owner={workspace.ownerChatId}
@@ -1879,70 +1880,86 @@ export function WorkPanelHost({
                           aria-label={t("chatWorkPanel.previewToolbar.label")}
                         >
                           <div className="external-webview-page is-work-panel-browser">
-                            <div className="external-webview-toolbar">
-                              <div className="external-webview-toolbar-actions">
-                                <button
-                                  type="button"
-                                  className="external-webview-toolbar-button"
-                                  onClick={() => {
-                                    const session = getWorkPanelReviewSession(
-                                      stateRef.current.review,
-                                      workspace.ownerChatId,
-                                      item.itemId,
-                                    );
-                                    if (hasWorkPanelReviewDraft(session) && !session?.invalidReason) {
-                                      dispatchCommand({
-                                        type: "markReviewInvalid",
-                                        ownerChatId: workspace.ownerChatId,
-                                        itemId: item.itemId,
-                                        reason: "preview_reloaded",
-                                      });
-                                    }
-                                    try {
-                                      findItemWebview(workspace.ownerChatId, item.itemId)?.reload();
-                                    } catch {
-                                      // The resource guest may have been replaced while this click was handled.
-                                    }
-                                  }}
-                                  aria-label={t("externalWebview.refresh")}
-                                  title={t("externalWebview.refresh")}
-                                >
-                                  <SidebarActionIcon kind="refresh" />
-                                </button>
-                              </div>
-                              <div className="external-webview-toolbar-location">
-                                <span className="external-webview-toolbar-location-icon" aria-hidden="true">
-                                  <FileTextOutlined />
-                                </span>
-                                <span
-                                  className="external-webview-toolbar-location-input is-static"
-                                  title={resourceReviewCapability?.fileName || item.title}
-                                >
-                                  {resourceReviewCapability?.fileName || item.title}
-                                </span>
-                                <button
-                                  type="button"
-                                  className={`external-webview-toolbar-edit${reviewActive ? " is-active" : ""}`}
-                                  disabled={!resourceReviewCapability}
-                                  onClick={() => toggleReviewForItem(workspace.ownerChatId, item)}
-                                  aria-label={t(reviewActive
-                                    ? "chatWorkPanel.tabContextMenu.exitReview"
-                                    : "chatWorkPanel.tabContextMenu.enterReview")}
-                                  aria-pressed={reviewActive}
-                                  title={resourceReviewCapability
-                                    ? t(reviewActive
-                                        ? "chatWorkPanel.tabContextMenu.exitReview"
-                                        : "chatWorkPanel.tabContextMenu.enterReview")
-                                    : t("chatWorkPanel.review.previewLoading")}
-                                >
-                                  <EditOutlined aria-hidden="true" />
-                                  <span className="external-webview-toolbar-edit-label">
-                                    {t(reviewActive
-                                      ? "externalWebview.finishPageReview"
-                                      : "externalWebview.editPage")}
+                            <div className={`external-webview-toolbar${reviewActive ? " is-review-mode" : ""}`}>
+                              {reviewActive ? (
+                                <>
+                                  <button
+                                    type="button"
+                                    className="external-webview-toolbar-return"
+                                    onClick={() => toggleReviewForItem(workspace.ownerChatId, item)}
+                                    aria-label={t("chatWorkPanel.review.returnPreview")}
+                                    title={t("chatWorkPanel.review.returnPreview")}
+                                  >
+                                    <ArrowLeftOutlined aria-hidden="true" />
+                                    <span>{t("chatWorkPanel.review.returnPreview")}</span>
+                                  </button>
+                                  <span className="external-webview-toolbar-review-hint">
+                                    {t(reviewSession?.kind === "image"
+                                      ? "chatWorkPanel.review.imageTool"
+                                      : "chatWorkPanel.review.htmlTool")}
                                   </span>
-                                </button>
-                              </div>
+                                </>
+                              ) : (
+                                <>
+                                  <div className="external-webview-toolbar-actions">
+                                    <button
+                                      type="button"
+                                      className="external-webview-toolbar-button"
+                                      onClick={() => {
+                                        const session = getWorkPanelReviewSession(
+                                          stateRef.current.review,
+                                          workspace.ownerChatId,
+                                          item.itemId,
+                                        );
+                                        if (hasWorkPanelReviewDraft(session) && !session?.invalidReason) {
+                                          dispatchCommand({
+                                            type: "markReviewInvalid",
+                                            ownerChatId: workspace.ownerChatId,
+                                            itemId: item.itemId,
+                                            reason: "preview_reloaded",
+                                          });
+                                        }
+                                        try {
+                                          findItemWebview(workspace.ownerChatId, item.itemId)?.reload();
+                                        } catch {
+                                          // The resource guest may have been replaced while this click was handled.
+                                        }
+                                      }}
+                                      aria-label={t("externalWebview.refresh")}
+                                      title={t("externalWebview.refresh")}
+                                    >
+                                      <SidebarActionIcon kind="refresh" />
+                                    </button>
+                                  </div>
+                                  <div className="external-webview-toolbar-location">
+                                    <span className="external-webview-toolbar-location-icon" aria-hidden="true">
+                                      <FileTextOutlined />
+                                    </span>
+                                    <span
+                                      className="external-webview-toolbar-location-input is-static"
+                                      title={resourceReviewCapability?.fileName || item.title}
+                                    >
+                                      {resourceReviewCapability?.fileName || item.title}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      className="external-webview-toolbar-edit"
+                                      disabled={!resourceReviewCapability}
+                                      onClick={() => toggleReviewForItem(workspace.ownerChatId, item)}
+                                      aria-label={t("chatWorkPanel.tabContextMenu.enterReview")}
+                                      aria-pressed={false}
+                                      title={resourceReviewCapability
+                                        ? t("chatWorkPanel.tabContextMenu.enterReview")
+                                        : t("chatWorkPanel.review.previewLoading")}
+                                    >
+                                      <EditOutlined aria-hidden="true" />
+                                      <span className="external-webview-toolbar-edit-label">
+                                        {t("externalWebview.editPage")}
+                                      </span>
+                                    </button>
+                                  </div>
+                                </>
+                              )}
                             </div>
                           </div>
                         </div>

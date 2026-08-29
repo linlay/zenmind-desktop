@@ -1,4 +1,4 @@
-import { EditOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, EditOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
 import { createElement, useEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
@@ -1899,110 +1899,129 @@ export function ExternalWebviewPage({
             </button>
           ) : null}
         </div>
-        {showToolbar ? <div className="external-webview-toolbar">
-          <div className="external-webview-toolbar-actions">
-            {!documentToolbar ? <>
-              <button
-                type="button"
-                className="external-webview-toolbar-button"
-                onClick={handleGoBack}
-                disabled={!activeTab?.canGoBack}
-                aria-label={t("externalWebview.back")}
-                title={t("externalWebview.back")}
-              >
-                <SidebarActionIcon kind="back" />
-              </button>
-              <button
-                type="button"
-                className="external-webview-toolbar-button"
-                onClick={handleGoForward}
-                disabled={!activeTab?.canGoForward}
-                aria-label={t("externalWebview.forward")}
-                title={t("externalWebview.forward")}
-              >
-                <SidebarActionIcon kind="forward" />
-              </button>
-            </> : null}
-            <button
-              type="button"
-              className="external-webview-toolbar-button"
-              onClick={handleReload}
-              aria-label={t("externalWebview.refresh")}
-              title={t("externalWebview.refresh")}
-            >
-              <SidebarActionIcon kind="refresh" />
-            </button>
-          </div>
-          <div className={`external-webview-toolbar-location${addressInputUnlocked ? " is-editing" : ""}`}>
-            <span className="external-webview-toolbar-location-icon" aria-hidden="true">
-              {documentToolbar ? <FileTextOutlined /> : workPanelBrowser ? <GlobalOutlined /> : <SearchIcon />}
-            </span>
-            {documentToolbar ? (
-              <span
-                className="external-webview-toolbar-location-input is-static"
-                title={toolbarDocumentName || title}
-              >
-                {toolbarDocumentName || title}
-              </span>
-            ) : (
-              <input
-                type="text"
-                className="external-webview-toolbar-location-input"
-                value={addressInputValue}
-                onChange={(event) => {
-                  setAddressInputValue(event.target.value);
-                }}
-                onFocus={handleAddressInputFocus}
-                onBlur={() => {
-                  setAddressInputUnlocked(false);
-                  setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
-                }}
-                onKeyDown={(event) => {
-                  if (event.key === "Escape" && workPanelBrowser) {
-                    event.preventDefault();
-                    setAddressInputUnlocked(false);
-                    setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
-                    return;
-                  }
-                  if (event.key !== "Enter") {
-                    return;
-                  }
-                  event.preventDefault();
-                  handleNavigateToInputUrl();
-                }}
-                spellCheck={false}
-                autoCorrect="off"
-                autoCapitalize="none"
-                placeholder={t("externalWebview.addressPlaceholder")}
-                aria-label={t("externalWebview.address")}
-              />
-            )}
-            {workPanelBrowser && onTogglePageReview ? (
-              <button
-                type="button"
-                className={`external-webview-toolbar-edit${pageReviewActive ? " is-active" : ""}`}
-                onClick={() => onTogglePageReview({
-                  url: activeTab?.currentUrl ?? url,
-                  title: activeTab?.title ?? title,
-                })}
-                aria-label={t(pageReviewActive
-                  ? "chatWorkPanel.tabContextMenu.exitReview"
-                  : "chatWorkPanel.tabContextMenu.enterReview")}
-                aria-pressed={pageReviewActive}
-                title={t(pageReviewActive
-                  ? "chatWorkPanel.tabContextMenu.exitReview"
-                  : "chatWorkPanel.tabContextMenu.enterReview")}
-              >
-                <EditOutlined aria-hidden="true" />
-                <span className="external-webview-toolbar-edit-label">
-                  {t(pageReviewActive
-                    ? "externalWebview.finishPageReview"
-                    : "externalWebview.editPage")}
+        {showToolbar ? (
+          <div className={`external-webview-toolbar${pageReviewActive ? " is-review-mode" : ""}`}>
+            {pageReviewActive && workPanelBrowser && onTogglePageReview ? (
+              <>
+                <button
+                  type="button"
+                  className="external-webview-toolbar-return"
+                  onClick={() => onTogglePageReview({
+                    url: activeTab?.currentUrl ?? url,
+                    title: activeTab?.title ?? title,
+                  })}
+                  aria-label={t("chatWorkPanel.review.returnPreview")}
+                  title={t("chatWorkPanel.review.returnPreview")}
+                >
+                  <ArrowLeftOutlined aria-hidden="true" />
+                  <span>{t("chatWorkPanel.review.returnPreview")}</span>
+                </button>
+                <span className="external-webview-toolbar-review-hint">
+                  {t("chatWorkPanel.review.htmlTool")}
                 </span>
-              </button>
-            ) : null}
+              </>
+            ) : (
+              <>
+                <div className="external-webview-toolbar-actions">
+                  {!documentToolbar ? <>
+                    <button
+                      type="button"
+                      className="external-webview-toolbar-button"
+                      onClick={handleGoBack}
+                      disabled={!activeTab?.canGoBack}
+                      aria-label={t("externalWebview.back")}
+                      title={t("externalWebview.back")}
+                    >
+                      <SidebarActionIcon kind="back" />
+                    </button>
+                    <button
+                      type="button"
+                      className="external-webview-toolbar-button"
+                      onClick={handleGoForward}
+                      disabled={!activeTab?.canGoForward}
+                      aria-label={t("externalWebview.forward")}
+                      title={t("externalWebview.forward")}
+                    >
+                      <SidebarActionIcon kind="forward" />
+                    </button>
+                  </> : null}
+                  <button
+                    type="button"
+                    className="external-webview-toolbar-button"
+                    onClick={handleReload}
+                    aria-label={t("externalWebview.refresh")}
+                    title={t("externalWebview.refresh")}
+                  >
+                    <SidebarActionIcon kind="refresh" />
+                  </button>
+                </div>
+                <div className={`external-webview-toolbar-location${addressInputUnlocked ? " is-editing" : ""}`}>
+                  <span className="external-webview-toolbar-location-icon" aria-hidden="true">
+                    {documentToolbar ? <FileTextOutlined /> : workPanelBrowser ? <GlobalOutlined /> : <SearchIcon />}
+                  </span>
+                  {documentToolbar ? (
+                    <span
+                      className="external-webview-toolbar-location-input is-static"
+                      title={toolbarDocumentName || title}
+                    >
+                      {toolbarDocumentName || title}
+                    </span>
+                  ) : (
+                    <input
+                      type="text"
+                      className="external-webview-toolbar-location-input"
+                      value={addressInputValue}
+                      onChange={(event) => {
+                        setAddressInputValue(event.target.value);
+                      }}
+                      onFocus={handleAddressInputFocus}
+                      onBlur={() => {
+                        setAddressInputUnlocked(false);
+                        setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape" && workPanelBrowser) {
+                          event.preventDefault();
+                          setAddressInputUnlocked(false);
+                          setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
+                          return;
+                        }
+                        if (event.key !== "Enter") {
+                          return;
+                        }
+                        event.preventDefault();
+                        handleNavigateToInputUrl();
+                      }}
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      placeholder={t("externalWebview.addressPlaceholder")}
+                      aria-label={t("externalWebview.address")}
+                    />
+                  )}
+                  {workPanelBrowser && onTogglePageReview ? (
+                    <button
+                      type="button"
+                      className="external-webview-toolbar-edit"
+                      onClick={() => onTogglePageReview({
+                        url: activeTab?.currentUrl ?? url,
+                        title: activeTab?.title ?? title,
+                      })}
+                      aria-label={t("chatWorkPanel.tabContextMenu.enterReview")}
+                      aria-pressed={false}
+                      title={t("chatWorkPanel.tabContextMenu.enterReview")}
+                    >
+                      <EditOutlined aria-hidden="true" />
+                      <span className="external-webview-toolbar-edit-label">
+                        {t("externalWebview.editPage")}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
-        </div> : null}
+        ) : null}
         </div>
       )}
       {onOpenAssistantDock && !assistantDockOpen ? (

@@ -145,13 +145,15 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   assert.match(externalWebview, /pageReviewActive\?: boolean;/u);
   assert.match(externalWebview, /onTogglePageReview\?: \(page: \{ url: string; title: string \}\) => void;/u);
   assert.match(externalWebview, /onClick=\{\(\) => onTogglePageReview\(\{/u);
-  assert.match(externalWebview, /aria-pressed=\{pageReviewActive\}/u);
-  assert.match(externalWebview, /externalWebview\.finishPageReview/u);
+  assert.match(externalWebview, /pageReviewActive && workPanelBrowser && onTogglePageReview/u);
+  assert.match(externalWebview, /className="external-webview-toolbar-return"[\s\S]*?chatWorkPanel\.review\.returnPreview/u);
   assert.match(
     externalWebview,
     /external-webview-toolbar-location[\s\S]*?external-webview-toolbar-location-input[\s\S]*?external-webview-toolbar-edit/u,
   );
   assert.match(host, /pageReviewActive=\{reviewActive && reviewSession\?\.kind === "html"\}/u);
+  assert.match(host, /reviewSession\?\.kind === "html" \? " is-html-review" : ""/u);
+  assert.match(host, /className="external-webview-toolbar-return"[\s\S]*?chatWorkPanel\.review\.returnPreview/u);
   assert.match(host, /const webReviewPreloadEnabled = item\.descriptor\.kind === "web" &&[\s\S]*?normalizeWorkPanelWebUrl\(item\.descriptor\.url\)/u);
   assert.match(host, /onTogglePageReview=\{webReviewPreloadEnabled[\s\S]*?toggleReviewForItem/u);
   assert.match(host, /webReviewPreloadEnabled[\s\S]{0,80}?reviewPreloadUrl/u);
@@ -176,8 +178,16 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   );
   assert.match(
     read("src/renderer/styles/app-shell.css"),
+    /\.chat-work-panel-item\.is-reviewing\.is-html-review > \.external-webview-page\s*,[\s\S]*?top:\s*0;/u,
+  );
+  assert.match(
+    read("src/renderer/styles/app-shell.css"),
     /@container \(min-width: 720px\)[\s\S]*?\.chat-work-panel-item\.is-reviewing > \.external-webview-page[\s\S]*?right: 320px;[\s\S]*?width: auto;/u,
   );
+  const reviewPanel = read("src/renderer/work-panel/WorkPanelReviewPanel.tsx");
+  assert.match(reviewPanel, /session\.kind === "image" \? \([\s\S]*?chat-work-panel-review-toolbar/u);
+  assert.match(reviewPanel, /annotation\.id === activeAnnotationId \? \([\s\S]*?<Input\.TextArea/u);
+  assert.match(reviewPanel, /chat-work-panel-review-panel-footer[\s\S]*?chatWorkPanel\.review\.handoff/u);
 });
 
 test("WorkPanel add menu and canonical WebApp presentation keep host-only ownership", () => {
