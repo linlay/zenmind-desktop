@@ -105,6 +105,7 @@ function createRuntime(targets, overrides = {}) {
     releasedRoots: [],
     releasedRuns: [],
     cloneUnsubscribes: 0,
+    debugTraces: [],
   };
   let activeRoot = null;
   let mainChatRoot = null;
@@ -183,7 +184,7 @@ function createRuntime(targets, overrides = {}) {
     },
     registerRunActionGrant: () => undefined,
     cleanupConsumer: () => undefined,
-    appendDebugTrace: () => undefined,
+    appendDebugTrace: (entry) => calls.debugTraces.push(entry),
     ...overrides.realtimeBroker,
   };
   const registration = registerAgentWebclientBridgeIpcHandlers({
@@ -360,6 +361,71 @@ test("Main Chat convergence never authorizes a payload that disagrees with the s
   assert.equal(sentFrames(sender).at(-1).type, "protocol_error");
 });
 
+test("registered ownerless new Chat query enters the Broker without convergence waiting", async () => {
+  const newChatUrl = "http://127.0.0.1:7079/agent/agent-1?newChat=new-source-ready";
+  const ready = mainTarget(101, {
+    ownerChatId: undefined,
+    pageRoute: "/agent/agent-1?newChat=new-source-ready",
+    pageRouteIdentity: "/agent/agent-1?newChat=new-source-ready",
+    currentUrl: newChatUrl,
+  });
+  let waitCalls = 0;
+  const targets = new Map([[101, ready]]);
+  const runtime = createRuntime(targets, {
+    browserSurfaces: {
+      waitForWebviewSurfaceTargetMatching: async () => {
+        waitCalls += 1;
+        return null;
+      },
+    },
+    realtimeBroker: {
+      query: (input) => {
+        runtime.calls.queries.push(input);
+        const owner = { kind: "agent", agentKey: "agent-1" };
+        queueMicrotask(() => {
+          void input.onEvent({
+            type: "chat.start",
+            timestamp: EPOCH_MS,
+            seq: 1,
+            chatId: "chat-ready",
+            agentKey: "agent-1",
+          }, "test.ready-new-chat.chat-start");
+          void input.onEvent({
+            type: "run.start",
+            timestamp: EPOCH_MS,
+            seq: 2,
+            runId: "run-ready",
+            chatId: "chat-ready",
+            agentKey: "agent-1",
+          }, "test.ready-new-chat.run-start");
+        });
+        return {
+          accepted: Promise.resolve({ runId: "run-ready", chatId: "chat-ready", owner }),
+          completed: new Promise(() => undefined),
+        };
+      },
+    },
+  });
+  const sender = createSender(101, newChatUrl);
+  await openSession(runtime, sender, "main-new-chat-ready");
+  send(runtime, sender, "main-new-chat-ready", {
+    frame: "request",
+    id: "query-new-chat-ready",
+    type: "/api/query",
+    payload: {
+      requestId: "request-new-chat-ready",
+      runId: "run-ready",
+      agentKey: "agent-1",
+      message: "new",
+    },
+  });
+  await flush();
+
+  assert.equal(waitCalls, 0);
+  assert.equal(runtime.calls.queries.length, 1);
+  assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
 test("new Chat query waits for a stale canonical owner to become the new-chat source", async () => {
   const stale = mainTarget(101, { active: false });
   const newChatUrl = "http://127.0.0.1:7079/agent/agent-1?newChat=new-source-2";
@@ -425,6 +491,51 @@ test("new Chat query waits for a stale canonical owner to become the new-chat so
   assert.equal(runtime.calls.queries.length, 1);
   assert.equal(runtime.calls.queries[0].payload.chatId, "chat-2");
   assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
+test("new Chat convergence expiry stays local and records the observed route state", async () => {
+  const newChatUrl = "http://127.0.0.1:7079/agent/agent-1?newChat=new-source-expired";
+  const stale = mainTarget(101, {
+    active: false,
+    currentUrl: newChatUrl,
+  });
+  const runtime = createRuntime(new Map([[101, stale]]), {
+    browserSurfaces: {
+      waitForWebviewSurfaceTargetMatching: async (_id, _predicate, timeoutMs) => {
+        assert.equal(timeoutMs, 1_500);
+        return null;
+      },
+    },
+  });
+  const sender = createSender(101, newChatUrl);
+  await openSession(runtime, sender, "main-new-chat-expired");
+  send(runtime, sender, "main-new-chat-expired", {
+    frame: "request",
+    id: "query-new-chat-expired",
+    type: "/api/query",
+    payload: {
+      requestId: "request-new-chat-expired",
+      runId: "run-expired",
+      agentKey: "agent-1",
+      message: "new",
+    },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.queries.length, 0);
+  const error = sentFrames(sender).at(-1);
+  assert.equal(error.type, "protocol_error");
+  assert.equal(error.msg, "Main Chat identity did not converge before query authorization");
+  const failedTrace = runtime.calls.debugTraces.findLast((entry) =>
+    entry.data?.event === "main-chat-query-identity-convergence" &&
+    entry.data?.state === "failed"
+  );
+  assert.equal(failedTrace.data.reason, "registration_wait_expired");
+  assert.equal(failedTrace.data.observedActive, false);
+  assert.equal(failedTrace.data.ownerPresent, true);
+  assert.equal(failedTrace.data.observedPageRouteKind, "canonical");
+  assert.equal(failedTrace.data.observedGuestRouteKind, "new-chat");
+  assert.equal(failedTrace.data.senderRouteKind, "new-chat");
 });
 
 test("trusted Main Chat registration creates the Broker bundle before FramePort open", () => {

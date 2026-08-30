@@ -472,6 +472,11 @@ test("main Chat queues the latest route until dom-ready and never retries determ
   );
 
   assert.match(registrationBlock, /const registrationActive = ownsActiveSurface && routeAligned/u);
+  assert.match(
+    registrationBlock,
+    /isAgentWebclientMainChatRouteAligned\([\s\S]*?desiredDesktopRoute,[\s\S]*?currentUrl,[\s\S]*?embeddedUrl/u,
+  );
+  assert.doesNotMatch(registrationBlock, /resolveAgentWebclientDesktopChatRouteFromUrl/u);
   assert.match(registrationBlock, /preserveRegisteredIdentity/u);
   assert.match(registrationBlock, /result\.reason === "route_not_aligned"[\s\S]*?return;/u);
   assert.doesNotMatch(registrationBlock, /attempt <= 6|Math\.min\(25/u);

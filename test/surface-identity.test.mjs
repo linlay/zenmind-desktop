@@ -496,7 +496,10 @@ test("Main Chat registry preserves canonical ownership and waits for coherent id
     pageRouteIdentity: "/agent/agent-201?newChat=nonce-202",
     currentUrl: "http://127.0.0.1:7788/agent/agent-201?newChat=nonce-202",
   }), 7), true);
-  assert.equal(registry.resolveWebviewSurfaceTarget(guest.id).ownerChatId, undefined);
+  const newChatTarget = registry.resolveWebviewSurfaceTarget(guest.id);
+  assert.equal(newChatTarget.active, true);
+  assert.equal(newChatTarget.ownerChatId, undefined);
+  assert.equal(newChatTarget.pageRouteIdentity, "/agent/agent-201?newChat=nonce-202");
 
   const canonicalTarget = registry.waitForWebviewSurfaceTargetMatching(
     guest.id,

@@ -3,6 +3,10 @@ import {
   encodeRoutePathSegment
 } from "./route-path";
 import {
+  readAgentWebclientCanonicalChatSource,
+  readAgentWebclientNewChatSource
+} from "./canonical-chat-sync";
+import {
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
@@ -371,6 +375,58 @@ export function areAgentWebclientChatBusinessRoutesEquivalent(
   }
 
   return areAgentWebclientChatRouteIdentitiesEqual(current, target, false);
+}
+
+/**
+ * Match the trusted Desktop Main Chat route to the live guest route.
+ *
+ * Canonical Chat navigation intentionally uses a separate parser below: that
+ * parser must continue rejecting ownerless newChat routes. Surface alignment,
+ * however, accepts either an exact canonical identity or an exact one-shot
+ * newChat identity while ignoring Desktop-owned presentation parameters.
+ */
+export function isAgentWebclientMainChatRouteAligned(
+  desktopRoute: string,
+  guestUrl: string,
+  embeddedUrl: string
+) {
+  let guest: URL;
+  let embedded: URL;
+  try {
+    guest = new URL(guestUrl);
+    embedded = new URL(embeddedUrl);
+  } catch {
+    return false;
+  }
+  if (
+    (guest.protocol !== "http:" && guest.protocol !== "https:") ||
+    (embedded.protocol !== "http:" && embedded.protocol !== "https:") ||
+    guest.origin !== embedded.origin
+  ) {
+    return false;
+  }
+
+  const desktopCanonical = readAgentWebclientCanonicalChatSource(desktopRoute);
+  const guestCanonical = readAgentWebclientCanonicalChatSource(guestUrl);
+  if (desktopCanonical || guestCanonical) {
+    return Boolean(
+      desktopCanonical &&
+      guestCanonical &&
+      desktopCanonical.agentKey === guestCanonical.agentKey &&
+      desktopCanonical.chatId === guestCanonical.chatId &&
+      areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, guestUrl)
+    );
+  }
+
+  const desktopNewChat = readAgentWebclientNewChatSource(desktopRoute);
+  const guestNewChat = readAgentWebclientNewChatSource(guestUrl);
+  return Boolean(
+    desktopNewChat &&
+    guestNewChat &&
+    desktopNewChat.agentKey === guestNewChat.agentKey &&
+    desktopNewChat.newChat === guestNewChat.newChat &&
+    areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, guestUrl)
+  );
 }
 
 export function resolveAgentWebclientDesktopChatRouteFromUrl(

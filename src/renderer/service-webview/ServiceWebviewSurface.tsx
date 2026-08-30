@@ -18,6 +18,7 @@ import {
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatNavigationUrlsEquivalent,
   createAgentWebclientAgentPath,
+  isAgentWebclientMainChatRouteAligned,
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
@@ -412,18 +413,6 @@ function resolveDesktopSurfacePathname(route: string) {
   } catch {
     return route.split(/[?#]/u, 1)[0] || "/";
   }
-}
-
-function isMainChatRouteAligned(
-  desktopRoute: string,
-  guestUrl: string,
-  embeddedUrl: string,
-) {
-  const guestRoute = resolveAgentWebclientDesktopChatRouteFromUrl(guestUrl, embeddedUrl);
-  return Boolean(
-    guestRoute &&
-    areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, guestRoute),
-  );
 }
 
 function buildServiceWebviewSrcUrl(embeddedUrl: string) {
@@ -1158,7 +1147,7 @@ export function ServiceWebviewSurface({
     let cancelled = false;
     let retryTimer: number | null = null;
     const mainChatSurface = isAgentWebclientChatSurface(serviceId, surfaceId);
-    const routeAligned = !mainChatSurface || isMainChatRouteAligned(
+    const routeAligned = !mainChatSurface || isAgentWebclientMainChatRouteAligned(
       desiredDesktopRoute,
       currentUrl,
       embeddedUrl,

@@ -1124,6 +1124,14 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     const initialTarget = input.context.target;
     const startedAt = Date.now();
     const trace = (state: "started" | "ready" | "failed", reason: string) => {
+      const observedTarget = options.browserSurfaces
+        .resolveWebviewSurfaceTarget(input.context.sender.id);
+      let senderRouteKind = "unavailable";
+      try {
+        senderRouteKind = describeMainChatRouteIdentity(input.context.sender.getURL());
+      } catch {
+        // A destroyed guest is reported as unavailable without changing failure handling.
+      }
       options.realtimeBroker.appendDebugTrace({
         layer: "surface-bridge",
         direction: "surface-to-desktop",
@@ -1133,12 +1141,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           reason,
           waitedMs: Date.now() - startedAt,
           generation: initialTarget.registrationId,
-          ownerPresent: Boolean(
-            options.browserSurfaces
-              .resolveWebviewSurfaceTarget(input.context.sender.id)
-              ?.ownerChatId?.trim(),
-          ),
+          observedGeneration: observedTarget?.registrationId || "",
+          sameGeneration: observedTarget?.registrationId === initialTarget.registrationId,
+          observedActive: observedTarget?.active === true,
+          ownerPresent: Boolean(observedTarget?.ownerChatId?.trim()),
           routeKind: describeMainChatRouteIdentity(initialTarget.pageRouteIdentity),
+          observedPageRouteKind: describeMainChatRouteIdentity(
+            observedTarget?.pageRouteIdentity,
+          ),
+          observedGuestRouteKind: describeMainChatRouteIdentity(
+            observedTarget?.currentUrl,
+          ),
+          senderRouteKind,
         },
         surfaceId: initialTarget.surfaceId,
         webContentsId: input.context.sender.id,
