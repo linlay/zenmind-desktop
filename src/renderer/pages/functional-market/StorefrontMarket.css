@@ -811,9 +811,9 @@
   min-width: 0;
   min-height: 22px;
   padding: 0 6px;
-  border: 1px solid var(--market-store-line);
+  border: 0;
   border-radius: 6px;
-  background: var(--market-store-surface-soft);
+  background: transparent;
   color: var(--market-store-muted);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 10px;
@@ -839,8 +839,8 @@
 }
 
 .market-store-stat-button.is-active {
-  border-color: color-mix(in srgb, var(--market-store-rose) 34%, var(--market-store-line));
-  background: var(--market-store-rose-soft);
+  border-color: transparent;
+  background: transparent;
   color: var(--market-store-rose);
 }
 
@@ -1039,6 +1039,20 @@
   scrollbar-color: rgba(100, 116, 139, 0.28) transparent;
 }
 
+.market-store-detail-modal .ant-modal-footer {
+  flex: none;
+  margin: 0;
+  padding: 12px 18px 16px;
+  border-top: 1px solid var(--market-store-line);
+}
+
+.market-store-detail-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
 .market-store-detail-modal .ant-modal-close {
   top: 14px;
   right: 14px;
@@ -1115,6 +1129,27 @@
   line-height: 1;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.market-store-detail-category-return {
+  width: fit-content;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.market-store-detail-category-return:hover .market-store-detail-category-pill,
+.market-store-detail-category-return:focus-visible .market-store-detail-category-pill {
+  border-color: color-mix(in srgb, var(--market-store-accent) 48%, transparent);
+  background: color-mix(in srgb, var(--market-store-accent) 18%, transparent);
+}
+
+.market-store-detail-category-return:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--market-store-accent) 42%, transparent);
+  outline-offset: 2px;
 }
 
 .market-store-detail-title h2 {
@@ -1325,7 +1360,6 @@
 :root[data-theme="dark"] .market-store-action.ant-btn,
 :root[data-theme="dark"] .market-store-source-pill,
 :root[data-theme="dark"] .market-store-tag.ant-tag,
-:root[data-theme="dark"] .market-store-stat-pill,
 :root[data-theme="dark"] .market-store-detail-meta-pill,
 :root[data-theme="dark"] .market-store-detail-category-pill.ant-tag {
   border-color: var(--market-store-line);

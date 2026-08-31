@@ -29,6 +29,8 @@ Cookie SSO 的主流程为：
   -> 发布 authenticated 状态
 ```
 
+当 Cookie 换票响应同时包含生产与开发等多个 JWT 时，默认环境配置必须用预期 Issuer 与 Audience 精确选择 canonical token，不能依赖字段顺序或默认取第一个 token。若受信 HTTPS 换票端点明确保证每次只返回一枚 JWT，可显式配置 `validationMode: remote`：Desktop 仍要求响应中只有一枚 JWT，但将签名、Issuer、Audience、有效期和权限交由实际业务服务校验。两种模式都不会向 renderer 暴露 token，也不会在多枚候选中自动选第一枚。
+
 会话、用户信息和 access token 是三个独立结果。交互式登录允许部分成功并向用户说明缺失步骤；不能用某一步的成功伪造另一步，也不能从未经验证的 token claims 推导用户身份。
 
 ## 启动恢复

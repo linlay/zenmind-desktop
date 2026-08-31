@@ -273,6 +273,25 @@ type PlatformAgentSummary = {
   chats?: unknown;
 };
 
+type PlatformAdminRegistryListResponse = {
+  items?: Array<{
+    category?: string;
+    file?: string;
+    key?: string;
+    status?: string;
+    summary?: {
+      syncStatus?: string;
+      toolCount?: number;
+      syncDiagnostic?: {
+        message?: string;
+      };
+    };
+    diagnostic?: {
+      message?: string;
+    };
+  }>;
+};
+
 function createChatId() {
   return `chat_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
 }
@@ -1417,6 +1436,21 @@ export class AgentPlatformAssistantBridge {
       fallbackWhenUnavailable: []
     });
     return toDesktopPetAgentOptions(Array.isArray(data) ? data : []);
+  }
+
+  async listMcpRuntimeStatuses() {
+    const data = await this.getJson<PlatformAdminRegistryListResponse>("/api/admin/registries");
+    return (data.items ?? [])
+      .filter((item) => item.category === "mcp-servers" && (item.key?.trim() || item.file?.trim()))
+      .map((item) => ({
+        serverKey: item.key?.trim() || item.file?.trim().replace(/\.ya?ml$/iu, "") || "",
+        status: item.status?.trim() ?? "",
+        syncStatus: item.summary?.syncStatus?.trim() ?? "",
+        toolCount: Number.isFinite(item.summary?.toolCount)
+          ? Math.max(0, Math.trunc(item.summary?.toolCount ?? 0))
+          : 0,
+        message: item.summary?.syncDiagnostic?.message?.trim() || item.diagnostic?.message?.trim() || ""
+      }));
   }
 
   async listNavigationAgents(): Promise<AssistantNavAgentItemsResult> {

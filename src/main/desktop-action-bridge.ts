@@ -269,6 +269,8 @@ type AgentPlatformTokenIssueResult = {
 type AgentPlatformFetchOptions = {
   method?: string;
   body?: unknown;
+  rawBody?: Uint8Array;
+  contentType?: string;
   issueToken: (reason: AgentPlatformTokenIssueReason) => Promise<AgentPlatformTokenIssueResult>;
   fetchImpl?: typeof fetch;
 };
@@ -818,7 +820,20 @@ async function fetchAgentPlatformWithAuth<T>(
 ): Promise<T> {
   const fetchImpl = options.fetchImpl ?? fetch;
   const requestUrl = new URL(pathOrUrl, baseUrl).toString();
-  const requestBody = options.body === undefined ? undefined : JSON.stringify(options.body);
+  if (options.body !== undefined && options.rawBody !== undefined) {
+    throw new Error("agent-platform request cannot contain both JSON and raw bodies");
+  }
+  let requestBody: BodyInit | undefined;
+  if (options.rawBody !== undefined) {
+    const body = new ArrayBuffer(options.rawBody.byteLength);
+    new Uint8Array(body).set(options.rawBody);
+    requestBody = body;
+  } else if (options.body !== undefined) {
+    requestBody = JSON.stringify(options.body);
+  }
+  const contentType = options.rawBody !== undefined
+    ? options.contentType?.trim() || "application/octet-stream"
+    : options.body === undefined ? "" : "application/json";
 
   for (const reason of ["missing", "unauthorized"] as const) {
     const token = await options.issueToken(reason);
@@ -831,7 +846,7 @@ async function fetchAgentPlatformWithAuth<T>(
       headers: {
         Accept: "application/json",
         Authorization: `Bearer ${token.token.trim()}`,
-        ...(requestBody === undefined ? {} : { "Content-Type": "application/json" })
+        ...(requestBody === undefined ? {} : { "Content-Type": contentType })
       },
       ...(requestBody === undefined ? {} : { body: requestBody })
     });
@@ -855,7 +870,7 @@ async function fetchAgentPlatformWithAuth<T>(
 export async function callAgentPlatform<T>(
   app: App,
   pathOrUrl: string,
-  options: { method?: string; body?: unknown } = {}
+  options: { method?: string; body?: unknown; rawBody?: Uint8Array; contentType?: string } = {}
 ): Promise<T> {
   const state = await getResponsiveServiceState(app, "agent-platform");
   const baseUrl = state.status === "running"

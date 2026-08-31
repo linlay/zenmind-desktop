@@ -196,6 +196,7 @@ import {
 import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
 import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../marketplace";
 import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
+import { configureSkillMarketPlatformCaller } from "../marketplace/skill-market";
 
 export function createMainProcessRuntime() {
   const startupPlatform = process.platform;
@@ -205,6 +206,9 @@ export function createMainProcessRuntime() {
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
   const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
   configureAgentMarketPlatformCaller((targetPath, options) =>
+    callAgentPlatform(app, targetPath, options)
+  );
+  configureSkillMarketPlatformCaller((targetPath, options) =>
     callAgentPlatform(app, targetPath, options)
   );
   const appState = createMainAppState();

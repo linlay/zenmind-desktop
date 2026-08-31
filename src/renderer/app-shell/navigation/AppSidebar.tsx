@@ -1581,9 +1581,9 @@ export function AppSidebar({
     )
     .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
-  const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.map(
-    (item) => ({ ...item, label: t(item.labelKey) }),
-  );
+  const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.filter(
+    (item) => item.id !== "market" || marketEnabled,
+  ).map((item) => ({ ...item, label: t(item.labelKey) }));
   const settingsToolItem = fixedToolItems.find(
     (item) => item.to === "/settings",
   );

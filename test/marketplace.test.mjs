@@ -21,29 +21,38 @@ const {
   importSandboxImageFromPath,
   installMarketItem,
   listMarketItems,
+  mergeMcpRuntimeStatuses,
   refreshMarketCatalog,
   saveMarketSettings,
   toggleMarketFavorite,
   uninstallMarketItem,
+  updateMarketItem,
   __testInternals
 } = require("../dist-electron/main/marketplace.js");
 const { webappManager } = require("../dist-electron/main/webs/webapps/manager.js");
 const installWebsiteAppArchiveFromPath = (app, archivePath, options) =>
   webappManager.installArchive(app, archivePath, options);
 const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
-const { getSkillInstallDir, installSkillFromPath } = require("../dist-electron/main/skill-installer.js");
+const { getSkillInstallDir, getSkillsCenterDir, installSkillFromPath, listInstalledSkills, uninstallSkill } = require("../dist-electron/main/skill-installer.js");
 const { readDesktopPetStoredState } = require("../dist-electron/main/assistant/pet/desktop-pet.js");
 const { readWebappItems } = require("../dist-electron/main/webs/webapps/store.js");
 const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/marketplace/agent-market.js");
+const { configureSkillMarketPlatformCaller } = require("../dist-electron/main/marketplace/skill-market.js");
 const { getSoftwarePackageInstallDir } = require("../dist-electron/main/marketplace/software-package-market.js");
 const { resolveRuntimeRoot } = require("../dist-electron/main/env-bootstrap.js");
 const {
+  getDesktopWebappDataRoot,
   getDesktopConfigRoot,
   getDesktopPetsDataRoot,
   getDesktopWebappsDataRoot,
-  getMarketplaceCacheRoot
+  getMarketplaceCacheRoot,
+  getMarketplaceStateRoot
 } = require("../dist-electron/main/user-paths.js");
 const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
+const {
+  readResponseBytesWithLimit,
+  requestMarket
+} = require("../dist-electron/main/marketplace/common.js");
 
 test("platform candidates keep fallbacks within the current CPU architecture", () => {
   const candidates = __testInternals.platformCandidates;
@@ -229,13 +238,15 @@ async function writePetArchive(root, options = {}) {
 async function writeWebappArchive(root, options = {}) {
   const key = options.key ?? "cloud-webapp";
   const id = options.id ?? webappId(key);
+  const archiveRootId = options.archiveRootId ?? id;
+  const manifestId = options.manifestId ?? id;
   const archivePath = path.join(root, `${id}.zip`);
   const zip = new JSZip();
   zip.file(
-    `${id}/webapp.json`,
+    `${archiveRootId}/webapp.json`,
     `${JSON.stringify({
       schemaVersion: 2,
-      id,
+      id: manifestId,
       key,
       label: options.label ?? "Cloud WebApp",
       version: options.version ?? "1.0.0",
@@ -249,7 +260,7 @@ async function writeWebappArchive(root, options = {}) {
       desktopBridge: { version: 1 }
     }, null, 2)}\n`
   );
-  zip.file(`${id}/frontend/index.html`, "<!doctype html><div id=\"app\">cloud webapp</div>");
+  zip.file(`${archiveRootId}/frontend/index.html`, "<!doctype html><div id=\"app\">cloud webapp</div>");
   fs.writeFileSync(archivePath, await zip.generateAsync({ type: "nodebuffer" }));
   return archivePath;
 }
@@ -573,6 +584,7 @@ test("normalizeCatalog keeps all public market types including software packages
 test("installMarketItem writes and removes MCP YAML through the runtime registry directory", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-mcp-install-"));
   const app = createApp(root);
+  const mcpRequestUrls = [];
   fs.mkdirSync(path.join(root, "temp"), { recursive: true });
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -586,24 +598,39 @@ test("installMarketItem writes and removes MCP YAML through the runtime registry
         name: "Remote Search",
         version: "1.0.0",
         description: "Search tools",
-        tags: ["search"],
+        tags: ["gateway", "search"],
+        metadata: { gatewayServerCode: "remoteSearch" },
         assets: {}
       }]
     })],
-    ["/api/v1/mcps/remote-search/download", JSON.stringify({
-      market: {
-        id: "remote-search",
-        name: "Remote Search",
+    ["/api/v1/mcps/remote-search/resolve", (req, res) => {
+      mcpRequestUrls.push(req.url);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        item: { id: "remote-search", type: "mcp" },
         version: "1.0.0",
-        tools: ["search"]
-      },
-      mcpServers: {
-        "remote-search": {
-          type: "streamable-http",
-          url: "https://mcp.example.test/mcp"
+        platform: "universal"
+      }));
+    }],
+    ["/api/v1/mcps/remote-search/download", (req, res) => {
+      mcpRequestUrls.push(req.url);
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        market: {
+          id: "remote-search",
+          name: "Remote Search",
+          version: "1.0.0",
+          tools: ["search"]
+        },
+        mcpServers: {
+          remoteSearch: {
+            type: "streamable-http",
+            url: "https://localhost/mcp/remoteSearch"
+          }
         }
-      }
-    })]
+      }));
+    }]
   ]), async (baseUrl) => {
     const options = {
       apiBaseUrl: `${baseUrl}/api/v1`,
@@ -617,20 +644,43 @@ test("installMarketItem writes and removes MCP YAML through the runtime registry
     assert.equal(installed.ok, true);
     assert.equal(installed.type, "mcp");
     assert.equal(installed.installPath, "registries/mcp-servers/remote-search.yml");
+    assert.deepEqual(mcpRequestUrls.slice(0, 2), [
+      "/api/v1/mcps/remote-search/resolve?version=1.0.0&platform=universal",
+      "/api/v1/mcps/remote-search/download?version=1.0.0&platform=universal"
+    ]);
     const registryFile = path.join(resolveRuntimeRoot(app), "registries", "mcp-servers", "remote-search.yml");
     const registryContent = fs.readFileSync(registryFile, "utf8");
     const registry = loadYaml(registryContent);
-    assert.equal(registry.serverKey, "remote-search");
+    assert.equal(registry.serverKey, "remoteSearch");
     assert.equal(registry.transport, "streamable-http");
-    assert.equal(registry.baseUrl, "https://mcp.example.test");
-    assert.equal(registry.endpointPath, "/mcp");
+    assert.equal(registry.baseUrl, "https://localhost");
+    assert.equal(registry.endpointPath, "/mcp/remoteSearch");
+    assert.equal(registry.authSource, "identity-file");
+    assert.equal(Object.hasOwn(registry, "bindings"), false);
     assert.equal(Object.hasOwn(registry, "tools"), false);
+
+    fs.appendFileSync(registryFile, "bindings:\n  agents:\n    - cutej\n    - planner\n", "utf8");
+
+    const updated = await updateMarketItem(app, "remote-search", options);
+    assert.equal(updated.ok, true);
+    const updatedRegistry = loadYaml(fs.readFileSync(registryFile, "utf8"));
+    assert.equal(Object.hasOwn(updatedRegistry, "bindings"), false);
+
+    const installedList = await listMarketItems(app, { ...options, sections: ["mcps"] });
+    assert.equal(installedList.items.find((item) => item.id === "remote-search")?.state, "installed");
 
     const removed = await uninstallMarketItem(app, "remote-search", options);
     assert.equal(removed.ok, true);
     assert.equal(fs.existsSync(registryFile), false);
     assert.equal(__testInternals.readInstalledRecords(app).some((item) => item.type === "mcp"), false);
 
+    await installMarketItem(app, "remote-search", options);
+    fs.rmSync(path.dirname(registryFile), { recursive: true, force: true });
+    const removedWithoutRegistryDirectory = await uninstallMarketItem(app, "remote-search", options);
+    assert.equal(removedWithoutRegistryDirectory.ok, true);
+    assert.equal(__testInternals.readInstalledRecords(app).some((item) => item.type === "mcp"), false);
+
+    fs.mkdirSync(path.dirname(registryFile), { recursive: true });
     const manualContent = "serverKey: manual\ntransport: streamable-http\nbaseUrl: https://manual.example.test\n";
     fs.writeFileSync(registryFile, manualContent, "utf8");
     await assert.rejects(
@@ -639,6 +689,159 @@ test("installMarketItem writes and removes MCP YAML through the runtime registry
     );
     assert.equal(fs.readFileSync(registryFile, "utf8"), manualContent);
   });
+});
+
+test("gateway MCP catalog items require an explicit gateway server code", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-mcp-gateway-code-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    () => installMarketItem(app, "missing-gateway-code", {
+      catalog: {
+        schemaVersion: 1,
+        items: [{
+          id: "missing-gateway-code",
+          type: "mcp",
+          name: "Missing Gateway Code",
+          version: "1.0.0",
+          description: "Invalid gateway metadata",
+          tags: ["gateway"],
+          assets: {}
+        }]
+      }
+    }),
+    (error) => error instanceof Error && /gatewayServerCode/u.test(error.message)
+  );
+});
+
+test("market MCP packages reject ambiguous identity, commands, credentials, and mismatched manifests", () => {
+  const { downloadedMcpConfig } = require("../dist-electron/main/marketplace/mcp-market.js").__mcpMarketInternals;
+  const manifest = (server) => ({
+    market: { id: "flowcenter", version: "1.0.0" },
+    mcpServers: { flowCenter: server }
+  });
+  const parse = (server, expectedVersion = "1.0.0") => downloadedMcpConfig(
+    manifest(server),
+    "flowcenter",
+    "Flow Center",
+    "identity-file",
+    expectedVersion,
+    "flowCenter"
+  );
+
+  assert.throws(
+    () => parse({ type: "streamable-http", url: "https://example.test/mcp/flowCenter", command: "danger" }),
+    /HTTP|stdio|标准输入输出/u
+  );
+  assert.throws(
+    () => parse({ type: "streamable-http", url: "https://example.test/mcp/flowCenter", authToken: "secret" }),
+    /凭据|credential/u
+  );
+  assert.throws(
+    () => parse({
+      type: "streamable-http",
+      url: "https://example.test/mcp/flowCenter",
+      headers: { Authorization: "Bearer secret" }
+    }),
+    /请求头|header/u
+  );
+  assert.throws(
+    () => parse({ type: "streamable-http", url: "https://example.test/mcp/flowCenter" }, "2.0.0"),
+    /版本|version/u
+  );
+  assert.throws(
+    () => parse({ type: "streamable-http", url: "https://example.test/mcp/flowCenter", authSource: "identity-file" }),
+    /身份来源|identity source/u
+  );
+  assert.throws(
+    () => downloadedMcpConfig({
+      market: { id: "flowcenter", version: "1.0.0" },
+      mcpServers: {
+        flowCenter: { type: "streamable-http", url: "https://example.test/mcp/flowCenter" },
+        second: { type: "streamable-http", url: "https://example.test/mcp/second" }
+      }
+    }, "flowcenter", "Flow Center", "identity-file", "1.0.0", "flowCenter"),
+    /一个服务|exactly one server/u
+  );
+});
+
+test("MCP runtime status keeps installation state separate from Platform synchronization", () => {
+  const [ready, unavailable, pending, mismatchedKey, legacyByItemId] = mergeMcpRuntimeStatuses([
+    { id: "ready", type: "mcp", installPath: "registries/mcp-servers/ready.yml", mcpServerKey: "remote-ready" },
+    { id: "down", type: "mcp", installPath: "registries/mcp-servers/down.yml", mcpServerKey: "remote-down" },
+    { id: "pending", type: "mcp", installPath: "registries/mcp-servers/pending.yml" },
+    { id: "broken-item", type: "mcp", installPath: "registries/mcp-servers/broken-item.yml", mcpServerKey: "gateway-key" },
+    { id: "broken-item", type: "mcp", installPath: "registries/mcp-servers/broken-item.yml" }
+  ], [
+    { serverKey: "remote-ready", status: "ready", syncStatus: "ready", toolCount: 2 },
+    { serverKey: "remote-down", status: "ready", syncStatus: "unavailable", toolCount: 0, message: "connection refused" },
+    { serverKey: "broken-item", status: "invalid", syncStatus: "", toolCount: 0, message: "invalid yaml" }
+  ]);
+
+  assert.equal(ready.mcpRuntimeStatus, "ready");
+  assert.equal(ready.mcpToolCount, 2);
+  assert.equal(unavailable.mcpRuntimeStatus, "unavailable");
+  assert.equal(unavailable.mcpRuntimeMessage, "connection refused");
+  assert.equal(pending.mcpRuntimeStatus, "configuration-written");
+  assert.equal(mismatchedKey.mcpRuntimeStatus, "configuration-written");
+  assert.equal(legacyByItemId.mcpRuntimeStatus, "invalid");
+  assert.equal(legacyByItemId.mcpRuntimeMessage, "invalid yaml");
+});
+
+test("installed MCP records drop legacy Agent binding fields", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-mcp-records-"));
+  const app = createApp(root);
+  const stateRoot = getMarketplaceStateRoot(app);
+  fs.mkdirSync(stateRoot, { recursive: true });
+  fs.writeFileSync(path.join(stateRoot, "marketplace-installed.json"), JSON.stringify({
+    records: [
+      {
+        id: "bad-bindings",
+        type: "mcp",
+        version: "1.0.0",
+        source: "cloud",
+        agentKeys: { unexpected: true },
+        installedAt: "2026-08-23T00:00:00.000Z"
+      },
+      {
+        id: "mixed-bindings",
+        type: "mcp",
+        version: "1.0.0",
+        source: "cloud",
+        agentKeys: [" cutej ", "CUTEJ", "bad/key", 7],
+        installedAt: "2026-08-23T00:00:00.000Z"
+      }
+    ]
+  }), "utf8");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const records = __testInternals.readInstalledRecords(app);
+  const badBindings = records.find((record) => record.id === "bad-bindings");
+  const mixedBindings = records.find((record) => record.id === "mixed-bindings");
+  assert.ok(badBindings);
+  assert.ok(mixedBindings);
+  assert.equal(badBindings.agentKeys, undefined);
+  assert.equal(mixedBindings.agentKeys, undefined);
+});
+
+test("MCP registry writes reject a directory that escapes the runtime root", (t) => {
+  if (process.platform === "win32") {
+    t.skip("symlink creation requires elevated Windows privileges");
+    return;
+  }
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-mcp-symlink-"));
+  const runtimeRoot = path.join(root, "runtime");
+  const outside = path.join(root, "outside");
+  fs.mkdirSync(runtimeRoot, { recursive: true });
+  fs.mkdirSync(path.join(outside, "mcp-servers"), { recursive: true });
+  fs.symlinkSync(outside, path.join(runtimeRoot, "registries"), "dir");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const { assertMcpRegistryTarget } = require("../dist-electron/main/marketplace/mcp-market.js").__mcpMarketInternals;
+  assert.throws(
+    () => assertMcpRegistryTarget(runtimeRoot, path.join(runtimeRoot, "registries", "mcp-servers", "demo.yml")),
+    /escapes the runtime root/u
+  );
 });
 
 test("normalizeCatalog keeps server assets for display while selectAsset only chooses installable assets", () => {
@@ -760,13 +963,238 @@ test("installSkillFromPath rejects non-zip skill archives but accepts SKILL.md",
     );
   }
 
+  const unsafeZip = new JSZip();
+  unsafeZip.file("unsafe-skill/SKILL.md", "# Unsafe Skill\n");
+  unsafeZip.file("unsafe-skill/link", "../outside", { unixPermissions: 0o120777 });
+  const unsafeZipPath = path.join(root, "unsafe-skill.zip");
+  fs.writeFileSync(unsafeZipPath, await unsafeZip.generateAsync({ type: "nodebuffer", platform: "UNIX" }));
+  await assert.rejects(
+    () => installSkillFromPath(app, unsafeZipPath),
+    /symbolic link/u
+  );
+
   const skillFilePath = path.join(root, "Local Skill.md");
   fs.writeFileSync(skillFilePath, "# Local Skill\n", "utf8");
   const result = await installSkillFromPath(app, skillFilePath);
 
   assert.equal(result.ok, true);
+  assert.match(result.message, /新对话|new conversation/u);
+  assert.doesNotMatch(result.message, /重启|restart/u);
   assert.equal(fs.existsSync(path.join(getSkillInstallDir(app, "local-skill"), "SKILL.md")), true);
   assert.equal(fs.readFileSync(unrelatedSkillMarketFile, "utf8"), "keep\n");
+});
+
+test("installed Skill discovery ignores hidden Platform control directories", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-hidden-skill-state-"));
+  const app = createApp(root);
+  const packageState = path.join(getSkillsCenterDir(app), ".package");
+  fs.mkdirSync(packageState, { recursive: true });
+  fs.writeFileSync(path.join(packageState, "office-pack.json"), "{}\n", "utf8");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  assert.equal(listInstalledSkills(app).some((item) => item.id === ".package"), false);
+});
+
+test("skill package installs and uninstalls all included skills as one transaction", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-skill-package-"));
+  const app = createApp(root);
+  const zip = new JSZip();
+  zip.file("manifest.json", JSON.stringify({
+    schemaVersion: 1,
+    type: "skill-package",
+    id: "office-pack",
+    name: "Office Pack",
+    version: "1.0.0",
+    skills: [
+      { id: "word-helper", name: "Word Helper", version: "1.0.0", path: "skills/word-helper/", platform: "universal", sha256: "word-sha" },
+      { id: "excel-helper", name: "Excel Helper", version: "2.0.0", path: "skills/excel-helper/", platform: "universal", sha256: "excel-sha" }
+    ]
+  }));
+  zip.file("skills/word-helper/word/SKILL.md", "# Word Helper\n");
+  zip.file("skills/excel-helper/excel/SKILL.md", "# Excel Helper\n");
+  const archive = await zip.generateAsync({ type: "nodebuffer", platform: "UNIX" });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => configureSkillMarketPlatformCaller(null));
+
+  const platformCalls = [];
+  let platformPackageInstalled = false;
+  let platformPackageSkills = [];
+  configureSkillMarketPlatformCaller(async (targetPath, options) => {
+    platformCalls.push({ targetPath, options });
+    if (targetPath === "/api/admin/skill-packages") {
+      return platformPackageInstalled ? [{
+        id: "office-pack",
+        version: "1.0.0",
+        skills: platformPackageSkills
+      }] : [];
+    }
+    if (targetPath.startsWith("/api/admin/skill-packages/import?")) {
+      assert.equal(options.method, "POST");
+      assert.equal(options.contentType, "application/zip");
+      assert.deepEqual(Buffer.from(options.rawBody), archive);
+      platformPackageInstalled = true;
+      platformPackageSkills = [
+        { id: "word-helper", version: "1.0.0" },
+        { id: "excel-helper", version: "2.0.0" }
+      ];
+      return {
+        id: "office-pack",
+        version: "1.0.0",
+        skills: [
+          { id: "word-helper", version: "1.0.0" },
+          { id: "excel-helper", version: "2.0.0" }
+        ]
+      };
+    }
+    if (targetPath === "/api/admin/skill-packages/delete") {
+      assert.deepEqual(options.body, { key: "office-pack" });
+      platformPackageInstalled = false;
+      return {
+        key: "office-pack",
+        deleted: true,
+        skills: [{ id: "word-helper" }, { id: "excel-helper" }]
+      };
+    }
+    if (targetPath === "/api/admin/skill-packages/skills/delete") {
+      assert.deepEqual(options.body, { packageId: "office-pack", skillId: "word-helper" });
+      platformPackageSkills = platformPackageSkills.filter((skill) => skill.id !== "word-helper");
+      return { packageId: "office-pack", skillId: "word-helper", deleted: true, packageDeleted: false };
+    }
+    throw new Error(`unexpected Platform call ${targetPath}`);
+  });
+
+  await withFixtureServer(new Map([
+    ["/api/v1/auth/me", JSON.stringify({ user: { id: "market-user" } })],
+    ["/api/v1/skills/office-pack/resolve", JSON.stringify({
+      schemaVersion: 1,
+      item: { id: "office-pack", type: "skill" },
+      version: "1.0.0",
+      platform: "universal",
+      platformSpec: { platform: "universal" }
+    })],
+    ["/api/v1/skills/office-pack/package/download", archive]
+  ]), async (baseUrl) => {
+    const options = {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      marketEnabled: true,
+      issueMarketAccessToken: () => "market-token",
+      catalog: {
+        schemaVersion: 1,
+        items: [{
+          id: "office-pack",
+          type: "skill",
+          name: "Office Pack",
+          version: "1.0.0",
+          description: "Office skill collection",
+          tags: [],
+          assets: { universal: { url: "https://example.test/word-helper.zip", sizeBytes: 1, archiveType: "zip", platform: "universal" } },
+          targets: { universal: { platform: "universal" } },
+          skill: {
+            kind: "package",
+            packageMode: "collection",
+            includedSkills: [
+              { id: "word-helper", name: "Word Helper" },
+              { id: "excel-helper", name: "Excel Helper" }
+            ]
+          }
+        }, {
+          id: "word-helper",
+          type: "skill",
+          name: "Word Helper",
+          version: "1.0.0",
+          description: "Word child skill",
+          tags: [],
+          assets: { universal: { url: "https://example.test/excel-helper.zip", sizeBytes: 1, archiveType: "zip", platform: "universal" } },
+          targets: { universal: { platform: "universal" } },
+          skill: { kind: "single" }
+        }, {
+          id: "excel-helper",
+          type: "skill",
+          name: "Excel Helper",
+          version: "2.0.0",
+          description: "Excel child skill",
+          tags: [],
+          assets: {},
+          targets: { universal: { platform: "universal" } },
+          skill: { kind: "single" }
+        }]
+      }
+    };
+    const before = await listMarketItems(app, options);
+    assert.equal(before.items.find((item) => item.id === "office-pack")?.state, "not-installed");
+
+    const installed = await installMarketItem(app, "office-pack", options);
+    assert.equal(installed.ok, true);
+    assert.match(installed.message, /新对话|new conversation/u);
+    assert.doesNotMatch(installed.message, /重启|restart/u);
+    const packageRecord = __testInternals.readInstalledRecords(app).find((record) => record.id === "office-pack");
+    assert.equal(packageRecord?.skillPackage, true);
+    assert.equal(Object.hasOwn(packageRecord ?? {}, "includedItemIds"), false);
+    assert.equal(__testInternals.readInstalledRecords(app).some((record) => record.id === "word-helper"), false);
+    assert.equal(__testInternals.readInstalledRecords(app).some((record) => record.id === "excel-helper"), false);
+    const after = await listMarketItems(app, options);
+    assert.equal(after.items.find((item) => item.id === "office-pack")?.state, "installed");
+    assert.deepEqual(
+      after.items
+        .filter((item) => item.id === "word-helper" || item.id === "excel-helper")
+        .map((item) => ({ id: item.id, state: item.state, installedVersion: item.installedVersion, skillPackageId: item.skillPackageId }))
+        .sort((left, right) => left.id.localeCompare(right.id)),
+      [
+        { id: "excel-helper", state: "installed", installedVersion: "2.0.0", skillPackageId: "office-pack" },
+        { id: "word-helper", state: "installed", installedVersion: "1.0.0", skillPackageId: "office-pack" }
+      ]
+    );
+
+    const removedChild = await uninstallMarketItem(app, "word-helper", options);
+    assert.equal(removedChild.ok, true);
+    const afterChildRemoval = await listMarketItems(app, options);
+    assert.equal(afterChildRemoval.items.find((item) => item.id === "word-helper")?.state, "not-installed");
+    assert.equal(afterChildRemoval.items.find((item) => item.id === "excel-helper")?.state, "installed");
+
+    const uninstalled = await uninstallMarketItem(app, "office-pack", options);
+    assert.equal(uninstalled.ok, true);
+    assert.equal(__testInternals.readInstalledRecords(app).some((record) => record.id === "office-pack"), false);
+    assert.equal(platformCalls.filter((call) => call.targetPath !== "/api/admin/skill-packages").length, 3);
+  });
+});
+
+test("Skill file changes roll back when the installation record commit fails", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-skill-record-rollback-"));
+  const app = createApp(root);
+  const installDir = getSkillInstallDir(app, "rollback-skill");
+  fs.mkdirSync(installDir, { recursive: true });
+  fs.writeFileSync(path.join(installDir, "SKILL.md"), "old skill\n", "utf8");
+  fs.writeFileSync(path.join(installDir, "skill.json"), JSON.stringify({
+    id: "rollback-skill",
+    name: "Rollback Skill",
+    version: "1.0.0",
+    description: "old",
+    tags: []
+  }), "utf8");
+  const archivePath = writeRootSkillArchive(root, { id: "rollback-skill", version: "2.0.0" });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    () => installSkillFromPath(app, archivePath, {
+      expectedId: "rollback-skill",
+      expectedVersion: "2.0.0",
+      onPublished: () => {
+        throw new Error("record commit failed");
+      }
+    }),
+    /record commit failed/u
+  );
+  assert.equal(fs.readFileSync(path.join(installDir, "SKILL.md"), "utf8"), "old skill\n");
+
+  await assert.rejects(
+    () => uninstallSkill(app, "rollback-skill", {
+      onRemoved: () => {
+        throw new Error("record removal failed");
+      }
+    }),
+    /record removal failed/u
+  );
+  assert.equal(fs.readFileSync(path.join(installDir, "SKILL.md"), "utf8"), "old skill\n");
 });
 
 test("refreshMarketCatalog combines catalog plugins with catalog skills", async (t) => {
@@ -1611,7 +2039,7 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
             role: "primary"
           }
         },
-        platforms: {
+        targets: {
           "darwin-arm64": {
             os: "darwin",
             arch: "arm64",
@@ -1730,6 +2158,9 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
           }
         },
         dependencies: [],
+        skill: {
+          kind: "single"
+        },
         metadata: {
           source: "zenmind-env/skills-center"
         },
@@ -1822,8 +2253,8 @@ test("listMarketItems maps the desktop market server catalog shape into visible 
   assert.equal(byKey.get("agent:desktopassistant")?.downloadCount, 1200);
   assert.equal(byKey.get("agent:desktopassistant")?.favoriteCount, 34);
   assert.equal(byKey.get("agent:desktopassistant")?.favorited, true);
-  assert.equal(byKey.get("agent:desktopassistant")?.platforms?.["darwin-arm64"]?.os, "darwin");
-  assert.equal(byKey.get("agent:desktopassistant")?.platforms?.["windows-x64"]?.arch, "x64");
+  assert.equal(byKey.get("agent:desktopassistant")?.targets?.["darwin-arm64"]?.os, "darwin");
+  assert.equal(byKey.get("agent:desktopassistant")?.targets?.["windows-x64"]?.arch, "x64");
   assert.equal(byKey.get("agent:desktopassistant")?.publishedAt, "2026-06-14T00:00:00.000Z");
   assert.equal(byKey.get("cli:dbx")?.author, "Metadata CLI");
   assert.equal(byKey.get("cli:dbx")?.createdAt, "2026-06-12T00:00:00.000Z");
@@ -1919,7 +2350,14 @@ test("installMarketItem installs and uninstalls website app packages into deskto
   const id = webappId("reg-report");
   const archivePath = await writeWebappArchive(root, { id, key: "reg-report", label: "监管报表" });
   const archiveBytes = fs.readFileSync(archivePath);
-  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const lifecycleEvents = [];
+  webappManager.runtime.setPublicationChangeListener((reason, webappId) => {
+    lifecycleEvents.push({ reason, webappId });
+  });
+  t.after(() => {
+    webappManager.runtime.setPublicationChangeListener(null);
+    fs.rmSync(root, { recursive: true, force: true });
+  });
 
   await withFixtureServer(new Map([
     ["/reg-report.zip", archiveBytes]
@@ -1931,7 +2369,7 @@ test("installMarketItem installs and uninstalls website app packages into deskto
           id,
           type: "website-app",
           name: "监管报表",
-          version: "0.1.0",
+          version: "1.0.0",
           description: "Local website app.",
           tags: ["webapp"],
           websiteKind: "local-app",
@@ -1953,17 +2391,151 @@ test("installMarketItem installs and uninstalls website app packages into deskto
     assert.equal(result.state, "installed");
     assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), id, "webapp.json")), true);
     assert.equal(readWebappItems(app).find((item) => item.id === id)?.label, "监管报表");
+    assert.deepEqual(lifecycleEvents.at(-1), { reason: "installed", webappId: id });
 
     const installedList = await listMarketItems(app, options);
     assert.equal(installedList.items.find((item) => item.id === id)?.state, "installed");
 
+    const userDataRoot = getDesktopWebappDataRoot(app, id);
+    fs.mkdirSync(userDataRoot, { recursive: true });
+    fs.writeFileSync(path.join(userDataRoot, "saved.txt"), "preserve me", "utf8");
+
     const uninstallResult = await uninstallMarketItem(app, id, options);
     assert.equal(uninstallResult.ok, true);
     assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), id)), false);
+    assert.equal(fs.readFileSync(path.join(userDataRoot, "saved.txt"), "utf8"), "preserve me");
 
     const uninstalledList = await listMarketItems(app, options);
     assert.equal(uninstalledList.items.find((item) => item.id === id)?.state, "not-installed");
   });
+});
+
+test("website app market keeps the catalog item id separate from the WebApp runtime id", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-product-id-"));
+  const app = createApp(root);
+  const marketItemId = "my-webapp";
+  const runtimeId = webappId("market-product-runtime");
+  const archivePath = await writeWebappArchive(root, {
+    id: runtimeId,
+    archiveRootId: runtimeId,
+    manifestId: runtimeId,
+    key: "market-product-runtime",
+    label: "Market Product WebApp"
+  });
+  const archiveBytes = fs.readFileSync(archivePath);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/my-webapp.zip", archiveBytes]
+  ]), async (baseUrl) => {
+    const options = {
+      catalog: {
+        schemaVersion: 1,
+        items: [{
+          id: marketItemId,
+          type: "website-app",
+          name: "Market Product WebApp",
+          version: "1.0.0",
+          description: "Catalog identity differs from the runtime identity.",
+          tags: ["webapp"],
+          websiteKind: "local-app",
+          assets: {
+            universal: {
+              url: `${baseUrl}/my-webapp.zip`,
+              sha256: sha256(archivePath),
+              sizeBytes: archiveBytes.length,
+              archiveType: "zip"
+            }
+          }
+        }]
+      }
+    };
+
+    const result = await installMarketItem(app, marketItemId, options);
+    assert.equal(result.itemId, runtimeId);
+    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), runtimeId, "webapp.json")), true);
+    assert.equal(readWebappItems(app).find((item) => item.id === runtimeId)?.sourceKind, "market");
+    const record = __testInternals.readInstalledRecords(app).find((entry) => entry.id === marketItemId);
+    assert.equal(record?.resourceKey, runtimeId);
+
+    const installedList = await listMarketItems(app, options);
+    const websiteApps = installedList.items.filter((item) => item.type === "website-app");
+    assert.equal(websiteApps.length, 1);
+    assert.equal(websiteApps[0]?.id, marketItemId);
+    assert.equal(websiteApps[0]?.webappId, runtimeId);
+    assert.equal(websiteApps[0]?.state, "installed");
+
+    const uninstallResult = await uninstallMarketItem(app, marketItemId, options);
+    assert.equal(uninstallResult.ok, true);
+    assert.equal(fs.existsSync(path.join(getDesktopWebappsDataRoot(app), runtimeId)), false);
+    assert.equal(
+      __testInternals.readInstalledRecords(app).some((entry) => entry.id === marketItemId),
+      false
+    );
+  });
+});
+
+test("website app market only exposes local ZIP WebApps", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-scope-"));
+  const app = createApp(root);
+  const localId = webappId("local-market-app");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const result = await listMarketItems(app, {
+    catalog: {
+      schemaVersion: 1,
+      items: [{
+        id: localId,
+        type: "website-app",
+        name: "Local app",
+        version: "1.0.0",
+        description: "Local WebApp",
+        tags: [],
+        websiteKind: "local-app",
+        assets: {
+          universal: {
+            url: "https://example.test/local.zip",
+            sizeBytes: 1,
+            archiveType: "zip"
+          }
+        }
+      }, {
+        id: "external-docs",
+        type: "website-app",
+        name: "External docs",
+        version: "1.0.0",
+        description: "External Website",
+        tags: [],
+        websiteKind: "external",
+        metadata: { url: "https://example.test/docs" },
+        assets: {}
+      }]
+    }
+  });
+
+  assert.equal(result.items.some((item) => item.id === localId), true);
+  assert.equal(result.items.some((item) => item.id === "external-docs"), false);
+});
+
+test("website app market rejects a package version that differs from Market", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-webapp-version-"));
+  const app = createApp(root);
+  const id = webappId("version-mismatch");
+  const archivePath = await writeWebappArchive(root, {
+    id,
+    key: "version-mismatch",
+    version: "1.0.0"
+  });
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await assert.rejects(
+    installWebsiteAppArchiveFromPath(app, archivePath, {
+      expectedId: id,
+      version: "2.0.0",
+      recordInstallation: false
+    }),
+    (error) => error?.stage === "manifest" && error?.code === "version_mismatch"
+  );
 });
 
 test("installWebsiteAppArchiveFromPath installs local website app packages", async (t) => {
@@ -2161,9 +2733,9 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
 
     const listed = await listMarketItems(app, { sections: ["skills"] });
     assert.equal(listed.items.find((item) => item.id === "saved-skill")?.name, "Saved Skill");
-    assert.equal(catalogHeaders[0]["x-desktop-device-name-b64"], Buffer.from("市场工作站", "utf8").toString("base64url"));
-    assert.equal(typeof catalogHeaders[0]["x-desktop-device-id"], "string");
-    assert.equal(typeof catalogHeaders[0]["x-desktop-platform"], "string");
+    assert.equal(catalogHeaders[0]["x-desktop-device-name-b64"], undefined);
+    assert.equal(catalogHeaders[0]["x-desktop-device-id"], undefined);
+    assert.equal(catalogHeaders[0]["x-desktop-platform"], undefined);
 
     const result = await installMarketItem(app, "saved-skill");
     assert.equal(result.ok, true);
@@ -2176,7 +2748,7 @@ test("saved apiBaseUrl is used by list and install when market is enabled", asyn
   });
 });
 
-test("market catalog retries one unauthorized response with a refreshed Desktop SSO token", async (t) => {
+test("public market catalog does not require or refresh a Desktop SSO token", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-auth-refresh-"));
   const app = createApp(root);
   const authorizationHeaders = [];
@@ -2186,12 +2758,6 @@ test("market catalog retries one unauthorized response with a refreshed Desktop 
   await withFixtureServer(new Map([
     ["/api/v1/desktop/catalog", (req, res) => {
       authorizationHeaders.push(req.headers.authorization ?? "");
-      if (req.headers.authorization !== "Bearer refreshed-market-token") {
-        res.statusCode = 401;
-        res.setHeader("content-type", "application/json");
-        res.end(JSON.stringify({ error: { message: "expired token" } }));
-        return;
-      }
       res.setHeader("content-type", "application/json");
       res.end(JSON.stringify({ schemaVersion: 1, items: [] }));
     }]
@@ -2208,9 +2774,23 @@ test("market catalog retries one unauthorized response with a refreshed Desktop 
 
     assert.equal(result.ok, true);
     assert.equal(result.offline, false);
-    assert.deepEqual(tokenReasons, ["missing", "unauthorized"]);
-    assert.deepEqual(authorizationHeaders, ["Bearer stale-market-token", "Bearer refreshed-market-token"]);
+    assert.deepEqual(tokenReasons, []);
+    assert.deepEqual(authorizationHeaders, [""]);
   });
+});
+
+test("market response reader aborts oversized chunked bodies", async () => {
+  const response = new Response(new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(8));
+      controller.enqueue(new Uint8Array(8));
+      controller.close();
+    }
+  }));
+  await assert.rejects(
+    () => readResponseBytesWithLimit(response, 10),
+    /下载超过|exceeds the allowed limit/u
+  );
 });
 
 test("installMarketItem resolves, downloads, installs and uninstalls software packages", async (t) => {
@@ -2302,7 +2882,8 @@ test("installMarketItem resolves, downloads, installs and uninstalls software pa
       `/api/v1/software-packages/python-test/resolve?version=3.14.6&platform=${platformKey}`,
       `/api/v1/software-packages/python-test/download?version=3.14.6&platform=${platformKey}`
     ]);
-    assert.equal(requests.every((entry) => entry.authorization === "Bearer market-access-token"), true);
+    assert.equal(requests[0].authorization, undefined);
+    assert.equal(requests.slice(1).every((entry) => entry.authorization === "Bearer market-access-token"), true);
     assert.equal(requests.some((entry) => entry.path.includes("ignored-direct-url")), false);
     assert.equal(requests.some((entry) => entry.path.includes("ignored-resolved-url")), false);
 
@@ -2322,6 +2903,28 @@ test("market settings reject a storefront origin without the API version path", 
     () => saveMarketSettings(app, { enabled: true, apiBaseUrl: "https://market.example.test" }),
     /(?:\/api\/v1|市场 API 地址请输入以 \/api\/v1 结尾的服务地址)/u
   );
+});
+
+test("market settings require HTTPS except for explicit loopback development hosts", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-secure-url-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  assert.throws(
+    () => saveMarketSettings(app, { enabled: true, apiBaseUrl: "http://market.example.test/api/v1" }),
+    /HTTPS|127\.0\.0\.1|localhost|::1/u
+  );
+  for (const apiBaseUrl of [
+    "http://127.0.0.1:9090/api/v1",
+    "http://localhost:9090/api/v1",
+    "http://[::1]:9090/api/v1",
+    "https://market.example.test/api/v1"
+  ]) {
+    assert.equal(
+      saveMarketSettings(app, { enabled: true, apiBaseUrl }).apiBaseUrl,
+      apiBaseUrl
+    );
+  }
 });
 
 test("saved apiBaseUrl without enabled true does not request the market catalog", async (t) => {

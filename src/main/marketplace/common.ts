@@ -15,7 +15,8 @@ import type {
   MarketPlatformSpec,
   MarketScriptSpec,
   MarketSettings,
-  MarketSettingsInput
+  MarketSettingsInput,
+  MarketSkillProfile
 } from "../../shared/contracts";
 import {
   getDesktopConfigRoot,
@@ -27,6 +28,10 @@ import { t } from "../i18n/main-i18n";
 
 export const DEFAULT_MARKET_API_BASE_URL = "";
 export const DEFAULT_MARKETPLACE_CATALOG_URL = "";
+export const MARKET_API_VERSION_PATH = "/api/v1";
+export const MARKET_AUTH_ME_PATH = "/auth/me";
+export const MARKET_DESKTOP_CATALOG_PATH = "/desktop/catalog";
+const MAX_MARKET_DOWNLOAD_BYTES = 512 * 1024 * 1024;
 
 export type Catalog = {
   schemaVersion: number;
@@ -44,6 +49,7 @@ export type InstalledRecord = {
   sha256?: string;
   installPath?: string;
   resourceKey?: string;
+  skillPackage?: boolean;
   installedAt: string;
 };
 
@@ -96,6 +102,10 @@ let configuredMarketAccessTokenIssuer: MarketAccessTokenIssuer | null = null;
 
 export function configureMarketAccessTokenIssuer(issuer: MarketAccessTokenIssuer | null) {
   configuredMarketAccessTokenIssuer = issuer;
+}
+
+export function resolveMarketFetchImpl(fetchImpl?: typeof fetch) {
+  return fetchImpl ?? fetch;
 }
 
 function ensureMarketplaceRoots(app: App) {
@@ -307,6 +317,32 @@ function normalizeMetadata(value: unknown): Record<string, string> {
   );
 }
 
+function normalizeSkillProfile(value: unknown): MarketSkillProfile | undefined {
+  const raw = asObject(value);
+  const kind = asString(raw.kind).trim().toLowerCase();
+  if (kind !== "single" && kind !== "package") {
+    return undefined;
+  }
+  const includedSkills = Array.isArray(raw.includedSkills)
+    ? raw.includedSkills.flatMap((entry) => {
+      const item = asObject(entry);
+      const id = asString(item.id).trim();
+      if (!id) return [];
+      return [{
+        id,
+        name: asString(item.name).trim() || undefined,
+        optional: asBoolean(item.optional),
+        sortOrder: asNumber(item.sortOrder)
+      }];
+    })
+    : [];
+  return {
+    kind,
+    packageMode: asString(raw.packageMode).trim() || undefined,
+    includedSkills: includedSkills.length > 0 ? includedSkills : undefined
+  };
+}
+
 function normalizePlatformSpec(key: string, value: unknown): MarketPlatformSpec | null {
   const raw = asObject(value);
   const platform = asString(raw.platform).trim() || asString(raw.key).trim() || key.trim() || "universal";
@@ -331,24 +367,24 @@ function normalizePlatformSpec(key: string, value: unknown): MarketPlatformSpec 
   return spec;
 }
 
-function normalizePlatforms(value: unknown, assets: Record<string, MarketAsset>) {
-  const platforms: Record<string, MarketPlatformSpec> = {};
+function normalizeTargets(value: unknown, assets: Record<string, MarketAsset>) {
+  const targets: Record<string, MarketPlatformSpec> = {};
   for (const [key, rawPlatform] of Object.entries(asObject(value))) {
     const normalizedKey = key.trim() || "universal";
     const platform = normalizePlatformSpec(normalizedKey, rawPlatform);
     if (platform) {
-      platforms[platform.platform] = platform;
+      targets[platform.platform] = platform;
     }
   }
   for (const [key] of Object.entries(assets)) {
     const normalizedKey = key.trim() || "universal";
-    if (!platforms[normalizedKey]) {
-      platforms[normalizedKey] = {
+    if (!targets[normalizedKey]) {
+      targets[normalizedKey] = {
         platform: normalizedKey
       };
     }
   }
-  return platforms;
+  return targets;
 }
 
 function isDesktopInstallableAsset(
@@ -384,7 +420,7 @@ function isDesktopInstallableAsset(
 
 function shouldRequireInstallableAsset(item: MarketCatalogItem) {
   return item.type === "plugin" ||
-    item.type === "skill" ||
+    (item.type === "skill" && item.skill?.kind !== "package") ||
     item.type === "agent" ||
     item.type === "pet" ||
     item.type === "website-app" ||
@@ -434,7 +470,7 @@ export function normalizeCatalog(input: unknown): Catalog {
     const downloadCount = asCount(item.downloadCount ?? rawMetadata.downloadCount ?? rawMetadata.downloads ?? item.downloads);
     const favoriteCount = asCount(item.favoriteCount ?? rawMetadata.favoriteCount ?? rawMetadata.favorites ?? item.favorites);
     const favorited = asBoolean(item.favorited ?? rawMetadata.favorited ?? rawMetadata.favorite);
-    const platforms = normalizePlatforms(item.platforms, assets);
+    const targets = normalizeTargets(item.targets, assets);
     if (publishedAt) metadata.publishedAt = publishedAt;
     if (updatedAt) metadata.updatedAt = updatedAt;
     if (createdAt) metadata.createdAt = createdAt;
@@ -474,9 +510,10 @@ export function normalizeCatalog(input: unknown): Catalog {
       downloadCount,
       favoriteCount,
       favorited,
+      skill: normalizeSkillProfile(item.skill),
       dependencies: normalizeDependencies(item.dependencies),
       metadata,
-      platforms,
+      targets,
       install: installSpec,
       uninstall: uninstallSpec,
       detect: detectSpec,
@@ -508,6 +545,11 @@ export function writeJsonFile(filePath: string, value: unknown) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
+export function isLoopbackHostname(value: unknown) {
+  const hostname = asString(value).trim().toLowerCase().replace(/^\[|\]$/gu, "");
+  return hostname === "127.0.0.1" || hostname === "localhost" || hostname === "::1";
+}
+
 export function normalizeMarketApiBaseUrl(value: unknown) {
   const input = asString(value).trim() || DEFAULT_MARKET_API_BASE_URL;
   if (!input) {
@@ -522,11 +564,14 @@ export function normalizeMarketApiBaseUrl(value: unknown) {
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
     throw new Error(t("market.main.marketApiUnsupportedProtocol"));
   }
+  if (parsed.protocol === "http:" && !isLoopbackHostname(parsed.hostname)) {
+    throw new Error(t("market.main.marketApiSecureUrlRequired"));
+  }
   if (parsed.search || parsed.hash) {
     throw new Error(t("market.main.marketApiNoSearch"));
   }
   const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
-  if (pathname === "/api/v1" || pathname.endsWith("/api/v1")) {
+  if (pathname === MARKET_API_VERSION_PATH || pathname.endsWith(MARKET_API_VERSION_PATH)) {
     return `${parsed.origin}${pathname}`;
   }
   throw new Error(t("market.main.marketApiInvalidPath"));
@@ -534,7 +579,7 @@ export function normalizeMarketApiBaseUrl(value: unknown) {
 
 export function catalogUrlFromApiBaseUrl(value: unknown) {
   const baseUrl = normalizeMarketApiBaseUrl(value).replace(/\/+$/u, "");
-  return baseUrl ? `${baseUrl}/desktop/catalog` : "";
+  return baseUrl ? `${baseUrl}${MARKET_DESKTOP_CATALOG_PATH}` : "";
 }
 
 export function getMarketplaceCatalogUrl(app: App, options: MarketplaceOptions = {}) {
@@ -624,15 +669,61 @@ export function readInstalledRecords(app: App) {
   return records
     .map((record) => {
       const type = normalizeMarketItemType(record?.type);
-      return record && typeof record.id === "string" && type
-        ? { ...record, type }
-        : null;
+      if (!record || typeof record.id !== "string" || !type) {
+        return null;
+      }
+      const normalized: InstalledRecord = { ...record, type };
+      delete (normalized as InstalledRecord & { agentKeys?: unknown }).agentKeys;
+      const legacyIncludedItemIds = (record as InstalledRecord & { includedItemIds?: unknown }).includedItemIds;
+      delete (normalized as InstalledRecord & { includedItemIds?: unknown }).includedItemIds;
+      normalized.skillPackage = record.skillPackage === true || (
+        Array.isArray(legacyIncludedItemIds) && legacyIncludedItemIds.length > 0
+      ) || undefined;
+      return normalized;
     })
     .filter((record): record is InstalledRecord => Boolean(record));
 }
 
 function writeInstalledRecords(app: App, records: InstalledRecord[]) {
-  writeJsonFile(installedRecordsPath(app), { records });
+  const targetPath = installedRecordsPath(app);
+  const directory = path.dirname(targetPath);
+  fs.mkdirSync(directory, { recursive: true });
+  const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const temporaryPath = path.join(directory, `.${path.basename(targetPath)}.${nonce}.tmp`);
+  const backupPath = path.join(directory, `.${path.basename(targetPath)}.${nonce}.bak`);
+  let backupActive = false;
+  let targetPublished = false;
+  try {
+    fs.writeFileSync(temporaryPath, `${JSON.stringify({ records }, null, 2)}\n`, {
+      encoding: "utf8",
+      flag: "wx",
+      mode: 0o600
+    });
+    if (fs.existsSync(targetPath)) {
+      fs.renameSync(targetPath, backupPath);
+      backupActive = true;
+    }
+    fs.renameSync(temporaryPath, targetPath);
+    targetPublished = true;
+  } catch (error) {
+    if (targetPublished) {
+      fs.rmSync(targetPath, { force: true });
+    }
+    if (backupActive && fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, targetPath);
+      backupActive = false;
+    }
+    throw error;
+  } finally {
+    fs.rmSync(temporaryPath, { force: true });
+  }
+  if (backupActive) {
+    try {
+      fs.rmSync(backupPath, { force: true });
+    } catch {
+      // The new record is already committed; hidden backup cleanup is best effort.
+    }
+  }
 }
 
 export function upsertInstalledRecord(app: App, record: InstalledRecord) {
@@ -643,6 +734,17 @@ export function upsertInstalledRecord(app: App, record: InstalledRecord) {
 
 export function removeInstalledRecord(app: App, itemId: string, type?: MarketItemType) {
   const records = readInstalledRecords(app).filter((item) => !(item.id === itemId && (!type || item.type === type)));
+  writeInstalledRecords(app, records);
+}
+
+export function removeInstalledRecordByResourceKey(app: App, resourceKey: string, type: MarketItemType) {
+  const records = readInstalledRecords(app).filter((item) => !(
+    item.type === type && (item.id === resourceKey || item.resourceKey === resourceKey)
+  ));
+  writeInstalledRecords(app, records);
+}
+
+export function replaceInstalledRecords(app: App, records: InstalledRecord[]) {
   writeInstalledRecords(app, records);
 }
 
@@ -724,7 +826,7 @@ export async function requestMarket(
   options: MarketplaceOptions = {},
   label = "market request"
 ) {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
   let token = await issueMarketAccessToken(app, "missing", options);
   for (const reason of ["missing", "unauthorized"] as const) {
     if (reason === "unauthorized") {
@@ -732,6 +834,8 @@ export async function requestMarket(
     }
     const response = await fetchImpl(url, {
       ...init,
+      credentials: "include",
+      redirect: "error",
       headers: {
         ...getMarketDesktopDeviceHeaders(app),
         ...Object.fromEntries(new Headers(init.headers).entries()),
@@ -763,6 +867,23 @@ export async function requestMarketJson(
   return response.json() as Promise<unknown>;
 }
 
+export async function requestPublicMarketJson(
+  app: App,
+  url: string,
+  options: MarketplaceOptions = {},
+  label = "market public request"
+) {
+  const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
+  const response = await fetchImpl(url, {
+    credentials: "omit",
+    redirect: "error"
+  });
+  if (!response.ok) {
+    throw new Error(await readMarketErrorMessage(response, label));
+  }
+  return response.json() as Promise<unknown>;
+}
+
 async function verifyMarketAuthentication(
   app: App,
   apiBaseUrl: string,
@@ -770,7 +891,7 @@ async function verifyMarketAuthentication(
 ) {
   const response = asObject(await requestMarketJson(
     app,
-    `${apiBaseUrl}/auth/me`,
+    `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`,
     options,
     "market authentication request"
   ));
@@ -781,11 +902,49 @@ async function verifyMarketAuthentication(
 }
 
 export async function fetchJson(url: string, label = "market request", headers: Record<string, string> = {}) {
-  const response = await fetch(url, { headers });
+  const response = await resolveMarketFetchImpl()(url, {
+    credentials: "omit",
+    headers,
+    redirect: "error"
+  });
   if (!response.ok) {
     throw new Error(`${label} failed: ${response.status}`);
   }
   return response.json() as Promise<unknown>;
+}
+
+export async function readResponseBytesWithLimit(response: Response, maxBytes: number) {
+  const limit = Math.max(1, Math.trunc(maxBytes));
+  const declaredLength = Number.parseInt(response.headers.get("content-length") || "", 10);
+  if (Number.isFinite(declaredLength) && declaredLength > limit) {
+    throw new Error(t("market.main.downloadTooLarge", { maxBytes: limit }));
+  }
+  if (!response.body) {
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.length > limit) {
+      throw new Error(t("market.main.downloadTooLarge", { maxBytes: limit }));
+    }
+    return bytes;
+  }
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (!value?.byteLength) continue;
+      totalBytes += value.byteLength;
+      if (totalBytes > limit) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(t("market.main.downloadTooLarge", { maxBytes: limit }));
+      }
+      chunks.push(value);
+    }
+  } finally {
+    reader.releaseLock();
+  }
+  return Buffer.concat(chunks, totalBytes);
 }
 
 function sha256(filePath: string) {
@@ -814,8 +973,14 @@ export async function downloadAsset(
   options: MarketplaceOptions = {},
   downloadUrl = asset.url
 ) {
+  if (asset.sizeBytes > MAX_MARKET_DOWNLOAD_BYTES) {
+    throw new Error(t("market.main.downloadTooLarge", { maxBytes: MAX_MARKET_DOWNLOAD_BYTES }));
+  }
   const response = await requestMarket(app, downloadUrl, {}, options, "market asset download");
-  const bytes = Buffer.from(await response.arrayBuffer());
+  const bytes = await readResponseBytesWithLimit(
+    response,
+    asset.sizeBytes > 0 ? asset.sizeBytes : MAX_MARKET_DOWNLOAD_BYTES
+  );
   if (asset.sizeBytes > 0 && bytes.length !== asset.sizeBytes) {
     throw new Error(t("market.main.downloadSizeMismatch", { expected: asset.sizeBytes, actual: bytes.length }));
   }
@@ -914,7 +1079,11 @@ export function platformCandidates(
   return [...new Set(archAliases.map((alias) => `${platformName}-${alias}`)), "universal"];
 }
 
-export function selectAsset(item: Pick<MarketCatalogItem, "type" | "sandboxKind"> & { assets?: Record<string, MarketAsset> }) {
+export function selectAsset(
+  item: Pick<MarketCatalogItem, "type" | "sandboxKind"> & {
+    assets?: Record<string, MarketAsset>;
+  }
+) {
   const assets = item.assets ?? {};
   for (const candidate of platformCandidates()) {
     const asset = assets[candidate];
@@ -944,7 +1113,7 @@ function currentDesktopVersion(app: App) {
   }
 }
 
-function assertDesktopVersionCompatible(app: App, item: MarketCatalogItem, platformSpec?: MarketPlatformSpec) {
+export function assertDesktopVersionCompatible(app: App, item: MarketCatalogItem, platformSpec?: MarketPlatformSpec) {
   const requiredVersion = platformSpec?.minDesktopVersion || item.minDesktopVersion || "";
   const desktopVersion = currentDesktopVersion(app);
   if (requiredVersion && desktopVersion && compareVersions(desktopVersion, requiredVersion) < 0) {
@@ -967,7 +1136,7 @@ export async function resolveMarketAsset(
 
   const apiBaseUrl = getMarketApiBaseUrl(app, options).replace(/\/+$/u, "");
   if (!apiBaseUrl || options.catalog) {
-    const platformSpec = item.platforms?.[selected.key];
+    const platformSpec = item.targets?.[selected.key];
     assertDesktopVersionCompatible(app, item, platformSpec);
     return {
       item,
@@ -1005,14 +1174,14 @@ export async function resolveMarketAsset(
   if (!asset || !isDesktopInstallableAsset(item, asset)) {
     throw new Error(t("market.main.platformUnavailable"));
   }
-  const platformSpec = normalizePlatformSpec(platform, resolved.platformSpec) ?? item.platforms?.[platform];
+  const platformSpec = normalizePlatformSpec(platform, resolved.platformSpec) ?? item.targets?.[platform];
   const resolvedItem: MarketCatalogItem = {
     ...item,
     version,
     minDesktopVersion: platformSpec?.minDesktopVersion || item.minDesktopVersion,
     dependencies: platformSpec?.dependencies?.length ? platformSpec.dependencies : item.dependencies,
-    platforms: {
-      ...item.platforms,
+    targets: {
+      ...item.targets,
       ...(platformSpec ? { [platform]: platformSpec } : {})
     },
     assets: { [platform]: asset }
@@ -1047,7 +1216,7 @@ export async function loadMarketplaceCatalog(app: App, options: MarketplaceOptio
     };
   }
   try {
-    const catalog = normalizeCatalog(await requestMarketJson(app, catalogUrl, options, label));
+    const catalog = normalizeCatalog(await requestPublicMarketJson(app, catalogUrl, options, label));
     return {
       catalog,
       offline: false,
@@ -1107,11 +1276,15 @@ function catalogItemToMarketItem(item: MarketCatalogItem, record: InstalledRecor
     downloadCount: item.downloadCount,
     favoriteCount: item.favoriteCount,
     favorited: item.favorited,
-    platforms: item.platforms,
+    skill: item.skill,
+    targets: item.targets,
     assets: item.assets,
     install: item.install,
     uninstall: item.uninstall,
     detect: item.detect,
+    mcpServerKey: item.type === "mcp" ? record?.resourceKey : undefined,
+    webappId: item.type === "website-app" ? record?.resourceKey : undefined,
+    mcpRuntimeStatus: item.type === "mcp" && record ? "configuration-written" : undefined,
     publishedAt: item.publishedAt,
     updatedAt: item.updatedAt,
     homepageUrl: item.metadata?.homepageUrl,
@@ -1128,8 +1301,14 @@ export function mergeCatalogItems(app: App, catalogItems: MarketCatalogItem[], l
     return catalogItemToMarketItem(item, record, localByKey.get(key));
   });
   const catalogKeys = new Set(catalogItems.map((item) => `${item.type}:${item.id}`));
+  const catalogResourceKeys = new Set(records.flatMap((record) => (
+    record.resourceKey && catalogKeys.has(`${record.type}:${record.id}`)
+      ? [`${record.type}:${record.resourceKey}`]
+      : []
+  )));
   for (const localItem of localItems) {
-    if (!catalogKeys.has(`${localItem.type}:${localItem.id}`)) {
+    const localKey = `${localItem.type}:${localItem.id}`;
+    if (!catalogKeys.has(localKey) && !catalogResourceKeys.has(localKey)) {
       const record = records.find((entry) => entry.id === localItem.id && entry.type === localItem.type);
       result.push({
         ...localItem,

@@ -157,6 +157,23 @@ test("main chat route comparison ignores host presentation params and their orde
   );
 });
 
+test("main chat route comparison accepts consumed one-shot composer prefill params", () => {
+  const prefilled =
+    "http://127.0.0.1:19011/agent/cutej?newChat=1710000000000&composerDraft=Create+a+Skill&composerSkill=skill-creator&theme=light&lang=zh-CN&wsSource=desktop-chat";
+  const consumed =
+    "http://127.0.0.1:19011/agent/cutej?newChat=1710000000000&theme=light&lang=zh-CN&wsSource=desktop-chat";
+
+  assert.equal(
+    areAgentWebclientChatNavigationUrlsEquivalent(prefilled, consumed),
+    true,
+  );
+  assert.equal(
+    areAgentWebclientChatBusinessRoutesEquivalent(prefilled, consumed),
+    true,
+  );
+  assert.equal(areAgentWebclientHostRouteParamsEqual(prefilled, consumed), true);
+});
+
 test("host presentation comparison detects every host parameter change", () => {
   const base =
     "http://127.0.0.1:19011/agent/cutej?chatId=chat-1&theme=light&hostTheme=light&lang=zh-CN&wsSource=desktop-chat";
@@ -288,6 +305,14 @@ test("Main Chat surface alignment accepts exact canonical and new Chat identitie
     ),
     true,
   );
+  assert.equal(
+    isAgentWebclientMainChatRouteAligned(
+      "/agent/cutej?newChat=nonce-1&composerDraft=Create+a+Skill&composerSkill=skill-creator",
+      "http://127.0.0.1:19011/agent/cutej?newChat=nonce-1&theme=dark&lang=zh-CN&wsSource=desktop-chat",
+      embeddedUrl,
+    ),
+    true,
+  );
 });
 
 test("Main Chat surface alignment rejects mismatched or ambiguous route identities", () => {
@@ -320,6 +345,13 @@ test("webview chat routes mirror all business params but no host params", () => 
   assert.equal(
     resolveAgentWebclientDesktopChatRouteFromUrl(webviewUrl, webviewSrcUrl),
     "/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?chatId=chat-1&custom=%E4%B8%AD%E6%96%87"
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopChatRouteFromUrl(
+      `${webviewUrl}&composerDraft=Create+a+Skill&composerSkill=skill-creator`,
+      webviewSrcUrl,
+    ),
+    "/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?chatId=chat-1&custom=%E4%B8%AD%E6%96%87",
   );
   assert.equal(
     resolveAgentWebclientDesktopChatRouteFromUrl(

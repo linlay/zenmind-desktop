@@ -66,7 +66,7 @@ export function resolveWebappManagementMetadata(app: App, item: Pick<WebappEntry
   }
 
   const marketRecord = readInstalledRecords(app).find((record) =>
-    record.id === item.id && record.type === "website-app"
+    record.type === "website-app" && (record.id === item.id || record.resourceKey === item.id)
   );
   if (marketRecord) {
     return createMetadata("market", installPath, {

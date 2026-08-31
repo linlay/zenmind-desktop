@@ -6,6 +6,7 @@ export type SidebarMode = "primary" | "capabilities" | "settings";
 export type CapabilityNavigationItemId =
   | "agents"
   | "skills"
+  | "market"
   | "mcp-servers"
   | "registries"
   | "archives"
@@ -33,6 +34,12 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
     labelKey: "nav.skills",
     icon: "skill",
     detailPathPrefix: "/skills/",
+  },
+  {
+    id: "market",
+    to: "/market",
+    labelKey: "nav.market",
+    icon: "market",
   },
   {
     id: "mcp-servers",

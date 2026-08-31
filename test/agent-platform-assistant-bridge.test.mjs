@@ -1693,6 +1693,56 @@ test("agent platform assistant bridge returns no agents when platform is install
   }
 });
 
+test("agent platform assistant bridge normalizes MCP runtime status", async () => {
+  const originalFetch = globalThis.fetch;
+  const { bridge } = makeBridge();
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    code: 0,
+    msg: "success",
+    data: {
+      items: [
+        {
+          category: "mcp-servers",
+          file: "broken-item.yml",
+          status: "invalid",
+          diagnostic: { message: "invalid yaml" }
+        },
+        {
+          category: "mcp-servers",
+          file: "flow.yml",
+          key: "flowCenter",
+          status: "ready",
+          summary: { syncStatus: "syncing", toolCount: 0 }
+        }
+      ]
+    }
+  }), {
+    status: 200,
+    headers: { "content-type": "application/json" }
+  });
+
+  try {
+    assert.deepEqual(await bridge.listMcpRuntimeStatuses(), [
+      {
+        serverKey: "broken-item",
+        status: "invalid",
+        syncStatus: "",
+        toolCount: 0,
+        message: "invalid yaml"
+      },
+      {
+        serverKey: "flowCenter",
+        status: "ready",
+        syncStatus: "syncing",
+        toolCount: 0,
+        message: ""
+      }
+    ]);
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("agent platform assistant bridge maps submitAwaiting and stopRun to platform endpoints", async () => {
   const originalFetch = globalThis.fetch;
   const requests = [];

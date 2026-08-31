@@ -12,7 +12,6 @@ export type SkillScope = "all" | "cloud" | "local";
 export interface MarketTabDefinition {
   id: MarketTab;
   label: string;
-  count?: number;
   title: string;
   subtitle: string;
 }
@@ -23,7 +22,9 @@ export interface MarketViewProps {
   initialItemId?: string;
 }
 
-export const DEFAULT_MARKET_TAB: MarketTab = "plugins";
+export const DEFAULT_MARKET_TAB: MarketTab = "skills";
+
+const VISIBLE_MARKET_TABS: readonly MarketTab[] = ["skills", "websiteApps"];
 
 const MARKET_TAB_KEYS: Record<MarketTab, { label: TranslationKey; title: TranslationKey; subtitle: TranslationKey }> = {
   plugins: {
@@ -91,7 +92,7 @@ export function marketTabForItemType(type: MarketItemType): MarketTab | null {
 }
 
 export function getMarketTabDefinitions(t: TranslateFunction): MarketTabDefinition[] {
-  return (Object.keys(MARKET_TAB_KEYS) as MarketTab[]).map((id) => ({
+  return VISIBLE_MARKET_TABS.map((id) => ({
     id,
     label: t(MARKET_TAB_KEYS[id].label),
     title: t(MARKET_TAB_KEYS[id].title),
@@ -144,7 +145,7 @@ export function matchesMarketItemQuery(item: MarketItem, query: string, t: Trans
   const assets = Object.values(item.assets ?? {})
     .map((asset) => [asset.url, asset.archiveType, asset.platform, asset.role].filter(Boolean).join(" "))
     .join(" ");
-  const platforms = Object.entries(item.platforms ?? {})
+  const targets = Object.entries(item.targets ?? {})
     .map(([key, platform]) => [
       key,
       platform.platform,
@@ -155,7 +156,7 @@ export function matchesMarketItemQuery(item: MarketItem, query: string, t: Trans
       Object.values(platform.metadata ?? {}).join(" ")
     ].filter(Boolean).join(" "))
     .join(" ");
-  return `${item.id} ${item.name} ${item.type} ${item.description} ${item.version} ${item.readme ?? ""} ${item.tags.join(" ")} ${item.author ?? ""} ${item.createdAt ?? ""} ${item.downloadCount ?? ""} ${item.favoriteCount ?? ""} ${Object.values(item.metadata ?? {}).join(" ")} ${dependencies} ${assets} ${platforms} ${(item.detect?.commands ?? []).join(" ")} ${item.detect?.versionCommand ?? ""} ${item.websiteKind ?? ""} ${item.sandboxKind ?? ""} ${item.npmPackage ?? ""} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
+  return `${item.id} ${item.name} ${item.type} ${item.description} ${item.version} ${item.readme ?? ""} ${item.tags.join(" ")} ${item.author ?? ""} ${item.createdAt ?? ""} ${item.downloadCount ?? ""} ${item.favoriteCount ?? ""} ${Object.values(item.metadata ?? {}).join(" ")} ${dependencies} ${assets} ${targets} ${(item.detect?.commands ?? []).join(" ")} ${item.detect?.versionCommand ?? ""} ${item.websiteKind ?? ""} ${item.sandboxKind ?? ""} ${item.npmPackage ?? ""} ${marketStateLabel(item.state, t)} ${item.imageRef ?? ""} ${item.environmentName ?? ""}`
     .toLowerCase()
     .includes(normalized);
 }
@@ -196,19 +197,4 @@ export function createEmptyMarketResult(): MarketListResult {
     softwarePackageMessage: "",
     softwarePackageOffline: false
   };
-}
-
-export function isValidSkillsApiBaseUrl(value: string) {
-  try {
-    const parsed = new URL(value.trim());
-    const pathname = parsed.pathname.replace(/\/+$/u, "") || "/";
-    return (
-      (parsed.protocol === "http:" || parsed.protocol === "https:") &&
-      !parsed.search &&
-      !parsed.hash &&
-      (pathname === "/" || pathname === "/api/v1")
-    );
-  } catch {
-    return false;
-  }
 }

@@ -2,19 +2,23 @@ import fs from "node:fs";
 import path from "node:path";
 import type { App } from "electron";
 import { dump as dumpYaml } from "js-yaml";
-import type { MarketCommandResult, MarketItem } from "../../shared/contracts";
+import type { MarketCommandResult, MarketItem, MarketMcpRuntimeStatus } from "../../shared/contracts";
 import { resolveRuntimeRoot } from "../env-bootstrap";
 import { t } from "../i18n/main-i18n";
 import {
-  asNumber,
   asObject,
   asString,
+  assertDesktopVersionCompatible,
   findCatalogItem,
   getMarketApiBaseUrl,
+  isLoopbackHostname,
+  MARKET_AUTH_ME_PATH,
   loadMarketplaceCatalog,
   mergeCatalogItems,
   normalizeCatalog,
   readInstalledRecords,
+  readResponseBytesWithLimit,
+  removeInstalledRecord,
   requestMarket,
   requestMarketJson,
   upsertInstalledRecord,
@@ -26,6 +30,15 @@ import {
 const MCP_REGISTRIES_DIRECTORY = "registries";
 const MCP_REGISTRY_CATEGORY = "mcp-servers";
 const MAX_MCP_CONFIG_BYTES = 1024 * 1024;
+const MCP_AUTH_SOURCE_IDENTITY_FILE = "identity-file";
+
+export type McpRuntimeStatusSnapshot = {
+  serverKey: string;
+  status: string;
+  syncStatus: string;
+  toolCount: number;
+  message?: string;
+};
 
 function mcpOnlyCatalog(catalog: Catalog): Catalog {
   return { ...catalog, items: catalog.items.filter((item) => item.type === "mcp") };
@@ -57,8 +70,49 @@ function installedMcpItems(app: App): MarketItem[] {
       state: "installed" as const,
       source: record.source,
       installedVersion: record.version,
-      installPath: record.installPath
+      installPath: record.installPath,
+      mcpServerKey: record.resourceKey || record.id,
+      mcpRuntimeStatus: "configuration-written" as const
     }));
+}
+
+function normalizedMcpRuntimeStatus(snapshot: McpRuntimeStatusSnapshot): MarketMcpRuntimeStatus {
+  const sourceStatus = String(snapshot.status ?? "").trim().toLowerCase();
+  const syncStatus = String(snapshot.syncStatus ?? "").trim().toLowerCase();
+  if (sourceStatus === "invalid") return "invalid";
+  if (sourceStatus === "disabled" || syncStatus === "disabled") return "disabled";
+  if (syncStatus === "ready") return "ready";
+  if (syncStatus === "unavailable") return "unavailable";
+  if (syncStatus === "pending" || syncStatus === "syncing") return "pending";
+  return "configuration-written";
+}
+
+export function mergeMcpRuntimeStatuses(items: MarketItem[], snapshots: McpRuntimeStatusSnapshot[]) {
+  const byKey = new Map(
+    snapshots
+      .filter((snapshot) => snapshot.serverKey.trim())
+      .map((snapshot) => [snapshot.serverKey.trim().toLowerCase(), snapshot])
+  );
+  return items.map((item) => {
+    if (item.type !== "mcp" || !item.installPath) {
+      return item;
+    }
+    const runtimeKey = (item.mcpServerKey || item.id).trim().toLowerCase();
+    const snapshot = byKey.get(runtimeKey);
+    if (!snapshot) {
+      return {
+        ...item,
+        mcpRuntimeStatus: item.mcpRuntimeStatus ?? "configuration-written"
+      };
+    }
+    return {
+      ...item,
+      mcpServerKey: snapshot.serverKey,
+      mcpRuntimeStatus: normalizedMcpRuntimeStatus(snapshot),
+      mcpToolCount: Math.max(0, Math.trunc(snapshot.toolCount || 0)),
+      mcpRuntimeMessage: snapshot.message?.trim() || undefined
+    };
+  });
 }
 
 export async function listMcpMarketItems(app: App, options: MarketplaceOptions = {}): Promise<MarketSectionResult> {
@@ -82,9 +136,11 @@ function safeMcpFileName(itemId: string) {
 function mcpRegistryLocation(app: App, itemId: string) {
   const file = safeMcpFileName(itemId);
   const installPath = `${MCP_REGISTRIES_DIRECTORY}/${MCP_REGISTRY_CATEGORY}/${file}`;
+  const runtimeRoot = resolveRuntimeRoot(app);
   return {
     installPath,
-    targetPath: path.join(resolveRuntimeRoot(app), MCP_REGISTRIES_DIRECTORY, MCP_REGISTRY_CATEGORY, file)
+    runtimeRoot,
+    targetPath: path.join(runtimeRoot, MCP_REGISTRIES_DIRECTORY, MCP_REGISTRY_CATEGORY, file)
   };
 }
 
@@ -94,7 +150,20 @@ function wrappedMcpFileError(message: string, cause: unknown) {
   return error;
 }
 
+function assertMcpRegistryTarget(runtimeRoot: string, targetPath: string) {
+  const realRuntimeRoot = fs.realpathSync(runtimeRoot);
+  const realDirectory = fs.realpathSync(path.dirname(targetPath));
+  const relativeDirectory = path.relative(realRuntimeRoot, realDirectory);
+  if (relativeDirectory.startsWith("..") || path.isAbsolute(relativeDirectory)) {
+    throw new Error("MCP registry directory escapes the runtime root");
+  }
+  if (fs.existsSync(targetPath) && !fs.lstatSync(targetPath).isFile()) {
+    throw new Error(t("market.main.mcpFileConflict"));
+  }
+}
+
 function publishManagedMcpFile(
+  runtimeRoot: string,
   targetPath: string,
   content: string,
   allowReplace: boolean,
@@ -103,6 +172,7 @@ function publishManagedMcpFile(
   const directory = path.dirname(targetPath);
   try {
     fs.mkdirSync(directory, { recursive: true });
+    assertMcpRegistryTarget(runtimeRoot, targetPath);
   } catch (error) {
     throw wrappedMcpFileError(t("market.main.mcpFileWriteFailed"), error);
   }
@@ -117,7 +187,7 @@ function publishManagedMcpFile(
   let backupActive = false;
   let targetPublished = false;
   try {
-    fs.writeFileSync(temporaryPath, content, { encoding: "utf8", mode: 0o600 });
+    fs.writeFileSync(temporaryPath, content, { encoding: "utf8", flag: "wx", mode: 0o600 });
     if (targetExists) {
       fs.renameSync(targetPath, backupPath);
       backupActive = true;
@@ -151,41 +221,84 @@ function publishManagedMcpFile(
   }
 }
 
-function stringRecord(value: unknown) {
-  const result: Record<string, string> = {};
-  for (const [key, entry] of Object.entries(asObject(value))) {
-    if (key.trim() && typeof entry === "string" && entry.trim()) {
-      result[key] = entry.trim();
+function removeManagedMcpFile(
+  runtimeRoot: string,
+  targetPath: string,
+  commitRecord: () => void
+) {
+  if (!fs.existsSync(targetPath)) {
+    commitRecord();
+    return;
+  }
+  assertMcpRegistryTarget(runtimeRoot, targetPath);
+  const nonce = `${process.pid}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const backupPath = path.join(path.dirname(targetPath), `.${path.basename(targetPath)}.${nonce}.bak`);
+  let backupActive = false;
+  try {
+    fs.renameSync(targetPath, backupPath);
+    backupActive = true;
+    commitRecord();
+  } catch (error) {
+    if (backupActive && fs.existsSync(backupPath)) {
+      fs.renameSync(backupPath, targetPath);
+      backupActive = false;
+    }
+    throw error;
+  }
+  if (backupActive) {
+    try {
+      fs.rmSync(backupPath, { force: true });
+    } catch {
+      // Registry file and install record are already removed; hidden backup cleanup is best effort.
     }
   }
-  return result;
 }
 
-function downloadedMcpConfig(value: unknown, itemId: string, fallbackName: string) {
+function downloadedMcpConfig(
+  value: unknown,
+  itemId: string,
+  fallbackName: string,
+  fallbackAuthSource = "",
+  expectedVersion = "",
+  expectedServerKey = ""
+) {
   const root = asObject(value);
+  const market = asObject(root.market);
   const servers = asObject(root.mcpServers);
   const serverEntries = Object.entries(servers);
-  const nested = asObject(root.config || root.registry || root.server);
-  const raw = Object.keys(nested).length > 0
-    ? nested
-    : serverEntries.length > 0
-      ? asObject(servers[itemId] ?? serverEntries[0]?.[1])
-      : root;
-  const downloadedId = asString(root.id || raw.id).trim();
-  if (downloadedId && downloadedId !== itemId) {
-    throw new Error(t("market.main.mcpIdMismatch", { expected: itemId, actual: downloadedId }));
+  if (serverEntries.length !== 1) {
+    throw new Error(t("market.main.mcpSingleServerRequired"));
   }
-  const serverKey = asString(raw.serverKey || raw.key || root.serverKey).trim() || itemId;
-  if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(serverKey)) {
+  const [serverKey, serverValue] = serverEntries[0];
+  const raw = asObject(serverValue);
+  const downloadedId = asString(market.id).trim();
+  if (downloadedId !== itemId) {
+    throw new Error(t("market.main.mcpIdMismatch", {
+      expected: itemId,
+      actual: downloadedId || t("common.none")
+    }));
+  }
+  const downloadedVersion = asString(market.version).trim();
+  if (expectedVersion && downloadedVersion !== expectedVersion) {
+    throw new Error(t("market.main.mcpVersionMismatch", {
+      expected: expectedVersion,
+      actual: downloadedVersion || t("common.none")
+    }));
+  }
+  if (!serverKey.trim() || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(serverKey)) {
     throw new Error(t("market.main.mcpInvalidConfig"));
   }
-  const transport = asString(raw.transport || raw.type).trim() || "streamable-http";
-  if (transport !== "streamable-http" && transport !== "http") {
+  if (expectedServerKey && serverKey !== expectedServerKey) {
+    throw new Error(t("market.main.mcpServerKeyMismatch", { expected: expectedServerKey, actual: serverKey }));
+  }
+  const transport = asString(raw.type).trim();
+  if (transport !== "streamable-http") {
     throw new Error(t("market.main.mcpHttpOnly"));
   }
-  const declaredBaseUrl = asString(raw.baseUrl || root.baseUrl).trim();
-  const declaredEndpointUrl = asString(raw.url || raw.endpoint || root.url).trim();
-  const sourceUrl = declaredBaseUrl || declaredEndpointUrl;
+  if (["command", "args", "env", "workingDirectory", "working-directory"].some((key) => Object.hasOwn(raw, key))) {
+    throw new Error(t("market.main.mcpHttpOnly"));
+  }
+  const sourceUrl = asString(raw.url).trim();
   let parsed: URL;
   try {
     parsed = new URL(sourceUrl);
@@ -195,33 +308,32 @@ function downloadedMcpConfig(value: unknown, itemId: string, fallbackName: strin
   if (parsed.username || parsed.password || parsed.search || parsed.hash) {
     throw new Error(t("market.main.mcpInvalidConfig"));
   }
-  const loopbackHttp = parsed.protocol === "http:" && ["127.0.0.1", "localhost", "::1"].includes(parsed.hostname);
+  const loopbackHttp = parsed.protocol === "http:" && isLoopbackHostname(parsed.hostname);
   if (parsed.protocol !== "https:" && !loopbackHttp) {
     throw new Error(t("market.main.mcpSecureUrlRequired"));
   }
-  let baseUrl = sourceUrl;
-  let endpointPath = asString(raw.endpointPath || raw.path).trim();
-  if (!declaredBaseUrl && declaredEndpointUrl && !endpointPath) {
-    baseUrl = parsed.origin;
-    endpointPath = parsed.pathname || "/";
-  }
+  const baseUrl = parsed.origin;
+  const endpointPath = parsed.pathname || "/";
   const config: Record<string, unknown> = {
     serverKey,
-    name: asString(raw.name || root.name).trim() || fallbackName || serverKey,
+    name: fallbackName || serverKey,
     transport: "streamable-http",
-    baseUrl
+    baseUrl,
+    endpointPath
   };
-  if (endpointPath) config.endpointPath = endpointPath;
-  const authToken = asString(raw.authToken).trim();
-  if (authToken) config.authToken = authToken;
-  const headers = stringRecord(raw.headers);
-  if (Object.keys(headers).length > 0) config.headers = headers;
-  const connectTimeout = asNumber(raw["connect-timeout"] ?? raw.connectTimeout);
-  const readTimeout = asNumber(raw["read-timeout"] ?? raw.readTimeout);
-  const retry = asNumber(raw.retry);
-  if (connectTimeout > 0) config["connect-timeout"] = Math.trunc(connectTimeout);
-  if (readTimeout > 0) config["read-timeout"] = Math.trunc(readTimeout);
-  if (retry >= 0) config.retry = Math.trunc(retry);
+  const authToken = asString(raw.authToken || raw["auth-token"]).trim();
+  if (authToken) {
+    throw new Error(t("market.main.mcpStaticCredentialRejected"));
+  }
+  const declaredAuthSource = asString(raw.authSource || raw["auth-source"]).trim().toLowerCase();
+  if (declaredAuthSource) {
+    throw new Error(t("market.main.mcpAuthSourceRejected"));
+  }
+  const authSource = fallbackAuthSource;
+  if (authSource) config.authSource = authSource;
+  if (Object.keys(asObject(raw.headers)).length > 0) {
+    throw new Error(t("market.main.mcpHeadersRejected"));
+  }
   return {
     serverKey,
     yaml: dumpYaml(config, { lineWidth: 120, noRefs: true, quotingType: "\"" })
@@ -235,18 +347,50 @@ export async function installMcpMarketItem(
 ): Promise<MarketCommandResult> {
   const { catalog } = await loadMcpCatalog(app, options);
   const item = findCatalogItem(catalog, itemId, "mcp");
+  const itemMetadata = asObject(item.metadata);
+  const gatewayTagged = item.tags.some((tag) => tag.trim().toLowerCase() === "gateway");
+  const gatewayServerCode = asString(itemMetadata.gatewayServerCode).trim();
+  if (gatewayTagged && !gatewayServerCode) {
+    throw new Error(t("market.main.mcpGatewayServerCodeRequired"));
+  }
+  const requiresDesktopIdentity = gatewayTagged || Boolean(gatewayServerCode);
+  const installedRecord = readInstalledRecords(app).find((record) => record.type === "mcp" && record.id === item.id);
+  const { installPath, runtimeRoot, targetPath } = mcpRegistryLocation(app, item.id);
   const apiBaseUrl = getMarketApiBaseUrl(app, options).replace(/\/+$/u, "");
   if (!apiBaseUrl) throw new Error(t("market.main.marketApiNotConfigured"));
-  await requestMarketJson(app, `${apiBaseUrl}/auth/me`, options, "MCP market authentication request");
+  await requestMarketJson(app, `${apiBaseUrl}${MARKET_AUTH_ME_PATH}`, options, "MCP market authentication request");
+  const platform = "universal";
+  const resolveQuery = new URLSearchParams({ version: item.version, platform });
+  const resolved = asObject(await requestMarketJson(
+    app,
+    `${apiBaseUrl}/mcps/${encodeURIComponent(item.id)}/resolve?${resolveQuery.toString()}`,
+    options,
+    "MCP market resolve request"
+  ));
+  const resolvedItem = asObject(resolved.item);
+  if (
+    asString(resolvedItem.id).trim() !== item.id ||
+    asString(resolvedItem.type).trim() !== "mcp" ||
+    asString(resolved.version).trim() !== item.version ||
+    (asString(resolved.platform).trim() && asString(resolved.platform).trim() !== platform)
+  ) {
+    throw new Error(t("market.main.resolveIdentityMismatch"));
+  }
+  const resolvedPlatformSpec = asObject(resolved.platformSpec);
+  const resolvedMinDesktopVersion = asString(resolvedPlatformSpec.minDesktopVersion).trim();
+  assertDesktopVersionCompatible(app, {
+    ...item,
+    minDesktopVersion: resolvedMinDesktopVersion || item.minDesktopVersion
+  });
   const response = await requestMarket(
     app,
-    `${apiBaseUrl}/mcps/${encodeURIComponent(item.id)}/download`,
+    `${apiBaseUrl}/mcps/${encodeURIComponent(item.id)}/download?${resolveQuery.toString()}`,
     {},
     options,
     "MCP market download"
   );
-  const bytes = Buffer.from(await response.arrayBuffer());
-  if (bytes.length === 0 || bytes.length > MAX_MCP_CONFIG_BYTES) {
+  const bytes = await readResponseBytesWithLimit(response, MAX_MCP_CONFIG_BYTES);
+  if (bytes.length === 0) {
     throw new Error(t("market.main.mcpInvalidConfig"));
   }
   let payload: unknown;
@@ -255,10 +399,15 @@ export async function installMcpMarketItem(
   } catch {
     throw new Error(t("market.main.mcpInvalidConfig"));
   }
-  const config = downloadedMcpConfig(payload, item.id, item.name);
-  const { installPath, targetPath } = mcpRegistryLocation(app, item.id);
-  const installedRecord = readInstalledRecords(app).find((record) => record.type === "mcp" && record.id === item.id);
-  publishManagedMcpFile(targetPath, config.yaml, Boolean(installedRecord), () => {
+  const config = downloadedMcpConfig(
+    payload,
+    item.id,
+    item.name,
+    requiresDesktopIdentity ? MCP_AUTH_SOURCE_IDENTITY_FILE : "",
+    item.version,
+    gatewayServerCode
+  );
+  publishManagedMcpFile(runtimeRoot, targetPath, config.yaml, Boolean(installedRecord), () => {
     upsertInstalledRecord(app, {
       id: item.id,
       type: "mcp",
@@ -282,9 +431,11 @@ export async function installMcpMarketItem(
 export async function uninstallMcpMarketItem(app: App, itemId: string): Promise<MarketCommandResult> {
   const installedRecord = readInstalledRecords(app).find((record) => record.type === "mcp" && record.id === itemId);
   if (installedRecord) {
-    const { targetPath } = mcpRegistryLocation(app, itemId);
+    const { runtimeRoot, targetPath } = mcpRegistryLocation(app, itemId);
     try {
-      fs.rmSync(targetPath, { force: true });
+      removeManagedMcpFile(runtimeRoot, targetPath, () => {
+        removeInstalledRecord(app, itemId, "mcp");
+      });
     } catch (error) {
       throw wrappedMcpFileError(t("market.main.mcpFileRemoveFailed"), error);
     }
@@ -298,4 +449,9 @@ export async function uninstallMcpMarketItem(app: App, itemId: string): Promise<
   };
 }
 
-export const __mcpMarketInternals = { downloadedMcpConfig, loadMcpCatalog, mcpRegistryLocation };
+export const __mcpMarketInternals = {
+  assertMcpRegistryTarget,
+  downloadedMcpConfig,
+  loadMcpCatalog,
+  mcpRegistryLocation
+};

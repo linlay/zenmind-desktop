@@ -72,6 +72,9 @@ type CookieAccessTokenExchangeConfig = {
   headers: Record<string, string>;
   body?: string;
   accessTokenPath: string;
+  validationMode: "identity" | "remote";
+  accessTokenIssuer?: string;
+  accessTokenAudience?: string;
 };
 
 export type DesktopSsoBrowserSessionConfig = {
@@ -831,6 +834,19 @@ function normalizeCookieAccessTokenExchangeConfig(
   const headers = normalizeCookieAccessTokenExchangeHeaders(exchangeRecord);
   const body = normalizeCookieAccessTokenExchangeBody(exchangeRecord, method, headers);
   const accessTokenPath = getRecordString(exchangeRecord, "accessTokenPath") || DEFAULT_COOKIE_ACCESS_TOKEN_PATH;
+  const rawValidationMode = getRecordString(exchangeRecord, "validationMode").toLowerCase();
+  if (rawValidationMode && rawValidationMode !== "identity" && rawValidationMode !== "remote") {
+    throw new Error(t("sso.config.cookieTokenValidationMode"));
+  }
+  const validationMode = rawValidationMode === "remote" ? "remote" : "identity";
+  const accessTokenIssuer = getRecordString(exchangeRecord, "accessTokenIssuer");
+  const accessTokenAudience = getRecordString(exchangeRecord, "accessTokenAudience");
+  if (validationMode === "identity" && Boolean(accessTokenIssuer) !== Boolean(accessTokenAudience)) {
+    throw new Error(t("sso.config.cookieTokenIdentityPairRequired"));
+  }
+  if (validationMode === "remote" && (accessTokenIssuer || accessTokenAudience)) {
+    throw new Error(t("sso.config.cookieTokenRemoteSelectorsRejected"));
+  }
   const rawCsrfUrl = getRecordString(exchangeRecord, "csrfUrl");
   return {
     url: new URL(rawUrl, baseOrigin).toString(),
@@ -838,7 +854,12 @@ function normalizeCookieAccessTokenExchangeConfig(
     method,
     headers,
     ...(body !== undefined ? { body } : {}),
-    accessTokenPath
+    accessTokenPath,
+    validationMode,
+    ...(accessTokenIssuer ? {
+      accessTokenIssuer: normalizeHttpUrl(accessTokenIssuer, accessTokenIssuer, "cookieAccessTokenExchange.accessTokenIssuer"),
+      accessTokenAudience
+    } : {})
   };
 }
 
@@ -2424,7 +2445,118 @@ function normalizeCookieAccessToken(value: unknown) {
   return (bearerMatch?.[1] || token).trim();
 }
 
+function cookieAccessTokenMatchesIdentity(
+  token: string,
+  issuer: string,
+  audience: string
+) {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return false;
+  }
+  try {
+    const payload = decodeJsonPart(parts[1]);
+    const tokenIssuer = normalizeStringClaim(payload.iss);
+    const rawAudience = payload.aud;
+    const audiences = Array.isArray(rawAudience)
+      ? rawAudience.filter((item): item is string => typeof item === "string")
+      : [normalizeStringClaim(rawAudience)].filter(Boolean);
+    return tokenIssuer === issuer && audiences.includes(audience);
+  } catch {
+    return false;
+  }
+}
+
+function describeCookieAccessTokenIdentity(token: string) {
+  const parts = token.split(".");
+  if (parts.length !== 3) {
+    return "";
+  }
+  try {
+    const payload = decodeJsonPart(parts[1]);
+    const issuer = normalizeStringClaim(payload.iss);
+    const rawAudience = payload.aud;
+    const audiences = Array.isArray(rawAudience)
+      ? rawAudience.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [normalizeStringClaim(rawAudience)].filter(Boolean);
+    if (!issuer && audiences.length === 0) {
+      return "";
+    }
+    return `${issuer || "<missing-issuer>"} -> ${audiences.join(",") || "<missing-audience>"}`;
+  } catch {
+    return "";
+  }
+}
+
+function collectCookieAccessTokenCandidates(
+  value: unknown,
+  candidates: Set<string>,
+  depth = 0
+) {
+  if (depth > 6 || candidates.size > 64 || value == null) {
+    return;
+  }
+  if (typeof value === "string") {
+    const token = normalizeCookieAccessToken(value);
+    if (token.split(".").length === 3) {
+      candidates.add(token);
+    }
+    return;
+  }
+  if (Array.isArray(value)) {
+    for (const item of value.slice(0, 64)) {
+      collectCookieAccessTokenCandidates(item, candidates, depth + 1);
+    }
+    return;
+  }
+  if (typeof value === "object") {
+    for (const item of Object.values(value as Record<string, unknown>).slice(0, 64)) {
+      collectCookieAccessTokenCandidates(item, candidates, depth + 1);
+    }
+  }
+}
+
+function selectCookieAccessTokenByIdentity(value: unknown, config: CookieAccessTokenExchangeConfig) {
+  const issuer = config.accessTokenIssuer || "";
+  const audience = config.accessTokenAudience || "";
+  const candidates = new Set<string>();
+  collectCookieAccessTokenCandidates(value, candidates);
+  const matches = [...candidates].filter((token) => cookieAccessTokenMatchesIdentity(token, issuer, audience));
+  if (matches.length === 0) {
+    const detected = [...new Set([...candidates]
+      .map((token) => describeCookieAccessTokenIdentity(token))
+      .filter(Boolean))];
+    const message = t("sso.token.cookieAccessTokenIdentityNotFound", { issuer, audience });
+    throw new Error(detected.length > 0
+      ? `${message} ${t("sso.token.cookieAccessTokenIdentitiesDetected", { identities: detected.join("; ") })}`
+      : message);
+  }
+  if (matches.length > 1) {
+    throw new Error(t("sso.token.cookieAccessTokenIdentityAmbiguous", { issuer, audience }));
+  }
+  return matches[0];
+}
+
+function selectSingleCookieAccessTokenForRemoteValidation(value: unknown) {
+  const candidates = new Set<string>();
+  collectCookieAccessTokenCandidates(value, candidates);
+  if (candidates.size === 0) {
+    throw new Error(t("sso.token.cookieAccessTokenRemoteMissing"));
+  }
+  if (candidates.size > 1) {
+    throw new Error(t("sso.token.cookieAccessTokenRemoteAmbiguous"));
+  }
+  return [...candidates][0];
+}
+
 function readCookieAccessTokenFromResponse(value: unknown, config: OidcConfig = DEFAULT_OIDC_CONFIG) {
+  const exchangeConfig = config.cookieAccessTokenExchange;
+  if (exchangeConfig?.validationMode === "remote") {
+    return selectSingleCookieAccessTokenForRemoteValidation(value);
+  }
+  if (exchangeConfig?.accessTokenIssuer && exchangeConfig.accessTokenAudience) {
+    return selectCookieAccessTokenByIdentity(value, exchangeConfig);
+  }
   const rawAccessToken = normalizeCookieAccessToken(value);
   if (rawAccessToken) {
     return rawAccessToken;

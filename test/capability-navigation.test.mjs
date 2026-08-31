@@ -39,14 +39,14 @@ const {
   resolveSidebarMode,
 } = mod.exports;
 
-test("capability navigation keeps the agreed six-item order", () => {
+test("capability navigation keeps the agreed item order", () => {
   assert.deepEqual(
     CAPABILITY_NAVIGATION_ITEMS.map((item) => item.id),
-    ["agents", "skills", "mcp-servers", "registries", "archives", "help"],
+    ["agents", "skills", "market", "mcp-servers", "registries", "archives", "help"],
   );
   assert.deepEqual(
     CAPABILITY_NAVIGATION_ITEMS.map((item) => item.to),
-    ["/agents", "/skills", "/mcp-servers", "/registries", "/archives", "/help"],
+    ["/agents", "/skills", "/market", "/mcp-servers", "/registries", "/archives", "/help"],
   );
 });
 
@@ -57,6 +57,7 @@ test("capability routes select their root item and keep supported details active
     ["/agents/%E4%B8%AD%E6%96%87?tab=profile", "agents"],
     ["/skills", "skills"],
     ["/skills/demo-skill?tab=files", "skills"],
+    ["/market", "market"],
     ["/mcp-servers", "mcp-servers"],
     ["/registries", "registries"],
     ["/archives", "archives"],
@@ -75,7 +76,6 @@ test("primary and settings routes do not enter capability mode", () => {
     "/agent/demo-agent",
     "/automations",
     "/memory",
-    "/market",
     "/help/topic",
     "/agentship",
     "/skills-center",
@@ -123,4 +123,25 @@ test("the app shell renders capability routes as a fixed secondary sidebar", () 
     sidebarSource,
     /isCapabilitiesMode[\s\S]*?renderCapabilitiesNav\(\)/u,
   );
+});
+
+test("the account menu keeps Market as an entry into the capability subpage", () => {
+  const sidebarSource = fs.readFileSync(
+    path.join(
+      projectRoot,
+      "src",
+      "renderer",
+      "app-shell",
+      "navigation",
+      "AppSidebar.tsx",
+    ),
+    "utf8",
+  );
+  const menuStart = sidebarSource.indexOf("const fixedToolRowsBase");
+  const menuEnd = sidebarSource.indexOf("type AccountMenuAvatarProps", menuStart);
+  const legacyMenu = sidebarSource.slice(menuStart, menuEnd);
+
+  assert.match(legacyMenu, /to:\s*"\/market"/u);
+  assert.equal(getCapabilityNavigationItem("/market")?.id, "market");
+  assert.equal(resolveSidebarMode("/market"), "capabilities");
 });

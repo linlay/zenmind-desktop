@@ -14,7 +14,7 @@ import {
   getDesktopWebappStateRoot,
   getDesktopWebappsDataRoot
 } from "../user-paths";
-import { removeWebappItem } from "../webs/webapps/actions";
+import { disposeWebappInstallation } from "../webs/webapps/actions";
 import {
   getWebappDir,
   readInstalledWebappItems,
@@ -34,7 +34,8 @@ import {
   loadMarketplaceCatalog,
   mergeCatalogItems,
   normalizeCatalog,
-  removeInstalledRecord,
+  readInstalledRecords,
+  replaceInstalledRecords,
   resolveMarketAsset,
   upsertInstalledRecord,
   type Catalog,
@@ -56,6 +57,7 @@ type WebsiteAppCatalogResult = {
 
 type WebsiteAppArchiveInstallOptions = {
   expectedId?: string;
+  marketItemId?: string;
   displayName?: string;
   version?: string;
   source?: "cloud" | "local";
@@ -125,7 +127,9 @@ function toWebappInstallError(
 function websiteAppOnlyCatalog(catalog: Catalog): Catalog {
   return {
     ...catalog,
-    items: catalog.items.filter((item) => item.type === "website-app")
+    items: catalog.items.filter((item) =>
+      item.type === "website-app" && item.websiteKind === "local-app"
+    )
   };
 }
 
@@ -266,9 +270,16 @@ export async function installWebsiteAppMarketItem(
   const catalogItem = findCatalogItem(catalog, itemId, "website-app");
   const resolved = await resolveMarketAsset(app, catalogItem, options);
   const item = resolved.item;
+  if (item.websiteKind !== "local-app" || resolved.asset.archiveType !== "zip") {
+    throw new WebappInstallError(
+      "archive",
+      "unsupported_market_artifact",
+      t("market.websiteApp.localZipRequired")
+    );
+  }
   const archivePath = await downloadAsset(app, item, resolved.asset, options, resolved.downloadUrl);
   return installWebsiteAppArchiveFromPath(app, archivePath, {
-    expectedId: item.id,
+    marketItemId: item.id,
     displayName: item.name,
     version: item.version,
     source: "cloud",
@@ -306,6 +317,13 @@ export async function installWebsiteAppArchiveFromPath(
   const preparedPath = path.join(stagingRoot, `${tempId}-${nonce}-package`);
   let transaction: WebappInstallTransaction | null = null;
   let releaseWebappDisposal: (() => void) | null = null;
+  const originalInstalledRecords = options.recordInstallation === false
+    ? null
+    : readInstalledRecords(app);
+  let installedRecordCommitted = false;
+  let activatedWebappId = "";
+  let replacingExistingPackage = false;
+  let previousPackageWasRunning = false;
   try {
     let archiveRootName: string;
     try {
@@ -324,7 +342,7 @@ export async function installWebsiteAppArchiveFromPath(
 
     let webapp;
     try {
-      webapp = readWebappItemFromDir(webappRoot, expectedId);
+      webapp = readWebappItemFromDir(webappRoot, expectedId || archiveRootName);
     } catch (error) {
       throw toWebappInstallError(error, "manifest", "invalid_manifest", {
         path: path.join(webappRoot, "webapp.json")
@@ -353,6 +371,17 @@ export async function installWebsiteAppArchiveFromPath(
         { expected: archiveRootName, actual: webapp.id }
       );
     }
+    if (options.version && webapp.version !== options.version) {
+      throw new WebappInstallError(
+        "manifest",
+        "version_mismatch",
+        t("market.websiteApp.versionMismatch", {
+          expected: options.version,
+          actual: webapp.version
+        }),
+        { expected: options.version, actual: webapp.version }
+      );
+    }
     const keyConflict = readInstalledWebappItems(app).find((item) =>
       item.key === webapp.key && item.id !== webapp.id
     );
@@ -368,6 +397,7 @@ export async function installWebsiteAppArchiveFromPath(
     const targetRoot = getDesktopWebappsDataRoot(app);
     const installPath = path.join(targetRoot, safeWebappDirName);
     const replacingExisting = fs.existsSync(installPath);
+    replacingExistingPackage = replacingExisting;
     if (replacingExisting) {
       const installed = readWebappItemFromDir(installPath, safeWebappDirName);
       if (!installed) {
@@ -393,6 +423,21 @@ export async function installWebsiteAppArchiveFromPath(
             { id: webapp.id, version: webapp.version, installedDigest, incomingDigest }
           );
         }
+        if (options.recordInstallation !== false) {
+          upsertInstalledRecord(app, {
+            id: options.marketItemId || webapp.id,
+            type: "website-app",
+            version: webapp.version,
+            ...(options.platform ? { platform: options.platform } : {}),
+            source: options.source ?? "local",
+            ...(options.assetUrl ? { assetUrl: options.assetUrl } : {}),
+            ...(options.sha256 ? { sha256: options.sha256 } : {}),
+            installPath,
+            ...(options.marketItemId ? { resourceKey: webapp.id } : {}),
+            installedAt: new Date().toISOString()
+          });
+        }
+        webappRuntime.emitLifecycleChange("installed", webapp.id);
         return {
           ok: true,
           itemId: webapp.id,
@@ -405,6 +450,7 @@ export async function installWebsiteAppArchiveFromPath(
     }
     const previousState = replacingExisting ? webappRuntime.getStatus(app, safeWebappDirName) : null;
     const previousWasRunning = previousState?.status === "running";
+    previousPackageWasRunning = previousWasRunning;
     const prerequisites = webappRuntime.checkItemPrerequisites(app, webapp, webappRoot);
     if (!prerequisites.ok) {
       if (
@@ -447,6 +493,7 @@ export async function installWebsiteAppArchiveFromPath(
       installPath,
       stagingPath: preparedPath
     });
+    activatedWebappId = safeWebappDirName;
 
     {
       const started = await webappRuntime.start(app, safeWebappDirName);
@@ -483,11 +530,9 @@ export async function installWebsiteAppArchiveFromPath(
         }
       }
     }
-    commitWebappInstall(app, transaction);
-    transaction = null;
     if (options.recordInstallation !== false) {
       upsertInstalledRecord(app, {
-        id: webapp.id,
+        id: options.marketItemId || webapp.id,
         type: "website-app",
         version: webapp.version,
         ...(options.platform ? { platform: options.platform } : {}),
@@ -495,9 +540,14 @@ export async function installWebsiteAppArchiveFromPath(
         ...(options.assetUrl ? { assetUrl: options.assetUrl } : {}),
         ...(options.sha256 ? { sha256: options.sha256 } : {}),
         installPath,
+        ...(options.marketItemId ? { resourceKey: webapp.id } : {}),
         installedAt: new Date().toISOString()
       });
+      installedRecordCommitted = true;
     }
+    commitWebappInstall(app, transaction);
+    transaction = null;
+    webappRuntime.emitLifecycleChange(replacingExisting ? "updated" : "installed", webapp.id);
 
     return {
       ok: true,
@@ -508,6 +558,18 @@ export async function installWebsiteAppArchiveFromPath(
       installPath
     };
   } catch (error) {
+    if (transaction && activatedWebappId) {
+      await webappRuntime.stop(app, activatedWebappId).catch(() => undefined);
+      rollbackWebappInstall(app, transaction);
+      transaction = null;
+      if (replacingExistingPackage && previousPackageWasRunning) {
+        await webappRuntime.start(app, activatedWebappId).catch(() => undefined);
+      }
+    }
+    if (installedRecordCommitted && originalInstalledRecords) {
+      replaceInstalledRecords(app, originalInstalledRecords);
+      installedRecordCommitted = false;
+    }
     throw toWebappInstallError(error, "install", "install_failed", { path: archivePath });
   } finally {
     releaseWebappDisposal?.();
@@ -522,11 +584,31 @@ export async function installWebsiteAppArchiveFromPath(
 }
 
 export async function uninstallWebsiteAppMarketItem(app: App, itemId: string): Promise<MarketCommandResult> {
-  const safeWebappDirName = validateWebappId(itemId);
+  const marketRecord = readInstalledRecords(app).find((record) =>
+    record.id === itemId && record.type === "website-app"
+  );
+  const safeWebappDirName = validateWebappId(marketRecord?.resourceKey || itemId);
   if (!safeWebappDirName) {
     throw new Error(t("market.websiteApp.invalidId"));
   }
-  const removed = await removeWebappItem(app, safeWebappDirName);
+  const target = readInstalledWebappItems(app).find((item) => item.id === safeWebappDirName);
+  if (!target) {
+    throw new Error(t("webapp.notFound"));
+  }
+  if (target.removable === false) {
+    throw new Error(t("webapp.managedNotRemovable", { label: target.label }));
+  }
+  const removed = await disposeWebappInstallation(
+    app,
+    {
+      id: target.id,
+      label: target.label,
+      installPath: target.installPath,
+      removeMarketRecord: true,
+      preserveUserData: true
+    },
+    t("market.websiteApp.uninstalled", { name: target.label })
+  );
   if (!removed.ok) {
     throw new Error(removed.message);
   }

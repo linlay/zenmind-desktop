@@ -37,6 +37,30 @@ const {
 const {
   getWebsitePath
 } = require("../dist-electron/main/webs/websites/store.js");
+
+test("Agent Platform bridge forwards raw ZIP bodies without JSON encoding", async () => {
+  const archive = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x01, 0x02]);
+  const result = await __testInternals.fetchAgentPlatformWithAuth(
+    "http://127.0.0.1:17078",
+    "/api/admin/skill-packages/import?key=office-pack&version=1.0.0",
+    {
+      method: "POST",
+      rawBody: archive,
+      contentType: "application/zip",
+      issueToken: async () => ({ ok: true, token: "test-token" }),
+      fetchImpl: async (_url, init) => {
+        assert.equal(init.headers["Content-Type"], "application/zip");
+        assert.equal(init.headers.Authorization, "Bearer test-token");
+        assert.deepEqual(Buffer.from(init.body), archive);
+        return new Response(JSON.stringify({ code: 0, msg: "success", data: { ok: true } }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        });
+      }
+    }
+  );
+  assert.deepEqual(result, { ok: true });
+});
 const {
   getDesktopWebappDataRoot,
   getDesktopWebappLogsRoot,

@@ -128,6 +128,31 @@ const AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS = new Set([
   "wsSource"
 ]);
 
+const AGENT_WEBCLIENT_ONE_SHOT_ROUTE_QUERY_PARAMS = new Set([
+  "composerDraft",
+  "composerSkill"
+]);
+
+function isAgentWebclientPersistentBusinessRouteQueryParam(key: string) {
+  return !AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS.has(key) &&
+    !AGENT_WEBCLIENT_ONE_SHOT_ROUTE_QUERY_PARAMS.has(key);
+}
+
+function createAgentWebclientPersistentBusinessSearch(
+  search: string | URLSearchParams | null | undefined
+) {
+  const source = search instanceof URLSearchParams
+    ? search
+    : new URLSearchParams(search ?? "");
+  const businessParams = new URLSearchParams();
+  for (const [key, value] of source.entries()) {
+    if (isAgentWebclientPersistentBusinessRouteQueryParam(key)) {
+      businessParams.append(key, value);
+    }
+  }
+  return businessParams.toString();
+}
+
 function normalizeRouteSearch(
   search: string | URLSearchParams | null | undefined
 ) {
@@ -305,7 +330,7 @@ function resolveAgentWebclientChatNavigationIdentity(
     }
 
     const businessQueryEntries = Array.from(url.searchParams.entries())
-      .filter(([key]) => !AGENT_WEBCLIENT_HOST_ROUTE_QUERY_PARAMS.has(key))
+      .filter(([key]) => isAgentWebclientPersistentBusinessRouteQueryParam(key))
       .sort(([leftKey, leftValue], [rightKey, rightValue]) => {
         const keyOrder = leftKey.localeCompare(rightKey);
         return keyOrder || leftValue.localeCompare(rightValue);
@@ -456,7 +481,7 @@ export function resolveAgentWebclientDesktopChatRouteFromUrl(
     return "";
   }
 
-  const businessSearch = createAgentWebclientBusinessSearch(parsed.searchParams);
+  const businessSearch = createAgentWebclientPersistentBusinessSearch(parsed.searchParams);
   return createAgentWebclientAgentPath(agentKey, businessSearch);
 }
 

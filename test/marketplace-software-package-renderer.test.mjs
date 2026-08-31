@@ -30,14 +30,65 @@ test("software package market is wired through the renderer tab, status and acti
   assert.match(storefront, /result\.softwarePackageOffline/u);
 });
 
+test("installed Market WebApps open only after an explicit user action", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+
+  assert.match(storefront, /async function launchWebsiteApp\(itemId: string\)/u);
+  assert.match(storefront, /window\.electronAPI\.webs\.webapps\.list\(\)/u);
+  assert.match(storefront, /webapp\.openMode === "dialog"[\s\S]*?webs\.webapps\.openWindow\(itemId\)/u);
+  assert.match(storefront, /launchWebsiteApp\(item\.webappId \|\| item\.id\)/u);
+  assert.match(storefront, /webs\.webapps\.start\(itemId\)[\s\S]*?navigate\(`\/webs\/\$\{webapp\.entryKey\}`\)/u);
+  assert.doesNotMatch(storefront, /item\.type === "website-app" && actionName !== "uninstall"[\s\S]*?launchWebsiteApp\(result\.itemId\)/u);
+  assert.match(storefront, /item\.type === "website-app" && isInstalledMarketItem\(item\)[\s\S]*?market\.websiteApp\.open/u);
+  assert.match(storefront, /installedWebsiteApp[\s\S]*?runMarketAction\(selectedDetailItem, "uninstall"\)/u);
+  assert.doesNotMatch(
+    storefront,
+    /item\.type === "skill" \|\| item\.type === "pet" \|\| item\.type === "mcp" \|\| item\.type === "website-app"/u
+  );
+  assert.match(storefront, /window\.electronAPI\.webs\.onChanged/u);
+  assert.match(storefront, /event\.phase === "disposing"/u);
+  assert.match(storefront, /command\(\{ sections: \["websiteApps"\] \}\)/u);
+  assert.match(storefront, /next\.items\.filter\(\(item\) => item\.type === "website-app"\)/u);
+});
+
+test("Market top navigation exposes only Skills and Website Apps", () => {
+  const model = readSource("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
+
+  assert.match(model, /DEFAULT_MARKET_TAB:\s*MarketTab\s*=\s*"skills"/u);
+  assert.match(model, /VISIBLE_MARKET_TABS:\s*readonly MarketTab\[\]\s*=\s*\["skills",\s*"websiteApps"\]/u);
+  assert.match(model, /return VISIBLE_MARKET_TABS\.map/u);
+});
+
+test("Market polls pending MCP runtime status without refreshing unrelated sections", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+
+  assert.match(storefront, /pendingMcpRuntimeSignature/u);
+  assert.match(storefront, /activeTab !== "mcps" \|\| !pendingMcpRuntimeSignature/u);
+  assert.match(storefront, /command\(\{ sections: \["mcps"\] \}\)/u);
+  assert.match(storefront, /MCP_STATUS_POLL_INTERVAL_MS = 2_000/u);
+  assert.match(storefront, /window\.setInterval\(\(\) => void poll\(\), MCP_STATUS_POLL_INTERVAL_MS\)/u);
+  assert.match(storefront, /window\.clearInterval\(timer\)/u);
+  assert.match(storefront, /item\.mcpRuntimeStatus === "configuration-written" \|\| item\.mcpRuntimeStatus === "pending"/u);
+  assert.match(storefront, /MCP_STATUS_POLL_MAX_ATTEMPTS = 30/u);
+  assert.match(storefront, /attempts >= MCP_STATUS_POLL_MAX_ATTEMPTS[\s\S]*?stopPolling\(\)/u);
+});
+
 test("market actions show progress and preserve success or error feedback after catalog refresh", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
 
   assert.match(storefront, /Boolean\(feedback\)\s*\|\|\s*Boolean\(marketOffline\s*&&\s*marketStatusMessage\)/u);
-  assert.match(storefront, /setFeedback\(t\("market\.action\.installing"\)\)[\s\S]*?const result = await action\(item\.id\)/u);
-  assert.match(storefront, /setFeedbackType\("success"\)[\s\S]*?await refreshEverything\(true, true\)/u);
+  assert.match(storefront, /actionName === "uninstall"[\s\S]*?market\.action\.uninstalling[\s\S]*?market\.action\.installing/u);
+  assert.match(storefront, /const result = actionName === "uninstall"/u);
+  assert.match(storefront, /await refreshEverything\(true, true\)[\s\S]*?setFeedbackType\("success"\)/u);
   assert.match(storefront, /setFeedback\(normalizeError\(reason\)\)[\s\S]*?setFeedbackType\("error"\)/u);
   assert.match(storefront, /type=\{feedback \? feedbackType : "warning"\}/u);
+});
+
+test("market install and update prompt for Desktop login before downloading", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+
+  assert.match(storefront, /actionName !== "uninstall"[\s\S]*?window\.electronAPI\.sso\.getStatus\(\)[\s\S]*?!status\.authenticated[\s\S]*?market\.storefront\.loginRequired[\s\S]*?return false/u);
+  assert.match(storefront, /setFeedbackType\("warning"\)/u);
 });
 
 test("catalog items keep the cloud source label and target version when a local copy exists", () => {
@@ -74,19 +125,45 @@ test("skill market separates uninstalled cloud skills from installed local and c
   assert.match(storefront, /market\.storefront\.cloudSkillsTitle/u);
   assert.match(storefront, /market\.storefront\.installedSkillsTitle/u);
   assert.match(storefront, /activeTab\s*!==\s*"skills"[\s\S]*?market-store-search-filter-button/u);
+  assert.match(storefront, /item\.type === "skill" && isInstalledMarketItem\(item\)[\s\S]*?icon=\{<MinusOutlined \/>\}[\s\S]*?runMarketAction\(item, "uninstall"\)/u);
 });
 
-test("skill toolbar provides WorkBuddy-style find, import, and create actions", () => {
+test("skill toolbar provides local import and the create-skill assistant action", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const assistantStart = storefront.indexOf("async function openSkillAssistant");
+  const assistantEnd = storefront.indexOf("function openPlugin", assistantStart);
+  const assistantFlow = storefront.slice(assistantStart, assistantEnd);
 
   assert.match(storefront, /<Dropdown[\s\S]*?market\.toolbar\.addSkill/u);
-  assert.match(storefront, /key:\s*"find"[\s\S]*?market\.skill\.menu\.find/u);
+  assert.doesNotMatch(storefront, /key:\s*"find"[\s\S]*?market\.skill\.menu\.find/u);
   assert.match(storefront, /key:\s*"import"[\s\S]*?market\.skill\.localImport/u);
   assert.match(storefront, /key:\s*"create"[\s\S]*?market\.skill\.menu\.create/u);
-  assert.match(storefront, /composerIntent:\s*SKILL_COMPOSER_INTENT\[mode\]/u);
+  assert.match(storefront, /composerDraft:\s*t\("market\.skill\.assistant\.draft"\)/u);
+  assert.match(storefront, /composerSkill:\s*"skill-creator"/u);
+  assert.doesNotMatch(storefront, /composerIntent/u);
+  assert.doesNotMatch(storefront, /composerSkillKey/u);
+  assert.doesNotMatch(storefront, /composerSkillLabel/u);
+  assert.doesNotMatch(storefront, /find-skill/u);
   assert.match(storefront, /navigate\(createAgentWebclientAgentPath\(agentKey, search\)\)/u);
+  assert.match(assistantFlow, /settings\.chatDefaultAgentKey\.trim\(\)/u);
+  assert.doesNotMatch(assistantFlow, /desktopHelperAgentKey/u);
+  assert.match(assistantFlow, /newChat:\s*String\(Date\.now\(\)\)/u);
   assert.doesNotMatch(storefront, /window\.electronAPI\.assistant\.startRun/u);
   assert.doesNotMatch(storefront, /renderSkillAssistantDialog/u);
+});
+
+test("skill detail category returns to the current skill list without resetting its filter", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+
+  assert.match(storefront, /selectedDetailItem\.type === "skill"[\s\S]*?market-store-detail-category-return[\s\S]*?setSelectedDetailItem\(null\)/u);
+  assert.match(storefront, /className="market-store-detail-category-return"[\s\S]*?onClick=\{\(\) => setSelectedDetailItem\(null\)\}/u);
+});
+
+test("clicking the active Skills tab returns from installed items to the skill market", () => {
+  const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+
+  assert.match(storefront, /function handleMarketTabChange\(tab: MarketTab\)[\s\S]*?tab === "skills" && activeTab === "skills"[\s\S]*?setRangeMode\("all"\)[\s\S]*?setSelectedDetailItem\(null\)[\s\S]*?onTabChange\(tab\)/u);
+  assert.match(storefront, /<MarketPageFrame[\s\S]*?onTabChange=\{handleMarketTabChange\}/u);
 });
 
 test("market header uses WorkBuddy-style compact tabs without a full-width segmented container", () => {
