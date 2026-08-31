@@ -58,6 +58,25 @@ test("Work Panel tab context menu accepts only bounded profile capabilities", ()
     x: 4,
     y: 8
   }), { mode: "copy-url", x: 4, y: 8 });
+  assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({
+    mode: "work-panel",
+    x: 10,
+    y: 20,
+    profile: "artifact",
+    isFullscreen: false,
+    reviewMode: "inactive",
+    canClose: true,
+    canCloseOthers: false
+  }), {
+    mode: "work-panel",
+    x: 10,
+    y: 20,
+    profile: "artifact",
+    isFullscreen: false,
+    reviewMode: "inactive",
+    canClose: true,
+    canCloseOthers: false
+  });
 });
 
 test("Work Panel tab context menu is main-window-owned and exposes bounded tab actions", async () => {
@@ -316,6 +335,61 @@ test("Work Panel tab context menu groups every profile without empty separators"
   }
 });
 
+test("Work Panel tab context menu exposes review only for an explicit trusted capability", async () => {
+  const handlers = new Map();
+  const sender = {};
+  const ownerWindow = {
+    isDestroyed: () => false,
+    getContentBounds: () => ({ x: 0, y: 0, width: 500, height: 500 })
+  };
+  let builtTemplate;
+  let selectedActionId = "toggle-review";
+  registerChatWorkPanelTabContextMenuIpcHandlers({
+    handle: (channel, handler) => handlers.set(channel, handler)
+  }, {
+    getMainWindow: () => ownerWindow,
+    BrowserWindow: { fromWebContents: (contents) => contents === sender ? ownerWindow : null },
+    Menu: {
+      buildFromTemplate: (template) => {
+        builtTemplate = template;
+        return {
+          popup: ({ callback }) => {
+            template.find((item) => item.id === selectedActionId)?.click();
+            callback();
+          }
+        };
+      }
+    }
+  });
+  const invoke = handlers.get("chatWorkPanel.tabContextMenu.popup");
+  const result = await invoke({ sender }, {
+    mode: "work-panel",
+    x: 20,
+    y: 20,
+    profile: "artifact",
+    isFullscreen: false,
+    reviewMode: "inactive",
+    canClose: true,
+    canCloseOthers: false
+  });
+  assert.deepEqual(result, { actionId: "toggle-review" });
+  assert.equal(builtTemplate[0].id, "toggle-review");
+  assert.match(builtTemplate[0].label, /Review|编辑/u);
+
+  selectedActionId = "reload";
+  await invoke({ sender }, {
+    mode: "work-panel",
+    x: 20,
+    y: 20,
+    profile: "artifact",
+    isFullscreen: false,
+    reviewMode: "active",
+    canClose: true,
+    canCloseOthers: false
+  });
+  assert.match(builtTemplate[0].label, /Exit|退出/u);
+});
+
 test("Work Panel reveal menu uses platform-native file manager labels", async () => {
   for (const scenario of [
     { platform: "darwin", label: /Finder|访达/u },
@@ -387,13 +461,17 @@ test("Work Panel local resource open and reveal IPCs are main-window-owned", asy
     relativePath: "artifacts/run/report.docx",
     profile: "artifact",
   };
-  assert.equal((await handler({ sender }, request)).ok, true);
+  const openResult = await handler({ sender }, request);
+  assert.equal(openResult.ok, true);
+  assert.equal("path" in openResult, false);
   assert.deepEqual(opened, [request]);
   assert.equal((await handler({ sender: {} }, request)).code, "invalid_request");
   assert.equal((await handler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");
 
   const revealHandler = handlers.get("chatWorkPanel.revealLocalResource");
-  assert.equal((await revealHandler({ sender }, request)).ok, true);
+  const revealResult = await revealHandler({ sender }, request);
+  assert.equal(revealResult.ok, true);
+  assert.equal("path" in revealResult, false);
   assert.deepEqual(revealed, [request]);
   assert.equal((await revealHandler({ sender: {} }, request)).code, "invalid_request");
   assert.equal((await revealHandler({ sender }, { ...request, relativePath: "../report.docx" })).code, "invalid_request");

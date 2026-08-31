@@ -20,6 +20,7 @@ import {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   openChatWorkPanelResourceInDefaultApp,
   revealChatWorkPanelResourceInFileManager,
+  toChatWorkPanelLocalResourceActionResult,
 } from "../chat-work-panel-resource-open";
 import { t } from "../i18n/main-i18n";
 
@@ -74,17 +75,19 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   }
   if (
     value.mode === "work-panel" &&
-    keys.length === 7 &&
+    (keys.length === 7 || keys.length === 8) &&
     keys.includes("mode") &&
     keys.includes("x") &&
     keys.includes("y") &&
     keys.includes("profile") &&
     keys.includes("isFullscreen") &&
+    (keys.length === 7 || keys.includes("reviewMode")) &&
     keys.includes("canClose") &&
     keys.includes("canCloseOthers") &&
     typeof value.profile === "string" &&
     WORK_PANEL_CONTEXT_MENU_PROFILES.has(value.profile as ChatWorkPanelTabContextMenuProfile) &&
     typeof value.isFullscreen === "boolean" &&
+    (value.reviewMode === undefined || value.reviewMode === "unavailable" || value.reviewMode === "inactive" || value.reviewMode === "active") &&
     typeof value.canClose === "boolean" &&
     typeof value.canCloseOthers === "boolean"
   ) {
@@ -94,6 +97,9 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
       y: Math.round(value.y),
       profile: value.profile as ChatWorkPanelTabContextMenuProfile,
       isFullscreen: value.isFullscreen,
+      ...(value.reviewMode === "inactive" || value.reviewMode === "active"
+        ? { reviewMode: value.reviewMode }
+        : {}),
       canClose: value.canClose,
       canCloseOthers: value.canCloseOthers
     };
@@ -109,6 +115,15 @@ function buildWorkPanelTemplate(
   const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
   const resourceProfile = request.profile === "artifact" || request.profile === "reference";
   const currentTabItems = [
+    ...(!request.reviewMode || request.reviewMode === "unavailable"
+      ? []
+      : [{
+          id: "toggle-review",
+          label: t(request.reviewMode === "active"
+            ? "chatWorkPanel.tabContextMenu.exitReview"
+            : "chatWorkPanel.tabContextMenu.enterReview"),
+          click: click("toggle-review")
+        }]),
     {
       id: "toggle-fullscreen",
       label: t(request.isFullscreen
@@ -202,18 +217,30 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
         ownerWindow !== mainWindow ||
         ownerWindow.isDestroyed()
       ) {
-        return { ok: false, code: "invalid_request", message: t("chatWorkPanel.openDefault.invalidPath") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "invalid_request" },
+          "openDefault",
+        );
       }
       if (options.openLocalResource) {
-        return options.openLocalResource(request);
+        return toChatWorkPanelLocalResourceActionResult(
+          await options.openLocalResource(request),
+          "openDefault",
+        );
       }
       if (!options.app) {
-        return { ok: false, code: "open_failed", message: t("chatWorkPanel.openDefault.unavailable") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "open_failed" },
+          "openDefault",
+        );
       }
-      return openChatWorkPanelResourceInDefaultApp(request, {
-        app: options.app,
-        platform: options.platform,
-      });
+      return toChatWorkPanelLocalResourceActionResult(
+        await openChatWorkPanelResourceInDefaultApp(request, {
+          app: options.app,
+          platform: options.platform,
+        }),
+        "openDefault",
+      );
     },
   );
 
@@ -230,18 +257,30 @@ export function registerChatWorkPanelTabContextMenuIpcHandlers(
         ownerWindow !== mainWindow ||
         ownerWindow.isDestroyed()
       ) {
-        return { ok: false, code: "invalid_request", message: t("chatWorkPanel.reveal.invalidPath") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "invalid_request" },
+          "reveal",
+        );
       }
       if (options.revealLocalResource) {
-        return options.revealLocalResource(request);
+        return toChatWorkPanelLocalResourceActionResult(
+          await options.revealLocalResource(request),
+          "reveal",
+        );
       }
       if (!options.app) {
-        return { ok: false, code: "open_failed", message: t("chatWorkPanel.reveal.unavailable") };
+        return toChatWorkPanelLocalResourceActionResult(
+          { ok: false, code: "open_failed" },
+          "reveal",
+        );
       }
-      return revealChatWorkPanelResourceInFileManager(request, {
-        app: options.app,
-        platform: options.platform,
-      });
+      return toChatWorkPanelLocalResourceActionResult(
+        await revealChatWorkPanelResourceInFileManager(request, {
+          app: options.app,
+          platform: options.platform,
+        }),
+        "reveal",
+      );
     },
   );
 

@@ -121,6 +121,8 @@ const api: DesktopApi = {
     setWorkPanelFullscreenActive: (active: boolean) =>
       ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
     requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),
+    minimizeWindow: () => ipcRenderer.invoke("desktopShell.minimizeWindow"),
+    toggleWindowMaximize: () => ipcRenderer.invoke("desktopShell.toggleWindowMaximize"),
     getWindowState: () => ipcRenderer.invoke("desktopShell.getWindowState"),
     setWindowFullScreen: (enabled: boolean) =>
       ipcRenderer.invoke("desktopShell.setWindowFullScreen", enabled),
@@ -231,6 +233,7 @@ const api: DesktopApi = {
     listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
     getChatInfo: (chatId: string) => ipcRenderer.invoke("assistant.getChatInfo", chatId),
+    revealChatInFolder: (chatId: string) => ipcRenderer.invoke("assistant.revealChatInFolder", chatId),
     searchChats: (request: AssistantChatSearchRequest) => ipcRenderer.invoke("assistant.searchChats", request),
     pickAttachments: (chatId?: string | null) => ipcRenderer.invoke("assistant.pickAttachments", chatId),
     cancelAttachmentTask: (taskId: string) => ipcRenderer.invoke("assistant.cancelAttachmentTask", taskId),
@@ -599,7 +602,29 @@ const api: DesktopApi = {
     getSurfaceTargetState: (input) => ipcRenderer.invoke("embeddedCdp.getSurfaceTargetState", input)
   },
   chatWorkPanel: {
-    clearSession: (input) => ipcRenderer.invoke("chatWorkPanel.clearSession", input)
+    clearSession: (input) => ipcRenderer.invoke("chatWorkPanel.clearSession", input),
+    localFiles: {
+      getReviewPreloadUrl: () => ipcRenderer.invoke("chatWorkPanel.localFiles.getReviewPreloadUrl"),
+      select: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.select", input),
+      claim: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.claim", input),
+      release: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.release", input),
+      open: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.open", input),
+      reveal: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.reveal", input)
+    },
+    resourceImages: {
+      claim: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.claim", input),
+      read: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.read", input),
+      release: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.release", input),
+      openExternal: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.openExternal", input),
+      ai: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.ai", input),
+      cancelAi: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.cancelAi", input),
+      commit: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.commit", input),
+      onChanged: (listener) => {
+        const handler = (_event: Electron.IpcRendererEvent, payload: Parameters<typeof listener>[0]) => listener(payload);
+        ipcRenderer.on("chatWorkPanel.resourceImages.changed", handler);
+        return () => ipcRenderer.off("chatWorkPanel.resourceImages.changed", handler);
+      }
+    }
   },
   copilot: {
     publishDevToolsTarget: (target) => ipcRenderer.invoke("copilot.publishDevToolsTarget", target)
@@ -638,6 +663,8 @@ const api: DesktopApi = {
     probeDesktopWs: (input) => ipcRenderer.invoke("diagnostics.probeDesktopWs", input),
     openAgentRealtimeInspector: () =>
       ipcRenderer.invoke("diagnostics.openAgentRealtimeInspector"),
+    openAgentRealtimeTargetDevTools: (input) =>
+      ipcRenderer.invoke("diagnostics.openAgentRealtimeTargetDevTools", input),
     getAgentRealtimeDebugSnapshot: (input) =>
       ipcRenderer.invoke("diagnostics.getAgentRealtimeDebugSnapshot", input),
     clearAgentRealtimeDebugTrace: () =>
@@ -719,6 +746,7 @@ const api: DesktopApi = {
       uninstall: (id: string) => ipcRenderer.invoke("webs.webapps.uninstall", id),
       start: (id: string) => ipcRenderer.invoke("webs.webapps.start", id),
       openWindow: (id: string) => ipcRenderer.invoke("webs.webapps.openWindow", id),
+      listOpenWindows: () => ipcRenderer.invoke("webs.webapps.listOpenWindows"),
       stop: (id: string) => ipcRenderer.invoke("webs.webapps.stop", id),
       restart: (id: string) => ipcRenderer.invoke("webs.webapps.restart", id),
       getStatus: (id: string) => ipcRenderer.invoke("webs.webapps.getStatus", id),
@@ -848,6 +876,7 @@ const api: DesktopApi = {
 
 window.addEventListener("error", (event) => {
   api.diagnostics.reportRendererError({
+    level: "error",
     source: "window-error",
     message: event.message || "Renderer window error",
     stack: event.error instanceof Error ? event.error.stack : undefined,
@@ -860,6 +889,7 @@ window.addEventListener("error", (event) => {
 window.addEventListener("unhandledrejection", (event) => {
   const reason = event.reason;
   api.diagnostics.reportRendererError({
+    level: "error",
     source: "unhandledrejection",
     message: reason instanceof Error ? reason.message : String(reason),
     stack: reason instanceof Error ? reason.stack : undefined

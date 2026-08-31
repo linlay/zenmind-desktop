@@ -1,3 +1,4 @@
+import { ArrowLeftOutlined, EditOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
 import { createElement, useEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
@@ -84,13 +85,20 @@ type ExternalWebviewPageProps = {
   surfaceCloseLabel?: string;
   onFaviconDiscovered?: (faviconUrl: string) => void;
   ownerChatId?: string;
+  presentationScope?: "main-workspace" | "workpanel";
   allowUserTabCreation?: boolean;
   allowTabUrlCopy?: boolean;
   showToolbar?: boolean;
+  workPanelToolbarKind?: "web" | "document";
+  toolbarDocumentName?: string;
   showLoadingProgress?: boolean;
   enableDesktopWebActions?: boolean;
   registerPublicWebSurface?: boolean;
   onLoadingChange?: (isLoading: boolean) => void;
+  pageReviewActive?: boolean;
+  onTogglePageReview?: (page: { url: string; title: string }) => void;
+  preloadUrl?: string;
+  onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
   cdpActive?: boolean;
   publishPageContext?: boolean;
   onControllerReady?: (controller: ExternalWebviewController | null) => void;
@@ -176,6 +184,8 @@ type ExternalWebviewPaneProps = {
   onWebviewRefChange: (tabId: string, webview: Electron.WebviewTag | null) => void;
   onCloseRequested: (tabId: string) => void;
   onDomReady: (tabId: string) => void;
+  preloadUrl?: string;
+  onIpcMessage?: (event: Event & { channel?: string; args?: unknown[] }) => void;
   onFaviconDiscovered?: (faviconUrl: string) => void;
 };
 
@@ -305,6 +315,8 @@ function ExternalWebviewPane({
   onWebviewRefChange,
   onCloseRequested,
   onDomReady,
+  preloadUrl,
+  onIpcMessage,
   onFaviconDiscovered
 }: ExternalWebviewPaneProps) {
   const webviewRef = useRef<Electron.WebviewTag | null>(null);
@@ -412,6 +424,7 @@ function ExternalWebviewPane({
     webview.addEventListener("page-title-updated", handlePageTitleUpdated);
     webview.addEventListener("page-favicon-updated", handlePageFaviconUpdated);
     webview.addEventListener("close", handleClose);
+    if (onIpcMessage) webview.addEventListener("ipc-message", onIpcMessage as EventListener);
     syncFromWebview();
 
     return () => {
@@ -424,8 +437,9 @@ function ExternalWebviewPane({
       webview.removeEventListener("page-title-updated", handlePageTitleUpdated);
       webview.removeEventListener("page-favicon-updated", handlePageFaviconUpdated);
       webview.removeEventListener("close", handleClose);
+      if (onIpcMessage) webview.removeEventListener("ipc-message", onIpcMessage as EventListener);
     };
-  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onTabStateChange, tab.currentUrl, tab.id]);
+  }, [onCloseRequested, onDomReady, onFaviconDiscovered, onIpcMessage, onTabStateChange, tab.currentUrl, tab.id]);
 
   return (
     <div
@@ -444,6 +458,7 @@ function ExternalWebviewPane({
         // Main receives popup requests and routes them to the owning surface.
         allowpopups: "true",
         partition: tab.partition,
+        ...(preloadUrl ? { preload: preloadUrl } : {}),
         useragent: tab.userAgent,
         style: { width: "100%", height: "100%", border: "none" }
       })}
@@ -472,13 +487,20 @@ export function ExternalWebviewPage({
   surfaceCloseLabel,
   onFaviconDiscovered,
   ownerChatId,
+  presentationScope,
   allowUserTabCreation = true,
   allowTabUrlCopy = false,
   showToolbar = true,
+  workPanelToolbarKind = "web",
+  toolbarDocumentName,
   showLoadingProgress = false,
   enableDesktopWebActions = true,
   registerPublicWebSurface = true,
   onLoadingChange,
+  pageReviewActive = false,
+  onTogglePageReview,
+  preloadUrl,
+  onIpcMessage,
   cdpActive,
   publishPageContext = true,
   onControllerReady
@@ -494,6 +516,8 @@ export function ExternalWebviewPage({
   const activeRef = useRef(active !== false);
   const [surfaceRegistrationId] = useState(createSurfaceRegistrationId);
   const registeredSurfaceKind = surfaceKind ?? (surfaceIdProp === BUILTIN_BROWSER_SURFACE_ID ? "browser" : null);
+  const workPanelBrowser = registeredSurfaceKind === "chat-work-panel";
+  const documentToolbar = workPanelBrowser && workPanelToolbarKind === "document";
   const surfaceIdentity = surfaceIdentityProp ?? (
     registeredSurfaceKind === "browser"
       ? createSurfaceIdentity("browser")
@@ -516,6 +540,9 @@ export function ExternalWebviewPage({
   const surfaceClassName = [
     "embedded-surface-page external-webview-page",
     appChrome ? "" : "has-browser-chrome",
+    workPanelBrowser ? "is-work-panel-browser" : "",
+    showToolbar ? "has-browser-toolbar" : "",
+    pageReviewActive ? "is-page-review-active" : "",
     !appChrome && !showToolbar ? "is-toolbarless-browser" : "",
     appChrome ? "is-app-surface" : "",
     onOpenAssistantDock && !assistantDockOpen ? "has-copilot-launcher" : "",
@@ -624,6 +651,7 @@ export function ExternalWebviewPage({
       surfaceType: registeredSurfaceKind,
       pageRoute: registeredSurfaceRoute,
       ...(ownerChatId ? { ownerChatId } : {}),
+      ...(presentationScope ? { presentationScope } : {}),
       label: surfaceLabel ?? title,
       url,
       active: cdpActive ?? activeRef.current,
@@ -1117,6 +1145,9 @@ export function ExternalWebviewPage({
     surfaceIdentity?.surfaceRole,
     surfaceIdentityKey,
     surfaceLabel,
+    cdpActive,
+    ownerChatId,
+    presentationScope,
     title,
     url
   ]);
@@ -1718,15 +1749,18 @@ export function ExternalWebviewPage({
     const normalizedUrl = normalizeEditableUrl(addressInputValue);
     if (!normalizedUrl) {
       setAddressInputValue(getEditableAddressInputValue(activeTab.currentUrl));
+      if (workPanelBrowser) setAddressInputUnlocked(false);
       return;
     }
 
     const activeWebview = webviewRefs.current.get(activeTab.id);
-    if (!activeWebview) {
+    if (!activeWebview || typeof activeWebview.loadURL !== "function") {
       setAddressInputValue(normalizedUrl);
+      if (workPanelBrowser) setAddressInputUnlocked(false);
       return;
     }
 
+    if (workPanelBrowser) setAddressInputUnlocked(false);
     void activeWebview.loadURL(normalizedUrl).then(() => {
       setAddressInputValue(normalizedUrl);
     }).catch(() => {
@@ -1865,69 +1899,129 @@ export function ExternalWebviewPage({
             </button>
           ) : null}
         </div>
-        {showToolbar ? <div className="external-webview-toolbar">
-          <div className="external-webview-toolbar-actions">
-            <button
-              type="button"
-              className="external-webview-toolbar-button"
-              onClick={handleGoBack}
-              disabled={!activeTab?.canGoBack}
-              aria-label={t("externalWebview.back")}
-              title={t("externalWebview.back")}
-            >
-              <SidebarActionIcon kind="back" />
-            </button>
-            <button
-              type="button"
-              className="external-webview-toolbar-button"
-              onClick={handleGoForward}
-              disabled={!activeTab?.canGoForward}
-              aria-label={t("externalWebview.forward")}
-              title={t("externalWebview.forward")}
-            >
-              <SidebarActionIcon kind="forward" />
-            </button>
-            <button
-              type="button"
-              className="external-webview-toolbar-button"
-              onClick={handleReload}
-              aria-label={t("externalWebview.refresh")}
-              title={t("externalWebview.refresh")}
-            >
-              <SidebarActionIcon kind="refresh" />
-            </button>
+        {showToolbar ? (
+          <div className={`external-webview-toolbar${pageReviewActive ? " is-review-mode" : ""}`}>
+            {pageReviewActive && workPanelBrowser && onTogglePageReview ? (
+              <>
+                <button
+                  type="button"
+                  className="external-webview-toolbar-return"
+                  onClick={() => onTogglePageReview({
+                    url: activeTab?.currentUrl ?? url,
+                    title: activeTab?.title ?? title,
+                  })}
+                  aria-label={t("chatWorkPanel.review.returnPreview")}
+                  title={t("chatWorkPanel.review.returnPreview")}
+                >
+                  <ArrowLeftOutlined aria-hidden="true" />
+                  <span>{t("chatWorkPanel.review.returnPreview")}</span>
+                </button>
+                <span className="external-webview-toolbar-review-hint">
+                  {t("chatWorkPanel.review.htmlTool")}
+                </span>
+              </>
+            ) : (
+              <>
+                <div className="external-webview-toolbar-actions">
+                  {!documentToolbar ? <>
+                    <button
+                      type="button"
+                      className="external-webview-toolbar-button"
+                      onClick={handleGoBack}
+                      disabled={!activeTab?.canGoBack}
+                      aria-label={t("externalWebview.back")}
+                      title={t("externalWebview.back")}
+                    >
+                      <SidebarActionIcon kind="back" />
+                    </button>
+                    <button
+                      type="button"
+                      className="external-webview-toolbar-button"
+                      onClick={handleGoForward}
+                      disabled={!activeTab?.canGoForward}
+                      aria-label={t("externalWebview.forward")}
+                      title={t("externalWebview.forward")}
+                    >
+                      <SidebarActionIcon kind="forward" />
+                    </button>
+                  </> : null}
+                  <button
+                    type="button"
+                    className="external-webview-toolbar-button"
+                    onClick={handleReload}
+                    aria-label={t("externalWebview.refresh")}
+                    title={t("externalWebview.refresh")}
+                  >
+                    <SidebarActionIcon kind="refresh" />
+                  </button>
+                </div>
+                <div className={`external-webview-toolbar-location${addressInputUnlocked ? " is-editing" : ""}`}>
+                  <span className="external-webview-toolbar-location-icon" aria-hidden="true">
+                    {documentToolbar ? <FileTextOutlined /> : workPanelBrowser ? <GlobalOutlined /> : <SearchIcon />}
+                  </span>
+                  {documentToolbar ? (
+                    <span
+                      className="external-webview-toolbar-location-input is-static"
+                      title={toolbarDocumentName || title}
+                    >
+                      {toolbarDocumentName || title}
+                    </span>
+                  ) : (
+                    <input
+                      type="text"
+                      className="external-webview-toolbar-location-input"
+                      value={addressInputValue}
+                      onChange={(event) => {
+                        setAddressInputValue(event.target.value);
+                      }}
+                      onFocus={handleAddressInputFocus}
+                      onBlur={() => {
+                        setAddressInputUnlocked(false);
+                        setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
+                      }}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape" && workPanelBrowser) {
+                          event.preventDefault();
+                          setAddressInputUnlocked(false);
+                          setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
+                          return;
+                        }
+                        if (event.key !== "Enter") {
+                          return;
+                        }
+                        event.preventDefault();
+                        handleNavigateToInputUrl();
+                      }}
+                      spellCheck={false}
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      placeholder={t("externalWebview.addressPlaceholder")}
+                      aria-label={t("externalWebview.address")}
+                    />
+                  )}
+                  {workPanelBrowser && onTogglePageReview ? (
+                    <button
+                      type="button"
+                      className="external-webview-toolbar-edit"
+                      onClick={() => onTogglePageReview({
+                        url: activeTab?.currentUrl ?? url,
+                        title: activeTab?.title ?? title,
+                      })}
+                      aria-label={t("chatWorkPanel.tabContextMenu.enterReview")}
+                      aria-pressed={false}
+                      title={t("chatWorkPanel.tabContextMenu.enterReview")}
+                    >
+                      <EditOutlined aria-hidden="true" />
+                      <span className="external-webview-toolbar-edit-label">
+                        {t("externalWebview.editPage")}
+                      </span>
+                    </button>
+                  ) : null}
+                </div>
+              </>
+            )}
           </div>
-          <div className="external-webview-toolbar-location">
-            <span className="external-webview-toolbar-location-icon" aria-hidden="true">
-              <SearchIcon />
-            </span>
-            <input
-              type="text"
-              className="external-webview-toolbar-location-input"
-              value={addressInputValue}
-              onChange={(event) => {
-                setAddressInputValue(event.target.value);
-              }}
-              onFocus={handleAddressInputFocus}
-              onBlur={() => {
-                setAddressInputUnlocked(false);
-                setAddressInputValue(getEditableAddressInputValue(activeTab?.currentUrl ?? url));
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== "Enter") {
-                  return;
-                }
-                event.preventDefault();
-                handleNavigateToInputUrl();
-              }}
-              spellCheck={false}
-              autoCorrect="off"
-              autoCapitalize="none"
-              placeholder={t("externalWebview.addressPlaceholder")}
-              aria-label={t("externalWebview.address")}
-            />
-          </div>
-        </div> : null}
+        ) : null}
         </div>
       )}
       {onOpenAssistantDock && !assistantDockOpen ? (
@@ -1968,6 +2062,8 @@ export function ExternalWebviewPage({
               void closeTab(tabId).catch(() => undefined);
             }}
             onDomReady={finishRefreshWaiter}
+            preloadUrl={preloadUrl}
+            onIpcMessage={onIpcMessage}
             onWebviewRefChange={(tabId, webview) => {
               if (webview) {
                 webviewRefs.current.set(tabId, webview);

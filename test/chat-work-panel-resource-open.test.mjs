@@ -8,10 +8,56 @@ const {
   shouldShowChatWorkPanelLocalResourceActions,
 } = require("../dist-electron/shared/chat-work-panel-tab-context-menu.js");
 const {
+  AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
+  AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE,
+  isServiceWebviewBridgeRequestType,
+  isServiceWebviewBridgeResponseType,
+  normalizeAgentWebclientCurrentResourceIdentity,
+} = require("../dist-electron/shared/service-webview-bridge.js");
+const {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   openChatWorkPanelResourceInDefaultApp,
   revealChatWorkPanelResourceInFileManager,
 } = await import("../dist-electron/main/chat-work-panel-resource-open.js");
+
+test("current resource actions use the allowlisted Service WebView bridge without absolute paths", () => {
+  assert.equal(
+    AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
+    "desktop:agent-webclient:current-resource:action",
+  );
+  assert.equal(
+    AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE,
+    "desktop:agent-webclient:current-resource:action:response",
+  );
+  assert.equal(
+    isServiceWebviewBridgeRequestType(AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE),
+    true,
+  );
+  assert.equal(
+    isServiceWebviewBridgeResponseType(AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE),
+    true,
+  );
+});
+
+test("current resource bridge accepts only chat-scoped Artifact/Reference identities", () => {
+  assert.deepEqual(normalizeAgentWebclientCurrentResourceIdentity({
+    chatId: "chat-72",
+    profile: "artifact",
+    relativePath: "artifacts/run-1/report.docx",
+  }), {
+    chatId: "chat-72",
+    profile: "artifact",
+    relativePath: "artifacts/run-1/report.docx",
+  });
+  for (const request of [
+    { chatId: "../chat-72", profile: "artifact", relativePath: "artifacts/run-1/report.docx" },
+    { chatId: "chat-72", profile: "artifact", relativePath: "artifacts/../report.docx" },
+    { chatId: "chat-72", profile: "artifact", relativePath: "artifacts/%252e%252e/report.docx" },
+    { chatId: "chat-72", profile: "artifact", relativePath: "references/report.docx" },
+  ]) {
+    assert.equal(normalizeAgentWebclientCurrentResourceIdentity(request), null);
+  }
+});
 
 test("Resource Viewer route yields only a chat-scoped artifact/reference path", () => {
   assert.equal(resolveChatWorkPanelLocalResourcePath({
@@ -87,6 +133,8 @@ test("local resource request normalization rejects injected and escaping paths",
   assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ...valid, extra: true }), null);
   assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ...valid, ownerChatId: "../chat-72" }), null);
   assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ...valid, relativePath: "artifacts/../report.docx" }), null);
+  assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ...valid, relativePath: "artifacts/%2e%2e/report.docx" }), null);
+  assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ...valid, relativePath: "artifacts/%252e%252e/report.docx" }), null);
   assert.equal(normalizeChatWorkPanelOpenLocalResourceRequest({ ...valid, relativePath: "references/report.docx" }), null);
 });
 
@@ -126,7 +174,7 @@ for (const scenario of [
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.path, scenario.expectedPath);
+    assert.equal("path" in result, false);
     assert.deepEqual(openedPaths, [scenario.expectedPath]);
   });
 
@@ -147,7 +195,7 @@ for (const scenario of [
     });
 
     assert.equal(result.ok, true);
-    assert.equal(result.path, scenario.expectedPath);
+    assert.equal("path" in result, false);
     assert.deepEqual(revealedPaths, [scenario.expectedPath]);
   });
 }
@@ -210,4 +258,97 @@ test("Windows rejects drive or alternate-stream syntax inside an artifact path",
 
   assert.equal(result.ok, false);
   assert.equal(result.code, "invalid_request");
+});
+
+test("reference resources use the same validated local open flow", async () => {
+  const openedPaths = [];
+  const expectedPath = "/runtime/chats/chat-72/references/source.docx";
+  const result = await openChatWorkPanelResourceInDefaultApp({
+    ownerChatId: "chat-72",
+    relativePath: "references/source.docx",
+    profile: "reference",
+  }, {
+    app: {},
+    platform: "darwin",
+    resolveRuntimeRoot: () => "/runtime",
+    existsSync: (targetPath) => targetPath === "/runtime/chats/chat-72" || targetPath === expectedPath,
+    realpathSync: (targetPath) => targetPath,
+    statSync: () => ({ isFile: () => true }),
+    openPath: async (targetPath) => {
+      openedPaths.push(targetPath);
+      return "";
+    },
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal("path" in result, false);
+  assert.deepEqual(openedPaths, [expectedPath]);
+});
+
+test("missing and non-file resources fail without exposing a local path", async () => {
+  const request = {
+    ownerChatId: "chat-72",
+    relativePath: "artifacts/run-1/report.docx",
+    profile: "artifact",
+  };
+  const baseDependencies = {
+    app: {},
+    platform: "darwin",
+    resolveRuntimeRoot: () => "/runtime",
+    realpathSync: (targetPath) => targetPath,
+    openPath: async () => "",
+  };
+  const missing = await openChatWorkPanelResourceInDefaultApp(request, {
+    ...baseDependencies,
+    existsSync: () => false,
+  });
+  assert.equal(missing.code, "not_found");
+  assert.equal("path" in missing, false);
+  assert.equal(JSON.stringify(missing).includes("/runtime"), false);
+
+  const notFile = await openChatWorkPanelResourceInDefaultApp(request, {
+    ...baseDependencies,
+    existsSync: () => true,
+    statSync: () => ({ isFile: () => false }),
+  });
+  assert.equal(notFile.code, "not_file");
+  assert.equal("path" in notFile, false);
+  assert.equal(JSON.stringify(notFile).includes("/runtime"), false);
+});
+
+test("shell failures are localized and do not expose their absolute path", async () => {
+  const absolutePath = "/runtime/chats/chat-72/artifacts/run-1/report.docx";
+  const request = {
+    ownerChatId: "chat-72",
+    relativePath: "artifacts/run-1/report.docx",
+    profile: "artifact",
+  };
+  const dependencies = {
+    app: {},
+    platform: "darwin",
+    resolveRuntimeRoot: () => "/runtime",
+    existsSync: () => true,
+    realpathSync: (targetPath) => targetPath,
+    statSync: () => ({ isFile: () => true }),
+  };
+  const openResult = await openChatWorkPanelResourceInDefaultApp(request, {
+    ...dependencies,
+    openPath: async () => `failed to open ${absolutePath}`,
+  });
+
+  assert.equal(openResult.ok, false);
+  assert.equal(openResult.code, "open_failed");
+  assert.equal("path" in openResult, false);
+  assert.equal(JSON.stringify(openResult).includes(absolutePath), false);
+
+  const revealResult = await revealChatWorkPanelResourceInFileManager(request, {
+    ...dependencies,
+    showItemInFolder: () => {
+      throw new Error(`failed to reveal ${absolutePath}`);
+    },
+  });
+  assert.equal(revealResult.ok, false);
+  assert.equal(revealResult.code, "open_failed");
+  assert.equal("path" in revealResult, false);
+  assert.equal(JSON.stringify(revealResult).includes(absolutePath), false);
 });

@@ -374,17 +374,70 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
   });
 
+  function getAuthorizedMainWindow(event: IpcMainInvokeEvent) {
+    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
+    if (
+      !ownerWindow ||
+      ownerWindow.isDestroyed() ||
+      !mainWindow ||
+      ownerWindow !== mainWindow
+    ) {
+      return null;
+    }
+    return ownerWindow;
+  }
+
+  ipcMain.handle("desktopShell.minimizeWindow", async (event: IpcMainInvokeEvent) => {
+    const ownerWindow = getAuthorizedMainWindow(event);
+    if (!ownerWindow) {
+      return { ok: false as const, message: t("shell.windowUnavailable") };
+    }
+    ownerWindow.minimize();
+    return { ok: true as const };
+  });
+
+  ipcMain.handle("desktopShell.toggleWindowMaximize", async (event: IpcMainInvokeEvent) => {
+    const ownerWindow = getAuthorizedMainWindow(event);
+    if (!ownerWindow) {
+      return {
+        ok: false as const,
+        isMaximized: false,
+        message: t("shell.windowUnavailable")
+      };
+    }
+    if (ownerWindow.isMaximized()) {
+      ownerWindow.unmaximize();
+    } else {
+      ownerWindow.maximize();
+    }
+    return { ok: true as const, isMaximized: ownerWindow.isMaximized() };
+  });
+
   ipcMain.handle("desktopShell.getWindowState", async (event: IpcMainInvokeEvent) => {
     try {
-      const ownerWindow = BrowserWindow.fromWebContents(event.sender) ?? options.mainWindow;
-      if (!ownerWindow || ownerWindow.isDestroyed()) {
-        return { ok: false as const, isFullScreen: false, message: t("shell.windowUnavailable") };
+      const ownerWindow = getAuthorizedMainWindow(event);
+      if (!ownerWindow) {
+        return {
+          ok: false as const,
+          isFullScreen: false,
+          isMaximized: false,
+          windowControlsMasked: false,
+          message: t("shell.windowUnavailable")
+        };
       }
-      return { ok: true as const, isFullScreen: ownerWindow.isFullScreen() };
+      return {
+        ok: true as const,
+        isFullScreen: ownerWindow.isFullScreen(),
+        isMaximized: ownerWindow.isMaximized(),
+        windowControlsMasked: false
+      };
     } catch (error) {
       return {
         ok: false as const,
         isFullScreen: false,
+        isMaximized: false,
+        windowControlsMasked: false,
         message: error instanceof Error ? error.message : String(error)
       };
     }
@@ -609,8 +662,15 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
 
   ipcMain.on("diagnostics.rendererError", (event: IpcMainEvent, report: unknown) => {
     const rendererReport = report && typeof report === "object" ? report as Record<string, unknown> : {};
+    const diagnosticLevel =
+      rendererReport.level === "debug" ||
+      rendererReport.level === "warn" ||
+      rendererReport.level === "error"
+        ? rendererReport.level
+        : "error";
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
     options.reportRendererDiagnostic?.("renderer-error", {
+      diagnosticLevel,
       windowId: ownerWindow?.id ?? null,
       route: event.sender.getURL(),
       source: typeof rendererReport.source === "string" ? rendererReport.source : "unknown",

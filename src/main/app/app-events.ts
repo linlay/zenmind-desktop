@@ -22,6 +22,7 @@ export type MainAppEventsOptions = {
   beginRealtimeShutdown: () => void;
   prepareQuitUi: () => void;
   runShutdownCleanup: () => Promise<ShutdownReport>;
+  flushDesktopLogs: (timeoutMs?: number) => Promise<void>;
   writeInstallerShutdownAcks: (report: ShutdownReport) => void;
   releaseAssistantRunWakeLock: () => void;
   clearDesktopPetIdleResetTimer: () => void;
@@ -115,6 +116,10 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
       }
     }).catch((error) => {
       console.error("[main] shutdown cleanup failed before report generation", error);
+    }).then(() => {
+      return options.flushDesktopLogs(500);
+    }).catch(() => {
+      // Log flushing is best-effort and must not trap the app in before-quit.
     }).finally(() => {
       options.beginAppQuitWithoutConfirmation();
     });

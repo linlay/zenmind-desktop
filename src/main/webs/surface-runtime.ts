@@ -18,6 +18,7 @@ export type WebSurfaceRuntimeOptions = {
   app: App;
   state: MainAppState;
   webContents: BrowserSurfaceRegistryOptions["webContents"];
+  reportRegistrationDiagnostic?: BrowserSurfaceRegistryOptions["reportRegistrationDiagnostic"];
   navigateMainWindow: (targetPath: string) => void;
   delay: (ms: number) => Promise<void>;
   t: (key: any, values?: any) => string;
@@ -64,7 +65,8 @@ export function createWebSurfaceRuntime(options: WebSurfaceRuntimeOptions) {
   const browserSurfaceRegistry = createBrowserSurfaceRegistry({
     webContents: options.webContents,
     listWebEntries: listBrowserRegistryWebItems,
-    getCurrentPageSnapshot: () => options.state.currentPageSnapshot
+    getCurrentPageSnapshot: () => options.state.currentPageSnapshot,
+    reportRegistrationDiagnostic: options.reportRegistrationDiagnostic,
   });
 
   async function openBrowserUrl(input: {

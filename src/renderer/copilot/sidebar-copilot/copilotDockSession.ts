@@ -1,8 +1,9 @@
 import { STORAGE_NAMESPACE } from "../../../shared/brand";
 
-const COPILOT_DOCK_SESSION_VERSION = 4;
+const COPILOT_DOCK_SESSION_VERSION = 5;
 const COPILOT_DOCK_SESSION_KEY = `${STORAGE_NAMESPACE}.copilot-dock-session`;
 const COPILOT_PATH = "/copilot";
+const FORBIDDEN_KANBAN_CONTEXT = "desktop-route:/kanban";
 
 export type CopilotDockContextSession = {
   embedPath: string;
@@ -11,7 +12,7 @@ export type CopilotDockContextSession = {
 };
 
 export type CopilotDockSessionSnapshot = {
-  version: 4;
+  version: 5;
   contexts: Record<string, CopilotDockContextSession>;
 };
 
@@ -59,7 +60,7 @@ export function readCopilotDockSessionSnapshot(): CopilotDockSessionSnapshot | n
       contexts?: unknown;
       surfaces?: unknown;
     };
-    const rawContexts = value.version === COPILOT_DOCK_SESSION_VERSION
+    const rawContexts = value.version === COPILOT_DOCK_SESSION_VERSION || value.version === 4
       ? value.contexts
       : value.version === 3
         ? value.surfaces
@@ -97,7 +98,7 @@ export function readCopilotDockSessionSnapshot(): CopilotDockSessionSnapshot | n
       version: COPILOT_DOCK_SESSION_VERSION,
       contexts
     };
-    if (value.version === 3) {
+    if (value.version !== COPILOT_DOCK_SESSION_VERSION) {
       window.sessionStorage.setItem(COPILOT_DOCK_SESSION_KEY, JSON.stringify(snapshot));
     }
     return snapshot;
@@ -149,7 +150,8 @@ function normalizeCopilotContextKey(value: string) {
     contextKey.length > 512 ||
     contextKey === "__proto__" ||
     contextKey === "prototype" ||
-    contextKey === "constructor"
+    contextKey === "constructor" ||
+    contextKey === FORBIDDEN_KANBAN_CONTEXT
   ) {
     return "";
   }

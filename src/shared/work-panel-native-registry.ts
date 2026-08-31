@@ -1,9 +1,8 @@
 /**
  * Desktop-owned Native WorkPanel surface registry.
  *
- * The v1 Desktop-only release intentionally ships an empty allowlist. Future
- * native surfaces must be registered here and implemented by WorkPanelHost
- * before their descriptors can be accepted.
+ * Public bridges cannot create these descriptors. Main turns a validated,
+ * single-use claim into a host descriptor inside the trusted AppShell.
  */
 export type WorkPanelNativeSurfaceRegistration = {
   surfaceKey: string;
@@ -11,7 +10,9 @@ export type WorkPanelNativeSurfaceRegistration = {
 };
 
 export const WORK_PANEL_NATIVE_SURFACE_ALLOWLIST:
-readonly WorkPanelNativeSurfaceRegistration[] = Object.freeze([]);
+readonly WorkPanelNativeSurfaceRegistration[] = Object.freeze([
+  { surfaceKey: "resource-image", closableByDefault: true },
+]);
 
 export function isRegisteredWorkPanelNativeSurface(surfaceKey: unknown) {
   const normalized = typeof surfaceKey === "string" ? surfaceKey.trim() : "";

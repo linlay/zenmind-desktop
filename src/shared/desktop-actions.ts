@@ -130,6 +130,15 @@ export interface DesktopWebActionStateResult {
   activeTab: DesktopWebActionTabSummary | null;
 }
 
+export interface DesktopWebExportArtifactResult {
+  surfaceId: string;
+  format: "png" | "html" | "project" | "pdf";
+  filePath: string;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+}
+
 export interface DesktopWebNavigateResult extends DesktopWebActionStateResult {
   targetTabId: string;
   navigatedUrl: string;
@@ -252,6 +261,8 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.navigate.toRoute", kind: "execute", category: "navigation", description: "Navigate the Desktop shell to a route." },
 
   { name: "desktop.assistant.chat", kind: "execute", category: "assistant", description: "Send a general message to the Desktop helper agent. Args: { message }." },
+  { name: "desktop.assistant.image", kind: "execute", category: "assistant", description: "Generate or edit images through the fixed Zenmi WebApp adapter. This action is available only to an authorized local WebApp page." },
+  { name: "desktop.assistant.image.cancel", kind: "execute", category: "assistant", description: "Cancel a running Zenmi image request owned by the calling local WebApp page." },
 
   { name: "desktop.capabilities.list", kind: "read", category: "capabilities", description: "List the capabilities exposed to the calling local WebApp page." },
 
@@ -284,6 +295,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.web.getSurfaceState", kind: "read", category: "web", description: "Read one Desktop web surface and its complete tab state. Args: { surfaceId }." },
   { name: "desktop.web.interactElement", kind: "execute", category: "web", description: "Interact with an element in the current Desktop web page." },
   { name: "desktop.web.executeScript", kind: "execute", category: "web", description: "Execute a script in the current Desktop web page." },
+  { name: "desktop.web.exportArtifact", kind: "execute", category: "web", description: "Export an artifact from the current root WebApp directly to Downloads. Args: { format: png|html|project|pdf }. Returns an absolute filePath; payload bytes never enter the agent context." },
   { name: "desktop.web.activateSurface", kind: "execute", category: "web", description: "Activate a Desktop web surface." },
   { name: "desktop.web.navigate", kind: "execute", category: "web", description: "Navigate a Desktop web tab to a URL. Returns the public surface/tabs/activeTab post-state plus { targetTabId, navigatedUrl }; Electron guest and webContents ids are never returned." },
   { name: "desktop.web.reload", kind: "execute", category: "web", description: "Reload a Desktop web tab. Returns the public surface/tabs/activeTab post-state plus { targetTabId }; Electron guest and webContents ids are never returned." },
@@ -295,6 +307,7 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.workpanel.getState", kind: "read", category: "workpanel", description: "Read the trusted source chat WorkPanel state." },
   { name: "desktop.workpanel.openTab", kind: "execute", category: "workpanel", description: "Open or activate a canonical WorkPanel tab for the trusted source chat. Args: { descriptor }. Returns: { workspace }, containing only that chat's complete workspace." },
   { name: "desktop.workpanel.openWeb", kind: "execute", category: "workpanel", description: "Open or activate an HTTP(S) WebView item for the trusted source chat. Args: { url }. Returns: { workspace }, containing only that chat's complete workspace." },
+  { name: "desktop.workpanel.openLocalFile", kind: "execute", category: "workpanel", description: "Open, reload, or activate a workspace-relative local file for the trusted source Chat. Available only to an authorized internal Agent Platform Run. Args: { path, title? }. Returns: { workspace }; absolute paths are never returned." },
   { name: "desktop.workpanel.refreshWeb", kind: "execute", category: "workpanel", description: "Reload and activate an existing HTTP(S) WebView item for the trusted source chat. Args: { url }. Returns: { workspace }, containing only that chat's complete workspace." },
   { name: "desktop.workpanel.activateTab", kind: "execute", category: "workpanel", description: "Activate a WorkPanel tab for the trusted source chat. Args: { tabId }. Returns: { workspace }, containing only that chat's complete workspace." },
   { name: "desktop.workpanel.closeTab", kind: "execute", category: "workpanel", description: "Close a closable WorkPanel tab for the trusted source chat. Args: { tabId }. Returns: { closedItemId, workspace }; workspace is null if it was destroyed." },

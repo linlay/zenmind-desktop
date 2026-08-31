@@ -3,11 +3,13 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 const {
+  SURFACE_ROLES,
   createLegacySurfaceIdAliases,
   createChatChildSurfaceIdentity,
   createServiceSurfaceIdentity,
   createSurfaceIdentity,
   createWebEntrySurfaceIdentity,
+  resolveLegacyFixedSurfaceId,
   stableSurfaceHash,
   surfaceIdentityMatchesPolicy
 } = await import("../dist-electron/shared/surface-identity.js");
@@ -20,8 +22,9 @@ const {
 } = await import("../dist-electron/shared/webview-context-menu.js");
 
 test("surface identity uses readable singleton roots and stable domain-prefixed dynamic ids", () => {
+  assert.equal(SURFACE_ROLES.includes("copilot-chat"), false);
+  assert.equal(resolveLegacyFixedSurfaceId("agent-webclient-copilot"), "agent-webclient-copilot");
   assert.equal(createSurfaceIdentity("main-chat").surfaceId, "main-chat");
-  assert.equal(createSurfaceIdentity("copilot-chat").surfaceId, "copilot-chat");
   assert.equal(createSurfaceIdentity("kanban-chat").surfaceId, "kanban-chat");
   assert.equal(createSurfaceIdentity("browser").surfaceId, "browser");
   const entryKey = "website:https://docs.example/private/path";
@@ -65,7 +68,6 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
   for (const [role, expected] of [
     ["main-chat", "agent-chat"],
     ["kanban-chat", "agent-chat"],
-    ["copilot-chat", "agent-copilot"],
     ["copilot-dock", "agent-copilot"],
     ["copilot", "agent-copilot"],
     ["overview", "agent-overview"],
@@ -84,6 +86,55 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
   ]) {
     assert.equal(resolveAgentWebclientWebviewSurfaceType(role), expected, role);
   }
+});
+
+test("surface registry rejects Copilot Dock on Kanban and emits trusted root lifecycle", () => {
+  const guest = { id: 61, getType: () => "webview", isDestroyed: () => false };
+  const registry = createBrowserSurfaceRegistry({
+    webContents: {
+      getAllWebContents: () => [guest],
+      fromId: (id) => id === guest.id ? guest : undefined,
+    },
+    listWebEntries: () => ({ items: [] }),
+    getCurrentPageSnapshot: () => null,
+  });
+  const events = [];
+  registry.subscribeLifecycle((event) => events.push(event));
+  const dock = createSurfaceIdentity("copilot-dock");
+  const registration = {
+    registrationId: "dock-generation-1",
+    ...dock,
+    surfaceIdentityKey: "desktop-route:/kanban",
+    surfaceKind: "service",
+    surfaceType: "agent-copilot",
+    serviceId: "agent-webclient",
+    pageRoute: "/kanban",
+    label: "Copilot Dock",
+    url: "http://127.0.0.1:7788/copilot/helper",
+    active: true,
+    tabs: [{
+      tabId: "dock-tab",
+      currentUrl: "http://127.0.0.1:7788/copilot/helper",
+      title: "Copilot Dock",
+      webContentsId: guest.id,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+    }],
+    activeTabId: "dock-tab",
+  };
+  assert.deepEqual(registry.registerSurfaceResult(registration, 7), {
+    ok: false,
+    reason: "invalid_registration",
+  });
+  assert.equal(events.length, 0);
+
+  const allowed = { ...registration, registrationId: "dock-generation-2", surfaceIdentityKey: "desktop-route:/settings", pageRoute: "/settings" };
+  assert.equal(registry.registerSurface(allowed, 7), true);
+  assert.equal(events[0].type, "registered");
+  assert.equal(events[0].surface.surfaceRole, "copilot-dock");
+  assert.equal(registry.unregisterSurface({ surfaceId: "copilot-dock", registrationId: "dock-generation-2" }, 7), true);
+  assert.equal(events[1].type, "unregistered");
 });
 
 test("surface registry rejects a forged identity and cascades child removal", () => {
@@ -210,6 +261,177 @@ test("surface registry rejects a forged identity and cascades child removal", ()
   assert.equal(registry.resolveWebviewSurfaceTarget(74), null);
 });
 
+test("surface registry reports sanitized and deduplicated registration rejection reasons", async () => {
+  const diagnostics = [];
+  const guests = new Map([301, 302, 303, 304].map((id) => [
+    id,
+    { id, getType: () => "webview", isDestroyed: () => false },
+  ]));
+  const webEntries = ["webapp:a", "webapp:b", "webapp:recovery"].map((entryKey) => ({
+    id: entryKey.slice("webapp:".length),
+    entryKey,
+    kind: "webapp",
+    label: entryKey,
+    url: "http://127.0.0.1:19001/",
+  }));
+  const registry = createBrowserSurfaceRegistry({
+    webContents: {
+      getAllWebContents: () => [...guests.values()],
+      fromId: (id) => guests.get(id),
+    },
+    listWebEntries: () => ({ items: webEntries }),
+    getCurrentPageSnapshot: () => null,
+    reportRegistrationDiagnostic: (diagnostic) => diagnostics.push(diagnostic),
+    registrationDiagnosticDedupWindowMs: 10,
+  });
+  const webappRegistration = (entryKey, guestId, registrationId) => ({
+    registrationId,
+    ...createWebEntrySurfaceIdentity("webapp", entryKey),
+    surfaceIdentityKey: entryKey,
+    surfaceKind: "webapp",
+    surfaceType: "webapp",
+    pageRoute: `/webs/${entryKey}`,
+    presentationScope: "main-workspace",
+    label: "Secret label must not be logged",
+    url: "http://127.0.0.1:19001/?token=secret-token",
+    active: true,
+    tabs: [{
+      tabId: `tab-${guestId}`,
+      currentUrl: "http://127.0.0.1:19001/poster?token=secret-token",
+      title: "Secret title must not be logged",
+      webContentsId: guestId,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+    }],
+    activeTabId: `tab-${guestId}`,
+  });
+  const serviceRegistration = (identity, guestId, registrationId, surfaceType, identityKey = "") => ({
+    registrationId,
+    ...identity,
+    ...(identityKey ? { surfaceIdentityKey: identityKey } : {}),
+    surfaceKind: "service",
+    surfaceType,
+    serviceId: "agent-webclient",
+    pageRoute: identity.surfaceRole === "main-chat" ? "/agent/agent-301" : "/chat",
+    ...(identity.surfaceRole === "main-chat"
+      ? { pageRouteIdentity: "/agent/agent-301?chatId=chat-private" }
+      : {}),
+    label: "Secret service label",
+    url: "http://127.0.0.1:7788/?token=secret-token",
+    active: true,
+    tabs: [{
+      tabId: `service-tab-${guestId}`,
+      currentUrl: identity.surfaceRole === "main-chat"
+        ? "http://127.0.0.1:7788/agent/agent-301?chatId=chat-private"
+        : "http://127.0.0.1:7788/ui/?token=secret-token",
+      title: "Secret service title",
+      webContentsId: guestId,
+      canGoBack: false,
+      canGoForward: false,
+      isLoading: false,
+    }],
+    activeTabId: `service-tab-${guestId}`,
+  });
+
+  const appA = webappRegistration("webapp:a", 301, "app-a");
+  assert.equal(registry.registerSurface(appA, 7), true);
+  assert.equal(diagnostics.length, 0);
+
+  const invalidRetry = {
+    ...webappRegistration("webapp:recovery", 302, "invalid-retry"),
+    surfaceId: "",
+  };
+  assert.equal(registry.registerSurface(invalidRetry, 7), false);
+  assert.equal(registry.registerSurface(invalidRetry, 7), false);
+  assert.equal(diagnostics.length, 1);
+  assert.equal(diagnostics[0].reason, "invalid_registration");
+  assert.equal(diagnostics[0].invalidCheck, "invalid_surface_id");
+  assert.equal(registry.registerSurface(webappRegistration("webapp:recovery", 302, "invalid-retry"), 7), true);
+  const retrySummary = diagnostics.find((diagnostic) =>
+    diagnostic.event === "surface-registration-rejection-summary" &&
+    diagnostic.registrationId === "invalid-retry"
+  );
+  assert.equal(retrySummary.occurrenceCount, 2);
+  assert.equal(retrySummary.resolution, "registered");
+
+  assert.equal(registry.registerSurface(
+    webappRegistration("webapp:missing", 304, "missing-entry"),
+    7,
+  ), false);
+  assert.equal(diagnostics.at(-1).invalidCheck, "entry_not_found");
+
+  assert.equal(registry.registerSurface({ ...appA, registrationId: "owner-conflict" }, 8), false);
+  assert.equal(diagnostics.at(-1).reason, "owner_webcontents_conflict");
+
+  const identityConflict = {
+    ...webappRegistration("webapp:b", 304, "identity-conflict"),
+    surfaceId: appA.surfaceId,
+  };
+  assert.equal(registry.registerSurface(identityConflict, 7), false);
+  assert.equal(diagnostics.at(-1).reason, "surface_identity_conflict");
+  assert.equal(diagnostics.at(-1).conflict.surfaceIdentityKeyMatches, false);
+
+  assert.equal(registry.registerSurface(webappRegistration("webapp:b", 301, "guest-conflict"), 7), false);
+  assert.equal(diagnostics.at(-1).reason, "guest_webcontents_claimed");
+  assert.equal(diagnostics.at(-1).conflict.guestWebContentsId, 301);
+
+  const main = createSurfaceIdentity("main-chat", "", { ownerChatId: "chat-private" });
+  const mainRegistration = serviceRegistration(main, 303, "main-valid", "agent-chat");
+  assert.equal(registry.registerSurface(mainRegistration, 7), true);
+  const incoherentMain = serviceRegistration(
+    createSurfaceIdentity("main-chat"),
+    303,
+    "main-transition",
+    "agent-chat",
+  );
+  assert.equal(registry.registerSurface(incoherentMain, 7), false);
+  assert.equal(diagnostics.at(-1).reason, "main_chat_owner_transition_rejected");
+
+  const overviewKey = "overview:chat-private";
+  const overview = createChatChildSurfaceIdentity("overview", overviewKey, "chat-private");
+  assert.equal(registry.registerSurface(
+    serviceRegistration(overview, 304, "parent-conflict", "agent-overview", overviewKey),
+    8,
+  ), false);
+  assert.equal(diagnostics.at(-1).reason, "parent_surface_conflict");
+
+  const rejectionReasons = new Set(
+    diagnostics
+      .filter((diagnostic) => diagnostic.event === "surface-registration-rejected")
+      .map((diagnostic) => diagnostic.reason),
+  );
+  for (const reason of [
+    "invalid_registration",
+    "owner_webcontents_conflict",
+    "surface_identity_conflict",
+    "main_chat_owner_transition_rejected",
+    "parent_surface_conflict",
+    "guest_webcontents_claimed",
+  ]) {
+    assert.equal(rejectionReasons.has(reason), true, reason);
+  }
+
+  const expiredRetry = {
+    ...webappRegistration("webapp:recovery", 302, "expired-retry"),
+    surfaceId: "",
+  };
+  assert.equal(registry.registerSurface(expiredRetry, 7), false);
+  assert.equal(registry.registerSurface(expiredRetry, 7), false);
+  await new Promise((resolve) => setTimeout(resolve, 25));
+  const expiredSummary = diagnostics.find((diagnostic) =>
+    diagnostic.event === "surface-registration-rejection-summary" &&
+    diagnostic.registrationId === "expired-retry"
+  );
+  assert.equal(expiredSummary.occurrenceCount, 2);
+  assert.equal(expiredSummary.resolution, "retry_window_expired");
+
+  const serializedDiagnostics = JSON.stringify(diagnostics);
+  assert.equal(serializedDiagnostics.includes("secret-token"), false);
+  assert.equal(serializedDiagnostics.includes("chat-private"), false);
+  assert.equal(serializedDiagnostics.includes("http://"), false);
+});
+
 test("Main Chat registry preserves canonical ownership and waits for coherent identity transitions", async () => {
   const owner = new EventEmitter();
   owner.isDestroyed = () => false;
@@ -274,7 +496,10 @@ test("Main Chat registry preserves canonical ownership and waits for coherent id
     pageRouteIdentity: "/agent/agent-201?newChat=nonce-202",
     currentUrl: "http://127.0.0.1:7788/agent/agent-201?newChat=nonce-202",
   }), 7), true);
-  assert.equal(registry.resolveWebviewSurfaceTarget(guest.id).ownerChatId, undefined);
+  const newChatTarget = registry.resolveWebviewSurfaceTarget(guest.id);
+  assert.equal(newChatTarget.active, true);
+  assert.equal(newChatTarget.ownerChatId, undefined);
+  assert.equal(newChatTarget.pageRouteIdentity, "/agent/agent-201?newChat=nonce-202");
 
   const canonicalTarget = registry.waitForWebviewSurfaceTargetMatching(
     guest.id,

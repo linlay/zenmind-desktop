@@ -10,6 +10,7 @@ import type { AssistantAttachmentCancelResult, AssistantAttachmentPickResult, As
 import type {
   AssistantChatDetail,
   AssistantChatInfo,
+  AssistantChatRevealResult,
   AssistantChatOrderMutationRequest,
   AssistantChatOrderMutationResult,
   AssistantChatSearchRequest,
@@ -78,13 +79,38 @@ import type { WebviewSelectionToolbarStateListener } from "../webview-selection-
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
 import type {
   EmbeddedCdpSurfaceRegistration,
+  EmbeddedCdpSurfaceRegistrationResult,
   EmbeddedCdpSurfaceRemoval,
   EmbeddedCdpSurfaceTargetStateRequest,
   EmbeddedCdpSurfaceTargetStateResult
 } from "../embedded-cdp";
 import type { EpochMilliseconds } from "../time-contract";
 import type { ShutdownProgressListener } from "../shutdown";
-import type { ChatWorkPanelClearSessionRequest } from "../chat-work-panel";
+import type {
+  ChatWorkPanelClearSessionRequest,
+  WorkPanelLocalFileActionResult,
+  WorkPanelLocalFileClaimRequest,
+  WorkPanelLocalFileClaimResult,
+  WorkPanelLocalFileHandleRequest,
+  WorkPanelLocalFileReleaseRequest,
+  WorkPanelLocalFileSelectRequest,
+  WorkPanelLocalFileSelectionResult,
+} from "../chat-work-panel";
+import type {
+  WorkPanelResourceImageActionResult,
+  WorkPanelResourceImageAiCancelRequest,
+  WorkPanelResourceImageAiRequest,
+  WorkPanelResourceImageAiResult,
+  WorkPanelResourceImageChangedEvent,
+  WorkPanelResourceImageClaimRequest,
+  WorkPanelResourceImageClaimResult,
+  WorkPanelResourceImageCommitRequest,
+  WorkPanelResourceImageCommitResult,
+  WorkPanelResourceImageExternalOpenRequest,
+  WorkPanelResourceImageHandleRequest,
+  WorkPanelResourceImageReadResult,
+  WorkPanelResourceImageReleaseRequest,
+} from "../work-panel-resource-image";
 import type { DesktopHelpSettings } from "../help";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
@@ -200,6 +226,46 @@ export interface AgentRealtimeDebugSurface {
   activeStreamCount: number;
 }
 
+export interface AgentRealtimeDebugProcess {
+  pid: number;
+  type: string;
+  name?: string;
+  serviceName?: string;
+  cpuPercent: number;
+  creationTime: number;
+  sandboxed?: boolean;
+  workingSetBytes: number;
+  peakWorkingSetBytes: number;
+  privateBytes?: number;
+  targetCount: number;
+}
+
+export interface AgentRealtimeDebugTarget {
+  targetId: string;
+  surfaceId?: string;
+  registrationId?: string;
+  label: string;
+  surfaceKind?: string;
+  surfaceType?: string;
+  surfaceRole?: SurfaceRole;
+  surfaceLevel?: SurfaceLevel;
+  parentSurfaceId?: string;
+  interaction?: SurfaceInteraction;
+  ownerChatId?: string;
+  ownerWebContentsId?: number;
+  webContentsId?: number;
+  webContentsType?: string;
+  pid?: number;
+  url: string;
+  title: string;
+  active: boolean;
+  loading: boolean;
+  crashed: boolean;
+  devToolsOpened: boolean;
+  backgroundThrottling: boolean;
+  orphaned: boolean;
+}
+
 export interface AgentRealtimeDebugLogicalSession {
   logicalSessionId: string;
   surfaceId: string;
@@ -213,38 +279,94 @@ export interface AgentRealtimeDebugLogicalSession {
   closeReason?: string;
   pendingRequestCount: number;
   activeStreamCount: number;
+  streams: Array<{
+    requestId: string;
+    type: "/api/query" | "/api/attach" | "/api/btw";
+    runId: string;
+    chatId: string;
+    lastSeq: number;
+    virtual: boolean;
+  }>;
 }
 
 export interface AgentRealtimeDebugRunRecovery {
+  lane: "primary" | "btw";
   runId: string;
+  chatId: string;
   lastSeq: number;
-  state: "active" | "suspended" | "restoring" | "terminal";
+  lastEventType?: string;
+  lastEventSeq?: number;
+  lastPlanTaskEventType?: string;
+  lastPlanTaskEventSeq?: number;
+  state: "observed" | "detaching" | "dormant" | "terminal";
+  terminalReason?: string;
+  terminalSource?: "query_stream" | "attach_stream" | "push";
+  rootObserverCount: number;
+  cloneCount: number;
+  upstreamState: "attached" | "detaching" | "detached";
   restoreCount: number;
   lastRestoreResult: string;
 }
 
+export interface AgentRealtimeDebugConnection {
+  source: "desktop-main" | "desktop-btw";
+  phase: AgentWebclientConnectionPhase;
+  generation: number;
+  physicalConnectionCount: 0 | 1;
+  reconnectCount: number;
+  endpoint: string;
+  physicalSessionId?: string;
+  lastInboundAt?: EpochMilliseconds;
+  lastHeartbeatAt?: EpochMilliseconds;
+  closeReason?: string;
+  lastError?: string;
+}
+
 export interface AgentRealtimeDebugSnapshot {
   capturedAt: EpochMilliseconds;
-  connection: {
-    phase: AgentWebclientConnectionPhase;
-    generation: number;
-    physicalConnectionCount: 0 | 1;
-    reconnectCount: number;
-    endpoint: string;
-    physicalSessionId?: string;
-    lastInboundAt?: EpochMilliseconds;
-    lastHeartbeatAt?: EpochMilliseconds;
-    closeReason?: string;
-    lastError?: string;
+  runtime: {
+    surfaceCount: number;
+    webviewCount: number;
+    orphanWebviewCount: number;
+    totalWorkingSetBytes: number;
+    processes: AgentRealtimeDebugProcess[];
+    targets: AgentRealtimeDebugTarget[];
+  };
+  connections: {
+    primary: AgentRealtimeDebugConnection;
+    btw: AgentRealtimeDebugConnection;
   };
   broker: {
     pendingRequestCount: number;
+    pendingQueryCount: number;
     activeStreamCount: number;
     runCount: number;
     localRunSubscriberCount: number;
     pushSubscriberCount: number;
     connectionSubscriberCount: number;
-    visibleBinding: { epoch: number; consumerCount: number } | null;
+    overviewLease: {
+      state: "pending_chat_identity" | "ready";
+      parentGeneration: string;
+      contextEpoch: string;
+      chatId?: string;
+      runCount: number;
+      runIds: string[];
+      pendingSubscriberCount: number;
+      uiSubscriberCount: number;
+      subscribers: Array<{
+        runId: string;
+        chatId: string;
+        lastSeq: number;
+      }>;
+    } | null;
+    pendingCloneCount: number;
+    pendingClones: Array<{
+      parentGeneration: string;
+      runId: string;
+      chatId: string;
+      waitReason: "awaiting_run_start";
+    }>;
+    lastCloneCancellationReason?: string;
     replayEventCount: number;
     replayBytes: number;
     unknownFrameCount: number;
@@ -254,14 +376,29 @@ export interface AgentRealtimeDebugSnapshot {
     seqRegressionCount: number;
     duplicateTerminalCount: number;
     replayEvictionCount: number;
+    observerReleaseCount: number;
+    seqExpiredCount: number;
+    upstreamAttachCount: number;
+    upstreamDetachCount: number;
+    cloneCreatedCount: number;
+    cloneRevokedCount: number;
+    laneRotationCount: number;
   };
   bridge: {
     registeredSenderCount: number;
     logicalSessionCount: number;
     pendingRequestCount: number;
     activeStreamCount: number;
-    activeLiveSurfaceCount: number;
-    activeLiveSessionKey: string | null;
+    rootObserver: {
+      token: string;
+      kind: "main_chat" | "copilot_dock" | "kanban_chat";
+      surfaceId: string;
+      generation: string;
+      contextId: string;
+      contextEpoch: string;
+      webContentsId: number;
+      runIds: string[];
+    } | null;
   };
   surfaces: AgentRealtimeDebugSurface[];
   logicalSessions: AgentRealtimeDebugLogicalSession[];
@@ -693,6 +830,8 @@ export type SandboxImageImportProgressListener = (event: SandboxImageImportProgr
 export type LocaleChangedListener = (settings: LocaleSettings) => void;
 export type DesktopWindowState = {
   isFullScreen: boolean;
+  isMaximized: boolean;
+  windowControlsMasked: boolean;
 };
 export type DesktopWindowStateListener = (state: DesktopWindowState) => void;
 export type DesktopGlobalSearchActionShortcutId = "newChat" | "history" | "agents" | "skills" | "mcpConnectors";
@@ -716,7 +855,10 @@ export type DesktopConfigChangedEvent = {
 };
 export type DesktopConfigChangedListener = (event: DesktopConfigChangedEvent) => void;
 
+export type RendererDiagnosticLevel = "debug" | "warn" | "error";
+
 export interface RendererDiagnosticReport {
+  level: RendererDiagnosticLevel;
   source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview";
   message: string;
   details?: Record<string, unknown>;
@@ -761,7 +903,15 @@ export interface DesktopApi {
     setWorkPanelKeyboardFocusActive: (active: boolean) => void;
     setWorkPanelFullscreenActive: (active: boolean) => void;
     requestWindowClose: () => void;
-    getWindowState: () => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
+    minimizeWindow: () => Promise<{ ok: boolean; message?: string }>;
+    toggleWindowMaximize: () => Promise<{ ok: boolean; isMaximized: boolean; message?: string }>;
+    getWindowState: () => Promise<{
+      ok: boolean;
+      isFullScreen: boolean;
+      isMaximized: boolean;
+      windowControlsMasked: boolean;
+      message?: string;
+    }>;
     setWindowFullScreen: (
       enabled: boolean
     ) => Promise<{ ok: boolean; isFullScreen: boolean; message?: string }>;
@@ -840,6 +990,7 @@ export interface DesktopApi {
     listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
     getChatInfo: (chatId: string) => Promise<AssistantChatInfo | null>;
+    revealChatInFolder: (chatId: string) => Promise<AssistantChatRevealResult>;
     searchChats: (request: AssistantChatSearchRequest) => Promise<AssistantChatSearchResponse>;
     pickAttachments: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
     captureScreenshot: (chatId?: string | null) => Promise<AssistantAttachmentPickResult>;
@@ -1023,12 +1174,30 @@ export interface DesktopApi {
     getSnapshot: () => Promise<DesktopPageContextSnapshot | null>;
   };
   embeddedCdp: {
-    registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<{ ok: boolean }>;
+    registerSurface: (input: EmbeddedCdpSurfaceRegistration) => Promise<EmbeddedCdpSurfaceRegistrationResult>;
     unregisterSurface: (input: EmbeddedCdpSurfaceRemoval) => Promise<{ ok: boolean }>;
     getSurfaceTargetState: (input: EmbeddedCdpSurfaceTargetStateRequest) => Promise<EmbeddedCdpSurfaceTargetStateResult>;
   };
   chatWorkPanel: {
     clearSession: (input: ChatWorkPanelClearSessionRequest) => Promise<{ ok: boolean }>;
+    localFiles: {
+      getReviewPreloadUrl: () => Promise<string>;
+      select: (input: WorkPanelLocalFileSelectRequest) => Promise<WorkPanelLocalFileSelectionResult>;
+      claim: (input: WorkPanelLocalFileClaimRequest) => Promise<WorkPanelLocalFileClaimResult>;
+      release: (input: WorkPanelLocalFileReleaseRequest) => Promise<WorkPanelLocalFileActionResult>;
+      open: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
+      reveal: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
+    };
+    resourceImages: {
+      claim: (input: WorkPanelResourceImageClaimRequest) => Promise<WorkPanelResourceImageClaimResult>;
+      read: (input: WorkPanelResourceImageHandleRequest) => Promise<WorkPanelResourceImageReadResult>;
+      release: (input: WorkPanelResourceImageReleaseRequest) => Promise<WorkPanelResourceImageActionResult>;
+      openExternal: (input: WorkPanelResourceImageExternalOpenRequest) => Promise<WorkPanelResourceImageActionResult>;
+      ai: (input: WorkPanelResourceImageAiRequest) => Promise<WorkPanelResourceImageAiResult>;
+      cancelAi: (input: WorkPanelResourceImageAiCancelRequest) => Promise<WorkPanelResourceImageActionResult>;
+      commit: (input: WorkPanelResourceImageCommitRequest) => Promise<WorkPanelResourceImageCommitResult>;
+      onChanged: (listener: (event: WorkPanelResourceImageChangedEvent) => void) => () => void;
+    };
   };
   diagnostics: {
     reportRendererError: (report: RendererDiagnosticReport) => void;
@@ -1049,6 +1218,9 @@ export interface DesktopApi {
     getTunnelDebugSnapshot: () => Promise<TunnelDebugSnapshot>;
     probeDesktopWs: (input: { target: "localDebug" }) => Promise<DesktopWsProbeResult>;
     openAgentRealtimeInspector: () => Promise<{ ok: boolean }>;
+    openAgentRealtimeTargetDevTools: (input: {
+      webContentsId: number;
+    }) => Promise<{ ok: boolean; message?: string }>;
     getAgentRealtimeDebugSnapshot: (input?: {
       afterSequence?: number;
     }) => Promise<AgentRealtimeDebugSnapshot>;
@@ -1094,6 +1266,7 @@ export interface DesktopApi {
       uninstall: (id: string) => Promise<WebappDeleteResult>;
       start: (id: string) => Promise<WebappCommandResult>;
       openWindow: (id: string) => Promise<WebappCommandResult>;
+      listOpenWindows: () => Promise<string[]>;
       stop: (id: string) => Promise<WebappCommandResult>;
       restart: (id: string) => Promise<WebappCommandResult>;
       getStatus: (id: string) => Promise<WebappStatusResult>;

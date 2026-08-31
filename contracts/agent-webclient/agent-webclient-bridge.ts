@@ -1,6 +1,6 @@
 // Generated from src/shared/contracts/agent-webclient-bridge.ts.
 // Do not edit this mirror directly.
-// sha256:d28c04d0e9e56948844a35188ddb563333407bccda8d5b6422bde4759cd8a20f
+// sha256:7f1d9e07012aab366a39895da2fc347a0e6457e4be23fd913e6f0e383b39fb84
 
 /**
  * Canonical Desktop <-> Agent WebClient bridge contract.
@@ -9,7 +9,7 @@
  * separately released Agent WebClient bundle and must not depend on Electron.
  */
 
-export const AGENT_WEBCLIENT_BRIDGE_VERSION = 4 as const;
+export const AGENT_WEBCLIENT_BRIDGE_VERSION = 5 as const;
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_TRANSPORT_VERSION = 2 as const;
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_GLOBAL =
   "__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__" as const;
@@ -18,10 +18,55 @@ export const AGENT_WEBCLIENT_WORKPANEL_BRIDGE_GLOBAL =
 export const AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION =
   "workPanel.resource.downloadCurrent" as const;
 export const AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION = 1 as const;
+export const AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION =
+  "workPanel.previewReview.dispatch" as const;
+export const AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_VERSION = 1 as const;
+export const AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT =
+  "__agentWebclientWorkPanelPreviewReviewEvent" as const;
+export const AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION =
+  "workPanel.composer.insertDraft" as const;
+export const AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION = 1 as const;
 
 export type AgentWebclientWorkPanelResourceDownloadAction = {
   action: typeof AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION;
   version: typeof AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_VERSION;
+};
+
+export type AgentWebclientWorkPanelPreviewReviewAction = {
+  action: typeof AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION;
+  version: typeof AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_VERSION;
+  requestId: string;
+  operation: "capabilities" | "initialize" | "sync" | "export-image";
+  enabled?: boolean;
+  kind?: "html" | "image";
+  annotations?: unknown[];
+};
+
+export type AgentWebclientComposerDraftAction = {
+  action: typeof AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION;
+  version: typeof AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION;
+  requestId: string;
+  ownerChatId: string;
+  text: string;
+  attachment?: {
+    name: string;
+    mimeType: "image/png";
+    dataBase64: string;
+    sizeBytes: number;
+  };
+  reviewData: {
+    version: 1;
+    sourceKind: "workspace-file" | "artifact" | "reference" | "web";
+    kind: "html" | "image";
+    source: {
+      fileName: string;
+      revision: string;
+      relativePath?: string;
+      resourceId?: string;
+      url?: string;
+    };
+    annotations: unknown[];
+  };
 };
 
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL =
@@ -47,6 +92,7 @@ export const AGENT_WEBCLIENT_BRIDGE_ERROR_CODES = [
   "target_unavailable",
   "unsupported_in_current_view",
   "unsupported_native_surface",
+  "unsupported_native_type",
   "seq_expired",
   "replay_required",
   "protocol_error",
@@ -198,7 +244,10 @@ export type DesktopPlatformFramePort = {
 };
 
 export type WorkPanelChatContext = { agentKey: string; chatId: string };
-export type WorkPanelBTWContext = WorkPanelChatContext & { btwId?: string };
+export type WorkPanelBTWContext = WorkPanelChatContext & {
+  btwId?: string;
+  instanceId?: string;
+};
 export type WorkPanelSourceContext = WorkPanelChatContext & {
   btwId?: string;
   publishId: string;
@@ -273,7 +322,7 @@ export type WorkPanelItemDescriptor =
   | {
       kind: "native";
       surfaceKey: string;
-      context: Record<string, never>;
+      context: Record<string, string | number | boolean>;
       title?: string;
       pinned?: boolean;
       closable?: boolean;
@@ -281,6 +330,25 @@ export type WorkPanelItemDescriptor =
   | {
       kind: "web";
       url: string;
+      title?: string;
+      pinned?: boolean;
+      closable?: boolean;
+    }
+  | {
+      kind: "webapp-ref";
+      webappId: string;
+      title: string;
+      pinned?: boolean;
+      closable?: boolean;
+    }
+  | {
+      kind: "local-file";
+      handleId: string;
+      fileName: string;
+      previewKind: "html" | "pdf" | "image" | "text" | "audio" | "video" | "unsupported";
+      reviewKind?: "html" | "image";
+      workspaceRelativePath?: string;
+      reviewRevision?: string;
       title?: string;
       pinned?: boolean;
       closable?: boolean;
@@ -308,6 +376,25 @@ export type WorkPanelOpenItemInput = {
   descriptor: WorkPanelItemDescriptor;
 };
 
+export type WorkPanelOpenResourceInput = {
+  version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
+  profile: "artifact" | "reference";
+  agentKey: string;
+  chatId: string;
+  resourceId: string;
+  relativePath: string;
+  title?: string;
+};
+
+export type WorkPanelOpenResourceResult =
+  | {
+      ok: true;
+      workspaceId: string;
+      itemId: string;
+      renderer: "native-image";
+    }
+  | AgentWebclientBridgeFailure;
+
 export type WorkPanelItemTargetInput = {
   version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
   itemId: string;
@@ -328,12 +415,13 @@ export type WorkPanelCapabilityResult =
 
 export type AgentWebclientWorkPanelBridge = {
   getCapabilities(): Promise<WorkPanelCapabilityResult>;
+  openResource(input: WorkPanelOpenResourceInput): Promise<WorkPanelOpenResourceResult>;
   openItem(input: WorkPanelOpenItemInput): Promise<WorkPanelBridgeResult>;
   activateItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
   closeItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
 };
 
-export function isAgentWebclientBridgeVersion(value: unknown): value is 4 {
+export function isAgentWebclientBridgeVersion(value: unknown): value is 5 {
   return value === AGENT_WEBCLIENT_BRIDGE_VERSION;
 }
 

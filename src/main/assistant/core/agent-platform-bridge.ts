@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
@@ -47,12 +47,12 @@ import {
 } from "../../../shared/time-contract";
 import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
+import { resolveAssistantChatStoragePaths } from "./chat-storage-path";
 import {
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform
 } from "./assistant-navigation-status-client";
 import { t } from "../../i18n/main-i18n";
-import { resolveRuntimeRoot } from "../../env-bootstrap";
 import { parseSafeLoopbackWebUrl } from "../../loopback-url";
 import {
   RealtimeBroker,
@@ -63,6 +63,7 @@ import type { AgentPlatformRealtimeSocketFactory } from "../../realtime/agent-pl
 const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";
 const MAX_CONVERSATION_MARKDOWN_BYTES = 2 << 20;
 const MAX_RAW_CHAT_JSONL_BYTES = 100 * 1024 * 1024;
+const MAX_GENERATED_IMAGE_BYTES = 32 * 1024 * 1024;
 const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "createdAt",
   "updatedAt",
@@ -119,6 +120,52 @@ type PlatformUploadTicket = {
   sha256?: string;
   sandboxPath?: string;
 };
+
+export type AgentPlatformImageOperation =
+  | "generate"
+  | "imageToImage"
+  | "inpaint"
+  | "outpaint"
+  | "removeObject"
+  | "replaceBackground"
+  | "removeBackground"
+  | "enhance"
+  | "repairSelection";
+
+export type AgentPlatformImageCompletionRequest = Omit<AssistantStartRunRequest, "message"> & {
+  operation: AgentPlatformImageOperation;
+  prompt: string;
+  negativePrompt?: string;
+  width: number;
+  height: number;
+  count: number;
+  strength: number;
+  seed: number;
+  preserveComposition: boolean;
+  edgeMode: "strict" | "soft";
+};
+
+export type AgentPlatformImageCompletionResult =
+  | {
+      ok: true;
+      runId: string;
+      chatId: string;
+      message: string;
+      images: Array<{
+        name: string;
+        mimeType: "image/png" | "image/jpeg" | "image/webp";
+        sizeBytes: number;
+        sha256: string;
+        dataBase64: string;
+      }>;
+    }
+  | {
+      ok: false;
+      runId: string;
+      chatId: string;
+      message: string;
+      images: [];
+    };
 
 type PlatformChatSummary = {
   chatId?: unknown;
@@ -248,6 +295,124 @@ function createApiUrl(baseUrl: string, pathname: string) {
 
 function readString(value: unknown) {
   return typeof value === "string" ? value : "";
+}
+
+const IMAGE_OPERATION_INSTRUCTIONS: Record<AgentPlatformImageOperation, string> = {
+  generate: "根据提示词生成一张全新图片。",
+  imageToImage: "以原图为编辑目标，根据提示词进行图生图修改。",
+  inpaint: "只重绘蒙版指定区域，未选区域保持不变。",
+  outpaint: "在保持主体与视觉风格的前提下智能扩展原图边界。",
+  removeObject: "移除蒙版区域内的对象，并根据周围内容自然补全。",
+  replaceBackground: "替换图片背景，主体的外观、姿态和细节保持稳定。",
+  removeBackground: "移除背景并保留主体，尽可能输出透明背景。",
+  enhance: "增强清晰度、细节与色彩，保持原内容和构图。",
+  repairSelection: "清除蒙版区域内的文字、标记或水印，并根据周围内容自然修复；素材已由用户确认拥有或获得授权。"
+};
+
+export function buildZenmiImageGenerateMessage(request: AgentPlatformImageCompletionRequest) {
+  const source = request.attachments?.find((attachment) => attachment.id === "image-studio-source");
+  const mask = request.attachments?.find((attachment) => attachment.id === "image-studio-mask");
+  const promptParts = [
+    IMAGE_OPERATION_INSTRUCTIONS[request.operation],
+    request.prompt.trim(),
+    request.negativePrompt?.trim() ? `避免出现：${request.negativePrompt.trim()}。` : "",
+    `重绘强度参考 ${Math.round(request.strength * 100)}%。`,
+    request.preserveComposition ? "保持原有构图。" : "允许重新组织构图。",
+    request.edgeMode === "strict" ? "严格限制修改范围。" : "允许自然影响蒙版边缘。",
+    `随机种子参考 ${request.seed}。`
+  ].filter(Boolean).join(" ");
+  const toolArgs: Record<string, unknown> = {
+    prompt: promptParts,
+    size: `${request.width}x${request.height}`,
+    n: request.count
+  };
+  if (source) {
+    toolArgs.images = [{ source_type: "reference_name", value: source.name }];
+  }
+  if (source && mask) {
+    toolArgs.mask = { source_type: "reference_name", value: mask.name, mode: "white_edit" };
+  }
+  return [
+    "必须且只能调用一次 image_generate 工具；不要调用文件、Shell、浏览器、桌面控制或其他工具，也不要向用户追问。",
+    `请使用以下参数调用 image_generate：${JSON.stringify(toolArgs)}`
+  ].join("\n");
+}
+
+type ImageGenerateOutcome = {
+  callCount: number;
+  resultSeen: boolean;
+  ok: boolean;
+  message: string;
+  artifacts: Array<Record<string, unknown>>;
+};
+
+function imageResultRecord(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function imageGenerateFailureMessage(value: unknown): string {
+  const record = imageResultRecord(value);
+  if (!record) return "image_generate 返回了无效结果。";
+  const direct = readString(record.message).trim() || readString(record.error).trim();
+  if (direct) return direct;
+  const nested = record.output;
+  if (typeof nested === "string") {
+    try {
+      return imageGenerateFailureMessage(JSON.parse(nested));
+    } catch {
+      return nested.trim().slice(0, 500) || "image_generate 执行失败。";
+    }
+  }
+  if (nested && nested !== value) return imageGenerateFailureMessage(nested);
+  return "image_generate 执行失败。";
+}
+
+function observeImageGenerateEvent(event: Record<string, unknown>, outcome: ImageGenerateOutcome) {
+  const eventType = readString(event.type);
+  const toolName = readString(event.toolName);
+  if (eventType === "tool.start") {
+    if (toolName !== "image_generate") {
+      outcome.message = `Zenmi 图片任务不允许调用 ${toolName || "未知工具"}。`;
+      return true;
+    }
+    outcome.callCount += 1;
+    if (outcome.callCount > 1) {
+      outcome.message = "Zenmi 图片任务检测到第二次 image_generate 调用，运行已终止。";
+      return true;
+    }
+    return false;
+  }
+  if (eventType !== "tool.result" || toolName !== "image_generate") return false;
+  if (outcome.resultSeen) {
+    outcome.message = "Zenmi 图片任务返回了多个 image_generate 结果，运行已终止。";
+    outcome.ok = false;
+    return true;
+  }
+  outcome.resultSeen = true;
+  if (outcome.callCount === 0) outcome.callCount = 1;
+  const result = imageResultRecord(event.result);
+  const images = result?.images;
+  if (result?.ok !== true || !Array.isArray(images) || images.length === 0) {
+    outcome.message = imageGenerateFailureMessage(result);
+    outcome.ok = false;
+    return true;
+  }
+  for (const image of images) {
+    const artifact = imageResultRecord(image);
+    if (artifact) outcome.artifacts.push(artifact);
+  }
+  outcome.ok = outcome.artifacts.length > 0;
+  outcome.message = outcome.ok ? "" : "image_generate 未返回有效 images[]。";
+  return true;
+}
+
+function validGeneratedImageRelativePath(value: string) {
+  if (!value || value.startsWith("/") || value.includes("\\") || value.includes("\0") || value.includes("://")) {
+    return false;
+  }
+  return value.split("/").every((segment) => segment && segment !== "." && segment !== "..");
 }
 
 function readNumber(value: unknown) {
@@ -599,8 +764,7 @@ function readFinalAssistantTextFromMessages(messages: unknown): string {
 }
 
 function resolvePlatformChatFile(app: App, chatId: string): string {
-  const safeChatId = /^[A-Za-z0-9_-]+$/u.test(chatId) ? chatId : "";
-  return safeChatId ? path.join(resolveRuntimeRoot(app), "chats", `${safeChatId}.jsonl`) : "";
+  return resolveAssistantChatStoragePaths(app, chatId)?.chatFilePath ?? "";
 }
 
 function readFinalAssistantTextFromChatFile(filePath: string, runId: string): string {
@@ -1044,7 +1208,11 @@ export class AgentPlatformAssistantBridge {
     return acceptance;
   }
 
-  async completeText(request: AssistantStartRunRequest): Promise<AssistantTextCompletionResult> {
+  async completeText(
+    request: AssistantStartRunRequest,
+    onRawEvent?: (event: Record<string, unknown>) => boolean | void,
+    strictAttachments = false
+  ): Promise<AssistantTextCompletionResult> {
     const message = request.message.trim();
     const chatId = request.chatId?.trim() || createChatId();
     const runId = request.runId?.trim() || createRunId();
@@ -1099,7 +1267,96 @@ export class AgentPlatformAssistantBridge {
       chatId,
       runId,
       activeRun,
+      onRawEvent,
+      strictAttachments,
     });
+  }
+
+  async completeImage(request: AgentPlatformImageCompletionRequest): Promise<AgentPlatformImageCompletionResult> {
+    const outcome: ImageGenerateOutcome = {
+      callCount: 0,
+      resultSeen: false,
+      ok: false,
+      message: "",
+      artifacts: []
+    };
+    const completion = await this.completeText(
+      {
+        ...request,
+        message: buildZenmiImageGenerateMessage(request)
+      },
+      (event) => observeImageGenerateEvent(event, outcome),
+      true
+    );
+    if (outcome.message && !outcome.ok) {
+      return { ok: false, runId: completion.runId, chatId: completion.chatId, message: outcome.message, images: [] };
+    }
+    if (!outcome.resultSeen) {
+      if (!completion.ok) {
+        return { ok: false, runId: completion.runId, chatId: completion.chatId, message: completion.message, images: [] };
+      }
+      return {
+        ok: false,
+        runId: completion.runId,
+        chatId: completion.chatId,
+        message: "Zenmi 未返回 image_generate 工具结果。",
+        images: []
+      };
+    }
+    if (!outcome.ok) {
+      return { ok: false, runId: completion.runId, chatId: completion.chatId, message: completion.message, images: [] };
+    }
+    const availability = await this.resolvePlatform();
+    if (!availability.ok) {
+      return { ok: false, runId: completion.runId, chatId: completion.chatId, message: availability.message, images: [] };
+    }
+    const images: Extract<AgentPlatformImageCompletionResult, { ok: true }>["images"] = [];
+    for (const artifact of outcome.artifacts.slice(0, request.count)) {
+      const relativePath = readString(artifact.relativePath).trim();
+      if (!validGeneratedImageRelativePath(relativePath)) continue;
+      const resourceURL = new URL("/api/resource", availability.baseUrl);
+      resourceURL.searchParams.set("file", `${completion.chatId}/${relativePath}`);
+      const response = await this.platformFetch(availability.baseUrl, resourceURL.toString(), {
+        method: "GET",
+        headers: { Authorization: `Bearer ${availability.token}` }
+      });
+      if (!response.ok) continue;
+      const mimeType = response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() ?? "";
+      if (mimeType !== "image/png" && mimeType !== "image/jpeg" && mimeType !== "image/webp") continue;
+      let bytes: Buffer;
+      try {
+        bytes = await readResponseBytesWithLimit(response, MAX_GENERATED_IMAGE_BYTES);
+      } catch {
+        continue;
+      }
+      if (bytes.length === 0) continue;
+      const sha256 = createHash("sha256").update(bytes).digest("hex");
+      const expectedSha256 = readString(artifact.sha256).trim().toLowerCase();
+      if (expectedSha256 && expectedSha256 !== sha256) continue;
+      images.push({
+        name: path.basename(relativePath),
+        mimeType,
+        sizeBytes: bytes.length,
+        sha256,
+        dataBase64: bytes.toString("base64")
+      });
+    }
+    if (images.length === 0) {
+      return {
+        ok: false,
+        runId: completion.runId,
+        chatId: completion.chatId,
+        message: "Zenmi 已生成图片，但 Desktop 无法安全读取生成结果。",
+        images: []
+      };
+    }
+    return {
+      ok: true,
+      runId: completion.runId,
+      chatId: completion.chatId,
+      message: "Zenmi 图片生成成功。",
+      images
+    };
   }
 
   async stopRun(runId: string): Promise<AssistantStopRunResult> {
@@ -1719,9 +1976,12 @@ export class AgentPlatformAssistantBridge {
       runId: string;
       activeRun: ActiveAssistantRun;
       onAcceptance?: (result: AssistantStartRunResult) => void;
+      onRawEvent?: (event: Record<string, unknown>) => boolean | void;
+      strictAttachments?: boolean;
     }
   ): Promise<AssistantTextCompletionResult> {
     let acceptanceSettled = false;
+    let stoppedByRawEvent = false;
     const settleAcceptance = (result: AssistantStartRunResult) => {
       if (acceptanceSettled) {
         return;
@@ -1730,7 +1990,14 @@ export class AgentPlatformAssistantBridge {
       run.onAcceptance?.(result);
     };
     try {
-      const references = await this.uploadAttachments(baseUrl, token, run.chatId, run.runId, request.attachments ?? []);
+      const references = await this.uploadAttachments(
+        baseUrl,
+        token,
+        run.chatId,
+        run.runId,
+        request.attachments ?? [],
+        run.strictAttachments === true
+      );
       const accessLevel = normalizeAssistantAccessLevel(request.accessLevel);
       const requestId = request.requestId?.trim() || run.runId;
       const query: RealtimeQueryHandle = this.realtimeBroker.query({
@@ -1772,6 +2039,7 @@ export class AgentPlatformAssistantBridge {
           stream: true
         },
         onEvent: async (event, eventPath) => {
+          const stopAfterEvent = run.onRawEvent?.(event) === true;
           const normalizedEvent = normalizePlatformEvent(
             event,
             {
@@ -1804,6 +2072,15 @@ export class AgentPlatformAssistantBridge {
             }
           }
           this.options.onEvent(normalizedEvent);
+          if (stopAfterEvent && !run.activeRun.controller.signal.aborted) {
+            stoppedByRawEvent = true;
+            await this.bestEffortInterrupt(
+              run.runId,
+              run.activeRun,
+              "Image Studio reached its single permitted tool boundary."
+            );
+            run.activeRun.controller.abort();
+          }
         }
       });
       let finalMessage = "";
@@ -1830,6 +2107,15 @@ export class AgentPlatformAssistantBridge {
         message: finalMessage.trim()
       };
     } catch (error) {
+      if (stoppedByRawEvent) {
+        return {
+          ok: false,
+          runId: run.runId,
+          chatId: run.chatId,
+          text: "",
+          message: "Image Studio stopped the agent after its single permitted tool result."
+        };
+      }
       const message =
         (error as Error).name === "AbortError"
           ? t("assistant.stopped")
@@ -1912,11 +2198,11 @@ export class AgentPlatformAssistantBridge {
   }
 
   private bestEffortInterrupt(runId: string, activeRun: ActiveAssistantRun, message: string) {
-    void this.platformFetch(activeRun.baseUrl, "/api/interrupt", {
+    return this.platformFetch(activeRun.baseUrl, "/api/interrupt", {
       method: "POST",
       headers: this.jsonHeaders(activeRun.token),
       body: JSON.stringify({ runId, agentKey: activeRun.agentKey, message })
-    }).catch(() => undefined);
+    }).then(() => undefined).catch(() => undefined);
   }
 
   private async readPersistedFinalAssistantMessage(chatId: string, runId: string): Promise<string> {
@@ -1930,10 +2216,19 @@ export class AgentPlatformAssistantBridge {
     return "";
   }
 
-  private async uploadAttachments(baseUrl: string, token: string, chatId: string, runId: string, attachments: AssistantAttachment[]) {
+  private async uploadAttachments(
+    baseUrl: string,
+    token: string,
+    chatId: string,
+    runId: string,
+    attachments: AssistantAttachment[],
+    strict = false
+  ) {
     const references: PlatformUploadTicket[] = [];
     for (const attachment of attachments) {
-      const ticket = await this.uploadAttachment(baseUrl, token, chatId, runId, attachment).catch(() => null);
+      const ticket = strict
+        ? await this.uploadAttachment(baseUrl, token, chatId, runId, attachment)
+        : await this.uploadAttachment(baseUrl, token, chatId, runId, attachment).catch(() => null);
       if (ticket) {
         references.push(ticket);
       }

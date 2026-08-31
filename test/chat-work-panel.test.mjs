@@ -29,15 +29,43 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /closable: false/u);
   assert.match(appShell, /type: "hideWorkspace"/u);
   assert.match(appShell, /type: "showWorkspace"/u);
+  assert.match(appShell, /pendingChatWorkPanelOpenRef/u);
+  assert.match(appShell, /requestChatWorkPanelOpenWhenRegistered/u);
+  assert.match(appShell, /handleMainChatSurfaceRegistrationChange/u);
+  assert.match(appShell, /const agentKey = state\.agentKey\.trim\(\)/u);
+  assert.doesNotMatch(
+    appShell,
+    /activeChatRouteInfo\.chatId !== state\.ownerChatId/u,
+  );
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /agentKey: readAgentWebclientAgentRouteKey\([\s\S]{0,160}registration\.pageRouteIdentity/u,
+  );
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /onSurfaceRegistrationChangeRef\.current\?\.\(\{/u,
+  );
+  assert.doesNotMatch(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /\[\s*ownsActiveSurface,\s*onSurfaceRegistrationChange,/u,
+  );
+  assert.match(appShell, /onMainChatSurfaceRegistrationChange=\{handleMainChatSurfaceRegistrationChange\}/u);
+  assert.match(embeddedHosts, /onSurfaceRegistrationChange=\{onMainChatSurfaceRegistrationChange\}/u);
   assert.match(appShell, /activeChatId=\{activeChatWorkPanelVisible \? activeChatWorkPanelChatId : null\}/u);
   assert.match(host, /state\.workspaces\.map/u);
   assert.match(host, /workspace\.items\.map/u);
   assert.match(host, /item\.descriptor\.kind === "webclient"/u);
   assert.match(host, /profile: tabContextMenuProfile\(item\)/u);
   assert.match(host, /<ServiceWebviewSurface/u);
+  assert.match(embeddedHosts, /enableAgentWebclientChatResourceActions/u);
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /runOwnedAgentWebclientResourceAction[\s\S]*?chatWorkPanelTabContextMenu\.revealLocalResource[\s\S]*?chatWorkPanelTabContextMenu\.openLocalResource/u,
+  );
   assert.match(host, /item\.descriptor\.kind === "webclient"[\s\S]*?<ServiceWebviewSurface[\s\S]*?skipContextRegistration[\s\S]*?\/>/u);
   assert.match(host, /<ExternalWebviewPage/u);
   assert.match(host, /hidden=\{!visible\}/u);
+  assert.match(host, /const active = visible && workspace\.activeItemId === item\.itemId/u);
   assert.match(host, /visible && hasPanelToggle \? " has-panel-toggle" : ""/u);
   assert.match(reducer, /stableKey:\s*`web:\$\{url\}`/u);
   assert.match(
@@ -64,7 +92,7 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const bridge = read("src/main/desktop-action-bridge.ts");
 
-  for (const name of ["getState", "openTab", "openWeb", "refreshWeb", "activateTab", "closeTab", "closeWorkpanel"]) {
+  for (const name of ["getState", "openTab", "openWeb", "openLocalFile", "refreshWeb", "activateTab", "closeTab", "closeWorkpanel"]) {
     assert.match(actions, new RegExp(`desktop\\.workpanel\\.${name}`, "u"));
   }
   assert.match(host, /request\.source\?\.chatId/u);
@@ -81,22 +109,62 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
   assert.match(read("src/renderer/app-shell/navigation/AppSidebar.tsx"), /onCloseChatWorkPanel\?\.\(chat\.chatId, true\)/u);
 });
 
-test("WorkPanel enforces one ephemeral Web guest per item and explicit platform focus branches", () => {
+test("WorkPanel Web guests share application cookies and keep explicit platform focus branches", () => {
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const externalWebview = read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx");
   const reducer = read("src/shared/work-panel.ts");
 
-  assert.match(host, /resolveWorkPanelWebSessionKey\([\s\S]{0,100}workspace\.workspaceId,[\s\S]{0,80}item\.itemId/u);
+  assert.match(host, /from "\.\.\/\.\.\/shared\/sso"/u);
+  assert.match(host, /partition=\{item\.descriptor\.kind === "local-file"[\s\S]{0,180}DESKTOP_SSO_WEBVIEW_PARTITION\}/u);
+  assert.match(host, /refreshOnDesktopSso=\{item\.descriptor\.kind === "web"/u);
+  assert.doesNotMatch(host, /resolveWorkPanelWebSessionKey|itemPartition|clearSession/u);
   assert.match(host, /type: "openBlobPopup"/u);
   assert.match(host, /navigationKind === "blob"/u);
-  assert.match(host, /clearSession\?\.\(\{ partition \}\)/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
+  assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web" \|\| \([\s\S]*?item\.descriptor\.reviewKind === "html"/u);
+  assert.match(host, /workPanelToolbarKind=\{item\.descriptor\.kind === "local-file" \? "document" : "web"\}/u);
+  assert.match(host, /className="chat-work-panel-preview-toolbar"/u);
+  assert.match(host, /showResourcePreviewToolbar[\s\S]*?item\.descriptor\.module === "artifact"/u);
+  const workPanelStyles = read("src/renderer/styles/app-shell.css");
+  assert.match(
+    workPanelStyles,
+    /\.chat-work-panel-item\.has-preview-toolbar > \.embedded-surface-page\s*\{[^}]*top:\s*48px;[^}]*height:\s*auto;/su,
+  );
+  assert.doesNotMatch(
+    workPanelStyles,
+    /\.chat-work-panel-item\.has-preview-toolbar > \.service-webview-surface/u,
+  );
   assert.match(host, /target !== "work-panel"/u);
   assert.match(host, /type: "openItem"[\s\S]*?descriptor: \{ kind: "web", url: normalizedUrl \}/u);
   assert.match(host, /showLoadingProgress/u);
   assert.match(host, /chat-work-panel-tab-loading-spinner/u);
   assert.match(host, /onLoadingChange/u);
   assert.match(externalWebview, /allowpopups: "true"/u);
+  assert.match(externalWebview, /workPanelBrowser \? "is-work-panel-browser" : ""/u);
+  assert.doesNotMatch(externalWebview, /readOnly=\{workPanelBrowser/u);
+  assert.match(externalWebview, /pageReviewActive\?: boolean;/u);
+  assert.match(externalWebview, /onTogglePageReview\?: \(page: \{ url: string; title: string \}\) => void;/u);
+  assert.match(externalWebview, /onClick=\{\(\) => onTogglePageReview\(\{/u);
+  assert.match(externalWebview, /pageReviewActive && workPanelBrowser && onTogglePageReview/u);
+  assert.match(externalWebview, /className="external-webview-toolbar-return"[\s\S]*?chatWorkPanel\.review\.returnPreview/u);
+  assert.match(
+    externalWebview,
+    /external-webview-toolbar-location[\s\S]*?external-webview-toolbar-location-input[\s\S]*?external-webview-toolbar-edit/u,
+  );
+  assert.match(host, /pageReviewActive=\{reviewActive && reviewSession\?\.kind === "html"\}/u);
+  assert.match(host, /reviewSession\?\.kind === "html" \? " is-html-review" : ""/u);
+  assert.match(host, /className="external-webview-toolbar-return"[\s\S]*?chatWorkPanel\.review\.returnPreview/u);
+  assert.match(host, /const webReviewPreloadEnabled = item\.descriptor\.kind === "web" &&[\s\S]*?normalizeWorkPanelWebUrl\(item\.descriptor\.url\)/u);
+  assert.match(host, /onTogglePageReview=\{webReviewPreloadEnabled[\s\S]*?toggleReviewForItem/u);
+  assert.match(host, /webReviewPreloadEnabled[\s\S]{0,80}?reviewPreloadUrl/u);
+  const previewPreload = read("src/preload/work-panel-preview.ts");
+  assert.match(previewPreload, /url\.protocol === "http:" \|\|[\s\S]{0,40}url\.protocol === "https:"/u);
+  assert.match(previewPreload, /!url\.username && !url\.password/u);
+  assert.match(previewPreload, /document\.contentType\.toLowerCase\(\)/u);
+  assert.match(previewPreload, /"text\/html" \|\| contentType === "application\/xhtml\+xml"/u);
+  assert.match(previewPreload, /event: "unavailable"/u);
+  assert.match(previewPreload, /document\.elementsFromPoint\(clientX, clientY\)/u);
+  assert.match(previewPreload, /positionSelectionLayer\(new DOMRect\(0, 0, window\.innerWidth, window\.innerHeight\)\)/u);
   assert.match(externalWebview, /target !== "desktop-browser"/u);
   assert.doesNotMatch(externalWebview, /openPopupsInCurrentTab/u);
   assert.match(host, /if \(isMac\)/u);
@@ -104,6 +172,70 @@ test("WorkPanel enforces one ephemeral Web guest per item and explicit platform 
   assert.match(host, /dataset\.workPanelDomReady === "true"/u);
   assert.match(reducer, /unsupported_native_surface/u);
   assert.match(reducer, /item\.pinned \|\| !item\.closable/u);
+  assert.match(
+    read("src/renderer/styles/app-shell.css"),
+    /\.external-webview-page\.is-work-panel-browser\.has-browser-toolbar \.external-webview-browser-chrome\s*\{[^}]*display:\s*flex;/su,
+  );
+  assert.match(
+    read("src/renderer/styles/app-shell.css"),
+    /\.chat-work-panel-item\.is-reviewing\.is-html-review > \.external-webview-page\s*,[\s\S]*?top:\s*0;/u,
+  );
+  assert.match(
+    read("src/renderer/styles/app-shell.css"),
+    /@container \(min-width: 720px\)[\s\S]*?\.chat-work-panel-item\.is-reviewing > \.external-webview-page[\s\S]*?right: 320px;[\s\S]*?width: auto;/u,
+  );
+  const reviewPanel = read("src/renderer/work-panel/WorkPanelReviewPanel.tsx");
+  assert.match(reviewPanel, /session\.kind === "image" \? \([\s\S]*?chat-work-panel-review-toolbar/u);
+  assert.match(reviewPanel, /annotation\.id === activeAnnotationId \? \([\s\S]*?<Input\.TextArea/u);
+  assert.match(reviewPanel, /chat-work-panel-review-panel-footer[\s\S]*?chatWorkPanel\.review\.handoff/u);
+});
+
+test("WorkPanel add menu and canonical WebApp presentation keep host-only ownership", () => {
+  const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
+  const appShell = read("src/renderer/app-shell/AppShell.tsx");
+  const embeddedHosts = read("src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx");
+  const runtime = read("src/main/app/runtime.ts");
+  const localFiles = read("src/main/chat-work-panel-local-files.ts");
+  const css = read("src/renderer/styles/app-shell.css");
+  const sidebarCss = read("src/renderer/styles/sidebar-copilot.css");
+
+  assert.match(host, /chat-work-panel-add-button/u);
+  assert.match(host, /createPortal\(/u);
+  assert.match(host, /chatWorkPanel\.add\.terminal[\s\S]*?disabled/u);
+  assert.match(host, /createAgentWebclientBtwPath/u);
+  assert.match(host, /instanceId: globalThis\.crypto\.randomUUID\(\)/u);
+  assert.match(host, /descriptor\.kind !== "webclient" && descriptor\.kind !== "web"/u);
+  assert.match(host, /case "desktop\.workpanel\.openResourceImage"/u);
+  assert.match(host, /className="chat-work-panel-add-menu sidebar-operation-menu-popover"/u);
+  assert.match(host, /const width = 248/u);
+  assert.match(css, /\.chat-work-panel-add-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/su);
+  assert.match(css, /\.chat-work-panel-add-menu\s*\{[^}]*padding:\s*6px;[^}]*background:\s*var\(--sidebar-operation-menu-bg\);[^}]*box-shadow:\s*var\(--sidebar-operation-menu-shadow\);/su);
+  assert.match(css, /\.chat-work-panel-add-menu-item\s*\{[^}]*min-height:\s*32px;[^}]*font-size:\s*14px;/su);
+
+  assert.match(appShell, /useState<Record<string, WebappPresentationOwner>>\(\{\}\)/u);
+  assert.match(appShell, /removeWebappWorkPanelReferences/u);
+  assert.match(appShell, /kind: "webapp-ref"/u);
+  assert.match(embeddedHosts, /export function CanonicalWebappSurfaceHost/u);
+  assert.match(embeddedHosts, /<CanonicalWebappSurface[\s\S]*?key=\{entryKey\}/u);
+  assert.match(embeddedHosts, /presentationScope=\{owner\.scope === "workpanel"/u);
+  assert.match(embeddedHosts, /cdpActive=\{owner\.scope === "main-workspace" && visible\}/u);
+  assert.match(embeddedHosts, /filter\(\(entryKey\) => itemMap\.get\(entryKey\)\?\.kind !== "webapp"\)/u);
+  assert.match(
+    css,
+    /\.app-content > \.canonical-webapp-layer\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*z-index:\s*55;[^}]*flex:\s*none;[^}]*width:\s*100%;[^}]*height:\s*100%;/su,
+  );
+  assert.match(
+    css,
+    /\.canonical-webapp-surface > \.embedded-surface-page\.external-webview-page,[\s\S]*?margin:\s*0;/u,
+  );
+  assert.match(sidebarCss, /\.app-content > \*\s*\{[^}]*position:\s*relative;[^}]*z-index:\s*1;/su);
+  assert.match(runtime, /target\.presentationScope === "workpanel"/u);
+
+  assert.match(localFiles, /CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL/u);
+  assert.match(localFiles, /fs\.realpathSync\.native/u);
+  assert.match(localFiles, /session\.fromPartition\(partition, \{ cache: false \}\)/u);
+  assert.match(localFiles, /setPermissionRequestHandler/u);
+  assert.doesNotMatch(host, /filePath:\s*file\./u);
 });
 
 test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-aware close controls", () => {
@@ -140,12 +272,12 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /resolveChatWorkPanelLocalResourcePath/u);
   assert.match(host, /openLocalResource/u);
   assert.match(host, /revealLocalResource/u);
-  assert.match(host, /className="chat-work-panel-resource-actions"/u);
   assert.match(host, /shouldShowChatWorkPanelLocalResourceActions/u);
-  assert.match(host, /const showLocalResourceActions = Boolean/u);
-  assert.match(host, /showLocalResourceActions \? \(/u);
-  assert.match(host, /<Button[\s\S]*?block[\s\S]*?className="chat-work-panel-resource-action"/u);
-  assert.match(host, /<Button[\s\S]*?type="primary"[\s\S]*?className="chat-work-panel-resource-action"/u);
+  assert.match(host, /const supportsLocalResourceActions = Boolean/u);
+  assert.match(host, /onAgentWebclientCurrentResourceAction=\{/u);
+  assert.match(host, /supportsLocalResourceActions[\s\S]*?handleLocalResourceAction/u);
+  assert.doesNotMatch(host, /className="chat-work-panel-resource-actions"/u);
+  assert.doesNotMatch(host, /setLocalResourceActionErrors/u);
   assert.match(host, /chatWorkPanel\.tabContextMenu\.revealInFinder/u);
   assert.match(host, /chatWorkPanel\.tabContextMenu\.revealInExplorer/u);
   assert.doesNotMatch(host, /resourceOpenIntentsRef/u);
@@ -170,9 +302,8 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(css, /\.chat-work-panel-tab-trigger\s*\{[^}]*padding:\s*0 10px;/su);
   assert.match(css, /\.chat-work-panel-tab-close\s*\{[^}]*position:\s*absolute;[^}]*right:\s*0;[^}]*width:\s*34px/su);
   assert.match(css, /\.chat-work-panel-tab-loading-spinner/u);
-  assert.match(css, /\.chat-work-panel-resource-actions\s*\{[^}]*inset:\s*0;[^}]*flex-direction:\s*column;[^}]*align-items:\s*center;[^}]*justify-content:\s*center;/su);
-  assert.match(css, /\.chat-work-panel-resource-action\.ant-btn\s*\{[^}]*width:\s*min\(220px,[^}]*height:\s*36px;[^}]*border-radius:\s*8px;/su);
-  assert.doesNotMatch(css, /\.chat-work-panel-item\.has-resource-actions > \.service-webview-surface/u);
+  assert.doesNotMatch(css, /\.chat-work-panel-resource-actions/u);
+  assert.doesNotMatch(css, /\.chat-work-panel-resource-action\.ant-btn/u);
   assert.match(css, /\.chat-work-panel-tab\.has-close:hover \.chat-work-panel-tab-title[^}]*mask-image:\s*linear-gradient/su);
   assert.doesNotMatch(css, /\.chat-work-panel-tab-close::before\s*\{/u);
   assert.match(css, /\.app-shell\.has-chat-work-panel \.work-panel-host\.is-fullscreen\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*width:\s*100%/su);

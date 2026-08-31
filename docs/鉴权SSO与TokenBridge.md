@@ -43,11 +43,13 @@ Cookie SSO 的主流程为：
 
 首次启动后导入 SSO 配置，只能把状态变为“可登录”，不能绕过启动恢复重新发布旧凭据。账号切换必须先完成退出清理，再发起新登录。
 
+Desktop 设备身份与账号会话分开管理，但共同参与 Realtime generation 的身份键。Main 每个进程只在首次读取设备身份时探测一次 macOS IOPlatformUUID 或 Windows MachineGuid，确认后必须在该进程内保持同一 deviceId；若探测暂时不可用且磁盘已有有效机器绑定，必须保留原绑定且不得更新时间戳或改写身份文件。只有新进程首次读取到不同的有效机器标识时才重新绑定。账号、session、endpoint 或确认后的 deviceId 真实变化仍必须失效旧 generation，且不得恢复或自动重放未完成请求。
+
 ## 凭据分发
 
 ### Agent WebClient Host 与可信 Bridge
 
-Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，物理连接、协议握手、存活与认证都完全由 main 拥有。
+Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 Run 实时请求都通过结构化 Platform Frame Port 收发对象帧；上传、下载、语音等显式 HTTP-only 请求继续经过 Desktop host，由 main 注入和刷新凭据。Frame Port 不暴露 URL、token 或 WebSocket 语义，Primary 与 BTW 两条物理 lane、协议握手、存活、认证、RunChannel 和 upstream observer 都完全由 main 的全局 Broker 拥有。
 
 ```text
 页面发送 Platform request frame
@@ -57,7 +59,7 @@ Agent WebClient guest 不接收 access token。普通 Platform 数据请求与 R
   -> 逐帧定向返回 Platform response/stream/error，业务 push 按可信 Session 广播
 ```
 
-页面不能访问通用主进程 API。Frame Port 必须校验 origin、来源窗口、session partition、route、owner Chat 与活动状态；Run frame 不能广播给其他 webview，也不能通过页面 URL 或 guest storage 传递 token。若可信 guest 的首次握手早于 Surface Registry 登记，Main 只能在 1500ms 有界窗口内等待，并必须在登记后重新执行全部校验；等待期间不能签发 token、连接 Broker 或转发 frame。Desktop 不保留 guest 业务 `/ws`、SSE query/attach 或 HTTP Run control 兼容面；Program manifest 缺少 `/api` 的 `agent-platform-access-token` 声明，或重新声明 `/auth`、`/ws`、Agent Platform WebSocket/SSE 时，安装与启动必须失败。
+页面不能访问通用主进程 API。Frame Port 必须校验 origin、来源窗口、session partition、route、owner Chat 与活动状态；Run frame 不能广播给其他 webview，也不能通过页面 URL 或 guest storage 传递 token。若可信 guest 的首次握手早于 Surface Registry 登记，Main 只能在 1500ms 有界窗口内等待，并必须在登记后重新执行全部校验；等待期间不能签发 token、连接 Broker 或转发 frame。这个窗口只用于 surface 注册和 Main Chat route/owner 收敛，不用于猜测 Run stream 是否就绪；Overview/Debug clone 等待 canonical `run.start` 时由 Broker 事件驱动，并在父 observer、context 或 generation 变化时确定性取消。Desktop 不保留 guest 业务 `/ws`、SSE query/attach 或 HTTP Run control 兼容面；Program manifest 缺少 `/api` 的 `agent-platform-access-token` 声明，或重新声明 `/auth`、`/ws`、Agent Platform WebSocket/SSE 时，安装与启动必须失败。
 
 Frame Port contract 与 Agent WebClient bundle、vendored contract hash 和 Desktop 内置资源必须原子发布及回滚。旧 Realtime Bridge Desktop、旧 WebClient 或旧 manifest 与 Frame Port 任一侧混用都属于不兼容部署，不允许回退到 Standalone transport。
 
@@ -79,8 +81,8 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## Session 与页面隔离
 
-- 登录页面和需要 Cookie SSO 的 Website 使用专用、持久化的 Electron partition。
-- 普通 WebApp、Help、浏览器页面与内置服务不因 URL 相似而继承 SSO 能力。
+- 登录页面、Website 与普通 WorkPanel Web 使用专用、持久化的 Desktop 应用浏览器 partition，共享 Chromium 管理的应用 Cookie；WorkPanel 仍不获得 token 文件或 Token Bridge。
+- 普通 WebApp、Help、内置 Browser 与内置服务不因 URL 相似而继承该应用 Cookie session 或 SSO 能力。
 - 登录成功后的页面刷新由显式 capability 控制，不根据路由或域名猜测。
 - 退出只清理配置中已知的身份来源与派生 Cookie，不影响无关网站数据。
 - 认证头像只允许来自配置的可信官网来源；主进程下载并转换为品牌隔离的本地协议 URL。

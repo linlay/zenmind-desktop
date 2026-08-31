@@ -1,10 +1,12 @@
 import http from "node:http";
+import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
-import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions } from "electron";
-import { clipboard, dialog, Notification, shell, systemPreferences } from "electron";
+import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions, WebContents } from "electron";
+import { clipboard, dialog, Notification, shell, systemPreferences, webContents } from "electron";
 import type {
+  AssistantAttachment,
   DesktopActionConfirmationDecision,
   DesktopActionConfirmationRequest,
   DesktopActionConfirmationResponse,
@@ -60,6 +62,7 @@ import {
   type DesktopWebActionSurfaceSummary,
   type DesktopWebActionTabSummary,
   type DesktopWebCloseTabResult,
+  type DesktopWebExportArtifactResult,
   type DesktopWebNavigateResult,
   type DesktopWebOpenTabResult,
   type DesktopWebTargetTabResult,
@@ -90,7 +93,10 @@ import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../shared/agent-webclient-rou
 import { DESKTOP_CDP_PUBLIC_METHODS } from "../shared/embedded-cdp";
 import type { EmbeddedCdpCommandRequest } from "./embedded-cdp-gateway";
 import { issueAgentAccessToken } from "./agent-auth";
-import type { AgentPlatformAssistantBridge } from "./assistant/core/agent-platform-bridge";
+import type {
+  AgentPlatformAssistantBridge,
+  AgentPlatformImageOperation
+} from "./assistant/core/agent-platform-bridge";
 import {
   getServiceLogsMeta,
   getResponsiveServiceState,
@@ -114,6 +120,7 @@ import {
   webappManager,
   WebappRuntimeRequiredError
 } from "./webs/webapps/manager";
+import { consumeWebappImageUpload } from "./webs/webapps/image-upload-registry";
 import { webappWindowManager } from "./webs/webapps/window-manager";
 import {
   getWebappPublishStatus,
@@ -151,14 +158,25 @@ import { getConfiguredDesktopActionBridgePort } from "./desktop-action-bridge-se
 import { getAssistantSettings } from "./assistant/core/settings-store";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { authorizeWebappActionToken } from "./webs/webapps/action-tokens";
+import {
+  getAvailableFilePath,
+  getDesktopDownloadDefaultPath,
+  sanitizeDownloadFilename
+} from "./download-paths";
+import {
+  resolveWorkPanelLocalFileFromWorkspace,
+  type WorkPanelLocalFilePathResolution,
+} from "./chat-work-panel-local-files";
 
 export type DesktopActionBridgeOptions = {
   app: App;
+  platform?: NodeJS.Platform;
   assistantBridge: AgentPlatformAssistantBridge;
   getDesktopAppInfo: () => DesktopAppInfo;
   getDesktopRuntimeDiagnostics: () => Promise<DesktopRuntimeDiagnostics>;
   getMainWindow: () => BrowserWindow | null;
   getCurrentPageSnapshot: () => DesktopPageContextSnapshot | null;
+  getWebContentsById?: (webContentsId: number) => WebContents | null;
   navigate: (targetPath: string) => void;
   openLogViewer: (request: ServiceOpenLogViewerRequest) => Promise<{ ok: boolean }>;
   showFileDialog?: (
@@ -179,6 +197,13 @@ export type DesktopActionBridgeOptions = {
     onClick: () => void;
   }) => boolean;
   callRendererAction: (request: DesktopActionRendererRequest) => Promise<DesktopActionRendererResponse>;
+  prepareWorkPanelLocalFileClaim?: (input: {
+    ownerChatId: string;
+    rendererWebContentsId: number;
+    filePath: string;
+    workspaceRelativePath: string;
+  }) => { claimId: string } | null;
+  discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
   executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{
     targetId?: string;
@@ -220,6 +245,7 @@ const AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS: Record<AgentWebclientWorkPanelA
 
 const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
   "desktop.workpanel.openWeb",
+  "desktop.workpanel.openLocalFile",
   "desktop.workpanel.refreshWeb"
 ]);
 
@@ -292,8 +318,23 @@ const PAGE_CONTROL_HIGH_RISK_PATTERN =
   /(\u63d0\u4ea4|\u5220\u9664|\u79fb\u9664|\u6e05\u7a7a|\u652f\u4ed8|\u4ed8\u6b3e|\u8d2d\u4e70|\u4e0b\u5355|\u8ba2\u5355|\u786e\u8ba4\u8ba2\u5355|\u9000\u6b3e|\u8f6c\u8d26|\u6388\u6743|\u786e\u8ba4\u6388\u6743|\u540c\u610f\u6388\u6743|\u5b89\u88c5|\u5378\u8f7d|\u542f\u52a8|\u505c\u6b62|\u91cd\u542f|\u53d1\u5e03|\u53d1\u9001|\u4fdd\u5b58|\u767b\u5f55|\u6ce8\u518c|submit|delete|remove|clear|pay|payment|purchase|buy|checkout|order|refund|transfer|authorize|approve|install|uninstall|start|stop|restart|deploy|publish|send|save|login|sign\s*in|sign\s*up)/iu;
 const CURRENT_PAGE_WEB_ACTIONS = new Set([
   "desktop.web.interactElement",
-  "desktop.web.executeScript"
+  "desktop.web.executeScript",
+  "desktop.web.exportArtifact"
 ]);
+const DESKTOP_WEB_EXPORT_FORMATS = ["png", "html", "project", "pdf"] as const;
+type DesktopWebExportFormat = typeof DESKTOP_WEB_EXPORT_FORMATS[number];
+const DESKTOP_WEB_EXPORT_MAX_BYTES = 32 * 1024 * 1024;
+const DESKTOP_WEB_EXPORT_PROVIDER_VERSION = 1;
+const DESKTOP_WEB_EXPORT_SPEC: Record<DesktopWebExportFormat, {
+  mimeType: string;
+  encoding: "base64" | "utf8";
+  extension: string;
+}> = {
+  png: { mimeType: "image/png", encoding: "base64", extension: ".png" },
+  html: { mimeType: "text/html", encoding: "utf8", extension: ".html" },
+  project: { mimeType: "application/json", encoding: "utf8", extension: ".poster-v2.json" },
+  pdf: { mimeType: "application/pdf", encoding: "base64", extension: ".pdf" }
+};
 const CONFIRMATION_ARG_MAX_KEYS = 8;
 const CONFIRMATION_ARG_MAX_NESTED_KEYS = 6;
 const CONFIRMATION_ARG_MAX_ARRAY_ITEMS = 4;
@@ -323,11 +364,91 @@ class WebappActionRateLimiter {
 const webappActionRateLimiter = new WebappActionRateLimiter();
 const CONFIRMATION_COMPACT_VALUE_MAX_CHARS = 280;
 const MAX_ASSISTANT_PROMPT_CHARS = WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS;
+const WEBAPP_IMAGE_PROMPT_MAX_CHARS = 4_000;
+const WEBAPP_IMAGE_MAX_PIXELS = 100_000_000;
+const WEBAPP_IMAGE_OPERATIONS = new Set([
+  "generate",
+  "imageToImage",
+  "inpaint",
+  "outpaint",
+  "removeObject",
+  "replaceBackground",
+  "removeBackground",
+  "enhance",
+  "repairSelection"
+]);
+const WEBAPP_IMAGE_PROMPT_REQUIRED = new Set([
+  "generate",
+  "imageToImage",
+  "inpaint",
+  "outpaint",
+  "replaceBackground"
+]);
+const WEBAPP_IMAGE_MASK_REQUIRED = new Set(["inpaint", "removeObject", "repairSelection"]);
+const activeWebappImageRuns = new Map<string, string>();
 let activeServer: http.Server | null = null;
 let activeServerPort = 0;
 
 function agentPlatformAuthFailureMessage() {
   return t("desktopAction.agentPlatformAuthFailed");
+}
+
+function webappImageRunKey(webappId: string, requestId: string) {
+  return `${webappId}:${requestId}`;
+}
+
+function normalizeWebappImageRequest(args: Record<string, unknown>) {
+  const allowed = new Set([
+    "requestId", "uploadId", "operation", "prompt", "negativePrompt", "width", "height",
+    "count", "strength", "seed", "preserveComposition", "edgeMode"
+  ]);
+  const rejected = Object.keys(args).filter((key) => !allowed.has(key));
+  if (rejected.length > 0) throw new Error(`unsupported image request fields: ${rejected.join(", ")}`);
+  const requestId = readString(args, "requestId");
+  const uploadId = readString(args, "uploadId");
+  const operation = readString(args, "operation");
+  const prompt = typeof args.prompt === "string" ? args.prompt.trim() : "";
+  const negativePrompt = typeof args.negativePrompt === "string" ? args.negativePrompt.trim() : "";
+  const width = Number(args.width);
+  const height = Number(args.height);
+  const count = Number(args.count);
+  const strength = Number(args.strength);
+  const seed = Number(args.seed);
+  const preserveComposition = args.preserveComposition;
+  const edgeMode = args.edgeMode;
+  if (!/^[A-Za-z0-9_-]{8,128}$/u.test(requestId)) throw new Error("requestId is invalid");
+  if (!WEBAPP_IMAGE_OPERATIONS.has(operation)) throw new Error("image operation is unsupported");
+  if (prompt.length > WEBAPP_IMAGE_PROMPT_MAX_CHARS || negativePrompt.length > WEBAPP_IMAGE_PROMPT_MAX_CHARS) {
+    throw new Error("image prompt is too long");
+  }
+  if (WEBAPP_IMAGE_PROMPT_REQUIRED.has(operation) && !prompt) throw new Error("prompt is required for this image operation");
+  if (!Number.isInteger(width) || !Number.isInteger(height) || width < 64 || height < 64 ||
+    width > 16_384 || height > 16_384 || width * height > WEBAPP_IMAGE_MAX_PIXELS) {
+    throw new Error("image output dimensions are invalid");
+  }
+  if (width % 16 !== 0 || height % 16 !== 0) {
+    throw new Error("image output width and height must be divisible by 16");
+  }
+  if (!Number.isInteger(count) || count < 1 || count > 4) throw new Error("image count must be between 1 and 4");
+  if (!Number.isFinite(strength) || strength < 0 || strength > 1) throw new Error("image strength must be between 0 and 1");
+  if (!Number.isInteger(seed) || seed < 0 || seed > 2_147_483_647) throw new Error("image seed is invalid");
+  if (typeof preserveComposition !== "boolean") throw new Error("preserveComposition must be boolean");
+  if (edgeMode !== "strict" && edgeMode !== "soft") throw new Error("edgeMode must be strict or soft");
+  if (operation !== "generate" && !/^webimg_[0-9a-f-]{36}$/iu.test(uploadId)) throw new Error("source image upload is required");
+  return {
+    requestId,
+    uploadId,
+    operation,
+    prompt,
+    negativePrompt,
+    width,
+    height,
+    count,
+    strength,
+    seed,
+    preserveComposition,
+    edgeMode
+  };
 }
 
 function resolveAgentWebclientHelpRoute(topic: string) {
@@ -1294,6 +1415,7 @@ const DESKTOP_WEB_POST_STATE_ACTIONS = new Set([
 const DESKTOP_WORKPANEL_MUTATION_ACTIONS = new Set([
   "desktop.workpanel.openTab",
   "desktop.workpanel.openWeb",
+  "desktop.workpanel.openLocalFile",
   "desktop.workpanel.refreshWeb",
   "desktop.workpanel.activateTab",
   "desktop.workpanel.closeTab",
@@ -2572,6 +2694,335 @@ async function executePetAction(options: DesktopActionBridgeOptions, action: str
   return ok(action, { appearanceId: nextState.appearanceId } satisfies DesktopPetSetResult);
 }
 
+type DesktopExportWebContents = Pick<
+  WebContents,
+  "executeJavaScript" | "isDestroyed" | "printToPDF"
+>;
+
+type DesktopExportProviderDescription = {
+  formats?: unknown;
+  suggestedFilenames?: unknown;
+};
+
+function isDesktopWebExportFormat(value: string): value is DesktopWebExportFormat {
+  return (DESKTOP_WEB_EXPORT_FORMATS as readonly string[]).includes(value);
+}
+
+function hasUnpairedUtf16Surrogate(value: string) {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (!(next >= 0xdc00 && next <= 0xdfff)) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function decodeStrictBase64(value: string) {
+  if (!value || value.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/u.test(value)) {
+    return null;
+  }
+  const buffer = Buffer.from(value, "base64");
+  return value.replace(/=+$/u, "") === buffer.toString("base64").replace(/=+$/u, "")
+    ? buffer
+    : null;
+}
+
+function validateExportFilename(value: unknown, extension: string) {
+  if (
+    typeof value !== "string" ||
+    !value.trim() ||
+    value.length > 240 ||
+    /[\\/\u0000-\u001f]/u.test(value) ||
+    !value.toLowerCase().endsWith(extension)
+  ) {
+    return "";
+  }
+  return value.trim();
+}
+
+function resolveCurrentRootWebapp(
+  options: DesktopActionBridgeOptions
+): { snapshot: DesktopPageContextSnapshot; contents: DesktopExportWebContents } | null {
+  const snapshot = options.getCurrentPageSnapshot();
+  if (
+    !snapshot ||
+    snapshot.pageKind !== "webview" ||
+    typeof snapshot.webContentsId !== "number" ||
+    !snapshot.surfaceId?.startsWith("app:") ||
+    !snapshot.surfaceRoute?.startsWith("/webs/webapp:")
+  ) {
+    return null;
+  }
+  const contents = options.getWebContentsById?.(snapshot.webContentsId) ??
+    webContents?.fromId(snapshot.webContentsId) ?? null;
+  if (!contents || contents.isDestroyed()) {
+    return null;
+  }
+  return { snapshot, contents };
+}
+
+async function readDesktopExportProvider(
+  contents: DesktopExportWebContents
+): Promise<
+  | { status: "ok"; description: DesktopExportProviderDescription }
+  | { status: "unavailable" }
+  | { status: "render_failed" }
+> {
+  try {
+    const result = await contents.executeJavaScript(`(async () => {
+      const provider = globalThis.__DESKTOP_WEBAPP_EXPORT__;
+      if (!provider || provider.version !== ${DESKTOP_WEB_EXPORT_PROVIDER_VERSION} || typeof provider.describe !== "function" || typeof provider.create !== "function") {
+        return { status: "unavailable" };
+      }
+      try {
+        return { status: "ok", description: await provider.describe() };
+      } catch {
+        return { status: "render_failed" };
+      }
+    })()`, true) as unknown;
+    const record = asRecord(result);
+    if (record.status === "ok") {
+      return { status: "ok", description: asRecord(record.description) };
+    }
+    return { status: record.status === "render_failed" ? "render_failed" : "unavailable" };
+  } catch {
+    return { status: "render_failed" };
+  }
+}
+
+async function createDesktopExportPayload(
+  contents: DesktopExportWebContents,
+  format: Exclude<DesktopWebExportFormat, "pdf">
+) {
+  try {
+    return await contents.executeJavaScript(`(async () => {
+      const provider = globalThis.__DESKTOP_WEBAPP_EXPORT__;
+      if (!provider || provider.version !== ${DESKTOP_WEB_EXPORT_PROVIDER_VERSION} || typeof provider.create !== "function") {
+        return { status: "unavailable" };
+      }
+      try {
+        return { status: "ok", payload: await provider.create({ format: ${JSON.stringify(format)} }) };
+      } catch {
+        return { status: "render_failed" };
+      }
+    })()`, true) as unknown;
+  } catch {
+    return { status: "render_failed" };
+  }
+}
+
+async function writeDesktopExportFile(
+  options: DesktopActionBridgeOptions,
+  filename: string,
+  data: Buffer
+) {
+  const platform = options.platform ?? process.platform;
+  const defaultPath = getDesktopDownloadDefaultPath(options.app, filename, platform);
+  const filePath = await getAvailableFilePath(defaultPath, { platform });
+  const temporaryPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${randomUUID()}.tmp`
+  );
+  try {
+    await fs.promises.mkdir(path.dirname(filePath), { recursive: true });
+    await fs.promises.writeFile(temporaryPath, data, { flag: "wx" });
+    await fs.promises.rename(temporaryPath, filePath);
+    return filePath;
+  } catch (error) {
+    await fs.promises.unlink(temporaryPath).catch(() => undefined);
+    throw error;
+  }
+}
+
+async function executeDesktopWebExportArtifact(
+  options: DesktopActionBridgeOptions,
+  action: string,
+  args: Record<string, unknown>
+): Promise<DesktopActionCallResponse> {
+  const format = readString(args, "format").toLowerCase();
+  if (!isDesktopWebExportFormat(format)) {
+    return fail(action, "export_format_unsupported", "format must be png, html, project, or pdf.");
+  }
+  const target = resolveCurrentRootWebapp(options);
+  if (!target) {
+    return fail(action, "current_webapp_required", "The current active root surface must be a WebApp.");
+  }
+  const provider = await readDesktopExportProvider(target.contents);
+  if (provider.status === "unavailable") {
+    return fail(action, "export_provider_unavailable", "The current WebApp does not expose export provider v1.");
+  }
+  if (provider.status === "render_failed") {
+    return fail(action, "export_render_failed", "The WebApp export provider could not be inspected.");
+  }
+  const formats = Array.isArray(provider.description.formats)
+    ? provider.description.formats.filter((value): value is string => typeof value === "string")
+    : [];
+  if (!formats.includes(format)) {
+    return fail(action, "export_format_unsupported", `The current WebApp does not support ${format} export.`);
+  }
+
+  const spec = DESKTOP_WEB_EXPORT_SPEC[format];
+  let filename = "";
+  let data: Buffer | null = null;
+  if (format === "pdf") {
+    const suggestedFilenames = asRecord(provider.description.suggestedFilenames);
+    filename = validateExportFilename(suggestedFilenames.pdf, spec.extension) || "poster.pdf";
+    try {
+      data = await target.contents.printToPDF({
+        pageSize: "A4",
+        printBackground: true,
+        preferCSSPageSize: true
+      });
+    } catch {
+      return fail(action, "export_render_failed", "Desktop could not render the WebApp as PDF.");
+    }
+  } else {
+    const generated = asRecord(await createDesktopExportPayload(target.contents, format));
+    if (generated.status === "unavailable") {
+      return fail(action, "export_provider_unavailable", "The current WebApp export provider became unavailable.");
+    }
+    if (generated.status !== "ok") {
+      return fail(action, "export_render_failed", `The WebApp could not render ${format}.`);
+    }
+    const payload = asRecord(generated.payload);
+    filename = validateExportFilename(payload.filename, spec.extension);
+    if (
+      !filename ||
+      payload.mimeType !== spec.mimeType ||
+      payload.encoding !== spec.encoding ||
+      typeof payload.data !== "string"
+    ) {
+      return fail(action, "export_payload_invalid", "The WebApp returned an invalid export payload.");
+    }
+    if (spec.encoding === "base64") {
+      data = decodeStrictBase64(payload.data);
+    } else if (!hasUnpairedUtf16Surrogate(payload.data)) {
+      data = Buffer.from(payload.data, "utf8");
+    }
+    if (!data) {
+      return fail(action, "export_payload_invalid", "The WebApp returned malformed export data.");
+    }
+  }
+  if (!data || data.byteLength === 0) {
+    return fail(action, "export_payload_invalid", "The rendered export is empty.");
+  }
+  if (data.byteLength > DESKTOP_WEB_EXPORT_MAX_BYTES) {
+    return fail(action, "export_too_large", "The rendered export exceeds the 32 MiB limit.", {
+      sizeBytes: data.byteLength,
+      maxBytes: DESKTOP_WEB_EXPORT_MAX_BYTES
+    });
+  }
+
+  const safeFilename = sanitizeDownloadFilename(filename, `poster${spec.extension}`);
+  try {
+    const filePath = await writeDesktopExportFile(options, safeFilename, data);
+    return ok(action, {
+      surfaceId: target.snapshot.surfaceId!,
+      format,
+      filePath,
+      filename: path.basename(filePath),
+      mimeType: spec.mimeType,
+      sizeBytes: data.byteLength
+    } satisfies DesktopWebExportArtifactResult);
+  } catch {
+    return fail(action, "export_write_failed", "Desktop could not write the export to Downloads.");
+  }
+}
+
+function validateOpenLocalFileArgs(
+  args: Record<string, unknown>,
+): { ok: true; path: string; title: string } | { ok: false; response: DesktopActionCallResponse } {
+  const action = "desktop.workpanel.openLocalFile";
+  const rejectedKeys = Object.keys(args).filter((key) => key !== "path" && key !== "title");
+  if (rejectedKeys.length > 0) {
+    return {
+      ok: false,
+      response: fail(action, "invalid_args", `openLocalFile does not accept: ${rejectedKeys.join(", ")}.`),
+    };
+  }
+  const requestedPath = typeof args.path === "string" ? args.path : "";
+  const title = typeof args.title === "string" ? args.title.trim() : "";
+  if (args.title !== undefined && (typeof args.title !== "string" || title.length > 160)) {
+    return {
+      ok: false,
+      response: fail(action, "invalid_args", "title must be a string of at most 160 characters."),
+    };
+  }
+  return { ok: true, path: requestedPath, title };
+}
+
+async function executeOpenLocalFileAction(
+  options: DesktopActionBridgeOptions,
+  request: DesktopActionCallRequest,
+  args: Record<string, unknown>,
+): Promise<DesktopActionCallResponse> {
+  const action = "desktop.workpanel.openLocalFile";
+  const validated = validateOpenLocalFileArgs(args);
+  if (!validated.ok) return validated.response;
+  const source = request.source;
+  const runId = source?.runId?.trim() || "";
+  const ownerChatId = source?.chatId?.trim() || "";
+  const agentKey = source?.agentKey?.trim() || "";
+  if (!runId || !ownerChatId || !agentKey || source?.teamId) {
+    return fail(action, "forbidden", "openLocalFile requires a trusted Agent-owned Platform Run.");
+  }
+
+  let workspaceResolution: WorkPanelLocalFilePathResolution;
+  try {
+    const navigation = await options.assistantBridge.listNavigationAgents();
+    const agent = navigation.ok
+      ? navigation.items.find((candidate) => candidate.agentKey === agentKey)
+      : null;
+    const workspaceDir = agent?.workspaceDir?.trim() || "";
+    if (!workspaceDir || workspaceDir === "@chat" || agent?.workspaceDirExists === false) {
+      return fail(action, "workspace_unavailable", "The Agent workspace is unavailable on this Desktop.");
+    }
+    workspaceResolution = resolveWorkPanelLocalFileFromWorkspace(
+      workspaceDir,
+      validated.path,
+      options.platform ?? process.platform,
+    );
+  } catch {
+    return fail(action, "workspace_unavailable", "Desktop could not resolve the Agent workspace.");
+  }
+  if (!workspaceResolution.ok) {
+    return fail(action, workspaceResolution.code, workspaceResolution.message);
+  }
+
+  const mainWindow = options.getMainWindow();
+  if (
+    !mainWindow ||
+    mainWindow.isDestroyed() ||
+    mainWindow.webContents.isDestroyed() ||
+    !options.prepareWorkPanelLocalFileClaim ||
+    !options.discardWorkPanelLocalFileClaim
+  ) {
+    return fail(action, "target_unavailable", "The Desktop WorkPanel renderer is unavailable.");
+  }
+  const prepared = options.prepareWorkPanelLocalFileClaim({
+    ownerChatId,
+    rendererWebContentsId: mainWindow.webContents.id,
+    filePath: workspaceResolution.filePath,
+    workspaceRelativePath: workspaceResolution.relativePath,
+  });
+  if (!prepared) {
+    return fail(action, "file_unavailable", "The requested local file became unavailable.");
+  }
+  try {
+    return await callRendererAction(options, request, {
+      claimId: prepared.claimId,
+      ...(validated.title ? { title: validated.title } : {}),
+    });
+  } finally {
+    options.discardWorkPanelLocalFileClaim(prepared.claimId);
+  }
+}
+
 async function executeAction(
   options: DesktopActionBridgeOptions,
   request: DesktopActionCallRequest,
@@ -2611,6 +3062,113 @@ async function executeAction(
   }
 
   switch (action) {
+    case "desktop.assistant.image.cancel": {
+      if (invocation.kind !== "webappPage") {
+        return fail(action, "forbidden", "Image cancellation is available only to an authorized local WebApp page.");
+      }
+      const requestId = readString(args, "requestId");
+      if (!/^[A-Za-z0-9_-]{8,128}$/u.test(requestId) || Object.keys(args).some((key) => key !== "requestId")) {
+        return fail(action, "invalid_args", "requestId is invalid");
+      }
+      const key = webappImageRunKey(invocation.webappId, requestId);
+      const runId = activeWebappImageRuns.get(key);
+      if (!runId) {
+        return ok(action, { requestId, cancelled: false });
+      }
+      const stopped = await options.assistantBridge.stopRun(runId);
+      return stopped.ok
+        ? ok(action, { requestId, cancelled: true })
+        : fail(action, "assistant_cancel_failed", stopped.message);
+    }
+    case "desktop.assistant.image": {
+      if (invocation.kind !== "webappPage") {
+        return fail(action, "forbidden", "Image generation is available only to an authorized local WebApp page.");
+      }
+      let normalized: ReturnType<typeof normalizeWebappImageRequest>;
+      try {
+        normalized = normalizeWebappImageRequest(args);
+      } catch (error) {
+        return fail(action, "invalid_args", error instanceof Error ? error.message : "image request is invalid");
+      }
+      const key = webappImageRunKey(invocation.webappId, normalized.requestId);
+      if (activeWebappImageRuns.has(key)) {
+        return fail(action, "request_conflict", "an image request with this requestId is already running");
+      }
+      const upload = normalized.uploadId
+        ? consumeWebappImageUpload(invocation.webappId, normalized.uploadId)
+        : null;
+      if (normalized.operation !== "generate" && !upload?.source) {
+        return fail(action, "image_upload_missing", "source image upload is missing or expired");
+      }
+      if (WEBAPP_IMAGE_MASK_REQUIRED.has(normalized.operation) && !upload?.mask) {
+        return fail(action, "selection_required", "this image operation requires a selection mask");
+      }
+      const attachments: AssistantAttachment[] = [];
+      if (upload?.source) {
+        const extension = upload.source.mimeType === "image/jpeg" ? "jpg" :
+          upload.source.mimeType === "image/webp" ? "webp" : "png";
+        attachments.push({
+          id: "image-studio-source",
+          name: `image-studio-source.${extension}`,
+          mimeType: upload.source.mimeType,
+          sizeBytes: upload.source.bytes.length,
+          text: "",
+          dataUrl: `data:${upload.source.mimeType};base64,${upload.source.bytes.toString("base64")}`,
+          kind: "input",
+          document: { format: "image", readStatus: "readable", extractedChars: 0, truncated: false, imageMode: "vision" }
+        });
+      }
+      if (upload?.mask) {
+        attachments.push({
+          id: "image-studio-mask",
+          name: "image-studio-mask.png",
+          mimeType: "image/png",
+          sizeBytes: upload.mask.bytes.length,
+          text: "",
+          dataUrl: `data:image/png;base64,${upload.mask.bytes.toString("base64")}`,
+          kind: "input",
+          document: { format: "image", readStatus: "readable", extractedChars: 0, truncated: false, imageMode: "vision" }
+        });
+      }
+      const runId = `run_webimg_${randomUUID().replace(/-/gu, "")}`;
+      activeWebappImageRuns.set(key, runId);
+      try {
+        const completion = await options.assistantBridge.completeImage({
+          runId,
+          requestId: normalized.requestId,
+          agentKey: "zenmi",
+          source: "copilot",
+          action: "image_studio",
+          operation: normalized.operation as AgentPlatformImageOperation,
+          prompt: normalized.prompt,
+          negativePrompt: normalized.negativePrompt,
+          width: normalized.width,
+          height: normalized.height,
+          count: normalized.count,
+          strength: normalized.strength,
+          seed: normalized.seed,
+          preserveComposition: normalized.preserveComposition,
+          edgeMode: normalized.edgeMode as "strict" | "soft",
+          attachments
+        });
+        if (!completion.ok) {
+          return fail(action, "assistant_image_failed", completion.message, {
+            runId: completion.runId,
+            chatId: completion.chatId
+          });
+        }
+        return ok(action, {
+          provider: "desktop-zenmi",
+          agentKey: "zenmi",
+          requestId: normalized.requestId,
+          runId: completion.runId,
+          chatId: completion.chatId,
+          images: completion.images
+        });
+      } finally {
+        activeWebappImageRuns.delete(key);
+      }
+    }
     case "desktop.assistant.chat": {
       const isWebappInvocation = invocation.kind === "webappPage" || invocation.kind === "webappBackend";
       const allowedWebappArgs = new Set(["message"]);
@@ -2714,11 +3272,16 @@ async function executeAction(
     case "desktop.workpanel.getState":
     case "desktop.workpanel.openTab":
     case "desktop.workpanel.openWeb":
+    case "desktop.workpanel.openLocalFile":
     case "desktop.workpanel.refreshWeb":
     case "desktop.workpanel.activateTab":
     case "desktop.workpanel.closeTab":
     case "desktop.workpanel.closeWorkpanel":
-      return callRendererAction(options, request, args);
+      return action === "desktop.workpanel.openLocalFile"
+        ? executeOpenLocalFileAction(options, request, args)
+        : callRendererAction(options, request, args);
+    case "desktop.web.exportArtifact":
+      return executeDesktopWebExportArtifact(options, action, args);
     case "desktop.general.deviceName": {
       const deviceInfo = getDesktopDeviceInfo(options.app);
       return ok(action, {
@@ -2956,6 +3519,9 @@ async function handleActionCallRaw(
   const definition = action ? getDesktopActionDefinition(action) : null;
   if (!action || !definition) {
     return fail(action || "unknown", "unknown_action", `unknown action: ${action || "(empty)"}`);
+  }
+  if (action === "desktop.workpanel.openLocalFile" && invocation.kind !== "agentPlatform") {
+    return fail(action, "forbidden", "openLocalFile is available only to an authorized internal Agent Platform Run.");
   }
   const normalizedRequest = { ...request, action };
   const args = asRecord(request.args);

@@ -7,9 +7,17 @@ import { fileURLToPath } from "node:url";
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const {
-  isDesktopDevelopmentRuntime
+  isDesktopDevelopmentRuntime,
+  resolveEffectiveAppId
 } = require(path.join(__dirname, "..", "dist-electron", "main", "development-runtime.js"));
 const { APP_ID, BRAND_ID } = require(path.join(__dirname, "..", "dist-electron", "shared", "brand.js"));
+
+test("effective app IDs stay brand-specific and add a stable development suffix", () => {
+  assert.equal(resolveEffectiveAppId("cc.zenmind.desktop", false), "cc.zenmind.desktop");
+  assert.equal(resolveEffectiveAppId("cc.zenmind.desktop", true), "cc.zenmind.desktop.dev");
+  assert.equal(resolveEffectiveAppId("cc.cutej.desktop", false), "cc.cutej.desktop");
+  assert.equal(resolveEffectiveAppId("cc.cutej.desktop", true), "cc.cutej.desktop.dev");
+});
 
 function createDarwinDevelopmentContext(root) {
   return {

@@ -472,7 +472,7 @@ function defaultRendererIndexHtml(brand) {
     "    <meta charset=\"UTF-8\" />",
     "    <meta",
     "      http-equiv=\"Content-Security-Policy\"",
-    `      content="default-src 'self'; img-src 'self' data: https: ${rendererPetProtocol(brand)}: ${rendererWebsiteFaviconProtocol(brand)}: ${rendererSsoAvatarProtocol(brand)}:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src 'self' http://127.0.0.1:*;"`,
+    `      content="default-src 'self'; img-src 'self' data: https: blob: ${rendererPetProtocol(brand)}: ${rendererWebsiteFaviconProtocol(brand)}: ${rendererSsoAvatarProtocol(brand)}:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' http://127.0.0.1:* ws://127.0.0.1:* http://localhost:* ws://localhost:*; frame-src 'self' http://127.0.0.1:*;"`,
     "    />",
     "    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\" />",
     `    <title>${escapeHtmlText(brand.productName)}</title>`,

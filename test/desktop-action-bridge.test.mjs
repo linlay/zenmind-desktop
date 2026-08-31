@@ -55,6 +55,11 @@ const {
   readWebappRuntimeSettings
 } = require("../dist-electron/main/webs/webapps/runtime-settings.js");
 const {
+  clearWebappImageUploadsForTest,
+  normalizeWebappImageUploadFile,
+  registerWebappImageUpload
+} = require("../dist-electron/main/webs/webapps/image-upload-registry.js");
+const {
   saveAssistantSettings
 } = require("../dist-electron/main/assistant/core/settings-store.js");
 
@@ -72,6 +77,9 @@ function createApp(homePath) {
       }
       if (name === "documents") {
         return path.join(homePath, "Documents");
+      }
+      if (name === "downloads") {
+        return path.join(homePath, "Downloads");
       }
       assert.fail(`unexpected app.getPath(${name})`);
     },
@@ -569,6 +577,7 @@ test("formal WorkPanel Web actions dispatch URL requests to the renderer", async
       "desktop.workpanel.getState",
       "desktop.workpanel.openTab",
       "desktop.workpanel.openWeb",
+      "desktop.workpanel.openLocalFile",
       "desktop.workpanel.refreshWeb",
       "desktop.workpanel.activateTab",
       "desktop.workpanel.closeTab",
@@ -577,7 +586,147 @@ test("formal WorkPanel Web actions dispatch URL requests to the renderer", async
   );
 });
 
-test("Agent Platform context exempts only WorkPanel openWeb and refreshWeb from confirmation", async (t) => {
+test("Platform-only WorkPanel openLocalFile resolves a trusted workspace path without exposing it to the renderer", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const workspaceDir = path.join(options.app.getPath("home"), "workspace");
+  const artifactDir = path.join(workspaceDir, "artifacts");
+  const filePath = path.join(artifactDir, "report.html");
+  fs.mkdirSync(artifactDir, { recursive: true });
+  fs.writeFileSync(filePath, "<!doctype html><title>Report</title>");
+  const rendererCalls = [];
+  const preparedClaims = [];
+  const discardedClaims = [];
+  const confirmations = [];
+  options.assistantBridge.listNavigationAgents = async () => ({
+    ok: true,
+    items: [{
+      agentKey: "coder",
+      workspaceDir,
+      workspaceDirExists: true,
+      recentChats: [],
+    }],
+  });
+  options.getMainWindow = () => ({
+    isDestroyed: () => false,
+    webContents: {
+      id: 77,
+      isDestroyed: () => false,
+    },
+  });
+  options.prepareWorkPanelLocalFileClaim = (input) => {
+    preparedClaims.push(input);
+    return { claimId: "claim-1" };
+  };
+  options.discardWorkPanelLocalFileClaim = (claimId) => {
+    discardedClaims.push(claimId);
+    return true;
+  };
+  options.confirmRendererAction = async (request) => {
+    confirmations.push(request);
+    return { requestId: request.requestId, decision: "cancel" };
+  };
+  options.callRendererAction = async (request) => {
+    rendererCalls.push(request);
+    return {
+      requestId: request.requestId,
+      action: request.action,
+      ok: true,
+      result: createWorkPanelRendererResult(request.action),
+    };
+  };
+
+  const response = await handleAgentPlatformDesktopActionRequest(options, {
+    requestId: "platform-local-file",
+    action: "desktop.workpanel.openLocalFile",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { path: "artifacts/report.html", title: "Generated report" },
+  });
+  assert.equal(response.ok, true);
+  assert.equal(confirmations.length, 0);
+  assert.deepEqual(preparedClaims, [{
+    ownerChatId: "chat-owner",
+    rendererWebContentsId: 77,
+    filePath: fs.realpathSync.native(filePath),
+  }]);
+  assert.deepEqual(rendererCalls.map(({ action, args, source }) => ({ action, args, source })), [{
+    action: "desktop.workpanel.openLocalFile",
+    args: { claimId: "claim-1", title: "Generated report" },
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+  }]);
+  assert.equal(JSON.stringify(rendererCalls).includes(filePath), false);
+  assert.deepEqual(discardedClaims, ["claim-1"]);
+
+  for (const invoke of [
+    () => handleDesktopActionRequest(options, {
+      action: "desktop.workpanel.openLocalFile",
+      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+      args: { path: "artifacts/report.html" },
+      permissionMode: "full_access",
+    }),
+    () => handleWebappPageActionRequest(options, "webapp-test", {
+      action: "desktop.workpanel.openLocalFile",
+      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+      args: { path: "artifacts/report.html" },
+    }),
+    () => handleAgentWebclientWorkPanelActionRequest(options, {
+      action: "openLocalFile",
+      ownerChatId: "chat-owner",
+      args: { path: "artifacts/report.html" },
+    }),
+  ]) {
+    const denied = await invoke();
+    assert.equal(denied.ok, false);
+    assert.equal(denied.error.code, "forbidden");
+  }
+  assert.equal(confirmations.length, 0);
+  assert.equal(rendererCalls.length, 1);
+});
+
+test("WorkPanel openLocalFile fails closed for invalid paths and unavailable Agent workspaces", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.getMainWindow = () => ({
+    isDestroyed: () => false,
+    webContents: { id: 77, isDestroyed: () => false },
+  });
+  options.prepareWorkPanelLocalFileClaim = () => assert.fail("invalid paths must not prepare claims");
+  options.discardWorkPanelLocalFileClaim = () => true;
+  options.assistantBridge.listNavigationAgents = async () => ({
+    ok: true,
+    items: [{ agentKey: "coder", workspaceDir: "@chat", workspaceDirExists: false, recentChats: [] }],
+  });
+  const workspaceUnavailable = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openLocalFile",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { path: "artifacts/report.html" },
+  });
+  assert.equal(workspaceUnavailable.ok, false);
+  assert.equal(workspaceUnavailable.error.code, "workspace_unavailable");
+
+  const workspaceDir = path.join(options.app.getPath("home"), "workspace");
+  fs.mkdirSync(workspaceDir, { recursive: true });
+  options.assistantBridge.listNavigationAgents = async () => ({
+    ok: true,
+    items: [{ agentKey: "coder", workspaceDir, workspaceDirExists: true, recentChats: [] }],
+  });
+  for (const invalidPath of ["../secret.txt", "/tmp/secret.txt", "file:///tmp/secret.txt"] ) {
+    const invalid = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.workpanel.openLocalFile",
+      source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+      args: { path: invalidPath },
+    });
+    assert.equal(invalid.ok, false, invalidPath);
+    assert.equal(invalid.error.code, "invalid_path", invalidPath);
+  }
+  const missing = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.workpanel.openLocalFile",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { path: "missing.html" },
+  });
+  assert.equal(missing.ok, false);
+  assert.equal(missing.error.code, "file_unavailable");
+});
+
+test("Agent Platform context exempts approved WorkPanel Web actions without exempting openTab", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const rendererCalls = [];
   const confirmationCalls = [];
@@ -976,6 +1125,112 @@ test("WebApp assistant chat uses its configured Desktop agent and forwards the m
   });
   assert.equal(oversized.ok, false);
   assert.equal(oversized.error.code, "assistant_message_too_long");
+});
+
+test("WebApp image action consumes a scoped upload and hardcodes Zenmi without exposing paths", async (t) => {
+  clearWebappImageUploadsForTest();
+  t.after(clearWebappImageUploadsForTest);
+  const { options } = createDesktopActionOptions(t);
+  const id = webappId("image-studio-zenmi");
+  const webappDir = path.join(getDesktopWebappsDataRoot(options.app), id);
+  fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
+  fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html>", "utf8");
+  fs.writeFileSync(path.join(webappDir, "webapp.json"), JSON.stringify({
+    schemaVersion: 2,
+    id,
+    key: "image-studio-zenmi",
+    label: "Image Studio",
+    version: "1.0.1",
+    target: "any",
+    appConfig: {},
+    frontend: { root: "frontend", index: "index.html", routeConfig: { backendPrefixes: [] } },
+    desktopBridge: { version: 1 }
+  }), "utf8");
+
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]);
+  const upload = registerWebappImageUpload({
+    webappId: id,
+    source: normalizeWebappImageUploadFile({ name: "source.png", mimeType: "image/png", bytes: png }),
+    mask: normalizeWebappImageUploadFile({ name: "mask.png", mimeType: "image/png", bytes: png }, { mask: true })
+  });
+  const imageCalls = [];
+  options.assistantBridge.completeImage = async (request) => {
+    imageCalls.push(request);
+    return {
+      ok: true,
+      runId: request.runId,
+      chatId: "chat-image",
+      message: "done",
+      images: [{ name: "result.png", mimeType: "image/png", sizeBytes: png.length, sha256: "abc", dataBase64: png.toString("base64") }]
+    };
+  };
+  options.assistantBridge.stopRun = async () => ({ ok: true, message: "stopped" });
+  const response = await handleWebappPageActionRequest(options, id, {
+    action: "desktop.assistant.image",
+    args: {
+      requestId: "image_request_1",
+      uploadId: upload.uploadId,
+      operation: "inpaint",
+      prompt: "把杯子换成花瓶",
+      negativePrompt: "文字",
+      width: 1024,
+      height: 1024,
+      count: 1,
+      strength: .65,
+      seed: 42,
+      preserveComposition: true,
+      edgeMode: "strict"
+    }
+  });
+  assert.equal(response.ok, true);
+  assert.equal(response.result.agentKey, "zenmi");
+  assert.equal(response.result.provider, "desktop-zenmi");
+  assert.equal(Object.hasOwn(response.result.images[0], "path"), false);
+  assert.equal(imageCalls.length, 1);
+  assert.equal(imageCalls[0].agentKey, "zenmi");
+  assert.equal(imageCalls[0].action, "image_studio");
+  assert.deepEqual(imageCalls[0].attachments.map((attachment) => attachment.id), ["image-studio-source", "image-studio-mask"]);
+  assert.equal(imageCalls[0].attachments.every((attachment) => attachment.dataUrl.startsWith("data:image/")), true);
+
+  const forged = await handleWebappPageActionRequest(options, id, {
+    action: "desktop.assistant.image",
+    args: {
+      requestId: "image_request_2",
+      operation: "generate",
+      prompt: "风景",
+      negativePrompt: "",
+      width: 1024,
+      height: 1024,
+      count: 1,
+      strength: .5,
+      seed: 1,
+      preserveComposition: true,
+      edgeMode: "strict",
+      agentKey: "other-agent"
+    }
+  });
+  assert.equal(forged.ok, false);
+  assert.equal(forged.error.code, "invalid_args");
+
+  const unaligned = await handleWebappPageActionRequest(options, id, {
+    action: "desktop.assistant.image",
+    args: {
+      requestId: "image_request_3",
+      operation: "generate",
+      prompt: "风景",
+      negativePrompt: "",
+      width: 1023,
+      height: 1537,
+      count: 1,
+      strength: .5,
+      seed: 1,
+      preserveComposition: true,
+      edgeMode: "strict"
+    }
+  });
+  assert.equal(unaligned.ok, false);
+  assert.equal(unaligned.error.code, "invalid_args");
+  assert.match(unaligned.error.message, /divisible by 16/u);
 });
 
 test("removed desktop assistant complete action returns unknown_action", async (t) => {
@@ -2071,6 +2326,129 @@ test("Desktop web actions retain page interaction while page reads use CDP", asy
     assert.equal(response.ok, false, action);
     assert.equal(response.error.code, "unknown_action", action);
   }
+});
+
+test("desktop web exportArtifact writes provider bytes to Downloads without returning payload data", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rendered = [];
+  const snapshot = {
+    route: "/webs/webapp:webapp-0123456789abcdef",
+    pageKey: "poster-page",
+    pageKind: "webview",
+    surfaceId: "app:poster",
+    surfaceRoute: "/webs/webapp:webapp-0123456789abcdef",
+    webContentsId: 701,
+    pageContext: null
+  };
+  const contents = {
+    isDestroyed: () => false,
+    executeJavaScript: async (script) => {
+      if (script.includes("provider.describe")) {
+        return {
+          status: "ok",
+          description: {
+            formats: ["png", "html", "project", "pdf"],
+            suggestedFilenames: { pdf: "结构化海报.pdf" }
+          }
+        };
+      }
+      return {
+        status: "ok",
+        payload: {
+          filename: "结构化海报.html",
+          mimeType: "text/html",
+          encoding: "utf8",
+          data: "<!doctype html><title>结构化海报</title>"
+        }
+      };
+    },
+    printToPDF: async (printOptions) => {
+      rendered.push(printOptions);
+      return Buffer.from("pdf-result");
+    }
+  };
+  options.getCurrentPageSnapshot = () => snapshot;
+  options.getWebContentsById = (id) => id === 701 ? contents : null;
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+
+  const first = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "html" },
+    expectedPageKey: "poster-page"
+  });
+  const second = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "html" }
+  });
+  const pdf = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "pdf" }
+  });
+
+  assert.equal(first.ok, true);
+  assert.equal(first.result.surfaceId, "app:poster");
+  assert.equal(first.result.filename, "结构化海报.html");
+  assert.equal(first.result.mimeType, "text/html");
+  assert.equal("data" in first.result, false);
+  assert.equal(fs.readFileSync(first.result.filePath, "utf8"), "<!doctype html><title>结构化海报</title>");
+  assert.equal(second.result.filename, "结构化海报 (1).html");
+  assert.equal(pdf.result.filename, "结构化海报.pdf");
+  assert.deepEqual(rendered, [{ pageSize: "A4", printBackground: true, preferCSSPageSize: true }]);
+  assert.deepEqual(
+    fs.readdirSync(options.app.getPath("downloads")).filter((name) => name.startsWith(".")),
+    [],
+    "same-directory temporary files must be removed after the atomic rename"
+  );
+});
+
+test("desktop web exportArtifact rejects child surfaces, invalid payloads, and oversized files", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const rootSnapshot = {
+    route: "/webs/webapp:webapp-0123456789abcdef",
+    pageKey: "poster-page",
+    pageKind: "webview",
+    surfaceId: "app:poster",
+    surfaceRoute: "/webs/webapp:webapp-0123456789abcdef",
+    webContentsId: 702,
+    pageContext: null
+  };
+  let mode = "invalid";
+  const contents = {
+    isDestroyed: () => false,
+    executeJavaScript: async (script) => {
+      if (script.includes("provider.describe")) {
+        return { status: "ok", description: { formats: ["png"] } };
+      }
+      return mode === "invalid"
+        ? { status: "ok", payload: { filename: "poster.png", mimeType: "image/jpeg", encoding: "base64", data: "eA==" } }
+        : { status: "ok", payload: { filename: "poster.png", mimeType: "image/png", encoding: "base64", data: Buffer.alloc(32 * 1024 * 1024 + 1).toString("base64") } };
+    },
+    printToPDF: async () => Buffer.from("pdf")
+  };
+  options.getCurrentPageSnapshot = () => ({ ...rootSnapshot, surfaceId: "copilot-dock" });
+  options.getWebContentsById = () => contents;
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+  const child = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "png" }
+  });
+  assert.equal(child.error.code, "current_webapp_required");
+
+  options.getCurrentPageSnapshot = () => rootSnapshot;
+  const invalid = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "png" }
+  });
+  assert.equal(invalid.error.code, "export_payload_invalid");
+
+  mode = "oversized";
+  const oversized = await handleDesktopActionRequest(options, {
+    action: "desktop.web.exportArtifact",
+    args: { format: "png" }
+  });
+  assert.equal(oversized.error.code, "export_too_large");
 });
 
 test("desktop general deviceName is read-only and exposes only the two name fields", async (t) => {

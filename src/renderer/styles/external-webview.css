@@ -87,10 +87,10 @@
   overflow: hidden;
 }
 
-/* Keep Windows WebApp scrolling below the native caption controls. */
+/* The Windows app shell already reserves the renderer-owned system bar. */
 .app-shell.is-windows-platform .external-webview-page.is-app-surface {
   position: absolute;
-  inset: var(--windows-titlebar-overlay-height) 0 0;
+  inset: 0;
   height: auto;
   margin: 0;
 }
@@ -553,7 +553,7 @@
 }
 
 .app-shell.is-windows-platform .external-webview-copilot-button {
-  top: calc(var(--windows-titlebar-overlay-height) + 10px);
+  top: 10px;
   right: 14px;
 }
 

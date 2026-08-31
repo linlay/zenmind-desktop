@@ -345,9 +345,14 @@ function manifestToEntry(
     id: manifest.id,
     entryKey: createWebappEntryKey(manifest.id),
     kind: "webapp",
-    ...(typeof userConfigValues.agentKey === "string" && WEBAPP_AGENT_KEY_PATTERN.test(userConfigValues.agentKey)
-      ? { copilotAgentKey: userConfigValues.agentKey }
-      : {}),
+    ...(manifest.copilot
+      ? {
+          copilotAgentKey: manifest.copilot.agentKey,
+          copilotMustUseSkills: [...manifest.copilot.mustUseSkills]
+        }
+      : typeof userConfigValues.agentKey === "string" && WEBAPP_AGENT_KEY_PATTERN.test(userConfigValues.agentKey)
+        ? { copilotAgentKey: userConfigValues.agentKey }
+        : {}),
     createdAt: manifestStat.birthtimeMs || manifestStat.ctimeMs,
     updatedAt: manifestStat.mtimeMs
   };

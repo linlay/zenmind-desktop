@@ -246,13 +246,18 @@ test("surface registry reverse index follows replacement and rejects cross-surfa
     surfaceKind: "service",
     surfaceType,
     serviceId: "agent-webclient",
-    pageRoute: "/chat",
+    pageRoute: identity.surfaceRole === "main-chat" ? "/agent/agent-41" : "/chat",
+    ...(identity.surfaceRole === "main-chat"
+      ? { pageRouteIdentity: "/agent/agent-41?newChat=nonce-41" }
+      : {}),
     label: "Chat",
     url: "http://127.0.0.1:7788/",
     active: true,
     tabs: [{
       tabId: "chat",
-      currentUrl: "http://127.0.0.1:7788/ui/",
+      currentUrl: identity.surfaceRole === "main-chat"
+        ? "http://127.0.0.1:7788/agent/agent-41?newChat=nonce-41"
+        : "http://127.0.0.1:7788/ui/",
       title: "Chat",
       webContentsId: guestId,
       canGoBack: false,
@@ -262,10 +267,10 @@ test("surface registry reverse index follows replacement and rejects cross-surfa
     activeTabId: "chat"
   });
   const mainChat = createSurfaceIdentity("main-chat");
-  const copilotChat = createSurfaceIdentity("copilot-chat");
+  const copilotDock = createSurfaceIdentity("copilot-dock");
   assert.equal(registry.registerSurface(registration(mainChat, 41), 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(41).registrationId, "generation-1");
-  assert.equal(registry.registerSurface(registration(copilotChat, 41, "agent-copilot"), 7), false);
+  assert.equal(registry.registerSurface(registration(copilotDock, 41, "agent-copilot"), 7), false);
   assert.equal(registry.registerSurface(registration(mainChat, 42), 7), true);
   assert.equal(registry.resolveWebviewSurfaceTarget(41), null);
   assert.equal(registry.resolveWebviewSurfaceTarget(42).registrationId, "generation-1");

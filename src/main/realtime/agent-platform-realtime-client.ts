@@ -41,6 +41,11 @@ export type RealtimeConnectionKey = {
   identitySessionId: string;
 };
 
+export type RealtimeIdentityRotationReason =
+  | "explicit_identity_invalidation"
+  | "endpoint_changed"
+  | "identity_session_changed";
+
 export type AgentPlatformRealtimeConnectionState = {
   phase: AgentWebclientConnectionPhase;
   generation: number;
@@ -108,12 +113,15 @@ export function createAgentPlatformRealtimeUrl(
   baseUrl: string,
   token: string,
   deviceId: string,
+  source = "desktop-main",
+  surfaceId = "",
 ) {
   const url = new URL("/ws", baseUrl);
   url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
   url.searchParams.set("token", token);
-  url.searchParams.set("source", "desktop-main");
+  url.searchParams.set("source", source.trim() || "desktop-main");
   url.searchParams.set("deviceId", deviceId);
+  if (surfaceId.trim()) url.searchParams.set("surfaceId", surfaceId.trim());
   return url.toString();
 }
 
@@ -236,6 +244,8 @@ export class AgentPlatformRealtimeClient {
     heartbeatTimeoutMs?: number;
     maxFrameBytes?: number;
     random?: () => number;
+    source?: "desktop-main" | "desktop-btw";
+    surfaceId?: string;
     onFrame(frame: AgentPlatformRealtimeFrame, generation: number): void;
     onStaleFrame?(): void;
     onState?(state: AgentPlatformRealtimeConnectionState): void;
@@ -247,8 +257,8 @@ export class AgentPlatformRealtimeClient {
     return { ...this.state, key: this.state.key ? { ...this.state.key } : null };
   }
 
-  requiresRotation(baseUrl: string, token: string) {
-    if (!this.currentKey) return false;
+  getRotationReason(baseUrl: string, token: string): RealtimeIdentityRotationReason | null {
+    if (!this.currentKey) return null;
     const nextKey = {
       endpoint: normalizeAgentPlatformRealtimeEndpoint(baseUrl),
       identitySessionId: createAgentPlatformIdentitySessionId(
@@ -256,8 +266,13 @@ export class AgentPlatformRealtimeClient {
         getDesktopDeviceId(this.options.app),
       ),
     };
-    return this.currentKey.endpoint !== nextKey.endpoint ||
-      this.currentKey.identitySessionId !== nextKey.identitySessionId;
+    if (this.currentKey.endpoint !== nextKey.endpoint) {
+      return "endpoint_changed";
+    }
+    if (this.currentKey.identitySessionId !== nextKey.identitySessionId) {
+      return "identity_session_changed";
+    }
+    return null;
   }
 
   async ensureConnected(baseUrl: string, token: string) {
@@ -270,12 +285,12 @@ export class AgentPlatformRealtimeClient {
       endpoint: normalizedBaseUrl,
       identitySessionId: createAgentPlatformIdentitySessionId(token, deviceId),
     };
-    if (
-      this.currentKey &&
-      (this.currentKey.endpoint !== nextKey.endpoint ||
-        this.currentKey.identitySessionId !== nextKey.identitySessionId)
-    ) {
-      this.rotateConnection("endpoint or identity changed");
+    if (this.currentKey) {
+      if (this.currentKey.endpoint !== nextKey.endpoint) {
+        this.rotateConnection("endpoint changed");
+      } else if (this.currentKey.identitySessionId !== nextKey.identitySessionId) {
+        this.rotateConnection("identity changed");
+      }
     }
     this.currentKey = nextKey;
     this.currentBaseUrl = normalizedBaseUrl;
@@ -383,7 +398,13 @@ export class AgentPlatformRealtimeClient {
     const factory = this.options.createWebSocket ?? defaultSocketFactory;
     const deviceId = getDesktopDeviceId(this.options.app);
     const socket = factory(
-      createAgentPlatformRealtimeUrl(this.currentBaseUrl, this.currentToken, deviceId),
+      createAgentPlatformRealtimeUrl(
+        this.currentBaseUrl,
+        this.currentToken,
+        deviceId,
+        this.options.source,
+        this.options.surfaceId,
+      ),
     );
     this.generation += 1;
     const generation = this.generation;
@@ -647,7 +668,7 @@ export class AgentPlatformRealtimeClient {
   }
 
   private sendInternalRequest(type: string, payload: Record<string, unknown>) {
-    const id = `desktop-main-${type}-${randomUUID()}`;
+    const id = `${this.options.source ?? "desktop-main"}-${type}-${randomUUID()}`;
     return new Promise<AgentPlatformRealtimeFrame>((resolve, reject) => {
       const timer = unrefTimer(setTimeout(() => {
         this.internalPending.delete(id);

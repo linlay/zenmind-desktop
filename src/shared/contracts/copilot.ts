@@ -63,7 +63,7 @@ export interface CopilotDevToolsTarget {
 
 export type AssistantMessageRole = "user" | "assistant";
 
-export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos";
+export type AssistantRunAction = "chat" | "summarize_page" | "explain_selection" | "extract_todos" | "image_studio";
 export type AssistantPermissionMode = "default" | "page_control" | "full_access";
 export type AssistantRunSource = "sidebar" | "copilot";
 
@@ -451,6 +451,11 @@ export interface AssistantChatInfo {
   lastRunContent: string;
   rawJson: string;
 }
+
+export type AssistantChatRevealResult = {
+  ok: boolean;
+  message: string;
+};
 
 export interface AssistantSettingsPublic {
   baseURL: string;

@@ -16,6 +16,7 @@ const UNAVAILABLE_MACHINE_ID = "unavailable";
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const SYSTEM_GUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
 const SHA256_HEX_PATTERN = /^[0-9a-f]{64}$/iu;
+const cachedDeviceIdentities = new Map<string, DesktopDeviceIdentity>();
 
 export type DesktopMachineSource =
   | "darwinIOPlatformUUID"
@@ -217,6 +218,24 @@ function writeDesktopDeviceIdentity(identityPath: string, identity: DesktopDevic
   fs.writeFileSync(identityPath, `${JSON.stringify(identity, null, 2)}\n`, "utf8");
 }
 
+function cloneDesktopDeviceIdentity(identity: DesktopDeviceIdentity): DesktopDeviceIdentity {
+  return { ...identity };
+}
+
+function cacheDesktopDeviceIdentity(identityPath: string, identity: DesktopDeviceIdentity) {
+  const cached = cloneDesktopDeviceIdentity(identity);
+  cachedDeviceIdentities.set(identityPath, cached);
+  return cloneDesktopDeviceIdentity(cached);
+}
+
+function clearDesktopDeviceIdentityCache(identityPath?: string) {
+  if (identityPath) {
+    cachedDeviceIdentities.delete(identityPath);
+    return;
+  }
+  cachedDeviceIdentities.clear();
+}
+
 function buildDesktopDeviceIdentity(input: {
   platform: NodeJS.Platform;
   installId: string;
@@ -261,11 +280,21 @@ export function getDesktopDeviceIdentity(
   options: DesktopDeviceIdentityOptions = {}
 ): DesktopDeviceIdentity {
   const identityPath = getDesktopDeviceIdentityPath(app);
+  const cachedIdentity = cachedDeviceIdentities.get(identityPath);
+  if (cachedIdentity) {
+    return cloneDesktopDeviceIdentity(cachedIdentity);
+  }
   const platform = options.platform ?? process.platform;
   const now = (options.now ?? (() => new Date()))().toISOString();
   const machineIdentity = options.readMachineIdentity?.(platform) ?? readPlatformMachineIdentity(platform);
   const existing = readDesktopDeviceIdentityFile(identityPath);
   if (existing) {
+    if (machineIdentity.source === "unavailable" && existing.machineSource !== "unavailable") {
+      console.warn(
+        "[device-identity] system machine identity is unavailable; preserving the stored process identity"
+      );
+      return cacheDesktopDeviceIdentity(identityPath, existing);
+    }
     const expected = buildDesktopDeviceIdentity({
       platform,
       installId: existing.installId,
@@ -275,7 +304,7 @@ export function getDesktopDeviceIdentity(
       lastMachineMismatchAt: existing.lastMachineMismatchAt
     });
     if (hasCurrentMachineBinding(existing, expected)) {
-      return existing;
+      return cacheDesktopDeviceIdentity(identityPath, existing);
     }
 
     const rebound = buildDesktopDeviceIdentity({
@@ -286,8 +315,11 @@ export function getDesktopDeviceIdentity(
       updatedAt: now,
       lastMachineMismatchAt: now
     });
+    console.warn(
+      "[device-identity] confirmed a system machine identity change during process identity initialization; rebinding the Desktop device identity"
+    );
     writeDesktopDeviceIdentity(identityPath, rebound);
-    return rebound;
+    return cacheDesktopDeviceIdentity(identityPath, rebound);
   }
 
   const installId = options.randomUUID?.() ?? randomUUID();
@@ -300,8 +332,13 @@ export function getDesktopDeviceIdentity(
       updatedAt: now
     })
   };
+  if (machineIdentity.source === "unavailable") {
+    console.warn(
+      "[device-identity] system machine identity is unavailable; using a process-stable fallback identity"
+    );
+  }
   writeDesktopDeviceIdentity(identityPath, identity);
-  return identity;
+  return cacheDesktopDeviceIdentity(identityPath, identity);
 }
 
 export function getDesktopDeviceId(app: App, options: DesktopDeviceIdentityOptions = {}) {
@@ -340,5 +377,6 @@ export const __testInternals = {
   parseDarwinIOPlatformUUID,
   parseWindowsMachineGuid,
   readDesktopDeviceIdentityFile,
-  readPlatformMachineIdentity
+  readPlatformMachineIdentity,
+  clearDesktopDeviceIdentityCache
 };

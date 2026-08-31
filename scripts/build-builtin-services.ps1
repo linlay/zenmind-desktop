@@ -57,7 +57,7 @@ function Invoke-ServiceRelease {
     }
     Write-Host "[build-builtin-services] release $RepoName (ARCH=$SyncArch)"
     if ($DryRun) {
-        Write-Host "  (cd $projectDir; clear VERSION TARGET_OS TARGET_ARCH PROGRAM_TARGETS PROGRAM_TARGET_MATRIX RELEASE_DRY_RUN GOOS GOARCH; make release ARCH=$SyncArch)"
+        Write-Host ('  (cd {0}; clear VERSION TARGET_OS TARGET_ARCH PROGRAM_TARGETS PROGRAM_TARGET_MATRIX RELEASE_DRY_RUN GOOS GOARCH; cmd.exe /d /s /c "make release ARCH={1}")' -f $projectDir, $SyncArch)
         return
     }
 
@@ -68,7 +68,9 @@ function Invoke-ServiceRelease {
     }
     Push-Location $projectDir
     try {
-        & make release "ARCH=$SyncArch"
+        # Invoke Make through cmd.exe so recursive $(MAKE) calls stay as `make`.
+        # PowerShell otherwise resolves Make to a full path whose spaces break the recursive command.
+        & cmd.exe /d /s /c "make release ARCH=$SyncArch"
         if ($LASTEXITCODE -ne 0) {
             throw "Upstream release failed for $RepoName with exit code $LASTEXITCODE"
         }

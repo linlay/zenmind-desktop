@@ -1,6 +1,7 @@
 export const WEBAPP_BRIDGE_MODULE_PATH = "/__desktop/bridge.js";
 
 export const WEBAPP_BRIDGE_MODULE_SOURCE = String.raw`const ACTION_PATH = "/__desktop/actions/call";
+const ASSISTANT_IMAGE_UPLOAD_PATH = "/__desktop/assistant/image/uploads";
 const APP_CONFIG_PATH = "/__desktop/app-config.json";
 const USER_CONFIG_PATH = "/__desktop/user-config.json";
 
@@ -65,6 +66,74 @@ function reserved(action) {
 
 async function listCapabilities() {
   return call("desktop.capabilities.list");
+}
+
+async function uploadAssistantImageInputs(source, mask) {
+  if (!(source instanceof Blob)) {
+    throw new DesktopBridgeError(
+      "desktop.assistant.image",
+      "invalid_args",
+      "source must be an image Blob."
+    );
+  }
+  if (mask !== undefined && mask !== null && !(mask instanceof Blob)) {
+    throw new DesktopBridgeError(
+      "desktop.assistant.image",
+      "invalid_args",
+      "mask must be a PNG Blob."
+    );
+  }
+  const form = new FormData();
+  form.set("source", source, source.name || "image-studio-source.png");
+  if (mask instanceof Blob) {
+    form.set("mask", mask, mask.name || "image-studio-mask.png");
+  }
+  let response;
+  try {
+    response = await fetch(ASSISTANT_IMAGE_UPLOAD_PATH, { method: "POST", body: form });
+  } catch (error) {
+    throw new DesktopBridgeError(
+      "desktop.assistant.image",
+      "bridge_unavailable",
+      "Desktop image upload bridge is unavailable.",
+      { cause: error?.name || "Error" }
+    );
+  }
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new DesktopBridgeError(
+      "desktop.assistant.image",
+      "invalid_response",
+      "Desktop image upload bridge returned an invalid response."
+    );
+  }
+  if (!response.ok || !payload?.ok || typeof payload.uploadId !== "string") {
+    throw new DesktopBridgeError(
+      "desktop.assistant.image",
+      payload?.error?.code || "image_upload_failed",
+      payload?.error?.message || "Desktop image upload failed."
+    );
+  }
+  return payload.uploadId;
+}
+
+async function generateAssistantImage(input = {}) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new DesktopBridgeError("desktop.assistant.image", "invalid_args", "Image request must be an object.");
+  }
+  const { source, mask, ...request } = input;
+  const uploadId = source instanceof Blob
+    ? await uploadAssistantImageInputs(source, mask)
+    : "";
+  if (mask instanceof Blob && !uploadId) {
+    throw new DesktopBridgeError("desktop.assistant.image", "invalid_args", "mask requires a source image.");
+  }
+  return call("desktop.assistant.image", {
+    ...request,
+    ...(uploadId ? { uploadId } : {})
+  });
 }
 
 async function getAppConfig() {
@@ -155,7 +224,9 @@ export const desktop = Object.freeze({
     }
   }),
   assistant: Object.freeze({
-    chat: (message) => call("desktop.assistant.chat", { message })
+    chat: (message) => call("desktop.assistant.chat", { message }),
+    image: generateAssistantImage,
+    cancelImage: (requestId) => call("desktop.assistant.image.cancel", { requestId })
   }),
   native: Object.freeze({
     browser: Object.freeze({

@@ -580,6 +580,31 @@
       ],
       "additionalProperties": false
     },
+    "copilot": {
+      "type": "object",
+      "properties": {
+        "agentKey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+        },
+        "mustUseSkills": {
+          "minItems": 1,
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 3,
+            "maxLength": 64,
+            "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+          }
+        }
+      },
+      "required": [
+        "agentKey",
+        "mustUseSkills"
+      ],
+      "additionalProperties": false
+    },
     "desktopBridge": {
       "default": {
         "version": 1

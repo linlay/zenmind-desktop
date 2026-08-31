@@ -6,6 +6,7 @@ export const CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL =
   "chatWorkPanel.revealLocalResource";
 
 export type ChatWorkPanelTabContextMenuActionId =
+  | "toggle-review"
   | "reload"
   | "copy-url"
   | "copy-title"
@@ -34,6 +35,7 @@ export type ChatWorkPanelTabContextMenuPopupRequest =
       y: number;
       profile: ChatWorkPanelTabContextMenuProfile;
       isFullscreen: boolean;
+      reviewMode?: "unavailable" | "inactive" | "active";
       canClose: boolean;
       canCloseOthers: boolean;
     };
@@ -50,10 +52,16 @@ export type ChatWorkPanelOpenLocalResourceRequest = {
   profile: ChatWorkPanelLocalResourceProfile;
 };
 
+export type ChatWorkPanelLocalResourceErrorCode =
+  | "invalid_request"
+  | "not_found"
+  | "not_file"
+  | "path_outside_chat"
+  | "open_failed";
+
 export type ChatWorkPanelOpenLocalResourceResult = {
   ok: boolean;
-  path?: string;
-  code?: "invalid_request" | "not_found" | "not_file" | "path_outside_chat" | "open_failed";
+  code?: ChatWorkPanelLocalResourceErrorCode;
   message?: string;
 };
 

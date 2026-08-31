@@ -812,6 +812,16 @@ test("Tunnel Client endpoint forwards ns=ap stream through agent-platform bridge
       queueMicrotask(() => {
         this.readyState = 1;
         this.emit("open", { type: "open" });
+        this.emit("message", { data: JSON.stringify({
+          frame: "push",
+          type: "connected",
+          data: {
+            protocolVersion: 2,
+            sessionId: "tunnel-agent-platform-primary",
+            serverTime: Date.now(),
+            liveness: { heartbeatIntervalMs: 30_000, silenceTimeoutMs: 100_000 }
+          }
+        }) });
       });
     }
 

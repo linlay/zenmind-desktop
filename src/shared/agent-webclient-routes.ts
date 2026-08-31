@@ -3,7 +3,10 @@ import {
   encodeRoutePathSegment
 } from "./route-path";
 import {
-  COPILOT_CHAT_SURFACE_ID,
+  readAgentWebclientCanonicalChatSource,
+  readAgentWebclientNewChatSource
+} from "./canonical-chat-sync";
+import {
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
@@ -20,11 +23,10 @@ export type AgentWebclientRouteKey =
   | "registries"
   | "mcp-servers"
   | "skills"
-  | "copilot"
   | "agent-chat"
   | "assistant-target";
 
-export type AgentWebclientRouteKind = "management" | "copilot" | "chat";
+export type AgentWebclientRouteKind = "management" | "chat";
 export type AgentWebclientRouteMode = "embedded";
 
 export type AgentWebclientRouteDefinition = {
@@ -102,20 +104,11 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
     labelKey: "nav.skills",
     kind: "management",
     mode: "embedded"
-  },
-  {
-    key: "copilot",
-    routePath: "/copilot",
-    embedPath: "/copilot",
-    labelKey: "nav.assistants",
-    kind: "copilot",
-    mode: "embedded"
   }
 ] as const satisfies readonly AgentWebclientRouteDefinition[];
 
 export const AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS = [
   "/agents/:agentKey",
-  "/copilot/:agentKey",
   "/agent/:agentKey",
   "/skills/:skillKey"
 ] as const;
@@ -125,7 +118,6 @@ const AGENT_WEBCLIENT_CHAT_SURFACE_IDS = new Set([
   KANBAN_CHAT_SURFACE_ID
 ]);
 const AGENT_WEBCLIENT_COPILOT_SURFACE_IDS = new Set([
-  COPILOT_CHAT_SURFACE_ID,
   COPILOT_DOCK_SURFACE_ID
 ]);
 
@@ -235,6 +227,12 @@ export function createAgentWebclientOverviewPath(request: {
   const chatId = request.chatId.trim();
   const encodedChatId = encodeRoutePathSegment(chatId);
   return encodedChatId ? `/overview/${encodedChatId}` : "";
+}
+
+export function createAgentWebclientBtwPath(request: { chatId: string }) {
+  const chatId = request.chatId.trim();
+  const encodedChatId = encodeRoutePathSegment(chatId);
+  return encodedChatId ? `/btw/${encodedChatId}` : "";
 }
 
 export function resolveAgentWebclientWsSource(
@@ -377,6 +375,58 @@ export function areAgentWebclientChatBusinessRoutesEquivalent(
   }
 
   return areAgentWebclientChatRouteIdentitiesEqual(current, target, false);
+}
+
+/**
+ * Match the trusted Desktop Main Chat route to the live guest route.
+ *
+ * Canonical Chat navigation intentionally uses a separate parser below: that
+ * parser must continue rejecting ownerless newChat routes. Surface alignment,
+ * however, accepts either an exact canonical identity or an exact one-shot
+ * newChat identity while ignoring Desktop-owned presentation parameters.
+ */
+export function isAgentWebclientMainChatRouteAligned(
+  desktopRoute: string,
+  guestUrl: string,
+  embeddedUrl: string
+) {
+  let guest: URL;
+  let embedded: URL;
+  try {
+    guest = new URL(guestUrl);
+    embedded = new URL(embeddedUrl);
+  } catch {
+    return false;
+  }
+  if (
+    (guest.protocol !== "http:" && guest.protocol !== "https:") ||
+    (embedded.protocol !== "http:" && embedded.protocol !== "https:") ||
+    guest.origin !== embedded.origin
+  ) {
+    return false;
+  }
+
+  const desktopCanonical = readAgentWebclientCanonicalChatSource(desktopRoute);
+  const guestCanonical = readAgentWebclientCanonicalChatSource(guestUrl);
+  if (desktopCanonical || guestCanonical) {
+    return Boolean(
+      desktopCanonical &&
+      guestCanonical &&
+      desktopCanonical.agentKey === guestCanonical.agentKey &&
+      desktopCanonical.chatId === guestCanonical.chatId &&
+      areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, guestUrl)
+    );
+  }
+
+  const desktopNewChat = readAgentWebclientNewChatSource(desktopRoute);
+  const guestNewChat = readAgentWebclientNewChatSource(guestUrl);
+  return Boolean(
+    desktopNewChat &&
+    guestNewChat &&
+    desktopNewChat.agentKey === guestNewChat.agentKey &&
+    desktopNewChat.newChat === guestNewChat.newChat &&
+    areAgentWebclientChatBusinessRoutesEquivalent(desktopRoute, guestUrl)
+  );
 }
 
 export function resolveAgentWebclientDesktopChatRouteFromUrl(

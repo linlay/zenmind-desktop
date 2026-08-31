@@ -267,7 +267,7 @@ test("sidebar does not expose the built-in Chrome surface", () => {
   assert.doesNotMatch(sidebarSource, /BUILTIN_BROWSER_ROUTE/);
 });
 
-test("main agent webclient keeps chat and copilot webviews separate from management", () => {
+test("main agent webclient keeps chat separate from management and leaves Copilot to the dock", () => {
   const surfaceHosts = readSourceFile(
     "src",
     "renderer",
@@ -277,16 +277,13 @@ test("main agent webclient keeps chat and copilot webviews separate from managem
   );
 
   assert.match(surfaceHosts, /const AGENT_WEBCLIENT_CHAT_SURFACE_ID = MAIN_CHAT_SURFACE_ID/);
-  assert.match(surfaceHosts, /const AGENT_WEBCLIENT_COPILOT_SURFACE_ID = COPILOT_CHAT_SURFACE_ID/);
   assert.match(surfaceHosts, /lastAgentChatRouteRef/);
-  assert.match(surfaceHosts, /lastCopilotRouteRef/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "chat"/);
-  assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "copilot"/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
-  assert.match(surfaceHosts, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
   assert.match(surfaceHosts, /serviceId=\{AGENT_WEBCLIENT_SERVICE_ID\}/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
+  assert.doesNotMatch(surfaceHosts, /COPILOT_CHAT_SURFACE_ID|lastCopilotRouteRef|"copilot-chat"/u);
 });
 
 test("agent webclient management routes render embedded webclient pages", () => {
@@ -313,7 +310,8 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(routeDefinitions, /routePath:\s*"\/copilot"[\s\S]*?mode:\s*"embedded"/);
+  assert.doesNotMatch(routeDefinitions, /routePath:\s*"\/copilot"/u);
+  assert.doesNotMatch(routeDefinitions, /"\/copilot\/:agentKey"/u);
   assert.match(sidebar, /to:\s*"\/agents"[\s\S]*?to:\s*"\/skills"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/registries"[\s\S]*?to:\s*"\/archives"[\s\S]*?to:\s*"\/market"/);
   assert.match(sidebar, /item\.to === "\/mcp-servers"/);
   assert.match(brandMark, /\|\s*"connector"[\s\S]*?case "connector":[\s\S]*?<circle cx="6" cy="12" r="3" \/>/);
@@ -797,6 +795,17 @@ test("sidebar chrome keeps its 24px history hover feedback", () => {
     globalStyles,
     /\.sidebar-history-button:hover:not\(:disabled\),[\s\S]*?\.sidebar-history-button:focus-visible:not\(:disabled\)\s*\{[\s\S]*?background:\s*rgba\(136, 151, 172, 0\.1\);/
   );
+});
+
+test("mac sidebar top chrome stays aligned with the compact native titlebar", () => {
+  const globalStyles = readRendererStyles();
+
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\s*\{[\s\S]*?--sidebar-toolbar-height:\s*33px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-chrome\s*\{[\s\S]*?margin-bottom:\s*8px;/);
+  assert.match(globalStyles, /\.sidebar-chrome-toolbar\.is-mac\s*\{[\s\S]*?margin-bottom:\s*2px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-top-actions\s*\{[\s\S]*?top:\s*9px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed\s*\{[\s\S]*?--sidebar-toolbar-height:\s*61px;/);
+  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{[\s\S]*?top:\s*35px;/);
 });
 
 test("sidebar collapse toggle moves into the top chrome with the outline sidebar icon", () => {
@@ -1548,8 +1557,6 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-primary-link\.sidebar-link-active \.sidebar-link-label,[\s\S]*?\.sidebar-tool-menu-trigger\.sidebar-link-active \.sidebar-link-label-collapsed\s*\{[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?:root\[data-theme="dark"\] \.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.sidebar-top-actions\s*\{[\s\S]*?top:\s*12px;/);
-  assert.match(globalStyles, /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions\s*\{[\s\S]*?top:\s*38px;/);
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;[\s\S]*?color:\s*#94a3b8;/);
   assert.match(globalStyles, /\.sidebar-action-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?--sidebar-special-icon-active-frame:\s*#475569;/);
@@ -1614,8 +1621,8 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /key:\s*"copilot"[\s\S]*?routePath:\s*"\/copilot"[\s\S]*?embedPath:\s*"\/copilot"[\s\S]*?labelKey:\s*"nav\.assistants"[\s\S]*?kind:\s*"copilot"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/copilot\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
+  assert.doesNotMatch(appShell, /routePath:\s*"\/copilot"|"\/copilot\/:agentKey"|kind:\s*"copilot"/u);
+  assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
   assert.match(appShell, /"\/skills\/:skillKey"/);
   assert.match(appShell, /function resolveSkillManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?embedPath: `\/skills\/\$\{encodeURIComponent\(skillKey\)\}\$\{search\}`/);
   assert.match(appShell, /const rawActiveAgentWebclientRoute = resolveAgentWebclientRoute\(location\.pathname,\s*location\.search/);
@@ -1659,7 +1666,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /findAgentWebclientRouteDefinition\(pathname\)/);
   assert.doesNotMatch(appShell, /AgentWebclientNativeRouteOutlet/);
   assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("main-chat"/);
-  assert.match(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
+  assert.doesNotMatch(appShell, /surfaceIdentity=\{createSurfaceIdentity\("copilot-chat"\)\}/);
   assert.match(appShell, /if \(currentRoute !== pendingSidebarNavigationPath\)/);
   assert.match(appShell, /function requestSidebarNavigation\(targetPath: string\)[\s\S]*?navigate\(targetPath\);[\s\S]*?return true;/);
   assert.match(appShell, /const usesEmbeddedSurface =[\s\S]*?Boolean\(activeEmbeddedAgentWebclientRoute\)/);
@@ -5633,6 +5640,7 @@ test("built index uses relative asset paths", (t) => {
   assert.match(builtIndex, /(src|href)="\.?\/?assets\//);
   assert.match(builtIndex, exactPetProtocolPattern);
   assert.match(builtIndex, exactWebsiteFaviconProtocolPattern);
+  assert.match(builtIndex, /img-src[^";]*blob:/u);
   assert.match(builtIndex, new RegExp(`<title>${escapeRegExp(brand.productName)}</title>`, "u"));
 
   for (const entry of fs.readdirSync(path.join(projectRoot, "brands"), { withFileTypes: true })) {
@@ -5642,6 +5650,120 @@ test("built index uses relative asset paths", (t) => {
     assert.doesNotMatch(builtIndex, new RegExp(`${escapeRegExp(entry.name)}-pet:`, "u"));
     assert.doesNotMatch(builtIndex, new RegExp(`${escapeRegExp(entry.name)}-website-favicon:`, "u"));
   }
+});
+
+test("native image byte and decode failures stay silent and inert", () => {
+  const source = readSourceFile(
+    "src",
+    "renderer",
+    "work-panel",
+    "WorkPanelResourceImage.tsx"
+  );
+  const rendererIndex = readSourceFile("index.html");
+  const brandArtifacts = readSourceFile("scripts", "lib", "brand-artifacts.mjs");
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+
+  assert.match(source, /function imageBytes\(value: unknown\)/u);
+  assert.match(source, /if \(!bytes\?\.byteLength\) \{\s*setLoading\(false\);\s*return;\s*\}/u);
+  assert.match(source, /catch \{\s*URL\.revokeObjectURL\(url\);\s*\}/u);
+  assert.doesNotMatch(source, /chatWorkPanel\.image\.errorDecode/u);
+  assert.doesNotMatch(source, /chatWorkPanel\.image\.errorLoad/u);
+  assert.match(rendererIndex, /img-src[^";]*blob:/u);
+  assert.match(brandArtifacts, /img-src[^";]*blob:/u);
+  assert.match(styles, /\.work-panel-resource-image\s*\{[\s\S]*?font-size:\s*12px;/u);
+  assert.match(styles, /\.work-panel-image-toolbar button\.is-primary\s*\{[\s\S]*?font-size:\s*13px;/u);
+  assert.match(styles, /\.work-panel-image-zoom-control input\s*\{[\s\S]*?font-size:\s*12px;/u);
+});
+
+test("native image modes keep viewing actions on top and photo tools in a sidebar", () => {
+  const source = readSourceFile(
+    "src",
+    "renderer",
+    "work-panel",
+    "WorkPanelResourceImage.tsx"
+  );
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+
+  assert.match(
+    source,
+    /!editing \? \([\s\S]*?className="work-panel-image-open-with"[\s\S]*?className="work-panel-image-edit-button"[\s\S]*?\) : \(/u
+  );
+  assert.equal(source.match(/className="work-panel-image-open-with"/gu)?.length, 1);
+  assert.doesNotMatch(source, /className="work-panel-image-file"/u);
+  assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?<strong>\{resource\.fileName\}<\/strong>/u);
+  assert.match(source, /className="work-panel-image-editor-sidebar"[\s\S]*?aria-orientation="vertical"/u);
+  assert.match(source, /function ImageToolButton[\s\S]*?<Tooltip title=\{label\} placement="right" mouseEnterDelay=\{0\.15\}>/u);
+  assert.doesNotMatch(source, /title=\{t\("chatWorkPanel\.image\.(?:pan|annotate|selection|crop|apply|rotate|flipHorizontal|flipVertical|lockAspect|resize|adjust|aiTools)"\)\}/u);
+  assert.match(source, /<ImageToolbarButton label=\{t\("chatWorkPanel\.image\.done"\)\} className="is-return-to-preview"[\s\S]*?<ArrowLeftOutlined \/><\/ImageToolbarButton>/u);
+  assert.match(source, /const discardEditingDraft = useCallback[\s\S]*?setHistory\(\[\]\)[\s\S]*?setError\(""\)[\s\S]*?setAnnotations\(\[\]\)[\s\S]*?void readResource\(\)/u);
+  assert.match(source, /useLayoutEffect\(\(\) => \{[\s\S]*?wasEditing && !editing[\s\S]*?discardEditingDraft\(\)/u);
+  assert.match(source, /label=\{t\("chatWorkPanel\.image\.save"\)\} className=\{pixelDirty && !saveBusy && !aiBusy && !sourceConflict \? "is-primary" : ""\}/u);
+  assert.match(
+    source,
+    /className="work-panel-image-save-actions"[\s\S]*?chatWorkPanel\.image\.cancel[\s\S]*?chatWorkPanel\.image\.overwrite[\s\S]*?chatWorkPanel\.image\.saveNew/u
+  );
+  assert.match(styles, /\.work-panel-image-toolbar\s*\{[^}]*flex-wrap:\s*wrap;[^}]*overflow:\s*visible;/u);
+  assert.match(styles, /\.work-panel-image-toolbar\.is-preview\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
+  assert.match(styles, /\.work-panel-image-toolbar\.is-editing\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*overflow:\s*hidden;/u);
+  assert.match(styles, /@container \(max-width: 760px\)[\s\S]*?\.work-panel-image-toolbar\.is-editing \.work-panel-image-toolbar-button-label\s*\{[^}]*display:\s*none;/u);
+  assert.match(styles, /\.work-panel-image-toolbar\.is-editing \.is-return-to-preview \.work-panel-image-toolbar-button-label\s*\{[^}]*display:\s*inline;/u);
+  assert.doesNotMatch(styles, /\.work-panel-image-toolbar\s*\{[^}]*overflow-x:\s*auto;/u);
+  assert.match(styles, /\.work-panel-image-editor-sidebar\s*\{[^}]*width:\s*44px;[^}]*flex:\s*0 0 44px;[^}]*flex-direction:\s*column;[^}]*overflow-y:\s*auto;/u);
+  assert.match(styles, /\.work-panel-image-editor-sidebar button\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
+  assert.match(styles, /\.work-panel-image-tool-tooltip-anchor\s*\{[^}]*width:\s*34px;[^}]*height:\s*34px;/u);
+  assert.match(source, /trigger=\{\["hover", "focus"\]\}[\s\S]*?placement="rightTop"[\s\S]*?chatWorkPanel\.image\.transform[\s\S]*?chatWorkPanel\.image\.rotate[\s\S]*?chatWorkPanel\.image\.flipHorizontal[\s\S]*?chatWorkPanel\.image\.flipVertical[\s\S]*?chatWorkPanel\.image\.freeTransform/u);
+  assert.match(source, /classNames=\{\{ root: "work-panel-image-transform-popover" \}\}/u);
+  assert.match(styles, /\.work-panel-image-transform-popover\s*\{[^}]*--antd-arrow-background-color:\s*var\(--embedded-surface-page-bg\);/u);
+  assert.match(styles, /\.work-panel-image-transform-popover \.ant-popover-inner\s*\{[^}]*background:\s*var\(--embedded-surface-page-bg\);/u);
+  assert.match(source, /chatWorkPanel\.image\.resize[\s\S]*?chatWorkPanel\.image\.canvasSize[\s\S]*?chatWorkPanel\.image\.adjust/u);
+  assert.match(styles, /button\.is-ai-tool\s*\{[^}]*border-color:[^}]*linear-gradient\(145deg,[^}]*#7555ee[^}]*#3385f5/u);
+  assert.match(styles, /button\.is-ai-tool\.is-active\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
+  assert.match(styles, /\.work-panel-image-save-actions\s*\{[^}]*display:\s*flex;/u);
+});
+
+test("native image selection and annotations have distinct movable AI workflows", () => {
+  const source = readSourceFile(
+    "src",
+    "renderer",
+    "work-panel",
+    "WorkPanelResourceImage.tsx"
+  );
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const contract = readSourceFile("src", "shared", "work-panel-resource-image.ts");
+
+  assert.match(source, /setGesturePreview\(\{ kind: "annotate", points: \[drawStartRef\.current, point\] \}\)/u);
+  assert.match(source, /setActiveAnnotationId\(id\)/u);
+  assert.doesNotMatch(source, /window\.prompt\(t\("chatWorkPanel\.image\.promptAnnotation"/u);
+  assert.match(source, /const consumesAnnotations = operation === "inpaint"/u);
+  assert.match(source, /selectionMaskBase64\(annotationRegions, operation === "removeObject"\)/u);
+  assert.match(source, /const maskDataBase64 = requiresMask\s*\? await selectionMaskBase64[\s\S]*?: ""/u);
+  assert.doesNotMatch(source, /fetch\(current\.url\)/u);
+  assert.match(source, /const sourceImage = await loadImage\(current\.url\)[\s\S]*?sourceContext\.drawImage\(sourceImage[\s\S]*?canvasBlob\(sourceCanvas, current\.mimeType\)/u);
+  assert.match(source, /catch \(reason\)[\s\S]*?aiFailedOperation[\s\S]*?setAiPromptOperation\(operation\)/u);
+  assert.match(source, /const aiOperationLabel[\s\S]*?chatWorkPanel\.image\.smartEdit[\s\S]*?chatWorkPanel\.image\.enhance/u);
+  assert.match(source, /aiRunningOperation[\s\S]*?aiOperationLabel\(aiBusy\.operation\)/u);
+  assert.match(styles, /\.work-panel-image-error,[\s\S]*?\.work-panel-image-ai-status\s*\{[^}]*position:\s*absolute;[^}]*z-index:\s*12;/u);
+  assert.match(source, /type SelectionPurpose = "general" \| "removeObject"/u);
+  assert.match(source, /chatWorkPanel\.image\.selection[\s\S]*?selectionPurpose === "general"[\s\S]*?setSelectionPurpose\("general"\)/u);
+  assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?selectionPurpose === "removeObject"[\s\S]*?if \(hasSelection\)[\s\S]*?runAi\("removeObject"\)[\s\S]*?setTool\("select"\)/u);
+  assert.match(source, /is-ai-selection[\s\S]*?removeObjectSelectionHint[\s\S]*?className="is-ai-action"[\s\S]*?disabled=\{!hasSelection[\s\S]*?removeSelectedObject/u);
+  assert.match(styles, /\.work-panel-image-subtoolbar button\.is-ai-action\s*\{[^}]*linear-gradient\(145deg, #8056ff, #367df0\)/u);
+  assert.doesNotMatch(source, /<ImageToolButton label=\{t\("chatWorkPanel\.image\.smartEdit"\)\}/u);
+  assert.match(source, /work-panel-image-annotation-actions[\s\S]*?annotations\.some[\s\S]*?runAi\("inpaint"\)[\s\S]*?chatWorkPanel\.image\.smartEdit/u);
+  assert.doesNotMatch(source, /aiPromptOperation === "inpaint"|value === "inpaint" \? null : "inpaint"/u);
+  assert.match(source, /chatWorkPanel\.image\.removeObject[\s\S]*?runAi\("removeObject"\)[\s\S]*?runAi\("removeBackground"\)[\s\S]*?replaceBackground[\s\S]*?outpaint[\s\S]*?runAi\("enhance"\)/u);
+  assert.doesNotMatch(source, /RobotOutlined|work-panel-image-ai-panel|work-panel-image-ai-tools/u);
+  assert.match(source, /beginFloatingPanelDrag[\s\S]*?setPointerCapture[\s\S]*?setFloatingControlsPosition[\s\S]*?setAnnotationsPanelPosition/u);
+  assert.match(source, /className="work-panel-image-floating-controls"[\s\S]*?work-panel-image-floating-drag-handle[\s\S]*?work-panel-image-subtoolbar[\s\S]*?work-panel-image-adjustments[\s\S]*?work-panel-image-parameter-panel[\s\S]*?work-panel-image-ai-prompt/u);
+  assert.match(styles, /\.work-panel-image-floating-controls\s*\{[^}]*position:\s*absolute;[^}]*max-height:\s*calc\(100% - 20px\);[^}]*overflow:\s*auto;/u);
+  assert.match(styles, /\.work-panel-image-floating-drag-handle\s*\{[^}]*cursor:\s*move;[^}]*touch-action:\s*none;/u);
+  assert.match(source, /work-panel-image-annotation-list[\s\S]*?activeAnnotation[\s\S]*?work-panel-image-annotation-editor[\s\S]*?runAi\("inpaint"\)/u);
+  assert.match(styles, /\.work-panel-image-annotations\s*\{[^}]*top:\s*12px;[^}]*right:\s*12px;[^}]*max-height:\s*calc\(100% - 24px\);/u);
+  assert.match(source, /const applyCanvasSize = useCallback[\s\S]*?drawImage\(image, Math\.round\(\(width - current\.width\) \/ 2\)/u);
+  assert.match(source, /const beginSelectionTransform = async[\s\S]*?globalCompositeOperation = "destination-out"[\s\S]*?globalCompositeOperation = "destination-in"/u);
+  assert.match(source, /className="work-panel-image-selection-transform"[\s\S]*?\["nw", "ne", "sw", "se"\]/u);
+  assert.match(styles, /\.work-panel-image-selection-transform\s*\{[^}]*position:\s*absolute;[^}]*cursor:\s*move;/u);
+  assert.match(contract, /\| "inpaint"[\s\S]*?\| "removeObject"/u);
 });
 
 test("plugin market guards stale preload market api before skill import", () => {
@@ -5907,8 +6029,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(globalStyles, /\.app-shell\.has-embedded-surface\s*\{[^}]*--app-window-drag-height:\s*8px;/);
   assert.match(globalStyles, /\.app-shell\.is-mac-platform\s*\{[^}]*--app-window-drag-height:\s*8px;/);
-  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--windows-titlebar-background:\s*#FFFFFF;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-shell\s*\{[^}]*--windows-titlebar-background:\s*#000000;/);
+  assert.match(globalStyles, /\.app-shell\s*\{[^}]*--windows-titlebar-background:\s*var\(--bg-base\);/);
   assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-mac-platform\.has-main-chat-work-panel-toggle\s*\{[^}]*--app-window-drag-right:/
@@ -5968,7 +6089,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
     /\.app-shell\.has-embedded-surface\s+\.app-window-drag-region\s*\{[^}]*display:\s*none;/
   );
   assert.match(globalStyles, /\.app-window-drag-layer\s*\{[^}]*z-index:\s*1000;/);
-  assert.match(
+  assert.doesNotMatch(
     globalStyles,
     /\.app-shell\.is-windows-platform\.has-webapp-surface \.app-window-drag-layer::before\s*\{[^}]*content:\s*"";[^}]*position:\s*absolute;[^}]*inset:\s*0 calc\(-1 \* var\(--app-window-drag-right\)\) 0 calc\(-1 \* var\(--app-window-drag-left\)\);[^}]*background:\s*var\(--windows-titlebar-background\);[^}]*pointer-events:\s*none;/
   );
@@ -5994,7 +6115,7 @@ test("embedded H5 routes keep a thin global window drag lane", () => {
   );
   assert.match(
     globalStyles,
-    /\.app-shell\.is-windows-platform \.external-webview-page\.is-app-surface\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*var\(--windows-titlebar-overlay-height\) 0 0;[^}]*height:\s*auto;[^}]*margin:\s*0;/
+    /\.app-shell\.is-windows-platform \.external-webview-page\.is-app-surface\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*height:\s*auto;[^}]*margin:\s*0;/
   );
   assert.match(
     globalStyles,
@@ -6096,7 +6217,12 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   assert.match(appShell, /target\?\.closest\("\.app-sidebar-shell"\)/);
   assert.match(appShell, /target\?\.closest\("\.external-webview-browser-chrome"\)/);
   assert.match(appShell, /browserChrome\.closest\("\.external-webview-page\.is-inactive-surface"\)/);
-  assert.match(appShell, /SIDEBAR_DRAG_BLOCK_SELECTOR/);
+  assert.match(appShell, /WINDOW_DRAG_BLOCK_SELECTOR/);
+  assert.match(appShell, /WINDOW_DRAG_BLOCK_SELECTOR = \[[\s\S]*?"button"/);
+  assert.match(
+    appShell,
+    /if \(dragRegion && !target\?\.closest\(WINDOW_DRAG_BLOCK_SELECTOR\)\)/,
+  );
   assert.doesNotMatch(appShell, /target\?\.closest\("\.app-window-drag-region, \.pan-drag-region"\)/);
   assert.match(appShell, /event\.button !== 0/);
   assert.match(appShell, /desktopShell\.beginWindowDrag\(\)/);
@@ -6160,12 +6286,16 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(appShellRuntime, /restoreFloatingWindowsForFullscreen: \(\) => options\.restoreDesktopPetWindowLayering\(\)/);
   assert.match(appRuntime, /restoreDesktopPetWindowLayering\s*\n\s*\}\);/);
   assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,120}petRuntime\.restoreWindowLayering\(\)/);
-  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;/);
-  assert.match(contracts, /getWindowState:\s*\(\) => Promise<\{ ok:\s*boolean; isFullScreen:\s*boolean; message\?:\s*string \}>;/);
+  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
+  assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/);
+  assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/);
+  assert.match(contracts, /getWindowState:\s*\(\) => Promise<\{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
   assert.match(contracts, /onWindowStateChanged:\s*\(listener:\s*DesktopWindowStateListener\) => \(\(\) => void\);/);
   assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.getWindowState"\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.minimizeWindow"\)/);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.toggleWindowMaximize"\)/);
   assert.match(preload, /ipcRenderer\.on\("desktopShell\.windowStateChanged"/);
-  assert.match(windowManager, /targetWindow\.webContents\.send\("desktopShell\.windowStateChanged",\s*\{ isFullScreen:\s*targetWindow\.isFullScreen\(\) \}\);/);
+  assert.match(windowManager, /targetWindow\.webContents\.send\("desktopShell\.windowStateChanged",\s*\{[\s\S]{0,180}isFullScreen:\s*targetWindow\.isFullScreen\(\),[\s\S]{0,100}isMaximized:\s*targetWindow\.isMaximized\(\)/);
   assert.match(appShell, /const desktopShell = window\.electronAPI\.desktopShell;[\s\S]*?!desktopShell\.getWindowState \|\| !desktopShell\.onWindowStateChanged/);
   assert.match(appShell, /desktopShell\.getWindowState\(\)/);
   assert.match(appShell, /desktopShell\.onWindowStateChanged/);
@@ -6173,8 +6303,36 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(macFullscreenRule, /--app-window-drag-height:\s*0px;/);
   assert.doesNotMatch(macFullscreenRule, /padding-top:/);
   assert.doesNotMatch(globalStyles, /--mac-fullscreen-top-safe-area/u);
-  assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*44px;/);
-  assert.match(globalStyles, /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[\s\S]*?padding-top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 12px\);/);
+  assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*30px;/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-system-bar\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*var\(--windows-titlebar-overlay-height\);/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-sidebar-shell\s*\{[\s\S]*?height:\s*calc\(100% - var\(--windows-titlebar-content-inset\)\);[\s\S]*?margin-top:\s*var\(--windows-titlebar-content-inset\);/);
+  assert.match(appShell, /className={`app-system-bar\$\{windowControlsMasked \? " is-masked" : ""\}`}/);
+  assert.match(appShell, /desktopShell\.minimizeWindow\(\)/);
+  assert.match(appShell, /desktopShell\.toggleWindowMaximize\(\)/);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform:not\(\.has-browser-chrome-surface\):not\(\.has-kanban-controls\):not\(\.has-market-controls\) \.app-main\s*\{[\s\S]*?padding-top:\s*12px;/);
+});
+
+test("Windows main renderer owns the thin system bar and bottom-docked DevTools", () => {
+  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appShell = readAppShellSource();
+  const contracts = readSharedContractsSource();
+  const preload = readSourceFile("src", "preload", "index.ts");
+  const globalStyles = readRendererStyles();
+
+  assert.doesNotMatch(windowManager, /titleBarOverlay/u);
+  assert.match(windowManager, /titleBarStyle:\s*"hidden"/u);
+  assert.match(windowManager, /contents\.openDevTools\(\{ mode:\s*"bottom" \}\)/u);
+  assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/u);
+  assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/u);
+  assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/u);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.minimizeWindow"\)/u);
+  assert.match(preload, /ipcRenderer\.invoke\("desktopShell\.toggleWindowMaximize"\)/u);
+  assert.match(appShell, /className=\{`app-system-bar\$\{windowControlsMasked \? " is-masked" : ""\}`\}/u);
+  assert.match(appShell, /desktopShell\.minimizeWindow\(\)/u);
+  assert.match(appShell, /desktopShell\.toggleWindowMaximize\(\)/u);
+  assert.match(globalStyles, /--windows-titlebar-overlay-height:\s*30px;/u);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-system-bar\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?height:\s*var\(--windows-titlebar-overlay-height\);/u);
+  assert.match(globalStyles, /\.app-shell\.is-windows-platform \.app-sidebar-shell\s*\{[\s\S]*?height:\s*calc\(100% - var\(--windows-titlebar-content-inset\)\);[\s\S]*?margin-top:\s*var\(--windows-titlebar-content-inset\);/u);
 });
 
 test("main process keeps app identity visible in platform program bars", () => {
@@ -6184,7 +6342,8 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
   assert.match(mainProcess, /options\.app\.setName\(options\.productName\);/);
-  assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, options\.appId\);/);
+  assert.match(mainProcess, /resolveEffectiveAppId\([\s\S]*?options\.appId,[\s\S]*?isDesktopDevelopmentRuntime\(options\.app, \{ platform: options\.platform \}\)[\s\S]*?\);/);
+  assert.match(mainProcess, /applyPlatformAppInit\(options\.platform, options\.app, effectiveAppId\);/);
   assert.match(
     platformAdapter,
     /if \(platform === "win32"\)\s*\{[\s\S]*?app\.setAppUserModelId\(appId\);[\s\S]*?\}/
@@ -6326,7 +6485,7 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
   assert.match(externalWebviewStyles, /\.external-webview-copilot-button\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?right:\s*14px;/);
   assert.match(externalWebviewStyles, /\.external-webview-page\.has-copilot-launcher \.external-webview-tabbar\s*\{[\s\S]*?padding-right:\s*44px;/);
   assert.match(externalWebviewStyles, /\.app-shell\.is-mac-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*12px;/);
-  assert.match(externalWebviewStyles, /\.app-shell\.is-windows-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*calc\(var\(--windows-titlebar-overlay-height\) \+ 10px\);/);
+  assert.match(externalWebviewStyles, /\.app-shell\.is-windows-platform \.external-webview-copilot-button\s*\{[\s\S]*?top:\s*10px;/);
   assert.doesNotMatch(appShell, /external-webview-debug-sidebar/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
@@ -6569,7 +6728,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(globalStyles, /\.service-webview-error\s*\{/);
 });
 
-test("Windows service webview modal overlays mask native caption controls", () => {
+test("Windows service webview modal overlays mask renderer-owned window controls", () => {
   const serviceWebviewPreload = readSourceFile("src", "preload", "service-webview.ts");
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
@@ -6591,7 +6750,8 @@ test("Windows service webview modal overlays mask native caption controls", () =
   assert.match(desktopPreload, /setWebviewModalOverlayVisible:\s*\(sourceId: string, visible: boolean\)/);
   assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.setWebviewModalOverlayVisible"/);
   assert.match(shellHandlers, /ownerWindow !== mainWindow/);
-  assert.match(windowManager, /globalSearchOverlayVisible \|\| webviewModalOverlaySources\.size > 0/);
+  assert.match(windowManager, /return globalSearchOverlayVisible \|\| webviewModalOverlaySources\.size > 0/);
+  assert.match(windowManager, /windowControlsMasked:\s*isWindowControlsMasked\(\)/);
 });
 
 test("embedded cdp exposes service frontends as webview surfaces", () => {
@@ -6890,14 +7050,24 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
   const mainProcess = readMainProcessRuntimeSource();
   const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
-  const helper = trayController.match(/export function getAppTrayIconCandidatePaths[\s\S]*?\n\}\n\nexport class/u)?.[0] ?? "";
-  const packagedBranch = helper.match(/^  if \(options\.isPackaged\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
-  const packagedDarwinBranch = packagedBranch.match(/if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu)?.[0] ?? "";
+  const helper = trayController.match(
+    /export function getAppTrayIconCandidatePaths[\s\S]*?\r?\n\}\r?\n\r?\nexport class/u
+  )?.[0] ?? "";
+  const packagedBranch = helper.match(
+    /^  if \(options\.isPackaged\) \{[\s\S]*?(?=^  if \(options\.platform === "darwin"\))/mu
+  )?.[0] ?? "";
+  const packagedDarwinBranch = helper.match(
+    /^    if \(options\.platform === "darwin"\) \{[\s\S]*?^    \}/mu
+  )?.[0] ?? "";
   const macDevBranch = helper.match(/^  if \(options\.platform === "darwin"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const windowsDevBranch = helper.match(/^  if \(options\.platform === "win32"\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
   const createIconMethod = trayController.match(/private createIcon\(\) \{[\s\S]*?^  \}/mu)?.[0] ?? "";
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
+  assert.match(mainProcess, /iconPath:\s*windowsDevelopmentAppIconPath/u);
+  assert.match(mainProcess, /effectiveAppId:\s*systemIdentityRuntime\.effectiveAppId/u);
+  assert.match(mainProcess, /applyWindowsDevelopmentAppDetails\(targetWindow,\s*\{[\s\S]{0,240}?appId:\s*options\.effectiveAppId,[\s\S]{0,160}?iconPath:\s*windowsDevelopmentAppIconPath/u);
+  assert.match(mainProcess, /getWindowsDevelopmentAppIconPath\(\{[\s\S]{0,260}?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
   assert.match(trayController, /function platformFallbackIconPath/);
   assert.match(trayController, /APP_ICON_ASSET_DIRECTORIES\.brandAssets/);
@@ -6943,9 +7113,9 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
   assert.doesNotMatch(windowsDevBranch, /setTemplateImage/);
 
   assert(
-    indexOfRequired(windowsDevBranch, "fallbackIconPath") <
-      indexOfRequired(windowsDevBranch, "generatedTrayIconPath"),
-    "Windows dev tray lookup should prefer the active build ico before generated tray fallback"
+    indexOfRequired(windowsDevBranch, "generatedTrayIconPath") <
+      indexOfRequired(windowsDevBranch, "fallbackIconPath"),
+    "Windows dev tray lookup should prefer transparent generated tray art before the app ico fallback"
   );
   assert.doesNotMatch(windowsDevBranch, /rendererTrayIconPath/);
 });
@@ -8154,6 +8324,7 @@ test("usage settings condense signed-out account context without changing API-ke
 });
 
 test("embedded browser accepts host-opened tabs after multiple tabs exist", () => {
+  const workPanelHost = readSourceFile("src", "renderer", "work-panel", "WorkPanelHost.tsx");
   const externalWebviewPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx"),
     "utf8"
@@ -8189,6 +8360,10 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(embeddedSurfaceHosts, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/);
   assert.match(embeddedSurfaceHosts, /function resolveWebsiteSsoPartition\(item: EmbeddedSidebarItem\)[\s\S]{0,140}item\.kind === "website" \? DESKTOP_SSO_WEBVIEW_PARTITION : undefined/);
   assert.match(embeddedSurfaceHosts, /partition=\{resolveWebsiteSsoPartition\(item\)\}/);
+  assert.match(workPanelHost, /from "\.\.\/\.\.\/shared\/sso"/u);
+  assert.match(workPanelHost, /partition=\{item\.descriptor\.kind === "local-file"[\s\S]{0,180}DESKTOP_SSO_WEBVIEW_PARTITION\}/u);
+  assert.match(workPanelHost, /refreshOnDesktopSso=\{item\.descriptor\.kind === "web"/u);
+  assert.doesNotMatch(workPanelHost, /itemPartition|resolveWorkPanelWebSessionKey|previousWebPartitionsRef/u);
   assert.match(copilotContracts, /partition\?: string;/);
   assert.match(copilotContracts, /userAgent\?: string;/);
   assert.match(externalWebviewPage, /partition\?: string;/);
@@ -8236,7 +8411,7 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /afterTabId: sourceTab\.id,[\s\S]{0,120}partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
 });
 
-test("embedded browser address entry remains editable while preserving edits", () => {
+test("embedded browser address stays directly editable while WorkPanel Edit toggles page review", () => {
   const externalWebviewPage = readSourceFile(
     "src",
     "renderer",
@@ -8251,12 +8426,18 @@ test("embedded browser address entry remains editable while preserving edits", (
   assert.match(externalWebviewPage, /const \[addressInputUnlocked, setAddressInputUnlocked\] = useState\(false\)/u);
   assert.match(externalWebviewPage, /useEffect\(\(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(false\);[\s\S]{0,80}\}, \[activeTab\?\.id\]\);/u);
   assert.match(externalWebviewPage, /if \(addressInputUnlocked\) \{[\s\S]{0,80}return;[\s\S]{0,80}\}[\s\S]{0,120}setAddressInputValue\(getEditableAddressInputValue\(activeTab\?\.currentUrl \?\? url\)\);/u);
-  assert.match(externalWebviewPage, /const handleAddressInputFocus = \(event: ReactFocusEvent<HTMLInputElement>\) => \{[\s\S]{0,160}setAddressInputUnlocked\(true\);[\s\S]{0,80}event\.currentTarget\.select\(\);/u);
+  assert.match(externalWebviewPage, /const handleAddressInputFocus = \(event: ReactFocusEvent<HTMLInputElement>\) => \{[\s\S]{0,120}setAddressInputUnlocked\(true\);[\s\S]{0,80}event\.currentTarget\.select\(\);/u);
+  assert.doesNotMatch(externalWebviewPage, /handleEditAddress/u);
   assert.match(externalWebviewPage, /onChange=\{\(event\) => \{[\s\S]{0,80}setAddressInputValue\(event\.target\.value\);[\s\S]{0,40}\}\}/u);
   assert.match(externalWebviewPage, /if \(event\.key !== "Enter"\) \{/u);
   assert.match(externalWebviewPage, /onFocus=\{handleAddressInputFocus\}/u);
   assert.match(externalWebviewPage, /onBlur=\{\(\) => \{[\s\S]{0,80}setAddressInputUnlocked\(false\);[\s\S]{0,160}setAddressInputValue\(getEditableAddressInputValue\(activeTab\?\.currentUrl \?\? url\)\);/u);
   assert.doesNotMatch(externalWebviewPage, /readOnly=\{!addressInputUnlocked\}/u);
+  assert.doesNotMatch(externalWebviewPage, /readOnly=\{workPanelBrowser/u);
+  assert.match(externalWebviewPage, /onTogglePageReview\?: \(page: \{ url: string; title: string \}\) => void;/u);
+  assert.match(externalWebviewPage, /onClick=\{\(\) => onTogglePageReview\(\{/u);
+  assert.match(externalWebviewPage, /aria-pressed=\{pageReviewActive\}/u);
+  assert.match(externalWebviewPage, /externalWebview\.finishPageReview/u);
   assert.doesNotMatch(externalWebviewPage, /if \(!addressInputUnlocked\) \{[\s\S]{0,80}return;/u);
   assert.doesNotMatch(externalWebviewPage, /if \(!addressInputUnlocked \|\| event\.key !== "Enter"\) \{/u);
   assert.doesNotMatch(externalWebviewPage, /event\.detail < 3/u);
@@ -8380,10 +8561,7 @@ test("help page uses the configured anonymous Help webview", () => {
   assert.match(helpPage, /createElement\("webview"/);
   assert.doesNotMatch(helpPage, /MarkdownContent|getHelpContent/);
   assert.match(appShell, /<HelpPage hostTheme=\{resolvedTheme\} \/>/);
-  assert.match(
-    helpPageCss,
-    /\.app-shell\.is-windows-platform \.help-webview-page\s*\{[\s\S]*?padding-top:\s*var\(--windows-titlebar-overlay-height\);/u
-  );
+  assert.doesNotMatch(helpPageCss, /\.app-shell\.is-windows-platform \.help-webview-page/u);
   assert.match(preload, /getSettings:\s*\(\) => ipcRenderer\.invoke\("help\.getSettings"\)/);
   assert.match(desktopApi, /help:\s*\{[\s\S]*?getSettings:\s*\(\) => Promise<DesktopHelpSettings>/u);
   assert.match(helpHandlers, /ipcMain\.handle\("help\.getSettings"/);

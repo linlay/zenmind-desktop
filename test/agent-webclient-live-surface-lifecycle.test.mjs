@@ -11,7 +11,6 @@ test("Desktop live Chat and trusted WorkPanel child surfaces publish active life
   const surface = read("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   for (const surfaceIdConstant of [
     "MAIN_CHAT_SURFACE_ID",
-    "COPILOT_CHAT_SURFACE_ID",
     "COPILOT_DOCK_SURFACE_ID",
     "KANBAN_CHAT_SURFACE_ID",
   ]) {
@@ -23,11 +22,11 @@ test("Desktop live Chat and trusted WorkPanel child surfaces publish active life
   assert.match(surface, /isAgentWebclientLifecycleSurface\(serviceId, surfaceId, surfaceIdentity\)/u);
   assert.match(
     surface,
-    /if \(!ownsActiveSurface\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(false\)[\s\S]*?registerSurface\(registration\)/,
+    /if \(!registrationActive\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(false\)[\s\S]*?registerSurface\(registration\)/,
   );
   assert.match(
     surface,
-    /registerSurface\(registration\)\.then\(\(result\) => \{[\s\S]*?if \(result\.ok\) \{[\s\S]*?if \(ownsActiveSurface\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(true\)/,
+    /registerSurface\(registration\)\.then\(\(result\) => \{[\s\S]*?if \(result\.ok\) \{[\s\S]*?if \(registrationActive\) \{[\s\S]*?sendLiveSurfaceLifecycleToWebview\(true\)/,
   );
   assert.match(surface, /return \(\) => sendLiveSurfaceLifecycleToWebview\(false\)/);
 });

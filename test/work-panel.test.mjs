@@ -7,9 +7,13 @@ const {
   EMPTY_WORK_PANEL_STATE,
   normalizeWorkPanelWebUrl,
   reduceWorkPanelCommand,
-  resolveWorkPanelWebSessionKey,
 } = require("../dist-electron/shared/work-panel.js");
 const { WORK_PANEL_NATIVE_SURFACE_ALLOWLIST } = require("../dist-electron/shared/work-panel-native-registry.js");
+const {
+  buildWorkPanelReviewComposerDraft,
+  normalizeWorkPanelNormalizedRect,
+  workPanelPixelRectFromNormalized,
+} = require("../dist-electron/shared/work-panel-review.js");
 
 function open(state, ownerChatId, descriptor) {
   return reduceWorkPanelCommand(state, { type: "openItem", ownerChatId, descriptor });
@@ -71,6 +75,284 @@ test("WorkPanel hides without destroying state, restores the active item, and is
   assert.equal(shown.state.activeItemId, second.item.itemId);
 });
 
+test("WorkPanel keeps review drafts in runtime state, enforces one active tab, and renumbers regions", () => {
+  const first = open(EMPTY_WORK_PANEL_STATE, "chat-review", {
+    kind: "local-file",
+    handleId: "opaque-image-1",
+    fileName: "image.png",
+    previewKind: "image",
+    reviewKind: "image",
+    workspaceRelativePath: "design/image.png",
+    reviewRevision: "1200:100",
+  });
+  const second = open(first.nextState, "chat-review", {
+    kind: "local-file",
+    handleId: "opaque-image-2",
+    fileName: "other.png",
+    previewKind: "image",
+    reviewKind: "image",
+    workspaceRelativePath: "design/other.png",
+    reviewRevision: "900:200",
+  });
+  const started = reduceWorkPanelCommand(second.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    kind: "image",
+    source: {
+      sourceKind: "workspace-file",
+      fileName: "image.png",
+      relativePath: "design/image.png",
+      revision: "1200:100",
+    },
+  });
+  assert.equal(started.ok, true);
+  assert.equal(started.nextState.review.activeItemIdsByOwnerChatId["chat-review"], first.item.itemId);
+
+  const add = (state, id, x) => reduceWorkPanelCommand(state, {
+    type: "addImageReviewAnnotation",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    annotation: {
+      id,
+      rect: { x, y: 20, width: 30, height: 40 },
+      normalizedRect: { x: x / 1000, y: 0.02, width: 0.03, height: 0.04 },
+    },
+  });
+  const region1 = add(started.nextState, "region-1", 10);
+  const region2 = add(region1.nextState, "region-2", 50);
+  const described = reduceWorkPanelCommand(region2.nextState, {
+    type: "updateReviewAnnotation",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    annotationId: "region-2",
+    requirement: "删除这个图标",
+  });
+  const removed = reduceWorkPanelCommand(described.nextState, {
+    type: "removeReviewAnnotation",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    annotationId: "region-1",
+  });
+  const firstSession = Object.values(removed.nextState.review.sessionsByKey)[0];
+  assert.equal(firstSession.annotations.length, 1);
+  assert.equal(firstSession.annotations[0].number, 1);
+  assert.equal(firstSession.annotations[0].requirement, "删除这个图标");
+
+  const switched = reduceWorkPanelCommand(removed.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-review",
+    itemId: second.item.itemId,
+    kind: "image",
+    source: {
+      sourceKind: "workspace-file",
+      fileName: "other.png",
+      relativePath: "design/other.png",
+      revision: "900:200",
+    },
+  });
+  assert.equal(switched.nextState.review.activeItemIdsByOwnerChatId["chat-review"], second.item.itemId);
+  assert.equal(Object.keys(switched.nextState.review.sessionsByKey).length, 2);
+  const inactiveAdd = add(switched.nextState, "region-3", 90);
+  assert.equal(inactiveAdd.ok, false);
+  assert.equal(inactiveAdd.error.code, "capability_denied");
+
+  const refusedClose = reduceWorkPanelCommand(switched.nextState, {
+    type: "closeItem",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+  });
+  assert.equal(refusedClose.ok, false);
+  assert.equal(refusedClose.error.code, "capability_denied");
+  const forcedClose = reduceWorkPanelCommand(switched.nextState, {
+    type: "closeItem",
+    ownerChatId: "chat-review",
+    itemId: first.item.itemId,
+    force: true,
+  });
+  assert.equal(forcedClose.ok, true);
+  assert.equal(Object.keys(forcedClose.nextState.review.sessionsByKey).length, 1);
+});
+
+test("ordinary HTTP(S) WorkPanel pages support bounded top-level HTML element review", () => {
+  const opened = open(EMPTY_WORK_PANEL_STATE, "chat-web-review", {
+    kind: "web",
+    url: "https://example.test/page",
+    title: "Example page",
+  });
+  const started = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    kind: "html",
+    source: {
+      sourceKind: "web",
+      fileName: "Example page",
+      revision: "https://example.test/page?section=hero&access_token=secret#intro",
+      url: "https://example.test/page?section=hero&access_token=secret#intro",
+    },
+  });
+  assert.equal(started.ok, true);
+
+  const annotated = reduceWorkPanelCommand(started.nextState, {
+    type: "addHtmlReviewAnnotation",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    annotation: {
+      id: "web-element-1",
+      fullXPath: "/html/body/main/button",
+      cssSelector: "main > button",
+      tagName: "button",
+      attributes: { class: "primary", "data-token": "must-not-leak" },
+      textExcerpt: "Submit",
+      rect: { x: 40, y: 80, width: 120, height: 36 },
+    },
+  });
+  const described = reduceWorkPanelCommand(annotated.nextState, {
+    type: "updateReviewAnnotation",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    annotationId: "web-element-1",
+    requirement: "Make this primary action more prominent.",
+  });
+  const session = Object.values(described.nextState.review.sessionsByKey)[0];
+  assert.equal(session.annotations[0].attributes.class, "primary");
+  assert.equal(session.annotations[0].attributes["data-token"], undefined);
+  assert.equal(
+    session.source.url,
+    "https://example.test/page?section=hero&access_token=%5Bredacted%5D#intro",
+  );
+  assert.equal(session.source.revision, session.source.url);
+  assert.doesNotMatch(buildWorkPanelReviewComposerDraft(session), /secret/u);
+  assert.match(buildWorkPanelReviewComposerDraft(session), /^请根据以下元素批注修改 https:\/\/example\.test\/page\?section=hero&access_token=%5Bredacted%5D#intro。/u);
+  assert.match(buildWorkPanelReviewComposerDraft(session), /无法定位源码时先说明限制，不要猜测修改。/u);
+
+  const imageReview = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    kind: "image",
+    source: {
+      sourceKind: "web",
+      fileName: "Example page",
+      revision: "https://example.test/page",
+      url: "https://example.test/page",
+    },
+  });
+  assert.equal(imageReview.ok, false);
+  assert.equal(imageReview.error.code, "capability_denied");
+
+  const credentialedReview = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-web-review",
+    itemId: opened.item.itemId,
+    kind: "html",
+    source: {
+      sourceKind: "web",
+      fileName: "Unsafe page",
+      revision: "https://user:secret@example.test/page",
+      url: "https://user:secret@example.test/page",
+    },
+  });
+  assert.equal(credentialedReview.ok, false);
+  assert.equal(credentialedReview.error.code, "capability_denied");
+});
+
+test("WorkPanel review coordinates remain source-pixel based across preview scaling", () => {
+  const normalized = normalizeWorkPanelNormalizedRect({
+    x: 120 / 1440,
+    y: 80 / 900,
+    width: 340 / 1440,
+    height: 96 / 900,
+  });
+  assert.ok(normalized);
+  assert.deepEqual(workPanelPixelRectFromNormalized(normalized, 1440, 900), {
+    x: 120,
+    y: 80,
+    width: 340,
+    height: 96,
+  });
+  assert.equal(normalizeWorkPanelNormalizedRect({
+    x: 0.9,
+    y: 0,
+    width: 0.2,
+    height: 0.2,
+  }), null);
+});
+
+test("WorkPanel review Composer drafts keep the fixed numbered coordinate and XPath protocol", () => {
+  const imageDraft = buildWorkPanelReviewComposerDraft({
+    version: 1,
+    ownerChatId: "chat-review",
+    itemId: "image-item",
+    kind: "image",
+    source: {
+      sourceKind: "workspace-file",
+      fileName: "image.png",
+      relativePath: "design/image.png",
+      revision: "1:1",
+    },
+    annotations: [{
+      id: "region-1",
+      number: 1,
+      kind: "image-region",
+      rect: { x: 120, y: 80, width: 340, height: 96 },
+      normalizedRect: { x: 120 / 1440, y: 80 / 900, width: 340 / 1440, height: 96 / 900 },
+      requirement: "将这里的主标题放大。",
+    }],
+    createdAt: 1,
+    updatedAt: 1,
+  }, { width: 1440, height: 900 });
+  assert.equal(imageDraft, [
+    "请根据以下标注修改 design/image.png。",
+    "",
+    "原图尺寸：1440 × 900",
+    "坐标格式：[x, y, width, height]，原点为图片左上角。",
+    "",
+    "标注区 1：坐标 [120, 80, 340, 96]",
+    "标注要求：将这里的主标题放大。",
+    "",
+    "只修改标注要求涉及的区域，其他内容保持不变。",
+    "原位修改 workspace 文件，完成后刷新当前 WorkPanel 标签页。",
+  ].join("\n"));
+
+  const htmlDraft = buildWorkPanelReviewComposerDraft({
+    version: 1,
+    ownerChatId: "chat-review",
+    itemId: "html-item",
+    kind: "html",
+    source: {
+      sourceKind: "artifact",
+      fileName: "index.html",
+      resourceId: "artifact-1",
+      revision: "v1",
+    },
+    annotations: [{
+      id: "element-1",
+      number: 1,
+      kind: "html-element",
+      fullXPath: "/html/body/header/button",
+      cssSelector: "header > button",
+      tagName: "button",
+      attributes: {},
+      textExcerpt: "保存",
+      rect: { x: 10, y: 10, width: 80, height: 32 },
+      requirement: "扩大按钮点击区域。",
+    }],
+    createdAt: 1,
+    updatedAt: 1,
+  });
+  assert.equal(htmlDraft, [
+    "请根据以下元素批注修改 index.html。",
+    "",
+    "标注元素 1：/html/body/header/button",
+    "标注要求：扩大按钮点击区域。",
+    "",
+    "只修改标注要求涉及的元素，其他内容保持不变。",
+    "保留原资源，生成一个新版本，并在 WorkPanel 中打开新版本。",
+  ].join("\n"));
+});
+
 test("opening or activating an item reveals its workspace and destructive close clears visibility", () => {
   const first = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "webclient", module: "overview", route: "/overview/chat", context: { agentKey: "agent-1", chatId: "chat" },
@@ -115,8 +397,10 @@ test("trusted Chat removal can destroy a workspace with pinned items without exp
   assert.deepEqual(removed.nextState.visibleOwnerChatIds, []);
 });
 
-test("WorkPanel rejects untrusted URL/path/identity fields and an empty native registry", () => {
-  assert.deepEqual(WORK_PANEL_NATIVE_SURFACE_ALLOWLIST, []);
+test("WorkPanel rejects untrusted fields and only accepts the registered host native image surface", () => {
+  assert.deepEqual(WORK_PANEL_NATIVE_SURFACE_ALLOWLIST, [
+    { surfaceKey: "resource-image", closableByDefault: true },
+  ]);
   for (const url of ["file:///tmp/secret", "javascript:alert(1)", "https://user:pass@example.test/"]) {
     assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", { kind: "web", url }).ok, false);
   }
@@ -158,9 +442,29 @@ test("WorkPanel rejects untrusted URL/path/identity fields and an empty native r
   });
   assert.equal(native.ok, false);
   assert.equal(native.error.code, "unsupported_native_surface");
+  const resourceImage = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "native",
+    surfaceKey: "resource-image",
+    context: {
+      handleId: "opaque-handle",
+      profile: "artifact",
+      agentKey: "agent",
+      chatId: "chat",
+      resourceId: "artifact-1",
+      relativePath: "artifacts/run/image.png",
+      fileName: "image.png",
+      mimeType: "image/png",
+      sizeBytes: 123,
+      revision: "123:456",
+      localOriginal: true,
+    },
+  });
+  assert.equal(resourceImage.ok, true);
+  assert.equal(resourceImage.item.descriptor.context.handleId, "opaque-handle");
+  assert.equal(resourceImage.item.stableKey, "resource-image:artifact:agent:chat:artifact-1");
 });
 
-test("trusted WorkPanel Blob popups inherit their source session without widening public URL inputs", () => {
+test("trusted WorkPanel Blob popups stay source-bound without widening public URL inputs", () => {
   const source = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "web",
     url: "https://example.test/attachments",
@@ -183,14 +487,7 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
   assert.equal(popup.ok, true);
   assert.equal(popup.item.descriptor.url, blobUrl);
   assert.equal(popup.item.title, "example.test");
-  assert.equal(
-    resolveWorkPanelWebSessionKey(popup.nextState, popup.workspaceId, popup.item.itemId),
-    source.item.itemId,
-  );
-  assert.equal(
-    popup.item.stableKey,
-    `blob:${source.item.itemId}:${blobUrl}`,
-  );
+  assert.equal(popup.item.stableKey, `blob:${blobUrl}`);
 
   const duplicate = reduceWorkPanelCommand(popup.nextState, {
     type: "openBlobPopup",
@@ -210,14 +507,6 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
     url: descendantUrl,
   });
   assert.equal(descendant.ok, true);
-  assert.equal(
-    resolveWorkPanelWebSessionKey(
-      descendant.nextState,
-      descendant.workspaceId,
-      descendant.item.itemId,
-    ),
-    source.item.itemId,
-  );
 
   const missingSource = reduceWorkPanelCommand(descendant.nextState, {
     type: "openBlobPopup",
@@ -234,10 +523,7 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
     itemId: source.item.itemId,
   });
   assert.equal(closeSource.ok, true);
-  assert.equal(
-    resolveWorkPanelWebSessionKey(closeSource.nextState, popup.workspaceId, popup.item.itemId),
-    source.item.itemId,
-  );
+  assert.equal(closeSource.state.items.some((item) => item.itemId === popup.item.itemId), true);
 
   const closePopup = reduceWorkPanelCommand(closeSource.nextState, {
     type: "closeItem",
@@ -250,10 +536,10 @@ test("trusted WorkPanel Blob popups inherit their source session without widenin
     itemId: descendant.item.itemId,
   });
   assert.equal(closeDescendant.ok, true);
-  assert.deepEqual(closeDescendant.nextState.webSessionKeysByItemId, {});
+  assert.equal(closeDescendant.nextState.workspaces.length, 0);
 });
 
-test("WorkPanel Blob session affinity remains isolated when item identities match across chats", () => {
+test("WorkPanel Blob item identity remains isolated by workspace while application cookies are shared", () => {
   const sourceA = open(EMPTY_WORK_PANEL_STATE, "chat-a", {
     kind: "web",
     url: "https://example.test/attachments",
@@ -277,7 +563,6 @@ test("WorkPanel Blob session affinity remains isolated when item identities matc
     url: blobUrl,
   });
   assert.equal(popupA.item.itemId, popupB.item.itemId);
-  assert.equal(Object.keys(popupB.nextState.webSessionKeysByItemId).length, 2);
 
   const closedA = reduceWorkPanelCommand(popupB.nextState, {
     type: "closeWorkspace",
@@ -285,15 +570,9 @@ test("WorkPanel Blob session affinity remains isolated when item identities matc
     force: true,
   });
   assert.equal(closedA.ok, true);
-  assert.equal(Object.keys(closedA.nextState.webSessionKeysByItemId).length, 1);
-  assert.equal(
-    resolveWorkPanelWebSessionKey(
-      closedA.nextState,
-      popupB.workspaceId,
-      popupB.item.itemId,
-    ),
-    sourceB.item.itemId,
-  );
+  assert.equal(closedA.nextState.workspaces.length, 1);
+  assert.equal(closedA.nextState.workspaces[0].ownerChatId, "chat-b");
+  assert.equal(closedA.nextState.workspaces[0].items.some((item) => item.itemId === popupB.item.itemId), true);
 });
 
 test("WorkPanel keeps Platform-resolvable File request paths and deduplicates normalized identities", () => {
@@ -474,4 +753,71 @@ test("WorkPanel closes other closable tabs while retaining pinned items and acti
   ]);
   assert.equal(result.state.activeItemId, artifact.item.itemId);
   assert.deepEqual(result.nextState.visibleOwnerChatIds, ["chat"]);
+});
+
+test("WorkPanel keeps host-created WebApps and local files resource-deduplicated", () => {
+  const webapp = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webapp-ref", webappId: "demo-app", title: "Demo App",
+  });
+  assert.equal(webapp.ok, true);
+  assert.equal(webapp.item.stableKey, "webapp:demo-app");
+  const duplicateWebapp = open(webapp.nextState, "chat", {
+    kind: "webapp-ref", webappId: "demo-app", title: "Renamed by caller",
+  });
+  assert.equal(duplicateWebapp.item.itemId, webapp.item.itemId);
+  assert.equal(duplicateWebapp.state.items.length, 1);
+
+  const localFile = open(duplicateWebapp.nextState, "chat", {
+    kind: "local-file",
+    handleId: "opaque-handle",
+    fileName: "report.pdf",
+    previewKind: "pdf",
+  });
+  assert.equal(localFile.ok, true);
+  assert.equal(localFile.item.stableKey, "local-file:opaque-handle");
+  assert.equal(localFile.item.title, "report.pdf");
+  const duplicateFile = open(localFile.nextState, "chat", {
+    kind: "local-file",
+    handleId: "opaque-handle",
+    fileName: "report.pdf",
+    previewKind: "pdf",
+  });
+  assert.equal(duplicateFile.item.itemId, localFile.item.itemId);
+  assert.equal(duplicateFile.state.items.length, 2);
+});
+
+test("WorkPanel creates independent BTW instances unless a canonical BTW id is known", () => {
+  const first = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", instanceId: "instance-a" },
+  });
+  const second = open(first.nextState, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", instanceId: "instance-b" },
+  });
+  assert.notEqual(first.item.itemId, second.item.itemId);
+  assert.equal(second.state.items.length, 2);
+
+  const canonical = open(second.nextState, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", btwId: "btw-1", instanceId: "ignored-a" },
+  });
+  const canonicalDuplicate = open(canonical.nextState, "chat", {
+    kind: "webclient",
+    module: "btw",
+    route: "/btw/chat",
+    context: { agentKey: "agent", chatId: "chat", btwId: "btw-1", instanceId: "ignored-b" },
+  });
+  assert.equal(canonical.item.itemId, canonicalDuplicate.item.itemId);
+});
+
+test("WorkPanel Web URL normalization adds HTTPS while still refusing credentials", () => {
+  assert.equal(normalizeWorkPanelWebUrl("example.test/path"), "https://example.test/path");
+  assert.equal(normalizeWorkPanelWebUrl("https://user:secret@example.test"), "");
 });

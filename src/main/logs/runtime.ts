@@ -1,6 +1,6 @@
 import type { App, BrowserWindow } from "electron";
 import type { ServiceOpenLogViewerRequest } from "../../shared/contracts";
-import { installDesktopConsoleLogTee } from "./desktop";
+import { flushDesktopLogs, installDesktopConsoleLogTee } from "./desktop";
 import { createLogStreamSubscriptionRegistry } from "./subscriptions";
 import { LogViewerWindowController } from "./viewer-window";
 
@@ -29,6 +29,9 @@ export function createLogsRuntime(options: LogsRuntimeOptions) {
   return {
     installConsoleTee() {
       installDesktopConsoleLogTee(options.app);
+    },
+    flush(timeoutMs = 500) {
+      return flushDesktopLogs(options.app, timeoutMs);
     },
     openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
       return logViewerWindowController.open(request);

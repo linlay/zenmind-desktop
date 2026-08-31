@@ -23,6 +23,8 @@ import {
   type WorkPanelBridgeResult,
   type WorkPanelItemTargetInput,
   type WorkPanelOpenItemInput,
+  type WorkPanelOpenResourceInput,
+  type WorkPanelOpenResourceResult,
   type CanonicalChatSyncRequest,
   type CanonicalChatSyncResult,
 } from "../../shared/contracts";
@@ -33,7 +35,6 @@ import {
   RealtimeBroker,
 } from "../realtime/realtime-broker";
 import {
-  COPILOT_CHAT_SURFACE_ID,
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
@@ -44,16 +45,15 @@ import {
 } from "../../shared/canonical-chat-sync";
 import { readAgentWebclientAgentRouteKey } from "../../shared/agent-webclient-routes";
 import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
+import { normalizeChatWorkPanelOpenLocalResourceRequest } from "../chat-work-panel-resource-open";
+import { isDesktopDevelopmentRuntime } from "../development-runtime";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
 const SURFACE_REGISTRATION_WAIT_MS = 1_500;
-const VISIBLE_RUN_BIND_WAIT_MS = 1_500;
-const VISIBLE_RUN_BIND_RETRY_MS = 25;
 
 const LIVE_CHAT_SURFACE_IDS = new Set([
   MAIN_CHAT_SURFACE_ID,
-  COPILOT_CHAT_SURFACE_ID,
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
 ]);
@@ -80,7 +80,6 @@ type StreamBinding = {
   suppressed: boolean;
   detachSent: boolean;
   virtual: boolean;
-  visibleRegistered: boolean;
   sourceId: string;
   unsubscribe: (() => void) | null;
   expectedOwner: AgentWebclientRunOwner | null;
@@ -96,7 +95,7 @@ type StreamBinding = {
   preboundChatId: string;
   canonicalChatReady: Promise<void> | null;
   runStarted: boolean;
-  protocolFailed: boolean;
+  observerToken: string | null;
 };
 
 type LogicalSession = {
@@ -117,6 +116,8 @@ type LogicalSession = {
   reconnectCount: number;
   retiring: boolean;
   closed: boolean;
+  rootObserverToken: string | null;
+  chatLoadRequests: Map<string, { chatId: string; startedAt: number }>;
 };
 
 type ClosedLogicalSessionDiagnostic = {
@@ -132,32 +133,19 @@ type ClosedLogicalSessionDiagnostic = {
   closeReason: DesktopPlatformSessionClose["reason"];
   pendingRequestCount: number;
   activeStreamCount: number;
+  streams: ReturnType<typeof streamBindingDiagnostic>[];
 };
 
-type VisibleRunBindReason =
-  | "primary_surface_transitioning"
-  | "primary_stream_not_ready"
-  | "primary_run_identity_pending"
-  | "primary_run_mismatch"
-  | "forwarded_source_transitioning";
-
-type VisibleRunBindSnapshot = {
-  stage: "visible_run_bind";
-  reason: VisibleRunBindReason;
-  visibleBindingPresent: boolean;
-  primarySessionCount: number;
-  activePrimarySessionCount: number;
-  matchingPrimarySessionCount: number;
-  matchingStreamCount: number;
-  pendingRunIdentityCount: number;
-  matchingRunStreamCount: number;
-  logicalGeneration?: number;
-  physicalGeneration?: number;
-};
-
-type PrimaryVisibleRunProbe =
-  | { state: "ready" }
-  | { state: "waiting"; snapshot: VisibleRunBindSnapshot };
+function streamBindingDiagnostic(binding: StreamBinding) {
+  return {
+    requestId: binding.localId,
+    type: binding.type,
+    runId: binding.runId,
+    chatId: binding.chatId,
+    lastSeq: binding.lastSeq,
+    virtual: binding.virtual,
+  };
+}
 
 function failure(code: AgentWebclientBridgeErrorCode, message: string): AgentWebclientBridgeFailure {
   return { ok: false, error: { code, message } };
@@ -165,10 +153,6 @@ function failure(code: AgentWebclientBridgeErrorCode, message: string): AgentWeb
 
 function readText(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
-}
-
-function isObserverDetachReason(reason: string) {
-  return reason.trim().toLowerCase() === "detached";
 }
 
 function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
@@ -181,6 +165,38 @@ function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
     value === "agent-management"
     ? value
     : null;
+}
+
+function rootObserverKind(target: RegisteredWebviewSurfaceTarget) {
+  if (target.surfaceId === MAIN_CHAT_SURFACE_ID && target.surfaceRole === "main-chat") return "main_chat" as const;
+  if (target.surfaceId === COPILOT_DOCK_SURFACE_ID && target.surfaceRole === "copilot-dock") return "copilot_dock" as const;
+  if (target.surfaceId === KANBAN_CHAT_SURFACE_ID && target.surfaceRole === "kanban-chat") return "kanban_chat" as const;
+  return null;
+}
+
+type RootObserverContextSource = Pick<
+  RegisteredWebviewSurfaceTarget,
+  "surfaceId" | "registrationId" | "surfaceRole" | "surfaceIdentityKey" | "ownerChatId"
+>;
+
+function rootObserverContextId(
+  target: RootObserverContextSource,
+  payloadChatId = "",
+) {
+  const chatId = target.ownerChatId?.trim() || payloadChatId.trim();
+  const fallback = `${target.surfaceId}:${target.registrationId}`;
+  if (target.surfaceRole !== "copilot-dock") return chatId || fallback;
+  return [target.surfaceIdentityKey?.trim() || fallback, chatId].filter(Boolean).join(":");
+}
+
+function createRootObserverToken(target: RegisteredWebviewSurfaceTarget, contextId: string) {
+  return [
+    target.surfaceId,
+    target.registrationId,
+    target.ownerWebContentsId,
+    target.webContentsId,
+    contextId,
+  ].join(":");
 }
 
 function sameOrigin(left: string, right: string) {
@@ -277,7 +293,7 @@ function bridgeErrorCode(error: unknown): AgentWebclientBridgeErrorCode {
     "bridge_unavailable", "version_mismatch", "invalid_request", "duplicate_id",
     "connection_unavailable", "connection_lost_before_acceptance", "capability_denied",
     "surface_unavailable", "target_unavailable",
-    "unsupported_in_current_view", "unsupported_native_surface", "seq_expired",
+    "unsupported_in_current_view", "unsupported_native_surface", "unsupported_native_type", "seq_expired",
     "replay_required", "protocol_error", "backpressure",
   ].includes(candidate) ? candidate as AgentWebclientBridgeErrorCode : "protocol_error";
 }
@@ -540,39 +556,26 @@ function mainChatQueryTargetIsTransitional(
   const target = context.target;
   if (
     target.surfaceId !== MAIN_CHAT_SURFACE_ID ||
-    target.surfaceType !== "agent-chat" ||
-    !target.active ||
-    target.ownerChatId?.trim()
+    target.surfaceType !== "agent-chat"
   ) {
     return false;
   }
-  try {
-    validateMainChatQueryAgentIdentity(context, payload);
-  } catch {
+  const owner = readOwner(payload);
+  if (!owner || owner.kind !== "agent") {
     return false;
   }
-  const pageNewChat = readAgentWebclientNewChatSource(target.pageRouteIdentity ?? "");
-  const pageCanonical = readAgentWebclientCanonicalChatSource(target.pageRouteIdentity ?? "");
-  const guestNewChat = readAgentWebclientNewChatSource(target.currentUrl);
-  const senderNewChat = readAgentWebclientNewChatSource(context.sender.getURL());
-  if (
-    pageNewChat &&
-    sameNewChatSource(pageNewChat, guestNewChat) &&
-    sameNewChatSource(pageNewChat, senderNewChat)
-  ) {
+  const senderUrl = context.sender.getURL();
+  if (readAgentWebclientAgentRouteKey(senderUrl) !== owner.agentKey) {
     return false;
   }
 
   const payloadChatId = readText(payload.chatId);
-  const guestCanonical = readAgentWebclientCanonicalChatSource(target.currentUrl);
-  const senderCanonical = readAgentWebclientCanonicalChatSource(context.sender.getURL());
-  for (const canonical of [guestCanonical, senderCanonical]) {
-    if (canonical && payloadChatId && canonical.chatId !== payloadChatId) return false;
+  const senderCanonical = readAgentWebclientCanonicalChatSource(senderUrl);
+  if (senderCanonical) {
+    return Boolean(payloadChatId && senderCanonical.chatId === payloadChatId);
   }
-  if (pageCanonical) {
-    return Boolean(payloadChatId && pageCanonical.chatId === payloadChatId);
-  }
-  return Boolean(pageNewChat);
+  const senderNewChat = readAgentWebclientNewChatSource(senderUrl);
+  return Boolean(senderNewChat && senderNewChat.agentKey === owner.agentKey);
 }
 
 export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
@@ -591,13 +594,34 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     ownerChatId: string;
     args: Record<string, unknown>;
   }): Promise<WorkPanelBridgeResult>;
+  openResource(input: {
+    ownerChatId: string;
+    resource: Omit<WorkPanelOpenResourceInput, "version">;
+  }): Promise<WorkPanelOpenResourceResult>;
 }) {
   const sessions = new Map<string, LogicalSession>();
   const senderSessionKeys = new Map<number, Set<string>>();
   const closedLogicalSessions: ClosedLogicalSessionDiagnostic[] = [];
   const installedCleanup = new Set<number>();
-  let activeLiveSessionKey: string | null = null;
   let nextLogicalGeneration = 0;
+  const developmentDiagnosticsEnabled = isDesktopDevelopmentRuntime(options.app);
+
+  const reportChatLoadDiagnostic = (
+    stage: "request" | "response",
+    session: LogicalSession,
+    details: Record<string, unknown>,
+  ) => {
+    if (!developmentDiagnosticsEnabled) return;
+    console.debug("[agent-webclient-chat-load]", {
+      stage,
+      sessionId: session.sessionId,
+      logicalGeneration: session.logicalGeneration,
+      physicalGeneration: session.physicalGeneration,
+      surfaceId: session.surfaceId,
+      webContentsId: session.sender.id,
+      ...details,
+    });
+  };
 
   const availability = async () => {
     const state = await options.getServiceState(options.app, AGENT_PLATFORM_SERVICE_ID);
@@ -631,10 +655,45 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   };
 
   const sendFrame = (session: LogicalSession, frame: PlatformFrameRecord) => {
+    const requestId = readText(frame.id);
+    const chatLoad = requestId ? session.chatLoadRequests.get(requestId) : null;
+    if (chatLoad) {
+      const data = isPlainBridgeRecord(frame.data) ? frame.data : {};
+      const nestedData = isPlainBridgeRecord(data.data) ? data.data : {};
+      const responseChatId = readText(data.chatId) || readText(nestedData.chatId);
+      reportChatLoadDiagnostic("response", session, {
+        requestId,
+        requestedChatId: chatLoad.chatId,
+        responseChatId,
+        frame: readText(frame.frame),
+        type: readText(frame.type),
+        code: typeof frame.code === "number" ? frame.code : undefined,
+        elapsedMs: Date.now() - chatLoad.startedAt,
+      });
+      if (readText(frame.frame) === "response" || readText(frame.frame) === "error") {
+        session.chatLoadRequests.delete(requestId);
+      }
+    }
     sendEvent(session, {
       sessionId: session.sessionId,
       type: "frame",
       frame: frame as Exclude<import("../../shared/contracts").AgentPlatformRealtimeFrame, AgentPlatformRequestFrame>,
+    });
+  };
+
+  const sendRunEvent = (
+    session: LogicalSession,
+    binding: StreamBinding,
+    runEvent: Record<string, unknown>,
+  ) => {
+    const seq = Number(runEvent.seq);
+    if (Number.isSafeInteger(seq) && seq >= 0) {
+      binding.lastSeq = Math.max(binding.lastSeq, seq);
+    }
+    sendFrame(session, {
+      frame: "stream",
+      id: binding.localId,
+      event: runEvent,
     });
   };
 
@@ -687,6 +746,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       closeReason: reason,
       pendingRequestCount: session.requestIds.size,
       activeStreamCount: session.streams.size,
+      streams: [...session.streams.values()].map(streamBindingDiagnostic),
     });
     if (closedLogicalSessions.length > 200) closedLogicalSessions.splice(0, closedLogicalSessions.length - 200);
     session.closed = true;
@@ -697,14 +757,16 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     for (const binding of session.streams.values()) {
       binding.unsubscribe?.();
       binding.unsubscribe = null;
-      if (binding.visibleRegistered) options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
     }
+    // Root Observer ownership follows the trusted Surface Registry lifecycle,
+    // not the shorter-lived FramePort session. Retiring a page port therefore
+    // releases only its stream consumers; the Main Chat bundle stays intact.
+    session.rootObserverToken = null;
     options.realtimeBroker.cleanupConsumer(session.consumerId);
     sessions.delete(session.key);
     const keys = senderSessionKeys.get(session.sender.id);
     keys?.delete(session.key);
     if (keys?.size === 0) senderSessionKeys.delete(session.sender.id);
-    if (activeLiveSessionKey === session.key) activeLiveSessionKey = null;
     if (!session.sender.isDestroyed()) {
       const event: AgentWebclientPlatformFramePortEvent = {
         sessionId: session.sessionId,
@@ -728,59 +790,108 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     }
   };
 
+  const releaseSessionRootObserver = (
+    session: LogicalSession,
+    observerToken: string,
+  ) => {
+    if (session.rootObserverToken !== observerToken) return;
+    session.rootObserverToken = null;
+    for (const binding of [...session.streams.values()]) {
+      if (binding.observerToken !== observerToken) continue;
+      binding.suppressed = true;
+      binding.detachSent = true;
+      binding.unsubscribe?.();
+      binding.unsubscribe = null;
+      session.requestIds.delete(binding.localId);
+      session.streams.delete(binding.localId);
+      sendFrame(session, {
+        frame: "stream",
+        id: binding.localId,
+        reason: "detached",
+        ...(binding.lastSeq > 0 ? { lastSeq: binding.lastSeq } : {}),
+      });
+    }
+  };
+
+  options.browserSurfaces.subscribeLifecycle?.((event) => {
+    if (
+      event.surface.surfaceId !== MAIN_CHAT_SURFACE_ID ||
+      event.surface.surfaceRole !== "main-chat"
+    ) return;
+
+    const active = options.realtimeBroker.getMainChatRootObserver();
+    const guestWebContentsId = event.surface.guestWebContentsIds[0];
+    const sameGeneration = Boolean(
+      active &&
+      event.surface.registrationId === active.generation &&
+      guestWebContentsId === active.webContentsId,
+    );
+
+    if (
+      event.type === "registered" &&
+      event.surface.active &&
+      Number.isSafeInteger(guestWebContentsId)
+    ) {
+      const registeredChatId = event.surface.ownerChatId.trim();
+      if (sameGeneration && active) {
+        if (registeredChatId && active.contextId !== registeredChatId) {
+          try {
+            options.realtimeBroker.promoteMainChatRootObserver(active.token, registeredChatId);
+            return;
+          } catch {
+            // A ready context changing under the same WebView generation is a
+            // real Chat switch and must replace the complete bundle below.
+          }
+        } else if (
+          registeredChatId === active.contextId ||
+          (!registeredChatId && active.contextId === `${event.surface.surfaceId}:${event.surface.registrationId}`)
+        ) {
+          return;
+        }
+      }
+
+      if (active) {
+        for (const session of [...sessions.values()]) {
+          if (session.rootObserverToken === active.token) {
+            releaseSessionRootObserver(session, active.token);
+          }
+        }
+      }
+      const contextId = rootObserverContextId(event.surface);
+      options.realtimeBroker.activateRootObserver({
+        token: [
+          event.surface.surfaceId,
+          event.surface.registrationId,
+          event.surface.ownerWebContentsId,
+          guestWebContentsId,
+          contextId,
+        ].join(":"),
+        kind: "main_chat",
+        surfaceId: event.surface.surfaceId,
+        generation: event.surface.registrationId,
+        contextId,
+        webContentsId: guestWebContentsId!,
+      });
+      return;
+    }
+
+    if (!active || !sameGeneration) return;
+    for (const session of [...sessions.values()]) {
+      if (session.rootObserverToken === active.token) {
+        releaseSessionRootObserver(session, active.token);
+      }
+    }
+    options.realtimeBroker.releaseRootObserver(active.token, "parent_observer_closed");
+  });
+
   const detachBinding = async (session: LogicalSession, binding: StreamBinding) => {
     if (binding.detachSent) return;
     binding.detachSent = true;
-    if (binding.virtual) {
-      binding.unsubscribe?.();
-      binding.unsubscribe = null;
-      return;
+    binding.unsubscribe?.();
+    binding.unsubscribe = null;
+    if (!binding.virtual && binding.observerToken && binding.runId) {
+      options.realtimeBroker.releaseObservedRun(binding.observerToken, binding.runId, "surface_inactive");
     }
-    if (binding.visibleRegistered) {
-      options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
-      binding.visibleRegistered = false;
-    }
-    if (!binding.runId || !binding.owner) return;
-    const { baseUrl, token } = await availability();
-    await options.realtimeBroker.forwardRequest({
-      baseUrl,
-      token,
-      localId: `surface-detach-${randomUUID()}`,
-      consumerId: `${session.consumerId}:lease-detach`,
-      type: "/api/detach",
-      payload: {
-        runId: binding.runId,
-        ...(binding.owner.kind === "agent"
-          ? { agentKey: binding.owner.agentKey }
-          : { teamId: binding.owner.teamId }),
-        reason: "surface_inactive",
-      },
-      onFrame: () => undefined,
-      onError: () => undefined,
-    });
-  };
-
-  const activateLiveSession = async (session: LogicalSession) => {
-    if (activeLiveSessionKey === session.key) {
-      await session.detachBarrier;
-      const pending = [...session.streams.values()]
-        .filter((binding) => binding.suppressed && !binding.detachSent && binding.runId && binding.owner)
-        .map((binding) => detachBinding(session, binding).catch(() => undefined));
-      await Promise.all(pending);
-      return;
-    }
-    const previous = activeLiveSessionKey ? sessions.get(activeLiveSessionKey) : null;
-    activeLiveSessionKey = session.key;
-    if (!previous) return;
-    await previous.detachBarrier;
-    const pending: Promise<void>[] = [];
-    for (const binding of previous.streams.values()) {
-      binding.suppressed = true;
-      if (binding.runId && binding.owner) {
-        pending.push(detachBinding(previous, binding).catch(() => undefined));
-      }
-    }
-    await Promise.all(pending);
   };
 
   const cleanupSender = (senderId: number) => {
@@ -824,31 +935,6 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
   const resolveSession = (sender: WebContents, sessionId: string) =>
     sessions.get(sessionKey(sender.id, sessionId)) ?? null;
 
-  const registerRejectedRunGrant = (
-    binding: StreamBinding,
-    event: Record<string, unknown>,
-    error: unknown,
-  ) => {
-    const runId = readText(event.runId);
-    const chatId = readText(event.chatId);
-    const owner = readOwner(event);
-    if (!runId || !chatId || !owner || binding.type !== "/api/query") return;
-    const rejected = Promise.reject(error);
-    void rejected.catch(() => undefined);
-    try {
-      options.realtimeBroker.registerForwardedRunActionGrant({
-        sourceId: binding.sourceId,
-        chatId,
-        runId,
-        owner,
-        ready: rejected,
-        replaceExisting: false,
-      });
-    } catch {
-      // Preserve the first canonical grant identity registered for this Run.
-    }
-  };
-
   const establishCanonicalChatIdentity = (binding: StreamBinding, chatIdValue: string) => {
     const chatId = chatIdValue.trim();
     if (!chatId) throw protocolError("canonical Chat identity is empty");
@@ -864,7 +950,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     }
     binding.canonicalChatId = chatId;
     binding.chatId = chatId;
-    if (!binding.newChatSource || binding.canonicalChatReady) return;
+    const promoteMainChatBundle = () => {
+      if (
+        binding.observerToken &&
+        options.realtimeBroker.getMainChatRootObserver()?.token === binding.observerToken
+      ) {
+        options.realtimeBroker.promoteMainChatRootObserver(binding.observerToken, chatId);
+      }
+    };
+    if (!binding.newChatSource || binding.canonicalChatReady) {
+      promoteMainChatBundle();
+      return;
+    }
     const request = {
       sourceId: binding.sourceId,
       surfaceId: MAIN_CHAT_SURFACE_ID,
@@ -906,6 +1003,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         traceCanonicalSync("failed", result.code);
         throw Object.assign(new Error(result.message), { name: result.code });
       }
+      promoteMainChatBundle();
       traceCanonicalSync("ready", "canonical_owner_registered");
     });
     void ready.catch(() => undefined);
@@ -989,8 +1087,8 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       return;
     }
     const ready = binding.canonicalChatReady ?? Promise.resolve();
-    options.realtimeBroker.registerForwardedRunActionGrant({
-      sourceId: binding.sourceId,
+    options.realtimeBroker.registerRunActionGrant({
+      sourceId: binding.observerToken || binding.sourceId,
       chatId,
       runId,
       owner,
@@ -1000,222 +1098,6 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     binding.runId = runId;
     binding.owner = owner;
     binding.runStarted = true;
-  };
-
-  const ensurePrimaryVisibleRun = (input: {
-    chatId: string;
-    runId: string;
-    owner: AgentWebclientRunOwner;
-  }): PrimaryVisibleRunProbe => {
-    const visible = options.realtimeBroker.getVisibleBinding();
-    if (visible?.chatId === input.chatId && visible.runId === input.runId) {
-      return { state: "ready" };
-    }
-
-    let primarySessionCount = 0;
-    let activePrimarySessionCount = 0;
-    let matchingPrimarySessionCount = 0;
-    let matchingStreamCount = 0;
-    let pendingRunIdentityCount = 0;
-    let matchingRunStreamCount = 0;
-    let forwardedSourceTransitioning = false;
-    let diagnosticSession: LogicalSession | null = null;
-    for (const primarySession of sessions.values()) {
-      if (primarySession.closed || primarySession.retiring) continue;
-      const target = options.browserSurfaces.resolveWebviewSurfaceTarget(primarySession.sender.id);
-      if (target?.surfaceId !== MAIN_CHAT_SURFACE_ID) continue;
-      primarySessionCount += 1;
-      diagnosticSession ??= primarySession;
-      if (target.active) activePrimarySessionCount += 1;
-      if (
-        target.ownerChatId?.trim() !== input.chatId ||
-        !target.active
-      ) {
-        continue;
-      }
-      matchingPrimarySessionCount += 1;
-      diagnosticSession = primarySession;
-      for (const candidate of primarySession.streams.values()) {
-        if (
-          candidate.virtual ||
-          candidate.suppressed ||
-          candidate.detachSent ||
-          (candidate.type !== "/api/query" && candidate.type !== "/api/attach") ||
-          candidate.chatId !== input.chatId ||
-          !sameOwner(candidate.owner, input.owner)
-        ) {
-          continue;
-        }
-        matchingStreamCount += 1;
-        if (!candidate.runId) {
-          pendingRunIdentityCount += 1;
-          continue;
-        }
-        if (candidate.runId !== input.runId) continue;
-        matchingRunStreamCount += 1;
-        try {
-          options.realtimeBroker.beginForwardedVisibleRun({
-            sourceId: candidate.sourceId,
-            chatId: candidate.chatId,
-            runId: candidate.runId,
-            owner: candidate.owner!,
-            lastSeq: candidate.lastSeq,
-            primarySurfaceId: `surface:${primarySession.sender.id}`,
-          });
-          candidate.visibleRegistered = true;
-          return { state: "ready" };
-        } catch (error) {
-          if (bridgeErrorCode(error) === "duplicate_id") {
-            forwardedSourceTransitioning = true;
-            continue;
-          }
-          const existingDetails = isPlainBridgeRecord(error) && isPlainBridgeRecord(error.details)
-            ? error.details
-            : {};
-          throw bridgeErrorWithMetadata(
-            bridgeErrorCode(error),
-            error instanceof Error ? error.message : String(error),
-            {
-              ...(isPlainBridgeRecord(error) && typeof error.retryable === "boolean"
-                ? { retryable: error.retryable }
-                : {}),
-              details: {
-                ...existingDetails,
-                stage: "visible_run_bind",
-                reason: "primary_registration_failed",
-                visibleBindingPresent: Boolean(visible),
-                primarySessionCount,
-                activePrimarySessionCount,
-                matchingPrimarySessionCount,
-                matchingStreamCount,
-                pendingRunIdentityCount,
-                matchingRunStreamCount,
-                logicalGeneration: primarySession.logicalGeneration,
-                physicalGeneration: primarySession.physicalGeneration,
-              },
-            },
-          );
-        }
-      }
-    }
-    const reason: VisibleRunBindReason = forwardedSourceTransitioning
-      ? "forwarded_source_transitioning"
-      : matchingStreamCount === 0
-        ? matchingPrimarySessionCount === 0
-          ? "primary_surface_transitioning"
-          : "primary_stream_not_ready"
-        : pendingRunIdentityCount > 0
-          ? "primary_run_identity_pending"
-          : "primary_run_mismatch";
-    return {
-      state: "waiting",
-      snapshot: {
-        stage: "visible_run_bind",
-        reason,
-        visibleBindingPresent: Boolean(visible),
-        primarySessionCount,
-        activePrimarySessionCount,
-        matchingPrimarySessionCount,
-        matchingStreamCount,
-        pendingRunIdentityCount,
-        matchingRunStreamCount,
-        ...(diagnosticSession
-          ? {
-              logicalGeneration: diagnosticSession.logicalGeneration,
-              physicalGeneration: diagnosticSession.physicalGeneration,
-            }
-          : {}),
-      },
-    };
-  };
-
-  const waitForPrimaryVisibleRun = async (input: {
-    session: LogicalSession;
-    binding: StreamBinding;
-    sender: WebContents;
-    surfaceId: string;
-    kind: "agent-overview" | "agent-debug";
-  }) => {
-    const startedAt = Date.now();
-    const deadline = startedAt + VISIBLE_RUN_BIND_WAIT_MS;
-    let attemptCount = 0;
-    let lastSnapshot: VisibleRunBindSnapshot | null = null;
-    while (true) {
-      const { session, binding } = input;
-      if (
-        session.closed ||
-        session.retiring ||
-        binding.suppressed ||
-        binding.detachSent ||
-        session.streams.get(binding.localId) !== binding
-      ) {
-        return false;
-      }
-      const currentContext = authorizeSurface(
-        input.sender,
-        options.browserSurfaces,
-        options.isTrustedAgentWebclientSession,
-      );
-      const expectedRole = input.kind === "agent-overview" ? "overview" : "debug";
-      if (
-        "ok" in currentContext ||
-        currentContext.kind !== input.kind ||
-        currentContext.target.surfaceId !== input.surfaceId ||
-        currentContext.target.surfaceRole !== expectedRole ||
-        currentContext.target.parentSurfaceId !== MAIN_CHAT_SURFACE_ID ||
-        currentContext.target.ownerChatId?.trim() !== binding.chatId ||
-        !currentContext.target.active
-      ) {
-        throw bridgeErrorWithMetadata(
-          "surface_unavailable",
-          "read-only Run surface changed while waiting for the Main Chat mirror",
-          {
-            retryable: false,
-            details: {
-              ...(lastSnapshot ?? {
-                stage: "visible_run_bind",
-                visibleBindingPresent: Boolean(options.realtimeBroker.getVisibleBinding()),
-                primarySessionCount: 0,
-                activePrimarySessionCount: 0,
-                matchingPrimarySessionCount: 0,
-                matchingStreamCount: 0,
-                pendingRunIdentityCount: 0,
-                matchingRunStreamCount: 0,
-              }),
-              reason: "virtual_surface_changed",
-              waitedMs: Date.now() - startedAt,
-              attemptCount,
-            },
-          },
-        );
-      }
-      attemptCount += 1;
-      const probe = ensurePrimaryVisibleRun({
-        chatId: binding.chatId,
-        runId: binding.runId,
-        owner: binding.owner!,
-      });
-      if (probe.state === "ready") return true;
-      lastSnapshot = probe.snapshot;
-      const remainingMs = deadline - Date.now();
-      if (remainingMs <= 0) {
-        throw bridgeErrorWithMetadata(
-          "target_unavailable",
-          `Main Chat visible Run mirror was not ready within ${VISIBLE_RUN_BIND_WAIT_MS}ms (${probe.snapshot.reason})`,
-          {
-            retryable: true,
-            details: {
-              ...probe.snapshot,
-              waitedMs: Date.now() - startedAt,
-              attemptCount,
-            },
-          },
-        );
-      }
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, Math.min(VISIBLE_RUN_BIND_RETRY_MS, remainingMs));
-      });
-    }
   };
 
   const resolveMainChatQueryAuthorization = async (input: {
@@ -1242,6 +1124,14 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     const initialTarget = input.context.target;
     const startedAt = Date.now();
     const trace = (state: "started" | "ready" | "failed", reason: string) => {
+      const observedTarget = options.browserSurfaces
+        .resolveWebviewSurfaceTarget(input.context.sender.id);
+      let senderRouteKind = "unavailable";
+      try {
+        senderRouteKind = describeMainChatRouteIdentity(input.context.sender.getURL());
+      } catch {
+        // A destroyed guest is reported as unavailable without changing failure handling.
+      }
       options.realtimeBroker.appendDebugTrace({
         layer: "surface-bridge",
         direction: "surface-to-desktop",
@@ -1251,12 +1141,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           reason,
           waitedMs: Date.now() - startedAt,
           generation: initialTarget.registrationId,
-          ownerPresent: Boolean(
-            options.browserSurfaces
-              .resolveWebviewSurfaceTarget(input.context.sender.id)
-              ?.ownerChatId?.trim(),
-          ),
+          observedGeneration: observedTarget?.registrationId || "",
+          sameGeneration: observedTarget?.registrationId === initialTarget.registrationId,
+          observedActive: observedTarget?.active === true,
+          ownerPresent: Boolean(observedTarget?.ownerChatId?.trim()),
           routeKind: describeMainChatRouteIdentity(initialTarget.pageRouteIdentity),
+          observedPageRouteKind: describeMainChatRouteIdentity(
+            observedTarget?.pageRouteIdentity,
+          ),
+          observedGuestRouteKind: describeMainChatRouteIdentity(
+            observedTarget?.currentUrl,
+          ),
+          senderRouteKind,
         },
         surfaceId: initialTarget.surfaceId,
         webContentsId: input.context.sender.id,
@@ -1392,6 +1288,8 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       reconnectCount: 0,
       retiring: false,
       closed: false,
+      rootObserverToken: null,
+      chatLoadRequests: new Map(),
     };
     sessions.set(key, session);
     const keys = senderSessionKeys.get(event.sender.id) ?? new Set<string>();
@@ -1467,6 +1365,18 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       sendFrame(session, frameError(frame.id, "surface_unavailable", context.error.message));
       return;
     }
+    if (frame.type === "/api/chat") {
+      const chatId = readText(isPlainBridgeRecord(frame.payload) ? frame.payload.chatId : "");
+      session.chatLoadRequests.set(frame.id, { chatId, startedAt: Date.now() });
+      reportChatLoadDiagnostic("request", session, {
+        requestId: frame.id,
+        requestedChatId: chatId,
+        registeredOwnerChatId: context.target.ownerChatId?.trim() || "",
+        registeredRoute: context.target.pageRouteIdentity || context.target.pageRoute,
+        guestUrl: event.sender.getURL(),
+        active: context.target.active,
+      });
+    }
     // Trusted one-shot Platform requests share the broker without acquiring the live Run lease.
     // Only query/attach/BTW streams require the additional active-surface authorization below.
     const isLive = LIVE_REQUEST_TYPES.has(frame.type);
@@ -1496,6 +1406,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       context.target.surfaceRole === (context.kind === "agent-overview" ? "overview" : "debug") &&
       context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
       Boolean(ownerChatId);
+    let observerToken: string | null = null;
     if (isLive) {
       const isLiveChat = LIVE_CHAT_SURFACE_IDS.has(context.target.surfaceId);
       const isBTW = context.kind === "agent-btw" &&
@@ -1511,7 +1422,62 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         sendFrame(session, frameError(frame.id, "surface_unavailable", "only the active Chat or BTW surface may open this live Run stream"));
         return;
       }
-      if (!isReadonlyVirtualAttach) await activateLiveSession(session);
+      const rootKind = rootObserverKind(context.target);
+      if (rootKind) {
+        const contextId = rootObserverContextId(context.target, readText(payload.chatId));
+        if (rootKind === "main_chat") {
+          const activeMain = options.realtimeBroker.getMainChatRootObserver();
+          const contextMatches = activeMain && (
+            activeMain.contextId === contextId ||
+            activeMain.contextId === `${context.target.surfaceId}:${context.target.registrationId}`
+          );
+          if (
+            !activeMain ||
+            activeMain.surfaceId !== context.target.surfaceId ||
+            activeMain.generation !== context.target.registrationId ||
+            activeMain.webContentsId !== event.sender.id ||
+            !contextMatches
+          ) {
+            sendFrame(session, frameError(
+              frame.id,
+              "target_unavailable",
+              "active Main Chat Broker bundle is unavailable",
+              { retryable: false, details: { reason: "surface_generation_superseded" } },
+            ));
+            return;
+          }
+          observerToken = activeMain.token;
+        } else {
+          observerToken = createRootObserverToken(context.target, contextId);
+          if (session.rootObserverToken && session.rootObserverToken !== observerToken) {
+            options.realtimeBroker.releaseRootObserver(session.rootObserverToken, "surface_generation_superseded");
+          }
+          options.realtimeBroker.activateRootObserver({
+            token: observerToken,
+            kind: rootKind,
+            surfaceId: context.target.surfaceId,
+            generation: context.target.registrationId,
+            contextId,
+            webContentsId: event.sender.id,
+          });
+        }
+        session.rootObserverToken = observerToken;
+      } else if (isBTW || isReadonlyVirtualAttach) {
+        const activeRoot = options.realtimeBroker.getMainChatRootObserver();
+        if (
+          !activeRoot || activeRoot.kind !== "main_chat" ||
+          activeRoot.contextId !== ownerChatId
+        ) {
+          sendFrame(session, frameError(
+            frame.id,
+            "target_unavailable",
+            "parent_observer_closed: active Main Chat observer is unavailable",
+            { retryable: false, details: { reason: "parent_observer_closed" } },
+          ));
+          return;
+        }
+        observerToken = activeRoot.token;
+      }
     }
     if (frame.type === "/api/detach" && (context.kind === "agent-overview" || context.kind === "agent-debug")) {
       const runId = readText(payload.runId);
@@ -1534,6 +1500,32 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       });
       return;
     }
+    if (frame.type === "/api/detach") {
+      const runId = readText(payload.runId);
+      const rootToken = session.rootObserverToken || (
+        context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID
+          ? options.realtimeBroker.getMainChatRootObserver()?.token || null
+          : null
+      );
+      if (rootToken && runId) {
+        options.realtimeBroker.releaseObservedRun(rootToken, runId, "surface_inactive");
+        for (const candidate of [...session.streams.values()]) {
+          if (candidate.runId !== runId) continue;
+          candidate.detachSent = true;
+          candidate.unsubscribe?.();
+          session.requestIds.delete(candidate.localId);
+          session.streams.delete(candidate.localId);
+        }
+        sendFrame(session, {
+          frame: "response",
+          id: frame.id,
+          type: frame.type,
+          code: 0,
+          data: { accepted: true, status: "detached", runId },
+        });
+        return;
+      }
+    }
     const explicitDetachBindings = frame.type === "/api/detach"
       ? [...session.streams.values()].filter((candidate) =>
           !candidate.detachSent &&
@@ -1550,10 +1542,6 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       for (const candidate of explicitDetachBindings) {
         candidate.suppressed = true;
         candidate.detachSent = true;
-        if (candidate.visibleRegistered) {
-          options.realtimeBroker.releaseForwardedVisibleRun(candidate.sourceId);
-          candidate.visibleRegistered = false;
-        }
       }
     }
     const finishExplicitDetachWrite = (written: boolean) => {
@@ -1590,7 +1578,6 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           suppressed: false,
           detachSent: false,
           virtual: isReadonlyVirtualAttach,
-          visibleRegistered: false,
           sourceId: `${session.key}:${frame.id}`,
           unsubscribe: null,
           expectedOwner: readOwner(payload),
@@ -1602,7 +1589,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             ? Promise.resolve()
             : null,
           runStarted: frame.type !== "/api/query",
-          protocolFailed: false,
+          observerToken,
         }
       : null;
     if (binding) session.streams.set(frame.id, binding);
@@ -1624,27 +1611,14 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         if (!binding.runId || !binding.chatId || !binding.owner) {
           throw Object.assign(new Error("visible Run identity is incomplete"), { name: "invalid_request" });
         }
-        const ready = await waitForPrimaryVisibleRun({
-          session,
-          binding,
-          sender: event.sender,
-          surfaceId: context.target.surfaceId,
-          kind: context.kind as "agent-overview" | "agent-debug",
-        });
-        if (!ready) return;
-        const subscription = options.realtimeBroker.subscribeVisibleRun({
+        const subscription = await options.realtimeBroker.subscribeClone({
+          kind: context.kind === "agent-overview" ? "overview" : "debug",
           runId: binding.runId,
           chatId: binding.chatId,
           lastSeq: binding.lastSeq,
           owner: binding.owner,
-          kind: "surface",
           consumerId: session.consumerId,
-          surfaceId: `surface:${event.sender.id}`,
-          onEvent: (runEvent) => sendFrame(session, {
-            frame: "stream",
-            id: binding.localId,
-            event: runEvent,
-          }),
+          onEvent: (runEvent) => sendRunEvent(session, binding, runEvent),
           onComplete: (completed) => {
             binding.unsubscribe?.();
             binding.unsubscribe = null;
@@ -1692,37 +1666,137 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       return;
     }
     if (
-      binding?.type === "/api/attach" &&
-      context.target.surfaceId === MAIN_CHAT_SURFACE_ID &&
+      binding?.type === "/api/attach" && observerToken &&
       binding.chatId && binding.runId && binding.owner
     ) {
       try {
-        await options.realtimeBroker.prepareForwardedVisibleRun({
+        if (context.target.surfaceId === MAIN_CHAT_SURFACE_ID) {
+          options.realtimeBroker.registerRunActionGrant({
+            sourceId: observerToken,
+            chatId: binding.chatId,
+            runId: binding.runId,
+            owner: binding.owner,
+            ready: Promise.resolve(),
+          });
+        }
+        const subscription = options.realtimeBroker.subscribeRun({
           baseUrl,
           token,
-          chatId: binding.chatId,
+          lane: context.kind === "agent-btw" ? "btw" : "primary",
           runId: binding.runId,
-          owner: binding.owner,
-        });
-        options.realtimeBroker.registerForwardedRunActionGrant({
-          sourceId: binding.sourceId,
           chatId: binding.chatId,
-          runId: binding.runId,
-          owner: binding.owner,
-          ready: Promise.resolve(),
-        });
-        options.realtimeBroker.beginForwardedVisibleRun({
-          sourceId: binding.sourceId,
-          chatId: binding.chatId,
-          runId: binding.runId,
-          owner: binding.owner,
           lastSeq: binding.lastSeq,
-          primarySurfaceId: `surface:${event.sender.id}`,
+          owner: binding.owner,
+          kind: "surface",
+          role: "root_observer",
+          observerToken,
+          consumerId: session.consumerId,
+          onEvent: (runEvent) => sendRunEvent(session, binding, runEvent),
+          onComplete: (completed) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            sendFrame(session, {
+              frame: "stream",
+              id: binding.localId,
+              reason: completed.reason,
+              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+            });
+            session.requestIds.delete(binding.localId);
+            session.streams.delete(binding.localId);
+          },
+          onError: (error) => {
+            binding.unsubscribe?.();
+            binding.unsubscribe = null;
+            sendFrame(session, frameError(
+              binding.localId,
+              bridgeErrorCode(error),
+              error.message,
+              frameErrorOptions(error),
+            ));
+            session.requestIds.delete(binding.localId);
+            session.streams.delete(binding.localId);
+          },
         });
-        binding.visibleRegistered = true;
-      } catch {
-        // Main Chat remains authoritative even when its read-only mirror cannot bind.
+        binding.unsubscribe = subscription.unsubscribe;
+        await subscription.ready;
+      } catch (error) {
+        session.requestIds.delete(binding.localId);
+        session.streams.delete(binding.localId);
+        sendFrame(session, frameError(
+          binding.localId,
+          bridgeErrorCode(error),
+          error instanceof Error ? error.message : String(error),
+          frameErrorOptions(error),
+        ));
       }
+      return;
+    }
+    if (binding && (binding.type === "/api/query" || binding.type === "/api/btw")) {
+      try {
+        const handle = options.realtimeBroker.query({
+          baseUrl,
+          token,
+          lane: binding.type === "/api/btw" ? "btw" : "primary",
+          requestType: binding.type,
+          id: frame.id,
+          payload,
+          runId: binding.runId || undefined,
+          chatId: binding.chatId || undefined,
+          owner: binding.expectedOwner || undefined,
+          observerToken: observerToken || undefined,
+          consumerId: session.consumerId,
+          onEvent: async (runEvent) => {
+            const upstreamFrame: PlatformFrameRecord = {
+              frame: "stream",
+              id: binding.localId,
+              event: runEvent,
+            };
+            processQueryBootstrapFrame(binding, upstreamFrame);
+            updateBindingFromFrame(binding, upstreamFrame);
+            if (binding.canonicalChatReady) await binding.canonicalChatReady;
+            if (!binding.suppressed) sendFrame(session, upstreamFrame);
+          },
+        });
+        void handle.accepted.then((accepted) => {
+          binding.chatId = accepted.chatId;
+          binding.runId = accepted.runId;
+          binding.owner = accepted.owner;
+          binding.runStarted = true;
+        }).catch(() => undefined);
+        void handle.completed.then((completed) => {
+          if (!binding.suppressed || completed.reason !== "detached") {
+            sendFrame(session, {
+              frame: "stream",
+              id: binding.localId,
+              reason: completed.reason,
+              ...(completed.lastSeq === undefined ? {} : { lastSeq: completed.lastSeq }),
+            });
+          }
+          session.requestIds.delete(binding.localId);
+          session.streams.delete(binding.localId);
+          finishRetiringSession(session);
+        }).catch((error) => {
+          session.requestIds.delete(binding.localId);
+          session.streams.delete(binding.localId);
+          sendFrame(session, frameError(
+            binding.localId,
+            bridgeErrorCode(error),
+            error instanceof Error ? error.message : String(error),
+            frameErrorOptions(error),
+          ));
+          finishRetiringSession(session);
+        });
+      } catch (error) {
+        session.requestIds.delete(binding.localId);
+        session.streams.delete(binding.localId);
+        sendFrame(session, frameError(
+          binding.localId,
+          bridgeErrorCode(error),
+          error instanceof Error ? error.message : String(error),
+          frameErrorOptions(error),
+        ));
+      }
+      return;
     }
     try {
       await options.realtimeBroker.forwardRequest({
@@ -1732,116 +1806,14 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         consumerId: session.consumerId,
         type: frame.type,
         payload,
-        stream: isLive,
+        stream: false,
         onFrame: (upstreamFrame) => {
-          const frameKind = readText(upstreamFrame.frame);
-          const terminal = frameKind === "error" ||
-            frameKind === "response" ||
-            (frameKind === "stream" && Boolean(readText(upstreamFrame.reason)));
-          if (binding?.protocolFailed) {
-            if (terminal) {
-              session.requestIds.delete(frame.id);
-              session.streams.delete(frame.id);
-              finishRetiringSession(session);
-            }
-            return;
-          }
-          if (binding) {
-            const previousLastSeq = binding.lastSeq;
-            try {
-              processQueryBootstrapFrame(binding, upstreamFrame);
-              updateBindingFromFrame(binding, upstreamFrame);
-            } catch (error) {
-              const normalizedEvent = readNormalizedStreamEvent(upstreamFrame);
-              if (normalizedEvent) {
-                registerRejectedRunGrant(binding, normalizedEvent, error);
-              }
-              binding.protocolFailed = true;
-              binding.suppressed = true;
-              if (binding.visibleRegistered) {
-                options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
-                binding.visibleRegistered = false;
-              }
-              session.requestIds.delete(frame.id);
-              session.streams.delete(frame.id);
-              sendFrame(session, frameError(
-                frame.id,
-                "protocol_error",
-                error instanceof Error ? error.message : String(error),
-              ));
-              finishRetiringSession(session);
-              return;
-            }
-            const shouldMirrorVisibleRun =
-              context.target.surfaceId === MAIN_CHAT_SURFACE_ID &&
-              (binding.type === "/api/query" || binding.type === "/api/attach") &&
-              (binding.type !== "/api/query" || binding.runStarted) &&
-              Boolean(binding.chatId && binding.runId && binding.owner);
-            if (shouldMirrorVisibleRun && !binding.visibleRegistered) {
-              try {
-                options.realtimeBroker.beginForwardedVisibleRun({
-                  sourceId: binding.sourceId,
-                  chatId: binding.chatId,
-                  runId: binding.runId,
-                  owner: binding.owner!,
-                  lastSeq: previousLastSeq,
-                  primarySurfaceId: `surface:${event.sender.id}`,
-                });
-                binding.visibleRegistered = true;
-              } catch {
-                // Main Chat remains authoritative even when its read-only mirror cannot bind.
-              }
-            }
-            const normalizedEvent = readNormalizedStreamEvent(upstreamFrame);
-            if (binding.visibleRegistered && normalizedEvent) {
-              try {
-                options.realtimeBroker.appendForwardedVisibleRunEvent({
-                  sourceId: binding.sourceId,
-                  runId: binding.runId,
-                  event: normalizedEvent,
-                });
-              } catch {
-                options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
-                binding.visibleRegistered = false;
-              }
-            }
-            if (binding.suppressed && !binding.detachSent && binding.runId && binding.owner) {
-              void detachBinding(session, binding).catch(() => undefined).finally(() => {
-                if (!session.retiring) return;
-                session.requestIds.delete(binding.localId);
-                session.streams.delete(binding.localId);
-                finishRetiringSession(session);
-              });
-            }
-          }
-          if (binding?.visibleRegistered && terminal) {
-            const streamReason = readText(upstreamFrame.reason);
-            if (frameKind === "stream" && streamReason && !isObserverDetachReason(streamReason)) {
-              options.realtimeBroker.completeForwardedVisibleRun({
-                sourceId: binding.sourceId,
-                runId: binding.runId,
-                reason: streamReason,
-                ...(typeof upstreamFrame.lastSeq === "number" ? { lastSeq: upstreamFrame.lastSeq } : {}),
-              });
-            } else {
-              options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
-            }
-            binding.visibleRegistered = false;
-          }
-          if (!binding?.suppressed || terminal) sendFrame(session, upstreamFrame);
-          if (terminal) {
-            session.requestIds.delete(frame.id);
-            session.streams.delete(frame.id);
-            finishRetiringSession(session);
-          }
+          sendFrame(session, upstreamFrame);
+          session.requestIds.delete(frame.id);
+          finishRetiringSession(session);
         },
         onError: (error) => {
-          if (binding?.visibleRegistered) {
-            options.realtimeBroker.releaseForwardedVisibleRun(binding.sourceId);
-            binding.visibleRegistered = false;
-          }
           session.requestIds.delete(frame.id);
-          session.streams.delete(frame.id);
           sendFrame(session, frameError(frame.id, "connection_unavailable", error.message));
           finishRetiringSession(session);
         },
@@ -1897,14 +1869,60 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       "workpanel.close" as const,
     ];
     if (method === "getCapabilities") return { ok: true, capabilities };
-    const capabilityAllowed = method === "openItem"
+    const capabilityAllowed = method === "openItem" || method === "openResource"
       ? capabilities.includes("workpanel.open")
       : method === "activateItem" || method === "closeItem";
     if (!capabilityAllowed) return failure("capability_denied", `${context.kind} cannot call ${method}`);
-    const input = record.input as WorkPanelOpenItemInput | WorkPanelItemTargetInput;
-    if (!isPlainBridgeRecord(input) || !isAgentWebclientBridgeVersion(input.version)) {
+    const input = record.input as WorkPanelOpenItemInput | WorkPanelOpenResourceInput | WorkPanelItemTargetInput;
+    const compatibleVersion = isPlainBridgeRecord(input) && (
+      isAgentWebclientBridgeVersion(input.version) ||
+      (input.version === 4 && method !== "openResource")
+    );
+    if (!compatibleVersion) {
       return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);
     }
+    if (method === "openResource") {
+      const resourceInput = input as WorkPanelOpenResourceInput;
+      const allowedKeys = new Set([
+        "version", "profile", "agentKey", "chatId", "resourceId", "relativePath", "title",
+      ]);
+      if (
+        Object.keys(resourceInput).some((key) => !allowedKeys.has(key)) ||
+        (resourceInput.profile !== "artifact" && resourceInput.profile !== "reference") ||
+        !readText(resourceInput.agentKey) ||
+        !readText(resourceInput.chatId) ||
+        !readText(resourceInput.resourceId) ||
+        !readText(resourceInput.relativePath) ||
+        (resourceInput.title !== undefined && !readText(resourceInput.title))
+      ) return failure("invalid_request", "Invalid native image resource request");
+      if (resourceInput.chatId.trim() !== ownerChatId) {
+        return failure("capability_denied", "Resource chat does not match the trusted owner Chat");
+      }
+      const normalizedResource = normalizeChatWorkPanelOpenLocalResourceRequest({
+        ownerChatId,
+        profile: resourceInput.profile,
+        relativePath: resourceInput.relativePath,
+      });
+      if (!normalizedResource) {
+        return failure("invalid_request", "Invalid native image resource path");
+      }
+      return options.openResource({
+        ownerChatId,
+        resource: {
+          profile: resourceInput.profile,
+          agentKey: resourceInput.agentKey.trim(),
+          chatId: resourceInput.chatId.trim(),
+          resourceId: resourceInput.resourceId.trim(),
+          relativePath: normalizedResource.relativePath,
+          ...(resourceInput.title ? { title: resourceInput.title.trim() } : {}),
+        },
+      });
+    }
+    if (
+      method === "openItem" &&
+      isPlainBridgeRecord((input as WorkPanelOpenItemInput).descriptor) &&
+      (input as WorkPanelOpenItemInput).descriptor.kind === "native"
+    ) return failure("capability_denied", "Native WorkPanel descriptors are host-only");
     const args = method === "openItem"
       ? { descriptor: (input as WorkPanelOpenItemInput).descriptor }
       : { itemId: (input as WorkPanelItemTargetInput).itemId };
@@ -1924,8 +1942,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       logicalSessionCount: sessions.size,
       pendingRequestCount: [...sessions.values()].reduce((sum, session) => sum + session.requestIds.size, 0),
       activeStreamCount: [...sessions.values()].reduce((sum, session) => sum + session.streams.size, 0),
-      activeLiveSurfaceCount: activeLiveSessionKey ? 1 : 0,
-      activeLiveSessionKey,
+      activeRootObserver: options.realtimeBroker.getActiveRootObserver(),
       logicalSessions: [
         ...closedLogicalSessions,
         ...[...sessions.values()].flatMap((session) => {
@@ -1941,6 +1958,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
             openedAt: session.openedAt,
             pendingRequestCount: session.requestIds.size,
             activeStreamCount: session.streams.size,
+            streams: [...session.streams.values()].map(streamBindingDiagnostic),
           }];
         }),
       ],

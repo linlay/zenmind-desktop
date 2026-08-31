@@ -35,6 +35,8 @@ import {
   createProjectAgentOrderPlan,
   validateProjectAgentOrderRequestKeys,
 } from "../assistant/core/project-agent-order";
+import { resolveAssistantChatStoragePaths } from "../assistant/core/chat-storage-path";
+import { revealPathInFileManager } from "../reveal-path";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -73,7 +75,7 @@ export interface AssistantIpcHandlerOptions {
   openDesktopActionWorkbenchWindow?: () => Promise<{ ok: boolean }> | { ok: boolean };
   closeDesktopActionWorkbenchWindow?: () => Promise<{ ok: boolean }> | { ok: boolean };
   consumeFirstInstallBootstrapNavigation?: () => { shouldOpen: boolean };
-  platform?: string;
+  platform?: NodeJS.Platform;
 }
 
 async function saveAssistantChatExport(
@@ -109,6 +111,47 @@ function readOptionalFiniteNumber(value: unknown) {
 
 function nowEpochMillis() {
   return requireEpochMillis(Date.now(), "desktop.assistantIpc.now");
+}
+
+export async function revealAssistantChatInFileManager(
+  chatId: string,
+  options: Pick<AssistantIpcHandlerOptions, "app" | "shell" | "platform">,
+) {
+  const platform = options.platform ?? process.platform;
+  const storagePaths = resolveAssistantChatStoragePaths(options.app, chatId, platform);
+  if (!storagePaths) {
+    return { ok: false, message: t("sidebar.chat.infoRevealInvalid") };
+  }
+  if (
+    typeof options.shell?.showItemInFolder !== "function" ||
+    typeof options.shell?.openPath !== "function"
+  ) {
+    return { ok: false, message: t("sidebar.chat.infoRevealUnavailable") };
+  }
+
+  const chatDirectoryExists = fs.existsSync(storagePaths.chatDirectoryPath);
+  const targetPath = chatDirectoryExists
+    ? storagePaths.chatDirectoryPath
+    : storagePaths.chatFilePath;
+
+  try {
+    const result = await revealPathInFileManager(
+      targetPath,
+      chatDirectoryExists
+        ? { targetType: "directory", directoryAction: "reveal" }
+        : { targetType: "file" },
+      {
+        platform,
+        showItemInFolder: (pathToReveal) => options.shell.showItemInFolder(pathToReveal),
+        openPath: (pathToOpen) => options.shell.openPath(pathToOpen),
+      },
+    );
+    return result.ok
+      ? { ok: true, message: result.message }
+      : { ok: false, message: t("sidebar.chat.infoRevealUnavailable") };
+  } catch {
+    return { ok: false, message: t("sidebar.chat.infoRevealUnavailable") };
+  }
 }
 
 function readAgentCatalogKeys(value: unknown, path: string) {
@@ -263,6 +306,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     if (snapshot && typeof snapshot === "object") {
       const currentPage = snapshot as Record<string, unknown>;
       options.reportRendererDiagnostic?.("current-page", {
+        diagnosticLevel: "debug",
         route: currentPage.route,
         pageKey: currentPage.pageKey,
         pageKind: currentPage.pageKind,
@@ -275,6 +319,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       });
     } else {
       options.reportRendererDiagnostic?.("current-page", {
+        diagnosticLevel: "debug",
         cleared: true
       });
     }
@@ -659,6 +704,10 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
 
   ipcMain.handle("assistant.getChatInfo", async (_event: any, chatId: string) =>
     assistantBridge?.getChatInfo(chatId)
+  );
+
+  ipcMain.handle("assistant.revealChatInFolder", async (_event: any, chatId: string) =>
+    revealAssistantChatInFileManager(chatId, { app, shell, platform })
   );
 
   ipcMain.handle("assistant.searchChats", async (_event: any, request: any) =>

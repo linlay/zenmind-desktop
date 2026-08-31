@@ -1,6 +1,7 @@
 import type { ServiceLogReadOptions, ServiceLogReadResult } from "./services";
 import type {
   WebappBackendConfig,
+  WebappCopilotConfig,
   WebappDesktopBridgeConfig,
   WebappFrontendConfig,
   WebappManifest,
@@ -42,6 +43,7 @@ export interface WebEntryBase {
   label: string;
   kind: WebKind;
   copilotAgentKey?: string;
+  copilotMustUseSkills?: string[];
   createdAt: number;
   updatedAt: number;
 }
@@ -65,6 +67,7 @@ export interface WebappEntry extends WebEntryBase {
   frontend: WebappFrontendConfig;
   backend?: WebappBackendConfig;
   desktopBridge?: WebappDesktopBridgeConfig;
+  copilot?: WebappCopilotConfig;
   sourceKind?: WebappSourceKind;
   sourceLabel?: string;
   sourceOwnerId?: string;

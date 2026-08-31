@@ -8,6 +8,10 @@ import {
   configureNativeAboutPanel,
   resolveDesktopAppInfo
 } from "../app-metadata";
+import {
+  isDesktopDevelopmentRuntime,
+  resolveEffectiveAppId
+} from "../development-runtime";
 
 export type SystemIdentityRuntimeOptions = {
   app: App;
@@ -36,8 +40,12 @@ function projectRootFromMainDir(mainDir: string, platform: NodeJS.Platform) {
 }
 
 export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
+  const effectiveAppId = resolveEffectiveAppId(
+    options.appId,
+    isDesktopDevelopmentRuntime(options.app, { platform: options.platform })
+  );
   options.app.setName(options.productName);
-  applyPlatformAppInit(options.platform, options.app, options.appId);
+  applyPlatformAppInit(options.platform, options.app, effectiveAppId);
   const desktopAppInfo = resolveDesktopAppInfo(options.app);
   configureNativeAboutPanel(options.platform, options.app, desktopAppInfo);
 
@@ -126,6 +134,7 @@ export function configureSystemIdentity(options: SystemIdentityRuntimeOptions) {
 
   return {
     desktopAppInfo,
+    effectiveAppId,
     ensureDockIdentity
   };
 }

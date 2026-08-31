@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
 
 const {
+  applyWindowsDevelopmentAppDetails,
   buildMainWindowOptions,
   configureAttachedWebview,
   configureMediaPermissions,
@@ -15,6 +16,7 @@ const {
 } = await import("../dist-electron/main/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
+const { DESKTOP_SSO_WEBVIEW_PARTITION } = await import("../dist-electron/shared/sso.js");
 const {
   isWorkPanelCloseShortcut,
   resolveGlobalSearchCommandShortcut,
@@ -25,16 +27,17 @@ class FakeWindow extends EventEmitter {
   destroyed = false;
   hidden = false;
   fullscreen = false;
+  maximized = false;
   restored = false;
   vibrancy = undefined;
   backgroundColor = "";
-  titleBarOverlay = null;
   minimized = false;
   shown = false;
   focused = false;
   webContents = new FakeMainWebContents();
   loadedUrls = [];
   loadedFiles = [];
+  appDetails = [];
   showCount = 0;
   focusCount = 0;
 
@@ -49,6 +52,10 @@ class FakeWindow extends EventEmitter {
 
   isFullScreen() {
     return this.fullscreen;
+  }
+
+  isMaximized() {
+    return this.maximized;
   }
 
   setFullScreen(value) {
@@ -90,8 +97,8 @@ class FakeWindow extends EventEmitter {
     this.backgroundColor = value;
   }
 
-  setTitleBarOverlay(value) {
-    this.titleBarOverlay = value;
+  setAppDetails(value) {
+    this.appDetails.push(value);
   }
 
   async loadURL(url) {
@@ -107,7 +114,9 @@ class FakeMainWebContents extends EventEmitter {
   id = 11;
   sentMessages = [];
   loadingMainFrame = false;
-  toggleDevToolsCount = 0;
+  devToolsOpened = false;
+  openedDevToolsOptions = [];
+  closeDevToolsCount = 0;
 
   isLoadingMainFrame() {
     return this.loadingMainFrame;
@@ -117,8 +126,18 @@ class FakeMainWebContents extends EventEmitter {
     this.sentMessages.push({ channel, payload });
   }
 
-  toggleDevTools() {
-    this.toggleDevToolsCount += 1;
+  isDevToolsOpened() {
+    return this.devToolsOpened;
+  }
+
+  openDevTools(options) {
+    this.devToolsOpened = true;
+    this.openedDevToolsOptions.push(options);
+  }
+
+  closeDevTools() {
+    this.devToolsOpened = false;
+    this.closeDevToolsCount += 1;
   }
 }
 
@@ -206,7 +225,7 @@ test("main window lifecycle hides Windows fullscreen windows without destroying 
   assert.equal(target.destroyed, false);
 });
 
-test("main window lifecycle sends Windows close requests to the tray instead of quitting", () => {
+test("main window lifecycle sends Windows close requests through quit confirmation", () => {
   const target = new FakeWindow();
   const controller = createMainWindowLifecycleController({
     platform: "win32",
@@ -215,12 +234,16 @@ test("main window lifecycle sends Windows close requests to the tray instead of 
     clearWindow: () => {}
   });
   let prevented = false;
+  let quitRequests = 0;
 
   configureMainWindowLifecycleEvents(target, {
     platform: "win32",
     lifecycle: controller,
     isDevToolsShortcut: () => false,
     isHandlingQuit: () => false,
+    requestAppQuit: () => {
+      quitRequests += 1;
+    },
     clearWindow: () => {}
   });
 
@@ -231,8 +254,39 @@ test("main window lifecycle sends Windows close requests to the tray instead of 
   });
 
   assert.equal(prevented, true);
-  assert.equal(target.hidden, true);
+  assert.equal(quitRequests, 1);
+  assert.equal(target.hidden, false);
   assert.equal(target.destroyed, false);
+});
+
+test("main window lifecycle allows Windows windows to close while quit is in progress", () => {
+  const target = new FakeWindow();
+  let prevented = false;
+  let quitRequests = 0;
+
+  configureMainWindowLifecycleEvents(target, {
+    platform: "win32",
+    lifecycle: {
+      applyAppearance: () => {},
+      hideForClose: () => {},
+      cancelPendingClose: () => {}
+    },
+    isDevToolsShortcut: () => false,
+    isHandlingQuit: () => true,
+    requestAppQuit: () => {
+      quitRequests += 1;
+    },
+    clearWindow: () => {}
+  });
+
+  target.emit("close", {
+    preventDefault: () => {
+      prevented = true;
+    }
+  });
+
+  assert.equal(prevented, false);
+  assert.equal(quitRequests, 0);
 });
 
 test("main window lifecycle hides macOS close requests without destroying the window", () => {
@@ -333,7 +387,7 @@ test("main window lifecycle applies macOS translucency only outside fullscreen",
   assert.equal(target.backgroundColor, "#FFFFFF");
 });
 
-test("main window lifecycle masks Windows caption controls while global search is open", () => {
+test("main window lifecycle publishes renderer-owned Windows control masking", () => {
   const target = new FakeWindow();
   const nativeTheme = { shouldUseDarkColors: false };
   const controller = createMainWindowLifecycleController({
@@ -346,31 +400,26 @@ test("main window lifecycle masks Windows caption controls while global search i
 
   controller.setGlobalSearchOverlayVisible(true);
   assert.equal(controller.isGlobalSearchOverlayVisible(), true);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#D4D5D9",
-    symbolColor: "#D4D5D9",
-    height: 44
+  assert.equal(controller.isWindowControlsMasked(), true);
+  assert.deepEqual(target.webContents.sentMessages.at(-1), {
+    channel: "desktopShell.windowStateChanged",
+    payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: true }
   });
 
   nativeTheme.shouldUseDarkColors = true;
   controller.applyAppearance(target);
-  assert.equal(target.backgroundColor, "#000000");
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#0E0E0E",
-    symbolColor: "#0E0E0E",
-    height: 44
-  });
+  assert.equal(target.backgroundColor, "#181818");
 
   controller.setGlobalSearchOverlayVisible(false);
   assert.equal(controller.isGlobalSearchOverlayVisible(), false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#000000",
-    symbolColor: "#F2F2F2",
-    height: 44
+  assert.equal(controller.isWindowControlsMasked(), false);
+  assert.deepEqual(target.webContents.sentMessages.at(-1), {
+    channel: "desktopShell.windowStateChanged",
+    payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false }
   });
 });
 
-test("main window lifecycle keeps Windows caption controls masked until every webview modal closes", () => {
+test("main window lifecycle keeps renderer controls masked until every webview modal closes", () => {
   const target = new FakeWindow();
   const controller = createMainWindowLifecycleController({
     platform: "win32",
@@ -383,25 +432,17 @@ test("main window lifecycle keeps Windows caption controls masked until every we
   controller.setWebviewModalOverlayVisible("service-webview:chat", true);
   controller.setWebviewModalOverlayVisible("service-webview:management", true);
   controller.setWebviewModalOverlayVisible("service-webview:chat", false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#D4D5D9",
-    symbolColor: "#D4D5D9",
-    height: 44
-  });
+  assert.equal(controller.isWindowControlsMasked(), true);
 
   controller.setGlobalSearchOverlayVisible(true);
   controller.setWebviewModalOverlayVisible("service-webview:management", false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#D4D5D9",
-    symbolColor: "#D4D5D9",
-    height: 44
-  });
+  assert.equal(controller.isWindowControlsMasked(), true);
 
   controller.setGlobalSearchOverlayVisible(false);
-  assert.deepEqual(target.titleBarOverlay, {
-    color: "#FFFFFF",
-    symbolColor: "#1F2937",
-    height: 44
+  assert.equal(controller.isWindowControlsMasked(), false);
+  assert.deepEqual(target.webContents.sentMessages.at(-1), {
+    channel: "desktopShell.windowStateChanged",
+    payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false }
   });
 });
 
@@ -482,14 +523,15 @@ test("window manager builds platform-specific main window options", () => {
   });
   const winOptions = buildMainWindowOptions({
     platform: "win32",
-    preloadPath: "C:/app/preload/index.js"
+    preloadPath: "C:/app/preload/index.js",
+    iconPath: "C:/app/build/brands/zenmind/icons/icon.ico"
   });
 
   assert.equal(macOptions.width, 1440);
   assert.equal(macOptions.title, PRODUCT_NAME);
   assert.equal(macOptions.show, false);
   assert.equal(macOptions.titleBarStyle, "hidden");
-  assert.deepEqual(macOptions.trafficLightPosition, { x: 10, y: 16 });
+  assert.deepEqual(macOptions.trafficLightPosition, { x: 10, y: 13 });
   assert.equal(macOptions.acceptFirstMouse, true);
   assert.equal(macOptions.transparent, true);
   assert.equal(macOptions.vibrancy, "under-window");
@@ -498,13 +540,38 @@ test("window manager builds platform-specific main window options", () => {
   assert.equal(macOptions.webPreferences.contextIsolation, true);
   assert.equal(macOptions.webPreferences.webviewTag, true);
   assert.equal(winOptions.titleBarStyle, "hidden");
-  assert.deepEqual(winOptions.titleBarOverlay, {
-    color: "#FFFFFF",
-    symbolColor: "#1F2937",
-    height: 44
-  });
+  assert.equal(winOptions.titleBarOverlay, undefined);
   assert.equal(winOptions.acceptFirstMouse, undefined);
   assert.equal(winOptions.backgroundColor, "#FFFFFF");
+  assert.equal(winOptions.icon, "C:/app/build/brands/zenmind/icons/icon.ico");
+  assert.equal(macOptions.icon, undefined);
+});
+
+test("window manager applies current brand app details only to Windows development windows", () => {
+  const windowsWindow = new FakeWindow();
+  const macWindow = new FakeWindow();
+
+  applyWindowsDevelopmentAppDetails(windowsWindow, {
+    platform: "win32",
+    appId: "cc.zenmind.desktop.dev",
+    iconPath: "C:/app/build/brands/zenmind/icons/icon.ico"
+  });
+  applyWindowsDevelopmentAppDetails(macWindow, {
+    platform: "darwin",
+    appId: "cc.zenmind.desktop.dev",
+    iconPath: "/app/build/brands/zenmind/icons/icon.ico"
+  });
+  applyWindowsDevelopmentAppDetails(windowsWindow, {
+    platform: "win32",
+    appId: "cc.zenmind.desktop"
+  });
+
+  assert.deepEqual(windowsWindow.appDetails, [{
+    appId: "cc.zenmind.desktop.dev",
+    appIconPath: "C:/app/build/brands/zenmind/icons/icon.ico",
+    appIconIndex: 0
+  }]);
+  assert.deepEqual(macWindow.appDetails, []);
 });
 
 test("window manager includes initial locale arguments for renderer bootstrap", () => {
@@ -594,6 +661,10 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
 
   target.emit("ready-to-show");
   target.emit("focus");
+  target.maximized = true;
+  target.emit("maximize");
+  target.maximized = false;
+  target.emit("unmaximize");
   target.fullscreen = true;
   target.emit("enter-full-screen");
   target.fullscreen = false;
@@ -604,13 +675,15 @@ test("window manager wires main window readiness, focus and fullscreen lifecycle
   assert.equal(restoredFloatingWindows, 2);
   assert.deepEqual(appearances, [target, target]);
   assert.deepEqual(target.webContents.sentMessages, [
-    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false } },
-    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: true } },
-    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false } }
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: true, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: true, isMaximized: false, windowControlsMasked: false } },
+    { channel: "desktopShell.windowStateChanged", payload: { isFullScreen: false, isMaximized: false, windowControlsMasked: false } }
   ]);
 });
 
-test("window manager wires DevTools shortcuts and close lifecycle events", () => {
+test("window manager toggles main renderer DevTools and wires close lifecycle events", () => {
   const target = new FakeWindow();
   const events = [];
   const prevented = { shortcut: false, close: false };
@@ -624,6 +697,7 @@ test("window manager wires DevTools shortcuts and close lifecycle events", () =>
     },
     isDevToolsShortcut: (_platform, input) => input.key === "i",
     isHandlingQuit: () => false,
+    requestAppQuit: () => events.push({ type: "quit" }),
     clearWindow: (window) => events.push({ type: "clear", window })
   });
 
@@ -631,6 +705,9 @@ test("window manager wires DevTools shortcuts and close lifecycle events", () =>
     preventDefault: () => {
       prevented.shortcut = true;
     }
+  }, { key: "i" });
+  target.webContents.emit("before-input-event", {
+    preventDefault: () => {}
   }, { key: "i" });
   target.emit("close", {
     preventDefault: () => {
@@ -640,10 +717,11 @@ test("window manager wires DevTools shortcuts and close lifecycle events", () =>
   target.emit("closed");
 
   assert.equal(prevented.shortcut, true);
-  assert.equal(target.webContents.toggleDevToolsCount, 1);
+  assert.deepEqual(target.webContents.openedDevToolsOptions, [{ mode: "bottom" }]);
+  assert.equal(target.webContents.closeDevToolsCount, 1);
   assert.equal(prevented.close, true);
   assert.deepEqual(events, [
-    { type: "hide", window: target },
+    { type: "quit" },
     { type: "cancel" },
     { type: "clear", window: target }
   ]);
@@ -676,7 +754,7 @@ test("window manager opens Desktop global search from the main window shortcut",
   assert.deepEqual(target.webContents.sentMessages, [
     { channel: "app.openGlobalSearch", payload: { source: "main" } }
   ]);
-  assert.equal(target.webContents.toggleDevToolsCount, 0);
+  assert.deepEqual(target.webContents.openedDevToolsOptions, []);
 });
 
 test("main window forwards close shortcuts only while WorkPanel owns keyboard focus", () => {
@@ -903,7 +981,8 @@ test("window manager wires webview preload validation and guest webview behavior
       src: "https://example.test/"
     }
   });
-  assert.deepEqual(guest.devtoolsOpenOptions, { mode: "detach" });
+  assert.equal(guest.devtoolsOpenOptions, null);
+  assert.deepEqual(target.webContents.openedDevToolsOptions, [{ mode: "bottom" }]);
   assert.deepEqual(focusChanges, [
     { webContentsId: 64, focused: true },
     { webContentsId: 64, focused: false },
@@ -1319,7 +1398,7 @@ test("window manager uses macOS native microphone access for allowed media reque
   assert.equal(await permissionSession.request({ id: 101 }, "media", { mediaTypes: ["audio"] }), false);
 });
 
-test("window manager allows only service webview preload for loopback service URLs", () => {
+test("window manager confines service and review preloads to their trusted webview surfaces", () => {
   const webPreferences = {
     preload: "file:///app/preload/service-webview.js",
     nodeIntegration: true,
@@ -1343,6 +1422,125 @@ test("window manager allows only service webview preload for loopback service UR
   assert.equal(webPreferences.contextIsolation, true);
   assert.equal(webPreferences.sandbox, false);
 
+  const localFilePreferences = {
+    nodeIntegration: true,
+    contextIsolation: false,
+    sandbox: false,
+  };
+  const localFile = prepareWebviewAttachPreferences({
+    webPreferences: localFilePreferences,
+    params: {
+      src: "zenmind-local-file://opaque-handle/index.html",
+      partition: "work-panel-local-file-test",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+    isReviewableLocalFileUrl: () => true,
+  });
+  assert.equal(localFile.ok, true);
+  assert.equal(localFilePreferences.nodeIntegration, false);
+  assert.equal(localFilePreferences.contextIsolation, true);
+  assert.equal(localFilePreferences.sandbox, true);
+
+  const reviewPreferences = {
+    preload: "file:///app/preload/work-panel-preview.js",
+    nodeIntegration: true,
+    contextIsolation: false,
+    sandbox: false,
+  };
+  const reviewLocalFile = prepareWebviewAttachPreferences({
+    webPreferences: reviewPreferences,
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "zenmind-local-file://opaque-handle/image.png",
+      partition: "work-panel-local-file-test",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+    isReviewableLocalFileUrl: () => true,
+  });
+  assert.equal(reviewLocalFile.ok, true);
+  assert.equal(reviewPreferences.preload, "C:/app/preload/work-panel-preview.js");
+  assert.equal(reviewPreferences.nodeIntegration, false);
+  assert.equal(reviewPreferences.contextIsolation, true);
+  assert.equal(reviewPreferences.sandbox, true);
+
+  const untrustedReview = prepareWebviewAttachPreferences({
+    webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "zenmind-local-file://user-selected/image.png",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+    isReviewableLocalFileUrl: () => false,
+  });
+  assert.deepEqual(untrustedReview, {
+    ok: false,
+    reason: "unsafe-review-url",
+    src: "zenmind-local-file://user-selected/image.png",
+  });
+
+  const webReviewPreferences = {
+    preload: "file:///app/preload/work-panel-preview.js",
+    nodeIntegration: true,
+    contextIsolation: false,
+    sandbox: false,
+  };
+  const webReview = prepareWebviewAttachPreferences({
+    webPreferences: webReviewPreferences,
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "https://example.test/page",
+      partition: DESKTOP_SSO_WEBVIEW_PARTITION,
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+  });
+  assert.equal(webReview.ok, true);
+  assert.equal(webReviewPreferences.preload, "C:/app/preload/work-panel-preview.js");
+  assert.equal(webReviewPreferences.nodeIntegration, false);
+  assert.equal(webReviewPreferences.contextIsolation, true);
+  assert.equal(webReviewPreferences.sandbox, true);
+
+  const isolatedWorkPanelReview = prepareWebviewAttachPreferences({
+    webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "https://example.test/page",
+      partition: "work-panel-abc123-def456",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+  });
+  assert.deepEqual(isolatedWorkPanelReview, {
+    ok: false,
+    reason: "unsafe-review-url",
+    src: "https://example.test/page",
+  });
+
+  const unsafeReview = prepareWebviewAttachPreferences({
+    webPreferences: { preload: "file:///app/preload/work-panel-preview.js" },
+    params: {
+      preload: "file:///app/preload/work-panel-preview.js",
+      src: "https://example.test/page",
+      partition: "desktop-browser",
+    },
+    servicePreloadPath: "C:/app/preload/service-webview.js",
+    servicePreloadUrl: "file:///app/preload/service-webview.js",
+    isSafeServiceUrl: () => false,
+  });
+  assert.deepEqual(unsafeReview, {
+    ok: false,
+    reason: "unsafe-review-url",
+    src: "https://example.test/page",
+  });
+
   const blocked = prepareWebviewAttachPreferences({
     webPreferences: { preload: "C:/other/preload.js" },
     params: {
@@ -1361,9 +1559,9 @@ test("window manager allows only service webview preload for loopback service UR
   });
 });
 
-test("window manager configures attached webviews for downloads, DevTools and popup routing", () => {
+test("window manager routes attached webview DevTools shortcuts to the main renderer", () => {
+  const mainWindow = new FakeWindow();
   const contents = new FakeWebContents(42);
-  const sentTabs = [];
   const externalUrls = [];
   const navigatedUrls = [];
   const diagnostics = [];
@@ -1371,12 +1569,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
 
   configureAttachedWebview(contents, {
     platform: "win32",
-    getMainWindow: () => ({
-      isDestroyed: () => false,
-      webContents: {
-        send: (channel, payload) => sentTabs.push({ channel, payload })
-      }
-    }),
+    getMainWindow: () => mainWindow,
     isDevToolsShortcut: (_platform, input) => input.key === "i",
     shouldDownloadUrl: (url) => url.endsWith(".zip"),
     resolveOpenDisposition: (url) => url.includes("inside") ? "tab" : "external",
@@ -1397,7 +1590,8 @@ test("window manager configures attached webviews for downloads, DevTools and po
     }
   }, { key: "i" });
   assert.equal(prevented.devtools, true);
-  assert.deepEqual(contents.devtoolsOpenOptions, { mode: "detach" });
+  assert.equal(contents.devtoolsOpenOptions, null);
+  assert.deepEqual(mainWindow.webContents.openedDevToolsOptions, [{ mode: "bottom" }]);
 
   contents.emit("will-navigate", {
     preventDefault: () => {
@@ -1408,7 +1602,7 @@ test("window manager configures attached webviews for downloads, DevTools and po
   assert.deepEqual(contents.downloadedUrls, ["https://example.test/file.zip"]);
 
   assert.deepEqual(contents.windowOpenHandler({ url: "https://example.test/inside" }), { action: "deny" });
-  assert.deepEqual(sentTabs, [{
+  assert.deepEqual(mainWindow.webContents.sentMessages, [{
     channel: "webview.openTab",
     payload: {
       target: "desktop-browser",

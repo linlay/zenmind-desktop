@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>WorkPanel browser toolbar visual QA</title>
+    <style>
+      html,
+      body,
+      #root {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+      }
+
+      body {
+        background: #ffffff;
+      }
+
+      .work-panel-browser-toolbar-shell.app-shell.has-chat-work-panel {
+        width: min(1480px, 100vw);
+        height: 450px;
+      }
+
+      .work-panel-browser-toolbar-shell .app-content {
+        width: 100%;
+        height: 100%;
+      }
+
+      .work-panel-browser-toolbar-shell.app-shell.has-chat-work-panel .work-panel-host {
+        flex-basis: 100%;
+        width: 100%;
+      }
+
+      .work-panel-browser-toolbar-shell .external-webview-frame-shell,
+      .work-panel-browser-toolbar-shell webview {
+        background: #ffffff;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/qa/work-panel-browser-toolbar-visual.tsx"></script>
+  </body>
+</html>

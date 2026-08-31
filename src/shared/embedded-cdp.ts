@@ -54,12 +54,22 @@ export type EmbeddedCdpSurfaceRegistration = SurfaceIdentity & {
   /** Main-only route snapshot used for authorization; never expose it in diagnostics. */
   pageRouteIdentity?: string;
   ownerChatId?: string;
+  presentationScope?: "main-workspace" | "workpanel";
   label: string;
   url: string;
   active: boolean;
   tabs: EmbeddedCdpSurfaceTabRegistration[];
   activeTabId: string | null;
 };
+
+export type EmbeddedCdpSurfaceRegistrationRejectReason =
+  | "route_not_aligned"
+  | "ownership_conflict"
+  | "invalid_registration";
+
+export type EmbeddedCdpSurfaceRegistrationResult =
+  | { ok: true }
+  | { ok: false; reason: EmbeddedCdpSurfaceRegistrationRejectReason };
 
 export type EmbeddedCdpSurfaceTargetState = {
   tabId: string;

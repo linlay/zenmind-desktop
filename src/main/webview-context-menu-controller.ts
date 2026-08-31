@@ -620,7 +620,9 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
         tabId: registeredTarget?.tabId ?? null,
         registrationId: registeredTarget?.registrationId ?? null,
         ownerWebContentsId: registeredTarget?.ownerWebContentsId ?? mainWindow.webContents.id,
-        surfaceType: registeredTarget?.surfaceType ?? "service",
+        surfaceType: registeredTarget?.presentationScope === "workpanel"
+          ? "chat-work-panel"
+          : registeredTarget?.surfaceType ?? "service",
         ...(registeredTarget?.serviceId ? { serviceId: registeredTarget.serviceId } : {}),
         ...(registeredTarget?.pageRoute ? { pageRoute: registeredTarget.pageRoute } : {}),
         pageURL,

@@ -47,12 +47,26 @@ import {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
+  AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION,
+  AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION,
+  AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION,
+  AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT,
+  AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_VERSION,
   AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
   AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } from "../shared/contracts/agent-webclient-bridge";
+import { WORK_PANEL_PREVIEW_REVIEW_EVENT_CHANNEL } from "../shared/work-panel-review";
 
 function isBridgeMessage(value: unknown): value is ServiceWebviewBridgeMessage {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));
+}
+
+function serializedPayloadSize(value: unknown) {
+  try {
+    return JSON.stringify(value).length;
+  } catch {
+    return Number.POSITIVE_INFINITY;
+  }
 }
 
 const BRIDGE_REQUEST_DEDUPE_WINDOW_MS = 5_000;
@@ -145,8 +159,8 @@ function installModalOverlayTracking() {
   }, { once: true });
 }
 
-// Windows caption controls are native and render above the guest page, so the
-// host must mirror the guest's modal-mask state into its titleBarOverlay.
+// The Windows system bar lives in the host renderer, outside the guest page, so
+// mirror guest modal state to let the host mask its window controls as well.
 if (process.platform === "win32") {
   installModalOverlayTracking();
 }
@@ -385,6 +399,32 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
   forwardDesktopBridgeRequest(payload, window.location.origin, "bridge-request");
 });
 
+window.addEventListener(AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT, (event) => {
+  const payload = (event as CustomEvent<Record<string, unknown>>).detail;
+  const allowedEvents = new Set([
+    "capability",
+    "ready",
+    "image-region-created",
+    "html-element-selected",
+    "annotation-invalid",
+    "image-exported",
+    "error",
+    "composer-draft-result",
+  ]);
+  if (
+    !payload ||
+    typeof payload !== "object" ||
+    payload.version !== AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_VERSION ||
+    typeof payload.event !== "string" ||
+    !allowedEvents.has(payload.event) ||
+    (payload.requestId !== undefined && (
+      typeof payload.requestId !== "string" || payload.requestId.length > 128
+    )) ||
+    serializedPayloadSize(payload) > 18 * 1024 * 1024
+  ) return;
+  ipcRenderer.sendToHost(WORK_PANEL_PREVIEW_REVIEW_EVENT_CHANNEL, payload);
+});
+
 window.addEventListener(AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT, (event) => {
   const detail = (event as CustomEvent<Record<string, unknown>>).detail;
   if (!detail || typeof detail !== "object" || typeof detail.requestId !== "string") return;
@@ -483,12 +523,23 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<s
     typeof payload !== "object" ||
     ![
       AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
+      AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION,
+      AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION,
       WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
       WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION
     ].includes(String(payload.action || ""))
   ) {
     return;
   }
+  if (
+    payload.action === AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION &&
+    (
+      payload.version !== AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION ||
+      typeof payload.text !== "string" ||
+      payload.text.length > 50_000 ||
+      serializedPayloadSize(payload) > 18 * 1024 * 1024
+    )
+  ) return;
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_ACTION_EVENT, { detail: payload }));
   sendBridgeDebug("action-dispatched", String(payload.action || ""));
 });

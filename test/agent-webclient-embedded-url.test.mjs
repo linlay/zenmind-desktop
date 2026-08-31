@@ -8,19 +8,28 @@ const {
   buildServiceWebviewUrl
 } = require("../dist-electron/shared/auth-bridge.js");
 const {
+  AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS,
   areAgentWebclientHostRouteParamsEqual,
   areAgentWebclientChatBusinessRoutesEquivalent,
   areAgentWebclientChatNavigationUrlsEquivalent,
   createAgentWebclientAgentPath,
+  createAgentWebclientBtwPath,
   createAgentWebclientCopilotPath,
   createAgentWebclientManagementPath,
   createAgentWebclientOverviewPath,
   createAgentWebclientProjectPath,
+  findAgentWebclientRouteDefinition,
+  isAgentWebclientMainChatRouteAligned,
   readAgentWebclientAgentRouteKey,
   resolveAgentWebclientDesktopAgentSwitchTarget,
   resolveAgentWebclientDesktopChatRouteFromUrl,
   resolveAgentWebclientWsSource
 } = require("../dist-electron/shared/agent-webclient-routes.js");
+
+test("Side Chat routes use the canonical /btw/:chatId path", () => {
+  assert.equal(createAgentWebclientBtwPath({ chatId: "chat / 一" }), "/btw/chat%20%2F%20%E4%B8%80");
+  assert.equal(createAgentWebclientBtwPath({ chatId: "  " }), "");
+});
 
 function buildAgentWebclientUrl(surfaceId, embedPath) {
   return new URL(buildServiceWebviewUrl(
@@ -49,14 +58,20 @@ test("agent chat embedded URL keeps chat WebSocket source without auth context",
   assert.equal(url.searchParams.has("desktopAuthContext"), false);
 });
 
-test("copilot embedded URL keeps copilot WebSocket source", () => {
+test("Copilot Dock embedded URL keeps copilot WebSocket source", () => {
   const url = buildAgentWebclientUrl(
-    "copilot-chat",
+    "copilot-dock",
     "/copilot/zenmi"
   );
 
   assert.equal(url.searchParams.get("wsSource"), "desktop-copilot");
   assert.equal(url.searchParams.has("desktopAuthContext"), false);
+});
+
+test("Desktop route catalog excludes full-page Copilot routes", () => {
+  assert.equal(findAgentWebclientRouteDefinition("/copilot"), null);
+  assert.equal(AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS.includes("/copilot/:agentKey"), false);
+  assert.equal(createAgentWebclientCopilotPath("zenmi"), "/copilot/zenmi");
 });
 
 test("management embedded URLs do not carry WebSocket source or auth context", () => {
@@ -253,6 +268,50 @@ test("agent chat business routes compare semantic keys and ignore host params", 
   );
 });
 
+test("Main Chat surface alignment accepts exact canonical and new Chat identities", () => {
+  const embeddedUrl =
+    "http://127.0.0.1:19011/agent/cutej?newChat=nonce-1&custom=%E4%B8%AD%E6%96%87&theme=light&lang=zh-CN&wsSource=desktop-chat#draft";
+
+  assert.equal(
+    isAgentWebclientMainChatRouteAligned(
+      "/agent/cutej?custom=%E4%B8%AD%E6%96%87&newChat=nonce-1#draft",
+      embeddedUrl.replace("theme=light&", "theme=dark&"),
+      embeddedUrl,
+    ),
+    true,
+  );
+  assert.equal(
+    isAgentWebclientMainChatRouteAligned(
+      "/agent/cutej?chatId=chat-1&custom=%E4%B8%AD%E6%96%87",
+      "http://127.0.0.1:19011/agent/cutej?custom=%E4%B8%AD%E6%96%87&chatId=chat-1&theme=dark&lang=zh-CN&wsSource=desktop-chat",
+      embeddedUrl,
+    ),
+    true,
+  );
+});
+
+test("Main Chat surface alignment rejects mismatched or ambiguous route identities", () => {
+  const desktopRoute = "/agent/cutej?newChat=nonce-1&custom=one#draft";
+  const embeddedUrl = "http://127.0.0.1:19011/agent/cutej?newChat=nonce-1";
+  for (const guestUrl of [
+    "http://127.0.0.1:19011/agent/cutej?newChat=nonce-2&custom=one#draft",
+    "http://127.0.0.1:19011/agent/other?newChat=nonce-1&custom=one#draft",
+    "http://127.0.0.1:19012/agent/cutej?newChat=nonce-1&custom=one#draft",
+    "http://127.0.0.1:19011/agent/cutej?newChat=nonce-1&custom=two#draft",
+    "http://127.0.0.1:19011/agent/cutej?newChat=nonce-1&custom=one#other",
+    "http://127.0.0.1:19011/agent/cutej",
+    "http://127.0.0.1:19011/agent/cutej?chatId=chat-1",
+    "http://127.0.0.1:19011/agent/cutej?newChat=nonce-1&newChat=nonce-1&custom=one#draft",
+    "http://127.0.0.1:19011/agent/cutej?newChat=nonce-1&chatId=chat-1&custom=one#draft",
+  ]) {
+    assert.equal(
+      isAgentWebclientMainChatRouteAligned(desktopRoute, guestUrl, embeddedUrl),
+      false,
+      guestUrl,
+    );
+  }
+});
+
 test("webview chat routes mirror all business params but no host params", () => {
   const webviewSrcUrl = "http://127.0.0.1:19011/agents";
   const webviewUrl =
@@ -275,6 +334,13 @@ test("webview chat routes mirror all business params but no host params", () => 
       webviewSrcUrl
     ),
     ""
+  );
+  assert.equal(
+    resolveAgentWebclientDesktopChatRouteFromUrl(
+      "http://127.0.0.1:19011/agent/%E5%86%92%E7%83%9F%E6%96%87%E6%A1%A3?newChat=nonce-1",
+      webviewSrcUrl,
+    ),
+    "",
   );
 });
 

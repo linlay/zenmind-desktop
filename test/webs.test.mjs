@@ -58,6 +58,13 @@ const {
   WEBAPP_BRIDGE_MODULE_SOURCE
 } = require("../dist-electron/main/webs/webapps/bridge-module.js");
 const {
+  clearWebappImageUploadsForTest,
+  consumeWebappImageUpload,
+  normalizeWebappImageUploadFile,
+  registerWebappImageUpload,
+  WEBAPP_IMAGE_INPUT_MAX_BYTES
+} = require("../dist-electron/main/webs/webapps/image-upload-registry.js");
+const {
   createWebappImportDiagnostic
 } = require("../dist-electron/main/ipc/web-handlers.js");
 
@@ -112,6 +119,7 @@ function manifest(key, overrides = {}) {
       }
     },
     ...(Object.hasOwn(overrides, "backend") ? { backend: overrides.backend } : {}),
+    ...(Object.hasOwn(overrides, "copilot") ? { copilot: overrides.copilot } : {}),
     desktopBridge: overrides.desktopBridge ?? { version: 1 }
   };
 }
@@ -150,6 +158,22 @@ const server = http.createServer((request, response) => {
 server.listen(port, host);
 `;
 }
+
+test("WebApp image upload registry validates signatures, limits bytes, and binds one-time handles to an app", () => {
+  clearWebappImageUploadsForTest();
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]);
+  assert.throws(() => normalizeWebappImageUploadFile({ name: "fake.png", mimeType: "image/png", bytes: Buffer.from("not an image") }), /PNG, JPEG, or WebP/u);
+  assert.throws(() => normalizeWebappImageUploadFile({ name: "mask.jpg", mimeType: "image/jpeg", bytes: Buffer.from([0xff, 0xd8, 0xff, 1]) }, { mask: true }), /mask must be PNG/u);
+  assert.throws(() => normalizeWebappImageUploadFile({ name: "large.png", mimeType: "image/png", bytes: Buffer.alloc(WEBAPP_IMAGE_INPUT_MAX_BYTES + 1) }), /exceeds/u);
+  const upload = registerWebappImageUpload({
+    webappId: "webapp-a",
+    source: normalizeWebappImageUploadFile({ name: "source.png", mimeType: "image/png", bytes: png })
+  });
+  assert.equal(consumeWebappImageUpload("webapp-b", upload.uploadId), null);
+  assert.equal(consumeWebappImageUpload("webapp-a", upload.uploadId)?.source?.bytes.equals(png), true);
+  assert.equal(consumeWebappImageUpload("webapp-a", upload.uploadId), null);
+  clearWebappImageUploadsForTest();
+});
 
 function nodeBackend(overrides = {}) {
   return {
@@ -276,7 +300,44 @@ test("manifest v2 defaults Desktop Bridge v1 and rejects legacy capability array
   assert.throws(() => parseWebappManifest(legacy));
 });
 
-test("WebApp SDK hides the internal config endpoint and sends only the chat message", async (t) => {
+test("manifest v2 validates fixed Copilot agent and forced skill configuration", () => {
+  const parsed = parseWebappManifest(manifest("poster-studio", {
+    copilot: {
+      agentKey: "webOperator",
+      mustUseSkills: ["poster-studio"]
+    }
+  }));
+  assert.deepEqual(parsed.copilot, {
+    agentKey: "webOperator",
+    mustUseSkills: ["poster-studio"]
+  });
+
+  assert.throws(() => parseWebappManifest(manifest("poster-conflict", {
+    copilot: { agentKey: "webOperator", mustUseSkills: ["poster-studio"] },
+    userConfig: {
+      fields: [{
+        name: "agentKey",
+        type: "select",
+        source: "desktop.agents",
+        label: "智能体"
+      }]
+    }
+  })));
+  assert.throws(() => parseWebappManifest(manifest("poster-duplicate", {
+    copilot: {
+      agentKey: "webOperator",
+      mustUseSkills: ["poster-studio", "poster-studio"]
+    }
+  })));
+  assert.throws(() => parseWebappManifest(manifest("poster-invalid-skill", {
+    copilot: {
+      agentKey: "webOperator",
+      mustUseSkills: ["../poster-studio"]
+    }
+  })));
+});
+
+test("WebApp SDK hides internal endpoints and separates chat from binary image upload", async (t) => {
   const originalFetch = globalThis.fetch;
   const calls = [];
   t.after(() => {
@@ -295,13 +356,24 @@ test("WebApp SDK hides the internal config endpoint and sends only the chat mess
         })
       };
     }
+    if (url === "/__desktop/assistant/image/uploads") {
+      assert.equal(options.body instanceof FormData, true);
+      assert.equal(options.body.get("source") instanceof Blob, true);
+      assert.equal(options.body.get("mask") instanceof Blob, true);
+      return {
+        ok: true,
+        json: async () => ({ ok: true, uploadId: "webimg-1" })
+      };
+    }
     const request = JSON.parse(options.body);
     return {
       ok: true,
       json: async () => ({
         ok: true,
         action: request.action,
-        result: { text: "摘要", agentKey: "summary-agent", chatId: "chat", runId: "run" }
+        result: request.action === "desktop.assistant.image"
+          ? { agentKey: "zenmi", images: [{ dataBase64: "AA==", mimeType: "image/png", sizeBytes: 1 }] }
+          : { text: "摘要", agentKey: "summary-agent", chatId: "chat", runId: "run" }
       })
     };
   };
@@ -321,6 +393,18 @@ test("WebApp SDK hides the internal config endpoint and sends only the chat mess
   assert.deepEqual(JSON.parse(calls[1].options.body), {
     action: "desktop.assistant.chat",
     args: { message: "会议原文" }
+  });
+  const imageResult = await desktop.assistant.image({
+    requestId: "image-request-1",
+    operation: "inpaint",
+    source: new Blob(["source"], { type: "image/png" }),
+    mask: new Blob(["mask"], { type: "image/png" })
+  });
+  assert.equal(imageResult.agentKey, "zenmi");
+  assert.equal(calls[2].url, "/__desktop/assistant/image/uploads");
+  assert.deepEqual(JSON.parse(calls[3].options.body), {
+    action: "desktop.assistant.image",
+    args: { requestId: "image-request-1", operation: "inpaint", uploadId: "webimg-1" }
   });
 });
 
