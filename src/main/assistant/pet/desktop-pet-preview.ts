@@ -59,12 +59,6 @@ export type DesktopPetPreviewIngestResult = {
   holdMs?: number;
 };
 
-export type DesktopPetSseParseResult = {
-  events: DesktopPetPreviewEvent[];
-  done: boolean;
-  errors: string[];
-};
-
 const MAX_ITEMS = 8;
 const SUMMARY_MAX_LENGTH = 42;
 const REPLY_PREVIEW_MAX_LENGTH = 30;
@@ -73,7 +67,6 @@ const DETAIL_TEXT_MAX_LENGTH = 220;
 const DONE_HOLD_MS = 12_000;
 const ERROR_HOLD_MS = 5_200;
 const STOPPED_HOLD_MS = 2_500;
-const DONE_SENTINEL = "[DONE]";
 const DONE_FALLBACK_SUMMARY = "暂无回复预览";
 const GENERIC_DONE_SUMMARIES = new Set([
   "已完成",
@@ -925,77 +918,6 @@ export class DesktopPetPreviewProjector {
       ? this.panel.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...nextItem } : item)
       : [...this.panel.items, nextItem];
     this.panel.items = clampItems(items);
-  }
-}
-
-function parseSseFrame(block: string): { event?: string; data: string } | null {
-  const lines = block.split(/\r?\n/u);
-  let eventName = "";
-  const dataLines: string[] = [];
-  for (const rawLine of lines) {
-    if (!rawLine || rawLine.startsWith(":")) {
-      continue;
-    }
-    if (rawLine.startsWith("event:")) {
-      eventName = rawLine.slice(6).trim();
-      continue;
-    }
-    if (rawLine.startsWith("data:")) {
-      dataLines.push(rawLine.slice(5).trimStart());
-    }
-  }
-  if (dataLines.length === 0) {
-    return null;
-  }
-  return {
-    event: eventName || undefined,
-    data: dataLines.join("\n")
-  };
-}
-
-export class DesktopPetSseParser {
-  private buffer = "";
-
-  push(chunk: string): DesktopPetSseParseResult {
-    this.buffer += chunk;
-    const blocks = this.buffer.split(/\r?\n\r?\n/u);
-    this.buffer = blocks.pop() || "";
-    return this.parseBlocks(blocks);
-  }
-
-  finish(): DesktopPetSseParseResult {
-    const tail = this.buffer.trim() ? [this.buffer] : [];
-    this.buffer = "";
-    return this.parseBlocks(tail);
-  }
-
-  private parseBlocks(blocks: string[]): DesktopPetSseParseResult {
-    const events: DesktopPetPreviewEvent[] = [];
-    const errors: string[] = [];
-    let done = false;
-    for (const block of blocks) {
-      const frame = parseSseFrame(block);
-      if (!frame) {
-        continue;
-      }
-      if (frame.data === DONE_SENTINEL) {
-        done = true;
-        continue;
-      }
-      try {
-        const parsed = JSON.parse(frame.data) as Record<string, unknown>;
-        if (frame.event && !toText(parsed.type) && frame.event !== "message") {
-          parsed.type = frame.event;
-        }
-        const event = normalizeDesktopPetAgentEvent(parsed);
-        if (event) {
-          events.push(event);
-        }
-      } catch (error) {
-        errors.push(error instanceof Error ? error.message : String(error));
-      }
-    }
-    return { events, done, errors };
   }
 }
 

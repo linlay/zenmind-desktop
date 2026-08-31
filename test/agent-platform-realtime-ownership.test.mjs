@@ -26,18 +26,21 @@ test("only the physical realtime client constructs the Agent Platform /ws URL", 
   ]);
 });
 
-test("Assistant, navigation, Pet, and Desktop WS ap are Broker consumers", () => {
+test("Assistant, navigation, Pet Push, and Desktop WS ap are Broker consumers", () => {
   const sources = [
     "src/main/assistant/core/agent-platform-bridge.ts",
     "src/main/assistant/core/assistant-navigation-status-client.ts",
     "src/main/assistant/pet/pet-status-client.ts",
-    "src/main/assistant/pet/pet-stream-client.ts",
     "src/main/desktop-ws-server.ts",
   ].map(read);
   for (const source of sources) {
     assert.match(source, /RealtimeBroker/u);
     assert.doesNotMatch(source, /new URL\(["']\/ws["']/u);
   }
+  const petStatus = read("src/main/assistant/pet/pet-status-client.ts");
+  assert.match(petStatus, /subscribePush/u);
+  assert.doesNotMatch(petStatus, /subscribeRun|\/api\/attach|\/api\/detach/u);
+  assert.equal(fs.existsSync(path.join(root, "src/main/assistant/pet/pet-stream-client.ts")), false);
   assert.equal(fs.existsSync(path.join(root, "src/main/assistant/core/assistant-ws-transport.ts")), false);
 });
 

@@ -52,7 +52,6 @@ import {
 } from "./desktop-pet";
 import { DesktopPetPreviewProjector } from "./desktop-pet-preview";
 import { AgentPlatformPetStatusClient } from "./pet-status-client";
-import { AgentPlatformPetStreamClient } from "./pet-stream-client";
 import type { RealtimeBroker } from "../../realtime/realtime-broker";
 import { applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow } from "./window";
 
@@ -223,7 +222,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     platform: options.platform,
     app: options.app,
     AgentStatusClientClass: AgentPlatformPetStatusClient,
-    AgentStreamClientClass: AgentPlatformPetStreamClient,
     getServiceState: getResponsiveServiceState,
     issueAccessToken: issueAgentAccessToken,
     realtimeBroker: options.realtimeBroker,
@@ -435,10 +433,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
 
   function ensureStatusClient() {
     return desktopPetClientLifecycleController.ensureStatusClient();
-  }
-
-  function ensureStreamClient() {
-    return desktopPetClientLifecycleController.ensureStreamClient();
   }
 
   function startStatusClient() {
@@ -997,7 +991,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     setWindowMode,
     isVisible,
     ensureStatusClient,
-    ensureStreamClient,
     startStatusClient,
     stopStatusClient,
     scheduleStatusRefresh,

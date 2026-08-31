@@ -193,6 +193,61 @@ test("Primary and BTW lanes stay at exactly two physical sockets and multiplex R
   assert.equal(received.filter(([, type]) => type === "run.start").length, 4);
 });
 
+test("push-only consumers never race Query RunChannel registration", async (t) => {
+  const { broker, socket, token } = createHarness(t);
+  const observer = rootObserver();
+  broker.activateRootObserver(observer);
+  const pushRunIds = [];
+  broker.subscribePush({
+    types: ["run.started", "run.finished", "chat.updated"],
+    kind: "internal",
+    consumerId: "desktop-pet-status",
+    onPush: (frame) => pushRunIds.push(frame.data?.runId),
+  });
+
+  const execute = async (runId, pushFirst) => {
+    const primaryBefore = socket("primary");
+    const queryCountBefore = primaryBefore ? requestOfType(primaryBefore, "/api/query").length : 0;
+    const query = broker.query({
+      baseUrl: "http://127.0.0.1:8080",
+      token,
+      id: `query-${runId}`,
+      chatId: "chat-1",
+      owner: { kind: "agent", agentKey: "agent-1" },
+      observerToken: observer.token,
+      consumerId: `main-chat:${runId}`,
+      payload: { chatId: "chat-1", agentKey: "agent-1", message: runId },
+      onEvent: () => undefined,
+    });
+    await waitUntil(() => requestOfType(socket("primary"), "/api/query").length === queryCountBefore + 1);
+    const upstream = requestOfType(socket("primary"), "/api/query").at(-1);
+    const startedPush = {
+      frame: "push",
+      type: "run.started",
+      data: { runId, chatId: "chat-1", agentKey: "agent-1", startedAt: EPOCH_MS + 1 },
+    };
+    const startedStream = {
+      frame: "stream",
+      id: upstream.id,
+      event: runEvent("run.start", runId, "chat-1", 1),
+    };
+    if (pushFirst) socket("primary").emit(startedPush);
+    socket("primary").emit(startedStream);
+    if (!pushFirst) socket("primary").emit(startedPush);
+    await query.accepted;
+    assert.equal(requestOfType(socket("primary"), "/api/attach").length, 0);
+    socket("primary").emit({ frame: "stream", id: upstream.id, reason: "complete", lastSeq: 1 });
+    await query.completed;
+  };
+
+  await execute("run-push-first", true);
+  await execute("run-stream-first", false);
+
+  assert.deepEqual(pushRunIds, ["run-push-first", "run-stream-first"]);
+  assert.equal(requestOfType(socket("primary"), "/api/query").length, 2);
+  assert.equal(requestOfType(socket("primary"), "/api/attach").length, 0);
+});
+
 test("Main Chat clones use local replay and never create upstream attach", async (t) => {
   const { broker, socket, token } = createHarness(t);
   const observer = rootObserver();

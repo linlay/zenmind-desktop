@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 import { EventEmitter } from "node:events";
 
 const require = createRequire(import.meta.url);
+const EPOCH_MS = 1_788_000_000_000;
 
 const {
   createDesktopPetState,
@@ -19,6 +20,7 @@ const {
   createDesktopPetMessagesFromAgentStatus,
   createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetActiveTasksFromNavigationSnapshot,
+  createDesktopPetClientLifecycleController,
   createDesktopPetDragController,
   createDesktopPetWindowController,
   computeDesktopPetPositionPersistence,
@@ -74,6 +76,88 @@ function createAgentStatus(overrides = {}) {
     ...overrides
   };
 }
+
+test("desktop pet lifecycle projects Push callbacks without a Run stream client", () => {
+  let statusOptions = null;
+  let startCount = 0;
+  let stopCount = 0;
+  const activeRunEvents = [];
+  const clearedPreviews = [];
+  const projectedEvents = [];
+
+  class FakeStatusClient {
+    constructor(options) {
+      statusOptions = options;
+    }
+
+    start() {
+      startCount += 1;
+    }
+
+    stop() {
+      stopCount += 1;
+    }
+
+    scheduleRefresh() {}
+  }
+
+  const controller = createDesktopPetClientLifecycleController({
+    platform: "darwin",
+    app: {},
+    AgentStatusClientClass: FakeStatusClient,
+    getServiceState: async () => ({ status: "running" }),
+    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
+    realtimeBroker: {
+      subscribeRun: () => {
+        throw new Error("desktop pet must not subscribe to RunChannel");
+      },
+    },
+    getSettings: () => ({ enabled: true }),
+    setAgentStatus: () => undefined,
+    setAgentOptions: () => undefined,
+    clearActiveRuns: () => undefined,
+    updateActiveRuns: (event) => activeRunEvents.push(event),
+    clearDismissedPreview: (chatId, runId) => clearedPreviews.push({ chatId, runId }),
+    getPreviewPanel: () => null,
+    ingestAgentEvent: (event, context) => projectedEvents.push({ event, context }),
+    refreshCompletedPreviewFromStatus: () => false,
+    refreshState: () => undefined,
+  });
+
+  controller.startStatusClient();
+  assert.equal(startCount, 1);
+  assert.equal(Object.hasOwn(controller, "getStreamClient"), false);
+  assert.equal(Object.hasOwn(controller, "ensureStreamClient"), false);
+
+  statusOptions.onRunStarted({
+    runId: "run-push-only",
+    chatId: "chat-1",
+    timestamp: EPOCH_MS,
+  });
+  assert.deepEqual(activeRunEvents, [{ type: "run.started", runId: "run-push-only" }]);
+  assert.deepEqual(clearedPreviews, [{ chatId: "chat-1", runId: "run-push-only" }]);
+
+  statusOptions.onRunFinished({
+    runId: "run-push-only",
+    chatId: "chat-1",
+    message: "完成摘要",
+    timestamp: EPOCH_MS + 1,
+  });
+  assert.deepEqual(activeRunEvents.at(-1), { type: "run.finished", runId: "run-push-only" });
+  assert.deepEqual(projectedEvents.at(-1), {
+    event: {
+      runId: "run-push-only",
+      chatId: "chat-1",
+      type: "run.complete",
+      createdAt: EPOCH_MS + 1,
+      message: "完成摘要",
+    },
+    context: { source: "agent-platform-status", transportMode: "ws" },
+  });
+
+  controller.stopStatusClient();
+  assert.equal(stopCount, 1);
+});
 
 test("closing desktop pet destroys its window until the user explicitly enables it again", () => {
   let settings = createSettings({ enabled: false });

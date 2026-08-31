@@ -1136,7 +1136,6 @@ export interface DesktopPetClientLifecycleControllerOptions {
   platform: string;
   app: any;
   AgentStatusClientClass: any;
-  AgentStreamClientClass: any;
   getServiceState: (app: any, serviceId: string) => Promise<any>;
   issueAccessToken: (app: any, reason: any) => Promise<any>;
   realtimeBroker?: any;
@@ -1154,9 +1153,7 @@ export interface DesktopPetClientLifecycleControllerOptions {
 
 export interface DesktopPetClientLifecycleController {
   getStatusClient(): any | null;
-  getStreamClient(): any | null;
   ensureStatusClient(): any | null;
-  ensureStreamClient(): any | null;
   startStatusClient(): void;
   stopStatusClient(): void;
   scheduleStatusRefresh(delayMs?: number, force?: boolean): void;
@@ -1166,14 +1163,9 @@ export function createDesktopPetClientLifecycleController(
   options: DesktopPetClientLifecycleControllerOptions
 ): DesktopPetClientLifecycleController {
   let statusClient: any = null;
-  let streamClient: any = null;
 
   function getStatusClient() {
     return statusClient;
-  }
-
-  function getStreamClient() {
-    return streamClient;
   }
 
   function ensureStatusClient() {
@@ -1205,7 +1197,6 @@ export function createDesktopPetClientLifecycleController(
       onRunStarted: ({ runId, chatId }: { runId: string; chatId: string | null; timestamp: number }) => {
         options.updateActiveRuns({ type: "run.started", runId });
         options.clearDismissedPreview(chatId, runId);
-        ensureStreamClient()?.attach(runId, chatId);
       },
       onRunFinished: ({ runId, chatId, message, timestamp }: { runId: string; chatId: string | null; message: string; timestamp: number }) => {
         options.updateActiveRuns({ type: "run.finished", runId });
@@ -1232,31 +1223,6 @@ export function createDesktopPetClientLifecycleController(
     return statusClient;
   }
 
-  function ensureStreamClient() {
-    if (!isDesktopPetSupportedPlatform(options.platform)) {
-      return null;
-    }
-    if (streamClient) {
-      return streamClient;
-    }
-    streamClient = new options.AgentStreamClientClass({
-      app: options.app,
-      getServiceState: options.getServiceState,
-      issueAccessToken: options.issueAccessToken,
-      realtimeBroker: options.realtimeBroker,
-      onEvent: (event: any) => {
-        options.ingestAgentEvent(event, {
-          source: "agent-platform-attach",
-          transportMode: "sse"
-        });
-      },
-      onDebug: (message: string) => {
-        console.warn(`[desktop-pet] agent-platform stream unavailable: ${message}`);
-      }
-    });
-    return streamClient;
-  }
-
   function startStatusClient() {
     if (!options.getSettings().enabled) {
       return;
@@ -1267,8 +1233,6 @@ export function createDesktopPetClientLifecycleController(
   function stopStatusClient() {
     statusClient?.stop();
     statusClient = null;
-    streamClient?.stop();
-    streamClient = null;
     options.setAgentStatus(null);
     options.setAgentOptions([]);
     options.clearActiveRuns();
@@ -1283,9 +1247,7 @@ export function createDesktopPetClientLifecycleController(
 
   return {
     getStatusClient,
-    getStreamClient,
     ensureStatusClient,
-    ensureStreamClient,
     startStatusClient,
     stopStatusClient,
     scheduleStatusRefresh
