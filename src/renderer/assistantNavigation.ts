@@ -260,6 +260,24 @@ export type FirstInstallBootstrapNavigationTarget = {
   chatId?: string;
 };
 
+export function hasAssistantNavChat(
+  chats: ReadonlyArray<Pick<AssistantNavChatItem, "chatId" | "agentKey">>,
+  options: {
+    chatId?: string;
+    agentKey?: string;
+  },
+) {
+  const chatId = toText(options.chatId);
+  const agentKey = toText(options.agentKey);
+  return Boolean(
+    chatId &&
+    agentKey &&
+    chats.some(
+      (chat) => chat.chatId === chatId && chat.agentKey === agentKey,
+    ),
+  );
+}
+
 export function resolveFirstInstallBootstrapNavigationTarget(
   agents: AssistantNavAgentItem[],
   chats: AssistantNavChatItem[],
@@ -277,11 +295,10 @@ export function resolveFirstInstallBootstrapNavigationTarget(
   );
 
   if (bootstrapAgentAvailable) {
-    const seedChatIndexed = Boolean(
-      bootstrapChatId && chats.some((chat) =>
-        chat.chatId === bootstrapChatId && chat.agentKey === bootstrapAgentKey,
-      ),
-    );
+    const seedChatIndexed = hasAssistantNavChat(chats, {
+      chatId: bootstrapChatId,
+      agentKey: bootstrapAgentKey,
+    });
     return {
       agentKey: bootstrapAgentKey,
       ...(seedChatIndexed ? { chatId: bootstrapChatId } : {}),

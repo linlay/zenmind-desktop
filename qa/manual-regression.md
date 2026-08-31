@@ -59,6 +59,13 @@
 - 选择任一存活 WebView 后切换概览、内存、事件和原始数据，确认复制快照不包含 URL query、hash、用户名或密码；“打开 DevTools”只对仍存活的 WebView 可用，guest 销毁后返回不可用而不误开其他页面。
 - 切换 Targets、Events、Topology、System，确认原有 Primary/BTW、Frame Port、Run 恢复和跟踪帧诊断仍可查看；清空只删除有界 trace，不销毁 Surface、WebView 或 Broker 状态。
 
+## 首装引导 Chat
+
+- 准备至少 16 条 Platform Chats，并让固定 seed Chat `00000000-0000-4000-8000-000000000001` 位于第 16 条；首次安装默认显示 8 条时，确认列表严格等于 Platform 前 8 条，不出现额外的“开始使用”行或聊天引导气泡。
+- 点击首装引导卡中的“打开开始使用对话”，确认即使 seed Chat 当前不可见，也导航到带该固定 `chatId` 的真实历史对话，不进入 New Chat 或“初始化助手对话”。
+- 点击“查看更多”展开到 16 条，确认真实“开始使用”只在 Platform 排序位置出现一次；点击后路由、页面内容与侧栏选中态都绑定固定 `chatId`。收起 Chats 分组并重新展开恢复前 8 条后，该行和聊天引导气泡都不再显示。
+- 分别在 `recent` 与 `manual` 模式重复上述检查，确认 Desktop 不对 seed Chat 置顶、重排或合成。删除 seed Chat 后重新执行首次安装引导，确认引导卡打开 Bootstrap Agent 的 New Chat，但 Chats 列表仍不伪造“开始使用”行。
+
 ## Chat information
 
 - 从 Chat 上下文菜单打开信息弹窗，确认标题为 `Chat information`，没有重复说明或分区标题；详情字段、逐项复制、`Copy all`、`Copy JSON`、关闭按钮及键盘 Esc 均正常，浅色与深色主题下紧凑、层级清晰。

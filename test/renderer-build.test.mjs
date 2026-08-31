@@ -2305,13 +2305,17 @@ test("Chats sidebar retains global chatItems and adds a default-agent history en
     sidebarSource.indexOf("function renderChatsList"),
     sidebarSource.indexOf("function renderChatsEntry"),
   );
+  const chatsRowsSource = sidebarSource.slice(
+    sidebarSource.indexOf("function renderChatsRow"),
+    sidebarSource.indexOf("function renderChatsList"),
+  );
 
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
   assert.match(appShell, /assistantNavChatItemsHasMore=\{assistantNavChatItemsHasMore\}/);
   assert.match(sidebarSource, /assistantNavChatItems\.slice\(0, chatsVisibleLimit\)/);
-  assert.match(chatsListSource, /sidebarChatItems\.map\(\(chat\) =>/);
+  assert.match(chatsRowsSource, /sidebarChatItems\.map\(\(chat\) =>/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey, chat\.chatId\)/);
-  assert.doesNotMatch(chatsListSource, /recentChats/);
+  assert.doesNotMatch(`${chatsRowsSource}${chatsListSource}`, /recentChats/);
   assert.match(sidebarSource, /const chatsShowMoreAvailable =\s*chatsVisibleLimit < CHATS_MAX_VISIBLE_LIMIT &&\s*assistantNavChatItems\.length > chatsVisibleLimit/);
   assert.match(sidebarSource, /const chatsHistoryAvailable =\s*\(assistantNavChatItems\.length > CHATS_VISIBLE_LIMIT \|\|\s*assistantNavChatItemsHasMore\)/);
   assert.match(chatsListSource, /className="sidebar-chats-actions"/);
@@ -2338,16 +2342,23 @@ test("Chats sidebar reuses the Projects chat row status and unread layout", () =
     sidebarSource.indexOf("function renderChatsList"),
     sidebarSource.indexOf("function renderChatsEntry"),
   );
+  const chatsRowsSource = sidebarSource.slice(
+    sidebarSource.indexOf("function renderChatsRow"),
+    sidebarSource.indexOf("function renderChatsList"),
+  );
 
-  assert.match(chatsListSource, /renderAssistantChatRow\(chat, activeSidebarChatId, \{/);
-  assert.match(chatsListSource, /focusId: createSidebarChatsChatFocusId\(chat\.chatId\)/);
-  assert.match(chatsListSource, /navigationKind: "chats-chat"/);
-  assert.match(chatsListSource, /rowClassName: "sidebar-chats-row"/);
-  assert.match(chatsListSource, /itemClassName: \[\s*"sidebar-chats-item"/);
-  assert.match(styles, /\.sidebar-chats-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*4px;/);
-  assert.match(chatsListSource, /wrapItem: \(item\) => \(/);
+  assert.match(chatsRowsSource, /renderAssistantChatRow\(chat, activeSidebarChatId, \{/);
+  assert.match(chatsRowsSource, /focusId: createSidebarChatsChatFocusId\(chat\.chatId\)/);
+  assert.match(chatsRowsSource, /navigationKind: "chats-chat"/);
+  assert.match(chatsRowsSource, /rowClassName: "sidebar-chats-row"/);
+  assert.match(chatsRowsSource, /itemClassName: \[\s*"sidebar-chats-item"/);
   assert.match(
-    chatsListSource,
+    styles,
+    /\.sidebar-chats-actions,\s*\.sidebar-project-chat-actions\s*\{[\s\S]*?display:\s*flex;[\s\S]*?gap:\s*4px;/,
+  );
+  assert.match(chatsRowsSource, /wrapItem: \(item\) => \(/);
+  assert.match(
+    chatsRowsSource,
     /shouldOpen=\{\(trigger\) => \{[\s\S]*?querySelector<HTMLElement>\("\.worker-chat-name"\)[\s\S]*?title\.scrollWidth > title\.clientWidth/,
   );
   assert.match(sidebarSource, /options\.wrapItem \? options\.wrapItem\(item\) : item/);
@@ -5284,14 +5295,14 @@ test("first-install bootstrap navigation stays optional and keeps the configured
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
   assert.match(appShell, /if \(bootstrapAgentKey\) \{[\s\S]*?chatDefaultAgentMigrationRef\.current = "";[\s\S]*?return;/);
   assert.match(appSidebar, /const resolvedChatDefaultAgent = chatDefaultAgent;/);
-  assert.match(appSidebar, /isBootstrapSeedChat[\s\S]*?chat\.chatName \|\| t\("sidebar\.bootstrapChat\.cta"\)/);
-  assert.match(appSidebar, /showBootstrapChatFallback[\s\S]*?!bootstrapSeedChatIndexed/);
-  assert.match(appSidebar, /function createBootstrapChatTargetRoute\(\)[\s\S]*?createAgentChatRoute\(\s*normalizedBootstrapAgentKey,\s*normalizedBootstrapChatId,?\s*\)[\s\S]*?createAgentNewChatRoute\(normalizedBootstrapAgentKey\)/);
+  assert.match(appSidebar, /const bootstrapSeedChatAvailable =\s*bootstrapActive &&\s*hasAssistantNavChat\(assistantNavChatItems,/);
+  assert.match(appSidebar, /const bootstrapSeedChatVisible =\s*bootstrapSeedChatAvailable &&\s*hasAssistantNavChat\(sidebarChatItems,/);
+  assert.match(appSidebar, /function createBootstrapChatTargetRoute\(\)[\s\S]*?bootstrapSeedChatAvailable && normalizedBootstrapChatId[\s\S]*?createAgentChatRoute\(\s*normalizedBootstrapAgentKey,\s*normalizedBootstrapChatId,?\s*\)[\s\S]*?createAgentNewChatRoute\(normalizedBootstrapAgentKey\)/);
   assert.match(appSidebar, /const showBootstrapChatGuide =[\s\S]*?!bootstrapGuideDismissedBubbles\.chat/);
   assert.match(appSidebar, /const showBootstrapHelpGuide =[\s\S]*?!bootstrapGuideDismissedBubbles\.help/);
-  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?showBootstrapChatGuide \? "is-bootstrap-guide"/);
   assert.match(appSidebar, /isBootstrapSeedChat && showBootstrapChatGuide[\s\S]*?"is-bootstrap-guide"/);
-  assert.match(appSidebar, /sidebar-chats-bootstrap-fallback[\s\S]*?assistant-worker-unread-dot chat-unread-dot[\s\S]*?worker-chat-name/);
+  assert.doesNotMatch(appSidebar, /showBootstrapChatFallback|sidebar-chats-bootstrap-fallback|bootstrap-fallback/);
+  assert.doesNotMatch(appSidebar, /previewText:\s*isBootstrapSeedChat|sidebar\.bootstrapChat\.cta/);
   assert.match(zhDictionary, /"sidebar\.bootstrapChat\.cta": "开始使用"/);
   assert.match(zhDictionary, /用户初始化是可选的/);
   assert.match(enDictionary, /"sidebar\.bootstrapChat\.cta":/);

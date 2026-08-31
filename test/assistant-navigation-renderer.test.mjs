@@ -70,6 +70,7 @@ const {
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
   getAssistantNavRecentChatsOverview,
+  hasAssistantNavChat,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
   normalizeAssistantNavAgents,
@@ -376,6 +377,46 @@ test("first-install bootstrap navigation opens the indexed seed Chat", () => {
       },
     ),
     { agentKey: "bootstrap", chatId: "seed-chat" },
+  );
+});
+
+test("bootstrap seed Chat follows the Platform list visibility window", () => {
+  const seedChatId = "00000000-0000-4000-8000-000000000001";
+  const chats = [
+    ...Array.from({ length: 15 }, (_, index) =>
+      chat({ chatId: `chat-${index + 1}` }),
+    ),
+    chat({ chatId: seedChatId, agentKey: "bootstrap" }),
+  ];
+
+  assert.equal(
+    hasAssistantNavChat(chats.slice(0, 8), {
+      chatId: seedChatId,
+      agentKey: "bootstrap",
+    }),
+    false,
+  );
+  assert.equal(
+    hasAssistantNavChat(chats.slice(0, 16), {
+      chatId: seedChatId,
+      agentKey: "bootstrap",
+    }),
+    true,
+  );
+  assert.deepEqual(
+    resolveFirstInstallBootstrapNavigationTarget(
+      [
+        { agentKey: "bootstrap", displayName: "Bootstrap", recentChats: [] },
+        { agentKey: "zenmi", displayName: "Zenmi", recentChats: [] },
+      ],
+      chats,
+      {
+        bootstrapAgentKey: "bootstrap",
+        bootstrapChatId: seedChatId,
+        defaultChatAgentKey: "zenmi",
+      },
+    ),
+    { agentKey: "bootstrap", chatId: seedChatId },
   );
 });
 

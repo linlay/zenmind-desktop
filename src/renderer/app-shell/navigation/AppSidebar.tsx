@@ -93,6 +93,7 @@ import {
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
   getAssistantNavAgentSortedChats,
+  hasAssistantNavChat,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
 } from "../../assistantNavigation";
@@ -1428,20 +1429,18 @@ export function AppSidebar({
     }),
     [sidebarChatItems],
   );
-  const bootstrapSeedChatIndexed = Boolean(
+  const bootstrapSeedChatAvailable =
     bootstrapActive &&
-    normalizedBootstrapChatId &&
-    sidebarChatItems.some(
-      (chat) =>
-        chat.chatId === normalizedBootstrapChatId &&
-        chat.agentKey === normalizedBootstrapAgentKey,
-    ),
-  );
-  const showBootstrapChatFallback = Boolean(
-    bootstrapActive &&
-    normalizedBootstrapAgentKey &&
-    !bootstrapSeedChatIndexed,
-  );
+    hasAssistantNavChat(assistantNavChatItems, {
+      chatId: normalizedBootstrapChatId,
+      agentKey: normalizedBootstrapAgentKey,
+    });
+  const bootstrapSeedChatVisible =
+    bootstrapSeedChatAvailable &&
+    hasAssistantNavChat(sidebarChatItems, {
+      chatId: normalizedBootstrapChatId,
+      agentKey: normalizedBootstrapAgentKey,
+    });
   const chatDefaultAgentAvailable = Boolean(resolvedChatDefaultAgentKey);
   const chatDefaultAgentUnavailable =
     assistantNavAgentsLoaded && !chatDefaultAgentAvailable;
@@ -1887,7 +1886,7 @@ export function AppSidebar({
     bootstrapActive,
     bootstrapGuideDismissedBubbles.chat,
     bootstrapGuideDismissedBubbles.help,
-    bootstrapSeedChatIndexed,
+    bootstrapSeedChatVisible,
     isCollapsed,
     isPrimaryMode,
     normalizedBootstrapAgentKey,
@@ -2031,7 +2030,7 @@ export function AppSidebar({
     if (!normalizedBootstrapAgentKey) {
       return "";
     }
-    return bootstrapSeedChatIndexed && normalizedBootstrapChatId
+    return bootstrapSeedChatAvailable && normalizedBootstrapChatId
       ? createAgentChatRoute(
           normalizedBootstrapAgentKey,
           normalizedBootstrapChatId,
@@ -4375,9 +4374,6 @@ export function AppSidebar({
           ? bootstrapGuideChatAnchorRef
           : undefined,
         rowRole: sortable ? undefined : "listitem",
-        previewText: isBootstrapSeedChat
-          ? chat.chatName || t("sidebar.bootstrapChat.cta")
-          : undefined,
         dragActivator,
         wrapItem: (item) => (
           <Popover
@@ -4464,47 +4460,11 @@ export function AppSidebar({
 
   function renderChatsList(options: { roving?: boolean } = {}) {
     const roving = options.roving ?? true;
-    const bootstrapFallbackActive =
-      activeSidebarAgentKey === normalizedBootstrapAgentKey &&
-      !activeSidebarChatId;
     return (
       <div className="sidebar-chats-list" role="list">
-        {showBootstrapChatFallback ? (
-          <div className="sidebar-chats-row" role="listitem">
-            <button
-              ref={bootstrapGuideChatAnchorRef}
-              type="button"
-              className={[
-                "assistant-worker-chat-item",
-                "sidebar-chats-item",
-                "sidebar-chats-bootstrap-fallback",
-                showBootstrapChatGuide ? "is-bootstrap-guide" : "",
-                bootstrapFallbackActive ? "is-active" : "",
-              ]
-                .filter(Boolean)
-                .join(" ")}
-              aria-current={bootstrapFallbackActive ? "page" : undefined}
-              onClick={handleBootstrapGuideOpenChat}
-              {...getSidebarRovingItemProps(
-                createSidebarChatsChatFocusId("bootstrap-fallback"),
-                roving,
-              )}
-            >
-              <span className="worker-chat-item-head">
-                <span
-                  className="assistant-worker-unread-dot chat-unread-dot"
-                  aria-hidden="true"
-                />
-                <span className="worker-chat-name">
-                  {t("sidebar.bootstrapChat.cta")}
-                </span>
-              </span>
-            </button>
-          </div>
-        ) : null}
         {sidebarChatItems.length > 0 ? (
           renderSortableChatsRows(roving)
-        ) : !showBootstrapChatFallback ? (
+        ) : (
           chatDefaultAgentUnavailable ? (
             <div className="sidebar-empty-hint">
               {t("sidebar.chats.defaultAgentUnavailable")}
@@ -4512,7 +4472,7 @@ export function AppSidebar({
           ) : (
             <div className="sidebar-empty-hint">{t("sidebar.chats.empty")}</div>
           )
-        ) : null}
+        )}
         {chatsShowMoreAvailable || chatsHistoryAvailable ? (
           <div className="sidebar-chats-actions">
             {chatsShowMoreAvailable ? (
