@@ -14,6 +14,10 @@ export type CanonicalChatSyncRequest = {
   chatId: string;
 };
 
+export type MainChatIdentity =
+  | { kind: "canonical"; agentKey: string; chatId: string }
+  | { kind: "new"; agentKey: string; newChat: string };
+
 export type CanonicalChatSyncFailureCode =
   | "stale_source"
   | "route_mismatch"
@@ -71,6 +75,71 @@ export function readAgentWebclientCanonicalChatSource(value: string) {
   } catch {
     return null;
   }
+}
+
+export function readMainChatIdentity(value: string): MainChatIdentity | null {
+  const canonical = readAgentWebclientCanonicalChatSource(value);
+  if (canonical) {
+    return { kind: "canonical", ...canonical };
+  }
+  const pending = readAgentWebclientNewChatSource(value);
+  return pending ? { kind: "new", ...pending } : null;
+}
+
+export function mainChatIdentitiesEqual(
+  left: MainChatIdentity | null | undefined,
+  right: MainChatIdentity | null | undefined,
+) {
+  if (!left || !right || left.kind !== right.kind || left.agentKey !== right.agentKey) {
+    return false;
+  }
+  return left.kind === "canonical" && right.kind === "canonical"
+    ? left.chatId === right.chatId
+    : left.kind === "new" && right.kind === "new" && left.newChat === right.newChat;
+}
+
+export function mainChatIdentityKey(identity: MainChatIdentity | null | undefined) {
+  if (!identity) return "";
+  return identity.kind === "canonical"
+    ? `canonical:${identity.agentKey}:${identity.chatId}`
+    : `new:${identity.agentKey}:${identity.newChat}`;
+}
+
+export function canCommitMainChatIdentity(input: {
+  desired: MainChatIdentity | null | undefined;
+  observed: MainChatIdentity | null | undefined;
+  ownerChatId?: string | null;
+  ownsActiveSurface: boolean;
+}) {
+  if (
+    !input.ownsActiveSurface ||
+    !mainChatIdentitiesEqual(input.desired, input.observed) ||
+    !input.desired
+  ) {
+    return false;
+  }
+  const ownerChatId = input.ownerChatId?.trim() || "";
+  return input.desired.kind === "canonical"
+    ? ownerChatId === input.desired.chatId
+    : !ownerChatId;
+}
+
+export function canCommitMainChatRegistration(input: {
+  desired: MainChatIdentity | null | undefined;
+  observed: MainChatIdentity | null | undefined;
+  ownerChatId?: string | null;
+  ownsActiveSurface: boolean;
+  candidateRevision: number;
+  currentRevision: number;
+  candidateTransitionKey: string;
+  currentTransitionKey: string;
+  candidateWebContentsId: number;
+  currentWebContentsId?: number;
+}) {
+  return input.candidateRevision === input.currentRevision &&
+    input.candidateTransitionKey === input.currentTransitionKey &&
+    input.candidateWebContentsId === input.currentWebContentsId &&
+    canCommitMainChatIdentity(input);
 }
 
 export function createCanonicalAgentChatRoute(

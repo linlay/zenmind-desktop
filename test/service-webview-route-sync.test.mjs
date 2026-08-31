@@ -463,8 +463,8 @@ test("service webview listeners stay bound across route and active-state changes
 test("main Chat queues the latest route until dom-ready and never retries deterministic rejection", () => {
   const source = readServiceWebviewSurfaceSource();
   const registrationBlock = source.slice(
-    source.indexOf("const mainChatSurface = isAgentWebclientChatSurface"),
-    source.indexOf("useEffect(() => {", source.indexOf("const mainChatSurface = isAgentWebclientChatSurface")),
+    source.indexOf("const observedMainChatIdentity"),
+    source.indexOf("const readPendingNewChatRegistration"),
   );
   const directRouteBlock = source.slice(
     source.indexOf("function requestDirectWebviewRouteLoad"),
@@ -472,19 +472,24 @@ test("main Chat queues the latest route until dom-ready and never retries determ
   );
 
   assert.match(registrationBlock, /const registrationActive = ownsActiveSurface && routeAligned/u);
+  assert.match(registrationBlock, /canCommitMainChatIdentity\(/u);
   assert.match(
     registrationBlock,
     /isAgentWebclientMainChatRouteAligned\([\s\S]*?desiredDesktopRoute,[\s\S]*?currentUrl,[\s\S]*?embeddedUrl/u,
   );
-  assert.doesNotMatch(registrationBlock, /resolveAgentWebclientDesktopChatRouteFromUrl/u);
   assert.match(registrationBlock, /preserveRegisteredIdentity/u);
-  assert.match(registrationBlock, /result\.reason === "route_not_aligned"[\s\S]*?return;/u);
-  assert.doesNotMatch(registrationBlock, /attempt <= 6|Math\.min\(25/u);
-  assert.match(registrationBlock, /attempt <= 2[\s\S]*?attempt === 1 \? 100 : 300/u);
+  assert.match(source, /result\.reason === "route_not_aligned"[\s\S]*?return;/u);
+  assert.match(source, /\[50, 150, 300, 500\]/u);
+  assert.match(source, /isDesiredMainChatRouteObserved\(\)/u);
+  assert.match(source, /isAgentWebclientMainChatRouteAligned\([\s\S]{0,240}mainChatIdentitiesEqual\(/u);
+  assert.match(source, /main-chat-identity-convergence-timeout/u);
+  assert.match(source, /attempt <= 2[\s\S]*?attempt === 1 \? 100 : 300/u);
   assert.match(directRouteBlock, /routeTransitionSequenceRef\.current \+ 1/u);
   assert.match(directRouteBlock, /!domReady\.ready/u);
   assert.match(directRouteBlock, /pendingDirectRouteTransitionRef\.current/u);
   assert.match(source, /webviewDomReadyRef\.current = \{ ready: true, webContentsId \}/u);
+  assert.match(source, /mainChatNavigation && isMainFrame[\s\S]*?refreshCurrentPageSnapshotTarget\(\)/u);
+  assert.match(source, /refreshCurrentPageSnapshotTarget\(\);[\s\S]*?direct-route-client-navigation-applied/u);
 });
 
 test("main chat routes every changed business or host target through the WebClient bridge", () => {

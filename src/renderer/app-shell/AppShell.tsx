@@ -9,6 +9,7 @@ import {
 } from "./navigation/capabilityNavigation";
 import type { WebsiteFaviconCache } from "../components/Favicon";
 import { BrandMark, SidebarActionIcon } from "../components/BrandMark";
+import { PageFeedbackStack } from "../components/PageFeedbackStack";
 import { DesktopGlobalSearchOverlay } from "./search/DesktopGlobalSearchOverlay";
 import { DesktopActionConfirmationDialog } from "./DesktopActionConfirmationDialog";
 import { DesktopShutdownOverlay } from "./DesktopShutdownOverlay";
@@ -28,7 +29,7 @@ import { EmptyContentSurface } from "./EmptyContentSurface";
 import { StartupLoadingScreen } from "./startup/StartupGate";
 import { EnvImportOverlay } from "./startup/EnvImportOverlay";
 import { AgentWebclientCopilotDock } from "../copilot/sidebar-copilot/AgentWebclientCopilotDock";
-import type { ServiceWebviewSurfaceRegistrationState } from "../service-webview/ServiceWebviewSurface";
+import type { MainChatCommitSnapshot } from "../service-webview/ServiceWebviewSurface";
 import {
   clearCopilotDockSessionSnapshot,
   readCopilotDockSessionSnapshot,
@@ -156,6 +157,10 @@ import {
   type WorkPanelCommand,
   type WorkPanelState,
 } from "../../shared/work-panel";
+import {
+  resolvePendingMainChatWorkPanelOpen,
+  shouldCancelPendingMainChatWorkPanelOpenForRoute,
+} from "../../shared/main-chat-work-panel";
 
 type ThemePreference = "light" | "dark" | "system";
 type ResolvedThemeMode = "light" | "dark";
@@ -581,20 +586,29 @@ export function AppShell() {
   const refreshServicesRef = useRef(refreshServices);
   const assistantNavAgentsRefreshIdRef = useRef(0);
   const chatDefaultAgentMigrationRef = useRef("");
-  const registeredMainChatSurfaceRef = useRef<{
-    registrationId: string;
-    chatId: string;
-    agentKey: string;
-  } | null>(null);
+  const registeredMainChatSurfaceRef = useRef<MainChatCommitSnapshot | null>(null);
+  const registeredMainChatRouteRef = useRef("");
+  const lastMainChatCommitRef = useRef<Pick<
+    MainChatCommitSnapshot,
+    "registrationId" | "webContentsId" | "revision"
+  > | null>(null);
   const pendingChatWorkPanelOpenRef = useRef<{
     chatId: string;
     agentKey: string;
     action: "ensure" | "show";
+    routeKey: string;
+    minimumRevision: number;
+    registrationId: string;
+    webContentsId: number;
+    timeoutId: number;
   } | null>(null);
   const [desktopPlatform, setDesktopPlatform] = useState(inferDesktopPlatform);
   const [windowFullScreen, setWindowFullScreen] = useState(false);
   const [windowMaximized, setWindowMaximized] = useState(false);
   const [windowControlsMasked, setWindowControlsMasked] = useState(false);
+  const [workPanelOpenError, setWorkPanelOpenError] = useState("");
+  const [committedMainChatSnapshot, setCommittedMainChatSnapshot] =
+    useState<MainChatCommitSnapshot | null>(null);
   const [workPanelFullscreenOwnerChatId, setWorkPanelFullscreenOwnerChatId] =
     useState<string | null>(null);
   const workPanelFullscreenOwnerChatIdRef = useRef<string | null>(null);
@@ -748,10 +762,18 @@ export function AppShell() {
   const activeEmbeddedAgentWebclientRoute = isEmbeddedAgentWebclientRoute(activeAgentWebclientRoute)
     ? activeAgentWebclientRoute
     : null;
+  const currentRoute = `${location.pathname}${location.search}`;
   const activeChatRouteInfo = readAgentRouteInfo(`${location.pathname}${location.search}`);
-  const activeChatWorkPanelChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId
+  const desiredChatRouteChatId = activeEmbeddedAgentWebclientRoute?.kind === "chat" && activeChatRouteInfo.chatId
     ? activeChatRouteInfo.chatId
     : null;
+  const activeChatWorkPanelChatId =
+    registeredMainChatRouteRef.current === currentRoute &&
+    committedMainChatSnapshot?.identity.kind === "canonical" &&
+    committedMainChatSnapshot.identity.chatId === desiredChatRouteChatId &&
+    committedMainChatSnapshot.identity.agentKey === activeChatRouteInfo.agentKey.trim()
+      ? committedMainChatSnapshot.identity.chatId
+      : null;
   const activeChatWorkPanelVisible = Boolean(
     activeChatWorkPanelChatId &&
     workPanelState.visibleOwnerChatIds.includes(activeChatWorkPanelChatId)
@@ -812,7 +834,6 @@ export function AppShell() {
   const isSettingsRoute = matchSettingsRoute(location.pathname);
   const sidebarMode = resolveSidebarMode(location.pathname);
   const isSecondarySidebarMode = sidebarMode !== "primary";
-  const currentRoute = `${location.pathname}${location.search}`;
   const activeAgentChatFocusRequestId =
     !globalSearchOpen &&
     !chatHistoryDialog &&
@@ -3901,10 +3922,19 @@ export function AppShell() {
     ensureChatWorkPanelWorkspace(chatId, agentKey);
   }, [dispatchWorkPanelCommand, ensureChatWorkPanelWorkspace]);
 
+  const clearPendingChatWorkPanelOpen = useCallback(() => {
+    const pending = pendingChatWorkPanelOpenRef.current;
+    if (pending) {
+      window.clearTimeout(pending.timeoutId);
+      pendingChatWorkPanelOpenRef.current = null;
+    }
+  }, []);
+
   const requestChatWorkPanelOpenWhenRegistered = useCallback((
     chatIdValue: string,
     agentKeyValue: string,
     action: "ensure" | "show" = "ensure",
+    routeKeyValue: string = currentRoute,
   ) => {
     const chatId = chatIdValue.trim();
     const agentKey = agentKeyValue.trim();
@@ -3914,40 +3944,111 @@ export function AppShell() {
       activeChatRouteInfo.agentKey.trim() === agentKey;
     if (
       activeRouteMatches &&
-      registered?.chatId === chatId &&
-      registered.agentKey === agentKey
+      registeredMainChatRouteRef.current === routeKeyValue &&
+      registered?.identity.kind === "canonical" &&
+      registered.identity.chatId === chatId &&
+      registered.identity.agentKey === agentKey
     ) {
+      setWorkPanelOpenError("");
       completeChatWorkPanelOpen(chatId, agentKey, action);
       return;
     }
-    pendingChatWorkPanelOpenRef.current = { chatId, agentKey, action };
-  }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, completeChatWorkPanelOpen]);
+    clearPendingChatWorkPanelOpen();
+    setWorkPanelOpenError("");
+    const lastCommit = lastMainChatCommitRef.current;
+    const pending = {
+      chatId,
+      agentKey,
+      action,
+      routeKey: routeKeyValue,
+      minimumRevision: lastCommit?.revision ?? 0,
+      registrationId: lastCommit?.registrationId ?? "",
+      webContentsId: lastCommit?.webContentsId ?? 0,
+      timeoutId: 0,
+    };
+    pending.timeoutId = window.setTimeout(() => {
+      if (pendingChatWorkPanelOpenRef.current !== pending) return;
+      pendingChatWorkPanelOpenRef.current = null;
+      setWorkPanelOpenError(t("chatWorkPanel.openNotReady"));
+      window.electronAPI.diagnostics?.reportRendererError({
+        source: "app-shell",
+        level: "warn",
+        message: "main-chat-work-panel-open-timeout",
+        details: {
+          route: pending.routeKey,
+          desiredIdentity: { kind: "canonical", agentKey, chatId },
+          committedIdentity: registeredMainChatSurfaceRef.current?.identity ?? null,
+          minimumRevision: pending.minimumRevision,
+          registrationId: pending.registrationId,
+          webContentsId: pending.webContentsId,
+        },
+      });
+    }, 5_000);
+    pendingChatWorkPanelOpenRef.current = pending;
+  }, [
+    activeChatRouteInfo.agentKey,
+    activeChatRouteInfo.chatId,
+    clearPendingChatWorkPanelOpen,
+    completeChatWorkPanelOpen,
+    currentRoute,
+    t,
+  ]);
 
   const handleMainChatSurfaceRegistrationChange = useCallback((
-    state: ServiceWebviewSurfaceRegistrationState,
+    snapshot: MainChatCommitSnapshot | null,
   ) => {
-    const agentKey = state.agentKey.trim();
-    if (!state.active || !state.ownerChatId || !agentKey) {
-      if (registeredMainChatSurfaceRef.current?.registrationId === state.registrationId) {
-        registeredMainChatSurfaceRef.current = null;
-      }
+    if (!snapshot) {
+      registeredMainChatSurfaceRef.current = null;
+      registeredMainChatRouteRef.current = "";
+      setCommittedMainChatSnapshot(null);
       return;
     }
-    registeredMainChatSurfaceRef.current = {
-      registrationId: state.registrationId,
-      chatId: state.ownerChatId,
-      agentKey,
+    registeredMainChatSurfaceRef.current = snapshot;
+    registeredMainChatRouteRef.current = currentRoute;
+    setCommittedMainChatSnapshot(snapshot);
+    lastMainChatCommitRef.current = {
+      registrationId: snapshot.registrationId,
+      webContentsId: snapshot.webContentsId,
+      revision: snapshot.revision,
     };
     const pending = pendingChatWorkPanelOpenRef.current;
-    if (
-      pending &&
-      pending.chatId === state.ownerChatId &&
-      pending.agentKey === agentKey
-    ) {
-      pendingChatWorkPanelOpenRef.current = null;
+    if (!pending) return;
+    const resolution = resolvePendingMainChatWorkPanelOpen(pending, snapshot, currentRoute);
+    if (resolution === "cancel") {
+      clearPendingChatWorkPanelOpen();
+      return;
+    }
+    if (resolution === "complete") {
+      clearPendingChatWorkPanelOpen();
+      setWorkPanelOpenError("");
       completeChatWorkPanelOpen(pending.chatId, pending.agentKey, pending.action);
     }
-  }, [completeChatWorkPanelOpen]);
+  }, [clearPendingChatWorkPanelOpen, completeChatWorkPanelOpen, currentRoute]);
+
+  useEffect(() => {
+    const registered = registeredMainChatSurfaceRef.current;
+    if (
+      registered?.identity.kind !== "canonical" ||
+      registeredMainChatRouteRef.current !== currentRoute ||
+      registered.identity.chatId !== activeChatRouteInfo.chatId ||
+      registered.identity.agentKey !== activeChatRouteInfo.agentKey.trim()
+    ) {
+      registeredMainChatSurfaceRef.current = null;
+      registeredMainChatRouteRef.current = "";
+      setCommittedMainChatSnapshot(null);
+    }
+    const pending = pendingChatWorkPanelOpenRef.current;
+    if (pending && shouldCancelPendingMainChatWorkPanelOpenForRoute(pending, currentRoute)) {
+      clearPendingChatWorkPanelOpen();
+    }
+  }, [
+    activeChatRouteInfo.agentKey,
+    activeChatRouteInfo.chatId,
+    clearPendingChatWorkPanelOpen,
+    currentRoute,
+  ]);
+
+  useEffect(() => clearPendingChatWorkPanelOpen, [clearPendingChatWorkPanelOpen]);
 
   async function handleOpenWebappInWorkPanel(
     ownerChatId: string,
@@ -4016,10 +4117,10 @@ export function AppShell() {
   }, [activeChatRouteInfo.agentKey, activeChatRouteInfo.chatId, closeChatWorkPanelWorkspace, currentRoute]);
 
   const toggleMainChatWorkPanel = useCallback(() => {
-    const chatId = activeChatWorkPanelChatId;
+    const chatId = desiredChatRouteChatId;
     if (!chatId) return;
     const currentState = workPanelStateRef.current;
-    if (currentState.visibleOwnerChatIds.includes(chatId)) {
+    if (activeChatWorkPanelVisible) {
       dispatchWorkPanelCommand({ type: "hideWorkspace", ownerChatId: chatId });
       return;
     }
@@ -4031,14 +4132,15 @@ export function AppShell() {
     const agentKey = activeChatRouteInfo.agentKey.trim();
     if (!agentKey) return;
     requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
-  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
+  }, [activeChatRouteInfo.agentKey, activeChatWorkPanelVisible, desiredChatRouteChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
 
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
-    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
-    if (activeChatWorkPanelChatId !== chatId) {
-      requestSidebarNavigation(createAgentChatRoute(agentKey, chatId));
+    const targetRoute = createAgentChatRoute(agentKey, chatId);
+    requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "ensure", targetRoute);
+    if (desiredChatRouteChatId !== chatId) {
+      requestSidebarNavigation(targetRoute);
     }
-  }, [activeChatWorkPanelChatId, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation]);
+  }, [desiredChatRouteChatId, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation]);
 
   const openAgentProjectEditorFromSidebar = useCallback((agent: AssistantNavAgentItem) => {
     const agentKey = agent.agentKey.trim();
@@ -4103,7 +4205,7 @@ export function AppShell() {
         ? "sidebar.chat.workPanel.close"
         : "sidebar.chat.workPanel.open")}
       aria-pressed={activeChatWorkPanelVisible}
-      disabled={!activeChatWorkPanelChatId}
+      disabled={!desiredChatRouteChatId}
       title={t(activeChatWorkPanelVisible
         ? "sidebar.chat.workPanel.close"
         : "sidebar.chat.workPanel.open")}
@@ -4153,6 +4255,17 @@ export function AppShell() {
         isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
     >
+      <PageFeedbackStack
+        placement="top-center"
+        items={workPanelOpenError
+          ? [{
+              id: "main-chat-work-panel-open-error",
+              tone: "error",
+              message: workPanelOpenError,
+              onDismiss: () => setWorkPanelOpenError(""),
+            }]
+          : []}
+      />
       {isWindows && !windowFullScreen ? (
         <header
           className={`app-system-bar${windowControlsMasked ? " is-masked" : ""}`}
@@ -4367,7 +4480,7 @@ export function AppShell() {
           <ServiceWebviewSurfaceHost
             activeServiceId={activeServiceId}
             activeAgentWebclientRoute={activeEmbeddedAgentWebclientRoute}
-            activeOwnerChatId={activeChatWorkPanelChatId}
+            activeOwnerChatId={desiredChatRouteChatId}
             agentChatFocusRequestId={activeAgentChatFocusRequestId}
             hostTheme={resolvedTheme}
             mountedServiceIds={mountedServiceIds}

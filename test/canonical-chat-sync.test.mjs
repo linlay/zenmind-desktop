@@ -6,11 +6,16 @@ const require = createRequire(import.meta.url);
 const {
   CANONICAL_CHAT_SYNC_REQUEST_CHANNEL,
   CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
+  canCommitMainChatIdentity,
+  canCommitMainChatRegistration,
   classifyAgentWebclientNewChatRegistration,
   createCanonicalAgentChatRoute,
   createPreparedAgentChatRoute,
+  mainChatIdentitiesEqual,
+  mainChatIdentityKey,
   readAgentWebclientCanonicalChatSource,
   readAgentWebclientNewChatSource,
+  readMainChatIdentity,
   resolveAgentWebclientNewChatRegistrationOutcome,
 } = require("../dist-electron/shared/canonical-chat-sync.js");
 const {
@@ -169,6 +174,85 @@ test("Main Chat route identity parsers reject ambiguous canonical and new Chat s
   ]) {
     assert.equal(readAgentWebclientNewChatSource(source), null, source);
   }
+});
+
+test("Main Chat identity commits only when desired, observed, owner, and active surface converge", () => {
+  const chatA = readMainChatIdentity("/agent/coder?chatId=chat-a");
+  const chatB = readMainChatIdentity("http://127.0.0.1:17080/agent/coder?chatId=chat-b");
+  const newChat = readMainChatIdentity("/agent/coder?newChat=1783680000000");
+
+  assert.deepEqual(chatA, { kind: "canonical", agentKey: "coder", chatId: "chat-a" });
+  assert.deepEqual(newChat, { kind: "new", agentKey: "coder", newChat: "1783680000000" });
+  assert.equal(mainChatIdentityKey(chatA), "canonical:coder:chat-a");
+  assert.equal(mainChatIdentitiesEqual(chatA, chatB), false);
+  assert.equal(canCommitMainChatIdentity({
+    desired: chatB,
+    observed: chatA,
+    ownerChatId: "chat-b",
+    ownsActiveSurface: true,
+  }), false);
+  assert.equal(canCommitMainChatIdentity({
+    desired: chatB,
+    observed: chatB,
+    ownerChatId: "chat-b",
+    ownsActiveSurface: true,
+  }), true);
+  assert.equal(canCommitMainChatIdentity({
+    desired: chatB,
+    observed: chatB,
+    ownerChatId: "chat-a",
+    ownsActiveSurface: true,
+  }), false);
+  assert.equal(canCommitMainChatIdentity({
+    desired: newChat,
+    observed: newChat,
+    ownerChatId: "",
+    ownsActiveSurface: true,
+  }), true);
+  assert.equal(canCommitMainChatIdentity({
+    desired: newChat,
+    observed: newChat,
+    ownerChatId: "chat-a",
+    ownsActiveSurface: true,
+  }), false);
+});
+
+test("late Main Chat registrations cannot commit after a newer route or guest generation", () => {
+  const chatB = readMainChatIdentity("/agent/coder?chatId=chat-b");
+  const chatC = readMainChatIdentity("/agent/coder?chatId=chat-c");
+  const candidateB = {
+    desired: chatB,
+    observed: chatB,
+    ownerChatId: "chat-b",
+    ownsActiveSurface: true,
+    candidateRevision: 2,
+    currentRevision: 2,
+    candidateTransitionKey: "active:chat-b:1",
+    currentTransitionKey: "active:chat-b:1",
+    candidateWebContentsId: 101,
+    currentWebContentsId: 101,
+  };
+
+  assert.equal(canCommitMainChatRegistration(candidateB), true);
+  assert.equal(canCommitMainChatRegistration({
+    ...candidateB,
+    currentRevision: 3,
+    currentTransitionKey: "active:chat-c:1",
+  }), false);
+  assert.equal(canCommitMainChatRegistration({
+    ...candidateB,
+    currentWebContentsId: 202,
+  }), false);
+  assert.equal(canCommitMainChatRegistration({
+    ...candidateB,
+    desired: chatC,
+    observed: chatB,
+    ownerChatId: "chat-c",
+    candidateRevision: 3,
+    currentRevision: 3,
+    candidateTransitionKey: "active:chat-c:1",
+    currentTransitionKey: "active:chat-c:1",
+  }), false);
 });
 
 test("canonical Chat IPC accepts an ACK only from the owning renderer", async () => {

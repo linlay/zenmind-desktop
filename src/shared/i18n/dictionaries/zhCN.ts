@@ -294,6 +294,7 @@ export const zhCNMessages = {
   "chatWorkPanel.title": "工作面板",
   "chatWorkPanel.close": "关闭工作面板",
   "chatWorkPanel.closeTab": "关闭 {title}",
+  "chatWorkPanel.openNotReady": "当前对话尚未准备完成，无法打开工作面板，请重试。",
   "chatWorkPanel.resize": "调整工作面板宽度",
   "chatWorkPanel.tabContextMenu.enterFullscreen": "进入全屏",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "退出全屏",

@@ -276,13 +276,14 @@ test("Main Chat query is Broker-owned on the Primary lane and keeps FramePort v2
     frame: "request",
     id: "local-query-1",
     type: "/api/query",
-    payload: { requestId: "request-1", runId: "run-1", chatId: "chat-1", agentKey: "agent-1", message: "hello" },
+    payload: { requestId: "request-1", runId: "run-1", agentKey: "agent-1", message: "hello" },
   });
   await flush();
 
   assert.equal(runtime.calls.queries.length, 1);
   assert.equal(runtime.calls.queries[0].lane, "primary");
   assert.equal(runtime.calls.queries[0].requestType, "/api/query");
+  assert.equal(runtime.calls.queries[0].payload.chatId, "chat-1");
   assert.equal(runtime.calls.queries[0].consumerId, "agent-webclient-frame-port:101:main-session");
   assert.equal(runtime.calls.forwarded.length, 0);
   assert.equal(runtime.broker.getActiveRootObserver().kind, "main_chat");

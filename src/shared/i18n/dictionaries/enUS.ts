@@ -294,6 +294,7 @@ export const enUSMessages = {
   "chatWorkPanel.title": "Work Panel",
   "chatWorkPanel.close": "Close Work Panel",
   "chatWorkPanel.closeTab": "Close {title}",
+  "chatWorkPanel.openNotReady": "This chat is not ready to open the Work Panel. Try again.",
   "chatWorkPanel.resize": "Resize Work Panel",
   "chatWorkPanel.tabContextMenu.enterFullscreen": "Enter Full Screen",
   "chatWorkPanel.tabContextMenu.exitFullscreen": "Exit Full Screen",

@@ -859,7 +859,7 @@ export type RendererDiagnosticLevel = "debug" | "warn" | "error";
 
 export interface RendererDiagnosticReport {
   level: RendererDiagnosticLevel;
-  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview";
+  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "app-shell";
   message: string;
   details?: Record<string, unknown>;
   stack?: string;

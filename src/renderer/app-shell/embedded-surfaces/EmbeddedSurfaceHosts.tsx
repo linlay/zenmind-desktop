@@ -21,7 +21,7 @@ import {
   createSurfaceIdentity,
   createWebEntrySurfaceIdentity
 } from "../../../shared/surface-identity";
-import type { ServiceWebviewSurfaceRegistrationState } from "../../service-webview/ServiceWebviewSurface";
+import type { MainChatCommitSnapshot } from "../../service-webview/ServiceWebviewSurface";
 
 type ThemeMode = "light" | "dark";
 
@@ -90,7 +90,7 @@ export function ServiceWebviewSurfaceHost({
   mountedServiceIds: string[];
   onAgentChatFocusRequestHandled?: (requestId: number) => void;
   activeOwnerChatId?: string | null;
-  onMainChatSurfaceRegistrationChange?: (state: ServiceWebviewSurfaceRegistrationState) => void;
+  onMainChatSurfaceRegistrationChange?: (snapshot: MainChatCommitSnapshot | null) => void;
 }) {
   const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
   const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);

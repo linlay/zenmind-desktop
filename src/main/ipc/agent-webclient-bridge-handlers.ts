@@ -1380,7 +1380,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     // Trusted one-shot Platform requests share the broker without acquiring the live Run lease.
     // Only query/attach/BTW streams require the additional active-surface authorization below.
     const isLive = LIVE_REQUEST_TYPES.has(frame.type);
-    const payload = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
+    let payload: Record<string, unknown> = isPlainBridgeRecord(frame.payload) ? frame.payload : {};
     let newChatSource: StreamBinding["newChatSource"] = null;
     if (frame.type === "/api/query") {
       try {
@@ -1391,6 +1391,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         });
         context = authorization.context;
         newChatSource = authorization.newChatSource;
+        const committedChatId = context.target.ownerChatId?.trim() || "";
+        if (committedChatId) {
+          payload = { ...payload, chatId: committedChatId };
+        }
       } catch (error) {
         sendFrame(session, frameError(
           frame.id,

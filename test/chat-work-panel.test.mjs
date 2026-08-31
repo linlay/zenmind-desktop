@@ -22,7 +22,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /<div className="app-window-controls-layer">\s*\{mainChatWorkPanelToggle\}\s*<\/div>/u);
   assert.match(appShell, /hasPanelToggle=\{activeChatWorkPanelVisible && showMainChatWorkPanelToggle\}/u);
   assert.doesNotMatch(appShell, /LayoutOutlined/u);
-  assert.match(appShell, /disabled=\{!activeChatWorkPanelChatId\}/u);
+  assert.match(appShell, /disabled=\{!desiredChatRouteChatId\}/u);
   assert.match(appShell, /createAgentWebclientOverviewPath\(\{ chatId \}\)/u);
   assert.match(appShell, /shouldEnsureOverview/u);
   assert.match(appShell, /pinned: true/u);
@@ -30,20 +30,19 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /type: "hideWorkspace"/u);
   assert.match(appShell, /type: "showWorkspace"/u);
   assert.match(appShell, /pendingChatWorkPanelOpenRef/u);
+  assert.match(appShell, /committedMainChatSnapshot/u);
   assert.match(appShell, /requestChatWorkPanelOpenWhenRegistered/u);
   assert.match(appShell, /handleMainChatSurfaceRegistrationChange/u);
-  assert.match(appShell, /const agentKey = state\.agentKey\.trim\(\)/u);
-  assert.doesNotMatch(
-    appShell,
-    /activeChatRouteInfo\.chatId !== state\.ownerChatId/u,
+  assert.match(appShell, /resolvePendingMainChatWorkPanelOpen\(pending, snapshot, currentRoute\)/u);
+  assert.match(appShell, /main-chat-work-panel-open-timeout/u);
+  assert.match(appShell, /5_000/u);
+  assert.match(
+    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
+    /const snapshot: MainChatCommitSnapshot = \{[\s\S]{0,180}identity: desiredMainChatIdentity/u,
   );
   assert.match(
     read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
-    /agentKey: readAgentWebclientAgentRouteKey\([\s\S]{0,160}registration\.pageRouteIdentity/u,
-  );
-  assert.match(
-    read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
-    /onSurfaceRegistrationChangeRef\.current\?\.\(\{/u,
+    /onSurfaceRegistrationChangeRef\.current\?\.\(snapshot\)/u,
   );
   assert.doesNotMatch(
     read("src/renderer/service-webview/ServiceWebviewSurface.tsx"),
