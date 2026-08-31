@@ -978,7 +978,14 @@ export function WorkPanelHost({
         return;
       }
       dispatchCommand({ type: "discardReview", ownerChatId, itemId: item.itemId });
-      sendReviewStateToPreview(ownerChatId, item, null, false);
+      // Resource Viewer routes sync by review kind, so keep the completed session's
+      // kind while explicitly disabling review and removing every annotation.
+      sendReviewStateToPreview(
+        ownerChatId,
+        item,
+        { ...session, annotations: [] },
+        false,
+      );
     } finally {
       setReviewHandoffBusyKeys((current) => {
         const next = new Set(current);

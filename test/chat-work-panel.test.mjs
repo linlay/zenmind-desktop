@@ -187,6 +187,10 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   assert.match(reviewPanel, /session\.kind === "image" \? \([\s\S]*?chat-work-panel-review-toolbar/u);
   assert.match(reviewPanel, /annotation\.id === activeAnnotationId \? \([\s\S]*?<Input\.TextArea/u);
   assert.match(reviewPanel, /chat-work-panel-review-panel-footer[\s\S]*?chatWorkPanel\.review\.handoff/u);
+  assert.match(
+    host,
+    /type: "discardReview"[\s\S]{0,240}?sendReviewStateToPreview\([\s\S]{0,160}?\{ \.\.\.session, annotations: \[\] \}[\s\S]{0,80}?false/u,
+  );
 });
 
 test("WorkPanel add menu and canonical WebApp presentation keep host-only ownership", () => {
