@@ -1,4 +1,5 @@
 import { CloseOutlined } from "@ant-design/icons";
+import { createPortal } from "react-dom";
 import { useI18n } from "../i18n/useI18n";
 
 export type PageFeedbackItem = {
@@ -22,7 +23,7 @@ export function PageFeedbackStack({
     return null;
   }
 
-  return (
+  const feedbackStack = (
     <div
       className={`page-feedback-anchor${placement === "top-center" ? " is-top-center" : ""}`}
     >
@@ -49,4 +50,8 @@ export function PageFeedbackStack({
       </div>
     </div>
   );
+
+  return typeof document === "undefined"
+    ? feedbackStack
+    : createPortal(feedbackStack, document.body);
 }

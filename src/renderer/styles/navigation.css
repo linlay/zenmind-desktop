@@ -2837,6 +2837,16 @@ div.sidebar-chats-group-popover {
   height: 40px;
 }
 
+.sidebar-chat-share-once-warning {
+  margin: 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
 .sidebar-chat-share-history-head {
   display: flex;
   align-items: center;

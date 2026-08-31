@@ -958,7 +958,7 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
         public: {
           method: "POST",
           path: "/api/foo?x=1",
-          host: "demo.wa.zenmind.cc",
+          host: "demo-wa.zenmind.cc",
           headers: { "content-type": "text/plain" }
         },
         upstream: {
@@ -970,7 +970,7 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
         route: {
           id: "route_http",
           name: "demo",
-          publicHost: "demo.wa.zenmind.cc"
+          publicHost: "demo-wa.zenmind.cc"
         },
         bodyLength: requestBody.byteLength
       }
@@ -1012,8 +1012,8 @@ test("Tunnel Client endpoint proxies ns=wa HTTP streams with v1 public upstream 
   assert.deepEqual(captured, {
     method: "POST",
     url: "/app/api/foo?x=1",
-    host: "demo.wa.zenmind.cc",
-    forwardedHost: "demo.wa.zenmind.cc",
+    host: "demo-wa.zenmind.cc",
+    forwardedHost: "demo-wa.zenmind.cc",
     body: "hello world"
   });
 });
@@ -1171,7 +1171,7 @@ test("Tunnel Client endpoint streams ns=wa HTTP responses with unknown body leng
         public: {
           method: "GET",
           path: "/events",
-          host: "events.wa.zenmind.cc",
+          host: "events-wa.zenmind.cc",
           headers: {}
         },
         upstream: {
@@ -1261,7 +1261,7 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
         public: {
           method: "GET",
           path: "/socket?room=1",
-          host: "socket.wa.zenmind.cc",
+          host: "socket-wa.zenmind.cc",
           headers: {}
         },
         upstream: {
@@ -1273,7 +1273,7 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
         route: {
           id: "route_ws",
           name: "socket",
-          publicHost: "socket.wa.zenmind.cc"
+          publicHost: "socket-wa.zenmind.cc"
         }
       }
     }));
@@ -1312,7 +1312,7 @@ test("Tunnel Client endpoint proxies ns=wa websocket text and binary frames", as
 
   await client.connect();
   const response = await fakeRelay.start();
-  assert.equal(capturedHost, "socket.wa.zenmind.cc");
+  assert.equal(capturedHost, "socket-wa.zenmind.cc");
   assert.equal(response.text.type, 1);
   assert.equal(response.text.payload.toString("utf8"), "echo:hello");
   assert.equal(response.binary.type, 2);
@@ -1374,7 +1374,7 @@ test("Tunnel Client endpoint rejects non-loopback ns=wa upstream hosts", async (
         public: {
           method: "GET",
           path: "/",
-          host: "bad.wa.zenmind.cc",
+          host: "bad-wa.zenmind.cc",
           headers: {}
         },
         upstream: {
@@ -1425,7 +1425,7 @@ test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
         type: "http",
         id: "req_unknown_type",
         payload: {
-          public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+          public: { method: "GET", path: "/", host: "bad-wa.zenmind.cc", headers: {} },
           upstream: { scheme: "http", host: "127.0.0.1", port: 5173, basePath: "" },
           bodyLength: 0
         }
@@ -1441,7 +1441,7 @@ test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
         type: "http.request",
         id: "req_bad_body",
         payload: {
-          public: { method: "POST", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+          public: { method: "POST", path: "/", host: "bad-wa.zenmind.cc", headers: {} },
           upstream: { scheme: "http", host: "127.0.0.1", port: 5173, basePath: "" },
           bodyLength: -1
         }
@@ -1457,7 +1457,7 @@ test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
         type: "http.request",
         id: "req_bad_port",
         payload: {
-          public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+          public: { method: "GET", path: "/", host: "bad-wa.zenmind.cc", headers: {} },
           upstream: { scheme: "http", host: "127.0.0.1", port: 0, basePath: "" },
           bodyLength: 0
         }
@@ -1473,7 +1473,7 @@ test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
         type: "http.request",
         id: "req_http_scheme",
         payload: {
-          public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+          public: { method: "GET", path: "/", host: "bad-wa.zenmind.cc", headers: {} },
           upstream: { scheme: "ws", host: "127.0.0.1", port: 5173, basePath: "" },
           bodyLength: 0
         }
@@ -1489,7 +1489,7 @@ test("Tunnel Client endpoint rejects malformed ns=wa v1 metadata", async () => {
         type: "websocket.connect",
         id: "req_ws_scheme",
         payload: {
-          public: { method: "GET", path: "/", host: "bad.wa.zenmind.cc", headers: {} },
+          public: { method: "GET", path: "/", host: "bad-wa.zenmind.cc", headers: {} },
           upstream: { scheme: "http", host: "127.0.0.1", port: 5173, basePath: "" }
         }
       },

@@ -34,7 +34,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
-import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
+import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
   isDesktopCopilotPageKey
@@ -183,6 +183,36 @@ type ExternalExperimentalItem = {
 };
 
 const EMPTY_WEB_SURFACE_ROUTE = "/webs";
+const WEBAPP_PUBLISH_CHANGE_REASONS = new Set([
+  "published",
+  "unpublished",
+  "route-synced",
+  "publish-failed"
+]);
+
+function sameWebappPublishState(
+  left: WebappPublishState | null | undefined,
+  right: WebappPublishState | null | undefined
+) {
+  if (!left || !right) {
+    return left === right;
+  }
+  return left.id === right.id &&
+    left.updatedAt === right.updatedAt &&
+    left.active === right.active &&
+    left.status === right.status &&
+    left.url === right.url;
+}
+
+function sameWebappPublishStateMap(
+  left: Record<string, WebappPublishState | null>,
+  right: Record<string, WebappPublishState | null>
+) {
+  const leftIds = Object.keys(left);
+  const rightIds = Object.keys(right);
+  return leftIds.length === rightIds.length &&
+    rightIds.every((id) => sameWebappPublishState(left[id], right[id]));
+}
 
 function resolveAssistantNavDisplayItems(result: AssistantNavAgentItemsResult) {
   const activityItems = Array.isArray(result.activityItems) ? result.activityItems : [];
@@ -658,6 +688,7 @@ export function AppShell() {
   const [webItems, setWebItems] = useState<WebEntry[]>([]);
   const [webItemsLoaded, setWebItemsLoaded] = useState(false);
   const [webappRuntimeById, setWebappRuntimeById] = useState<Record<string, WebappRuntimeViewState>>({});
+  const [webappPublishStateById, setWebappPublishStateById] = useState<Record<string, WebappPublishState | null>>({});
   const [faviconCache, setFaviconCache] = useState<WebsiteFaviconCache>({});
   const webItemsRef = useRef<WebEntry[]>([]);
   const activeWebEntryKeyRef = useRef<WebEntryKey | null>(null);
@@ -1061,9 +1092,40 @@ export function AppShell() {
     const result = await window.electronAPI.webs.list();
     if (result.ok) {
       updateWebItems(result.items);
+      setWebappPublishStateById((current) =>
+        sameWebappPublishStateMap(current, result.webappPublishStates)
+          ? current
+          : result.webappPublishStates
+      );
       await refreshWebappRuntimeStates(result.items);
     }
     return result;
+  }
+
+  async function refreshWebappPublishState(webappId: string) {
+    const normalizedId = webappId.trim();
+    if (!normalizedId) {
+      return;
+    }
+    const result = await window.electronAPI.webs.webapps.getPublishStatus(normalizedId);
+    setWebappPublishStateById((current) => {
+      if (sameWebappPublishState(current[normalizedId], result.state)) {
+        return current;
+      }
+      return { ...current, [normalizedId]: result.state };
+    });
+  }
+
+  function handleSettingsWebappPublishStateChange(id: string, state: WebappPublishState | null) {
+    const webappId = id.trim();
+    if (!webappId) {
+      return;
+    }
+    setWebappPublishStateById((current) =>
+      sameWebappPublishState(current[webappId], state)
+        ? current
+        : { ...current, [webappId]: state }
+    );
   }
 
   async function refreshWebappRuntimeStates(items: WebEntry[]) {
@@ -2184,6 +2246,14 @@ export function AppShell() {
         setMountedWebEntryKeys((current) =>
           current.filter((currentEntryKey) => currentEntryKey !== entryKey)
         );
+        return;
+      }
+      if (
+        event.webappId &&
+        event.reason &&
+        WEBAPP_PUBLISH_CHANGE_REASONS.has(event.reason)
+      ) {
+        void refreshWebappPublishState(event.webappId).catch(() => undefined);
         return;
       }
       refreshWebItems().catch(() => undefined);
@@ -3866,6 +3936,7 @@ export function AppShell() {
           webItems={webItems}
           webOpenEntryKeys={webOpenEntryKeys}
           webRunningEntryKeys={webRunningEntryKeys}
+          webappPublishStateById={webappPublishStateById}
           faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
           assistantNavChatItems={assistantNavChatItems}
@@ -4014,8 +4085,10 @@ export function AppShell() {
                     marketEnabled={marketEnabled}
                     onMarketEnabledChange={setMarketEnabled}
                     webItems={webItems}
+                    webappPublishStateById={webappPublishStateById}
                     onWebItemsRefresh={refreshWebItems}
                     onWebappRuntimeStateChange={handleSettingsWebappRuntimeStateChange}
+                    onWebappPublishStateChange={handleSettingsWebappPublishStateChange}
                     onAssistantSettingsChange={setAssistantSettings}
                     debugVisible={debugSettingsUnlocked}
                     onCloseDebug={handleCloseDebugSettings}

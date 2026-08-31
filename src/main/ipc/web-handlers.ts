@@ -25,7 +25,12 @@ import { applyWebOrder } from "../webs/order-store";
 import { readWebItems } from "../webs/store";
 import { webappWindowManager } from "../webs/webapps/window-manager";
 import { resetWebappRuntimeProbeCaches } from "../webs/webapps/launchers";
-import { getWebappPublishStatus, publishWebapp, unpublishWebapp } from "../webs/webapps/publisher";
+import {
+  getWebappPublishStatus,
+  publishWebapp,
+  readWebappPublishState,
+  unpublishWebapp
+} from "../webs/webapps/publisher";
 import { t } from "../i18n/main-i18n";
 
 export interface WebIpcHandlerOptions {
@@ -88,9 +93,15 @@ export function createWebappImportDiagnostic(error: unknown) {
 }
 
 export function listWebEntries(app: App) {
+  const items = applyWebOrder(app, readWebItems(app));
   return {
     ok: true,
-    items: applyWebOrder(app, readWebItems(app)),
+    items,
+    webappPublishStates: Object.fromEntries(
+      items
+        .filter((item) => item.kind === "webapp")
+        .map((item) => [item.id, readWebappPublishState(app, item.id)])
+    ),
     message: t("website.configRead")
   };
 }

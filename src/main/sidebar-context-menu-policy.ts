@@ -103,30 +103,34 @@ export function normalizeSidebarContextMenuRequest(
     }
     normalizedTarget = { kind: "chat", workPanelOpen: target.workPanelOpen };
   } else if (target.kind === "web") {
+    const commonKeys = [
+      "kind",
+      "webKind",
+      "openMode",
+      "canClose",
+      "canOpenAlternative",
+      "canExport",
+      "canRemove",
+      "showRemove"
+    ];
     if (
-      !hasOnlyKeys(target, [
-        "kind",
-        "webKind",
-        "openMode",
-        "canClose",
-        "canOpenAlternative",
-        "canExport",
-        "canRemove",
-        "showRemove"
-      ]) ||
       !["website", "webapp"].includes(String(target.webKind)) ||
       !["dialog", "window"].includes(String(target.openMode)) ||
       !isBoolean(target.canClose) ||
       !isBoolean(target.canOpenAlternative) ||
       !isBoolean(target.canExport) ||
       !isBoolean(target.canRemove) ||
-      !isBoolean(target.showRemove)
+      !isBoolean(target.showRemove) ||
+      (target.webKind === "website" && !hasOnlyKeys(target, commonKeys)) ||
+      (target.webKind === "webapp" && (
+        !hasOnlyKeys(target, [...commonKeys, "hasPublicShareUrl"]) ||
+        !isBoolean(target.hasPublicShareUrl)
+      ))
     ) {
       return null;
     }
-    normalizedTarget = {
-      kind: "web",
-      webKind: target.webKind as "website" | "webapp",
+    const commonTarget = {
+      kind: "web" as const,
       openMode: target.openMode as "dialog" | "window",
       canClose: target.canClose,
       canOpenAlternative: target.canOpenAlternative,
@@ -134,6 +138,13 @@ export function normalizeSidebarContextMenuRequest(
       canRemove: target.canRemove,
       showRemove: target.showRemove
     };
+    normalizedTarget = target.webKind === "webapp"
+      ? {
+          ...commonTarget,
+          webKind: "webapp",
+          hasPublicShareUrl: target.hasPublicShareUrl as boolean
+        }
+      : { ...commonTarget, webKind: "website" };
   } else {
     return null;
   }
@@ -243,6 +254,13 @@ export function buildSidebarContextMenuPolicy(
             : "web.open-in-window",
         group: 1,
         enabled: target.canOpenAlternative
+      },
+      {
+        id: target.hasPublicShareUrl
+          ? "web.copy-share-url"
+          : "web.open-publish-settings",
+        group: 1,
+        enabled: true
       },
       { id: "web.export", group: 1, enabled: target.canExport }
     );

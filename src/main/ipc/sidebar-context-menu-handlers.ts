@@ -47,6 +47,8 @@ const LABEL_KEYS: Record<SidebarContextMenuLabelId, TranslationKey> = {
   "web.close": "sidebar.website.close",
   "web.open-in-workspace": "sidebar.webapp.openInWorkspace",
   "web.open-in-window": "sidebar.webapp.openInWindow",
+  "web.copy-share-url": "sidebar.webapp.copyShareUrl",
+  "web.open-publish-settings": "sidebar.webapp.openPublishSettings",
   "web.export": "sidebar.webapp.export",
   "web.remove": "sidebar.webapp.remove"
 };

@@ -1,12 +1,25 @@
 import { createPortal } from "react-dom";
 import { CheckOutlined, CopyOutlined } from "@ant-design/icons";
-import type {
-  AssistantConversationShareExpiration,
-  AssistantConversationShareRecord,
+import {
+  ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS,
+  type AssistantConversationShareExpiration,
+  type AssistantConversationShareRecord,
 } from "../../../shared/contracts";
-import type { TranslateFunction } from "../../../shared/i18n";
+import type { TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import { formatEpochMillis } from "../../../shared/time-contract";
 import type { ConversationShareDialogState } from "./useConversationShareDialog";
+
+const EXPIRATION_LABEL_KEYS: Record<
+  AssistantConversationShareExpiration,
+  TranslationKey
+> = {
+  once: "sidebar.chat.shareExpiration.once",
+  "3h": "sidebar.chat.shareExpiration.3h",
+  "1d": "sidebar.chat.shareExpiration.1d",
+  "7d": "sidebar.chat.shareExpiration.7d",
+  "30d": "sidebar.chat.shareExpiration.30d",
+  permanent: "sidebar.chat.shareExpiration.permanent",
+};
 
 type ConversationShareDialogProps = {
   state: ConversationShareDialogState | null;
@@ -82,23 +95,11 @@ export function ConversationShareDialog({
                 )
               }
             >
-              <option value="5m">{t("sidebar.chat.shareExpiration.5m")}</option>
-              <option value="30m">
-                {t("sidebar.chat.shareExpiration.30m")}
-              </option>
-              <option value="1h">{t("sidebar.chat.shareExpiration.1h")}</option>
-              <option value="3h">{t("sidebar.chat.shareExpiration.3h")}</option>
-              <option value="1d">{t("sidebar.chat.shareExpiration.1d")}</option>
-              <option value="5d">{t("sidebar.chat.shareExpiration.5d")}</option>
-              <option value="15d">
-                {t("sidebar.chat.shareExpiration.15d")}
-              </option>
-              <option value="30d">
-                {t("sidebar.chat.shareExpiration.30d")}
-              </option>
-              <option value="permanent">
-                {t("sidebar.chat.shareExpiration.permanent")}
-              </option>
+              {ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS.map((expiration) => (
+                <option key={expiration} value={expiration}>
+                  {t(EXPIRATION_LABEL_KEYS[expiration])}
+                </option>
+              ))}
             </select>
           </label>
           <button
@@ -112,6 +113,12 @@ export function ConversationShareDialog({
               : t("sidebar.chat.shareCreate")}
           </button>
         </div>
+
+        {state.expiration === "once" ? (
+          <p className="sidebar-chat-share-once-warning" role="note">
+            {t("sidebar.chat.shareExpiration.onceWarning")}
+          </p>
+        ) : null}
 
         {state.notice ? (
           <div className="sidebar-chat-share-notice" role="status">
@@ -297,7 +304,9 @@ function ConversationShareRecordItem({
         <div>
           <dt>{t("sidebar.chat.shareExpiry")}</dt>
           <dd>
-            {record.expiresAt === null ? (
+            {record.singleUse ? (
+              t("sidebar.chat.shareSingleUse")
+            ) : record.expiresAt === null ? (
               t("sidebar.chat.sharePermanent")
             ) : (
               <time>{formatEpochMillis(record.expiresAt)}</time>

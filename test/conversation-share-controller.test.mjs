@@ -50,6 +50,7 @@ function shareRecord(overrides = {}) {
     createdAt: 1_786_363_200_000,
     expiresAt: 1_788_955_200_000,
     lastAccessedAt: null,
+    singleUse: false,
     ...overrides
   };
 }
@@ -129,23 +130,25 @@ test("createConversationShare does not call Tunnel when HTML generation fails", 
   assert.equal(created, false);
 });
 
-test("createConversationShare rejects invalid expiration before resolving dependencies", async (t) => {
+test("createConversationShare rejects removed and invalid expirations before resolving dependencies", async (t) => {
   const app = createFixture(t);
-  let called = false;
-  const result = await createConversationShare(app, {
-    async renderChatHtml() {
-      called = true;
-      return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
-    }
-  }, {
-    async create() {
-      called = true;
-      return shareRecord();
-    }
-  }, { chatId: "chat-1", expiration: "90d" });
+  for (const expiration of ["5m", "30m", "1h", "5d", "15d", "90d"]) {
+    let called = false;
+    const result = await createConversationShare(app, {
+      async renderChatHtml() {
+        called = true;
+        return { ok: true, bytes: Buffer.from("html"), filename: "chat.html" };
+      }
+    }, {
+      async create() {
+        called = true;
+        return shareRecord();
+      }
+    }, { chatId: "chat-1", expiration });
 
-  assert.equal(result.ok, false);
-  assert.equal(called, false);
+    assert.equal(result.ok, false, expiration);
+    assert.equal(called, false, expiration);
+  }
 });
 
 test("createConversationShare rejects an invalid conversation id before rendering", async (t) => {
