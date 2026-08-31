@@ -60,6 +60,7 @@ import type {
   WebappDeleteResult,
   WebappExportResult,
   WebappImportResult,
+  WebappPublishState,
   WebsiteInput,
   WebsiteResult,
   SidebarContextMenuActionId,
@@ -80,6 +81,10 @@ import { Collapse } from "../../components/Collapse";
 import { Tooltip } from "../../components/Tooltip";
 import { Popover } from "../../components/Popover";
 import { SettingsSidebarIcon } from "./SettingsSidebarIcon";
+import {
+  PageFeedbackStack,
+  type PageFeedbackItem,
+} from "../../components/PageFeedbackStack";
 import { useI18n } from "../../i18n/useI18n";
 import {
   getAssistantAwaitingStatusKey,
@@ -105,7 +110,10 @@ import type {
   SettingsSectionGroupId,
   SettingsSectionId,
 } from "../../../shared/settings-sections";
-import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
+import {
+  buildSettingsSectionPath,
+  buildWebappSettingsPath,
+} from "../../settings/settingsRoutes";
 import { Flex, Modal } from "antd";
 import {
   CAPABILITY_NAVIGATION_ITEMS,
@@ -179,6 +187,20 @@ type SidebarStatusSummary = {
   unreadCount: number;
   pendingCount: number;
 };
+
+function getWebappPublicShareUrl(
+  state: WebappPublishState | null | undefined,
+) {
+  if (!state?.active || !state.url) {
+    return "";
+  }
+  try {
+    const url = new URL(state.url);
+    return url.protocol === "https:" ? state.url.trim() : "";
+  } catch {
+    return "";
+  }
+}
 
 type MenuAnchorPoint = {
   x: number;
@@ -1075,6 +1097,7 @@ type AppSidebarProps = {
   onOpenWebappWorkspace?: (item: Extract<WebEntry, { kind: "webapp" }>) => void;
   webOpenEntryKeys?: WebEntryKey[];
   webRunningEntryKeys?: WebEntryKey[];
+  webappPublishStateById?: Record<string, WebappPublishState | null>;
   faviconCache?: WebsiteFaviconCache;
   onCloseWebItem?: (item: WebEntry) => Promise<void> | void;
   onExportWebappItem?: (item: WebEntry) => Promise<WebappExportResult>;
@@ -1145,6 +1168,7 @@ export function AppSidebar({
   onOpenWebappWorkspace,
   webOpenEntryKeys = [],
   webRunningEntryKeys = [],
+  webappPublishStateById = {},
   faviconCache,
   onCloseWebItem,
   onExportWebappItem,
@@ -1232,6 +1256,9 @@ export function AppSidebar({
   const [webClosePendingEntryKey, setWebClosePendingEntryKey] = useState("");
   const [webItemRemovePendingId, setWebItemRemovePendingId] = useState("");
   const [webItemExportPendingId, setWebItemExportPendingId] = useState("");
+  const [webappShareFeedback, setWebappShareFeedback] =
+    useState<Omit<PageFeedbackItem, "onDismiss"> | null>(null);
+  const webappShareFeedbackTimerRef = useRef<number | null>(null);
   const [webappImportFailure, setWebappImportFailure] = useState<{
     message: string;
     diagnostic?: WebappImportResult["diagnostic"];
@@ -1264,6 +1291,53 @@ export function AppSidebar({
   const webItemsRef = useRef(webItems);
   assistantNavAgentsRef.current = assistantNavAgents;
   webItemsRef.current = webItems;
+
+  useEffect(() => () => {
+    if (webappShareFeedbackTimerRef.current !== null) {
+      window.clearTimeout(webappShareFeedbackTimerRef.current);
+    }
+  }, []);
+
+  function dismissWebappShareFeedback() {
+    if (webappShareFeedbackTimerRef.current !== null) {
+      window.clearTimeout(webappShareFeedbackTimerRef.current);
+      webappShareFeedbackTimerRef.current = null;
+    }
+    setWebappShareFeedback(null);
+  }
+
+  function showWebappShareFeedback(tone: "success" | "error", message: string) {
+    if (webappShareFeedbackTimerRef.current !== null) {
+      window.clearTimeout(webappShareFeedbackTimerRef.current);
+      webappShareFeedbackTimerRef.current = null;
+    }
+    setWebappShareFeedback({ id: Date.now(), tone, message });
+    if (tone === "success") {
+      webappShareFeedbackTimerRef.current = window.setTimeout(() => {
+        setWebappShareFeedback(null);
+        webappShareFeedbackTimerRef.current = null;
+      }, 3_000);
+    }
+  }
+
+  async function copyWebappShareUrl(url: string) {
+    try {
+      const result = await window.electronAPI.clipboard.writeText(url);
+      showWebappShareFeedback(
+        result.ok ? "success" : "error",
+        result.ok
+          ? t("sidebar.webapp.shareUrlCopied")
+          : result.message || t("sidebar.webapp.shareUrlCopyFailed"),
+      );
+    } catch (error) {
+      showWebappShareFeedback(
+        "error",
+        error instanceof Error
+          ? error.message
+          : t("sidebar.webapp.shareUrlCopyFailed"),
+      );
+    }
+  }
   const forcedActiveManagementPathname = forcedActiveManagementRoute
     ? getRoutePathname(forcedActiveManagementRoute)
     : "";
@@ -1383,6 +1457,7 @@ export function AppSidebar({
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
+    webappPublishStateById,
     isCollapsed,
     onOpenAgentProjectEditor,
     onUpdateAssistantChatOrder,
@@ -1402,6 +1477,7 @@ export function AppSidebar({
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
+    webappPublishStateById,
     isCollapsed,
     onOpenAgentProjectEditor,
     onUpdateAssistantChatOrder,
@@ -2192,13 +2268,12 @@ export function AppSidebar({
       return null;
     }
     const isWebapp = item.kind === "webapp";
-    return {
-      kind: "web",
-      webKind: item.kind,
-      openMode:
-        item.kind === "webapp" && item.openMode === "dialog"
-          ? "dialog"
-          : "window",
+    const openMode: "dialog" | "window" =
+      item.kind === "webapp" && item.openMode === "dialog"
+        ? "dialog"
+        : "window";
+    const commonTarget = {
+      openMode,
       canClose:
         runtime.webOpenEntryKeys.includes(item.entryKey) &&
         !runtime.webClosePendingEntryKey,
@@ -2216,6 +2291,17 @@ export function AppSidebar({
         item.removable !== false &&
         !runtime.webItemRemovePendingId,
       showRemove: isWebapp && !runtime.isCollapsed,
+    };
+    if (!isWebapp) {
+      return { kind: "web", webKind: "website", ...commonTarget };
+    }
+    return {
+      kind: "web",
+      webKind: "webapp",
+      ...commonTarget,
+      hasPublicShareUrl: Boolean(
+        getWebappPublicShareUrl(runtime.webappPublishStateById[item.id]),
+      ),
     };
   }
 
@@ -2284,6 +2370,12 @@ export function AppSidebar({
     }
     if (actionId === "web.export") {
       return target.webKind === "webapp" && target.canExport;
+    }
+    if (
+      actionId === "web.copy-share-url" ||
+      actionId === "web.open-publish-settings"
+    ) {
+      return target.webKind === "webapp";
     }
     return (
       actionId === "web.remove" &&
@@ -2392,6 +2484,19 @@ export function AppSidebar({
       runtime.onOpenWebappWindow?.(item);
     } else if (actionId === "web.export" && item.kind === "webapp") {
       await exportWebappItem(item);
+    } else if (
+      (actionId === "web.copy-share-url" ||
+        actionId === "web.open-publish-settings") &&
+      item.kind === "webapp"
+    ) {
+      const publicUrl = getWebappPublicShareUrl(
+        runtime.webappPublishStateById[item.id],
+      );
+      if (actionId === "web.copy-share-url" && publicUrl) {
+        await copyWebappShareUrl(publicUrl);
+      } else {
+        requestNavigate(buildWebappSettingsPath(item.id));
+      }
     } else if (
       actionId === "web.remove" &&
       item.kind === "webapp" &&
@@ -6692,6 +6797,12 @@ export function AppSidebar({
           </div>
         ) : null}
       </aside>
+      <PageFeedbackStack
+        items={webappShareFeedback ? [{
+          ...webappShareFeedback,
+          onDismiss: dismissWebappShareFeedback,
+        }] : []}
+      />
       {renderWebappImportFailureDialog()}
       {renderBootstrapGuideFloatingBubbles()}
     </>

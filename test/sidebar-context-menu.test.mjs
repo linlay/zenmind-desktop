@@ -118,14 +118,32 @@ test("sidebar entity context menus expose only their fixed action sets", () => {
     openMode: "dialog",
     canClose: true,
     canOpenAlternative: true,
+    hasPublicShareUrl: true,
     canExport: true,
     canRemove: true,
     showRemove: true
   }), [
     "web.close",
     "web.open-in-workspace",
+    "web.copy-share-url",
     "web.export",
     "web.remove"
+  ]);
+  assert.deepEqual(ids({
+    kind: "web",
+    webKind: "webapp",
+    openMode: "window",
+    canClose: false,
+    canOpenAlternative: true,
+    hasPublicShareUrl: false,
+    canExport: true,
+    canRemove: false,
+    showRemove: false
+  }), [
+    "web.close",
+    "web.open-in-window",
+    "web.open-publish-settings",
+    "web.export"
   ]);
 });
 
@@ -167,6 +185,46 @@ test("sidebar native context request validation rejects injected and malformed f
     x: 1,
     y: 2,
     target: { kind: "chat", workPanelOpen: false, label: "Injected" }
+  }), null);
+  const validWebTarget = {
+    kind: "web",
+    webKind: "webapp",
+    openMode: "window",
+    canClose: false,
+    canOpenAlternative: true,
+    hasPublicShareUrl: true,
+    canExport: true,
+    canRemove: true,
+    showRemove: true
+  };
+  assert.deepEqual(normalizeSidebarContextMenuRequest({
+    x: 8,
+    y: 12,
+    target: validWebTarget
+  }), {
+    x: 8,
+    y: 12,
+    target: validWebTarget
+  });
+  const { hasPublicShareUrl: _missingShareState, ...missingShareState } = validWebTarget;
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 8,
+    y: 12,
+    target: missingShareState
+  }), null);
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 8,
+    y: 12,
+    target: { ...validWebTarget, hasPublicShareUrl: "yes" }
+  }), null);
+  assert.equal(normalizeSidebarContextMenuRequest({
+    x: 8,
+    y: 12,
+    target: {
+      ...validWebTarget,
+      webKind: "website",
+      hasPublicShareUrl: false
+    }
   }), null);
   assert.deepEqual(normalizeSidebarContextMenuRequest({
     x: 4,
@@ -248,6 +306,14 @@ test("workspace reveal menu uses native platform terminology", () => {
   assert.equal(
     resolveSidebarContextMenuLabelKey("chat.exportMenu", "darwin"),
     "sidebar.chat.exportMenu"
+  );
+  assert.equal(
+    resolveSidebarContextMenuLabelKey("web.copy-share-url", "darwin"),
+    "sidebar.webapp.copyShareUrl"
+  );
+  assert.equal(
+    resolveSidebarContextMenuLabelKey("web.open-publish-settings", "win32"),
+    "sidebar.webapp.openPublishSettings"
   );
 });
 

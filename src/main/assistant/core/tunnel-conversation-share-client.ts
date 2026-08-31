@@ -21,7 +21,7 @@ const MAX_JSON_RESPONSE_BYTES = 1024 * 1024;
 const MAX_CONVERSATION_ID_BYTES = 255;
 const SHARE_ID_PATTERN = /^[A-Za-z0-9_-]{1,80}$/u;
 const RFC3339_PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d{1,9})?(Z|[+-]\d{2}:\d{2})$/u;
-const RECORD_KEYS = ["id", "url", "createdAt", "expiresAt", "lastAccessedAt"] as const;
+const RECORD_KEYS = ["id", "url", "createdAt", "expiresAt", "lastAccessedAt", "singleUse"] as const;
 
 export type TunnelConversationShareErrorKind =
   | "invalid_request"
@@ -99,9 +99,12 @@ export class TunnelConversationShareClient implements
     const record = readConversationShareRecord(await readLimitedJson(response));
     if (
       record.lastAccessedAt !== null ||
-      (input.expiration === "permanent"
-        ? record.expiresAt !== null
-        : record.expiresAt === null)
+      (input.expiration === "once"
+        ? !record.singleUse || record.expiresAt !== null
+        : record.singleUse ||
+          (input.expiration === "permanent"
+            ? record.expiresAt !== null
+            : record.expiresAt === null))
     ) {
       throw new TunnelConversationShareError("invalid_response");
     }
@@ -279,14 +282,17 @@ function readConversationShareRecord(value: unknown): AssistantConversationShare
   const createdAt = readRequiredRfc3339(value.createdAt);
   const expiresAt = readNullableRfc3339(value.expiresAt);
   const lastAccessedAt = readNullableRfc3339(value.lastAccessedAt);
+  const singleUse = value.singleUse;
   if (
+    typeof singleUse !== "boolean" ||
+    (singleUse && (expiresAt !== null || lastAccessedAt !== null)) ||
     (expiresAt !== null && expiresAt <= createdAt) ||
     (lastAccessedAt !== null && lastAccessedAt < createdAt) ||
     (expiresAt !== null && lastAccessedAt !== null && lastAccessedAt > expiresAt)
   ) {
     throw new TunnelConversationShareError("invalid_response");
   }
-  return { shareId, url, createdAt, expiresAt, lastAccessedAt };
+  return { shareId, url, createdAt, expiresAt, lastAccessedAt, singleUse };
 }
 
 function readRequiredRfc3339(value: unknown) {

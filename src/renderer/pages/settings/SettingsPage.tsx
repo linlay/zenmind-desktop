@@ -71,7 +71,12 @@ import {
   getVisibleSettingsSections,
   type SettingsSectionId
 } from "../../settingsPageSections";
-import { buildSettingsSectionPath, resolveSettingsSectionId } from "../../settings/settingsRoutes";
+import {
+  buildSettingsSectionPath,
+  buildWebappSettingsPath,
+  readSettingsWebappId,
+  resolveSettingsSectionId
+} from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
 import { isAssistantNavChatAgent } from "../../assistantNavigation";
@@ -105,8 +110,10 @@ type SettingsPageProps = {
   marketEnabled: boolean;
   onMarketEnabledChange?: (enabled: boolean) => void;
   webItems: WebEntry[];
+  webappPublishStateById: Record<string, WebappPublishState | null>;
   onWebItemsRefresh: () => void | Promise<unknown>;
   onWebappRuntimeStateChange?: (id: string, state: WebappRuntimeState | null, message?: string) => void;
+  onWebappPublishStateChange?: (id: string, state: WebappPublishState | null) => void;
   onAssistantSettingsChange?: (settings: AssistantSettingsPublic) => void;
   debugVisible: boolean;
   onCloseDebug: () => void;
@@ -2408,8 +2415,10 @@ export function SettingsPage({
   marketEnabled,
   onMarketEnabledChange,
   webItems,
+  webappPublishStateById,
   onWebItemsRefresh,
   onWebappRuntimeStateChange,
+  onWebappPublishStateChange,
   onAssistantSettingsChange,
   debugVisible,
   onCloseDebug
@@ -2459,7 +2468,6 @@ export function SettingsPage({
     runtimeExecutables: {}
   });
   const [webappPublishInfoById, setWebappPublishInfoById] = useState<Record<string, WebappPublishInfo | null>>({});
-  const [webappPublishStateById, setWebappPublishStateById] = useState<Record<string, WebappPublishState | null>>({});
   const [webappPublishPendingId, setWebappPublishPendingId] = useState("");
   const [webappDetailsOpen, setWebappDetailsOpen] = useState(false);
   const [webappLogTarget, setWebappLogTarget] = useState<WebappLogTarget>("main");
@@ -2640,6 +2648,25 @@ export function SettingsPage({
     if (activeSection !== "webapps") {
       return;
     }
+    const requestedId = readSettingsWebappId(location.search);
+    const requestedWebapp = requestedId
+      ? webappItems.find((item) => item.id === requestedId) ?? null
+      : null;
+    const nextWebapp = requestedWebapp ?? webappItems[0] ?? null;
+    const nextId = nextWebapp?.id ?? "";
+    if (selectedWebappId !== nextId) {
+      setSelectedWebappId(nextId);
+    }
+    const canonicalRoute = buildWebappSettingsPath(nextId);
+    if (currentRoute !== canonicalRoute) {
+      navigate(canonicalRoute, { replace: true });
+    }
+  }, [activeSection, currentRoute, location.search, navigate, selectedWebappId, webappItems]);
+
+  useEffect(() => {
+    if (activeSection !== "webapps") {
+      return;
+    }
     if (selectedWebapp) {
       const nextSnapshot = createWebappDraftSnapshot(selectedWebapp);
       const previousSnapshot = webappDraftSourceRef.current;
@@ -2654,11 +2681,7 @@ export function SettingsPage({
       webappDraftSourceRef.current = nextSnapshot;
       return;
     }
-    const firstWebapp = webappItems[0] ?? null;
-    if (firstWebapp) {
-      setSelectedWebappId(firstWebapp.id);
-    } else {
-      setSelectedWebappId("");
+    if (webappItems.length === 0) {
       clearWebappDraft();
     }
   }, [
@@ -2678,41 +2701,6 @@ export function SettingsPage({
     void refreshSelectedWebappUserConfig(selectedWebapp.id);
     void refreshWebappPublishStatus(selectedWebapp.id);
   }, [activeSection, selectedWebapp?.id]);
-
-  useEffect(() => {
-    if (activeSection !== "webapps" || !selectedWebapp) {
-      return;
-    }
-    let cancelled = false;
-    const otherWebapps = webappItems.filter((item) => item.id !== selectedWebapp.id);
-    void Promise.all(otherWebapps.map(async (item) => {
-      try {
-        const result = await window.electronAPI.webs.webapps.getPublishStatus(item.id);
-        return { id: item.id, result };
-      } catch {
-        return null;
-      }
-    })).then((results) => {
-      if (cancelled) {
-        return;
-      }
-      const successfulResults = results.filter((entry) => entry !== null);
-      if (successfulResults.length === 0) {
-        return;
-      }
-      setWebappPublishInfoById((current) => ({
-        ...current,
-        ...Object.fromEntries(successfulResults.map(({ id, result }) => [id, result.info]))
-      }));
-      setWebappPublishStateById((current) => ({
-        ...current,
-        ...Object.fromEntries(successfulResults.map(({ id, result }) => [id, result.state]))
-      }));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSection, selectedWebapp?.id, webappItems]);
 
   useEffect(() => {
     if (activeSection !== "webapps") {
@@ -3564,6 +3552,7 @@ export function SettingsPage({
   function handleSelectWebappItem(item: WebappEntry) {
     setWebappDetailsOpen(false);
     setSelectedWebappId(item.id);
+    navigate(buildWebappSettingsPath(item.id), { replace: true });
     setWebappLabel(item.label);
     setWebappOpenMode(item.openMode);
     setWebappUserConfigValues({});
@@ -3581,7 +3570,7 @@ export function SettingsPage({
     try {
       const result = await window.electronAPI.webs.webapps.getPublishStatus(id);
       setWebappPublishInfoById((current) => ({ ...current, [id]: result.info }));
-      setWebappPublishStateById((current) => ({ ...current, [id]: result.state }));
+      onWebappPublishStateChange?.(id, result.state);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
     }
@@ -3599,7 +3588,7 @@ export function SettingsPage({
       }
       const result = await window.electronAPI.webs.webapps.publish(item.id);
       setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
-      setWebappPublishStateById((current) => ({ ...current, [item.id]: result.state }));
+      onWebappPublishStateChange?.(item.id, result.state);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");
@@ -3613,7 +3602,7 @@ export function SettingsPage({
     try {
       const result = await window.electronAPI.webs.webapps.unpublish(item.id);
       setWebappPublishInfoById((current) => ({ ...current, [item.id]: result.info }));
-      setWebappPublishStateById((current) => ({ ...current, [item.id]: result.state }));
+      onWebappPublishStateChange?.(item.id, result.state);
       showSectionResultNotice("webapps", result);
     } catch (reason) {
       showSectionNotice("webapps", reason instanceof Error ? reason.message : String(reason), "error");

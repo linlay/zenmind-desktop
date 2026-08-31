@@ -23,8 +23,20 @@ export type SidebarContextMenuActionId =
   | "web.close"
   | "web.open-in-workspace"
   | "web.open-in-window"
+  | "web.copy-share-url"
+  | "web.open-publish-settings"
   | "web.export"
   | "web.remove";
+
+type SidebarWebContextMenuTargetBase = {
+  kind: "web";
+  openMode: "dialog" | "window";
+  canClose: boolean;
+  canOpenAlternative: boolean;
+  canExport: boolean;
+  canRemove: boolean;
+  showRemove: boolean;
+};
 
 export type SidebarContextMenuTarget =
   | {
@@ -45,16 +57,13 @@ export type SidebarContextMenuTarget =
       kind: "chat";
       workPanelOpen: boolean;
     }
-  | {
-      kind: "web";
-      webKind: "website" | "webapp";
-      openMode: "dialog" | "window";
-      canClose: boolean;
-      canOpenAlternative: boolean;
-      canExport: boolean;
-      canRemove: boolean;
-      showRemove: boolean;
-    };
+  | (SidebarWebContextMenuTargetBase & {
+      webKind: "website";
+    })
+  | (SidebarWebContextMenuTargetBase & {
+      webKind: "webapp";
+      hasPublicShareUrl: boolean;
+    });
 
 export type SidebarContextMenuPopupRequest = {
   x: number;

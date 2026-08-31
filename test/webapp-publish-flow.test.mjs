@@ -1,10 +1,17 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const {
+  buildWebappSettingsPath,
+  readSettingsWebappId
+} = await import("../dist-electron/shared/settings-routes.js");
+const { readWebappPublishState } = await import("../dist-electron/main/webs/webapps/publisher.js");
+const { getDesktopWebappStateRoot } = await import("../dist-electron/main/user-paths.js");
 
 function read(relativePath) {
   return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
@@ -96,6 +103,54 @@ test("Settings exposes one-click Tunnel publishing and mobile QR sharing", () =>
   assert.match(page, /handleCopyWebappPublishUrl/u);
   assert.match(page, /buildSettingsSectionPath\("tunnelHub"\)/u);
   assert.match(styles, /\.web-publish-share-card[\s\S]*?@media \(max-width: 760px\)/u);
+});
+
+test("sidebar WebApp sharing uses cached publication state and targeted settings navigation", () => {
+  const handlers = read("src/main/ipc/web-handlers.ts");
+  const runtime = read("src/main/bridge/assistant-runtime.ts");
+  const appShell = read("src/renderer/app-shell/AppShell.tsx");
+  const sidebar = read("src/renderer/app-shell/navigation/AppSidebar.tsx");
+  const settings = read("src/renderer/pages/settings/SettingsPage.tsx");
+
+  assert.match(handlers, /webappPublishStates:[\s\S]*?readWebappPublishState/u);
+  assert.match(runtime, /webContents\.send\("webs\.changed", \{[\s\S]*?webappId,[\s\S]*?reason/u);
+  assert.match(appShell, /WEBAPP_PUBLISH_CHANGE_REASONS[\s\S]*?refreshWebappPublishState\(event\.webappId\)/u);
+  assert.match(sidebar, /runtime\.webappPublishStateById\[item\.id\]/u);
+  assert.match(sidebar, /actionId === "web\.copy-share-url"[\s\S]*?copyWebappShareUrl\(publicUrl\)/u);
+  assert.match(sidebar, /buildWebappSettingsPath\(item\.id\)/u);
+  assert.match(settings, /readSettingsWebappId\(location\.search\)/u);
+  assert.doesNotMatch(settings, /const otherWebapps = webappItems\.filter/u);
+  assert.doesNotMatch(appShell, /setInterval\([\s\S]*?getPublishStatus/u);
+});
+
+test("WebApp settings deep links encode and recover a selected application", () => {
+  const route = buildWebappSettingsPath(" app/id with spaces ");
+  assert.equal(route, "/settings/webapps?webappId=app%2Fid+with+spaces");
+  assert.equal(readSettingsWebappId("?webappId=app%2Fid+with+spaces"), "app/id with spaces");
+  assert.equal(buildWebappSettingsPath("  "), "/settings/webapps");
+  assert.equal(readSettingsWebappId("?unrelated=1"), "");
+});
+
+test("missing and damaged WebApp publication files resolve to null", () => {
+  const temporaryHome = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-publish-state-"));
+  const app = {
+    getPath(name) {
+      if (name === "home") {
+        return temporaryHome;
+      }
+      throw new Error(`Unexpected Electron path: ${name}`);
+    }
+  };
+  const webappId = "test-webapp";
+  try {
+    assert.equal(readWebappPublishState(app, webappId), null);
+    const stateRoot = getDesktopWebappStateRoot(app, webappId);
+    fs.mkdirSync(stateRoot, { recursive: true });
+    fs.writeFileSync(path.join(stateRoot, "publish.json"), "{damaged", "utf8");
+    assert.equal(readWebappPublishState(app, webappId), null);
+  } finally {
+    fs.rmSync(temporaryHome, { recursive: true, force: true });
+  }
 });
 
 test("bootstrap navigation is consumed once and never OWNER-hands off", () => {
