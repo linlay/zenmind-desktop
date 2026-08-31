@@ -93,6 +93,7 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     webappId: string,
     item?: DesktopMobileWebappItem | null
   ) {
+    const changedAt = new Date().toISOString();
     let resolvedItem = item ?? null;
     if (item === undefined) {
       try {
@@ -104,9 +105,17 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
     emitDesktopWsPush("webapp.changed", {
       reason,
       webappId,
-      changedAt: new Date().toISOString(),
+      changedAt,
       item: resolvedItem
     });
+    const targetWindow = state.mainWindow;
+    if (targetWindow && !targetWindow.isDestroyed()) {
+      targetWindow.webContents.send("webs.changed", {
+        changedAt,
+        webappId,
+        reason
+      });
+    }
   }
   webappManager.runtime.setPublicationChangeListener(emitWebappChanged);
 

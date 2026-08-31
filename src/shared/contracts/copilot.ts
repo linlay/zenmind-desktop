@@ -385,13 +385,10 @@ export interface AssistantNavActionResult {
 }
 
 export const ASSISTANT_CONVERSATION_SHARE_EXPIRATIONS = [
-  "5m",
-  "30m",
-  "1h",
+  "once",
   "3h",
   "1d",
-  "5d",
-  "15d",
+  "7d",
   "30d",
   "permanent",
 ] as const;
@@ -419,6 +416,7 @@ export interface AssistantConversationShareRecord {
   createdAt: EpochMilliseconds;
   expiresAt: EpochMilliseconds | null;
   lastAccessedAt: EpochMilliseconds | null;
+  singleUse: boolean;
 }
 
 export type AssistantConversationShareCreateResult =

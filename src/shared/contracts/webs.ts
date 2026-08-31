@@ -109,6 +109,7 @@ export interface WebappRuntimeState {
 export interface WebListResult {
   ok: boolean;
   items: WebEntry[];
+  webappPublishStates: Record<string, WebappPublishState | null>;
   message: string;
 }
 
@@ -116,6 +117,7 @@ export interface WebsChangedEvent {
   changedAt: string;
   phase?: "changed" | "disposing";
   webappId?: string;
+  reason?: DesktopWebappChangedReason;
 }
 
 export type WebsChangedListener = (event: WebsChangedEvent) => void;
