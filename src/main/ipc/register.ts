@@ -1,4 +1,5 @@
 import type { App, WebContents } from "electron";
+import type { MarketListResult } from "../../shared/contracts";
 import { createAppPairingPayload } from "../app-pairing";
 import { issueAgentAccessToken } from "../agent-auth";
 import {
@@ -41,6 +42,7 @@ import {
   importSkillFromPath,
   installMarketItem,
   listMarketItems,
+  mergeMcpRuntimeStatuses,
   refreshMarketCatalog,
   saveMarketSettings,
   toggleMarketFavorite,
@@ -318,6 +320,28 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   } = options;
   const state = context.state;
   const { assistantBridge, desktopActionOptions } = assistantBridgeRuntime;
+  async function mergeMarketMcpStatuses(result: MarketListResult): Promise<MarketListResult> {
+    if (!result.items.some((item) => item.type === "mcp" && item.installPath)) {
+      return result;
+    }
+    try {
+      return {
+        ...result,
+        items: mergeMcpRuntimeStatuses(result.items, await assistantBridge.listMcpRuntimeStatuses())
+      };
+    } catch {
+      return {
+        ...result,
+        items: result.items.map((item) => item.type === "mcp" && item.installPath
+          ? {
+            ...item,
+            mcpRuntimeStatus: "unavailable" as const,
+            mcpRuntimeMessage: t("market.main.platformMcpStatusUnavailable")
+          }
+          : item)
+      };
+    }
+  }
 
   registerShellIpcHandlers(ipcMain, createShellIpcHandlerOptions(context, {
     showFileDialog: options.showFileDialog,
@@ -719,8 +743,14 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     handlePluginUninstall,
     getMarketSettings,
     saveMarketSettings,
-    listMarketItems,
-    refreshMarketCatalog,
+    listMarketItems: async (marketApp, listOptions) => {
+      const result = await listMarketItems(marketApp, listOptions);
+      return mergeMarketMcpStatuses(result);
+    },
+    refreshMarketCatalog: async (marketApp, listOptions) => {
+      const result = await refreshMarketCatalog(marketApp, listOptions);
+      return mergeMarketMcpStatuses(result);
+    },
     toggleMarketFavorite: (marketApp, input) => toggleMarketFavorite(marketApp, input, {
       issueAgentAccessToken: async (_app, reason) => {
         let token = isDesktopSsoCredentialRuntimeReady()

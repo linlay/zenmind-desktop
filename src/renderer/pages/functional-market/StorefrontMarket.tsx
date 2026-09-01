@@ -7,6 +7,7 @@ import {
   CloudDownloadOutlined,
   CodeOutlined,
   CopyOutlined,
+  CloseOutlined,
   DownloadOutlined,
   FilterOutlined,
   GlobalOutlined,
@@ -15,6 +16,7 @@ import {
   HeartOutlined,
   InfoCircleOutlined,
   LinkOutlined,
+  MinusOutlined,
   PlusCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -67,12 +69,34 @@ type RangeMode = "all" | "installed" | "updates";
 type SortMode = "popular" | "latest" | "rating";
 type SearchFilterMenu = "sort" | "scope" | null;
 type MarketFeedbackType = "success" | "info" | "warning" | "error";
-type SkillAssistantMode = "find" | "create";
+const MCP_STATUS_POLL_INTERVAL_MS = 2_000;
+const MCP_STATUS_POLL_MAX_ATTEMPTS = 30;
 
-const SKILL_COMPOSER_INTENT: Record<SkillAssistantMode, "find-skill" | "create-skill"> = {
-  find: "find-skill",
-  create: "create-skill"
-};
+function mcpRuntimeStatusLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]) {
+  switch (item.mcpRuntimeStatus) {
+    case "ready":
+      return t("market.mcp.runtime.ready", { count: item.mcpToolCount ?? 0 });
+    case "pending":
+      return t("market.mcp.runtime.pending");
+    case "unavailable":
+      return t("market.mcp.runtime.unavailable");
+    case "invalid":
+      return t("market.mcp.runtime.invalid");
+    case "disabled":
+      return t("market.mcp.runtime.disabled");
+    case "configuration-written":
+      return t("market.mcp.runtime.configurationWritten");
+    default:
+      return "";
+  }
+}
+
+function mcpRuntimeStatusClass(item: MarketItem) {
+  if (item.mcpRuntimeStatus === "ready") return "is-running";
+  if (item.mcpRuntimeStatus === "invalid" || item.mcpRuntimeStatus === "unavailable") return "is-error";
+  if (item.mcpRuntimeStatus === "pending" || item.mcpRuntimeStatus === "configuration-written") return "is-warning";
+  return "";
+}
 
 function isInstalledMarketItem(item: MarketItem) {
   return item.state === "installed" || item.state === "update-available" || item.state === "local-imported";
@@ -105,6 +129,20 @@ function marketMessageForTab(result: ReturnType<typeof createEmptyMarketResult>,
   if (tab === "mcps") return result.mcpMessage ?? "";
   if (tab === "softwarePackages") return result.softwarePackageMessage ?? "";
   return result.cliMessage ?? "";
+}
+
+function clearMarketMessageForTab(result: ReturnType<typeof createEmptyMarketResult>, tab: MarketTab) {
+  const next = { ...result };
+  if (tab === "plugins") next.pluginMessage = "";
+  else if (tab === "skills") next.skillMessage = "";
+  else if (tab === "agents") next.agentMessage = "";
+  else if (tab === "sandboxImages") next.sandboxMessage = "";
+  else if (tab === "pets") next.petMessage = "";
+  else if (tab === "websiteApps") next.websiteAppMessage = "";
+  else if (tab === "mcps") next.mcpMessage = "";
+  else if (tab === "softwarePackages") next.softwarePackageMessage = "";
+  else next.cliMessage = "";
+  return next;
 }
 
 function marketOfflineForTab(result: ReturnType<typeof createEmptyMarketResult>, tab: MarketTab) {
@@ -381,9 +419,9 @@ function itemCreatedAt(item: MarketItem, locale: string, fallback: string) {
 }
 
 function platformSummary(item: MarketItem) {
-  const platforms = Object.keys(item.platforms ?? {});
+  const targets = Object.keys(item.targets ?? {});
   const assetPlatforms = Object.keys(item.assets ?? {});
-  return [...new Set([...platforms, ...assetPlatforms])]
+  return [...new Set([...targets, ...assetPlatforms])]
     .filter(Boolean)
     .sort((a, b) => {
       if (a === "universal") return -1;
@@ -503,6 +541,10 @@ function storefrontDetailRows(
     [t("market.storefront.detail.uninstallSpec"), scriptSummary(item.uninstall)],
     [t("market.storefront.detail.detectCommands"), (item.detect?.commands ?? []).join("\n")],
     [t("market.storefront.detail.detectVersionCommand"), item.detect?.versionCommand ?? ""],
+    [t("market.storefront.detail.mcpServerKey"), item.mcpServerKey ?? ""],
+    [t("market.storefront.detail.mcpRuntimeStatus"), mcpRuntimeStatusLabel(item, t)],
+    [t("market.storefront.detail.mcpToolCount"), item.mcpToolCount === undefined ? "" : String(item.mcpToolCount)],
+    [t("market.storefront.detail.mcpRuntimeMessage"), item.mcpRuntimeMessage ?? ""],
     [t("market.storefront.detail.publishedAt"), item.publishedAt ?? ""],
     [t("market.storefront.detail.updatedAt"), item.updatedAt ?? ""],
     [t("market.storefront.detail.metadata"), metadataSummary(item)]
@@ -534,21 +576,21 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
   const itemType = MARKET_TAB_ITEM_TYPES[activeTab];
-  const tabDefinitions = useMemo(() => {
-    const counts = new Map<MarketItemType, number>();
-    for (const item of marketResult.items) {
-      counts.set(item.type, (counts.get(item.type) ?? 0) + 1);
-    }
-    return getMarketTabDefinitions(t).map((tab) => ({
-      ...tab,
-      count: counts.get(MARKET_TAB_ITEM_TYPES[tab.id]) ?? 0
-    }));
-  }, [marketResult.items, t]);
+  const tabDefinitions = useMemo(() => getMarketTabDefinitions(t), [t]);
 
   const activeItems = useMemo(
     () => marketResult.items.filter((item) => item.type === itemType),
     [itemType, marketResult.items]
   );
+  const pendingMcpRuntimeSignature = useMemo(() => marketResult.items
+    .filter((item) =>
+      item.type === "mcp" &&
+      isInstalledMarketItem(item) &&
+      (item.mcpRuntimeStatus === "configuration-written" || item.mcpRuntimeStatus === "pending")
+    )
+    .map((item) => `${item.id}:${item.mcpRuntimeStatus}`)
+    .sort()
+    .join("|"), [marketResult.items]);
   const visibleItems = useMemo(
     () => sortMarketItems(
       activeItems.filter((item) => {
@@ -583,7 +625,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       if (initialItem) {
         setSelectedDetailItem(initialItem);
         const initialTab = marketTabForItemType(initialItem.type);
-        if (initialTab && initialTab !== activeTab) {
+        if (initialTab && tabDefinitions.some((tab) => tab.id === initialTab) && initialTab !== activeTab) {
           onTabChange(initialTab);
         }
       }
@@ -591,10 +633,12 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         setFeedback("");
         setFeedbackType("info");
       }
+      return next;
     } catch (reason) {
       console.warn("[market-storefront] failed to load market data", reason);
       setFeedback(normalizeError(reason));
       setFeedbackType("error");
+      return null;
     } finally {
       setIsLoadingMarket(false);
     }
@@ -604,10 +648,85 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     void loadMarket(false);
   }, []);
 
+  useEffect(() => window.electronAPI.webs.onChanged((event) => {
+    if (event.phase === "disposing") return;
+    const command = getMarketMethod("list");
+    if (!command) return;
+    void command({ sections: ["websiteApps"] }).then((next) => {
+      const nextWebsiteApps = next.items.filter((item) => item.type === "website-app");
+      setMarketResult((current) => ({
+        ...current,
+        websiteAppMessage: next.websiteAppMessage,
+        websiteAppOffline: next.websiteAppOffline,
+        items: [
+          ...current.items.filter((item) => item.type !== "website-app"),
+          ...nextWebsiteApps
+        ]
+      }));
+    }).catch((reason) => {
+      console.warn("[market-storefront] WebApp market status refresh failed", reason);
+    });
+  }), []);
+
   useEffect(() => {
     setRangeMode("all");
     setSearchFilterMenu(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab !== "mcps" || !pendingMcpRuntimeSignature) {
+      return undefined;
+    }
+    let cancelled = false;
+    let requestPending = false;
+    let attempts = 0;
+    let timer: number | undefined;
+    const stopPolling = () => {
+      if (timer === undefined) return;
+      window.clearInterval(timer);
+      timer = undefined;
+    };
+    const poll = async () => {
+      if (cancelled || requestPending) return;
+      if (attempts >= MCP_STATUS_POLL_MAX_ATTEMPTS) {
+        stopPolling();
+        return;
+      }
+      attempts += 1;
+      requestPending = true;
+      try {
+        const command = getMarketMethod("list");
+        if (!command) return;
+        const next = await command({ sections: ["mcps"] });
+        if (cancelled) return;
+        const nextMcpItems = next.items.filter((item) => item.type === "mcp");
+        setMarketResult((current) => ({
+          ...current,
+          mcpMessage: next.mcpMessage,
+          mcpOffline: next.mcpOffline,
+          items: [
+            ...current.items.filter((item) => item.type !== "mcp"),
+            ...nextMcpItems
+          ]
+        }));
+      } catch (reason) {
+        if (!cancelled) {
+          console.warn("[market-storefront] MCP runtime status poll failed", reason);
+        }
+      } finally {
+        requestPending = false;
+        if (attempts >= MCP_STATUS_POLL_MAX_ATTEMPTS) {
+          stopPolling();
+        }
+      }
+    };
+    void poll();
+    timer = window.setInterval(() => void poll(), MCP_STATUS_POLL_INTERVAL_MS);
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
+  }, [activeTab, pendingMcpRuntimeSignature]);
 
   useEffect(() => {
     if (!searchFilterMenu) {
@@ -635,7 +754,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   async function refreshEverything(force = false, preserveFeedback = false) {
     await refreshServices();
-    await loadMarket(force, preserveFeedback);
+    return loadMarket(force, preserveFeedback);
   }
 
   useEffect(() => {
@@ -673,21 +792,90 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     });
   }, [t]);
 
-  async function runMarketAction(item: MarketItem, actionName: "install" | "update" | "uninstall") {
+  async function executeMarketAction(
+    item: MarketItem,
+    actionName: "install" | "update" | "uninstall"
+  ) {
+    if (actionName !== "uninstall") {
+      try {
+        const status = await window.electronAPI.sso.getStatus();
+        if (!status.authenticated) {
+          setFeedback(t("market.storefront.loginRequired", { product: PRODUCT_NAME }));
+          setFeedbackType("warning");
+          return false;
+        }
+      } catch (reason) {
+        setFeedback(normalizeError(reason));
+        setFeedbackType("error");
+        return false;
+      }
+    }
     setBusyItemId(item.id);
-    setFeedback(t("market.action.installing"));
+    setFeedback(actionName === "uninstall"
+      ? t("market.action.uninstalling")
+      : t("market.action.installing"));
     setFeedbackType("info");
     try {
-      const action = getMarketMethod(actionName);
-      if (!action) {
-        throw createMissingMarketApiError(actionName, t);
-      }
-      const result = await action(item.id);
-      setFeedback(result.message);
-      setFeedbackType("success");
+      const result = actionName === "uninstall"
+        ? await (() => {
+          const action = getMarketMethod("uninstall");
+          if (!action) throw createMissingMarketApiError("uninstall", t);
+          return action(item.id);
+        })()
+        : await (() => {
+          const action = getMarketMethod(actionName);
+          if (!action) throw createMissingMarketApiError(actionName, t);
+          return action(item.id);
+        })();
       await refreshEverything(true, true);
+      setFeedback(item.type === "mcp" && actionName !== "uninstall"
+        ? `${result.message} ${t("market.mcp.configureInAgentNotice")}`
+        : result.message);
+      setFeedbackType("success");
+      return true;
     } catch (reason) {
       console.warn(`[market-storefront] ${actionName} failed for ${item.id}`, reason);
+      setFeedback(normalizeError(reason));
+      setFeedbackType("error");
+      return false;
+    } finally {
+      setBusyItemId("");
+    }
+  }
+
+  async function runMarketAction(item: MarketItem, actionName: "install" | "update" | "uninstall") {
+    return executeMarketAction(item, actionName);
+  }
+
+  async function launchWebsiteApp(itemId: string) {
+    const listed = await window.electronAPI.webs.webapps.list();
+    const webapp = listed.items.find((entry) => entry.id === itemId);
+    if (!webapp) {
+      throw new Error(t("market.websiteApp.notAvailableAfterInstall"));
+    }
+    if (webapp.openMode === "dialog") {
+      const opened = await window.electronAPI.webs.webapps.openWindow(itemId);
+      if (!opened.ok) {
+        throw new Error(opened.message);
+      }
+      return;
+    }
+    const started = await window.electronAPI.webs.webapps.start(itemId);
+    if (!started.ok || !started.state?.webUrl) {
+      throw new Error(started.message || t("market.websiteApp.openFailed"));
+    }
+    navigate(`/webs/${webapp.entryKey}`);
+  }
+
+  async function openWebsiteAppFromMarket(item: MarketItem) {
+    setBusyItemId(item.id);
+    setFeedback(t("market.websiteApp.opening"));
+    setFeedbackType("info");
+    try {
+      await launchWebsiteApp(item.webappId || item.id);
+      setFeedback(t("market.websiteApp.opened", { name: item.name }));
+      setFeedbackType("success");
+    } catch (reason) {
       setFeedback(normalizeError(reason));
       setFeedbackType("error");
     } finally {
@@ -784,20 +972,21 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     }
   }
 
-  async function openSkillAssistant(mode: SkillAssistantMode) {
+  async function openSkillAssistant() {
     if (isOpeningSkillAssistant) {
       return;
     }
     setIsOpeningSkillAssistant(true);
     try {
       const settings = await window.electronAPI.assistant.getSettings();
-      const agentKey = settings.chatDefaultAgentKey.trim() || settings.desktopHelperAgentKey.trim();
+      const agentKey = settings.chatDefaultAgentKey.trim();
       if (!agentKey) {
         throw new Error(t("market.skill.assistant.agentUnavailable"));
       }
       const search = new URLSearchParams({
         newChat: String(Date.now()),
-        composerIntent: SKILL_COMPOSER_INTENT[mode]
+        composerDraft: t("market.skill.assistant.draft"),
+        composerSkill: "skill-creator"
       });
       navigate(createAgentWebclientAgentPath(agentKey, search));
     } catch (reason) {
@@ -902,6 +1091,34 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         </Button>
       );
     }
+    if (item.type === "website-app" && isInstalledMarketItem(item)) {
+      return (
+        <Button
+          className={`market-store-action is-primary ${compact ? "is-compact-icon" : ""}`}
+          disabled={busy}
+          icon={compact ? <GlobalOutlined /> : undefined}
+          loading={busy}
+          onClick={() => void openWebsiteAppFromMarket(item)}
+          title={t("market.websiteApp.open")}
+          type="primary"
+        >
+          {compact ? null : busy ? t("market.websiteApp.opening") : t("market.websiteApp.open")}
+        </Button>
+      );
+    }
+    if (item.type === "skill" && isInstalledMarketItem(item)) {
+      return (
+        <Button
+          aria-label={t("market.action.uninstall")}
+          className="market-store-action is-compact-icon"
+          disabled={busy}
+          icon={<MinusOutlined />}
+          loading={busy}
+          onClick={() => void runMarketAction(item, "uninstall")}
+          title={t("market.action.uninstall")}
+        />
+      );
+    }
     if (item.type === "plugin") {
       return (
         <Button className="market-store-action" onClick={() => openPlugin(item)}>
@@ -909,7 +1126,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         </Button>
       );
     }
-    if (item.type === "skill" || item.type === "pet" || item.type === "mcp" || item.type === "website-app" || item.type === "software-package") {
+    if (item.type === "pet" || item.type === "mcp" || item.type === "software-package") {
       return (
         <Button
           className="market-store-action"
@@ -944,13 +1161,37 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       ? t("market.favorite.unfavorite")
       : t("market.favorite.favorite");
     const favoriteIcon = selectedDetailItem.favorited ? <HeartFilled /> : <HeartOutlined />;
+    const installedWebsiteApp = selectedDetailItem.type === "website-app" && isInstalledMarketItem(selectedDetailItem);
+    const detailBusy = busyItemId === selectedDetailItem.id;
+    const detailFooter = installedWebsiteApp ? (
+      <div className="market-store-detail-actions">
+        <Button
+          danger
+          disabled={detailBusy}
+          loading={detailBusy}
+          onClick={() => void runMarketAction(selectedDetailItem, "uninstall").then((completed) => {
+            if (completed) setSelectedDetailItem(null);
+          })}
+        >
+          {t("market.action.uninstall")}
+        </Button>
+        <Button
+          disabled={detailBusy}
+          loading={detailBusy}
+          onClick={() => void openWebsiteAppFromMarket(selectedDetailItem)}
+          type="primary"
+        >
+          {t("market.websiteApp.open")}
+        </Button>
+      </div>
+    ) : null;
 
     return (
       <Modal
         centered
         className="market-store-detail-modal"
         destroyOnHidden
-        footer={null}
+        footer={detailFooter}
         onCancel={() => setSelectedDetailItem(null)}
         open={Boolean(selectedDetailItem)}
         title={
@@ -960,7 +1201,23 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
                 {marketTypeIcon(selectedDetailItem.type)}
               </span>
               <div className="market-store-detail-title">
-                <Tag className="market-store-detail-category-pill" color="blue">{marketTypeLabel(selectedDetailItem.type, t)}</Tag>
+                {selectedDetailItem.type === "skill" ? (
+                  <button
+                    aria-label={t("market.tab.skills.title")}
+                    className="market-store-detail-category-return"
+                    onClick={() => setSelectedDetailItem(null)}
+                    title={t("market.tab.skills.title")}
+                    type="button"
+                  >
+                    <Tag className="market-store-detail-category-pill" color="blue">
+                      {marketTypeLabel(selectedDetailItem.type, t)}
+                    </Tag>
+                  </button>
+                ) : (
+                  <Tag className="market-store-detail-category-pill" color="blue">
+                    {marketTypeLabel(selectedDetailItem.type, t)}
+                  </Tag>
+                )}
                 <h2>{displayName}</h2>
                 <span className="market-store-detail-version">{marketVersionLabel(selectedDetailItem)}</span>
               </div>
@@ -1051,6 +1308,15 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
                 {marketItemStateLabel(item, t)}
               </span>
               {service ? <span className="market-store-source-pill">{serviceMetric(service)}</span> : null}
+              {item.type === "mcp" && item.mcpRuntimeStatus ? (
+                <span
+                  className={`market-store-state-pill ${mcpRuntimeStatusClass(item)}`}
+                  title={item.mcpRuntimeMessage || mcpRuntimeStatusLabel(item, t)}
+                >
+                  <span className="market-store-state-dot" aria-hidden="true" />
+                  {mcpRuntimeStatusLabel(item, t)}
+                </span>
+              ) : null}
             </div>
             {description ? <p className="market-store-description">{description}</p> : null}
           </div>
@@ -1138,11 +1404,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const skillAddMenu: MenuProps = {
     items: [
       {
-        key: "find",
-        icon: <SearchOutlined />,
-        label: t("market.skill.menu.find")
-      },
-      {
         key: "import",
         icon: <CloudDownloadOutlined />,
         label: t("market.skill.localImport")
@@ -1158,7 +1419,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         void handleToolbarImport();
         return;
       }
-      void openSkillAssistant(key === "find" ? "find" : "create");
+      void openSkillAssistant();
     }
   };
   const marketHeaderTools = (
@@ -1271,22 +1532,44 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     </div>
   );
 
+  function handleMarketTabChange(tab: MarketTab) {
+    if (tab === "skills" && activeTab === "skills") {
+      setRangeMode("all");
+      setSelectedDetailItem(null);
+    }
+    onTabChange(tab);
+  }
+
   return (
     <MarketPageFrame
       activeTab={activeTab}
-      onTabChange={onTabChange}
+      onTabChange={handleMarketTabChange}
       tabs={tabDefinitions}
       toolbar={marketHeaderTools}
     >
       <div className="market-content market-storefront">
         {renderDetailDialog()}
         {shouldShowMarketStatus ? (
-          <Alert
-            className="market-status"
-            message={marketStatusMessage}
-            showIcon
-            type={feedback ? feedbackType : "warning"}
-          />
+          <div className="market-status-wrap">
+            <Alert
+              className="market-status"
+              message={marketStatusMessage}
+              showIcon
+              type={feedback ? feedbackType : "warning"}
+            />
+            <Button
+              aria-label={t("common.close")}
+              className="market-status-close"
+              icon={<CloseOutlined />}
+              onClick={() => {
+                setFeedback("");
+                setFeedbackType("info");
+                setMarketResult((current) => clearMarketMessageForTab(current, activeTab));
+              }}
+              size="small"
+              type="text"
+            />
+          </div>
         ) : null}
 
         <div className="market-store-scroll">

@@ -27,6 +27,7 @@ import {
   platformCandidates,
   readInstalledRecords,
   removeInstalledRecord,
+  resolveMarketFetchImpl,
   saveMarketSettings,
   selectAsset,
   writeMarketSettingsIfAbsent,
@@ -48,6 +49,7 @@ import {
 import {
   installMcpMarketItem,
   listMcpMarketItems,
+  mergeMcpRuntimeStatuses,
   uninstallMcpMarketItem
 } from "./marketplace/mcp-market";
 import {
@@ -80,9 +82,7 @@ import {
   uninstallSoftwarePackageMarketItem
 } from "./marketplace/software-package-market";
 import {
-  getSkillInstallDir,
-  installSkillFromCommand as installSkillFromCommandInput,
-  listInstalledSkills
+  installSkillFromCommand as installSkillFromCommandInput
 } from "./skill-installer";
 import { t } from "./i18n/main-i18n";
 
@@ -179,7 +179,7 @@ async function requestFavoriteUpdate(
   method: "POST" | "DELETE",
   options: MarketFavoriteOptions
 ) {
-  const fetchImpl = options.fetchImpl ?? fetch;
+  const fetchImpl = resolveMarketFetchImpl(options.fetchImpl);
   let token = await issueFavoriteAccessToken(app, "missing", options);
   for (const reason of ["missing", "unauthorized"] as const) {
     if (reason === "unauthorized") {
@@ -414,19 +414,16 @@ export async function importSkillFromPath(app: App, sourcePath: string): Promise
 }
 
 export async function importSkillFromCommand(app: App, commandText: string): Promise<MarketCommandResult> {
-  const result = await installSkillFromCommandInput(app, commandText);
-  if (result.ok) {
-    const installed = listInstalledSkills(app).find((item) => item.id === result.itemId);
-    upsertInstalledRecord(app, {
-      id: result.itemId,
+  return installSkillFromCommandInput(app, commandText, {
+    onPublished: ({ metadata, installPath }) => upsertInstalledRecord(app, {
+      id: metadata.id,
       type: "skill",
-      version: installed?.version ?? "0.0.0",
+      version: metadata.version,
       source: "cloud",
-      installPath: result.installPath ?? getSkillInstallDir(app, result.itemId),
+      installPath,
       installedAt: new Date().toISOString()
-    });
-  }
-  return result;
+    })
+  });
 }
 
 export async function uninstallMarketItem(
@@ -450,13 +447,14 @@ export async function uninstallMarketItem(
           : type === "mcp"
             ? await uninstallMcpMarketItem(app, itemId)
           : await uninstallSkillMarketItem(app, itemId);
-  if (result.ok && type !== "website-app") {
+  if (result.ok && type !== "website-app" && type !== "skill" && type !== "mcp") {
     removeInstalledRecord(app, itemId, type);
   }
   return result;
 }
 
 export { buildSandboxImage, deleteSandboxImage, exportSandboxImageToPath, importSandboxImageFromPath };
+export { mergeMcpRuntimeStatuses };
 
 export const __testInternals = {
   compareVersions,

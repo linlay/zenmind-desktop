@@ -9,6 +9,14 @@ export type MarketInstallState =
   | "installing"
   | "failed";
 
+export type MarketMcpRuntimeStatus =
+  | "configuration-written"
+  | "pending"
+  | "ready"
+  | "unavailable"
+  | "invalid"
+  | "disabled";
+
 export interface MarketAsset {
   url: string;
   sha256?: string;
@@ -70,6 +78,19 @@ export interface MarketPlatformSpec {
   detect?: MarketDetectSpec;
 }
 
+export interface MarketSkillPackageItem {
+  id: string;
+  name?: string;
+  optional?: boolean;
+  sortOrder?: number;
+}
+
+export interface MarketSkillProfile {
+  kind: "single" | "package";
+  packageMode?: string;
+  includedSkills?: MarketSkillPackageItem[];
+}
+
 export interface MarketCatalogItem {
   id: string;
   type: MarketItemType;
@@ -87,9 +108,10 @@ export interface MarketCatalogItem {
   downloadCount?: number;
   favoriteCount?: number;
   favorited?: boolean;
+  skill?: MarketSkillProfile;
   dependencies: MarketDependency[];
   metadata?: Record<string, string>;
-  platforms?: Record<string, MarketPlatformSpec>;
+  targets?: Record<string, MarketPlatformSpec>;
   install?: MarketScriptSpec;
   uninstall?: MarketScriptSpec;
   detect?: MarketDetectSpec;
@@ -109,6 +131,7 @@ export interface MarketItem {
   source: "cloud" | "local";
   marketplaceAvailable?: boolean;
   installedVersion?: string;
+  skillPackageId?: string;
   minDesktopVersion?: string;
   installPath?: string;
   serviceId?: string;
@@ -131,13 +154,19 @@ export interface MarketItem {
   downloadCount?: number;
   favoriteCount?: number;
   favorited?: boolean;
+  skill?: MarketSkillProfile;
   dependencies?: MarketDependency[];
   metadata?: Record<string, string>;
-  platforms?: Record<string, MarketPlatformSpec>;
+  targets?: Record<string, MarketPlatformSpec>;
   assets?: Record<string, MarketAsset>;
   install?: MarketScriptSpec;
   uninstall?: MarketScriptSpec;
   detect?: MarketDetectSpec;
+  mcpServerKey?: string;
+  webappId?: string;
+  mcpRuntimeStatus?: MarketMcpRuntimeStatus;
+  mcpToolCount?: number;
+  mcpRuntimeMessage?: string;
   publishedAt?: string;
   updatedAt?: string;
   homepageUrl?: string;

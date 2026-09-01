@@ -75,9 +75,6 @@ export function MarketPageFrame({
                 >
                   <span className="market-tab-icon" aria-hidden="true">{marketTabIcon(tab.id)}</span>
                   <span className="market-tab-text">{tab.label}</span>
-                  {typeof tab.count === "number" && tab.count > 0 ? (
-                    <span className="market-tab-count">{tab.count}</span>
-                  ) : null}
                 </button>
               );
             })}

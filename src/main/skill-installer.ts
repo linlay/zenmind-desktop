@@ -6,8 +6,7 @@ import { promisify } from "node:util";
 import type { App } from "electron";
 import type { MarketCommandResult, MarketItem } from "../shared/contracts";
 import { APP_BRAND } from "../shared/brand";
-import { extractArchiveToDir, listArchiveEntries } from "./archive-utils";
-import { getInstallDir, getServiceState } from "./services/manager";
+import { extractArchiveToDir, inspectZipArchiveSafety } from "./archive-utils";
 import { t } from "./i18n/main-i18n";
 import { resolveRuntimeRootPath } from "./runtime-root";
 
@@ -24,6 +23,11 @@ type SkillInstallOptions = {
   expectedId?: string;
   expectedVersion?: string;
   metadata?: Partial<SkillMetadata>;
+  onPublished?: (details: { metadata: SkillMetadata; installPath: string }) => void;
+};
+
+type SkillUninstallOptions = {
+  onRemoved?: () => void;
 };
 
 const execFileAsync = promisify(execFile);
@@ -158,21 +162,6 @@ function readSkillMetadata(skillDir: string): SkillMetadata {
   };
 }
 
-function ensureSafeArchiveEntries(archivePath: string) {
-  for (const entry of listArchiveEntries(archivePath)) {
-    const normalized = entry.replace(/\\/gu, "/");
-    if (
-      !normalized ||
-      normalized.startsWith("/") ||
-      normalized.includes("../") ||
-      normalized === ".." ||
-      /^[a-zA-Z]:\//u.test(normalized)
-    ) {
-      throw new Error(t("skillInstaller.unsafePath", { entry }));
-    }
-  }
-}
-
 function getSingleTopLevelDir(root: string) {
   const entries = fs.readdirSync(root, { withFileTypes: true }).filter((entry) => !entry.name.startsWith("__MACOSX"));
   if (entries.length !== 1 || !entries[0].isDirectory()) {
@@ -234,7 +223,12 @@ function restoreBackup(targetDir: string, backupDir: string) {
 
 function cleanupBackup(backupDir: string) {
   if (backupDir) {
-    fs.rmSync(backupDir, { recursive: true, force: true });
+    try {
+      fs.rmSync(backupDir, { recursive: true, force: true });
+    } catch {
+      // The new file state and installation record are already committed.
+      // Hidden backup cleanup is best effort and must not invert that transaction.
+    }
   }
 }
 
@@ -551,16 +545,8 @@ function findDownloadedSkillSource(root: string) {
   return candidates[0];
 }
 
-async function buildMessage(app: App, skillName: string) {
-  try {
-    const state = await getServiceState(app, "agent-platform");
-    if (state.status === "running") {
-      return t("skillInstaller.installedRestartRequired", { name: skillName });
-    }
-    return t("skillInstaller.installedNextStart", { name: skillName });
-  } catch {
-    return t("skillInstaller.installedNextStart", { name: skillName });
-  }
+function buildMessage(skillName: string) {
+  return t("skillInstaller.installedAvailable", { name: skillName });
 }
 
 export async function installSkillFromPath(app: App, sourcePath: string, options: SkillInstallOptions = {}): Promise<MarketCommandResult> {
@@ -601,7 +587,7 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
         "utf8"
       );
     } else if (extension.endsWith(".zip")) {
-      ensureSafeArchiveEntries(sourcePath);
+      await inspectZipArchiveSafety(sourcePath);
       await extractArchiveToDir(sourcePath, tempRoot);
       preparedDir = getPreparedSkillDir(tempRoot, slugify(options.metadata?.id || options.expectedId || path.basename(sourcePath)));
       if (!fs.existsSync(path.join(preparedDir, "SKILL.md"))) {
@@ -626,30 +612,35 @@ export async function installSkillFromPath(app: App, sourcePath: string, options
       throw new Error(t("skillInstaller.versionMismatch", { expected: options.expectedVersion, actual: metadata.version }));
     }
     const targetDir = getSkillInstallDir(app, metadata.id);
+    const result: MarketCommandResult = {
+      ok: true,
+      itemId: metadata.id,
+      type: "skill",
+      state: "installed",
+      message: buildMessage(metadata.name),
+      installPath: targetDir
+    };
     fs.mkdirSync(path.dirname(targetDir), { recursive: true });
     const backupDir = preserveBackup(targetDir);
     try {
       fs.cpSync(preparedDir, targetDir, { recursive: true });
+      options.onPublished?.({ metadata, installPath: targetDir });
       cleanupBackup(backupDir);
     } catch (error) {
       restoreBackup(targetDir, backupDir);
       throw error;
     }
-
-    return {
-      ok: true,
-      itemId: metadata.id,
-      type: "skill",
-      state: "installed",
-      message: await buildMessage(app, metadata.name),
-      installPath: targetDir
-    };
+    return result;
   } finally {
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
 }
 
-export async function installSkillFromCommand(app: App, commandText: string): Promise<MarketCommandResult> {
+export async function installSkillFromCommand(
+  app: App,
+  commandText: string,
+  options: Pick<SkillInstallOptions, "onPublished"> = {}
+): Promise<MarketCommandResult> {
   const tokens = splitCommandLine(commandText);
   if (tokens.length === 0) {
     throw new Error(t("skillInstaller.commandRequired"));
@@ -671,7 +662,7 @@ export async function installSkillFromCommand(app: App, commandText: string): Pr
       windowsHide: true
     });
     const sourcePath = findDownloadedSkillSource(downloadRoot);
-    return await installSkillFromPath(app, sourcePath, { source: "cloud" });
+    return await installSkillFromPath(app, sourcePath, { source: "cloud", ...options });
   } catch (error) {
     if (error instanceof Error) {
       throw new Error(t("skillInstaller.downloadFailed", { message: error.message }));
@@ -688,7 +679,7 @@ export function listInstalledSkills(app: App): MarketItem[] {
     return [];
   }
   return fs.readdirSync(root, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".tmp-") && !entry.name.includes(".backup-"))
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith(".") && !entry.name.includes(".backup-"))
     .map((entry) => {
       const installPath = path.join(root, entry.name);
       const metadata = readSkillMetadata(installPath);
@@ -707,9 +698,20 @@ export function listInstalledSkills(app: App): MarketItem[] {
     });
 }
 
-export async function uninstallSkill(app: App, skillId: string): Promise<MarketCommandResult> {
+export async function uninstallSkill(
+  app: App,
+  skillId: string,
+  options: SkillUninstallOptions = {}
+): Promise<MarketCommandResult> {
   const installDir = getSkillInstallDir(app, skillId);
-  fs.rmSync(installDir, { recursive: true, force: true });
+  const backupDir = preserveBackup(installDir);
+  try {
+    options.onRemoved?.();
+    cleanupBackup(backupDir);
+  } catch (error) {
+    restoreBackup(installDir, backupDir);
+    throw error;
+  }
   return {
     ok: true,
     itemId: skillId,

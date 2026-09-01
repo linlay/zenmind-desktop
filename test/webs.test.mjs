@@ -738,6 +738,29 @@ test("Tooling and Desktop installer share path and native artifact policy", asyn
   );
 });
 
+test("WebApp Tooling preserves the project package without adding a Market manifest", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-webapp-market-package-"));
+  const projectRoot = writeWebapp(root, "market-package-app", { version: "1.2.3" });
+  const outputPath = path.join(root, "market-package.zip");
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  const tooling = spawnSync(process.execPath, [
+    path.join(process.cwd(), "scripts", "run-webapp-tooling.mjs"),
+    "package",
+    "build",
+    "--project",
+    projectRoot,
+    "--output",
+    outputPath
+  ], { cwd: process.cwd(), encoding: "utf8" });
+  assert.equal(tooling.status, 0, tooling.stderr || tooling.stdout);
+  const result = JSON.parse(tooling.stdout);
+  const zip = await JSZip.loadAsync(fs.readFileSync(outputPath));
+  assert.ok(zip.file(`${result.id}/webapp.json`));
+  assert.equal(zip.file(`${result.id}/website.json`), null);
+  assert.equal(fs.existsSync(path.join(projectRoot, "website.json")), false);
+});
+
 test("WebApp import diagnostics use structured errors instead of localized message text", () => {
   const structured = createWebappImportDiagnostic(new WebappInstallError(
     "archive",

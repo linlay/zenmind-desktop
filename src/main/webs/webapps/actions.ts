@@ -5,7 +5,7 @@ import JSZip from "jszip";
 import type { App } from "electron";
 import type { WebappDeleteResult, WebappEntry, WebappExportResult, WebappResult, WebappUpdateInput } from "../../../shared/contracts";
 import { t } from "../../i18n/main-i18n";
-import { removeInstalledRecord } from "../../marketplace/common";
+import { removeInstalledRecordByResourceKey } from "../../marketplace/common";
 import {
   getDesktopWebappDataRoot,
   getDesktopWebappLogsRoot,
@@ -151,7 +151,7 @@ export async function disposeWebappInstallation(
       removeWebappPreferences(app, target.id);
     }
     if (target.removeMarketRecord) {
-      removeInstalledRecord(app, target.id, "website-app");
+      removeInstalledRecordByResourceKey(app, target.id, "website-app");
     }
     webappRuntime.emitLifecycleChange("removed", target.id);
     return { ok: true, message: stopMessage };
