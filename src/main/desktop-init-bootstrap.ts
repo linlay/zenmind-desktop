@@ -58,6 +58,7 @@ import {
   getHelpSettingsPath,
   writeHelpSettings
 } from "./help-settings";
+import { writeErrorReportingSettings } from "./error-reporting/settings";
 
 const DESKTOP_INIT_FILE = "desktop-init.json";
 const DESKTOP_INIT_ASSISTANT_FILE = "assistant.json";
@@ -81,6 +82,7 @@ type BootstrapApplyResult = {
   enterpriseIm: BootstrapSectionResult;
   help: BootstrapSectionResult;
   services: BootstrapSectionResult;
+  errorReporting: BootstrapSectionResult;
 };
 
 type BootstrapSiteItemResult = {
@@ -463,6 +465,22 @@ function applySsoDefaults(app: App, ssoDefaults: unknown, platform: NodeJS.Platf
   const canonicalSsoDefaults = { ...ssoDefaults };
   delete canonicalSsoDefaults.siteTokenBridge;
   writeJsonFile(ssoPath, canonicalSsoDefaults);
+  return "applied";
+}
+
+function applyErrorReportingDefaults(
+  app: App,
+  defaults: unknown,
+  platform: NodeJS.Platform
+): Exclude<BootstrapSectionResult, "failed"> {
+  if (!isRecord(defaults)) return "absent";
+  writeErrorReportingSettings(app, {
+    enabled: typeof defaults.enabled === "boolean" ? defaults.enabled : true,
+    endpoint: defaults.endpoint
+  }, platform);
+  updateDesktopProfileInRoot(getDesktopConfigRoot(app, platform), {
+    general: { errorReportingEnabled: defaults.enabled !== false }
+  });
   return "applied";
 }
 
@@ -1156,7 +1174,12 @@ export function applyDesktopInitBootstrap(
         errors,
         () => applyHelpDefaults(app, defaults.help, platform)
       ),
-      services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform))
+      services: runBootstrapSection("services", errors, () => applyServiceDefaults(app, defaults.services, platform)),
+      errorReporting: runBootstrapSection(
+        "errorReporting",
+        errors,
+        () => applyErrorReportingDefaults(app, defaults.errorReporting, platform)
+      )
     };
     const failedSections = getFailedSections(applied);
     if (applied.webs === "failed" && errors.webs) {

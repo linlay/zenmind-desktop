@@ -33,6 +33,7 @@ import { getDesktopUsageProfile } from "../usage-profile";
 import { readWebOrderKeys, writeWebOrderKeys } from "../webs/order-store";
 import { t } from "../i18n/main-i18n";
 import { requireEpochMillis } from "../../shared/time-contract";
+import { setDesktopErrorReportingEnabled } from "../error-reporting/manager";
 
 export interface SettingsIpcHandlerOptions {
   app: any;
@@ -279,7 +280,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
             deviceName: current.general.deviceName,
             preventSleepWhileRunning: current.general.preventSleepWhileRunning,
             desktopWsServerEnabled: true,
-            desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled
+            desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled,
+            errorReportingEnabled: current.general.errorReportingEnabled
           }
         });
         onGeneralSettingsChanged?.(profile.general);
@@ -306,7 +308,8 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         deviceName: current.general.deviceName,
         preventSleepWhileRunning: current.general.preventSleepWhileRunning,
         desktopWsServerEnabled: false,
-        desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled
+        desktopActionConfirmationEnabled: current.general.desktopActionConfirmationEnabled,
+        errorReportingEnabled: current.general.errorReportingEnabled
       }
     });
     onGeneralSettingsChanged?.(profile.general);
@@ -325,10 +328,14 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
         desktopActionConfirmationEnabled: typeof input?.desktopActionConfirmationEnabled === "boolean"
           ? input.desktopActionConfirmationEnabled
           : current.general.desktopActionConfirmationEnabled,
+        errorReportingEnabled: typeof input?.errorReportingEnabled === "boolean"
+          ? input.errorReportingEnabled
+          : current.general.errorReportingEnabled,
         desktopWsServerEnabled: current.general.desktopWsServerEnabled
       }
     });
     onGeneralSettingsChanged?.(profile.general);
+    setDesktopErrorReportingEnabled(profile.general.errorReportingEnabled);
     return profile.general;
   });
   ipcMain.handle("settings.getEnterpriseImSettings", async () =>

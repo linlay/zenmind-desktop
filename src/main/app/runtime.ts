@@ -2,6 +2,7 @@ import fs from "node:fs";
 import {
   app,
   clipboard,
+  crashReporter,
   globalShortcut,
   ipcMain,
   net,
@@ -194,6 +195,7 @@ import {
 import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
 import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../marketplace";
 import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
+import { initializeErrorReporting, reportDesktopError } from "../error-reporting/manager";
 
 export function createMainProcessRuntime() {
   const startupPlatform = process.platform;
@@ -215,6 +217,10 @@ export function createMainProcessRuntime() {
     session,
     nativeTheme,
     webContents
+  });
+  initializeErrorReporting(app, crashReporter);
+  process.on("uncaughtExceptionMonitor", (error, origin) => {
+    reportDesktopError("main", { source: "main", message: error.message, stack: error.stack, origin });
   });
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
@@ -494,6 +500,7 @@ export function createMainProcessRuntime() {
   function initializeUserDataRootsAndSettings() {
     ensureDataRoot(app);
     applyDesktopInitBootstrap(app, mainProcessContext.platform);
+    initializeErrorReporting(app, crashReporter);
     const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
     if (isFirstDesktopInstall) {
       setMainLocale(app, initialLocaleSettings.locale);
@@ -1163,6 +1170,7 @@ export function createMainProcessRuntime() {
       source,
       ...details
     });
+    reportDesktopError(source, details);
   }
   
   function createWindow() {

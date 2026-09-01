@@ -634,12 +634,14 @@ export interface DesktopGeneralSettings {
   preventSleepWhileRunning: boolean;
   desktopWsServerEnabled: boolean;
   desktopActionConfirmationEnabled: boolean;
+  errorReportingEnabled: boolean;
 }
 
 export interface DesktopGeneralSettingsInput {
   deviceName?: string;
   preventSleepWhileRunning?: boolean;
   desktopActionConfirmationEnabled?: boolean;
+  errorReportingEnabled?: boolean;
 }
 
 export interface EnterpriseImSettings {
@@ -717,7 +719,7 @@ export type DesktopConfigChangedEvent = {
 export type DesktopConfigChangedListener = (event: DesktopConfigChangedEvent) => void;
 
 export interface RendererDiagnosticReport {
-  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview";
+  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "preload" | "main";
   message: string;
   details?: Record<string, unknown>;
   stack?: string;

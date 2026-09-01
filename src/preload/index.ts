@@ -866,4 +866,12 @@ window.addEventListener("unhandledrejection", (event) => {
   });
 });
 
+process.on("uncaughtExceptionMonitor", (error) => {
+  api.diagnostics.reportRendererError({
+    source: "preload",
+    message: error.message || "Preload error",
+    stack: error.stack
+  });
+});
+
 contextBridge.exposeInMainWorld("electronAPI", api);

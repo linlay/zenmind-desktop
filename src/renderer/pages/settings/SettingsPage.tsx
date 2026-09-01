@@ -506,7 +506,8 @@ const defaultGeneralSettings: DesktopGeneralSettings = {
   deviceName: "",
   preventSleepWhileRunning: true,
   desktopWsServerEnabled: false,
-  desktopActionConfirmationEnabled: true
+  desktopActionConfirmationEnabled: true,
+  errorReportingEnabled: true
 };
 
 const defaultEnterpriseImSettings: EnterpriseImSettings = {
@@ -3303,6 +3304,30 @@ export function SettingsPage({
     }
   }
 
+  async function handleToggleErrorReporting() {
+    const previousSettings = generalSettings;
+    const nextSettings = { ...generalSettings, errorReportingEnabled: !generalSettings.errorReportingEnabled };
+    setGeneralSettings(nextSettings);
+    setGeneralSettingsSaving(true);
+    try {
+      const savedSettings = await window.electronAPI.settings.saveGeneralSettings(nextSettings);
+      setGeneralSettings({ ...defaultGeneralSettings, ...savedSettings });
+      setReadErrorSections(["general"], "");
+      showSectionNotice(
+        "general",
+        savedSettings.errorReportingEnabled
+          ? t("settings.general.noticeErrorReportingEnabled")
+          : t("settings.general.noticeErrorReportingDisabled"),
+        "success"
+      );
+    } catch (reason) {
+      setGeneralSettings(previousSettings);
+      showSectionNotice("general", reason instanceof Error ? reason.message : String(reason), "error");
+    } finally {
+      setGeneralSettingsSaving(false);
+    }
+  }
+
   async function handleToggleEnterpriseIm() {
     const previousSettings = enterpriseImSettings;
     const nextSettings = {
@@ -4466,6 +4491,18 @@ export function SettingsPage({
                 aria-label={t("settings.general.desktopActionConfirmation")}
                 disabled={generalSettingsSaving}
                 onChange={() => void handleToggleDesktopActionConfirmation()}
+              />
+            </div>
+            <div className="settings-appearance-row">
+              <div className="settings-appearance-row-copy">
+                <strong>{t("settings.general.errorReporting")}</strong>
+                <span>{t("settings.general.errorReportingDescription")}</span>
+              </div>
+              <Switch
+                checked={generalSettings.errorReportingEnabled}
+                aria-label={t("settings.general.errorReporting")}
+                disabled={generalSettingsSaving}
+                onChange={() => void handleToggleErrorReporting()}
               />
             </div>
             <div className="settings-appearance-row">
