@@ -3111,7 +3111,7 @@ export const zhCNMessages = {
   "desktopPet.panel.expandCompleted": "展开 {count} 条已完成消息",
   "desktopPet.panel.defaultAgent": "小助手",
   "desktopPet.panel.taskSummary": "进行中 {running} · 等待 {awaiting} · 已完成 {completed}",
-  "desktopPet.panel.overview": "运行概览",
+  "desktopPet.panel.overview": "对话概览",
   "desktopPet.panel.collapseWidget": "收起聊天框内容",
   "desktopPet.panel.expandWidget": "展开聊天框内容",
   "desktopPet.panel.completedMore": "+{count} 已完成",

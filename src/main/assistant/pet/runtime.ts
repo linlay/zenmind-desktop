@@ -103,6 +103,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const desktopPetDonePreviewDismissalTracker = createDesktopPetDonePreviewDismissalTracker();
   const desktopPetActiveRunTracker = createDesktopPetActiveRunTracker();
   const desktopPetDismissedMessages = new Map<string, number>();
+  const desktopPetReadMessages = new Map<string, number>();
   const desktopPetMessageCache = new Map<string, DesktopPetMessageItem>();
   let destroyingPanelWindow = false;
   let desktopPetPanelPlacement: DesktopPetPanelPlacement = null;
@@ -353,6 +354,17 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return !dismissedAt || message.updatedAt > dismissedAt;
   }
 
+  function applyMessageReadState(message: DesktopPetMessageItem) {
+    const readAt = desktopPetReadMessages.get(message.chatId);
+    if (!readAt || message.updatedAt > readAt || !message.unread) {
+      return message;
+    }
+    return {
+      ...message,
+      unread: false
+    };
+  }
+
   function getMessagesForState() {
     const navigationMessages = createDesktopPetMessagesFromNavigationSnapshot(
       state.assistantNavigationStatusClient?.getSnapshot()
@@ -362,7 +374,9 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       : createDesktopPetMessagesFromAgentStatus(getAgentStatusForState());
     rememberMessages(liveMessages);
     const messages = mergeMessages(liveMessages, [...desktopPetMessageCache.values()]);
-    return messages.filter(isMessageVisible);
+    return messages
+      .map(applyMessageReadState)
+      .filter((message) => isMessageVisible(message) && (message.unread || message.status === "awaiting"));
   }
 
   function getAgentStatusForState() {
@@ -833,6 +847,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       if (!response.ok) {
         throw new Error(`agent-platform /api/read returned HTTP ${response.status}`);
       }
+      desktopPetReadMessages.set(normalizedChatId, Date.now());
       const payload = await response.json() as { data?: unknown };
       const data = typeof payload.data === "object" && payload.data !== null
         ? payload.data as { agentKey?: unknown; agentUnreadCount?: unknown }
@@ -885,6 +900,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       chatId,
       focusComposerOnComplete: false
     });
+    void markAgentPlatformChatRead(chatId);
     return {
       ok: true,
       message: t("main.taskChatOpened")
@@ -963,6 +979,9 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       message
     });
     desktopPetDismissedMessages.delete(chatId);
+    if (result?.ok !== false) {
+      void markAgentPlatformChatRead(chatId);
+    }
     scheduleStatusRefresh(200);
     return result;
   }
@@ -975,6 +994,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }
     desktopPetDismissedMessages.set(chatId, updatedAt);
     refreshState();
+    void markAgentPlatformChatRead(chatId);
     return { ok: true };
   }
 

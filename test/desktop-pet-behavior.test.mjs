@@ -699,12 +699,13 @@ test("desktop pet state exposes panel placement for detached panel rendering", (
 });
 
 test("desktop pet builds a message history item from bound agent status when navigation messages are empty", () => {
+  const updatedAt = Date.now() - 1_000;
   const messages = createDesktopPetMessagesFromAgentStatus(createAgentStatus({
     presence: "available",
     unreadCount: 1,
     latestPreview: "这是上一条历史回复",
     chatId: "chat-history",
-    updatedAt: 1781654400000
+    updatedAt
   }));
 
   assert.equal(messages.length, 1);
@@ -718,8 +719,66 @@ test("desktop pet builds a message history item from bound agent status when nav
     preview: "这是上一条历史回复",
     status: "done",
     unread: true,
-    updatedAt: 1781654400000
+    updatedAt
   });
+});
+
+test("desktop pet message list keeps only recent unread or awaiting chats", () => {
+  const now = Date.now();
+  const snapshot = {
+    ok: true,
+    items: [{
+      agentKey: "cutej",
+      displayName: "小君",
+      updatedAt: now,
+      recentChats: [
+        {
+          chatId: "chat-unread",
+          chatName: "未读对话",
+          agentKey: "cutej",
+          updatedAt: now - 1_000,
+          lastRunContent: "有一条新回复",
+          isRead: false,
+          hasActiveRun: false,
+          hasPendingAwaiting: false
+        },
+        {
+          chatId: "chat-awaiting",
+          chatName: "待确认对话",
+          agentKey: "cutej",
+          updatedAt: now - 2_000,
+          lastRunContent: "需要你确认",
+          isRead: true,
+          hasActiveRun: false,
+          hasPendingAwaiting: true
+        },
+        {
+          chatId: "chat-read",
+          chatName: "已读对话",
+          agentKey: "cutej",
+          updatedAt: now - 3_000,
+          lastRunContent: "普通已读回复",
+          isRead: true,
+          hasActiveRun: false,
+          hasPendingAwaiting: false
+        },
+        {
+          chatId: "chat-old",
+          chatName: "过期未读对话",
+          agentKey: "cutej",
+          updatedAt: now - 8 * 24 * 60 * 60 * 1_000,
+          lastRunContent: "八天前的回复",
+          isRead: false,
+          hasActiveRun: false,
+          hasPendingAwaiting: false
+        }
+      ]
+    }]
+  };
+
+  const messages = createDesktopPetMessagesFromNavigationSnapshot(snapshot);
+
+  assert.deepEqual(messages.map((message) => message.chatId), ["chat-unread", "chat-awaiting"]);
 });
 
 test("desktop pet window modes keep the visible pet footprint anchored", () => {
@@ -1711,6 +1770,7 @@ test("desktop pet unread badge counts render awaiting and completed badges separ
 });
 
 test("desktop pet preserves per-chat awaiting counts from navigation snapshots", () => {
+  const updatedAt = Date.now() - 1_000;
   const snapshot = {
     ok: true,
     items: [{
@@ -1723,12 +1783,12 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
       hasPendingAwaiting: true,
       latestChatId: "chat-awaiting",
       latestPreview: "等待确认",
-      updatedAt: 1781697600000,
+      updatedAt,
       recentChats: [{
         chatId: "chat-awaiting",
         chatName: "审批发布",
         agentKey: "cutej",
-        updatedAt: 1781697600000,
+        updatedAt,
         lastRunId: "run-awaiting",
         lastRunContent: "需要你确认两项操作",
         isRead: true,
@@ -1744,6 +1804,7 @@ test("desktop pet preserves per-chat awaiting counts from navigation snapshots",
 });
 
 test("desktop pet reads copilot activity items when navigation items omit the agent", () => {
+  const updatedAt = Date.now() - 1_000;
   const snapshot = {
     ok: true,
     items: [],
@@ -1757,12 +1818,12 @@ test("desktop pet reads copilot activity items when navigation items omit the ag
       hasPendingAwaiting: false,
       latestChatId: "helper-chat-1",
       latestPreview: "已完成网络诊断",
-      updatedAt: 1782302400000,
+      updatedAt,
       recentChats: [{
         chatId: "helper-chat-1",
         chatName: "网络诊断",
         agentKey: "net-yu",
-        updatedAt: 1782302400000,
+        updatedAt,
         lastRunId: "run-1",
         lastRunContent: "已完成网络诊断",
         isRead: false,

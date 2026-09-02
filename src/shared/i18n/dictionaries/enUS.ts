@@ -3111,7 +3111,7 @@ export const enUSMessages = {
   "desktopPet.panel.expandCompleted": "Expand {count} completed messages",
   "desktopPet.panel.defaultAgent": "Assistant",
   "desktopPet.panel.taskSummary": "Running {running} · Waiting {awaiting} · Done {completed}",
-  "desktopPet.panel.overview": "Run overview",
+  "desktopPet.panel.overview": "Conversation overview",
   "desktopPet.panel.collapseWidget": "Collapse chat panel",
   "desktopPet.panel.expandWidget": "Expand chat panel",
   "desktopPet.panel.completedMore": "+{count} done",

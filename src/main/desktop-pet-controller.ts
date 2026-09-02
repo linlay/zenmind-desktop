@@ -335,6 +335,13 @@ function resolveDesktopPetMessageStatusFromAgentStatus(
   return "done";
 }
 
+const DESKTOP_PET_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const DESKTOP_PET_MESSAGE_LIMIT = 50;
+
+function isDesktopPetMessageRecent(updatedAt: number, now = Date.now()) {
+  return updatedAt >= now - DESKTOP_PET_MESSAGE_RETENTION_MS;
+}
+
 export function createDesktopPetMessagesFromAgentStatus(
   agentStatus: DesktopPetBoundAgentStatus | null | undefined
 ): DesktopPetMessageItem[] {
@@ -349,6 +356,9 @@ export function createDesktopPetMessagesFromAgentStatus(
   }
   const unreadCount = Math.max(0, Math.round(Number(agentStatus.unreadCount) || 0));
   const status = resolveDesktopPetMessageStatusFromAgentStatus(agentStatus);
+  if ((unreadCount <= 0 && status !== "awaiting") || !isDesktopPetMessageRecent(updatedAt)) {
+    return [];
+  }
   const preview = getUsableDesktopPetTaskPreview(agentStatus.latestPreview) ||
     (unreadCount > 0 ? "有新消息" : "") ||
     (status === "awaiting" ? "等待你确认" : "");
@@ -372,8 +382,8 @@ export function createDesktopPetMessagesFromAgentStatus(
   ];
 }
 
-// 把 recentChats 映射成桌宠"消息列表"：保留未读、运行中、待确认的会话（含已完成但未读的回复），
-// 每条 = 一个会话的最新一条 agent 回复，可在桌宠内回复（续聊）或关闭（标记已读）。
+// 把 recentChats 映射成桌宠"消息列表"：只保留七天内的未读或待确认会话。
+// 每条 = 一个会话的最新一条 agent 回复；待确认会话只负责打开原对话，不在桌宠内直接作答。
 export function createDesktopPetMessagesFromNavigationSnapshot(
   snapshot: DesktopPetNavigationSnapshotLike | null | undefined
 ): DesktopPetMessageItem[] {
@@ -394,13 +404,16 @@ export function createDesktopPetMessagesFromNavigationSnapshot(
         continue;
       }
       const unread = chat.isRead === false;
-      // 保留所有有回复内容的最近会话（含已读），让消息态始终可见、可回复
+      const status = resolveDesktopPetMessageStatus(chat);
+      if (!unread && status !== "awaiting") {
+        continue;
+      }
       if (!toDesktopPetTaskText(chat.lastRunContent) && !chat.hasActiveRun && !chat.hasPendingAwaiting) {
         continue;
       }
       const messageAgentKey = toDesktopPetTaskText(chat.agentKey) || agentKey;
       const updatedAt = readEpochMillis(chat.updatedAt) ?? readEpochMillis(agent.updatedAt);
-      if (updatedAt === undefined) {
+      if (updatedAt === undefined || !isDesktopPetMessageRecent(updatedAt)) {
         continue;
       }
       const awaitingCount = readDesktopPetAwaitingCount(chat);
@@ -412,7 +425,7 @@ export function createDesktopPetMessagesFromNavigationSnapshot(
         agentDisplayName,
         title: resolveDesktopPetTaskTitle(chat),
         preview: getUsableDesktopPetTaskPreview(chat.lastRunContent),
-        status: resolveDesktopPetMessageStatus(chat),
+        status,
         unread,
         ...(awaitingCount > 0 ? { awaitingCount } : {}),
         ...(chat.awaitingMode ? { awaitingMode: chat.awaitingMode } : {}),
@@ -433,7 +446,7 @@ export function createDesktopPetMessagesFromNavigationSnapshot(
       return timeDelta;
     }
     return left.title.localeCompare(right.title, "zh-CN");
-  });
+  }).slice(0, DESKTOP_PET_MESSAGE_LIMIT);
 }
 
 export function computeDesktopPetStateRefresh(input: {

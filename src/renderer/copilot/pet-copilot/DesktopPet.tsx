@@ -193,6 +193,8 @@ function formatTaskStatus(task: DesktopPetTaskItem, t: ReturnType<typeof useI18n
 
 const DESKTOP_PET_INLINE_PREVIEW_MAX_LENGTH = 30;
 const DESKTOP_PET_TASK_VISIBLE_LIMIT = 2;
+const DESKTOP_PET_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
+const DESKTOP_PET_MESSAGE_LIMIT = 50;
 
 function formatInlinePetPreview(value: string) {
   const normalized = value.replace(/\s+/g, " ").trim();
@@ -250,7 +252,13 @@ function getVisibleDesktopPetMessages(input: {
   const withPreview = input.previewHistoryMessage
     ? mergeDesktopPetMessageLists(mergedMessages, [input.previewHistoryMessage])
     : mergedMessages;
-  return withPreview.filter((message) => !input.dismissedKeys.has(getDesktopPetMessageVersionKey(message)));
+  const oldestVisibleAt = Date.now() - DESKTOP_PET_MESSAGE_RETENTION_MS;
+  return withPreview
+    .filter((message) => message.unread || message.status === "awaiting")
+    .filter((message) => message.updatedAt >= oldestVisibleAt)
+    .filter((message) => !input.dismissedKeys.has(getDesktopPetMessageVersionKey(message)))
+    .sort((left, right) => right.updatedAt - left.updatedAt)
+    .slice(0, DESKTOP_PET_MESSAGE_LIMIT);
 }
 
 function formatMessageCardPreview(
@@ -1213,6 +1221,11 @@ export function DesktopPet() {
     }
     void window.electronAPI.desktopPet
       .replyMessage({ chatId: message.chatId, agentKey: message.agentKey, message: text })
+      .then((result) => {
+        if (result.ok) {
+          hideMessageLocally(message);
+        }
+      })
       .catch(() => undefined);
     markReplyPending(message.chatId);
     setReplyingChatId(null);
@@ -1234,12 +1247,16 @@ export function DesktopPet() {
     handleReplySubmit(message);
   }
 
-  function handleDismissMessage(message: DesktopPetMessageItem) {
+  function hideMessageLocally(message: DesktopPetMessageItem) {
     const dismissedKey = getDesktopPetMessageVersionKey(message);
     setDismissedMessageKeys((current) => current.includes(dismissedKey) ? current : [...current, dismissedKey]);
     setMessageCache((current) => current.filter((cachedMessage) =>
       getDesktopPetMessageVersionKey(cachedMessage) !== dismissedKey
     ));
+  }
+
+  function handleDismissMessage(message: DesktopPetMessageItem) {
+    hideMessageLocally(message);
     void window.electronAPI.desktopPet
       .dismissMessage({ chatId: message.chatId, runId: message.runId, updatedAt: message.updatedAt })
       .catch(() => undefined);
@@ -1258,10 +1275,17 @@ export function DesktopPet() {
 
   function handleOpenMessageClick(event: ReactMouseEvent<HTMLButtonElement>, message: DesktopPetMessageItem) {
     stopPanelClick(event);
-    void window.electronAPI.desktopPet.openTaskChat({
-      agentKey: message.agentKey,
-      chatId: message.chatId
-    });
+    void window.electronAPI.desktopPet
+      .openTaskChat({
+        agentKey: message.agentKey,
+        chatId: message.chatId
+      })
+      .then((result) => {
+        if (result.ok && message.status !== "awaiting") {
+          hideMessageLocally(message);
+        }
+      })
+      .catch(() => undefined);
   }
 
   function handleOpenAssistantFromPanel(event: ReactMouseEvent<HTMLButtonElement>) {
@@ -1617,13 +1641,14 @@ export function DesktopPet() {
                       const isThinking =
                         message.status === "running" || pendingReplyIds.includes(message.chatId);
                       const cardStatus = isThinking ? "running" : message.status;
-                      const isReplying = replyingChatId === message.chatId;
+                      const canReply = message.status !== "awaiting";
+                      const isReplying = canReply && replyingChatId === message.chatId;
                       const replyDraftPreview = isReplying ? replyText : "";
                       const previewText = formatMessageCardPreview(message, isThinking, replyDraftPreview, t);
                       return (
                       <div
                         key={message.id}
-                        className={`desktop-pet-message-card is-${cardStatus}${message.unread ? " is-unread" : ""}${isReplying ? " is-replying" : ""}`}
+                        className={`desktop-pet-message-card is-${cardStatus}${message.unread ? " is-unread" : ""}${canReply ? " can-reply" : ""}${isReplying ? " is-replying" : ""}`}
                         onPointerDown={handleTaskPointerDown}
                       >
                         <div className="desktop-pet-message-meta">
@@ -1641,15 +1666,24 @@ export function DesktopPet() {
                           className="desktop-pet-message-main"
                           onClick={(event) => handleOpenMessageClick(event, message)}
                         >
-                          <span className="desktop-pet-task-copy">
-                            <strong>{message.title}</strong>
-                            <span>{previewText}</span>
-                          </span>
-                          <span
-                            className={`desktop-pet-task-status-badge is-${cardStatus}`}
-                            aria-label={message.title}
-                          >
-                            {renderDesktopPetStatusIcon(cardStatus)}
+                          <span className="desktop-pet-message-copy">
+                            <span className="desktop-pet-message-title-line">
+                              <strong>{message.title}</strong>
+                              {message.status === "awaiting" ? (
+                                <span
+                                  className="desktop-pet-message-status is-awaiting"
+                                  aria-label={t("desktopPet.status.awaiting")}
+                                >
+                                  <ClockCircleOutlined aria-hidden="true" />
+                                </span>
+                              ) : message.unread ? (
+                                <span
+                                  className="desktop-pet-message-status is-unread"
+                                  aria-label={t("desktopPet.unread", { count: 1 })}
+                                />
+                              ) : null}
+                            </span>
+                            <span className="desktop-pet-message-preview">{previewText}</span>
                           </span>
                         </button>
                         {isReplying ? (
@@ -1661,11 +1695,7 @@ export function DesktopPet() {
                             <input
                               className="desktop-pet-message-reply-input"
                               value={replyText}
-                              placeholder={
-                                message.status === "awaiting"
-                                  ? t("desktopPet.reply.awaitingPlaceholder")
-                                  : t("desktopPet.reply.placeholder")
-                              }
+                              placeholder={t("desktopPet.reply.placeholder")}
                               autoFocus
                               onFocus={() => setMouseInteractive(true)}
                               onChange={(event) => setReplyText(event.target.value)}
@@ -1698,7 +1728,7 @@ export function DesktopPet() {
                               {t("desktopPet.reply.send")}
                             </button>
                           </div>
-                        ) : (
+                        ) : canReply ? (
                           <button
                             type="button"
                             className="desktop-pet-message-reply"
@@ -1706,7 +1736,7 @@ export function DesktopPet() {
                           >
                             {t("desktopPet.reply.action")}
                           </button>
-                        )}
+                        ) : null}
                       </div>
                       );
                     })
