@@ -23,6 +23,7 @@ import {
   normalizeWorkPanelPixelRect,
   renumberWorkPanelReviewAnnotations,
   sanitizeWorkPanelReviewWebUrl,
+  isLoopbackWorkPanelReviewUrl,
   workPanelReviewSessionKey,
   type HtmlElementAnnotation,
   type ImageRegionAnnotation,
@@ -133,6 +134,12 @@ function cleanIdentity(value: unknown, max = 512) {
   return text && text.length <= max ? text : "";
 }
 
+function cleanWorkPanelFileTitle(value: unknown) {
+  const title = typeof value === "string" ? value.trim() : "";
+  if (!title || /[\u0000-\u001f\u007f]/u.test(title)) return "";
+  return title.slice(0, 160);
+}
+
 function normalizeRelativePath(value: unknown) {
   const raw = cleanIdentity(value, 2_048).replace(/\\/gu, "/");
   if (!raw || raw.startsWith("/") || /^[a-z]:\//iu.test(raw) || raw.startsWith("//")) {
@@ -168,7 +175,7 @@ function normalizeContext(
         ? ["key"]
         : [
             "chatId", "runId", "agentKey", "artifactId", "referenceId", "planningId",
-            "publishId", "sourceId", "btwId", "instanceId", "path",
+            "publishId", "sourceId", "btwId", "instanceId", "path", "relativePath",
           ],
   );
   if (Object.keys(record).some((key) => !allowed.has(key) || /token|event|absolute|preload/iu.test(key))) {
@@ -189,6 +196,11 @@ function normalizeContext(
       : normalizeRelativePath(record.path);
     if (!path) return null;
     context.path = path;
+  }
+  if (record.relativePath !== undefined) {
+    const relativePath = normalizeRelativePath(record.relativePath);
+    if (!relativePath) return null;
+    context.relativePath = relativePath;
   }
   if (module === "planning") {
     return {
@@ -220,24 +232,67 @@ function normalizeDescriptor(
   if (descriptor.kind === "native") {
     if (
       !isRegisteredWorkPanelNativeSurface(descriptor.surfaceKey) ||
-      descriptor.surfaceKey !== "resource-image" ||
       keys.some((key) => !["kind", "surfaceKey", "context", "title", "pinned", "closable"].includes(key)) ||
       !descriptor.context || typeof descriptor.context !== "object" || Array.isArray(descriptor.context)
     ) return null;
     const context = descriptor.context;
+    if (descriptor.surfaceKey === "document-html") {
+      const allowedContextKeys = new Set([
+        "handleId", "sourceKind", "stableIdentity", "fileName", "mimeType",
+        "sizeBytes", "revision", "localOriginal",
+      ]);
+      if (Object.keys(context).some((key) => !allowedContextKeys.has(key))) return null;
+      const handleId = cleanIdentity(context.handleId, 256);
+      const sourceKind = ["workspace-file", "artifact", "reference"].includes(String(context.sourceKind))
+        ? String(context.sourceKind)
+        : "";
+      const stableIdentity = cleanIdentity(context.stableIdentity, 2_048);
+      const fileName = cleanIdentity(context.fileName, 512);
+      const mimeType = context.mimeType === "text/html" || context.mimeType === "application/xhtml+xml"
+        ? context.mimeType
+        : "";
+      const sizeBytes = typeof context.sizeBytes === "number" && Number.isSafeInteger(context.sizeBytes) && context.sizeBytes >= 0
+        ? context.sizeBytes
+        : -1;
+      const revision = cleanIdentity(context.revision, 512);
+      const localOriginal = typeof context.localOriginal === "boolean" ? context.localOriginal : null;
+      if (!handleId || !sourceKind || !stableIdentity || !fileName || !mimeType || sizeBytes < 0 || !revision || localOriginal === null) {
+        return null;
+      }
+      const sanitized: WorkPanelItemDescriptor = {
+        kind: "native",
+        surfaceKey: "document-html",
+        context: { handleId, sourceKind, stableIdentity, fileName, mimeType, sizeBytes, revision, localOriginal },
+        ...(title ? { title } : {}),
+        ...(descriptor.pinned === true ? { pinned: true } : {}),
+        ...(descriptor.closable === false ? { closable: false } : {}),
+      };
+      return {
+        descriptor: sanitized,
+        stableKey: stableIdentity,
+        title: title || fileName,
+      };
+    }
+    if (descriptor.surfaceKey !== "resource-image" && descriptor.surfaceKey !== "document-image") return null;
     const allowedContextKeys = new Set([
       "handleId", "profile", "agentKey", "chatId", "resourceId", "relativePath", "fileName",
       "mimeType", "sizeBytes", "revision", "localOriginal",
+      "editable",
     ]);
     if (Object.keys(context).some((key) => !allowedContextKeys.has(key))) return null;
     const handleId = cleanIdentity(context.handleId, 256);
-    const profile = context.profile === "artifact" || context.profile === "reference" ? context.profile : "";
+    const profile = ["workspace-file", "artifact", "reference"].includes(String(context.profile))
+      ? String(context.profile)
+      : "";
     const agentKey = cleanIdentity(context.agentKey);
     const chatId = cleanIdentity(context.chatId);
     const resourceId = cleanIdentity(context.resourceId, 1_024);
     const relativePath = normalizeRelativePath(context.relativePath);
     const fileName = cleanIdentity(context.fileName, 512);
-    const mimeType = ["image/png", "image/jpeg", "image/webp"].includes(String(context.mimeType))
+    const mimeType = [
+      "image/png", "image/jpeg", "image/webp", "image/apng", "image/avif", "image/bmp",
+      "image/gif", "image/x-icon", "image/heic", "image/heif", "image/tiff", "image/svg+xml",
+    ].includes(String(context.mimeType))
       ? String(context.mimeType)
       : "";
     const sizeBytes = typeof context.sizeBytes === "number" && Number.isSafeInteger(context.sizeBytes) && context.sizeBytes >= 0
@@ -247,13 +302,16 @@ function normalizeDescriptor(
     const localOriginal = context.localOriginal === true || context.localOriginal === false
       ? context.localOriginal
       : null;
+    const editable = typeof context.editable === "boolean"
+      ? context.editable
+      : ["image/png", "image/jpeg", "image/webp"].includes(mimeType);
     if (
       !handleId || !profile || !agentKey || !chatId || !resourceId || !relativePath || !fileName ||
       !mimeType || sizeBytes < 0 || !revision || localOriginal === null
     ) return null;
     const sanitized: WorkPanelItemDescriptor = {
       kind: "native",
-      surfaceKey: "resource-image",
+      surfaceKey: descriptor.surfaceKey,
       context: {
         handleId,
         profile,
@@ -266,6 +324,7 @@ function normalizeDescriptor(
         sizeBytes,
         revision,
         localOriginal,
+        editable,
       },
       ...(title ? { title } : {}),
       ...(descriptor.pinned === true ? { pinned: true } : {}),
@@ -273,7 +332,9 @@ function normalizeDescriptor(
     };
     return {
       descriptor: sanitized,
-      stableKey: `resource-image:${profile}:${agentKey}:${chatId}:${resourceId}`,
+      stableKey: profile === "workspace-file"
+        ? `file:${agentKey}:${relativePath}`
+        : `${profile}:${agentKey}:${chatId}:${resourceId}:${relativePath}`,
       title: title || fileName,
     };
   }
@@ -381,12 +442,12 @@ function normalizeDescriptor(
       break;
     case "artifact":
       stableKey = context.agentKey && context.chatId && context.artifactId
-        ? `artifact:${context.agentKey}:${context.chatId}:${context.artifactId}`
+        ? `artifact:${context.agentKey}:${context.chatId}:${context.artifactId}${context.relativePath ? `:${context.relativePath}` : ""}`
         : "";
       break;
     case "reference":
       stableKey = context.agentKey && context.chatId && context.referenceId
-        ? `reference:${context.agentKey}:${context.chatId}:${context.referenceId}`
+        ? `reference:${context.agentKey}:${context.chatId}:${context.referenceId}${context.relativePath ? `:${context.relativePath}` : ""}`
         : "";
       break;
     case "file":
@@ -411,19 +472,32 @@ function normalizeDescriptor(
   }
   if (!stableKey) return null;
   const isOverview = descriptor.module === "overview";
+  const normalizedTitle = descriptor.module === "file"
+    ? cleanWorkPanelFileTitle(descriptor.title)
+    : title;
+  const fileTitle = descriptor.module === "file"
+    ? (() => {
+        const normalizedPath = String(context.path || "")
+          .replace(/\\/gu, "/")
+          .replace(/\/+$/u, "");
+        return cleanWorkPanelFileTitle(
+          normalizedPath.split("/").filter(Boolean).pop(),
+        ) || "file";
+      })()
+    : "";
   const sanitized = {
     kind: "webclient",
     module: descriptor.module,
     route,
     context,
-    ...(title ? { title } : {}),
+    ...(normalizedTitle ? { title: normalizedTitle } : {}),
     ...(isOverview || descriptor.pinned === true ? { pinned: true } : {}),
     ...(isOverview || descriptor.closable === false ? { closable: false } : {}),
   } as WorkPanelItemDescriptor;
   return {
     descriptor: sanitized,
     stableKey,
-    title: title || descriptor.module,
+    title: normalizedTitle || fileTitle || descriptor.module,
   };
 }
 
@@ -488,13 +562,16 @@ function normalizeReviewSource(source: ReviewSourceRevision) {
     ? sanitizeWorkPanelReviewWebUrl(normalizedUrl)
     : normalizedUrl;
   const revision = sourceKind === "web" ? url : requestedRevision;
+  const liveProjectWeb = source.liveProjectWeb === true && sourceKind === "web" &&
+    Boolean(url) && isLoopbackWorkPanelReviewUrl(url);
   if (
     !["workspace-file", "artifact", "reference", "web"].includes(sourceKind) ||
     !fileName ||
     !revision ||
     (source.relativePath !== undefined && !relativePath) ||
     (source.resourceId !== undefined && !resourceId) ||
-    (source.url !== undefined && !url)
+    (source.url !== undefined && !url) ||
+    (source.liveProjectWeb !== undefined && !liveProjectWeb)
   ) return null;
   if (sourceKind === "workspace-file" && !relativePath) return null;
   if ((sourceKind === "artifact" || sourceKind === "reference") && !resourceId) return null;
@@ -506,6 +583,7 @@ function normalizeReviewSource(source: ReviewSourceRevision) {
     ...(relativePath ? { relativePath } : {}),
     ...(resourceId ? { resourceId } : {}),
     ...(url ? { url } : {}),
+    ...(liveProjectWeb ? { liveProjectWeb: true as const } : {}),
   } satisfies ReviewSourceRevision;
 }
 

@@ -1,4 +1,5 @@
 import type { App, WebContents } from "electron";
+import path from "node:path";
 import type { MarketListResult } from "../../shared/contracts";
 import { createAppPairingPayload } from "../app-pairing";
 import { issueAgentAccessToken } from "../agent-auth";
@@ -118,7 +119,14 @@ import { registerEnterpriseChatIpcHandlers } from "./enterprise-chat-handlers";
 import { registerHelpIpcHandlers } from "./help-handlers";
 import { registerSidebarContextMenuIpcHandlers } from "./sidebar-context-menu-handlers";
 import { registerChatWorkPanelTabContextMenuIpcHandlers } from "./chat-work-panel-tab-context-menu-handlers";
-import { registerChatWorkPanelLocalFileIpcHandlers } from "../chat-work-panel-local-files";
+import {
+  registerChatWorkPanelLocalFileIpcHandlers,
+  resolveWorkPanelLocalFileFromWorkspace,
+} from "../chat-work-panel-local-files";
+import {
+  registerChatWorkPanelDocumentHtmlIpcHandlers,
+  workPanelDocumentHtmlRegistry,
+} from "../chat-work-panel-document-html";
 import {
   registerChatWorkPanelResourceImageIpcHandlers,
   workPanelResourceImageRegistry,
@@ -374,43 +382,69 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       .replace(/service-webview\.js$/u, "work-panel-preview.js"),
     showFileDialog: options.showFileDialog as any,
   });
+  const fetchDocumentResource = async ({ chatId, relativePath }: { chatId: string; relativePath: string }) => {
+    try {
+      const state = await getServiceState(app, "agent-platform");
+      const baseUrl = state.status === "running"
+        ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
+        : "";
+      if (!baseUrl) return null;
+      const tokenResult = await issueAgentAccessToken(app, "missing");
+      if (!tokenResult.ok || !tokenResult.token.trim()) return null;
+      const url = new URL("/api/resource", baseUrl);
+      url.searchParams.set("file", `${chatId}/${relativePath}`);
+      const response = await fetch(url, { headers: { Authorization: `Bearer ${tokenResult.token.trim()}` } });
+      if (!response.ok) return null;
+      const declaredSize = Number(response.headers.get("content-length") || "0");
+      if (declaredSize > 100 * 1024 * 1024) return null;
+      const bytes = Buffer.from(await response.arrayBuffer());
+      if (!bytes.length || bytes.length > 100 * 1024 * 1024) return null;
+      return {
+        bytes,
+        mimeType: response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || "",
+        revision: response.headers.get("x-zenmind-resource-revision")?.trim() || "",
+      };
+    } catch {
+      return null;
+    }
+  };
+  registerChatWorkPanelDocumentHtmlIpcHandlers(ipcMain, {
+    app,
+    getMainWindow: () => context.state.mainWindow,
+    fetchRemoteResource: fetchDocumentResource,
+    commitDocument: (payload) => callAgentPlatform(app, "/api/document/commit", {
+      method: "POST",
+      body: payload,
+    }),
+  });
   registerChatWorkPanelResourceImageIpcHandlers(ipcMain, {
     app,
     assistantBridge,
     getMainWindow: () => context.state.mainWindow,
     showFileDialog: options.showFileDialog as any,
     showSaveDialog: options.showSaveDialog as any,
-    fetchRemoteResource: async ({ chatId, relativePath }) => {
-      try {
-        const state = await getServiceState(app, "agent-platform");
-        const baseUrl = state.status === "running"
-          ? state.healthMeta.webUrl.trim() || (state.healthMeta.port ? `http://127.0.0.1:${state.healthMeta.port}` : "")
-          : "";
-        if (!baseUrl) return null;
-        const tokenResult = await issueAgentAccessToken(app, "missing");
-        if (!tokenResult.ok || !tokenResult.token.trim()) return null;
-        const url = new URL("/api/resource", baseUrl);
-        url.searchParams.set("file", `${chatId}/${relativePath}`);
-        const response = await fetch(url, {
-          headers: { Authorization: `Bearer ${tokenResult.token.trim()}` },
-        });
-        if (!response.ok) return null;
-        const declaredSize = Number(response.headers.get("content-length") || "0");
-        if (declaredSize > 100 * 1024 * 1024) return null;
-        const bytes = Buffer.from(await response.arrayBuffer());
-        if (!bytes.length || bytes.length > 100 * 1024 * 1024) return null;
-        return {
-          bytes,
-          mimeType: response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || "",
-          revision: response.headers.get("x-zenmind-resource-revision")?.trim() || "",
-        };
-      } catch {
-        return null;
-      }
-    },
-    commitResource: (payload) => callAgentPlatform(app, "/api/resource/image/commit", {
+    fetchRemoteResource: fetchDocumentResource,
+    commitResource: (payload) => callAgentPlatform(app, "/api/document/commit", {
       method: "POST",
-      body: { operation: "resource.image.commit", ...payload },
+      body: {
+        operation: "document.commit",
+        source: payload.profile === "workspace-file"
+          ? { kind: "workspace-file", agentKey: payload.agentKey, path: payload.relativePath }
+          : {
+              kind: payload.profile,
+              agentKey: payload.agentKey,
+              chatId: payload.chatId,
+              resourceId: payload.resourceId,
+              relativePath: payload.relativePath,
+            },
+        mode: payload.mode,
+        expectedRevision: payload.expectedRevision,
+        payload: {
+          kind: "document-image",
+          mimeType: payload.mimeType,
+          dataBase64: payload.dataBase64,
+        },
+      },
     }),
   });
 
@@ -518,6 +552,98 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
           : { ok: false, error: { code: "protocol_error", message: "Native image host returned an invalid result" } };
       } finally {
         workPanelResourceImageRegistry.discardPreparedClaim(prepared.claimId);
+      }
+    },
+    openDocument: async ({ ownerChatId, document }) => {
+      const mainWindow = context.state.mainWindow;
+      if (!mainWindow || mainWindow.isDestroyed() || mainWindow.webContents.isDestroyed()) {
+        return { ok: false, error: { code: "target_unavailable", message: "WorkPanel renderer is unavailable" } };
+      }
+      const source = document.source;
+      let workspaceFilePath: string | undefined;
+      let workspaceRelativePath: string | undefined;
+      if (source.kind === "workspace-file") {
+        try {
+          const navigation = await assistantBridge.listNavigationAgents();
+          const agent = navigation.ok
+            ? navigation.items.find((candidate) => candidate.agentKey === source.agentKey)
+            : null;
+          const workspaceDir = agent?.workspaceDir?.trim() || "";
+          const resolved = workspaceDir && workspaceDir !== "@chat" && agent?.workspaceDirExists !== false
+            ? resolveWorkPanelLocalFileFromWorkspace(workspaceDir, source.path, context.platform)
+            : null;
+          if (!resolved?.ok) {
+            return { ok: false, error: { code: "target_unavailable", message: resolved?.message || "Agent workspace is unavailable" } };
+          }
+          workspaceFilePath = resolved.filePath;
+          workspaceRelativePath = resolved.relativePath;
+        } catch {
+          return { ok: false, error: { code: "target_unavailable", message: "Agent workspace is unavailable" } };
+        }
+      }
+      const imagePrepared = await workPanelResourceImageRegistry.prepareClaim({
+          ownerChatId,
+          rendererWebContentsId: mainWindow.webContents.id,
+          profile: source.kind,
+          agentKey: source.agentKey,
+          chatId: source.kind === "workspace-file" ? ownerChatId : source.chatId,
+          resourceId: source.kind === "workspace-file" ? workspaceRelativePath! : source.resourceId,
+          relativePath: source.kind === "workspace-file" ? workspaceRelativePath! : source.relativePath,
+          title: document.title,
+          ...(workspaceFilePath ? { workspaceFilePath } : {}),
+        });
+      if (imagePrepared.ok) {
+        try {
+          const response = await desktopActionOptions.callRendererAction({
+            requestId: `workpanel-document-image-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            action: "desktop.workpanel.openResourceImage",
+            args: {
+              claimId: imagePrepared.claimId,
+              surfaceKey: "document-image",
+              ...(document.title ? { title: document.title } : {}),
+            },
+            source: { chatId: ownerChatId, agentKey: source.agentKey },
+          });
+          if (!response.ok) return { ok: false, error: { code: (response.error?.code || "target_unavailable") as any, message: response.error?.message || "WorkPanel renderer is unavailable" } };
+          const result = response.result as { workspaceId?: unknown; item?: { itemId?: unknown } } | undefined;
+          const workspaceId = typeof result?.workspaceId === "string" ? result.workspaceId : "";
+          const itemId = typeof result?.item?.itemId === "string" ? result.item.itemId : "";
+          return workspaceId && itemId
+            ? { ok: true, workspaceId, itemId, renderer: "native-image" as const }
+            : { ok: false, error: { code: "protocol_error", message: "Native image host returned an invalid result" } };
+        } finally {
+          workPanelResourceImageRegistry.discardPreparedClaim(imagePrepared.claimId);
+        }
+      }
+      if (imagePrepared.code !== "unsupported_native_type") {
+        return { ok: false, error: { code: imagePrepared.code, message: imagePrepared.message } };
+      }
+      const prepared = await workPanelDocumentHtmlRegistry.prepareClaim({
+        ownerChatId,
+        rendererWebContentsId: mainWindow.webContents.id,
+        source: source.kind === "workspace-file"
+          ? { ...source, path: workspaceRelativePath! }
+          : source,
+        title: document.title,
+        ...(workspaceFilePath ? { workspaceFilePath } : {}),
+      });
+      if (!prepared.ok) return { ok: false, error: { code: prepared.code, message: prepared.message } };
+      try {
+        const response = await desktopActionOptions.callRendererAction({
+          requestId: `workpanel-document-html-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          action: "desktop.workpanel.openDocumentHtml",
+          args: { claimId: prepared.claimId, ...(document.title ? { title: document.title } : {}) },
+          source: { chatId: ownerChatId, agentKey: source.agentKey },
+        });
+        if (!response.ok) return { ok: false, error: { code: (response.error?.code || "target_unavailable") as any, message: response.error?.message || "WorkPanel renderer is unavailable" } };
+        const result = response.result as { workspaceId?: unknown; item?: { itemId?: unknown } } | undefined;
+        const workspaceId = typeof result?.workspaceId === "string" ? result.workspaceId : "";
+        const itemId = typeof result?.item?.itemId === "string" ? result.item.itemId : "";
+        return workspaceId && itemId
+          ? { ok: true, workspaceId, itemId, renderer: "native-html" as const }
+          : { ok: false, error: { code: "protocol_error", message: "Native HTML host returned an invalid result" } };
+      } finally {
+        workPanelDocumentHtmlRegistry.discardPreparedClaim(prepared.claimId);
       }
     },
   });

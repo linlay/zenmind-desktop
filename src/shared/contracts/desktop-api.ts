@@ -111,6 +111,18 @@ import type {
   WorkPanelResourceImageReadResult,
   WorkPanelResourceImageReleaseRequest,
 } from "../work-panel-resource-image";
+import type {
+  WorkPanelDocumentHtmlActionResult,
+  WorkPanelDocumentHtmlClaimRequest,
+  WorkPanelDocumentHtmlClaimResult,
+  WorkPanelDocumentHtmlCommitRequest,
+  WorkPanelDocumentHtmlCommitResult,
+  WorkPanelDocumentHtmlHandleRequest,
+  WorkPanelDocumentHtmlPreviewRequest,
+  WorkPanelDocumentHtmlPreviewResult,
+  WorkPanelDocumentHtmlReadResult,
+  WorkPanelDocumentHtmlReleaseRequest,
+} from "../work-panel-document-html";
 import type { DesktopHelpSettings } from "../help";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../surface-identity";
 import type { AgentWebclientConnectionPhase, AgentWebclientSurfaceKind } from "./agent-webclient-bridge";
@@ -1187,6 +1199,13 @@ export interface DesktopApi {
       release: (input: WorkPanelLocalFileReleaseRequest) => Promise<WorkPanelLocalFileActionResult>;
       open: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
       reveal: (input: WorkPanelLocalFileHandleRequest) => Promise<WorkPanelLocalFileActionResult>;
+    };
+    documentHtml: {
+      claim: (input: WorkPanelDocumentHtmlClaimRequest) => Promise<WorkPanelDocumentHtmlClaimResult>;
+      read: (input: WorkPanelDocumentHtmlHandleRequest) => Promise<WorkPanelDocumentHtmlReadResult>;
+      preview: (input: WorkPanelDocumentHtmlPreviewRequest) => Promise<WorkPanelDocumentHtmlPreviewResult>;
+      release: (input: WorkPanelDocumentHtmlReleaseRequest) => Promise<WorkPanelDocumentHtmlActionResult>;
+      commit: (input: WorkPanelDocumentHtmlCommitRequest) => Promise<WorkPanelDocumentHtmlCommitResult>;
     };
     resourceImages: {
       claim: (input: WorkPanelResourceImageClaimRequest) => Promise<WorkPanelResourceImageClaimResult>;

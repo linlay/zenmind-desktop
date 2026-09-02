@@ -3,7 +3,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { spawn } from "node:child_process";
-import { shell, type App, type BrowserWindow, type WebContents } from "electron";
+import { nativeImage, shell, type App, type BrowserWindow, type WebContents } from "electron";
 import type { AssistantAttachment } from "../shared/contracts";
 import type {
   AgentPlatformAssistantBridge,
@@ -110,6 +110,7 @@ export type PrepareWorkPanelResourceImageInput = {
   resourceId: string;
   relativePath: string;
   title?: string;
+  workspaceFilePath?: string;
 };
 
 export type PrepareWorkPanelResourceImageResult =
@@ -139,8 +140,7 @@ function fileRevision(filePath: string) {
 }
 
 function cleanRevision(value: unknown) {
-  const revision = typeof value === "string" ? value.trim() : "";
-  return /^\d+:\d+$/u.test(revision) ? revision : "";
+  return cleanText(value, 512);
 }
 
 function detectImageMime(bytes: Uint8Array): WorkPanelResourceImageMimeType | "" {
@@ -157,6 +157,24 @@ function detectImageMime(bytes: Uint8Array): WorkPanelResourceImageMimeType | ""
     Buffer.from(bytes.subarray(0, 4)).toString("ascii") === "RIFF" &&
     Buffer.from(bytes.subarray(8, 12)).toString("ascii") === "WEBP"
   ) return "image/webp";
+  if (bytes.length >= 6 && ["GIF87a", "GIF89a"].includes(Buffer.from(bytes.subarray(0, 6)).toString("ascii"))) {
+    return "image/gif";
+  }
+  if (bytes.length >= 2 && bytes[0] === 0x42 && bytes[1] === 0x4d) return "image/bmp";
+  if (bytes.length >= 4 && bytes[0] === 0 && bytes[1] === 0 && bytes[2] === 1 && bytes[3] === 0) return "image/x-icon";
+  if (
+    bytes.length >= 4 &&
+    ((bytes[0] === 0x49 && bytes[1] === 0x49 && bytes[2] === 0x2a && bytes[3] === 0) ||
+      (bytes[0] === 0x4d && bytes[1] === 0x4d && bytes[2] === 0 && bytes[3] === 0x2a))
+  ) return "image/tiff";
+  if (bytes.length >= 12 && Buffer.from(bytes.subarray(4, 8)).toString("ascii") === "ftyp") {
+    const brand = Buffer.from(bytes.subarray(8, 12)).toString("ascii").toLowerCase();
+    if (brand.startsWith("avif") || brand.startsWith("avis")) return "image/avif";
+    if (["heic", "heix", "hevc", "hevx", "heim", "heis"].includes(brand)) return "image/heic";
+    if (["mif1", "msf1"].includes(brand)) return "image/heif";
+  }
+  const text = Buffer.from(bytes.subarray(0, Math.min(bytes.length, 512))).toString("utf8").trimStart();
+  if (/^(?:<\?xml[^>]*>\s*)?<svg[\s>]/iu.test(text)) return "image/svg+xml";
   return "";
 }
 
@@ -165,6 +183,15 @@ function expectedMimeForPath(filePath: string): WorkPanelResourceImageMimeType |
   if (extension === ".png") return "image/png";
   if (extension === ".jpg" || extension === ".jpeg") return "image/jpeg";
   if (extension === ".webp") return "image/webp";
+  if (extension === ".apng") return "image/apng";
+  if (extension === ".avif") return "image/avif";
+  if (extension === ".bmp") return "image/bmp";
+  if (extension === ".gif") return "image/gif";
+  if (extension === ".ico") return "image/x-icon";
+  if (extension === ".heic") return "image/heic";
+  if (extension === ".heif") return "image/heif";
+  if (extension === ".tif" || extension === ".tiff") return "image/tiff";
+  if (extension === ".svg") return "image/svg+xml";
   return "";
 }
 
@@ -173,7 +200,7 @@ function inspectImageFile(filePath: string) {
     const stat = fs.statSync(filePath);
     if (!stat.isFile()) return null;
     const descriptor = fs.openSync(filePath, "r");
-    const header = Buffer.alloc(16);
+    const header = Buffer.alloc(512);
     try {
       fs.readSync(descriptor, header, 0, header.length, 0);
     } finally {
@@ -181,12 +208,16 @@ function inspectImageFile(filePath: string) {
     }
     const mimeType = detectImageMime(header);
     const expectedMime = expectedMimeForPath(filePath);
-    if (!mimeType || mimeType !== expectedMime) return null;
+    if (!mimeType) return null;
+    const resolvedMime = expectedMime === "image/apng" && mimeType === "image/png"
+      ? expectedMime
+      : mimeType;
     return {
       fileName: path.basename(filePath),
-      mimeType,
+      mimeType: resolvedMime,
       sizeBytes: stat.size,
       revision: `${stat.size}:${Math.trunc(stat.mtimeMs)}`,
+      editable: ["image/png", "image/jpeg", "image/webp"].includes(resolvedMime),
     };
   } catch {
     return null;
@@ -300,6 +331,10 @@ export class WorkPanelResourceImageRegistry {
 
   private async resolveSource(input: PrepareWorkPanelResourceImageInput) {
     if (!this.runtime) return null;
+    if (input.profile === "workspace-file") {
+      const filePath = cleanText(input.workspaceFilePath, 4_096);
+      return filePath ? { filePath, temporary: false, revision: fileRevision(filePath) } : null;
+    }
     const dependencies: OpenChatResourceDependencies = { app: this.runtime.app };
     const resolved = resolveChatWorkPanelResourceFile({
       ownerChatId: input.chatId,
@@ -314,8 +349,10 @@ export class WorkPanelResourceImageRegistry {
     });
     if (!remote) return null;
     const detectedMime = detectImageMime(remote.bytes);
-    if (!detectedMime || detectedMime !== remote.mimeType) return null;
-    const extension = detectedMime === "image/png" ? ".png" : detectedMime === "image/jpeg" ? ".jpg" : ".webp";
+    const extension = path.extname(input.relativePath).toLowerCase() || (
+      detectedMime === "image/jpeg" ? ".jpg" : detectedMime === "image/svg+xml" ? ".svg" :
+        detectedMime ? `.${detectedMime.split("/")[1]}` : ".bin"
+    );
     const cacheRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-resource-image-"));
     const filePath = path.join(cacheRoot, `resource${extension}`);
     fs.writeFileSync(filePath, remote.bytes, { mode: 0o600 });
@@ -332,31 +369,26 @@ export class WorkPanelResourceImageRegistry {
     const rendererWebContentsId = Number.isSafeInteger(input.rendererWebContentsId) && input.rendererWebContentsId > 0
       ? input.rendererWebContentsId
       : 0;
-    if (!ownerChatId || !agentKey || !chatId || !resourceId || !relativePath || !rendererWebContentsId) {
+    if (
+      !ownerChatId || !agentKey || !chatId || !resourceId || !relativePath || !rendererWebContentsId ||
+      !["workspace-file", "artifact", "reference"].includes(input.profile)
+    ) {
       return { ok: false, code: "invalid_request", message: "Invalid native image resource request." };
     }
     if (ownerChatId !== chatId) {
       return { ok: false, code: "capability_denied", message: "Resource chat does not match the trusted owner Chat." };
-    }
-    const extensionMime = expectedMimeForPath(relativePath);
-    if (!extensionMime) {
-      return {
-        ok: false,
-        code: "unsupported_native_type",
-        message: "This resource type is not supported by the native image viewer.",
-      };
     }
     const source = await this.resolveSource(input);
     if (!source) {
       return { ok: false, code: "target_unavailable", message: "The image resource is unavailable." };
     }
     const inspection = inspectImageFile(source.filePath);
-    if (!inspection || inspection.mimeType !== extensionMime) {
+    if (!inspection) {
       if (source.temporary) removeTemporaryImage(source.filePath);
       return {
         ok: false,
-        code: "invalid_request",
-        message: "The resource extension and image signature do not match PNG, JPEG, or WebP.",
+        code: "unsupported_native_type",
+        message: "This document is not a supported image.",
       };
     }
     const claimId = crypto.randomUUID();
@@ -421,6 +453,7 @@ export class WorkPanelResourceImageRegistry {
       handle.agentKey === claim.agentKey &&
       handle.profile === claim.profile &&
       handle.resourceId === claim.resourceId &&
+      handle.relativePath === claim.relativePath &&
       handle.rendererGeneration === rendererGeneration &&
       handle.rendererWebContentsId === sender.id,
     );
@@ -438,6 +471,7 @@ export class WorkPanelResourceImageRegistry {
       existing.mimeType = inspection.mimeType;
       existing.sizeBytes = inspection.sizeBytes;
       existing.revision = claim.revision;
+      existing.editable = inspection.editable;
       if (sourceChanged) this.watchHandle(existing, sender);
       return { ok: true, resource: imageSelection(existing), reused: true };
     }
@@ -453,6 +487,7 @@ export class WorkPanelResourceImageRegistry {
       sizeBytes: inspection.sizeBytes,
       revision: claim.revision,
       localOriginal: !claim.temporary,
+      editable: inspection.editable,
       rendererGeneration,
       rendererWebContentsId: sender.id,
       filePath: claim.filePath,
@@ -463,23 +498,49 @@ export class WorkPanelResourceImageRegistry {
     return { ok: true, resource: imageSelection(handle), reused: false };
   }
 
-  read(request: WorkPanelResourceImageHandleRequest, sender: WebContents): WorkPanelResourceImageReadResult {
+  async read(request: WorkPanelResourceImageHandleRequest, sender: WebContents): Promise<WorkPanelResourceImageReadResult> {
     const handle = this.ownedHandle(request, sender);
     if (!handle) return { ok: false, message: "Native image handle is unavailable." };
     const inspection = inspectImageFile(handle.filePath);
     if (!inspection) return { ok: false, message: "Native image resource is unavailable." };
     try {
       const data = fs.readFileSync(handle.filePath);
-      const mimeType = detectImageMime(data.subarray(0, 16));
-      if (mimeType !== handle.mimeType) return { ok: false, message: "Image signature changed." };
+      if (inspection.mimeType !== handle.mimeType) return { ok: false, message: "Image signature changed." };
       handle.fileName = inspection.fileName;
       handle.mimeType = inspection.mimeType;
       handle.sizeBytes = inspection.sizeBytes;
       if (!handle.temporary) handle.revision = inspection.revision;
-      return { ok: true, data, revision: handle.revision };
+      if (!handle.editable && ["image/heic", "image/heif", "image/tiff"].includes(handle.mimeType)) {
+        const preview = await this.createSystemReadonlyPreview(handle.filePath);
+        if (preview) return { ok: true, data: preview, displayMimeType: "image/png", revision: handle.revision };
+      }
+      return { ok: true, data, displayMimeType: handle.mimeType, revision: handle.revision };
     } catch (error) {
       return { ok: false, message: error instanceof Error ? error.message : String(error) };
     }
+  }
+
+  private async createSystemReadonlyPreview(filePath: string) {
+    // Electron delegates this operation to Quick Look on macOS and the Shell
+    // thumbnail provider on Windows. Keep the platform branches explicit:
+    // their codec availability and failure modes are intentionally different.
+    if (process.platform === "darwin") {
+      try {
+        const image = await nativeImage.createThumbnailFromPath(filePath, { width: 4_096, height: 4_096 });
+        return image.isEmpty() ? null : image.toPNG();
+      } catch {
+        return null;
+      }
+    }
+    if (process.platform === "win32") {
+      try {
+        const image = await nativeImage.createThumbnailFromPath(filePath, { width: 4_096, height: 4_096 });
+        return image.isEmpty() ? null : image.toPNG();
+      } catch {
+        return null;
+      }
+    }
+    return null;
   }
 
   release(request: WorkPanelResourceImageReleaseRequest, sender: WebContents) {
@@ -554,7 +615,7 @@ export class WorkPanelResourceImageRegistry {
     const requestId = cleanText(request?.requestId, 128);
     const handle = this.ownedHandle(request, sender);
     const runtime = this.runtime;
-    if (!requestId || !handle || !runtime) {
+    if (!requestId || !handle || !runtime || !handle.editable) {
       return { ok: false, requestId, message: "Native image AI request is unavailable." };
     }
     if (
@@ -661,7 +722,10 @@ export class WorkPanelResourceImageRegistry {
   ): Promise<WorkPanelResourceImageCommitResult> {
     const handle = this.ownedHandle(request, sender);
     const runtime = this.runtime;
-    if (!handle || !runtime?.commitResource) return { ok: false, message: "Platform image commit is unavailable." };
+    if (!handle || !runtime?.commitResource || !handle.editable) return { ok: false, message: "This image format is read-only." };
+    if (handle.profile === "workspace-file" && request.mode !== "overwrite") {
+      return { ok: false, message: "Workspace images can only be overwritten." };
+    }
     if (request.mode === "overwrite" && handle.profile === "reference") {
       return { ok: false, message: "References can only create a new Artifact." };
     }
@@ -705,14 +769,18 @@ export class WorkPanelResourceImageRegistry {
     const nextProfile: WorkPanelResourceImageProfile = "artifact";
     const nextResourceId = cleanText(response.resourceId || response.artifactId, 1_024) || handle.resourceId;
     const nextRelativePath = cleanText(response.relativePath, 2_048) || handle.relativePath;
-    const resolved = resolveChatWorkPanelResourceFile({
-      ownerChatId: handle.chatId,
-      profile: request.mode === "overwrite" ? handle.profile : nextProfile,
-      relativePath: nextRelativePath,
-    }, { app: runtime.app }, "openDefault");
-    const reopened = resolved.ok && resolved.path
-      ? { filePath: resolved.path, temporary: false, revision: "" }
-      : await this.resolveSource({
+    const resolved = handle.profile === "workspace-file"
+      ? null
+      : resolveChatWorkPanelResourceFile({
+          ownerChatId: handle.chatId,
+          profile: request.mode === "overwrite" ? handle.profile : nextProfile,
+          relativePath: nextRelativePath,
+        }, { app: runtime.app }, "openDefault");
+    const reopened = handle.profile === "workspace-file" && request.mode === "overwrite"
+      ? { filePath: handle.filePath, temporary: false, revision: response.revision || "" }
+      : resolved?.ok && resolved.path
+        ? { filePath: resolved.path, temporary: false, revision: "" }
+        : await this.resolveSource({
           ownerChatId: handle.chatId,
           rendererWebContentsId: sender.id,
           profile: request.mode === "overwrite" ? handle.profile : nextProfile,
@@ -720,6 +788,7 @@ export class WorkPanelResourceImageRegistry {
           chatId: handle.chatId,
           resourceId: nextResourceId,
           relativePath: nextRelativePath,
+          ...(handle.profile === "workspace-file" ? { workspaceFilePath: handle.filePath } : {}),
         });
     if (!reopened) {
       return { ok: false, message: "Platform committed the image, but Desktop could not reopen the committed resource." };

@@ -5,7 +5,7 @@
  * separately released Agent WebClient bundle and must not depend on Electron.
  */
 
-export const AGENT_WEBCLIENT_BRIDGE_VERSION = 5 as const;
+export const AGENT_WEBCLIENT_BRIDGE_VERSION = 6 as const;
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_TRANSPORT_VERSION = 2 as const;
 export const AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_GLOBAL =
   "__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__" as const;
@@ -53,7 +53,7 @@ export type AgentWebclientComposerDraftAction = {
   reviewData: {
     version: 1;
     sourceKind: "workspace-file" | "artifact" | "reference" | "web";
-    kind: "html" | "image";
+    kind: "html" | "image" | "markdown" | "text" | "code";
     source: {
       fileName: string;
       revision: string;
@@ -250,8 +250,8 @@ export type WorkPanelSourceContext = WorkPanelChatContext & {
   sourceId: string;
 };
 export type WorkPanelPlanningContext = { chatId: string; planningId: string };
-export type WorkPanelArtifactContext = WorkPanelChatContext & { artifactId: string };
-export type WorkPanelReferenceContext = WorkPanelChatContext & { referenceId: string };
+export type WorkPanelArtifactContext = WorkPanelChatContext & { artifactId: string; relativePath?: string };
+export type WorkPanelReferenceContext = WorkPanelChatContext & { referenceId: string; relativePath?: string };
 export type WorkPanelFileContext = { agentKey: string; path: string };
 export type WorkPanelProjectContext = {
   agentKey: string;
@@ -391,6 +391,31 @@ export type WorkPanelOpenResourceResult =
     }
   | AgentWebclientBridgeFailure;
 
+export type WorkPanelDocumentSource =
+  | { kind: "workspace-file"; agentKey: string; path: string }
+  | {
+      kind: "artifact" | "reference";
+      agentKey: string;
+      chatId: string;
+      resourceId: string;
+      relativePath: string;
+    };
+
+export type WorkPanelOpenDocumentInput = {
+  version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
+  source: WorkPanelDocumentSource;
+  title?: string;
+};
+
+export type WorkPanelOpenDocumentResult =
+  | {
+      ok: true;
+      workspaceId: string;
+      itemId: string;
+      renderer: "native-html" | "native-image";
+    }
+  | AgentWebclientBridgeFailure;
+
 export type WorkPanelItemTargetInput = {
   version: typeof AGENT_WEBCLIENT_BRIDGE_VERSION;
   itemId: string;
@@ -411,13 +436,14 @@ export type WorkPanelCapabilityResult =
 
 export type AgentWebclientWorkPanelBridge = {
   getCapabilities(): Promise<WorkPanelCapabilityResult>;
+  openDocument(input: WorkPanelOpenDocumentInput): Promise<WorkPanelOpenDocumentResult>;
   openResource(input: WorkPanelOpenResourceInput): Promise<WorkPanelOpenResourceResult>;
   openItem(input: WorkPanelOpenItemInput): Promise<WorkPanelBridgeResult>;
   activateItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
   closeItem(input: WorkPanelItemTargetInput): Promise<WorkPanelBridgeResult>;
 };
 
-export function isAgentWebclientBridgeVersion(value: unknown): value is 5 {
+export function isAgentWebclientBridgeVersion(value: unknown): value is 6 {
   return value === AGENT_WEBCLIENT_BRIDGE_VERSION;
 }
 

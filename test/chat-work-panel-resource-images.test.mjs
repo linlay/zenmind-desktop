@@ -85,7 +85,7 @@ test("native resource image claims are chat-bound, one-time, signature checked, 
       rendererGeneration: "renderer-1",
     }, webContents)).ok, false);
 
-    const read = registry.read({
+    const read = await registry.read({
       ownerChatId: "chat-1",
       rendererGeneration: "renderer-1",
       handleId: claimed.resource.handleId,
@@ -103,7 +103,7 @@ test("native resource image claims are chat-bound, one-time, signature checked, 
       relativePath: "artifacts/run-1/not-image.png",
     });
     assert.equal(signatureMismatch.ok, false);
-    assert.equal(signatureMismatch.code, "invalid_request");
+    assert.equal(signatureMismatch.code, "unsupported_native_type");
 
     const unsupported = await registry.prepareClaim({
       ownerChatId: "chat-1",
@@ -122,11 +122,11 @@ test("native resource image claims are chat-bound, one-time, signature checked, 
       rendererGeneration: "renderer-1",
       handleIds: [claimed.resource.handleId],
     }, webContents), { ok: true });
-    assert.equal(registry.read({
+    assert.equal((await registry.read({
       ownerChatId: "chat-1",
       rendererGeneration: "renderer-1",
       handleId: claimed.resource.handleId,
-    }, webContents).ok, false);
+    }, webContents)).ok, false);
   } finally {
     registry.dispose();
     fs.rmSync(homePath, { recursive: true, force: true });
@@ -173,7 +173,7 @@ test("remote native image handles retain the Platform revision instead of the ca
     assert.equal(claimed.ok, true);
     assert.equal(claimed.resource.localOriginal, false);
     assert.equal(claimed.resource.revision, "68:1777777777000");
-    const read = registry.read({
+    const read = await registry.read({
       ownerChatId: "chat-remote",
       rendererGeneration: "renderer-remote",
       handleId: claimed.resource.handleId,

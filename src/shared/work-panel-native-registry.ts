@@ -12,6 +12,8 @@ export type WorkPanelNativeSurfaceRegistration = {
 export const WORK_PANEL_NATIVE_SURFACE_ALLOWLIST:
 readonly WorkPanelNativeSurfaceRegistration[] = Object.freeze([
   { surfaceKey: "resource-image", closableByDefault: true },
+  { surfaceKey: "document-image", closableByDefault: true },
+  { surfaceKey: "document-html", closableByDefault: true },
 ]);
 
 export function isRegisteredWorkPanelNativeSurface(surfaceKey: unknown) {

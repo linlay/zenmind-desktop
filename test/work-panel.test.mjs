@@ -258,6 +258,85 @@ test("ordinary HTTP(S) WorkPanel pages support bounded top-level HTML element re
   assert.equal(credentialedReview.error.code, "capability_denied");
 });
 
+test("Coder loopback review is explicitly handed off as live project source work", () => {
+  const opened = open(EMPTY_WORK_PANEL_STATE, "chat-live-project", {
+    kind: "web",
+    url: "http://127.23.4.5:5173/preview",
+    title: "Local preview",
+  });
+  const started = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-live-project",
+    itemId: opened.item.itemId,
+    kind: "html",
+    source: {
+      sourceKind: "web",
+      fileName: "Local preview",
+      revision: "http://127.23.4.5:5173/preview",
+      url: "http://127.23.4.5:5173/preview",
+      liveProjectWeb: true,
+    },
+  });
+  assert.equal(started.ok, true);
+  const annotated = reduceWorkPanelCommand(started.nextState, {
+    type: "addHtmlReviewAnnotation",
+    ownerChatId: "chat-live-project",
+    itemId: opened.item.itemId,
+    annotation: {
+      id: "hero",
+      fullXPath: "/html/body/main/h1",
+      cssSelector: "main > h1",
+      tagName: "h1",
+      attributes: {},
+      textExcerpt: "Preview",
+      rect: { x: 20, y: 30, width: 160, height: 48 },
+    },
+  });
+  const described = reduceWorkPanelCommand(annotated.nextState, {
+    type: "updateReviewAnnotation",
+    ownerChatId: "chat-live-project",
+    itemId: opened.item.itemId,
+    annotationId: "hero",
+    requirement: "Increase contrast.",
+  });
+  const session = Object.values(described.nextState.review.sessionsByKey)[0];
+  assert.equal(session.source.liveProjectWeb, true);
+  assert.match(buildWorkPanelReviewComposerDraft(session), /修改 workspace 源码/u);
+  assert.match(buildWorkPanelReviewComposerDraft(session), /HMR 或刷新验证/u);
+
+  const downgraded = reduceWorkPanelCommand(started.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-live-project",
+    itemId: opened.item.itemId,
+    kind: "html",
+    source: {
+      sourceKind: "web",
+      fileName: "External",
+      revision: "https://example.test/",
+      url: "https://example.test/",
+    },
+  });
+  assert.equal(downgraded.ok, true);
+  const downgradedSession = Object.values(downgraded.nextState.review.sessionsByKey)[0];
+  assert.equal(downgradedSession.source.liveProjectWeb, undefined);
+  assert.equal(downgradedSession.invalidReason, "source_revision_changed");
+
+  const external = reduceWorkPanelCommand(opened.nextState, {
+    type: "startReview",
+    ownerChatId: "chat-live-project",
+    itemId: opened.item.itemId,
+    kind: "html",
+    source: {
+      sourceKind: "web",
+      fileName: "External",
+      revision: "https://example.test/",
+      url: "https://example.test/",
+      liveProjectWeb: true,
+    },
+  });
+  assert.equal(external.ok, false);
+});
+
 test("WorkPanel review coordinates remain source-pixel based across preview scaling", () => {
   const normalized = normalizeWorkPanelNormalizedRect({
     x: 120 / 1440,
@@ -397,9 +476,11 @@ test("trusted Chat removal can destroy a workspace with pinned items without exp
   assert.deepEqual(removed.nextState.visibleOwnerChatIds, []);
 });
 
-test("WorkPanel rejects untrusted fields and only accepts the registered host native image surface", () => {
+test("WorkPanel rejects untrusted fields and only accepts registered host native document surfaces", () => {
   assert.deepEqual(WORK_PANEL_NATIVE_SURFACE_ALLOWLIST, [
     { surfaceKey: "resource-image", closableByDefault: true },
+    { surfaceKey: "document-image", closableByDefault: true },
+    { surfaceKey: "document-html", closableByDefault: true },
   ]);
   for (const url of ["file:///tmp/secret", "javascript:alert(1)", "https://user:pass@example.test/"]) {
     assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", { kind: "web", url }).ok, false);
@@ -461,7 +542,7 @@ test("WorkPanel rejects untrusted fields and only accepts the registered host na
   });
   assert.equal(resourceImage.ok, true);
   assert.equal(resourceImage.item.descriptor.context.handleId, "opaque-handle");
-  assert.equal(resourceImage.item.stableKey, "resource-image:artifact:agent:chat:artifact-1");
+  assert.equal(resourceImage.item.stableKey, "artifact:agent:chat:artifact-1:artifacts/run/image.png");
 });
 
 test("trusted WorkPanel Blob popups stay source-bound without widening public URL inputs", () => {
@@ -596,6 +677,11 @@ test("WorkPanel keeps Platform-resolvable File request paths and deduplicates no
     assert.equal(first.ok, true, requestedPath);
     assert.equal(first.item.descriptor.context.path, normalizedPath);
     assert.equal(first.item.stableKey, `file:agent:${normalizedPath}`);
+    assert.equal(
+      first.item.title,
+      normalizedPath.replace(/\\/gu, "/").split("/").filter(Boolean).pop()?.trim() || "file",
+      requestedPath,
+    );
 
     const duplicate = open(first.nextState, "chat", {
       ...descriptor,
@@ -612,6 +698,52 @@ test("WorkPanel keeps Platform-resolvable File request paths and deduplicates no
   assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "webclient", module: "file", route: "/file-viewer/agent", context: { agentKey: "agent", path: "\n/etc/hosts" },
   }).ok, false);
+});
+
+test("WorkPanel File tab title prefers explicit title then path basename", () => {
+  const explicit = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient",
+    module: "file",
+    route: "/file-viewer/agent?path=src%2Fapp.ts",
+    context: { agentKey: "agent", path: "src/app.ts" },
+    title: "Explicit title",
+  });
+  assert.equal(explicit.ok, true);
+  assert.equal(explicit.item.title, "Explicit title");
+
+  const windows = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient",
+    module: "file",
+    route: "/file-viewer/agent?path=README.md",
+    context: { agentKey: "agent", path: "C:\\Users\\demo\\README.md" },
+  });
+  assert.equal(windows.ok, true);
+  assert.equal(windows.item.title, "README.md");
+
+  const cases = [
+    ["\\\\server\\share\\中文 文件.md", "中文 文件.md"],
+    ["/tmp/a%20b.txt", "a%20b.txt"],
+    ["///", "file"],
+  ];
+  for (const [filePath, expected] of cases) {
+    const result = open(EMPTY_WORK_PANEL_STATE, "chat", {
+      kind: "webclient",
+      module: "file",
+      route: "/file-viewer/agent",
+      context: { agentKey: "agent", path: filePath },
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.item.title, expected);
+  }
+
+  const bounded = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "webclient",
+    module: "file",
+    route: "/file-viewer/agent",
+    context: { agentKey: "agent", path: `/tmp/${"x".repeat(220)}.txt` },
+  });
+  assert.equal(bounded.ok, true);
+  assert.equal(bounded.item.title.length, 160);
 });
 
 test("WorkPanel derives distinct canonical identities for every independent WebClient surface", () => {

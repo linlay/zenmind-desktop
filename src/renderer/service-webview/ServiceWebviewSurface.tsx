@@ -27,6 +27,8 @@ import {
 import { useI18n } from "../i18n/useI18n";
 import {
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
+  AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
@@ -135,6 +137,13 @@ type ServiceWebviewSurfaceProps = {
     resource: AgentWebclientCurrentResourceIdentity,
   ) => Promise<AgentWebclientCurrentResourceActionResult>;
   enableAgentWebclientChatResourceActions?: boolean;
+  onAgentWebclientDocumentState?: (state: {
+    dirty: boolean;
+    busy: boolean;
+    annotationCount: number;
+    targetKey: string;
+  }) => void;
+  onAgentWebclientDocumentHandoff?: (text: string) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -600,6 +609,8 @@ export function ServiceWebviewSurface({
   onIpcMessage,
   onAgentWebclientCurrentResourceAction,
   enableAgentWebclientChatResourceActions,
+  onAgentWebclientDocumentState,
+  onAgentWebclientDocumentHandoff,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -2284,6 +2295,24 @@ export function ServiceWebviewSurface({
       ServiceWebviewBridgeMessage?,
     ];
     if (!payload || !payload.type || !payload.requestId) {
+      return;
+    }
+    if (payload.type === AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE) {
+      onAgentWebclientDocumentState?.({
+        dirty: payload.dirty === true,
+        busy: payload.busy === true,
+        annotationCount: Number.isFinite(payload.annotationCount)
+          ? Math.max(0, Math.floor(Number(payload.annotationCount)))
+          : 0,
+        targetKey: typeof payload.targetKey === "string"
+          ? payload.targetKey.trim().slice(0, 2048)
+          : "",
+      });
+      return;
+    }
+    if (payload.type === AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE) {
+      const text = typeof payload.text === "string" ? payload.text.trim() : "";
+      if (text && text.length <= 50_000) onAgentWebclientDocumentHandoff?.(text);
       return;
     }
 

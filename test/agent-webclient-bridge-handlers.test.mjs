@@ -209,7 +209,8 @@ function createRuntime(targets, overrides = {}) {
     realtimeBroker: broker,
     getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:7078" } }),
     issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
-    syncCanonicalChat: async () => ({ requestId: "sync-1", ok: true }),
+    syncCanonicalChat: overrides.syncCanonicalChat
+      || (async () => ({ requestId: "sync-1", ok: true })),
     dispatchWorkPanel: async () => ({ ok: true, workspaceId: "workspace-1" }),
     openResource: async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" }),
   });
@@ -425,6 +426,75 @@ test("registered ownerless new Chat query enters the Broker without convergence 
   assert.equal(waitCalls, 0);
   assert.equal(runtime.calls.queries.length, 1);
   assert.equal(sentFrames(sender).some((frame) => frame.frame === "error"), false);
+});
+
+test("chat.start promotes the Desktop owner before the guest promotion guard ACK", async () => {
+  const newChatUrl = "http://127.0.0.1:7079/agent/agent-1?newChat=new-source-promote";
+  const ready = mainTarget(101, {
+    ownerChatId: undefined,
+    pageRoute: "/agent/agent-1?newChat=new-source-promote",
+    pageRouteIdentity: "/agent/agent-1?newChat=new-source-promote",
+    currentUrl: newChatUrl,
+  });
+  let resolveCanonicalSync;
+  const canonicalSync = new Promise((resolve) => {
+    resolveCanonicalSync = resolve;
+  });
+  const runtime = createRuntime(new Map([[101, ready]]), {
+    syncCanonicalChat: () => canonicalSync,
+    realtimeBroker: {
+      query: (input) => {
+        runtime.calls.queries.push(input);
+        const owner = { kind: "agent", agentKey: "agent-1" };
+        queueMicrotask(() => {
+          void input.onEvent({
+            type: "chat.start",
+            timestamp: EPOCH_MS,
+            seq: 1,
+            chatId: "chat-promoted",
+            agentKey: "agent-1",
+          }, "test.promote-new-chat.chat-start");
+        });
+        return {
+          accepted: Promise.resolve({
+            runId: "run-promoted",
+            chatId: "chat-promoted",
+            owner,
+          }),
+          completed: new Promise(() => undefined),
+        };
+      },
+    },
+  });
+  const sender = createSender(101, newChatUrl);
+  await openSession(runtime, sender, "main-new-chat-promote");
+  send(runtime, sender, "main-new-chat-promote", {
+    frame: "request",
+    id: "query-new-chat-promote",
+    type: "/api/query",
+    payload: {
+      requestId: "request-new-chat-promote",
+      agentKey: "agent-1",
+      message: "new",
+    },
+  });
+  await flush();
+
+  assert.equal(
+    runtime.broker.getMainChatRootObserver()?.contextId,
+    "chat-promoted",
+  );
+  assert.equal(
+    sentFrames(sender).some((frame) => frame.event?.type === "chat.start"),
+    false,
+  );
+
+  resolveCanonicalSync({ requestId: "sync-promote", ok: true });
+  await flush();
+  assert.equal(
+    sentFrames(sender).some((frame) => frame.event?.type === "chat.start"),
+    true,
+  );
 });
 
 test("new Chat query waits for a stale canonical owner to become the new-chat source", async () => {

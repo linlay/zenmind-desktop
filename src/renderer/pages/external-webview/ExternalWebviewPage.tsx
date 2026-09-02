@@ -95,6 +95,7 @@ type ExternalWebviewPageProps = {
   enableDesktopWebActions?: boolean;
   registerPublicWebSurface?: boolean;
   onLoadingChange?: (isLoading: boolean) => void;
+  onCurrentUrlChange?: (url: string) => void;
   pageReviewActive?: boolean;
   onTogglePageReview?: (page: { url: string; title: string }) => void;
   preloadUrl?: string;
@@ -497,6 +498,7 @@ export function ExternalWebviewPage({
   enableDesktopWebActions = true,
   registerPublicWebSurface = true,
   onLoadingChange,
+  onCurrentUrlChange,
   pageReviewActive = false,
   onTogglePageReview,
   preloadUrl,
@@ -988,6 +990,9 @@ export function ExternalWebviewPage({
   };
 
   const handleTabStateChange = (tabId: string, patch: ExternalWebviewTabPatch) => {
+    if (typeof patch.currentUrl === "string" && patch.currentUrl.trim()) {
+      onCurrentUrlChange?.(patch.currentUrl);
+    }
     commitBrowserState((currentState) => {
       let changed = false;
       const nextTabs = currentState.tabs.map((tab) => {

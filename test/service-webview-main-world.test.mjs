@@ -384,7 +384,14 @@ test("service webview main-world script exposes a fixed typed Platform Frame Por
   const platformFramePort = window.__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__;
   const workpanel = window.__AGENT_WEBCLIENT_WORKPANEL_BRIDGE__;
   assert.deepEqual(Object.keys(platformFramePort).sort(), ["createSession", "transportVersion"]);
-  assert.deepEqual(Object.keys(workpanel).sort(), ["activateItem", "closeItem", "getCapabilities", "openItem"]);
+  assert.deepEqual(Object.keys(workpanel).sort(), [
+    "activateItem",
+    "closeItem",
+    "getCapabilities",
+    "openDocument",
+    "openItem",
+    "openResource",
+  ]);
   assert.equal(Object.getOwnPropertyDescriptor(window, "__AGENT_WEBCLIENT_PLATFORM_FRAME_PORT__").writable, false);
   assert.equal(platformFramePort.transportVersion, 2);
 

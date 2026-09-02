@@ -55,6 +55,8 @@ import {
   getWorkPanelReviewSession,
   hasWorkPanelReviewDraft,
   isWorkPanelReviewReadyForComposer,
+  isLoopbackWorkPanelReviewUrl,
+  sanitizeWorkPanelReviewWebUrl,
   type ReviewSourceRevision,
   type WorkPanelPreviewReviewEvent,
   type WorkPanelReviewKind,
@@ -75,6 +77,8 @@ import {
 } from "../../shared/chat-work-panel";
 import { WorkPanelReviewPanel } from "./WorkPanelReviewPanel";
 import { WorkPanelResourceImage } from "./WorkPanelResourceImage";
+import { WorkPanelDocumentHtml, type HtmlAnnotation } from "./WorkPanelDocumentHtml";
+import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
 import { SidebarActionIcon } from "../components/BrandMark";
 
 const ExternalWebviewPage = lazy(() =>
@@ -114,6 +118,13 @@ function itemRuntimeKey(ownerChatId: string, itemId: string) {
 }
 
 type WorkPanelItem = WorkPanelState["workspaces"][number]["items"][number];
+
+type WebclientDocumentState = {
+  dirty: boolean;
+  busy: boolean;
+  annotationCount: number;
+  targetKey: string;
+};
 
 function localResourceProfile(item: WorkPanelItem) {
   if (
@@ -231,7 +242,7 @@ function readReviewEvent(event: Event & { channel?: string; args?: unknown[] }) 
 function reviewSourceForItem(
   item: WorkPanelItem,
   capability?: ResourceReviewCapability,
-  webPage?: { url?: string; title?: string },
+  webPage?: { url?: string; title?: string; liveProjectWeb?: boolean },
 ): { kind: WorkPanelReviewKind; source: ReviewSourceRevision } | null {
   if (item.descriptor.kind === "web") {
     const url = normalizeWorkPanelWebUrl(webPage?.url || item.descriptor.url);
@@ -243,6 +254,7 @@ function reviewSourceForItem(
         fileName: webPage?.title?.trim() || item.title || url,
         revision: url,
         url,
+        ...(webPage?.liveProjectWeb ? { liveProjectWeb: true as const } : {}),
       },
     };
   }
@@ -300,6 +312,7 @@ export function WorkPanelHost({
   const stateRef = useRef(state);
   const previousLocalFileHandlesRef = useRef(new Map<string, string>());
   const previousResourceImageHandlesRef = useRef(new Map<string, string>());
+  const previousDocumentHtmlHandlesRef = useRef(new Map<string, string>());
   const rendererGenerationRef = useRef(globalThis.crypto.randomUUID());
   const addButtonRef = useRef<HTMLButtonElement | null>(null);
   const addMenuRef = useRef<HTMLDivElement | null>(null);
@@ -316,6 +329,7 @@ export function WorkPanelHost({
   const [reviewHandoffBusyKeys, setReviewHandoffBusyKeys] = useState<Set<string>>(() => new Set());
   const [reviewErrors, setReviewErrors] = useState<Record<string, string>>({});
   const [activeImageEditorItemIds, setActiveImageEditorItemIds] = useState<Record<string, string>>({});
+  const [webclientDocumentStates, setWebclientDocumentStates] = useState<Record<string, WebclientDocumentState>>({});
   const pendingReviewRequestsRef = useRef(new Map<string, PendingReviewRequest>());
   stateRef.current = state;
 
@@ -507,11 +521,15 @@ export function WorkPanelHost({
   const closeItemWithReviewProtection = (ownerChatId: string, itemId: string) => {
     const nativeImageBusy = rootRef.current?.querySelector<HTMLElement>(
       `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-saving="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-ai-busy="true"]`,
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-ai-busy="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-work-panel-document-busy="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"][data-webclient-document-busy="true"]`,
     );
     if (nativeImageBusy) return false;
     const dirtyNativeImage = rootRef.current?.querySelector<HTMLElement>(
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-dirty="true"]`,
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-native-image-dirty="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"] [data-work-panel-document-dirty="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(itemId)}"][data-webclient-document-dirty="true"]`,
     );
     if (dirtyNativeImage && !window.confirm(t("chatWorkPanel.image.confirmDiscardDraft"))) return false;
     const session = getWorkPanelReviewSession(stateRef.current.review, ownerChatId, itemId);
@@ -531,11 +549,15 @@ export function WorkPanelHost({
       hasWorkPanelReviewDraft(getWorkPanelReviewSession(stateRef.current.review, ownerChatId, removedId)),
     );
     const hasNativeDrafts = removedIds.some((removedId) => rootRef.current?.querySelector(
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-dirty="true"]`,
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-dirty="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-work-panel-document-dirty="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"][data-webclient-document-dirty="true"]`,
     ));
     const hasBusyNativeImages = removedIds.some((removedId) => rootRef.current?.querySelector(
       `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-saving="true"], ` +
-      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-ai-busy="true"]`,
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-native-image-ai-busy="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"] [data-work-panel-document-busy="true"], ` +
+      `[data-work-panel-owner="${CSS.escape(ownerChatId)}"][data-work-panel-item="${CSS.escape(removedId)}"][data-webclient-document-busy="true"]`,
     ));
     if (hasBusyNativeImages) return false;
     if (hasNativeDrafts && !window.confirm(t("chatWorkPanel.image.confirmDiscardDraft"))) return false;
@@ -807,6 +829,10 @@ export function WorkPanelHost({
         ? {
             url: webPage?.url || readWebviewUrl(findItemWebview(ownerChatId, item.itemId)),
             title: webPage?.title || item.title,
+            liveProjectWeb: ownerChatId === activeChatId &&
+              launcher.agentMode.trim().toUpperCase() === "CODER" &&
+              launcher.projectEnabled &&
+              isLoopbackWorkPanelReviewUrl(webPage?.url || readWebviewUrl(findItemWebview(ownerChatId, item.itemId))),
           }
         : undefined,
     );
@@ -945,6 +971,43 @@ export function WorkPanelHost({
     return result;
   };
 
+  const insertDocumentComposerDraft = async (ownerChatId: string, text: string) => {
+    const mainChatWebview = getServiceSurfaceWebview(MAIN_CHAT_SURFACE_ID);
+    const normalizedText = text.trim().slice(0, 50_000);
+    if (!mainChatWebview || !normalizedText) return false;
+    const requestId = globalThis.crypto.randomUUID();
+    const result = new Promise<boolean>((resolve) => {
+      let settled = false;
+      const finish = (ok: boolean) => {
+        if (settled) return;
+        settled = true;
+        window.clearTimeout(timer);
+        mainChatWebview.removeEventListener("ipc-message", handleMessage as EventListener);
+        resolve(ok);
+      };
+      const handleMessage = (event: Event) => {
+        const payload = readReviewEvent(event as Event & { channel?: string; args?: unknown[] });
+        if (payload?.event === "composer-draft-result" && payload.requestId === requestId) {
+          finish(payload.ok);
+        }
+      };
+      const timer = window.setTimeout(() => finish(false), 8_000);
+      mainChatWebview.addEventListener("ipc-message", handleMessage as EventListener);
+    });
+    try {
+      mainChatWebview.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+        action: AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION,
+        version: AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION,
+        requestId,
+        ownerChatId,
+        text: normalizedText,
+      });
+      return await result;
+    } catch {
+      return false;
+    }
+  };
+
   const handoffReview = async (ownerChatId: string, item: WorkPanelItem) => {
     const runtimeKey = itemRuntimeKey(ownerChatId, item.itemId);
     const session = getWorkPanelReviewSession(stateRef.current.review, ownerChatId, item.itemId);
@@ -1008,7 +1071,7 @@ export function WorkPanelHost({
   ) => {
     if (
       item.descriptor.kind !== "native" ||
-      item.descriptor.surfaceKey !== "resource-image" ||
+      (item.descriptor.surfaceKey !== "resource-image" && item.descriptor.surfaceKey !== "document-image") ||
       input.sizeBytes <= 0 ||
       input.sizeBytes > WORK_PANEL_REVIEW_MAX_PNG_BYTES
     ) return false;
@@ -1020,7 +1083,11 @@ export function WorkPanelHost({
       itemId: item.itemId,
       kind: "image",
       source: {
-        sourceKind: context.profile === "reference" ? "reference" : "artifact",
+        sourceKind: context.profile === "reference"
+          ? "reference"
+          : context.profile === "workspace-file"
+            ? "workspace-file"
+            : "artifact",
         fileName: String(context.fileName || item.title),
         revision: String(context.revision || ""),
         relativePath: String(context.relativePath || ""),
@@ -1044,6 +1111,51 @@ export function WorkPanelHost({
       height: input.height,
       sizeBytes: input.sizeBytes,
     });
+  };
+
+  const handoffNativeHtmlReview = async (
+    ownerChatId: string,
+    item: WorkPanelItem,
+    annotations: HtmlAnnotation[],
+  ) => {
+    if (
+      item.descriptor.kind !== "native" ||
+      item.descriptor.surfaceKey !== "document-html" ||
+      annotations.length === 0
+    ) return false;
+    const context = item.descriptor.context;
+    const now = Date.now();
+    const session: WorkPanelReviewSession = {
+      version: WORK_PANEL_REVIEW_VERSION,
+      ownerChatId,
+      itemId: item.itemId,
+      kind: "html",
+      source: {
+        sourceKind: context.sourceKind as "workspace-file" | "artifact" | "reference",
+        fileName: String(context.fileName || item.title),
+        revision: String(context.revision || ""),
+      },
+      annotations: annotations.map((annotation, index) => ({
+        id: annotation.id,
+        number: index + 1,
+        kind: "html-element" as const,
+        fullXPath: annotation.xpath,
+        cssSelector: annotation.selector,
+        tagName: annotation.selector.replace(/^[#.]/u, "").split(/[\s:#.[\]]/u, 1)[0] || "element",
+        attributes: {},
+        textExcerpt: annotation.text,
+        rect: annotation.rect,
+        requirement: annotation.note.trim() || `Review ${annotation.selector}: ${annotation.text || "selected element"}`,
+      })),
+      createdAt: now,
+      updatedAt: now,
+    };
+    return insertReviewComposerDraft(
+      ownerChatId,
+      session,
+      buildWorkPanelReviewComposerDraft(session),
+      null,
+    );
   };
 
   const handleLocalResourceAction = async (
@@ -1289,7 +1401,10 @@ export function WorkPanelHost({
     const nextHandles = new Map<string, string>();
     for (const workspace of state.workspaces) {
       for (const item of workspace.items) {
-        if (item.descriptor.kind === "native" && item.descriptor.surfaceKey === "resource-image") {
+        if (
+          item.descriptor.kind === "native" &&
+          (item.descriptor.surfaceKey === "resource-image" || item.descriptor.surfaceKey === "document-image")
+        ) {
           const handleId = String(item.descriptor.context.handleId || "");
           if (handleId) nextHandles.set(handleId, workspace.ownerChatId);
         }
@@ -1309,6 +1424,37 @@ export function WorkPanelHost({
   useEffect(() => () => {
     for (const [handleId, ownerChatId] of previousResourceImageHandlesRef.current) {
       void window.electronAPI.chatWorkPanel.resourceImages.release({
+        ownerChatId,
+        rendererGeneration: rendererGenerationRef.current,
+        handleIds: [handleId],
+      }).catch(() => undefined);
+    }
+  }, []);
+
+  useEffect(() => {
+    const nextHandles = new Map<string, string>();
+    for (const workspace of state.workspaces) {
+      for (const item of workspace.items) {
+        if (item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html") {
+          const handleId = String(item.descriptor.context.handleId || "");
+          if (handleId) nextHandles.set(handleId, workspace.ownerChatId);
+        }
+      }
+    }
+    for (const [handleId, ownerChatId] of previousDocumentHtmlHandlesRef.current) {
+      if (nextHandles.has(handleId)) continue;
+      void window.electronAPI.chatWorkPanel.documentHtml.release({
+        ownerChatId,
+        rendererGeneration: rendererGenerationRef.current,
+        handleIds: [handleId],
+      }).catch(() => undefined);
+    }
+    previousDocumentHtmlHandlesRef.current = nextHandles;
+  }, [state.workspaces]);
+
+  useEffect(() => () => {
+    for (const [handleId, ownerChatId] of previousDocumentHtmlHandlesRef.current) {
+      void window.electronAPI.chatWorkPanel.documentHtml.release({
         ownerChatId,
         rendererGeneration: rendererGenerationRef.current,
         handleIds: [handleId],
@@ -1482,12 +1628,13 @@ export function WorkPanelHost({
           return actionError("target_unavailable", claimed.message || "Native image claim is unavailable.");
         }
         const resource = claimed.resource;
+        const surfaceKey = args.surfaceKey === "document-image" ? "document-image" : "resource-image";
         const opened = execute({
           type: "openItem",
           ownerChatId,
           descriptor: {
             kind: "native",
-            surfaceKey: "resource-image",
+            surfaceKey,
             context: { ...resource },
             title: typeof args.title === "string" && args.title.trim()
               ? args.title.trim()
@@ -1499,6 +1646,41 @@ export function WorkPanelHost({
             ownerChatId,
             rendererGeneration: rendererGenerationRef.current,
             handleIds: [resource.handleId],
+          }).catch(() => undefined);
+        }
+        return opened;
+      }
+      case "desktop.workpanel.openDocumentHtml": {
+        const claimId = typeof args.claimId === "string" ? args.claimId.trim() : "";
+        if (!claimId) return actionError("target_unavailable", "Native HTML claim is unavailable.");
+        const bootstrapFailure = ensureTrustedWorkspace();
+        if (bootstrapFailure) return bootstrapFailure;
+        const claimed = await window.electronAPI.chatWorkPanel.documentHtml.claim({
+          ownerChatId,
+          rendererGeneration: rendererGenerationRef.current,
+          claimId,
+        });
+        if (!claimed.ok || !claimed.document) {
+          return actionError("target_unavailable", claimed.message || "Native HTML claim is unavailable.");
+        }
+        const document = claimed.document;
+        const opened = execute({
+          type: "openItem",
+          ownerChatId,
+          descriptor: {
+            kind: "native",
+            surfaceKey: "document-html",
+            context: { ...document },
+            title: typeof args.title === "string" && args.title.trim()
+              ? args.title.trim()
+              : document.fileName,
+          },
+        });
+        if (!opened.ok && !claimed.reused) {
+          await window.electronAPI.chatWorkPanel.documentHtml.release({
+            ownerChatId,
+            rendererGeneration: rendererGenerationRef.current,
+            handleIds: [document.handleId],
           }).catch(() => undefined);
         }
         return opened;
@@ -1861,6 +2043,7 @@ export function WorkPanelHost({
                   );
                   const reviewActive = state.review.activeItemIdsByOwnerChatId[workspace.ownerChatId] === item.itemId;
                   const reviewRuntimeKey = itemRuntimeKey(workspace.ownerChatId, item.itemId);
+                  const webclientDocumentState = webclientDocumentStates[reviewRuntimeKey];
                   const resourceReviewCapability = resourceReviewCapabilities[reviewRuntimeKey];
                   const showResourcePreviewToolbar = item.descriptor.kind === "webclient" &&
                     (item.descriptor.module === "artifact" || item.descriptor.module === "reference");
@@ -1877,6 +2060,8 @@ export function WorkPanelHost({
                       data-work-panel-active={active ? "true" : "false"}
                       data-work-panel-item={item.itemId}
                       data-work-panel-owner={workspace.ownerChatId}
+                      data-webclient-document-dirty={webclientDocumentState?.dirty ? "true" : "false"}
+                      data-webclient-document-busy={webclientDocumentState?.busy ? "true" : "false"}
                       hidden={!active}
                       aria-hidden={!active}
                     >
@@ -1971,8 +2156,39 @@ export function WorkPanelHost({
                           </div>
                         </div>
                       ) : null}
-                      {item.descriptor.kind === "native" && item.descriptor.surfaceKey === "resource-image" ? (
-                        <WorkPanelResourceImage
+                      {item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html" ? (
+                        <WorkPanelDocumentHtml
+                          ownerChatId={workspace.ownerChatId}
+                          rendererGeneration={rendererGenerationRef.current}
+                          document={item.descriptor.context as unknown as import("../../shared/work-panel-document-html").WorkPanelDocumentHtmlSelection}
+                          onCommitted={(document) => {
+                            dispatchCommand({
+                              type: "openItem",
+                              ownerChatId: workspace.ownerChatId,
+                              descriptor: {
+                                kind: "native",
+                                surfaceKey: "document-html",
+                                context: { ...document },
+                                title: document.fileName,
+                              },
+                            });
+                          }}
+                          onHandoff={(annotations) => handoffNativeHtmlReview(
+                            workspace.ownerChatId,
+                            item,
+                            annotations,
+                          )}
+                        />
+                      ) : item.descriptor.kind === "native" && (
+                        item.descriptor.surfaceKey === "resource-image" || item.descriptor.surfaceKey === "document-image"
+                      ) ? (
+                        item.descriptor.context.editable === false ? (
+                          <WorkPanelDocumentImageReadonly
+                            ownerChatId={workspace.ownerChatId}
+                            rendererGeneration={rendererGenerationRef.current}
+                            resource={item.descriptor.context as unknown as import("../../shared/work-panel-resource-image").WorkPanelResourceImageSelection}
+                          />
+                        ) : <WorkPanelResourceImage
                           active={active}
                           editing={activeImageEditorItemIds[workspace.ownerChatId] === item.itemId}
                           ownerChatId={workspace.ownerChatId}
@@ -1994,7 +2210,9 @@ export function WorkPanelHost({
                               ownerChatId: workspace.ownerChatId,
                               descriptor: {
                                 kind: "native",
-                                surfaceKey: "resource-image",
+                                surfaceKey: item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-image"
+                                  ? "document-image"
+                                  : "resource-image",
                                 context: { ...resource },
                                 title: resource.fileName,
                               },
@@ -2032,6 +2250,23 @@ export function WorkPanelHost({
                                   })
                               : undefined
                           }
+                          onAgentWebclientDocumentState={(documentState) => {
+                            setWebclientDocumentStates((current) => {
+                              const previous = current[reviewRuntimeKey];
+                              if (
+                                previous?.dirty === documentState.dirty &&
+                                previous.busy === documentState.busy &&
+                                previous.annotationCount === documentState.annotationCount &&
+                                previous.targetKey === documentState.targetKey
+                              ) {
+                                return current;
+                              }
+                              return { ...current, [reviewRuntimeKey]: documentState };
+                            });
+                          }}
+                          onAgentWebclientDocumentHandoff={(text) => {
+                            void insertDocumentComposerDraft(workspace.ownerChatId, text);
+                          }}
                           onIpcMessage={(event) => handleReviewIpcMessage(
                             workspace.ownerChatId,
                             item,
@@ -2086,6 +2321,33 @@ export function WorkPanelHost({
                               else next.delete(key);
                               return next;
                             });
+                          }}
+                          onCurrentUrlChange={(nextUrl) => {
+                            const session = getWorkPanelReviewSession(
+                              stateRef.current.review,
+                              workspace.ownerChatId,
+                              item.itemId,
+                            );
+                            if (
+                              session?.source.sourceKind === "web" &&
+                              session.source.liveProjectWeb &&
+                              !isLoopbackWorkPanelReviewUrl(nextUrl)
+                            ) {
+                              const sanitizedUrl = sanitizeWorkPanelReviewWebUrl(nextUrl);
+                              if (!sanitizedUrl) return;
+                              dispatchCommand({
+                                type: "startReview",
+                                ownerChatId: workspace.ownerChatId,
+                                itemId: item.itemId,
+                                kind: session.kind,
+                                source: {
+                                  ...session.source,
+                                  revision: sanitizedUrl,
+                                  url: sanitizedUrl,
+                                  liveProjectWeb: undefined,
+                                },
+                              });
+                            }
                           }}
                           onIpcMessage={(event) => handleReviewIpcMessage(
                             workspace.ownerChatId,

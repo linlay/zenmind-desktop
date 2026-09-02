@@ -611,6 +611,13 @@ const api: DesktopApi = {
       open: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.open", input),
       reveal: (input) => ipcRenderer.invoke("chatWorkPanel.localFiles.reveal", input)
     },
+    documentHtml: {
+      claim: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.claim", input),
+      read: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.read", input),
+      preview: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.preview", input),
+      release: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.release", input),
+      commit: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.commit", input)
+    },
     resourceImages: {
       claim: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.claim", input),
       read: (input) => ipcRenderer.invoke("chatWorkPanel.resourceImages.read", input),

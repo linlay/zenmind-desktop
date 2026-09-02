@@ -52,6 +52,7 @@
 - [前端嵌入与导航](前端嵌入与导航.md)：surface、webview、路由和导航状态。
 - [鉴权、SSO 与 Token Bridge](鉴权SSO与TokenBridge.md)：身份信任边界与凭据分发。
 - [桌面协议与动作桥](桌面协议与动作桥.md)：协议入口、动作模型、授权和页面控制。
+- [统一文档与 WorkPanel](统一文档与WorkPanel.md)：文档来源、内容分类、原生/WebClient 路由、编辑批注与保存边界。
 - [智能助理集成](智能助理集成.md)：Agent Platform、WebClient、Main Assistant 与 Copilot。
 
 ### 扩展与业务域

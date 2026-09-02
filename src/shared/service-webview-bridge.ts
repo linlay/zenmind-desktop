@@ -30,6 +30,10 @@ export const AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE =
   "desktop:agent-webclient:current-resource:action";
 export const AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_RESPONSE_TYPE =
   "desktop:agent-webclient:current-resource:action:response";
+export const AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE =
+  "desktop:agent-webclient:document-state";
+export const AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE =
+  "desktop:agent-webclient:document-handoff";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -47,6 +51,8 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   DESKTOP_WEBS_LIST_REQUEST_TYPE,
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_REQUEST_TYPE,
   AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
+  AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -193,6 +199,10 @@ export type ServiceWebviewBridgeMessage = {
   changedKeys?: string[];
   token?: string | null;
   desktopAuthContext?: string;
+  dirty?: boolean;
+  busy?: boolean;
+  annotationCount?: number;
+  targetKey?: string;
   desktop?: unknown;
   active?: boolean;
   available?: boolean;

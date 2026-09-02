@@ -23,6 +23,8 @@ import {
   type WorkPanelBridgeResult,
   type WorkPanelItemTargetInput,
   type WorkPanelOpenItemInput,
+  type WorkPanelOpenDocumentInput,
+  type WorkPanelOpenDocumentResult,
   type WorkPanelOpenResourceInput,
   type WorkPanelOpenResourceResult,
   type CanonicalChatSyncRequest,
@@ -51,6 +53,13 @@ import { isDesktopDevelopmentRuntime } from "../development-runtime";
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
 const SURFACE_REGISTRATION_WAIT_MS = 1_500;
+
+function normalizeDocumentWorkspacePath(value: unknown) {
+  const requestedPath = typeof value === "string" ? value : "";
+  return requestedPath.trim() && requestedPath.length <= 2_048 && !/[\u0000-\u001f\u007f]/u.test(requestedPath)
+    ? requestedPath.replace(/\\/gu, "/")
+    : "";
+}
 
 const LIVE_CHAT_SURFACE_IDS = new Set([
   MAIN_CHAT_SURFACE_ID,
@@ -598,6 +607,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     ownerChatId: string;
     resource: Omit<WorkPanelOpenResourceInput, "version">;
   }): Promise<WorkPanelOpenResourceResult>;
+  openDocument(input: {
+    ownerChatId: string;
+    document: Omit<WorkPanelOpenDocumentInput, "version">;
+  }): Promise<WorkPanelOpenDocumentResult>;
 }) {
   const sessions = new Map<string, LogicalSession>();
   const senderSessionKeys = new Map<number, Set<string>>();
@@ -971,6 +984,10 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       newChat: binding.newChatSource.newChat,
       chatId,
     } satisfies Omit<CanonicalChatSyncRequest, "requestId">;
+    // The outer Desktop identity owns the canonical Chat as soon as
+    // chat.start arrives. Guest navigation remains protected separately until
+    // WebClient promotes its own live-query URL.
+    promoteMainChatBundle();
     const traceCanonicalSync = (state: "ready" | "failed", reason: string) => {
       const target = options.browserSurfaces.resolveWebviewSurfaceTarget(
         binding.newChatSource!.guestWebContentsId,
@@ -1003,8 +1020,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         traceCanonicalSync("failed", result.code);
         throw Object.assign(new Error(result.message), { name: result.code });
       }
-      promoteMainChatBundle();
-      traceCanonicalSync("ready", "canonical_owner_registered");
+      traceCanonicalSync("ready", "canonical_promotion_guard_installed");
     });
     void ready.catch(() => undefined);
     binding.canonicalChatReady = ready;
@@ -1873,14 +1889,15 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       "workpanel.close" as const,
     ];
     if (method === "getCapabilities") return { ok: true, capabilities };
-    const capabilityAllowed = method === "openItem" || method === "openResource"
+    const capabilityAllowed = method === "openItem" || method === "openResource" || method === "openDocument"
       ? capabilities.includes("workpanel.open")
       : method === "activateItem" || method === "closeItem";
     if (!capabilityAllowed) return failure("capability_denied", `${context.kind} cannot call ${method}`);
-    const input = record.input as WorkPanelOpenItemInput | WorkPanelOpenResourceInput | WorkPanelItemTargetInput;
+    const input = record.input as WorkPanelOpenItemInput | WorkPanelOpenResourceInput | WorkPanelOpenDocumentInput | WorkPanelItemTargetInput;
     const compatibleVersion = isPlainBridgeRecord(input) && (
       isAgentWebclientBridgeVersion(input.version) ||
-      (input.version === 4 && method !== "openResource")
+      ((input.version === 4 || input.version === 5) && method !== "openResource" && method !== "openDocument") ||
+      (input.version === 5 && method === "openResource")
     );
     if (!compatibleVersion) {
       return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);
@@ -1919,6 +1936,60 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           resourceId: resourceInput.resourceId.trim(),
           relativePath: normalizedResource.relativePath,
           ...(resourceInput.title ? { title: resourceInput.title.trim() } : {}),
+        },
+      });
+    }
+    if (method === "openDocument") {
+      const documentInput = input as WorkPanelOpenDocumentInput;
+      if (
+        Object.keys(documentInput).some((key) => !["version", "source", "title"].includes(key)) ||
+        !isPlainBridgeRecord(documentInput.source) ||
+        (documentInput.title !== undefined && !readText(documentInput.title))
+      ) return failure("invalid_request", "Invalid native document request");
+      const source = documentInput.source;
+      const sourceKind = source.kind;
+      const agentKey = readText(source.agentKey);
+      if (!agentKey) return failure("invalid_request", "Invalid native document Agent");
+      if (sourceKind === "workspace-file") {
+        if (
+          Object.keys(source).some((key) => !["kind", "agentKey", "path"].includes(key)) ||
+          !readText(source.path)
+        ) return failure("invalid_request", "Invalid workspace document request");
+        const normalizedPath = normalizeDocumentWorkspacePath(source.path);
+        if (!normalizedPath) return failure("invalid_request", "Invalid workspace document path");
+        return options.openDocument({
+          ownerChatId,
+          document: {
+            source: { kind: "workspace-file", agentKey, path: normalizedPath },
+            ...(documentInput.title ? { title: documentInput.title.trim() } : {}),
+          },
+        });
+      }
+      if (sourceKind !== "artifact" && sourceKind !== "reference") {
+        return failure("invalid_request", "Invalid document source");
+      }
+      if (
+        Object.keys(source).some((key) => !["kind", "agentKey", "chatId", "resourceId", "relativePath"].includes(key)) ||
+        !readText(source.chatId) || !readText(source.resourceId) || !readText(source.relativePath) ||
+        source.chatId.trim() !== ownerChatId
+      ) return failure("capability_denied", "Document does not match the trusted owner Chat");
+      const normalized = normalizeChatWorkPanelOpenLocalResourceRequest({
+        ownerChatId,
+        profile: sourceKind,
+        relativePath: source.relativePath,
+      });
+      if (!normalized) return failure("invalid_request", "Invalid document resource path");
+      return options.openDocument({
+        ownerChatId,
+        document: {
+          source: {
+            kind: sourceKind,
+            agentKey,
+            chatId: ownerChatId,
+            resourceId: source.resourceId.trim(),
+            relativePath: normalized.relativePath,
+          },
+          ...(documentInput.title ? { title: documentInput.title.trim() } : {}),
         },
       });
     }
