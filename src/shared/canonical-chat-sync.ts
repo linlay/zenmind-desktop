@@ -36,6 +36,11 @@ export type CanonicalChatSyncRequestListener = (
   request: CanonicalChatSyncRequest,
 ) => void;
 
+export type CanonicalChatPromotionGuardState =
+  | "protecting"
+  | "completed"
+  | "invalid";
+
 function readAgentRouteKey(url: URL) {
   const match = /^\/agent\/([^/]+)$/u.exec(url.pathname);
   return match ? decodeRoutePathSegment(match[1]) : null;
@@ -160,6 +165,57 @@ export function createCanonicalAgentChatRoute(
   url.searchParams.delete("newChat");
   url.searchParams.set("chatId", chatId);
   return `${url.pathname}${url.search}${url.hash}`;
+}
+
+/**
+ * Classify the short hand-off window where Desktop already owns the canonical
+ * Chat while the original WebClient guest still renders its new-Chat query.
+ */
+export function classifyCanonicalChatPromotionGuard(input: {
+  request: Pick<
+    CanonicalChatSyncRequest,
+    "registrationId" | "guestWebContentsId" | "agentKey" | "newChat" | "chatId"
+  >;
+  registrationId: string;
+  guestWebContentsId?: number;
+  targetRoute: string;
+  guestUrl: string;
+}): CanonicalChatPromotionGuardState {
+  const requestAgentKey = input.request.agentKey.trim();
+  const requestNewChat = input.request.newChat.trim();
+  const requestChatId = input.request.chatId.trim();
+  const target = readAgentWebclientCanonicalChatSource(input.targetRoute);
+  if (
+    !requestAgentKey ||
+    !requestNewChat ||
+    !requestChatId ||
+    input.registrationId !== input.request.registrationId ||
+    input.guestWebContentsId !== input.request.guestWebContentsId ||
+    target?.agentKey !== requestAgentKey ||
+    target.chatId !== requestChatId
+  ) {
+    return "invalid";
+  }
+
+  const source = readAgentWebclientNewChatSource(input.guestUrl);
+  if (
+    source?.agentKey === requestAgentKey &&
+    source.newChat === requestNewChat
+  ) {
+    return "protecting";
+  }
+
+  // A mounted guest may briefly expose no URL while its main frame is being
+  // recreated. Keep the exact guard until a real guest identity is observed.
+  if (!input.guestUrl.trim()) {
+    return "protecting";
+  }
+
+  const completed = readAgentWebclientCanonicalChatSource(input.guestUrl);
+  return completed?.agentKey === requestAgentKey &&
+      completed.chatId === requestChatId
+    ? "completed"
+    : "invalid";
 }
 
 export type AgentWebclientNewChatPrepareInput = {

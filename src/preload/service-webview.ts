@@ -6,6 +6,7 @@ import {
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+  isServiceWebviewRouteAppliedAck,
   isServiceWebviewBridgeRequestType,
   isServiceWebviewBridgeResponseType,
   SERVICE_WEBVIEW_BRIDGE_DEBUG_TYPE,
@@ -14,6 +15,7 @@ import {
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL,
   type ServiceWebviewBridgeMessage,
   type ServiceWebviewModalOverlayState
 } from "../shared/service-webview-bridge";
@@ -30,6 +32,7 @@ import {
 } from "../shared/webview-selection-toolbar";
 import {
   PAGE_TO_PRELOAD_EVENT,
+  PAGE_TO_PRELOAD_ROUTE_ACK_EVENT,
   PRELOAD_TO_PAGE_EVENT,
   PRELOAD_TO_PAGE_ACTION_EVENT,
   buildServiceWebviewMainWorldScript
@@ -397,6 +400,19 @@ window.addEventListener(PAGE_TO_PRELOAD_EVENT, (event) => {
   }
 
   forwardDesktopBridgeRequest(payload, window.location.origin, "bridge-request");
+});
+
+window.addEventListener(PAGE_TO_PRELOAD_ROUTE_ACK_EVENT, (event) => {
+  const payload = (event as CustomEvent<unknown>).detail;
+  if (!isServiceWebviewRouteAppliedAck(payload)) {
+    sendBridgeDebug("route-ack-rejected", "invalid-payload");
+    return;
+  }
+  ipcRenderer.sendToHost(SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL, payload);
+  sendBridgeDebug(
+    "route-ack-forwarded",
+    `${payload.routeRevision}:${payload.routerLocation}`,
+  );
 });
 
 window.addEventListener(AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT, (event) => {

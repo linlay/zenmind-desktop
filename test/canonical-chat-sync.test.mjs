@@ -9,6 +9,7 @@ const {
   canCommitMainChatIdentity,
   canCommitMainChatRegistration,
   classifyAgentWebclientNewChatRegistration,
+  classifyCanonicalChatPromotionGuard,
   createCanonicalAgentChatRoute,
   createPreparedAgentChatRoute,
   mainChatIdentitiesEqual,
@@ -44,6 +45,55 @@ test("canonical Chat route promotion preserves unrelated query parameters and ha
     }),
     "",
   );
+});
+
+test("canonical Chat promotion guard protects only the exact original guest", () => {
+  const request = {
+    registrationId: "registration-1",
+    guestWebContentsId: 41,
+    agentKey: "coder",
+    newChat: "1783680000000",
+    chatId: "chat-canonical",
+  };
+  const base = {
+    request,
+    registrationId: "registration-1",
+    guestWebContentsId: 41,
+    targetRoute: "/agent/coder?chatId=chat-canonical",
+  };
+
+  assert.equal(classifyCanonicalChatPromotionGuard({
+    ...base,
+    guestUrl: "http://127.0.0.1:17080/agent/coder?newChat=1783680000000",
+  }), "protecting");
+  assert.equal(classifyCanonicalChatPromotionGuard({
+    ...base,
+    guestUrl: "http://127.0.0.1:17080/agent/coder?chatId=chat-canonical",
+  }), "completed");
+  assert.equal(classifyCanonicalChatPromotionGuard({
+    ...base,
+    guestUrl: "",
+  }), "protecting");
+
+  for (const input of [
+    { ...base, registrationId: "registration-2" },
+    { ...base, guestWebContentsId: 42 },
+    { ...base, targetRoute: "/agent/coder?chatId=chat-other" },
+    {
+      ...base,
+      guestUrl: "http://127.0.0.1:17080/agent/other?newChat=1783680000000",
+    },
+    {
+      ...base,
+      guestUrl: "http://127.0.0.1:17080/agent/coder?newChat=1783680000001",
+    },
+    {
+      ...base,
+      guestUrl: "http://127.0.0.1:17080/agent/coder?chatId=chat-other",
+    },
+  ]) {
+    assert.equal(classifyCanonicalChatPromotionGuard(input), "invalid");
+  }
 });
 
 test("new Chat preparation accepts only the exact canonical source route", () => {
