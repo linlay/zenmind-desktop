@@ -1684,7 +1684,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(serviceWebviewSurface, /get\("embedPath"\)/);
   assert.match(serviceWebviewSurface, /embedPath: effectiveEmbedPath/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
-  assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(targetUrl\)/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientSelectWorkerScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientRouteAgentKey/);
@@ -6604,11 +6604,14 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewSurface, /ownerChatId\?: string/);
   assert.match(serviceWebviewSurface, /function requestDirectWebviewRouteLoad\(\)/);
   assert.match(serviceWebviewSurface, /!loadInitialEmbeddedUrlDirectly \|\| !embeddedUrl/);
-  assert.match(serviceWebviewSurface, /normalizedCurrentUrl === embeddedUrl/);
+  assert.match(directRouteLoadBlock, /normalizedCurrentUrl === targetUrl/);
   assert.match(serviceWebviewSurface, /resolveAgentWebclientDesktopChatRouteFromUrl/);
   assert.match(serviceWebviewSurface, /lastHostAppliedChatRouteRef/);
   assert.match(serviceWebviewSurface, /function isAgentWebclientChatSurface\(/);
-  assert.match(serviceWebviewSurface, /areAgentWebclientChatBusinessRoutesEquivalent\(currentRoute, nextChatRoute\)/);
+  assert.match(
+    serviceWebviewSurface,
+    /areAgentWebclientChatBusinessRoutesEquivalent\(\s*context\.currentRoute,\s*nextChatRoute/u
+  );
   assert.match(serviceWebviewSurface, /isAgentWebclientChatSurface\(service\?\.id, surfaceId\)[\s\S]*?navigate\(nextChatRoute, \{ replace: true \}\)/);
   assert.doesNotMatch(serviceWebviewSurface, /ChatRouteMessage/);
   assert.doesNotMatch(serviceWebviewSurface, /handleAgentWebclientChatRouteMessage/);
@@ -6618,7 +6621,7 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(directRouteLoadBlock, /targetWebview\.executeJavaScript\(/);
   assert.match(serviceWebviewSurface, /window\.history\.pushState/);
   assert.match(serviceWebviewSurface, /PopStateEvent\("popstate"/);
-  assert.match(serviceWebviewSurface, /targetWebview\.loadURL\(embeddedUrl\)/);
+  assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(targetUrl\)/);
   assert.match(serviceWebviewSurface, /\[\s*active,\s*bridgeReady,\s*embeddedUrl,\s*loadInitialEmbeddedUrlDirectly,\s*serviceWebviewPreloadUrl,\s*webviewRenderKey,\s*webviewSrcUrl,\s*\]/);
   assert.match(serviceWebviewSurface, /suppressInitialLoadingCopy\s*\?\s*\(/);
   assert.match(serviceWebviewSurface, /aria-label=\{t\("serviceWebview\.loading", \{ name: serviceDisplayName \}\)\}/);
@@ -6626,7 +6629,10 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.doesNotMatch(serviceWebviewSurface, /!webviewRef\.current && \(webviewRef\.current = node\)/);
   assert.match(sendBridgeMessageBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,\s*payload\)/);
   assert.doesNotMatch(sendBridgeMessageBlock, /executeJavaScript/);
-  assert.match(sendServiceRouteBlock, /webviewRef\.current\?\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/);
+  assert.match(
+    sendServiceRouteBlock,
+    /targetWebview\.send\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,\s*payload\)/,
+  );
   assert.doesNotMatch(sendServiceRouteBlock, /executeJavaScript/);
   assert.doesNotMatch(serviceWebviewSurface, /buildAgentWebclientAccessTokenInjectionScript/);
   assert.doesNotMatch(serviceWebviewSurface, /agentWebclientTokenReloadTimerRef/);
@@ -6660,6 +6666,9 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action"/);
+  assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL = "desktop:service-webview:route-ack"/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE = "desktopRouteApplied"/);
+  assert.match(serviceWebviewBridgeContracts, /isServiceWebviewRouteAppliedAck/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_WEBS_LIST_REQUEST_TYPE/);
@@ -6679,6 +6688,14 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /payload\.type !== DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
+  assert.match(serviceWebviewPreload, /PAGE_TO_PRELOAD_ROUTE_ACK_EVENT/);
+  assert.match(serviceWebviewPreload, /isServiceWebviewRouteAppliedAck\(payload\)/);
+  assert.match(
+    serviceWebviewPreload,
+    /ipcRenderer\.sendToHost\(SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL, payload\)/,
+  );
+  assert.match(serviceWebviewSurface, /channel === SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL/);
+  assert.match(serviceWebviewSurface, /settleMainChatRouterAck\(payload\)/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewPreload, /PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewPreload, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/);

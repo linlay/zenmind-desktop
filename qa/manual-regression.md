@@ -25,7 +25,7 @@
 - 确认菜单顺序为 Terminal、Web、Files、Side Chat、Project、WebApp；Terminal 禁用且没有快捷键或 PTY。
 - Web 输入无协议域名时补 `https://`；拒绝 URL 中的用户名密码和非 HTTP(S) URL。重复 URL 激活已有 tab；Website、普通 WorkPanel Web 与其 popup 共享 Desktop 应用浏览器 Cookie partition，popup 仍留在所属 Chat。分别在登录、刷新 access token、退出登录和 Desktop 重启后验证 `HttpOnly`、`SameSite` 与重定向 Cookie 按 Chromium 原生规则生效；本地文件、WebApp、Help、内置 Browser 和服务页不得继承。
 - 激活普通 Web tab 时确认标签栏下只增加一行浏览器工具栏：预览模式显示后退、前进、刷新、可直接输入的地址与“编辑”；进入 HTML 编辑模式后，同一行只保留“返回预览”和元素选择提示，导航/刷新/地址不再与批注操作混用，也不得再出现“完成 + 退出”两个重复出口。可批注的 `openLocalFile` HTML 与仍由 Resource Viewer 承载的 Artifact/Reference HTML 使用同一套预览/编辑模式；原生图片、WebApp 与其他 item 不复用这行 WebView 工具栏。
-- 从 Main Chat 打开 PNG/JPEG/WebP Artifact 与 Reference，确认 Desktop WorkPanel 创建原生图片 tab 且不创建 Agent WebClient Resource Viewer WebView；PDF、HTML、SVG、GIF 与签名不匹配资源继续使用或拒绝进入既有 Viewer。Standalone Agent WebClient 不受影响。
+- 从 Main Chat 分别打开 Workspace File、Artifact 与 Reference 来源的 HTML 和图片，确认 Desktop 创建原生 document tab；Markdown、文本、代码、PDF、Office、媒体、压缩包与未知二进制仍由 WebClient Document Surface 承载。Standalone 全部使用 WebClient，不显示 Desktop-only 操作。
 - 用截断或浏览器无法解码但签名仍匹配的图片回归原生预览：WorkPanel 保持可操作，不显示错误条或错误占位文案，编辑入口禁用，其他 tab 与 Main Chat 不受影响。
 - 原生图片预览态顶部固定为单行，不直接显示文件名；hover 或键盘 focus 信息按钮时显示完整文件名、格式/大小和源尺寸。验证 10%–800% 比例、缩放、中性背景的编辑入口与打开方式，以及适合窗口、100%、比例直接输入、触控板/Cmd/Ctrl 缩放、拖拽平移、默认/其他应用打开、窄 WorkPanel、拉宽、全屏和窗口 resize；不得出现第二行或横向滚动条。
 - 编辑态确认图片工具位于左侧 44px 单列图标栏，hover 后立即在右侧显示工具名，禁用项也能显示。顶部只保留“返回预览”、撤销/重做、缩放与保存；窄 WorkPanel 中仅次要按钮收敛为图标，普通样式的“返回预览”始终显示返回箭头和四字文案，整行无换行、无横向滚动；未修改时保存为普通禁用样式，产生可保存修改后才显示蓝色强调。左栏“变换”hover/focus 后在右侧显示旋转、水平/垂直翻转和自由变换二级菜单；图片尺寸与画布尺寸各自独立，画布尺寸扩大或缩小时原图像素不拉伸。建立矩形、椭圆、套索或画笔选区后启动自由变换，确认原选区像素被提取到可拖动边框，四角可缩放且角度可输入，取消不改图、应用只增加一步历史。批注、按批注修改、对象擦除、背景移除/替换、扩图、增强必须作为连续紫色按钮平铺在“调整”之后，不得再出现机器人总入口、聚合 AI 工具对话框或“选区/批注二选一”的重复入口。验证普通选区只用于自由变换和对象擦除，按批注修改只接受已经圈选且逐条填写要求的批注；批注面板以摘要列表呈现且仅展开当前一条。拖动批注面板标题和其他设置浮层手柄，确认可移开被遮区域且不会拖出画布容器；内容过多时只在浮层内部滚动，图片显示尺寸和适合窗口比例不发生跳变。再验证裁剪、尺寸、曝光/对比度/饱和度、选区添加/减去/反选/清除及 50 步撤销上限。像素修改前有批注时必须确认清除；超出 8192 单边或 4000 万像素时编辑入口禁用。
@@ -35,6 +35,15 @@
 - 在浅色、深色、默认窄 WorkPanel、拉宽与全屏状态检查分段按钮、地址截断、编辑按钮和键盘 focus；窄宽度仍保留完整编辑入口，地址安全截断且不挤出工具栏。
 - 连续新增两个 Side Chat，确认都导航 `/btw/:chatId` 且 guest/instance 独立；active BTW 可调用 BTW/attach，不能 query；切换、隐藏、关闭不取消后台 Run。
 - KBASE 显示可用 Project；CODER 仅在 workspace 有效时可用，并携带当前 chatId 与 lastRunId；普通 Agent 不显示 Project。
+
+## WorkPanel 统一文档 Surface
+
+- 以显式 title、相对路径、macOS/POSIX 绝对路径、Windows 驱动器路径、UNC 路径、中文/空格、空 basename 和超长名称创建 File descriptor；Tab 标题必须为“显式 title > basename > file”，不 URL decode，且 stable key 和 `surfaceId` 不变。分别使用新旧 WebClient bundle 验证 Desktop 兜底。
+- 对 Workspace File、Artifact 和 Reference 遍历 HTML、PNG/JPEG/WebP、动画图、SVG、Markdown、TXT、代码、PDF、Office、音视频、压缩包与未知二进制；Desktop 只原生打开 HTML/图片，其他类型使用 WebClient。伪造扩展名、错误 MIME、Office ZIP、SVG 和无后缀 UTF-8 文本必须以 Platform 最终分类为准。
+- 在 Markdown/TXT/代码中验证 Monaco、Markdown 净化预览/分屏、查找替换、行列选区批注和 revision 冲突。Workspace 只能原位覆盖；Artifact 默认创建新产物且可明确覆盖；Reference 永不覆盖。外部 revision 变更后批注必须失效而不漂移。
+- 验证 PDF.js 页码、缩放和搜索；Office、压缩包和未知二进制不显示伪文本也不自动下载。Desktop 的系统打开/定位在 macOS 与 Windows 分别回归，Standalone 不显示这些操作。
+- 在有效 Coder owner Chat 打开 `localhost`、一个 `*.localhost`、`127.0.0.1` 和 `[::1]` 站点；元素批注只交接脱敏摘要、selector/XPath、坐标、URL 和可选截图，页面不获得文件系统、Node、Token 或 Desktop API。Coder 修改 workspace 后用 HMR/刷新验证；顶层导航离开 loopback 后交接语义立即退化为普通 Web。
+- 分别在原生与 WebClient 文档中制造 dirty、busy 和批注，再关闭当前 Tab、关闭其他 Tab、隐藏/恢复 WorkPanel、切换原生编辑器和进出全屏；未保存保护必须绑定当前可信 item，guest replacement 不得用旧状态阻塞新 Tab。
 
 ## WebView 生命周期与全局 Realtime Broker
 
