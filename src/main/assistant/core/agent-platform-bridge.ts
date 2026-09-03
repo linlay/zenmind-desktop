@@ -45,7 +45,7 @@ import {
   requireAgentPlatformEpochMillis,
   requireEpochMillis,
 } from "../../../shared/time-contract";
-import { toDesktopPetAgentOptions } from "../pet/pet-status-client";
+import { toDesktopPetAgentOptions } from "../pet/agent-options";
 import { resolveAssistantAttachmentPath } from "../attachments/attachment-store";
 import { resolveAssistantChatStoragePaths } from "./chat-storage-path";
 import {

@@ -26,20 +26,20 @@ test("only the physical realtime client constructs the Agent Platform /ws URL", 
   ]);
 });
 
-test("Assistant, navigation, Pet Push, and Desktop WS ap are Broker consumers", () => {
+test("Assistant, navigation, and Desktop WS api are Broker consumers", () => {
   const sources = [
     "src/main/assistant/core/agent-platform-bridge.ts",
     "src/main/assistant/core/assistant-navigation-status-client.ts",
-    "src/main/assistant/pet/pet-status-client.ts",
     "src/main/desktop-ws-server.ts",
   ].map(read);
   for (const source of sources) {
     assert.match(source, /RealtimeBroker/u);
     assert.doesNotMatch(source, /new URL\(["']\/ws["']/u);
   }
-  const petStatus = read("src/main/assistant/pet/pet-status-client.ts");
-  assert.match(petStatus, /subscribePush/u);
-  assert.doesNotMatch(petStatus, /subscribeRun|\/api\/attach|\/api\/detach/u);
+  const petRuntime = read("src/main/assistant/pet/runtime.ts");
+  const assistantRuntime = read("src/main/bridge/assistant-runtime.ts");
+  assert.doesNotMatch(petRuntime, /AgentPlatformPetStatusClient|pet-status-client|realtimeBroker/u);
+  assert.doesNotMatch(assistantRuntime, /handleDesktopPetAssistantEvent/u);
   assert.equal(fs.existsSync(path.join(root, "src/main/assistant/pet/pet-stream-client.ts")), false);
   assert.equal(fs.existsSync(path.join(root, "src/main/assistant/core/assistant-ws-transport.ts")), false);
 });
@@ -57,7 +57,7 @@ test("shutdown stops delivery, tears down adapters and WorkPanel, then disposes 
   const beforeQuit = events.slice(events.indexOf('options.app.on("before-quit"'), events.indexOf('options.app.on("will-quit"'));
   assert.ok(beforeQuit.indexOf("beginRealtimeShutdown") < beforeQuit.indexOf("prepareQuitUi"));
   const willQuit = events.slice(events.indexOf('options.app.on("will-quit"'), events.indexOf('options.app.on("window-all-closed"'));
-  assert.ok(willQuit.indexOf("stopAssistantBridgeRuntime") < willQuit.indexOf("stopAgentPlatformPetStatusClient"));
-  assert.ok(willQuit.indexOf("stopAgentPlatformPetStatusClient") < willQuit.indexOf("disposeRealtimeBroker"));
+  assert.ok(willQuit.indexOf("stopAssistantBridgeRuntime") < willQuit.indexOf("disposeRealtimeBroker"));
+  assert.doesNotMatch(willQuit, /stopAgentPlatformPetStatusClient/u);
   assert.match(appShell, /progress\.phase === "preparing"[\s\S]{0,180}workPanelStateRef\.current = EMPTY_WORK_PANEL_STATE[\s\S]{0,100}setWorkPanelState\(EMPTY_WORK_PANEL_STATE\)/u);
 });

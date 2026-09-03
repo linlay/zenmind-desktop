@@ -13,7 +13,8 @@ import type {
   DesktopPetPreviewPanel,
   DesktopPetTaskItem,
   DesktopPetMessageItem,
-  DesktopPetMessageStatus
+  DesktopPetMessageStatus,
+  AssistantNavigationAttentionSummary,
 } from "../shared/contracts";
 import { readEpochMillis } from "../shared/time-contract";
 import type {
@@ -460,6 +461,7 @@ export function computeDesktopPetStateRefresh(input: {
   agentOptions: DesktopPetAgentOption[];
   activeTasks?: DesktopPetTaskItem[];
   messages?: DesktopPetMessageItem[];
+  navigationAttention?: AssistantNavigationAttentionSummary;
   appearanceOptions?: DesktopPetAppearanceOption[];
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
@@ -483,6 +485,7 @@ export function computeDesktopPetStateRefresh(input: {
     agentOptions: input.agentOptions,
     activeTasks: input.activeTasks,
     messages: input.messages,
+    navigationAttention: input.navigationAttention,
     appearanceOptions: input.appearanceOptions,
     previewPanel: input.previewPanel,
     runningTaskCount: input.runningTaskCount,
@@ -964,8 +967,6 @@ export interface DesktopPetWindowControllerOptions {
   isHandlingQuit: () => boolean;
   loadRendererRoute: (window: any, route: string) => Promise<void>;
   buildContextMenu: (appearanceId: string, window: any) => any;
-  startStatusClient: () => void;
-  stopStatusClient: () => void;
   endDrag: () => void;
   clearIdleResetTimer: () => void;
   clearPreviewRefreshTimer: () => void;
@@ -1055,7 +1056,6 @@ export function createDesktopPetWindowController(
           enabled: false,
           unreadCount: 0
         });
-        options.stopStatusClient();
       }
       options.refreshState();
     });
@@ -1108,7 +1108,6 @@ export function createDesktopPetWindowController(
       options.saveSettings({
         enabled: true
       });
-      options.startStatusClient();
       return options.refreshState();
     } catch (error) {
       console.error("failed to show desktop pet window", error);
@@ -1126,7 +1125,6 @@ export function createDesktopPetWindowController(
       enabled: false,
       unreadCount: 0
     });
-    options.stopStatusClient();
     if (window && !window.isDestroyed()) {
       window.destroy();
     }
@@ -1142,128 +1140,6 @@ export function createDesktopPetWindowController(
     showWindow,
     hideWindow,
     isVisible
-  };
-}
-
-export interface DesktopPetClientLifecycleControllerOptions {
-  platform: string;
-  app: any;
-  AgentStatusClientClass: any;
-  getServiceState: (app: any, serviceId: string) => Promise<any>;
-  issueAccessToken: (app: any, reason: any) => Promise<any>;
-  realtimeBroker?: any;
-  getSettings: () => DesktopPetSettingsLike;
-  setAgentStatus: (status: any) => void;
-  setAgentOptions: (options: any[]) => void;
-  clearActiveRuns: () => void;
-  updateActiveRuns: (event: any) => void;
-  clearDismissedPreview: (chatId: string | null | undefined, runId: string | null | undefined) => void;
-  getPreviewPanel: () => { chatId?: string | null; runId?: string | null } | null;
-  ingestAgentEvent: (event: any, context: { source: string; transportMode: string }) => void;
-  refreshCompletedPreviewFromStatus: (status: any) => boolean;
-  refreshState: () => void;
-}
-
-export interface DesktopPetClientLifecycleController {
-  getStatusClient(): any | null;
-  ensureStatusClient(): any | null;
-  startStatusClient(): void;
-  stopStatusClient(): void;
-  scheduleStatusRefresh(delayMs?: number, force?: boolean): void;
-}
-
-export function createDesktopPetClientLifecycleController(
-  options: DesktopPetClientLifecycleControllerOptions
-): DesktopPetClientLifecycleController {
-  let statusClient: any = null;
-
-  function getStatusClient() {
-    return statusClient;
-  }
-
-  function ensureStatusClient() {
-    if (!isDesktopPetSupportedPlatform(options.platform)) {
-      return null;
-    }
-    if (statusClient) {
-      return statusClient;
-    }
-    statusClient = new options.AgentStatusClientClass({
-      app: options.app,
-      getServiceState: options.getServiceState,
-      issueAccessToken: options.issueAccessToken,
-      realtimeBroker: options.realtimeBroker,
-      onStatus: (status: any) => {
-        options.setAgentStatus(status);
-        if (!status) {
-          options.clearActiveRuns();
-        }
-        if (options.refreshCompletedPreviewFromStatus(status)) {
-          return;
-        }
-        options.refreshState();
-      },
-      onAgents: (agents: any) => {
-        options.setAgentOptions(agents);
-        options.refreshState();
-      },
-      onRunStarted: ({ runId, chatId }: { runId: string; chatId: string | null; timestamp: number }) => {
-        options.updateActiveRuns({ type: "run.started", runId });
-        options.clearDismissedPreview(chatId, runId);
-      },
-      onRunFinished: ({ runId, chatId, message, timestamp }: { runId: string; chatId: string | null; message: string; timestamp: number }) => {
-        options.updateActiveRuns({ type: "run.finished", runId });
-        const panel = options.getPreviewPanel();
-        const resolvedRunId = runId || (panel && (!chatId || panel.chatId === chatId) ? panel.runId : "");
-        if (!resolvedRunId) {
-          return;
-        }
-        options.ingestAgentEvent({
-          runId: resolvedRunId,
-          chatId: chatId ?? panel?.chatId ?? null,
-          type: "run.complete",
-          createdAt: timestamp,
-          message
-        }, {
-          source: "agent-platform-status",
-          transportMode: "ws"
-        });
-      },
-      onDebug: (message: string) => {
-        console.warn(`[desktop-pet] agent-platform status unavailable: ${message}`);
-      }
-    });
-    return statusClient;
-  }
-
-  function startStatusClient() {
-    if (!options.getSettings().enabled) {
-      return;
-    }
-    ensureStatusClient()?.start();
-  }
-
-  function stopStatusClient() {
-    statusClient?.stop();
-    statusClient = null;
-    options.setAgentStatus(null);
-    options.setAgentOptions([]);
-    options.clearActiveRuns();
-  }
-
-  function scheduleStatusRefresh(delayMs = 0, force = false) {
-    if (!force && !options.getSettings().enabled) {
-      return;
-    }
-    ensureStatusClient()?.scheduleRefresh(delayMs);
-  }
-
-  return {
-    getStatusClient,
-    ensureStatusClient,
-    startStatusClient,
-    stopStatusClient,
-    scheduleStatusRefresh
   };
 }
 

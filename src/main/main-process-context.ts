@@ -454,7 +454,6 @@ export function createKanbanIpcHandlerOptions(
 }
 
 export interface DesktopPetIpcHandlerContextDependencies {
-  clearActiveRuns: (...args: any[]) => unknown;
   showWindow: (...args: any[]) => unknown;
   hideWindow: (...args: any[]) => unknown;
   openAssistant: (...args: any[]) => unknown;
@@ -466,7 +465,6 @@ export interface DesktopPetIpcHandlerContextDependencies {
   dismissPreview: (...args: any[]) => unknown;
   setMouseInteractive: (...args: any[]) => unknown;
   setWindowMode: (...args: any[]) => unknown;
-  scheduleStatusRefresh: (...args: any[]) => unknown;
   refreshState: (...args: any[]) => unknown;
   replyMessage: (...args: any[]) => unknown;
   dismissMessage: (...args: any[]) => unknown;
@@ -483,10 +481,6 @@ export function createDesktopPetIpcHandlerOptions(
     saveSettingsInState: (settings: unknown) => {
       context.state.desktopPetSettings = settings as any;
     },
-    setAgentStatus: (status: unknown) => {
-      context.state.desktopPetAgentStatus = status as any;
-    },
-    clearActiveRuns: dependencies.clearActiveRuns,
     showWindow: dependencies.showWindow,
     hideWindow: dependencies.hideWindow,
     openAssistant: dependencies.openAssistant,
@@ -498,7 +492,6 @@ export function createDesktopPetIpcHandlerOptions(
     dismissPreview: dependencies.dismissPreview,
     setMouseInteractive: dependencies.setMouseInteractive,
     setWindowMode: dependencies.setWindowMode,
-    scheduleStatusRefresh: dependencies.scheduleStatusRefresh,
     refreshState: dependencies.refreshState,
     replyMessage: dependencies.replyMessage,
     dismissMessage: dependencies.dismissMessage,

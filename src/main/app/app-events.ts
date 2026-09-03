@@ -28,7 +28,6 @@ export type MainAppEventsOptions = {
   clearDesktopPetIdleResetTimer: () => void;
   stopAssistantBridgeRuntime: () => void;
   stopTunnelHubRuntime: () => unknown;
-  stopAgentPlatformPetStatusClient: () => void;
   disposeRealtimeBroker: () => void;
   unregisterPluginGlobalShortcuts: () => void;
   stopResourceDirectoryWatcher: () => void;
@@ -130,7 +129,6 @@ export function registerMainAppEvents(options: MainAppEventsOptions) {
     options.clearDesktopPetIdleResetTimer();
     options.stopAssistantBridgeRuntime();
     void options.stopTunnelHubRuntime();
-    options.stopAgentPlatformPetStatusClient();
     options.disposeRealtimeBroker();
     options.unregisterPluginGlobalShortcuts();
     options.globalShortcut.unregister(options.focusedWebviewDevToolsShortcut);

@@ -331,11 +331,11 @@ body.desktop-pet-body,
   -webkit-appearance: none;
 }
 
-.desktop-pet-unread-badge.is-message {
-  background: linear-gradient(158deg, #10c866 4%, #09a84f 54%, #07883f 100%);
+.desktop-pet-unread-badge.is-unread {
+  background: #1677ff;
   box-shadow:
-    0 4px 11px rgba(9, 168, 79, 0.34),
-    0 1px 3px rgba(3, 107, 50, 0.22);
+    0 4px 11px rgba(22, 119, 255, 0.34),
+    0 1px 3px rgba(9, 88, 194, 0.22);
 }
 
 .desktop-pet-unread-badge.is-awaiting {

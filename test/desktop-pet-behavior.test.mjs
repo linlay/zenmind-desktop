@@ -20,7 +20,6 @@ const {
   createDesktopPetMessagesFromAgentStatus,
   createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetActiveTasksFromNavigationSnapshot,
-  createDesktopPetClientLifecycleController,
   createDesktopPetDragController,
   createDesktopPetWindowController,
   computeDesktopPetPositionPersistence,
@@ -77,92 +76,9 @@ function createAgentStatus(overrides = {}) {
   };
 }
 
-test("desktop pet lifecycle projects Push callbacks without a Run stream client", () => {
-  let statusOptions = null;
-  let startCount = 0;
-  let stopCount = 0;
-  const activeRunEvents = [];
-  const clearedPreviews = [];
-  const projectedEvents = [];
-
-  class FakeStatusClient {
-    constructor(options) {
-      statusOptions = options;
-    }
-
-    start() {
-      startCount += 1;
-    }
-
-    stop() {
-      stopCount += 1;
-    }
-
-    scheduleRefresh() {}
-  }
-
-  const controller = createDesktopPetClientLifecycleController({
-    platform: "darwin",
-    app: {},
-    AgentStatusClientClass: FakeStatusClient,
-    getServiceState: async () => ({ status: "running" }),
-    issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
-    realtimeBroker: {
-      subscribeRun: () => {
-        throw new Error("desktop pet must not subscribe to RunChannel");
-      },
-    },
-    getSettings: () => ({ enabled: true }),
-    setAgentStatus: () => undefined,
-    setAgentOptions: () => undefined,
-    clearActiveRuns: () => undefined,
-    updateActiveRuns: (event) => activeRunEvents.push(event),
-    clearDismissedPreview: (chatId, runId) => clearedPreviews.push({ chatId, runId }),
-    getPreviewPanel: () => null,
-    ingestAgentEvent: (event, context) => projectedEvents.push({ event, context }),
-    refreshCompletedPreviewFromStatus: () => false,
-    refreshState: () => undefined,
-  });
-
-  controller.startStatusClient();
-  assert.equal(startCount, 1);
-  assert.equal(Object.hasOwn(controller, "getStreamClient"), false);
-  assert.equal(Object.hasOwn(controller, "ensureStreamClient"), false);
-
-  statusOptions.onRunStarted({
-    runId: "run-push-only",
-    chatId: "chat-1",
-    timestamp: EPOCH_MS,
-  });
-  assert.deepEqual(activeRunEvents, [{ type: "run.started", runId: "run-push-only" }]);
-  assert.deepEqual(clearedPreviews, [{ chatId: "chat-1", runId: "run-push-only" }]);
-
-  statusOptions.onRunFinished({
-    runId: "run-push-only",
-    chatId: "chat-1",
-    message: "完成摘要",
-    timestamp: EPOCH_MS + 1,
-  });
-  assert.deepEqual(activeRunEvents.at(-1), { type: "run.finished", runId: "run-push-only" });
-  assert.deepEqual(projectedEvents.at(-1), {
-    event: {
-      runId: "run-push-only",
-      chatId: "chat-1",
-      type: "run.complete",
-      createdAt: EPOCH_MS + 1,
-      message: "完成摘要",
-    },
-    context: { source: "agent-platform-status", transportMode: "ws" },
-  });
-
-  controller.stopStatusClient();
-  assert.equal(stopCount, 1);
-});
-
 test("closing desktop pet destroys its window until the user explicitly enables it again", () => {
   let settings = createSettings({ enabled: false });
   let createdWindow = null;
-  let stopStatusClientCount = 0;
 
   class FakeDesktopPetWindow extends EventEmitter {
     constructor() {
@@ -220,10 +136,6 @@ test("closing desktop pet destroys its window until the user explicitly enables 
     isHandlingQuit: () => false,
     loadRendererRoute: async () => {},
     buildContextMenu: () => null,
-    startStatusClient: () => {},
-    stopStatusClient: () => {
-      stopStatusClientCount += 1;
-    },
     endDrag: () => {},
     clearIdleResetTimer: () => {},
     clearPreviewRefreshTimer: () => {},
@@ -249,13 +161,11 @@ test("closing desktop pet destroys its window until the user explicitly enables 
   assert.equal(createdWindow.hideCount, 0);
   assert.equal(controller.getWindow(), null);
   assert.equal(controller.isVisible(), false);
-  assert.equal(stopStatusClientCount, 1);
 });
 
 test("desktop pet show rolls persisted enabled back when the window cannot become visible", () => {
   let settings = createSettings({ enabled: true, unreadCount: 4 });
   let createdWindow = null;
-  let stopStatusClientCount = 0;
 
   class HiddenDesktopPetWindow extends EventEmitter {
     constructor() {
@@ -297,10 +207,6 @@ test("desktop pet show rolls persisted enabled back when the window cannot becom
     isHandlingQuit: () => false,
     loadRendererRoute: async () => {},
     buildContextMenu: () => null,
-    startStatusClient: () => {},
-    stopStatusClient: () => {
-      stopStatusClientCount += 1;
-    },
     endDrag: () => {},
     clearIdleResetTimer: () => {},
     clearPreviewRefreshTimer: () => {},
@@ -315,8 +221,6 @@ test("desktop pet show rolls persisted enabled back when the window cannot becom
   assert.equal(settings.unreadCount, 0);
   assert.equal(createdWindow.isDestroyed(), true);
   assert.equal(controller.getWindow(), null);
-  assert.equal(stopStatusClientCount, 1);
-
   assert.doesNotThrow(() => controller.hideWindow());
   assert.equal(controller.isVisible(), false);
 });
@@ -1660,112 +1564,50 @@ test("desktop pet visual arbitration does not emit thinking or message states", 
   }), "idle");
 });
 
-test("desktop pet unread badge tone separates awaiting from completed unread messages", () => {
+test("desktop pet unread badge tone follows navigation pending and unread totals", () => {
   const {
     resolveDesktopPetUnreadBadgeTone
   } = require("../dist-electron/shared/desktop-pet-visual.js");
 
   assert.equal(resolveDesktopPetUnreadBadgeTone({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    visibleMessages: [
-      { status: "done", unread: true },
-      { status: "done", unread: true }
-    ]
-  }), "message");
+    navigationAttention: {
+      chats: { unreadCount: 2, pendingCount: 0 },
+      projects: { unreadCount: 4, pendingCount: 0 },
+      total: { unreadCount: 6, pendingCount: 0 }
+    }
+  }), "unread");
 
   assert.equal(resolveDesktopPetUnreadBadgeTone({
-    displayStatus: "idle",
-    unreadCount: 1,
-    visibleMessages: [
-      { status: "awaiting", unread: true }
-    ]
+    navigationAttention: {
+      chats: { unreadCount: 0, pendingCount: 1 },
+      projects: { unreadCount: 0, pendingCount: 2 },
+      total: { unreadCount: 0, pendingCount: 3 }
+    }
   }), "awaiting");
 
   assert.equal(resolveDesktopPetUnreadBadgeTone({
-    displayStatus: "awaiting",
-    unreadCount: 1,
-    visibleMessages: []
-  }), "awaiting");
+    navigationAttention: {
+      chats: { unreadCount: 1, pendingCount: 1 },
+      projects: { unreadCount: 0, pendingCount: 0 },
+      total: { unreadCount: 1, pendingCount: 1 }
+    }
+  }), "unread");
 });
 
-test("desktop pet unread badge counts render awaiting and completed badges separately", () => {
+test("desktop pet badges use the exact navigation aggregate instead of message caches", () => {
   const {
     resolveDesktopPetUnreadBadgeCounts
   } = require("../dist-electron/shared/desktop-pet-visual.js");
 
   assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    visibleMessages: [
-      { status: "awaiting", unread: true, awaitingCount: 2 }
-    ]
+    navigationAttention: {
+      chats: { unreadCount: 2, pendingCount: 1 },
+      projects: { unreadCount: 4, pendingCount: 2 },
+      total: { unreadCount: 6, pendingCount: 3 }
+    }
   }), {
-    awaitingCount: 2,
-    completedCount: 0
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    activeTasks: [
-      { status: "awaiting", awaitingCount: 2 }
-    ],
-    visibleMessages: []
-  }), {
-    awaitingCount: 2,
-    completedCount: 0
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 3,
-    activeTasks: [
-      { status: "awaiting" }
-    ],
-    visibleMessages: [
-      { status: "done", unread: true },
-      { status: "done", unread: true }
-    ]
-  }), {
-    awaitingCount: 1,
-    completedCount: 2
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "idle",
-    unreadCount: 2,
-    visibleMessages: [
-      { status: "done", unread: false },
-      { status: "done", unread: true },
-      { status: "done", unread: false },
-      { status: "done", unread: false },
-      { status: "done", unread: true },
-      { status: "done", unread: false },
-      { status: "done", unread: false },
-      { status: "done", unread: false }
-    ]
-  }), {
-    awaitingCount: 0,
-    completedCount: 2
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "awaiting",
-    unreadCount: 2,
-    visibleMessages: []
-  }), {
-    awaitingCount: 2,
-    completedCount: 0
-  });
-
-  assert.deepEqual(resolveDesktopPetUnreadBadgeCounts({
-    displayStatus: "idle",
-    unreadCount: 4,
-    visibleMessages: []
-  }), {
-    awaitingCount: 0,
-    completedCount: 4
+    pendingCount: 3,
+    unreadCount: 6
   });
 });
 

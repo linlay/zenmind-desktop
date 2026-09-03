@@ -101,6 +101,10 @@ import {
 import { getActiveServiceSurfaceWebviewRef } from "../../services/serviceSurfaceWebviewRefs";
 import { PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
 import {
+  isAssistantNavigationAttentionProjectAgent,
+  summarizeAssistantNavigationAttention,
+} from "../../../shared/assistant-navigation-attention";
+import {
   AGENT_WEBCLIENT_ROUTE_DEFINITIONS,
   createAgentWebclientAgentPath,
   createAgentWebclientManagementPath,
@@ -341,10 +345,6 @@ const CODER_ACP_PROXY_SERVICE_OPTIONS: CoderAcpProxyOption[] = [
   },
 ];
 
-const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>([
-  "desktopAssistant",
-  "webOperator",
-]);
 const HIDDEN_ASSISTANT_ROLE_MODES = new Set<string>(["CODER", "KBASE"]);
 const CHATS_VISIBLE_LIMIT = 8;
 const CHATS_VISIBLE_INCREMENT = 8;
@@ -741,28 +741,12 @@ function createAgentSelectionRoute(
   return createAgentNewChatRoute(agent.agentKey);
 }
 
-function summarizeAgentStatus(
-  items: AssistantNavAgentItem[],
-): SidebarStatusSummary {
-  return {
-    unreadCount: items.reduce(
-      (total, item) =>
-        total + getAssistantNavAgentNonNegativeInteger(item.unreadCount),
-      0,
-    ),
-    pendingCount: items.filter((item) => item.hasPendingAwaiting).length,
-  };
-}
-
 function shouldShowAssistantInChats(agent: AssistantNavAgentItem) {
   return isAssistantNavChatAgent(agent);
 }
 
 function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
-  return (
-    !PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS.has(agent.agentKey.trim()) &&
-    isAssistantNavProjectAgent(agent)
-  );
+  return isAssistantNavigationAttentionProjectAgent(agent);
 }
 
 function formatUnreadCount(value: number) {
@@ -1422,14 +1406,14 @@ export function AppSidebar({
       defaultChatAgentKey: resolvedChatDefaultAgentKey,
     },
   );
-  const chatStatusSummary = useMemo(
-    () => ({
-      unreadCount: sidebarChatItems.filter((chat) => !chat.isRead).length,
-      pendingCount: sidebarChatItems.filter((chat) => chat.hasPendingAwaiting)
-        .length,
+  const navigationAttentionSummary = useMemo(
+    () => summarizeAssistantNavigationAttention({
+      items: assistantNavAgents,
+      chatItems: assistantNavChatItems,
     }),
-    [sidebarChatItems],
+    [assistantNavAgents, assistantNavChatItems],
   );
+  const chatStatusSummary = navigationAttentionSummary.chats;
   const bootstrapSeedChatAvailable =
     bootstrapActive &&
     hasAssistantNavChat(assistantNavChatItems, {
@@ -1498,10 +1482,7 @@ export function AppSidebar({
   )
     ? activeSidebarChatId
     : "";
-  const assistantStatusSummary = useMemo(
-    () => summarizeAgentStatus(primaryAssistantNavAgents),
-    [primaryAssistantNavAgents],
-  );
+  const assistantStatusSummary = navigationAttentionSummary.projects;
   const normalizedSettingsSearchQuery = settingsSearchQuery
     .trim()
     .toLocaleLowerCase();

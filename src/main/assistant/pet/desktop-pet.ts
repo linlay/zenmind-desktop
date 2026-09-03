@@ -10,6 +10,7 @@ import type {
   DesktopPetMessageItem,
   DesktopPetAgentOption,
   DesktopPetAgentPresence,
+  AssistantNavigationAttentionSummary,
   DesktopPetDragDirection,
   DesktopPetEdgeDock,
   DesktopPetPanelPlacement,
@@ -828,7 +829,8 @@ function hasAwaitingDesktopPetTask(activeTasks: DesktopPetTaskItem[] | undefined
 function resolveMergedDesktopPetStatus(
   localStatus: DesktopPetLocalStatus,
   agentStatus: DesktopPetBoundAgentStatus | null,
-  activeTasks: DesktopPetTaskItem[] = []
+  activeTasks: DesktopPetTaskItem[] = [],
+  navigationAttention?: AssistantNavigationAttentionSummary,
 ): Pick<DesktopPetState, "status" | "hint" | "messagePreview" | "unreadCount" | "chatId"> {
   if (
     localStatus.status === "done" &&
@@ -851,6 +853,19 @@ function resolveMergedDesktopPetStatus(
 
   if (localStatus.status !== "idle") {
     return normalizeLocalDesktopPetStatus(localStatus);
+  }
+
+  const attentionTask = activeTasks.find((task) => task.status === "awaiting") ?? activeTasks[0];
+  if (attentionTask) {
+    return {
+      status: attentionTask.status === "awaiting" ? "awaiting" : "running",
+      hint: attentionTask.status === "awaiting"
+        ? t("desktopPet.status.awaitingConfirm")
+        : t("desktopPet.status.thinking"),
+      messagePreview: "",
+      unreadCount: navigationAttention?.total.unreadCount ?? 0,
+      chatId: attentionTask.chatId,
+    };
   }
 
   if (agentStatus && !agentStatus.stale) {
@@ -881,7 +896,7 @@ function resolveMergedDesktopPetStatus(
     status: "idle",
     hint: "",
     messagePreview: "",
-    unreadCount: 0,
+    unreadCount: navigationAttention?.total.unreadCount ?? 0,
     chatId: null
   };
 }
@@ -897,6 +912,7 @@ export function createDesktopPetState(
     agentOptions?: DesktopPetAgentOption[];
     activeTasks?: DesktopPetTaskItem[];
     messages?: DesktopPetMessageItem[];
+    navigationAttention?: AssistantNavigationAttentionSummary;
     appearanceOptions?: DesktopPetAppearanceOption[];
     previewPanel?: DesktopPetPreviewPanel | null;
     runningTaskCount?: unknown;
@@ -909,7 +925,17 @@ export function createDesktopPetState(
   const localStatus = options.localStatus ?? createDefaultDesktopPetLocalStatus(settings);
   const agentStatus = options.agentStatus ?? null;
   const activeTasks = options.activeTasks ?? [];
-  const mergedStatus = resolveMergedDesktopPetStatus(localStatus, agentStatus, activeTasks);
+  const navigationAttention = options.navigationAttention ?? {
+    chats: { unreadCount: 0, pendingCount: 0 },
+    projects: { unreadCount: 0, pendingCount: 0 },
+    total: { unreadCount: 0, pendingCount: 0 },
+  };
+  const mergedStatus = resolveMergedDesktopPetStatus(
+    localStatus,
+    agentStatus,
+    activeTasks,
+    navigationAttention,
+  );
   const appearanceOptions: DesktopPetAppearanceOption[] = [
     ...DESKTOP_PET_APPEARANCE_OPTIONS,
     ...(options.appearanceOptions ?? [])
@@ -923,9 +949,6 @@ export function createDesktopPetState(
     appearanceId,
     appearanceOption?.signature
   );
-  const agentUnreadCount = agentStatus && !agentStatus.stale
-    ? sanitizeDesktopPetUnreadCount(agentStatus.unreadCount)
-    : 0;
   const activeAgentKey = agentStatus?.agentKey || settings.boundAgentKey;
   const agentDefaults = createDefaultDesktopPetAgentStatus(activeAgentKey);
   return {
@@ -933,7 +956,8 @@ export function createDesktopPetState(
     enabled: Boolean(options.enabled),
     windowMode: options.windowMode ?? "base",
     ...mergedStatus,
-    unreadCount: Math.max(mergedStatus.unreadCount, agentUnreadCount),
+    unreadCount: navigationAttention.total.unreadCount,
+    navigationAttention,
     appearanceId,
     appearanceOptions,
     boundAgentKey: activeAgentKey,

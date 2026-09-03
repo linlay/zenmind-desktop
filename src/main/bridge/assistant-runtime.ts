@@ -1,6 +1,5 @@
 import type { App, BrowserWindow } from "electron";
 import type {
-  AssistantEvent,
   AssistantNavAgentItemsResult,
   AssistantNavigationPushEvent,
   DesktopMobileWebappItem,
@@ -56,7 +55,6 @@ export type AssistantBridgeRuntimeOptions = {
   emitKanbanChanged: () => void;
   emitAssistantNavigationAgentsChanged: (result: AssistantNavAgentItemsResult) => void;
   emitAssistantNavigationPushEvent: (event: AssistantNavigationPushEvent) => void;
-  handleDesktopPetAssistantEvent: (event: AssistantEvent) => void;
   onTunnelConnected?: () => Promise<unknown> | unknown;
   desktopPet: {
     refreshState: (...args: any[]) => unknown;
@@ -84,7 +82,6 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       if (targetWindow && !targetWindow.isDestroyed()) {
         targetWindow.webContents.send("assistant.event", event);
       }
-      options.handleDesktopPetAssistantEvent(event);
     }
   });
 

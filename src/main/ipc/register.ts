@@ -1030,7 +1030,6 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     emitWebappChanged: assistantBridgeRuntime.emitWebappChanged
   });
   registerDesktopPetIpcHandlers(ipcMain, createDesktopPetIpcHandlerOptions(context, {
-    clearActiveRuns: () => petRuntime.clearActiveRuns(),
     showWindow: () => petRuntime.showWindow(),
     hideWindow: () => petRuntime.hideWindow(),
     openAssistant: () => petRuntime.openAssistant(),
@@ -1042,7 +1041,6 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     dismissPreview: () => petRuntime.dismissPreview(),
     setMouseInteractive: (interactive: boolean) => petRuntime.setMouseInteractive(Boolean(interactive)),
     setWindowMode: (mode: unknown) => petRuntime.setWindowMode(mode),
-    scheduleStatusRefresh: (delayMs: number) => petRuntime.scheduleStatusRefresh(delayMs),
     refreshState: () => petRuntime.refreshState(),
     replyMessage: (input: any) => petRuntime.replyMessage(assistantBridge, input),
     dismissMessage: (input: any) => petRuntime.dismissMessage(input)

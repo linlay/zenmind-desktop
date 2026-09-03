@@ -1,6 +1,6 @@
 import { Menu, type App, type BrowserWindow, type MenuItemConstructorOptions, type Rectangle } from "electron";
 import type {
-  AssistantEvent,
+  AssistantNavAgentItem,
   AssistantWorkerOpenRequest,
   DesktopPetAgentOption,
   DesktopPetMessageItem,
@@ -9,7 +9,6 @@ import type {
 } from "../../../shared/contracts";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import { readEpochMillis } from "../../../shared/time-contract";
-import { issueAgentAccessToken as defaultIssueAgentAccessToken } from "../../agent-auth";
 import type { MainAppState } from "../../app-state";
 import {
   computeDesktopPetBoundsUpdate,
@@ -17,19 +16,17 @@ import {
   computeDesktopPetStateRefresh,
   createDesktopPetActiveRunTracker,
   createDesktopPetActiveTasksFromNavigationSnapshot,
-  createDesktopPetMessagesFromAgentStatus,
   createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetDonePreviewDismissalTracker,
   createDesktopPetIdleResetAction,
   resolveDesktopPetWindowMode,
   createDesktopPetDragController,
   createDesktopPetWindowController,
-  createDesktopPetClientLifecycleController,
   createDesktopPetPreviewController,
   getDesktopPetBoundsSignature
 } from "../../desktop-pet-controller";
-import { getResponsiveServiceState as defaultGetResponsiveServiceState } from "../../services/manager";
 import { t } from "../../i18n/main-i18n";
+import { summarizeAssistantNavigationAttention } from "../../../shared/assistant-navigation-attention";
 import {
   createDesktopPetState,
   createDefaultDesktopPetLocalStatus,
@@ -51,8 +48,6 @@ import {
   type DesktopPetWindowMode
 } from "./desktop-pet";
 import { DesktopPetPreviewProjector } from "./desktop-pet-preview";
-import { AgentPlatformPetStatusClient } from "./pet-status-client";
-import type { RealtimeBroker } from "../../realtime/realtime-broker";
 import { applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow } from "./window";
 
 export type DesktopPetRuntimeOptions = {
@@ -70,9 +65,6 @@ export type DesktopPetRuntimeOptions = {
   openAssistantWorker: (request: AssistantWorkerOpenRequest) => Promise<void> | void;
   publishPluginAssistantActiveTasks: (tasks: DesktopPetTaskItem[], runningTaskCount: number) => void;
   refreshTrayContextMenu: () => void;
-  getResponsiveServiceState?: typeof defaultGetResponsiveServiceState;
-  issueAgentAccessToken?: typeof defaultIssueAgentAccessToken;
-  realtimeBroker?: RealtimeBroker;
 };
 
 const DESKTOP_PET_RENDERER_WINDOW_MODES: readonly DesktopPetWindowMode[] = [
@@ -84,10 +76,6 @@ const DESKTOP_PET_RENDERER_WINDOW_MODES: readonly DesktopPetWindowMode[] = [
   "task-list"
 ];
 
-function getDesktopPetMessageCacheKey(message: DesktopPetMessageItem) {
-  return message.chatId || message.id;
-}
-
 function normalizeDesktopPetRendererWindowMode(mode: unknown): DesktopPetWindowMode {
   return typeof mode === "string" &&
     DESKTOP_PET_RENDERER_WINDOW_MODES.includes(mode as DesktopPetWindowMode)
@@ -97,13 +85,10 @@ function normalizeDesktopPetRendererWindowMode(mode: unknown): DesktopPetWindowM
 
 export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const state = options.state;
-  const getResponsiveServiceState = options.getResponsiveServiceState ?? defaultGetResponsiveServiceState;
-  const issueAgentAccessToken = options.issueAgentAccessToken ?? defaultIssueAgentAccessToken;
   const desktopPetPreviewProjector = new DesktopPetPreviewProjector();
   const desktopPetDonePreviewDismissalTracker = createDesktopPetDonePreviewDismissalTracker();
   const desktopPetActiveRunTracker = createDesktopPetActiveRunTracker();
   const desktopPetDismissedMessages = new Map<string, number>();
-  const desktopPetMessageCache = new Map<string, DesktopPetMessageItem>();
   let destroyingPanelWindow = false;
   let desktopPetPanelPlacement: DesktopPetPanelPlacement = null;
 
@@ -190,12 +175,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       await options.loadRendererRoute(win, route);
     },
     buildContextMenu: () => buildContextMenu(),
-    startStatusClient: () => {
-      startStatusClient();
-    },
-    stopStatusClient: () => {
-      stopStatusClient();
-    },
     endDrag: () => {
       endDrag();
     },
@@ -218,41 +197,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }
   });
 
-  const desktopPetClientLifecycleController = createDesktopPetClientLifecycleController({
-    platform: options.platform,
-    app: options.app,
-    AgentStatusClientClass: AgentPlatformPetStatusClient,
-    getServiceState: getResponsiveServiceState,
-    issueAccessToken: issueAgentAccessToken,
-    realtimeBroker: options.realtimeBroker,
-    getSettings: () => state.desktopPetSettings,
-    setAgentStatus: (status) => {
-      state.desktopPetAgentStatus = status;
-    },
-    setAgentOptions: (agentOptions) => {
-      state.desktopPetAgentOptions = agentOptions;
-    },
-    clearActiveRuns: () => {
-      clearActiveRuns();
-    },
-    updateActiveRuns: (event) => {
-      updateActiveRuns(event);
-    },
-    clearDismissedPreview: (chatId, runId) => {
-      desktopPetDonePreviewDismissalTracker.clear(chatId, runId);
-    },
-    getPreviewPanel: () => desktopPetPreviewController.getPanel(),
-    ingestAgentEvent: (event, context) => {
-      desktopPetPreviewController.ingestAgentEvent(event, context);
-    },
-    refreshCompletedPreviewFromStatus: (status) => {
-      return desktopPetPreviewController.refreshCompletedPreviewFromAgentStatus(status);
-    },
-    refreshState: () => {
-      refreshState();
-    }
-  });
-
   function initializeState(isFirstDesktopInstall: boolean) {
     state.desktopPetSettings = readDesktopPetStoredState(options.app, options.platform, { isFirstInstall: isFirstDesktopInstall });
     if (isFirstDesktopInstall) {
@@ -271,43 +215,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     });
   }
 
-  function updateActiveRuns(event: { type?: unknown; runId?: unknown; data?: unknown } | null | undefined) {
-    if (!desktopPetActiveRunTracker.update(event)) {
-      return false;
-    }
-    refreshState();
-    return true;
-  }
-
-  function clearActiveRuns() {
-    if (!desktopPetActiveRunTracker.clear()) {
-      return false;
-    }
-    refreshState();
-    return true;
-  }
-
-  function getKanbanActiveRunIds() {
-    try {
-      return (state.kanbanRuntime?.listIssues().issues ?? [])
-        .filter((issue) => issue.status === "in_progress" && Boolean(issue.runId))
-        .map((issue) => issue.runId)
-        .filter((runId): runId is string => Boolean(runId));
-    } catch (error) {
-      console.warn("[desktop-pet] failed to read kanban active runs", error);
-      return [];
-    }
-  }
-
   function getRunningTaskCount() {
-    const fallbackRunning = state.desktopPetLocalStatus.status === "running" ||
-      state.desktopPetLocalStatus.status === "awaiting" ||
-      state.desktopPetAgentStatus?.presence === "busy" ||
-      Boolean(state.desktopPetAgentStatus?.hasPendingAwaiting);
-    return desktopPetActiveRunTracker.getRunningTaskCount({
-      kanbanRunIds: getKanbanActiveRunIds(),
-      fallbackRunning
-    });
+    return getActiveTasks().length;
   }
 
   function getActiveTasks() {
@@ -325,44 +234,15 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     };
   }
 
-  function rememberMessages(messages: DesktopPetMessageItem[]) {
-    for (const message of messages) {
-      const key = getDesktopPetMessageCacheKey(message);
-      if (key) {
-        desktopPetMessageCache.set(key, message);
-      }
-    }
-  }
-
-  function mergeMessages(primaryMessages: DesktopPetMessageItem[], fallbackMessages: DesktopPetMessageItem[]) {
-    const merged: DesktopPetMessageItem[] = [];
-    const seenKeys = new Set<string>();
-    for (const message of [...primaryMessages, ...fallbackMessages]) {
-      const key = getDesktopPetMessageCacheKey(message);
-      if (!key || seenKeys.has(key)) {
-        continue;
-      }
-      seenKeys.add(key);
-      merged.push(message);
-    }
-    return merged;
-  }
-
   function isMessageVisible(message: DesktopPetMessageItem) {
     const dismissedAt = desktopPetDismissedMessages.get(message.chatId);
     return !dismissedAt || message.updatedAt > dismissedAt;
   }
 
   function getMessagesForState() {
-    const navigationMessages = createDesktopPetMessagesFromNavigationSnapshot(
+    return createDesktopPetMessagesFromNavigationSnapshot(
       state.assistantNavigationStatusClient?.getSnapshot()
-    );
-    const liveMessages = navigationMessages.length > 0
-      ? navigationMessages
-      : createDesktopPetMessagesFromAgentStatus(getAgentStatusForState());
-    rememberMessages(liveMessages);
-    const messages = mergeMessages(liveMessages, [...desktopPetMessageCache.values()]);
-    return messages
+    )
       .filter((message) => isMessageVisible(message) && (message.unread || message.status === "awaiting"));
   }
 
@@ -373,7 +253,11 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   function listKanbanLocalAgents(): DesktopPetAgentOption[] {
     const agents = new Map<string, DesktopPetAgentOption>();
     const fallbackKanbanAgentKey = DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY;
-    for (const agent of state.desktopPetAgentOptions) {
+    const snapshot = state.assistantNavigationStatusClient?.getSnapshot();
+    const navigationAgents = snapshot?.ok && Array.isArray(snapshot.items)
+      ? snapshot.items as AssistantNavAgentItem[]
+      : [];
+    for (const agent of navigationAgents) {
       const agentKey = agent.agentKey?.trim();
       if (!agentKey || agents.has(agentKey)) {
         continue;
@@ -387,16 +271,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       });
     }
 
-    const status = getAgentStatusForState();
-    const statusAgentKey = status?.agentKey?.trim() ?? "";
-    if (status && !status.stale && statusAgentKey && !agents.has(statusAgentKey)) {
-      agents.set(statusAgentKey, {
-        agentKey: statusAgentKey,
-        displayName: status.displayName?.trim() || statusAgentKey,
-        role: status.role?.trim() || "",
-        unreadCount: Math.max(0, Math.round(status.unreadCount ?? 0))
-      });
-    }
     if (agents.size === 0) {
       agents.set(fallbackKanbanAgentKey, {
         agentKey: fallbackKanbanAgentKey,
@@ -432,26 +306,18 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return desktopPetWindowController.isVisible();
   }
 
-  function ensureStatusClient() {
-    return desktopPetClientLifecycleController.ensureStatusClient();
-  }
-
-  function startStatusClient() {
-    desktopPetClientLifecycleController.startStatusClient();
-  }
-
-  function stopStatusClient() {
-    desktopPetClientLifecycleController.stopStatusClient();
-  }
-
-  function scheduleStatusRefresh(delayMs = 0, force = false) {
-    desktopPetClientLifecycleController.scheduleStatusRefresh(delayMs, force);
-  }
-
   function refreshState(patch: Partial<DesktopPetLocalStatus> = {}) {
+    const navigationSnapshot = state.assistantNavigationStatusClient?.getSnapshot();
     const enabled = isVisible();
     const activeTasks = getActiveTasks();
     const messages = getMessagesForState();
+    const navigationAttention = summarizeAssistantNavigationAttention({
+      items: navigationSnapshot?.ok ? navigationSnapshot.items : [],
+      activityItems: navigationSnapshot?.ok ? navigationSnapshot.activityItems : [],
+      chatItems: navigationSnapshot?.ok ? navigationSnapshot.chatItems : [],
+    });
+    const agentOptions = listKanbanLocalAgents();
+    state.desktopPetAgentOptions = agentOptions;
     const runningTaskCount = Math.max(getRunningTaskCount(), activeTasks.length);
     const refresh = computeDesktopPetStateRefresh({
       settings: state.desktopPetSettings,
@@ -460,10 +326,11 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       localStatus: state.desktopPetLocalStatus,
       patch,
       agentStatus: getAgentStatusForState(),
-      agentOptions: state.desktopPetAgentOptions,
+      agentOptions,
       appearanceOptions: listUserDesktopPetAppearanceOptions(options.app),
       activeTasks,
       messages,
+      navigationAttention,
       previewPanel: desktopPetPreviewController.getPanel(),
       runningTaskCount,
       windowMode: state.desktopPetRendererWindowMode,
@@ -874,22 +741,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return result;
   }
 
-  function ingestAgentEvent(event: unknown, meta: { source?: string; transportMode?: string } = {}) {
-    desktopPetPreviewController.ingestAgentEvent(event, meta);
-  }
-
   function dismissPreview() {
     return desktopPetPreviewController.dismissPreview();
-  }
-
-  function handleAssistantEvent(event: AssistantEvent) {
-    if (!isDesktopPetSupportedPlatform(options.platform)) {
-      return;
-    }
-    ingestAgentEvent(event, {
-      source: "local",
-      transportMode: "local"
-    });
   }
 
   function setPreviewExpanded(expanded: boolean) {
@@ -909,7 +762,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       message
     });
     desktopPetDismissedMessages.delete(chatId);
-    scheduleStatusRefresh(200);
     return result;
   }
 
@@ -927,8 +779,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   return {
     initializeState,
     clearIdleResetTimer,
-    updateActiveRuns,
-    clearActiveRuns,
     getRunningTaskCount,
     getActiveTasks,
     getAssistantActiveTasksSnapshotForPlugins,
@@ -936,10 +786,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     getWindowMode,
     setWindowMode,
     isVisible,
-    ensureStatusClient,
-    startStatusClient,
-    stopStatusClient,
-    scheduleStatusRefresh,
     refreshState,
     scheduleIdleReset,
     getDisplayBounds,
@@ -961,9 +807,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     buildContextMenu,
     createWindow,
     showWindow,
-    ingestAgentEvent,
     dismissPreview,
-    handleAssistantEvent,
     setPreviewExpanded,
     replyMessage,
     dismissMessage

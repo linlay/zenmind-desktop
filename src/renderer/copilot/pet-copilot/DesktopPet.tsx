@@ -60,6 +60,11 @@ function createFallbackDesktopPetState(): DesktopPetState {
     hint: "",
     messagePreview: "",
     unreadCount: 0,
+    navigationAttention: {
+      chats: { unreadCount: 0, pendingCount: 0 },
+      projects: { unreadCount: 0, pendingCount: 0 },
+      total: { unreadCount: 0, pendingCount: 0 }
+    },
     chatId: null,
     appearanceId: DEFAULT_DESKTOP_PET_APPEARANCE_ID,
     appearanceOptions: [...DESKTOP_PET_APPEARANCE_OPTIONS],
@@ -244,14 +249,12 @@ function mergeDesktopPetMessageLists(
 
 function getVisibleDesktopPetMessages(input: {
   messages: readonly DesktopPetMessageItem[];
-  cachedMessages: readonly DesktopPetMessageItem[];
   previewHistoryMessage: DesktopPetMessageItem | null;
   dismissedKeys: ReadonlySet<string>;
 }) {
-  const mergedMessages = mergeDesktopPetMessageLists(input.messages, input.cachedMessages);
   const withPreview = input.previewHistoryMessage
-    ? mergeDesktopPetMessageLists(mergedMessages, [input.previewHistoryMessage])
-    : mergedMessages;
+    ? mergeDesktopPetMessageLists(input.messages, [input.previewHistoryMessage])
+    : input.messages;
   const oldestVisibleAt = Date.now() - DESKTOP_PET_MESSAGE_RETENTION_MS;
   return withPreview
     .filter((message) => message.unread || message.status === "awaiting")
@@ -543,7 +546,6 @@ export function DesktopPet() {
   const [isWidgetExpanded, setIsWidgetExpanded] = useState(false);
   const [replyingChatId, setReplyingChatId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
-  const [messageCache, setMessageCache] = useState<readonly DesktopPetMessageItem[]>([]);
   const [dismissedMessageKeys, setDismissedMessageKeys] = useState<readonly string[]>([]);
   // 回复发送后到后端状态回填前的乐观「思考中」占位（按 chatId），超时自动清除
   const [pendingReplyIds, setPendingReplyIds] = useState<readonly string[]>([]);
@@ -735,14 +737,6 @@ export function DesktopPet() {
       Math.max(0, Math.round(Number(nextState.unreadCount) || 0)) > 0;
   }
 
-  function rememberMessagesFromState(nextState: DesktopPetState) {
-    const nextMessages = Array.isArray(nextState.messages) ? nextState.messages : [];
-    if (nextMessages.length === 0) {
-      return;
-    }
-    setMessageCache((current) => mergeDesktopPetMessageLists(nextMessages, current));
-  }
-
   async function beginDrag() {
     try {
       const result = await window.electronAPI.desktopPet.beginDrag({});
@@ -775,7 +769,6 @@ export function DesktopPet() {
     }
     void window.electronAPI.desktopPet.getState().then((nextState) => {
       setPetState(nextState);
-      rememberMessagesFromState(nextState);
       if (!nextState.enabled || shouldInterruptSignature(nextState)) {
         stopSignature();
       }
@@ -785,7 +778,6 @@ export function DesktopPet() {
     }).catch(() => undefined);
     const dispose = window.electronAPI.desktopPet.onStateChanged((nextState) => {
       setPetState(nextState);
-      rememberMessagesFromState(nextState);
       if (!nextState.enabled || shouldInterruptSignature(nextState)) {
         stopSignature();
       }
@@ -906,23 +898,8 @@ export function DesktopPet() {
           updatedAt: previewPanel.updatedAt
         }
       : null;
-  const previewHistoryMessageCacheKey = previewHistoryMessage
-    ? [
-        getDesktopPetMessageVersionKey(previewHistoryMessage),
-        previewHistoryMessage.title,
-        previewHistoryMessage.preview,
-        previewHistoryMessage.status
-      ].join("\u0001")
-    : "";
-  useEffect(() => {
-    if (!previewHistoryMessage) {
-      return;
-    }
-    setMessageCache((current) => mergeDesktopPetMessageLists([previewHistoryMessage], current));
-  }, [previewHistoryMessageCacheKey]);
   const visibleMessages = getVisibleDesktopPetMessages({
     messages: petMessages,
-    cachedMessages: messageCache,
     previewHistoryMessage,
     dismissedKeys: dismissedMessageKeySet
   });
@@ -1061,29 +1038,23 @@ export function DesktopPet() {
   const shouldShowStatusPanel = canShowStatusPanel && isWidgetExpanded;
   const showStatusPanel = isPanelWindow && shouldShowStatusPanel;
   const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts({
-    displayStatus,
-    unreadCount,
-    visibleMessages,
-    messages: petMessages,
-    activeTasks
+    navigationAttention: petState.navigationAttention
   });
   const unreadBadgeItems = [
-    ...(unreadBadgeCounts.awaitingCount > 0
+    ...(unreadBadgeCounts.pendingCount > 0
       ? [{
           key: "awaiting" as const,
           tone: "awaiting" as const,
-          count: unreadBadgeCounts.awaitingCount,
-          ariaLabel: t("desktopPet.panel.expandAwaiting", { count: unreadBadgeCounts.awaitingCount })
+          count: unreadBadgeCounts.pendingCount,
+          ariaLabel: t("desktopPet.panel.expandAwaiting", { count: unreadBadgeCounts.pendingCount })
         }]
       : []),
-    ...(unreadBadgeCounts.completedCount > 0
+    ...(unreadBadgeCounts.unreadCount > 0
       ? [{
-          key: "completed" as const,
-          tone: "message" as const,
-          count: unreadBadgeCounts.completedCount,
-          ariaLabel: hasHistoryMessages
-            ? t("desktopPet.panel.expandCompleted", { count: unreadBadgeCounts.completedCount })
-            : t("desktopPet.unread", { count: unreadBadgeCounts.completedCount })
+          key: "unread" as const,
+          tone: "unread" as const,
+          count: unreadBadgeCounts.unreadCount,
+          ariaLabel: t("desktopPet.unread", { count: unreadBadgeCounts.unreadCount })
         }]
       : [])
   ];
@@ -1250,9 +1221,6 @@ export function DesktopPet() {
   function hideMessageLocally(message: DesktopPetMessageItem) {
     const dismissedKey = getDesktopPetMessageVersionKey(message);
     setDismissedMessageKeys((current) => current.includes(dismissedKey) ? current : [...current, dismissedKey]);
-    setMessageCache((current) => current.filter((cachedMessage) =>
-      getDesktopPetMessageVersionKey(cachedMessage) !== dismissedKey
-    ));
   }
 
   function handleDismissMessage(message: DesktopPetMessageItem) {
@@ -1814,7 +1782,9 @@ export function DesktopPet() {
                 onPointerDown={handleUnreadBadgePointerDown}
                 onClick={handleUnreadBadgeClick}
               >
-                {badge.count > 99 ? "99+" : String(badge.count)}
+                {badge.key === "unread" && badge.count > 99
+                  ? "99+"
+                  : String(badge.count)}
               </button>
             ))}
           </div>

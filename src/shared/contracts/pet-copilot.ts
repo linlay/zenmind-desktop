@@ -1,4 +1,8 @@
-import type { AssistantAwaitingMode, AssistantNavAgentIcon } from "./copilot";
+import type {
+  AssistantAwaitingMode,
+  AssistantNavAgentIcon,
+  AssistantNavigationAttentionSummary,
+} from "./copilot";
 
 export type DesktopPetStatus = "idle" | "running" | "awaiting" | "done" | "error";
 export type DesktopPetAgentPresence = "available" | "busy" | "away" | "offline";
@@ -182,6 +186,7 @@ export interface DesktopPetState {
   hint: string;
   messagePreview: string;
   unreadCount: number;
+  navigationAttention: AssistantNavigationAttentionSummary;
   chatId: string | null;
   appearanceId: string;
   appearanceOptions: DesktopPetAppearanceOption[];

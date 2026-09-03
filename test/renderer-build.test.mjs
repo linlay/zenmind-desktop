@@ -1462,7 +1462,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.doesNotMatch(sidebarSource, /groupId === "assistants"[\s\S]{0,180}pendingCount:\s*0/);
   assert.match(sidebarSource, /return renderStatusBadges\(status, "sidebar-group-status"\);/);
   assert.match(sidebarSource, /renderSidebarGroupStatusBadges\(args\.status\)/);
-  assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
+  assert.match(sidebarSource, /summarizeAssistantNavigationAttention\(\{/);
+  assert.match(sidebarSource, /const chatStatusSummary = navigationAttentionSummary\.chats;/);
+  assert.match(sidebarSource, /const assistantStatusSummary = navigationAttentionSummary\.projects;/);
   assert.match(sidebarSource, /assistant-worker-collapse worker-collapse/);
   const newChatHandlerStart = sidebarSource.indexOf("function handleAssistantNewChat");
   const markAllReadHandlerStart = sidebarSource.indexOf("async function handleAssistantMarkAllRead");
@@ -2226,9 +2228,8 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   );
   const appShell = readAppShellSource();
 
-  assert.match(sidebarSource, /const PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS = new Set<string>\(\[\s*"desktopAssistant",\s*"webOperator",\s*\]\);/);
   assert.match(sidebarSource, /function shouldShowAssistantInChats\(agent: AssistantNavAgentItem\)[\s\S]*?isAssistantNavChatAgent\(agent\)/);
-  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?PRIMARY_NAV_HIDDEN_ASSISTANT_AGENT_KEYS\.has\(agent\.agentKey\.trim\(\)\)[\s\S]*?isAssistantNavProjectAgent\(agent\)/);
+  assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?isAssistantNavigationAttentionProjectAgent\(agent\)/);
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
   assert.match(sidebarSource, /assistantNavChatItems\?: AssistantNavChatItem\[\]/);
   assert.match(sidebarSource, /const CHATS_VISIBLE_LIMIT = 8;/);
@@ -2236,7 +2237,7 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   assert.match(sidebarSource, /const CHATS_MAX_VISIBLE_LIMIT = 24;/);
   assert.match(sidebarSource, /const \[chatsVisibleLimit, setChatsVisibleLimit\] = useState\(\s*CHATS_VISIBLE_LIMIT,\s*\);/);
   assert.doesNotMatch(sidebarSource, /getAssistantNavRecentChatsOverview/);
-  assert.match(sidebarSource, /summarizeAgentStatus\(primaryAssistantNavAgents\)/);
+  assert.match(sidebarSource, /summarizeAssistantNavigationAttention\(\{/);
   assert.doesNotMatch(sidebarSource, /sortAssistantNavAgentsForMode|assistantNavSortMode/u);
   assert.match(sidebarSource, /renderSortableAssistantProjects\(\)/u);
   assert.doesNotMatch(sidebarSource, /const CHATS_RECENT_LIMIT = 8;/);
@@ -7634,14 +7635,14 @@ test("desktop pet appearance picker confirms persistence before success feedback
   assert.doesNotMatch(settingsPage, /\?\?\s*"小宅"/);
 });
 
-test("desktop pet legacy agent aliases avoid inline display-name literals", () => {
-  const petStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "pet", "pet-status-client.ts"),
+test("desktop pet Agent option mapping avoids inline display-name literals", () => {
+  const petAgentOptions = fs.readFileSync(
+    path.join(projectRoot, "src", "main", "assistant", "pet", "agent-options.ts"),
     "utf8"
   );
 
-  assert.match(petStatusClient, /LEGACY_DESKTOP_PET_BOUND_AGENT_REQUEST_KEYS/);
-  assert.doesNotMatch(petStatusClient, /requestedKey === "小宅"/);
+  assert.match(petAgentOptions, /toDesktopPetAgentOptions/);
+  assert.doesNotMatch(petAgentOptions, /"小宅"/);
 });
 
 test("desktop pet drag ignores transient capture loss while the pointer is still down", () => {
@@ -7786,9 +7787,9 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.match(desktopPet, /const desiredWindowMode: DesktopPetWindowMode =[\s\S]{0,620}shouldShowStatusPanel[\s\S]{0,80}"bubble"[\s\S]{0,80}"base";/);
   assert.match(desktopPet, /desktopPet\.setWindowMode\(desiredWindowMode\)/);
   assert.match(desktopPet, /hasBubbleAnchor \? "has-bubble" : ""/);
-  assert.match(desktopPet, /const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts\(\{[\s\S]{0,180}visibleMessages,[\s\S]{0,80}activeTasks[\s\S]{0,40}\}\);/);
-  assert.match(desktopPet, /unreadBadgeCounts\.awaitingCount > 0/);
-  assert.match(desktopPet, /unreadBadgeCounts\.completedCount > 0/);
+  assert.match(desktopPet, /const unreadBadgeCounts = resolveDesktopPetUnreadBadgeCounts\(\{[\s\S]{0,120}navigationAttention: petState\.navigationAttention[\s\S]{0,40}\}\);/);
+  assert.match(desktopPet, /unreadBadgeCounts\.pendingCount > 0/);
+  assert.match(desktopPet, /unreadBadgeCounts\.unreadCount > 0/);
   assert.match(desktopPet, /const showUnreadBadges = unreadBadgeItems\.length > 0 && !shouldShowTaskPanel && !shouldShowPreviewPanel && !shouldShowStatusPanel;/);
   assert.doesNotMatch(desktopPet, /latestVisibleMessageSummary/);
   assert.doesNotMatch(desktopPet, /statusPanelSummary/);
@@ -7798,15 +7799,13 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.doesNotMatch(desktopPet, /hasAwaitingHumanLoop/);
   assert.match(desktopPetVisual, /export function resolveDesktopPetUnreadBadgeTone/);
   assert.match(desktopPetVisual, /export function resolveDesktopPetUnreadBadgeCounts/);
-  assert.match(desktopPetVisual, /const awaitingCountsByKey = new Map<string, number>\(\);/);
-  assert.match(desktopPetVisual, /setAwaitingBadgeCount\(/);
-  assert.match(desktopPetVisual, /\[\.\.\.awaitingCountsByKey\.values\(\)\]\.reduce/);
-  assert.match(desktopPetVisual, /completedCount:\s*completedMessageCount/);
+  assert.match(desktopPetVisual, /pendingCount: normalizeUnreadBadgeCount\(input\.navigationAttention\.total\.pendingCount\)/);
+  assert.match(desktopPetVisual, /unreadCount: normalizeUnreadBadgeCount\(input\.navigationAttention\.total\.unreadCount\)/);
   assert.match(desktopPet, /function handleUnreadBadgeClick[\s\S]{0,220}setIsWidgetExpanded\(true\);/);
   assert.match(desktopPet, /className=\{`desktop-pet-unread-badge is-\$\{badge\.tone\} is-\$\{badge\.key\}`\}/);
   assert.match(desktopPet, /onPointerDown=\{handleUnreadBadgePointerDown\}/);
   assert.match(desktopPet, /onClick=\{handleUnreadBadgeClick\}/);
-  assert.match(desktopPet, /const \[messageCache, setMessageCache\] = useState<readonly DesktopPetMessageItem\[\]>\(\[\]\);/);
+  assert.doesNotMatch(desktopPet, /messageCache|setMessageCache/);
   assert.match(desktopPet, /const visibleMessages = getVisibleDesktopPetMessages\(\{/);
   assert.doesNotMatch(desktopPet, /DESKTOP_PET_MESSAGE_VISIBLE_LIMIT/);
   assert.doesNotMatch(desktopPet, /desktop-pet-message-latest/);
@@ -7817,7 +7816,7 @@ test("desktop pet message reaction collapses to an unread badge without an expan
   assert.doesNotMatch(desktopPet, /desktop-pet-status-fab/);
   assert.match(globalStyles, /\.desktop-pet-unread-badges\s*\{[\s\S]{0,220}display:\s*inline-flex;[\s\S]{0,120}gap:\s*4px;/);
   assert.match(globalStyles, /\.desktop-pet-unread-badges\.has-multiple\s*\{[\s\S]{0,160}left:\s*calc\(var\(--desktop-pet-button-left\) \+ 78px\);/);
-  assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-message\s*\{[\s\S]{0,220}#09a84f[\s\S]{0,220}rgba\(9,\s*168,\s*79,\s*0\.34\)/);
+  assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-unread\s*\{[\s\S]{0,120}#1677ff[\s\S]{0,220}rgba\(22,\s*119,\s*255,\s*0\.34\)/);
   assert.match(globalStyles, /\.desktop-pet-unread-badge\.is-awaiting\s*\{[\s\S]{0,220}#f59e0b[\s\S]{0,220}rgba\(245,\s*158,\s*11,\s*0\.34\)/);
   assert.match(globalStyles, /\.desktop-pet-unread-badge\s*\{[\s\S]*?pointer-events:\s*auto;/);
   assert.match(globalStyles, /\.desktop-pet-task-status-badge\.is-awaiting\s*\{[\s\S]{0,120}#fff2c2[\s\S]{0,120}#b45309/);
@@ -8086,9 +8085,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.match(desktopPet, /\.filter\(\(message\) => message\.unread \|\| message\.status === "awaiting"\)/);
   assert.match(desktopPet, /DESKTOP_PET_MESSAGE_RETENTION_MS = 7 \* 24 \* 60 \* 60 \* 1000/);
   assert.match(desktopPet, /\.slice\(0, DESKTOP_PET_MESSAGE_LIMIT\)/);
-  assert.match(desktopPet, /messages: petMessages,[\s\S]{0,80}cachedMessages: messageCache,[\s\S]{0,80}previewHistoryMessage/);
+  assert.match(desktopPet, /messages: petMessages,[\s\S]{0,80}previewHistoryMessage/);
   assert.match(desktopPet, /const hasHistoryMessages = visibleMessages\.length > 0;/);
-  assert.match(desktopPet, /setMessageCache\(\(current\) => mergeDesktopPetMessageLists\(\[previewHistoryMessage\], current\)\)/);
+  assert.doesNotMatch(desktopPet, /setMessageCache|cachedMessages/);
   assert.match(desktopPet, /const hasCollapsedPreviewPanel = Boolean\(previewPanel && !previewPanel\.expanded && !isDonePreviewPanel && !hasHistoryMessages\);/);
   assert.match(desktopPet, /const shouldShowPreviewPanel = !isDragging && isWidgetExpanded && !hasHistoryMessages && !shouldShowTaskPanel && Boolean\(previewPanel && previewPanel\.expanded && !isDonePreviewPanel\);/);
   assert.match(desktopPet, /const showMessageBadgeOnly = hasMessageReaction && !hasHistoryMessages && !shouldShowTaskPanel && !shouldShowPreviewPanel && !isDonePreviewPanel;/);

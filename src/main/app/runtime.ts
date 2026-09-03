@@ -48,7 +48,6 @@ import { readDesktopProfileFromRoot } from "../desktop-profile-store";
 import { createServicesRuntime } from "../services/runtime";
 import type {
   AssistantAttachmentTaskProgress,
-  AssistantEvent,
   AssistantNavAgentItemsResult,
   AssistantNavigationPushEvent,
   AssistantWorkerOpenRequest,
@@ -691,10 +690,7 @@ export function createMainProcessRuntime() {
     openAssistantWorker,
     publishPluginAssistantActiveTasks: (tasks, runningTaskCount) =>
       pluginBridgeRuntime.publishAssistantActiveTasks(tasks, runningTaskCount),
-    refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
-    getResponsiveServiceState,
-    issueAgentAccessToken,
-    realtimeBroker
+    refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu()
   });
   pluginBridgeRuntime = createPluginBridgeRuntime({
     app,
@@ -797,7 +793,6 @@ export function createMainProcessRuntime() {
     emitKanbanChanged,
     emitAssistantNavigationAgentsChanged,
     emitAssistantNavigationPushEvent,
-    handleDesktopPetAssistantEvent: (event) => petRuntime.handleAssistantEvent(event),
     onTunnelConnected: () => restorePublishedWebapps(app),
     desktopPet: {
       refreshState: () => petRuntime.refreshState(),
@@ -916,23 +911,8 @@ export function createMainProcessRuntime() {
     return petRuntime.clearIdleResetTimer();
   }
   
-  function clearDesktopPetActiveRuns() {
-    return petRuntime.clearActiveRuns();
-  }
-  
   function setDesktopPetRendererWindowMode(mode: unknown) {
     return petRuntime.setWindowMode(mode);
-  }
-  
-  function stopAgentPlatformPetStatusClient() {
-    return petRuntime.stopStatusClient();
-  }
-  
-  function scheduleAgentPlatformPetStatusRefresh(delayMs = 0, force = false) {
-    if (!appState.desktopPetSettings) {
-      return;
-    }
-    return petRuntime.scheduleStatusRefresh(delayMs, force);
   }
   
   function refreshDesktopPetState(patch: any = {}) {
@@ -1009,16 +989,8 @@ export function createMainProcessRuntime() {
     return petRuntime.restoreWindowLayering();
   }
   
-  function ingestDesktopPetAgentEvent(event: unknown, meta: { source?: string; transportMode?: string } = {}) {
-    return petRuntime.ingestAgentEvent(event, meta);
-  }
-  
   function dismissDesktopPetPreview() {
     return petRuntime.dismissPreview();
-  }
-  
-  function handleDesktopPetAssistantEvent(event: AssistantEvent) {
-    return petRuntime.handleAssistantEvent(event);
   }
   
   async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
@@ -1233,7 +1205,6 @@ export function createMainProcessRuntime() {
     if (app.isReady()) {
       refreshPluginDesktopGlobalShortcuts();
     }
-    scheduleAgentPlatformPetStatusRefresh(1000);
   }
 
   function emitWebsChanged(
@@ -1601,7 +1572,6 @@ export function createMainProcessRuntime() {
       clearDesktopPetIdleResetTimer,
       stopAssistantBridgeRuntime: () => assistantBridgeRuntime.stop(),
       stopTunnelHubRuntime,
-      stopAgentPlatformPetStatusClient,
       disposeRealtimeBroker: () => realtimeBroker.dispose(),
       unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
       stopResourceDirectoryWatcher,

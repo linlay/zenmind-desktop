@@ -346,6 +346,17 @@ export interface AssistantNavAgentItemsResult {
   updatedAt: EpochMilliseconds;
 }
 
+export interface AssistantNavigationAttentionCounts {
+  unreadCount: number;
+  pendingCount: number;
+}
+
+export interface AssistantNavigationAttentionSummary {
+  chats: AssistantNavigationAttentionCounts;
+  projects: AssistantNavigationAttentionCounts;
+  total: AssistantNavigationAttentionCounts;
+}
+
 export interface AssistantReorderProjectsRequest {
   agentKeys: string[];
 }

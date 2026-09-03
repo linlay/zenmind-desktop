@@ -53,11 +53,7 @@ export function registerDesktopPetIpcHandlers(ipcMain: any, options: any) {
   });
 
   ipcMain.handle("desktopPet.getState", async () => {
-    const state = options.refreshState();
-    if (state.enabled) {
-      options.scheduleStatusRefresh(0);
-    }
-    return state;
+    return options.refreshState();
   });
 
   ipcMain.handle("desktopPet.saveSettings", async (_event: any, input: DesktopPetSettingsInput) => {
