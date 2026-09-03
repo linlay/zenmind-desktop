@@ -28,7 +28,7 @@ Desktop 只原生承载 HTML 和图片。Markdown、文本、代码、PDF、Offi
 | --- | --- | --- | --- |
 | HTML | 原生隔离预览与 DOM 批注 | WebClient 源码与 sandbox 预览 | Desktop WorkPanel 不编辑源码，只交接 DOM 批注；Standalone 由 WebClient 管理 |
 | 图片 | 原生图片 Surface | WebClient 可解码预览与基础 Canvas | PNG/JPEG/WebP 可编辑保存；动画、SVG 及其他格式只读 |
-| Markdown/文本/代码 | WebClient | WebClient | Monaco 编辑、范围批注与带 revision 保存 |
+| Markdown/文本/代码 | WebClient | WebClient | Markdown 默认预览且仅保留预览/源码，预览可选区批注，源码可直接编辑；带 revision 保存 |
 | PDF | WebClient | WebClient | PDF.js 只读预览、页码、缩放与搜索 |
 | Office/音视频 | WebClient | WebClient | 只读预览或元信息；Desktop 可使用系统打开与定位 |
 | 压缩包/未知二进制 | WebClient | WebClient | 元信息与显式下载，不伪装为文本 |
@@ -43,7 +43,7 @@ Main Chat 卡片、Markdown 链接、Project 文件、Artifact 和 Reference 只
 
 WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。只有 `unsupported_native_type` 可以由 Desktop 原生打开退回 WebClient；身份、路径、缺失、越界或 revision 失败一律 fail closed。历史 `/file-viewer` 与 `/resource-viewer` 路由保留，但内部共用 Document Surface。
 
-文档 Surface 不显示 Desktop 通用浏览器地址栏：文件名只出现在 Tab，完整路径进入 Tab tooltip/右键菜单；Markdown、文本和代码内容区最多保留一行自身工具栏。重新加载权威 revision 收纳在文档工具栏的更多菜单中，有未保存修改时必须先确认。普通 Web、WebApp 与 loopback 实时网站继续使用浏览器刷新/地址栏。
+文档 Surface 不显示 Desktop 通用浏览器地址栏：文件名只出现在 Tab，完整路径进入 Tab tooltip/右键菜单；Markdown、文本和代码内容区最多保留一行自身工具栏。Markdown 打开或切换文档时始终优先预览，不提供分屏；用户只在需要修改内容时主动切换到源码。保存前必须选择方式：Workspace File 默认且只能原位覆盖，Artifact 默认创建新产物且可明确选择覆盖，Reference 只能创建新产物。重新加载权威 revision 收纳在文档工具栏的更多菜单中，有未保存修改时必须先确认。普通 Web、WebApp 与 loopback 实时网站继续使用浏览器刷新/地址栏。
 
 ## Desktop 原生安全边界
 
