@@ -1155,6 +1155,11 @@
 }
 
 .work-panel-resource-image {
+  --work-panel-image-control-hover: color-mix(in srgb, var(--ink) 8%, transparent);
+  --work-panel-image-control-active-hover: var(--accent-fill-strong);
+  --work-panel-image-primary: #2563eb;
+  --work-panel-image-primary-hover: #1d4ed8;
+  --work-panel-image-primary-text: #fff;
   position: absolute;
   inset: 0;
   display: flex;
@@ -1162,10 +1167,15 @@
   min-height: 0;
   flex-direction: column;
   overflow: hidden;
-  color: var(--text-primary);
+  color: var(--ink);
   background: var(--embedded-surface-page-bg);
   font-size: 12px;
   outline: none;
+}
+
+:root[data-theme="dark"] .work-panel-resource-image {
+  --work-panel-image-primary: #2f69d9;
+  --work-panel-image-primary-hover: #316fe8;
 }
 
 .work-panel-image-toolbar,
@@ -1177,7 +1187,7 @@
   align-items: center;
   gap: 5px;
   padding: 6px 10px;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--embedded-surface-page-bg) 96%, transparent);
 }
 
@@ -1236,10 +1246,35 @@
 .work-panel-image-adjustments button:hover:not(:disabled),
 .work-panel-image-ai-prompt button:hover:not(:disabled),
 .work-panel-image-parameter-panel button:hover:not(:disabled),
+.work-panel-image-ai-status button:hover:not(:disabled),
 .work-panel-image-conflict button:hover:not(:disabled),
 .work-panel-image-annotations button:hover:not(:disabled),
-.work-panel-image-save-dialog button:hover:not(:disabled) {
-  background: var(--hover-bg);
+.work-panel-image-save-dialog button:hover:not(:disabled),
+.work-panel-image-toolbar button:focus-visible:not(:disabled),
+.work-panel-image-subtoolbar button:focus-visible:not(:disabled),
+.work-panel-image-editor-sidebar button:focus-visible:not(:disabled),
+.work-panel-image-adjustments button:focus-visible:not(:disabled),
+.work-panel-image-ai-prompt button:focus-visible:not(:disabled),
+.work-panel-image-parameter-panel button:focus-visible:not(:disabled),
+.work-panel-image-ai-status button:focus-visible:not(:disabled),
+.work-panel-image-conflict button:focus-visible:not(:disabled),
+.work-panel-image-annotations button:focus-visible:not(:disabled),
+.work-panel-image-save-dialog button:focus-visible:not(:disabled) {
+  background: var(--work-panel-image-control-hover);
+}
+
+.work-panel-image-toolbar button:focus-visible:not(:disabled),
+.work-panel-image-subtoolbar button:focus-visible:not(:disabled),
+.work-panel-image-editor-sidebar button:focus-visible:not(:disabled),
+.work-panel-image-adjustments button:focus-visible:not(:disabled),
+.work-panel-image-ai-prompt button:focus-visible:not(:disabled),
+.work-panel-image-parameter-panel button:focus-visible:not(:disabled),
+.work-panel-image-ai-status button:focus-visible:not(:disabled),
+.work-panel-image-conflict button:focus-visible:not(:disabled),
+.work-panel-image-annotations button:focus-visible:not(:disabled),
+.work-panel-image-save-dialog button:focus-visible:not(:disabled) {
+  outline: 2px solid var(--control-focus-outline);
+  outline-offset: 2px;
 }
 
 .work-panel-image-toolbar button.is-primary,
@@ -1248,24 +1283,59 @@
 .work-panel-image-adjustments button.is-primary,
 .work-panel-image-ai-prompt button.is-primary,
 .work-panel-image-parameter-panel button.is-primary {
-  color: #fff;
-  background: var(--accent-color, #1677ff);
+  border-color: var(--work-panel-image-primary);
+  color: var(--work-panel-image-primary-text);
+  background: var(--work-panel-image-primary);
+}
+
+.work-panel-image-toolbar button.is-primary:hover:not(:disabled),
+.work-panel-image-toolbar button.is-primary:focus-visible:not(:disabled),
+.work-panel-image-save-dialog button.is-primary:hover:not(:disabled),
+.work-panel-image-save-dialog button.is-primary:focus-visible:not(:disabled),
+.work-panel-image-annotations button.is-primary:hover:not(:disabled),
+.work-panel-image-annotations button.is-primary:focus-visible:not(:disabled),
+.work-panel-image-adjustments button.is-primary:hover:not(:disabled),
+.work-panel-image-adjustments button.is-primary:focus-visible:not(:disabled),
+.work-panel-image-ai-prompt button.is-primary:hover:not(:disabled),
+.work-panel-image-ai-prompt button.is-primary:focus-visible:not(:disabled),
+.work-panel-image-parameter-panel button.is-primary:hover:not(:disabled),
+.work-panel-image-parameter-panel button.is-primary:focus-visible:not(:disabled) {
+  border-color: var(--work-panel-image-primary-hover);
+  color: var(--work-panel-image-primary-text);
+  background: var(--work-panel-image-primary-hover);
 }
 
 .work-panel-image-toolbar button.is-active,
 .work-panel-image-subtoolbar button.is-active,
 .work-panel-image-editor-sidebar button.is-active,
 .work-panel-image-ai-prompt button.is-active {
-  border-color: color-mix(in srgb, var(--accent-color, #1677ff) 42%, transparent);
-  color: var(--accent-color, #1677ff);
-  background: color-mix(in srgb, var(--accent-color, #1677ff) 13%, transparent);
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--accent-fill-soft);
+}
+
+.work-panel-image-toolbar button.is-active:hover:not(:disabled),
+.work-panel-image-toolbar button.is-active:focus-visible:not(:disabled),
+.work-panel-image-subtoolbar button.is-active:hover:not(:disabled),
+.work-panel-image-subtoolbar button.is-active:focus-visible:not(:disabled),
+.work-panel-image-editor-sidebar button.is-active:hover:not(:disabled),
+.work-panel-image-editor-sidebar button.is-active:focus-visible:not(:disabled),
+.work-panel-image-ai-prompt button.is-active:hover:not(:disabled),
+.work-panel-image-ai-prompt button.is-active:focus-visible:not(:disabled) {
+  border-color: var(--accent-border);
+  color: var(--accent);
+  background: var(--work-panel-image-control-active-hover);
 }
 
 .work-panel-image-toolbar button:disabled,
 .work-panel-image-subtoolbar button:disabled,
 .work-panel-image-editor-sidebar button:disabled,
+.work-panel-image-adjustments button:disabled,
 .work-panel-image-ai-prompt button:disabled,
 .work-panel-image-parameter-panel button:disabled,
+.work-panel-image-ai-status button:disabled,
+.work-panel-image-conflict button:disabled,
+.work-panel-image-annotations button:disabled,
 .work-panel-image-save-dialog button:disabled {
   cursor: not-allowed;
   opacity: 0.45;
@@ -1275,7 +1345,7 @@
 .work-panel-image-subtoolbar select {
   height: 30px;
   max-width: 148px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   padding: 0 7px;
   color: inherit;
@@ -1288,7 +1358,7 @@
   height: 30px;
   box-sizing: border-box;
   align-items: center;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   background: var(--embedded-surface-page-bg);
 }
@@ -1344,7 +1414,7 @@
 }
 
 .work-panel-image-zoom-label {
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -1359,7 +1429,7 @@
   display: grid;
   max-width: min(320px, calc(100vw - 32px));
   gap: 4px;
-  color: var(--text-primary);
+  color: var(--ink);
   font-size: 12px;
 }
 
@@ -1376,7 +1446,7 @@
   width: 1px;
   height: 22px;
   flex: 0 0 auto;
-  background: var(--line-soft);
+  background: var(--line);
 }
 
 .work-panel-image-subtoolbar {
@@ -1415,7 +1485,7 @@
   overflow-y: auto;
   box-sizing: border-box;
   padding: 5px 4px;
-  border-right: 1px solid var(--line-soft);
+  border-right: 1px solid var(--line);
   background: color-mix(in srgb, var(--embedded-surface-page-bg) 96%, transparent);
   scrollbar-width: none;
 }
@@ -1440,7 +1510,7 @@
 
 .work-panel-image-editor-tool-group.is-secondary {
   padding-top: 5px;
-  border-top: 1px solid var(--line-soft);
+  border-top: 1px solid var(--line);
 }
 
 .work-panel-image-editor-sidebar button {
@@ -1465,8 +1535,16 @@
 }
 
 .work-panel-image-editor-sidebar button.is-confirm {
-  color: #fff;
-  background: var(--accent-color, #1677ff);
+  border-color: var(--work-panel-image-primary);
+  color: var(--work-panel-image-primary-text);
+  background: var(--work-panel-image-primary);
+}
+
+.work-panel-image-editor-sidebar button.is-confirm:hover:not(:disabled),
+.work-panel-image-editor-sidebar button.is-confirm:focus-visible:not(:disabled) {
+  border-color: var(--work-panel-image-primary-hover);
+  color: var(--work-panel-image-primary-text);
+  background: var(--work-panel-image-primary-hover);
 }
 
 .work-panel-image-editor-sidebar button.is-ai-tool {
@@ -1476,6 +1554,13 @@
   box-shadow: inset 0 0 0 1px color-mix(in srgb, #4b7ff2 8%, transparent);
 }
 
+.work-panel-image-editor-sidebar button.is-ai-tool:not(.is-active):hover:not(:disabled),
+.work-panel-image-editor-sidebar button.is-ai-tool:not(.is-active):focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, #5f56ef 52%, transparent);
+  color: #5546d9;
+  background: linear-gradient(145deg, color-mix(in srgb, #7555ee 22%, transparent), color-mix(in srgb, #3385f5 20%, transparent));
+}
+
 .work-panel-image-editor-sidebar button.is-ai-tool.is-active {
   border-color: color-mix(in srgb, #4d6ff0 65%, transparent);
   color: #fff;
@@ -1483,10 +1568,24 @@
   box-shadow: 0 4px 14px color-mix(in srgb, #615eea 30%, transparent);
 }
 
+.work-panel-image-editor-sidebar button.is-ai-tool.is-active:hover:not(:disabled),
+.work-panel-image-editor-sidebar button.is-ai-tool.is-active:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, #4d6ff0 76%, transparent);
+  color: #fff;
+  background: linear-gradient(145deg, #8a64ff, #4389f7);
+}
+
 [data-theme="dark"] .work-panel-image-editor-sidebar button.is-ai-tool {
   border-color: color-mix(in srgb, #8e85ff 48%, transparent);
   color: #aaa4ff;
   background: linear-gradient(145deg, rgb(117 85 238 / 22%), rgb(51 133 245 / 18%));
+}
+
+[data-theme="dark"] .work-panel-image-editor-sidebar button.is-ai-tool:not(.is-active):hover:not(:disabled),
+[data-theme="dark"] .work-panel-image-editor-sidebar button.is-ai-tool:not(.is-active):focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, #8e85ff 64%, transparent);
+  color: #c3bfff;
+  background: linear-gradient(145deg, rgb(117 85 238 / 30%), rgb(51 133 245 / 26%));
 }
 
 [data-theme="dark"] .work-panel-image-editor-sidebar button.is-ai-tool.is-active {
@@ -1550,7 +1649,7 @@
   align-items: center;
   gap: 5px;
   margin-right: 4px;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   white-space: nowrap;
 }
 
@@ -1583,9 +1682,9 @@
   gap: 6px;
   box-sizing: border-box;
   padding: 4px 9px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 7px;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   background: color-mix(in srgb, var(--embedded-surface-page-bg) 96%, transparent);
   box-shadow: 0 6px 18px rgb(0 0 0 / 16%);
   font-size: 12px;
@@ -1601,7 +1700,7 @@
   flex: none;
   flex-wrap: wrap;
   padding: 9px 10px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: color-mix(in srgb, var(--embedded-surface-page-bg) 94%, transparent);
   box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
@@ -1610,7 +1709,7 @@
 }
 
 .work-panel-image-floating-controls .work-panel-image-subtoolbar.is-ai-selection {
-  border-color: color-mix(in srgb, #7655ee 42%, var(--line-soft));
+  border-color: color-mix(in srgb, #7655ee 42%, var(--line));
 }
 
 .work-panel-image-subtoolbar.is-ai-selection .work-panel-image-subtoolbar-hint {
@@ -1628,7 +1727,9 @@
   box-shadow: 0 4px 14px color-mix(in srgb, #615eea 24%, transparent);
 }
 
-.work-panel-image-subtoolbar button.is-ai-action:hover:not(:disabled) {
+.work-panel-image-subtoolbar button.is-ai-action:hover:not(:disabled),
+.work-panel-image-subtoolbar button.is-ai-action:focus-visible:not(:disabled) {
+  color: #fff;
   background: linear-gradient(145deg, #8a64ff, #4389f7);
 }
 
@@ -1640,7 +1741,7 @@
   margin: 0;
   box-sizing: border-box;
   padding: 12px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--embedded-surface-page-bg);
   box-shadow: 0 12px 32px rgb(0 0 0 / 18%);
@@ -1661,14 +1762,14 @@
   box-sizing: border-box;
   gap: 10px;
   padding: 12px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: color-mix(in srgb, var(--embedded-surface-page-bg) 97%, transparent);
   box-shadow: 0 14px 38px rgb(0 0 0 / 22%);
 }
 
 .work-panel-image-ai-prompt {
-  border-color: color-mix(in srgb, #7c4dff 30%, var(--line-soft));
+  border-color: color-mix(in srgb, #7c4dff 30%, var(--line));
 }
 
 .work-panel-image-ai-prompt header,
@@ -1712,7 +1813,7 @@
 .work-panel-image-ai-instruction textarea {
   min-height: 76px;
   resize: vertical;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   outline: none;
   padding: 7px 8px;
@@ -1743,7 +1844,7 @@
 }
 
 .work-panel-image-parameter-fields label > span {
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   font-size: 11px;
 }
 
@@ -1752,7 +1853,7 @@
   height: 30px;
   min-width: 0;
   box-sizing: border-box;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line-strong);
   border-radius: 7px;
   outline: none;
   padding: 4px 7px;
@@ -1774,7 +1875,7 @@
   min-height: 34px;
   box-sizing: border-box;
   padding: 5px 12px;
-  border-bottom: 1px solid var(--line-soft);
+  border-bottom: 1px solid var(--line);
   font-size: 12px;
 }
 
@@ -1793,7 +1894,7 @@
   box-sizing: border-box;
   padding: 6px 12px;
   transform: translateX(-50%);
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 9px;
   box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
   font-size: 12px;
@@ -1826,8 +1927,8 @@
 
 .work-panel-image-ai-status {
   justify-content: center;
-  color: var(--accent-color, #1677ff);
-  background: color-mix(in srgb, var(--accent-color, #1677ff) 8%, var(--embedded-surface-page-bg) 96%);
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 8%, var(--embedded-surface-page-bg) 96%);
 }
 
 .work-panel-image-viewport {
@@ -2020,7 +2121,7 @@
   inset: 0;
   display: grid;
   place-items: center;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
 }
 
 .work-panel-image-annotations {
@@ -2035,7 +2136,7 @@
   overflow: auto;
   box-sizing: border-box;
   padding: 12px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--embedded-surface-page-bg);
   box-shadow: 0 12px 32px rgb(0 0 0 / 20%);
@@ -2058,7 +2159,7 @@
 }
 
 .work-panel-image-annotations > header > span {
-  color: var(--text-secondary);
+  color: var(--ink-soft);
 }
 
 .work-panel-image-annotation-guidance {
@@ -2068,7 +2169,7 @@
   margin: 0;
   padding: 8px;
   border-radius: 7px;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   background: color-mix(in srgb, #7c4dff 8%, transparent);
   font-size: 12px;
   line-height: 1.45;
@@ -2102,8 +2203,14 @@
   background: color-mix(in srgb, #7c4dff 10%, transparent);
 }
 
+.work-panel-image-annotation-list > button.is-active:hover:not(:disabled),
+.work-panel-image-annotation-list > button.is-active:focus-visible:not(:disabled) {
+  border-color: color-mix(in srgb, #7c4dff 58%, transparent);
+  background: color-mix(in srgb, #7c4dff 16%, transparent);
+}
+
 .work-panel-image-annotation-list > button.is-incomplete {
-  color: var(--text-secondary);
+  color: var(--ink-soft);
 }
 
 .work-panel-image-annotation-list > button > span:first-child {
@@ -2130,7 +2237,7 @@
 }
 
 .work-panel-image-annotation-editor > span {
-  color: var(--text-secondary);
+  color: var(--ink-soft);
   font-size: 12px;
 }
 
@@ -2139,7 +2246,7 @@
   width: 100%;
   resize: vertical;
   box-sizing: border-box;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line-strong);
   border-radius: 6px;
   padding: 7px;
   color: inherit;
@@ -2171,7 +2278,7 @@
   width: min(520px, calc(100% - 32px));
   box-sizing: border-box;
   padding: 18px;
-  border: 1px solid var(--line-soft);
+  border: 1px solid var(--line);
   border-radius: 12px;
   background: var(--embedded-surface-page-bg);
   box-shadow: 0 18px 50px rgb(0 0 0 / 28%);
@@ -2179,7 +2286,7 @@
 
 .work-panel-image-save-dialog p {
   margin: 0 0 4px;
-  color: var(--text-secondary);
+  color: var(--ink-soft);
 }
 
 .work-panel-image-save-dialog > strong {

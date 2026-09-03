@@ -5686,6 +5686,47 @@ test("native image byte and decode failures stay silent and inert", () => {
   assert.match(styles, /\.work-panel-image-zoom-control input\s*\{[\s\S]*?font-size:\s*12px;/u);
 });
 
+test("native image controls keep semantic colors across interaction states and themes", () => {
+  const styles = readSourceFile("src", "renderer", "styles", "app-shell.css");
+  const imageStylesStart = styles.indexOf(".work-panel-resource-image {");
+  const imageStylesEnd = styles.indexOf(".chat-work-panel-review-toolbar {", imageStylesStart);
+
+  assert.notEqual(imageStylesStart, -1);
+  assert.notEqual(imageStylesEnd, -1);
+  const imageStyles = styles.slice(imageStylesStart, imageStylesEnd);
+
+  assert.doesNotMatch(
+    imageStyles,
+    /var\(--(?:text-primary|text-secondary|line-soft|hover-bg|accent-color)(?:[,)]|\s)/u
+  );
+  assert.match(imageStyles, /--work-panel-image-primary:\s*#2563eb;/u);
+  assert.match(imageStyles, /--work-panel-image-primary-hover:\s*#1d4ed8;/u);
+  assert.match(
+    styles,
+    /:root\[data-theme="dark"\] \.work-panel-resource-image\s*\{[^}]*--work-panel-image-primary:\s*#2f69d9;[^}]*--work-panel-image-primary-hover:\s*#316fe8;/u
+  );
+  assert.match(
+    imageStyles,
+    /\.work-panel-image-parameter-panel button\.is-primary:hover:not\(:disabled\),[\s\S]*?\.work-panel-image-parameter-panel button\.is-primary:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-primary-hover\);/u
+  );
+  assert.match(
+    imageStyles,
+    /\.work-panel-image-editor-sidebar button\.is-confirm:hover:not\(:disabled\),[\s\S]*?\.work-panel-image-editor-sidebar button\.is-confirm:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-primary-hover\);/u
+  );
+  assert.match(
+    imageStyles,
+    /button\.is-active:hover:not\(:disabled\),[\s\S]*?button\.is-active:focus-visible:not\(:disabled\)[\s\S]*?background:\s*var\(--work-panel-image-control-active-hover\);/u
+  );
+  assert.match(
+    imageStyles,
+    /button\.is-ai-tool:not\(\.is-active\):hover:not\(:disabled\),[\s\S]*?button\.is-ai-tool:not\(\.is-active\):focus-visible:not\(:disabled\)[\s\S]*?linear-gradient/u
+  );
+  assert.match(
+    imageStyles,
+    /button:focus-visible:not\(:disabled\)[\s\S]*?outline:\s*2px solid var\(--control-focus-outline\);/u
+  );
+});
+
 test("native image modes keep viewing actions on top and photo tools in a sidebar", () => {
   const source = readSourceFile(
     "src",
