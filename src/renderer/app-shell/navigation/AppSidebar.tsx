@@ -5246,67 +5246,61 @@ export function AppSidebar({
         headerActions={
           <>
             {args.headerActions}
-            {args.groupId === "assistants" ? (
-              <Tooltip
-                content={
-                  allProjectsExpanded
-                    ? t("sidebar.assistants.collapseAll")
-                    : t("sidebar.assistants.expandAll")
-                }
-              >
-                <button
-                  type="button"
-                  className="assistant-worker-icon-button sidebar-assistant-expand-button"
-                  aria-label={
+            {args.groupId === "assistants" && expanded ? (
+              <>
+                <Tooltip
+                  content={
                     allProjectsExpanded
                       ? t("sidebar.assistants.collapseAll")
                       : t("sidebar.assistants.expandAll")
                   }
-                  title={
-                    allProjectsExpanded
-                      ? t("sidebar.assistants.collapseAll")
-                      : t("sidebar.assistants.expandAll")
-                  }
-                  tabIndex={-1}
-                  disabled={
-                    primaryAssistantNavAgents.length === 0 ||
-                    Boolean(activeProjectDragKey)
-                  }
-                  onClick={handleToggleAllProjects}
                 >
-                  <SidebarActionIcon
-                    kind={allProjectsExpanded ? "collapse_all" : "expand_all"}
-                  />
-                </button>
-              </Tooltip>
-            ) : null}
-            {args.groupId === "assistants" ? (
-              <Tooltip
-                content={
-                  refreshingAssistantNavAgents
-                    ? t("sidebar.assistants.refreshing")
-                    : t("sidebar.assistants.refresh")
-                }
-              >
-                <button
-                  type="button"
-                  className="assistant-worker-icon-button sidebar-assistant-refresh-button"
-                  aria-label={t("sidebar.assistants.refresh")}
-                  title={t("sidebar.assistants.refresh")}
-                  tabIndex={-1}
-                  disabled={refreshingAssistantNavAgents}
-                  onClick={handleRefreshAssistantNavAgents}
-                >
-                  {refreshingAssistantNavAgents ? (
-                    <span
-                      className="assistant-material-icon is-loading"
-                      aria-hidden="true"
+                  <button
+                    type="button"
+                    className="assistant-worker-icon-button sidebar-assistant-expand-button"
+                    aria-label={
+                      allProjectsExpanded
+                        ? t("sidebar.assistants.collapseAll")
+                        : t("sidebar.assistants.expandAll")
+                    }
+                    tabIndex={-1}
+                    disabled={
+                      primaryAssistantNavAgents.length === 0 ||
+                      Boolean(activeProjectDragKey)
+                    }
+                    onClick={handleToggleAllProjects}
+                  >
+                    <SidebarActionIcon
+                      kind={allProjectsExpanded ? "collapse_all" : "expand_all"}
                     />
-                  ) : (
-                    <SidebarActionIcon kind="refresh" />
-                  )}
-                </button>
-              </Tooltip>
+                  </button>
+                </Tooltip>
+                <Tooltip
+                  content={
+                    refreshingAssistantNavAgents
+                      ? t("sidebar.assistants.refreshing")
+                      : t("sidebar.assistants.refresh")
+                  }
+                >
+                  <button
+                    type="button"
+                    className="assistant-worker-icon-button sidebar-assistant-refresh-button"
+                    aria-label={t("sidebar.assistants.refresh")}
+                    tabIndex={-1}
+                    disabled={refreshingAssistantNavAgents}
+                    onClick={handleRefreshAssistantNavAgents}
+                  >
+                    {refreshingAssistantNavAgents ? (
+                      <span
+                        className="assistant-material-icon is-loading"
+                        aria-hidden="true"
+                      />
+                    ) : (
+                      <SidebarActionIcon kind="refresh" />
+                    )}
+                  </button>
+                </Tooltip>
+              </>
             ) : null}
             {args.groupId === "assistants" ? (
               <Tooltip content={t("sidebar.project.new")}>
@@ -5314,7 +5308,6 @@ export function AppSidebar({
                   type="button"
                   className="assistant-worker-icon-button sidebar-assistant-project-button"
                   aria-label={t("sidebar.project.new")}
-                  title={t("sidebar.project.new")}
                   tabIndex={-1}
                   disabled={creatingProject || Boolean(createProjectDialog)}
                   onClick={handleCreateProject}

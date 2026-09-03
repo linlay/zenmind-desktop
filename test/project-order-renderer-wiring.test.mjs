@@ -9,6 +9,17 @@ function readSource(...segments) {
   return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
 }
 
+function readButtonByClass(source, className) {
+  const marker = `className="${className}"`;
+  const markerIndex = source.indexOf(marker);
+  assert.notEqual(markerIndex, -1, `missing button class: ${className}`);
+  const startIndex = source.lastIndexOf("<button", markerIndex);
+  const endIndex = source.indexOf("</button>", markerIndex);
+  assert.notEqual(startIndex, -1, `missing button start: ${className}`);
+  assert.notEqual(endIndex, -1, `missing button end: ${className}`);
+  return source.slice(startIndex, endIndex + "</button>".length);
+}
+
 test("Projects reorder bridge is limited and wired across contract, preload, and Main", () => {
   const copilotContracts = readSource("src", "shared", "contracts", "copilot.ts");
   const desktopApi = readSource("src", "shared", "contracts", "desktop-api.ts");
@@ -82,6 +93,55 @@ test("expanded Projects use direct pointer and keyboard sorting", () => {
   assert.match(sidebar, /const recentChats = getAssistantNavAgentPreviewChats\(\s*agent,\s*projectChatVisibleLimit,\s*\);/u);
   assert.match(assistantNavigation, /getAssistantNavAgentPreviewChats\([\s\S]*?limit = 5,/u);
   assert.doesNotMatch(sidebar, /SIDEBAR_ASSISTANT_SORT_STORAGE_KEY|AssistantNavSortMode|sortAssistantNavAgentsForMode/u);
+});
+
+test("Project header hides nested actions with the outer group and uses one tooltip", () => {
+  const sidebar = readSource(
+    "src",
+    "renderer",
+    "app-shell",
+    "navigation",
+    "AppSidebar.tsx",
+  );
+  const conditionalActionsStart = sidebar.indexOf(
+    '{args.groupId === "assistants" && expanded ? (',
+  );
+  const newProjectActionStart = sidebar.indexOf(
+    '{args.groupId === "assistants" ? (',
+    conditionalActionsStart + 1,
+  );
+  assert.notEqual(conditionalActionsStart, -1);
+  assert.notEqual(newProjectActionStart, -1);
+
+  const conditionalActions = sidebar.slice(
+    conditionalActionsStart,
+    newProjectActionStart,
+  );
+  assert.match(conditionalActions, /sidebar-assistant-expand-button/u);
+  assert.match(conditionalActions, /sidebar-assistant-refresh-button/u);
+  assert.doesNotMatch(conditionalActions, /sidebar-assistant-project-button/u);
+
+  const assistantsCollapseEffect = sidebar.match(
+    /useEffect\(\(\) => \{\s*if \(sidebarGroupState\.assistants\)[\s\S]*?\}, \[sidebarGroupState\.assistants\]\);/u,
+  )?.[0] ?? "";
+  assert.match(
+    assistantsCollapseEffect,
+    /setAssistantAgentChatVisibleLimits/u,
+  );
+  assert.doesNotMatch(
+    assistantsCollapseEffect,
+    /setExpandedAssistantAgentKeys/u,
+  );
+
+  for (const className of [
+    "assistant-worker-icon-button sidebar-assistant-expand-button",
+    "assistant-worker-icon-button sidebar-assistant-refresh-button",
+    "assistant-worker-icon-button sidebar-assistant-project-button",
+  ]) {
+    const button = readButtonByClass(sidebar, className);
+    assert.match(button, /aria-label=/u);
+    assert.doesNotMatch(button, /\btitle=/u);
+  }
 });
 
 test("AppShell optimistically applies, canonicalizes, and rolls back Project order", () => {
