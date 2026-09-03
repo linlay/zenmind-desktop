@@ -87,6 +87,7 @@ import {
 } from "../../components/PageFeedbackStack";
 import { useI18n } from "../../i18n/useI18n";
 import {
+  getAdjacentAssistantNavChat,
   getAssistantAwaitingStatusKey,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentNonNegativeInteger,
@@ -2103,6 +2104,9 @@ export function AppSidebar({
     }
 
     if (targetPath === currentRoute) {
+      if (options.focusAgentChat) {
+        onRequestAgentChatNavigate?.(targetPath);
+      }
       return;
     }
     const requestNavigation = options.focusAgentChat
@@ -2683,6 +2687,52 @@ export function AppSidebar({
     return element;
   }
 
+  function getSidebarChatNavigationItems(element: HTMLElement) {
+    const kind = element.dataset.sidebarNavKind;
+    if (kind === "chats-chat") {
+      return sidebarChatItems;
+    }
+    if (kind !== "chat") {
+      return null;
+    }
+
+    const agentKey = element.dataset.sidebarAgentKey || "";
+    const agent = findAssistantNavAgent(agentKey);
+    if (!agent) {
+      return null;
+    }
+    const visibleLimit =
+      assistantAgentChatVisibleLimits.get(agentKey) ??
+      PROJECT_CHATS_VISIBLE_LIMIT;
+    return getAssistantNavAgentPreviewChats(agent, visibleLimit);
+  }
+
+  function moveSidebarChatSelection(
+    currentElement: HTMLElement,
+    direction: "next" | "previous",
+  ) {
+    const chats = getSidebarChatNavigationItems(currentElement);
+    const currentChatId = currentElement.dataset.sidebarChatId || "";
+    if (!chats || !currentChatId) {
+      return;
+    }
+    const nextChat = getAdjacentAssistantNavChat(
+      chats,
+      currentChatId,
+      direction,
+    );
+    if (!nextChat) {
+      return;
+    }
+
+    const focusId =
+      currentElement.dataset.sidebarNavKind === "chats-chat"
+        ? createSidebarChatsChatFocusId(nextChat.chatId)
+        : createSidebarChatFocusId(nextChat.chatId);
+    focusSidebarRovingItemById(focusId);
+    void handleAssistantOpenChat(nextChat);
+  }
+
   function handleSidebarNavKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
     if (!isPrimaryMode) {
       return;
@@ -2692,8 +2742,35 @@ export function AppSidebar({
       return;
     }
 
+    if (activeChatDragId || activeProjectDragKey) {
+      return;
+    }
+
     if (event.key === "Escape") {
       closeToolMenu();
+      return;
+    }
+
+    const currentNavigationKind = currentElement.dataset.sidebarNavKind;
+    const currentIsChat =
+      currentNavigationKind === "chat" ||
+      currentNavigationKind === "chats-chat";
+    const isPlainVerticalArrow =
+      !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
+    if (
+      currentIsChat &&
+      (event.key === "ArrowDown" || event.key === "ArrowUp")
+    ) {
+      if (!isPlainVerticalArrow) {
+        return;
+      }
+      event.preventDefault();
+      if (!event.repeat) {
+        moveSidebarChatSelection(
+          currentElement,
+          event.key === "ArrowDown" ? "next" : "previous",
+        );
+      }
       return;
     }
 
@@ -3339,7 +3416,10 @@ export function AppSidebar({
     await window.electronAPI.assistant.markAgentChatsRead(agent.agentKey);
   }
 
-  async function handleAssistantOpenChat(chat: AssistantNavChatItem) {
+  async function handleAssistantOpenChat(
+    chat: AssistantNavChatItem,
+    options: { focusAgentChat?: boolean } = {},
+  ) {
     if (!chat.agentKey) {
       return;
     }
@@ -3352,7 +3432,7 @@ export function AppSidebar({
     }
     requestNavigate(createAgentChatRoute(chat.agentKey, chat.chatId), {
       retriggerAgentRoute: true,
-      focusAgentChat: true,
+      focusAgentChat: options.focusAgentChat === true,
     });
   }
 
@@ -4757,7 +4837,9 @@ export function AppSidebar({
           .filter(Boolean)
           .join(" ")}
         aria-current={isActive ? "page" : undefined}
-        onClick={() => void handleAssistantOpenChat(chat)}
+        onClick={(event) => void handleAssistantOpenChat(chat, {
+          focusAgentChat: event.detail === 0,
+        })}
         onDoubleClick={(event) => handleAssistantChatDoubleClick(event, chat)}
         {...getSidebarRovingItemProps(focusId, roving)}
         {...dragActivator?.listeners}

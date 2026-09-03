@@ -1037,8 +1037,16 @@ test("sidebar primary navigation uses roving tabindex", () => {
   assert.match(sidebarSource, /const resolvedSidebarNavFocusId =\s*sidebarNavFocusId \|\| defaultSidebarNavFocusId;/);
   assert.match(sidebarSource, /function getSidebarRovingItemProps\(id: string, enabled = true\)/);
   assert.match(sidebarSource, /tabIndex:\s*resolvedSidebarNavFocusId === id \? 0 : -1/);
-  assert.match(sidebarSource, /data-sidebar-roving-container=\{!isSettingsMode \? "true" : undefined\}/);
+  assert.match(sidebarSource, /data-sidebar-roving-container=\{isPrimaryMode \? "true" : undefined\}/);
   assert.match(sidebarSource, /onKeyDown=\{handleSidebarNavKeyDown\}/);
+  assert.match(sidebarSource, /function getSidebarChatNavigationItems\(element: HTMLElement\)/);
+  assert.match(sidebarSource, /kind === "chats-chat"[\s\S]*?return sidebarChatItems/);
+  assert.match(sidebarSource, /getAssistantNavAgentPreviewChats\(agent, visibleLimit\)/);
+  assert.match(sidebarSource, /function moveSidebarChatSelection\([\s\S]*?getAdjacentAssistantNavChat/);
+  assert.match(sidebarSource, /currentIsChat[\s\S]*?event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"/);
+  assert.match(sidebarSource, /if \(!event\.repeat\) \{[\s\S]*?moveSidebarChatSelection/);
+  assert.match(sidebarSource, /event\.key === "ArrowDown" \? "next" : "previous"/);
+  assert.match(sidebarSource, /if \(activeChatDragId \|\| activeProjectDragKey\) \{\s*return;/);
   assert.match(sidebarSource, /event\.key === "ArrowDown"[\s\S]*?moveSidebarRovingFocus\(currentElement, "next"\)/);
   assert.match(sidebarSource, /event\.key === "ArrowUp"[\s\S]*?moveSidebarRovingFocus\(currentElement, "previous"\)/);
   assert.match(sidebarSource, /event\.key === "Home"[\s\S]*?moveSidebarRovingFocus\(currentElement, "first"\)/);

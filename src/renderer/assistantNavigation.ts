@@ -396,6 +396,25 @@ export function getAssistantNavAgentPreviewChats(
   return getAssistantNavAgentSortedChats(agent).slice(0, normalizedLimit);
 }
 
+export function getAdjacentAssistantNavChat(
+  chats: ReadonlyArray<AssistantNavChatItem>,
+  currentChatId: string,
+  direction: "next" | "previous",
+): AssistantNavChatItem | null {
+  const normalizedChatId = currentChatId.trim();
+  const currentIndex = chats.findIndex(
+    (chat) => chat.chatId === normalizedChatId,
+  );
+  if (currentIndex < 0) {
+    return null;
+  }
+
+  const nextIndex = currentIndex + (direction === "next" ? 1 : -1);
+  return nextIndex >= 0 && nextIndex < chats.length
+    ? chats[nextIndex]
+    : null;
+}
+
 export type AssistantNavChatsOverviewItem = {
   agent: Pick<
     AssistantNavAgentItem,

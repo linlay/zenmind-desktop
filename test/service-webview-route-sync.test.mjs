@@ -308,7 +308,7 @@ test("inactive agent webclient surfaces cannot take ownership of the Desktop rou
   );
 });
 
-test("global search and sidebar Chat navigation restore focus to the active main chat webview once", () => {
+test("explicit Chat activation restores webview focus while sidebar Chat browsing keeps row focus", () => {
   const appShell = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "app-shell", "AppShell.tsx"),
     "utf8",
@@ -388,6 +388,10 @@ test("global search and sidebar Chat navigation restore focus to the active main
     appSidebar.indexOf("async function handleAssistantOpenChat"),
     appSidebar.indexOf("function handleAssistantOpenChatMenu"),
   );
+  const chatRowBlock = appSidebar.slice(
+    appSidebar.indexOf("function renderAssistantChatRow"),
+    appSidebar.indexOf("function renderAssistantAgent"),
+  );
   const chatsNewChatBlock = appSidebar.slice(
     appSidebar.indexOf("function startChatsNewChat"),
     appSidebar.indexOf("function focusChatsDefaultAgentMenuItem"),
@@ -398,7 +402,14 @@ test("global search and sidebar Chat navigation restore focus to the active main
   );
   assert.match(projectNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
   assert.match(chatsNewChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
-  assert.match(openChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*true/);
+  assert.match(openChatBlock, /options:\s*\{ focusAgentChat\?: boolean \} = \{\}/);
+  assert.match(openChatBlock, /retriggerAgentRoute:\s*true,\s*focusAgentChat:\s*options\.focusAgentChat === true/);
+  assert.match(chatRowBlock, /onClick=\{\(event\) => void handleAssistantOpenChat\(chat, \{/);
+  assert.match(chatRowBlock, /focusAgentChat:\s*event\.detail === 0/);
+  assert.match(
+    sidebarNavigationBlock,
+    /targetPath === currentRoute[\s\S]*?options\.focusAgentChat[\s\S]*?onRequestAgentChatNavigate\?\.\(targetPath\)/,
+  );
 });
 
 test("service webview diagnostics suppress normal production lifecycle and aggregate dev breadcrumbs", () => {

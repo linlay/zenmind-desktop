@@ -66,6 +66,7 @@ function loadAssistantNavigationModule() {
 }
 
 const {
+  getAdjacentAssistantNavChat,
   getAssistantAwaitingStatusKey,
   getAssistantNavAgentAttentionChat,
   getAssistantNavAgentPreviewChats,
@@ -79,6 +80,26 @@ const {
   resolveAssistantNavChatRuntimeAgent,
   resolveFirstInstallBootstrapNavigationTarget,
 } = loadAssistantNavigationModule();
+
+test("assistant nav resolves adjacent chats without wrapping", () => {
+  const chats = [
+    chat({ chatId: "chat-a" }),
+    chat({ chatId: "chat-b" }),
+    chat({ chatId: "chat-c" }),
+  ];
+
+  assert.equal(
+    getAdjacentAssistantNavChat(chats, "chat-b", "previous")?.chatId,
+    "chat-a",
+  );
+  assert.equal(
+    getAdjacentAssistantNavChat(chats, "chat-b", "next")?.chatId,
+    "chat-c",
+  );
+  assert.equal(getAdjacentAssistantNavChat(chats, "chat-a", "previous"), null);
+  assert.equal(getAdjacentAssistantNavChat(chats, "chat-c", "next"), null);
+  assert.equal(getAdjacentAssistantNavChat(chats, "missing", "next"), null);
+});
 
 test("assistant nav reorders only Project slots and appends omitted projects", () => {
   const items = [
