@@ -27,6 +27,7 @@ import {
   platformCandidates,
   readInstalledRecords,
   removeInstalledRecord,
+  requestMarketJson,
   resolveMarketFetchImpl,
   saveMarketSettings,
   selectAsset,
@@ -323,7 +324,40 @@ async function resolveInstalledItemType(
 
 export async function refreshMarketCatalog(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {
   const { pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket } = await loadMarketSections(app, options);
-  return combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket);
+  const result = combineMarketSections(pluginMarket, skillMarket, agentMarket, sandboxImageMarket, petMarket, cliMarket, mcpMarket, websiteAppMarket, softwarePackageMarket);
+  if (!options.includeFavorites) {
+    return result;
+  }
+  const apiBaseUrl = getMarketApiBaseUrlForAction(app, options).replace(/\/+$/u, "");
+  if (!apiBaseUrl) {
+    return result;
+  }
+  try {
+    const favoriteCatalog = normalizeCatalog(await requestMarketJson(
+      app,
+      `${apiBaseUrl}/me/favorites`,
+      options,
+      "market favorites request"
+    ));
+    const favoriteByKey = new Map(favoriteCatalog.items.map((item) => [`${item.type}:${item.id}`, item]));
+    return {
+      ...result,
+      items: result.items.map((item) => {
+        const favorite = favoriteByKey.get(`${item.type}:${item.id}`);
+        if (!favorite) {
+          return { ...item, favorited: false };
+        }
+        return {
+          ...item,
+          favorited: true,
+          favoriteCount: favorite.favoriteCount ?? item.favoriteCount
+        };
+      })
+    };
+  } catch (error) {
+    console.warn("[market] failed to load authenticated favorites; keeping public catalog", error);
+    return result;
+  }
 }
 
 export async function listMarketItems(app: App, options: MarketplaceOptions = {}): Promise<MarketListResult> {

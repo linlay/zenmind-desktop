@@ -204,6 +204,7 @@ export interface MarketListResult {
 
 export interface MarketListOptions {
   sections?: MarketSection[];
+  includeFavorites?: boolean;
 }
 
 export interface MarketFavoriteInput {

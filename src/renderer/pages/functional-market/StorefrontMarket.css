@@ -457,6 +457,10 @@
   min-height: 70px;
 }
 
+.market-store-card-head > .market-store-item-icon {
+  align-self: center;
+}
+
 .market-store-item-icon {
   display: inline-flex;
   align-items: center;
@@ -488,6 +492,7 @@
   justify-content: flex-end;
   gap: 6px;
   min-width: 28px;
+  align-self: start;
 }
 
 .market-store-origin-pill {
@@ -592,6 +597,7 @@
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 6px;
+  min-height: 19px;
 }
 
 .market-store-title-line h2 {
@@ -607,7 +613,10 @@
 }
 
 .market-store-version {
+  display: inline-flex;
+  align-items: center;
   flex: none;
+  min-height: 19px;
   color: var(--market-store-faint);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   font-size: 10px;
