@@ -523,6 +523,35 @@ test("WorkPanel rejects untrusted fields and only accepts registered host native
   });
   assert.equal(native.ok, false);
   assert.equal(native.error.code, "unsupported_native_surface");
+  const documentHtmlContext = {
+    handleId: "opaque-html-handle",
+    sourceKind: "artifact",
+    stableIdentity: "artifact:agent:chat:artifact-html:artifacts/run/report.html",
+    displayUrl: "artifact:///artifacts/run/report.html",
+    fileName: "report.html",
+    mimeType: "text/html",
+    sizeBytes: 456,
+    revision: "456:789",
+    localOriginal: false,
+  };
+  const documentHtml = open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "native",
+    surfaceKey: "document-html",
+    context: documentHtmlContext,
+  });
+  assert.equal(documentHtml.ok, true);
+  assert.equal(documentHtml.item.descriptor.context.displayUrl, documentHtmlContext.displayUrl);
+  assert.equal(documentHtml.item.stableKey, documentHtmlContext.stableIdentity);
+  assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "native",
+    surfaceKey: "document-html",
+    context: { ...documentHtmlContext, displayUrl: "file:///tmp/report.html" },
+  }).ok, false);
+  assert.equal(open(EMPTY_WORK_PANEL_STATE, "chat", {
+    kind: "native",
+    surfaceKey: "document-html",
+    context: { ...documentHtmlContext, displayUrl: "reference:///references/report.html" },
+  }).ok, false);
   const resourceImage = open(EMPTY_WORK_PANEL_STATE, "chat", {
     kind: "native",
     surfaceKey: "resource-image",

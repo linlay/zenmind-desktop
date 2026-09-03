@@ -3,10 +3,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { createRequire } from "node:module";
 
 const {
   WorkPanelDocumentHtmlRegistry,
 } = await import("../dist-electron/main/chat-work-panel-document-html.js");
+const require = createRequire(import.meta.url);
+const {
+  EMPTY_WORK_PANEL_STATE,
+  reduceWorkPanelCommand,
+} = require("../dist-electron/shared/work-panel.js");
 
 function sender(id = 72) {
   return {
@@ -76,6 +82,17 @@ test("native HTML workspace claims are opaque, sender-bound, editable, and revis
     assert.equal(claimed.document.displayUrl, "workspace:///site/index.html");
     assert.equal(claimed.document.localOriginal, true);
     assert.equal("filePath" in claimed.document, false);
+    const opened = reduceWorkPanelCommand(EMPTY_WORK_PANEL_STATE, {
+      type: "openItem",
+      ownerChatId: "chat-html",
+      descriptor: {
+        kind: "native",
+        surfaceKey: "document-html",
+        context: { ...claimed.document },
+      },
+    });
+    assert.equal(opened.ok, true);
+    assert.equal(opened.item.descriptor.context.displayUrl, claimed.document.displayUrl);
 
     const requestIdentity = {
       ownerChatId: "chat-html",

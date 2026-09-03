@@ -238,7 +238,7 @@ function normalizeDescriptor(
     const context = descriptor.context;
     if (descriptor.surfaceKey === "document-html") {
       const allowedContextKeys = new Set([
-        "handleId", "sourceKind", "stableIdentity", "fileName", "mimeType",
+        "handleId", "sourceKind", "stableIdentity", "displayUrl", "fileName", "mimeType",
         "sizeBytes", "revision", "localOriginal",
       ]);
       if (Object.keys(context).some((key) => !allowedContextKeys.has(key))) return null;
@@ -247,6 +247,13 @@ function normalizeDescriptor(
         ? String(context.sourceKind)
         : "";
       const stableIdentity = cleanIdentity(context.stableIdentity, 2_048);
+      const displayUrl = cleanIdentity(context.displayUrl, 2_048);
+      const displayUrlPrefix = sourceKind === "workspace-file"
+        ? "workspace:///"
+        : `${sourceKind}:///`;
+      const displayPath = displayUrl.startsWith(displayUrlPrefix)
+        ? normalizeRelativePath(displayUrl.slice(displayUrlPrefix.length))
+        : "";
       const fileName = cleanIdentity(context.fileName, 512);
       const mimeType = context.mimeType === "text/html" || context.mimeType === "application/xhtml+xml"
         ? context.mimeType
@@ -256,13 +263,27 @@ function normalizeDescriptor(
         : -1;
       const revision = cleanIdentity(context.revision, 512);
       const localOriginal = typeof context.localOriginal === "boolean" ? context.localOriginal : null;
-      if (!handleId || !sourceKind || !stableIdentity || !fileName || !mimeType || sizeBytes < 0 || !revision || localOriginal === null) {
+      if (
+        !handleId || !sourceKind || !stableIdentity || !displayPath ||
+        displayUrl !== `${displayUrlPrefix}${displayPath}` ||
+        !fileName || !mimeType || sizeBytes < 0 || !revision || localOriginal === null
+      ) {
         return null;
       }
       const sanitized: WorkPanelItemDescriptor = {
         kind: "native",
         surfaceKey: "document-html",
-        context: { handleId, sourceKind, stableIdentity, fileName, mimeType, sizeBytes, revision, localOriginal },
+        context: {
+          handleId,
+          sourceKind,
+          stableIdentity,
+          displayUrl,
+          fileName,
+          mimeType,
+          sizeBytes,
+          revision,
+          localOriginal,
+        },
         ...(title ? { title } : {}),
         ...(descriptor.pinned === true ? { pinned: true } : {}),
         ...(descriptor.closable === false ? { closable: false } : {}),

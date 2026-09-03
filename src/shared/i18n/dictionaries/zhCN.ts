@@ -478,6 +478,7 @@ export const zhCNMessages = {
   "chatWorkPanel.document.htmlReadFailed": "无法读取 HTML 文档。",
   "chatWorkPanel.document.imageReadFailed": "无法读取图片。",
   "chatWorkPanel.document.invalidAnnotation": "已失效",
+  "chatWorkPanel.document.addAnnotation": "添加批注",
   "chatWorkPanel.document.annotationNumber": "批注 {number}",
   "chatWorkPanel.document.removeAnnotation": "移除",
   "chatWorkPanel.document.handoff": "交给智能体",

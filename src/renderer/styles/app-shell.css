@@ -1160,12 +1160,25 @@
   color: #6b7280;
 }
 
-.work-panel-document-html-location > span {
+.work-panel-document-html-location > input {
   min-width: 0;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  border: 0;
+  outline: 0;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  font: inherit;
   font-size: 13px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.work-panel-document-html-location:focus-within {
+  border-color: #1677ff;
+  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
 }
 
 .work-panel-document-html-hint,
@@ -1183,6 +1196,11 @@
 
 .work-panel-document-html-count {
   flex: 0 1 auto;
+}
+
+.work-panel-document-html-count.ant-btn {
+  padding-inline: 8px;
+  color: var(--work-panel-tab-muted);
 }
 
 .work-panel-document-html-toolbar .ant-btn {
@@ -1219,11 +1237,17 @@
 
 .work-panel-document-html-annotations {
   box-sizing: border-box;
-  max-height: 180px;
-  flex: 0 1 auto;
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(360px, calc(100vh - 120px));
   overflow: auto;
-  border-top: 1px solid var(--line-soft);
-  padding: 8px;
+  padding: 4px;
+}
+
+.work-panel-document-html-annotations-empty {
+  max-width: 360px;
+  padding: 12px 8px 16px;
+  color: var(--work-panel-tab-muted);
+  line-height: 1.5;
 }
 
 .work-panel-document-html-annotation {
@@ -1242,7 +1266,26 @@
 
 .work-panel-document-html-annotation-actions {
   display: flex;
+  border-top: 1px solid var(--line-soft);
+  margin-top: 10px;
+  padding-top: 10px;
   justify-content: flex-end;
+}
+
+.work-panel-document-html-annotation-dialog {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.work-panel-document-html-annotation-dialog > code,
+.work-panel-document-html-annotation-dialog > p {
+  overflow: hidden;
+  margin: 0;
+  color: var(--work-panel-tab-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 :root[data-theme="dark"] .work-panel-document-html-location {

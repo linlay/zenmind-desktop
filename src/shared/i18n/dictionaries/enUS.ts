@@ -478,6 +478,7 @@ export const enUSMessages = {
   "chatWorkPanel.document.htmlReadFailed": "HTML document could not be read.",
   "chatWorkPanel.document.imageReadFailed": "Image could not be read.",
   "chatWorkPanel.document.invalidAnnotation": "invalid",
+  "chatWorkPanel.document.addAnnotation": "Add annotation",
   "chatWorkPanel.document.annotationNumber": "Annotation {number}",
   "chatWorkPanel.document.removeAnnotation": "Remove",
   "chatWorkPanel.document.handoff": "Hand off to agent",
