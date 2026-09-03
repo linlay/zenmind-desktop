@@ -101,6 +101,9 @@ test("catalog items keep the cloud source label and target version when a local 
 test("market storefront uses one WorkBuddy-inspired list with per-card source labels", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
   const styles = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
+  const renderCardStart = storefront.indexOf("function renderCard");
+  const renderCardEnd = storefront.indexOf("const toolbarImportLabel", renderCardStart);
+  const renderCard = storefront.slice(renderCardStart, renderCardEnd);
 
   assert.match(storefront, /market\.storefront\.allTitle/u);
   assert.doesNotMatch(storefront, /market\.storefront\.featuredTitle/u);
@@ -113,6 +116,18 @@ test("market storefront uses one WorkBuddy-inspired list with per-card source la
   assert.match(styles, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/u);
   assert.match(styles, /\.market-store-action\.is-compact-icon\.ant-btn/u);
   assert.match(storefront, /activeTab\s*===\s*"skills"[\s\S]*?market\.toolbar\.myInstalled/u);
+  assert.match(storefront, /market\.toolbar\.myFavorites/u);
+  assert.match(storefront, /rangeMode\s*===\s*"favorites"[\s\S]*?item\.favorited/u);
+  assert.match(storefront, /command\(\{\s*includeFavorites\s*\}\)/u);
+  assert.match(storefront, /disabled=\{!isMarketAuthenticated\s*\|\|\s*isFavoriting/u);
+  assert.match(storefront, /function canFavoriteMarketItem\(item: MarketItem\)[\s\S]*?item\.type === "website-app"[\s\S]*?item\.type !== "skill" \|\| isCloudMarketItem\(item\)/u);
+  assert.match(renderCard, /canFavoriteMarketItem\(item\)[\s\S]*?toggleFavorite\(item\)/u);
+  assert.match(storefront, /canFavoriteMarketItem\(selectedDetailItem\)[\s\S]*?toggleFavorite\(selectedDetailItem\)/u);
+  assert.match(storefront, /activeTab !== "websiteApps"[\s\S]*?market\.toolbar\.myFavorites/u);
+  assert.match(storefront, /activeTab === "websiteApps" \? \[\] : \[\{ label: t\("market\.scope\.favorites"\)/u);
+  assert.doesNotMatch(storefront, /SortAscendingOutlined|sortMarketItems|sortMode|market\.sort\./u);
+  assert.match(storefront, /formatMarketDateTime\(item\.publishedAt,\s*locale\)/u);
+  assert.match(storefront, /formatMarketDateTime\(item\.updatedAt,\s*locale\)/u);
   assert.match(styles, /\.market-store-header-tools/u);
 });
 
@@ -120,12 +135,14 @@ test("skill market separates uninstalled cloud skills from installed local and c
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
 
   assert.match(storefront, /function isCloudMarketItem\(item: MarketItem\)[\s\S]*?item\.marketplaceAvailable\s*\|\|\s*item\.source\s*===\s*"cloud"/u);
-  assert.match(storefront, /function isCloudSkillStorefrontItem\(item: MarketItem\)[\s\S]*?item\.state\s*===\s*"update-available"/u);
+  assert.match(storefront, /function isCloudSkillStorefrontItem\(item: MarketItem\)[\s\S]*?isInstalledMarketItem\(item\)[\s\S]*?item\.state\s*===\s*"update-available"/u);
   assert.match(storefront, /activeTab\s*===\s*"skills"[\s\S]*?rangeMode\s*===\s*"installed"[\s\S]*?isInstalledMarketItem\(item\)[\s\S]*?isCloudSkillStorefrontItem\(item\)/u);
   assert.match(storefront, /market\.storefront\.cloudSkillsTitle/u);
   assert.match(storefront, /market\.storefront\.installedSkillsTitle/u);
   assert.match(storefront, /activeTab\s*!==\s*"skills"[\s\S]*?market-store-search-filter-button/u);
-  assert.match(storefront, /item\.type === "skill" && isInstalledMarketItem\(item\)[\s\S]*?icon=\{<MinusOutlined \/>\}[\s\S]*?runMarketAction\(item, "uninstall"\)/u);
+  assert.match(storefront, /item\.type === "skill" && isInstalledMarketItem\(item\)[\s\S]*?rangeMode !== "installed"[\s\S]*?icon=\{<CheckOutlined \/>\}[\s\S]*?icon=\{<MinusOutlined \/>\}[\s\S]*?setPendingSkillUninstall\(item\)/u);
+  assert.match(storefront, /market\.skill\.uninstallConfirmTitle[\s\S]*?market\.skill\.uninstallConfirmDescription/u);
+  assert.match(storefront, /confirmLoading=\{busyItemId === pendingSkillUninstall\?\.id\}[\s\S]*?onOk=\{\(\) => void confirmSkillUninstall\(\)\}/u);
 });
 
 test("skill toolbar provides local import and the create-skill assistant action", () => {
