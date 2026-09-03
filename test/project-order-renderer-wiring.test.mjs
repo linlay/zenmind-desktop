@@ -103,6 +103,12 @@ test("Project header hides nested actions with the outer group and uses one tool
     "navigation",
     "AppSidebar.tsx",
   );
+  const brandMark = readSource(
+    "src",
+    "renderer",
+    "components",
+    "BrandMark.tsx",
+  );
   const conditionalActionsStart = sidebar.indexOf(
     '{args.groupId === "assistants" && expanded ? (',
   );
@@ -142,6 +148,14 @@ test("Project header hides nested actions with the outer group and uses one tool
     assert.match(button, /aria-label=/u);
     assert.doesNotMatch(button, /\btitle=/u);
   }
+  assert.match(
+    brandMark,
+    /case "expand_all":[\s\S]*?<path d="m6 9 6-6 6 6" \/>[\s\S]*?<path d="m6 15 6 6 6-6" \/>[\s\S]*?<path d="M3 12h18" \/>/u,
+  );
+  assert.match(
+    brandMark,
+    /case "collapse_all":[\s\S]*?<path d="m6 3 6 6 6-6" \/>[\s\S]*?<path d="m6 21 6-6 6 6" \/>[\s\S]*?<path d="M3 12h18" \/>/u,
+  );
 });
 
 test("AppShell optimistically applies, canonicalizes, and rolls back Project order", () => {

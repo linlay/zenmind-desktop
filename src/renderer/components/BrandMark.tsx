@@ -202,17 +202,17 @@ export function SidebarActionIcon({ kind, className }: SidebarActionIconProps) {
     case "expand_all":
       return (
         <svg {...iconProps}>
-          <path d="m8 9 4-4 4 4" />
-          <path d="m8 15 4 4 4-4" />
-          <path d="M5 12h14" />
+          <path d="m6 9 6-6 6 6" />
+          <path d="m6 15 6 6 6-6" />
+          <path d="M3 12h18" />
         </svg>
       );
     case "collapse_all":
       return (
         <svg {...iconProps}>
-          <path d="m8 5 4 4 4-4" />
-          <path d="m8 19 4-4 4 4" />
-          <path d="M5 12h14" />
+          <path d="m6 3 6 6 6-6" />
+          <path d="m6 21 6-6 6 6" />
+          <path d="M3 12h18" />
         </svg>
       );
     case "refresh":
