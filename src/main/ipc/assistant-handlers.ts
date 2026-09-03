@@ -723,19 +723,7 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   });
 
   ipcMain.handle("assistant.markAgentChatsRead", async (_event: any, agentKey: string) => {
-    const result = await assistantBridge?.markAgentChatsRead(agentKey);
-    if (result?.ok) {
-      assistantNavigationStatusClient?.scheduleRefresh(0);
-    }
-    return result;
-  });
-
-  ipcMain.handle("assistant.markChatRead", async (_event: any, chatId: string, runId?: string) => {
-    const result = await assistantBridge?.markChatRead(chatId, runId);
-    if (result?.ok) {
-      assistantNavigationStatusClient?.scheduleRefresh(0);
-    }
-    return result;
+    return assistantBridge?.markAgentChatsRead(agentKey);
   });
 
   ipcMain.handle("assistant.renameChat", async (_event: any, chatId: string, chatName: string) => {

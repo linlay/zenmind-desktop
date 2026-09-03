@@ -1796,9 +1796,13 @@ test("Projects sidebar toggles without navigation and summarizes numeric awaitin
     assistantAgentRenderer,
     /<Tooltip content=\{t\("sidebar\.agent\.markAllRead"\)\}>/,
   );
+  assert.doesNotMatch(
+    assistantOpenChatHandler,
+    /markChatRead|markAgentChatsRead|\/api\/read/,
+  );
   assert.match(
     assistantOpenChatHandler,
-    /if \(!chat\.isRead && !chat\.hasActiveRun\)[\s\S]*?markChatRead\(chat\.chatId, chat\.lastRunId \|\| undefined\)[\s\S]*?markAgentChatsRead\(chat\.agentKey\)/,
+    /requestNavigate\(createAgentChatRoute\(chat\.agentKey, chat\.chatId\), \{/,
   );
 });
 
@@ -6707,9 +6711,15 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "REQUEST", "TYPE"));
   assert.doesNotMatch(serviceWebviewBridgeContracts, removedSymbolPattern("LEGACY", "AGENT", "APP", "CLIPBOARD", "RESPONSE", "TYPE"));
   assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action"/);
-  assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL = "desktop:service-webview:route-ack"/);
+  assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL = "desktop:service-webview:route-status"/);
+  assert.match(serviceWebviewBridgeContracts, /DESKTOP_ROUTE_READY_MESSAGE_TYPE = "desktopRouteReady"/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE = "desktopRouteApplied"/);
-  assert.match(serviceWebviewBridgeContracts, /isServiceWebviewRouteAppliedAck/);
+  assert.match(serviceWebviewBridgeContracts, /type ServiceWebviewRouteStatus/);
+  assert.match(serviceWebviewBridgeContracts, /isServiceWebviewRouteStatus/);
+  assert.match(serviceWebviewBridgeContracts, /value\.startsWith\("\/"\)/);
+  assert.match(serviceWebviewBridgeContracts, /!value\.startsWith\("\/\/"\)/);
+  assert.match(serviceWebviewBridgeContracts, /!value\.includes\("\\\\"\)/);
+  assert.match(serviceWebviewBridgeContracts, /value\.length <= 8_192/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_REQUEST_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_SCREENSHOT_CAPTURE_RESPONSE_TYPE/);
   assert.match(serviceWebviewBridgeContracts, /DESKTOP_WEBS_LIST_REQUEST_TYPE/);
@@ -6729,14 +6739,15 @@ test("service webview surface provides webview-backed assistant context instead 
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL/);
   assert.match(serviceWebviewPreload, /payload\.type !== DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE/);
   assert.match(serviceWebviewPreload, /window\.dispatchEvent\(new CustomEvent\(PRELOAD_TO_PAGE_EVENT/);
-  assert.match(serviceWebviewPreload, /PAGE_TO_PRELOAD_ROUTE_ACK_EVENT/);
-  assert.match(serviceWebviewPreload, /isServiceWebviewRouteAppliedAck\(payload\)/);
+  assert.match(serviceWebviewPreload, /PAGE_TO_PRELOAD_ROUTE_STATUS_EVENT/);
+  assert.match(serviceWebviewPreload, /isServiceWebviewRouteStatus\(payload\)/);
   assert.match(
     serviceWebviewPreload,
-    /ipcRenderer\.sendToHost\(SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL, payload\)/,
+    /ipcRenderer\.sendToHost\(SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL, payload\)/,
   );
-  assert.match(serviceWebviewSurface, /channel === SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL/);
-  assert.match(serviceWebviewSurface, /settleMainChatRouterAck\(payload\)/);
+  assert.match(serviceWebviewSurface, /channel === SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL/);
+  assert.match(serviceWebviewSurface, /handleMainChatRouterReady\(payload\)/);
+  assert.match(serviceWebviewSurface, /settleMainChatRouterApplied\(payload\)/);
   assert.match(serviceWebviewPreload, /ipcRenderer\.on\(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL/);
   assert.match(serviceWebviewPreload, /PRELOAD_TO_PAGE_ACTION_EVENT/);
   assert.match(serviceWebviewPreload, /AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION/);
@@ -7877,9 +7888,7 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
   assert.match(desktopPetController, /t\("desktopPet\.task\.untitled"\)/);
   assert.match(desktopPetController, /left\.status === "awaiting" \? -1 : 1/);
   assert.match(petRuntime, /state\.assistantNavigationStatusClient\?\.getSnapshot\(\)/);
-  assert.match(petRuntime, /async function openTaskChat[\s\S]{0,760}void markAgentPlatformChatRead\(chatId\);/);
-  assert.match(petRuntime, /async function replyMessage[\s\S]{0,760}result\?\.ok !== false[\s\S]{0,120}markAgentPlatformChatRead\(chatId\)/);
-  assert.match(petRuntime, /function dismissMessage[\s\S]{0,480}markAgentPlatformChatRead\(chatId\)/);
+  assert.doesNotMatch(petRuntime, /markAgentPlatformChatRead|\/api\/read/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?refreshDesktopPetState\(\);/);
   assert.match(mainProcess, /openDesktopPetTaskChat/);
   assert.match(desktopPetHandlers, /desktopPet\.openTaskChat/);

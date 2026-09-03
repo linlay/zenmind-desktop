@@ -244,6 +244,8 @@ export interface AssistantNavChatItem {
   lastRunId: string;
   lastRunContent: string;
   isRead: boolean;
+  readAt?: EpochMilliseconds;
+  readRunId: string;
   hasActiveRun: boolean;
   hasPendingAwaiting: boolean;
   awaitingCount?: number;

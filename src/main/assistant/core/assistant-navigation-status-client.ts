@@ -72,6 +72,8 @@ type PlatformChatSummary = {
   message?: unknown;
   read?: unknown;
   isRead?: unknown;
+  readAt?: unknown;
+  readRunId?: unknown;
   activeRun?: PlatformActiveRunSummary | null;
   awaiting?: unknown;
   hasPendingAwaiting?: unknown;
@@ -206,6 +208,11 @@ const NAVIGATION_GIT_BRANCH_CACHE_MS = 15_000;
 const NAVIGATION_GIT_BRANCH_TIMEOUT_MS = 1_000;
 const navigationGitBranchCache = new Map<string, AssistantGitBranchCacheEntry>();
 const IGNORED_PUSH_TYPES = new Set(["heartbeat", "live.connected"]);
+const JOURNALED_NAVIGATION_PUSH_TYPES = new Set([
+  "chat.read",
+  "chat.unread",
+  "chat.read_all",
+]);
 const STRUCTURED_PUSH_TIME_FIELDS = [
   "createdAt",
   "updatedAt",
@@ -541,6 +548,20 @@ function readChatIsRead(chat: PlatformChatSummary) {
   return true;
 }
 
+function readChatReadAt(chat: PlatformChatSummary) {
+  if (isObjectRecord(chat.read)) {
+    return toTimestampMs(chat.read.readAt) ?? toTimestampMs(chat.readAt);
+  }
+  return toTimestampMs(chat.readAt);
+}
+
+function readChatReadRunId(chat: PlatformChatSummary) {
+  if (isObjectRecord(chat.read)) {
+    return toText(chat.read.readRunId) || toText(chat.readRunId);
+  }
+  return toText(chat.readRunId);
+}
+
 function readChatPendingAwaiting(chat: PlatformChatSummary) {
   if (chat.hasPendingAwaiting === true) {
     return true;
@@ -749,6 +770,8 @@ function mapNavigationChat(
     lastRunId: toText(chat.lastRunId),
     lastRunContent,
     isRead: readChatIsRead(chat),
+    readAt: readChatReadAt(chat),
+    readRunId: readChatReadRunId(chat),
     hasActiveRun: readChatActiveRun(chat),
     hasPendingAwaiting: readChatPendingAwaiting(chat),
     awaitingCount: readChatAwaitingCount(chat),
@@ -1080,6 +1103,89 @@ function readPushActiveRun(event: NavigationPushEvent, fallback: boolean) {
   return fallback;
 }
 
+function parseRunIdMillis(runId: string): number | undefined {
+  const normalized = runId.trim().toLowerCase();
+  if (!normalized || !/^[0-9a-z]+$/.test(normalized)) {
+    return undefined;
+  }
+  const millis = Number.parseInt(normalized, 36);
+  return Number.isSafeInteger(millis) ? millis : undefined;
+}
+
+/** Mirrors Agent Platform's chat.RunIDAfter ordering contract. */
+function isRunIdAfter(runId: string, cursor: string) {
+  const normalizedRunId = runId.trim();
+  const normalizedCursor = cursor.trim();
+  const runMillis = parseRunIdMillis(normalizedRunId);
+  const cursorMillis = parseRunIdMillis(normalizedCursor);
+  if (runMillis !== undefined && cursorMillis !== undefined && runMillis !== cursorMillis) {
+    return runMillis > cursorMillis;
+  }
+  return normalizedRunId.localeCompare(normalizedCursor) > 0;
+}
+
+function isValidReadProjectionPush(event: NavigationPushEvent) {
+  if (event.type !== "chat.read" && event.type !== "chat.unread") {
+    return true;
+  }
+  const agentUnreadCount = Number(event.agentUnreadCount);
+  return Boolean(
+    readPushChatId(event) &&
+    Object.hasOwn(event, "agentKey") &&
+    typeof event.agentKey === "string" &&
+    (toText(event.lastRunId) || toText(event.runId)) &&
+    Object.hasOwn(event, "readRunId") &&
+    typeof event.readRunId === "string" &&
+    Number.isInteger(agentUnreadCount) &&
+    agentUnreadCount >= 0,
+  );
+}
+
+function shouldIgnoreReadStatePush(
+  event: NavigationPushEvent,
+  current: AssistantNavChatItem,
+) {
+  const eventLastRunId = toText(event.lastRunId) || toText(event.runId);
+  const eventReadRunId = toText(event.readRunId);
+  if (event.type === "chat.read") {
+    if (!eventReadRunId) {
+      return false;
+    }
+    if (current.lastRunId && isRunIdAfter(current.lastRunId, eventReadRunId)) {
+      return true;
+    }
+    if (current.readRunId && isRunIdAfter(current.readRunId, eventReadRunId)) {
+      return true;
+    }
+    const eventReadAt = toTimestampMs(event.readAt);
+    return Boolean(
+      current.isRead &&
+      current.readRunId === eventReadRunId &&
+      current.readAt !== undefined &&
+      eventReadAt !== undefined &&
+      current.readAt > eventReadAt,
+    );
+  }
+
+  if (!eventLastRunId || !isRunIdAfter(eventLastRunId, eventReadRunId)) {
+    return true;
+  }
+  if (current.lastRunId && isRunIdAfter(current.lastRunId, eventLastRunId)) {
+    return true;
+  }
+  if (current.isRead && current.readRunId && !isRunIdAfter(eventLastRunId, current.readRunId)) {
+    return true;
+  }
+  const eventCreatedAt = toTimestampMs(event.createdAt);
+  return Boolean(
+    current.isRead &&
+    !current.readRunId &&
+    current.readAt !== undefined &&
+    eventCreatedAt !== undefined &&
+    eventCreatedAt <= current.readAt,
+  );
+}
+
 function createChatPatchFromPush(event: NavigationPushEvent, current?: AssistantNavChatItem): AssistantNavChatItem | null {
   const chatId = readPushChatId(event);
   if (!chatId) {
@@ -1089,15 +1195,23 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
   const agentKey = readPushAgentKey(event) || current?.agentKey || "";
   const chatName = toText(event.chatName) || current?.chatName || t("assistant.newChat");
   const eventTimestamp = readPushChatUpdateTimestamp(event);
-  const canReuseCurrentTimestamp = event.type === "chat.read" || event.type === "chat.unread";
+  const isReadStatePush = event.type === "chat.read" || event.type === "chat.unread";
+  const canReuseCurrentTimestamp = isReadStatePush;
   if (eventTimestamp === undefined && (!canReuseCurrentTimestamp || !current)) {
     return null;
   }
   const createdAt = readPushCreatedAt(event, current?.createdAt) ?? eventTimestamp;
-  const updatedAt = eventTimestamp ?? current?.updatedAt;
+  const updatedAt = event.type === "chat.read"
+    ? current?.updatedAt
+    : eventTimestamp ?? current?.updatedAt;
   if (createdAt === undefined || updatedAt === undefined) {
     return null;
   }
+
+  if (isReadStatePush && current && shouldIgnoreReadStatePush(event, current)) {
+    return current;
+  }
+
   let isRead = current?.isRead ?? true;
   if (event.type === "chat.read") {
     isRead = true;
@@ -1120,6 +1234,12 @@ function createChatPatchFromPush(event: NavigationPushEvent, current?: Assistant
     lastRunId: toText(event.lastRunId) || toText(event.runId) || current?.lastRunId || "",
     lastRunContent: preview || current?.lastRunContent || "",
     isRead,
+    readAt: event.type === "chat.read"
+      ? toTimestampMs(event.readAt)
+      : current?.readAt,
+    readRunId: isReadStatePush
+      ? toText(event.readRunId)
+      : current?.readRunId || "",
     hasActiveRun: readPushActiveRun(event, current?.hasActiveRun ?? false),
     hasPendingAwaiting,
     awaitingCount: readPushAwaitingCount(event, hasPendingAwaiting, current?.awaitingCount),
@@ -1304,6 +1424,9 @@ export function applyAssistantNavigationPush(
   if (validateAgentPlatformPushTimeContract(type, event)) {
     return { items: currentItems, changed: false, shouldRefresh: true };
   }
+  if (!isValidReadProjectionPush(event)) {
+    return { items: currentItems, changed: false, shouldRefresh: true };
+  }
   if (IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
   }
@@ -1328,9 +1451,13 @@ export function applyAssistantNavigationPush(
   if (type === "chat.read_all") {
     nextAgent = refreshAgentDerivedFields({
       ...nextAgent,
-      unreadCount: 0,
-      unreadChatCount: 0,
-      recentChats: nextAgent.recentChats.map((chat) => ({ ...chat, isRead: true }))
+      unreadCount: readPushUnreadCount(event, nextAgent.unreadCount, "preserve"),
+      unreadChatCount: readPushUnreadCount(event, nextAgent.unreadChatCount, "preserve"),
+      recentChats: nextAgent.recentChats.map((chat) => ({
+        ...chat,
+        isRead: true,
+        readRunId: chat.lastRunId || chat.readRunId,
+      }))
     });
     nextItems[agentIndex] = nextAgent;
     return { items: nextItems, changed: true, shouldRefresh: false };
@@ -1354,6 +1481,9 @@ export function applyAssistantNavigationPush(
     const patch = createChatPatchFromPush(event, currentChat);
     if (!patch) {
       return { items: currentItems, changed: false, shouldRefresh: true };
+    }
+    if (patch === currentChat) {
+      return { items: currentItems, changed: false, shouldRefresh: false };
     }
     nextAgent.recentChats[chatIndex] = patch;
     nextAgent.unreadCount = readPushUnreadCount(
@@ -1406,6 +1536,9 @@ export function applyAssistantNavigationChatPush(
   if (validateAgentPlatformPushTimeContract(type, event)) {
     return { items: currentItems, changed: false, shouldRefresh: true };
   }
+  if (!isValidReadProjectionPush(event)) {
+    return { items: currentItems, changed: false, shouldRefresh: true };
+  }
   if (IGNORED_PUSH_TYPES.has(type)) {
     return { items: currentItems, changed: false, shouldRefresh: false };
   }
@@ -1426,9 +1559,13 @@ export function applyAssistantNavigationChatPush(
         return chat;
       }
       changed = true;
-      return { ...chat, isRead: true };
+      return {
+        ...chat,
+        isRead: true,
+        readRunId: chat.lastRunId || chat.readRunId,
+      };
     });
-    return { items: nextItems, changed, shouldRefresh: false };
+    return { items: nextItems, changed, shouldRefresh: !changed };
   }
 
   const chatId = readPushChatId(event);
@@ -1453,6 +1590,9 @@ export function applyAssistantNavigationChatPush(
     const patch = createChatPatchFromPush(event, currentItems[chatIndex]);
     if (!patch) {
       return { items: currentItems, changed: false, shouldRefresh: true };
+    }
+    if (patch === currentItems[chatIndex]) {
+      return { items: currentItems, changed: false, shouldRefresh: false };
     }
     const nextItems = currentItems.slice();
     nextItems[chatIndex] = patch;
@@ -1780,7 +1920,10 @@ export class AssistantNavigationStatusClient {
     frame: NavigationPushFrame,
     event: NavigationPushEvent,
   ) {
-    if (!createChatRuntimeStatusPatch(event)) {
+    if (
+      !createChatRuntimeStatusPatch(event) &&
+      !JOURNALED_NAVIGATION_PUSH_TYPES.has(event.type)
+    ) {
       return;
     }
     this.runtimeStatusPushSequence += 1;
@@ -2049,6 +2192,17 @@ export class AssistantNavigationStatusClient {
         updatedAt: nowEpochMillis()
       });
     }
+    const isReadProjectionPush = JOURNALED_NAVIGATION_PUSH_TYPES.has(event.type);
+    if (isReadProjectionPush) {
+      // Read state is a push-owned projection. A successfully applied or
+      // recognized stale event must not start a snapshot race; only a wholly
+      // missing target needs server calibration.
+      if (next.shouldRefresh && nextActivity.shouldRefresh && nextChats.shouldRefresh) {
+        this.scheduleRefresh();
+      }
+      return;
+    }
+
     // A new chat cannot be optimistically inserted into the global Chats list:
     // the server owns its ordering and visible cutoff. Refresh it immediately
     // so the route mirrored from agent-webclient can select the new list item.

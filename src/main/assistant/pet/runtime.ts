@@ -103,7 +103,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const desktopPetDonePreviewDismissalTracker = createDesktopPetDonePreviewDismissalTracker();
   const desktopPetActiveRunTracker = createDesktopPetActiveRunTracker();
   const desktopPetDismissedMessages = new Map<string, number>();
-  const desktopPetReadMessages = new Map<string, number>();
   const desktopPetMessageCache = new Map<string, DesktopPetMessageItem>();
   let destroyingPanelWindow = false;
   let desktopPetPanelPlacement: DesktopPetPanelPlacement = null;
@@ -354,17 +353,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return !dismissedAt || message.updatedAt > dismissedAt;
   }
 
-  function applyMessageReadState(message: DesktopPetMessageItem) {
-    const readAt = desktopPetReadMessages.get(message.chatId);
-    if (!readAt || message.updatedAt > readAt || !message.unread) {
-      return message;
-    }
-    return {
-      ...message,
-      unread: false
-    };
-  }
-
   function getMessagesForState() {
     const navigationMessages = createDesktopPetMessagesFromNavigationSnapshot(
       state.assistantNavigationStatusClient?.getSnapshot()
@@ -375,7 +363,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     rememberMessages(liveMessages);
     const messages = mergeMessages(liveMessages, [...desktopPetMessageCache.values()]);
     return messages
-      .map(applyMessageReadState)
       .filter((message) => isMessageVisible(message) && (message.unread || message.status === "awaiting"));
   }
 
@@ -821,62 +808,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     return { ok: true };
   }
 
-  async function markAgentPlatformChatRead(chatId: string) {
-    const normalizedChatId = chatId.trim();
-    if (!normalizedChatId) {
-      return;
-    }
-    try {
-      const serviceState = await getResponsiveServiceState(options.app, "agent-platform");
-      const baseUrl = serviceState.status === "running" ? serviceState.healthMeta.webUrl.trim() : "";
-      if (!baseUrl) {
-        return;
-      }
-      const tokenResult = await issueAgentAccessToken(options.app, "missing");
-      if (!tokenResult.ok || !tokenResult.token.trim()) {
-        return;
-      }
-      const response = await fetch(new URL("/api/read", baseUrl), {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${tokenResult.token.trim()}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ chatId: normalizedChatId })
-      });
-      if (!response.ok) {
-        throw new Error(`agent-platform /api/read returned HTTP ${response.status}`);
-      }
-      desktopPetReadMessages.set(normalizedChatId, Date.now());
-      const payload = await response.json() as { data?: unknown };
-      const data = typeof payload.data === "object" && payload.data !== null
-        ? payload.data as { agentKey?: unknown; agentUnreadCount?: unknown }
-        : {};
-      const agentKey = typeof data.agentKey === "string" ? data.agentKey.trim() : "";
-      const rawUnreadCount = Number(data.agentUnreadCount);
-      const fallbackUnreadCount = Math.max(0, (state.desktopPetAgentStatus?.unreadCount ?? 1) - 1);
-      const unreadCount = Number.isFinite(rawUnreadCount) && rawUnreadCount >= 0
-        ? Math.round(rawUnreadCount)
-        : fallbackUnreadCount;
-
-      if (!state.desktopPetAgentStatus || (agentKey && agentKey !== state.desktopPetAgentStatus.agentKey)) {
-        return;
-      }
-      state.desktopPetAgentStatus = {
-        ...state.desktopPetAgentStatus,
-        chatId: normalizedChatId,
-        unreadCount,
-        stale: false,
-        updatedAt: Date.now()
-      };
-      refreshState();
-    } catch (error) {
-      console.warn("[desktop-pet] failed to mark agent chat read", error);
-    } finally {
-      scheduleStatusRefresh(250, true);
-    }
-  }
-
   async function openAssistant() {
     options.showMainWindow();
     const targetWindow = state.mainWindow && !state.mainWindow.isDestroyed() ? state.mainWindow : null;
@@ -900,7 +831,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       chatId,
       focusComposerOnComplete: false
     });
-    void markAgentPlatformChatRead(chatId);
     return {
       ok: true,
       message: t("main.taskChatOpened")
@@ -979,9 +909,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       message
     });
     desktopPetDismissedMessages.delete(chatId);
-    if (result?.ok !== false) {
-      void markAgentPlatformChatRead(chatId);
-    }
     scheduleStatusRefresh(200);
     return result;
   }
@@ -994,7 +921,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     }
     desktopPetDismissedMessages.set(chatId, updatedAt);
     refreshState();
-    void markAgentPlatformChatRead(chatId);
     return { ok: true };
   }
 
@@ -1029,7 +955,6 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     endDrag,
     hideWindow,
     setMouseInteractive,
-    markAgentPlatformChatRead,
     openAssistant,
     openTaskChat,
     requestSignature,

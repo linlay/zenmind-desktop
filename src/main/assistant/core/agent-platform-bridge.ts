@@ -1701,30 +1701,6 @@ export class AgentPlatformAssistantBridge {
     return { ok: true, message: t("assistant.agentChatsMarkedRead") };
   }
 
-  async markChatRead(chatId: string, runId?: string) {
-    const trimmedChatId = chatId.trim();
-    const trimmedRunId = runId?.trim() ?? "";
-    if (!trimmedChatId) {
-      return { ok: false, message: t("assistant.chatIdRequired") };
-    }
-    const availability = await this.resolvePlatform();
-    if (!availability.ok) {
-      return { ok: false, message: availability.message };
-    }
-    const response = await this.platformFetch(availability.baseUrl, "/api/read", {
-      method: "POST",
-      headers: this.jsonHeaders(availability.token),
-      body: JSON.stringify({
-        chatId: trimmedChatId,
-        ...(trimmedRunId ? { runId: trimmedRunId } : {}),
-      })
-    });
-    if (!response.ok) {
-      return { ok: false, message: await readErrorText(response) };
-    }
-    return { ok: true, message: t("assistant.agentChatsMarkedRead") };
-  }
-
   async renameChat(chatId: string, chatName: string) {
     const trimmedChatId = chatId.trim();
     const trimmedChatName = chatName.trim();

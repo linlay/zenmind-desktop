@@ -97,6 +97,19 @@ function readAssistantNavChatIsRead(record: Record<string, unknown>) {
   return true;
 }
 
+function readAssistantNavChatReadAt(record: Record<string, unknown>) {
+  const nestedRead = isObjectRecord(record.read) ? record.read : {};
+  return parseOptionalNullableAgentPlatformEpochMillis(
+    nestedRead.readAt ?? record.readAt,
+    "assistantNavigation.chat.readAt",
+  ) ?? undefined;
+}
+
+function readAssistantNavChatReadRunId(record: Record<string, unknown>) {
+  const nestedRead = isObjectRecord(record.read) ? record.read : {};
+  return toText(nestedRead.readRunId ?? record.readRunId);
+}
+
 function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): AssistantNavChatItem | null {
   const record = asRecord(value);
   const chatId = toText(record.chatId);
@@ -115,6 +128,8 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
     lastRunId: toText(record.lastRunId),
     lastRunContent: toText(record.lastRunContent),
     isRead: readAssistantNavChatIsRead(record),
+    readAt: readAssistantNavChatReadAt(record),
+    readRunId: readAssistantNavChatReadRunId(record),
     hasActiveRun: record.hasActiveRun === true,
     hasPendingAwaiting: record.hasPendingAwaiting === true,
     awaitingCount: toNonNegativeInteger(record.awaitingCount),

@@ -3350,23 +3350,6 @@ export function AppSidebar({
     ) {
       dismissBootstrapGuideBubble("chat");
     }
-    if (!chat.isRead && !chat.hasActiveRun) {
-      const assistantApi = window.electronAPI
-        .assistant as typeof window.electronAPI.assistant & {
-        markChatRead?: (
-          chatId: string,
-          runId?: string,
-        ) => ReturnType<typeof window.electronAPI.assistant.markAgentChatsRead>;
-      };
-      const markChatRead = assistantApi.markChatRead;
-      const markReadRequest =
-        typeof markChatRead === "function"
-          ? markChatRead(chat.chatId, chat.lastRunId || undefined)
-          : window.electronAPI.assistant.markAgentChatsRead(chat.agentKey);
-      void markReadRequest.catch((error: unknown) => {
-        console.warn("[assistant] failed to mark chat read", error);
-      });
-    }
     requestNavigate(createAgentChatRoute(chat.agentKey, chat.chatId), {
       retriggerAgentRoute: true,
       focusAgentChat: true,

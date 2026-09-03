@@ -56,6 +56,7 @@ function createNavigationChat(overrides = {}) {
     lastRunId: "",
     lastRunContent: "",
     isRead: true,
+    readRunId: "",
     hasActiveRun: false,
     hasPendingAwaiting: false,
     ...overrides,
@@ -573,9 +574,9 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     agentKey: "coder-project",
     createdAt: EPOCH_MS,
     updatedAt: EPOCH_MS + 1,
-    lastRunId: "previous-run",
+    lastRunId: "run-1",
     lastRunContent: "Original assistant preview",
-    read: { isRead: true },
+    read: { isRead: true, readAt: EPOCH_MS + 1, readRunId: "run-1" },
   };
 
   class FakeWebSocket {
@@ -675,7 +676,7 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     data: {
       agentKey: "runtime-owner-does-not-match-project",
       chatId,
-      runId: "current-run",
+      runId: "run-2",
       startedAt: EPOCH_MS + 2,
     },
   });
@@ -689,6 +690,18 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
       mode: "planning",
     },
   });
+  sockets[0].emit({
+    frame: "push",
+    type: "chat.unread",
+    data: {
+      agentKey: "coder-project",
+      chatId,
+      lastRunId: "run-2",
+      readRunId: "run-1",
+      createdAt: EPOCH_MS + 4,
+      agentUnreadCount: 1,
+    },
+  });
   sockets[0].respondWithStaleChats();
 
   const result = await refresh;
@@ -699,17 +712,24 @@ test("assistant navigation replays chat runtime pushes that arrive during a snap
     assert.equal(chat?.hasActiveRun, true);
     assert.equal(chat?.hasPendingAwaiting, true);
     assert.equal(chat?.awaitingMode, "planning");
-    assert.equal(chat?.lastRunId, "current-run");
+    assert.equal(chat?.lastRunId, "run-2");
+    assert.equal(chat?.isRead, false);
+    assert.equal(chat?.readRunId, "run-1");
     assert.equal(chat?.chatName, staleChat.chatName);
     assert.equal(chat?.lastRunContent, staleChat.lastRunContent);
-    assert.equal(chat?.updatedAt, staleChat.updatedAt);
+    assert.equal(chat?.updatedAt, EPOCH_MS + 4);
   }
   assert.equal(result.items[0]?.hasPendingAwaiting, true);
   assert.equal(result.activityItems[0]?.hasPendingAwaiting, true);
 });
 
 test("assistant navigation chat reducer updates displayed chats without checking agent mode", () => {
-  const current = [createNavigationChat({ agentKey: "coder-agent", mode: "CODER" })];
+  const current = [createNavigationChat({
+    agentKey: "coder-agent",
+    mode: "CODER",
+    lastRunId: "run-1",
+    readRunId: "run-1",
+  })];
   const unread = applyAssistantNavigationChatPush(current, {
     frame: "push",
     type: "chat.unread",
@@ -717,11 +737,15 @@ test("assistant navigation chat reducer updates displayed chats without checking
       agentKey: "coder-agent",
       chatId: "chat-1",
       createdAt: EPOCH_MS + 1,
+      lastRunId: "run-2",
+      readRunId: "run-1",
+      agentUnreadCount: 1,
     },
   });
   assert.equal(unread.changed, true);
   assert.equal(unread.items[0].isRead, false);
   assert.equal(unread.items[0].updatedAt, EPOCH_MS + 1);
+  assert.equal(unread.items[0].readRunId, "run-1");
 
   const read = applyAssistantNavigationChatPush(unread.items, {
     frame: "push",
@@ -730,11 +754,37 @@ test("assistant navigation chat reducer updates displayed chats without checking
       agentKey: "coder-agent",
       chatId: "chat-1",
       readAt: EPOCH_MS + 2,
+      lastRunId: "run-2",
+      readRunId: "run-2",
+      agentUnreadCount: 0,
     },
   });
   assert.equal(read.changed, true);
   assert.equal(read.items[0].isRead, true);
-  assert.equal(read.items[0].updatedAt, EPOCH_MS + 2);
+  assert.equal(read.items[0].updatedAt, EPOCH_MS + 1);
+  assert.equal(read.items[0].readAt, EPOCH_MS + 2);
+  assert.equal(read.items[0].readRunId, "run-2");
+
+  const readFromOlderSnapshot = applyAssistantNavigationChatPush([
+    createNavigationChat({
+      agentKey: "coder-agent",
+      lastRunId: "run-1",
+      isRead: false,
+      readRunId: "run-1",
+    }),
+  ], {
+    frame: "push",
+    type: "chat.read",
+    data: {
+      agentKey: "coder-agent",
+      chatId: "chat-1",
+      readAt: EPOCH_MS + 2,
+      lastRunId: "run-2",
+      readRunId: "run-2",
+      agentUnreadCount: 0,
+    },
+  });
+  assert.equal(readFromOlderSnapshot.items[0].lastRunId, "run-2");
 
   const started = applyAssistantNavigationChatPush(read.items, {
     frame: "push",
@@ -803,6 +853,118 @@ test("assistant navigation chat reducer updates displayed chats without checking
   assert.equal(absent.changed, false);
   assert.equal(absent.shouldRefresh, true);
   assert.deepEqual(absent.items.map((chat) => chat.chatId), ["chat-1"]);
+});
+
+test("assistant navigation ignores stale read state pushes and accepts a newer run unread", () => {
+  const current = [createNavigationChat({
+    lastRunId: "run-2",
+    isRead: true,
+    readAt: EPOCH_MS + 20,
+    readRunId: "run-2",
+  })];
+
+  const staleUnread = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "chat.unread",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-1",
+      readRunId: "",
+      createdAt: EPOCH_MS + 10,
+      agentUnreadCount: 0,
+    },
+  });
+  assert.equal(staleUnread.changed, false);
+  assert.equal(staleUnread.shouldRefresh, false);
+  assert.equal(staleUnread.items[0].isRead, true);
+
+  const newerUnread = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "chat.unread",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-3",
+      readRunId: "run-2",
+      createdAt: EPOCH_MS + 30,
+      agentUnreadCount: 1,
+    },
+  });
+  assert.equal(newerUnread.changed, true);
+  assert.equal(newerUnread.items[0].isRead, false);
+  assert.equal(newerUnread.items[0].lastRunId, "run-3");
+  assert.equal(newerUnread.items[0].updatedAt, EPOCH_MS + 30);
+});
+
+test("assistant navigation applies read push without scheduling a full refresh", () => {
+  const unreadChat = createNavigationChat({
+    lastRunId: "run-2",
+    isRead: false,
+    readRunId: "run-1",
+  });
+  const agent = createAgent({
+    unreadCount: 1,
+    unreadChatCount: 1,
+    recentChats: [unreadChat],
+  });
+  const snapshots = [];
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => os.tmpdir() },
+    getServiceState: async () => ({ status: "stopped", healthMeta: { webUrl: "" } }),
+    issueAccessToken: async () => ({ ok: false, token: "", message: "" }),
+    onSnapshot: (snapshot) => snapshots.push(snapshot),
+  });
+  client.latestResult = {
+    ok: true,
+    items: [agent],
+    activityItems: [agent],
+    chatItems: [unreadChat],
+    chatItemsHasMore: false,
+    chatSortMode: "recent",
+    chatOrderingSupported: true,
+    message: "ready",
+    updatedAt: EPOCH_MS,
+  };
+  let refreshCount = 0;
+  client.scheduleRefresh = () => { refreshCount += 1; };
+
+  client.handleRealtimeFrame({
+    frame: "push",
+    type: "chat.read",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-2",
+      readRunId: "run-2",
+      readAt: EPOCH_MS + 10,
+      agentUnreadCount: 0,
+    },
+  });
+
+  assert.equal(refreshCount, 0);
+  assert.equal(snapshots.length, 1);
+  assert.equal(findChat(snapshots[0].items, "chat-1")?.isRead, true);
+  assert.equal(snapshots[0].chatItems[0]?.isRead, true);
+});
+
+test("assistant navigation calibrates from a snapshot when a read projection push is incomplete", () => {
+  const current = [createNavigationChat({ isRead: false })];
+  const invalid = applyAssistantNavigationChatPush(current, {
+    frame: "push",
+    type: "chat.read",
+    data: {
+      chatId: "chat-1",
+      agentKey: "zenmi",
+      lastRunId: "run-1",
+      readRunId: "run-1",
+      readAt: EPOCH_MS + 1,
+    },
+  });
+
+  assert.equal(invalid.changed, false);
+  assert.equal(invalid.shouldRefresh, true);
+  assert.equal(invalid.items[0].isRead, false);
 });
 
 test("assistant navigation live status reports WebSocket setup failures without credentials", async (t) => {
@@ -935,6 +1097,25 @@ test("assistant navigation chat mapper preserves server order while still filter
   ]);
 
   assert.deepEqual(chats.map((chat) => chat.chatId), ["second", "first"]);
+});
+
+test("assistant navigation chat mapper preserves authoritative read metadata", () => {
+  const [chat] = buildAssistantNavigationChatsFromPlatform([{
+    chatId: "read-metadata",
+    agentKey: "zenmi",
+    createdAt: EPOCH_MS,
+    updatedAt: EPOCH_MS + 1,
+    lastRunId: "run-2",
+    read: {
+      isRead: true,
+      readAt: EPOCH_MS + 2,
+      readRunId: "run-2",
+    },
+  }]);
+
+  assert.equal(chat.isRead, true);
+  assert.equal(chat.readAt, EPOCH_MS + 2);
+  assert.equal(chat.readRunId, "run-2");
 });
 
 test("assistant navigation maps the unified activeRun summary contract for Projects and Chats", () => {

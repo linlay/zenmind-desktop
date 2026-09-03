@@ -1019,7 +1019,6 @@ export interface DesktopApi {
     openAttachment: (chatId: string, attachmentId: string) => Promise<{ ok: boolean; message: string; path?: string }>;
     deleteChat: (chatId: string) => Promise<{ ok: boolean; message: string }>;
     markAgentChatsRead: (agentKey: string) => Promise<AssistantNavActionResult>;
-    markChatRead: (chatId: string, runId?: string) => Promise<AssistantNavActionResult>;
     renameChat: (chatId: string, chatName: string) => Promise<AssistantNavActionResult>;
     archiveChat: (chatId: string) => Promise<AssistantNavActionResult>;
     exportChat: (chatId: string) => Promise<AssistantNavActionResult>;
