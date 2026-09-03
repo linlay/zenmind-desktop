@@ -140,7 +140,9 @@ test("skill market separates uninstalled cloud skills from installed local and c
   assert.match(storefront, /market\.storefront\.cloudSkillsTitle/u);
   assert.match(storefront, /market\.storefront\.installedSkillsTitle/u);
   assert.match(storefront, /activeTab\s*!==\s*"skills"[\s\S]*?market-store-search-filter-button/u);
-  assert.match(storefront, /item\.type === "skill" && isInstalledMarketItem\(item\)[\s\S]*?rangeMode !== "installed"[\s\S]*?icon=\{<CheckOutlined \/>\}[\s\S]*?icon=\{<MinusOutlined \/>\}[\s\S]*?runMarketAction\(item, "uninstall"\)/u);
+  assert.match(storefront, /item\.type === "skill" && isInstalledMarketItem\(item\)[\s\S]*?rangeMode !== "installed"[\s\S]*?icon=\{<CheckOutlined \/>\}[\s\S]*?icon=\{<MinusOutlined \/>\}[\s\S]*?setPendingSkillUninstall\(item\)/u);
+  assert.match(storefront, /market\.skill\.uninstallConfirmTitle[\s\S]*?market\.skill\.uninstallConfirmDescription/u);
+  assert.match(storefront, /confirmLoading=\{busyItemId === pendingSkillUninstall\?\.id\}[\s\S]*?onOk=\{\(\) => void confirmSkillUninstall\(\)\}/u);
 });
 
 test("skill toolbar provides local import and the create-skill assistant action", () => {

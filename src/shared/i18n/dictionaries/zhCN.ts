@@ -1700,6 +1700,8 @@ export const zhCNMessages = {
   "market.skill.scope.cloud": "云端",
   "market.skill.scope.local": "本地",
   "market.skill.localImport": "本地导入",
+  "market.skill.uninstallConfirmTitle": "确认卸载技能",
+  "market.skill.uninstallConfirmDescription": "确定卸载“{name}”吗？卸载后，新对话将无法使用该技能。",
   "market.skill.menu.create": "创建技能",
   "market.skill.assistant.agentUnavailable": "请先配置可用的桌面助手，再使用技能助手。",
   "market.skill.assistant.draft": "请帮我创建一个可以实现「……」的 Skill。先向我确认需求，并在写入前展示目标目录和完整文件预览。",

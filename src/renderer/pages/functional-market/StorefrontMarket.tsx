@@ -546,6 +546,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const [isImporting, setIsImporting] = useState(false);
   const [isOpeningSkillAssistant, setIsOpeningSkillAssistant] = useState(false);
   const [selectedDetailItem, setSelectedDetailItem] = useState<MarketItem | null>(null);
+  const [pendingSkillUninstall, setPendingSkillUninstall] = useState<MarketItem | null>(null);
   const searchFilterRef = useRef<HTMLDivElement | null>(null);
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
@@ -825,6 +826,16 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   async function runMarketAction(item: MarketItem, actionName: "install" | "update" | "uninstall") {
     return executeMarketAction(item, actionName);
+  }
+
+  async function confirmSkillUninstall() {
+    if (!pendingSkillUninstall) {
+      return;
+    }
+    const completed = await runMarketAction(pendingSkillUninstall, "uninstall");
+    if (completed) {
+      setPendingSkillUninstall(null);
+    }
   }
 
   async function launchWebsiteApp(itemId: string) {
@@ -1110,7 +1121,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
           disabled={busy}
           icon={<MinusOutlined />}
           loading={busy}
-          onClick={() => void runMarketAction(item, "uninstall")}
+          onClick={() => setPendingSkillUninstall(item)}
           title={t("market.action.uninstall")}
         />
       );
@@ -1563,6 +1574,25 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       toolbar={marketHeaderTools}
     >
       <div className="market-content market-storefront">
+        <Modal
+          cancelText={t("common.cancel")}
+          centered
+          closable={busyItemId !== pendingSkillUninstall?.id}
+          confirmLoading={busyItemId === pendingSkillUninstall?.id}
+          maskClosable={busyItemId !== pendingSkillUninstall?.id}
+          okButtonProps={{ danger: true }}
+          okText={t("market.action.uninstall")}
+          onCancel={() => {
+            if (busyItemId !== pendingSkillUninstall?.id) {
+              setPendingSkillUninstall(null);
+            }
+          }}
+          onOk={() => void confirmSkillUninstall()}
+          open={Boolean(pendingSkillUninstall)}
+          title={t("market.skill.uninstallConfirmTitle")}
+        >
+          <p>{t("market.skill.uninstallConfirmDescription", { name: pendingSkillUninstall?.name ?? "" })}</p>
+        </Modal>
         {renderDetailDialog()}
         {shouldShowMarketStatus ? (
           <div className="market-status-wrap">

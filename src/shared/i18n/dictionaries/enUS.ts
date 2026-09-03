@@ -1700,6 +1700,8 @@ export const enUSMessages = {
   "market.skill.scope.cloud": "Cloud",
   "market.skill.scope.local": "Local",
   "market.skill.localImport": "Local import",
+  "market.skill.uninstallConfirmTitle": "Uninstall skill?",
+  "market.skill.uninstallConfirmDescription": "Uninstall “{name}”? This skill will no longer be available in new conversations.",
   "market.skill.menu.create": "Create skill",
   "market.skill.assistant.agentUnavailable": "Configure an available Desktop assistant before using the Skill assistant.",
   "market.skill.assistant.draft": "Help me create a Skill that can do \"...\". Confirm the requirements first, then show the target directory and complete file preview before writing anything.",
