@@ -3040,6 +3040,103 @@ test("toggleMarketFavorite posts and deletes favorite state through the market A
   });
 });
 
+test("listMarketItems overlays authenticated favorites without authorizing the public catalog request", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-list-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  let catalogAuthorization = "";
+  let favoritesAuthorization = "";
+  const item = {
+    id: "automation",
+    type: "skill",
+    name: "Automation",
+    version: "1.0.0",
+    description: "Automation skill",
+    tags: ["automation"],
+    dependencies: [],
+    assets: {},
+    downloadCount: 8,
+    favoriteCount: 3,
+    favorited: false
+  };
+
+  await withFixtureServer(new Map([
+    ["/api/v1/desktop/catalog", (req, res) => {
+      catalogAuthorization = req.headers.authorization || "";
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ schemaVersion: 1, items: [item] }));
+    }],
+    ["/api/v1/me/favorites", (req, res) => {
+      favoritesAuthorization = req.headers.authorization || "";
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        items: [{ ...item, favorited: true }]
+      }));
+    }]
+  ]), async (baseUrl) => {
+    const listed = await listMarketItems(app, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      catalogUrl: `${baseUrl}/api/v1/desktop/catalog`,
+      sections: ["skills"],
+      includeFavorites: true,
+      issueMarketAccessToken: () => "market-token"
+    });
+
+    assert.equal(listed.items.length, 1);
+    assert.equal(listed.items[0].favorited, true);
+    assert.equal(listed.items[0].favoriteCount, 3);
+    assert.equal(catalogAuthorization, "");
+    assert.equal(favoritesAuthorization, "Bearer market-token");
+  });
+});
+
+test("listMarketItems keeps the public catalog when authenticated favorites are unavailable", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-list-fallback-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+
+  await withFixtureServer(new Map([
+    ["/api/v1/desktop/catalog", (_req, res) => {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({
+        schemaVersion: 1,
+        items: [{
+          id: "automation",
+          type: "skill",
+          name: "Automation",
+          version: "1.0.0",
+          description: "Automation skill",
+          tags: [],
+          dependencies: [],
+          assets: {},
+          favoriteCount: 3,
+          favorited: false
+        }]
+      }));
+    }],
+    ["/api/v1/me/favorites", (_req, res) => {
+      res.statusCode = 401;
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ message: "login required" }));
+    }]
+  ]), async (baseUrl) => {
+    const listed = await listMarketItems(app, {
+      apiBaseUrl: `${baseUrl}/api/v1`,
+      catalogUrl: `${baseUrl}/api/v1/desktop/catalog`,
+      sections: ["skills"],
+      includeFavorites: true,
+      issueMarketAccessToken: () => "stale-token"
+    });
+
+    assert.equal(listed.offline, false);
+    assert.equal(listed.items.length, 1);
+    assert.equal(listed.items[0].favorited, false);
+    assert.equal(listed.items[0].favoriteCount, 3);
+  });
+});
+
 test("toggleMarketFavorite refreshes the access token once after a 401", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-market-favorite-retry-"));
   const app = createApp(root);

@@ -113,6 +113,11 @@ test("market storefront uses one WorkBuddy-inspired list with per-card source la
   assert.match(styles, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/u);
   assert.match(styles, /\.market-store-action\.is-compact-icon\.ant-btn/u);
   assert.match(storefront, /activeTab\s*===\s*"skills"[\s\S]*?market\.toolbar\.myInstalled/u);
+  assert.match(storefront, /market\.toolbar\.myFavorites/u);
+  assert.match(storefront, /rangeMode\s*===\s*"favorites"[\s\S]*?item\.favorited/u);
+  assert.match(storefront, /command\(\{\s*includeFavorites\s*\}\)/u);
+  assert.match(storefront, /disabled=\{!isMarketAuthenticated\s*\|\|\s*isFavoriting/u);
+  assert.match(storefront, /disabled=\{!isMarketAuthenticated\s*\|\|\s*isFavoriting\s*\|\|\s*Boolean\(favoritingItemKey\)\}/u);
   assert.match(styles, /\.market-store-header-tools/u);
 });
 
