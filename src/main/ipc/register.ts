@@ -134,6 +134,8 @@ import {
 import { requireEpochMillis } from "../../shared/time-contract";
 import type { AgentRealtimeDebugTarget } from "../../shared/contracts";
 
+const PLATFORM_DOCUMENT_REVISION_HEADER = "X-Document-Revision";
+
 export type MainIpcRegistrationOptions = {
   app: App;
   ipcMain: any;
@@ -402,7 +404,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
       return {
         bytes,
         mimeType: response.headers.get("content-type")?.split(";", 1)[0]?.trim().toLowerCase() || "",
-        revision: response.headers.get("x-zenmind-resource-revision")?.trim() || "",
+        revision: response.headers.get(PLATFORM_DOCUMENT_REVISION_HEADER)?.trim() || "",
       };
     } catch {
       return null;

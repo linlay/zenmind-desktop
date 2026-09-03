@@ -18,7 +18,7 @@
 | Live Project Web | loopback URL 与 owner Chat 对应的 Coder workspace | 不写 DOM；批注交给 Coder 修改源码 |
 | 普通 Web | HTTP(S) URL | 不保存页面，仅交接 DOM 批注 |
 
-revision 在所有客户端中都是不透明值。Platform 在提交时重新验证来源身份、路径、权限和 revision；冲突不得静默覆盖。
+revision 在所有客户端中都是不透明值；Platform 通过 `X-Document-Revision` 为原始文档响应传递该源版本。Platform 在提交时重新验证来源身份、路径、权限和 revision；冲突不得静默覆盖。
 
 ## 内容类型与宿主所有权
 
