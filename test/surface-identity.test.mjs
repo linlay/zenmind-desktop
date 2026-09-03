@@ -26,6 +26,13 @@ test("surface identity uses readable singleton roots and stable domain-prefixed 
   assert.equal(resolveLegacyFixedSurfaceId("agent-webclient-copilot"), "agent-webclient-copilot");
   assert.equal(createSurfaceIdentity("main-chat").surfaceId, "main-chat");
   assert.equal(createSurfaceIdentity("kanban-chat").surfaceId, "kanban-chat");
+  assert.deepEqual(createSurfaceIdentity("selection-explain", "", { ownerChatId: "chat-1" }), {
+    surfaceId: "selection-explain",
+    surfaceRole: "selection-explain",
+    surfaceLevel: "root",
+    ownerChatId: "chat-1",
+    interaction: "interactive",
+  });
   assert.equal(createSurfaceIdentity("browser").surfaceId, "browser");
   const entryKey = "website:https://docs.example/private/path";
   const website = createWebEntrySurfaceIdentity("website", entryKey);
@@ -73,6 +80,7 @@ test("Agent WebClient surface type follows the trusted semantic role", () => {
     ["overview", "agent-overview"],
     ["debug", "agent-debug"],
     ["btw", "agent-btw"],
+    ["selection-explain", "agent-selection-explain"],
     ["project", "agent-project"],
     ["file", "agent-management"],
     ["file-diff", "agent-management"],

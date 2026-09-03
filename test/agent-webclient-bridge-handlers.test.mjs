@@ -4,7 +4,10 @@ import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/ipc/agent-webclient-bridge-handlers.js");
+const {
+  redactSelectionReferencesForTrace,
+  registerAgentWebclientBridgeIpcHandlers,
+} = require("../dist-electron/main/ipc/agent-webclient-bridge-handlers.js");
 const {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
@@ -17,6 +20,24 @@ const EPOCH_MS = 1_788_000_000_000;
 function flush() {
   return new Promise((resolve) => setImmediate(resolve));
 }
+
+test("selection reference text is redacted from Desktop realtime traces", () => {
+  const frame = {
+    frame: "request",
+    type: "/api/btw",
+    payload: {
+      message: "explain",
+      references: [{
+        id: "selection-1",
+        type: "selection",
+        meta: { text: "private selected text", sourceKind: "message" },
+      }],
+    },
+  };
+  const redacted = redactSelectionReferencesForTrace(frame);
+  assert.equal(redacted.payload.references[0].meta.text, "<REDACTED_SELECTION>");
+  assert.equal(frame.payload.references[0].meta.text, "private selected text");
+});
 
 function createSender(id, url) {
   const sender = new EventEmitter();
@@ -106,9 +127,11 @@ function createRuntime(targets, overrides = {}) {
     releasedRuns: [],
     cloneUnsubscribes: 0,
     debugTraces: [],
+    pushSubscriptions: [],
   };
   let activeRoot = null;
   let mainChatRoot = null;
+  const auxiliaryRoots = new Map();
   const broker = {
     ensureConnected: async () => undefined,
     getConnectionState: () => ({
@@ -123,11 +146,15 @@ function createRuntime(targets, overrides = {}) {
       onState(broker.getConnectionState());
       return () => undefined;
     },
-    subscribePush: () => () => undefined,
+    subscribePush: (input) => {
+      calls.pushSubscriptions.push(input);
+      return () => undefined;
+    },
     activateRootObserver: (observer) => {
       const next = { ...observer, contextEpoch: `context:${observer.token}`, runIds: new Set() };
       if (observer.kind === "main_chat") mainChatRoot = next;
-      activeRoot = next;
+      if (observer.kind === "selection_explain") auxiliaryRoots.set(observer.token, next);
+      else activeRoot = next;
       return next;
     },
     getActiveRootObserver: () => activeRoot,
@@ -141,6 +168,7 @@ function createRuntime(targets, overrides = {}) {
       calls.releasedRoots.push(token);
       if (activeRoot?.token === token) activeRoot = null;
       if (mainChatRoot?.token === token) mainChatRoot = null;
+      auxiliaryRoots.delete(token);
       return true;
     },
     releaseObservedRun: (token, runId, reason) => {
@@ -707,7 +735,7 @@ test("Overview cannot survive without an active Main Chat observer", async () =>
   assert.equal(runtime.calls.clones.length, 0);
 });
 
-test("only Main Chat, Copilot Dock and Kanban Chat can become Root Observers", async () => {
+test("Main Chat, Copilot Dock, Kanban Chat and isolated explanations use bounded Root Observers", async () => {
   const kanban = mainTarget(105, {
     registrationId: "kanban-g1",
     surfaceId: "kanban-chat",
@@ -717,7 +745,17 @@ test("only Main Chat, Copilot Dock and Kanban Chat can become Root Observers", a
     currentUrl: "http://127.0.0.1:7079/kanban?chatId=chat-1",
   });
   const project = childTarget(106, "project", "agent-project");
-  const runtime = createRuntime(new Map([[105, kanban], [106, project]]));
+  const explanation = mainTarget(107, {
+    registrationId: "selection-explain-g1",
+    surfaceId: "selection-explain",
+    surfaceType: "agent-selection-explain",
+    surfaceRole: "selection-explain",
+    surfaceLevel: "root",
+    pageRoute: "/selection-explain/chat-1?runId=run-explain",
+    pageRouteIdentity: "/selection-explain/chat-1?runId=run-explain",
+    currentUrl: "http://127.0.0.1:7079/selection-explain/chat-1?runId=run-explain",
+  });
+  const runtime = createRuntime(new Map([[105, kanban], [106, project], [107, explanation]]));
   const kanbanSender = createSender(105, kanban.currentUrl);
   await openSession(runtime, kanbanSender, "kanban");
   send(runtime, kanbanSender, "kanban", {
@@ -725,6 +763,19 @@ test("only Main Chat, Copilot Dock and Kanban Chat can become Root Observers", a
     payload: { requestId: "rk", runId: "run-k", chatId: "chat-1", agentKey: "agent-1", message: "run" },
   });
   await flush();
+  assert.equal(runtime.broker.getActiveRootObserver().kind, "kanban_chat");
+
+  const explanationSender = createSender(107, explanation.currentUrl);
+  const pushSubscriptionCount = runtime.calls.pushSubscriptions.length;
+  await openSession(runtime, explanationSender, "selection-explain");
+  assert.equal(runtime.calls.pushSubscriptions.length, pushSubscriptionCount);
+  send(runtime, explanationSender, "selection-explain", {
+    frame: "request", id: "ea", type: "/api/attach",
+    payload: { runId: "run-explain", chatId: "chat-1", agentKey: "agent-1", lastSeq: 0 },
+  });
+  await flush();
+  assert.equal(runtime.calls.attaches.at(-1).lane, "btw");
+  assert.match(runtime.calls.attaches.at(-1).observerToken, /^selection-explain:/u);
   assert.equal(runtime.broker.getActiveRootObserver().kind, "kanban_chat");
 
   const projectSender = createSender(106, project.currentUrl);

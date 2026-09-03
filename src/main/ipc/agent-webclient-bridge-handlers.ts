@@ -37,7 +37,8 @@ import {
 import {
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
-  MAIN_CHAT_SURFACE_ID
+  MAIN_CHAT_SURFACE_ID,
+  SELECTION_EXPLAIN_SURFACE_ID,
 } from "../../shared/surface-identity";
 import {
   readAgentWebclientCanonicalChatSource,
@@ -161,6 +162,7 @@ function trustedKind(value: unknown): AgentWebclientSurfaceKind | null {
     value === "agent-overview" ||
     value === "agent-debug" ||
     value === "agent-btw" ||
+    value === "agent-selection-explain" ||
     value === "agent-project" ||
     value === "agent-management"
     ? value
@@ -171,6 +173,10 @@ function rootObserverKind(target: RegisteredWebviewSurfaceTarget) {
   if (target.surfaceId === MAIN_CHAT_SURFACE_ID && target.surfaceRole === "main-chat") return "main_chat" as const;
   if (target.surfaceId === COPILOT_DOCK_SURFACE_ID && target.surfaceRole === "copilot-dock") return "copilot_dock" as const;
   if (target.surfaceId === KANBAN_CHAT_SURFACE_ID && target.surfaceRole === "kanban-chat") return "kanban_chat" as const;
+  if (
+    target.surfaceId === SELECTION_EXPLAIN_SURFACE_ID &&
+    target.surfaceRole === "selection-explain"
+  ) return "selection_explain" as const;
   return null;
 }
 
@@ -243,6 +249,27 @@ function sessionKey(senderId: number, sessionId: string) {
 }
 
 type PlatformFrameRecord = Record<string, unknown>;
+
+export function redactSelectionReferencesForTrace(value: unknown) {
+  if (!isPlainBridgeRecord(value)) return value;
+  const payload = isPlainBridgeRecord(value.payload) ? value.payload : null;
+  const references = Array.isArray(payload?.references) ? payload.references : null;
+  if (!payload || !references) return value;
+  let changed = false;
+  const nextReferences = references.map((reference) => {
+    if (!isPlainBridgeRecord(reference) || reference.type !== "selection") return reference;
+    const meta = isPlainBridgeRecord(reference.meta) ? reference.meta : null;
+    if (!meta || typeof meta.text !== "string") return reference;
+    changed = true;
+    return {
+      ...reference,
+      meta: { ...meta, text: "<REDACTED_SELECTION>" },
+    };
+  });
+  return changed
+    ? { ...value, payload: { ...payload, references: nextReferences } }
+    : value;
+}
 
 type FrameErrorOptions = {
   retryable?: boolean;
@@ -815,6 +842,26 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
 
   options.browserSurfaces.subscribeLifecycle?.((event) => {
     if (
+      event.surface.surfaceId === SELECTION_EXPLAIN_SURFACE_ID &&
+      event.surface.surfaceRole === "selection-explain"
+    ) {
+      if (event.type === "unregistered") {
+        const guestWebContentsId = event.surface.guestWebContentsIds[0];
+        if (Number.isSafeInteger(guestWebContentsId)) {
+          const contextId = event.surface.ownerChatId.trim() ||
+            `${event.surface.surfaceId}:${event.surface.registrationId}`;
+          options.realtimeBroker.releaseRootObserver([
+            event.surface.surfaceId,
+            event.surface.registrationId,
+            event.surface.ownerWebContentsId,
+            guestWebContentsId,
+            contextId,
+          ].join(":"), "surface_inactive");
+        }
+      }
+      return;
+    }
+    if (
       event.surface.surfaceId !== MAIN_CHAT_SURFACE_ID ||
       event.surface.surfaceRole !== "main-chat"
     ) return;
@@ -1322,12 +1369,14 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         return;
       }
       session.unsubscribeConnection = unsubscribeConnection;
-      session.unsubscribePush = options.realtimeBroker.subscribePush({
-        types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES],
-        kind: "surface",
-        consumerId: session.consumerId,
-        onPush: (frame) => sendFrame(session, frame),
-      });
+      if (context.kind !== "agent-selection-explain") {
+        session.unsubscribePush = options.realtimeBroker.subscribePush({
+          types: [...AGENT_PLATFORM_KNOWN_PUSH_TYPES],
+          kind: "surface",
+          consumerId: session.consumerId,
+          onPush: (frame) => sendFrame(session, frame),
+        });
+      }
       const { baseUrl, token } = await availability();
       await options.realtimeBroker.ensureConnected(baseUrl, token);
     } catch (error) {
@@ -1417,10 +1466,15 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         context.target.surfaceRole === "btw" &&
         context.target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
         Boolean(context.target.ownerChatId);
+      const isSelectionExplain =
+        context.kind === "agent-selection-explain" &&
+        context.target.surfaceRole === "selection-explain" &&
+        context.target.surfaceId === SELECTION_EXPLAIN_SURFACE_ID &&
+        Boolean(context.target.ownerChatId);
       const allowedSurface = frame.type === "/api/query"
         ? isLiveChat
         : frame.type === "/api/btw" || frame.type === "/api/attach"
-          ? isLiveChat || isBTW || isReadonlyVirtualAttach
+          ? isLiveChat || isBTW || isSelectionExplain || isReadonlyVirtualAttach
           : false;
       if (!allowedSurface || !context.target.active) {
         sendFrame(session, frameError(frame.id, "surface_unavailable", "only the active Chat or BTW surface may open this live Run stream"));
@@ -1600,7 +1654,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     options.realtimeBroker.appendDebugTrace({
       layer: "surface-bridge",
       direction: "surface-to-desktop",
-      data: frame,
+      data: redactSelectionReferencesForTrace(frame),
       surfaceId: context.target.surfaceId,
       webContentsId: event.sender.id,
       surfaceKind: context.kind,
@@ -1686,7 +1740,9 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
         const subscription = options.realtimeBroker.subscribeRun({
           baseUrl,
           token,
-          lane: context.kind === "agent-btw" ? "btw" : "primary",
+          lane: context.kind === "agent-btw" || context.kind === "agent-selection-explain"
+            ? "btw"
+            : "primary",
           runId: binding.runId,
           chatId: binding.chatId,
           lastSeq: binding.lastSeq,
@@ -1865,6 +1921,11 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     if (!ownerChatId) return failure("target_unavailable", "trusted WorkPanel owner chat is unavailable");
     const record = isPlainBridgeRecord(call) ? call : {};
     const method = typeof record.method === "string" ? record.method : "";
+    if (context.kind === "agent-selection-explain") {
+      return method === "getCapabilities"
+        ? { ok: true, capabilities: [] }
+        : failure("capability_denied", "selection explanation cannot access WorkPanel");
+    }
     const capabilities = [
       ...(context.kind === "agent-chat" || context.kind === "agent-copilot" || context.kind === "agent-overview"
         ? ["workpanel.open" as const]
@@ -1880,7 +1941,7 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
     const input = record.input as WorkPanelOpenItemInput | WorkPanelOpenResourceInput | WorkPanelItemTargetInput;
     const compatibleVersion = isPlainBridgeRecord(input) && (
       isAgentWebclientBridgeVersion(input.version) ||
-      (input.version === 4 && method !== "openResource")
+      (Number(input.version) === 4 && method !== "openResource")
     );
     if (!compatibleVersion) {
       return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);

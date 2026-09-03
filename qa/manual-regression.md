@@ -38,6 +38,10 @@
 
 ## WebView 生命周期与全局 Realtime Broker
 
+- 在 Main Chat、Copilot Dock 与 Kanban Chat 的用户/助手消息、Markdown 和代码块中分别拖选单一语义目标，确认 Desktop 工具条出现；跨消息/代码块、输入框、管理页、Website/WebApp 和普通浏览器 WebClient 不出现。抓取 guest/Main/renderer IPC，确认显示与执行 payload 均不包含选中文字。
+- 点击“添加到对话”，确认主 Composer 保留原草稿/文件/技能并增加 `N 条注释`，发送前没有 query；点击“在顺便问中提问”，确认右侧 BTW 打开并增加 `N 个已选文本片段`，同样不自动发送。发送受理后片段清空，受理前失败时仍保留。
+- 点击“详细解释”，确认单例小窗立即显示准备态，并定位到 CuteJ 主窗口 bounds 内的右下角（macOS 20px、Windows 16px 边距），而不是整个显示器的右下角。只产生一次 `/api/btw`，随后按 `chatId/runId` attach 并支持继续追问、复制与 Stop。重复点击复用窗口并重新对齐主窗口右下角；关闭窗口只 detach，不 interrupt。Realtime Inspector 中辅助 observer 不替换 Main Chat、Copilot Dock 或 Kanban Chat observer，物理连接仍不超过 Primary + BTW 两条。
+
 - 在 Main Chat、Website/Browser 的 Copilot Dock 与 Kanban Chat 之间切换并分别发起对话，确认同一时刻只有当前 surface 持有 live observer；Dock 继续加载内部 `/copilot/:agentKey`，Desktop 不再挂载全页 `copilot-chat`。
 - macOS 与 Windows 分别固定一个 Main Chat 和一个 WorkPanel WebClient guest，记录 `webContentsId` 后反复切换 Chat、WorkPanel tab、面板显示/隐藏和 active 状态；同一 generation 只能出现一次 `listeners-attached`，普通状态变化不得出现 `listeners-detached`，guest 被替换或卸载时才允许成对解绑。
 - 从 Sidebar 依次打开不同 Agent 的多个历史 Chat，再触发新 Chat 和继续对话；确认 Desktop route、Main Chat guest URL、页面内容与 Registry owner 一致切换，`webContentsId` 保持不变，变化的 `chatId/newChat` 会经 route bridge 到达 WebClient，而不是只改变外层选中态。Inspector 中 Primary 物理 WS 全程保持同一条；旧 Chat 有 active Run 时只出现一次 detach，无 active Run 时不产生 detach，切换后的 `/api/chat` 仍在原 LogicalSession/Primary WS 上完成。Realtime 诊断中每次稳定 Chat 切换只允许一次目标 `chatId` 加载，不得在 surface active 恢复时紧随发出旧 `chatId` 的 `forceReload`。

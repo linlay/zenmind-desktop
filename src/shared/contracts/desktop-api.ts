@@ -75,8 +75,16 @@ import type {
   ChatWorkPanelTabContextMenuPopupRequest,
   ChatWorkPanelTabContextMenuPopupResult
 } from "../chat-work-panel-tab-context-menu";
-import type { WebviewSelectionToolbarStateListener } from "../webview-selection-toolbar";
+import type {
+  WebviewSelectionToolbarExecuteRequest,
+  WebviewSelectionToolbarExecuteResult,
+  WebviewSelectionToolbarStateListener,
+} from "../webview-selection-toolbar";
 import type { DesktopCopilotPagePreferences } from "../assistant-settings";
+import type {
+  SelectionExplainWindowState,
+  SelectionExplainWindowStateListener,
+} from "../selection-explain-window";
 import type {
   EmbeddedCdpSurfaceRegistration,
   EmbeddedCdpSurfaceRegistrationResult,
@@ -1068,9 +1076,18 @@ export interface DesktopApi {
   serviceWebview: {
     getPreloadPath: () => Promise<string>;
     getPreloadUrl: () => Promise<string>;
+    executeSelectionToolbarAction: (
+      request: WebviewSelectionToolbarExecuteRequest
+    ) => Promise<WebviewSelectionToolbarExecuteResult>;
     onSelectionToolbarState: (
       listener: WebviewSelectionToolbarStateListener
     ) => () => void;
+  };
+  selectionExplain: {
+    getState: () => Promise<SelectionExplainWindowState | null>;
+    minimize: () => Promise<{ ok: boolean }>;
+    close: () => Promise<{ ok: boolean }>;
+    onState: (listener: SelectionExplainWindowStateListener) => () => void;
   };
   market: {
     getSettings: () => Promise<MarketSettings>;

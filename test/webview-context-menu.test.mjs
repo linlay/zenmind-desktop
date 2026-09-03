@@ -9,6 +9,7 @@ const {
 } = await import("../dist-electron/main/webview-context-menu-policy.js");
 const {
   getWebviewContextMenuAccelerator,
+  validateWebviewSelectionActionResult,
   validateWebviewContextMenuSemanticResponse
 } = await import("../dist-electron/main/webview-context-menu-controller.js");
 const {
@@ -225,6 +226,33 @@ test("semantic response validator accepts v1 whitelist and rejects forged or ove
     ...response,
     target: { ...response.target, targetId: "x".repeat(129) }
   }, "request-1"), undefined);
+});
+
+test("selection action result accepts only ids and bounded status metadata", () => {
+  const response = {
+    version: 1,
+    requestId: "selection-request-1",
+    ok: true,
+    handoff: { chatId: "chat-1", runId: "run-1" },
+  };
+  assert.deepEqual(
+    validateWebviewSelectionActionResult(response, response.requestId),
+    response,
+  );
+  assert.equal(validateWebviewSelectionActionResult({
+    ...response,
+    text: "secret",
+  }, response.requestId), null);
+  assert.equal(validateWebviewSelectionActionResult({
+    ...response,
+    handoff: { ...response.handoff, prompt: "secret" },
+  }, response.requestId), null);
+  assert.equal(validateWebviewSelectionActionResult({
+    version: 1,
+    requestId: response.requestId,
+    ok: false,
+    code: "unknown_error",
+  }, response.requestId), null);
 });
 
 test("surface registry reverse index follows replacement and rejects cross-surface guest reuse", () => {

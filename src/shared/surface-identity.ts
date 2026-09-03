@@ -8,6 +8,7 @@ export const SURFACE_ROLES = [
   "overview",
   "debug",
   "btw",
+  "selection-explain",
   "source",
   "project",
   "file-diff",
@@ -42,6 +43,7 @@ export const KANBAN_CHAT_SURFACE_ID = "kanban-chat";
 export const COPILOT_DOCK_SURFACE_ID = "copilot-dock";
 export const BROWSER_SURFACE_ID = "browser";
 export const HELP_SURFACE_ID = "help";
+export const SELECTION_EXPLAIN_SURFACE_ID = "selection-explain";
 
 export const LEGACY_FIXED_SURFACE_ID_ALIASES: Readonly<Record<string, string>> = Object.freeze({
   "agent-webclient-chat": MAIN_CHAT_SURFACE_ID,
@@ -55,6 +57,7 @@ const FIXED_ROLE_IDS: Partial<Record<SurfaceRole, string>> = {
   "main-chat": MAIN_CHAT_SURFACE_ID,
   "kanban-chat": KANBAN_CHAT_SURFACE_ID,
   "copilot-dock": COPILOT_DOCK_SURFACE_ID,
+  "selection-explain": SELECTION_EXPLAIN_SURFACE_ID,
   browser: BROWSER_SURFACE_ID,
   help: HELP_SURFACE_ID,
 };

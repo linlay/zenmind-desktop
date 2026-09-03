@@ -89,7 +89,10 @@ import {
   resolveAgentWebclientWebviewSurfaceType,
   type WebviewContextMenuSurfaceType,
 } from "../../shared/webview-context-menu";
-import type { WebviewSelectionToolbarState } from "../../shared/webview-selection-toolbar";
+import {
+  WEBVIEW_SELECTION_TOOLBAR_VERSION,
+  type WebviewSelectionToolbarState,
+} from "../../shared/webview-selection-toolbar";
 import {
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
@@ -2962,6 +2965,13 @@ export function ServiceWebviewSurface({
               <WebviewSelectionToolbar
                 anchor={selectionToolbarState.rect}
                 selectionId={selectionToolbarState.selectionId}
+                onAction={(action) =>
+                  window.electronAPI.serviceWebview.executeSelectionToolbarAction({
+                    version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
+                    selectionId: selectionToolbarState.selectionId,
+                    action,
+                  })
+                }
                 onDismiss={() => setSelectionToolbarState(null)}
               />
             ) : null}

@@ -64,15 +64,30 @@ import type {
   WebviewOpenTabRequest,
   ChatWorkPanelTabContextMenuPopupRequest,
   SidebarContextMenuPopupRequest,
+  WebviewSelectionToolbarExecuteRequest,
+  WebviewSelectionToolbarExecuteResult,
   WebviewSelectionToolbarStateListener
 } from "../shared/contracts";
+import type {
+  SelectionExplainWindowState,
+  SelectionExplainWindowStateListener,
+} from "../shared/selection-explain-window";
+import {
+  SELECTION_EXPLAIN_WINDOW_CLOSE_CHANNEL,
+  SELECTION_EXPLAIN_WINDOW_GET_STATE_CHANNEL,
+  SELECTION_EXPLAIN_WINDOW_MINIMIZE_CHANNEL,
+  SELECTION_EXPLAIN_WINDOW_STATE_CHANNEL,
+} from "../shared/selection-explain-window";
 import { SIDEBAR_CONTEXT_MENU_POPUP_CHANNEL } from "../shared/sidebar-context-menu";
 import {
   CHAT_WORK_PANEL_OPEN_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_REVEAL_LOCAL_RESOURCE_CHANNEL,
   CHAT_WORK_PANEL_TAB_CONTEXT_MENU_POPUP_CHANNEL,
 } from "../shared/chat-work-panel-tab-context-menu";
-import { WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL } from "../shared/webview-selection-toolbar";
+import {
+  WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL,
+  WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL,
+} from "../shared/webview-selection-toolbar";
 import {
   CANONICAL_CHAT_SYNC_REQUEST_CHANNEL,
   CANONICAL_CHAT_SYNC_RESULT_CHANNEL,
@@ -382,6 +397,8 @@ const api: DesktopApi = {
   serviceWebview: {
     getPreloadPath: () => ipcRenderer.invoke("serviceWebview.getPreloadPath"),
     getPreloadUrl: () => ipcRenderer.invoke("serviceWebview.getPreloadUrl"),
+    executeSelectionToolbarAction: (request: WebviewSelectionToolbarExecuteRequest) =>
+      ipcRenderer.invoke(WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL, request) as Promise<WebviewSelectionToolbarExecuteResult>,
     onSelectionToolbarState: (listener: WebviewSelectionToolbarStateListener) => {
       const handleSelectionToolbarState = (
         _event: Electron.IpcRendererEvent,
@@ -394,6 +411,19 @@ const api: DesktopApi = {
         ipcRenderer.off(WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL, handleSelectionToolbarState);
       };
     }
+  },
+  selectionExplain: {
+    getState: () => ipcRenderer.invoke(SELECTION_EXPLAIN_WINDOW_GET_STATE_CHANNEL) as Promise<SelectionExplainWindowState | null>,
+    minimize: () => ipcRenderer.invoke(SELECTION_EXPLAIN_WINDOW_MINIMIZE_CHANNEL) as Promise<{ ok: boolean }>,
+    close: () => ipcRenderer.invoke(SELECTION_EXPLAIN_WINDOW_CLOSE_CHANNEL) as Promise<{ ok: boolean }>,
+    onState: (listener: SelectionExplainWindowStateListener) => {
+      const handleState = (
+        _event: Electron.IpcRendererEvent,
+        state: SelectionExplainWindowState,
+      ) => listener(state);
+      ipcRenderer.on(SELECTION_EXPLAIN_WINDOW_STATE_CHANNEL, handleState);
+      return () => ipcRenderer.off(SELECTION_EXPLAIN_WINDOW_STATE_CHANNEL, handleState);
+    },
   },
   market: {
     getSettings: () => ipcRenderer.invoke("market.getSettings"),

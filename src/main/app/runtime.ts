@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { pathToFileURL } from "node:url";
 import {
   app,
   clipboard,
@@ -143,13 +144,23 @@ import {
 import { createCdpIntegration } from "../cdp-integration";
 import { createWebSurfaceRuntime } from "../webs/surface-runtime";
 import { createWebviewContextMenuController } from "../webview-context-menu-controller";
+import { SelectionExplainWindowController } from "../app-shell/selection-explain-window";
+import { configureMainWindowWebContents } from "../window-manager";
+import {
+  resolveWebviewOpenDisposition,
+  shouldDownloadUrlFromWebview,
+} from "../webview-open-tab";
 import { createSettingsRuntime } from "../settings/runtime";
 import { createMainAppState } from "../app-state";
 import {
   createMainProcessContext,
   type MainProcessContext,
 } from "../main-process-context";
-import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../electron-bundle-paths";
+import {
+  getMainPreloadPath,
+  getServiceWebviewPreloadPath as resolveServiceWebviewPreloadPath,
+  resolveElectronBundleRootFromRuntimeDir,
+} from "../electron-bundle-paths";
 import {
   loadRendererRoute,
 } from "../renderer-route";
@@ -226,6 +237,7 @@ export function createMainProcessRuntime() {
   const LOG_VIEWER_ROUTE = "/log-viewer";
   const AGENT_REALTIME_INSPECTOR_ROUTE = "/agent-realtime-inspector";
   const DESKTOP_ACTION_WORKBENCH_ROUTE = "/desktop-action-workbench";
+  const SELECTION_EXPLAIN_WINDOW_ROUTE = "/selection-explain-window";
   const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, mainProcessContext.platform);
   const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
   const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
@@ -283,6 +295,7 @@ export function createMainProcessRuntime() {
     delay,
     t
   });
+  let selectionExplainWindowController: SelectionExplainWindowController | null = null;
   const webviewContextMenuController = createWebviewContextMenuController({
     platform: mainProcessContext.platform,
     browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
@@ -325,7 +338,40 @@ export function createMainProcessRuntime() {
       );
     },
     t,
-    report: reportRendererDiagnostic
+    report: reportRendererDiagnostic,
+    updateSelectionExplainWindow: (input) =>
+      selectionExplainWindowController?.update(input),
+  });
+  selectionExplainWindowController = new SelectionExplainWindowController({
+    platform: mainProcessContext.platform,
+    preloadPath: MAIN_PRELOAD_PATH,
+    routePath: SELECTION_EXPLAIN_WINDOW_ROUTE,
+    title: t("webviewSelectionToolbar.moreDetails"),
+    loadRendererRoute,
+    getAnchorWindow: () => appState.mainWindow,
+    onRendererError: safeConsoleError,
+    configureWindow: (targetWindow) => {
+      const servicePreloadPath = resolveServiceWebviewPreloadPath(
+        MAIN_PROCESS_DIR,
+        mainProcessContext.platform,
+      );
+      configureMainWindowWebContents(targetWindow, {
+        platform: mainProcessContext.platform,
+        getMainWindow: () => targetWindow,
+        servicePreloadPath,
+        servicePreloadUrl: pathToFileURL(servicePreloadPath).toString(),
+        isSafeServiceUrl: parseSafeLoopbackWebUrl,
+        isDevToolsShortcut: () => false,
+        shouldDownloadUrl: shouldDownloadUrlFromWebview,
+        resolveOpenDisposition: resolveWebviewOpenDisposition,
+        collectLoadDiagnostics: collectWebviewLoadDiagnostics,
+        report: reportRendererDiagnostic,
+        onWebviewNavigation: handleDesktopSsoWebviewNavigation,
+        attachWebviewContextMenu: webviewContextMenuController.attach,
+        openExternal: shell.openExternal,
+        schedule: setImmediate,
+      });
+    },
   });
   let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
   const enterpriseChatRuntime = new EnterpriseChatRuntime({

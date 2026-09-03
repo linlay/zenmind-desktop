@@ -10,6 +10,7 @@ const {
   isWebviewSelectionToolbarTargetAllowed,
   resolveWebviewSelectionToolbarPosition,
   validateWebviewSelectionToolbarChange,
+  validateWebviewSelectionToolbarExecuteRequest,
 } = await import("../dist-electron/shared/webview-selection-toolbar.js");
 
 function readSource(...segments) {
@@ -21,7 +22,8 @@ test("selection toolbar change validation accepts geometry without selected text
     version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
     visible: true,
     rect: { x: 10, y: 20, width: 120, height: 32 },
-    probe: { x: 22, y: 28 },
+    start: { x: 22, y: 28 },
+    end: { x: 118, y: 44 },
   };
   assert.deepEqual(validateWebviewSelectionToolbarChange(payload), payload);
   assert.equal(JSON.stringify(validateWebviewSelectionToolbarChange(payload)).includes("text"), false);
@@ -42,7 +44,24 @@ test("selection toolbar change validation accepts geometry without selected text
   }), null);
   assert.equal(validateWebviewSelectionToolbarChange({
     ...payload,
-    probe: { x: Number.NaN, y: 20 },
+    start: { x: Number.NaN, y: 20 },
+  }), null);
+});
+
+test("selection toolbar execution only accepts an opaque id and fixed action", () => {
+  const payload = {
+    version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
+    selectionId: "selection-1",
+    action: "add-to-chat",
+  };
+  assert.deepEqual(validateWebviewSelectionToolbarExecuteRequest(payload), payload);
+  assert.equal(validateWebviewSelectionToolbarExecuteRequest({
+    ...payload,
+    selectedText: "secret",
+  }), null);
+  assert.equal(validateWebviewSelectionToolbarExecuteRequest({
+    ...payload,
+    action: "send-now",
   }), null);
 });
 
@@ -80,7 +99,7 @@ test("selection toolbar positioning centers, flips and clamps to eight pixel edg
   }), { left: 112, top: 52, placement: "above" });
 });
 
-test("desktop owns the placeholder toolbar and does not expose business execution", () => {
+test("desktop owns the toolbar and executes through the bounded WebClient bridge", () => {
   const mainController = readSource("src", "main", "webview-context-menu-controller.ts");
   const surface = readSource("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const toolbar = readSource("src", "renderer", "service-webview", "WebviewSelectionToolbar.tsx");
@@ -88,16 +107,19 @@ test("desktop owns the placeholder toolbar and does not expose business executio
   const preload = readSource("src", "preload", "service-webview.ts");
 
   assert.match(mainController, /isTrustedAgentWebclient\(contents, registeredTarget\)/u);
-  assert.match(mainController, /isWebviewSelectionToolbarTargetAllowed\(semanticTarget\.kind\)/u);
+  assert.match(mainController, /isWebviewSelectionToolbarTargetAllowed\(startTarget\.kind\)/u);
+  assert.match(mainController, /startTarget\.targetId !== endTarget\.targetId/u);
   assert.match(mainController, /selectionSequenceByGuest\.get\(guestId\) !== selectionSequence/u);
   assert.match(surface, /<WebviewSelectionToolbar/u);
   assert.match(toolbar, /webviewSelectionToolbar\.addToChat/u);
   assert.match(toolbar, /webviewSelectionToolbar\.moreDetails/u);
   assert.match(toolbar, /webviewSelectionToolbar\.askInSideChat/u);
-  assert.match(toolbar, /onPointerDown=\{dismissFromPointer\}/u);
+  assert.match(toolbar, /onPointerDown=\{preserveGuestSelection\}/u);
+  assert.match(surface, /executeSelectionToolbarAction/u);
   assert.match(styles, /border-radius:\s*16px/u);
   assert.match(styles, /webview-selection-toolbar button:hover/u);
   assert.match(preload, /WEBVIEW_SELECTION_TOOLBAR_CHANGE_CHANNEL/u);
-  assert.doesNotMatch(mainController, /selectionToolbar\.execute/u);
+  assert.match(mainController, /AGENT_WEBCLIENT_SELECTION_ACTION/u);
+  assert.match(mainController, /validateWebviewSelectionActionResult/u);
   assert.doesNotMatch(toolbar, /sendBTW|set-composer-draft|openBTW|desktopAction/u);
 });

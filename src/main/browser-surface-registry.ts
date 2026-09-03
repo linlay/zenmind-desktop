@@ -25,6 +25,7 @@ import {
   KANBAN_CHAT_SURFACE_ID,
   LEGACY_FIXED_SURFACE_ID_ALIASES,
   MAIN_CHAT_SURFACE_ID,
+  SELECTION_EXPLAIN_SURFACE_ID,
   createLegacySurfaceIdAliases,
   createWebEntrySurfaceIdentity,
   resolveLegacyFixedSurfaceId,
@@ -717,6 +718,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     if (input.surfaceType === "agent-overview") return ["overview"];
     if (input.surfaceType === "agent-debug") return ["debug"];
     if (input.surfaceType === "agent-btw") return ["btw"];
+    if (input.surfaceType === "agent-selection-explain") return ["selection-explain"];
     if (input.surfaceType === "agent-project" || input.surfaceType === "project") return ["project"];
     if (input.surfaceType === "agent-chat") return ["main-chat", "kanban-chat"];
     if (input.surfaceType === "agent-copilot") return ["copilot-dock", "copilot"];
@@ -747,13 +749,14 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       input.serviceId?.trim() !== identityKey
     ) return { ok: false, check: "service_identity_mismatch" };
     if (
-      ["main-chat", "kanban-chat", "copilot-dock", "overview", "debug", "btw", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
+      ["main-chat", "kanban-chat", "copilot-dock", "overview", "debug", "btw", "selection-explain", "source", "project", "file-diff", "artifact", "reference", "file", "planning", "agent", "copilot", "skill"].includes(input.surfaceRole) &&
       input.serviceId?.trim() !== "agent-webclient"
     ) return { ok: false, check: "agent_webclient_service_mismatch" };
     if (
       (input.surfaceRole === "main-chat" && input.surfaceId !== MAIN_CHAT_SURFACE_ID) ||
       (input.surfaceRole === "kanban-chat" && input.surfaceId !== KANBAN_CHAT_SURFACE_ID) ||
-      (input.surfaceRole === "copilot-dock" && input.surfaceId !== COPILOT_DOCK_SURFACE_ID)
+      (input.surfaceRole === "copilot-dock" && input.surfaceId !== COPILOT_DOCK_SURFACE_ID) ||
+      (input.surfaceRole === "selection-explain" && input.surfaceId !== SELECTION_EXPLAIN_SURFACE_ID)
     ) return { ok: false, check: "fixed_surface_id_mismatch" };
     if (
       input.surfaceRole === "copilot-dock" &&
@@ -807,6 +810,7 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
       "agent-overview",
       "agent-debug",
       "agent-btw",
+      "agent-selection-explain",
       "agent-project",
       "agent-management",
       "project",

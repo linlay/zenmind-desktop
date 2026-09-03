@@ -1,11 +1,19 @@
 import type { WebviewContextMenuSemanticTargetKind, WebviewContextMenuSurfaceType } from "./webview-context-menu";
+import type {
+  AgentWebclientSelectionActionId,
+  AgentWebclientSelectionActionResult,
+} from "./contracts/agent-webclient-bridge";
 
-export const WEBVIEW_SELECTION_TOOLBAR_VERSION = 1 as const;
+export const WEBVIEW_SELECTION_TOOLBAR_VERSION = 2 as const;
 
 export const WEBVIEW_SELECTION_TOOLBAR_CHANGE_CHANNEL =
   "desktop:webview-selection-toolbar:change";
 export const WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL =
   "desktop:webview-selection-toolbar:state";
+export const WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL =
+  "desktop:webview-selection-toolbar:execute";
+export const WEBVIEW_SELECTION_TOOLBAR_RESULT_CHANNEL =
+  "desktop:webview-selection-toolbar:result";
 
 export type WebviewSelectionToolbarRect = {
   x: number;
@@ -28,7 +36,24 @@ export type WebviewSelectionToolbarChange =
       version: typeof WEBVIEW_SELECTION_TOOLBAR_VERSION;
       visible: true;
       rect: WebviewSelectionToolbarRect;
-      probe: WebviewSelectionToolbarPoint;
+      start: WebviewSelectionToolbarPoint;
+      end: WebviewSelectionToolbarPoint;
+    };
+
+export type WebviewSelectionToolbarExecuteRequest = {
+  version: typeof WEBVIEW_SELECTION_TOOLBAR_VERSION;
+  selectionId: string;
+  action: AgentWebclientSelectionActionId;
+};
+
+export type WebviewSelectionToolbarExecuteResult =
+  | { ok: true; handoff?: AgentWebclientSelectionActionResult["handoff"] }
+  | {
+      ok: false;
+      code:
+        | NonNullable<AgentWebclientSelectionActionResult["code"]>
+        | "invalid_request"
+        | "timeout";
     };
 
 export type WebviewSelectionToolbarState =
@@ -133,18 +158,45 @@ export function validateWebviewSelectionToolbarChange(
   }
   if (
     value.visible !== true ||
-    !hasOnlyKeys(value, ["version", "visible", "rect", "probe"])
+    !hasOnlyKeys(value, ["version", "visible", "rect", "start", "end"])
   ) {
     return null;
   }
   const rect = readRect(value.rect);
-  const probe = readPoint(value.probe);
-  if (!rect || !probe) return null;
+  const start = readPoint(value.start);
+  const end = readPoint(value.end);
+  if (!rect || !start || !end) return null;
   return {
     version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
     visible: true,
     rect,
-    probe,
+    start,
+    end,
+  };
+}
+
+export function validateWebviewSelectionToolbarExecuteRequest(
+  value: unknown,
+): WebviewSelectionToolbarExecuteRequest | null {
+  if (
+    !isPlainObject(value) ||
+    !hasOnlyKeys(value, ["version", "selectionId", "action"]) ||
+    value.version !== WEBVIEW_SELECTION_TOOLBAR_VERSION ||
+    typeof value.selectionId !== "string" ||
+    !value.selectionId.trim() ||
+    value.selectionId.length > 192 ||
+    ![
+      "add-to-chat",
+      "more-details",
+      "ask-in-side-chat",
+    ].includes(String(value.action || ""))
+  ) {
+    return null;
+  }
+  return {
+    version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
+    selectionId: value.selectionId,
+    action: value.action as AgentWebclientSelectionActionId,
   };
 }
 

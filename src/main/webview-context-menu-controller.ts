@@ -20,12 +20,22 @@ import {
   type WebviewContextMenuPolicyItem
 } from "./webview-context-menu-policy";
 import {
+  AGENT_WEBCLIENT_SELECTION_ACTION,
+  AGENT_WEBCLIENT_SELECTION_ACTION_VERSION,
+  type AgentWebclientSelectionActionResult as SelectionActionResult,
+} from "../shared/contracts/agent-webclient-bridge";
+import {
   WEBVIEW_SELECTION_TOOLBAR_CHANGE_CHANNEL,
+  WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL,
+  WEBVIEW_SELECTION_TOOLBAR_RESULT_CHANNEL,
   WEBVIEW_SELECTION_TOOLBAR_STATE_CHANNEL,
   WEBVIEW_SELECTION_TOOLBAR_VERSION,
   isWebviewSelectionToolbarSurfaceAllowed,
   isWebviewSelectionToolbarTargetAllowed,
   validateWebviewSelectionToolbarChange,
+  validateWebviewSelectionToolbarExecuteRequest,
+  type WebviewSelectionToolbarExecuteResult,
+  type WebviewSelectionToolbarPoint,
   type WebviewSelectionToolbarState
 } from "../shared/webview-selection-toolbar";
 
@@ -34,6 +44,7 @@ const MAX_SEMANTIC_RESPONSE_BYTES = 32 * 1024;
 const MAX_TARGET_ID_LENGTH = 128;
 const MAX_URL_LENGTH = 2_048;
 const MAX_LABEL_LENGTH = 256;
+const SELECTION_ACTION_TIMEOUT_MS = 15_000;
 
 const CAPABILITIES_BY_TARGET = {
   message: new Set<WebviewContextMenuSemanticCapability>(["content.copy"]),
@@ -101,6 +112,11 @@ export type WebviewContextMenuControllerOptions = {
   ): boolean | Promise<boolean>;
   t(key: any, values?: any): string;
   report(source: string, details: Record<string, unknown>): void;
+  updateSelectionExplainWindow?(input:
+    | { requestId: string; status: "pending" }
+    | { requestId: string; status: "ready"; chatId: string; runId: string }
+    | { requestId: string; status: "error"; code: string }
+  ): void | Promise<void>;
 };
 
 type PendingSemanticRequest = {
@@ -116,11 +132,22 @@ type MenuSnapshot = {
 };
 
 type SelectionToolbarVisibleRecord = {
+  contents: WebContents;
   selectionId: string;
   guestId: number;
   registrationId: string;
   surfaceId: string;
   ownerWebContentsId: number;
+  pageURL: string;
+  target: WebviewContextMenuSemanticTarget;
+  start: WebviewSelectionToolbarPoint;
+  end: WebviewSelectionToolbarPoint;
+};
+
+type PendingSelectionAction = {
+  guestId: number;
+  resolve(result: SelectionActionResult | null): void;
+  timeout: NodeJS.Timeout;
 };
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -224,6 +251,60 @@ export function getWebviewContextMenuAccelerator(
   return accelerators[actionId];
 }
 
+export function validateWebviewSelectionActionResult(
+  value: unknown,
+  expectedRequestId: string,
+): SelectionActionResult | null {
+  if (
+    !isPlainObject(value) ||
+    !hasOnlyKeys(value, ["version", "requestId", "ok", "code", "handoff"]) ||
+    value.version !== AGENT_WEBCLIENT_SELECTION_ACTION_VERSION ||
+    value.requestId !== expectedRequestId ||
+    typeof value.ok !== "boolean"
+  ) {
+    return null;
+  }
+  if (value.code !== undefined && ![
+    "stale_selection",
+    "chat_required",
+    "selection_too_large",
+    "surface_not_ready",
+    "run_start_failed",
+  ].includes(String(value.code))) {
+    return null;
+  }
+  if ((value.ok && value.code !== undefined) || (!value.ok && value.code === undefined)) {
+    return null;
+  }
+  let handoff: SelectionActionResult["handoff"];
+  if (value.handoff !== undefined) {
+    if (!value.ok) return null;
+    if (
+      !isPlainObject(value.handoff) ||
+      !hasOnlyKeys(value.handoff, ["chatId", "runId"]) ||
+      typeof value.handoff.chatId !== "string" ||
+      !value.handoff.chatId.trim() ||
+      value.handoff.chatId.length > 192 ||
+      typeof value.handoff.runId !== "string" ||
+      !value.handoff.runId.trim() ||
+      value.handoff.runId.length > 192
+    ) {
+      return null;
+    }
+    handoff = {
+      chatId: value.handoff.chatId,
+      runId: value.handoff.runId,
+    };
+  }
+  return {
+    version: AGENT_WEBCLIENT_SELECTION_ACTION_VERSION,
+    requestId: expectedRequestId,
+    ok: value.ok,
+    ...(value.code ? { code: value.code as NonNullable<SelectionActionResult["code"]> } : {}),
+    ...(handoff ? { handoff } : {}),
+  };
+}
+
 export function createWebviewContextMenuController(options: WebviewContextMenuControllerOptions) {
   const attachedGuests = new WeakSet<WebContents>();
   const pendingRequests = new Map<string, PendingSemanticRequest>();
@@ -231,6 +312,7 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
   const contextSequenceByGuest = new Map<number, number>();
   const selectionSequenceByGuest = new Map<number, number>();
   const visibleSelectionByGuest = new Map<number, SelectionToolbarVisibleRecord>();
+  const pendingSelectionActions = new Map<string, PendingSelectionAction>();
 
   function finishPending(requestId: string, target: WebviewContextMenuSemanticTarget | null) {
     const pending = pendingRequests.get(requestId);
@@ -263,6 +345,32 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
       });
     });
   });
+
+  function finishSelectionAction(
+    requestId: string,
+    result: SelectionActionResult | null,
+  ) {
+    const pending = pendingSelectionActions.get(requestId);
+    if (!pending) return;
+    clearTimeout(pending.timeout);
+    pendingSelectionActions.delete(requestId);
+    pending.resolve(result);
+  }
+
+  ipcMain.on(WEBVIEW_SELECTION_TOOLBAR_RESULT_CHANNEL, (event, payload: unknown) => {
+    if (!isPlainObject(payload) || typeof payload.requestId !== "string") return;
+    const pending = pendingSelectionActions.get(payload.requestId);
+    if (!pending || pending.guestId !== event.sender.id) return;
+    finishSelectionAction(
+      payload.requestId,
+      validateWebviewSelectionActionResult(payload, payload.requestId),
+    );
+  });
+
+  ipcMain.removeHandler(WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL);
+  ipcMain.handle(WEBVIEW_SELECTION_TOOLBAR_EXECUTE_CHANNEL, (event, payload: unknown) =>
+    handleSelectionToolbarExecute(event.sender.id, payload)
+  );
 
   function cancelGuestRequests(guestId: number) {
     const requestId = latestRequestByGuest.get(guestId);
@@ -327,6 +435,102 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
     });
   }
 
+  async function handleSelectionToolbarExecute(
+    ownerWebContentsId: number,
+    payload: unknown,
+  ): Promise<WebviewSelectionToolbarExecuteResult> {
+    const request = validateWebviewSelectionToolbarExecuteRequest(payload);
+    if (!request) return { ok: false, code: "invalid_request" };
+    const visible = [...visibleSelectionByGuest.values()].find(
+      (candidate) => candidate.selectionId === request.selectionId,
+    );
+    const live = visible
+      ? options.browserSurfaces.resolveWebviewSurfaceTarget(visible.guestId)
+      : null;
+    if (
+      !visible ||
+      !live ||
+      visible.ownerWebContentsId !== ownerWebContentsId ||
+      !liveSelectionRegistrationMatches(
+        visible.contents,
+        live,
+        visible.pageURL,
+      )
+    ) {
+      return { ok: false, code: "stale_selection" };
+    }
+    if (
+      live.registrationId !== visible.registrationId ||
+      live.surfaceId !== visible.surfaceId
+    ) {
+      return { ok: false, code: "stale_selection" };
+    }
+
+    const guestRequestId = `webview-selection-action-${visible.guestId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    if (request.action === "more-details") {
+      void options.updateSelectionExplainWindow?.({
+        requestId: guestRequestId,
+        status: "pending",
+      });
+    }
+    clearSelectionToolbar(visible.guestId);
+    const resultPromise = new Promise<SelectionActionResult | null>((resolve) => {
+      const timeout = setTimeout(
+        () => finishSelectionAction(guestRequestId, null),
+        SELECTION_ACTION_TIMEOUT_MS,
+      );
+      pendingSelectionActions.set(guestRequestId, {
+        guestId: visible.guestId,
+        resolve,
+        timeout,
+      });
+    });
+    try {
+      visible.contents.send(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, {
+        action: AGENT_WEBCLIENT_SELECTION_ACTION,
+        version: AGENT_WEBCLIENT_SELECTION_ACTION_VERSION,
+        requestId: guestRequestId,
+        selectionId: visible.selectionId,
+        operation: request.action,
+        targetId: visible.target.targetId,
+        targetKind: visible.target.kind,
+        start: visible.start,
+        end: visible.end,
+      });
+    } catch {
+      finishSelectionAction(guestRequestId, null);
+    }
+    const result = await resultPromise;
+    if (!result?.ok) {
+      const code = result?.code || "timeout";
+      if (request.action === "more-details") {
+        await options.updateSelectionExplainWindow?.({
+          requestId: guestRequestId,
+          status: "error",
+          code,
+        });
+      }
+      return { ok: false, code };
+    }
+    if (request.action === "more-details") {
+      if (!result.handoff) {
+        await options.updateSelectionExplainWindow?.({
+          requestId: guestRequestId,
+          status: "error",
+          code: "invalid_request",
+        });
+        return { ok: false, code: "invalid_request" };
+      }
+      await options.updateSelectionExplainWindow?.({
+        requestId: guestRequestId,
+        status: "ready",
+        ...result.handoff,
+      });
+      return { ok: true, handoff: result.handoff };
+    }
+    return { ok: true };
+  }
+
   function liveSelectionRegistrationMatches(
     contents: WebContents,
     registeredTarget: RegisteredWebviewSurfaceTarget,
@@ -386,15 +590,24 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
       clearSelectionToolbar(guestId, false);
       return;
     }
-    const semanticTarget = await resolveSemantic(
+    const startTarget = await resolveSemantic(
       contents,
-      change.probe.x,
-      change.probe.y
+      change.start.x,
+      change.start.y
+    );
+    if (selectionSequenceByGuest.get(guestId) !== selectionSequence) return;
+    const endTarget = await resolveSemantic(
+      contents,
+      change.end.x,
+      change.end.y,
     );
     if (selectionSequenceByGuest.get(guestId) !== selectionSequence) return;
     if (
-      !semanticTarget ||
-      !isWebviewSelectionToolbarTargetAllowed(semanticTarget.kind) ||
+      !startTarget ||
+      !endTarget ||
+      startTarget.targetId !== endTarget.targetId ||
+      startTarget.kind !== endTarget.kind ||
+      !isWebviewSelectionToolbarTargetAllowed(startTarget.kind) ||
       !liveSelectionRegistrationMatches(contents, registeredTarget, pageURL)
     ) {
       clearSelectionToolbar(guestId, false);
@@ -410,11 +623,16 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
     }
     const selectionId = `webview-selection-${guestId}-${Date.now()}-${selectionSequence}`;
     const visible: SelectionToolbarVisibleRecord = {
+      contents,
       selectionId,
       guestId,
       registrationId: registeredTarget.registrationId,
       surfaceId: registeredTarget.surfaceId,
-      ownerWebContentsId: registeredTarget.ownerWebContentsId
+      ownerWebContentsId: registeredTarget.ownerWebContentsId,
+      pageURL,
+      target: startTarget,
+      start: change.start,
+      end: change.end,
     };
     visibleSelectionByGuest.set(guestId, visible);
     if (!sendSelectionToolbarState(registeredTarget.ownerWebContentsId, {
@@ -664,6 +882,9 @@ export function createWebviewContextMenuController(options: WebviewContextMenuCo
     contents.once("destroyed", () => {
       clearSelectionToolbar(contents.id);
       cancelGuestRequests(contents.id);
+      for (const [requestId, pending] of pendingSelectionActions) {
+        if (pending.guestId === contents.id) finishSelectionAction(requestId, null);
+      }
       contextSequenceByGuest.delete(contents.id);
       selectionSequenceByGuest.delete(contents.id);
     });

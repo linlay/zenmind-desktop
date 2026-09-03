@@ -20,4 +20,5 @@ export * from "./help";
 export * from "./sidebar-context-menu";
 export * from "./chat-work-panel-tab-context-menu";
 export * from "./webview-selection-toolbar";
+export * from "./selection-explain-window";
 export * from "./canonical-chat-sync";

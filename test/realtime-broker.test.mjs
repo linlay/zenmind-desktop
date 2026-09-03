@@ -375,6 +375,38 @@ test("ownerless Main Chat promotes its Overview lease in place", (t) => {
   assert.equal(broker.getDiagnostics().overviewLease.chatId, "chat-canonical");
 });
 
+test("selection explanation observer stays isolated from Main Chat and active roots", (t) => {
+  const { broker } = createHarness(t);
+  const main = rootObserver();
+  const copilot = rootObserver({
+    token: "copilot-dock:g2:2:202",
+    kind: "copilot_dock",
+    surfaceId: "copilot-dock",
+    generation: "g2",
+    contextId: "context-2:chat-2",
+    webContentsId: 202,
+  });
+  const explanation = rootObserver({
+    token: "selection-explain:g3:3:303:chat-1",
+    kind: "selection_explain",
+    surfaceId: "selection-explain",
+    generation: "g3",
+    contextId: "chat-1",
+    webContentsId: 303,
+  });
+  broker.activateRootObserver(main);
+  broker.activateRootObserver(copilot);
+  const activated = broker.activateRootObserver(explanation);
+  assert.equal(activated.token, explanation.token);
+  assert.equal(broker.getDiagnostics().auxiliaryRootObservers[0].token, explanation.token);
+  assert.equal(broker.getMainChatRootObserver().token, main.token);
+  assert.equal(broker.getActiveRootObserver().token, copilot.token);
+  assert.equal(broker.releaseRootObserver(explanation.token, "surface_inactive"), true);
+  assert.deepEqual(broker.getDiagnostics().auxiliaryRootObservers, []);
+  assert.equal(broker.getMainChatRootObserver().token, main.token);
+  assert.equal(broker.getActiveRootObserver().token, copilot.token);
+});
+
 test("normal Main Chat replacement completes Overview locally instead of reporting parent release", async (t) => {
   const { broker, token } = createHarness(t);
   const first = rootObserver();

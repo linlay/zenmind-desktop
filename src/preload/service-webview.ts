@@ -24,6 +24,7 @@ import {
 } from "../shared/webview-context-menu";
 import {
   WEBVIEW_SELECTION_TOOLBAR_CHANGE_CHANNEL,
+  WEBVIEW_SELECTION_TOOLBAR_RESULT_CHANNEL,
   WEBVIEW_SELECTION_TOOLBAR_VERSION,
   type WebviewSelectionToolbarChange,
   type WebviewSelectionToolbarRect
@@ -49,6 +50,9 @@ import {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
   AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION,
   AGENT_WEBCLIENT_COMPOSER_DRAFT_VERSION,
+  AGENT_WEBCLIENT_SELECTION_ACTION,
+  AGENT_WEBCLIENT_SELECTION_ACTION_RESULT_PAGE_EVENT,
+  AGENT_WEBCLIENT_SELECTION_ACTION_VERSION,
   AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION,
   AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_PAGE_EVENT,
   AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_VERSION,
@@ -67,6 +71,19 @@ function serializedPayloadSize(value: unknown) {
   } catch {
     return Number.POSITIVE_INFINITY;
   }
+}
+
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]) {
+  const keys = new Set(allowed);
+  return Object.keys(value).every((key) => keys.has(key));
+}
+
+function isSelectionActionPoint(value: unknown) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const point = value as Record<string, unknown>;
+  return hasOnlyKeys(point, ["x", "y"]) &&
+    typeof point.x === "number" && Number.isFinite(point.x) && Math.abs(point.x) <= 100_000 &&
+    typeof point.y === "number" && Number.isFinite(point.y) && Math.abs(point.y) <= 100_000;
 }
 
 const BRIDGE_REQUEST_DEDUPE_WINDOW_MS = 5_000;
@@ -215,7 +232,8 @@ function readSelectionToolbarChange(): WebviewSelectionToolbarChange | null {
   const top = Math.min(...visibleRects.map((rect) => rect.y));
   const right = Math.max(...visibleRects.map((rect) => rect.x + rect.width));
   const bottom = Math.max(...visibleRects.map((rect) => rect.y + rect.height));
-  const probeRect = visibleRects[0];
+  const startRect = visibleRects[0];
+  const endRect = visibleRects[visibleRects.length - 1];
   return {
     version: WEBVIEW_SELECTION_TOOLBAR_VERSION,
     visible: true,
@@ -225,9 +243,13 @@ function readSelectionToolbarChange(): WebviewSelectionToolbarChange | null {
       width: right - left,
       height: bottom - top
     },
-    probe: {
-      x: probeRect.x + probeRect.width / 2,
-      y: probeRect.y + probeRect.height / 2
+    start: {
+      x: startRect.x + startRect.width / 2,
+      y: startRect.y + startRect.height / 2
+    },
+    end: {
+      x: endRect.x + endRect.width / 2,
+      y: endRect.y + endRect.height / 2
     }
   };
 }
@@ -477,6 +499,24 @@ window.addEventListener(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_EVENT, (event)
   );
 });
 
+window.addEventListener(AGENT_WEBCLIENT_SELECTION_ACTION_RESULT_PAGE_EVENT, (event) => {
+  const detail = (event as CustomEvent<Record<string, unknown>>).detail;
+  if (
+    !detail ||
+    typeof detail !== "object" ||
+    !hasOnlyKeys(detail, ["version", "requestId", "ok", "code", "handoff"]) ||
+    detail.version !== AGENT_WEBCLIENT_SELECTION_ACTION_VERSION ||
+    typeof detail.requestId !== "string" ||
+    detail.requestId.length === 0 ||
+    detail.requestId.length > 192 ||
+    typeof detail.ok !== "boolean" ||
+    serializedPayloadSize(detail) > 16 * 1024
+  ) {
+    return;
+  }
+  ipcRenderer.send(WEBVIEW_SELECTION_TOOLBAR_RESULT_CHANNEL, detail);
+});
+
 ipcRenderer.on(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL, (_event, message) => {
   window.dispatchEvent(new CustomEvent(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT, { detail: message }));
 });
@@ -525,6 +565,7 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<s
       AGENT_WEBCLIENT_WORKPANEL_RESOURCE_DOWNLOAD_ACTION,
       AGENT_WEBCLIENT_WORKPANEL_PREVIEW_REVIEW_ACTION,
       AGENT_WEBCLIENT_COMPOSER_DRAFT_ACTION,
+      AGENT_WEBCLIENT_SELECTION_ACTION,
       WEBVIEW_CONTEXT_MENU_RESOLVE_ACTION,
       WEBVIEW_CONTEXT_MENU_EXECUTE_ACTION
     ].includes(String(payload.action || ""))
@@ -538,6 +579,33 @@ ipcRenderer.on(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL, (_event, payload: Record<s
       typeof payload.text !== "string" ||
       payload.text.length > 50_000 ||
       serializedPayloadSize(payload) > 18 * 1024 * 1024
+    )
+  ) return;
+  if (
+    payload.action === AGENT_WEBCLIENT_SELECTION_ACTION &&
+    (
+      !hasOnlyKeys(payload, [
+        "action",
+        "version",
+        "requestId",
+        "selectionId",
+        "operation",
+        "targetId",
+        "targetKind",
+        "start",
+        "end",
+      ]) ||
+      payload.version !== AGENT_WEBCLIENT_SELECTION_ACTION_VERSION ||
+      typeof payload.requestId !== "string" ||
+      typeof payload.selectionId !== "string" ||
+      !["add-to-chat", "more-details", "ask-in-side-chat"].includes(
+        String(payload.operation || ""),
+      ) ||
+      typeof payload.targetId !== "string" ||
+      !["message", "code"].includes(String(payload.targetKind || "")) ||
+      !isSelectionActionPoint(payload.start) ||
+      !isSelectionActionPoint(payload.end) ||
+      serializedPayloadSize(payload) > 8 * 1024
     )
   ) return;
   window.dispatchEvent(new CustomEvent(PRELOAD_TO_PAGE_ACTION_EVENT, { detail: payload }));

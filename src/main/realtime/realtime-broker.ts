@@ -30,7 +30,11 @@ const DESKTOP_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
 
 export type RealtimeLane = "primary" | "btw";
 export type RunChannelKey = { lane: RealtimeLane; runId: string };
-export type RootObserverKind = "main_chat" | "copilot_dock" | "kanban_chat";
+export type RootObserverKind =
+  | "main_chat"
+  | "copilot_dock"
+  | "kanban_chat"
+  | "selection_explain";
 
 export type RootObserverIdentity = {
   token: string;
@@ -357,6 +361,7 @@ export class RealtimeBroker {
   private readonly runActionGrants = new Map<string, RunActionGrant>();
   private activeRootObserver: RootObserverState | null = null;
   private mainChatRootObserver: RootObserverState | null = null;
+  private readonly auxiliaryRootObservers = new Map<string, RootObserverState>();
   private readonly pendingClones = new Map<string, PendingClone>();
   private lastCloneCancellationReason = "";
   private desktopBridgeProvider: DesktopBridgeRequestProvider | null = null;
@@ -463,6 +468,9 @@ export class RealtimeBroker {
     if (!token) return null;
     if (this.mainChatRootObserver?.token === token) return this.mainChatRootObserver;
     if (this.activeRootObserver?.token === token) return this.activeRootObserver;
+    if (this.auxiliaryRootObservers.has(token)) {
+      return this.auxiliaryRootObservers.get(token) || null;
+    }
     return null;
   }
 
@@ -667,9 +675,13 @@ export class RealtimeBroker {
     }
     const current = input.kind === "main_chat"
       ? this.mainChatRootObserver
-      : this.activeRootObserver?.kind === input.kind
-        ? this.activeRootObserver
-        : null;
+      : input.kind === "selection_explain"
+        ? [...this.auxiliaryRootObservers.values()].find(
+            (observer) => observer.surfaceId === surfaceId,
+          ) || null
+        : this.activeRootObserver?.kind === input.kind
+          ? this.activeRootObserver
+          : null;
     if (current?.token === token) {
       if (
         input.kind === "main_chat" &&
@@ -680,7 +692,9 @@ export class RealtimeBroker {
       }
       return input.kind === "main_chat"
         ? this.getMainChatRootObserver()
-        : this.getActiveRootObserver();
+        : input.kind === "selection_explain"
+          ? this.snapshotRootObserver(current)
+          : this.getActiveRootObserver();
     }
     const contextEpoch = `root-context-${randomUUID()}`;
     const next: RootObserverState = {
@@ -709,6 +723,12 @@ export class RealtimeBroker {
       if (!this.activeRootObserver || this.activeRootObserver.kind === "main_chat") {
         this.activeRootObserver = next;
       }
+    } else if (input.kind === "selection_explain") {
+      if (current) {
+        this.auxiliaryRootObservers.delete(current.token);
+        this.retireRootObserver(current, "surface_generation_superseded");
+      }
+      this.auxiliaryRootObservers.set(token, next);
     } else {
       const previousActive = this.activeRootObserver;
       this.activeRootObserver = next;
@@ -716,10 +736,14 @@ export class RealtimeBroker {
         this.retireRootObserver(previousActive, "surface_generation_superseded");
       }
     }
-    if (current) this.retireRootObserver(current, "surface_generation_superseded");
+    if (current && input.kind !== "selection_explain") {
+      this.retireRootObserver(current, "surface_generation_superseded");
+    }
     return input.kind === "main_chat"
       ? this.getMainChatRootObserver()
-      : this.getActiveRootObserver();
+      : input.kind === "selection_explain"
+        ? this.snapshotRootObserver(next)
+        : this.getActiveRootObserver();
   }
 
   getActiveRootObserver() {
@@ -756,6 +780,7 @@ export class RealtimeBroker {
     if (this.activeRootObserver === observer) {
       this.activeRootObserver = this.mainChatRootObserver;
     }
+    this.auxiliaryRootObservers.delete(observer.token);
     this.retireRootObserver(observer, reason);
     return true;
   }
@@ -1195,6 +1220,9 @@ export class RealtimeBroker {
       pushSubscriberCount: this.pushSubscriptions.size,
       connectionSubscriberCount: this.connectionSubscriptions.size,
       rootObserver: this.getActiveRootObserver(),
+      auxiliaryRootObservers: [...this.auxiliaryRootObservers.values()].map(
+        (observer) => this.snapshotRootObserver(observer),
+      ),
       overviewLease: this.mainChatRootObserver?.overviewLease
         ? {
             state: this.mainChatRootObserver.overviewLease.state,
@@ -1307,6 +1335,7 @@ export class RealtimeBroker {
     this.pendingClones.clear();
     this.activeRootObserver = null;
     this.mainChatRootObserver = null;
+    this.auxiliaryRootObservers.clear();
     this.terminalRequestIds.clear();
     this.clearRunActionGrants();
     this.clients.primary.rotateIdentity();
@@ -1336,6 +1365,7 @@ export class RealtimeBroker {
     this.pendingClones.clear();
     this.activeRootObserver = null;
     this.mainChatRootObserver = null;
+    this.auxiliaryRootObservers.clear();
     this.terminalRequestIds.clear();
     this.clearRunActionGrants();
     for (const controller of this.inboundDesktopRequests.values()) controller.abort();
