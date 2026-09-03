@@ -26,7 +26,7 @@ Desktop 只原生承载 HTML 和图片。Markdown、文本、代码、PDF、Offi
 
 | 内容类型 | Desktop | Standalone | 可变更能力 |
 | --- | --- | --- | --- |
-| HTML | 原生隔离 Surface | WebClient 源码与 sandbox 预览 | 静态文件可编辑源码和 DOM 批注；实时站点只批注交接 |
+| HTML | 原生隔离预览与 DOM 批注 | WebClient 源码与 sandbox 预览 | Desktop WorkPanel 不编辑源码，只交接 DOM 批注；Standalone 由 WebClient 管理 |
 | 图片 | 原生图片 Surface | WebClient 可解码预览与基础 Canvas | PNG/JPEG/WebP 可编辑保存；动画、SVG 及其他格式只读 |
 | Markdown/文本/代码 | WebClient | WebClient | Monaco 编辑、范围批注与带 revision 保存 |
 | PDF | WebClient | WebClient | PDF.js 只读预览、页码、缩放与搜索 |
@@ -45,7 +45,7 @@ WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。
 
 Document Registry 只接收语义来源，并用绑定 sender、owner Chat 与 renderer generation 的一次性 claim 下发 opaque handle。Renderer 不获得绝对路径、Platform Token 或内部 descriptor。
 
-HTML 脚本在隔离预览中运行，不获得 Node、Desktop bridge、popup 和任意权限。源码修改先只更新内存预览。批注仅保存有界 selector/XPath、坐标和脱敏摘要；文档重建后无法定位的批注显式失效。
+HTML 脚本在隔离预览中运行，不获得 Node、Desktop bridge、popup 和任意权限。Desktop WorkPanel 的 HTML Surface 固定使用占满内容区的直接预览，只在预览与 DOM 批注之间切换，不提供源码、分屏或源码保存入口。顶部工具条在预览态显示不含本地绝对路径的语义 URL 与批注按钮，批注态显示返回预览、选择提示和批注数量。批注仅保存有界 selector/XPath、坐标和脱敏摘要；文档重建后无法定位的批注显式失效。
 
 图片 Surface 对 PNG/JPEG/WebP 保留像素编辑、撤销/重做、AI 工具和区域批注。非编辑格式只读，不得通过错误扩展名或隐式栅格化覆盖原件；JPEG 不接受含透明像素的覆盖结果。系统打开、定位和解码链路必须分别回归 macOS 与 Windows。
 

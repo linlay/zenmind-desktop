@@ -2161,18 +2161,6 @@ export function WorkPanelHost({
                           ownerChatId={workspace.ownerChatId}
                           rendererGeneration={rendererGenerationRef.current}
                           document={item.descriptor.context as unknown as import("../../shared/work-panel-document-html").WorkPanelDocumentHtmlSelection}
-                          onCommitted={(document) => {
-                            dispatchCommand({
-                              type: "openItem",
-                              ownerChatId: workspace.ownerChatId,
-                              descriptor: {
-                                kind: "native",
-                                surfaceKey: "document-html",
-                                context: { ...document },
-                                title: document.fileName,
-                              },
-                            });
-                          }}
                           onHandoff={(annotations) => handoffNativeHtmlReview(
                             workspace.ownerChatId,
                             item,

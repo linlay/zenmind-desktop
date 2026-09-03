@@ -1154,6 +1154,151 @@
   opacity: 0.68;
 }
 
+.work-panel-document-html {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+  color: var(--text-primary);
+  background: var(--embedded-surface-page-bg);
+  font-size: 12px;
+}
+
+.work-panel-document-html-toolbar {
+  z-index: 2;
+  box-sizing: border-box;
+  display: flex;
+  height: 48px;
+  flex: 0 0 48px;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  border-bottom: 1px solid var(--line-soft);
+  padding: 8px;
+  background: var(--embedded-surface-page-bg);
+}
+
+.work-panel-document-html-location {
+  box-sizing: border-box;
+  display: flex;
+  min-width: 0;
+  height: 30px;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 7px;
+  overflow: hidden;
+  border: 1px solid #dce2e8;
+  border-radius: 999px;
+  padding: 0 11px;
+  color: #30343b;
+  background: #fff;
+}
+
+.work-panel-document-html-location > svg {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
+  color: #6b7280;
+}
+
+.work-panel-document-html-location > span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-panel-document-html-hint,
+.work-panel-document-html-count {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--work-panel-tab-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-panel-document-html-hint {
+  flex: 1 1 auto;
+}
+
+.work-panel-document-html-count {
+  flex: 0 1 auto;
+}
+
+.work-panel-document-html-toolbar .ant-btn {
+  flex: 0 0 auto;
+}
+
+.work-panel-document-html-body {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  background: #fff;
+}
+
+.work-panel-document-html-body > iframe {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: #fff;
+}
+
+.work-panel-document-html-status {
+  padding: 16px;
+}
+
+.work-panel-document-html-status.is-error,
+.work-panel-document-html-annotation code.is-invalid {
+  color: #cf1322;
+}
+
+.work-panel-document-html-annotations {
+  box-sizing: border-box;
+  max-height: 180px;
+  flex: 0 1 auto;
+  overflow: auto;
+  border-top: 1px solid var(--line-soft);
+  padding: 8px;
+}
+
+.work-panel-document-html-annotation {
+  display: grid;
+  grid-template-columns: minmax(100px, 160px) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.work-panel-document-html-annotation code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.work-panel-document-html-annotation-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
+:root[data-theme="dark"] .work-panel-document-html-location {
+  border-color: rgba(255, 255, 255, 0.18);
+  color: #e2e7ed;
+  background: #2b3037;
+}
+
+:root[data-theme="dark"] .work-panel-document-html-location > svg {
+  color: #aeb4bd;
+}
+
 .work-panel-resource-image {
   --work-panel-image-control-hover: color-mix(in srgb, var(--ink) 8%, transparent);
   --work-panel-image-control-active-hover: var(--accent-fill-strong);

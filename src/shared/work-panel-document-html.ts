@@ -12,6 +12,7 @@ export type WorkPanelDocumentHtmlSelection = {
   handleId: string;
   sourceKind: WorkPanelDocumentSource["kind"];
   stableIdentity: string;
+  displayUrl: string;
   fileName: string;
   mimeType: "text/html" | "application/xhtml+xml";
   sizeBytes: number;

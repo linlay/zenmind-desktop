@@ -73,6 +73,7 @@ test("native HTML workspace claims are opaque, sender-bound, editable, and revis
     }, webContents);
     assert.equal(claimed.ok, true);
     assert.equal(claimed.document.stableIdentity, "file:agent-html:site/index.html");
+    assert.equal(claimed.document.displayUrl, "workspace:///site/index.html");
     assert.equal(claimed.document.localOriginal, true);
     assert.equal("filePath" in claimed.document, false);
 
@@ -163,6 +164,7 @@ test("remote native HTML keeps the Platform revision and Reference only creates 
     }, webContents);
     assert.equal(claimed.ok, true);
     assert.equal(claimed.document.revision, "platform-revision-1");
+    assert.equal(claimed.document.displayUrl, "reference:///references/source.html");
     const identity = {
       ownerChatId: "chat-reference",
       rendererGeneration: "renderer-reference",

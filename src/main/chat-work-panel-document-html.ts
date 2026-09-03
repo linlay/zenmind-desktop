@@ -23,7 +23,7 @@ const HTML_MAX_BYTES = 8 * 1024 * 1024;
 const HTML_PREVIEW_ASSET_MAX_BYTES = 12 * 1024 * 1024;
 const HTML_PREVIEW_TOTAL_MAX_BYTES = 32 * 1024 * 1024;
 
-type DocumentHandle = WorkPanelDocumentHtmlSelection & {
+type DocumentHandle = Omit<WorkPanelDocumentHtmlSelection, "displayUrl"> & {
   source: WorkPanelDocumentSource;
   ownerChatId: string;
   rendererGeneration: string;
@@ -215,10 +215,12 @@ async function replaceAsync(
 }
 
 function selection(handle: DocumentHandle): WorkPanelDocumentHtmlSelection {
+  const displayPath = (handle.semanticPath || handle.fileName).replace(/\\/gu, "/").replace(/^\/+|\/+$/gu, "");
   return {
     handleId: handle.handleId,
     sourceKind: handle.source.kind,
     stableIdentity: handle.stableIdentity,
+    displayUrl: `${handle.source.kind === "workspace-file" ? "workspace" : handle.source.kind}:///${displayPath}`,
     fileName: handle.fileName,
     mimeType: handle.mimeType,
     sizeBytes: handle.sizeBytes,
