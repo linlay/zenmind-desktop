@@ -450,7 +450,7 @@ test("service webview surface falls back to loadURL when client-side route navig
   assert.match(directRouteLoadBlock, /targetWebview\.loadURL\(targetUrl\)/);
 });
 
-test("main chat uses the Router bridge before a bounded loadURL fallback", () => {
+test("main chat retries the Router bridge before a bounded loadURL fallback", () => {
   const serviceWebviewSurface = readServiceWebviewSurfaceSource();
   const mainChatRouteBlock = serviceWebviewSurface.slice(
     serviceWebviewSurface.indexOf("function requestMainChatRouteBridgeNavigation"),
@@ -461,10 +461,20 @@ test("main chat uses the Router bridge before a bounded loadURL fallback", () =>
     serviceWebviewSurface.indexOf("function handleWebviewBridgeMessage"),
   );
 
-  assert.match(serviceWebviewSurface, /const MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS = 150/);
+  assert.match(serviceWebviewSurface, /const MAIN_CHAT_ROUTE_ACK_RETRY_MS = 150/);
+  assert.match(serviceWebviewSurface, /const MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS = 1_000/);
   assert.match(
     mainChatRouteBlock,
     /window\.setTimeout[\s\S]*?sendServiceRouteToWebview\(embeddedUrl, "route-sync"\)/u,
+  );
+  assert.match(mainChatRouteBlock, /main-chat-router-ack-retry/u);
+  assert.match(
+    mainChatRouteBlock,
+    /MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS - \(Date\.now\(\) - pending\.queuedAt\)/u,
+  );
+  assert.match(
+    mainChatRouteBlock,
+    /sendServiceRouteToWebview\(pending\.targetUrl, "route-sync"\)/u,
   );
   assert.match(mainChatRouteBlock, /liveWebview\.loadURL\(pending\.targetUrl\)/);
   assert.match(mainChatRouteBlock, /main-chat-router-ack-timeout/u);

@@ -205,6 +205,7 @@ type PendingMainChatRouterAck = {
   targetRouterLocation: string;
   webContentsId: number;
   timeoutId: number;
+  retryIssued: boolean;
   fallbackIssued: boolean;
   queuedAt: number;
 };
@@ -242,7 +243,8 @@ type ServiceWebviewEventContext = {
 
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
-const MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS = 150;
+const MAIN_CHAT_ROUTE_ACK_RETRY_MS = 150;
+const MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS = 1_000;
 const AGENT_WEBCLIENT_SOURCE_CHAT = MAIN_CHAT_SURFACE_ID;
 const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
   AGENT_WEBCLIENT_SOURCE_CHAT,
@@ -2443,11 +2445,12 @@ export function ServiceWebviewSurface({
       targetRouterLocation,
       webContentsId,
       timeoutId: 0,
+      retryIssued: false,
       fallbackIssued: false,
       queuedAt: Date.now(),
     };
     pendingMainChatRouterAckRef.current = pending;
-    pending.timeoutId = window.setTimeout(() => {
+    const readLivePendingGuest = () => {
       if (pendingMainChatRouterAckRef.current !== pending) return;
       const liveWebview = webviewRef.current;
       const liveWebContentsId = readWebviewContentsId(liveWebview);
@@ -2470,6 +2473,12 @@ export function ServiceWebviewSurface({
         });
         return;
       }
+      return { liveWebview, liveWebContentsId };
+    };
+    const issueLoadUrlFallback = () => {
+      const liveGuest = readLivePendingGuest();
+      if (!liveGuest) return;
+      const { liveWebview, liveWebContentsId } = liveGuest;
       const guestUrl = readCurrentWebviewUrl();
       pending.timeoutId = 0;
       pending.fallbackIssued = true;
@@ -2481,6 +2490,7 @@ export function ServiceWebviewSurface({
         physicalUrl: guestUrl,
         physicalUrlMatches: isMainChatGuestAtRoute(guestUrl, pending.targetUrl),
         delayMs: MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS,
+        retryIssued: pending.retryIssued,
       });
       webviewDomReadyRef.current = {
         ready: false,
@@ -2502,7 +2512,31 @@ export function ServiceWebviewSurface({
           error: reason instanceof Error ? reason.message : String(reason),
         });
       });
-    }, MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS);
+    };
+    pending.timeoutId = window.setTimeout(() => {
+      const liveGuest = readLivePendingGuest();
+      if (!liveGuest) return;
+      pending.retryIssued = true;
+      const guestUrl = readCurrentWebviewUrl();
+      reportServiceWebviewDiagnostic("main-chat-router-ack-retry", {
+        transitionId: pending.id,
+        routeRevision: pending.revision,
+        targetUrl: pending.targetUrl,
+        targetRouterLocation: pending.targetRouterLocation,
+        physicalUrl: guestUrl,
+        physicalUrlMatches: isMainChatGuestAtRoute(guestUrl, pending.targetUrl),
+        delayMs: MAIN_CHAT_ROUTE_ACK_RETRY_MS,
+      });
+      const fallbackDelayMs = Math.max(
+        0,
+        MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS - (Date.now() - pending.queuedAt),
+      );
+      pending.timeoutId = window.setTimeout(
+        issueLoadUrlFallback,
+        fallbackDelayMs,
+      );
+      sendServiceRouteToWebview(pending.targetUrl, "route-sync");
+    }, MAIN_CHAT_ROUTE_ACK_RETRY_MS);
     reportServiceWebviewDiagnostic("main-chat-router-ack-awaiting", {
       transitionId,
       routeRevision: mainChatRouteRevision,
@@ -2510,7 +2544,8 @@ export function ServiceWebviewSurface({
       targetRouterLocation,
       physicalUrl: currentUrl,
       physicalUrlMatches: isMainChatGuestAtRoute(currentUrl, embeddedUrl),
-      delayMs: MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS,
+      retryDelayMs: MAIN_CHAT_ROUTE_ACK_RETRY_MS,
+      fallbackDelayMs: MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS,
     });
     sendServiceRouteToWebview(embeddedUrl, "route-sync");
   }
