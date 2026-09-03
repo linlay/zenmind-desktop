@@ -427,6 +427,24 @@ function formatMarketDate(value: string | undefined, locale: string, fallback: s
   }).format(new Date(timestamp));
 }
 
+function formatMarketDateTime(value: string | undefined, locale: string) {
+  if (!value) {
+    return "";
+  }
+  const timestamp = Date.parse(value);
+  if (!Number.isFinite(timestamp)) {
+    return value;
+  }
+  return new Intl.DateTimeFormat(locale, {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit"
+  }).format(new Date(timestamp));
+}
+
 function itemCreatedAt(item: MarketItem, locale: string, fallback: string) {
   return formatMarketDate(item.createdAt || item.publishedAt || item.metadata?.createdAt, locale, fallback);
 }
@@ -519,6 +537,7 @@ function scriptSummary(script: MarketItem["install"] | MarketItem["uninstall"]) 
 function storefrontDetailRows(
   item: MarketItem,
   service: ServiceState | null,
+  locale: string,
   t: ReturnType<typeof useI18n>["t"]
 ) {
   const commercialMeta = itemCommercialMeta(item, t);
@@ -543,7 +562,7 @@ function storefrontDetailRows(
     [t("market.storefront.detail.image"), item.imageRef ?? ""],
     [t("market.storefront.detail.imageId"), item.imageId ?? ""],
     [t("market.storefront.detail.size"), item.imageSize || itemAssetSize(item)],
-    [t("market.storefront.detail.imageCreatedAt"), item.imageCreatedAt ?? ""],
+    [t("market.storefront.detail.imageCreatedAt"), formatMarketDateTime(item.imageCreatedAt, locale)],
     [t("market.storefront.detail.buildStatus"), item.buildStatus ?? ""],
     [t("market.storefront.detail.installPath"), item.installPath ?? ""],
     [t("market.storefront.detail.minDesktopVersion"), item.minDesktopVersion ?? ""],
@@ -558,8 +577,8 @@ function storefrontDetailRows(
     [t("market.storefront.detail.mcpRuntimeStatus"), mcpRuntimeStatusLabel(item, t)],
     [t("market.storefront.detail.mcpToolCount"), item.mcpToolCount === undefined ? "" : String(item.mcpToolCount)],
     [t("market.storefront.detail.mcpRuntimeMessage"), item.mcpRuntimeMessage ?? ""],
-    [t("market.storefront.detail.publishedAt"), item.publishedAt ?? ""],
-    [t("market.storefront.detail.updatedAt"), item.updatedAt ?? ""],
+    [t("market.storefront.detail.publishedAt"), formatMarketDateTime(item.publishedAt, locale)],
+    [t("market.storefront.detail.updatedAt"), formatMarketDateTime(item.updatedAt, locale)],
     [t("market.storefront.detail.metadata"), metadataSummary(item)]
   ];
 
@@ -1182,7 +1201,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       ? getServiceDisplayName(selectedDetailItem.id, selectedDetailItem.name, t)
       : selectedDetailItem.name;
     const description = marketCardDescription(selectedDetailItem);
-    const rows = storefrontDetailRows(selectedDetailItem, service, t);
+    const rows = storefrontDetailRows(selectedDetailItem, service, locale, t);
     const favoriteKey = `${selectedDetailItem.type}:${selectedDetailItem.id}`;
     const isFavoriting = favoritingItemKey === favoriteKey;
     const favoriteLabel = selectedDetailItem.favorited
@@ -1303,9 +1322,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name, t) : item.name;
     const description = marketCardDescription(item);
     const isCloudSource = isCloudMarketItem(item);
-    const favoriteKey = `${item.type}:${item.id}`;
-    const isFavoriting = favoritingItemKey === favoriteKey;
-    const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
     const chips = Array.from(new Set([
       ...item.tags,
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
@@ -1376,19 +1392,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
                 <DownloadOutlined />
                 <span>{formatCount(itemDownloadCount(item))}</span>
               </span>
-              <button
-                type="button"
-                className={item.favorited ? "market-store-stat-pill market-store-stat-button is-active" : "market-store-stat-pill market-store-stat-button"}
-                onClick={() => void toggleFavorite(item)}
-                disabled={!isMarketAuthenticated || isFavoriting || Boolean(favoritingItemKey)}
-                title={isMarketAuthenticated ? favoriteLabel : t("market.main.favoriteAuthRequired")}
-                aria-label={isMarketAuthenticated
-                  ? `${favoriteLabel}: ${formatCount(itemFavoriteCount(item))}`
-                  : t("market.main.favoriteAuthRequired")}
-              >
-                {item.favorited ? <HeartFilled /> : <HeartOutlined />}
-                <span>{formatCount(itemFavoriteCount(item))}</span>
-              </button>
             </div>
           </div>
         </div>

@@ -101,6 +101,9 @@ test("catalog items keep the cloud source label and target version when a local 
 test("market storefront uses one WorkBuddy-inspired list with per-card source labels", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
   const styles = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
+  const renderCardStart = storefront.indexOf("function renderCard");
+  const renderCardEnd = storefront.indexOf("const toolbarImportLabel", renderCardStart);
+  const renderCard = storefront.slice(renderCardStart, renderCardEnd);
 
   assert.match(storefront, /market\.storefront\.allTitle/u);
   assert.doesNotMatch(storefront, /market\.storefront\.featuredTitle/u);
@@ -117,7 +120,9 @@ test("market storefront uses one WorkBuddy-inspired list with per-card source la
   assert.match(storefront, /rangeMode\s*===\s*"favorites"[\s\S]*?item\.favorited/u);
   assert.match(storefront, /command\(\{\s*includeFavorites\s*\}\)/u);
   assert.match(storefront, /disabled=\{!isMarketAuthenticated\s*\|\|\s*isFavoriting/u);
-  assert.match(storefront, /disabled=\{!isMarketAuthenticated\s*\|\|\s*isFavoriting\s*\|\|\s*Boolean\(favoritingItemKey\)\}/u);
+  assert.doesNotMatch(renderCard, /toggleFavorite/u);
+  assert.match(storefront, /formatMarketDateTime\(item\.publishedAt,\s*locale\)/u);
+  assert.match(storefront, /formatMarketDateTime\(item\.updatedAt,\s*locale\)/u);
   assert.match(styles, /\.market-store-header-tools/u);
 });
 
