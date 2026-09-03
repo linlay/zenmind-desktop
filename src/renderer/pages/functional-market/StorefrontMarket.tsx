@@ -3,6 +3,7 @@ import {
   ApiOutlined,
   AppstoreOutlined,
   CalendarOutlined,
+  CheckOutlined,
   CheckCircleOutlined,
   CloudDownloadOutlined,
   CodeOutlined,
@@ -24,7 +25,6 @@ import {
   SafetyCertificateOutlined,
   SearchOutlined,
   SmileOutlined,
-  SortAscendingOutlined,
   UserOutlined
 } from "@ant-design/icons";
 import { Alert, Button, Card, Dropdown, Empty, Input, Modal, Tag } from "antd";
@@ -66,8 +66,7 @@ import {
 import "./StorefrontMarket.css";
 
 type RangeMode = "all" | "installed" | "favorites" | "updates";
-type SortMode = "popular" | "latest" | "rating";
-type SearchFilterMenu = "sort" | "scope" | null;
+type SearchFilterMenu = "scope" | null;
 type MarketFeedbackType = "success" | "info" | "warning" | "error";
 const MCP_STATUS_POLL_INTERVAL_MS = 2_000;
 const MCP_STATUS_POLL_MAX_ATTEMPTS = 30;
@@ -109,10 +108,18 @@ function isCloudMarketItem(item: MarketItem) {
 function isCloudSkillStorefrontItem(item: MarketItem) {
   return isCloudMarketItem(item) && (
     item.state === "not-installed" ||
+    isInstalledMarketItem(item) ||
     item.state === "update-available" ||
     item.state === "incompatible" ||
     item.state === "failed"
   );
+}
+
+function canFavoriteMarketItem(item: MarketItem) {
+  if (item.type === "website-app") {
+    return false;
+  }
+  return item.type !== "skill" || isCloudMarketItem(item);
 }
 
 function isListOnlyMarketItem(item: MarketItem) {
@@ -172,17 +179,6 @@ function itemDetailUrl(item: MarketItem) {
   return (item.homepageUrl || item.metadata?.readmeUrl || item.metadata?.manifestUrl || item.cliDetailCommand || "").trim();
 }
 
-function numberFromMetadata(item: MarketItem, keys: string[]) {
-  for (const key of keys) {
-    const raw = item.metadata?.[key];
-    const value = raw ? Number.parseFloat(raw) : Number.NaN;
-    if (Number.isFinite(value)) {
-      return value;
-    }
-  }
-  return 0;
-}
-
 function countFromValue(value: unknown) {
   if (typeof value === "number" && Number.isFinite(value)) {
     return Math.max(0, Math.trunc(value));
@@ -223,48 +219,6 @@ function formatCount(value: unknown) {
   return countFromValue(value).toLocaleString();
 }
 
-function dateFromMetadata(item: MarketItem) {
-  const candidates = [
-    item.updatedAt,
-    item.publishedAt,
-    item.createdAt,
-    item.metadata?.updatedAt,
-    item.metadata?.publishedAt,
-    item.metadata?.releasedAt,
-    item.metadata?.createdAt
-  ];
-  for (const raw of candidates) {
-    if (!raw) {
-      continue;
-    }
-    const value = Date.parse(raw);
-    if (Number.isFinite(value)) {
-      return value;
-    }
-  }
-  return 0;
-}
-
-function sortMarketItems(items: MarketItem[], sortMode: SortMode) {
-  const sorted = [...items];
-  sorted.sort((a, b) => {
-    if (sortMode === "latest") {
-      const diff = dateFromMetadata(b) - dateFromMetadata(a);
-      if (diff !== 0) return diff;
-    } else if (sortMode === "rating") {
-      const diff = numberFromMetadata(b, ["rating", "score"]) - numberFromMetadata(a, ["rating", "score"]);
-      if (diff !== 0) return diff;
-    } else {
-      const downloadDiff = itemDownloadCount(b) - itemDownloadCount(a);
-      if (downloadDiff !== 0) return downloadDiff;
-      const favoriteDiff = itemFavoriteCount(b) - itemFavoriteCount(a);
-      if (favoriteDiff !== 0) return favoriteDiff;
-    }
-    return a.name.localeCompare(b.name, "zh-Hans-CN");
-  });
-  return sorted;
-}
-
 function rangeMatches(item: MarketItem, rangeMode: RangeMode) {
   if (rangeMode === "installed") {
     return isInstalledMarketItem(item);
@@ -276,18 +230,6 @@ function rangeMatches(item: MarketItem, rangeMode: RangeMode) {
     return item.state === "update-available";
   }
   return true;
-}
-
-function marketSortLabel(sortMode: SortMode, t: ReturnType<typeof useI18n>["t"]) {
-  switch (sortMode) {
-    case "latest":
-      return t("market.sort.latest");
-    case "rating":
-      return t("market.sort.rating");
-    case "popular":
-    default:
-      return t("market.sort.popular");
-  }
 }
 
 function marketScopeLabel(rangeMode: RangeMode, t: ReturnType<typeof useI18n>["t"]) {
@@ -593,7 +535,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const { services, refresh: refreshServices } = useServices();
   const [query, setQuery] = useState("");
   const [rangeMode, setRangeMode] = useState<RangeMode>("all");
-  const [sortMode, setSortMode] = useState<SortMode>("popular");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenu>(null);
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
@@ -625,8 +566,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     .sort()
     .join("|"), [marketResult.items]);
   const visibleItems = useMemo(
-    () => sortMarketItems(
-      activeItems.filter((item) => {
+    () => activeItems.filter((item) => {
         const matchesView = activeTab === "skills"
           ? rangeMode === "installed"
             ? isInstalledMarketItem(item)
@@ -636,9 +576,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
           : rangeMatches(item, rangeMode);
         return matchesView && matchesMarketItemQuery(item, query, t);
       }),
-      sortMode
-    ),
-    [activeItems, activeTab, query, rangeMode, sortMode, t]
+    [activeItems, activeTab, query, rangeMode, t]
   );
   const marketStatusMessage = feedback || marketMessageForTab(marketResult, activeTab);
   const marketOffline = marketOfflineForTab(marketResult, activeTab);
@@ -1154,6 +1092,17 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       );
     }
     if (item.type === "skill" && isInstalledMarketItem(item)) {
+      if (rangeMode !== "installed") {
+        return (
+          <Button
+            aria-label={t("market.state.installed")}
+            className="market-store-action is-compact-icon"
+            disabled
+            icon={<CheckOutlined />}
+            title={t("market.state.installed")}
+          />
+        );
+      }
       return (
         <Button
           aria-label={t("market.action.uninstall")}
@@ -1290,20 +1239,22 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
             <span>{t("market.stats.downloads")}</span>
             <strong>{formatCount(itemDownloadCount(selectedDetailItem))}</strong>
           </span>
-          <button
-            type="button"
-            className={selectedDetailItem.favorited ? "market-store-detail-meta-pill market-store-favorite is-active" : "market-store-detail-meta-pill market-store-favorite"}
-            onClick={() => void toggleFavorite(selectedDetailItem)}
-            disabled={!isMarketAuthenticated || isFavoriting}
-            aria-label={isMarketAuthenticated
-              ? `${favoriteLabel}: ${formatCount(itemFavoriteCount(selectedDetailItem))}`
-              : t("market.main.favoriteAuthRequired")}
-            title={isMarketAuthenticated ? favoriteLabel : t("market.main.favoriteAuthRequired")}
-          >
-            {favoriteIcon}
-            <span>{t("market.stats.favorites")}</span>
-            <strong>{formatCount(itemFavoriteCount(selectedDetailItem))}</strong>
-          </button>
+          {canFavoriteMarketItem(selectedDetailItem) ? (
+            <button
+              type="button"
+              className={selectedDetailItem.favorited ? "market-store-detail-meta-pill market-store-favorite is-active" : "market-store-detail-meta-pill market-store-favorite"}
+              onClick={() => void toggleFavorite(selectedDetailItem)}
+              disabled={!isMarketAuthenticated || isFavoriting}
+              aria-label={isMarketAuthenticated
+                ? `${favoriteLabel}: ${formatCount(itemFavoriteCount(selectedDetailItem))}`
+                : t("market.main.favoriteAuthRequired")}
+              title={isMarketAuthenticated ? favoriteLabel : t("market.main.favoriteAuthRequired")}
+            >
+              {favoriteIcon}
+              <span>{t("market.stats.favorites")}</span>
+              <strong>{formatCount(itemFavoriteCount(selectedDetailItem))}</strong>
+            </button>
+          ) : null}
         </div>
         <dl className="market-store-detail-grid">
           {rows.map((row) => (
@@ -1322,6 +1273,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name, t) : item.name;
     const description = marketCardDescription(item);
     const isCloudSource = isCloudMarketItem(item);
+    const favoriteKey = `${item.type}:${item.id}`;
+    const isFavoriting = favoritingItemKey === favoriteKey;
+    const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
     const chips = Array.from(new Set([
       ...item.tags,
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
@@ -1392,6 +1346,21 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
                 <DownloadOutlined />
                 <span>{formatCount(itemDownloadCount(item))}</span>
               </span>
+              {canFavoriteMarketItem(item) ? (
+                <button
+                  type="button"
+                  className={item.favorited ? "market-store-stat-pill market-store-stat-button is-active" : "market-store-stat-pill market-store-stat-button"}
+                  onClick={() => void toggleFavorite(item)}
+                  disabled={!isMarketAuthenticated || isFavoriting || Boolean(favoritingItemKey)}
+                  title={isMarketAuthenticated ? favoriteLabel : t("market.main.favoriteAuthRequired")}
+                  aria-label={isMarketAuthenticated
+                    ? `${favoriteLabel}: ${formatCount(itemFavoriteCount(item))}`
+                    : t("market.main.favoriteAuthRequired")}
+                >
+                  {item.favorited ? <HeartFilled /> : <HeartOutlined />}
+                  <span>{formatCount(itemFavoriteCount(item))}</span>
+                </button>
+              ) : null}
             </div>
           </div>
         </div>
@@ -1404,18 +1373,12 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     : activeTab === "sandboxImages"
       ? t("market.sandbox.import")
       : "";
-  const sortOptions: Array<{ label: string; value: SortMode }> = [
-    { label: t("market.sort.popular"), value: "popular" },
-    { label: t("market.sort.latest"), value: "latest" },
-    { label: t("market.sort.rating"), value: "rating" }
-  ];
   const scopeOptions: Array<{ label: string; value: RangeMode }> = [
     { label: t("market.scope.all"), value: "all" },
     { label: t("market.scope.installed"), value: "installed" },
-    { label: t("market.scope.favorites"), value: "favorites" },
+    ...(activeTab === "websiteApps" ? [] : [{ label: t("market.scope.favorites"), value: "favorites" as const }]),
     { label: t("market.scope.updates"), value: "updates" }
   ];
-  const sortFilterLabel = marketSortLabel(sortMode, t);
   const scopeFilterLabel = marketScopeLabel(rangeMode, t);
   const activeTypeLabel = marketTypeLabel(itemType, t);
   const installedItemCount = activeItems.filter(isInstalledMarketItem).length;
@@ -1481,17 +1444,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         prefix={<SearchOutlined />}
         suffix={
           <div className="market-store-search-filters" ref={searchFilterRef}>
-            <button
-              type="button"
-              className={`market-store-search-filter-button ${searchFilterMenu === "sort" ? "is-open" : ""} ${sortMode !== "popular" ? "is-active" : ""}`}
-              aria-label={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
-              aria-haspopup="true"
-              aria-expanded={searchFilterMenu === "sort"}
-              title={`${t("market.toolbar.sort")}: ${sortFilterLabel}`}
-              onClick={() => setSearchFilterMenu(searchFilterMenu === "sort" ? null : "sort")}
-            >
-              <SortAscendingOutlined />
-            </button>
             {activeTab !== "skills" ? (
               <button
                 type="button"
@@ -1507,21 +1459,17 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
             ) : null}
             {searchFilterMenu ? (
               <div
-                className={`market-store-search-filter-menu is-${searchFilterMenu}`}
-                aria-label={searchFilterMenu === "sort" ? t("market.toolbar.sort") : t("market.toolbar.scope")}
+                className="market-store-search-filter-menu is-scope"
+                aria-label={t("market.toolbar.scope")}
               >
-                {(searchFilterMenu === "sort" ? sortOptions : scopeOptions).map((option) => (
+                {scopeOptions.map((option) => (
                   <label key={option.value} className="market-store-search-filter-row">
                     <input
                       type="radio"
                       name={`market-${searchFilterMenu}-filter`}
-                      checked={searchFilterMenu === "sort" ? sortMode === option.value : rangeMode === option.value}
+                      checked={rangeMode === option.value}
                       onChange={() => {
-                        if (searchFilterMenu === "sort") {
-                          setSortMode(option.value as SortMode);
-                        } else {
-                          setRangeMode(option.value as RangeMode);
-                        }
+                        setRangeMode(option.value);
                         setSearchFilterMenu(null);
                       }}
                     />
@@ -1545,22 +1493,24 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
           <span className="market-store-installed-count">{installedItemCount}</span>
         </Button>
       ) : null}
-      <Button
-        className={`market-store-toolbar-button is-favorites ${rangeMode === "favorites" ? "is-active" : ""}`}
-        aria-pressed={rangeMode === "favorites"}
-        icon={rangeMode === "favorites" ? <HeartFilled /> : <HeartOutlined />}
-        onClick={() => {
-          if (!isMarketAuthenticated) {
-            setFeedback(t("market.main.favoriteAuthRequired"));
-            setFeedbackType("warning");
-            return;
-          }
-          setRangeMode(rangeMode === "favorites" ? "all" : "favorites");
-        }}
-      >
-        {t("market.toolbar.myFavorites")}
-        <span className="market-store-installed-count">{favoriteItemCount}</span>
-      </Button>
+      {activeTab !== "websiteApps" ? (
+        <Button
+          className={`market-store-toolbar-button is-favorites ${rangeMode === "favorites" ? "is-active" : ""}`}
+          aria-pressed={rangeMode === "favorites"}
+          icon={rangeMode === "favorites" ? <HeartFilled /> : <HeartOutlined />}
+          onClick={() => {
+            if (!isMarketAuthenticated) {
+              setFeedback(t("market.main.favoriteAuthRequired"));
+              setFeedbackType("warning");
+              return;
+            }
+            setRangeMode(rangeMode === "favorites" ? "all" : "favorites");
+          }}
+        >
+          {t("market.toolbar.myFavorites")}
+          <span className="market-store-installed-count">{favoriteItemCount}</span>
+        </Button>
+      ) : null}
       <Button
         aria-label={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
         title={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
