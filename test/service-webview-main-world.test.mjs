@@ -458,6 +458,7 @@ test("service webview main-world script emits route changes on current channel",
   const currentChannelPayloads = [];
   const payload = {
     type: "desktopRouteChanged",
+    routeRevision: 1,
     pathname: "/registries",
     search: "?hostTheme=light"
   };

@@ -19,7 +19,7 @@ import {
 } from "../shared/contracts/agent-webclient-bridge";
 
 export const PAGE_TO_PRELOAD_EVENT = "__desktopServiceWebviewBridgeMessage";
-export const PAGE_TO_PRELOAD_ROUTE_ACK_EVENT = "__desktopServiceWebviewRouteApplied";
+export const PAGE_TO_PRELOAD_ROUTE_STATUS_EVENT = "__desktopServiceWebviewRouteStatus";
 export const PRELOAD_TO_PAGE_EVENT = "__desktopServiceWebviewBridgeDeliver";
 export const PRELOAD_TO_PAGE_ACTION_EVENT = "__desktopServiceWebviewBridgeAction";
 export const AGENT_WEBCLIENT_BRIDGE_INVOKE_EVENT = "__agentWebclientBridgeInvoke";

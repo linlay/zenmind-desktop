@@ -29,21 +29,23 @@ import {
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE,
   AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE,
+  DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
+  DESKTOP_ROUTE_READY_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
-  isServiceWebviewRouteAppliedAck,
+  isServiceWebviewRouteStatus,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
-  SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL,
+  SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL,
   type AgentWebclientCurrentResourceAction,
   type AgentWebclientCurrentResourceIdentity,
   type AgentWebclientCurrentResourceActionResult,
   type ServiceWebviewBridgeMessage,
   type ServiceWebviewModalOverlayState,
-  type ServiceWebviewRouteAppliedAck,
+  type ServiceWebviewRouteStatus,
 } from "../../shared/service-webview-bridge";
 import { handleServiceWebviewBridgeMessage } from "../services/serviceWebviewBridgeHost";
 import { getServiceDisplayName } from "../service-display";
@@ -198,19 +200,23 @@ type PendingDirectRouteTransition = {
   targetUrl: string;
 };
 
-type PendingMainChatRouterAck = {
+type PendingMainChatRouteTransition = {
   id: number;
   revision: number;
   targetUrl: string;
   targetRouterLocation: string;
   webContentsId: number;
-  timeoutId: number;
-  retryIssued: boolean;
+  documentGeneration: number;
+  phase: "waiting-ready" | "waiting-applied";
+  watchdogId: number;
   fallbackIssued: boolean;
-  queuedAt: number;
+  startedAt: number;
+  readyAt?: number;
+  sentAt?: number;
 };
 
 type MainChatRouterAcknowledgement = {
+  phase: "ready";
   revision: number;
   targetUrl: string;
   routerLocation: string;
@@ -243,7 +249,6 @@ type ServiceWebviewEventContext = {
 
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_HEADINGS = 24;
 const MAX_SERVICE_WEBVIEW_PAGE_CONTEXT_BODY_TEXT = 40000;
-const MAIN_CHAT_ROUTE_ACK_RETRY_MS = 150;
 const MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS = 1_000;
 const AGENT_WEBCLIENT_SOURCE_CHAT = MAIN_CHAT_SURFACE_ID;
 const AGENT_WEBCLIENT_LIVE_CHAT_SURFACE_IDS = new Set([
@@ -277,7 +282,7 @@ const SERVICE_WEBVIEW_WARN_STAGES = new Set([
   "direct-route-client-navigation-failed",
   "execute-script-skipped",
   "main-chat-route-transition-replaced",
-  "main-chat-router-ack-timeout",
+  "main-chat-router-timeout",
   "new-chat-preparation-identity-changed",
   "new-chat-preparation-timeout",
 ]);
@@ -755,9 +760,28 @@ export function ServiceWebviewSurface({
   const mainChatRouteStateRef = useRef({ transitionKey: "", revision: 0 });
   const mainChatWebviewGenerationRef = useRef(0);
   const routeTransitionSequenceRef = useRef(0);
+  const serviceRouteCommandRevisionRef = useRef(0);
   const pendingDirectRouteTransitionRef = useRef<PendingDirectRouteTransition | null>(null);
-  const pendingMainChatRouterAckRef = useRef<PendingMainChatRouterAck | null>(null);
-  const webviewDomReadyRef = useRef<{ ready: boolean; webContentsId?: number }>({ ready: false });
+  const pendingMainChatRouteTransitionRef =
+    useRef<PendingMainChatRouteTransition | null>(null);
+  const webviewDocumentGenerationRef = useRef(0);
+  const mainChatRouterReadyRef = useRef<{
+    ready: boolean;
+    webContentsId?: number;
+    documentGeneration: number;
+    routerLocation: string;
+    readyAt: number;
+  }>({
+    ready: false,
+    documentGeneration: 0,
+    routerLocation: "",
+    readyAt: 0,
+  });
+  const webviewDomReadyRef = useRef<{
+    ready: boolean;
+    webContentsId?: number;
+    documentGeneration: number;
+  }>({ ready: false, documentGeneration: 0 });
   const webviewEventContextRef = useRef<ServiceWebviewEventContext | null>(null);
   if (!surfaceRegistrationIdRef.current) {
     surfaceRegistrationIdRef.current = createServiceSurfaceRegistrationId();
@@ -825,15 +849,17 @@ export function ServiceWebviewSurface({
       window.clearTimeout(bucket.timerId);
     }
     diagnosticBucketsRef.current.clear();
-    const pendingRouterAck = pendingMainChatRouterAckRef.current;
-    if (pendingRouterAck) {
-      window.clearTimeout(pendingRouterAck.timeoutId);
-      pendingMainChatRouterAckRef.current = null;
-      reportServiceWebviewDiagnostic("main-chat-router-ack-cancelled", {
+    const pendingTransition = pendingMainChatRouteTransitionRef.current;
+    if (pendingTransition) {
+      if (pendingTransition.watchdogId) {
+        window.clearTimeout(pendingTransition.watchdogId);
+      }
+      pendingMainChatRouteTransitionRef.current = null;
+      reportServiceWebviewDiagnostic("main-chat-route-transition-replaced", {
         reason: "guest-replaced",
-        transitionId: pendingRouterAck.id,
-        routeRevision: pendingRouterAck.revision,
-        targetUrl: pendingRouterAck.targetUrl,
+        transitionId: pendingTransition.id,
+        routeRevision: pendingTransition.revision,
+        targetUrl: pendingTransition.targetUrl,
       });
     }
   }, []);
@@ -876,13 +902,24 @@ export function ServiceWebviewSurface({
     setWebviewModalOverlayVisible(false);
     routeTransitionSequenceRef.current += 1;
     pendingDirectRouteTransitionRef.current = null;
-    const pendingRouterAck = pendingMainChatRouterAckRef.current;
-    if (pendingRouterAck) {
-      window.clearTimeout(pendingRouterAck.timeoutId);
-      pendingMainChatRouterAckRef.current = null;
+    const pendingTransition = pendingMainChatRouteTransitionRef.current;
+    if (pendingTransition) {
+      if (pendingTransition.watchdogId) {
+        window.clearTimeout(pendingTransition.watchdogId);
+      }
+      pendingMainChatRouteTransitionRef.current = null;
     }
     lastMainChatRouterAcknowledgementRef.current = null;
-    webviewDomReadyRef.current = { ready: false };
+    mainChatRouterReadyRef.current = {
+      ready: false,
+      documentGeneration: webviewDocumentGenerationRef.current,
+      routerLocation: "",
+      readyAt: 0,
+    };
+    webviewDomReadyRef.current = {
+      ready: false,
+      documentGeneration: webviewDocumentGenerationRef.current,
+    };
     webviewRef.current = node;
     if (mainChatSurface) {
       mainChatWebviewGenerationRef.current += 1;
@@ -977,15 +1014,17 @@ export function ServiceWebviewSurface({
         });
         return;
       }
-      const pendingRouterAck = pendingMainChatRouterAckRef.current;
-      if (pendingRouterAck) {
-        window.clearTimeout(pendingRouterAck.timeoutId);
-        pendingMainChatRouterAckRef.current = null;
-        reportServiceWebviewDiagnostic("main-chat-router-ack-cancelled", {
+      const pendingTransition = pendingMainChatRouteTransitionRef.current;
+      if (pendingTransition) {
+        if (pendingTransition.watchdogId) {
+          window.clearTimeout(pendingTransition.watchdogId);
+        }
+        pendingMainChatRouteTransitionRef.current = null;
+        reportServiceWebviewDiagnostic("main-chat-route-transition-replaced", {
           reason: "canonical-promotion-guard",
-          transitionId: pendingRouterAck.id,
-          routeRevision: pendingRouterAck.revision,
-          targetUrl: pendingRouterAck.targetUrl,
+          transitionId: pendingTransition.id,
+          routeRevision: pendingTransition.revision,
+          targetUrl: pendingTransition.targetUrl,
         });
       }
       canonicalChatPromotionGuardRef.current = { request, targetRoute };
@@ -1019,11 +1058,13 @@ export function ServiceWebviewSurface({
 
   useEffect(() => {
     if (active !== false) return;
-    const pending = pendingMainChatRouterAckRef.current;
+    const pending = pendingMainChatRouteTransitionRef.current;
     if (!pending) return;
-    window.clearTimeout(pending.timeoutId);
-    pendingMainChatRouterAckRef.current = null;
-    reportServiceWebviewDiagnostic("main-chat-router-ack-cancelled", {
+    if (pending.watchdogId) {
+      window.clearTimeout(pending.watchdogId);
+    }
+    pendingMainChatRouteTransitionRef.current = null;
+    reportServiceWebviewDiagnostic("main-chat-route-transition-replaced", {
       reason: "surface-inactive",
       transitionId: pending.id,
       routeRevision: pending.revision,
@@ -1851,31 +1892,25 @@ export function ServiceWebviewSurface({
       areAgentWebclientHostRouteParamsEqual(currentUrl, targetUrl);
   }
 
-  function observeMainChatRoutePhysicalUrl(guestUrl: string) {
-    const pending = pendingMainChatRouterAckRef.current;
-    if (!pending || !isMainChatGuestAtRoute(guestUrl, pending.targetUrl)) {
-      return;
-    }
-    reportServiceWebviewDiagnostic("main-chat-route-physical-url-observed", {
-      transitionId: pending.id,
-      routeRevision: pending.revision,
-      targetUrl: pending.targetUrl,
-      targetRouterLocation: pending.targetRouterLocation,
-      guestUrl,
-      awaitingRouterAck: true,
-    });
-  }
-
-  function settleMainChatRouterAck(ack: ServiceWebviewRouteAppliedAck) {
-    const pending = pendingMainChatRouterAckRef.current;
+  function settleMainChatRouterApplied(
+    status: Extract<
+      ServiceWebviewRouteStatus,
+      { type: typeof DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE }
+    >,
+  ) {
+    const pending = pendingMainChatRouteTransitionRef.current;
     const webContentsId = readWebviewContentsId(webviewRef.current);
+    const routerReady = mainChatRouterReadyRef.current;
     const physicalUrl = readCurrentWebviewUrl();
-    reportServiceWebviewDiagnostic("main-chat-router-ack-received", {
-      routeRevision: ack.routeRevision,
-      routerLocation: ack.routerLocation,
+    const now = Date.now();
+    reportServiceWebviewDiagnostic("main-chat-router-applied-received", {
+      routeRevision: status.routeRevision,
+      routerLocation: status.routerLocation,
       physicalUrl,
       pendingRevision: pending?.revision,
       pendingTarget: pending?.targetRouterLocation,
+      webContentsId,
+      documentGeneration: routerReady.documentGeneration,
     });
     if (
       !mainChatSurface ||
@@ -1883,46 +1918,133 @@ export function ServiceWebviewSurface({
       !pending ||
       !webContentsId ||
       pending.webContentsId !== webContentsId ||
-      pending.revision !== ack.routeRevision ||
-      pending.targetRouterLocation !== ack.routerLocation ||
-      mainChatRouteStateRef.current.revision !== ack.routeRevision
+      pending.documentGeneration !== routerReady.documentGeneration ||
+      !routerReady.ready ||
+      routerReady.webContentsId !== webContentsId ||
+      pending.phase !== "waiting-applied" ||
+      pending.revision !== status.routeRevision ||
+      pending.targetRouterLocation !== status.routerLocation ||
+      mainChatRouteStateRef.current.revision !== status.routeRevision
     ) {
-      reportServiceWebviewDiagnostic("main-chat-router-ack-rejected", {
+      reportServiceWebviewDiagnostic("main-chat-router-applied-rejected", {
         reason: !pending
           ? "no-pending-transition"
           : pending.webContentsId !== webContentsId
             ? "guest-mismatch"
-            : pending.revision !== ack.routeRevision ||
-                mainChatRouteStateRef.current.revision !== ack.routeRevision
+            : pending.documentGeneration !== routerReady.documentGeneration ||
+                !routerReady.ready
+              ? "document-mismatch"
+              : pending.phase !== "waiting-applied"
+                ? "route-not-sent"
+                : pending.revision !== status.routeRevision ||
+                    mainChatRouteStateRef.current.revision !== status.routeRevision
               ? "stale-revision"
-              : pending.targetRouterLocation !== ack.routerLocation
+              : pending.targetRouterLocation !== status.routerLocation
                 ? "router-location-mismatch"
                 : "surface-inactive",
-        routeRevision: ack.routeRevision,
-        routerLocation: ack.routerLocation,
+        routeRevision: status.routeRevision,
+        routerLocation: status.routerLocation,
         physicalUrl,
         pendingRevision: pending?.revision,
         pendingTarget: pending?.targetRouterLocation,
+        webContentsId,
+        documentGeneration: routerReady.documentGeneration,
       });
       return;
     }
-    window.clearTimeout(pending.timeoutId);
-    pendingMainChatRouterAckRef.current = null;
+    if (pending.watchdogId) {
+      window.clearTimeout(pending.watchdogId);
+    }
+    pendingMainChatRouteTransitionRef.current = null;
     lastMainChatRouterAcknowledgementRef.current = {
-      revision: ack.routeRevision,
+      phase: "ready",
+      revision: status.routeRevision,
       targetUrl: pending.targetUrl,
-      routerLocation: ack.routerLocation,
+      routerLocation: status.routerLocation,
       webContentsId,
     };
-    reportServiceWebviewDiagnostic("main-chat-router-ack-accepted", {
+    reportServiceWebviewDiagnostic("main-chat-router-applied-accepted", {
       transitionId: pending.id,
-      routeRevision: ack.routeRevision,
+      routeRevision: status.routeRevision,
       targetUrl: pending.targetUrl,
-      routerLocation: ack.routerLocation,
+      routerLocation: status.routerLocation,
       physicalUrl,
       fallbackIssued: pending.fallbackIssued,
-      elapsedMs: Math.max(0, Date.now() - pending.queuedAt),
+      desiredToReadyMs: Math.max(
+        0,
+        (pending.readyAt ?? pending.sentAt ?? now) - pending.startedAt,
+      ),
+      sentToAppliedMs: Math.max(0, now - (pending.sentAt ?? now)),
+      totalElapsedMs: Math.max(0, now - pending.startedAt),
+      webContentsId,
+      documentGeneration: pending.documentGeneration,
     });
+  }
+
+  function handleMainChatRouterReady(
+    status: Extract<
+      ServiceWebviewRouteStatus,
+      { type: typeof DESKTOP_ROUTE_READY_MESSAGE_TYPE }
+    >,
+  ) {
+    const webContentsId = readWebviewContentsId(webviewRef.current);
+    const domReady = webviewDomReadyRef.current;
+    if (
+      !mainChatSurface ||
+      active === false ||
+      !webContentsId ||
+      !domReady.ready ||
+      domReady.webContentsId !== webContentsId
+    ) {
+      reportServiceWebviewDiagnostic("main-chat-router-ready", {
+        accepted: false,
+        reason: active === false ? "surface-inactive" : "document-not-ready",
+        routerLocation: status.routerLocation,
+        webContentsId,
+        documentGeneration: domReady.documentGeneration,
+      });
+      return;
+    }
+
+    const readyAt = Date.now();
+    mainChatRouterReadyRef.current = {
+      ready: true,
+      webContentsId,
+      documentGeneration: domReady.documentGeneration,
+      routerLocation: status.routerLocation,
+      readyAt,
+    };
+    const pending = pendingMainChatRouteTransitionRef.current;
+    reportServiceWebviewDiagnostic("main-chat-router-ready", {
+      accepted: true,
+      routeRevision: pending?.revision ?? mainChatRouteRevision,
+      routerLocation: status.routerLocation,
+      pendingPhase: pending?.phase ?? "ready",
+      desiredToReadyMs: pending
+        ? Math.max(0, readyAt - pending.startedAt)
+        : 0,
+      webContentsId,
+      documentGeneration: domReady.documentGeneration,
+    });
+
+    if (!pending) {
+      requestMainChatRouteBridgeNavigation();
+      return;
+    }
+    if (
+      pending.webContentsId !== webContentsId ||
+      pending.revision !== mainChatRouteStateRef.current.revision
+    ) {
+      return;
+    }
+    pending.documentGeneration = domReady.documentGeneration;
+    pending.readyAt ??= readyAt;
+    sendPendingMainChatRoute(
+      pending,
+      pending.phase === "waiting-applied"
+        ? "repeated-router-ready"
+        : "router-ready",
+    );
   }
 
   function readObservedMainChatIdentity() {
@@ -1955,9 +2077,6 @@ export function ServiceWebviewSurface({
 
   function updateWebviewCurrentUrl(nextUrl: string, source: ServiceWebviewUrlChangeSource) {
     setWebviewCurrentUrl(nextUrl);
-    if (source === "guest" && mainChatSurface) {
-      observeMainChatRoutePhysicalUrl(nextUrl);
-    }
     if (source === "guest" && canonicalChatPromotionGuardRef.current) {
       settleCanonicalChatPromotionGuard(nextUrl, "guest-identity-changed");
     }
@@ -2261,169 +2380,138 @@ export function ServiceWebviewSurface({
   ) {
     const mainChatRoute = isAgentWebclientChatSurface(service?.id, surfaceId);
     if (mainChatRoute) {
-      if (
-        reason !== "navigation" &&
-        shouldProtectCanonicalChatGuest(targetUrl)
-      ) {
-        reportServiceWebviewDiagnostic("chat-route-bridge-skipped", {
-          reason: "canonical-promotion-guard",
-          transitionId: routeTransitionSequenceRef.current,
-          currentUrl: readCurrentWebviewUrl(),
-          targetUrl,
-        });
-        return;
-      }
-      const currentUrl = readCurrentWebviewUrl();
-      const webContentsId = readWebviewContentsId(webviewRef.current);
-      const domReady = webviewDomReadyRef.current;
-      if (
-        reason !== "navigation" &&
-        (!webContentsId || !domReady.ready || domReady.webContentsId !== webContentsId)
-      ) {
-        reportServiceWebviewDiagnostic("chat-route-bridge-skipped", {
-          reason: "guest-not-ready",
-          transitionId: routeTransitionSequenceRef.current,
-          routeRevision: mainChatRouteRevision,
-          currentUrl,
-          targetUrl,
-        });
-        return;
-      }
-      const previousAcknowledgement = lastMainChatRouterAcknowledgementRef.current;
-      const acknowledgedTransition = reason !== "navigation" && Boolean(
-        previousAcknowledgement &&
-          previousAcknowledgement.revision === mainChatRouteRevision &&
-          previousAcknowledgement.webContentsId === webContentsId &&
-          previousAcknowledgement.targetUrl === targetUrl,
-      );
-      const guestAlreadyAtTarget = isMainChatGuestAtRoute(currentUrl, targetUrl);
-      if (acknowledgedTransition || (reason === "navigation" && guestAlreadyAtTarget)) {
-        reportServiceWebviewDiagnostic("chat-route-bridge-skipped", {
-          reason: acknowledgedTransition ? "acknowledged-transition" : reason,
-          transitionId: routeTransitionSequenceRef.current,
-          routeRevision: mainChatRouteRevision,
-          currentUrl,
-          targetUrl,
-        });
-        return;
-      }
-      reportServiceWebviewDiagnostic("chat-route-bridge-queueing", {
-        reason,
-        transitionId: routeTransitionSequenceRef.current,
-        routeRevision: mainChatRouteRevision,
-        currentUrl,
-        targetUrl,
-        physicalUrlMatches: guestAlreadyAtTarget,
-      });
+      // Main Chat route commands are owned by the READY/APPLIED coordinator.
+      // Guest navigation remains observation-only and never emits an
+      // unrevisioned command back into the page Router.
+      return;
     }
     const payload = buildServiceWebviewRouteChangedMessage(
       targetUrl,
       reason,
-      mainChatRoute && reason !== "navigation" ? mainChatRouteRevision : undefined,
+      serviceRouteCommandRevisionRef.current + 1,
     );
     if (!payload) {
       return;
     }
+    serviceRouteCommandRevisionRef.current += 1;
     const queued = dispatchServiceWebviewRouteEventToWebview(payload);
+    void queued;
+  }
+
+  function sendPendingMainChatRoute(
+    pending: PendingMainChatRouteTransition,
+    reason: "router-ready" | "warm-route-change" | "repeated-router-ready",
+  ) {
+    const routerReady = mainChatRouterReadyRef.current;
+    const liveWebview = webviewRef.current;
+    const webContentsId = readWebviewContentsId(liveWebview);
     if (
-      queued &&
-      reason !== "navigation" &&
-      mainChatRoute
+      pendingMainChatRouteTransitionRef.current !== pending ||
+      active === false ||
+      !liveWebview ||
+      !liveWebview.isConnected ||
+      !webContentsId ||
+      webContentsId !== pending.webContentsId ||
+      mainChatRouteStateRef.current.revision !== pending.revision ||
+      !routerReady.ready ||
+      routerReady.webContentsId !== webContentsId ||
+      routerReady.documentGeneration !== pending.documentGeneration ||
+      canonicalChatPromotionGuardRef.current
     ) {
-      lastHostAppliedChatRouteRef.current = targetUrl;
-      reportServiceWebviewDiagnostic("chat-route-bridge-queued", {
-        reason,
-        transitionId: routeTransitionSequenceRef.current,
-        routeRevision: mainChatRouteRevision,
-        targetUrl,
-        physicalUrl: readCurrentWebviewUrl(),
-      });
-    } else if (!queued && mainChatRoute) {
+      return false;
+    }
+    const payload = buildServiceWebviewRouteChangedMessage(
+      pending.targetUrl,
+      "route-sync",
+      pending.revision,
+    );
+    if (!payload) return false;
+    const queued = dispatchServiceWebviewRouteEventToWebview(payload);
+    if (!queued) {
       reportServiceWebviewDiagnostic("chat-route-bridge-failed", {
         reason,
-        routeRevision: mainChatRouteRevision,
-        targetUrl,
+        transitionId: pending.id,
+        routeRevision: pending.revision,
+        targetUrl: pending.targetUrl,
+        webContentsId,
+        documentGeneration: pending.documentGeneration,
       });
+      return false;
     }
+    const now = Date.now();
+    pending.phase = "waiting-applied";
+    pending.readyAt ??= routerReady.readyAt || now;
+    pending.sentAt ??= now;
+    lastHostAppliedChatRouteRef.current = pending.targetUrl;
+    reportServiceWebviewDiagnostic("chat-route-bridge-queued", {
+      reason,
+      transitionId: pending.id,
+      routeRevision: pending.revision,
+      targetUrl: pending.targetUrl,
+      routerLocation: pending.targetRouterLocation,
+      routerReadyLocation: routerReady.routerLocation,
+      physicalUrl: readCurrentWebviewUrl(),
+      desiredToReadyMs: Math.max(0, (pending.readyAt ?? now) - pending.startedAt),
+      webContentsId,
+      documentGeneration: pending.documentGeneration,
+    });
+    return true;
   }
 
   function requestMainChatRouteBridgeNavigation() {
+    const previous = pendingMainChatRouteTransitionRef.current;
     if (shouldProtectCanonicalChatGuest(embeddedUrl)) {
-      const pending = pendingMainChatRouterAckRef.current;
-      if (pending) {
-        window.clearTimeout(pending.timeoutId);
-        pendingMainChatRouterAckRef.current = null;
+      if (previous) {
+        if (previous.watchdogId) window.clearTimeout(previous.watchdogId);
+        pendingMainChatRouteTransitionRef.current = null;
+        reportServiceWebviewDiagnostic("main-chat-route-transition-replaced", {
+          reason: "canonical-promotion-guard",
+          transitionId: previous.id,
+          routeRevision: previous.revision,
+          targetUrl: previous.targetUrl,
+        });
       }
-      reportServiceWebviewDiagnostic("main-chat-router-ack-cancelled", {
-        reason: "canonical-promotion-guard",
-        routeRevision: pending?.revision,
-        targetUrl: embeddedUrl,
-      });
       return;
     }
 
     const targetWebview = webviewRef.current;
     const webContentsId = readWebviewContentsId(targetWebview);
-    const domReady = webviewDomReadyRef.current;
-    if (
-      !targetWebview ||
-      !targetWebview.isConnected ||
-      !webContentsId ||
-      !domReady.ready ||
-      domReady.webContentsId !== webContentsId
-    ) {
-      reportServiceWebviewDiagnostic("main-chat-router-ack-cancelled", {
-        reason: "guest-not-ready",
-        routeRevision: mainChatRouteRevision,
-        targetUrl: embeddedUrl,
-      });
-      return;
-    }
+    if (!targetWebview || !targetWebview.isConnected || !webContentsId) return;
 
     const targetRouterLocation = buildServiceWebviewRouterLocation(embeddedUrl);
-    if (!targetRouterLocation) {
-      reportServiceWebviewDiagnostic("main-chat-router-ack-cancelled", {
-        reason: "invalid-target",
-        routeRevision: mainChatRouteRevision,
-        targetUrl: embeddedUrl,
-      });
-      return;
-    }
+    if (!targetRouterLocation) return;
 
     const acknowledged = lastMainChatRouterAcknowledgementRef.current;
     if (
-      acknowledged?.revision === mainChatRouteRevision &&
+      acknowledged?.phase === "ready" &&
+      acknowledged.revision === mainChatRouteRevision &&
       acknowledged.webContentsId === webContentsId &&
       acknowledged.targetUrl === embeddedUrl &&
       acknowledged.routerLocation === targetRouterLocation
     ) {
-      reportServiceWebviewDiagnostic("main-chat-router-ack-already-accepted", {
-        routeRevision: mainChatRouteRevision,
-        targetUrl: embeddedUrl,
-        routerLocation: targetRouterLocation,
-      });
       return;
     }
 
-    const previous = pendingMainChatRouterAckRef.current;
     if (
       previous?.revision === mainChatRouteRevision &&
       previous.targetUrl === embeddedUrl &&
       previous.webContentsId === webContentsId
     ) {
-      reportServiceWebviewDiagnostic("main-chat-route-bridge-requeued", {
-        transitionId: previous.id,
-        routeRevision: previous.revision,
-        targetUrl: previous.targetUrl,
-        targetRouterLocation: previous.targetRouterLocation,
-        fallbackIssued: previous.fallbackIssued,
-      });
-      sendServiceRouteToWebview(embeddedUrl, "route-sync");
+      const routerReady = mainChatRouterReadyRef.current;
+      if (
+        previous.phase === "waiting-ready" &&
+        routerReady.ready &&
+        routerReady.webContentsId === webContentsId &&
+        routerReady.documentGeneration === previous.documentGeneration
+      ) {
+        sendPendingMainChatRoute(previous, "warm-route-change");
+      }
       return;
     }
+
     if (previous) {
-      window.clearTimeout(previous.timeoutId);
-      pendingMainChatRouterAckRef.current = null;
+      if (previous.watchdogId) window.clearTimeout(previous.watchdogId);
+      pendingMainChatRouteTransitionRef.current = null;
       reportServiceWebviewDiagnostic("main-chat-route-transition-replaced", {
         reason: "new-route-revision",
         previousTransitionId: previous.id,
@@ -2431,27 +2519,38 @@ export function ServiceWebviewSurface({
         previousTargetUrl: previous.targetUrl,
         nextRevision: mainChatRouteRevision,
         nextTargetUrl: embeddedUrl,
-        elapsedMs: Math.max(0, Date.now() - previous.queuedAt),
+        totalElapsedMs: Math.max(0, Date.now() - previous.startedAt),
       });
     }
 
     const transitionId = routeTransitionSequenceRef.current + 1;
     routeTransitionSequenceRef.current = transitionId;
-    const currentUrl = readCurrentWebviewUrl();
-    const pending: PendingMainChatRouterAck = {
+    const routerReady = mainChatRouterReadyRef.current;
+    const domReady = webviewDomReadyRef.current;
+    const currentDocumentGeneration = routerReady.ready &&
+        routerReady.webContentsId === webContentsId
+      ? routerReady.documentGeneration
+      : domReady.documentGeneration;
+    const pending: PendingMainChatRouteTransition = {
       id: transitionId,
       revision: mainChatRouteRevision,
       targetUrl: embeddedUrl,
       targetRouterLocation,
       webContentsId,
-      timeoutId: 0,
-      retryIssued: false,
+      documentGeneration: currentDocumentGeneration,
+      phase: "waiting-ready",
+      watchdogId: 0,
       fallbackIssued: false,
-      queuedAt: Date.now(),
+      startedAt: Date.now(),
     };
-    pendingMainChatRouterAckRef.current = pending;
-    const readLivePendingGuest = () => {
-      if (pendingMainChatRouterAckRef.current !== pending) return;
+    pendingMainChatRouteTransitionRef.current = pending;
+    pending.watchdogId = window.setTimeout(() => {
+      if (
+        pendingMainChatRouteTransitionRef.current !== pending ||
+        pending.fallbackIssued
+      ) {
+        return;
+      }
       const liveWebview = webviewRef.current;
       const liveWebContentsId = readWebviewContentsId(liveWebview);
       if (
@@ -2462,47 +2561,46 @@ export function ServiceWebviewSurface({
         mainChatRouteStateRef.current.revision !== pending.revision ||
         canonicalChatPromotionGuardRef.current
       ) {
-        pendingMainChatRouterAckRef.current = null;
-        reportServiceWebviewDiagnostic("main-chat-router-ack-cancelled", {
-          reason: canonicalChatPromotionGuardRef.current
-            ? "canonical-promotion-guard"
-            : "stale-transition",
-          transitionId: pending.id,
-          routeRevision: pending.revision,
-          targetUrl: pending.targetUrl,
-        });
+        pendingMainChatRouteTransitionRef.current = null;
         return;
       }
-      return { liveWebview, liveWebContentsId };
-    };
-    const issueLoadUrlFallback = () => {
-      const liveGuest = readLivePendingGuest();
-      if (!liveGuest) return;
-      const { liveWebview, liveWebContentsId } = liveGuest;
-      const guestUrl = readCurrentWebviewUrl();
-      pending.timeoutId = 0;
+      pending.watchdogId = 0;
       pending.fallbackIssued = true;
-      reportServiceWebviewDiagnostic("main-chat-router-ack-timeout", {
+      pending.phase = "waiting-ready";
+      const guestUrl = readCurrentWebviewUrl();
+      reportServiceWebviewDiagnostic("main-chat-router-timeout", {
         transitionId: pending.id,
         routeRevision: pending.revision,
+        phase: pending.sentAt ? "waiting-applied" : "waiting-ready",
         targetUrl: pending.targetUrl,
-        targetRouterLocation: pending.targetRouterLocation,
+        routerLocation: pending.targetRouterLocation,
         physicalUrl: guestUrl,
         physicalUrlMatches: isMainChatGuestAtRoute(guestUrl, pending.targetUrl),
-        delayMs: MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS,
-        retryIssued: pending.retryIssued,
+        totalElapsedMs: Math.max(0, Date.now() - pending.startedAt),
+        webContentsId: liveWebContentsId,
+        documentGeneration: pending.documentGeneration,
       });
+      mainChatRouterReadyRef.current = {
+        ready: false,
+        webContentsId: liveWebContentsId,
+        documentGeneration: webviewDocumentGenerationRef.current,
+        routerLocation: "",
+        readyAt: 0,
+      };
       webviewDomReadyRef.current = {
         ready: false,
         webContentsId: liveWebContentsId,
+        documentGeneration: webviewDocumentGenerationRef.current,
       };
+      lastMainChatRouterAcknowledgementRef.current = null;
       lastHostAppliedChatRouteRef.current = pending.targetUrl;
       reportServiceWebviewDiagnostic("main-chat-route-load-url-fallback", {
         transitionId: pending.id,
         routeRevision: pending.revision,
         targetUrl: pending.targetUrl,
         guestUrl,
-        delayMs: MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS,
+        totalElapsedMs: Math.max(0, Date.now() - pending.startedAt),
+        webContentsId: liveWebContentsId,
       });
       void liveWebview.loadURL(pending.targetUrl).catch((reason: unknown) => {
         reportServiceWebviewDiagnostic("main-chat-route-load-url-failed", {
@@ -2512,42 +2610,24 @@ export function ServiceWebviewSurface({
           error: reason instanceof Error ? reason.message : String(reason),
         });
       });
-    };
-    pending.timeoutId = window.setTimeout(() => {
-      const liveGuest = readLivePendingGuest();
-      if (!liveGuest) return;
-      pending.retryIssued = true;
-      const guestUrl = readCurrentWebviewUrl();
-      reportServiceWebviewDiagnostic("main-chat-router-ack-retry", {
-        transitionId: pending.id,
-        routeRevision: pending.revision,
-        targetUrl: pending.targetUrl,
-        targetRouterLocation: pending.targetRouterLocation,
-        physicalUrl: guestUrl,
-        physicalUrlMatches: isMainChatGuestAtRoute(guestUrl, pending.targetUrl),
-        delayMs: MAIN_CHAT_ROUTE_ACK_RETRY_MS,
-      });
-      const fallbackDelayMs = Math.max(
-        0,
-        MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS - (Date.now() - pending.queuedAt),
-      );
-      pending.timeoutId = window.setTimeout(
-        issueLoadUrlFallback,
-        fallbackDelayMs,
-      );
-      sendServiceRouteToWebview(pending.targetUrl, "route-sync");
-    }, MAIN_CHAT_ROUTE_ACK_RETRY_MS);
-    reportServiceWebviewDiagnostic("main-chat-router-ack-awaiting", {
+    }, MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS);
+    reportServiceWebviewDiagnostic("main-chat-router-waiting-ready", {
       transitionId,
-      routeRevision: mainChatRouteRevision,
-      targetUrl: embeddedUrl,
-      targetRouterLocation,
-      physicalUrl: currentUrl,
-      physicalUrlMatches: isMainChatGuestAtRoute(currentUrl, embeddedUrl),
-      retryDelayMs: MAIN_CHAT_ROUTE_ACK_RETRY_MS,
-      fallbackDelayMs: MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS,
+      routeRevision: pending.revision,
+      targetUrl: pending.targetUrl,
+      routerLocation: pending.targetRouterLocation,
+      physicalUrl: readCurrentWebviewUrl(),
+      watchdogMs: MAIN_CHAT_ROUTE_LOAD_FALLBACK_MS,
+      webContentsId,
+      documentGeneration: pending.documentGeneration,
     });
-    sendServiceRouteToWebview(embeddedUrl, "route-sync");
+    if (
+      routerReady.ready &&
+      routerReady.webContentsId === webContentsId &&
+      routerReady.documentGeneration === pending.documentGeneration
+    ) {
+      sendPendingMainChatRoute(pending, "warm-route-change");
+    }
   }
 
   function requestDirectWebviewRouteLoad() {
@@ -2589,7 +2669,11 @@ export function ServiceWebviewSurface({
     };
     const loadTargetUrl = () => {
       if (isStaleTransition()) return;
-      webviewDomReadyRef.current = { ready: false, webContentsId };
+      webviewDomReadyRef.current = {
+        ready: false,
+        webContentsId,
+        documentGeneration: webviewDocumentGenerationRef.current,
+      };
       void targetWebview.loadURL(targetUrl).catch((reason: unknown) => {
         if (isStaleTransition()) return;
         reportServiceWebviewDiagnostic("direct-route-load-failed", {
@@ -2716,10 +2800,10 @@ export function ServiceWebviewSurface({
   function handleWebviewBridgeMessage(event: Event) {
     onIpcMessage?.(event as Event & { channel?: string; args?: unknown[] });
     const channel = readEventString(event, "channel");
-    if (channel === SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL) {
+    if (channel === SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL) {
       const [payload] = ((event as Event & { args?: unknown[] }).args ?? []);
-      if (!isServiceWebviewRouteAppliedAck(payload)) {
-        reportServiceWebviewDiagnostic("main-chat-router-ack-rejected", {
+      if (!isServiceWebviewRouteStatus(payload)) {
+        reportServiceWebviewDiagnostic("main-chat-router-applied-rejected", {
           reason: "invalid-payload",
           payloadType: payload && typeof payload === "object"
             ? String((payload as Record<string, unknown>).type ?? "")
@@ -2727,7 +2811,12 @@ export function ServiceWebviewSurface({
         });
         return;
       }
-      settleMainChatRouterAck(payload);
+      if (!mainChatSurface) return;
+      if (payload.type === DESKTOP_ROUTE_READY_MESSAGE_TYPE) {
+        handleMainChatRouterReady(payload);
+      } else {
+        settleMainChatRouterApplied(payload);
+      }
       return;
     }
     if (channel === SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL) {
@@ -2842,13 +2931,40 @@ export function ServiceWebviewSurface({
 
     const handleDomReady = () => {
       const webContentsId = readWebviewContentsId(targetWebview);
-      webviewDomReadyRef.current = { ready: true, webContentsId };
+      webviewDocumentGenerationRef.current += 1;
+      const documentGeneration = webviewDocumentGenerationRef.current;
+      webviewDomReadyRef.current = {
+        ready: true,
+        webContentsId,
+        documentGeneration,
+      };
+      mainChatRouterReadyRef.current = {
+        ready: false,
+        webContentsId,
+        documentGeneration,
+        routerLocation: "",
+        readyAt: 0,
+      };
+      lastMainChatRouterAcknowledgementRef.current = null;
+      const pending = pendingMainChatRouteTransitionRef.current;
+      if (
+        pending &&
+        pending.webContentsId === webContentsId &&
+        pending.revision === mainChatRouteStateRef.current.revision
+      ) {
+        pending.documentGeneration = documentGeneration;
+        pending.phase = "waiting-ready";
+        pending.readyAt = undefined;
+        pending.sentAt = undefined;
+      }
       const context = webviewEventContextRef.current;
       if (!context) return;
-      context.reportDiagnostic("dom-ready");
+      context.reportDiagnostic("dom-ready", { documentGeneration });
       context.syncWebviewState();
       context.refreshCurrentPageSnapshotTarget();
-      context.sendServiceRouteToWebview(context.embeddedUrl, "initial");
+      if (!isAgentWebclientChatSurface(context.serviceId, context.surfaceId)) {
+        context.sendServiceRouteToWebview(context.embeddedUrl, "initial");
+      }
       context.requestDirectWebviewRouteLoad();
     };
     const handleDidFinishLoad = () => {
@@ -2857,7 +2973,9 @@ export function ServiceWebviewSurface({
       context.reportDiagnostic("did-finish-load");
       context.syncWebviewState();
       context.refreshCurrentPageSnapshotTarget();
-      context.sendServiceRouteToWebview(context.embeddedUrl, "route-sync");
+      if (!isAgentWebclientChatSurface(context.serviceId, context.surfaceId)) {
+        context.sendServiceRouteToWebview(context.embeddedUrl, "route-sync");
+      }
     };
     const syncNavigationRoute = (event: Event) => {
       const context = webviewEventContextRef.current;
@@ -2905,21 +3023,13 @@ export function ServiceWebviewSurface({
         canSyncDesktopRoute &&
         isAgentWebclientChatSurface(context.serviceId, context.surfaceId)
       ) {
-        const pendingRouterAck = pendingMainChatRouterAckRef.current;
+        const pendingRouteTransition = pendingMainChatRouteTransitionRef.current;
         const pendingRouteEcho = Boolean(
-          pendingRouterAck &&
-          isMainChatGuestAtRoute(resolvedUrl, pendingRouterAck.targetUrl),
+          pendingRouteTransition &&
+          isMainChatGuestAtRoute(resolvedUrl, pendingRouteTransition.targetUrl),
         );
         const isHostRouteEcho = Boolean(lastHostAppliedChatRouteRef.current) &&
           isMainChatGuestAtRoute(lastHostAppliedChatRouteRef.current, resolvedUrl);
-        if (pendingRouteEcho || isHostRouteEcho) {
-          context.reportDiagnostic("main-chat-route-physical-echo", {
-            routeRevision: pendingRouterAck?.revision,
-            observedUrl: resolvedUrl,
-            targetUrl: pendingRouterAck?.targetUrl || lastHostAppliedChatRouteRef.current,
-            awaitingRouterAck: Boolean(pendingRouterAck),
-          });
-        }
         const switchedAgentKey = pendingRouteEcho || isHostRouteEcho
           ? ""
           : resolveAgentWebclientDesktopAgentSwitchTarget(
@@ -2986,6 +3096,7 @@ export function ServiceWebviewSurface({
       if (
         nextUrl &&
         isMainFrame &&
+        !mainChatNavigation &&
         isServiceWebviewRouteSyncTarget(nextUrl, context.webviewSrcUrl)
       ) {
         context.sendServiceRouteToWebview(resolvedUrl, "navigation");
@@ -3023,7 +3134,10 @@ export function ServiceWebviewSurface({
     targetWebview.addEventListener("ipc-message", handleIpcMessage);
     webviewEventContextRef.current?.syncWebviewState();
     const context = webviewEventContextRef.current;
-    if (context) {
+    if (
+      context &&
+      !isAgentWebclientChatSurface(context.serviceId, context.surfaceId)
+    ) {
       context.sendServiceRouteToWebview(context.embeddedUrl, "route-sync");
     }
     return () => {
@@ -3038,23 +3152,19 @@ export function ServiceWebviewSurface({
       targetWebview.removeEventListener("did-fail-load", handleDidFailLoad);
       targetWebview.removeEventListener("ipc-message", handleIpcMessage);
       if (webviewDomReadyRef.current.webContentsId === readWebviewContentsId(targetWebview)) {
-        webviewDomReadyRef.current = { ready: false };
+        webviewDomReadyRef.current = {
+          ready: false,
+          documentGeneration: webviewDocumentGenerationRef.current,
+        };
+        mainChatRouterReadyRef.current = {
+          ready: false,
+          documentGeneration: webviewDocumentGenerationRef.current,
+          routerLocation: "",
+          readyAt: 0,
+        };
       }
     };
   }, [bridgeReady, serviceWebviewPreloadUrl, webviewRenderKey]);
-
-  useEffect(() => {
-    if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {
-      return;
-    }
-  }, [
-    active,
-    bridgeReady,
-    embeddedUrl,
-    service?.id,
-    serviceWebviewPreloadUrl,
-    webviewRenderKey,
-  ]);
 
   useEffect(() => {
     if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {
@@ -3070,18 +3180,6 @@ export function ServiceWebviewSurface({
     webviewRenderKey,
     webviewSrcUrl,
   ]);
-
-  useEffect(() => {
-    if (
-      active === false ||
-      !bridgeReady ||
-      !serviceWebviewPreloadUrl ||
-      !isAgentWebclientChatSurface(service?.id, surfaceId)
-    ) {
-      return;
-    }
-    sendServiceRouteToWebview(embeddedUrl, "route-sync");
-  }, [active, bridgeReady, embeddedUrl, service?.id, serviceWebviewPreloadUrl, surfaceId]);
 
   useEffect(() => {
     if (service?.id !== "agent-platform") {

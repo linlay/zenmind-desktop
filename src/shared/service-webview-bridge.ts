@@ -1,7 +1,7 @@
 export const SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL = "desktop:service-webview:message";
 export const SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL = "desktop:service-webview:deliver";
 export const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = "desktop:service-webview:route";
-export const SERVICE_WEBVIEW_BRIDGE_ROUTE_ACK_CHANNEL = "desktop:service-webview:route-ack";
+export const SERVICE_WEBVIEW_BRIDGE_ROUTE_STATUS_CHANNEL = "desktop:service-webview:route-status";
 export const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = "desktop:service-webview:action";
 export const SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL = "desktop:service-webview:surface-lifecycle";
 export const SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL = "desktop:service-webview:modal-overlay-state";
@@ -41,26 +41,40 @@ export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write
 export const PLUGIN_SETTINGS_WRITE_RESPONSE_TYPE = "desktop:plugin-settings:write:response";
 export const DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE = "desktopContextChanged";
 export const DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE = "desktopRouteChanged";
+export const DESKTOP_ROUTE_READY_MESSAGE_TYPE = "desktopRouteReady";
 export const DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE = "desktopRouteApplied";
 export const DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE = "desktopSurfaceActiveChanged";
 
-export type ServiceWebviewRouteAppliedAck = {
-  type: typeof DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE;
-  routeRevision: number;
-  routerLocation: string;
-};
+export type ServiceWebviewRouteStatus =
+  | {
+      type: typeof DESKTOP_ROUTE_READY_MESSAGE_TYPE;
+      routerLocation: string;
+    }
+  | {
+      type: typeof DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE;
+      routeRevision: number;
+      routerLocation: string;
+    };
 
-export function isServiceWebviewRouteAppliedAck(
+function isServiceWebviewRouterLocation(value: unknown): value is string {
+  return typeof value === "string" &&
+    value.startsWith("/") &&
+    !value.startsWith("//") &&
+    !value.includes("\\") &&
+    value.length <= 8_192 &&
+    !/[\u0000-\u001f\u007f]/u.test(value);
+}
+
+export function isServiceWebviewRouteStatus(
   value: unknown,
-): value is ServiceWebviewRouteAppliedAck {
+): value is ServiceWebviewRouteStatus {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
+  if (!isServiceWebviewRouterLocation(record.routerLocation)) return false;
+  if (record.type === DESKTOP_ROUTE_READY_MESSAGE_TYPE) return true;
   return record.type === DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE &&
     Number.isSafeInteger(record.routeRevision) &&
-    Number(record.routeRevision) > 0 &&
-    typeof record.routerLocation === "string" &&
-    record.routerLocation.startsWith("/") &&
-    record.routerLocation.length <= 8_192;
+    Number(record.routeRevision) > 0;
 }
 
 export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
