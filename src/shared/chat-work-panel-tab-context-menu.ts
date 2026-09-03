@@ -10,6 +10,7 @@ export type ChatWorkPanelTabContextMenuActionId =
   | "reload"
   | "copy-url"
   | "copy-title"
+  | "copy-path"
   | "download-resource"
   | "reveal-resource"
   | "open-resource-default-app"
@@ -36,6 +37,7 @@ export type ChatWorkPanelTabContextMenuPopupRequest =
       profile: ChatWorkPanelTabContextMenuProfile;
       isFullscreen: boolean;
       reviewMode?: "unavailable" | "inactive" | "active";
+      documentPathAvailable?: boolean;
       canClose: boolean;
       canCloseOthers: boolean;
     };

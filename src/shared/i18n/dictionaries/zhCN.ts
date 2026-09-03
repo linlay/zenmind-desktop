@@ -306,6 +306,7 @@ export const zhCNMessages = {
   "chatWorkPanel.tabContextMenu.revealInFileManager": "在文件管理器中显示",
   "chatWorkPanel.tabContextMenu.openInDefaultApp": "在默认应用中打开",
   "chatWorkPanel.tabContextMenu.copyFilename": "复制文件名",
+  "chatWorkPanel.tabContextMenu.copyPath": "复制文件路径",
   "chatWorkPanel.tabContextMenu.reloadPreview": "刷新预览",
   "chatWorkPanel.tabContextMenu.closeTab": "关闭标签页",
   "chatWorkPanel.tabContextMenu.closeOtherTabs": "关闭其他标签页",

@@ -1104,54 +1104,10 @@
   height: auto;
 }
 
-.chat-work-panel-item.has-preview-toolbar > .embedded-surface-page {
-  top: 48px;
-  height: auto;
-}
-
-.chat-work-panel-item.has-preview-toolbar.is-reviewing > .embedded-surface-page {
-  top: 92px;
-}
-
-.chat-work-panel-item.has-preview-toolbar.is-reviewing > .chat-work-panel-review-toolbar {
-  top: 48px;
-}
-
 .chat-work-panel-item.is-reviewing.is-html-review > .embedded-surface-page,
 .chat-work-panel-item.is-reviewing.is-html-review > .external-webview-page,
 .chat-work-panel-item.is-reviewing.is-html-review > .chat-work-panel-local-file-fallback {
   top: 0;
-}
-
-.chat-work-panel-item.has-preview-toolbar.is-reviewing.is-html-review > .embedded-surface-page {
-  top: 48px;
-}
-
-.chat-work-panel-preview-toolbar {
-  position: absolute;
-  z-index: 9;
-  top: 0;
-  right: 0;
-  left: 0;
-  height: 48px;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.chat-work-panel-preview-toolbar > .external-webview-page {
-  width: 100%;
-  height: 48px;
-}
-
-.chat-work-panel-preview-toolbar .external-webview-toolbar {
-  box-sizing: border-box;
-  width: 100%;
-}
-
-.chat-work-panel-preview-toolbar .external-webview-toolbar-edit:disabled {
-  color: #aeb4bd;
-  cursor: wait;
-  opacity: 0.68;
 }
 
 .work-panel-document-html {
@@ -2812,10 +2768,6 @@
   }
 
   .chat-work-panel-review-toolbar {
-    right: 320px;
-  }
-
-  .chat-work-panel-item.is-reviewing > .chat-work-panel-preview-toolbar {
     right: 320px;
   }
 

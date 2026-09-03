@@ -24,7 +24,7 @@
 - 在浅色、深色、Windows 标题栏偏移和 WorkPanel 全屏下检查菜单定位、圆角、hover/focus、Esc、方向键、Home/End 与 Enter。
 - 确认菜单顺序为 Terminal、Web、Files、Side Chat、Project、WebApp；Terminal 禁用且没有快捷键或 PTY。
 - Web 输入无协议域名时补 `https://`；拒绝 URL 中的用户名密码和非 HTTP(S) URL。重复 URL 激活已有 tab；Website、普通 WorkPanel Web 与其 popup 共享 Desktop 应用浏览器 Cookie partition，popup 仍留在所属 Chat。分别在登录、刷新 access token、退出登录和 Desktop 重启后验证 `HttpOnly`、`SameSite` 与重定向 Cookie 按 Chromium 原生规则生效；本地文件、WebApp、Help、内置 Browser 和服务页不得继承。
-- 激活普通 Web tab 时确认标签栏下只增加一行浏览器工具栏：预览模式显示后退、前进、刷新、可直接输入的地址与“编辑”；进入 HTML 编辑模式后，同一行只保留“返回预览”和元素选择提示，导航/刷新/地址不再与批注操作混用，也不得再出现“完成 + 退出”两个重复出口。可批注的 `openLocalFile` HTML 与仍由 Resource Viewer 承载的 Artifact/Reference HTML 使用同一套预览/编辑模式；原生图片、WebApp 与其他 item 不复用这行 WebView 工具栏。
+- 激活普通 Web 或 loopback tab 时确认标签栏下只增加一行浏览器工具栏：预览模式显示后退、前进、刷新、可直接输入的地址与“编辑”；进入 HTML 编辑模式后，同一行只保留“返回预览”和元素选择提示，导航/刷新/地址不再与批注操作混用，也不得再出现“完成 + 退出”两个重复出口。Workspace File、Artifact、Reference 和 Desktop 原生静态文档不显示这行浏览器工具栏。
 - 从 Main Chat 分别打开 Workspace File、Artifact 与 Reference 来源的 HTML 和图片，确认 Desktop 创建原生 document tab；Markdown、文本、代码、PDF、Office、媒体、压缩包与未知二进制仍由 WebClient Document Surface 承载。Standalone 全部使用 WebClient，不显示 Desktop-only 操作。
 - 用截断或浏览器无法解码但签名仍匹配的图片回归原生预览：WorkPanel 保持可操作，不显示错误条或错误占位文案，编辑入口禁用，其他 tab 与 Main Chat 不受影响。
 - 原生图片预览态顶部固定为单行，不直接显示文件名；hover 或键盘 focus 信息按钮时显示完整文件名、格式/大小和源尺寸。验证 10%–800% 比例、缩放、中性背景的编辑入口与打开方式，以及适合窗口、100%、比例直接输入、触控板/Cmd/Ctrl 缩放、拖拽平移、默认/其他应用打开、窄 WorkPanel、拉宽、全屏和窗口 resize；不得出现第二行或横向滚动条。
@@ -33,7 +33,7 @@
 - 验证擦除对象必须有选区，移除/替换背景、扩图和增强每次只产生一个 Zenmi 候选，运行中仍可缩放/平移且可取消；失败不丢草稿，结果不自动写入 Artifact。
 - 每次保存都重新选择，弹窗中的取消、覆盖原 Artifact、生成新 Artifact 在同一行等宽排列；Reference 只显示取消与生成新 Artifact。Artifact 默认生成新 Artifact且可覆盖；透明结果不覆盖 JPEG；revision 冲突禁用覆盖。新 Artifact 打开新 tab，覆盖保留原 tab并清空 dirty/undo。
 - macOS 验证 `.app`、Windows 验证 `.exe` 的无 shell 外部打开；有草稿时先提示只打开原文件。外部修改在无草稿时自动刷新，有草稿时只允许丢弃重载或另存新 Artifact；远端缓存先下载副本并明确不会回写。
-- 在浅色、深色、默认窄 WorkPanel、拉宽与全屏状态检查分段按钮、地址截断、编辑按钮和键盘 focus；窄宽度仍保留完整编辑入口，地址安全截断且不挤出工具栏。
+- 在浅色、深色、默认窄 WorkPanel、拉宽与全屏状态检查普通 Web 的分段按钮、地址截断、编辑按钮和键盘 focus；窄宽度仍保留完整编辑入口，地址安全截断且不挤出工具栏。Markdown/TXT/代码不得出现地址栏或第二行宿主工具栏。
 - 连续新增两个 Side Chat，确认都导航 `/btw/:chatId` 且 guest/instance 独立；active BTW 可调用 BTW/attach，不能 query；切换、隐藏、关闭不取消后台 Run。
 - KBASE 显示可用 Project；CODER 仅在 workspace 有效时可用，并携带当前 chatId 与 lastRunId；普通 Agent 不显示 Project。
 
@@ -43,6 +43,8 @@
 - 对 Workspace File、Artifact 和 Reference 遍历 HTML、PNG/JPEG/WebP、动画图、SVG、Markdown、TXT、代码、PDF、Office、音视频、压缩包与未知二进制；Desktop 只原生打开 HTML/图片，其他类型使用 WebClient。伪造扩展名、错误 MIME、Office ZIP、SVG 和无后缀 UTF-8 文本必须以 Platform 最终分类为准。
 - 原生 HTML 打开后直接占满 WorkPanel 内容区；header 工具条在预览态同时显示安全语义 URL 与“批注”按钮，不出现“源码/预览/分屏”、源码输入框、覆盖、保存或另存按钮。进入批注后 header 显示“返回预览”、选择提示和实时批注数量；悬停元素必须出现虚线选择框，点击后阻止页面原动作并新增批注，填写要求后可交给智能体。返回预览后页面恢复正常交互。默认窄宽度、拉宽、全屏和窗口 resize 下均不得露出底部空白背景。
 - 在 Markdown/TXT/代码中验证 Monaco、Markdown 净化预览/分屏、查找替换、行列选区批注和 revision 冲突。Workspace 只能原位覆盖；Artifact 默认创建新产物且可明确覆盖；Reference 永不覆盖。外部 revision 变更后批注必须失效而不漂移。
+- 发布中文/英文、UTF-8 BOM、空文件的 `.md/.markdown/.mdx/.txt` 产物，确认 Artifact manifest 与 Resource GET/HEAD 返回一致的 Markdown/Text kind、UTF-8 MIME、revision 与 size，WorkPanel 进入 Monaco。旧 Platform 不返回 kind header 时仍按 provisional 扩展名预览；UTF-16、无效 UTF-8、含 NUL 的文本扩展名文件只显示“文本编码不受支持”和下载入口。
+- 确认 Workspace File、Artifact、Reference 文档只显示 Tab 与最多一行文档工具栏；文件名不在内容区重复，完整路径只在 Tab tooltip/右键菜单。Markdown/TXT/代码等 WebClient 文档的更多菜单可重新加载权威 revision，dirty 时先确认丢弃；原生 HTML 仍只提供批注入口。普通 Web 与 loopback 仍显示地址栏和刷新。
 - 验证 PDF.js 页码、缩放和搜索；Office、压缩包和未知二进制不显示伪文本也不自动下载。Desktop 的系统打开/定位在 macOS 与 Windows 分别回归，Standalone 不显示这些操作。
 - 在有效 Coder owner Chat 打开 `localhost`、一个 `*.localhost`、`127.0.0.1` 和 `[::1]` 站点；元素批注只交接脱敏摘要、selector/XPath、坐标、URL 和可选截图，页面不获得文件系统、Node、Token 或 Desktop API。Coder 修改 workspace 后用 HMR/刷新验证；顶层导航离开 loopback 后交接语义立即退化为普通 Web。
 - 分别在原生与 WebClient 文档中制造 dirty、busy 和批注，再关闭当前 Tab、关闭其他 Tab、隐藏/恢复 WorkPanel、切换原生编辑器和进出全屏；未保存保护必须绑定当前可信 item，guest replacement 不得用旧状态阻塞新 Tab。
@@ -106,7 +108,7 @@
 
 ## WorkPanel HTML/图片评审批注
 
-- 在 canonical Coder workspace 中分别打开 HTML 与图片；确认 Tab 右键出现“进入编辑模式”，HTML 内容区同时显示刷新、文件名和编辑工具栏。普通 HTTP(S) Web 的工具栏与 Tab 右键也提供网页元素批注入口；Artifact/Reference 的 HTML 与图片 Resource Viewer 外层显示同风格工具栏并在 capability 就绪后启用编辑。WebApp、用户手选的项目外文件、PDF/文本及不支持 capability 的 Resource Viewer 不提供可用编辑入口。
+- 在 canonical Coder workspace 中分别打开 HTML 与图片；确认静态文档内容区只显示原生单行文档工具栏，不显示浏览器地址栏或重复文件名。普通 HTTP(S)/loopback Web 的工具栏与 Tab 右键提供网页元素批注入口；WebApp、用户手选的项目外文件、PDF/文本及不支持 capability 的 Resource Viewer 不提供网页元素编辑入口。
 - 图片在默认窄宽度、宽 WorkPanel、全屏、滚动和窗口缩放下框选多个区域；进入批注模式后确认顶部出现“拖动框选/单击建框”提示，拖动中实时显示红色框，松开后右下角输入框自动聚焦，单击图片也能创建默认大小的批注框。确认画面与列表编号一致，坐标按原图像素显示，删除中间区域后连续重新编号，最多 50 条且每条要求最多 1000 字。
 - 打开左栏底部智能图片工具，分别用矩形/椭圆/套索/画笔选区及批注区域执行“按选区 / 批注修改”；确认区域状态可见，修改要求随 PNG 白色蒙版交给 Zenmi，成功后清除已消费的选区与批注。擦除对象仍要求区域；移除/替换背景、扩图和增强入口继续可用。
 - 本地、普通 Web 与 Artifact/Reference HTML 分别从预览模式进入编辑模式，确认顶部与图片编辑态一致显示“返回预览”，批注面板只展开当前一条修改要求；悬停并点击同名兄弟元素时页面链接、表单与按钮不执行，批注显示唯一 Full XPath。滚动后定位框跟随；返回预览后页面恢复正常交互且不显示编辑提示。普通 Web 资源版本变化或删除目标元素后显示失效且不能交给智能体。Resource Viewer iframe 继续没有 `allow-same-origin`，其内部嵌套 iframe、Shadow DOM、伪元素、文字范围和自由画笔保持不支持。

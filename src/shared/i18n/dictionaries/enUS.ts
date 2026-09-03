@@ -306,6 +306,7 @@ export const enUSMessages = {
   "chatWorkPanel.tabContextMenu.revealInFileManager": "Show in File Manager",
   "chatWorkPanel.tabContextMenu.openInDefaultApp": "Open in Default App",
   "chatWorkPanel.tabContextMenu.copyFilename": "Copy File Name",
+  "chatWorkPanel.tabContextMenu.copyPath": "Copy File Path",
   "chatWorkPanel.tabContextMenu.reloadPreview": "Reload Preview",
   "chatWorkPanel.tabContextMenu.closeTab": "Close Tab",
   "chatWorkPanel.tabContextMenu.closeOtherTabs": "Close Other Tabs",

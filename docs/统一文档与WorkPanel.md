@@ -35,11 +35,15 @@ Desktop 只原生承载 HTML 和图片。Markdown、文本、代码、PDF、Offi
 
 Platform 的 MIME、签名和文本探测是加载后最终事实。WebClient 可以用扩展名做加载前临时分类；Desktop 在创建 HTML/图片原生 Surface 前必须从权威来源重新检查，不信任 guest 自报类型。
 
+Platform 分类使用来源中的语义文件名，而不是缓存名或内部存储名。`application/octet-stream` 只表示 MIME 未知，不能压过 `.md/.markdown/.mdx/.txt` 等专用扩展名与安全 UTF-8 探测；安全文本响应必须归一为声明 UTF-8 的文本 MIME。已知文本扩展名若包含 NUL 或不是 UTF-8，仍保持只读，但 UI 应明确显示“文本编码不受支持”，不把它描述成普通未知二进制。
+
 ## 统一打开流程
 
 Main Chat 卡片、Markdown 链接、Project 文件、Artifact 和 Reference 只提交语义来源，不自行选择 Viewer。打开流程先规范化来源并获得内容类型；Desktop 的 HTML/图片调用 canonical `openDocument` 进入原生 registry，其他内容产生 WebClient descriptor。Standalone 始终进入 WebClient Document Surface。
 
 WorkPanel item 的 stable identity 只取决于来源，不取决于 renderer。只有 `unsupported_native_type` 可以由 Desktop 原生打开退回 WebClient；身份、路径、缺失、越界或 revision 失败一律 fail closed。历史 `/file-viewer` 与 `/resource-viewer` 路由保留，但内部共用 Document Surface。
+
+文档 Surface 不显示 Desktop 通用浏览器地址栏：文件名只出现在 Tab，完整路径进入 Tab tooltip/右键菜单；Markdown、文本和代码内容区最多保留一行自身工具栏。重新加载权威 revision 收纳在文档工具栏的更多菜单中，有未保存修改时必须先确认。普通 Web、WebApp 与 loopback 实时网站继续使用浏览器刷新/地址栏。
 
 ## Desktop 原生安全边界
 

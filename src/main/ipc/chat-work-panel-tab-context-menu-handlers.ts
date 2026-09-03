@@ -75,19 +75,23 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   }
   if (
     value.mode === "work-panel" &&
-    (keys.length === 7 || keys.length === 8) &&
+    keys.length >= 7 && keys.length <= 9 &&
+    keys.every((key) => [
+      "mode", "x", "y", "profile", "isFullscreen", "reviewMode",
+      "documentPathAvailable", "canClose", "canCloseOthers",
+    ].includes(key)) &&
     keys.includes("mode") &&
     keys.includes("x") &&
     keys.includes("y") &&
     keys.includes("profile") &&
     keys.includes("isFullscreen") &&
-    (keys.length === 7 || keys.includes("reviewMode")) &&
     keys.includes("canClose") &&
     keys.includes("canCloseOthers") &&
     typeof value.profile === "string" &&
     WORK_PANEL_CONTEXT_MENU_PROFILES.has(value.profile as ChatWorkPanelTabContextMenuProfile) &&
     typeof value.isFullscreen === "boolean" &&
     (value.reviewMode === undefined || value.reviewMode === "unavailable" || value.reviewMode === "inactive" || value.reviewMode === "active") &&
+    (value.documentPathAvailable === undefined || typeof value.documentPathAvailable === "boolean") &&
     typeof value.canClose === "boolean" &&
     typeof value.canCloseOthers === "boolean"
   ) {
@@ -100,6 +104,7 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
       ...(value.reviewMode === "inactive" || value.reviewMode === "active"
         ? { reviewMode: value.reviewMode }
         : {}),
+      ...(value.documentPathAvailable === true ? { documentPathAvailable: true } : {}),
       canClose: value.canClose,
       canCloseOthers: value.canCloseOthers
     };
@@ -143,6 +148,13 @@ function buildWorkPanelTemplate(
           id: "copy-url",
           label: t("webviewContextMenu.page.copy-url"),
           click: click("copy-url")
+        }]
+      : []),
+    ...(request.documentPathAvailable
+      ? [{
+          id: "copy-path",
+          label: t("chatWorkPanel.tabContextMenu.copyPath"),
+          click: click("copy-path")
         }]
       : [])
   ];

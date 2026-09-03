@@ -13,6 +13,7 @@ test("Work Panel tab context menu accepts only bounded profile capabilities", ()
     y: 20.6,
     profile: "artifact",
     isFullscreen: false,
+    documentPathAvailable: true,
     canClose: true,
     canCloseOthers: false
   }), {
@@ -21,6 +22,7 @@ test("Work Panel tab context menu accepts only bounded profile capabilities", ()
     y: 21,
     profile: "artifact",
     isFullscreen: false,
+    documentPathAvailable: true,
     canClose: true,
     canCloseOthers: false
   });
@@ -119,6 +121,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
     y: -10,
     profile: "artifact",
     isFullscreen: true,
+    documentPathAvailable: true,
     canClose: false,
     canCloseOthers: true
   });
@@ -126,6 +129,7 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   assert.deepEqual(builtTemplate.map((item) => item.id ?? item.type), [
     "toggle-fullscreen",
     "reload",
+    "copy-path",
     "separator",
     "download-resource",
     "open-resource-default-app",
@@ -137,6 +141,10 @@ test("Work Panel tab context menu is main-window-owned and exposes bounded tab a
   ]);
   assert.equal(builtTemplate.find((item) => item.id === "close-tab").enabled, false);
   assert.equal(builtTemplate.find((item) => item.id === "close-other-tabs").enabled, true);
+  assert.match(
+    builtTemplate.find((item) => item.id === "copy-path").label,
+    /Copy File Path|复制文件路径/u
+  );
   assert.match(
     builtTemplate.find((item) => item.id === "toggle-fullscreen").label,
     /Exit Full Screen|退出全屏/u

@@ -121,18 +121,15 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   assert.match(host, /navigationKind === "blob"/u);
   assert.match(host, /allowUserTabCreation=\{false\}/u);
   assert.match(host, /showToolbar=\{item\.descriptor\.kind === "web" \|\| \([\s\S]*?item\.descriptor\.reviewKind === "html"/u);
+  assert.match(host, /function workPanelDocumentPath[\s\S]*?module === "file"[\s\S]*?context\.path\.trim\(\)[\s\S]*?context\.relativePath/u);
+  assert.match(host, /title=\{documentPath \|\| item\.title\}/u);
+  assert.match(host, /documentPathAvailable: true/u);
+  assert.match(host, /result\.actionId === "copy-path"[\s\S]*?clipboard\.writeText\(documentPath\)/u);
   assert.match(host, /workPanelToolbarKind=\{item\.descriptor\.kind === "local-file" \? "document" : "web"\}/u);
-  assert.match(host, /className="chat-work-panel-preview-toolbar"/u);
-  assert.match(host, /showResourcePreviewToolbar[\s\S]*?item\.descriptor\.module === "artifact"/u);
+	assert.doesNotMatch(host, /className="chat-work-panel-preview-toolbar"/u);
+	assert.doesNotMatch(host, /showResourcePreviewToolbar/u);
   const workPanelStyles = read("src/renderer/styles/app-shell.css");
-  assert.match(
-    workPanelStyles,
-    /\.chat-work-panel-item\.has-preview-toolbar > \.embedded-surface-page\s*\{[^}]*top:\s*48px;[^}]*height:\s*auto;/su,
-  );
-  assert.doesNotMatch(
-    workPanelStyles,
-    /\.chat-work-panel-item\.has-preview-toolbar > \.service-webview-surface/u,
-  );
+	assert.doesNotMatch(workPanelStyles, /chat-work-panel-preview-toolbar|has-preview-toolbar/u);
   assert.match(host, /target !== "work-panel"/u);
   assert.match(host, /type: "openItem"[\s\S]*?descriptor: \{ kind: "web", url: normalizedUrl \}/u);
   assert.match(host, /showLoadingProgress/u);
@@ -152,7 +149,6 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   );
   assert.match(host, /pageReviewActive=\{reviewActive && reviewSession\?\.kind === "html"\}/u);
   assert.match(host, /reviewSession\?\.kind === "html" \? " is-html-review" : ""/u);
-  assert.match(host, /className="external-webview-toolbar-return"[\s\S]*?chatWorkPanel\.review\.returnPreview/u);
   assert.match(host, /const webReviewPreloadEnabled = item\.descriptor\.kind === "web" &&[\s\S]*?normalizeWorkPanelWebUrl\(item\.descriptor\.url\)/u);
   assert.match(host, /onTogglePageReview=\{webReviewPreloadEnabled[\s\S]*?toggleReviewForItem/u);
   assert.match(host, /webReviewPreloadEnabled[\s\S]{0,80}?reviewPreloadUrl/u);
