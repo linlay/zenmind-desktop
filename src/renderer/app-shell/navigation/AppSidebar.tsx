@@ -4018,7 +4018,6 @@ export function AppSidebar({
             .filter(Boolean)
             .join(" ")}
           aria-label={t("sidebar.chats.newChat")}
-          title={label}
           tabIndex={options.inPopover ? undefined : -1}
           disabled={disabled}
           onClick={handleChatsNewChat}
@@ -4042,7 +4041,6 @@ export function AppSidebar({
             type="button"
             className="assistant-worker-icon-button sidebar-chats-sort-button"
             aria-label={t("sidebar.chats.sortMenu")}
-            title={sortLabel}
             tabIndex={options.inPopover ? undefined : -1}
             disabled={!assistantChatOrderingSupported || chatOrderMutationPending}
             onClick={(event) => {
@@ -4519,8 +4517,12 @@ export function AppSidebar({
           {item.label}
         </span>
       ),
-      headerSupplement: renderChatsDefaultAgentPicker(),
-      headerActions: renderChatsHeaderActions(),
+      headerSupplement: sidebarGroupState.chats
+        ? renderChatsDefaultAgentPicker()
+        : undefined,
+      headerActions: sidebarGroupState.chats
+        ? renderChatsHeaderActions()
+        : renderChatsNewChatButton(),
       popoverHeader: (
         <div className="sidebar-chats-collapsed-head">
           <span>{item.label}</span>

@@ -1118,7 +1118,14 @@ test("chat headers expose sorting and new chat while the chat menu keeps sharing
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
-  assert.match(sidebarSource, /headerActions: renderChatsHeaderActions\(\)/u);
+  assert.match(
+    sidebarSource,
+    /headerSupplement: sidebarGroupState\.chats\s*\? renderChatsDefaultAgentPicker\(\)\s*:\s*undefined/u,
+  );
+  assert.match(
+    sidebarSource,
+    /headerActions: sidebarGroupState\.chats\s*\? renderChatsHeaderActions\(\)\s*:\s*renderChatsNewChatButton\(\)/u,
+  );
   assert.match(
     sidebarSource,
     /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)[\s\S]{0,160}renderChatsHeaderActions\(\{ inPopover: true \}\)/u
@@ -1126,6 +1133,27 @@ test("chat headers expose sorting and new chat while the chat menu keeps sharing
   assert.match(
     sidebarSource,
     /function renderChatsHeaderActions[\s\S]{0,1800}SidebarActionIcon kind="sort"[\s\S]{0,500}renderChatsNewChatButton\(options\)/u
+  );
+  const newChatButton =
+    sidebarSource.match(
+      /function renderChatsNewChatButton[\s\S]*?function renderChatsHeaderActions/u,
+    )?.[0] ?? "";
+  const sortButton =
+    sidebarSource.match(
+      /function renderChatsHeaderActions[\s\S]*?function renderChatsDefaultAgentPicker/u,
+    )?.[0] ?? "";
+  assert.match(newChatButton, /aria-label=\{t\("sidebar\.chats\.newChat"\)\}/u);
+  assert.doesNotMatch(newChatButton, /\btitle=/u);
+  assert.match(sortButton, /aria-label=\{t\("sidebar\.chats\.sortMenu"\)\}/u);
+  assert.doesNotMatch(sortButton, /\btitle=/u);
+  const newChatHandler =
+    sidebarSource.match(
+      /function handleChatsNewChat[\s\S]*?function focusChatsDefaultAgentMenuItem/u,
+    )?.[0] ?? "";
+  assert.match(newChatHandler, /startChatsNewChat\(\)/u);
+  assert.doesNotMatch(
+    newChatHandler,
+    /setSidebarGroupState|toggleSidebarGroup/u,
   );
   assert.match(
     sidebarSource,
@@ -3516,7 +3544,10 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(sidebarSource, /function handleChatsDefaultAgentChange[\s\S]*?onChatsDefaultAgentChange\?\.\(normalizedAgentKey\)/);
   assert.match(sidebarSource, /catch \{\s*setChatDefaultAgentError\(t\("sidebar\.chats\.defaultAgentSaveFailed"\)\);/);
   assert.match(sidebarSource, /chatDefaultAgentPending/);
-  assert.match(sidebarSource, /headerSupplement: renderChatsDefaultAgentPicker\(\)/);
+  assert.match(
+    sidebarSource,
+    /headerSupplement: sidebarGroupState\.chats\s*\? renderChatsDefaultAgentPicker\(\)\s*:\s*undefined/,
+  );
   assert.match(sidebarSource, /renderChatsDefaultAgentPicker\(\{ inPopover: true \}\)/);
   assert.match(sidebarSource, /args\.groupId === "chats" \? "sidebar-chats-group-popover" : undefined/);
   assert.match(collapse, /headerSupplement\?: React\.ReactNode/);
