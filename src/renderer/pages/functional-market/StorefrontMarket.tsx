@@ -1090,16 +1090,12 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     if (item.type === "website-app" && isInstalledMarketItem(item)) {
       return (
         <Button
-          className={`market-store-action is-primary ${compact ? "is-compact-icon" : ""}`}
-          disabled={busy}
-          icon={compact ? <GlobalOutlined /> : undefined}
-          loading={busy}
-          onClick={() => void openWebsiteAppFromMarket(item)}
-          title={t("market.websiteApp.open")}
-          type="primary"
-        >
-          {compact ? null : busy ? t("market.websiteApp.opening") : t("market.websiteApp.open")}
-        </Button>
+          aria-label={t("market.state.installed")}
+          className="market-store-action is-compact-icon"
+          disabled
+          icon={<CheckOutlined />}
+          title={t("market.state.installed")}
+        />
       );
     }
     if (item.type === "skill" && isInstalledMarketItem(item)) {
