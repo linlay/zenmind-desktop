@@ -16,7 +16,7 @@
 - 使用真实鼠标分别点击按钮图标中心与空白拖动区：按钮点击不得触发窗口拖动，空白区仍可正常拖动窗口。
 - 在主 renderer 与聚焦 webview 中分别按 `Ctrl+Shift+I`，确认都只切换主 renderer 的停靠式 DevTools；按钮始终留在 ZenMind 系统栏。按 `Ctrl+Shift+D` 仍只为当前 focus webview 打开独立 DevTools。
 - 点击最小化、最大化/还原，确认状态图标及时更新；分别通过系统栏关闭按钮、`Alt+F4` 和任务栏右键“关闭窗口”触发关闭，确认只显示一个现有的退出确认框，取消后窗口保持显示，确认后完成受管任务与服务清理并真正退出。托盘菜单“退出”仍直接执行安全退出；打开全局搜索或可信 guest 模态层时窗口按钮被遮罩且不可点击。
-- macOS 确认仍使用原生 traffic lights，标题栏、全屏和 `Cmd+W` 行为不变。
+- macOS 确认仍使用原生 traffic lights，标题栏和全屏行为不变；`Cmd+W` 按当前 Chat 的可见 WorkPanel → 主窗口层级关闭。
 
 ## 项目侧边栏
 
@@ -28,10 +28,14 @@
 
 - 展开“对话”分组，确认标题栏显示默认助手选择器、排序和“新建对话”；收起外层分组后隐藏默认助手选择器与排序，只保留标题、展开箭头、状态数量和“新建对话”，重新展开后完整操作恢复。
 - 在对话分组收起状态点击“新建对话”，确认使用当前默认助手直接创建且不自动展开分组；展开状态下悬浮排序与新建按钮时各只显示一份自定义提示，不再叠加浏览器原生 `title` 提示。完整侧边栏收成窄栏后的对话 Popover 仍显示原有完整操作。
+- 在全局 Chats 与 Project 内分别聚焦 Chat 行，普通、非长按的 `↑/↓` 只切换当前可见 Chat 且焦点始终留在目标行；目标带 awaiting 或已显示 WorkPanel 时结果相同。按 `Enter` 后才进入 Main Chat，确认 awaiting 的 `↑/↓` 与数字 `1–4` 原样交给 Agent WebClient。
+- Chat 行按普通 `←` 时先把焦点移到对应 Chats/Project 父级再收起左栏，收起态父级再次按 `←` 可展开；普通 `→` 依次验证无 workspace 创建 Overview、隐藏态恢复、显示态隐藏，Chat 行焦点全程不变。带 Cmd/Ctrl/Alt/Shift、长按或键盘拖拽时不得切换两侧面板；分组标题的 `←/→`、Home/End、Enter/Space、菜单键与 `Shift+F10` 保持原行为。
 
 ## WorkPanel 自由新增 Tab
 
 - 在 macOS 与 Windows 分别打开一个稳定 Chat，确认 Overview 固定首项，`32×32px` 的 `+` 紧跟最后一个 tab 并随横向溢出滚动。
+- 分别把焦点放在侧栏 Chat 行、Main Chat 与当前 WorkPanel WebView，连续按 macOS `Cmd+W` / Windows `Ctrl+W`：先关闭 active 可关闭 tab；Overview 激活时关闭最后一个可关闭 tab；再关闭整个 WorkPanel；下一次才执行主窗口原有关闭。取消 dirty/批注确认或遇到 busy 时本次停止。隐藏 WorkPanel、普通 Website、Browser、Copilot 与其他 Chat 的后台 WorkPanel 不得被误关闭。
+- 从侧栏显示/恢复 WorkPanel、切换 Chat 和切换 WorkPanel tab，确认不会自动把焦点送入 WebView；只有用户主动点击 Main Chat、WorkPanel 内容或 tab 时焦点才移动。隐藏、失活和回收 item 后旧 WebView 不再接收按键，macOS 与 Windows 都回归。
 - 在浅色、深色、Windows 标题栏偏移和 WorkPanel 全屏下检查菜单定位、圆角、hover/focus、Esc、方向键、Home/End 与 Enter。
 - 确认菜单顺序为 Terminal、Web、Files、Side Chat、Project、WebApp；Terminal 禁用且没有快捷键或 PTY。
 - Web 输入无协议域名时补 `https://`；拒绝 URL 中的用户名密码和非 HTTP(S) URL。重复 URL 激活已有 tab；Website、普通 WorkPanel Web 与其 popup 共享 Desktop 应用浏览器 Cookie partition，popup 仍留在所属 Chat。分别在登录、刷新 access token、退出登录和 Desktop 重启后验证 `HttpOnly`、`SameSite` 与重定向 Cookie 按 Chromium 原生规则生效；本地文件、WebApp、Help、内置 Browser 和服务页不得继承。

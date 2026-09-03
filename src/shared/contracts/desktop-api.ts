@@ -856,7 +856,6 @@ export type DesktopGlobalSearchShortcutListener = (shortcut: DesktopGlobalSearch
 export type DesktopWorkPanelCloseShortcutRequest = {
   guestId: number | null;
   fallbackToWindowClose?: boolean;
-  workPanelFocused?: boolean;
 };
 export type DesktopWorkPanelCloseShortcutListener = (
   request: DesktopWorkPanelCloseShortcutRequest
@@ -912,7 +911,6 @@ export interface DesktopApi {
     endWindowDrag: () => Promise<{ ok: boolean; message?: string }>;
     setGlobalSearchOverlayVisible: (visible: boolean) => void;
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) => void;
-    setWorkPanelKeyboardFocusActive: (active: boolean) => void;
     setWorkPanelFullscreenActive: (active: boolean) => void;
     requestWindowClose: () => void;
     minimizeWindow: () => Promise<{ ok: boolean; message?: string }>;

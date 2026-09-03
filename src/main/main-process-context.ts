@@ -99,7 +99,6 @@ export interface ShellIpcHandlerContextDependencies {
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
   setWebviewModalOverlayVisible?: (sourceId: string, visible: boolean) => void;
-  setWorkPanelKeyboardFocusActive?: (active: boolean) => void;
   setWorkPanelFullscreenActive?: (active: boolean) => void;
 }
 
@@ -121,7 +120,6 @@ export function createShellIpcHandlerOptions(
     desktopLogStreamSubscriptions: dependencies.desktopLogStreamSubscriptions,
     setGlobalSearchOverlayVisible: dependencies.setGlobalSearchOverlayVisible,
     setWebviewModalOverlayVisible: dependencies.setWebviewModalOverlayVisible,
-    setWorkPanelKeyboardFocusActive: dependencies.setWorkPanelKeyboardFocusActive,
     setWorkPanelFullscreenActive: dependencies.setWorkPanelFullscreenActive
   };
 }

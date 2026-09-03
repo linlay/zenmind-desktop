@@ -32,6 +32,10 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(appShell, /pendingChatWorkPanelOpenRef/u);
   assert.match(appShell, /committedMainChatSnapshot/u);
   assert.match(appShell, /requestChatWorkPanelOpenWhenRegistered/u);
+  assert.match(appShell, /onToggleChatWorkPanel=\{toggleChatWorkPanelFromSidebar\}/u);
+  assert.match(appShell, /const toggleChatWorkPanelFromSidebar = useCallback/u);
+  assert.match(appShell, /activeChatWorkPanelChatId === chatId && activeChatWorkPanelVisible[\s\S]{0,120}type: "hideWorkspace"/u);
+  assert.match(appShell, /workspaceExists \? "show" : "ensure"/u);
   assert.match(appShell, /handleMainChatSurfaceRegistrationChange/u);
   assert.match(appShell, /resolvePendingMainChatWorkPanelOpen\(pending, snapshot, currentRoute\)/u);
   assert.match(appShell, /main-chat-work-panel-open-timeout/u);
@@ -108,7 +112,7 @@ test("WorkPanel actions derive ownership from trusted source and expose the cano
   assert.match(read("src/renderer/app-shell/navigation/AppSidebar.tsx"), /onCloseChatWorkPanel\?\.\(chat\.chatId, true\)/u);
 });
 
-test("WorkPanel Web guests share application cookies and keep explicit platform focus branches", () => {
+test("WorkPanel Web guests share application cookies and only blur hidden or inactive platform surfaces", () => {
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const externalWebview = read("src/renderer/pages/external-webview/ExternalWebviewPage.tsx");
   const reducer = read("src/shared/work-panel.ts");
@@ -164,7 +168,12 @@ test("WorkPanel Web guests share application cookies and keep explicit platform 
   assert.doesNotMatch(externalWebview, /openPopupsInCurrentTab/u);
   assert.match(host, /if \(isMac\)/u);
   assert.match(host, /else if \(isWindows\)/u);
-  assert.match(host, /dataset\.workPanelDomReady === "true"/u);
+  assert.match(host, /const activeItemId = activeChatId/u);
+  assert.match(host, /const isActiveItemHost/u);
+  assert.match(host, /focusedItem && !isActiveItemHost\(focusedItem\)/u);
+  assert.match(host, /if \(!isActiveItemHost\(itemHost\)\)/u);
+  assert.doesNotMatch(host, /webview\.focus\(\)/u);
+  assert.doesNotMatch(host, /workPanelDomReady/u);
   assert.match(reducer, /unsupported_native_surface/u);
   assert.match(reducer, /item\.pinned \|\| !item\.closable/u);
   assert.match(
@@ -237,7 +246,7 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   assert.doesNotMatch(host, /filePath:\s*file\./u);
 });
 
-test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-aware close controls", () => {
+test("WorkPanel renders Chrome-style outer tabs with mapped icons and layered close controls", () => {
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const appShell = read("src/renderer/app-shell/AppShell.tsx");
   const css = read("src/renderer/styles/app-shell.css");
@@ -290,7 +299,7 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and focus-awar
   assert.match(host, /const closable = item\.closable && !item\.pinned/u);
   assert.match(host, /onWorkPanelCloseShortcut/u);
   assert.match(host, /guestId === null/u);
-  assert.match(host, /setWorkPanelKeyboardFocusActive/u);
+  assert.match(host, /if \(activeChatId\)[\s\S]{0,80}closeWorkPanelStep\(activeChatId\)/u);
   assert.match(host, /const closableItems = workspace\.items\.filter/u);
   assert.match(host, /type: "closeWorkspace"[\s\S]*?force: true/u);
   assert.match(host, /data-work-panel-active/u);
@@ -367,7 +376,7 @@ test("WorkPanel fullscreen owns native window state and exclusively covers the D
   assert.match(enUS, /"chatWorkPanel\.tabContextMenu\.revealInExplorer": "Show in File Explorer"/u);
 });
 
-test("WorkPanel close shortcut focus ownership is wired across renderer preload and main", () => {
+test("WorkPanel close shortcut uses visible composite ownership across renderer preload and main", () => {
   const contracts = read("src/shared/contracts/desktop-api.ts");
   const preload = read("src/preload/index.ts");
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
@@ -375,24 +384,30 @@ test("WorkPanel close shortcut focus ownership is wired across renderer preload 
   const mainContext = read("src/main/main-process-context.ts");
   const windowManager = read("src/main/window-manager.ts");
   const runtime = read("src/main/app-shell/runtime.ts");
+  const appRuntime = read("src/main/app/runtime.ts");
+  const appState = read("src/main/app-state.ts");
 
-  assert.match(contracts, /DesktopWorkPanelCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;[\s\S]*?workPanelFocused\?: boolean;/u);
-  assert.match(contracts, /setWorkPanelKeyboardFocusActive: \(active: boolean\) => void/u);
+  assert.match(contracts, /DesktopWorkPanelCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;/u);
+  assert.doesNotMatch(contracts, /workPanelFocused|setWorkPanelKeyboardFocusActive/u);
   assert.match(contracts, /requestWindowClose: \(\) => void/u);
-  assert.match(preload, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
+  assert.doesNotMatch(preload, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
   assert.match(preload, /desktopShell\.requestWindowClose/u);
-  assert.match(host, /document\.addEventListener\("pointerdown", handlePointerDown, true\)/u);
-  assert.match(host, /root\.addEventListener\("focusin", handleFocusIn, true\)/u);
-  assert.match(host, /publishFocusState\(false\)/u);
-  assert.match(shellHandlers, /getMainWindow\?\.\(\) \?\? options\.mainWindow/u);
+  assert.doesNotMatch(host, /setWorkPanelKeyboardFocusActive|workPanelFocused/u);
+  assert.match(host, /if \(activeChatId\)[\s\S]{0,80}closeWorkPanelStep\(activeChatId\)/u);
+  assert.doesNotMatch(shellHandlers, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
   assert.match(shellHandlers, /ownerWindow !== mainWindow/u);
   assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.requestWindowClose"/u);
   assert.match(mainContext, /getMainWindow: \(\) => context\.state\.mainWindow/u);
-  assert.match(windowManager, /isWorkPanelKeyboardFocusActive\?\.\(\) === true/u);
-  assert.match(windowManager, /app\.workPanelCloseShortcut"[\s\S]*?guestId: null,[\s\S]*?workPanelFocused: true/u);
-  assert.match(runtime, /isWorkPanelKeyboardFocusActive: \(\) => options\.state\.workPanelKeyboardFocusActive/u);
+  assert.doesNotMatch(mainContext, /setWorkPanelKeyboardFocusActive/u);
+  assert.doesNotMatch(appState, /workPanelKeyboardFocusActive/u);
+  assert.match(windowManager, /isCurrentWorkPanelGuest \|\| isCurrentMainChatGuest/u);
+  assert.match(windowManager, /guestId: null, fallbackToWindowClose: true/u);
+  assert.match(runtime, /isMainChatWebview: options\.isMainChatWebview/u);
   assert.match(runtime, /fallbackToWindowClose: true/u);
-  assert.match(runtime, /workPanelFocused: options\.state\.workPanelKeyboardFocusActive/u);
-  assert.match(host, /workPanelFocused && activeChatId/u);
+  assert.match(appRuntime, /target\.surfaceId === MAIN_CHAT_SURFACE_ID[\s\S]{0,180}target\.surfaceType === "agent-chat"/u);
+  assert.match(appRuntime, /target\?\.active &&[\s\S]{0,80}target\.presentationScope === "workpanel"/u);
+  for (const role of ["btw", "source", "reference", "file", "workpanel-web"]) {
+    assert.match(appRuntime, new RegExp(`"${role}"`, "u"));
+  }
   assert.match(host, /else if \(fallbackToWindowClose\)/u);
 });

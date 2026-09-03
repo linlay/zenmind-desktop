@@ -1073,6 +1073,7 @@ type AppSidebarProps = {
   ) => Promise<AssistantChatOrderMutationResult>;
   onOpenAgentProjectEditor?: (agent: AssistantNavAgentItem) => void;
   onOpenChatWorkPanel?: (chatId: string, agentKey: string) => void;
+  onToggleChatWorkPanel?: (chatId: string, agentKey: string) => void;
   onOpenChatHistory?: (agentKey?: string) => void;
   onCloseChatWorkPanel?: (chatId: string, force?: boolean) => void;
   onChatsDefaultAgentChange?: (agentKey: string) => Promise<void> | void;
@@ -1144,6 +1145,7 @@ export function AppSidebar({
   onUpdateAssistantChatOrder,
   onOpenAgentProjectEditor,
   onOpenChatWorkPanel,
+  onToggleChatWorkPanel,
   onOpenChatHistory,
   onCloseChatWorkPanel,
   onChatsDefaultAgentChange,
@@ -2615,6 +2617,10 @@ export function AppSidebar({
   function handleSidebarRovingArrowLeft(element: HTMLElement) {
     const kind = element.dataset.sidebarNavKind;
     if (kind === "group") {
+      if (isCollapsed && onToggleCollapsed) {
+        onToggleCollapsed();
+        return true;
+      }
       const groupId = readSidebarGroupId(element.dataset.sidebarGroupId);
       if (groupId && !isCollapsed && sidebarGroupState[groupId]) {
         setSidebarGroupState((current) => ({ ...current, [groupId]: false }));
@@ -2623,6 +2629,10 @@ export function AppSidebar({
       return false;
     }
     if (kind === "agent") {
+      if (isCollapsed && onToggleCollapsed) {
+        onToggleCollapsed();
+        return true;
+      }
       const agentKey = element.dataset.sidebarAgentKey || "";
       if (agentKey && expandedAssistantAgentKeys.has(agentKey)) {
         setAssistantAgentExpanded(agentKey, false);
@@ -2653,6 +2663,35 @@ export function AppSidebar({
       return focusSidebarRovingItemById(createSidebarGroupFocusId("webs"));
     }
     return false;
+  }
+
+  function toggleSidebarFromChatRow(element: HTMLElement) {
+    if (!onToggleCollapsed) {
+      return false;
+    }
+    const kind = element.dataset.sidebarNavKind;
+    const parentFocusId = kind === "chats-chat"
+      ? createSidebarGroupFocusId("chats")
+      : createSidebarAgentFocusId(element.dataset.sidebarAgentKey || "");
+    if (!focusSidebarRovingItemById(parentFocusId)) {
+      return false;
+    }
+    onToggleCollapsed();
+    return true;
+  }
+
+  function toggleChatWorkPanelFromChatRow(element: HTMLElement) {
+    if (!onToggleChatWorkPanel) {
+      return false;
+    }
+    const chatId = element.dataset.sidebarChatId || "";
+    const chat = findAssistantNavChat(chatId);
+    const agentKey = chat?.agentKey.trim() || element.dataset.sidebarAgentKey?.trim() || "";
+    if (!chatId || !agentKey) {
+      return false;
+    }
+    onToggleChatWorkPanel(chatId, agentKey);
+    return true;
   }
 
   function getSidebarRovingEventElement(target: EventTarget | null) {
@@ -2736,13 +2775,13 @@ export function AppSidebar({
     const currentIsChat =
       currentNavigationKind === "chat" ||
       currentNavigationKind === "chats-chat";
-    const isPlainVerticalArrow =
+    const isPlainArrow =
       !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey;
     if (
       currentIsChat &&
       (event.key === "ArrowDown" || event.key === "ArrowUp")
     ) {
-      if (!isPlainVerticalArrow) {
+      if (!isPlainArrow) {
         return;
       }
       event.preventDefault();
@@ -2751,6 +2790,22 @@ export function AppSidebar({
           currentElement,
           event.key === "ArrowDown" ? "next" : "previous",
         );
+      }
+      return;
+    }
+
+    if (
+      currentIsChat &&
+      (event.key === "ArrowLeft" || event.key === "ArrowRight")
+    ) {
+      if (!isPlainArrow || event.repeat) {
+        return;
+      }
+      const handled = event.key === "ArrowLeft"
+        ? toggleSidebarFromChatRow(currentElement)
+        : toggleChatWorkPanelFromChatRow(currentElement);
+      if (handled) {
+        event.preventDefault();
       }
       return;
     }

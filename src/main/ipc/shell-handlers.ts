@@ -200,7 +200,6 @@ type ShellIpcOptions = {
   desktopLogStreamSubscriptions?: LogStreamSubscriptionRegistry;
   setGlobalSearchOverlayVisible?: (visible: boolean) => void;
   setWebviewModalOverlayVisible?: (sourceId: string, visible: boolean) => void;
-  setWorkPanelKeyboardFocusActive?: (active: boolean) => void;
   setWorkPanelFullscreenActive?: (active: boolean) => void;
 };
 
@@ -548,20 +547,6 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       return;
     }
     options.setWebviewModalOverlayVisible?.(normalizedSourceId, visible === true);
-  });
-
-  ipcMain.on("desktopShell.setWorkPanelKeyboardFocusActive", (event: IpcMainEvent, active: unknown) => {
-    const ownerWindow = BrowserWindow.fromWebContents(event.sender);
-    const mainWindow = options.getMainWindow?.() ?? options.mainWindow ?? null;
-    if (
-      !ownerWindow ||
-      ownerWindow.isDestroyed() ||
-      !mainWindow ||
-      ownerWindow !== mainWindow
-    ) {
-      return;
-    }
-    options.setWorkPanelKeyboardFocusActive?.(active === true);
   });
 
   ipcMain.on("desktopShell.setWorkPanelFullscreenActive", (event: IpcMainEvent, active: unknown) => {

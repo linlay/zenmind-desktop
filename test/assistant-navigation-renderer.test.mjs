@@ -84,7 +84,7 @@ const {
 test("assistant nav resolves adjacent chats without wrapping", () => {
   const chats = [
     chat({ chatId: "chat-a" }),
-    chat({ chatId: "chat-b" }),
+    chat({ chatId: "chat-b", hasPendingAwaiting: true }),
     chat({ chatId: "chat-c" }),
   ];
 

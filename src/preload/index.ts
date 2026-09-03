@@ -116,8 +116,6 @@ const api: DesktopApi = {
     setGlobalSearchOverlayVisible: (visible: boolean) => ipcRenderer.send("desktopShell.setGlobalSearchOverlayVisible", visible),
     setWebviewModalOverlayVisible: (sourceId: string, visible: boolean) =>
       ipcRenderer.send("desktopShell.setWebviewModalOverlayVisible", sourceId, visible),
-    setWorkPanelKeyboardFocusActive: (active: boolean) =>
-      ipcRenderer.send("desktopShell.setWorkPanelKeyboardFocusActive", active),
     setWorkPanelFullscreenActive: (active: boolean) =>
       ipcRenderer.send("desktopShell.setWorkPanelFullscreenActive", active),
     requestWindowClose: () => ipcRenderer.send("desktopShell.requestWindowClose"),

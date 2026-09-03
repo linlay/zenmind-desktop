@@ -68,6 +68,7 @@ export type AppShellRuntimeOptions = {
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isWorkPanelCloseShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isWorkPanelWebview: (contents: Electron.WebContents) => boolean;
+  isMainChatWebview: (contents: Electron.WebContents) => boolean;
   resolveGlobalSearchCommandShortcut: (platform: NodeJS.Platform, input: any) => DesktopGlobalSearchShortcut | null;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
   shouldOpenWebviewPopupInWorkPanelTab: (contents: Electron.WebContents) => boolean;
@@ -226,7 +227,6 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
   }
 
   function createWindow() {
-    options.state.workPanelKeyboardFocusActive = false;
     options.state.workPanelFullscreenActive = false;
     options.state.focusedWebviewDevToolsTargetId = null;
     options.state.mainWindow = new BrowserWindow(buildMainWindowOptions({
@@ -257,6 +257,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
       isWorkPanelWebview: options.isWorkPanelWebview,
+      isMainChatWebview: options.isMainChatWebview,
       isWorkPanelFullscreenActive: () => options.state.workPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: () => mainWindowLifecycle.isGlobalSearchOverlayVisible(),
@@ -297,7 +298,6 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
-      isWorkPanelKeyboardFocusActive: () => options.state.workPanelKeyboardFocusActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isHandlingQuit: () => options.state.isHandlingQuit,
       requestAppQuit: () => {
@@ -306,7 +306,6 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       clearWindow: (windowToClear) => {
         if (options.state.mainWindow === windowToClear) {
           options.state.mainWindow = null;
-          options.state.workPanelKeyboardFocusActive = false;
           options.state.workPanelFullscreenActive = false;
           options.state.focusedWebviewDevToolsTargetId = null;
         }
@@ -363,11 +362,22 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
           options.isWorkPanelWebview(focusedContents)
           ? focusedContents
           : null;
-        targetWindow.webContents.send("app.workPanelCloseShortcut", {
-          guestId: focusedWorkPanelGuest?.id ?? null,
-          fallbackToWindowClose: true,
-          workPanelFocused: options.state.workPanelKeyboardFocusActive
-        });
+        const focusedMainChatGuest = focusedContents && focusedContents !== targetWindow.webContents &&
+          options.isMainChatWebview(focusedContents)
+          ? focusedContents
+          : null;
+        if (
+          focusedContents === targetWindow.webContents ||
+          focusedWorkPanelGuest ||
+          focusedMainChatGuest
+        ) {
+          targetWindow.webContents.send("app.workPanelCloseShortcut", {
+            guestId: focusedWorkPanelGuest?.id ?? null,
+            fallbackToWindowClose: true
+          });
+          return;
+        }
+        targetWindow.close();
       },
       requestQuit: options.requestAppQuit,
       quitWithoutConfirmation: options.beginAppQuitWithoutConfirmation

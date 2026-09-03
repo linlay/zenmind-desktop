@@ -4212,6 +4212,40 @@ export function AppShell() {
     }
   }, [desiredChatRouteChatId, requestChatWorkPanelOpenWhenRegistered, requestSidebarNavigation]);
 
+  const toggleChatWorkPanelFromSidebar = useCallback((chatIdValue: string, agentKeyValue: string) => {
+    const chatId = chatIdValue.trim();
+    const agentKey = agentKeyValue.trim();
+    if (!chatId || !agentKey) return;
+    const targetRoute = createAgentChatRoute(agentKey, chatId);
+    if (activeChatWorkPanelChatId === chatId && activeChatWorkPanelVisible) {
+      dispatchWorkPanelCommand({ type: "hideWorkspace", ownerChatId: chatId });
+      return;
+    }
+    const workspaceExists = workPanelStateRef.current.workspaces.some(
+      (workspace) => workspace.ownerChatId === chatId,
+    );
+    requestChatWorkPanelOpenWhenRegistered(
+      chatId,
+      agentKey,
+      workspaceExists ? "show" : "ensure",
+      targetRoute,
+    );
+    if (
+      desiredChatRouteChatId !== chatId ||
+      activeChatRouteInfo.agentKey.trim() !== agentKey
+    ) {
+      requestSidebarNavigation(targetRoute);
+    }
+  }, [
+    activeChatRouteInfo.agentKey,
+    activeChatWorkPanelChatId,
+    activeChatWorkPanelVisible,
+    desiredChatRouteChatId,
+    dispatchWorkPanelCommand,
+    requestChatWorkPanelOpenWhenRegistered,
+    requestSidebarNavigation,
+  ]);
+
   const openAgentProjectEditorFromSidebar = useCallback((agent: AssistantNavAgentItem) => {
     const agentKey = agent.agentKey.trim();
     if (!agentKey) {
@@ -4499,6 +4533,7 @@ export function AppShell() {
           onUpdateAssistantChatOrder={updateAssistantChatOrder}
           onOpenAgentProjectEditor={openAgentProjectEditorFromSidebar}
           onOpenChatWorkPanel={openChatWorkPanelFromSidebar}
+          onToggleChatWorkPanel={toggleChatWorkPanelFromSidebar}
           onOpenChatHistory={openChatHistoryDialog}
           onCloseChatWorkPanel={closeChatWorkPanelWorkspace}
           onChatsDefaultAgentChange={saveChatsDefaultAgent}

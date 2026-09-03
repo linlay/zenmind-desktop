@@ -757,63 +757,46 @@ test("window manager opens Desktop global search from the main window shortcut",
   assert.deepEqual(target.webContents.openedDevToolsOptions, []);
 });
 
-test("main window forwards close shortcuts only while WorkPanel owns keyboard focus", () => {
-  const target = new FakeWindow();
-  let workPanelFocused = true;
-  let prevented = false;
-
-  configureMainWindowLifecycleEvents(target, {
-    platform: "darwin",
-    lifecycle: {
-      applyAppearance: () => {},
-      hideForClose: () => {},
-      cancelPendingClose: () => {},
+test("main window forwards close shortcuts for renderer-owned composite workspaces", () => {
+  const cases = [
+    {
+      platform: "darwin",
+      input: { type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false },
     },
-    isDevToolsShortcut: () => false,
-    isWorkPanelCloseShortcut,
-    isWorkPanelKeyboardFocusActive: () => workPanelFocused,
-    isHandlingQuit: () => false,
-    clearWindow: () => {},
-  });
-
-  target.webContents.emit("before-input-event", {
-    preventDefault: () => {
-      prevented = true;
+    {
+      platform: "win32",
+      input: { type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false },
     },
-  }, {
-    type: "keyDown",
-    key: "w",
-    meta: true,
-    control: false,
-    alt: false,
-    shift: false,
-    isAutoRepeat: false,
-  });
+  ];
 
-  assert.equal(prevented, true);
-  assert.deepEqual(target.webContents.sentMessages, [{
-    channel: "app.workPanelCloseShortcut",
-    payload: { guestId: null, workPanelFocused: true },
-  }]);
+  for (const testCase of cases) {
+    const target = new FakeWindow();
+    let prevented = false;
+    configureMainWindowLifecycleEvents(target, {
+      platform: testCase.platform,
+      lifecycle: {
+        applyAppearance: () => {},
+        hideForClose: () => {},
+        cancelPendingClose: () => {},
+      },
+      isDevToolsShortcut: () => false,
+      isWorkPanelCloseShortcut,
+      isHandlingQuit: () => false,
+      clearWindow: () => {},
+    });
 
-  workPanelFocused = false;
-  prevented = false;
-  target.webContents.emit("before-input-event", {
-    preventDefault: () => {
-      prevented = true;
-    },
-  }, {
-    type: "keyDown",
-    key: "w",
-    meta: true,
-    control: false,
-    alt: false,
-    shift: false,
-    isAutoRepeat: false,
-  });
+    target.webContents.emit("before-input-event", {
+      preventDefault: () => {
+        prevented = true;
+      },
+    }, testCase.input);
 
-  assert.equal(prevented, false);
-  assert.equal(target.webContents.sentMessages.length, 1);
+    assert.equal(prevented, true, testCase.platform);
+    assert.deepEqual(target.webContents.sentMessages, [{
+      channel: "app.workPanelCloseShortcut",
+      payload: { guestId: null, fallbackToWindowClose: true },
+    }]);
+  }
 });
 
 test("main window forwards global search commands only while the overlay is visible", () => {
@@ -1203,17 +1186,27 @@ test("attached webviews prioritize visible global search commands over edit shor
   }]);
 });
 
-test("attached webviews forward close only for active registered WorkPanel guests", () => {
+test("attached webviews forward close only for trusted Main Chat and current WorkPanel guests", () => {
   const target = new FakeWindow();
   const macGuest = new FakeWebContents(91);
   const windowsGuest = new FakeWebContents(92);
   const ordinaryGuest = new FakeWebContents(93);
-  const prevented = { mac: false, windows: false, repeated: false, ordinary: false };
+  const mainChatMacGuest = new FakeWebContents(96);
+  const mainChatWindowsGuest = new FakeWebContents(97);
+  const prevented = {
+    mac: false,
+    windows: false,
+    mainChatMac: false,
+    mainChatWindows: false,
+    repeated: false,
+    ordinary: false,
+  };
   const baseOptions = {
     getMainWindow: () => target,
     isDevToolsShortcut: () => false,
     isWorkPanelCloseShortcut,
-    isWorkPanelWebview: (contents) => contents.id !== ordinaryGuest.id,
+    isWorkPanelWebview: (contents) => contents.id === macGuest.id || contents.id === windowsGuest.id,
+    isMainChatWebview: (contents) => contents.id === mainChatMacGuest.id || contents.id === mainChatWindowsGuest.id,
     shouldDownloadUrl: () => false,
     resolveOpenDisposition: () => "external",
     collectLoadDiagnostics: async () => ({}),
@@ -1224,12 +1217,20 @@ test("attached webviews forward close only for active registered WorkPanel guest
 
   configureAttachedWebview(macGuest, { ...baseOptions, platform: "darwin" });
   configureAttachedWebview(windowsGuest, { ...baseOptions, platform: "win32" });
+  configureAttachedWebview(mainChatMacGuest, { ...baseOptions, platform: "darwin" });
+  configureAttachedWebview(mainChatWindowsGuest, { ...baseOptions, platform: "win32" });
   configureAttachedWebview(ordinaryGuest, { ...baseOptions, platform: "win32" });
 
   macGuest.emit("before-input-event", { preventDefault: () => { prevented.mac = true; } }, {
     type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false,
   });
   windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.windows = true; } }, {
+    type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
+  });
+  mainChatMacGuest.emit("before-input-event", { preventDefault: () => { prevented.mainChatMac = true; } }, {
+    type: "keyDown", key: "w", meta: true, control: false, alt: false, shift: false, isAutoRepeat: false,
+  });
+  mainChatWindowsGuest.emit("before-input-event", { preventDefault: () => { prevented.mainChatWindows = true; } }, {
     type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
   });
   windowsGuest.emit("before-input-event", { preventDefault: () => { prevented.repeated = true; } }, {
@@ -1239,10 +1240,19 @@ test("attached webviews forward close only for active registered WorkPanel guest
     type: "keyDown", key: "w", meta: false, control: true, alt: false, shift: false, isAutoRepeat: false,
   });
 
-  assert.deepEqual(prevented, { mac: true, windows: true, repeated: false, ordinary: false });
+  assert.deepEqual(prevented, {
+    mac: true,
+    windows: true,
+    mainChatMac: true,
+    mainChatWindows: true,
+    repeated: false,
+    ordinary: false,
+  });
   assert.deepEqual(target.webContents.sentMessages, [
     { channel: "app.workPanelCloseShortcut", payload: { guestId: 91 } },
     { channel: "app.workPanelCloseShortcut", payload: { guestId: 92 } },
+    { channel: "app.workPanelCloseShortcut", payload: { guestId: null, fallbackToWindowClose: true } },
+    { channel: "app.workPanelCloseShortcut", payload: { guestId: null, fallbackToWindowClose: true } },
   ]);
 });
 

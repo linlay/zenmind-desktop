@@ -593,17 +593,21 @@ export function createMainProcessRuntime() {
     isWorkPanelWebview: (contents) => {
       const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
       return Boolean(
-        target &&
-        (target.presentationScope === "workpanel" || (target.active &&
+        target?.active &&
+        (target.presentationScope === "workpanel" || (
           target.surfaceLevel === "child" &&
           target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
           target.ownerChatId &&
           [
             "overview",
             "debug",
+            "btw",
+            "source",
             "project",
             "file-diff",
             "artifact",
+            "reference",
+            "file",
             "planning",
             "agent",
             "copilot",
@@ -611,6 +615,16 @@ export function createMainProcessRuntime() {
             "workpanel-web",
           ].includes(target.surfaceRole)
         ))
+      );
+    },
+    isMainChatWebview: (contents) => {
+      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+      return Boolean(
+        target?.active &&
+        target.surfaceId === MAIN_CHAT_SURFACE_ID &&
+        target.surfaceRole === "main-chat" &&
+        target.surfaceLevel === "root" &&
+        target.surfaceType === "agent-chat"
       );
     },
     resolveGlobalSearchCommandShortcut,

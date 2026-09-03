@@ -516,9 +516,6 @@ export function WorkPanelHost({
       ownerChatId,
       force: true,
     });
-    if (result.ok) {
-      window.electronAPI.desktopShell.setWorkPanelKeyboardFocusActive(false);
-    }
     return result.ok;
   };
 
@@ -1817,60 +1814,12 @@ export function WorkPanelHost({
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    let workPanelFocusActive: boolean | null = null;
-    const publishFocusState = (active: boolean) => {
-      if (workPanelFocusActive === active) return;
-      workPanelFocusActive = active;
-      window.electronAPI.desktopShell.setWorkPanelKeyboardFocusActive(active);
-    };
-    const updateFocusState = (target: EventTarget | null) => {
-      const element = target instanceof Element ? target : null;
-      const visiblePanel = element?.closest<HTMLElement>(".chat-work-panel.is-visible");
-      const canonicalWebapp = element?.closest<HTMLElement>(".canonical-webapp-surface.is-active");
-      publishFocusState(Boolean(
-        (visiblePanel && root.contains(visiblePanel)) ||
-        (canonicalWebapp?.dataset.workPanelOwner && canonicalWebapp.dataset.workPanelOwner === activeChatId),
-      ));
-    };
-    const handlePointerDown = (event: PointerEvent) => {
-      updateFocusState(event.target);
-    };
-    const handleFocusIn = () => publishFocusState(true);
-    document.addEventListener("pointerdown", handlePointerDown, true);
-    root.addEventListener("focusin", handleFocusIn, true);
-    updateFocusState(document.activeElement);
-    return () => {
-      document.removeEventListener("pointerdown", handlePointerDown, true);
-      root.removeEventListener("focusin", handleFocusIn, true);
-      publishFocusState(false);
-    };
-  }, [activeChatId]);
-
-  useEffect(() => {
-    const root = rootRef.current;
-    if (!root) return;
-    const isCloseShortcut = (event: KeyboardEvent) => {
-      if (event.type !== "keydown" || event.repeat || event.key.toLowerCase() !== "w") return false;
-      if (isMac) return event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
-      if (isWindows) return event.ctrlKey && !event.metaKey && !event.altKey && !event.shiftKey;
-      return false;
-    };
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape" && fullscreenOwnerChatId === activeChatId) {
         void onFullscreenChange(null);
         event.preventDefault();
         event.stopPropagation();
-        return;
       }
-      if (!isCloseShortcut(event)) return;
-      const activeElement = document.activeElement as HTMLElement | null;
-      const visiblePanel = activeElement?.closest<HTMLElement>(".chat-work-panel.is-visible");
-      if (!visiblePanel || !root.contains(visiblePanel)) return;
-      const ownerChatId = visiblePanel.dataset.workPanelChat || "";
-      if (!ownerChatId) return;
-      event.preventDefault();
-      event.stopPropagation();
-      closeWorkPanelStep(ownerChatId);
     };
     root.addEventListener("keydown", handleKeyDown, true);
     const disposeFullscreenExitShortcut = window.electronAPI.onWorkPanelFullscreenExitShortcut(() => {
@@ -1881,17 +1830,9 @@ export function WorkPanelHost({
     const disposeGuestShortcut = window.electronAPI.onWorkPanelCloseShortcut(({
       guestId,
       fallbackToWindowClose,
-      workPanelFocused,
     }) => {
       if (guestId === null) {
-        const activeElement = document.activeElement as HTMLElement | null;
-        const visiblePanel = activeElement?.closest<HTMLElement>(".chat-work-panel.is-visible");
-        const ownerChatId = visiblePanel && root.contains(visiblePanel)
-          ? visiblePanel.dataset.workPanelChat || ""
-          : "";
-        if (ownerChatId) {
-          closeWorkPanelStep(ownerChatId);
-        } else if (workPanelFocused && activeChatId) {
+        if (activeChatId) {
           closeWorkPanelStep(activeChatId);
         } else if (fallbackToWindowClose) {
           window.electronAPI.desktopShell.requestWindowClose();
@@ -1913,47 +1854,66 @@ export function WorkPanelHost({
       disposeFullscreenExitShortcut();
       disposeGuestShortcut();
     };
-  }, [activeChatId, dispatchCommand, fullscreenOwnerChatId, isMac, isWindows, onFullscreenChange]);
+  }, [activeChatId, dispatchCommand, fullscreenOwnerChatId, onFullscreenChange]);
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root) return;
-    const webviews = Array.from(root.querySelectorAll("webview")) as Electron.WebviewTag[];
-    const markReady = (event: Event) => {
-      (event.currentTarget as HTMLElement).dataset.workPanelDomReady = "true";
-    };
-    for (const webview of webviews) webview.addEventListener("dom-ready", markReady);
-    const visible = activeChatId
+    const visiblePanel = activeChatId
       ? root.querySelector<HTMLElement>(`[data-work-panel-chat="${CSS.escape(activeChatId)}"]`)
       : null;
-    if (!visible) {
-      const activeElement = document.activeElement as HTMLElement | null;
-      if (activeElement && root.contains(activeElement)) activeElement.blur();
-    } else {
-      window.requestAnimationFrame(() => {
-        const webview = visible.querySelector(
-          "[data-work-panel-active=\"true\"] webview",
-        ) as Electron.WebviewTag | null;
-        if (!webview) return;
-        if (isMac) {
-          webview.focus();
-        } else if (isWindows) {
-          if (webview.dataset.workPanelDomReady === "true" && document.hasFocus()) webview.focus();
-        } else if (document.hasFocus()) {
-          webview.focus();
-        }
-      });
+    const activeItemId = activeChatId
+      ? state.workspaces.find((workspace) => workspace.ownerChatId === activeChatId)?.activeItemId ?? null
+      : null;
+    const isActiveItemHost = (element: HTMLElement | null) => Boolean(
+      element &&
+      activeChatId &&
+      activeItemId &&
+      element.dataset.workPanelOwner === activeChatId &&
+      element.dataset.workPanelItem === activeItemId,
+    );
+    const activeElement = document.activeElement as HTMLElement | null;
+    const focusedItem = activeElement?.closest<HTMLElement>(
+      "[data-work-panel-item][data-work-panel-owner]",
+    ) ?? null;
+    if (
+      activeElement &&
+      ((root.contains(activeElement) && !visiblePanel) ||
+        (focusedItem && !isActiveItemHost(focusedItem)))
+    ) {
+      activeElement.blur();
     }
-    return () => {
-      if (isMac) {
-        const activeElement = document.activeElement as HTMLElement | null;
-        if (activeElement && root.contains(activeElement)) activeElement.blur();
-      } else if (isWindows) {
-        for (const webview of webviews) webview.blur();
+
+    if (isWindows) {
+      const webviews = Array.from(document.querySelectorAll(
+        "[data-work-panel-item][data-work-panel-owner] webview",
+      )) as Electron.WebviewTag[];
+      for (const webview of webviews) {
+        const itemHost = webview.closest<HTMLElement>(
+          "[data-work-panel-item][data-work-panel-owner]",
+        );
+        if (!isActiveItemHost(itemHost)) {
+          webview.blur();
+        }
       }
-      for (const webview of webviews) webview.removeEventListener("dom-ready", markReady);
-    };
+    } else if (isMac && focusedItem && !isActiveItemHost(focusedItem)) {
+      (focusedItem.querySelector("webview") as Electron.WebviewTag | null)?.blur();
+    }
   }, [activeChatId, isMac, isWindows, state.workspaces]);
+
+  useEffect(() => () => {
+    const root = rootRef.current;
+    if (!root) return;
+    const activeElement = document.activeElement as HTMLElement | null;
+    if (isMac) {
+      if (activeElement && root.contains(activeElement)) activeElement.blur();
+    } else if (isWindows) {
+      const webviews = Array.from(root.querySelectorAll("webview")) as Electron.WebviewTag[];
+      for (const webview of webviews) webview.blur();
+    } else if (activeElement && root.contains(activeElement)) {
+      activeElement.blur();
+    }
+  }, [isMac, isWindows]);
 
   return (
     <div

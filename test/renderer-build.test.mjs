@@ -1043,10 +1043,18 @@ test("sidebar primary navigation uses roving tabindex", () => {
   assert.match(sidebarSource, /kind === "chats-chat"[\s\S]*?return sidebarChatItems/);
   assert.match(sidebarSource, /getAssistantNavAgentPreviewChats\(agent, visibleLimit\)/);
   assert.match(sidebarSource, /function moveSidebarChatSelection\([\s\S]*?getAdjacentAssistantNavChat/);
+  assert.match(sidebarSource, /focusSidebarRovingItemById\(focusId\);[\s\S]{0,100}handleAssistantOpenChat\(nextChat\)/);
   assert.match(sidebarSource, /currentIsChat[\s\S]*?event\.key === "ArrowDown" \|\| event\.key === "ArrowUp"/);
+  assert.match(sidebarSource, /const isPlainArrow =[\s\S]{0,100}!event\.shiftKey/);
   assert.match(sidebarSource, /if \(!event\.repeat\) \{[\s\S]*?moveSidebarChatSelection/);
   assert.match(sidebarSource, /event\.key === "ArrowDown" \? "next" : "previous"/);
   assert.match(sidebarSource, /if \(activeChatDragId \|\| activeProjectDragKey\) \{\s*return;/);
+  assert.match(sidebarSource, /currentIsChat &&[\s\S]{0,100}event\.key === "ArrowLeft" \|\| event\.key === "ArrowRight"/);
+  assert.match(sidebarSource, /if \(!isPlainArrow \|\| event\.repeat\) \{\s*return;/);
+  assert.match(sidebarSource, /function toggleSidebarFromChatRow[\s\S]*?focusSidebarRovingItemById\(parentFocusId\)[\s\S]*?onToggleCollapsed\(\)/);
+  assert.match(sidebarSource, /function toggleChatWorkPanelFromChatRow[\s\S]*?onToggleChatWorkPanel\(chatId, agentKey\)/);
+  assert.match(sidebarSource, /kind === "group"[\s\S]{0,120}isCollapsed && onToggleCollapsed/);
+  assert.match(sidebarSource, /kind === "agent"[\s\S]{0,120}isCollapsed && onToggleCollapsed/);
   assert.match(sidebarSource, /event\.key === "ArrowDown"[\s\S]*?moveSidebarRovingFocus\(currentElement, "next"\)/);
   assert.match(sidebarSource, /event\.key === "ArrowUp"[\s\S]*?moveSidebarRovingFocus\(currentElement, "previous"\)/);
   assert.match(sidebarSource, /event\.key === "Home"[\s\S]*?moveSidebarRovingFocus\(currentElement, "first"\)/);

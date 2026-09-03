@@ -151,6 +151,7 @@ type AttachedWebviewOptions<
   isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
   isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
   isWorkPanelWebview?(contents: TGuestContents): boolean;
+  isMainChatWebview?(contents: TGuestContents): boolean;
   isWorkPanelFullscreenActive?(): boolean;
   resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
   isGlobalSearchOverlayVisible?(): boolean;
@@ -289,7 +290,6 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
-    isWorkPanelKeyboardFocusActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isHandlingQuit(): boolean;
     requestAppQuit(): void;
@@ -348,14 +348,11 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
       return;
     }
 
-    if (
-      options.isWorkPanelKeyboardFocusActive?.() === true &&
-      options.isWorkPanelCloseShortcut?.(options.platform, input)
-    ) {
+    if (options.isWorkPanelCloseShortcut?.(options.platform, input)) {
       event.preventDefault();
       targetWindow.webContents.send("app.workPanelCloseShortcut", {
         guestId: null,
-        workPanelFocused: true
+        fallbackToWindowClose: true
       });
       return;
     }
@@ -405,6 +402,7 @@ export function configureMainWindowWebContents<
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelWebview?(contents: TGuestContents): boolean;
+    isMainChatWebview?(contents: TGuestContents): boolean;
     isWorkPanelFullscreenActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isGlobalSearchOverlayVisible?(): boolean;
@@ -512,6 +510,7 @@ export function configureMainWindowWebContents<
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
       isWorkPanelWebview: options.isWorkPanelWebview,
+      isMainChatWebview: options.isMainChatWebview,
       isWorkPanelFullscreenActive: options.isWorkPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: options.isGlobalSearchOverlayVisible,
@@ -797,8 +796,10 @@ export function configureAttachedWebview<
       return;
     }
 
+    const isCurrentWorkPanelGuest = options.isWorkPanelWebview?.(contents) === true;
+    const isCurrentMainChatGuest = options.isMainChatWebview?.(contents) === true;
     if (
-      options.isWorkPanelWebview?.(contents) === true &&
+      (isCurrentWorkPanelGuest || isCurrentMainChatGuest) &&
       options.isWorkPanelCloseShortcut?.(options.platform, input)
     ) {
       event.preventDefault();
@@ -806,7 +807,9 @@ export function configureAttachedWebview<
       if (!mainWindow || mainWindow.isDestroyed()) {
         return;
       }
-      mainWindow.webContents.send("app.workPanelCloseShortcut", { guestId: contents.id });
+      mainWindow.webContents.send("app.workPanelCloseShortcut", isCurrentWorkPanelGuest
+        ? { guestId: contents.id }
+        : { guestId: null, fallbackToWindowClose: true });
       return;
     }
 

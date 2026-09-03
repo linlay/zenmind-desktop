@@ -103,7 +103,6 @@ Object.assign(window, {
     clipboard: { writeText: async () => undefined },
     desktopActions: { respond: async () => undefined, onCall: () => dispose },
     desktopShell: {
-      setWorkPanelKeyboardFocusActive: () => undefined,
       setWebviewModalOverlayVisible: () => undefined,
       requestWindowClose: () => undefined,
     },
