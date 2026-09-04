@@ -1152,6 +1152,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       );
     }
     if (item.type === "website-app" && isInstalledMarketItem(item)) {
+      if (compact) {
+        return null;
+      }
       return (
         <Button
           className={`market-store-action is-primary ${compact ? "is-compact-icon" : ""}`}
@@ -1353,6 +1356,13 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
     const skillToneClass = marketSkillToneClass(item, displayName);
     const packageSkills = marketSkillPackageItems(item);
+    const usesStackedStatusLayout = item.type === "skill" || item.type === "website-app";
+    const statePill = (
+      <span className={`market-store-state-pill ${getMarketItemStatusClass(item.state)}`}>
+        <span className="market-store-state-dot" aria-hidden="true" />
+        {marketItemStateLabel(item, t)}
+      </span>
+    );
     const chips = Array.from(new Set([
       ...item.tags,
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
@@ -1371,40 +1381,53 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         hoverable
         variant="borderless"
       >
-        <div className="market-store-card-head">
+        <div className={`market-store-card-head ${usesStackedStatusLayout ? "is-stacked-status" : ""}`.trim()}>
           <span className={`market-store-item-icon is-${item.type}`} aria-hidden="true">
             {marketTypeIcon(item.type)}
           </span>
           <div className="market-store-title-block">
             <div className="market-store-title-line">
               <h2>{displayName}</h2>
-              <span className="market-store-version">{marketVersionLabel(item)}</span>
+              {!usesStackedStatusLayout ? <span className="market-store-version">{marketVersionLabel(item)}</span> : null}
             </div>
             <div className="market-store-submeta">
-              <span className={`market-store-state-pill ${getMarketItemStatusClass(item.state)}`}>
-                <span className="market-store-state-dot" aria-hidden="true" />
-                {marketItemStateLabel(item, t)}
-              </span>
-              {service ? <span className="market-store-source-pill">{serviceMetric(service)}</span> : null}
-              {item.type === "mcp" && item.mcpRuntimeStatus ? (
-                <span
-                  className={`market-store-state-pill ${mcpRuntimeStatusClass(item)}`}
-                  title={item.mcpRuntimeMessage || mcpRuntimeStatusLabel(item, t)}
-                >
-                  <span className="market-store-state-dot" aria-hidden="true" />
-                  {mcpRuntimeStatusLabel(item, t)}
-                </span>
+              {statePill}
+              {!usesStackedStatusLayout ? (
+                <>
+                {service ? <span className="market-store-source-pill">{serviceMetric(service)}</span> : null}
+                {item.type === "mcp" && item.mcpRuntimeStatus ? (
+                  <span
+                    className={`market-store-state-pill ${mcpRuntimeStatusClass(item)}`}
+                    title={item.mcpRuntimeMessage || mcpRuntimeStatusLabel(item, t)}
+                  >
+                    <span className="market-store-state-dot" aria-hidden="true" />
+                    {mcpRuntimeStatusLabel(item, t)}
+                  </span>
+                ) : null}
+                </>
               ) : null}
             </div>
-            {description ? <p className="market-store-description">{description}</p> : null}
+            {!usesStackedStatusLayout && description ? <p className="market-store-description">{description}</p> : null}
           </div>
           <div className="market-store-card-quick-action">
-            <span className={`market-store-origin-pill ${isCloudSource ? "is-cloud" : "is-local"}`}>
-              {marketSourceLabel(item, t)}
-            </span>
+            {usesStackedStatusLayout ? (
+              <div className="market-store-card-secondary-meta">
+                <span className="market-store-version">{marketVersionLabel(item)}</span>
+                <span className={`market-store-origin-pill ${isCloudSource ? "is-cloud" : "is-local"}`}>
+                  {marketSourceLabel(item, t)}
+                </span>
+              </div>
+            ) : (
+              <span className={`market-store-origin-pill ${isCloudSource ? "is-cloud" : "is-local"}`}>
+                {marketSourceLabel(item, t)}
+              </span>
+            )}
             {renderPrimaryAction(item, true)}
           </div>
         </div>
+        {usesStackedStatusLayout && description ? (
+          <p className="market-store-description is-standalone">{description}</p>
+        ) : null}
         {chips.length > 0 ? (
           <div className="market-store-tags" aria-label={t("market.tags.aria", { name: displayName })}>
             {chips.map((chip) => <Tag className="market-store-tag" key={chip}>{tagLabel(chip)}</Tag>)}

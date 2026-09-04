@@ -32,6 +32,7 @@ test("software package market is wired through the renderer tab, status and acti
 
 test("installed Market WebApps open only after an explicit user action", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
+  const styles = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.css");
 
   assert.match(storefront, /async function launchWebsiteApp\(itemId: string\)/u);
   assert.match(storefront, /window\.electronAPI\.webs\.webapps\.list\(\)/u);
@@ -39,7 +40,7 @@ test("installed Market WebApps open only after an explicit user action", () => {
   assert.match(storefront, /launchWebsiteApp\(item\.webappId \|\| item\.id\)/u);
   assert.match(storefront, /webs\.webapps\.start\(itemId\)[\s\S]*?navigate\(`\/webs\/\$\{webapp\.entryKey\}`\)/u);
   assert.doesNotMatch(storefront, /item\.type === "website-app" && actionName !== "uninstall"[\s\S]*?launchWebsiteApp\(result\.itemId\)/u);
-  assert.match(storefront, /item\.type === "website-app" && isInstalledMarketItem\(item\)[\s\S]*?market\.websiteApp\.open/u);
+  assert.match(storefront, /item\.type === "website-app" && isInstalledMarketItem\(item\)[\s\S]*?if \(compact\) \{\s*return null;\s*\}[\s\S]*?market\.websiteApp\.open/u);
   assert.match(storefront, /installedWebsiteApp[\s\S]*?runMarketAction\(selectedDetailItem, "uninstall"\)/u);
   assert.doesNotMatch(
     storefront,
@@ -49,6 +50,11 @@ test("installed Market WebApps open only after an explicit user action", () => {
   assert.match(storefront, /event\.phase === "disposing"/u);
   assert.match(storefront, /command\(\{ sections: \["websiteApps"\] \}\)/u);
   assert.match(storefront, /next\.items\.filter\(\(item\) => item\.type === "website-app"\)/u);
+  assert.match(storefront, /const usesStackedStatusLayout = item\.type === "skill" \|\| item\.type === "website-app"/u);
+  assert.match(storefront, /usesStackedStatusLayout[\s\S]*?market-store-title-line[\s\S]*?market-store-submeta[\s\S]*?statePill[\s\S]*?market-store-description is-standalone/u);
+  assert.match(styles, /\.market-store-card-head\.is-stacked-status\s*\{[\s\S]*?grid-template-columns:\s*36px minmax\(0, 1fr\) auto;[\s\S]*?min-height:\s*46px;/u);
+  assert.match(styles, /\.market-store-card-secondary-meta\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*flex-end;/u);
+  assert.match(styles, /\.market-store-description\.is-standalone\s*\{[\s\S]*?min-height:\s*30px;/u);
 });
 
 test("Market top navigation exposes only Skills and Website Apps", () => {
