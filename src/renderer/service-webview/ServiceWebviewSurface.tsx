@@ -29,12 +29,14 @@ import {
   AGENT_WEBCLIENT_NEW_CHAT_PREPARE_RESPONSE_TYPE,
   AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE,
   AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
   DESKTOP_ROUTE_APPLIED_MESSAGE_TYPE,
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_READY_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE,
   isServiceWebviewRouteStatus,
+  isAgentWebclientWorkspaceArrowKeyMessage,
   SERVICE_WEBVIEW_BRIDGE_DELIVER_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_MESSAGE_CHANNEL,
   SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL,
@@ -43,6 +45,7 @@ import {
   type AgentWebclientCurrentResourceAction,
   type AgentWebclientCurrentResourceIdentity,
   type AgentWebclientCurrentResourceActionResult,
+  type AgentWebclientWorkspaceArrowKeyDirection,
   type ServiceWebviewBridgeMessage,
   type ServiceWebviewModalOverlayState,
   type ServiceWebviewRouteStatus,
@@ -150,6 +153,9 @@ type ServiceWebviewSurfaceProps = {
     targetKey: string;
   }) => void;
   onAgentWebclientDocumentHandoff?: (text: string) => void;
+  onAgentWebclientWorkspaceArrowKey?: (
+    direction: AgentWebclientWorkspaceArrowKeyDirection,
+  ) => void;
 };
 
 type EmbeddedWebScriptResult =
@@ -656,6 +662,7 @@ export function ServiceWebviewSurface({
   enableAgentWebclientChatResourceActions,
   onAgentWebclientDocumentState,
   onAgentWebclientDocumentHandoff,
+  onAgentWebclientWorkspaceArrowKey,
 }: ServiceWebviewSurfaceProps) {
   const location = useLocation();
   const navigate = useNavigate();
@@ -2851,6 +2858,22 @@ export function ServiceWebviewSurface({
     if (payload.type === AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE) {
       const text = typeof payload.text === "string" ? payload.text.trim() : "";
       if (text && text.length <= 50_000) onAgentWebclientDocumentHandoff?.(text);
+      return;
+    }
+    if (payload.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE) {
+      const committed = committedMainChatIdentityRef.current;
+      const currentWebContentsId = readWebviewContentsId(webviewRef.current);
+      if (
+        !isAgentWebclientWorkspaceArrowKeyMessage(payload) ||
+        !mainChatSurface ||
+        !ownsActiveSurface ||
+        !committed ||
+        committed.webContentsId !== currentWebContentsId ||
+        committed.desiredKey !== desiredMainChatKey
+      ) {
+        return;
+      }
+      onAgentWebclientWorkspaceArrowKey?.(payload.direction);
       return;
     }
 

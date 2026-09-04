@@ -2939,9 +2939,9 @@ export function AppShell() {
     setThemeMode(nextThemeMode);
   }
 
-  function toggleSidebarCollapsed() {
+  const toggleSidebarCollapsed = useCallback(() => {
     setSidebarState((current) => toggleSidebarLayoutState(current));
-  }
+  }, []);
 
   function handleSidebarResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
     if (
@@ -4204,6 +4204,14 @@ export function AppShell() {
     requestChatWorkPanelOpenWhenRegistered(chatId, agentKey);
   }, [activeChatRouteInfo.agentKey, activeChatWorkPanelVisible, desiredChatRouteChatId, dispatchWorkPanelCommand, requestChatWorkPanelOpenWhenRegistered]);
 
+  const handleMainChatWorkspaceArrowKey = useCallback((direction: "left" | "right") => {
+    if (direction === "left") {
+      toggleSidebarCollapsed();
+      return;
+    }
+    toggleMainChatWorkPanel();
+  }, [toggleMainChatWorkPanel, toggleSidebarCollapsed]);
+
   const openChatWorkPanelFromSidebar = useCallback((chatId: string, agentKey: string) => {
     const targetRoute = createAgentChatRoute(agentKey, chatId);
     requestChatWorkPanelOpenWhenRegistered(chatId, agentKey, "ensure", targetRoute);
@@ -4592,6 +4600,7 @@ export function AppShell() {
             mountedServiceIds={mountedServiceIds}
             onAgentChatFocusRequestHandled={handleAgentChatFocusRequestHandled}
             onMainChatSurfaceRegistrationChange={handleMainChatSurfaceRegistrationChange}
+            onMainChatWorkspaceArrowKey={handleMainChatWorkspaceArrowKey}
           />
           <BuiltinBrowserSurfaceHost
             active={usesBuiltinBrowserSurface}

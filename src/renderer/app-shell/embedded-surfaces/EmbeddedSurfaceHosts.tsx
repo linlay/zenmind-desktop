@@ -22,6 +22,7 @@ import {
   createWebEntrySurfaceIdentity
 } from "../../../shared/surface-identity";
 import type { MainChatCommitSnapshot } from "../../service-webview/ServiceWebviewSurface";
+import type { AgentWebclientWorkspaceArrowKeyDirection } from "../../../shared/service-webview-bridge";
 
 type ThemeMode = "light" | "dark";
 
@@ -82,6 +83,7 @@ export function ServiceWebviewSurfaceHost({
   onAgentChatFocusRequestHandled,
   activeOwnerChatId,
   onMainChatSurfaceRegistrationChange,
+  onMainChatWorkspaceArrowKey,
 }: {
   activeServiceId: string | null;
   activeAgentWebclientRoute: AgentWebclientRouteItem | null;
@@ -91,6 +93,9 @@ export function ServiceWebviewSurfaceHost({
   onAgentChatFocusRequestHandled?: (requestId: number) => void;
   activeOwnerChatId?: string | null;
   onMainChatSurfaceRegistrationChange?: (snapshot: MainChatCommitSnapshot | null) => void;
+  onMainChatWorkspaceArrowKey?: (
+    direction: AgentWebclientWorkspaceArrowKeyDirection,
+  ) => void;
 }) {
   const activeAgentWebclientRouteKind = resolveAgentWebclientRouteKind(activeAgentWebclientRoute);
   const lastAgentChatRouteRef = useRef<AgentWebclientRouteItem | null>(null);
@@ -163,6 +168,7 @@ export function ServiceWebviewSurfaceHost({
           hostTheme={hostTheme}
           loadInitialEmbeddedUrlDirectly={Boolean(agentChatRoute?.embedPath)}
           onFocusRequestHandled={onAgentChatFocusRequestHandled}
+          onAgentWebclientWorkspaceArrowKey={onMainChatWorkspaceArrowKey}
           onSurfaceRegistrationChange={onMainChatSurfaceRegistrationChange}
           ownerChatId={agentChatOwnerChatId || undefined}
           serviceId={AGENT_WEBCLIENT_SERVICE_ID}

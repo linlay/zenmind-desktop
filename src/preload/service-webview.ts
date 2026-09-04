@@ -6,6 +6,7 @@ import {
 import {
   DESKTOP_CONTEXT_CHANGED_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
   isServiceWebviewRouteStatus,
   isServiceWebviewBridgeRequestType,
   isServiceWebviewBridgeResponseType,
@@ -511,6 +512,12 @@ window.addEventListener("message", (event) => {
     return;
   }
   if (!isBridgeMessage(event.data) || !isDesktopBridgeRequest(event.data)) {
+    return;
+  }
+  if (
+    event.data.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE &&
+    (event.source !== window || event.origin !== window.location.origin)
+  ) {
     return;
   }
 

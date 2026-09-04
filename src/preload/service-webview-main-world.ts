@@ -4,6 +4,7 @@ import {
   SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL,
   SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL,
+  AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
   DESKTOP_ROUTE_CHANGED_MESSAGE_TYPE,
   DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE
 } from "../shared/service-webview-bridge";
@@ -51,6 +52,7 @@ export function buildServiceWebviewMainWorldScript() {
   const SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ACTION_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_ROUTE_CHANNEL)};
   const SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL = ${JSON.stringify(SERVICE_WEBVIEW_BRIDGE_SURFACE_LIFECYCLE_CHANNEL)};
+  const AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE = ${JSON.stringify(AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE)};
   const DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE = ${JSON.stringify(DESKTOP_SURFACE_ACTIVE_CHANGED_MESSAGE_TYPE)};
   const DESKTOP_WEBVIEW_BRIDGE_FLAG = ${JSON.stringify(DESKTOP_WEBVIEW_BRIDGE_FLAG)};
   const DESKTOP_WS_MONITOR_WRAPPED_FLAG = ${JSON.stringify(DESKTOP_WS_MONITOR_WRAPPED_FLAG)};
@@ -398,7 +400,14 @@ export function buildServiceWebviewMainWorldScript() {
   // Keep postMessage native: awaiting form iframes rely on browser-provided
   // child-to-parent event.source semantics.
   window.addEventListener("message", (event) => {
-    if (isDesktopBridgeRequest(event.data)) {
+    const workspaceArrowRequest =
+      event.data?.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE;
+    if (
+      isDesktopBridgeRequest(event.data) &&
+      (!workspaceArrowRequest || (
+        event.source === window && event.origin === window.location.origin
+      ))
+    ) {
       dispatchToPreload(event.data);
     }
   });

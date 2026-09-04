@@ -35,6 +35,8 @@ export const AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE =
   "desktop:agent-webclient:document-state";
 export const AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE =
   "desktop:agent-webclient:document-handoff";
+export const AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE =
+  "desktop:agent-webclient:workspace-arrow-key";
 export const PLUGIN_SETTINGS_READ_REQUEST_TYPE = "desktop:plugin-settings:read";
 export const PLUGIN_SETTINGS_READ_RESPONSE_TYPE = "desktop:plugin-settings:read:response";
 export const PLUGIN_SETTINGS_WRITE_REQUEST_TYPE = "desktop:plugin-settings:write";
@@ -88,6 +90,7 @@ export const SERVICE_WEBVIEW_BRIDGE_REQUEST_TYPES = [
   AGENT_WEBCLIENT_CURRENT_RESOURCE_ACTION_REQUEST_TYPE,
   AGENT_WEBCLIENT_DOCUMENT_STATE_MESSAGE_TYPE,
   AGENT_WEBCLIENT_DOCUMENT_HANDOFF_MESSAGE_TYPE,
+  AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE,
   PLUGIN_SETTINGS_READ_REQUEST_TYPE,
   PLUGIN_SETTINGS_WRITE_REQUEST_TYPE
 ] as const;
@@ -147,6 +150,23 @@ export type AgentWebclientCurrentResourceActionResult = {
   message?: string;
   available?: boolean;
 };
+
+export type AgentWebclientWorkspaceArrowKeyDirection = "left" | "right";
+
+export function isAgentWebclientWorkspaceArrowKeyMessage(
+  value: unknown,
+): value is ServiceWebviewBridgeMessage & {
+  type: typeof AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE;
+  direction: AgentWebclientWorkspaceArrowKeyDirection;
+} {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+  const record = value as Record<string, unknown>;
+  return record.type === AGENT_WEBCLIENT_WORKSPACE_ARROW_KEY_MESSAGE_TYPE &&
+    typeof record.requestId === "string" &&
+    record.requestId.length > 0 &&
+    record.requestId.length <= 128 &&
+    (record.direction === "left" || record.direction === "right");
+}
 
 export function normalizeAgentWebclientCurrentResourceIdentity(
   value: unknown,
@@ -256,4 +276,5 @@ export type ServiceWebviewBridgeMessage = {
   search?: string;
   hash?: string;
   routeRevision?: number;
+  direction?: AgentWebclientWorkspaceArrowKeyDirection;
 };

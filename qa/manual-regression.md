@@ -30,6 +30,7 @@
 - 在对话分组收起状态点击“新建对话”，确认使用当前默认助手直接创建且不自动展开分组；展开状态下悬浮排序与新建按钮时各只显示一份自定义提示，不再叠加浏览器原生 `title` 提示。完整侧边栏收成窄栏后的对话 Popover 仍显示原有完整操作。
 - 在全局 Chats 与 Project 内分别聚焦 Chat 行，普通、非长按的 `↑/↓` 只切换当前可见 Chat 且焦点始终留在目标行；目标带 awaiting 或已显示 WorkPanel 时结果相同。按 `Enter` 后才进入 Main Chat，确认 awaiting 的 `↑/↓` 与数字 `1–4` 原样交给 Agent WebClient。
 - Chat 行按普通 `←` 时先把焦点移到对应 Chats/Project 父级再收起左栏，收起态父级再次按 `←` 可展开；普通 `→` 依次验证无 workspace 创建 Overview、隐藏态恢复、显示态隐藏，Chat 行焦点全程不变。带 Cmd/Ctrl/Alt/Shift、长按或键盘拖拽时不得切换两侧面板；分组标题的 `←/→`、Home/End、Enter/Space、菜单键与 `Shift+F10` 保持原行为。
+- 按 `Enter` 或鼠标点击进入 Main Chat 后，在消息时间线空白处按普通 `←/→`，确认分别切换左侧栏和当前 canonical Chat 的 WorkPanel，且焦点仍在 Main Chat。再分别聚焦 Composer、可编辑内容、按钮、链接、菜单、可聚焦选项、代码编辑器，并覆盖文字选区、Cmd/Ctrl/Alt/Shift、长按、输入法组合、按住指针和拖拽场景，确认方向键不触发宿主面板。Chat 存在 active awaiting/HITL 时，无论焦点位于选项还是其余 Main Chat 区域，`←/→`、`↑/↓` 与数字选择都只由 WebClient 处理；awaiting 结束后空白区宿主左右键恢复。
 
 ## WorkPanel 自由新增 Tab
 
