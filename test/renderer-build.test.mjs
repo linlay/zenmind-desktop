@@ -5094,6 +5094,17 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(overlay, /if \(actionId === "history"\) \{[\s\S]*?options\.onClose\(\);[\s\S]*?options\.onOpenHistory\(\);/);
   assert.match(overlay, /params\.set\("newChat", String\(Date\.now\(\)\)\)/);
   assert.match(overlay, /return createAgentWebclientAgentPath\(newChatAgentKey, params\);/);
+  assert.match(
+    overlay,
+    /if \(row\.kind === "agent"\) \{\s*return resolveActionTargetPath\("newChat", row\.agentKey\);\s*\}/,
+  );
+  assert.doesNotMatch(
+    overlay,
+    /if \(row\.kind === "agent"\) \{\s*return createAgentWebclientAgentPath\(row\.agentKey\);\s*\}/,
+  );
+  assert.match(overlay, /event\.key === "Enter" && activeRow[\s\S]*?activateRow\(activeRow,/);
+  assert.match(overlay, /onClick=\{\(\) => activateRow\(row,/);
+  assert.match(overlay, /if \(target\) \{\s*activateRow\(target, options\);\s*\}/);
   assert.doesNotMatch(overlay, /newChatRequest/);
   assert.match(overlay, /import \{ SidebarActionIcon, SidebarIllustration \} from "\.\.\/\.\.\/components\/BrandMark";/);
   assert.match(overlay, /import \{ AgentIcon \} from "\.\.\/navigation\/AgentIcon";/);
