@@ -4,7 +4,7 @@ import {
   AppstoreOutlined,
   CalendarOutlined,
   CheckOutlined,
-  CheckCircleOutlined,
+  CheckSquareOutlined,
   CloudDownloadOutlined,
   CodeOutlined,
   CopyOutlined,
@@ -20,20 +20,19 @@ import {
   MinusOutlined,
   PlusCircleOutlined,
   PlusOutlined,
-  ReloadOutlined,
   RobotOutlined,
-  SafetyCertificateOutlined,
   SearchOutlined,
   SmileOutlined,
   UserOutlined
 } from "@ant-design/icons";
-import { Alert, Button, Card, Dropdown, Empty, Input, Modal, Tag } from "antd";
+import { Alert, Button, Card, Dropdown, Empty, Input, Modal, Popover, Tag } from "antd";
 import type { MenuProps } from "antd";
 import { PRODUCT_NAME } from "../../../shared/brand";
 import type { MarketItem, MarketItemType, ServiceState } from "@shared/contracts";
 import { createAgentWebclientAgentPath } from "../../../shared/agent-webclient-routes";
 import { useNavigate } from "react-router-dom";
 import { buildSettingsSectionPath } from "../../settings/settingsRoutes";
+import { SidebarIllustration } from "../../components/BrandMark";
 import { getServiceDisplayName } from "../../service-display";
 import { useI18n } from "../../i18n/useI18n";
 import { useServices } from "../../services/ServicesContext";
@@ -66,10 +65,50 @@ import {
 import "./StorefrontMarket.css";
 
 type RangeMode = "all" | "installed" | "favorites" | "updates";
+type InstalledSkillSource = "cloud" | "local";
 type SearchFilterMenu = "scope" | null;
 type MarketFeedbackType = "success" | "info" | "warning" | "error";
+const MARKET_STATUS_AUTO_DISMISS_MS = 4_000;
 const MCP_STATUS_POLL_INTERVAL_MS = 2_000;
 const MCP_STATUS_POLL_MAX_ATTEMPTS = 30;
+const MARKET_SKILL_TONES = ["rose", "coral", "amber", "lime", "mint", "sky", "blue", "violet"] as const;
+const MARKET_PACKAGE_POPOVER_CLASS_NAMES = {
+  body: "market-store-package-popover-body",
+  root: "market-store-package-popover"
+} as const;
+
+function marketSkillToneClass(item: MarketItem, displayName: string) {
+  if (item.type !== "skill") {
+    return "";
+  }
+  let hash = 5381;
+  for (const character of `${displayName}:${item.id}`) {
+    hash = (((hash << 5) + hash) ^ (character.codePointAt(0) ?? 0)) >>> 0;
+  }
+  hash = (hash ^ (hash >>> 16)) >>> 0;
+  return `tone-${MARKET_SKILL_TONES[hash % MARKET_SKILL_TONES.length]}`;
+}
+
+function marketSkillPackageItems(item: MarketItem) {
+  const includedSkills = item.type === "skill" && item.skill?.kind === "package"
+    ? item.skill.includedSkills ?? []
+    : [];
+  if (includedSkills.length === 0) {
+    return [];
+  }
+  const seen = new Set<string>();
+  return [...includedSkills]
+    .sort((left, right) => (
+      (left.sortOrder ?? Number.MAX_SAFE_INTEGER) - (right.sortOrder ?? Number.MAX_SAFE_INTEGER) ||
+      (left.name || left.id).localeCompare(right.name || right.id)
+    ))
+    .flatMap((skill) => {
+      const id = skill.id.trim();
+      if (!id || seen.has(id)) return [];
+      seen.add(id);
+      return [{ id, name: skill.name?.trim() || id }];
+    });
+}
 
 function mcpRuntimeStatusLabel(item: MarketItem, t: ReturnType<typeof useI18n>["t"]) {
   switch (item.mcpRuntimeStatus) {
@@ -215,6 +254,17 @@ function preserveCurrentFavoriteState(nextItems: MarketItem[], currentItems: Mar
   }));
 }
 
+function mergeFavoriteUpdate(currentItem: MarketItem, updatedItem: MarketItem) {
+  if (currentItem.id !== updatedItem.id || currentItem.type !== updatedItem.type) {
+    return currentItem;
+  }
+  return {
+    ...currentItem,
+    favorited: Boolean(updatedItem.favorited),
+    favoriteCount: updatedItem.favoriteCount ?? currentItem.favoriteCount
+  };
+}
+
 function formatCount(value: unknown) {
   return countFromValue(value).toLocaleString();
 }
@@ -273,7 +323,7 @@ function marketTypeLabel(type: MarketItemType, t: ReturnType<typeof useI18n>["t"
 function marketTypeIcon(type: MarketItemType) {
   switch (type) {
     case "skill":
-      return <SafetyCertificateOutlined />;
+      return <SidebarIllustration kind="skill" />;
     case "agent":
       return <RobotOutlined />;
     case "sandbox-image":
@@ -535,6 +585,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const { services, refresh: refreshServices } = useServices();
   const [query, setQuery] = useState("");
   const [rangeMode, setRangeMode] = useState<RangeMode>("all");
+  const [installedSkillSource, setInstalledSkillSource] = useState<InstalledSkillSource>("cloud");
   const [searchFilterMenu, setSearchFilterMenu] = useState<SearchFilterMenu>(null);
   const [marketResult, setMarketResult] = useState(createEmptyMarketResult);
   const [isLoadingMarket, setIsLoadingMarket] = useState(true);
@@ -570,14 +621,16 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     () => activeItems.filter((item) => {
         const matchesView = activeTab === "skills"
           ? rangeMode === "installed"
-            ? isInstalledMarketItem(item)
+            ? isInstalledMarketItem(item) && (
+              installedSkillSource === "cloud" ? isCloudMarketItem(item) : !isCloudMarketItem(item)
+            )
             : rangeMode === "favorites"
               ? Boolean(item.favorited)
             : isCloudSkillStorefrontItem(item)
           : rangeMatches(item, rangeMode);
         return matchesView && matchesMarketItemQuery(item, query, t);
       }),
-    [activeItems, activeTab, query, rangeMode, t]
+    [activeItems, activeTab, installedSkillSource, query, rangeMode, t]
   );
   const marketStatusMessage = feedback || marketMessageForTab(marketResult, activeTab);
   const marketOffline = marketOfflineForTab(marketResult, activeTab);
@@ -651,8 +704,21 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   useEffect(() => {
     setRangeMode("all");
+    setInstalledSkillSource("cloud");
     setSearchFilterMenu(null);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (!shouldShowMarketStatus) {
+      return undefined;
+    }
+    const timer = window.setTimeout(() => {
+      setFeedback("");
+      setFeedbackType("info");
+      setMarketResult((current) => clearMarketMessageForTab(current, activeTab));
+    }, MARKET_STATUS_AUTO_DISMISS_MS);
+    return () => window.clearTimeout(timer);
+  }, [activeTab, marketStatusMessage, shouldShowMarketStatus]);
 
   useEffect(() => {
     if (activeTab !== "mcps" || !pendingMcpRuntimeSignature) {
@@ -908,12 +974,10 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       });
       setMarketResult((current) => ({
         ...current,
-        items: current.items.map((entry) => (
-          entry.id === result.item.id && entry.type === result.item.type ? result.item : entry
-        ))
+        items: current.items.map((entry) => mergeFavoriteUpdate(entry, result.item))
       }));
       setSelectedDetailItem((current) => (
-        current && current.id === result.item.id && current.type === result.item.type ? result.item : current
+        current ? mergeFavoriteUpdate(current, result.item) : current
       ));
       setFeedback(result.message);
       setFeedbackType("success");
@@ -1287,6 +1351,8 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     const favoriteKey = `${item.type}:${item.id}`;
     const isFavoriting = favoritingItemKey === favoriteKey;
     const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
+    const skillToneClass = marketSkillToneClass(item, displayName);
+    const packageSkills = marketSkillPackageItems(item);
     const chips = Array.from(new Set([
       ...item.tags,
       item.sandboxKind === "environment-template" ? t("market.detail.environmentTemplate") : "",
@@ -1296,13 +1362,14 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       item.type === "website-app" ? t("market.type.websiteApp") : "",
       item.type === "software-package" ? t("market.type.softwarePackage") : ""
     ].filter(Boolean))).slice(0, 3);
-    return (
+    const cardKey = `${item.type}:${item.id}`;
+    const card = (
       <Card
-        key={`${item.type}:${item.id}`}
-        className={`market-store-card is-${item.type} is-catalog`}
+        key={cardKey}
+        className={`market-store-card is-${item.type} is-catalog ${skillToneClass}`.trim()}
         classNames={{ body: "market-store-card-body" }}
         hoverable
-        variant="outlined"
+        variant="borderless"
       >
         <div className="market-store-card-head">
           <span className={`market-store-item-icon is-${item.type}`} aria-hidden="true">
@@ -1362,7 +1429,8 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
                   type="button"
                   className={item.favorited ? "market-store-stat-pill market-store-stat-button is-active" : "market-store-stat-pill market-store-stat-button"}
                   onClick={() => void toggleFavorite(item)}
-                  disabled={!isMarketAuthenticated || isFavoriting || Boolean(favoritingItemKey)}
+                  disabled={!isMarketAuthenticated || isFavoriting}
+                  aria-busy={isFavoriting}
                   title={isMarketAuthenticated ? favoriteLabel : t("market.main.favoriteAuthRequired")}
                   aria-label={isMarketAuthenticated
                     ? `${favoriteLabel}: ${formatCount(itemFavoriteCount(item))}`
@@ -1376,6 +1444,29 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
           </div>
         </div>
       </Card>
+    );
+    if (packageSkills.length === 0) {
+      return card;
+    }
+    return (
+      <Popover
+        classNames={MARKET_PACKAGE_POPOVER_CLASS_NAMES}
+        content={(
+          <ul className="market-store-package-skill-list">
+            {packageSkills.map((skill) => (
+              <li key={skill.id}>{skill.name}</li>
+            ))}
+          </ul>
+        )}
+        destroyOnHidden
+        key={cardKey}
+        mouseEnterDelay={0.25}
+        placement="rightTop"
+        title={t("market.storefront.packageSkillsTitle", { count: packageSkills.length })}
+        trigger={["hover", "focus"]}
+      >
+        {card}
+      </Popover>
     );
   }
 
@@ -1393,7 +1484,22 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const scopeFilterLabel = marketScopeLabel(rangeMode, t);
   const activeTypeLabel = marketTypeLabel(itemType, t);
   const installedItemCount = activeItems.filter(isInstalledMarketItem).length;
-  const favoriteItemCount = activeItems.filter((item) => Boolean(item.favorited)).length;
+  const installedCloudSkillCount = activeItems.filter((item) => (
+    isInstalledMarketItem(item) && isCloudMarketItem(item)
+  )).length;
+  const installedLocalSkillCount = installedItemCount - installedCloudSkillCount;
+  const installedSkillSourceOptions: Array<{ count: number; label: string; value: InstalledSkillSource }> = [
+    {
+      count: installedCloudSkillCount,
+      label: t("market.storefront.cloudSkillsTitle"),
+      value: "cloud"
+    },
+    {
+      count: installedLocalSkillCount,
+      label: t("market.storefront.localSkillsTitle"),
+      value: "local"
+    }
+  ];
   const sectionTitle = activeTab === "skills"
     ? rangeMode === "favorites"
       ? t("market.storefront.favoriteTitle", { type: activeTypeLabel })
@@ -1407,7 +1513,11 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     ? rangeMode === "favorites"
       ? t("market.storefront.noFavorites")
       : rangeMode === "installed"
-      ? t("market.storefront.noInstalled")
+      ? installedSkillSource === "cloud"
+        ? t("market.storefront.noInstalledCloud")
+        : installedSkillSource === "local"
+          ? t("market.storefront.noInstalledLocal")
+          : t("market.storefront.noInstalled")
       : t("market.storefront.noCloudSkills")
     : rangeMode === "favorites"
       ? t("market.storefront.noFavorites")
@@ -1416,7 +1526,11 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     ? rangeMode === "favorites"
       ? t("market.storefront.noFavoritesDescription")
       : rangeMode === "installed"
-      ? t("market.storefront.noInstalledDescription")
+      ? installedSkillSource === "cloud"
+        ? t("market.storefront.noInstalledCloudDescription")
+        : installedSkillSource === "local"
+          ? t("market.storefront.noInstalledLocalDescription")
+          : t("market.storefront.noInstalledDescription")
       : t("market.storefront.noCloudSkillsDescription")
     : rangeMode === "favorites"
       ? t("market.storefront.noFavoritesDescription")
@@ -1451,7 +1565,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         allowClear
         className="market-store-search"
         onChange={(event) => setQuery(event.target.value)}
-        placeholder={t("market.search.storefront")}
+        placeholder={activeTab === "skills" ? t("market.search.skills") : t("market.search.storefront")}
         prefix={<SearchOutlined />}
         suffix={
           <div className="market-store-search-filters" ref={searchFilterRef}>
@@ -1495,41 +1609,19 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       />
       {activeTab === "skills" ? (
         <Button
-          className={`market-store-toolbar-button is-installed ${rangeMode === "installed" ? "is-active" : ""}`}
           aria-pressed={rangeMode === "installed"}
-          icon={<CheckCircleOutlined />}
-          onClick={() => setRangeMode(rangeMode === "installed" ? "all" : "installed")}
+          className={`market-store-toolbar-button is-installed ${rangeMode === "installed" ? "is-active" : ""}`}
+          icon={<CheckSquareOutlined />}
+          onClick={() => {
+            setRangeMode(rangeMode === "installed" ? "all" : "installed");
+            setInstalledSkillSource("cloud");
+            setSelectedDetailItem(null);
+          }}
         >
           {t("market.toolbar.myInstalled")}
           <span className="market-store-installed-count">{installedItemCount}</span>
         </Button>
       ) : null}
-      {activeTab !== "websiteApps" ? (
-        <Button
-          className={`market-store-toolbar-button is-favorites ${rangeMode === "favorites" ? "is-active" : ""}`}
-          aria-pressed={rangeMode === "favorites"}
-          icon={rangeMode === "favorites" ? <HeartFilled /> : <HeartOutlined />}
-          onClick={() => {
-            if (!isMarketAuthenticated) {
-              setFeedback(t("market.main.favoriteAuthRequired"));
-              setFeedbackType("warning");
-              return;
-            }
-            setRangeMode(rangeMode === "favorites" ? "all" : "favorites");
-          }}
-        >
-          {t("market.toolbar.myFavorites")}
-          <span className="market-store-installed-count">{favoriteItemCount}</span>
-        </Button>
-      ) : null}
-      <Button
-        aria-label={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
-        title={isLoadingMarket ? t("market.toolbar.refreshing") : t("market.toolbar.refreshMarket")}
-        className="market-store-toolbar-button is-icon-only"
-        icon={<ReloadOutlined />}
-        loading={isLoadingMarket}
-        onClick={() => void refreshEverything(true)}
-      />
       {activeTab === "skills" ? (
         <Dropdown
           disabled={isImporting || isOpeningSkillAssistant}
@@ -1561,6 +1653,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   function handleMarketTabChange(tab: MarketTab) {
     if (tab === "skills" && activeTab === "skills") {
       setRangeMode("all");
+      setInstalledSkillSource("cloud");
       setSelectedDetailItem(null);
     }
     onTabChange(tab);
@@ -1618,14 +1711,40 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         ) : null}
 
         <div className="market-store-scroll">
+          {activeTab === "skills" && rangeMode === "installed" ? (
+            <div
+              aria-label={t("market.storefront.installedSkillSourceAria")}
+              className="market-store-installed-source-tabs"
+              role="tablist"
+            >
+              {installedSkillSourceOptions.map((option) => {
+                const selected = installedSkillSource === option.value;
+                return (
+                  <button
+                    aria-selected={selected}
+                    className={`market-store-installed-source-tab ${selected ? "is-selected" : ""}`}
+                    key={option.value}
+                    onClick={() => setInstalledSkillSource(option.value)}
+                    role="tab"
+                    type="button"
+                  >
+                    <span className="market-store-installed-source-label">{option.label}</span>
+                    <span className="market-store-installed-source-count">{option.count}</span>
+                  </button>
+                );
+              })}
+            </div>
+          ) : null}
           {visibleItems.length > 0 ? (
             <div className="market-store-sections">
               {catalogSections.map((section) => (
                 <section className={`market-store-section is-${section.key}`} key={section.key}>
-                  <div className="market-store-section-head">
-                    <h2>{section.title}</h2>
-                    <span>{section.items.length}</span>
-                  </div>
+                  {activeTab !== "skills" || rangeMode !== "installed" ? (
+                    <div className="market-store-section-head">
+                      <h2>{section.title}</h2>
+                      <span>{section.items.length}</span>
+                    </div>
+                  ) : null}
                   <div className="market-store-grid">
                     {section.items.map((item) => renderCard(item))}
                   </div>

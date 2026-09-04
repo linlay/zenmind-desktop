@@ -5952,11 +5952,11 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.match(storefront, /market-store-detail-modal/);
   assert.match(storefront, /storefrontDetailRows/);
   assert.match(storefront, /setSelectedDetailItem\(item\)/);
-  assert.match(storefront, /ReloadOutlined/);
+  assert.doesNotMatch(storefront, /ReloadOutlined/);
   assert.match(storefront, /handleToolbarImport/);
   assert.match(storefront, /getPluginMethod\("install"\)/);
-  assert.match(storefront, /market-store-toolbar-actions/);
-  assert.match(storefront, /market\.toolbar\.refreshMarket/);
+  assert.match(storefront, /market-store-header-tools/);
+  assert.doesNotMatch(storefront, /market\.toolbar\.refreshMarket/);
   assert.match(storefront, /market\.sandbox\.import/);
   assert.doesNotMatch(storefront, /market-store-category-pill/);
   assert.doesNotMatch(storefront, /market-store-readiness/);
@@ -5965,21 +5965,23 @@ test("storefront market uses compact responsive component item cards", () => {
   assert.doesNotMatch(storefront, /market-store-metric/);
   assert.doesNotMatch(storefront, /market-store-compatibility/);
   assert.match(storefrontStyles, /\.market-store-scroll\s*\{[\s\S]*?container-type:\s*inline-size;/);
-  assert.match(storefrontStyles, /--market-card-min:\s*320px;/);
-  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(auto-fill,\s*minmax\(min\(100%,\s*var\(--market-card-min\)\),\s*1fr\)\);/);
+  assert.match(storefrontStyles, /--market-card-min:\s*238px;/);
+  assert.match(storefrontStyles, /\.market-store-grid\s*\{[\s\S]*?grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\);/);
   assert.doesNotMatch(storefrontStyles, /620px/);
-  assert.match(storefrontStyles, /\.market-store-card\.ant-card\s*\{[\s\S]*?border-radius:\s*8px;/);
-  assert.match(storefrontStyles, /\.market-store-card-head\s*\{[\s\S]*?grid-template-columns:\s*30px minmax\(0,\s*1fr\);/);
-  assert.match(storefrontStyles, /\.market-store-item-icon\s*\{[\s\S]*?width:\s*30px;[\s\S]*?height:\s*30px;[\s\S]*?background:\s*var\(--glyph-bg/);
+  assert.match(storefrontStyles, /\.market-store-card\.ant-card\s*\{[\s\S]*?border:\s*1px solid var\(--market-store-line\);[\s\S]*?border-radius:\s*14px;/);
+  assert.match(storefrontStyles, /\.market-store-card-head\s*\{[\s\S]*?grid-template-columns:\s*32px minmax\(0,\s*1fr\) auto;/);
+  assert.match(storefrontStyles, /\.market-store-item-icon\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;[\s\S]*?background:\s*var\(--glyph-bg/);
   assert.match(storefrontStyles, /\.market-store-item-icon svg\s*\{[\s\S]*?width:\s*15px;[\s\S]*?height:\s*15px;/);
+  assert.match(storefront, /case\s+"skill"[\s\S]*?<SidebarIllustration kind="skill"\s*\/>/);
+  assert.doesNotMatch(storefrontStyles, /\.market-store-avatar-letter/);
   assert.doesNotMatch(storefrontStyles, /--glyph-grad/);
   assert.doesNotMatch(storefrontStyles, /\.market-store-item-icon::after/);
   assert.doesNotMatch(storefrontStyles, /market-store-platform-chip/);
-  assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?flex-wrap:\s*wrap;/);
+  assert.match(storefrontStyles, /\.market-store-title-line\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\) auto;/);
   assert.match(storefrontStyles, /\.market-store-description\s*\{[\s\S]*?-webkit-line-clamp:\s*2;/);
-  assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*1px solid var\(--market-store-line\);/);
+  assert.match(storefrontStyles, /\.market-store-card-footer\s*\{[\s\S]*?border-top:\s*0;/);
   assert.match(storefrontStyles, /\.market-store-toolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(280px,\s*520px\)\s*auto;/);
-  assert.match(storefrontStyles, /\.market-store-toolbar-actions\s*\{[\s\S]*?justify-content:\s*flex-end;/);
+  assert.match(storefrontStyles, /\.market-store-header-tools\s*\{[\s\S]*?justify-content:\s*flex-end;/);
   assert.match(storefrontStyles, /\.market-store-toolbar-button\.ant-btn\s*\{[\s\S]*?border-radius:\s*8px;/);
   assert.match(storefrontStyles, /\.market-store-action\.is-primary\.ant-btn\s*\{[\s\S]*?background:\s*var\(--market-store-accent\);/);
   assert.match(storefront, /width=\{680\}/);
@@ -6024,7 +6026,8 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   assert.doesNotMatch(marketModel, /market\.tab\.[^.]+\.meta/);
   assert.match(marketFrame, /function marketTabIcon\(tab: MarketTab\)/);
   assert.match(marketFrame, /AppstoreOutlined/);
-  assert.match(marketFrame, /SafetyCertificateOutlined/);
+  assert.match(marketFrame, /SidebarIllustration/);
+  assert.doesNotMatch(marketFrame, /SafetyCertificateOutlined/);
   assert.match(marketFrame, /RobotOutlined/);
   assert.match(marketFrame, /ApiOutlined/);
   assert.match(marketFrame, /SmileOutlined/);
@@ -6037,9 +6040,9 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   assert.match(storefront, /case "sandbox-image":\s*return <ApiOutlined \/>/);
   assert.match(storefront, /activeTab === "sandboxImages"[\s\S]*?t\("market\.sandbox\.import"\)/);
   assert.match(storefront, /getMarketMethod\("importSandboxImage"\)/);
-  assert.match(storefront, /className=\{`market-store-card is-\$\{item\.type\}`\}/);
+  assert.match(storefront, /className=\{`market-store-card is-\$\{item\.type\} is-catalog \$\{skillToneClass\}`\.trim\(\)\}/);
   assert.match(storefront, /className=\{`market-store-item-icon is-\$\{item\.type\}`\}/);
-  assert.match(storefront, /market-store-toolbar-button is-primary/);
+  assert.match(storefront, /market-store-toolbar-button is-add/);
   assert.doesNotMatch(storefront, /getMarketMethod\("buildSandboxImage"\)/);
   assert.doesNotMatch(storefront, /onBuildSandboxImage/);
   assert.match(marketDisplay, /market-sandbox-image-symbol/);
@@ -6056,15 +6059,19 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   );
   assert.match(
     marketStyles,
-    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?width:\s*100%/
+    /\.market-tabs\s*\{[\s\S]*?grid-column:\s*1[\s\S]*?width:\s*max-content/
   );
   assert.match(
     marketStyles,
-    /\.market-tabs \.market-tab-label\s*\{[\s\S]*?min-height:\s*30px/
+    /\.market-tab-option\s*\{[\s\S]*?height:\s*32px/
   );
   assert.match(
     marketStyles,
     /\.market-tab-icon\s*\{[\s\S]*?font-size:\s*13px;/
+  );
+  assert.match(
+    marketStyles,
+    /\.market-tab-icon > \.sidebar-illustration-skill\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;/
   );
   assert.match(
     marketStyles,
@@ -6073,7 +6080,7 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   assert.doesNotMatch(marketStyles, /\.market-tab-meta/);
   assert.match(
     marketStyles,
-    /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*#121821;[\s\S]*?box-shadow:\s*inset 0 1px 0 rgba\(255,\s*255,\s*255,\s*0\.035\)/
+    /:root\[data-theme="dark"\]\s+\.market-tabs\s*\{[\s\S]*?background:\s*transparent;[\s\S]*?box-shadow:\s*none;/
   );
 });
 
