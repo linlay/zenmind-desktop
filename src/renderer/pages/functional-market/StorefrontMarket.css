@@ -1,5 +1,5 @@
 .market-storefront {
-  --market-grid-gap: 10px;
+  --market-grid-gap: 12px;
   --market-card-min: 238px;
   --market-card-height: 138px;
   --market-card-footer-height: 28px;
@@ -12,14 +12,15 @@
   --market-store-line: rgba(15, 23, 42, 0.1);
   --market-store-line-strong: rgba(15, 23, 42, 0.16);
   --market-store-surface: #ffffff;
-  --market-store-surface-soft: #f7faff;
+  --market-store-surface-soft: #f5f6f8;
+  --market-store-surface-hover: #fafafa;
   --market-store-success: #15803d;
   --market-store-warning: #b45309;
   --market-store-danger: #b91c1c;
   --market-store-rose: #e11d48;
   --market-store-rose-soft: rgba(225, 29, 72, 0.08);
-  --market-store-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 1px 3px rgba(15, 23, 42, 0.05);
-  --market-store-shadow-hover: 0 10px 24px -8px rgba(15, 23, 42, 0.12), 0 4px 8px -4px rgba(15, 23, 42, 0.08);
+  --market-store-shadow: none;
+  --market-store-shadow-hover: 0 8px 20px -12px rgba(15, 23, 42, 0.22);
   gap: 10px;
 }
 
@@ -32,6 +33,7 @@
   --market-store-muted: #667085;
   --market-store-faint: #98a2b3;
   --market-store-line: rgba(15, 23, 42, 0.1);
+  --market-store-line-strong: rgba(15, 23, 42, 0.16);
   --market-store-surface: #ffffff;
   --market-store-surface-soft: #f5f6f8;
   display: flex;
@@ -217,15 +219,6 @@
   transition: background-color 0.18s ease, border-color 0.18s ease, color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
-.market-store-toolbar-button.is-icon-only.ant-btn {
-  width: 24px;
-  min-width: 24px;
-  height: 24px;
-  min-height: 24px;
-  border-radius: 6px;
-  padding: 0;
-}
-
 .market-store-toolbar-button span {
   min-width: 0;
   overflow: hidden;
@@ -246,9 +239,9 @@
 }
 
 .market-store-toolbar-button.is-installed.is-active.ant-btn {
-  border-color: #303236;
-  background: #303236;
-  color: #ffffff;
+  border-color: var(--market-store-line-strong);
+  background: var(--market-store-surface-soft);
+  color: var(--market-store-text);
 }
 
 .market-store-installed-count {
@@ -256,7 +249,7 @@
   align-items: center;
   justify-content: center;
   min-width: 18px;
-  height: 16px;
+  height: 18px;
   padding: 0 5px;
   border-radius: 999px;
   background: #edf0f3;
@@ -267,8 +260,8 @@
 }
 
 .market-store-toolbar-button.is-installed.is-active .market-store-installed-count {
-  background: rgba(255, 255, 255, 0.14);
-  color: #ffffff;
+  background: var(--market-store-surface);
+  color: var(--market-store-text);
 }
 
 .market-store-toolbar-button.is-add.ant-btn {
@@ -287,14 +280,6 @@
   border-color: var(--market-store-accent-strong);
   background: var(--market-store-accent-strong);
   color: #ffffff;
-}
-
-.market-store-toolbar-button.is-icon-only.ant-btn:hover:not(:disabled) {
-  border-color: var(--market-store-line);
-  background: var(--market-store-surface-soft);
-  color: #475569;
-  box-shadow: none;
-  transform: none;
 }
 
 .market-store-toolbar-button.ant-btn:disabled {
@@ -324,6 +309,91 @@
   display: grid;
   gap: 9px;
   min-width: 0;
+}
+
+.market-store-installed-source-tabs {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  width: max-content;
+  max-width: 100%;
+  padding: 0 2px;
+  margin-bottom: 10px;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.market-store-installed-source-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.market-store-installed-source-tab {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  flex: none;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--market-store-muted);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+  transition: background-color 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+}
+
+.market-store-installed-source-tab:hover:not(.is-selected) {
+  background: transparent;
+  color: var(--market-store-text);
+}
+
+.market-store-installed-source-tab.is-selected {
+  background: transparent;
+  color: var(--market-store-text);
+}
+
+.market-store-installed-source-tab:focus-visible {
+  outline: 2px solid var(--market-store-accent);
+  outline-offset: 2px;
+}
+
+.market-store-installed-source-label {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  font-weight: 680;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.market-store-installed-source-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  min-width: 20px;
+  height: 18px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: #f1f3f5;
+  color: var(--market-store-muted);
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.market-store-installed-source-tab.is-selected .market-store-installed-source-count {
+  background: #edf0f3;
+  color: var(--market-store-text);
+}
+
+.market-store-installed-source-tab.is-selected .market-store-installed-source-label {
+  font-weight: 780;
 }
 
 .market-store-section-head {
@@ -376,26 +446,66 @@
   min-height: 0;
   overflow: hidden;
   border: 1px solid var(--market-store-line);
-  border-radius: 12px;
+  border-radius: 14px;
   background: var(--market-store-surface);
   box-shadow: var(--market-store-shadow);
   transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
 }
 
 .market-store-card.ant-card-hoverable:hover {
-  border-color: color-mix(in srgb, var(--card-accent) 26%, rgba(148, 163, 184, 0.34));
+  border-color: var(--market-store-line-strong);
+  background: var(--market-store-surface-hover);
   box-shadow: var(--market-store-shadow-hover);
   transform: translateY(-1px);
 }
 
 .market-store-card.ant-card:focus-within {
-  border-color: color-mix(in srgb, var(--card-accent) 38%, var(--market-store-line));
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--card-accent) 13%, transparent), var(--market-store-shadow);
 }
 
 .market-store-card.is-skill {
+  --card-accent: #7c3aed;
+  --card-tint: #ede9fe;
+}
+
+.market-store-card.is-skill.tone-rose {
+  --card-accent: #db2777;
+  --card-tint: #fce7f3;
+}
+
+.market-store-card.is-skill.tone-coral {
+  --card-accent: #dc2626;
+  --card-tint: #fee2e2;
+}
+
+.market-store-card.is-skill.tone-amber {
+  --card-accent: #ea580c;
+  --card-tint: #ffedd5;
+}
+
+.market-store-card.is-skill.tone-lime {
+  --card-accent: #65a30d;
+  --card-tint: #ecfccb;
+}
+
+.market-store-card.is-skill.tone-mint {
   --card-accent: #059669;
-  --card-tint: rgba(5, 150, 105, 0.08);
+  --card-tint: #d1fae5;
+}
+
+.market-store-card.is-skill.tone-sky {
+  --card-accent: #0284c7;
+  --card-tint: #e0f2fe;
+}
+
+.market-store-card.is-skill.tone-blue {
+  --card-accent: #4f46e5;
+  --card-tint: #e0e7ff;
+}
+
+.market-store-card.is-skill.tone-violet {
+  --card-accent: #7c3aed;
+  --card-tint: #ede9fe;
 }
 
 .market-store-card.is-agent {
@@ -501,7 +611,7 @@
   justify-content: center;
   min-height: 19px;
   padding: 0 7px;
-  border: 1px solid transparent;
+  border: 0;
   border-radius: 999px;
   font-size: 10px;
   font-weight: 780;
@@ -510,15 +620,13 @@
 }
 
 .market-store-origin-pill.is-cloud {
-  border-color: #dbeafe;
   background: #eff6ff;
   color: #2563eb;
 }
 
 .market-store-origin-pill.is-local {
-  border-color: #bbf7d0;
-  background: #ecfdf3;
-  color: #15803d;
+  background: #f1f3f5;
+  color: #667085;
 }
 
 .market-store-item-icon.is-plugin {
@@ -529,10 +637,8 @@
 }
 
 .market-store-item-icon.is-skill {
-  --glyph-bg: rgba(5, 150, 105, 0.08);
-  --glyph-border: rgba(5, 150, 105, 0.16);
-  --glyph-border-strong: rgba(5, 150, 105, 0.3);
-  --glyph-color: #059669;
+  --glyph-bg: var(--card-tint);
+  --glyph-color: var(--card-accent);
 }
 
 .market-store-item-icon.is-agent {
@@ -674,11 +780,12 @@
 }
 
 .market-store-state-pill.is-running {
-  color: var(--market-store-success);
+  color: var(--market-store-muted);
 }
 
 .market-store-state-pill.is-running .market-store-state-dot {
-  box-shadow: 0 0 0 3px rgba(22, 163, 74, 0.12);
+  background: var(--market-store-success);
+  box-shadow: 0 0 0 2px rgba(22, 163, 74, 0.1);
 }
 
 .market-store-state-pill.is-warning {
@@ -890,7 +997,7 @@
   height: 28px;
   min-height: 28px;
   padding: 0;
-  border-color: transparent;
+  border: 0;
   border-radius: 7px;
   background: #f1f3f5;
   color: #343a40;
@@ -898,17 +1005,54 @@
 }
 
 .market-store-action.is-compact-icon.is-primary.ant-btn {
-  border-color: color-mix(in srgb, var(--card-accent) 18%, transparent);
   background: color-mix(in srgb, var(--card-tint) 82%, #ffffff);
   color: var(--card-accent);
 }
 
 .market-store-action.is-compact-icon.ant-btn:hover:not(:disabled) {
-  border-color: color-mix(in srgb, var(--card-accent) 24%, transparent);
   background: color-mix(in srgb, var(--card-tint) 74%, #ffffff);
   color: var(--card-accent);
   box-shadow: none;
   transform: none;
+}
+
+.market-store-package-popover-body {
+  max-width: calc(100vw - 32px);
+  padding: 11px 12px;
+}
+
+.market-store-package-skill-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
+  gap: 7px 14px;
+  width: min(320px, calc(100vw - 56px));
+  max-height: 280px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.market-store-package-skill-list li {
+  display: grid;
+  grid-template-columns: 6px minmax(0, 1fr);
+  align-items: start;
+  gap: 7px;
+  min-width: 0;
+  color: #475569;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.market-store-package-skill-list li::before {
+  width: 5px;
+  height: 5px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: #94a3b8;
+  content: "";
 }
 
 .market-store-action span,
@@ -1311,11 +1455,12 @@
   --market-store-line-strong: rgba(148, 163, 184, 0.3);
   --market-store-surface: #17202a;
   --market-store-surface-soft: #111821;
+  --market-store-surface-hover: #1b2530;
   --market-store-success: #4ade80;
   --market-store-warning: #fbbf24;
   --market-store-danger: #fb7185;
-  --market-store-shadow: 0 1px 2px rgba(0, 0, 0, 0.28);
-  --market-store-shadow-hover: 0 12px 28px rgba(0, 0, 0, 0.34);
+  --market-store-shadow: none;
+  --market-store-shadow-hover: 0 10px 24px rgba(0, 0, 0, 0.22);
 }
 
 :root[data-theme="dark"] .market-store-header-tools {
@@ -1325,6 +1470,7 @@
   --market-store-muted: #9aa8ba;
   --market-store-faint: #718095;
   --market-store-line: rgba(130, 151, 177, 0.18);
+  --market-store-line-strong: rgba(148, 163, 184, 0.3);
   --market-store-surface: #17202a;
   --market-store-surface-soft: #111821;
 }
@@ -1332,6 +1478,16 @@
 :root[data-theme="dark"] .market-store-toolbar-button.is-installed.ant-btn,
 :root[data-theme="dark"] .market-store-toolbar-button.is-add.ant-btn {
   color: #c5d0de;
+}
+
+:root[data-theme="dark"] .market-store-installed-count,
+:root[data-theme="dark"] .market-store-installed-source-count {
+  background: rgba(255, 255, 255, 0.08);
+  color: #9aa8ba;
+}
+
+:root[data-theme="dark"] .market-store-installed-source-tab.is-selected .market-store-installed-source-count {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 :root[data-theme="dark"] .market-store-detail-modal {
@@ -1383,9 +1539,9 @@
 }
 
 :root[data-theme="dark"] .market-store-origin-pill.is-local {
-  border-color: rgba(74, 222, 128, 0.24);
-  background: rgba(22, 163, 74, 0.14);
-  color: #86efac;
+  border-color: var(--market-store-line);
+  background: rgba(148, 163, 184, 0.1);
+  color: #aab4c2;
 }
 
 :root[data-theme="dark"] .market-store-search-filter-button {
@@ -1415,14 +1571,6 @@
   color: #ffffff;
 }
 
-:root[data-theme="dark"] .market-store-toolbar-button.is-icon-only.ant-btn:hover:not(:disabled) {
-  border-color: var(--market-store-line);
-  background: rgba(148, 163, 184, 0.12);
-  color: #c5d0de;
-  box-shadow: none;
-  transform: none;
-}
-
 :root[data-theme="dark"] .market-store-toolbar-actions .market-store-toolbar-button.is-primary.ant-btn:hover:not(:disabled),
 :root[data-theme="dark"] .market-store-card-footer .market-store-action.is-primary.ant-btn:hover:not(:disabled) {
   border-color: #6ea8ff;
@@ -1442,6 +1590,14 @@
   background: var(--glyph-bg);
 }
 
+:root[data-theme="dark"] .market-store-package-skill-list li {
+  color: #c5d0de;
+}
+
+:root[data-theme="dark"] .market-store-package-skill-list li::before {
+  background: #718095;
+}
+
 :root[data-theme="dark"] .market-store-card-footer,
 :root[data-theme="dark"] .market-store-detail-grid div {
   border-color: rgba(148, 163, 184, 0.18);
@@ -1455,10 +1611,48 @@
 }
 
 :root[data-theme="dark"] .market-store-item-icon.is-skill {
-  --glyph-bg: rgba(52, 211, 153, 0.12);
-  --glyph-border: rgba(110, 231, 183, 0.18);
-  --glyph-border-strong: rgba(110, 231, 183, 0.3);
-  --glyph-color: #6ee7b7;
+  --glyph-bg: var(--card-tint);
+  --glyph-color: var(--card-accent);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-rose {
+  --card-accent: #f9a8d4;
+  --card-tint: rgba(244, 114, 182, 0.14);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-coral {
+  --card-accent: #fca5a5;
+  --card-tint: rgba(248, 113, 113, 0.14);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-amber {
+  --card-accent: #fdba74;
+  --card-tint: rgba(251, 146, 60, 0.14);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-lime {
+  --card-accent: #bef264;
+  --card-tint: rgba(163, 230, 53, 0.13);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-mint {
+  --card-accent: #6ee7b7;
+  --card-tint: rgba(52, 211, 153, 0.13);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-sky {
+  --card-accent: #7dd3fc;
+  --card-tint: rgba(56, 189, 248, 0.13);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-blue {
+  --card-accent: #a5b4fc;
+  --card-tint: rgba(129, 140, 248, 0.14);
+}
+
+:root[data-theme="dark"] .market-store-card.is-skill.tone-violet {
+  --card-accent: #c4b5fd;
+  --card-tint: rgba(167, 139, 250, 0.14);
 }
 
 :root[data-theme="dark"] .market-store-item-icon.is-agent {
@@ -1551,11 +1745,6 @@
 
   .market-store-toolbar-button.ant-btn {
     width: 100%;
-  }
-
-  .market-store-toolbar-button.is-icon-only.ant-btn {
-    width: 24px;
-    min-width: 24px;
   }
 
   .market-store-grid {

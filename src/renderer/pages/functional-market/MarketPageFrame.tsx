@@ -7,11 +7,11 @@ import {
   HddOutlined,
   LinkOutlined,
   RobotOutlined,
-  SafetyCertificateOutlined,
   SmileOutlined
 } from "@ant-design/icons";
 import type { MarketTab, MarketTabDefinition } from "./marketPageModel";
 import { useI18n } from "../../i18n/useI18n";
+import { SidebarIllustration } from "../../components/BrandMark";
 import "./MarketPageFrame.css";
 
 interface MarketPageFrameProps {
@@ -27,7 +27,7 @@ interface MarketPageFrameProps {
 function marketTabIcon(tab: MarketTab) {
   switch (tab) {
     case "skills":
-      return <SafetyCertificateOutlined />;
+      return <SidebarIllustration kind="skill" />;
     case "agents":
       return <RobotOutlined />;
     case "sandboxImages":

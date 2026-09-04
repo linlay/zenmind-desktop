@@ -1,4 +1,5 @@
 import {
+  Fragment,
   useEffect,
   useLayoutEffect,
   useMemo,
@@ -6579,6 +6580,9 @@ export function AppSidebar({
       pendingPath ?? "",
     );
     const selectedCapabilityItem = pendingCapabilityItem ?? activeCapabilityItem;
+    const firstSecondaryCapabilityItemId = capabilityNavigationItems.find(
+      (item) => item.id === "market" || item.id === "help",
+    )?.id;
 
     return (
       <div className="sidebar-settings-nav sidebar-capabilities-nav">
@@ -6600,24 +6604,33 @@ export function AppSidebar({
             {capabilityNavigationItems.map((item) => {
               const isActive = selectedCapabilityItem?.id === item.id;
               return (
-                <NavLink
-                  key={item.id}
-                  to={item.to}
-                  aria-current={isActive ? "page" : undefined}
-                  className={[
-                    "sidebar-link",
-                    isActive ? "sidebar-link-active" : "",
-                    pendingCapabilityItem?.id === item.id ? "is-pending" : "",
-                  ]
-                    .filter(Boolean)
-                    .join(" ")}
-                  onClick={(event) => handleToolItemClick(event, item.to)}
-                >
-                  <span className="sidebar-link-icon" aria-hidden="true">
-                    <SidebarIllustration kind={item.icon} />
-                  </span>
-                  <span className="sidebar-link-label">{item.label}</span>
-                </NavLink>
+                <Fragment key={item.id}>
+                  {item.id === firstSecondaryCapabilityItemId ? (
+                    <div
+                      className="sidebar-capability-divider"
+                      aria-hidden="true"
+                    />
+                  ) : null}
+                  <NavLink
+                    to={item.to}
+                    aria-current={isActive ? "page" : undefined}
+                    className={[
+                      "sidebar-link",
+                      isActive ? "sidebar-link-active" : "",
+                      pendingCapabilityItem?.id === item.id
+                        ? "is-pending"
+                        : "",
+                    ]
+                      .filter(Boolean)
+                      .join(" ")}
+                    onClick={(event) => handleToolItemClick(event, item.to)}
+                  >
+                    <span className="sidebar-link-icon" aria-hidden="true">
+                      <SidebarIllustration kind={item.icon} />
+                    </span>
+                    <span className="sidebar-link-label">{item.label}</span>
+                  </NavLink>
+                </Fragment>
               );
             })}
           </div>
