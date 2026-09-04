@@ -571,6 +571,52 @@
   align-self: center;
 }
 
+.market-store-card-head.is-stacked-status {
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  min-height: 46px;
+}
+
+.market-store-card-head.is-stacked-status > .market-store-item-icon {
+  width: 36px;
+  height: 36px;
+}
+
+.market-store-card-head.is-stacked-status .market-store-title-block {
+  gap: 2px;
+}
+
+.market-store-card-head.is-stacked-status .market-store-title-line {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  min-height: 20px;
+}
+
+.market-store-card-head.is-stacked-status .market-store-title-line h2 {
+  flex: 0 1 auto;
+  font-size: 13.5px;
+}
+
+.market-store-card-head.is-stacked-status .market-store-card-quick-action {
+  align-self: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.market-store-card-secondary-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  min-width: 0;
+}
+
+.market-store-description.is-standalone {
+  min-height: 30px;
+  margin-top: 2px;
+}
+
 .market-store-item-icon {
   display: inline-flex;
   align-items: center;
