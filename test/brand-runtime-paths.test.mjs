@@ -1352,7 +1352,7 @@ test("Windows uninstall safety requires path validation in addition to owner mar
 
 test("critical runtime path modules use shared brand-aware roots", () => {
   const expectations = [
-    ["src/main/kanban-db.ts", /getDataRoot/u],
+    ["src/main/kanban-local-store.ts", /getRuntimeDataRoot/u],
     ["src/main/kanban-runtime.ts", /resolveRuntimeRoot/u],
     ["src/main/assistant/core/agent-platform-config.ts", /resolveRuntimeRoot/u],
     ["src/main/assistant/core/agent-platform-bridge.ts", /resolveRuntimeRoot/u]

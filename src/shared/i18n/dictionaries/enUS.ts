@@ -2316,7 +2316,6 @@ export const enUSMessages = {
   "kanban.localProject.unboundConfirmed": "Local project unbind confirmed.",
   "kanban.cloudSync.running": "Upstream sync is already running.",
   "kanban.cloudSync.notConnected": "Cloud board service is not connected.",
-  "kanban.cloudSync.uploadDisabled": "Desktop V1 does not upload local issue body changes to the cloud.",
   "kanban.cloudSync.noBindings": "No bindings need upstream sync.",
   "kanban.cloudSync.debugComplete": "Cloud board upstream sync complete: binding {bindingId}, submitted {count}, synced {synced}, conflicts {conflicts}, errors {errors}.",
   "kanban.cloudSync.debugFailed": "Cloud board upstream sync failed: binding {bindingId}, {message}",

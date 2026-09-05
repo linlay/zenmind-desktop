@@ -2316,7 +2316,6 @@ export const zhCNMessages = {
   "kanban.localProject.unboundConfirmed": "本地项目解绑已确认。",
   "kanban.cloudSync.running": "上行同步已在进行中。",
   "kanban.cloudSync.notConnected": "云端看板服务未连接。",
-  "kanban.cloudSync.uploadDisabled": "桌面端首版不把本地问题正文变更上行到云端。",
   "kanban.cloudSync.noBindings": "没有需要上行同步的绑定。",
   "kanban.cloudSync.debugComplete": "云端看板上行同步完成：绑定 {bindingId} 提交 {count} 条，成功 {synced}，冲突 {conflicts}，失败 {errors}。",
   "kanban.cloudSync.debugFailed": "云端看板上行同步失败：绑定 {bindingId}，{message}",

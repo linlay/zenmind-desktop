@@ -4019,13 +4019,12 @@ test("Kanban route exposes native desktop api and page styles", () => {
   const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
   const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
   const kanbanHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "kanban-handlers.ts"), "utf8");
-  const kanbanSync = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-sync.ts"), "utf8");
   const kanbanRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-runtime.ts"), "utf8");
+  const kanbanLocalStore = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-local-store.ts"), "utf8");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
-  const kanbanStore = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-store.ts"), "utf8");
   const assistantNavigationStatusClient = fs.readFileSync(
     path.join(projectRoot, "src", "main", "assistant", "core", "assistant-navigation-status-client.ts"),
     "utf8"
@@ -4049,18 +4048,17 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.claimIssue"/);
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.runIssue"/);
   assert.match(kanbanHandlers, /ipcMain\.handle\("kanban\.syncIssueAutomation"/);
-  assert.match(kanbanSync, /syncKanbanIssueAutomation/);
-  assert.match(kanbanSync, /\/api\/automation\/create/);
-  assert.match(kanbanSync, /\/api\/automation\/update/);
-  assert.match(kanbanSync, /\/api\/automation\/delete/);
-  assert.doesNotMatch(kanbanSync, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
+  assert.match(kanbanRuntime, /async syncIssueAutomation\(/);
+  assert.match(kanbanRuntime, /\/api\/automation\/create/);
+  assert.match(kanbanRuntime, /\/api\/automation\/update/);
+  assert.match(kanbanRuntime, /\/api\/automation\/delete/);
+  assert.doesNotMatch(kanbanRuntime, /\/api\/schedule(?:\/|-)(?:create|update|delete)/);
   assert.match(assistantRuntime, /createKanbanRuntime/);
   assert.doesNotMatch(assistantRuntime, /onEvent:\s*\(event\) => \{\s*state\.kanbanRuntime/);
-  assert.match(kanbanSync, /event\.frame !== "push" \|\| event\.type !== "run\.finished"/);
-  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
-  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
-  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
-  assert.doesNotMatch(kanbanSync, /updateKanbanIssueByChatId/);
+  assert.match(kanbanRuntime, /event\.frame !== "push" \|\| event\.type !== "run\.finished"/);
+  assert.match(kanbanRuntime, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanRuntime, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanRuntime, /status === "interrupted" && finishReason === "cancel"/);
   assert.match(kanbanRuntime, /private async applyIssueEvent\(event: KanbanDesktopIssueEvent\)/);
   assert.match(kanbanRuntime, /private async applyDelivery\(delivery: KanbanDesktopDelivery\)/);
   assert.match(kanbanRuntime, /seq <= cursor\.lastAppliedRevision/);
@@ -4073,7 +4071,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanRuntime, /desktop\.issue\.sync/);
   assert.match(kanbanRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
   assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}state\.kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
-  assert.match(kanbanStore, /export function updateKanbanIssueByChatId/);
+  assert.match(kanbanLocalStore, /export function updateDesktopKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
   assert.match(assistantNavigationStatusClient, /frame: "push"/);
@@ -4317,12 +4315,26 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(globalStyles, /\.kanban-chat-modal-layer\s*\{|\.kanban-chat-modal\s*\{/);
 });
 
+test("Kanban runtime keeps only the canonical local-store implementation", () => {
+  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  for (const legacyFileName of [
+    "kanban-sync.ts",
+    "kanban-store.ts",
+    "kanban-db.ts",
+    "kanban-cloud-sync.ts",
+  ]) {
+    assert.equal(fs.existsSync(path.join(projectRoot, "src", "main", legacyFileName)), false, legacyFileName);
+  }
+  assert.match(kanbanRuntime, /from "\.\/kanban-local-store"/);
+  assert.doesNotMatch(kanbanRuntime, /from "\.\/kanban-(?:sync|store|db|cloud-sync)"/);
+  assert.doesNotMatch(kanbanRuntime, /DesktopCloudSyncEngine/);
+});
+
 test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () => {
   const contracts = readSharedContractsSource();
   const assistantRuntime = readSourceFile("src", "main", "bridge", "assistant-runtime.ts");
   const navigationClient = readSourceFile("src", "main", "assistant", "core", "assistant-navigation-status-client.ts");
   const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
-  const kanbanSync = readSourceFile("src", "main", "kanban-sync.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
 
   assert.match(contracts, /interface AssistantNavigationPushEvent[\s\S]{0,100}frame: "push"/);
@@ -4334,9 +4346,9 @@ test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () =
   assert.match(assistantRuntime, /sendNavigationPushEvent\(event\)/);
   assert.match(navigationClient, /runId: toText\(event\.runId\) \|\| null/);
   assert.doesNotMatch(navigationClient, /runId: toText\(event\.runId\) \|\| toText\(event\.lastRunId\)/);
-  assert.match(kanbanSync, /status === "completed" && finishReason === "complete"/);
-  assert.match(kanbanSync, /status === "failed" && finishReason === "error"/);
-  assert.match(kanbanSync, /status === "interrupted" && finishReason === "cancel"/);
+  assert.match(kanbanRuntime, /status === "completed" && finishReason === "complete"/);
+  assert.match(kanbanRuntime, /status === "failed" && finishReason === "error"/);
+  assert.match(kanbanRuntime, /status === "interrupted" && finishReason === "cancel"/);
   assert.match(kanbanRuntime, /issue\.runId === runId \|\| issue\.activeRunId === runId/);
   assert.doesNotMatch(kanbanRuntime, /sendAssistantEvent/);
   assert.doesNotMatch(kanbanPage, /assistant\.onAssistantEvent/);
@@ -4366,14 +4378,14 @@ test("Kanban view settings use a dismissible gear menu for the Backlog column", 
 
 test("Kanban status order places completed after in progress", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
-  const kanbanDb = readSourceFile("src", "main", "kanban-db.ts");
+  const kanbanLocalStore = readSourceFile("src", "main", "kanban-local-store.ts");
 
   assert.match(
     contracts,
     /KANBAN_STATUSES\s*=\s*\[[\s\S]*?"backlog",[\s\S]*?"todo",[\s\S]*?"in_progress",[\s\S]*?"in_review",[\s\S]*?"completed"[\s\S]*?\]/,
   );
   assert.match(
-    kanbanDb,
+    kanbanLocalStore,
     /WHEN 'in_progress' THEN 2[\s\S]*?WHEN 'in_review' THEN 3[\s\S]*?WHEN 'completed' THEN 4/,
   );
 });
@@ -5286,7 +5298,6 @@ test("assistant navigation agents stay empty before platform data is ready", () 
 test("main process automation callers use current platform automation routes", () => {
   const sourceFiles = [
     path.join(projectRoot, "src", "main", "plugin-resources.ts"),
-    path.join(projectRoot, "src", "main", "kanban-sync.ts"),
     path.join(projectRoot, "src", "main", "kanban-runtime.ts")
   ];
   const combined = sourceFiles.map((filePath) => fs.readFileSync(filePath, "utf8")).join("\n");

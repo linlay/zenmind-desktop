@@ -28,12 +28,12 @@ import type {
   KanbanStatus
 } from "../shared/contracts";
 import { parseKanbanPriority } from "../shared/contracts";
+import { PRODUCT_NAME } from "../shared/brand";
 import { isAgentPlatformEpochMilliseconds } from "../shared/time-contract";
 import { getDesktopDeviceInfo } from "./desktop-device-info";
 import { getDesktopDeviceId } from "./device-identity";
 import { readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser } from "./oidc-sso";
 import { resolveRuntimeRoot } from "./env-bootstrap";
-import { buildKanbanAutomationPayload, resolveKanbanRunFinishedPush } from "./kanban-sync";
 import {
   applyDesktopKanbanCloudSnapshot,
   completeDesktopKanbanCommandReceiptByRunId,
@@ -77,7 +77,6 @@ import {
   createLocalDesktopProject,
   findLocalDesktopProject
 } from "./kanban-local-projects";
-import { DesktopCloudSyncEngine } from "./kanban-cloud-sync";
 import {
   KanbanDesktopWsClient,
   KanbanDesktopRequestError,
@@ -100,6 +99,62 @@ type AgentPlatformCaller<TApp> = <T = unknown>(
     body?: unknown;
   }
 ) => Promise<T>;
+
+export type KanbanRunFinishedPushResolution = {
+  status: KanbanStatus;
+  runState: Exclude<KanbanRunState, "running">;
+  terminalEventType: "run.completed" | "run.failed" | "run.cancelled";
+};
+
+export function resolveKanbanRunFinishedPush(
+  event: Pick<AssistantNavigationPushEvent, "frame" | "type" | "status" | "finishReason">
+): KanbanRunFinishedPushResolution | null {
+  if (event.frame !== "push" || event.type !== "run.finished") {
+    return null;
+  }
+  const status = event.status?.trim() ?? "";
+  const finishReason = event.finishReason?.trim() ?? "";
+  if (status === "completed" && finishReason === "complete") {
+    return { status: "completed", runState: "completed", terminalEventType: "run.completed" };
+  }
+  if (status === "failed" && finishReason === "error") {
+    return { status: "todo", runState: "failed", terminalEventType: "run.failed" };
+  }
+  if (status === "interrupted" && finishReason === "cancel") {
+    return { status: "todo", runState: "cancelled", terminalEventType: "run.cancelled" };
+  }
+  return null;
+}
+
+function buildKanbanAutomationMessage(issue: KanbanIssue) {
+  const message = issue.automationMessage?.trim() || issue.description.trim() || issue.title.trim();
+  return [
+    message,
+    "",
+    t("kanban.automation.messageIntro", { productName: PRODUCT_NAME }),
+    t("kanban.automation.issueId", { id: issue.id }),
+    t("kanban.automation.issueTitle", { title: issue.title })
+  ].join("\n");
+}
+
+export function buildKanbanAutomationPayload(issue: KanbanIssue) {
+  return {
+    name: t("kanban.automation.name", { id: issue.id, title: issue.title }).slice(0, 120),
+    description: t("kanban.automation.description", { productName: PRODUCT_NAME, id: issue.id }),
+    cron: issue.automationCron?.trim() ?? "",
+    agentKey: issue.assigneeAgentKey?.trim() ?? "",
+    enabled: true,
+    zoneId: issue.automationTimezone?.trim() || "Asia/Shanghai",
+    query: {
+      message: buildKanbanAutomationMessage(issue),
+      hidden: true,
+      params: {
+        source: "kanban",
+        issueId: issue.id
+      }
+    }
+  };
+}
 
 type AssistantBridgeLike = {
   listAgents: () => Promise<DesktopPetAgentOption[]>;
@@ -592,7 +647,6 @@ function kanbanIssueFromAutomationPayload(payload: unknown): KanbanIssue | null 
 
 export class KanbanRuntime {
   private readonly wsClient: KanbanDesktopWsClient;
-  private readonly cloudSync: DesktopCloudSyncEngine;
   private connectionState: KanbanDesktopConnectionState = "disabled";
   private connectionFallbackState: KanbanConnectionFallbackState = "disabled";
   private commandReceiptProcessing = false;
@@ -656,14 +710,6 @@ export class KanbanRuntime {
       }),
       onWsLog: (entry) => appendKanbanWsLog(this.options.app, entry)
     });
-    this.cloudSync = new DesktopCloudSyncEngine({
-      app: this.options.app,
-      getCurrentUser: () => this.currentUser(),
-      getDeviceId: () => getDesktopDeviceId(this.options.app),
-      wsClient: this.wsClient,
-      onChanged: () => this.notifyChanged(),
-      onDebug: this.options.onDebug
-    });
   }
 
   start() {
@@ -678,7 +724,6 @@ export class KanbanRuntime {
     this.connectionFallbackState = "disabled";
     this.negotiatedContractVersion = "";
     this.negotiatedCapabilities = [];
-    this.cloudSync.stop();
     this.wsClient.stop();
   }
 
