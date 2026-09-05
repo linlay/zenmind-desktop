@@ -18,7 +18,6 @@ import {
   type MarketplaceOptions,
   type MarketSectionResult
 } from "./common";
-import { assertPluginNotRetired, isRetiredPluginId } from "../retired-plugins";
 
 type PluginCatalogResult = {
   catalog: Catalog;
@@ -30,7 +29,7 @@ type PluginCatalogResult = {
 function pluginOnlyCatalog(catalog: Catalog): Catalog {
   return {
     ...catalog,
-    items: catalog.items.filter((item) => item.type === "plugin" && !isRetiredPluginId(item.id))
+    items: catalog.items.filter((item) => item.type === "plugin")
   };
 }
 
@@ -54,7 +53,6 @@ async function loadPluginCatalog(app: App, options: MarketplaceOptions = {}): Pr
 function listLocalPlugins(app: App): MarketItem[] {
   return getAllServices()
     .filter((service) => service.kind === "plugin")
-    .filter((service) => !isRetiredPluginId(service.id))
     .map((service) => ({
       id: service.id,
       type: "plugin" as const,
@@ -85,7 +83,6 @@ export async function installPluginMarketItem(
   itemId: string,
   options: MarketplaceOptions = {}
 ): Promise<MarketCommandResult> {
-  assertPluginNotRetired(itemId);
   const { catalog } = await loadPluginCatalog(app, options);
   const catalogItem = findCatalogItem(catalog, itemId, "plugin");
   const resolved = await resolveMarketAsset(app, catalogItem, options);
@@ -102,7 +99,6 @@ export async function installPluginMarketItem(
     if (manifest.id !== item.id) {
       throw new Error(t("market.main.pluginIdMismatch", { expected: item.id, actual: manifest.id }));
     }
-    assertPluginNotRetired(manifest.id);
     const result = await installPluginFromArchive(app, archivePath);
     const installPath = getPluginInstallDir(app, item.id);
     upsertInstalledRecord(app, {

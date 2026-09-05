@@ -195,6 +195,14 @@ export function resolveLegacyFixedSurfaceId(value: string) {
   return LEGACY_FIXED_SURFACE_ID_ALIASES[normalized] ?? normalized;
 }
 
+export function resolveFixedSurfaceRole(value: string): SurfaceRole | null {
+  const normalized = value.trim();
+  for (const role of SURFACE_ROLES) {
+    if (FIXED_ROLE_IDS[role] === normalized) return role;
+  }
+  return null;
+}
+
 export function createLegacySurfaceIdAliases(
   surfaceRole: SurfaceRole,
   identityKey = "",

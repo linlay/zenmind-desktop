@@ -146,6 +146,17 @@
 - 生成期间点击取消，确认只中止调用方自己的 Run；重复 requestId 冲突、附件上传失败、工具失败、超时及资源哈希不符都显示可重试错误，不自动转为 Mock。
 - 在普通浏览器直接打开开发服务器，确认明确显示开发态 Mock；在 ZenMind Desktop 中不得静默回退 Mock。macOS 与 Windows 均检查 WebApp workspace、WorkPanel 和独立窗口的同源上传与结果显示。
 
+## R0 废弃清理与兼容观察
+
+- 在 renderer DevTools 检查 `window.electronAPI.assistant`，确认 memory 设置/摘要/列表/删除/清空/目录打开和语音纠错/转写方法均不存在；Agent WebClient 的 `/memory` 页面仍可打开，`/api/voice` 仍由 host 按服务配置代理。
+- 分别调用规范 `assistant.createProject` 与兼容 `assistant.createCoderProject`；两者创建 CODER Project 的结果一致。连续调用兼容入口两次，main log 只出现一次 `assistant.createCoderProject`，包含当前 Desktop 版本且不含请求内容、workspace 路径或 Chat ID。
+- 打开旧 `/service/agent-webclient` 深链，确认重定向到 `/agents`；同一进程重复命中只记录一次。分别以固定旧 surface ID 和动态旧哈希执行受支持的 Desktop Web Action，确认仍解析到 canonical surface，每类与 canonical role 组合只记录一次，日志不含旧 ID、URL、identity key 或 Chat ID。
+- 用历史 Program bundle 验证 WorkPanel bridge：v4 仅旧 item 操作，v5 额外支持 resource，v6 支持当前完整能力，其他版本返回 version mismatch；重复同一 `version + method` 只记录一次。验证 `agent-webclient v0.3.59` 被安装/恢复/升级路径升级或拒绝启动，`v0.3.60` 正常启动。
+- 在 macOS、Windows 分别执行内置服务首次安装、旧版本升级和启动恢复，确认 identity 公钥由 `auth.publicKey` capability 提供；覆盖 capability 成功、命令失败、结果文件缺失和 canonical `keys/publicKey.pem` 回退，不执行 Desktop 内旧 `.env` 解析、身份脚本或 token 构造路径。
+- 在 macOS、Windows 检查服务启动环境：只有 `agent-platform` 同时收到 `DESKTOP_WEBAPP_TOOLING_PATH` 和临时 `DESKTOP_ROOT`，其他内置服务和插件均未收到；开发态与打包态路径分别正确。S1 发布前扫描当前 WebApp Builder Skill 包仍应发现 `0.1.0` 的 `DESKTOP_ROOT` 引用，因此不得删除兼容变量或开始零命中观察窗。
+- 启动、市场刷新、插件加载和升级不再根据退休 denylist 删除、过滤或拒绝任何插件；插件程序、配置、用户数据、状态和日志均保持不变，显式卸载仍遵循现有用户选择。
+- 回归 Local Kanban CRUD、Cloud `resyncFromCloud`、`issue.claim`、`issue.run.prepare`、`issue.chat.bind/unbind` 与 `run.event.append`；确认旧 DB/store/upload API 不再出现，已有缓存 schema 和磁盘残留旧文件均未被迁移或删除。
+
 ## 设备身份与 Realtime 稳定性
 
 - 在 Windows 启动 Desktop 后从 Debug 记录 deviceId，运行长对话并同时进行高磁盘负载操作；确认 deviceId、Realtime physical generation 与当前 Run 保持稳定，不出现 `realtime identity was invalidated`。

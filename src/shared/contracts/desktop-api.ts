@@ -27,12 +27,6 @@ import type {
   AssistantEventListener,
   AssistantFirstInstallBootstrapNavigationResult,
   AssistantHistoryChatsResult,
-  AssistantMemoryItem,
-  AssistantMemorySettings,
-  AssistantMemorySettingsInput,
-  AssistantMemoryStats,
-  AssistantMemoryStorage,
-  AssistantMemorySummary,
   AssistantNavActionResult,
   AssistantNavAgentItemsResult,
   AssistantNavigationAgentsChangedListener,
@@ -49,10 +43,6 @@ import type {
   AssistantStopRunResult,
   AssistantSubmitAwaitingRequest,
   AssistantSubmitAwaitingResult,
-  AssistantVoiceCorrectionRequest,
-  AssistantVoiceCorrectionResult,
-  AssistantVoiceTranscriptionRequest,
-  AssistantVoiceTranscriptionResult,
   AssistantWorkerOpenListener,
   CopilotDevToolsTargetInput,
   DesktopActionCallListener,
@@ -870,7 +860,7 @@ export type RendererDiagnosticLevel = "debug" | "warn" | "error";
 
 export interface RendererDiagnosticReport {
   level: RendererDiagnosticLevel;
-  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "app-shell";
+  source: "window-error" | "unhandledrejection" | "react-error-boundary" | "service-webview" | "app-shell" | "deprecated-compatibility";
   message: string;
   details?: Record<string, unknown>;
   stack?: string;
@@ -976,9 +966,6 @@ export interface DesktopApi {
     getSettings: () => Promise<AssistantSettingsPublic>;
     consumeFirstInstallBootstrapNavigation: () => Promise<AssistantFirstInstallBootstrapNavigationResult>;
     saveSettings: (input: AssistantSettingsInput) => Promise<AssistantSettingsPublic>;
-    getMemorySettings: () => Promise<AssistantMemorySettings>;
-    saveMemorySettings: (input: AssistantMemorySettingsInput) => Promise<AssistantMemorySettings>;
-    getMemorySummary: () => Promise<AssistantMemorySummary>;
     listAgents: () => Promise<DesktopPetAgentOption[]>;
     listNavigationAgents: (options?: AssistantNavigationListOptions) => Promise<AssistantNavAgentItemsResult>;
     updateChatOrder: (input: AssistantChatOrderMutationRequest) => Promise<AssistantChatOrderMutationResult>;
@@ -987,15 +974,6 @@ export interface DesktopApi {
     listCopilotAgents: () => Promise<AssistantNavAgentItemsResult>;
     createProject: (input: AssistantCreateProjectRequest) => Promise<AssistantCreateProjectResult>;
     createCoderProject: (input: AssistantCreateCoderProjectRequest) => Promise<AssistantCreateCoderProjectResult>;
-    openMemoryDirectory: () => Promise<{ ok: boolean; message: string; path?: string }>;
-    listMemoryItems: () => Promise<{
-      items: AssistantMemoryItem[];
-      settings: AssistantMemorySettings;
-      stats: AssistantMemoryStats;
-      storage: AssistantMemoryStorage;
-    }>;
-    deleteMemoryItem: (memoryId: string) => Promise<{ ok: boolean; message: string }>;
-    clearMemoryItems: () => Promise<{ ok: boolean; message: string; deletedCount: number }>;
     listChats: () => Promise<AssistantChatSummary[]>;
     listHistoryChats: () => Promise<AssistantHistoryChatsResult>;
     getChat: (chatId: string) => Promise<AssistantChatDetail | null>;
@@ -1011,8 +989,6 @@ export interface DesktopApi {
     ) => Promise<AssistantAttachmentPickResult>;
     startRun: (request: AssistantStartRunRequest) => Promise<AssistantStartRunResult>;
     stopRun: (runId: string) => Promise<AssistantStopRunResult>;
-    correctVoiceText: (request: AssistantVoiceCorrectionRequest) => Promise<AssistantVoiceCorrectionResult>;
-    transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) => Promise<AssistantVoiceTranscriptionResult>;
     submitAwaiting: (request: AssistantSubmitAwaitingRequest) => Promise<AssistantSubmitAwaitingResult>;
     openAttachment: (chatId: string, attachmentId: string) => Promise<{ ok: boolean; message: string; path?: string }>;
     deleteChat: (chatId: string) => Promise<{ ok: boolean; message: string }>;

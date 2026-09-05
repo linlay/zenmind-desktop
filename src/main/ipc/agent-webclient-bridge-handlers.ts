@@ -49,6 +49,7 @@ import { readAgentWebclientAgentRouteKey } from "../../shared/agent-webclient-ro
 import { requireAgentPlatformEpochMillis } from "../../shared/time-contract";
 import { normalizeChatWorkPanelOpenLocalResourceRequest } from "../chat-work-panel-resource-open";
 import { isDesktopDevelopmentRuntime } from "../development-runtime";
+import { reportDeprecatedCompatibilityUse } from "../deprecated-compatibility";
 
 const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 const MAX_SERIALIZED_FRAME_BYTES = 8 * 1024 * 1024;
@@ -1894,13 +1895,20 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       : method === "activateItem" || method === "closeItem";
     if (!capabilityAllowed) return failure("capability_denied", `${context.kind} cannot call ${method}`);
     const input = record.input as WorkPanelOpenItemInput | WorkPanelOpenResourceInput | WorkPanelOpenDocumentInput | WorkPanelItemTargetInput;
-    const compatibleVersion = isPlainBridgeRecord(input) && (
-      isAgentWebclientBridgeVersion(input.version) ||
-      ((input.version === 4 || input.version === 5) && method !== "openResource" && method !== "openDocument") ||
-      (input.version === 5 && method === "openResource")
-    );
+    const inputVersion: unknown = isPlainBridgeRecord(input)
+      ? (input as Record<string, unknown>).version
+      : undefined;
+    const compatibleVersion = isAgentWebclientBridgeVersion(inputVersion) ||
+      ((inputVersion === 4 || inputVersion === 5) && method !== "openResource" && method !== "openDocument") ||
+      (inputVersion === 5 && method === "openResource");
     if (!compatibleVersion) {
       return failure("version_mismatch", `Desktop host bridge requires version ${AGENT_WEBCLIENT_BRIDGE_VERSION}`);
+    }
+    if (inputVersion === 4 || inputVersion === 5) {
+      reportDeprecatedCompatibilityUse(
+        inputVersion === 4 ? "agent-webclient.bridge-v4" : "agent-webclient.bridge-v5",
+        { version: inputVersion, method }
+      );
     }
     if (method === "openResource") {
       const resourceInput = input as WorkPanelOpenResourceInput;

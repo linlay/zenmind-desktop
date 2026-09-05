@@ -11,7 +11,6 @@ import { sanitizeDesktopCopilotPagePreferences } from "../shared/page-copilot";
 import type { AssistantChatSortMode } from "../shared/contracts/copilot";
 
 export const DESKTOP_PROFILE_FILE = "profile.json";
-export const DEFAULT_VOICE_CORRECTION_ENABLED = true;
 
 export type DesktopThemePreference = "system" | "light" | "dark";
 
@@ -30,7 +29,6 @@ export type DesktopProfile = {
     locale: SupportedLocale;
   };
   assistant: {
-    voiceCorrectionEnabled: boolean;
     copilot: {
       agentKey: string;
     };
@@ -135,9 +133,6 @@ function normalizeDesktopProfile(
       locale: profileLocale || options.defaultLocale || DEFAULT_LOCALE
     },
     assistant: {
-      voiceCorrectionEnabled: typeof assistant.voiceCorrectionEnabled === "boolean"
-        ? assistant.voiceCorrectionEnabled
-        : DEFAULT_VOICE_CORRECTION_ENABLED,
       copilot: {
         agentKey: copilotAgentKey
       },

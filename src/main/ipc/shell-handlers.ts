@@ -23,6 +23,7 @@ import {
   inspectIdentityAccessToken,
   probeDesktopWs
 } from "../desktop-diagnostics";
+import { isSurfaceRole } from "../../shared/surface-identity";
 
 type ShellIpcResult = {
   ok: boolean;
@@ -653,12 +654,43 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       rendererReport.level === "error"
         ? rendererReport.level
         : "error";
+    const reportSource = typeof rendererReport.source === "string" ? rendererReport.source : "unknown";
+    const deprecatedCompatibility = reportSource === "deprecated-compatibility";
     const ownerWindow = BrowserWindow.fromWebContents(event.sender);
+    if (deprecatedCompatibility) {
+      const compatibilityId =
+        rendererReport.message === "route.service-agent-webclient" ||
+        rendererReport.message === "surface.legacy-alias"
+          ? rendererReport.message
+          : "unknown";
+      const rawDetails =
+        rendererReport.details && typeof rendererReport.details === "object"
+          ? rendererReport.details as Record<string, unknown>
+          : {};
+      const compatibilityDetails = compatibilityId === "surface.legacy-alias"
+        ? {
+            category: rawDetails.category === "fixed" || rawDetails.category === "derived"
+              ? rawDetails.category
+              : "unknown",
+            canonicalRole: isSurfaceRole(rawDetails.canonicalRole)
+              ? rawDetails.canonicalRole
+              : "unknown"
+          }
+        : {};
+      options.reportRendererDiagnostic?.("deprecated-compatibility", {
+        diagnosticLevel: "warn",
+        windowId: ownerWindow?.id ?? null,
+        source: "deprecated-compatibility",
+        message: compatibilityId,
+        details: compatibilityDetails
+      });
+      return;
+    }
     options.reportRendererDiagnostic?.("renderer-error", {
       diagnosticLevel,
       windowId: ownerWindow?.id ?? null,
       route: event.sender.getURL(),
-      source: typeof rendererReport.source === "string" ? rendererReport.source : "unknown",
+      source: reportSource,
       message: typeof rendererReport.message === "string" ? rendererReport.message : String(report),
       details: rendererReport.details && typeof rendererReport.details === "object" ? rendererReport.details : undefined,
       stack: typeof rendererReport.stack === "string" ? rendererReport.stack : undefined,

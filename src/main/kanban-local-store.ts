@@ -2042,38 +2042,6 @@ export function updateDesktopKanbanIssueRuntimeState(
   );
 }
 
-export function updateDesktopKanbanIssueByRunId(
-  app: AppPathProvider,
-  currentUser: KanbanCurrentUser,
-  runId: string,
-  input: KanbanIssueUpdateInput
-): KanbanIssueResult {
-  const targetRunId = trimText(runId);
-  return updateDesktopKanbanIssueByPredicate(
-    app,
-    currentUser,
-    (issue) => issue.runId === targetRunId || issue.activeRunId === targetRunId,
-    input,
-    t("kanban.runtime.runMissing")
-  );
-}
-
-export function updateDesktopKanbanIssueByChatId(
-  app: AppPathProvider,
-  currentUser: KanbanCurrentUser,
-  chatId: string,
-  input: KanbanIssueUpdateInput
-): KanbanIssueResult {
-  const targetChatId = trimText(chatId);
-  return updateDesktopKanbanIssueByPredicate(
-    app,
-    currentUser,
-    (issue) => issue.chatId === targetChatId || issue.attachmentChatId === targetChatId,
-    input,
-    t("kanban.runtime.chatMissing")
-  );
-}
-
 export function moveDesktopKanbanIssue(
   app: AppPathProvider,
   currentUser: KanbanCurrentUser,
@@ -2279,62 +2247,6 @@ function findLocalSyncForRemote(db: DatabaseSync, remoteIssueId: string) {
     localIssueId: row?.localIssueId ?? "",
     origin: row?.origin
   };
-}
-
-function markIssueSyncState(
-  db: DatabaseSync,
-  currentUser: KanbanCurrentUser,
-  issueId: string,
-  syncState: KanbanSyncState,
-  syncError: string | null
-) {
-  const issue = selectIssues(db, currentUser).find((candidate) => candidate.id === issueId);
-  if (!issue) {
-    return null;
-  }
-  insertOrReplaceIssue(db, issue, {
-    syncMode: issue.syncMode ?? "local",
-    syncState,
-    origin: issue.origin ?? "desktop",
-    ownerUserId: issue.ownerUserId ?? currentUser.id,
-    lastRemoteRevision: issue.lastRemoteRevision,
-    lastSyncedAt: issue.lastSyncedAt,
-    syncError
-  });
-  return selectIssues(db, currentUser).find((candidate) => candidate.id === issueId) ?? issue;
-}
-
-export function markDesktopKanbanIssueSyncing(
-  app: AppPathProvider,
-  currentUser: KanbanCurrentUser,
-  issueId: string
-): KanbanIssueResult {
-  return withDesktopKanbanDatabase(app, currentUser, (db) => {
-    const issue = markIssueSyncState(db, currentUser, issueId, "syncing", null);
-    return {
-      ok: Boolean(issue),
-      message: issue ? t("kanban.runtime.cloudSyncing") : t("kanban.runtime.missing"),
-      issue: issue ?? undefined,
-      issues: selectIssues(db, currentUser)
-    };
-  });
-}
-
-export function markDesktopKanbanIssueSyncError(
-  app: AppPathProvider,
-  currentUser: KanbanCurrentUser,
-  issueId: string,
-  message: string
-): KanbanIssueResult {
-  return withDesktopKanbanDatabase(app, currentUser, (db) => {
-    const issue = markIssueSyncState(db, currentUser, issueId, "error", message);
-    return {
-      ok: false,
-      message,
-      issue: issue ?? undefined,
-      issues: selectIssues(db, currentUser)
-    };
-  });
 }
 
 export function applyDesktopKanbanCloudSnapshot(
@@ -2856,39 +2768,6 @@ export function upsertDispatchedDesktopKanbanIssue(
     });
     writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
     return { ok: true, message: t("kanban.runtime.dispatched"), issue: localIssue, issues: selectIssues(db, currentUser) };
-  });
-}
-
-export function linkDesktopKanbanIssueToRemote(
-  app: AppPathProvider,
-  currentUser: KanbanCurrentUser,
-  localIssueId: string,
-  remoteIssue: unknown,
-  revision = 0
-): KanbanIssueResult {
-  const cloudIssue = parseCloudIssue(remoteIssue);
-  if (!cloudIssue) {
-    return { ok: false, message: t("kanban.runtime.cloudIssueInvalid"), issues: listDesktopKanbanIssues(app, currentUser).issues };
-  }
-  return withDesktopKanbanDatabase(app, currentUser, (db) => {
-    const currentIssue = selectIssues(db, currentUser).find((candidate) => candidate.id === localIssueId);
-    const nextIssue = cloudIssueToLocalIssue(cloudIssue, currentUser, revision);
-    if (!currentIssue || !nextIssue?.remoteIssueId) {
-      return { ok: false, message: t("kanban.runtime.missing"), issues: selectIssues(db, currentUser) };
-    }
-    nextIssue.id = currentIssue.id;
-    nextIssue.localIssueId = currentIssue.id;
-    insertOrReplaceIssue(db, nextIssue, {
-      syncMode: "cloud",
-      syncState: "synced",
-      origin: currentIssue.origin ?? "desktop",
-      ownerUserId: currentUser.id,
-      lastRemoteRevision: nextIssue.revision ?? revision,
-      lastSyncedAt: nowIso(),
-      syncError: null
-    });
-    writeDesktopKanbanSyncCursorInDb(db, { lastAppliedRevision: Math.max(readDesktopKanbanRevision(db), revision) });
-    return { ok: true, message: t("kanban.runtime.syncedToCloud"), issue: nextIssue, issues: selectIssues(db, currentUser) };
   });
 }
 

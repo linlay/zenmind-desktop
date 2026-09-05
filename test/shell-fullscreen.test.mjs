@@ -204,6 +204,51 @@ test("desktopShell renderer window controls operate only on the current main win
   assert.equal(otherWindow.maximized, false);
 });
 
+test("deprecated renderer compatibility diagnostics omit routes and keep their stable source", () => {
+  const listeners = new Map();
+  const reports = [];
+  const sender = {
+    getURL() {
+      throw new Error("deprecated compatibility diagnostics must not read the renderer URL");
+    }
+  };
+  registerShellIpcHandlers({
+    handle: () => undefined,
+    on: (channel, handler) => listeners.set(channel, handler)
+  }, {
+    BrowserWindow: {
+      fromWebContents: () => ({ id: 71 })
+    },
+    reportRendererDiagnostic: (source, details) => reports.push({ source, details })
+  });
+
+  listeners.get("diagnostics.rendererError")({ sender }, {
+    source: "deprecated-compatibility",
+    level: "warn",
+    message: "surface.legacy-alias",
+    details: {
+      category: "fixed",
+      canonicalRole: "main-chat",
+      chatId: "must-not-be-logged",
+      path: "/must/not/be/logged"
+    },
+    stack: "must-not-be-logged",
+    filename: "/must/not/be/logged.ts"
+  });
+
+  assert.deepEqual(reports, [{
+    source: "deprecated-compatibility",
+    details: {
+      diagnosticLevel: "warn",
+      windowId: 71,
+      source: "deprecated-compatibility",
+      message: "surface.legacy-alias",
+      details: { category: "fixed", canonicalRole: "main-chat" }
+    }
+  }]);
+  assert.equal(Object.hasOwn(reports[0].details, "route"), false);
+});
+
 test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DPI displays", async () => {
   const handlers = new Map();
   const sender = {};

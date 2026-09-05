@@ -103,7 +103,7 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   const handlers = readSource("src", "main", "ipc", "enterprise-chat-handlers.ts");
   const bridge = readSource("src", "main", "assistant", "core", "agent-platform-bridge.ts");
   const rawMethodStart = bridge.indexOf("async downloadRawChatJSONL(");
-  const rawMethodEnd = bridge.indexOf("\n  async getMemorySettings(", rawMethodStart);
+  const rawMethodEnd = bridge.indexOf("\n  private async runQuery(", rawMethodStart);
   const rawMethod = bridge.slice(rawMethodStart, rawMethodEnd);
 
   assert.match(panel, /enterpriseChat\.sendAgentChat/);

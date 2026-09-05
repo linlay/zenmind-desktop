@@ -517,53 +517,6 @@ export interface KanbanDispatchBindingContext {
   localDisplayName?: string;
 }
 
-export interface KanbanIssueSyncUpsert {
-  localIssueId: string;
-  remoteIssueId?: string | null;
-  baseIssueRevision?: number;
-  input: Record<string, unknown>;
-}
-
-export interface KanbanIssueSyncDelete {
-  localIssueId: string;
-  remoteIssueId: string;
-  baseIssueRevision?: number;
-}
-
-export interface KanbanIssueSyncRequest {
-  deviceId: string;
-  projectId: string;
-  localProjectId: string;
-  baseRevision?: number;
-  upserts?: KanbanIssueSyncUpsert[];
-  deletes?: KanbanIssueSyncDelete[];
-}
-
-export type KanbanIssueSyncItemStatus =
-  | "created"
-  | "updated"
-  | "deleted"
-  | "conflict"
-  | "skipped"
-  | "error";
-
-export interface KanbanIssueSyncItemResult {
-  localIssueId: string;
-  remoteIssueId?: string;
-  status: KanbanIssueSyncItemStatus;
-  issue?: Record<string, unknown>;
-  message?: string;
-}
-
-export interface KanbanIssueSyncResult {
-  ok: boolean;
-  message?: string;
-  boardId?: string;
-  projectId?: string;
-  revision?: number;
-  results: KanbanIssueSyncItemResult[];
-}
-
 export interface KanbanCreateLocalProjectRequest {
   name: string;
   localProjectId?: string;

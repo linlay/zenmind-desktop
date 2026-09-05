@@ -4071,7 +4071,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.doesNotMatch(kanbanRuntime, /desktop\.issue\.sync/);
   assert.match(kanbanRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
   assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}state\.kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
-  assert.match(kanbanLocalStore, /export function updateDesktopKanbanIssueByChatId/);
+  assert.doesNotMatch(kanbanLocalStore, /export function updateDesktopKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
   assert.match(assistantNavigationStatusClient, /frame: "push"/);
@@ -5214,7 +5214,6 @@ test("Chinese chat copy consistently uses 对话 while technical sessions keep �
     "enterpriseChat.directConversation",
     "enterpriseChat.noConversations",
     "enterpriseChat.supportBundleConfirm",
-    "kanban.runtime.chatMissing",
     "kanban.runtime.chatUpdated",
     "desktopPet.replyMissingContent",
     "assistant.chatIdRequired",
@@ -8831,4 +8830,138 @@ test("persistent external webview surfaces hide without detaching the webview la
     externalWebviewStyles,
     /\.external-webview-page\.is-inactive-surface \.external-webview-browser-chrome\s*\{[\s\S]*?app-region:\s*no-drag;[\s\S]*?-webkit-app-region:\s*no-drag;/u
   );
+});
+
+test("R0 deprecated Desktop APIs and dead storage chains are absent while compatibility exits stay observable", () => {
+  for (const segments of [
+    ["src", "main", "assistant", "pet", "agent-platform-api.ts"],
+    ["src", "shared", "startup-status.ts"],
+    ["src", "main", "kanban-cloud-sync.ts"],
+    ["src", "main", "kanban-db.ts"],
+    ["src", "main", "kanban-store.ts"],
+    ["src", "main", "kanban-sync.ts"],
+    ["src", "main", "retired-plugins.ts"],
+  ]) {
+    assert.equal(fs.existsSync(path.join(projectRoot, ...segments)), false, segments.join("/"));
+  }
+
+  const desktopAssistantBoundary = [
+    readSourceFile("src", "shared", "contracts", "copilot.ts"),
+    readSourceFile("src", "shared", "contracts", "desktop-api.ts"),
+    readSourceFile("src", "preload", "index.ts"),
+    readSourceFile("src", "main", "ipc", "assistant-handlers.ts"),
+    readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"),
+  ].join("\n");
+  for (const removedName of [
+    "getMemorySettings",
+    "saveMemorySettings",
+    "getMemorySummary",
+    "openMemoryDirectory",
+    "listMemoryItems",
+    "deleteMemoryItem",
+    "clearMemoryItems",
+    "correctVoiceText",
+    "transcribeVoiceAudio",
+    "AssistantMemorySettings",
+    "AssistantMemorySummary",
+    "AssistantVoiceCorrectionRequest",
+    "AssistantVoiceTranscriptionRequest",
+    "ASSISTANT_LEGACY_STREAM_EVENT_TYPES",
+  ]) {
+    assert.doesNotMatch(desktopAssistantBoundary, new RegExp(`\\b${removedName}\\b`, "u"), removedName);
+  }
+  assert.doesNotMatch(
+    [
+      readSourceFile("src", "shared", "contracts", "copilot.ts"),
+      readSourceFile("src", "main", "assistant", "core", "settings-store.ts"),
+      readSourceFile("src", "main", "desktop-profile-store.ts"),
+      readSourceFile("src", "main", "desktop-init-bootstrap.ts"),
+    ].join("\n"),
+    /\bvoiceCorrectionEnabled\b/u,
+  );
+
+  const identityAuth = readSourceFile("src", "main", "identity-center-auth.ts");
+  assert.match(identityAuth, /resolveDesktopCapability\(app, "auth\.publicKey"\)/u);
+  assert.match(identityAuth, /capability\.filePath \|\| getIdentityCenterPublicKeyExportPath\(app\)/u);
+  assert.doesNotMatch(identityAuth, /readEnvFile|runExecFile|issueIdentityCenterAccessToken|__testInternals|validateJwt|accessToken/u);
+
+  const attachmentStore = readSourceFile("src", "main", "assistant", "attachments", "attachment-store.ts");
+  const agentPlatformConfig = readSourceFile("src", "main", "assistant", "core", "agent-platform-config.ts");
+  for (const removedName of [
+    "hydrateAssistantAttachmentsForChat",
+    "refreshAssistantAttachmentsForRun",
+    "createAssistantArtifactAttachmentsFromFiles",
+    "AssistantArtifactPublishInput",
+    "AssistantArtifactPublishResult",
+    "PublishedAssistantArtifact",
+  ]) {
+    assert.doesNotMatch(attachmentStore, new RegExp(`\\b${removedName}\\b`, "u"), removedName);
+  }
+  assert.doesNotMatch(agentPlatformConfig, /\btryLoadAgentPlatformMinimaxSettings\b|\btryLoadAgentPlatformVoiceAsrSettings\b/u);
+
+  const kanbanBoundary = [
+    readSourceFile("src", "shared", "contracts", "kanban.ts"),
+    readSourceFile("src", "main", "kanban-local-projects.ts"),
+    readSourceFile("src", "main", "kanban-local-store.ts"),
+    readSourceFile("src", "main", "kanban-runtime.ts"),
+  ].join("\n");
+  for (const removedName of [
+    "KanbanIssueSyncResult",
+    "listPendingUpstreamIssues",
+    "applyDesktopIssueSyncResults",
+    "updateDesktopKanbanIssueByRunId",
+    "updateDesktopKanbanIssueByChatId",
+    "markDesktopKanbanIssueSyncing",
+    "writeKanbanSettingsIfAbsent",
+    "updateKanbanIssueByRunId",
+  ]) {
+    assert.doesNotMatch(kanbanBoundary, new RegExp(`\\b${removedName}\\b`, "u"), removedName);
+  }
+  assert.match(kanbanBoundary, /\bbuildKanbanAutomationPayload\b/u);
+  assert.match(kanbanBoundary, /\bresolveKanbanRunFinishedPush\b/u);
+
+  const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
+  for (const removedName of [
+    "createDesktopPetWindow",
+    "dismissDesktopPetPreview",
+    "openAssistantFromDesktopPet",
+    "openDesktopPetTaskChat",
+    "requestDesktopPetSignature",
+    "setDesktopPetRendererWindowMode",
+    "moveDesktopPetWindowBy",
+    "beginDesktopPetWindowDrag",
+    "endDesktopPetWindowDrag",
+    "setDesktopPetWindowMouseInteractive",
+  ]) {
+    assert.doesNotMatch(appRuntime, new RegExp(`function ${removedName}\\b`, "u"), removedName);
+  }
+
+  const pluginLoader = readSourceFile("src", "main", "plugin-loader.ts");
+  const pluginMarket = readSourceFile("src", "main", "marketplace", "plugin-market.ts");
+  assert.doesNotMatch(`${appRuntime}\n${pluginLoader}\n${pluginMarket}`, /retired-plugins|isRetiredPlugin|cleanupRetiredPluginUserData/u);
+
+  const compatibility = readSourceFile("src", "main", "deprecated-compatibility.ts");
+  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const webclientBridge = readSourceFile("src", "main", "ipc", "agent-webclient-bridge-handlers.ts");
+  const browserRegistry = readSourceFile("src", "main", "browser-surface-registry.ts");
+  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
+  const builtinLoader = readSourceFile("src", "main", "builtin-loader.ts");
+  const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
+  assert.match(assistantHandlers, /reportDeprecatedCompatibilityUse\("assistant\.createCoderProject"\)/u);
+  assert.match(webclientBridge, /"agent-webclient\.bridge-v4"[\s\S]{0,100}"agent-webclient\.bridge-v5"/u);
+  assert.match(browserRegistry, /category: LEGACY_FIXED_SURFACE_ID_ALIASES\[normalized\] \? "fixed" : "derived"/u);
+  assert.match(appShell, /const LEGACY_AGENT_WEBCLIENT_SERVICE_PATH = "\/service\/agent-webclient"/u);
+  assert.match(appShell, /path=\{LEGACY_AGENT_WEBCLIENT_SERVICE_PATH\}[\s\S]{0,120}LegacyAgentWebclientServiceRouteRedirect/u);
+  assert.match(appShell, /reportDeprecatedRendererCompatibilityUse\("route\.service-agent-webclient"/u);
+  assert.match(compatibility, /"\[deprecated-compatibility\]"/u);
+  assert.match(compatibility, /desktopVersion: currentDesktopVersion/u);
+  assert.match(appRuntime, /source === "deprecated-compatibility" \? \{ desktopVersion: app\.getVersion\(\) \}/u);
+  assert.match(builtinLoader, /MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION = "v0\.3\.60"/u);
+  assert.doesNotMatch(
+    shellHandlers,
+    /source === "deprecated-compatibility"[\s\S]{0,260}route: event\.sender\.getURL\(\)/u,
+  );
+
+  const webclientHost = readSourceFile("src", "main", "services", "agent-webclient-host.ts");
+  assert.match(webclientHost, /requestPath\.startsWith\("\/api\/voice"\)/u);
 });

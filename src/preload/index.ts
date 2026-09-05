@@ -12,13 +12,10 @@ import type {
   AssistantNavigationPushEventListener,
   AssistantReorderProjectsRequest,
   AssistantAttachmentProgressListener,
-  AssistantMemorySettingsInput,
   AssistantPastedImageInput,
   AssistantSettingsInput,
   AssistantSubmitAwaitingRequest,
   AssistantStartRunRequest,
-  AssistantVoiceCorrectionRequest,
-  AssistantVoiceTranscriptionRequest,
   DesktopActionCallListener,
   DesktopActionRendererResponse,
   DesktopPetSignatureRequestedListener,
@@ -206,10 +203,6 @@ const api: DesktopApi = {
     consumeFirstInstallBootstrapNavigation: () =>
       ipcRenderer.invoke("assistant.consumeFirstInstallBootstrapNavigation"),
     saveSettings: (input: AssistantSettingsInput) => ipcRenderer.invoke("assistant.saveSettings", input),
-    getMemorySettings: () => ipcRenderer.invoke("assistant.getMemorySettings"),
-    saveMemorySettings: (input: AssistantMemorySettingsInput) =>
-      ipcRenderer.invoke("assistant.saveMemorySettings", input),
-    getMemorySummary: () => ipcRenderer.invoke("assistant.getMemorySummary"),
     listAgents: () => ipcRenderer.invoke("assistant.listAgents"),
     listNavigationAgents: (options?: AssistantNavigationListOptions) =>
       ipcRenderer.invoke("assistant.listNavigationAgents", options),
@@ -223,10 +216,6 @@ const api: DesktopApi = {
       ipcRenderer.invoke("assistant.createProject", input),
     createCoderProject: (input: AssistantCreateCoderProjectRequest) =>
       ipcRenderer.invoke("assistant.createCoderProject", input),
-    openMemoryDirectory: () => ipcRenderer.invoke("assistant.openMemoryDirectory"),
-    listMemoryItems: () => ipcRenderer.invoke("assistant.listMemoryItems"),
-    deleteMemoryItem: (memoryId: string) => ipcRenderer.invoke("assistant.deleteMemoryItem", memoryId),
-    clearMemoryItems: () => ipcRenderer.invoke("assistant.clearMemoryItems"),
     listChats: () => ipcRenderer.invoke("assistant.listChats"),
     listHistoryChats: () => ipcRenderer.invoke("assistant.listHistoryChats"),
     getChat: (chatId: string) => ipcRenderer.invoke("assistant.getChat", chatId),
@@ -240,10 +229,6 @@ const api: DesktopApi = {
     captureScreenshot: (chatId?: string | null) => ipcRenderer.invoke("assistant.captureScreenshot", chatId),
     startRun: (request: AssistantStartRunRequest) => ipcRenderer.invoke("assistant.startRun", request),
     stopRun: (runId: string) => ipcRenderer.invoke("assistant.stopRun", runId),
-    correctVoiceText: (request: AssistantVoiceCorrectionRequest) =>
-      ipcRenderer.invoke("assistant.correctVoiceText", request),
-    transcribeVoiceAudio: (request: AssistantVoiceTranscriptionRequest) =>
-      ipcRenderer.invoke("assistant.transcribeVoiceAudio", request),
     submitAwaiting: (request: AssistantSubmitAwaitingRequest) => ipcRenderer.invoke("assistant.submitAwaiting", request),
     openAttachment: (chatId: string, attachmentId: string) =>
       ipcRenderer.invoke("assistant.openAttachment", chatId, attachmentId),

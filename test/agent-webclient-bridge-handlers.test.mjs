@@ -10,7 +10,11 @@ const {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
+  AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } = require("../dist-electron/shared/contracts/agent-webclient-bridge.js");
+const {
+  __testInternals: deprecatedCompatibilityInternals,
+} = require("../dist-electron/main/deprecated-compatibility.js");
 
 const EPOCH_MS = 1_788_000_000_000;
 
@@ -211,8 +215,12 @@ function createRuntime(targets, overrides = {}) {
     issueAccessToken: async () => ({ ok: true, token: "token", message: "" }),
     syncCanonicalChat: overrides.syncCanonicalChat
       || (async () => ({ requestId: "sync-1", ok: true })),
-    dispatchWorkPanel: async () => ({ ok: true, workspaceId: "workspace-1" }),
-    openResource: async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" }),
+    dispatchWorkPanel: overrides.dispatchWorkPanel
+      || (async () => ({ ok: true, workspaceId: "workspace-1" })),
+    openResource: overrides.openResource
+      || (async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" })),
+    openDocument: overrides.openDocument
+      || (async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-2", renderer: "native-document" })),
   });
   const emitLifecycle = (event) => lifecycleListeners.forEach((listener) => listener(event));
   for (const target of targets.values()) {
@@ -240,6 +248,73 @@ function createRuntime(targets, overrides = {}) {
     emitLifecycle,
   };
 }
+
+test("WorkPanel bridge keeps the v4/v5 compatibility matrix and deduplicates diagnostics by version and method", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[target.webContentsId, target]]));
+  const sender = createSender(target.webContentsId, target.currentUrl);
+  const invoke = runtime.handlers.get(AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL);
+  const warnings = [];
+  const originalWarn = console.warn;
+  deprecatedCompatibilityInternals.resetDesktopVersion();
+  deprecatedCompatibilityInternals.clearReportedCompatibilityUses();
+  console.warn = (...args) => warnings.push(args);
+  try {
+    const v4Item = {
+      method: "openItem",
+      input: { version: 4, descriptor: { kind: "web", id: "legacy-item" } },
+    };
+    assert.equal((await invoke({ sender }, v4Item)).ok, true);
+    assert.equal((await invoke({ sender }, v4Item)).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "activateItem",
+      input: { version: 4, itemId: "legacy-item" },
+    })).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "openResource",
+      input: { version: 4 },
+    })).error.code, "version_mismatch");
+
+    const v5Resource = {
+      method: "openResource",
+      input: {
+        version: 5,
+        profile: "artifact",
+        agentKey: "agent-1",
+        chatId: "chat-1",
+        resourceId: "resource-1",
+        relativePath: "artifacts/images/example.png",
+      },
+    };
+    assert.equal((await invoke({ sender }, v5Resource)).ok, true);
+    assert.equal((await invoke({ sender }, v5Resource)).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "openDocument",
+      input: { version: 5, source: { kind: "workspace-file", agentKey: "agent-1", path: "README.md" } },
+    })).error.code, "version_mismatch");
+    assert.equal((await invoke({ sender }, {
+      method: "openDocument",
+      input: { version: 6, source: { kind: "workspace-file", agentKey: "agent-1", path: "README.md" } },
+    })).ok, true);
+    assert.equal((await invoke({ sender }, {
+      method: "openItem",
+      input: { version: 7, descriptor: { kind: "web", id: "future-item" } },
+    })).error.code, "version_mismatch");
+
+    const compatibilityWarnings = warnings.filter((args) => args[0] === "[deprecated-compatibility]");
+    assert.deepEqual(
+      compatibilityWarnings.map((args) => args[1]),
+      [
+        { id: "agent-webclient.bridge-v4", version: 4, method: "openItem" },
+        { id: "agent-webclient.bridge-v4", version: 4, method: "activateItem" },
+        { id: "agent-webclient.bridge-v5", version: 5, method: "openResource" },
+      ],
+    );
+  } finally {
+    console.warn = originalWarn;
+    deprecatedCompatibilityInternals.clearReportedCompatibilityUses();
+  }
+});
 
 async function openSession(runtime, sender, sessionId) {
   runtime.listeners.get(AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL)({ sender }, { sessionId });

@@ -10,7 +10,6 @@ import {
 import { sanitizeDesktopCopilotPagePreferences } from "../../../shared/page-copilot";
 import { getAssistantSettingsRoot } from "../../user-paths";
 import {
-  DEFAULT_VOICE_CORRECTION_ENABLED,
   DESKTOP_PROFILE_FILE,
   getDesktopProfilePath,
   readDesktopProfileFromRoot,
@@ -24,7 +23,6 @@ export type AssistantSettingsPrivate = {
   baseURL: string;
   model: string;
   apiKey: string;
-  voiceCorrectionEnabled: boolean;
   desktopHelperAgentKey: string;
   chatDefaultAgentKey: string;
   bootstrapAgentKey: string;
@@ -88,9 +86,6 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
     baseURL: "",
     model: "",
     apiKey: "",
-    voiceCorrectionEnabled: typeof candidate.voiceCorrectionEnabled === "boolean"
-      ? candidate.voiceCorrectionEnabled
-      : DEFAULT_VOICE_CORRECTION_ENABLED,
     desktopHelperAgentKey,
     chatDefaultAgentKey,
     bootstrapAgentKey: typeof candidate.bootstrapAgentKey === "string" ? candidate.bootstrapAgentKey.trim() : "",
@@ -101,7 +96,6 @@ function normalizeStoredSettings(value: unknown): AssistantSettingsPrivate {
 
 function toStoredAssistantSettings(settings: AssistantSettingsPrivate) {
   return {
-    voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
     chatDefaultAgentKey: settings.chatDefaultAgentKey,
     desktopCopilotPages: settings.desktopCopilotPages
@@ -139,7 +133,6 @@ export function toPublicAssistantSettings(
     model: settings.model,
     configured: Boolean(settings.baseURL.trim() && settings.model.trim() && apiKeyConfigured),
     apiKeyConfigured,
-    voiceCorrectionEnabled: settings.voiceCorrectionEnabled,
     desktopHelperAgentKey: settings.desktopHelperAgentKey,
     chatDefaultAgentKey: settings.chatDefaultAgentKey,
     bootstrapAgentKey: settings.bootstrapAgentKey,
@@ -155,7 +148,6 @@ export function readAssistantSettingsFromRoot(rootDir: string): AssistantSetting
   const profile = readDesktopProfileFromRoot(rootDir);
   const desktopInitAssistant = readDesktopInitAssistantSettingsFromRoot(rootDir);
   const settings = normalizeStoredSettings({
-    voiceCorrectionEnabled: profile.assistant.voiceCorrectionEnabled,
     desktopHelperAgentKey: profile.assistant.copilot.agentKey,
     chatDefaultAgentKey:
       profile.assistant.chat.agentKey || desktopInitAssistant.chatDefaultAgentKey,
@@ -180,9 +172,6 @@ export function saveAssistantSettingsToRoot(
     baseURL: "",
     model: "",
     apiKey: "",
-    voiceCorrectionEnabled: typeof input.voiceCorrectionEnabled === "boolean"
-      ? input.voiceCorrectionEnabled
-      : current.voiceCorrectionEnabled,
     desktopHelperAgentKey: typeof input.desktopHelperAgentKey === "string" && input.desktopHelperAgentKey.trim()
       ? input.desktopHelperAgentKey.trim()
       : current.desktopHelperAgentKey,
@@ -196,7 +185,6 @@ export function saveAssistantSettingsToRoot(
 
   updateDesktopProfileInRoot(rootDir, {
     assistant: {
-      voiceCorrectionEnabled: next.voiceCorrectionEnabled,
       copilot: {
         agentKey: next.desktopHelperAgentKey
       },
@@ -224,7 +212,6 @@ export function saveAssistantSettings(app: App, input: AssistantSettingsInput): 
 }
 
 export const __testInternals = {
-  DEFAULT_VOICE_CORRECTION_ENABLED,
   SETTINGS_FILE,
   getAssistantRoot,
   getSettingsPath,

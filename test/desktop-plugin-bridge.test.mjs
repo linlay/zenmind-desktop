@@ -192,7 +192,8 @@ test("installed plugin loader skips invalid legacy manifests", () => {
       warnings.push(args.map(String).join(" "));
     };
 
-    writePluginManifest(getPluginInstallDir(app, "legacy-plugin", "v0.1.0"), {
+    const legacyPluginDir = getPluginInstallDir(app, "legacy-plugin", "v0.1.0");
+    writePluginManifest(legacyPluginDir, {
       kind: "plugin",
       id: "legacy-plugin",
       name: "Legacy Plugin",
@@ -201,6 +202,8 @@ test("installed plugin loader skips invalid legacy manifests", () => {
       frontend: { mode: "none" },
       scripts: { start: "start.sh", stop: "stop.sh" }
     });
+    const legacyUserDataPath = path.join(legacyPluginDir, "user-owned-data.json");
+    fs.writeFileSync(legacyUserDataPath, "{\"preserve\":true}\n", "utf8");
 
     writePluginManifest(getPluginInstallDir(app, "valid-plugin", "v0.1.0"), {
       pluginApiVersion: 1,
@@ -229,6 +232,7 @@ test("installed plugin loader skips invalid legacy manifests", () => {
     assert.equal(getService("valid-plugin").kind, "plugin");
     assert.throws(() => getService("legacy-plugin"), /unknown service id/u);
     assert.match(warnings.join("\n"), /Skipping invalid installed plugin manifest/u);
+    assert.equal(fs.readFileSync(legacyUserDataPath, "utf8"), "{\"preserve\":true}\n");
   } finally {
     console.warn = originalWarn;
     registryInternals.clearServices();

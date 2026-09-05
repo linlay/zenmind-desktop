@@ -489,15 +489,6 @@ function writeKanbanCloudConfig(app: App, input: KanbanDesktopConfigFile): Kanba
   }).cloud;
 }
 
-export function writeKanbanSettingsIfAbsent(app: App, input: KanbanSettingsInput) {
-  const configPath = getKanbanConfigPath(app);
-  if (fs.existsSync(configPath)) {
-    return false;
-  }
-  saveKanbanSettings(app, input);
-  return true;
-}
-
 function getKanbanDeviceInfo(app: App) {
   const deviceInfo = getDesktopDeviceInfo(app);
   const config = readKanbanCloudConfig(app);

@@ -83,7 +83,6 @@ const TEXT_EXTENSIONS = new Set([
 ]);
 
 const IMAGE_EXTENSIONS = new Set([".gif", ".jpeg", ".jpg", ".png", ".webp"]);
-const REFRESHABLE_DOCUMENT_FORMATS = new Set(["text", "pdf", "docx", "xlsx", "pptx", "zip"]);
 
 function createAttachmentId() {
   return `att_${Date.now().toString(36)}_${randomUUID().slice(0, 8)}`;
@@ -274,42 +273,8 @@ type StoredAttachmentMetadata = Omit<AssistantAttachment, "dataUrl"> & {
   sha256?: string;
 };
 
-export type AssistantArtifactPublishInput = {
-  artifactId?: string;
-  path: string;
-  name?: string;
-  mimeType?: string;
-  description?: string;
-  type?: string;
-};
-
-export type PublishedAssistantArtifact = {
-  artifactId: string;
-  attachmentId: string;
-  name: string;
-  mimeType: string;
-  sizeBytes: number;
-  sha256: string;
-  url: string;
-  type: string;
-  description?: string;
-};
-
-export type AssistantArtifactPublishResult = {
-  ok: boolean;
-  chatId: string;
-  message: string;
-  attachments: AssistantAttachment[];
-  artifacts: PublishedAssistantArtifact[];
-  errors: string[];
-};
-
 function getAttachmentMetadataPath(attachmentsDir: string, attachmentId: string) {
   return path.join(attachmentsDir, `${path.basename(attachmentId)}.json`);
-}
-
-function createAssistantAttachmentUrl(chatId: string, attachmentId: string) {
-  return `assistant://attachment/${chatId}/${attachmentId}`;
 }
 
 function readAttachmentMetadata(attachmentsDir: string, attachmentId: string): StoredAttachmentMetadata | null {
@@ -352,143 +317,6 @@ function readAttachmentMetadata(attachmentsDir: string, attachmentId: string): S
   }
 }
 
-export function hydrateAssistantAttachmentsForChat(
-  app: App,
-  chatId: string | null | undefined,
-  attachments: AssistantAttachment[] | null | undefined
-) {
-  if (!chatId || !Array.isArray(attachments) || attachments.length === 0) {
-    return attachments ?? [];
-  }
-
-  const attachmentsDir = path.join(getAttachmentChatDir(app, chatId), "attachments");
-  return attachments.map((attachment) => {
-    if (attachment.dataUrl) {
-      return attachment;
-    }
-
-    const metadata = readAttachmentMetadata(attachmentsDir, attachment.id);
-    const merged: AssistantAttachment = {
-      ...attachment,
-      ...(metadata
-        ? {
-            name: metadata.name,
-            mimeType: metadata.mimeType,
-            sizeBytes: metadata.sizeBytes,
-            text: metadata.text,
-            ...(metadata.kind ? { kind: metadata.kind } : {}),
-            ...(metadata.artifactId ? { artifactId: metadata.artifactId } : {}),
-            ...(metadata.description ? { description: metadata.description } : {}),
-            ...(metadata.sha256 ? { sha256: metadata.sha256 } : {}),
-            ...(metadata.url ? { url: metadata.url } : {}),
-            ...(metadata.truncated ? { truncated: true } : {}),
-            ...(metadata.error ? { error: metadata.error } : {}),
-            ...(metadata.document ? { document: metadata.document } : {})
-          }
-        : {})
-    };
-
-    if (!metadata?.storedName || !isSupportedImage(merged.mimeType, merged.name)) {
-      return merged;
-    }
-
-    try {
-      const storedBuffer = fs.readFileSync(path.join(attachmentsDir, path.basename(metadata.storedName)));
-      const imageContext = createImageDataUrl(storedBuffer, merged.mimeType);
-      return {
-        ...merged,
-        ...(imageContext.dataUrl ? { dataUrl: imageContext.dataUrl } : {}),
-        ...(imageContext.error && !merged.error ? { error: imageContext.error } : {})
-      };
-    } catch (error) {
-      if ((error as NodeJS.ErrnoException).code === "ENOENT") {
-        return merged;
-      }
-      throw error;
-    }
-  });
-}
-
-function shouldRefreshStoredAttachment(attachment: AssistantAttachment, metadata: StoredAttachmentMetadata | null) {
-  if (!metadata?.storedName || attachment.kind === "artifact" || attachment.hidden) {
-    return false;
-  }
-  const document = attachment.document ?? metadata.document;
-  if (!document || document.readStatus !== "unreadable") {
-    return false;
-  }
-  if (!REFRESHABLE_DOCUMENT_FORMATS.has(document.format)) {
-    return false;
-  }
-  return !(attachment.text || metadata.text || "").trim();
-}
-
-function mergeRefreshedAttachment(
-  attachment: AssistantAttachment,
-  metadata: StoredAttachmentMetadata,
-  extracted: Awaited<ReturnType<typeof extractDocumentTextFromFile>>
-): AssistantAttachment {
-  const { error: _error, truncated: _truncated, dataUrl: _dataUrl, ...base } = {
-    ...attachment,
-    ...metadata
-  };
-  return {
-    ...base,
-    text: extracted.text,
-    ...(extracted.truncated ? { truncated: true } : {}),
-    ...(extracted.error ? { error: extracted.error } : {}),
-    document: extracted.document
-  };
-}
-
-export async function refreshAssistantAttachmentsForRun(
-  app: App,
-  chatId: string | null | undefined,
-  attachments: AssistantAttachment[] | null | undefined
-): Promise<{ attachments: AssistantAttachment[]; changed: boolean }> {
-  if (!chatId || !Array.isArray(attachments) || attachments.length === 0) {
-    return {
-      attachments: attachments ?? [],
-      changed: false
-    };
-  }
-
-  const attachmentsDir = path.join(getAttachmentChatDir(app, chatId), "attachments");
-  const refreshed: AssistantAttachment[] = [];
-  let changed = false;
-  for (const attachment of attachments) {
-    const metadata = readAttachmentMetadata(attachmentsDir, attachment.id);
-    if (!shouldRefreshStoredAttachment(attachment, metadata)) {
-      refreshed.push(attachment);
-      continue;
-    }
-
-    const storedPath = path.resolve(path.join(attachmentsDir, path.basename(metadata!.storedName!)));
-    if (!isInsideOrSame(attachmentsDir, storedPath)) {
-      refreshed.push(attachment);
-      continue;
-    }
-
-    try {
-      const extracted = await extractDocumentTextFromFile(storedPath, {
-        maxChars: MAX_ATTACHMENT_TEXT_LENGTH,
-        mimeType: metadata!.mimeType || attachment.mimeType
-      });
-      const next = mergeRefreshedAttachment(attachment, metadata!, extracted);
-      writeAttachmentMetadata(attachmentsDir, next, metadata!.storedName!, metadata!.sha256 ?? "");
-      refreshed.push(next);
-      changed = true;
-    } catch {
-      refreshed.push(attachment);
-    }
-  }
-
-  return {
-    attachments: refreshed,
-    changed
-  };
-}
-
 function writeAttachmentMetadata(
   attachmentsDir: string,
   attachment: AssistantAttachment,
@@ -520,28 +348,6 @@ function isInsideOrSame(parent: string, candidate: string) {
   }
   const relative = path.relative(normalizedParent, normalizedCandidate);
   return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
-}
-
-function resolveArtifactSourcePath(app: App, _chatId: string, inputPath: string) {
-  const trimmed = inputPath.trim();
-  if (!trimmed) {
-    throw new Error(t("attachment.artifactPathRequired"));
-  }
-
-  const workspaceMatch = /^[/\\]workspace(?:[/\\](.*))?$/iu.exec(trimmed);
-  if (workspaceMatch) {
-    throw new Error(t("attachment.workspacePathDeprecated"));
-  }
-  const desktop = path.resolve(app.getPath("desktop"));
-  const allowedRoots = [desktop];
-  const candidate = path.isAbsolute(trimmed)
-      ? trimmed
-      : path.join(desktop, trimmed);
-  const resolved = path.resolve(candidate);
-  if (!allowedRoots.some((root) => isInsideOrSame(root, resolved))) {
-    throw new Error(t("attachment.artifactPathOutsideAllowed", { path: resolved }));
-  }
-  return resolved;
 }
 
 export function resolveAssistantAttachmentPath(app: App, chatId: string, attachmentId: string) {
@@ -979,92 +785,6 @@ export async function createAssistantAttachmentsFromFilesInProcess(
 	    message,
     attachments,
     ...(options.taskId ? { taskId: options.taskId } : {})
-  };
-}
-
-export function createAssistantArtifactAttachmentsFromFiles(
-  app: App,
-  chatId: string,
-  inputs: AssistantArtifactPublishInput[],
-  options: { fallbackArtifactId?: string } = {}
-): AssistantArtifactPublishResult {
-  const chat = ensureAttachmentChatDir(app, chatId);
-  const chatDir = getAttachmentChatDir(app, chat.id);
-  const attachmentsDir = path.join(chatDir, "attachments");
-  fs.mkdirSync(attachmentsDir, { recursive: true });
-
-  const attachments: AssistantAttachment[] = [];
-  const artifacts: PublishedAssistantArtifact[] = [];
-  const errors: string[] = [];
-  for (const [index, input] of inputs.entries()) {
-    const id = createAttachmentId();
-    const artifactId = input.artifactId || (inputs.length === 1 ? options.fallbackArtifactId : "") || `artifact_${Date.now().toString(36)}_${index}`;
-    try {
-      const sourcePath = resolveArtifactSourcePath(app, chat.id, input.path);
-      const stat = fs.statSync(sourcePath);
-      if (!stat.isFile()) {
-        errors.push(t("attachment.pathNotFile", { path: input.path }));
-        continue;
-      }
-      if (stat.size > MAX_ATTACHMENT_FILE_BYTES) {
-        errors.push(t("attachment.publishTooLarge", {
-          path: input.path,
-          limit: formatAttachmentSizeLimit(MAX_ATTACHMENT_FILE_BYTES)
-        }));
-        continue;
-      }
-
-      const name = safeFilename(input.name || sourcePath);
-      const mimeType = input.mimeType || guessMimeType(sourcePath);
-      const storedName = `${id}_${name}`;
-      const storedPath = path.join(attachmentsDir, storedName);
-      fs.copyFileSync(sourcePath, storedPath);
-      const storedBuffer = fs.readFileSync(storedPath);
-      const hash = createHash("sha256").update(storedBuffer).digest("hex");
-      const url = createAssistantAttachmentUrl(chat.id, id);
-      const attachment: AssistantAttachment = {
-        id,
-        name,
-        mimeType,
-        sizeBytes: stat.size,
-        text: "",
-        kind: "artifact",
-        artifactId,
-        ...(input.description ? { description: input.description } : {}),
-        sha256: hash,
-        url
-      };
-      attachments.push(attachment);
-      artifacts.push({
-        artifactId,
-        attachmentId: id,
-        name,
-        mimeType,
-        sizeBytes: stat.size,
-        sha256: hash,
-        url,
-        type: input.type || "file",
-        ...(input.description ? { description: input.description } : {})
-      });
-      writeAttachmentMetadata(attachmentsDir, attachment, storedName, hash);
-    } catch (error) {
-      errors.push(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  const names = artifacts.map((artifact) => artifact.name).join(t("common.nameSeparator"));
-  return {
-    ok: attachments.length > 0,
-    chatId: chat.id,
-    message: attachments.length > 0
-      ? t("attachment.published", {
-          count: attachments.length,
-          names: names ? t("attachment.publishedNames", { names }) : ""
-        })
-      : errors[0] || t("attachment.nonePublished"),
-    attachments,
-    artifacts,
-    errors
   };
 }
 

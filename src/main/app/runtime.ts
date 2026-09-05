@@ -16,7 +16,6 @@ import {
 } from "electron";
 import { issueAgentAccessToken } from "../agent-auth";
 import {
-  cancelDesktopSsoLogin,
   completeDesktopSsoCookieLogin,
   desktopSsoAccessTokenNeedsRefresh,
   finalizeDesktopSsoLoginAttempt,
@@ -26,8 +25,6 @@ import {
   getDesktopSsoStatus,
   isDesktopSsoCredentialRuntimeReady,
   isDesktopSsoLoginCompletionUrl,
-  logoutDesktopSso,
-  startDesktopSsoLogin,
 } from "../oidc-sso";
 import { loadBuiltinServices } from "../builtin-loader";
 import {
@@ -73,6 +70,7 @@ import { redactEnterpriseChatSupportText } from "../enterprise-chat-support-bund
 import { readEnterpriseImSettings } from "../enterprise-im-settings";
 import { createLogsRuntime } from "../logs/runtime";
 import { isDesktopDevelopmentRuntime } from "../development-runtime";
+import { setDeprecatedCompatibilityDesktopVersion } from "../deprecated-compatibility";
 import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
 import {
   bundledEnvZipExists,
@@ -154,16 +152,10 @@ import {
 } from "../renderer-route";
 import { parseSafeLoopbackWebUrl } from "../loopback-url";
 import {
-  openPluginSettingsPage,
-  readPluginSettingsSnapshot,
-  writePluginSettingsValues,
-} from "../plugin-settings";
-import {
   refreshPluginGlobalShortcuts,
   unregisterPluginGlobalShortcuts,
 } from "../plugin-global-shortcuts";
 import { invokePluginDesktopAction } from "../plugin-actions";
-import { cleanupRetiredPluginUserData } from "../retired-plugins";
 import { cleanupProgramDataForVersion } from "../program-data-cleanup";
 import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../bridge/assistant-runtime";
 import { createAssistantRunWakeLock } from "../bridge/assistant-wake-lock";
@@ -198,6 +190,7 @@ import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market"
 import { configureSkillMarketPlatformCaller } from "../marketplace/skill-market";
 
 export function createMainProcessRuntime() {
+  setDeprecatedCompatibilityDesktopVersion(app.getVersion());
   const startupPlatform = process.platform;
   const isFirstDesktopInstall = !desktopDataRootExists(app, startupPlatform);
   const runtimeRootAtProcessStart = resolveRuntimeRoot(app, startupPlatform);
@@ -523,8 +516,6 @@ export function createMainProcessRuntime() {
         }`
       );
     }
-    cleanupRetiredPluginUserData(app);
-  
     petRuntime.initializeState(isFirstDesktopInstall);
   }
   
@@ -925,32 +916,12 @@ export function createMainProcessRuntime() {
     return petRuntime.clearIdleResetTimer();
   }
   
-  function setDesktopPetRendererWindowMode(mode: unknown) {
-    return petRuntime.setWindowMode(mode);
-  }
-  
   function refreshDesktopPetState(patch: any = {}) {
     return petRuntime.refreshState(patch);
   }
   
-  function moveDesktopPetWindowBy(delta: { x?: unknown; y?: unknown }) {
-    return petRuntime.moveWindowBy(delta);
-  }
-  
-  function beginDesktopPetWindowDrag(point: { x?: unknown; y?: unknown }) {
-    return petRuntime.beginDrag(point);
-  }
-  
-  function endDesktopPetWindowDrag() {
-    return petRuntime.endDrag();
-  }
-  
   function hideDesktopPetWindow() {
     return petRuntime.hideWindow();
-  }
-  
-  function setDesktopPetWindowMouseInteractive(interactive: boolean) {
-    return petRuntime.setMouseInteractive(interactive);
   }
   
   async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_TARGET_PATH) {
@@ -975,36 +946,12 @@ export function createMainProcessRuntime() {
     };
   }
   
-  async function openAssistantFromDesktopPet() {
-    return petRuntime.openAssistant();
-  }
-  
-  async function openDesktopPetTaskChat(input: { agentKey?: unknown; chatId?: unknown } = {}) {
-    return petRuntime.openTaskChat(input);
-  }
-  
-  function requestDesktopPetSignature(signatureId: string) {
-    return petRuntime.requestSignature(signatureId);
-  }
-  
-  function buildDesktopPetContextMenu() {
-    return petRuntime.buildContextMenu();
-  }
-  
-  function createDesktopPetWindow() {
-    return petRuntime.createWindow();
-  }
-  
   function showDesktopPetWindow() {
     return petRuntime.showWindow();
   }
 
   function restoreDesktopPetWindowLayering() {
     return petRuntime.restoreWindowLayering();
-  }
-  
-  function dismissDesktopPetPreview() {
-    return petRuntime.dismissPreview();
   }
   
   async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
@@ -1169,6 +1116,7 @@ export function createMainProcessRuntime() {
         : "error";
     const payload = {
       source,
+      ...(source === "deprecated-compatibility" ? { desktopVersion: app.getVersion() } : {}),
       ...details
     };
     if (diagnosticLevel === "debug") {

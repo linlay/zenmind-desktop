@@ -355,9 +355,6 @@ function applyProfileDefaults(
       locale: normalizeLocale(appearance.locale) || current.appearance.locale || DEFAULT_LOCALE
     },
     assistant: {
-      voiceCorrectionEnabled: typeof assistant.voiceCorrectionEnabled === "boolean"
-        ? assistant.voiceCorrectionEnabled
-        : current.assistant.voiceCorrectionEnabled,
       copilot: {
         agentKey: defaultAgentKey
       }

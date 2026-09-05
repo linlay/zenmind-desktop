@@ -11,6 +11,10 @@ const {
 const {
   registerAssistantIpcHandlers
 } = require("../dist-electron/main/ipc/assistant-handlers.js");
+const {
+  __testInternals: deprecatedCompatibilityInternals,
+  setDeprecatedCompatibilityDesktopVersion
+} = require("../dist-electron/main/deprecated-compatibility.js");
 
 function registerProjectHandlers({
   assistantBridge = {},
@@ -37,7 +41,11 @@ function registerProjectHandlers({
     setCurrentPageSnapshot: null,
     reportRendererDiagnostic: null,
     desktopActionOptions: {},
-    app: {},
+    app: {
+      once(event, listener) {
+        if (event === "will-quit") queueMicrotask(() => void listener());
+      }
+    },
     mainWindow: null,
     shell: null,
     showFileDialog: null,
@@ -196,15 +204,31 @@ test("assistant.createProject creates a CODER ACP project with the simplified pa
 });
 
 test("assistant.createCoderProject remains a compatibility alias for CODER creation", async () => {
+  deprecatedCompatibilityInternals.resetDesktopVersion();
+  setDeprecatedCompatibilityDesktopVersion("0.3.60");
+  deprecatedCompatibilityInternals.clearReportedCompatibilityUses();
   const { calls, handlers } = registerProjectHandlers();
   const handler = handlers.get("assistant.createCoderProject");
   assert.equal(typeof handler, "function");
 
-  const result = await handler(null, {
-    name: "ignored-name",
-    workspaceDir: "/Users/demo/Project/legacy-coder",
-    acpProxyId: "claude"
-  });
+  const warnings = [];
+  const originalWarn = console.warn;
+  console.warn = (...args) => warnings.push(args);
+  let result;
+  try {
+    result = await handler(null, {
+      name: "ignored-name",
+      workspaceDir: "/Users/demo/Project/legacy-coder",
+      acpProxyId: "claude"
+    });
+    await handler(null, {
+      name: "ignored-name",
+      workspaceDir: "/Users/demo/Project/legacy-coder",
+      acpProxyId: "claude"
+    });
+  } finally {
+    console.warn = originalWarn;
+  }
 
   assert.equal(result.ok, true);
   assert.equal(calls[0].path, "/api/admin/agents/create");
@@ -219,6 +243,11 @@ test("assistant.createCoderProject remains a compatibility alias for CODER creat
   });
   assert.deepEqual(calls[1], { path: "scheduleRefresh", delay: 0 });
   assert.equal(calls.some((call) => call.path === "/api/admin/agents/update"), false);
+  assert.deepEqual(warnings, [[
+    "[deprecated-compatibility]",
+    { id: "assistant.createCoderProject", desktopVersion: "0.3.60" }
+  ]]);
+  deprecatedCompatibilityInternals.resetDesktopVersion();
 });
 
 test("assistant IPC rethrows time contract violations while keeping ordinary navigation failures structured", async () => {

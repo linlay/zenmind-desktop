@@ -2,14 +2,10 @@ import { randomUUID } from "node:crypto";
 import type {
   KanbanCreateLocalProjectResult,
   KanbanCurrentUser,
-  KanbanIssue,
-  KanbanIssueSyncItemResult,
   KanbanProject
 } from "../shared/contracts";
 import {
-  linkDesktopKanbanIssueToRemote,
   listDesktopKanbanIssues,
-  markDesktopKanbanIssueSyncError,
   withDesktopKanbanDatabase
 } from "./kanban-local-store";
 import { t } from "./i18n/main-i18n";
@@ -166,68 +162,4 @@ export function convertLocalProjectIssuesToLocal(
     }
     return rows.length;
   });
-}
-
-// 收集等待上行的本地 issue:origin=desktop 且 syncState 为 local/error。
-// localProjectIds 为空数组时返回空(无 active 绑定即无需上行)。
-export function listPendingUpstreamIssues(
-  app: AppPathProvider,
-  currentUser: KanbanCurrentUser,
-  localProjectIds: string[]
-): KanbanIssue[] {
-  const ids = localProjectIds.map((value) => trimText(value)).filter(Boolean);
-  if (ids.length === 0) {
-    return [];
-  }
-  const result = listDesktopKanbanIssues(app, currentUser);
-  return result.issues.filter((issue) =>
-    issue.origin === "desktop" &&
-    (issue.syncState === "local" || issue.syncState === "error") &&
-    ids.includes(issue.projectId ?? "")
-  );
-}
-
-// 把 desktop.issue.sync 的逐条结果回写本地库:
-//   created/updated → 用云端权威版覆盖本地并建立映射(syncState=synced)
-//   conflict        → 云端 revision 优先,同样用云端版覆盖本地
-//   deleted/skipped → 标记 synced(deleted 表示云端已确认删除)
-//   error           → syncState=error 并记录消息
-export function applyDesktopIssueSyncResults(
-  app: AppPathProvider,
-  currentUser: KanbanCurrentUser,
-  results: KanbanIssueSyncItemResult[],
-  revision = 0
-): { synced: number; conflicts: number; errors: number } {
-  let synced = 0;
-  let conflicts = 0;
-  let errors = 0;
-  for (const item of results) {
-    const localIssueId = trimText(item.localIssueId);
-    if (!localIssueId) {
-      continue;
-    }
-    if ((item.status === "created" || item.status === "updated") && item.issue) {
-      linkDesktopKanbanIssueToRemote(app, currentUser, localIssueId, item.issue, revision);
-      synced += 1;
-      continue;
-    }
-    if (item.status === "conflict") {
-      conflicts += 1;
-      if (item.issue) {
-        linkDesktopKanbanIssueToRemote(app, currentUser, localIssueId, item.issue, revision);
-      } else {
-        markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("kanban.localProject.remoteConflict"));
-      }
-      continue;
-    }
-    if (item.status === "error") {
-      errors += 1;
-      markDesktopKanbanIssueSyncError(app, currentUser, localIssueId, item.message || t("kanban.localProject.syncFailed"));
-      continue;
-    }
-    if (item.status === "deleted") {
-      synced += 1;
-    }
-  }
-  return { synced, conflicts, errors };
 }

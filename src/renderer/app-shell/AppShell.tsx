@@ -67,6 +67,7 @@ import {
   createServiceSurfaceIdentity,
   createSurfaceIdentity,
   createWebEntrySurfaceIdentity,
+  resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId
 } from "../../shared/surface-identity";
 import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../shared/brand";
@@ -307,7 +308,23 @@ const STARTUP_SERVICE_IDS = ["identity-center", "agent-platform", "agent-webclie
 const STARTUP_LOADING_TIMEOUT_MS = 45000;
 
 const STARTUP_STATUS_REFRESH_MS = 1500;
-const REPORTED_LEGACY_PUBLIC_SURFACE_IDS = new Set<string>();
+const REPORTED_DEPRECATED_COMPATIBILITY_USES = new Set<string>();
+
+function reportDeprecatedRendererCompatibilityUse(
+  id: "route.service-agent-webclient" | "surface.legacy-alias",
+  details: Record<string, string> = {}
+) {
+  const key = `${id}:${JSON.stringify(details)}`;
+  if (REPORTED_DEPRECATED_COMPATIBILITY_USES.has(key)) return;
+  REPORTED_DEPRECATED_COMPATIBILITY_USES.add(key);
+  window.electronAPI.diagnostics?.reportRendererError({
+    source: "deprecated-compatibility",
+    level: "warn",
+    message: id,
+    details
+  });
+}
+
 function RouteSuspense({ children }: { children: ReactNode }) {
   return <Suspense fallback={null}>{children}</Suspense>;
 }
@@ -315,6 +332,9 @@ function RouteSuspense({ children }: { children: ReactNode }) {
 function LegacyAgentWebclientServiceRouteRedirect() {
   const location = useLocation();
   const embedPath = readAgentWebclientRouteEmbedPath(location.search);
+  useEffect(() => {
+    reportDeprecatedRendererCompatibilityUse("route.service-agent-webclient");
+  }, []);
   return embedPath ? null : <Navigate to={ASSISTANT_TARGET_PATH} replace />;
 }
 
@@ -3405,27 +3425,36 @@ export function AppShell() {
     function resolvePublicSurfaceIdAlias(surfaceId: string) {
       const fixed = resolveLegacyFixedSurfaceId(surfaceId);
       if (fixed !== surfaceId) {
-        reportLegacyPublicSurfaceId(surfaceId, fixed);
+        reportLegacyPublicSurfaceId(
+          surfaceId,
+          fixed,
+          "fixed",
+          resolveFixedSurfaceRole(fixed) ?? "unknown"
+        );
         return fixed;
       }
       const webItem = webItemMap.get(surfaceId as WebEntryKey);
       if (webItem) {
         const canonical = createWebEntrySurfaceIdentity(webItem.kind, surfaceId).surfaceId;
-        reportLegacyPublicSurfaceId(surfaceId, canonical);
+        reportLegacyPublicSurfaceId(surfaceId, canonical, "derived", webItem.kind);
         return canonical;
       }
       if (services.some((service) => service.id === surfaceId)) {
         const canonical = createServiceSurfaceIdentity(surfaceId).surfaceId;
-        reportLegacyPublicSurfaceId(surfaceId, canonical);
+        reportLegacyPublicSurfaceId(surfaceId, canonical, "derived", "service");
         return canonical;
       }
       return surfaceId;
     }
 
-    function reportLegacyPublicSurfaceId(legacy: string, canonical: string) {
-      if (!legacy || legacy === canonical || REPORTED_LEGACY_PUBLIC_SURFACE_IDS.has(legacy)) return;
-      REPORTED_LEGACY_PUBLIC_SURFACE_IDS.add(legacy);
-      console.warn(`[surface-identity] deprecated surfaceId "${legacy}" accepted; use "${canonical}"`);
+    function reportLegacyPublicSurfaceId(
+      legacy: string,
+      canonical: string,
+      category: "fixed" | "derived",
+      canonicalRole: string
+    ) {
+      if (!legacy || legacy === canonical) return;
+      reportDeprecatedRendererCompatibilityUse("surface.legacy-alias", { category, canonicalRole });
     }
 
     function surfaceMatchesTarget(

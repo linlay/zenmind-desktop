@@ -37,6 +37,7 @@ import {
 } from "../assistant/core/project-agent-order";
 import { resolveAssistantChatStoragePaths } from "../assistant/core/chat-storage-path";
 import { revealPathInFileManager } from "../reveal-path";
+import { reportDeprecatedCompatibilityUse } from "../deprecated-compatibility";
 
 export interface AssistantIpcHandlerOptions {
   assistantBridge: any;
@@ -409,18 +410,6 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
     return saveAssistantSettings?.(app, input);
   });
 
-  ipcMain.handle("assistant.getMemorySettings", async () =>
-    assistantBridge?.getMemorySettings()
-  );
-
-  ipcMain.handle("assistant.saveMemorySettings", async (_event: any, input: any) =>
-    assistantBridge?.saveMemorySettings(input)
-  );
-
-  ipcMain.handle("assistant.getMemorySummary", async () =>
-    assistantBridge?.getMemorySummary()
-  );
-
   // ---------------------------------------------------------------------------
   // assistant — agents
   // ---------------------------------------------------------------------------
@@ -656,35 +645,17 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
   );
 
   ipcMain.handle("assistant.createCoderProject", async (_event: any, input: any): Promise<any> =>
-    createProject({
-      ...(
-        input && typeof input === "object" && !Array.isArray(input)
-          ? input
-          : {}
-      ),
-      projectType: "coder"
-    })
-  );
-
-  // ---------------------------------------------------------------------------
-  // assistant — memory (legacy stub + bridge delegates)
-  // ---------------------------------------------------------------------------
-  ipcMain.handle("assistant.openMemoryDirectory", async () => ({
-    ok: false,
-    message: t("assistant.memoryManagedByAgentPlatform"),
-    path: ""
-  }));
-
-  ipcMain.handle("assistant.listMemoryItems", async () =>
-    assistantBridge?.listMemoryItems()
-  );
-
-  ipcMain.handle("assistant.deleteMemoryItem", async (_event: any, memoryId: string) =>
-    assistantBridge?.deleteMemoryItem(memoryId)
-  );
-
-  ipcMain.handle("assistant.clearMemoryItems", async () =>
-    assistantBridge?.clearMemoryItems()
+    {
+      reportDeprecatedCompatibilityUse("assistant.createCoderProject");
+      return createProject({
+        ...(
+          input && typeof input === "object" && !Array.isArray(input)
+            ? input
+            : {}
+        ),
+        projectType: "coder"
+      });
+    }
   );
 
   // ---------------------------------------------------------------------------
@@ -830,14 +801,6 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
 
   ipcMain.handle("assistant.stopRun", async (_event: any, runId: string) =>
     assistantBridge?.stopRun(runId)
-  );
-
-  ipcMain.handle("assistant.correctVoiceText", async (_event: any, request: any) =>
-    assistantBridge?.correctVoiceText(request)
-  );
-
-  ipcMain.handle("assistant.transcribeVoiceAudio", async (_event: any, request: any) =>
-    assistantBridge?.transcribeVoiceAudio(request)
   );
 
   ipcMain.handle("assistant.submitAwaiting", async (_event: any, request: any) =>

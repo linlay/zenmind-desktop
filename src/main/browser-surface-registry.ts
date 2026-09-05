@@ -27,11 +27,13 @@ import {
   MAIN_CHAT_SURFACE_ID,
   createLegacySurfaceIdAliases,
   createWebEntrySurfaceIdentity,
+  resolveFixedSurfaceRole,
   resolveLegacyFixedSurfaceId,
   surfaceIdentityMatchesPolicy,
   type SurfaceIdentity,
   type SurfaceRole
 } from "../shared/surface-identity";
+import { reportDeprecatedCompatibilityUse } from "./deprecated-compatibility";
 
 export type BrowserSurface = SurfaceIdentity & {
   id: string;
@@ -445,7 +447,6 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
     Set<PendingGuestTargetWaiter>
   >();
   const surfaceAliases = new Map<string, string>(Object.entries(LEGACY_FIXED_SURFACE_ID_ALIASES));
-  const reportedLegacyAliases = new Set<string>();
   const pendingRegistrationDiagnostics = new Map<string, PendingSurfaceRegistrationDiagnostic>();
   const lifecycleListeners = new Set<(event: BrowserSurfaceLifecycleEvent) => void>();
   const registrationDiagnosticDedupWindowMs = Math.max(
@@ -605,9 +606,14 @@ export function createBrowserSurfaceRegistry(options: BrowserSurfaceRegistryOpti
   function resolveCanonicalSurfaceId(surfaceId: string) {
     const normalized = surfaceId.trim();
     const canonical = surfaceAliases.get(normalized) ?? resolveLegacyFixedSurfaceId(normalized);
-    if (canonical !== normalized && !reportedLegacyAliases.has(normalized)) {
-      reportedLegacyAliases.add(normalized);
-      console.warn("[surface-identity] deprecated alias accepted; use canonical surfaceId", canonical);
+    if (canonical !== normalized) {
+      reportDeprecatedCompatibilityUse("surface.legacy-alias", {
+        category: LEGACY_FIXED_SURFACE_ID_ALIASES[normalized] ? "fixed" : "derived",
+        canonicalRole:
+          registeredSurfaces.get(canonical)?.surfaceRole ??
+          resolveFixedSurfaceRole(canonical) ??
+          "unknown"
+      });
     }
     return canonical;
   }

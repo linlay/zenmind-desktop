@@ -9,6 +9,7 @@ import { getServicesRoot } from "./user-paths";
 import { readServicePortDefaultsConfig } from "./service-port-defaults";
 
 const manifestCache = new Map<string, { key: string; manifest: Manifest }>();
+export const MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION = "v0.3.60";
 
 type BuiltinAssetIndexEntry = {
   id: string;
@@ -185,6 +186,11 @@ function compareBuiltinVersions(leftVersion: string, rightVersion: string) {
   return 0;
 }
 
+export function isSupportedAgentWebclientBundle(manifest: Manifest) {
+  return manifest.id !== "agent-webclient" ||
+    compareBuiltinVersions(manifest.version, MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION) >= 0;
+}
+
 function listInstalledBuiltinManifestPaths(app: App) {
   const servicesRoot = getServicesRoot(app);
   if (!fs.existsSync(servicesRoot)) {
@@ -224,6 +230,12 @@ function loadInstalledBuiltinServices(app: App, coreServiceDefaultPorts: Record<
         continue;
       }
       if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
+        continue;
+      }
+      if (!isSupportedAgentWebclientBundle(manifest)) {
+        console.warn(
+          `[builtin-loader] rejecting agent-webclient ${manifest.version}; minimum supported Program bundle is ${MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION}`
+        );
         continue;
       }
       const current = latestByServiceId.get(manifest.id);
@@ -279,6 +291,12 @@ export function loadBuiltinServices(app: App) {
 
       const manifest = readCachedManifest(assetPath);
       if (manifest.platform?.os && !isPlatformMatch(manifest.platform.os)) {
+        continue;
+      }
+      if (!isSupportedAgentWebclientBundle(manifest)) {
+        console.warn(
+          `[builtin-loader] rejecting agent-webclient ${manifest.version}; minimum supported Program bundle is ${MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION}`
+        );
         continue;
       }
       const definition = registerService(manifest, {

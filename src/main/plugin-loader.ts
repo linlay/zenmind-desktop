@@ -9,7 +9,6 @@ import { getPluginsRoot, getServiceConfigRoot, getServiceStateRoot } from "./use
 import { STORAGE_NAMESPACE } from "../shared/brand";
 import { removePluginResources } from "./plugin-resources";
 import { t } from "./i18n/main-i18n";
-import { assertPluginNotRetired, isRetiredPluginId } from "./retired-plugins";
 
 const SUPPORTED_PLUGIN_API_VERSION = 1;
 
@@ -85,9 +84,6 @@ export function loadInstalledPlugins(app: App) {
     for (const candidateDir of candidateDirs) {
       const manifest = readManifest(candidateDir);
       if (manifest && readManifestKind(manifest) !== "builtin") {
-        if (isRetiredPluginId(manifest.id)) {
-          continue;
-        }
         try {
           registerService(manifest, { defaultKind: "plugin" });
         } catch (error) {
@@ -210,7 +206,6 @@ export async function installPluginFromArchive(app: App, archivePath: string) {
     if (readManifestKind(manifest) === "builtin") {
       throw new Error(t("plugin.builtinManifestRejected"));
     }
-    assertPluginNotRetired(manifest.id);
     const definition = normalizeManifest(manifest, { defaultKind: "plugin" });
     assertPluginBundleImportable(extractedDir, entries[0], definition);
 

@@ -16,11 +16,6 @@ import type {
   AssistantEvent,
   AssistantHistoryChatItem,
   AssistantHistoryChatsResult,
-  AssistantMemoryItem,
-  AssistantMemorySettings,
-  AssistantMemoryStats,
-  AssistantMemoryStorage,
-  AssistantMemorySummary,
   AssistantNavAgentItem,
   AssistantNavAgentItemsResult,
   AssistantRunEvent,
@@ -31,10 +26,6 @@ import type {
   AssistantStopRunResult,
   AssistantSubmitAwaitingRequest,
   AssistantSubmitAwaitingResult,
-  AssistantVoiceCorrectionRequest,
-  AssistantVoiceCorrectionResult,
-  AssistantVoiceTranscriptionRequest,
-  AssistantVoiceTranscriptionResult,
   DesktopPetAgentOption,
   ServiceId,
   ServiceState
@@ -75,13 +66,6 @@ const STRUCTURED_PLATFORM_TIME_FIELDS = [
   "readAt",
   "lastAccessedAt",
 ] as const;
-const DEFAULT_MEMORY_SETTINGS: AssistantMemorySettings = {
-  enabled: true,
-  autoLearn: true,
-  maxItems: 200,
-  maxChars: 12000
-};
-
 type ApiResponse<T> = {
   code: number;
   msg: string;
@@ -227,37 +211,6 @@ type PlatformArchiveChatResponse = {
     success?: boolean;
     error?: string;
   }>;
-};
-
-type PlatformMemoryRecord = {
-  id?: string;
-  chatId?: string;
-  runId?: string;
-  kind?: string;
-  scopeType?: string;
-  subjectKey?: string;
-  category?: string;
-  title?: string;
-  summary?: string;
-  tags?: string[];
-  importance?: number;
-  confidence?: number;
-  status?: string;
-  sourceChatId?: string;
-  sourceRunId?: string;
-  accessCount?: number;
-  createdAt?: unknown;
-  updatedAt?: unknown;
-  lastAccessedAt?: unknown;
-};
-
-type PlatformMemoryRecordsResponse = {
-  count?: number;
-  results?: PlatformMemoryRecord[];
-};
-
-type PlatformMemoryHistoryResponse = {
-  events?: Array<Record<string, unknown>>;
 };
 
 type PlatformAgentSummary = {
@@ -1072,49 +1025,6 @@ function mapRunMessages(run: PlatformRunSummary, path: string): AssistantChatMes
   return messages;
 }
 
-function mapMemoryRecord(record: PlatformMemoryRecord, path: string): AssistantMemoryItem | null {
-  validatePresentPlatformTimes(record as Record<string, unknown>, path);
-  const kind = record.kind === "observation" ? "observation" : "fact";
-  const status = record.status === "archived" || record.status === "open" ? record.status : "active";
-  const createdAt = readRequiredPlatformTimestamp(record.createdAt, `${path}.createdAt`);
-  const updatedAt = readRequiredPlatformTimestamp(record.updatedAt, `${path}.updatedAt`);
-  const lastReferencedAt = readOptionalPlatformTimestamp(record.lastAccessedAt, `${path}.lastAccessedAt`);
-  return {
-    id: readString(record.id),
-    kind,
-    title: readString(record.title) || readString(record.summary).slice(0, 48) || t("assistant.memory"),
-    summary: readString(record.summary || record.title),
-    category: readString(record.category),
-    scopeType: record.scopeType === "chat" ? "chat" : "user",
-    facet: readString(record.category),
-    subjectKey: readString(record.subjectKey),
-    tags: Array.isArray(record.tags) ? record.tags.filter((item): item is string => typeof item === "string") : [],
-    importance: readNumber(record.importance),
-    confidence: readNumber(record.confidence),
-    status,
-    sourceChatId: readString(record.sourceChatId || record.chatId),
-    sourceRunId: readString(record.sourceRunId || record.runId),
-    referenceCount: readNumber(record.accessCount),
-    createdAt,
-    updatedAt,
-    ...(lastReferencedAt === undefined ? {} : { lastReferencedAt })
-  };
-}
-
-function createUnsupportedVoiceCorrectionResult(rawText: string): AssistantVoiceCorrectionResult {
-  return {
-    ok: false,
-    text: rawText,
-    rawText,
-    correctedText: rawText,
-    changeLevel: "none",
-    confidence: 0,
-    glossaryHits: [],
-    uncertainTerms: [],
-    message: t("agentPlatform.voiceCorrectionUnsupported")
-  };
-}
-
 function normalizeAssistantPermissionMode(value: unknown): AssistantStartRunRequest["permissionMode"] {
   return value === "full_access" || value === "page_control" ? value : "default";
 }
@@ -1893,90 +1803,6 @@ export class AgentPlatformAssistantBridge {
     }
   }
 
-  async getMemorySettings(): Promise<AssistantMemorySettings> {
-    return DEFAULT_MEMORY_SETTINGS;
-  }
-
-  async saveMemorySettings(_input: Partial<AssistantMemorySettings>): Promise<AssistantMemorySettings> {
-    return DEFAULT_MEMORY_SETTINGS;
-  }
-
-  async getMemorySummary(): Promise<AssistantMemorySummary> {
-    const [itemsResult, historyResult] = await Promise.allSettled([
-      this.listMemoryItems(),
-      this.getJson<PlatformMemoryHistoryResponse>("/api/memory/history?limit=1")
-    ]);
-    if (itemsResult.status === "rejected" && isTimeContractViolation(itemsResult.reason)) {
-      throw itemsResult.reason;
-    }
-    if (historyResult.status === "rejected" && isTimeContractViolation(historyResult.reason)) {
-      throw historyResult.reason;
-    }
-    const items = itemsResult.status === "fulfilled" ? itemsResult.value.items : [];
-    const history = historyResult.status === "fulfilled" ? historyResult.value.events : [];
-    const audits = Array.isArray(history)
-      ? history.map((event, index) => ({
-          operation: readString(event.operation),
-          status: "ok",
-          reason: readString(event.reason),
-          timestamp: readRequiredPlatformTimestamp(event.ts, `memory.history[${index}].ts`)
-        }))
-      : [];
-    const recentAudit = audits[0] ?? null;
-    return {
-      settings: DEFAULT_MEMORY_SETTINGS,
-      stats: this.createMemoryStats(items),
-      storage: this.createPlatformMemoryStorage(),
-      directoryPath: "",
-      recentAudit
-    };
-  }
-
-  async listMemoryItems(): Promise<{
-    items: AssistantMemoryItem[];
-    settings: AssistantMemorySettings;
-    stats: AssistantMemoryStats;
-    storage: AssistantMemoryStorage;
-  }> {
-    const data = await this.getJson<PlatformMemoryRecordsResponse>("/api/memory/record/list?limit=200");
-    const items = Array.isArray(data.results)
-      ? data.results
-          .map((item, index) => mapMemoryRecord(item, `memory.records[${index}]`))
-          .filter((item): item is AssistantMemoryItem => item !== null)
-      : [];
-    return {
-      items,
-      settings: DEFAULT_MEMORY_SETTINGS,
-      stats: this.createMemoryStats(items),
-      storage: this.createPlatformMemoryStorage()
-    };
-  }
-
-  async deleteMemoryItem(_memoryId: string) {
-    return {
-      ok: false,
-      message: t("agentPlatform.deleteMemoryUnsupported")
-    };
-  }
-
-  async clearMemoryItems() {
-    return {
-      ok: false,
-      message: t("agentPlatform.clearMemoryUnsupported")
-    };
-  }
-
-  async correctVoiceText(request: AssistantVoiceCorrectionRequest): Promise<AssistantVoiceCorrectionResult> {
-    return createUnsupportedVoiceCorrectionResult(request.text);
-  }
-
-  async transcribeVoiceAudio(_request: AssistantVoiceTranscriptionRequest): Promise<AssistantVoiceTranscriptionResult> {
-    return {
-      ...createUnsupportedVoiceCorrectionResult(""),
-      message: t("agentPlatform.voiceTranscriptionUnsupported")
-    };
-  }
-
   private async runQuery(
     baseUrl: string,
     token: string,
@@ -2356,38 +2182,4 @@ export class AgentPlatformAssistantBridge {
     };
   }
 
-  private createMemoryStats(items: AssistantMemoryItem[]): AssistantMemoryStats {
-    const lastLearnedAt = items.reduce<AssistantMemoryStats["lastLearnedAt"]>((latest, item) => {
-      if (latest === null || item.createdAt > latest) {
-        return item.createdAt;
-      }
-      return latest;
-    }, null);
-    const lastReferencedAt = items.reduce<AssistantMemoryStats["lastReferencedAt"]>((latest, item) => {
-      if (
-        item.lastReferencedAt !== undefined &&
-        item.lastReferencedAt !== null &&
-        (latest === null || item.lastReferencedAt > latest)
-      ) {
-        return item.lastReferencedAt;
-      }
-      return latest;
-    }, null);
-    return {
-      total: items.length,
-      factCount: items.filter((item) => item.kind === "fact").length,
-      observationCount: items.filter((item) => item.kind === "observation").length,
-      lastLearnedAt,
-      lastReferencedAt
-    };
-  }
-
-  private createPlatformMemoryStorage(): AssistantMemoryStorage {
-    return {
-      recordsPath: "agent-platform:/api/memory/record/list",
-      staticPath: "agent-platform:/api/memory/scope",
-      auditPath: "agent-platform:/api/memory/history",
-      directoryPath: ""
-    };
-  }
 }

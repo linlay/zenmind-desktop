@@ -28,7 +28,11 @@ const childProcess = require("node:child_process");
     stopRunningServicesForShutdown,
     writeServiceConfig
 } = require("../dist-electron/main/services/manager/index.js");
-const { loadBuiltinServices } = require("../dist-electron/main/builtin-loader.js");
+const {
+  MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION,
+  isSupportedAgentWebclientBundle,
+  loadBuiltinServices
+} = require("../dist-electron/main/builtin-loader.js");
 const {
   __testInternals: registryInternals,
   getBuiltinService,
@@ -3956,6 +3960,14 @@ test("loadBuiltinServices reuses newer installed builtin manifests without openi
     }
     fs.rmSync(tempRoot, { recursive: true, force: true });
   }
+});
+
+test("agent-webclient Program bundles enforce the bridge v6 version floor", () => {
+  assert.equal(MIN_AGENT_WEBCLIENT_BRIDGE_V6_BUNDLE_VERSION, "v0.3.60");
+  assert.equal(isSupportedAgentWebclientBundle({ id: "agent-webclient", version: "v0.3.59" }), false);
+  assert.equal(isSupportedAgentWebclientBundle({ id: "agent-webclient", version: "v0.3.60" }), true);
+  assert.equal(isSupportedAgentWebclientBundle({ id: "agent-webclient", version: "v0.4.0" }), true);
+  assert.equal(isSupportedAgentWebclientBundle({ id: "identity-center", version: "v0.1.0" }), true);
 });
 
 test("installBuiltinService installs extracted builtin root without an extra directory copy", async () => {

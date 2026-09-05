@@ -154,8 +154,7 @@
 .settings-page .settings-item-list,
 .settings-page .desktop-pet-appearance-list,
 .settings-page .navigation-order-list,
-.settings-page .website-list,
-.settings-page .assistant-memory-list {
+.settings-page .website-list {
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -166,9 +165,7 @@
 .settings-page .settings-pet-appearance-row,
 .settings-page .desktop-pet-appearance-row,
 .settings-page .navigation-order-row,
-.settings-page .website-row,
-.settings-page .assistant-memory-row,
-.settings-page .assistant-memory-switch-row {
+.settings-page .website-row {
   border: none;
   border-radius: 0;
   background: transparent;
@@ -179,15 +176,12 @@
 .settings-page .settings-pet-appearance-row + .settings-pet-appearance-row,
 .settings-page .desktop-pet-appearance-row + .desktop-pet-appearance-row,
 .settings-page .navigation-order-list > * + *,
-.settings-page .website-list > * + *,
-.settings-page .assistant-memory-list > * + * {
+.settings-page .website-list > * + * {
   border-top: 1px solid var(--line);
 }
 
 .settings-page .navigation-order-row,
-.settings-page .website-row,
-.settings-page .assistant-memory-row,
-.settings-page .assistant-memory-switch-row {
+.settings-page .website-row {
   padding: 14px 16px;
 }
 
@@ -1812,35 +1806,6 @@
   align-items: end;
 }
 
-.settings-page .assistant-memory-switches {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-}
-
-.settings-page .assistant-memory-switch-row {
-  display: flex;
-  min-height: 0;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.settings-page .assistant-memory-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: start;
-  gap: 14px;
-  min-height: 0;
-}
-
-.settings-page .assistant-memory-storage-card {
-  padding: 14px 16px;
-  border: none;
-  border-radius: 0;
-  background: transparent;
-}
-
 .settings-page .settings-pet-appearance-row,
 .settings-page .desktop-pet-appearance-row {
   display: grid;
@@ -2570,8 +2535,7 @@
   width: 100%;
 }
 
-.settings-page .desktop-pet-agent-form,
-.settings-page .assistant-memory-stats {
+.settings-page .desktop-pet-agent-form {
   width: 100%;
   max-width: none;
 }

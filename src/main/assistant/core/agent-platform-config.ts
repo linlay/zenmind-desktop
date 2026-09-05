@@ -284,7 +284,6 @@ export function loadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPri
     baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
     model: modelId,
     apiKey: resolveProviderAPIKey(provider.key || "minimax", provider.apiKey, location.env),
-    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
     desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
     chatDefaultAgentKey: localSettings.chatDefaultAgentKey,
     bootstrapAgentKey: localSettings.bootstrapAgentKey,
@@ -339,20 +338,12 @@ export function loadAgentPlatformProviderSettings(
     baseURL: endpointToBaseURL(provider.baseUrl, endpointPath),
     model: modelId,
     apiKey,
-    voiceCorrectionEnabled: localSettings.voiceCorrectionEnabled,
     desktopHelperAgentKey: localSettings.desktopHelperAgentKey,
     chatDefaultAgentKey: localSettings.chatDefaultAgentKey,
     bootstrapAgentKey: localSettings.bootstrapAgentKey,
     bootstrapChatId: localSettings.bootstrapChatId,
     desktopCopilotPages: localSettings.desktopCopilotPages
   };
-}
-
-export function loadAgentPlatformVoiceAsrSettings(app: App): AssistantSettingsPrivate | null {
-  return loadAgentPlatformProviderSettings(app, "bailian", {
-    modelId: "qwen3-asr-flash",
-    rejectPlaceholderApiKey: true
-  });
 }
 
 export function loadAgentPlatformAssistantSettings(app: App): AssistantSettingsPrivate | null {
@@ -362,24 +353,6 @@ export function loadAgentPlatformAssistantSettings(app: App): AssistantSettingsP
 function warnAgentPlatformSettingsLoadFailure(scope: string, error: unknown) {
   const message = error instanceof Error ? error.message : String(error);
   console.warn(`[assistant] Failed to load agent-platform ${scope} settings: ${message}`);
-}
-
-export function tryLoadAgentPlatformMinimaxSettings(app: App): AssistantSettingsPrivate | null {
-  try {
-    return loadAgentPlatformMinimaxSettings(app);
-  } catch (error) {
-    warnAgentPlatformSettingsLoadFailure("minimax", error);
-    return null;
-  }
-}
-
-export function tryLoadAgentPlatformVoiceAsrSettings(app: App): AssistantSettingsPrivate | null {
-  try {
-    return loadAgentPlatformVoiceAsrSettings(app);
-  } catch (error) {
-    warnAgentPlatformSettingsLoadFailure("voice-asr", error);
-    return null;
-  }
 }
 
 export function tryLoadAgentPlatformAssistantSettings(app: App): AssistantSettingsPrivate | null {
