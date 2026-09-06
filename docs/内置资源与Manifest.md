@@ -46,6 +46,8 @@ Desktop 同时读取 bundled 资源和已安装程序版本，按稳定 service 
 
 ## 安全与维护约束
 
+WebClient 更新必须显式同步完整的服务资源集合，其他内置服务沿用已验证字节。发布链使用只读的 `scripts/verify-webclient-assets.mjs` 比较 bundle、同步资源、打包应用与部署后 dist 的实际 HTML/JS/CSS 指纹，包含懒加载 chunk；相同版本标签不能作为代码一致的证据。核验运行目录只读，不以手工替换安装目录静态文件作为交付步骤。
+
 - 只接受 manifest 明确声明且通过平台校验的资源。
 - 拒绝路径穿越、符号链接逃逸、缺失顶层目录和不完整 required paths。
 - 不直接手改生成的资源目录；修改上游并重新发布、同步。

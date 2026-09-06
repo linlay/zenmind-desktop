@@ -199,7 +199,7 @@ test("new Chat canonical synchronization promotes Desktop while protecting the l
   );
   assert.match(navigationHandlerBlock, /newChatBootstrapOwnsPromotion/);
   assert.match(navigationHandlerBlock, /!newChatBootstrapOwnsPromotion/);
-  assert.match(canonicalSyncBlock, /canonicalChatPromotionGuardRef\.current = \{ request, targetRoute \}/u);
+  assert.match(canonicalSyncBlock, /canonicalChatPromotionGuardRef\.current = \{\s*request, targetRoute, documentGeneration: webviewDocumentGenerationRef\.current/u);
   assert.match(canonicalSyncBlock, /navigate\(targetRoute, \{ replace: true \}\)/u);
   assert.match(canonicalSyncBlock, /respond\(\{ requestId: request\.requestId, ok: true \}\)/u);
   assert.match(routeDeliveryBlock, /shouldProtectCanonicalChatGuest\(embeddedUrl\)/u);
@@ -593,6 +593,8 @@ test("main Chat settles route delivery only from an exact Router APPLIED status"
 
   assert.match(ackBlock, /pending\.webContentsId !== webContentsId/u);
   assert.match(ackBlock, /pending\.documentGeneration !== routerReady\.documentGeneration/u);
+  assert.match(ackBlock, /pending\.documentGeneration !== webviewDocumentGenerationRef\.current/u);
+  assert.match(ackBlock, /completionScope: "router-only"/u);
   assert.match(ackBlock, /pending\.revision !== status\.routeRevision/u);
   assert.match(ackBlock, /pending\.targetRouterLocation !== status\.routerLocation/u);
   assert.match(ackBlock, /pendingMainChatRouteTransitionRef\.current = null/u);

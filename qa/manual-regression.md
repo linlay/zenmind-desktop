@@ -159,6 +159,14 @@
 - 启动、市场刷新、插件加载和升级不再根据退休 denylist 删除、过滤或拒绝任何插件；插件程序、配置、用户数据、状态和日志均保持不变，显式卸载仍遵循现有用户选择。
 - 回归 Local Kanban CRUD、Cloud `resyncFromCloud`、`issue.claim`、`issue.run.prepare`、`issue.chat.bind/unbind` 与 `run.event.append`；确认旧 DB/store/upload API 不再出现，已有缓存 schema 和磁盘残留旧文件均未被迁移或删除。
 
+## 会话路由交接与整屏加载
+
+- 冷启动、复用 Main Chat webview、隐藏后恢复分别切入目标 Chat；READY/APPLIED 只确认 Router 接受目标，不能当作数据完成。注入旧 revision、目标不符、旧 webContents、旧 document generation 的迟到 ACK/promotion，不得改写当前目标；约 1 秒 fallback 每次交接最多一次，WebClient 数据超时不触发无限重载。
+- 从含产物和计划任务的 A 切入慢加载的 B，再快速切入 C：三个内容区域始终一致，不能出现 A 的产物、计划或顶部旧状态；输入框可见但禁用、侧栏可用。15 秒准备期限和最多 2 秒滚动恢复均有终态；重试仍指向失败目标，迟到数据无效。
+- 对 `36a49dee-bab7-4e5b-84c7-07e2e3c5a83a` 做实际安装版切换检查，同时运行可重复的受控竞态联动测试；只用源码测试或版本标签不能代替此项。
+- 用 `scripts/verify-webclient-assets.mjs --reference <bundle-dist> --candidate <synced-dist> --candidate <packaged-dist> --candidate <deployed-dist>` 检查 HTML、入口与懒加载 JS/CSS 一致。同步输入须包含完整内置服务集合，其他服务指纹保持不变；不得手工替换安装目录文件。
+- macOS 签名/安装与 Windows 原生 PowerShell 打包/安装分别验收，缺少平台或安装授权时记录未完成，不记作通过。
+
 ## 设备身份与 Realtime 稳定性
 
 - 在 Windows 启动 Desktop 后从 Debug 记录 deviceId，运行长对话并同时进行高磁盘负载操作；确认 deviceId、Realtime physical generation 与当前 Run 保持稳定，不出现 `realtime identity was invalidated`。

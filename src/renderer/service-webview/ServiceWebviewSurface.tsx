@@ -177,6 +177,8 @@ type VisibleSelectionToolbarState = Extract<
 type CanonicalChatPromotionGuard = {
   request: CanonicalChatSyncRequest;
   targetRoute: string;
+  documentGeneration: number;
+  routeRevision: number;
 };
 
 type PendingNewChatPreparation = {
@@ -999,6 +1001,8 @@ export function ServiceWebviewSurface({
       const webContentsId = readWebviewContentsId(webviewRef.current);
       if (
         active === false ||
+        mainChatRouteStateRef.current.revision !== mainChatRouteRevision ||
+        currentRouteWithHashRef.current !== currentRouteWithHash ||
         request.surfaceId !== MAIN_CHAT_SURFACE_ID ||
         request.registrationId !== surfaceRegistrationIdRef.current ||
         request.guestWebContentsId !== webContentsId
@@ -1034,7 +1038,11 @@ export function ServiceWebviewSurface({
           targetUrl: pendingTransition.targetUrl,
         });
       }
-      canonicalChatPromotionGuardRef.current = { request, targetRoute };
+      canonicalChatPromotionGuardRef.current = {
+        request, targetRoute, documentGeneration: webviewDocumentGenerationRef.current,
+        // The one source -> canonical route commit advances the revision once.
+        routeRevision: mainChatRouteRevision + 1,
+      };
       surfaceRegistrationRetryRef.current = 0;
       navigate(targetRoute, { replace: true });
       // This ACK means the exact promotion guard is installed. The guest must
@@ -1044,6 +1052,7 @@ export function ServiceWebviewSurface({
   }, [
     active,
     currentRouteWithHash,
+    mainChatRouteRevision,
     navigate,
     ownerChatId,
     serviceId,
@@ -1852,6 +1861,8 @@ export function ServiceWebviewSurface({
     if (!guard) return "invalid" as const;
     const webContentsId = readWebviewContentsId(webviewRef.current);
     const state = active !== false &&
+        guard.documentGeneration === webviewDocumentGenerationRef.current &&
+        guard.routeRevision === mainChatRouteStateRef.current.revision &&
         currentRouteWithHashRef.current === guard.targetRoute
       ? classifyCanonicalChatPromotionGuard({
           request: guard.request,
@@ -1880,6 +1891,8 @@ export function ServiceWebviewSurface({
     const webContentsId = readWebviewContentsId(webviewRef.current);
     const guestUrl = readCurrentPromotionGuestUrl();
     const state = active !== false &&
+        guard.documentGeneration === webviewDocumentGenerationRef.current &&
+        guard.routeRevision === mainChatRouteStateRef.current.revision &&
         currentRouteWithHashRef.current === guard.targetRoute
       ? classifyCanonicalChatPromotionGuard({
           request: guard.request,
@@ -1926,6 +1939,7 @@ export function ServiceWebviewSurface({
       !webContentsId ||
       pending.webContentsId !== webContentsId ||
       pending.documentGeneration !== routerReady.documentGeneration ||
+      pending.documentGeneration !== webviewDocumentGenerationRef.current ||
       !routerReady.ready ||
       routerReady.webContentsId !== webContentsId ||
       pending.phase !== "waiting-applied" ||
@@ -1939,6 +1953,7 @@ export function ServiceWebviewSurface({
           : pending.webContentsId !== webContentsId
             ? "guest-mismatch"
             : pending.documentGeneration !== routerReady.documentGeneration ||
+                pending.documentGeneration !== webviewDocumentGenerationRef.current ||
                 !routerReady.ready
               ? "document-mismatch"
               : pending.phase !== "waiting-applied"
@@ -1971,6 +1986,7 @@ export function ServiceWebviewSurface({
       webContentsId,
     };
     reportServiceWebviewDiagnostic("main-chat-router-applied-accepted", {
+      completionScope: "router-only",
       transitionId: pending.id,
       routeRevision: status.routeRevision,
       targetUrl: pending.targetUrl,
@@ -2423,6 +2439,7 @@ export function ServiceWebviewSurface({
       !routerReady.ready ||
       routerReady.webContentsId !== webContentsId ||
       routerReady.documentGeneration !== pending.documentGeneration ||
+      pending.documentGeneration !== webviewDocumentGenerationRef.current ||
       canonicalChatPromotionGuardRef.current
     ) {
       return false;
@@ -2952,10 +2969,32 @@ export function ServiceWebviewSurface({
       return undefined;
     }
 
+    const handleDidStartNavigation = (event: Event) => {
+      if (readEventBoolean(event, "isMainFrame") !== true || readEventBoolean(event, "isInPlace") === true) return;
+      // Invalidate the old document before dom-ready: queued READY/APPLIED must
+      // not settle routing while the replacement document is still loading.
+      const webContentsId = readWebviewContentsId(targetWebview);
+      const documentGeneration = ++webviewDocumentGenerationRef.current;
+      webviewDomReadyRef.current = { ready: false, webContentsId, documentGeneration };
+      mainChatRouterReadyRef.current = { ready: false, webContentsId, documentGeneration, routerLocation: "", readyAt: 0 };
+      lastMainChatRouterAcknowledgementRef.current = null;
+      canonicalChatPromotionGuardRef.current = null;
+      const pending = pendingMainChatRouteTransitionRef.current;
+      if (pending && pending.webContentsId === webContentsId) pending.phase = "waiting-ready";
+      webviewEventContextRef.current?.reportDiagnostic("main-chat-document-invalidated", {
+        webContentsId, documentGeneration, routeRevision: pending?.revision,
+      });
+    };
     const handleDomReady = () => {
       const webContentsId = readWebviewContentsId(targetWebview);
       webviewDocumentGenerationRef.current += 1;
       const documentGeneration = webviewDocumentGenerationRef.current;
+      if (canonicalChatPromotionGuardRef.current) {
+        canonicalChatPromotionGuardRef.current = null;
+        webviewEventContextRef.current?.reportDiagnostic("canonical-chat-promotion-guard-cleared", {
+          reason: "document-recreated", webContentsId, documentGeneration,
+        });
+      }
       webviewDomReadyRef.current = {
         ready: true,
         webContentsId,
@@ -3015,7 +3054,6 @@ export function ServiceWebviewSurface({
             context.webviewSrcUrl,
           )
         : readCurrentWebviewUrl();
-      context.updateWebviewCurrentUrl(resolvedUrl, "guest");
       const isMainFrame = readEventBoolean(event, "isMainFrame") !== false;
       const mainChatNavigation = isAgentWebclientChatSurface(
         context.serviceId,
@@ -3041,6 +3079,22 @@ export function ServiceWebviewSurface({
         });
         return;
       }
+      const pendingRouterTransition = pendingMainChatRouteTransitionRef.current;
+      if (mainChatNavigation && isMainFrame && pendingRouterTransition && (
+        pendingRouterTransition.revision !== mainChatRouteStateRef.current.revision ||
+        pendingRouterTransition.webContentsId !== readWebviewContentsId(targetWebview) ||
+        pendingRouterTransition.documentGeneration !== webviewDocumentGenerationRef.current ||
+        !isMainChatGuestAtRoute(resolvedUrl, pendingRouterTransition.targetUrl)
+      )) {
+        context.reportDiagnostic("navigation-stale-router-transition", {
+          routeRevision: pendingRouterTransition.revision,
+          targetUrl: pendingRouterTransition.targetUrl,
+          observedUrl: resolvedUrl,
+          documentGeneration: webviewDocumentGenerationRef.current,
+        });
+        return;
+      }
+      context.updateWebviewCurrentUrl(resolvedUrl, "guest");
       const canSyncDesktopRoute = context.ownsActiveSurface;
       if (
         canSyncDesktopRoute &&
@@ -3146,6 +3200,7 @@ export function ServiceWebviewSurface({
     };
 
     webviewEventContextRef.current?.reportDiagnostic("listeners-attached");
+    targetWebview.addEventListener("did-start-navigation", handleDidStartNavigation);
     targetWebview.addEventListener("dom-ready", handleDomReady);
     targetWebview.addEventListener("did-finish-load", handleDidFinishLoad);
     targetWebview.addEventListener("did-navigate", handleDidNavigate);
@@ -3165,6 +3220,7 @@ export function ServiceWebviewSurface({
     }
     return () => {
       webviewEventContextRef.current?.reportDiagnostic("listeners-detached");
+      targetWebview.removeEventListener("did-start-navigation", handleDidStartNavigation);
       targetWebview.removeEventListener("dom-ready", handleDomReady);
       targetWebview.removeEventListener("did-finish-load", handleDidFinishLoad);
       targetWebview.removeEventListener("did-navigate", handleDidNavigate);
