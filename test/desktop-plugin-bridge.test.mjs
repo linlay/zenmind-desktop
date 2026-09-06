@@ -13,18 +13,18 @@ const yaml = require("js-yaml");
 const {
   loadInstalledPlugins,
   getPluginInstallDir
-} = require("../dist-electron/main/plugin-loader.js");
+} = require("../dist-electron/main/modules/plugins/loader.js");
 const {
   getService,
   registerPlugin,
   __testInternals: registryInternals
-} = require("../dist-electron/main/services/service-registry.js");
+} = require("../dist-electron/main/modules/services/service-registry.js");
 const {
   configurePluginBridge,
   getPluginBridgeEnv,
   stopPluginBridgeServers,
   __testInternals: bridgeInternals
-} = require("../dist-electron/main/plugin-bridge.js");
+} = require("../dist-electron/main/modules/plugins/bridge.js");
 const {
   configurePluginResources,
   initializePluginResourceState,
@@ -32,28 +32,28 @@ const {
   stopPluginResources,
   syncPluginResources,
   __testInternals: resourceInternals
-} = require("../dist-electron/main/plugin-resources.js");
+} = require("../dist-electron/main/modules/plugins/resources.js");
 const {
   __testInternals: desktopEffectsInternals
-} = require("../dist-electron/main/plugin-desktop-effects.js");
+} = require("../dist-electron/main/modules/plugins/desktop-effects.js");
 const {
   readPluginSettingsSnapshot,
   writePluginSettingsValues,
   getPluginSettingsPath,
   openPluginSettingsPage
-} = require("../dist-electron/main/plugin-settings.js");
+} = require("../dist-electron/main/modules/plugins/settings.js");
 const {
   refreshPluginGlobalShortcuts,
   getPluginGlobalShortcutStatuses,
   unregisterPluginGlobalShortcuts
-} = require("../dist-electron/main/plugin-global-shortcuts.js");
+} = require("../dist-electron/main/modules/plugins/global-shortcuts.js");
 const {
   stopAllStaticSiteHosts
-} = require("../dist-electron/main/static-site-host-manager.js");
+} = require("../dist-electron/main/modules/webs/static-site-host-manager.js");
 const {
   getDesktopPetSettingsPath,
   getDesktopPetsDataRoot
-} = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const {
   DEFAULT_DESKTOP_PET_DISPLAY_NAME
 } = require("../dist-electron/shared/desktop-pet.js");

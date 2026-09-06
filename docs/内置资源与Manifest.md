@@ -54,8 +54,8 @@ Desktop 同时读取 bundled 资源和已安装程序版本，按稳定 service 
 
 ## 实现事实源
 
-- `src/main/builtin-loader.ts`
-- `src/main/manifest-utils.ts`
+- `src/main/modules/services/builtin-loader.ts`
+- `src/main/support/manifest/manifest-utils.ts`
 - `scripts/sync-builtin-assets.mjs` 与 `scripts/lib/builtin-assets.mjs`
 - `scripts/build-builtin-services.sh` 与 `scripts/build-builtin-services.ps1`
 - `src/shared/contracts/manifest.ts`

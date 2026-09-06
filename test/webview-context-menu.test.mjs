@@ -6,14 +6,14 @@ const {
   isDesktopTabUrl,
   isExternalApplicationUrl,
   isSafeMediaDownloadUrl
-} = await import("../dist-electron/main/webview-context-menu-policy.js");
+} = await import("../dist-electron/main/modules/web-surfaces/context-menu-policy.js");
 const {
   getWebviewContextMenuAccelerator,
   validateWebviewContextMenuSemanticResponse
-} = await import("../dist-electron/main/webview-context-menu-controller.js");
+} = await import("../dist-electron/main/modules/web-surfaces/context-menu-controller.js");
 const {
   createBrowserSurfaceRegistry
-} = await import("../dist-electron/main/browser-surface-registry.js");
+} = await import("../dist-electron/main/modules/web-surfaces/browser-surface-registry.js");
 const {
   createSurfaceIdentity
 } = await import("../dist-electron/shared/surface-identity.js");

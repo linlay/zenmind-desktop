@@ -14,12 +14,12 @@ const allowedFiles = new Set([
 
 const allowedLinePatterns = [
   {
-    file: "src/main/identity-center-auth.ts",
+    file: "src/main/modules/identity/identity-center-auth.ts",
     pattern: /找不到与参数名称/u,
     reason: "localized PowerShell stderr matcher"
   },
   {
-    file: "src/main/kanban-local-projects.ts",
+    file: "src/main/modules/kanban/local-projects.ts",
     pattern: /replace\(\/\[\^\\p\{Script=Han\}a-z0-9\]\+/u,
     reason: "Chinese slug character range"
   },
@@ -44,13 +44,19 @@ const allowedBlocks = [
     reason: "desktop pet generic status matcher"
   },
   {
-    file: "src/main/desktop-pet-controller.ts",
+    file: "src/main/modules/pet/controller.part-1.ts",
     start: /DESKTOP_PET_GENERIC_TASK_PREVIEWS|DESKTOP_PET_DONE_PREVIEW_FALLBACK|DESKTOP_PET_GENERIC_DONE_PREVIEWS/u,
     end: /\]\);|DESKTOP_PET_DONE_PREVIEW_FALLBACK/u,
     reason: "desktop pet generic preview matcher"
   },
   {
-    file: "src/main/assistant/pet/desktop-pet-preview.ts",
+    file: "src/main/modules/pet/controller.part-2.ts",
+    start: /DESKTOP_PET_GENERIC_TASK_PREVIEWS|DESKTOP_PET_DONE_PREVIEW_FALLBACK|DESKTOP_PET_GENERIC_DONE_PREVIEWS/u,
+    end: /\]\);|DESKTOP_PET_DONE_PREVIEW_FALLBACK/u,
+    reason: "desktop pet generic preview matcher"
+  },
+  {
+    file: "src/main/modules/pet/desktop-pet-preview.ts",
     start: /DONE_FALLBACK_SUMMARY|GENERIC_DONE_SUMMARIES/u,
     end: /\]\);|DONE_FALLBACK_SUMMARY/u,
     reason: "desktop pet done-summary matcher"

@@ -1,14 +1,16 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import dns from "node:dns";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+dns.setDefaultResultOrder("ipv4first");
 
-const { registerSsoIpcHandlers } = require("../dist-electron/main/ipc/sso-handlers.js");
-const { createDesktopSsoController } = require("../dist-electron/main/sso-controller.js");
+const { registerSsoIpcHandlers } = require("../dist-electron/main/modules/identity/ipc.js");
+const { createDesktopSsoController } = require("../dist-electron/main/modules/identity/sso-controller.js");
 const {
   __testInternals,
   failDesktopSsoFlow,
@@ -16,7 +18,7 @@ const {
   getDesktopSsoStatus,
   isDesktopSsoCredentialRuntimeReady,
   startDesktopSsoLogin
-} = require("../dist-electron/main/oidc-sso.js");
+} = require("../dist-electron/main/modules/identity/oidc-sso.js");
 
 function createApp(homePath) {
   return {

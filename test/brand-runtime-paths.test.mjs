@@ -1145,6 +1145,22 @@ test("sync-env clears stale bundled env zip when ENV_ZIP is not provided", async
   });
 });
 
+test("formal distribution sync rejects a missing ENV_ZIP", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-required-env-zip-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(root, "VERSION"), "0.3.60\n");
+
+  await assert.rejects(
+    () => prepareBundledEnvZip({
+      rootDir: root,
+      env: { BRAND: "cutej" },
+      logger: { log() {} },
+      required: true
+    }),
+    /ENV_ZIP is required for formal Desktop distribution builds/u
+  );
+});
+
 test("sync-env stages an explicit valid ENV_ZIP in the active brand resources", async (t) => {
   const root = createBrandFixture(t);
   fs.writeFileSync(path.join(root, "VERSION"), "v1.2.3\n", "utf8");
@@ -1352,23 +1368,29 @@ test("Windows uninstall safety requires path validation in addition to owner mar
 
 test("critical runtime path modules use shared brand-aware roots", () => {
   const expectations = [
-    ["src/main/kanban-local-store.ts", /getRuntimeDataRoot/u],
-    ["src/main/kanban-runtime.ts", /resolveRuntimeRoot/u],
-    ["src/main/assistant/core/agent-platform-config.ts", /resolveRuntimeRoot/u],
-    ["src/main/assistant/core/agent-platform-bridge.ts", /resolveRuntimeRoot/u]
+    ["src/main/modules/kanban/local-store.ts", /getRuntimeDataRoot/u],
+    ["src/main/modules/kanban/runtime.ts", /resolveRuntimeRoot/u],
+    ["src/main/modules/agent-platform/config.ts", /resolveRuntimeRoot/u],
+    ["src/main/modules/agent-platform/bridge.ts", /resolveAssistantChatFile/u]
   ];
 
   for (const [relativePath, pattern] of expectations) {
-    const content = fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
+    const directory = path.dirname(relativePath);
+    const stem = path.basename(relativePath, ".ts");
+    const content = fs.readdirSync(path.join(projectRoot, directory))
+      .filter((name) => name === `${stem}.ts` || new RegExp(`^${stem}\\.(?:part|methods)-\\d+\\.ts$`, "u").test(name))
+      .sort()
+      .map((name) => fs.readFileSync(path.join(projectRoot, directory, name), "utf8"))
+      .join("\n");
     assert.match(content, pattern, relativePath);
     assert.doesNotMatch(content, /["'`]\.zenmind["'`]/u, relativePath);
   }
 });
 
 test("skill installer uses shared runtime root on Windows before legacy ZenMind fallbacks", () => {
-  const content = fs.readFileSync(path.join(projectRoot, "src/main/skill-installer.ts"), "utf8");
+  const content = fs.readFileSync(path.join(projectRoot, "src/main/modules/marketplace/skill-installer.ts"), "utf8");
 
-  assert.match(content, /import \{ resolveRuntimeRootPath \} from "\.\/runtime-root";/u);
+  assert.match(content, /import \{ resolveRuntimeRootPath \} from "\.\.\/\.\.\/infrastructure\/filesystem\/runtime-root";/u);
   assert.match(content, /const preferredRuntimeRoot = resolveRuntimeRootPath\(/u);
   assert.match(content, /if \(process\.platform === "win32"\) \{\s*return preferredRuntimeRoot;\s*\}/u);
   assert.match(content, /if \(String\(APP_BRAND\.id\) === "zenmind"\) \{/u);

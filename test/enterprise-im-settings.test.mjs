@@ -12,8 +12,8 @@ const {
   readEnterpriseImSettings,
   setEnterpriseImEnabled,
   writeEnterpriseImSettings
-} = require("../dist-electron/main/enterprise-im-settings.js");
-const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/modules/enterprise-chat/settings.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 
 function createApp(homePath) {
   return {

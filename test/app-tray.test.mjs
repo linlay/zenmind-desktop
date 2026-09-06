@@ -74,7 +74,7 @@ try {
     AppTrayController,
     getAppTrayIconCandidatePaths,
     getWindowsDevelopmentAppIconPath
-  } = require("../dist-electron/main/app-shell/tray.js"));
+  } = require("../dist-electron/main/modules/shell/tray.js"));
 } finally {
   Module._load = originalLoad;
 }

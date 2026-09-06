@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 const {
   TunnelConversationShareClient,
   TunnelConversationShareError
-} = await import("../dist-electron/main/assistant/core/tunnel-conversation-share-client.js");
+} = await import("../dist-electron/main/modules/conversation-share/tunnel-client.js");
 
 const target = {
   origin: "https://tunnel.example.test",

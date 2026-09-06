@@ -26,7 +26,7 @@ test("generic service webview modules reject legacy plugin surface names", () =>
     ["src", "renderer", "services", "serviceSurfaceWebviewRefs.ts"],
     ["src", "shared", "auth-bridge.ts"],
     ["src", "preload", "index.ts"],
-    ["src", "main", "ipc", "services-handlers.ts"],
+    ["src", "main", "modules", "services", "ipc.ts"],
   ];
   const source = genericModulePaths
     .map((segments) => fs.readFileSync(path.join(projectRoot, ...segments), "utf8"))

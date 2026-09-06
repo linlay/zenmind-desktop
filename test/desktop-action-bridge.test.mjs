@@ -20,23 +20,42 @@ const {
   startDesktopActionBridge,
   stopDesktopActionBridge,
   __testInternals
-} = require("../dist-electron/main/desktop-action-bridge.js");
+} = require("../dist-electron/main/modules/desktop-actions/runtime.js");
 const {
   DesktopCdpTimeoutError
-} = require("../dist-electron/main/desktop-cdp-debugger.js");
+} = require("../dist-electron/main/modules/web-surfaces/cdp/debugger.js");
 const {
   writeDesktopActionBridgeSettingsConfig
-} = require("../dist-electron/main/desktop-action-bridge-settings.js");
+} = require("../dist-electron/main/modules/desktop-actions/settings.js");
 const {
   DESKTOP_ACTION_BRIDGE_HOST,
   DESKTOP_ACTION_DEFINITIONS
 } = require("../dist-electron/shared/desktop-actions.js");
 const {
   normalizeActionBridgeTimePayload
-} = require("../dist-electron/main/action-bridge-time-normalizer.js");
+} = require("../dist-electron/main/modules/desktop-actions/time-normalizer.js");
 const {
   getWebsitePath
-} = require("../dist-electron/main/webs/websites/store.js");
+} = require("../dist-electron/main/modules/webs/websites/store.js");
+const { createWebsFacade } = require("../dist-electron/main/modules/webs/index.js");
+const {
+  installWebsiteAppArchiveFromPath
+} = require("../dist-electron/main/modules/marketplace/website-app-market.js");
+
+const websFacade = createWebsFacade({
+  getDesktopDeviceId: () => "desktop-action-test-device",
+  getConfiguredDesktopActionBridgePort: () => 17070,
+  readInstalledRecords: () => [],
+  removeInstalledRecordByResourceKey: () => undefined,
+  installWebsiteAppArchiveFromPath: (app, archivePath, options) =>
+    installWebsiteAppArchiveFromPath(app, archivePath, { ...options, webs: websFacade }),
+  deriveTunnelHubRegistrationApiOrigin: () => "",
+  getTunnelHubRuntimeStatus: () => ({ connected: false }),
+  startTunnelHubRuntime: async () => ({ ok: false }),
+  readTunnelHubRegistrationBearerToken: () => "",
+  readTunnelHubSettings: () => ({ enabled: false, relayUrl: "" }),
+  saveTunnelHubSettings: (_app, input) => input
+});
 
 test("Agent Platform bridge forwards raw ZIP bodies without JSON encoding", async () => {
   const archive = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x01, 0x02]);
@@ -67,25 +86,25 @@ const {
   getDesktopWebappsDataRoot,
   getDesktopWebappStateRoot,
   getDesktopConfigRoot
-} = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const {
   updateDesktopProfileInRoot
-} = require("../dist-electron/main/desktop-profile-store.js");
+} = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
 const {
   issueWebappActionToken,
   revokeWebappActionToken
-} = require("../dist-electron/main/webs/webapps/action-tokens.js");
+} = require("../dist-electron/main/modules/webs/webapps/action-tokens.js");
 const {
   readWebappRuntimeSettings
-} = require("../dist-electron/main/webs/webapps/runtime-settings.js");
+} = require("../dist-electron/main/modules/webs/webapps/runtime-settings.js");
 const {
   clearWebappImageUploadsForTest,
   normalizeWebappImageUploadFile,
   registerWebappImageUpload
-} = require("../dist-electron/main/webs/webapps/image-upload-registry.js");
+} = require("../dist-electron/main/modules/webs/webapps/image-upload-registry.js");
 const {
   saveAssistantSettings
-} = require("../dist-electron/main/assistant/core/settings-store.js");
+} = require("../dist-electron/main/modules/assistant/settings-store.js");
 
 function createApp(homePath) {
   return {
@@ -265,6 +284,24 @@ function createDesktopActionOptions(t) {
     state,
     options: {
       app: createApp(homePath),
+      issueAgentAccessToken: async () => ({ ok: true, token: "desktop-action-test-token", message: "issued" }),
+      getAssistantSettings: require("../dist-electron/main/modules/assistant/settings-store.js").getAssistantSettings,
+      createContainerHubClient: () => {
+        throw new Error("Container Hub is unavailable in this Desktop Action test.");
+      },
+      services: {
+        listServices: async () => [],
+        getResponsiveServiceState: async () => null,
+        getServiceLogsMeta: async () => null,
+        readServiceLog: async () => null,
+        installBuiltinService: async () => null,
+        getServiceState: async () => null,
+        initializeService: async () => null,
+        startService: async () => null,
+        stopService: async () => null,
+        restartService: async () => null
+      },
+      webs: websFacade,
       getDesktopAppInfo: () => ({
         productName: "ZenMind Test",
         version: "v9.8.7",
@@ -418,7 +455,7 @@ async function writeRuntimeWebappArchive(root, key) {
       command: {
         type: "runtime",
         runtime: "java",
-        minimumVersion: "17",
+        minimumVersion: "9999",
         entry: "backend/server.jar"
       },
       args: [],
@@ -671,6 +708,7 @@ test("Platform-only WorkPanel openLocalFile resolves a trusted workspace path wi
     ownerChatId: "chat-owner",
     rendererWebContentsId: 77,
     filePath: fs.realpathSync.native(filePath),
+    workspaceRelativePath: "artifacts/report.html",
   }]);
   assert.deepEqual(rendererCalls.map(({ action, args, source }) => ({ action, args, source })), [{
     action: "desktop.workpanel.openLocalFile",
@@ -748,6 +786,189 @@ test("WorkPanel openLocalFile fails closed for invalid paths and unavailable Age
   });
   assert.equal(missing.ok, false);
   assert.equal(missing.error.code, "file_unavailable");
+});
+
+test("Agent Platform WebApp Tooling actions use only the trusted Run workspace", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const workspaceRoot = path.join(options.app.getPath("home"), "agent-workspace");
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  options.webappToolingWorkerPath = path.join(
+    process.cwd(),
+    "dist-electron/main/modules/webs/webapps/tooling/worker.js"
+  );
+  let confirmations = 0;
+  options.confirmRendererAction = async () => {
+    confirmations += 1;
+    return { decision: "cancel" };
+  };
+  const source = {
+    chatId: "chat-owner",
+    runId: "run-owner",
+    agentKey: "coder",
+    workspaceRoot
+  };
+
+  const initialized = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.manifest.init",
+    source,
+    args: {
+      projectPath: "apps/example",
+      key: "action-example",
+      label: "Action Example"
+    }
+  });
+  assert.equal(initialized.ok, true);
+  assert.equal(initialized.result.projectPath, "apps/example");
+  assert.equal(initialized.result.manifestPath, "apps/example/webapp.json");
+  assert.equal("ok" in initialized.result, false);
+  assert.equal("message" in initialized.result, false);
+  assert.equal(JSON.stringify(initialized).includes(workspaceRoot), false);
+
+  const manifest = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.manifest.validate",
+    source: { ...source, agentKey: undefined, teamId: "builders" },
+    args: { projectPath: "apps/example" }
+  });
+  assert.equal(manifest.ok, true);
+  assert.equal(manifest.result.id, initialized.result.id);
+
+  const project = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.package.validate",
+    source,
+    args: { projectPath: "apps/example" }
+  });
+  assert.equal(project.ok, true);
+  assert.ok(project.result.fileCount >= 2);
+
+  const built = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.package.build",
+    source,
+    args: { projectPath: "apps/example", outputPath: "artifacts/example.zip" }
+  });
+  assert.equal(built.ok, true);
+  assert.equal(built.result.outputPath, "artifacts/example.zip");
+  assert.match(built.result.sha256, /^[a-f\d]{64}$/u);
+  assert.equal(confirmations, 0);
+
+  const archive = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.package.validate",
+    source,
+    args: { archivePath: "artifacts/example.zip" }
+  });
+  assert.equal(archive.ok, true);
+  assert.equal(archive.result.id, initialized.result.id);
+  assert.equal(JSON.stringify(archive).includes(workspaceRoot), false);
+
+  options.getMainWindow = () => ({
+    isDestroyed: () => false,
+    webContents: { send() {}, isDestroyed: () => false }
+  });
+  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+  const installed = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    source,
+    args: { workspaceArchivePath: "artifacts/example.zip", expectedId: initialized.result.id }
+  });
+  assert.equal(installed.ok, true);
+  assert.equal(installed.result.webappId, initialized.result.id);
+
+  const runtimeCheck = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.checkRuntime",
+    source,
+    args: { webappId: initialized.result.id }
+  });
+  assert.equal(runtimeCheck.ok, true);
+  assert.equal(runtimeCheck.result.ready, true);
+
+  const opened = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.open",
+    source,
+    args: { webappId: initialized.result.id }
+  });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.result.status, "running");
+
+  const sites = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.site.list",
+    source,
+    args: {}
+  });
+  assert.equal(sites.ok, true);
+  assert.ok(sites.result.items.some((item) => item.kind === "webapp" && item.id === initialized.result.id));
+
+  const stopped = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.stop",
+    source,
+    args: { webappId: initialized.result.id }
+  });
+  assert.equal(stopped.ok, true);
+
+  const absolute = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.package.validate",
+    source,
+    args: { archivePath: path.join(workspaceRoot, "artifacts/example.zip") }
+  });
+  assert.equal(absolute.ok, false);
+  assert.equal(absolute.error.code, "invalid_path");
+  assert.equal(absolute.error.details.stage, "archive");
+  assert.equal(JSON.stringify(absolute).includes(workspaceRoot), false);
+
+  const missingWorkspace = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.manifest.validate",
+    source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
+    args: { projectPath: "apps/example" }
+  });
+  assert.equal(missingWorkspace.ok, false);
+  assert.equal(missingWorkspace.error.code, "forbidden");
+
+  const forgedSource = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.manifest.validate",
+    source: {
+      chatId: "chat-owner",
+      runId: "run-owner",
+      agentKey: "coder",
+      teamId: "builders",
+      workspaceRoot: 42
+    },
+    args: { projectPath: "apps/example" }
+  });
+  assert.equal(forgedSource.ok, false);
+  assert.equal(forgedSource.error.code, "forbidden");
+
+  const forgedDesktop = await handleDesktopActionRequest(options, {
+    action: "desktop.webapp.package.build",
+    source,
+    args: { projectPath: "apps/example", outputPath: "artifacts/forged.zip" },
+    permissionMode: "full_access"
+  });
+  assert.equal(forgedDesktop.ok, false);
+  assert.equal(forgedDesktop.error.code, "forbidden");
+});
+
+test("Agent Platform WebApp install accepts only a workspace-relative archive path", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  options.getMainWindow = () => ({ isDestroyed: () => false });
+  options.confirmRendererAction = async (request) => ({ requestId: request.requestId, decision: "confirm" });
+  const workspaceRoot = path.join(options.app.getPath("home"), "agent-workspace");
+  fs.mkdirSync(workspaceRoot, { recursive: true });
+  const source = { chatId: "chat-owner", runId: "run-owner", agentKey: "coder", workspaceRoot };
+
+  const direct = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    source,
+    args: { archivePath: path.join(workspaceRoot, "example.zip") }
+  });
+  assert.equal(direct.ok, false);
+  assert.equal(direct.error.code, "invalid_args");
+
+  const absoluteWorkspacePath = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.install",
+    source,
+    args: { workspaceArchivePath: path.join(workspaceRoot, "example.zip") }
+  });
+  assert.equal(absoluteWorkspacePath.ok, false);
+  assert.equal(absoluteWorkspacePath.error.code, "invalid_path");
+  assert.equal(JSON.stringify(absoluteWorkspacePath).includes(workspaceRoot), false);
 });
 
 test("Agent Platform context exempts approved WorkPanel Web actions without exempting openTab", async (t) => {
@@ -1424,7 +1645,7 @@ test("desktop.webapp.install asks for a missing Java runtime and stores only a l
   const runtimeWrapper = path.join(options.app.getPath("home"), "fixture-java");
   fs.writeFileSync(runtimeWrapper, `#!/bin/sh
 if [ "$1" = "--version" ]; then
-  echo "java 17.0.0"
+  echo "java 9999.0.0"
   exit 0
 fi
 if [ "$1" = "-jar" ]; then
@@ -1437,7 +1658,7 @@ exec "${process.execPath}" "$@"
 `, { encoding: "utf8", mode: 0o755 });
   const runtimeProbe = spawnSync(runtimeWrapper, ["--version"], { encoding: "utf8" });
   assert.equal(runtimeProbe.status, 0, runtimeProbe.stderr);
-  assert.match(runtimeProbe.stdout, /17\.0\.0/u);
+  assert.match(runtimeProbe.stdout, /9999\.0\.0/u);
   options.showFileDialog = async (dialogOptions) => {
     calls.fileDialogs.push(dialogOptions);
     return { canceled: false, filePaths: [runtimeWrapper] };

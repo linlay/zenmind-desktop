@@ -1,0 +1,281 @@
+import fs from "node:fs";
+import path from "node:path";
+import { pipeline } from "node:stream/promises";
+import JSZip from "jszip";
+import type { App } from "electron";
+import type { WebappDeleteResult, WebappEntry, WebappExportResult, WebappResult, WebappUpdateInput } from "../../../../shared/contracts";
+import { t } from "../../../support/i18n/main-i18n";
+import { requireWebsIntegrationPorts, type WebsIntegrationPorts } from "../integration-ports";
+import {
+  getDesktopWebappDataRoot,
+  getDesktopWebappLogsRoot,
+  getDesktopWebappStateRoot
+} from "../../../infrastructure/filesystem/user-paths";
+import {
+  getWebappDir,
+  readWebappItems,
+  removeWebappPreferences,
+  writeWebappPreferenceFields
+} from "./store";
+import { webappRuntime } from "./runtime";
+import { unpublishWebapp } from "./publisher";
+import { webappWindowManager } from "./window-manager";
+
+function findWebapp(items: WebappEntry[], id: string) {
+  const normalizedId = id.trim();
+  return items.find((item) => item.id === normalizedId) ?? null;
+}
+
+async function addWebappDirectoryToZip(
+  zip: JSZip,
+  rootPath: string,
+  currentPath: string = rootPath,
+  archiveRoot: string = path.basename(rootPath)
+): Promise<void> {
+  const entries = await fs.promises.readdir(currentPath, { withFileTypes: true });
+  for (const entry of entries) {
+    const sourcePath = path.join(currentPath, entry.name);
+    const relativePath = path.relative(rootPath, sourcePath).split(path.sep).join("/");
+    const archivePath = `${archiveRoot}/${relativePath}`;
+    const stat = await fs.promises.lstat(sourcePath);
+    if (stat.isSymbolicLink()) {
+      throw new Error(t("webapp.packageSymbolicLink", { path: archivePath }));
+    }
+    if (stat.isDirectory()) {
+      if ((await fs.promises.readdir(sourcePath)).length === 0) {
+        zip.folder(`${archivePath}/`);
+      }
+      await addWebappDirectoryToZip(zip, rootPath, sourcePath, archiveRoot);
+      continue;
+    }
+    if (!stat.isFile()) {
+      throw new Error(t("webapp.packageUnsupportedFile", { path: archivePath }));
+    }
+    zip.file(archivePath, await fs.promises.readFile(sourcePath), {
+      unixPermissions: stat.mode & 0o777
+    });
+  }
+}
+
+export async function exportWebappArchive(
+  app: App,
+  id: string,
+  archivePath: string,
+  ports?: WebsIntegrationPorts
+): Promise<WebappExportResult> {
+  const item = findWebapp(readWebappItems(app, process.platform, ports), id);
+  if (!item) {
+    return {
+      ok: false,
+      item: null,
+      path: archivePath,
+      message: t("webapp.notFound")
+    };
+  }
+
+  const installPath = item.installPath || getWebappDir(app, item.id);
+  try {
+    const zip = new JSZip();
+    await addWebappDirectoryToZip(zip, installPath);
+    await fs.promises.mkdir(path.dirname(archivePath), { recursive: true });
+    await pipeline(
+      zip.generateNodeStream({
+        type: "nodebuffer",
+        streamFiles: true,
+        platform: "UNIX",
+        compression: "DEFLATE",
+        compressionOptions: { level: 6 }
+      }),
+      fs.createWriteStream(archivePath, { mode: 0o600 })
+    );
+    return {
+      ok: true,
+      item,
+      path: archivePath,
+      message: t("webapp.exported", { label: item.label })
+    };
+  } catch (error) {
+    await fs.promises.rm(archivePath, { force: true }).catch(() => undefined);
+    return {
+      ok: false,
+      item,
+      path: archivePath,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+export type WebappDisposalTarget = {
+  id: string;
+  label: string;
+  installPath?: string;
+  removeMarketRecord?: boolean;
+  preserveUserData?: boolean;
+};
+
+export type WebappDisposalDependencies = {
+  runtime: typeof webappRuntime;
+  windowManager: typeof webappWindowManager;
+};
+
+export async function disposeWebappInstallation(
+  app: App,
+  target: WebappDisposalTarget,
+  stopMessage: string,
+  ports?: WebsIntegrationPorts,
+  dependencies: WebappDisposalDependencies = {
+    runtime: webappRuntime,
+    windowManager: webappWindowManager
+  }
+) {
+  const releaseDisposal = dependencies.windowManager.beginDisposal(target.id, { closeImmediately: false });
+  try {
+    const unpublished = await unpublishWebapp(app, target.id, ports);
+    if (!unpublished.ok) {
+      return {
+        ok: false,
+        message: t("webapp.unpublishBeforeRemove", {
+          label: target.label,
+          message: unpublished.message
+        })
+      };
+    }
+    const stopped = await dependencies.runtime.stop(app, target.id, stopMessage);
+    if (!stopped.ok) {
+      return {
+        ok: false,
+        message: t("webapp.removeFailed", {
+          label: target.label,
+          message: stopped.message
+        })
+      };
+    }
+    dependencies.windowManager.closeForDisposal(target.id);
+    fs.rmSync(target.installPath || getWebappDir(app, target.id), {
+      recursive: true,
+      force: true
+    });
+    if (!target.preserveUserData) {
+      fs.rmSync(getDesktopWebappDataRoot(app, target.id), { recursive: true, force: true });
+      fs.rmSync(getDesktopWebappStateRoot(app, target.id), { recursive: true, force: true });
+      fs.rmSync(getDesktopWebappLogsRoot(app, target.id), { recursive: true, force: true });
+      removeWebappPreferences(app, target.id);
+    }
+    if (target.removeMarketRecord) {
+      requireWebsIntegrationPorts(ports).removeInstalledRecordByResourceKey(app, target.id, "website-app");
+    }
+    dependencies.runtime.emitLifecycleChange("removed", target.id);
+    return { ok: true, message: stopMessage };
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  } finally {
+    releaseDisposal();
+  }
+}
+
+export function listWebappItems(app: App, ports?: WebsIntegrationPorts) {
+  return {
+    ok: true,
+    items: readWebappItems(app, process.platform, ports),
+    message: t("webapp.listRead")
+  };
+}
+
+export function updateWebappItem(
+  app: App,
+  id: string,
+  input: WebappUpdateInput,
+  ports?: WebsIntegrationPorts
+): WebappResult {
+  const items = readWebappItems(app, process.platform, ports);
+  const target = findWebapp(items, id);
+  if (!target) {
+    return {
+      ok: false,
+      item: null,
+      items,
+      message: t("webapp.notFound")
+    };
+  }
+
+  try {
+    const updated = writeWebappPreferenceFields(app, target.id, {
+      ...(typeof input.label === "string" ? { label: input.label } : {}),
+      ...(input.openMode === "workspace" || input.openMode === "dialog"
+        ? { openMode: input.openMode }
+        : {})
+    }, process.platform, ports);
+    const nextItems = readWebappItems(app, process.platform, ports);
+    return {
+      ok: true,
+      item: updated,
+      items: nextItems,
+      message: t("webapp.updated", { label: updated.label })
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      item: target,
+      items,
+      message: error instanceof Error ? error.message : String(error)
+    };
+  }
+}
+
+export async function removeWebappItem(
+  app: App,
+  id: string,
+  ports?: WebsIntegrationPorts,
+  dependencies?: WebappDisposalDependencies
+): Promise<WebappDeleteResult> {
+  const items = readWebappItems(app, process.platform, ports);
+  const target = findWebapp(items, id);
+  if (!target) {
+    return {
+      ok: false,
+      item: null,
+      items,
+      message: t("webapp.notFound")
+    };
+  }
+
+  if (target.removable === false) {
+    return {
+      ok: false,
+      item: target,
+      items,
+      message: t("webapp.managedNotRemovable", { label: target.label })
+    };
+  }
+
+  const message = t("webapp.deleted", { label: target.label });
+  const disposed = await disposeWebappInstallation(
+    app,
+    {
+      id: target.id,
+      label: target.label,
+      installPath: target.installPath,
+      removeMarketRecord: target.sourceKind === "market"
+    },
+    message,
+    ports,
+    dependencies
+  );
+  if (!disposed.ok) {
+    return {
+      ok: false,
+      item: target,
+      items,
+      message: disposed.message
+    };
+  }
+  return {
+    ok: true,
+    item: target,
+    items: readWebappItems(app, process.platform, ports),
+    message
+  };
+}

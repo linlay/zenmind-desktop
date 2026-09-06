@@ -9,7 +9,18 @@ const require = createRequire(import.meta.url);
 const projectRoot = process.cwd();
 
 function readSource(...segments) {
-  return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
+  const sourcePath = path.join(projectRoot, ...segments);
+  const source = fs.readFileSync(sourcePath, "utf8");
+  if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
+    return source;
+  }
+  const sourceDirectory = path.dirname(sourcePath);
+  const sourceStem = path.basename(sourcePath, ".ts");
+  const splitSources = fs.readdirSync(sourceDirectory)
+    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
+  return [source, ...splitSources].join("\n");
 }
 
 test("installer shutdown acknowledgement validates branded temp paths and writes atomically", (t) => {
@@ -20,7 +31,7 @@ test("installer shutdown acknowledgement validates branded temp paths and writes
     parseInstallerShutdownRequest,
     validateShutdownAckPath,
     writeShutdownAck
-  } = require("../dist-electron/main/lifecycle/shutdown-ack.js");
+  } = require("../dist-electron/main/app/lifecycle/shutdown-ack.js");
   const ackPath = path.join(tempRoot, "zenmind-desktop-shutdown-42.status");
 
   assert.equal(
@@ -56,7 +67,7 @@ test("installer shutdown acknowledgement validates branded temp paths and writes
 });
 
 test("Windows taskkill success is not trusted until every captured descendant is verified", () => {
-  const { terminateProcessTree } = require("../dist-electron/main/services/manager/process-cleanup.js");
+  const { terminateProcessTree } = require("../dist-electron/main/modules/services/manager/process-cleanup.js");
   const running = new Set([4321, 4322]);
   const fallbackCalls = [];
   const terminated = terminateProcessTree(4321, {
@@ -79,7 +90,7 @@ test("Windows taskkill success is not trusted until every captured descendant is
 test("Windows WebApp process trees receive a graceful request before force cleanup", async () => {
   const {
     requestWindowsProcessTreeExitAsync
-  } = require("../dist-electron/main/services/manager/process-cleanup.js");
+  } = require("../dist-electron/main/modules/services/manager/process-cleanup.js");
   const running = new Set([5101, 5102]);
   const commands = [];
   const exited = await requestWindowsProcessTreeExitAsync(5101, [5101, 5102], {
@@ -96,13 +107,13 @@ test("Windows WebApp process trees receive a graceful request before force clean
   assert.deepEqual(commands, [["taskkill.exe", "/PID", "5101", "/T"]]);
   assert.equal(commands[0].includes("/F"), false);
   assert.match(
-    readSource("src", "main", "webs", "webapps", "runtime.ts"),
+    readSource("src", "main", "modules", "webs", "webapps", "runtime.ts"),
     /if \(process\.platform === "win32"\) \{[\s\S]*?requestWindowsProcessTreeExitAsync\([\s\S]*?if \(exitedGracefully\) \{[\s\S]*?return true;[\s\S]*?terminateCapturedProcessTreeAsync/u
   );
 });
 
 test("shutdown coordinator is staged, report-driven, and does not leave a total deadline race", () => {
-  const source = readSource("src", "main", "lifecycle", "shutdown.ts");
+  const source = readSource("src", "main", "app", "lifecycle", "shutdown.ts");
   const markCompleteIndex = source.indexOf("options.markComplete(report)");
   const reportIndex = source.indexOf("const report: ShutdownReport");
 
@@ -115,7 +126,7 @@ test("shutdown coordinator is staged, report-driven, and does not leave a total 
 });
 
 test("shutdown coordinator starts graceful resources in parallel and marks complete only after its report", async () => {
-  const { createShutdownCleanupRunner } = require("../dist-electron/main/lifecycle/shutdown.js");
+  const { createShutdownCleanupRunner } = require("../dist-electron/main/app/lifecycle/shutdown.js");
   const starts = [];
   const phases = [];
   let releaseStops;
@@ -181,7 +192,7 @@ test("shutdown coordinator starts graceful resources in parallel and marks compl
 });
 
 test("shutdown coordinator reports a real budget overrun instead of abandoning cleanup", async () => {
-  const { createShutdownCleanupRunner } = require("../dist-electron/main/lifecycle/shutdown.js");
+  const { createShutdownCleanupRunner } = require("../dist-electron/main/app/lifecycle/shutdown.js");
   let clock = 0;
   const phases = [];
   const runner = createShutdownCleanupRunner({
@@ -218,7 +229,7 @@ test("shutdown coordinator reports a real budget overrun instead of abandoning c
 });
 
 test("shutdown coordinator converts unexpected failures into an installer report", async () => {
-  const { createShutdownCleanupRunner } = require("../dist-electron/main/lifecycle/shutdown.js");
+  const { createShutdownCleanupRunner } = require("../dist-electron/main/app/lifecycle/shutdown.js");
   let mode = "user";
   let completedReport = null;
   const phases = [];
@@ -268,7 +279,7 @@ test("shutdown coordinator converts unexpected failures into an installer report
 });
 
 test("shutdown coordinator fails verification while a captured gateway port is still listening", async () => {
-  const { createShutdownCleanupRunner } = require("../dist-electron/main/lifecycle/shutdown.js");
+  const { createShutdownCleanupRunner } = require("../dist-electron/main/app/lifecycle/shutdown.js");
   let cleanupPromise = null;
   const runner = createShutdownCleanupRunner({
     app: {},
@@ -317,7 +328,7 @@ test("shutdown coordinator fails verification while a captured gateway port is s
 
 test("managed force cleanup uses bounded concurrency and waits for every root", async () => {
   const { forceCleanupManagedProcesses } =
-    require("../dist-electron/main/services/manager/managed-cleanup.js");
+    require("../dist-electron/main/modules/services/manager/managed-cleanup.js");
   const running = new Set([7101, 7102, 7103]);
   let active = 0;
   let peak = 0;
@@ -370,25 +381,25 @@ test("renderer shows shutdown progress from the main-process stage event", () =>
 });
 
 test("WebApp removal closes its UI and refuses file deletion after a failed runtime stop", () => {
-  const actions = readSource("src", "main", "webs", "webapps", "actions.ts");
-  const pluginResources = readSource("src", "main", "plugin-resources.ts");
-  const websiteAppMarket = readSource("src", "main", "marketplace", "website-app-market.ts");
-  const webappRuntime = readSource("src", "main", "webs", "webapps", "runtime.ts");
-  const windowManager = readSource("src", "main", "webs", "webapps", "window-manager.ts");
+  const actions = readSource("src", "main", "modules", "webs", "webapps", "actions.ts");
+  const pluginResources = readSource("src", "main", "modules", "plugins", "resources.ts");
+  const websiteAppMarket = readSource("src", "main", "modules", "marketplace", "website-app-market.ts");
+  const webappRuntime = readSource("src", "main", "modules", "webs", "webapps", "runtime.ts");
+  const windowManager = readSource("src", "main", "modules", "webs", "webapps", "window-manager.ts");
   const mainRuntime = readSource("src", "main", "app", "runtime.ts");
   const appShell = readSource("src", "renderer", "app-shell", "AppShell.tsx");
-  const disposalIndex = actions.indexOf("webappWindowManager.beginDisposal");
-  const stopIndex = actions.indexOf("await webappRuntime.stop");
+  const disposalIndex = actions.indexOf("dependencies.windowManager.beginDisposal");
+  const stopIndex = actions.indexOf("await dependencies.runtime.stop");
   const stopGuardIndex = actions.indexOf("if (!stopped.ok)");
   const deleteIndex = actions.indexOf("fs.rmSync(target.installPath");
 
   assert.ok(disposalIndex >= 0 && disposalIndex < stopIndex);
   assert.ok(stopIndex < stopGuardIndex && stopGuardIndex < deleteIndex);
-  assert.doesNotMatch(actions, /webappRuntime\.stop\([^;]+\.catch\(\(\) => undefined\)/u);
+  assert.doesNotMatch(actions, /dependencies\.runtime\.stop\([^;]+\.catch\(\(\) => undefined\)/u);
   assert.match(windowManager, /this\.disposalListener\?\.\(normalizedId\)/u);
   assert.match(mainRuntime, /phase: "disposing"/u);
   assert.match(appShell, /event\.phase === "disposing"/u);
-  assert.match(pluginResources, /disposeWebappInstallation/u);
-  assert.match(websiteAppMarket, /removeWebappItem/u);
+  assert.match(pluginResources, /manager\.dispose/u);
+  assert.match(websiteAppMarket, /disposeWebappInstallation/u);
   assert.match(webappRuntime, /identityMatch === "unknown"/u);
 });

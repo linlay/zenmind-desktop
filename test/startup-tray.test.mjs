@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const { createStartupPipeline } = await import("../dist-electron/main/lifecycle/startup.js");
+const { createStartupPipeline } = await import("../dist-electron/main/app/lifecycle/startup.js");
 
 const startupGateSource = fs.readFileSync(
   path.join(process.cwd(), "src", "renderer", "app-shell", "startup", "StartupGate.tsx"),

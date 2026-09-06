@@ -15,7 +15,7 @@ const {
   getDesktopPetContextMenuItems,
   listUserDesktopPetAppearanceOptions,
   __testInternals
-} = require("../dist-electron/main/assistant/pet/desktop-pet.js");
+} = require("../dist-electron/main/modules/pet/desktop-pet.js");
 const {
   createDesktopPetMessagesFromAgentStatus,
   createDesktopPetMessagesFromNavigationSnapshot,
@@ -24,8 +24,8 @@ const {
   createDesktopPetWindowController,
   computeDesktopPetPositionPersistence,
   resolveDesktopPetWindowMode
-} = require("../dist-electron/main/desktop-pet-controller.js");
-const { getDesktopPetsDataRoot } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/modules/pet/controller.js");
+const { getDesktopPetsDataRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const {
   DEFAULT_DESKTOP_PET_BUILTIN_ID,

@@ -246,6 +246,22 @@ export interface DesktopWebappInstallFailureDetails {
   diagnostic?: DesktopWebappInstallDiagnostic;
 }
 
+export type DesktopWebappToolingResult = {
+  id: string;
+  key: string;
+  projectPath?: string;
+  manifestPath?: string;
+  archivePath?: string;
+  outputPath?: string;
+  fileCount?: number;
+  entryCount?: number;
+  totalBytes?: number;
+  sourceBytes?: number;
+  archiveBytes?: number;
+  expandedBytes?: number;
+  sha256?: string;
+};
+
 export interface DesktopWebappInvalidResultDetails {
   webappId: string;
   operation: "start" | "stop" | "restart" | "open" | "update" | "install" | "uninstall" | "publish" | "unpublish";
@@ -325,7 +341,11 @@ export const DESKTOP_ACTION_DEFINITIONS = [
   { name: "desktop.webapp.restart", kind: "execute", category: "web", description: "Restart a local webapp. Returns: { webappId, status }. Failures include detailed diagnostics for this WebApp only." },
   { name: "desktop.webapp.open", kind: "execute", category: "web", description: "Start and open a local webapp. Returns: { webappId, status, route }. Failures include detailed diagnostics for this WebApp only." },
   { name: "desktop.webapp.updatePreferences", kind: "execute", category: "web", description: "Update a local WebApp label or Desktop open-mode preference. Args: { webappId|id, patch: { label?, openMode? } }. Returns: { webappId, label, openMode }." },
-  { name: "desktop.webapp.install", kind: "execute", category: "web", description: "Install or update a local WebApp archive without starting or opening it. Args: { archivePath, expectedId? }. Returns: { webappId, operation }. Failures include sanitized stage, diagnostic, executable, and directly related path details." },
+  { name: "desktop.webapp.manifest.init", kind: "execute", category: "web", confirmation: "none", description: "Initialize a Manifest v2 WebApp inside the trusted source Run workspace. Agent Platform only. Args: { projectPath, key, label, target? }; projectPath is workspace-relative." },
+  { name: "desktop.webapp.manifest.validate", kind: "validate", category: "web", description: "Validate webapp.json inside the trusted source Run workspace. Agent Platform only. Args: { projectPath }; projectPath is workspace-relative." },
+  { name: "desktop.webapp.package.validate", kind: "validate", category: "web", description: "Validate a WebApp directory or ZIP inside the trusted source Run workspace. Agent Platform only. Args: exactly one of { projectPath } or { archivePath }; paths are workspace-relative." },
+  { name: "desktop.webapp.package.build", kind: "execute", category: "web", confirmation: "none", description: "Build and validate a new WebApp ZIP inside the trusted source Run workspace. Agent Platform only. Args: { projectPath, outputPath }; both paths are workspace-relative and existing output is never overwritten." },
+  { name: "desktop.webapp.install", kind: "execute", category: "web", description: "Install or update a local WebApp archive without starting or opening it. Agent Platform uses { workspaceArchivePath, expectedId? }; other trusted local callers use { archivePath, expectedId? }. Returns: { webappId, operation }." },
   { name: "desktop.webapp.uninstall", kind: "execute", category: "web", description: "Unpublish, stop, and remove one local WebApp installation and its managed data. Args: { webappId|id }. Returns: { webappId }." },
   { name: "desktop.webapp.getPublishStatus", kind: "read", category: "web", description: "Read one local WebApp's Tunnel publishing readiness, state, and public URL. Args: { webappId|id }." },
   { name: "desktop.webapp.publish", kind: "execute", category: "web", description: "Publish a running local WebApp gateway through the configured Tunnel. Args: { webappId|id }. Returns: { webappId, status, publicUrl }. Failures include this WebApp's publish info/state only." },
@@ -403,6 +423,7 @@ export interface DesktopActionSource {
   chatId?: string;
   agentKey?: string;
   teamId?: string;
+  workspaceRoot?: string;
   webappId?: string;
 }
 

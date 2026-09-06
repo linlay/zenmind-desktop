@@ -15,12 +15,12 @@ const {
   hasTunnelDesktopWsSubscriber,
   startDesktopWsServer,
   stopDesktopWsServer
-} = require("../dist-electron/main/desktop-ws-server.js");
+} = require("../dist-electron/main/modules/desktop-protocol/ws-server.js");
 const {
   DESKTOP_WS_HOST,
   DESKTOP_WS_LAN_BIND_HOST
 } = require("../dist-electron/shared/desktop-ws.js");
-const { RealtimeBroker } = require("../dist-electron/main/realtime/realtime-broker.js");
+const { RealtimeBroker } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-broker.js");
 
 function createApp(homePath) {
   return {
@@ -1039,6 +1039,7 @@ test("desktop ws server routes agent-platform namespace frames", async (t) => {
   const realtimeBroker = new RealtimeBroker({
     app,
     issueAccessToken: async () => ({ ok: true, token: "platform-token", message: "issued" }),
+    getDesktopDeviceId: () => "desktop-test",
     createWebSocket: (url) => new FakeAgentPlatformWebSocket(url),
     heartbeatTimeoutMs: 0,
   });

@@ -7,13 +7,13 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const { registerAssistantIpcHandlers } = require(
-  "../dist-electron/main/ipc/assistant-handlers.js",
+  "../dist-electron/main/modules/assistant/ipc.js",
 );
 const { readDesktopProfileFromRoot } = require(
-  "../dist-electron/main/desktop-profile-store.js",
+  "../dist-electron/main/infrastructure/filesystem/profile-store.js",
 );
 const { getDesktopConfigRoot } = require(
-  "../dist-electron/main/user-paths.js",
+  "../dist-electron/main/infrastructure/filesystem/user-paths.js",
 );
 const projectRoot = path.resolve(import.meta.dirname, "..");
 
@@ -38,6 +38,9 @@ function registerChatOrderHandler(t, callAgentPlatform) {
     },
   }, {
     assistantBridge: {},
+    conversationShare: {
+      exportChatHtml() {}, create() {}, list() {}, revoke() {},
+    },
     assistantNavigationStatusClient: {
       async refreshNow() {
         refreshCount += 1;

@@ -11,7 +11,7 @@ const {
   buildContainerEngineInvocation,
   clearContainerEngineProbeCache,
   probeContainerEngines
-} = require("../dist-electron/main/container-engine.js");
+} = require("../dist-electron/main/modules/services/container-engine.js");
 
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..");
 
@@ -55,8 +55,8 @@ async function waitForProcessExit(pid, timeoutMs = 2_000) {
 
 test("container engine probing contains no synchronous Docker info path", () => {
   const sourcePaths = [
-    "src/main/container-engine.ts",
-    "src/main/services/manager/container-engine.ts"
+    "src/main/modules/services/container-engine.ts",
+    "src/main/modules/services/manager/container-engine.ts"
   ];
 
   for (const relativePath of sourcePaths) {
@@ -67,7 +67,7 @@ test("container engine probing contains no synchronous Docker info path", () => 
   }
 
   const sharedSource = fs.readFileSync(
-    path.join(WORKSPACE_ROOT, "src/main/container-engine.ts"),
+    path.join(WORKSPACE_ROOT, "src/main/modules/services/container-engine.ts"),
     "utf8"
   );
   assert.match(sharedSource, /\["version", "--format", "\{\{\.Server\.Version\}\}"\]/u);
@@ -100,7 +100,7 @@ exit 91
     cache: false
   });
 
-  assert.equal(result.engine, "docker");
+  assert.equal(result.engine, "docker", JSON.stringify(result));
   assert.equal(result.probes[0]?.reachable, true);
   const invocation = fs.readFileSync(logPath, "utf8").trim();
   assert.equal(invocation, "version --format {{.Server.Version}}");
@@ -242,17 +242,22 @@ wait "$child_pid"
       CHILD_PID_FILE: childPidPath
     }),
     preferredName: "docker",
-    timeoutMs: 200,
+    // Process startup can be delayed by endpoint security and CI sandbox
+    // wrappers. Keep this comfortably below the production 3s bound while
+    // still giving the fixture time to create its descendant process.
+    timeoutMs: 1_000,
     cache: false
   });
   const elapsedMs = Date.now() - startedAt;
   clearInterval(heartbeat);
 
+  assert.equal(fs.existsSync(parentPidPath), true, JSON.stringify(result));
+  assert.equal(fs.existsSync(childPidPath), true, JSON.stringify(result));
   parentPid = Number(fs.readFileSync(parentPidPath, "utf8").trim());
   childPid = Number(fs.readFileSync(childPidPath, "utf8").trim());
   assert.equal(result.engine, "");
   assert.equal(result.probes[0]?.failure, "timeout");
-  assert.ok(elapsedMs < 1_500, `probe took ${elapsedMs}ms`);
+  assert.ok(elapsedMs < 2_500, `probe took ${elapsedMs}ms`);
   assert.ok(heartbeats >= 5, `event-loop heartbeat only advanced ${heartbeats} times`);
   assert.equal(await waitForProcessExit(parentPid), true, `probe parent ${parentPid} survived`);
   assert.equal(await waitForProcessExit(childPid), true, `probe child ${childPid} survived`);

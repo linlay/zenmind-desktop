@@ -11,7 +11,7 @@ const {
 } = require("../dist-electron/shared/webview-popup.js");
 const {
   resolveWebviewOpenDisposition,
-} = require("../dist-electron/main/webview-open-tab.js");
+} = require("../dist-electron/main/modules/web-surfaces/open-tab.js");
 
 test("Blob popup URLs require a non-opaque HTTP(S) creator origin", () => {
   const valid = "blob:https://example.test/1c5f9ca2-49ab-472c-b705-62f95df674d4";

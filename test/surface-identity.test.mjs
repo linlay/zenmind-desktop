@@ -17,10 +17,10 @@ const {
 const {
   createBrowserSurfaceRegistry,
   registeredSurfaceIdentitiesConflict
-} = await import("../dist-electron/main/browser-surface-registry.js");
+} = await import("../dist-electron/main/modules/web-surfaces/browser-surface-registry.js");
 const {
   __testInternals: deprecatedCompatibilityInternals
-} = await import("../dist-electron/main/deprecated-compatibility.js");
+} = await import("../dist-electron/main/support/logging/deprecated-compatibility.js");
 const {
   resolveAgentWebclientWebviewSurfaceType
 } = await import("../dist-electron/shared/webview-context-menu.js");

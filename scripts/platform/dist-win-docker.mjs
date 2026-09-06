@@ -29,7 +29,7 @@ export async function buildWithDocker(brand = syncBrandArtifacts({ brandId: reso
   const target = { os: "win32", arch: "x64" };
   const brandProcessOptions = (options = {}) => withBrandEnv(brand, options);
 
-  await runAndWait(npmCmd, ["run", "sync:env"], brandProcessOptions({ cwd: projectRoot }));
+  await runAndWait(npmCmd, ["run", "sync:env", "--", "--required"], brandProcessOptions({ cwd: projectRoot }));
   syncBrandArtifacts({ brandId: brand.id, target });
   await syncWindowsBuiltinAssets(brand);
   await runAndWait(npmCmd, ["run", "build"], brandProcessOptions({ cwd: projectRoot }));

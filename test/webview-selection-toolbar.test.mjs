@@ -81,7 +81,7 @@ test("selection toolbar positioning centers, flips and clamps to eight pixel edg
 });
 
 test("desktop owns the placeholder toolbar and does not expose business execution", () => {
-  const mainController = readSource("src", "main", "webview-context-menu-controller.ts");
+  const mainController = readSource("src", "main", "modules", "web-surfaces", "context-menu-controller.ts");
   const surface = readSource("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const toolbar = readSource("src", "renderer", "service-webview", "WebviewSelectionToolbar.tsx");
   const styles = readSource("src", "renderer", "styles", "webview-selection-toolbar.css");

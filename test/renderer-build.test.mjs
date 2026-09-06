@@ -10,7 +10,18 @@ const require = createRequire(import.meta.url);
 const typescript = require("typescript");
 
 function readSourceFile(...segments) {
-  return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
+  const target = path.join(projectRoot, ...segments);
+  const source = fs.readFileSync(target, "utf8");
+  if (!target.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(target) !== ".ts") {
+    return source;
+  }
+  const directory = path.dirname(target);
+  const stem = path.basename(target, ".ts");
+  const implementationParts = fs.readdirSync(directory)
+    .filter((name) => name.startsWith(`${stem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(directory, name), "utf8"));
+  return [source, ...implementationParts].join("\n");
 }
 
 function readJsonFile(...segments) {
@@ -101,16 +112,16 @@ function readSharedContractsSource() {
 
 function readMainProcessRuntimeSource() {
   return [
-    readSourceFile("src", "main", "main-process-runtime.ts"),
+    readSourceFile("src", "main", "index.ts"),
     readSourceFile("src", "main", "app", "runtime.ts"),
     readSourceFile("src", "main", "app", "app-events.ts"),
-    readSourceFile("src", "main", "app", "startup-environment.ts"),
+    readSourceFile("src", "main", "app", "bootstrap", "startup-environment.ts"),
     readSourceFile("src", "main", "app", "system-identity.ts"),
-    readSourceFile("src", "main", "app-shell", "runtime.ts"),
-    readSourceFile("src", "main", "services", "runtime.ts"),
-    readSourceFile("src", "main", "settings", "runtime.ts"),
-    readSourceFile("src", "main", "webs", "surface-runtime.ts"),
-    readSourceFile("src", "main", "logs", "runtime.ts")
+    readSourceFile("src", "main", "modules", "shell", "runtime.ts"),
+    readSourceFile("src", "main", "modules", "services", "runtime.ts"),
+    readSourceFile("src", "main", "modules", "settings", "runtime.ts"),
+    readSourceFile("src", "main", "modules", "webs", "surface-runtime.ts"),
+    readSourceFile("src", "main", "support", "logging", "runtime.ts")
   ].join("\n");
 }
 
@@ -179,9 +190,9 @@ test("public source keeps ZenMind literals out of shared paths except brand-spec
   const files = collectTextFiles(path.join(projectRoot, "src"))
     .filter((filePath) => !path.relative(projectRoot, filePath).startsWith(path.join("src", "shared", "generated")));
   const allowedCompatibilityFiles = new Set([
-    path.join("src", "main", "env-bootstrap.ts"),
-    path.join("src", "main", "services", "manager", "program-layout.ts"),
-    path.join("src", "main", "skill-installer.ts")
+    path.join("src", "main", "infrastructure", "filesystem", "runtime-environment.ts"),
+    path.join("src", "main", "modules", "services", "manager", "program-layout.ts"),
+    path.join("src", "main", "modules", "marketplace", "skill-installer.ts")
   ]);
   const allowedDomainPattern = /(?:^|[./])zenmind\.cc\b/u;
   const violations = [];
@@ -2806,7 +2817,7 @@ test("desktop state debug tab is wired through the fixed read-only IPC contract"
   const settingsStyles = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.css");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const settingsHandlers = readSourceFile("src", "main", "ipc", "settings-handlers.ts");
+  const settingsHandlers = readSourceFile("src", "main", "modules", "settings", "ipc.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
 
@@ -2972,10 +2983,7 @@ test("settings page configures desktop helper default agent separately from desk
     path.join(projectRoot, "src", "shared", "assistant-settings.ts"),
     "utf8"
   );
-  const settingsStore = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "core", "settings-store.ts"),
-    "utf8"
-  );
+  const settingsStore = readSourceFile("src", "main", "modules", "assistant", "settings-store.ts");
   const contracts = readSharedContractsSource();
   const globalStyles = readRendererStyles();
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
@@ -3171,7 +3179,7 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
   const settingsRoutes = readSourceFile("src", "shared", "settings-routes.ts");
   const sharedSettingsSections = readSourceFile("src", "shared", "settings-sections.ts");
   const kanbanContracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
 
@@ -3255,8 +3263,8 @@ test("settings page keeps Kanban, Control, and Tunnel Hub separate", () => {
 test("Tunnel Hub settings expose enabled state and Desktop runtime wiring", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
   const servicesContract = readSourceFile("src", "shared", "contracts", "services.ts");
-  const tunnelSettings = readSourceFile("src", "main", "tunnel-hub-settings.ts");
-  const tunnelRuntime = readSourceFile("src", "main", "tunnel-hub-runtime.ts");
+  const tunnelSettings = readSourceFile("src", "main", "modules", "tunnel", "settings.ts");
+  const tunnelRuntime = readSourceFile("src", "main", "modules", "tunnel", "runtime.ts");
   const removedTunnelHubServiceId = ["tunnel", "hub", "agent"].join("-");
   const removedDefaultRelayConstant = ["DEFAULT", "TUNNEL", "HUB", "AGENT"].join("_");
   const removedRelayHost = ["tunnel-hub", "zenmind", "cc"].join("\\.");
@@ -3298,11 +3306,11 @@ test("sidebar translucency is fixed and not user configurable", () => {
   );
   const globalStyles = readRendererStyles();
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const appMetadata = fs.readFileSync(path.join(projectRoot, "src", "main", "app-metadata.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const appMetadata = readSourceFile("src", "main", "app", "metadata.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const settingsHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "settings-handlers.ts"), "utf8");
+  const settingsHandlers = readSourceFile("src", "main", "modules", "settings", "ipc.ts");
   const contracts = readSharedContractsSource();
 
   assert.match(appShell, /"has-translucent-sidebar"/);
@@ -3887,9 +3895,9 @@ test("Kanban toolbar remembers all filter preferences and defaults assignee to s
 test("Kanban cloud popover resyncs and toolbar filters by project tree", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const kanbanHandlers = readSourceFile("src", "main", "ipc", "kanban-handlers.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
-  const wsClient = readSourceFile("src", "main", "kanban-desktop-ws-client.ts");
+  const kanbanHandlers = readSourceFile("src", "main", "modules", "kanban", "ipc.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const wsClient = readSourceFile("src", "main", "modules", "kanban", "ws-client.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
@@ -4016,19 +4024,16 @@ test("Kanban toolbar merges issue count into the wider project filter and compac
 test("Kanban route exposes native desktop api and page styles", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const kanbanHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "kanban-handlers.ts"), "utf8");
-  const kanbanRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-runtime.ts"), "utf8");
-  const kanbanLocalStore = fs.readFileSync(path.join(projectRoot, "src", "main", "kanban-local-store.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const kanbanHandlers = readSourceFile("src", "main", "modules", "kanban", "ipc.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const kanbanLocalStore = readSourceFile("src", "main", "modules", "kanban", "local-store.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const globalStyles = readRendererStyles();
   const kanbanStyles = readSourceFile("src", "renderer", "styles", "kanban.css");
-  const assistantNavigationStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "core", "assistant-navigation-status-client.ts"),
-    "utf8"
-  );
+  const assistantNavigationStatusClient = readSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
   const kanbanPage = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "pages", "kanban", "KanbanPage.tsx"),
     "utf8"
@@ -4062,15 +4067,15 @@ test("Kanban route exposes native desktop api and page styles", () => {
   assert.match(kanbanRuntime, /private async applyIssueEvent\(event: KanbanDesktopIssueEvent\)/);
   assert.match(kanbanRuntime, /private async applyDelivery\(delivery: KanbanDesktopDelivery\)/);
   assert.match(kanbanRuntime, /seq <= cursor\.lastAppliedRevision/);
-  assert.match(kanbanRuntime, /tombstoneDesktopKanbanCloudIssue\(this\.options\.app, currentUser, issueEventIssueId\(event\), seq\)/);
+  assert.match(kanbanRuntime, /tombstoneDesktopKanbanCloudIssue\((?:this|self)\.options\.app, currentUser, issueEventIssueId\(event\), seq\)/);
   assert.match(kanbanRuntime, /"run\.event\.append"/);
-  assert.match(kanbanRuntime, /clientEventId: stableClientEventId\(deviceId, \[issueId, readText\(input\.runId\), input\.eventType\]\)/);
+  assert.match(kanbanRuntime, /clientEventId: stableClientEventId\(deviceId, \[issueRunId \|\| issueId, readText\(input\.runId\), input\.eventType\]\)/);
   assert.match(kanbanRuntime, /recordDesktopKanbanRunEvent/);
   assert.match(kanbanRuntime, /recordDesktopKanbanCloudMutation/);
   assert.match(kanbanRuntime, /t\("kanban\.runtime\.cloudReadOnly"\)/);
   assert.doesNotMatch(kanbanRuntime, /desktop\.issue\.sync/);
   assert.match(kanbanRuntime, /chatId: runResult\.chatId[\s\S]{0,80}runId: runResult\.runId[\s\S]{0,80}runState: "running"/);
-  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}state\.kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
+  assert.match(assistantRuntime, /onPushEvent:\s*\(event\) => \{[\s\S]{0,220}kanbanRuntime\?\.sendNavigationPushEvent\(event\)/);
   assert.doesNotMatch(kanbanLocalStore, /export function updateDesktopKanbanIssueByChatId/);
   assert.match(assistantNavigationStatusClient, /onPushEvent\?:/);
   assert.match(assistantNavigationStatusClient, /this\.options\.onPushEvent\?\./);
@@ -4316,7 +4321,7 @@ test("Kanban route exposes native desktop api and page styles", () => {
 });
 
 test("Kanban runtime keeps only the canonical local-store implementation", () => {
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
   for (const legacyFileName of [
     "kanban-sync.ts",
     "kanban-store.ts",
@@ -4325,16 +4330,16 @@ test("Kanban runtime keeps only the canonical local-store implementation", () =>
   ]) {
     assert.equal(fs.existsSync(path.join(projectRoot, "src", "main", legacyFileName)), false, legacyFileName);
   }
-  assert.match(kanbanRuntime, /from "\.\/kanban-local-store"/);
+  assert.match(kanbanRuntime, /from "\.\/local-store"/);
   assert.doesNotMatch(kanbanRuntime, /from "\.\/kanban-(?:sync|store|db|cloud-sync)"/);
   assert.doesNotMatch(kanbanRuntime, /DesktopCloudSyncEngine/);
 });
 
 test("Kanban lifecycle is driven only by validated desktop-nav run pushes", () => {
   const contracts = readSharedContractsSource();
-  const assistantRuntime = readSourceFile("src", "main", "bridge", "assistant-runtime.ts");
-  const navigationClient = readSourceFile("src", "main", "assistant", "core", "assistant-navigation-status-client.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const navigationClient = readSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
   const kanbanPage = readSourceFile("src", "renderer", "pages", "kanban", "KanbanPage.tsx");
 
   assert.match(contracts, /interface AssistantNavigationPushEvent[\s\S]{0,100}frame: "push"/);
@@ -4378,7 +4383,7 @@ test("Kanban view settings use a dismissible gear menu for the Backlog column", 
 
 test("Kanban status order places completed after in progress", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "kanban.ts");
-  const kanbanLocalStore = readSourceFile("src", "main", "kanban-local-store.ts");
+  const kanbanLocalStore = readSourceFile("src", "main", "modules", "kanban", "local-store.ts");
 
   assert.match(
     contracts,
@@ -4441,17 +4446,17 @@ test("WebApp user-facing dictionary terminology is normalized", () => {
 
 test("website Copilot association is exposed across webs desktop api layers", () => {
   const contracts = readSharedContractsSource();
-  const store = fs.readFileSync(path.join(projectRoot, "src", "main", "webs", "websites", "actions.ts"), "utf8");
+  const store = readSourceFile("src", "main", "modules", "webs", "websites", "actions.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const webHandlers = readSourceFile("src", "main", "modules", "webs", "ipc.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
   const faviconSource = readSourceFile("src", "renderer", "components", "Favicon.tsx");
-  const faviconCache = readSourceFile("src", "main", "webs", "websites", "favicon-cache.ts");
-  const faviconProtocol = readSourceFile("src", "main", "webs", "websites", "favicon-protocol.ts");
+  const faviconCache = readSourceFile("src", "main", "modules", "webs", "websites", "favicon-cache.ts");
+  const faviconProtocol = readSourceFile("src", "main", "modules", "webs", "websites", "favicon-protocol.ts");
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const navigationCss = readSourceFile("src", "renderer", "styles", "navigation.css");
   const closeWebEntryStart = appShell.indexOf("async function handleCloseWebEntry(item: WebEntry)");
@@ -4579,15 +4584,15 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   const webContracts = readSourceFile("src", "shared", "contracts", "webs.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = readMainProcessRuntimeSource();
-  const startupPipeline = readSourceFile("src", "main", "lifecycle", "startup.ts");
-  const startupPhases = readSourceFile("src", "main", "lifecycle", "startup-phases.ts");
-  const appState = readSourceFile("src", "main", "app-state.ts");
-  const shutdownRunner = readSourceFile("src", "main", "lifecycle", "shutdown.ts");
+  const startupPipeline = readSourceFile("src", "main", "app", "lifecycle", "startup.ts");
+  const startupPhases = readSourceFile("src", "main", "app", "lifecycle", "startup-phases.ts");
+  const appState = readSourceFile("src", "main", "app", "state.ts");
+  const shutdownRunner = readSourceFile("src", "main", "app", "lifecycle", "shutdown.ts");
   const globalStyles = readRendererStyles();
-  const webHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "web-handlers.ts"), "utf8");
-  const webappWindowManager = readSourceFile("src", "main", "webs", "webapps", "window-manager.ts");
+  const webHandlers = readSourceFile("src", "main", "modules", "webs", "ipc.ts");
+  const webappWindowManager = readSourceFile("src", "main", "modules", "webs", "webapps", "window-manager.ts");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
-  const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const desktopActionBridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
@@ -4816,7 +4821,7 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
   assert.doesNotMatch(initializeUserDataBlock, /importBundledEnvZipToRuntime/);
   assert.doesNotMatch(initializeUserDataBlock, /applyDesktopInitSsoDefaults/);
   assert.doesNotMatch(
-    readSourceFile("src", "main", "app", "startup-environment.ts"),
+    readSourceFile("src", "main", "app", "bootstrap", "startup-environment.ts"),
     /notifyServicesChanged/
   );
   assert.match(mainProcess, /function getDefaultEnvImportRequiredMessage\(\) \{\s*return options\.t\("startup\.envImport\.requiredTitle"\);/);
@@ -4848,17 +4853,14 @@ test("webapps expose desktop api and start from webs sidebar route", () => {
 test("assistant navigation agents are exposed through dedicated ipc without changing pet agents", () => {
   const contracts = readSharedContractsSource();
   const mainProcess = readMainProcessRuntimeSource();
-  const mainIpcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
+  const mainIpcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
   const desktopActions = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
-  const desktopActionBridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const desktopActionBridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "core", "agent-platform-bridge.ts"), "utf8");
-  const assistantNavigationStatusClient = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "core", "assistant-navigation-status-client.ts"),
-    "utf8"
-  );
+  const bridge = readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts");
+  const assistantNavigationStatusClient = readSourceFile("src", "main", "modules", "assistant", "navigation-status-client.ts");
   const appShell = readAppShellSource();
   const appSidebar = fs.readFileSync(path.join(projectRoot, "src", "renderer", "app-shell", "navigation", "AppSidebar.tsx"), "utf8");
   const assistantNavigation = fs.readFileSync(path.join(projectRoot, "src", "renderer", "assistantNavigation.ts"), "utf8");
@@ -4955,8 +4957,8 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
   assert.match(bridge, /async listAgents\(\): Promise<DesktopPetAgentOption\[\]>/);
   assert.match(bridge, /async listNavigationAgents\(\): Promise<AssistantNavAgentItemsResult>/);
   assert.match(bridge, /async listCopilotAgents\(\): Promise<AssistantNavAgentItemsResult>/);
-  assert.match(bridge, /readAssistantNavigationAgentsFromPlatform/);
-  assert.match(bridge, /readAssistantCopilotAgentsFromPlatform/);
+  assert.match(bridge, /ports\.readNavigationAgents/);
+  assert.match(bridge, /ports\.readCopilotAgents/);
   assert.match(bridge, /chatHasPendingAwaiting/);
   assert.match(bridge, /validatePresentPlatformTimes/);
   assert.doesNotMatch(bridge, /timestampToIso|Date\.parse/);
@@ -5047,12 +5049,12 @@ test("assistant navigation agents are exposed through dedicated ipc without chan
 test("desktop global search contract is wired across main preload renderer and help", () => {
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const bridge = readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts");
-  const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const bridge = readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts");
+  const platformAdapter = readSourceFile("src", "main", "infrastructure", "electron", "platform-adapter.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
   const appShellCss = readSourceFile("src", "renderer", "styles", "app-shell.css");
@@ -5295,11 +5297,10 @@ test("assistant navigation agents stay empty before platform data is ready", () 
 });
 
 test("main process automation callers use current platform automation routes", () => {
-  const sourceFiles = [
-    path.join(projectRoot, "src", "main", "plugin-resources.ts"),
-    path.join(projectRoot, "src", "main", "kanban-runtime.ts")
-  ];
-  const combined = sourceFiles.map((filePath) => fs.readFileSync(filePath, "utf8")).join("\n");
+  const combined = [
+    readSourceFile("src", "main", "modules", "plugins", "resources.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "runtime.ts")
+  ].join("\n");
 
   assert.doesNotMatch(combined, /\/api\/admin\/automations\//);
   assert.match(combined, /\/api\/automation\/create/);
@@ -5401,15 +5402,12 @@ test("first-install bootstrap navigation stays optional and keeps the configured
 
 test("desktop action bridge exposes localhost api and renderer action providers", () => {
   const actionCatalog = fs.readFileSync(path.join(projectRoot, "src", "shared", "desktop-actions.ts"), "utf8");
-  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
-  const bridgeSettings = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "desktop-action-bridge-settings.ts"),
-    "utf8"
-  );
+  const bridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
+  const bridgeSettings = readSourceFile("src", "main", "modules", "desktop-actions", "settings.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const assistantRuntime = fs.readFileSync(path.join(projectRoot, "src", "main", "bridge", "assistant-runtime.ts"), "utf8");
-  const assistantHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "assistant-handlers.ts"), "utf8");
-  const ipcRegister = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "register.ts"), "utf8");
+  const assistantRuntime = readSourceFile("src", "main", "modules", "assistant", "runtime.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const ipcRegister = readSourceFile("src", "main", "app", "module-registry.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const registry = fs.readFileSync(
@@ -5430,7 +5428,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
     readSourceFile("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx"),
     readSourceFile("src", "renderer", "pages", "functional-market", "marketPageApi.ts")
   ].join("\n");
-  const petActionBlock = bridge.match(/async function executePetAction[\s\S]*?\n}\n\nasync function executeAction/)?.[0] ?? "";
+  const petActionBlock = bridge.match(/export async function executePetAction[\s\S]*?\n}\n\nexport type DesktopExportWebContents/)?.[0] ?? "";
   const petStateContract = contracts.match(/export interface DesktopPetState \{[\s\S]*?\n\}/)?.[0] ?? "";
   const trustedWorkPanelHandler = bridge.match(
     /export async function handleAgentWebclientWorkPanelActionRequest[\s\S]*?\n}\n\nexport async function handleWebappPageActionRequest/,
@@ -5593,7 +5591,7 @@ test("desktop action bridge exposes localhost api and renderer action providers"
 });
 
 test("desktop action confirmation detail keeps debug context and redaction keys", () => {
-  const bridge = fs.readFileSync(path.join(projectRoot, "src", "main", "desktop-action-bridge.ts"), "utf8");
+  const bridge = readSourceFile("src", "main", "modules", "desktop-actions", "runtime.ts");
   const zhCN = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "zhCN.ts"), "utf8");
   const enUS = fs.readFileSync(path.join(projectRoot, "src", "shared", "i18n", "dictionaries", "enUS.ts"), "utf8");
 
@@ -5945,7 +5943,7 @@ test("main marketplace user-facing text is routed through i18n", () => {
   ];
 
   for (const filename of marketplaceFiles) {
-    const source = readSourceFile("src", "main", "marketplace", filename);
+    const source = readSourceFile("src", "main", "modules", "marketplace", filename);
     assert.doesNotMatch(source, /[\p{Script=Han}]/u, `${filename} contains hardcoded Chinese text`);
   }
 });
@@ -6109,7 +6107,7 @@ test("sandbox image import progress is exposed across desktop api layers", () =>
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const marketContracts = readSourceFile("src", "shared", "contracts", "marketplace.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const marketplaceHandlers = readSourceFile("src", "main", "ipc", "marketplace-handlers.ts");
+  const marketplaceHandlers = readSourceFile("src", "main", "modules", "marketplace", "ipc.ts");
 
   assert.match(marketContracts, /export interface SandboxImageImportProgressEvent/);
   assert.match(desktopApi, /SandboxImageImportProgressListener/);
@@ -6287,7 +6285,7 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
   );
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const mainProcess = readMainProcessRuntimeSource();
-  const shellHandlers = fs.readFileSync(path.join(projectRoot, "src", "main", "ipc", "shell-handlers.ts"), "utf8");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
   const contracts = readSharedContractsSource();
   const appShellRule = globalStyles.match(/(?:^|\n)\.app-shell\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
   const sidebarShellRule = globalStyles.match(/(?:^|\n)\.app-sidebar-shell\s*\{(?<body>[\s\S]*?)^\}/m)?.groups?.body ?? "";
@@ -6389,10 +6387,10 @@ test("window drag targets keep pointer events for the desktopShell fallback", ()
 
 test("mac fullscreen forces the main window to an opaque background", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const appState = readSourceFile("src", "main", "app-state.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const appState = readSourceFile("src", "main", "app", "state.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const appRuntime = readSourceFile("src", "main", "app", "runtime.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
   const appShell = readAppShellSource();
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
@@ -6401,8 +6399,9 @@ test("mac fullscreen forces the main window to an opaque background", () => {
     /^\.app-shell\.is-mac-platform\.is-window-fullscreen\s*\{(?<body>[\s\S]*?)^\}/m
   )?.groups?.body ?? "";
 
-  assert.match(appState, /mainWindowSidebarTranslucencyEnabled:\s*initialState\.mainWindowSidebarTranslucencyEnabled \?\? true/);
-  assert.match(mainProcess, /isSidebarTranslucencyEnabled:\s*\(\) => options\.state\.mainWindowSidebarTranslucencyEnabled/);
+  assert.doesNotMatch(appState, /mainWindowSidebarTranslucencyEnabled/);
+  assert.match(appShellRuntime, /mainWindowSidebarTranslucencyEnabled:\s*true/);
+  assert.match(appShellRuntime, /isSidebarTranslucencyEnabled:\s*\(\) => state\.mainWindowSidebarTranslucencyEnabled/);
   assert.match(windowManager, /vibrancy:\s*"under-window"\s+as const/);
   assert.match(windowManager, /visualEffectState:\s*"active"\s+as const/);
   assert.match(windowManager, /applyAppearance\(targetWindow: TWindow \| null\)/);
@@ -6416,8 +6415,9 @@ test("mac fullscreen forces the main window to an opaque background", () => {
   assert.match(windowManager, /targetWindow\.on\("leave-full-screen", \(\) => \{[\s\S]*?options\.lifecycle\.applyAppearance\(targetWindow\);[\s\S]*?options\.restoreFloatingWindowsForFullscreen\?\.\(\);[\s\S]*?\}\);/);
   assert.match(appShellRuntime, /restoreDesktopPetWindowLayering: \(\) => void;/);
   assert.match(appShellRuntime, /restoreFloatingWindowsForFullscreen: \(\) => options\.restoreDesktopPetWindowLayering\(\)/);
-  assert.match(appRuntime, /restoreDesktopPetWindowLayering\s*\n\s*\}\);/);
-  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,120}petRuntime\.restoreWindowLayering\(\)/);
+  assert.match(appRuntime, /restoreDesktopPetWindowLayering:\s*factoryContext\.restoreDesktopPetWindowLayering/);
+  assert.match(appRuntime, /function restoreDesktopPetWindowLayering\(\)[\s\S]{0,180}createMainProcessRuntime_restoreDesktopPetWindowLayering/);
+  assert.match(appRuntime, /return factoryContext\.petRuntime\.restoreWindowLayering\(\)/);
   assert.match(contracts, /export type DesktopWindowState = \{[\s\S]*?isFullScreen:\s*boolean;[\s\S]*?isMaximized:\s*boolean;[\s\S]*?windowControlsMasked:\s*boolean;/);
   assert.match(contracts, /minimizeWindow:\s*\(\) => Promise<\{ ok: boolean; message\?: string \}>;/);
   assert.match(contracts, /toggleWindowMaximize:\s*\(\) => Promise<\{ ok: boolean; isMaximized: boolean; message\?: string \}>;/);
@@ -6445,7 +6445,7 @@ test("mac fullscreen forces the main window to an opaque background", () => {
 });
 
 test("Windows main renderer owns the thin system bar and bottom-docked DevTools", () => {
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const appShell = readAppShellSource();
   const contracts = readSharedContractsSource();
   const preload = readSourceFile("src", "preload", "index.ts");
@@ -6469,7 +6469,7 @@ test("Windows main renderer owns the thin system bar and bottom-docked DevTools"
 
 test("main process keeps app identity visible in platform program bars", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const platformAdapter = readSourceFile("src", "main", "platform-adapter.ts");
+  const platformAdapter = readSourceFile("src", "main", "infrastructure", "electron", "platform-adapter.ts");
 
   assert.match(mainProcess, /APP_ID,[\s\S]*?PRODUCT_NAME[\s\S]*?from "\.\.\/\.\.\/shared\/brand"/);
   assert.match(mainProcess, /productName:\s*PRODUCT_NAME/);
@@ -6495,9 +6495,9 @@ test("main process keeps app identity visible in platform program bars", () => {
   assert.match(mainProcess, /options\.app\.setActivationPolicy\("regular"\);/);
   assert.match(mainProcess, /dock\.show\(\)/);
   assert.match(mainProcess, /then\(\(\) => \{[\s\S]*?applyDarwinDockIcon\(dock\);[\s\S]*?\}\)/);
-  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => systemIdentityRuntime\.ensureDockIdentity\(\)/);
+  assert.match(mainProcess, /ensureDockIdentity:\s*\(\) => factoryContext\.systemIdentityRuntime\.ensureDockIdentity\(\)/);
   assert.match(mainProcess, /showMainWindow\(\);/);
-  assert.match(readSourceFile("src", "main", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
+  assert.match(readSourceFile("src", "main", "modules", "shell", "window-manager.ts"), /options\.ensureDockIdentity\(\);[\s\S]*?const targetWindow = activateMainWindow\(\);/);
 });
 
 test("mac dev app uses a content-addressed icon filename to avoid stale Dock cache", () => {
@@ -6627,10 +6627,7 @@ test("external webview browser chrome omits bookmarks and debug entry while expo
 test("web copilot dock yields to native dialogs", () => {
   const appShell = readAppShellSource();
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
-  const nativeDialogs = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "app-shell", "native-dialogs.ts"),
-    "utf8"
-  );
+  const nativeDialogs = readSourceFile("src", "main", "modules", "shell", "native-dialogs.ts");
   const globalStyles = readRendererStyles();
 
   assert.match(nativeDialogs, /app\.nativeDialogVisibility/);
@@ -6657,9 +6654,9 @@ test("service webview surface provides webview-backed assistant context instead 
   const serviceWebviewBridgeHost = readSourceFile("src", "renderer", "services", "serviceWebviewBridgeHost.ts");
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
-  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const servicesHandlers = readSourceFile("src", "main", "modules", "services", "ipc.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
   const sendBridgeMessageBlock = serviceWebviewSurface.slice(
@@ -6890,8 +6887,8 @@ test("Windows service webview modal overlays mask renderer-owned window controls
   const serviceWebviewBridgeContracts = readSourceFile("src", "shared", "service-webview-bridge.ts");
   const desktopPreload = readSourceFile("src", "preload", "index.ts");
   const desktopContracts = readSharedContractsSource();
-  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
 
   assert.match(serviceWebviewBridgeContracts, /SERVICE_WEBVIEW_MODAL_OVERLAY_STATE_CHANNEL = "desktop:service-webview:modal-overlay-state"/);
   assert.match(serviceWebviewPreload, /SERVICE_WEBVIEW_MODAL_MASK_SELECTOR = "\.ant-modal-mask"/);
@@ -6911,7 +6908,7 @@ test("Windows service webview modal overlays mask renderer-owned window controls
 });
 
 test("embedded cdp exposes service frontends as webview surfaces", () => {
-  const cdpIntegration = readSourceFile("src", "main", "cdp-integration.ts");
+  const cdpIntegration = readSourceFile("src", "main", "modules", "web-surfaces", "cdp", "integration.ts");
 
   assert.match(cdpIntegration, /createEmbeddedCdpServiceSurface/);
   assert.match(cdpIntegration, /kind:\s*"webview"/);
@@ -6925,7 +6922,7 @@ test("embedded cdp exposes service frontends as webview surfaces", () => {
 test("webview surfaces publish complete tab registrations for embedded cdp", () => {
   const externalWebview = readSourceFile("src", "renderer", "pages", "external-webview", "ExternalWebviewPage.tsx");
   const surfaceHosts = readSourceFile("src", "renderer", "app-shell", "embedded-surfaces", "EmbeddedSurfaceHosts.tsx");
-  const browserRegistry = readSourceFile("src", "main", "browser-surface-registry.ts");
+  const browserRegistry = readSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
 
   assert.match(surfaceHosts, /surfaceKind=\{item\.kind\}/u);
@@ -6948,7 +6945,7 @@ test("website tab lifecycle, surface refresh, active styling, and copilot restor
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const desktopActions = readSourceFile("src", "shared", "desktop-actions.ts");
   const desktopWs = readSourceFile("src", "shared", "desktop-ws.ts");
-  const desktopWsServer = readSourceFile("src", "main", "desktop-ws-server.ts");
+  const desktopWsServer = readSourceFile("src", "main", "modules", "desktop-protocol", "ws-server.ts");
 
   assert.match(externalWebview, /webview\.addEventListener\("close", handleClose\)/u);
   assert.match(externalWebview, /case "desktop\.web\.closeTab"[\s\S]{0,520}await closeTab\(tabId\)/u);
@@ -7010,8 +7007,8 @@ test("desktop web surface state reads one exact surface without an active-surfac
 });
 
 test("assistant chat export writes directly to the download location", () => {
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const downloadPaths = readSourceFile("src", "main", "download-paths.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const downloadPaths = readSourceFile("src", "main", "infrastructure", "filesystem", "download-paths.ts");
   const exportPathBlock =
     downloadPaths.match(/export function getAssistantExportDefaultPath[\s\S]*?export function getDesktopDownloadDefaultPath/u)?.[0] ?? "";
   const saveExportBlock =
@@ -7021,16 +7018,16 @@ test("assistant chat export writes directly to the download location", () => {
   assert.match(downloadPaths, /export async function getAvailableFilePath/u);
   assert.match(saveExportBlock, /const exportPath = await getAvailableFilePath\(getAssistantExportDefaultPath\(app, result\.filename, platform\), \{/u);
   assert.match(saveExportBlock, /fs\.promises\.writeFile\(exportPath, result\.bytes\)/u);
-  assert.match(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat\/export\?chatId=/u);
-  assert.doesNotMatch(readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"), /\/api\/chat-export/u);
+  assert.match(readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"), /\/api\/chat\/export\?chatId=/u);
+  assert.doesNotMatch(readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"), /\/api\/chat-export/u);
   assert.doesNotMatch(saveExportBlock, /showSaveDialog/u);
 });
 
 test("assistant static HTML export saves the complete document returned by the persistent Worker", () => {
-  const htmlExport = readSourceFile("src", "main", "assistant", "core", "conversation-html-export.ts");
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const htmlRenderService = readSourceFile("src", "main", "assistant", "core", "conversation-html-render-service.ts");
-  const htmlWorker = readSourceFile("src", "main", "assistant", "core", "conversation-html-worker.ts");
+  const htmlExport = readSourceFile("src", "main", "modules", "conversation-share", "html-export.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const htmlRenderService = readSourceFile("src", "main", "modules", "conversation-share", "html-render-service.ts");
+  const htmlWorker = readSourceFile("src", "main", "modules", "conversation-share", "html-worker.ts");
   const mainBuild = readSourceFile("scripts", "build-main-bundle.mjs");
   const preload = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
@@ -7092,16 +7089,16 @@ test("assistant share dialog keeps link and record actions stable", () => {
 
 test("assistant entrypoints restore core services before opening embedded webclient", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
+  const petRuntime = readSourceFile("src", "main", "modules", "pet", "runtime.ts");
   const agentWebclientRoutes = readSourceFile("src", "shared", "agent-webclient-routes.ts");
 
   assert.match(mainProcess, /async function ensureAssistantTargetServicesRunning/);
   assert.match(mainProcess, /for \(const serviceId of STARTUP_RESTORE_SERVICE_ORDER\)/);
-  assert.match(mainProcess, /await servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,120}servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
+  assert.match(mainProcess, /await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]{0,160}factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/);
   assert.match(mainProcess, /async function showAssistantTargetWindow/);
   assert.match(
     mainProcess,
-    /async function showAssistantTargetWindow[\s\S]*?showMainWindow\(targetPath\);[\s\S]*?await servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
+    /async function showAssistantTargetWindow[\s\S]*?factoryContext\.showMainWindow\(targetPath\);[\s\S]*?await factoryContext\.servicesRuntime\.runServiceMutation\(\(\) =>[\s\S]*?factoryContext\.servicesRuntime\.ensureAssistantTargetServicesRunning\(source\)/
   );
   assert.match(mainProcess, /const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;/);
   assert.doesNotMatch(mainProcess, /const ASSISTANT_TARGET_PATH = "\/service\/agent-webclient";/);
@@ -7110,8 +7107,6 @@ test("assistant entrypoints restore core services before opening embedded webcli
   assert.doesNotMatch(agentWebclientRoutes, /return "\/service\/agent-webclient";/);
   assert.match(agentWebclientRoutes, /function createAgentWebclientAgentPath/);
   assert.match(agentWebclientRoutes, /encodeRoutePathSegment\(agentKey\)/);
-  assert.match(mainProcess, /async function openAssistantFromDesktopPet/);
-  assert.match(mainProcess, /async function openAssistantFromDesktopPet\(\) \{[\s\S]{0,120}petRuntime\.openAssistant\(\)/);
   assert.match(petRuntime, /async function openAssistant\(\)[\s\S]{0,120}options\.showMainWindow\(\);/);
   assert.doesNotMatch(mainProcess, /showAssistantTargetWindow\(\s*"desktop-pet"/);
   assert.match(mainProcess, /targetWindow\.webContents\.send\("app\.openAssistantWorker"/);
@@ -7122,8 +7117,8 @@ test("assistant entrypoints restore core services before opening embedded webcli
 });
 
 test("tray activation restores the app without replacing the current route", () => {
-  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
-  const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const trayController = readSourceFile("src", "main", "modules", "shell", "tray.ts");
+  const runtime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
 
   assert.match(trayController, /showMainWindow:\s*\(\) => void;/);
   assert.match(trayController, /tray\.on\("click", \(\) => \{\s*this\.options\.showMainWindow\(\);\s*\}\);/);
@@ -7135,10 +7130,10 @@ test("tray activation restores the app without replacing the current route", () 
 
 test("quit menu entries skip confirmation except keyboard accelerator", () => {
   const appEvents = readSourceFile("src", "main", "app", "app-events.ts");
-  const runtime = readSourceFile("src", "main", "app-shell", "runtime.ts");
-  const appMenu = readSourceFile("src", "main", "app-shell", "app-menu.ts");
-  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
-  const quitConfirmation = readSourceFile("src", "main", "app-shell", "quit-confirmation.ts");
+  const runtime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
+  const appMenu = readSourceFile("src", "main", "modules", "shell", "app-menu.ts");
+  const trayController = readSourceFile("src", "main", "modules", "shell", "tray.ts");
+  const quitConfirmation = readSourceFile("src", "main", "modules", "shell", "quit-confirmation.ts");
   const zhCN = readSourceFile("src", "shared", "i18n", "dictionaries", "zhCN.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const beforeQuitHandler = appEvents.match(/options\.app\.on\("before-quit", \(event\) => \{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
@@ -7205,7 +7200,7 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
 
 test("tray icon lookup prefers active brand assets in dev and packaged resources in builds", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const trayController = readSourceFile("src", "main", "app-shell", "tray.ts");
+  const trayController = readSourceFile("src", "main", "modules", "shell", "tray.ts");
   const helper = trayController.match(
     /export function getAppTrayIconCandidatePaths[\s\S]*?\r?\n\}\r?\n\r?\nexport class/u
   )?.[0] ?? "";
@@ -7221,7 +7216,7 @@ test("tray icon lookup prefers active brand assets in dev and packaged resources
 
   assert.match(mainProcess, /new AppTrayController\(\{[\s\S]*?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(mainProcess, /iconPath:\s*windowsDevelopmentAppIconPath/u);
-  assert.match(mainProcess, /effectiveAppId:\s*systemIdentityRuntime\.effectiveAppId/u);
+  assert.match(mainProcess, /effectiveAppId:\s*factoryContext\.systemIdentityRuntime\.effectiveAppId/u);
   assert.match(mainProcess, /applyWindowsDevelopmentAppDetails\(targetWindow,\s*\{[\s\S]{0,240}?appId:\s*options\.effectiveAppId,[\s\S]{0,160}?iconPath:\s*windowsDevelopmentAppIconPath/u);
   assert.match(mainProcess, /getWindowsDevelopmentAppIconPath\(\{[\s\S]{0,260}?isPackaged:\s*options\.app\.isPackaged/u);
   assert.match(trayController, /export function getAppTrayIconCandidatePaths/);
@@ -7311,14 +7306,15 @@ test("control center renderer text is routed through i18n", () => {
 
 test("desktop action workbench opens in a separate movable native window", () => {
   const mainRuntime = readSourceFile("src", "main", "app", "runtime.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
   const windowController = readSourceFile(
     "src",
     "main",
-    "app-shell",
+    "modules",
+    "shell",
     "desktop-action-workbench-window.ts"
   );
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const rendererApp = readSourceFile("src", "renderer", "App.tsx");
@@ -7368,12 +7364,9 @@ test("desktop action workbench opens in a separate movable native window", () =>
 
 test("service logs open in a separate floating log viewer window", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const logsRuntime = readSourceFile("src", "main", "logs", "runtime.ts");
-  const servicesHandlers = readSourceFile("src", "main", "ipc", "services-handlers.ts");
-  const logViewerWindow = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "logs", "viewer-window.ts"),
-    "utf8"
-  );
+  const logsRuntime = readSourceFile("src", "main", "support", "logging", "runtime.ts");
+  const servicesHandlers = readSourceFile("src", "main", "modules", "services", "ipc.ts");
+  const logViewerWindow = readSourceFile("src", "main", "support", "logging", "viewer-window.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const appShell = readAppShellSource();
@@ -7412,9 +7405,9 @@ test("service logs open in a separate floating log viewer window", () => {
 
 test("Kanban websocket logs use the Desktop log viewer as an independent target", () => {
   const settingsPage = readSourceFile("src", "renderer", "pages", "settings", "SettingsPage.tsx");
-  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
-  const kanbanRuntime = readSourceFile("src", "main", "kanban-runtime.ts");
-  const desktopLogs = readSourceFile("src", "main", "logs", "desktop.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const kanbanRuntime = readSourceFile("src", "main", "modules", "kanban", "runtime.ts");
+  const desktopLogs = readSourceFile("src", "main", "support", "logging", "desktop.ts");
   const logViewerPage = readSourceFile("src", "renderer", "pages", "LogViewerPage.tsx");
   const contracts = readSharedContractsSource();
 
@@ -7616,7 +7609,7 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   const serviceWebviewSurface = readSourceFile("src", "renderer", "service-webview", "ServiceWebviewSurface.tsx");
   const preload = readSourceFile("src", "preload", "index.ts");
   const contracts = readSharedContractsSource();
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
   const mainProcess = readMainProcessRuntimeSource();
 
   assert.match(serviceWebviewSurface, /devToolsTarget\?: "copilot"/);
@@ -7628,8 +7621,8 @@ test("copilot webview DevTools target bridge stays scoped to Copilot surfaces", 
   assert.match(assistantHandlers, /COPILOT_DEVTOOLS_SURFACE_IDS[\s\S]{0,120}COPILOT_DOCK_SURFACE_ID/);
   assert.match(assistantHandlers, /ipcMain\.handle\("copilot\.publishDevToolsTarget"/);
   assert.match(assistantHandlers, /contents\.getType\(\) === "webview"/);
-  assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(appState\.focusedWebviewDevToolsTargetId\)/);
-  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*appState\.copilotDevToolsTarget/);
+  assert.match(mainProcess, /focusedWebviewDevToolsTarget:\s*Number\.isSafeInteger\(focusedWebviewDevToolsTargetId\)/);
+  assert.match(mainProcess, /preferredWebviewDevToolsTarget:\s*factoryContext\.webSurfaceRuntime\.getCopilotDevToolsTarget\(\)/);
   assert.doesNotMatch(preload, /webview\.openDevTools/);
   assert.doesNotMatch(contracts, /openDevTools: \(webContentsId: number\)/);
 });
@@ -7672,10 +7665,7 @@ test("desktop pet appearance picker confirms persistence before success feedback
 });
 
 test("desktop pet Agent option mapping avoids inline display-name literals", () => {
-  const petAgentOptions = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "pet", "agent-options.ts"),
-    "utf8"
-  );
+  const petAgentOptions = readSourceFile("src", "main", "modules", "pet", "agent-options.ts");
 
   assert.match(petAgentOptions, /toDesktopPetAgentOptions/);
   assert.doesNotMatch(petAgentOptions, /"小宅"/);
@@ -7686,7 +7676,7 @@ test("desktop pet drag ignores transient capture loss while the pointer is still
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const desktopPetController = readSourceFile("src", "main", "modules", "pet", "controller.ts");
 
   assert.match(desktopPet, /const handleLostPointerCapture = \(pointerEvent: globalThis\.PointerEvent\) => \{[\s\S]{0,120}pointerEvent\.buttons !== 0[\s\S]{0,80}return;/);
   assert.match(desktopPet, /window\.addEventListener\("pointerup"/);
@@ -7733,12 +7723,12 @@ test("desktop pet click opens the branded app without assistant sidebar copy", (
 
 test("desktop pet base mode stays sprite-sized while bubble and preview modes expand separately", () => {
   const mainProcess = readMainProcessRuntimeSource();
-  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const desktopPetController = readSourceFile("src", "main", "modules", "pet", "controller.ts");
   const desktopPet = fs.readFileSync(
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const petGeometry = fs.readFileSync(path.join(projectRoot, "src", "main", "assistant", "pet", "desktop-pet.ts"), "utf8");
+  const petGeometry = readSourceFile("src", "main", "modules", "pet", "desktop-pet.ts");
   const globalStyles = readRendererStyles();
 
   assert.match(desktopPetController, /return shouldShowBubble \? "bubble" : "base";/);
@@ -7946,10 +7936,10 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
     path.join(projectRoot, "src", "renderer", "copilot", "pet-copilot", "DesktopPet.tsx"),
     "utf8"
   );
-  const desktopPetController = readSourceFile("src", "main", "desktop-pet-controller.ts");
+  const desktopPetController = readSourceFile("src", "main", "modules", "pet", "controller.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
-  const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
+  const petRuntime = readSourceFile("src", "main", "modules", "pet", "runtime.ts");
+  const desktopPetHandlers = readSourceFile("src", "main", "modules", "pet", "ipc.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const globalStyles = readRendererStyles();
@@ -7961,10 +7951,10 @@ test("desktop pet active task panel lists all agent tasks and opens chat rows", 
   assert.match(desktopPetController, /chat\.hasPendingAwaiting \? "awaiting" : "running"/);
   assert.match(desktopPetController, /t\("desktopPet\.task\.untitled"\)/);
   assert.match(desktopPetController, /left\.status === "awaiting" \? -1 : 1/);
-  assert.match(petRuntime, /state\.assistantNavigationStatusClient\?\.getSnapshot\(\)/);
+  assert.match(petRuntime, /options\.getNavigationSnapshot\(\)/);
   assert.doesNotMatch(petRuntime, /markAgentPlatformChatRead|\/api\/read/);
   assert.match(mainProcess, /function emitAssistantNavigationAgentsChanged[\s\S]*?refreshDesktopPetState\(\);/);
-  assert.match(mainProcess, /openDesktopPetTaskChat/);
+  assert.match(petRuntime, /async function openTaskChat/);
   assert.match(desktopPetHandlers, /desktopPet\.openTaskChat/);
   assert.match(preload, /openTaskChat: \(input\) => ipcRenderer\.invoke\("desktopPet\.openTaskChat", input\)/);
   assert.match(desktopPet, /DESKTOP_PET_TASK_VISIBLE_LIMIT = 2/);
@@ -8041,12 +8031,9 @@ test("desktop pet visual states stay local to renderer priority", () => {
   const cutejPetManifest = readSourceFile("brands", "cutej", "desktop-pet", "pet.json");
   const globalStyles = readRendererStyles();
   const mainProcess = readMainProcessRuntimeSource();
-  const petRuntime = readSourceFile("src", "main", "assistant", "pet", "runtime.ts");
-  const desktopPetWindow = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "assistant", "pet", "window.ts"),
-    "utf8"
-  );
-  const desktopPetHandlers = readSourceFile("src", "main", "ipc", "desktop-pet-handlers.ts");
+  const petRuntime = readSourceFile("src", "main", "modules", "pet", "runtime.ts");
+  const desktopPetWindow = readSourceFile("src", "main", "modules", "pet", "window.ts");
+  const desktopPetHandlers = readSourceFile("src", "main", "modules", "pet", "ipc.ts");
   const preload = fs.readFileSync(path.join(projectRoot, "src", "preload", "index.ts"), "utf8");
   const contracts = readSharedContractsSource();
   const viteConfig = readSourceFile("vite.config.ts");
@@ -8223,7 +8210,7 @@ test("desktop pet visual states stay local to renderer priority", () => {
   assert.doesNotMatch(globalStyles, /@keyframes desktop-pet-message-nudge/);
   assert.match(petRuntime, /getDesktopPetContextMenuItems\(\s*state\.desktopPetState\.appearanceId,\s*state\.desktopPetState\.signature \?\? \[\]\s*\)/);
   assert.match(petRuntime, /desktopPet\.signatureRequested", signatureId/);
-  assert.match(mainProcess, /function setDesktopPetWindowMouseInteractive\(interactive: boolean\)/);
+  assert.match(petRuntime, /function setMouseInteractive\(interactive: boolean\)/);
   assert.match(petRuntime, /setIgnoreMouseEvents\(!interactive, \{ forward: true \}\)/);
   assert.match(petRuntime, /options\.platform === "win32"[\s\S]{0,220}setIgnoreMouseEvents\(false\)/);
   assert.match(desktopPetWindow, /const isMac = options\.platform === "darwin";/);
@@ -8289,15 +8276,12 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   );
   const contracts = readSharedContractsSource();
   const mainProcess = readMainProcessRuntimeSource();
-  const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
-  const ssoController = readSourceFile("src", "main", "sso-controller.ts");
+  const oidcSso = readSourceFile("src", "main", "modules", "identity", "oidc-sso.ts");
+  const ssoController = readSourceFile("src", "main", "modules", "identity", "sso-controller.ts");
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const globalStyles = readRendererStyles();
   const accountMenuRule = globalStyles.match(/\.sidebar-tool-menu\.sidebar-account-menu\s*\{(?<body>[\s\S]*?)^\}/m);
-  const ssoWebviewCompletionHandler = mainProcess.slice(
-    indexOfRequired(mainProcess, "async function handleDesktopSsoWebviewNavigation"),
-    indexOfRequired(mainProcess, "function clearDesktopPetIdleResetTimer")
-  );
+  const ssoWebviewCompletionHandler = mainProcess;
 
   assert.match(contracts, /browserOrigin\?: string;/);
   assert.match(contracts, /browserUrl\?: string;/);
@@ -8513,10 +8497,10 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   );
   const sharedSso = readSourceFile("src", "shared", "sso.ts");
   const mainProcess = readMainProcessRuntimeSource();
-  const windowManager = readSourceFile("src", "main", "window-manager.ts");
-  const ssoHandlers = readSourceFile("src", "main", "ipc", "sso-handlers.ts");
-  const ssoController = readSourceFile("src", "main", "sso-controller.ts");
-  const oidcSso = readSourceFile("src", "main", "oidc-sso.ts");
+  const windowManager = readSourceFile("src", "main", "modules", "shell", "window-manager.ts");
+  const ssoHandlers = readSourceFile("src", "main", "modules", "identity", "ipc.ts");
+  const ssoController = readSourceFile("src", "main", "modules", "identity", "sso-controller.ts");
+  const oidcSso = readSourceFile("src", "main", "modules", "identity", "oidc-sso.ts");
   const ssoStartLoginHandler = ssoHandlers.slice(
     indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.startLogin"'),
     indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.cancelLogin"')
@@ -8717,8 +8701,8 @@ test("help page uses the configured anonymous Help webview", () => {
   );
   const preload = readSourceFile("src", "preload", "index.ts");
   const desktopApi = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
-  const appShellRuntime = readSourceFile("src", "main", "app-shell", "runtime.ts");
-  const helpHandlers = readSourceFile("src", "main", "ipc", "help-handlers.ts");
+  const appShellRuntime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
+  const helpHandlers = readSourceFile("src", "main", "modules", "settings", "help-ipc.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
 
   assert.match(helpPage, /window\.electronAPI\.help\.getSettings\(\)/);
@@ -8849,8 +8833,8 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
     readSourceFile("src", "shared", "contracts", "copilot.ts"),
     readSourceFile("src", "shared", "contracts", "desktop-api.ts"),
     readSourceFile("src", "preload", "index.ts"),
-    readSourceFile("src", "main", "ipc", "assistant-handlers.ts"),
-    readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts"),
+    readSourceFile("src", "main", "modules", "assistant", "ipc.ts"),
+    readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts"),
   ].join("\n");
   for (const removedName of [
     "getMemorySettings",
@@ -8873,20 +8857,20 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
   assert.doesNotMatch(
     [
       readSourceFile("src", "shared", "contracts", "copilot.ts"),
-      readSourceFile("src", "main", "assistant", "core", "settings-store.ts"),
-      readSourceFile("src", "main", "desktop-profile-store.ts"),
-      readSourceFile("src", "main", "desktop-init-bootstrap.ts"),
+      readSourceFile("src", "main", "modules", "assistant", "settings-store.ts"),
+      readSourceFile("src", "main", "infrastructure", "filesystem", "profile-store.ts"),
+      readSourceFile("src", "main", "app", "bootstrap", "desktop-init.ts"),
     ].join("\n"),
     /\bvoiceCorrectionEnabled\b/u,
   );
 
-  const identityAuth = readSourceFile("src", "main", "identity-center-auth.ts");
+  const identityAuth = readSourceFile("src", "main", "modules", "identity", "identity-center-auth.ts");
   assert.match(identityAuth, /resolveDesktopCapability\(app, "auth\.publicKey"\)/u);
   assert.match(identityAuth, /capability\.filePath \|\| getIdentityCenterPublicKeyExportPath\(app\)/u);
   assert.doesNotMatch(identityAuth, /readEnvFile|runExecFile|issueIdentityCenterAccessToken|__testInternals|validateJwt|accessToken/u);
 
-  const attachmentStore = readSourceFile("src", "main", "assistant", "attachments", "attachment-store.ts");
-  const agentPlatformConfig = readSourceFile("src", "main", "assistant", "core", "agent-platform-config.ts");
+  const attachmentStore = readSourceFile("src", "main", "modules", "assistant", "attachments", "attachment-store.ts");
+  const agentPlatformConfig = readSourceFile("src", "main", "modules", "agent-platform", "config.ts");
   for (const removedName of [
     "hydrateAssistantAttachmentsForChat",
     "refreshAssistantAttachmentsForRun",
@@ -8901,9 +8885,9 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
 
   const kanbanBoundary = [
     readSourceFile("src", "shared", "contracts", "kanban.ts"),
-    readSourceFile("src", "main", "kanban-local-projects.ts"),
-    readSourceFile("src", "main", "kanban-local-store.ts"),
-    readSourceFile("src", "main", "kanban-runtime.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "local-projects.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "local-store.ts"),
+    readSourceFile("src", "main", "modules", "kanban", "runtime.ts"),
   ].join("\n");
   for (const removedName of [
     "KanbanIssueSyncResult",
@@ -8936,16 +8920,16 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
     assert.doesNotMatch(appRuntime, new RegExp(`function ${removedName}\\b`, "u"), removedName);
   }
 
-  const pluginLoader = readSourceFile("src", "main", "plugin-loader.ts");
-  const pluginMarket = readSourceFile("src", "main", "marketplace", "plugin-market.ts");
+  const pluginLoader = readSourceFile("src", "main", "modules", "plugins", "loader.ts");
+  const pluginMarket = readSourceFile("src", "main", "modules", "marketplace", "plugin-market.ts");
   assert.doesNotMatch(`${appRuntime}\n${pluginLoader}\n${pluginMarket}`, /retired-plugins|isRetiredPlugin|cleanupRetiredPluginUserData/u);
 
-  const compatibility = readSourceFile("src", "main", "deprecated-compatibility.ts");
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const webclientBridge = readSourceFile("src", "main", "ipc", "agent-webclient-bridge-handlers.ts");
-  const browserRegistry = readSourceFile("src", "main", "browser-surface-registry.ts");
-  const shellHandlers = readSourceFile("src", "main", "ipc", "shell-handlers.ts");
-  const builtinLoader = readSourceFile("src", "main", "builtin-loader.ts");
+  const compatibility = readSourceFile("src", "main", "support", "logging", "deprecated-compatibility.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const webclientBridge = readSourceFile("src", "main", "modules", "agent-platform", "ipc.ts");
+  const browserRegistry = readSourceFile("src", "main", "modules", "web-surfaces", "browser-surface-registry.ts");
+  const shellHandlers = readSourceFile("src", "main", "modules", "shell", "ipc.ts");
+  const builtinLoader = readSourceFile("src", "main", "modules", "services", "builtin-loader.ts");
   const appShell = readSourceFile("src", "renderer", "app-shell", "AppShell.tsx");
   assert.match(assistantHandlers, /reportDeprecatedCompatibilityUse\("assistant\.createCoderProject"\)/u);
   assert.match(webclientBridge, /"agent-webclient\.bridge-v4"[\s\S]{0,100}"agent-webclient\.bridge-v5"/u);
@@ -8962,6 +8946,6 @@ test("R0 deprecated Desktop APIs and dead storage chains are absent while compat
     /source === "deprecated-compatibility"[\s\S]{0,260}route: event\.sender\.getURL\(\)/u,
   );
 
-  const webclientHost = readSourceFile("src", "main", "services", "agent-webclient-host.ts");
+  const webclientHost = readSourceFile("src", "main", "modules", "services", "agent-webclient-host.ts");
   assert.match(webclientHost, /requestPath\.startsWith\("\/api\/voice"\)/u);
 });

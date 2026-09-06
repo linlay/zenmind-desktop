@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   isWorkPanelCloseShortcut,
   resolveGlobalSearchCommandShortcut,
-} = require("../dist-electron/main/platform-adapter.js");
+} = require("../dist-electron/main/infrastructure/electron/platform-adapter.js");
 
 function keyDown(key, overrides = {}) {
   return {

@@ -8,10 +8,10 @@ const {
   assembleConversationHtml,
   fetchLimitedResponse,
   parseConversationHtmlTemplate
-} = require("../dist-electron/main/assistant/core/conversation-html-worker.js");
+} = require("../dist-electron/main/modules/conversation-share/html-worker.js");
 const {
   ConversationHtmlRenderService
-} = require("../dist-electron/main/assistant/core/conversation-html-render-service.js");
+} = require("../dist-electron/main/modules/conversation-share/html-render-service.js");
 
 const SNAPSHOT_MARKER = "__CONVERSATION_EXPORT_SNAPSHOT_JSON_V1__";
 const ASSET_ORIGIN_MARKER = "__CONVERSATION_EXPORT_ASSET_ORIGIN__";

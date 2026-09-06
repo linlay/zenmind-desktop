@@ -19,9 +19,9 @@ const {
   readAssistantCopilotAgentsFromPlatform,
   readAssistantNavigationAgentsFromPlatform,
   resolveAssistantWorkspaceGitBranch,
-} = require("../dist-electron/main/assistant/core/assistant-navigation-status-client.js");
-const { readDesktopProfileFromRoot } = require("../dist-electron/main/desktop-profile-store.js");
-const { getDesktopConfigRoot } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/modules/assistant/navigation-status-client.js");
+const { readDesktopProfileFromRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
+const { getDesktopConfigRoot } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 
 const EPOCH_MS = 1_783_000_000_000;
 

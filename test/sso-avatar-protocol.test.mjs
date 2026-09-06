@@ -11,12 +11,12 @@ const require = createRequire(import.meta.url);
 const {
   registerDesktopSsoAvatarProtocol,
   registerDesktopSsoAvatarProtocolScheme,
-} = require("../dist-electron/main/sso-avatar-protocol.js");
+} = require("../dist-electron/main/modules/identity/avatar-protocol.js");
 const {
   clearCachedDesktopSsoAvatar,
   getDesktopSsoAvatarCacheDir,
-} = require("../dist-electron/main/sso-avatar-storage.js");
-const { __testInternals: oidcInternals } = require("../dist-electron/main/oidc-sso.js");
+} = require("../dist-electron/main/modules/identity/avatar-storage.js");
+const { __testInternals: oidcInternals } = require("../dist-electron/main/modules/identity/oidc-sso.js");
 const {
   DESKTOP_SSO_AVATAR_PROTOCOL,
   buildDesktopSsoAvatarUrl,

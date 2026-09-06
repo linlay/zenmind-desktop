@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 const {
   normalizeChatWorkPanelTabContextMenuRequest,
   registerChatWorkPanelTabContextMenuIpcHandlers
-} = await import("../dist-electron/main/ipc/chat-work-panel-tab-context-menu-handlers.js");
+} = await import("../dist-electron/main/modules/work-panel/tab-context-menu-ipc.js");
 
 test("Work Panel tab context menu accepts only bounded profile capabilities", () => {
   assert.deepEqual(normalizeChatWorkPanelTabContextMenuRequest({

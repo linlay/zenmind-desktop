@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const { revealPathInFileManager } = await import(
-  "../dist-electron/main/reveal-path.js"
+  "../dist-electron/main/modules/shell/reveal-path.js"
 );
 
 for (const [platform, targetPath] of [

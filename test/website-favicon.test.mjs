@@ -11,13 +11,13 @@ const {
   cacheWebsiteFavicon,
   findCachedWebsiteFaviconPath,
   __testInternals,
-} = require("../dist-electron/main/webs/websites/favicon-cache.js");
+} = require("../dist-electron/main/modules/webs/websites/favicon-cache.js");
 const {
   isWebsiteFaviconPathInsideRoot,
   resolveWebsiteFaviconRequest,
-} = require("../dist-electron/main/webs/websites/favicon-protocol.js");
-const { updateWebsiteItem } = require("../dist-electron/main/webs/websites/actions.js");
-const { getWebsiteDir } = require("../dist-electron/main/webs/websites/store.js");
+} = require("../dist-electron/main/modules/webs/websites/favicon-protocol.js");
+const { updateWebsiteItem } = require("../dist-electron/main/modules/webs/websites/actions.js");
+const { getWebsiteDir } = require("../dist-electron/main/modules/webs/websites/store.js");
 
 function createApp(root) {
   return {

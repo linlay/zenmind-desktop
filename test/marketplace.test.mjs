@@ -19,27 +19,25 @@ const {
   getMarketSettings,
   importSkillFromCommand,
   importSandboxImageFromPath,
-  installMarketItem,
+  installMarketItem: installMarketItemRaw,
   listMarketItems,
   mergeMcpRuntimeStatuses,
   refreshMarketCatalog,
   saveMarketSettings,
   toggleMarketFavorite,
-  uninstallMarketItem,
-  updateMarketItem,
+  uninstallMarketItem: uninstallMarketItemRaw,
+  updateMarketItem: updateMarketItemRaw,
   __testInternals
-} = require("../dist-electron/main/marketplace.js");
-const { webappManager } = require("../dist-electron/main/webs/webapps/manager.js");
-const installWebsiteAppArchiveFromPath = (app, archivePath, options) =>
-  webappManager.installArchive(app, archivePath, options);
-const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/plugin-loader.js");
-const { getSkillInstallDir, getSkillsCenterDir, installSkillFromPath, listInstalledSkills, uninstallSkill } = require("../dist-electron/main/skill-installer.js");
-const { readDesktopPetStoredState } = require("../dist-electron/main/assistant/pet/desktop-pet.js");
-const { readWebappItems } = require("../dist-electron/main/webs/webapps/store.js");
-const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/marketplace/agent-market.js");
-const { configureSkillMarketPlatformCaller } = require("../dist-electron/main/marketplace/skill-market.js");
-const { getSoftwarePackageInstallDir } = require("../dist-electron/main/marketplace/software-package-market.js");
-const { resolveRuntimeRoot } = require("../dist-electron/main/env-bootstrap.js");
+} = require("../dist-electron/main/modules/marketplace/runtime.js");
+const { createWebsFacade } = require("../dist-electron/main/modules/webs/index.js");
+const { getPluginInstallDir, installPluginFromArchive } = require("../dist-electron/main/modules/plugins/loader.js");
+const { getSkillInstallDir, getSkillsCenterDir, installSkillFromPath, listInstalledSkills, uninstallSkill } = require("../dist-electron/main/modules/marketplace/skill-installer.js");
+const { readDesktopPetStoredState } = require("../dist-electron/main/modules/pet/desktop-pet.js");
+const { readWebappItems: readWebappItemsRaw } = require("../dist-electron/main/modules/webs/webapps/store.js");
+const { configureAgentMarketPlatformCaller } = require("../dist-electron/main/modules/marketplace/agent-market.js");
+const { configureSkillMarketPlatformCaller } = require("../dist-electron/main/modules/marketplace/skill-market.js");
+const { getSoftwarePackageInstallDir } = require("../dist-electron/main/modules/marketplace/software-package-market.js");
+const { resolveRuntimeRoot } = require("../dist-electron/main/infrastructure/filesystem/runtime-environment.js");
 const {
   getDesktopWebappDataRoot,
   getDesktopConfigRoot,
@@ -47,12 +45,57 @@ const {
   getDesktopWebappsDataRoot,
   getMarketplaceCacheRoot,
   getMarketplaceStateRoot
-} = require("../dist-electron/main/user-paths.js");
-const { __testInternals: registryInternals } = require("../dist-electron/main/services/service-registry.js");
+} = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
+const { __testInternals: registryInternals } = require("../dist-electron/main/modules/services/service-registry.js");
 const {
   readResponseBytesWithLimit,
   requestMarket
-} = require("../dist-electron/main/marketplace/common.js");
+} = require("../dist-electron/main/modules/marketplace/common.js");
+const {
+  installWebsiteAppArchiveFromPath: installWebsiteAppArchiveThroughMarket,
+} = require("../dist-electron/main/modules/marketplace/website-app-market.js");
+const {
+  readInstalledRecords,
+  removeInstalledRecordByResourceKey,
+} = require("../dist-electron/main/modules/marketplace/common.js");
+const {
+  deriveTunnelHubRegistrationApiOrigin,
+  getTunnelHubRuntimeStatus,
+  readTunnelHubRegistrationBearerToken,
+  readTunnelHubSettings,
+  saveTunnelHubSettings,
+  startTunnelHubRuntime,
+} = require("../dist-electron/main/modules/tunnel/index.js");
+const { ContainerHubClient } = require("../dist-electron/main/modules/assistant/container-hub.js");
+const { getConfiguredDesktopActionBridgePort } = require("../dist-electron/main/modules/desktop-actions/settings.js");
+
+const createContainerHubClient = (config) => new ContainerHubClient(config);
+const websIntegrationPorts = {
+  getDesktopDeviceId: () => "marketplace-test-device",
+  getConfiguredDesktopActionBridgePort,
+  installWebsiteAppArchiveFromPath: (app, archivePath, options) =>
+    installWebsiteAppArchiveThroughMarket(app, archivePath, { ...options, webs: websFacade }),
+  readInstalledRecords,
+  removeInstalledRecordByResourceKey,
+  deriveTunnelHubRegistrationApiOrigin,
+  getTunnelHubRuntimeStatus,
+  readTunnelHubRegistrationBearerToken,
+  readTunnelHubSettings,
+  saveTunnelHubSettings,
+  startTunnelHubRuntime,
+};
+const websFacade = createWebsFacade(websIntegrationPorts);
+const { webappManager } = websFacade;
+const installWebsiteAppArchiveFromPath = (app, archivePath, options) =>
+  webappManager.installArchive(app, archivePath, options);
+const installMarketItem = (app, itemId, options = {}) =>
+  installMarketItemRaw(app, itemId, { ...options, webs: websFacade });
+const uninstallMarketItem = (app, itemId, options = {}) =>
+  uninstallMarketItemRaw(app, itemId, { ...options, webs: websFacade });
+const updateMarketItem = (app, itemId, options = {}) =>
+  updateMarketItemRaw(app, itemId, { ...options, webs: websFacade });
+const readWebappItems = (app, platform) =>
+  readWebappItemsRaw(app, platform, websIntegrationPorts);
 
 test("platform candidates keep fallbacks within the current CPU architecture", () => {
   const candidates = __testInternals.platformCandidates;
@@ -716,7 +759,7 @@ test("gateway MCP catalog items require an explicit gateway server code", async 
 });
 
 test("market MCP packages reject ambiguous identity, commands, credentials, and mismatched manifests", () => {
-  const { downloadedMcpConfig } = require("../dist-electron/main/marketplace/mcp-market.js").__mcpMarketInternals;
+  const { downloadedMcpConfig } = require("../dist-electron/main/modules/marketplace/mcp-market.js").__mcpMarketInternals;
   const manifest = (server) => ({
     market: { id: "flowcenter", version: "1.0.0" },
     mcpServers: { flowCenter: server }
@@ -837,7 +880,7 @@ test("MCP registry writes reject a directory that escapes the runtime root", (t)
   fs.mkdirSync(path.join(outside, "mcp-servers"), { recursive: true });
   fs.symlinkSync(outside, path.join(runtimeRoot, "registries"), "dir");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-  const { assertMcpRegistryTarget } = require("../dist-electron/main/marketplace/mcp-market.js").__mcpMarketInternals;
+  const { assertMcpRegistryTarget } = require("../dist-electron/main/modules/marketplace/mcp-market.js").__mcpMarketInternals;
   assert.throws(
     () => assertMcpRegistryTarget(runtimeRoot, path.join(runtimeRoot, "registries", "mcp-servers", "demo.yml")),
     /escapes the runtime root/u
@@ -1509,6 +1552,7 @@ test("listMarketItems maps Container Hub environments into sandbox image market 
     const result = await listMarketItems(app, {
       catalog: { schemaVersion: 1, items: [] },
       containerHubBaseUrl: baseUrl,
+      createContainerHubClient,
       sections: ["sandboxImages"]
     });
     const image = result.items.find((item) => item.type === "sandbox-image" && item.id === "daily-office");
@@ -1567,6 +1611,7 @@ exit 1
       const result = await listMarketItems(app, {
         catalog: { schemaVersion: 1, items: [] },
         containerHubBaseUrl: baseUrl,
+        createContainerHubClient,
         sections: ["sandboxImages"]
       });
 
@@ -1681,7 +1726,10 @@ test("buildSandboxImage starts a Container Hub environment build job", async (t)
       });
     }]
   ]), async (baseUrl) => {
-    const result = await buildSandboxImage(app, "daily-office", { containerHubBaseUrl: baseUrl });
+    const result = await buildSandboxImage(app, "daily-office", {
+      containerHubBaseUrl: baseUrl,
+      createContainerHubClient
+    });
 
     assert.equal(capturedBody, "{}");
     assert.equal(result.ok, true);

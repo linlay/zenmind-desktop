@@ -12,13 +12,13 @@ const {
   agentWebclientInstallNeedsRefresh,
   serviceInstallNeedsRefresh,
   identityCenterInstallNeedsRefresh
-} = require("../dist-electron/main/services/manager/install-refresh.js");
+} = require("../dist-electron/main/modules/services/manager/install-refresh.js");
 const {
   isInstallHealthy,
   listMissingBundleDirectoryEntries,
   listMissingRuntimeFiles
-} = require("../dist-electron/main/services/manager/bundle-assets.js");
-const envNormalization = require("../dist-electron/main/services/manager/env-normalization.js");
+} = require("../dist-electron/main/modules/services/manager/bundle-assets.js");
+const envNormalization = require("../dist-electron/main/modules/services/manager/env-normalization.js");
 
 function createTempDir(t, prefix) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), prefix));

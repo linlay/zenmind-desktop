@@ -7,13 +7,13 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-const { registerSettingsIpcHandlers } = require("../dist-electron/main/ipc/settings-handlers.js");
-const { readDesktopProfileFromRoot } = require("../dist-electron/main/desktop-profile-store.js");
-const { readEnterpriseImSettings } = require("../dist-electron/main/enterprise-im-settings.js");
+const { registerSettingsIpcHandlers } = require("../dist-electron/main/modules/settings/ipc.js");
+const { readDesktopProfileFromRoot } = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
+const { readEnterpriseImSettings } = require("../dist-electron/main/modules/enterprise-chat/settings.js");
 const {
   getDesktopConfigRoot,
   getDesktopStateRoot
-} = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const {
   DESKTOP_WS_HOST,
   DESKTOP_WS_PATH,

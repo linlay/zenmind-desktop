@@ -37,8 +37,9 @@ export async function buildMainBundle(rootDir = projectRoot) {
     absWorkingDir: rootDir,
     entryPoints: {
       "main/index": path.join(rootSrc, "main", "index.ts"),
-      "main/attachment-worker": path.join(rootSrc, "main", "assistant", "attachments", "attachment-worker.ts"),
-      "main/conversation-html-worker": path.join(rootSrc, "main", "assistant", "core", "conversation-html-worker.ts"),
+      "main/attachment-worker": path.join(rootSrc, "main", "modules", "assistant", "attachments", "attachment-worker.ts"),
+      "main/conversation-html-worker": path.join(rootSrc, "main", "modules", "conversation-share", "html-worker.ts"),
+      "main/webapp-tooling-worker": path.join(rootSrc, "main", "modules", "webs", "webapps", "tooling", "worker.ts"),
       "preload/index": path.join(rootSrc, "preload", "index.ts"),
       "preload/service-webview": path.join(rootSrc, "preload", "service-webview.ts"),
       "preload/work-panel-preview": path.join(rootSrc, "preload", "work-panel-preview.ts")
@@ -63,6 +64,10 @@ export async function buildMainBundle(rootDir = projectRoot) {
   const conversationWorker = path.join(outdir, "main", "conversation-html-worker.js");
   if (!fs.statSync(conversationWorker, { throwIfNoEntry: false })?.isFile()) {
     throw new Error("conversation HTML Worker bundle is missing");
+  }
+  const webappToolingWorker = path.join(outdir, "main", "webapp-tooling-worker.js");
+  if (!fs.statSync(webappToolingWorker, { throwIfNoEntry: false })?.isFile()) {
+    throw new Error("WebApp Tooling Worker bundle is missing");
   }
 
   return outdir;

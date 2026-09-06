@@ -8,7 +8,7 @@ const {
 } = require("../dist-electron/shared/assistant-navigation-attention.js");
 const {
   createDesktopPetState,
-} = require("../dist-electron/main/assistant/pet/desktop-pet.js");
+} = require("../dist-electron/main/modules/pet/desktop-pet.js");
 
 function createAgent(agentKey, mode, unreadCount, hasPendingAwaiting = false) {
   return {

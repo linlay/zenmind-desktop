@@ -6,15 +6,16 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const capabilities = require("../dist-electron/main/services/manager/capabilities.js");
+const capabilities = require("../dist-electron/main/modules/services/manager/capabilities.js");
 const {
   __testInternals: registryInternals,
   registerPlugin,
-} = require("../dist-electron/main/services/service-registry.js");
+} = require("../dist-electron/main/modules/services/service-registry.js");
 const {
   ensureIdentityCenterJwk,
   getIdentityCenterPublicKeyExportPath,
-} = require("../dist-electron/main/identity-center-auth.js");
+} = require("../dist-electron/main/modules/identity/identity-center-auth.js");
+const resolveDesktopCapability = (...args) => capabilities.resolveDesktopCapability(...args);
 
 function registerIdentityCenter() {
   registerPlugin({
@@ -54,7 +55,7 @@ test("identity public-key lookup uses capability output, falls back to the canon
       capabilityCalls.push(capabilityId);
       return { id: capabilityId, providerServiceId: "identity-center", output: "file", filePath: capabilityPath };
     };
-    assert.deepEqual(await ensureIdentityCenterJwk(app), {
+    assert.deepEqual(await ensureIdentityCenterJwk(app, resolveDesktopCapability), {
       publicKeyPath: capabilityPath,
       publicKeyPem: "capability-public-key",
     });
@@ -66,7 +67,7 @@ test("identity public-key lookup uses capability output, falls back to the canon
       capabilityCalls.push(capabilityId);
       return { id: capabilityId, providerServiceId: "identity-center", output: "file" };
     };
-    assert.deepEqual(await ensureIdentityCenterJwk(app), {
+    assert.deepEqual(await ensureIdentityCenterJwk(app, resolveDesktopCapability), {
       publicKeyPath: fallbackPath,
       publicKeyPem: "fallback-public-key",
     });
@@ -75,14 +76,14 @@ test("identity public-key lookup uses capability output, falls back to the canon
       capabilityCalls.push(capabilityId);
       throw new Error("capability command failed");
     };
-    await assert.rejects(ensureIdentityCenterJwk(app), /capability command failed/u);
+    await assert.rejects(ensureIdentityCenterJwk(app, resolveDesktopCapability), /capability command failed/u);
 
     fs.unlinkSync(fallbackPath);
     capabilities.resolveDesktopCapability = async (_app, capabilityId) => {
       capabilityCalls.push(capabilityId);
       return { id: capabilityId, providerServiceId: "identity-center", output: "file" };
     };
-    await assert.rejects(ensureIdentityCenterJwk(app), (error) => {
+    await assert.rejects(ensureIdentityCenterJwk(app, resolveDesktopCapability), (error) => {
       assert.match(String(error?.message), new RegExp(fallbackPath.replace(/[\\^$.*+?()[\]{}|]/gu, "\\$&"), "u"));
       return true;
     });

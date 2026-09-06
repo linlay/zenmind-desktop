@@ -6,10 +6,10 @@ import path from "node:path";
 
 const {
   WorkPanelResourceImageRegistry,
-} = await import("../dist-electron/main/chat-work-panel-resource-images.js");
+} = await import("../dist-electron/main/modules/work-panel/resource-images.js");
 const {
   resolveRuntimeRootPath,
-} = await import("../dist-electron/main/runtime-root.js");
+} = await import("../dist-electron/main/infrastructure/filesystem/runtime-root.js");
 
 const PNG_1X1 = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",

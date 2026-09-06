@@ -5,7 +5,7 @@ const {
   getMainPreloadPath,
   getServiceWebviewPreloadPath,
   resolveElectronBundleRootFromRuntimeDir
-} = await import("../dist-electron/main/electron-bundle-paths.js");
+} = await import("../dist-electron/main/infrastructure/electron/bundle-paths.js");
 
 test("runtime module dirs resolve back to the dist-electron bundle root on macOS", () => {
   const runtimeModuleDir = "/Applications/ZenMind.app/Contents/Resources/app.asar/dist-electron/main/app";

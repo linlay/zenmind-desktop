@@ -10,7 +10,7 @@ const {
   readDesktopLog,
   appendKanbanWsLog,
   __testInternals
-} = await import("../dist-electron/main/logs/desktop.js");
+} = await import("../dist-electron/main/support/logging/desktop.js");
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const TEST_PLATFORM = "linux";
 
@@ -99,7 +99,7 @@ test("renderer diagnostics keep warnings out of error.log and flush before quit"
     "utf8",
   );
   const shellHandlersSource = fs.readFileSync(
-    path.join(projectRoot, "src", "main", "ipc", "shell-handlers.ts"),
+    path.join(projectRoot, "src", "main", "modules", "shell", "ipc.ts"),
     "utf8",
   );
   const appEventsSource = fs.readFileSync(

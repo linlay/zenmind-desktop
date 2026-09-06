@@ -10,7 +10,7 @@ const require = createRequire(import.meta.url);
 const {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
-} = require("../dist-electron/main/desktop-profile-store.js");
+} = require("../dist-electron/main/infrastructure/filesystem/profile-store.js");
 
 test("desktop profile enables Desktop Action confirmation by default", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-store-"));

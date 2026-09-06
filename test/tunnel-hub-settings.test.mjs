@@ -9,7 +9,7 @@ const {
   recordTunnelHubRegistrationResult,
   readTunnelHubSettings,
   saveTunnelHubSettings
-} = await import("../dist-electron/main/tunnel-hub-settings.js");
+} = await import("../dist-electron/main/modules/tunnel/settings.js");
 
 function createTempApp(t) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-tunnel-hub-settings-"));

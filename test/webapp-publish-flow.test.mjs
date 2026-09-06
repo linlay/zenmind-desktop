@@ -10,18 +10,29 @@ const {
   buildWebappSettingsPath,
   readSettingsWebappId
 } = await import("../dist-electron/shared/settings-routes.js");
-const { readWebappPublishState } = await import("../dist-electron/main/webs/webapps/publisher.js");
-const { getDesktopWebappStateRoot } = await import("../dist-electron/main/user-paths.js");
+const { readWebappPublishState } = await import("../dist-electron/main/modules/webs/webapps/publisher.js");
+const { getDesktopWebappStateRoot } = await import("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 
 function read(relativePath) {
-  return fs.readFileSync(path.join(projectRoot, relativePath), "utf8");
+  const sourcePath = path.join(projectRoot, relativePath);
+  const source = fs.readFileSync(sourcePath, "utf8");
+  if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
+    return source;
+  }
+  const sourceDirectory = path.dirname(sourcePath);
+  const sourceStem = path.basename(sourcePath, ".ts");
+  const splitSources = fs.readdirSync(sourceDirectory)
+    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
+  return [source, ...splitSources].join("\n");
 }
 
 test("WebApp lifecycle actions keep install, runtime, and Tunnel publishing separate", () => {
   const catalog = read("src/shared/desktop-actions.ts");
-  const bridge = read("src/main/desktop-action-bridge.ts");
-  const webappActions = read("src/main/webs/webapps/actions.ts");
-  const wsServer = read("src/main/desktop-ws-server.ts");
+  const bridge = read("src/main/modules/desktop-actions/runtime.ts");
+  const webappActions = read("src/main/modules/webs/webapps/actions.ts");
+  const wsServer = read("src/main/modules/desktop-protocol/ws-server.ts");
   const wsContract = read("src/shared/desktop-ws.ts");
 
   for (const action of [
@@ -52,12 +63,12 @@ test("WebApp lifecycle actions keep install, runtime, and Tunnel publishing sepa
   assert.doesNotMatch(installHandler, /webappRuntime\.start/u);
   assert.doesNotMatch(installHandler, /navigate/u);
   assert.doesNotMatch(installHandler, /mobilePublish|readDesktopMobileWebappItem/u);
-  assert.match(bridge, /webapp_install_not_visible/u);
-  assert.match(bridge, /runtimeState\.status !== "running" \|\| !runtimeState\.webUrl/u);
-  assert.match(bridge, /webapp_not_running/u);
+  assert.match(bridge, /invalidWebappActionResult\(action, webappId, "install", \["item"\]\)/u);
+  assert.match(bridge, /options\.webs\.getWebappPublishStatus\(options\.app, webappId\)/u);
+  assert.match(bridge, /options\.publishWebapp \?\? options\.webs\.publishWebapp/u);
   assert.match(
     webappActions,
-    /unpublishWebapp\(app, target\.id\)[\s\S]*?webappRuntime\.stop\(app, target\.id[\s\S]*?closeForDisposal\(target\.id\)[\s\S]*?fs\.rmSync\(target\.installPath/u
+    /unpublishWebapp\(app, target\.id, ports\)[\s\S]*?dependencies\.runtime\.stop\(app, target\.id[\s\S]*?dependencies\.windowManager\.closeForDisposal\(target\.id\)[\s\S]*?fs\.rmSync\(target\.installPath/u
   );
   assert.match(wsContract, /"webapp\.list"/u);
   assert.match(wsContract, /"webapp\.changed"/u);
@@ -77,9 +88,9 @@ test("WebApp lifecycle actions keep install, runtime, and Tunnel publishing sepa
 });
 
 test("mobile WebApp catalog derives m URLs while manual publishing remains on the wa route API", () => {
-  const mobileAccess = read("src/main/webs/webapps/mobile-access.ts");
-  const mobileCatalog = read("src/main/webs/webapps/mobile-catalog.ts");
-  const publisher = read("src/main/webs/webapps/publisher.ts");
+  const mobileAccess = read("src/main/modules/webs/webapps/mobile-access.ts");
+  const mobileCatalog = read("src/main/modules/webs/webapps/mobile-catalog.ts");
+  const publisher = read("src/main/modules/webs/webapps/publisher.ts");
 
   assert.match(mobileAccess, /readTunnelHubSettings/u);
   assert.match(mobileAccess, /url\.hostname = mobileWebappHost/u);
@@ -89,7 +100,7 @@ test("mobile WebApp catalog derives m URLs while manual publishing remains on th
   assert.match(mobileCatalog, /createMobileTunnelWebappUrl/u);
   assert.doesNotMatch(mobileCatalog, /readWebappPublishState/u);
   assert.match(publisher, /\/api\/desktop\/devices\/\$\{encodeURIComponent\(settings\.deviceId\)\}\/webapps\//u);
-  assert.match(publisher, /registerTunnelRoute\(app, item, runtime\.webUrl, true\)/u);
+  assert.match(publisher, /registerTunnelRoute\(app, item, runtime\.webUrl, true, ports\)/u);
 });
 
 test("Settings exposes one-click Tunnel publishing and mobile QR sharing", () => {
@@ -106,8 +117,8 @@ test("Settings exposes one-click Tunnel publishing and mobile QR sharing", () =>
 });
 
 test("sidebar WebApp sharing uses cached publication state and targeted settings navigation", () => {
-  const handlers = read("src/main/ipc/web-handlers.ts");
-  const runtime = read("src/main/bridge/assistant-runtime.ts");
+  const handlers = read("src/main/modules/webs/ipc.ts");
+  const runtime = read("src/main/modules/assistant/runtime.ts");
   const appShell = read("src/renderer/app-shell/AppShell.tsx");
   const sidebar = read("src/renderer/app-shell/navigation/AppSidebar.tsx");
   const settings = read("src/renderer/pages/settings/SettingsPage.tsx");

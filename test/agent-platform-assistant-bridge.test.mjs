@@ -9,8 +9,10 @@ const require = createRequire(import.meta.url);
 const {
   AgentPlatformAssistantBridge,
   buildZenmiImageGenerateMessage
-} = require("../dist-electron/main/assistant/core/agent-platform-bridge.js");
+} = require("../dist-electron/main/modules/agent-platform/bridge.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
+const { toDesktopPetAgentOptions } = require("../dist-electron/main/modules/pet/agent-options.js");
+const { resolveAssistantChatStoragePaths } = require("../dist-electron/main/modules/assistant/chat-storage-path.js");
 
 const EPOCH_MS = 1_783_000_000_000;
 
@@ -84,6 +86,14 @@ function makeBridge(overrides = {}) {
     onEvent: (event) => events.push(event),
     getServiceState: async () => runningService(),
     issueAccessToken: async () => ({ ok: true, token: "desktop-token", message: "" }),
+    getDesktopDeviceId: () => "desktop-test",
+    ports: {
+      toDesktopPetAgentOptions,
+      resolveAssistantAttachmentPath: () => "/missing-assistant-attachment",
+      resolveAssistantChatFile: (app, chatId) => resolveAssistantChatStoragePaths(app, chatId)?.chatFilePath ?? "",
+      readNavigationAgents: async () => [],
+      readCopilotAgents: async () => [],
+    },
     ...overrides
   });
   return { bridge, events };

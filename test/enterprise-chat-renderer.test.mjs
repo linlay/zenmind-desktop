@@ -7,19 +7,30 @@ import { fileURLToPath } from "node:url";
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
 function readSource(...segments) {
-  return fs.readFileSync(path.join(projectRoot, ...segments), "utf8");
+  const sourcePath = path.join(projectRoot, ...segments);
+  const source = fs.readFileSync(sourcePath, "utf8");
+  if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
+    return source;
+  }
+  const sourceDirectory = path.dirname(sourcePath);
+  const sourceStem = path.basename(sourcePath, ".ts");
+  const splitSources = fs.readdirSync(sourceDirectory)
+    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
+  return [source, ...splitSources].join("\n");
 }
 
 test("enterprise IM configuration is independent from the enterprise chat business API", () => {
   const appRuntime = readSource("src", "main", "app", "runtime.ts");
-  const bootstrap = readSource("src", "main", "desktop-init-bootstrap.ts");
-  const profile = readSource("src", "main", "desktop-profile-store.ts");
-  const settingsHandlers = readSource("src", "main", "ipc", "settings-handlers.ts");
+  const bootstrap = readSource("src", "main", "app", "bootstrap", "desktop-init.ts");
+  const profile = readSource("src", "main", "infrastructure", "filesystem", "profile-store.ts");
+  const settingsHandlers = readSource("src", "main", "modules", "settings", "ipc.ts");
   const preload = readSource("src", "preload", "index.ts");
 
-  assert.match(appRuntime, /readEnterpriseImSettings\(app, mainProcessContext\.platform\)\.baseUrl/);
+  assert.match(appRuntime, /readEnterpriseImSettings\(app, factoryContext\.startupPlatform\)\.baseUrl/);
   assert.match(appRuntime, /initialEnabled:\s*readEnterpriseImSettings\([\s\S]*?\)\.enabled/);
-  assert.match(appRuntime, /reloadConfiguration\([\s\S]*?readEnterpriseImSettings\(app, mainProcessContext\.platform\)\.enabled/);
+  assert.match(appRuntime, /reloadConfiguration\([\s\S]*?readEnterpriseImSettings\(app, factoryContext\.startupPlatform\)\.enabled/);
   assert.match(bootstrap, /defaults\.enterpriseIm/);
   assert.doesNotMatch(bootstrap, /defaults\.imServer/);
   assert.doesNotMatch(profile, /enterpriseChatEnabled/);
@@ -56,7 +67,7 @@ test("enterprise chat distinguishes people, groups, and service bots in Contacts
     "EnterpriseChatFloatingPanel.tsx"
   );
   const styles = readSource("src", "renderer", "styles", "enterprise-chat.css");
-  const runtime = readSource("src", "main", "enterprise-chat-runtime.ts");
+  const runtime = readSource("src", "main", "modules", "enterprise-chat", "runtime.ts");
 
   assert.match(runtime, /record\.kind\) === "service_bot"/u);
   assert.match(panel, /employeeContacts/);
@@ -77,7 +88,7 @@ test("enterprise chat exposes an attachment menu and a local profile settings ta
     "EnterpriseChatFloatingPanel.tsx"
   );
   const preload = readSource("src", "preload", "index.ts");
-  const handlers = readSource("src", "main", "ipc", "enterprise-chat-handlers.ts");
+  const handlers = readSource("src", "main", "modules", "enterprise-chat", "ipc.ts");
 
   assert.match(panel, /className="enterprise-chat-attachment-menu"/);
   assert.match(panel, /sendSupportBundle/);
@@ -100,11 +111,15 @@ test("enterprise chat sends a selected Agent Chat through the raw JSONL file pat
   const styles = readSource("src", "renderer", "styles", "enterprise-chat.css");
   const preload = readSource("src", "preload", "index.ts");
   const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
-  const handlers = readSource("src", "main", "ipc", "enterprise-chat-handlers.ts");
-  const bridge = readSource("src", "main", "assistant", "core", "agent-platform-bridge.ts");
-  const rawMethodStart = bridge.indexOf("async downloadRawChatJSONL(");
-  const rawMethodEnd = bridge.indexOf("\n  private async runQuery(", rawMethodStart);
-  const rawMethod = bridge.slice(rawMethodStart, rawMethodEnd);
+  const handlers = readSource("src", "main", "modules", "enterprise-chat", "ipc.ts");
+  const bridge = readSource("src", "main", "modules", "agent-platform", "bridge.ts");
+  const bridgeMethods = readSource("src", "main", "modules", "agent-platform", "bridge.methods-2.ts");
+  const rawMethodStart = bridgeMethods.indexOf("export async function AgentPlatformAssistantBridge_downloadRawChatJSONL");
+  const nextMethodStart = bridgeMethods.indexOf("\nexport ", rawMethodStart + 1);
+  const rawMethod = bridgeMethods.slice(
+    rawMethodStart,
+    nextMethodStart === -1 ? bridgeMethods.length : nextMethodStart
+  );
 
   assert.match(panel, /enterpriseChat\.sendAgentChat/);
   assert.match(panel, /assistant\.listChats\(\)/);
@@ -155,7 +170,7 @@ test("enterprise chat screenshot button opens three explicit capture levels", ()
     "EnterpriseChatFloatingPanel.tsx"
   );
   const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
-  const runtime = readSource("src", "main", "enterprise-chat-runtime.ts");
+  const runtime = readSource("src", "main", "modules", "enterprise-chat", "runtime.ts");
 
   assert.match(panel, /className="enterprise-chat-screenshot-menu"/);
   assert.match(panel, /sendScreenshot\("region"\)/);
@@ -176,8 +191,8 @@ test("enterprise chat receives Desktop actions but exposes no action sending pat
   const preload = readSource("src", "preload", "index.ts");
   const contract = readSource("src", "shared", "contracts", "enterprise-chat.ts");
   const desktopApi = readSource("src", "shared", "contracts", "desktop-api.ts");
-  const handlers = readSource("src", "main", "ipc", "enterprise-chat-handlers.ts");
-  const runtime = readSource("src", "main", "enterprise-chat-runtime.ts");
+  const handlers = readSource("src", "main", "modules", "enterprise-chat", "ipc.ts");
+  const runtime = readSource("src", "main", "modules", "enterprise-chat", "runtime.ts");
   const appRuntime = readSource("src", "main", "app", "runtime.ts");
 
   assert.doesNotMatch(panel, /new-action|sendDesktopAction|desktopActionName/);

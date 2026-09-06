@@ -9,10 +9,10 @@ const {
   createConversationShare,
   listConversationShares,
   revokeConversationShare
-} = await import("../dist-electron/main/assistant/core/conversation-share-controller.js");
+} = await import("../dist-electron/main/modules/conversation-share/controller.js");
 const {
   TunnelConversationShareError
-} = await import("../dist-electron/main/assistant/core/tunnel-conversation-share-client.js");
+} = await import("../dist-electron/main/modules/conversation-share/tunnel-client.js");
 
 function createFixture(t, tunnelOverrides = {}) {
   const tempRoot = fs.mkdtempSync(path.join(os.tmpdir(), "conversation-share-"));
@@ -264,11 +264,11 @@ test("controller maps typed Tunnel failures without exposing secrets", async (t)
 
 test("Desktop sharing source keeps HTML rendering separate from Tunnel persistence", () => {
   const controllerSource = fs.readFileSync(
-    new URL("../src/main/assistant/core/conversation-share-controller.ts", import.meta.url),
+    new URL("../src/main/modules/conversation-share/controller.ts", import.meta.url),
     "utf8"
   );
   const bridgeSource = fs.readFileSync(
-    new URL("../src/main/assistant/core/agent-platform-bridge.ts", import.meta.url),
+    new URL("../src/main/modules/agent-platform/bridge.ts", import.meta.url),
     "utf8"
   );
 

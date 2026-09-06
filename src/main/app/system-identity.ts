@@ -3,15 +3,15 @@ import type { App, nativeImage } from "electron";
 import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../../shared/app-icon-assets";
 import {
   applyPlatformAppInit
-} from "../platform-adapter";
+} from "../infrastructure/electron/platform-adapter";
 import {
   configureNativeAboutPanel,
   resolveDesktopAppInfo
-} from "../app-metadata";
+} from "./metadata";
 import {
   isDesktopDevelopmentRuntime,
   resolveEffectiveAppId
-} from "../development-runtime";
+} from "../infrastructure/electron/development-runtime";
 
 export type SystemIdentityRuntimeOptions = {
   app: App;

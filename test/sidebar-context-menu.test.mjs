@@ -8,11 +8,11 @@ const projectRoot = path.resolve(import.meta.dirname, "..");
 const {
   buildSidebarContextMenuPolicy,
   normalizeSidebarContextMenuRequest
-} = await import("../dist-electron/main/sidebar-context-menu-policy.js");
+} = await import("../dist-electron/main/modules/web-surfaces/sidebar-context-menu-policy.js");
 const {
   registerSidebarContextMenuIpcHandlers,
   resolveSidebarContextMenuLabelKey
-} = await import("../dist-electron/main/ipc/sidebar-context-menu-handlers.js");
+} = await import("../dist-electron/main/modules/web-surfaces/sidebar-context-menu-ipc.js");
 
 function ids(target) {
   return buildSidebarContextMenuPolicy(target).map((item) => item.id);

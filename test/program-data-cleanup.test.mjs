@@ -10,8 +10,8 @@ const {
   PROGRAM_DATA_VERSION_FILE,
   __testInternals,
   cleanupProgramDataForVersion
-} = require("../dist-electron/main/program-data-cleanup.js");
-const { getProgramsRoot, __testInternals: userPathInternals } = require("../dist-electron/main/user-paths.js");
+} = require("../dist-electron/main/app/lifecycle/program-data-cleanup.js");
+const { getProgramsRoot, __testInternals: userPathInternals } = require("../dist-electron/main/infrastructure/filesystem/user-paths.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 function expectedWindowsDataBaseRoot(root) {

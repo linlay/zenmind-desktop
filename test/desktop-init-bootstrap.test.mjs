@@ -11,17 +11,21 @@ const {
   applyDesktopInitBootstrap,
   applyDesktopInitVersionUpgrade,
   resolveDesktopInitPath
-} = require("../dist-electron/main/desktop-init-bootstrap.js");
+} = require("../dist-electron/main/app/bootstrap/desktop-init.js");
 const {
   getAssistantSettingsFromRoot
-} = require("../dist-electron/main/assistant/core/settings-store.js");
+} = require("../dist-electron/main/modules/assistant/settings-store.js");
 
-const { registerServicesIpcHandlers } = require("../dist-electron/main/ipc/services-handlers.js");
-const { getArchiveExtensions } = require("../dist-electron/main/platform-adapter.js");
+const { registerServicesIpcHandlers } = require("../dist-electron/main/modules/services/ipc.js");
+const { getArchiveExtensions } = require("../dist-electron/main/infrastructure/electron/platform-adapter.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const { DEFAULT_DESKTOP_PET_SELECTED_ID } = require("../dist-electron/shared/desktop-pet.js");
 
 const RUNTIME_ROOT_DIR_NAME = APP_BRAND.paths.runtimeRootDirName;
+const OPS_CONSOLE_WEBAPP_ID = "webapp-0000000000000001";
+const OTHER_CONSOLE_WEBAPP_ID = "webapp-0000000000000002";
+const OPS_WIN_WEBAPP_ID = "webapp-0000000000000003";
+const LINKED_WEBAPP_ID = "webapp-0000000000000004";
 
 function createApp(homePath) {
   return {
@@ -74,19 +78,22 @@ function writeBootstrapWebappSeed(app, platform, id, manifest = {}) {
   fs.mkdirSync(path.join(webappDir, "frontend"), { recursive: true });
   fs.writeFileSync(path.join(webappDir, "frontend", "index.html"), "<!doctype html><title>seed</title>", "utf8");
   fs.writeFileSync(path.join(webappDir, "webapp.json"), `${JSON.stringify({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id,
+    key: `seed-${id.slice("webapp-".length)}`,
     label: id,
     version: "1.0.0",
-    target: "universal",
-    openMode: "workspace",
+    target: "any",
     appConfig: {},
     frontend: {
       root: "frontend",
       index: "index.html",
-      spa: true,
-      apiPrefix: "/api"
+      routeConfig: {
+        backendPrefixes: [],
+        navigationFallback: "index.html"
+      }
     },
+    desktopBridge: { version: 1 },
     ...manifest
   }, null, 2)}\n`, "utf8");
   return webappDir;
@@ -272,7 +279,6 @@ test("desktop-init bootstrap applies into canonical desktop files and rereads ex
   assert.equal(kanban.enabled, false);
   assert.deepEqual(kanban.cloud, {
     serverUrl: "https://kanban.example.test",
-    token: "",
     remoteControlEnabled: false,
     deviceAlias: ""
   });
@@ -544,7 +550,7 @@ test("desktop-init v2 installs mixed Sites once, keeps declared order, and later
         },
         {
           kind: "webapp",
-          id: "ops-console"
+          id: OPS_CONSOLE_WEBAPP_ID
         },
         {
           kind: "website",
@@ -556,19 +562,15 @@ test("desktop-init v2 installs mixed Sites once, keeps declared order, and later
     }
   };
   const initPath = writeDesktopInit(app, "darwin", init);
-  writeBootstrapWebappSeed(app, "darwin", "ops-console", {
-    appConfig: { seeded: true },
-    desktopBridge: {
-      version: 1,
-      capabilities: { "native.clipboard.write": {} }
-    }
+  writeBootstrapWebappSeed(app, "darwin", OPS_CONSOLE_WEBAPP_ID, {
+    appConfig: { seeded: true }
   });
 
   const first = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(first.appliedResult.webs, "applied");
   assert.equal(first.websReport.mode, "initialize");
   assert.deepEqual(first.websReport.items.map(({ entryKey, status }) => ({ entryKey, status })), [
-    { entryKey: "webapp:ops-console", status: "installed" },
+    { entryKey: `webapp:${OPS_CONSOLE_WEBAPP_ID}`, status: "installed" },
     { entryKey: "website:docs", status: "installed" },
     { entryKey: "website:portal", status: "installed" }
   ]);
@@ -576,7 +578,7 @@ test("desktop-init v2 installs mixed Sites once, keeps declared order, and later
   const desktop = desktopRoot(homePath);
   const docsPath = path.join(desktop, "data", "webs", "websites", "docs", "website.json");
   const portalDir = path.join(desktop, "data", "webs", "websites", "portal");
-  const webappPath = path.join(desktop, "data", "webs", "webapps", "ops-console", "webapp.json");
+  const webappPath = path.join(desktop, "data", "webs", "webapps", OPS_CONSOLE_WEBAPP_ID, "webapp.json");
   const orderPath = path.join(desktop, "config", "webs", "order.json");
   const docs = readJson(docsPath);
   const portal = readJson(path.join(portalDir, "website.json"));
@@ -585,12 +587,12 @@ test("desktop-init v2 installs mixed Sites once, keeps declared order, and later
   assert.equal(docs.copilotAgentKey, "desktopAssistant");
   assert.equal("agentKey" in docs, false);
   assert.equal("copilotAgentKey" in portal, false);
-  assert.equal(webapp.schemaVersion, 1);
+  assert.equal(webapp.schemaVersion, 2);
   assert.deepEqual(webapp.appConfig, { seeded: true });
-  assert.deepEqual(webapp.desktopBridge.capabilities, { "native.clipboard.write": {} });
+  assert.deepEqual(webapp.desktopBridge, { version: 1 });
   assert.deepEqual(readJson(orderPath).entryKeys, [
     "website:docs",
-    "webapp:ops-console",
+    `webapp:${OPS_CONSOLE_WEBAPP_ID}`,
     "website:portal"
   ]);
   assert.equal(fs.existsSync(path.join(path.dirname(initPath), "desktop-init", "sites")), false);
@@ -599,11 +601,11 @@ test("desktop-init v2 installs mixed Sites once, keeps declared order, and later
   fs.rmSync(portalDir, { recursive: true, force: true });
   const userOrder = {
     schemaVersion: 1,
-    entryKeys: ["webapp:ops-console", "website:docs"]
+    entryKeys: [`webapp:${OPS_CONSOLE_WEBAPP_ID}`, "website:docs"]
   };
   fs.writeFileSync(orderPath, `${JSON.stringify(userOrder, null, 2)}\n`, "utf8");
   writeDesktopInit(app, "darwin", init);
-  const staleStaging = path.join(path.dirname(initPath), "desktop-init", "sites", "ops-console");
+  const staleStaging = path.join(path.dirname(initPath), "desktop-init", "sites", OPS_CONSOLE_WEBAPP_ID);
   fs.mkdirSync(staleStaging, { recursive: true });
   fs.writeFileSync(path.join(staleStaging, "webapp.json"), "not valid json", "utf8");
 
@@ -646,14 +648,14 @@ test("desktop-init rejects a WebApp whose manifest id differs from its declared 
   const app = createApp(homePath);
   writeDesktopInit(app, "darwin", {
     schemaVersion: 2,
-    webs: { items: [{ kind: "webapp", id: "ops-console" }] }
+    webs: { items: [{ kind: "webapp", id: OPS_CONSOLE_WEBAPP_ID }] }
   });
-  writeBootstrapWebappSeed(app, "darwin", "ops-console", { id: "other-console" });
+  writeBootstrapWebappSeed(app, "darwin", OPS_CONSOLE_WEBAPP_ID, { id: OTHER_CONSOLE_WEBAPP_ID });
 
   const result = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(result.appliedResult.webs, "failed");
   assert.match(result.errors.webs, /manifest id must match/);
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", "ops-console")), false);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", OPS_CONSOLE_WEBAPP_ID)), false);
 });
 
 test("desktop-init rejects an oversized Website seed without installing the earlier entries", (t) => {
@@ -688,20 +690,20 @@ test("desktop-init mixed Sites uses the explicit Windows path branch", (t) => {
     schemaVersion: 2,
     webs: {
       items: [
-        { kind: "webapp", id: "ops-win" },
+        { kind: "webapp", id: OPS_WIN_WEBAPP_ID },
         { kind: "website", id: "docs-win", label: "Docs", url: "https://docs-win.example.com/" }
       ]
     }
   });
-  writeBootstrapWebappSeed(app, "win32", "ops-win");
+  writeBootstrapWebappSeed(app, "win32", OPS_WIN_WEBAPP_ID);
 
   const result = applyDesktopInitBootstrap(app, "win32");
   assert.equal(result.appliedResult.webs, "applied");
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", "ops-win", "webapp.json")), true);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", OPS_WIN_WEBAPP_ID, "webapp.json")), true);
   assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "websites", "docs-win", "website.json")), true);
   assert.deepEqual(
     readJson(path.join(desktopRoot(homePath), "config", "webs", "order.json")).entryKeys,
-    ["webapp:ops-win", "website:docs-win"]
+    [`webapp:${OPS_WIN_WEBAPP_ID}`, "website:docs-win"]
   );
 });
 
@@ -712,9 +714,9 @@ test("desktop-init rejects symbolic links inside a WebApp seed", (t) => {
   const app = createApp(homePath);
   writeDesktopInit(app, "darwin", {
     schemaVersion: 2,
-    webs: { items: [{ kind: "webapp", id: "linked-app" }] }
+    webs: { items: [{ kind: "webapp", id: LINKED_WEBAPP_ID }] }
   });
-  const seedDir = writeBootstrapWebappSeed(app, "darwin", "linked-app");
+  const seedDir = writeBootstrapWebappSeed(app, "darwin", LINKED_WEBAPP_ID);
   const outsideFile = path.join(root, "outside.html");
   fs.writeFileSync(outsideFile, "outside", "utf8");
   fs.rmSync(path.join(seedDir, "frontend", "index.html"));
@@ -723,7 +725,7 @@ test("desktop-init rejects symbolic links inside a WebApp seed", (t) => {
   const result = applyDesktopInitBootstrap(app, "darwin");
   assert.equal(result.appliedResult.webs, "failed");
   assert.match(result.errors.webs, /symbolic links/);
-  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", "linked-app")), false);
+  assert.equal(fs.existsSync(path.join(desktopRoot(homePath), "data", "webs", "webapps", LINKED_WEBAPP_ID)), false);
 });
 
 test("desktop-init bootstrap ignores the retired Chat default agent field", (t) => {

@@ -10,7 +10,7 @@ const {
   MAX_CONVERSATION_HTML_BYTES,
   conversationHtmlFilename,
   saveConversationHtmlExport,
-} = require("../dist-electron/main/assistant/core/conversation-html-export.js");
+} = require("../dist-electron/main/modules/conversation-share/html-export.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 function createFixture(t) {

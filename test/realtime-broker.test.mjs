@@ -6,11 +6,11 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { RealtimeBroker } = require("../dist-electron/main/realtime/realtime-broker.js");
+const { RealtimeBroker } = require("../dist-electron/main/modules/agent-platform/realtime/realtime-broker.js");
 const {
   createAgentPlatformIdentitySessionId,
   normalizeAgentPlatformRealtimeEndpoint,
-} = require("../dist-electron/main/realtime/agent-platform-realtime-client.js");
+} = require("../dist-electron/main/modules/agent-platform/realtime/agent-platform-realtime-client.js");
 
 const EPOCH_MS = 1_788_000_000_000;
 
@@ -70,6 +70,7 @@ function createHarness(t, options = {}) {
   const broker = new RealtimeBroker({
     app: { getPath: () => root },
     issueAccessToken: async () => ({ ok: true, token: jwt(), message: "" }),
+    getDesktopDeviceId: () => "desktop-test",
     createWebSocket: (url) => new FakeSocket(url),
     connectTimeoutMs: 100,
     heartbeatTimeoutMs: options.heartbeatTimeoutMs ?? 0,

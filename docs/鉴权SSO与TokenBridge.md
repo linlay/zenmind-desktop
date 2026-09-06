@@ -103,9 +103,9 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## 事实来源
 
-- 身份与 bridge 实现：`src/main/identity-center-auth.ts`、`src/main/agent-auth.ts`、`src/main/oidc-sso.ts`
+- 身份与 bridge 实现：`src/main/modules/identity/identity-center-auth.ts`、`src/main/modules/identity/agent-auth.ts`、`src/main/modules/identity/oidc-sso.ts`
 - shared contract：`src/shared/auth-bridge.ts`
 - webview 边界：`src/preload/service-webview-main-world.ts`
-- Realtime/WorkPanel bridge：`src/main/ipc/agent-webclient-bridge-handlers.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
-- Tunnel Hub 身份桥：`src/main/tunnel-hub-registration.ts`、`src/main/tunnel-hub-runtime.ts`、`src/main/tunnel-client-endpoint.ts`
+- Realtime/WorkPanel bridge：`src/main/modules/agent-platform/ipc.ts`、`src/shared/contracts/agent-webclient-bridge.ts`
+- Tunnel Hub 身份桥：`src/main/modules/tunnel/registration.ts`、`src/main/modules/tunnel/runtime.ts`、`src/main/modules/tunnel/client-endpoint.ts`
 - 恢复和安全语义：`test/oidc-sso.test.mjs`、`test/service-webview-main-world.test.mjs`

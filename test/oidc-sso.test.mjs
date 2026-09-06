@@ -1,12 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import dns from "node:dns";
 import os from "node:os";
 import path from "node:path";
 import { createSign, generateKeyPairSync } from "node:crypto";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+dns.setDefaultResultOrder("ipv4first");
 
 const {
   cancelDesktopSsoLogin,
@@ -20,7 +22,7 @@ const {
   prepareDesktopSsoSessionRestore,
   startDesktopSsoLogin,
   __testInternals
-} = require("../dist-electron/main/oidc-sso.js");
+} = require("../dist-electron/main/modules/identity/oidc-sso.js");
 const {
   DESKTOP_SSO_AVATAR_PROTOCOL
 } = require("../dist-electron/shared/sso-avatar.js");

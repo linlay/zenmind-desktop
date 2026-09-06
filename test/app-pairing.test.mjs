@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 
-const { createAppPairingPayload } = require("../dist-electron/main/app-pairing.js");
+const { createAppPairingPayload } = require("../dist-electron/main/modules/identity/app-pairing.js");
 
 function encodeJwtPart(value) {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");

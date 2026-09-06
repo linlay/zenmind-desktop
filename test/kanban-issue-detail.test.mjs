@@ -9,7 +9,7 @@ const read = (...parts) => fs.readFileSync(path.join(projectRoot, ...parts), "ut
 
 test("Kanban detail keeps the full cloud snapshot in shared contracts and SQLite cache", () => {
   const contracts = read("src", "shared", "contracts", "kanban.ts");
-  const store = read("src", "main", "kanban-local-store.ts");
+  const store = read("src", "main", "modules", "kanban", "local-store.ts");
   const issueContract = contracts.slice(
     contracts.indexOf("export interface KanbanIssue {"),
     contracts.indexOf("export interface KanbanIssueInput")

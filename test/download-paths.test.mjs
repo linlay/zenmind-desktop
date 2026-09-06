@@ -6,7 +6,7 @@ const require = createRequire(import.meta.url);
 const {
   getAvailableFilePath,
   getDesktopDownloadDefaultPath
-} = require("../dist-electron/main/download-paths.js");
+} = require("../dist-electron/main/infrastructure/filesystem/download-paths.js");
 
 test("Desktop Downloads paths use native macOS and Windows separators", () => {
   const darwinApp = {

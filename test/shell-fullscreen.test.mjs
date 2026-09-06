@@ -5,7 +5,7 @@ import { EventEmitter } from "node:events";
 const {
   registerShellIpcHandlers,
   transitionWindowFullScreen
-} = await import("../dist-electron/main/ipc/shell-handlers.js");
+} = await import("../dist-electron/main/modules/shell/ipc.js");
 
 class FakeFullscreenWindow extends EventEmitter {
   constructor({ destroyed = false, fullscreen = false, mode = "sync" } = {}) {

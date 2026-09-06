@@ -10,8 +10,8 @@ const JSZip = require("jszip");
 const {
   extractArchiveToDir,
   listArchiveEntries
-} = require("../dist-electron/main/archive-utils.js");
-const { readManifestFromArchive } = require("../dist-electron/main/manifest-utils.js");
+} = require("../dist-electron/main/support/archive/archive-utils.js");
+const { readManifestFromArchive } = require("../dist-electron/main/support/manifest/manifest-utils.js");
 
 async function writeZipArchive(archivePath, entries) {
   const zip = new JSZip();

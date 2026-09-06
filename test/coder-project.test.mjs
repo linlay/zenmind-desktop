@@ -7,14 +7,14 @@ const require = createRequire(import.meta.url);
 const {
   buildCoderProjectAgentCreateRequest,
   buildProjectAgentCreateRequest
-} = require("../dist-electron/main/assistant/core/coder-project.js");
+} = require("../dist-electron/main/modules/assistant/coder-project.js");
 const {
   registerAssistantIpcHandlers
-} = require("../dist-electron/main/ipc/assistant-handlers.js");
+} = require("../dist-electron/main/modules/assistant/ipc.js");
 const {
   __testInternals: deprecatedCompatibilityInternals,
   setDeprecatedCompatibilityDesktopVersion
-} = require("../dist-electron/main/deprecated-compatibility.js");
+} = require("../dist-electron/main/support/logging/deprecated-compatibility.js");
 
 function registerProjectHandlers({
   assistantBridge = {},
@@ -31,6 +31,9 @@ function registerProjectHandlers({
 
   registerAssistantIpcHandlers(ipcMain, {
     assistantBridge,
+    conversationShare: {
+      exportChatHtml() {}, create() {}, list() {}, revoke() {},
+    },
     assistantNavigationStatusClient: assistantNavigationStatusClient ?? {
       scheduleRefresh(delay) {
         calls.push({ path: "scheduleRefresh", delay });

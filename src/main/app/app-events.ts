@@ -1,6 +1,6 @@
 import type { App, GlobalShortcut } from "electron";
-import type { MainAppState } from "../app-state";
-import { hasInstallerShutdownArg } from "../lifecycle/single-instance";
+import type { MainAppState } from "./state";
+import { hasInstallerShutdownArg } from "./lifecycle/single-instance";
 import type { ShutdownReport } from "../../shared/shutdown";
 import { findDesktopOpenDeepLink, isDesktopOpenDeepLink } from "./deep-link";
 

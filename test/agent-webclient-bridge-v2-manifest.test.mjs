@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { normalizeManifest } = require("../dist-electron/main/manifest-utils.js");
+const { normalizeManifest } = require("../dist-electron/main/support/manifest/manifest-utils.js");
 
 function manifest(proxyRoutes) {
   return {

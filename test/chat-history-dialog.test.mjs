@@ -4,10 +4,20 @@ import fs from "node:fs";
 import path from "node:path";
 
 const projectRoot = process.cwd();
-const readSource = (...segments) => fs.readFileSync(
-  path.join(projectRoot, ...segments),
-  "utf8",
-);
+const readSource = (...segments) => {
+  const sourcePath = path.join(projectRoot, ...segments);
+  const source = fs.readFileSync(sourcePath, "utf8");
+  if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
+    return source;
+  }
+  const sourceDirectory = path.dirname(sourcePath);
+  const sourceStem = path.basename(sourcePath, ".ts");
+  const splitSources = fs.readdirSync(sourceDirectory)
+    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
+  return [source, ...splitSources].join("\n");
+};
 
 test("Chats and Projects open one native history dialog without route mutation", () => {
   const sidebar = readSource("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
@@ -30,8 +40,8 @@ test("Chats and Projects open one native history dialog without route mutation",
 test("native history uses a restricted assistant bridge and supports dense row actions", () => {
   const contracts = readSource("src", "shared", "contracts", "desktop-api.ts");
   const preload = readSource("src", "preload", "index.ts");
-  const handlers = readSource("src", "main", "ipc", "assistant-handlers.ts");
-  const bridge = readSource("src", "main", "assistant", "core", "agent-platform-bridge.ts");
+  const handlers = readSource("src", "main", "modules", "assistant", "ipc.ts");
+  const bridge = readSource("src", "main", "modules", "agent-platform", "bridge.ts");
   const dialog = readSource("src", "renderer", "app-shell", "history", "ChatHistoryDialog.tsx");
   const webviewBridge = readSource("src", "shared", "service-webview-bridge.ts");
 

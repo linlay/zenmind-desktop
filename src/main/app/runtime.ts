@@ -1,195 +1,169 @@
-import fs from "node:fs";
-import {
-  app,
-  clipboard,
-  globalShortcut,
-  ipcMain,
-  net,
-  nativeImage,
-  nativeTheme,
-  protocol,
-  screen,
-  shell,
-  session,
-  systemPreferences,
-  webContents,
-} from "electron";
-import { issueAgentAccessToken } from "../agent-auth";
-import {
-  completeDesktopSsoCookieLogin,
-  desktopSsoAccessTokenNeedsRefresh,
-  finalizeDesktopSsoLoginAttempt,
-  failDesktopSsoFlow,
-  failDesktopSsoStep,
-  getDesktopSsoAccessToken,
-  getDesktopSsoStatus,
-  isDesktopSsoCredentialRuntimeReady,
-  isDesktopSsoLoginCompletionUrl,
-} from "../oidc-sso";
-import { loadBuiltinServices } from "../builtin-loader";
-import {
-  getResponsiveServiceState,
-  getServiceState,
-  listServices,
-  readServiceLog,
-  runStartupPreparation,
-} from "../services/manager";
-import { restorePublishedWebapps } from "../webs/webapps/publication-runtime";
-import { webappManager } from "../webs/webapps/manager";
-import { webappWindowManager } from "../webs/webapps/window-manager";
-import { loadInstalledPlugins } from "../plugin-loader";
-import { configurePluginResources, retryPendingPluginResourceSync } from "../plugin-resources";
-import { revealPathInFileManager } from "../reveal-path";
-import { createAppShellRuntime, type AppShellRuntime } from "../app-shell/runtime";
-import { readDesktopProfileFromRoot } from "../desktop-profile-store";
-import { createServicesRuntime } from "../services/runtime";
-import type {
-  AssistantAttachmentTaskProgress,
-  AssistantNavAgentItemsResult,
-  AssistantNavigationPushEvent,
-  AssistantWorkerOpenRequest,
-  EnterpriseChatScreenshotMode,
-  ServiceOpenLogViewerRequest,
-  WebsChangedEvent,
-} from "../../shared/contracts";
-import {
-  APP_ID,
-  INSTALLER_SHUTDOWN_ARG,
-  PRODUCT_NAME,
-  STORAGE_NAMESPACE,
-} from "../../shared/brand";
-import {
-  desktopDataRootExists,
-  ensureDataRoot,
-  getDataRoot,
-  getDesktopConfigRoot,
-  getElectronUserDataRoot,
-} from "../user-paths";
-import { EnterpriseChatRuntime } from "../enterprise-chat-runtime";
-import { redactEnterpriseChatSupportText } from "../enterprise-chat-support-bundle";
-import { readEnterpriseImSettings } from "../enterprise-im-settings";
-import { createLogsRuntime } from "../logs/runtime";
-import { isDesktopDevelopmentRuntime } from "../development-runtime";
-import { setDeprecatedCompatibilityDesktopVersion } from "../deprecated-compatibility";
-import { applyDesktopInitBootstrap } from "../desktop-init-bootstrap";
-import {
-  bundledEnvZipExists,
-  resolveRuntimeRoot,
-  runtimeEnvExists,
-  runtimeEnvNeedsBundledSeedRefresh,
-  runtimeRootExists,
-  shouldPromptEnvRootConflict,
-  shouldRequireEnvZipImport,
-  type EnvRootConflictDecision,
-} from "../env-bootstrap";
-import { createStartupEnvironmentRuntime } from "./startup-environment";
-import { safeConsoleError } from "../safe-console";
-import {
-  callAgentPlatform,
-  handleDesktopActionRequest
-} from "../desktop-action-bridge";
-import { callDesktopActionRenderer } from "../desktop-action-renderer";
-import { emitDesktopWsPush } from "../desktop-ws-server";
-import {
-  startTunnelHubRuntimeIfEnabled,
-  stopTunnelHubRuntime,
-} from "../tunnel-hub-runtime";
-import {
-  AGENT_WEBCLIENT_TARGET_PATH,
-  createAgentWebclientRoute
-} from "../../shared/agent-webclient-routes";
-import {
-  registerDesktopPetAssetProtocol,
-  registerDesktopPetAssetProtocolScheme,
-} from "../assistant/pet/pet-asset-protocol";
-import {
-  registerWebsiteFaviconProtocol,
-  registerWebsiteFaviconProtocolScheme,
-} from "../webs/websites/favicon-protocol";
-import {
-  registerDesktopSsoAvatarProtocol,
-  registerDesktopSsoAvatarProtocolScheme,
-} from "../sso-avatar-protocol";
-import { registerChatWorkPanelLocalFileProtocolScheme } from "../chat-work-panel-local-files";
-import {
-  isDesktopPetSupportedPlatform,
-  saveDesktopPetSettings,
-} from "../assistant/pet/desktop-pet";
-import { createDesktopPetRuntime, type DesktopPetRuntime } from "../assistant/pet/runtime";
-import { registerMainIpcHandlers } from "../ipc/register";
-import {
-  captureAssistantScreenshot as captureCopilotScreenshot,
-  captureScreenshotForBridge
-} from "../assistant/copilot/screenshot";
-import { initializeMainI18n, setMainLocale, t } from "../i18n/main-i18n";
-import { createStartupRestoreController } from "../startup-restore";
-import {
-  getFocusedWebviewDevToolsShortcut,
-  isDevToolsShortcut,
-  isGlobalSearchShortcut,
-  isWorkPanelCloseShortcut,
-  resolveGlobalSearchCommandShortcut,
-} from "../platform-adapter";
-import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
-import { configureSystemIdentity } from "./system-identity";
-import { openCurrentWebviewDevTools } from "../focused-webview-devtools";
-import {
-  createDesktopSsoController,
-  type DesktopSsoRestoreResult
-} from "../sso-controller";
-import { createCdpIntegration } from "../cdp-integration";
-import { createWebSurfaceRuntime } from "../webs/surface-runtime";
-import { createWebviewContextMenuController } from "../webview-context-menu-controller";
-import { createSettingsRuntime } from "../settings/runtime";
-import { createMainAppState } from "../app-state";
-import {
-  createMainProcessContext,
-  type MainProcessContext,
-} from "../main-process-context";
-import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../electron-bundle-paths";
-import {
-  loadRendererRoute,
-} from "../renderer-route";
-import { parseSafeLoopbackWebUrl } from "../loopback-url";
-import {
-  refreshPluginGlobalShortcuts,
-  unregisterPluginGlobalShortcuts,
-} from "../plugin-global-shortcuts";
-import { invokePluginDesktopAction } from "../plugin-actions";
-import { cleanupProgramDataForVersion } from "../program-data-cleanup";
-import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../bridge/assistant-runtime";
-import { createAssistantRunWakeLock } from "../bridge/assistant-wake-lock";
-import { createFirstInstallBootstrapNavigation } from "../assistant/core/first-install-bootstrap-navigation";
-import { RealtimeBroker } from "../realtime/realtime-broker";
-import { createPluginClipboardBridge } from "../bridge/plugin-clipboard";
-import { createPluginBridgeRuntime, type PluginBridgeRuntime } from "../bridge/plugin-runtime";
-import {
-  createInstallerShutdownArgs,
-  requestMainSingleInstanceLock,
-} from "../lifecycle/single-instance";
-import { createStartupPipeline } from "../lifecycle/startup";
-import {
-  isStartupPhaseAtLeast,
-  type StartupPhase,
-} from "../lifecycle/startup-phases";
-import { createShutdownCleanupRunner } from "../lifecycle/shutdown";
-import {
-  createNoPrimaryShutdownReport,
-  parseInstallerShutdownRequest,
-  writeShutdownAck
-} from "../lifecycle/shutdown-ack";
-import { registerMainAppEvents } from "./app-events";
-import { registerDesktopOpenProtocolClient } from "./deep-link";
-import {
-  createResourceDirectoryWatcher,
-  type ResourceDirectoryWatcher
-} from "../resource-directory-watcher";
-import { recoverWebappInstallTransactions } from "../webs/webapps/install-transaction";
-import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../marketplace";
-import { configureAgentMarketPlatformCaller } from "../marketplace/agent-market";
-import { configureSkillMarketPlatformCaller } from "../marketplace/skill-market";
+import { app, clipboard, globalShortcut, protocol } from "electron";
+import { getDesktopDeviceId, issueAgentAccessToken } from "../modules/identity";
+import { getDesktopSsoAccessToken } from "../modules/identity";
+import { createWebsFacade, type WebsFacade } from "../modules/webs";
+import { type AppShellRuntime } from "../modules/shell";
+import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile-store";
+import { createServicesFacade, createServicesRuntime, type ServicesFacade } from "../modules/services";
+import type { AssistantAttachmentTaskProgress, AssistantNavAgentItemsResult, AssistantNavigationPushEvent, AssistantWorkerOpenRequest, EnterpriseChatScreenshotMode, ServiceOpenLogViewerRequest, WebsChangedEvent } from "../../shared/contracts";
+import { INSTALLER_SHUTDOWN_ARG, STORAGE_NAMESPACE } from "../../shared/brand";
+import { desktopDataRootExists, getDesktopConfigRoot } from "../infrastructure/filesystem/user-paths";
+import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
+import { bundledEnvZipExists, configureRuntimeEnvironmentTranslator, resolveRuntimeRoot, runtimeEnvExists, runtimeEnvNeedsBundledSeedRefresh, runtimeRootExists, shouldPromptEnvRootConflict, shouldRequireEnvZipImport, type EnvRootConflictDecision } from "../infrastructure/filesystem/runtime-environment";
+import { callAgentPlatform } from "../modules/desktop-actions";
+import { AGENT_WEBCLIENT_TARGET_PATH } from "../../shared/agent-webclient-routes";
+import { registerDesktopPetAssetProtocolScheme } from "../modules/pet";
+import { registerWebsiteFaviconProtocolScheme } from "../modules/webs";
+import { registerDesktopSsoAvatarProtocolScheme } from "../modules/identity";
+import { registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
+import { type DesktopPetRuntime } from "../modules/pet";
+import { t } from "../support/i18n/main-i18n";
+import { getFocusedWebviewDevToolsShortcut } from "../infrastructure/electron/platform-adapter";
+import { type DesktopSsoRestoreResult } from "../modules/identity";
+import { createMainAppState } from "./state";
+import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../infrastructure/electron/bundle-paths";
+import { type AssistantBridgeRuntime } from "../modules/assistant";
+import { createAssistantRunWakeLock } from "../modules/assistant";
+import { createFirstInstallBootstrapNavigation } from "../modules/assistant";
+import { RealtimeBroker } from "../modules/agent-platform";
+import { createPluginClipboardBridge } from "../modules/plugins";
+import { type PluginBridgeRuntime } from "../modules/plugins";
+import { createInstallerShutdownArgs, requestMainSingleInstanceLock } from "./lifecycle/single-instance";
+import { type StartupPhase } from "./lifecycle/startup-phases";
+import { createNoPrimaryShutdownReport, parseInstallerShutdownRequest, writeShutdownAck } from "./lifecycle/shutdown-ack";
+import { type ResourceDirectoryWatcher } from "./resource-directory-watcher";
+import { configureAgentMarketPlatformCaller } from "../modules/marketplace";
+import { configureSkillMarketPlatformCaller } from "../modules/marketplace";
+import { ContainerHubClient, getAssistantSettings } from "../modules/assistant";
+import type { CreateMainProcessRuntimeContext } from "./runtime.shared";
+import { createMainProcessRuntime_block14_2, createMainProcessRuntime_block17_3, createMainProcessRuntime_block18_4, createMainProcessRuntime_startupRestoreController_5, createMainProcessRuntime_webSurfaceRuntime_6, createMainProcessRuntime_webviewContextMenuController_7, createMainProcessRuntime_enterpriseChatRuntime_8, createMainProcessRuntime_cdpIntegration_9, createMainProcessRuntime_systemIdentityRuntime_10, createMainProcessRuntime_setStartupPhase_11, createMainProcessRuntime_initializeUserDataRootsAndSettings_12, createMainProcessRuntime_delay_13 } from "./runtime.operations-1";
+import { createMainProcessRuntime_logsRuntime_1, createMainProcessRuntime_block68_2, createMainProcessRuntime_startupEnvironmentRuntime_3, createMainProcessRuntime_block71_4, createMainProcessRuntime_block72_5, createMainProcessRuntime_desktopSsoController_6, createMainProcessRuntime_block74_7, createMainProcessRuntime_block75_8, createMainProcessRuntime_settingsRuntime_9, createMainProcessRuntime_block77_10, createMainProcessRuntime_startupPipeline_11 } from "./runtime.operations-2";
+import { createMainProcessRuntime_runShutdownCleanup_1, createMainProcessRuntime_handleDesktopSsoWebviewNavigation_2, createMainProcessRuntime_clearDesktopPetIdleResetTimer_3, createMainProcessRuntime_refreshDesktopPetState_4, createMainProcessRuntime_hideDesktopPetWindow_5, createMainProcessRuntime_showAssistantTargetWindow_6, createMainProcessRuntime_showDesktopPetWindow_7, createMainProcessRuntime_restoreDesktopPetWindowLayering_8, createMainProcessRuntime_openLogViewerWindow_9, createMainProcessRuntime_openAgentPlatformMonitorWindow_10, createMainProcessRuntime_openDesktopActionWorkbenchWindow_11, createMainProcessRuntime_openAgentRealtimeInspectorWindow_12, createMainProcessRuntime_closeDesktopActionWorkbenchWindow_13, createMainProcessRuntime_closeLogViewerWindow_14, createMainProcessRuntime_getServiceWebviewPreloadPath_15, createMainProcessRuntime_getServiceWebviewPreloadUrl_16, createMainProcessRuntime_minimizeLogViewerWindow_17, createMainProcessRuntime_maximizeLogViewerWindow_18, createMainProcessRuntime_captureAssistantScreenshot_19, createMainProcessRuntime_captureDesktopScreenshotForWebview_20, createMainProcessRuntime_captureEnterpriseChatScreenshot_21, createMainProcessRuntime_refreshPluginDesktopGlobalShortcuts_22, createMainProcessRuntime_registerFocusedWebviewDevToolsShortcut_23, createMainProcessRuntime_collectWebviewLoadDiagnostics_24, createMainProcessRuntime_reportRendererDiagnostic_25, createMainProcessRuntime_createWindow_26, createMainProcessRuntime_configureAppMediaPermissions_27, createMainProcessRuntime_showMainWindow_28, createMainProcessRuntime_notifyServicesChanged_29 } from "./runtime.operations-3";
+import { createMainProcessRuntime_notifyCoreServicesChanged_1, createMainProcessRuntime_notifyDesktopDecorationsChanged_2, createMainProcessRuntime_emitWebsChanged_3, createMainProcessRuntime_startResourceDirectoryWatcher_4, createMainProcessRuntime_stopResourceDirectoryWatcher_5, createMainProcessRuntime_emitKanbanChanged_6, createMainProcessRuntime_emitAssistantNavigationAgentsChanged_7, createMainProcessRuntime_emitAssistantNavigationPushEvent_8, createMainProcessRuntime_navigateMainWindow_9, createMainProcessRuntime_openAssistantWorker_10, createMainProcessRuntime_createAppTray_11, createMainProcessRuntime_runNonCoreStartupTask_12, createMainProcessRuntime_startSsoCredentialDependentRuntimes_13, createMainProcessRuntime_applyDesktopSsoRestoreResult_14, createMainProcessRuntime_startNonCoreDesktopRuntime_15, createMainProcessRuntime_showFileDialog_16, createMainProcessRuntime_showSaveDialog_17, createMainProcessRuntime_showMessageBox_18, createMainProcessRuntime_emitAssistantAttachmentProgress_19, createMainProcessRuntime_buildApplicationMenu_20, createMainProcessRuntime_showArchiveDialog_21 } from "./runtime.operations-4";
+import { createMainProcessRuntime_handleAppReady_1, createMainProcessRuntime_start_2, createMainProcessRuntime_prepareQuitUi_3, createMainProcessRuntime_beginAppQuitWithoutConfirmation_4, createMainProcessRuntime_beginInstallerShutdown_5, createMainProcessRuntime_writeInstallerShutdownAck_6, createMainProcessRuntime_writeInstallerShutdownAcks_7, createMainProcessRuntime_requestAppQuit_8 } from "./runtime.operations-5";
 
 export function createMainProcessRuntime() {
+  let servicesFacade!: ServicesFacade;
+  let websFacade!: WebsFacade;
+  const factoryContext: CreateMainProcessRuntimeContext = {
+    get startupPlatform() { return startupPlatform; },
+    get isFirstDesktopInstall() { return isFirstDesktopInstall; },
+    get runtimeRootAtProcessStart() { return runtimeRootAtProcessStart; },
+    get runtimeRootExistedAtStartup() { return runtimeRootExistedAtStartup; },
+    get runtimeEnvExistedAtStartup() { return runtimeEnvExistedAtStartup; },
+    get firstInstallBootstrapNavigation() { return firstInstallBootstrapNavigation; },
+    get assistantIntegrationPorts() { return assistantIntegrationPorts; },
+    get issueAgentAccessToken() { return identityTokenProvider; },
+    get servicesFacade() { return servicesFacade; },
+    get websFacade() { return websFacade; },
+    get appState() { return appState; },
+    get ASSISTANT_TARGET_PATH() { return ASSISTANT_TARGET_PATH; },
+    get LOG_VIEWER_ROUTE() { return LOG_VIEWER_ROUTE; },
+    get AGENT_REALTIME_INSPECTOR_ROUTE() { return AGENT_REALTIME_INSPECTOR_ROUTE; },
+    get DESKTOP_ACTION_WORKBENCH_ROUTE() { return DESKTOP_ACTION_WORKBENCH_ROUTE; },
+    get MAIN_PROCESS_DIR() { return MAIN_PROCESS_DIR; },
+    get MAIN_PRELOAD_PATH() { return MAIN_PRELOAD_PATH; },
+    get FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT() { return FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT; },
+    get INSTALLER_SHUTDOWN_ARGS() { return INSTALLER_SHUTDOWN_ARGS; },
+    get ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS() { return ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS; },
+    get assistantRunWakeLock() { return assistantRunWakeLock; },
+    get realtimeBroker() { return realtimeBroker; },
+    get pluginClipboardBridge() { return pluginClipboardBridge; },
+    get petRuntime() { return petRuntime; }, set petRuntime(value) { petRuntime = value; },
+    get assistantBridgeRuntime() { return assistantBridgeRuntime; }, set assistantBridgeRuntime(value) { assistantBridgeRuntime = value; },
+    get pluginBridgeRuntime() { return pluginBridgeRuntime; }, set pluginBridgeRuntime(value) { pluginBridgeRuntime = value; },
+    get appShellRuntime() { return appShellRuntime; }, set appShellRuntime(value) { appShellRuntime = value; },
+    get getMainWindow() { return getMainWindow; },
+    get resourceDirectoryWatcher() { return resourceDirectoryWatcher; }, set resourceDirectoryWatcher(value) { resourceDirectoryWatcher = value; },
+    get startupRestoreController() { return startupRestoreController; },
+    get servicesRuntime() { return servicesRuntime; },
+    get webSurfaceRuntime() { return webSurfaceRuntime; },
+    get webviewContextMenuController() { return webviewContextMenuController; },
+    get refreshDesktopSsoIdentityToken() { return refreshDesktopSsoIdentityToken; }, set refreshDesktopSsoIdentityToken(value) { refreshDesktopSsoIdentityToken = value; },
+    get enterpriseChatRuntime() { return enterpriseChatRuntime; },
+    get cdpIntegration() { return cdpIntegration; },
+    get systemIdentityRuntime() { return systemIdentityRuntime; },
+    get desktopAppInfo() { return desktopAppInfo; },
+    get bundledEnvZipExistsAtStartup() { return bundledEnvZipExistsAtStartup; },
+    get bundledSeedRefreshNeededAtStartup() { return bundledSeedRefreshNeededAtStartup; },
+    get requireEnvZipImportAtStartup() { return requireEnvZipImportAtStartup; },
+    get envZipConflictNeedsDecision() { return envZipConflictNeedsDecision; },
+    get oldRootDecisionRef() { return oldRootDecisionRef; },
+    get startupEnvImportFailureMessage() { return startupEnvImportFailureMessage; }, set startupEnvImportFailureMessage(value) { startupEnvImportFailureMessage = value; },
+    get nonCoreDesktopRuntimeStarted() { return nonCoreDesktopRuntimeStarted; }, set nonCoreDesktopRuntimeStarted(value) { nonCoreDesktopRuntimeStarted = value; },
+    get ssoCredentialDependentRuntimesStarted() { return ssoCredentialDependentRuntimesStarted; }, set ssoCredentialDependentRuntimesStarted(value) { ssoCredentialDependentRuntimesStarted = value; },
+    get desktopSsoRestoreState() { return desktopSsoRestoreState; }, set desktopSsoRestoreState(value) { desktopSsoRestoreState = value; },
+    get focusedWebviewDevToolsShortcutRegistered() { return focusedWebviewDevToolsShortcutRegistered; }, set focusedWebviewDevToolsShortcutRegistered(value) { focusedWebviewDevToolsShortcutRegistered = value; },
+    get setStartupPhase() { return setStartupPhase; },
+    get initializeUserDataRootsAndSettings() { return initializeUserDataRootsAndSettings; },
+    get gotSingleInstanceLock() { return gotSingleInstanceLock; },
+    get startupInstallerShutdownRequest() { return startupInstallerShutdownRequest; },
+    get delay() { return delay; },
+    get logsRuntime() { return logsRuntime; },
+    get startupEnvironmentRuntime() { return startupEnvironmentRuntime; },
+    get desktopSsoController() { return desktopSsoController; },
+    get settingsRuntime() { return settingsRuntime; },
+    get startupPipeline() { return startupPipeline; },
+    get runShutdownCleanup() { return runShutdownCleanup; },
+    get handleDesktopSsoWebviewNavigation() { return handleDesktopSsoWebviewNavigation; },
+    get clearDesktopPetIdleResetTimer() { return clearDesktopPetIdleResetTimer; },
+    get refreshDesktopPetState() { return refreshDesktopPetState; },
+    get hideDesktopPetWindow() { return hideDesktopPetWindow; },
+    get showAssistantTargetWindow() { return showAssistantTargetWindow; },
+    get showDesktopPetWindow() { return showDesktopPetWindow; },
+    get restoreDesktopPetWindowLayering() { return restoreDesktopPetWindowLayering; },
+    get openLogViewerWindow() { return openLogViewerWindow; },
+    get openAgentPlatformMonitorWindow() { return openAgentPlatformMonitorWindow; },
+    get openDesktopActionWorkbenchWindow() { return openDesktopActionWorkbenchWindow; },
+    get openAgentRealtimeInspectorWindow() { return openAgentRealtimeInspectorWindow; },
+    get closeDesktopActionWorkbenchWindow() { return closeDesktopActionWorkbenchWindow; },
+    get closeLogViewerWindow() { return closeLogViewerWindow; },
+    get getServiceWebviewPreloadPath() { return getServiceWebviewPreloadPath; },
+    get getServiceWebviewPreloadUrl() { return getServiceWebviewPreloadUrl; },
+    get minimizeLogViewerWindow() { return minimizeLogViewerWindow; },
+    get maximizeLogViewerWindow() { return maximizeLogViewerWindow; },
+    get captureAssistantScreenshot() { return captureAssistantScreenshot; },
+    get captureDesktopScreenshotForWebview() { return captureDesktopScreenshotForWebview; },
+    get captureEnterpriseChatScreenshot() { return captureEnterpriseChatScreenshot; },
+    get refreshPluginDesktopGlobalShortcuts() { return refreshPluginDesktopGlobalShortcuts; },
+    get registerFocusedWebviewDevToolsShortcut() { return registerFocusedWebviewDevToolsShortcut; },
+    get collectWebviewLoadDiagnostics() { return collectWebviewLoadDiagnostics; },
+    get reportRendererDiagnostic() { return reportRendererDiagnostic; },
+    get createWindow() { return createWindow; },
+    get configureAppMediaPermissions() { return configureAppMediaPermissions; },
+    get showMainWindow() { return showMainWindow; },
+    get notifyServicesChanged() { return notifyServicesChanged; },
+    get notifyCoreServicesChanged() { return notifyCoreServicesChanged; },
+    get notifyDesktopDecorationsChanged() { return notifyDesktopDecorationsChanged; },
+    get emitWebsChanged() { return emitWebsChanged; },
+    get startResourceDirectoryWatcher() { return startResourceDirectoryWatcher; },
+    get stopResourceDirectoryWatcher() { return stopResourceDirectoryWatcher; },
+    get emitKanbanChanged() { return emitKanbanChanged; },
+    get emitAssistantNavigationAgentsChanged() { return emitAssistantNavigationAgentsChanged; },
+    get emitAssistantNavigationPushEvent() { return emitAssistantNavigationPushEvent; },
+    get navigateMainWindow() { return navigateMainWindow; },
+    get openAssistantWorker() { return openAssistantWorker; },
+    get createAppTray() { return createAppTray; },
+    get runNonCoreStartupTask() { return runNonCoreStartupTask; },
+    get startSsoCredentialDependentRuntimes() { return startSsoCredentialDependentRuntimes; },
+    get applyDesktopSsoRestoreResult() { return applyDesktopSsoRestoreResult; },
+    get startNonCoreDesktopRuntime() { return startNonCoreDesktopRuntime; },
+    get showFileDialog() { return showFileDialog; },
+    get showSaveDialog() { return showSaveDialog; },
+    get showMessageBox() { return showMessageBox; },
+    get emitAssistantAttachmentProgress() { return emitAssistantAttachmentProgress; },
+    get buildApplicationMenu() { return buildApplicationMenu; },
+    get showArchiveDialog() { return showArchiveDialog; },
+    get handleAppReady() { return handleAppReady; },
+    get start() { return start; },
+    get prepareQuitUi() { return prepareQuitUi; },
+    get beginAppQuitWithoutConfirmation() { return beginAppQuitWithoutConfirmation; },
+    get beginInstallerShutdown() { return beginInstallerShutdown; },
+    get writeInstallerShutdownAck() { return writeInstallerShutdownAck; },
+    get writeInstallerShutdownAcks() { return writeInstallerShutdownAcks; },
+    get requestAppQuit() { return requestAppQuit; }
+  };
+  configureRuntimeEnvironmentTranslator(t);
   setDeprecatedCompatibilityDesktopVersion(app.getVersion());
   const startupPlatform = process.platform;
   const isFirstDesktopInstall = !desktopDataRootExists(app, startupPlatform);
@@ -197,44 +171,44 @@ export function createMainProcessRuntime() {
   const runtimeRootExistedAtStartup = runtimeRootExists(app, startupPlatform);
   const runtimeEnvExistedAtStartup = runtimeEnvExists(app, startupPlatform);
   const firstInstallBootstrapNavigation = createFirstInstallBootstrapNavigation(isFirstDesktopInstall);
+  const appState = createMainAppState();
+  const identityTokenProvider = (targetApp: typeof app, reason: Parameters<typeof issueAgentAccessToken>[1]) =>
+    issueAgentAccessToken(targetApp, reason, (capabilityApp, capabilityId) =>
+      servicesFacade.resolveDesktopCapability(capabilityApp, capabilityId)
+    );
+  const servicesIntegrationPorts = createMainProcessRuntime_block18_4(factoryContext);
+  servicesFacade = createServicesFacade(servicesIntegrationPorts);
   configureAgentMarketPlatformCaller((targetPath, options) =>
-    callAgentPlatform(app, targetPath, options)
+    callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
   );
   configureSkillMarketPlatformCaller((targetPath, options) =>
-    callAgentPlatform(app, targetPath, options)
+    callAgentPlatform(app, targetPath, { ...options, issueAgentAccessToken: identityTokenProvider })
   );
-  const appState = createMainAppState();
-  const mainProcessContext = createMainProcessContext({
-    state: appState,
-    app,
-    ipcMain,
-    platform: process.platform,
-    shell,
-    session,
-    nativeTheme,
-    webContents
-  });
+  const websIntegrationPorts = createMainProcessRuntime_block14_2(factoryContext);
+  websFacade = createWebsFacade(websIntegrationPorts);
+  const assistantIntegrationPorts = createMainProcessRuntime_block17_3(factoryContext);
   const ASSISTANT_TARGET_PATH = AGENT_WEBCLIENT_TARGET_PATH;
   const LOG_VIEWER_ROUTE = "/log-viewer";
   const AGENT_REALTIME_INSPECTOR_ROUTE = "/agent-realtime-inspector";
   const DESKTOP_ACTION_WORKBENCH_ROUTE = "/desktop-action-workbench";
-  const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, mainProcessContext.platform);
-  const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, mainProcessContext.platform);
-  const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(mainProcessContext.platform);
+  const MAIN_PROCESS_DIR = resolveElectronBundleRootFromRuntimeDir(__dirname, startupPlatform);
+  const MAIN_PRELOAD_PATH = getMainPreloadPath(MAIN_PROCESS_DIR, startupPlatform);
+  const FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT = getFocusedWebviewDevToolsShortcut(startupPlatform);
   const INSTALLER_SHUTDOWN_ARGS = createInstallerShutdownArgs(INSTALLER_SHUTDOWN_ARG);
   const ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS =
     ".enterprise-chat-floating { visibility: hidden !important; }";
   
-  const assistantRunWakeLock = createAssistantRunWakeLock(mainProcessContext.platform, {
+  const assistantRunWakeLock = createAssistantRunWakeLock(startupPlatform, {
     isEnabled: () => readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.preventSleepWhileRunning
   });
   const realtimeBroker = new RealtimeBroker({
     app,
-    issueAccessToken: issueAgentAccessToken,
+    issueAccessToken: identityTokenProvider,
+    getDesktopDeviceId,
     onDiagnostic: (message) => console.warn(`[agent-platform-realtime] ${message}`)
   });
   const pluginClipboardBridge = createPluginClipboardBridge({
-    platform: mainProcessContext.platform,
+    platform: startupPlatform,
     clipboard,
     globalShortcut
   });
@@ -242,21 +216,16 @@ export function createMainProcessRuntime() {
   let assistantBridgeRuntime: AssistantBridgeRuntime;
   let pluginBridgeRuntime: PluginBridgeRuntime;
   let appShellRuntime: AppShellRuntime;
+  const getMainWindow = () => appShellRuntime?.getMainWindow() ?? null;
   let resourceDirectoryWatcher: ResourceDirectoryWatcher | null = null;
-  const startupRestoreController = createStartupRestoreController({
-    onChange: (state) => {
-      if (!appState.mainWindow || appState.mainWindow.isDestroyed()) {
-        return;
-      }
-      appState.mainWindow.webContents.send("services.startupRestoreState", state);
-    }
-  });
+  const startupRestoreController = createMainProcessRuntime_startupRestoreController_5(factoryContext);
   const servicesRuntime = createServicesRuntime({
     app,
-    state: appState,
-    getMainWindow: () => appState.mainWindow,
+    getMainWindow: () => getMainWindow(),
     notifyServicesChanged,
-    delay
+    delay,
+    getServiceState: servicesFacade.getServiceState,
+    startService: servicesFacade.startService
   });
   
   registerDesktopPetAssetProtocolScheme(protocol);
@@ -264,217 +233,25 @@ export function createMainProcessRuntime() {
   registerDesktopSsoAvatarProtocolScheme(protocol);
   registerChatWorkPanelLocalFileProtocolScheme(protocol);
   
-  const webSurfaceRuntime = createWebSurfaceRuntime({
-    app,
-    state: appState,
-    webContents,
-    reportRegistrationDiagnostic: (diagnostic) => {
-      safeConsoleError("[surface-registration]", diagnostic);
-    },
-    navigateMainWindow,
-    delay,
-    t
-  });
-  const webviewContextMenuController = createWebviewContextMenuController({
-    platform: mainProcessContext.platform,
-    browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
-    getMainWindow: () => appState.mainWindow,
-    openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
-    openWorkPanelUrl: ({ sourceGuestId, url }) => {
-      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(sourceGuestId);
-      const mainWindow = appState.mainWindow;
-      if (
-        !target ||
-        (target.surfaceType !== "chat-work-panel" && target.presentationScope !== "workpanel") ||
-        !mainWindow ||
-        mainWindow.isDestroyed()
-      ) {
-        return;
-      }
-      mainWindow.webContents.send("webview.openTab", {
-        target: "work-panel",
-        navigationKind: "network",
-        sourceGuestId,
-        url
-      });
-    },
-    openExternal: (url) => shell.openExternal(url),
-    isTrustedAgentWebclient: async (contents, target) => {
-      if (
-        target.serviceId !== "agent-webclient" ||
-        contents.session !== session.fromPartition(`persist:${STORAGE_NAMESPACE}-service-agent-webclient`)
-      ) {
-        return false;
-      }
-      const liveUrl = parseSafeLoopbackWebUrl(contents.getURL());
-      if (!liveUrl) return false;
-      const service = await getResponsiveServiceState(app, "agent-webclient");
-      const serviceUrl = parseSafeLoopbackWebUrl(service.healthMeta.webUrl);
-      return Boolean(
-        service.status === "running" &&
-        serviceUrl &&
-        new URL(liveUrl.toString()).origin === new URL(serviceUrl.toString()).origin
-      );
-    },
-    t,
-    report: reportRendererDiagnostic
-  });
+  const webSurfaceRuntime = createMainProcessRuntime_webSurfaceRuntime_6(factoryContext);
+  const webviewContextMenuController = createMainProcessRuntime_webviewContextMenuController_7(factoryContext);
   let refreshDesktopSsoIdentityToken = async (_force = false) => getDesktopSsoAccessToken() || "";
-  const enterpriseChatRuntime = new EnterpriseChatRuntime({
-    app,
-    platform: mainProcessContext.platform,
-    getServerUrl: () =>
-      readEnterpriseImSettings(app, mainProcessContext.platform).baseUrl,
-    initialEnabled: readEnterpriseImSettings(
-      app,
-      mainProcessContext.platform
-    ).enabled,
-    refreshIdentityToken: () => refreshDesktopSsoIdentityToken(true),
-    selectFiles: async () => {
-      const result = await showFileDialog({
-        title: t("enterpriseChat.selectFiles"),
-        properties: ["openFile", "multiSelections"]
-      });
-      return result.canceled ? [] : result.filePaths;
-    },
-    selectAvatar: async () => {
-      const result = await showFileDialog({
-        title: t("enterpriseChat.selectAvatar"),
-        properties: ["openFile"],
-        filters: [{ name: t("enterpriseChat.avatarImage"), extensions: ["png", "jpg", "jpeg", "webp"] }]
-      });
-      return result.canceled ? [] : result.filePaths;
-    },
-    showSaveDialog: (options) => showSaveDialog(options),
-    captureScreenshot: (mode) => captureEnterpriseChatScreenshot(mode),
-    createSupportArtifact: async (action, args) => {
-      const readArg = (key: string) => typeof args[key] === "string" ? args[key].trim() : "";
-      let filename = "desktop-support.txt";
-      let content = "";
-      if (action === "desktop.support.requestServiceLogs") {
-        const serviceId = (readArg("serviceId") || readArg("id")) as Parameters<typeof readServiceLog>[1];
-        const target = readArg("target") === "error" ? "error" : "main";
-        const result = await readServiceLog(app, serviceId, target, { limitBytes: 512 * 1024 });
-        filename = `service-${serviceId}-${target}.log`;
-        content = result.content;
-      } else if (action === "desktop.support.requestWebappLogs") {
-        const webappId = readArg("webappId") || readArg("id");
-        const target = readArg("target") === "error" ? "error" : "main";
-        const result = webappManager.runtime.readLog(app, webappId, target, { limitBytes: 512 * 1024 });
-        filename = `webapp-${webappId}-${target}.log`;
-        content = result.content;
-      } else if (action === "desktop.support.requestSystemInfo") {
-        filename = "desktop-system-info.json";
-        content = `${JSON.stringify({
-          appVersion: app.getVersion(),
-          platform: mainProcessContext.platform,
-          arch: process.arch,
-          electron: process.versions.electron,
-          node: process.versions.node,
-          locale: app.getLocale()
-        }, null, 2)}\n`;
-      } else {
-        throw new Error("Unsupported support artifact request.");
-      }
-      return {
-        filename,
-        contentType: filename.endsWith(".json") ? "application/json" : "text/plain",
-        bytes: Buffer.from(redactEnterpriseChatSupportText(
-          content,
-          app.getPath("home"),
-          getDataRoot(app)
-        ), "utf8")
-      };
-    },
-    executeDesktopAction: async (request) => {
-      const response = await handleDesktopActionRequest(
-        assistantBridgeRuntime.desktopActionOptions,
-        {
-          requestId: `enterprise-im-${request.messageId}`,
-          action: request.action,
-          args: request.args,
-          permissionMode: "full_access",
-          source: {
-            chatId: `enterprise-im:${request.conversationId}`
-          }
-        }
-      );
-      return {
-        confirmed: true,
-        status: response.ok ? "succeeded" : "failed",
-        response,
-        message: response.ok
-          ? t("enterpriseChat.desktopActionExecuted")
-          : response.error?.message || t("enterpriseChat.desktopActionFailed")
-      };
-    },
-    onStateChanged: (snapshot) => {
-      const targetWindow = appState.mainWindow;
-      if (targetWindow && !targetWindow.isDestroyed()) {
-        targetWindow.webContents.send("enterpriseChat.stateChanged", snapshot);
-      }
-    }
-  });
-  const cdpIntegration = createCdpIntegration({
-    browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
-    getCurrentPageSnapshot: () => appState.currentPageSnapshot,
-    listServices: () => listServices(app),
-    isLoopbackUrl: parseSafeLoopbackWebUrl,
-    switchTab: async (surfaceId, tabId, ownerChatId) => {
-      const response = await callDesktopActionRenderer({
-        requestId: `cdp-switch-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: ownerChatId ? "desktop.workpanel.activateTab" : "desktop.web.switchTab",
-        args: ownerChatId ? { tabId } : { surfaceId, tabId },
-        ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
-      }, {
-        getMainWindow: () => appState.mainWindow,
-        pendingRequests: appState.desktopActionRendererRequests
-      });
-      if (!response.ok) {
-        throw new Error(response.error?.message || "Desktop tab could not be activated.");
-      }
-      return response.result;
-    },
-    closeTab: async (surfaceId, tabId, ownerChatId) => {
-      const response = await callDesktopActionRenderer({
-        requestId: `cdp-close-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-        action: ownerChatId ? "desktop.workpanel.closeTab" : "desktop.web.closeTab",
-        args: ownerChatId ? { tabId } : { surfaceId, tabId },
-        ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
-      }, {
-        getMainWindow: () => appState.mainWindow,
-        pendingRequests: appState.desktopActionRendererRequests
-      });
-      if (!response.ok) {
-        throw new Error(response.error?.message || "Desktop tab could not be closed.");
-      }
-      return response.result;
-    },
-    version: `${PRODUCT_NAME}/${app.getVersion()} Electron/${process.versions.electron}`
-  });
+  const enterpriseChatRuntime = createMainProcessRuntime_enterpriseChatRuntime_8(factoryContext);
+  const cdpIntegration = createMainProcessRuntime_cdpIntegration_9(factoryContext);
   
   // Keep dev Electron runs on the same data root as packaged builds.
-  const systemIdentityRuntime = configureSystemIdentity({
-    app,
-    platform: mainProcessContext.platform,
-    appId: APP_ID,
-    productName: PRODUCT_NAME,
-    mainProcessDir: MAIN_PROCESS_DIR,
-    resourcesPath: process.resourcesPath,
-    nativeImage,
-    safeConsoleError
-  });
+  const systemIdentityRuntime = createMainProcessRuntime_systemIdentityRuntime_10(factoryContext);
   const desktopAppInfo = systemIdentityRuntime.desktopAppInfo;
-  const bundledEnvZipExistsAtStartup = bundledEnvZipExists(app, mainProcessContext.platform);
+  const bundledEnvZipExistsAtStartup = bundledEnvZipExists(app, startupPlatform);
   const bundledSeedRefreshNeededAtStartup =
     bundledEnvZipExistsAtStartup &&
-    runtimeEnvNeedsBundledSeedRefresh(app, mainProcessContext.platform);
+    runtimeEnvNeedsBundledSeedRefresh(app, startupPlatform);
   const requireEnvZipImportAtStartup = shouldRequireEnvZipImport({
-    platform: mainProcessContext.platform,
+    platform: startupPlatform,
     runtimeEnvExistedAtStartup
   }) || bundledSeedRefreshNeededAtStartup;
   const envZipConflictNeedsDecision = shouldPromptEnvRootConflict({
-    platform: mainProcessContext.platform,
+    platform: startupPlatform,
     isFirstDesktopInstall,
     bundledEnvZipExists: bundledEnvZipExistsAtStartup,
     runtimeRootExistedAtStartup
@@ -485,39 +262,9 @@ export function createMainProcessRuntime() {
   let ssoCredentialDependentRuntimesStarted = false;
   let desktopSsoRestoreState: DesktopSsoRestoreResult["state"] = "signed_out";
   let focusedWebviewDevToolsShortcutRegistered = false;
-  function setStartupPhase(phase: StartupPhase) {
-    if (appState.startupPhase === phase) {
-      return;
-    }
-    appState.startupPhase = phase;
-    console.info(`[main] startup phase: ${phase}`);
-  }
+  function setStartupPhase(phase: StartupPhase) { return createMainProcessRuntime_setStartupPhase_11(factoryContext, phase); }
 
-  function initializeUserDataRootsAndSettings() {
-    ensureDataRoot(app);
-    applyDesktopInitBootstrap(app, mainProcessContext.platform);
-    const initialLocaleSettings = initializeMainI18n(app, { isFirstInstall: isFirstDesktopInstall });
-    if (isFirstDesktopInstall) {
-      setMainLocale(app, initialLocaleSettings.locale);
-    }
-  
-    const electronUserDataRoot = getElectronUserDataRoot(app);
-    fs.mkdirSync(electronUserDataRoot, { recursive: true });
-    app.setPath("userData", electronUserDataRoot);
-    const programDataCleanup = cleanupProgramDataForVersion(app, desktopAppInfo.version);
-    if (programDataCleanup.cleaned) {
-      console.info(
-        `[main] refreshed program data for ${desktopAppInfo.version}: ${programDataCleanup.removedPaths.length} path(s) removed`
-      );
-    } else if (programDataCleanup.failedPaths.length > 0) {
-      console.warn(
-        `[main] program data cleanup incomplete for ${desktopAppInfo.version}: ${
-          programDataCleanup.failedPaths.map((item) => `${item.path}: ${item.message}`).join("; ")
-        }`
-      );
-    }
-    petRuntime.initializeState(isFirstDesktopInstall);
-  }
+  function initializeUserDataRootsAndSettings() { return createMainProcessRuntime_initializeUserDataRootsAndSettings_12(factoryContext); }
   
   const gotSingleInstanceLock = requestMainSingleInstanceLock(app);
   
@@ -545,1055 +292,153 @@ export function createMainProcessRuntime() {
     return { start() {} };
   }
   
-  function delay(ms: number) {
-    return new Promise<void>((resolve) => {
-      setTimeout(resolve, ms);
-    });
-  }
+  function delay(ms: number) { return createMainProcessRuntime_delay_13(factoryContext, ms); }
   
-  const logsRuntime = createLogsRuntime({
-    app,
-    preloadPath: MAIN_PRELOAD_PATH,
-    routePath: LOG_VIEWER_ROUTE,
-    platform: mainProcessContext.platform,
-    getOwnerWindow: () => appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null,
-    loadRendererRoute,
-    onRendererError: safeConsoleError
-  });
-  appShellRuntime = createAppShellRuntime({
-    app,
-    state: appState,
-    platform: mainProcessContext.platform,
-    effectiveAppId: systemIdentityRuntime.effectiveAppId,
-    mainProcessDir: MAIN_PROCESS_DIR,
-    productName: PRODUCT_NAME,
-    resourcesPath: process.resourcesPath,
-    session,
-    shell,
-    nativeTheme,
-    systemPreferences,
-    t,
-    logsRuntime,
-    agentRealtimeInspectorRoute: AGENT_REALTIME_INSPECTOR_ROUTE,
-    desktopActionWorkbenchRoute: DESKTOP_ACTION_WORKBENCH_ROUTE,
-    loadRendererRoute,
-    parseSafeLoopbackWebUrl,
-    isDevToolsShortcut,
-    isGlobalSearchShortcut,
-    isWorkPanelCloseShortcut,
-    isWorkPanelWebview: (contents) => {
-      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
-      return Boolean(
-        target?.active &&
-        (target.presentationScope === "workpanel" || (
-          target.surfaceLevel === "child" &&
-          target.parentSurfaceId === MAIN_CHAT_SURFACE_ID &&
-          target.ownerChatId &&
-          [
-            "overview",
-            "debug",
-            "btw",
-            "source",
-            "project",
-            "file-diff",
-            "artifact",
-            "reference",
-            "file",
-            "planning",
-            "agent",
-            "copilot",
-            "skill",
-            "workpanel-web",
-          ].includes(target.surfaceRole)
-        ))
-      );
-    },
-    isMainChatWebview: (contents) => {
-      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
-      return Boolean(
-        target?.active &&
-        target.surfaceId === MAIN_CHAT_SURFACE_ID &&
-        target.surfaceRole === "main-chat" &&
-        target.surfaceLevel === "root" &&
-        target.surfaceType === "agent-chat"
-      );
-    },
-    resolveGlobalSearchCommandShortcut,
-    handleDesktopSsoWebviewNavigation,
-    shouldOpenWebviewPopupInWorkPanelTab: (contents) =>
-      (() => {
-        const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
-        return target?.surfaceType === "chat-work-panel" || target?.presentationScope === "workpanel";
-      })(),
-    resolveBlobPopupTarget: (contents) => {
-      const target = webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
-      if (target?.surfaceType === "chat-work-panel" || target?.presentationScope === "workpanel") return "work-panel";
-      if (target?.surfaceType === "website" || target?.surfaceType === "browser") {
-        return "desktop-browser";
-      }
-      return null;
-    },
-    attachWebviewContextMenu: webviewContextMenuController.attach,
-    collectWebviewLoadDiagnostics,
-    reportRendererDiagnostic,
-    safeConsoleError,
-    ensureDockIdentity: () => systemIdentityRuntime.ensureDockIdentity(),
-    beginAppQuitWithoutConfirmation,
-    requestAppQuit,
-    openAssistantWorker,
-    getDesktopPetEnabled: () => appState.desktopPetSettings?.enabled === true,
-    isDesktopPetSupported: () => isDesktopPetSupportedPlatform(mainProcessContext.platform),
-    showDesktopPetWindow,
-    hideDesktopPetWindow,
-    restoreDesktopPetWindowLayering,
-    isAllowedWebappMicrophoneRequest: (contents, details) => {
-      const guest = webContents.fromId(contents.id);
-      if (!guest || guest.isDestroyed()) {
-        return false;
-      }
-      const liveUrl = guest.getURL();
-      const requestingUrl = details && typeof details === "object" &&
-        "requestingUrl" in details && typeof details.requestingUrl === "string"
-        ? details.requestingUrl
-        : liveUrl;
-      try {
-        if (new URL(liveUrl).origin !== new URL(requestingUrl).origin) {
-          return false;
-        }
-      } catch {
-        return false;
-      }
-      return webappManager.runtime.allowsLocalPageCapability(requestingUrl, "native.microphone");
-    }
-  });
-  webappWindowManager.setDisposalListener((webappId) => {
+  const logsRuntime = createMainProcessRuntime_logsRuntime_1(factoryContext);
+  createMainProcessRuntime_block68_2(factoryContext);
+  websFacade.webappWindowManager.setDisposalListener((webappId) => {
     emitWebsChanged({
       phase: "disposing",
       webappId
     });
   });
-  const startupEnvironmentRuntime = createStartupEnvironmentRuntime({
-    app,
-    platform: mainProcessContext.platform,
-    productName: PRODUCT_NAME,
-    envZipConflictNeedsDecision,
-    requireEnvZipImportAtStartup,
-    runtimeRootAtProcessStart,
-    oldRootDecisionRef,
-    startupRestoreController,
-    showMessageBox: (options) => appShellRuntime.showMessageBox(options),
-    t
-  });
-  petRuntime = createDesktopPetRuntime({
-    app,
-    platform: mainProcessContext.platform,
-    state: appState,
-    screen,
-    preloadPath: MAIN_PRELOAD_PATH,
-    loadRendererRoute,
-    showMainWindow,
-    openAssistantWorker,
-    publishPluginAssistantActiveTasks: (tasks, runningTaskCount) =>
-      pluginBridgeRuntime.publishAssistantActiveTasks(tasks, runningTaskCount),
-    refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu()
-  });
-  pluginBridgeRuntime = createPluginBridgeRuntime({
-    app,
-    clipboardBridge: pluginClipboardBridge,
-    getServiceState: (serviceId) => getServiceState(app, serviceId),
-    listServices: (targetApp) => listServices(targetApp),
-    retryPendingPluginResourceSync,
-    notifyAgentPlatformConfigChanged: () => notifyServicesChanged(),
-    getAssistantActiveTasks: () => petRuntime.getAssistantActiveTasksSnapshotForPlugins(),
-    queryAgentPlatform: (params) => callAgentPlatform(app, "/api/query", {
-      method: "POST",
-      body: {
-        message: params.message,
-        ...(params.agentKey ? { agentKey: params.agentKey } : {}),
-        params: {
-          desktop: {
-            source: params.source || "plugin",
-            action: params.action || "query"
-          }
-        },
-        stream: false
-      }
-    }),
-    onError: safeConsoleError
-  });
-  const desktopSsoController = createDesktopSsoController({
-    app,
-    platform: mainProcessContext.platform,
-    session,
-    getMainWindow: () => appState.mainWindow,
-    openBrowserUrl: webSurfaceRuntime.openBrowserUrl,
-    openExternal: shell.openExternal,
-    onRestoreResult: applyDesktopSsoRestoreResult
-  });
-  configureMarketAccessTokenIssuer(async (_marketApp, reason) => {
-    const currentToken = isDesktopSsoCredentialRuntimeReady()
-      ? getDesktopSsoAccessToken() || ""
-      : "";
-    if (currentToken && reason === "missing") {
-      return currentToken;
-    }
-    return desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(true);
-  });
-  refreshDesktopSsoIdentityToken = async (force = false) => {
-    const restoreResult = await desktopSsoController.retryDesktopSsoSessionRestoreIfNeeded();
-    applyDesktopSsoRestoreResult(restoreResult);
-    if (desktopSsoRestoreState === "temporarily_unavailable") {
-      return "";
-    }
-    const needsRefresh = force || desktopSsoAccessTokenNeedsRefresh(app);
-    const accessToken = await desktopSsoController.refreshBrowserCookieAccessTokenIfNeeded(force);
-    if (needsRefresh && accessToken) {
-      appState.kanbanRuntime?.refreshDeviceInfo();
-      void enterpriseChatRuntime.refresh().catch((error) => {
-        safeConsoleError("failed to refresh enterprise chat after desktop sso token renewal", {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
-    }
-    return accessToken;
-  };
+  const startupEnvironmentRuntime = createMainProcessRuntime_startupEnvironmentRuntime_3(factoryContext);
+  createMainProcessRuntime_block71_4(factoryContext);
+  createMainProcessRuntime_block72_5(factoryContext);
+  const desktopSsoController = createMainProcessRuntime_desktopSsoController_6(factoryContext);
+  createMainProcessRuntime_block74_7(factoryContext);
+  createMainProcessRuntime_block75_8(factoryContext);
 
-  const settingsRuntime = createSettingsRuntime({
-    app,
-    platform: mainProcessContext.platform,
-    state: appState,
-    getLogViewerWindow: () => logsRuntime.getLogViewerWindow(),
-    buildApplicationMenu,
-    refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
-    refreshDesktopPetState: () => refreshDesktopPetState(),
-    showDesktopPetWindow: () => showDesktopPetWindow(),
-    hideDesktopPetWindow: () => hideDesktopPetWindow(),
-    broadcastDesktopSsoStatus: (status) => desktopSsoController.broadcastStatus(status),
-    notifyServicesChanged,
-    emitKanbanChanged,
-    refreshDesktopActionBridge: () => assistantBridgeRuntime.refreshDesktopActionBridge(),
-    refreshEnterpriseChat: () => {
-      void enterpriseChatRuntime.reloadConfiguration(
-        readEnterpriseImSettings(app, mainProcessContext.platform).enabled
-      );
-    }
-  });
-  assistantBridgeRuntime = createAssistantBridgeRuntime({
-    app,
-    desktopAppInfo,
-    context: mainProcessContext,
-    assistantRunWakeLock,
-    cdpIntegration,
-    getResponsiveServiceState,
-    issueAgentAccessToken,
-    realtimeBroker,
-    refreshDesktopSsoAccessToken: () => refreshDesktopSsoIdentityToken(true),
-    canUseDesktopSsoCredentials: isDesktopSsoCredentialRuntimeReady,
-    callAgentPlatform,
-    showMainWindow,
-    showFileDialog,
-    showSaveDialog,
-    openLogViewerWindow,
-    listKanbanLocalAgents: () => petRuntime.listKanbanLocalAgents(),
-    emitKanbanChanged,
-    emitAssistantNavigationAgentsChanged,
-    emitAssistantNavigationPushEvent,
-    onTunnelConnected: () => restorePublishedWebapps(app),
-    desktopPet: {
-      refreshState: () => petRuntime.refreshState(),
-      showWindow: () => petRuntime.showWindow(),
-      hideWindow: () => petRuntime.hideWindow(),
-      saveSettings: (input) => {
-        appState.desktopPetSettings = saveDesktopPetSettings(app, input, mainProcessContext.platform);
-        return petRuntime.refreshState();
-      }
-    },
-    safeConsoleError,
-    logger: console
-  });
-  const startupPipeline = createStartupPipeline({
-    app,
-    desktopVersion: desktopAppInfo.version,
-    isFirstDesktopInstall,
-    getEnvImportFailureMessage: () => startupEnvImportFailureMessage,
-    startupRestoreController,
-    loadBuiltinServices,
-    loadInstalledPlugins,
-    notifyCoreServicesChanged,
-    startShellRuntime: () => runNonCoreStartupTask("app tray", () => createAppTray()),
-    startNonCoreRuntime: startNonCoreDesktopRuntime,
-    setStartupPhase,
-    runServiceMutation: servicesRuntime.runServiceMutation,
-    runStartupPreparation,
-    t,
-    onError: safeConsoleError
-  });
-  const runShutdownCleanup = createShutdownCleanupRunner({
-    app,
-    getMode: () => appState.shutdownMode,
-    getExistingPromise: () => appState.shutdownCleanupPromise,
-    setPromise: (promise) => {
-      appState.shutdownCleanupPromise = promise;
-    },
-    markComplete: (report) => {
-      appState.shutdownReport = report;
-      appState.shutdownCleanupComplete = true;
-    },
-    emitProgress: (progress) => {
-      const targetWindow = appState.mainWindow;
-      if (!targetWindow || targetWindow.isDestroyed()) {
-        return;
-      }
-      try {
-        targetWindow.webContents.send("desktopShell.shutdownProgress", progress);
-      } catch (error) {
-        console.warn("[main] failed to render shutdown progress", error);
-      }
-    }
-  });
+  const settingsRuntime = createMainProcessRuntime_settingsRuntime_9(factoryContext);
+  createMainProcessRuntime_block77_10(factoryContext);
+  const startupPipeline = createMainProcessRuntime_startupPipeline_11(factoryContext);
+  const runShutdownCleanup = createMainProcessRuntime_runShutdownCleanup_1(factoryContext);
   
-  async function handleDesktopSsoWebviewNavigation(url: string) {
-    let sessionCompleted = false;
-    try {
-      const status = getDesktopSsoStatus(app);
-      if (appState.desktopSsoWebviewCompletionInFlight || !status.pending || !isDesktopSsoLoginCompletionUrl(app, url)) {
-        return;
-      }
-      appState.desktopSsoWebviewCompletionInFlight = true;
-      await desktopSsoController.syncBrowserCookies();
+  async function handleDesktopSsoWebviewNavigation(url: string) { return createMainProcessRuntime_handleDesktopSsoWebviewNavigation_2(factoryContext, url); }
+  
+  function clearDesktopPetIdleResetTimer() { return createMainProcessRuntime_clearDesktopPetIdleResetTimer_3(factoryContext); }
+  
+  function refreshDesktopPetState(patch: any = {}) { return createMainProcessRuntime_refreshDesktopPetState_4(factoryContext, patch); }
+  
+  function hideDesktopPetWindow() { return createMainProcessRuntime_hideDesktopPetWindow_5(factoryContext); }
+  
+  async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_TARGET_PATH) { return createMainProcessRuntime_showAssistantTargetWindow_6(factoryContext, source, targetPath); }
+  
+  function showDesktopPetWindow() { return createMainProcessRuntime_showDesktopPetWindow_7(factoryContext); }
 
-      const browserSessionStatus = await desktopSsoController.validateBrowserSession();
-      if (!browserSessionStatus) {
-        const accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
-        if (!accessToken) {
-          failDesktopSsoFlow(t("main.ssoCookieExchangeNoAccessToken"));
-          return;
-        }
-        completeDesktopSsoCookieLogin(app, accessToken);
-        finalizeDesktopSsoLoginAttempt();
-        return;
-      }
-      sessionCompleted = true;
-      const stepErrors: string[] = [];
-      try {
-        await desktopSsoController.fetchBrowserUserInfo();
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        stepErrors.push(message);
-        safeConsoleError("failed to fetch desktop sso browser userinfo", { url, error: message });
-      }
+  function restoreDesktopPetWindowLayering() { return createMainProcessRuntime_restoreDesktopPetWindowLayering_8(factoryContext); }
+  
+  async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) { return createMainProcessRuntime_openLogViewerWindow_9(factoryContext, request); }
+  
+  async function openAgentPlatformMonitorWindow(url: string) { return createMainProcessRuntime_openAgentPlatformMonitorWindow_10(factoryContext, url); }
 
-      let accessToken = "";
-      try {
-        accessToken = await desktopSsoController.exchangeBrowserCookieAccessToken();
-        if (!accessToken) {
-          stepErrors.push(t("main.ssoCookieExchangeNoAccessToken"));
-        }
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        stepErrors.push(message);
-        safeConsoleError("failed to exchange desktop sso browser access token", { url, error: message });
-      }
+  async function openDesktopActionWorkbenchWindow() { return createMainProcessRuntime_openDesktopActionWorkbenchWindow_11(factoryContext); }
 
-      finalizeDesktopSsoLoginAttempt(stepErrors);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      if (sessionCompleted) {
-        failDesktopSsoStep(message);
-      } else {
-        failDesktopSsoFlow(message);
-      }
-      safeConsoleError("failed to complete desktop sso from webview navigation", {
-        url,
-        error: message
-      });
-    } finally {
-      appState.desktopSsoWebviewCompletionInFlight = false;
-    }
-  }
-  
-  function clearDesktopPetIdleResetTimer() {
-    return petRuntime.clearIdleResetTimer();
-  }
-  
-  function refreshDesktopPetState(patch: any = {}) {
-    return petRuntime.refreshState(patch);
-  }
-  
-  function hideDesktopPetWindow() {
-    return petRuntime.hideWindow();
-  }
-  
-  async function showAssistantTargetWindow(source: string, targetPath = ASSISTANT_TARGET_PATH) {
-    // Keep Windows tray activation responsive while service probes/startup finish.
-    showMainWindow(targetPath);
-    const failures = await servicesRuntime.runServiceMutation(() =>
-      servicesRuntime.ensureAssistantTargetServicesRunning(source)
-    );
-    if (failures.length > 0) {
-      showMainWindow("/control-center");
-      return {
-        ok: false,
-        message: t("main.assistantServicesRecoveryFailed", { failures: failures.join(t("common.nameSeparator")) }),
-        window: appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null
-      };
-    }
-  
-    return {
-      ok: true,
-      message: t("main.assistantOpened"),
-      window: appState.mainWindow && !appState.mainWindow.isDestroyed() ? appState.mainWindow : null
-    };
-  }
-  
-  function showDesktopPetWindow() {
-    return petRuntime.showWindow();
-  }
+  async function openAgentRealtimeInspectorWindow() { return createMainProcessRuntime_openAgentRealtimeInspectorWindow_12(factoryContext); }
 
-  function restoreDesktopPetWindowLayering() {
-    return petRuntime.restoreWindowLayering();
-  }
-  
-  async function openLogViewerWindow(request: ServiceOpenLogViewerRequest) {
-    return logsRuntime.openLogViewerWindow(request);
-  }
-  
-  async function openAgentPlatformMonitorWindow(url: string) {
-    return appShellRuntime.openAgentPlatformMonitorWindow(url);
-  }
+  function closeDesktopActionWorkbenchWindow() { return createMainProcessRuntime_closeDesktopActionWorkbenchWindow_13(factoryContext); }
 
-  async function openDesktopActionWorkbenchWindow() {
-    return appShellRuntime.openDesktopActionWorkbenchWindow();
-  }
-
-  async function openAgentRealtimeInspectorWindow() {
-    return appShellRuntime.openAgentRealtimeInspectorWindow();
-  }
-
-  function closeDesktopActionWorkbenchWindow() {
-    return appShellRuntime.closeDesktopActionWorkbenchWindow();
-  }
-
-  function closeLogViewerWindow() {
-    return logsRuntime.closeLogViewerWindow();
-  }
+  function closeLogViewerWindow() { return createMainProcessRuntime_closeLogViewerWindow_14(factoryContext); }
   
-  function getServiceWebviewPreloadPath() {
-    return appShellRuntime.getServiceWebviewPreloadPath();
-  }
+  function getServiceWebviewPreloadPath() { return createMainProcessRuntime_getServiceWebviewPreloadPath_15(factoryContext); }
   
-  function getServiceWebviewPreloadUrl() {
-    return appShellRuntime.getServiceWebviewPreloadUrl();
-  }
+  function getServiceWebviewPreloadUrl() { return createMainProcessRuntime_getServiceWebviewPreloadUrl_16(factoryContext); }
   
-  function minimizeLogViewerWindow() {
-    return logsRuntime.minimizeLogViewerWindow();
-  }
+  function minimizeLogViewerWindow() { return createMainProcessRuntime_minimizeLogViewerWindow_17(factoryContext); }
   
-  function maximizeLogViewerWindow() {
-    return logsRuntime.maximizeLogViewerWindow();
-  }
+  function maximizeLogViewerWindow() { return createMainProcessRuntime_maximizeLogViewerWindow_18(factoryContext); }
   
-  async function captureAssistantScreenshot(chatId: string | null | undefined) {
-    return captureCopilotScreenshot({
-      app,
-      chatId,
-      platform: mainProcessContext.platform,
-      getMainWindow: () => appState.mainWindow,
-      delay
-    });
-  }
+  async function captureAssistantScreenshot(chatId: string | null | undefined) { return createMainProcessRuntime_captureAssistantScreenshot_19(factoryContext, chatId); }
   
   async function captureDesktopScreenshotForWebview(
     mode: EnterpriseChatScreenshotMode = "region"
-  ) {
-    return captureScreenshotForBridge({
-      platform: mainProcessContext.platform,
-      getMainWindow: () => appState.mainWindow,
-      delay
-    }, mode);
-  }
+  ) { return createMainProcessRuntime_captureDesktopScreenshotForWebview_20(factoryContext, mode); }
 
-  async function captureEnterpriseChatScreenshot(mode: EnterpriseChatScreenshotMode) {
-    if (mode !== "window") {
-      return captureDesktopScreenshotForWebview(mode);
-    }
-    const targetWindow = appState.mainWindow;
-    if (
-      !targetWindow ||
-      targetWindow.isDestroyed() ||
-      targetWindow.webContents.isDestroyed()
-    ) {
-      return captureDesktopScreenshotForWebview(mode);
-    }
-
-    let insertedCssKey = "";
-    try {
-      insertedCssKey = await targetWindow.webContents.insertCSS(
-        ENTERPRISE_CHAT_WINDOW_CAPTURE_HIDE_CSS
-      );
-      return await captureDesktopScreenshotForWebview(mode);
-    } finally {
-      if (insertedCssKey && !targetWindow.webContents.isDestroyed()) {
-        await targetWindow.webContents.removeInsertedCSS(insertedCssKey).catch(() => undefined);
-      }
-    }
-  }
+  async function captureEnterpriseChatScreenshot(mode: EnterpriseChatScreenshotMode) { return createMainProcessRuntime_captureEnterpriseChatScreenshot_21(factoryContext, mode); }
   
-  function refreshPluginDesktopGlobalShortcuts() {
-    return refreshPluginGlobalShortcuts({
-      app,
-      globalShortcut,
-      platform: mainProcessContext.platform,
-      invokePluginAction: (serviceId, actionId) => {
-        void servicesRuntime.runServiceMutation(() => invokePluginDesktopAction({
-          app,
-          serviceId,
-          actionId,
-          getServiceState,
-          handleServiceStart: servicesRuntime.handleServiceStart
-        })).catch((error) => {
-          safeConsoleError("failed to invoke plugin global shortcut", {
-            serviceId,
-            actionId,
-            error: error instanceof Error ? error.message : String(error)
-          });
-        });
-      }
-    });
-  }
+  function refreshPluginDesktopGlobalShortcuts() { return createMainProcessRuntime_refreshPluginDesktopGlobalShortcuts_22(factoryContext); }
   
-  function registerFocusedWebviewDevToolsShortcut() {
-    if (focusedWebviewDevToolsShortcutRegistered) {
-      return;
-    }
-    const registered = globalShortcut.register(FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT, () => {
-      openCurrentWebviewDevTools({
-        focusedWebviewDevToolsTarget: Number.isSafeInteger(appState.focusedWebviewDevToolsTargetId) &&
-          Number(appState.focusedWebviewDevToolsTargetId) > 0
-          ? { webContentsId: Number(appState.focusedWebviewDevToolsTargetId) }
-          : null,
-        preferredWebviewDevToolsTarget: appState.copilotDevToolsTarget,
-        currentPageSnapshot: appState.currentPageSnapshot,
-        webContents,
-      });
-    });
-    if (!registered) {
-      console.warn(`failed to register focused webview DevTools shortcut: ${FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT}`);
-      return;
-    }
-    focusedWebviewDevToolsShortcutRegistered = true;
-  }
+  function registerFocusedWebviewDevToolsShortcut() { return createMainProcessRuntime_registerFocusedWebviewDevToolsShortcut_23(factoryContext); }
   
   async function collectWebviewLoadDiagnostics(
     contents: Electron.WebContents,
     validatedUrl: string
-  ): Promise<Record<string, unknown>> {
-    const sessionRef = contents.session;
-    let resolvedProxy = "unknown";
-    try {
-      resolvedProxy = await sessionRef.resolveProxy(validatedUrl);
-    } catch (error) {
-      resolvedProxy = `resolve-proxy-failed: ${error instanceof Error ? error.message : String(error)}`;
-    }
+  ): Promise<Record<string, unknown>> { return createMainProcessRuntime_collectWebviewLoadDiagnostics_24(factoryContext, contents, validatedUrl); }
   
-    return {
-      guestId: contents.id,
-      currentUrl: contents.getURL(),
-      validatedUrl,
-      userAgent: contents.getUserAgent(),
-      resolvedProxy,
-      sessionPartition: sessionRef.getStoragePath() || "default"
-    };
-  }
+  function reportRendererDiagnostic(source: string, details: Record<string, unknown>) { return createMainProcessRuntime_reportRendererDiagnostic_25(factoryContext, source, details); }
   
-  function reportRendererDiagnostic(source: string, details: Record<string, unknown>) {
-    const diagnosticLevel =
-      details.diagnosticLevel === "debug" ||
-      details.diagnosticLevel === "warn" ||
-      details.diagnosticLevel === "error"
-        ? details.diagnosticLevel
-        : "error";
-    const payload = {
-      source,
-      ...(source === "deprecated-compatibility" ? { desktopVersion: app.getVersion() } : {}),
-      ...details
-    };
-    if (diagnosticLevel === "debug") {
-      if (!isDesktopDevelopmentRuntime(app)) return;
-      console.debug("[renderer-diagnostic]", payload);
-    } else if (diagnosticLevel === "warn") {
-      console.warn("[renderer-diagnostic]", payload);
-    } else {
-      safeConsoleError("[renderer-diagnostic]", payload);
-    }
-  }
+  function createWindow() { return createMainProcessRuntime_createWindow_26(factoryContext); }
   
-  function createWindow() {
-    return appShellRuntime.createWindow();
-  }
+  function configureAppMediaPermissions() { return createMainProcessRuntime_configureAppMediaPermissions_27(factoryContext); }
   
-  function configureAppMediaPermissions() {
-    return appShellRuntime.configureAppMediaPermissions();
-  }
+  function showMainWindow(targetPath?: string) { return createMainProcessRuntime_showMainWindow_28(factoryContext, targetPath); }
   
-  function showMainWindow(targetPath?: string) {
-    return appShellRuntime.showMainWindow(targetPath);
-  }
-  
-  function notifyServicesChanged() {
-    notifyCoreServicesChanged();
-    notifyDesktopDecorationsChanged();
-  }
+  function notifyServicesChanged() { return createMainProcessRuntime_notifyServicesChanged_29(factoryContext); }
 
-  function notifyCoreServicesChanged() {
-    if (!isStartupPhaseAtLeast(appState.startupPhase, "shell-ready")) {
-      console.info(`[main] skipped core service notification before shell-ready: ${appState.startupPhase}`);
-      return;
-    }
-    void pluginBridgeRuntime.publishServiceStates();
-    emitDesktopWsPush("service.changed", { changedAt: new Date().toISOString() });
-    appState.assistantNavigationStatusClient?.scheduleRefresh(1000);
-    const targetWindow = appState.mainWindow;
-    if (targetWindow && !targetWindow.isDestroyed()) {
-      targetWindow.webContents.send("services.changed");
-    }
-  }
+  function notifyCoreServicesChanged() { return createMainProcessRuntime_notifyCoreServicesChanged_1(factoryContext); }
 
-  function notifyDesktopDecorationsChanged() {
-    if (appState.startupPhase !== "non-core-ready") {
-      return;
-    }
-    if (app.isReady()) {
-      refreshPluginDesktopGlobalShortcuts();
-    }
-  }
+  function notifyDesktopDecorationsChanged() { return createMainProcessRuntime_notifyDesktopDecorationsChanged_2(factoryContext); }
 
   function emitWebsChanged(
     details: Partial<Omit<WebsChangedEvent, "changedAt">> = {}
-  ) {
-    const payload: WebsChangedEvent = {
-      changedAt: new Date().toISOString(),
-      ...details
-    };
-    const targetWindow = appState.mainWindow;
-    if (!targetWindow || targetWindow.isDestroyed()) {
-      return;
-    }
-    targetWindow.webContents.send("webs.changed", payload);
-  }
+  ) { return createMainProcessRuntime_emitWebsChanged_3(factoryContext, details); }
 
-  function startResourceDirectoryWatcher() {
-    if (resourceDirectoryWatcher) {
-      return;
-    }
-    resourceDirectoryWatcher = createResourceDirectoryWatcher({
-      app,
-      platform: mainProcessContext.platform,
-      onWebsChanged: emitWebsChanged,
-      onPetsChanged: () => {
-        petRuntime.refreshState();
-      },
-      onPluginsChanged: () => {
-        loadInstalledPlugins(app);
-        notifyServicesChanged();
-      },
-      onError: (message, error) => safeConsoleError(message, error)
-    });
-    resourceDirectoryWatcher.start();
-  }
+  function startResourceDirectoryWatcher() { return createMainProcessRuntime_startResourceDirectoryWatcher_4(factoryContext); }
 
-  function stopResourceDirectoryWatcher() {
-    resourceDirectoryWatcher?.stop();
-    resourceDirectoryWatcher = null;
-  }
+  function stopResourceDirectoryWatcher() { return createMainProcessRuntime_stopResourceDirectoryWatcher_5(factoryContext); }
   
-  function emitKanbanChanged() {
-    emitDesktopWsPush("snapshot.updated", { changedAt: new Date().toISOString() });
-    const targetWindow = appState.mainWindow;
-    if (!targetWindow || targetWindow.isDestroyed()) {
-      return;
-    }
-    targetWindow.webContents.send("kanban.changed");
-  }
+  function emitKanbanChanged() { return createMainProcessRuntime_emitKanbanChanged_6(factoryContext); }
   
-  function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResult) {
-    const targetWindow = appState.mainWindow;
-    if (targetWindow && !targetWindow.isDestroyed()) {
-      targetWindow.webContents.send("assistant.navigationAgentsChanged", result);
-    }
-    if (petRuntime.isVisible()) {
-      refreshDesktopPetState();
-    }
-  }
+  function emitAssistantNavigationAgentsChanged(result: AssistantNavAgentItemsResult) { return createMainProcessRuntime_emitAssistantNavigationAgentsChanged_7(factoryContext, result); }
 
-  function emitAssistantNavigationPushEvent(event: AssistantNavigationPushEvent) {
-    const targetWindow = appState.mainWindow;
-    if (targetWindow && !targetWindow.isDestroyed()) {
-      targetWindow.webContents.send("assistant.navigationPushEvent", event);
-    }
-  }
+  function emitAssistantNavigationPushEvent(event: AssistantNavigationPushEvent) { return createMainProcessRuntime_emitAssistantNavigationPushEvent_8(factoryContext, event); }
   
-  function navigateMainWindow(targetPath: string) {
-    return appShellRuntime.navigateMainWindow(targetPath);
-  }
+  function navigateMainWindow(targetPath: string) { return createMainProcessRuntime_navigateMainWindow_9(factoryContext, targetPath); }
   
-  async function openAssistantWorker(request: AssistantWorkerOpenRequest) {
-    const targetAgentKey = request.agentKey ?? request.workerKey ?? "";
-    const openResult = await showAssistantTargetWindow(
-      "assistant-worker",
-      createAgentWebclientRoute({
-        agentKey: targetAgentKey,
-        chatId: request.chatId
-      })
-    );
-    const targetWindow = openResult.window;
-    if (!openResult.ok || !targetWindow || targetWindow.isDestroyed()) {
-      return;
-    }
+  async function openAssistantWorker(request: AssistantWorkerOpenRequest) { return createMainProcessRuntime_openAssistantWorker_10(factoryContext, request); }
   
-    const sendOpenAssistantWorker = () => {
-      if (!targetWindow.isDestroyed()) {
-        targetWindow.webContents.send("app.openAssistantWorker", request);
-      }
-    };
-  
-    if (targetWindow.webContents.isLoadingMainFrame()) {
-      targetWindow.webContents.once("did-finish-load", sendOpenAssistantWorker);
-      return;
-    }
-  
-    setTimeout(sendOpenAssistantWorker, 100);
-  }
-  
-  function createAppTray() {
-    return appShellRuntime.createAppTray();
-  }
+  function createAppTray() { return createMainProcessRuntime_createAppTray_11(factoryContext); }
 
-  function runNonCoreStartupTask(label: string, task: () => void) {
-    try {
-      task();
-    } catch (error) {
-      safeConsoleError(`failed to start non-core runtime: ${label}`, {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-  }
+  function runNonCoreStartupTask(label: string, task: () => void) { return createMainProcessRuntime_runNonCoreStartupTask_12(factoryContext, label, task); }
 
-  function startSsoCredentialDependentRuntimes() {
-    if (
-      !nonCoreDesktopRuntimeStarted ||
-      ssoCredentialDependentRuntimesStarted ||
-      !isDesktopSsoCredentialRuntimeReady()
-    ) {
-      return;
-    }
-    ssoCredentialDependentRuntimesStarted = true;
-    runNonCoreStartupTask("enterprise chat", () => {
-      void enterpriseChatRuntime.setEnabled(
-        readEnterpriseImSettings(app, mainProcessContext.platform).enabled
-      );
-    });
-    void startTunnelHubRuntimeIfEnabled().catch((error) => {
-      safeConsoleError("failed to start Desktop Tunnel Hub", {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    });
-  }
+  function startSsoCredentialDependentRuntimes() { return createMainProcessRuntime_startSsoCredentialDependentRuntimes_13(factoryContext); }
 
-  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) {
-    const previousRestoreState = desktopSsoRestoreState;
-    desktopSsoRestoreState = result.state;
-    if (result.state === "signed_out") {
-      ssoCredentialDependentRuntimesStarted = false;
-      return;
-    }
-    if (
-      result.state !== "authenticated" ||
-      previousRestoreState === "authenticated" ||
-      !isDesktopSsoCredentialRuntimeReady()
-    ) {
-      return;
-    }
-    startSsoCredentialDependentRuntimes();
-    appState.kanbanRuntime?.refreshDeviceInfo();
-    void refreshMarketCatalog(app).catch((error) => {
-      safeConsoleError("failed to refresh Market after desktop sso restore", {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    });
-    void enterpriseChatRuntime.refresh().catch((error) => {
-      safeConsoleError("failed to refresh enterprise chat after desktop sso restore", {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    });
-  }
+  function applyDesktopSsoRestoreResult(result: DesktopSsoRestoreResult) { return createMainProcessRuntime_applyDesktopSsoRestoreResult_14(factoryContext, result); }
 
-  function startNonCoreDesktopRuntime() {
-    if (nonCoreDesktopRuntimeStarted) {
-      return;
-    }
-    nonCoreDesktopRuntimeStarted = true;
+  function startNonCoreDesktopRuntime() { return createMainProcessRuntime_startNonCoreDesktopRuntime_15(factoryContext); }
+  
+  async function showFileDialog(options: any, ownerWindow = getMainWindow()) { return createMainProcessRuntime_showFileDialog_16(factoryContext, options, ownerWindow); }
+  
+  async function showSaveDialog(options: any, ownerWindow = getMainWindow()) { return createMainProcessRuntime_showSaveDialog_17(factoryContext, options, ownerWindow); }
+  
+  async function showMessageBox(options: any, ownerWindow = getMainWindow()) { return createMainProcessRuntime_showMessageBox_18(factoryContext, options, ownerWindow); }
+  
+  function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) { return createMainProcessRuntime_emitAssistantAttachmentProgress_19(factoryContext, progress); }
+  
+  function buildApplicationMenu() { return createMainProcessRuntime_buildApplicationMenu_20(factoryContext); }
+  
+  function showArchiveDialog(title: string, extensions?: string[]) { return createMainProcessRuntime_showArchiveDialog_21(factoryContext, title, extensions); }
+  
+  async function handleAppReady() { return createMainProcessRuntime_handleAppReady_1(factoryContext); }
+  
+  function start() { return createMainProcessRuntime_start_2(factoryContext); }
+  
+  function prepareQuitUi() { return createMainProcessRuntime_prepareQuitUi_3(factoryContext); }
+  
+  function beginAppQuitWithoutConfirmation() { return createMainProcessRuntime_beginAppQuitWithoutConfirmation_4(factoryContext); }
 
-    void refreshDesktopSsoIdentityToken().catch((error) => {
-      safeConsoleError("failed to refresh desktop sso token during startup", {
-        error: error instanceof Error ? error.message : String(error)
-      });
-    });
-    const desktopSsoRefreshTimer = setInterval(() => {
-      void refreshDesktopSsoIdentityToken().catch((error) => {
-        safeConsoleError("failed to refresh desktop sso token before expiry", {
-          error: error instanceof Error ? error.message : String(error)
-        });
-      });
-    }, 5 * 60_000);
-    desktopSsoRefreshTimer.unref();
-    app.once("before-quit", () => clearInterval(desktopSsoRefreshTimer));
-
-    runNonCoreStartupTask("webapp install recovery", () => {
-      recoverWebappInstallTransactions(app);
-    });
-    runNonCoreStartupTask("desktop pet", () => {
-      if (isDesktopPetSupportedPlatform(mainProcessContext.platform) && appState.desktopPetSettings?.enabled === true) {
-        showDesktopPetWindow();
-      } else if (appState.desktopPetSettings) {
-        refreshDesktopPetState();
-      }
-    });
-    runNonCoreStartupTask("application menu", () => buildApplicationMenu());
-    runNonCoreStartupTask("plugin desktop bridge", () => pluginBridgeRuntime.setDesktopReady());
-    runNonCoreStartupTask("desktop ws server", () => {
-      assistantBridgeRuntime.startDesktopWsServerIfEnabled(
-        readDesktopProfileFromRoot(getDesktopConfigRoot(app)).general.desktopWsServerEnabled
-      );
-    });
-    startSsoCredentialDependentRuntimes();
-
-    setStartupPhase("non-core-ready");
-    notifyDesktopDecorationsChanged();
-  }
-  
-  async function showFileDialog(options: any, ownerWindow = appState.mainWindow) {
-    return appShellRuntime.showFileDialog(options, ownerWindow);
-  }
-  
-  async function showSaveDialog(options: any, ownerWindow = appState.mainWindow) {
-    return appShellRuntime.showSaveDialog(options, ownerWindow);
-  }
-  
-  async function showMessageBox(options: any, ownerWindow = appState.mainWindow) {
-    return appShellRuntime.showMessageBox(options, ownerWindow);
-  }
-  
-  function emitAssistantAttachmentProgress(progress: AssistantAttachmentTaskProgress) {
-    const targetWindow = appState.mainWindow;
-    if (targetWindow && !targetWindow.isDestroyed()) {
-      targetWindow.webContents.send("assistant.attachmentProgress", progress);
-    }
-  }
-  
-  function buildApplicationMenu() {
-    return appShellRuntime.buildApplicationMenu();
-  }
-  
-  function showArchiveDialog(title: string, extensions?: string[]) {
-    return appShellRuntime.showArchiveDialog(title, extensions);
-  }
-  
-  async function handleAppReady() {
-    setStartupPhase("platform-preflight");
-    systemIdentityRuntime.ensureDockIdentity();
-    registerDesktopPetAssetProtocol(app, protocol, net, mainProcessContext.platform);
-    registerWebsiteFaviconProtocol(app, protocol, net, mainProcessContext.platform);
-    registerDesktopSsoAvatarProtocol(
-      app,
-      protocol,
-      net,
-      session,
-      mainProcessContext.platform,
-    );
-  
-    setStartupPhase("runtime-env");
-    const canContinueStartup = await startupEnvironmentRuntime.handleStartupEnvRootConflict();
-    if (!canContinueStartup) {
-      app.exit(0);
-      return;
-    }
-  
-    const startupRuntimeReady = await startupEnvironmentRuntime.prepareStartupRuntimeEnvironment();
-    if (!startupRuntimeReady.ok) {
-      startupEnvImportFailureMessage =
-        startupRuntimeReady.message || startupEnvironmentRuntime.getDefaultEnvImportRequiredMessage();
-      startupRestoreController.setEnvImportRequired(startupEnvImportFailureMessage);
-    }
-    setStartupPhase("runtime-env-ready");
-  
-    initializeUserDataRootsAndSettings();
-    setStartupPhase("desktop-state-ready");
-    const desktopSsoRestoreResult = await desktopSsoController.restoreDesktopSsoSession();
-    applyDesktopSsoRestoreResult(desktopSsoRestoreResult);
-    logsRuntime.installConsoleTee();
-    pluginBridgeRuntime.configure();
-    configurePluginResources({ callAgentPlatform });
-    assistantBridgeRuntime.start();
-    registerMainIpcHandlers({
-      app,
-      ipcMain,
-      context: mainProcessContext,
-      assistantBridgeRuntime,
-      assistantRunWakeLock,
-      logsRuntime,
-      petRuntime,
-      browserSurfaces: webSurfaceRuntime.browserSurfaceRegistry,
-      isTrustedAgentWebclientSession: (sender) => sender.session === session.fromPartition(
-        `persist:${STORAGE_NAMESPACE}-service-agent-webclient`,
-      ),
-      enterpriseChatRuntime,
-      desktopSsoController,
-      startupRestoreController,
-      desktopAppInfo,
-      oldRootDecisionRef,
-      isFirstDesktopInstall,
-      bundledEnvZipExistsAtStartup,
-      runtimeRootExistedAtStartup,
-      runtimeRootAtProcessStart,
-      consumeFirstInstallBootstrapNavigation: () => firstInstallBootstrapNavigation.consume(),
-      showFileDialog,
-      showSaveDialog,
-      showMessageBox,
-      showArchiveDialog,
-      openLogViewerWindow,
-      closeLogViewerWindow,
-      minimizeLogViewerWindow,
-      maximizeLogViewerWindow,
-      openAgentPlatformMonitorWindow,
-      openAgentRealtimeInspectorWindow,
-      openDesktopActionWorkbenchWindow,
-      closeDesktopActionWorkbenchWindow,
-      revealPathInFileManager,
-      getServiceWebviewPreloadPath,
-      getServiceWebviewPreloadUrl,
-      runServiceMutation: servicesRuntime.runServiceMutation,
-      handleServiceStart: servicesRuntime.handleServiceStart,
-      refreshPluginDesktopGlobalShortcuts,
-      notifyServicesChanged,
-      onStartupPreparationSucceeded: () => {
-        setStartupPhase("core-ready");
-        startNonCoreDesktopRuntime();
-      },
-      onStartupPreparationBlocked: () => setStartupPhase("degraded"),
-      refreshDesktopRuntimeConfigFromCanonicalFiles: settingsRuntime.refreshDesktopRuntimeConfigFromCanonicalFiles,
-      buildApplicationMenu,
-      refreshTrayContextMenu: () => appShellRuntime.refreshTrayContextMenu(),
-      refreshMainWindowAppearance: () => appShellRuntime.refreshMainWindowAppearance(),
-      setGlobalSearchOverlayVisible: (visible) => appShellRuntime.setGlobalSearchOverlayVisible(visible),
-      setWebviewModalOverlayVisible: (sourceId, visible) =>
-        appShellRuntime.setWebviewModalOverlayVisible(sourceId, visible),
-      emitLocaleChanged: settingsRuntime.emitLocaleChanged,
-      captureDesktopScreenshotForWebview,
-      reportRendererDiagnostic,
-      emitAssistantAttachmentProgress,
-      captureAssistantScreenshot
-    });
-    configureAppMediaPermissions();
-    registerFocusedWebviewDevToolsShortcut();
-    createWindow();
-    setStartupPhase("shell-ready");
-    startResourceDirectoryWatcher();
-  
-    void startupPipeline.run();
-  }
-  
-  function start() {
-    registerDesktopOpenProtocolClient(app, mainProcessContext.platform, {
-      isDefaultApp: Boolean((process as NodeJS.Process & { defaultApp?: boolean }).defaultApp),
-      execPath: process.execPath,
-      appEntryPath: process.argv[1]
-    });
-    registerMainAppEvents({
-      app,
-      platform: mainProcessContext.platform,
-      state: appState,
-      gotSingleInstanceLock,
-      installerShutdownArgs: INSTALLER_SHUTDOWN_ARGS,
-      globalShortcut,
-      focusedWebviewDevToolsShortcut: FOCUSED_WEBVIEW_DEVTOOLS_SHORTCUT,
-      initialCommandLine: process.argv,
-      onReady: handleAppReady,
-      showMainWindow,
-      beginAppQuitWithoutConfirmation,
-      beginInstallerShutdown,
-      isNativeDialogOpen: () => appShellRuntime.isNativeDialogOpen(),
-      emitPluginBeforeQuit: () => pluginBridgeRuntime.emitBeforeQuit(),
-      prepareQuitUi,
-      beginRealtimeShutdown: () => realtimeBroker.beginShutdown(),
-      runShutdownCleanup,
-      flushDesktopLogs: (timeoutMs) => logsRuntime.flush(timeoutMs),
-      writeInstallerShutdownAcks,
-      releaseAssistantRunWakeLock: () => assistantRunWakeLock.release(),
-      clearDesktopPetIdleResetTimer,
-      stopAssistantBridgeRuntime: () => assistantBridgeRuntime.stop(),
-      stopTunnelHubRuntime,
-      disposeRealtimeBroker: () => realtimeBroker.dispose(),
-      unregisterPluginGlobalShortcuts: () => unregisterPluginGlobalShortcuts(globalShortcut),
-      stopResourceDirectoryWatcher,
-      stopPluginBridgeRuntime: () => pluginBridgeRuntime.stop(),
-      stopEnterpriseChatRuntime: () => enterpriseChatRuntime.stop()
-    });
-  }
-  
-  function prepareQuitUi() {
-    appShellRuntime.prepareQuitUi();
-  }
-  
-  function beginAppQuitWithoutConfirmation() {
-    appState.isHandlingQuit = true;
-    prepareQuitUi();
-    app.quit();
-  }
-
-  function beginInstallerShutdown(commandLine: string[]) {
-    const request = parseInstallerShutdownRequest(
-      commandLine,
-      INSTALLER_SHUTDOWN_ARGS,
-      STORAGE_NAMESPACE
-    );
-    appState.shutdownMode = "installer";
-    if (request.ackPath) {
-      if (appState.shutdownReport) {
-        writeInstallerShutdownAck(request.ackPath, appState.shutdownReport);
-      } else {
-        appState.shutdownAckPaths.add(request.ackPath);
-      }
-    }
-    beginAppQuitWithoutConfirmation();
-  }
+  function beginInstallerShutdown(commandLine: string[]) { return createMainProcessRuntime_beginInstallerShutdown_5(factoryContext, commandLine); }
 
   function writeInstallerShutdownAck(
     ackPath: string,
     report: import("../../shared/shutdown").ShutdownReport
-  ) {
-    const status = report.ok ? "OK" : "FAILED";
-    try {
-      writeShutdownAck(ackPath, status, report);
-    } catch (error) {
-      console.error(`[main] failed to write shutdown acknowledgement ${ackPath}`, error);
-    }
-  }
+  ) { return createMainProcessRuntime_writeInstallerShutdownAck_6(factoryContext, ackPath, report); }
 
-  function writeInstallerShutdownAcks(report: import("../../shared/shutdown").ShutdownReport) {
-    if (appState.shutdownAckPaths.size === 0) {
-      return;
-    }
-    for (const ackPath of appState.shutdownAckPaths) {
-      writeInstallerShutdownAck(ackPath, report);
-    }
-    appState.shutdownAckPaths.clear();
-  }
+  function writeInstallerShutdownAcks(report: import("../../shared/shutdown").ShutdownReport) { return createMainProcessRuntime_writeInstallerShutdownAcks_7(factoryContext, report); }
   
-  function requestAppQuit() {
-    void appShellRuntime.confirmAndRequestAppQuit();
-  }
+  function requestAppQuit() { return createMainProcessRuntime_requestAppQuit_8(factoryContext); }
   
   return { start };
 }
+
+export * from "./runtime.shared";

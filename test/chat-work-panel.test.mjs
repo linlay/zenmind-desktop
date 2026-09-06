@@ -3,7 +3,20 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 
-const read = (relativePath) => fs.readFileSync(path.join(process.cwd(), relativePath), "utf8");
+const read = (relativePath) => {
+  const sourcePath = path.join(process.cwd(), relativePath);
+  const source = fs.readFileSync(sourcePath, "utf8");
+  if (!sourcePath.includes(`${path.sep}src${path.sep}main${path.sep}`) || path.extname(sourcePath) !== ".ts") {
+    return source;
+  }
+  const sourceDirectory = path.dirname(sourcePath);
+  const sourceStem = path.basename(sourcePath, ".ts");
+  const splitSources = fs.readdirSync(sourceDirectory)
+    .filter((name) => name.startsWith(`${sourceStem}.`) && name.endsWith(".ts"))
+    .sort()
+    .map((name) => fs.readFileSync(path.join(sourceDirectory, name), "utf8"));
+  return [source, ...splitSources].join("\n");
+};
 
 test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => {
   const embeddedHosts = read("src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx");
@@ -93,7 +106,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
 test("WorkPanel actions derive ownership from trusted source and expose the canonical namespace", () => {
   const actions = read("src/shared/desktop-actions.ts");
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
-  const bridge = read("src/main/desktop-action-bridge.ts");
+  const bridge = read("src/main/modules/desktop-actions/runtime.ts");
 
   for (const name of ["getState", "openTab", "openWeb", "openLocalFile", "refreshWeb", "activateTab", "closeTab", "closeWorkpanel"]) {
     assert.match(actions, new RegExp(`desktop\\.workpanel\\.${name}`, "u"));
@@ -203,7 +216,7 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   const appShell = read("src/renderer/app-shell/AppShell.tsx");
   const embeddedHosts = read("src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts.tsx");
   const runtime = read("src/main/app/runtime.ts");
-  const localFiles = read("src/main/chat-work-panel-local-files.ts");
+  const localFiles = read("src/main/modules/work-panel/local-files.ts");
   const css = read("src/renderer/styles/app-shell.css");
   const sidebarCss = read("src/renderer/styles/sidebar-copilot.css");
 
@@ -328,7 +341,7 @@ test("WorkPanel fullscreen owns native window state and exclusively covers the D
   const css = read("src/renderer/styles/app-shell.css");
   const contracts = read("src/shared/contracts/desktop-api.ts");
   const preload = read("src/preload/index.ts");
-  const shellHandlers = read("src/main/ipc/shell-handlers.ts");
+  const shellHandlers = read("src/main/modules/shell/ipc.ts");
   const zhCN = read("src/shared/i18n/dictionaries/zhCN.ts");
   const enUS = read("src/shared/i18n/dictionaries/enUS.ts");
 
@@ -380,12 +393,12 @@ test("WorkPanel close shortcut uses visible composite ownership across renderer 
   const contracts = read("src/shared/contracts/desktop-api.ts");
   const preload = read("src/preload/index.ts");
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
-  const shellHandlers = read("src/main/ipc/shell-handlers.ts");
-  const mainContext = read("src/main/main-process-context.ts");
-  const windowManager = read("src/main/window-manager.ts");
-  const runtime = read("src/main/app-shell/runtime.ts");
+  const shellHandlers = read("src/main/modules/shell/ipc.ts");
+  const moduleRegistry = read("src/main/app/module-registry.ts");
+  const windowManager = read("src/main/modules/shell/window-manager.ts");
+  const runtime = read("src/main/modules/shell/runtime.ts");
   const appRuntime = read("src/main/app/runtime.ts");
-  const appState = read("src/main/app-state.ts");
+  const appState = read("src/main/app/state.ts");
 
   assert.match(contracts, /DesktopWorkPanelCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;/u);
   assert.doesNotMatch(contracts, /workPanelFocused|setWorkPanelKeyboardFocusActive/u);
@@ -397,8 +410,8 @@ test("WorkPanel close shortcut uses visible composite ownership across renderer 
   assert.doesNotMatch(shellHandlers, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
   assert.match(shellHandlers, /ownerWindow !== mainWindow/u);
   assert.match(shellHandlers, /ipcMain\.on\("desktopShell\.requestWindowClose"/u);
-  assert.match(mainContext, /getMainWindow: \(\) => context\.state\.mainWindow/u);
-  assert.doesNotMatch(mainContext, /setWorkPanelKeyboardFocusActive/u);
+  assert.match(moduleRegistry, /getMainWindow: options\.getMainWindow/u);
+  assert.doesNotMatch(moduleRegistry, /setWorkPanelKeyboardFocusActive/u);
   assert.doesNotMatch(appState, /workPanelKeyboardFocusActive/u);
   assert.match(windowManager, /isCurrentWorkPanelGuest \|\| isCurrentMainChatGuest/u);
   assert.match(windowManager, /guestId: null, fallbackToWindowClose: true/u);

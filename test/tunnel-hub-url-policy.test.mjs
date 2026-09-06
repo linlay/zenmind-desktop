@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 const { isTunnelHubForbiddenHostname, isTunnelHubLoopbackHostname } = await import(
-  "../dist-electron/main/tunnel-hub-url-policy.js"
+  "../dist-electron/main/modules/tunnel/url-policy.js"
 );
 
 test("Tunnel Hub loopback hostname policy accepts only canonical loopback hosts", () => {

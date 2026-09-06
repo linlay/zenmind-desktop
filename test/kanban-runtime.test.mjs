@@ -13,12 +13,12 @@ const {
   readKanbanSettings,
   readKanbanWsConfig,
   resolveKanbanRunFinishedPush,
-} = await import("../dist-electron/main/kanban-runtime.js");
+} = await import("../dist-electron/main/modules/kanban/runtime.js");
 const {
   listDesktopKanbanRunEvents,
   recordDesktopKanbanCommandReceipt,
   updateDesktopKanbanCommandReceipt,
-} = await import("../dist-electron/main/kanban-local-store.js");
+} = await import("../dist-electron/main/modules/kanban/local-store.js");
 
 test("Kanban runtime accepts only the three run.finished status and finishReason pairs", () => {
   assert.deepEqual(resolveKanbanRunFinishedPush({

@@ -7,7 +7,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { getDesktopUsageProfile } = require("../dist-electron/main/usage-profile.js");
+const { getDesktopUsageProfile } = require("../dist-electron/main/modules/settings/usage-profile.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 
 function createTempDir(t, prefix) {

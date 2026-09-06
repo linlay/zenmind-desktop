@@ -18,7 +18,7 @@ const {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   openChatWorkPanelResourceInDefaultApp,
   revealChatWorkPanelResourceInFileManager,
-} = await import("../dist-electron/main/chat-work-panel-resource-open.js");
+} = await import("../dist-electron/main/modules/work-panel/resource-open.js");
 
 test("current resource actions use the allowlisted Service WebView bridge without absolute paths", () => {
   assert.equal(

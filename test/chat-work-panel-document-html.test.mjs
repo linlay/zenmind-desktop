@@ -7,7 +7,7 @@ import { createRequire } from "node:module";
 
 const {
   WorkPanelDocumentHtmlRegistry,
-} = await import("../dist-electron/main/chat-work-panel-document-html.js");
+} = await import("../dist-electron/main/modules/work-panel/document-html.js");
 const require = createRequire(import.meta.url);
 const {
   EMPTY_WORK_PANEL_STATE,

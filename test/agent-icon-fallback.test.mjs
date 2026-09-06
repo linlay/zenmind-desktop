@@ -25,7 +25,7 @@ test("agents without a known icon use the gray robot default", () => {
     "default.svg",
   );
 
-  assert.match(defaultAgentIcon, /<rect x="10" y="14" width="28" height="24" rx="6"/);
+  assert.match(defaultAgentIcon, /<rect x="4" y="7" width="16" height="12" rx="4"/);
   assert.match(defaultAgentIcon, /#94A3B8/);
   assert.match(
     agentIconSource,

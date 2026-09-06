@@ -5,7 +5,6 @@ import http from "node:http";
 import os from "node:os";
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
@@ -21,52 +20,91 @@ const {
   getWebappUserConfigPath,
   readWebappUserConfigState,
   readWebappItemFromDir,
-  readWebappItems,
+  readWebappItems: readWebappItemsRaw,
   writeWebappUserConfigValues,
   writeCanonicalWebappManifest
-} = require("../dist-electron/main/webs/webapps/store.js");
+} = require("../dist-electron/main/modules/webs/webapps/store.js");
 const {
-  removeWebappItem,
-  updateWebappItem
-} = require("../dist-electron/main/webs/webapps/actions.js");
-const { WebappRuntime } = require("../dist-electron/main/webs/webapps/runtime.js");
+  removeWebappItem: removeWebappItemRaw,
+  updateWebappItem: updateWebappItemRaw
+} = require("../dist-electron/main/modules/webs/webapps/actions.js");
+const { WebappRuntime: RawWebappRuntime } = require("../dist-electron/main/modules/webs/webapps/runtime.js");
 const {
   authorizeWebappActionToken,
   issueWebappActionToken,
   revokeWebappActionToken
-} = require("../dist-electron/main/webs/webapps/action-tokens.js");
+} = require("../dist-electron/main/modules/webs/webapps/action-tokens.js");
 const {
   getWebappAllowedActions,
   isWebappActionAllowed
-} = require("../dist-electron/main/webs/webapps/capability-policy.js");
+} = require("../dist-electron/main/modules/webs/webapps/capability-policy.js");
 const {
   readWebappRuntimeSettings,
   writeWebappRuntimeSettings
-} = require("../dist-electron/main/webs/webapps/runtime-settings.js");
+} = require("../dist-electron/main/modules/webs/webapps/runtime-settings.js");
 const {
   activateWebappInstall,
   commitWebappInstall,
   recoverWebappInstallTransactions,
   rollbackWebappInstall
-} = require("../dist-electron/main/webs/webapps/install-transaction.js");
+} = require("../dist-electron/main/modules/webs/webapps/install-transaction.js");
 const {
-  installWebsiteAppArchiveFromPath,
+  installWebsiteAppArchiveFromPath: installWebsiteAppArchiveThroughMarket,
   WebappInstallError,
   WebappInstallPolicyError
-} = require("../dist-electron/main/marketplace/website-app-market.js");
+} = require("../dist-electron/main/modules/marketplace/website-app-market.js");
 const {
   WEBAPP_BRIDGE_MODULE_SOURCE
-} = require("../dist-electron/main/webs/webapps/bridge-module.js");
+} = require("../dist-electron/main/modules/webs/webapps/bridge-module.js");
 const {
   clearWebappImageUploadsForTest,
   consumeWebappImageUpload,
   normalizeWebappImageUploadFile,
   registerWebappImageUpload,
   WEBAPP_IMAGE_INPUT_MAX_BYTES
-} = require("../dist-electron/main/webs/webapps/image-upload-registry.js");
+} = require("../dist-electron/main/modules/webs/webapps/image-upload-registry.js");
 const {
   createWebappImportDiagnostic
-} = require("../dist-electron/main/ipc/web-handlers.js");
+} = require("../dist-electron/main/modules/webs/ipc.js");
+const {
+  executeWebappToolingTask
+} = require("../dist-electron/main/modules/webs/webapps/tooling/service.js");
+const { createWebsFacade } = require("../dist-electron/main/modules/webs/index.js");
+const { getConfiguredDesktopActionBridgePort } = require("../dist-electron/main/modules/desktop-actions/settings.js");
+const marketplacePorts = require("../dist-electron/main/modules/marketplace/index.js");
+const tunnelPorts = require("../dist-electron/main/modules/tunnel/index.js");
+
+const websIntegrationPorts = {
+  getDesktopDeviceId: () => "webs-test-device",
+  getConfiguredDesktopActionBridgePort,
+  readInstalledRecords: marketplacePorts.readInstalledRecords,
+  removeInstalledRecordByResourceKey: marketplacePorts.removeInstalledRecordByResourceKey,
+  installWebsiteAppArchiveFromPath: (app, archivePath, options) =>
+    installWebsiteAppArchiveThroughMarket(app, archivePath, { ...options, webs: websFacade }),
+  deriveTunnelHubRegistrationApiOrigin: tunnelPorts.deriveTunnelHubRegistrationApiOrigin,
+  getTunnelHubRuntimeStatus: tunnelPorts.getTunnelHubRuntimeStatus,
+  startTunnelHubRuntime: tunnelPorts.startTunnelHubRuntime,
+  readTunnelHubRegistrationBearerToken: tunnelPorts.readTunnelHubRegistrationBearerToken,
+  readTunnelHubSettings: tunnelPorts.readTunnelHubSettings,
+  saveTunnelHubSettings: tunnelPorts.saveTunnelHubSettings,
+};
+const websFacade = createWebsFacade(websIntegrationPorts);
+const installWebsiteAppArchiveFromPath = (app, archivePath, options) =>
+  websFacade.webappManager.installArchive(app, archivePath, options);
+const readWebappItems = (app, platform) =>
+  readWebappItemsRaw(app, platform, websIntegrationPorts);
+const removeWebappItem = (app, id) =>
+  removeWebappItemRaw(app, id, websIntegrationPorts, {
+    runtime: websFacade.webappRuntime,
+    windowManager: websFacade.webappWindowManager
+  });
+const updateWebappItem = (app, id, input) =>
+  updateWebappItemRaw(app, id, input, websIntegrationPorts);
+class WebappRuntime extends RawWebappRuntime {
+  constructor() {
+    super(websIntegrationPorts);
+  }
+}
 
 function createApp(homePath) {
   return {
@@ -695,15 +733,14 @@ test("Tooling and Desktop installer share path and native artifact policy", asyn
   const projectRoot = writeWebapp(root, "tooling-policy-app");
   fs.mkdirSync(path.join(projectRoot, ".mypy_cache"), { recursive: true });
   fs.writeFileSync(path.join(projectRoot, ".mypy_cache", "cache.bin"), "cache", "utf8");
-  const tooling = spawnSync(process.execPath, [
-    path.join(process.cwd(), "scripts", "run-webapp-tooling.mjs"),
-    "package",
-    "validate",
-    "--project",
-    projectRoot
-  ], { cwd: process.cwd(), encoding: "utf8" });
-  assert.equal(tooling.status, 1);
-  assert.equal(JSON.parse(tooling.stdout).code, "disallowed_path");
+  await assert.rejects(
+    executeWebappToolingTask({
+      operation: "package.validate",
+      workspaceRoot: root,
+      projectPath: path.relative(root, projectRoot)
+    }),
+    (error) => error.code === "disallowed_path"
+  );
 
   const archive = await writeArchive(root, "installer-policy-app", {
     extraFiles: { "dist-cache/cache.bin": "cache" }
@@ -717,15 +754,14 @@ test("Tooling and Desktop installer share path and native artifact policy", asyn
 
   const nativeProjectRoot = writeWebapp(root, "tooling-native-app");
   fs.writeFileSync(path.join(nativeProjectRoot, "addon.node"), "not-native", "utf8");
-  const nativeTooling = spawnSync(process.execPath, [
-    path.join(process.cwd(), "scripts", "run-webapp-tooling.mjs"),
-    "package",
-    "validate",
-    "--project",
-    nativeProjectRoot
-  ], { cwd: process.cwd(), encoding: "utf8" });
-  assert.equal(nativeTooling.status, 1);
-  assert.equal(JSON.parse(nativeTooling.stdout).code, "native_artifact_forbidden");
+  await assert.rejects(
+    executeWebappToolingTask({
+      operation: "package.validate",
+      workspaceRoot: root,
+      projectPath: path.relative(root, nativeProjectRoot)
+    }),
+    (error) => error.code === "native_artifact_forbidden"
+  );
 
   const nativeArchive = await writeArchive(root, "installer-native-app", {
     extraFiles: { "addon.node": "not-native" }
@@ -744,17 +780,12 @@ test("WebApp Tooling preserves the project package without adding a Market manif
   const outputPath = path.join(root, "market-package.zip");
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-  const tooling = spawnSync(process.execPath, [
-    path.join(process.cwd(), "scripts", "run-webapp-tooling.mjs"),
-    "package",
-    "build",
-    "--project",
-    projectRoot,
-    "--output",
-    outputPath
-  ], { cwd: process.cwd(), encoding: "utf8" });
-  assert.equal(tooling.status, 0, tooling.stderr || tooling.stdout);
-  const result = JSON.parse(tooling.stdout);
+  const result = await executeWebappToolingTask({
+    operation: "package.build",
+    workspaceRoot: root,
+    projectPath: path.relative(root, projectRoot),
+    outputPath: path.relative(root, outputPath)
+  });
   const zip = await JSZip.loadAsync(fs.readFileSync(outputPath));
   assert.ok(zip.file(`${result.id}/webapp.json`));
   assert.equal(zip.file(`${result.id}/website.json`), null);

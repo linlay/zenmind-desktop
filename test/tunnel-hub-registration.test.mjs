@@ -13,11 +13,11 @@ const {
   configureTunnelHubRegistrationController,
   deriveTunnelHubRegistrationApiOrigin,
   ensureTunnelHubRegistrationReady
-} = require("../dist-electron/main/tunnel-hub-registration.js");
+} = require("../dist-electron/main/modules/tunnel/registration.js");
 const {
   readTunnelHubSettings,
   saveTunnelHubSettings
-} = require("../dist-electron/main/tunnel-hub-settings.js");
+} = require("../dist-electron/main/modules/tunnel/settings.js");
 
 function createApp(homePath) {
   return {

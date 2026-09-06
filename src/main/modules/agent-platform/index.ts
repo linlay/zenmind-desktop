@@ -1,0 +1,10 @@
+export { AgentPlatformAssistantBridge } from "./bridge";
+export type { AgentPlatformAssistantBridgePorts, AgentPlatformImageCompletionResult, AgentPlatformImageOperation } from "./bridge";
+export { registerCanonicalChatSyncIpc } from "./canonical-chat-sync";
+export { getAgentPlatformMinimaxSettingsPublic, listAgentPlatformUsageProviderCandidates } from "./config";
+export type { AgentPlatformSettingsPorts } from "./config";
+export type { AgentPlatformUsageProviderCandidate } from "./config";
+export { registerAgentWebclientBridgeIpcHandlers } from "./ipc";
+export { ensureProviderRegisterApiKey } from "./provider-register";
+export type { AgentPlatformRealtimeFrame } from "./realtime/agent-platform-realtime-client";
+export { AGENT_PLATFORM_KNOWN_PUSH_TYPES, RealtimeBroker } from "./realtime/realtime-broker";

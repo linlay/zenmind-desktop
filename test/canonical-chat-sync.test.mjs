@@ -21,7 +21,7 @@ const {
 } = require("../dist-electron/shared/canonical-chat-sync.js");
 const {
   registerCanonicalChatSyncIpc,
-} = require("../dist-electron/main/ipc/canonical-chat-sync.js");
+} = require("../dist-electron/main/modules/agent-platform/canonical-chat-sync.js");
 
 test("canonical Chat route promotion preserves unrelated query parameters and hash", () => {
   const source = "/agent/%E7%BC%96%E7%A8%8B?newChat=nonce-1&mode=review&mode=compact#draft";

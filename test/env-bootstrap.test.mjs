@@ -25,18 +25,20 @@ const {
   validateSelectedEnvZipForDesktopVersionUpgrade,
   runtimeEnvExists,
   runtimeEnvNeedsBundledSeedRefresh
-} = require(path.join(__dirname, "..", "dist-electron", "main", "env-bootstrap.js"));
+} = require(path.join(__dirname, "..", "dist-electron", "main", "infrastructure", "filesystem", "runtime-environment.js"));
 const {
   WINDOWS_RUNTIME_ROOT_REGISTRY_KEY,
   WINDOWS_RUNTIME_ROOT_REGISTRY_VALUE,
   __testInternals: runtimeRootInternals
-} = require(path.join(__dirname, "..", "dist-electron", "main", "runtime-root.js"));
+} = require(path.join(__dirname, "..", "dist-electron", "main", "infrastructure", "filesystem", "runtime-root.js"));
 const { APP_BRAND } = require(path.join(__dirname, "..", "dist-electron", "shared", "brand.js"));
 const { __testInternals: userPathInternals } = require(path.join(
   __dirname,
   "..",
   "dist-electron",
   "main",
+  "infrastructure",
+  "filesystem",
   "user-paths.js"
 ));
 

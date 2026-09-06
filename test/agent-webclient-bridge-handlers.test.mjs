@@ -4,7 +4,7 @@ import { EventEmitter } from "node:events";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/ipc/agent-webclient-bridge-handlers.js");
+const { registerAgentWebclientBridgeIpcHandlers } = require("../dist-electron/main/modules/agent-platform/ipc.js");
 const {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
@@ -14,7 +14,7 @@ const {
 } = require("../dist-electron/shared/contracts/agent-webclient-bridge.js");
 const {
   __testInternals: deprecatedCompatibilityInternals,
-} = require("../dist-electron/main/deprecated-compatibility.js");
+} = require("../dist-electron/main/support/logging/deprecated-compatibility.js");
 
 const EPOCH_MS = 1_788_000_000_000;
 
@@ -221,6 +221,9 @@ function createRuntime(targets, overrides = {}) {
       || (async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-1", renderer: "native-image" })),
     openDocument: overrides.openDocument
       || (async () => ({ ok: true, workspaceId: "workspace-1", itemId: "item-2", renderer: "native-document" })),
+    normalizeWorkPanelOpenLocalResourceRequest: (value) => ({
+      relativePath: String(value?.relativePath || "").replace(/\\/gu, "/"),
+    }),
   });
   const emitLifecycle = (event) => lifecycleListeners.forEach((listener) => listener(event));
   for (const target of targets.values()) {

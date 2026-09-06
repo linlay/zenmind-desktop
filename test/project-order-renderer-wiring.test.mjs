@@ -24,7 +24,7 @@ test("Projects reorder bridge is limited and wired across contract, preload, and
   const copilotContracts = readSource("src", "shared", "contracts", "copilot.ts");
   const desktopApi = readSource("src", "shared", "contracts", "desktop-api.ts");
   const preload = readSource("src", "preload", "index.ts");
-  const handlers = readSource("src", "main", "ipc", "assistant-handlers.ts");
+  const handlers = readSource("src", "main", "modules", "assistant", "ipc.ts");
 
   assert.match(copilotContracts, /interface AssistantReorderProjectsRequest[\s\S]*?agentKeys: string\[\]/u);
   assert.match(copilotContracts, /interface AssistantReorderProjectsResult[\s\S]*?agentKeys: string\[\][\s\S]*?updatedAt\?: EpochMilliseconds/u);

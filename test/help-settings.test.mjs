@@ -12,7 +12,7 @@ const {
   normalizeHelpUrl,
   readHelpSettings,
   writeHelpSettings
-} = require("../dist-electron/main/help-settings.js");
+} = require("../dist-electron/main/modules/settings/help-settings.js");
 const { APP_BRAND } = require("../dist-electron/shared/brand.js");
 const { buildDesktopHelpUrl } = require("../dist-electron/shared/help.js");
 

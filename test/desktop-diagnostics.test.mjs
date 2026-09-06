@@ -3,7 +3,7 @@ import test from "node:test";
 
 const {
   inspectIdentityAccessToken
-} = await import("../dist-electron/main/desktop-diagnostics.js");
+} = await import("../dist-electron/main/modules/shell/diagnostics.js");
 
 function encodeJwtPart(value) {
   return Buffer.from(JSON.stringify(value), "utf8").toString("base64url");

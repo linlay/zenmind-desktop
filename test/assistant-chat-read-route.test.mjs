@@ -12,8 +12,8 @@ function readSourceFile(...segments) {
 test("assistant chat navigation never writes read state and keeps explicit mark-all", () => {
   const contracts = readSourceFile("src", "shared", "contracts", "desktop-api.ts");
   const preload = readSourceFile("src", "preload", "index.ts");
-  const assistantHandlers = readSourceFile("src", "main", "ipc", "assistant-handlers.ts");
-  const bridge = readSourceFile("src", "main", "assistant", "core", "agent-platform-bridge.ts");
+  const assistantHandlers = readSourceFile("src", "main", "modules", "assistant", "ipc.ts");
+  const bridge = readSourceFile("src", "main", "modules", "agent-platform", "bridge.ts");
   const sidebar = readSourceFile("src", "renderer", "app-shell", "navigation", "AppSidebar.tsx");
 
   assert.doesNotMatch(contracts, /markChatRead/);

@@ -13,15 +13,15 @@ const {
   loadMainWindowRenderer,
   prepareWebviewAttachPreferences,
   createMainWindowLifecycleController
-} = await import("../dist-electron/main/window-manager.js");
+} = await import("../dist-electron/main/modules/shell/window-manager.js");
 const { PRODUCT_NAME } = await import("../dist-electron/shared/brand.js");
 const { DESKTOP_HELP_WEBVIEW_PARTITION } = await import("../dist-electron/shared/help.js");
 const { DESKTOP_SSO_WEBVIEW_PARTITION } = await import("../dist-electron/shared/sso.js");
 const {
   isWorkPanelCloseShortcut,
   resolveGlobalSearchCommandShortcut,
-} = await import("../dist-electron/main/platform-adapter.js");
-const { resolveWebviewOpenDisposition } = await import("../dist-electron/main/webview-open-tab.js");
+} = await import("../dist-electron/main/infrastructure/electron/platform-adapter.js");
+const { resolveWebviewOpenDisposition } = await import("../dist-electron/main/modules/web-surfaces/open-tab.js");
 
 class FakeWindow extends EventEmitter {
   destroyed = false;
