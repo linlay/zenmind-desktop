@@ -808,8 +808,15 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
     workspaceRoot
   };
 
+  const oldInitialization = await handleAgentPlatformDesktopActionRequest(options, {
+    action: "desktop.webapp.manifest.init", source,
+    args: { projectPath: "apps/example", key: "action-example", label: "Action Example" }
+  });
+  assert.equal(oldInitialization.error.code, "unknown_action");
+  assert.equal(fs.existsSync(path.join(workspaceRoot, "apps/example")), false);
+
   const initialized = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.manifest.init",
+    action: "desktop.webapp.init",
     source,
     args: {
       projectPath: "apps/example",

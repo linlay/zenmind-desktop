@@ -559,7 +559,7 @@ export async function executeAction(
     case "desktop.webapp.publish":
     case "desktop.webapp.unpublish":
       return executeWebAction(options, request, invocation, args);
-    case "desktop.webapp.manifest.init":
+    case "desktop.webapp.init":
     case "desktop.webapp.manifest.validate":
     case "desktop.webapp.package.validate":
     case "desktop.webapp.package.build":

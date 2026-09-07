@@ -760,7 +760,7 @@ export async function executeWebappToolingAction(
   if (!trusted.ok) return trusted.response;
 
   let task: WebappToolingTask;
-  if (action === "desktop.webapp.manifest.init") {
+  if (action === "desktop.webapp.init") {
     const invalid = rejectUnexpectedArgs(action, args, ["projectPath", "key", "label", "target"]);
     if (invalid) return invalid;
     const projectPath = readString(args, "projectPath");
