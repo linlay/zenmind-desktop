@@ -166,7 +166,7 @@
 - 打开旧 `/service/agent-webclient` 深链，确认重定向到 `/agents`；同一进程重复命中只记录一次。分别以固定旧 surface ID 和动态旧哈希执行受支持的 Desktop Web Action，确认仍解析到 canonical surface，每类与 canonical role 组合只记录一次，日志不含旧 ID、URL、identity key 或 Chat ID。
 - 用历史 Program bundle 验证 WorkPanel bridge：v4 仅旧 item 操作，v5 额外支持 resource，v6 支持当前完整能力，其他版本返回 version mismatch；重复同一 `version + method` 只记录一次。验证 `agent-webclient v0.3.59` 被安装/恢复/升级路径升级或拒绝启动，`v0.3.60` 正常启动。
 - 在 macOS、Windows 分别执行内置服务首次安装、旧版本升级和启动恢复，确认 identity 公钥由 `auth.publicKey` capability 提供；覆盖 capability 成功、命令失败、结果文件缺失和 canonical `keys/publicKey.pem` 回退，不执行 Desktop 内旧 `.env` 解析、身份脚本或 token 构造路径。
-- 在 macOS、Windows 用 Agent Workspace 相对路径执行 `manifest.init → manifest.validate → package.validate(projectPath) → package.build → package.validate(archivePath) → install(workspaceArchivePath) → checkRuntime → open → site.list`；覆盖绝对路径、URI、`..`、控制字符、符号链接/Junction 越界、输出已存在、断连和十分钟超时，确认失败无临时文件且所有响应与 Debug 记录不含 Workspace 绝对根路径。
+- 在 macOS、Windows 用 Agent Workspace 相对路径执行 `package.init → package.validate(projectPath) → package.build → package.validate(archivePath) → install(workspaceArchivePath) → checkRuntime → open → site.list`；覆盖绝对路径、URI、`..`、控制字符、符号链接/Junction 越界、输出已存在、断连和十分钟超时，确认失败无临时文件且所有响应与 Debug 记录不含 Workspace 绝对根路径。
 - 检查开发态与正式安装包：Tooling Worker 存在于 `app.asar` 编译产物，`Resources/scripts/webapp-tooling.mjs` 与 `Resources/tooling/webapp-tooling.mjs` 均不存在，所有内置服务和插件均未收到 `DESKTOP_WEBAPP_TOOLING_PATH` 或运行时 `DESKTOP_ROOT`。正式 `dist:mac/dist:win` 缺少匹配当前 Desktop 版本的 `env.zip` 时失败，开发模式不带 `env.zip` 仍可启动。
 - 用 WebApp Builder `0.2.0` 验证 Skill 包没有 `scripts/`、`--desktop-root`、磁盘扫描或 Node 子进程逻辑；版本化事务同步失败时回滚，不能留下新 Skill/旧 Desktop Action 或新 Desktop/旧 Skill 的混合组合。
 - 启动、市场刷新、插件加载和升级不再根据退休 denylist 删除、过滤或拒绝任何插件；插件程序、配置、用户数据、状态和日志均保持不变，显式卸载仍遵循现有用户选择。

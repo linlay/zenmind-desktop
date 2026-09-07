@@ -58,7 +58,7 @@ test("one-shot Tooling Worker completes the workspace-relative package workflow"
   const run = (task) => executeWebappToolingInWorker(task, { workerPath });
 
   const initialized = await run({
-    operation: "manifest.init",
+    operation: "package.init",
     workspaceRoot,
     projectPath: "apps/example",
     key: "production-example",
@@ -73,7 +73,7 @@ test("one-shot Tooling Worker completes the workspace-relative package workflow"
   const indexPath = path.join(workspaceRoot, "apps/example/frontend/index.html");
   fs.writeFileSync(indexPath, "<!doctype html><title>Custom</title>\n");
   const initializedAgain = await run({
-    operation: "manifest.init",
+    operation: "package.init",
     workspaceRoot,
     projectPath: "apps/example",
     key: "ignored-key",
@@ -83,19 +83,13 @@ test("one-shot Tooling Worker completes the workspace-relative package workflow"
   assert.equal(initializedAgain.key, initialized.key);
   assert.equal(fs.readFileSync(indexPath, "utf8"), "<!doctype html><title>Custom</title>\n");
 
-  const manifest = await run({
-    operation: "manifest.validate",
-    workspaceRoot,
-    projectPath: "apps/example"
-  });
-  assert.equal(manifest.id, initialized.id);
-
   const project = await run({
     operation: "package.validate",
     workspaceRoot,
     projectPath: "apps/example"
   });
   assert.ok(project.fileCount >= 2);
+  assert.equal(project.id, initialized.id);
 
   const built = await run({
     operation: "package.build",
@@ -143,7 +137,7 @@ test("Tooling rejects workspace escapes, ZIP Slip, compression bombs, and output
   const workerPath = path.join(projectRoot, "dist-electron/main/modules/webs/webapps/tooling/worker.js");
   const run = (task, options = {}) => executeWebappToolingInWorker(task, { workerPath, ...options });
   const initialized = await run({
-    operation: "manifest.init",
+    operation: "package.init",
     workspaceRoot,
     projectPath: "app",
     key: "security-example",
