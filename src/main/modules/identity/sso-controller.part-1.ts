@@ -95,7 +95,6 @@ export type EmbeddedLoginDialogOpenInput = {
 
 export type ElectronSessionAccess = {
   defaultSession: Session;
-  fromPartition(partition: string): Session;
 };
 
 export type DesktopSsoControllerOptions = {

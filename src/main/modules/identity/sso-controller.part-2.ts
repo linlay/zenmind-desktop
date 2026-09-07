@@ -57,7 +57,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     if (!config) {
       return null;
     }
-    const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+    const ssoSession = options.session.defaultSession;
     const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
     if (!cookieHeader) {
       throw new DesktopSsoRestoreRequestError("Desktop SSO browser session cookie is missing.", 401);
@@ -110,7 +110,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     if (!config) {
       return undefined;
     }
-    const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+    const ssoSession = options.session.defaultSession;
     const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
     if (!cookieHeader) {
       throw new DesktopSsoRestoreRequestError("Desktop SSO browser userinfo cookie is missing.", 401);
@@ -155,11 +155,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   }
 
   async function flushDesktopSsoSessions() {
-    const targetSessions = [
-      options.session.defaultSession,
-      options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
-    ];
+    const targetSessions = [options.session.defaultSession];
     await Promise.all(targetSessions.map(async (targetSession) => {
+      await targetSession.cookies.flushStore();
       if (typeof targetSession.flushStorageData === "function") {
         await targetSession.flushStorageData();
       }
@@ -174,7 +172,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     if (!exchangeUrl) {
       return "";
     }
-    const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+    const ssoSession = options.session.defaultSession;
     const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, exchangeUrl);
     if (!cookieHeader && exchangeOptions.requireCookie) {
       throw new DesktopSsoRestoreRequestError("Desktop SSO access-token exchange cookie is missing.", 401);
@@ -194,7 +192,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       return "";
     }
     const cookieDetails = getDesktopSsoAccessTokenCookieDetails(options.app, accessToken);
-    const targetSessions = [options.session.defaultSession, ssoSession];
+    const targetSessions = [ssoSession];
     await Promise.all(cookieDetails.flatMap((details) =>
       targetSessions.map(async (targetSession) => {
         await targetSession.cookies.set(details);
@@ -205,7 +203,6 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   }
 
   async function clearRestoredDesktopSsoCookies() {
-    const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
     const defaultSession = options.session.defaultSession;
     const knownOrigins = new Set([
       ...getDesktopSsoCookieMirrorOrigins(options.app),
@@ -226,23 +223,6 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }
     }));
     try {
-      const cookies = await ssoSession.cookies.get({});
-      await Promise.all(cookies.map(async (cookie) => {
-        const domain = cookie.domain?.replace(/^\./u, "") || "";
-        if (!domain) {
-          return;
-        }
-        const cookiePath = cookie.path?.startsWith("/") ? cookie.path : `/${cookie.path || ""}`;
-        try {
-          await ssoSession.cookies.remove(`${cookie.secure ? "https" : "http"}://${domain}${cookiePath}`, cookie.name);
-        } catch {
-          // Dedicated SSO partition cleanup is best effort.
-        }
-      }));
-    } catch {
-      // Failure to enumerate the dedicated partition does not restore local authentication.
-    }
-    try {
       await flushDesktopSsoSessions();
     } catch {
       // Cookie cleanup remains best effort after the canonical files are cleared.
@@ -250,10 +230,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   }
 
   async function clearDesktopSsoAccessTokenCookies() {
-    const targetSessions = [
-      options.session.defaultSession,
-      options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
-    ];
+    const targetSessions = [options.session.defaultSession];
     const cookieLookups = getDesktopSsoAccessTokenCookieLookups(options.app);
     await Promise.all(cookieLookups.flatMap((details) =>
       targetSessions.map(async (targetSession) => {
@@ -299,7 +276,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }
       let exchangeStatus: number | undefined;
       const accessToken = await exchangeBrowserCookieAccessToken(async (url, init) => {
-        const response = await options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION).fetch(url, init);
+        const response = await options.session.defaultSession.fetch(url, init);
         exchangeStatus = response.status;
         if (
           response.status === 401 ||
@@ -375,7 +352,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       browserOrigin?: string;
       resolveRedirect?: boolean;
     }) {
-      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const ssoSession = options.session.defaultSession;
       const userAgent = getDesktopSsoBrowserUserAgent(options.platform);
       await ssoSession.setProxy({ proxyRules: "direct://" });
       return options.openBrowserUrl({
@@ -400,7 +377,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           message: "Desktop SSO login window is unavailable."
         };
       }
-      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const ssoSession = options.session.defaultSession;
       const userAgent = getDesktopSsoBrowserUserAgent(options.platform);
       await ssoSession.setProxy({ proxyRules: "direct://" });
       const url = input.resolveRedirect === false
@@ -448,33 +425,9 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     },
     async syncBrowserCookies() {
       const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();
-      const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(options.app);
-      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
-      const targetSessions = [
-        options.session.defaultSession,
-        ssoSession
-      ];
-      await Promise.all(cookieDetails.flatMap((details) =>
-        targetSessions.map(async (targetSession) => {
-          await targetSession.cookies.set(details);
-        })
-      ));
-      await Promise.all(mirrorOrigins.map(async (origin) => {
-        const cookies = await ssoSession.cookies.get({ url: origin });
-        await Promise.all(cookies.map(async (cookie) => {
-          await options.session.defaultSession.cookies.set({
-            url: origin,
-            name: cookie.name,
-            value: cookie.value,
-            domain: cookie.domain || undefined,
-            path: cookie.path || "/",
-            secure: cookie.secure,
-            httpOnly: cookie.httpOnly,
-            expirationDate: cookie.expirationDate,
-            sameSite: cookie.sameSite
-          });
-        }));
-      }));
+      const defaultSession = options.session.defaultSession;
+      await Promise.all(cookieDetails.map((details) => defaultSession.cookies.set(details)));
+      await flushDesktopSsoSessions();
     },
     async validateBrowserSession(fetchImpl?: BrowserCookieFetch) {
       const browserSession = await probeBrowserSession(fetchImpl);
@@ -492,7 +445,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       if (!config) {
         return null;
       }
-      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const ssoSession = options.session.defaultSession;
       const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
       const headers: Record<string, string> = {
         Accept: "application/json"
@@ -607,15 +560,13 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       if (setCookieHeaders.length === 0) {
         return false;
       }
-      const targetSessions = [
-        options.session.defaultSession,
-        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
-      ];
+      const targetSessions = [options.session.defaultSession];
       await applyDesktopSsoSetCookieHeadersToSessions(
         targetSessions,
         [exchangeConfig.url, ...exchangeConfig.cookieOrigins],
         setCookieHeaders
       );
+      await flushDesktopSsoSessions();
       return true;
     },
     async exchangeWebSessionTicket(ticket: string, fetchImpl: WebSessionExchangeFetch = fetch as unknown as WebSessionExchangeFetch) {
@@ -642,15 +593,13 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       if (setCookieHeaders.length === 0) {
         return null;
       }
-      const targetSessions = [
-        options.session.defaultSession,
-        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
-      ];
+      const targetSessions = [options.session.defaultSession];
       await applyDesktopSsoSetCookieHeadersToSessions(
         targetSessions,
         [exchangeConfig.url, ...exchangeConfig.cookieOrigins],
         setCookieHeaders
       );
+      await flushDesktopSsoSessions();
       if (typeof response.json !== "function") {
         return null;
       }
@@ -663,7 +612,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
         return false;
       }
       const logoutUrl = new URL("/api/auth/logout", exchangeConfig.url).toString();
-      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
+      const ssoSession = options.session.defaultSession;
       const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, logoutUrl);
       const headers: Record<string, string> = {
         Accept: "application/json"
@@ -701,61 +650,24 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     },
     async clearBrowserCookies() {
       const cookieDetails = getDesktopSsoProxyBrowserCookieDetails();
-      const mirrorOrigins = getDesktopSsoCookieMirrorOrigins(options.app);
-      const ssoSession = options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION);
-      const targetSessions = [
-        options.session.defaultSession,
-        ssoSession
-      ];
-      await Promise.all(cookieDetails.flatMap((details) =>
-        targetSessions.map(async (targetSession) => {
-          try {
-            await targetSession.cookies.remove(details.url, details.name);
-          } catch {
-            // Cookie removal is best effort; local Desktop auth state is already cleared.
-          }
-        })
-      ));
-      await Promise.all(targetSessions.flatMap((targetSession) =>
-        mirrorOrigins.map(async (origin) => {
-          const cookies = await targetSession.cookies.get({ url: origin });
-          await Promise.all(cookies.map(async (cookie) => {
-            try {
-              await targetSession.cookies.remove(origin, cookie.name);
-            } catch {
-              // Cookie removal is best effort; local Desktop auth state is already cleared.
-            }
-          }));
-        })
-      ));
-      try {
-        const partitionCookies = await ssoSession.cookies.get({});
-        await Promise.all(partitionCookies.map(async (cookie) => {
-          const domain = cookie.domain?.replace(/^\./u, "") || "";
-          if (!domain) {
-            return;
-          }
-          const cookiePath = cookie.path?.startsWith("/") ? cookie.path : `/${cookie.path || ""}`;
-          const cookieUrl = `${cookie.secure ? "https" : "http"}://${domain}${cookiePath}`;
-          try {
-            await ssoSession.cookies.remove(cookieUrl, cookie.name);
-          } catch {
-            // Logout clears the dedicated partition on a best-effort basis.
-          }
-        }));
-      } catch {
-        // Failure to enumerate the dedicated partition does not block local logout.
-      }
+      const defaultSession = options.session.defaultSession;
+      await Promise.all(cookieDetails.map(async (details) => {
+        try {
+          await defaultSession.cookies.remove(details.url, details.name);
+        } catch {
+          // Cookie removal is best effort; local Desktop auth state is already cleared.
+        }
+      }));
+      // The default Session also contains unrelated Website cookies. Only clear
+      // configured identity origins, never enumerate and wipe the whole store.
+      await clearRestoredDesktopSsoCookies();
     },
     async clearWebSessionCookies() {
       const clearCookies = getDesktopSsoWebSessionClearCookies(options.app);
       if (clearCookies.length === 0) {
         return;
       }
-      const targetSessions = [
-        options.session.defaultSession,
-        options.session.fromPartition(DESKTOP_SSO_WEBVIEW_PARTITION)
-      ];
+      const targetSessions = [options.session.defaultSession];
       await Promise.all(clearCookies.flatMap((details) =>
         targetSessions.map(async (targetSession) => {
           try {
@@ -765,6 +677,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
           }
         })
       ));
+      await flushDesktopSsoSessions();
     }
   };
 }

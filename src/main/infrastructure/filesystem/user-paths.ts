@@ -129,7 +129,7 @@ function ensureDesktopDirs(dataRoot: string) {
   ensureDirectory(path.join(dataRoot, "logs", "webs"));
   ensureDirectory(path.join(dataRoot, "logs", "webs", "webapps"));
   ensureDirectory(path.join(dataRoot, "cache", "marketplace"));
-  ensureDirectory(path.join(dataRoot, "profiles", "electron"));
+  ensureDirectory(path.join(dataRoot, "state", "chromium"));
 }
 
 function kindDirectoryName(kind: ServiceKind) {
@@ -348,12 +348,14 @@ export function getSecretsRoot(app: App, platform: NodeJS.Platform = process.pla
 
 export const getCredentialsRoot = getSecretsRoot;
 
-export function getProfilesRoot(app: App) {
-  return path.join(getDataRoot(app), "profiles");
+export function getProfilesRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  const dataRoot = getDataRoot(app, platform);
+  return pathApiForRoot(platform, dataRoot).join(dataRoot, "profiles");
 }
 
-export function getElectronUserDataRoot(app: App) {
-  return path.join(getProfilesRoot(app), "electron");
+export function getElectronUserDataRoot(app: App, platform: NodeJS.Platform = process.platform) {
+  const dataRoot = getDataRoot(app, platform);
+  return pathApiForRoot(platform, dataRoot).join(dataRoot, "state", "chromium");
 }
 
 export const __testInternals = {

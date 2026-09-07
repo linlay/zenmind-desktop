@@ -21,7 +21,7 @@ Desktop 支持标准 OIDC 与基于浏览器 Cookie 的站点 SSO。两种模式
 Cookie SSO 的主流程为：
 
 ```text
-专用 Electron session 完成登录
+Electron 默认 session 完成登录
   -> 验证上游浏览器会话
   -> 取得稳定用户身份
   -> 交换 canonical access token
@@ -83,10 +83,12 @@ Tunnel Hub 不再为 Desktop 派生或持久化第二份 relay token/device secr
 
 ## Session 与页面隔离
 
-- 登录页面、Website 与普通 WorkPanel Web 使用专用、持久化的 Desktop 应用浏览器 partition，共享 Chromium 管理的应用 Cookie；WorkPanel 仍不获得 token 文件或 Token Bridge。
+- 登录页面、Website 与普通 WorkPanel Web 使用 Electron 持久化默认 session，共享 Chromium 管理的应用 Cookie；WorkPanel 仍不获得 token 文件或 Token Bridge。
+- 浏览器 profile 在 Electron ready 前固定；登录、恢复、换票与退出必须等待 Cookie store 完成写入或删除，不能以 DOM Storage 刷盘替代 Cookie 持久化。Cookie 的上游有效期保持不变，不把会话 Cookie 擅自延长为持久 Cookie。
+- 品牌隔离由外层数据根承担。Chromium 状态归 Desktop state 层管理，SSO 不创建命名 partition，Cookie 直接保存在默认 session 的数据根。升级时仅在新 Chromium 根尚不存在的情况下，于任何 Session 打开前将旧 SSO 存储整体提升为默认 session，并保留其他命名 partition；已存在的新存储不被旧数据覆盖或合并。
 - 普通 WebApp、Help、内置 Browser 与内置服务不因 URL 相似而继承该应用 Cookie session 或 SSO 能力。
 - 登录成功后的页面刷新由显式 capability 控制，不根据路由或域名猜测。
-- 退出只清理配置中已知的身份来源与派生 Cookie，不影响无关网站数据。
+- 退出只清理配置中已知的身份来源与派生 Cookie，不得清空默认 session 的全部 Cookie，也不影响无关网站数据。
 - 认证头像只允许来自配置的可信官网来源；主进程下载并转换为品牌隔离的本地协议 URL。
 
 ## 安全与失败原则

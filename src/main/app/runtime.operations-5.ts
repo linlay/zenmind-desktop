@@ -342,9 +342,6 @@ import type { CreateMainProcessRuntimeContext } from "./runtime.shared";
 export async function createMainProcessRuntime_handleAppReady_1(factoryContext: CreateMainProcessRuntimeContext) {
     factoryContext.setStartupPhase("platform-preflight");
     factoryContext.systemIdentityRuntime.ensureDockIdentity();
-    registerDesktopPetAssetProtocol(app, protocol, net, factoryContext.startupPlatform);
-    registerWebsiteFaviconProtocol(app, protocol, net, factoryContext.startupPlatform);
-    registerDesktopSsoAvatarProtocol(app, protocol, net, session, factoryContext.startupPlatform);
     factoryContext.setStartupPhase("runtime-env");
     const canContinueStartup = await factoryContext.startupEnvironmentRuntime.handleStartupEnvRootConflict();
     if (!canContinueStartup) {
@@ -359,6 +356,11 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     }
     factoryContext.setStartupPhase("runtime-env-ready");
     factoryContext.initializeUserDataRootsAndSettings();
+    // A first-install root migration must finish before protocol.handle creates
+    // the default Session and opens files in the already-configured profile.
+    registerDesktopPetAssetProtocol(app, protocol, net, factoryContext.startupPlatform);
+    registerWebsiteFaviconProtocol(app, protocol, net, factoryContext.startupPlatform);
+    registerDesktopSsoAvatarProtocol(app, protocol, net, session, factoryContext.startupPlatform);
     factoryContext.setStartupPhase("desktop-state-ready");
     const desktopSsoRestoreResult = await factoryContext.desktopSsoController.restoreDesktopSsoSession();
     factoryContext.applyDesktopSsoRestoreResult(desktopSsoRestoreResult);

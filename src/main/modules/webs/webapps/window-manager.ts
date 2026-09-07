@@ -14,6 +14,7 @@ import { t } from "../../../support/i18n/main-i18n";
 import { webappRuntime, type WebappRuntime } from "./runtime";
 import { readWebappItems } from "./store";
 import type { WebsIntegrationPorts } from "../integration-ports";
+import { DESKTOP_BROWSER_WEBVIEW_PARTITION } from "../../../../shared/browser-surfaces";
 
 type WebappWindowRecord = {
   window: BrowserWindow;
@@ -118,6 +119,7 @@ function buildWindowOptions(app: App, item: WebappEntry) {
     modal: false,
     backgroundColor: "#FFFFFF",
     webPreferences: {
+      partition: DESKTOP_BROWSER_WEBVIEW_PARTITION,
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true,
@@ -257,6 +259,7 @@ export class WebappWindowManager {
     const targetWindow = new BrowserWindow(buildWindowOptions(app, item));
     const webappView = new WebContentsView({
       webPreferences: {
+        partition: DESKTOP_BROWSER_WEBVIEW_PARTITION,
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: true,

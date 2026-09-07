@@ -7,6 +7,14 @@
 - Windows 开发模式和安装包分别检查主托盘区与溢出面板，确认使用透明品牌 tray 图，图标周围没有应用 ICO 的白色底板或淡色方框。
 - macOS 分别检查两品牌 Dock 和菜单栏图标，确认 Dock 图标尺寸不变，菜单栏仍按 template image 渲染。
 
+## SSO 重启恢复
+
+- macOS 与 Windows 分别在登录成功后立即完全退出并重启，确认上游会话有效时自动恢复同一账号并重新换取 token；再次重启仍保持登录。Windows 同时覆盖默认目录与安装器登记的自定义数据根。
+- 确认 SSO 使用默认 session，Cookie 直接写入当前品牌的 `state/chromium/Cookies`；Website 与普通 WorkPanel Web 共享该会话，内置 Browser、WebApp、Help 和 Service 不继承。退出登录后立即重启，不能恢复旧账号或 SSO Cookie，其他网站的 Cookie 应保留。
+- 旧 `profiles/electron/Partitions` 下的 SSO 存储应在新 Chromium 根不存在时整体迁移为默认 session，保留 Cookie 与网站存储；新 Chromium 根已存在时不得覆盖。
+- 上游明确拒绝时保持退出；断网或上游临时故障时保留恢复材料，联网后自动重试，不能直接沿用未经验证的旧 token。
+- macOS 首次安装覆盖旧运行根“保留”和“迁移备份”两种选择，确认引导分类正确，迁移后仍可登录并跨重启恢复。
+
 ## Windows 主窗口系统栏
 
 - 在 Kanban、设置和 Agent WebClient 页面确认薄系统栏独立横跨主窗口顶部，侧栏与内容从系统栏下方开始；浅色、深色和最大化状态下均无重叠或跳动。

@@ -303,6 +303,7 @@ test("desktop sso web session exchange uses configured provider", async (t) => {
   const setCookies = [];
   const fakeSession = {
     cookies: {
+      flushStore: async () => undefined,
       set: async (details) => {
         setCookies.push(details);
       },
@@ -340,7 +341,8 @@ test("desktop sso web session exchange uses configured provider", async (t) => {
     provider: "zenmind-session",
     id_token: "id-token-1"
   });
-  assert.equal(setCookies.length, 4);
+  assert.equal(setCookies.length, 2);
+  assert.ok(setCookies.every((cookie) => cookie.name === "sid" && cookie.value === "abc"));
 });
 
 function createCookieSsoControllerFixture(t, name) {
@@ -383,6 +385,7 @@ function createCookieSsoControllerFixture(t, name) {
   });
   const fakeSession = {
     cookies: {
+      flushStore: async () => undefined,
       set: async () => undefined,
       get: async () => [{ name: "_oauth2_proxy", value: "browser-session" }],
       remove: async () => undefined
@@ -437,11 +440,9 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler) {
 
   const calls = {
     defaultSets: [],
-    partitionSets: [],
     defaultRemoves: [],
-    partitionRemoves: [],
     defaultFlushes: 0,
-    partitionFlushes: 0,
+    defaultCookieFlushes: 0,
     fetches: []
   };
   const browserCookie = {
@@ -454,21 +455,15 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler) {
   };
   const defaultSession = {
     cookies: {
+      flushStore: async () => {
+        if (calls.cookieFlushError) throw calls.cookieFlushError;
+        calls.defaultCookieFlushes += 1;
+      },
       set: async (details) => { calls.defaultSets.push(details); },
       get: async ({ url } = {}) => url ? [{ ...browserCookie }] : [],
       remove: async (url, cookieName) => { calls.defaultRemoves.push({ url, name: cookieName }); }
     },
-    flushStorageData: async () => { calls.defaultFlushes += 1; }
-  };
-  const partitionSession = {
-    cookies: {
-      set: async (details) => { calls.partitionSets.push(details); },
-      get: async (filter = {}) => Object.keys(filter).length === 0
-        ? [{ ...browserCookie }]
-        : [{ ...browserCookie }],
-      remove: async (url, cookieName) => { calls.partitionRemoves.push({ url, name: cookieName }); }
-    },
-    flushStorageData: async () => { calls.partitionFlushes += 1; },
+    flushStorageData: async () => { calls.defaultFlushes += 1; },
     fetch: async (url, init) => {
       calls.fetches.push({ url, init });
       return fetchHandler(url, init, calls);
@@ -479,7 +474,7 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler) {
     platform: "darwin",
     session: {
       defaultSession,
-      fromPartition: () => partitionSession
+      fromPartition: () => assert.fail("SSO must use the default Session")
     },
     getMainWindow: () => null,
     openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
@@ -488,7 +483,7 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler) {
   return { app, controller, calls };
 }
 
-test("desktop sso restart always validates Cookie, exchanges a fresh JWT, and flushes both sessions", async (t) => {
+test("desktop sso restart always validates Cookie, exchanges a fresh JWT, and flushes the default session", async (t) => {
   const expiresAt = Math.floor(Date.now() / 1000) + 7_200;
   const oldToken = createUnsignedJwt({ sub: "old-user", exp: expiresAt + 7_200 });
   const freshToken = createUnsignedJwt({
@@ -555,14 +550,31 @@ test("desktop sso restart always validates Cookie, exchanges a fresh JWT, and fl
   assert.equal(storedSession.schemaVersion, 2);
   assert.equal(storedSession.authMode, "browser-cookie");
   assert.match(storedSession.message, /单点登录已完成|Single sign-on completed/ui);
-  for (const cookieWrites of [calls.defaultSets, calls.partitionSets]) {
+  for (const cookieWrites of [calls.defaultSets]) {
     const accessTokenCookie = cookieWrites.find((cookie) => cookie.name === "access_token");
     assert.ok(accessTokenCookie);
     assert.equal(accessTokenCookie.value, freshToken);
     assert.equal(accessTokenCookie.expirationDate, expiresAt);
   }
   assert.equal(calls.defaultFlushes, 2, "stale derived Cookie removal and fresh Cookie write are both flushed");
-  assert.equal(calls.partitionFlushes, 2, "stale derived Cookie removal and fresh Cookie write are both flushed");
+  assert.equal(calls.defaultCookieFlushes, 2, "DOM Storage flushes do not persist Cookie writes");
+});
+
+test("desktop sso restore retains candidates and stays unavailable when Cookie persistence fails", async (t) => {
+  const { app, controller, calls } = createCookieSsoRestoreFixture(
+    t, "zenmind-sso-restore-cookie-flush-", async () => { throw new Error("unexpected fetch"); }
+  );
+  const stateRoot = writeBrowserCookieRestoreCandidate(app);
+  calls.cookieFlushError = new Error("Cookie store unavailable");
+
+  const result = await controller.restoreDesktopSsoSession();
+
+  assert.equal(result.state, "temporarily_unavailable");
+  assert.equal(result.status.authenticated, false);
+  assert.match(result.status.error, /Cookie store unavailable/u);
+  assert.equal(calls.fetches.length, 0);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-session.json")), true);
+  assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), true);
 });
 
 test("desktop sso restart 401 clears canonical files and known cookies", async (t) => {
@@ -595,7 +607,6 @@ test("desktop sso restart 401 clears canonical files and known cookies", async (
     false
   );
   assert.ok(calls.defaultRemoves.some(({ name }) => name === "_oauth2_proxy"));
-  assert.ok(calls.partitionRemoves.some(({ name }) => name === "_oauth2_proxy"));
 });
 
 test("desktop sso restart keeps files unavailable on 5xx and retries with single-flight", async (t) => {
@@ -646,7 +657,6 @@ test("desktop sso restart keeps files unavailable on 5xx and retries with single
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-user-info.json")), true);
   assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), true);
   assert.ok(calls.defaultRemoves.some(({ name }) => name === "access_token"));
-  assert.ok(calls.partitionRemoves.some(({ name }) => name === "access_token"));
   assert.equal(getDesktopSsoStatus(app).authenticated, false);
   assert.equal(isDesktopSsoCredentialRuntimeReady(), false);
   assert.equal(getDesktopSsoStatus(app).authenticated, false, "status reads must not resurrect the disk candidate");
@@ -715,6 +725,7 @@ test("standard OIDC restart keeps file recovery and does not probe Cookie endpoi
   let fetchCount = 0;
   const fakeSession = {
     cookies: {
+      flushStore: async () => undefined,
       set: async () => undefined,
       get: async () => [],
       remove: async () => undefined
@@ -741,7 +752,7 @@ test("standard OIDC restart keeps file recovery and does not probe Cookie endpoi
   assert.equal(fetchCount, 0);
 });
 
-test("desktop sso logout clears every dedicated-partition cookie but scopes default-session cleanup", async (t) => {
+test("desktop sso logout scopes default-session cleanup to identity origins", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-switch-cookies-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const app = createApp(path.join(root, "home"));
@@ -756,10 +767,10 @@ test("desktop sso logout clears every dedicated-partition cookie but scopes defa
 
   const defaultGets = [];
   const defaultRemoves = [];
-  const partitionGets = [];
-  const partitionRemoves = [];
+  let cookieFlushes = 0;
   const defaultSession = {
     cookies: {
+      flushStore: async () => { cookieFlushes += 1; },
       set: async () => undefined,
       get: async (filter) => {
         defaultGets.push(filter);
@@ -768,28 +779,12 @@ test("desktop sso logout clears every dedicated-partition cookie but scopes defa
       remove: async (url, name) => { defaultRemoves.push({ url, name }); }
     }
   };
-  const partitionSession = {
-    cookies: {
-      set: async () => undefined,
-      get: async (filter) => {
-        partitionGets.push(filter);
-        if (Object.keys(filter).length === 0) {
-          return [
-            { name: "_oauth2_proxy", value: "sso", domain: ".ai.example.test", path: "/", secure: true },
-            { name: "eiam_session", value: "identity", domain: ".identity.example.test", path: "/oauth2", secure: true }
-          ];
-        }
-        return [{ name: "_oauth2_proxy", value: "sso", domain: ".ai.example.test", path: "/", secure: true }];
-      },
-      remove: async (url, name) => { partitionRemoves.push({ url, name }); }
-    }
-  };
   const controller = createDesktopSsoController({
     app,
     platform: "darwin",
     session: {
       defaultSession,
-      fromPartition: () => partitionSession
+      fromPartition: () => assert.fail("SSO must use the default Session")
     },
     getMainWindow: () => null,
     openBrowserUrl: async () => ({ ok: true, action: "open", target: "", url: "", message: "" }),
@@ -798,11 +793,10 @@ test("desktop sso logout clears every dedicated-partition cookie but scopes defa
 
   await controller.clearBrowserCookies();
 
+  assert.equal(cookieFlushes, 1, "logout must persist Cookie deletions before completing");
   assert.equal(defaultGets.every((filter) => typeof filter.url === "string"), true);
-  assert.equal(partitionGets.some((filter) => Object.keys(filter).length === 0), true);
   assert.equal(defaultRemoves.some(({ url }) => url.includes("identity.example.test")), false);
-  assert.equal(partitionRemoves.some(({ url, name }) =>
-    url === "https://identity.example.test/oauth2" && name === "eiam_session"), true);
+  assert.ok(defaultRemoves.some(({ name }) => name === "_oauth2_proxy"));
 });
 
 test("desktop sso cookie flow keeps session and userinfo when access token returns 401", async (t) => {

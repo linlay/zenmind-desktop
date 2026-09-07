@@ -8506,8 +8506,8 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
     indexOfRequired(ssoHandlers, 'ipcMain.handle("sso.cancelLogin"')
   );
 
-  assert.match(sharedSso, /export const DESKTOP_SSO_WEBVIEW_PARTITION = `persist:\$\{STORAGE_NAMESPACE\}-sso`;/);
-  assert.match(ssoController, /from "\.\.\/shared\/sso"/);
+  assert.match(sharedSso, /export const DESKTOP_SSO_WEBVIEW_PARTITION = "";/);
+  assert.match(ssoController, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/);
   assert.match(embeddedSurfaceHosts, /from "\.\.\/\.\.\/\.\.\/shared\/sso"/);
   assert.match(embeddedSurfaceHosts, /function resolveWebsiteSsoPartition\(item: EmbeddedSidebarItem\)[\s\S]{0,140}item\.kind === "website" \? DESKTOP_SSO_WEBVIEW_PARTITION : undefined/);
   assert.match(embeddedSurfaceHosts, /partition=\{resolveWebsiteSsoPartition\(item\)\}/);
@@ -8558,7 +8558,7 @@ test("embedded browser accepts host-opened tabs after multiple tabs exist", () =
   assert.match(externalWebviewPage, /webview\.reload\(\)/u);
   assert.match(externalWebviewPage, /const isHostOpenRequest = sourceGuestId < 0;/);
   assert.match(externalWebviewPage, /if \(isHostOpenRequest\) \{[\s\S]{0,220}if \(!activeRef\.current\) \{[\s\S]{0,80}return;[\s\S]{0,180}openTab\(nextUrl, "", \{[\s\S]{0,160}partition,[\s\S]{0,80}userAgent/);
-  assert.match(externalWebviewPage, /partition: activeTab\?\.partition,[\s\S]{0,80}userAgent: activeTab\?\.userAgent/);
+  assert.match(externalWebviewPage, /partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
   assert.match(externalWebviewPage, /afterTabId: sourceTab\.id,[\s\S]{0,120}partition: sourceTab\.partition,[\s\S]{0,80}userAgent: sourceTab\.userAgent/);
 });
 

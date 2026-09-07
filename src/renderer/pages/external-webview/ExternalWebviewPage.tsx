@@ -19,7 +19,7 @@ import {
   resolveLegacyFixedSurfaceId,
   type SurfaceIdentity
 } from "../../../shared/surface-identity";
-import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID } from "../../../shared/browser-surfaces";
+import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID, DESKTOP_BROWSER_WEBVIEW_PARTITION } from "../../../shared/browser-surfaces";
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import { normalizeWebviewBlobPopupUrl } from "../../../shared/webview-popup";
 import { closeWebTabFromOrder } from "../../../shared/web-tab-lifecycle";
@@ -484,7 +484,7 @@ export function ExternalWebviewPage({
   surfaceKind,
   surfaceLabel,
   chrome = "browser",
-  partition,
+  partition = DESKTOP_BROWSER_WEBVIEW_PARTITION,
   refreshOnDesktopSso = false,
   assistantDockOpen = false,
   onOpenAssistantDock,

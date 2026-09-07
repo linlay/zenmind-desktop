@@ -96,7 +96,6 @@ import {
   ensureDataRoot,
   getDataRoot,
   getDesktopConfigRoot,
-  getElectronUserDataRoot,
 } from "../infrastructure/filesystem/user-paths";
 
 import { EnterpriseChatRuntime } from "../modules/enterprise-chat";
@@ -674,9 +673,6 @@ export function createMainProcessRuntime_initializeUserDataRootsAndSettings_12(f
     if (factoryContext.isFirstDesktopInstall) {
         setMainLocale(app, initialLocaleSettings.locale);
     }
-    const electronUserDataRoot = getElectronUserDataRoot(app);
-    fs.mkdirSync(electronUserDataRoot, { recursive: true });
-    app.setPath("userData", electronUserDataRoot);
     const programDataCleanup = cleanupProgramDataForVersion(app, factoryContext.desktopAppInfo.version);
     if (programDataCleanup.cleaned) {
         console.info(`[main] refreshed program data for ${factoryContext.desktopAppInfo.version}: ${programDataCleanup.removedPaths.length} path(s) removed`);

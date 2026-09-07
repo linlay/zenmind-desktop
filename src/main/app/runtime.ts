@@ -21,6 +21,7 @@ import { t } from "../support/i18n/main-i18n";
 import { getFocusedWebviewDevToolsShortcut } from "../infrastructure/electron/platform-adapter";
 import { type DesktopSsoRestoreResult } from "../modules/identity";
 import { createMainAppState } from "./state";
+import { initializeElectronProfile } from "./bootstrap/electron-profile";
 import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../infrastructure/electron/bundle-paths";
 import { type AssistantBridgeRuntime } from "../modules/assistant";
 import { createAssistantRunWakeLock } from "../modules/assistant";
@@ -291,6 +292,10 @@ export function createMainProcessRuntime() {
   if (!gotSingleInstanceLock) {
     return { start() {} };
   }
+
+  // Keep startup snapshots and the existing single-instance lock ahead of profile
+  // creation, but configure Chromium storage before ready or any Session access.
+  initializeElectronProfile(app, startupPlatform);
   
   function delay(ms: number) { return createMainProcessRuntime_delay_13(factoryContext, ms); }
   
