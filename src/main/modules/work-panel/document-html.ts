@@ -4,6 +4,8 @@ import os from "node:os";
 import path from "node:path";
 import type { App, BrowserWindow, WebContents } from "electron";
 import {
+  type WorkPanelDocumentHtmlFileActionRequest,
+  type WorkPanelDocumentHtmlActionResult,
   type WorkPanelDocumentHtmlClaimRequest,
   type WorkPanelDocumentHtmlClaimResult,
   type WorkPanelDocumentHtmlCommitRequest,
@@ -17,11 +19,11 @@ import {
   type WorkPanelDocumentSource,
 } from "../../../shared/work-panel-document-html";
 import { resolveChatWorkPanelResourceFile } from "./resource-open";
+import { DocumentHtmlPreviewSessions, resolveDocumentLocalPath } from "./document-html-preview";
+import { performHtmlFileAction, type HtmlFileActionRuntime } from "./document-html-file-actions";
 
 const CLAIM_TTL_MS = 30_000;
 const HTML_MAX_BYTES = 8 * 1024 * 1024;
-const HTML_PREVIEW_ASSET_MAX_BYTES = 12 * 1024 * 1024;
-const HTML_PREVIEW_TOTAL_MAX_BYTES = 32 * 1024 * 1024;
 
 type DocumentHandle = Omit<WorkPanelDocumentHtmlSelection, "displayUrl"> & {
   source: WorkPanelDocumentSource;
@@ -67,7 +69,7 @@ type DocumentCommitResponse = {
   revision?: string;
 };
 
-type RegistryRuntime = {
+type RegistryRuntime = HtmlFileActionRuntime & {
   app: App;
   getMainWindow: () => BrowserWindow | null;
   fetchRemoteResource?: (input: {
@@ -162,56 +164,8 @@ function authorityRootFor(filePath: string, semanticPath: string) {
   }
 }
 
-function filepathFromSemanticPath(value: string) {
-  return value.split("/").filter(Boolean).join(path.sep);
-}
-
-function safePreviewResourcePath(baseSemanticPath: string, rawValue: string) {
-  const value = rawValue.trim();
-  if (!value || value.startsWith("#") || value.startsWith("//") || /^[a-z][a-z\d+.-]*:/iu.test(value)) return "";
-  try {
-    const baseDirectory = path.posix.dirname(`/${baseSemanticPath.replace(/\\/gu, "/").replace(/^\/+/, "")}`);
-    const url = new URL(value, `https://workpanel.invalid${baseDirectory}/`);
-    if (url.origin !== "https://workpanel.invalid") return "";
-    const decoded = decodeURIComponent(url.pathname).replace(/^\/+/, "");
-    const normalized = path.posix.normalize(decoded);
-    return normalized && normalized !== "." && normalized !== ".." && !normalized.startsWith("../")
-      ? normalized
-      : "";
-  } catch {
-    return "";
-  }
-}
-
-function previewAssetMime(fileName: string, declaredMime = "") {
-  const normalized = declaredMime.split(";", 1)[0].trim().toLowerCase();
-  if (/^(?:image|audio|video|font)\/[a-z\d.+-]+$/u.test(normalized) ||
-    /^(?:text\/(?:css|javascript)|application\/(?:javascript|json|wasm))$/u.test(normalized)) return normalized;
-  const extension = path.extname(fileName).toLowerCase();
-  const known: Record<string, string> = {
-    ".avif": "image/avif", ".bmp": "image/bmp", ".css": "text/css", ".gif": "image/gif",
-    ".ico": "image/x-icon", ".jpeg": "image/jpeg", ".jpg": "image/jpeg", ".js": "text/javascript",
-    ".mjs": "text/javascript", ".mp3": "audio/mpeg", ".mp4": "video/mp4", ".ogg": "audio/ogg",
-    ".png": "image/png", ".svg": "image/svg+xml", ".wasm": "application/wasm", ".wav": "audio/wav",
-    ".webm": "video/webm", ".webp": "image/webp", ".woff": "font/woff", ".woff2": "font/woff2",
-  };
-  return known[extension] || "application/octet-stream";
-}
-
-async function replaceAsync(
-  input: string,
-  pattern: RegExp,
-  replacer: (match: RegExpExecArray) => Promise<string>,
-) {
-  let output = "";
-  let offset = 0;
-  pattern.lastIndex = 0;
-  for (let match = pattern.exec(input); match; match = pattern.exec(input)) {
-    output += input.slice(offset, match.index) + await replacer(match);
-    offset = match.index + match[0].length;
-    if (match[0].length === 0) pattern.lastIndex += 1;
-  }
-  return output + input.slice(offset);
+function sourcePath(source: WorkPanelDocumentSource) {
+  return (source.kind === "workspace-file" ? source.path : source.relativePath).replace(/\\/gu, "/");
 }
 
 function selection(handle: DocumentHandle): WorkPanelDocumentHtmlSelection {
@@ -230,6 +184,12 @@ function selection(handle: DocumentHandle): WorkPanelDocumentHtmlSelection {
 }
 
 export class WorkPanelDocumentHtmlRegistry {
+  readonly previews: DocumentHtmlPreviewSessions;
+
+  constructor(createSession?: ConstructorParameters<typeof DocumentHtmlPreviewSessions>[0]) {
+    this.previews = new DocumentHtmlPreviewSessions(createSession);
+  }
+
   private runtime: RegistryRuntime | null = null;
   private readonly claims = new Map<string, PendingClaim>();
   private readonly handles = new Map<string, DocumentHandle>();
@@ -254,6 +214,7 @@ export class WorkPanelDocumentHtmlRegistry {
   }
 
   private releaseHandle(handle: DocumentHandle) {
+    this.previews.release(handle.handleId);
     this.handles.delete(handle.handleId);
     if (handle.temporary) removeTemporary(handle.filePath);
   }
@@ -290,7 +251,7 @@ export class WorkPanelDocumentHtmlRegistry {
         filePath,
         temporary: false,
         revision: revisionForFile(filePath),
-        semanticPath: input.source.path,
+        semanticPath: sourcePath(input.source),
         authorityRoot: authorityRootFor(filePath, input.source.path),
       } : null;
     }
@@ -304,7 +265,7 @@ export class WorkPanelDocumentHtmlRegistry {
         filePath: resolved.path,
         temporary: false,
         revision: revisionForFile(resolved.path),
-        semanticPath: input.source.relativePath,
+        semanticPath: sourcePath(input.source),
         authorityRoot: authorityRootFor(resolved.path, input.source.relativePath),
       };
     }
@@ -324,7 +285,7 @@ export class WorkPanelDocumentHtmlRegistry {
       filePath,
       temporary: true,
       revision: cleanText(remote.revision, 512),
-      semanticPath: input.source.relativePath,
+      semanticPath: sourcePath(input.source),
       authorityRoot: "",
     };
   }
@@ -397,7 +358,7 @@ export class WorkPanelDocumentHtmlRegistry {
       Object.assign(existing, {
         filePath: claim.filePath,
         temporary: claim.temporary,
-        semanticPath: claim.source.kind === "workspace-file" ? claim.source.path : claim.source.relativePath,
+        semanticPath: sourcePath(claim.source),
         authorityRoot: claim.temporary
           ? ""
           : authorityRootFor(
@@ -405,7 +366,7 @@ export class WorkPanelDocumentHtmlRegistry {
               claim.source.kind === "workspace-file" ? claim.source.path : claim.source.relativePath,
             ),
         localOriginal: !claim.temporary,
-        fileName: inspection.fileName,
+        fileName: path.posix.basename(sourcePath(claim.source)),
         mimeType: inspection.mimeType,
         sizeBytes: inspection.sizeBytes,
         revision: claim.revision,
@@ -424,14 +385,14 @@ export class WorkPanelDocumentHtmlRegistry {
       rendererWebContentsId: sender.id,
       filePath: claim.filePath,
       temporary: claim.temporary,
-      semanticPath: claim.source.kind === "workspace-file" ? claim.source.path : claim.source.relativePath,
+      semanticPath: sourcePath(claim.source),
       authorityRoot: claim.temporary
         ? ""
         : authorityRootFor(
             claim.filePath,
             claim.source.kind === "workspace-file" ? claim.source.path : claim.source.relativePath,
           ),
-      fileName: inspection.fileName,
+      fileName: path.posix.basename(sourcePath(claim.source)),
       mimeType: inspection.mimeType,
       sizeBytes: inspection.sizeBytes,
       revision: claim.revision,
@@ -444,69 +405,11 @@ export class WorkPanelDocumentHtmlRegistry {
   read(request: WorkPanelDocumentHtmlHandleRequest, sender: WebContents): WorkPanelDocumentHtmlReadResult {
     const handle = this.ownedHandle(request, sender);
     if (!handle) return { ok: false, message: "Native HTML handle is unavailable." };
-    const inspection = inspectHtml(handle.filePath);
+    const inspection = inspectHtml(resolveDocumentLocalPath(handle));
     if (inspection && !handle.temporary) handle.revision = inspection.revision;
     return inspection
       ? { ok: true, text: inspection.text, revision: handle.temporary ? handle.revision : inspection.revision }
       : { ok: false, message: "Native HTML document is unavailable." };
-  }
-
-  private async previewAssetDataUrl(
-    handle: DocumentHandle,
-    semanticPath: string,
-    budget: { bytes: number },
-    cache: Map<string, string | null>,
-    depth = 0,
-  ): Promise<string | null> {
-    if (depth > 2) return null;
-    if (cache.has(semanticPath)) return cache.get(semanticPath) ?? null;
-    cache.set(semanticPath, null);
-    let bytes: Buffer;
-    let declaredMime = "";
-    if (handle.authorityRoot) {
-      try {
-        const candidate = path.join(handle.authorityRoot, filepathFromSemanticPath(semanticPath));
-        const canonical = fs.realpathSync(candidate);
-        const relative = path.relative(handle.authorityRoot, canonical);
-        if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) return null;
-        const info = fs.statSync(canonical);
-        if (!info.isFile() || info.size <= 0 || info.size > HTML_PREVIEW_ASSET_MAX_BYTES) return null;
-        bytes = fs.readFileSync(canonical);
-      } catch {
-        return null;
-      }
-    } else if (handle.source.kind !== "workspace-file" && this.runtime?.fetchRemoteResource) {
-      const remote = await this.runtime.fetchRemoteResource({
-        chatId: handle.source.chatId,
-        relativePath: semanticPath,
-      });
-      if (!remote || remote.bytes.length <= 0 || remote.bytes.length > HTML_PREVIEW_ASSET_MAX_BYTES) return null;
-      bytes = remote.bytes;
-      declaredMime = remote.mimeType;
-    } else {
-      return null;
-    }
-    if (budget.bytes + bytes.length > HTML_PREVIEW_TOTAL_MAX_BYTES) return null;
-    budget.bytes += bytes.length;
-    const mimeType = previewAssetMime(semanticPath, declaredMime);
-    if (mimeType === "text/css") {
-      const css = bytes.toString("utf8");
-      if (Buffer.from(css, "utf8").equals(bytes) && !css.includes("\0")) {
-        const rewritten = await replaceAsync(css, /url\(\s*(["']?)([^"')]+)\1\s*\)/giu, async (match) => {
-          const nestedPath = safePreviewResourcePath(semanticPath, match[2] || "");
-          const nested = nestedPath
-            ? await this.previewAssetDataUrl(handle, nestedPath, budget, cache, depth + 1)
-            : null;
-          return nested ? `url("${nested}")` : match[0];
-        });
-        const result = `data:text/css;charset=utf-8;base64,${Buffer.from(rewritten, "utf8").toString("base64")}`;
-        cache.set(semanticPath, result);
-        return result;
-      }
-    }
-    const result = `data:${mimeType};base64,${bytes.toString("base64")}`;
-    cache.set(semanticPath, result);
-    return result;
   }
 
   async preview(
@@ -514,30 +417,17 @@ export class WorkPanelDocumentHtmlRegistry {
     sender: WebContents,
   ): Promise<WorkPanelDocumentHtmlPreviewResult> {
     const handle = this.ownedHandle(request, sender);
-    if (!handle || typeof request.text !== "string" || request.text.includes("\0") || Buffer.byteLength(request.text, "utf8") > HTML_MAX_BYTES) {
-      return { ok: false, message: "Native HTML preview request is invalid." };
-    }
-    const budget = { bytes: 0 };
-    const cache = new Map<string, string | null>();
-    let text = request.text;
-    const rewriteAttribute = async (match: RegExpExecArray) => {
-      const semanticPath = safePreviewResourcePath(handle.semanticPath, match[3] || "");
-      const dataUrl = semanticPath
-        ? await this.previewAssetDataUrl(handle, semanticPath, budget, cache)
-        : null;
-      return dataUrl ? `${match[1]}${match[2]}${dataUrl}${match[2]}` : match[0];
-    };
-    text = await replaceAsync(
-      text,
-      /(<(?:img|script|iframe|source|video|audio|input)\b[^>]*?\s(?:src|poster)\s*=\s*)(["'])([^"']+)\2/giu,
-      rewriteAttribute,
-    );
-    text = await replaceAsync(
-      text,
-      /(<link\b[^>]*?\shref\s*=\s*)(["'])([^"']+)\2/giu,
-      rewriteAttribute,
-    );
-    return { ok: true, text };
+    if (!handle) return { ok: false, message: "Native HTML handle is unavailable." };
+    if (!resolveDocumentLocalPath(handle)) return { ok: false, message: "Native HTML document is unavailable." };
+    const read = this.read(request, sender);
+    if (!read.ok) return { ok: false, message: read.message };
+    return { ok: true, ...this.previews.open(handle, this.runtime?.fetchRemoteResource), revision: read.revision };
+  }
+
+  async fileAction(request: WorkPanelDocumentHtmlFileActionRequest, sender: WebContents): Promise<WorkPanelDocumentHtmlActionResult> {
+    const handle = this.ownedHandle(request, sender);
+    if (!handle || !this.runtime) return { ok: false, message: "Native HTML handle is unavailable." };
+    return performHtmlFileAction(handle, request.action, this.runtime, () => this.ownedHandle(request, sender) === handle && !sender.isDestroyed());
   }
 
   release(request: WorkPanelDocumentHtmlReleaseRequest, sender: WebContents) {
@@ -639,7 +529,7 @@ export class WorkPanelDocumentHtmlRegistry {
       temporary: reopened.temporary,
       semanticPath: reopened.semanticPath,
       authorityRoot: reopened.authorityRoot,
-      fileName: inspection.fileName,
+      fileName: path.posix.basename(reopened.semanticPath),
       mimeType: inspection.mimeType,
       sizeBytes: inspection.sizeBytes,
       revision: cleanText(response.revision, 512) || reopened.revision || inspection.revision,
@@ -672,6 +562,8 @@ export function registerChatWorkPanelDocumentHtmlIpcHandlers(
     authorized(event.sender) ? workPanelDocumentHtmlRegistry.read(request, event.sender) : { ok: false, message: "Unauthorized renderer." });
   ipcMain.handle("chatWorkPanel.documentHtml.preview", (event, request) =>
     authorized(event.sender) ? workPanelDocumentHtmlRegistry.preview(request, event.sender) : { ok: false, message: "Unauthorized renderer." });
+  ipcMain.handle("chatWorkPanel.documentHtml.fileAction", (event, request) =>
+    authorized(event.sender) ? workPanelDocumentHtmlRegistry.fileAction(request, event.sender) : { ok: false, message: "Unauthorized renderer." });
   ipcMain.handle("chatWorkPanel.documentHtml.release", (event, request) =>
     authorized(event.sender) ? workPanelDocumentHtmlRegistry.release(request, event.sender) : { ok: false, message: "Unauthorized renderer." });
   ipcMain.handle("chatWorkPanel.documentHtml.commit", (event, request) =>

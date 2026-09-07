@@ -36,7 +36,7 @@
     "dist:win": "node ./scripts/dist-win.mjs",
     "dist:win-docker": "node ./scripts/dist-win.mjs --docker",
     "test": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run i18n:check && npm run build && node --test --test-concurrency=1 ./test/*.test.mjs",
-    "test:unit": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:types && node --test --test-concurrency=1 ./test/*.test.mjs"
+    "test:unit": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:prepared && node --test --test-concurrency=1 ./test/*.test.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.1",

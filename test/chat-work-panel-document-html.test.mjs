@@ -4,6 +4,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { createRequire } from "node:module";
+import { createHtmlTestSession } from "./helpers/document-html-session.mjs";
 
 const {
   WorkPanelDocumentHtmlRegistry,
@@ -49,7 +50,8 @@ test("native HTML workspace claims are opaque, sender-bound, editable, and revis
       "<img src='../assets/logo.png'><img src='../escaped.txt'>",
   );
   const commits = [];
-  const registry = new WorkPanelDocumentHtmlRegistry();
+  const previewSession = createHtmlTestSession();
+  const registry = new WorkPanelDocumentHtmlRegistry(() => previewSession.session);
   configureRegistry(registry, root, {
     commitDocument: async (payload) => {
       commits.push(payload);
@@ -103,12 +105,17 @@ test("native HTML workspace claims are opaque, sender-bound, editable, and revis
     assert.equal(read.ok, true);
     assert.match(read.text, /Original/u);
     assert.equal(read.revision, claimed.document.revision);
-    const preview = await registry.preview({ ...requestIdentity, text: read.text }, webContents);
+    const preview = await registry.preview(requestIdentity, webContents);
     assert.equal(preview.ok, true);
-    assert.match(preview.text, /data:image\/png;base64,/u);
-    assert.match(preview.text, /data:text\/css;charset=utf-8;base64,/u);
-    assert.doesNotMatch(preview.text, /must-not-be-inlined/u);
-    assert.match(preview.text, /src='\.\.\/escaped\.txt'/u);
+    assert.match(preview.url, /^zenmind-document-html:\/\//u);
+    assert.equal(preview.revision, read.revision);
+    assert.equal("text" in preview, false);
+    assert.equal(await (await previewSession.request(preview.url)).text(), read.text);
+    const css = await previewSession.request(new URL("style.css", preview.url).href);
+    assert.equal(css.headers.get("Content-Type"), "text/css");
+    assert.match(await css.text(), /url\('\.\.\/assets\/logo.png'\)/u);
+    assert.equal((await previewSession.request(new URL("../assets/logo.png", preview.url).href)).status, 200);
+    assert.equal((await previewSession.request(new URL("../escaped.txt", preview.url).href)).status, 404);
 
     const stale = await registry.commit({
       ...requestIdentity,
@@ -181,6 +188,7 @@ test("remote native HTML keeps the Platform revision and Reference only creates 
     }, webContents);
     assert.equal(claimed.ok, true);
     assert.equal(claimed.document.revision, "platform-revision-1");
+    assert.equal(claimed.document.fileName, "source.html", "remote file actions must not use the internal cache basename");
     assert.equal(claimed.document.displayUrl, "reference:///references/source.html");
     const identity = {
       ownerChatId: "chat-reference",

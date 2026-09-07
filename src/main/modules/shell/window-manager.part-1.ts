@@ -1,3 +1,4 @@
+import { WORK_PANEL_DOCUMENT_HTML_PROTOCOL } from "../../../shared/work-panel-document-html";
 import type { App, BrowserWindow, NativeTheme } from "electron";
 
 import { PRODUCT_NAME } from "../../../shared/brand";
@@ -99,6 +100,11 @@ export type WebviewAttachInput = {
     nodeIntegration?: boolean;
     contextIsolation?: boolean;
     sandbox?: boolean;
+    webSecurity?: boolean;
+    webviewTag?: boolean;
+    nodeIntegrationInSubFrames?: boolean;
+    nodeIntegrationInWorker?: boolean;
+    allowRunningInsecureContent?: boolean;
   };
   params: {
     preload?: unknown;
@@ -109,6 +115,7 @@ export type WebviewAttachInput = {
   servicePreloadUrl: string;
   isSafeServiceUrl(value: string): unknown;
   isReviewableLocalFileUrl?(value: string): boolean;
+  isDocumentHtmlPreview?(url: string, partition: string): boolean;
 };
 
 export type WebviewAttachResult =
@@ -175,6 +182,7 @@ export type AttachedWebviewOptions<
   resolveBlobPopupTarget?(contents: TGuestContents): BlobPopupTarget | null;
   getHelpUrl?(): string;
   isHelpWebview?(contents: TGuestContents): boolean;
+  restrictedDocumentPreview?: boolean;
   openExternal(url: string): Promise<unknown>;
   schedule(callback: () => void): void;
 };
@@ -461,6 +469,21 @@ export function configureMediaPermissions<TWindow extends MediaPermissionWindowL
 export function prepareWebviewAttachPreferences(input: WebviewAttachInput): WebviewAttachResult {
   const requestedPreload = String(input.webPreferences.preload || input.params.preload || "");
   const src = String(input.params.src || "");
+  const documentPreloadPath = input.servicePreloadPath.replace(/service-webview\.js$/u, "document-html-review.js");
+  const documentPreloadUrl = input.servicePreloadUrl.replace(/service-webview\.js$/u, "document-html-review.js");
+  const usesDocumentPreload = requestedPreload === documentPreloadPath || requestedPreload === documentPreloadUrl;
+  const partition = String(input.params.partition || "");
+  if (usesDocumentPreload || src.startsWith(`${WORK_PANEL_DOCUMENT_HTML_PROTOCOL}:`) || partition.startsWith("work-panel-document-html:")) {
+    if (!usesDocumentPreload || input.isDocumentHtmlPreview?.(src, partition) !== true) {
+      return { ok: false, reason: "unsafe-review-url", src };
+    }
+    Object.assign(input.webPreferences, {
+      preload: documentPreloadPath, nodeIntegration: false, nodeIntegrationInSubFrames: false,
+      nodeIntegrationInWorker: false, contextIsolation: true, sandbox: true, webSecurity: true,
+      webviewTag: false, allowRunningInsecureContent: false,
+    });
+    return { ok: true };
+  }
   const reviewPreloadPath = input.servicePreloadPath.replace(
     /service-webview\.js$/u,
     "work-panel-preview.js",

@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 
 function read(relativePath) {
@@ -9,12 +8,11 @@ function read(relativePath) {
 
 test("native WorkPanel HTML stays a full-size preview with annotation-only editing", () => {
   const surface = read("src/renderer/work-panel/WorkPanelDocumentHtml.tsx");
-  const reviewScript = read("src/renderer/work-panel/work-panel-document-html-review.js").trim();
+  const reviewScript = read("src/preload/document-html-review.ts");
   const host = read("src/renderer/work-panel/WorkPanelHost.tsx");
   const css = read("src/renderer/styles/app-shell.css");
   const rendererIndex = read("index.html");
   const brandArtifacts = read("scripts/lib/brand-artifacts.mjs");
-  const reviewScriptCspSource = `'sha256-${createHash("sha256").update(reviewScript).digest("base64")}'`;
 
   assert.doesNotMatch(surface, /\bSegmented\b|type ViewMode|documentHtml\.commit/u);
   assert.doesNotMatch(
@@ -37,17 +35,15 @@ test("native WorkPanel HTML stays a full-size preview with annotation-only editi
   assert.match(surface, /okButtonProps=\{\{ disabled: !pendingNote\.trim\(\) \}\}/u);
   assert.match(surface, /setPendingAnnotation[\s\S]*?confirmPendingAnnotation/u);
   assert.match(surface, /zenmind-html-annotation-mode/u);
-  assert.match(surface, /work-panel-document-html-review\.js\?raw/u);
-  assert.match(surface, /data-zenmind-review-token/u);
-  assert.match(reviewScript, /document\.currentScript/u);
+  assert.match(surface, /<webview[\s\S]*?partition=\{preview\.partition\}/u);
+  assert.match(reviewScript, /ipcRenderer\.sendToHost/u);
+  assert.doesNotMatch(reviewScript, /contextBridge\.exposeInMainWorld|parent\.postMessage/u);
   assert.match(reviewScript, /addEventListener\("pointermove"[\s\S]*?addEventListener\("pointerdown"[\s\S]*?addEventListener\("pointerup"/u);
   assert.match(reviewScript, /stopImmediatePropagation/u);
   assert.match(reviewScript, /elementsFromPoint/u);
-  assert.match(reviewScript, /zenmindReviewMarker/u);
   assert.match(rendererIndex, /script-src 'self'/u);
-  assert.ok(rendererIndex.includes(reviewScriptCspSource));
-  assert.ok(brandArtifacts.includes(reviewScriptCspSource));
-  assert.doesNotMatch(surface, /allow-same-origin/u);
+  assert.match(brandArtifacts, /script-src 'self'/u);
+  assert.doesNotMatch(surface, /allow-same-origin|srcDoc|annotatedHtml/u);
   assert.match(surface, /onHandoff\(annotations\.filter/u);
   assert.match(surface, /data-work-panel-document-dirty=\{annotations\.length > 0/u);
   assert.doesNotMatch(host, /<WorkPanelDocumentHtml[\s\S]{0,500}?onCommitted=/u);
@@ -58,6 +54,7 @@ test("native WorkPanel HTML stays a full-size preview with annotation-only editi
   );
   assert.match(
     css,
-    /\.work-panel-document-html-body\s*>\s*iframe\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?height:\s*100%;/u,
+    /\.work-panel-document-html-body\s*>\s*webview\s*\{[\s\S]*?position:\s*absolute;[\s\S]*?inset:\s*0;[\s\S]*?height:\s*100%;/u,
   );
+  assert.match(css, /\.work-panel-document-html-body\s*>\s*webview\s*\{[^}]*display:\s*flex;/u);
 });

@@ -102,6 +102,7 @@ import type {
   WorkPanelResourceImageReleaseRequest,
 } from "../work-panel-resource-image";
 import type {
+  WorkPanelDocumentHtmlFileActionRequest,
   WorkPanelDocumentHtmlActionResult,
   WorkPanelDocumentHtmlClaimRequest,
   WorkPanelDocumentHtmlClaimResult,
@@ -1177,6 +1178,7 @@ export interface DesktopApi {
       claim: (input: WorkPanelDocumentHtmlClaimRequest) => Promise<WorkPanelDocumentHtmlClaimResult>;
       read: (input: WorkPanelDocumentHtmlHandleRequest) => Promise<WorkPanelDocumentHtmlReadResult>;
       preview: (input: WorkPanelDocumentHtmlPreviewRequest) => Promise<WorkPanelDocumentHtmlPreviewResult>;
+      fileAction: (input: WorkPanelDocumentHtmlFileActionRequest) => Promise<WorkPanelDocumentHtmlActionResult>;
       release: (input: WorkPanelDocumentHtmlReleaseRequest) => Promise<WorkPanelDocumentHtmlActionResult>;
       commit: (input: WorkPanelDocumentHtmlCommitRequest) => Promise<WorkPanelDocumentHtmlCommitResult>;
     };

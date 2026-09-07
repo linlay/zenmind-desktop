@@ -75,10 +75,10 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
   }
   if (
     value.mode === "work-panel" &&
-    keys.length >= 7 && keys.length <= 9 &&
+    keys.length >= 7 && keys.length <= 10 &&
     keys.every((key) => [
       "mode", "x", "y", "profile", "isFullscreen", "reviewMode",
-      "documentPathAvailable", "canClose", "canCloseOthers",
+      "documentPathAvailable", "nativeHtml", "canClose", "canCloseOthers",
     ].includes(key)) &&
     keys.includes("mode") &&
     keys.includes("x") &&
@@ -92,6 +92,7 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
     typeof value.isFullscreen === "boolean" &&
     (value.reviewMode === undefined || value.reviewMode === "unavailable" || value.reviewMode === "inactive" || value.reviewMode === "active") &&
     (value.documentPathAvailable === undefined || typeof value.documentPathAvailable === "boolean") &&
+    (value.nativeHtml === undefined || (isPlainRecord(value.nativeHtml) && Object.keys(value.nativeHtml).length === 1 && typeof value.nativeHtml.localOriginal === "boolean")) &&
     typeof value.canClose === "boolean" &&
     typeof value.canCloseOthers === "boolean"
   ) {
@@ -105,6 +106,7 @@ export function normalizeChatWorkPanelTabContextMenuRequest(
         ? { reviewMode: value.reviewMode }
         : {}),
       ...(value.documentPathAvailable === true ? { documentPathAvailable: true } : {}),
+      ...(isPlainRecord(value.nativeHtml) ? { nativeHtml: { localOriginal: value.nativeHtml.localOriginal === true } } : {}),
       canClose: value.canClose,
       canCloseOthers: value.canCloseOthers
     };
@@ -119,6 +121,7 @@ function buildWorkPanelTemplate(
 ) {
   const click = (actionId: ChatWorkPanelTabContextMenuActionId) => () => settle(actionId);
   const resourceProfile = request.profile === "artifact" || request.profile === "reference";
+  const fileActionsAvailable = resourceProfile || Boolean(request.nativeHtml);
   const currentTabItems = [
     ...(!request.reviewMode || request.reviewMode === "unavailable"
       ? []
@@ -138,7 +141,7 @@ function buildWorkPanelTemplate(
     },
     {
       id: "reload",
-      label: t(resourceProfile
+      label: t(fileActionsAvailable
         ? "chatWorkPanel.tabContextMenu.reloadPreview"
         : "webviewContextMenu.page.reload"),
       click: click("reload")
@@ -158,15 +161,17 @@ function buildWorkPanelTemplate(
         }]
       : [])
   ];
-  const crossEnvironmentItems = resourceProfile
+  const crossEnvironmentItems = fileActionsAvailable
     ? [
         {
           id: "download-resource",
           label: t(request.profile === "artifact"
             ? "chatWorkPanel.tabContextMenu.downloadArtifact"
-            : "chatWorkPanel.tabContextMenu.downloadReference"),
+            : request.profile === "reference" ? "chatWorkPanel.tabContextMenu.downloadReference"
+              : "chatWorkPanel.tabContextMenu.saveCopy"),
           click: click("download-resource")
         },
+        ...(request.nativeHtml ? [{ id: "open-resource-browser", label: t("chatWorkPanel.tabContextMenu.openInBrowser"), click: click("open-resource-browser") }] : []),
         {
           id: "open-resource-default-app",
           label: t("chatWorkPanel.tabContextMenu.openInDefaultApp"),
@@ -174,6 +179,7 @@ function buildWorkPanelTemplate(
         },
         {
           id: "reveal-resource",
+          enabled: request.nativeHtml ? request.nativeHtml.localOriginal : true,
           label: t(platform === "darwin"
             ? "chatWorkPanel.tabContextMenu.revealInFinder"
             : platform === "win32"

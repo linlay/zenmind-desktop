@@ -186,3 +186,16 @@
 - 模拟启动时 MachineGuid 暂时不可读且已有有效设备身份，确认 Debug 仍显示原 deviceId，身份文件未改写，`lastMachineMismatchAt` 未更新，日志只记录保留已有身份的脱敏诊断。
 - 关闭 Desktop 后模拟有效 MachineGuid 发生变化并重新启动，确认首次读取重新生成 deviceId、更新 `lastMachineMismatchAt`，旧 Realtime generation 不被恢复或自动重放。
 - 在 macOS 重复上述稳定性检查，确认 IOPlatformUUID 临时不可读时同样保留已有身份，且正常启动不重复执行系统机器标识探测。
+
+## HTML 产物预览与文件操作回归
+
+- 自包含 ECharts HTML 与 HTTPS CDN 版本均能显示图表；外部 CSS、图片、字体、Fetch/XHR 和模块资源正常加载，网络失败可诊断，未关闭 CORS/TLS/混合内容检查。
+- 同目录 CSS 的嵌套引用、相对图片/脚本、动态 import 和 JSON fetch 正常；Artifact/Reference 不能读取兄弟资源或经 symlink 越界，Workspace 不能逃出授权目录。
+- 验证原始 dashboard 和 dashboard-v2 的全部 9 个图表；调整宽度、切换标签、隐藏恢复及全屏后仍显示，guest 不重建。
+- 批注模式可点选元素、填写要求、显示编号并交给智能体；页面 postMessage 不能控制批注。刷新前确认，取消保持原状；刷新后批注保留，缺失目标标为失效。
+- 开发启动与打包运行都从实际 preload 路径验证“点击编辑 → 元素高亮 → 点击元素 → 填写要求 → 确认编号”；不能只用测试中重新打包的 preload 代替。检查沙箱日志没有 `module not found`，普通网页/手选本地 HTML 的批注也不受影响。
+- 原生 HTML 标签右键包含刷新、复制文件名/语义路径、下载/另存、定位、外部浏览器和默认应用打开；右键刷新与工具栏一致。
+- macOS 验证 Finder 定位及指定浏览器打开；Windows 验证 Explorer 定位及浏览器可执行文件启动。HTML 默认关联编辑器时，两种打开入口仍各自正确。
+- 覆盖中文、空格、百分号和井号文件名、文件已删除、浏览器不可用、远端仅缓存和取消另存；不得泄漏绝对路径、误开缓存或静默改用其他打开方式。
+- 关闭文档/工作区及 renderer 销毁后，旧 handle 和 guest 不再可用；预览不共享 Desktop 登录 Cookie、无 Node/Desktop bridge、popup、自动下载或设备权限。
+- 手动选择本地文件的既有离线策略不变。自动化入口：先编译 Main，再运行 `RUN_HTML_ELECTRON_TEST=1 node --test test/document-html-electron.test.mjs`；`HTML_CDN_SMOKE=1` 增加实际 CDN 冒烟。

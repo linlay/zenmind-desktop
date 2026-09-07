@@ -274,6 +274,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
   };
   registerChatWorkPanelDocumentHtmlIpcHandlers(ipcMain, {
     app,
+    showSaveDialog: options.showSaveDialog,
     getMainWindow: options.getMainWindow,
     fetchRemoteResource: fetchDocumentResource,
     commitDocument: (payload) => callAgentPlatform(app, "/api/document/commit", {

@@ -1,10 +1,10 @@
 import { EditOutlined, LinkOutlined, ReloadOutlined } from "@ant-design/icons";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { forwardRef, useImperativeHandle, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button, Input, Modal, Popover } from "antd";
-import type { WorkPanelDocumentHtmlSelection } from "../../shared/work-panel-document-html";
+import { WORK_PANEL_DOCUMENT_HTML_REVIEW_CHANNEL, WORK_PANEL_DOCUMENT_HTML_REVIEW_EVENT, type WorkPanelDocumentHtmlSelection, type WorkPanelDocumentHtmlPreviewResult } from "../../shared/work-panel-document-html";
 import { WORK_PANEL_REVIEW_MAX_REQUIREMENT_CHARS } from "../../shared/work-panel-review";
 import { useI18n } from "../i18n/useI18n";
-import documentHtmlReviewScriptSource from "./work-panel-document-html-review.js?raw";
+
 
 export type HtmlAnnotation = {
   id: string;
@@ -18,29 +18,24 @@ export type HtmlAnnotation = {
 
 type PendingHtmlAnnotation = Omit<HtmlAnnotation, "id" | "note">;
 
-function annotatedHtml(source: string, token: string) {
-  const injectedBootstrap = `<script data-zenmind-review-token="${token}">${documentHtmlReviewScriptSource.trim()}</script>`;
-  return source.includes("<head")
-    ? source.replace(/<head([^>]*)>/iu, `<head$1>${injectedBootstrap}`)
-    : `${injectedBootstrap}${source}`;
-}
-
-export function WorkPanelDocumentHtml({
-  ownerChatId,
-  rendererGeneration,
-  document,
-  onHandoff,
-}: {
+export type HtmlDocumentController = { reload(): void; toggleReview(): void; isAnnotating(): boolean };
+type Props = {
   ownerChatId: string;
   rendererGeneration: string;
   document: WorkPanelDocumentHtmlSelection;
+  active: boolean;
+  preloadUrl: string;
   onHandoff(annotations: HtmlAnnotation[]): Promise<boolean>;
-}) {
+};
+
+export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(function WorkPanelDocumentHtml({
+  ownerChatId, rendererGeneration, document, active, preloadUrl, onHandoff,
+}, ref) {
   const { t } = useI18n();
-  const frameRef = useRef<HTMLIFrameElement | null>(null);
+  const frameRef = useRef<Electron.WebviewTag | null>(null);
+  const readyRef = useRef(false);
   const refreshRequestRef = useRef(0);
-  const [previewSource, setPreviewSource] = useState("");
-  const [frameGeneration, setFrameGeneration] = useState(0);
+  const [preview, setPreview] = useState<WorkPanelDocumentHtmlPreviewResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [annotating, setAnnotating] = useState(false);
   const [annotations, setAnnotations] = useState<HtmlAnnotation[]>([]);
@@ -48,7 +43,10 @@ export function WorkPanelDocumentHtml({
   const [pendingAnnotation, setPendingAnnotation] = useState<PendingHtmlAnnotation | null>(null);
   const [pendingNote, setPendingNote] = useState("");
   const [error, setError] = useState("");
-  const token = useMemo(() => globalThis.crypto.randomUUID().replace(/-/gu, ""), [document.handleId]);
+  const sendReview = useCallback((data: unknown) => {
+    if (!readyRef.current) return;
+    try { frameRef.current?.send(WORK_PANEL_DOCUMENT_HTML_REVIEW_CHANNEL, data); } catch { /* guest closed */ }
+  }, []);
   const displayUrl = document.displayUrl || `${document.sourceKind}:///${document.fileName}`;
   const displayPath = useMemo(() => {
     try {
@@ -69,32 +67,31 @@ export function WorkPanelDocumentHtml({
     setLoading(true);
     setError("");
     try {
-      const result = await window.electronAPI.chatWorkPanel.documentHtml.read(handleRequest);
+      const result = await window.electronAPI.chatWorkPanel.documentHtml.preview(handleRequest);
       if (requestId !== refreshRequestRef.current) return;
-      if (!result.ok || result.text === undefined) {
+      if (!result.ok || !result.url || !result.partition) {
         setError(result.message || t("chatWorkPanel.document.htmlReadFailed"));
+        setLoading(false);
         return;
       }
-      const previewResult = await window.electronAPI.chatWorkPanel.documentHtml.preview({
-        ...handleRequest,
-        text: result.text,
-      });
-      if (requestId !== refreshRequestRef.current) return;
-      setPreviewSource(previewResult.ok && previewResult.text !== undefined
-        ? previewResult.text
-        : result.text);
-      setFrameGeneration((current) => current + 1);
+      setPreview(result);
+      setAnnotations((current) => current.map((item) => ({ ...item, valid: false })));
+      if (frameRef.current) {
+        readyRef.current = false;
+        frameRef.current.reload();
+      }
+
     } catch {
       if (requestId === refreshRequestRef.current) {
         setError(t("chatWorkPanel.document.htmlReadFailed"));
+        setLoading(false);
       }
-    } finally {
-      if (requestId === refreshRequestRef.current) setLoading(false);
     }
   }, [handleRequest, t]);
 
   useEffect(() => {
-    setPreviewSource("");
+    setPreview(null);
+    readyRef.current = false;
     setAnnotating(false);
     setAnnotations([]);
     setAnnotationListOpen(false);
@@ -102,34 +99,40 @@ export function WorkPanelDocumentHtml({
     setPendingNote("");
     void refreshPreview();
     return () => { refreshRequestRef.current += 1; };
+  }, [refreshPreview]);
+
+  const revisionRef = useRef(document.revision);
+  useEffect(() => {
+    if (revisionRef.current === document.revision) return;
+    revisionRef.current = document.revision;
+    void refreshPreview();
   }, [document.revision, refreshPreview]);
 
   useEffect(() => {
-    frameRef.current?.contentWindow?.postMessage({
-      type: "zenmind-html-annotation-mode",
-      token,
-      enabled: annotating,
-    }, "*");
-  }, [annotating, token]);
+    if (active) sendReview({ type: "resize" });
+  }, [active, sendReview]);
 
   useEffect(() => {
-    frameRef.current?.contentWindow?.postMessage({
+    sendReview({ type: "zenmind-html-annotation-mode", enabled: annotating });
+  }, [annotating, sendReview]);
+
+  useEffect(() => {
+    sendReview({
       type: "zenmind-html-annotation-locate",
-      token,
       items: annotations.slice(0, 64).map(({ id, selector }, index) => ({
         id,
         selector,
         number: index + 1,
       })),
-    }, "*");
-  }, [annotations, token]);
+    });
+  }, [annotations, sendReview]);
 
   useEffect(() => {
-    const listener = (event: MessageEvent) => {
-      if (
-        event.source !== frameRef.current?.contentWindow ||
-        !event.data || event.data.token !== token
-      ) return;
+    const guest = frameRef.current;
+    if (!guest) return;
+    const listener = (message: Electron.IpcMessageEvent) => {
+      if (message.channel !== WORK_PANEL_DOCUMENT_HTML_REVIEW_EVENT || !message.args[0]) return;
+      const event = { data: message.args[0] };
       if (event.data.type === "zenmind-html-annotation-located") {
         const locatedItems = Array.isArray(event.data.items) ? event.data.items.slice(0, 64) : [];
         const locatedById = new Map<string, { valid: boolean; text?: string; rect?: HtmlAnnotation["rect"] }>();
@@ -147,16 +150,23 @@ export function WorkPanelDocumentHtml({
             } : undefined,
           });
         }
-        setAnnotations((current) => current.map((annotation) => {
-          const located = locatedById.get(annotation.id);
-          if (!located) return annotation;
-          return {
-            ...annotation,
-            valid: located.valid,
-            text: located.text ?? annotation.text,
-            rect: located.rect ?? annotation.rect,
-          };
-        }));
+        setAnnotations((current) => {
+          let changed = false;
+          const next = current.map((annotation) => {
+            const located = locatedById.get(annotation.id);
+            if (!located) return annotation;
+            const updated = {
+              ...annotation,
+              valid: located.valid,
+              text: located.text ?? annotation.text,
+              rect: located.rect ?? annotation.rect,
+            };
+            if (JSON.stringify(updated) === JSON.stringify(annotation)) return annotation;
+            changed = true;
+            return updated;
+          });
+          return changed ? next : current;
+        });
         return;
       }
       if (event.data.type !== "zenmind-html-annotation") return;
@@ -170,15 +180,38 @@ export function WorkPanelDocumentHtml({
         width: Number.isFinite(rawRect.width) ? Math.max(1, Number(rawRect.width)) : 1,
         height: Number.isFinite(rawRect.height) ? Math.max(1, Number(rawRect.height)) : 1,
       };
-      if (!selector || !xpath || pendingAnnotation) return;
+      if (!selector || !xpath || pendingAnnotation || annotations.length >= 64) return;
       setPendingAnnotation({
         selector, xpath, text, rect, valid: true,
       });
       setPendingNote("");
     };
-    window.addEventListener("message", listener);
-    return () => window.removeEventListener("message", listener);
-  }, [pendingAnnotation, token]);
+    const ready = () => {
+      readyRef.current = true;
+      setLoading(false);
+      setError("");
+      sendReview({ type: "zenmind-html-annotation-mode", enabled: annotating });
+      sendReview({ type: "zenmind-html-annotation-locate", items: annotations.slice(0, 64).map(({ id, selector }, index) => ({ id, selector, number: index + 1 })) });
+      if (active) sendReview({ type: "resize" });
+    };
+    const failed = (event: Electron.DidFailLoadEvent) => {
+      if (!event.isMainFrame || event.errorCode === -3) return;
+      readyRef.current = false;
+      setLoading(false);
+      setError(t("chatWorkPanel.document.htmlReadFailed"));
+    };
+    const gone = () => { readyRef.current = false; setLoading(false); setError(t("chatWorkPanel.document.htmlReadFailed")); };
+    guest.addEventListener("ipc-message", listener);
+    guest.addEventListener("dom-ready", ready);
+    guest.addEventListener("did-fail-load", failed);
+    guest.addEventListener("render-process-gone", gone);
+    return () => {
+      guest.removeEventListener("ipc-message", listener);
+      guest.removeEventListener("dom-ready", ready);
+      guest.removeEventListener("did-fail-load", failed);
+      guest.removeEventListener("render-process-gone", gone);
+    };
+  }, [preview?.url, preloadUrl, pendingAnnotation, annotating, annotations, active, sendReview, t]);
 
   const cancelPendingAnnotation = () => {
     setPendingAnnotation(null);
@@ -197,10 +230,22 @@ export function WorkPanelDocumentHtml({
   };
 
   const refreshCurrentPreview = () => {
-    setAnnotationListOpen(false);
-    cancelPendingAnnotation();
-    void refreshPreview();
+    const reload = () => {
+      setAnnotationListOpen(false);
+      cancelPendingAnnotation();
+      return refreshPreview();
+    };
+    if (annotations.length || pendingAnnotation) {
+      Modal.confirm({ title: t("common.refresh"), content: t("chatWorkPanel.document.htmlReloadConfirm"),
+        okText: t("common.confirm"), cancelText: t("common.cancel"), onOk: reload });
+    } else void reload();
   };
+
+  useImperativeHandle(ref, () => ({
+    reload: refreshCurrentPreview,
+    toggleReview: () => { if (!loading && !error) setAnnotating((current) => !current); },
+    isAnnotating: () => annotating,
+  }));
 
   const annotationList = (
     <div className="work-panel-document-html-annotations">
@@ -249,7 +294,7 @@ export function WorkPanelDocumentHtml({
   return (
     <div
       className={`work-panel-document-html${annotating ? " is-annotating" : ""}`}
-      data-work-panel-document-dirty={annotations.length > 0 ? "true" : "false"}
+      data-work-panel-document-dirty={annotations.length > 0 || pendingAnnotation ? "true" : "false"}
     >
       <div className="work-panel-document-html-toolbar" role="toolbar" aria-label={t("chatWorkPanel.review.htmlTool")}>
         {annotating ? (
@@ -321,35 +366,22 @@ export function WorkPanelDocumentHtml({
         )}
       </div>
       <div className="work-panel-document-html-body">
-        {loading ? (
-          <div className="work-panel-document-html-status">{t("common.loading")}</div>
-        ) : error ? (
-          <div className="work-panel-document-html-status is-error" role="alert">{error}</div>
-        ) : (
-          <iframe
-            key={frameGeneration}
+        {preview?.url && preview.partition && preloadUrl ? (
+          <webview
             ref={frameRef}
             title={document.fileName}
-            sandbox="allow-forms allow-modals allow-scripts"
-            srcDoc={annotatedHtml(previewSource, token)}
-            onLoad={() => {
-              frameRef.current?.contentWindow?.postMessage({
-                type: "zenmind-html-annotation-mode", token, enabled: annotating,
-              }, "*");
-              if (annotations.length) {
-                frameRef.current?.contentWindow?.postMessage({
-                  type: "zenmind-html-annotation-locate",
-                  token,
-                  items: annotations.slice(0, 64).map(({ id, selector }, index) => ({
-                    id,
-                    selector,
-                    number: index + 1,
-                  })),
-                }, "*");
-              }
-            }}
+            src={preview.url}
+            partition={preview.partition}
+            preload={preloadUrl}
+            webpreferences="contextIsolation=yes,sandbox=yes,nodeIntegration=no,webSecurity=yes"
           />
-        )}
+        ) : null}
+        {loading || error ? (
+          <div className={`work-panel-document-html-status${error ? " is-error" : ""}`} role={error ? "alert" : "status"}>
+            {error || t("common.loading")}
+          </div>
+        ) : null}
+
       </div>
       <Modal
         open={Boolean(pendingAnnotation)}
@@ -383,4 +415,4 @@ export function WorkPanelDocumentHtml({
       </Modal>
     </div>
   );
-}
+});

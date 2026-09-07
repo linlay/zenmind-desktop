@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { WORK_PANEL_DOCUMENT_HTML_PROTOCOL } from "../../../shared/work-panel-document-html";
 import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -250,6 +251,9 @@ export function registerChatWorkPanelLocalFileProtocolScheme(protocolModule: Pro
       corsEnabled: true,
       stream: true,
     },
+  }, {
+    scheme: WORK_PANEL_DOCUMENT_HTML_PROTOCOL,
+    privileges: { standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, stream: true },
   }]);
 }
 

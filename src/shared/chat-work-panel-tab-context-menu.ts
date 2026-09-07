@@ -14,6 +14,7 @@ export type ChatWorkPanelTabContextMenuActionId =
   | "download-resource"
   | "reveal-resource"
   | "open-resource-default-app"
+  | "open-resource-browser"
   | "close-tab"
   | "close-other-tabs"
   | "toggle-fullscreen";
@@ -38,6 +39,7 @@ export type ChatWorkPanelTabContextMenuPopupRequest =
       isFullscreen: boolean;
       reviewMode?: "unavailable" | "inactive" | "active";
       documentPathAvailable?: boolean;
+      nativeHtml?: { localOriginal: boolean };
       canClose: boolean;
       canCloseOthers: boolean;
     };

@@ -596,6 +596,7 @@ const api: DesktopApi = {
       claim: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.claim", input),
       read: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.read", input),
       preview: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.preview", input),
+      fileAction: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.fileAction", input),
       release: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.release", input),
       commit: (input) => ipcRenderer.invoke("chatWorkPanel.documentHtml.commit", input)
     },

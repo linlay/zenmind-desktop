@@ -39,7 +39,7 @@ import { DesktopActionWorkbenchWindowController } from "./desktop-action-workben
 import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
 import { AppTrayController, getWindowsDevelopmentAppIconPath } from "./tray";
-import { workPanelLocalFileRegistry } from "../work-panel";
+import { workPanelLocalFileRegistry, workPanelDocumentHtmlRegistry } from "../work-panel";
 
 export type AppShellRuntimeOptions = {
   app: App;
@@ -258,10 +258,12 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       servicePreloadUrl: getServiceWebviewPreloadUrl(),
       isSafeServiceUrl: options.parseSafeLoopbackWebUrl,
       isReviewableLocalFileUrl: (url) => workPanelLocalFileRegistry.isReviewableUrl(url),
+      isDocumentHtmlPreview: (url, partition) => workPanelDocumentHtmlRegistry.previews.canAttach(url, partition, targetWindow.webContents.id),
+      configureDocumentHtmlGuest: (guest) => workPanelDocumentHtmlRegistry.previews.configureGuest(guest, targetWindow.webContents.id),
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
       isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
-      isWorkPanelWebview: options.isWorkPanelWebview,
+      isWorkPanelWebview: (guest) => workPanelDocumentHtmlRegistry.previews.hasGuest(guest) || options.isWorkPanelWebview(guest),
       isMainChatWebview: options.isMainChatWebview,
       isWorkPanelFullscreenActive: () => state.workPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,

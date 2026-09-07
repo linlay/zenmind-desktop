@@ -17,7 +17,7 @@ import {
   RightOutlined,
   CodeOutlined,
 } from "@ant-design/icons";
-import { Button } from "antd";
+import { Button, Modal } from "antd";
 import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
@@ -75,7 +75,7 @@ import {
 } from "../../shared/chat-work-panel";
 import { WorkPanelReviewPanel } from "./WorkPanelReviewPanel";
 import { WorkPanelResourceImage } from "./WorkPanelResourceImage";
-import { WorkPanelDocumentHtml, type HtmlAnnotation } from "./WorkPanelDocumentHtml";
+import { WorkPanelDocumentHtml, type HtmlAnnotation, type HtmlDocumentController } from "./WorkPanelDocumentHtml";
 import { WorkPanelDocumentImageReadonly } from "./WorkPanelDocumentImageReadonly";
 
 const ExternalWebviewPage = lazy(() =>
@@ -152,6 +152,10 @@ function matchesLocalResourceIdentity(
 
 function tabContextMenuProfile(item: WorkPanelItem): ChatWorkPanelTabContextMenuProfile {
   if (item.descriptor.kind === "web") return "web";
+  if (item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html") {
+    const source = item.descriptor.context.sourceKind;
+    if (source === "artifact" || source === "reference") return source;
+  }
   if (item.descriptor.kind === "webclient" && item.descriptor.module === "artifact") {
     return "artifact";
   }
@@ -178,6 +182,7 @@ function workPanelDocumentPath(ownerChatId: string, item: WorkPanelItem) {
     return item.descriptor.workspaceRelativePath?.trim() || "";
   }
   if (item.descriptor.kind === "native") {
+    if (item.descriptor.surfaceKey === "document-html") return String(item.descriptor.context.displayUrl || "");
     const relativePath = item.descriptor.context.relativePath;
     return typeof relativePath === "string" ? relativePath.trim() : "";
   }
@@ -344,6 +349,7 @@ export function WorkPanelHost({
   const [webUrlError, setWebUrlError] = useState("");
   const [openWebappWindowIds, setOpenWebappWindowIds] = useState<Set<string>>(() => new Set());
   const [reviewPreloadUrl, setReviewPreloadUrl] = useState("");
+  const nativeHtmlControllers = useRef(new Map<string, HtmlDocumentController>());
   const [resourceReviewCapabilities, setResourceReviewCapabilities] = useState<Record<string, ResourceReviewCapability>>({});
   const [reviewPreviewMetadata, setReviewPreviewMetadata] = useState<Record<string, ReviewPreviewMetadata>>({});
   const [reviewHandoffBusyKeys, setReviewHandoffBusyKeys] = useState<Set<string>>(() => new Set());
@@ -1245,19 +1251,43 @@ export function WorkPanelHost({
     );
     const reviewActive = stateRef.current.review.activeItemIdsByOwnerChatId[ownerChatId] === item.itemId;
     const documentPath = workPanelDocumentPath(ownerChatId, item);
+    const nativeHtml = item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html" ? item.descriptor.context : null;
+    const htmlController = nativeHtmlControllers.current.get(itemRuntimeKey(ownerChatId, item.itemId));
     const result = await window.electronAPI.chatWorkPanelTabContextMenu.popup({
       mode: "work-panel",
       x: event.clientX,
       y: event.clientY,
       profile: tabContextMenuProfile(item),
       isFullscreen: fullscreenOwnerChatId === ownerChatId,
-      reviewMode: reviewSource ? (reviewActive ? "active" : "inactive") : "unavailable",
+      reviewMode: htmlController ? (htmlController.isAnnotating() ? "active" : "inactive") : reviewSource ? (reviewActive ? "active" : "inactive") : "unavailable",
+      ...(nativeHtml ? { nativeHtml: { localOriginal: nativeHtml.localOriginal === true } } : {}),
       ...(documentPath ? { documentPathAvailable: true } : {}),
       canClose: item.closable && !item.pinned,
       canCloseOthers: workspace?.items.some((candidate) =>
         candidate.itemId !== item.itemId && candidate.closable && !candidate.pinned,
       ) ?? false,
     });
+    const currentItem = stateRef.current.workspaces.find((candidate) => candidate.ownerChatId === ownerChatId)?.items.find((candidate) => candidate.itemId === item.itemId && candidate.stableKey === item.stableKey);
+    if (!currentItem) return;
+    if (nativeHtml) {
+      if (currentItem.descriptor.kind !== "native" || currentItem.descriptor.surfaceKey !== "document-html" || currentItem.descriptor.context.handleId !== nativeHtml.handleId) return;
+      const currentController = nativeHtmlControllers.current.get(itemRuntimeKey(ownerChatId, item.itemId));
+      const actions = { "reveal-resource": "reveal", "open-resource-default-app": "open-default", "open-resource-browser": "open-browser", "download-resource": "save-copy" } as const;
+      const action = actions[result.actionId as keyof typeof actions];
+      if (action) {
+        try {
+          const outcome = await window.electronAPI.chatWorkPanel.documentHtml.fileAction({
+            ownerChatId, rendererGeneration: rendererGenerationRef.current,
+            handleId: String(nativeHtml.handleId), action,
+          });
+          if (!outcome.ok) Modal.error({ content: outcome.message || t("chatWorkPanel.resourceActions.failed") });
+        } catch { Modal.error({ content: t("chatWorkPanel.resourceActions.failed") }); }
+        return;
+      }
+      if (result.actionId === "reload") { currentController?.reload(); return; }
+      if (result.actionId === "toggle-review") { currentController?.toggleReview(); return; }
+      if (result.actionId === "copy-title") { await window.electronAPI.clipboard.writeText(String(nativeHtml.fileName)); return; }
+    }
     if (result.actionId === "toggle-review") {
       toggleReviewForItem(ownerChatId, item);
       return;
@@ -2051,6 +2081,13 @@ export function WorkPanelHost({
                     >
                       {item.descriptor.kind === "native" && item.descriptor.surfaceKey === "document-html" ? (
                         <WorkPanelDocumentHtml
+                          ref={(controller) => {
+                            const key = itemRuntimeKey(workspace.ownerChatId, item.itemId);
+                            if (controller) nativeHtmlControllers.current.set(key, controller);
+                            else nativeHtmlControllers.current.delete(key);
+                          }}
+                          active={active}
+                          preloadUrl={reviewPreloadUrl.replace(/work-panel-preview\.js$/u, "document-html-review.js")}
                           ownerChatId={workspace.ownerChatId}
                           rendererGeneration={rendererGenerationRef.current}
                           document={item.descriptor.context as unknown as import("../../shared/work-panel-document-html").WorkPanelDocumentHtmlSelection}

@@ -170,6 +170,10 @@ export function configureAttachedWebview<
       });
   });
 
+  // The document registry already installed its deny-by-default navigation and
+  // popup policy. Do not attach the generic SSO/download/external-open handlers.
+  if (options.restrictedDocumentPreview) return;
+
   contents.on("will-navigate", (event, url) => {
     if (blockUnexpectedHelpNavigation(event, url)) {
       return;
@@ -624,6 +628,8 @@ export function configureMainWindowWebContents<
     servicePreloadUrl: string;
     isSafeServiceUrl(value: string): unknown;
     isReviewableLocalFileUrl?(value: string): boolean;
+    isDocumentHtmlPreview?(url: string, partition: string): boolean;
+    configureDocumentHtmlGuest?(contents: TGuestContents): boolean;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
@@ -679,6 +685,7 @@ export function configureMainWindowWebContents<
       servicePreloadUrl: options.servicePreloadUrl,
       isSafeServiceUrl: options.isSafeServiceUrl,
       isReviewableLocalFileUrl: options.isReviewableLocalFileUrl,
+      isDocumentHtmlPreview: options.isDocumentHtmlPreview,
     });
 
     if (!result.ok && result.reason === "unexpected-preload") {
@@ -728,8 +735,10 @@ export function configureMainWindowWebContents<
     contents.on("blur", publishBlurred);
     contents.on("destroyed", publishBlurred);
     if (contents.isFocused?.()) publishFocused();
-    options.attachWebviewContextMenu?.(contents);
+    const restrictedDocumentPreview = options.configureDocumentHtmlGuest?.(contents) === true;
+    if (!restrictedDocumentPreview) options.attachWebviewContextMenu?.(contents);
     configureAttachedWebview(contents, {
+      restrictedDocumentPreview,
       platform: options.platform,
       getMainWindow: options.getMainWindow,
       isDevToolsShortcut: options.isDevToolsShortcut,

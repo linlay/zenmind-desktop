@@ -52,14 +52,22 @@ export type WorkPanelDocumentHtmlReadResult = {
   message?: string;
 };
 
-export type WorkPanelDocumentHtmlPreviewRequest = WorkPanelDocumentHtmlHandleRequest & {
-  text: string;
-};
+export const WORK_PANEL_DOCUMENT_HTML_PROTOCOL = "zenmind-document-html";
+export const WORK_PANEL_DOCUMENT_HTML_REVIEW_CHANNEL = "work-panel.document-html.review";
+export const WORK_PANEL_DOCUMENT_HTML_REVIEW_EVENT = "work-panel.document-html.review-event";
+
+export type WorkPanelDocumentHtmlPreviewRequest = WorkPanelDocumentHtmlHandleRequest;
 
 export type WorkPanelDocumentHtmlPreviewResult = {
   ok: boolean;
-  text?: string;
+  url?: string;
+  partition?: string;
+  revision?: string;
   message?: string;
+};
+
+export type WorkPanelDocumentHtmlFileActionRequest = WorkPanelDocumentHtmlHandleRequest & {
+  action: "reveal" | "open-default" | "open-browser" | "save-copy";
 };
 
 export type WorkPanelDocumentHtmlCommitRequest = WorkPanelDocumentHtmlHandleRequest & {

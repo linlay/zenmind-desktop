@@ -51,6 +51,12 @@ Document Registry 只接收语义来源，并用绑定 sender、owner Chat 与 r
 
 HTML 脚本在隔离预览中运行，不获得 Node、Desktop bridge、popup 和任意权限。Desktop WorkPanel 的 HTML Surface 固定使用占满内容区的直接预览，只在预览与 DOM 批注之间切换，不提供源码、分屏或源码保存入口。顶部工具条在预览态显示不含本地绝对路径的语义 URL 与批注按钮，批注态显示返回预览、选择提示和批注数量。批注仅保存有界 selector/XPath、坐标和脱敏摘要；文档重建后无法定位的批注显式失效。
 
+原生 HTML 的内容由独立 sandbox WebView 承载，而非 Desktop renderer 的 `srcDoc`。每个 opaque handle 绑定独立临时 session，使用专用协议读取原始 HTML 与相对资源，不注入 Desktop CSP 或页面级批注脚本，也不改写产物自身的 CSP。内联脚本、CDN 脚本、外部样式/图片/字体和接口请求遵循 Chromium 的正常 CORS、证书及混合内容规则；不能通过关闭 webSecurity 或使用 Main 网络代理绕过这些限制。该 session 不共享 SSO、Desktop Cookie、Token Bridge 或公开 CDP 授权。手动选择本地文件的既有离线 session 不随此变化。
+
+协议请求逐次验证资源身份、方法、规范路径、realpath 与大小上限。Workspace 资源限于权威 workspace，Artifact/Reference 限于当前资源目录，远端相对资源沿用同一语义边界并由 Main 读取。Main 校验 owner renderer、session 和预加载脚本后才允许 guest attach；外部顶层导航、popup、自动下载、嵌套 webview 与设备权限均被拒绝。批注只通过隔离 preload 的窄消息通道传递，不接受页面 postMessage。隐藏、切换标签和全屏保留 guest；关闭 item、workspace 或 renderer 时撤销 handle、关闭 guest 并清理 session 与临时缓存。
+
+Tab 文件操作由来源与可用能力决定，不由原生/WebClient 的展示实现决定。原生 HTML 提供刷新、语义路径和文件名复制、另存、定位、默认应用打开与外部浏览器打开。后两者必须区分：默认应用遵循 HTML 文件关联，浏览器使用系统 HTTPS 默认处理程序；macOS 与 Windows 分别执行对应启动方式，不在浏览器解析失败时静默改用文件关联。操作只传 opaque handle，Main 重新验证 sender、owner Chat、generation 和文件。远端缓存不能冒充本地原件进行定位；外部打开先由用户另存，取消不得打开。刷新保留并重新定位批注，刷新前提示用户，无法重定位的批注明确失效。
+
 图片 Surface 对 PNG/JPEG/WebP 保留像素编辑、撤销/重做、AI 工具和区域批注。非编辑格式只读，不得通过错误扩展名或隐式栅格化覆盖原件；JPEG 不接受含透明像素的覆盖结果。系统打开、定位和解码链路必须分别回归 macOS 与 Windows。
 
 ## 实时 loopback 项目
