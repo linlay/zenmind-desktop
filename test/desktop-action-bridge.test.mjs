@@ -808,8 +808,20 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
     workspaceRoot
   };
 
+  for (const action of ["desktop.webapp.manifest.init", "desktop.webapp.init", "desktop.webapp.manifest.validate"]) {
+    const removed = await handleAgentPlatformDesktopActionRequest(options, {
+      action, source,
+      args: { projectPath: "apps/example", key: "action-example", label: "Action Example" }
+    });
+    assert.equal(removed.error.code, "unknown_action");
+  }
+  assert.equal(fs.existsSync(path.join(workspaceRoot, "apps/example")), false);
+  assert.deepEqual(DESKTOP_ACTION_DEFINITIONS.filter(({ name }) => name.startsWith("desktop.webapp.package.")).map(({ name }) => name).sort(), [
+    "desktop.webapp.package.build", "desktop.webapp.package.init", "desktop.webapp.package.validate"
+  ]);
+
   const initialized = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.manifest.init",
+    action: "desktop.webapp.package.init",
     source,
     args: {
       projectPath: "apps/example",
@@ -825,7 +837,7 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   assert.equal(JSON.stringify(initialized).includes(workspaceRoot), false);
 
   const manifest = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.manifest.validate",
+    action: "desktop.webapp.package.validate",
     source: { ...source, agentKey: undefined, teamId: "builders" },
     args: { projectPath: "apps/example" }
   });
@@ -839,6 +851,20 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   });
   assert.equal(project.ok, true);
   assert.ok(project.result.fileCount >= 2);
+
+  const manifestPath = path.join(workspaceRoot, "apps/example/webapp.json");
+  const manifestBytes = fs.readFileSync(manifestPath);
+  try {
+    fs.writeFileSync(manifestPath, "{}");
+    const invalidManifest = await handleAgentPlatformDesktopActionRequest(options, {
+      action: "desktop.webapp.package.validate", source,
+      args: { projectPath: "apps/example" }
+    });
+    assert.equal(invalidManifest.ok, false);
+    assert.equal(invalidManifest.error.details.stage, "manifest");
+  } finally {
+    fs.writeFileSync(manifestPath, manifestBytes);
+  }
 
   const built = await handleAgentPlatformDesktopActionRequest(options, {
     action: "desktop.webapp.package.build",
@@ -914,7 +940,7 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   assert.equal(JSON.stringify(absolute).includes(workspaceRoot), false);
 
   const missingWorkspace = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.manifest.validate",
+    action: "desktop.webapp.package.validate",
     source: { chatId: "chat-owner", runId: "run-owner", agentKey: "coder" },
     args: { projectPath: "apps/example" }
   });
@@ -922,7 +948,7 @@ test("Agent Platform WebApp Tooling actions use only the trusted Run workspace",
   assert.equal(missingWorkspace.error.code, "forbidden");
 
   const forgedSource = await handleAgentPlatformDesktopActionRequest(options, {
-    action: "desktop.webapp.manifest.validate",
+    action: "desktop.webapp.package.validate",
     source: {
       chatId: "chat-owner",
       runId: "run-owner",

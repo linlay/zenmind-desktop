@@ -760,7 +760,7 @@ export async function executeWebappToolingAction(
   if (!trusted.ok) return trusted.response;
 
   let task: WebappToolingTask;
-  if (action === "desktop.webapp.manifest.init") {
+  if (action === "desktop.webapp.package.init") {
     const invalid = rejectUnexpectedArgs(action, args, ["projectPath", "key", "label", "target"]);
     if (invalid) return invalid;
     const projectPath = readString(args, "projectPath");
@@ -770,19 +770,13 @@ export async function executeWebappToolingAction(
       return fail(action, "invalid_args", "projectPath, key, and label are required; target must be a string when provided.");
     }
     task = {
-      operation: "manifest.init",
+      operation: "package.init",
       workspaceRoot: trusted.workspaceRoot,
       projectPath,
       key,
       label,
       ...(readString(args, "target") ? { target: readString(args, "target") } : {}),
     };
-  } else if (action === "desktop.webapp.manifest.validate") {
-    const invalid = rejectUnexpectedArgs(action, args, ["projectPath"]);
-    if (invalid) return invalid;
-    const projectPath = readString(args, "projectPath");
-    if (!projectPath) return fail(action, "invalid_args", "projectPath is required.");
-    task = { operation: "manifest.validate", workspaceRoot: trusted.workspaceRoot, projectPath };
   } else if (action === "desktop.webapp.package.validate") {
     const invalid = rejectUnexpectedArgs(action, args, ["projectPath", "archivePath"]);
     if (invalid) return invalid;
