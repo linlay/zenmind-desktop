@@ -971,13 +971,7 @@ export function DesktopPet() {
     : undefined;
   const stateSpriteStyle = shouldShowStateSpriteAnimation
     ? {
-        backgroundImage: `url("${visualAsset.assetPath}")`,
-        // Keep Zenmi's rocket pose on the first frame while held in place.
-        ...(BRAND_ID === "zenmind" &&
-        appearanceId === DEFAULT_DESKTOP_PET_APPEARANCE_ID &&
-        visualStatus === "dragging"
-          ? { animation: "none", backgroundPosition: "0 0" }
-          : {})
+        backgroundImage: `url("${visualAsset.assetPath}")`
       }
     : undefined;
   useEffect(() => {
