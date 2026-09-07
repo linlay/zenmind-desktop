@@ -600,7 +600,8 @@ export function getDesktopSsoStatus(app?: App): DesktopSsoStatus {
 }
 
 export type DesktopSsoRestorePreparation = {
-  requiresCookieValidation: boolean;
+  requiresRemoteValidation: boolean;
+  authMode?: "cookie" | "bearer";
   clearCookies?: boolean;
   status: DesktopSsoStatus;
 };
@@ -620,14 +621,14 @@ export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePrep
 
   if (!configResult.configured) {
     desktopSsoRuntimeState.currentStatus = createUnconfiguredStatus(configResult.message);
-    return { requiresCookieValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
+    return { requiresRemoteValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
   }
   if (configResult.error || !configResult.config) {
     desktopSsoRuntimeState.currentStatus = createFailedStatus(configResult.error || t("sso.missingOidcConfig"));
-    return { requiresCookieValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
+    return { requiresRemoteValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
   }
   if (!fs.existsSync(sessionPath)) {
-    return { requiresCookieValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
+    return { requiresRemoteValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
   }
 
   let parsed: {
@@ -639,18 +640,18 @@ export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePrep
   try {
     parsed = JSON.parse(fs.readFileSync(sessionPath, "utf8")) as typeof parsed;
   } catch {
-    return { requiresCookieValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
+    return { requiresRemoteValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
   }
 
-  const requiresCookieValidation =
+  const requiresRemoteValidation =
     parsed.authenticated === true &&
     Boolean(configResult.config.browserSession) &&
     Boolean(configResult.config.cookieAccessTokenExchange) &&
     parsed.authMode !== "oidc" &&
     parsed.authMode !== "server";
-  if (!requiresCookieValidation) {
+  if (!requiresRemoteValidation) {
     loadSession(app);
-    return { requiresCookieValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
+    return { requiresRemoteValidation: false, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
   }
 
   const expectedIssuer = configResult.config.browserOrigin ||
@@ -663,7 +664,7 @@ export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePrep
     (storedAudience && storedAudience !== expectedAudience)
   ) {
     return {
-      requiresCookieValidation: false,
+      requiresRemoteValidation: false,
       clearCookies: true,
       status: clearDesktopSsoLocalSession(app, t("sso.restoreConfigurationChanged"))
     };
@@ -671,7 +672,11 @@ export function prepareDesktopSsoSessionRestore(app: App): DesktopSsoRestorePrep
 
   desktopSsoRuntimeState.currentStatus = createPendingStatus(t("sso.restoringLogin"));
   desktopSsoRuntimeState.unverifiedCookieSessionCandidate = true;
-  return { requiresCookieValidation: true, status: cloneStatus(desktopSsoRuntimeState.currentStatus) };
+  return {
+    requiresRemoteValidation: true,
+    authMode: configResult.config.sessionRestore?.authMode || "cookie",
+    status: cloneStatus(desktopSsoRuntimeState.currentStatus)
+  };
 }
 
 export function markDesktopSsoRestoreTemporarilyUnavailable(app: App, message: string) {

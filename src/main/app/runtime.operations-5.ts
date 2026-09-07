@@ -362,9 +362,9 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     registerWebsiteFaviconProtocol(app, protocol, net, factoryContext.startupPlatform);
     registerDesktopSsoAvatarProtocol(app, protocol, net, session, factoryContext.startupPlatform);
     factoryContext.setStartupPhase("desktop-state-ready");
+    factoryContext.logsRuntime.installConsoleTee();
     const desktopSsoRestoreResult = await factoryContext.desktopSsoController.restoreDesktopSsoSession();
     factoryContext.applyDesktopSsoRestoreResult(desktopSsoRestoreResult);
-    factoryContext.logsRuntime.installConsoleTee();
     factoryContext.pluginBridgeRuntime.configure();
     configurePluginResources({
         callAgentPlatform: (targetApp, targetPath, requestOptions) => callAgentPlatform(targetApp, targetPath, {

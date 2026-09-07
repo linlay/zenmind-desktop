@@ -23,6 +23,7 @@ import {
   getDesktopSsoWebSessionExchangeConfig,
   markDesktopSsoRestoreTemporarilyUnavailable,
   parseDesktopSsoCookieUserInfo,
+  readDesktopSsoAccessToken,
   prepareDesktopSsoSessionRestore
 } from "./oidc-sso";
 
@@ -105,22 +106,24 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     };
   }
 
-  async function probeBrowserUserInfo(signal: AbortSignal) {
+  async function probeBrowserUserInfo(signal: AbortSignal, bearerToken?: string) {
     const config = getDesktopSsoCookieUserInfoConfig(options.app);
     if (!config) {
       return undefined;
     }
     const ssoSession = options.session.defaultSession;
     const cookieHeader = await buildDesktopSsoCookieHeader(ssoSession, config.url);
-    if (!cookieHeader) {
+    if (!cookieHeader && !bearerToken) {
       throw new DesktopSsoRestoreRequestError("Desktop SSO browser userinfo cookie is missing.", 401);
     }
     const response = await ssoSession.fetch(config.url, {
       method: "GET",
       headers: {
         Accept: "application/json",
-        Cookie: cookieHeader
+        Cookie: cookieHeader,
+        ...(bearerToken ? { Authorization: `Bearer ${bearerToken}` } : {})
       },
+      ...(bearerToken ? { redirect: "manual" as const } : {}),
       signal
     });
     if (!response.ok) {
@@ -166,7 +169,7 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
 
   async function exchangeBrowserCookieAccessToken(
     fetchImpl?: CookieAccessTokenFetch,
-    exchangeOptions: { signal?: AbortSignal; persist?: boolean; requireCookie?: boolean } = {}
+    exchangeOptions: { signal?: AbortSignal; persist?: boolean; requireCookie?: boolean; syncCookies?: boolean } = {}
   ) {
     const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
     if (!exchangeUrl) {
@@ -191,15 +194,16 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
     if (!accessToken) {
       return "";
     }
-    const cookieDetails = getDesktopSsoAccessTokenCookieDetails(options.app, accessToken);
-    const targetSessions = [ssoSession];
-    await Promise.all(cookieDetails.flatMap((details) =>
-      targetSessions.map(async (targetSession) => {
-        await targetSession.cookies.set(details);
-      })
-    ));
-    await flushDesktopSsoSessions();
+    if (exchangeOptions.syncCookies !== false) {
+      await syncAccessTokenCookies(accessToken);
+    }
     return accessToken;
+  }
+
+  async function syncAccessTokenCookies(accessToken: string) {
+    const details = getDesktopSsoAccessTokenCookieDetails(options.app, accessToken);
+    await Promise.all(details.map((cookie) => options.session.defaultSession.cookies.set(cookie)));
+    await flushDesktopSsoSessions();
   }
 
   async function clearRestoredDesktopSsoCookies() {
@@ -248,10 +252,14 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
   async function performDesktopSsoSessionRestore(timeoutMs: number): Promise<DesktopSsoRestoreResult> {
     const wasTemporarilyUnavailable = restoreState === "temporarily_unavailable";
     const preparation = prepareDesktopSsoSessionRestore(options.app);
+    console.info("[sso-restore] preparation", {
+      requiresRemoteValidation: preparation.requiresRemoteValidation,
+      clearCookies: preparation.clearCookies === true
+    });
     if (preparation.clearCookies) {
       await clearRestoredDesktopSsoCookies();
     }
-    if (!preparation.requiresCookieValidation) {
+    if (!preparation.requiresRemoteValidation) {
       const result: DesktopSsoRestoreResult = {
         state: preparation.status.authenticated ? "authenticated" : "signed_out",
         status: preparation.status,
@@ -265,18 +273,32 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
 
     const abortController = new AbortController();
     const timeout = setTimeout(() => abortController.abort(), timeoutMs);
+    const restoreAuthMode = preparation.authMode || "cookie";
+    let stage = "clear-derived-cookie";
     try {
-      // Keep the upstream session Cookie as the recovery authority, but remove the derived JWT
-      // Cookie until this process has verified the session and exchanged a fresh token.
-      await clearDesktopSsoAccessTokenCookies();
-      const browserSession = await probeBrowserSession(undefined, abortController.signal);
-      const stableUserInfo = browserSession?.userInfo || await probeBrowserUserInfo(abortController.signal);
-      if (!stableUserInfo?.sub.trim()) {
-        throw new Error("Desktop SSO restore did not return a stable user id.");
+      // Saved credentials remain private recovery candidates. Only explicitly
+      // configured Bearer restoration may present the token to the login origin.
+      const candidateToken = restoreAuthMode === "bearer" ? readDesktopSsoAccessToken(options.app) : "";
+      if (restoreAuthMode === "bearer" && !candidateToken) {
+        throw new DesktopSsoRestoreRequestError("Desktop SSO restore token is missing.", 401);
       }
+      await clearDesktopSsoAccessTokenCookies();
+      stage = "session-probe";
+      const browserSession = restoreAuthMode === "cookie"
+        ? await probeBrowserSession(undefined, abortController.signal)
+        : null;
       let exchangeStatus: number | undefined;
+      stage = "token-exchange";
       const accessToken = await exchangeBrowserCookieAccessToken(async (url, init) => {
-        const response = await options.session.defaultSession.fetch(url, init);
+        const exchangeUrl = getDesktopSsoCookieAccessTokenExchangeUrl(options.app);
+        const useBearer = restoreAuthMode === "bearer" && url === exchangeUrl;
+        const response = await options.session.defaultSession.fetch(url, {
+          ...init,
+          ...(useBearer ? {
+            headers: { ...init?.headers, Authorization: `Bearer ${candidateToken}` },
+            redirect: "manual" as const
+          } : {})
+        });
         exchangeStatus = response.status;
         if (
           response.status === 401 ||
@@ -293,12 +315,29 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }, {
         signal: abortController.signal,
         persist: false,
-        requireCookie: true
+        requireCookie: restoreAuthMode === "cookie",
+        syncCookies: restoreAuthMode === "cookie"
       });
       if (!accessToken) {
         throw new DesktopSsoRestoreRequestError("Desktop SSO access-token exchange returned no token.", exchangeStatus);
       }
+      // Cookie recovery may need the newly exchanged token Cookie for userinfo.
+      // Bearer recovery validates identity with the returned token before writing
+      // that Cookie. Both keep canonical credentials unpublished until confirmed.
+      stage = "userinfo-probe";
+      const stableUserInfo = browserSession?.userInfo || await probeBrowserUserInfo(
+        abortController.signal,
+        restoreAuthMode === "bearer" ? accessToken : undefined
+      );
+      if (!stableUserInfo?.sub.trim()) {
+        throw new Error("Desktop SSO restore did not return a stable user id.");
+      }
+      stage = "persist-session";
+      if (restoreAuthMode === "bearer") {
+        await syncAccessTokenCookies(accessToken);
+      }
       const status = completeDesktopSsoRestoredBrowserSession(options.app, accessToken, stableUserInfo);
+      console.info("[sso-restore] authenticated");
       const result: DesktopSsoRestoreResult = { state: "authenticated", status, accessToken };
       restoreState = result.state;
       if (wasTemporarilyUnavailable) {
@@ -306,6 +345,11 @@ export function createDesktopSsoController(options: DesktopSsoControllerOptions)
       }
       return publishRestoreResult(result);
     } catch (error) {
+      console.warn("[sso-restore] failed", {
+        stage,
+        httpStatus: error instanceof DesktopSsoRestoreRequestError ? error.status : undefined,
+        errorType: error instanceof Error ? error.name : "unknown"
+      });
       if (isDefinitiveRestoreFailure(error)) {
         const status = clearDesktopSsoLocalSession(options.app, t("sso.restoreSessionExpired"));
         await clearRestoredDesktopSsoCookies();

@@ -94,6 +94,8 @@ export type OidcConfig = {
   accessTokenCookie?: AccessTokenCookieConfig;
   accessTokenCookies?: AccessTokenCookieConfig[];
   browserSession?: DesktopSsoBrowserSessionConfig;
+  // Startup recovery only; interactive login retains its configured protocol.
+  sessionRestore?: { authMode: "cookie" | "bearer" };
   userInfo?: DesktopSsoUserInfoConfig;
   avatarCache?: DesktopSsoAvatarCacheConfig;
   claims?: DesktopSsoClaimsConfig;

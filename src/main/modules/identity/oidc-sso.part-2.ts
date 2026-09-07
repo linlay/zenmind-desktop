@@ -645,6 +645,23 @@ export function buildOidcConfigFromRecord(record: Record<string, unknown>) {
   if (userInfo) {
     config.userInfo = userInfo;
   }
+  if ("sessionRestore" in record) {
+    const restore = getRecordObject(record, "sessionRestore");
+    const authMode = restore && getRecordString(restore, "authMode");
+    if (authMode !== "cookie" && authMode !== "bearer") {
+      throw new Error(t("sso.config.sessionRestoreAuthMode"));
+    }
+    if (authMode === "bearer") {
+      if (!browserSession || !cookieAccessTokenExchange || !userInfo?.enabled || userInfo.authMode !== "cookie") {
+        throw new Error(t("sso.config.sessionRestoreBearerRequirements"));
+      }
+      const origin = config.browserOrigin || new URL(browserSession.url).origin;
+      if ([cookieAccessTokenExchange.url, userInfo.url].some((url) => new URL(url).origin !== origin)) {
+        throw new Error(t("sso.config.sessionRestoreBearerOrigin"));
+      }
+    }
+    config.sessionRestore = { authMode };
+  }
   const avatarCache = normalizeAvatarCacheConfig(record);
   if (avatarCache) {
     config.avatarCache = avatarCache;

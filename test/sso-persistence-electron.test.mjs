@@ -10,14 +10,21 @@ import electron from "electron";
 test("real Electron persists SSO across restart and persists logout", {
   skip: process.env.RUN_SSO_ELECTRON_TEST !== "1", timeout: 90000
 }, async (t) => {
-  const scenarios = [{ migrate: false, legacyPartition: false }, { migrate: false, legacyPartition: true }];
+  const scenarios = [
+    { migrate: false, legacyPartition: false },
+    { migrate: false, legacyPartition: true },
+    { migrate: false, legacyPartition: false, userInfoRequiresToken: true },
+    { migrate: false, legacyPartition: false, bearerRestore: true }
+  ];
   if (process.platform === "darwin") scenarios.push({ migrate: true, legacyPartition: false });
-  for (const { migrate, legacyPartition } of scenarios) {
+  for (const { migrate, legacyPartition, userInfoRequiresToken, bearerRestore } of scenarios) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-sso-persistence-"));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     for (const phase of ["write", "restore", "logout", "signed-out"]) {
       const env = { ...process.env, SSO_PERSISTENCE_TEST_ROOT: root, SSO_PERSISTENCE_TEST_PHASE: phase,
-        SSO_PERSISTENCE_MIGRATE_ROOT: migrate && phase === "write" ? "1" : "0" };
+        SSO_PERSISTENCE_MIGRATE_ROOT: migrate && phase === "write" ? "1" : "0",
+        SSO_PERSISTENCE_USERINFO_REQUIRES_TOKEN: userInfoRequiresToken ? "1" : "0",
+        SSO_PERSISTENCE_BEARER_RESTORE: bearerRestore ? "1" : "0" };
       delete env.ELECTRON_RUN_AS_NODE;
       const child = spawn(electron, [fileURLToPath(new URL("./fixtures/sso-persistence-electron.cjs", import.meta.url))], {
         env, stdio: ["ignore", "pipe", "pipe"]
@@ -36,7 +43,7 @@ test("real Electron persists SSO across restart and persists logout", {
         clearTimeout(timer);
         if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
       }
-      assert.equal(code, 0, `phase=${phase} migration=${migrate}\n${output}`);
+      assert.equal(code, 0, `phase=${phase} migration=${migrate} userInfoRequiresToken=${userInfoRequiresToken} bearerRestore=${bearerRestore}\n${output}`);
       const result = JSON.parse(fs.readFileSync(path.join(root, `${phase}.json`), "utf8"));
       assert.equal(result.ok, true);
       if (phase === "write" && legacyPartition) {

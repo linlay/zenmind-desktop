@@ -9,6 +9,7 @@
 
 ## SSO 重启恢复
 
+- 分别使用 CuteJ 的显式 Bearer 恢复配置与 ZenMind 的服务端票据配置：CuteJ 即使缺少上游 Cookie，也应通过保存的 token 完成同源换票与身份确认，再写回派生 Cookie；ZenMind 保持原有流程。未配置 Bearer 恢复时，不得自动发送保存的 token。401/403 清理候选，服务临时故障保留候选但不能发布登录状态。
 - macOS 与 Windows 分别在登录成功后立即完全退出并重启，确认上游会话有效时自动恢复同一账号并重新换取 token；再次重启仍保持登录。Windows 同时覆盖默认目录与安装器登记的自定义数据根。
 - 确认 SSO 使用默认 session，Cookie 直接写入当前品牌的 `state/chromium/Cookies`；Website 与普通 WorkPanel Web 共享该会话，内置 Browser、WebApp、Help 和 Service 不继承。退出登录后立即重启，不能恢复旧账号或 SSO Cookie，其他网站的 Cookie 应保留。
 - 旧 `profiles/electron/Partitions` 下的 SSO 存储应在新 Chromium 根不存在时整体迁移为默认 session，保留 Cookie 与网站存储；新 Chromium 根已存在时不得覆盖。

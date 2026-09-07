@@ -47,6 +47,7 @@ const allowedLatinTerms = [
   /ACP/g,
   /CODER/g,
   /Cookie/g,
+  /\b[Bb]earer\b/g,
   /Google/g,
   /Kanban/g,
   /App/g,

@@ -15,6 +15,7 @@ const {
   __testInternals,
   failDesktopSsoFlow,
   finalizeDesktopSsoLoginAttempt,
+  getDesktopSsoAccessToken,
   getDesktopSsoStatus,
   isDesktopSsoCredentialRuntimeReady,
   startDesktopSsoLogin
@@ -405,7 +406,7 @@ function createCookieSsoControllerFixture(t, name) {
   return { app, controller };
 }
 
-function createCookieSsoRestoreFixture(t, name, fetchHandler) {
+function createCookieSsoRestoreFixture(t, name, fetchHandler, configOverrides = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), name));
   t.after(() => {
     failDesktopSsoFlow("reset test state");
@@ -435,7 +436,8 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler) {
       url: "https://ai.example.test/authorization",
       method: "GET",
       accessTokenPath: "access_token"
-    }
+    },
+    ...configOverrides
   });
 
   const calls = {
@@ -483,7 +485,7 @@ function createCookieSsoRestoreFixture(t, name, fetchHandler) {
   return { app, controller, calls };
 }
 
-test("desktop sso restart always validates Cookie, exchanges a fresh JWT, and flushes the default session", async (t) => {
+test("desktop sso default restart validates Cookie, exchanges a fresh JWT, and flushes the default session", async (t) => {
   const expiresAt = Math.floor(Date.now() / 1000) + 7_200;
   const oldToken = createUnsignedJwt({ sub: "old-user", exp: expiresAt + 7_200 });
   const freshToken = createUnsignedJwt({
@@ -534,6 +536,7 @@ test("desktop sso restart always validates Cookie, exchanges a fresh JWT, and fl
     accessToken: true
   });
   assert.equal(calls.fetches.length, 2, "a still-valid local JWT must not skip upstream validation and exchange");
+  assert.ok(calls.fetches.every(({ init }) => init.headers.Authorization === undefined));
   assert.equal(fs.readFileSync(path.join(stateRoot, "sso-access-token.txt"), "utf8").trim(), freshToken);
   const storedUser = JSON.parse(fs.readFileSync(path.join(stateRoot, "sso-user-info.json"), "utf8"));
   assert.equal(storedUser.sub, "new-user");
@@ -558,6 +561,31 @@ test("desktop sso restart always validates Cookie, exchanges a fresh JWT, and fl
   }
   assert.equal(calls.defaultFlushes, 2, "stale derived Cookie removal and fresh Cookie write are both flushed");
   assert.equal(calls.defaultCookieFlushes, 2, "DOM Storage flushes do not persist Cookie writes");
+});
+
+test("desktop sso Bearer restore clears rejected credentials but retains candidates on upstream failure", async (t) => {
+  for (const status of [401, 503]) {
+    await t.test(`upstream ${status}`, async (t) => {
+      const { app, controller, calls } = createCookieSsoRestoreFixture(
+        t, "desktop-sso-bearer-failure-", async (url, init) => {
+          assert.equal(url, "https://ai.example.test/authorization");
+          assert.match(init.headers.Authorization, /^Bearer /u);
+          assert.equal(init.redirect, "manual");
+          return new Response("upstream failure", { status });
+        }, {
+          sessionRestore: { authMode: "bearer" },
+          userInfo: { url: "https://ai.example.test/userinfo", authMode: "cookie", subPath: "data.id" }
+        }
+      );
+      const stateRoot = writeBrowserCookieRestoreCandidate(app);
+      const result = await controller.restoreDesktopSsoSession();
+      assert.equal(result.state, status === 401 ? "signed_out" : "temporarily_unavailable");
+      assert.equal(getDesktopSsoAccessToken(), null);
+      assert.equal(fs.existsSync(path.join(stateRoot, "sso-access-token.txt")), status !== 401);
+      assert.equal(calls.defaultSets.length, 0);
+      assert.equal(calls.fetches.length, 1);
+    });
+  }
 });
 
 test("desktop sso restore retains candidates and stays unavailable when Cookie persistence fails", async (t) => {
@@ -692,7 +720,8 @@ test("desktop sso restart timeout preserves the candidate without publishing a t
   assert.equal(getDesktopSsoStatus(app).completedSteps.accessToken, false);
 });
 
-test("standard OIDC restart keeps file recovery and does not probe Cookie endpoints", async (t) => {
+for (const authMode of ["oidc", "server"]) {
+test(`${authMode} restart keeps file recovery and does not probe Cookie or Bearer endpoints`, async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-restore-oidc-"));
   t.after(() => {
     failDesktopSsoFlow("reset test state");
@@ -701,14 +730,19 @@ test("standard OIDC restart keeps file recovery and does not probe Cookie endpoi
   const app = createApp(path.join(root, "home"));
   writeSsoConfig(app, {
     enabled: true,
-    authMode: "oidc",
+    authMode,
     browserMode: "system",
     issuer: "https://auth.example.test/application/o/desktop/",
     authorizeUrl: "https://auth.example.test/o/authorize/",
     tokenUrl: "https://auth.example.test/application/o/token/",
     clientId: "desktop",
     usePkce: true,
-    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration"
+    wellKnownUrl: "https://auth.example.test/application/o/desktop/.well-known/openid-configuration",
+    ...(authMode === "server" ? {
+      serverAuthorizeUrl: "https://auth.example.test/api/auth/desktop-sso/start",
+      webSessionExchange: { url: "https://auth.example.test/api/auth/desktop-sso/session", provider: "zenmind" },
+      cookieAccessTokenExchange: { url: "https://auth.example.test/api/auth/desktop-sso/token" }
+    } : {})
   });
   const stateRoot = path.dirname(__testInternals.getDesktopSsoAccessTokenFilePath(app));
   fs.mkdirSync(stateRoot, { recursive: true });
@@ -717,7 +751,7 @@ test("standard OIDC restart keeps file recovery and does not probe Cookie endpoi
     authenticated: true,
     issuer: "https://auth.example.test/application/o/desktop/",
     audience: "desktop",
-    authMode: "oidc",
+    authMode,
     message: "Single sign-on completed.",
     updatedAt: "2026-08-01T00:00:00.000Z"
   })}\n`, "utf8");
@@ -751,6 +785,7 @@ test("standard OIDC restart keeps file recovery and does not probe Cookie endpoi
   assert.equal(result.status.completedSteps.accessToken, true);
   assert.equal(fetchCount, 0);
 });
+}
 
 test("desktop sso logout scopes default-session cleanup to identity origins", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-sso-switch-cookies-"));
