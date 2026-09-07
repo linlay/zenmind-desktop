@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, FormEvent, ReactNode } from "react";
-import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined } from "@ant-design/icons";
+import { CheckOutlined, CopyOutlined, DesktopOutlined, MoonOutlined, PlusOutlined, QuestionCircleOutlined, SunOutlined, UserOutlined, PlayCircleOutlined, PauseCircleOutlined, ReloadOutlined, AppstoreOutlined, GlobalOutlined, ImportOutlined, ExportOutlined } from "@ant-design/icons";
 import { Button, Input, InputNumber, Modal, QRCode, Segmented, Select, Switch, Tabs, Tooltip } from "antd";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { PageFeedbackStack } from "../../components/PageFeedbackStack";
@@ -2693,6 +2693,19 @@ export function SettingsPage({
   ]);
 
   useEffect(() => {
+    if (activeSection !== "webapps") return;
+    let cancelled = false;
+    // Populate the whole catalog on entry, rather than revealing status on selection.
+    void Promise.allSettled(webappItems.map(async (item) => {
+      const result = await window.electronAPI.webs.webapps.getStatus(item.id);
+      if (!cancelled) {
+        setWebappRuntimeById((current) => ({ ...current, [item.id]: result.state }));
+      }
+    }));
+    return () => { cancelled = true; };
+  }, [activeSection, webappItems]);
+
+  useEffect(() => {
     if (activeSection !== "webapps" || !selectedWebapp) {
       return;
     }
@@ -5053,37 +5066,12 @@ export function SettingsPage({
                         className="service-catalog-import web-action-button is-secondary"
                         icon={<PlusOutlined />}
                         onClick={beginAddWebsiteItem}
+                        aria-pressed={creatingWebsite}
                       >
                         {t("settings.websites.addShort")}
                       </Button>
                     </div>
-                    <div className="web-catalog-actions">
-                      <Button
-                        type="text"
-                        className="web-action-button is-secondary"
-                        onClick={() => void handleImportWebsiteItems()}
-                        disabled={websiteTransferPending !== ""}
-                      >
-                        {websiteTransferPending === "import" ? t("settings.websites.importing") : t("settings.websites.import")}
-                      </Button>
-                      <Button
-                        type="text"
-                        className="web-action-button is-secondary"
-                        onClick={() => void handleExportWebsiteItems()}
-                        disabled={websiteTransferPending !== ""}
-                      >
-                        {websiteTransferPending === "export" ? t("settings.websites.exporting") : t("settings.websites.export")}
-                      </Button>
-                    </div>
                     <div className="service-nav-list" role="list" aria-label={t("settings.websites.addedTitle")}>
-                      <Button
-                        type="text"
-                        className="web-action-button is-secondary web-add-entry-action"
-                        onClick={beginAddWebsiteItem}
-                        aria-pressed={creatingWebsite}
-                      >
-                        {t("settings.websites.addTitle")}
-                      </Button>
                       {websiteItems.length === 0 ? (
                         <div className="service-group-empty">{t("settings.websites.empty")}</div>
                       ) : websiteItems.map((item) => (
@@ -5097,16 +5085,34 @@ export function SettingsPage({
                           aria-pressed={selectedWebsiteId === item.id}
                         >
                           <span className="service-nav-card-head">
+                            <span className="website-catalog-icon" aria-hidden="true"><GlobalOutlined /></span>
                             <span className="service-nav-title-row">
                               <span className="service-nav-card-title">{item.label}</span>
                             </span>
                             <span className="service-nav-version-status" title={item.url}>
-                              <span className="status-dot running" aria-hidden="true" />
                               <span className="service-nav-status-label">{new URL(item.url).hostname}</span>
                             </span>
                           </span>
                         </Button>
                       ))}
+                    </div>
+                    <div className="web-catalog-actions">
+                      <Button
+                        type="text"
+                        icon={<ImportOutlined />}
+                        onClick={() => void handleImportWebsiteItems()}
+                        disabled={websiteTransferPending !== ""}
+                      >
+                        {websiteTransferPending === "import" ? t("settings.websites.importing") : t("settings.websites.import")}
+                      </Button>
+                      <Button
+                        type="text"
+                        icon={<ExportOutlined />}
+                        onClick={() => void handleExportWebsiteItems()}
+                        disabled={websiteTransferPending !== "" || websiteItems.length === 0}
+                      >
+                        {websiteTransferPending === "export" ? t("settings.websites.exporting") : t("settings.websites.export")}
+                      </Button>
                     </div>
                   </section>
                 </div>
@@ -5116,7 +5122,7 @@ export function SettingsPage({
                 <section className="service-card control-center-service-hero web-detail-card">
                   <div className="control-center-service-head">
                     <div className="control-center-service-main">
-                      <div className="service-hero-icon web-hero-icon" aria-hidden="true"><span /></div>
+                      <div className="website-detail-icon" aria-hidden="true">{creatingWebsite ? <PlusOutlined /> : <GlobalOutlined />}</div>
                       <div className="service-hero-copy">
                         <div className="service-hero-title-line">
                           <h2>{creatingWebsite ? t("settings.websites.addTitle") : selectedWebsite?.label}</h2>
@@ -5152,7 +5158,7 @@ export function SettingsPage({
                         required
                       />
                     </label>
-                    <label className="web-detail-form-item">
+                    <label className="web-detail-form-item website-copilot-field">
                       <span>{t("settings.websites.agentEnhancement")}</span>
                       <span className="settings-control-row-select desktop-pet-agent-select-wrap">
                         <Select
@@ -5178,6 +5184,11 @@ export function SettingsPage({
                           ? (creatingWebsite ? t("settings.websites.adding") : t("settings.websites.updating"))
                           : (creatingWebsite ? t("settings.websites.add") : t("settings.websites.save"))}
                       </Button>
+                      {creatingWebsite && websiteItems.length > 0 ? (
+                        <Button disabled={websitePending} onClick={() => handleSelectWebsiteItem(websiteItems[0])}>
+                          {t("settings.websites.cancel")}
+                        </Button>
+                      ) : null}
                       {!creatingWebsite && selectedWebsite ? (
                         <Button
                           danger
@@ -5287,6 +5298,7 @@ export function SettingsPage({
                             aria-pressed={selectedWebappId === item.id}
                           >
                             <span className="service-nav-card-head">
+                              <span className="webapp-catalog-icon" aria-hidden="true"><AppstoreOutlined /></span>
                               <span className="service-nav-title-row">
                                 <span className="service-nav-card-title">{item.label}</span>
                               </span>
@@ -5322,17 +5334,21 @@ export function SettingsPage({
                   >
                     <div className="control-center-service-head">
                       <div className="control-center-service-main">
-                        <div className="service-hero-icon web-hero-icon" aria-hidden="true"><span /></div>
+                        <div className="webapp-detail-icon" aria-hidden="true"><AppstoreOutlined /></div>
                         <div className="service-hero-copy">
                           <div className="service-hero-title-line">
                             <h2>{selectedWebapp.label}</h2>
                           </div>
-                          <p>{getWebappSourceLabel(selectedWebapp)}</p>
+                          <div className="webapp-detail-meta">
+                            <span className="webapp-state-badge"><span className={`status-dot ${getWebappRuntimeStatusClass(runtimeState)}`} aria-hidden="true" />{getWebappRuntimeStatusLabel(runtimeState)}</span>
+                            <span>{publishStatusLabel}</span>
+                            <span>{selectedWebapp.version}</span>
+                          </div>
                         </div>
                       </div>
                       <div className="service-title-actions service-primary-actions">
                         <Button
-                          type="primary"
+                          className="webapp-publish-action"
                           disabled={webappPublishPendingId !== ""}
                           loading={webappPublishPendingId === selectedWebapp.id}
                           onClick={() => void handlePublishWebapp(selectedWebapp)}
@@ -5344,21 +5360,25 @@ export function SettingsPage({
                               : t("settings.webapps.publishAction")}
                         </Button>
                         <Button
-                          disabled={webappRuntimePendingId !== ""}
+                          type="primary"
+                          icon={<PlayCircleOutlined />}
+                          disabled={webappRuntimePendingId !== "" || runtimeState?.status === "running" || runtimeState?.status === "starting"}
                           loading={webappRuntimePendingId === `start:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("start", selectedWebapp)}
                         >
                           {t("settings.webapps.start")}
                         </Button>
                         <Button
-                          disabled={webappRuntimePendingId !== ""}
+                          icon={<PauseCircleOutlined />}
+                          disabled={webappRuntimePendingId !== "" || !runtimeState || runtimeState.status === "stopped"}
                           loading={webappRuntimePendingId === `stop:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("stop", selectedWebapp)}
                         >
                           {t("settings.webapps.stop")}
                         </Button>
                         <Button
-                          disabled={webappRuntimePendingId !== ""}
+                          icon={<ReloadOutlined />}
+                          disabled={webappRuntimePendingId !== "" || runtimeState?.status !== "running"}
                           loading={webappRuntimePendingId === `restart:${selectedWebapp.id}`}
                           onClick={() => void handleWebappRuntimeAction("restart", selectedWebapp)}
                         >
@@ -5398,6 +5418,7 @@ export function SettingsPage({
                       className="web-detail-form"
                       onSubmit={(event) => void handleSaveWebappSettings(event)}
                     >
+                      <div className="webapp-user-config-heading"><h3>{t("settings.webapps.userConfigTitle")}</h3></div>
                       <label className="web-detail-form-item">
                         <span>{t("settings.websites.displayName")}</span>
                         <Input
