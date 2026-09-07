@@ -1,3 +1,4 @@
+import type { SiteCdpScope } from "../web-surfaces";
 import http from "node:http";
 
 import fs from "node:fs";
@@ -276,7 +277,7 @@ export type DesktopActionBridgeOptions = {
   }) => { claimId: string } | null;
   discardWorkPanelLocalFileClaim?: (claimId: string) => boolean;
   confirmRendererAction?: (request: DesktopActionConfirmationRequest) => Promise<DesktopActionConfirmationResponse>;
-  executeCdpCommand: (request: EmbeddedCdpCommandRequest) => Promise<{
+  executeCdpCommand: (request: EmbeddedCdpCommandRequest, scope?: SiteCdpScope) => Promise<{
     targetId?: string;
     surfaceId?: string;
     result: unknown;

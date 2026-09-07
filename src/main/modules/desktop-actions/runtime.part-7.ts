@@ -1,3 +1,4 @@
+import type { SiteCdpScope } from "../web-surfaces";
 import http from "node:http";
 
 import fs from "node:fs";
@@ -217,7 +218,8 @@ import { handleActionCall, normalizeActionResponseTimePayload } from "./runtime.
 
 export async function handleDesktopCdpRequest(
   options: DesktopActionBridgeOptions,
-  request: DesktopCdpCallRequest
+  request: DesktopCdpCallRequest,
+  scope?: SiteCdpScope
 ): Promise<DesktopCdpCallResponse> {
   const method = typeof request.method === "string" ? request.method.trim() : "";
   if (!method) {
@@ -249,7 +251,7 @@ export async function handleDesktopCdpRequest(
       params,
       targetId,
       ...(request.source?.chatId ? { source: { chatId: request.source.chatId } } : {})
-    });
+    }, scope);
     return {
       ok: true,
       method,

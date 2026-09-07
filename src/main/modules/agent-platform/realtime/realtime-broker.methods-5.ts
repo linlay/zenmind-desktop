@@ -50,6 +50,7 @@ export function RealtimeBroker_handlePush_1(self: RealtimeBrokerMethodContext, f
     if (type === "run.finished" || type === "run.complete") {
         const runId = pushIdentity(frame, "runId");
         self.revokeRunActionGrant(runId);
+        self.siteCdpGrants.revoke(runId);
         const run = self.getRunChannel(runId);
         if (run && !run.terminal) {
             const payload = framePayload(frame);
@@ -147,9 +148,14 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
                 source,
             };
         }
+        const cdpSource = !isDesktopAction && isRecord(frame.payload.source) ? frame.payload.source : {};
+        if (!isDesktopAction && (!readText(cdpSource.runId) || !readText(cdpSource.chatId) ||
+            Boolean(readText(cdpSource.agentKey)) === Boolean(readText(cdpSource.teamId)))) {
+            throw brokerError("protocol_error", "CDP source must include Run, Chat and exactly one owner");
+        }
         const result = isDesktopAction
             ? await provider.action(actionRequest as Record<string, unknown>)
-            : await provider.cdp(frame.payload);
+            : await provider.cdp(frame.payload, self.siteCdpGrants.resolve(cdpSource));
         if (controller.signal.aborted)
             return;
         if (!isRecord(result)) {
@@ -165,8 +171,8 @@ export async function RealtimeBroker_handleDesktopBridgeRequest_3(self: Realtime
     }
     catch (error) {
         if (!controller.signal.aborted) {
-            const errorCode = error instanceof Error ? error.name : "";
-            if (errorCode === "source_chat_not_ready" || errorCode === "protocol_error") {
+            const errorCode = error instanceof Error ? readText((error as Error & { code?: string }).code) || error.name : "";
+            if (errorCode === "source_chat_not_ready" || errorCode === "protocol_error" || errorCode === "site_control_unavailable") {
                 const brokerFailure = error as Error & {
                     retryable?: boolean;
                     details?: Record<string, unknown>;

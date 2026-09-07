@@ -11,7 +11,17 @@ const {
 } = require("../dist-electron/shared/webview-popup.js");
 const {
   resolveWebviewOpenDisposition,
+  resolveRegisteredWebviewPopupTarget,
 } = require("../dist-electron/main/modules/web-surfaces/open-tab.js");
+
+test("popup policy keeps canonical WebApps single-page in both presentations", () => {
+  for (const presentationScope of ["main-workspace", "workpanel"]) {
+    assert.equal(resolveRegisteredWebviewPopupTarget({ surfaceType: "webapp", presentationScope }), null);
+  }
+  assert.equal(resolveRegisteredWebviewPopupTarget({ surfaceType: "chat-work-panel" }), "work-panel");
+  assert.equal(resolveRegisteredWebviewPopupTarget({ surfaceType: "website", active: false }), "desktop-browser");
+  assert.equal(resolveRegisteredWebviewPopupTarget(null), null);
+});
 
 test("Blob popup URLs require a non-opaque HTTP(S) creator origin", () => {
   const valid = "blob:https://example.test/1c5f9ca2-49ab-472c-b705-62f95df674d4";

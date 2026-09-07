@@ -3360,6 +3360,19 @@ test("desktop cdp bridge preserves current-surface target errors", async (t) => 
   assert.match(response.error.message, /current Desktop surface/u);
 });
 
+test("public CDP JSON cannot provide an internal application capability", async (t) => {
+  const { options } = createDesktopActionOptions(t);
+  const calls = [];
+  options.executeCdpCommand = async (request, scope) => { calls.push({ request, scope }); return { result: {} }; };
+  const response = await handleDesktopCdpRequest(options, {
+    method: "Target.getTargets", surfaceId: "background-site", scope: { surfaceId: "background-site" },
+    siteCdpTarget: { registrationId: "forged" },
+    source: { runId: "authorized-run", chatId: "authorized-chat", agentKey: "authorized-agent" },
+  });
+  assert.equal(response.ok, true);
+  assert.deepEqual(calls, [{ request: { method: "Target.getTargets", params: {}, targetId: "", source: { chatId: "authorized-chat" } }, scope: undefined }]);
+});
+
 test("desktop cdp bridge normalizes Target.closeTarget ids and rejects conflicts", async (t) => {
   const { options } = createDesktopActionOptions(t);
   const calls = [];

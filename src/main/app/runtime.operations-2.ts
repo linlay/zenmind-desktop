@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { resolveRegisteredWebviewPopupTarget } from "../modules/web-surfaces";
 
 import {
   app,
@@ -407,16 +408,11 @@ factoryContext.appShellRuntime = createAppShellRuntime({
     handleDesktopSsoWebviewNavigation: factoryContext.handleDesktopSsoWebviewNavigation,
     shouldOpenWebviewPopupInWorkPanelTab: (contents) => (() => {
         const target = factoryContext.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
-        return target?.surfaceType === "chat-work-panel" || target?.presentationScope === "workpanel";
+        return resolveRegisteredWebviewPopupTarget(target) === "work-panel";
     })(),
     resolveBlobPopupTarget: (contents) => {
         const target = factoryContext.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
-        if (target?.surfaceType === "chat-work-panel" || target?.presentationScope === "workpanel")
-            return "work-panel";
-        if (target?.surfaceType === "website" || target?.surfaceType === "browser") {
-            return "desktop-browser";
-        }
-        return null;
+        return resolveRegisteredWebviewPopupTarget(target);
     },
     attachWebviewContextMenu: factoryContext.webviewContextMenuController.attach,
     collectWebviewLoadDiagnostics: factoryContext.collectWebviewLoadDiagnostics,

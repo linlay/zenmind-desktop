@@ -1,3 +1,5 @@
+import type { RunSiteCdpGrants } from "./run-site-cdp-grants";
+import type { SiteCdpScope } from "../../web-surfaces";
 import { randomUUID } from "node:crypto";
 
 import type { App } from "electron";
@@ -131,6 +133,7 @@ export type BrokerRun = {
 };
 
 export type QueryTransaction = {
+  siteCdpScope?: SiteCdpScope;
   lane: RealtimeLane;
   requestType: "/api/query" | "/api/btw";
   operationId: string;
@@ -247,7 +250,7 @@ export type RunActionGrant = {
 
 export type DesktopBridgeRequestProvider = {
   action(request: Record<string, unknown>): Promise<unknown>;
-  cdp(request: Record<string, unknown>): Promise<unknown>;
+  cdp(request: Record<string, unknown>, scope?: SiteCdpScope): Promise<unknown>;
 };
 
 export type RealtimeQueryAccepted = {
@@ -380,6 +383,7 @@ export interface RealtimeBrokerMethodContext {
   inboundDesktopRequests: Map<string, AbortController>;
   seenInboundDesktopRequestIds: Set<string>;
   runActionGrants: Map<string, RunActionGrant>;
+  siteCdpGrants: RunSiteCdpGrants;
   activeRootObserver: RootObserverState | null;
   mainChatRootObserver: RootObserverState | null;
   pendingClones: Map<string, PendingClone>;
@@ -414,6 +418,7 @@ export interface RealtimeBrokerMethodContext {
     lane?: RealtimeLane;
     requestType?: "/api/query" | "/api/btw";
     observerToken?: string;
+    siteCdpScope?: SiteCdpScope;
   }): RealtimeQueryHandle;
   forwardRequest(options: {
     baseUrl: string;

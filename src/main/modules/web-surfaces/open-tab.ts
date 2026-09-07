@@ -1,4 +1,13 @@
 import { normalizeWebviewBlobPopupUrl } from "../../../shared/webview-popup";
+import type { RegisteredWebviewSurfaceTarget } from "./browser-surface-registry.shared";
+
+export function resolveRegisteredWebviewPopupTarget(target: RegisteredWebviewSurfaceTarget | null) {
+  // Canonical WebApps remain single-page even when presented in WorkPanel.
+  if (target?.surfaceType === "webapp") return null;
+  if (target?.surfaceType === "chat-work-panel" || target?.presentationScope === "workpanel") return "work-panel";
+  if (target?.surfaceType === "website" || target?.surfaceType === "browser") return "desktop-browser";
+  return null;
+}
 
 function parseHttpUrl(value: string) {
   try {

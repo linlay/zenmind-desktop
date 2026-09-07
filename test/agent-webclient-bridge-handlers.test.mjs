@@ -110,6 +110,7 @@ function createRuntime(targets, overrides = {}) {
     releasedRuns: [],
     cloneUnsubscribes: 0,
     debugTraces: [],
+    grants: [],
   };
   let activeRoot = null;
   let mainChatRoot = null;
@@ -186,7 +187,7 @@ function createRuntime(targets, overrides = {}) {
       input.onFrame({ frame: "response", id: input.localId, type: input.type, code: 0, data: { ok: true } });
       return `upstream-${input.localId}`;
     },
-    registerRunActionGrant: () => undefined,
+    registerRunActionGrant: (input) => calls.grants.push(input),
     cleanupConsumer: () => undefined,
     appendDebugTrace: (entry) => calls.debugTraces.push(entry),
     ...overrides.realtimeBroker,
@@ -981,3 +982,37 @@ test("ordinary non-live requests still use the Broker request multiplexer", asyn
   assert.equal(runtime.calls.forwarded[0].stream, false);
   assert.equal(sentFrames(sender).at(-1).id, "file-1");
 });
+
+for (const validParent of [true, false]) {
+  test(`Copilot query ${validParent ? 'captures' : 'rejects mismatched'} trusted application context`, async () => {
+    const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
+    const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b'); h.foreground(a);
+    const dock = childTarget(201, 'copilot-dock', 'agent-copilot', {
+      surfaceId: 'copilot-dock', ownerWebContentsId: 7, parentSurfaceId: a.surfaceId,
+      surfaceIdentityKey: validParent ? a.surfaceIdentityKey : b.surfaceIdentityKey,
+      currentUrl: 'http://127.0.0.1:7079/copilot/agent-1?chatId=chat-1',
+    });
+    const runtime = createRuntime(new Map([[201, dock]]), { browserSurfaces: {
+      listRegisteredSurfaces: h.registry.listRegisteredSurfaces,
+      getRegisteredSurfaceSnapshot: h.registry.getRegisteredSurfaceSnapshot,
+      findWebContentsById: h.registry.findWebContentsById,
+    } });
+    const sender = createSender(201, dock.currentUrl);
+    await openSession(runtime, sender, 'dock');
+    send(runtime, sender, 'dock', { frame: 'request', id: 'query-site', type: '/api/query',
+      payload: { requestId: 'query-site', agentKey: 'agent-1', chatId: 'chat-1', message: 'continue in background' } });
+    await flush();
+    if (validParent) {
+      assert.equal(runtime.calls.queries.length, 1);
+      const scope = runtime.calls.queries[0].siteCdpScope;
+      h.foreground(b);
+      scope.activate();
+      assert.equal(scope.readSurface().surfaceId, a.surfaceId);
+      scope.release();
+      assert.equal(runtime.calls.grants.length, 0);
+    } else {
+      assert.equal(runtime.calls.queries.length, 0);
+      assert.equal(sentFrames(sender).at(-1).type, 'capability_denied');
+    }
+  });
+}

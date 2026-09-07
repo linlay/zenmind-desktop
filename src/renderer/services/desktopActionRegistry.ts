@@ -3,17 +3,19 @@ import type {
   DesktopActionRendererResponse
 } from "../../shared/contracts";
 import { createTranslator, DEFAULT_LOCALE, type TranslateFunction } from "../../shared/i18n";
+import { controlBackgroundSiteFocus } from "./backgroundSiteFocus";
 
 export type DesktopActionProvider = (
   request: DesktopActionRendererRequest
 ) => Promise<Omit<DesktopActionRendererResponse, "requestId" | "action"> | null>;
 
-export type DesktopActionProviderScope = "global" | "page" | "web";
+export type DesktopActionProviderScope = "global" | "page" | "web" | "site-cdp";
 
 const providers: Record<DesktopActionProviderScope, DesktopActionProvider[]> = {
   global: [],
   page: [],
-  web: []
+  web: [],
+  "site-cdp": []
 };
 let bridgeStarted = false;
 let translate: TranslateFunction = createTranslator(DEFAULT_LOCALE);
@@ -75,7 +77,13 @@ function getProviderScopesForAction(action: string): DesktopActionProviderScope[
 }
 
 async function callScopedProviders(request: DesktopActionRendererRequest) {
-  const scopes = getProviderScopesForAction(request.action);
+  if (request.siteCdpTarget && request.action === "desktop.web.pageControlFocus" && request.args?.phase !== "input") {
+    if (request.args?.phase !== "capture" && request.args?.phase !== "restore") return actionError("invalid_args", "Invalid focus control phase.");
+    return { ok: true, result: controlBackgroundSiteFocus(request.args.phase, document) };
+  }
+  const scopes: DesktopActionProviderScope[] = request.siteCdpTarget
+    ? ["site-cdp"]
+    : getProviderScopesForAction(request.action);
   for (const scope of scopes) {
     const scopedProviders = providers[scope];
     for (let index = scopedProviders.length - 1; index >= 0; index -= 1) {

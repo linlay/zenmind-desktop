@@ -1,3 +1,4 @@
+import type { SiteCdpScope } from "../web-surfaces";
 import type { App, BrowserWindow } from "electron";
 import type {
   AssistantNavAgentItemsResult,
@@ -134,13 +135,13 @@ export function createAssistantBridgeRuntime(options: AssistantBridgeRuntimeOpti
       getMainWindow: options.getMainWindow,
       pendingRequests: desktopActionConfirmationRequests
     }),
-    executeCdpCommand: async (request: unknown) => options.cdpIntegration.start().executeCommand(request),
+    executeCdpCommand: async (request: unknown, scope?: SiteCdpScope) => options.cdpIntegration.start().executeCommand(request, scope),
     emitWebappChanged,
     desktopPet: options.desktopPet
   });
   options.realtimeBroker.setDesktopBridgeProvider({
     action: (request) => integration.handleAgentPlatformDesktopActionRequest(desktopActionOptions, request as any),
-    cdp: (request) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any),
+    cdp: (request, scope) => integration.handleDesktopCdpRequest(desktopActionOptions, request as any, scope),
   });
 
   const desktopWsServerOptions = {

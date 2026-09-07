@@ -1,3 +1,5 @@
+import { requireSiteCdpScope, type SiteCdpScope } from "./site-scope";
+import { withSiteCdpFocus } from "./site-focus";
 import crypto from "node:crypto";
 import http from "node:http";
 import type { AddressInfo, Socket } from "node:net";
@@ -52,8 +54,9 @@ type EmbeddedCdpGatewayOptions = {
   port?: number;
   getSurfaces: () => EmbeddedCdpSurface[] | Promise<EmbeddedCdpSurface[]>;
   resolveWebContents: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => WebContents | null | Promise<WebContents | null>;
-  activateTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => Promise<void>;
-  closeTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab) => Promise<unknown>;
+  activateTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteCdpScope) => Promise<void>;
+  closeTarget?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope?: SiteCdpScope) => Promise<unknown>;
+  controlSiteFocus?: (surface: EmbeddedCdpSurface, tab: EmbeddedCdpSurfaceTab, scope: SiteCdpScope, phase: "capture" | "restore" | "input") => Promise<unknown>;
   version?: string;
   commandTimeoutMs?: number;
   logger?: Pick<Console, "debug" | "warn">;
@@ -447,7 +450,8 @@ export class EmbeddedCdpGateway {
     );
   }
 
-  async executeCommand(request: EmbeddedCdpCommandRequest) {
+  async executeCommand(request: EmbeddedCdpCommandRequest, scope?: SiteCdpScope) {
+    if (scope) requireSiteCdpScope(scope);
     const method = typeof request.method === "string" ? request.method.trim() : "";
     if (!method) {
       throw new Error("method is required");
@@ -457,7 +461,7 @@ export class EmbeddedCdpGateway {
       if (Object.keys(params).length > 0) {
         throw new EmbeddedCdpInvalidArgsError(`${method} does not accept params.`);
       }
-      const surface = this.resolveCurrentSurface(await this.listValidSurfaces());
+      const surface = scope ? scope.readSurface() : this.resolveCurrentSurface(await this.listValidSurfaces());
       const tabs = surface ? surfaceTabs(surface) : [];
       const currentTab = surface ? activeSurfaceTab(surface) : null;
       const targetId = surface && currentTab ? createEmbeddedCdpTargetId(surface, currentTab) : null;
@@ -491,27 +495,30 @@ export class EmbeddedCdpGateway {
         }
       };
     }
-    const { surface, tab, targetId } = await this.resolveCommandTarget(request);
-    if (method === "Target.closeTarget") {
-      if (Object.keys(params).length > 0) {
-        throw new EmbeddedCdpInvalidArgsError("Target.closeTarget does not accept params after targetId resolution.");
+    const { surface, tab, targetId } = await this.resolveCommandTarget(request, scope);
+    return withSiteCdpFocus(scope, scope && this.options.controlSiteFocus
+      ? (phase) => this.options.controlSiteFocus!(surface, tab, scope, phase) : undefined, async () => {
+      if (method === "Target.closeTarget") {
+        if (Object.keys(params).length > 0) {
+          throw new EmbeddedCdpInvalidArgsError("Target.closeTarget does not accept params after targetId resolution.");
+        }
+        if (!this.options.closeTarget) {
+          throw new Error("Target.closeTarget is unavailable.");
+        }
+        await this.options.closeTarget(surface, tab, scope);
+        return {
+          targetId,
+          surfaceId: surface.id,
+          result: { success: true }
+        };
       }
-      if (!this.options.closeTarget) {
-        throw new Error("Target.closeTarget is unavailable.");
-      }
-      await this.options.closeTarget(surface, tab);
+      const result = await this.handleWebContentsCommandOnce(surface, tab, targetId, method, params, scope);
       return {
         targetId,
         surfaceId: surface.id,
-        result: { success: true }
+        result
       };
-    }
-    const result = await this.handleWebContentsCommandOnce(surface, tab, targetId, method, params);
-    return {
-      targetId,
-      surfaceId: surface.id,
-      result
-    };
+    });
   }
 
   private async handleHttpRequest(req: http.IncomingMessage, res: http.ServerResponse) {
@@ -689,14 +696,20 @@ export class EmbeddedCdpGateway {
     tab: EmbeddedCdpSurfaceTab,
     targetId: string,
     method: string,
-    params: Record<string, unknown>
+    params: Record<string, unknown>,
+    scope?: SiteCdpScope
   ) {
     const contents = await this.ensureWebContents(surface, tab);
     if (!contents || contents.isDestroyed()) {
       throw new Error("Embedded webContents target is unavailable.");
     }
+    scope?.validateTab(tab);
+    if (scope && method.startsWith("Input.")) {
+      await this.options.controlSiteFocus?.(surface, tab, scope, "input");
+      scope.validateTab(tab);
+    }
     if (method === "Page.bringToFront") {
-      await this.options.activateTarget?.(surface, tab);
+      await this.options.activateTarget?.(surface, tab, scope);
       return {};
     }
     if (method === "Page.reload") {
@@ -707,14 +720,23 @@ export class EmbeddedCdpGateway {
     if (ownsAttach) {
       debuggerRef.attach(DEFAULT_PROTOCOL_VERSION);
     }
+    const emulateFocus = Boolean(scope);
+    const debugContext = this.buildCommandDebugContext(surface, targetId, contents);
     try {
-      return await sendDesktopCdpCommand(debuggerRef, method, params, this.buildCommandDebugContext(surface, targetId, contents));
+      if (emulateFocus) {
+        // Chromium ignores input in an unfocused guest. Emulation does not focus the host window.
+        await sendDesktopCdpCommand(debuggerRef, "Emulation.setFocusEmulationEnabled", { enabled: true }, debugContext);
+        scope?.validateTab(tab);
+      }
+      return await sendDesktopCdpCommand(debuggerRef, method, params, debugContext);
     } finally {
-      if (ownsAttach && debuggerRef.isAttached()) {
-        try {
-          debuggerRef.detach();
-        } catch {
-          // Ignore detach failures while the target is closing.
+      try {
+        if (emulateFocus && debuggerRef.isAttached() && !contents.isDestroyed()) {
+          await sendDesktopCdpCommand(debuggerRef, "Emulation.setFocusEmulationEnabled", { enabled: false }, debugContext);
+        }
+      } finally {
+        if (ownsAttach && debuggerRef.isAttached()) {
+          try { debuggerRef.detach(); } catch { /* Target is closing. */ }
         }
       }
     }
@@ -880,10 +902,16 @@ export class EmbeddedCdpGateway {
     return this.targetsForSurface(currentSurface).find((target) => target.targetId === targetId) ?? null;
   }
 
-  private async resolveCommandTarget(request: EmbeddedCdpCommandRequest) {
+  private async resolveCommandTarget(request: EmbeddedCdpCommandRequest, scope?: SiteCdpScope) {
     const targetId = typeof request.targetId === "string" ? request.targetId.trim() : "";
     if (!targetId) {
       throw new EmbeddedCdpTargetError("target_required", "targetId is required for this CDP method.");
+    }
+    if (scope) {
+      const surface = scope.readSurface();
+      const target = this.targetsForSurface(surface).find((candidate) => candidate.targetId === targetId);
+      if (!target) throw new EmbeddedCdpTargetError("target_not_in_current_surface", "The target does not belong to the Run application instance.");
+      return target;
     }
     const surfaces = await this.listValidSurfaces();
     const currentSurface = this.resolveCurrentSurface(surfaces);

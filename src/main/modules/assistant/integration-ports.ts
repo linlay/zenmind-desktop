@@ -1,10 +1,11 @@
+import type { SiteCdpScope } from "../web-surfaces";
 import type { App } from "electron";
 
 export type AssistantIntegrationPorts = {
   callDesktopActionConfirmation: (request: any, options: any) => Promise<any>;
   callDesktopActionRenderer: (request: any, options: any) => Promise<any>;
   handleAgentPlatformDesktopActionRequest: (options: any, request: any) => Promise<any>;
-  handleDesktopCdpRequest: (options: any, request: any) => Promise<any>;
+  handleDesktopCdpRequest: (options: any, request: any, scope?: SiteCdpScope) => Promise<any>;
   startDesktopActionBridge: (options: any) => unknown;
   stopDesktopActionBridge: () => unknown;
   emitDesktopWsPush: (type: any, payload: any) => unknown;

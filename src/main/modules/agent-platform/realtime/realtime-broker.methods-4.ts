@@ -240,6 +240,7 @@ export function RealtimeBroker_consumeRunEvent_5(self: RealtimeBrokerMethodConte
             clearTimeout(transaction.acceptanceTimer);
             transaction.acceptanceTimer = null;
         }
+        if (transaction.siteCdpScope) self.siteCdpGrants.bind(transaction.acceptedValue, transaction.siteCdpScope);
         transaction.accepted.resolve(transaction.acceptedValue);
     }
     self.appendReplay(run, event, seq, path);
@@ -300,6 +301,7 @@ export function RealtimeBroker_completeRun_8(self: RealtimeBrokerMethodContext, 
     run.terminalSource = source;
     run.suspended = false;
     self.revokeRunActionGrant(run.runId);
+    self.siteCdpGrants.revoke(run.runId);
     if (run.upstreamRequestId) {
         self.terminalRequestIds.add(run.upstreamRequestId);
         if (self.terminalRequestIds.size > 2000) {
@@ -326,6 +328,8 @@ export function RealtimeBroker_completeRun_8(self: RealtimeBrokerMethodContext, 
 }
 
 export function RealtimeBroker_failQuery_9(self: RealtimeBrokerMethodContext, transaction: QueryTransaction, error: unknown) {
+    transaction.siteCdpScope?.release("The source query failed.");
+    if (transaction.runId) self.siteCdpGrants.revoke(transaction.runId);
     self.queriesByRequestId.delete(transaction.upstreamRequestId);
     const run = transaction.runId ? self.getRunChannel(transaction.runId, transaction.lane) : null;
     if (run && !transaction.acceptedValue)

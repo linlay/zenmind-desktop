@@ -104,6 +104,8 @@ export interface DesktopPageContextSnapshot {
 }
 
 export interface DesktopActionRendererRequest {
+  /** Main-only routing for an already authorized CDP tab operation; not a public Action input. */
+  siteCdpTarget?: { surfaceId: string; registrationId: string; tabId: string; webContentsId: number };
   requestId: string;
   action: string;
   args: Record<string, unknown>;

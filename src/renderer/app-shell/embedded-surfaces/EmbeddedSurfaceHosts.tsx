@@ -353,12 +353,10 @@ function CanonicalWebappSurface({
     const target = findTarget();
     const updateBounds = () => {
       const nextTarget = findTarget();
-      if (!nextTarget || nextTarget.hidden) {
-        setBounds({});
-        return;
-      }
+      if (!nextTarget || nextTarget.hidden) return;
       const rootRect = appContent.getBoundingClientRect();
       const targetRect = nextTarget.getBoundingClientRect();
+      if (targetRect.width <= 0 || targetRect.height <= 0) return;
       setBounds({
         left: targetRect.left - rootRect.left,
         top: targetRect.top - rootRect.top,

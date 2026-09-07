@@ -933,7 +933,7 @@ test("Primary chunks large reverse Desktop responses below 256 KiB", async (t) =
     frame: "request",
     type: "desktop.cdp.call",
     id: "large-screenshot",
-    payload: { method: "Page.captureScreenshot", params: {} },
+    payload: { method: "Page.captureScreenshot", params: {}, source: { runId: "run-1", chatId: "chat-1", agentKey: "agent-1" } },
   });
   await waitUntil(() => ["large-json", "large-screenshot"].every((id) =>
     socket("primary").sent.some((frame) => frame.frame === "response" && frame.id === id),
@@ -948,4 +948,68 @@ test("Primary chunks large reverse Desktop responses below 256 KiB", async (t) =
     assert.equal(terminal.code, 0);
     assert.equal(terminal.data.streamed ?? terminal.data.result?.data?.streamed, true);
   }
+});
+
+for (const switchBeforeAcceptance of [false, true]) {
+  test(`Copilot site authority survives Dock detach ${switchBeforeAcceptance ? 'before' : 'after'} canonical acceptance`, async (t) => {
+    const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
+    const { broker, socket, token } = createHarness(t);
+    const h = createSiteHarness(); const a = h.site('a'); const b = h.site('b');
+    const scope = h.capture(a);
+    const observer = rootObserver({ token: 'copilot:g1', kind: 'copilot_dock', surfaceId: 'copilot-dock', contextId: 'website:a' });
+    broker.activateRootObserver(observer);
+    const request = broker.query({ baseUrl: 'http://127.0.0.1:8080', token, id: 'site-query', payload: { agentKey: 'agent-1' },
+      owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteCdpScope: scope, onEvent() {} });
+    void request.completed.catch(() => undefined);
+    await waitUntil(() => requestOfType(socket('primary') ?? { sent: [] }, '/api/query').length === 1);
+    const outbound = requestOfType(socket('primary'), '/api/query')[0];
+    const detach = () => { h.foreground(b); broker.releaseRootObserver(observer.token); };
+    if (switchBeforeAcceptance) detach();
+    socket('primary').emit({ frame: 'stream', id: outbound.id, event: runEvent('run.start', 'run-site', 'chat-site', 1) });
+    await request.accepted;
+    if (!switchBeforeAcceptance) detach();
+    const added = h.addTab(a);
+    const calls = [];
+    broker.setDesktopBridgeProvider({ action: async () => ({ ok: true }), cdp: async (_request, granted) => {
+      const surface = granted.readSurface(); calls.push(surface);
+      return { ok: true, method: 'Target.getTargets', result: { count: surface.tabs.length } };
+    } });
+    const invoke = async (id, source = { runId: 'run-site', chatId: 'chat-site', agentKey: 'agent-1' }) => {
+      socket('primary').emit({ frame: 'request', type: 'desktop.cdp.call', id, payload: { method: 'Target.getTargets', source } });
+      await waitUntil(() => socket('primary').sent.some((frame) => frame.id === id));
+      return socket('primary').sent.find((frame) => frame.id === id);
+    };
+    assert.equal((await invoke('site-read')).frame, 'response');
+    assert.equal(calls.at(-1).surfaceId, a.surfaceId);
+    assert.equal(calls.at(-1).tabs.at(-1).webContentsId, added.webContentsId);
+    assert.equal((await invoke('bad-source', { runId: 'run-site', chatId: 'other', agentKey: 'agent-1' })).type, 'site_control_unavailable');
+    assert.equal(calls.length, 1);
+    socket('primary').emit({ frame: 'push', type: 'run.finished', data: { runId: 'run-site', chatId: 'chat-site', finishedAt: EPOCH_MS + 10 } });
+    assert.equal((await invoke('after-finish')).type, 'site_control_unavailable');
+    assert.equal(h.contents.get(added.webContentsId).throttle, true);
+    assert.equal(calls.length, 1);
+  });
+}
+
+test('same-identity reconnect preserves site authority while account rotation revokes it', async (t) => {
+  const { createSiteHarness } = require('./fixtures/site-cdp-harness.cjs');
+  const { broker, socket, sockets, token } = createHarness(t);
+  const h = createSiteHarness(); const a = h.site('a'); const scope = h.capture(a);
+  const observer = rootObserver({ token: 'copilot:g1', kind: 'copilot_dock', surfaceId: 'copilot-dock' });
+  broker.activateRootObserver(observer);
+  const request = broker.query({ baseUrl: 'http://127.0.0.1:8080', token, id: 'site-query', payload: {},
+    owner: { kind: 'agent', agentKey: 'agent-1' }, observerToken: observer.token, siteCdpScope: scope, onEvent() {} });
+  void request.completed.catch(() => undefined);
+  await waitUntil(() => requestOfType(socket('primary') ?? { sent: [] }, '/api/query').length === 1);
+  const outbound = requestOfType(socket('primary'), '/api/query')[0];
+  socket('primary').emit({ frame: 'stream', id: outbound.id, event: runEvent('run.start', 'run-site', 'chat-site', 1) });
+  await request.accepted;
+  broker.releaseRootObserver(observer.token);
+  socket('primary').disconnect();
+  await broker.ensureConnected('http://127.0.0.1:8080', token);
+  assert.equal(scope.readSurface().surfaceId, a.surfaceId);
+  assert.equal(sockets.flatMap((socket) => requestOfType(socket, '/api/query')).length, 1);
+  broker.rotateIdentity();
+  assert.throws(() => scope.readSurface(), { code: 'site_control_unavailable' });
+  assert.equal(h.contents.get(a.tabs[0].webContentsId).throttle, true);
 });

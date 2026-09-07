@@ -591,11 +591,34 @@ export function createMainProcessRuntime_cdpIntegration_9(factoryContext: Create
     getCurrentPageSnapshot: factoryContext.webSurfaceRuntime.getCurrentPageSnapshot,
     listServices: () => factoryContext.servicesFacade.listServices(app),
     isLoopbackUrl: parseSafeLoopbackWebUrl,
-    switchTab: async (surfaceId, tabId, ownerChatId) => {
+    controlSiteFocus: async (surfaceId, tabId, siteTarget, phase) => {
+        const response = await callDesktopActionRenderer({
+            requestId: `cdp-focus-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+            action: "desktop.web.pageControlFocus",
+            args: { phase },
+            siteCdpTarget: { surfaceId, tabId, ...siteTarget },
+        }, {
+            getMainWindow: factoryContext.getMainWindow,
+            pendingRequests: factoryContext.assistantBridgeRuntime.desktopActionRendererRequests,
+        });
+        if (!response.ok) throw new Error(response.error?.message || "Desktop foreground focus could not be preserved.");
+        const foregroundId = response.result && typeof response.result === "object" && "webContentsId" in response.result
+            ? response.result.webContentsId : undefined;
+        if (phase !== "capture" && typeof foregroundId === "number") {
+            const registry = factoryContext.webSurfaceRuntime.browserSurfaceRegistry;
+            const foreground = registry.resolveWebviewSurfaceTarget(foregroundId);
+            if (foreground?.ownerWebContentsId === factoryContext.getMainWindow()?.webContents.id) {
+                // Restore the focused child widget without showing or activating its window.
+                registry.findWebContentsById(foregroundId)?.focus();
+            }
+        }
+    },
+    switchTab: async (surfaceId, tabId, ownerChatId, siteTarget) => {
         const response = await callDesktopActionRenderer({
             requestId: `cdp-switch-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             action: ownerChatId ? "desktop.workpanel.activateTab" : "desktop.web.switchTab",
             args: ownerChatId ? { tabId } : { surfaceId, tabId },
+            ...(siteTarget ? { siteCdpTarget: { surfaceId, tabId, ...siteTarget } } : {}),
             ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
         }, {
             getMainWindow: factoryContext.getMainWindow,
@@ -606,11 +629,12 @@ export function createMainProcessRuntime_cdpIntegration_9(factoryContext: Create
         }
         return response.result;
     },
-    closeTab: async (surfaceId, tabId, ownerChatId) => {
+    closeTab: async (surfaceId, tabId, ownerChatId, siteTarget) => {
         const response = await callDesktopActionRenderer({
             requestId: `cdp-close-tab-${Date.now()}-${Math.random().toString(36).slice(2)}`,
             action: ownerChatId ? "desktop.workpanel.closeTab" : "desktop.web.closeTab",
             args: ownerChatId ? { tabId } : { surfaceId, tabId },
+            ...(siteTarget ? { siteCdpTarget: { surfaceId, tabId, ...siteTarget } } : {}),
             ...(ownerChatId ? { source: { chatId: ownerChatId } } : {})
         }, {
             getMainWindow: factoryContext.getMainWindow,

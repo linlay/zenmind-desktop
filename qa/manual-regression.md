@@ -114,9 +114,22 @@
 - 隐藏 WorkPanel、切换 Chat和恢复时确认 guest 保持 mounted/inactive；关闭 WebApp tab 时 guest 销毁但 runtime 继续，再次打开产生新 guest。
 - 在 WorkPanel 调整宽度、窗口缩放和 WorkPanel 全屏下确认 canonical WebApp 始终覆盖 active item body，不遮挡 tab strip、窗口控制或新增菜单。
 - WebApp 已在独立窗口时，WorkPanel 菜单显示已在浮窗并只聚焦窗口，不创建 tab。
-- WorkPanel presentation 不进入公开 CDP current，但页面 gateway/bridge、Cmd/Ctrl+W、popup 和上下文菜单仍按 WorkPanel 归属工作。
+- WorkPanel presentation 不进入公开 CDP current，但页面 gateway/bridge、Cmd/Ctrl+W 和上下文菜单仍按 WorkPanel 归属工作；WebApp popup 保持单页，不能打开 WorkPanel 新 tab。
 - 停止、启动失败、卸载和退出应用后确认所有 WorkPanel 引用与 canonical guest 被回收；WorkPanel 转移不改变持久 `openMode`。
 - 人为构造一次 Surface Registry 拒绝，确认 Main 只记录结构化 reason、surface/renderer/guest 身份和去重汇总，不记录 URL、token、Cookie、页面正文、identity key 或原始 Chat ID。
+
+## Website / WebApp Copilot 后台页面控制
+
+- macOS 与 Windows 分别执行：Website A 发起 query 后切到 B，A 读取、输入、坐标点击、刷新、截图均成功，B 的路由、原生/DOM 焦点、输入框内容与公开 current 保持不变。Tab 键不能进入隐藏 Website 或隐藏 tab。
+- 后台 A 的老 tab 打开新 tab，新 tab 再打开后续 tab；每个 popup 只创建在 A，登记后立即可查询和操作。未知 sourceGuestId 不得回退到 B，Blob 保持同来源和 partition，下载既有行为不变。
+- A、B 同时运行时分别查询和操作，确认不能跨实例；伪造公共 source、surfaceId 或内部 target 字段不能获得后台权限；Run/Chat/owner 冲突拒绝。
+- query 提交后立即切页、隐藏/卸载 Dock、切换 Chat 或进入 Kanban，迟到 acceptance 仍只能绑定 A。提交后先关闭 A 则拒绝建立可用授权；历史 attach 不补发授权。
+- 同身份连接重连后继续操作 A，已发命令不重放；Run 终态、退出账号或身份更换后授权失效。多 Run 共享 guest 时直到最后一个授权释放才恢复原后台节流值，Desktop 重启不恢复 grant。
+- 关闭单 tab 后旧 targetId 失败；关闭整个 Website、停止 WebApp、重开同名应用或 guest 崩溃后旧授权不能复用，不能重开页面或退回 B。
+- WebApp 主区 ↔ WorkPanel 转移保持原 guest 和授权，隐藏 WorkPanel 后仍有有效截图尺寸与坐标；始终单页。切换独立窗口更换 guest 后旧授权失败。
+- 回归普通前台 CDP、WorkPanel 私有授权、最后一个 tab 关闭、公开 post-state、截图与下载。
+- 可运行隔离的真实 Electron smoke：先 `npm run build:main:types`，再 `node_modules/.bin/electron test/fixtures/site-cdp-electron.cjs`（Windows 使用 `node_modules/.bin/electron.cmd`）。测试使用临时数据目录与 loopback 页面，不连接真实账号；成功输出测试平台及截图路径。该 smoke 不能替代真实 Platform query、Dock 和账号生命周期的端到端检查。
+- 同窗口并发输入需单独验收：在 Agent 连续输入时持续给 B 打字，检查字符归属与焦点事件。当前实现使用短暂 guest 焦点事务并在每条命令后恢复，不应将“命令后焦点恢复通过”视为“输入过程中绝无竞争”。
 
 ## 本地文件安全宿主
 

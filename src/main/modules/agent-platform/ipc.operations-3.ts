@@ -1,3 +1,4 @@
+import { captureCopilotSiteCdpScope } from "../web-surfaces";
 import type { App, WebContents } from "electron";
 
 import { randomUUID } from "node:crypto";
@@ -254,6 +255,15 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         releaseDetachBarrier?.();
         releaseDetachBarrier = null;
     };
+    let siteCdpScope: ReturnType<typeof captureCopilotSiteCdpScope>;
+    try {
+        siteCdpScope = frame.type === "/api/query"
+            ? captureCopilotSiteCdpScope(factoryContext.options.browserSurfaces, context.target)
+            : undefined;
+    } catch (error) {
+        factoryContext.sendFrame(session, frameError(frame.id, "capability_denied", error instanceof Error ? error.message : String(error)));
+        return;
+    }
     let connection: {
         baseUrl: string;
         token: string;
@@ -262,6 +272,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         connection = await factoryContext.availability();
     }
     catch (error) {
+        siteCdpScope?.release("Platform is unavailable.");
         finishExplicitDetachWrite(false);
         factoryContext.sendFrame(session, frameError(frame.id, "connection_unavailable", error instanceof Error ? error.message : String(error)));
         return;
@@ -414,6 +425,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
     if (binding && (binding.type === "/api/query" || binding.type === "/api/btw")) {
         try {
             const handle = factoryContext.options.realtimeBroker.query({
+                siteCdpScope,
                 baseUrl,
                 token,
                 lane: binding.type === "/api/btw" ? "btw" : "primary",
@@ -426,12 +438,14 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
                 observerToken: observerToken || undefined,
                 consumerId: session.consumerId,
                 onEvent: async (runEvent) => {
+                    // Run page authority is committed by the Broker, independently of Dock delivery.
+                    if (siteCdpScope && (binding.suppressed || binding.detachSent || session.closed)) return;
                     const upstreamFrame: PlatformFrameRecord = {
                         frame: "stream",
                         id: binding.localId,
                         event: runEvent,
                     };
-                    factoryContext.processQueryBootstrapFrame(binding, upstreamFrame);
+                    if (!siteCdpScope) factoryContext.processQueryBootstrapFrame(binding, upstreamFrame);
                     updateBindingFromFrame(binding, upstreamFrame);
                     if (binding.canonicalChatReady)
                         await binding.canonicalChatReady;
@@ -465,6 +479,7 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
             });
         }
         catch (error) {
+            siteCdpScope?.release("The query could not be submitted.");
             session.requestIds.delete(binding.localId);
             session.streams.delete(binding.localId);
             factoryContext.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));
