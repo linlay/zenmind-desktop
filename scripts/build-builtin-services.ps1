@@ -3,6 +3,7 @@ param(
     [string]$SyncOS = "windows",
     [string]$SyncArch = "amd64",
     [string]$WorkspaceRoot,
+    [switch]$Clean,
     [switch]$DryRun
 )
 
@@ -54,6 +55,17 @@ function Invoke-ServiceRelease {
     }
     if (-not (Test-Path -LiteralPath (Join-Path $projectDir "Makefile") -PathType Leaf)) {
         throw "Missing Makefile: $projectDir"
+    }
+    $releaseDir = [IO.Path]::GetFullPath((Join-Path $projectDir "dist/release"))
+    $expectedReleaseDir = [IO.Path]::GetFullPath((Join-Path (Join-Path $WorkspaceRoot $RepoName) "dist/release"))
+    if ($releaseDir -ne $expectedReleaseDir) {
+        throw "Refusing to clean unexpected release path: $releaseDir"
+    }
+    if ($Clean) {
+        Write-Host "[build-builtin-services] clean $releaseDir"
+        if (-not $DryRun) {
+            Remove-Item -LiteralPath $releaseDir -Recurse -Force -ErrorAction SilentlyContinue
+        }
     }
     Write-Host "[build-builtin-services] release $RepoName (ARCH=$SyncArch)"
     if ($DryRun) {

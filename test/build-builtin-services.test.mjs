@@ -16,8 +16,48 @@ const serviceRepos = [
   "identity-center"
 ];
 
-test("build-builtin-services releases every upstream service with only ARCH and explicit sources", (t) => {
+test("build-builtin-services cleans and releases every upstream service with only ARCH and explicit sources", (t) => {
   const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-build-builtin-services-workspace-"));
+  t.after(() => {
+    fs.rmSync(workspaceRoot, { recursive: true, force: true });
+  });
+
+  for (const repoName of serviceRepos) {
+    const repoRoot = path.join(workspaceRoot, repoName);
+    fs.mkdirSync(repoRoot, { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, "Makefile"), "release:\n\t@true\n", "utf8");
+  }
+
+  const output = execFileSync(
+    "bash",
+    [buildBuiltinServicesScript, "--dry-run", "--clean", "--sync-os", "darwin", "--sync-arch", "arm64"],
+    {
+      cwd: projectRoot,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        DESKTOP_WORKSPACE_ROOT: workspaceRoot,
+        VERSION: "desktop-must-not-forward",
+        PROGRAM_TARGETS: "windows",
+        PROGRAM_TARGET_MATRIX: "windows/amd64"
+      }
+    }
+  );
+
+  for (const repoName of serviceRepos) {
+    const repoRoot = path.join(workspaceRoot, repoName);
+    assert.match(output, new RegExp(`clean ${escapeRegExp(path.join(repoRoot, "dist", "release"))}`, "u"));
+    assert.match(
+      output,
+      new RegExp(`\\(cd ${escapeRegExp(repoRoot)} && unset VERSION PROGRAM_TARGETS PROGRAM_TARGET_MATRIX && make release ARCH=arm64\\)`, "u")
+    );
+    assert.match(output, new RegExp(`--source=${escapeRegExp(path.join(repoRoot, "dist", "release"))}`, "u"));
+  }
+  assert.doesNotMatch(output, /--only|--skip|--no-clean|--no-sync/u);
+});
+
+test("build-builtin-services keeps upstream releases unless --clean is requested", (t) => {
+  const workspaceRoot = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-build-builtin-services-no-clean-"));
   t.after(() => {
     fs.rmSync(workspaceRoot, { recursive: true, force: true });
   });
@@ -34,25 +74,11 @@ test("build-builtin-services releases every upstream service with only ARCH and 
     {
       cwd: projectRoot,
       encoding: "utf8",
-      env: {
-        ...process.env,
-        DESKTOP_WORKSPACE_ROOT: workspaceRoot,
-        VERSION: "desktop-must-not-forward",
-        PROGRAM_TARGETS: "windows",
-        PROGRAM_TARGET_MATRIX: "windows/amd64"
-      }
+      env: { ...process.env, DESKTOP_WORKSPACE_ROOT: workspaceRoot }
     }
   );
 
-  for (const repoName of serviceRepos) {
-    const repoRoot = path.join(workspaceRoot, repoName);
-    assert.match(
-      output,
-      new RegExp(`\\(cd ${escapeRegExp(repoRoot)} && unset VERSION PROGRAM_TARGETS PROGRAM_TARGET_MATRIX && make release ARCH=arm64\\)`, "u")
-    );
-    assert.match(output, new RegExp(`--source=${escapeRegExp(path.join(repoRoot, "dist", "release"))}`, "u"));
-  }
-  assert.doesNotMatch(output, /--only|--skip|--no-clean|--no-sync/u);
+  assert.doesNotMatch(output, /\[build-builtin-services\] clean /u);
 });
 
 test("build-builtin-services leaves existing Desktop assets untouched when an upstream release fails", (t) => {
@@ -73,9 +99,12 @@ test("build-builtin-services leaves existing Desktop assets untouched when an up
   for (const repoName of serviceRepos) {
     const repoRoot = path.join(workspaceRoot, repoName);
     fs.mkdirSync(repoRoot, { recursive: true });
+    fs.mkdirSync(path.join(repoRoot, "dist", "release"), { recursive: true });
+    fs.writeFileSync(path.join(repoRoot, "dist", "release", "stale.txt"), "stale\n", "utf8");
     const releaseRecipe = repoName === serviceRepos[0]
       ? [
           "release:",
+          "\t@test ! -e dist/release/stale.txt",
           "\t@printf 'ARCH=%s VERSION=%s TARGETS=%s\\n' \"$$ARCH\" \"$$VERSION\" \"$$PROGRAM_TARGETS\" > invocation.txt",
           "\t@false"
         ].join("\n")
@@ -86,7 +115,7 @@ test("build-builtin-services leaves existing Desktop assets untouched when an up
   assert.throws(
     () => execFileSync(
       "bash",
-      [path.join(scriptsRoot, "build-builtin-services.sh"), "--sync-os", "darwin", "--sync-arch", "arm64"],
+      [path.join(scriptsRoot, "build-builtin-services.sh"), "--clean", "--sync-os", "darwin", "--sync-arch", "arm64"],
       {
         cwd: desktopRoot,
         encoding: "utf8",
@@ -102,16 +131,17 @@ test("build-builtin-services leaves existing Desktop assets untouched when an up
   );
 
   assert.equal(fs.readFileSync(existingAsset, "utf8"), "keep\n");
+  assert.equal(fs.existsSync(path.join(workspaceRoot, serviceRepos[0], "dist", "release", "stale.txt")), false);
   assert.equal(
     fs.readFileSync(path.join(workspaceRoot, serviceRepos[0], "invocation.txt"), "utf8"),
     "ARCH=arm64 VERSION= TARGETS=\n"
   );
 });
 
-test("native PowerShell orchestrator preserves the public four-service release boundary", () => {
+test("native PowerShell orchestrator cleans generated releases and preserves the public four-service release boundary", () => {
   const source = fs.readFileSync(buildBuiltinServicesPowerShellScript, "utf8");
   assert.match(source, /#Requires -Version 5\.1/u);
-  for (const parameter of ["SyncOS", "SyncArch", "WorkspaceRoot", "DryRun"]) {
+  for (const parameter of ["SyncOS", "SyncArch", "WorkspaceRoot", "Clean", "DryRun"]) {
     assert.match(source, new RegExp(`\\$${parameter}\\b`, "u"));
   }
   let previousIndex = -1;
@@ -124,6 +154,7 @@ test("native PowerShell orchestrator preserves the public four-service release b
   assert.match(source, /& cmd\.exe \/d \/s \/c "make release ARCH=\$SyncArch"/u);
   assert.doesNotMatch(source, /& make release/u);
   assert.match(source, /Remove-Item "Env:\$name"/u);
+  assert.match(source, /Remove-Item -LiteralPath \$releaseDir -Recurse -Force/u);
   assert.match(source, /--os=\$SyncOS/u);
   assert.match(source, /--arch=\$SyncArch/u);
   assert.match(source, /synced 4 builtin service assets/u);

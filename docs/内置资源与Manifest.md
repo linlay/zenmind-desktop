@@ -20,6 +20,8 @@
 
 四个内置服务的显式构建与同步入口是 macOS/Linux 的 `scripts/build-builtin-services.sh` 和 Windows 的 `scripts/build-builtin-services.ps1`。Windows host 与 Docker 发布只校验、消费已经同步的 `build/resources/services`；资源缺失时先运行对应 PowerShell 入口，发布命令本身不扫描相邻服务仓库。
 
+该显式构建入口拥有上游服务生成产物的清理权限：传入 `--clean` 或 `-Clean` 时，在调用每个服务的 `make release` 前删除其 `dist/release`，避免旧版本、旧平台或同版本产物影响本次完整构建。清理范围只限固定的四个服务仓库中可重建的 `dist/release`，不读取或修改服务源码、配置和私有发布输入。未显式传入清理选项时保留现有发布物。
+
 ## Manifest 职责
 
 每个 bundle 的 manifest 是 Desktop 识别该资源的唯一入口，描述：

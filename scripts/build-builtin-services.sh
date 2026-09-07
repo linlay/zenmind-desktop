@@ -7,6 +7,7 @@ DEFAULT_DESKTOP_WORKSPACE_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 DESKTOP_WORKSPACE_ROOT="${DESKTOP_WORKSPACE_ROOT:-$DEFAULT_DESKTOP_WORKSPACE_ROOT}"
 
 DRY_RUN=0
+CLEAN_FIRST=0
 SYNC_OS=""
 SYNC_ARCH=""
 SIGN_MAC_BUILTINS="${SIGN_MAC_BUILTINS:-0}"
@@ -28,6 +29,7 @@ Build the complete set of upstream builtin service release packages, then sync
 only those release outputs into build/resources/services.
 
 Options:
+  --clean          Remove upstream dist/release directories before build.
   --sync-os os     Sync only one target OS (darwin, windows, linux).
   --sync-arch arch Build upstream services for, and sync only, one target arch
                     (arm64, amd64). Defaults to the host arch for upstream builds.
@@ -46,11 +48,12 @@ Environment:
                    release signing still happens in electron-builder.
 
 Each upstream service owns its VERSION, target matrix, and all service-private
-release inputs. Desktop invokes only: make release ARCH=<host-or-sync-arch>.
+release inputs. With --clean, Desktop removes generated dist/release output
+before invoking: make release ARCH=<host-or-sync-arch>.
 
 Examples:
-  scripts/build-builtin-services.sh --sync-os darwin --sync-arch arm64
-  SIGN_MAC_BUILTINS=1 CSC_NAME="Your Name (TEAMID)" scripts/build-builtin-services.sh --sync-os darwin --sync-arch arm64
+  scripts/build-builtin-services.sh --clean --sync-os darwin --sync-arch arm64
+  SIGN_MAC_BUILTINS=1 CSC_NAME="Your Name (TEAMID)" scripts/build-builtin-services.sh --clean --sync-os darwin --sync-arch arm64
   DESKTOP_WORKSPACE_ROOT=/Users/me/Project/desktop-workspace scripts/build-builtin-services.sh --sync-os windows --sync-arch amd64
 EOF
 }
@@ -164,6 +167,30 @@ should_sign_mac_builtins() {
   [[ "$SIGN_MAC_BUILTINS" == "1" && ( -z "$SYNC_OS" || "$SYNC_OS" == "darwin" ) ]]
 }
 
+clean_project_release() {
+  local project_dir="$1"
+  local release_dir="$project_dir/dist/release"
+
+  if [[ "$CLEAN_FIRST" != "1" ]]; then
+    return 0
+  fi
+
+  case "$release_dir" in
+    "$DESKTOP_WORKSPACE_ROOT"/*/dist/release)
+      ;;
+    *)
+      die "refusing to clean unexpected release path: $release_dir"
+      ;;
+  esac
+
+  log "clean $release_dir"
+  if [[ "$DRY_RUN" == "1" ]]; then
+    printf '  rm -rf -- %q\n' "$release_dir"
+    return
+  fi
+  rm -rf -- "$release_dir"
+}
+
 build_project() {
   local repo_name="$1"
   local project_dir="$DESKTOP_WORKSPACE_ROOT/$repo_name"
@@ -171,6 +198,7 @@ build_project() {
   [[ -d "$project_dir" ]] || die "missing service project: $project_dir"
   [[ -f "$project_dir/Makefile" ]] || die "missing Makefile: $project_dir/Makefile"
 
+  clean_project_release "$project_dir"
   log "release $repo_name (ARCH=$BUILD_ARCH)"
   if [[ "$DRY_RUN" == "1" ]]; then
     printf '  (cd %q && unset VERSION PROGRAM_TARGETS PROGRAM_TARGET_MATRIX && make release ARCH=%q)\n' \
@@ -225,6 +253,10 @@ sync_desktop_assets() {
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --clean)
+      CLEAN_FIRST=1
+      shift
+      ;;
     --sync-os)
       [[ $# -ge 2 ]] || die "--sync-os requires a value"
       SYNC_OS="$(normalize_sync_os "$2")"
