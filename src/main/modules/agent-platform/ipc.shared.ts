@@ -56,6 +56,7 @@ import {
 } from "../../../shared/canonical-chat-sync";
 
 import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
+import { decodeRoutePathSegment } from "../../../shared/route-path";
 
 import { requireAgentPlatformEpochMillis } from "../../../shared/time-contract";
 
@@ -370,6 +371,29 @@ export function sameOwner(left: AgentWebclientRunOwner | null, right: AgentWebcl
   return left.kind === "agent" && right.kind === "agent"
     ? left.agentKey === right.agentKey
     : left.kind === "team" && right.kind === "team" && left.teamId === right.teamId;
+}
+
+export function resolveAttachChatId(context: SurfaceContext, payload: Record<string, unknown>): string {
+  const payloadChatId = readText(payload.chatId);
+  const ownerChatId = context.target.ownerChatId?.trim() || "";
+  if (rootObserverKind(context.target) !== "copilot_dock") return payloadChatId || ownerChatId;
+
+  // Attach's wire payload identifies the Run, not its Chat. Unlike Main Chat,
+  // the persistent Dock has no registered ownerChatId; its guest owns Chat navigation.
+  const url = new URL(context.sender.getURL());
+  const routeMatch = /^\/copilot\/([^/]+)$/u.exec(url.pathname);
+  const agentKey = routeMatch ? decodeRoutePathSegment(routeMatch[1]) : null;
+  const chatIds = url.searchParams.getAll("chatId");
+  const chatId = chatIds[0]?.trim() || "";
+  const owner = readOwner(payload);
+  if (!agentKey || chatIds.length !== 1 || !chatId || url.searchParams.has("newChat")) {
+    throw protocolError("Copilot attach requires a canonical guest Chat route");
+  }
+  if (owner?.kind !== "agent" || owner.agentKey !== agentKey ||
+      (payloadChatId && payloadChatId !== chatId) || (ownerChatId && ownerChatId !== chatId)) {
+    throw protocolError("Copilot attach identity does not match the current guest Chat");
+  }
+  return chatId;
 }
 
 export function readNormalizedStreamEvent(frame: PlatformFrameRecord): Record<string, unknown> | null {

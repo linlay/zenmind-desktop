@@ -63,6 +63,7 @@ import { isDesktopDevelopmentRuntime } from "../../infrastructure/electron/devel
 import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
 
 import type { RegisterAgentWebclientBridgeIpcHandlersContext } from "./ipc.shared";
+import { resolveAttachChatId } from "./ipc.shared";
 
 import { AGENT_PLATFORM_SERVICE_ID, ClosedLogicalSessionDiagnostic, FrameErrorOptions, LIVE_CHAT_SURFACE_IDS, LIVE_REQUEST_TYPES, LogicalSession, MAX_SERIALIZED_FRAME_BYTES, PlatformFrameRecord, RootObserverContextSource, SURFACE_REGISTRATION_WAIT_MS, StreamBinding, SurfaceContext, authorizeSurface, bridgeErrorCode, bridgeErrorWithMetadata, createRootObserverToken, describeMainChatRouteIdentity, failure, frameError, frameErrorOptions, mainChatQueryRouteAgentKeys, mainChatQueryTargetIsReady, mainChatQueryTargetIsTransitional, mayAwaitSurfaceRegistration, normalizeDocumentWorkspacePath, parseRequestFrame, protocolError, readNormalizedStreamEvent, readOwner, readText, resolveNewChatQuerySource, rootObserverContextId, rootObserverKind, sameNewChatSource, sameOrigin, sameOwner, sessionKey, streamBindingDiagnostic, trustedKind, updateBindingFromFrame, validateMainChatQueryAgentIdentity, validateMainChatQuerySenderChatIdentity, validateMainChatQueryTargetAgentIdentity } from "./ipc.shared";
 
@@ -142,6 +143,17 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         if (!allowedSurface || !context.target.active) {
             factoryContext.sendFrame(session, frameError(frame.id, "surface_unavailable", "only the active Chat or BTW surface may open this live Run stream"));
             return;
+        }
+        if (frame.type === "/api/attach") {
+            try {
+                payload = { ...payload, chatId: resolveAttachChatId(context, payload) };
+                if (!readText(payload.chatId) || !readText(payload.runId) || !readOwner(payload)) {
+                    throw protocolError("attach Run identity is incomplete");
+                }
+            } catch (error) {
+                factoryContext.sendFrame(session, frameError(frame.id, "protocol_error", error instanceof Error ? error.message : String(error)));
+                return;
+            }
         }
         const rootKind = rootObserverKind(context.target);
         if (rootKind) {
@@ -367,9 +379,13 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
         }
         return;
     }
-    if (binding?.type === "/api/attach" && observerToken &&
-        binding.chatId && binding.runId && binding.owner) {
+    if (binding?.type === "/api/attach") {
         try {
+            // Live attach must never fall through to one-shot forwarding, which
+            // discards the remaining stream after its first response.
+            if (!observerToken || !binding.chatId || !binding.runId || !binding.owner) {
+                throw protocolError("attach requires a complete Run identity and active observer");
+            }
             if (context.target.surfaceId === MAIN_CHAT_SURFACE_ID) {
                 factoryContext.options.realtimeBroker.registerRunActionGrant({
                     sourceId: observerToken,

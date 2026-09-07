@@ -697,6 +697,114 @@ test("trusted Main Chat registration creates the Broker bundle before FramePort 
   assert.equal(root.contextId, main.ownerChatId);
 });
 
+test("ownerless Copilot attach restores a lasting Primary subscription from the current guest Chat", async () => {
+  const target = childTarget(201, "copilot-dock", "agent-copilot", {
+    surfaceId: "copilot-dock",
+    surfaceLevel: "root",
+    parentSurfaceId: undefined,
+    ownerChatId: undefined,
+    surfaceIdentityKey: "copilot:website-1",
+    // Registry can still contain the original URL after guest SPA navigation.
+    currentUrl: "http://127.0.0.1:7079/copilot/agent-1",
+  });
+  const runtime = createRuntime(new Map([[201, target]]));
+  const sender = createSender(201, `${target.currentUrl}?chatId=chat-2`);
+  await openSession(runtime, sender, "copilot-recovery");
+  send(runtime, sender, "copilot-recovery", {
+    frame: "request", id: "copilot-attach", type: "/api/attach",
+    // The WebClient attach wire contract carries run/owner/seq, but no chatId.
+    payload: { runId: "run-2", agentKey: "agent-1", lastSeq: 4 },
+  });
+  await flush();
+
+  assert.equal(runtime.calls.attaches.length, 1);
+  assert.equal(runtime.calls.forwarded.length, 0);
+  assert.equal(runtime.calls.queries.length, 0);
+  const subscription = runtime.calls.attaches[0];
+  assert.equal(subscription.chatId, "chat-2");
+  assert.equal(subscription.runId, "run-2");
+  assert.deepEqual(subscription.owner, { kind: "agent", agentKey: "agent-1" });
+  assert.equal(subscription.lastSeq, 4);
+  assert.equal(subscription.lane, "primary");
+  assert.equal(runtime.broker.getActiveRootObserver().contextId, "copilot:website-1:chat-2");
+
+  for (const seq of [5, 6, 7]) {
+    subscription.onEvent({ type: "message.delta", timestamp: EPOCH_MS, seq, runId: "run-2", chatId: "chat-2", delta: `chunk-${seq}` });
+    await flush();
+  }
+  assert.deepEqual(sentFrames(sender).map((frame) => [frame.id, frame.event?.seq]), [
+    ["copilot-attach", 5], ["copilot-attach", 6], ["copilot-attach", 7],
+  ]);
+  subscription.onComplete({ reason: "completed", lastSeq: 7 });
+  assert.equal(sentFrames(sender).at(-1).reason, "completed");
+  assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+  assert.equal(runtime.registration.getDiagnostics().pendingRequestCount, 0);
+});
+
+test("Main Chat attach without chatId uses its registered owner on the Primary lane", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[101, target]]));
+  const sender = createSender(101, target.currentUrl);
+  await openSession(runtime, sender, "main-attach");
+  send(runtime, sender, "main-attach", {
+    frame: "request", id: "main-attach", type: "/api/attach",
+    payload: { runId: "run-1", agentKey: "agent-1", lastSeq: 3 },
+  });
+  await flush();
+  assert.equal(runtime.calls.attaches.length, 1);
+  assert.equal(runtime.calls.attaches[0].chatId, "chat-1");
+  assert.equal(runtime.calls.attaches[0].lane, "primary");
+  assert.equal(runtime.calls.forwarded.length, 0);
+});
+
+test("Copilot rejects ambiguous or conflicting attach identities before replacing its observer", async () => {
+  const target = childTarget(201, "copilot-dock", "agent-copilot", {
+    surfaceId: "copilot-dock", surfaceLevel: "root", ownerChatId: undefined,
+    currentUrl: "http://127.0.0.1:7079/copilot/agent-1?chatId=chat-1",
+  });
+  const cases = [
+    { path: "/copilot/agent-1" },
+    { path: "/copilot/agent-1?chatId=chat-1&chatId=chat-2" },
+    { path: "/copilot/agent-1?chatId=chat-1&newChat=new-1" },
+    { path: "/agent/agent-1?chatId=chat-1" },
+    { path: "/copilot/agent-2?chatId=chat-1" },
+    { payload: { chatId: "chat-2" } },
+    { payload: { runId: "" } },
+    { payload: { agentKey: "" } },
+    { payload: { teamId: "team-1" } },
+  ];
+  for (const scenario of cases) {
+    const runtime = createRuntime(new Map([[201, target]]));
+    const sender = createSender(201, scenario.path ? `http://127.0.0.1:7079${scenario.path}` : target.currentUrl);
+    await openSession(runtime, sender, "invalid-attach");
+    send(runtime, sender, "invalid-attach", {
+      frame: "request", id: "invalid-attach", type: "/api/attach",
+      payload: { runId: "run-1", agentKey: "agent-1", ...scenario.payload },
+    });
+    await flush();
+    assert.equal(sentFrames(sender).at(-1).type, "protocol_error", JSON.stringify(scenario));
+    assert.equal(runtime.calls.attaches.length, 0);
+    assert.equal(runtime.calls.forwarded.length, 0);
+    assert.equal(runtime.broker.getActiveRootObserver(), null);
+    assert.equal(runtime.registration.getDiagnostics().activeStreamCount, 0);
+  }
+});
+
+test("incomplete Main Chat attach cannot fall back to a one-shot request", async () => {
+  const target = mainTarget();
+  const runtime = createRuntime(new Map([[101, target]]));
+  const sender = createSender(101, target.currentUrl);
+  await openSession(runtime, sender, "incomplete-attach");
+  send(runtime, sender, "incomplete-attach", {
+    frame: "request", id: "incomplete-attach", type: "/api/attach",
+    payload: { agentKey: "agent-1" },
+  });
+  await flush();
+  assert.equal(sentFrames(sender).at(-1).type, "protocol_error");
+  assert.equal(runtime.calls.attaches.length, 0);
+  assert.equal(runtime.calls.forwarded.length, 0);
+});
+
 test("Overview may attach before the Main Chat live request without parent observer failure", async () => {
   const main = mainTarget();
   const overview = childTarget(102, "overview", "agent-overview");
