@@ -30,8 +30,7 @@ type ToolingZipEntry = JSZip.JSZipObject & {
 };
 
 export type WebappToolingTask =
-  | { operation: "manifest.init"; workspaceRoot: string; projectPath: string; key: string; label: string; target?: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
-  | { operation: "manifest.validate"; workspaceRoot: string; projectPath: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
+  | { operation: "package.init"; workspaceRoot: string; projectPath: string; key: string; label: string; target?: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
   | { operation: "package.validate"; workspaceRoot: string; projectPath: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
   | { operation: "package.validate"; workspaceRoot: string; archivePath: string; _temporaryToken?: string; _retainBuildTemporary?: boolean }
   | { operation: "package.build"; workspaceRoot: string; projectPath: string; outputPath: string; _temporaryToken?: string; _retainBuildTemporary?: boolean };
@@ -212,7 +211,7 @@ function ensureMinimalFrontend(projectPath: string, manifest: WebappManifest) {
   writeInitialIndex(indexPath);
 }
 
-function initializeManifest(task: Extract<WebappToolingTask, { operation: "manifest.init" }>) {
+function initializeManifest(task: Extract<WebappToolingTask, { operation: "package.init" }>) {
   const project = resolveCreatableWorkspacePath(task.workspaceRoot, task.projectPath, "manifest");
   const key = task.key.trim();
   const label = task.label.trim();
@@ -350,18 +349,8 @@ async function buildPackage(task: Extract<WebappToolingTask, { operation: "packa
 
 export async function executeWebappToolingTask(task: WebappToolingTask): Promise<WebappToolingResult> {
   switch (task.operation) {
-    case "manifest.init":
+    case "package.init":
       return initializeManifest(task);
-    case "manifest.validate": {
-      const project = resolveExistingWorkspacePath(task.workspaceRoot, task.projectPath, "directory", "manifest");
-      const manifest = readManifest(project.absolutePath, project.relativePath);
-      return {
-        projectPath: project.relativePath,
-        manifestPath: relativeChild(project.relativePath, "webapp.json"),
-        id: manifest.id,
-        key: manifest.key,
-      };
-    }
     case "package.validate": {
       if ("archivePath" in task) {
         const archive = resolveExistingWorkspacePath(task.workspaceRoot, task.archivePath, "file", "archive");

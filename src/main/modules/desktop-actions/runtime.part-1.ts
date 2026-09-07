@@ -324,8 +324,7 @@ export const AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS = new Set([
 
 export const AGENT_PLATFORM_ONLY_ACTIONS = new Set([
   "desktop.workpanel.openLocalFile",
-  "desktop.webapp.manifest.init",
-  "desktop.webapp.manifest.validate",
+  "desktop.webapp.package.init",
   "desktop.webapp.package.validate",
   "desktop.webapp.package.build"
 ]);

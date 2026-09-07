@@ -933,6 +933,212 @@
   min-height: 34px;
 }
 
+.settings-page .web-settings-page .web-settings-shell {
+  grid-template-columns: 300px minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.settings-page .web-settings-page .web-settings-catalog {
+  min-height: 420px;
+  border-radius: 12px;
+}
+
+.settings-page .web-settings-page .web-nav-card .service-nav-card-head {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 6px 12px;
+  align-items: center;
+}
+
+.settings-page .webapp-catalog-icon,
+.settings-page .website-catalog-icon,
+.settings-page .website-detail-icon,
+.settings-page .webapp-detail-icon {
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+  color: var(--accent-strong);
+  background: var(--accent-fill-subtle);
+  border: 1px solid var(--accent-border-subtle);
+  border-radius: 10px;
+}
+
+.settings-page .website-catalog-icon,
+.settings-page .webapp-catalog-icon {
+  grid-row: span 2;
+  width: 36px;
+  height: 36px;
+  font-size: 19px;
+}
+
+.settings-page .web-settings-page .webapp-nav-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  grid-column: 2;
+  color: var(--muted);
+}
+
+.settings-page .web-settings-page .web-nav-card.ant-btn {
+  padding: 14px 12px;
+  border-radius: 9px;
+}
+
+.settings-page .web-settings-page .web-nav-card.ant-btn.is-active {
+  background: var(--accent-fill-subtle);
+  box-shadow: none;
+}
+
+.settings-page .web-settings-page .web-nav-card.is-active .service-nav-version-status {
+  color: var(--muted);
+}
+
+.settings-page .web-settings-page .web-settings-detail {
+  background: transparent;
+}
+
+.settings-page .web-settings-page .web-detail-card {
+  border-radius: 12px;
+}
+
+.settings-page .web-settings-page .control-center-service-head {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 22px;
+  padding: 24px;
+}
+
+.settings-page .website-detail-icon,
+.settings-page .webapp-detail-icon {
+  width: 52px;
+  height: 52px;
+  font-size: 26px;
+  border-radius: 14px;
+}
+
+.settings-page .web-settings-page .service-hero-title-line h2 {
+  font-size: 20px;
+  line-height: 1.5;
+}
+
+.settings-page .webapp-detail-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 16px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.settings-page .webapp-state-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-page .web-settings-page .service-primary-actions {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-page .web-settings-page .webapp-publish-action {
+  order: 1;
+  margin-left: auto;
+}
+
+.settings-page .web-settings-page .webapp-user-config-heading {
+  padding: 22px 24px 8px;
+}
+
+.settings-page .web-settings-page .web-detail-form-item {
+  grid-template-columns: 112px minmax(0, 480px);
+  border: 0;
+  padding: 16px 24px;
+}
+
+.settings-page .web-settings-page .webapp-user-config-empty {
+  margin: 4px 24px 24px;
+  padding: 16px;
+  border: 1px dashed var(--control-center-border);
+  border-radius: 8px;
+  background: var(--control-center-card-muted);
+}
+
+.settings-page .web-settings-page .web-detail-actions {
+  padding: 16px 24px;
+}
+
+.settings-page .is-websites .service-nav-version-status {
+  grid-column: 2;
+  min-width: 0;
+  justify-content: flex-start;
+  color: var(--muted);
+}
+
+.settings-page .is-websites .web-settings-catalog .service-group {
+  display: flex;
+  flex-direction: column;
+  min-height: 418px;
+}
+
+.settings-page .is-websites .web-catalog-actions {
+  margin-top: auto;
+  padding: 12px;
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .is-websites .web-catalog-actions .ant-btn {
+  flex: 1;
+  color: var(--ink-soft);
+}
+
+.settings-page .is-websites .web-detail-form {
+  padding-top: 8px;
+}
+
+.settings-page .is-websites .website-copilot-field {
+  margin-top: 8px;
+  padding-top: 24px;
+  padding-bottom: 24px;
+  border-top: 1px solid var(--control-center-border);
+}
+
+.settings-page .is-websites .web-detail-actions .is-danger {
+  margin-left: auto;
+}
+
+.settings-page .is-websites .service-hero-copy p {
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+
+@media (max-width: 1000px) {
+  .settings-page .web-settings-page .web-settings-shell {
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 12px;
+  }
+}
+
+@media (max-width: 760px) {
+  .settings-page .web-settings-page .web-settings-shell {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-page .web-settings-page .web-settings-catalog {
+    min-height: 0;
+    max-height: 300px;
+  }
+  .settings-page .web-settings-page .web-detail-form-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .settings-page .is-websites .web-settings-catalog .service-group {
+    min-height: 0;
+  }
+}
+
 @media (max-width: 900px) {
   .settings-page .webapp-user-config-field {
     grid-template-columns: 1fr;
