@@ -844,12 +844,13 @@ export type DesktopGlobalSearchShortcut =
   | { kind: "attention"; slot: DesktopGlobalSearchShortcutSlot }
   | { kind: "agent"; slot: DesktopGlobalSearchShortcutSlot };
 export type DesktopGlobalSearchShortcutListener = (shortcut: DesktopGlobalSearchShortcut) => void;
-export type DesktopWorkPanelCloseShortcutRequest = {
+export type DesktopCloseShortcutRequest = {
   guestId: number | null;
+  website?: { surfaceId: string; registrationId: string };
   fallbackToWindowClose?: boolean;
 };
-export type DesktopWorkPanelCloseShortcutListener = (
-  request: DesktopWorkPanelCloseShortcutRequest
+export type DesktopCloseShortcutListener = (
+  request: DesktopCloseShortcutRequest
 ) => void;
 export type DesktopConfigChangedEvent = {
   reason: string;
@@ -1284,7 +1285,7 @@ export interface DesktopApi {
   onStartupRestoreState: (listener: StartupRestoreStateListener) => () => void;
   onOpenGlobalSearch: (listener: () => void) => () => void;
   onGlobalSearchShortcut: (listener: DesktopGlobalSearchShortcutListener) => () => void;
-  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => () => void;
+  onCloseShortcut: (listener: DesktopCloseShortcutListener) => () => void;
   onWorkPanelFullscreenExitShortcut: (listener: () => void) => () => void;
   onOpenAssistantWorker: (listener: AssistantWorkerOpenListener) => () => void;
   onWebviewOpenTab: (listener: WebviewOpenTabListener) => () => void;

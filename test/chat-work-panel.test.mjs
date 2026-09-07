@@ -310,7 +310,7 @@ test("WorkPanel renders Chrome-style outer tabs with mapped icons and layered cl
   assert.match(host, /normalizeWorkPanelWebUrl\(findItemWebview\(ownerChatId, item\.itemId\)\?\.getURL\(\)\)/u);
   assert.match(host, /work-panel-host\$\{fullscreenOwnerChatId === activeChatId \? " is-fullscreen" : ""\}/u);
   assert.match(host, /const closable = item\.closable && !item\.pinned/u);
-  assert.match(host, /onWorkPanelCloseShortcut/u);
+  assert.match(host, /registerDesktopCloseShortcutHandler/u);
   assert.match(host, /guestId === null/u);
   assert.match(host, /if \(activeChatId\)[\s\S]{0,80}closeWorkPanelStep\(activeChatId\)/u);
   assert.match(host, /const closableItems = workspace\.items\.filter/u);
@@ -400,7 +400,7 @@ test("WorkPanel close shortcut uses visible composite ownership across renderer 
   const appRuntime = read("src/main/app/runtime.ts");
   const appState = read("src/main/app/state.ts");
 
-  assert.match(contracts, /DesktopWorkPanelCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;/u);
+  assert.match(contracts, /DesktopCloseShortcutRequest = \{[\s\S]*?guestId: number \| null;[\s\S]*?fallbackToWindowClose\?: boolean;/u);
   assert.doesNotMatch(contracts, /workPanelFocused|setWorkPanelKeyboardFocusActive/u);
   assert.match(contracts, /requestWindowClose: \(\) => void/u);
   assert.doesNotMatch(preload, /desktopShell\.setWorkPanelKeyboardFocusActive/u);
@@ -422,5 +422,9 @@ test("WorkPanel close shortcut uses visible composite ownership across renderer 
   for (const role of ["btw", "source", "reference", "file", "workpanel-web"]) {
     assert.match(appRuntime, new RegExp(`"${role}"`, "u"));
   }
-  assert.match(host, /else if \(fallbackToWindowClose\)/u);
+  const closeRegistry = read("src/renderer/services/desktopCloseShortcutRegistry.ts");
+  const appShell = read("src/renderer/app-shell/AppShell.tsx");
+  assert.match(appShell, /onCloseShortcut\(dispatchDesktopCloseShortcut\)/u);
+  assert.match(closeRegistry, /request\.guestId === null && !request\.website && request\.fallbackToWindowClose/u);
+  assert.match(host, /if \(website\) return false/u);
 });

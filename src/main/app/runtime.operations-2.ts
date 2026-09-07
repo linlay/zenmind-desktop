@@ -200,7 +200,7 @@ import {
   getFocusedWebviewDevToolsShortcut,
   isDevToolsShortcut,
   isGlobalSearchShortcut,
-  isWorkPanelCloseShortcut,
+  isDesktopCloseShortcut,
   resolveGlobalSearchCommandShortcut,
 } from "../infrastructure/electron/platform-adapter";
 
@@ -372,7 +372,7 @@ factoryContext.appShellRuntime = createAppShellRuntime({
     parseSafeLoopbackWebUrl,
     isDevToolsShortcut,
     isGlobalSearchShortcut,
-    isWorkPanelCloseShortcut,
+    isDesktopCloseShortcut,
     isWorkPanelWebview: (contents) => {
         const target = factoryContext.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
         return Boolean(target?.active &&
@@ -403,6 +403,12 @@ factoryContext.appShellRuntime = createAppShellRuntime({
             target.surfaceRole === "main-chat" &&
             target.surfaceLevel === "root" &&
             target.surfaceType === "agent-chat");
+    },
+    resolveWebsiteCloseTarget: (contents) => {
+        const target = factoryContext.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+        if (!target?.active || target.surfaceType !== "website" || target.surfaceRole !== "website" ||
+            target.surfaceLevel !== "root" || target.presentationScope === "workpanel") return null;
+        return { surfaceId: target.surfaceId, registrationId: target.registrationId };
     },
     resolveGlobalSearchCommandShortcut,
     handleDesktopSsoWebviewNavigation: factoryContext.handleDesktopSsoWebviewNavigation,

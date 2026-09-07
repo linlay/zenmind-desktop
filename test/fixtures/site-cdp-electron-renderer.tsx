@@ -4,6 +4,7 @@ import { MemoryRouter } from 'react-router-dom';
 import { ipcRenderer } from 'electron';
 import { WebSurfaceHost, CanonicalWebappSurfaceHost } from '../../src/renderer/app-shell/embedded-surfaces/EmbeddedSurfaceHosts';
 import { startDesktopActionRendererBridge } from '../../src/renderer/services/desktopActionRegistry';
+import { dispatchDesktopCloseShortcut } from '../../src/renderer/services/desktopCloseShortcutRegistry';
 
 const listen = (channel: string, callback: (value: any) => void) => {
   const listener = (_event: unknown, value: any) => callback(value);
@@ -23,8 +24,13 @@ const listen = (channel: string, callback: (value: any) => void) => {
     respond: (input: unknown) => ipcRenderer.invoke('smoke.response', input),
   },
   sso: { onStatusChanged: () => () => {} },
+  desktopShell: { requestWindowClose: () => ipcRenderer.send('smoke.windowClose') },
 };
 startDesktopActionRendererBridge();
+listen('app.closeShortcut', (request) => {
+  ipcRenderer.send('smoke.closeTrace', request);
+  dispatchDesktopCloseShortcut(request);
+});
 const origin = new URLSearchParams(location.search).get('origin')!;
 const items: any = new Map([
   ['website:a', { id: 'a', kind: 'website', label: 'A', url: origin + '/a' }],
@@ -35,11 +41,15 @@ function Fixture() {
   const [active, setActive] = useState('website:a');
   const [owner, setOwner] = useState<any>({ scope: 'main-workspace' });
   const [opened, setOpened] = useState<any[]>([...items.keys()]);
+  const closeWebsite = (key: string) => {
+    setOpened((current) => current.filter((entry) => entry !== key));
+    setActive((current) => current === key ? '' : current);
+  };
   (window as any).smoke = { select: setActive, present: setOwner, close: (key: string) => setOpened((current) => current.filter((entry) => entry !== key)) };
   return <MemoryRouter><div className="app-content" style={{ position: 'relative', width: '100%', height: '100%' }}>
     <main className="app-main" style={{ position: 'relative', width: '100%', height: '100%' }}>
       <WebSurfaceHost activeEntryKey={active} itemMap={items} mountedEntryKeys={opened}
-        onCloseWebItem={(key) => setOpened((current) => current.filter((entry) => entry !== key))} />
+        onCloseWebItem={closeWebsite} />
     </main>
     <div hidden={active !== 'workpanel'} data-work-panel-owner="chat-fixture" data-work-panel-item="app-item"
       style={{ position: 'absolute', inset: '10px', width: 650, height: 420 }} />

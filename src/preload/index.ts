@@ -29,7 +29,7 @@ import type {
   EnterpriseChatSnapshotListener,
   DesktopWindowStateListener,
   DesktopGlobalSearchShortcutListener,
-  DesktopWorkPanelCloseShortcutListener,
+  DesktopCloseShortcutListener,
   ShutdownProgressListener,
   DesktopPetStateListener,
   DesktopLogTarget,
@@ -803,17 +803,17 @@ const api: DesktopApi = {
       ipcRenderer.off("app.globalSearchShortcut", handleGlobalSearchShortcut);
     };
   },
-  onWorkPanelCloseShortcut: (listener: DesktopWorkPanelCloseShortcutListener) => {
-    const handleWorkPanelCloseShortcut = (
+  onCloseShortcut: (listener: DesktopCloseShortcutListener) => {
+    const handleCloseShortcut = (
       _event: Electron.IpcRendererEvent,
-      request: Parameters<DesktopWorkPanelCloseShortcutListener>[0]
+      request: Parameters<DesktopCloseShortcutListener>[0]
     ) => {
       listener(request);
     };
 
-    ipcRenderer.on("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+    ipcRenderer.on("app.closeShortcut", handleCloseShortcut);
     return () => {
-      ipcRenderer.off("app.workPanelCloseShortcut", handleWorkPanelCloseShortcut);
+      ipcRenderer.off("app.closeShortcut", handleCloseShortcut);
     };
   },
   onWorkPanelFullscreenExitShortcut: (listener: () => void) => {

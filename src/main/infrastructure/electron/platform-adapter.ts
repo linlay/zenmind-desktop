@@ -49,7 +49,7 @@ export function isGlobalSearchShortcut(platform: DesktopPlatform, input: Keyboar
   return false;
 }
 
-export function isWorkPanelCloseShortcut(platform: DesktopPlatform, input: KeyboardShortcutInput) {
+export function isDesktopCloseShortcut(platform: DesktopPlatform, input: KeyboardShortcutInput) {
   if (input.type !== "keyDown" || input.isAutoRepeat || input.key.toLowerCase() !== "w") {
     return false;
   }

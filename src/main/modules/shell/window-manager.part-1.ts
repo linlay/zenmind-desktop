@@ -13,7 +13,7 @@ import { createInitialLocaleArguments } from "../../../shared/i18n/initial-local
 
 import type { LocaleSettings } from "../../../shared/i18n/types";
 
-import type { DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
+import type { DesktopCloseShortcutRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
 
 import {
   CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL,
@@ -167,9 +167,10 @@ export type AttachedWebviewOptions<
   getMainWindow(): TMainWindow | null;
   isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
   isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
-  isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+  isDesktopCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
   isWorkPanelWebview?(contents: TGuestContents): boolean;
   isMainChatWebview?(contents: TGuestContents): boolean;
+  resolveWebsiteCloseTarget?(contents: TGuestContents): DesktopCloseShortcutRequest["website"] | null;
   isWorkPanelFullscreenActive?(): boolean;
   resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
   isGlobalSearchOverlayVisible?(): boolean;
@@ -308,7 +309,7 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
     };
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
-    isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isDesktopCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isHandlingQuit(): boolean;
     requestAppQuit(): void;
@@ -367,9 +368,9 @@ export function configureMainWindowLifecycleEvents<TWindow extends MainWindowLif
       return;
     }
 
-    if (options.isWorkPanelCloseShortcut?.(options.platform, input)) {
+    if (options.isDesktopCloseShortcut?.(options.platform, input)) {
       event.preventDefault();
-      targetWindow.webContents.send("app.workPanelCloseShortcut", {
+      targetWindow.webContents.send("app.closeShortcut", {
         guestId: null,
         fallbackToWindowClose: true
       });

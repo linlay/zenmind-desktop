@@ -16,7 +16,7 @@
 - 使用真实鼠标分别点击按钮图标中心与空白拖动区：按钮点击不得触发窗口拖动，空白区仍可正常拖动窗口。
 - 在主 renderer 与聚焦 webview 中分别按 `Ctrl+Shift+I`，确认都只切换主 renderer 的停靠式 DevTools；按钮始终留在 ZenMind 系统栏。按 `Ctrl+Shift+D` 仍只为当前 focus webview 打开独立 DevTools。
 - 点击最小化、最大化/还原，确认状态图标及时更新；分别通过系统栏关闭按钮、`Alt+F4` 和任务栏右键“关闭窗口”触发关闭，确认只显示一个现有的退出确认框，取消后窗口保持显示，确认后完成受管任务与服务清理并真正退出。托盘菜单“退出”仍直接执行安全退出；打开全局搜索或可信 guest 模态层时窗口按钮被遮罩且不可点击。
-- macOS 确认仍使用原生 traffic lights，标题栏和全屏行为不变；`Cmd+W` 按当前 Chat 的可见 WorkPanel → 主窗口层级关闭。
+- macOS 确认仍使用原生 traffic lights，标题栏和全屏行为不变；`Cmd+W` 在 Website 逐个关闭当前 tab，在 Chat 按可见 WorkPanel → 主窗口层级关闭。
 
 ## 项目侧边栏
 
@@ -35,7 +35,7 @@
 ## WorkPanel 自由新增 Tab
 
 - 在 macOS 与 Windows 分别打开一个稳定 Chat，确认 Overview 固定首项，`32×32px` 的 `+` 紧跟最后一个 tab 并随横向溢出滚动。
-- 分别把焦点放在侧栏 Chat 行、Main Chat 与当前 WorkPanel WebView，连续按 macOS `Cmd+W` / Windows `Ctrl+W`：先关闭 active 可关闭 tab；Overview 激活时关闭最后一个可关闭 tab；再关闭整个 WorkPanel；下一次才执行主窗口原有关闭。取消 dirty/批注确认或遇到 busy 时本次停止。隐藏 WorkPanel、普通 Website、Browser、Copilot 与其他 Chat 的后台 WorkPanel 不得被误关闭。
+- 分别把焦点放在侧栏 Chat 行、Main Chat 与当前 WorkPanel WebView，连续按 macOS `Cmd+W` / Windows `Ctrl+W`：先关闭 active 可关闭 tab；Overview 激活时关闭最后一个可关闭 tab；再关闭整个 WorkPanel；下一次才执行主窗口原有关闭。取消 dirty/批注确认或遇到 busy 时本次停止。隐藏 WorkPanel、后台 Website、Browser、Copilot 与其他 Chat 的后台 WorkPanel 不得被误关闭。
 - 从侧栏显示/恢复 WorkPanel、切换 Chat 和切换 WorkPanel tab，确认不会自动把焦点送入 WebView；只有用户主动点击 Main Chat、WorkPanel 内容或 tab 时焦点才移动。隐藏、失活和回收 item 后旧 WebView 不再接收按键，macOS 与 Windows 都回归。
 - 在浅色、深色、Windows 标题栏偏移和 WorkPanel 全屏下检查菜单定位、圆角、hover/focus、Esc、方向键、Home/End 与 Enter。
 - 确认菜单顺序为 Terminal、Web、Files、Side Chat、Project、WebApp；Terminal 禁用且没有快捷键或 PTY。
@@ -118,6 +118,12 @@
 - WorkPanel presentation 不进入公开 CDP current，但页面 gateway/bridge、Cmd/Ctrl+W 和上下文菜单仍按 WorkPanel 归属工作；WebApp popup 保持单页，不能打开 WorkPanel 新 tab。
 - 停止、启动失败、卸载和退出应用后确认所有 WorkPanel 引用与 canonical guest 被回收；WorkPanel 转移不改变持久 `openMode`。
 - 人为构造一次 Surface Registry 拒绝，确认 Main 只记录结构化 reason、surface/renderer/guest 身份和去重汇总，不记录 URL、token、Cookie、页面正文、identity key 或原始 Chat ID。
+
+## Website 关闭快捷键
+
+- macOS 与 Windows 分别打开至少 6 个 Website tabs，把焦点放在网页输入框、标签栏、地址栏与主侧栏，用 `Cmd+W` / `Ctrl+W` 连续关闭：每次只关闭当前 tab，优先选中左侧存活 tab，无左侧时选右侧；快速重复按键不要求重新点击页面。关闭非当前 tab 后，快捷键仍关闭当前 tab。
+- macOS 应用菜单的关闭命令与键盘保持一致。关闭最后一个 tab 后退出该 Website 页面，所有 guest 被销毁，持久 Sites 入口仍可重新打开，当前命令不关闭主窗口。
+- 保持另一 Website 和其他 Chat 的 WorkPanel 在后台；连续关闭当前 Website 不影响它们。切走或关闭重开 Website 后，旧实例的定向关闭请求不能关闭新页面或窗口。
 
 ## Website / WebApp Copilot 后台页面控制
 

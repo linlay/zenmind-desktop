@@ -202,7 +202,7 @@ import {
   getFocusedWebviewDevToolsShortcut,
   isDevToolsShortcut,
   isGlobalSearchShortcut,
-  isWorkPanelCloseShortcut,
+  isDesktopCloseShortcut,
   resolveGlobalSearchCommandShortcut,
 } from "../infrastructure/electron/platform-adapter";
 

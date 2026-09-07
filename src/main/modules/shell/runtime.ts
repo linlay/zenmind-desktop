@@ -8,7 +8,7 @@ import {
   type Shell,
   type SystemPreferences
 } from "electron";
-import type { AssistantWorkerOpenRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts";
+import type { AssistantWorkerOpenRequest, DesktopCloseShortcutRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts";
 import { DESKTOP_HELP_WEBVIEW_PARTITION } from "../../../shared/help";
 import type { LogsRuntime } from "../../support/logging/runtime";
 import { getMainLocaleSettings } from "../../support/i18n/main-i18n";
@@ -63,9 +63,10 @@ export type AppShellRuntimeOptions = {
   parseSafeLoopbackWebUrl: (value: string) => unknown;
   isDevToolsShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isGlobalSearchShortcut: (platform: NodeJS.Platform, input: any) => boolean;
-  isWorkPanelCloseShortcut: (platform: NodeJS.Platform, input: any) => boolean;
+  isDesktopCloseShortcut: (platform: NodeJS.Platform, input: any) => boolean;
   isWorkPanelWebview: (contents: Electron.WebContents) => boolean;
   isMainChatWebview: (contents: Electron.WebContents) => boolean;
+  resolveWebsiteCloseTarget: (contents: Electron.WebContents) => DesktopCloseShortcutRequest["website"] | null;
   resolveGlobalSearchCommandShortcut: (platform: NodeJS.Platform, input: any) => DesktopGlobalSearchShortcut | null;
   handleDesktopSsoWebviewNavigation: (url: string) => Promise<void> | void;
   shouldOpenWebviewPopupInWorkPanelTab: (contents: Electron.WebContents) => boolean;
@@ -262,9 +263,10 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       configureDocumentHtmlGuest: (guest) => workPanelDocumentHtmlRegistry.previews.configureGuest(guest, targetWindow.webContents.id),
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
-      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isDesktopCloseShortcut: options.isDesktopCloseShortcut,
       isWorkPanelWebview: (guest) => workPanelDocumentHtmlRegistry.previews.hasGuest(guest) || options.isWorkPanelWebview(guest),
       isMainChatWebview: options.isMainChatWebview,
+      resolveWebsiteCloseTarget: options.resolveWebsiteCloseTarget,
       isWorkPanelFullscreenActive: () => state.workPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: () => mainWindowLifecycle.isGlobalSearchOverlayVisible(),
@@ -304,7 +306,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
       lifecycle: mainWindowLifecycle,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
-      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isDesktopCloseShortcut: options.isDesktopCloseShortcut,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isHandlingQuit: () => options.isHandlingQuit(),
       requestAppQuit: () => {
@@ -365,6 +367,13 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
           return;
         }
         const focusedContents = electronWebContents.getFocusedWebContents();
+        const website = focusedContents && focusedContents !== targetWindow.webContents
+          ? options.resolveWebsiteCloseTarget(focusedContents)
+          : null;
+        if (website && focusedContents) {
+          targetWindow.webContents.send("app.closeShortcut", { guestId: focusedContents.id, website });
+          return;
+        }
         const focusedWorkPanelGuest = focusedContents && focusedContents !== targetWindow.webContents &&
           options.isWorkPanelWebview(focusedContents)
           ? focusedContents
@@ -378,7 +387,7 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
           focusedWorkPanelGuest ||
           focusedMainChatGuest
         ) {
-          targetWindow.webContents.send("app.workPanelCloseShortcut", {
+          targetWindow.webContents.send("app.closeShortcut", {
             guestId: focusedWorkPanelGuest?.id ?? null,
             fallbackToWindowClose: true
           });

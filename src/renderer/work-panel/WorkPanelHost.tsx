@@ -1,3 +1,4 @@
+import { registerDesktopCloseShortcutHandler } from "../services/desktopCloseShortcutRegistry";
 import {
   AppstoreOutlined,
   BugOutlined,
@@ -18,7 +19,7 @@ import {
   CodeOutlined,
 } from "@ant-design/icons";
 import { Button, Modal } from "antd";
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
+import { lazy, Suspense, useCallback, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent } from "react";
 import { createPortal } from "react-dom";
 import type { WorkPanelCommand, WorkPanelCommandResult, WorkPanelState } from "../../shared/work-panel";
 import {
@@ -1841,7 +1842,7 @@ export function WorkPanelHost({
     }
   }), [dispatchCommand, t]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     const root = rootRef.current;
     if (!root) return;
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -1857,27 +1858,28 @@ export function WorkPanelHost({
         void onFullscreenChange(null);
       }
     });
-    const disposeGuestShortcut = window.electronAPI.onWorkPanelCloseShortcut(({
+    const disposeGuestShortcut = registerDesktopCloseShortcutHandler(({
       guestId,
-      fallbackToWindowClose,
+      website,
     }) => {
+      if (website) return false;
       if (guestId === null) {
         if (activeChatId) {
           closeWorkPanelStep(activeChatId);
-        } else if (fallbackToWindowClose) {
-          window.electronAPI.desktopShell.requestWindowClose();
+          return true;
         }
-        return;
+        return false;
       }
-      if (!Number.isSafeInteger(guestId) || guestId <= 0) return;
+      if (!Number.isSafeInteger(guestId) || guestId <= 0) return false;
       const webviews = Array.from(document.querySelectorAll("webview")) as Electron.WebviewTag[];
       const matchingWebview = webviews.find((webview) => readWebviewGuestId(webview) === guestId);
       const itemHost = matchingWebview?.closest<HTMLElement>("[data-work-panel-item]");
       const ownerChatId = itemHost?.dataset.workPanelOwner || "";
       const itemId = itemHost?.dataset.workPanelItem || "";
       const workspace = stateRef.current.workspaces.find((item) => item.ownerChatId === ownerChatId);
-      if (!workspace || workspace.ownerChatId !== activeChatId || workspace.activeItemId !== itemId) return;
+      if (!workspace || workspace.ownerChatId !== activeChatId || workspace.activeItemId !== itemId) return false;
       closeWorkPanelStep(ownerChatId);
+      return true;
     });
     return () => {
       root.removeEventListener("keydown", handleKeyDown, true);

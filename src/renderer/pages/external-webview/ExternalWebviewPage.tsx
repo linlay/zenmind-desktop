@@ -1,5 +1,5 @@
 import { ArrowLeftOutlined, EditOutlined, FileTextOutlined, GlobalOutlined } from "@ant-design/icons";
-import { createElement, useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useLayoutEffect, useRef, useState } from "react";
 import type {
   FocusEvent as ReactFocusEvent,
   MouseEvent as ReactMouseEvent,
@@ -23,6 +23,7 @@ import { BUILTIN_BROWSER_ROUTE, BUILTIN_BROWSER_SURFACE_ID } from "../../../shar
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
 import { normalizeWebviewBlobPopupUrl } from "../../../shared/webview-popup";
 import { closeWebTabFromOrder } from "../../../shared/web-tab-lifecycle";
+import { registerDesktopCloseShortcutHandler } from "../../services/desktopCloseShortcutRegistry";
 import {
   buildInteractElementScript,
   type EmbeddedWebInteractAction
@@ -907,10 +908,13 @@ export function ExternalWebviewPage({
       tabs: remainingTabs,
       activeTabId: nextActiveTabId
     }));
-    await syncEmbeddedCdpSurface(nextState);
     const closedSurface = remainingTabs.length === 0;
-    if (closedSurface) {
-      onCloseSurface?.();
+    try {
+      await syncEmbeddedCdpSurface(nextState);
+    } finally {
+      if (closedSurface) {
+        onCloseSurface?.();
+      }
     }
     return {
       surfaceId: surfaceId ?? "",
@@ -920,6 +924,22 @@ export function ExternalWebviewPage({
       activeTabId: nextActiveTabId || null
     };
   };
+
+  useLayoutEffect(() => {
+    if (registeredSurfaceKind !== "website" || active === false) return;
+    return registerDesktopCloseShortcutHandler((request) => {
+      if (request.website) {
+        if (request.website.surfaceId !== surfaceId ||
+            request.website.registrationId !== surfaceRegistrationId) return false;
+      } else if (request.guestId !== null) {
+        return false;
+      }
+      // Read the committed state on every press, including presses queued by the old guest.
+      const tabId = browserStateRef.current.activeTabId;
+      if (tabId) void closeTab(tabId).catch(() => undefined);
+      return true;
+    });
+  });
 
   const finishRefreshWaiter = (tabId: string) => {
     controlBackgroundSiteFocus("restore", document);

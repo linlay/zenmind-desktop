@@ -11,6 +11,8 @@ const { captureCopilotSiteCdpScope } = require('../../dist-electron/main/modules
 const { createCdpIntegration } = require('../../dist-electron/main/modules/web-surfaces/cdp/integration.js');
 const { EmbeddedCdpGateway } = require('../../dist-electron/main/modules/web-surfaces/cdp/gateway.js');
 const { configureAttachedWebview } = require('../../dist-electron/main/modules/shell/window-manager.part-2.js');
+const { isDesktopCloseShortcut } = require('../../dist-electron/main/infrastructure/electron/platform-adapter.js');
+const { buildApplicationMenu } = require('../../dist-electron/main/modules/shell/app-menu.js');
 const { resolveWebviewOpenDisposition, shouldDownloadUrlFromWebview, resolveRegisteredWebviewPopupTarget } = require('../../dist-electron/main/modules/web-surfaces/open-tab.js');
 const root = path.resolve(__dirname, '../..');
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'zenmind-site-cdp-electron-'));
@@ -72,10 +74,35 @@ async function main() {
   const gateway = new EmbeddedCdpGateway({ getSurfaces: () => registry.listRegisteredSurfaces(), resolveWebContents: (_surface, tab) => webContents.fromId(tab.webContentsId),
     activateTarget: integration.activateTarget, closeTarget: integration.closeTarget, controlSiteFocus: integration.controlSiteFocus, logger: { debug() {}, warn: console.warn } });
   win = new BrowserWindow({ show: false, width: 900, height: 700, webPreferences: { nodeIntegration: true, contextIsolation: false, webviewTag: true } });
+  let windowCloseRequests = 0;
+  const closeTrace = [];
+  ipcMain.on('smoke.closeTrace', (_event, request) => closeTrace.push(request));
+  ipcMain.on('smoke.windowClose', () => { windowCloseRequests++; closeTrace.push('renderer window close'); });
+
+  buildApplicationMenu({
+    appName: 'Website shortcut smoke', platform: process.platform, t: (key) => key,
+    openSettings() {}, requestQuit() {}, quitWithoutConfirmation() {},
+    requestCloseWindow() {
+      const focused = webContents.getFocusedWebContents();
+      const target = focused && registry.resolveWebviewSurfaceTarget(focused.id);
+      closeTrace.push({ menu: true, guestId: focused?.id });
+      if (target?.active && target.surfaceType === 'website') {
+        win.webContents.send('app.closeShortcut', { guestId: focused.id, website: { surfaceId: target.surfaceId, registrationId: target.registrationId } });
+      } else {
+        win.webContents.send('app.closeShortcut', { guestId: null, fallbackToWindowClose: true });
+      }
+    },
+  });
   win.on('closed', () => { if (!finishing) { console.error('Smoke window closed before completion'); app.exit(1); } });
   win.webContents.on('console-message', (_event, level, message) => { if (level >= 2) console.error('RENDERER', message); });
   win.webContents.on('did-attach-webview', (_event, guest) => configureAttachedWebview(guest, {
     platform: process.platform, getMainWindow: () => win, isDevToolsShortcut: () => false,
+    isDesktopCloseShortcut,
+    resolveWebsiteCloseTarget: (guest) => {
+      const target = registry.resolveWebviewSurfaceTarget(guest.id);
+      return target?.active && target.surfaceType === 'website'
+        ? { surfaceId: target.surfaceId, registrationId: target.registrationId } : null;
+    },
     shouldDownloadUrl: shouldDownloadUrlFromWebview, resolveOpenDisposition: resolveWebviewOpenDisposition,
     shouldOpenPopupInWorkPanelTab: (guest) => resolveRegisteredWebviewPopupTarget(registry.resolveWebviewSurfaceTarget(guest.id)) === 'work-panel',
     resolveBlobPopupTarget: (guest) => resolveRegisteredWebviewPopupTarget(registry.resolveWebviewSurfaceTarget(guest.id)),
@@ -84,6 +111,11 @@ async function main() {
   const css = fs.readFileSync(path.join(root, 'src/renderer/styles/external-webview.css'), 'utf8') + '\n' + fs.readFileSync(path.join(root, 'src/renderer/styles/app-shell.css'), 'utf8');
   fs.writeFileSync(path.join(temp, 'index.html'), `<html><head><style>${css}\nhtml,body,#root{height:100%;width:100%;margin:0}.embedded-surface-page{height:100%}</style></head><body><div id="root"></div><script src="renderer.js"></script></body></html>`);
   await win.loadFile(path.join(temp, 'index.html'), { query: { origin } });
+  win.webContents.on('before-input-event', (event, input) => {
+    if (!isDesktopCloseShortcut(process.platform, input)) return;
+    event.preventDefault();
+    win.webContents.send('app.closeShortcut', { guestId: null, fallbackToWindowClose: true });
+  });
   // Both supported desktop platforms use real Chromium guests; macOS does not need app activation.
   if (process.platform === 'darwin') win.showInactive();
   else if (process.platform === 'win32') win.showInactive();
@@ -174,7 +206,51 @@ async function main() {
   await gateway.executeCommand({ method: 'Target.closeTarget', targetId: appTarget }, appScope);
   assert.throws(() => appScope.readSurface(), { code: 'site_control_unavailable' });
   assert.equal((await gateway.executeCommand({ method: 'Target.getCurrentTarget' })).surfaceId, surface('website:b').surfaceId);
-  console.log('SITE_CDP_SMOKE_PASSED', JSON.stringify({ platform: process.platform, screenshot: path.join(temp, 'background.png'), cases: ['background input', 'coordinate popup', 'descendant popup', 'foreground keyboard isolation', 'background screenshot/reload', 'unknown opener rejection', 'switch/close tab', 'WebApp round-trip transfer/input', 'WebApp single-page popup', 'last-tab disposal'] }));
+  await waitFor(() => webContents.getAllWebContents().filter((contents) => contents.getType() === 'webview').length === 3, 'prior CDP guests disposed');
+  closeTrace.push('begin Website shortcut checks');
+  const aSource = aScope.readSurface().tabs[0].webContentsId;
+  const aRegistration = registrations.get(aScope.surfaceId);
+  const traceBeforeInactiveClose = closeTrace.length;
+  win.webContents.send('app.closeShortcut', { guestId: aSource, website: {
+    surfaceId: aScope.surfaceId, registrationId: aRegistration.registrationId,
+  } });
+  await waitFor(() => closeTrace.length > traceBeforeInactiveClose, 'inactive Website close delivered');
+  assert.equal(surface('website:a').tabs.length, 2);
+  assert.equal(surface('website:b').tabs.length, 1);
+  for (let index = 0; index < 4; index++) {
+    win.webContents.send('webview.openTab', { target: 'desktop-browser', navigationKind: 'network', sourceGuestId: aSource, url: origin + '/close-' + index });
+  }
+  await waitFor(() => surface('website:a')?.tabs.length === 6, 'six Website tabs');
+  await select('website:a');
+  await waitFor(() => surface('website:a').tabs.every((tab) => !tab.isLoading), 'Website tabs loaded');
+  const traceBeforeStaleClose = closeTrace.length;
+  win.webContents.send('app.closeShortcut', { guestId: aSource, website: {
+    surfaceId: aScope.surfaceId, registrationId: 'closed-instance',
+  } });
+  await waitFor(() => closeTrace.length > traceBeforeStaleClose, 'stale Website close delivered');
+  assert.equal(surface('website:a').tabs.length, 6);
+  const aTabs = surface('website:a').tabs.map((tab) => tab.webContentsId);
+  const pressClose = (contents) => {
+    let modifiers;
+    if (process.platform === 'darwin') modifiers = ['meta'];
+    else if (process.platform === 'win32') modifiers = ['control'];
+    else throw new Error('Unsupported smoke platform');
+    contents.sendInputEvent({ type: 'keyDown', keyCode: 'W', modifiers });
+    contents.sendInputEvent({ type: 'keyUp', keyCode: 'W', modifiers });
+  };
+  // Consecutive guest key events may all arrive before React has removed the original guest.
+  const closingGuest = webContents.fromId(surface('website:a').tabs.find((tab) => tab.tabId === surface('website:a').activeTabId).webContentsId);
+  pressClose(closingGuest); pressClose(closingGuest); pressClose(closingGuest);
+  await waitFor(() => surface('website:a')?.tabs.length === 3, 'three rapid guest closes');
+  // After the guest is removed Chromium can return keyboard focus to the main renderer.
+  pressClose(win.webContents); pressClose(win.webContents); pressClose(win.webContents);
+  await waitFor(() => !surface('website:a'), 'final Website tab disposal');
+  await waitFor(() => aTabs.every((id) => !webContents.fromId(id)), 'all closed guests destroyed');
+  assert.equal(surface('website:b').tabs.length, 1);
+  assert.equal(windowCloseRequests, 0, JSON.stringify(closeTrace));
+  assert.equal(win.isDestroyed(), false);
+  assert.throws(() => aScope.readSurface(), { code: 'site_control_unavailable' });
+  console.log('SITE_CDP_SMOKE_PASSED', JSON.stringify({ platform: process.platform, screenshot: path.join(temp, 'background.png'), cases: ['background input', 'coordinate popup', 'descendant popup', 'foreground keyboard isolation', 'background screenshot/reload', 'unknown opener rejection', 'switch/close tab', 'WebApp round-trip transfer/input', 'WebApp single-page popup', 'last-tab disposal', 'six consecutive Website shortcut closes from guest and renderer'] }));
 }
 app.whenReady().then(main).then(() => {
   finishing = true; scopes.forEach((scope) => scope.release()); win?.destroy(); server?.close(); clearTimeout(watchdog); app.exit(0);

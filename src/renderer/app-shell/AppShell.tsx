@@ -47,6 +47,7 @@ import {
   startDesktopActionRendererBridge
 } from "../services/desktopActionRegistry";
 import { readWebSurfaceState } from "../services/webSurfaceStateRegistry";
+import { dispatchDesktopCloseShortcut } from "../services/desktopCloseShortcutRegistry";
 import type { AssistantChatOrderMutationRequest, AssistantChatOrderMutationResult, AssistantChatSortMode, AssistantHistoryChatItem, AssistantNavAgentItem, AssistantNavAgentItemsResult, AssistantNavChatItem, AssistantNavigationListOptions, AssistantReorderProjectsRequest, AssistantReorderProjectsResult, AssistantSettingsPublic, AssistantWorkerOpenRequest, DesktopActionConfirmationDecision, DesktopActionConfirmationRequest, DesktopSsoEmbeddedLoginRequest, DesktopSsoStatus, ServiceId, ShutdownProgress, StartupRestoreState, WebappDeleteResult, WebappEntry, WebappExportResult, WebappImportResult, WebappPublishState, WebEntry, WebEntryKey, WebappRuntimeState, WebsiteEntry, WebsiteInput, WebsiteResult } from "../../shared/contracts";
 import {
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
@@ -2196,6 +2197,8 @@ export function AppShell() {
   useEffect(() => {
     startDesktopActionRendererBridge();
   }, []);
+
+  useEffect(() => window.electronAPI.onCloseShortcut(dispatchDesktopCloseShortcut), []);
 
   useEffect(() => {
     let active = true;

@@ -12,7 +12,7 @@ import { createInitialLocaleArguments } from "../../../shared/i18n/initial-local
 
 import type { LocaleSettings } from "../../../shared/i18n/types";
 
-import type { DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
+import type { DesktopCloseShortcutRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
 
 import {
   CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL,
@@ -118,18 +118,21 @@ export function configureAttachedWebview<
 
     const isCurrentWorkPanelGuest = options.isWorkPanelWebview?.(contents) === true;
     const isCurrentMainChatGuest = options.isMainChatWebview?.(contents) === true;
+    const website = options.resolveWebsiteCloseTarget?.(contents);
     if (
-      (isCurrentWorkPanelGuest || isCurrentMainChatGuest) &&
-      options.isWorkPanelCloseShortcut?.(options.platform, input)
+      (isCurrentWorkPanelGuest || isCurrentMainChatGuest || website) &&
+      options.isDesktopCloseShortcut?.(options.platform, input)
     ) {
       event.preventDefault();
       const mainWindow = options.getMainWindow();
       if (!mainWindow || mainWindow.isDestroyed()) {
         return;
       }
-      mainWindow.webContents.send("app.workPanelCloseShortcut", isCurrentWorkPanelGuest
-        ? { guestId: contents.id }
-        : { guestId: null, fallbackToWindowClose: true });
+      mainWindow.webContents.send("app.closeShortcut", website
+        ? { guestId: contents.id, website }
+        : isCurrentWorkPanelGuest
+          ? { guestId: contents.id }
+          : { guestId: null, fallbackToWindowClose: true });
       return;
     }
 
@@ -632,9 +635,10 @@ export function configureMainWindowWebContents<
     configureDocumentHtmlGuest?(contents: TGuestContents): boolean;
     isDevToolsShortcut(platform: DesktopPlatform, input: any): boolean;
     isGlobalSearchShortcut?(platform: DesktopPlatform, input: any): boolean;
-    isWorkPanelCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
+    isDesktopCloseShortcut?(platform: DesktopPlatform, input: any): boolean;
     isWorkPanelWebview?(contents: TGuestContents): boolean;
     isMainChatWebview?(contents: TGuestContents): boolean;
+    resolveWebsiteCloseTarget?(contents: TGuestContents): DesktopCloseShortcutRequest["website"] | null;
     isWorkPanelFullscreenActive?(): boolean;
     resolveGlobalSearchCommandShortcut?(platform: DesktopPlatform, input: any): DesktopGlobalSearchShortcut | null;
     isGlobalSearchOverlayVisible?(): boolean;
@@ -743,9 +747,10 @@ export function configureMainWindowWebContents<
       getMainWindow: options.getMainWindow,
       isDevToolsShortcut: options.isDevToolsShortcut,
       isGlobalSearchShortcut: options.isGlobalSearchShortcut,
-      isWorkPanelCloseShortcut: options.isWorkPanelCloseShortcut,
+      isDesktopCloseShortcut: options.isDesktopCloseShortcut,
       isWorkPanelWebview: options.isWorkPanelWebview,
       isMainChatWebview: options.isMainChatWebview,
+      resolveWebsiteCloseTarget: options.resolveWebsiteCloseTarget,
       isWorkPanelFullscreenActive: options.isWorkPanelFullscreenActive,
       resolveGlobalSearchCommandShortcut: options.resolveGlobalSearchCommandShortcut,
       isGlobalSearchOverlayVisible: options.isGlobalSearchOverlayVisible,
