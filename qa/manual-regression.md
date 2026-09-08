@@ -1,5 +1,12 @@
 # Desktop 手工回归清单
 
+## Darwin builtin 签名完整性
+
+- 用新的 Platform release 分别执行不签名同步、预签名同步、已有资源重复签名，确认 Platform 的独立打包校验命令均通过，单文件与连接器/Poppler 目录树哈希和当前文件一致。
+- 对原包测试副本篡改 builtin 文件，确认同步/签名前失败；对最终 App 测试副本篡改 builtin 文件或技能，确认发布验证失败，不通过刷新清单掩盖坏输入。
+- 正式 macOS 打包确认服务先签名并更新清单，外层 App 签名不再次修改服务文件；最终服务签名、builtin 清单以及开发/安装启动均通过。同版本重新签名后，资源指纹变化能触发重新安装。
+- Windows/Linux 不执行 Darwin 清单刷新；Windows 原生服务启动及原始 builtin 清单验证保持通过。
+
 ## 品牌应用与托盘图标
 
 - Windows 开发模式分别以 `BRAND=zenmind` 和 `BRAND=cutej` 启动，确认任务栏使用当前品牌生成的 ICO，不受已安装旧版本、开始菜单快捷方式或图标缓存影响。

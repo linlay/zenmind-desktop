@@ -778,6 +778,7 @@ test("brand sync writes CuteJ isolated runtime paths into generated artifacts", 
   assert.equal(electronBuilderConfig.mac.extendInfo.NSMicrophoneUsageDescription, "CuteJ 使用麦克风将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.extendInfo.NSSpeechRecognitionUsageDescription, "CuteJ 使用系统语音识别将你的语音输入转成文字。");
   assert.equal(electronBuilderConfig.mac.notarize, false);
+  assert.equal(electronBuilderConfig.mac.sign, "./scripts/sign-mac-app.js");
   assert.equal(electronBuilderConfig.mac.timestamp, undefined);
   assert.deepEqual(electronBuilderConfig.electronLanguages, ["zh-CN", "en-US"]);
   assert.equal(electronBuilderConfig.afterPack, "./scripts/after-pack.js");

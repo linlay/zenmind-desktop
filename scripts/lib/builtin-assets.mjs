@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { desktopBuiltinServicesDir } from "./desktop-resources.mjs";
+import { runPlatformBuiltinsManifest } from "./platform-builtins.js";
 
 // monorepo 根目录：当前仓库的上一级
 const WORKSPACE_ROOT = path.resolve(import.meta.dirname, "..", "..", "..");
@@ -205,7 +206,7 @@ function computeDirectoryAssetSignature(assetPath) {
   return `dir:${totalSize}:${hash.digest("hex")}`;
 }
 
-function computeAssetSignature(assetPath) {
+export function computeAssetSignature(assetPath) {
   const stat = fs.lstatSync(assetPath);
   if (stat.isDirectory()) {
     return computeDirectoryAssetSignature(assetPath);
@@ -336,7 +337,7 @@ function listMachOFiles(rootDir) {
   });
 }
 
-function signMachOFile(filePath, identity) {
+function signMachOFile(filePath, identity, { keychain } = {}) {
   execFileSync("codesign", [
     "--force",
     ...(shouldSkipMacTimestamp() ? [] : ["--timestamp"]),
@@ -344,6 +345,7 @@ function signMachOFile(filePath, identity) {
     "runtime",
     "--sign",
     identity,
+    ...(keychain ? ["--keychain", keychain] : []),
     filePath
   ], { stdio: "inherit" });
   execFileSync("codesign", ["--verify", "--strict", "--verbose=2", filePath], { stdio: "inherit" });
@@ -387,7 +389,16 @@ function extractArchiveToBundleDirectory(archivePath, targetDir, service) {
   }
 }
 
-function signDarwinServiceDirectory(directoryPath, service, identity) {
+export function signDarwinServiceDirectory(directoryPath, service, identity, {
+  keychain,
+  signFile = signMachOFile,
+  runManifest = runPlatformBuiltinsManifest
+} = {}) {
+  // Never bless an already-corrupt input by recomputing its hashes. The receipt
+  // also binds refresh to the exact manifest verified before signing.
+  const receipt = service.id === "agent-platform"
+    ? runManifest(directoryPath, "verify")
+    : null;
   const machOFiles = listMachOFiles(directoryPath);
   if (machOFiles.length === 0) {
     return;
@@ -395,7 +406,11 @@ function signDarwinServiceDirectory(directoryPath, service, identity) {
 
   console.log(`[mac-service-sign] Signing ${machOFiles.length} Mach-O file(s) in ${service.id}...`);
   for (const filePath of machOFiles) {
-    signMachOFile(filePath, identity);
+    signFile(filePath, identity, { keychain });
+  }
+  if (receipt) {
+    runManifest(directoryPath, "refresh-after-signing", receipt.manifestSha256);
+    runManifest(directoryPath, "verify");
   }
 }
 
@@ -1502,6 +1517,10 @@ export function validateBundleDirectory(service, directoryPath) {
   validateBundleDirectoryContents(service, directoryPath);
   validateAgentWebclientPlatformFramePortManifest(service, manifest, directoryPath);
   validateAgentPlatformBundleDirectory(service, directoryPath);
+  if (service.id === "agent-platform" && manifest.platform?.os === "darwin" &&
+      fs.existsSync(path.join(directoryPath, "builtins.manifest.json"))) {
+    runPlatformBuiltinsManifest(directoryPath, "verify");
+  }
   if (service.id === "agent-container-hub") {
     validateBundleDirectoryDeployProtocol(service, directoryPath);
   }

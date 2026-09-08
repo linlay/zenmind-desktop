@@ -56,6 +56,16 @@ WebClient 更新必须显式同步完整的服务资源集合，其他内置服�
 - 生成的资源索引和签名可以重建，源 manifest 与上游 release 才是长期事实。
 - Desktop 只验证生命周期 contract，不代替服务脚本修复配置。
 
+## Darwin 签名与 builtin 完整性
+
+macOS App 的服务资源复制必须保留完整目录结构和权限，包含连接器的空目录。通用打包器按文件筛选的复制不能作为最终服务资源来源；afterPack 从已验证同步资源完整复制，再验证副本，不能通过重算清单掩盖复制时的丢失。
+
+Platform 原始 release 的 builtin 清单与最终签名文件属于两个发布阶段。Desktop 对 Mach-O 预签名或正式签名之前，必须调用 bundle 自带的 Platform 打包命令验证现有清单；签名后再携带该次验证返回的清单摘要，请 Platform 重算单文件与目录树的哈希并复验。算法、组件元数据和清单写入归 Platform，Desktop 不自行实现或放宽启动校验。
+
+正式 App 使用显式签名入口：先完成 Resources 中服务文件的签名与清单更新，再更新服务资源指纹，最后签名外层 App。外层递归签名必须跳过已经完成的服务目录，避免重新改变文件字节。App 签名后的验证只读执行，证书校验的开发开关不能跳过 builtin 完整性校验。损坏输入、缺少打包命令的旧 Platform 包和最终清单不匹配必须使发布失败，不在安装目录修补。
+
+Windows/Linux 继续消费各自原始清单；签名后刷新仅用于 Darwin 发布链路。开发启动也要验证已有 Darwin Platform 资源，不能等到服务启动失败才暴露哈希错误。
+
 ## 实现事实源
 
 - `src/main/modules/services/builtin-loader.ts`

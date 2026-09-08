@@ -2,6 +2,7 @@ const { spawnSync } = require("child_process");
 const { createHash } = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { verifyPlatformBuiltinsInServices } = require("./lib/platform-builtins.js");
 
 const MACHO_MAGICS = new Set([
   0xfeedface,
@@ -177,6 +178,10 @@ function verifyAppServices(appPath, options = {}) {
         forbiddenArchives.map((filePath) => `- ${filePath}`).join("\n")
     );
   }
+
+  // Builtin integrity is independent of certificate/timestamp verification and
+  // must still be checked for development packages using signature overrides.
+  verifyPlatformBuiltinsInServices(servicesRoot);
 
   if (process.env.DESKTOP_SKIP_MAC_SERVICE_SIGNATURE_VERIFY === "1") {
     console.warn("[verify-mac-services-signing] Skipping service Mach-O signature verification by environment override.");

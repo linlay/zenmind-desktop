@@ -1,6 +1,7 @@
 const { createHash } = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { copyDarwinServiceResources } = require("./lib/mac-service-resources.js");
 
 function getAppPath(context) {
   return path.join(context.appOutDir, `${context.packager.appInfo.productFilename}.app`);
@@ -61,6 +62,12 @@ exports.default = async function (context) {
   if (context.electronPlatformName !== "darwin") {
     return;
   }
+  const projectRoot = context.packager?.projectDir || process.cwd();
+  const { desktopBuiltinServicesDir } = await import("./lib/desktop-resources.mjs");
+  copyDarwinServiceResources(
+    desktopBuiltinServicesDir(projectRoot),
+    path.join(getAppPath(context), "Contents", "Resources", "services")
+  );
   contentAddressMacAppIcon(getAppPath(context));
 };
 

@@ -118,6 +118,7 @@ export function electronBuilderConfig(brand, target = currentBrandBuildTarget())
       target: ["dmg"],
       category: "public.app-category.developer-tools",
       hardenedRuntime: true,
+      sign: "./scripts/sign-mac-app.js",
       notarize: false,
       timestamp: shouldSkipMacTimestamp() ? "none" : undefined
     },
