@@ -7,6 +7,7 @@ import {
 } from "electron";
 import { APP_ICON_ASSET_DIRECTORIES, APP_ICON_ASSET_FILENAMES } from "../../../shared/app-icon-assets";
 import type { TranslationKey, TranslateFunction } from "../../../shared/i18n";
+import type { AppTrayRecentChat } from "./tray-chats";
 
 export type AppTrayControllerOptions = {
   platform: NodeJS.Platform;
@@ -17,7 +18,9 @@ export type AppTrayControllerOptions = {
   resourcesPath: string;
   getDesktopPetEnabled: () => boolean;
   isDesktopPetSupported: () => boolean;
-  openAssistantChat: () => void;
+  getRecentChats: () => AppTrayRecentChat[];
+  openRecentChat: (chat: AppTrayRecentChat) => void;
+  openNewChat: () => void;
   showMainWindow: () => void;
   openSettings: () => void;
   showDesktopPet: () => void;
@@ -169,9 +172,14 @@ export class AppTrayController {
     if (this.options.platform !== "darwin") {
       this.tray.setContextMenu(this.buildMenu());
     }
-    this.tray.on("click", () => {
-      this.options.showMainWindow();
-    });
+    if (this.options.platform === "darwin") {
+      // A menu-bar click opens the menu without activating the main window.
+      this.tray.on("click", () => this.tray?.popUpContextMenu(this.buildMenu()));
+    } else if (this.options.platform === "win32") {
+      this.tray.on("click", () => this.options.showMainWindow());
+    } else {
+      this.tray.on("click", () => this.options.showMainWindow());
+    }
     this.tray.on("right-click", () => this.tray?.popUpContextMenu(this.buildMenu()));
 
     return this.tray;
@@ -211,10 +219,29 @@ export class AppTrayController {
 
   private buildMenu() {
     const t = (key: TranslationKey, params?: Parameters<TranslateFunction>[1]) => this.options.t(key, params);
+    const recentChats = this.options.getRecentChats();
     const template: MenuItemConstructorOptions[] = [
       {
-        label: t("tray.chatWithApp", { appName: this.options.appName }),
-        click: () => this.options.openAssistantChat()
+        label: t("tray.recentChats"),
+        enabled: false
+      },
+      ...(recentChats.length > 0
+        ? recentChats.map((chat): MenuItemConstructorOptions => {
+            const title = chat.chatName.replace(/\s+/gu, " ").trim() || t("tray.untitledChat");
+            const characters = Array.from(title);
+            const label = characters.length > 40 ? `${characters.slice(0, 40).join("")}…` : title;
+            return {
+              // Windows interprets '&' as a menu mnemonic; preserve the actual title.
+              label: this.options.platform === "win32" ? label.replace(/&/gu, "&&") : label,
+              ...(this.options.platform === "darwin" ? { sublabel: chat.agentDisplayName, toolTip: title } : {}),
+              click: () => this.options.openRecentChat(chat)
+            };
+          })
+        : [{ label: t("tray.noRecentChats"), enabled: false }]),
+      { type: "separator" },
+      {
+        label: t("tray.newChat"),
+        click: () => this.options.openNewChat()
       },
       {
         label: t("tray.openApp", { appName: this.options.appName }),
@@ -241,7 +268,7 @@ export class AppTrayController {
         : []),
       { type: "separator" },
       {
-        label: t("tray.quit"),
+        label: t("tray.quit", { appName: this.options.appName }),
         click: () => this.options.quitWithoutConfirmation()
       }
     ];

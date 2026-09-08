@@ -8,7 +8,8 @@ import {
   type Shell,
   type SystemPreferences
 } from "electron";
-import type { AssistantWorkerOpenRequest, DesktopCloseShortcutRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts";
+import type { AssistantNavAgentItemsResult, DesktopCloseShortcutRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts";
+import { createAgentWebclientRoute } from "../../../shared/agent-webclient-routes";
 import { DESKTOP_HELP_WEBVIEW_PARTITION } from "../../../shared/help";
 import type { LogsRuntime } from "../../support/logging/runtime";
 import { getMainLocaleSettings } from "../../support/i18n/main-i18n";
@@ -39,6 +40,7 @@ import { DesktopActionWorkbenchWindowController } from "./desktop-action-workben
 import { createQuitConfirmationController } from "./quit-confirmation";
 import { NativeDialogVisibilityController } from "./native-dialogs";
 import { AppTrayController, getWindowsDevelopmentAppIconPath } from "./tray";
+import { createAppTrayNewChatRoute, getAppTrayRecentChats } from "./tray-chats";
 import { workPanelLocalFileRegistry, workPanelDocumentHtmlRegistry } from "../work-panel";
 
 export type AppShellRuntimeOptions = {
@@ -81,7 +83,8 @@ export type AppShellRuntimeOptions = {
   isHandlingQuit: () => boolean;
   beginAppQuitWithoutConfirmation: () => void;
   requestAppQuit: () => void;
-  openAssistantWorker: (request: AssistantWorkerOpenRequest) => Promise<void> | void;
+  getAssistantNavigationSnapshot: () => AssistantNavAgentItemsResult | undefined;
+  getDefaultChatAgentKey: () => string;
   getDesktopPetEnabled: () => boolean;
   isDesktopPetSupported: () => boolean;
   showDesktopPetWindow: () => unknown;
@@ -155,13 +158,9 @@ export function createAppShellRuntime(options: AppShellRuntimeOptions) {
     resourcesPath: options.resourcesPath,
     getDesktopPetEnabled: options.getDesktopPetEnabled,
     isDesktopPetSupported: options.isDesktopPetSupported,
-    openAssistantChat: () => {
-      void options.openAssistantWorker({
-        displayName: options.productName,
-        role: options.t("main.confirmationExampleRole"),
-        focusComposerOnComplete: true
-      });
-    },
+    getRecentChats: () => getAppTrayRecentChats(options.getAssistantNavigationSnapshot()),
+    openRecentChat: (chat) => showMainWindow(createAgentWebclientRoute(chat)),
+    openNewChat: () => showMainWindow(createAppTrayNewChatRoute(options.getDefaultChatAgentKey())),
     showMainWindow: () => showMainWindow(),
     openSettings: () => showMainWindow("/settings"),
     showDesktopPet: () => options.showDesktopPetWindow(),

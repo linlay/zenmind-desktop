@@ -7121,7 +7121,8 @@ test("tray activation restores the app without replacing the current route", () 
   const runtime = readSourceFile("src", "main", "modules", "shell", "runtime.ts");
 
   assert.match(trayController, /showMainWindow:\s*\(\) => void;/);
-  assert.match(trayController, /tray\.on\("click", \(\) => \{\s*this\.options\.showMainWindow\(\);\s*\}\);/);
+  assert.match(trayController, /platform === "darwin"[\s\S]*?tray\.on\("click", \(\) => this\.tray\?\.popUpContextMenu\(this\.buildMenu\(\)\)\)/);
+  assert.match(trayController, /platform === "win32"[\s\S]*?tray\.on\("click", \(\) => this\.options\.showMainWindow\(\)\)/);
   assert.match(trayController, /label: t\("tray\.openApp"[\s\S]{0,120}click: \(\) => this\.options\.showMainWindow\(\)/);
   assert.doesNotMatch(trayController, /openAssistantTarget/);
   assert.match(runtime, /showMainWindow:\s*\(\) => showMainWindow\(\)/);
@@ -7138,7 +7139,7 @@ test("quit menu entries skip confirmation except keyboard accelerator", () => {
   const enUS = readSourceFile("src", "shared", "i18n", "dictionaries", "enUS.ts");
   const beforeQuitHandler = appEvents.match(/options\.app\.on\("before-quit", \(event\) => \{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const trayOptions = trayController.match(/export type AppTrayControllerOptions = \{[\s\S]*?\n\};/u)?.[0] ?? "";
-  const trayQuitMenuItem = trayController.match(/label: t\("tray\.quit"\),[\s\S]*?\n      \}/u)?.[0] ?? "";
+  const trayQuitMenuItem = trayController.match(/label: t\("tray\.quit", \{ appName: this\.options\.appName \}\),[\s\S]*?\n      \}/u)?.[0] ?? "";
   const trayRuntimeOptions = runtime.match(/new AppTrayController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";
   const appMenuRuntimeOptions = runtime.match(/installApplicationMenu\(\{[\s\S]*?\n    \}\);/u)?.[0] ?? "";
   const quitConfirmationRuntimeOptions = runtime.match(/createQuitConfirmationController\(\{[\s\S]*?\n  \}\);/u)?.[0] ?? "";

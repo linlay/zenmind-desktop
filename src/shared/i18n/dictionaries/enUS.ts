@@ -87,12 +87,15 @@ export const enUSMessages = {
   "shutdown.progress.complete": "Cleanup complete. Quitting…",
   "shutdown.progress.failed": "Some resources could not be cleaned up. Preparing the shutdown report…",
 
-  "tray.chatWithApp": "Chat with {appName}",
+  "tray.recentChats": "Recent conversations",
+  "tray.noRecentChats": "No recent conversations",
+  "tray.untitledChat": "Untitled conversation",
+  "tray.newChat": "New conversation",
   "tray.openApp": "Open {appName}",
   "tray.settings": "Settings",
   "tray.showDesktopPet": "Show desktop pet",
   "tray.hideDesktopPet": "Hide desktop pet",
-  "tray.quit": "Quit",
+  "tray.quit": "Quit {appName}",
 
   "main.confirmationExampleRole": "Confirmation dialog example",
   "main.ssoCookieExchangeMissing": "SSO cookie exchange request is missing auth_code.",

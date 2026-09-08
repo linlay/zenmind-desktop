@@ -87,12 +87,15 @@ export const zhCNMessages = {
   "shutdown.progress.complete": "清理完成，即将退出…",
   "shutdown.progress.failed": "部分资源未能清理，正在生成退出报告…",
 
-  "tray.chatWithApp": "和 {appName} 聊天",
+  "tray.recentChats": "最近对话",
+  "tray.noRecentChats": "暂无最近对话",
+  "tray.untitledChat": "未命名对话",
+  "tray.newChat": "新对话",
   "tray.openApp": "打开 {appName}",
   "tray.settings": "设置",
   "tray.showDesktopPet": "显示桌面宠物",
   "tray.hideDesktopPet": "隐藏桌面宠物",
-  "tray.quit": "退出",
+  "tray.quit": "退出 {appName}",
 
   "main.confirmationExampleRole": "确认对话示例",
   "main.ssoCookieExchangeMissing": "SSO Cookie 交换请求缺少 auth_code。",
