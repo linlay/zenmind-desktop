@@ -407,6 +407,12 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
         message: t("shell.windowUnavailable")
       };
     }
+    // Stop the cursor loop before changing bounds. Native fullscreen is separate
+    // from maximize/restore on both macOS and Windows, even if renderer state lags.
+    endWindowDrag();
+    if (ownerWindow.isFullScreen()) {
+      return { ok: true as const, isMaximized: ownerWindow.isMaximized() };
+    }
     if (ownerWindow.isMaximized()) {
       ownerWindow.unmaximize();
     } else {

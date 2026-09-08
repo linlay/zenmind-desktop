@@ -1,7 +1,8 @@
-import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
+import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type PointerEvent as ReactPointerEvent, type ReactNode } from "react";
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
 import {
   isCapabilityNavigationRoute,
@@ -621,6 +622,7 @@ export function AppShell() {
   const appShellRef = useRef<HTMLDivElement | null>(null);
   const appContentRef = useRef<HTMLDivElement | null>(null);
   const windowDragEndRef = useRef<(() => void) | null>(null);
+  const windowDragClickTrackerRef = useRef(createWindowDragClickTracker<Element>());
   const pendingAssistantDockOpenRequestRef = useRef<{ contextKey: string; embedPath: string } | null>(null);
   const assistantDockSessionsRef = useRef<Record<string, CopilotDockContextSession>>({});
   const pendingCopilotRestoreRef = useRef<CopilotDockSessionSnapshot | null>(null);
@@ -3760,18 +3762,22 @@ export function AppShell() {
   }), []);
 
   const handleWindowDragPointerDownCapture = useCallback((event: ReactPointerEvent<HTMLDivElement>) => {
+    const clickTracker = windowDragClickTrackerRef.current;
     if (event.button !== 0 || event.defaultPrevented) {
+      clickTracker.reset();
       return;
     }
 
     const target = event.target instanceof Element ? event.target : null;
     const dragTarget = resolveWindowDragTarget(target);
     if (!dragTarget) {
+      clickTracker.reset();
       return;
     }
 
     const desktopShell = window.electronAPI.desktopShell;
     if (!desktopShell.beginWindowDrag || !desktopShell.endWindowDrag) {
+      clickTracker.reset();
       return;
     }
 
@@ -3779,21 +3785,38 @@ export function AppShell() {
     event.stopPropagation();
 
     windowDragEndRef.current?.();
+    if (event.pointerType === "mouse") {
+      clickTracker.begin(dragTarget, event);
+    } else {
+      clickTracker.reset();
+    }
 
     const pointerId = event.pointerId;
     let ended = false;
     let pointerCaptureRestoreFrame: number | null = null;
-    const finishDrag = () => {
+    const trackPointerMove = (pointerEvent: globalThis.PointerEvent) => {
+      if (pointerEvent.pointerId === pointerId) clickTracker.move(pointerEvent);
+    };
+    const finishDrag = (releaseEvent?: globalThis.MouseEvent) => {
+      if (releaseEvent && "pointerId" in releaseEvent && releaseEvent.pointerId !== pointerId) {
+        return;
+      }
       if (ended) {
         return;
       }
       ended = true;
+      if (releaseEvent?.type === "pointerup" || releaseEvent?.type === "mouseup") {
+        clickTracker.release(releaseEvent);
+      } else {
+        clickTracker.reset();
+      }
       if (pointerCaptureRestoreFrame !== null) {
         window.cancelAnimationFrame(pointerCaptureRestoreFrame);
         pointerCaptureRestoreFrame = null;
       }
       window.removeEventListener("pointerup", finishDrag, true);
       window.removeEventListener("pointercancel", finishDrag, true);
+      window.removeEventListener("pointermove", trackPointerMove, true);
       window.removeEventListener("mouseup", finishDragOnMouseUp, true);
       window.removeEventListener("blur", finishDragOnWindowBlur);
       dragTarget.removeEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
@@ -3809,7 +3832,7 @@ export function AppShell() {
     };
     const finishDragOnMouseUp = (mouseEvent: globalThis.MouseEvent) => {
       if (mouseEvent.button === 0) {
-        finishDrag();
+        finishDrag(mouseEvent);
       }
     };
     const finishDragOnWindowBlur = (blurEvent: globalThis.FocusEvent) => {
@@ -3846,6 +3869,7 @@ export function AppShell() {
     windowDragEndRef.current = finishDrag;
     window.addEventListener("pointerup", finishDrag, true);
     window.addEventListener("pointercancel", finishDrag, true);
+    window.addEventListener("pointermove", trackPointerMove, true);
     window.addEventListener("mouseup", finishDragOnMouseUp, true);
     window.addEventListener("blur", finishDragOnWindowBlur);
     dragTarget.addEventListener("lostpointercapture", finishDragOnLostPointerCapture, true);
@@ -3859,8 +3883,28 @@ export function AppShell() {
       if (!result?.ok) {
         finishDrag();
       }
-    }).catch(finishDrag);
+    }).catch(() => finishDrag());
   }, []);
+
+  const handleWindowDragClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
+    const clickTracker = windowDragClickTrackerRef.current;
+    const target = event.target instanceof Element ? event.target : null;
+    const dragTarget = resolveWindowDragTarget(target);
+    if (
+      event.button !== 0 || event.defaultPrevented || !dragTarget ||
+      windowFullScreen || windowControlsMasked ||
+      workPanelFullscreenOwnerChatIdRef.current || workPanelFullscreenTransitionPendingRef.current
+    ) {
+      clickTracker.reset();
+      return;
+    }
+    if (!clickTracker.click(dragTarget, event.detail)) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    windowDragEndRef.current?.();
+    toggleMainWindowMaximize();
+  }, [toggleMainWindowMaximize, windowControlsMasked, windowFullScreen]);
 
   useEffect(() => () => {
     windowDragEndRef.current?.();
@@ -4368,6 +4412,7 @@ export function AppShell() {
         ref={appShellRef}
         style={appShellStyle}
         onPointerDownCapture={handleWindowDragPointerDownCapture}
+        onClickCapture={handleWindowDragClickCapture}
         className={[
         "app-shell",
         usesEmbeddedSurface ? "has-embedded-surface" : "",

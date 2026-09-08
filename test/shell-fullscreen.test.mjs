@@ -284,3 +284,43 @@ test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DP
 
   assert.deepEqual(mainWindow.moves, [[95, 102]]);
 });
+
+for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: maximize/restore ends the drag before resizing and preserves native fullscreen`, async () => {
+    const handlers = new Map();
+    const sender = {};
+    const mainWindow = new FakeFullscreenWindow();
+    let tick;
+    const timer = {};
+    let activeTimer = null;
+    registerShellIpcHandlers({
+      handle: (channel, handler) => handlers.set(channel, handler),
+      on: () => undefined,
+    }, {
+      platform,
+      mainWindow,
+      BrowserWindow: { fromWebContents: (contents) => contents === sender ? mainWindow : null },
+      screen: { getCursorScreenPoint: () => ({ x: 100, y: 100 }) },
+      setInterval: (callback) => { tick = callback; activeTimer = timer; return timer; },
+      clearInterval: (handle) => { assert.equal(handle, timer); activeTimer = null; },
+    });
+    for (const eventName of ["maximize", "unmaximize"]) {
+      mainWindow.on(eventName, () => assert.equal(activeTimer, null));
+    }
+    const beginDrag = handlers.get("desktopShell.beginWindowDrag");
+    const toggleMaximize = handlers.get("desktopShell.toggleWindowMaximize");
+    for (const expected of [true, false]) {
+      await beginDrag({ sender });
+      assert.equal(activeTimer, timer);
+      assert.deepEqual(await toggleMaximize({ sender }), { ok: true, isMaximized: expected });
+      tick(); // A tick already queued before cancellation must not move the resized window.
+    }
+    await beginDrag({ sender });
+    mainWindow.fullscreen = true; // Native state can change before renderer receives its event.
+    assert.deepEqual(await toggleMaximize({ sender }), { ok: true, isMaximized: false });
+    assert.equal(activeTimer, null);
+    assert.equal(mainWindow.fullscreen, true);
+    assert.deepEqual(mainWindow.requests, []);
+    assert.equal((await toggleMaximize({ sender: {} })).ok, false);
+  });
+}
