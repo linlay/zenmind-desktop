@@ -91,8 +91,8 @@ export const AGENT_WEBCLIENT_ROUTE_DEFINITIONS = [
   },
   {
     key: "mcp-servers",
-    routePath: "/mcp-servers",
-    embedPath: "/mcp-servers",
+    routePath: "/connectors",
+    embedPath: "/connectors",
     labelKey: "nav.mcpConnectors",
     kind: "management",
     mode: "embedded"

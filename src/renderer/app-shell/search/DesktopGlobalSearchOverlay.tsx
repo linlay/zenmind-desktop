@@ -389,7 +389,7 @@ function resolveActionTargetPath(actionId: DesktopGlobalSearchActionId, newChatA
     return "/skills";
   }
   if (actionId === "mcpConnectors") {
-    return "/mcp-servers";
+    return "/connectors";
   }
   if (actionId === "settings") {
     return "/settings";

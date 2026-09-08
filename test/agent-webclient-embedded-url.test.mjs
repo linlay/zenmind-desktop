@@ -75,13 +75,18 @@ test("Desktop route catalog excludes full-page Copilot routes", () => {
 });
 
 test("management embedded URLs do not carry WebSocket source or auth context", () => {
+  const connectorsRoute = findAgentWebclientRouteDefinition("/connectors");
+  assert.ok(connectorsRoute);
+  assert.equal(buildAgentWebclientUrl("agent-webclient", connectorsRoute.embedPath).pathname, "/connectors");
+
   const managementPaths = [
     "/agents",
     "/agents/zenmi",
     "/archives",
     "/automations",
     "/memory",
-    "/mcp-servers",
+    "/connectors",
+    "/connectors/builtin.dbx",
     "/registries"
   ];
 

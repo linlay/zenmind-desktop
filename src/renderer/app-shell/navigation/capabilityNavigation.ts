@@ -37,7 +37,7 @@ export const CAPABILITY_NAVIGATION_ITEMS: readonly CapabilityNavigationItem[] = 
   },
   {
     id: "mcp-servers",
-    to: "/mcp-servers",
+    to: "/connectors",
     labelKey: "nav.mcpConnectors",
     icon: "connector",
   },

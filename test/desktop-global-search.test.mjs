@@ -64,8 +64,8 @@ const messages = {
   "desktop.globalSearch.action.agents.description": "Browse agents",
   "desktop.globalSearch.action.skills": "Open Skills Center",
   "desktop.globalSearch.action.skills.description": "Browse skills",
-  "desktop.globalSearch.action.mcpConnectors": "Open MCP connections",
-  "desktop.globalSearch.action.mcpConnectors.description": "Manage MCP connectors",
+  "desktop.globalSearch.action.mcpConnectors": "Open Connectors Center",
+  "desktop.globalSearch.action.mcpConnectors.description": "Manage connectors",
   "desktop.globalSearch.action.settings": "Open settings",
   "desktop.globalSearch.action.settings.description": "Adjust preferences",
 };

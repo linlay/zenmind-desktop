@@ -321,6 +321,7 @@ export const DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING: ManifestDesktopHosting = {
     "/history",
     "/terminal/",
     "/memory",
+    "/connectors",
     "/mcp-servers",
     "/project/",
     "/registries"

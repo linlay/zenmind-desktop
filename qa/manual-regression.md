@@ -1,5 +1,10 @@
 # Desktop 手工回归清单
 
+## Connectors Center 导航
+
+- 切换中英文，确认账号菜单、能力侧栏和全局搜索统一显示“连接器中心 / Connectors Center”；从三个入口打开时，Desktop 路由和 WebClient 嵌入地址均为 `/connectors`。
+- 在连接器页面进入详情并刷新，确认 `/connectors/:connectorId` 正常加载。macOS 使用搜索面板内 `Cmd+M`、Windows 使用 `Ctrl+M`，确认均打开连接器中心。
+
 ## Darwin builtin 签名完整性
 
 - 用新的 Platform release 分别执行不签名同步、预签名同步、已有资源重复签名，确认 Platform 的独立打包校验命令均通过，单文件与连接器/Poppler 目录树哈希和当前文件一致。

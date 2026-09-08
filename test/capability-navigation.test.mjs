@@ -46,7 +46,7 @@ test("capability navigation keeps the agreed item order", () => {
   );
   assert.deepEqual(
     CAPABILITY_NAVIGATION_ITEMS.map((item) => item.to),
-    ["/agents", "/skills", "/mcp-servers", "/registries", "/archives", "/market", "/help"],
+    ["/agents", "/skills", "/connectors", "/registries", "/archives", "/market", "/help"],
   );
 });
 
@@ -58,7 +58,7 @@ test("capability routes select their root item and keep supported details active
     ["/skills", "skills"],
     ["/skills/demo-skill?tab=files", "skills"],
     ["/market", "market"],
-    ["/mcp-servers", "mcp-servers"],
+    ["/connectors", "mcp-servers"],
     ["/registries", "registries"],
     ["/archives", "archives"],
     ["/help", "help"],

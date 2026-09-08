@@ -320,14 +320,14 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(routeDefinitions, /routePath:\s*"\/automations"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/memory"[\s\S]*?mode:\s*"embedded"/);
   assert.match(routeDefinitions, /routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(routeDefinitions, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(routeDefinitions, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/connectors"[\s\S]*?embedPath:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.doesNotMatch(routeDefinitions, /routePath:\s*"\/copilot"/u);
   assert.doesNotMatch(routeDefinitions, /"\/copilot\/:agentKey"/u);
-  assert.match(sidebar, /to:\s*"\/agents"[\s\S]*?to:\s*"\/skills"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/registries"[\s\S]*?to:\s*"\/archives"[\s\S]*?to:\s*"\/market"/);
-  assert.match(sidebar, /item\.to === "\/mcp-servers"/);
+  assert.match(sidebar, /to:\s*"\/agents"[\s\S]*?to:\s*"\/skills"[\s\S]*?to:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/registries"[\s\S]*?to:\s*"\/archives"[\s\S]*?to:\s*"\/market"/);
+  assert.match(sidebar, /item\.to === "\/connectors"/);
   assert.match(brandMark, /\|\s*"connector"[\s\S]*?case "connector":[\s\S]*?<circle cx="6" cy="12" r="3" \/>/);
-  assert.match(enDictionary, /"nav\.mcpConnectors":\s*"MCP Connectors"/);
-  assert.match(zhDictionary, /"nav\.mcpConnectors":\s*"MCP 连接器"/);
+  assert.match(enDictionary, /"nav\.mcpConnectors":\s*"Connectors Center"/);
+  assert.match(zhDictionary, /"nav\.mcpConnectors":\s*"连接器中心"/);
   assert.match(enDictionary, /"nav\.skills":\s*"Skills Center"/);
   assert.match(zhDictionary, /"nav\.skills":\s*"技能中心"/);
   assert.match(routeDefinitions, /"\/agents\/:agentKey"/);
@@ -336,7 +336,7 @@ test("agent webclient management routes render embedded webclient pages", () => 
   assert.match(appShell, /function resolveAgentManagementWebclientRoute\(pathname: string, search: string\)[\s\S]*?mode:\s*"embedded"/);
   assert.match(surfaceHosts, /activeAgentWebclientRouteKind === "management" \? activeAgentWebclientRoute\?\.embedPath : undefined/);
   assert.match(surfaceHosts, /surfaceIdentity=\{createServiceSurfaceIdentity\(AGENT_WEBCLIENT_SERVICE_ID\)\}/);
-  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/overview\/"[\s\S]*?"\/mcp-servers"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
+  assert.match(manifestContracts, /spaRoutes:\s*\[[\s\S]*?"\/archives"[\s\S]*?"\/overview\/"[\s\S]*?"\/connectors"[\s\S]*?"\/project\/"[\s\S]*?"\/registries"[\s\S]*?\]/);
   assert.match(manifestContracts, /"\/resource-viewer\/"/u);
   assert.doesNotMatch(manifestContracts, /"\/(?:source|planning|resource|file)-view\/"|"\/web-view"/u);
   assert.doesNotMatch(manifestContracts, /"\/(?:artifact|reference)-view\/"/u);
@@ -1566,7 +1566,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(archiveChatHandler, /await onRefreshAssistantNavAgents\?\.\(\)/u);
   assert.doesNotMatch(sidebarSource, /sidebar\.agent\.delete/);
   assert.match(sidebarSource, /schedulesNavItemBase[\s\S]*?to:\s*"\/automations"[\s\S]*?icon:\s*"schedule"/);
-  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/skills"[\s\S]*?labelKey:\s*"nav\.skills"[\s\S]*?icon:\s*"skill"/);
+  assert.match(fixedToolRowsBaseSource, /to:\s*"\/agents"[\s\S]*?labelKey:\s*"nav\.agents"[\s\S]*?to:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?icon:\s*"archive"[\s\S]*?to:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?to:\s*"\/market"[\s\S]*?labelKey:\s*"nav\.market"[\s\S]*?to:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?icon:\s*"connector"[\s\S]*?to:\s*"\/skills"[\s\S]*?labelKey:\s*"nav\.skills"[\s\S]*?icon:\s*"skill"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/memory"[\s\S]*?labelKey:\s*"nav\.memory"/);
   assert.match(fixedToolRowsBaseSource, /to:\s*"\/settings"[\s\S]*?labelKey:\s*"nav\.settings"/);
   assert.doesNotMatch(fixedToolRowsBaseSource, /to:\s*"\/control-center"/);
@@ -1677,7 +1677,7 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(appShell, /key:\s*"archives"[\s\S]*?routePath:\s*"\/archives"[\s\S]*?embedPath:\s*"\/archives"[\s\S]*?labelKey:\s*"nav\.archives"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"schedules"[\s\S]*?routePath:\s*"\/automations"[\s\S]*?embedPath:\s*"\/automations"[\s\S]*?labelKey:\s*"nav\.schedules"[\s\S]*?mode:\s*"embedded"/);
   assert.match(appShell, /key:\s*"registries"[\s\S]*?routePath:\s*"\/registries"[\s\S]*?embedPath:\s*"\/registries"[\s\S]*?labelKey:\s*"nav\.registries"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
-  assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/mcp-servers"[\s\S]*?embedPath:\s*"\/mcp-servers"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
+  assert.match(appShell, /key:\s*"mcp-servers"[\s\S]*?routePath:\s*"\/connectors"[\s\S]*?embedPath:\s*"\/connectors"[\s\S]*?labelKey:\s*"nav\.mcpConnectors"[\s\S]*?kind:\s*"management"[\s\S]*?mode:\s*"embedded"/);
   assert.doesNotMatch(appShell, /routePath:\s*"\/copilot"|"\/copilot\/:agentKey"|kind:\s*"copilot"/u);
   assert.match(appShell, /AGENT_WEBCLIENT_DYNAMIC_ROUTE_PATTERNS[\s\S]*?"\/agents\/:agentKey"[\s\S]*?"\/agent\/:agentKey"/);
   assert.match(appShell, /"\/skills\/:skillKey"/);
@@ -5183,13 +5183,13 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(i18nEn, /"desktop\.globalSearch\.group\.unread": "Unread chats"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.history": "Open chat history"/);
   assert.match(i18nEn, /"desktop\.globalSearch\.action\.skills": "Open Skills Center"/);
-  assert.match(i18nEn, /"desktop\.globalSearch\.action\.mcpConnectors": "Open MCP connections"/);
+  assert.match(i18nEn, /"desktop\.globalSearch\.action\.mcpConnectors": "Open Connectors Center"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.awaiting": "等待中"/);
   assert.doesNotMatch(i18nZh, /desktop\.globalSearch\.status\.awaiting/);
   assert.match(i18nZh, /"desktop\.globalSearch\.group\.unread": "未读聊天"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.history": "打开对话历史"/);
   assert.match(i18nZh, /"desktop\.globalSearch\.action\.skills": "打开技能中心"/);
-  assert.match(i18nZh, /"desktop\.globalSearch\.action\.mcpConnectors": "打开 MCP 连接"/);
+  assert.match(i18nZh, /"desktop\.globalSearch\.action\.mcpConnectors": "打开连接器中心"/);
 });
 
 test("Chinese chat copy consistently uses 对话 while technical sessions keep 会话", () => {
@@ -8363,7 +8363,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.doesNotMatch(sidebarSource, /is-personal/);
   assert.doesNotMatch(sidebarSource, /sidebar\.account\.remainingUsage/);
   assert.doesNotMatch(sidebarSource, /className="sidebar-tool-status-label"/);
-  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/mcp-servers" \|\|[\s\S]*?item\.to === "\/skills"/);
+  assert.match(sidebarSource, /const topToolItems = fixedToolItems\.filter\([\s\S]*?item\.to === "\/agents" \|\|[\s\S]*?item\.to === "\/archives" \|\|[\s\S]*?item\.to === "\/registries" \|\|[\s\S]*?item\.to === "\/market" \|\|[\s\S]*?item\.to === "\/connectors" \|\|[\s\S]*?item\.to === "\/skills"/);
   assert.doesNotMatch(sidebarSource, /const middleToolItems = fixedToolItems\.filter/);
   assert.doesNotMatch(sidebarSource, /const settingsToolItems = fixedToolItems\.filter/);
   assert.match(sidebarSource, /const settingsToolItem = fixedToolItems\.find\([\s\S]{0,120}\(item\) => item\.to === "\/settings"[\s\S]{0,40}\);/);

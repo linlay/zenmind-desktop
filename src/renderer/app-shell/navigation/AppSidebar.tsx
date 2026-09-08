@@ -432,7 +432,7 @@ const fixedToolRowsBase: Array<
     },
     {
       orderKey: "mcp-servers",
-      to: "/mcp-servers",
+      to: "/connectors",
       labelKey: "nav.mcpConnectors",
       icon: "connector",
     },
@@ -5920,7 +5920,7 @@ export function AppSidebar({
         item.to === "/archives" ||
         item.to === "/registries" ||
         item.to === "/market" ||
-        item.to === "/mcp-servers" ||
+        item.to === "/connectors" ||
         item.to === "/skills",
     );
 
