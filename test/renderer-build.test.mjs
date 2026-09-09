@@ -3535,7 +3535,7 @@ test("sidebar navigation order helper normalizes and sorts available items", () 
   assert.match(sidebarSource, /sortSidebarNavItems\(/);
 });
 
-test("Chats sidebar exposes a hover-only default-agent picker and per-agent history", () => {
+test("Chats sidebar exposes a stable compact default-agent picker and per-agent history", () => {
   const sidebarSource = readSourceFile(
     "src",
     "renderer",
@@ -3579,11 +3579,11 @@ test("Chats sidebar exposes a hover-only default-agent picker and per-agent hist
   assert.match(collapse, /<div className="Collapse-headerSupplement">\{headerSupplement\}<\/div>/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-label|chatAgentInlineLabel/);
   assert.doesNotMatch(sidebarSource, /sidebar-chats-agent-select/);
-  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement[\s\S]*?opacity:\s*0;/);
-  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement,[\s\S]*?:focus-within \.Collapse-headerSupplement/);
+  assert.match(styles, /\.sidebar-nav-group>\.Collapse-header \.Collapse-headerSupplement\s*\{[^}]*flex:\s*0 0 64px;/);
+  assert.doesNotMatch(styles, /\.sidebar-nav-group>\.Collapse-header:hover \.Collapse-headerSupplement/);
   assert.match(
     styles,
-    /\.sidebar-chats-agent-picker\s*\{[\s\S]*?flex:\s*0 0 100px;[\s\S]*?width:\s*100px;/,
+    /\.sidebar-chats-agent-picker\s*\{[\s\S]*?flex:\s*0 1 64px;[\s\S]*?width:\s*64px;/,
   );
   assert.match(styles, /\.sidebar-chats-agent-trigger\s*\{/);
   assert.match(styles, /\.sidebar-chats-agent-menu-label\s*\{/);
