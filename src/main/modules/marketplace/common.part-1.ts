@@ -353,6 +353,9 @@ export function normalizeSkillProfile(value: unknown): MarketSkillProfile | unde
     : [];
   return {
     kind,
+    category: asString(raw.category).trim() || undefined,
+    scenario: asString(raw.scenario).trim() || undefined,
+    featured: raw.featured === true,
     packageMode: asString(raw.packageMode).trim() || undefined,
     includedSkills: includedSkills.length > 0 ? includedSkills : undefined
   };
@@ -526,6 +529,7 @@ export function normalizeCatalog(input: unknown): Catalog {
       favoriteCount,
       favorited,
       skill: normalizeSkillProfile(item.skill),
+      skillFeatured: typeof item.skillFeatured === "boolean" ? item.skillFeatured : asObject(item.skill).featured === true,
       dependencies: normalizeDependencies(item.dependencies),
       metadata,
       targets,

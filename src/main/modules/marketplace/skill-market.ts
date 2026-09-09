@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import type { MarketSkillPins } from "../../../shared/contracts/market-skill-pins";
 import type { App } from "electron";
 import type { MarketCommandResult } from "../../../shared/contracts";
 import {
@@ -56,6 +57,28 @@ export function configureSkillMarketPlatformCaller(call: SkillMarketPlatformCall
   skillMarketPlatformCall = call;
 }
 
+export function normalizeMarketSkillPins(value: unknown): MarketSkillPins {
+  const input = asObject(value);
+  if (input.version !== 1 || !Array.isArray(input.order) || input.order.length > 4096 || input.order.some((key) => typeof key !== "string" || !key.trim() || key.length > 256)) {
+    throw new Error("market_skill_pins_invalid");
+  }
+  return { version: 1, order: [...new Set(input.order.map((key: string) => key.trim().toLowerCase()))],
+    ...(typeof input.updatedAt === "number" && Number.isSafeInteger(input.updatedAt) ? { updatedAt: input.updatedAt } : {}) };
+}
+
+export async function readMarketSkillPins(): Promise<MarketSkillPins> {
+  if (!skillMarketPlatformCall) throw new Error("market_skill_pins_unavailable");
+  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills/order"));
+}
+
+export async function saveMarketSkillPins(input: unknown): Promise<MarketSkillPins> {
+  const value = asObject(input);
+  const key = asString(value.key).trim().toLowerCase();
+  if (!key || Buffer.byteLength(key, "utf8") > 256 || /[\/\\\x00-\x1f]/.test(key) || typeof value.pinned !== "boolean") throw new Error("market_skill_pins_invalid");
+  if (!skillMarketPlatformCall) throw new Error("market_skill_pins_unavailable");
+  return normalizeMarketSkillPins(await skillMarketPlatformCall("/api/skills/order", { method: "PUT", body: { key, pinned: value.pinned } }));
+}
+
 async function listPlatformSkillPackages(suppressErrors = true) {
   if (!skillMarketPlatformCall) {
     return [] as PlatformSkillPackage[];
@@ -69,7 +92,8 @@ async function listPlatformSkillPackages(suppressErrors = true) {
   }
 }
 
-function mergePlatformSkillPackageState(items: ReturnType<typeof mergeCatalogItems>, packages: PlatformSkillPackage[]) {
+function mergePlatformSkillPackageState(items: ReturnType<typeof mergeCatalogItems>, packages: PlatformSkillPackage[], localSkills: ReturnType<typeof listInstalledSkills>) {
+  const localVersionById = new Map(localSkills.map((skill) => [skill.id, skill.installedVersion || skill.version]));
   const ownerBySkill = new Map<string, { packageId: string; version: string }>();
   for (const packageItem of packages) {
     const packageId = asString(packageItem.id).trim();
@@ -86,11 +110,14 @@ function mergePlatformSkillPackageState(items: ReturnType<typeof mergeCatalogIte
     if (item.type !== "skill") return item;
     const owner = ownerBySkill.get(item.id);
     if (!owner) return item;
+    // A child may have been updated independently since the package was installed.
+    // Package membership is still valid, but its recorded child version is only a fallback.
+    const installedVersion = localVersionById.get(item.id) || owner.version;
     return {
       ...item,
       source: "cloud" as const,
-      state: compareVersions(item.version, owner.version) > 0 ? "update-available" as const : "installed" as const,
-      installedVersion: owner.version,
+      state: compareVersions(item.version, installedVersion) > 0 ? "update-available" as const : "installed" as const,
+      installedVersion,
       skillPackageId: owner.packageId
     };
   });
@@ -131,10 +158,12 @@ export async function listSkillMarketItems(app: App, options: MarketplaceOptions
     loadSkillCatalog(app, options),
     listPlatformSkillPackages()
   ]);
+  const localSkills = listInstalledSkills(app);
   return {
     items: mergePlatformSkillPackageState(
-      mergeCatalogItems(app, result.catalog.items, listInstalledSkills(app)),
-      packages
+      mergeCatalogItems(app, result.catalog.items, localSkills),
+      packages,
+      localSkills
     ),
     offline: result.offline,
     message: result.message,

@@ -220,6 +220,38 @@
   display: none;
 }
 
+.market-page .market-toolbar :is(.skill-discovery-search, .market-store-search) {
+  background: var(--market-control-card-soft);
+  box-sizing: border-box;
+  height: 34px;
+  min-height: 34px;
+  max-height: 34px;
+  margin-block: 0;
+  border-width: 1px;
+  padding-block: 0;
+}
+
+.market-page .market-toolbar :is(.skill-discovery-search, .market-store-search) input {
+  background: transparent;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 20px;
+}
+
+.market-page .market-toolbar :is(.skill-discovery-search, .market-store-search) input::placeholder {
+  color: var(--market-control-muted);
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 1;
+}
+
+.market-page .market-toolbar :is(.skill-discovery-search, .market-store-search):focus-within {
+  outline: none;
+  border-color: color-mix(in srgb, var(--market-control-blue) 45%, var(--market-control-border));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--market-control-blue) 8%, transparent);
+}
+
 .market-tab:focus-visible,
 .market-toolbar-btn:focus-visible,
 .market-item-action:focus-visible,
@@ -274,6 +306,7 @@
 }
 
 .market-status-close.ant-btn {
+  pointer-events: auto;
   position: absolute;
   top: 50%;
   right: 10px;

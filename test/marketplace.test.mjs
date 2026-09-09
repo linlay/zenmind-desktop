@@ -1038,6 +1038,35 @@ test("installed Skill discovery ignores hidden Platform control directories", (t
   assert.equal(listInstalledSkills(app).some((item) => item.id === ".package"), false);
 });
 
+test("package child states use the actual installed version after an independent update", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "market-child-version-"));
+  const app = createApp(root);
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  t.after(() => configureSkillMarketPlatformCaller(null));
+  configureSkillMarketPlatformCaller(async () => [{ id: "suite", version: "1.0.0", skills: [
+    { id: "updated-child", version: "1.0.0" }, { id: "old-child", version: "1.0.0" }
+  ] }]);
+  for (const [id, version] of [["updated-child", "1.1.0"], ["old-child", "1.0.0"]]) {
+    const dir = getSkillInstallDir(app, id);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(path.join(dir, "SKILL.md"), `# ${id}\n`);
+    fs.writeFileSync(path.join(dir, "skill.json"), JSON.stringify({ id, name: id, version, description: "test", tags: [] }));
+  }
+  const options = { marketEnabled: true, catalog: { schemaVersion: 1, items: ["updated-child", "old-child", "new-child"].map((id) => ({
+    id, type: "skill", name: id, version: "1.1.0", description: "test", tags: [],
+    assets: { universal: { url: "https://example.test/skill.zip", archiveType: "zip", platform: "universal" } }
+  })) } };
+  for (let refresh = 0; refresh < 2; refresh++) {
+    const result = await listMarketItems(app, options);
+    const byId = new Map(result.items.map((item) => [item.id, item]));
+    assert.equal(byId.get("updated-child").state, "installed");
+    assert.equal(byId.get("updated-child").installedVersion, "1.1.0");
+    assert.equal(byId.get("updated-child").skillPackageId, "suite");
+    assert.equal(byId.get("old-child").state, "update-available");
+    assert.equal(byId.get("new-child").state, "not-installed");
+  }
+});
+
 test("skill package installs and uninstalls all included skills as one transaction", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-skill-package-"));
   const app = createApp(root);
