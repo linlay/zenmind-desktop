@@ -1,6 +1,5 @@
 import fs from "node:fs";
 import path from "node:path";
-
 import type { ServiceRevealPathOptions, ServiceRevealPathResult } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
 

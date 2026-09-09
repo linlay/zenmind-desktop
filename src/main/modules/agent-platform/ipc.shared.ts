@@ -1,15 +1,5 @@
 import type { App, WebContents } from "electron";
-
-import { randomUUID } from "node:crypto";
-
 import {
-  AGENT_WEBCLIENT_BRIDGE_VERSION,
-  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
-  AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
-  isAgentWebclientBridgeVersion,
   isPlainBridgeRecord,
   type AgentPlatformRequestFrame,
   type AgentWebclientBridgeErrorCode,
@@ -24,45 +14,36 @@ import {
   type AgentWebclientSurfaceKind,
   type WorkPanelBridgeResult,
   type WorkPanelItem,
-  type WorkPanelItemTargetInput,
   type WorkPanelWorkspace,
-  type WorkPanelOpenItemInput,
   type WorkPanelOpenDocumentInput,
   type WorkPanelOpenDocumentResult,
   type WorkPanelOpenResourceInput,
   type WorkPanelOpenResourceResult,
   type CanonicalChatSyncRequest,
-  type CanonicalChatSyncResult,
+  type CanonicalChatSyncResult
 } from "../../../shared/contracts";
-
 import type { AgentAuthIssueResult, ServiceState } from "../../../shared/contracts";
-
 import type { BrowserSurfaceRegistry, RegisteredWebviewSurfaceTarget } from "../web-surfaces";
-
 import {
-  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
-  RealtimeBroker,
+  RealtimeBroker
 } from "./realtime/realtime-broker";
-
 import {
   COPILOT_DOCK_SURFACE_ID,
   KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
 } from "../../../shared/surface-identity";
-
 import {
   readAgentWebclientCanonicalChatSource,
   readAgentWebclientNewChatSource,
 } from "../../../shared/canonical-chat-sync";
-
 import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
 import { decodeRoutePathSegment } from "../../../shared/route-path";
 
-import { requireAgentPlatformEpochMillis } from "../../../shared/time-contract";
 
-import { isDesktopDevelopmentRuntime } from "../../infrastructure/electron/development-runtime";
 
-import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
+
+
+
 
 export const AGENT_PLATFORM_SERVICE_ID = "agent-platform";
 

@@ -1,113 +1,33 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { randomUUID } from "node:crypto";
-
-import yaml from "js-yaml";
-
-import type { App } from "electron";
-
 import type {
-  AssistantNavigationPushEvent,
   AssistantStartRunRequest,
   AssistantStartRunResult,
-  DesktopPetAgentOption,
-  KanbanCloudConfig,
-  KanbanCloudConfigResult,
-  KanbanCurrentUser,
-  KanbanDeleteResult,
-  KanbanIssue,
-  KanbanIssueInput,
-  KanbanIssueMoveInput,
-  KanbanIssueResult,
-  KanbanIssueUpdateInput,
-  KanbanListResult,
-  KanbanProject,
-  KanbanRunState,
-  KanbanRunIssueInput,
-  KanbanRunIssueResult,
-  KanbanSettings,
-  KanbanSettingsInput,
-  KanbanSettingsResult,
-  KanbanStatus
+  DesktopPetAgentOption
 } from "../../../shared/contracts";
-
-import { parseKanbanPriority } from "../../../shared/contracts";
-
-import { PRODUCT_NAME } from "../../../shared/brand";
-
-import { isAgentPlatformEpochMilliseconds } from "../../../shared/time-contract";
-
-import { getDesktopDeviceInfo } from "../identity";
-
 import { getDesktopDeviceId } from "../identity";
-
-import { readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser } from "../identity";
-
-import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
 import {
-  applyDesktopKanbanCloudSnapshot,
-  completeDesktopKanbanCommandReceiptByRunId,
-  createLocalDesktopKanbanIssue,
-  deleteDesktopKanbanCloudMutation,
-  deleteDesktopKanbanRunEvent,
-  deleteDesktopKanbanIssue,
-  ensureDesktopKanbanDefaultBinding,
-  getDesktopKanbanCommandReceiptByRunId,
-  getDesktopKanbanIssue,
-  getDesktopKanbanManualRunByRunId,
-  hasDesktopKanbanCloudProject,
-  listPendingDesktopKanbanManualRuns,
   listPendingDesktopKanbanCommandReceipts,
-  listDesktopKanbanCloudMutations,
-  listDesktopKanbanRunEvents,
   markDesktopKanbanCommandReceiptReported,
-  markDesktopKanbanCloudMutationAttempt,
-  markDesktopKanbanRunEventAttempt,
-  listDesktopKanbanIssues,
-  moveDesktopKanbanIssue,
   readDesktopKanbanSyncCursor,
   recordDesktopKanbanCommandReceipt,
-  recordDesktopKanbanCloudMutation,
-  recordDesktopKanbanManualRun,
   recordDesktopKanbanRunEvent,
-  tombstoneDesktopKanbanCloudIssue,
-  updateDesktopKanbanIssue,
   updateDesktopKanbanCommandReceipt,
   updateDesktopKanbanCommandReceiptIdentity,
-  updateDesktopKanbanManualRun,
   updateDesktopKanbanIssueRuntimeState,
   upsertDispatchedDesktopKanbanIssue,
-  writeDesktopKanbanSyncCursor,
   type KanbanCloudSnapshot,
   type KanbanCommandReceipt
 } from "./local-store";
-
-import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
 import {
   convertLocalProjectIssuesToLocal,
   createLocalDesktopProject,
   findLocalDesktopProject
 } from "./local-projects";
-
 import {
-  KanbanDesktopWsClient,
-  KanbanDesktopRequestError,
   type KanbanDesktopDelivery,
-  type KanbanDesktopDeliveryApplyResult,
-  type KanbanDesktopConnectionState,
-  type KanbanDesktopIssueEvent,
-  type KanbanDesktopIssueEventApplyResult,
-  type KanbanDesktopSyncLocalProject,
-  type KanbanDesktopWsConfig
+  type KanbanDesktopDeliveryApplyResult
 } from "./ws-client";
-
 import { t } from "../../support/i18n/main-i18n";
-
-import { appendKanbanWsLog } from "../../support/logging/desktop";import { ASSISTANT_AGENT_LIST_TIMEOUT_MS, DEFAULT_SELECTED_PROJECT_ID, KanbanRuntimeMethodContext, REMOTE_START_RUN_ACK_TIMEOUT_MS, createKanbanRemoteChatId, createKanbanRemoteRunId, deliveryIssuePayload, deliveryPayloadRecord, deliverySourceRevision, isRecord, normalizeDesktopPetAgentOptions, normalizeRemoteAccessLevel, optionalText, parseStructuredReviewText, readInstalledAgentOptions, readStringList, readText, stableClientEventId, waitForRemoteStartRunAck, withTimeout } from "./runtime.shared";
+import { ASSISTANT_AGENT_LIST_TIMEOUT_MS, DEFAULT_SELECTED_PROJECT_ID, KanbanRuntimeMethodContext, REMOTE_START_RUN_ACK_TIMEOUT_MS, createKanbanRemoteChatId, createKanbanRemoteRunId, deliveryIssuePayload, deliveryPayloadRecord, deliverySourceRevision, isRecord, normalizeDesktopPetAgentOptions, normalizeRemoteAccessLevel, optionalText, parseStructuredReviewText, readInstalledAgentOptions, readStringList, readText, stableClientEventId, waitForRemoteStartRunAck, withTimeout } from "./runtime.shared";
 
 
 

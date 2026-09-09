@@ -1,87 +1,37 @@
 import fs from "node:fs";
-
 import path from "node:path";
-
 import type { App } from "electron";
-
-import {
-  DESKTOP_COPILOT_PAGE_KEYS,
-  DEFAULT_DESKTOP_HELPER_AGENT_KEY
-} from "../../../shared/assistant-settings";
-
-import { DEFAULT_LOCALE, normalizeLocale } from "../../../shared/i18n";
-
-import type { WebappEntry, WebEntryKey, WebsiteEntry } from "../../../shared/contracts";
-
-import {
-  readDesktopProfileFromRoot,
-  updateDesktopProfileInRoot
-} from "../../infrastructure/filesystem/profile-store";
-
-import { MAX_WEBSITE_ITEMS } from "../../modules/webs";
-
-import {
-  createWebsiteItem,
-  getWebsiteDir,
-  readWebsiteItems,
-  writeWebsiteItem
-} from "../../modules/webs";
-
-import { webappManager } from "../../modules/webs";
-
-import { readWebOrderKeys, writeWebOrderKeys } from "../../modules/webs";
-
-import { normalizeWebId } from "../../modules/webs";
-
-import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
 import { resolveDesktopSsoConfigPath } from "../../modules/identity";
-
 import {
   getDesktopConfigRoot,
-  getDesktopStateRoot,
-  getDesktopWebappsDataRoot,
-  getDesktopWebsitesDataRoot
+  getDesktopStateRoot
 } from "../../infrastructure/filesystem/user-paths";
-
-import { saveDesktopPetSettings } from "../../modules/pet";
-
-import { normalizeMarketApiBaseUrl, saveMarketSettings } from "../../modules/marketplace";
-
-import { saveKanbanSettings } from "../../modules/kanban";
-
-import { saveTunnelHubSettings } from "../../modules/tunnel";
-
+import { normalizeMarketApiBaseUrl } from "../../modules/marketplace";
 import {
   normalizeServiceLifecycleArgsConfig,
   getServiceLifecycleArgsConfigPath,
   writeServiceLifecycleArgsConfig
 } from "../../modules/services";
-
 import {
   normalizeServicePortDefaultsConfig,
   getServicePortDefaultsConfigPath,
   writeServicePortDefaultsConfig
 } from "../../modules/services";
-
 import {
   normalizeDesktopActionBridgeSettingsConfig,
   getDesktopActionBridgeSettingsConfigPath,
   writeDesktopActionBridgeSettingsConfig
 } from "../../modules/desktop-actions";
-
 import {
   normalizeEnterpriseImSettings,
   getEnterpriseImSettingsPath,
   writeEnterpriseImSettings
 } from "../../modules/enterprise-chat";
-
 import {
   normalizeHelpSettings,
   getHelpSettingsPath,
   writeHelpSettings
 } from "../../modules/settings";
-
 import { BootstrapApplyResult, BootstrapSectionResult, BootstrapWebsReport, DESKTOP_INIT_ASSISTANT_FILE, DESKTOP_INIT_BOOTSTRAP_STATE_FILE, DESKTOP_INIT_FILE, applyKanbanDefaults, applyMarketDefaults, applyPetDefaults, applyProfileDefaults, applySsoDefaults, applyTunnelHubDefaults, applyWebsiteDefaults, errorMessage, isRecord, isValidHttpUrl, isValidRelayUrl, normalizeDesktopInitAssistantDefaults, normalizeKanbanDefaults, pathApiForRuntimeRoot, readJsonFile, readText, removeDesktopInitFile, removeDesktopInitSitesStaging, resolveDesktopInitPath, writeAssistantDefaults, writeBootstrapState, writeJsonFile } from "./desktop-init.part-1";
 
 export function applyServiceDefaults(

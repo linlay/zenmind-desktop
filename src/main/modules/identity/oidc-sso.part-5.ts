@@ -1,54 +1,19 @@
 import fs from "node:fs";
-
 import http from "node:http";
-
 import type { AddressInfo } from "node:net";
-
-import path from "node:path";
-
 import {
-  createPublicKey,
-  createHash,
-  createVerify,
-  randomBytes,
-  randomUUID,
-  type KeyObject
+  createVerify
 } from "node:crypto";
-
 import type { App } from "electron";
-
 import type {
   DesktopSsoClaims,
-  DesktopSsoLogoutResult,
-  DesktopSsoStartResult,
   DesktopSsoStatus
 } from "../../../shared/contracts";
-
-import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
-
-import {
-  buildDesktopSsoAvatarUrl,
-  DESKTOP_SSO_AVATAR_PROTOCOL
-} from "../../../shared/sso-avatar";
-
-import {
-  getDesktopSsoAccessTokenFilePath,
-  getDesktopStateRoot,
-  getSecretsRoot
-} from "../../infrastructure/filesystem/user-paths";
-
-import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
+import { PRODUCT_NAME } from "../../../shared/brand";
 import { t } from "../../support/i18n/main-i18n";
-
-import { clearCachedDesktopSsoAvatar } from "./avatar-storage";
-
-import { CALLBACK_HOST, CALLBACK_ORIGIN, CALLBACK_PATH, CALLBACK_PORT, CallbackHooks, CallbackServerInfo, CallbackServerOptions, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_OIDC_CONFIG, DesktopSsoStatusChangeContext, FetchLike, FetchResponseLike, GOOGLE_LOOPBACK_HOST, LOGOUT_CALLBACK_PATH, OidcConfig, RETURN_TO_APP_PATH, cloneStatus, createAuthenticatedStatus, createFailedStatus, createPendingStatus, createSignedOutStatus, createUnconfiguredStatus, desktopSsoRuntimeState, getCompletedDesktopSsoMessage, getSessionPath, isGoogleOidcConfig, isServerBrokerAuthMode, removeLegacyDesktopSsoSiteTokenFile, setCurrentStatus } from "./oidc-sso.part-1";
-
+import { CALLBACK_HOST, CALLBACK_ORIGIN, CALLBACK_PATH, CALLBACK_PORT, CallbackHooks, CallbackServerInfo, CallbackServerOptions, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_OIDC_CONFIG, DesktopSsoStatusChangeContext, FetchLike, FetchResponseLike, GOOGLE_LOOPBACK_HOST, LOGOUT_CALLBACK_PATH, OidcConfig, RETURN_TO_APP_PATH, cloneStatus, createAuthenticatedStatus, createFailedStatus, createPendingStatus, createSignedOutStatus, createUnconfiguredStatus, desktopSsoRuntimeState, getSessionPath, isGoogleOidcConfig, isServerBrokerAuthMode, removeLegacyDesktopSsoSiteTokenFile, setCurrentStatus } from "./oidc-sso.part-1";
 import { loadDesktopSsoConfig, shouldUseEphemeralSystemCallback } from "./oidc-sso.part-2";
-
 import { beginAuthenticatedSession, buildReturnToAppUrl, clearSession, completeAccessTokenStep, completeUserInfoStep, createClaims, decodeJsonPart, failDesktopSsoFlow, failDesktopSsoStep, finalizeDesktopSsoLoginAttempt, includesAudience, keyObjectFromJwk, loadSession, normalizeStringClaim, readFetchErrorBody, readFetchErrorStatus, renderCallbackHtml, writeHtmlResponse } from "./oidc-sso.part-3";
-
 import { buildTokenExchangeRequest, createDesktopTicketPlaceholderClaims, describeFetchError, getDefaultOidcFetch, isDesktopSsoClaimsValue, normalizeCallbackRequest, normalizeDesktopTicketCallbackRequest, proxyDesktopSsoRequest, readJsonPathValue } from "./oidc-sso.part-4";
 
 export function buildOidcFetchStage(action: string, config: OidcConfig = DEFAULT_OIDC_CONFIG) {

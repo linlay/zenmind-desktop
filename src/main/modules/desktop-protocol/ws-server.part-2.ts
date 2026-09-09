@@ -1,63 +1,32 @@
-import crypto from "node:crypto";
-
 import http from "node:http";
-
 import type { Socket } from "node:net";
-
 import type { AddressInfo } from "node:net";
-
-import type { App } from "electron";
-
 import {
   DESKTOP_WS_NAMESPACE_AGENT_PLATFORM,
   DESKTOP_WS_NAMESPACE_DESKTOP,
   DESKTOP_WS_NAMESPACE_FIELD,
   DESKTOP_WS_NAMESPACE_WEBAPP,
   DESKTOP_WS_NAMESPACES,
-  DESKTOP_WS_HOST,
   DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
-  DESKTOP_WS_LAN_BIND_HOST,
   DESKTOP_WS_PATH,
   DESKTOP_WS_PORT,
   DESKTOP_WS_PUSH_TYPES,
   DESKTOP_WS_REQUEST_TYPES,
   type DesktopWsPushType
 } from "../../../shared/desktop-ws";
-
 import {
-  DESKTOP_ACTION_DEFINITIONS,
-  getDesktopActionDefinition,
   type DesktopActionCallRequest,
-  type DesktopActionCallResponse,
-  type DesktopActionDefinition
+  type DesktopActionCallResponse
 } from "../../../shared/desktop-actions";
-
 import type {
   AssistantStartRunRequest,
-  AssistantStartRunResult,
-  AgentAuthIssueResult,
-  AgentAuthRefreshReason,
-  DesktopMobileWebappCatalog,
-  DesktopWsServerState,
-  ServiceState,
   KanbanIssueInput,
   KanbanIssueMoveInput,
   KanbanIssueUpdateInput
 } from "../../../shared/contracts";
-
-
 import { getDesktopDeviceId } from "../identity";
-
 import { handleDesktopActionRequest } from "../desktop-actions";
-
-import type { KanbanRuntime } from "../kanban";
-
-import {
-  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
-  RealtimeBroker,
-} from "../agent-platform";
-
-import { AUTH_EXPIRING_THROTTLE_MS, AUTH_EXPIRING_WINDOW_MS, AgentPlatformWsBridge, DIRECT_ACTION_TYPES, DesktopWsAuthSession, DesktopWsConnection, DesktopWsOutboundFrame, DesktopWsProtocolTransport, DesktopWsRequestFrame, DesktopWsServerKind, DesktopWsServerOptions, DesktopWsServerRecord, DesktopWsSessionGroup, HEARTBEAT_INTERVAL_MS, MAX_FRAME_BYTES, activeServers, asRecord, authenticateDesktopWsProtocolSession, createDesktopWsServerRuntimeState, createSessionId, encodeWebSocketFrame, isDesktopWsBindHostSatisfied, listPublicActions, normalizeDesktopWsBindHost, normalizePublicActionName, nowIso, readAuthRefreshReason, readNamespace, readText, readTokenFromRequest, refreshDesktopWsConnectionAuth, sendJson, sendResponse, tunnelSessionGroup, verifyRs256Jwt, writeUpgradeFailure, writeUpgradeSuccess } from "./ws-server.part-1";
+import { AUTH_EXPIRING_THROTTLE_MS, AUTH_EXPIRING_WINDOW_MS, AgentPlatformWsBridge, DIRECT_ACTION_TYPES, DesktopWsAuthSession, DesktopWsConnection, DesktopWsProtocolTransport, DesktopWsRequestFrame, DesktopWsServerKind, DesktopWsServerOptions, DesktopWsServerRecord, DesktopWsSessionGroup, HEARTBEAT_INTERVAL_MS, MAX_FRAME_BYTES, activeServers, asRecord, authenticateDesktopWsProtocolSession, createDesktopWsServerRuntimeState, createSessionId, encodeWebSocketFrame, isDesktopWsBindHostSatisfied, listPublicActions, normalizeDesktopWsBindHost, normalizePublicActionName, nowIso, readAuthRefreshReason, readNamespace, readText, readTokenFromRequest, refreshDesktopWsConnectionAuth, sendJson, sendResponse, tunnelSessionGroup, verifyRs256Jwt, writeUpgradeFailure, writeUpgradeSuccess } from "./ws-server.part-1";
 
 export function sendError(
   connection: DesktopWsConnection,

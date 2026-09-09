@@ -1,13 +1,4 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { randomUUID } from "node:crypto";
-
-import yaml from "js-yaml";
-
 import type { App } from "electron";
-
 import type {
   AssistantNavigationPushEvent,
   AssistantStartRunRequest,
@@ -24,99 +15,34 @@ import type {
   KanbanIssueUpdateInput,
   KanbanListResult,
   KanbanProject,
-  KanbanRunState,
   KanbanRunIssueInput,
   KanbanRunIssueResult,
-  KanbanSettings,
   KanbanSettingsInput,
-  KanbanSettingsResult,
-  KanbanStatus
+  KanbanSettingsResult
 } from "../../../shared/contracts";
-
-import { parseKanbanPriority } from "../../../shared/contracts";
-
-import { PRODUCT_NAME } from "../../../shared/brand";
-
-import { isAgentPlatformEpochMilliseconds } from "../../../shared/time-contract";
-
-import { getDesktopDeviceInfo } from "../identity";
-
 import { getDesktopDeviceId } from "../identity";
-
-import { readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser } from "../identity";
-
-import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
 import {
-  applyDesktopKanbanCloudSnapshot,
-  completeDesktopKanbanCommandReceiptByRunId,
-  createLocalDesktopKanbanIssue,
-  deleteDesktopKanbanCloudMutation,
-  deleteDesktopKanbanRunEvent,
-  deleteDesktopKanbanIssue,
-  ensureDesktopKanbanDefaultBinding,
-  getDesktopKanbanCommandReceiptByRunId,
-  getDesktopKanbanIssue,
-  getDesktopKanbanManualRunByRunId,
-  hasDesktopKanbanCloudProject,
-  listPendingDesktopKanbanManualRuns,
-  listPendingDesktopKanbanCommandReceipts,
   listDesktopKanbanCloudMutations,
   listDesktopKanbanRunEvents,
-  markDesktopKanbanCommandReceiptReported,
-  markDesktopKanbanCloudMutationAttempt,
-  markDesktopKanbanRunEventAttempt,
-  listDesktopKanbanIssues,
-  moveDesktopKanbanIssue,
   readDesktopKanbanSyncCursor,
-  recordDesktopKanbanCommandReceipt,
-  recordDesktopKanbanCloudMutation,
-  recordDesktopKanbanManualRun,
-  recordDesktopKanbanRunEvent,
-  tombstoneDesktopKanbanCloudIssue,
-  updateDesktopKanbanIssue,
-  updateDesktopKanbanCommandReceipt,
-  updateDesktopKanbanCommandReceiptIdentity,
-  updateDesktopKanbanManualRun,
-  updateDesktopKanbanIssueRuntimeState,
-  upsertDispatchedDesktopKanbanIssue,
   writeDesktopKanbanSyncCursor,
   type KanbanCloudSnapshot,
   type KanbanCommandReceipt
 } from "./local-store";
-
-import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
-import {
-  convertLocalProjectIssuesToLocal,
-  createLocalDesktopProject,
-  findLocalDesktopProject
-} from "./local-projects";
-
 import {
   KanbanDesktopWsClient,
-  KanbanDesktopRequestError,
   type KanbanDesktopDelivery,
   type KanbanDesktopDeliveryApplyResult,
   type KanbanDesktopConnectionState,
   type KanbanDesktopIssueEvent,
   type KanbanDesktopIssueEventApplyResult,
-  type KanbanDesktopSyncLocalProject,
-  type KanbanDesktopWsConfig
+  type KanbanDesktopSyncLocalProject
 } from "./ws-client";
-
-import { t } from "../../support/i18n/main-i18n";
-
 import { appendKanbanWsLog } from "../../support/logging/desktop";
-
-import { ASSISTANT_AGENT_LIST_TIMEOUT_MS, AgentPlatformCaller, AssistantBridgeLike, DEFAULT_SELECTED_PROJECT_ID, KANBAN_CONFIG_FILE, KanbanConnectionFallbackState, KanbanDesktopConfigFile, KanbanRunFinishedPushResolution, KanbanRuntimeOptions, REMOTE_START_RUN_ACK_TIMEOUT_MS, buildKanbanAutomationMessage, buildKanbanAutomationPayload, deliveryIssueId, deliveryIssuePayload, deliveryPayloadRecord, deliverySourceRevision, getKanbanConfigPath, getKanbanDeviceInfo, getRemoteIssueId, hasKanbanCloudFields, hasLegacyKanbanSelectedProjectId, hasLegacyKanbanToken, isKanbanCloudConfigComplete, isRecord, issueEventIssueId, issueEventIssuePayload, issueSyncMode, kanbanIssueFromAutomationPayload, normalizeKanbanCloudConfig, normalizeKanbanSettings, normalizeRemoteAccessLevel, nullableText, optionalText, parseStructuredReviewText, readBoolean, readDueDate, readEffortSeconds, readInstalledAgentOptions, readJsonConfigFile, readKanbanCloudConfig, readKanbanOwnerConfig, readKanbanSettings, readKanbanWsConfig, readPositiveIntegerEnv, readStringList, readText, resolveKanbanRunFinishedPush, resolveKanbanWsConnection, saveKanbanSettings, stableClientEventId, writeKanbanCloudConfig, writeKanbanSettings } from "./runtime.shared";
-
+import { AgentPlatformCaller, KanbanConnectionFallbackState, KanbanRuntimeOptions, getKanbanDeviceInfo } from "./runtime.shared";
 import { KanbanRuntime_start_1, KanbanRuntime_stop_2, KanbanRuntime_refreshDeviceInfo_3, KanbanRuntime_listIssues_4, KanbanRuntime_getCloudConfig_5, KanbanRuntime_getSettings_6, KanbanRuntime_resyncCloudBoard_7, KanbanRuntime_listLocalProjects_8, KanbanRuntime_listSyncLocalProjects_9, KanbanRuntime_saveCloudConfig_10, KanbanRuntime_saveSettings_11, KanbanRuntime_createIssue_12, KanbanRuntime_updateIssue_13, KanbanRuntime_moveIssue_14, KanbanRuntime_deleteIssueWithAutomation_15, KanbanRuntime_syncIssueAutomation_16, KanbanRuntime_claimIssue_17, KanbanRuntime_runIssue_18, KanbanRuntime_bindHumanReferenceChat_19, KanbanRuntime_unbindHumanReferenceChat_20 } from "./runtime.methods-1";
-
 import { KanbanRuntime_sendCloudMutation_1, KanbanRuntime_flushCloudOutboxes_2, KanbanRuntime_flushCloudMutationOutbox_3, KanbanRuntime_flushRunEventOutbox_4, KanbanRuntime_sendRunEventOutboxItem_5, KanbanRuntime_handleRejectedRunEvent_6, KanbanRuntime_recoverPendingManualRuns_7, KanbanRuntime_sendNavigationPushEvent_8, KanbanRuntime_currentUser_9, KanbanRuntime_refreshConnection_10, KanbanRuntime_applySnapshot_11, KanbanRuntime_applyDispatch_12, KanbanRuntime_cloudIssueReadOnlyResult_13, KanbanRuntime_cloudIssueReadOnlyDeleteResult_14, KanbanRuntime_applyIssueEvent_15 } from "./runtime.methods-2";
-
 import { KanbanRuntime_applyDelivery_1, KanbanRuntime_processPendingCommandReceipts_2, KanbanRuntime_inspectReceiptRun_3, KanbanRuntime_localChatExists_4, KanbanRuntime_readStructuredReviewResult_5, KanbanRuntime_reportFailedCommandReceipt_6, KanbanRuntime_scheduleCommandReceiptRecovery_7, KanbanRuntime_appendRunEvent_8, KanbanRuntime_createLocalProject_9, KanbanRuntime_bindLocalProject_10, KanbanRuntime_unbindLocalProject_11, KanbanRuntime_listAgents_12, KanbanRuntime_startRemoteRun_13 } from "./runtime.methods-3";
-
 import { KanbanRuntime_handleRemoteStartFailure_1, KanbanRuntime_notifyChanged_2, KanbanRuntime_syncAutomationForIssue_3, KanbanRuntime_syncRemoteAutomationPayload_4 } from "./runtime.methods-4";
 
 export class KanbanRuntime {

@@ -1,342 +1,37 @@
-import fs from "node:fs";
-
 import {
   app,
-  clipboard,
   globalShortcut,
-  ipcMain,
-  net,
-  nativeImage,
-  nativeTheme,
-  protocol,
-  screen,
-  shell,
-  session,
-  systemPreferences,
-  webContents,
+  webContents
 } from "electron";
-
-
 import {
   completeDesktopSsoCookieLogin,
-  desktopSsoAccessTokenNeedsRefresh,
   finalizeDesktopSsoLoginAttempt,
   failDesktopSsoFlow,
   failDesktopSsoStep,
-  getDesktopSsoAccessToken,
   getDesktopSsoStatus,
-  isDesktopSsoCredentialRuntimeReady,
-  isDesktopSsoLoginCompletionUrl,
+  isDesktopSsoLoginCompletionUrl
 } from "../modules/identity";
-
-import { loadBuiltinServices } from "../modules/services";
-
 import {
-  getResponsiveServiceState,
-  getServiceState,
-  listServices,
-  readServiceLog,
-  runStartupPreparation,
+  getServiceState
 } from "../modules/services";
-
-import {
-  createDesktopMobileWebappCatalog,
-  readDesktopMobileWebappItem,
-  restorePublishedWebapps
-} from "../modules/webs";
-
-import { webappManager } from "../modules/webs";
-
-import { webappWindowManager } from "../modules/webs";
 import { staticSiteHostManager } from "../modules/webs";
-
-import { loadInstalledPlugins } from "../modules/plugins";
-
-import {
-  configurePluginResources,
-  emitPluginBridgeHook,
-  getPluginBridgeEnv,
-  getPluginSettingsEnv,
-  initializePluginResourceState,
-  readPluginResourceDesiredStatus,
-  retryPendingPluginResourceSync,
-  stopPluginResources,
-  syncPluginResources
-} from "../modules/plugins";
-
-import { revealPathInFileManager } from "../modules/shell";
-
-import { createAppShellRuntime, type AppShellRuntime } from "../modules/shell";
-
-import { readDesktopProfileFromRoot } from "../infrastructure/filesystem/profile-store";
-
-import { createServicesRuntime } from "../modules/services";
-
 import type {
-  AssistantAttachmentTaskProgress,
-  AssistantNavAgentItemsResult,
-  AssistantNavigationPushEvent,
-  AssistantWorkerOpenRequest,
   EnterpriseChatScreenshotMode,
-  ServiceOpenLogViewerRequest,
-  WebsChangedEvent,
+  ServiceOpenLogViewerRequest
 } from "../../shared/contracts";
-
-import {
-  APP_ID,
-  INSTALLER_SHUTDOWN_ARG,
-  PRODUCT_NAME,
-  STORAGE_NAMESPACE,
-} from "../../shared/brand";
-
-import {
-  desktopDataRootExists,
-  ensureDataRoot,
-  getDataRoot,
-  getDesktopConfigRoot,
-  getElectronUserDataRoot,
-} from "../infrastructure/filesystem/user-paths";
-
-import { EnterpriseChatRuntime } from "../modules/enterprise-chat";
-
-import { redactEnterpriseChatSupportText } from "../modules/enterprise-chat";
-
-import { readEnterpriseImSettings } from "../modules/enterprise-chat";
-
-import { createLogsRuntime } from "../support/logging/runtime";
-
 import { isDesktopDevelopmentRuntime } from "../infrastructure/electron/development-runtime";
-
-import { setDeprecatedCompatibilityDesktopVersion } from "../support/logging/deprecated-compatibility";
-
-import {
-  applyDesktopInitBootstrap,
-  applyDesktopInitVersionUpgrade
-} from "./bootstrap/desktop-init";
-
-import {
-  bundledEnvZipExists,
-  configureRuntimeEnvironmentTranslator,
-  resolveRuntimeRoot,
-  runtimeEnvExists,
-  runtimeEnvNeedsBundledSeedRefresh,
-  runtimeRootExists,
-  shouldPromptEnvRootConflict,
-  shouldRequireEnvZipImport,
-  type EnvRootConflictDecision,
-} from "../infrastructure/filesystem/runtime-environment";
-
-import { createStartupEnvironmentRuntime } from "./bootstrap/startup-environment";
-
 import { safeConsoleError } from "../support/logging/safe-console";
-
-import {
-  callAgentPlatform,
-  handleAgentPlatformDesktopActionRequest,
-  handleDesktopActionRequest,
-  handleDesktopCdpRequest,
-  startDesktopActionBridge,
-  stopDesktopActionBridge
-} from "../modules/desktop-actions";
-
-import {
-  callDesktopActionConfirmation,
-  callDesktopActionRenderer,
-  createDesktopActionOptions
-} from "../modules/desktop-actions";
-
-import {
-  emitDesktopWsPush,
-  getDesktopWsServerRuntimeState,
-  startDesktopWsServer,
-  stopDesktopWsServer
-} from "../modules/desktop-protocol";
-
-import {
-  configureTunnelHubRegistrationController,
-  configureTunnelHubRuntime,
-  startTunnelHubRuntimeIfEnabled,
-  stopTunnelHubRuntime,
-} from "../modules/tunnel";
-
-import {
-  AGENT_WEBCLIENT_TARGET_PATH,
-  createAgentWebclientRoute
-} from "../../shared/agent-webclient-routes";
-
-import {
-  registerDesktopPetAssetProtocol,
-  registerDesktopPetAssetProtocolScheme,
-} from "../modules/pet";
-
-import {
-  registerWebsiteFaviconProtocol,
-  registerWebsiteFaviconProtocolScheme,
-} from "../modules/webs";
-
-import {
-  registerDesktopSsoAvatarProtocol,
-  registerDesktopSsoAvatarProtocolScheme,
-} from "../modules/identity";
-
-import { registerChatWorkPanelLocalFileProtocolScheme } from "../modules/work-panel";
-
-import { isDesktopPetSupportedPlatform } from "../modules/pet";
-
-import { createDesktopPetRuntime, type DesktopPetRuntime } from "../modules/pet";
-
-import { registerMainIpcHandlers } from "./module-registry";
-
 import {
   captureAssistantScreenshot as captureCopilotScreenshot,
   captureScreenshotForBridge
 } from "../modules/assistant";
-
-import { initializeMainI18n, setMainLocale, t } from "../support/i18n/main-i18n";
-
-import { createStartupRestoreController } from "./lifecycle/startup-restore";
-
-import {
-  getFocusedWebviewDevToolsShortcut,
-  isDevToolsShortcut,
-  isGlobalSearchShortcut,
-  isDesktopCloseShortcut,
-  resolveGlobalSearchCommandShortcut,
-} from "../infrastructure/electron/platform-adapter";
-
-import { MAIN_CHAT_SURFACE_ID } from "../../shared/surface-identity";
-
-import { configureSystemIdentity } from "./system-identity";
-
+import { t } from "../support/i18n/main-i18n";
 import { openCurrentWebviewDevTools } from "../modules/web-surfaces";
-
 import {
-  createDesktopSsoController,
-  type DesktopSsoRestoreResult
-} from "../modules/identity";
-
-import { createCdpIntegration } from "../modules/web-surfaces";
-
-import { createWebSurfaceRuntime } from "../modules/webs";
-
-import { createWebviewContextMenuController } from "../modules/web-surfaces";
-
-import { createSettingsRuntime } from "../modules/settings";
-
-import { readHelpSettings } from "../modules/settings";
-
-import { createMainAppState } from "./state";
-
-import { getMainPreloadPath, resolveElectronBundleRootFromRuntimeDir } from "../infrastructure/electron/bundle-paths";
-
-import { loadRendererRoute } from "../infrastructure/electron/renderer-route";
-
-import { parseSafeLoopbackWebUrl } from "../infrastructure/network/loopback-url";
-
-import {
-  refreshPluginGlobalShortcuts,
-  unregisterPluginGlobalShortcuts,
+  refreshPluginGlobalShortcuts
 } from "../modules/plugins";
-
 import { invokePluginDesktopAction } from "../modules/plugins";
-
-import { cleanupProgramDataForVersion } from "./lifecycle/program-data-cleanup";
-
-import { createAssistantBridgeRuntime, type AssistantBridgeRuntime } from "../modules/assistant";
-
-import { createAssistantRunWakeLock } from "../modules/assistant";
-
-import { createFirstInstallBootstrapNavigation } from "../modules/assistant";
-
-import {
-  ensureProviderRegisterApiKey,
-  RealtimeBroker
-} from "../modules/agent-platform";
-
-import { createPluginClipboardBridge } from "../modules/plugins";
-
-import { createPluginBridgeRuntime, type PluginBridgeRuntime } from "../modules/plugins";
-
-import {
-  createInstallerShutdownArgs,
-  requestMainSingleInstanceLock,
-} from "./lifecycle/single-instance";
-
-import { createStartupPipeline } from "./lifecycle/startup";
-
-import {
-  isStartupPhaseAtLeast,
-  type StartupPhase,
-} from "./lifecycle/startup-phases";
-
 import { createShutdownCleanupRunner } from "./lifecycle/shutdown";
-
-import {
-  createNoPrimaryShutdownReport,
-  parseInstallerShutdownRequest,
-  writeShutdownAck
-} from "./lifecycle/shutdown-ack";
-
-import { registerMainAppEvents } from "./app-events";
-
-import { registerDesktopOpenProtocolClient } from "./deep-link";
-
-import {
-  createResourceDirectoryWatcher,
-  type ResourceDirectoryWatcher
-} from "./resource-directory-watcher";
-
-import { recoverWebappInstallTransactions } from "../modules/webs";
-
-import { configureMarketAccessTokenIssuer, refreshMarketCatalog } from "../modules/marketplace";
-
-import { configureAgentMarketPlatformCaller } from "../modules/marketplace";
-
-import { configureSkillMarketPlatformCaller } from "../modules/marketplace";
-
-import {
-  getDesktopDeviceId,
-  getDesktopDeviceInfo
-} from "../modules/identity";
-
-
-import { resolveConversationAssetOrigin } from "../modules/conversation-share";
-
-import {
-  installWebsiteAppArchiveFromPath,
-  readInstalledRecords,
-  removeInstalledRecordByResourceKey
-} from "../modules/marketplace";
-
-import {
-  deriveTunnelHubRegistrationApiOrigin,
-  getTunnelHubRuntimeStatus,
-  readTunnelHubRegistrationBearerToken,
-  readTunnelHubSettings,
-  saveTunnelHubSettings,
-  startTunnelHubRuntime
-} from "../modules/tunnel";
-
-import {
-  getConfiguredDesktopActionBridgePort
-} from "../modules/desktop-actions";
-
-import {
-  ContainerHubClient,
-  createAssistantIntegrationPorts,
-  getAssistantSettings,
-  readAssistantCopilotAgentsFromPlatform,
-  readAssistantNavigationAgentsFromPlatform,
-  readAssistantSettings,
-  resolveAssistantAttachmentPath,
-  resolveAssistantChatStoragePaths,
-  toPublicAssistantSettings
-} from "../modules/assistant";
-
-import { toDesktopPetAgentOptions } from "../modules/pet";
-
-import { createKanbanRuntime } from "../modules/kanban";
-
 import type { CreateMainProcessRuntimeContext } from "./runtime.shared";
 
 export function createMainProcessRuntime_runShutdownCleanup_1(factoryContext: CreateMainProcessRuntimeContext) { return createShutdownCleanupRunner({

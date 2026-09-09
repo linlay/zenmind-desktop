@@ -1,230 +1,62 @@
 import fs from "node:fs";
-
 import path from "node:path";
-
-import os from "node:os";
-
 import type { App } from "electron";
-
 import type {
-  ServiceCommandResult,
-  ServiceConfigReadResult,
   ServiceDesiredStatus,
   ServiceId,
-  ManifestDesktopCapabilityPhase,
-  ManifestDesktopCapabilityRequirement,
-  ServiceImportResult,
-  ServiceLogReadOptions,
-  ServiceLogReadResult,
-  ServiceLogStreamEvent,
-  ServiceLogStreamOptions,
-  ServiceLogTarget,
-  ServiceLogsMeta,
   ServiceState,
-  ServiceVerification,
-  StartupRestoreMode,
-  StartupRestoreServicePhase,
-  StartupEnvImportRequest
+  ServiceVerification
 } from "../../../../shared/contracts";
-
 import type { ServiceDefinition } from "../../../support/manifest/manifest-utils";
-
 import { getAllServices, getService } from "../service-registry";
-
 import type { ServicesIntegrationPorts } from "../integration-ports";
-
-import { readEnvFile, parseEnvFileContent } from "../../../infrastructure/filesystem/env-file";
-
-import { extractArchiveToDir } from "../../../support/archive/archive-utils";
-
+import { readEnvFile } from "../../../infrastructure/filesystem/env-file";
 import {
-  getInitializationStatePath,
   getInstallDir,
   getServiceLayout,
   resolveConfigPath,
   resolveConfigTemplatePath,
-  resolveProgramPath,
-  resolveServiceRuntimePath,
   type ServiceLayout
 } from "./layout";
-
-import {
-  LOG_READ_WINDOW_BYTES,
-  readLogRange,
-  readServiceLogFile,
-  normalizeLogStreamOffset,
-  normalizeLogStreamPollInterval
-} from "../../../support/logging/service-logs";
-
-import {
-  beginStartupTiming,
-  flushStartupTimingSummary
-} from "../../../support/logging/startup-timing";
-
-import {
-  identityCenterInstallNeedsRefresh,
-  serviceInstallNeedsRefresh
-} from "./install-refresh";
-
-import {
-  resolveNodeBin,
-  __testInternals as commandEnvTestInternals
-} from "./command-env";
-
-import {
-  decodePowerShellCapturePayload,
-  runExecFile,
-  SERVICE_COMMAND_TIMEOUT_MS
-} from "./command-runner";
-
 import { t } from "../../../support/i18n/main-i18n";
-
 import {
-  upsertEnvFileContent,
-  writeEnvFileUpdates
-} from "./env-content";
-
-import {
-  DEFAULT_STARTUP_SERVICE_IDS,
-  getDefaultStartupServiceIds,
-  getLastRunningServicesStatePath,
-  getOptionalServiceIdsToRestore,
-  getServiceIdsToRestore,
-  INSTALL_ONLY_STARTUP_SERVICE_IDS,
-  OPTIONAL_AUTO_STARTUP_SERVICE_IDS,
-  isNonBlockingRestoreFailure,
-  orderServiceIdsForRestore,
-  readInitializationState,
-  readLastRunningServices,
-  writeInitializationState,
-  writeLastRunningServices
+  readInitializationState
 } from "./state-files";
-
 import {
-  fixShellScriptPermissions
-} from "./program-layout";
-
-import {
-  computeAssetSignature,
-  ensureArchiveHealthy,
   ensureBundleAssetHealthy,
-  getOptionalBundleAssetPath,
-  isInstallHealthy,
-  listMissingBundleEntries,
-  listMissingRuntimeFiles,
-  moveExtractedBuiltinRoot,
-  readBuiltinAssetSignature
+  listMissingRuntimeFiles
 } from "./bundle-assets";
-
 import {
-  buildProcessTreePids,
-  parseProcessTreeRowsFromPs,
-  parseProcessTreeRowsFromWindowsPowerShell,
-  type ProcessTreeRow
-} from "./process-tree";
-
-import {
-  isProcessRunning,
-  terminateProcessList,
-  terminateProcessTree
+  isProcessRunning
 } from "./process-cleanup";
-
 import {
-  matchProcessInstallDir,
   pidMatchesInstallDir
 } from "./process-identity";
-
 import {
-  LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
-  PROCESS_EXEC_PATH_PLACEHOLDER,
-  resolveAcpCommandForDesktop
-} from "./env-normalization";
-
-import {
-  __testInternals as containerEngineTestInternals,
-  clearContainerEngineProbeCache,
-  containerEngineAvailable,
   probeContainerEngines
 } from "./container-engine";
-
 import {
-  CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS,
-  delay,
-  getServiceVerificationDelayMs,
-  normalizeProbeUrl,
-  probeHttpUrl,
   type HttpProbeResult
 } from "./service-probes";
-
 import {
   getWebUrl,
   parsePort
 } from "./service-network";
-
-import {
-  resolvePreferredAgentPlatformRuntimeRoot
-} from "./runtime-paths";
-
 import {
   getManagedPidFilePaths,
   readManagedPidFile,
   resolveRuntimePath,
   writeManagedPidFiles
 } from "./pid-files";
-
 import {
-  captureManagedProcessCleanupSnapshot,
-  collectManagedRootPids,
-  collectManagedServiceStopState,
   detectManagedServicePid,
-  ensureManagedServiceStoppedForPlatform,
-  forceStopServiceInstallDir,
-  listListeningPids,
-  mergeCleanupTargets
+  listListeningPids
 } from "./managed-cleanup";
-
 import {
-  reconcileBuiltinSiblingInstallDirs,
-  stopBuiltinInstallDir
-} from "./builtin-install";
-
-import {
-  getAgentWebclientHostState,
-  isHostManagedAgentWebclientService,
-  startAgentWebclientHost,
-  stopAgentWebclientHost
+  getAgentWebclientHostState
 } from "../agent-webclient-host";
-
-import { resolveDesktopCapability } from "./capabilities";
-
-import {
-  appendConfiguredServiceLifecycleArgs,
-  getConfiguredServiceLifecycleArgs,
-  rewriteServiceLifecycleArgsForDesktopConfigUpgrade,
-  type ServiceLifecycleCommandKind
-} from "../lifecycle-args";
-
-import { rewriteServicePortDefaultsForDesktopConfigUpgrade } from "../port-defaults";
-
-import { getDataRoot, getDesktopSsoAccessTokenFilePath } from "../../../infrastructure/filesystem/user-paths";
-
-import {
-  bundledEnvZipExists,
-  stageValidatedDesktopVersionUpgradeInput,
-  validateBundledEnvForDesktopVersionUpgrade,
-  validateEnvZipForDesktopManualImport,
-  validateSelectedEnvZipForDesktopVersionUpgrade
-} from "../../../infrastructure/filesystem/runtime-environment";
-
-import { isDesktopDevelopmentRuntime } from "../../../infrastructure/electron/development-runtime";
-
-import {
-  completeDesktopServiceConfigUpgrade,
-  DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,
-  prepareDesktopServiceConfigUpgrade,
-  recordDesktopServiceConfigCoreHealthFailure,
-  type DesktopServiceConfigResetContext
-} from "./desktop-config-upgrade";import { DEFAULT_DEPENDENCY_RUNNING_VERIFICATION_TIMEOUT_MS, ServiceCommandKind, ServiceStateReadOptions, ServiceVerificationOptions, ensureDir, getDesktopManagedCommandPort, getDesktopManagedContainerHubBindAddr, integrationPorts, isHostManagedService } from "./index.part-1";
+import { getDesktopSsoAccessTokenFilePath } from "../../../infrastructure/filesystem/user-paths";
+import { DEFAULT_DEPENDENCY_RUNNING_VERIFICATION_TIMEOUT_MS, ServiceCommandKind, ServiceStateReadOptions, ServiceVerificationOptions, ensureDir, getDesktopManagedCommandPort, getDesktopManagedContainerHubBindAddr, integrationPorts, isHostManagedService } from "./index.part-1";
 
 
 

@@ -1,57 +1,35 @@
-import fs from "node:fs";
-
-import { execFile } from "node:child_process";
-
 import type { App } from "electron";
-
 import type {
   AgentAuthIssueResult,
   AssistantChatSortMode,
-  AssistantAwaitingMode,
-  AssistantNavAgentIcon,
-  AssistantNavAgentItem,
   AssistantNavAgentItemsResult,
-  AssistantNavChatItem,
   AssistantNavigationLiveFrame,
   AssistantNavigationPushEvent,
   AssistantNavigationLiveStatus,
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
-
 import {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot,
 } from "../../infrastructure/filesystem/profile-store";
-
 import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
 import {
   isTimeContractViolation,
-  isAgentPlatformEpochMilliseconds,
-  parseOptionalNullableAgentPlatformEpochMillis,
-  requireAgentPlatformEpochMillis,
-  requireEpochMillis,
+  requireAgentPlatformEpochMillis
 } from "../../../shared/time-contract";
-
 import {
   readAgentPlatformPushEpochMillis,
   validateAgentPlatformPushTimeContract,
 } from "../../../shared/agent-platform-push-time-contract";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import {
   AGENT_PLATFORM_KNOWN_PUSH_TYPES,
   RealtimeBroker,
 } from "../agent-platform";
-
 import type { AgentPlatformRealtimeFrame } from "../agent-platform";
-
 import { AGENT_PLATFORM_SERVICE_ID, ASSISTANT_NAVIGATION_WS_SOURCE, AssistantNavigationRecordedRuntimeStatusPush, IGNORED_PUSH_TYPES, JOURNALED_NAVIGATION_PUSH_TYPES, NAVIGATION_AGENT_CHAT_LIMIT, NAVIGATION_AGENT_HISTORY_LIMIT, NAVIGATION_CHAT_AGENT_MODE, NAVIGATION_CHAT_LIMIT, NAVIGATION_CHAT_PROBE_LIMIT, NAVIGATION_LIVE_FRAME_LIMIT, NAVIGATION_REFRESH_DEBOUNCE_MS, NAVIGATION_UNAVAILABLE_RETRY_MS, NavigationPushEvent, NavigationPushFrame, PlatformChatOrder, createRedactedWsEndpoint, nowEpochMillis, toText, unwrapApiResponse } from "./navigation-status-client.part-1";
-
 import { AssistantNavigationChatOrderSnapshot, AssistantNavigationChatsSnapshot, buildAssistantNavigationChatsSnapshotFromPlatform, createChatRuntimeStatusPatch, readPushChatId, toPushEvent } from "./navigation-status-client.part-2";
-
 import { applyAssistantNavigationChatPush, applyAssistantNavigationPush, readAssistantNavigationActivityAgentsFromPlatform, readAssistantNavigationAgentsFromPlatform } from "./navigation-status-client.part-3";
 
 export class AssistantNavigationStatusClient {

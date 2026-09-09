@@ -273,47 +273,6 @@ export function readTunnelHubSettings(
   };
 }
 
-export function validateTunnelHubSettingsInput(input: TunnelHubSettingsInput) {
-  const issues: string[] = [];
-  const relayUrl = normalizeRelayUrl(input.relayUrl);
-  if ("enabled" in input && typeof input.enabled !== "boolean") {
-    issues.push("enabled must be boolean.");
-  }
-  if (input.enabled === true || relayUrl) {
-    if (!isValidRelayUrl(relayUrl)) {
-      issues.push("Relay URL is invalid.");
-    }
-  }
-  if (input.deviceId !== undefined) {
-    const deviceId = normalizeTunnelHubDeviceId(input.deviceId);
-    if (!isValidTunnelHubDeviceId(deviceId)) {
-      issues.push("Device ID must be a lowercase DNS label up to 63 characters.");
-    }
-  }
-
-  const reconnectSeconds = normalizeReconnectSeconds(input.reconnectSeconds);
-  if (
-    input.reconnectSeconds !== undefined &&
-    (!Number.isFinite(Number(input.reconnectSeconds)) ||
-      Number(input.reconnectSeconds) < MIN_RECONNECT_SECONDS ||
-      Number(input.reconnectSeconds) > MAX_RECONNECT_SECONDS)
-  ) {
-    issues.push(`Reconnect seconds must be between ${MIN_RECONNECT_SECONDS} and ${MAX_RECONNECT_SECONDS}.`);
-  }
-
-  return {
-    valid: issues.length === 0,
-    issues,
-    settings: {
-      enabled: input.enabled === true,
-      relayUrl,
-      deviceId: normalizeTunnelHubDeviceId(input.deviceId),
-      tlsInsecureSkipVerify: false,
-      reconnectSeconds
-    }
-  };
-}
-
 function writeStoredSettings(
   app: App,
   settings: WritableTunnelHubSettings,

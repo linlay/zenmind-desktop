@@ -26,10 +26,7 @@ import { readWebItems } from "./store";
 import { webappWindowManager } from "./webapps/window-manager";
 import { resetWebappRuntimeProbeCaches } from "./webapps/launchers";
 import {
-  getWebappPublishStatus,
-  publishWebapp,
-  readWebappPublishState,
-  unpublishWebapp
+  readWebappPublishState
 } from "./webapps/publisher";
 import { t } from "../../support/i18n/main-i18n";
 import type { WebsFacade } from "./facade";

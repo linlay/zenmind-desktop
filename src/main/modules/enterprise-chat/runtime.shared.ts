@@ -1,11 +1,5 @@
-import { openAsBlob } from "node:fs";
-
-import fs from "node:fs";
-
 import path from "node:path";
-
 import type { App } from "electron";
-
 import type {
   EnterpriseChatAttachment,
   EnterpriseChatAttachmentData,
@@ -34,46 +28,22 @@ import type {
   EnterpriseChatSnapshot,
   EnterpriseChatUser
 } from "../../../shared/contracts";
-
 import {
-  ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES,
-  ENTERPRISE_CHAT_MAX_PASTED_FILES
-} from "../../../shared/contracts/enterprise-chat";
-
-import {
-  ENTERPRISE_CHAT_REMOTE_ACTION_NAMES,
   getEnterpriseChatRemoteAction
 } from "../../../shared/enterprise-chat-actions";
-
 import type { DesktopActionCallResponse } from "../../../shared/desktop-actions";
-
 import type { EpochMilliseconds } from "../../../shared/time-contract";
-
-import { getDesktopDeviceInfo } from "../identity";
-
 import {
   EnterpriseChatActionLedger,
-  enterpriseChatActionScope,
   type EnterpriseChatActionLedgerEntry
 } from "./action-ledger";
-
-import {
-  clearEnterpriseChatAvatar,
-  readEnterpriseChatSelfProfile,
-  saveEnterpriseChatAvatar,
-  saveEnterpriseChatMotto
-} from "./local-profile";
-
-import { createEnterpriseChatSupportBundle } from "./support-bundle";
-
 import {
   DEFAULT_ENTERPRISE_IM_BASE_URL,
   normalizeEnterpriseImBaseUrl
 } from "./settings";
-
 import { t } from "../../support/i18n/main-i18n";
 
-import { getDesktopSsoAccessToken } from "../identity";
+
 
 export const ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS = 15_000;
 

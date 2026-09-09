@@ -1,44 +1,11 @@
 import fs from "node:fs";
-
 import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
 import { DatabaseSync } from "node:sqlite";
-
-import type { App } from "electron";
-
 import type {
-  AssistantAttachment,
-  KanbanCloudDetailData,
   KanbanCurrentUser,
-  KanbanDeleteResult,
-  KanbanIssue,
-  KanbanIssueInput,
-  KanbanIssueMoveInput,
-  KanbanIssueResult,
-  KanbanIssueUpdateInput,
-  KanbanListResult,
-  KanbanOrigin,
-  KanbanPriority,
-  KanbanProject,
-  KanbanProjectBinding,
-  KanbanRunState,
-  KanbanStatus,
-  KanbanSyncMode,
-  KanbanSyncState
+  KanbanStatus
 } from "../../../shared/contracts";
-
-import {
-  KANBAN_RUN_STATES,
-  KANBAN_STATUSES,
-  parseKanbanPriority
-} from "../../../shared/contracts";
-
-import { getRuntimeDataRoot } from "../../infrastructure/filesystem/user-paths";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import { AppPathProvider, BOARD_ID, DATABASE_SCHEMA_VERSION, PROJECT_ID, WORKFLOW_ID, getDesktopKanbanDatabasePath, nowIso, nullableTrimmedText, parseJsonRecord, readLegacyDueDate } from "./local-store.part-1";
 
 export function ensureDesktopKanbanSchema(db: DatabaseSync) {

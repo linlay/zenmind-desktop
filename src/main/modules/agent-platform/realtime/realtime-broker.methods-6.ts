@@ -1,31 +1,12 @@
 import type { RealtimeBrokerMethodContext } from "./realtime-broker.shared";
 import { randomUUID } from "node:crypto";
-
-import type { App } from "electron";
-
 import type {
-  AgentAuthIssueResult,
-  AgentWebclientConnectionPhase,
-  AgentWebclientRunOwner,
+  AgentWebclientRunOwner
 } from "../../../../shared/contracts";
-
-import { validateAgentPlatformPushTimeContract } from "../../../../shared/agent-platform-push-time-contract";
-
-import { getDesktopActionDefinition } from "../../../../shared/desktop-actions";
-
-import { requireAgentPlatformEpochMillis } from "../../../../shared/time-contract";
-
 import {
-  AgentPlatformRealtimeClient,
-  type AgentPlatformRealtimeConnectionState,
-  type AgentPlatformRealtimeFrame,
-  type AgentPlatformRealtimeSocketFactory,
-  type RealtimeIdentityRotationReason,
+  type AgentPlatformRealtimeFrame
 } from "./agent-platform-realtime-client";
-
-import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
-
-import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, BrokerRun, ConnectionSubscription, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, Deferred, DesktopBridgeRequestProvider, MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, MAX_RETAINED_TERMINAL_RUNS, OverviewCloneLeaseState, PendingClone, PendingRequest, PushSubscription, QueryTransaction, REQUEST_TIMEOUT_MS, RealtimeLane, RealtimeQueryAccepted, RealtimeQueryCompleted, RealtimeQueryHandle, ReplayEvent, RootObserverIdentity, RootObserverKind, RootObserverState, RunActionGrant, RunChannelKey, RunSubscription, brokerError, cloneBindingError, createDeferred, frameError, framePayload, isObserverDetachReason, isRecord, isTerminalEvent, pushIdentity, readText, runChannelMapKey, sameRunOwner, unrefTimer } from "./realtime-broker.shared";
+import { BrokerRun, MAX_RETAINED_TERMINAL_RUNS, cloneBindingError, framePayload, isRecord, readText, sameRunOwner } from "./realtime-broker.shared";
 
 export function RealtimeBroker_waitForCloneRun_1(self: RealtimeBrokerMethodContext, kind: "overview" | "debug", observerToken: string, runIdValue: string, chatIdValue: string, owner: AgentWebclientRunOwner, consumerId: string) {
     const runId = runIdValue.trim();

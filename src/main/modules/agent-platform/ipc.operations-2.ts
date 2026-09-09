@@ -1,69 +1,18 @@
-import type { App, WebContents } from "electron";
-
-import { randomUUID } from "node:crypto";
-
 import {
-  AGENT_WEBCLIENT_BRIDGE_VERSION,
-  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_EVENT_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
-  AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_SEND_CHANNEL,
-  AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
-  isAgentWebclientBridgeVersion,
-  isPlainBridgeRecord,
-  type AgentPlatformRequestFrame,
-  type AgentWebclientBridgeErrorCode,
-  type AgentWebclientBridgeFailure,
-  type AgentWebclientPlatformFramePortCloseInput,
   type AgentWebclientPlatformFramePortEvent,
-  type AgentWebclientPlatformFramePortOpenInput,
-  type AgentWebclientPlatformFramePortSendInput,
-  type DesktopPlatformConnectionState,
-  type DesktopPlatformSessionClose,
-  type AgentWebclientRunOwner,
-  type AgentWebclientSurfaceKind,
-  type WorkPanelBridgeResult,
-  type WorkPanelItemTargetInput,
-  type WorkPanelOpenItemInput,
-  type WorkPanelOpenDocumentInput,
-  type WorkPanelOpenDocumentResult,
-  type WorkPanelOpenResourceInput,
-  type WorkPanelOpenResourceResult,
-  type CanonicalChatSyncRequest,
-  type CanonicalChatSyncResult,
+  type AgentWebclientPlatformFramePortOpenInput
 } from "../../../shared/contracts";
-
-import type { AgentAuthIssueResult, ServiceState } from "../../../shared/contracts";
-
-import type { BrowserSurfaceRegistry, RegisteredWebviewSurfaceTarget } from "../web-surfaces";
-
+import type { RegisteredWebviewSurfaceTarget } from "../web-surfaces";
 import {
-  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
-  RealtimeBroker,
+  AGENT_PLATFORM_KNOWN_PUSH_TYPES
 } from "./realtime/realtime-broker";
-
 import {
-  COPILOT_DOCK_SURFACE_ID,
-  KANBAN_CHAT_SURFACE_ID,
   MAIN_CHAT_SURFACE_ID
 } from "../../../shared/surface-identity";
-
-import {
-  readAgentWebclientCanonicalChatSource,
-  readAgentWebclientNewChatSource,
-} from "../../../shared/canonical-chat-sync";
-
-import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
-
 import { requireAgentPlatformEpochMillis } from "../../../shared/time-contract";
-
-import { isDesktopDevelopmentRuntime } from "../../infrastructure/electron/development-runtime";
-
-import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
-
 import type { RegisterAgentWebclientBridgeIpcHandlersContext } from "./ipc.shared";
-
-import { AGENT_PLATFORM_SERVICE_ID, ClosedLogicalSessionDiagnostic, FrameErrorOptions, LIVE_CHAT_SURFACE_IDS, LIVE_REQUEST_TYPES, LogicalSession, MAX_SERIALIZED_FRAME_BYTES, PlatformFrameRecord, RootObserverContextSource, SURFACE_REGISTRATION_WAIT_MS, StreamBinding, SurfaceContext, authorizeSurface, bridgeErrorCode, bridgeErrorWithMetadata, createRootObserverToken, describeMainChatRouteIdentity, failure, frameError, frameErrorOptions, mainChatQueryRouteAgentKeys, mainChatQueryTargetIsReady, mainChatQueryTargetIsTransitional, mayAwaitSurfaceRegistration, normalizeDocumentWorkspacePath, parseRequestFrame, protocolError, readNormalizedStreamEvent, readOwner, readText, resolveNewChatQuerySource, rootObserverContextId, rootObserverKind, sameNewChatSource, sameOrigin, sameOwner, sessionKey, streamBindingDiagnostic, trustedKind, updateBindingFromFrame, validateMainChatQueryAgentIdentity, validateMainChatQuerySenderChatIdentity, validateMainChatQueryTargetAgentIdentity } from "./ipc.shared";
+import { LogicalSession, PlatformFrameRecord, SURFACE_REGISTRATION_WAIT_MS, StreamBinding, SurfaceContext, authorizeSurface, describeMainChatRouteIdentity, mainChatQueryTargetIsReady, mainChatQueryTargetIsTransitional, mayAwaitSurfaceRegistration, protocolError, readNormalizedStreamEvent, readOwner, readText, resolveNewChatQuerySource, sameOwner, sessionKey, validateMainChatQueryAgentIdentity, validateMainChatQuerySenderChatIdentity } from "./ipc.shared";
 
 export function registerAgentWebclientBridgeIpcHandlers_processQueryBootstrapFrame_1(factoryContext: RegisterAgentWebclientBridgeIpcHandlersContext, binding: StreamBinding, upstreamFrame: PlatformFrameRecord): void {
     if (binding.type !== "/api/query")

@@ -1,33 +1,18 @@
-import type { App, BrowserWindow, NativeTheme } from "electron";
-
-import { PRODUCT_NAME } from "../../../shared/brand";
-
+import type { App, NativeTheme } from "electron";
 import {
   DESKTOP_HELP_WEBVIEW_PARTITION,
   isAllowedHelpNavigationUrl,
   isSafeHelpExternalUrl
 } from "../../../shared/help";
-
-import { createInitialLocaleArguments } from "../../../shared/i18n/initial-locale-args";
-
-import type { LocaleSettings } from "../../../shared/i18n/types";
-
 import type { DesktopCloseShortcutRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
-
 import {
-  CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL,
-  normalizeChatWorkPanelUrl,
+  normalizeChatWorkPanelUrl
 } from "../../../shared/chat-work-panel";
-
 import {
   isBlobSchemeUrl,
   normalizeWebviewBlobPopupForSource,
 } from "../../../shared/webview-popup";
-
-import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
-
 import type { DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
-
 import { AttachedWebviewLike, AttachedWebviewOptions, BlobPopupTarget, MAC_FULLSCREEN_CLOSE_DELAY_MS, MAC_FULLSCREEN_CLOSE_FALLBACK_MS, MainRendererDevToolsContentsLike, MainWindowActivationLike, MainWindowLike, MainWindowWebContentsLike, RendererDiagnosticReporter, isWorkPanelFullscreenExitShortcut, prepareWebviewAttachPreferences, resolveWebviewEditShortcut, resolveWindowsBackgroundColor, runWebviewEditCommand, toggleMainRendererDevTools } from "./window-manager.part-1";
 
 export function configureAttachedWebview<

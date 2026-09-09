@@ -1,20 +1,11 @@
 import fs from "node:fs";
-
 import path from "node:path";
-
 import {
   DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING
 } from "../../../shared/contracts";
-
-import { t } from "../i18n/main-i18n";
-
 import type {
-  FrontendMode,
   Manifest,
-  ManifestApi,
-  ManifestBackend,
   ManifestCommand,
-  ManifestConfigFile,
   ManifestDesktop,
   ManifestDesktopAction,
   ManifestDesktopCapabilities,
@@ -24,26 +15,9 @@ import type {
   ManifestDesktopHosting,
   ManifestDesktopProxyRoute,
   ManifestEnvBinding,
-  ManifestFrontend,
-  ManifestPluginBridge,
-  ManifestPluginHooks,
-  ManifestPluginResources,
-  ManifestPluginSettingField,
-  ManifestPluginSettingPlatform,
-  ManifestPluginSettingType,
-  ManifestPluginSettingValue,
-  ManifestPluginSettings,
-  ManifestPluginSettingsUi,
-  ManifestRuntime,
-  ManifestScripts,
-  ManifestWeb,
-  ServiceId,
-  ServiceKind,
-  ServiceMode
+  ManifestFrontend
 } from "../../../shared/contracts";
-
 import { listArchiveEntries, readFileFromArchive } from "../archive/archive-utils";
-
 import { NormalizeManifestOptions, ServiceDefinition, applyCoreServiceRuntimeOverride, applyCoreServiceWebOverride, asBoolean, asNumber, asObject, asOptionalString, asString, asStringArray, asStringRecord, assertNoPluginManifestLegacyFields, cloneDisabledResponse, isServiceKind, normalizeRoutePath, resolveApi, resolveBackend, resolveDesktopActions, resolveFrontend, resolvePluginBridge, resolvePluginHooks, resolvePluginResources, resolvePluginSettings, resolveRuntime, resolveScripts, resolveServiceConfigFiles, resolveServiceMode, resolveWeb, toManifestCommand } from "./manifest-utils.part-1";
 
 export function cloneDesktopHosting(hosting: ManifestDesktopHosting): ManifestDesktopHosting {

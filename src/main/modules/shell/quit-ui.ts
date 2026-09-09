@@ -1,5 +1,3 @@
-import type { BrowserWindow } from "electron";
-
 export interface QuitUiDependencies {
   getAllWindows: () => Array<{
     isDestroyed: () => boolean;

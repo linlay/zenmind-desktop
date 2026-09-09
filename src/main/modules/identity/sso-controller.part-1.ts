@@ -1,40 +1,14 @@
 import type { App, BrowserWindow, CookiesSetDetails, Session } from "electron";
-
 import {
   type DesktopSsoClaimsConfig,
-  completeDesktopSsoBrowserSession,
-  completeDesktopSsoBrowserSessionUserInfo,
-  completeDesktopSsoRestoredBrowserSession,
-  completeDesktopSsoBrowserUserInfo,
-  clearDesktopSsoLocalSession,
-  desktopSsoAccessTokenNeedsRefresh,
   exchangeConfiguredDesktopSsoCookieForAccessToken,
-  getDesktopSsoAccessToken,
-  getDesktopSsoAccessTokenCookieDetails,
-  getDesktopSsoAccessTokenCookieLookups,
-  getDesktopSsoCookieMirrorOrigins,
-  getDesktopSsoCookieAccessTokenExchangeUrl,
-  getDesktopSsoCookieCSRFUrl,
-  getDesktopSsoBrowserSessionConfig,
-  getDesktopSsoCookieUserInfoConfig,
-  getDesktopSsoProxyBrowserCookieDetails,
-  getDesktopSsoStatus,
-  getDesktopSsoWebSessionClearCookies,
-  getDesktopSsoWebSessionExchangeConfig,
-  markDesktopSsoRestoreTemporarilyUnavailable,
-  parseDesktopSsoCookieUserInfo,
-  prepareDesktopSsoSessionRestore
+  getDesktopSsoStatus
 } from "./oidc-sso";
-
-import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
-
+import { type DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
 import { safeConsoleError } from "../../support/logging/safe-console";
-
-import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
-
 import type { DesktopSsoClaims } from "../../../shared/contracts";
 
-import { t } from "../../support/i18n/main-i18n";
+
 
 export type DesktopSsoStatus = ReturnType<typeof getDesktopSsoStatus>;
 

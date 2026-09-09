@@ -1,16 +1,5 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
 import { DatabaseSync } from "node:sqlite";
-
-import type { App } from "electron";
-
 import type {
-  AssistantAttachment,
-  KanbanCloudDetailData,
   KanbanCurrentUser,
   KanbanDeleteResult,
   KanbanIssue,
@@ -20,29 +9,11 @@ import type {
   KanbanIssueUpdateInput,
   KanbanListResult,
   KanbanOrigin,
-  KanbanPriority,
-  KanbanProject,
-  KanbanProjectBinding,
-  KanbanRunState,
-  KanbanStatus,
-  KanbanSyncMode,
-  KanbanSyncState
+  KanbanStatus
 } from "../../../shared/contracts";
-
-import {
-  KANBAN_RUN_STATES,
-  KANBAN_STATUSES,
-  parseKanbanPriority
-} from "../../../shared/contracts";
-
-import { getRuntimeDataRoot } from "../../infrastructure/filesystem/user-paths";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanCloudMutationOutboxItem, KanbanCloudSnapshot, KanbanManualRunReceipt, KanbanManualRunReceiptState, KanbanRunEventOutboxItem, PROJECT_ID, WORKFLOW_ID, createCloudCacheIssueId, getDesktopKanbanDatabasePath, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseCloudIssue, parseJsonRecord, readLegacyDueDate, selectCloudDetailData, storeCloudDetailData, trimText } from "./local-store.part-1";
-
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
-
 import { buildLocalIssue, insertOrReplaceIssue, insertOrReplaceProject, insertOrReplaceProjectBinding, parseCloudProject, parseCloudProjectBinding, readDesktopKanbanRevision, selectIssues, selectProjectBindings, selectProjects, writeDesktopKanbanRevision, writeDesktopKanbanSyncCursorInDb } from "./local-store.part-3";
 
 export function applyIssueUpdate(issue: KanbanIssue, input: KanbanIssueUpdateInput): KanbanIssue | null {

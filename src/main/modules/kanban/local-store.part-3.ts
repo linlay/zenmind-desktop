@@ -1,46 +1,16 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
 import { DatabaseSync } from "node:sqlite";
-
-import type { App } from "electron";
-
 import type {
-  AssistantAttachment,
-  KanbanCloudDetailData,
   KanbanCurrentUser,
-  KanbanDeleteResult,
   KanbanIssue,
   KanbanIssueInput,
-  KanbanIssueMoveInput,
-  KanbanIssueResult,
-  KanbanIssueUpdateInput,
-  KanbanListResult,
   KanbanOrigin,
-  KanbanPriority,
   KanbanProject,
   KanbanProjectBinding,
-  KanbanRunState,
   KanbanStatus,
   KanbanSyncMode,
   KanbanSyncState
 } from "../../../shared/contracts";
-
-import {
-  KANBAN_RUN_STATES,
-  KANBAN_STATUSES,
-  parseKanbanPriority
-} from "../../../shared/contracts";
-
-import { getRuntimeDataRoot } from "../../infrastructure/filesystem/user-paths";
-
-import { t } from "../../support/i18n/main-i18n";
-
 import { AppPathProvider, BOARD_ID, ISSUE_TYPE_ID, KanbanDesktopSyncCursor, KanbanIssueRow, KanbanProjectBindingRow, KanbanProjectRow, PROJECT_ID, SYNC_CACHE_SCHEMA_VERSION, WORKFLOW_ID, buildIssueDetailJson, createLocalIssueId, normalizeAttachments, normalizeCustomFields, normalizeDueDate, normalizeEffortSeconds, normalizeKanbanPriority, normalizeKanbanRunState, normalizeKanbanSeverity, normalizeKanbanStatus, normalizeStringList, normalizeWorkerType, nowIso, nullableTrimmedText, parseAttachmentsJson, parseCloudIssue, parseJsonRecord, parseStringList, readStoredDueDate, trimText } from "./local-store.part-1";
-
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
 
 export function issueFromRow(row: KanbanIssueRow): KanbanIssue {

@@ -1,59 +1,27 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import type { App, Rectangle } from "electron";
-
 import type {
   DesktopPetAppearanceOption,
-  DesktopPetSignatureAction,
-  DesktopPetStateAsset,
-  DesktopPetStateAssets,
   DesktopPetTaskItem,
   DesktopPetMessageItem,
   DesktopPetAgentOption,
-  DesktopPetAgentPresence,
   AssistantNavigationAttentionSummary,
   DesktopPetDragDirection,
   DesktopPetEdgeDock,
   DesktopPetPanelPlacement,
   DesktopPetPreviewPanel,
-  DesktopPetSettings,
   DesktopPetState,
-  DesktopPetStatus,
   DesktopPetWindowMode
 } from "../../../shared/contracts";
-
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
   DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
-  DEFAULT_DESKTOP_PET_SELECTED_ID,
-  DESKTOP_PET_USER_ASSET_PROTOCOL,
   DESKTOP_PET_APPEARANCE_OPTIONS,
-  DESKTOP_PET_REQUIRED_STATE_KEYS,
-  DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES,
-  DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES,
-  DESKTOP_PET_STATUS_HINT_TEXTS,
-  applyDesktopPetActiveRunEvent,
-  getDesktopPetSignatureActions,
   normalizeDesktopPetAppearanceId,
   normalizeDesktopPetBoundAgentKey,
-  normalizeDesktopPetWhitespaceText,
   resolveDesktopPetSignatureActions,
-  resolveDesktopPetRunningTaskCount,
   sanitizeDesktopPetRunningTaskCount,
-  sanitizeDesktopPetUnreadCount,
-  truncateDesktopPetReplyPreview
+  sanitizeDesktopPetUnreadCount
 } from "../../../shared/desktop-pet";
-
 import { t } from "../../support/i18n/main-i18n";
-
-import {
-  getDesktopPetSettingsPath as resolveDesktopPetSettingsPath,
-  getDesktopPetsDataRoot,
-  getDesktopStateRoot
-} from "../../infrastructure/filesystem/user-paths";
-
 import { DEFAULT_DESKTOP_PET_ID, DEFAULT_OFFSET, DESKTOP_PET_CONFIG_FILE, DESKTOP_PET_EDGE_SNAP_DISTANCE_PX, DESKTOP_PET_EDGE_STICK_DISTANCE_PX, DESKTOP_PET_PANEL_WINDOW_INSET_PX, DESKTOP_PET_STATE_FILE, DESKTOP_PET_VISIBLE_FOOTPRINT, DESKTOP_PET_WINDOW_SIZE, DESKTOP_PET_WINDOW_SIZES, DESKTOP_PET_WINDOW_VISIBLE_FOOTPRINTS, DesktopPetBoundAgentStatus, DesktopPetClampOptions, DesktopPetDisplayBounds, DesktopPetLocalStatus, DesktopPetStoredState, DisplayArea, createDefaultDesktopPetLocalStatus, getDesktopPetRoot, getDesktopPetStatePath, isDesktopPetSupportedPlatform, isGenericDesktopPetDoneHint, listUserDesktopPetAppearanceOptions, listUserDesktopPets, normalizeDesktopPetDragDirection, normalizeUserDesktopPetId, sanitizeDesktopPetAppearanceId, sanitizeDesktopPetAssetRelativePath, sanitizeDesktopPetMessagePreview, sanitizeDesktopPetStoredState, sanitizeUserPetDirectoryName, selectedPetIdForAppearance, userPetAssetBaseUrl, userPetAssetUrl } from "./desktop-pet.part-1";
 
 export function createDefaultDesktopPetAgentStatus(boundAgentKey: string): Pick<

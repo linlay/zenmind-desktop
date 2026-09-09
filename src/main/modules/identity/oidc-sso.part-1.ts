@@ -1,47 +1,20 @@
 import fs from "node:fs";
-
 import http from "node:http";
-
-import type { AddressInfo } from "node:net";
-
 import path from "node:path";
-
-import {
-  createPublicKey,
-  createHash,
-  createVerify,
-  randomBytes,
-  randomUUID,
-  type KeyObject
-} from "node:crypto";
-
 import type { App } from "electron";
-
 import type {
   DesktopSsoClaims,
-  DesktopSsoLogoutResult,
-  DesktopSsoStartResult,
   DesktopSsoStatus
 } from "../../../shared/contracts";
-
-import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
-
+import { BRAND_ID, STORAGE_NAMESPACE } from "../../../shared/brand";
 import {
-  buildDesktopSsoAvatarUrl,
-  DESKTOP_SSO_AVATAR_PROTOCOL
-} from "../../../shared/sso-avatar";
-
-import {
-  getDesktopSsoAccessTokenFilePath,
   getDesktopStateRoot,
   getSecretsRoot
 } from "../../infrastructure/filesystem/user-paths";
-
 import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
 import { t } from "../../support/i18n/main-i18n";
 
-import { clearCachedDesktopSsoAvatar } from "./avatar-storage";
+
 
 export type DesktopSsoSessionMetadata = {
   issuer?: string;

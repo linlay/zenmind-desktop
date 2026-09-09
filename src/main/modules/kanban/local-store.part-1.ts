@@ -1,43 +1,28 @@
-import fs from "node:fs";
-
 import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
+import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-
 import type { App } from "electron";
-
 import type {
   AssistantAttachment,
   KanbanCloudDetailData,
   KanbanCurrentUser,
-  KanbanDeleteResult,
   KanbanIssue,
-  KanbanIssueInput,
-  KanbanIssueMoveInput,
-  KanbanIssueResult,
-  KanbanIssueUpdateInput,
-  KanbanListResult,
   KanbanOrigin,
   KanbanPriority,
-  KanbanProject,
   KanbanProjectBinding,
   KanbanRunState,
   KanbanStatus,
   KanbanSyncMode,
   KanbanSyncState
 } from "../../../shared/contracts";
-
 import {
   KANBAN_RUN_STATES,
   KANBAN_STATUSES,
   parseKanbanPriority
 } from "../../../shared/contracts";
-
 import { getRuntimeDataRoot } from "../../infrastructure/filesystem/user-paths";
 
-import { t } from "../../support/i18n/main-i18n";
+
 
 export type AppPathProvider = {
   getPath(name: Parameters<App["getPath"]>[0]): string;

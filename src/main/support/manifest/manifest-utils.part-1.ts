@@ -1,13 +1,4 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import {
-  DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING
-} from "../../../shared/contracts";
-
 import { t } from "../i18n/main-i18n";
-
 import type {
   FrontendMode,
   Manifest,
@@ -21,8 +12,6 @@ import type {
   ManifestDesktopCapabilityProvider,
   ManifestDesktopCapabilityRequirement,
   ManifestDesktopDisabledResponse,
-  ManifestDesktopHosting,
-  ManifestDesktopProxyRoute,
   ManifestEnvBinding,
   ManifestFrontend,
   ManifestPluginBridge,
@@ -42,7 +31,7 @@ import type {
   ServiceMode
 } from "../../../shared/contracts";
 
-import { listArchiveEntries, readFileFromArchive } from "../archive/archive-utils";
+
 
 export interface ServiceImportTarget {
   key: string;

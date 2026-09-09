@@ -1,35 +1,12 @@
-import fs from "node:fs";
-
 import http from "node:http";
-
 import https from "node:https";
-
 import net from "node:net";
-
-import path from "node:path";
-
 import tls from "node:tls";
-
 import type { Socket } from "node:net";
-
-import {
-  DEFAULT_AGENT_WEBCLIENT_DESKTOP_HOSTING
-} from "../../../shared/contracts";
-
 import type {
-  AgentAuthIssueResult,
-  AgentAuthRefreshReason,
-  ManifestDesktopDisabledResponse,
-  ManifestDesktopHosting,
   ManifestDesktopProxyRoute
 } from "../../../shared/contracts";
-
 import type { ServiceDefinition } from "../../support/manifest/manifest-utils";
-
-import { readEnvFile } from "../../infrastructure/filesystem/env-file";
-
-import type { ServiceLayout } from "./manager/layout";
-
 import { AgentWebclientHostConfig, AgentWebclientHostRecord, HOST, applyDevCors, assertHostConfig, buildUpstreamUrl, createRuntimeConfigScript, findProxyRoute, getHeaderValue, getProxyRequestHeaders, handleProxyError, hasWebSocketAccessToken, hosts, isDesktopBridgeOnlyHttpPath, isSseProxyRequest, isSseQueryRequest, normalizeDesktopHosting, parseRequestPath, readRuntimeConfig, refreshHttpRouteAccessToken, resolveFrontendRequest, resolveHttpRouteAccessToken, resolveRouteTarget, resolveWebSocketRouteAccessToken, sendFile, writeDisabledHttpResponse, writeDisabledWebSocketUpgrade, writeHttpTokenIssueFailure, writeJSON, writeMissingTargetHttpResponse } from "./agent-webclient-host.part-1";
 
 export async function proxyHttpRequest(

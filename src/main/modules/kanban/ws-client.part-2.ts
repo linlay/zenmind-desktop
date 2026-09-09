@@ -1,20 +1,6 @@
-import { randomUUID } from "node:crypto";
-
 import { Buffer } from "node:buffer";
-
-import type {
-  AssistantStartRunRequest,
-  AssistantStartRunResult,
-  DesktopPetAgentOption,
-  KanbanIssueResult,
-  KanbanListResult,
-  KanbanProject
-} from "../../../shared/contracts";
-
 import type { KanbanCloudSnapshot } from "./local-store";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import { CONTRACT_VERSION, KanbanDesktopConnectionState, KanbanDesktopDelivery, KanbanDesktopIssueEvent, KanbanDesktopRequestError, KanbanDesktopSyncLocalProject, KanbanDesktopWsClientOptions, KanbanDesktopWsConfig, KanbanEnvelope, MinimalWebSocket, PROTOCOL_VERSION, PendingRequest, RECONNECT_MS, REQUEST_TIMEOUT_MS, WS_OPEN_STATE, assertCloudPayloadPrivacy, createRequestId, createWsLogUrl, createWsUrl, decodeMessageData, envelopeBusinessType, errorMessage, getWebSocketConstructor, isIssueEventPushEnvelope, isProjectEventPushEnvelope, isRecord, isRequestEnvelope, isResponseEnvelope, isSnapshotPushEnvelope, isSyncDeliverPushEnvelope, isV1Envelope, normalizeDeliveries, normalizeIssueEvent, normalizeIssueEvents, normalizeMessageType, normalizeSnapshot, normalizeStartRunPayload, normalizeSyncCursor, readNonNegativeInteger, readText, snapshotProjectScopeIds, wsEventDetail } from "./ws-client.part-1";
 
 export class KanbanDesktopWsClient {

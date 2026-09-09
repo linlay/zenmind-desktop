@@ -17,7 +17,6 @@ const {
   __testInternals
 } = require("../dist-electron/main/modules/pet/desktop-pet.js");
 const {
-  createDesktopPetMessagesFromAgentStatus,
   createDesktopPetMessagesFromNavigationSnapshot,
   createDesktopPetActiveTasksFromNavigationSnapshot,
   createDesktopPetDragController,
@@ -600,31 +599,6 @@ test("desktop pet state exposes panel placement for detached panel rendering", (
   });
 
   assert.equal(state.panelPlacement, "below");
-});
-
-test("desktop pet builds a message history item from bound agent status when navigation messages are empty", () => {
-  const updatedAt = Date.now() - 1_000;
-  const messages = createDesktopPetMessagesFromAgentStatus(createAgentStatus({
-    presence: "available",
-    unreadCount: 1,
-    latestPreview: "这是上一条历史回复",
-    chatId: "chat-history",
-    updatedAt
-  }));
-
-  assert.equal(messages.length, 1);
-  assert.deepEqual(messages[0], {
-    id: "zenmi:chat-history",
-    chatId: "chat-history",
-    runId: null,
-    agentKey: "zenmi",
-    agentDisplayName: "小宅",
-    title: "小宅",
-    preview: "这是上一条历史回复",
-    status: "done",
-    unread: true,
-    updatedAt
-  });
 });
 
 test("desktop pet message list keeps only recent unread or awaiting chats", () => {

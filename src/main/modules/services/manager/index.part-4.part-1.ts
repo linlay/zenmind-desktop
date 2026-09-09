@@ -1,53 +1,28 @@
 import fs from "node:fs";
-
 import path from "node:path";
-
-import os from "node:os";
-
 import type { App } from "electron";
-
 import type {
   ServiceCommandResult,
   ServiceConfigReadResult,
-  ServiceDesiredStatus,
   ServiceId,
-  ManifestDesktopCapabilityPhase,
-  ManifestDesktopCapabilityRequirement,
   ServiceImportResult,
   ServiceLogReadOptions,
   ServiceLogReadResult,
-  ServiceLogStreamEvent,
   ServiceLogStreamOptions,
   ServiceLogTarget,
   ServiceLogsMeta,
-  ServiceState,
-  ServiceVerification,
-  StartupRestoreMode,
-  StartupRestoreServicePhase,
-  StartupEnvImportRequest
+  ServiceState
 } from "../../../../shared/contracts";
-
 import type { ServiceDefinition } from "../../../support/manifest/manifest-utils";
-
 import { getAllServices, getService } from "../service-registry";
-
 import type { ServicesIntegrationPorts } from "../integration-ports";
-
-import { readEnvFile, parseEnvFileContent } from "../../../infrastructure/filesystem/env-file";
-
-import { extractArchiveToDir } from "../../../support/archive/archive-utils";
-
+import { readEnvFile } from "../../../infrastructure/filesystem/env-file";
 import {
-  getInitializationStatePath,
   getInstallDir,
   getServiceLayout,
   resolveConfigPath,
-  resolveConfigTemplatePath,
-  resolveProgramPath,
-  resolveServiceRuntimePath,
-  type ServiceLayout
+  resolveConfigTemplatePath
 } from "./layout";
-
 import {
   LOG_READ_WINDOW_BYTES,
   readLogRange,
@@ -55,183 +30,24 @@ import {
   normalizeLogStreamOffset,
   normalizeLogStreamPollInterval
 } from "../../../support/logging/service-logs";
-
-import {
-  beginStartupTiming,
-  flushStartupTimingSummary
-} from "../../../support/logging/startup-timing";
-
-import {
-  identityCenterInstallNeedsRefresh,
-  serviceInstallNeedsRefresh
-} from "./install-refresh";
-
-import {
-  resolveNodeBin,
-  __testInternals as commandEnvTestInternals
-} from "./command-env";
-
-import {
-  decodePowerShellCapturePayload,
-  runExecFile,
-  SERVICE_COMMAND_TIMEOUT_MS
-} from "./command-runner";
-
 import { t } from "../../../support/i18n/main-i18n";
-
 import {
-  upsertEnvFileContent,
-  writeEnvFileUpdates
-} from "./env-content";
-
-import {
-  DEFAULT_STARTUP_SERVICE_IDS,
-  getDefaultStartupServiceIds,
-  getLastRunningServicesStatePath,
-  getOptionalServiceIdsToRestore,
-  getServiceIdsToRestore,
-  INSTALL_ONLY_STARTUP_SERVICE_IDS,
-  OPTIONAL_AUTO_STARTUP_SERVICE_IDS,
-  isNonBlockingRestoreFailure,
-  orderServiceIdsForRestore,
   readInitializationState,
-  readLastRunningServices,
-  writeInitializationState,
   writeLastRunningServices
 } from "./state-files";
-
 import {
-  fixShellScriptPermissions
-} from "./program-layout";
-
-import {
-  computeAssetSignature,
-  ensureArchiveHealthy,
-  ensureBundleAssetHealthy,
-  getOptionalBundleAssetPath,
-  isInstallHealthy,
-  listMissingBundleEntries,
-  listMissingRuntimeFiles,
-  moveExtractedBuiltinRoot,
-  readBuiltinAssetSignature
+  isInstallHealthy
 } from "./bundle-assets";
-
 import {
-  buildProcessTreePids,
-  parseProcessTreeRowsFromPs,
-  parseProcessTreeRowsFromWindowsPowerShell,
-  type ProcessTreeRow
-} from "./process-tree";
-
-import {
-  isProcessRunning,
-  terminateProcessList,
-  terminateProcessTree
-} from "./process-cleanup";
-
-import {
-  matchProcessInstallDir,
-  pidMatchesInstallDir
-} from "./process-identity";
-
-import {
-  LOCAL_CLI_ACP_RELAY_PLUGIN_ID,
-  PROCESS_EXEC_PATH_PLACEHOLDER,
-  resolveAcpCommandForDesktop
-} from "./env-normalization";
-
-import {
-  __testInternals as containerEngineTestInternals,
-  clearContainerEngineProbeCache,
-  containerEngineAvailable,
-  probeContainerEngines
-} from "./container-engine";
-
-import {
-  CONTAINER_HUB_RUNNING_VERIFICATION_TIMEOUT_MS,
-  delay,
-  getServiceVerificationDelayMs,
-  normalizeProbeUrl,
-  probeHttpUrl,
-  type HttpProbeResult
-} from "./service-probes";
-
-import {
-  getWebUrl,
-  parsePort
-} from "./service-network";
-
-import {
-  resolvePreferredAgentPlatformRuntimeRoot
-} from "./runtime-paths";
-
-import {
-  getManagedPidFilePaths,
-  readManagedPidFile,
-  resolveRuntimePath,
-  writeManagedPidFiles
-} from "./pid-files";
-
-import {
-  captureManagedProcessCleanupSnapshot,
-  collectManagedRootPids,
-  collectManagedServiceStopState,
-  detectManagedServicePid,
-  ensureManagedServiceStoppedForPlatform,
-  forceStopServiceInstallDir,
-  listListeningPids,
-  mergeCleanupTargets
+  ensureManagedServiceStoppedForPlatform
 } from "./managed-cleanup";
-
 import {
-  reconcileBuiltinSiblingInstallDirs,
-  stopBuiltinInstallDir
-} from "./builtin-install";
-
-import {
-  getAgentWebclientHostState,
-  isHostManagedAgentWebclientService,
-  startAgentWebclientHost,
   stopAgentWebclientHost
 } from "../agent-webclient-host";
-
-import { resolveDesktopCapability } from "./capabilities";
-
-import {
-  appendConfiguredServiceLifecycleArgs,
-  getConfiguredServiceLifecycleArgs,
-  rewriteServiceLifecycleArgsForDesktopConfigUpgrade,
-  type ServiceLifecycleCommandKind
-} from "../lifecycle-args";
-
-import { rewriteServicePortDefaultsForDesktopConfigUpgrade } from "../port-defaults";
-
-import { getDataRoot, getDesktopSsoAccessTokenFilePath } from "../../../infrastructure/filesystem/user-paths";
-
-import {
-  bundledEnvZipExists,
-  stageValidatedDesktopVersionUpgradeInput,
-  validateBundledEnvForDesktopVersionUpgrade,
-  validateEnvZipForDesktopManualImport,
-  validateSelectedEnvZipForDesktopVersionUpgrade
-} from "../../../infrastructure/filesystem/runtime-environment";
-
-import { isDesktopDevelopmentRuntime } from "../../../infrastructure/electron/development-runtime";
-
-import {
-  completeDesktopServiceConfigUpgrade,
-  DESKTOP_SERVICE_CONFIG_UPGRADE_IDS,
-  prepareDesktopServiceConfigUpgrade,
-  recordDesktopServiceConfigCoreHealthFailure,
-  type DesktopServiceConfigResetContext
-} from "./desktop-config-upgrade";
-
-import { CORE_SERVICE_IDS, SHUTDOWN_SERVICE_STOP_TIMEOUT_MS, ServiceLogStreamCallback, ServiceVerificationOptions, StartupPreparationProgressPhase, WINDOWS_SHUTDOWN_SERVICE_STOP_TIMEOUT_MS, appendAgentContainerHubDesktopDeployArgs, appendAgentPlatformDesktopDeployArgs, appendAgentPlatformRuntimeResourceDeployArgs, appendAgentWebclientDesktopDeployArgs, appendDesktopConfigResetDeployArgs, appendIdentityCenterDesktopDeployArgs, copyDirectoryAssetToTempRoot, ensureDir, inFlightBuiltinInstalls, integrationPorts, isAssetNewerThanInstall, isDirectoryAssetPath, isHostManagedService, prepareServiceExecutionLayout, startedThisSession } from "./index.part-1";
-
-import { InstallBuiltinServiceOptions, appendDesktopManagedLayoutFlags, buildVerificationResult, createBuiltinInstallKey, ensureDefaultConfig, getDependencyRunningVerificationTimeoutMs, getServiceState, hasVerifyRunningRequirements, listServices } from "./index.part-2";
-
-import { RunServiceCommandOptions, applyEnvBindings, buildDesktopServiceCommandEnv, getServicePortForEnvSync, shouldReinitializeMissingCoreServiceConfig } from "./index.part-3";import { ensureMutableInstallDir } from "./index.part-4.part-2";
-
+import { CORE_SERVICE_IDS, SHUTDOWN_SERVICE_STOP_TIMEOUT_MS, ServiceLogStreamCallback, StartupPreparationProgressPhase, WINDOWS_SHUTDOWN_SERVICE_STOP_TIMEOUT_MS, ensureDir, integrationPorts, isHostManagedService, prepareServiceExecutionLayout, startedThisSession } from "./index.part-1";
+import { getServiceState, listServices } from "./index.part-2";
+import { shouldReinitializeMissingCoreServiceConfig } from "./index.part-3";
+import { ensureMutableInstallDir } from "./index.part-4.part-2";
 import { attachServiceVerification, runServiceCommand } from "./index.part-4.part-3";
 
 
@@ -637,39 +453,6 @@ export function watchServiceLog(
     stopped = true;
     clearInterval(timer);
   };
-}
-
-export async function stopStartedServices(app: App, ports?: ServicesIntegrationPorts) {
-  for (const serviceId of [...startedThisSession]) {
-    try {
-      await stopService(app, serviceId, ports);
-    } catch (error) {
-      console.error(`failed to stop ${serviceId} during app shutdown`, error);
-    }
-  }
-}
-
-export async function stopRunningServices(app: App, ports?: ServicesIntegrationPorts) {
-  const services = await listServices(app, ports);
-  const runningServices = services.filter((service) => service.status === "running");
-  writeLastRunningServices(
-    app,
-    runningServices.map((service) => service.id)
-  );
-  const failures: string[] = [];
-
-  for (const service of runningServices) {
-    try {
-      await stopService(app, service.id, ports);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      failures.push(`${service.name}: ${message}`);
-    }
-  }
-
-  if (failures.length > 0) {
-    throw new Error(t("service.stopRunningFailed", { message: failures.join(t("common.listSeparator")) }));
-  }
 }
 
 export type ShutdownServiceStopResult = {

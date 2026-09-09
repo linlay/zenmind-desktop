@@ -1,4 +1,4 @@
-import type { App, BrowserWindow, WebContents } from "electron";
+import type { App, BrowserWindow } from "electron";
 import type { CopilotDevToolsTarget, DesktopPageContextSnapshot } from "../../../shared/contracts";
 import {
   createBrowserSurfaceRegistry,

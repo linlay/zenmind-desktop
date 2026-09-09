@@ -1,9 +1,6 @@
 import type { RunSiteCdpGrants } from "./run-site-cdp-grants";
 import type { SiteCdpScope } from "../../web-surfaces";
-import { randomUUID } from "node:crypto";
-
 import type { App } from "electron";
-
 import type {
   AgentAuthIssueResult,
   AgentRealtimeDebugTraceDirection,
@@ -12,15 +9,8 @@ import type {
   AgentWebclientConnectionPhase,
   AgentWebclientRunOwner,
 } from "../../../../shared/contracts";
-
-import { validateAgentPlatformPushTimeContract } from "../../../../shared/agent-platform-push-time-contract";
-
-import { getDesktopActionDefinition } from "../../../../shared/desktop-actions";
-
-import { requireAgentPlatformEpochMillis } from "../../../../shared/time-contract";
 import type { EpochMilliseconds } from "../../../../shared/time-contract";
 import type { SurfaceInteraction, SurfaceLevel, SurfaceRole } from "../../../../shared/surface-identity";
-
 import {
   AgentPlatformRealtimeClient,
   type AgentPlatformRealtimeConnectionState,
@@ -28,7 +18,6 @@ import {
   type AgentPlatformRealtimeSocketFactory,
   type RealtimeIdentityRotationReason,
 } from "./agent-platform-realtime-client";
-
 import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
 
 export const MAX_REPLAY_EVENTS = 2_000;

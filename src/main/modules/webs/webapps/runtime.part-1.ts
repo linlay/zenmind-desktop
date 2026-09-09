@@ -1,31 +1,15 @@
 import fs from "node:fs";
-
 import http from "node:http";
-
 import net from "node:net";
-
 import path from "node:path";
-
 import type { ChildProcess } from "node:child_process";
-
 import type { App } from "electron";
-
 import type {
-  DesktopWebappChangedReason,
-  WebappCommandResult,
   WebappEntry,
   WebappLauncherKind,
-  WebappLogReadOptions,
-  WebappLogReadResult,
   WebappLogTarget,
-  WebappRuntimeCheckResult,
   WebappRuntimeState
 } from "../../../../shared/contracts";
-
-import type { WebappBridgeCapability } from "../../../../shared/webapp-bridge";
-
-import { readServiceLogFile } from "../../../support/logging/service-logs";
-
 import {
   isProcessRunning,
   listProcessTreePidsAsync,
@@ -33,43 +17,27 @@ import {
   terminateCapturedProcessTreeAsync,
   terminateProcessTree
 } from "../../services";
-
-import {
-  matchProcessInstallDirAsync,
-  pidMatchesInstallDir,
-} from "../../services";
-
 import { delay, probeHttpUrl } from "../../services";
-
 import {
   getDesktopWebappDataRoot,
   getDesktopWebappLogsRoot,
   getDesktopWebappStateRoot,
   getDesktopWebappsStateRoot
 } from "../../../infrastructure/filesystem/user-paths";
-
 import { t } from "../../../support/i18n/main-i18n";
-
-import { startWebappGateway, type WebappGateway } from "./gateway";
-
+import { type WebappGateway } from "./gateway";
 import {
-  checkWebappBackendPrerequisites,
-  getWebappBackendLauncher,
   type WebappLauncherCheck,
   type WebappLauncherContext
 } from "./launchers";
-
 import {
-  issueWebappActionToken,
   revokeWebappActionToken
 } from "./action-tokens";
-
 import { getWebappAllowedActions } from "./capability-policy";
-
 import { getWebappDir, readWebappItems } from "./store";
 import type { WebsIntegrationPorts } from "../integration-ports";
 
-import { syncPublishedWebappRoute } from "./publisher";
+
 
 export const HOST = "127.0.0.1";
 

@@ -1,58 +1,27 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
-import type { App } from "electron";
-
+import { randomUUID } from "node:crypto";
 import type {
-  AgentAuthIssueResult,
-  AssistantAttachment,
   AssistantAwaitingMode,
-  AssistantChatDetail,
-  AssistantChatInfo,
-  AssistantChatMessage,
-  AssistantChatSearchRequest,
-  AssistantChatSearchResponse,
-  AssistantChatSearchResult,
-  AssistantChatSummary,
   AssistantEvent,
-  AssistantHistoryChatItem,
-  AssistantHistoryChatsResult,
-  AssistantNavAgentItem,
-  AssistantNavAgentItemsResult,
-  AssistantRunEvent,
   AssistantRunEventType,
   AssistantStartRunRequest,
   AssistantStartRunResult,
-  AssistantTextCompletionResult,
-  AssistantStopRunResult,
-  AssistantSubmitAwaitingRequest,
-  AssistantSubmitAwaitingResult,
-  DesktopPetAgentOption,
-  ServiceId,
-  ServiceState
+  ServiceId
 } from "../../../shared/contracts";
-
 import {
-  isTimeContractViolation,
   parseOptionalNullableAgentPlatformEpochMillis,
   requireAgentPlatformEpochMillis,
-  requireEpochMillis,
+  requireEpochMillis
 } from "../../../shared/time-contract";
 
 
-import { t } from "../../support/i18n/main-i18n";
 
-import { parseSafeLoopbackWebUrl } from "../../infrastructure/network/loopback-url";
 
-import {
-  RealtimeBroker,
-  type RealtimeQueryHandle,
-} from "./realtime/realtime-broker";
 
-import type { AgentPlatformRealtimeSocketFactory } from "./realtime/agent-platform-realtime-client";
+
+
+
+
+
 
 
 export const AGENT_PLATFORM_SERVICE_ID: ServiceId = "agent-platform";

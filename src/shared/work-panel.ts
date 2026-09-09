@@ -1,11 +1,10 @@
 import type {
   AgentWebclientBridgeErrorCode,
   WorkPanelBridgeResult,
-  WorkPanelContext,
   WorkPanelItem,
   WorkPanelItemDescriptor,
   WorkPanelWebclientModule,
-  WorkPanelWorkspace,
+  WorkPanelWorkspace
 } from "./contracts/agent-webclient-bridge";
 import { isRegisteredWorkPanelNativeSurface } from "./work-panel-native-registry";
 import {

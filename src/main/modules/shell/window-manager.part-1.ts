@@ -1,32 +1,13 @@
 import { WORK_PANEL_DOCUMENT_HTML_PROTOCOL } from "../../../shared/work-panel-document-html";
-import type { App, BrowserWindow, NativeTheme } from "electron";
-
+import type { BrowserWindow } from "electron";
 import { PRODUCT_NAME } from "../../../shared/brand";
-
-import {
-  DESKTOP_HELP_WEBVIEW_PARTITION,
-  isAllowedHelpNavigationUrl,
-  isSafeHelpExternalUrl
-} from "../../../shared/help";
-
 import { createInitialLocaleArguments } from "../../../shared/i18n/initial-locale-args";
-
 import type { LocaleSettings } from "../../../shared/i18n/types";
-
 import type { DesktopCloseShortcutRequest, DesktopGlobalSearchShortcut } from "../../../shared/contracts/desktop-api";
-
 import {
-  CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL,
-  normalizeChatWorkPanelUrl,
+  CHAT_WORK_PANEL_LOCAL_FILE_PROTOCOL
 } from "../../../shared/chat-work-panel";
-
-import {
-  isBlobSchemeUrl,
-  normalizeWebviewBlobPopupForSource,
-} from "../../../shared/webview-popup";
-
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
-
 import type { DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
 
 export const MAC_FULLSCREEN_CLOSE_DELAY_MS = 500;

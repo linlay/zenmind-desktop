@@ -90,7 +90,6 @@ import { useI18n } from "../../i18n/useI18n";
 import {
   getAdjacentAssistantNavChat,
   getAssistantAwaitingStatusKey,
-  getAssistantNavAgentAttentionChat,
   getAssistantNavAgentNonNegativeInteger,
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
@@ -269,10 +268,6 @@ type AssistantChatRowOptions = {
   previewText?: string;
   wrapItem?: (item: ReactElement) => ReactNode;
   dragActivator?: AssistantChatDragActivator;
-};
-
-type AgentSelectionOptions = {
-  preferNewChat?: boolean;
 };
 
 type NavigateOptions = {
@@ -713,37 +708,6 @@ function createAgentChatRoute(agentKey: string, chatId: string) {
 
 function createAgentNewChatRoute(agentKey: string) {
   return `${createAgentRoute(agentKey)}?newChat=${Date.now()}`;
-}
-
-function createAgentDefaultRoute(agent: AssistantNavAgentItem) {
-  const firstChatId =
-    getAssistantNavAgentSortedChats(agent)[0]?.chatId ||
-    agent.latestChatId ||
-    "";
-  return firstChatId
-    ? createAgentChatRoute(agent.agentKey, firstChatId)
-    : createAgentRoute(agent.agentKey);
-}
-
-function createAgentSelectionRoute(
-  agent: AssistantNavAgentItem,
-  options: AgentSelectionOptions = {},
-) {
-  const attentionChat = getAssistantNavAgentAttentionChat(agent);
-  const attentionChatId = attentionChat?.chatId.trim() ?? "";
-  if (attentionChatId) {
-    return createAgentChatRoute(agent.agentKey, attentionChatId);
-  }
-
-  if (!options.preferNewChat) {
-    return createAgentDefaultRoute(agent);
-  }
-
-  return createAgentNewChatRoute(agent.agentKey);
-}
-
-function shouldShowAssistantInChats(agent: AssistantNavAgentItem) {
-  return isAssistantNavChatAgent(agent);
 }
 
 function shouldShowAssistantInPrimaryNavigation(agent: AssistantNavAgentItem) {
@@ -2974,12 +2938,6 @@ export function AppSidebar({
     void onRefreshCopilotAgentOptions?.();
   }
 
-  function openWebsiteDialog(event: MouseEvent<HTMLElement>) {
-    event.preventDefault();
-    event.stopPropagation();
-    showWebsiteDialog();
-  }
-
   async function handleSaveWebsite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (websiteCreatePending) {
@@ -3442,15 +3400,6 @@ export function AppSidebar({
     setChatsVisibleLimit((current) =>
       Math.min(current + CHATS_VISIBLE_INCREMENT, CHATS_MAX_VISIBLE_LIMIT),
     );
-  }
-
-  async function handleAssistantMarkAllRead(
-    event: MouseEvent<HTMLElement>,
-    agent: AssistantNavAgentItem,
-  ) {
-    event.preventDefault();
-    event.stopPropagation();
-    await window.electronAPI.assistant.markAgentChatsRead(agent.agentKey);
   }
 
   async function handleAssistantOpenChat(

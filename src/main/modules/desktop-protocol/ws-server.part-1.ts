@@ -1,37 +1,23 @@
 import crypto from "node:crypto";
-
 import http from "node:http";
-
 import type { Socket } from "node:net";
-
-import type { AddressInfo } from "node:net";
-
 import type { App } from "electron";
-
 import {
   DESKTOP_WS_NAMESPACE_AGENT_PLATFORM,
   DESKTOP_WS_NAMESPACE_DESKTOP,
   DESKTOP_WS_NAMESPACE_FIELD,
   DESKTOP_WS_NAMESPACE_WEBAPP,
-  DESKTOP_WS_NAMESPACES,
   DESKTOP_WS_HOST,
-  DESKTOP_WS_IMPLEMENTED_REQUEST_TYPES,
   DESKTOP_WS_LAN_BIND_HOST,
   DESKTOP_WS_PATH,
   DESKTOP_WS_PORT,
-  DESKTOP_WS_PUSH_TYPES,
-  DESKTOP_WS_REQUEST_TYPES,
   type DesktopWsPushType
 } from "../../../shared/desktop-ws";
-
 import {
   DESKTOP_ACTION_DEFINITIONS,
   getDesktopActionDefinition,
-  type DesktopActionCallRequest,
-  type DesktopActionCallResponse,
   type DesktopActionDefinition
 } from "../../../shared/desktop-actions";
-
 import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
@@ -39,19 +25,11 @@ import type {
   AgentAuthRefreshReason,
   DesktopMobileWebappCatalog,
   DesktopWsServerState,
-  ServiceState,
-  KanbanIssueInput,
-  KanbanIssueMoveInput,
-  KanbanIssueUpdateInput
+  ServiceState
 } from "../../../shared/contracts";
-
-
 import { getDesktopDeviceId } from "../identity";
-
 import { handleDesktopActionRequest } from "../desktop-actions";
-
 import type { KanbanRuntime } from "../kanban";
-
 import {
   AGENT_PLATFORM_KNOWN_PUSH_TYPES,
   RealtimeBroker,

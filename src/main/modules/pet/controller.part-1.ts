@@ -2,7 +2,6 @@ import {
   applyDesktopPetActiveRunEvent,
   resolveDesktopPetRunningTaskCount
 } from "../../../shared/desktop-pet";
-
 import type {
   AssistantNavAgentItem,
   AssistantNavChatItem,
@@ -17,28 +16,16 @@ import type {
   DesktopPetMessageStatus,
   AssistantNavigationAttentionSummary,
 } from "../../../shared/contracts";
-
 import { readEpochMillis } from "../../../shared/time-contract";
-
 import type {
   DesktopPetBoundAgentStatus,
   DesktopPetLocalStatus,
   DesktopPetWindowMode
 } from "./desktop-pet";
-
 import {
   createDesktopPetState,
-  getDesktopPetLogicalPositionFromBounds,
-  clampDesktopPetPosition,
-  getAnchoredDesktopPetBounds,
-  getDesktopPetWindowSize,
-  isDesktopPetSupportedPlatform,
-  DESKTOP_PET_EDGE_SNAP_DISTANCE_PX,
-  DESKTOP_PET_WINDOW_SIZE
+  getDesktopPetLogicalPositionFromBounds
 } from "./desktop-pet";
-
-import { normalizeDesktopPetAgentEvent } from "./desktop-pet-preview";
-
 import { t } from "../../support/i18n/main-i18n";
 
 export type DesktopPetPreviewPanelLike = {
@@ -328,64 +315,12 @@ export function resolveDesktopPetMessageStatus(chat: AssistantNavChatItem): Desk
   return "done";
 }
 
-export function resolveDesktopPetMessageStatusFromAgentStatus(
-  agentStatus: DesktopPetBoundAgentStatus
-): DesktopPetMessageStatus {
-  if (agentStatus.hasPendingAwaiting) {
-    return "awaiting";
-  }
-  if (agentStatus.presence === "busy") {
-    return "running";
-  }
-  return "done";
-}
-
 export const DESKTOP_PET_MESSAGE_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 
 export const DESKTOP_PET_MESSAGE_LIMIT = 50;
 
 export function isDesktopPetMessageRecent(updatedAt: number, now = Date.now()) {
   return updatedAt >= now - DESKTOP_PET_MESSAGE_RETENTION_MS;
-}
-
-export function createDesktopPetMessagesFromAgentStatus(
-  agentStatus: DesktopPetBoundAgentStatus | null | undefined
-): DesktopPetMessageItem[] {
-  if (!agentStatus || agentStatus.stale) {
-    return [];
-  }
-  const agentKey = toDesktopPetTaskText(agentStatus.agentKey);
-  const chatId = toDesktopPetTaskText(agentStatus.chatId);
-  const updatedAt = readEpochMillis(agentStatus.updatedAt);
-  if (!agentKey || !chatId || updatedAt === undefined) {
-    return [];
-  }
-  const unreadCount = Math.max(0, Math.round(Number(agentStatus.unreadCount) || 0));
-  const status = resolveDesktopPetMessageStatusFromAgentStatus(agentStatus);
-  if ((unreadCount <= 0 && status !== "awaiting") || !isDesktopPetMessageRecent(updatedAt)) {
-    return [];
-  }
-  const preview = getUsableDesktopPetTaskPreview(agentStatus.latestPreview) ||
-    (unreadCount > 0 ? "有新消息" : "") ||
-    (status === "awaiting" ? "等待你确认" : "");
-  if (!preview && status === "done") {
-    return [];
-  }
-  const agentDisplayName = toDesktopPetTaskText(agentStatus.displayName) || agentKey;
-  return [
-    {
-      id: `${agentKey}:${chatId}`,
-      chatId,
-      runId: null,
-      agentKey,
-      agentDisplayName,
-      title: agentDisplayName,
-      preview: preview || "打开对话查看历史消息",
-      status,
-      unread: unreadCount > 0,
-      updatedAt
-    }
-  ];
 }
 
 export function createDesktopPetMessagesFromNavigationSnapshot(

@@ -1,162 +1,20 @@
-import http from "node:http";
-
-import fs from "node:fs";
-
-import path from "node:path";
-
 import { randomUUID } from "node:crypto";
-
-import type { AddressInfo } from "node:net";
-
-import type { App, BrowserWindow, OpenDialogOptions, SaveDialogOptions, WebContents } from "electron";
-
-import { clipboard, dialog, Notification, shell, systemPreferences, webContents } from "electron";
-
 import type {
   AssistantAttachment,
-  DesktopActionConfirmationDecision,
-  DesktopActionConfirmationRequest,
-  DesktopActionConfirmationResponse,
-  DesktopActionRendererRequest,
-  DesktopActionRendererResponse,
-  DesktopAppInfo,
-  DesktopPageContextSnapshot,
-  DesktopPetState,
-  DesktopRuntimeDiagnostics,
-  DesktopWebappChangedReason,
-  KanbanIssueInput,
-  KanbanIssueMoveInput,
-  KanbanIssueUpdateInput,
-  MarketListOptions,
-  ServiceId,
-  ServiceLogTarget,
-  ServiceOpenLogViewerRequest,
-  WebappCommandResult,
-  WebappEntry,
-  WebappPublishResult,
-  WebappRuntimeState,
-  WorkPanelWorkspace
+  ServiceLogTarget
 } from "../../../shared/contracts";
-
 import {
-  WEBAPP_BRIDGE_AVAILABLE_CAPABILITIES,
-  WEBAPP_BRIDGE_RESERVED_CAPABILITIES,
-  WEBAPP_BRIDGE_VERSION,
-  type WebappBridgeCapabilitiesResult,
-  type WebappBridgePermissionStatus
-} from "../../../shared/webapp-bridge";
-
-import {
-  WEBAPP_ASSISTANT_MESSAGE_MAX_CHARS,
-  WEBAPP_ID_PATTERN
-} from "../../../shared/webapp-manifest";
-
-import {
-  DESKTOP_ACTION_BRIDGE_HOST,
-  DESKTOP_ACTION_DEFINITIONS,
   getDesktopActionDefinition,
   isDesktopActionMutating,
   type DesktopActionCallRequest,
-  type DesktopActionCallResponse,
-  type DesktopActionConfirmationPolicy,
-  type DesktopActionError,
-  type DesktopActionSource,
-  type DesktopCopilotPreferenceResult,
-  type DesktopKanbanDeleteResult,
-  type DesktopKanbanIssueResult,
-  type DesktopPetListResult,
-  type DesktopPetSetResult,
-  type DesktopPetStateResult,
-  type DesktopPetVisibilityResult,
-  type DesktopWebActionStateResult,
-  type DesktopWebActionSurfaceSummary,
-  type DesktopWebActionTabSummary,
-  type DesktopWebCloseTabResult,
-  type DesktopWebExportArtifactResult,
-  type DesktopWebNavigateResult,
-  type DesktopWebOpenTabResult,
-  type DesktopWebTargetTabResult,
-  type DesktopWebappInstallDiagnostic,
-  type DesktopWebappInstallFailureDetails,
-  type DesktopWebappInstallResult,
-  type DesktopWebappInvalidResultDetails,
-  type DesktopWebappOpenResult,
-  type DesktopWebappPreferenceFailureDetails,
-  type DesktopWebappPreferenceResult,
-  type DesktopWebappPublishFailureDetails,
-  type DesktopWebappPublishResult,
-  type DesktopWebappRuntimeFailureDetails,
-  type DesktopWebappRuntimeMutationResult,
-  type DesktopWebappSummary,
-  type DesktopWebappToolingResult,
-  type DesktopWebappUninstallResult,
-  type DesktopWebappUnpublishResult,
-  type DesktopWorkPanelCloseResult,
-  type DesktopWorkPanelCloseTabResult,
-  type DesktopWorkPanelWorkspaceResult,
-  type DesktopWebsiteItemResult,
-  type DesktopWebsiteRemoveResult
+  type DesktopActionCallResponse
 } from "../../../shared/desktop-actions";
-
-import { isDesktopCopilotPageKey } from "../../../shared/assistant-settings";
-
-import { isSurfaceRole } from "../../../shared/surface-identity";
-
 import { ActionBridgeTimeContractError, normalizeActionBridgeTimePayload } from "./time-normalizer";
-
-import { AGENT_WEBCLIENT_ROUTE_DEFINITIONS } from "../../../shared/agent-webclient-routes";
-
-import { DESKTOP_CDP_PUBLIC_METHODS } from "../../../shared/embedded-cdp";
-
-import type { EmbeddedCdpCommandRequest } from "../web-surfaces";
-
-
 import type {
   AgentPlatformAssistantBridge,
   AgentPlatformImageOperation
 } from "../agent-platform";
-
-import {
-  getServiceLogsMeta,
-  getResponsiveServiceState,
-  getServiceState,
-  initializeService,
-  installBuiltinService,
-  listServices,
-  readServiceLog,
-  restartService,
-  startService,
-  stopService
-} from "../services";
-
-import { createWebappImportDiagnostic, listWebEntries } from "../webs";
-
-import {
-  addWebsiteItem,
-  listWebsiteItems,
-  removeWebsiteItem,
-  updateWebsiteItem
-} from "../webs";
-
-import {
-  executeWebappToolingInWorker,
-  resolveExistingWorkspacePath,
-  webappManager,
-  WebappToolingError,
-  type WebappToolingTask,
-  WebappRuntimeRequiredError
-} from "../webs";
-
 import { consumeWebappImageUpload } from "../webs";
-
-import { webappWindowManager } from "../webs";
-
-import {
-  getWebappPublishStatus,
-  publishWebapp,
-  unpublishWebapp
-} from "../webs";
-
 import {
   buildSandboxImage,
   deleteSandboxImage,
@@ -169,54 +27,12 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "../marketplace";
-
-import { normalizeMarketApiBaseUrl } from "../marketplace";
-
-import { readDesktopProfileFromRoot } from "../../infrastructure/filesystem/profile-store";
-
-import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
-import {
-  DESKTOP_CDP_TARGET_TIMEOUT_CODE,
-  isDesktopCdpTimeoutError,
-  readDesktopCdpErrorDetails
-} from "../web-surfaces";
-
-import {
-  inspectCurrentPageCdpElement,
-  readCurrentPageCdpLocation,
-  type CurrentPageCdpElementSnapshot
-} from "../web-surfaces";
-
-import type { KanbanRuntime } from "../kanban";
-
 import { t } from "../../support/i18n/main-i18n";
-
-import { getConfiguredDesktopActionBridgePort } from "./settings";
-
 import { getDesktopDeviceInfo } from "../identity";
-
-import { authorizeWebappActionToken } from "../webs";
-
-import {
-  getAvailableFilePath,
-  getDesktopDownloadDefaultPath,
-  sanitizeDownloadFilename
-} from "../../infrastructure/filesystem/download-paths";
-
-import {
-  resolveWorkPanelLocalFileFromWorkspace,
-  type WorkPanelLocalFilePathResolution,
-} from "../work-panel";
-
 import { AGENT_PLATFORM_CONFIRMATION_EXEMPT_ACTIONS, AGENT_PLATFORM_ONLY_ACTIONS, AGENT_WEBCLIENT_WORKPANEL_ACTIONS, AGENT_WEBCLIENT_WORKPANEL_DESKTOP_ACTIONS, ARGUMENT_FREE_RUNTIME_ACTIONS, AgentWebclientWorkPanelAction, CURRENT_PAGE_WEB_ACTIONS, DesktopActionBridgeOptions, DesktopActionInvocationContext, MAX_ASSISTANT_PROMPT_CHARS, WEBAPP_IMAGE_MASK_REQUIRED, WEBAPP_PAGE_ONLY_ACTIONS, activeWebappImageRuns, asRecord, fail, normalizeWebappImageRequest, ok, preview, readItemId, readMarketListOptions, readServiceId, readString, resolveHelpOpenRoute, saveMarketSettingsPreview, validateMarketSettings, webappImageRunKey } from "./runtime.part-1";
-
 import { callAgentPlatform, confirmDesktopActionIfNeeded } from "./runtime.part-2";
-
 import { callRendererAction, executeWebappToolingAction } from "./runtime.part-3";
-
 import { executeNativeWebappAction, executeWebAction } from "./runtime.part-4";
-
 import { executeDesktopWebExportArtifact, executeKanbanAction, executeOpenLocalFileAction, executePetAction } from "./runtime.part-5";
 
 export async function executeAction(

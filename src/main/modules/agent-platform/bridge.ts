@@ -1,29 +1,16 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
 import type { App } from "electron";
-
 import type {
   AgentAuthIssueResult,
   AssistantAttachment,
-  AssistantAwaitingMode,
   AssistantChatDetail,
   AssistantChatInfo,
-  AssistantChatMessage,
   AssistantChatSearchRequest,
   AssistantChatSearchResponse,
-  AssistantChatSearchResult,
   AssistantChatSummary,
   AssistantEvent,
-  AssistantHistoryChatItem,
   AssistantHistoryChatsResult,
   AssistantNavAgentItem,
   AssistantNavAgentItemsResult,
-  AssistantRunEvent,
-  AssistantRunEventType,
   AssistantStartRunRequest,
   AssistantStartRunResult,
   AssistantTextCompletionResult,
@@ -34,24 +21,14 @@ import type {
   ServiceId,
   ServiceState
 } from "../../../shared/contracts";
-
 import {
-  isTimeContractViolation,
-  parseOptionalNullableAgentPlatformEpochMillis,
-  requireAgentPlatformEpochMillis,
-  requireEpochMillis,
-} from "../../../shared/time-contract";
-
-import { t } from "../../support/i18n/main-i18n";
-
-import { parseSafeLoopbackWebUrl } from "../../infrastructure/network/loopback-url";
-
-import {
-  RealtimeBroker,
-  type RealtimeQueryHandle,
+  RealtimeBroker
 } from "./realtime/realtime-broker";
-
 import type { AgentPlatformRealtimeSocketFactory } from "./realtime/agent-platform-realtime-client";
+import { ActiveAssistantRun, AgentPlatformChatExportResult, AgentPlatformImageCompletionRequest, AgentPlatformImageCompletionResult, AgentPlatformRawChatJSONLResult, AssistantRunWakeLock } from "./bridge.shared";
+import { AgentPlatformAssistantBridge_acquireWakeLockForActiveRuns_1, AgentPlatformAssistantBridge_releaseWakeLockIfIdle_2, AgentPlatformAssistantBridge_startRun_3, AgentPlatformAssistantBridge_completeText_4, AgentPlatformAssistantBridge_completeImage_5, AgentPlatformAssistantBridge_stopRun_6, AgentPlatformAssistantBridge_submitAwaiting_7, AgentPlatformAssistantBridge_listAgents_8, AgentPlatformAssistantBridge_listMcpRuntimeStatuses_9, AgentPlatformAssistantBridge_listNavigationAgents_10, AgentPlatformAssistantBridge_listCopilotAgents_11, AgentPlatformAssistantBridge_listChats_12, AgentPlatformAssistantBridge_listHistoryChats_13 } from "./bridge.methods-1";
+import { AgentPlatformAssistantBridge_getChat_1, AgentPlatformAssistantBridge_getChatInfo_2, AgentPlatformAssistantBridge_searchChats_3, AgentPlatformAssistantBridge_deleteChat_4, AgentPlatformAssistantBridge_markAgentChatsRead_5, AgentPlatformAssistantBridge_renameChat_6, AgentPlatformAssistantBridge_archiveChat_7, AgentPlatformAssistantBridge_downloadChatExport_8, AgentPlatformAssistantBridge_createChatSnapshotRequest_9, AgentPlatformAssistantBridge_downloadRawChatJSONL_10 } from "./bridge.methods-2";
+import { AgentPlatformAssistantBridge_runQuery_1, AgentPlatformAssistantBridge_dispose_2, AgentPlatformAssistantBridge_bestEffortInterrupt_3, AgentPlatformAssistantBridge_readPersistedFinalAssistantMessage_4, AgentPlatformAssistantBridge_uploadAttachments_5, AgentPlatformAssistantBridge_uploadAttachment_6, AgentPlatformAssistantBridge_attachmentToBlob_7, AgentPlatformAssistantBridge_getJson_8, AgentPlatformAssistantBridge_resolvePlatform_9, AgentPlatformAssistantBridge_platformFetch_10, AgentPlatformAssistantBridge_jsonHeaders_11 } from "./bridge.methods-3";
 
 export type AgentPlatformAssistantBridgePorts = {
   toDesktopPetAgentOptions: (agents: unknown) => DesktopPetAgentOption[];
@@ -60,14 +37,6 @@ export type AgentPlatformAssistantBridgePorts = {
   readNavigationAgents: (baseUrl: string, token: string) => Promise<AssistantNavAgentItem[]>;
   readCopilotAgents: (baseUrl: string, token: string) => Promise<AssistantNavAgentItem[]>;
 };
-
-import { AGENT_PLATFORM_SERVICE_ID, ActiveAssistantRun, AgentPlatformChatExportResult, AgentPlatformImageCompletionRequest, AgentPlatformImageCompletionResult, AgentPlatformImageOperation, AgentPlatformRawChatJSONLResult, ApiResponse, AssistantRunWakeLock, IMAGE_OPERATION_INSTRUCTIONS, ImageGenerateOutcome, MAX_CONVERSATION_MARKDOWN_BYTES, MAX_GENERATED_IMAGE_BYTES, MAX_RAW_CHAT_JSONL_BYTES, PLATFORM_OUTPUT_TEXT_KEYS, PlatformAdminRegistryListResponse, PlatformAgentSummary, PlatformArchiveChatResponse, PlatformChatDetail, PlatformChatSearchResponse, PlatformChatSummary, PlatformRunSummary, PlatformUploadTicket, ResponseBytesTooLargeError, STRUCTURED_PLATFORM_TIME_FIELDS, buildZenmiImageGenerateMessage, chatHasPendingAwaiting, createApiUrl, createChatId, createMessageId, createRunId, dataUrlToBlob, filenameFromContentDisposition, imageGenerateFailureMessage, imageResultRecord, isAssistantRunTerminalEvent, isPendingAwaitingPayload, isPlatformEventType, mapChatSearchResponse, mapChatSearchResult, mapChatSummary, mapHistoryChat, mapRunMessages, normalizeAssistantAccessLevel, normalizeAssistantPermissionMode, normalizeAwaitingPayload, normalizePlatformEvent, nowEpochMillis, observeImageGenerateEvent, readAssistantEventOutputText, readAssistantTextContent, readAwaitingMode, readAwaitingPayloadMode, readChatAgentKey, readChatAwaitingMode, readChatIsRead, readErrorCode, readErrorPayloadText, readErrorText, readFinalAssistantTextFromChatFile, readFinalAssistantTextFromMessages, readNumber, readOptionalPlatformTimestamp, readOutputTextFromRecord, readRequiredPlatformTimestamp, readResponseBytesWithLimit, readString, unwrapApiResponse, validGeneratedImageRelativePath, validateAwaitingPayloadTimes, validatePresentPlatformTimes } from "./bridge.shared";
-
-import { AgentPlatformAssistantBridge_acquireWakeLockForActiveRuns_1, AgentPlatformAssistantBridge_releaseWakeLockIfIdle_2, AgentPlatformAssistantBridge_startRun_3, AgentPlatformAssistantBridge_completeText_4, AgentPlatformAssistantBridge_completeImage_5, AgentPlatformAssistantBridge_stopRun_6, AgentPlatformAssistantBridge_submitAwaiting_7, AgentPlatformAssistantBridge_listAgents_8, AgentPlatformAssistantBridge_listMcpRuntimeStatuses_9, AgentPlatformAssistantBridge_listNavigationAgents_10, AgentPlatformAssistantBridge_listCopilotAgents_11, AgentPlatformAssistantBridge_listChats_12, AgentPlatformAssistantBridge_listHistoryChats_13 } from "./bridge.methods-1";
-
-import { AgentPlatformAssistantBridge_getChat_1, AgentPlatformAssistantBridge_getChatInfo_2, AgentPlatformAssistantBridge_searchChats_3, AgentPlatformAssistantBridge_deleteChat_4, AgentPlatformAssistantBridge_markAgentChatsRead_5, AgentPlatformAssistantBridge_renameChat_6, AgentPlatformAssistantBridge_archiveChat_7, AgentPlatformAssistantBridge_downloadChatExport_8, AgentPlatformAssistantBridge_createChatSnapshotRequest_9, AgentPlatformAssistantBridge_downloadRawChatJSONL_10 } from "./bridge.methods-2";
-
-import { AgentPlatformAssistantBridge_runQuery_1, AgentPlatformAssistantBridge_dispose_2, AgentPlatformAssistantBridge_bestEffortInterrupt_3, AgentPlatformAssistantBridge_readPersistedFinalAssistantMessage_4, AgentPlatformAssistantBridge_uploadAttachments_5, AgentPlatformAssistantBridge_uploadAttachment_6, AgentPlatformAssistantBridge_attachmentToBlob_7, AgentPlatformAssistantBridge_getJson_8, AgentPlatformAssistantBridge_resolvePlatform_9, AgentPlatformAssistantBridge_platformFetch_10, AgentPlatformAssistantBridge_jsonHeaders_11 } from "./bridge.methods-3";
 
 export class AgentPlatformAssistantBridge {
   private readonly activeRuns = new Map<string, ActiveAssistantRun>();

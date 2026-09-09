@@ -1,53 +1,34 @@
 import fs from "node:fs";
-
 import path from "node:path";
-
 import type { App, Rectangle } from "electron";
-
 import type {
   DesktopPetAppearanceOption,
   DesktopPetSignatureAction,
   DesktopPetStateAsset,
   DesktopPetStateAssets,
-  DesktopPetTaskItem,
-  DesktopPetMessageItem,
-  DesktopPetAgentOption,
   DesktopPetAgentPresence,
-  AssistantNavigationAttentionSummary,
   DesktopPetDragDirection,
-  DesktopPetEdgeDock,
-  DesktopPetPanelPlacement,
-  DesktopPetPreviewPanel,
   DesktopPetSettings,
-  DesktopPetState,
   DesktopPetStatus,
   DesktopPetWindowMode
 } from "../../../shared/contracts";
-
 import {
   DEFAULT_DESKTOP_PET_APPEARANCE_ID,
-  DEFAULT_DESKTOP_PET_BOUND_AGENT_KEY,
   DEFAULT_DESKTOP_PET_SELECTED_ID,
   DESKTOP_PET_USER_ASSET_PROTOCOL,
-  DESKTOP_PET_APPEARANCE_OPTIONS,
   DESKTOP_PET_REQUIRED_STATE_KEYS,
   DESKTOP_PET_STANDARD_ACTION_MAX_FRAMES,
   DESKTOP_PET_STANDARD_ACTION_MIN_FRAMES,
   DESKTOP_PET_STATUS_HINT_TEXTS,
-  applyDesktopPetActiveRunEvent,
   getDesktopPetSignatureActions,
   normalizeDesktopPetAppearanceId,
   normalizeDesktopPetBoundAgentKey,
   normalizeDesktopPetWhitespaceText,
   resolveDesktopPetSignatureActions,
-  resolveDesktopPetRunningTaskCount,
-  sanitizeDesktopPetRunningTaskCount,
   sanitizeDesktopPetUnreadCount,
   truncateDesktopPetReplyPreview
 } from "../../../shared/desktop-pet";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import {
   getDesktopPetSettingsPath as resolveDesktopPetSettingsPath,
   getDesktopPetsDataRoot,

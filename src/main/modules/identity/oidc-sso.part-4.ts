@@ -1,52 +1,11 @@
-import fs from "node:fs";
-
 import http from "node:http";
-
-import type { AddressInfo } from "node:net";
-
-import path from "node:path";
-
-import {
-  createPublicKey,
-  createHash,
-  createVerify,
-  randomBytes,
-  randomUUID,
-  type KeyObject
-} from "node:crypto";
-
 import type { App } from "electron";
-
 import type {
-  DesktopSsoClaims,
-  DesktopSsoLogoutResult,
-  DesktopSsoStartResult,
-  DesktopSsoStatus
+  DesktopSsoClaims
 } from "../../../shared/contracts";
-
-import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
-
-import {
-  buildDesktopSsoAvatarUrl,
-  DESKTOP_SSO_AVATAR_PROTOCOL
-} from "../../../shared/sso-avatar";
-
-import {
-  getDesktopSsoAccessTokenFilePath,
-  getDesktopStateRoot,
-  getSecretsRoot
-} from "../../infrastructure/filesystem/user-paths";
-
-import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
 import { t } from "../../support/i18n/main-i18n";
-
-import { clearCachedDesktopSsoAvatar } from "./avatar-storage";
-
 import { CALLBACK_ORIGIN, CookieAccessTokenExchangeConfig, CookieAccessTokenExchangeRequest, DEFAULT_COOKIE_ACCESS_TOKEN_ACCEPT, DEFAULT_COOKIE_ACCESS_TOKEN_PATH, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_OIDC_CONFIG, DesktopSsoBrowserCookieDetails, DesktopSsoProxyState, ElectronFetchRuntime, FetchLike, FetchResponseLike, OidcConfig, TokenExchangeRequest, desktopSsoRuntimeState, isGoogleOidcConfig, usedAuthorizationCodes, usedDesktopSsoTickets } from "./oidc-sso.part-1";
-
 import { loadDesktopSsoConfig } from "./oidc-sso.part-2";
-
 import { decodeJsonPart, getJwtPayload, getDesktopSsoBrowserCookieOrigins, getDesktopSsoProxySetCookieHeaders, getDesktopSsoProxyTargetOrigin, normalizeAudience, normalizeDesktopSsoAvatarUrlClaim, normalizeStringClaim, readFetchErrorBody, readFetchErrorStatus, rewriteDesktopSsoProxyLocation, rewriteDesktopSsoProxySetCookieHeader } from "./oidc-sso.part-3";
 
 export function buildDesktopSsoBrowserCookieDetails(

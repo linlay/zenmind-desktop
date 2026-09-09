@@ -1,20 +1,12 @@
-import { createHash } from "node:crypto";
-
-import { Buffer } from "node:buffer";
-
 import fs from "node:fs";
-
 import path from "node:path";
-
 import type { App } from "electron";
 import type { WebsFacade } from "../webs";
-
 import type {
   MarketAsset,
   MarketCatalogItem,
   MarketDependency,
   MarketDetectSpec,
-  MarketInstallState,
   MarketItem,
   MarketItemType,
   MarketListOptions,
@@ -24,15 +16,11 @@ import type {
   MarketSettingsInput,
   MarketSkillProfile
 } from "../../../shared/contracts";
-
 import {
   getDesktopConfigRoot,
   getMarketplaceCacheRoot,
   getMarketplaceStateRoot
 } from "../../infrastructure/filesystem/user-paths";
-
-import { getDesktopDeviceInfo } from "../identity";
-
 import { t } from "../../support/i18n/main-i18n";
 
 export const DEFAULT_MARKET_API_BASE_URL = "";

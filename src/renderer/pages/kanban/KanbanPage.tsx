@@ -25,11 +25,9 @@ import { useNavigate } from "react-router-dom";
 import {
   CalendarOutlined,
   CloseCircleOutlined,
-  DeleteOutlined,
   FlagOutlined,
   HistoryOutlined,
   HourglassOutlined,
-  MessageOutlined,
   PlusOutlined,
   RobotOutlined,
   SettingOutlined,
@@ -74,7 +72,7 @@ import {
   toggleKanbanProjectTreeSelection
 } from "./kanbanProjectTree";
 import { IssueTypeIcon, resolveIssueTypeColor } from "./IssueTypeIcon";
-import { ImportanceIcon, PriorityIcon } from "./StatusIcons";
+import { ImportanceIcon } from "./StatusIcons";
 import { KanbanIssueDetailDialog, type KanbanIssueDetailDraft } from "./KanbanIssueDetailDialog";
 import { resolveLocalKanbanRunChatId } from "./kanbanAssistantRun";
 import { resolveWorkflowStageColor } from "./stageColor";
@@ -503,44 +501,6 @@ function formatIssueUpdatedTime(updatedAt: string, currentDate = new Date()) {
   return date;
 }
 
-function formatKanbanCompactDuration(value: string | null | undefined, now: Date) {
-  const timestamp = Date.parse(value ?? "");
-  const nowTimestamp = now.getTime();
-  if (!Number.isFinite(timestamp) || !Number.isFinite(nowTimestamp) || timestamp > nowTimestamp) {
-    return "";
-  }
-
-  const totalMinutes = Math.floor((nowTimestamp - timestamp) / 60_000);
-  if (totalMinutes < 1) {
-    return "<1m";
-  }
-
-  const days = Math.floor(totalMinutes / (24 * 60));
-  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
-  const minutes = totalMinutes % 60;
-  if (days > 0) {
-    return hours > 0 ? `${days}d ${hours}h` : `${days}d`;
-  }
-  if (hours > 0) {
-    return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
-  }
-  return `${minutes}m`;
-}
-
-function formatKanbanCompletionTime(value: string | null | undefined, locale: SupportedLocale) {
-  const timestamp = Date.parse(value ?? "");
-  if (!Number.isFinite(timestamp)) {
-    return "";
-  }
-  return new Intl.DateTimeFormat(locale, {
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit"
-  }).format(timestamp);
-}
-
 function formatKanbanSortNumber(sortIndex: number | undefined, position: number) {
   if (typeof sortIndex === "number" && Number.isFinite(sortIndex) && sortIndex > 0) {
     return `#${Math.round(sortIndex)}`;
@@ -596,86 +556,6 @@ function buildAutomationCron(plan: KanbanAutomationPlan, time: string, customCro
 
 function isNumericCronPart(value: string) {
   return /^\d+$/u.test(value);
-}
-
-function isFifteenMinuteCronMinute(value: string) {
-  if (!isNumericCronPart(value)) {
-    return false;
-  }
-  const minute = Number(value);
-  return minute >= 0 && minute <= 59 && minute % 15 === 0;
-}
-
-function isCronHour(value: string) {
-  if (!isNumericCronPart(value)) {
-    return false;
-  }
-  const hour = Number(value);
-  return hour >= 0 && hour <= 23;
-}
-
-function formatAutomationTime(hour: string, minute: string) {
-  return `${padAutomationNumber(Number(hour))}:${padAutomationNumber(Number(minute))}`;
-}
-
-function parseAutomationFormFromCron(value: string | null | undefined) {
-  const automationCron = value?.trim() || DEFAULT_KANBAN_AUTOMATION_CRON;
-  const parts = automationCron.split(/\s+/u);
-  if (parts.length !== 5) {
-    return {
-      automationPreset: "custom" as KanbanAutomationPlan,
-      automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
-      automationCron
-    };
-  }
-  const [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-  if (!isFifteenMinuteCronMinute(minute)) {
-    return {
-      automationPreset: "custom" as KanbanAutomationPlan,
-      automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
-      automationCron
-    };
-  }
-  if (hour === "*" && dayOfMonth === "*" && month === "*" && dayOfWeek === "*") {
-    return {
-      automationPreset: "hourly" as KanbanAutomationPlan,
-      automationTime: formatAutomationTime("0", minute),
-      automationCron
-    };
-  }
-  if (!isCronHour(hour) || dayOfMonth !== "*" || month !== "*") {
-    return {
-      automationPreset: "custom" as KanbanAutomationPlan,
-      automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
-      automationCron
-    };
-  }
-  if (dayOfWeek === "*") {
-    return {
-      automationPreset: "daily" as KanbanAutomationPlan,
-      automationTime: formatAutomationTime(hour, minute),
-      automationCron
-    };
-  }
-  if (dayOfWeek === "1-5") {
-    return {
-      automationPreset: "weekdays" as KanbanAutomationPlan,
-      automationTime: formatAutomationTime(hour, minute),
-      automationCron
-    };
-  }
-  if (dayOfWeek === "1") {
-    return {
-      automationPreset: "weekly" as KanbanAutomationPlan,
-      automationTime: formatAutomationTime(hour, minute),
-      automationCron
-    };
-  }
-  return {
-    automationPreset: "custom" as KanbanAutomationPlan,
-    automationTime: DEFAULT_KANBAN_AUTOMATION_TIME,
-    automationCron
-  };
 }
 
 function getAutomationPlanLabel(plan: KanbanAutomationPlan, t: TranslateFunction) {
@@ -744,42 +624,6 @@ function computeSortableDropPosition(
   return computeDropPosition(targetIssuesWithoutActive, insertIndex);
 }
 
-function createFormFromIssue(issue: KanbanIssue): IssueFormState {
-  const automationForm = parseAutomationFormFromCron(issue.automationCron);
-  const projectId = issue.projectId?.trim() ?? "";
-  return {
-    title: issue.title,
-    projectId: issue.syncMode === "local" && (!projectId || projectId === "default") ? "" : projectId,
-    projectVersion: issue.projectVersion ?? "",
-    dueDate: issue.dueDate ?? "",
-    resolution: issue.resolution ?? "",
-    reporterId: issue.reporterId ?? "",
-    componentKeys: issue.componentKeys ?? [],
-    originalEstimateHours: secondsToHoursInput(issue.originalEstimate),
-    remainingEstimateHours: secondsToHoursInput(issue.remainingEstimate),
-    timeSpentHours: secondsToHoursInput(issue.timeSpent),
-    description: issue.description,
-    attachmentChatId: issue.attachmentChatId ?? issue.chatId ?? createKanbanAttachmentChatId(issue.id),
-    attachments: issue.attachments ?? [],
-    status: issue.status,
-    priority: issue.priority,
-    severity: issue.severity,
-    assigneeAgentKey: issue.assigneeAgentKey ?? "",
-    automationEnabled: issue.automationEnabled,
-    automationPreset: automationForm.automationPreset,
-    automationTime: automationForm.automationTime,
-    automationCron: automationForm.automationCron,
-    automationMessage: issue.automationMessage ?? "",
-    automationTimezone: issue.automationTimezone ?? "Asia/Shanghai",
-    syncToCloud: issue.syncMode === "cloud"
-  };
-}
-
-function secondsToHoursInput(value: number | null | undefined) {
-  if (!value) return "";
-  return String(Math.round((value / 3600) * 100) / 100);
-}
-
 function hoursInputToSeconds(value: string) {
   if (!value.trim()) return 0;
   const hours = Number(value);
@@ -843,11 +687,6 @@ function mergeKanbanIssuesAttachmentDraft(
 function getAssigneeName(agentKey: string, agents: AssistantNavAgentItem[]) {
   if (!agentKey) return null;
   return agents.find((agent) => agent.agentKey === agentKey)?.displayName ?? agentKey;
-}
-
-function getAssigneeAgent(issue: KanbanIssue, agents: AssistantNavAgentItem[]) {
-  const agentKey = issue.assigneeAgentKey?.trim();
-  return agentKey ? agents.find((agent) => agent.agentKey === agentKey) : undefined;
 }
 
 function formatKanbanPersonLabel(value: string | null | undefined, fallback: string) {
@@ -4417,18 +4256,6 @@ function IssueCardPeople({
           </span>
         </span>
       ))}
-    </span>
-  );
-}
-
-function IssuePriorityBadge({ priority, t }: { priority: KanbanPriority; t: TranslateFunction }) {
-  const meta = PRIORITY_META[priority];
-  const label = t(meta.labelKey);
-  const shortLabel = t(meta.shortLabelKey);
-  return (
-    <span className="kanban-priority-badge" title={t("kanban.card.priority", { value: label })}>
-      <PriorityIcon priority={priority} />
-      <span className="kanban-priority-text">{shortLabel}</span>
     </span>
   );
 }

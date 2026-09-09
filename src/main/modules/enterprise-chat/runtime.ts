@@ -1,21 +1,10 @@
-import { openAsBlob } from "node:fs";
-
-import fs from "node:fs";
-
-import path from "node:path";
-
 import type { App } from "electron";
-
 import type {
-  EnterpriseChatAttachment,
   EnterpriseChatAttachmentData,
   EnterpriseChatAttachmentInput,
-  EnterpriseChatConnectionState,
   EnterpriseChatConversation,
   EnterpriseChatCreateGroupInput,
   EnterpriseChatDesktopAction,
-  EnterpriseChatDesktopActionResult,
-  EnterpriseChatDesktopActionStatus,
   EnterpriseChatDownloadResult,
   EnterpriseChatExecuteActionInput,
   EnterpriseChatExecuteActionResult,
@@ -28,61 +17,24 @@ import type {
   EnterpriseChatSendMessageInput,
   EnterpriseChatSendPastedFilesInput,
   EnterpriseChatSendRawAgentChatInput,
-  EnterpriseChatScreenshotMode,
   EnterpriseChatSendScreenshotInput,
   EnterpriseChatSendSupportBundleInput,
-  EnterpriseChatSnapshot,
-  EnterpriseChatUser
+  EnterpriseChatSnapshot
 } from "../../../shared/contracts";
-
-import {
-  ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES,
-  ENTERPRISE_CHAT_MAX_PASTED_FILES
-} from "../../../shared/contracts/enterprise-chat";
-
-import {
-  ENTERPRISE_CHAT_REMOTE_ACTION_NAMES,
-  getEnterpriseChatRemoteAction
-} from "../../../shared/enterprise-chat-actions";
-
-import type { DesktopActionCallResponse } from "../../../shared/desktop-actions";
-
-import type { EpochMilliseconds } from "../../../shared/time-contract";
-
 import { getDesktopDeviceInfo } from "../identity";
-
 import {
   EnterpriseChatActionLedger,
-  enterpriseChatActionScope,
   type EnterpriseChatActionLedgerEntry
 } from "./action-ledger";
-
-import {
-  clearEnterpriseChatAvatar,
-  readEnterpriseChatSelfProfile,
-  saveEnterpriseChatAvatar,
-  saveEnterpriseChatMotto
-} from "./local-profile";
-
 import { createEnterpriseChatSupportBundle } from "./support-bundle";
-
 import {
-  DEFAULT_ENTERPRISE_IM_BASE_URL,
-  normalizeEnterpriseImBaseUrl
+  DEFAULT_ENTERPRISE_IM_BASE_URL
 } from "./settings";
-
-import { t } from "../../support/i18n/main-i18n";
-
 import { getDesktopSsoAccessToken } from "../identity";
-
-import { ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES, ENTERPRISE_CHAT_INLINE_ATTACHMENT_MAX_BYTES, ENTERPRISE_CHAT_MAX_SELECTED_FILES, ENTERPRISE_CHAT_RAW_AGENT_CHAT_MAX_BYTES, ENTERPRISE_CHAT_RECONNECT_MAX_MS, ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS, EnterpriseChatRawAgentChatData, EnterpriseChatRequestError, EnterpriseChatRuntimeOptions, FetchLike, FetchResponseLike, PendingWebSocketRequest, ServerBootstrap, ServerSession, WebSocketLike, WebSocketMessageEventLike, contentTypeForFile, createDefaultWebSocket, errorMessage, isRecord, localizedDesktopActionSummary, mergeConversationUsers, mergeMessage, normalizeAttachment, normalizeConversation, normalizeConversations, normalizeDesktopAction, normalizeDesktopActionResult, normalizeMessage, normalizeMessages, normalizeServerUrl, normalizeUser, nowEpochMilliseconds, readEpochMilliseconds, readNumber, readOnline, readText, readWebSocketText, safeDownloadName, safeRawAgentChatFilename, toWebSocketUrl } from "./runtime.shared";
-
+import { EnterpriseChatRawAgentChatData, EnterpriseChatRuntimeOptions, FetchLike, PendingWebSocketRequest, ServerBootstrap, ServerSession, WebSocketLike, createDefaultWebSocket, mergeConversationUsers, normalizeConversation, normalizeDesktopAction, normalizeMessage, normalizeServerUrl, normalizeUser, nowEpochMilliseconds, safeRawAgentChatFilename, toWebSocketUrl } from "./runtime.shared";
 import { EnterpriseChatRuntime_getState_1, EnterpriseChatRuntime_currentDesktopActionScope_2, EnterpriseChatRuntime_getDesktopActionLedger_3, EnterpriseChatRuntime_desktopActionState_4, EnterpriseChatRuntime_projectMessage_5, EnterpriseChatRuntime_setEnabled_6, EnterpriseChatRuntime_refresh_7, EnterpriseChatRuntime_reloadConfiguration_8, EnterpriseChatRuntime_performRefresh_9, EnterpriseChatRuntime_updateServerUrl_10, EnterpriseChatRuntime_openDirectConversation_11, EnterpriseChatRuntime_openConversation_12, EnterpriseChatRuntime_createGroup_13, EnterpriseChatRuntime_sendMessage_14, EnterpriseChatRuntime_sendFiles_15 } from "./runtime.methods-1";
-
 import { EnterpriseChatRuntime_sendSupportBundle_1, EnterpriseChatRuntime_sendRawAgentChat_2, EnterpriseChatRuntime_saveSelfProfile_3, EnterpriseChatRuntime_selectSelfAvatar_4, EnterpriseChatRuntime_clearSelfAvatar_5, EnterpriseChatRuntime_sendPastedFiles_6, EnterpriseChatRuntime_sendScreenshot_7, EnterpriseChatRuntime_loadAttachment_8, EnterpriseChatRuntime_downloadAttachment_9, EnterpriseChatRuntime_executeMessageDesktopAction_10, EnterpriseChatRuntime_handledDesktopActionResult_11, EnterpriseChatRuntime_notExecutableDesktopActionResult_12, EnterpriseChatRuntime_createRemoteSupportAttachment_13 } from "./runtime.methods-2";
-
 import { EnterpriseChatRuntime_deliverDesktopActionReceipt_1, EnterpriseChatRuntime_flushDesktopActionReceipts_2, EnterpriseChatRuntime_reconcileDesktopActionMessages_3, EnterpriseChatRuntime_sendMessagePayload_4, EnterpriseChatRuntime_assertMessageSendReady_5, EnterpriseChatRuntime_markRead_6, EnterpriseChatRuntime_handleSignedOut_7, EnterpriseChatRuntime_stop_8, EnterpriseChatRuntime_ensureSession_9, EnterpriseChatRuntime_uploadFilePath_10, EnterpriseChatRuntime_uploadBlob_11, EnterpriseChatRuntime_fetchAttachment_12, EnterpriseChatRuntime_exchangeSession_13, EnterpriseChatRuntime_requestBootstrap_14, EnterpriseChatRuntime_requestUsers_15, EnterpriseChatRuntime_requestJson_16 } from "./runtime.methods-3";
-
 import { EnterpriseChatRuntime_connectWebSocket_1, EnterpriseChatRuntime_handleWebSocketMessage_2, EnterpriseChatRuntime_applyMessage_3, EnterpriseChatRuntime_applyPresence_4, EnterpriseChatRuntime_refreshConversationSummaries_5, EnterpriseChatRuntime_refreshEmployeeDirectory_6, EnterpriseChatRuntime_sendWebSocketRequest_7, EnterpriseChatRuntime_nextRequestId_8, EnterpriseChatRuntime_updateSnapshot_9, EnterpriseChatRuntime_scheduleReconnect_10, EnterpriseChatRuntime_scheduleSessionRefresh_11, EnterpriseChatRuntime_disconnect_12, EnterpriseChatRuntime_clearSession_13, EnterpriseChatRuntime_rejectPendingRequests_14 } from "./runtime.methods-4";
 
 export class EnterpriseChatRuntime {

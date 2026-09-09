@@ -1,51 +1,18 @@
 import type { WebContents } from "electron";
-
-import type { DesktopPageContextSnapshot } from "../../../shared/contracts";
-
 import type {
-  EmbeddedCdpSurfaceRegistration,
-  EmbeddedCdpSurfaceRegistrationResult,
-  EmbeddedCdpSurfaceRemoval,
-  EmbeddedCdpSurfaceTabRegistration,
-  EmbeddedCdpSiteSurfaceKind,
-  EmbeddedCdpSurfaceKind
+  EmbeddedCdpSurfaceTabRegistration
 } from "../../../shared/embedded-cdp";
-
 import {
   BUILTIN_BROWSER_DEFAULT_URL,
   BUILTIN_BROWSER_ROUTE,
   BUILTIN_BROWSER_SURFACE_ID,
   BUILTIN_BROWSER_SURFACE_LABEL
 } from "../../../shared/browser-surfaces";
-
 import {
-  readAgentWebclientCanonicalChatSource,
-  readAgentWebclientNewChatSource
-} from "../../../shared/canonical-chat-sync";
-
-import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
-
-import { selectSurvivingTabId } from "../../../shared/web-tab-lifecycle";
-
-import {
-  COPILOT_DOCK_SURFACE_ID,
-  KANBAN_CHAT_SURFACE_ID,
-  LEGACY_FIXED_SURFACE_ID_ALIASES,
-  MAIN_CHAT_SURFACE_ID,
-  createLegacySurfaceIdAliases,
-  createWebEntrySurfaceIdentity,
-  resolveFixedSurfaceRole,
-  resolveLegacyFixedSurfaceId,
-  surfaceIdentityMatchesPolicy,
-  type SurfaceIdentity,
-  type SurfaceRole
+  createWebEntrySurfaceIdentity
 } from "../../../shared/surface-identity";
-
-import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
-
 import type { CreateBrowserSurfaceRegistryContext } from "./browser-surface-registry.shared";
-
-import { BrowserSurface, BrowserSurfaceDiagnosticSnapshot, BrowserSurfaceLifecycleEvent, BrowserSurfaceRegistryOptions, BrowserSurfaceTab, BrowserWebContentsDiagnosticSnapshot, PendingGuestTargetWaiter, PendingSurfaceRegistrationDiagnostic, RegisteredSurface, RegisteredWebviewSurfaceTarget, SURFACE_REGISTRATION_DIAGNOSTIC_ID_PATTERN, SURFACE_REGISTRATION_DIAGNOSTIC_SECRET_PATTERN, SurfaceRegistrationDiagnostic, SurfaceRegistrationInvalidCheck, SurfaceRegistrationRejectionReason, SurfaceRegistrationValidation, WebContentsAccess, activeRegistrationTab, describeMainChatRoute, diagnosticGuestWebContentsIds, guestTargetMatches, isMainChatSurfaceRegistration, mainChatSurfaceRegistrationTransitionAllowed, normalizeSurfaceMatchText, preserveInactiveMainChatIdentity, registeredSurfaceIdentitiesConflict, sameNewChatSource, sanitizeSurfaceDiagnosticEnum, sanitizeSurfaceDiagnosticId, webEntryMatchesSurfaceTarget } from "./browser-surface-registry.shared";
+import { BrowserSurface, BrowserSurfaceDiagnosticSnapshot, BrowserWebContentsDiagnosticSnapshot, PendingGuestTargetWaiter, RegisteredSurface, RegisteredWebviewSurfaceTarget, guestTargetMatches } from "./browser-surface-registry.shared";
 
 export function createBrowserSurfaceRegistry_waitForWebviewSurfaceTargetMatching_1(context: CreateBrowserSurfaceRegistryContext, webContentsId: number, predicate: (target: RegisteredWebviewSurfaceTarget) => boolean, timeoutMs: number, signal?: AbortSignal): Promise<RegisteredWebviewSurfaceTarget | null> {
     if (signal?.aborted ||

@@ -1,39 +1,18 @@
 import { createHash } from "node:crypto";
-
 import { Buffer } from "node:buffer";
-
 import fs from "node:fs";
-
 import path from "node:path";
-
 import type { App } from "electron";
-
 import type {
   MarketAsset,
   MarketCatalogItem,
-  MarketDependency,
-  MarketDetectSpec,
   MarketInstallState,
   MarketItem,
   MarketItemType,
-  MarketListOptions,
-  MarketPlatformSpec,
-  MarketScriptSpec,
-  MarketSettings,
-  MarketSettingsInput,
-  MarketSkillProfile
+  MarketPlatformSpec
 } from "../../../shared/contracts";
-
-import {
-  getDesktopConfigRoot,
-  getMarketplaceCacheRoot,
-  getMarketplaceStateRoot
-} from "../../infrastructure/filesystem/user-paths";
-
 import { getDesktopDeviceInfo } from "../identity";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import { Catalog, InstallableMarketType, InstalledRecord, MARKET_AUTH_ME_PATH, MAX_MARKET_DOWNLOAD_BYTES, MarketAccessTokenReason, MarketCatalogItemNotFoundError, MarketplaceCatalogResult, MarketplaceOptions, asObject, asString, configuredMarketAccessTokenIssuer, downloadsRoot, getMarketApiBaseUrl, getMarketplaceCatalogUrl, installedRecordsPath, isDesktopInstallableAsset, normalizeAsset, normalizeCatalog, normalizeMarketItemType, normalizePlatformSpec, readInstalledRecords, resolveMarketFetchImpl, shouldRequireInstallableAsset } from "./common.part-1";
 
 export function writeInstalledRecords(app: App, records: InstalledRecord[]) {

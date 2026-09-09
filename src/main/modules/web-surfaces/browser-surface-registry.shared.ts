@@ -1,7 +1,5 @@
 import type { WebContents } from "electron";
-
 import type { DesktopPageContextSnapshot } from "../../../shared/contracts";
-
 import type {
   EmbeddedCdpSurfaceRegistration,
   EmbeddedCdpSurfaceRegistrationResult,
@@ -10,38 +8,18 @@ import type {
   EmbeddedCdpSiteSurfaceKind,
   EmbeddedCdpSurfaceKind
 } from "../../../shared/embedded-cdp";
-
-import {
-  BUILTIN_BROWSER_DEFAULT_URL,
-  BUILTIN_BROWSER_ROUTE,
-  BUILTIN_BROWSER_SURFACE_ID,
-  BUILTIN_BROWSER_SURFACE_LABEL
-} from "../../../shared/browser-surfaces";
-
 import {
   readAgentWebclientCanonicalChatSource,
   readAgentWebclientNewChatSource
 } from "../../../shared/canonical-chat-sync";
-
 import { readAgentWebclientAgentRouteKey } from "../../../shared/agent-webclient-routes";
-
-import { selectSurvivingTabId } from "../../../shared/web-tab-lifecycle";
-
 import {
-  COPILOT_DOCK_SURFACE_ID,
-  KANBAN_CHAT_SURFACE_ID,
-  LEGACY_FIXED_SURFACE_ID_ALIASES,
   MAIN_CHAT_SURFACE_ID,
-  createLegacySurfaceIdAliases,
-  createWebEntrySurfaceIdentity,
-  resolveFixedSurfaceRole,
-  resolveLegacyFixedSurfaceId,
-  surfaceIdentityMatchesPolicy,
   type SurfaceIdentity,
   type SurfaceRole
 } from "../../../shared/surface-identity";
 
-import { reportDeprecatedCompatibilityUse } from "../../support/logging/deprecated-compatibility";
+
 
 export type BrowserSurface = SurfaceIdentity & {
   id: string;

@@ -2247,7 +2247,7 @@ test("assistant sidebar keeps Projects and Chats mutually exclusive by mode", ()
   );
   const appShell = readAppShellSource();
 
-  assert.match(sidebarSource, /function shouldShowAssistantInChats\(agent: AssistantNavAgentItem\)[\s\S]*?isAssistantNavChatAgent\(agent\)/);
+  assert.doesNotMatch(sidebarSource, /function shouldShowAssistantInChats\(/);
   assert.match(sidebarSource, /function shouldShowAssistantInPrimaryNavigation\(agent: AssistantNavAgentItem\)[\s\S]*?isAssistantNavigationAttentionProjectAgent\(agent\)/);
   assert.match(sidebarSource, /const primaryAssistantNavAgents = useMemo\(\s*\(\) => assistantNavAgents\.filter\(shouldShowAssistantInPrimaryNavigation\),\s*\[assistantNavAgents\],\s*\);/);
   assert.match(sidebarSource, /assistantNavChatItems\?: AssistantNavChatItem\[\]/);
@@ -6064,7 +6064,7 @@ test("storefront market keeps sandbox image tab wired to local image import", ()
   assert.match(storefront, /market-store-toolbar-button is-add/);
   assert.doesNotMatch(storefront, /getMarketMethod\("buildSandboxImage"\)/);
   assert.doesNotMatch(storefront, /onBuildSandboxImage/);
-  assert.match(marketDisplay, /market-sandbox-image-symbol/);
+  assert.doesNotMatch(marketDisplay, /MarketCardGlyph|market-sandbox-image-symbol/);
   assert.match(storefrontStyles, /\.market-store-card\.is-sandbox-image/);
   assert.match(storefrontStyles, /\.market-store-item-icon\.is-sandbox-image/);
   assert.match(storefrontStyles, /:root\[data-theme="dark"\]\s+\.market-store-item-icon\.is-sandbox-image/);

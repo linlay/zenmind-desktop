@@ -1,23 +1,7 @@
 import fs from "node:fs";
-
-import { createHash } from "node:crypto";
-
-import os from "node:os";
-
 import path from "node:path";
-
-import type { App } from "electron";
-
 import JSZip from "jszip";
-
-import { APP_BRAND } from "../../../shared/brand";
-
-import { resolveRuntimeRootPath } from "./runtime-root";
-
-import { isDesktopDevelopmentRuntime } from "../electron/development-runtime";
-
 import { AppPackageReader, AppPathReader, AppVersionReader, BUNDLED_ENV_RESOURCES_DIR_NAME, BundledEnvManifest, BundledEnvPackage, BundledEnvZipImportResult, ENV_IMPORT_MARKER_RELATIVE_PATH, ENV_INITIAL_PACKAGE_RELATIVE_PATH, ENV_ZIP_FILE_NAME, ENV_ZIP_MANIFEST_FILE_NAME, ENV_ZIP_ROOT_DIR_NAME, EnvZipImportResult, InitialEnvPackageRecord, InitialEnvPackageSource, RuntimeEnvResetFailure, RuntimeEnvResetResult, ValidatedBundledEnvUpgradeInput, bundledResourcesRootCandidates, entrySegments, fileExists, isRecord, normalizeEnvZipEntryRelativePath, normalizeVersion, normalizeZipEntries, pathApiForResolvedRoot, persistInitialEnvPackage, resolveDesktopVersion, resolveRuntimeRoot, resolveSafeTargetPath, restoreImportedShellScriptPermissions, sha256Hex, supportsBundledEnvResources, validateEnvZipVersion } from "./runtime-environment.part-1";
-
 import { t } from "./runtime-environment-translator";
 
 export function readBundledEnvManifest(manifestPath: string): BundledEnvManifest | null {

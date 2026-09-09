@@ -1,55 +1,14 @@
-import fs from "node:fs";
-
-import { execFile } from "node:child_process";
-
-import type { App } from "electron";
-
 import type {
-  AgentAuthIssueResult,
-  AssistantChatSortMode,
-  AssistantAwaitingMode,
-  AssistantNavAgentIcon,
   AssistantNavAgentItem,
-  AssistantNavAgentItemsResult,
-  AssistantNavChatItem,
-  AssistantNavigationLiveFrame,
-  AssistantNavigationPushEvent,
-  AssistantNavigationLiveStatus,
-  ServiceId,
-  ServiceState
+  AssistantNavChatItem
 } from "../../../shared/contracts";
-
 import {
-  readDesktopProfileFromRoot,
-  updateDesktopProfileInRoot,
-} from "../../infrastructure/filesystem/profile-store";
-
-import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
-import {
-  isTimeContractViolation,
-  isAgentPlatformEpochMilliseconds,
-  parseOptionalNullableAgentPlatformEpochMillis,
-  requireAgentPlatformEpochMillis,
-  requireEpochMillis,
+  isTimeContractViolation
 } from "../../../shared/time-contract";
-
 import {
-  readAgentPlatformPushEpochMillis,
-  validateAgentPlatformPushTimeContract,
+  validateAgentPlatformPushTimeContract
 } from "../../../shared/agent-platform-push-time-contract";
-
-import { t } from "../../support/i18n/main-i18n";
-
-import {
-  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
-  RealtimeBroker,
-} from "../agent-platform";
-
-import type { AgentPlatformRealtimeFrame } from "../agent-platform";
-
 import { AssistantNavigationApplyResult, AssistantNavigationChatApplyResult, IGNORED_PUSH_TYPES, NAVIGATION_AGENT_CHAT_LIMIT, NavigationPushFrame, createApiUrl, readApiJson } from "./navigation-status-client.part-1";
-
 import { applyChatRuntimeStatusToAgents, applyChatRuntimeStatusToChats, buildAssistantCopilotAgentsFromPlatformAgents, buildAssistantNavigationAgentsFromPlatformAgents, createChatPatchFromPush, createChatRuntimeStatusPatch, enrichNavigationAgentsWithGitBranches, findAgentIndexForPush, isValidReadProjectionPush, mergeNavigationAgentGroups, readPushAgentKey, readPushChatId, readPushUnreadCount, refreshAgentDerivedFields, toPushEvent } from "./navigation-status-client.part-2";
 
 export function applyAssistantNavigationPush(

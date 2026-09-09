@@ -233,16 +233,6 @@ function readEventString(event: Event, key: string) {
   return typeof candidate === "string" ? candidate : "";
 }
 
-function getUrlDisplayLabel(url: string) {
-  try {
-    const parsedUrl = new URL(url);
-    const pathname = parsedUrl.pathname === "/" ? "" : parsedUrl.pathname;
-    return `${parsedUrl.hostname}${pathname}` || url;
-  } catch {
-    return url;
-  }
-}
-
 function pickFirstSafeFaviconUrl(favicons: unknown, baseUrl?: string | null) {
   if (!Array.isArray(favicons)) {
     return null;

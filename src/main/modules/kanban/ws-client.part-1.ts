@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
-
 import { Buffer } from "node:buffer";
-
 import type {
   AssistantStartRunRequest,
   AssistantStartRunResult,
@@ -10,9 +8,7 @@ import type {
   KanbanListResult,
   KanbanProject
 } from "../../../shared/contracts";
-
 import type { KanbanCloudSnapshot } from "./local-store";
-
 import { t } from "../../support/i18n/main-i18n";
 
 export type MinimalWebSocket = {

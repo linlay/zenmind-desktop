@@ -1,7 +1,4 @@
-import type { App, BrowserWindow, CookiesSetDetails, Session } from "electron";
-
 import {
-  type DesktopSsoClaimsConfig,
   completeDesktopSsoBrowserSession,
   completeDesktopSsoBrowserSessionUserInfo,
   completeDesktopSsoRestoredBrowserSession,
@@ -26,17 +23,10 @@ import {
   readDesktopSsoAccessToken,
   prepareDesktopSsoSessionRestore
 } from "./oidc-sso";
-
-import { getDesktopSsoBrowserUserAgent, type DesktopPlatform } from "../../infrastructure/electron/platform-adapter";
-
+import { getDesktopSsoBrowserUserAgent } from "../../infrastructure/electron/platform-adapter";
 import { safeConsoleError } from "../../support/logging/safe-console";
-
 import { DESKTOP_SSO_WEBVIEW_PARTITION } from "../../../shared/sso";
-
-import type { DesktopSsoClaims } from "../../../shared/contracts";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import { BrowserCookieFetch, BrowserOpenResult, CookieAccessTokenFetch, DesktopSsoControllerOptions, DesktopSsoRestoreRequestError, DesktopSsoRestoreResult, DesktopSsoStatus, EmbeddedLoginDialogOpenInput, WebSessionExchangeFetch, applyDesktopSsoSetCookieHeadersToSessions, buildDesktopSsoCookieHeader, createWebSessionClaims, focusMainWindowAfterDesktopSso, getDesktopSsoSetCookieHeaders, getRecordValue, mirrorDesktopSsoSetCookieHeaders, readDesktopSsoWebSessionExchangeError, resolveDesktopSsoNavigationUrl, rewriteDesktopSsoUrlOrigin } from "./sso-controller.part-1";
 
 export function createDesktopSsoController(options: DesktopSsoControllerOptions) {

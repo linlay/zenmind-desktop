@@ -1,113 +1,41 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { randomUUID } from "node:crypto";
-
-import yaml from "js-yaml";
-
-import type { App } from "electron";
-
 import type {
   AssistantNavigationPushEvent,
-  AssistantStartRunRequest,
-  AssistantStartRunResult,
-  DesktopPetAgentOption,
-  KanbanCloudConfig,
-  KanbanCloudConfigResult,
   KanbanCurrentUser,
-  KanbanDeleteResult,
   KanbanIssue,
-  KanbanIssueInput,
-  KanbanIssueMoveInput,
-  KanbanIssueResult,
-  KanbanIssueUpdateInput,
-  KanbanListResult,
-  KanbanProject,
-  KanbanRunState,
-  KanbanRunIssueInput,
-  KanbanRunIssueResult,
-  KanbanSettings,
-  KanbanSettingsInput,
-  KanbanSettingsResult,
-  KanbanStatus
+  KanbanIssueResult
 } from "../../../shared/contracts";
-
-import { parseKanbanPriority } from "../../../shared/contracts";
-
-import { PRODUCT_NAME } from "../../../shared/brand";
-
 import { isAgentPlatformEpochMilliseconds } from "../../../shared/time-contract";
-
-import { getDesktopDeviceInfo } from "../identity";
-
 import { getDesktopDeviceId } from "../identity";
-
-import { readDesktopSsoAccessToken, readDesktopSsoAccessTokenUser } from "../identity";
-
-import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
+import { readDesktopSsoAccessTokenUser } from "../identity";
 import {
   applyDesktopKanbanCloudSnapshot,
   completeDesktopKanbanCommandReceiptByRunId,
-  createLocalDesktopKanbanIssue,
   deleteDesktopKanbanCloudMutation,
   deleteDesktopKanbanRunEvent,
-  deleteDesktopKanbanIssue,
-  ensureDesktopKanbanDefaultBinding,
   getDesktopKanbanCommandReceiptByRunId,
-  getDesktopKanbanIssue,
   getDesktopKanbanManualRunByRunId,
   hasDesktopKanbanCloudProject,
   listPendingDesktopKanbanManualRuns,
-  listPendingDesktopKanbanCommandReceipts,
   listDesktopKanbanCloudMutations,
   listDesktopKanbanRunEvents,
-  markDesktopKanbanCommandReceiptReported,
   markDesktopKanbanCloudMutationAttempt,
   markDesktopKanbanRunEventAttempt,
   listDesktopKanbanIssues,
-  moveDesktopKanbanIssue,
   readDesktopKanbanSyncCursor,
-  recordDesktopKanbanCommandReceipt,
-  recordDesktopKanbanCloudMutation,
-  recordDesktopKanbanManualRun,
-  recordDesktopKanbanRunEvent,
   tombstoneDesktopKanbanCloudIssue,
-  updateDesktopKanbanIssue,
-  updateDesktopKanbanCommandReceipt,
-  updateDesktopKanbanCommandReceiptIdentity,
   updateDesktopKanbanManualRun,
   updateDesktopKanbanIssueRuntimeState,
   upsertDispatchedDesktopKanbanIssue,
   writeDesktopKanbanSyncCursor,
-  type KanbanCloudSnapshot,
-  type KanbanCommandReceipt
+  type KanbanCloudSnapshot
 } from "./local-store";
-
-import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
 import {
-  convertLocalProjectIssuesToLocal,
-  createLocalDesktopProject,
-  findLocalDesktopProject
-} from "./local-projects";
-
-import {
-  KanbanDesktopWsClient,
   KanbanDesktopRequestError,
-  type KanbanDesktopDelivery,
-  type KanbanDesktopDeliveryApplyResult,
-  type KanbanDesktopConnectionState,
   type KanbanDesktopIssueEvent,
-  type KanbanDesktopIssueEventApplyResult,
-  type KanbanDesktopSyncLocalProject,
-  type KanbanDesktopWsConfig
+  type KanbanDesktopIssueEventApplyResult
 } from "./ws-client";
-
 import { t } from "../../support/i18n/main-i18n";
-
-import { appendKanbanWsLog } from "../../support/logging/desktop";import { KanbanRuntimeMethodContext, buildDesktopKanbanRunPrompt, getKanbanDeviceInfo, getRemoteIssueId, issueEventIssueId, issueEventIssuePayload, issueSyncMode, optionalText, readText, resolveKanbanRunFinishedPush, resolveKanbanWsConnection, stableClientEventId } from "./runtime.shared";
+import { KanbanRuntimeMethodContext, buildDesktopKanbanRunPrompt, getKanbanDeviceInfo, getRemoteIssueId, issueEventIssueId, issueEventIssuePayload, issueSyncMode, optionalText, readText, resolveKanbanRunFinishedPush, resolveKanbanWsConnection, stableClientEventId } from "./runtime.shared";
 
 
 

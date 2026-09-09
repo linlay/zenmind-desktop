@@ -1,46 +1,22 @@
-import {
-  applyDesktopPetActiveRunEvent,
-  resolveDesktopPetRunningTaskCount
-} from "../../../shared/desktop-pet";
-
 import type {
-  AssistantNavAgentItem,
-  AssistantNavChatItem,
-  DesktopPetAgentOption,
-  DesktopPetAppearanceOption,
   DesktopPetDragDirection,
-  DesktopPetEdgeDock,
-  DesktopPetPanelPlacement,
-  DesktopPetPreviewPanel,
-  DesktopPetTaskItem,
-  DesktopPetMessageItem,
-  DesktopPetMessageStatus,
-  AssistantNavigationAttentionSummary,
+  DesktopPetPreviewPanel
 } from "../../../shared/contracts";
-
 import { readEpochMillis } from "../../../shared/time-contract";
-
 import type {
-  DesktopPetBoundAgentStatus,
   DesktopPetLocalStatus,
   DesktopPetWindowMode
 } from "./desktop-pet";
-
 import {
-  createDesktopPetState,
   getDesktopPetLogicalPositionFromBounds,
   clampDesktopPetPosition,
   getAnchoredDesktopPetBounds,
-  getDesktopPetWindowSize,
   isDesktopPetSupportedPlatform,
   DESKTOP_PET_EDGE_SNAP_DISTANCE_PX,
   DESKTOP_PET_WINDOW_SIZE
 } from "./desktop-pet";
-
 import { normalizeDesktopPetAgentEvent } from "./desktop-pet-preview";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import { DesktopPetBounds, DesktopPetDragController, DesktopPetDragControllerOptions, DesktopPetSettingsLike } from "./controller.part-1";
 
 export function createDesktopPetDragController(options: DesktopPetDragControllerOptions): DesktopPetDragController {

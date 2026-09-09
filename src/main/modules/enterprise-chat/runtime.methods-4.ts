@@ -1,82 +1,13 @@
 import type { EnterpriseChatRuntimeMethodContext } from "./runtime.shared";
-import { openAsBlob } from "node:fs";
-
-import fs from "node:fs";
-
-import path from "node:path";
-
-import type { App } from "electron";
-
 import type {
-  EnterpriseChatAttachment,
-  EnterpriseChatAttachmentData,
-  EnterpriseChatAttachmentInput,
-  EnterpriseChatConnectionState,
-  EnterpriseChatConversation,
-  EnterpriseChatCreateGroupInput,
-  EnterpriseChatDesktopAction,
-  EnterpriseChatDesktopActionResult,
-  EnterpriseChatDesktopActionStatus,
-  EnterpriseChatDownloadResult,
-  EnterpriseChatExecuteActionInput,
-  EnterpriseChatExecuteActionResult,
-  EnterpriseChatMarkReadInput,
   EnterpriseChatMessage,
-  EnterpriseChatOpenConversationInput,
-  EnterpriseChatOpenDirectInput,
-  EnterpriseChatSaveSelfProfileInput,
-  EnterpriseChatSendFilesInput,
-  EnterpriseChatSendMessageInput,
-  EnterpriseChatSendPastedFilesInput,
-  EnterpriseChatSendRawAgentChatInput,
-  EnterpriseChatScreenshotMode,
-  EnterpriseChatSendScreenshotInput,
-  EnterpriseChatSendSupportBundleInput,
   EnterpriseChatSnapshot,
   EnterpriseChatUser
 } from "../../../shared/contracts";
-
 import {
-  ENTERPRISE_CHAT_MAX_PASTED_FILE_BYTES,
-  ENTERPRISE_CHAT_MAX_PASTED_FILES
-} from "../../../shared/contracts/enterprise-chat";
-
-import {
-  ENTERPRISE_CHAT_REMOTE_ACTION_NAMES,
-  getEnterpriseChatRemoteAction
+  ENTERPRISE_CHAT_REMOTE_ACTION_NAMES
 } from "../../../shared/enterprise-chat-actions";
-
-import type { DesktopActionCallResponse } from "../../../shared/desktop-actions";
-
-import type { EpochMilliseconds } from "../../../shared/time-contract";
-
-import { getDesktopDeviceInfo } from "../identity";
-
-import {
-  EnterpriseChatActionLedger,
-  enterpriseChatActionScope,
-  type EnterpriseChatActionLedgerEntry
-} from "./action-ledger";
-
-import {
-  clearEnterpriseChatAvatar,
-  readEnterpriseChatSelfProfile,
-  saveEnterpriseChatAvatar,
-  saveEnterpriseChatMotto
-} from "./local-profile";
-
-import { createEnterpriseChatSupportBundle } from "./support-bundle";
-
-import {
-  DEFAULT_ENTERPRISE_IM_BASE_URL,
-  normalizeEnterpriseImBaseUrl
-} from "./settings";
-
-import { t } from "../../support/i18n/main-i18n";
-
-import { getDesktopSsoAccessToken } from "../identity";
-
-import { ENTERPRISE_CHAT_DOWNLOAD_MAX_BYTES, ENTERPRISE_CHAT_INLINE_ATTACHMENT_MAX_BYTES, ENTERPRISE_CHAT_MAX_SELECTED_FILES, ENTERPRISE_CHAT_RAW_AGENT_CHAT_MAX_BYTES, ENTERPRISE_CHAT_RECONNECT_MAX_MS, ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS, EnterpriseChatRawAgentChatData, EnterpriseChatRequestError, EnterpriseChatRuntimeOptions, FetchLike, FetchResponseLike, PendingWebSocketRequest, ServerBootstrap, ServerSession, WebSocketLike, WebSocketMessageEventLike, contentTypeForFile, createDefaultWebSocket, errorMessage, isRecord, localizedDesktopActionSummary, mergeConversationUsers, mergeMessage, normalizeAttachment, normalizeConversation, normalizeConversations, normalizeDesktopAction, normalizeDesktopActionResult, normalizeMessage, normalizeMessages, normalizeServerUrl, normalizeUser, nowEpochMilliseconds, readEpochMilliseconds, readNumber, readOnline, readText, readWebSocketText, safeDownloadName, safeRawAgentChatFilename, toWebSocketUrl } from "./runtime.shared";
+import { ENTERPRISE_CHAT_RECONNECT_MAX_MS, ENTERPRISE_CHAT_REQUEST_TIMEOUT_MS, errorMessage, isRecord, mergeConversationUsers, mergeMessage, normalizeConversations, normalizeMessage, nowEpochMilliseconds, readNumber, readText, readWebSocketText, toWebSocketUrl } from "./runtime.shared";
 
 export async function EnterpriseChatRuntime_connectWebSocket_1(self: EnterpriseChatRuntimeMethodContext) {
     if (!self.snapshot.enabled || !self.imSessionToken) {

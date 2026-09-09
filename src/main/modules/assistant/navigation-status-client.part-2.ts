@@ -1,53 +1,17 @@
-import fs from "node:fs";
-
-import { execFile } from "node:child_process";
-
-import type { App } from "electron";
-
 import type {
-  AgentAuthIssueResult,
   AssistantChatSortMode,
   AssistantAwaitingMode,
-  AssistantNavAgentIcon,
   AssistantNavAgentItem,
-  AssistantNavAgentItemsResult,
-  AssistantNavChatItem,
-  AssistantNavigationLiveFrame,
-  AssistantNavigationPushEvent,
-  AssistantNavigationLiveStatus,
-  ServiceId,
-  ServiceState
+  AssistantNavChatItem
 } from "../../../shared/contracts";
-
 import {
-  readDesktopProfileFromRoot,
-  updateDesktopProfileInRoot,
-} from "../../infrastructure/filesystem/profile-store";
-
-import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
-import {
-  isTimeContractViolation,
-  isAgentPlatformEpochMilliseconds,
   parseOptionalNullableAgentPlatformEpochMillis,
-  requireAgentPlatformEpochMillis,
-  requireEpochMillis,
+  requireAgentPlatformEpochMillis
 } from "../../../shared/time-contract";
-
 import {
-  readAgentPlatformPushEpochMillis,
-  validateAgentPlatformPushTimeContract,
+  readAgentPlatformPushEpochMillis
 } from "../../../shared/agent-platform-push-time-contract";
-
 import { t } from "../../support/i18n/main-i18n";
-
-import {
-  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
-  RealtimeBroker,
-} from "../agent-platform";
-
-import type { AgentPlatformRealtimeFrame } from "../agent-platform";
-
 import { AssistantNavigationApplyResult, AssistantNavigationChatApplyResult, AssistantNavigationChatRuntimeStatusPatch, NAVIGATION_AGENT_CHAT_LIMIT, NAVIGATION_CHAT_LIMIT, NavigationPushEvent, NavigationPushFrame, PlatformAgentSummary, PlatformChatSummary, checkWorkspaceDirExists, compareNavChats, countPendingAwaitingPayload, hasPendingAwaitingPayload, isObjectRecord, mergeNavigationAgentItem, readActiveRunValue, readAgentDisplayName, readAgentIcon, readAgentKey, readAgentWorkspaceDir, readAwaitingPayloadMode, readChatActiveRun, readChatAgentKey, readChatAwaitingCount, readChatAwaitingMode, readChatIsRead, readChatPendingAwaiting, readChatReadAt, readChatReadRunId, resolveAssistantWorkspaceGitBranch, resolveNavigationUnreadCount, toAwaitingMode, toNonNegativeInteger, toOptionalNonNegativeInteger, toText, toTimestampMs, validateNavigationPayloadTimes, validatePresentNavigationTimes } from "./navigation-status-client.part-1";
 
 export function mergeNavigationAgentGroups(

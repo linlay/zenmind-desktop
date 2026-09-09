@@ -1,21 +1,11 @@
 import { RunSiteCdpGrants } from "./run-site-cdp-grants";
 import type { SiteCdpScope } from "../../web-surfaces";
-import { randomUUID } from "node:crypto";
-
 import type { App } from "electron";
-
 import type {
   AgentAuthIssueResult,
   AgentWebclientConnectionPhase,
   AgentWebclientRunOwner,
 } from "../../../../shared/contracts";
-
-import { validateAgentPlatformPushTimeContract } from "../../../../shared/agent-platform-push-time-contract";
-
-import { getDesktopActionDefinition } from "../../../../shared/desktop-actions";
-
-import { requireAgentPlatformEpochMillis } from "../../../../shared/time-contract";
-
 import {
   AgentPlatformRealtimeClient,
   type AgentPlatformRealtimeConnectionState,
@@ -23,21 +13,13 @@ import {
   type AgentPlatformRealtimeSocketFactory,
   type RealtimeIdentityRotationReason,
 } from "./agent-platform-realtime-client";
-
 import { RealtimeDebugTraceBuffer } from "./realtime-debug-trace";
-
-import { AGENT_PLATFORM_KNOWN_PUSH_TYPES, BrokerRun, ConnectionSubscription, DESKTOP_CDP_REQUEST_TYPE, DESKTOP_MAX_RESPONSE_BYTES, DESKTOP_RESPONSE_DELTA_EVENT_TYPE, DESKTOP_SCREENSHOT_CHUNK_CHARS, DESKTOP_SCREENSHOT_DELTA_EVENT_TYPE, DESKTOP_STREAM_RAW_CHUNK_BYTES, Deferred, DesktopBridgeRequestProvider, MAX_REPLAY_BYTES, MAX_REPLAY_EVENTS, MAX_RETAINED_TERMINAL_RUNS, OverviewCloneLeaseState, PendingClone, PendingRequest, PushSubscription, QueryTransaction, REQUEST_TIMEOUT_MS, RealtimeLane, RealtimeQueryAccepted, RealtimeQueryCompleted, RealtimeQueryHandle, ReplayEvent, RootObserverIdentity, RootObserverKind, RootObserverState, RunActionGrant, RunChannelKey, RunSubscription, brokerError, cloneBindingError, createDeferred, frameError, framePayload, isObserverDetachReason, isRecord, isTerminalEvent, pushIdentity, readText, runChannelMapKey, sameRunOwner, unrefTimer } from "./realtime-broker.shared";
-
+import { BrokerRun, ConnectionSubscription, DesktopBridgeRequestProvider, PendingClone, PendingRequest, PushSubscription, QueryTransaction, RealtimeLane, RealtimeQueryCompleted, RealtimeQueryHandle, RootObserverIdentity, RootObserverState, RunActionGrant, RunSubscription } from "./realtime-broker.shared";
 import { RealtimeBroker_getConnectionPhase_1, RealtimeBroker_getConnectionState_2, RealtimeBroker_getConnectionStates_3, RealtimeBroker_setDesktopBridgeProvider_4, RealtimeBroker_getRunChannel_5, RealtimeBroker_setRunChannel_6, RealtimeBroker_deleteRunChannel_7, RealtimeBroker_findRootObserver_8, RealtimeBroker_snapshotRootObserver_9, RealtimeBroker_ensureConnected_10, RealtimeBroker_query_11, RealtimeBroker_forwardRequest_12, RealtimeBroker_activateRootObserver_13, RealtimeBroker_getActiveRootObserver_14, RealtimeBroker_getMainChatRootObserver_15, RealtimeBroker_promoteMainChatRootObserver_16, RealtimeBroker_releaseRootObserver_17, RealtimeBroker_retireRootObserver_18, RealtimeBroker_releaseObservedRun_19 } from "./realtime-broker.methods-1";
-
 import { RealtimeBroker_subscribeClone_1, RealtimeBroker_subscribePush_2, RealtimeBroker_subscribeConnection_3, RealtimeBroker_subscribeRun_4, RealtimeBroker_unsubscribe_5, RealtimeBroker_registerRunActionGrant_6, RealtimeBroker_revokeRunActionGrant_7, RealtimeBroker_clearRunActionGrants_8, RealtimeBroker_cleanupConsumer_9 } from "./realtime-broker.methods-2";
-
 import { RealtimeBroker_getDiagnostics_1, RealtimeBroker_appendDebugTrace_2, RealtimeBroker_getDebugTraceEntries_3, RealtimeBroker_clearDebugTrace_4, RealtimeBroker_rotateIdentity_5, RealtimeBroker_beginShutdown_6, RealtimeBroker_dispose_7, RealtimeBroker_handleConnectionState_8, RealtimeBroker_handleFrame_9, RealtimeBroker_handleQueryStream_10, RealtimeBroker_bufferProvisionalQueryEvent_11, RealtimeBroker_commitProvisionalQueryEvents_12 } from "./realtime-broker.methods-3";
-
 import { RealtimeBroker_registerProvisionalRun_1, RealtimeBroker_bindQuerySubscription_2, RealtimeBroker_handleRunStream_3, RealtimeBroker_releaseRunObserver_4, RealtimeBroker_consumeRunEvent_5, RealtimeBroker_appendReplay_6, RealtimeBroker_replayToSubscriber_7, RealtimeBroker_completeRun_8, RealtimeBroker_failQuery_9, RealtimeBroker_startAttach_10, RealtimeBroker_restoreRun_11 } from "./realtime-broker.methods-4";
-
 import { RealtimeBroker_handlePush_1, RealtimeBroker_handleInboundRequest_2, RealtimeBroker_handleDesktopBridgeRequest_3, RealtimeBroker_awaitRunActionReadiness_4, RealtimeBroker_sendDesktopBridgeSuccess_5, RealtimeBroker_sendDesktopBridgeChunk_6, RealtimeBroker_sendDesktopBridgeError_7 } from "./realtime-broker.methods-5";
-
 import { RealtimeBroker_waitForCloneRun_1, RealtimeBroker_notifyPendingClones_2, RealtimeBroker_rejectPendingClones_3, RealtimeBroker_detachPendingClones_4, RealtimeBroker_pruneRetainedTerminalRuns_5, RealtimeBroker_hasSystemRunLease_6, RealtimeBroker_detachRunIfUnobserved_7, RealtimeBroker_cleanupPending_8, RealtimeBroker_prepareConnectionIdentity_9 } from "./realtime-broker.methods-6";
 
 export class RealtimeBroker {

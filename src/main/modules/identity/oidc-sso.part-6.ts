@@ -1,56 +1,20 @@
-import fs from "node:fs";
-
-import http from "node:http";
-
-import type { AddressInfo } from "node:net";
-
-import path from "node:path";
-
 import {
-  createPublicKey,
-  createHash,
-  createVerify,
-  randomBytes,
-  randomUUID,
-  type KeyObject
+  randomUUID
 } from "node:crypto";
-
 import type { App } from "electron";
-
 import type {
-  DesktopSsoClaims,
   DesktopSsoLogoutResult,
   DesktopSsoStartResult,
   DesktopSsoStatus
 } from "../../../shared/contracts";
-
-import { BRAND_ID, PRODUCT_NAME, STORAGE_NAMESPACE } from "../../../shared/brand";
-
 import {
-  buildDesktopSsoAvatarUrl,
-  DESKTOP_SSO_AVATAR_PROTOCOL
-} from "../../../shared/sso-avatar";
-
-import {
-  getDesktopSsoAccessTokenFilePath,
-  getDesktopStateRoot,
-  getSecretsRoot
+  getDesktopSsoAccessTokenFilePath
 } from "../../infrastructure/filesystem/user-paths";
-
-import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
 import { t } from "../../support/i18n/main-i18n";
-
-import { clearCachedDesktopSsoAvatar } from "./avatar-storage";
-
 import { CallbackHooks, DEFAULT_DESKTOP_SSO_CLAIMS_CONFIG, DEFAULT_GOOGLE_OIDC_CONFIG, DEFAULT_OIDC_CONFIG, DESKTOP_SSO_CONFIG_FILE_NAME, DesktopSsoAccessTokenCookieDetails, FetchLike, OidcConfig, cloneStatus, createFailedStatus, createPendingStatus, createSignedOutStatus, createUnconfiguredStatus, desktopSsoRuntimeState, getDesktopSsoUserInfoFilePath, getSessionPath, isServerBrokerAuthMode, resolveDesktopSsoConfigPath, setCurrentStatus, shouldUsePkce, shouldUseSystemBrowser } from "./oidc-sso.part-1";
-
 import { getDesktopSsoLoginLabel, getDesktopSsoLogoutLabel, loadDesktopSsoConfig } from "./oidc-sso.part-2";
-
 import { beginAuthenticatedSession, buildAuthorizeUrl, buildConfiguredLoginUrl, buildDesktopSsoProxyUrl, buildReturnToAppUrl, buildServerBrokerAuthorizeUrl, clearSession, completeAccessTokenStep, completeUserInfoStep, createPkceCodeChallenge, createPkceCodeVerifier, desktopSsoAccessTokenNeedsRefresh, desktopSsoAvatarVersion, failDesktopSsoFlow, failDesktopSsoStep, finalizeDesktopSsoLoginAttempt, getDesktopSsoAvatarCacheConfig, getJwtPayload, isDesktopSsoAvatarSourceTrusted, loadSession, normalizeStringClaim, readUserInfoFile, renderCallbackHtml, rewriteDesktopSsoProxyLocation, rewriteDesktopSsoProxySetCookieHeader, saveAccessTokenFile } from "./oidc-sso.part-3";
-
 import { activateDesktopSsoProxy, buildCookieAccessTokenExchangeRequest, buildDesktopSsoBrowserCookieDetails, buildTokenExchangeRequest, createCookieAccessTokenClaims, exchangeCookieForAccessToken, getDefaultOidcFetch, getDesktopSsoCookieMirrorOrigins, getIdentityProviderCookieHosts, isDesktopSsoAuthorizeUrl, normalizeCallbackRequest, readCookieAccessTokenFromResponse, urlsMatchOriginAndPath } from "./oidc-sso.part-4";
-
 import { buildLogoutUrl, cancelDesktopSsoLogin, closeCallbackServer, completeValidatedOidcLogin, createDesktopSsoCookieUserInfoClaims, ensureCallbackServer, exchangeCodeForClaims, exchangeCodeForTokenClaims, resolveLoginCallbackServerOptions, resolveLogoutCallbackServerOptions, validateIdToken } from "./oidc-sso.part-5";
 
 export async function startDesktopSsoLogin(app: App, hooks: CallbackHooks = {}): Promise<DesktopSsoStartResult> {

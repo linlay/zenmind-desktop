@@ -21,8 +21,6 @@ const MAX_ATTACHMENT_FILE_BYTES = 32 * 1024 * 1024;
 const MAX_ATTACHMENT_BATCH_BYTES = 64 * 1024 * 1024;
 export const MAX_ATTACHMENT_IMAGE_CONTEXT_BYTES = 10 * 1024 * 1024;
 export const MAX_ATTACHMENT_TEXT_LENGTH = 20000;
-const TEXT_PREVIEW_BYTES = 512 * 1024;
-
 type AttachmentTaskOptions = {
   taskId?: string;
   useWorker?: boolean;

@@ -1,50 +1,15 @@
-import fs from "node:fs";
-
-import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
+import { createHash } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-
-import type { App } from "electron";
-
 import type {
-  AssistantAttachment,
-  KanbanCloudDetailData,
   KanbanCurrentUser,
-  KanbanDeleteResult,
-  KanbanIssue,
-  KanbanIssueInput,
-  KanbanIssueMoveInput,
   KanbanIssueResult,
-  KanbanIssueUpdateInput,
-  KanbanListResult,
   KanbanOrigin,
-  KanbanPriority,
-  KanbanProject,
-  KanbanProjectBinding,
-  KanbanRunState,
-  KanbanStatus,
-  KanbanSyncMode,
-  KanbanSyncState
+  KanbanProjectBinding
 } from "../../../shared/contracts";
-
-import {
-  KANBAN_RUN_STATES,
-  KANBAN_STATUSES,
-  parseKanbanPriority
-} from "../../../shared/contracts";
-
-import { getRuntimeDataRoot } from "../../infrastructure/filesystem/user-paths";
-
 import { t } from "../../support/i18n/main-i18n";
-
 import { AppPathProvider, DATABASE_DIRECTORY, DATABASE_FILENAME, KanbanCommandReceipt, KanbanCommandReceiptState, PROJECT_ID, createCloudCacheIssueId, getDesktopKanbanDatabasePath, nowIso, parseCloudIssue, trimText } from "./local-store.part-1";
-
 import { withDesktopKanbanDatabase } from "./local-store.part-2";
-
 import { insertOrReplaceIssue, insertOrReplaceProjectBinding, readDesktopKanbanRevision, selectIssues, writeDesktopKanbanSyncCursorInDb } from "./local-store.part-3";
-
 import { cloudIssueToLocalIssue, findLocalSyncForRemote, listDesktopKanbanIssues } from "./local-store.part-4";
 
 export function recordDesktopKanbanCommandReceipt(

@@ -1,8 +1,4 @@
-import type { App, BrowserWindow, WebContents } from "electron";
-import path from "node:path";
 import type {
-  CopilotDevToolsTarget,
-  DesktopPageContextSnapshot,
   MarketListResult
 } from "../../shared/contracts";
 import { createAppPairingPayload } from "../modules/identity";
@@ -17,22 +13,8 @@ import {
 } from "../modules/identity";
 import { loadBuiltinServices } from "../modules/services";
 import {
-  getServiceLogsMeta,
-  readServiceLog,
-  watchServiceLog,
   getServiceState,
-  getResponsiveServiceState,
-  initializeService,
-  importEnvZipIntoExistingRuntime,
-  importServiceFile,
-  installBuiltinService,
-  listServices,
-  readServiceConfig,
-  restartService,
-  runStartupPreparation,
-  startService,
-  stopService,
-  writeServiceConfig
+  importEnvZipIntoExistingRuntime
 } from "../modules/services";
 import {
   emitPluginBridgeHook,
@@ -59,29 +41,23 @@ import {
   uninstallMarketItem,
   updateMarketItem
 } from "../modules/marketplace";
-
 import { getAgentPlatformMinimaxSettingsPublic } from "../modules/agent-platform";
-
 import { ContainerHubClient, getAssistantSettings, readAssistantSettings, saveAssistantSettings, toPublicAssistantSettings } from "../modules/assistant";
-
 import {
   cancelAssistantAttachmentTask,
   createAssistantAttachmentFromPastedImage,
   createAssistantAttachmentsFromFiles,
   resolveAssistantAttachmentPath
 } from "../modules/assistant";
-
 import {
   callAgentPlatform,
   handleAgentWebclientWorkPanelActionRequest,
   handleDesktopActionRequest
 } from "../modules/desktop-actions";
-
 import {
   applyDesktopInitBootstrap,
   applyDesktopInitVersionUpgrade
 } from "./bootstrap/desktop-init";
-
 import {
   generateBackupDirName,
   importEnvZipToRuntime,
@@ -90,89 +66,47 @@ import {
   runtimeEnvExists,
   shouldPromptEnvRootConflict
 } from "../infrastructure/filesystem/runtime-environment";
-
 import { getDataRoot } from "../infrastructure/filesystem/user-paths";
-
 import {
   openPluginSettingsPage,
   readPluginSettingsSnapshot,
   writePluginSettingsValues
 } from "../modules/plugins";
-
 import { t, initializeMainI18n, setMainLocale } from "../support/i18n/main-i18n";
-
 import { isSupportedLocale } from "../../shared/i18n";
-
 import { DESKTOP_ACTION_DEFINITIONS } from "../../shared/desktop-actions";
-
 import { applyTunnelHubSettings, getTunnelHubRuntimeStatus, stopTunnelHubRuntime } from "../modules/tunnel";
-
-import type { AssistantBridgeRuntime } from "../modules/assistant";
-
-import type { AssistantRunWakeLock } from "../modules/assistant";
-
-import type { DesktopPetRuntime } from "../modules/pet";
-
-import type { LogsRuntime } from "../support/logging/runtime";
-
 import { registerAssistantIpcHandlers } from "../modules/assistant";
-
 import { registerDesktopPetIpcHandlers } from "../modules/pet";
-
 import { registerMarketplaceIpcHandlers } from "../modules/marketplace";
-
 import { registerServicesIpcHandlers } from "../modules/services";
-
 import { registerSettingsIpcHandlers } from "../modules/settings";
-
 import { registerShellIpcHandlers } from "../modules/shell";
-
 import { registerSsoIpcHandlers } from "../modules/identity";
-
 import { registerKanbanIpcHandlers } from "../modules/kanban";
-
 import { registerTunnelHubIpcHandlers } from "../modules/tunnel";
-
 import { registerWebIpcHandlers } from "../modules/webs";
-
 import { registerEmbeddedCdpIpcHandlers } from "../modules/web-surfaces";
-
 import { registerAgentWebclientBridgeIpcHandlers } from "../modules/agent-platform";
-
 import { registerCanonicalChatSyncIpc } from "../modules/agent-platform";
-
-import type { BrowserSurfaceRegistry } from "../modules/web-surfaces";
-
-import type { EnterpriseChatRuntime } from "../modules/enterprise-chat";
-
 import { registerEnterpriseChatIpcHandlers } from "../modules/enterprise-chat";
-
 import { registerHelpIpcHandlers } from "../modules/settings";
-
 import { registerSidebarContextMenuIpcHandlers } from "../modules/web-surfaces";
-
 import { registerChatWorkPanelTabContextMenuIpcHandlers } from "../modules/work-panel";
-
 import {
   normalizeChatWorkPanelOpenLocalResourceRequest,
   registerChatWorkPanelLocalFileIpcHandlers,
   resolveWorkPanelLocalFileFromWorkspace,
 } from "../modules/work-panel";
-
 import {
   registerChatWorkPanelDocumentHtmlIpcHandlers,
   workPanelDocumentHtmlRegistry,
 } from "../modules/work-panel";
-
 import {
   registerChatWorkPanelResourceImageIpcHandlers,
   workPanelResourceImageRegistry,
 } from "../modules/work-panel";
-
 import { requireEpochMillis } from "../../shared/time-contract";
-
-import type { AgentRealtimeDebugTarget } from "../../shared/contracts";
-
 import { MainIpcRegistrationOptions, PLATFORM_DOCUMENT_REVISION_HEADER, createAgentRealtimeRuntimeDiagnostics } from "./module-registry.part-1";
 
 export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {

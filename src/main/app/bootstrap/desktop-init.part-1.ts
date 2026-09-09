@@ -1,86 +1,47 @@
 import fs from "node:fs";
-
 import path from "node:path";
-
 import type { App } from "electron";
-
 import {
   DESKTOP_COPILOT_PAGE_KEYS,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY
 } from "../../../shared/assistant-settings";
-
 import { DEFAULT_LOCALE, normalizeLocale } from "../../../shared/i18n";
-
 import type { WebappEntry, WebEntryKey, WebsiteEntry } from "../../../shared/contracts";
-
 import {
   readDesktopProfileFromRoot,
   updateDesktopProfileInRoot
 } from "../../infrastructure/filesystem/profile-store";
-
 import { MAX_WEBSITE_ITEMS } from "../../modules/webs";
-
 import {
   createWebsiteItem,
   getWebsiteDir,
   readWebsiteItems,
   writeWebsiteItem
 } from "../../modules/webs";
-
 import { webappManager } from "../../modules/webs";
-
 import { readWebOrderKeys, writeWebOrderKeys } from "../../modules/webs";
-
 import { normalizeWebId } from "../../modules/webs";
-
 import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
-
 import { resolveDesktopSsoConfigPath } from "../../modules/identity";
-
 import {
   getDesktopConfigRoot,
   getDesktopStateRoot,
-  getDesktopWebappsDataRoot,
-  getDesktopWebsitesDataRoot
+  getDesktopWebappsDataRoot
 } from "../../infrastructure/filesystem/user-paths";
-
 import { saveDesktopPetSettings } from "../../modules/pet";
-
-import { normalizeMarketApiBaseUrl, saveMarketSettings } from "../../modules/marketplace";
-
+import { saveMarketSettings } from "../../modules/marketplace";
 import { saveKanbanSettings } from "../../modules/kanban";
-
 import { saveTunnelHubSettings } from "../../modules/tunnel";
 
-import {
-  normalizeServiceLifecycleArgsConfig,
-  getServiceLifecycleArgsConfigPath,
-  writeServiceLifecycleArgsConfig
-} from "../../modules/services";
 
-import {
-  normalizeServicePortDefaultsConfig,
-  getServicePortDefaultsConfigPath,
-  writeServicePortDefaultsConfig
-} from "../../modules/services";
 
-import {
-  normalizeDesktopActionBridgeSettingsConfig,
-  getDesktopActionBridgeSettingsConfigPath,
-  writeDesktopActionBridgeSettingsConfig
-} from "../../modules/desktop-actions";
 
-import {
-  normalizeEnterpriseImSettings,
-  getEnterpriseImSettingsPath,
-  writeEnterpriseImSettings
-} from "../../modules/enterprise-chat";
 
-import {
-  normalizeHelpSettings,
-  getHelpSettingsPath,
-  writeHelpSettings
-} from "../../modules/settings";
+
+
+
+
+
 
 export const DESKTOP_INIT_FILE = "desktop-init.json";
 

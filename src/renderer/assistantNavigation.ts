@@ -415,55 +415,6 @@ export function getAdjacentAssistantNavChat(
     : null;
 }
 
-export type AssistantNavChatsOverviewItem = {
-  agent: Pick<
-    AssistantNavAgentItem,
-    "agentKey" | "displayName" | "mode" | "workspaceDir" | "workspaceDirExists" | "gitBranch"
-  >;
-  chat: AssistantNavChatItem;
-};
-
-export function getAssistantNavRecentChatsOverview(
-  agents: AssistantNavAgentItem[],
-  limit = 10,
-) {
-  const normalizedLimit = Math.max(0, Math.floor(Number(limit) || 0));
-  if (normalizedLimit <= 0) {
-    return [];
-  }
-
-  const chatsById = new Map<string, AssistantNavChatsOverviewItem>();
-  for (const agent of agents) {
-    for (const chat of getAssistantNavAgentSortedChats(agent)) {
-      const normalizedChat = {
-        ...chat,
-        agentKey: chat.agentKey || agent.agentKey,
-      };
-      const existing = chatsById.get(normalizedChat.chatId);
-      if (
-        !existing ||
-        compareAssistantNavChatFreshness(normalizedChat, existing.chat) < 0
-      ) {
-        chatsById.set(normalizedChat.chatId, {
-          agent: {
-            agentKey: agent.agentKey,
-            displayName: agent.displayName,
-            mode: agent.mode,
-            workspaceDir: agent.workspaceDir,
-            workspaceDirExists: agent.workspaceDirExists,
-            gitBranch: agent.gitBranch,
-          },
-          chat: normalizedChat,
-        });
-      }
-    }
-  }
-
-  return Array.from(chatsById.values())
-    .sort((left, right) => compareAssistantNavChatFreshness(left.chat, right.chat))
-    .slice(0, normalizedLimit);
-}
-
 export function getAssistantNavAgentAttentionChat(
   agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
 ) {

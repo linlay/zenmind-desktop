@@ -49,7 +49,6 @@ import { formatEpochMillis } from "../../../shared/time-contract";
 import {
   DEFAULT_CHAT_DEFAULT_AGENT_KEY,
   DEFAULT_DESKTOP_HELPER_AGENT_KEY,
-  DESKTOP_COPILOT_PAGE_KEYS,
   createDefaultDesktopCopilotPagePreferences,
   type DesktopCopilotPageKey,
   type DesktopCopilotPagePreferences
@@ -608,25 +607,6 @@ function getCopilotPageKeyForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey
     return "schedules";
   }
   return null;
-}
-
-function getDesktopCopilotPageLabel(pageKey: DesktopCopilotPageKey, t: TranslateFunction) {
-  switch (pageKey) {
-    case "controlCenter":
-      return t("nav.controlCenter");
-    case "market":
-      return t("nav.market");
-    case "help":
-      return t("nav.help");
-    case "agents":
-      return t("nav.agents");
-    case "schedules":
-      return t("nav.schedules");
-    case "skills":
-      return t("nav.skills");
-    default:
-      return pageKey;
-  }
 }
 
 function getFixedAssistantLabelForSidebarNavOrderItem(itemKey: SidebarNavOrderItemKey, t: TranslateFunction): string | null {
@@ -3078,10 +3058,6 @@ export function SettingsPage({
     ? desktopPetState.appearanceOptions
     : [...DESKTOP_PET_APPEARANCE_OPTIONS];
   const currentDesktopPetAppearanceId = desktopPetState?.appearanceId || DEFAULT_DESKTOP_PET_APPEARANCE_ID;
-
-  function isKnownAssistantAgent(agentKey: string) {
-    return assistantAgentOptions.some((agent) => agent.agentKey === agentKey);
-  }
 
   function isKnownChatAgent(agentKey: string) {
     return chatAgentOptions.some((agent) => agent.agentKey === agentKey);

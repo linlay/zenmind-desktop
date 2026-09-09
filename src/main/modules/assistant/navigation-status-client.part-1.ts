@@ -1,52 +1,25 @@
 import fs from "node:fs";
-
 import { execFile } from "node:child_process";
-
-import type { App } from "electron";
-
 import type {
-  AgentAuthIssueResult,
-  AssistantChatSortMode,
   AssistantAwaitingMode,
   AssistantNavAgentIcon,
   AssistantNavAgentItem,
-  AssistantNavAgentItemsResult,
   AssistantNavChatItem,
-  AssistantNavigationLiveFrame,
-  AssistantNavigationPushEvent,
-  AssistantNavigationLiveStatus,
-  ServiceId,
-  ServiceState
+  ServiceId
 } from "../../../shared/contracts";
-
 import {
-  readDesktopProfileFromRoot,
-  updateDesktopProfileInRoot,
-} from "../../infrastructure/filesystem/profile-store";
-
-import { getDesktopConfigRoot } from "../../infrastructure/filesystem/user-paths";
-
-import {
-  isTimeContractViolation,
   isAgentPlatformEpochMilliseconds,
   parseOptionalNullableAgentPlatformEpochMillis,
-  requireAgentPlatformEpochMillis,
-  requireEpochMillis,
+  requireEpochMillis
 } from "../../../shared/time-contract";
 
-import {
-  readAgentPlatformPushEpochMillis,
-  validateAgentPlatformPushTimeContract,
-} from "../../../shared/agent-platform-push-time-contract";
 
-import { t } from "../../support/i18n/main-i18n";
 
-import {
-  AGENT_PLATFORM_KNOWN_PUSH_TYPES,
-  RealtimeBroker,
-} from "../agent-platform";
 
-import type { AgentPlatformRealtimeFrame } from "../agent-platform";
+
+
+
+
 
 export type AgentPlatformApiResponse<T> = {
   code?: number;

@@ -1,62 +1,19 @@
 import fs from "node:fs";
-
-import path from "node:path";
-
-import { createHash, randomUUID } from "node:crypto";
-
-import type { App } from "electron";
-
 import type {
-  AgentAuthIssueResult,
   AssistantAttachment,
-  AssistantAwaitingMode,
-  AssistantChatDetail,
-  AssistantChatInfo,
-  AssistantChatMessage,
-  AssistantChatSearchRequest,
-  AssistantChatSearchResponse,
-  AssistantChatSearchResult,
-  AssistantChatSummary,
-  AssistantEvent,
-  AssistantHistoryChatItem,
-  AssistantHistoryChatsResult,
-  AssistantNavAgentItem,
-  AssistantNavAgentItemsResult,
-  AssistantRunEvent,
-  AssistantRunEventType,
   AssistantStartRunRequest,
   AssistantStartRunResult,
   AssistantTextCompletionResult,
-  AssistantStopRunResult,
-  AssistantSubmitAwaitingRequest,
-  AssistantSubmitAwaitingResult,
-  DesktopPetAgentOption,
-  ServiceId,
   ServiceState
 } from "../../../shared/contracts";
-
 import {
-  isTimeContractViolation,
-  parseOptionalNullableAgentPlatformEpochMillis,
-  requireAgentPlatformEpochMillis,
-  requireEpochMillis,
+  isTimeContractViolation
 } from "../../../shared/time-contract";
-
-
 import { t } from "../../support/i18n/main-i18n";
-
-import { parseSafeLoopbackWebUrl } from "../../infrastructure/network/loopback-url";
-
 import {
-  RealtimeBroker,
-  type RealtimeQueryHandle,
+  type RealtimeQueryHandle
 } from "./realtime/realtime-broker";
-
-import type { AgentPlatformRealtimeSocketFactory } from "./realtime/agent-platform-realtime-client";
-
-import { AGENT_PLATFORM_SERVICE_ID, ActiveAssistantRun, AgentPlatformChatExportResult, AgentPlatformImageCompletionRequest, AgentPlatformImageCompletionResult, AgentPlatformImageOperation, AgentPlatformRawChatJSONLResult, ApiResponse, AssistantRunWakeLock, IMAGE_OPERATION_INSTRUCTIONS, ImageGenerateOutcome, MAX_CONVERSATION_MARKDOWN_BYTES, MAX_GENERATED_IMAGE_BYTES, MAX_RAW_CHAT_JSONL_BYTES, PLATFORM_OUTPUT_TEXT_KEYS, PlatformAdminRegistryListResponse, PlatformAgentSummary, PlatformArchiveChatResponse, PlatformChatDetail, PlatformChatSearchResponse, PlatformChatSummary, PlatformRunSummary, PlatformUploadTicket, ResponseBytesTooLargeError, STRUCTURED_PLATFORM_TIME_FIELDS, buildZenmiImageGenerateMessage, chatHasPendingAwaiting, createApiUrl, createChatId, createMessageId, createRunId, dataUrlToBlob, filenameFromContentDisposition, imageGenerateFailureMessage, imageResultRecord, isAssistantRunTerminalEvent, isPendingAwaitingPayload, isPlatformEventType, mapChatSearchResponse, mapChatSearchResult, mapChatSummary, mapHistoryChat, mapRunMessages, normalizeAssistantAccessLevel, normalizeAssistantPermissionMode, normalizeAwaitingPayload, normalizePlatformEvent, nowEpochMillis, observeImageGenerateEvent, readAssistantEventOutputText, readAssistantTextContent, readAwaitingMode, readAwaitingPayloadMode, readChatAgentKey, readChatAwaitingMode, readChatIsRead, readErrorCode, readErrorPayloadText, readErrorText, readFinalAssistantTextFromChatFile, readFinalAssistantTextFromMessages, readNumber, readOptionalPlatformTimestamp, readOutputTextFromRecord, readRequiredPlatformTimestamp, readResponseBytesWithLimit, readString, unwrapApiResponse, validGeneratedImageRelativePath, validateAwaitingPayloadTimes, validatePresentPlatformTimes } from "./bridge.shared";
-
-const callGetJson = <T>(self: any, ...args: any[]): Promise<T> => self.getJson(...args) as Promise<T>;
+import { AGENT_PLATFORM_SERVICE_ID, ActiveAssistantRun, PlatformUploadTicket, createApiUrl, dataUrlToBlob, isAssistantRunTerminalEvent, normalizeAssistantAccessLevel, normalizeAssistantPermissionMode, normalizePlatformEvent, nowEpochMillis, readAssistantEventOutputText, readErrorText, readFinalAssistantTextFromChatFile, unwrapApiResponse } from "./bridge.shared";
 
 export async function AgentPlatformAssistantBridge_runQuery_1(self: any, baseUrl: string, token: string, request: AssistantStartRunRequest, run: {
       chatId: string;
