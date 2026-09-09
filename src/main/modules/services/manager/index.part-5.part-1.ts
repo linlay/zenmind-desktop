@@ -7,9 +7,11 @@ import type {
   StartupRestoreMode
 } from "../../../../shared/contracts";
 import { getService } from "../service-registry";
+import { getBuiltinAssetsRoot } from "../builtin-loader";
 import type { ServicesIntegrationPorts } from "../integration-ports";
 import { readEnvFile } from "../../../infrastructure/filesystem/env-file";
 import {
+  getInitializationStatePath,
   getServiceLayout
 } from "./layout";
 import { t } from "../../../support/i18n/main-i18n";
@@ -19,8 +21,10 @@ import {
   INSTALL_ONLY_STARTUP_SERVICE_IDS,
   OPTIONAL_AUTO_STARTUP_SERVICE_IDS,
   isNonBlockingRestoreFailure,
-  orderServiceIdsForRestore
+  orderServiceIdsForRestore,
+  readInitializationState
 } from "./state-files";
+import { readBuiltinAssetSignature } from "./bundle-assets";
 import {
   collectManagedServiceStopState
 } from "./managed-cleanup";
@@ -179,6 +183,27 @@ export async function prepareStartupService(
       bundledAssetNeedsRefresh ||
       installNeedsRepair
     ) {
+      // Capture the previous receipt before installation overwrites it, so a
+      // later restart can be traced to an asset change or an install repair.
+      const layout = getServiceLayout(app, service);
+      const installedState = readInitializationState(layout);
+      console.info("[service-manager] startup install decision", {
+        serviceId,
+        installed: current.installed,
+        status: current.status,
+        version: service.version,
+        installDir: layout.programDir,
+        initializationStatePath: getInitializationStatePath(layout),
+        installedVersion: installedState?.version ?? null,
+        initializationStatus: installedState?.status ?? null,
+        initializedAt: installedState?.updatedAt ?? null,
+        bundledAssetNeedsRefresh,
+        installNeedsRepair,
+        builtinAssetsRoot: getBuiltinAssetsRoot(app),
+        assetFileName: service.desktop.assetFileName,
+        installedAssetSignature: installedState?.assetSignature ?? null,
+        bundledAssetSignature: readBuiltinAssetSignature(app, service) ?? null
+      });
       options.onProgress?.(serviceId, "installing", t("service.installing", { name: current.name }));
       if (bundledAssetNeedsRefresh && current.status === "running") {
         await stopService(app, serviceId, options.integrationPorts);
