@@ -373,3 +373,19 @@ test("runtime env reset reports that restart is required before bootstrap resume
   assert.equal(result.copiedFiles, 12);
   assert.match(result.backupPath, /\.zenmind-123$/u);
 });
+
+test("navigation IPC persists web pins independently of main and Sites ordering", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-web-pins-setting-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  const ipc = registerSettingsHandlers(app);
+  assert.deepEqual((await ipc.invoke("settings.getNavigationPreferences")).pinnedWebEntryKeys, []);
+  await ipc.invoke("settings.saveNavigationPreferences", { pinnedWebEntryKeys: ["webapp:editor", "website:docs"] });
+  await ipc.invoke("settings.saveNavigationPreferences", { mainOrder: ["kanban", "schedules"], webOrder: ["website:docs", "webapp:editor"] });
+  const restored = await registerSettingsHandlers(app).invoke("settings.getNavigationPreferences");
+  assert.deepEqual(restored.pinnedWebEntryKeys, ["webapp:editor", "website:docs"]);
+  assert.deepEqual(restored.webOrder, ["website:docs", "webapp:editor"]);
+  const unpinned = await ipc.invoke("settings.saveNavigationPreferences", { pinnedWebEntryKeys: [] });
+  assert.deepEqual(unpinned.pinnedWebEntryKeys, []);
+  assert.deepEqual(unpinned.webOrder, restored.webOrder);
+});

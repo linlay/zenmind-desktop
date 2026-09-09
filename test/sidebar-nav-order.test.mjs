@@ -35,6 +35,7 @@ new Function("exports", "require", "module", "__filename", "__dirname", outputTe
 const {
   createDefaultSidebarNavOrderItems,
   normalizeSidebarNavOrder,
+  partitionSidebarWebItems,
 } = mod.exports;
 
 test("Chats defaults after Automations and is inserted for saved legacy orders", () => {
@@ -73,4 +74,21 @@ test("Chats keeps an explicit saved navigation position", () => {
     ),
     ["kanban", "schedules", "group:assistants", "chats", "group:webs"],
   );
+});
+
+
+test("website and webapp pins preserve pin order and restore the original Sites order", () => {
+  const site = { orderKey: "website:docs" };
+  const app = { orderKey: "webapp:editor" };
+  const other = { orderKey: "website:news" };
+  const items = [site, other, app];
+  const pins = ["webapp:editor", "website:missing", "website:docs", "webapp:editor"];
+  assert.deepEqual(partitionSidebarWebItems(items, pins), {
+    pinned: [app, site], unpinned: [other]
+  });
+  assert.deepEqual(partitionSidebarWebItems(items, ["website:docs"]), {
+    pinned: [site], unpinned: [other, app]
+  });
+  assert.deepEqual(partitionSidebarWebItems(items, []), { pinned: [], unpinned: items });
+  assert.deepEqual(items, [site, other, app]);
 });

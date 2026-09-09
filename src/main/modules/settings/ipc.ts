@@ -406,6 +406,9 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
           ? normalizeStringArray(input.mainOrder)
           : current.navigation.mainOrder,
         webOrder,
+        pinnedWebEntryKeys: Array.isArray(input?.pinnedWebEntryKeys)
+          ? normalizeStringArray(input.pinnedWebEntryKeys)
+          : current.navigation.pinnedWebEntryKeys,
         desktopCopilotPages: current.navigation.desktopCopilotPages
       }
     });

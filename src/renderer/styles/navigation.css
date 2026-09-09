@@ -1611,6 +1611,28 @@ div.sidebar-chats-group-popover {
   font-weight: 400;
 }
 
+.sidebar-pinned-web-row {
+  min-height: 31px;
+}
+
+.sidebar-pinned-web-row .sidebar-child-link {
+  /* The row supplies the border that primary navigation links own directly. */
+  min-height: 29px;
+}
+
+.app-sidebar.is-collapsed .sidebar-pinned-web-row {
+  position: relative;
+  width: 58px;
+}
+
+.app-sidebar.is-collapsed .sidebar-pinned-web-row .sidebar-child-link {
+  min-height: 56px;
+}
+
+.app-sidebar.is-collapsed .sidebar-pinned-web-row .sidebar-link-label {
+  display: none;
+}
+
 .sidebar-website-child-row:hover:not(.is-active) {
   background: rgba(136, 151, 172, 0.1);
 }

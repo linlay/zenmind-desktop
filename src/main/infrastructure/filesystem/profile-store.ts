@@ -39,6 +39,7 @@ export type DesktopProfile = {
   navigation: {
     mainOrder: string[];
     webOrder: string[];
+    pinnedWebEntryKeys: string[];
     chatSortMode: AssistantChatSortMode;
     desktopCopilotPages: DesktopCopilotPagePreferences;
   };
@@ -143,6 +144,8 @@ function normalizeDesktopProfile(
     navigation: {
       mainOrder: normalizeTextArray(navigation.mainOrder),
       webOrder: normalizeTextArray(navigation.webOrder),
+      pinnedWebEntryKeys: [...new Set(normalizeTextArray(navigation.pinnedWebEntryKeys)
+        .filter((key) => /^(website|webapp):\S+$/.test(key)))],
       chatSortMode: normalizeChatSortMode(navigation.chatSortMode),
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
         navigation.desktopCopilotPages

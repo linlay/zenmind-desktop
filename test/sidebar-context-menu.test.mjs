@@ -416,3 +416,28 @@ test("chat pin menu uses explicit state and validates the bridge payload", () =>
   }
   assert.equal(normalizeSidebarContextMenuRequest({ x: 10, y: 20, target: { kind: "chat", workPanelOpen: false, pinned: "true" } }), null);
 });
+
+
+test("website and webapp menus expose state-aware pinning on both desktop platforms", () => {
+  for (const webKind of ["website", "webapp"]) {
+    for (const pinned of [false, true]) {
+      const target = {
+        kind: "web", webKind, pinned, canPin: true, openMode: "window",
+        canClose: false, canOpenAlternative: false, canExport: false,
+        canRemove: false, showRemove: false,
+        ...(webKind === "webapp" ? { hasPublicShareUrl: false } : {})
+      };
+      assert.deepEqual(normalizeSidebarContextMenuRequest({ x: 1, y: 2, target }).target, target);
+      const action = pinned ? "web.unpin" : "web.pin";
+      assert.equal(ids(target)[0], action);
+      assert.equal(ids(target).includes(pinned ? "web.pin" : "web.unpin"), false);
+      assert.equal(buildSidebarContextMenuPolicy({ ...target, canPin: false })[0].enabled, false);
+      for (const platform of ["darwin", "win32"]) {
+        assert.equal(resolveSidebarContextMenuLabelKey(action, platform), pinned ? "sidebar.web.unpin" : "sidebar.web.pin");
+      }
+      for (const field of ["pinned", "canPin"]) {
+        assert.equal(normalizeSidebarContextMenuRequest({ x: 1, y: 2, target: { ...target, [field]: "true" } }), null);
+      }
+    }
+  }
+});

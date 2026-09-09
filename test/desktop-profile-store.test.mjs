@@ -103,3 +103,17 @@ test("desktop profile leaves Chat agent unset instead of inheriting the sidebar 
 
   assert.equal(readDesktopProfileFromRoot(root).assistant.chat.agentKey, "chat-agent");
 });
+
+
+test("local web pins survive unrelated navigation writes and can be cleared", (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-profile-pins-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  assert.deepEqual(readDesktopProfileFromRoot(root).navigation.pinnedWebEntryKeys, []);
+  updateDesktopProfileInRoot(root, { navigation: {
+    pinnedWebEntryKeys: ["webapp:editor", "website:docs", "webapp:editor", "chats", "website:", null]
+  }});
+  updateDesktopProfileInRoot(root, { navigation: { webOrder: ["website:docs", "webapp:editor"] }});
+  assert.deepEqual(readDesktopProfileFromRoot(root).navigation.pinnedWebEntryKeys, ["webapp:editor", "website:docs"]);
+  updateDesktopProfileInRoot(root, { navigation: { pinnedWebEntryKeys: [] }});
+  assert.deepEqual(readDesktopProfileFromRoot(root).navigation.pinnedWebEntryKeys, []);
+});

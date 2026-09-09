@@ -1141,8 +1141,8 @@ export interface DesktopApi {
     saveTunnelHubSettings: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
-    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
-    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[]; pinnedWebEntryKeys?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;

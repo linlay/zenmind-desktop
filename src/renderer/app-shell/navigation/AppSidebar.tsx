@@ -74,6 +74,7 @@ import {
 import {
   createWebNavOrderKey,
   sortSidebarNavItems,
+  partitionSidebarWebItems,
   type SidebarNavOrderItemKey,
 } from "./sidebarNavOrder";
 import { getAssistantWorkspaceName } from "./workspaceName";
@@ -1007,6 +1008,9 @@ type AppSidebarProps = {
   marketEnabled?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   websiteNavOrder?: SidebarNavOrderItemKey[];
+  pinnedWebEntryKeys?: string[];
+  webPinningAvailable?: boolean;
+  onSetWebItemPinned?: (item: WebEntry, pinned: boolean) => Promise<void>;
   webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
   assistantPinnedChatItems?: AssistantNavChatItem[];
@@ -1087,6 +1091,9 @@ export function AppSidebar({
   marketEnabled = true,
   sidebarNavOrder,
   websiteNavOrder = [],
+  pinnedWebEntryKeys = [],
+  webPinningAvailable = false,
+  onSetWebItemPinned,
   webItems,
   assistantNavAgents = [],
   assistantPinnedChatItems = [],
@@ -1438,6 +1445,9 @@ export function AppSidebar({
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
+    pinnedWebEntryKeys,
+    webPinningAvailable,
+    onSetWebItemPinned,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
@@ -1458,6 +1468,9 @@ export function AppSidebar({
     assistantChatOrderingSupported,
     chatOrderMutationPending,
     webOpenEntryKeys,
+    pinnedWebEntryKeys,
+    webPinningAvailable,
+    onSetWebItemPinned,
     webClosePendingEntryKey,
     webItemRemovePendingId,
     webItemExportPendingId,
@@ -1525,6 +1538,11 @@ export function AppSidebar({
         return leftIndex - rightIndex;
       });
   }, [webItems, websiteNavOrder]);
+
+  const { pinned: pinnedWebNavItems, unpinned: unpinnedWebNavItems } = useMemo(
+    () => partitionSidebarWebItems(webNavItems, pinnedWebEntryKeys),
+    [webNavItems, pinnedWebEntryKeys],
+  );
 
   const navItems: SidebarPrimaryEntry[] = sortSidebarNavItems(
     [
@@ -1621,12 +1639,18 @@ export function AppSidebar({
 
     if (isWebsiteGroupActive()) {
       const activeWebItem = webNavItems.find((item) => isRouteActive(item.to));
-      if (!isCollapsed && sidebarGroupState.webs && activeWebItem?.webItem) {
+      if (activeWebItem?.webItem && (
+        pinnedWebEntryKeys.includes(activeWebItem.webItem.entryKey) ||
+        (!isCollapsed && sidebarGroupState.webs)
+      )) {
         return createSidebarWebFocusId(activeWebItem.webItem.entryKey);
       }
       return createSidebarGroupFocusId("webs");
     }
 
+    if (pinnedWebNavItems[0]?.webItem) {
+      return createSidebarWebFocusId(pinnedWebNavItems[0].webItem.entryKey);
+    }
     const firstItem = navItems[0];
     if (!firstItem) {
       return "";
@@ -1657,6 +1681,8 @@ export function AppSidebar({
     assistantPinnedChatItems,
     activeSidebarChatId,
     sidebarGroupState.pinned,
+    pinnedWebEntryKeys,
+    pinnedWebNavItems,
     webNavItems,
   ]);
   const resolvedSidebarNavFocusId =
@@ -2271,6 +2297,8 @@ export function AppSidebar({
         : "window";
     const commonTarget = {
       openMode,
+      pinned: runtime.pinnedWebEntryKeys.includes(item.entryKey),
+      canPin: runtime.webPinningAvailable && Boolean(runtime.onSetWebItemPinned),
       canClose:
         runtime.webOpenEntryKeys.includes(item.entryKey) &&
         !runtime.webClosePendingEntryKey,
@@ -2350,6 +2378,9 @@ export function AppSidebar({
         "chat.delete",
         "chat.info",
       ].includes(actionId);
+    }
+    if (actionId === "web.pin" || actionId === "web.unpin") {
+      return target.canPin === true && target.pinned !== (actionId === "web.pin");
     }
     if (actionId === "web.close") return target.canClose;
     if (actionId === "web.open-in-workspace") {
@@ -2464,7 +2495,22 @@ export function AppSidebar({
     const item = findWebItem(subject.entryKey);
     if (!item) return;
     const runtime = sidebarContextMenuRuntimeRef.current;
-    if (
+    if (actionId === "web.pin" || actionId === "web.unpin") {
+      try {
+        await runtime.onSetWebItemPinned?.(item, actionId === "web.pin");
+        if (actionId === "web.unpin") {
+          setSidebarGroupState((current) => ({ ...current, webs: true }));
+        }
+        window.requestAnimationFrame(() => {
+          const focusId = actionId === "web.unpin" && sidebarContextMenuRuntimeRef.current.isCollapsed
+            ? createSidebarGroupFocusId("webs")
+            : createSidebarWebFocusId(item.entryKey);
+          focusSidebarRovingItemById(focusId);
+        });
+      } catch {
+        window.alert(t("sidebar.web.pinFailed"));
+      }
+    } else if (
       actionId === "web.close" &&
       runtime.webOpenEntryKeys.includes(item.entryKey) &&
       !runtime.webClosePendingEntryKey
@@ -2674,6 +2720,7 @@ export function AppSidebar({
         : false;
     }
     if (kind === "web") {
+      if (pinnedWebEntryKeys.includes(element.dataset.sidebarWebEntryKey || "")) return false;
       return focusSidebarRovingItemById(createSidebarGroupFocusId("webs"));
     }
     return false;
@@ -4728,7 +4775,7 @@ export function AppSidebar({
 
   function renderSidebarChildLink(
     item: SidebarNavItem & { status?: SidebarStatusSummary },
-    options: { roving?: boolean } = {},
+    options: { roving?: boolean; topLevel?: boolean } = {},
   ) {
     const roving = options.roving ?? true;
     const showIcon = !item.orderKey.startsWith("custom:");
@@ -4756,6 +4803,7 @@ export function AppSidebar({
           key={item.to}
           className={[
             "sidebar-website-child-row",
+            options.topLevel ? "sidebar-pinned-web-row" : "",
             isActive ? "is-active" : "",
             isOpen ? "is-open" : "",
             closing ? "is-closing" : "",
@@ -4805,11 +4853,16 @@ export function AppSidebar({
               </span>
             ) : null}
             <span className="sidebar-link-label">{item.label}</span>
+            {options.topLevel ? (
+              <span className="sidebar-link-label-collapsed" aria-hidden="true">
+                {getCollapsedSidebarLabel(item.label)}
+              </span>
+            ) : null}
             {item.status
               ? renderStatusBadges(item.status, "sidebar-child-status")
               : null}
           </NavLink>
-          {isOpen && isWebsite ? (
+          {isOpen && isWebsite && !(options.topLevel && isCollapsed) ? (
             <Tooltip content={closeWebsiteLabel}>
               <button
                 type="button"
@@ -4840,7 +4893,7 @@ export function AppSidebar({
               </button>
             </Tooltip>
           ) : null}
-          {showWebappAction ? (
+          {showWebappAction && !(options.topLevel && isCollapsed) ? (
             <span className="sidebar-website-child-actions">
               {isWebappRunning ? (
                 <span
@@ -5615,8 +5668,8 @@ export function AppSidebar({
         label: item.label,
         collapsedLabel: item.collapsedLabel,
         icon: item.icon,
-        active: isWebsiteGroupActive(),
-        children: webNavItems,
+        active: isWebsiteGroupActive() && !pinnedWebNavItems.some((entry) => isRouteActive(entry.to)),
+        children: unpinnedWebNavItems,
       });
     }
     return renderSidebarLink(item);
@@ -6864,7 +6917,10 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : navItems.map((item) => renderPrimaryNavEntry(item))}
+              : <>
+                  {pinnedWebNavItems.map((item) => renderSidebarChildLink(item, { topLevel: true }))}
+                  {navItems.map((item) => renderPrimaryNavEntry(item))}
+                </>}
         </nav>
         {renderBootstrapGuideCard()}
 

@@ -47,6 +47,8 @@ const LABEL_KEYS: Record<SidebarContextMenuLabelId, TranslationKey> = {
   "chat.delete": "sidebar.chat.delete",
   "chat.info": "sidebar.chat.info",
   "web.close": "sidebar.website.close",
+  "web.pin": "sidebar.web.pin",
+  "web.unpin": "sidebar.web.unpin",
   "web.open-in-workspace": "sidebar.webapp.openInWorkspace",
   "web.open-in-window": "sidebar.webapp.openInWindow",
   "web.copy-share-url": "sidebar.webapp.copyShareUrl",

@@ -694,6 +694,9 @@ export function AppShell() {
   const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
   const [webGroupOrder, setWebGroupOrder] = useState<SidebarNavOrderItemKey[]>(readInitialWebGroupOrder);
   const [navigationPreferencesLoaded, setNavigationPreferencesLoaded] = useState(false);
+  const [pinnedWebEntryKeys, setPinnedWebEntryKeys] = useState<string[]>([]);
+  const [webPinMutationPending, setWebPinMutationPending] = useState(false);
+  const webPinMutationPendingRef = useRef(false);
   const [assistantDockSessions, setAssistantDockSessions] = useState<Record<string, CopilotDockContextSession>>({});
   const [assistantDockOpenRequest, setAssistantDockOpenRequest] = useState<AssistantWorkerOpenRequest | null>(null);
   const [, setAssistantRunningRunId] = useState<string | null>(null);
@@ -2009,6 +2012,24 @@ export function AppShell() {
     }
   }
 
+  async function handleSetWebItemPinned(item: WebEntry, pinned: boolean) {
+    if (!navigationPreferencesLoaded || webPinMutationPendingRef.current) return;
+    webPinMutationPendingRef.current = true;
+    setWebPinMutationPending(true);
+    try {
+      const nextKeys = pinned
+        ? [item.entryKey, ...pinnedWebEntryKeys.filter((key) => key !== item.entryKey)]
+        : pinnedWebEntryKeys.filter((key) => key !== item.entryKey);
+      const preferences = await window.electronAPI.settings.saveNavigationPreferences({
+        pinnedWebEntryKeys: nextKeys
+      });
+      setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys);
+    } finally {
+      webPinMutationPendingRef.current = false;
+      setWebPinMutationPending(false);
+    }
+  }
+
   async function refreshNavigationPreferencesFromCanonical() {
     try {
       const preferences = await window.electronAPI.settings.getNavigationPreferences();
@@ -2018,6 +2039,7 @@ export function AppShell() {
       if (Array.isArray(preferences?.webOrder)) {
         setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
       }
+      setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys ?? []);
     } catch {
       // Keep the current navigation order if settings are temporarily unavailable.
     } finally {
@@ -2639,6 +2661,7 @@ export function AppShell() {
         if (Array.isArray(preferences?.webOrder)) {
           setWebGroupOrder(preferences.webOrder as SidebarNavOrderItemKey[]);
         }
+        setPinnedWebEntryKeys(preferences.pinnedWebEntryKeys ?? []);
       })
       .catch(() => undefined)
       .finally(() => {
@@ -4602,6 +4625,9 @@ export function AppShell() {
           marketEnabled={marketEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
           websiteNavOrder={normalizedWebGroupOrder}
+          pinnedWebEntryKeys={pinnedWebEntryKeys}
+          webPinningAvailable={navigationPreferencesLoaded && !webPinMutationPending}
+          onSetWebItemPinned={handleSetWebItemPinned}
           webItems={webItems}
           webOpenEntryKeys={webOpenEntryKeys}
           webRunningEntryKeys={webRunningEntryKeys}
