@@ -230,6 +230,22 @@ export function configureAttachedWebview<
       return { action: "deny" };
     }
 
+    if (options.shouldOpenPopupExternally?.(contents)) {
+      // WebClient authorization must use the OS browser even in WorkPanel.
+      // Only ordinary Web guests own popup tabs within a WorkPanel workspace.
+      if (isSafeHelpExternalUrl(url)) {
+        if (options.resolveOpenDisposition(url) === "download") {
+          downloadFromWebview(url);
+        } else {
+          void options.openExternal(url).catch(() => {
+            // Authorization URLs and OS errors may contain login state or tokens.
+            options.report("failed to open service popup externally", { guestId: contents.id });
+          });
+        }
+      }
+      return { action: "deny" };
+    }
+
     if (options.shouldOpenPopupInWorkPanelTab?.(contents)) {
       const nextUrl = normalizeChatWorkPanelUrl(url);
       if (nextUrl) {
@@ -633,6 +649,7 @@ export function configureMainWindowWebContents<
     report(source: string, details: Record<string, unknown>): void;
     onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
     shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
+    shouldOpenPopupExternally?(contents: TGuestContents): boolean;
     resolveBlobPopupTarget?(contents: TGuestContents): BlobPopupTarget | null;
     attachWebviewContextMenu?(contents: TGuestContents): void;
     onWebviewFocusChanged?(webContentsId: number, focused: boolean): void;
@@ -745,6 +762,7 @@ export function configureMainWindowWebContents<
       report: options.report,
       onWebviewNavigation: options.onWebviewNavigation,
       shouldOpenPopupInWorkPanelTab: options.shouldOpenPopupInWorkPanelTab,
+      shouldOpenPopupExternally: options.shouldOpenPopupExternally,
       resolveBlobPopupTarget: options.resolveBlobPopupTarget,
       getHelpUrl: options.getHelpUrl,
       isHelpWebview: options.isHelpWebview,

@@ -143,6 +143,10 @@ factoryContext.appShellRuntime = createAppShellRuntime({
         const target = factoryContext.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
         return resolveRegisteredWebviewPopupTarget(target) === "work-panel";
     })(),
+    shouldOpenWebviewPopupExternally: (contents) => {
+        const target = factoryContext.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
+        return target?.serviceId === "agent-webclient";
+    },
     resolveBlobPopupTarget: (contents) => {
         const target = factoryContext.webSurfaceRuntime.browserSurfaceRegistry.resolveWebviewSurfaceTarget(contents.id);
         return resolveRegisteredWebviewPopupTarget(target);

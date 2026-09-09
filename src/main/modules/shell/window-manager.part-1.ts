@@ -161,6 +161,7 @@ export type AttachedWebviewOptions<
   report(source: string, details: Record<string, unknown>): void;
   onWebviewNavigation?(url: string, details: { guestId: number; isInPage: boolean; isMainFrame: boolean }): void;
   shouldOpenPopupInWorkPanelTab?(contents: TGuestContents): boolean;
+  shouldOpenPopupExternally?(contents: TGuestContents): boolean;
   resolveBlobPopupTarget?(contents: TGuestContents): BlobPopupTarget | null;
   getHelpUrl?(): string;
   isHelpWebview?(contents: TGuestContents): boolean;

@@ -1666,6 +1666,69 @@ test("window manager routes attached webview DevTools shortcuts to the main rend
   ]);
 });
 
+for (const platform of ["darwin", "win32"]) {
+  test(`Agent WebClient authorization popups open in the system browser on ${platform}`, async () => {
+    const mainWindow = new FakeWindow();
+    const guest = new FakeWebContents(45, "persist:service", "http://127.0.0.1:18080/connectors/wecom");
+    const externalUrls = [];
+    const reports = [];
+    let inWorkPanel = false;
+    configureMainWindowWebContents(mainWindow, {
+      platform,
+      getMainWindow: () => mainWindow,
+      servicePreloadPath: platform === "win32" ? "C:/app/preload/service-webview.js" : "/app/preload/service-webview.js",
+      servicePreloadUrl: "file:///app/preload/service-webview.js",
+      isSafeServiceUrl: () => true,
+      isDevToolsShortcut: () => false,
+      shouldDownloadUrl: () => false,
+      resolveOpenDisposition: resolveWebviewOpenDisposition,
+      shouldOpenPopupExternally: (contents) => contents === guest,
+      shouldOpenPopupInWorkPanelTab: () => inWorkPanel,
+      collectLoadDiagnostics: async () => ({}),
+      report: (source, details) => reports.push({ source, details }),
+      openExternal: async (url) => {
+        externalUrls.push(url);
+        if (url.includes("fail=true")) throw new Error(`OS could not open ${url}`);
+      },
+      schedule: (callback) => callback()
+    });
+    mainWindow.webContents.emit("did-attach-webview", {}, guest);
+
+    const authorizationUrl = "https://official.example/authorize?state=private-login-state&redirect_uri=http%3A%2F%2F127.0.0.1%3A9000%2Fcallback";
+    const localUrl = "http://127.0.0.1:9000/authorize";
+    for (const url of [authorizationUrl, localUrl]) {
+      assert.deepEqual(guest.windowOpenHandler({ url }), { action: "deny" });
+    }
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl]);
+    assert.deepEqual(mainWindow.webContents.sentMessages, []);
+    assert.deepEqual(guest.loadedUrls, []);
+
+    for (const url of [
+      "about:blank", "javascript:alert(1)", "file:///tmp/auth.html",
+      "custom-auth://authorize", "https://user:secret@official.example/authorize",
+      "blob:http://127.0.0.1:18080/auth-page", "invalid-url",
+    ]) {
+      assert.deepEqual(guest.windowOpenHandler({ url }), { action: "deny" });
+    }
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl]);
+    assert.deepEqual(mainWindow.webContents.sentMessages, []);
+
+    guest.windowOpenHandler({ url: "https://official.example/connector.zip" });
+    assert.deepEqual(guest.downloadedUrls, ["https://official.example/connector.zip"]);
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl]);
+
+    inWorkPanel = true;
+    const workPanelAuthUrl = `${authorizationUrl}&source=workpanel`;
+    guest.windowOpenHandler({ url: workPanelAuthUrl });
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl, workPanelAuthUrl]);
+    assert.deepEqual(mainWindow.webContents.sentMessages, []);
+
+    guest.windowOpenHandler({ url: `${authorizationUrl}&fail=true` });
+    await Promise.resolve();
+    assert.deepEqual(reports, [{ source: "failed to open service popup externally", details: { guestId: guest.id } }]);
+  });
+}
+
 test("Website Blob popups stay bound to the source surface and never open externally", () => {
   const contents = new FakeWebContents(44, "persist:desktop-sso", "https://example.test/attachments");
   const sentTabs = [];
