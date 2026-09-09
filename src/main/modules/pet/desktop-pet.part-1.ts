@@ -166,7 +166,9 @@ export type DesktopPetBoundAgentStatus = {
   updatedAt?: number;
 };
 
-export type DisplayArea = Pick<Rectangle, "x" | "y" | "width" | "height">;
+export type DisplayArea = Pick<Rectangle, "x" | "y" | "width" | "height"> & {
+  windowLeftInset?: number;
+};
 
 export type DesktopPetDisplayBounds = {
   bounds?: DisplayArea;
@@ -210,9 +212,9 @@ export const DESKTOP_PET_CONFIG_FILE = "pet.json";
 
 export const DESKTOP_PET_STATE_FILE = "pet-state.json";
 
-export const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 24;
+export const DESKTOP_PET_EDGE_STICK_DISTANCE_PX = 1;
 
-export const DESKTOP_PET_EDGE_SNAP_DISTANCE_PX = 96;
+export const DESKTOP_PET_EDGE_SNAP_DISTANCE_PX = 1;
 
 export function getDesktopPetRoot(app: App, platform: Platform = process.platform) {
   return path.dirname(getDesktopPetSettingsPath(app, platform));

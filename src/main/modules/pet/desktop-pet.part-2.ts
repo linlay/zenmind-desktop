@@ -193,6 +193,7 @@ export function createDesktopPetState(
     previewPanel?: DesktopPetPreviewPanel | null;
     runningTaskCount?: unknown;
     edgeDock?: DesktopPetEdgeDock;
+    bodyOffset?: { x: number; y: number };
     panelPlacement?: DesktopPetPanelPlacement;
     dragDirection?: DesktopPetDragDirection;
     dragMoved?: unknown;
@@ -247,6 +248,7 @@ export function createDesktopPetState(
     previewPanel: options.previewPanel ?? null,
     runningTaskCount: sanitizeDesktopPetRunningTaskCount(options.runningTaskCount),
     edgeDock: options.edgeDock ?? null,
+    ...(options.bodyOffset ? { bodyOffset: options.bodyOffset } : {}),
     panelPlacement: options.panelPlacement ?? null,
     dragDirection: normalizeDesktopPetDragDirection(options.dragDirection),
     dragMoved: Boolean(options.dragMoved),
@@ -262,11 +264,13 @@ export function getDesktopPetWindowSize(mode: DesktopPetWindowMode = "base") {
 export function resolveDesktopPetDisplayArea(display: DesktopPetDisplayBounds): DisplayArea {
   const horizontalBounds = display.bounds ?? display.workArea;
   const workAreaBottom = display.workArea.y + display.workArea.height;
+  const windowLeftInset = Math.max(0, display.workArea.x - horizontalBounds.x);
   return {
     x: horizontalBounds.x,
     y: display.workArea.y,
     width: Math.max(1, horizontalBounds.width),
-    height: Math.max(1, workAreaBottom - display.workArea.y)
+    height: Math.max(1, workAreaBottom - display.workArea.y),
+    ...(windowLeftInset > 0 ? { windowLeftInset } : {})
   };
 }
 
@@ -539,7 +543,7 @@ export function resolveDesktopPetPanelWindowBounds(input: {
   };
 }
 
-export function getAnchoredDesktopPetBounds(
+export function resolveDesktopPetWindowLayout(
   position: { x: number; y: number } | undefined,
   displayArea: DisplayArea,
   mode: DesktopPetWindowMode = "base"
@@ -549,23 +553,47 @@ export function getAnchoredDesktopPetBounds(
     allowVisibleEdgeDock: true
   });
   const edgeDock = resolveDesktopPetEdgeDock(baseBounds, displayArea);
+  const visibleX = baseBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x;
+  const visibleY = baseBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y;
   const footprint = getDesktopPetVisibleFootprintForMode(mode, edgeDock);
-  const anchoredX = baseBounds.x + DESKTOP_PET_VISIBLE_FOOTPRINT.x - footprint.x;
-  const anchoredY = baseBounds.y + DESKTOP_PET_VISIBLE_FOOTPRINT.y - footprint.y;
-  if (mode === "base" && desktopPetEdgeDockIncludes(edgeDock, "left")) {
-    return {
-      x: displayArea.x,
-      y: anchoredY,
-      width: Math.max(size.width, displayArea.width),
+  let bounds = {
+    x: visibleX - footprint.x,
+    y: visibleY - footprint.y,
+    width: size.width,
+    height: size.height
+  };
+  if (mode === "base") {
+    // Keep the native host on screen, while the body moves continuously inside it.
+    // macOS can constrain a narrow host to the side Dock's work-area inset, so
+    // expand before crossing that inset without changing the visible position.
+    const useWideLeftHost = baseBounds.x < displayArea.x + (displayArea.windowLeftInset ?? 0);
+    bounds = {
+      x: useWideLeftHost ? displayArea.x : Math.round(clampNumber(
+        baseBounds.x, displayArea.x, displayArea.x + Math.max(0, displayArea.width - size.width)
+      )),
+      y: Math.round(clampNumber(
+        baseBounds.y, displayArea.y, displayArea.y + Math.max(0, displayArea.height - size.height)
+      )),
+      width: useWideLeftHost ? Math.max(size.width, displayArea.width) : size.width,
       height: size.height
     };
   }
   return {
-    x: anchoredX,
-    y: anchoredY,
-    width: size.width,
-    height: size.height
+    bounds,
+    bodyOffset: { x: visibleX - bounds.x, y: visibleY - bounds.y },
+    position: { x: baseBounds.x, y: baseBounds.y },
+    edgeDock
   };
+}
+
+export type DesktopPetWindowLayout = ReturnType<typeof resolveDesktopPetWindowLayout>;
+
+export function getAnchoredDesktopPetBounds(
+  position: { x: number; y: number } | undefined,
+  displayArea: DisplayArea,
+  mode: DesktopPetWindowMode = "base"
+) {
+  return resolveDesktopPetWindowLayout(position, displayArea, mode).bounds;
 }
 
 export function getDesktopPetLogicalPositionFromBounds(
@@ -575,6 +603,16 @@ export function getDesktopPetLogicalPositionFromBounds(
   preferredPosition?: { x: number; y: number }
 ) {
   if (displayArea) {
+    // A clamped host can represent several visible positions. Preserve the known
+    // logical anchor instead of inferring a different one from its native frame.
+    if (mode === "base" && preferredPosition) {
+      const preferredLayout = resolveDesktopPetWindowLayout(preferredPosition, displayArea, mode);
+      if (preferredLayout.bounds.x === bounds.x && preferredLayout.bounds.y === bounds.y &&
+        (!("width" in bounds) || preferredLayout.bounds.width === bounds.width) &&
+        (!("height" in bounds) || preferredLayout.bounds.height === bounds.height)) {
+        return preferredLayout.position;
+      }
+    }
     const displayRight = displayArea.x + displayArea.width;
     const shouldPreferWindowBoundaryEdges = mode === "base";
     const boundsTouchLeft = shouldPreferWindowBoundaryEdges && bounds.x <= displayArea.x + 1;
@@ -666,6 +704,7 @@ export const __testInternals = {
   resolveDesktopPetPanelLayout,
   resolveDesktopPetPanelWindowBounds,
   getAnchoredDesktopPetBounds,
+  resolveDesktopPetWindowLayout,
   getDesktopPetLogicalPositionFromBounds,
   getDesktopPetRoot,
   getDesktopPetStatePath,

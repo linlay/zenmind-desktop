@@ -201,6 +201,8 @@ export interface DesktopPetState {
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
+  /** Visible pet footprint origin in CSS pixels within the pet window. */
+  bodyOffset?: { x: number; y: number };
   panelPlacement: DesktopPetPanelPlacement;
   dragDirection?: DesktopPetDragDirection;
   dragMoved?: boolean;

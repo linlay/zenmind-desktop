@@ -48,6 +48,11 @@ import {
 } from "../../../shared/desktop-pet-visual";
 import { BRAND_ID, PRODUCT_NAME } from "../../../shared/brand";
 import { useI18n } from "../../i18n/useI18n";
+import {
+  loadDesktopPetAlphaMask,
+  pointIntersectsDesktopPetImage,
+  type DesktopPetAlphaMask
+} from "./desktopPetHitTest";
 
 type DesktopPetTranslate = ReturnType<typeof useI18n>["t"];
 
@@ -419,7 +424,6 @@ const DESKTOP_PET_DONE_VISUAL_HOLD_MS = 2500;
 const DESKTOP_PET_ERROR_VISUAL_HOLD_MS = 3000;
 const DESKTOP_PET_IDLE_RANDOM_DELAY_MS = 25000;
 const DESKTOP_PET_DRAG_DIRECTION_THRESHOLD_PX = 3;
-const DESKTOP_PET_IMAGE_HIT_MARGIN = 8;
 const DESKTOP_PET_STANDARD_IDLE_ACTION_ID: DesktopPetStandardIdleAction = "jumping";
 const DESKTOP_PET_REVIEW_TEXT_PATTERN = /review|检查|校验|验证|整理|复核|审阅/iu;
 
@@ -430,22 +434,17 @@ function rectContainsPoint(rect: DOMRect, x: number, y: number, margin = 0) {
     y <= rect.bottom + margin;
 }
 
-function pointIntersectsElement(selector: string, x: number, y: number, margin = 0) {
-  const element = document.querySelector<HTMLElement>(selector);
-  if (!element) {
-    return false;
-  }
-  const rect = element.getBoundingClientRect();
-  if (rect.width <= 0 || rect.height <= 0) {
-    return false;
-  }
-  return rectContainsPoint(rect, x, y, margin);
+function pointIntersectsElement(selector: string, x: number, y: number) {
+  return Array.from(document.querySelectorAll<HTMLElement>(selector)).some((element) => {
+    const rect = element.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rectContainsPoint(rect, x, y);
+  });
 }
 
-function pointIntersectsVisiblePetArea(x: number, y: number) {
-  return pointIntersectsElement(".desktop-pet-image", x, y, DESKTOP_PET_IMAGE_HIT_MARGIN) ||
-    pointIntersectsElement(".desktop-pet-unread-badges", x, y, 4) ||
-    pointIntersectsElement(".desktop-pet-speech", x, y) ||
+function pointIntersectsVisiblePetArea(x: number, y: number, mask: DesktopPetAlphaMask | null) {
+  const image = document.querySelector<HTMLElement>(".desktop-pet-image");
+  return Boolean(image && pointIntersectsDesktopPetImage(image, mask, x, y)) ||
+    pointIntersectsElement(".desktop-pet-unread-badge", x, y) ||
     pointIntersectsElement(".desktop-pet-task-panel", x, y) ||
     pointIntersectsElement(".desktop-pet-preview", x, y);
 }
@@ -559,6 +558,8 @@ export function DesktopPet() {
   const appearanceIdRef = useRef(DEFAULT_DESKTOP_PET_APPEARANCE_ID);
   const draggingRef = useRef(false);
   const mouseInteractiveRef = useRef(true);
+  const imageAlphaMaskRef = useRef<DesktopPetAlphaMask | null>(null);
+  const mousePointRef = useRef<{ x: number; y: number } | null>(null);
   const activeSignatureRef = useRef<ActiveDesktopPetSignature | null>(activeSignature);
   const activeStandardActionRef = useRef<ActiveDesktopPetStandardAction | null>(activeStandardAction);
   const petStateRef = useRef<DesktopPetState>(petState);
@@ -646,7 +647,8 @@ export function DesktopPet() {
   }
 
   function updateMouseInteractivityFromPoint(point: { x: number; y: number }) {
-    const interactive = draggingRef.current || pointIntersectsVisiblePetArea(point.x, point.y);
+    mousePointRef.current = point;
+    const interactive = draggingRef.current || pointIntersectsVisiblePetArea(point.x, point.y, imageAlphaMaskRef.current);
     setMouseInteractive(interactive);
   }
 
@@ -798,6 +800,7 @@ export function DesktopPet() {
     };
     const handleWindowMouseLeave = () => {
       if (!draggingRef.current) {
+        mousePointRef.current = null;
         setMouseInteractive(false);
       }
     };
@@ -808,6 +811,7 @@ export function DesktopPet() {
     };
     const handleMouseVisibilityChange = () => {
       if (document.hidden && !draggingRef.current) {
+        mousePointRef.current = null;
         setMouseInteractive(false);
       }
     };
@@ -817,7 +821,16 @@ export function DesktopPet() {
       window.addEventListener("blur", handleWindowInactive);
       document.addEventListener("visibilitychange", handleMouseVisibilityChange);
     }
+    // The sprite can move away from a stationary cursor between mouse events.
+    const hitTestTimer = !isPanelWindow ? window.setInterval(() => {
+      if (mousePointRef.current && !draggingRef.current) {
+        updateMouseInteractivityFromPoint(mousePointRef.current);
+      }
+    }, 50) : null;
     return () => {
+      if (hitTestTimer !== null) {
+        window.clearInterval(hitTestTimer);
+      }
       if (!isPanelWindow) {
         window.removeEventListener("mousemove", handleWindowMouseMove);
         window.removeEventListener("mouseleave", handleWindowMouseLeave);
@@ -946,24 +959,48 @@ export function DesktopPet() {
   const shouldShowStateSpriteAnimation = !shouldShowSignatureSpriteAnimation && isDesktopPetAnimatedAsset(visualAsset.asset);
   const stateAnimationFrameCount = Math.max(1, Math.round(Number(visualAsset.asset?.frameCount) || 1));
   const stateAnimationDurationMs = Math.max(100, Math.round(Number(visualAsset.asset?.durationMs) || 0));
-  const rootStyle = shouldShowStateSpriteAnimation ||
-    (shouldShowSignatureSpriteAnimation && activeSignature)
-    ? ({
-        ...(shouldShowSignatureSpriteAnimation && activeSignature
-          ? {
-              "--desktop-pet-signature-duration": `${activeSignature.variant.durationMs}ms`,
-              "--desktop-pet-signature-frames": String(activeSignature.variant.frameCount)
-            }
-          : {}),
-        ...(shouldShowStateSpriteAnimation
-          ? {
-              "--desktop-pet-state-duration": `${stateAnimationDurationMs}ms`,
-              "--desktop-pet-state-frames": String(stateAnimationFrameCount),
-              "--desktop-pet-state-loop-count": visualAsset.asset?.loop === false ? "1" : "infinite"
-            }
-          : {})
-      } as CSSProperties)
-    : undefined;
+  const hitTestAssetPath = shouldShowSignatureSpriteAnimation && activeSignature
+    ? activeSignature.assetPath
+    : visualAsset.assetPath;
+  const hitTestFrameCount = shouldShowSignatureSpriteAnimation && activeSignature
+    ? activeSignature.variant.frameCount
+    : shouldShowStateSpriteAnimation ? stateAnimationFrameCount : 1;
+  const hitTestIsSprite = shouldShowSignatureSpriteAnimation || shouldShowStateSpriteAnimation;
+  useEffect(() => {
+    if (isPanelWindow) {
+      return;
+    }
+    let cancelled = false;
+    imageAlphaMaskRef.current = null;
+    void loadDesktopPetAlphaMask(hitTestAssetPath, hitTestFrameCount, hitTestIsSprite).then((mask) => {
+      if (!cancelled) {
+        imageAlphaMaskRef.current = mask;
+        if (mousePointRef.current) {
+          updateMouseInteractivityFromPoint(mousePointRef.current);
+        }
+      }
+    });
+    return () => { cancelled = true; };
+  }, [isPanelWindow, hitTestAssetPath, hitTestFrameCount, hitTestIsSprite]);
+  const rootStyle = {
+    ...(!isPanelWindow && petState.bodyOffset ? {
+      "--desktop-pet-button-left": `${petState.bodyOffset.x - 18}px`,
+      "--desktop-pet-button-top": `${petState.bodyOffset.y - 16}px`
+    } : {}),
+    ...(shouldShowSignatureSpriteAnimation && activeSignature
+      ? {
+          "--desktop-pet-signature-duration": `${activeSignature.variant.durationMs}ms`,
+          "--desktop-pet-signature-frames": String(activeSignature.variant.frameCount)
+        }
+      : {}),
+    ...(shouldShowStateSpriteAnimation
+      ? {
+          "--desktop-pet-state-duration": `${stateAnimationDurationMs}ms`,
+          "--desktop-pet-state-frames": String(stateAnimationFrameCount),
+          "--desktop-pet-state-loop-count": visualAsset.asset?.loop === false ? "1" : "infinite"
+        }
+      : {})
+  } as CSSProperties;
   const signatureSpriteStyle = shouldShowSignatureSpriteAnimation && activeSignature
     ? {
         backgroundImage: `url("${activeSignature.assetPath}")`
