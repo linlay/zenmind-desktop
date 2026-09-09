@@ -1,0 +1,22 @@
+.connector-discovery .connector-runtime-dot {
+  display: inline-block;
+  flex: 0 0 6px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--market-control-muted);
+}
+
+.connector-discovery .connector-runtime-dot.is-ready {
+  background: #16a34a;
+}
+
+.connector-discovery .connector-runtime-dot.is-pending,
+.connector-discovery .connector-runtime-dot.is-configuration-written {
+  background: #d97706;
+}
+
+.connector-discovery .connector-runtime-dot.is-invalid,
+.connector-discovery .connector-runtime-dot.is-unavailable {
+  background: #e5484d;
+}

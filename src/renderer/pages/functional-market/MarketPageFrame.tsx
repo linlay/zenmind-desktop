@@ -22,6 +22,7 @@ interface MarketPageFrameProps {
   tabs: MarketTabDefinition[];
   title?: string;
   toolbar?: ReactNode;
+  leading?: ReactNode;
 }
 
 function marketTabIcon(tab: MarketTab) {
@@ -53,7 +54,8 @@ export function MarketPageFrame({
   children,
   onTabChange,
   tabs,
-  toolbar
+  toolbar,
+  leading
 }: MarketPageFrameProps) {
   const { t } = useI18n();
   const hasToolbar = Boolean(toolbar);
@@ -61,7 +63,7 @@ export function MarketPageFrame({
     <section className="market-page">
       <div className="market-shell">
         <div className={hasToolbar ? "market-topbar has-toolbar" : "market-topbar"}>
-          <div aria-label={t("market.tabs.ariaLabel")} className="market-tabs" role="tablist">
+          {leading ?? <div aria-label={t("market.tabs.ariaLabel")} className="market-tabs" role="tablist">
             {tabs.map((tab) => {
               const selected = tab.id === activeTab;
               return (
@@ -78,7 +80,7 @@ export function MarketPageFrame({
                 </button>
               );
             })}
-          </div>
+          </div>}
 
           {hasToolbar ? (
             <div className="market-toolbar">

@@ -1,0 +1,24 @@
+.skill-detail-layout { display: grid; grid-template-columns: minmax(0, 1fr) 170px; gap: 24px; max-height: 70dvh; overflow-y: auto; padding-top: 8px; }
+.skill-detail-main { min-width: 0; font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.skill-detail-heading { display: flex; align-items: center; gap: 12px; }
+.skill-detail-heading .skill-discovery-icon { width: 42px; height: 42px; flex-basis: 42px; }
+.skill-detail-heading h2 { margin: 0; font-size: 20px; }
+.skill-detail-tags { display: flex; flex-wrap: wrap; gap: 6px; color: #768195; font-size: 11px; }
+.skill-detail-description { color: #768195; }
+.skill-detail-main h3 { font-size: 14px; }
+.skill-detail-main pre { overflow-x: auto; padding: 12px; background: #f4f6f9; border-radius: 8px; }
+.skill-detail-main img { max-width: 100%; }
+.skill-detail-main table { border-collapse: collapse; width: 100%; }
+.skill-detail-main td, .skill-detail-main th { border: 1px solid #e5e7eb; padding: 6px; }
+.skill-detail-side { border-left: 1px solid #e5e7eb; padding-left: 18px; font-size: 12px; }
+.skill-detail-side dt { color: #768195; margin-top: 12px; }
+.skill-detail-side dd { margin: 4px 0 14px; overflow-wrap: anywhere; }
+.skill-detail-side button + button { margin-top: 8px; }
+.skill-detail-hint { color: #768195; font-size: 11px; }
+.skill-detail-child { display: flex; align-items: center; gap: 10px; border: 1px solid #e5e7eb; border-radius: 9px; padding: 12px; margin-bottom: 8px; }
+.skill-detail-child > div { flex: 1; min-width: 0; }
+.skill-detail-child > div > button { border: 0; background: none; color: inherit; padding: 0; font-size: 13px; font-weight: 600; cursor: pointer; text-align: left; }
+.skill-detail-child p { color: #768195; font-size: 11px; margin: 4px 0 0; }
+:root[data-theme="dark"] .skill-detail-main pre { background: #18212c; }
+:root[data-theme="dark"] .skill-detail-side, :root[data-theme="dark"] .skill-detail-child { border-color: #354050; }
+@media(max-width: 600px) { .skill-detail-layout { grid-template-columns: minmax(0, 1fr); } .skill-detail-side { border-left: 0; padding-left: 0; } }

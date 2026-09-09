@@ -1,0 +1,90 @@
+.skill-discovery {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  color: var(--market-control-text);
+}
+.skill-discovery-scroll, .is-webapp-discovery .market-store-scroll { flex: 1; overflow: auto; padding: 20px 6px 32px; }
+.skill-discovery.is-installed-view .skill-discovery-scroll { padding-top: 6px; }
+.skill-discovery.is-installed-view .skill-discovery-installed-heading { margin-top: 0; }
+.skill-discovery-toolbar { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.skill-discovery-installed-title { display: flex; align-items: center; gap: 8px; margin: 0 10px 0 0; color: var(--market-control-text); font-size: 14px; font-weight: 650; white-space: nowrap; }
+.skill-discovery-installed-nav { display: flex; align-items: center; gap: 16px; min-height: 32px; }
+.skill-discovery button, .skill-discovery-toolbar button, .skill-discovery-back {
+  font: inherit;
+  cursor: pointer;
+}
+.skill-discovery-search { display: flex; align-items: center; gap: 7px; box-sizing: border-box; width: 260px; min-width: 180px; height: 34px; min-height: 34px; padding: 0 10px; border: 1px solid var(--market-control-border); border-radius: 8px; background: var(--market-control-card-soft); color: var(--market-control-muted); }
+.skill-discovery-search input { width: 100%; min-width: 0; border: 0; outline: none; background: transparent; color: var(--market-control-text); font: inherit; font-size: 12px; }
+.skill-discovery-search:focus-within { outline: 2px solid var(--market-control-blue); outline-offset: 1px; }
+.skill-discovery-outline { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border: 1px solid var(--market-control-border); border-radius: 8px; background: var(--market-control-card); color: var(--market-control-text); white-space: nowrap; }
+.skill-discovery-count { display: inline-flex; justify-content: center; align-items: center; min-width: 18px; height: 18px; padding: 0 5px; border-radius: 20px; color: var(--market-control-muted); background: var(--market-control-card-soft); font-size: 11px; font-weight: 500; }
+.skill-discovery-toolbar > .skill-discovery-outline { box-sizing: border-box; height: 32px; min-height: 32px; padding: 0 10px; font-size: 12px; font-weight: 600; line-height: 1; }
+.skill-discovery-toolbar > .skill-discovery-outline svg { width: 15px; height: 15px; }
+.skill-discovery-outline:hover:not(:disabled) { border-color: var(--market-control-muted); background: var(--market-control-card-soft); }
+.skill-discovery h2 { display: flex; align-items: center; gap: 8px; margin: 0 0 14px; font-size: 16px; font-weight: 650; line-height: 24px; }
+.is-webapp-discovery .market-store-section { gap: 14px; }
+.is-webapp-discovery .market-store-section-head { align-items: center; }
+.is-webapp-discovery .market-store-section-head h2 { margin: 0; }
+.is-webapp-discovery .market-store-section-head { padding: 0; }
+.skill-discovery-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; align-content: start; }
+.skill-discovery-featured { margin-bottom: 30px; }
+.skill-discovery-featured-empty { margin: 0; padding: 14px; border: 1px dashed var(--market-control-border); border-radius: 10px; color: var(--market-control-muted); font-size: 12px; }
+.skill-discovery-section-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 14px; }
+.skill-discovery-section-heading h2 { margin-bottom: 0; }
+.skill-discovery .skill-discovery-shuffle { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--market-control-muted); font-size: 12px; }
+.skill-discovery-card.is-package { position: relative; background: linear-gradient(155deg, var(--market-control-card), var(--market-control-card-soft)); }
+.skill-discovery-icon.is-package { border-radius: 8px; box-shadow: 3px -3px 0 color-mix(in srgb, currentColor 15%, transparent); }
+.skill-discovery-icon img { width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.skill-discovery-card-footer { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-height: 22px; margin-top: auto; padding-top: 12px; }
+.skill-discovery-kind { color: var(--market-control-muted); font-size: 10px; }
+.skill-discovery .skill-discovery-use { display: inline-flex; align-items: center; gap: 5px; border: 0; border-radius: 5px; padding: 3px 5px; background: transparent; color: var(--market-control-blue); font-size: 11px; }
+.skill-discovery-use:hover { background: var(--market-control-card-soft); }
+.skill-discovery-card { display: flex; flex-direction: column; min-width: 0; min-height: 152px; box-sizing: border-box; padding: 16px; border: 1px solid var(--market-control-border); border-radius: 13px; background: var(--market-control-card); transition: border-color .15s, box-shadow .15s; }
+.skill-discovery-card:hover { border-color: color-mix(in srgb, var(--market-control-muted) 35%, transparent); box-shadow: 0 5px 16px #00000005; }
+.skill-discovery-card.is-selected { border-color: var(--market-control-blue); }
+.skill-discovery-card-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.skill-discovery-icon { display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px; border-radius: 9px; background: #e1f8ed; color: #1e9a6c; }
+.skill-discovery-icon svg { width: 17px; height: 17px; }
+.skill-discovery-icon.tone-1 { background: #fce3ed; color: #dc528b; }
+.skill-discovery-icon.tone-2 { background: #e7eaff; color: #707ee1; }
+.skill-discovery-icon.tone-3 { background: #fff0df; color: #e88f38; }
+.skill-discovery-icon.tone-4 { background: #e4f4ff; color: #299cd7; }
+.skill-discovery-icon.tone-5 { background: #f0e6ff; color: #a16adc; }
+.skill-discovery-name { flex: 1; min-width: 0; padding: 0; border: 0; background: transparent; color: inherit; text-align: left; font-size: 13px !important; font-weight: 650 !important; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.skill-discovery-install { display: grid; place-items: center; flex: 0 0 24px; height: 24px; border: 0; border-radius: 6px; background: var(--market-control-card-soft); color: var(--market-control-text); }
+.skill-discovery .skill-discovery-install.is-update { flex-basis: auto; min-width: 48px; padding: 0 6px; color: var(--market-control-blue); font-size: 11px; white-space: nowrap; }
+.skill-discovery button:disabled { cursor: default; opacity: .45; }
+.skill-discovery-description { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; width: 100%; margin-top: 10px; padding: 0; border: 0; background: transparent; color: var(--market-control-muted); text-align: left; font-size: 12px !important; line-height: 1.65 !important; overflow-wrap: anywhere; }
+.skill-discovery-collections { display: flex; gap: 24px; margin-bottom: 14px; }
+.skill-discovery-collections button { padding: 0; border: 0; background: transparent; color: var(--market-control-muted); font-size: 16px; }
+.skill-discovery-collections button[aria-selected="true"] { color: var(--market-control-text); font-weight: 650; }
+.skill-discovery-categories { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 12px; }
+.skill-discovery-categories button { padding: 5px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--market-control-muted); font-size: 11px; }
+.skill-discovery-categories button[aria-pressed="true"] { color: var(--market-control-text); background: var(--market-control-card-soft); font-weight: 600; }
+.skill-discovery-back { display: flex; align-items: center; gap: 8px; width: fit-content; min-height: 30px; padding: 0 6px; border: 0; background: transparent; color: var(--market-control-muted); font-size: 12px; }
+.skill-discovery-installed-heading { display: flex; justify-content: space-between; align-items: center; gap: 14px; margin: 16px 0 14px; }
+.skill-discovery-installed-heading h2 { margin: 0; }
+.skill-discovery-text-button { border: 0; background: transparent; color: var(--market-control-muted); font-size: 12px !important; white-space: nowrap; }
+.skill-discovery-card-tools { display: flex; align-items: center; gap: 2px; }
+.skill-discovery-pin, .skill-discovery-menu summary { display: grid; place-items: center; width: 22px; height: 24px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--market-control-muted); cursor: pointer; }
+.skill-discovery-pin { opacity: 0; }
+.skill-discovery-card:hover .skill-discovery-pin, .skill-discovery-card:focus-within .skill-discovery-pin, .skill-discovery-pin.is-pinned { opacity: 1; }
+.skill-discovery-pin.is-pinned { color: var(--market-control-blue); }
+.skill-discovery-menu { position: relative; }
+.skill-discovery-menu summary { list-style: none; }
+.skill-discovery-menu summary::-webkit-details-marker { display: none; }
+.skill-discovery-menu > div { position: absolute; top: 28px; right: 0; z-index: 3; box-sizing: border-box; width: 132px; padding: 6px; background: var(--market-control-card); border: 1px solid var(--market-control-border); border-radius: 14px; box-shadow: 0 8px 28px #00000014; }
+.skill-discovery .skill-discovery-menu > div > button { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 32px; border: 0; border-radius: 8px; padding: 6px 9px; text-align: left; color: var(--market-control-muted); background: transparent; font-size: 12px; font-weight: 400; line-height: 20px; }
+.skill-discovery-menu > div > button svg { width: 15px; height: 15px; flex: none; }
+.skill-discovery-menu button:hover, .skill-discovery-batch button:hover { background: var(--market-control-card-soft); }
+.skill-discovery-batch { display: flex; align-items: center; gap: 6px; min-height: 32px; margin: 0; color: var(--market-control-muted); font-size: 12px; white-space: nowrap; }
+.skill-discovery-batch button { padding: 5px 9px; border: 1px solid var(--market-control-border); border-radius: 6px; color: inherit; background: var(--market-control-card); }
+.skill-discovery-empty { padding: 60px 16px; color: var(--market-control-muted); text-align: center; }
+.skill-discovery-package-preview { font-size: 12px; line-height: 1.7; white-space: pre-wrap; overflow-wrap: anywhere; max-height: 300px; overflow-y: auto; }
+.skill-discovery button:focus-visible, .skill-discovery-toolbar button:focus-visible, .skill-discovery-menu summary:focus-visible, .skill-discovery-back:focus-visible { outline: 2px solid var(--market-control-blue); outline-offset: 2px; }
+@media (max-width: 980px) { .skill-discovery-search { width: 210px; } .skill-discovery-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 760px) { .skill-discovery-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .skill-discovery-toolbar { flex-wrap: wrap; } }
+@media (max-width: 680px) { .skill-discovery-search { width: 100%; } }
+@media (max-width: 560px) { .skill-discovery-grid { grid-template-columns: minmax(0, 1fr); } .skill-discovery-installed-heading { align-items: flex-start; flex-direction: column; } .skill-discovery-batch { flex-wrap: wrap; } }

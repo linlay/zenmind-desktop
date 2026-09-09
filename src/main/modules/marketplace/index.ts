@@ -1,4 +1,5 @@
 export { configureAgentMarketPlatformCaller } from "./agent-market";
+export { readMarketSkillContent } from "./skill-detail";
 export { normalizeMarketApiBaseUrl, readInstalledRecords, removeInstalledRecordByResourceKey, saveMarketSettings } from "./common";
 export { registerMarketplaceIpcHandlers } from "./ipc";
 export { buildSandboxImage, configureMarketAccessTokenIssuer, deleteSandboxImage, exportSandboxImageToPath, getMarketSettings, importSandboxImageFromPath, importSkillFromCommand, importSkillFromPath, installMarketItem, listMarketItems, mergeMcpRuntimeStatuses, refreshMarketCatalog, toggleMarketFavorite, uninstallMarketItem, updateMarketItem } from "./runtime";

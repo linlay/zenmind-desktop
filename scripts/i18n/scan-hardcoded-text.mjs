@@ -32,6 +32,12 @@ const allowedLinePatterns = [
 
 const allowedBlocks = [
   {
+    file: "src/renderer/pages/functional-market/skillDiscovery.ts",
+    start: /^const categoryAliases:/u,
+    end: /^\};/u,
+    reason: "server category aliases used for matching, not display labels"
+  },
+  {
     file: "src/shared/work-panel-review.ts",
     start: /^export function buildWorkPanelReviewComposerDraft/u,
     end: /^\}$/u,

@@ -608,6 +608,7 @@ export function catalogItemToMarketItem(item: MarketCatalogItem, record: Install
     favoriteCount: item.favoriteCount,
     favorited: item.favorited,
     skill: item.skill,
+    skillFeatured: item.skillFeatured === true,
     targets: item.targets,
     assets: item.assets,
     install: item.install,
