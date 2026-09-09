@@ -50,19 +50,20 @@ test("installed Market WebApps open only after an explicit user action", () => {
   assert.match(storefront, /event\.phase === "disposing"/u);
   assert.match(storefront, /command\(\{ sections: \["websiteApps"\] \}\)/u);
   assert.match(storefront, /next\.items\.filter\(\(item\) => item\.type === "website-app"\)/u);
-  assert.match(storefront, /const usesStackedStatusLayout = item\.type === "skill" \|\| item\.type === "website-app"/u);
+  assert.match(storefront, /const usesStackedStatusLayout = item\.type === "skill"/u);
+  assert.match(storefront, /if \(item\.type === "website-app"\)[\s\S]*?className="skill-discovery-card"/u);
   assert.match(storefront, /usesStackedStatusLayout[\s\S]*?market-store-title-line[\s\S]*?market-store-submeta[\s\S]*?statePill[\s\S]*?market-store-description is-standalone/u);
   assert.match(styles, /\.market-store-card-head\.is-stacked-status\s*\{[\s\S]*?grid-template-columns:\s*36px minmax\(0, 1fr\) auto;[\s\S]*?min-height:\s*46px;/u);
   assert.match(styles, /\.market-store-card-secondary-meta\s*\{[\s\S]*?display:\s*flex;[\s\S]*?justify-content:\s*flex-end;/u);
   assert.match(styles, /\.market-store-description\.is-standalone\s*\{[\s\S]*?min-height:\s*30px;/u);
 });
 
-test("Market top navigation exposes only Skills and Website Apps", () => {
+test("Market top navigation exposes Skills, Connectors and Website Apps", () => {
   const model = readSource("src", "renderer", "pages", "functional-market", "marketPageModel.ts");
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
 
   assert.match(model, /DEFAULT_MARKET_TAB:\s*MarketTab\s*=\s*"skills"/u);
-  assert.match(model, /VISIBLE_MARKET_TABS:\s*readonly MarketTab\[\]\s*=\s*\["skills",\s*"websiteApps"\]/u);
+  assert.match(model, /VISIBLE_MARKET_TABS:\s*readonly MarketTab\[\]\s*=\s*\["skills",\s*"mcps",\s*"websiteApps"\]/u);
   assert.match(model, /return VISIBLE_MARKET_TABS\.map/u);
   assert.doesNotMatch(storefront, /ReloadOutlined|market\.toolbar\.refreshMarket|market-store-toolbar-button is-icon-only/u);
 });
@@ -146,8 +147,8 @@ test("market storefront uses one WorkBuddy-inspired list with per-card source la
   assert.match(styles, /grid-template-columns:\s*repeat\(4,\s*minmax\(0,\s*1fr\)\)/u);
   assert.match(styles, /\.market-store-action\.is-compact-icon\.ant-btn\s*\{[\s\S]*?border:\s*0;/u);
   assert.match(storefront, /market-store-toolbar-button is-installed[\s\S]*?icon=\{<CheckSquareOutlined \/>\}[\s\S]*?market\.toolbar\.myInstalled/u);
-  assert.match(storefront, /activeTab === "skills" && rangeMode === "installed"[\s\S]*?className="market-store-installed-source-tabs"[\s\S]*?role="tablist"/u);
-  assert.match(storefront, /installedSkillSourceOptions\.map[\s\S]*?aria-selected=\{selected\}[\s\S]*?role="tab"/u);
+  // Skills now have a dedicated discovery/installed view; other resources keep this card renderer.
+  assert.match(storefront, /return <SkillMarketplace/u);
   assert.match(styles, /\.market-store-installed-source-tabs\s*\{[\s\S]*?display:\s*flex;[\s\S]*?width:\s*max-content;/u);
   assert.doesNotMatch(styles, /\.market-store-installed-source-tabs\s*\{[^}]*grid-template-columns/u);
   assert.doesNotMatch(storefront, /market\.toolbar\.myFavorites/u);
@@ -232,11 +233,13 @@ test("skill toolbar provides local import and the create-skill assistant action"
   assert.doesNotMatch(storefront, /renderSkillAssistantDialog/u);
 });
 
-test("skill detail category returns to the current skill list without resetting its filter", () => {
+test("closing skill details preserves the current skill list and its filters", () => {
   const storefront = readSource("src", "renderer", "pages", "functional-market", "StorefrontMarket.tsx");
-
-  assert.match(storefront, /selectedDetailItem\.type === "skill"[\s\S]*?market-store-detail-category-return[\s\S]*?setSelectedDetailItem\(null\)/u);
-  assert.match(storefront, /className="market-store-detail-category-return"[\s\S]*?onClick=\{\(\) => setSelectedDetailItem\(null\)\}/u);
+  const detail = readSource("src", "renderer", "pages", "functional-market", "SkillDetailDialog.tsx");
+  assert.match(storefront, /selectedDetailItem\.type === "skill"[\s\S]*?return <SkillDetailDialog/u);
+  assert.match(storefront, /onClose=\{\(\) => setSelectedDetailItem\(null\)\} onInstall=\{runMarketAction\}/u);
+  assert.match(detail, /<Modal\b[^>]*onCancel=\{onClose\}/u);
+  assert.doesNotMatch(detail, /navigate\(|setSearchParams\(|setCategory\(|setQuery\(/u);
 });
 
 test("clicking the active Skills tab returns from installed items to the skill market", () => {

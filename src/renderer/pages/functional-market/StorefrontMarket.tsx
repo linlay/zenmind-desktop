@@ -11,6 +11,7 @@ import {
   CloseOutlined,
   DownloadOutlined,
   FilterOutlined,
+  FolderOpenOutlined,
   GlobalOutlined,
   HddOutlined,
   HeartFilled,
@@ -63,6 +64,10 @@ import {
   marketVersionLabel
 } from "./marketDisplay";
 import "./StorefrontMarket.css";
+import { SkillMarketplace } from "./SkillMarketplace";
+import { MarketCardDescription } from "./MarketCardDescription";
+import { ConnectorMarketplace } from "./ConnectorMarketplace";
+import { SkillDetailDialog } from "./SkillDetailDialog";
 
 type RangeMode = "all" | "installed" | "favorites" | "updates";
 type InstalledSkillSource = "cloud" | "local";
@@ -599,6 +604,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const [selectedDetailItem, setSelectedDetailItem] = useState<MarketItem | null>(null);
   const [pendingSkillUninstall, setPendingSkillUninstall] = useState<MarketItem | null>(null);
   const searchFilterRef = useRef<HTMLDivElement | null>(null);
+  const marketLoadGeneration = useRef(0);
+  const marketActionInFlight = useRef(false);
+  const skillLaunchInFlight = useRef(false);
 
   const serviceById = useMemo(() => new Map(services.map((service) => [service.id, service])), [services]);
   const itemType = MARKET_TAB_ITEM_TYPES[activeTab];
@@ -637,6 +645,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   const shouldShowMarketStatus = Boolean(feedback) || Boolean(marketOffline && marketStatusMessage);
 
   async function loadMarket(force = false, preserveFeedback = false) {
+    const generation = ++marketLoadGeneration.current;
     setIsLoadingMarket(true);
     try {
       const commandName = force ? "refresh" : "list";
@@ -652,6 +661,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       }
       setIsMarketAuthenticated(includeFavorites);
       const next = await command({ includeFavorites });
+      if (generation !== marketLoadGeneration.current) return null;
       setMarketResult(next);
       const initialItem = initialItemId
         ? next.items.find((item) => item.id === initialItemId) ?? null
@@ -669,12 +679,13 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       }
       return next;
     } catch (reason) {
+      if (generation !== marketLoadGeneration.current) return null;
       console.warn("[market-storefront] failed to load market data", reason);
       setFeedback(normalizeError(reason));
       setFeedbackType("error");
       return null;
     } finally {
-      setIsLoadingMarket(false);
+      if (generation === marketLoadGeneration.current) setIsLoadingMarket(false);
     }
   }
 
@@ -843,6 +854,12 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     item: MarketItem,
     actionName: "install" | "update" | "uninstall"
   ) {
+    if (marketActionInFlight.current) return false;
+    marketActionInFlight.current = true;
+    marketLoadGeneration.current++;
+    setIsLoadingMarket(false);
+    setBusyItemId(item.id);
+    try {
     if (actionName !== "uninstall") {
       try {
         const status = await window.electronAPI.sso.getStatus();
@@ -857,12 +874,10 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         return false;
       }
     }
-    setBusyItemId(item.id);
     setFeedback(actionName === "uninstall"
       ? t("market.action.uninstalling")
       : t("market.action.installing"));
     setFeedbackType("info");
-    try {
       const result = actionName === "uninstall"
         ? await (() => {
           const action = getMarketMethod("uninstall");
@@ -874,11 +889,33 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
           if (!action) throw createMissingMarketApiError(actionName, t);
           return action(item.id);
         })();
-      await refreshEverything(true, true);
+      if (!result.ok) throw new Error(result.message);
+      // The completed command is authoritative; do not wait for remote catalog refresh
+      // before reflecting its state in every occurrence of this resource.
+      const applyCompletedState = (entry: MarketItem): MarketItem => entry.id === result.itemId && entry.type === result.type
+        ? { ...entry, state: result.state,
+          installedVersion: result.state === "installed" ? entry.version : entry.installedVersion }
+        : entry;
+      setMarketResult((current) => ({ ...current, items: current.items.map(applyCompletedState) }));
+      setSelectedDetailItem((current) => current ? applyCompletedState(current) : current);
       setFeedback(item.type === "mcp" && actionName !== "uninstall"
         ? `${result.message} ${t("market.mcp.configureInAgentNotice")}`
         : result.message);
       setFeedbackType("success");
+      // Packages change multiple skill rows. Refresh this section before waiting
+      // for unrelated service/catalog requests, without fabricating child versions.
+      if (item.type === "skill" && item.skill?.kind === "package") {
+        const list = getMarketMethod("list");
+        if (list) {
+          try {
+            const next = await list({ sections: ["skills"] });
+            setMarketResult((current) => ({ ...current,
+              items: [...current.items.filter((entry) => entry.type !== "skill"), ...next.items.filter((entry) => entry.type === "skill")]
+            }));
+          } catch { /* Keep the confirmed parent state; the full refresh can retry. */ }
+        }
+      }
+      await refreshEverything(true, true);
       return true;
     } catch (reason) {
       console.warn(`[market-storefront] ${actionName} failed for ${item.id}`, reason);
@@ -886,6 +923,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       setFeedbackType("error");
       return false;
     } finally {
+      marketActionInFlight.current = false;
       setBusyItemId("");
     }
   }
@@ -1058,6 +1096,26 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     }
   }
 
+  async function useMarketSkill(item: MarketItem) {
+    if (skillLaunchInFlight.current) return;
+    if (item.skill?.kind === "package" || !isInstalledMarketItem(item) || !/^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/.test(item.id)) {
+      setFeedback(t("market.discovery.cannotUse")); setFeedbackType("warning"); return;
+    }
+    skillLaunchInFlight.current = true;
+    try {
+      const settings = await window.electronAPI.assistant.getSettings();
+      const agentKey = settings.chatDefaultAgentKey.trim();
+      if (!agentKey) throw new Error(t("market.discovery.defaultAgentRequired"));
+      const agents = await window.electronAPI.assistant.listAgents();
+      if (!agents.some((agent) => agent.agentKey === agentKey)) throw new Error(t("market.skill.assistant.agentUnavailable"));
+      const search = new URLSearchParams({ newChat: String(Date.now()),
+        composerDraft: t("market.discovery.useDraft", { name: item.name }), composerSkill: item.id });
+      setSelectedDetailItem(null);
+      navigate(createAgentWebclientAgentPath(agentKey, search));
+    } catch (reason) { setFeedback(normalizeError(reason)); setFeedbackType("error"); }
+    finally { skillLaunchInFlight.current = false; }
+  }
+
   function openPlugin(item: MarketItem) {
     const service = serviceById.get(item.id) ?? null;
     if (canOpenPlugin(service)) {
@@ -1073,6 +1131,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
 
   function renderPrimaryAction(item: MarketItem, compact = false) {
     const busy = busyItemId === item.id;
+    if (item.type === "mcp") {
+      return <Button onClick={() => navigate("/connectors")}>{t("market.connector.custom")}</Button>;
+    }
     if (isListOnlyMarketItem(item)) {
       return (
         <Button
@@ -1200,7 +1261,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         </Button>
       );
     }
-    if (item.type === "pet" || item.type === "mcp" || item.type === "software-package") {
+    if (item.type === "pet" || item.type === "software-package") {
       return (
         <Button
           className="market-store-action"
@@ -1222,6 +1283,11 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   function renderDetailDialog() {
     if (!selectedDetailItem) {
       return null;
+    }
+    if (selectedDetailItem.type === "skill") {
+      return <SkillDetailDialog item={selectedDetailItem} items={marketResult.items} busy={Boolean(busyItemId)}
+        onClose={() => setSelectedDetailItem(null)} onInstall={runMarketAction}
+        onUse={(item) => void useMarketSkill(item)} onDetail={(item) => void openDetail(item)} />;
     }
     const service = selectedDetailItem.type === "plugin" ? serviceById.get(selectedDetailItem.id) ?? null : null;
     const displayName = selectedDetailItem.type === "plugin"
@@ -1275,23 +1341,9 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
                 {marketTypeIcon(selectedDetailItem.type)}
               </span>
               <div className="market-store-detail-title">
-                {selectedDetailItem.type === "skill" ? (
-                  <button
-                    aria-label={t("market.tab.skills.title")}
-                    className="market-store-detail-category-return"
-                    onClick={() => setSelectedDetailItem(null)}
-                    title={t("market.tab.skills.title")}
-                    type="button"
-                  >
-                    <Tag className="market-store-detail-category-pill" color="blue">
-                      {marketTypeLabel(selectedDetailItem.type, t)}
-                    </Tag>
-                  </button>
-                ) : (
-                  <Tag className="market-store-detail-category-pill" color="blue">
-                    {marketTypeLabel(selectedDetailItem.type, t)}
-                  </Tag>
-                )}
+                <Tag className="market-store-detail-category-pill" color="blue">
+                  {marketTypeLabel(selectedDetailItem.type, t)}
+                </Tag>
                 <h2>{displayName}</h2>
                 <span className="market-store-detail-version">{marketVersionLabel(selectedDetailItem)}</span>
               </div>
@@ -1347,6 +1399,23 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
   }
 
   function renderCard(item: MarketItem) {
+    if (item.type === "website-app") {
+      const installed = isInstalledMarketItem(item);
+      const updatable = item.state === "update-available";
+      const label = t(updatable ? "market.action.update" : installed ? "market.state.installed" : "market.action.install");
+      return <article className="skill-discovery-card" key={`${item.type}:${item.id}`}>
+        <div className="skill-discovery-card-head">
+          <span className="skill-discovery-icon tone-5" aria-hidden="true"><GlobalOutlined /></span>
+          <button className="skill-discovery-name" title={item.name} onClick={() => void openDetail(item)}>{item.name}</button>
+          <button className={`skill-discovery-install${updatable ? " is-update" : ""}`} aria-label={`${item.name}: ${label}`} title={label}
+            disabled={Boolean(busyItemId) || (installed && !updatable) || item.state === "incompatible" || item.state === "failed"}
+            onClick={() => void runMarketAction(item, updatable ? "update" : "install")}>
+            {updatable ? t("market.state.updateAvailable") : installed ? <CheckOutlined /> : <PlusOutlined />}
+          </button>
+        </div>
+        <MarketCardDescription text={marketCardDescription(item) || t("market.discovery.noDescription")} onDetail={() => void openDetail(item)} />
+      </article>;
+    }
     const service = item.type === "plugin" ? serviceById.get(item.id) ?? null : null;
     const displayName = item.type === "plugin" ? getServiceDisplayName(item.id, item.name, t) : item.name;
     const description = marketCardDescription(item);
@@ -1356,7 +1425,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     const favoriteLabel = item.favorited ? t("market.favorite.unfavorite") : t("market.favorite.favorite");
     const skillToneClass = marketSkillToneClass(item, displayName);
     const packageSkills = marketSkillPackageItems(item);
-    const usesStackedStatusLayout = item.type === "skill" || item.type === "website-app";
+    const usesStackedStatusLayout = item.type === "skill";
     const statePill = (
       <span className={`market-store-state-pill ${getMarketItemStatusClass(item.state)}`}>
         <span className="market-store-state-dot" aria-hidden="true" />
@@ -1369,7 +1438,6 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       item.type === "cli" ? t("market.detail.scriptedInstall") : "",
       item.type === "pet" ? t("market.detail.desktopPet") : "",
       item.type === "mcp" ? t("market.type.mcp") : "",
-      item.type === "website-app" ? t("market.type.websiteApp") : "",
       item.type === "software-package" ? t("market.type.softwarePackage") : ""
     ].filter(Boolean))).slice(0, 3);
     const cardKey = `${item.type}:${item.id}`;
@@ -1565,7 +1633,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     items: [
       {
         key: "import",
-        icon: <CloudDownloadOutlined />,
+        icon: <FolderOpenOutlined />,
         label: t("market.skill.localImport")
       },
       {
@@ -1588,7 +1656,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         allowClear
         className="market-store-search"
         onChange={(event) => setQuery(event.target.value)}
-        placeholder={activeTab === "skills" ? t("market.search.skills") : t("market.search.storefront")}
+        placeholder={t(activeTab === "skills" ? "market.search.skills" : activeTab === "websiteApps" ? "market.search.webapps" : "market.search.storefront")}
         prefix={<SearchOutlined />}
         suffix={
           <div className="market-store-search-filters" ref={searchFilterRef}>
@@ -1682,6 +1750,37 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
     onTabChange(tab);
   }
 
+  if (activeTab === "mcps") {
+    return <ConnectorMarketplace items={activeItems} loading={isLoadingMarket} busyItemId={busyItemId}
+      onTabChange={handleMarketTabChange} onDetail={(item) => void openDetail(item)}
+      onManage={() => navigate("/connectors")}
+      detail={renderDetailDialog()}
+      feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
+        <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />
+        <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined />} size="small" type="text"
+          onClick={() => { setFeedback(""); setMarketResult((current) => clearMarketMessageForTab(current, activeTab)); }} />
+      </div> : null} />;
+  }
+  if (activeTab === "skills") {
+    return <SkillMarketplace
+      items={activeItems} loading={isLoadingMarket} busyItemId={busyItemId}
+      onTabChange={handleMarketTabChange}
+      onInstall={runMarketAction}
+      onUninstall={(item) => runMarketAction(item, "uninstall")}
+      onDetail={(item) => void openDetail(item)}
+      onUse={(item) => void useMarketSkill(item)}
+      detail={renderDetailDialog()}
+      feedback={shouldShowMarketStatus ? <div className="market-status-wrap">
+        <Alert className="market-status" message={marketStatusMessage} showIcon type={feedback ? feedbackType : "warning"} />
+        <Button aria-label={t("common.close")} className="market-status-close" icon={<CloseOutlined />} size="small" type="text"
+          onClick={() => { setFeedback(""); setMarketResult((current) => clearMarketMessageForTab(current, activeTab)); }} />
+      </div> : null}
+      addControl={<Dropdown disabled={isImporting || isOpeningSkillAssistant} menu={skillAddMenu} placement="bottomRight" trigger={["click"]}>
+        <button type="button" className="skill-discovery-outline" disabled={isImporting || isOpeningSkillAssistant} aria-busy={isImporting || isOpeningSkillAssistant}><PlusCircleOutlined />{t("market.toolbar.addSkill")}</button>
+      </Dropdown>}
+    />;
+  }
+
   return (
     <MarketPageFrame
       activeTab={activeTab}
@@ -1689,7 +1788,7 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
       tabs={tabDefinitions}
       toolbar={marketHeaderTools}
     >
-      <div className="market-content market-storefront">
+      <div className={`market-content market-storefront${activeTab === "websiteApps" ? " skill-discovery is-webapp-discovery" : ""}`}>
         <Modal
           cancelText={t("common.cancel")}
           centered
@@ -1734,41 +1833,15 @@ export function StorefrontMarket({ activeTab, initialItemId = "", onTabChange }:
         ) : null}
 
         <div className="market-store-scroll">
-          {activeTab === "skills" && rangeMode === "installed" ? (
-            <div
-              aria-label={t("market.storefront.installedSkillSourceAria")}
-              className="market-store-installed-source-tabs"
-              role="tablist"
-            >
-              {installedSkillSourceOptions.map((option) => {
-                const selected = installedSkillSource === option.value;
-                return (
-                  <button
-                    aria-selected={selected}
-                    className={`market-store-installed-source-tab ${selected ? "is-selected" : ""}`}
-                    key={option.value}
-                    onClick={() => setInstalledSkillSource(option.value)}
-                    role="tab"
-                    type="button"
-                  >
-                    <span className="market-store-installed-source-label">{option.label}</span>
-                    <span className="market-store-installed-source-count">{option.count}</span>
-                  </button>
-                );
-              })}
-            </div>
-          ) : null}
           {visibleItems.length > 0 ? (
             <div className="market-store-sections">
               {catalogSections.map((section) => (
                 <section className={`market-store-section is-${section.key}`} key={section.key}>
-                  {activeTab !== "skills" || rangeMode !== "installed" ? (
                     <div className="market-store-section-head">
                       <h2>{section.title}</h2>
                       <span>{section.items.length}</span>
                     </div>
-                  ) : null}
-                  <div className="market-store-grid">
+                  <div className={activeTab === "websiteApps" ? "skill-discovery-grid" : "market-store-grid"}>
                     {section.items.map((item) => renderCard(item))}
                   </div>
                 </section>

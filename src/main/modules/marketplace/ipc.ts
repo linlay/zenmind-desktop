@@ -1,9 +1,12 @@
 import { getSandboxImageExportDefaultPath } from "../../infrastructure/filesystem/download-paths";
+import { readMarketSkillContent } from "./skill-detail";
+import { readMarketSkillPins, saveMarketSkillPins } from "./skill-market";
 
 export interface MarketplaceIpcHandlerOptions {
   app: any;
   platform?: string;
   mainWindow: any;
+  getMainWindow?: () => any;
   t: (key: any, params?: any) => string;
   runServiceMutation: <T>(task: () => Promise<T>) => Promise<T>;
   showArchiveDialog: (title: string, extensions?: string[]) => Promise<any>;
@@ -83,6 +86,23 @@ export function registerMarketplaceIpcHandlers(ipcMain: any, options: Marketplac
   });
 
   ipcMain.handle("market.getSettings", async () => getMarketSettings(app));
+  const assertPinSender = (event: any) => {
+    const owner = options.getMainWindow ? options.getMainWindow() : mainWindow;
+    if (!owner || owner.isDestroyed() || owner.webContents.isDestroyed()
+      || event.sender !== owner.webContents || event.senderFrame !== owner.webContents.mainFrame) {
+      throw new Error("market_skill_pins_forbidden");
+    }
+  };
+  ipcMain.handle("market.getSkillPins", async (event: any) => { assertPinSender(event); return readMarketSkillPins(); });
+  ipcMain.handle("market.saveSkillPins", async (event: any, input: unknown) => { assertPinSender(event); return saveMarketSkillPins(input); });
+  ipcMain.handle("market.readSkillContent", async (event: any, id: unknown) => {
+    const owner = options.getMainWindow ? options.getMainWindow() : mainWindow;
+    if (!owner || owner.isDestroyed() || owner.webContents.isDestroyed()
+      || event.sender !== owner.webContents || event.senderFrame !== owner.webContents.mainFrame) {
+      throw new Error("market_skill_content_forbidden");
+    }
+    return readMarketSkillContent(app, id);
+  });
   ipcMain.handle("market.saveSettings", async (_event: any, input: any) => saveMarketSettings(app, input));
   ipcMain.handle("market.list", async (_event: any, listOptions: any) => listMarketItems(app, listOptions));
   ipcMain.handle("market.refresh", async (_event: any, listOptions: any) => refreshMarketCatalog(app, listOptions));

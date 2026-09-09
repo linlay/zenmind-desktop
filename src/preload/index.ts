@@ -377,6 +377,9 @@ const api: DesktopApi = {
     }
   },
   market: {
+    readSkillContent: (id: string) => ipcRenderer.invoke("market.readSkillContent", id),
+    getSkillPins: () => ipcRenderer.invoke("market.getSkillPins"),
+    saveSkillPins: (pins) => ipcRenderer.invoke("market.saveSkillPins", pins),
     getSettings: () => ipcRenderer.invoke("market.getSettings"),
     saveSettings: (input) => ipcRenderer.invoke("market.saveSettings", input),
     list: (options) => ipcRenderer.invoke("market.list", options),

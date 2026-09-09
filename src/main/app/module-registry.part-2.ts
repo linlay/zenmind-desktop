@@ -707,6 +707,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     app,
     platform: options.platform,
     mainWindow: options.getMainWindow(),
+    getMainWindow: options.getMainWindow,
     t,
     runServiceMutation: options.runServiceMutation,
     showArchiveDialog: options.showArchiveDialog,
