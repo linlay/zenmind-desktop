@@ -311,6 +311,7 @@ type BootstrapGuideDismissedBubbles = {
 };
 
 const SIDEBAR_GROUP_STATE_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-groups`;
+const SIDEBAR_SCROLLBAR_HIDE_DELAY_MS = 800;
 const BOOTSTRAP_GUIDE_BUBBLE_WIDTH = 270;
 const BOOTSTRAP_GUIDE_BUBBLE_GAP = 12;
 const BOOTSTRAP_GUIDE_BUBBLE_MAX_VISIBLE_MS = 60_000;
@@ -1251,6 +1252,30 @@ export function AppSidebar({
   const webItemsRef = useRef(webItems);
   assistantNavAgentsRef.current = assistantNavAgents;
   webItemsRef.current = webItems;
+
+  useEffect(() => {
+    const sidebarNav = sidebarNavRef.current;
+    if (!sidebarNav) {
+      return;
+    }
+
+    let hideScrollbarTimer: number | undefined;
+    // Update only the scroll container so scrolling does not rerender the chat list.
+    const handleScroll = () => {
+      sidebarNav.dataset.scrolling = "true";
+      window.clearTimeout(hideScrollbarTimer);
+      hideScrollbarTimer = window.setTimeout(() => {
+        delete sidebarNav.dataset.scrolling;
+      }, SIDEBAR_SCROLLBAR_HIDE_DELAY_MS);
+    };
+
+    sidebarNav.addEventListener("scroll", handleScroll, { passive: true });
+    return () => {
+      sidebarNav.removeEventListener("scroll", handleScroll);
+      window.clearTimeout(hideScrollbarTimer);
+      delete sidebarNav.dataset.scrolling;
+    };
+  }, []);
 
   useEffect(() => () => {
     if (webappShareFeedbackTimerRef.current !== null) {
