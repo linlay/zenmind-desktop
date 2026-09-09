@@ -50,7 +50,8 @@ const servicesIntegrationPorts = {
   getDesktopDeviceId: identityPorts.getDesktopDeviceId,
   getDesktopDeviceInfo: identityPorts.getDesktopDeviceInfo,
   ensureProviderRegisterApiKey: (app) => ensureProviderRegisterApiKey(app, {
-    getDesktopDeviceId: identityPorts.getDesktopDeviceId
+    getDesktopDeviceId: identityPorts.getDesktopDeviceId,
+    fetchImpl: (input, init) => globalThis.fetch(input, init)
   }),
   resolveConversationAssetOrigin,
   emitPluginBridgeHook: pluginBridgePorts.emitPluginBridgeHook,

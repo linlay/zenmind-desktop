@@ -77,6 +77,8 @@ Workspace Terminal、容器、代理、ACP、MCP、LSP 与 sidecar 默认不继�
 
 ### 业务服务授权
 
+首次 Provider API Key 申请由 Desktop 主进程使用运行环境中的登记 grant 完成。请求沿用 Electron 的系统代理解析，只携带本次登记所需的凭据，不继承浏览器 Cookie 或 SSO 身份；macOS 与 Windows 都不要求用户额外设置启动代理参数。此网络策略只作用于 Desktop 的登记请求，不改变 Agent Platform 自身的模型调用网络。网络失败保留登记材料供用户重试，错误详情须脱敏，不能把连接失败解释为 grant 过期或额度不足。
+
 企业聊天等业务服务使用 canonical token 在主进程内换取自己的短期 session 或一次性票据。派生凭据只存在于所属 runtime，不进入 renderer、webview、持久配置或日志。
 
 Kanban、Market、Tunnel Hub、会话分享和 WebApp Tunnel 发布统一使用同一枚 canonical token。Cookie SSO 通过官网会话换回的结果直接发布为 canonical token；Desktop 不再启动额外 site-token bridge，也不持久化 `sso-site-token.json`。各消费者可以在 401 后请求 Main 刷新 canonical token 一次，但不能自行登录、换取或保存另一枚 Desktop access token。

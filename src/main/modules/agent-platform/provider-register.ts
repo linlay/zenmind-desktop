@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { App } from "electron";
+import { net, type App } from "electron";
 import yaml from "js-yaml";
 import { t } from "../../support/i18n/main-i18n";
 import { resolveRuntimeRoot } from "../../infrastructure/filesystem/runtime-environment";
@@ -38,6 +38,7 @@ type ProviderRegisterFetch = (
   input: string,
   init: {
     method: "POST";
+    credentials: "omit";
     headers: Record<string, string>;
     body: string;
   }
@@ -158,6 +159,28 @@ function summarizeResponseBody(value: string) {
   return `${normalized.slice(0, MAX_ERROR_BODY_LENGTH)}...`;
 }
 
+function summarizeRequestError(error: unknown, token: string) {
+  const details: string[] = [];
+  const seen = new Set<unknown>();
+  let current = error;
+  while (current !== undefined && current !== null && !seen.has(current) && seen.size < 4) {
+    seen.add(current);
+    if (typeof current !== "object") {
+      details.push(String(current));
+      break;
+    }
+    const failure = current as { message?: unknown; code?: unknown; cause?: unknown };
+    const code = typeof failure.code === "string" ? failure.code : "";
+    const message = typeof failure.message === "string" ? failure.message : "";
+    if (code || message) {
+      details.push([code, message].filter(Boolean).join(": "));
+    }
+    current = failure.cause;
+  }
+  const message = (details.join(" -> ") || String(error)).split(token).join("<redacted-token>");
+  return redactSensitiveText(message);
+}
+
 async function requestApiKey(input: {
   endpoint: string;
   token: string;
@@ -165,21 +188,22 @@ async function requestApiKey(input: {
   fetchImpl: ProviderRegisterFetch;
 }) {
   let response: ProviderRegisterFetchResponse;
+  let responseText: string;
   try {
     response = await input.fetchImpl(input.endpoint, {
       method: "POST",
+      credentials: "omit",
       headers: {
         Authorization: `Bearer ${input.token}`,
         "Content-Type": "application/json"
       },
       body: JSON.stringify({ name: input.deviceId })
     });
+    responseText = await response.text();
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new Error(t("providerRegister.requestFailed", { message: redactSensitiveText(message) }));
+    throw new Error(t("providerRegister.requestFailed", { message: summarizeRequestError(error, input.token) }));
   }
 
-  const responseText = await response.text();
   if (!response.ok) {
     const suffix = summarizeResponseBody(responseText);
     throw new Error(
@@ -328,10 +352,11 @@ function safetyCleanRegister(registerPath: string, config: ProviderRegisterConfi
 }
 
 function defaultFetchImpl(): ProviderRegisterFetch {
-  if (typeof globalThis.fetch !== "function") {
+  if (typeof net?.fetch !== "function") {
     throw new Error(t("providerRegister.fetchUnsupported"));
   }
-  return globalThis.fetch as unknown as ProviderRegisterFetch;
+  // Chromium resolves the native macOS/Windows system proxy; Node fetch does not.
+  return (input, init) => net.fetch(input, init);
 }
 
 export async function ensureProviderRegisterApiKey(

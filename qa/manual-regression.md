@@ -1,5 +1,12 @@
 # Desktop 手工回归清单
 
+## Provider API Key 登记与系统代理
+
+- macOS 与 Windows 分别在隔离的新运行环境中启用系统 HTTP 代理或 PAC，不设置终端代理环境变量，使用空 Provider key 和测试 grant 启动；确认登记请求经过系统选择的代理，成功写入 key 并清理一次性登记文件。关闭系统代理后，可直连的测试接口仍能登记。
+- 在 Electron 默认 session 预置登记域名的测试 Cookie，确认登记请求只发送 grant Authorization，不发送 Cookie；登记不会改变既有浏览器 Cookie。
+- 使用不可达代理或断网重试，确认错误包含 Chromium 网络错误或底层错误码，Provider key 和登记材料保持原样；错误和日志不含 grant、JWT 或 API Key，单次登记失败不会自动重发申请。
+- 分别模拟 HTTP 401 和额度拒绝响应，确认仍显示 HTTP 状态及脱敏摘要，可与连接失败区分；恢复网络后通过用户重试完成登记。
+
 ## Connectors Center 导航
 
 - 切换中英文，确认账号菜单、能力侧栏和全局搜索统一显示“连接器中心 / Connectors Center”；从三个入口打开时，Desktop 路由和 WebClient 嵌入地址均为 `/connectors`。
