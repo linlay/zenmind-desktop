@@ -1,5 +1,10 @@
 # Desktop 手工回归清单
 
+## WebClient 调试与网站菜单入口
+
+- macOS 与 Windows 分别在运行配置中启用 `DEBUG_PANEL_ENABLED=true` 并刷新 Agent Chat，确认顶栏显示 Debug 按钮；关闭或未设置该开关时隐藏。已有 Chat 点击后在宿主 WorkPanel 打开对应 Debug item，重复点击复用已有 item；未建立 Chat 时不发起打开请求，宿主 WorkPanel 显隐按钮保持原有行为。
+- 同时启用 `SETTINGS_MENU_ENABLED=true`、`QUICK_ACTIONS_ENABLED=true`，确认 `DESKTOP_APP=true` 的 WebClient 根页面、Agent Chat 与 Copilot 均不显示 Settings Menu 或 Quick Actions；Standalone 网站仍按各自开关显示。
+
 ## Provider API Key 登记与系统代理
 
 - macOS 与 Windows 分别在隔离的新运行环境中启用系统 HTTP 代理或 PAC，不设置终端代理环境变量，使用空 Provider key 和测试 grant 启动；确认登记请求经过系统选择的代理，成功写入 key 并清理一次性登记文件。关闭系统代理后，可直连的测试接口仍能登记。
