@@ -5621,3 +5621,13 @@ div.sidebar-chats-group-popover {
   display: none;
   pointer-events: none;
 }
+
+.sidebar-pinned-chat-owner {
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  font-size: 11px;
+  opacity: 0.6;
+}

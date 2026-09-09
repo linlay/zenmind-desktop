@@ -15,7 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
-import { CloseOutlined } from "@ant-design/icons";
+import { CloseOutlined, PushpinOutlined } from "@ant-design/icons";
 import {
   DndContext,
   DragOverlay,
@@ -94,6 +94,7 @@ import {
   getAssistantNavAgentPreviewChats,
   getAssistantNavAgentRecentChats,
   getAssistantNavAgentSortedChats,
+  getAssistantNavAgentUnpinnedChats,
   hasAssistantNavChat,
   isAssistantNavChatAgent,
   isAssistantNavProjectAgent,
@@ -158,7 +159,7 @@ type SidebarStandardPrimaryEntry = SidebarNavItem & {
 
 type SidebarPrimaryEntry = SidebarStandardPrimaryEntry | SidebarChatsEntry;
 
-type SidebarGroupId = "assistants" | "chats" | "webs";
+type SidebarGroupId = "assistants" | "chats" | "webs" | "pinned";
 
 type SidebarContextMenuSubject =
   | {
@@ -323,6 +324,7 @@ function createInitialBootstrapGuideDismissedBubbles(): BootstrapGuideDismissedB
 }
 
 const defaultSidebarGroupState: SidebarGroupState = {
+  pinned: true,
   assistants: true,
   chats: true,
   webs: true,
@@ -528,6 +530,7 @@ function normalizeSidebarGroupState(candidate: unknown): SidebarGroupState {
     Record<SidebarGroupId | "websites", unknown>
   >;
   return {
+    pinned: typeof record.pinned === "boolean" ? record.pinned : true,
     assistants:
       typeof record.assistants === "boolean"
         ? record.assistants
@@ -1005,6 +1008,8 @@ type AppSidebarProps = {
   websiteNavOrder?: SidebarNavOrderItemKey[];
   webItems: WebEntry[];
   assistantNavAgents?: AssistantNavAgentItem[];
+  assistantPinnedChatItems?: AssistantNavChatItem[];
+  assistantChatPinningSupported?: boolean;
   assistantNavChatItems?: AssistantNavChatItem[];
   assistantNavChatItemsHasMore?: boolean;
   assistantChatSortMode?: AssistantChatSortMode;
@@ -1083,6 +1088,8 @@ export function AppSidebar({
   websiteNavOrder = [],
   webItems,
   assistantNavAgents = [],
+  assistantPinnedChatItems = [],
+  assistantChatPinningSupported = false,
   assistantNavChatItems = [],
   assistantNavChatItemsHasMore = false,
   assistantChatSortMode = "recent",
@@ -1347,11 +1354,11 @@ export function AppSidebar({
   const resolvedChatDefaultAgentKey =
     resolvedChatDefaultAgent?.agentKey.trim() ?? "";
   const sidebarChatItems = useMemo(
-    () => assistantNavChatItems.slice(0, chatsVisibleLimit),
+    () => assistantNavChatItems.filter((chat) => !chat.pinned).slice(0, chatsVisibleLimit),
     [assistantNavChatItems, chatsVisibleLimit],
   );
   const activeChatDragItem = activeChatDragId
-    ? sidebarChatItems.find((chat) => chat.chatId === activeChatDragId) ?? null
+    ? [...assistantPinnedChatItems, ...sidebarChatItems].find((chat) => chat.chatId === activeChatDragId) ?? null
     : null;
   const chatNavigationAgentsByKey = useMemo(
     () =>
@@ -1377,8 +1384,9 @@ export function AppSidebar({
     () => summarizeAssistantNavigationAttention({
       items: assistantNavAgents,
       chatItems: assistantNavChatItems,
+      pinnedChatItems: assistantPinnedChatItems,
     }),
-    [assistantNavAgents, assistantNavChatItems],
+    [assistantNavAgents, assistantNavChatItems, assistantPinnedChatItems],
   );
   const chatStatusSummary = navigationAttentionSummary.chats;
   const bootstrapSeedChatAvailable =
@@ -1561,6 +1569,11 @@ export function AppSidebar({
       return createSidebarLinkFocusId(activeTopLevelItem.orderKey);
     }
 
+    if (assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId)) {
+      return !isCollapsed && sidebarGroupState.pinned
+        ? createSidebarChatsChatFocusId(activeSidebarChatId)
+        : createSidebarGroupFocusId("pinned");
+    }
     if (navigationOwner === "chats") {
       if (!isCollapsed && sidebarGroupState.chats) {
         return activeChatsOverviewChatId
@@ -1616,6 +1629,9 @@ export function AppSidebar({
     sidebarGroupState.chats,
     sidebarGroupState.webs,
     activeChatsOverviewChatId,
+    assistantPinnedChatItems,
+    activeSidebarChatId,
+    sidebarGroupState.pinned,
     webNavItems,
   ]);
   const resolvedSidebarNavFocusId =
@@ -2145,7 +2161,7 @@ export function AppSidebar({
   function readSidebarGroupId(
     value: string | undefined,
   ): SidebarGroupId | null {
-    return value === "assistants" || value === "chats" || value === "webs"
+    return value === "assistants" || value === "chats" || value === "webs" || value === "pinned"
       ? value
       : null;
   }
@@ -2159,6 +2175,8 @@ export function AppSidebar({
   }
 
   function findAssistantNavChat(chatId: string) {
+    const direct = [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === chatId);
+    if (direct) return direct;
     for (const agent of assistantNavAgentsRef.current) {
       const chat = getAssistantNavAgentRecentChats(agent).find(
         (item) => item.chatId === chatId,
@@ -2181,6 +2199,7 @@ export function AppSidebar({
   ): SidebarContextMenuTarget | null {
     const runtime = sidebarContextMenuRuntimeRef.current;
     if (subject.kind === "group") {
+      if (subject.groupId === "pinned") return null;
       return {
         kind: "group",
         groupId: subject.groupId,
@@ -2209,9 +2228,11 @@ export function AppSidebar({
         : null;
     }
     if (subject.kind === "chat") {
-      return findAssistantNavChat(subject.chatId)
-        ? { kind: "chat", workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId) }
-        : null;
+      const chat = findAssistantNavChat(subject.chatId);
+      return chat ? { kind: "chat", workPanelOpen: chatWorkPanelOpenChatIds.includes(subject.chatId),
+        pinned: chat.pinned === true,
+        canPin: assistantChatPinningSupported && !chatOrderMutationPending,
+      } : null;
     }
 
     const item = findWebItem(subject.entryKey);
@@ -2292,6 +2313,7 @@ export function AppSidebar({
       );
     }
     if (target.kind === "chat") {
+      if (actionId === "chat.pin" || actionId === "chat.unpin") return target.canPin === true;
       return [
         "chat.export",
         "chat.exportHtml",
@@ -2406,6 +2428,8 @@ export function AppSidebar({
         await handleAssistantArchiveChat(chat);
       } else if (actionId === "chat.delete") {
         await handleAssistantDeleteChat(chat);
+      } else if (actionId === "chat.pin" || actionId === "chat.unpin") {
+        await setChatPinned(chat, actionId === "chat.pin");
       } else if (actionId === "chat.info") {
         chatInfoDialog.open(chat);
       }
@@ -2606,7 +2630,7 @@ export function AppSidebar({
       return false;
     }
     if (kind === "chats-chat") {
-      return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
+      return focusSidebarRovingItemById(createSidebarGroupFocusId(element.dataset.sidebarGroupId === "pinned" ? "pinned" : "chats"));
     }
     if (kind === "chats-more") {
       return focusSidebarRovingItemById(createSidebarGroupFocusId("chats"));
@@ -2636,7 +2660,7 @@ export function AppSidebar({
     }
     const kind = element.dataset.sidebarNavKind;
     const parentFocusId = kind === "chats-chat"
-      ? createSidebarGroupFocusId("chats")
+      ? createSidebarGroupFocusId(element.dataset.sidebarGroupId === "pinned" ? "pinned" : "chats")
       : createSidebarAgentFocusId(element.dataset.sidebarAgentKey || "");
     if (!focusSidebarRovingItemById(parentFocusId)) {
       return false;
@@ -2675,7 +2699,7 @@ export function AppSidebar({
   function getSidebarChatNavigationItems(element: HTMLElement) {
     const kind = element.dataset.sidebarNavKind;
     if (kind === "chats-chat") {
-      return sidebarChatItems;
+      return element.dataset.sidebarGroupId === "pinned" ? assistantPinnedChatItems : sidebarChatItems;
     }
     if (kind !== "chat") {
       return null;
@@ -3188,7 +3212,7 @@ export function AppSidebar({
       return;
     }
     const firstRevealedChat =
-      getAssistantNavAgentSortedChats(agent)[currentVisibleLimit];
+      getAssistantNavAgentUnpinnedChats(agent)[currentVisibleLimit];
     if (!firstRevealedChat) {
       return;
     }
@@ -3735,11 +3759,11 @@ export function AppSidebar({
   }
 
   function isAssistantGroupActive() {
-    return navigationOwner === "assistants";
+    return navigationOwner === "assistants" && !assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId);
   }
 
   function isChatsGroupActive() {
-    return navigationOwner === "chats";
+    return navigationOwner === "chats" && !assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId);
   }
 
   function isWebsiteGroupActive() {
@@ -3747,6 +3771,34 @@ export function AppSidebar({
       currentPathname.startsWith("/webs/") ||
       Boolean(pendingPath?.startsWith("/webs/"))
     );
+  }
+
+  async function setChatPinned(chat: AssistantNavChatItem, pinned: boolean) {
+    if (
+      chatOrderMutationPending ||
+      !assistantChatPinningSupported ||
+      !onUpdateAssistantChatOrder
+    ) {
+      return;
+    }
+    setChatOrderMutationPending(true);
+    setChatOrderError("");
+    try {
+      const result = await onUpdateAssistantChatOrder({
+        operation: "set_pinned",
+        chatId: chat.chatId,
+        pinned,
+      });
+      if (!result.ok) {
+        setChatOrderError(result.message || t("assistant.chatOrderSaveFailed"));
+      }
+    } catch (error) {
+      setChatOrderError(
+        error instanceof Error ? error.message : t("assistant.chatOrderSaveFailed"),
+      );
+    } finally {
+      setChatOrderMutationPending(false);
+    }
   }
 
   async function updateChatsSortMode(sortMode: AssistantChatSortMode) {
@@ -3795,10 +3847,11 @@ export function AppSidebar({
     if (!activeId || !overId || activeId === overId) {
       return null;
     }
-    const activeIndex = sidebarChatItems.findIndex(
+    const dragItems = assistantPinnedChatItems.some((chat) => chat.chatId === activeId) ? assistantPinnedChatItems : sidebarChatItems;
+    const activeIndex = dragItems.findIndex(
       (chat) => chat.chatId === activeId,
     );
-    const overIndex = sidebarChatItems.findIndex(
+    const overIndex = dragItems.findIndex(
       (chat) => chat.chatId === overId,
     );
     if (activeIndex < 0 || overIndex < 0) {
@@ -4480,10 +4533,10 @@ export function AppSidebar({
     );
   }
 
-  function renderSortableChatsRows(roving: boolean) {
+  function renderSortableChatsRows(roving: boolean, chats = sidebarChatItems) {
     const sortable = roving && assistantChatOrderingSupported;
     if (!sortable) {
-      return sidebarChatItems.map((chat) => renderChatsRow(chat, roving, false));
+      return chats.map((chat) => renderChatsRow(chat, roving, false));
     }
     return (
       <DndContext
@@ -4498,10 +4551,10 @@ export function AppSidebar({
         onDragEnd={(event) => void handleChatDragEnd(event)}
       >
         <SortableContext
-          items={sidebarChatItems.map((chat) => chat.chatId)}
+          items={chats.map((chat) => chat.chatId)}
           strategy={verticalListSortingStrategy}
         >
-          {sidebarChatItems.map((chat) => renderChatsRow(chat, roving, true))}
+          {chats.map((chat) => renderChatsRow(chat, roving, true))}
         </SortableContext>
         {typeof document !== "undefined"
           ? createPortal(
@@ -4590,6 +4643,31 @@ export function AppSidebar({
         ) : null}
       </div>
     );
+  }
+
+  function renderPinnedEntry() {
+    if (assistantPinnedChatItems.length === 0) {
+      return null;
+    }
+    return renderSidebarGroup({
+      groupId: "pinned",
+      label: t("sidebar.pinned.title"),
+      iconNode: <PushpinOutlined />,
+      status: {
+        unreadCount: assistantPinnedChatItems.filter((chat) => !chat.isRead).length,
+        pendingCount: assistantPinnedChatItems.filter((chat) => chat.hasPendingAwaiting).length,
+      },
+      active: assistantPinnedChatItems.some((chat) => chat.chatId === activeSidebarChatId),
+      children: [],
+      renderChildren: ({ roving }) => (
+        <div className="sidebar-chats-list sidebar-pinned-list" role="list">
+          {renderSortableChatsRows(roving, assistantPinnedChatItems)}
+          {chatOrderError ? (
+            <div className="sidebar-chats-agent-error" role="alert">{chatOrderError}</div>
+          ) : null}
+        </div>
+      ),
+    });
   }
 
   function renderChatsEntry(item: SidebarChatsEntry) {
@@ -4863,6 +4941,7 @@ export function AppSidebar({
           roving ? chat.agentKey || currentAgentKey : undefined
         }
         data-sidebar-chat-id={roving ? chat.chatId : undefined}
+        data-sidebar-group-id={chat.pinned ? "pinned" : undefined}
       >
         <span className="worker-chat-item-head">
           <span
@@ -4877,6 +4956,11 @@ export function AppSidebar({
             aria-hidden={chat.isRead ? "true" : undefined}
           />
           <span className="worker-chat-name">{previewText}</span>
+          {chat.pinned ? (
+            <span className="sidebar-pinned-chat-owner" title={getChatHoverAgent(chat).displayName}>
+              {getChatHoverAgent(chat).displayName}
+            </span>
+          ) : null}
           {chat.hasPendingAwaiting ? (
             <span className="chat-awaiting-status">
               {t(getAssistantAwaitingStatusKey(chat.awaitingMode))}
@@ -4933,7 +5017,7 @@ export function AppSidebar({
   ) {
     const roving = options.roving ?? true;
     const dragActivator = options.dragActivator;
-    const allRecentChats = getAssistantNavAgentSortedChats(agent);
+    const allRecentChats = getAssistantNavAgentUnpinnedChats(agent);
     const projectChatVisibleLimit =
       assistantAgentChatVisibleLimits.get(agent.agentKey) ??
       PROJECT_CHATS_VISIBLE_LIMIT;
@@ -5210,6 +5294,7 @@ export function AppSidebar({
     label: string;
     collapsedLabel?: string;
     icon?: SidebarIllustrationKind;
+    iconNode?: ReactNode;
     active: boolean;
     status?: SidebarStatusSummary;
     children: Array<SidebarNavItem & { status?: SidebarStatusSummary }>;
@@ -5288,9 +5373,9 @@ export function AppSidebar({
           data-sidebar-group-id={args.groupId}
         >
           <span className="sidebar-group-heading-main">
-            {args.icon ? (
+            {args.icon || args.iconNode ? (
               <span className="sidebar-link-icon">
-                <SidebarIllustration kind={args.icon} variant="rail" />
+                {args.iconNode ?? (args.icon ? <SidebarIllustration kind={args.icon} variant="rail" /> : null)}
               </span>
             ) : null}
             {isCollapsed || !args.headerLabel ? (
@@ -6749,7 +6834,7 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : navItems.map((item) => renderPrimaryNavEntry(item))}
+              : <>{renderPinnedEntry()}{navItems.map((item) => renderPrimaryNavEntry(item))}</>}
         </nav>
         {renderBootstrapGuideCard()}
 

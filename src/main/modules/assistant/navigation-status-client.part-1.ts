@@ -39,6 +39,7 @@ export type PlatformActiveRunSummary = {
 };
 
 export type PlatformChatSummary = {
+  pinned?: unknown;
   id?: unknown;
   chatId?: unknown;
   chatName?: unknown;
@@ -67,6 +68,7 @@ export type PlatformChatSummary = {
 };
 
 export type PlatformChatOrder = {
+  pinnedOrder?: unknown;
   sortMode?: unknown;
   updatedAt?: unknown;
 };
@@ -659,7 +661,12 @@ export function mergeNavigationChats(
       chatsById.set(chatId, chat);
     }
   }
-  return [...chatsById.values()].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
+  return limitNavigationChats([...chatsById.values()]);
+}
+
+export function limitNavigationChats(chats: AssistantNavChatItem[]) {
+  const sorted = [...chats].sort(compareNavChats);
+  return [...sorted.filter((chat) => chat.pinned), ...sorted.filter((chat) => !chat.pinned).slice(0, NAVIGATION_AGENT_CHAT_LIMIT)].sort(compareNavChats);
 }
 
 export function resolveNavigationUnreadCount(options: {

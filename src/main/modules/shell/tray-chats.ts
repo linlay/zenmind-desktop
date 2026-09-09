@@ -15,7 +15,7 @@ export function getAppTrayRecentChats(snapshot: AssistantNavAgentItemsResult | u
   const agentNames = new Map(agents.map((agent) => [agent.agentKey, agent.displayName]));
   const chatsById = new Map<string, AppTrayRecentChat>();
   // Per-agent recent history also covers Chats outside the sidebar's manual-order window.
-  const chats = [...snapshot.chatItems, ...agents.flatMap((agent) => agent.recentChats)];
+  const chats = [...(snapshot.pinnedChatItems ?? []), ...snapshot.chatItems, ...agents.flatMap((agent) => agent.recentChats)];
   for (const chat of chats) {
     const agentKey = chat.agentKey.trim();
     const chatId = chat.chatId.trim();

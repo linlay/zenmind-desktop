@@ -1051,7 +1051,7 @@ test("sidebar primary navigation uses roving tabindex", () => {
   assert.match(sidebarSource, /data-sidebar-roving-container=\{isPrimaryMode \? "true" : undefined\}/);
   assert.match(sidebarSource, /onKeyDown=\{handleSidebarNavKeyDown\}/);
   assert.match(sidebarSource, /function getSidebarChatNavigationItems\(element: HTMLElement\)/);
-  assert.match(sidebarSource, /kind === "chats-chat"[\s\S]*?return sidebarChatItems/);
+  assert.match(sidebarSource, /kind === "chats-chat"[\s\S]*?element\.dataset\.sidebarGroupId === "pinned" \? assistantPinnedChatItems : sidebarChatItems/);
   assert.match(sidebarSource, /getAssistantNavAgentPreviewChats\(agent, visibleLimit\)/);
   assert.match(sidebarSource, /function moveSidebarChatSelection\([\s\S]*?getAdjacentAssistantNavChat/);
   assert.match(sidebarSource, /focusSidebarRovingItemById\(focusId\);[\s\S]{0,100}handleAssistantOpenChat\(nextChat\)/);
@@ -2372,8 +2372,8 @@ test("Chats sidebar retains global chatItems and adds a default-agent history en
 
   assert.match(appShell, /assistantNavChatItems=\{assistantNavChatItems\}/);
   assert.match(appShell, /assistantNavChatItemsHasMore=\{assistantNavChatItemsHasMore\}/);
-  assert.match(sidebarSource, /assistantNavChatItems\.slice\(0, chatsVisibleLimit\)/);
-  assert.match(chatsRowsSource, /sidebarChatItems\.map\(\(chat\) =>/);
+  assert.match(sidebarSource, /assistantNavChatItems\.filter\(\(chat\) => !chat\.pinned\)\.slice\(0, chatsVisibleLimit\)/);
+  assert.match(chatsRowsSource, /chats\.map\(\(chat\) =>/);
   assert.match(sidebarSource, /createAgentChatRoute\(chat\.agentKey, chat\.chatId\)/);
   assert.doesNotMatch(`${chatsRowsSource}${chatsListSource}`, /recentChats/);
   assert.match(sidebarSource, /const chatsShowMoreAvailable =\s*chatsVisibleLimit < CHATS_MAX_VISIBLE_LIMIT &&\s*assistantNavChatItems\.length > chatsVisibleLimit/);

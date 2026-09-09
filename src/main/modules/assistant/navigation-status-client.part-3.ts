@@ -206,7 +206,7 @@ export async function readAssistantNavigationAgentsFromPlatform(
   token: string,
   includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
 ): Promise<AssistantNavAgentItem[]> {
-  const agents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "nav", includeChatLimit);
+  const agents = await readAssistantNavigationAgentsFromPlatformScope(baseUrl, token, "nav", includeChatLimit, false);
   return await enrichNavigationAgentsWithGitBranches(
     buildAssistantNavigationAgentsFromPlatformAgents(agents, includeChatLimit),
   );
@@ -216,10 +216,11 @@ export async function readAssistantNavigationAgentsFromPlatformScope(
   baseUrl: string,
   token: string,
   scope: "nav" | "copilot",
-  includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT
+  includeChatLimit = NAVIGATION_AGENT_CHAT_LIMIT,
+  chatsPinned?: boolean,
 ): Promise<unknown[]> {
   return await readApiJson<unknown[]>(
-    `${createApiUrl(baseUrl, "/api/agents")}?includeChats=${encodeURIComponent(String(includeChatLimit))}&scope=${scope}`,
+    `${createApiUrl(baseUrl, "/api/agents")}?includeChats=${encodeURIComponent(String(includeChatLimit))}&scope=${scope}${chatsPinned === undefined ? "" : `&chatsPinned=${chatsPinned}`}`,
     token
   );
 }

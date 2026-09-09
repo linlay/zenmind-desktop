@@ -2,6 +2,7 @@ import type { App } from "electron";
 import type {
   AgentAuthIssueResult,
   AssistantChatSortMode,
+  AssistantNavChatItem,
   AssistantNavAgentItemsResult,
   AssistantNavigationLiveFrame,
   AssistantNavigationPushEvent,
@@ -28,8 +29,8 @@ import {
   RealtimeBroker,
 } from "../agent-platform";
 import type { AgentPlatformRealtimeFrame } from "../agent-platform";
-import { AGENT_PLATFORM_SERVICE_ID, ASSISTANT_NAVIGATION_WS_SOURCE, AssistantNavigationRecordedRuntimeStatusPush, IGNORED_PUSH_TYPES, JOURNALED_NAVIGATION_PUSH_TYPES, NAVIGATION_AGENT_CHAT_LIMIT, NAVIGATION_AGENT_HISTORY_LIMIT, NAVIGATION_CHAT_AGENT_MODE, NAVIGATION_CHAT_LIMIT, NAVIGATION_CHAT_PROBE_LIMIT, NAVIGATION_LIVE_FRAME_LIMIT, NAVIGATION_REFRESH_DEBOUNCE_MS, NAVIGATION_UNAVAILABLE_RETRY_MS, NavigationPushEvent, NavigationPushFrame, PlatformChatOrder, createRedactedWsEndpoint, nowEpochMillis, toText, unwrapApiResponse } from "./navigation-status-client.part-1";
-import { AssistantNavigationChatOrderSnapshot, AssistantNavigationChatsSnapshot, buildAssistantNavigationChatsSnapshotFromPlatform, createChatRuntimeStatusPatch, readPushChatId, toPushEvent } from "./navigation-status-client.part-2";
+import { AGENT_PLATFORM_SERVICE_ID, ASSISTANT_NAVIGATION_WS_SOURCE, AssistantNavigationRecordedRuntimeStatusPush, IGNORED_PUSH_TYPES, JOURNALED_NAVIGATION_PUSH_TYPES, NAVIGATION_AGENT_CHAT_LIMIT, NAVIGATION_AGENT_HISTORY_LIMIT, NAVIGATION_CHAT_AGENT_MODE, NAVIGATION_CHAT_LIMIT, NAVIGATION_CHAT_PROBE_LIMIT, NAVIGATION_LIVE_FRAME_LIMIT, NAVIGATION_REFRESH_DEBOUNCE_MS, NAVIGATION_UNAVAILABLE_RETRY_MS, NavigationPushEvent, NavigationPushFrame, PlatformChatSummary, PlatformChatOrder, createRedactedWsEndpoint, nowEpochMillis, toText, unwrapApiResponse } from "./navigation-status-client.part-1";
+import { AssistantNavigationChatOrderSnapshot, AssistantNavigationChatsSnapshot, buildAssistantNavigationChatsSnapshotFromPlatform, mapNavigationChat, createChatRuntimeStatusPatch, readPushChatId, toPushEvent } from "./navigation-status-client.part-2";
 import { applyAssistantNavigationChatPush, applyAssistantNavigationPush, readAssistantNavigationActivityAgentsFromPlatform, readAssistantNavigationAgentsFromPlatform } from "./navigation-status-client.part-3";
 
 export class AssistantNavigationStatusClient {
@@ -239,6 +240,18 @@ export class AssistantNavigationStatusClient {
         this.requestNavigationChats(baseUrl, token),
         this.requestNavigationChatOrder(baseUrl, token),
       ]);
+      const pinnedChatItems = chatOrderSnapshot.chatPinningSupported
+        ? (await this.requestNavigationChatList(baseUrl, token, true))
+            .map((chat, index) => mapNavigationChat(chat, "", `navigation.pinned[${index}]`))
+            .filter((chat): chat is AssistantNavChatItem => Boolean(chat?.agentKey && chat.pinned))
+        : [];
+      // Activity retains owner-level attention for pinned project conversations.
+      for (const agent of activityItems) {
+        const pins = pinnedChatItems.filter((chat) => chat.agentKey === agent.agentKey);
+        const ids = new Set(pins.map((chat) => chat.chatId));
+        agent.recentChats = [...pins, ...agent.recentChats.filter((chat) => !ids.has(chat.chatId))];
+        agent.hasPendingAwaiting ||= pins.some((chat) => chat.hasPendingAwaiting);
+      }
       if (chatOrderSnapshot.chatOrderingSupported) {
         this.cacheChatSortMode(chatOrderSnapshot.chatSortMode);
       }
@@ -248,6 +261,7 @@ export class AssistantNavigationStatusClient {
         activityItems,
         ...chatSnapshot,
         ...chatOrderSnapshot,
+        pinnedChatItems,
         message: t("assistant.navigationStatusRead"),
         updatedAt: nowEpochMillis()
       }, runtimeStatusSequenceAtStart);
@@ -315,7 +329,8 @@ export class AssistantNavigationStatusClient {
         nextResult.chatItems,
         recorded.frame,
       );
-      if (!next.changed && !nextActivity.changed && !nextChats.changed) {
+      const nextPins = applyAssistantNavigationChatPush(nextResult.pinnedChatItems ?? [], recorded.frame);
+      if (!next.changed && !nextActivity.changed && !nextChats.changed && !nextPins.changed) {
         continue;
       }
       nextResult = {
@@ -323,6 +338,7 @@ export class AssistantNavigationStatusClient {
         items: next.items,
         activityItems: nextActivity.items,
         chatItems: nextChats.items,
+        pinnedChatItems: nextPins.items,
       };
     }
     return nextResult;
@@ -382,6 +398,14 @@ export class AssistantNavigationStatusClient {
     baseUrl: string,
     token: string,
   ): Promise<AssistantNavigationChatsSnapshot> {
+    return buildAssistantNavigationChatsSnapshotFromPlatform(await this.requestNavigationChatList(baseUrl, token, false));
+  }
+
+  private async requestNavigationChatList(
+    baseUrl: string,
+    token: string,
+    pinned: boolean,
+  ): Promise<PlatformChatSummary[]> {
     const id = `desktop-nav-chats-${++this.wsRequestSequence}`;
     const frame = await new Promise<NavigationPushFrame>((resolve, reject) => {
       void this.realtimeBroker.forwardRequest({
@@ -390,9 +414,10 @@ export class AssistantNavigationStatusClient {
         localId: id,
         consumerId: "assistant-navigation",
         type: "/api/chats",
-        payload: {
+        payload: pinned ? { pinned: true } : {
           mode: NAVIGATION_CHAT_AGENT_MODE,
           limit: NAVIGATION_CHAT_PROBE_LIMIT,
+          pinned: false,
         },
         onFrame: (response) => {
           this.updateLiveStatus({ lastMessageAt: nowEpochMillis() });
@@ -411,9 +436,8 @@ export class AssistantNavigationStatusClient {
       }).catch((error) => reject(error instanceof Error ? error : new Error(String(error))));
       this.recordLiveFrame({ direction: "outbound", kind: "request", type: "/api/chats" });
     });
-    return buildAssistantNavigationChatsSnapshotFromPlatform(
-      unwrapApiResponse<unknown[]>(frame),
-    );
+    const chats = unwrapApiResponse<PlatformChatSummary[]>(frame);
+    return Array.isArray(chats) ? chats : [];
   }
 
   private async requestNavigationChatOrder(
@@ -461,6 +485,7 @@ export class AssistantNavigationStatusClient {
       return {
         chatSortMode: sortMode,
         chatOrderingSupported: true,
+        chatPinningSupported: Array.isArray(data?.pinnedOrder),
       };
     } catch (error) {
       this.options.onDebug?.(
@@ -543,12 +568,15 @@ export class AssistantNavigationStatusClient {
       ? applyAssistantNavigationPush(this.latestResult.activityItems ?? [], frame)
       : next;
     const nextChats = applyAssistantNavigationChatPush(this.latestResult.chatItems, frame);
-    if (next.changed || nextActivity.changed || nextChats.changed) {
+    const nextPins = applyAssistantNavigationChatPush(this.latestResult.pinnedChatItems ?? [], frame);
+    if (next.changed || nextActivity.changed || nextChats.changed || nextPins.changed) {
       this.setSnapshot({
         ok: true,
         items: next.items,
         activityItems: nextActivity.items,
         chatItems: nextChats.items,
+        pinnedChatItems: nextPins.items,
+        chatPinningSupported: this.latestResult.chatPinningSupported === true,
         chatItemsHasMore: this.latestResult.chatItemsHasMore,
         chatSortMode: this.latestResult.chatSortMode ?? "recent",
         chatOrderingSupported: this.latestResult.chatOrderingSupported === true,
@@ -561,7 +589,7 @@ export class AssistantNavigationStatusClient {
       // Read state is a push-owned projection. A successfully applied or
       // recognized stale event must not start a snapshot race; only a wholly
       // missing target needs server calibration.
-      if (next.shouldRefresh && nextActivity.shouldRefresh && nextChats.shouldRefresh) {
+      if (next.shouldRefresh && nextActivity.shouldRefresh && nextChats.shouldRefresh && nextPins.shouldRefresh) {
         this.scheduleRefresh();
       }
       return;

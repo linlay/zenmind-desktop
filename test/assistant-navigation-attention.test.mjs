@@ -106,3 +106,22 @@ test("navigation attention uses the same activity projection rendered by Project
     pendingCount: 1,
   });
 });
+
+
+test("navigation attention includes ordinary pins without double-counting project pins", () => {
+  const visible = createChat("visible", false, true);
+  const summary = summarizeAssistantNavigationAttention({
+    items: [createAgent("coder", "CODER", 2, true)],
+    chatItems: [visible],
+    pinnedChatItems: [
+      { ...createChat("ordinary-pin", false, true), pinned: true },
+      { ...createChat("project-pin", false, true), agentKey: "coder", pinned: true },
+      visible,
+    ],
+  });
+  assert.deepEqual(summary, {
+    chats: { unreadCount: 1, pendingCount: 1 },
+    projects: { unreadCount: 2, pendingCount: 1 },
+    total: { unreadCount: 4, pendingCount: 3 },
+  });
+});

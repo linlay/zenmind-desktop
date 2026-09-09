@@ -601,3 +601,20 @@ test("assistant nav normalization falls back to row read states when stats are a
   assert.equal(agent.unreadCount, 1);
   assert.equal(agent.unreadChatCount, 1);
 });
+
+
+test("project previews exclude pins before applying each display limit", () => {
+  const recentChats = Array.from({ length: 30 }, (_, index) => chat({
+    chatId: `chat-${index}`,
+    updatedAt: epoch(100 - index),
+    pinned: index < 7,
+  }));
+  const agent = { recentChats };
+  assert.deepEqual(
+    getAssistantNavAgentPreviewChats(agent).map((item) => item.chatId),
+    ["chat-7", "chat-8", "chat-9", "chat-10", "chat-11"],
+  );
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 20).length, 20);
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 20).at(-1).chatId, "chat-26");
+  assert.equal(getAssistantNavAgentPreviewChats(agent, 20).some((item) => item.pinned), false);
+});

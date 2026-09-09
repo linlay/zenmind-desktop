@@ -98,10 +98,15 @@ export function normalizeSidebarContextMenuRequest(
       canOpenProjectEditor: target.canOpenProjectEditor
     };
   } else if (target.kind === "chat") {
-    if (!hasOnlyKeys(target, ["kind", "workPanelOpen"]) || !isBoolean(target.workPanelOpen)) {
+    if (!hasOnlyKeys(target, ["kind", "workPanelOpen", "pinned", "canPin"]) || !isBoolean(target.workPanelOpen)
+      || (target.pinned !== undefined && !isBoolean(target.pinned))
+      || (target.canPin !== undefined && !isBoolean(target.canPin))) {
       return null;
     }
-    normalizedTarget = { kind: "chat", workPanelOpen: target.workPanelOpen };
+    normalizedTarget = { kind: "chat", workPanelOpen: target.workPanelOpen,
+      ...(target.pinned === undefined ? {} : { pinned: target.pinned as boolean }),
+      ...(target.canPin === undefined ? {} : { canPin: target.canPin as boolean }),
+    };
   } else if (target.kind === "web") {
     const commonKeys = [
       "kind",
@@ -220,6 +225,7 @@ export function buildSidebarContextMenuPolicy(
 
   if (target.kind === "chat") {
     return [
+      ...(target.canPin ? [{ id: target.pinned ? "chat.unpin" as const : "chat.pin" as const, group: 0, enabled: true }] : []),
       {
         id: target.workPanelOpen ? "chat.workPanel.close" : "chat.workPanel.open",
         group: 0,
