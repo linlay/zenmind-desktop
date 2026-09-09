@@ -4094,6 +4094,29 @@ export function AppSidebar({
     );
   }
 
+  function renderNewChatNavButton() {
+    const disabled =
+      !resolvedChatDefaultAgentKey || chatDefaultAgentUnavailable;
+    const label = t("sidebar.chats.newChat");
+    return (
+      <button
+        type="button"
+        className="sidebar-link sidebar-primary-link sidebar-new-chat-button"
+        aria-label={label}
+        title={disabled ? t("sidebar.chats.defaultAgentUnavailable") : label}
+        {...getSidebarRovingItemProps("action:new-chat")}
+        data-sidebar-nav-kind="action"
+        disabled={disabled}
+        onClick={handleChatsNewChat}
+      >
+        <span className="sidebar-link-icon" aria-hidden="true">
+          <SidebarActionIcon kind="new_chat" />
+        </span>
+        <span className="sidebar-link-label">{label}</span>
+      </button>
+    );
+  }
+
   function renderChatsHeaderActions(options: { inPopover?: boolean } = {}) {
     const sortLabel = assistantChatOrderingSupported
       ? assistantChatSortMode === "manual"
@@ -5449,6 +5472,14 @@ export function AppSidebar({
   }
 
   function renderPrimaryNavEntry(item: SidebarPrimaryEntry) {
+    if (item.orderKey === "schedules") {
+      return (
+        <Fragment key={item.orderKey}>
+          {renderSidebarLink(item)}
+          {renderNewChatNavButton()}
+        </Fragment>
+      );
+    }
     if (item.entryType === "chats") {
       return renderChatsEntry(item);
     }
