@@ -5566,7 +5566,12 @@ export function AppSidebar({
       );
     }
     if (item.entryType === "chats") {
-      return renderChatsEntry(item);
+      return (
+        <Fragment key={item.orderKey}>
+          {renderPinnedEntry()}
+          {renderChatsEntry(item)}
+        </Fragment>
+      );
     }
     if (item.entryType === "assistants") {
       return renderSidebarGroup({
@@ -6834,7 +6839,7 @@ export function AppSidebar({
             ? renderSettingsNav()
             : isCapabilitiesMode
               ? renderCapabilitiesNav()
-              : <>{renderPinnedEntry()}{navItems.map((item) => renderPrimaryNavEntry(item))}</>}
+              : navItems.map((item) => renderPrimaryNavEntry(item))}
         </nav>
         {renderBootstrapGuideCard()}
 

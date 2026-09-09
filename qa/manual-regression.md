@@ -79,6 +79,7 @@
 
 ## 对话置顶
 
+- macOS 与 Windows 分别在展开和收起侧栏确认默认顺序为“自动化 → 新建对话 → 置顶 / Pinned → 对话 / Chats”；调整 Chats 导航位置后 Pinned 仍紧邻其上方，键盘焦点顺序与显示顺序一致。
 - 在普通、CODER、KBASE 的对话菜单中分别置顶，确认全部进入同一 Pinned，原 Chats/Project 下不再重复；有足够历史时 Chats 始终补满 8 条、每个 Project 补满 5 条，查看更多分别按 8/5 增长到 24/20，新增行焦点不落到置顶项。
 - 混合拖动 Pinned 内不同 Agent 的对话，确认保存并跨重启恢复；普通 Chats 原 recent/manual 模式和序列不改变。取消置顶回到原组的排序位置，新置顶在 Pinned 首位，重复设置相同状态不改位置。组间拖放不得迁移记录。
 - 覆盖运行中、awaiting 和未读置顶 Chat，收到 Run/已读 Push 后状态及时更新且置顶保持；Project 统计与桌宠不漏计或重复计数。正在刷新时置顶/取消置顶，再快速切换 Chat，最终与 Platform 快照一致。
