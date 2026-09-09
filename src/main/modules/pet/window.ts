@@ -3,6 +3,24 @@ import { PRODUCT_NAME } from "../../../shared/brand";
 
 type DesktopPetLayeredWindow = Pick<BrowserWindow, "isDestroyed" | "setAlwaysOnTop">;
 
+export function applyDesktopPetMouseInteractivity(
+  win: Pick<BrowserWindow, "setIgnoreMouseEvents">,
+  platform: NodeJS.Platform | string,
+  interactive: boolean
+) {
+  if (platform === "darwin") {
+    win.setIgnoreMouseEvents(!interactive, { forward: true });
+    return;
+  }
+  if (platform === "win32") {
+    // Electron forwards mouse movement on Windows too, so the renderer can
+    // restore interaction when the cursor returns to an opaque pet pixel.
+    win.setIgnoreMouseEvents(!interactive, { forward: true });
+    return;
+  }
+  win.setIgnoreMouseEvents(false);
+}
+
 export function applyDesktopPetBrowserWindowLayering(
   win: DesktopPetLayeredWindow | null | undefined,
   platform: NodeJS.Platform | string

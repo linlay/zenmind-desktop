@@ -495,7 +495,8 @@ test("desktop pet display area keeps full horizontal screen bounds when work are
     x: 0,
     y: 25,
     width: 1280,
-    height: 640
+    height: 640,
+    windowLeftInset: 79
   });
 });
 
@@ -810,7 +811,7 @@ test("desktop pet left edge keeps the BrowserWindow onscreen while the visible p
   assert.deepEqual(getDesktopPetLogicalPositionFromBounds(legacyBounds, "base", displayArea, {
     x: displayArea.x,
     y: position.y
-  }), position);
+  }), { x: displayArea.x, y: position.y });
 });
 
 test("desktop pet full-width left host persists as a left-edge logical position", () => {
@@ -1090,13 +1091,13 @@ test("desktop pet drag clamps the pet body instead of the expanded panel window"
   assert.deepEqual(bounds, getAnchoredDesktopPetBounds({ x: initialPosition.x - 8, y: initialPosition.y }, displayArea, "bubble"));
 });
 
-test("desktop pet drag snaps to the full left screen edge when macOS keeps the cursor at the work-area inset", () => {
+test("desktop pet drag preserves the pointer offset near the macOS side Dock", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
     getAnchoredDesktopPetBounds,
-    getDesktopPetVisibleFootprintForMode
+    resolveDesktopPetWindowLayout
   } = __testInternals;
-  const displayArea = { x: 0, y: 25, width: 1440, height: 900 };
+  const displayArea = { x: 0, y: 25, width: 1440, height: 900, windowLeftInset: 79 };
   const initialPosition = { x: 220, y: 300 };
   let bounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
   let cursorPoint = {
@@ -1144,20 +1145,22 @@ test("desktop pet drag snaps to the full left screen edge when macOS keeps the c
 
   assert.equal(setBoundsCalls.length, 1);
   assert.equal(bounds.x, displayArea.x);
+  const layout = resolveDesktopPetWindowLayout({ x: 29, y: initialPosition.y }, displayArea);
   assert.equal(
-    visibleFootprintRect(bounds, getDesktopPetVisibleFootprintForMode("base", "left")).x,
-    displayArea.x
+    bounds.x + layout.bodyOffset.x,
+    cursorPoint.x - 10
   );
+  assert.equal(layout.edgeDock, null);
   assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
 });
 
-test("desktop pet drag release keeps the requested left-edge snap when getBounds reports the work-area inset", () => {
+test("desktop pet drag release preserves its requested position when native bounds report a work-area inset", () => {
   const {
     DESKTOP_PET_VISIBLE_FOOTPRINT,
     getAnchoredDesktopPetBounds,
-    getDesktopPetVisibleFootprintForMode
+    resolveDesktopPetWindowLayout
   } = __testInternals;
-  const displayArea = { x: 0, y: 25, width: 1440, height: 900 };
+  const displayArea = { x: 0, y: 25, width: 1440, height: 900, windowLeftInset: 79 };
   const initialPosition = { x: 220, y: 300 };
   let requestedBounds = getAnchoredDesktopPetBounds(initialPosition, displayArea, "base");
   let reportedBounds = { ...requestedBounds };
@@ -1219,21 +1222,103 @@ test("desktop pet drag release keeps the requested left-edge snap when getBounds
 
   assert.equal(requestedBounds.x, displayArea.x);
   assert.equal(reportedBounds.x, 79);
+  const requestedPosition = { x: 29, y: initialPosition.y };
+  const layout = resolveDesktopPetWindowLayout(requestedPosition, displayArea);
   assert.equal(
-    visibleFootprintRect(requestedBounds, getDesktopPetVisibleFootprintForMode("base", "left")).x,
-    displayArea.x
+    requestedBounds.x + layout.bodyOffset.x,
+    cursorPoint.x - 10
   );
   assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
 
   assert.equal(setBoundsCalls.at(-1).x, displayArea.x);
   assert.deepEqual(savedSettings, [{
-    position: {
-      x: displayArea.x - DESKTOP_PET_VISIBLE_FOOTPRINT.x,
-      y: initialPosition.y
-    }
+    position: requestedPosition
   }]);
   assert.deepEqual(guardedBounds.at(-1), requestedBounds);
   assert.deepEqual(persistedModes, []);
+});
+
+test("desktop pet body moves continuously to all four edges while its native host stays onscreen", () => {
+  const { resolveDesktopPetWindowLayout, getDesktopPetLogicalPositionFromBounds } = __testInternals;
+  for (const display of [
+    { x: 0, y: 25, width: 1440, height: 900 },
+    { x: -1920, y: -320, width: 1920, height: 1080, windowLeftInset: 79 }
+  ]) {
+    for (const side of ["left", "right", "top", "bottom"]) {
+      let previous = null;
+      for (let gap = 130; gap >= 0; gap -= 1) {
+        const expected = {
+          x: side === "left" ? display.x + gap : side === "right"
+            ? display.x + display.width - 96 - gap : display.x + 300,
+          y: side === "top" ? display.y + gap : side === "bottom"
+            ? display.y + display.height - 108 - gap : display.y + 300
+        };
+        const position = { x: expected.x - 40, y: expected.y - 52 };
+        const layout = resolveDesktopPetWindowLayout(position, display);
+        const visible = {
+          x: layout.bounds.x + layout.bodyOffset.x,
+          y: layout.bounds.y + layout.bodyOffset.y
+        };
+        assert.deepEqual(visible, expected, `${side} keeps the requested ${gap} px gap`);
+        assert.ok(layout.bounds.x >= display.x && layout.bounds.y >= display.y);
+        assert.ok(layout.bounds.x + layout.bounds.width <= display.x + display.width);
+        assert.ok(layout.bounds.y + layout.bounds.height <= display.y + display.height);
+        assert.equal(layout.edgeDock, gap <= 1 ? side : null);
+        assert.deepEqual(getDesktopPetLogicalPositionFromBounds(layout.bounds, "base", display, position), position);
+        if (previous) {
+          assert.equal(Math.hypot(visible.x - previous.x, visible.y - previous.y), 1);
+        }
+        previous = visible;
+      }
+    }
+  }
+});
+
+test("desktop pet drag projects geometry on both platforms and samples the final release position", () => {
+  const { resolveDesktopPetWindowLayout } = __testInternals;
+  for (const platform of ["darwin", "win32"]) {
+    const display = { x: -1440, y: 25, width: 1440, height: 900, windowLeftInset: 79 };
+    const initialPosition = { x: -1120, y: 250 };
+    let bounds = resolveDesktopPetWindowLayout(initialPosition, display).bounds;
+    let cursorPoint = { x: initialPosition.x + 88, y: initialPosition.y + 106 };
+    let intervalCallback;
+    let refreshCount = 0;
+    const layouts = [];
+    const saved = [];
+    const controller = createDesktopPetDragController({
+      platform,
+      getWindow: () => ({
+        isDestroyed: () => false,
+        getBounds: () => ({ ...bounds }),
+        setBounds: (value) => { bounds = { ...value }; },
+        moveTop: () => {}
+      }),
+      getSettings: () => ({ position: initialPosition }),
+      saveSettings: (value) => { saved.push(value); },
+      getMode: () => "base",
+      getCursorScreenPoint: () => cursorPoint,
+      getDisplayBounds: () => display,
+      getPointDisplayBounds: () => display,
+      persistPosition: () => assert.fail("release must preserve the requested anchor"),
+      onLayoutChanged: (layout) => { layouts.push(layout); },
+      refreshState: () => { refreshCount += 1; },
+      setInterval: (callback) => { intervalCallback = callback; return 1; },
+      clearInterval: () => {}
+    });
+    controller.beginDrag({});
+    for (const gap of [97, 96, 95, 25, 24, 23, 8]) {
+      cursorPoint = { x: display.x + gap + 48, y: cursorPoint.y };
+      intervalCallback();
+      const layout = layouts.at(-1);
+      assert.equal(bounds.x + layout.bodyOffset.x, display.x + gap);
+    }
+    assert.equal(refreshCount, 2, "each drag sample uses the layout callback, not a full state refresh");
+    cursorPoint = { ...cursorPoint, x: display.x + 5 + 48 };
+    assert.deepEqual(controller.endDrag(), { ok: true, moved: true });
+    assert.deepEqual(saved, [{ position: { x: display.x + 5 - 40, y: initialPosition.y } }]);
+    assert.equal(bounds.x + layouts.at(-1).bodyOffset.x, display.x + 5);
+    assert.equal(refreshCount, 3);
+  }
 });
 
 test("desktop pet idle and unread states keep base window bounds for stable dragging", () => {

@@ -36,7 +36,6 @@ import {
   getDesktopPetVisibleFootprintForMode,
   getDesktopPetContextMenuItems,
   getAnchoredDesktopPetBounds,
-  getDesktopPetLogicalPositionFromBounds,
   getDesktopPetWindowSize,
   isDesktopPetSupportedPlatform,
   listUserDesktopPetAppearanceOptions,
@@ -44,13 +43,15 @@ import {
   resolveDesktopPetEdgeDock,
   resolveDesktopPetDisplayArea,
   resolveDesktopPetPanelWindowBounds,
+  resolveDesktopPetWindowLayout,
   saveDesktopPetSettings,
   type DesktopPetBoundAgentStatus,
   type DesktopPetLocalStatus,
-  type DesktopPetWindowMode
+  type DesktopPetWindowMode,
+  type DesktopPetWindowLayout
 } from "./desktop-pet";
 import { DesktopPetPreviewProjector } from "./desktop-pet-preview";
-import { applyDesktopPetBrowserWindowLayering, createDesktopPetBrowserWindow } from "./window";
+import { applyDesktopPetBrowserWindowLayering, applyDesktopPetMouseInteractivity, createDesktopPetBrowserWindow } from "./window";
 
 export type DesktopPetRuntimeOptions = {
   app: App;
@@ -109,6 +110,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   const desktopPetDismissedMessages = new Map<string, number>();
   let destroyingPanelWindow = false;
   let desktopPetPanelPlacement: DesktopPetPanelPlacement = null;
+  let desktopPetDragLayout: DesktopPetWindowLayout | null = null;
 
   function isPanelWindowMode(mode: DesktopPetWindowMode) {
     return mode !== "base" && mode !== "preview-collapsed";
@@ -163,6 +165,21 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     guardProgrammaticBounds: (bounds) => {
       armProgrammaticBoundsGuard(getDesktopPetBoundsSignature(bounds));
     },
+    onLayoutChanged: (layout) => {
+      desktopPetDragLayout = layout;
+      state.desktopPetState = {
+        ...state.desktopPetState,
+        bodyOffset: layout.bodyOffset,
+        edgeDock: layout.edgeDock,
+        dragDirection: desktopPetDragController.getDragDirection(),
+        dragMoved: desktopPetDragController.hasDragMovement()
+      };
+      // Drag geometry is a local window projection, not a navigation refresh.
+      const petWindow = state.desktopPetWindow;
+      if (petWindow && !petWindow.isDestroyed()) {
+        petWindow.webContents.send("desktopPet.state", state.desktopPetState);
+      }
+    },
     refreshState: () => refreshState()
   });
 
@@ -180,6 +197,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
         }
       });
       state.desktopPetWindow = win;
+      state.desktopPetMouseInteractive = true;
       return win;
     },
     getSettings: () => state.desktopPetSettings,
@@ -223,13 +241,17 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     state.desktopPetLocalStatus = createDefaultDesktopPetLocalStatus(state.desktopPetSettings);
     state.desktopPetAgentStatus = null;
     state.desktopPetAgentOptions = [];
+    desktopPetDragLayout = null;
+    const layout = getCurrentPetLayout();
     state.desktopPetState = createDesktopPetState(state.desktopPetSettings, {
       supported: isDesktopPetSupportedPlatform(options.platform),
       enabled: false,
       localStatus: state.desktopPetLocalStatus,
       agentStatus: state.desktopPetAgentStatus,
       agentOptions: state.desktopPetAgentOptions,
-      appearanceOptions: listUserDesktopPetAppearanceOptions(options.app)
+      appearanceOptions: listUserDesktopPetAppearanceOptions(options.app),
+      bodyOffset: layout.bodyOffset,
+      edgeDock: layout.edgeDock
     });
   }
 
@@ -325,6 +347,10 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
   }
 
   function refreshState(patch: Partial<DesktopPetLocalStatus> = {}) {
+    if (!desktopPetDragController.isDragging()) {
+      desktopPetDragLayout = null;
+    }
+    const petLayout = getCurrentPetLayout();
     const navigationSnapshot = options.getNavigationSnapshot();
     const enabled = isVisible();
     const activeTasks = getActiveTasks();
@@ -352,7 +378,8 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       previewPanel: desktopPetPreviewController.getPanel(),
       runningTaskCount,
       windowMode: state.desktopPetRendererWindowMode,
-      edgeDock: getCurrentPetEdgeDock(),
+      edgeDock: petLayout.edgeDock,
+      bodyOffset: petLayout.bodyOffset,
       panelPlacement: isPanelWindowMode(state.desktopPetRendererWindowMode) ? desktopPetPanelPlacement : null,
       dragDirection: desktopPetDragController.getDragDirection(),
       dragMoved: desktopPetDragController.hasDragMovement()
@@ -443,31 +470,25 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
     );
   }
 
-  function getCurrentPetLogicalPosition() {
-    const displayArea = getDisplayBounds(state.desktopPetSettings.position);
-    return getDesktopPetLogicalPositionFromBounds(
-      getPetBounds(),
-      "base",
-      displayArea,
-      state.desktopPetSettings.position
+  function getCurrentPetLayout() {
+    if (desktopPetDragController.isDragging() && desktopPetDragLayout) {
+      return desktopPetDragLayout;
+    }
+    return resolveDesktopPetWindowLayout(
+      state.desktopPetSettings.position,
+      getDisplayBounds(state.desktopPetSettings.position),
+      "base"
     );
-  }
-
-  function getCurrentPetEdgeDock() {
-    const displayArea = getDisplayBounds(state.desktopPetSettings.position);
-    return resolveDesktopPetEdgeDock(getCurrentPetLogicalPosition(), displayArea);
   }
 
   function getPanelLayout(mode: DesktopPetWindowMode) {
     const displayArea = getDisplayBounds(state.desktopPetSettings.position);
-    const petBounds = getPetBounds();
-    const edgeDock = getCurrentPetEdgeDock();
-    const footprint = getDesktopPetVisibleFootprintForMode("base", edgeDock);
+    const petLayout = getCurrentPetLayout();
     const petRect = {
-      x: petBounds.x + footprint.x,
-      y: petBounds.y + footprint.y,
-      width: footprint.width,
-      height: footprint.height
+      x: petLayout.bounds.x + petLayout.bodyOffset.x,
+      y: petLayout.bounds.y + petLayout.bodyOffset.y,
+      width: DESKTOP_PET_VISIBLE_FOOTPRINT.width,
+      height: DESKTOP_PET_VISIBLE_FOOTPRINT.height
     };
     return resolveDesktopPetPanelWindowBounds({
       displayArea,
@@ -680,16 +701,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       return { ok: true };
     }
     state.desktopPetMouseInteractive = interactive;
-    if (options.platform === "darwin") {
-      state.desktopPetWindow.setIgnoreMouseEvents(!interactive, { forward: true });
-      return { ok: true };
-    }
-    if (options.platform === "win32") {
-      // Windows cannot forward mousemove events while ignored, so keep the pet window interactive there.
-      state.desktopPetWindow.setIgnoreMouseEvents(false);
-      return { ok: true };
-    }
-    state.desktopPetWindow.setIgnoreMouseEvents(false);
+    applyDesktopPetMouseInteractivity(state.desktopPetWindow, options.platform, interactive);
     return { ok: true };
   }
 

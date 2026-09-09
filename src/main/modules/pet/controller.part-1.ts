@@ -404,6 +404,7 @@ export function computeDesktopPetStateRefresh(input: {
   previewPanel: DesktopPetPreviewPanel | null;
   runningTaskCount: number;
   edgeDock: DesktopPetEdgeDock;
+  bodyOffset?: { x: number; y: number };
   panelPlacement?: DesktopPetPanelPlacement;
   dragDirection?: DesktopPetDragDirection;
   dragMoved?: unknown;
@@ -428,6 +429,7 @@ export function computeDesktopPetStateRefresh(input: {
     previewPanel: input.previewPanel,
     runningTaskCount: input.runningTaskCount,
     edgeDock: input.edgeDock,
+    bodyOffset: input.bodyOffset,
     panelPlacement: input.panelPlacement,
     dragDirection: input.dragDirection ?? null,
     dragMoved: input.dragMoved
@@ -579,6 +581,7 @@ export interface DesktopPetBounds {
   y: number;
   width: number;
   height: number;
+  windowLeftInset?: number;
 }
 
 export interface BrowserWindowLike {
@@ -599,6 +602,7 @@ export interface DesktopPetDragControllerOptions {
   getPointDisplayBounds: (point: { x: number; y: number }) => DesktopPetBounds;
   persistPosition: (mode: DesktopPetWindowMode) => void;
   guardProgrammaticBounds?: (bounds: DesktopPetBounds) => void;
+  onLayoutChanged?: (layout: import("./desktop-pet").DesktopPetWindowLayout) => void;
   refreshState: () => void;
   setInterval?: typeof setInterval;
   clearInterval?: typeof clearInterval;

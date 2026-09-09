@@ -10,9 +10,8 @@ import type {
 import {
   getDesktopPetLogicalPositionFromBounds,
   clampDesktopPetPosition,
-  getAnchoredDesktopPetBounds,
+  resolveDesktopPetWindowLayout,
   isDesktopPetSupportedPlatform,
-  DESKTOP_PET_EDGE_SNAP_DISTANCE_PX,
   DESKTOP_PET_WINDOW_SIZE
 } from "./desktop-pet";
 import { normalizeDesktopPetAgentEvent } from "./desktop-pet-preview";
@@ -60,15 +59,6 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     }
   }
 
-  function shouldSnapToCursorEdge(cursorPoint: { x: number; y: number }, displayBounds: DesktopPetBounds) {
-    const rightEdge = displayBounds.x + displayBounds.width;
-    const bottomEdge = displayBounds.y + displayBounds.height;
-    return cursorPoint.x <= displayBounds.x + DESKTOP_PET_EDGE_SNAP_DISTANCE_PX ||
-      cursorPoint.x >= rightEdge - DESKTOP_PET_EDGE_SNAP_DISTANCE_PX ||
-      cursorPoint.y <= displayBounds.y + DESKTOP_PET_EDGE_SNAP_DISTANCE_PX ||
-      cursorPoint.y >= bottomEdge - DESKTOP_PET_EDGE_SNAP_DISTANCE_PX;
-  }
-
   function prepareWindowForDrag(mode: DesktopPetWindowMode) {
     void mode;
     // Do not resize/re-anchor the window while the pointer is already down.
@@ -85,23 +75,14 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       return { ok: false };
     }
     const displayBounds = options.getPointDisplayBounds(cursorPoint);
-    const nextLogicalBounds = clampDesktopPetPosition(position, displayBounds, DESKTOP_PET_WINDOW_SIZE, {
-      allowVisibleEdgeDock: true,
-      stickToEdges: shouldSnapToCursorEdge(cursorPoint, displayBounds)
-    });
-    const nextBounds = getAnchoredDesktopPetBounds({
-      x: nextLogicalBounds.x,
-      y: nextLogicalBounds.y
-    }, displayBounds, mode);
+    const layout = resolveDesktopPetWindowLayout(position, displayBounds, mode);
     lastRequestedDragAnchor = {
-      position: {
-        x: nextLogicalBounds.x,
-        y: nextLogicalBounds.y
-      },
+      position: layout.position,
       displayBounds,
       mode
     };
-    window.setBounds(nextBounds, false);
+    window.setBounds(layout.bounds, false);
+    options.onLayoutChanged?.(layout);
     window.moveTop();
     return { ok: true };
   }
@@ -124,12 +105,14 @@ export function createDesktopPetDragController(options: DesktopPetDragController
     const cursorPoint = options.getCursorScreenPoint();
     const displayBounds = options.getPointDisplayBounds(cursorPoint);
     const mode = dragState?.mode ?? options.getMode();
-    const logicalPosition = getDesktopPetLogicalPositionFromBounds(
-      currentBounds,
-      mode,
-      displayBounds,
-      options.getSettings().position
-    );
+    const logicalPosition = lastRequestedDragAnchor?.mode === mode
+      ? lastRequestedDragAnchor.position
+      : getDesktopPetLogicalPositionFromBounds(
+          currentBounds,
+          mode,
+          displayBounds,
+          options.getSettings().position
+        );
     return moveWindowToLogicalPosition({
       x: logicalPosition.x + Math.round(deltaX),
       y: logicalPosition.y + Math.round(deltaY)
@@ -155,7 +138,7 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       ? requestedAnchor.displayBounds
       : options.getPointDisplayBounds(currentCenter!);
     const logicalPosition = requestedAnchor?.position ??
-      getDesktopPetLogicalPositionFromBounds(currentBounds, mode, currentDisplayBounds);
+      getDesktopPetLogicalPositionFromBounds(currentBounds, mode, currentDisplayBounds, options.getSettings().position);
     const displayBounds = requestedAnchor?.displayBounds ?? options.getDisplayBounds(logicalPosition);
     const snappedBounds = clampDesktopPetPosition(logicalPosition, displayBounds, DESKTOP_PET_WINDOW_SIZE, {
       allowVisibleEdgeDock: true,
@@ -165,7 +148,8 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       x: snappedBounds.x,
       y: snappedBounds.y
     };
-    const nextBounds = getAnchoredDesktopPetBounds(snappedPosition, displayBounds, mode);
+    const layout = resolveDesktopPetWindowLayout(snappedPosition, displayBounds, mode);
+    const nextBounds = layout.bounds;
     options.guardProgrammaticBounds?.(nextBounds);
     if (
       currentBounds.x === nextBounds.x &&
@@ -173,12 +157,14 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       currentBounds.width === nextBounds.width &&
       currentBounds.height === nextBounds.height
     ) {
+      options.onLayoutChanged?.(layout);
       return {
         position: snappedPosition,
         bounds: nextBounds
       };
     }
     window.setBounds(nextBounds, false);
+    options.onLayoutChanged?.(layout);
     return {
       position: snappedPosition,
       bounds: nextBounds
@@ -214,6 +200,7 @@ export function createDesktopPetDragController(options: DesktopPetDragController
       direction: null
     };
     prepareWindowForDrag(initialMode);
+    options.onLayoutChanged?.(resolveDesktopPetWindowLayout(startLogicalPosition, startDisplayBounds, initialMode));
     options.refreshState();
 
     dragTimer = runSetInterval(() => {
@@ -226,41 +213,49 @@ export function createDesktopPetDragController(options: DesktopPetDragController
         return;
       }
 
-      const cursorPoint = options.getCursorScreenPoint();
-      const totalDeltaX = cursorPoint.x - dragState.startPoint.x;
-      const totalDeltaY = cursorPoint.y - dragState.startPoint.y;
-      if (!dragState.moved && Math.hypot(totalDeltaX, totalDeltaY) < 4) {
-        return;
-      }
-
-      const deltaX = cursorPoint.x - dragState.lastPoint.x;
-      const deltaY = cursorPoint.y - dragState.lastPoint.y;
-      const wasMoved = dragState.moved;
-      dragState.moved = true;
-      dragState.lastPoint = cursorPoint;
-      const nextDirection = Math.abs(deltaX) >= 3
-        ? deltaX < 0 ? "left" : "right"
-        : dragState.direction;
-      if (!wasMoved || nextDirection !== dragState.direction) {
-        dragState.direction = nextDirection;
-        options.refreshState();
-      }
-      if (deltaX !== 0 || deltaY !== 0) {
-        dragState.lastMovedAt = Date.now();
-        moveWindowToLogicalPosition({
-          x: dragState.startLogicalPosition.x + Math.round(totalDeltaX),
-          y: dragState.startLogicalPosition.y + Math.round(totalDeltaY)
-        }, cursorPoint, dragState.mode);
-      }
+      updateDragPosition();
     }, 16);
 
     return { ok: true };
+  }
+
+  function updateDragPosition() {
+    if (!dragState) {
+      return;
+    }
+    const cursorPoint = options.getCursorScreenPoint();
+    const totalDeltaX = cursorPoint.x - dragState.startPoint.x;
+    const totalDeltaY = cursorPoint.y - dragState.startPoint.y;
+    if (!dragState.moved && Math.hypot(totalDeltaX, totalDeltaY) < 4) {
+      return;
+    }
+    const deltaX = cursorPoint.x - dragState.lastPoint.x;
+    const deltaY = cursorPoint.y - dragState.lastPoint.y;
+    const wasMoved = dragState.moved;
+    dragState.moved = true;
+    dragState.lastPoint = cursorPoint;
+    const nextDirection = Math.abs(deltaX) >= 3
+      ? deltaX < 0 ? "left" : "right"
+      : dragState.direction;
+    if (!wasMoved || nextDirection !== dragState.direction) {
+      dragState.direction = nextDirection;
+      options.refreshState();
+    }
+    if (deltaX !== 0 || deltaY !== 0) {
+      dragState.lastMovedAt = Date.now();
+      moveWindowToLogicalPosition({
+        x: dragState.startLogicalPosition.x + Math.round(totalDeltaX),
+        y: dragState.startLogicalPosition.y + Math.round(totalDeltaY)
+      }, cursorPoint, dragState.mode);
+    }
   }
 
   function endDrag() {
     if (!dragState) {
       return { ok: true, moved: false };
     }
+    // The release can arrive between two 16 ms samples. Keep its final position.
+    updateDragPosition();
     const moved = dragState.moved;
     const mode = dragState.mode;
     dragState = null;
