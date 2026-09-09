@@ -286,6 +286,44 @@ test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DP
 });
 
 for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: native fullscreen stops an active drag before changing window state`, async () => {
+    const handlers = new Map();
+    const sender = {};
+    const mainWindow = new FakeFullscreenWindow({ mode: platform === "darwin" ? "async" : "sync" });
+    let tick;
+    const timer = {};
+    let activeTimer = null;
+    registerShellIpcHandlers({
+      handle: (channel, handler) => handlers.set(channel, handler),
+      on: () => undefined,
+    }, {
+      platform,
+      mainWindow,
+      BrowserWindow: { fromWebContents: (contents) => contents === sender ? mainWindow : null },
+      screen: { getCursorScreenPoint: () => ({ x: 100, y: 100 }) },
+      setInterval: (callback) => { tick = callback; activeTimer = timer; return timer; },
+      clearInterval: (handle) => { assert.equal(handle, timer); activeTimer = null; },
+    });
+    const setFullScreen = mainWindow.setFullScreen.bind(mainWindow);
+    mainWindow.setFullScreen = (enabled) => {
+      assert.equal(activeTimer, null, "drag must end before native fullscreen starts");
+      setFullScreen(enabled);
+    };
+    for (const enabled of [true, false]) {
+      mainWindow.fullscreen = false;
+      await handlers.get("desktopShell.beginWindowDrag")({ sender });
+      assert.equal(activeTimer, timer);
+      // Native fullscreen can change before the renderer sees the state event.
+      mainWindow.fullscreen = !enabled;
+      assert.deepEqual(await handlers.get("desktopShell.setWindowFullScreen")({ sender }, enabled), {
+        ok: true,
+        isFullScreen: enabled,
+      });
+      tick(); // A queued tick cannot move the window after cancellation.
+    }
+    assert.deepEqual(mainWindow.requests, [true, false]);
+  });
+
   test(`${platform}: maximize/restore ends the drag before resizing and preserves native fullscreen`, async () => {
     const handlers = new Map();
     const sender = {};

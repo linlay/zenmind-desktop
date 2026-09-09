@@ -476,6 +476,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       };
     }
 
+    endWindowDrag();
     const result = await transitionWindowFullScreen(ownerWindow, enabled, {
       platform: options.platform
     });

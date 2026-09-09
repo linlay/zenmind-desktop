@@ -662,7 +662,7 @@ export function AppShell() {
     useState<string | null>(null);
   const workPanelFullscreenOwnerChatIdRef = useRef<string | null>(null);
   const workPanelEnteredNativeFullscreenRef = useRef(false);
-  const workPanelFullscreenTransitionPendingRef = useRef(false);
+  const windowFullscreenTransitionPendingRef = useRef(false);
   const [shutdownProgress, setShutdownProgress] = useState<ShutdownProgress | null>(null);
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [desktopDisplay, setDesktopDisplay] = useState<DesktopDisplayOverlayRequest | null>(null);
@@ -974,6 +974,22 @@ export function AppShell() {
       .catch(() => undefined);
   }, []);
 
+  const toggleMainWindowFullScreen = useCallback(async () => {
+    if (windowFullscreenTransitionPendingRef.current || workPanelFullscreenOwnerChatIdRef.current) return;
+    windowFullscreenTransitionPendingRef.current = true;
+    try {
+      const desktopShell = window.electronAPI.desktopShell;
+      const currentState = await desktopShell.getWindowState();
+      if (!currentState.ok) return;
+      const result = await desktopShell.setWindowFullScreen(!currentState.isFullScreen);
+      setWindowFullScreen(result.isFullScreen);
+    } catch {
+      // Native window-state events remain authoritative if the request fails.
+    } finally {
+      windowFullscreenTransitionPendingRef.current = false;
+    }
+  }, []);
+
   const closeMainWindow = useCallback(() => {
     window.electronAPI.desktopShell.requestWindowClose();
   }, []);
@@ -982,9 +998,9 @@ export function AppShell() {
     const currentOwnerChatId = workPanelFullscreenOwnerChatIdRef.current;
     if (ownerChatId) {
       if (currentOwnerChatId === ownerChatId) return true;
-      if (currentOwnerChatId || workPanelFullscreenTransitionPendingRef.current) return false;
+      if (currentOwnerChatId || windowFullscreenTransitionPendingRef.current) return false;
 
-      workPanelFullscreenTransitionPendingRef.current = true;
+      windowFullscreenTransitionPendingRef.current = true;
       try {
         const currentWindowState = await window.electronAPI.desktopShell.getWindowState();
         if (!currentWindowState.ok) return false;
@@ -1005,18 +1021,18 @@ export function AppShell() {
       } catch {
         return false;
       } finally {
-        workPanelFullscreenTransitionPendingRef.current = false;
+        windowFullscreenTransitionPendingRef.current = false;
       }
     }
 
     if (!currentOwnerChatId) return true;
-    if (workPanelFullscreenTransitionPendingRef.current) return false;
+    if (windowFullscreenTransitionPendingRef.current) return false;
     if (!workPanelEnteredNativeFullscreenRef.current) {
       clearWorkPanelFullscreen();
       return true;
     }
 
-    workPanelFullscreenTransitionPendingRef.current = true;
+    windowFullscreenTransitionPendingRef.current = true;
     try {
       const transition = await window.electronAPI.desktopShell.setWindowFullScreen(false);
       if (!transition.ok && transition.isFullScreen) return false;
@@ -1026,7 +1042,7 @@ export function AppShell() {
     } catch {
       return false;
     } finally {
-      workPanelFullscreenTransitionPendingRef.current = false;
+      windowFullscreenTransitionPendingRef.current = false;
     }
   }, [clearWorkPanelFullscreen]);
 
@@ -1035,11 +1051,15 @@ export function AppShell() {
     const shouldExitNativeFullscreen = workPanelEnteredNativeFullscreenRef.current;
     clearWorkPanelFullscreen();
     if (!shouldExitNativeFullscreen) return;
+    windowFullscreenTransitionPendingRef.current = true;
     void window.electronAPI.desktopShell.setWindowFullScreen(false)
       .then((result) => {
         setWindowFullScreen(result.isFullScreen);
       })
-      .catch(() => undefined);
+      .catch(() => undefined)
+      .finally(() => {
+        windowFullscreenTransitionPendingRef.current = false;
+      });
   }, [clearWorkPanelFullscreen]);
 
   const startupServices = STARTUP_SERVICE_IDS.map((serviceId) =>
@@ -3875,21 +3895,28 @@ export function AppShell() {
       // The main-process cursor loop still keeps the drag alive across webview boundaries.
     }
 
-    void desktopShell.beginWindowDrag().then((result) => {
-      if (!result?.ok) {
-        finishDrag();
-      }
-    }).catch(() => finishDrag());
-  }, []);
+    // Fullscreen windows cannot move, but still need both completed clicks so
+    // the sidebar gesture can exit fullscreen.
+    if (!windowFullScreen) {
+      void desktopShell.beginWindowDrag().then((result) => {
+        if (!result?.ok) {
+          finishDrag();
+        }
+      }).catch(() => finishDrag());
+    }
+  }, [windowFullScreen]);
 
   const handleWindowDragClickCapture = useCallback((event: ReactMouseEvent<HTMLDivElement>) => {
     const clickTracker = windowDragClickTrackerRef.current;
     const target = event.target instanceof Element ? event.target : null;
     const dragTarget = resolveWindowDragTarget(target);
+    // macOS sidebar blanks toggle native fullscreen; Windows keeps its
+    // maximize/restore gesture, as do the other window drag regions.
+    const togglesFullScreen = isMac && dragTarget?.matches(".app-sidebar-shell");
     if (
       event.button !== 0 || event.defaultPrevented || !dragTarget ||
-      windowFullScreen || windowControlsMasked ||
-      workPanelFullscreenOwnerChatIdRef.current || workPanelFullscreenTransitionPendingRef.current
+      (windowFullScreen && !togglesFullScreen) || windowControlsMasked ||
+      workPanelFullscreenOwnerChatIdRef.current || windowFullscreenTransitionPendingRef.current
     ) {
       clickTracker.reset();
       return;
@@ -3899,8 +3926,12 @@ export function AppShell() {
     event.preventDefault();
     event.stopPropagation();
     windowDragEndRef.current?.();
-    toggleMainWindowMaximize();
-  }, [toggleMainWindowMaximize, windowControlsMasked, windowFullScreen]);
+    if (togglesFullScreen) {
+      void toggleMainWindowFullScreen();
+    } else {
+      toggleMainWindowMaximize();
+    }
+  }, [isMac, toggleMainWindowFullScreen, toggleMainWindowMaximize, windowControlsMasked, windowFullScreen]);
 
   useEffect(() => () => {
     windowDragEndRef.current?.();
