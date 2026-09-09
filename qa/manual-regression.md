@@ -290,3 +290,11 @@
 - 覆盖中文、空格、百分号和井号文件名、文件已删除、浏览器不可用、远端仅缓存和取消另存；不得泄漏绝对路径、误开缓存或静默改用其他打开方式。
 - 关闭文档/工作区及 renderer 销毁后，旧 handle 和 guest 不再可用；预览不共享 Desktop 登录 Cookie、无 Node/Desktop bridge、popup、自动下载或设备权限。
 - 手动选择本地文件的既有离线策略不变。自动化入口：先编译 Main，再运行 `RUN_HTML_ELECTRON_TEST=1 node --test test/document-html-electron.test.mjs`；`HTML_CDN_SMOKE=1` 增加实际 CDN 冒烟。
+
+## 上传 Reference 预览回归
+
+- macOS / Windows 分别上传 PNG、PDF、DOCX、文本；新建与历史 Chat 的卡片均可打开，运行中可阅读，再次点击聚焦同一 Tab。
+- 验证 Chat 根目录文件与 `references/` 子目录文件；路径越界、编码遍历、跨 Chat 与逃逸 symlink 仍须拒绝。
+- DOCX 查看中文表格、内嵌图片、翻页、缩放与刷新；损坏、加密、超限、无权限、文件不存在时显示可操作错误，不自动下载。
+- 图片与文本修改 Reference 只能创建 Artifact；DOCX 保持只读，下载拿到原文件。
+- 原生 HTML 根目录上传只能读自身，相邻聊天元数据或其他附件不能作为相对资源读取。

@@ -340,3 +340,25 @@ test("native image regional AI forwards the canonical source, mask, and instruct
     fs.rmSync(homePath, { recursive: true, force: true });
   }
 });
+
+test("root uploaded images open natively and a root DOCX falls back by content type", async () => {
+  const homePath = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-root-reference-"));
+  const runtimeRoot = resolveRuntimeRootPath({ homePath, platform: process.platform });
+  const chatRoot = path.join(runtimeRoot, "chats", "chat-root-upload");
+  fs.mkdirSync(chatRoot, { recursive: true });
+  fs.writeFileSync(path.join(chatRoot, "上传图片.png"), PNG_1X1);
+  fs.writeFileSync(path.join(chatRoot, "申请表.docx"), Buffer.from("PK\x03\x04office"));
+  const registry = new WorkPanelResourceImageRegistry();
+  configureRegistry(registry, homePath);
+  try {
+    const input = { ownerChatId: "chat-root-upload", rendererWebContentsId: 42, profile: "reference", agentKey: "agent", chatId: "chat-root-upload", resourceId: "upload-1" };
+    const image = await registry.prepareClaim({ ...input, relativePath: "上传图片.png" });
+    assert.equal(image.ok, true);
+    const document = await registry.prepareClaim({ ...input, relativePath: "申请表.docx" });
+    assert.equal(document.ok, false);
+    assert.equal(document.code, "unsupported_native_type");
+  } finally {
+    registry.dispose();
+    fs.rmSync(homePath, { recursive: true, force: true });
+  }
+});

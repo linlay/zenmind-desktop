@@ -41,6 +41,8 @@ function resourcePrefix(document: HtmlPreviewDocument) {
   // Published artifacts live under artifacts/<runId>/..., while references
   // may use a separate storage key. Derive scope from the validated source path.
   const parts = document.semanticPath.split("/");
+  // A root upload may read itself, never neighbouring Chat files or assets.
+  if (document.source.kind === "reference" && parts.length === 1) return "";
   const expected = document.source.kind === "artifact" ? "artifacts" : "references";
   if (parts[0] !== expected) return null;
   return parts.length >= 3 ? `${parts[0]}/${parts[1]}/` : `${parts[0]}/`;
