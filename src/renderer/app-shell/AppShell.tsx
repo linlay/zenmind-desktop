@@ -701,6 +701,8 @@ export function AppShell() {
   const [firstInstallBootstrapNavigationRequested, setFirstInstallBootstrapNavigationRequested] =
     useState<boolean | null>(null);
   const [assistantNavAgents, setAssistantNavAgents] = useState<AssistantNavAgentItem[]>([]);
+  const [assistantPinnedChatItems, setAssistantPinnedChatItems] = useState<AssistantNavChatItem[]>([]);
+  const [assistantChatPinningSupported, setAssistantChatPinningSupported] = useState(false);
   const [assistantNavChatItems, setAssistantNavChatItems] = useState<AssistantNavChatItem[]>([]);
   const [assistantNavChatItemsHasMore, setAssistantNavChatItemsHasMore] = useState(false);
   const [assistantChatSortMode, setAssistantChatSortMode] =
@@ -1682,6 +1684,8 @@ export function AppShell() {
         setChatNavAgentOptions(getChatNavigationAgentOptions(navigationItems));
         setAssistantNavAgents(nextItems);
         setAssistantNavChatItems(nextResult.chatItems);
+        setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
+        setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
         setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
         setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
         setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
@@ -1733,19 +1737,24 @@ export function AppShell() {
     input: AssistantChatOrderMutationRequest,
   ): Promise<AssistantChatOrderMutationResult> {
     const previousItems = assistantNavChatItems;
+    const previousPinnedItems = assistantPinnedChatItems;
+    const pinnedMove = input.operation === "move" && previousPinnedItems.some(
+      (chat) => chat.chatId === input.chatId,
+    );
     const previousMode = assistantChatSortMode;
     if (input.operation === "set_mode") {
       setAssistantChatSortMode(input.sortMode);
-    } else {
+    } else if (input.operation === "move") {
+      const sourceItems = pinnedMove ? previousPinnedItems : previousItems;
       const anchorId = input.beforeChatId || input.afterChatId || "";
-      const activeIndex = previousItems.findIndex(
+      const activeIndex = sourceItems.findIndex(
         (chat) => chat.chatId === input.chatId,
       );
-      const anchorIndex = previousItems.findIndex(
+      const anchorIndex = sourceItems.findIndex(
         (chat) => chat.chatId === anchorId,
       );
       if (activeIndex >= 0 && anchorIndex >= 0 && activeIndex !== anchorIndex) {
-        const reordered = previousItems.slice();
+        const reordered = sourceItems.slice();
         const [moved] = reordered.splice(activeIndex, 1);
         const nextAnchorIndex = reordered.findIndex(
           (chat) => chat.chatId === anchorId,
@@ -1755,15 +1764,23 @@ export function AppShell() {
           0,
           moved,
         );
-        setAssistantNavChatItems(reordered);
+        if (pinnedMove) {
+          setAssistantPinnedChatItems(reordered);
+        } else {
+          setAssistantNavChatItems(reordered);
+        }
       }
-      setAssistantChatSortMode("manual");
+      if (!pinnedMove) {
+        setAssistantChatSortMode("manual");
+      }
     }
     try {
       const result = await window.electronAPI.assistant.updateChatOrder(input);
       if (!result.ok) {
         setAssistantNavChatItems(previousItems);
+        setAssistantPinnedChatItems(previousPinnedItems);
         setAssistantChatSortMode(previousMode);
+        await refreshAssistantNavAgents({ force: true });
         return result;
       }
       setAssistantChatSortMode(result.sortMode);
@@ -1771,7 +1788,9 @@ export function AppShell() {
       return result;
     } catch (error) {
       setAssistantNavChatItems(previousItems);
+      setAssistantPinnedChatItems(previousPinnedItems);
       setAssistantChatSortMode(previousMode);
+      await refreshAssistantNavAgents({ force: true });
       return {
         ok: false,
         sortMode: previousMode,
@@ -1815,6 +1834,8 @@ export function AppShell() {
       setChatNavAgentOptions(getChatNavigationAgentOptions(nextResult.items));
       setAssistantNavAgents(normalizeAssistantNavAgents(resolveAssistantNavDisplayItems(nextResult)));
       setAssistantNavChatItems(nextResult.chatItems);
+      setAssistantPinnedChatItems(nextResult.pinnedChatItems ?? []);
+      setAssistantChatPinningSupported(nextResult.chatPinningSupported === true);
       setAssistantNavChatItemsHasMore(nextResult.chatItemsHasMore);
       setAssistantChatSortMode(nextResult.chatSortMode ?? "recent");
       setAssistantChatOrderingSupported(nextResult.chatOrderingSupported === true);
@@ -3929,7 +3950,7 @@ export function AppShell() {
   const workPanelProjectEnabled = workPanelLauncherAgentMode === "KBASE" ||
     (workPanelLauncherAgentMode === "CODER" && !workPanelProjectDisabledReason);
   const workPanelLastRunId = activeChatWorkPanelChatId
-    ? assistantNavChatItems.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ??
+    ? [...assistantPinnedChatItems, ...assistantNavChatItems].find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ??
       workPanelLauncherAgent?.recentChats.find((chat) => chat.chatId === activeChatWorkPanelChatId)?.lastRunId ?? ""
     : "";
   const workPanelWebapps = webItems
@@ -4338,7 +4359,7 @@ export function AppShell() {
       agent.latestChatId?.trim() ||
       agent.recentChats[0]?.chatId.trim() ||
       "";
-    const preferredChat = [...agent.recentChats, ...assistantNavChatItems].find(
+    const preferredChat = [...assistantPinnedChatItems, ...agent.recentChats, ...assistantNavChatItems].find(
       (chat) =>
         (chat.agentKey.trim() || agentKey) === agentKey &&
         chat.chatId.trim() === preferredChatId,
@@ -4587,6 +4608,8 @@ export function AppShell() {
           webappPublishStateById={webappPublishStateById}
           faviconCache={faviconCache}
           assistantNavAgents={assistantNavAgents}
+          assistantPinnedChatItems={assistantPinnedChatItems}
+          assistantChatPinningSupported={assistantChatPinningSupported}
           assistantNavChatItems={assistantNavChatItems}
           assistantNavChatItemsHasMore={assistantNavChatItemsHasMore}
           assistantChatSortMode={assistantChatSortMode}

@@ -404,3 +404,15 @@ test("sidebar native menu is owned by the main window and returns only the click
   });
   assert.deepEqual(rejected, { actionId: null });
 });
+
+test("chat pin menu uses explicit state and validates the bridge payload", () => {
+  for (const pinned of [true, false]) {
+    const target = { kind: "chat", workPanelOpen: false, canPin: true, pinned };
+    const request = normalizeSidebarContextMenuRequest({ x: 10, y: 20, target });
+    assert.deepEqual(request.target, target);
+    const actions = buildSidebarContextMenuPolicy(target).map((item) => item.id);
+    assert.equal(actions[0], pinned ? "chat.unpin" : "chat.pin");
+    assert.equal(actions.includes(pinned ? "chat.pin" : "chat.unpin"), false);
+  }
+  assert.equal(normalizeSidebarContextMenuRequest({ x: 10, y: 20, target: { kind: "chat", workPanelOpen: false, pinned: "true" } }), null);
+});

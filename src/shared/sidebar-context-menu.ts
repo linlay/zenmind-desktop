@@ -14,6 +14,8 @@ export type SidebarContextMenuActionId =
   | "chat.export"
   | "chat.exportHtml"
   | "chat.share"
+  | "chat.pin"
+  | "chat.unpin"
   | "chat.rename"
   | "chat.workPanel.open"
   | "chat.workPanel.close"
@@ -55,6 +57,8 @@ export type SidebarContextMenuTarget =
     }
   | {
       kind: "chat";
+      pinned?: boolean;
+      canPin?: boolean;
       workPanelOpen: boolean;
     }
   | (SidebarWebContextMenuTargetBase & {

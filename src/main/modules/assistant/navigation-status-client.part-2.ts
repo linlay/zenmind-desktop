@@ -12,7 +12,7 @@ import {
   readAgentPlatformPushEpochMillis
 } from "../../../shared/agent-platform-push-time-contract";
 import { t } from "../../support/i18n/main-i18n";
-import { AssistantNavigationApplyResult, AssistantNavigationChatApplyResult, AssistantNavigationChatRuntimeStatusPatch, NAVIGATION_AGENT_CHAT_LIMIT, NAVIGATION_CHAT_LIMIT, NavigationPushEvent, NavigationPushFrame, PlatformAgentSummary, PlatformChatSummary, checkWorkspaceDirExists, compareNavChats, countPendingAwaitingPayload, hasPendingAwaitingPayload, isObjectRecord, mergeNavigationAgentItem, readActiveRunValue, readAgentDisplayName, readAgentIcon, readAgentKey, readAgentWorkspaceDir, readAwaitingPayloadMode, readChatActiveRun, readChatAgentKey, readChatAwaitingCount, readChatAwaitingMode, readChatIsRead, readChatPendingAwaiting, readChatReadAt, readChatReadRunId, resolveAssistantWorkspaceGitBranch, resolveNavigationUnreadCount, toAwaitingMode, toNonNegativeInteger, toOptionalNonNegativeInteger, toText, toTimestampMs, validateNavigationPayloadTimes, validatePresentNavigationTimes } from "./navigation-status-client.part-1";
+import { AssistantNavigationApplyResult, AssistantNavigationChatApplyResult, AssistantNavigationChatRuntimeStatusPatch, NAVIGATION_AGENT_CHAT_LIMIT, NAVIGATION_CHAT_LIMIT, NavigationPushEvent, NavigationPushFrame, PlatformAgentSummary, PlatformChatSummary, checkWorkspaceDirExists, compareNavChats, limitNavigationChats, countPendingAwaitingPayload, hasPendingAwaitingPayload, isObjectRecord, mergeNavigationAgentItem, readActiveRunValue, readAgentDisplayName, readAgentIcon, readAgentKey, readAgentWorkspaceDir, readAwaitingPayloadMode, readChatActiveRun, readChatAgentKey, readChatAwaitingCount, readChatAwaitingMode, readChatIsRead, readChatPendingAwaiting, readChatReadAt, readChatReadRunId, resolveAssistantWorkspaceGitBranch, resolveNavigationUnreadCount, toAwaitingMode, toNonNegativeInteger, toOptionalNonNegativeInteger, toText, toTimestampMs, validateNavigationPayloadTimes, validatePresentNavigationTimes } from "./navigation-status-client.part-1";
 
 export function mergeNavigationAgentGroups(
   primaryItems: AssistantNavAgentItem[],
@@ -57,6 +57,8 @@ export function mapNavigationChat(
   return {
     chatId,
     chatName,
+    ...(chat.pinned === true ? { pinned: true } : {}),
+    ...(toText(chat.mode) ? { mode: toText(chat.mode) } : {}),
     agentKey: readChatAgentKey(chat, fallbackAgentKey),
     createdAt,
     updatedAt,
@@ -78,6 +80,7 @@ export type AssistantNavigationChatsSnapshot = {
 };
 
 export type AssistantNavigationChatOrderSnapshot = {
+  chatPinningSupported?: boolean;
   chatSortMode: AssistantChatSortMode;
   chatOrderingSupported: boolean;
 };
@@ -91,7 +94,7 @@ export function buildAssistantNavigationChatsSnapshotFromPlatform(
   const validChats: AssistantNavChatItem[] = [];
   for (const [index, rawChat] of chats.entries()) {
     const chat = mapNavigationChat(rawChat as PlatformChatSummary, "", `navigation.chats[${index}]`);
-    if (!chat?.agentKey) {
+    if (!chat?.agentKey || chat.pinned) {
       continue;
     }
     validChats.push(chat);
@@ -520,6 +523,8 @@ export function createChatPatchFromPush(event: NavigationPushEvent, current?: As
   return {
     chatId,
     chatName,
+    ...(current?.pinned ? { pinned: true } : {}),
+    ...(current?.mode ? { mode: current.mode } : {}),
     agentKey,
     createdAt,
     updatedAt,
@@ -556,7 +561,7 @@ export function readPushUnreadCount(event: NavigationPushEvent, fallback: number
 }
 
 export function refreshAgentDerivedFields(agent: AssistantNavAgentItem): AssistantNavAgentItem {
-  const recentChats = [...agent.recentChats].sort(compareNavChats).slice(0, NAVIGATION_AGENT_CHAT_LIMIT);
+  const recentChats = limitNavigationChats(agent.recentChats);
   const latestChat = recentChats[0] ?? null;
   const unreadFromChats = recentChats.filter((chat) => !chat.isRead).length;
   const unreadCount = resolveNavigationUnreadCount({

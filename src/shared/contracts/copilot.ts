@@ -238,6 +238,8 @@ export type AssistantNavAgentIcon = string | {
 };
 
 export interface AssistantNavChatItem {
+  pinned?: boolean;
+  mode?: string;
   chatId: string;
   chatName: string;
   agentKey: string;
@@ -262,6 +264,7 @@ export interface AssistantChatOrderState {
 }
 
 export type AssistantChatOrderMutationRequest =
+  | { operation: "set_pinned"; chatId: string; pinned: boolean }
   | {
       operation: "set_mode";
       sortMode: AssistantChatSortMode;
@@ -337,6 +340,8 @@ export interface AssistantNavAgentItem {
 }
 
 export interface AssistantNavAgentItemsResult {
+  pinnedChatItems?: AssistantNavChatItem[];
+  chatPinningSupported?: boolean;
   ok: boolean;
   items: AssistantNavAgentItem[];
   activityItems?: AssistantNavAgentItem[];

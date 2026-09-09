@@ -276,7 +276,7 @@ test("assistant navigation reads global REACT chats over WebSocket and keeps dis
 
   const first = await client.refreshNow();
   const firstRequest = sockets[0].sent.find((frame) => frame.type === "/api/chats");
-  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 25 });
+  assert.deepEqual(firstRequest.payload, { mode: "REACT", limit: 25, pinned: false });
   assert.deepEqual(
     first.chatItems.map((chat) => chat.chatId),
     [
@@ -2262,4 +2262,74 @@ test("assistant navigation enriches both Coder and Knowledge Base project branch
   assert.equal(items.find((item) => item.agentKey === "coder")?.gitBranch, "main");
   assert.equal(items.find((item) => item.agentKey === "kbase")?.gitBranch, "docs");
   assert.equal(items.find((item) => item.agentKey === "chat")?.gitBranch, undefined);
+});
+
+test("navigation fetches global pins independently of the regular and project cutoffs and keeps their pushes live", async (t) => {
+  const temp = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-pinned-navigation-"));
+  const fetchBefore = globalThis.fetch;
+  const requests = [];
+  const urls = [];
+  let push;
+  const platformChat = (id, mode, pinned, index = 0) => ({
+    chatId: id, agentKey: mode === "REACT" ? "zenmi" : "project", mode,
+    chatName: id, pinned, createdAt: EPOCH_MS, updatedAt: EPOCH_MS + index,
+    lastRunId: "loyw3v28", read: { isRead: false, readRunId: "" },
+  });
+  const pins = Array.from({ length: 30 }, (_, i) => platformChat(`pin-${i}`, i % 2 ? "CODER" : "REACT", true, i));
+  globalThis.fetch = async (url) => {
+    urls.push(String(url));
+    return { ok: true, status: 200, json: async () => ({ code: 0, data: [
+      { key: "zenmi", name: "Zenmi", mode: "REACT", chats: [] },
+      { key: "project", name: "Project", mode: "CODER", stats: { totalCount: 65, unreadCount: 15 },
+        chats: Array.from({ length: 50 }, (_, i) => platformChat(`project-${i}`, "CODER", false, i)) },
+    ] }) };
+  };
+  const broker = {
+    async ensureConnected() {},
+    subscribePush(options) { push = options.onPush; return () => {}; },
+    getConnectionPhase: () => "connected",
+    getConnectionState: () => ({ phase: "connected" }),
+    cleanupConsumer() {},
+    async forwardRequest(request) {
+      requests.push({ type: request.type, payload: request.payload });
+      const data = request.type === "/api/chats/order"
+        ? { sortMode: "recent", pinnedOrder: pins.map((chat) => chat.chatId) }
+        : request.payload.pinned
+          ? pins
+          : Array.from({ length: 25 }, (_, i) => platformChat(`regular-${i}`, "REACT", false, i));
+      request.onFrame({ frame: "response", type: request.type, code: 0, data });
+    },
+  };
+  const client = new AssistantNavigationStatusClient({
+    app: { getPath: () => temp }, realtimeBroker: broker,
+    getServiceState: async () => ({ status: "running", healthMeta: { webUrl: "http://127.0.0.1:11789" } }),
+    issueAccessToken: async () => ({ ok: true, token: "test-token" }), onSnapshot() {},
+  });
+  t.after(() => { client.stop(); globalThis.fetch = fetchBefore; fs.rmSync(temp, { recursive: true, force: true }); });
+  const result = await client.refreshNow();
+  assert.equal(result.ok, true, result.message);
+  assert.equal(result.chatPinningSupported, true);
+  assert.equal(result.pinnedChatItems.length, 30);
+  assert.deepEqual(result.pinnedChatItems.map((chat) => chat.chatId), pins.map((chat) => chat.chatId));
+  assert.equal(result.chatItems.length, 24);
+  assert.equal(result.chatItemsHasMore, true);
+  assert.equal(result.items.find((agent) => agent.agentKey === "project").recentChats.length, 50);
+  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && request.payload.pinned).payload, { pinned: true });
+  assert.deepEqual(requests.find((request) => request.type === "/api/chats" && !request.payload.pinned).payload, { mode: "REACT", limit: 25, pinned: false });
+  assert.equal(new URL(urls[0]).searchParams.get("chatsPinned"), "false");
+  push({ frame: "push", type: "chat.read", data: {
+    chatId: "pin-1", agentKey: "project", readRunId: "loyw3v28", lastRunId: "loyw3v28", readAt: EPOCH_MS + 100, agentUnreadCount: 14,
+  } });
+  const current = client.getSnapshot();
+  assert.equal(current.pinnedChatItems[1].isRead, true);
+  assert.equal(current.pinnedChatItems[1].pinned, true);
+  assert.equal(current.pinnedChatItems[1].mode, "CODER");
+  assert.equal(current.chatItems.some((chat) => chat.chatId === "pin-1"), false);
+  const projectActivity = current.activityItems.find((agent) => agent.agentKey === "project");
+  assert.equal(projectActivity.recentChats.filter((chat) => !chat.pinned).length, 50);
+  assert.equal(projectActivity.recentChats.filter((chat) => chat.pinned).length, 15);
+  let refreshScheduled = false;
+  client.scheduleRefresh = () => { refreshScheduled = true; };
+  push({ frame: "push", type: "chats.order.changed", data: { updatedAt: EPOCH_MS + 200 } });
+  assert.equal(refreshScheduled, true);
 });

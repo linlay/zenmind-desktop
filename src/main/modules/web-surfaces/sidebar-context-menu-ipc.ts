@@ -38,6 +38,8 @@ const LABEL_KEYS: Record<SidebarContextMenuLabelId, TranslationKey> = {
   "chat.export": "sidebar.chat.export",
   "chat.exportHtml": "sidebar.chat.exportHtml",
   "chat.share": "sidebar.chat.share",
+  "chat.pin": "sidebar.chat.pin",
+  "chat.unpin": "sidebar.chat.unpin",
   "chat.rename": "sidebar.chat.rename",
   "chat.workPanel.open": "sidebar.chat.workPanel.open",
   "chat.workPanel.close": "sidebar.chat.workPanel.close",

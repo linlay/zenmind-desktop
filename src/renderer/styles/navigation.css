@@ -565,6 +565,15 @@
   margin-left: 0;
 }
 
+.sidebar-new-chat-button {
+  font: inherit;
+}
+
+.sidebar-new-chat-button:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
 .sidebar-nav-group>.Collapse-header .Collapse-headerSupplement {
   display: inline-flex;
   /* Reserve a stable, compact slot so hovering cannot steal the collapse target. */
@@ -1459,6 +1468,7 @@
 }
 
 .sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .sidebar-group-heading-arrow,
+.sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .sidebar-chats-agent-trigger,
 .sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .assistant-worker-icon-button {
   opacity: 0;
 }
@@ -1470,18 +1480,12 @@
 .sidebar-nav-group>.Collapse-header .sidebar-group-heading[data-sidebar-group-id="chats"] {
   min-width: 80px;
   width: auto;
-  padding: 0 4px;
+  padding: 0 8px;
 }
 
 .sidebar-group-heading[data-sidebar-group-id="chats"] .sidebar-group-heading-main {
   flex: 1 1 auto;
   min-width: 0;
-}
-
-.sidebar-nav-group>.Collapse-header .sidebar-group-heading[data-sidebar-group-id="chats"] .sidebar-group-heading-arrow {
-  order: -1;
-  flex-shrink: 0;
-  opacity: 1;
 }
 
 .sidebar-group-heading .sidebar-link-icon {
@@ -5616,4 +5620,14 @@ div.sidebar-chats-group-popover {
 .app-shell.is-secondary-sidebar-mode .app-sidebar-resizer {
   display: none;
   pointer-events: none;
+}
+
+.sidebar-pinned-chat-owner {
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 1;
+  font-size: 11px;
+  opacity: 0.6;
 }

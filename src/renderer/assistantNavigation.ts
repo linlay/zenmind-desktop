@@ -122,6 +122,8 @@ function normalizeAssistantNavChat(value: unknown, fallbackAgentKey: string): As
   return {
     chatId,
     chatName: toText(record.chatName),
+    ...(record.pinned === true ? { pinned: true } : {}),
+    ...(toText(record.mode) ? { mode: toText(record.mode) } : {}),
     agentKey: toText(record.agentKey) || fallbackAgentKey,
     createdAt,
     updatedAt,
@@ -364,7 +366,9 @@ export function normalizeAssistantNavAgentItemsResult(
   return {
     ...result,
     items: normalizeAssistantNavAgents(result.items),
-    chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }),
+    chatItems: normalizeAssistantNavChats(result.chatItems, { requireAgentKey: true }).filter((chat) => !chat.pinned),
+    pinnedChatItems: normalizeAssistantNavChats(result.pinnedChatItems, { requireAgentKey: true }).filter((chat) => chat.pinned),
+    chatPinningSupported: result.chatPinningSupported === true,
     chatItemsHasMore: result.chatItemsHasMore === true,
     chatSortMode: result.chatSortMode === "manual" ? "manual" : "recent",
     chatOrderingSupported: result.chatOrderingSupported === true,
@@ -384,6 +388,12 @@ export function getAssistantNavAgentSortedChats(
     .sort(compareAssistantNavChatFreshness);
 }
 
+export function getAssistantNavAgentUnpinnedChats(
+  agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
+) {
+  return getAssistantNavAgentSortedChats(agent).filter((chat) => !chat.pinned);
+}
+
 export function getAssistantNavAgentPreviewChats(
   agent: Pick<AssistantNavAgentItem, "recentChats"> | null | undefined,
   limit = 5,
@@ -393,7 +403,7 @@ export function getAssistantNavAgentPreviewChats(
     return [];
   }
 
-  return getAssistantNavAgentSortedChats(agent).slice(0, normalizedLimit);
+  return getAssistantNavAgentUnpinnedChats(agent).slice(0, normalizedLimit);
 }
 
 export function getAdjacentAssistantNavChat(

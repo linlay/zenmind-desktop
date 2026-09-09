@@ -172,3 +172,19 @@ test("expanded Chats drag with a portaled name preview and insertion line", () =
   assert.match(appShell, /setAssistantNavChatItems\(reordered\)[\s\S]*?setAssistantChatSortMode\("manual"\)/u);
   assert.match(appShell, /if \(!result\.ok\)[\s\S]*?setAssistantNavChatItems\(previousItems\)[\s\S]*?setAssistantChatSortMode\(previousMode\)/u);
 });
+
+test("Desktop forwards explicit pin state without changing the recent sort mode", async (t) => {
+  const fixture = registerChatOrderHandler(t, async () => ({ sortMode: "recent", pinnedOrder: ["chat-old"], updatedAt: 1_787_414_400_000 }));
+  const result = await fixture.handler({}, { operation: "set_pinned", chatId: "chat-old", pinned: true });
+  assert.equal(result.ok, true);
+  assert.equal(result.sortMode, "recent");
+  assert.deepEqual(fixture.calls[0].options.body, { operation: "set_pinned", chatId: "chat-old", pinned: true });
+  assert.equal(fixture.getRefreshCount(), 1);
+  t.mock.method(console, "warn", () => {});
+  for (const input of [
+    { operation: "set_pinned", chatId: "chat-old" },
+    { operation: "set_pinned", chatId: "chat-old", pinned: "true" },
+    { operation: "set_pinned", chatId: "", pinned: false },
+  ]) assert.equal((await fixture.handler({}, input)).ok, false);
+  assert.equal(fixture.calls.length, 1);
+});

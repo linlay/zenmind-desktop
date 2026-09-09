@@ -359,6 +359,7 @@ export function createDesktopPetRuntime(options: DesktopPetRuntimeOptions) {
       items: navigationSnapshot?.ok ? navigationSnapshot.items : [],
       activityItems: navigationSnapshot?.ok ? navigationSnapshot.activityItems : [],
       chatItems: navigationSnapshot?.ok ? navigationSnapshot.chatItems : [],
+      pinnedChatItems: navigationSnapshot?.ok ? navigationSnapshot.pinnedChatItems : [],
     });
     const agentOptions = listKanbanLocalAgents();
     state.desktopPetAgentOptions = agentOptions;

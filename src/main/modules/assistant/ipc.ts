@@ -264,6 +264,11 @@ export function registerAssistantIpcHandlers(ipcMain: any, options: AssistantIpc
       }
       return { operation: "set_mode", sortMode: input.sortMode };
     }
+    if (input.operation === "set_pinned") {
+      const chatId = typeof input.chatId === "string" ? input.chatId.trim() : "";
+      if (!chatId || typeof input.pinned !== "boolean") { throw new Error(t("assistant.chatOrderInvalidRequest")); }
+      return { operation: "set_pinned", chatId, pinned: input.pinned };
+    }
     if (input.operation !== "move") {
       throw new Error(t("assistant.chatOrderInvalidRequest"));
     }
