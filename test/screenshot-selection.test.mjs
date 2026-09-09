@@ -50,7 +50,7 @@ function readMacApplicationActivationPolicy(pid) {
   ], { encoding: "utf8" }).trim());
 }
 
-test("macOS region screenshot keeps the Desktop app visible in the Dock", {
+test("macOS region screenshot covers the application display and keeps the app visible in the Dock", {
   skip: process.platform !== "darwin"
 }, async (t) => {
   const electronPath = require("electron");
@@ -75,7 +75,13 @@ test("macOS region screenshot keeps the Desktop app visible in the Dock", {
     }
   });
 
-  await waitForOutput(child, "SCREENSHOT_OVERLAY_READY");
+  const output = await waitForOutput(child, "SCREENSHOT_OVERLAY_READY");
+  const probe = JSON.parse(output.match(/SCREENSHOT_OVERLAY_READY (\{[^\n]+\})/u)[1]);
+  assert.deepEqual(probe.bounds, probe.displayBounds);
+  assert.deepEqual(probe.viewport, {
+    width: probe.displayBounds.width,
+    height: probe.displayBounds.height
+  });
 
   assert.equal(
     readMacApplicationActivationPolicy(child.pid),
@@ -88,6 +94,7 @@ test("screenshot selection supports right-click cancellation", () => {
   const screenshotSource = readSourceFile(
     "src",
     "main",
+    "modules",
     "assistant",
     "copilot",
     "screenshot.ts"
@@ -107,6 +114,7 @@ test("bridge screenshot capture supports region, app window, and full desktop mo
   const screenshotSource = readSourceFile(
     "src",
     "main",
+    "modules",
     "assistant",
     "copilot",
     "screenshot.ts"
