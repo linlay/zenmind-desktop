@@ -457,6 +457,7 @@ export function ChatHistoryDialog({
                     <input
                       type="date"
                       value={startDate}
+                      onClick={(event) => event.currentTarget.showPicker()}
                       onChange={(event) => setStartDate(event.target.value)}
                     />
                   </label>
@@ -465,6 +466,7 @@ export function ChatHistoryDialog({
                     <input
                       type="date"
                       value={endDate}
+                      onClick={(event) => event.currentTarget.showPicker()}
                       onChange={(event) => setEndDate(event.target.value)}
                     />
                   </label>
