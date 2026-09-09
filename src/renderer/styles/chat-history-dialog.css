@@ -233,6 +233,11 @@
   box-shadow: var(--control-focus-ring);
 }
 
+.chat-history-dialog-filter-field input[type="date"],
+.chat-history-dialog-filter-field input[type="date"]::-webkit-calendar-picker-indicator {
+  cursor: pointer;
+}
+
 .chat-history-dialog-filter-dates {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
