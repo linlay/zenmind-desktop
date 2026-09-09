@@ -567,33 +567,17 @@
 
 .sidebar-nav-group>.Collapse-header .Collapse-headerSupplement {
   display: inline-flex;
-  flex: 0 1 0;
+  /* Reserve a stable, compact slot so hovering cannot steal the collapse target. */
+  flex: 0 0 64px;
   min-width: 0;
-  max-width: 0;
-  overflow: hidden;
-  opacity: 0;
-  pointer-events: none;
-  transition:
-    max-width 0.16s ease,
-    opacity 0.12s ease;
-}
-
-.sidebar-nav-group>.Collapse-header:hover .Collapse-headerSupplement,
-.sidebar-nav-group>.Collapse-header:focus-within .Collapse-headerSupplement,
-/* 菜单打开时焦点会移入 portal 菜单（在 header 之外），
-   需要继续钉住触发器，否则菜单会失去锚点而移位 */
-.sidebar-nav-group>.Collapse-header:has(.sidebar-chats-agent-trigger[aria-expanded="true"]) .Collapse-headerSupplement {
-  flex: 0 0 100px;
-  max-width: 100px;
-  opacity: 1;
-  pointer-events: auto;
+  max-width: 64px;
 }
 
 .sidebar-chats-agent-picker {
   position: relative;
   display: inline-flex;
-  flex: 0 0 100px;
-  width: 100px;
+  flex: 0 1 64px;
+  width: 64px;
   min-width: 0;
   max-width: 100px;
 }
@@ -605,7 +589,7 @@
   width: 100%;
   min-width: 0;
   max-width: 100%;
-  height: 24px;
+  height: 28px;
   padding: 0 4px;
   border: 0;
   border-radius: 5px;
@@ -641,6 +625,7 @@
 
 .sidebar-chats-agent-picker.is-in-popover {
   flex: 0 0 100px;
+  width: 100px;
   max-width: 100px;
 }
 
@@ -1476,6 +1461,27 @@
 .sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .sidebar-group-heading-arrow,
 .sidebar-nav-group>.Collapse-header:not(:hover):not(:focus-within) .assistant-worker-icon-button {
   opacity: 0;
+}
+
+.sidebar-nav-group>.Collapse-header:has([data-sidebar-group-id="chats"]) {
+  gap: 8px;
+}
+
+.sidebar-nav-group>.Collapse-header .sidebar-group-heading[data-sidebar-group-id="chats"] {
+  min-width: 80px;
+  width: auto;
+  padding: 0 4px;
+}
+
+.sidebar-group-heading[data-sidebar-group-id="chats"] .sidebar-group-heading-main {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.sidebar-nav-group>.Collapse-header .sidebar-group-heading[data-sidebar-group-id="chats"] .sidebar-group-heading-arrow {
+  order: -1;
+  flex-shrink: 0;
+  opacity: 1;
 }
 
 .sidebar-group-heading .sidebar-link-icon {

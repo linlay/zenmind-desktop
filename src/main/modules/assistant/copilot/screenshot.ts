@@ -46,6 +46,14 @@ const MAX_BRIDGE_SCREENSHOT_BYTES = 32 * 1024 * 1024;
 const SCREENSHOT_SOURCE_UNAVAILABLE = "screen_capture_source_unavailable";
 const SCREENSHOT_SELECTION_PROTOCOL = "desktop:";
 
+function getScreenshotDisplay(options: Pick<CaptureAssistantScreenshotOptions, "getMainWindow">) {
+  const mainWindow = options.getMainWindow();
+  if (mainWindow && !mainWindow.isDestroyed() && mainWindow.isVisible()) {
+    return screen.getDisplayMatching(mainWindow.getBounds());
+  }
+  return screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+}
+
 function createScreenshotSelectionHtml(selectionId: string) {
   const doneUrl = `${SCREENSHOT_SELECTION_PROTOCOL}//screenshot-selection/${selectionId}`;
   const selectionHint = t("screenshot.selectionHint");
@@ -144,7 +152,7 @@ function selectScreenshotRegion(display: Display, platform: NodeJS.Platform) {
       fullscreenable: false,
       skipTaskbar: true,
       hasShadow: false,
-      ...(platform === "darwin" ? { roundedCorners: false } : {}),
+      ...(platform === "darwin" ? { roundedCorners: false, enableLargerThanScreen: true } : {}),
       backgroundColor: "#00000000",
       title: `${PRODUCT_NAME} Screenshot Selection`,
       webPreferences: {
@@ -194,6 +202,10 @@ function selectScreenshotRegion(display: Display, platform: NodeJS.Platform) {
         if (overlayWindow.isDestroyed()) {
           return;
         }
+        // Electron 36 creates Windows HWNDs on the primary display before moving
+        // them; reapply DIP bounds after placement to correct mixed-DPI sizing.
+        // On macOS this also covers the full display, including the menu/Dock area.
+        overlayWindow.setBounds(display.bounds, false);
         overlayWindow.show();
         overlayWindow.moveTop();
         overlayWindow.focus();
@@ -435,7 +447,7 @@ export async function captureAssistantScreenshot(options: CaptureAssistantScreen
   }
 
   try {
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const display = getScreenshotDisplay(options);
     const selection = await selectScreenshotRegion(display, options.platform);
     if (!selection) {
       return {
@@ -490,7 +502,7 @@ export async function captureScreenshotForBridge(
       await options.delay(80);
       captured = await captureMainWindowImage(options);
     } else {
-      const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+      const display = getScreenshotDisplay(options);
       if (mode === "desktop") {
         await options.delay(80);
         try {
