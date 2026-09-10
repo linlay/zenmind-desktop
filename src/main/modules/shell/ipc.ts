@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { popupWindowsApplicationMenu } from "./app-menu";
 import {
   shell as electronShell,
   clipboard as electronClipboard,
@@ -224,6 +225,7 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
   let windowDragState: {
     ownerWindow: BrowserWindow;
     lastPoint: { x: number; y: number };
+    windowsOrigin?: { cursor: { x: number; y: number }; bounds: Electron.Rectangle };
     startedAt: number;
   } | null = null;
   const desktopLogStreamSubscriptions = options.desktopLogStreamSubscriptions ?? createLogStreamSubscriptionRegistry();
@@ -294,6 +296,24 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
 
     const currentPoint = screen.getCursorScreenPoint();
+    const { ownerWindow, windowsOrigin } = windowDragState;
+    if (windowsOrigin) {
+      if (ownerWindow.isDestroyed() || ownerWindow.isFullScreen() || ownerWindow.isMaximized()) {
+        endWindowDrag();
+        return;
+      }
+      if (currentPoint.x === windowDragState.lastPoint.x && currentPoint.y === windowDragState.lastPoint.y) return;
+      windowDragState.lastPoint = currentPoint;
+      // Preserve the initial outer size on Windows. Repeated setPosition calls can
+      // accumulate native frame/DPI rounding; never feed the resulting bounds back in.
+      ownerWindow.setBounds({
+        ...windowsOrigin.bounds,
+        x: windowsOrigin.bounds.x + Math.round(currentPoint.x - windowsOrigin.cursor.x),
+        y: windowsOrigin.bounds.y + Math.round(currentPoint.y - windowsOrigin.cursor.y)
+      }, false);
+      ownerWindow.moveTop();
+      return;
+    }
     const deltaX = currentPoint.x - windowDragState.lastPoint.x;
     const deltaY = currentPoint.y - windowDragState.lastPoint.y;
     windowDragState.lastPoint = currentPoint;
@@ -396,6 +416,15 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
     }
     ownerWindow.minimize();
     return { ok: true as const };
+  });
+
+  ipcMain.handle("desktopShell.popupApplicationMenu", async (event: IpcMainInvokeEvent, request: unknown) => {
+    const ownerWindow = getAuthorizedMainWindow(event);
+    if ((options.platform ?? process.platform) !== "win32" || !ownerWindow ||
+        event.sender !== ownerWindow.webContents || event.senderFrame !== event.sender.mainFrame) {
+      return { ok: false };
+    }
+    return { ok: await popupWindowsApplicationMenu(ownerWindow, request) };
   });
 
   ipcMain.handle("desktopShell.toggleWindowMaximize", async (event: IpcMainInvokeEvent) => {
@@ -525,6 +554,9 @@ export function registerShellIpcHandlers(ipcMain: Pick<IpcMain, "handle" | "on">
       windowDragState = {
         ownerWindow,
         lastPoint: startPoint,
+        ...((options.platform ?? process.platform) === "win32" ? {
+          windowsOrigin: { cursor: startPoint, bounds: ownerWindow.getBounds() }
+        } : {}),
         startedAt: Date.now()
       };
       windowDragTimer = runSetInterval(tickWindowDrag, 16);

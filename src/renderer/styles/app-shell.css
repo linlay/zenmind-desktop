@@ -636,7 +636,7 @@
   width: auto;
   min-width: 0;
   padding: 0 10px;
-  cursor: default;
+  cursor: move;
 }
 
 .app-system-bar-brand-mark {
@@ -698,6 +698,20 @@
 .app-system-bar-action.is-active {
   background: var(--sidebar-operation-menu-hover);
   color: var(--ink);
+}
+
+.app-system-bar-menus {
+  margin-left: 0;
+  margin-right: auto;
+}
+
+.app-system-bar-action.app-system-bar-menu {
+  flex: 0 0 auto;
+  width: auto;
+  padding: 0 9px;
+  font: inherit;
+  font-size: 13px;
+  white-space: nowrap;
 }
 
 .app-system-bar-action:disabled {

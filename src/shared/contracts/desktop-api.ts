@@ -909,6 +909,7 @@ export interface DesktopApi {
     setWorkPanelFullscreenActive: (active: boolean) => void;
     requestWindowClose: () => void;
     minimizeWindow: () => Promise<{ ok: boolean; message?: string }>;
+    popupApplicationMenu: (request: { menu: "file" | "edit" | "view" | "help"; x: number; y: number }) => Promise<{ ok: boolean }>;
     toggleWindowMaximize: () => Promise<{ ok: boolean; isMaximized: boolean; message?: string }>;
     getWindowState: () => Promise<{
       ok: boolean;

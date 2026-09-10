@@ -2,6 +2,7 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { WindowsApplicationMenu } from "./WindowsApplicationMenu";
 import { useAppearance } from "../appearance/AppearanceProvider";
 import { DesktopBackground } from "../appearance/DesktopBackground";
 import { isThemePreference, type ThemePreference } from "../appearance/model";
@@ -3848,6 +3849,11 @@ export function AppShell() {
     const clickTracker = windowDragClickTrackerRef.current;
     const target = event.target instanceof Element ? event.target : null;
     const dragTarget = resolveWindowDragTarget(target);
+    // Windows header is a move-only surface; resizing stays on explicit controls.
+    if (isWindows && target?.closest(".app-system-bar")) {
+      clickTracker.reset();
+      return;
+    }
     if (
       event.button !== 0 || event.defaultPrevented || !dragTarget ||
       windowFullScreen || windowControlsMasked ||
@@ -3862,7 +3868,7 @@ export function AppShell() {
     event.stopPropagation();
     windowDragEndRef.current?.();
     toggleMainWindowMaximize();
-  }, [toggleMainWindowMaximize, windowControlsMasked, windowFullScreen]);
+  }, [isWindows, toggleMainWindowMaximize, windowControlsMasked, windowFullScreen]);
 
   useEffect(() => () => {
     windowDragEndRef.current?.();
@@ -4488,6 +4494,7 @@ export function AppShell() {
                 ) : null}
               </nav>
             ) : null}
+            <WindowsApplicationMenu disabled={windowControlsMasked} />
           </div>
           <div className="app-system-bar-window-controls" aria-hidden={windowControlsMasked}>
             <button

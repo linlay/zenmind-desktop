@@ -30,6 +30,10 @@ class FakeFullscreenWindow extends EventEmitter {
     return this.maximized;
   }
 
+  getBounds() {
+    return { x: 80, y: 90, width: 1440, height: 920 };
+  }
+
   minimize() {
     this.minimized = true;
   }
@@ -260,6 +264,7 @@ test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DP
     handle: (channel, handler) => handlers.set(channel, handler),
     on: () => undefined
   }, {
+    platform: "darwin",
     mainWindow,
     BrowserWindow: {
       fromWebContents: (contents) => contents === sender ? mainWindow : null
@@ -283,6 +288,45 @@ test("desktopShell drag uses main-process DIP cursor coordinates across mixed-DP
   dragTick();
 
   assert.deepEqual(mainWindow.moves, [[95, 102]]);
+});
+
+test("Windows drag preserves initial size and ignores native bounds drift on every tick", async () => {
+  const handlers = new Map();
+  const sender = {};
+  const mainWindow = new FakeFullscreenWindow();
+  let cursor = { x: 1920, y: 100 };
+  let tick;
+  let bounds = mainWindow.getBounds();
+  const updates = [];
+  mainWindow.getBounds = () => ({ ...bounds });
+  mainWindow.setPosition = () => assert.fail("Windows drag must not use setPosition");
+  mainWindow.setBounds = (next, animate) => {
+    assert.equal(animate, false);
+    updates.push(next);
+    // Simulate native frame/DPI rounding after each requested move.
+    bounds = { x: next.x + 1, y: next.y + 1, width: next.width + 2, height: next.height + 2 };
+  };
+  mainWindow.moveTop = () => {};
+  registerShellIpcHandlers({
+    handle: (channel, handler) => handlers.set(channel, handler), on: () => {}
+  }, {
+    platform: "win32", mainWindow,
+    BrowserWindow: { fromWebContents: () => mainWindow },
+    screen: { getCursorScreenPoint: () => ({ ...cursor }) },
+    setInterval: (callback) => { tick = callback; return 1; }, clearInterval: () => {}
+  });
+  assert.deepEqual(await handlers.get("desktopShell.beginWindowDrag")({ sender }), { ok: true });
+  for (let step = 1; step <= 100; step++) {
+    cursor = { x: 1920 + step * 2, y: 100 + step };
+    tick();
+    assert.deepEqual(updates.at(-1), { x: 80 + step * 2, y: 90 + step, width: 1440, height: 920 });
+  }
+  tick();
+  assert.equal(updates.length, 100);
+  await handlers.get("desktopShell.endWindowDrag")();
+  cursor.x += 10;
+  tick();
+  assert.equal(updates.length, 100);
 });
 
 for (const platform of ["darwin", "win32"]) {
