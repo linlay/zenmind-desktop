@@ -36,6 +36,9 @@ function quotePowerShell(value: string) {
 }
 
 const SYNC_TIMEOUT_MS = 300_000;
+// PortableGit bundles exceed Node's default 1 MiB stdout limit. Windows also
+// expands UTF-8 output through Base64; keep a bounded allowance for both formats.
+const ARCHIVE_MAX_BUFFER_BYTES = 4 * 1024 * 1024;
 function tarCommand() {
   if (process.platform === "win32") {
     return "tar.exe";
@@ -57,7 +60,7 @@ function runPowerShell(script: string) {
   return execFileSync(
     "powershell",
     ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-    { encoding: "utf8", timeout: SYNC_TIMEOUT_MS }
+    { encoding: "utf8", timeout: SYNC_TIMEOUT_MS, maxBuffer: ARCHIVE_MAX_BUFFER_BYTES }
   );
 }
 
@@ -66,7 +69,7 @@ function runPowerShellAsync(script: string): Promise<string> {
     execFile(
       "powershell",
       ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", script],
-      { encoding: "utf8", timeout: SYNC_TIMEOUT_MS },
+      { encoding: "utf8", timeout: SYNC_TIMEOUT_MS, maxBuffer: ARCHIVE_MAX_BUFFER_BYTES },
       (error, stdout) => {
         if (error) {
           reject(error);
@@ -214,7 +217,7 @@ try {
       );
     }
 
-    const output = execFileSync(unzipCommand(), ["-Z1", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
+    const output = execFileSync(unzipCommand(), ["-Z1", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS, maxBuffer: ARCHIVE_MAX_BUFFER_BYTES });
     return new Set(
       output
         .split(/\r?\n/u)
@@ -223,7 +226,7 @@ try {
     );
   }
 
-  const output = execFileSync(tarCommand(), ["-tzf", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
+  const output = execFileSync(tarCommand(), ["-tzf", archivePath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS, maxBuffer: ARCHIVE_MAX_BUFFER_BYTES });
 
   return new Set(
     output
@@ -310,7 +313,7 @@ export function readFileFromArchive(archivePath: string, entryPath: string) {
   const archiveType = ensureSupportedArchive(archivePath);
   if (archiveType === "zip") {
     if (process.platform !== "win32") {
-      return execFileSync(unzipCommand(), ["-p", archivePath, entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
+      return execFileSync(unzipCommand(), ["-p", archivePath, entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS, maxBuffer: ARCHIVE_MAX_BUFFER_BYTES });
     }
     return runPowerShellForUtf8Text(`
 Add-Type -AssemblyName System.IO.Compression.FileSystem
@@ -340,5 +343,5 @@ try {
 `);
   }
 
-  return execFileSync(tarCommand(), ["-xzf", archivePath, "-O", entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS });
+  return execFileSync(tarCommand(), ["-xzf", archivePath, "-O", entryPath], { encoding: "utf8", timeout: SYNC_TIMEOUT_MS, maxBuffer: ARCHIVE_MAX_BUFFER_BYTES });
 }
