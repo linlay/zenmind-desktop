@@ -178,6 +178,8 @@
 
 ## WorkPanel 统一文档 Surface
 
+- macOS 与 Windows 分别打开 DOCX/PPTX/XLSX 元信息页，确认文件图标、名称、易读大小、可截断的 MIME 和操作集中在同一卡片；在线预览、下载、文件定位与默认应用打开按钮等宽、等高。窄 WorkPanel、全屏、浅色/深色及皮肤主题下无横向溢出；未配置预览时保留禁用按钮与原因，宿主定位/打开继续检查可用能力。
+
 - 以显式 title、相对路径、macOS/POSIX 绝对路径、Windows 驱动器路径、UNC 路径、中文/空格、空 basename 和超长名称创建 File descriptor；Tab 标题必须为“显式 title > basename > file”，不 URL decode，且 stable key 和 `surfaceId` 不变。分别使用新旧 WebClient bundle 验证 Desktop 兜底。
 - 对 Workspace File、Artifact 和 Reference 遍历 HTML、PNG/JPEG/WebP、动画图、SVG、Markdown、TXT、代码、PDF、Office、音视频、压缩包与未知二进制；Desktop 只原生打开 HTML/图片，其他类型使用 WebClient。伪造扩展名、错误 MIME、Office ZIP、SVG 和无后缀 UTF-8 文本必须以 Platform 最终分类为准。
 - 原生 HTML 打开后直接占满 WorkPanel 内容区；header 工具条在预览态同时显示安全语义 URL 与“批注”按钮，不出现“源码/预览/分屏”、源码输入框、覆盖、保存或另存按钮。进入批注后 header 显示“返回预览”、选择提示和实时批注数量；悬停元素必须出现虚线选择框，点击后阻止页面原动作并新增批注，填写要求后可交给智能体。返回预览后页面恢复正常交互。默认窄宽度、拉宽、全屏和窗口 resize 下均不得露出底部空白背景。
