@@ -2925,6 +2925,7 @@
 .chat-work-panel-add-button svg {
   width: 16px;
   height: 16px;
+  padding: 2px;
 }
 
 .chat-work-panel-add-button:focus-visible {

@@ -154,7 +154,7 @@
 
 ## WorkPanel 自由新增 Tab
 
-- 在 macOS 与 Windows 分别打开一个稳定 Chat，确认 Overview 固定首项，`+` 图标为 `16×16px`、按钮区域为 `24×24px`，默认透明，hover、键盘 focus 或菜单展开时显示底色；按钮在 tab 行内垂直居中，紧跟最后一个 tab 并随横向溢出滚动。
+- 在 macOS 与 Windows 分别打开一个稳定 Chat，确认 Overview 固定首项，`+` 图标框为 `16×16px`、四边内留 `2px`，按钮区域为 `24×24px`，默认透明，hover、键盘 focus 或菜单展开时显示底色；按钮在 tab 行内垂直居中，紧跟最后一个 tab 并随横向溢出滚动。切换语言后，新增菜单中文显示“网站应用”、英文显示“WebApp”，空列表提示同步使用对应语言。
 - 默认皮肤下，浅色标签栏为 `#FFFFFF`、选中 tab 为 `#EEEEEE`，深色分别为 `#181818` / `#303030`；tab 高度为 `28px`，四角均为 `10px` 圆角，上部留 `8px`、下部留 `4px`，标签栏总高为 `40px`，相邻 tab 与 `+` 间隔 `4px`。在 macOS、Windows、窄面板与全屏下检查底部圆角完整、标签栏不遮挡内容、右上角面板按钮中心比 tab 中心高 `2px`；多 tab 横向滚动、hover、键盘焦点和关闭按钮保持可用，切换皮肤仍消费该皮肤的标签配色。
 - 分别把焦点放在侧栏 Chat 行、Main Chat 与当前 WorkPanel WebView，连续按 macOS `Cmd+W` / Windows `Ctrl+W`：先关闭 active 可关闭 tab；Overview 激活时关闭最后一个可关闭 tab；再关闭整个 WorkPanel；下一次才执行主窗口原有关闭。取消 dirty/批注确认或遇到 busy 时本次停止。隐藏 WorkPanel、后台 Website、Browser、Copilot 与其他 Chat 的后台 WorkPanel 不得被误关闭。
 - 从侧栏显示/恢复 WorkPanel、切换 Chat 和切换 WorkPanel tab，确认不会自动把焦点送入 WebView；只有用户主动点击 Main Chat、WorkPanel 内容或 tab 时焦点才移动。隐藏、失活和回收 item 后旧 WebView 不再接收按键，macOS 与 Windows 都回归。
