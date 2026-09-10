@@ -343,6 +343,8 @@
 /* ── Sidebar Nav ── */
 
 .sidebar-nav {
+  --control-icon-color: var(--ink-soft);
+  --nav-selected-text: var(--control-primary-bg);
   --sidebar-scrollbar-thumb: transparent;
   display: flex;
   flex-direction: column;
@@ -374,7 +376,7 @@
   border-radius: var(--control-radius);
   appearance: none;
   background: transparent;
-  color: var(--ink-muted);
+  color: var(--control-icon-color);
   cursor: pointer;
   text-align: left;
   transition:
@@ -474,14 +476,6 @@
   color: var(--nav-selected-text);
 }
 
-.app-sidebar.is-collapsed .sidebar-link-active .sidebar-illustration-rail {
-  color: var(--control-primary-bg);
-}
-
-:root[data-theme="dark"] .app-sidebar.is-collapsed .sidebar-link-active .sidebar-illustration-rail {
-  color: var(--control-primary-bg);
-}
-
 :root[data-theme="dark"] .sidebar-chats-item:hover,
 :root[data-theme="dark"] .sidebar-chats-item:focus-visible {
   background: var(--control-hover-bg);
@@ -489,45 +483,6 @@
 
 :root[data-theme="dark"] .sidebar-link-icon {
   --sidebar-special-icon-active-frame: var(--ink);
-}
-
-.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-frame,
-.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-automation .sidebar-illustration-automation-ring {
-  stroke: var(--sidebar-special-icon-active-frame);
-}
-
-.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-blue {
-  fill: #3b82f6;
-  fill-opacity: 0.15;
-  stroke: #3b82f6;
-}
-
-.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-green {
-  fill: #10b981;
-  fill-opacity: 0.15;
-  stroke: #10b981;
-}
-
-.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-amber {
-  fill: #f59e0b;
-  fill-opacity: 0.15;
-  stroke: #f59e0b;
-}
-
-.sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-automation .sidebar-illustration-automation-hand {
-  stroke: #3b82f6;
-}
-
-.sidebar-link-active .sidebar-illustration-rail.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-blue {
-  fill: #3b82f6;
-}
-
-.sidebar-link-active .sidebar-illustration-rail.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-green {
-  fill: #10b981;
-}
-
-.sidebar-link-active .sidebar-illustration-rail.sidebar-illustration-kanban .sidebar-illustration-kanban-lane-amber {
-  fill: #f59e0b;
 }
 
 .sidebar-link-label {
@@ -3460,20 +3415,20 @@ div.sidebar-chats-group-popover {
   width: calc(100% - 8px);
 }
 
-.sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
-.sidebar-link.sidebar-tool-menu-trigger:hover:not(.sidebar-link-active),
-.sidebar-link.sidebar-tool-menu-trigger:focus:not(.sidebar-link-active),
-.sidebar-link.sidebar-tool-menu-trigger.is-open:not(.sidebar-link-active),
-.app-sidebar:not(.is-collapsed) .sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
-.app-sidebar.is-collapsed .sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active),
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:hover:not(.sidebar-link-active),
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:focus:not(.sidebar-link-active),
-:root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger.is-open:not(.sidebar-link-active) {
-  background: var(--nav-selected-bg);
-  border: 0;
-  border-radius: 0;
-  box-shadow: none;
+:root .app-sidebar .sidebar-link.sidebar-tool-menu-trigger:not(.sidebar-link-active) {
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--control-radius);
+}
+
+:root .app-sidebar .sidebar-link.sidebar-tool-menu-trigger:hover:not(.sidebar-link-active),
+:root .app-sidebar .sidebar-link.sidebar-tool-menu-trigger.is-open:not(.sidebar-link-active) {
+  background: var(--control-hover-bg);
+  color: var(--control-icon-hover-color);
+}
+
+.sidebar-tool-menu-trigger.is-open .sidebar-link-icon {
+  color: var(--control-icon-hover-color);
 }
 
 .sidebar-tool-menu-trigger .sidebar-link-label {
@@ -4065,8 +4020,8 @@ div.sidebar-chats-group-popover {
 }
 
 .app-sidebar.is-collapsed .sidebar-nav .sidebar-link-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 .app-sidebar.is-collapsed .sidebar-link-utility .sidebar-link-icon {
@@ -4130,8 +4085,8 @@ div.sidebar-chats-group-popover {
 }
 
 .app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-link-icon {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
 }
 
 .app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-status-badges {
@@ -4153,8 +4108,8 @@ div.sidebar-chats-group-popover {
 }
 
 .app-sidebar.is-collapsed .sidebar-tool-menu-trigger {
-  width: 48px;
-  min-height: 32px;
+  width: 36px;
+  min-height: 36px;
   flex-direction: row;
   padding: 0;
   margin: 0 auto;
