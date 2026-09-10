@@ -2,11 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { Worker } from "node:worker_threads";
-import type { App } from "electron";
-import type { ServiceState } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
-import { parseSafeLoopbackWebUrl } from "../../infrastructure/network/loopback-url";
-import { getResponsiveServiceState } from "../services";
 import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname
@@ -14,13 +10,12 @@ import {
 import {
   CONVERSATION_EXPORT_TEMPLATE_PATH,
   MAX_CONVERSATION_HTML_BYTES,
+  type ConversationExportWorkerRequest,
   type ConversationHtmlRenderResult,
   type ConversationHtmlWorkerErrorCode,
-  type RenderConversationHtmlRequest,
+  type ConversationSnapshotReadResult,
   type RenderConversationHtmlResponse
 } from "./export-contract";
-
-const AGENT_WEBCLIENT_SERVICE_ID = "agent-webclient";
 
 export type ConversationSnapshotRequestResult =
   | { ok: true; snapshotUrl: string; bearerToken: string }
@@ -52,9 +47,7 @@ export class ConversationHtmlRenderService {
   private readonly pending = new Map<string, PendingRender>();
 
   constructor(private readonly options: {
-    app: App;
     snapshotProvider: ConversationSnapshotRequestProvider;
-    getServiceState?: (app: App, serviceId: string) => Promise<ServiceState>;
     workerPath?: string;
   }) {}
 
@@ -86,36 +79,25 @@ export class ConversationHtmlRenderService {
     if (!isValidAssetOrigin(assetOrigin)) {
       return { ok: false, message: t("assistant.chatShareTunnelConfigInvalid") };
     }
-    const [snapshotRequest, webclientState] = await Promise.all([
-      this.options.snapshotProvider.createChatSnapshotRequest(normalizedChatId),
-      (this.options.getServiceState || getResponsiveServiceState)(
-        this.options.app,
-        AGENT_WEBCLIENT_SERVICE_ID
-      ).catch(() => null)
-    ]);
+    const snapshotRequest = await this.options.snapshotProvider
+      .createChatSnapshotRequest(normalizedChatId);
     if (!snapshotRequest.ok) return snapshotRequest;
-    if (!webclientState || webclientState.status !== "running") {
-      return { ok: false, message: t("assistant.chatHtmlExportUnsupported") };
-    }
-    const webclientVersion = String(webclientState.version || "").trim();
-    const webclientURL = parseSafeLoopbackWebUrl(
-      String(webclientState.healthMeta?.webUrl || "").trim()
-    );
-    if (!webclientURL || !webclientVersion) {
-      return { ok: false, message: t("assistant.chatHtmlExportUnsupported") };
-    }
-    const templateURL = new URL(CONVERSATION_EXPORT_TEMPLATE_PATH, webclientURL.origin);
+    const templateURL = new URL(CONVERSATION_EXPORT_TEMPLATE_PATH, assetOrigin);
     const requestId = randomUUID();
     try {
       const response = await this.renderInWorker({
+        kind: "html",
         requestId,
         snapshotUrl: snapshotRequest.snapshotUrl,
         bearerToken: snapshotRequest.bearerToken,
         templateUrl: templateURL.toString(),
-        templateCacheKey: `${templateURL.origin}|${webclientVersion}`,
+        templateCacheKey: templateURL.toString(),
         assetOrigin: new URL(assetOrigin).origin
       });
-      if (response.type === "error") {
+      if (response.type !== "result") {
+        if (response.type === "snapshot") {
+          throw new ConversationHtmlWorkerError("worker_failed");
+        }
         throw new ConversationHtmlWorkerError(
           response.code,
           response.actualBytes,
@@ -133,6 +115,40 @@ export class ConversationHtmlRenderService {
     }
   }
 
+  async readChatSnapshot(chatId: string): Promise<ConversationSnapshotReadResult> {
+    const normalizedChatId = chatId.trim();
+    if (!normalizedChatId) {
+      return { ok: false, message: t("assistant.chatIdRequired") };
+    }
+    const snapshotRequest = await this.options.snapshotProvider
+      .createChatSnapshotRequest(normalizedChatId);
+    if (!snapshotRequest.ok) return snapshotRequest;
+    try {
+      const response = await this.renderInWorker({
+        kind: "snapshot",
+        requestId: randomUUID(),
+        snapshotUrl: snapshotRequest.snapshotUrl,
+        bearerToken: snapshotRequest.bearerToken
+      });
+      if (response.type !== "snapshot") {
+        if (response.type === "error") {
+          throw new ConversationHtmlWorkerError(
+            response.code,
+            response.actualBytes,
+            response.limitBytes
+          );
+        }
+        throw new ConversationHtmlWorkerError("worker_failed");
+      }
+      return { ok: true, bytes: Buffer.from(response.snapshot) };
+    } catch (error) {
+      if (error instanceof ConversationHtmlWorkerError && error.code === "too_large") {
+        return { ok: false, message: t("assistant.chatShareSnapshotTooLarge") };
+      }
+      return { ok: false, message: t("assistant.chatShareRequestFailed") };
+    }
+  }
+
   async dispose(): Promise<void> {
     if (this.disposed) return;
     this.disposed = true;
@@ -143,7 +159,7 @@ export class ConversationHtmlRenderService {
   }
 
   private renderInWorker(
-    request: RenderConversationHtmlRequest
+    request: ConversationExportWorkerRequest
   ): Promise<RenderConversationHtmlResponse> {
     if (this.disposed) {
       return Promise.reject(new ConversationHtmlWorkerError("worker_failed"));

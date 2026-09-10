@@ -418,6 +418,19 @@ export async function resolveDesktopCapability(
   return resolveDesktopCapabilityWithPending(app, capabilityId, options);
 }
 
+// Owned by one verification round; never retained across retries or service starts.
+export function createVerificationCapabilityResolver(resolve = resolveDesktopCapability): typeof resolveDesktopCapability {
+  let accessToken: ReturnType<typeof resolveDesktopCapability> | undefined;
+  return (app, capabilityId, options) => {
+    if (capabilityId !== "auth.accessToken") {
+      return resolve(app, capabilityId, options);
+    }
+    // Keep failures too, so a failed authentication check cannot issue again in this round.
+    accessToken ??= resolve(app, capabilityId, options);
+    return accessToken;
+  };
+}
+
 export const __testInternals = {
   buildTemplateValues,
   commandForCurrentPlatform,

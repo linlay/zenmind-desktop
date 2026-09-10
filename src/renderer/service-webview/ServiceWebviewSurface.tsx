@@ -111,7 +111,10 @@ import {
 } from "../../shared/surface-identity";
 import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
 import { useAppearance } from "../appearance/AppearanceProvider";
-import { readWebclientAppearanceProjection } from "../appearance/webclientProjection";
+import {
+  isWebclientHostBackgroundSurface,
+  readWebclientAppearanceProjection
+} from "../appearance/webclientProjection";
 import { createWebclientAppearanceHost } from "./appearanceHost";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
@@ -691,8 +694,9 @@ export function ServiceWebviewSurface({
   const [hostSkinBackground, setHostSkinBackground] = useState(false);
   const appearanceHostRef = useRef<ReturnType<typeof createWebclientAppearanceHost> | null>(null);
   const appearanceRevisionRef = useRef({ revision: 0, signature: "" });
-  const appearanceInputRef = useRef({ appearance, mainChatSurface, active });
-  appearanceInputRef.current = { appearance, mainChatSurface, active };
+  const hostBackgroundSurface = isWebclientHostBackgroundSurface(serviceId, surfaceIdentity, embedPath);
+  const appearanceInputRef = useRef({ appearance, hostBackgroundSurface, active });
+  appearanceInputRef.current = { appearance, hostBackgroundSurface, active };
   const desiredMainChatIdentity = useMemo(
     () => mainChatSurface ? readMainChatIdentity(desiredDesktopRoute) : null,
     [desiredDesktopRoute, mainChatSurface],
@@ -3275,7 +3279,7 @@ export function ServiceWebviewSurface({
         // opaque native window; macOS paints above the native vibrancy layer.
         if (shell?.classList.contains("is-mac-platform")) platformSupportsHostBackground = true;
         if (shell?.classList.contains("is-windows-platform")) platformSupportsHostBackground = true;
-        const hostBackground = platformSupportsHostBackground && input.mainChatSurface &&
+        const hostBackground = platformSupportsHostBackground && input.hostBackgroundSurface &&
           input.active !== false && Boolean(input.appearance.background);
         return readWebclientAppearanceProjection(input.appearance, hostBackground);
       },
@@ -3292,7 +3296,7 @@ export function ServiceWebviewSurface({
 
   useEffect(() => {
     appearanceHostRef.current?.refresh();
-  }, [appearance.resolvedTheme, appearance.skin, appearance.background, active, documentVisible]);
+  }, [appearance.resolvedTheme, appearance.skin, appearance.background, hostBackgroundSurface, active, documentVisible]);
 
   useEffect(() => {
     if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {

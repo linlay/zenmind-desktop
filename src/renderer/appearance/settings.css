@@ -1,5 +1,8 @@
 .desktop-skin-settings { container-type: inline-size; border-top: 1px solid var(--line); padding: 16px; min-width: 0; }
 .desktop-skin-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.desktop-skin-title { display: flex; align-items: center; gap: 8px; }
+.desktop-skin-saving { position: relative; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; flex-shrink: 0; color: var(--ink-soft); font-size: 12px; }
+.desktop-skin-saving-label { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
 .desktop-skin-heading strong, .desktop-background-copy strong { color: var(--ink); font-size: 13px; font-weight: 600; }
 .desktop-skin-heading > span, .desktop-background-copy > span { color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
 .desktop-skin-options { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 14px 0 20px; }
@@ -40,9 +43,16 @@
 .desktop-skin-settings + .settings-appearance-row { border-top: 1px solid var(--line); }
 
 .desktop-skin-import { flex-shrink: 0; }
-.desktop-installed-skin { min-width: 0; display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.desktop-installed-skin { position: relative; min-width: 0; display: flex; }
 .desktop-installed-skin .desktop-skin-option { width: 100%; }
+.desktop-installed-skin .desktop-skin-remove { position: absolute; right: 8px; bottom: 8px; width: 24px; height: 24px; opacity: 0; pointer-events: none; }
+.desktop-installed-skin:hover .desktop-skin-remove,
+.desktop-installed-skin:focus-within .desktop-skin-remove { opacity: 1; pointer-events: auto; }
+.desktop-installed-skin .desktop-skin-remove:focus-visible { outline: 2px solid var(--control-primary-bg); outline-offset: 2px; }
+@media (hover: none) {
+  .desktop-installed-skin .desktop-skin-remove { opacity: 1; pointer-events: auto; }
+}
 .desktop-skin-sample > img { width: 100%; height: 100%; object-fit: cover; }
 .desktop-skin-no-preview { margin: auto; font-size: 32px; color: var(--ink-soft); }
-.desktop-skin-package-meta { display: block; padding: 0 8px 6px; font-size: 11px; color: var(--ink-soft); overflow-wrap: anywhere; }
+.desktop-skin-package-meta { display: block; min-height: 24px; padding: 0 32px 6px 8px; font-size: 11px; color: var(--ink-soft); overflow-wrap: anywhere; }
 .desktop-installed-skin .desktop-skin-option-label { overflow-wrap: anywhere; }

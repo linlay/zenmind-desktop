@@ -15,7 +15,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import { NavLink } from "react-router-dom";
-import { CloseOutlined, PushpinOutlined } from "@ant-design/icons";
+import { CloseOutlined } from "@ant-design/icons";
 import {
   DndContext,
   DragOverlay,
@@ -4724,7 +4724,7 @@ export function AppSidebar({
     return renderSidebarGroup({
       groupId: "pinned",
       label: t("sidebar.pinned.title"),
-      iconNode: <PushpinOutlined />,
+      iconNode: <SidebarActionIcon kind="pin" />,
       status: {
         unreadCount: assistantPinnedChatItems.filter((chat) => !chat.isRead).length,
         pendingCount: assistantPinnedChatItems.filter((chat) => chat.hasPendingAwaiting).length,

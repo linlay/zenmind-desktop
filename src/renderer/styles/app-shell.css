@@ -928,6 +928,25 @@
   min-width: 0;
 }
 
+/* Keep both separators reachable when WorkPanel consumes the chat column. */
+.app-shell.is-main-chat-collapsed-by-work-panel .app-content > .app-main {
+  flex: 0 0 0;
+  width: 0;
+  margin-right: var(--work-panel-collapsed-main-gap);
+  padding: 0;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app-shell.is-main-chat-collapsed-by-work-panel .app-sidebar-resizer {
+  --sidebar-resizer-hitbox: 6px;
+}
+
+.app-shell.is-main-chat-collapsed-by-work-panel .chat-work-panel-resizer {
+  --work-panel-resizer-hitbox: 6px;
+}
+
 .app-content > .canonical-webapp-layer {
   position: absolute;
   inset: 0;

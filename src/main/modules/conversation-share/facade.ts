@@ -1,7 +1,6 @@
 import type { App } from "electron";
 import type {
-  AssistantConversationShareRequest,
-  ServiceState
+  AssistantConversationShareRequest
 } from "../../../shared/contracts";
 import {
   createConversationShare,
@@ -18,16 +17,13 @@ import { TunnelConversationShareClient } from "./tunnel-client";
 export type ConversationShareFacadeOptions = {
   app: App;
   snapshotProvider: ConversationSnapshotRequestProvider;
-  getServiceState?: (app: App, serviceId: string) => Promise<ServiceState>;
   workerPath?: string;
   fetchImpl?: typeof globalThis.fetch;
 };
 
 export function createConversationShareFacade(options: ConversationShareFacadeOptions) {
   const renderer = new ConversationHtmlRenderService({
-    app: options.app,
     snapshotProvider: options.snapshotProvider,
-    getServiceState: options.getServiceState,
     workerPath: options.workerPath
   });
   const client = new TunnelConversationShareClient(options.fetchImpl);

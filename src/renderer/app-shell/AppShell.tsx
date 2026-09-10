@@ -87,6 +87,7 @@ import {
   type SidebarLayoutState
 } from "../../shared/sidebar-layout";
 import {
+  WORK_PANEL_COLLAPSED_MAIN_GAP,
   WORK_PANEL_MIN_WIDTH,
   WORK_PANEL_RESIZE_STEP,
   clampWorkPanelWidth,
@@ -814,6 +815,8 @@ export function AppShell() {
     preferredWorkPanelWidth,
     appContentWidth || undefined,
   );
+  const isMainChatCollapsedByWorkPanel = activeChatWorkPanelVisible && appContentWidth > 0 &&
+    renderedWorkPanelWidth >= workPanelMaxWidth;
   const bareAgentWebclientServiceRoute = isBareAgentWebclientServiceRoute(location.pathname, location.search);
   const activeServiceId = activeEmbeddedAgentWebclientRoute
     ? AGENT_WEBCLIENT_SERVICE_ID
@@ -3008,10 +3011,16 @@ export function AppShell() {
     let nextWidth: number | null = null;
     switch (event.key) {
       case "ArrowLeft":
-        nextWidth = renderedWorkPanelWidth + WORK_PANEL_RESIZE_STEP;
+        // Keep keyboard progress through the same buffer used by pointer resizing.
+        nextWidth = Math.min(workPanelMaxWidth, Math.max(renderedWorkPanelWidth, preferredWorkPanelWidth)) + WORK_PANEL_RESIZE_STEP;
         break;
       case "ArrowRight":
-        nextWidth = renderedWorkPanelWidth - WORK_PANEL_RESIZE_STEP;
+        nextWidth = resolveWorkPanelWidthFromDrag({
+          initialWidth: renderedWorkPanelWidth,
+          startClientX: 0,
+          currentClientX: WORK_PANEL_RESIZE_STEP,
+          availableWidth: appContentWidth || undefined,
+        });
         break;
       case "Home":
         nextWidth = WORK_PANEL_MIN_WIDTH;
@@ -3024,7 +3033,7 @@ export function AppShell() {
     }
     event.preventDefault();
     event.stopPropagation();
-    setPreferredWorkPanelWidth(clampWorkPanelWidth(nextWidth, appContentWidth || undefined));
+    setPreferredWorkPanelWidth(clampWorkPanelWidth(Math.min(nextWidth, workPanelMaxWidth)));
   }
 
   function handleCopilotDockResizerPointerDown(event: ReactPointerEvent<HTMLDivElement>) {
@@ -3876,6 +3885,7 @@ export function AppShell() {
 
   const appShellStyle = {
     "--app-sidebar-width": `${effectiveSidebarWidth}px`,
+    "--work-panel-collapsed-main-gap": `${WORK_PANEL_COLLAPSED_MAIN_GAP}px`,
     "--chat-work-panel-width": `${renderedWorkPanelWidth}px`,
     "--assistant-dock-embedded-width": `${renderedCopilotDockWidth}px`,
   } as CSSProperties;
@@ -4393,6 +4403,7 @@ export function AppShell() {
         assistantCopilotOpen ? "has-assistant-dock-full" : "",
         assistantCopilotOpen && copilotDockOverlayMode ? "has-assistant-dock-overlay" : "",
         activeChatWorkPanelVisible ? "has-chat-work-panel" : "",
+        isMainChatCollapsedByWorkPanel ? "is-main-chat-collapsed-by-work-panel" : "",
         workPanelFullscreenOwnerChatId ? "is-work-panel-fullscreen" : "",
         showMainChatWorkPanelToggle ? "has-main-chat-work-panel-toggle" : "",
         isMac ? "is-mac-platform" : "",

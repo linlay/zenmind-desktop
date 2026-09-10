@@ -86,8 +86,7 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     factoryContext.assistantBridgeRuntime.start();
     const conversationShareFacade = createConversationShareFacade({
         app,
-        snapshotProvider: factoryContext.assistantBridgeRuntime.assistantBridge,
-        getServiceState: factoryContext.servicesFacade.getServiceState
+        snapshotProvider: factoryContext.assistantBridgeRuntime.assistantBridge
     });
     conversationShareFacade.start();
     app.once("will-quit", () => {

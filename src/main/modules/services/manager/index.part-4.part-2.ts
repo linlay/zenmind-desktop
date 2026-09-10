@@ -62,7 +62,7 @@ import {
   reconcileBuiltinSiblingInstallDirs,
   stopBuiltinInstallDir
 } from "./builtin-install";
-import { resolveDesktopCapability } from "./capabilities";
+import { createVerificationCapabilityResolver, resolveDesktopCapability } from "./capabilities";
 import {
   appendConfiguredServiceLifecycleArgs
 } from "../lifecycle-args";
@@ -511,7 +511,7 @@ export async function verifyServiceState(
         : 0;
     checkpoints.next("initial-probe");
     let current = await collectServiceVerification(app, serviceId, desired, options);
-    if (current.verification.verified && delayMs <= 0) {
+    if (current.verification.verified) {
       verified = true;
       return current.verification;
     }
@@ -621,7 +621,8 @@ export function resolveAgentPlatformReadinessFallbackTarget(
 export async function ensureRequiredServiceHttpReachable(
   app: App,
   requirement: ManifestDesktopCapabilityRequirement,
-  options: ServiceVerificationOptions = {}
+  options: ServiceVerificationOptions = {},
+  resolveCapability = resolveDesktopCapability
 ) {
   const requiredServiceId = requirement.service as ServiceId | undefined;
   if (!requiredServiceId) {
@@ -651,7 +652,7 @@ export async function ensureRequiredServiceHttpReachable(
   const target = resolveRequirementHttpTarget(requiredService, webUrl, requirement.target);
   const authCapability = requirement.authCapability?.trim() ?? "";
   const authResult = authCapability
-    ? await runStartupCheckpoint(requiredService.id, "dependency-http", "resolve-auth", () => resolveDesktopCapability(app, authCapability, {
+    ? await runStartupCheckpoint(requiredService.id, "dependency-http", "resolve-auth", () => resolveCapability(app, authCapability, {
       ports: integrationPorts(options.integrationPorts),
       ensureProviderInstall: async (providerService) => {
         await ensureMutableInstallDir(app, providerService, options.integrationPorts);
@@ -663,6 +664,7 @@ export async function ensureRequiredServiceHttpReachable(
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
   }));
   if (!probe.ok) {
+    console.warn("[service-verification] HTTP check failed", { serviceId: requiredService.id, statusCode: probe.statusCode ?? null });
     const fallbackTarget = resolveAgentPlatformReadinessFallbackTarget(requiredService.id, target, probe);
     if (fallbackTarget) {
       const fallbackProbe = await probeHttpUrl(fallbackTarget, {
@@ -671,6 +673,7 @@ export async function ensureRequiredServiceHttpReachable(
       if (fallbackProbe.ok) {
         return;
       }
+      console.warn("[service-verification] fallback HTTP check failed", { serviceId: requiredService.id, statusCode: fallbackProbe.statusCode ?? null });
       throw new Error(
         [
           t("service.verify.probeFailed", { target, message: probe.message || t("service.probeHttpUnavailable") }),
@@ -690,7 +693,8 @@ export async function applyDesktopCapabilityRequirement(
   _service: ServiceDefinition,
   layout: ServiceLayout,
   requirement: ManifestDesktopCapabilityRequirement,
-  options: ServiceVerificationOptions = {}
+  options: ServiceVerificationOptions = {},
+  resolveCapability = resolveDesktopCapability
 ) {
   const action = getCapabilityRequirementAction(requirement);
 
@@ -698,7 +702,7 @@ export async function applyDesktopCapabilityRequirement(
     if (action === "waitHttp") {
       throw new Error(`${describeCapabilityRequirement(requirement)} cannot use waitHttp.`);
     }
-    const result = await resolveDesktopCapability(app, requirement.capability, {
+    const result = await resolveCapability(app, requirement.capability, {
       ports: integrationPorts(options.integrationPorts),
       ensureProviderInstall: async (providerService) => {
         await ensureMutableInstallDir(app, providerService, options.integrationPorts);
@@ -732,7 +736,7 @@ export async function applyDesktopCapabilityRequirement(
     if (action !== "waitHttp") {
       throw new Error(`${describeCapabilityRequirement(requirement)} must use waitHttp.`);
     }
-    await ensureRequiredServiceHttpReachable(app, requirement, options);
+    await ensureRequiredServiceHttpReachable(app, requirement, options, resolveCapability);
     return;
   }
 
@@ -760,12 +764,14 @@ export async function collectDesktopCapabilityRequirementIssues(
   options: ServiceVerificationOptions = {}
 ) {
   const issues: string[] = [];
+  const resolveCapability = createVerificationCapabilityResolver();
   const requirements = service.desktop.capabilities.requires.filter((requirement) => requirement.phase === phase);
   for (const requirement of requirements) {
     try {
       await runStartupCheckpoint(service.id, `requirement-${phase}`, describeCapabilityRequirement(requirement).replace(/\s+/gu, "-"),
-        () => applyDesktopCapabilityRequirement(app, service, layout, requirement, options));
+        () => applyDesktopCapabilityRequirement(app, service, layout, requirement, options, resolveCapability));
     } catch (error) {
+      console.warn("[service-verification] requirement failed", { serviceId: service.id, phase, requirement: describeCapabilityRequirement(requirement) });
       const message = error instanceof Error ? error.message : String(error);
       issues.push(t("service.verify.requirementNotReady", {
         requirement: describeCapabilityRequirement(requirement),

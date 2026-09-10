@@ -120,8 +120,8 @@
   background: color-mix(in srgb, var(--bg-base) 58%, transparent);
 }
 
-/* Only a Main Chat document that consumes the dedicated appearance bridge may
-   opt into this path. Clear the owned host chain, never the guest's own CSS.
+/* Main Chat and supported management documents opt in through the dedicated
+   appearance bridge. Clear the owned host chain, never the guest's own CSS.
    Keep Copilot, WorkPanel and other service reading surfaces independent. */
 :root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface:has(.agent-webclient-host-background:not([hidden])) > .app-content,
 :root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface:has(.agent-webclient-host-background:not([hidden])) > .app-content > .app-main,
