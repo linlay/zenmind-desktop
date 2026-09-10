@@ -76,3 +76,12 @@ canonical Desktop/WebClient bridge v6 增加 `openDocument`，同时保留旧方
 Platform 上传的 Reference 可以是 Chat 根目录的单个文件名，也可以位于 `references/` 下。WebClient 打开、当前资源操作及 Desktop 本地解析使用相同的来源规则；Artifact 仍限于 `artifacts/`。owner Chat、规范路径和 realpath 校验继续生效。根目录 HTML Reference 只允许读取自身，不因此获得相邻 Chat 文件的读取权限。
 
 DOCX 正文由共用 WebClient Document Surface 承载，只读显示文字、表格、内嵌图片、分页和缩放，不依赖系统安装的 Office 或转换服务。随包分发的渲染库在独立 opaque-origin sandbox iframe 中运行；只有固定 nonce 脚本可执行，文档自带脚本、HTML altChunk、远端资源和表单均被禁止。父页面按 frame source 和随机 token 验证窄消息通道，只交付文档字节与阅读控制，不交付凭据或 Desktop 能力。下载仍返回原件；Reference 不可覆盖。其他 Office 格式保留现有元信息及显式文件操作。
+
+
+## Office 在线预览
+
+DOCX/PPTX/XLSX 在线预览由 WebClient Document Surface 和 Platform 完成。Desktop 继续托管 Program Bundle、代理 `/api/document/preview/capabilities` 与 `/api/document/preview`，并将明确点击的 HTTP(S) 预览链接交给系统浏览器；不增加 bridge、原生 Office 查看器或 document-hub 配置。
+
+Document Surface 的文件描述符始终指向原文件；分享 URL 仅在 WebClient 内存展示，不覆盖 tab 身份。预览页是跨 origin iframe，不注入 Desktop preload/bridge，也不通过 Platform API 代理加载分享页。平台凭据仍仅用于已有 `/api` 鉴权链路；服务凭据由 Platform 管理，返回给 WebClient 的仅为一天有效的只读分享 URL。
+
+本地统一 `127.0.0.1`，document-hub 默认 `8090`；嵌入允许来源及 ONLYOFFICE 浏览器地址由 document-hub 配置。跨站 Cookie 限制下使用 Platform `open-mode: external`。`test/window-manager.test.mjs` 验证 darwin/win32 的系统浏览器分流，`test/service-manager.test.mjs` 验证两个普通 HTTP 接口经原有代理保留鉴权、方法及请求体。系统分支测试不替代 Windows/macOS 安装包的人工完整联调。

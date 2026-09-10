@@ -1667,7 +1667,7 @@ test("window manager routes attached webview DevTools shortcuts to the main rend
 });
 
 for (const platform of ["darwin", "win32"]) {
-  test(`Agent WebClient authorization popups open in the system browser on ${platform}`, async () => {
+  test(`Agent WebClient authorization and document preview popups open in the system browser on ${platform}`, async () => {
     const mainWindow = new FakeWindow();
     const guest = new FakeWebContents(45, "persist:service", "http://127.0.0.1:18080/connectors/wecom");
     const externalUrls = [];
@@ -1721,6 +1721,15 @@ for (const platform of ["darwin", "win32"]) {
     const workPanelAuthUrl = `${authorizationUrl}&source=workpanel`;
     guest.windowOpenHandler({ url: workPanelAuthUrl });
     assert.deepEqual(externalUrls, [authorizationUrl, localUrl, workPanelAuthUrl]);
+    assert.deepEqual(mainWindow.webContents.sentMessages, []);
+
+    // Document Surface uses the same explicit target=_blank path on both OSes.
+    const previews = ["http://127.0.0.1:8090/s/local-preview", "https://docs.company.test/s/readonly-preview"];
+    for (const url of previews) {
+      assert.deepEqual(guest.windowOpenHandler({ url }), { action: "deny" });
+    }
+    assert.deepEqual(externalUrls, [authorizationUrl, localUrl, workPanelAuthUrl, ...previews]);
+    assert.deepEqual(guest.loadedUrls, []);
     assert.deepEqual(mainWindow.webContents.sentMessages, []);
 
     guest.windowOpenHandler({ url: `${authorizationUrl}&fail=true` });

@@ -6684,11 +6684,14 @@ test("startService applies agent-webclient host-managed base-url start arg over 
   const fixture = createStartupCoreAssetsFixture();
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
-  const upstream = http.createServer((req, res) => {
+  const upstream = http.createServer(async (req, res) => {
+    let body = "";
+    for await (const chunk of req) body += chunk;
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({
       url: req.url,
-      authorization: req.headers.authorization || ""
+      authorization: req.headers.authorization || "",
+      ...(req.method === "POST" ? { body: JSON.parse(body) } : {})
     }));
   });
 
@@ -6735,6 +6738,20 @@ test("startService applies agent-webclient host-managed base-url start arg over 
       url: "/api/overlay-probe?x=1",
       authorization: "Bearer caller"
     });
+
+    const previewRequest = { requestId: "desktop-preview", source: { kind: "workspace-file", agentKey: "coder", path: "report.xlsx" } };
+    for (const [route, method] of [["/api/document/preview/capabilities", "GET"], ["/api/document/preview", "POST"]]) {
+      const response = await fetch(new URL(route, webclientStart.service.healthMeta.webUrl), {
+        method,
+        headers: { authorization: "Bearer caller", "content-type": "application/json" },
+        ...(method === "POST" ? { body: JSON.stringify(previewRequest) } : {})
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(await response.json(), {
+        url: route, authorization: "Bearer caller",
+        ...(method === "POST" ? { body: previewRequest } : {})
+      });
+    }
 
     const runtimeConfigResponse = await fetch(new URL("/runtime-config.js", webclientStart.service.healthMeta.webUrl));
     assert.equal(runtimeConfigResponse.status, 200);
