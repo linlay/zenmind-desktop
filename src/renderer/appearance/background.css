@@ -61,8 +61,8 @@
   border-right-color: var(--line);
 }
 
-/* Native pages share the wallpaper. Embedded content keeps its existing host
-   surfaces and opaque guest background until a separate guest contract lands. */
+/* Native pages share the wallpaper. Service and Website guests retain their
+   existing surfaces; WebApps use the transparent host path below. */
 :root[data-desktop-background="image"] .app-shell:not(.has-embedded-surface) > .app-content {
   background: transparent;
   backdrop-filter: none;
@@ -71,6 +71,39 @@
 
 :root[data-desktop-background="image"] .app-shell:not(.has-embedded-surface) > .app-content > .app-main {
   background: var(--shell-content-bg);
+}
+
+/* A WebApp's own document background wins naturally. Only clear Desktop-owned
+   surfaces; never inject guest CSS or copy the wallpaper into another document.
+   macOS also overrides the service host's dark surface when a WebApp occupies
+   WorkPanel; Windows keeps its native opaque base and renderer title bar. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface:is(.has-webapp-surface, .has-work-panel-webapp-surface) > .app-content,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform:is(.has-webapp-surface, .has-work-panel-webapp-surface) > .app-content {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-webapp-surface > .app-content > .app-main,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-webapp-surface > .app-content > .app-main {
+  background: transparent;
+}
+
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.has-work-panel-webapp-surface .chat-work-panel.is-visible,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform.has-work-panel-webapp-surface .chat-work-panel.is-visible {
+  background: transparent;
+}
+
+/* Shared dark Browser/Service rules also match these host wrappers. Scope the
+   override to canonical WebApps so their transparent guest canvas stays clear. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface .canonical-webapp-surface :is(.external-webview-page, .external-webview-frame-shell, .external-webview-panel, .external-webview-frame),
+:root[data-desktop-background="image"] .app-shell.is-windows-platform .canonical-webapp-surface :is(.external-webview-page, .external-webview-frame-shell, .external-webview-panel, .external-webview-frame) {
+  background: transparent;
+}
+
+/* Fullscreen WorkPanel normally hides its shell siblings, including decoration. */
+:root[data-desktop-background="image"] .app-shell.has-work-panel-webapp-surface.is-work-panel-fullscreen > .desktop-background {
+  visibility: visible;
 }
 
 /* Photographs need a lighter reading surface than the deliberately subtle

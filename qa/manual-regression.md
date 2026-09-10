@@ -221,6 +221,9 @@
 
 ## WebApp 单一展示所有权
 
+- macOS 与 Windows 分别使用有图片的浅色/深色皮肤打开透明 WebApp，确认主区、WorkPanel 和 WorkPanel 全屏透出同一背景，图片不重新裁切或随 guest 滚动。切换皮肤和主区/WorkPanel 转移时输入、滚动与 guest identity 保留；隐藏面板或切到非 WebApp tab 后宿主表面恢复。
+- 用明确设置实色背景和背景图片的 WebApp 重复验证，确认页面自有背景优先；普通 Website、Browser、Service 页面不受影响。恢复无图片的默认皮肤及打开独立 WebApp 窗口时检查原有底色，不出现透明到系统桌面的意外变化。
+
 - 导入一个新的 workspace WebApp（至少包含 CSS、JS 和图片资源），确认首次导航后主工作区立即显示完整页面；`.canonical-webapp-layer` 的 computed position 为 `absolute`，layer、surface 与 webview 均为非零尺寸，资源正常加载不能只停留在不可见 WebContents。
 - 运行中的 WebApp 从主工作区移到当前 WorkPanel，再跨 Chat 移动并移回主区；每次确认 DOM 中只有一个 webview 且 `guestWebContentsId` 不变，旧位置引用在同一提交消失。
 - 隐藏 WorkPanel、切换 Chat和恢复时确认 guest 保持 mounted/inactive；关闭 WebApp tab 时 guest 销毁但 runtime 继续，再次打开产生新 guest。

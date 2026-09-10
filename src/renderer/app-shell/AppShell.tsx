@@ -1087,6 +1087,11 @@ export function AppShell() {
   );
   const usesBrowserChromeSurface = usesBuiltinBrowserSurface || activeWebEntry?.kind === "website";
   const usesWebappSurface = activeWebEntry?.kind === "webapp";
+  const usesWorkPanelWebappSurface = activeChatWorkPanelVisible && workPanelState.workspaces.some(
+    (workspace) => workspace.ownerChatId === activeChatWorkPanelChatId && workspace.items.some(
+      (item) => item.itemId === workspace.activeItemId && item.descriptor.kind === "webapp-ref",
+    ),
+  );
   const resolvedCopilotAgentKey = activeWebEntry
     ? activeWebEntry.copilotAgentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY
     : currentCopilotPreference?.agentKey || assistantSettings?.desktopHelperAgentKey || DEFAULT_DESKTOP_HELPER_AGENT_KEY;
@@ -4372,6 +4377,7 @@ export function AppShell() {
         usesBuiltinBrowserSurface ? "has-builtin-browser-surface" : "",
         usesBrowserChromeSurface ? "has-browser-chrome-surface" : "",
         usesWebappSurface ? "has-webapp-surface" : "",
+        usesWorkPanelWebappSurface ? "has-work-panel-webapp-surface" : "",
         usesServiceWebviewSurface ? "has-service-webview-surface" : "",
         isKanbanRoute ? "has-kanban-controls" : "",
         isMarketRoute && marketEnabled ? "has-market-controls" : "",
