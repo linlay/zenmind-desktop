@@ -13,6 +13,7 @@ import {
   MAX_CONVERSATION_SNAPSHOT_BYTES,
   MAX_CONVERSATION_TEMPLATE_BYTES,
   type ConversationHtmlWorkerErrorCode,
+  type ConversationExportWorkerRequest,
   type RenderConversationHtmlFailure,
   type RenderConversationHtmlRequest,
   type RenderConversationHtmlResponse
@@ -254,7 +255,7 @@ async function readExactResponseBody(
   return Buffer.from(storage);
 }
 
-async function loadSnapshot(request: RenderConversationHtmlRequest): Promise<SnapshotResponse> {
+async function loadSnapshot(request: ConversationExportWorkerRequest): Promise<SnapshotResponse> {
   const snapshotURL = requireLoopbackURL(request.snapshotUrl, "/api/chat/export");
   if (snapshotURL.searchParams.get("format") !== "snapshot" ||
     !snapshotURL.searchParams.get("chatId")) {
@@ -285,8 +286,16 @@ async function loadSnapshot(request: RenderConversationHtmlRequest): Promise<Sna
 }
 
 async function loadTemplate(request: RenderConversationHtmlRequest): Promise<ParsedConversationHtmlTemplate> {
-  const templateURL = requireLoopbackURL(request.templateUrl, CONVERSATION_EXPORT_TEMPLATE_PATH);
-  if (templateURL.search || templateURL.hash || !request.templateCacheKey.trim()) {
+  const assetOrigin = requireAssetOrigin(request.assetOrigin);
+  let templateURL: URL;
+  try {
+    templateURL = new URL(request.templateUrl);
+  } catch {
+    throw new ConversationHtmlRenderFailure("request_invalid");
+  }
+  const expectedTemplateURL = new URL(CONVERSATION_EXPORT_TEMPLATE_PATH, assetOrigin);
+  if (templateURL.toString() !== expectedTemplateURL.toString() ||
+    !request.templateCacheKey.trim()) {
     throw new ConversationHtmlRenderFailure("request_invalid");
   }
   if (cachedTemplate?.key === request.templateCacheKey) {
@@ -322,6 +331,28 @@ async function renderConversationHtml(
       requestId: request.requestId,
       filename: snapshot.filename,
       html
+    };
+  } catch (error) {
+    return failureResponse(request.requestId, error);
+  }
+}
+
+async function readConversationSnapshot(
+  request: ConversationExportWorkerRequest
+): Promise<RenderConversationHtmlResponse> {
+  try {
+    if (!request.requestId?.trim()) {
+      throw new ConversationHtmlRenderFailure("request_invalid");
+    }
+    const snapshot = await loadSnapshot(request);
+    const transferred = snapshot.bytes.buffer.slice(
+      snapshot.bytes.byteOffset,
+      snapshot.bytes.byteOffset + snapshot.bytes.byteLength
+    ) as ArrayBuffer;
+    return {
+      type: "snapshot",
+      requestId: request.requestId,
+      snapshot: transferred
     };
   } catch (error) {
     return failureResponse(request.requestId, error);
@@ -438,11 +469,17 @@ function failureResponse(requestId: string, error: unknown): RenderConversationH
 let queue = Promise.resolve();
 const workerPort = parentPort;
 const isRenderWorker = (workerData as { mode?: unknown } | null)?.mode === "conversation-html-render";
-if (workerPort && isRenderWorker) workerPort.on("message", (request: RenderConversationHtmlRequest) => {
+if (workerPort && isRenderWorker) workerPort.on("message", (request: ConversationExportWorkerRequest) => {
   queue = queue.then(async () => {
-    const response = await renderConversationHtml(request);
+    const response = request.kind === "snapshot"
+      ? await readConversationSnapshot(request)
+      : await renderConversationHtml(request);
     if (response.type === "result") {
       workerPort.postMessage(response, [response.html]);
+      return;
+    }
+    if (response.type === "snapshot") {
+      workerPort.postMessage(response, [response.snapshot]);
       return;
     }
     workerPort.postMessage(response);
