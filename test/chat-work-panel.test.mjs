@@ -97,7 +97,7 @@ test("WorkPanel is AppShell-owned and keeps heterogeneous items mounted", () => 
   assert.match(css, /\.app-window-controls-layer\s*\{[^}]*position:\s*absolute;[^}]*inset:\s*0;[^}]*z-index:\s*1001;[^}]*pointer-events:\s*none;/su);
   assert.match(css, /\.app-window-controls-layer \.main-chat-work-panel-toggle\s*\{[^}]*pointer-events:\s*auto;/su);
   assert.match(css, /\.main-chat-work-panel-toggle:focus-visible/u);
-  assert.match(css, /\.main-chat-work-panel-toggle\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*6px/su);
+  assert.match(css, /\.main-chat-work-panel-toggle\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*var\(--control-radius-sm\)/su);
   assert.match(css, /\.main-chat-work-panel-toggle-icon\s*\{[^}]*width:\s*16px;[^}]*height:\s*16px;[^}]*transform:\s*scaleX\(-1\)/su);
   assert.match(css, /\.chat-work-panel\.has-panel-toggle \.chat-work-panel-tabs\s*\{[^}]*padding-right:\s*46px/su);
   assert.match(css, /\.app-shell webview\s*\{[^}]*-webkit-user-select:\s*none;[^}]*user-select:\s*none;/su);
@@ -229,7 +229,7 @@ test("WorkPanel add menu and canonical WebApp presentation keep host-only owners
   assert.match(host, /case "desktop\.workpanel\.openResourceImage"/u);
   assert.match(host, /className="chat-work-panel-add-menu sidebar-operation-menu-popover"/u);
   assert.match(host, /const width = 248/u);
-  assert.match(css, /\.chat-work-panel-add-button\s*\{[^}]*width:\s*32px;[^}]*height:\s*32px;/su);
+  assert.match(css, /\.chat-work-panel-add-button\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;/su);
   assert.match(css, /\.chat-work-panel-add-menu\s*\{[^}]*padding:\s*6px;[^}]*background:\s*var\(--sidebar-operation-menu-bg\);[^}]*box-shadow:\s*var\(--sidebar-operation-menu-shadow\);/su);
   assert.match(css, /\.chat-work-panel-add-menu-item\s*\{[^}]*min-height:\s*32px;[^}]*font-size:\s*14px;/su);
 

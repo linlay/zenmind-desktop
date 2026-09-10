@@ -122,6 +122,6 @@ test("Windows 主导航动作紧跟品牌并从侧栏顶部移除", () => {
   );
   assert.match(
     appShellCss,
-    /\.app-system-bar-action\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*6px;/su,
+    /\.app-system-bar-action\s*\{[^}]*width:\s*24px;[^}]*height:\s*24px;[^}]*border-radius:\s*var\(--control-radius-sm\);/su,
   );
 });
