@@ -376,6 +376,23 @@ test("ownerless Main Chat promotes its Overview lease in place", (t) => {
   assert.equal(broker.getDiagnostics().overviewLease.chatId, "chat-canonical");
 });
 
+test("Root Observer token cannot silently change context or registration identity", (t) => {
+  const { broker } = createHarness(t);
+  const pending = rootObserver({ contextId: "main-chat:g1", newChatSourceKey: '["agent-1","nonce-1"]' });
+  const original = broker.activateRootObserver(pending);
+  assert.equal(broker.activateRootObserver(pending).contextEpoch, original.contextEpoch);
+  const canonical = { ...pending, contextId: "chat-canonical" };
+  assert.equal(broker.activateRootObserver(canonical).contextEpoch, original.contextEpoch);
+  assert.equal(broker.activateRootObserver(canonical).contextId, "chat-canonical");
+  for (const conflict of [pending, { ...canonical, contextId: "another-chat" },
+    { ...canonical, generation: "g2" }, { ...canonical, webContentsId: 102 },
+    { ...canonical, newChatSourceKey: '["agent-1","nonce-2"]' }]) {
+    assert.throws(() => broker.activateRootObserver(conflict), /Root Observer (context changed|token conflicts)/u);
+    assert.equal(broker.getMainChatRootObserver().contextId, "chat-canonical");
+    assert.equal(broker.getMainChatRootObserver().contextEpoch, original.contextEpoch);
+  }
+});
+
 test("normal Main Chat replacement completes Overview locally instead of reporting parent release", async (t) => {
   const { broker, token } = createHarness(t);
   const first = rootObserver();

@@ -7,7 +7,7 @@ import {
   MAIN_CHAT_SURFACE_ID
 } from "../../../shared/surface-identity";
 import type { RegisterAgentWebclientBridgeIpcHandlersContext } from "./ipc.shared";
-import { resolveAttachChatId } from "./ipc.shared";
+import { resolveAttachChatId, rootObserverNewChatSourceKey } from "./ipc.shared";
 import { LIVE_CHAT_SURFACE_IDS, LIVE_REQUEST_TYPES, PlatformFrameRecord, StreamBinding, authorizeSurface, bridgeErrorCode, createRootObserverToken, frameError, frameErrorOptions, parseRequestFrame, protocolError, readOwner, readText, rootObserverContextId, rootObserverKind, updateBindingFromFrame } from "./ipc.shared";
 
 export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(factoryContext: RegisterAgentWebclientBridgeIpcHandlersContext, event: any, input: AgentWebclientPlatformFramePortSendInput): Promise<void> {
@@ -105,11 +105,32 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
                 const activeMain = factoryContext.options.realtimeBroker.getMainChatRootObserver();
                 const contextMatches = activeMain && (activeMain.contextId === contextId ||
                     activeMain.contextId === `${context.target.surfaceId}:${context.target.registrationId}`);
+                const sourceMatches = !newChatSource ||
+                    activeMain?.newChatSourceKey === rootObserverNewChatSourceKey(context.target);
                 if (!activeMain ||
                     activeMain.surfaceId !== context.target.surfaceId ||
                     activeMain.generation !== context.target.registrationId ||
                     activeMain.webContentsId !== event.sender.id ||
-                    !contextMatches) {
+                    !contextMatches || !sourceMatches) {
+                    const diagnostic = {
+                        event: "main-chat-query-bundle-rejected",
+                        requestId: frame.id,
+                        observerPresent: Boolean(activeMain),
+                        generationMatches: activeMain?.generation === context.target.registrationId,
+                        guestMatches: activeMain?.webContentsId === event.sender.id,
+                        contextMatches: Boolean(contextMatches),
+                        sourceMatches,
+                    };
+                    factoryContext.options.realtimeBroker.appendDebugTrace({
+                        layer: "surface-bridge",
+                        direction: "surface-to-desktop",
+                        surfaceId: context.target.surfaceId,
+                        webContentsId: event.sender.id,
+                        data: diagnostic,
+                    });
+                    if (factoryContext.developmentDiagnosticsEnabled) {
+                        console.warn("[agent-webclient-query]", diagnostic);
+                    }
                     factoryContext.sendFrame(session, frameError(frame.id, "target_unavailable", "active Main Chat Broker bundle is unavailable", { retryable: false, details: { reason: "surface_generation_superseded" } }));
                     return;
                 }
@@ -433,7 +454,9 @@ export async function registerAgentWebclientBridgeIpcHandlers_handleSend_1(facto
             }).catch((error) => {
                 session.requestIds.delete(binding.localId);
                 session.streams.delete(binding.localId);
-                factoryContext.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));
+                if (!binding.suppressed && !binding.detachSent) {
+                    factoryContext.sendFrame(session, frameError(binding.localId, bridgeErrorCode(error), error instanceof Error ? error.message : String(error), frameErrorOptions(error)));
+                }
                 factoryContext.finishRetiringSession(session);
             });
         }

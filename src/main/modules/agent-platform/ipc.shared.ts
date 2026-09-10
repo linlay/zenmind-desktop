@@ -205,6 +205,11 @@ export function createRootObserverToken(target: RegisteredWebviewSurfaceTarget, 
   ].join(":");
 }
 
+export function rootObserverNewChatSourceKey(target: { pageRouteIdentity?: string }) {
+  const source = readAgentWebclientNewChatSource(target.pageRouteIdentity ?? "");
+  return source ? JSON.stringify([source.agentKey, source.newChat]) : "";
+}
+
 export function sameOrigin(left: string, right: string) {
   try {
     return new URL(left).origin === new URL(right).origin;

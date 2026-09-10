@@ -158,6 +158,7 @@ export type BrowserSurfaceLifecycleEvent = {
     surfaceIdentityKey: string;
     active: boolean;
     ownerChatId: string;
+    pageRouteIdentity: string;
     ownerWebContentsId: number;
     guestWebContentsIds: number[];
   };
