@@ -60,7 +60,7 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
         factoryContext.startupRestoreController.setEnvImportRequired(factoryContext.startupEnvImportFailureMessage);
     }
     factoryContext.setStartupPhase("runtime-env-ready");
-    factoryContext.initializeUserDataRootsAndSettings();
+    const programDataCleanup = factoryContext.initializeUserDataRootsAndSettings();
     // A first-install root migration must finish before protocol.handle creates
     // the default Session and opens files in the already-configured profile.
     registerDesktopPetAssetProtocol(app, protocol, net, factoryContext.startupPlatform);
@@ -68,6 +68,12 @@ export async function createMainProcessRuntime_handleAppReady_1(factoryContext: 
     registerDesktopSsoAvatarProtocol(app, protocol, net, session, factoryContext.startupPlatform);
     factoryContext.setStartupPhase("desktop-state-ready");
     factoryContext.logsRuntime.installConsoleTee();
+    // Persist the pre-logger cleanup result without moving logging ahead of root initialization.
+    if (programDataCleanup.failedPaths.length > 0) {
+        console.warn("[program-data-cleanup] result", programDataCleanup);
+    } else {
+        console.info("[program-data-cleanup] result", programDataCleanup);
+    }
     const desktopSsoRestoreResult = await factoryContext.desktopSsoController.restoreDesktopSsoSession();
     factoryContext.applyDesktopSsoRestoreResult(desktopSsoRestoreResult);
     factoryContext.pluginBridgeRuntime.configure();

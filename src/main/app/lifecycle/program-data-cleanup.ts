@@ -63,6 +63,11 @@ function readProgramDataVersion(versionPath: string) {
 }
 
 function isPreservedProgramDataEntry(entry: fs.Dirent, platform: NodeJS.Platform) {
+  // Windows Electron holds this single-instance lock before profile relocation.
+  // It is process-owned, not a replaceable service asset.
+  if (platform === "win32" && namesEqual(entry.name, "lockfile", platform) && entry.isFile()) {
+    return true;
+  }
   if (namesEqual(entry.name, "plugins", platform)) {
     return true;
   }

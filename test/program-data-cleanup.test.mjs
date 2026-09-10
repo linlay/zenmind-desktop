@@ -42,7 +42,7 @@ function createFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-program-data-cleanup-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const app = createMockApp(root);
-  const programRoot = path.join(expectedWindowsDataBaseRoot(root), "programs");
+  const programRoot = getProgramsRoot(app);
   const pluginsRoot = path.join(programRoot, "plugins");
   const runtimeRoot = path.join(expectedWindowsDataBaseRoot(root), APP_BRAND.paths.desktopDataSubdir);
   fs.mkdirSync(pluginsRoot, { recursive: true });
@@ -74,16 +74,16 @@ test("program data cleanup keeps plugins and writes root VERSION when install ve
   assert.equal(fs.existsSync(runtimeRoot), false);
 });
 
-test("Windows program data root lives under the unified runtime root", (t) => {
+test("program data root uses the Electron appData brand directory", (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-program-root-win-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const app = createMockApp(root);
 
   assert.equal(
     getProgramsRoot(app),
-    path.join(expectedWindowsDataBaseRoot(root), "programs")
+    path.join(root, "app-data", APP_BRAND.paths.programDataDirName)
   );
-  assert.equal(fs.existsSync(path.join(root, "app-data", APP_BRAND.paths.programDataDirName)), false);
+  assert.equal(fs.existsSync(path.join(expectedWindowsDataBaseRoot(root), "programs")), false);
 });
 
 test("macOS keeps desktop data under the home runtime root and programs in Application Support", () => {
@@ -177,4 +177,80 @@ test("program data cleanup preserves plugins and VERSION case-insensitively on W
     .sort();
 
   assert.deepEqual(targets, ["Services"]);
+});
+
+test("Windows occupied lockfile does not prevent VERSION commit or cause a second cleanup", (t) => {
+  const { app, programRoot } = createFixture(t);
+  const lockPath = path.join(programRoot, "LOCKFILE");
+  const servicesPath = path.join(programRoot, "services");
+  fs.writeFileSync(lockPath, "electron-owned");
+  fs.mkdirSync(servicesPath);
+  const originalRmSync = fs.rmSync;
+  const attempted = [];
+  const removalMock = t.mock.method(fs, "rmSync", (target, options) => {
+    attempted.push(target);
+    if (String(target).toLowerCase() === lockPath.toLowerCase()) {
+      throw Object.assign(new Error("lockfile is in use"), { code: "EBUSY" });
+    }
+    return originalRmSync(target, options);
+  });
+  try {
+    const first = cleanupProgramDataForVersion(app, "v0.4.0", {
+      platform: "win32", listProcessesImpl: () => []
+    });
+    assert.equal(first.cleaned, true);
+    assert.deepEqual(first.failedPaths, []);
+    assert.deepEqual(first.removedPaths, [servicesPath]);
+    assert.equal(fs.readFileSync(path.join(programRoot, "VERSION"), "utf8"), "v0.4.0\n");
+    assert.equal(fs.readFileSync(lockPath, "utf8"), "electron-owned");
+    fs.mkdirSync(servicesPath);
+    fs.writeFileSync(path.join(servicesPath, "installed-marker"), "keep");
+    const second = cleanupProgramDataForVersion(app, "0.4.0", {
+      platform: "win32", listProcessesImpl: () => { throw new Error("unexpected process scan"); }
+    });
+    assert.equal(second.skipped, true);
+    assert.deepEqual(attempted, [servicesPath]);
+    assert.equal(fs.readFileSync(path.join(servicesPath, "installed-marker"), "utf8"), "keep");
+  } finally {
+    removalMock.mock.restore();
+  }
+});
+
+for (const platform of ["win32", "darwin"]) {
+  test(`${platform} real service cleanup failure does not commit VERSION and can retry`, (t) => {
+    const { app, programRoot } = createFixture(t);
+    const servicesPath = path.join(programRoot, "services");
+    const versionPath = path.join(programRoot, "VERSION");
+    fs.mkdirSync(servicesPath);
+    fs.writeFileSync(versionPath, "v0.3.0\n");
+    const originalRmSync = fs.rmSync;
+    const removalMock = t.mock.method(fs, "rmSync", (target, options) => {
+      if (target === servicesPath) throw Object.assign(new Error("service is in use"), { code: "EBUSY" });
+      return originalRmSync(target, options);
+    });
+    try {
+      const result = cleanupProgramDataForVersion(app, "v0.4.0", { platform, listProcessesImpl: () => [] });
+      assert.equal(result.cleaned, false);
+      assert.deepEqual(result.failedPaths, [{ path: servicesPath, message: "service is in use" }]);
+      assert.equal(fs.readFileSync(versionPath, "utf8"), "v0.3.0\n");
+      assert.equal(fs.existsSync(servicesPath), true);
+    } finally {
+      removalMock.mock.restore();
+    }
+    const retried = cleanupProgramDataForVersion(app, "v0.4.0", { platform, listProcessesImpl: () => [] });
+    assert.equal(retried.cleaned, true);
+    assert.equal(fs.readFileSync(versionPath, "utf8"), "v0.4.0\n");
+    assert.equal(cleanupProgramDataForVersion(app, "v0.4.0", { platform }).skipped, true);
+  });
+}
+
+test("macOS still removes lockfile while Windows does not exempt a directory named lockfile", (t) => {
+  const { app, programRoot } = createFixture(t);
+  const lockPath = path.join(programRoot, "lockfile");
+  fs.writeFileSync(lockPath, "old-file");
+  const result = cleanupProgramDataForVersion(app, "v0.4.0", { platform: "darwin", listProcessesImpl: () => [] });
+  assert.deepEqual(result.removedPaths, [lockPath]);
+  assert.equal(result.cleaned, true);
+  fs.mkdirSync(lockPath);
+  assert.deepEqual(__testInternals.listProgramDataRemovalTargets(programRoot, "win32"), [lockPath]);
 });

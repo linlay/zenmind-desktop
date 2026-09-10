@@ -1,5 +1,10 @@
 # Desktop 手工回归清单
 
+## 程序数据启动清理
+
+- Windows 升级或缺少程序根 VERSION 时，Electron 持有 lockfile 不应使清理失败；main.log 的 `[program-data-cleanup] result` 应记录版本与清理结果。同版本再次启动应为 skipped，服务包未变化时不重复解包；配置、用户数据与插件保持。
+- 真正的服务程序清理失败时记录失败路径，不提交新 VERSION；解决占用后可重试。macOS 验证升级清理和同版本跳过保持原行为。
+
 ## 主窗口外观基础
 
 - 使用支持外观桥的新 WebClient，打开 Main Chat 后切换皮肤、图片和系统明暗：主聊天透出同一张壁纸，Composer、消息、菜单与弹窗保持可读；URL、guest ID、草稿、附件、焦点、滚动和流式输出保持。没有图片时回到实色。

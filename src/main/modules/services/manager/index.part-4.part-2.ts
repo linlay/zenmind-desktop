@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
+import { beginStartupCheckpoints } from "../../../support/logging/startup-checkpoints";
 import type { App } from "electron";
 import type {
   ServiceCommandResult,
@@ -274,8 +275,10 @@ export async function initializeServiceInternal(
     serviceId,
     skipInstallRefresh: Boolean(options.skipInstallRefresh)
   });
+  const checkpoints = beginStartupCheckpoints(serviceId, "initialize");
   const service = getService(serviceId);
   try {
+    checkpoints.next("read-initial-state");
     const installDir = getInstallDir(app, service);
     const layout = getServiceLayout(app, service);
     const currentState = await getServiceState(app, serviceId, {
@@ -283,6 +286,7 @@ export async function initializeServiceInternal(
     });
 
     if (!currentState.installed) {
+      checkpoints.end("skipped");
       return {
         ok: false,
         message: service.kind === "plugin"
@@ -292,7 +296,9 @@ export async function initializeServiceInternal(
       };
     }
 
+    checkpoints.next("validate-install");
     if (!isInstallHealthy(service, installDir)) {
+      checkpoints.end("failed");
       return {
         ok: false,
         message: currentState.message,
@@ -302,12 +308,14 @@ export async function initializeServiceInternal(
 
     if (!options.skipInstallRefresh && service.kind === "builtin" && serviceInstallNeedsRefresh(service, installDir)) {
       try {
+        checkpoints.next("refresh-install");
         await installBuiltinService(app, service.id, {
           force: true,
           source: "initializeServiceInternal:refresh",
           integrationPorts: options.integrationPorts
         });
       } catch (error) {
+        checkpoints.end("failed");
         const nextState = await getServiceState(app, serviceId, { integrationPorts: options.integrationPorts });
         return {
           ok: false,
@@ -316,7 +324,9 @@ export async function initializeServiceInternal(
         };
       }
 
+      checkpoints.next("read-final-state");
       const nextState = await getServiceState(app, serviceId, { integrationPorts: options.integrationPorts });
+      checkpoints.end();
       return {
         ok: true,
         message: t("service.reinstalledAndInitialized", { name: service.name }),
@@ -325,6 +335,7 @@ export async function initializeServiceInternal(
     }
 
     try {
+      checkpoints.next("prepare-execution-layout");
       fixShellScriptPermissions(installDir);
       prepareServiceExecutionLayout(service, layout);
       const serviceDeployOwnsConfig = service.kind === "builtin" && CORE_SERVICE_IDS.has(service.id) && Boolean(service.deployCommand);
@@ -332,6 +343,7 @@ export async function initializeServiceInternal(
         ensureDefaultConfig(service, layout);
       }
       if (service.deployCommand) {
+        checkpoints.next("build-deploy-command");
         const deployCommand = await buildDesktopManagedDeployCommand(
           app,
           service,
@@ -340,11 +352,14 @@ export async function initializeServiceInternal(
           options.desktopConfigReset,
           options.integrationPorts
         );
-        await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, {
-          env: buildDesktopServiceCommandEnv(app, service, layout, undefined, options.integrationPorts)
-        });
+        checkpoints.next("build-deploy-env");
+        const env = buildDesktopServiceCommandEnv(app, service, layout, undefined, options.integrationPorts);
+        checkpoints.next("execute-deploy");
+        await runExecFile(deployCommand[0], deployCommand.slice(1), installDir, { env });
       }
+      checkpoints.next("check-initialization-requirements");
       await ensureInitializationRequirements(app, service, layout, options.integrationPorts);
+      checkpoints.next("sync-plugin-resources");
       if (service.kind === "plugin" && service.serviceMode === "resource") {
         const desiredStatus = integrationPorts(options.integrationPorts).initializePluginResourceState(app, service);
         if (desiredStatus === "running") {
@@ -353,7 +368,9 @@ export async function initializeServiceInternal(
       } else {
         await integrationPorts(options.integrationPorts).syncPluginResources(app, service, installDir);
       }
+      checkpoints.next("read-asset-signature");
       const assetSignature = options.assetSignatureOverride ?? readBuiltinAssetSignature(app, service);
+      checkpoints.next("persist-initialization-state");
       writeInitializationState(layout, {
         version: service.version,
         status: "succeeded",
@@ -364,6 +381,7 @@ export async function initializeServiceInternal(
         integrationPorts(options.integrationPorts).emitPluginBridgeHook("plugin.initialized", { pluginId: service.id });
       }
     } catch (error) {
+      checkpoints.end("failed");
       writeInitializationState(layout, {
         version: service.version,
         status: "failed",
@@ -378,13 +396,16 @@ export async function initializeServiceInternal(
       };
     }
 
+    checkpoints.next("read-final-state");
     const nextState = await getServiceState(app, serviceId, { integrationPorts: options.integrationPorts });
+    checkpoints.end();
     return {
       ok: true,
       message: t("service.initialized", { name: service.name }),
       service: nextState
     };
   } finally {
+    checkpoints.end("failed");
     timing.end();
   }
 }
@@ -477,6 +498,7 @@ export async function verifyServiceState(
   options: ServiceVerificationOptions = {}
 ): Promise<ServiceVerification> {
   const timing = beginStartupTiming("verifyServiceState", { serviceId, desired });
+  const checkpoints = beginStartupCheckpoints(serviceId, `verify-${desired}`);
   let verified = false;
   try {
     const delayMs = getServiceVerificationDelayMs();
@@ -487,6 +509,7 @@ export async function verifyServiceState(
         : hasVerifyRunningRequirements(service) && desired === "running"
         ? Date.now() + getDependencyRunningVerificationTimeoutMs()
         : 0;
+    checkpoints.next("initial-probe");
     let current = await collectServiceVerification(app, serviceId, desired, options);
     if (current.verification.verified && delayMs <= 0) {
       verified = true;
@@ -494,7 +517,9 @@ export async function verifyServiceState(
     }
 
     do {
+      checkpoints.next("retry-delay");
       await delay(delayMs > 0 ? delayMs : 1500);
+      checkpoints.next("retry-probe");
       current = await collectServiceVerification(app, serviceId, desired, options);
       if (current.verification.verified) {
         verified = true;
@@ -509,6 +534,7 @@ export async function verifyServiceState(
     verified = current.verification.verified;
     return current.verification;
   } finally {
+    checkpoints.end(verified ? "succeeded" : "failed");
     timing.end({ verified });
   }
 }

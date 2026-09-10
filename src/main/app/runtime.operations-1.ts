@@ -439,13 +439,8 @@ export function createMainProcessRuntime_initializeUserDataRootsAndSettings_12(f
         setMainLocale(app, initialLocaleSettings.locale);
     }
     const programDataCleanup = cleanupProgramDataForVersion(app, factoryContext.desktopAppInfo.version);
-    if (programDataCleanup.cleaned) {
-        console.info(`[main] refreshed program data for ${factoryContext.desktopAppInfo.version}: ${programDataCleanup.removedPaths.length} path(s) removed`);
-    }
-    else if (programDataCleanup.failedPaths.length > 0) {
-        console.warn(`[main] program data cleanup incomplete for ${factoryContext.desktopAppInfo.version}: ${programDataCleanup.failedPaths.map((item) => `${item.path}: ${item.message}`).join("; ")}`);
-    }
     factoryContext.petRuntime.initializeState(factoryContext.isFirstDesktopInstall);
+    return programDataCleanup;
 }
 
 export function createMainProcessRuntime_delay_13(factoryContext: CreateMainProcessRuntimeContext, ms: number) {
