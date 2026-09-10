@@ -2,6 +2,9 @@ import { createElement, lazy, Suspense, useCallback, useEffect, useMemo, useRef,
 import { Navigate, Route, Routes, matchPath, useLocation, useNavigate } from "react-router-dom";
 import { BorderOutlined, CloseOutlined, MinusOutlined, SwitcherOutlined } from "@ant-design/icons";
 import { AppSidebar } from "./navigation/AppSidebar";
+import { useAppearance } from "../appearance/AppearanceProvider";
+import { DesktopBackground } from "../appearance/DesktopBackground";
+import { isThemePreference, type ThemePreference } from "../appearance/model";
 import { createWindowDragClickTracker } from "./windowDragClickTracker";
 import { SettingsSidebarIcon } from "./navigation/SettingsSidebarIcon";
 import {
@@ -165,8 +168,6 @@ import {
   shouldCancelPendingMainChatWorkPanelOpenForRoute,
 } from "../../shared/main-chat-work-panel";
 
-type ThemePreference = "light" | "dark" | "system";
-type ResolvedThemeMode = "light" | "dark";
 type AgentChatFocusRequest = {
   id: number;
   sourceRoute: string;
@@ -243,41 +244,9 @@ function getChatNavigationAgentOptions(items: AssistantNavAgentItem[]) {
   return items.filter(isAssistantNavChatAgent);
 }
 
-function isThemePreference(value: unknown): value is ThemePreference {
-  return value === "light" || value === "dark" || value === "system";
-}
-
-function readStoredThemePreference(): ThemePreference {
-  if (typeof window === "undefined") {
-    return "light";
-  }
-  try {
-    const savedTheme = window.localStorage.getItem(THEME_STORAGE_KEY);
-    if (savedTheme === "dark") {
-      return "dark";
-    }
-    if (savedTheme === "system") {
-      return "system";
-    }
-    return "light";
-  } catch {
-    return "light";
-  }
-}
-
 function normalizeDesktopAppVersion(version: string) {
   const normalized = version.trim().replace(/^v/iu, "");
   return normalized ? `v${normalized}` : "";
-}
-
-function resolveThemePreference(preference: ThemePreference): ResolvedThemeMode {
-  if (preference === "system") {
-    if (typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches) {
-      return "dark";
-    }
-    return "light";
-  }
-  return preference;
 }
 
 const HelpPage = lazy(() =>
@@ -296,7 +265,6 @@ const KanbanPage = lazy(() =>
   import("../pages/kanban/KanbanPage").then((module) => ({ default: module.KanbanPage }))
 );
 
-const THEME_STORAGE_KEY = `${STORAGE_NAMESPACE}.theme`;
 const SIDEBAR_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar`;
 const SIDEBAR_NAV_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.sidebar-nav-order`;
 const WEB_GROUP_ORDER_STORAGE_KEY = `${STORAGE_NAMESPACE}.web-group-order`;
@@ -667,9 +635,15 @@ export function AppShell() {
   const [desktopAppVersion, setDesktopAppVersion] = useState("");
   const [desktopDisplay, setDesktopDisplay] = useState<DesktopDisplayOverlayRequest | null>(null);
   const desktopDisplayTokenRef = useRef(0);
-  const [themeMode, setThemeMode] = useState<ThemePreference>(() => readStoredThemePreference());
-  const [themePreferenceLoaded, setThemePreferenceLoaded] = useState(false);
-  const [resolvedTheme, setResolvedTheme] = useState<ResolvedThemeMode>(() => resolveThemePreference(readStoredThemePreference()));
+  const {
+    themeMode,
+    resolvedTheme,
+    background,
+    skin,
+    setThemeMode,
+    getAppearanceSnapshot,
+    refreshAppearanceFromCanonical
+  } = useAppearance();
   const [sidebarState, setSidebarState] = useState<SidebarLayoutState>(() => {
     if (typeof window === "undefined") {
       return normalizeSidebarLayoutState(null);
@@ -1999,19 +1973,6 @@ export function AppShell() {
     setAssistantSettings(settings);
   }
 
-  async function refreshThemePreferenceFromCanonical() {
-    try {
-      const profileTheme = await window.electronAPI.settings.getThemePreference();
-      if (isThemePreference(profileTheme)) {
-        setThemeMode(profileTheme);
-      }
-    } catch {
-      // Keep the current theme if settings are temporarily unavailable.
-    } finally {
-      setThemePreferenceLoaded(true);
-    }
-  }
-
   async function handleSetWebItemPinned(item: WebEntry, pinned: boolean) {
     if (!navigationPreferencesLoaded || webPinMutationPendingRef.current) return;
     webPinMutationPendingRef.current = true;
@@ -2059,7 +2020,7 @@ export function AppShell() {
   }
 
   function refreshDesktopShellConfigFromCanonical() {
-    void refreshThemePreferenceFromCanonical();
+    void refreshAppearanceFromCanonical();
     void refreshNavigationPreferencesFromCanonical();
     void refreshKanbanSettingsFromCanonical();
     void refreshMarketSettingsVisibility();
@@ -2592,54 +2553,6 @@ export function AppShell() {
   }, [shouldPollStartup]);
 
   useEffect(() => {
-    let cancelled = false;
-    window.electronAPI.settings.getThemePreference()
-      .then((profileTheme) => {
-        if (!cancelled && isThemePreference(profileTheme)) {
-          setThemeMode(profileTheme);
-        }
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) {
-          setThemePreferenceLoaded(true);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    const resolved = resolveThemePreference(themeMode);
-    setResolvedTheme(resolved);
-    document.documentElement.dataset.theme = resolved;
-    if (themePreferenceLoaded) {
-      window.electronAPI.settings.setNativeThemeSource(themeMode).catch(() => undefined);
-    }
-    try {
-      window.localStorage.setItem(THEME_STORAGE_KEY, themeMode);
-    } catch {
-      // Ignore persistence failures and keep the in-memory theme switch usable.
-    }
-
-    if (themeMode !== "system") {
-      return;
-    }
-
-    const media = window.matchMedia("(prefers-color-scheme: dark)");
-    const handleSystemThemeChange = () => {
-      const nextResolved = media.matches ? "dark" : "light";
-      setResolvedTheme(nextResolved);
-      document.documentElement.dataset.theme = nextResolved;
-    };
-    media.addEventListener("change", handleSystemThemeChange);
-    return () => {
-      media.removeEventListener("change", handleSystemThemeChange);
-    };
-  }, [themeMode, themePreferenceLoaded]);
-
-  useEffect(() => {
     const shouldApply = isMac;
     document.body.classList.toggle("mac-translucent-sidebar-body", shouldApply);
 
@@ -3000,8 +2913,8 @@ export function AppShell() {
     );
   }, [webItems, webItemsLoaded]);
 
-  function handleThemeModeChange(nextThemeMode: ThemePreference) {
-    setThemeMode(nextThemeMode);
+  async function handleThemeModeChange(nextThemeMode: ThemePreference) {
+    await setThemeMode(nextThemeMode);
   }
 
   const toggleSidebarCollapsed = useCallback(() => {
@@ -3606,6 +3519,7 @@ export function AppShell() {
     const args = request.args ?? {};
 
     if (request.action === "desktop.theme.get") {
+      const { themeMode, resolvedTheme } = getAppearanceSnapshot();
       return {
         ok: true,
         result: { themeMode, resolvedTheme }
@@ -3624,16 +3538,15 @@ export function AppShell() {
       };
     }
     const nextThemeMode = args.themeMode;
-    await window.electronAPI.settings.setNativeThemeSource(nextThemeMode);
-    setThemeMode(nextThemeMode);
+    const nextAppearance = await setThemeMode(nextThemeMode);
     return {
       ok: true,
       result: {
         themeMode: nextThemeMode,
-        resolvedTheme: resolveThemePreference(nextThemeMode)
+        resolvedTheme: nextAppearance.resolvedTheme
       }
     };
-  }), [resolvedTheme, themeMode]);
+  }), [getAppearanceSnapshot, setThemeMode]);
 
   useEffect(() => registerDesktopActionProviderForScope("global", async (request) => {
     const args = request.args ?? {};
@@ -4484,6 +4397,7 @@ export function AppShell() {
         isMac ? "is-mac-translucent-sidebar" : ""
       ].filter(Boolean).join(" ")}
     >
+      <DesktopBackground background={background} fallback={skin.backgrounds?.[resolvedTheme]} />
       <PageFeedbackStack
         placement="top-center"
         items={workPanelOpenError

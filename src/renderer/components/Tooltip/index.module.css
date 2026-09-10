@@ -10,3 +10,8 @@
   background: var(--desktop-ui-card-soft);
   backdrop-filter: blur(10px);
 }
+
+:global(:root[data-desktop-skin]) .Tooltip {
+  border-radius: var(--control-radius-sm);
+  background: var(--control-popover-bg);
+}

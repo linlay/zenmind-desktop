@@ -1,0 +1,88 @@
+/* One decoration plane behind the shell. It never participates in layout,
+   scrolling, hit testing, keyboard focus or Electron window dragging. */
+.app-shell > .desktop-background {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  user-select: none;
+  background: var(--bg-base);
+}
+
+.desktop-background-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.desktop-background-image[data-background-state="ready"] {
+  visibility: visible;
+}
+
+.desktop-background::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--shell-background-tint);
+  pointer-events: none;
+}
+
+/* Default skins leave the existing platform composition intact. On macOS,
+   an image skin paints its own base above native vibrancy. Windows paints the
+   same image above its opaque window base, below its renderer title bar. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform {
+  isolation: isolate;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-desktop-background="image"] .app-shell.is-windows-platform {
+  --windows-titlebar-background: var(--shell-titlebar-bg);
+  isolation: isolate;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-desktop-background="image"] .app-shell.is-mac-platform .app-sidebar {
+  background: var(--shell-sidebar-bg);
+  border-right-color: var(--line);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-desktop-background="image"] .app-shell.is-windows-platform .app-sidebar {
+  background: var(--shell-sidebar-bg);
+  border-right-color: var(--line);
+}
+
+/* Native pages share the wallpaper. Embedded content keeps its existing host
+   surfaces and opaque guest background until a separate guest contract lands. */
+:root[data-desktop-background="image"] .app-shell:not(.has-embedded-surface) > .app-content {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-desktop-background="image"] .app-shell:not(.has-embedded-surface) > .app-content > .app-main {
+  background: var(--shell-content-bg);
+}
+
+/* Photographs need a lighter reading surface than the deliberately subtle
+   bundled textures. Keep navigation protected and card/control surfaces intact. */
+:root[data-desktop-background-source="custom"] .app-shell.is-mac-platform .app-sidebar {
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+}
+
+:root[data-desktop-background-source="custom"] .app-shell.is-windows-platform .app-sidebar {
+  background: color-mix(in srgb, var(--bg-base) 72%, transparent);
+}
+
+:root[data-desktop-background-source="custom"] .app-shell:not(.has-embedded-surface) > .app-content > .app-main {
+  background: color-mix(in srgb, var(--bg-base) 58%, transparent);
+}

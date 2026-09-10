@@ -386,7 +386,7 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
     }
   });
   ipcMain.handle("settings.getThemePreference", async () =>
-    readDesktopProfileFromRoot(getDesktopConfigRoot(app)).appearance.theme
+    readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform)).appearance.theme
   );
   ipcMain.handle("settings.getNavigationPreferences", async () => {
     const profile = readDesktopProfileFromRoot(getDesktopConfigRoot(app));
@@ -419,12 +419,14 @@ export function registerSettingsIpcHandlers(ipcMain: any, options: SettingsIpcHa
   });
   ipcMain.handle("settings.setNativeThemeSource", async (_event: any, themeMode: string) => {
     const normalizedThemeMode = normalizeThemePreference(themeMode);
-    const result = setNativeThemeSource(nativeTheme, normalizedThemeMode);
-    updateDesktopProfileInRoot(getDesktopConfigRoot(app), {
+    // Commit first: a failed disk write must not leave native window chrome
+    // using the rejected theme while the renderer rolls back its preview.
+    updateDesktopProfileInRoot(getDesktopConfigRoot(app, platform), {
       appearance: {
         theme: normalizedThemeMode
       }
     });
+    const result = setNativeThemeSource(nativeTheme, normalizedThemeMode);
     refreshMainWindowAppearance?.();
     return result;
   });

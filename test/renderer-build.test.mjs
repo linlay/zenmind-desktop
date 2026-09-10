@@ -224,7 +224,7 @@ test("renderer entry uses HashRouter for Electron routing", () => {
   );
 
   assert.match(rendererEntry, /HashRouter/);
-  assert.match(rendererEntry, /import \{ PRODUCT_NAME, STORAGE_NAMESPACE \}/);
+  assert.match(rendererEntry, /import \{ PRODUCT_NAME \}/);
   assert.match(rendererEntry, /document\.title = PRODUCT_NAME;/);
   assert.doesNotMatch(rendererEntry, /BrowserRouter/);
 });
@@ -925,14 +925,14 @@ test("collapsed mac sidebar toggle uses the same muted icon color as primary nav
   )?.groups?.body;
 
   assert.ok(collapsedMacTopActionButtonRule, "missing mac collapsed top action button rule");
-  assert.match(collapsedMacTopActionButtonRule, /color:\s*#94a3b8;/);
+  assert.match(collapsedMacTopActionButtonRule, /color:\s*var\(--control-icon-color\);/);
   assert.match(
     globalStyles,
-    /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button:hover,[\s\S]*?color:\s*#64748b;/
+    /\.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed \.sidebar-top-actions \.app-sidebar-collapse-button:hover,[\s\S]*?color:\s*var\(--control-icon-hover-color\);/
   );
   assert.match(
     globalStyles,
-    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed[\s\S]*?color:\s*#cbd5e1;/
+    /:root\[data-theme="dark"\] \.app-shell\.is-mac-platform \.app-sidebar\.is-collapsed[\s\S]*?color:\s*var\(--control-icon-color\);/
   );
 });
 
@@ -1301,8 +1301,8 @@ test("primary sidebar navigation uses separate compact and rail SVG families", (
   assert.match(sidebarSource, /"sidebar-group-trigger",\s*"sidebar-primary-link",\s*args\.active \? "sidebar-link-active"/);
   assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-nav \.sidebar-link-icon\s*\{[\s\S]*?width:\s*28px;[\s\S]*?height:\s*28px;/);
   assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-tool-menu-trigger \.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*#1677ff;/);
-  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*var\(--accent-strong\);/);
+  assert.match(navigationStyles, /\.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*var\(--control-primary-bg\);/);
+  assert.match(navigationStyles, /:root\[data-theme="dark"\] \.app-sidebar\.is-collapsed \.sidebar-link-active \.sidebar-illustration-rail\s*\{[\s\S]*?color:\s*var\(--control-primary-bg\);/);
   assert.match(navigationStyles, /\.sidebar-link-active \.sidebar-illustration-rail\.sidebar-illustration-kanban[\s\S]*?\.sidebar-illustration-kanban-lane-blue\s*\{[\s\S]*?fill:\s*#3b82f6;/);
 });
 
@@ -1610,9 +1610,9 @@ test("sidebar renders Kanban and section groups above the fixed tool menu", () =
   assert.match(globalStyles, /\.sidebar-group-divider\s*\{/);
   assert.match(globalStyles, /\.sidebar-group-children\s*\{[\s\S]*?gap:\s*2px;[\s\S]*?padding:\s*0;[\s\S]*?border-left:\s*0;/);
   assert.match(globalStyles, /\.sidebar-link\.sidebar-tool-menu-trigger:not\(\.sidebar-link-active\),[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*0;[\s\S]*?border-radius:\s*0;[\s\S]*?box-shadow:\s*none;/);
-  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?border-radius:\s*6px;[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);[\s\S]*?font-weight:\s*500;/);
+  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?border-radius:\s*6px;[\s\S]*?background:\s*var\(--nav-selected-bg\);[\s\S]*?color:\s*var\(--nav-selected-text\);[\s\S]*?font-weight:\s*500;/);
   assert.match(globalStyles, /\.sidebar-primary-link\.sidebar-link-active \.sidebar-link-label,[\s\S]*?\.sidebar-tool-menu-trigger\.sidebar-link-active \.sidebar-link-label-collapsed\s*\{[\s\S]*?font-weight:\s*500;/);
-  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?:root\[data-theme="dark"\] \.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
+  assert.match(globalStyles, /:root\[data-theme="dark"\] \.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?:root\[data-theme="dark"\] \.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*var\(--nav-selected-bg\);[\s\S]*?color:\s*var\(--nav-selected-text\);/);
   assert.match(globalStyles, /\.sidebar-link-active\s*\{[\s\S]*?color:\s*#1677ff;[\s\S]*?background:\s*rgba\(22,\s*119,\s*255,\s*0\.13\);/);
   assert.match(globalStyles, /\.sidebar-link-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;[\s\S]*?color:\s*#94a3b8;/);
   assert.match(globalStyles, /\.sidebar-action-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
@@ -2890,7 +2890,7 @@ test("settings dark mode themes Ant Design controls inside settings cards", () =
   );
   assert.match(
     settingsStyles,
-    /:root\[data-theme="dark"\] :is\(\.settings-page, \.settings-debug-modal\) \.ant-select-disabled \.ant-select-selector,[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.04\)\s*!important;/
+    /:root\[data-theme="dark"\] :is\(\.settings-page, \.settings-debug-modal\) \.ant-select-disabled \.ant-select-selector,[\s\S]*?background:\s*var\(--control-disabled-bg\)\s*!important;/
   );
   assert.match(
     settingsStyles,
@@ -2902,13 +2902,13 @@ test("settings dark mode themes Ant Design controls inside settings cards", () =
   );
   assert.match(
     settingsStyles,
-    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.065\)\s*!important;[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
+    /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*var\(--control-button-bg\)\s*!important;[\s\S]*?color:\s*var\(--ink-soft\)\s*!important;/
   );
   assert.match(
     settingsStyles,
     /:root\[data-theme="dark"\] \.settings-page \.ant-btn-default\.ant-btn-dangerous:not\(\.ant-btn-link\):not\(\.ant-btn-text\)\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--danger\) 12%, transparent\)\s*!important;[\s\S]*?color:\s*var\(--danger\)\s*!important;/
   );
-  assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup\s*\{[\s\S]*?background:\s*var\(--surface-strong\);/);
+  assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup\s*\{[\s\S]*?background:\s*var\(--control-popover-bg\);/);
   assert.match(settingsStyles, /:root\[data-theme="dark"\] \.settings-select-popup \.ant-select-item-option-selected:not\(\.ant-select-item-option-disabled\)\s*\{[\s\S]*?background:\s*var\(--accent-soft\);/);
 });
 
@@ -3315,7 +3315,8 @@ test("sidebar translucency is fixed and not user configurable", () => {
 
   assert.match(appShell, /"has-translucent-sidebar"/);
   assert.match(appShell, /isMac \? "is-mac-translucent-sidebar" : ""/);
-  assert.match(appShell, /window\.electronAPI\.settings\.setNativeThemeSource\(themeMode\)/);
+  const appearanceBrowser = readSourceFile("src", "renderer", "appearance", "browser.ts");
+  assert.match(appearanceBrowser, /window\.electronAPI\.settings\.setNativeThemeSource\(themeMode\)/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_STORAGE_KEY/);
   assert.doesNotMatch(appShell, /SIDEBAR_TRANSLUCENCY_OPACITY_STORAGE_KEY/);
   assert.doesNotMatch(appShell, /setSidebarTranslucency/);
@@ -5155,7 +5156,7 @@ test("desktop global search contract is wired across main preload renderer and h
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-panel\s*\{[\s\S]*?background:\s*var\(--desktop-overlay-panel-bg\);[\s\S]*?box-shadow:\s*none;/);
   assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row-icon\s*\{[\s\S]*?background:\s*transparent;/);
   assert.match(appShellCss, /\.desktop-global-search-row-icon \.sidebar-illustration,[\s\S]*?\.desktop-global-search-row-icon \.sidebar-action-icon,[\s\S]*?\.desktop-global-search-row-icon \.settings-sidebar-icon\s*\{[\s\S]*?width:\s*16px;[\s\S]*?height:\s*16px;/);
-  assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row\.is-active\s*\{[\s\S]*?background:\s*rgba\(255, 255, 255, 0\.08\);/);
+  assert.match(appShellCss, /:root\[data-theme="dark"\] \.desktop-global-search-row\.is-active\s*\{[\s\S]*?background:\s*var\(--control-active-bg\);/);
   assert.match(appShellCss, /\.desktop-global-search-row\.is-chat \.desktop-global-search-row-title\s*\{[\s\S]{0,80}font-weight:\s*400;/);
   assert.match(appShellCss, /\.desktop-global-search-row-shortcut\s*\{/);
   assert.match(appShellCss, /\.desktop-global-search-shortcut-icon\s*\{/);
@@ -5683,9 +5684,9 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(dialog, /data-decision=\{button\.decision\}/);
   assert.match(layerRule, /position:\s*fixed;/);
   assert.match(layerRule, /padding:\s*16px;/);
-  assert.match(dialogRule, /border-radius:\s*12px;/);
+  assert.match(dialogRule, /border-radius:\s*var\(--overlay-radius\);/);
   assert.match(dialogRule, /width:\s*min\(440px, 100%\);/);
-  assert.match(dialogRule, /background:\s*rgba\(255, 255, 255, 0\.94\);/);
+  assert.match(dialogRule, /background:\s*var\(--desktop-overlay-panel-bg\);/);
   assert.match(dialogRule, /box-shadow:\s*0 18px 54px rgba\(15, 23, 42, 0\.2\);/);
   assert.match(titleRule, /font-size:\s*12px;/);
   assert.match(titleRule, /font-weight:\s*400;/);
@@ -5695,7 +5696,7 @@ test("desktop action confirmation keeps supporting information inside details", 
   assert.match(buttonFocusRule, /outline-offset:\s*2px;/);
   assert.match(
     styles,
-    /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*#2D2D2D;[\s\S]*?box-shadow:\s*none;/
+    /:root\[data-theme="dark"\] \.desktop-action-confirmation-dialog\s*\{[\s\S]*?background:\s*var\(--desktop-overlay-panel-bg\);[\s\S]*?box-shadow:\s*none;/
   );
 });
 
@@ -8414,7 +8415,7 @@ test("desktop sso waits for a user click and keeps pending login recoverable", (
   assert.match(globalStyles, /\.sidebar-account-menu \.sidebar-link-icon,[\s\S]*?\.sidebar-account-menu-icon\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.sidebar-account-menu-item\.is-disabled\s*\{[\s\S]*?color:\s*var\(--ink-muted\);/);
   assert.match(globalStyles, /\.sidebar-link:hover:not\(\.sidebar-link-active\)\s*\{[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/);
-  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*color-mix\(in srgb, var\(--ink-muted\) 14%, transparent\);[\s\S]*?color:\s*var\(--ink\);/);
+  assert.match(globalStyles, /\.app-sidebar \.sidebar-primary-link\.sidebar-link-active,[\s\S]*?\.app-sidebar \.sidebar-link\.sidebar-tool-menu-trigger\.sidebar-link-active\s*\{[\s\S]*?background:\s*var\(--nav-selected-bg\);[\s\S]*?color:\s*var\(--nav-selected-text\);/);
   assert.match(
     globalStyles,
     /\.sidebar-account-menu \.sidebar-tool-menu-item:hover,[\s\S]*?\.sidebar-account-menu \.sidebar-tool-menu-item\.sidebar-link-active,[\s\S]*?background:\s*rgba\(136,\s*151,\s*172,\s*0\.1\);/

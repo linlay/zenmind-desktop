@@ -4,11 +4,6 @@
   line-height: 1.45;
 }
 
-:root[data-theme="dark"] .settings-page {
-  --surface-soft: #232323;
-  --control-select-bg: #232323;
-}
-
 .settings-page-single {
   width: 100%;
   min-height: 0;
@@ -258,8 +253,8 @@
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   outline: none;
   font-size: 12px;
@@ -302,8 +297,8 @@
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   outline: none;
   font-size: 12px;
@@ -349,8 +344,8 @@
   gap: 8px;
   padding: 4px 6px 4px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
   font-size: 12px;
@@ -380,8 +375,8 @@
   gap: 12px;
   padding: 9px 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink-soft);
   font-size: 12px;
   line-height: 1.35;
@@ -410,8 +405,8 @@
   min-height: 38px;
   padding: 0 12px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   transition:
     border-color 0.16s ease,
     box-shadow 0.16s ease;
@@ -519,7 +514,7 @@
   min-width: 24px;
   height: 24px;
   padding: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   color: var(--ink-soft);
 }
 
@@ -588,7 +583,7 @@
   min-height: 32px;
   height: 32px;
   padding: 0 12px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   font-size: 12px;
   font-weight: 600;
   line-height: 1;
@@ -702,17 +697,17 @@
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:hover,
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn:focus-visible {
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--control-hover-bg);
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active {
-  background: rgba(255, 255, 255, 0.075);
+  background: var(--control-active-bg);
   box-shadow: none;
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:hover,
 :root[data-theme="dark"] .settings-page .web-nav-card.ant-btn.is-active:focus-visible {
-  background: rgba(255, 255, 255, 0.095);
+  background: var(--control-hover-bg);
 }
 
 :root[data-theme="dark"] .settings-page .web-nav-card.is-active .service-nav-version-status {
@@ -1579,9 +1574,9 @@
   min-height: 34px;
   padding: 0 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-on);
   font-size: 12px;
   font-weight: 700;
   cursor: pointer;
@@ -1596,11 +1591,11 @@
 :root[data-theme="dark"] .settings-page .settings-control-field select,
 :root[data-theme="dark"] .settings-page .settings-control-row-control.ant-input,
 :root[data-theme="dark"] .settings-page .settings-control-row-readonly {
-  background: var(--control-select-bg);
-  border-color: rgba(255, 255, 255, 0.12);
+  background: var(--control-input-bg);
+  border-color: var(--control-border);
 }
 
-/* Settings owns its Ant controls locally so app-wide Ant defaults stay untouched. */
+/* Keep settings-specific states aligned with the main-window appearance roles. */
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-label > label,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-extra,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-form-item-explain,
@@ -1618,8 +1613,8 @@
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-select:not(.ant-select-customize-input) .ant-select-selector,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select {
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  background: var(--control-select-bg) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-input-bg) !important;
   color: var(--ink) !important;
 }
 
@@ -1675,7 +1670,7 @@
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) textarea:disabled,
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) select:disabled {
   border-color: var(--line) !important;
-  background: rgba(255, 255, 255, 0.04) !important;
+  background: var(--control-disabled-bg) !important;
   color: var(--ink-muted) !important;
   opacity: 1;
   cursor: not-allowed;
@@ -1719,8 +1714,8 @@
 }
 
 :root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text) {
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  background: rgba(255, 255, 255, 0.065) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-button-bg) !important;
   color: var(--ink-soft) !important;
   text-shadow: none !important;
   box-shadow: none;
@@ -1728,9 +1723,13 @@
 
 :root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):hover:not(:disabled),
 :root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):focus-visible:not(:disabled) {
-  border-color: var(--line-strong) !important;
-  background: rgba(255, 255, 255, 0.1) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-hover-bg) !important;
   color: var(--ink) !important;
+}
+
+:root[data-theme="dark"] .settings-page .ant-btn-default:not(.ant-btn-link):not(.ant-btn-text):not(.ant-btn-dangerous):active:not(:disabled) {
+  background: var(--control-active-bg) !important;
 }
 
 :root[data-theme="dark"] .settings-page .ant-btn-default.ant-btn-dangerous:not(.ant-btn-link):not(.ant-btn-text) {
@@ -1750,26 +1749,26 @@
 :root[data-theme="dark"] .settings-page .ant-btn.ant-btn-disabled:not(.ant-btn-link):not(.ant-btn-text),
 :root[data-theme="dark"] .settings-debug-modal .ant-btn:disabled:not(.ant-btn-link):not(.ant-btn-text),
 :root[data-theme="dark"] .settings-debug-modal .ant-btn.ant-btn-disabled:not(.ant-btn-link):not(.ant-btn-text) {
-  border-color: rgba(255, 255, 255, 0.16) !important;
-  background: rgba(255, 255, 255, 0.045) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-disabled-bg) !important;
   color: var(--ink-muted) !important;
   text-shadow: none !important;
   opacity: 1;
 }
 
 :root[data-theme="dark"] .settings-page .navigation-assistant-default-select .ant-select-selector {
-  border-color: rgba(255, 255, 255, 0.095) !important;
-  background: rgba(255, 255, 255, 0.035) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-input-bg) !important;
 }
 
 :root[data-theme="dark"] .settings-page .navigation-assistant-default-select .ant-select:not(.ant-select-disabled):hover .ant-select-selector {
-  border-color: rgba(255, 255, 255, 0.15) !important;
-  background: rgba(255, 255, 255, 0.045) !important;
+  border-color: var(--control-border) !important;
+  background: var(--control-hover-bg) !important;
 }
 
 :root[data-theme="dark"] :is(.settings-page, .settings-debug-modal) .ant-segmented {
   border: 1px solid var(--line);
-  background: var(--control-select-bg);
+  background: var(--control-input-bg);
   color: var(--ink-soft);
 }
 
@@ -1806,7 +1805,7 @@
 
 :root[data-theme="dark"] .settings-debug-modal .ant-modal-content,
 :root[data-theme="dark"] .settings-debug-modal .ant-modal-header {
-  background: var(--surface-strong);
+  background: var(--desktop-overlay-panel-bg);
   color: var(--ink);
 }
 
@@ -1840,7 +1839,7 @@
 
 :root[data-theme="dark"] .settings-select-popup {
   border: 1px solid var(--line);
-  background: var(--surface-strong);
+  background: var(--control-popover-bg);
   box-shadow: var(--panel-shadow);
 }
 
@@ -2449,8 +2448,8 @@
   resize: vertical;
   padding: 10px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--control-select-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-input-bg);
   color: var(--ink);
   font-family: "SFMono-Regular", "Monaco", "Consolas", monospace;
   font-size: 12px;
@@ -2496,7 +2495,7 @@
   min-height: 34px;
   padding: 8px 10px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
@@ -2511,7 +2510,7 @@
 .settings-page .settings-debug-nav-item.ant-btn:not(:disabled):not(.ant-btn-disabled):hover,
 .settings-page .settings-debug-nav-item.ant-btn:not(:disabled):not(.ant-btn-disabled):focus-visible {
   border-color: var(--line);
-  background: var(--control-select-bg);
+  background: var(--control-input-bg);
   color: var(--ink);
 }
 
@@ -3185,7 +3184,7 @@
 
 .settings-appearance-panel {
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface-soft);
   overflow: hidden;
 }
@@ -3327,7 +3326,7 @@
 .settings-page .settings-theme-option {
   gap: 10px;
   padding: 12px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   box-shadow: none;
 }
 
@@ -3354,7 +3353,7 @@
 .settings-page .settings-theme-preview {
   gap: 8px;
   padding: 10px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
 }
 
 .settings-page .settings-theme-preview span {

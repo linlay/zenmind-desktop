@@ -78,6 +78,8 @@ import {
 } from "../../settings/settingsRoutes";
 import type { SidebarNavOrderItem, SidebarNavOrderItemKey } from "../../app-shell/navigation/sidebarNavOrder";
 import { useI18n } from "../../i18n/useI18n";
+import type { ThemePreference } from "../../appearance/model";
+import { SkinSettings } from "../../appearance/SkinSettings";
 import { isAssistantNavChatAgent } from "../../assistantNavigation";
 import type { SupportedLocale, TranslateFunction, TranslationKey } from "../../../shared/i18n";
 import type {
@@ -86,7 +88,6 @@ import type {
   WebappUserConfigValues
 } from "../../../shared/webapp-manifest";
 
-type ThemePreference = "light" | "dark" | "system";
 type KanbanConnectionState = "disabled" | "auth_required" | "connecting" | "open" | "closed" | "error";
 type DebugCategoryId = "device" | "state" | "logs" | "realtime" | "wsServer" | "authTokens" | "other";
 type UsageHeatmapMode = "day" | "week" | "cumulative";
@@ -100,7 +101,7 @@ type DebugLogEntry = {
 
 type SettingsPageProps = {
   themeMode: ThemePreference;
-  onThemeModeChange: (themeMode: ThemePreference) => void;
+  onThemeModeChange: (themeMode: ThemePreference) => Promise<void>;
   isMac: boolean;
   isWindows: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
@@ -4474,7 +4475,9 @@ export function SettingsPage({
                   value={themeMode}
                   onChange={(value) => {
                     if (themeMode !== value) {
-                      onThemeModeChange(value);
+                      void onThemeModeChange(value).catch((reason) => {
+                        showSectionNotice("appearance", reason instanceof Error ? reason.message : String(reason), "error");
+                      });
                     }
                   }}
                   options={THEME_PREFERENCE_OPTIONS.map((option) => ({
@@ -4490,6 +4493,7 @@ export function SettingsPage({
                   }))}
                 />
               </div>
+              <SkinSettings />
               <div className="settings-appearance-row">
                 <div className="settings-appearance-row-copy">
                   <strong>{t("settings.language.label")}</strong>

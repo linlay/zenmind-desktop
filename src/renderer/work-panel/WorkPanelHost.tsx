@@ -334,6 +334,7 @@ export function WorkPanelHost({
   launcher,
 }: WorkPanelHostProps) {
   const { t } = useI18n();
+  const [modal, modalContext] = Modal.useModal();
   const rootRef = useRef<HTMLDivElement | null>(null);
   const stateRef = useRef(state);
   const previousLocalFileHandlesRef = useRef(new Map<string, string>());
@@ -1281,8 +1282,8 @@ export function WorkPanelHost({
             ownerChatId, rendererGeneration: rendererGenerationRef.current,
             handleId: String(nativeHtml.handleId), action,
           });
-          if (!outcome.ok) Modal.error({ content: outcome.message || t("chatWorkPanel.resourceActions.failed") });
-        } catch { Modal.error({ content: t("chatWorkPanel.resourceActions.failed") }); }
+          if (!outcome.ok) modal.error({ content: outcome.message || t("chatWorkPanel.resourceActions.failed") });
+        } catch { modal.error({ content: t("chatWorkPanel.resourceActions.failed") }); }
         return;
       }
       if (result.actionId === "reload") { currentController?.reload(); return; }
@@ -1952,6 +1953,7 @@ export function WorkPanelHost({
       ref={rootRef}
       className={`work-panel-host${fullscreenOwnerChatId === activeChatId ? " is-fullscreen" : ""}`}
     >
+      {modalContext}
       {state.workspaces.map((workspace) => {
         const visible = workspace.ownerChatId === activeChatId;
         return (

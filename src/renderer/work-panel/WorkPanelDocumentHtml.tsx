@@ -32,6 +32,7 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
   ownerChatId, rendererGeneration, document, active, preloadUrl, onHandoff,
 }, ref) {
   const { t } = useI18n();
+  const [modal, modalContext] = Modal.useModal();
   const frameRef = useRef<Electron.WebviewTag | null>(null);
   const readyRef = useRef(false);
   const refreshRequestRef = useRef(0);
@@ -236,7 +237,7 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
       return refreshPreview();
     };
     if (annotations.length || pendingAnnotation) {
-      Modal.confirm({ title: t("common.refresh"), content: t("chatWorkPanel.document.htmlReloadConfirm"),
+      modal.confirm({ title: t("common.refresh"), content: t("chatWorkPanel.document.htmlReloadConfirm"),
         okText: t("common.confirm"), cancelText: t("common.cancel"), onOk: reload });
     } else void reload();
   };
@@ -296,6 +297,7 @@ export const WorkPanelDocumentHtml = forwardRef<HtmlDocumentController, Props>(f
       className={`work-panel-document-html${annotating ? " is-annotating" : ""}`}
       data-work-panel-document-dirty={annotations.length > 0 || pendingAnnotation ? "true" : "false"}
     >
+      {modalContext}
       <div className="work-panel-document-html-toolbar" role="toolbar" aria-label={t("chatWorkPanel.review.htmlTool")}>
         {annotating ? (
           <>

@@ -23,3 +23,9 @@
   -webkit-app-region: no-drag;
   pointer-events: auto;
 }
+
+:global(:root[data-desktop-skin]) .Popover {
+  border-radius: var(--control-radius);
+  background: var(--control-popover-bg);
+  color: var(--ink);
+}

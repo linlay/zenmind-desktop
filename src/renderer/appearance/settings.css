@@ -1,0 +1,39 @@
+.desktop-skin-settings { border-top: 1px solid var(--line); padding: 20px 16px 4px; min-width: 0; }
+.desktop-skin-heading { display: flex; flex-direction: column; gap: 6px; }
+.desktop-skin-heading strong, .desktop-background-copy strong { color: var(--ink); font-size: 13px; font-weight: 600; }
+.desktop-skin-heading > span, .desktop-background-copy > span { color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.desktop-skin-options { display: grid; grid-template-columns: repeat(2, minmax(0, 210px)); gap: 16px; margin: 16px 0 24px; }
+.desktop-skin-option { appearance: none; min-width: 0; padding: 5px; border: 1px solid var(--control-border); border-radius: var(--control-radius-lg); background: var(--control-button-bg); color: var(--ink); text-align: left; cursor: pointer; }
+.desktop-skin-option[aria-pressed="true"] { border-color: var(--control-primary-bg); box-shadow: 0 0 0 1px var(--control-primary-bg); }
+.desktop-skin-option:hover:not(:disabled) { background: var(--control-hover-bg); }
+.desktop-skin-option:focus-visible { outline: 2px solid var(--control-primary-bg); outline-offset: 4px; }
+.desktop-skin-option:disabled { cursor: default; opacity: var(--control-disabled-opacity); }
+.desktop-skin-option-label { display: flex; justify-content: space-between; padding: 9px 8px 6px; font-size: 12px; }
+.desktop-skin-option-label > span { color: var(--control-primary-bg); }
+.desktop-skin-sample { position: relative; display: flex; height: 94px; overflow: hidden; border-radius: var(--control-radius); background-color: var(--bg-base); background-size: cover; background-position: center; }
+/* Default preview must not inherit the currently selected skin's colors. */
+.desktop-skin-sample[data-sample-skin="default"] { --bg-base: #f5f7fb; --surface: #fff; --ink-muted: #b5bdcb; --control-primary-bg: #2663eb; }
+:root[data-theme="dark"] .desktop-skin-sample[data-sample-skin="default"] { --bg-base: #181b20; --surface: #252930; --ink-muted: #586071; --control-primary-bg: #4f88ff; }
+.desktop-skin-sample-sidebar { width: 26%; padding: 16px 8px; display: flex; flex-direction: column; gap: 6px; background: color-mix(in srgb, var(--surface) 75%, transparent); }
+.desktop-skin-sample i { display: block; height: 4px; border-radius: 2px; background: var(--ink-muted); opacity: .45; }
+.desktop-skin-sample-sidebar i:first-child { background: var(--control-primary-bg); opacity: .8; }
+.desktop-skin-sample-content { display: flex; flex: 1; flex-direction: column; gap: 7px; padding: 23px 16px; }
+.desktop-skin-sample-content i { width: 60%; }
+.desktop-skin-sample-content i + i { width: 85%; }
+.desktop-skin-sample-content b { width: 26px; height: 10px; margin-top: 3px; border-radius: 3px; background: var(--control-primary-bg); }
+.desktop-background-setting { display: flex; gap: 16px; align-items: flex-start; }
+.desktop-background-sample { flex: 0 0 112px; height: 84px; overflow: hidden; border: 1px solid var(--line); border-radius: var(--control-radius); background: var(--bg-base); }
+.desktop-background-sample img { display: block; width: 100%; height: 100%; object-fit: cover; }
+.desktop-background-copy { min-width: 0; display: flex; flex-direction: column; gap: 5px; }
+.desktop-background-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.desktop-background-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 7px; }
+.desktop-skin-status { min-height: 20px; margin-top: 12px; color: var(--ink-soft); font-size: 12px; line-height: 1.6; }
+.desktop-skin-status > * { display: block; }
+.desktop-skin-status button { margin-left: 8px; }
+.desktop-skin-error { color: var(--error, #dc4446); }
+@media (max-width: 600px) {
+  .desktop-background-setting { flex-wrap: wrap; }
+  .desktop-skin-options { gap: 10px; }
+}
+
+.desktop-skin-settings + .settings-appearance-row { border-top: 1px solid var(--line); }

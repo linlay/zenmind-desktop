@@ -36,7 +36,8 @@
     "dist:win": "node ./scripts/dist-win.mjs",
     "dist:win-docker": "node ./scripts/dist-win.mjs --docker",
     "test": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run i18n:check && npm run build && node --test --test-concurrency=1 ./test/*.test.mjs",
-    "test:unit": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:prepared && node --test --test-concurrency=1 ./test/*.test.mjs"
+    "test:unit": "npm run architecture:check && npm run webapp-contract:check && npm run agent-webclient-contract:check && npm run brand:prepare && npm run build:main:prepared && node --test --test-concurrency=1 ./test/*.test.mjs",
+    "test:appearance": "npm run architecture:check && npm run i18n:keys && npm run build:main:prepared && npm run build:renderer:prepared && node --test test/desktop-appearance.test.mjs test/desktop-skin-store.test.mjs test/desktop-profile-store.test.mjs test/settings-desktop-ws-server.test.mjs test/agent-webclient-embedded-url.test.mjs test/desktop-init-bootstrap.test.mjs test/user-paths.test.mjs && node qa/desktop-appearance-smoke.mjs && node qa/desktop-appearance-release.mjs"
   },
   "dependencies": {
     "@ant-design/icons": "^6.1.1",

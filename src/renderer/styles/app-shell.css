@@ -289,11 +289,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 12px;
-  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid var(--control-border);
+  border-radius: var(--overlay-radius);
+  background: var(--desktop-overlay-panel-bg);
   box-shadow: 0 18px 54px rgba(15, 23, 42, 0.2);
-  color: #0f172a;
+  color: var(--ink);
 }
 
 .desktop-action-confirmation-head {
@@ -305,7 +305,7 @@
 
 .desktop-action-confirmation-head h2 {
   margin: 0;
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 12px;
   font-weight: 400;
   line-height: 18px;
@@ -319,10 +319,10 @@
 
 .desktop-action-confirmation-summary {
   margin: 0;
-  border-radius: 10px;
+  border-radius: calc(var(--control-radius) + 2px);
   padding: 8px 9px;
   background: rgba(15, 23, 42, 0.05);
-  color: #0f172a;
+  color: var(--ink);
   font-size: 13px;
   font-weight: 600;
   line-height: 19px;
@@ -331,7 +331,7 @@
 
 .desktop-action-confirmation-description {
   margin: 8px 10px 0;
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 12px;
   line-height: 18px;
 }
@@ -340,7 +340,7 @@
   display: grid;
   gap: 8px;
   margin: 8px 10px 0;
-  border-radius: 10px;
+  border-radius: calc(var(--control-radius) + 2px);
   padding: 10px;
   background: rgba(15, 23, 42, 0.04);
 }
@@ -354,7 +354,7 @@
 }
 
 .desktop-action-confirmation-field dt {
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 11px;
   font-weight: 600;
   line-height: 16px;
@@ -363,7 +363,7 @@
 .desktop-action-confirmation-field dd {
   min-width: 0;
   margin: 0;
-  color: #0f172a;
+  color: var(--ink);
   font-size: 12px;
   line-height: 18px;
   overflow-wrap: anywhere;
@@ -376,9 +376,9 @@
 .desktop-action-confirmation-details summary {
   width: fit-content;
   max-width: 100%;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   padding: 6px 10px 6px 8px;
-  color: #64748b;
+  color: var(--ink-muted);
   cursor: pointer;
   font-size: 12px;
   font-weight: 400;
@@ -386,8 +386,8 @@
 }
 
 .desktop-action-confirmation-details summary:hover {
-  background: rgba(15, 23, 42, 0.07);
-  color: #0f172a;
+  background: var(--control-hover-bg);
+  color: var(--ink);
 }
 
 .desktop-action-confirmation-details summary:focus-visible {
@@ -424,7 +424,7 @@
 .desktop-action-confirmation-settings-hint {
   min-width: 0;
   margin: 0 auto 0 0;
-  color: #94a3b8;
+  color: var(--ink-muted);
   font-size: 10px;
   font-weight: 400;
   line-height: 15px;
@@ -440,50 +440,50 @@
   min-width: 72px;
   min-height: 32px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   padding: 0 12px;
   background: transparent;
-  color: #475569;
+  color: var(--ink-soft);
   cursor: pointer;
   font-size: 12px;
   font-weight: 500;
 }
 
 .desktop-action-confirmation-button:hover {
-  background: rgba(15, 23, 42, 0.07);
+  background: var(--control-hover-bg);
 }
 
 .desktop-action-confirmation-button:focus {
-  background: rgba(15, 23, 42, 0.07);
+  background: var(--control-hover-bg);
   outline: 2px solid var(--accent-border);
   outline-offset: 2px;
 }
 
 .desktop-action-confirmation-button.is-secondary {
-  border-color: rgba(148, 163, 184, 0.24);
+  border-color: var(--control-border);
   background: rgba(15, 23, 42, 0.05);
 }
 
 .desktop-action-confirmation-button.is-primary {
-  border-color: #2563eb;
-  background: #2563eb;
-  color: #ffffff;
+  border-color: var(--control-primary-bg);
+  background: var(--control-primary-bg);
+  color: var(--accent-on);
 }
 
 .desktop-action-confirmation-button.is-primary:hover,
 .desktop-action-confirmation-button.is-primary:focus {
-  border-color: rgba(29, 78, 216, 0.74);
-  background: #1d4ed8;
+  border-color: var(--control-primary-hover);
+  background: var(--control-primary-hover);
 }
 
 .desktop-action-confirmation-button.is-cancel {
-  color: #64748b;
+  color: var(--ink-muted);
 }
 
 :root[data-theme="dark"] .desktop-action-confirmation-dialog {
-  border-color: rgba(255, 255, 255, 0.12);
-  background: #2D2D2D;
-  color: #e2e8f0;
+  border-color: var(--control-border);
+  background: var(--desktop-overlay-panel-bg);
+  color: var(--ink);
   box-shadow: none;
 }
 
@@ -493,16 +493,16 @@
 :root[data-theme="dark"] .desktop-action-confirmation-details summary,
 :root[data-theme="dark"] .desktop-action-confirmation-button.is-cancel,
 :root[data-theme="dark"] .desktop-action-confirmation-settings-hint {
-  color: #a3a3a3;
+  color: var(--ink-muted);
 }
 
 :root[data-theme="dark"] .desktop-action-confirmation-summary {
   background: rgba(255, 255, 255, 0.06);
-  color: #eeeeee;
+  color: var(--ink);
 }
 
 :root[data-theme="dark"] .desktop-action-confirmation-field dd {
-  color: #eeeeee;
+  color: var(--ink);
 }
 
 :root[data-theme="dark"] .desktop-action-confirmation-fields,
@@ -515,12 +515,12 @@
 :root[data-theme="dark"] .desktop-action-confirmation-details summary:hover,
 :root[data-theme="dark"] .desktop-action-confirmation-button:not(.is-primary):hover,
 :root[data-theme="dark"] .desktop-action-confirmation-button:not(.is-primary):focus {
-  background: rgba(255, 255, 255, 0.08);
-  color: #eeeeee;
+  background: var(--control-hover-bg);
+  color: var(--ink);
 }
 
 :root[data-theme="dark"] .desktop-action-confirmation-button.is-secondary {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--control-border);
   background: rgba(255, 255, 255, 0.08);
 }
 
@@ -675,9 +675,9 @@
   padding: 0;
   place-items: center;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
-  color: rgba(71, 85, 105, 0.78);
+  color: var(--control-icon-color);
   cursor: pointer;
   appearance: none;
   app-region: no-drag;
@@ -713,7 +713,7 @@
 }
 
 :root[data-theme="dark"] .app-system-bar-action {
-  color: rgba(203, 213, 225, 0.72);
+  color: var(--control-icon-color);
 }
 
 .app-system-bar-window-controls {
@@ -960,9 +960,9 @@
   height: 24px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
-  color: rgba(71, 85, 105, 0.84);
+  color: var(--control-icon-color);
   cursor: pointer;
   appearance: none;
   touch-action: manipulation;
@@ -987,8 +987,8 @@
 
 .main-chat-work-panel-toggle:hover:not(:disabled),
 .main-chat-work-panel-toggle:focus-visible:not(:disabled) {
-  color: #1f2937;
-  background: rgba(136, 151, 172, 0.1);
+  color: var(--ink);
+  background: var(--control-hover-bg);
 }
 
 .main-chat-work-panel-toggle:focus-visible {
@@ -1009,13 +1009,13 @@
 }
 
 :root[data-theme="dark"] .main-chat-work-panel-toggle {
-  color: rgba(203, 213, 225, 0.8);
+  color: var(--control-icon-color);
 }
 
 :root[data-theme="dark"] .main-chat-work-panel-toggle:hover:not(:disabled),
 :root[data-theme="dark"] .main-chat-work-panel-toggle:focus-visible:not(:disabled) {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--control-hover-bg);
 }
 
 .work-panel-host {
@@ -1046,13 +1046,13 @@
   --chat-work-panel-tab-height: 32px;
   --chat-work-panel-tabs-top-padding: 8px;
   --chat-work-panel-tabs-height: calc(var(--chat-work-panel-tab-height) + var(--chat-work-panel-tabs-top-padding));
-  --work-panel-tab-strip: #dee6ee;
-  --work-panel-tab-active: #ffffff;
-  --work-panel-tab-hover: rgba(255, 255, 255, 0.6);
-  --work-panel-tab-separator: rgba(95, 99, 104, 0.2);
-  --work-panel-tab-ink: #202124;
-  --work-panel-tab-muted: #5f6368;
-  --work-panel-tab-focus: #1a73e8;
+  --work-panel-tab-strip: var(--control-tab-strip-bg);
+  --work-panel-tab-active: var(--control-tab-active-bg);
+  --work-panel-tab-hover: var(--control-tab-hover-bg);
+  --work-panel-tab-separator: var(--control-border);
+  --work-panel-tab-ink: var(--ink);
+  --work-panel-tab-muted: var(--ink-soft);
+  --work-panel-tab-focus: var(--accent);
   position: relative;
   z-index: 12;
   display: block;
@@ -2901,8 +2901,8 @@
   height: 32px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.46);
+  border-radius: calc(var(--control-radius) + 2px);
+  background: var(--control-button-bg);
   color: var(--work-panel-tab-ink);
   font-size: 17px;
   cursor: pointer;
@@ -2913,7 +2913,7 @@
 .chat-work-panel-add-button:hover,
 .chat-work-panel-add-button.is-open,
 .chat-work-panel-add-button:focus-visible {
-  border-color: rgba(100, 116, 139, 0.16);
+  border-color: var(--control-border);
   background: var(--work-panel-tab-active);
 }
 
@@ -2951,7 +2951,7 @@
   width: 100%;
   padding: 4px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: inherit;
   font: inherit;
@@ -3014,7 +3014,7 @@
   min-height: 28px;
   padding: 3px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--sidebar-operation-menu-text-soft);
   font: inherit;
@@ -3039,7 +3039,7 @@
   height: 32px;
   padding: 0 10px;
   border: 1px solid var(--sidebar-operation-menu-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   outline: none;
   background: var(--sidebar-operation-menu-bg);
   color: var(--sidebar-operation-menu-text);
@@ -3072,8 +3072,8 @@
 :root[data-theme="dark"] .chat-work-panel-add-button:hover,
 :root[data-theme="dark"] .chat-work-panel-add-button.is-open,
 :root[data-theme="dark"] .chat-work-panel-add-button:focus-visible {
-  border-color: rgba(255, 255, 255, 0.08);
-  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--control-border);
+  background: var(--control-hover-bg);
 }
 
 :root[data-theme="dark"] .chat-work-panel-add-menu {
@@ -3642,8 +3642,8 @@
 .chat-work-panel-resizer:focus-visible .chat-work-panel-resizer-line,
 .chat-work-panel-resizer.is-active .chat-work-panel-resizer-line {
   width: 3px;
-  background: rgba(38, 99, 235, 0.42);
-  box-shadow: 0 0 12px rgba(38, 99, 235, 0.18);
+  background: rgba(var(--accent-rgb), 0.42);
+  box-shadow: 0 0 12px rgba(var(--accent-rgb), 0.18);
 }
 
 .chat-work-panel-resizer:focus-visible {
@@ -3668,13 +3668,6 @@
 }
 
 :root[data-theme="dark"] .chat-work-panel {
-  --work-panel-tab-strip: #2b3138;
-  --work-panel-tab-active: #1f2329;
-  --work-panel-tab-hover: rgba(255, 255, 255, 0.12);
-  --work-panel-tab-separator: rgba(255, 255, 255, 0.12);
-  --work-panel-tab-ink: #f1f3f4;
-  --work-panel-tab-muted: #bdc1c6;
-  --work-panel-tab-focus: #8ab4f8;
   box-shadow: -10px 0 28px rgba(0, 0, 0, 0.18);
 }
 
@@ -3689,8 +3682,8 @@
 :root[data-theme="dark"] .chat-work-panel-resizer:hover .chat-work-panel-resizer-line,
 :root[data-theme="dark"] .chat-work-panel-resizer:focus-visible .chat-work-panel-resizer-line,
 :root[data-theme="dark"] .chat-work-panel-resizer.is-active .chat-work-panel-resizer-line {
-  background: rgba(79, 136, 255, 0.48);
-  box-shadow: 0 0 14px rgba(79, 136, 255, 0.2);
+  background: rgba(var(--accent-rgb), 0.48);
+  box-shadow: 0 0 14px rgba(var(--accent-rgb), 0.2);
 }
 
 .app-shell.is-windows-platform .chat-work-panel {
@@ -3717,11 +3710,11 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--control-radius-lg);
   background: var(--desktop-overlay-panel-bg);
   box-shadow: 0 18px 54px rgba(15, 23, 42, 0.2);
-  color: #0f172a;
+  color: var(--ink);
 }
 
 .desktop-global-search-input-shell {
@@ -3736,7 +3729,7 @@
 .desktop-global-search-input-icon {
   width: 18px;
   height: 18px;
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 18px;
 }
 
@@ -3746,13 +3739,13 @@
   border: 0;
   outline: none;
   background: transparent;
-  color: #0f172a;
+  color: var(--ink);
   font-size: 13px;
   line-height: 26px;
 }
 
 .desktop-global-search-input-shell input::placeholder {
-  color: #64748b;
+  color: var(--ink-muted);
 }
 
 .desktop-global-search-input-shell kbd {
@@ -3761,7 +3754,7 @@
   border: 0;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.08);
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 12px;
   font-family: inherit;
   line-height: 18px;
@@ -3801,7 +3794,7 @@
 
 .desktop-global-search-section-title {
   padding: 9px 6px 4px;
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 12px;
   font-weight: 650;
   line-height: 16px;
@@ -3816,7 +3809,7 @@
   gap: 8px;
   padding: 5px 8px;
   border: 0;
-  border-radius: 12px;
+  border-radius: var(--control-radius-lg);
   background: transparent;
   color: inherit;
   text-align: left;
@@ -3829,7 +3822,7 @@
 }
 
 .desktop-global-search-row.is-active {
-  background: rgba(15, 23, 42, 0.07);
+  background: var(--control-active-bg);
 }
 
 .desktop-global-search-row-icon {
@@ -3840,7 +3833,7 @@
   justify-content: center;
   border-radius: 7px;
   background: transparent;
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 16px;
 }
 
@@ -3871,7 +3864,7 @@
 }
 
 .desktop-global-search-row-title {
-  color: #0f172a;
+  color: var(--ink);
   font-size: 14px;
   /* font-weight: 600; */
   line-height: 20px;
@@ -3882,7 +3875,7 @@
 }
 
 .desktop-global-search-row-detail {
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 12px;
   line-height: 18px;
 }
@@ -3898,7 +3891,7 @@
 .desktop-global-search-row-agent {
   justify-self: end;
   max-width: 128px;
-  color: #64748b;
+  color: var(--ink-muted);
   font-size: 12px;
   line-height: 18px;
 }
@@ -3928,7 +3921,7 @@
   border: 0;
   border-radius: 999px;
   background: rgba(15, 23, 42, 0.07);
-  color: #64748b;
+  color: var(--ink-muted);
   font-family: inherit;
   font-size: 11px;
   font-weight: 500;
@@ -3943,7 +3936,7 @@
   align-items: center;
   justify-content: center;
   padding: 24px;
-  color: #64748b;
+  color: var(--ink-muted);
   text-align: center;
 }
 
@@ -3960,9 +3953,9 @@
 }
 
 :root[data-theme="dark"] .desktop-global-search-panel {
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--control-border);
   background: var(--desktop-overlay-panel-bg);
-  color: #e2e8f0;
+  color: var(--ink);
   box-shadow: none;
 }
 
@@ -3977,25 +3970,25 @@
 
 :root[data-theme="dark"] .desktop-global-search-input-shell input,
 :root[data-theme="dark"] .desktop-global-search-row-title {
-  color: #eeeeee;
+  color: var(--ink);
 }
 
 :root[data-theme="dark"] .desktop-global-search-input-shell kbd {
   background: rgba(255, 255, 255, 0.08);
-  color: #d4d4d4;
+  color: var(--ink-soft);
 }
 
 :root[data-theme="dark"] .desktop-global-search-row-icon {
   background: transparent;
-  color: #d4d4d4;
+  color: var(--ink-soft);
 }
 
 :root[data-theme="dark"] .desktop-global-search-row.is-active {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--control-active-bg);
 }
 
 :root[data-theme="dark"] .desktop-global-search-row-agent {
-  color: #a3a3a3;
+  color: var(--ink-muted);
 }
 
 :root[data-theme="dark"] .desktop-global-search-row-status {
@@ -4010,7 +4003,7 @@
 
 :root[data-theme="dark"] .desktop-global-search-row-shortcut {
   background: rgba(255, 255, 255, 0.09);
-  color: #d4d4d4;
+  color: var(--ink-soft);
 }
 
 @media (max-width: 680px) {

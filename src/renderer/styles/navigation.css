@@ -67,10 +67,10 @@
 .app-sidebar-resizer:hover .app-sidebar-resizer-line,
 .app-sidebar-resizer.is-active .app-sidebar-resizer-line {
   width: 3px;
-  background: rgba(38, 99, 235, 0.3);
+  background: rgba(var(--accent-rgb), 0.3);
   box-shadow:
-    0 0 0 1px rgba(38, 99, 235, 0.08),
-    0 0 14px rgba(38, 99, 235, 0.12);
+    0 0 0 1px rgba(var(--accent-rgb), 0.08),
+    0 0 14px rgba(var(--accent-rgb), 0.12);
 }
 
 .app-sidebar-resize-overlay {
@@ -90,10 +90,10 @@
 
 :root[data-theme="dark"] .app-sidebar-resizer:hover .app-sidebar-resizer-line,
 :root[data-theme="dark"] .app-sidebar-resizer.is-active .app-sidebar-resizer-line {
-  background: rgba(79, 136, 255, 0.4);
+  background: rgba(var(--accent-rgb), 0.4);
   box-shadow:
-    0 0 0 1px rgba(79, 136, 255, 0.08),
-    0 0 16px rgba(79, 136, 255, 0.16);
+    0 0 0 1px rgba(var(--accent-rgb), 0.08),
+    0 0 16px rgba(var(--accent-rgb), 0.16);
 }
 
 .app-sidebar {
@@ -252,9 +252,9 @@
   height: 24px;
   padding: 0;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
-  color: rgba(71, 85, 105, 0.72);
+  color: var(--control-icon-color);
   cursor: pointer;
   appearance: none;
   app-region: no-drag;
@@ -268,8 +268,8 @@
 
 .sidebar-history-button:hover:not(:disabled),
 .sidebar-history-button:focus-visible:not(:disabled) {
-  background: rgba(136, 151, 172, 0.1);
-  color: #1f2937;
+  background: var(--control-hover-bg);
+  color: var(--ink);
 }
 
 .sidebar-history-button:focus-visible {
@@ -288,12 +288,12 @@
 }
 
 :root[data-theme="dark"] .sidebar-history-button {
-  color: rgba(203, 213, 225, 0.72);
+  color: var(--control-icon-color);
 }
 
 :root[data-theme="dark"] .sidebar-history-button:hover:not(:disabled),
 :root[data-theme="dark"] .sidebar-history-button:focus-visible:not(:disabled) {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--control-hover-bg);
   color: var(--ink);
 }
 
@@ -311,22 +311,22 @@
 }
 
 .sidebar-assistant-top-button.is-assistant-open .sidebar-assistant-top-button-icon {
-  color: #1e293b;
+  color: var(--ink);
 }
 
 :root[data-theme="dark"] .sidebar-assistant-top-button.is-assistant-open .sidebar-assistant-top-button-icon {
-  color: #e2e8f0;
+  color: var(--ink);
 }
 
 .sidebar-assistant-top-button.is-disabled,
 .sidebar-assistant-top-button:disabled {
   cursor: not-allowed;
-  opacity: 0.52;
+  opacity: var(--control-disabled-opacity);
 }
 
 .sidebar-assistant-top-button.is-disabled:hover,
 .sidebar-assistant-top-button:disabled:hover {
-  opacity: 1;
+  opacity: var(--control-disabled-opacity);
 }
 
 .sidebar-custom-child-link {
@@ -371,7 +371,7 @@
   min-height: 31px;
   padding: 0 4px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   appearance: none;
   background: transparent;
   color: var(--ink-muted);
@@ -385,8 +385,8 @@
 }
 
 .sidebar-link:hover:not(.sidebar-link-active) {
-  color: #1f2937;
-  background: rgba(136, 151, 172, 0.1);
+  color: var(--ink);
+  background: var(--control-hover-bg);
   border-color: transparent;
 }
 
@@ -397,13 +397,13 @@
 .sidebar-chats-item:focus-visible,
 .assistant-worker-more:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.28);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.28);
 }
 
 :root[data-theme="dark"] .sidebar-link:hover:not(.sidebar-link-active) {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.07);
+  background: var(--control-hover-bg);
+  border-color: var(--control-border);
 }
 
 :root[data-theme="dark"] .sidebar-link:focus-visible,
@@ -412,12 +412,12 @@
 :root[data-theme="dark"] .assistant-worker-chat-item:focus-visible,
 :root[data-theme="dark"] .sidebar-chats-item:focus-visible,
 :root[data-theme="dark"] .assistant-worker-more:focus-visible {
-  box-shadow: 0 0 0 2px rgba(79, 136, 255, 0.38);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.38);
 }
 
 .sidebar-link-active {
-  color: #1677ff;
-  background: rgba(22, 119, 255, 0.13);
+  color: var(--control-primary-bg);
+  background: var(--nav-accent-selected-bg);
   border-color: transparent;
   box-shadow: none;
   transition: none;
@@ -425,8 +425,8 @@
 
 :root[data-theme="dark"] .sidebar-link-active {
   color: var(--accent-strong);
-  background: rgba(255, 255, 255, 0.12);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--nav-selected-bg);
+  border-color: var(--control-border);
   box-shadow: none;
 }
 
@@ -437,8 +437,8 @@
   width: 16px;
   height: 16px;
   flex: none;
-  --sidebar-special-icon-active-frame: #475569;
-  color: #94a3b8;
+  --sidebar-special-icon-active-frame: var(--ink-soft);
+  color: var(--control-icon-color);
   transition: color 0.2s ease-in-out;
 }
 
@@ -457,38 +457,38 @@
 }
 
 .sidebar-link:hover:not(.sidebar-link-active) .sidebar-link-icon {
-  color: #64748b;
+  color: var(--control-icon-hover-color);
 }
 
 .sidebar-link-active .sidebar-link-icon,
 .sidebar-group-heading.is-active .sidebar-link-icon {
-  color: #1e293b;
+  color: var(--nav-selected-text);
 }
 
 :root[data-theme="dark"] .sidebar-link:hover:not(.sidebar-link-active) .sidebar-link-icon {
-  color: #cbd5e1;
+  color: var(--control-icon-hover-color);
 }
 
 :root[data-theme="dark"] .sidebar-link-active .sidebar-link-icon,
 :root[data-theme="dark"] .sidebar-group-heading.is-active .sidebar-link-icon {
-  color: #e2e8f0;
+  color: var(--nav-selected-text);
 }
 
 .app-sidebar.is-collapsed .sidebar-link-active .sidebar-illustration-rail {
-  color: #1677ff;
+  color: var(--control-primary-bg);
 }
 
 :root[data-theme="dark"] .app-sidebar.is-collapsed .sidebar-link-active .sidebar-illustration-rail {
-  color: var(--accent-strong);
+  color: var(--control-primary-bg);
 }
 
 :root[data-theme="dark"] .sidebar-chats-item:hover,
 :root[data-theme="dark"] .sidebar-chats-item:focus-visible {
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--control-hover-bg);
 }
 
 :root[data-theme="dark"] .sidebar-link-icon {
-  --sidebar-special-icon-active-frame: #e2e8f0;
+  --sidebar-special-icon-active-frame: var(--ink);
 }
 
 .sidebar-link-active .sidebar-illustration-compact.sidebar-illustration-kanban .sidebar-illustration-kanban-frame,
@@ -623,13 +623,13 @@
 
 .sidebar-chats-agent-trigger:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.18);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.18);
 }
 
 .sidebar-chats-agent-option:focus-visible {
   outline: none;
-  border-color: rgba(22, 119, 255, 0.62);
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.18);
+  border-color: rgba(var(--accent-rgb), 0.62);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.18);
 }
 
 .sidebar-chats-agent-trigger:disabled {
@@ -692,7 +692,7 @@
   min-height: 30px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
@@ -738,8 +738,8 @@
   min-width: 184px;
   padding: 4px;
   border: 1px solid var(--sidebar-operation-menu-border);
-  border-radius: 8px;
-  background: var(--sidebar-operation-menu-bg);
+  border-radius: var(--control-radius);
+  background: var(--control-popover-bg);
   color: var(--sidebar-operation-menu-text);
   box-shadow: var(--sidebar-operation-menu-shadow);
   backdrop-filter: blur(18px) saturate(135%);
@@ -777,19 +777,19 @@
 
 :root[data-theme="dark"] .sidebar-chats-agent-trigger:hover:not(:disabled),
 :root[data-theme="dark"] .sidebar-chats-agent-trigger[aria-expanded="true"] {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--control-hover-bg);
   color: var(--ink);
 }
 
 :root[data-theme="dark"] .sidebar-chats-agent-trigger:focus-visible {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(79, 136, 255, 0.22);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22);
 }
 
 :root[data-theme="dark"] .sidebar-chats-agent-option:focus-visible {
   outline: none;
-  border-color: rgba(79, 136, 255, 0.78);
-  box-shadow: 0 0 0 2px rgba(79, 136, 255, 0.22);
+  border-color: rgba(var(--accent-rgb), 0.78);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.22);
 }
 
 .sidebar-chat-hover-card-surface {
@@ -1020,7 +1020,7 @@
 .sidebar-chats-item:hover,
 .sidebar-chats-item:focus-visible {
   outline: none;
-  background: rgba(136, 151, 172, 0.1);
+  background: var(--control-hover-bg);
   color: var(--ink);
 }
 
@@ -1087,7 +1087,7 @@
   margin: 0 12px 10px;
   padding: 10px;
   border: 1px solid rgba(245, 158, 11, 0.32);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: rgba(255, 251, 235, 0.78);
   box-shadow: 0 8px 18px rgba(120, 53, 15, 0.08);
   color: #7c2d12;
@@ -1123,7 +1123,7 @@
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: #92400e;
   cursor: pointer;
@@ -1193,7 +1193,7 @@
 
 .sidebar-bootstrap-guide-actions button:hover {
   border-color: rgba(245, 158, 11, 0.48);
-  background: rgba(255, 255, 255, 0.82);
+  background: var(--control-hover-bg);
 }
 
 .sidebar-chats-item.is-bootstrap-guide,
@@ -1208,7 +1208,7 @@
   content: "";
   inset: 2px;
   border: 2px solid #f59e0b;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: rgba(245, 158, 11, 0.04);
   pointer-events: none;
   animation: sidebar-bootstrap-guide-ring 0.86s ease-in-out infinite;
@@ -1249,7 +1249,7 @@
   transform: translateY(-50%);
   padding: 7px 9px;
   border: 1px solid rgba(245, 158, 11, 0.42);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: rgba(255, 251, 235, 0.98);
   box-shadow: 0 8px 22px rgba(120, 53, 15, 0.16);
   color: #78350f;
@@ -1372,7 +1372,7 @@
 .app-sidebar:not(.is-collapsed) .sidebar-link,
 .app-sidebar:not(.is-collapsed) .sidebar-link-utility {
   padding: 0 8px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
 }
 
 .app-sidebar:not(.is-collapsed) .sidebar-footer-actions .sidebar-link {
@@ -1417,7 +1417,7 @@
   gap: 8px;
   padding: 0 8px;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   appearance: none;
   background: transparent;
   color: var(--ink-muted);
@@ -1434,9 +1434,9 @@
 }
 
 .sidebar-group-heading:hover {
-  color: #1f2937;
-  background: rgba(136, 151, 172, 0.1);
-  border-color: rgba(136, 151, 172, 0.18);
+  color: var(--ink);
+  background: var(--control-hover-bg);
+  border-color: var(--control-border);
 }
 
 .sidebar-group-heading[data-sidebar-group-id="assistants"],
@@ -1510,7 +1510,7 @@
   --ink-soft: var(--sidebar-operation-menu-text-soft);
   --ink-muted: var(--sidebar-operation-menu-text-muted);
   border: 1px solid var(--sidebar-operation-menu-border);
-  background: var(--sidebar-operation-menu-bg);
+  background: var(--control-popover-bg);
   color: var(--sidebar-operation-menu-text);
   box-shadow: var(--sidebar-operation-menu-shadow);
   backdrop-filter: blur(18px) saturate(135%);
@@ -1565,7 +1565,7 @@ div.sidebar-chats-group-popover {
 
 .sidebar-nav[data-scrolling="true"]::-webkit-scrollbar-thumb:hover,
 .worker-popover-content.sidebar-website-children::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.48);
+  background: var(--control-hover-bg);
 }
 
 .sidebar-child-link {
@@ -1587,7 +1587,7 @@ div.sidebar-chats-group-popover {
   align-items: center;
   min-width: 0;
   min-height: 30px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   border: 1px solid transparent;
   background: transparent;
   transition:
@@ -1634,7 +1634,7 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-website-child-row:hover:not(.is-active) {
-  background: rgba(136, 151, 172, 0.1);
+  background: var(--control-hover-bg);
 }
 
 .sidebar-website-child-row:hover:not(.is-active) .sidebar-link-label {
@@ -1653,8 +1653,8 @@ div.sidebar-chats-group-popover {
 }
 
 :root[data-theme="dark"] .sidebar-website-child-row:hover:not(.is-active) {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.07);
+  background: var(--control-hover-bg);
+  border-color: var(--control-border);
 }
 
 :root[data-theme="dark"] .sidebar-website-child-row.is-active {
@@ -1699,7 +1699,7 @@ div.sidebar-chats-group-popover {
   flex: 0 0 24px;
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   opacity: 0;
   transform: translateX(-20px);
   transition: opacity 0.16s ease-in-out;
@@ -1885,7 +1885,7 @@ div.sidebar-chats-group-popover {
 }
 
 .assistant-worker-collapse-item>.Collapse-header {
-  border-radius: 8px;
+  border-radius: var(--control-radius);
 
   &:hover {
     background-color: color-mix(in srgb, var(--ink-muted) 14%, transparent);
@@ -2040,7 +2040,7 @@ div.sidebar-chats-group-popover {
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
@@ -2157,14 +2157,14 @@ div.sidebar-chats-group-popover {
   width: min(420px, calc(100vw - 32px));
   padding: 18px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  background: #fff;
+  border-radius: var(--overlay-radius);
+  background: var(--desktop-overlay-panel-bg);
   box-shadow: 0 24px 72px rgba(15, 23, 42, 0.26);
   color: var(--ink);
 }
 
 :root[data-theme="dark"] .sidebar-website-dialog {
-  background: #303236;
+  background: var(--desktop-overlay-panel-bg);
 }
 
 .sidebar-website-dialog-head {
@@ -2186,7 +2186,7 @@ div.sidebar-chats-group-popover {
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
@@ -2214,8 +2214,8 @@ div.sidebar-chats-group-popover {
   min-height: 34px;
   padding: 7px 9px;
   border: 1px solid var(--line);
-  border-radius: 6px;
-  background: #fff;
+  border-radius: var(--control-radius-sm);
+  background: var(--control-input-bg);
   color: var(--ink);
   font: inherit;
   font-weight: 500;
@@ -2224,18 +2224,18 @@ div.sidebar-chats-group-popover {
 
 :root[data-theme="dark"] .sidebar-website-dialog-field input,
 :root[data-theme="dark"] .sidebar-website-dialog-field select {
-  background: #2a2b2f;
+  background: var(--control-input-bg);
 }
 
 .sidebar-website-dialog-field input:focus,
 .sidebar-website-dialog-field select:focus {
-  border-color: #1677ff;
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.14);
+  border-color: var(--control-primary-bg);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.14);
 }
 
 .sidebar-website-dialog-field>input:disabled,
 .sidebar-website-dialog-readonly-input {
-  background: color-mix(in srgb, var(--ink-muted) 8%, #fff);
+  background: var(--control-disabled-bg);
   color: var(--ink-muted);
   cursor: not-allowed;
   -webkit-text-fill-color: var(--ink-muted);
@@ -2243,7 +2243,7 @@ div.sidebar-chats-group-popover {
 
 :root[data-theme="dark"] .sidebar-website-dialog-field>input:disabled,
 :root[data-theme="dark"] .sidebar-website-dialog-readonly-input {
-  background: color-mix(in srgb, var(--ink-muted) 12%, #2a2b2f);
+  background: var(--control-disabled-bg);
 }
 
 .sidebar-project-option-grid {
@@ -2259,7 +2259,7 @@ div.sidebar-chats-group-popover {
   min-height: 34px;
   padding: 7px 9px;
   border: 1px solid var(--line);
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: #fff;
   color: var(--ink);
   cursor: pointer;
@@ -2276,9 +2276,9 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-project-option-grid label:has(input:checked) {
-  border-color: #1677ff;
-  background: rgba(22, 119, 255, 0.08);
-  box-shadow: 0 0 0 2px rgba(22, 119, 255, 0.12);
+  border-color: var(--control-primary-bg);
+  background: rgba(var(--accent-rgb), 0.08);
+  box-shadow: 0 0 0 2px rgba(var(--accent-rgb), 0.12);
 }
 
 .sidebar-project-option-grid label:has(input:disabled) {
@@ -2309,7 +2309,7 @@ div.sidebar-chats-group-popover {
 .sidebar-website-dialog-error {
   padding: 9px 10px;
   border: 1px solid rgba(220, 38, 38, 0.26);
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: rgba(220, 38, 38, 0.08);
   color: #b91c1c;
   font-size: 12px;
@@ -2357,7 +2357,7 @@ div.sidebar-chats-group-popover {
   min-width: 72px;
   min-height: 32px;
   padding: 0 12px;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   border: 1px solid transparent;
   cursor: pointer;
   font-size: 13px;
@@ -2365,30 +2365,30 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-website-secondary-button {
-  border-color: var(--border);
-  background: transparent;
-  color: var(--ink-muted);
+  border-color: var(--control-border);
+  background: var(--control-button-bg);
+  color: var(--ink-soft);
 }
 
 .sidebar-website-primary-button {
-  background: #1677ff;
-  color: #fff;
+  background: var(--control-primary-bg);
+  color: var(--accent-on);
 }
 
-.sidebar-website-secondary-button:hover {
-  background: color-mix(in srgb, var(--ink-muted) 10%, transparent);
+.sidebar-website-secondary-button:hover:not(:disabled) {
+  background: var(--control-hover-bg);
   color: var(--ink);
 }
 
-.sidebar-website-primary-button:hover {
-  background: #0958d9;
+.sidebar-website-primary-button:hover:not(:disabled) {
+  background: var(--control-primary-hover);
 }
 
 .sidebar-website-secondary-button:disabled,
 .sidebar-website-primary-button:disabled,
 .sidebar-website-dialog-close:disabled {
   cursor: default;
-  opacity: 0.65;
+  opacity: var(--control-disabled-opacity);
 }
 
 .assistant-worker-chat-row {
@@ -2410,13 +2410,13 @@ div.sidebar-chats-group-popover {
 }
 
 .assistant-worker-chat-item:hover {
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
 }
 
 .assistant-worker-chat-item.is-active {
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
   font-weight: 500;
@@ -2569,7 +2569,7 @@ div.sidebar-chats-group-popover {
   height: 24px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
@@ -2648,7 +2648,7 @@ div.sidebar-chats-group-popover {
 .sidebar-agent-dialog {
   width: min(360px, 100%);
   padding: 16px;
-  border-radius: 12px;
+  border-radius: var(--control-radius-lg);
   background: var(--desktop-ui-card);
   box-shadow: var(--panel-shadow);
 }
@@ -2672,7 +2672,7 @@ div.sidebar-chats-group-popover {
   padding: 0;
   overflow: hidden;
   border: 1px solid color-mix(in srgb, var(--desktop-ui-border) 86%, transparent);
-  border-radius: 12px;
+  border-radius: var(--control-radius-lg);
   background: var(--desktop-overlay-panel-bg);
   box-shadow:
     0 24px 64px rgba(0, 0, 0, 0.28),
@@ -2729,7 +2729,7 @@ div.sidebar-chats-group-popover {
   margin: 10px 16px 0;
   padding: 8px 10px;
   border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--desktop-ui-border));
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--danger) 7%, transparent);
   color: var(--danger);
 }
@@ -2846,7 +2846,7 @@ div.sidebar-chats-group-popover {
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
@@ -3062,7 +3062,7 @@ div.sidebar-chats-group-popover {
   width: 152px;
   height: 40px;
   padding: 0 18px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   cursor: pointer;
   font: inherit;
   font-size: 13px;
@@ -3076,7 +3076,7 @@ div.sidebar-chats-group-popover {
 .sidebar-chat-share-once-warning {
   margin: 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--danger) 8%, transparent);
   color: var(--danger);
   font-size: 12px;
@@ -3117,7 +3117,7 @@ div.sidebar-chats-group-popover {
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 12px;
+  border-radius: var(--control-radius-lg);
   background: var(--desktop-ui-card);
 }
 
@@ -3134,7 +3134,7 @@ div.sidebar-chats-group-popover {
   grid-template-columns: minmax(0, 1fr) 84px;
   overflow: hidden;
   border: 1px solid var(--desktop-ui-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface);
 }
 
@@ -3196,7 +3196,7 @@ div.sidebar-chats-group-popover {
   min-width: 0;
   height: 40px;
   padding: 0 10px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   cursor: pointer;
   font: inherit;
   font-size: 12px;
@@ -3262,7 +3262,7 @@ div.sidebar-chats-group-popover {
 
 .sidebar-chat-share-notice {
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--accent) 10%, transparent);
   color: var(--ink);
   font-size: 12px;
@@ -3313,7 +3313,7 @@ div.sidebar-chats-group-popover {
   width: 24px;
   height: 24px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: var(--ink-muted);
   cursor: pointer;
@@ -3338,7 +3338,7 @@ div.sidebar-chats-group-popover {
   min-height: 36px;
   padding: 0 10px;
   border: 1px solid var(--desktop-ui-border);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface);
   color: var(--ink);
   outline: none;
@@ -3376,7 +3376,7 @@ div.sidebar-chats-group-popover {
 .sidebar-agent-dialog-actions button {
   min-height: 32px;
   padding: 0 14px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   cursor: pointer;
 }
 
@@ -3389,7 +3389,7 @@ div.sidebar-chats-group-popover {
 .sidebar-agent-primary-button,
 .sidebar-agent-danger-button {
   border: 0;
-  color: #fff;
+  color: var(--accent-on);
 }
 
 .sidebar-agent-primary-button {
@@ -3466,7 +3466,7 @@ div.sidebar-chats-group-popover {
 :root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:hover:not(.sidebar-link-active),
 :root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger:focus:not(.sidebar-link-active),
 :root[data-theme="dark"] .sidebar-link.sidebar-tool-menu-trigger.is-open:not(.sidebar-link-active) {
-  background: transparent;
+  background: var(--nav-selected-bg);
   border: 0;
   border-radius: 0;
   box-shadow: none;
@@ -3562,7 +3562,7 @@ div.sidebar-chats-group-popover {
   margin: 0;
   padding: 2px 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--ink-soft);
   font: inherit;
@@ -3684,7 +3684,7 @@ div.sidebar-chats-group-popover {
   margin-left: auto;
   padding: 0 8px;
   border: 0;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: transparent;
   color: var(--ink-muted);
   font: inherit;
@@ -3742,7 +3742,7 @@ div.sidebar-chats-group-popover {
   flex: 0 0 16px;
   width: 16px;
   height: 16px;
-  color: var(--ink-muted);
+  color: var(--control-icon-color);
 }
 
 .sidebar-account-menu-icon svg {
@@ -3752,22 +3752,22 @@ div.sidebar-chats-group-popover {
 }
 
 .sidebar-account-menu .sidebar-tool-menu-item .sidebar-link-icon {
-  color: #94a3b8;
+  color: var(--control-icon-color);
 }
 
 .sidebar-account-menu .sidebar-tool-menu-item:hover .sidebar-link-icon,
 .sidebar-account-menu .sidebar-tool-menu-item:focus-visible .sidebar-link-icon {
-  color: #64748b;
+  color: var(--control-icon-hover-color);
 }
 
 .sidebar-account-menu .sidebar-tool-menu-item.sidebar-link-active .sidebar-link-icon {
-  color: #1e293b;
+  color: var(--nav-selected-text);
 }
 
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item:hover .sidebar-link-icon,
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item:focus-visible .sidebar-link-icon,
 :root[data-theme="dark"] .sidebar-account-menu .sidebar-tool-menu-item.sidebar-link-active .sidebar-link-icon {
-  color: var(--sidebar-operation-menu-text-muted);
+  color: var(--control-icon-hover-color);
 }
 
 :root[data-theme="dark"] .sidebar-group-heading {
@@ -3776,8 +3776,8 @@ div.sidebar-chats-group-popover {
 
 :root[data-theme="dark"] .sidebar-group-heading:hover {
   color: var(--ink);
-  background: rgba(255, 255, 255, 0.07);
-  border-color: rgba(255, 255, 255, 0.07);
+  background: var(--control-hover-bg);
+  border-color: var(--control-border);
 }
 
 :root[data-theme="dark"] .sidebar-group-heading.is-active {
@@ -3834,13 +3834,13 @@ div.sidebar-chats-group-popover {
 }
 
 :root[data-theme="dark"] .assistant-worker-chat-item:hover {
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
 }
 
 :root[data-theme="dark"] .assistant-worker-chat-item.is-active {
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   color: var(--ink);
   font-weight: 500;
@@ -3934,7 +3934,7 @@ div.sidebar-chats-group-popover {
 
 :root[data-theme="dark"] .sidebar-tool-menu {
   background: rgba(31, 35, 42, 0.94);
-  border-color: rgba(255, 255, 255, 0.08);
+  border-color: var(--control-border);
   box-shadow:
     0 20px 42px rgba(0, 0, 0, 0.32),
     inset 0 1px 0 rgba(255, 255, 255, 0.06);
@@ -4004,22 +4004,22 @@ div.sidebar-chats-group-popover {
   width: 24px;
   height: 24px;
   justify-self: center;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   border-color: transparent;
-  color: #94a3b8;
+  color: var(--control-icon-color);
 }
 
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:hover,
 .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:focus-visible {
-  background: rgba(148, 163, 184, 0.18);
-  border-color: rgba(148, 163, 184, 0.16);
-  color: #64748b;
+  background: var(--control-hover-bg);
+  border-color: var(--control-border);
+  color: var(--control-icon-hover-color);
 }
 
 :root[data-theme="dark"] .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:hover,
 :root[data-theme="dark"] .app-shell.is-mac-platform .app-sidebar.is-collapsed .sidebar-top-actions .app-sidebar-collapse-button:focus-visible {
-  color: #cbd5e1;
+  color: var(--control-icon-hover-color);
 }
 
 .app-sidebar.is-collapsed .sidebar-top-actions .sidebar-assistant-top-button {
@@ -4057,7 +4057,7 @@ div.sidebar-chats-group-popover {
   justify-content: center;
   margin: 0 auto;
   gap: 4px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
 }
 
 .app-sidebar.is-collapsed .sidebar-nav .sidebar-link-icon {
@@ -4106,7 +4106,7 @@ div.sidebar-chats-group-popover {
   padding: 0;
   justify-content: center;
   margin: 0 auto;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
 }
 
 .app-sidebar.is-collapsed .sidebar-nav-group {
@@ -4122,7 +4122,7 @@ div.sidebar-chats-group-popover {
   justify-content: center;
   margin: 0 auto;
   gap: 4px;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
 }
 
 .app-sidebar.is-collapsed .sidebar-group-trigger .sidebar-link-icon {
@@ -4180,10 +4180,10 @@ div.sidebar-chats-group-popover {
 
 .app-sidebar .sidebar-primary-link.sidebar-link-active,
 .app-sidebar .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active {
-  border-radius: 6px;
-  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  border-radius: var(--control-radius-sm);
+  background: var(--nav-selected-bg);
   border-color: transparent;
-  color: var(--ink);
+  color: var(--nav-selected-text);
   font-weight: 500;
 }
 
@@ -4196,9 +4196,9 @@ div.sidebar-chats-group-popover {
 
 :root[data-theme="dark"] .app-sidebar .sidebar-primary-link.sidebar-link-active,
 :root[data-theme="dark"] .app-sidebar .sidebar-link.sidebar-tool-menu-trigger.sidebar-link-active {
-  background: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  background: var(--nav-selected-bg);
   border-color: transparent;
-  color: var(--ink);
+  color: var(--nav-selected-text);
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle {
@@ -4215,7 +4215,7 @@ div.sidebar-chats-group-popover {
   border: 0;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.56);
-  color: rgba(71, 85, 105, 0.94);
+  color: var(--control-icon-color);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.44),
     0 12px 28px rgba(148, 163, 184, 0.16);
@@ -4255,7 +4255,7 @@ div.sidebar-chats-group-popover {
 }
 
 .app-shell.is-mac-overlay-sidebar.has-right-corner-toggle .app-sidebar-toggle:hover {
-  background: rgba(255, 255, 255, 0.62);
+  background: var(--control-hover-bg);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.5),
     0 10px 22px rgba(148, 163, 184, 0.16);
@@ -4263,14 +4263,14 @@ div.sidebar-chats-group-popover {
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle:hover {
   transform: translateY(-1px);
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--control-hover-bg);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.56),
     0 14px 30px rgba(148, 163, 184, 0.2);
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle.is-active {
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--nav-selected-bg);
 }
 
 .app-shell.is-mac-overlay-sidebar .app-sidebar-toggle svg {
@@ -4350,7 +4350,7 @@ div.sidebar-chats-group-popover {
   padding: 0;
   border: 1px solid transparent;
   background: transparent;
-  color: rgba(71, 85, 105, 0.84);
+  color: var(--control-icon-color);
   cursor: pointer;
   appearance: none;
   touch-action: manipulation;
@@ -4366,7 +4366,7 @@ div.sidebar-chats-group-popover {
 }
 
 .app-sidebar-collapse-button:hover {
-  color: #1f2937;
+  color: var(--control-icon-hover-color);
 }
 
 .app-sidebar-collapse-button:focus-visible {
@@ -4376,28 +4376,28 @@ div.sidebar-chats-group-popover {
 .app-sidebar-collapse-button.is-compact {
   width: 24px;
   height: 24px;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
 }
 
 .app-sidebar-collapse-button.is-compact:hover,
 .app-sidebar-collapse-button.is-compact:focus-visible {
-  background: rgba(136, 151, 172, 0.1);
+  background: var(--control-hover-bg);
   border-color: transparent;
 }
 
 .app-sidebar-collapse-button.is-nav {
   width: var(--sidebar-collapse-toggle-nav-width, 48px);
   min-height: var(--sidebar-collapse-toggle-nav-height, 32px);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: rgba(148, 163, 184, 0.16);
-  border-color: rgba(148, 163, 184, 0.18);
+  border-color: var(--control-border);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.24);
 }
 
 .app-sidebar-collapse-button.is-nav:hover,
 .app-sidebar-collapse-button.is-nav:focus-visible {
-  background: rgba(148, 163, 184, 0.22);
-  border-color: rgba(148, 163, 184, 0.24);
+  background: var(--control-hover-bg);
+  border-color: var(--control-border);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.28),
     0 0 0 3px rgba(148, 163, 184, 0.1);
@@ -4409,11 +4409,11 @@ div.sidebar-chats-group-popover {
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button {
-  color: rgba(203, 213, 225, 0.8);
+  color: var(--control-icon-color);
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button:hover {
-  color: var(--ink);
+  color: var(--control-icon-hover-color);
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-compact {
@@ -4424,21 +4424,21 @@ div.sidebar-chats-group-popover {
 
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-compact:hover,
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-compact:focus-visible {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--control-hover-bg);
   border-color: transparent;
   box-shadow: none;
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-nav {
   background: rgba(255, 255, 255, 0.05);
-  border-color: rgba(255, 255, 255, 0.04);
+  border-color: var(--control-border);
   box-shadow: none;
 }
 
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-nav:hover,
 :root[data-theme="dark"] .app-sidebar-collapse-button.is-nav:focus-visible {
-  background: rgba(255, 255, 255, 0.1);
-  border-color: rgba(255, 255, 255, 0.08);
+  background: var(--control-hover-bg);
+  border-color: var(--control-border);
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
 }
 
@@ -5501,7 +5501,7 @@ div.sidebar-chats-group-popover {
   gap: 8px;
   padding: 0 10px;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--control-select-bg);
   color: var(--ink-muted);
   box-shadow: none;
