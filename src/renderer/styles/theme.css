@@ -65,9 +65,9 @@
   --control-primary-active: var(--accent-strong);
   --control-primary-shadow: 0 2px 0 var(--accent-fill-subtle);
   --control-popover-bg: var(--sidebar-operation-menu-bg);
-  --control-tab-strip-bg: #dee6ee;
-  --control-tab-active-bg: var(--embedded-surface-frame-bg);
-  --control-tab-hover-bg: rgba(255, 255, 255, 0.6);
+  --control-tab-strip-bg: #FFFFFF;
+  --control-tab-active-bg: #EEEEEE;
+  --control-tab-hover-bg: #F5F5F5;
   --nav-hover-bg: var(--control-hover-bg);
   --nav-selected-bg: color-mix(in srgb, var(--ink-muted) 14%, transparent);
   --nav-selected-text: var(--ink);
@@ -154,8 +154,9 @@
   --control-hover-bg: rgba(255, 255, 255, 0.08);
   --control-active-bg: rgba(255, 255, 255, 0.12);
   --control-disabled-bg: rgba(255, 255, 255, 0.04);
-  --control-tab-strip-bg: #2b3138;
-  --control-tab-hover-bg: rgba(255, 255, 255, 0.12);
+  --control-tab-strip-bg: #181818;
+  --control-tab-active-bg: #303030;
+  --control-tab-hover-bg: #242424;
   --success: #27C346;
   --warning: #FF9A2E;
   --danger: #F76560;

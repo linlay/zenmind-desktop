@@ -980,6 +980,10 @@
   right: 14px;
 }
 
+.app-shell.is-mac-platform.has-chat-work-panel .main-chat-work-panel-toggle {
+  top: 10px;
+}
+
 .app-shell.is-windows-platform .main-chat-work-panel-toggle {
   top: calc(var(--windows-titlebar-overlay-height) + 10px);
   right: 14px;
@@ -1044,12 +1048,12 @@
 .chat-work-panel {
   --chat-work-panel-top-inset: 0px;
   --chat-work-panel-tab-height: 32px;
-  --chat-work-panel-tabs-top-padding: 8px;
-  --chat-work-panel-tabs-height: calc(var(--chat-work-panel-tab-height) + var(--chat-work-panel-tabs-top-padding));
+  --chat-work-panel-tabs-top-padding: 6px;
+  --chat-work-panel-tabs-bottom-padding: 6px;
+  --chat-work-panel-tabs-height: calc(var(--chat-work-panel-tab-height) + var(--chat-work-panel-tabs-top-padding) + var(--chat-work-panel-tabs-bottom-padding));
   --work-panel-tab-strip: var(--control-tab-strip-bg);
   --work-panel-tab-active: var(--control-tab-active-bg);
   --work-panel-tab-hover: var(--control-tab-hover-bg);
-  --work-panel-tab-separator: var(--control-border);
   --work-panel-tab-ink: var(--ink);
   --work-panel-tab-muted: var(--ink-soft);
   --work-panel-tab-focus: var(--accent);
@@ -2844,10 +2848,10 @@
   right: 0;
   left: 0;
   display: flex;
-  align-items: flex-end;
-  gap: 0;
+  align-items: center;
+  gap: 4px;
   height: var(--chat-work-panel-tabs-height);
-  padding: var(--chat-work-panel-tabs-top-padding) 8px 0;
+  padding: var(--chat-work-panel-tabs-top-padding) 8px var(--chat-work-panel-tabs-bottom-padding);
   overflow-x: auto;
   overflow-y: hidden;
   overscroll-behavior-x: contain;
@@ -2875,7 +2879,7 @@
   max-width: 240px;
   height: var(--chat-work-panel-tab-height);
   border: 0;
-  border-radius: 10px 10px 0 0;
+  border-radius: 10px;
   background: transparent;
   color: var(--work-panel-tab-muted);
   overflow: visible;
@@ -2890,7 +2894,6 @@
   flex: 0 0 32px;
   width: 32px;
   height: var(--chat-work-panel-tab-height);
-  margin-left: 4px;
 }
 
 .chat-work-panel-add-button {
@@ -2902,7 +2905,7 @@
   padding: 0;
   border: 1px solid transparent;
   border-radius: calc(var(--control-radius) + 2px);
-  background: var(--control-button-bg);
+  background: var(--work-panel-tab-hover);
   color: var(--work-panel-tab-ink);
   font-size: 17px;
   cursor: pointer;
@@ -3064,18 +3067,6 @@
   text-align: center;
 }
 
-:root[data-theme="dark"] .chat-work-panel-add-button {
-  background: rgba(255, 255, 255, 0.055);
-  color: rgba(241, 245, 249, 0.9);
-}
-
-:root[data-theme="dark"] .chat-work-panel-add-button:hover,
-:root[data-theme="dark"] .chat-work-panel-add-button.is-open,
-:root[data-theme="dark"] .chat-work-panel-add-button:focus-visible {
-  border-color: var(--control-border);
-  background: var(--control-hover-bg);
-}
-
 :root[data-theme="dark"] .chat-work-panel-add-menu {
   border-color: var(--sidebar-operation-menu-border);
   background: var(--sidebar-operation-menu-bg);
@@ -3164,37 +3155,6 @@
   z-index: 1;
   color: var(--work-panel-tab-ink);
   background: var(--work-panel-tab-active);
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.28) inset;
-}
-
-.chat-work-panel-tab.is-active::before,
-.chat-work-panel-tab.is-active::after {
-  content: "";
-  position: absolute;
-  bottom: 0;
-  width: 8px;
-  height: 8px;
-  pointer-events: none;
-}
-
-.chat-work-panel-tab.is-active::before {
-  left: -8px;
-  background: radial-gradient(circle at top left, transparent 0 7px, var(--work-panel-tab-active) 7.5px);
-}
-
-.chat-work-panel-tab.is-active::after {
-  right: -8px;
-  background: radial-gradient(circle at top right, transparent 0 7px, var(--work-panel-tab-active) 7.5px);
-}
-
-.chat-work-panel-tab:not(.is-active):not(:last-child)::after {
-  content: "";
-  position: absolute;
-  top: 10px;
-  right: 0;
-  width: 1px;
-  height: 18px;
-  background: var(--work-panel-tab-separator);
 }
 
 .chat-work-panel-tab-trigger {
@@ -3207,7 +3167,7 @@
   padding: 0 10px;
   overflow: hidden;
   border: 0;
-  border-radius: 10px 8px 0 0;
+  border-radius: inherit;
   background: transparent;
   color: inherit;
   text-align: left;
@@ -3669,10 +3629,6 @@
 
 :root[data-theme="dark"] .chat-work-panel {
   box-shadow: -10px 0 28px rgba(0, 0, 0, 0.18);
-}
-
-:root[data-theme="dark"] .chat-work-panel-tab.is-active {
-  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.04) inset;
 }
 
 :root[data-theme="dark"] .chat-work-panel-resizer-line {
