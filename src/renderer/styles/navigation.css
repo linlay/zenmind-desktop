@@ -1493,6 +1493,10 @@
   min-width: 0;
 }
 
+.sidebar-group-heading[data-sidebar-group-id="chats"] .sidebar-status-badges {
+  margin-left: 0;
+}
+
 .sidebar-group-heading .sidebar-link-icon {
   width: 16px;
   height: 16px;
