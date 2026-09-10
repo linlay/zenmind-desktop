@@ -105,7 +105,9 @@ export function createBrowserAppearanceController() {
       try { window.localStorage.setItem(SKIN_STORAGE_KEY, id); } catch { /* Profile remains authoritative. */ }
     },
     getDesktopSkin: () => window.electronAPI.settings.getDesktopSkin(),
-    setDesktopSkin: (id) => window.electronAPI.settings.setDesktopSkin(id),
+    setDesktopSkin: (id, options) => window.electronAPI.settings.setDesktopSkin(id, options),
+    importDesktopSkinPackage: () => callSkinPackageApi("importDesktopSkinPackage"),
+    removeDesktopSkinPackage: (id) => callSkinPackageApi("removeDesktopSkinPackage", id),
     importDesktopBackground: () => window.electronAPI.settings.importDesktopBackground(),
     resetDesktopBackground: () => window.electronAPI.settings.resetDesktopBackground(),
     systemUsesDarkColors: () => media.matches,
@@ -117,4 +119,22 @@ export function createBrowserAppearanceController() {
     setNativeThemeSource: (themeMode) => window.electronAPI.settings.setNativeThemeSource(themeMode),
     ...target
   });
+}
+
+export function skinPackageApiAvailable() {
+  return typeof window.electronAPI.settings.importDesktopSkinPackage === "function" &&
+    typeof window.electronAPI.settings.removeDesktopSkinPackage === "function";
+}
+
+// Renderer hot updates cannot install new preload methods or Main handlers in
+// an already-running Electron process. Report that boundary explicitly.
+async function callSkinPackageApi(method: "importDesktopSkinPackage" | "removeDesktopSkinPackage", id?: DesktopSkinId) {
+  if (!skinPackageApiAvailable()) throw new Error("runtimeOutdated");
+  try {
+    return method === "importDesktopSkinPackage" ? await window.electronAPI.settings.importDesktopSkinPackage()
+      : await window.electronAPI.settings.removeDesktopSkinPackage(id!);
+  } catch (error) {
+    if (error instanceof Error && /No handler registered/.test(error.message)) throw new Error("runtimeOutdated");
+    throw error;
+  }
 }

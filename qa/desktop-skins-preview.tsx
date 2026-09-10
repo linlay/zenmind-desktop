@@ -77,7 +77,7 @@ function SkinPreview() {
       <header className="skin-preview-toolbar">
         <div><strong>Desktop · 图片背景与皮肤</strong><span>预览选择不会保存到 Desktop</span></div>
         <div className="skin-preview-options">
-          <Segmented aria-label="皮肤" value={appearance.skin.id} onChange={(id) => void appearance.setSkinId(id).catch(() => undefined)} options={[{value:"default",label:"默认"},{value:"mist",label:"雾林"}]} />
+          <Segmented aria-label="皮肤" value={appearance.skin.id} onChange={(id) => void appearance.setSkinId(id).catch(() => undefined)} options={[{value:"default",label:"默认"},{value:"mist",label:"雾林"},{value:"ocean",label:"晴海"},{value:"violet",label:"暮紫"}]} />
           <Segmented aria-label="明暗" value={appearance.themeMode} onChange={(mode) => void appearance.setThemeMode(mode)} options={[{value:"light",label:"浅色"},{value:"dark",label:"深色"},{value:"system",label:"系统"}]} />
           <Segmented aria-label="平台布局" value={platform} onChange={setPlatform} options={[{value:"mac",label:"macOS"},{value:"windows",label:"Windows"}]} />
           <label className="skin-preview-guest-switch"><Switch checked={embedded} onChange={setEmbedded} size="small" /> 嵌入页面</label>
@@ -109,7 +109,7 @@ function SkinPreview() {
                 </button>
               ))}
             </div>
-            {!collapsed && <div className="skin-preview-sidebar-footer">{appearance.skin.id === "mist" ? "雾林 / MIST" : "默认 / DEFAULT"}<span>主窗口外观</span></div>}
+            {!collapsed && <div className="skin-preview-sidebar-footer">{appearance.skin.name ?? ({ mist: "雾林 / MIST", ocean: "晴海 / OCEAN", violet: "暮紫 / VIOLET" }[appearance.skin.id] ?? "默认 / DEFAULT")}<span>主窗口外观</span></div>}
           </aside>
         </div>
         <div className="app-content">

@@ -313,7 +313,7 @@ test("bundled skins preview immediately, persist independently and reject unknow
   assert.deepEqual(h.cache, cached);
   await h.controller.setSkinId("default");
   assert.equal(h.controller.getSnapshot().skin, DEFAULT_DESKTOP_SKIN);
-  assert.deepEqual(DESKTOP_SKINS.map((skin) => skin.id), ["default", "mist"]);
+  assert.deepEqual(DESKTOP_SKINS.map((skin) => skin.id), ["default", "mist", "ocean", "violet"]);
 });
 
 test("skin selection survives a late canonical read and an in-flight theme rollback", async (t) => {

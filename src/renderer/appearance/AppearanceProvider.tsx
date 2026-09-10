@@ -1,5 +1,5 @@
 import { createContext, useContext, useLayoutEffect, useState, useSyncExternalStore, type ReactNode } from "react";
-import { createBrowserAppearanceController } from "./browser";
+import { createBrowserAppearanceController, skinPackageApiAvailable } from "./browser";
 import { ConfigProvider, type ThemeConfig } from "antd";
 import { readDocumentAntAppearanceTheme } from "./antdTheme";
 
@@ -31,6 +31,9 @@ export function useAppearance() {
     getAppearanceSnapshot: controller.getSnapshot,
     setThemeMode: controller.setThemeMode,
     setSkinId: controller.setSkinId,
+    skinPackagesAvailable: snapshot.skinSettings.packageApiVersion === 1 && skinPackageApiAvailable() && typeof controller.importSkinPackage === "function",
+    importSkinPackage: () => typeof controller.importSkinPackage === "function" ? controller.importSkinPackage() : Promise.reject(new Error("runtimeOutdated")),
+    removeSkinPackage: (id: Parameters<typeof controller.removeSkinPackage>[0]) => typeof controller.removeSkinPackage === "function" ? controller.removeSkinPackage(id) : Promise.reject(new Error("runtimeOutdated")),
     importBackground: controller.importBackground,
     resetBackground: controller.resetBackground,
     refreshAppearanceFromCanonical: controller.refreshFromCanonical

@@ -18,13 +18,16 @@ for (const preload of preloads) {
   if (!fs.existsSync(preload)) throw new Error("Build Main before running the appearance release check.");
 }
 const images = [];
+// Match every shipped wallpaper by its first sky stop, including both variants
+// of each color. This verifies the production bundle, not fixture-only assets.
+const wallpaperColors = ["D2E2D6", "142C28", "D2DAE2", "14202C", "DAD2E2", "20142C"];
 for (const name of fs.readdirSync(path.join(built, "renderer/assets")).filter((name) => name.endsWith(".js"))) {
   const source = fs.readFileSync(path.join(built, "renderer/assets", name), "utf8");
   for (const match of source.matchAll(/"(data:image\/svg\+xml,[^"]+)"/g)) {
-    if (match[1].includes("%23D2E2D6") || match[1].includes("%23142C28")) images.push(JSON.parse(`"${match[1]}"`));
+    if (wallpaperColors.some((color) => match[1].includes("%23" + color))) images.push(JSON.parse(`"${match[1]}"`));
   }
 }
-if (new Set(images).size !== 2) throw new Error("The renderer build must contain both bundled mist wallpapers.");
+if (new Set(images).size !== 6) throw new Error("The renderer build must contain light/dark wallpapers for all three colored skins.");
 const html = fs.readFileSync(path.join(built, "renderer/index.html"), "utf8");
 const csp = html.match(/<meta\s+http-equiv="Content-Security-Policy"[\s\S]*?>/i)?.[0];
 if (!csp) throw new Error("Production renderer CSP is missing.");

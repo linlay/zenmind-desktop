@@ -28,7 +28,7 @@ test("legacy and malformed profile skin fields normalize without rewriting or lo
   const file = path.join(h.configRoot, "profile.json");
   const raw = JSON.stringify({ appearance: { theme: "dark", locale: "en-US", skinId: "../../remote.css", background: { id: "../../secret", name: "x", width: 1, height: 1 } } });
   fs.writeFileSync(file, raw);
-  assert.deepEqual(h.store.read(), { skinId: "default", background: null, backgroundDataUrl: null });
+  assert.deepEqual(h.store.read(), { skinId: "default", background: null, backgroundDataUrl: null, packageApiVersion: 1 });
   assert.equal(fs.readFileSync(file, "utf8"), raw);
   h.store.setSkin("mist");
   const profile = readDesktopProfileFromRoot(h.configRoot);
@@ -36,6 +36,11 @@ test("legacy and malformed profile skin fields normalize without rewriting or lo
   assert.equal(profile.appearance.locale, "en-US");
   assert.throws(() => h.store.setSkin("unknown"), /Unknown/);
   assert.equal(h.store.read().skinId, "mist");
+  for (const skinId of ["ocean", "violet"]) {
+    h.store.setSkin(skinId);
+    assert.equal(createDesktopSkinStore(h.options).read().skinId, skinId);
+    assert.equal(readDesktopProfileFromRoot(h.configRoot).appearance.theme, "dark");
+  }
 });
 
 test("imported background survives source removal and restart; other profile saves retain skin fields", (t) => {

@@ -56,7 +56,7 @@ module.exports = ({ repo, root, preloads, images }) => {
     await until('!!window.appearanceRelease && appearanceRelease.skinLoadState === "ready"');
     assert.deepEqual(failures, []);
     // Load exact URLs extracted from the production bundle under its CSP.
-    assert.deepEqual(await js(`Promise.all(${JSON.stringify(images)}.map(src=>new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve([i.naturalWidth,i.naturalHeight]);i.onerror=()=>reject(new Error('Built wallpaper failed'));i.src=src;})))`), [[1920,1200],[1920,1200]]);
+    assert.deepEqual(await js(`Promise.all(${JSON.stringify(images)}.map(src=>new Promise((resolve,reject)=>{const i=new Image();i.onload=()=>resolve([i.naturalWidth,i.naturalHeight]);i.onerror=()=>reject(new Error('Built wallpaper failed'));i.src=src;})))`), images.map(() => [1920,1200]));
     if (phase === 'write') {
       await js('appearanceRelease.setThemeMode("dark")');
       await settle();
@@ -96,7 +96,7 @@ module.exports = ({ repo, root, preloads, images }) => {
       await until('document.querySelector(".desktop-skin-status").textContent.includes("不可用")');
       await pictureReady();
       assert.equal(await js('document.querySelector(".desktop-background-image").src === appearanceRelease.skin.backgrounds.dark.imageUrl'), true);
-      await click('恢复皮肤背景'); await pictureReady();
+      await click('默认背景'); await pictureReady();
       await until('!!document.querySelector(".desktop-background-sample img")');
       // Replace the same image after reset, then verify disk-write rollback in
       // the production settings flow and leave it selected for process restart.

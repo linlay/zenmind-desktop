@@ -96,7 +96,7 @@ fs.writeFileSync(path.join(root, "index.html"), `<link rel="stylesheet" href="./
   .fixture-popover { padding: 14px; } #platform { margin-top: 55px; }
   #shell .app-sidebar { height: auto; min-height: 0; }
 </style><div id="root"></div><script src="./fixture.js"></script>`);
-fs.writeFileSync(path.join(root, "preload.cjs"), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('electronAPI',{settings:{getThemePreference:()=>ipcRenderer.invoke('theme.read'),setNativeThemeSource:(theme)=>ipcRenderer.invoke('theme.write',theme),getDesktopSkin:()=>ipcRenderer.invoke('settings.getDesktopSkin'),setDesktopSkin:(id)=>ipcRenderer.invoke('settings.setDesktopSkin',id),importDesktopBackground:()=>ipcRenderer.invoke('settings.importDesktopBackground'),resetDesktopBackground:()=>ipcRenderer.invoke('settings.resetDesktopBackground')}});`);
+fs.writeFileSync(path.join(root, "preload.cjs"), `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('electronAPI',{settings:{getThemePreference:()=>ipcRenderer.invoke('theme.read'),setNativeThemeSource:(theme)=>ipcRenderer.invoke('theme.write',theme),getDesktopSkin:()=>ipcRenderer.invoke('settings.getDesktopSkin'),setDesktopSkin:(id,options)=>ipcRenderer.invoke('settings.setDesktopSkin',options?{id,options}:id),importDesktopSkinPackage:()=>ipcRenderer.invoke('settings.importDesktopSkinPackage'),removeDesktopSkinPackage:(id)=>ipcRenderer.invoke('settings.removeDesktopSkinPackage',id),importDesktopBackground:()=>ipcRenderer.invoke('settings.importDesktopBackground'),resetDesktopBackground:()=>ipcRenderer.invoke('settings.resetDesktopBackground')}});`);
 fs.writeFileSync(path.join(root, "main.cjs"), `
 const {app,BrowserWindow,ipcMain,nativeTheme,nativeImage,dialog}=require('electron');
 const fs=require('node:fs'),path=require('node:path'),assert=require('node:assert/strict');
@@ -202,6 +202,7 @@ registerAppearanceIpcHandlers(ipcMain,{app:fixtureApp,platform:process.platform,
   failSave=false;
   await require(${JSON.stringify(path.join(repo, "qa/desktop-skins-checks.cjs"))})(win,path.join(__dirname,'preview'));
   await require(${JSON.stringify(path.join(repo, "qa/desktop-skin-settings-checks.cjs"))})(win,path.join(__dirname,'preview'),fixtureApp);
+  await require(${JSON.stringify(path.join(repo, "qa/desktop-skin-package-checks.cjs"))})(win,path.join(__dirname,'preview'));
   console.log(JSON.stringify({ok:true,defaultModes:true,nativeAndAntStates:true,portalTheme:true,platformCss:true,noRemount:true,systemTracking:true,rollback:true}));
   win.destroy();app.exit(0);
 })().catch(error=>{console.error(error.stack);app.exit(1);});

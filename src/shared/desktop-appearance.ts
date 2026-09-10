@@ -1,5 +1,13 @@
-export const DESKTOP_SKIN_IDS = ["default", "mist"] as const;
-export type DesktopSkinId = typeof DESKTOP_SKIN_IDS[number];
+import type { DesktopSkinDefinition } from "./desktop-skin-definition";
+
+export const DESKTOP_SKIN_IDS = ["default", "mist", "ocean", "violet"] as const;
+export type BuiltinDesktopSkinId = typeof DESKTOP_SKIN_IDS[number];
+export type InstalledDesktopSkinId = `pack:${string}`;
+export type DesktopSkinId = BuiltinDesktopSkinId | InstalledDesktopSkinId;
+export type DesktopSkinSelectionOptions = { keepBackground?: boolean };
+export type InstalledDesktopSkinSummary = {
+  id: InstalledDesktopSkinId; name: string; version: string; author?: string; previewDataUrl: string | null;
+};
 
 export type DesktopBackgroundAsset = Readonly<{
   id: string;
@@ -15,14 +23,27 @@ export type DesktopSkinSettings = Readonly<{
 
 // Image bytes are a bounded, runtime projection; never persisted in profile or
 // browser storage. Null with asset metadata means the saved file is unavailable.
-export type DesktopSkinView = DesktopSkinSettings & { backgroundDataUrl: string | null };
-export type DesktopSkinError = "invalidImage" | "imageTooLarge" | "storageFailed" | "unavailable";
+export type DesktopSkinView = DesktopSkinSettings & {
+  packageApiVersion?: 1;
+  backgroundDataUrl: string | null;
+  installedSkins?: readonly InstalledDesktopSkinSummary[];
+  installedSkin?: DesktopSkinDefinition | null;
+};
+export type DesktopSkinError = "invalidImage" | "imageTooLarge" | "storageFailed" | "unavailable" | "runtimeOutdated" | "invalidPackage" | "unsupportedPackageVersion" | "packageTooLarge" | "packageExists" | "tooManySkins";
 export type DesktopSkinResult =
-  | { ok: true; settings: DesktopSkinView; cancelled?: boolean }
+  | { ok: true; settings: DesktopSkinView; cancelled?: boolean; importedSkinId?: InstalledDesktopSkinId }
   | { ok: false; error: DesktopSkinError };
 
 export function isDesktopSkinId(value: unknown): value is DesktopSkinId {
-  return value === "default" || value === "mist";
+  return isBuiltinDesktopSkinId(value) || isInstalledDesktopSkinId(value);
+}
+
+export function isBuiltinDesktopSkinId(value: unknown): value is BuiltinDesktopSkinId {
+  return DESKTOP_SKIN_IDS.some((id) => id === value);
+}
+
+export function isInstalledDesktopSkinId(value: unknown): value is InstalledDesktopSkinId {
+  return typeof value === "string" && /^pack:[a-f0-9]{32}$/.test(value);
 }
 
 export function isDesktopBackgroundId(value: unknown): value is string {

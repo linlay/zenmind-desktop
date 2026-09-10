@@ -1,6 +1,8 @@
 import mistLight from "./assets/mist-light.svg";
 import mistDark from "./assets/mist-dark.svg";
 import { DEFAULT_DESKTOP_SKIN, type DesktopSkinDefinition, type DesktopSkinToken } from "./model";
+import { OCEAN_DESKTOP_SKIN } from "./oceanSkin";
+import { VIOLET_DESKTOP_SKIN } from "./violetSkin";
 
 type SkinTokens = Readonly<Partial<Record<DesktopSkinToken, string>>>;
 
@@ -82,9 +84,10 @@ const MIST_DESKTOP_SKIN: DesktopSkinDefinition = Object.freeze({
   })
 });
 
-// Only bundled definitions can be selected. User-imported assets will have a
-// separate Main-owned import/persistence boundary; never accept arbitrary CSS.
-export const DESKTOP_SKINS = Object.freeze([DEFAULT_DESKTOP_SKIN, MIST_DESKTOP_SKIN]);
+// Bundled definitions; imported packages use the separate Main-owned registry.
+export const DESKTOP_SKINS = Object.freeze([
+  DEFAULT_DESKTOP_SKIN, MIST_DESKTOP_SKIN, OCEAN_DESKTOP_SKIN, VIOLET_DESKTOP_SKIN
+]);
 
 export function findDesktopSkin(id: string): DesktopSkinDefinition | undefined {
   return DESKTOP_SKINS.find((skin) => skin.id === id);

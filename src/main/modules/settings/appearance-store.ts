@@ -5,36 +5,24 @@ import { readDesktopProfileFromRoot, updateDesktopProfileInRoot } from "../../in
 import { isDesktopSkinId, type DesktopSkinView } from "../../../shared/desktop-appearance";
 import { BackgroundImageError, inspectBackgroundImage, MAX_BACKGROUND_INPUT_BYTES, MAX_BACKGROUND_STORED_BYTES } from "./appearance-images";
 
+import { readBoundedFile } from "./appearance-files";
+import { createSkinPackageStore } from "./skin-package-store";
+import { isBuiltinDesktopSkinId, isInstalledDesktopSkinId, type DesktopSkinSelectionOptions } from "../../../shared/desktop-appearance";
+
 type Options = {
   configRoot: string;
   assetsRoot: string;
+  makePreview?: (data: Buffer) => Buffer;
   normalizeImage: (data: Buffer) => { data: Buffer; width: number; height: number };
 };
 
-function readBoundedFile(filePath: string, limit: number) {
-  if (!fs.lstatSync(filePath).isFile()) throw new BackgroundImageError("invalidImage");
-  const fd = fs.openSync(filePath, "r");
-  try {
-    const stat = fs.fstatSync(fd);
-    if (!stat.isFile()) throw new BackgroundImageError("invalidImage");
-    if (stat.size > limit) throw new BackgroundImageError("imageTooLarge");
-    const buffer = Buffer.alloc(stat.size + 1);
-    let read = 0;
-    while (read < buffer.length) {
-      const count = fs.readSync(fd, buffer, read, buffer.length - read, null);
-      if (!count) break;
-      read += count;
-    }
-    if (read > stat.size) throw new BackgroundImageError("imageTooLarge");
-    return buffer.subarray(0, read);
-  } finally { fs.closeSync(fd); }
-}
-
 export function createDesktopSkinStore(options: Options) {
+  const packages = createSkinPackageStore({ root: path.join(options.assetsRoot, "skins"), normalizeImage: options.normalizeImage, makePreview: options.makePreview });
   const profile = () => readDesktopProfileFromRoot(options.configRoot);
   const assetPath = (id: string) => path.join(options.assetsRoot, `${id}.png`);
   function read(): DesktopSkinView {
     const { skinId, background } = profile().appearance;
+    packages.recoverRemovals(skinId);
     let backgroundDataUrl: string | null = null;
     if (background) {
       try {
@@ -45,7 +33,10 @@ export function createDesktopSkinStore(options: Options) {
         }
       } catch { /* A missing/corrupt asset never prevents loading the skin. */ }
     }
-    return { skinId, background, backgroundDataUrl };
+    const installedSkins = packages.list();
+    return { skinId, background, backgroundDataUrl, packageApiVersion: 1,
+      ...(installedSkins.length || isInstalledDesktopSkinId(skinId) ? { installedSkins, installedSkin: packages.resolve(skinId) } : {})
+    };
   }
   function removeAsset(id: string | undefined) {
     if (!id) return;
@@ -53,9 +44,23 @@ export function createDesktopSkinStore(options: Options) {
   }
   return {
     read,
-    setSkin(id: unknown) {
-      if (!isDesktopSkinId(id)) throw new Error("Unknown desktop skin.");
-      updateDesktopProfileInRoot(options.configRoot, { appearance: { skinId: id } });
+    setSkin(id: unknown, selection: DesktopSkinSelectionOptions = {}) {
+      if (!isDesktopSkinId(id) || (!isBuiltinDesktopSkinId(id) && !packages.resolve(id))) throw new Error("Unknown desktop skin.");
+      const previous = profile().appearance.background;
+      const reset = isInstalledDesktopSkinId(id) && selection.keepBackground !== true;
+      updateDesktopProfileInRoot(options.configRoot, { appearance: { skinId: id, ...(reset ? { background: null } : {}) } });
+      if (reset) removeAsset(previous?.id);
+      return read();
+    },
+    async importPackage(filePath: string, assertOwner: () => void = () => {}) {
+      const importedSkinId = await packages.install(filePath, assertOwner);
+      return { settings: read(), importedSkinId };
+    },
+    removePackage(id: unknown) {
+      if (!isInstalledDesktopSkinId(id)) throw new Error("Unknown desktop skin.");
+      packages.remove(id, () => {
+        if (profile().appearance.skinId === id) updateDesktopProfileInRoot(options.configRoot, { appearance: { skinId: "default" } });
+      });
       return read();
     },
     importFile(filePath: string) {

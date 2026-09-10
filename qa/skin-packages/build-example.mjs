@@ -1,0 +1,12 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import JSZip from "jszip";
+const here = path.dirname(fileURLToPath(import.meta.url));
+const output = path.resolve(here, "../../build/qa/alpine-lake.skin.zip");
+const zip = new JSZip();
+zip.file("skin.json", fs.readFileSync(path.join(here, "alpine-lake/skin.json")));
+zip.file("assets/background.png", fs.readFileSync(path.join(here, "../assets/alpine-lake.png")));
+fs.mkdirSync(path.dirname(output), { recursive: true });
+fs.writeFileSync(output, await zip.generateAsync({ type: "nodebuffer", compression: "DEFLATE", compressionOptions: { level: 6 } }));
+console.log(output);

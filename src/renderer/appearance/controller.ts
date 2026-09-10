@@ -5,7 +5,7 @@ import {
   type ThemePreference
 } from "./model";
 import { findDesktopSkin } from "./skins";
-import { isDesktopSkinId, type DesktopSkinId, type DesktopSkinResult, type DesktopSkinView } from "../../shared/desktop-appearance";
+import { isDesktopSkinId, type DesktopSkinId, type DesktopSkinResult, type DesktopSkinView, type DesktopSkinSelectionOptions, type InstalledDesktopSkinId } from "../../shared/desktop-appearance";
 
 export type AppearanceEnvironment = {
   readCachedTheme: () => ThemePreference;
@@ -13,7 +13,9 @@ export type AppearanceEnvironment = {
   readCachedSkin: () => DesktopSkinId;
   cacheSkin: (id: DesktopSkinId) => void;
   getDesktopSkin: () => Promise<DesktopSkinResult>;
-  setDesktopSkin: (id: DesktopSkinId) => Promise<DesktopSkinResult>;
+  setDesktopSkin: (id: DesktopSkinId, options?: DesktopSkinSelectionOptions) => Promise<DesktopSkinResult>;
+  importDesktopSkinPackage: () => Promise<DesktopSkinResult>;
+  removeDesktopSkinPackage: (id: DesktopSkinId) => Promise<DesktopSkinResult>;
   importDesktopBackground: () => Promise<DesktopSkinResult>;
   resetDesktopBackground: () => Promise<DesktopSkinResult>;
   systemUsesDarkColors: () => boolean;
@@ -29,13 +31,17 @@ export type AppearanceEnvironment = {
 
 export function createAppearanceController(environment: AppearanceEnvironment) {
   let skinSettings: DesktopSkinView = { skinId: environment.readCachedSkin(), background: null, backgroundDataUrl: null };
+  function resolveSkin() {
+    return findDesktopSkin(skinSettings.skinId) ??
+      (skinSettings.installedSkin?.id === skinSettings.skinId ? skinSettings.installedSkin : undefined);
+  }
   let confirmedSkin = skinSettings;
   let skinLoadState: DesktopAppearanceSnapshot["skinLoadState"] = "loading";
   let skinSaving = false;
   let skinReadRevision = 0, skinWriteRevision = 0;
   let skinWrites: Promise<void> = Promise.resolve();
   let snapshot = createAppearanceSnapshot(
-    environment.readCachedTheme(), environment.systemUsesDarkColors(), findDesktopSkin(skinSettings.skinId),
+    environment.readCachedTheme(), environment.systemUsesDarkColors(), resolveSkin(),
     skinSettings, skinLoadState, skinSaving
   );
   let confirmedTheme = snapshot.themeMode;
@@ -47,7 +53,7 @@ export function createAppearanceController(environment: AppearanceEnvironment) {
   const listeners = new Set<() => void>();
 
   function publish(theme: ThemePreference = snapshot.themeMode) {
-    const next = createAppearanceSnapshot(theme, environment.systemUsesDarkColors(), findDesktopSkin(skinSettings.skinId), skinSettings, skinLoadState, skinSaving);
+    const next = createAppearanceSnapshot(theme, environment.systemUsesDarkColors(), resolveSkin(), skinSettings, skinLoadState, skinSaving);
     if (next.themeMode === snapshot.themeMode && next.resolvedTheme === snapshot.resolvedTheme &&
       next.skinSettings === snapshot.skinSettings && next.skinLoadState === snapshot.skinLoadState && next.skinSaving === snapshot.skinSaving) {
       return;
@@ -185,9 +191,20 @@ export function createAppearanceController(environment: AppearanceEnvironment) {
     }
   }
 
-  function setSkinId(id: string) {
-    if (!isDesktopSkinId(id)) throw new Error("Unknown bundled desktop skin.");
-    return saveSkin(() => environment.setDesktopSkin(id), id);
+  function setSkinId(id: string, options?: DesktopSkinSelectionOptions) {
+    if (!isDesktopSkinId(id) || (!findDesktopSkin(id) && !skinSettings.installedSkins?.some((skin) => skin.id === id))) throw new Error("Unknown desktop skin.");
+    // Installed definitions arrive only after Main confirms the selection.
+    return saveSkin(() => environment.setDesktopSkin(id, options), findDesktopSkin(id) ? id : undefined);
+  }
+
+  async function importSkinPackage() {
+    let importedSkinId: InstalledDesktopSkinId | undefined;
+    await saveSkin(async () => {
+      const result = await environment.importDesktopSkinPackage();
+      if (result.ok) importedSkinId = result.importedSkinId;
+      return result;
+    });
+    return importedSkinId;
   }
 
   async function refreshFromCanonical() {
@@ -223,6 +240,8 @@ export function createAppearanceController(environment: AppearanceEnvironment) {
     start,
     setThemeMode,
     setSkinId,
+    importSkinPackage,
+    removeSkinPackage: (id: DesktopSkinId) => saveSkin(() => environment.removeDesktopSkinPackage(id)),
     importBackground: () => saveSkin(environment.importDesktopBackground),
     resetBackground: () => saveSkin(environment.resetDesktopBackground),
     refreshFromCanonical

@@ -34,6 +34,35 @@ module.exports = async (win, output, fixtureApp) => {
   await until('skinPreview.api.skinLoadState === "ready" && !skinPreview.api.skinSaving');
   await click('默认');
   assert.equal(await js('skinPreview.api.skin.id'), 'default');
+  const cardRows = () => js('[...document.querySelectorAll(".desktop-skin-options[aria-labelledby] > button")].map(x=>Math.round(x.getBoundingClientRect().top))');
+  const rows = await cardRows();
+  assert.equal(rows.length, 4);
+  assert.equal(new Set(rows).size, 1, 'Four built-in skins fit on one desktop row');
+  for (const [id, label, accents] of [
+    ['ocean', '晴海', ['rgb(37, 101, 170)', 'rgb(139, 188, 237)']],
+    ['violet', '暮紫', ['rgb(121, 80, 169)', 'rgb(194, 162, 230)']]
+  ]) {
+    await click(label);
+    for (const [index, theme] of ['light', 'dark'].entries()) {
+      await js('skinPreview.api.setThemeMode(' + JSON.stringify(theme) + ')');
+      await until('skinPreview.api.resolvedTheme === ' + JSON.stringify(theme));
+      await readyImage();
+      assert.equal(await js('skinPreview.api.skin.id'), id);
+      assert.equal(await js('getComputedStyle(document.querySelector("[data-sample-skin=' + id + '] b")).backgroundColor'), accents[index]);
+      const swatches = await js('[...document.querySelectorAll("[data-sample-skin] b")].map(x=>getComputedStyle(x).backgroundColor)');
+      assert.equal(new Set(swatches).size, 4, 'Each card previews its own accent, regardless of the active skin');
+      await save('settings-' + id + '-' + theme);
+    }
+  }
+  // A compact container wraps to two columns without clipping the controls.
+  await js('document.querySelector(".desktop-skin-settings").style.width="360px"');
+  const narrowRows = await cardRows();
+  assert.equal(narrowRows[0], narrowRows[1]);
+  assert(narrowRows[2] > narrowRows[0]);
+  assert.equal(narrowRows[2], narrowRows[3]);
+  assert.equal(await js('(()=>{const x=document.querySelector(".desktop-skin-settings");return x.scrollWidth<=x.clientWidth})()'), true);
+  await save('settings-violet-narrow');
+  await js('document.querySelector(".desktop-skin-settings").style.removeProperty("width");skinPreview.api.setThemeMode("light")');
   await click('雾林');
   await readyImage();
   await save('settings-mist-light');
@@ -60,8 +89,14 @@ module.exports = async (win, output, fixtureApp) => {
     assert.equal(await js('skinPreview.api.skinSettings.background.width'), 3840);
     const assetId = await js('skinPreview.api.skinSettings.background.id');
     assert.equal(await js('skinPreview.api.background.imageUrl.startsWith("data:image/png;base64,")'), true);
+    assert.equal(await js('document.querySelector(".desktop-background-name").textContent'), '自定义图片');
+    assert.equal(await js('document.querySelector(".desktop-background-name").title'), 'picked-wallpaper.png');
     await save('settings-custom-background');
     // A new skin keeps the override; reset returns to the selected bundled skin.
+    for (const label of ['晴海', '暮紫']) {
+      await click(label);
+      assert.equal(await js('skinPreview.api.skinSettings.background.id'), assetId);
+    }
     await click('默认');
     assert.equal(await js('skinPreview.api.skinSettings.background.id'), assetId);
     await readyImage();
@@ -96,7 +131,7 @@ module.exports = async (win, output, fixtureApp) => {
     await until('document.querySelector(".desktop-skin-status").textContent.includes("不可用")');
     await readyImage();
     await save('settings-missing-background');
-    await click('恢复皮肤背景');
+    await click('默认背景');
     assert.equal(await js('skinPreview.api.skinSettings.background'), null);
     await click('默认');
     assert.equal(await js('document.documentElement.dataset.desktopBackground'), 'none');
@@ -108,6 +143,10 @@ module.exports = async (win, output, fixtureApp) => {
     await readyImage();
     assert.equal(await js('document.documentElement.dataset.desktopBackgroundSource'), 'custom');
     await click('雾林');
+    await js('skinPreview.api.setThemeMode("light")');
+    await save('settings-photo-light');
+    const panel = await js('(()=>{const r=document.querySelector(".desktop-skin-settings").getBoundingClientRect();return {x:Math.floor(r.x),y:Math.floor(r.y),width:Math.ceil(r.width),height:Math.ceil(r.height)}})()');
+    fs.writeFileSync(path.join(output, 'settings-photo-panel.png'), (await win.webContents.capturePage(panel)).toPNG());
     await js('skinPreview.setSelected("工作台")');
     for (const platform of ['mac', 'windows']) {
       await js('skinPreview.setPlatform(' + JSON.stringify(platform) + ')');
@@ -119,6 +158,6 @@ module.exports = async (win, output, fixtureApp) => {
     }
     await js('skinPreview.api.resetBackground()');
     assert.equal(await js('document.documentElement.dataset.desktopBackgroundSource'), 'skin');
-    console.log(JSON.stringify({ appearanceSettings: true, pngAndJpegImport: true, cancelAndInvalidImport: true, resizeBeforeStorage: true, persistedAcrossReload: true, missingAssetRecovery: true, guestPreservedDuringImport: true, photographicWallpaper: true }));
+    console.log(JSON.stringify({ appearanceSettings: true, fourSkinColumns: true, blueAndPurpleLightDark: true, compactBackgroundControls: true, pngAndJpegImport: true, cancelAndInvalidImport: true, resizeBeforeStorage: true, persistedAcrossReload: true, missingAssetRecovery: true, guestPreservedDuringImport: true, photographicWallpaper: true }));
   } finally { dialog.showOpenDialog = originalPicker; }
 };

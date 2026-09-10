@@ -119,3 +119,22 @@
 :root[data-desktop-background-source="custom"] .app-shell:not(.has-embedded-surface) > .app-content > .app-main {
   background: color-mix(in srgb, var(--bg-base) 58%, transparent);
 }
+
+/* Only a Main Chat document that consumes the dedicated appearance bridge may
+   opt into this path. Clear the owned host chain, never the guest's own CSS.
+   Keep Copilot, WorkPanel and other service reading surfaces independent. */
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface:has(.agent-webclient-host-background:not([hidden])) > .app-content,
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface:has(.agent-webclient-host-background:not([hidden])) > .app-content > .app-main,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform:has(.agent-webclient-host-background:not([hidden])) > .app-content,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform:has(.agent-webclient-host-background:not([hidden])) > .app-content > .app-main {
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+}
+
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .agent-webclient-host-background,
+:root[data-desktop-background="image"] .app-shell.is-mac-platform.is-mac-translucent-sidebar.has-embedded-surface.has-service-webview-surface .agent-webclient-host-background :is(.embedded-surface-frame-shell, .embedded-surface-frame),
+:root[data-desktop-background="image"] .app-shell.is-windows-platform .agent-webclient-host-background,
+:root[data-desktop-background="image"] .app-shell.is-windows-platform .agent-webclient-host-background :is(.embedded-surface-frame-shell, .embedded-surface-frame) {
+  background: transparent;
+}
