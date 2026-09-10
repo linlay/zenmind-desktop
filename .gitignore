@@ -4,6 +4,7 @@ package-lock.json
 
 # Build and generated outputs
 build/
+/output/
 dist/
 dist-electron/
 src/shared/generated/
