@@ -7,7 +7,7 @@ import {
   type AssistantConversationShareRevokeResult,
 } from "../../../shared/contracts";
 import { t } from "../../support/i18n/main-i18n";
-import type { ConversationHtmlRenderer } from "./export-contract";
+import type { ConversationSnapshotReader } from "./export-contract";
 import { resolveConversationShareTarget } from "./target";
 import {
   TunnelConversationShareError,
@@ -18,7 +18,7 @@ import {
 
 export async function createConversationShare(
   app: App,
-  documentRenderer: ConversationHtmlRenderer,
+  snapshotReader: ConversationSnapshotReader,
   shareCreator: ConversationShareCreator,
   request: AssistantConversationShareRequest,
 ): Promise<AssistantConversationShareCreateResult> {
@@ -37,17 +37,14 @@ export async function createConversationShare(
     return target;
   }
 
-  let rendered: Awaited<ReturnType<ConversationHtmlRenderer["renderChatHtml"]>>;
+  let snapshot: Awaited<ReturnType<ConversationSnapshotReader["readChatSnapshot"]>>;
   try {
-    rendered = await documentRenderer.renderChatHtml(
-      conversationId,
-      target.target.origin,
-    );
+    snapshot = await snapshotReader.readChatSnapshot(conversationId);
   } catch {
     return { ok: false, message: t("assistant.chatShareRequestFailed") };
   }
-  if (!rendered.ok) {
-    return { ok: false, message: rendered.message };
+  if (!snapshot.ok) {
+    return { ok: false, message: snapshot.message };
   }
 
   try {
@@ -55,7 +52,7 @@ export async function createConversationShare(
       target: target.target,
       conversationId,
       expiration: request.expiration,
-      html: rendered.bytes,
+      snapshot: snapshot.bytes,
     });
     return {
       ok: true,

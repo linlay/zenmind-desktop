@@ -7,14 +7,14 @@ import {
   isTunnelHubForbiddenHostname,
   isTunnelHubLoopbackHostname,
 } from "../tunnel";
-import { MAX_CONVERSATION_HTML_BYTES } from "./export-contract";
+import { MAX_CONVERSATION_SNAPSHOT_BYTES } from "./export-contract";
 import type { ConversationShareTarget } from "./target";
 
 const CONVERSATION_SHARES_PATH = "/api/desktop/shares";
-const CONVERSATION_DOCUMENT_VERSION_HEADER = "X-Conversation-Document-Version";
+const CONVERSATION_SNAPSHOT_VERSION_HEADER = "X-Conversation-Snapshot-Version";
 const CONVERSATION_SHARE_EXPIRATION_HEADER = "X-Conversation-Share-Expiration";
 const CONVERSATION_ID_HEADER = "X-Conversation-ID";
-const CONVERSATION_DOCUMENT_VERSION = "1";
+const CONVERSATION_SNAPSHOT_VERSION = "1";
 const CREATE_TIMEOUT_MS = 15_000;
 const READ_TIMEOUT_MS = 10_000;
 const MAX_JSON_RESPONSE_BYTES = 1024 * 1024;
@@ -44,7 +44,7 @@ export type ConversationShareCreateInput = {
   target: ConversationShareTarget;
   conversationId: string;
   expiration: AssistantConversationShareExpiration;
-  html: Buffer;
+  snapshot: Buffer;
 };
 
 export interface ConversationShareCreator {
@@ -72,11 +72,11 @@ export class TunnelConversationShareClient implements
     requireValidTarget(input.target);
     if (
       !isValidConversationId(input.conversationId) ||
-      input.html.byteLength === 0
+      input.snapshot.byteLength === 0
     ) {
       throw new TunnelConversationShareError("invalid_request");
     }
-    if (input.html.byteLength > MAX_CONVERSATION_HTML_BYTES) {
+    if (input.snapshot.byteLength > MAX_CONVERSATION_SNAPSHOT_BYTES) {
       throw new TunnelConversationShareError("invalid_request", 413);
     }
     const response = await this.request(
@@ -85,13 +85,13 @@ export class TunnelConversationShareClient implements
         method: "POST",
         headers: {
           ...authorizationHeaders(input.target),
-          "Content-Type": "text/html; charset=utf-8",
-          "Content-Length": String(input.html.byteLength),
-          [CONVERSATION_DOCUMENT_VERSION_HEADER]: CONVERSATION_DOCUMENT_VERSION,
+          "Content-Type": "application/json; charset=utf-8",
+          "Content-Length": String(input.snapshot.byteLength),
+          [CONVERSATION_SNAPSHOT_VERSION_HEADER]: CONVERSATION_SNAPSHOT_VERSION,
           [CONVERSATION_SHARE_EXPIRATION_HEADER]: input.expiration,
           [CONVERSATION_ID_HEADER]: input.conversationId,
         },
-        body: input.html as unknown as BodyInit,
+        body: input.snapshot as unknown as BodyInit,
       },
       CREATE_TIMEOUT_MS,
     );
