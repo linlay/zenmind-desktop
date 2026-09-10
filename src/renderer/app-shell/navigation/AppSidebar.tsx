@@ -1006,6 +1006,7 @@ type AppSidebarProps = {
   assistantLauncherDisabled?: boolean;
   assistantLauncherVisible?: boolean;
   marketEnabled?: boolean;
+  helpEnabled?: boolean;
   sidebarNavOrder: SidebarNavOrderItemKey[];
   websiteNavOrder?: SidebarNavOrderItemKey[];
   pinnedWebEntryKeys?: string[];
@@ -1089,6 +1090,7 @@ export function AppSidebar({
   assistantLauncherDisabled = false,
   assistantLauncherVisible = true,
   marketEnabled = true,
+  helpEnabled = false,
   sidebarNavOrder,
   websiteNavOrder = [],
   pinnedWebEntryKeys = [],
@@ -1354,7 +1356,7 @@ export function AppSidebar({
   const showBootstrapChatGuide =
     bootstrapActive && !bootstrapGuideDismissedBubbles.chat;
   const showBootstrapHelpGuide =
-    bootstrapActive && !bootstrapGuideDismissedBubbles.help;
+    helpEnabled && bootstrapActive && !bootstrapGuideDismissedBubbles.help;
   const showBootstrapGuideCard =
     bootstrapActive &&
     !bootstrapGuideCardDismissed &&
@@ -1582,7 +1584,7 @@ export function AppSidebar({
     .filter((row) => row.length > 0);
   const fixedToolItems = fixedToolRows.flat();
   const capabilityNavigationItems = CAPABILITY_NAVIGATION_ITEMS.filter(
-    (item) => item.id !== "market" || marketEnabled,
+    (item) => (item.id !== "market" || marketEnabled) && (item.id !== "help" || helpEnabled),
   ).map((item) => ({ ...item, label: t(item.labelKey) }));
   const settingsToolItem = fixedToolItems.find(
     (item) => item.to === "/settings",
@@ -2064,6 +2066,7 @@ export function AppSidebar({
   }
 
   function handleBootstrapGuideOpenHelp() {
+    if (!helpEnabled) return;
     dismissBootstrapGuideBubble("help");
     requestNavigate("/help");
     closeToolMenu();
@@ -5784,18 +5787,18 @@ export function AppSidebar({
             <span aria-hidden="true">2</span>
             {t("sidebar.bootstrapGuide.stepProfile")}
           </li>
-          <li>
+          {helpEnabled ? <li>
             <span aria-hidden="true">3</span>
             {t("sidebar.bootstrapGuide.stepHelp")}
-          </li>
+          </li> : null}
         </ol>
         <div className="sidebar-bootstrap-guide-actions">
           <button type="button" onClick={handleBootstrapGuideOpenChat}>
             {t("sidebar.bootstrapGuide.actionChat")}
           </button>
-          <button type="button" onClick={handleBootstrapGuideOpenHelp}>
+          {helpEnabled ? <button type="button" onClick={handleBootstrapGuideOpenHelp}>
             {t("sidebar.bootstrapGuide.actionHelp")}
-          </button>
+          </button> : null}
         </div>
       </section>
     );
@@ -5815,6 +5818,7 @@ export function AppSidebar({
     }
 
     if (
+      helpEnabled &&
       !bootstrapGuideDismissedBubbles.help &&
       isPrimaryMode &&
       toolMenuOpen
@@ -6095,10 +6099,10 @@ export function AppSidebar({
         ) : null}
         {topToolItems.map((item) => renderToolLink(item))}
         <div className="sidebar-account-menu-divider" aria-hidden="true" />
-        {renderToolLink(helpToolItem, {
+        {helpEnabled ? renderToolLink(helpToolItem, {
           anchorRef: bootstrapGuideToolHelpAnchorRef,
           bootstrapGuide: showBootstrapHelpGuide,
-        })}
+        }) : null}
         {settingsToolItem ? renderToolLink(settingsToolItem) : null}
       </div>
     );

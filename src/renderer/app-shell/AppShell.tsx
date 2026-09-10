@@ -665,6 +665,24 @@ export function AppShell() {
   );
   const [kanbanEnabled, setKanbanEnabled] = useState(true);
   const [kanbanSettingsLoaded, setKanbanSettingsLoaded] = useState(false);
+  const [helpEnabled, setHelpEnabled] = useState(false);
+  const [helpSettingsLoaded, setHelpSettingsLoaded] = useState(false);
+  useEffect(() => {
+    let requestId = 0;
+    const refresh = () => {
+      const currentRequest = ++requestId;
+      void window.electronAPI.help.getSettings().then((settings) => {
+        if (currentRequest === requestId) setHelpEnabled(Boolean(settings.url));
+      }).catch(() => {
+        if (currentRequest === requestId) setHelpEnabled(false);
+      }).finally(() => {
+        if (currentRequest === requestId) setHelpSettingsLoaded(true);
+      });
+    };
+    refresh();
+    const unsubscribe = window.electronAPI.onServicesChanged(refresh);
+    return () => { requestId += 1; unsubscribe(); };
+  }, []);
   const [marketEnabled, setMarketEnabled] = useState(false);
   const [marketSettingsLoaded, setMarketSettingsLoaded] = useState(false);
   const [debugSettingsUnlocked, setDebugSettingsUnlocked] = useState(false);
@@ -4505,7 +4523,7 @@ export function AppShell() {
                 ) : null}
               </nav>
             ) : null}
-            <WindowsApplicationMenu disabled={windowControlsMasked} />
+            <WindowsApplicationMenu disabled={windowControlsMasked} helpEnabled={helpEnabled} />
           </div>
           <div className="app-system-bar-window-controls" aria-hidden={windowControlsMasked}>
             <button
@@ -4561,6 +4579,7 @@ export function AppShell() {
           assistantLauncherDisabled={isAgentWebclientMainRoute}
           assistantLauncherVisible={assistantLauncherVisible}
           marketEnabled={marketEnabled}
+          helpEnabled={helpEnabled}
           sidebarNavOrder={normalizedSidebarNavOrder}
           websiteNavOrder={normalizedWebGroupOrder}
           pinnedWebEntryKeys={pinnedWebEntryKeys}
@@ -4784,7 +4803,11 @@ export function AppShell() {
                     : <Navigate to="/control-center" replace />
               }
             />
-            <Route path="/help" element={<RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>} />
+            <Route path="/help" element={
+              !helpSettingsLoaded ? null : helpEnabled
+                ? <RouteSuspense><HelpPage hostTheme={resolvedTheme} /></RouteSuspense>
+                : <Navigate to="/control-center" replace />
+            } />
           </Routes>
         </main>
         {activeChatWorkPanelVisible ? (

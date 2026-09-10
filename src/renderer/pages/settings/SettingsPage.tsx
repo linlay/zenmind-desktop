@@ -3282,6 +3282,7 @@ export function SettingsPage({
   }
 
   async function handleToggleEnterpriseIm() {
+    if (!enterpriseImSettings.baseUrl) return;
     const previousSettings = enterpriseImSettings;
     const nextSettings = {
       ...enterpriseImSettings,
@@ -4447,7 +4448,7 @@ export function SettingsPage({
                 onChange={() => void handleToggleDesktopActionConfirmation()}
               />
             </div>
-            <div className="settings-appearance-row">
+            {enterpriseImSettings.baseUrl ? <div className="settings-appearance-row">
               <div className="settings-appearance-row-copy">
                 <strong>{t("settings.general.enterpriseChat")}</strong>
                 <span>{t("settings.general.enterpriseChatDescription")}</span>
@@ -4458,7 +4459,7 @@ export function SettingsPage({
                 disabled={generalSettingsSaving}
                 onChange={() => void handleToggleEnterpriseIm()}
               />
-            </div>
+            </div> : null}
           </div>
         );
       }

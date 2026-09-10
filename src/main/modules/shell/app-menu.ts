@@ -11,6 +11,7 @@ export type BuildApplicationMenuOptions = {
   t: TranslateFunction;
   openSettings: () => void;
   openHelp: () => void;
+  helpEnabled?: boolean;
   requestCloseWindow: () => void;
   requestQuit: () => void;
   quitWithoutConfirmation: () => void;
@@ -40,6 +41,7 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
     const editRoles = ["undo", "redo", "cut", "copy", "paste", "selectAll"] as const;
     windowsMenus.set("file", Menu.buildFromTemplate([
       { label: options.t("menu.settings"), click: options.openSettings },
+      ...(!options.helpEnabled ? [{ role: "about" as const, label: options.t("menu.about", { appName: options.appName }) }] : []),
       { type: "separator" },
       { label: options.t("menu.closeWindow"), click: options.requestCloseWindow },
       { label: options.t("menu.quit", { appName: options.appName }), click: options.requestQuit }
@@ -57,7 +59,7 @@ export function buildApplicationMenu(options: BuildApplicationMenuOptions) {
       { type: "separator" },
       { role: "toggleDevTools", label: options.t("menu.devTools") }
     ]));
-    windowsMenus.set("help", Menu.buildFromTemplate([
+    if (options.helpEnabled) windowsMenus.set("help", Menu.buildFromTemplate([
       { label: options.t("nav.help"), click: options.openHelp },
       { role: "about", label: options.t("menu.about", { appName: options.appName }) }
     ]));

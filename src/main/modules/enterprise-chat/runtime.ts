@@ -95,7 +95,7 @@ export class EnterpriseChatRuntime {
     this.createSupportArtifact = options.createSupportArtifact;
     this.executeDesktopAction = options.executeDesktopAction;
     this.onStateChanged = options.onStateChanged;
-    const initialEnabled = options.initialEnabled ?? false;
+    const initialEnabled = options.initialEnabled === true && Boolean(this.serverUrl);
     this.snapshot = {
       enabled: initialEnabled,
       connectionState: initialEnabled ? "signed_out" : "disabled",

@@ -1,3 +1,4 @@
+import { readHelpSettings } from "../modules/settings";
 import {
   app,
   nativeImage,
@@ -147,6 +148,7 @@ return createAssistantIntegrationPorts({
     stopDesktopWsServer,
     createDesktopActionOptions: (context, dependencies) => createDesktopActionOptions(context, {
         ...dependencies,
+        getHelpUrl: () => readHelpSettings(context.app, context.platform).url,
         issueAgentAccessToken: factoryContext.issueAgentAccessToken,
         getAssistantSettings,
         createContainerHubClient: (config) => new ContainerHubClient(config),

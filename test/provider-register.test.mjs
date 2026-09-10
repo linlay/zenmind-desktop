@@ -52,6 +52,18 @@ function fixture(t, platform = "darwin") {
 }
 
 for (const platform of ["darwin", "win32"]) {
+  test(`${platform}: missing registration skips offline without changing provider configuration`, async (t) => {
+    const f = fixture(t, platform);
+    fs.unlinkSync(f.registerPath);
+    const providerContent = fs.readFileSync(f.providerPath, "utf8");
+    electronNet.fetch = () => assert.fail("missing registration must not access the network");
+    assert.deepEqual(await f.run({
+      getDesktopDeviceId: () => assert.fail("missing registration must not request a device identity")
+    }), { status: "skipped", reason: "missing" });
+    assert.equal(fs.readFileSync(f.providerPath, "utf8"), providerContent);
+    assert.equal(fs.existsSync(f.registerPath), false);
+  });
+
   test(`${platform}: registration uses Electron networking with only the grant credential`, async (t) => {
     const f = fixture(t, platform);
     let calls = 0;

@@ -38,7 +38,6 @@ import {
   type EnterpriseChatActionLedgerEntry
 } from "./action-ledger";
 import {
-  DEFAULT_ENTERPRISE_IM_BASE_URL,
   normalizeEnterpriseImBaseUrl
 } from "./settings";
 import { t } from "../../support/i18n/main-i18n";
@@ -408,7 +407,8 @@ export function normalizeMessages(value: unknown) {
 }
 
 export function normalizeServerUrl(value: string | undefined) {
-  const normalized = normalizeEnterpriseImBaseUrl(readText(value) || DEFAULT_ENTERPRISE_IM_BASE_URL);
+  if (!readText(value)) return "";
+  const normalized = normalizeEnterpriseImBaseUrl(readText(value));
   if (!normalized) {
     throw new Error("IM server base URL must use loopback HTTP or remote HTTPS.");
   }
