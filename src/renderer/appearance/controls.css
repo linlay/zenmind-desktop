@@ -1,0 +1,69 @@
+/* Main-window interaction roles. Geometry and platform drag regions stay in
+   their owning components; guest documents do not inherit this stylesheet. */
+:root[data-desktop-skin] :is(
+  .sidebar-history-button,
+  .sidebar-assistant-top-button,
+  .sidebar-link,
+  .sidebar-website-dialog-close,
+  .sidebar-website-secondary-button,
+  .sidebar-website-primary-button,
+  .app-sidebar-collapse-button,
+  .app-system-bar-action,
+  .main-chat-work-panel-toggle,
+  .chat-work-panel-tab,
+  .chat-work-panel-add-button,
+  .desktop-action-confirmation-button,
+  .settings-control-primary-button
+):focus-visible {
+  outline: 2px solid var(--control-focus-outline);
+  outline-offset: 2px;
+}
+
+:root[data-desktop-skin] :is(
+  .sidebar-website-primary-button,
+  .desktop-action-confirmation-button.is-primary,
+  .settings-control-primary-button
+) {
+  background: var(--control-primary-bg);
+  color: var(--accent-on);
+}
+
+:root[data-desktop-skin] :is(
+  .sidebar-website-primary-button,
+  .desktop-action-confirmation-button.is-primary,
+  .settings-control-primary-button
+):hover:not(:disabled) {
+  background: var(--control-primary-hover);
+}
+
+:root[data-desktop-skin] :is(
+  .sidebar-website-primary-button,
+  .desktop-action-confirmation-button.is-primary,
+  .settings-control-primary-button
+):active:not(:disabled) {
+  background: var(--control-primary-active);
+}
+
+:root[data-desktop-skin] :is(
+  .sidebar-history-button,
+  .sidebar-website-secondary-button,
+  .app-sidebar-collapse-button,
+  .app-system-bar-action,
+  .main-chat-work-panel-toggle,
+  .chat-work-panel-add-button
+):active:not(:disabled) {
+  background: var(--control-active-bg);
+}
+
+:root[data-desktop-skin] :is(
+  .sidebar-website-secondary-button,
+  .sidebar-website-primary-button,
+  .desktop-action-confirmation-button,
+  .settings-control-primary-button
+):disabled {
+  background: var(--control-disabled-bg);
+  color: var(--ink-muted);
+  border-color: var(--control-border);
+  opacity: var(--control-disabled-opacity);
+  cursor: not-allowed;
+}

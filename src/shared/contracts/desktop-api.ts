@@ -1,4 +1,5 @@
 import type { DesktopActionCallRequest, DesktopActionCallResponse, DesktopActionDefinition } from "../desktop-actions";
+import type { DesktopSkinId, DesktopSkinResult, DesktopSkinSelectionOptions } from "../desktop-appearance";
 import type { DesktopLogTarget, ServiceId, ServiceState, ServiceCommandResult, ServiceConfigReadResult, ServiceImportResult, ServiceLogsMeta, ServiceLogReadOptions, ServiceLogReadResult, ServiceLogStreamListener, ServiceLogStreamOptions, ServiceLogTarget, ServiceOpenLogViewerRequest, ServiceRevealPathOptions, ServiceRevealPathResult, TunnelHubSettings, TunnelHubSettingsInput, TunnelHubSettingsResult, TunnelHubRuntimeCommandResult, TunnelHubRuntimeStatus, PluginSettingsReadResult, PluginSettingsValues, PluginSettingsWriteResult, PluginSettingsPageResult } from "./services";
 import type { PluginInstallResult } from "./manifest";
 import type { MarketSkillContentResult } from "./market-skill-detail";
@@ -1141,8 +1142,14 @@ export interface DesktopApi {
     saveTunnelHubSettings: (input: TunnelHubSettingsInput) => Promise<TunnelHubSettingsResult>;
     resetRuntimeEnv: () => Promise<DesktopRuntimeEnvResetResult>;
     getThemePreference: () => Promise<"light" | "dark" | "system">;
-    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
-    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    getDesktopSkin: () => Promise<DesktopSkinResult>;
+    setDesktopSkin: (skinId: DesktopSkinId, options?: DesktopSkinSelectionOptions) => Promise<DesktopSkinResult>;
+    importDesktopSkinPackage: () => Promise<DesktopSkinResult>;
+    removeDesktopSkinPackage: (skinId: DesktopSkinId) => Promise<DesktopSkinResult>;
+    importDesktopBackground: () => Promise<DesktopSkinResult>;
+    resetDesktopBackground: () => Promise<DesktopSkinResult>;
+    getNavigationPreferences: () => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
+    saveNavigationPreferences: (input: { mainOrder?: string[]; webOrder?: string[]; pinnedWebEntryKeys?: string[] }) => Promise<{ mainOrder: string[]; webOrder: string[]; pinnedWebEntryKeys: string[]; desktopCopilotPages: DesktopCopilotPagePreferences }>;
     setNativeThemeSource: (themeMode: "light" | "dark" | "system") => Promise<{ ok: boolean; themeSource: "light" | "dark" | "system" }>;
     getInitialLocale: () => LocaleSettings;
     getLocale: () => Promise<LocaleSettings>;

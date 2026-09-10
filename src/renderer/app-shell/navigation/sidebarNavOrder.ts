@@ -102,3 +102,20 @@ export function sortSidebarNavItems<T extends { orderKey: SidebarNavOrderItemKey
     return leftIndex - rightIndex;
   });
 }
+
+// Pinning changes only sidebar placement; keep the complete Sites order for unpinning.
+export function partitionSidebarWebItems<T extends { orderKey: SidebarNavOrderItemKey }>(
+  items: T[],
+  pinnedEntryKeys: string[]
+): { pinned: T[]; unpinned: T[] } {
+  const pinnedKeys = [...new Set(pinnedEntryKeys)];
+  const pinnedSet = new Set(pinnedKeys);
+  const byKey = new Map<string, T>(items.map((item) => [item.orderKey, item]));
+  return {
+    pinned: pinnedKeys.flatMap((key) => {
+      const item = byKey.get(key);
+      return item ? [item] : [];
+    }),
+    unpinned: items.filter((item) => !pinnedSet.has(item.orderKey))
+  };
+}

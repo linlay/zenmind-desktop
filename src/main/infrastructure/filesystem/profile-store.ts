@@ -1,5 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
+import { randomUUID } from "node:crypto";
+import { isDesktopSkinId, normalizeDesktopBackground, type DesktopSkinSettings } from "../../../shared/desktop-appearance";
 import type { SupportedLocale } from "../../../shared/i18n";
 import { DEFAULT_LOCALE, normalizeLocale } from "../../../shared/i18n";
 import {
@@ -24,7 +26,7 @@ export type DesktopGeneralSettings = {
 export type DesktopProfile = {
   schemaVersion: 1;
   general: DesktopGeneralSettings;
-  appearance: {
+  appearance: DesktopSkinSettings & {
     theme: DesktopThemePreference;
     locale: SupportedLocale;
   };
@@ -39,6 +41,7 @@ export type DesktopProfile = {
   navigation: {
     mainOrder: string[];
     webOrder: string[];
+    pinnedWebEntryKeys: string[];
     chatSortMode: AssistantChatSortMode;
     desktopCopilotPages: DesktopCopilotPagePreferences;
   };
@@ -75,7 +78,15 @@ function readJsonFile(filePath: string) {
 
 function writeJsonFile(filePath: string, value: unknown) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
-  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const temporary = `${filePath}.${randomUUID()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, `${JSON.stringify(value, null, 2)}\n`, { encoding: "utf8", flag: "wx" });
+    // Same-directory rename replaces the profile atomically on macOS and
+    // Windows. Never unlink the confirmed profile to work around a failure.
+    fs.renameSync(temporary, filePath);
+  } finally {
+    fs.rmSync(temporary, { force: true });
+  }
 }
 
 function readText(value: unknown) {
@@ -130,6 +141,8 @@ function normalizeDesktopProfile(
     },
     appearance: {
       theme: normalizeTheme(appearance.theme),
+      skinId: isDesktopSkinId(appearance.skinId) ? appearance.skinId : "default",
+      background: normalizeDesktopBackground(appearance.background),
       locale: profileLocale || options.defaultLocale || DEFAULT_LOCALE
     },
     assistant: {
@@ -143,6 +156,8 @@ function normalizeDesktopProfile(
     navigation: {
       mainOrder: normalizeTextArray(navigation.mainOrder),
       webOrder: normalizeTextArray(navigation.webOrder),
+      pinnedWebEntryKeys: [...new Set(normalizeTextArray(navigation.pinnedWebEntryKeys)
+        .filter((key) => /^(website|webapp):\S+$/.test(key)))],
       chatSortMode: normalizeChatSortMode(navigation.chatSortMode),
       desktopCopilotPages: sanitizeDesktopCopilotPagePreferences(
         navigation.desktopCopilotPages

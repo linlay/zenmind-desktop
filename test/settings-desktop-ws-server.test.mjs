@@ -81,6 +81,34 @@ function registerSettingsHandlers(app, overrides = {}) {
   return ipcMain;
 }
 
+for (const platform of ["darwin", "win32"]) {
+  test(`theme save failure preserves native chrome and confirmed skin on ${platform}`, async (t) => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "desktop-theme-commit-"));
+    t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+    const app = createApp(root);
+    const nativeTheme = { themeSource: "system" };
+    let refreshes = 0;
+    const ipc = registerSettingsHandlers(app, { platform, nativeTheme,
+      refreshMainWindowAppearance: () => { refreshes++; } });
+    await ipc.invoke("settings.setNativeThemeSource", "dark");
+    const profilePath = path.join(getDesktopConfigRoot(app, platform), "profile.json");
+    const saved = JSON.parse(fs.readFileSync(profilePath, "utf8"));
+    saved.appearance.skinId = "mist";
+    fs.writeFileSync(profilePath, JSON.stringify(saved));
+    const rename = t.mock.method(fs, "renameSync", () => { throw new Error("disk unavailable"); });
+    await assert.rejects(ipc.invoke("settings.setNativeThemeSource", "light"), /disk unavailable/);
+    assert.equal(nativeTheme.themeSource, "dark");
+    assert.equal(refreshes, 1);
+    assert.equal(await ipc.invoke("settings.getThemePreference"), "dark");
+    assert.equal(readDesktopProfileFromRoot(getDesktopConfigRoot(app, platform)).appearance.skinId, "mist");
+    rename.mock.restore();
+    await ipc.invoke("settings.setNativeThemeSource", "system");
+    assert.equal(nativeTheme.themeSource, "system");
+    assert.equal(await ipc.invoke("settings.getThemePreference"), "system");
+    assert.equal(refreshes, 2);
+  });
+}
+
 test("desktop ws server setting defaults to disabled and does not start by reading state", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-desktop-ws-setting-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -372,4 +400,20 @@ test("runtime env reset reports that restart is required before bootstrap resume
   assert.equal(result.restartRequired, true);
   assert.equal(result.copiedFiles, 12);
   assert.match(result.backupPath, /\.zenmind-123$/u);
+});
+
+test("navigation IPC persists web pins independently of main and Sites ordering", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "zenmind-web-pins-setting-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const app = createApp(path.join(root, "home"));
+  const ipc = registerSettingsHandlers(app);
+  assert.deepEqual((await ipc.invoke("settings.getNavigationPreferences")).pinnedWebEntryKeys, []);
+  await ipc.invoke("settings.saveNavigationPreferences", { pinnedWebEntryKeys: ["webapp:editor", "website:docs"] });
+  await ipc.invoke("settings.saveNavigationPreferences", { mainOrder: ["kanban", "schedules"], webOrder: ["website:docs", "webapp:editor"] });
+  const restored = await registerSettingsHandlers(app).invoke("settings.getNavigationPreferences");
+  assert.deepEqual(restored.pinnedWebEntryKeys, ["webapp:editor", "website:docs"]);
+  assert.deepEqual(restored.webOrder, ["website:docs", "webapp:editor"]);
+  const unpinned = await ipc.invoke("settings.saveNavigationPreferences", { pinnedWebEntryKeys: [] });
+  assert.deepEqual(unpinned.pinnedWebEntryKeys, []);
+  assert.deepEqual(unpinned.webOrder, restored.webOrder);
 });

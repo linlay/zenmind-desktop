@@ -20,8 +20,8 @@
   min-height: min(420px, calc(100vh - 32px));
   flex-direction: column;
   overflow: hidden;
-  border: 1px solid rgba(148, 163, 184, 0.22);
-  border-radius: 12px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--overlay-radius);
   background: var(--desktop-overlay-panel-bg);
   color: var(--ink);
   box-shadow: 0 18px 54px rgba(15, 23, 42, 0.2);
@@ -32,7 +32,7 @@
 }
 
 .chat-history-dialog.is-windows {
-  border-radius: 10px;
+  border-radius: calc(var(--control-radius) + 2px);
 }
 
 .chat-history-dialog-row-title-line,
@@ -94,7 +94,7 @@
   gap: 6px;
   padding: 0 8px;
   border: 1px solid var(--line-strong);
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: var(--surface-strong);
   color: var(--ink-soft);
   font: inherit;
@@ -193,8 +193,8 @@
   gap: 10px;
   padding: 10px;
   border: 1px solid var(--sidebar-operation-menu-border);
-  border-radius: 10px;
-  background: var(--sidebar-operation-menu-bg);
+  border-radius: calc(var(--control-radius) + 2px);
+  background: var(--control-popover-bg);
   color: var(--sidebar-operation-menu-text);
   box-shadow: var(--sidebar-operation-menu-shadow);
   backdrop-filter: blur(18px) saturate(135%);
@@ -220,7 +220,7 @@
   padding: 0 8px;
   border: 1px solid color-mix(in srgb, var(--sidebar-operation-menu-text-muted) 28%, transparent);
   border-radius: 7px;
-  background: var(--sidebar-operation-menu-bg);
+  background: var(--control-popover-bg);
   color: var(--sidebar-operation-menu-text);
   font: inherit;
   font-size: 12px;
@@ -255,7 +255,7 @@
   min-height: 28px;
   padding: 0 10px;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: transparent;
   color: var(--sidebar-operation-menu-text-muted);
   font: inherit;
@@ -308,7 +308,7 @@
   min-height: 52px;
   overflow: hidden;
   border: 1px solid transparent;
-  border-radius: 8px;
+  border-radius: var(--control-radius);
   background: transparent;
 }
 
@@ -441,7 +441,7 @@
   align-items: center;
   justify-content: center;
   border: 0;
-  border-radius: 6px;
+  border-radius: var(--control-radius-sm);
   background: var(--surface-strong);
   color: var(--ink-muted);
   cursor: pointer;
@@ -504,7 +504,7 @@
   width: min(360px, 100%);
   padding: 16px;
   border: 1px solid var(--line-strong);
-  border-radius: 10px;
+  border-radius: calc(var(--control-radius) + 2px);
   background: var(--desktop-overlay-panel-bg);
   box-shadow: 0 18px 54px rgba(15, 23, 42, 0.24);
 }
@@ -578,6 +578,6 @@
     width: 100%;
     height: calc(100vh - 20px);
     min-height: 0;
-    border-radius: 10px;
+    border-radius: var(--overlay-radius);
   }
 }

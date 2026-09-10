@@ -20,7 +20,7 @@
   --accent: #2663EB;
   --accent-strong: #1D4ED8;
   --accent-soft: #E8F0FF;
-  --accent-glow: rgba(38, 99, 235, 0.12);
+  --accent-glow: rgba(var(--accent-rgb), 0.12);
   --accent-rgb: 38, 99, 235;
   --accent-on: #ffffff;
   --accent-border: rgba(var(--accent-rgb), 0.46);
@@ -49,6 +49,34 @@
   --control-switch-padding: 2px;
   --control-switch-thumb-size: 18px;
   --control-switch-shadow-on: 0 3px 8px var(--accent-shadow);
+  --control-radius: 8px;
+  --control-radius-sm: 6px;
+  --control-radius-lg: 12px;
+  --control-button-bg: #fff;
+  --control-input-bg: var(--control-select-bg);
+  --control-border: var(--line-strong);
+  --control-hover-bg: rgba(136, 151, 172, 0.1);
+  --control-active-bg: rgba(136, 151, 172, 0.16);
+  --control-disabled-bg: rgba(148, 163, 184, 0.08);
+  --control-icon-color: var(--ink-muted);
+  --control-icon-hover-color: var(--ink);
+  --control-primary-bg: var(--accent);
+  --control-primary-hover: var(--accent-strong);
+  --control-primary-active: var(--accent-strong);
+  --control-primary-shadow: 0 2px 0 var(--accent-fill-subtle);
+  --control-popover-bg: var(--sidebar-operation-menu-bg);
+  --control-tab-strip-bg: #FFFFFF;
+  --control-tab-active-bg: #EEEEEE;
+  --control-tab-hover-bg: #F5F5F5;
+  --nav-hover-bg: var(--control-hover-bg);
+  --nav-selected-bg: color-mix(in srgb, var(--ink-muted) 14%, transparent);
+  --nav-selected-text: var(--ink);
+  --nav-accent-selected-bg: rgba(var(--accent-rgb), 0.13);
+  --overlay-radius: 12px;
+  --shell-sidebar-bg: color-mix(in srgb, var(--surface-sidebar) 88%, transparent);
+  --shell-content-bg: color-mix(in srgb, var(--surface-strong) 72%, transparent);
+  --shell-titlebar-bg: color-mix(in srgb, var(--bg-base) 94%, transparent);
+  --shell-background-tint: transparent;
   --success: #00B42A;
   --warning: #FF7D00;
   --danger: #F53F3F;
@@ -116,12 +144,19 @@
   --accent: #4F88FF;
   --accent-strong: #75A5FF;
   --accent-soft: rgba(79, 136, 255, 0.16);
-  --accent-glow: rgba(79, 136, 255, 0.2);
+  --accent-glow: rgba(var(--accent-rgb), 0.2);
   --accent-rgb: 79, 136, 255;
   --accent-on: #ffffff;
   --control-thumb-shadow: rgba(0, 0, 0, 0.24);
   --control-select-bg: var(--surface-soft);
   --control-panel-bg: var(--accent-soft);
+  --control-button-bg: rgba(255, 255, 255, 0.065);
+  --control-hover-bg: rgba(255, 255, 255, 0.08);
+  --control-active-bg: rgba(255, 255, 255, 0.12);
+  --control-disabled-bg: rgba(255, 255, 255, 0.04);
+  --control-tab-strip-bg: #181818;
+  --control-tab-active-bg: #303030;
+  --control-tab-hover-bg: #242424;
   --success: #27C346;
   --warning: #FF9A2E;
   --danger: #F76560;
@@ -164,4 +199,16 @@
   --embedded-surface-loading-bg: rgba(35, 37, 40, 0.96);
   --embedded-surface-dock-bg: rgba(35, 37, 40, 0.98);
   --embedded-surface-dock-shadow: -14px 0 42px rgba(0, 0, 0, 0.24);
+}
+
+/* Main-window legacy consumers share the same primary palette as controls.
+   Auxiliary windows retain their existing desktop-ui defaults. */
+:root[data-desktop-skin] {
+  --desktop-ui-primary: var(--control-primary-bg);
+  --desktop-ui-primary-strong: var(--control-primary-hover);
+  --desktop-ui-primary-rgb: var(--accent-rgb);
+  --sidebar-operation-menu-text: var(--ink);
+  --sidebar-operation-menu-text-soft: var(--ink-soft);
+  --sidebar-operation-menu-text-muted: var(--ink-muted);
+  --sidebar-operation-menu-hover: var(--control-hover-bg);
 }

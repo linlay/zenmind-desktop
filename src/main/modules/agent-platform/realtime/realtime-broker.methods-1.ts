@@ -65,6 +65,7 @@ export function RealtimeBroker_snapshotRootObserver_9(self: RealtimeBrokerMethod
             surfaceId: observer.surfaceId,
             generation: observer.generation,
             contextId: observer.contextId,
+            newChatSourceKey: observer.newChatSourceKey,
             contextEpoch: observer.contextEpoch,
             webContentsId: observer.webContentsId,
             runIds: new Set(observer.runIds),
@@ -265,10 +266,17 @@ export function RealtimeBroker_activateRootObserver_13(self: RealtimeBrokerMetho
             ? self.activeRootObserver
             : null;
     if (current?.token === token) {
+        if (current.kind !== input.kind || current.surfaceId !== surfaceId ||
+            current.generation !== generation || current.webContentsId !== input.webContentsId ||
+            current.newChatSourceKey !== input.newChatSourceKey) {
+            throw brokerError("protocol_error", "Root Observer token conflicts with its registered identity");
+        }
         if (input.kind === "main_chat" &&
             current.overviewLease?.state === "pending_chat_identity" &&
             contextId !== current.contextId) {
             self.promoteMainChatRootObserver(token, contextId);
+        } else if (contextId !== current.contextId) {
+            throw brokerError("protocol_error", "Root Observer context changed without a new token");
         }
         return input.kind === "main_chat"
             ? self.getMainChatRootObserver()

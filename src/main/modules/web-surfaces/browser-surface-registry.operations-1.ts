@@ -28,6 +28,7 @@ export function createBrowserSurfaceRegistry_emitLifecycle_1(context: CreateBrow
             surfaceIdentityKey: surface.surfaceIdentityKey?.trim() || "",
             active: surface.active,
             ownerChatId: surface.ownerChatId?.trim() || "",
+            pageRouteIdentity: surface.pageRouteIdentity?.trim() || "",
             ownerWebContentsId: surface.ownerWebContentsId,
             guestWebContentsIds: surface.tabs.map((tab) => tab.webContentsId),
         },

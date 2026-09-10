@@ -139,7 +139,8 @@ export function resolveChatWorkPanelLocalResourcePath(input: {
     }
     const parts = rawPath.split("/").filter((part) => part && part !== ".");
     const expectedRoot = input.profile === "artifact" ? "artifacts" : "references";
-    if (parts.length < 2 || parts[0] !== expectedRoot || parts.some((part) => part === "..")) {
+    const rootReference = input.profile === "reference" && parts.length === 1;
+    if ((!rootReference && (parts.length < 2 || parts[0] !== expectedRoot)) || parts.some((part) => part === "..")) {
       return "";
     }
     return parts.join("/");

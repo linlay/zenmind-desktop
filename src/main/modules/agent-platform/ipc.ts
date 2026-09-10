@@ -1,4 +1,5 @@
 import type { App, WebContents } from "electron";
+import { randomUUID } from "node:crypto";
 import {
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_CLOSE_CHANNEL,
   AGENT_WEBCLIENT_PLATFORM_FRAME_PORT_OPEN_CHANNEL,
@@ -28,7 +29,7 @@ import {
 } from "../../../shared/surface-identity";
 import { isDesktopDevelopmentRuntime } from "../../infrastructure/electron/development-runtime";
 import type { RegisterAgentWebclientBridgeIpcHandlersContext } from "./ipc.shared";
-import { ClosedLogicalSessionDiagnostic, LogicalSession, PlatformFrameRecord, StreamBinding, SurfaceContext, rootObserverContextId, sessionKey, streamBindingDiagnostic, trustedKind } from "./ipc.shared";
+import { ClosedLogicalSessionDiagnostic, LogicalSession, PlatformFrameRecord, StreamBinding, SurfaceContext, rootObserverContextId, rootObserverNewChatSourceKey, sessionKey, streamBindingDiagnostic, trustedKind } from "./ipc.shared";
 import { registerAgentWebclientBridgeIpcHandlers_reportChatLoadDiagnostic_1, registerAgentWebclientBridgeIpcHandlers_availability_2, registerAgentWebclientBridgeIpcHandlers_sendEvent_3, registerAgentWebclientBridgeIpcHandlers_sendFrame_4, registerAgentWebclientBridgeIpcHandlers_sendRunEvent_5, registerAgentWebclientBridgeIpcHandlers_framePortState_6, registerAgentWebclientBridgeIpcHandlers_closeSession_7, registerAgentWebclientBridgeIpcHandlers_releaseSessionRootObserver_8, registerAgentWebclientBridgeIpcHandlers_detachBinding_9, registerAgentWebclientBridgeIpcHandlers_cleanupSender_10, registerAgentWebclientBridgeIpcHandlers_installSenderCleanup_11, registerAgentWebclientBridgeIpcHandlers_finishRetiringSession_12, registerAgentWebclientBridgeIpcHandlers_retireSession_13, registerAgentWebclientBridgeIpcHandlers_establishCanonicalChatIdentity_14 } from "./ipc.operations-1";
 import { registerAgentWebclientBridgeIpcHandlers_processQueryBootstrapFrame_1, registerAgentWebclientBridgeIpcHandlers_resolveMainChatQueryAuthorization_2, registerAgentWebclientBridgeIpcHandlers_handleOpen_3 } from "./ipc.operations-2";
 import { registerAgentWebclientBridgeIpcHandlers_handleSend_1 } from "./ipc.operations-3";
@@ -152,19 +153,12 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
       Number.isSafeInteger(guestWebContentsId)
     ) {
       const registeredChatId = event.surface.ownerChatId.trim();
+      const newChatSourceKey = rootObserverNewChatSourceKey(event.surface);
       if (sameGeneration && active) {
-        if (registeredChatId && active.contextId !== registeredChatId) {
-          try {
-            options.realtimeBroker.promoteMainChatRootObserver(active.token, registeredChatId);
-            return;
-          } catch {
-            // A ready context changing under the same WebView generation is a
-            // real Chat switch and must replace the complete bundle below.
-          }
-        } else if (
-          registeredChatId === active.contextId ||
-          (!registeredChatId && active.contextId === `${event.surface.surfaceId}:${event.surface.registrationId}`)
-        ) {
+        // Bootstrap promotes the bundle before canonical Registry acknowledgement.
+        // Repeated snapshots of that same new-chat source must not undo promotion.
+        if ((registeredChatId && registeredChatId === active.contextId) ||
+            (!registeredChatId && newChatSourceKey && newChatSourceKey === active.newChatSourceKey)) {
           return;
         }
       }
@@ -183,12 +177,13 @@ export function registerAgentWebclientBridgeIpcHandlers(ipcMain: any, options: {
           event.surface.registrationId,
           event.surface.ownerWebContentsId,
           guestWebContentsId,
-          contextId,
+          randomUUID(),
         ].join(":"),
         kind: "main_chat",
         surfaceId: event.surface.surfaceId,
         generation: event.surface.registrationId,
         contextId,
+        newChatSourceKey,
         webContentsId: guestWebContentsId!,
       });
       return;

@@ -195,9 +195,9 @@ export function normalizeAgentWebclientCurrentResourceIdentity(
   }
   const parts = relativePath.split("/");
   const expectedRoot = profile === "artifact" ? "artifacts" : "references";
+  const rootReference = profile === "reference" && parts.length === 1;
   if (
-    parts.length < 2 ||
-    parts[0] !== expectedRoot ||
+    (!rootReference && (parts.length < 2 || parts[0] !== expectedRoot)) ||
     parts.some((part) => {
       if (!part || part === "." || part === "..") return true;
       let probe = part;

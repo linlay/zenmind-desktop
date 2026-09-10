@@ -23,6 +23,8 @@ export type SidebarContextMenuActionId =
   | "chat.delete"
   | "chat.info"
   | "web.close"
+  | "web.pin"
+  | "web.unpin"
   | "web.open-in-workspace"
   | "web.open-in-window"
   | "web.copy-share-url"
@@ -32,6 +34,8 @@ export type SidebarContextMenuActionId =
 
 type SidebarWebContextMenuTargetBase = {
   kind: "web";
+  pinned?: boolean;
+  canPin?: boolean;
   openMode: "dialog" | "window";
   canClose: boolean;
   canOpenAlternative: boolean;

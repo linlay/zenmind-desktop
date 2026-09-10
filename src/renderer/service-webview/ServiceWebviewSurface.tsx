@@ -110,6 +110,9 @@ import {
   type SurfaceIdentity
 } from "../../shared/surface-identity";
 import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
+import { useAppearance } from "../appearance/AppearanceProvider";
+import { readWebclientAppearanceProjection } from "../appearance/webclientProjection";
+import { createWebclientAppearanceHost } from "./appearanceHost";
 
 type ServiceWebviewUrlChangeSource = "host" | "guest";
 
@@ -683,6 +686,13 @@ export function ServiceWebviewSurface({
   const surfaceId = surfaceIdentity.surfaceId || surfaceIdProp?.trim() || serviceId;
   const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const mainChatSurface = isAgentWebclientChatSurface(serviceId, surfaceId);
+  const appearance = useAppearance();
+  const [appearanceRouteTheme, setAppearanceRouteTheme] = useState<"light" | "dark" | null>(null);
+  const [hostSkinBackground, setHostSkinBackground] = useState(false);
+  const appearanceHostRef = useRef<ReturnType<typeof createWebclientAppearanceHost> | null>(null);
+  const appearanceRevisionRef = useRef({ revision: 0, signature: "" });
+  const appearanceInputRef = useRef({ appearance, mainChatSurface, active });
+  appearanceInputRef.current = { appearance, mainChatSurface, active };
   const desiredMainChatIdentity = useMemo(
     () => mainChatSurface ? readMainChatIdentity(desiredDesktopRoute) : null,
     [desiredDesktopRoute, mainChatSurface],
@@ -898,6 +908,7 @@ export function ServiceWebviewSurface({
     if (webviewRef.current === node) {
       return;
     }
+    setAppearanceRouteTheme(null);
     const promotionGuard = canonicalChatPromotionGuardRef.current;
     if (promotionGuard) {
       canonicalChatPromotionGuardRef.current = null;
@@ -1146,9 +1157,12 @@ export function ServiceWebviewSurface({
   const wsSource = service?.id === "agent-webclient"
     ? resolveAgentWebclientWsSource(surfaceId, effectiveEmbedPath)
     : undefined;
+  // Once this guest consumes the dedicated appearance bridge, URL theme is
+  // bootstrap-only. Color changes must not generate route commands or reloads.
+  const routeHostTheme = service?.id === "agent-webclient" ? appearanceRouteTheme ?? hostTheme : hostTheme;
   const embeddedUrl = useMemo(() => {
     return buildServiceWebviewUrl(service?.id, webUrl, {
-      hostTheme,
+      hostTheme: routeHostTheme,
       hostLocale: service?.id === "agent-webclient" ? locale : undefined,
       accessToken:
         service?.id === "agent-platform"
@@ -1163,7 +1177,7 @@ export function ServiceWebviewSurface({
   }, [
     agentPlatformMonitorAccessToken,
     effectiveEmbedPath,
-    hostTheme,
+    routeHostTheme,
     locale,
     service?.healthMeta.port,
     service?.id,
@@ -3246,6 +3260,41 @@ export function ServiceWebviewSurface({
   }, [bridgeReady, serviceWebviewPreloadUrl, webviewRenderKey]);
 
   useEffect(() => {
+    const target = webviewRef.current;
+    if (!target || service?.id !== "agent-webclient" || service.status !== "running" ||
+      !bridgeReady || !serviceWebviewPreloadUrl) return;
+    const host = createWebclientAppearanceHost({
+      webview: target,
+      isCurrentGuest: () => webviewRef.current === target,
+      trustedUrl: () => webUrl,
+      read: () => {
+        const input = appearanceInputRef.current;
+        const shell = document.querySelector(".app-shell");
+        let platformSupportsHostBackground = false;
+        // Both paths paint a single renderer wallpaper. Windows retains its
+        // opaque native window; macOS paints above the native vibrancy layer.
+        if (shell?.classList.contains("is-mac-platform")) platformSupportsHostBackground = true;
+        if (shell?.classList.contains("is-windows-platform")) platformSupportsHostBackground = true;
+        const hostBackground = platformSupportsHostBackground && input.mainChatSurface &&
+          input.active !== false && Boolean(input.appearance.background);
+        return readWebclientAppearanceProjection(input.appearance, hostBackground);
+      },
+      onNegotiated: (theme) => setAppearanceRouteTheme((current) => theme === null ? null : current ?? theme),
+      onBackground: setHostSkinBackground,
+      revisionState: appearanceRevisionRef.current
+    });
+    appearanceHostRef.current = host;
+    return () => {
+      host.dispose();
+      if (appearanceHostRef.current === host) appearanceHostRef.current = null;
+    };
+  }, [bridgeReady, serviceWebviewPreloadUrl, webviewRenderKey, service?.id, service?.status, webUrl]);
+
+  useEffect(() => {
+    appearanceHostRef.current?.refresh();
+  }, [appearance.resolvedTheme, appearance.skin, appearance.background, active, documentVisible]);
+
+  useEffect(() => {
     if (active === false || !bridgeReady || !serviceWebviewPreloadUrl) {
       return;
     }
@@ -3585,7 +3634,8 @@ export function ServiceWebviewSurface({
     <section
       className={[
         "embedded-surface-page",
-        "embedded-surface-page-embedded"
+        "embedded-surface-page-embedded",
+        hostSkinBackground ? "agent-webclient-host-background" : ""
       ].filter(Boolean).join(" ")}
       {...surfaceVisibilityProps}
     >

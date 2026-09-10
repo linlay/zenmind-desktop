@@ -111,6 +111,8 @@ export function normalizeSidebarContextMenuRequest(
     const commonKeys = [
       "kind",
       "webKind",
+      "pinned",
+      "canPin",
       "openMode",
       "canClose",
       "canOpenAlternative",
@@ -126,6 +128,8 @@ export function normalizeSidebarContextMenuRequest(
       !isBoolean(target.canExport) ||
       !isBoolean(target.canRemove) ||
       !isBoolean(target.showRemove) ||
+      (target.pinned !== undefined && !isBoolean(target.pinned)) ||
+      (target.canPin !== undefined && !isBoolean(target.canPin)) ||
       (target.webKind === "website" && !hasOnlyKeys(target, commonKeys)) ||
       (target.webKind === "webapp" && (
         !hasOnlyKeys(target, [...commonKeys, "hasPublicShareUrl"]) ||
@@ -136,6 +140,8 @@ export function normalizeSidebarContextMenuRequest(
     }
     const commonTarget = {
       kind: "web" as const,
+      ...(target.pinned === undefined ? {} : { pinned: target.pinned as boolean }),
+      ...(target.canPin === undefined ? {} : { canPin: target.canPin as boolean }),
       openMode: target.openMode as "dialog" | "window",
       canClose: target.canClose,
       canOpenAlternative: target.canOpenAlternative,
@@ -249,6 +255,11 @@ export function buildSidebarContextMenuPolicy(
   }
 
   const items: SidebarContextMenuPolicyItem[] = [
+    ...(target.canPin !== undefined ? [{
+      id: target.pinned ? "web.unpin" as const : "web.pin" as const,
+      group: 0,
+      enabled: target.canPin
+    }] : []),
     { id: "web.close", group: 0, enabled: target.canClose }
   ];
   if (target.webKind === "webapp") {

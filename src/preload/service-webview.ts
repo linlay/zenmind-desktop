@@ -60,6 +60,9 @@ import {
   AGENT_WEBCLIENT_WORKPANEL_INVOKE_CHANNEL,
 } from "../shared/contracts/agent-webclient-bridge";
 import { WORK_PANEL_PREVIEW_REVIEW_EVENT_CHANNEL } from "../shared/work-panel-review";
+import { installServiceWebviewAppearance } from "./service-webview-appearance";
+
+installServiceWebviewAppearance();
 
 function isBridgeMessage(value: unknown): value is ServiceWebviewBridgeMessage {
   return Boolean(value && typeof value === "object" && !Array.isArray(value));

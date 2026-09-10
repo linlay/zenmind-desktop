@@ -107,9 +107,11 @@ function normalizeResourcePath(
   }
   const parts = rawPath.split("/").filter((part) => part && part !== ".");
   const expectedRoot = profile === "artifact" ? "artifacts" : "references";
+  // Platform uploads may live directly in the Chat root. Only a single
+  // filename is accepted there; nested resources still use their profile root.
+  const rootReference = profile === "reference" && parts.length === 1;
   if (
-    parts.length < 2 ||
-    parts[0] !== expectedRoot ||
+    (!rootReference && (parts.length < 2 || parts[0] !== expectedRoot)) ||
     parts.some((part) => {
       if (part === "..") return true;
       try {

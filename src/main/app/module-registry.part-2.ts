@@ -80,7 +80,7 @@ import { registerAssistantIpcHandlers } from "../modules/assistant";
 import { registerDesktopPetIpcHandlers } from "../modules/pet";
 import { registerMarketplaceIpcHandlers } from "../modules/marketplace";
 import { registerServicesIpcHandlers } from "../modules/services";
-import { registerSettingsIpcHandlers } from "../modules/settings";
+import { registerAppearanceIpcHandlers, registerSettingsIpcHandlers } from "../modules/settings";
 import { registerShellIpcHandlers } from "../modules/shell";
 import { registerSsoIpcHandlers } from "../modules/identity";
 import { registerKanbanIpcHandlers } from "../modules/kanban";
@@ -902,6 +902,7 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     replyMessage: (input: any) => petRuntime.replyMessage(assistantBridge, input),
     dismissMessage: (input: any) => petRuntime.dismissMessage(input)
   });
+  registerAppearanceIpcHandlers(ipcMain, { app, platform: options.platform, getMainWindow: options.getMainWindow });
   registerSettingsIpcHandlers(ipcMain, {
     app,
     platform: options.platform,
