@@ -4,7 +4,34 @@ import {
   parseAgentWebclientAppearanceTokens,
   type AgentWebclientAppearanceSnapshot
 } from "../../shared/contracts/agent-webclient-bridge";
+import {
+  AGENT_WEBCLIENT_ROUTE_DEFINITIONS,
+  AGENT_WEBCLIENT_SERVICE_ID
+} from "../../shared/agent-webclient-routes";
+import {
+  MAIN_CHAT_SURFACE_ID,
+  createServiceSurfaceIdentity,
+  type SurfaceIdentity
+} from "../../shared/surface-identity";
 import type { DesktopAppearanceSnapshot } from "./model";
+
+const MANAGEMENT_BACKGROUND_ROUTES = AGENT_WEBCLIENT_ROUTE_DEFINITIONS
+  .filter(({ key }) => ["agents", "skills", "mcp-servers", "registries", "archives"].includes(key))
+  .map(({ embedPath }) => embedPath);
+const MANAGEMENT_SURFACE_ID = createServiceSurfaceIdentity(AGENT_WEBCLIENT_SERVICE_ID).surfaceId;
+
+/** Background eligibility is independent of Chat identity and routing authority. */
+export function isWebclientHostBackgroundSurface(
+  serviceId: string,
+  surface: Pick<SurfaceIdentity, "surfaceId" | "surfaceRole">,
+  embedPath?: string
+): boolean {
+  if (serviceId !== AGENT_WEBCLIENT_SERVICE_ID) return false;
+  if (surface.surfaceId === MAIN_CHAT_SURFACE_ID && surface.surfaceRole === "main-chat") return true;
+  if (surface.surfaceRole !== "service" || surface.surfaceId !== MANAGEMENT_SURFACE_ID) return false;
+  const pathname = (embedPath ?? "").split(/[?#]/u, 1)[0];
+  return MANAGEMENT_BACKGROUND_ROUTES.some(path => pathname === path || pathname.startsWith(`${path}/`));
+}
 
 export type WebclientAppearanceProjection = Omit<AgentWebclientAppearanceSnapshot, "revision">;
 

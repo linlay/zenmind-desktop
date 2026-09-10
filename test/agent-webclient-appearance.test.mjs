@@ -5,7 +5,9 @@ import { build } from "esbuild";
 const { outputFiles } = await build({
   stdin: { contents: `export * from './src/shared/contracts/agent-webclient-bridge';
     export * from './src/preload/appearance-receiver';
-    export * from './src/renderer/service-webview/appearanceHost';`, resolveDir: process.cwd() },
+    export * from './src/renderer/service-webview/appearanceHost';
+    export * from './src/renderer/appearance/webclientProjection';
+    export * from './src/shared/surface-identity';`, resolveDir: process.cwd() },
   bundle: true, write: false, platform: "browser", format: "esm"
 });
 const {
@@ -14,7 +16,8 @@ const {
   AGENT_WEBCLIENT_APPEARANCE_COLOR_TOKENS: colors,
   AGENT_WEBCLIENT_APPEARANCE_REQUEST_CHANNEL: requestChannel,
   AGENT_WEBCLIENT_APPEARANCE_SNAPSHOT_CHANNEL: snapshotChannel,
-  createAppearanceReceiver, createWebclientAppearanceHost
+  createAppearanceReceiver, createWebclientAppearanceHost,
+  isWebclientHostBackgroundSurface, createSurfaceIdentity, createServiceSurfaceIdentity
 } = await import(`data:text/javascript;base64,${Buffer.from(outputFiles[0].text).toString('base64')}`);
 const snapshot = (revision = 1, extra = {}) => ({
   schemaVersion: 1, revision, resolvedTheme: 'light', skinId: 'pack:0123456789abcdef0123456789abcdef',
@@ -152,5 +155,50 @@ test('document navigation revokes negotiation while in-place business navigation
   h.host.refresh(); assert.equal(h.sent.filter(item => item.message?.snapshot).length, count);
   h.request({ documentId: 'aaaaaaaa-1234-1234-1234-123456789abc' });
   assert.equal(h.sent.at(-1).message.documentId, 'aaaaaaaa-1234-1234-1234-123456789abc');
+  h.host.dispose();
+});
+
+
+test('wallpaper eligibility includes five management pages without expanding Chat or child surfaces', () => {
+  const service = createServiceSurfaceIdentity('agent-webclient');
+  const eligible = (surface, route, serviceId = 'agent-webclient') =>
+    isWebclientHostBackgroundSurface(serviceId, surface, route);
+  assert.equal(eligible(createSurfaceIdentity('main-chat'), '/agent/demo'), true);
+  for (const path of ['/agents', '/skills', '/connectors', '/registries', '/archives']) {
+    for (const suffix of ['', '?tab=models', '/demo', '/demo?tab=source#editor']) {
+      assert.equal(eligible(service, path + suffix), true, path + suffix);
+    }
+    assert.equal(eligible(service, path + '-other'), false);
+  }
+  for (const route of [undefined, '', '/', '/agent/demo', '/automations', '/memory', '/project/demo']) {
+    assert.equal(eligible(service, route), false, String(route));
+  }
+  for (const role of ['copilot-dock', 'kanban-chat', 'project', 'skill', 'agent', 'workpanel-web']) {
+    assert.equal(eligible(createSurfaceIdentity(role, 'demo'), '/skills'), false, role);
+  }
+  assert.equal(eligible(service, '/skills', 'another-service'), false);
+  assert.equal(eligible(createServiceSurfaceIdentity('another-service'), '/skills'), false);
+});
+
+test('management background changes refresh the existing relay without renegotiating or navigating', () => {
+  const h = hostHarness();
+  const surface = createServiceSurfaceIdentity('agent-webclient');
+  const showRoute = route => {
+    h.setProjection(snapshot(1, { background: {
+      mode: isWebclientHostBackgroundSurface('agent-webclient', surface, route) ? 'host' : 'opaque'
+    } }));
+    h.host.refresh();
+  };
+  showRoute('/registries');
+  h.request();
+  assert.equal(h.backgrounds.at(-1), true);
+  const firstRevision = h.sent.at(-1).message.snapshot.revision;
+  showRoute('/memory');
+  assert.equal(h.backgrounds.at(-1), false);
+  showRoute('/skills/demo');
+  assert.equal(h.backgrounds.at(-1), true);
+  assert.equal(h.sent.at(-1).message.snapshot.revision, firstRevision + 2);
+  assert.deepEqual(h.themes, ['light']);
+  assert.equal(h.sent.at(-1).message.documentId, h.documentId);
   h.host.dispose();
 });
