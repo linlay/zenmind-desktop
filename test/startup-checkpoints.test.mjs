@@ -3,7 +3,43 @@ import assert from "node:assert/strict";
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
-const { beginStartupCheckpoints } = require("../dist-electron/main/support/logging/startup-checkpoints.js");
+const { beginStartupCheckpoints, runStartupCheckpoint } = require("../dist-electron/main/support/logging/startup-checkpoints.js");
+
+test("checkpoint wrapper preserves results and errors without logging credentials", async (t) => {
+  if (process.platform !== "win32") return t.skip("Windows-only diagnostics");
+  const lines = [];
+  t.mock.method(console, "info", (line) => lines.push(line));
+  t.mock.timers.enable({ apis: ["setInterval"] });
+  const result = { token: "secret-token" };
+  assert.equal(await runStartupCheckpoint("identity-center", "capability", "issue", () => result), result);
+  const failure = new Error("secret-command-output");
+  await assert.rejects(runStartupCheckpoint("identity-center", "capability", "issue", async () => { throw failure; }),
+    (error) => error === failure);
+  assert.equal(lines.length, 4);
+  assert.match(lines[1], /status=succeeded/);
+  assert.match(lines[3], /status=failed/);
+  assert.ok(lines.every((line) => !line.includes("secret")));
+  t.mock.timers.tick(10_000);
+  assert.equal(lines.length, 4);
+});
+
+test("macOS bypasses the additional diagnostics and preserves the operation", async (t) => {
+  const platformDescriptor = Object.getOwnPropertyDescriptor(process, "platform");
+  const lines = [];
+  t.mock.method(console, "info", (line) => lines.push(line));
+  const timer = t.mock.method(globalThis, "setInterval", () => { throw new Error("unexpected diagnostic timer"); });
+  try {
+    Object.defineProperty(process, "platform", { ...platformDescriptor, value: "darwin" });
+    const result = {};
+    assert.equal(await runStartupCheckpoint("identity-center", "capability", "issue", () => result), result);
+    const failure = new Error("original failure");
+    await assert.rejects(runStartupCheckpoint("identity-center", "capability", "issue", () => { throw failure; }), (error) => error === failure);
+    assert.deepEqual(lines, []);
+    assert.equal(timer.mock.callCount(), 0);
+  } finally {
+    Object.defineProperty(process, "platform", platformDescriptor);
+  }
+});
 
 test("slow checkpoints report waiting, finish the previous stage, and stop timers on failure", (t) => {
   const lines = [];

@@ -16,6 +16,7 @@ import {
   type ServiceLayout
 } from "./layout";
 import { t } from "../../../support/i18n/main-i18n";
+import { runStartupCheckpoint } from "../../../support/logging/startup-checkpoints";
 
 const SQLITE_BUSY_RETRY_DELAYS_MS = [150, 350, 700, 1_200];
 const AUTH_PUBLIC_KEY_SIDECAR_FILE_NAMES = ["jwk-private.pem", "jwk-public.pem"] as const;
@@ -243,6 +244,7 @@ function removeDeviceIdArgs(command: string[]) {
 }
 
 async function runCapabilityCommand(
+  serviceId: ServiceId,
   provider: ManifestDesktopCapabilityProvider,
   layout: ServiceLayout,
   command: string[],
@@ -251,18 +253,18 @@ async function runCapabilityCommand(
   let lastError: unknown;
   for (let attempt = 0; attempt <= SQLITE_BUSY_RETRY_DELAYS_MS.length; attempt += 1) {
     try {
-      return await runExecFile(command[0], command.slice(1), layout.programDir, {
+      return await runStartupCheckpoint(serviceId, `capability-${provider.id}`, `execute-attempt-${attempt + 1}`, () => runExecFile(command[0], command.slice(1), layout.programDir, {
         env: {
           ...Object.fromEntries(readEnvFile(layout.envPath)),
           ...env
         }
-      });
+      }));
     } catch (reason) {
       lastError = reason;
       if (!provider.retryOnSqliteBusy || !isSqliteBusyError(reason) || attempt >= SQLITE_BUSY_RETRY_DELAYS_MS.length) {
         throw reason;
       }
-      await delay(SQLITE_BUSY_RETRY_DELAYS_MS[attempt]);
+      await runStartupCheckpoint(serviceId, `capability-${provider.id}`, "sqlite-busy-delay", () => delay(SQLITE_BUSY_RETRY_DELAYS_MS[attempt]));
     }
   }
   throw lastError;
@@ -343,13 +345,13 @@ async function resolveDesktopCapabilityInternal(
   let result: ExecResult;
   let validateExactDeviceId = true;
   try {
-    result = await runCapabilityCommand(provider, layout, renderedCommand, renderedEnv);
+    result = await runCapabilityCommand(service.id, provider, layout, renderedCommand, renderedEnv);
   } catch (reason) {
     if (!provider.allowDeviceIdFallback || !isUnsupportedDeviceIdArgumentError(reason)) {
       throw reason;
     }
     validateExactDeviceId = false;
-    result = await runCapabilityCommand(provider, layout, removeDeviceIdArgs(renderedCommand), renderedEnv);
+    result = await runCapabilityCommand(service.id, provider, layout, removeDeviceIdArgs(renderedCommand), renderedEnv);
   } finally {
     cleanupDesktopCapabilitySidecars(provider, values);
   }

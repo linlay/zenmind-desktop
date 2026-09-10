@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import os from "node:os";
-import { beginStartupCheckpoints } from "../../../support/logging/startup-checkpoints";
+import { beginStartupCheckpoints, runStartupCheckpoint } from "../../../support/logging/startup-checkpoints";
 import type { App } from "electron";
 import type {
   ServiceCommandResult,
@@ -444,15 +444,15 @@ export async function collectServiceVerification(
   options: ServiceVerificationOptions = {}
 ): Promise<{ state: ServiceState; verification: ServiceVerification }> {
   const service = getService(serviceId);
-  const state = await getServiceState(app, serviceId, {
+  const state = await runStartupCheckpoint(serviceId, "verification", "read-service-state", () => getServiceState(app, serviceId, {
     ...options.stateReadOptions,
     integrationPorts: options.integrationPorts
-  });
+  }));
   const probes: HttpProbeResult[] = [];
 
   if (desired === "running" && state.status === "running" && state.healthMeta.webUrl) {
     const webUrl = state.healthMeta.webUrl;
-    probes.push(await probeHttpUrl(webUrl));
+    probes.push(await runStartupCheckpoint(serviceId, "verification", "http-service-root", () => probeHttpUrl(webUrl)));
     if (service.id === "agent-container-hub") {
       probes.push(await probeHttpUrl(normalizeProbeUrl(webUrl, "/api/runtime-info")));
     }
@@ -635,10 +635,10 @@ export async function ensureRequiredServiceHttpReachable(
     throw new Error(`missing required service provider: ${requiredServiceId}`);
   }
 
-  const state = await getServiceState(app, requiredService.id, {
+  const state = await runStartupCheckpoint(requiredService.id, "dependency-http", "read-service-state", () => getServiceState(app, requiredService.id, {
     ...options.stateReadOptions,
     integrationPorts: options.integrationPorts
-  });
+  }));
   if (state.status !== "running") {
     throw new Error(`${requiredService.name} is ${state.status}.`);
   }
@@ -651,17 +651,17 @@ export async function ensureRequiredServiceHttpReachable(
   const target = resolveRequirementHttpTarget(requiredService, webUrl, requirement.target);
   const authCapability = requirement.authCapability?.trim() ?? "";
   const authResult = authCapability
-    ? await resolveDesktopCapability(app, authCapability, {
+    ? await runStartupCheckpoint(requiredService.id, "dependency-http", "resolve-auth", () => resolveDesktopCapability(app, authCapability, {
       ports: integrationPorts(options.integrationPorts),
       ensureProviderInstall: async (providerService) => {
         await ensureMutableInstallDir(app, providerService, options.integrationPorts);
       }
-    })
+    }))
     : null;
   const authToken = authResult?.token || authResult?.text || "";
-  const probe = await probeHttpUrl(target, {
+  const probe = await runStartupCheckpoint(requiredService.id, "dependency-http", "probe", () => probeHttpUrl(target, {
     headers: authToken ? { Authorization: `Bearer ${authToken}` } : undefined
-  });
+  }));
   if (!probe.ok) {
     const fallbackTarget = resolveAgentPlatformReadinessFallbackTarget(requiredService.id, target, probe);
     if (fallbackTarget) {
@@ -763,7 +763,8 @@ export async function collectDesktopCapabilityRequirementIssues(
   const requirements = service.desktop.capabilities.requires.filter((requirement) => requirement.phase === phase);
   for (const requirement of requirements) {
     try {
-      await applyDesktopCapabilityRequirement(app, service, layout, requirement, options);
+      await runStartupCheckpoint(service.id, `requirement-${phase}`, describeCapabilityRequirement(requirement).replace(/\s+/gu, "-"),
+        () => applyDesktopCapabilityRequirement(app, service, layout, requirement, options));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       issues.push(t("service.verify.requirementNotReady", {

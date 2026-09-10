@@ -811,7 +811,7 @@ function createStartupCoreAssetsFixture(options = {}) {
                 "$pidDir = if ($stateDirArg) { $stateDirArg } else { $runDir }",
                 "New-Item -ItemType Directory -Path $pidDir -Force | Out-Null",
                 "if ($env:NODE_BIN) { $env:NODE_BIN | Set-Content -LiteralPath (Join-Path $runDir 'node-bin.txt') }",
-                "$fixtureScript = Join-Path $runDir '${service.id}-fixture.cjs'",
+                `$fixtureScript = Join-Path $runDir '${service.id}-fixture.cjs'`,
                 "$fixtureScriptContent = @'",
                 "const port = Number(process.argv[2] || 0);",
                 `if (${service.id === "agent-platform" ? "true" : "false"} && port > 0) {`,
@@ -3201,7 +3201,7 @@ test("desktop capability templates render global device name for macOS and Windo
 
     assert.equal(values["desktop.deviceName"], "Studio Desktop");
     assert.match(values["desktop.deviceId"], /^[0-9a-f-]{36}$/i);
-    assert.equal(values["output.path"], `${layout.dataDir}/tokens/Studio Desktop.txt`);
+    assert.equal(values["output.path"], path.join(layout.dataDir, "tokens", "Studio Desktop.txt"));
     assert.deepEqual(
       renderArgs(["--db", "{{auth.dbPath}}", "--device-name", "{{desktop.deviceName}}"], values),
       ["--db", path.join(tempRoot, "auth.db"), "--device-name", "Studio Desktop"]
@@ -7656,11 +7656,22 @@ test("runStartupPreparation uses manifest auth capability for agent-platform run
   const userDataRoot = path.join(fixture.tempRoot, "user-data");
   const { app, restore } = loadStartupCoreBuiltinsForTest(userDataRoot, fixture, { isPackaged: true });
   const previousVerifyDelay = process.env.SERVICE_VERIFY_DELAY_MS;
+  const fixturePids = [];
 
   process.env.SERVICE_VERIFY_DELAY_MS = "0";
 
   try {
     const result = await runStartupPreparation(app);
+    if (process.platform === "win32") {
+      // Keep fixture-owned PID receipts before later state reads reconcile them.
+      for (const serviceId of ["identity-center", "agent-platform"]) {
+        const pidPath = getTestPidPath(userDataRoot, serviceId, `${serviceId}.pid`);
+        if (fs.existsSync(pidPath)) {
+          const pid = Number(fs.readFileSync(pidPath, "utf8").trim());
+          if (Number.isSafeInteger(pid) && pid > 0 && pid !== process.pid) fixturePids.push(pid);
+        }
+      }
+    }
     const platformState = await getServiceState(app, "agent-platform");
     const webclientState = await getServiceState(app, "agent-webclient");
     const platformRootProbe = await __testInternals.probeHttpUrl(platformState.healthMeta.webUrl);
@@ -7685,8 +7696,17 @@ test("runStartupPreparation uses manifest auth capability for agent-platform run
       process.env.SERVICE_VERIFY_DELAY_MS = previousVerifyDelay;
     }
     await stopStartupCoreProcesses(app);
+    for (const pid of fixturePids) {
+      if (isPidRunning(pid)) process.kill(pid);
+      assert.equal(await waitForPidExit(pid), true);
+    }
     restore();
-    fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    // Windows releases the fixture process cwd asynchronously after termination.
+    if (process.platform === "win32") {
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
+    } else {
+      fs.rmSync(fixture.tempRoot, { recursive: true, force: true });
+    }
   }
 });
 

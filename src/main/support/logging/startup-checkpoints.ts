@@ -1,5 +1,20 @@
 let nextOperationId = 0;
 
+export async function runStartupCheckpoint<T>(serviceId: string, operation: string, stage: string, run: () => T | Promise<T>): Promise<T> {
+  // The additional diagnostics target Windows startup; other platforms keep the direct operation.
+  if (process.platform !== "win32") return run();
+  const checkpoints = beginStartupCheckpoints(serviceId, operation);
+  checkpoints.next(stage);
+  try {
+    const result = await run();
+    checkpoints.end();
+    return result;
+  } catch (error) {
+    checkpoints.end("failed");
+    throw error;
+  }
+}
+
 // Only pass fixed stage names: command arguments, env and script output can contain secrets.
 export function beginStartupCheckpoints(serviceId: string, operation: string) {
   const id = ++nextOperationId;
