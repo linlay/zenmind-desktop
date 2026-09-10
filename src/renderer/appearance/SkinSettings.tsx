@@ -1,5 +1,6 @@
 import { useRef, useState, type CSSProperties } from "react";
 import { Button, Checkbox } from "antd";
+import { DeleteOutlined, LoadingOutlined } from "@ant-design/icons";
 import { useI18n } from "../i18n/useI18n";
 import { useAppearance } from "./AppearanceProvider";
 import { DESKTOP_SKINS } from "./skins";
@@ -50,7 +51,12 @@ export function SkinSettings() {
   return (
     <div className="desktop-skin-settings">
       <div className="desktop-skin-heading">
-        <strong id="desktop-skin-label">{t("settings.appearance.skin")}</strong>
+        <div className="desktop-skin-title">
+          <strong id="desktop-skin-label">{t("settings.appearance.skin")}</strong>
+          <span className="desktop-skin-saving" role="status" aria-live="polite" title={skinSaving ? t("settings.appearance.saving") : undefined}>
+            {skinSaving && <><LoadingOutlined aria-hidden="true" /><span className="desktop-skin-saving-label">{t("settings.appearance.saving")}</span></>}
+          </span>
+        </div>
         <div className="desktop-skin-import">
           <Button disabled={disabled || !appearance.skinPackagesAvailable} onClick={() => void perform(async () => {
             const id = await appearance.importSkinPackage();
@@ -94,10 +100,9 @@ export function SkinSettings() {
               <span className="desktop-skin-option-label">{option.name}<span aria-hidden="true">{skinSettings.skinId === option.id ? "✓" : ""}</span></span>
               <span className="desktop-skin-package-meta">v{option.version}{option.author ? ` · ${option.author}` : ""}</span>
             </button>
-            <Button size="small" disabled={disabled} aria-label={t("settings.appearance.removePackageNamed", { name: option.name })}
-              onClick={() => void perform(async () => { await appearance.removeSkinPackage(option.id); if (importedId === option.id) setImportedId(undefined); })}>
-              {t("settings.appearance.removePackage")}
-            </Button>
+            <Button className="desktop-skin-remove" type="text" size="small" danger icon={<DeleteOutlined />} disabled={disabled}
+              title={t("settings.appearance.removePackage")} aria-label={t("settings.appearance.removePackageNamed", { name: option.name })}
+              onClick={() => void perform(async () => { await appearance.removeSkinPackage(option.id); if (importedId === option.id) setImportedId(undefined); })} />
           </div>)}
         </div>
       </>}
@@ -124,7 +129,6 @@ export function SkinSettings() {
       </div>
       <div className="desktop-skin-status" aria-live="polite">
         {skinLoadState === "loading" && <span>{t("settings.appearance.loading")}</span>}
-        {skinSaving && <span>{t("settings.appearance.saving")}</span>}
         {importedId && skinSettings.installedSkins?.some((option) => option.id === importedId) && <span>{t("settings.appearance.packageImported")}</span>}
         {isInstalledDesktopSkinId(skinSettings.skinId) && !skinSettings.installedSkin && <span role="status">{t("settings.appearance.packageMissing")}</span>}
         {skinLoadState === "error" && <div role="alert">{t("settings.appearance.loadFailed")}
