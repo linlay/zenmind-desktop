@@ -4,6 +4,7 @@ import { RendererI18nContext, type RendererI18nContextValue } from "./i18n/i18n-
 type AppErrorBoundaryProps = {
   resetKey: string;
   children: ReactNode;
+  onExit?: () => void;
 };
 
 type AppErrorBoundaryState = {
@@ -57,14 +58,14 @@ export class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorB
       <div className="app-error-screen">
         <div className="app-error-panel">
           <h1>{t("appError.title")}</h1>
-          <p>{t("appError.description")}</p>
+          <p>{t(this.props.onExit ? "appError.auxiliaryDescription" : "appError.description")}</p>
           <div className="app-error-detail">{this.state.error.message}</div>
           <div className="app-error-actions">
             <button type="button" className="action-button" onClick={this.reloadWindow}>
               {t("appError.reload")}
             </button>
-            <button type="button" className="text-button" onClick={this.openControlCenter}>
-              {t("appError.openControlCenter")}
+            <button type="button" className="text-button" onClick={this.props.onExit ?? this.openControlCenter}>
+              {t(this.props.onExit ? "common.close" : "appError.openControlCenter")}
             </button>
           </div>
         </div>

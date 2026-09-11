@@ -71,7 +71,10 @@ export function App() {
     );
   } else if (location.pathname === "/selection-explain-window") {
     content = (
-      <AppErrorBoundary resetKey={resetKey}>
+      <AppErrorBoundary
+        resetKey={resetKey}
+        onExit={() => { void window.electronAPI.selectionExplain.close(); }}
+      >
         <ServicesProvider>
           <Suspense fallback={null}>
             <SelectionExplainWindowPage />

@@ -113,7 +113,8 @@ import {
   type SurfaceIdentity
 } from "../../shared/surface-identity";
 import { WebviewSelectionToolbar } from "./WebviewSelectionToolbar";
-import { useAppearance } from "../appearance/AppearanceProvider";
+import { useAppearanceSnapshot } from "../appearance/AppearanceProvider";
+import { createAppearanceSnapshot } from "../appearance/model";
 import {
   isWebclientHostBackgroundSurface,
   readWebclientAppearanceProjection
@@ -692,7 +693,11 @@ export function ServiceWebviewSurface({
   const surfaceId = surfaceIdentity.surfaceId || surfaceIdProp?.trim() || serviceId;
   const ownsActiveSurface = surfaceOwnershipActive ?? active !== false;
   const mainChatSurface = isAgentWebclientChatSurface(serviceId, surfaceId);
-  const appearance = useAppearance();
+  const appearanceSnapshot = useAppearanceSnapshot();
+  const appearance = useMemo(
+    () => appearanceSnapshot ?? createAppearanceSnapshot(hostTheme ?? "light", false),
+    [appearanceSnapshot, hostTheme],
+  );
   const [appearanceRouteTheme, setAppearanceRouteTheme] = useState<"light" | "dark" | null>(null);
   const [hostSkinBackground, setHostSkinBackground] = useState(false);
   const appearanceHostRef = useRef<ReturnType<typeof createWebclientAppearanceHost> | null>(null);

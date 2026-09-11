@@ -3061,6 +3061,7 @@ export const zhCNMessages = {
 
   "appError.title": "页面遇到错误",
   "appError.description": "Desktop 已捕获这次异常，日志会写到主进程控制台。你可以重新加载，或先进入控制中心处理服务状态。",
+  "appError.auxiliaryDescription": "Desktop 已记录这次异常。你可以重新加载或关闭此窗口，主聊天不受影响。",
   "appError.reload": "重新加载",
   "appError.openControlCenter": "进入控制中心",
   "pageFeedback.dismiss": "知道了",

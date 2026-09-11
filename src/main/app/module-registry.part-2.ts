@@ -288,7 +288,13 @@ export function registerMainIpcHandlers(options: MainIpcRegistrationOptions) {
     consumeFirstInstallBootstrapNavigation: options.consumeFirstInstallBootstrapNavigation
   });
 
-  registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces);
+  registerEmbeddedCdpIpcHandlers(ipcMain, options.browserSurfaces, {
+    isMainWindow: (senderWebContentsId) => {
+      const mainWindow = options.getMainWindow();
+      return Boolean(mainWindow && !mainWindow.isDestroyed() &&
+        !mainWindow.webContents.isDestroyed() && mainWindow.webContents.id === senderWebContentsId);
+    },
+  });
   const canonicalChatSync = registerCanonicalChatSyncIpc(ipcMain, {
     resolveRenderer: (ownerWebContentsId) => {
       const mainWindow = options.getMainWindow();
