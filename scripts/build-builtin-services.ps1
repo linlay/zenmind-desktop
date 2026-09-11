@@ -21,7 +21,13 @@ $ServiceRepos = @(
 $ClearedReleaseEnvironment = @(
     "VERSION",
     "PROGRAM_TARGETS",
-    "PROGRAM_TARGET_MATRIX"
+    "PROGRAM_TARGET_MATRIX",
+    "RELEASE_DRY_RUN",
+    "GOOS",
+    "GOARCH",
+    # PowerShell Core parents can export module paths that Windows PowerShell
+    # cannot load. Child release processes must rebuild their native defaults.
+    "PSModulePath"
 )
 
 switch ($SyncOS.ToLowerInvariant()) {
@@ -64,7 +70,7 @@ function Invoke-ServiceRelease {
     }
     Write-Host "[build-builtin-services] release $RepoName (ARCH=$SyncArch)"
     if ($DryRun) {
-        Write-Host ('  (cd {0}; clear VERSION PROGRAM_TARGETS PROGRAM_TARGET_MATRIX; cmd.exe /d /s /c "make release ARCH={1}")' -f $projectDir, $SyncArch)
+        Write-Host ('  (cd {0}; clear VERSION TARGET_OS TARGET_ARCH PROGRAM_TARGETS PROGRAM_TARGET_MATRIX RELEASE_DRY_RUN GOOS GOARCH PSModulePath; cmd.exe /d /s /c "make release ARCH={1}")' -f $projectDir, $SyncArch)
         return
     }
 

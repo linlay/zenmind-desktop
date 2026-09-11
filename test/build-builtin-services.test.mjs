@@ -154,10 +154,20 @@ test("native PowerShell orchestrator cleans generated releases and preserves the
   assert.match(source, /& cmd\.exe \/d \/s \/c "make release ARCH=\$SyncArch"/u);
   assert.doesNotMatch(source, /& make release/u);
   assert.match(source, /Remove-Item "Env:\$name"/u);
+  assert.match(source, /"PSModulePath"/u);
   assert.match(source, /Remove-Item -LiteralPath \$releaseDir -Recurse -Force/u);
   assert.match(source, /--os=\$SyncOS/u);
   assert.match(source, /--arch=\$SyncArch/u);
   assert.match(source, /synced 4 builtin service assets/u);
+  for (const relative of [
+    "connectors/builtin.dbx/bin/dbx.exe",
+    "connectors/builtin.httpx/bin/httpx.exe",
+    "libexec/git-bash/windows-amd64"
+  ]) {
+    assert.match(source, new RegExp(escapeRegExp(`"${relative}"`), "u"));
+  }
+  assert.match(source, /"git-bash"/u);
+  assert.doesNotMatch(source, /"bin\/(?:dbx|httpx)\.exe"/u);
   assert.doesNotMatch(source, /sync-local-builtins|stage-builtins|builtins\.lock\.json/u);
 });
 
